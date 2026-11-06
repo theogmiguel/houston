@@ -54,14 +54,14 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
   return (
     <div
       className={cn(
-        "@container/changed-files mt-3 overflow-hidden rounded-lg border border-border bg-card",
+        "@container/changed-files mt-3 overflow-hidden rounded-lg border border-(--contrast-card-border) bg-card",
         SURFACE_LIFT_CLASS,
       )}
       data-changed-files-state="tree"
     >
       <div
         data-changed-files-header=""
-        className="flex h-9 items-center justify-between gap-2 border-b border-border bg-card px-3"
+        className="flex h-9 items-center justify-between gap-2 border-b border-(--contrast-card-border) bg-card px-3"
       >
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-foreground">
           <span>

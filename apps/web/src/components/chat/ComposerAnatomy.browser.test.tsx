@@ -168,23 +168,22 @@ it(
     expect(footer!.querySelectorAll('button[type="submit"]')).toHaveLength(1);
     expect(lastButton().type).toBe("submit");
 
-    // The send button is a 32px circle: a neutral inert control while there is nothing to send.
+    // The send button is a 32px accent circle; only its glyph dims while there is nothing to send.
     const send = lastButton();
     const emptyStyle = getComputedStyle(send);
     expect(send.disabled).toBe(true);
     expect(send.getBoundingClientRect().width).toBe(32);
     expect(send.getBoundingClientRect().height).toBe(32);
-    expect(emptyStyle.backgroundColor).toBe(resolveColor("var(--sel)"));
+    expect(emptyStyle.backgroundColor).toBe(resolveColor("var(--accent)"));
     expect(emptyStyle.opacity).toBe("1");
+    expect(Number(getComputedStyle(send.querySelector("svg")!).opacity)).toBeCloseTo(0.45, 2);
 
     await userEvent.click(page.getByTestId("composer-editor"));
     await userEvent.keyboard("hello");
     await vi.waitFor(() => expect(send.disabled).toBe(false));
-    // The fill moves from the neutral disabled recipe to the accent over the feedback role.
-    await vi.waitFor(() =>
-      expect(getComputedStyle(send).backgroundColor).toBe(resolveColor("var(--accent)")),
-    );
+    expect(getComputedStyle(send).backgroundColor).toBe(resolveColor("var(--accent)"));
     expect(Number(getComputedStyle(send).opacity)).toBe(1);
+    expect(Number(getComputedStyle(send.querySelector("svg")!).opacity)).toBe(1);
     await userEvent.keyboard("{Control>}a{/Control}{Backspace}");
 
     await userEvent.keyboard("{Control>}{Shift>}m{/Shift}{/Control}");

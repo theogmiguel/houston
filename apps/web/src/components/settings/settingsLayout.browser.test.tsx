@@ -3,7 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import "~/index.css";
 import { render } from "../../../test/render";
 import { SettingsBreadcrumb } from "./SettingsBreadcrumb";
-import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
+import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { SETTINGS_SECTION_DESCRIPTIONS, SETTINGS_SECTION_LABELS } from "./settingsSearch";
 
 describe("SettingsPageContainer heading", () => {
@@ -137,5 +137,53 @@ describe("settings helper text contrast", () => {
       luminance(flatten(fill, "#000")),
     ].toSorted((a, b) => b - a);
     expect((lighter! + 0.05) / (darker! + 0.05)).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+function resolveToken(property: "color" | "borderTopColor", value: string): string {
+  const probe = document.createElement("span");
+  document.body.append(probe);
+  probe.style[property] = value;
+  const resolved = getComputedStyle(probe)[property];
+  probe.remove();
+  return resolved;
+}
+
+describe("settings group card", () => {
+  it("separates the card from the canvas in light and reads its description at 12px and 4.5:1 in both themes", async () => {
+    try {
+      for (const theme of ["light", "dark"] as const) {
+        document.documentElement.classList.toggle("dark", theme === "dark");
+        await using screen = await render(
+          <SettingsSection title="Theme">
+            <SettingsRow title="Contrast" description="Adjust the contrast across the interface." />
+          </SettingsSection>,
+          { router: "/settings/appearance" },
+        );
+        const group = document.querySelector<HTMLElement>('[data-slot="settings-group"]')!;
+        const card = getComputedStyle(group);
+        // The light card edge is one step above --border; dark keeps the ordinary hairline.
+        const edge = flatten(card.borderTopColor, card.backgroundColor);
+        const expected = flatten(
+          resolveToken("borderTopColor", theme === "light" ? "var(--divider)" : "var(--border)"),
+          card.backgroundColor,
+        );
+        edge.forEach((channel, index) =>
+          expect(Math.abs(channel - expected[index]!), theme).toBeLessThanOrEqual(1),
+        );
+
+        const description = screen.getByText("Adjust the contrast across the interface.").element();
+        const style = getComputedStyle(description);
+        expect(style.fontSize, theme).toBe("12px");
+        const fill = card.backgroundColor;
+        const [lighter, darker] = [
+          luminance(flatten(style.color, fill)),
+          luminance(flatten(fill, "#000")),
+        ].toSorted((a, b) => b - a);
+        expect((lighter! + 0.05) / (darker! + 0.05), theme).toBeGreaterThanOrEqual(4.5);
+      }
+    } finally {
+      document.documentElement.classList.remove("dark");
+    }
   });
 });

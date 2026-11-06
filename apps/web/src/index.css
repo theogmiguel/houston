@@ -1047,6 +1047,8 @@ body {
   --t2: #424245;
   --houston: #5b5b60;
   --border: rgba(0, 0, 0, 0.09);
+  /* White cards on the light canvas need the next step up from --border to separate. */
+  --card-edge: var(--divider);
   /* Shell dividers: one step above --border so a 1px seam reads on both panes,
      and below the 16% interactive line so it never reads as a control. */
   --divider: rgba(0, 0, 0, 0.14);
@@ -1200,6 +1202,7 @@ body {
   --t2: rgba(255, 255, 255, 0.66);
   --houston: rgba(255, 255, 255, 0.52);
   --border: rgba(255, 255, 255, 0.09);
+  --card-edge: var(--border);
   --divider: rgba(255, 255, 255, 0.14);
   --border-hover: rgba(255, 255, 255, 0.16);
   --line-strong: rgba(255, 255, 255, 0.16);
@@ -1682,6 +1685,11 @@ html[data-theme-id="t3-chat"] [data-app-sidebar] {
   --contrast-border: color-mix(
     in srgb,
     color-mix(in srgb, var(--border) var(--appearance-contrast-base), transparent),
+    var(--foreground) var(--appearance-contrast-border-boost)
+  );
+  --contrast-card-border: color-mix(
+    in srgb,
+    color-mix(in srgb, var(--card-edge) var(--appearance-contrast-base), transparent),
     var(--foreground) var(--appearance-contrast-border-boost)
   );
   --contrast-foreground: color-mix(

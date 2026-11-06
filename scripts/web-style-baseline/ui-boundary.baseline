@@ -19,7 +19,7 @@
 10 apps/web/src/components/chat/AssistantCitationCommentEditor.tsx
 2 apps/web/src/components/chat/AssistantModelAttributionLine.tsx
 7 apps/web/src/components/chat/ChangedFilesBar.tsx
-39 apps/web/src/components/chat/ChangedFilesTree.tsx
+37 apps/web/src/components/chat/ChangedFilesTree.tsx
 2 apps/web/src/components/chat/ChatBannerLane.tsx
 3 apps/web/src/components/chat/ChatCanvas.tsx
 21 apps/web/src/components/chat/ChatComposer.tsx
@@ -79,7 +79,7 @@
 1 apps/web/src/components/chat/OpenInPicker.tsx
 5 apps/web/src/components/chat/PanelLayoutControls.tsx
 2 apps/web/src/components/chat/PierreEntryIcon.tsx
-15 apps/web/src/components/chat/ProposedPlanCard.tsx
+14 apps/web/src/components/chat/ProposedPlanCard.tsx
 16 apps/web/src/components/chat/ProviderInstanceIcon.tsx
 3 apps/web/src/components/chat/ProviderModelPicker.tsx
 3 apps/web/src/components/chat/ProviderStatusBanner.tsx
@@ -370,7 +370,7 @@
 39 apps/web/src/components/settings/SettingInheritance.tsx
 2 apps/web/src/components/settings/SettingsBreadcrumb.tsx
 7 apps/web/src/components/settings/SettingsFontPreviews.tsx
-7 apps/web/src/components/settings/SettingsGroup.tsx
+6 apps/web/src/components/settings/SettingsGroup.tsx
 26 apps/web/src/components/settings/settingsLayout.tsx
 15 apps/web/src/components/settings/SettingsPanels.tsx
 15 apps/web/src/components/settings/SettingsScopeNotice.tsx

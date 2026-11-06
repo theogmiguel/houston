@@ -79,17 +79,38 @@ export function TimelineFileChangeCard({
   const rows = parseDiff(item);
   const additions = item.additions ?? rows.filter((row) => row.kind === "add").length;
   const deletions = item.deletions ?? rows.filter((row) => row.kind === "del").length;
+  // A change with no diff body is only a pointer to the file, so it reads as a quiet row that
+  // fills on hover instead of a second bordered card beside the changed-files card.
+  const isReference = rows.length === 0;
   return (
     <section
       aria-label={`Diff for ${item.fileName}`}
+      data-file-change-variant={isReference ? "reference" : "card"}
       className={cn(
-        "overflow-hidden rounded-(--r-group) border border-border bg-card",
-        SURFACE_LIFT_CLASS,
+        "group/file-change",
+        isReference
+          ? "-mx-2 rounded-(--r-ctl) px-2 hover:bg-(--hover) has-focus-visible:bg-(--hover)"
+          : cn(
+              "overflow-hidden rounded-(--r-group) border border-border bg-card",
+              SURFACE_LIFT_CLASS,
+            ),
       )}
     >
-      <div className="flex h-9 items-center gap-2 border-b border-border pe-1.5 ps-3">
+      <div
+        className={cn(
+          "flex h-9 items-center gap-2 pe-1.5",
+          isReference ? "ps-0" : "border-b border-border ps-3",
+        )}
+      >
         <FileIcon aria-hidden className="size-3.5 shrink-0 text-(--houston)" />
-        <span className="min-w-0 flex-1 truncate font-mono text-mono text-(--t1)">
+        <span
+          className={cn(
+            "min-w-0 flex-1 truncate font-mono text-mono",
+            isReference
+              ? "text-(--houston) group-hover/file-change:text-(--t1) group-has-focus-visible/file-change:text-(--t1)"
+              : "text-(--t1)",
+          )}
+        >
           {formatWorkspaceRelativePath(item.fileName, workspaceRoot)}
         </span>
         <span className="shrink-0 text-callout text-(--houston) tabular-nums">

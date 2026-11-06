@@ -1088,7 +1088,7 @@ export function ProviderInstanceCard({
               ) : null}
               {versionAdvisoryNode}
             </span>
-            <span className="mt-0.5 flex items-start gap-1.5 text-xs leading-normal text-muted-foreground/80">
+            <span className="mt-0.5 flex items-start gap-1.5 text-xs leading-normal text-muted-foreground">
               {statusDotNode && !updateProgress ? (
                 <span className="flex h-[1.45em] shrink-0 items-center">{statusDotNode}</span>
               ) : null}

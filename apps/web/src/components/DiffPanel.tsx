@@ -270,7 +270,9 @@ export default function DiffPanel({
     wordWrap: settings.wordWrap,
   }));
   const diffLayout = settings.diffLayout;
-  const [wordWrap, setWordWrap] = useState(settings.wordWrap);
+  // The embedded side panel is narrow, so it soft-wraps by default instead of clipping code at its
+  // right edge; the header toggle still switches it off per panel.
+  const [wordWrap, setWordWrap] = useState(mode === "embedded" || settings.wordWrap);
   const [diffIgnoreWhitespace, setDiffIgnoreWhitespace] = useState(settings.diffIgnoreWhitespace);
   const [fileTreeOpen, setFileTreeOpen] = useLocalStorage(
     DIFF_FILE_TREE_STORAGE_KEY,

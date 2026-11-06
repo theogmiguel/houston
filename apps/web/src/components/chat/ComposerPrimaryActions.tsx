@@ -372,24 +372,26 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         ? `Click to ${followUpBehavior}, ${isMacPlatform(navigator.platform) ? "⌘" : "Ctrl"}-click${alternateShortcutLabel ? ` or ${alternateShortcutLabel}` : ""} to ${alternateAction}`
         : submitLabel);
 
+  const isSendButtonDisabled =
+    isSendBusy ||
+    isSendDisabled ||
+    isEnvironmentUnavailable ||
+    (!hasSendableContent && !showResume);
+
   const sendButton = (
     <button
       type={showResume ? "button" : "submit"}
       className={cn(
-        "relative isolate flex size-8 items-center justify-center overflow-hidden rounded-full bg-(--accent) text-(--primary-foreground) transition-colors duration-150 enabled:cursor-pointer enabled:hover:bg-(--accent-hover) disabled:pointer-events-none [&_svg]:size-4 [&_svg]:pointer-events-none",
-        // Idle-disabled reads as inert (neutral fill, muted glyph); a busy send keeps the accent
-        // so the spinner still reads as work in progress.
-        isSendBusy ? "disabled:opacity-60" : "disabled:bg-(--sel) disabled:text-(--houston)",
+        "relative isolate flex size-8 items-center justify-center overflow-hidden rounded-full bg-(--accent) text-(--primary-foreground) transition-colors duration-(--motion-feedback) enabled:cursor-pointer enabled:hover:bg-(--accent-hover) disabled:pointer-events-none [&_svg]:size-4 [&_svg]:pointer-events-none",
+        // The fill stays the solid accent so the composer always shows its primary action. An
+        // idle-disabled send dims only its glyph (the shared disabled-control opacity); a busy send
+        // dims the whole button so the spinner still reads as work in progress.
+        isSendBusy ? "disabled:opacity-60" : "disabled:[&_svg]:opacity-45",
         boardFocusRing,
       )}
       {...pointerFocusProps}
       onClick={showResume ? onResume : onSubmitMessage}
-      disabled={
-        isSendBusy ||
-        isSendDisabled ||
-        isEnvironmentUnavailable ||
-        (!hasSendableContent && !showResume)
-      }
+      disabled={isSendButtonDisabled}
       aria-label={submitStatus ?? submitLabel}
     >
       {isSendBusy ? (
@@ -408,7 +410,13 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
 
   const submit = (
     <Tooltip key="submit">
-      <TooltipTrigger render={<span className="inline-flex" />}>{sendButton}</TooltipTrigger>
+      <TooltipTrigger
+        render={
+          <span className={cn("inline-flex", isSendButtonDisabled && "cursor-not-allowed")} />
+        }
+      >
+        {sendButton}
+      </TooltipTrigger>
       <TooltipPopup>{submitTooltip}</TooltipPopup>
     </Tooltip>
   );
