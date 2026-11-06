@@ -15,6 +15,12 @@ vi.mock(import("@effect/atom-react"), async (original) => ({
   useAtomValue: (() => []) as never,
 }));
 
+vi.mock(import("../../state/environments"), async (original) => ({
+  ...(await original()),
+  usePrimaryEnvironmentId: (() => "env-1") as never,
+  useEnvironmentMachines: (() => new Map()) as never,
+}));
+
 vi.mock(import("../../state/session"), async (original) => ({
   ...(await original()),
   readEnvironmentScope: () => true,
@@ -133,6 +139,7 @@ describe("ThreadCard drag source", () => {
       threadId: "thread-a",
       environmentId: "env-1",
       projectId: "project-1",
+      title: "Split drawer state from the thread store",
     });
     endThreadDrag();
   });
@@ -269,10 +276,8 @@ describe("ThreadCard", () => {
     expect(rowStyle.transitionDuration).toBe("0.1s");
     expect(rowStyle.transitionTimingFunction).toBe("cubic-bezier(0.2, 0, 0, 1)");
 
-    const reveal = [...row.querySelectorAll("span")].find((span) =>
-      span.className.includes("right-2 "),
-    );
-    if (reveal === undefined) throw new Error("The thread card has no action reveal span.");
+    const reveal = screen.getByRole("button", { name: "Close thread" }).element().parentElement;
+    if (reveal === null) throw new Error("The thread card has no action reveal span.");
     const revealStyle = getComputedStyle(reveal);
     expect(revealStyle.transitionProperty).toBe("opacity");
     expect(revealStyle.transitionDuration).toBe("0.1s");
@@ -445,6 +450,7 @@ describe("ThreadCard layout", () => {
   });
 
   it("keeps a long title clear of the hover actions in an active row and in a shelf row", async () => {
+    // The actions take the meta line's right corner; the title line below never runs under them.
     const longTitle = thread({ title: "T".repeat(200) });
     const rows = [
       { label: "active", options: {}, actionsName: /Thread actions for/ },
@@ -461,8 +467,13 @@ describe("ThreadCard layout", () => {
       const reveal = actions.element().closest("span")!;
       await vi.waitFor(() => expect(getComputedStyle(reveal).opacity).toBe("1"));
 
-      const actionsLeft = reveal.getBoundingClientRect().left;
-      expect(titleOf(screen).getBoundingClientRect().right, label).toBeLessThanOrEqual(actionsLeft);
+      const actionsBox = reveal.getBoundingClientRect();
+      const titleBox = titleOf(screen).getBoundingClientRect();
+      const clearBelow = titleBox.top >= actionsBox.bottom;
+      const clearBeside = titleBox.right <= actionsBox.left;
+      expect(clearBelow || clearBeside, label).toBe(true);
+      // The title keeps its width: the actions do not shorten the line below them.
+      expect(titleBox.right, label).toBeGreaterThan(actionsBox.left);
     }
   });
 
@@ -706,7 +717,7 @@ describe("ThreadCard status marks", () => {
     const cases = [
       { label: "Running", value: runningThread, ink: "text-(--accent-ink)", glyph: null },
       {
-        label: "Needs you",
+        label: "Input",
         value: { hasPendingUserInput: true },
         ink: "text-(--warn-ink)",
         glyph: null,
@@ -754,7 +765,7 @@ describe("ThreadCard status marks", () => {
       card(thread({ hasPendingUserInput: true }), { timeLabel: null }),
     );
 
-    const label = screen.getByText("Needs you").element();
+    const label = screen.getByText("Input").element();
     const outline = label.parentElement?.querySelector("svg path");
     expect(outline).not.toBeNull();
     expect(getComputedStyle(outline!).fill).toBe("none");

@@ -95,8 +95,16 @@ export function useThreadActionMenu(input: {
   readonly onCloseThread?: (() => void) | undefined;
   readonly onHoldThread?: ((snoozedUntil: string) => void) | undefined;
   readonly onSetAutoSettle?: ((enabled: boolean) => void) | undefined;
+  /** A surface that navigates after a reopen or wake supplies it, so the menu matches its button. */
+  readonly onReopenThread?: (() => void) | undefined;
+  readonly onWakeThread?: (() => void) | undefined;
   /** A grid cell closes itself once its thread is archived. */
   readonly onThreadArchived?: (() => void) | undefined;
+  /** The rail's project filter for this thread's project; absent hides Filter by project. */
+  readonly projectFilter?:
+    | { readonly label: string; readonly isActive: boolean; readonly onToggle: () => void }
+    | null
+    | undefined;
 }) {
   const { threadRef, onStartRename, onFind, handleNewThread, grid, cell } = input;
   const {
@@ -178,7 +186,10 @@ export function useThreadActionMenu(input: {
       canFind: thread !== null && onFind !== undefined,
       canStartBranchThread: handleNewThread !== undefined,
       branch: thread?.branch ?? null,
-      projectFilter: null,
+      projectFilter:
+        input.projectFilter == null
+          ? null
+          : { label: input.projectFilter.label, isActive: input.projectFilter.isActive },
       isSettled: thread !== null && supports.settlement && thread.settledOverride === "settled",
       autoSettleEnabled: thread?.autoSettleDisabledAt == null,
       tags: threadTags,
@@ -311,6 +322,9 @@ export function useThreadActionMenu(input: {
         if (onFind === undefined) findThread(threadRef);
         else onFind(threadRef);
         return;
+      case "filter-by-project":
+        input.projectFilter?.onToggle();
+        return;
       case "project-settings":
         await openThreadProjectSettings(threadRef);
         return;
@@ -334,9 +348,17 @@ export function useThreadActionMenu(input: {
         else await closeThread(threadRef);
         return;
       case "unsettle":
+        if (input.onReopenThread) {
+          input.onReopenThread();
+          return;
+        }
         await reportFailure("Failed to reopen thread", () => unsettleThread(threadRef));
         return;
       case "unsnooze":
+        if (input.onWakeThread) {
+          input.onWakeThread();
+          return;
+        }
         await reportFailure("Failed to wake thread", () => unsnoozeThread(threadRef));
         return;
       case "auto-settle:enabled":
