@@ -20,6 +20,7 @@ import {
   makeMemory as makeMemoryKeychain,
   type MemoryKeychain,
 } from "./LegacyKeychain.ts";
+import { DATADOG_KEY_SECRET } from "../observability/DatadogKey.ts";
 import { importKeychainSecrets } from "./SecretStoreImport.ts";
 
 const APP = "xapp-1-A0-keychain";
@@ -138,6 +139,29 @@ describe("the keychain import copies each token once into the secret store", () 
           absent: 0,
           refused: 0,
         });
+      }),
+    ),
+  );
+
+  // Observability reads the Datadog key before the runtime runs this import (server.ts), which
+  // is safe only while the import never copies that key.
+  it.effect("never reads or writes the Datadog API key", () =>
+    withWorld((world) =>
+      Effect.gen(function* () {
+        const seeded = yield* seedConnections;
+        seeded.seedKeychain(world.keychain);
+        world.secrets.entries.set(DATADOG_KEY_SECRET, "0123456789abcdef0123456789abcdef");
+        assert.deepEqual(yield* importKeychainSecrets, imported(4));
+        assert.isFalse(world.secrets.calls.some((call) => call.name === DATADOG_KEY_SECRET));
+        assert.isFalse(
+          world.keychain.calls.some((call) =>
+            JSON.stringify(call).toLowerCase().includes("datadog"),
+          ),
+        );
+        assert.strictEqual(
+          world.secrets.entries.get(DATADOG_KEY_SECRET),
+          "0123456789abcdef0123456789abcdef",
+        );
       }),
     ),
   );
