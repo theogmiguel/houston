@@ -1943,7 +1943,7 @@ export function ThreadCard({
   useThreadDropZone(
     rowRef,
     (_point, source) =>
-      shelf === null && source.threadId !== thread.id
+      shelf === null && gridId !== null && source.threadId !== thread.id
         ? { kind: "thread", gridId, threadId: thread.id }
         : null,
     (source) => onDropOnThread(source),
