@@ -27,7 +27,6 @@ const HOUSTON_TRACK: Array<readonly [number, string]> = [
   [9, "NightShift"],
   [10, "DropNightShiftAndHarnessReview"],
   [11, "SecretStoreImport"],
-  [14, "EventPromptReferences"],
 ];
 const TASK_TABLES = [
   "houston_task_acceptance",
@@ -145,11 +144,9 @@ describe("the Houston track applies every id it has not recorded", () => {
     `).map((row) => row.name);
   });
 
-  it.effect("a fresh database applies every id in order after upstream's track", () =>
+  it.effect("a fresh database applies 1..11 in id order", () =>
     withDatabaseFile((file) =>
       Effect.gen(function* () {
-        // As Sqlite.ts does: id 14 indexes upstream's event table.
-        yield* runMigrations();
         assert.deepEqual(yield* runHoustonMigrations(), HOUSTON_TRACK);
         assert.deepEqual(yield* houstonHistory, HOUSTON_TRACK);
       }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: file }))),

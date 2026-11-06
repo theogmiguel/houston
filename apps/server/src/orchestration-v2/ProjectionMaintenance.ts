@@ -45,8 +45,8 @@ const PAGE_SIZE = 50;
 // Borrowing rows are small (their prompt is empty), so a page of them stays cheap to read.
 const REFERENCE_PAGE_SIZE = 500;
 
-// Rows that borrow an anchor's prompt. Houston's partial index
-// houston_orch_events_prompt_references_idx has this exact predicate, so keep the two equal.
+// Rows that borrow an anchor's prompt. Matching them costs a JSON read, so the prune evaluates
+// it over a sequence range only; an index on it would charge every stream write instead.
 const borrowsPrompt = (sql: SqlClient.SqlClient) => sql`
   event.event_type IN ('subagent.updated', 'turn-item.updated')
   AND json_type(event.payload_json, '$.promptSequence') = 'integer'
@@ -109,12 +109,15 @@ export const layer: Layer.Layer<ProjectionMaintenanceV2, never, SqlClient.SqlCli
         updated_at = excluded.updated_at
     `;
 
-    // Collects anchors whose prompt later rows borrow through promptSequence.
-    const readPromptReferences = Effect.fnUntraced(function* (
+    // Collects anchors whose prompt later rows borrow through promptSequence. A pass reads
+    // only rows after its boundary, which is normally the previous pass's head.
+    const readPromptReferences = Effect.fn("ProjectionMaintenance.readPromptReferences")(function* (
       afterSequence: number,
       throughSequence: number,
       betweenPages: Effect.Effect<void>,
     ) {
+      yield* Effect.annotateCurrentSpan("event_prune.references_after", afterSequence);
+      yield* Effect.annotateCurrentSpan("event_prune.references_through", throughSequence);
       const referenced = new Set<number>();
       for (let cursor = afterSequence; cursor < throughSequence;) {
         const rows = yield* promptReferencesQuery(sql, {

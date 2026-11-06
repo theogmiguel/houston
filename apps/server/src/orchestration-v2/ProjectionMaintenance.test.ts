@@ -19,6 +19,7 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
+import * as Tracer from "effect/Tracer";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Statement from "effect/sql/Statement";
 
@@ -363,7 +364,7 @@ it.effect("keeps the anchor a retained stream head borrows from", () =>
   }).pipe(Effect.provide(layerTest)),
 );
 
-it.effect("reads borrowed prompts through their partial index, not every retained event", () =>
+it.effect("reads borrowed prompts over a sequence range, not by scanning the whole log", () =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     const plan = (statement: Statement.Statement<unknown>) => {
@@ -377,9 +378,55 @@ it.effect("reads borrowed prompts through their partial index, not every retaine
     );
     const heads = yield* plan(ProjectionMaintenance.keptHeadReferencesQuery(sql, 10));
     for (const detail of [references, heads]) {
-      assert.match(detail[0] ?? "", /USING INDEX houston_orch_events_prompt_references_idx/);
+      assert.match(detail[0] ?? "", /USING INTEGER PRIMARY KEY \(rowid/);
       assert.notMatch(detail.join("\n"), /\bSCAN\b/);
     }
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("a pass reads borrowed prompts only after the previous pass's head", () =>
+  Effect.gen(function* () {
+    const sink = yield* EventSink.EventSinkV2;
+    const eventStore = yield* EventStore.EventStoreV2;
+    const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
+    const ranges: Array<readonly [unknown, unknown]> = [];
+    const tracer = Tracer.make({
+      span(options) {
+        const span = new Tracer.NativeSpan(options);
+        const end = span.end.bind(span);
+        span.end = (endTime, exit) => {
+          end(endTime, exit);
+          if (span.name === "ProjectionMaintenance.readPromptReferences")
+            ranges.push([
+              span.attributes.get("event_prune.references_after"),
+              span.attributes.get("event_prune.references_through"),
+            ]);
+        };
+        return span;
+      },
+    });
+    const prune = maintenance.pruneEventStore().pipe(Effect.withTracer(tracer));
+    const now = yield* DateTime.now;
+    const threadId = ThreadId.make("thread:prune-ranges");
+    yield* sink.write({ events: [threadCreated(makeThread(threadId, now), now)] });
+    yield* sink.write({ events: subagentEvents(threadId, now, 0) });
+    // The first pass only marks the head.
+    yield* prune;
+    const firstHead = yield* eventStore.latestSequence();
+    yield* sink.write({ events: subagentEvents(threadId, now, 0, "repeat") });
+    yield* TestClock.adjust("1 day");
+    yield* prune;
+    const secondHead = yield* eventStore.latestSequence();
+    yield* sink.write({ events: subagentEvents(threadId, now, 1, "later") });
+    yield* TestClock.adjust("1 day");
+    yield* prune;
+    const thirdHead = yield* eventStore.latestSequence();
+    assert.isAbove(secondHead, firstHead);
+    assert.isAbove(thirdHead, secondHead);
+    assert.deepEqual(ranges, [
+      [firstHead, secondHead],
+      [secondHead, thirdHead],
+    ]);
   }).pipe(Effect.provide(layerTest)),
 );
 
