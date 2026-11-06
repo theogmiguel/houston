@@ -14,9 +14,10 @@ const groupVariants = cva(
     variants: {
       variant: {
         default: "",
-        // One 28px outlined container that owns the outer corners; the halves fill its inner height.
+        // One 28px outlined container. The outline is an overlay, not a layout border, so the
+        // halves measure the full 28px and line up with sibling icon buttons.
         split:
-          "h-7 items-stretch rounded-[var(--r-ctl)] border border-border *:data-slot:not-data-[slot=separator]:h-full *:data-slot:not-data-[slot=separator]:rounded-[calc(var(--r-ctl)-1px)]",
+          "relative h-7 items-stretch rounded-[var(--r-ctl)] after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:border after:border-border *:data-slot:not-data-[slot=separator]:h-full *:data-slot:not-data-[slot=separator]:rounded-[var(--r-ctl)]",
       },
       orientation: {
         horizontal:

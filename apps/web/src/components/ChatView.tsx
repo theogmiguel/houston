@@ -3645,6 +3645,7 @@ export default function ChatView(props: ChatViewProps) {
                 {...(embedded
                   ? {}
                   : { onOpenTurnDiff: onOpenTurnDiffStable, onForkFromRun: onForkFromRunStable })}
+                pendingChangesRunId={changedFilesBar === null ? null : (latestTurnDiff?.runId ?? null)}
                 {...(secondOpinionOffered
                   ? {
                       secondOpinion: {

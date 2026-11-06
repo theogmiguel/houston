@@ -18,14 +18,22 @@ describe("RouteErrorActions", () => {
     ).not.toBeNull();
   });
 
-  it("gives Reload app and Copy error one secondary look beside the single primary", async () => {
+  it("keeps Try again primary, Reload app secondary and Copy error a borderless ghost action", async () => {
     await using screen = await render(<RouteErrorActions report="report" />);
 
     const look = (name: string) => {
       const style = getComputedStyle(screen.getByRole("button", { name }).element());
       return [style.backgroundColor, style.borderTopColor, style.color];
     };
-    expect(look("Reload app")).toEqual(look("Copy error"));
     expect(look("Try again")).not.toEqual(look("Reload app"));
+    expect(look("Copy error")).not.toEqual(look("Reload app"));
+
+    const ghost = getComputedStyle(screen.getByRole("button", { name: "Copy error" }).element());
+    const secondary = getComputedStyle(
+      screen.getByRole("button", { name: "Reload app" }).element(),
+    );
+    expect(ghost.backgroundColor).toBe("rgba(0, 0, 0, 0)");
+    expect(ghost.borderTopColor).toBe("rgba(0, 0, 0, 0)");
+    expect(secondary.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
   });
 });

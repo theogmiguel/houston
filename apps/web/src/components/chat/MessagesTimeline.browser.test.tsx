@@ -1347,6 +1347,78 @@ describe("ChangedFilesCard", () => {
   );
 });
 
+describe("ChangedFilesCard when the composer banner covers the turn", () => {
+  const diffSummary = (runId: RunId, assistantId: string, path: string) =>
+    ({
+      runId,
+      checkpointTurnCount: 1,
+      checkpointRef: `checkpoint-${runId}` as never,
+      status: "ready",
+      files: [{ path, kind: "modified", additions: 5, deletions: 0 }],
+      assistantMessageId: MessageId.make(assistantId),
+      completedAt: CREATED_AT,
+    }) as const;
+
+  it("draws the covered turn as one borderless row and keeps older turns as cards", async () => {
+    setup();
+    const first = RunId.make("run-1");
+    const second = RunId.make("run-2");
+    const onOpenTurnDiff = vi.fn();
+    await using screen = await renderTimeline(
+      [
+        message("First", { role: "user", runId: first }, "user-1"),
+        message("Done one", { role: "assistant", runId: first }, "assistant-1"),
+        message("Second", { role: "user", runId: second }, "user-2"),
+        message("Done two", { role: "assistant", runId: second }, "assistant-2"),
+      ],
+      {
+        onOpenTurnDiff,
+        pendingChangesRunId: second,
+        turnDiffSummaries: [
+          diffSummary(first, "assistant-1", "src/old.ts"),
+          diffSummary(second, "assistant-2", "CHANGELOG.md"),
+        ],
+      },
+    );
+
+    const cards = screen.container.querySelectorAll<HTMLElement>(
+      '[data-changed-files-state="tree"]',
+    );
+    expect(cards).toHaveLength(1);
+    expect(getComputedStyle(cards[0]!).borderTopWidth).toBe("1px");
+
+    const rows = screen.container.querySelectorAll<HTMLElement>(
+      '[data-changed-files-state="compact"]',
+    );
+    expect(rows).toHaveLength(1);
+    const row = rows[0]!;
+    expect(row.textContent).toContain("Edited CHANGELOG.md");
+    expect(row.textContent).toContain("+5");
+    expect(getComputedStyle(row).borderTopWidth).toBe("0px");
+    expect(row.getBoundingClientRect().height).toBeLessThanOrEqual(32);
+    expect(screen.container.textContent).not.toContain("1 changed file +5");
+
+    await click(row.querySelector<HTMLElement>('button[aria-label="Open diff"]')!);
+    expect(onOpenTurnDiff).toHaveBeenCalledWith(second, "CHANGELOG.md");
+  });
+
+  it("keeps the full card for the latest turn while no banner covers it", async () => {
+    setup();
+    const run = RunId.make("run-1");
+    await using screen = await renderTimeline(
+      [
+        message("First", { role: "user", runId: run }, "user-1"),
+        message("Done", { role: "assistant", runId: run }, "assistant-1"),
+      ],
+      { turnDiffSummaries: [diffSummary(run, "assistant-1", "CHANGELOG.md")] },
+    );
+    expect(
+      screen.container.querySelectorAll('[data-changed-files-state="tree"]'),
+    ).toHaveLength(1);
+    expect(screen.container.querySelector('[data-changed-files-state="compact"]')).toBeNull();
+  });
+});
+
 it("keeps concurrent approvals actionable outside collapsed work and restores settled rows", async () => {
   setup();
   const fixture = makeStreamingTimelineFixture();

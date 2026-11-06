@@ -259,6 +259,8 @@ interface MessagesTimelineProps {
   announceTurnStatus?: boolean;
   onOpenToolDiff?: (target: ToolCallDiffTarget) => void;
   onOpenTurnDiff?: (runId: RunId, filePath?: string) => void;
+  /** The run the composer's pending-changes banner covers; its changed-files card shrinks to one row. */
+  pendingChangesRunId?: RunId | null;
   onOpenThread: (threadId: OrchestrationV2TurnItem["threadId"]) => void;
   renderHtmlRender?: TimelineRowSharedState["renderHtmlRender"];
   turnItemSource?: TimelineRowSharedState["turnItemSource"];
@@ -375,6 +377,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   announceTurnStatus = true,
   onOpenToolDiff,
   onOpenTurnDiff,
+  pendingChangesRunId = null,
   onOpenThread,
   renderHtmlRender,
   turnItemSource,
@@ -1044,6 +1047,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     openPullRequest,
     onOpenToolDiff,
     onOpenTurnDiff,
+    pendingChangesRunId,
     onOpenThread,
     renderHtmlRender,
     turnItemSource,

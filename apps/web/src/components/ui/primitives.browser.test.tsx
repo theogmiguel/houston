@@ -130,7 +130,8 @@ describe("Houston primitives", () => {
       "--del-bg": "rgba(255, 107, 97, 0.1)",
       "--pane": "#0f0f11",
       "--pane-head": "#18181b",
-      "--composer": "#18181b",
+      // The composer is one card with the thread surface's card fill.
+      "--composer": "#202023",
     };
     root.classList.remove("dark");
     try {

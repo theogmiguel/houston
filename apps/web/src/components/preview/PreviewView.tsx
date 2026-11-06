@@ -1041,32 +1041,27 @@ export function PreviewView({
             </Tooltip>
           ) : null
         }
-        trailingActions={
-          moreMenuActions ? (
-            <PreviewMoreMenu
-              enabled={
-                runtimeTabId !== null &&
-                (serverOwnsRendering || (desktopOverlay?.hasWebContents ?? false))
-              }
-              actions={moreMenuActions}
-              {...(moveTarget
-                ? { move: { label: moveLabel, onMove: () => void handleMoveTab() } }
-                : {})}
-              profileName={activeProfileName}
-              zoomFactor={
-                serverOwnsRendering ? serverZoomFactor : (desktopOverlay?.zoomFactor ?? 1)
-              }
-              colorScheme={
-                serverOwnsRendering
-                  ? (snapshot?.colorScheme ?? "system")
-                  : (desktopOverlay?.colorScheme ?? "system")
-              }
-              deviceToolbarVisible={viewport._tag !== "fill"}
-              onToggleDeviceToolbar={handleToggleDeviceToolbar}
-              nativePictureInPicture={desktopOverlay?.pictureInPicture ?? false}
-            />
-          ) : null
-        }
+        renderMenu={(toolbarActions) => (
+          <PreviewMoreMenu
+            toolbarActions={toolbarActions}
+            enabled={
+              runtimeTabId !== null &&
+              (serverOwnsRendering || (desktopOverlay?.hasWebContents ?? false))
+            }
+            actions={moreMenuActions}
+            {...(moveTarget
+              ? { move: { label: moveLabel, onMove: () => void handleMoveTab() } }
+              : {})}
+            profileName={activeProfileName}
+            zoomFactor={serverOwnsRendering ? serverZoomFactor : (desktopOverlay?.zoomFactor ?? 1)}
+            colorScheme={
+              serverOwnsRendering
+                ? (snapshot?.colorScheme ?? "system")
+                : (desktopOverlay?.colorScheme ?? "system")
+            }
+            nativePictureInPicture={desktopOverlay?.pictureInPicture ?? false}
+          />
+        )}
       />
 
       {confirmation ? (

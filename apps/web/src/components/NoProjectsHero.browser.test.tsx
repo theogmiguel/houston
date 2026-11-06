@@ -55,7 +55,7 @@ const missing = (driver: string) =>
     auth: { status: "unknown" },
   });
 
-it("lists every provider with its version and sign-in state or install hint", async () => {
+it("lists installed providers and folds the missing ones behind one disclosure row", async () => {
   state.providers = [
     provider("claudeAgent"),
     provider("codex"),
@@ -66,15 +66,42 @@ it("lists every provider with its version and sign-in state or install hint", as
 
   await expect.element(page.getByText("Claude Code", { exact: true })).toBeVisible();
   await expect.element(page.getByText("Codex", { exact: true })).toBeVisible();
-  await expect.element(page.getByText("OpenCode", { exact: true })).toBeVisible();
   expect(page.getByText("1.0.0 · signed in").elements()).toHaveLength(2);
+
+  const disclosure = page.getByText("2 more not installed");
+  await expect.element(disclosure).toBeVisible();
+  await expect.element(page.getByText("OpenCode", { exact: true })).not.toBeVisible();
+  expect(page.getByRole("button", { name: "How to install" }).elements()).toHaveLength(0);
+
+  await userEvent.click(disclosure);
+  await expect.element(page.getByText("OpenCode", { exact: true })).toBeVisible();
+  await expect.element(page.getByText("Cursor", { exact: true })).toBeVisible();
   expect(page.getByText("Not installed").elements()).toHaveLength(2);
   expect(page.getByRole("button", { name: "How to install" }).elements()).toHaveLength(2);
+});
+
+it("omits the disclosure row when every provider is installed", async () => {
+  state.providers = [provider("claudeAgent"), provider("codex")];
+  await using _screen = await render(<NoProjectsHero />, { router: "/" });
+
+  await expect.element(page.getByText("Codex", { exact: true })).toBeVisible();
+  expect(page.getByText(/more not installed/).elements()).toHaveLength(0);
+});
+
+it("keeps Add folder the dominant action above the provider card", async () => {
+  state.providers = [provider("claudeAgent"), missing("opencode")];
+  await using _screen = await render(<NoProjectsHero />, { router: "/" });
+
+  const add = page.getByRole("button", { name: "Add folder" }).element();
+  const card = page.getByText("1 more not installed").element().closest("details")!;
+  expect(add.getBoundingClientRect().bottom).toBeLessThan(card.getBoundingClientRect().top);
+  expect(getComputedStyle(add).backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
 });
 
 it("sets the install action apart from the muted 'Not installed' status", async () => {
   state.providers = [provider("claudeAgent"), missing("opencode")];
   await using _screen = await render(<NoProjectsHero />, { router: "/" });
+  await userEvent.click(page.getByText("1 more not installed"));
 
   const status = getComputedStyle(page.getByText("Not installed").element());
   const action = getComputedStyle(page.getByRole("button", { name: "How to install" }).element());

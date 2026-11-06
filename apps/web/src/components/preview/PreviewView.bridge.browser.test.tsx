@@ -126,12 +126,12 @@ const TEST_THREAD_REF = {
 } as const;
 const TEST_RUNTIME_TAB_ID = previewRuntimeTabId(TEST_THREAD_REF, null, "tab-1");
 
-function seedPreviewState() {
+function seedPreviewState(url = "http://example.com/") {
   updatePreviewServerSnapshot(TEST_THREAD_REF, {
     threadId: TEST_THREAD_REF.threadId,
     tabId: "tab-1",
     runtime: "desktop",
-    navStatus: { _tag: "Success", url: "http://example.com/", title: "Example" },
+    navStatus: { _tag: "Success", url, title: "Example" },
     canGoBack: true,
     canGoForward: true,
     updatedAt: "2026-07-13T00:00:00.000Z",
@@ -151,11 +151,11 @@ function seedPreviewState() {
   });
 }
 
-function setup() {
+function setup(url?: string) {
   vi.clearAllMocks();
   mocks.commitBrowserViewportChange.mockResolvedValue(undefined);
   resetPreviewStateForTests();
-  seedPreviewState();
+  seedPreviewState(url);
   usePreviewMiniPlayerStore.setState({ byThreadKey: {} });
   useRightPanelStore.setState({ byThreadKey: {}, pendingMaximizeThreadKey: null });
   useRightPanelStore.getState().show(TEST_THREAD_REF);
@@ -190,10 +190,12 @@ describe("preview toolbar with the desktop preview bridge", () => {
     await userEvent.keyboard("{Enter}");
     expect(mocks.navigate).toHaveBeenCalledWith(TEST_RUNTIME_TAB_ID, "http://example.com/next");
 
-    await userEvent.click(page.getByRole("button", { name: "Open in system browser" }));
+    await userEvent.click(page.getByRole("button", { name: "Preview menu" }));
+    await userEvent.click(page.getByRole("menuitem", { name: "Open in system browser" }));
     expect(mocks.openExternal).toHaveBeenCalledWith("http://example.com/");
 
-    await userEvent.click(page.getByRole("button", { name: "Capture screenshot" }));
+    await userEvent.click(page.getByRole("button", { name: "Preview menu" }));
+    await userEvent.click(page.getByRole("menuitem", { name: "Capture screenshot" }));
     await vi.waitFor(() =>
       expect(mocks.captureScreenshot).toHaveBeenCalledWith(TEST_RUNTIME_TAB_ID),
     );
@@ -207,9 +209,11 @@ describe("preview toolbar with the desktop preview bridge", () => {
     await vi.waitFor(() => expect(mocks.pickElement).toHaveBeenCalledWith(TEST_RUNTIME_TAB_ID));
     expect(mocks.setAnnotationSendEnabled).toHaveBeenCalledWith(TEST_RUNTIME_TAB_ID, false);
 
-    await userEvent.click(page.getByRole("button", { name: "Float preview over chat" }));
+    await userEvent.click(page.getByRole("button", { name: "Preview menu" }));
+    await userEvent.click(page.getByRole("menuitem", { name: "Float preview over chat" }));
+    await userEvent.click(page.getByRole("button", { name: "Preview menu" }));
     await expect
-      .element(page.getByRole("button", { name: "Close floating preview" }))
+      .element(page.getByRole("menuitem", { name: "Close floating preview" }))
       .toBeVisible();
   });
 
@@ -217,7 +221,8 @@ describe("preview toolbar with the desktop preview bridge", () => {
     setup();
     await using _screen = await render(view());
 
-    await userEvent.click(page.getByRole("button", { name: "Device size" }));
+    await userEvent.click(page.getByRole("button", { name: "Preview menu" }));
+    await userEvent.click(page.getByRole("menuitem", { name: "Show device toolbar" }));
     expect(mocks.commitBrowserViewportChange).toHaveBeenCalledWith(
       { threadRef: TEST_THREAD_REF, tabId: "tab-1", runtimeTabId: TEST_RUNTIME_TAB_ID },
       expect.objectContaining({ _tag: "freeform" }),
@@ -272,5 +277,89 @@ describe("preview toolbar with the desktop preview bridge", () => {
     await userEvent.click(page.getByRole("button", { name: "Preview menu" }));
     await userEvent.click(page.getByRole("menuitem", { name: "Clear cache" }));
     expect(mocks.clearCache).toHaveBeenCalledWith(TEST_THREAD_REF.environmentId, "default");
+  });
+});
+
+// The right panel of the 1440px layout.
+const PANEL_WIDTH = 399;
+
+describe("preview toolbar in a narrow panel", () => {
+  async function mountNarrow(url: string) {
+    setup(url);
+    const box = document.createElement("div");
+    box.style.cssText = `width:${PANEL_WIDTH}px;height:600px;display:flex;flex-direction:column`;
+    const screen = await render(view(), { container: box });
+    const field = box.querySelector("[data-preview-url-input]")!.parentElement as HTMLElement;
+    return { box, screen, field };
+  }
+
+  it("gives the address field the free width and shows the whole local address", async () => {
+    const view = await mountNarrow("http://127.0.0.1:52341/dashboard/usage?range=30d");
+    await using _screen = view.screen;
+    const form = view.box.querySelector("form")!;
+    const fixed = [...form.querySelectorAll("button")].map((b) => b.getBoundingClientRect().width);
+    const buttonsWidth = fixed.reduce((sum, width) => sum + width, 0);
+    // What is left after the buttons and the form padding belongs to the field.
+    expect(view.field.getBoundingClientRect().width).toBeGreaterThanOrEqual(
+      PANEL_WIDTH - buttonsWidth - 40,
+    );
+    expect(view.field.getBoundingClientRect().width).toBeGreaterThanOrEqual(190);
+    const host = [...view.field.querySelectorAll("span")].find(
+      (span) => span.textContent === "127.0.0.1:52341",
+    )!;
+    console.log(
+      "MEAS",
+      JSON.stringify({
+        field: view.field.getBoundingClientRect().width,
+        buttons: fixed,
+        host: [host.scrollWidth, host.clientWidth],
+        form: form.getBoundingClientRect().width,
+        kids: [...form.children].map(
+          (c) => c.tagName + ":" + Math.round(c.getBoundingClientRect().width),
+        ),
+      }),
+    );
+    expect(host, "the host is not rendered as its own span").toBeDefined();
+    expect(host.scrollWidth).toBeLessThanOrEqual(host.clientWidth);
+  });
+
+  it("keeps navigation and two actions visible and lists the rest in the menu", async () => {
+    const view = await mountNarrow("http://127.0.0.1:52341/");
+    await using _screen = view.screen;
+    const names = [...view.box.querySelectorAll("form button")].map((b) =>
+      b.getAttribute("aria-label"),
+    );
+    expect(names).toEqual([
+      "Back",
+      "Forward",
+      "Reload",
+      "Full screen",
+      "Annotate preview",
+      "Preview menu",
+    ]);
+    // Each button stays inside the panel.
+    for (const button of view.box.querySelectorAll("form button")) {
+      expect(button.getBoundingClientRect().right).toBeLessThanOrEqual(PANEL_WIDTH);
+    }
+
+    await userEvent.click(page.getByRole("button", { name: "Preview menu" }));
+    for (const name of [
+      "Open in system browser",
+      "Show device toolbar",
+      "Capture screenshot",
+      "Record screen",
+      "Float preview over chat",
+    ]) {
+      await expect.element(page.getByRole("menuitem", { name })).toBeVisible();
+    }
+  });
+
+  it("opens the menu from the keyboard", async () => {
+    const view = await mountNarrow("http://127.0.0.1:52341/");
+    await using _screen = view.screen;
+    (view.box.querySelector('[aria-label="Preview menu"]') as HTMLElement).focus();
+    await userEvent.keyboard("{Enter}");
+    await userEvent.keyboard("{Enter}");
+    expect(mocks.openExternal).toHaveBeenCalledWith("http://127.0.0.1:52341/");
   });
 });

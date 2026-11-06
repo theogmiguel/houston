@@ -126,14 +126,14 @@ it(
     expect(footer!.querySelectorAll('button[type="submit"]')).toHaveLength(1);
     expect(lastButton().type).toBe("submit");
 
-    // The send button is a 32px accent-filled circle, dimmer while there is nothing to send.
+    // The send button is a 32px accent-filled circle, at full opacity even with nothing to send.
     const send = lastButton();
     const emptyStyle = getComputedStyle(send);
     expect(send.disabled).toBe(true);
     expect(send.getBoundingClientRect().width).toBe(32);
     expect(send.getBoundingClientRect().height).toBe(32);
     expect(emptyStyle.backgroundColor).toBe(resolveColor("var(--accent)"));
-    expect(Number(emptyStyle.opacity)).toBeCloseTo(0.6, 2);
+    expect(Number(emptyStyle.opacity)).toBe(1);
 
     await userEvent.click(page.getByTestId("composer-editor"));
     await userEvent.keyboard("hello");

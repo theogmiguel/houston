@@ -32,26 +32,30 @@ export const DIFF_VIEW_UNSAFE_CSS = `${DIFF_SURFACE_THEME_UNSAFE_CSS}
 }
 
 /* The scrollbar sits under the file, often out of view, so a clipped line also gets a fade at
-   the right edge. The mask is static: a 24px fade on a tile 24px wider than the box would
-   push it out of sight, so scroll position alone picks which of the two states shows. The
-   timeline is inactive when nothing overflows, which leaves the wide tile (no fade) in place,
-   and the fade is only fully on until the last 24px of scroll, where the end of the line is
-   reached. */
+   the right edge of the visible column. The sticky gutter always sits at the left edge of the
+   scroll viewport, so a pseudo-element anchored to it by container width lands on the right
+   edge wherever the file is scrolled. The scroll-state query shows it only while there is more
+   to the right. It is state, not an animation, so it also holds where animations are
+   finished or disabled. Without scroll-state support the fade is simply absent. */
 [data-overflow="scroll"] [data-code] {
-  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
-  mask-repeat: no-repeat;
-  mask-size: calc(100% + 24px) 100%;
-  animation: diffs-overflow-fade linear both;
-  animation-timeline: scroll(self inline);
-  animation-range: calc(100% - 24px) 100%;
+  container-type: inline-size scroll-state;
 }
 
-@keyframes diffs-overflow-fade {
-  from {
-    mask-size: 100% 100%;
-  }
-  to {
-    mask-size: calc(100% + 24px) 100%;
+[data-overflow="scroll"] [data-code] [data-gutter]::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(100cqi - 24px);
+  width: 24px;
+  pointer-events: none;
+  background: linear-gradient(to right, transparent, var(--code-background));
+  opacity: 0;
+}
+
+@container scroll-state(scrollable: right) {
+  [data-overflow="scroll"] [data-code] [data-gutter]::after {
+    opacity: 1;
   }
 }
 

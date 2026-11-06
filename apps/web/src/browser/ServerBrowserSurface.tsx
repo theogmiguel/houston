@@ -834,9 +834,8 @@ export function ServerBrowserSurface(props: {
         </span>
         {control?.canOperate ? (
           <Button
-            className="text-[var(--t1)]"
-            variant="ghost"
-            size="sm"
+            variant="outline"
+            size="xs"
             disabled={control.controller === "another-viewer"}
             onClick={() =>
               send({ type: control.controller === "you" ? "releaseControl" : "takeControl" })

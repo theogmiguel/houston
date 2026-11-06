@@ -83,6 +83,8 @@ export interface TimelineRowSharedState {
   onOpenToolDiff: ((target: ToolCallDiffTarget) => void) | undefined;
   /** Unset where there is no diff to open, so the timeline shows no "Open diff" button. */
   onOpenTurnDiff: ((runId: RunId, filePath?: string) => void) | undefined;
+  /** The run whose changes the composer's pending-changes banner already summarizes. */
+  pendingChangesRunId: RunId | null;
   /** Draws a published HTML visual. Unset, the row loads it from the environment. */
   renderHtmlRender: ((row: Extract<TimelineRow, { kind: "html-render" }>) => ReactNode) | undefined;
   /** Unset, expanded rows read detail and command output from the environment. */

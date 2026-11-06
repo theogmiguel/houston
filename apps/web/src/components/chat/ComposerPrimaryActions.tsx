@@ -366,21 +366,20 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         ? `Click to ${followUpBehavior}, ${isMacPlatform(navigator.platform) ? "⌘" : "Ctrl"}-click${alternateShortcutLabel ? ` or ${alternateShortcutLabel}` : ""} to ${alternateAction}`
         : submitLabel);
 
+  // The inert send button keeps its solid accent fill; the not-allowed cursor on the tooltip
+  // wrapper (the button itself takes no pointer events) is what marks it unavailable.
+  const sendInert =
+    isSendBusy || isSendDisabled || isEnvironmentUnavailable || (!hasSendableContent && !showResume);
   const sendButton = (
     <button
       type={showResume ? "button" : "submit"}
       className={cn(
-        "relative isolate flex size-8 items-center justify-center overflow-hidden rounded-full bg-(--accent) text-(--primary-foreground) transition-colors duration-150 enabled:cursor-pointer enabled:hover:bg-(--accent-hover) disabled:pointer-events-none disabled:opacity-60 [&_svg]:size-4 [&_svg]:pointer-events-none",
+        "relative isolate flex size-8 items-center justify-center overflow-hidden rounded-full bg-(--accent) text-(--primary-foreground) transition-colors duration-150 enabled:cursor-pointer enabled:hover:bg-(--accent-hover) disabled:pointer-events-none [&_svg]:size-4 [&_svg]:pointer-events-none",
         boardFocusRing,
       )}
       {...pointerFocusProps}
       onClick={showResume ? onResume : onSubmitMessage}
-      disabled={
-        isSendBusy ||
-        isSendDisabled ||
-        isEnvironmentUnavailable ||
-        (!hasSendableContent && !showResume)
-      }
+      disabled={sendInert}
       aria-label={submitStatus ?? submitLabel}
     >
       {isSendBusy ? (
@@ -399,7 +398,11 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
 
   const submit = (
     <Tooltip key="submit">
-      <TooltipTrigger render={<span className="inline-flex" />}>{sendButton}</TooltipTrigger>
+      <TooltipTrigger
+        render={<span className="inline-flex" data-send-inert={sendInert ? "" : undefined} />}
+      >
+        {sendButton}
+      </TooltipTrigger>
       <TooltipPopup>{submitTooltip}</TooltipPopup>
     </Tooltip>
   );

@@ -38,11 +38,13 @@ function sendButtonStyle() {
   return { disabled: (button as HTMLButtonElement).disabled, style };
 }
 
-it("keeps an empty composer's send button accent-filled, dimmed to 60% and disabled", async () => {
+it("keeps an empty composer's send button solid accent at full opacity, disabled with a not-allowed cursor", async () => {
   await using _screen = await renderSend(false);
   const { disabled, style } = sendButtonStyle();
   expect(disabled).toBe(true);
-  expect(Number(style.opacity)).toBeCloseTo(0.6, 2);
+  expect(style.opacity).toBe("1");
+  const wrapper = page.getByRole("button", { name: "Submit message" }).element().parentElement!;
+  expect(getComputedStyle(wrapper).cursor).toBe("not-allowed");
 
   const probe = document.createElement("span");
   document.body.append(probe);

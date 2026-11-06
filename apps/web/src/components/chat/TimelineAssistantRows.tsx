@@ -485,6 +485,7 @@ function AssistantChangedFilesSectionInner({
   return (
     <ChangedFilesCard
       runId={turnSummary.runId}
+      compact={ctx.pendingChangesRunId === turnSummary.runId}
       files={checkpointFiles}
       totals={checkpointFileTotals(turnSummary)}
       allDirectoriesExpanded={allDirectoriesExpanded}

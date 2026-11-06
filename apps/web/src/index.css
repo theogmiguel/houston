@@ -2202,12 +2202,25 @@ code {
   font-size: 0.85em;
 }
 
-/* The age on a sidebar thread row's title line: a muted 12px tabular column. */
+/* Ages in the sidebar's meta line keep digit widths so they scan as a column. */
 [data-thread-time] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The inert send button takes no pointer events, so its wrapper carries the cursor. */
+[data-send-inert] {
+  cursor: not-allowed;
+}
+
+/* The one-row changed-files summary: muted 12px text with the file name at full ink. */
+[data-changed-files-state="compact"] {
   color: var(--color-secondary-label);
   font-size: var(--text-xs);
   line-height: var(--text-xs--line-height);
-  font-variant-numeric: tabular-nums;
+}
+
+[data-changed-files-state="compact"] [data-changed-files-name] {
+  color: var(--color-foreground);
 }
 
 /* A zero in a diff stat is not a change: it stays muted instead of taking the addition or

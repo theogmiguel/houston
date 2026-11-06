@@ -32,7 +32,7 @@ import { ProjectCloneToastCoordinator } from "../components/ProjectCloneToastCoo
 import { ChatGptWelcomeCoordinator } from "../components/settings/ChatGptWelcomeCoordinator";
 import { ThemeEditorHost } from "../components/settings/ThemeEditorHost";
 import { RouteErrorActions } from "../components/RouteErrorActions";
-import { ErrorLogDisclosure } from "../components/ui/error-log-disclosure";
+import { ServerUnavailableCard } from "../components/ServerUnavailableCard";
 import { Button } from "../components/ui/button";
 import { StandalonePage, StandalonePageHeader } from "../components/ui/standalone-page";
 import { AnchoredToastProvider, ToastProvider } from "../components/ui/toast";
@@ -45,8 +45,12 @@ import {
 } from "@houston-app/client-runtime/state/project-grouping";
 import { useUiStateStore } from "../uiStateStore";
 import { configureClientTracing } from "../observability/clientTracing";
-import { resolveInitialServerAuthGateState } from "../environments/primary";
+import {
+  readPrimaryEnvironmentTarget,
+  resolveInitialServerAuthGateState,
+} from "../environments/primary";
 import { PrimaryEnvironmentRequestError } from "../environments/primary/auth";
+import { serverUnavailableDetail } from "../components/serverUnavailableDetail";
 import { hasHostedPairingRequest, isHostedStaticApp } from "../hostedPairing";
 import { useHostedPromptLinkLanding } from "../components/promptLinks/HostedPromptLinkLanding";
 import { isLocalEnvironmentDisabled } from "../localEnvironment";
@@ -223,17 +227,21 @@ function ServerUnavailableView({ error }: { error: PrimaryEnvironmentRequestErro
   const pathname = useLocation({ select: (location) => location.pathname });
   const report = errorReport(error, pathname);
   return (
-    <StandalonePage>
-      <StandalonePageHeader
-        title="Houston's server isn't running"
-        description="Your threads are saved. Start the server to see them."
-      />
-
-      <RouteErrorActions report={report} />
-
-      <ErrorLogDisclosure report={report} />
-    </StandalonePage>
+    <ServerUnavailableCard
+      report={report}
+      detail={serverUnavailableDetail(error, primaryTargetHost())}
+    />
   );
+}
+
+/** The host the client tried, or null when the target itself cannot be resolved. */
+function primaryTargetHost(): string | null {
+  try {
+    const target = readPrimaryEnvironmentTarget();
+    return target === null ? null : new URL(target.target.httpBaseUrl).host;
+  } catch {
+    return null;
+  }
 }
 
 function GenericRouteErrorView({ error }: Pick<ErrorComponentProps, "error">) {
