@@ -4077,8 +4077,10 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             SELECT json_extract(payload_json, '$.limitRecovery.resetAt') AS reset_at,
               json_extract(payload_json, '$.snoozedUntil') AS snoozed_until
             FROM orchestration_v2_projection_threads
+            -- Houston: matches houston_threads_limit_auto_resume_idx (houston/migrations.ts).
             WHERE deleted_at IS NULL
-              AND json_extract(payload_json, '$.limitRecovery.autoResume') = 1
+              AND CASE WHEN json_valid(payload_json)
+                THEN json_extract(payload_json, '$.limitRecovery.autoResume') = 1 ELSE 0 END
           )
         `;
         const wakes = [rows[0]?.reset_ms, rows[0]?.snooze_ms].filter(
@@ -6594,9 +6596,11 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           const rows = yield* sql<PayloadRow>`
           SELECT payload_json
           FROM orchestration_v2_projection_threads
+          -- Houston: matches houston_threads_pull_requests_idx (houston/migrations.ts).
           WHERE deleted_at IS NULL${threadId === undefined ? sql`` : sql` AND thread_id = ${threadId}`}
-            AND json_extract(payload_json, '$.archivedAt') IS NULL
-            AND json_array_length(payload_json, '$.pullRequests') > 0
+            AND CASE WHEN json_valid(payload_json) THEN
+              json_extract(payload_json, '$.archivedAt') IS NULL
+              AND json_array_length(payload_json, '$.pullRequests') > 0 ELSE 0 END
           ORDER BY updated_at ASC, thread_id ASC
         `;
           return yield* Effect.forEach(rows, (row) =>
@@ -6619,9 +6623,11 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       sql<{ readonly thread_id: string; readonly worktree_path: string }>`
         SELECT thread_id, json_extract(payload_json, '$.worktreePath') AS worktree_path
         FROM orchestration_v2_projection_threads
+        -- Houston: matches houston_threads_worktree_idx (houston/migrations.ts).
         WHERE deleted_at IS NULL
+          AND CASE WHEN json_valid(payload_json)
+            THEN json_extract(payload_json, '$.worktreePath') IS NOT NULL ELSE 0 END
           ${options?.includeArchived === true ? sql`` : sql`AND json_extract(payload_json, '$.archivedAt') IS NULL`}
-          AND json_extract(payload_json, '$.worktreePath') IS NOT NULL
       `.pipe(
         Effect.map((rows) =>
           rows.map((row) => ({
@@ -7005,9 +7011,11 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         const rows = yield* sql<{ readonly thread_id: string }>`
         SELECT thread_id
         FROM orchestration_v2_projection_threads
+        -- Houston: matches houston_threads_subagent_idx (houston/migrations.ts).
         WHERE deleted_at IS NULL
-          AND json_extract(payload_json, '$.archivedAt') IS NULL
-          AND json_extract(payload_json, '$.lineage.relationshipToParent') = 'subagent'
+          AND CASE WHEN json_valid(payload_json) THEN
+            json_extract(payload_json, '$.archivedAt') IS NULL
+            AND json_extract(payload_json, '$.lineage.relationshipToParent') = 'subagent' ELSE 0 END
       `;
         return rows.map((row) => ThreadId.make(row.thread_id));
       },
