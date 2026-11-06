@@ -1065,10 +1065,10 @@ export function EnvironmentProviderSettings({
         ) : null}
         <SettingsGroup
           divided={false}
+          data-provider-card
           className={cn(
-            providerCardHeightClassName,
             "overflow-hidden",
-            selectedRow && PROVIDER_DETAIL_SPLIT_CLASS,
+            selectedRow && [providerCardHeightClassName, PROVIDER_DETAIL_SPLIT_CLASS],
           )}
         >
           <div

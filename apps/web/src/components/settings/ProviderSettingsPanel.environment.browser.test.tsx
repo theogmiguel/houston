@@ -369,6 +369,21 @@ describe("EnvironmentProviderSettings routing", () => {
   });
 });
 
+describe("EnvironmentProviderSettings layout", () => {
+  it("sizes the provider card to its list until a provider is selected", async () => {
+    await setup();
+    await setProviders([provider()]);
+    await using _screen = await render(panel());
+    const listEnd = page.getByText("Add provider").last().element();
+    const card = listEnd.closest("[data-provider-card]");
+    expect(card).not.toBeNull();
+    const cardBottom = card!.getBoundingClientRect().bottom;
+    const listBottom = listEnd.getBoundingClientRect().bottom;
+    // The card ends with the list's last row instead of reserving the detail's height.
+    expect(cardBottom - listBottom).toBeLessThan(24);
+  });
+});
+
 describe("EnvironmentProviderSettings instance removal", () => {
   it("resets a configured default instance only once the user confirms", async () => {
     await setup();
