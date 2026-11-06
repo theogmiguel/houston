@@ -47,9 +47,11 @@ import { toolOutputImages } from "@houston-app/shared/toolOutput";
 import { resolveAttachmentPathById } from "../../attachmentStore.ts";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Logger from "effect/Logger";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
+import * as References from "effect/References";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as Sink from "effect/Sink";
@@ -71,6 +73,8 @@ import * as ProviderAdapter from "@houston-app/provider-core/server/ProviderAdap
 import type * as ProviderContinuationRequests from "@houston-app/provider-core/server/ProviderContinuationRequests";
 import * as ModelManifest from "../../provider/ModelManifest.ts";
 import { resolveProviderCompatibility } from "../../provider/providerCompatibility.ts";
+import * as TraceContext from "../../houston/observability/TraceContext.ts";
+import * as RecordingTracer from "../../observability/testing/RecordingTracer.ts";
 import * as CodexAdapterV2 from "./CodexAdapterV2.ts";
 import { withCodexReplayChildMetadata } from "./CodexAdapterV2.testkit.ts";
 import * as CodexAdapterV2Testkit from "./CodexAdapterV2.testkit.ts";
@@ -1414,6 +1418,110 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           ),
         ),
       ),
+  );
+
+  it.effect(
+    "a session opened in one turn stamps no earlier run on a later turn's spans and logs",
+    () => {
+      const recording = RecordingTracer.make();
+      const logged: Array<Readonly<Record<string, unknown>>> = [];
+      return Effect.gen(function* () {
+        const nativeThreadId = "trace-thread";
+        const first = codexReplayPreamble({
+          nativeThreadId,
+          nativeTurnId: "trace-1",
+          prompt: "work",
+        });
+        const second = codexReplayPreamble({
+          nativeThreadId,
+          nativeTurnId: "trace-2",
+          prompt: "work",
+        });
+        const completed = (id: string): CodexReplay.CodexAppServerReplayEntry => ({
+          type: "emit_inbound",
+          label: `${id} completed`,
+          frame: {
+            method: "turn/completed",
+            params: {
+              threadId: nativeThreadId,
+              turn: makeCodexReplayTurn({ id, status: "completed" }),
+            },
+          },
+        });
+        const firstContext = { runId: "run-trace-1", commandId: "command-trace-1" };
+        // The session manager opens the session inside the first turn's context.
+        const harness = yield* makeCodexReplayHarness(
+          makeCodexReplayTranscript({
+            scenario: "trace-context",
+            entries: [
+              ...first,
+              completed("trace-1"),
+              ...second.slice(5, 7).map((entry) => withReplayRequestId(entry, 4)),
+              completed("trace-2"),
+            ],
+          }),
+        ).pipe(TraceContext.withTraceContext(firstContext));
+        const input = makeCodexTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make("trace-1"),
+          text: "work",
+        });
+        yield* harness.runtime.startTurn(input).pipe(TraceContext.withTraceContext(firstContext));
+        yield* harness.awaitTerminal(1);
+        const spansBefore = recording.ended.length;
+        const logsBefore = logged.length;
+        yield* harness.runtime
+          .startTurn({
+            ...input,
+            runId: RunId.make("run-trace-2"),
+            attemptId: RunAttemptId.make("trace-2"),
+            rootNodeId: NodeId.make("trace-2"),
+            runOrdinal: 2,
+            providerTurnOrdinal: 2,
+          })
+          .pipe(
+            TraceContext.withTraceContext({ runId: "run-trace-2", commandId: "command-trace-2" }),
+          );
+        yield* harness.awaitTerminal(2);
+
+        const later = recording.ended.slice(spansBefore);
+        assert.isAbove(later.length, 0);
+        for (const span of later) {
+          assert.notStrictEqual(
+            span.attributes.get("houston.run.id"),
+            firstContext.runId,
+            span.name,
+          );
+          assert.notStrictEqual(
+            span.attributes.get("houston.command.id"),
+            firstContext.commandId,
+            span.name,
+          );
+        }
+        for (const annotations of logged.slice(logsBefore)) {
+          assert.notStrictEqual(annotations["houston.run.id"], firstContext.runId);
+          assert.notStrictEqual(annotations["houston.command.id"], firstContext.commandId);
+        }
+      }).pipe(
+        Effect.scoped,
+        Effect.withTracer(recording.tracer),
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+            Logger.layer([
+              Logger.make((options) => {
+                logged.push(options.fiber.getRef(References.CurrentLogAnnotations));
+              }),
+            ]),
+          ),
+        ),
+      );
+    },
   );
 
   it.effect.each(["supported", "unsupported", "invalid"] as const)(
