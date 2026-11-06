@@ -10,7 +10,7 @@ import { AppRoot } from "~/AppRoot";
 import { __setClientSettingsForTests } from "~/hooks/useSettings";
 import { getRouter } from "~/router";
 import { installFakeEnvironment, threadWithHistory } from "../../test/fakeEnvironment";
-import { render } from "../../test/render";
+import { act, fakeTimers, render } from "../../test/render";
 
 // The socket is the only fake layer: the client runtime hands every connection the in-process session.
 vi.mock("../../../../packages/client-runtime/src/connection/driver.ts", async (importOriginal) => {
@@ -102,9 +102,14 @@ it("opens no tooltip when closing the drawer returns focus to the toggle", async
   await vi.waitFor(() =>
     expect(document.activeElement?.getAttribute("aria-label")).toBe("Toggle main sidebar"),
   );
-  // Base UI opens focus tooltips after a short delay; wait past it.
-  await new Promise((resolve) => setTimeout(resolve, 600));
-  expect(toggleTooltip()).toBeNull();
+  {
+    // Base UI opens focus tooltips after a short delay; run its timers past that delay.
+    using _timers = fakeTimers();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    expect(toggleTooltip()).toBeNull();
+  }
 
   // Hover still opens it, and so does focus the user moves there with Tab.
   await userEvent.hover(toggle);

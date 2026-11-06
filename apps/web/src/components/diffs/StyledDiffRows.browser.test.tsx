@@ -1,5 +1,5 @@
 import { parsePatchFiles } from "@pierre/diffs/utils/parsePatchFiles";
-import { afterEach, describe, expect, it } from "vite-plus/test";
+import { describe, expect, it } from "vite-plus/test";
 
 import "~/index.css";
 import { resolveDiffThemeName } from "~/lib/diffRendering";
@@ -58,7 +58,14 @@ async function mount(addedLine: string, colorScheme: "light" | "dark") {
   await expect
     .poll(() => descendants(box).some((e) => e.hasAttribute("data-line")), { timeout: 20_000 })
     .toBe(true);
-  return { box, screen, all: () => descendants(box) };
+  // Disposing the view also drops the theme class this mount set on the document.
+  const view = {
+    [Symbol.asyncDispose]: async () => {
+      document.documentElement.classList.remove("dark");
+      await screen[Symbol.asyncDispose]();
+    },
+  };
+  return { box, view, all: () => descendants(box) };
 }
 
 /** Resolves any CSS colour (the tints compute to lab()) to 0-255 sRGB channels. */
@@ -88,15 +95,12 @@ function rowBackgrounds(all: Element[]) {
   };
 }
 
-afterEach(() => document.documentElement.classList.remove("dark"));
-
-// The first mount waits for the highlighter worker, which is slow while other suites run.
-describe("added and removed rows", { timeout: 30_000 }, () => {
+describe("added and removed rows", () => {
   it.each(["light", "dark"] as const)(
     "carry a full-row background tint in the %s theme",
     async (scheme) => {
       const view = await mount(LONG_LINE, scheme);
-      await using _screen = view.screen;
+      await using _view = view.view;
       const rows = rowBackgrounds(view.all());
       expect(rows.added).toHaveLength(1);
       expect(rows.removed).toHaveLength(1);
@@ -118,7 +122,7 @@ describe("added and removed rows", { timeout: 30_000 }, () => {
   );
 });
 
-describe("horizontal overflow cue", { timeout: 30_000 }, () => {
+describe("horizontal overflow cue", () => {
   const scroller = (all: Element[]) =>
     all.find((e) => e.hasAttribute("data-code")) as HTMLElement | undefined;
   // The fade is a pseudo-element on the sticky gutter; its opacity is the on/off state.
@@ -127,7 +131,7 @@ describe("horizontal overflow cue", { timeout: 30_000 }, () => {
 
   it("fades the right edge while a line runs past it, and not once the end is reached", async () => {
     const view = await mount(LONG_LINE, "dark");
-    await using _screen = view.screen;
+    await using _view = view.view;
     const code = scroller(view.all())!;
     expect(code.scrollWidth).toBeGreaterThan(code.clientWidth);
     await expect.poll(() => fadeOpacity(code)).toBe("1");
@@ -137,7 +141,7 @@ describe("horizontal overflow cue", { timeout: 30_000 }, () => {
 
   it("shows no fade when every line fits", async () => {
     const view = await mount("const added = 1;", "dark");
-    await using _screen = view.screen;
+    await using _view = view.view;
     const code = scroller(view.all())!;
     expect(code.scrollWidth).toBeLessThanOrEqual(code.clientWidth);
     expect(fadeOpacity(code)).toBe("0");

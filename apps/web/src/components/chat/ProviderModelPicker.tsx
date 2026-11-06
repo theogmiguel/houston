@@ -166,9 +166,9 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   const [headerClearance, setHeaderClearance] = useState<number | null>(null);
   // The route header is a DOM node outside React, measured each time the popup opens (also when a
   // shortcut opens it through `props.open`, which no handler of this component sees).
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- measures the header's rect, which only the DOM knows
   useLayoutEffect(() => {
     if (!docked || !isMenuOpen) return;
-    // oxlint-disable-next-line houston/no-unreasoned-state-sync -- measures the header's rect, which only the DOM knows
     setHeaderClearance(headerClearanceOf(triggerRef.current));
   }, [docked, isMenuOpen]);
 
