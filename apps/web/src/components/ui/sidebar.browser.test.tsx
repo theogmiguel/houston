@@ -89,9 +89,7 @@ describe("Sidebar", () => {
       );
 
       await vi.waitFor(() =>
-        expect(
-          document.querySelector('[data-slot="sidebar"][data-mobile="true"]'),
-        ).not.toBeNull(),
+        expect(document.querySelector('[data-slot="sidebar"][data-mobile="true"]')).not.toBeNull(),
       );
     });
 
@@ -124,9 +122,7 @@ describe("Sidebar", () => {
         screen.container.querySelector<HTMLElement>('[data-slot="sidebar-trigger"]')!,
       );
       await vi.waitFor(() =>
-        expect(
-          document.querySelector('[data-slot="sidebar"][data-mobile="true"]'),
-        ).not.toBeNull(),
+        expect(document.querySelector('[data-slot="sidebar"][data-mobile="true"]')).not.toBeNull(),
       );
 
       await page.viewport(1280, 800);

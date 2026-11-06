@@ -291,8 +291,12 @@ export function GridSidebar() {
   const taskCount = useTaskYourTurnCount();
   const sidebarVisible = useSidebarVisibility();
   const { isMobile: sidebarIsDrawer, setOpenMobile: setSidebarDrawerOpen } = useSidebar();
-  // Navigating from the drawer lands on the page it opened; it never stays over it.
+  // The rail mounts when the drawer opens, so only a change of page closes it, never the mount.
+  const drawerPathnameRef = useRef(pathname);
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- the route is external state; the drawer must follow a navigation made from anywhere (row, shortcut, link)
   useEffect(() => {
+    if (drawerPathnameRef.current === pathname) return;
+    drawerPathnameRef.current = pathname;
     if (sidebarIsDrawer) setSidebarDrawerOpen(false);
   }, [pathname, sidebarIsDrawer, setSidebarDrawerOpen]);
   const nowMinute = useNowMinute();

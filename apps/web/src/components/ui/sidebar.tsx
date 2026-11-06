@@ -227,6 +227,7 @@ function SidebarProvider({
 
   // The drawer is transient: a window widened past the breakpoint docks the rail by the user's
   // own `open` preference, and narrowing again starts with the drawer closed.
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- the drawer state lives in an external store that must follow the viewport crossing the breakpoint
   React.useEffect(() => {
     if (!isMobile) store.setOpenMobile(false);
   }, [isMobile, store]);
