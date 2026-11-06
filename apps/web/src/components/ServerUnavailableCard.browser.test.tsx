@@ -44,7 +44,7 @@ describe("ServerUnavailableCard", () => {
     expect(line.getBoundingClientRect().right).toBeLessThanOrEqual(window.innerWidth);
   });
 
-  it("offers one primary action, one secondary action and a ghost Copy error", async () => {
+  it("offers one primary action and two matching secondary actions", async () => {
     await using screen = await render(<ServerUnavailableCard report="report" detail={DETAIL} />);
 
     const paint = (name: string) => {
@@ -52,7 +52,16 @@ describe("ServerUnavailableCard", () => {
       return [style.backgroundColor, style.borderTopColor];
     };
     expect(paint("Try again")).not.toEqual(paint("Reload app"));
-    expect(paint("Copy error")).toEqual([TRANSPARENT, TRANSPARENT]);
+    expect(paint("Copy error")).toEqual(paint("Reload app"));
     expect(paint("Reload app")[0]).not.toBe(TRANSPARENT);
+  });
+
+  it("opens on the title without a separate Houston line above it", async () => {
+    await using screen = await render(<ServerUnavailableCard report="report" detail={DETAIL} />);
+
+    expect(screen.container.querySelector('[aria-label="Houston"]')).toBeNull();
+    const section = screen.container.querySelector("section")!;
+    const heading = screen.getByRole("heading", { name: "Houston's server isn't running" });
+    expect(section.firstElementChild).toBe(heading.element());
   });
 });

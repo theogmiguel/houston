@@ -51,13 +51,11 @@ export function WorkLogList({ children }: { children: ReactNode }) {
 type RowContent = {
   icon?: ReactNode;
   label: ReactNode;
-  /** Quiet detail (a timestamp) that sits right after the label instead of at the row's end. */
-  meta?: ReactNode;
   trailing?: ReactNode;
   wrapLabel?: boolean;
 };
 
-function WorkLogLine({ icon, label, meta, trailing, wrapLabel }: RowContent) {
+function WorkLogLine({ icon, label, trailing, wrapLabel }: RowContent) {
   return (
     <div
       className={cn(
@@ -71,10 +69,9 @@ function WorkLogLine({ icon, label, meta, trailing, wrapLabel }: RowContent) {
             {icon}
           </span>
         ) : null}
-        <div className={cn("min-w-0", !wrapLabel && "truncate [&_*]:whitespace-nowrap")}>
+        <div className={cn("min-w-0 flex-1", !wrapLabel && "truncate [&_*]:whitespace-nowrap")}>
           {label}
         </div>
-        {meta}
       </div>
       {trailing}
     </div>
@@ -99,7 +96,6 @@ function useRowClassName(interactive: boolean) {
 export function WorkLogButton({
   icon,
   label,
-  meta,
   trailing,
   wrapLabel = false,
   ...buttonProps
@@ -107,13 +103,7 @@ export function WorkLogButton({
   const className = useRowClassName(true);
   return (
     <button {...buttonProps} type="button" className={className}>
-      <WorkLogLine
-        icon={icon}
-        label={label}
-        meta={meta}
-        trailing={trailing}
-        wrapLabel={wrapLabel}
-      />
+      <WorkLogLine icon={icon} label={label} trailing={trailing} wrapLabel={wrapLabel} />
     </button>
   );
 }
@@ -122,7 +112,6 @@ export function WorkLogButton({
 export function WorkLogRow({
   icon,
   label,
-  meta,
   trailing,
   wrapLabel = false,
   children,
@@ -131,13 +120,7 @@ export function WorkLogRow({
   const className = useRowClassName(rowProps.onClick !== undefined);
   return (
     <div {...rowProps} className={className}>
-      <WorkLogLine
-        icon={icon}
-        label={label}
-        meta={meta}
-        trailing={trailing}
-        wrapLabel={wrapLabel}
-      />
+      <WorkLogLine icon={icon} label={label} trailing={trailing} wrapLabel={wrapLabel} />
       {children}
     </div>
   );

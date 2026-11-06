@@ -21,7 +21,7 @@ export function RouteErrorActions({ report }: { report: string }) {
       <Button variant="secondary" onClick={() => window.location.reload()}>
         Reload app
       </Button>
-      <Button variant="ghost" onClick={() => copyToClipboard(report)}>
+      <Button variant="secondary" onClick={() => copyToClipboard(report)}>
         <MorphIcon className={cn(isCopied && "text-success")} icon={isCopied ? Check : Copy} />
         {isCopied ? "Copied" : "Copy error"}
       </Button>

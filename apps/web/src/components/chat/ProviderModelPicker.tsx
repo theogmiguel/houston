@@ -5,7 +5,7 @@ import {
   type ProviderDriverKind,
   type ResolvedKeybindingsConfig,
 } from "@houston-app/contracts";
-import { memo, useRef, useState, type ReactNode } from "react";
+import { memo, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { BotIcon, ChevronDownIcon } from "lucide-react";
 import { Badge } from "../ui/badge";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
@@ -93,6 +93,21 @@ function contextStripClearance(card: HTMLElement | null): number {
   return Math.max(0, strip.getBoundingClientRect().bottom - card.getBoundingClientRect().bottom);
 }
 
+/** Space kept between a docked popup and the header it must not cross. */
+const HEADER_CLEARANCE_PX = 8;
+
+/**
+ * Where a docked popup's top edge may start: just under the route header of the column the
+ * picker sits in. A grid cell has no header, so it keeps the default collision padding.
+ */
+function headerClearanceOf(trigger: HTMLElement | null): number | null {
+  const header = trigger
+    ?.closest<HTMLElement>("[data-chat-column]")
+    ?.querySelector<HTMLElement>("[data-chat-header]");
+  if (!header) return null;
+  return Math.ceil(header.getBoundingClientRect().bottom) + HEADER_CLEARANCE_PX;
+}
+
 export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   environmentId: EnvironmentId | null;
   activeInstanceId: ProviderInstanceId;
@@ -148,6 +163,14 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   const size = props.size ?? "sm";
   const iconOnly = props.iconOnly === true;
   const docked = props.effortColumn !== undefined;
+  const [headerClearance, setHeaderClearance] = useState<number | null>(null);
+  // The route header is a DOM node outside React, measured each time the popup opens (also when a
+  // shortcut opens it through `props.open`, which no handler of this component sees).
+  useLayoutEffect(() => {
+    if (!docked || !isMenuOpen) return;
+    // oxlint-disable-next-line houston/no-unreasoned-state-sync -- measures the header's rect, which only the DOM knows
+    setHeaderClearance(headerClearanceOf(triggerRef.current));
+  }, [docked, isMenuOpen]);
 
   const activeEntry =
     props.instanceEntries.find((entry) => entry.instanceId === props.activeInstanceId) ?? null;
@@ -407,6 +430,9 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
               anchor: () => composerCardOf(triggerRef.current) ?? triggerRef.current,
               // Above the card when it fits; the flip below clears the context row.
               side: "top" as const,
+              ...(headerClearance === null
+                ? {}
+                : { collisionPadding: { top: headerClearance, right: 5, bottom: 5, left: 5 } }),
               sideOffset: ({ side }: { side: string }) =>
                 side === "bottom"
                   ? contextStripClearance(composerCardOf(triggerRef.current)) + 4

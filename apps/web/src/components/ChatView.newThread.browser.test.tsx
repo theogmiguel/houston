@@ -119,14 +119,18 @@ it(
 );
 
 it(
-  "paints a faint static accent wash behind the new-thread hero only",
+  "paints a faint static dot grid behind the new-thread hero, masked around the hero",
   async () => {
     using _environment = installFakeEnvironment([]);
     await using _app = await openNewThread();
     const overlay = document.querySelector<HTMLElement>("[data-chat-composer-overlay]")!;
-    const style = getComputedStyle(overlay);
-    expect(style.backgroundImage).toContain("radial-gradient");
-    expect(style.animationName).toBe("none");
+    expect(getComputedStyle(overlay).backgroundImage).toBe("none");
+    const grid = getComputedStyle(overlay, "::before");
+    expect(grid.backgroundImage).toContain("radial-gradient");
+    expect(grid.backgroundSize).toBe("7px 7px");
+    expect(grid.maskImage).toContain("radial-gradient");
+    expect(grid.animationName).toBe("none");
+    expect(grid.pointerEvents).toBe("none");
   },
   APP_BOOT_TEST_TIMEOUT_MS,
 );

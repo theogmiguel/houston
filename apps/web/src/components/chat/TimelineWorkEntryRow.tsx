@@ -457,9 +457,11 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
         </span>
       }
       label={
-        <div className="min-w-0 overflow-hidden">
-          <p className="flex min-w-0 items-baseline gap-2 text-body ">
-            <span className={cn("min-w-0 truncate", headingClass)}>
+        <div className="min-w-0 flex-1 overflow-hidden">
+          <p className="flex min-w-0 w-full items-baseline gap-2 text-body ">
+            <span
+              className={cn(answerPreview ? "min-w-0" : "min-w-0 flex-1", "truncate", headingClass)}
+            >
               {isReasoning && !expanded ? (
                 <ChatMarkdown
                   inline
@@ -505,9 +507,6 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
             ) : null}
           </p>
         </div>
-      }
-      meta={
-        <TimelineRowTimestamp createdAt={workEntry.createdAt} timestampFormat={timestampFormat} />
       }
       trailing={
         <>
@@ -574,6 +573,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
           toolParts?.exitCode === undefined ? (
             <XIcon aria-hidden className={cn("size-3 shrink-0", failedToolIconClassName)} />
           ) : null}
+          <TimelineRowTimestamp createdAt={workEntry.createdAt} timestampFormat={timestampFormat} />
           <span
             className={cn(
               "flex size-4 shrink-0 items-center justify-center",

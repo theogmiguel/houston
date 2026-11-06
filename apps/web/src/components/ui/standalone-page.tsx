@@ -19,6 +19,7 @@ export function StandalonePageHeader({
   description,
   status,
   detail,
+  brand = true,
 }: {
   readonly context?: ReactNode;
   readonly title: ReactNode;
@@ -30,18 +31,26 @@ export function StandalonePageHeader({
    * each part stays on one line, so the line breaks only at a separator.
    */
   readonly detail?: ReactNode;
+  /** The Houston wordmark row above the title; an error card leaves it out. */
+  readonly brand?: boolean;
 }) {
+  const showTopRow = brand || context;
   return (
     <>
-      <div className="flex items-baseline justify-between gap-3 text-muted-foreground">
-        <span className="flex items-baseline gap-1.5" role="img" aria-label="Houston">
-          <HoustonWordmark className="shrink-0 text-xs text-foreground" aria-hidden />
-        </span>
-        {context ? <span className="text-sm">{context}</span> : null}
-      </div>
+      {showTopRow ? (
+        <div className="flex items-baseline justify-between gap-3 text-muted-foreground">
+          {brand ? (
+            <span className="flex items-baseline gap-1.5" role="img" aria-label="Houston">
+              <HoustonWordmark className="shrink-0 text-xs text-foreground" aria-hidden />
+            </span>
+          ) : null}
+          {context ? <span className="text-sm">{context}</span> : null}
+        </div>
+      ) : null}
       <h1
         className={cn(
-          "mt-6 text-xl leading-tight font-semibold",
+          "text-xl leading-tight font-semibold",
+          showTopRow && "mt-6",
           status !== undefined && "flex items-center gap-2",
         )}
       >

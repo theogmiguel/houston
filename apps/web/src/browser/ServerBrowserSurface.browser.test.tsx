@@ -151,6 +151,35 @@ describe("ServerBrowserSurface clipboard commands", () => {
   });
 });
 
+describe("ServerBrowserSurface control banner", () => {
+  it("draws Take over as an outlined button that stays legible while another viewer controls", async () => {
+    setup();
+    const { screen, input } = await renderSurface("another-viewer");
+    await using _screen = screen;
+    const button = input
+      .closest("[data-server-browser-surface]")!
+      .querySelector<HTMLButtonElement>("button")!;
+    expect(button.textContent).toBe("Take over");
+    expect(button.disabled).toBe(true);
+    const style = getComputedStyle(button);
+    expect(Number.parseFloat(style.opacity)).toBeGreaterThanOrEqual(0.7);
+    expect(Number.parseFloat(style.borderTopWidth)).toBeGreaterThan(0);
+    expect(style.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+  });
+
+  it("sends takeControl from an enabled Take over button when nobody controls", async () => {
+    setup();
+    const { screen, input } = await renderSurface("unclaimed");
+    await using _screen = screen;
+    const button = input
+      .closest("[data-server-browser-surface]")!
+      .querySelector<HTMLButtonElement>("button")!;
+    expect(button.disabled).toBe(false);
+    await userEvent.click(button);
+    expect(mocks.sent).toEqual([{ type: "takeControl" }]);
+  });
+});
+
 const mouseUp = (canvas: HTMLCanvasElement, button: number) => {
   const event = new MouseEvent("mouseup", { button, bubbles: true, cancelable: true });
   canvas.dispatchEvent(event);

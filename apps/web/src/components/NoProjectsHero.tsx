@@ -167,6 +167,15 @@ export function NoProjectsHero() {
                 <GitForkIcon className="size-4" />
                 Clone a repository
               </Button>
+              {scratchTargetEnvironmentId === null ? null : (
+                <Button
+                  variant="ghost"
+                  onClick={() => void startScratchThread(scratchTargetEnvironmentId)}
+                >
+                  <MessageSquareDashedIcon className="size-4" />
+                  Start without a project
+                </Button>
+              )}
             </div>
             {visibleProviders.length > 0 ? (
               <StatusList className="mt-5 w-full">
@@ -195,20 +204,9 @@ export function NoProjectsHero() {
                 ) : null}
               </StatusList>
             ) : null}
-            {scratchTargetEnvironmentId === null ? null : (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="mt-1"
-                onClick={() => void startScratchThread(scratchTargetEnvironmentId)}
-              >
-                <MessageSquareDashedIcon className="size-4" />
-                Start without a project
-              </Button>
-            )}
-            <p className="mt-2 max-w-[52ch] text-xs leading-4 text-secondary-label">
-              The server listens on {serverAddress ?? "this machine"} only. Each agent sends your
-              prompts and the files it reads to its own provider; Houston sends nothing else.
+            <p className="mt-2 text-xs leading-4 text-secondary-label">
+              Runs locally at {serverAddress ?? "this machine"}; prompts go only to your agent's
+              provider.
             </p>
             <Button
               variant="ghost"

@@ -348,4 +348,54 @@ describe("docked popup and the composer context row", () => {
 
     await expect.poll(() => rects().popup.top >= rects().strip.bottom).toBe(true);
   });
+
+  it("never extends above the header of its column", async () => {
+    await page.viewport(1440, 900);
+    await using _screen = await render(
+      <TooltipProvider delay={0}>
+        <div data-chat-column="">
+          <header data-chat-header="" style={{ height: 44 }} />
+          <form
+            data-chat-composer-form="true"
+            style={{ width: 760, marginLeft: 160, paddingTop: 250 }}
+          >
+            <div
+              data-inline-resting-controls="true"
+              style={{ padding: "12px 32px" }}
+              className="rounded-xl border border-border"
+            >
+              <ProviderModelPicker
+                environmentId={null}
+                activeInstanceId={CLAUDE}
+                model="opus"
+                lockedProvider={null}
+                instanceEntries={entries}
+                keybindings={compileResolvedKeybindingsConfig([])}
+                modelOptionsByInstance={new Map([[CLAUDE, provider.models]])}
+                isComposerOwned
+                effortColumn={<ComposerEffortColumn traits={null} />}
+                onInstanceModelChange={() => {}}
+              />
+            </div>
+            <div data-slot="composer-context-strip" style={{ marginTop: 4, height: 22 }}>
+              Local checkout
+            </div>
+          </form>
+        </div>
+      </TooltipProvider>,
+      { router: false },
+    );
+    await page.getByRole("button", { name: /Opus 5\.5/ }).click();
+    await expect
+      .poll(() => document.querySelector("[data-model-picker-effort]") !== null)
+      .toBe(true);
+
+    const header = document.querySelector<HTMLElement>("[data-chat-header]")!;
+    await expect
+      .poll(() => {
+        const popup = document.querySelector<HTMLElement>('[data-slot="popover-positioner"]')!;
+        return popup.getBoundingClientRect().top - header.getBoundingClientRect().bottom;
+      })
+      .toBeGreaterThanOrEqual(8);
+  });
 });

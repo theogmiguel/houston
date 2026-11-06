@@ -11,13 +11,16 @@ import "~/index.css";
 import { render } from "../../test/render";
 import { NoProjectsHero } from "./NoProjectsHero";
 
-const state = vi.hoisted(() => ({ providers: [] as ServerProvider[] }));
+const state = vi.hoisted(() => ({
+  providers: [] as ServerProvider[],
+  scratchEnvironmentId: null as string | null,
+}));
 
 vi.mock(import("../state/environments"), async (original) => ({
   ...(await original()),
   useEnvironmentProviders: (() => new Map()) as never,
   usePrimaryEnvironmentId: () => null,
-  useEnvironmentHttpBaseUrl: () => null,
+  useEnvironmentHttpBaseUrl: () => "http://127.0.0.1:10443",
 }));
 vi.mock(import("@effect/atom-react"), async (original) => ({
   ...(await original()),
@@ -25,7 +28,7 @@ vi.mock(import("@effect/atom-react"), async (original) => ({
 }));
 vi.mock(import("../hooks/useScratchProject"), () => ({
   useScratchProject: (() => ({
-    scratchEnvironmentId: () => null,
+    scratchEnvironmentId: () => state.scratchEnvironmentId as never,
     startScratchThread: async () => {},
   })) as never,
 }));
@@ -113,15 +116,19 @@ it("sets the install action apart from the muted 'Not installed' status", async 
   ).toBe("underline");
 });
 
-it("sets the disclaimer in 12px sans and Set up Houston as a ghost button", async () => {
+it("sets the privacy note on one 12px sans line and Set up Houston as a ghost button", async () => {
+  await page.viewport(1440, 900);
   state.providers = [provider("claudeAgent")];
   await using _screen = await render(<NoProjectsHero />, { router: "/" });
 
-  const disclaimer = page.getByText(/Houston sends nothing/).element();
-  const style = getComputedStyle(disclaimer);
+  const note = page.getByText(/Runs locally at 127\.0\.0\.1:10443/).element();
+  const style = getComputedStyle(note);
   expect(style.fontSize).toBe("12px");
   expect(style.fontFamily).not.toContain("JetBrains");
-  expect(disclaimer.querySelector(".font-mono")).toBeNull();
+  expect(note.querySelector(".font-mono")).toBeNull();
+  expect(note.getBoundingClientRect().height).toBeLessThanOrEqual(
+    Number.parseFloat(style.lineHeight),
+  );
 
   const setup = getComputedStyle(page.getByRole("button", { name: "Set up Houston" }).element());
   // The ghost recipe: transparent fill, a leading icon and the 22px compact height.
@@ -130,4 +137,21 @@ it("sets the disclaimer in 12px sans and Set up Houston as a ghost button", asyn
   expect(
     page.getByRole("button", { name: "Set up Houston" }).element().querySelector("svg"),
   ).not.toBeNull();
+});
+
+it("offers Start without a project as a ghost button in the action row", async () => {
+  await page.viewport(1440, 900);
+  state.providers = [provider("claudeAgent")];
+  state.scratchEnvironmentId = "environment-local";
+  await using _screen = await render(<NoProjectsHero />, { router: "/" });
+
+  const add = page.getByRole("button", { name: "Add folder" }).element();
+  const clone = page.getByRole("button", { name: "Clone a repository" }).element();
+  const scratch = page.getByRole("button", { name: "Start without a project" }).element();
+  expect(getComputedStyle(scratch).backgroundColor).toBe("rgba(0, 0, 0, 0)");
+  expect(Math.round(scratch.getBoundingClientRect().top)).toBe(
+    Math.round(add.getBoundingClientRect().top),
+  );
+  expect(scratch.getBoundingClientRect().left).toBeGreaterThan(clone.getBoundingClientRect().right);
+  state.scratchEnvironmentId = null;
 });
