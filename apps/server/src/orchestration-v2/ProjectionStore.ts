@@ -5625,7 +5625,6 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         SELECT item.turn_item_id, item.run_id, item.node_id, item.parent_item_id, item.type,
           item.status, item.ordinal
         FROM orchestration_v2_projection_turn_items AS item
-          INDEXED BY houston_turn_items_timeline_idx
         WHERE item.thread_id = ${threadId}
         ORDER BY item.ordinal ASC, item.turn_item_id ASC
       `;
