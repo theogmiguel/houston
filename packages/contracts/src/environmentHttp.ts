@@ -60,12 +60,8 @@ import {
   EnvironmentSpeechModelRequest,
   EnvironmentSpeechModels,
   EnvironmentSpeechStatus,
-  EnvironmentSpeechCustomWordsRequest,
-  EnvironmentSpeechFillerWordsRequest,
   EnvironmentSpeechAccelerationRequest,
   EnvironmentSpeechModelUnloadTimeoutRequest,
-  EnvironmentSpeechLanguageRequest,
-  EnvironmentSpeechTranslationRequest,
   EnvironmentSpeechPostProcessingRequest,
   EnvironmentSpeechPostProcessingResult,
   EnvironmentSpeechTranscriptionResult,
@@ -638,6 +634,13 @@ export class EnvironmentVoiceBodyLimit extends HttpApiMiddleware.Service<Environ
 
 export class EnvironmentVoiceHttpApi extends HttpApiGroup.make("voice")
   .add(
+    HttpApiEndpoint.get("status", "/api/voice/status", {
+      headers: OptionalBearerHeaders,
+      success: EnvironmentSpeechStatus,
+      error: [...EnvironmentScopedOperationErrors, EnvironmentRequestInvalidError],
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
     HttpApiEndpoint.post("prepareModel", "/api/voice/models/prepare", {
       headers: OptionalBearerHeaders,
       success: Schema.Void,
@@ -645,17 +648,12 @@ export class EnvironmentVoiceHttpApi extends HttpApiGroup.make("voice")
     }).middleware(EnvironmentAuthenticatedAuth),
   )
   .add(
-    HttpApiEndpoint.get("status", "/api/voice/status", {
-      headers: OptionalBearerHeaders,
-      success: EnvironmentSpeechStatus,
-      error: EnvironmentScopedOperationErrors,
-    }).middleware(EnvironmentAuthenticatedAuth),
-  )
-  .add(
     HttpApiEndpoint.get("models", "/api/voice/models", {
       headers: OptionalBearerHeaders,
+      // Benchmarks are about 30 KB; only the model comparison asks for them.
+      query: { benchmarks: Schema.optionalKey(Schema.Literal("1")) },
       success: EnvironmentSpeechModels,
-      error: EnvironmentScopedOperationErrors,
+      error: [...EnvironmentScopedOperationErrors, EnvironmentRequestInvalidError],
     }).middleware(EnvironmentAuthenticatedAuth),
   )
   .add(
@@ -683,18 +681,10 @@ export class EnvironmentVoiceHttpApi extends HttpApiGroup.make("voice")
     }).middleware(EnvironmentAuthenticatedAuth),
   )
   .add(
-    HttpApiEndpoint.post("updateCustomWords", "/api/voice/custom-words", {
+    HttpApiEndpoint.post("removeModel", "/api/voice/models/remove", {
       headers: OptionalBearerHeaders,
-      payload: EnvironmentSpeechCustomWordsRequest,
-      success: EnvironmentSpeechStatus,
-      error: [...EnvironmentScopedOperationErrors, EnvironmentRequestInvalidError],
-    }).middleware(EnvironmentAuthenticatedAuth),
-  )
-  .add(
-    HttpApiEndpoint.post("updateFillerWordRemoval", "/api/voice/filler-word-removal", {
-      headers: OptionalBearerHeaders,
-      payload: EnvironmentSpeechFillerWordsRequest,
-      success: EnvironmentSpeechStatus,
+      payload: EnvironmentSpeechModelRequest,
+      success: EnvironmentSpeechModels,
       error: [...EnvironmentScopedOperationErrors, EnvironmentRequestInvalidError],
     }).middleware(EnvironmentAuthenticatedAuth),
   )
@@ -715,35 +705,8 @@ export class EnvironmentVoiceHttpApi extends HttpApiGroup.make("voice")
     }).middleware(EnvironmentAuthenticatedAuth),
   )
   .add(
-    HttpApiEndpoint.post("updateLanguage", "/api/voice/language", {
-      headers: OptionalBearerHeaders,
-      payload: EnvironmentSpeechLanguageRequest,
-      success: EnvironmentSpeechStatus,
-      error: [...EnvironmentScopedOperationErrors, EnvironmentRequestInvalidError],
-    }).middleware(EnvironmentAuthenticatedAuth),
-  )
-  .add(
-    HttpApiEndpoint.post("updateTranslation", "/api/voice/translation", {
-      headers: OptionalBearerHeaders,
-      payload: EnvironmentSpeechTranslationRequest,
-      success: EnvironmentSpeechStatus,
-      error: [...EnvironmentScopedOperationErrors, EnvironmentRequestInvalidError],
-    }).middleware(EnvironmentAuthenticatedAuth),
-  )
-  .add(
-    HttpApiEndpoint.post("postProcess", "/api/voice/post-process", {
-      headers: OptionalBearerHeaders,
-      payload: EnvironmentSpeechPostProcessingRequest,
-      success: EnvironmentSpeechPostProcessingResult,
-      error: EnvironmentScopedOperationErrors,
-    }).middleware(EnvironmentAuthenticatedAuth),
-  )
-  .add(
     HttpApiEndpoint.post("transcribe", "/api/voice/transcribe", {
-      headers: Schema.Struct({
-        ...OptionalBearerHeaders.fields,
-        "x-houston-project-name": Schema.optionalKey(Schema.String.check(Schema.isMaxLength(200))),
-      }),
+      headers: OptionalBearerHeaders,
       payload: Schema.Uint8Array.pipe(HttpApiSchema.asUint8Array()),
       success: EnvironmentSpeechTranscriptionResult,
       error: [...EnvironmentScopedOperationErrors, EnvironmentRequestInvalidError],
@@ -752,11 +715,11 @@ export class EnvironmentVoiceHttpApi extends HttpApiGroup.make("voice")
       .middleware(EnvironmentAuthenticatedAuth),
   )
   .add(
-    HttpApiEndpoint.post("removeModel", "/api/voice/models/remove", {
+    HttpApiEndpoint.post("postProcess", "/api/voice/post-process", {
       headers: OptionalBearerHeaders,
-      payload: EnvironmentSpeechModelRequest,
-      success: EnvironmentSpeechModels,
-      error: [...EnvironmentScopedOperationErrors, EnvironmentRequestInvalidError],
+      payload: EnvironmentSpeechPostProcessingRequest,
+      success: EnvironmentSpeechPostProcessingResult,
+      error: EnvironmentScopedOperationErrors,
     }).middleware(EnvironmentAuthenticatedAuth),
   ) {}
 

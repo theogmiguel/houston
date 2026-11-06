@@ -4,6 +4,7 @@ import { useSyncExternalStore } from "react";
 
 import { useNavigate } from "@tanstack/react-router";
 import type { useEnvironmentSpeechInput } from "~/speech/useEnvironmentSpeechInput";
+import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
 import { Text } from "../ui/text";
@@ -17,7 +18,7 @@ type SpeechPresentation = {
 };
 
 export function resolveSpeechPresentation(
-  state: VoiceInputState<true>,
+  state: VoiceInputState,
   progress: { downloaded: number; total: number } | null,
 ): SpeechPresentation {
   switch (state.phase) {
@@ -47,7 +48,7 @@ export function resolveSpeechPresentation(
 }
 
 function ComposerSpeechStatus(props: {
-  state: VoiceInputState<true>;
+  state: VoiceInputState;
   progress: { downloaded: number; total: number } | null;
   level: number;
 }) {
@@ -75,7 +76,7 @@ function ComposerSpeechStatus(props: {
 }
 
 function ComposerSpeechCancelButton(props: {
-  state: VoiceInputState<true>;
+  state: VoiceInputState;
   shortcutLabel?: string | null;
   onCancel(): void;
 }) {
@@ -131,7 +132,7 @@ export function ComposerSpeechUnavailableMic(props: { reason: string }) {
 
 /** The dictation mic beside the composer's send button. */
 export function ComposerSpeechMicButton(props: {
-  state: VoiceInputState<true>;
+  state: VoiceInputState;
   shortcutLabel?: string | null;
   disabled?: boolean;
   onStart(): void;
@@ -195,17 +196,22 @@ export function ComposerSpeechMicButton(props: {
 
 /** Live transcript and voice status under the composer prompt while dictating. */
 export function ComposerSpeechTray(props: {
-  state: VoiceInputState<true>;
+  state: VoiceInputState;
   progress: { downloaded: number; total: number } | null;
   level: ReturnType<typeof useEnvironmentSpeechInput>["level"];
   preview: { committed: string; tentative: string } | null;
   onCancel(): void;
   onSkipPostProcessing(): void;
+  /** Replaces the composer's own horizontal padding when the tray sits inside another surface. */
+  className?: string;
 }) {
   const level = useSyncExternalStore(props.level.subscribe, props.level.getSnapshot);
   if (props.state.phase === "idle" && !props.preview) return null;
   return (
-    <div data-chat-composer-speech="true" className="flex flex-col gap-1 px-3 pb-2 sm:px-4">
+    <div
+      data-chat-composer-speech="true"
+      className={cn("flex flex-col gap-1", props.className ?? "px-3 pb-2 sm:px-4")}
+    >
       {props.preview ? (
         <div
           aria-label="Live transcription"

@@ -150,7 +150,10 @@ export function resolveSpeechPostProcessingModelSelection(
       provider.supportsTextGeneration !== false
     );
   };
-  let selection: ModelSelection | null = settings.speechPostProcessingModelSelection;
+  // Null follows the text-generation model; either way a selection that cannot run falls
+  // through to the per-driver defaults.
+  let selection: ModelSelection | null =
+    settings.speechPostProcessingModelSelection ?? settings.textGenerationModelSelection;
   if (!canUse(selection)) {
     selection = null;
     for (const [driver, defaults] of Object.entries(DEFAULT_SPEECH_POST_PROCESSING_MODELS)) {
@@ -422,7 +425,6 @@ export function applyServerSettingsPatch(
 ): ServerSettings {
   const patch = translateLegacyProjectOverridePatch(current, rawPatch);
   const selectionPatch = patch.textGenerationModelSelection;
-  const speechSelectionPatch = patch.speechPostProcessingModelSelection;
   const {
     migrateModelPreferences,
     setModelFavorites,
@@ -659,6 +661,9 @@ export function applyServerSettingsPatch(
     ...(patch.reviewGuideModelSelection !== undefined
       ? { reviewGuideModelSelection: patch.reviewGuideModelSelection }
       : {}),
+    ...(patch.speechPostProcessingModelSelection !== undefined
+      ? { speechPostProcessingModelSelection: patch.speechPostProcessingModelSelection }
+      : {}),
     ...(automaticGitFetchInterval !== undefined ? { automaticGitFetchInterval } : {}),
     ...(providerHealthRefreshInterval !== undefined ? { providerHealthRefreshInterval } : {}),
   };
@@ -671,26 +676,6 @@ export function applyServerSettingsPatch(
   const nextWithReplacements = {
     ...withIdleCompaction(nextWithReplacementsBase, patchedIdleCompaction(current, patch)),
     ...deriveLegacyProjectOverrides(nextWithReplacementsBase),
-    ...(speechSelectionPatch
-      ? {
-          speechPostProcessingModelSelection: createModelSelection(
-            speechSelectionPatch.instanceId ??
-              current.speechPostProcessingModelSelection.instanceId,
-            speechSelectionPatch.model ?? current.speechPostProcessingModelSelection.model,
-            shouldReplaceTextGenerationModelSelection(speechSelectionPatch)
-              ? speechSelectionPatch.options
-              : mergeModelSelectionOptionsById({
-                  current: current.speechPostProcessingModelSelection.options,
-                  patch: speechSelectionPatch.options,
-                }),
-          ),
-        }
-      : {}),
-    speechPostProcessingPrompt:
-      nextWithReplacementsBase.speechPostProcessingPrompt.mode === "custom" &&
-      !nextWithReplacementsBase.speechPostProcessingPrompt.customInstructions.trim()
-        ? { mode: "default" as const, customInstructions: "" }
-        : nextWithReplacementsBase.speechPostProcessingPrompt,
     backgroundActivity: normalizedBackgroundActivity,
     automaticGitFetchInterval: resolvedBackgroundActivity.automaticGitFetchInterval,
     providerHealthRefreshInterval: resolvedBackgroundActivity.providerHealthRefreshInterval,

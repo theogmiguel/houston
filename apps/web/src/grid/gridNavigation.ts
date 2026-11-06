@@ -28,6 +28,22 @@ export function resolveGridThreadTarget(input: {
   if (containing !== null) return { gridId: containing.id, threadId: input.threadId };
 
   const shell = readThreadShell(scopeThreadRef(input.environmentId, input.threadId));
+  // A subagent has no rail row and never gets a cell of its own: it opens in its parent's cell,
+  // or on its own page when no grid shows the parent.
+  const parentThreadId = shell?.lineage?.parentThreadId ?? null;
+  if (parentThreadId !== null) {
+    const parentGrid = gridContainingThread(store.grids, input.environmentId, parentThreadId);
+    if (parentGrid === null) return null;
+    const moved = store.moveThreadToCell({
+      threadId: input.threadId,
+      targetGridId: parentGrid.id,
+      targetThreadId: parentThreadId,
+      side: "center",
+      threadEnvironmentId: input.environmentId,
+      threadProjectId: input.projectId,
+    });
+    return moved ? { gridId: parentGrid.id, threadId: input.threadId } : null;
+  }
   const shelved =
     shell !== null &&
     (shell.settledOverride === "settled" ||

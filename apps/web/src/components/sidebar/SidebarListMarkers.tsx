@@ -128,8 +128,6 @@ export function SidebarShelfHeader(props: {
     return (
       <button
         type="button"
-        role="treeitem"
-        tabIndex={-1}
         data-sidebar-row={`shelf:${props.shelf}`}
         data-testid={`grid-${props.shelf}-shelf-toggle`}
         onClick={props.toggle.onToggle}

@@ -21,12 +21,15 @@ const buttonVariants = cva(
         "icon-micro": "size-5 rounded-[var(--r-badge)] p-0 [&_svg:not([class*='size-'])]:size-3",
         "icon-tiny": "size-4 p-0 [&_svg:not([class*='size-'])]:size-3",
         "icon-sm": "size-[22px] rounded-[var(--r-ctl)] [&_svg:not([class*='size-'])]:size-3.5",
+        "icon-sm-pill": "size-(--h-ctl) rounded-full p-0 [&_svg:not([class*='size-'])]:size-3.5",
         "icon-xs":
           "size-7 sm:size-6 not-in-data-[slot=input-group]:[&_svg:not([class*='size-'])]:size-4 sm:not-in-data-[slot=input-group]:[&_svg:not([class*='size-'])]:size-3.5",
         micro:
           "h-5 gap-1 rounded-[var(--r-badge)] px-1.5 text-[11px] [&_svg:not([class*='size-'])]:size-3",
         multiline: "min-h-9 px-3 py-1.5 whitespace-normal sm:min-h-8",
         sm: "h-[22px] gap-1.5 px-2 text-xs [&_svg:not([class*='size-'])]:size-3.5",
+        "sm-pill":
+          "h-(--h-pill) gap-1.5 rounded-full px-2.5 text-xs [&_svg:not([class*='size-'])]:size-3.5",
         selection:
           "h-(--h-pill) gap-1.5 rounded-[7px] px-2.5 text-xs [&_svg:not([class*='size-'])]:size-3.5",
         "sm-multiline":

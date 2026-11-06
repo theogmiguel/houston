@@ -1,6 +1,9 @@
 import { useRef } from "react";
 import { expect, it, vi } from "vite-plus/test";
-import { DEFAULT_RESOLVED_KEYBINDINGS } from "@houston-app/shared/keybindings";
+import {
+  compileResolvedKeybindingsConfig,
+  DEFAULT_RESOLVED_KEYBINDINGS,
+} from "@houston-app/shared/keybindings";
 import type { VoiceInputState } from "@houston-app/client-runtime/voice-input";
 
 import { act, render } from "../../test/render";
@@ -15,7 +18,7 @@ vi.mock("../lib/terminalFocus", () => ({ getTerminalFocusOwner: () => null }));
 function createSpeech() {
   return {
     available: true,
-    state: { phase: "idle", error: null, errorAction: null } as VoiceInputState<true>,
+    state: { phase: "idle", error: null, errorAction: null } as VoiceInputState,
     start: vi.fn(async () => {}),
     stop: vi.fn(async () => {}),
     cancel: vi.fn(),
@@ -215,4 +218,111 @@ it("does not finish a new recording when a cancelled hold start resolves", async
   expect(fixture.comment.start).toHaveBeenCalledTimes(2);
   expect(fixture.comment.cancel).toHaveBeenCalledOnce();
   expect(fixture.comment.stop).not.toHaveBeenCalled();
+});
+
+function Single({ speech }: { speech: ReturnType<typeof createSpeech> }) {
+  useDictationShortcut({
+    keybindings: DEFAULT_RESOLVED_KEYBINDINGS,
+    speech,
+    disabled: false,
+    terminalOpen: false,
+    modelPickerOpen: false,
+  });
+  return null;
+}
+
+it("leaves the browser shortcut alone when dictation is unavailable", async () => {
+  settings.mode = "toggle";
+  const speech = { ...createSpeech(), available: false };
+  await using _screen = await render(<Single speech={speech} />);
+  expect(key("keydown")).toBe(true);
+  expect(speech.start).not.toHaveBeenCalled();
+});
+
+it("stops on a new press when the OS omitted keyup, but ignores autorepeat", async () => {
+  settings.mode = "toggle";
+  const speech = createSpeech();
+  await using screen = await render(<Single speech={speech} />);
+  expect(key("keydown")).toBe(false);
+  expect(speech.start).toHaveBeenCalledOnce();
+  speech.state = { phase: "recording", error: null, errorAction: null };
+  await screen.rerender(<Single speech={{ ...speech }} />);
+  window.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "v",
+      code: "KeyV",
+      ctrlKey: true,
+      altKey: true,
+      repeat: true,
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
+  expect(speech.stop).not.toHaveBeenCalled();
+  key("keydown");
+  expect(speech.stop).toHaveBeenCalledOnce();
+});
+
+it("finishes a released hold after startup even if the chord was pressed again while preparing", async () => {
+  settings.mode = "hold";
+  const speech = createSpeech();
+  let finishStart!: () => void;
+  speech.start.mockReturnValue(
+    new Promise<void>((resolve) => {
+      finishStart = resolve;
+    }),
+  );
+  await using screen = await render(<Single speech={speech} />);
+  key("keydown");
+  speech.state = { phase: "preparing", error: null, errorAction: null };
+  await screen.rerender(<Single speech={{ ...speech }} />);
+  key("keyup");
+  key("keydown");
+  key("keyup");
+  await act(async () => finishStart());
+  expect(speech.start).toHaveBeenCalledOnce();
+  expect(speech.stop).toHaveBeenCalledOnce();
+});
+
+function PreviewChord({
+  speech,
+  previewFocus,
+}: {
+  speech: ReturnType<typeof createSpeech>;
+  previewFocus: boolean;
+}) {
+  useDictationShortcut({
+    // The chord is bound only where a preview editor has the keyboard.
+    keybindings: compileResolvedKeybindingsConfig([
+      { key: "mod+alt+v", command: "composer.dictation", when: "previewFocus && editableFocus" },
+    ]),
+    speech,
+    disabled: false,
+    terminalOpen: false,
+    modelPickerOpen: false,
+    previewFocus,
+  });
+  return null;
+}
+
+it("leaves a preview-only chord alone without previewFocus", async () => {
+  settings.mode = "toggle";
+  const speech = createSpeech();
+  await using _screen = await render(<PreviewChord speech={speech} previewFocus={false} />);
+  await act(() => {
+    key("keydown");
+    key("keyup");
+  });
+  expect(speech.start).not.toHaveBeenCalled();
+});
+
+it("resolves the chord as an editable preview focus under previewFocus", async () => {
+  settings.mode = "toggle";
+  const speech = createSpeech();
+  await using _screen = await render(<PreviewChord speech={speech} previewFocus />);
+  await act(() => {
+    key("keydown");
+    key("keyup");
+  });
+  expect(speech.start).toHaveBeenCalledOnce();
 });

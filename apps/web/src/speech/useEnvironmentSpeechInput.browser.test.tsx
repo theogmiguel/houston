@@ -3,110 +3,250 @@ import { expect, it, vi } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import type { PreparedConnection } from "@houston-app/client-runtime/connection";
-import { DEFAULT_CLIENT_SETTINGS, type EnvironmentId } from "@houston-app/contracts";
+import {
+  DEFAULT_CLIENT_SETTINGS,
+  DEFAULT_SERVER_SETTINGS,
+  type EnvironmentId,
+  type ProjectId,
+  type SpeechCustomWords,
+  type SpeechPostProcessingOptions,
+  type SpeechTranscriptionOptions,
+} from "@houston-app/contracts";
 
 import { act, fakeTimers, render } from "../../test/render";
 import { ComposerSpeechTray } from "../components/chat/ComposerSpeechButton";
-import type { createBrowserVoiceInputPlatform } from "./browserVoiceInput";
 import { useEnvironmentSpeechInput } from "./useEnvironmentSpeechInput";
+import { chooseAudioDestination, chooseTranscriptCleanup, bindAudioGrant } from "./voiceConsent";
+import { writeBrowserClientSettings } from "../clientPersistenceStorage";
 
 const mocks = vi.hoisted(() => ({
-  postProcessingEnabled: false,
+  voice: undefined as unknown as ReturnType<typeof useEnvironmentSpeechInput>,
+  settings: {} as Record<string, unknown>,
+  connected: new Set<string>(),
+  voiceCapable: new Set<string>(),
+  canDictate: new Set<string>(),
+  protocols: new Map<string, number | undefined>(),
+  prepared: new Map<string, unknown>(),
+  statusRequests: [] as string[],
+  statusUnavailable: false,
+  modelState: "ready" as "ready" | "missing-model",
   busy: false,
-  microphoneFailure: true,
-  missingModel: false,
-  downloadGate: null as { promise: Promise<void>; resolve(): void } | null,
+  microphoneFailure: false,
   downloadCancelled: false,
-  microphoneRequests: 0,
+  download: vi.fn<() => Promise<void>>(),
+  cancelDownload: vi.fn<() => Promise<void>>(),
   onLevel: (_level: number) => {},
+  platforms: [] as string[],
+  microphoneRequests: [] as string[],
+  transcribeCalls: [] as string[],
+  cleanupCalls: [] as string[],
+  cleanupDraft: vi.fn(),
+  cleanupOptions: [] as SpeechPostProcessingOptions[],
+  recordingOptions: [] as SpeechTranscriptionOptions[],
+  projectWords: {} as Record<string, SpeechCustomWords>,
+  transcripts: [] as Array<string | Error>,
+  committed: vi.fn(),
+  draft: "",
   ownerKey: "draft",
-  prepared: {} as PreparedConnection,
-  preparedEnvironmentId: null as EnvironmentId | null,
-  preparedEnvironmentIds: [] as Array<EnvironmentId | null>,
-  primaryEnvironmentId: "primary-environment" as EnvironmentId,
-  transcriptionEnvironmentId: null as EnvironmentId | null,
 }));
+
 vi.mock("../state/session", () => ({
-  usePreparedConnection: (environmentId: EnvironmentId | null) => {
-    mocks.preparedEnvironmentId = environmentId;
-    mocks.preparedEnvironmentIds.push(environmentId);
-    return Option.some(mocks.prepared);
+  useEnvironmentScope: (id: string) => mocks.canDictate.has(id),
+  useEnvironmentsWithScope: () => mocks.canDictate,
+  usePreparedConnection: (environmentId: string | null) => {
+    if (!environmentId || !mocks.connected.has(environmentId)) return Option.none();
+    let prepared = mocks.prepared.get(environmentId);
+    if (!prepared) {
+      prepared = { environmentId, label: environmentId };
+      mocks.prepared.set(environmentId, prepared);
+    }
+    return Option.some(prepared);
   },
 }));
+const presentation = (environmentId: string) => ({
+  environmentId,
+  label: environmentId,
+  serverConfig: {
+    environment: {
+      capabilities: {
+        voiceTranscription: mocks.voiceCapable.has(environmentId),
+        voiceProtocol: mocks.protocols.get(environmentId),
+      },
+    },
+  },
+});
 vi.mock("../state/environments", () => ({
-  usePrimaryEnvironmentId: () => mocks.primaryEnvironmentId,
+  useEnvironment: (environmentId: string | null) =>
+    environmentId && mocks.connected.has(environmentId) ? presentation(environmentId) : null,
+  useEnvironments: () => ({ environments: [...mocks.connected].map(presentation) }),
 }));
 vi.mock("../hooks/useSettings", () => ({
   useClientSettingsHydrated: () => true,
-  useClientSettings: (selector: (settings: typeof DEFAULT_CLIENT_SETTINGS) => unknown) =>
+  useClientSettings: (selector?: (settings: Record<string, unknown>) => unknown) => {
+    const settings = { ...DEFAULT_CLIENT_SETTINGS, ...mocks.settings };
+    return selector ? selector(settings) : settings;
+  },
+  usePrimarySettings: () => undefined,
+  updateClientSettings: vi.fn(async () => {}),
+  useEnvironmentSettings: (
+    environmentId: string,
+    selector: (settings: Record<string, unknown>) => unknown,
+  ) =>
     selector({
-      ...DEFAULT_CLIENT_SETTINGS,
-      voiceTranscriptionEnvironmentId: mocks.transcriptionEnvironmentId,
+      ...DEFAULT_SERVER_SETTINGS,
+      projectSettingsOverrides: Object.fromEntries(
+        Object.entries(environmentId === THREAD_ENV ? mocks.projectWords : {}).map(
+          ([projectId, words]) => [projectId, { speechProjectCustomWords: words }],
+        ),
+      ),
     }),
-  useEnvironmentSettings: () => mocks.postProcessingEnabled,
 }));
 vi.mock("../lib/runtime", () => ({ runtime: { runPromise: Effect.runPromise } }));
-vi.mock("../localApi", () => ({ ensureLocalApi: () => ({}) }));
+vi.mock("../components/ui/toast", () => ({ toastManager: { add: vi.fn() } }));
 vi.mock("@houston-app/client-runtime/voice-input", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@houston-app/client-runtime/voice-input")>()),
-  getEnvironmentSpeechStatus: () =>
-    Effect.succeed({
-      supported: true,
-      state: mocks.busy ? "transcribing" : mocks.missingModel ? "missing-model" : "ready",
-      model: "test",
-      modelId: "test-model",
-      size: 731_357_568,
+  getEnvironmentSpeechStatus: (prepared: PreparedConnection) =>
+    Effect.sync(() => {
+      mocks.statusRequests.push(prepared.environmentId);
+      if (mocks.statusUnavailable) throw new Error("Temporarily offline");
+      return {
+        supported: true,
+        state: mocks.busy ? "transcribing" : mocks.modelState,
+        modelId: "test-model",
+        model: "Test",
+        size: 1,
+        supportsStreaming: false,
+        supportsTranslation: false,
+        acceleration: "auto",
+        modelUnloadTimeout: "min_15",
+        gpuDevices: [],
+      };
     }),
   downloadEnvironmentSpeechModel: () =>
     Effect.promise(async () => {
-      await mocks.downloadGate?.promise;
-      if (!mocks.downloadCancelled) mocks.missingModel = false;
+      await mocks.download();
+      if (!mocks.downloadCancelled) mocks.modelState = "ready";
     }),
   cancelEnvironmentSpeechModelDownload: () =>
-    Effect.sync(() => {
+    Effect.promise(async () => {
       mocks.downloadCancelled = true;
-      mocks.downloadGate?.resolve();
+      await mocks.cancelDownload();
+    }),
+  getEnvironmentSpeechModels: () => Effect.succeed({ models: [] }),
+  postProcessEnvironmentTranscript: (
+    prepared: PreparedConnection,
+    transcript: string,
+    draft: unknown,
+    options: SpeechPostProcessingOptions,
+  ) =>
+    Effect.sync(() => {
+      mocks.cleanupCalls.push(prepared.environmentId);
+      mocks.cleanupDraft(draft);
+      mocks.cleanupOptions.push(options);
+      return { text: `Cleaned ${transcript}` };
     }),
 }));
+// Capture and the wire live behind the platform; its `prepared` is where audio would go.
 vi.mock("./browserVoiceInput", () => ({
-  createBrowserVoiceInputPlatform: (
-    input: Parameters<typeof createBrowserVoiceInputPlatform>[0],
-  ) => {
+  createBrowserVoiceInputPlatform: (input: {
+    prepared: PreparedConnection;
+    onLevel: (level: number) => void;
+    getTranscriptionOptions?: () => SpeechTranscriptionOptions;
+  }) => {
+    const environmentId = input.prepared.environmentId;
+    mocks.platforms.push(environmentId);
     mocks.onLevel = input.onLevel;
     return {
       recorder: {
-        uri: null,
+        uri: `blob:${environmentId}`,
         prepareToRecordAsync: async () => {
-          mocks.microphoneRequests += 1;
+          mocks.microphoneRequests.push(environmentId);
           if (mocks.microphoneFailure) throw new Error("no microphone");
         },
         record() {},
         stop: async () => {},
       },
-      transcriber: { prepare: async () => ({ locale: "en", transcribe: async () => "" }) },
-      releaseRecording() {},
+      transcriber: {
+        prepare: async () => {
+          const options = input.getTranscriptionOptions?.();
+          if (options) mocks.recordingOptions.push(options);
+          return {
+            locale: "en",
+            transcribe: async () => {
+              mocks.transcribeCalls.push(environmentId);
+              const next = mocks.transcripts.shift() ?? "dictated";
+              if (next instanceof Error) throw next;
+              return next;
+            },
+          };
+        },
+      },
       cancelRecording() {},
       deleteRecording() {},
     };
   },
 }));
 
-function Probe({
-  ownerKey,
-  onChange,
-}: {
-  ownerKey: string;
-  onChange: (value: ReturnType<typeof useEnvironmentSpeechInput>) => void;
+const THREAD_ENV = "thread-env";
+
+function setup(options: { readonly destination?: string | null } = {}) {
+  mocks.settings = {};
+  setDestination(options.destination ?? null);
+  chooseTranscriptCleanup(false);
+  mocks.connected = new Set(["primary-env", THREAD_ENV, "env-a", "env-b"]);
+  mocks.voiceCapable = new Set(["primary-env", THREAD_ENV, "env-a", "env-b"]);
+  mocks.canDictate = new Set(mocks.voiceCapable);
+  mocks.protocols = new Map([...mocks.voiceCapable].map((id) => [id, 2]));
+  mocks.prepared.clear();
+  mocks.statusRequests = [];
+  mocks.statusUnavailable = false;
+  mocks.modelState = "ready";
+  mocks.busy = false;
+  mocks.microphoneFailure = false;
+  mocks.downloadCancelled = false;
+  mocks.download.mockReset();
+  mocks.cancelDownload.mockReset();
+  mocks.platforms = [];
+  mocks.microphoneRequests = [];
+  mocks.transcribeCalls = [];
+  mocks.cleanupCalls = [];
+  mocks.cleanupDraft.mockClear();
+  mocks.cleanupOptions = [];
+  mocks.recordingOptions = [];
+  mocks.projectWords = {};
+  mocks.transcripts = [];
+  mocks.committed.mockClear();
+  mocks.draft = "";
+  mocks.ownerKey = "draft";
+}
+
+function setDestination(environmentId: string | null) {
+  chooseAudioDestination(
+    environmentId ? { kind: "environment", environmentId: environmentId as EnvironmentId } : null,
+  );
+}
+
+function Probe(props: {
+  readonly projectId?: string;
+  readonly projectName?: string;
+  readonly cleanup?: boolean;
+  readonly ownerKey?: string;
 }) {
   const value = useEnvironmentSpeechInput({
-    environmentId: "project-environment" as EnvironmentId,
-    ownerKey,
-    draftText: "",
-    readDraft: () => ({ text: "", selection: { start: 0, end: 0 } }),
-    commitDraft() {},
+    environmentId: THREAD_ENV as EnvironmentId,
+    projectId: props.projectId as ProjectId | undefined,
+    projectName: props.projectName,
+    cleanup: props.cleanup,
+    ownerKey: props.ownerKey ?? mocks.ownerKey,
+    draftText: mocks.draft,
+    readDraft: () => ({
+      text: mocks.draft,
+      selection: { start: mocks.draft.length, end: mocks.draft.length },
+    }),
+    commitDraft: mocks.committed,
   });
   useLayoutEffect(() => {
-    onChange(value);
+    mocks.voice = value;
   });
   return (
     <ComposerSpeechTray
@@ -120,234 +260,492 @@ function Probe({
   );
 }
 
-function createProbe() {
-  let voice!: ReturnType<typeof useEnvironmentSpeechInput>;
-  const onChange = (value: ReturnType<typeof useEnvironmentSpeechInput>) => {
-    voice = value;
-  };
-  return {
-    get voice() {
-      return voice;
-    },
-    view: () => <Probe ownerKey={mocks.ownerKey} onChange={onChange} />,
-  };
+function expectNoAudioSent() {
+  expect(mocks.platforms).toEqual([]);
+  expect(mocks.microphoneRequests).toEqual([]);
+  expect(mocks.transcribeCalls).toEqual([]);
+  expect(mocks.statusRequests).toEqual([]);
 }
 
-function setup() {
-  mocks.postProcessingEnabled = false;
-  mocks.busy = false;
-  mocks.microphoneFailure = true;
-  mocks.missingModel = false;
-  mocks.downloadGate = null;
-  mocks.downloadCancelled = false;
-  mocks.microphoneRequests = 0;
-  mocks.ownerKey = "draft";
-  mocks.transcriptionEnvironmentId = null;
-  mocks.preparedEnvironmentId = null;
-  mocks.preparedEnvironmentIds = [];
-}
+it("asks where audio goes on the first press and sends nothing meanwhile", async () => {
+  setup();
+  await using _screen = await render(<Probe />);
+  expect(mocks.voice.needsDestination).toBe(true);
+  expect(mocks.voice.available).toBe(true);
+  await act(() => mocks.voice.start());
+  expectNoAudioSent();
+  expect(mocks.voice.setup).toMatchObject({ open: true, choosingDestination: true });
+  expect(mocks.committed).not.toHaveBeenCalled();
+  expect(mocks.voice.transcriptionEnvironmentId).toBeNull();
+});
+
+it("never substitutes the primary or the draft's environment for an unset destination", async () => {
+  setup();
+  // A destination chosen by an older build is not consent.
+  mocks.settings = { voiceTranscriptionEnvironmentId: "env-a" };
+  await using _screen = await render(<Probe />);
+  await act(() => mocks.voice.start());
+  expectNoAudioSent();
+  expect(mocks.voice.transcriptionEnvironmentId).toBeNull();
+});
+
+it("records on the chosen environment once the first press's choice is made", async () => {
+  setup();
+  await using screen = await render(<Probe />);
+  await act(() => mocks.voice.start());
+  await act(async () => {
+    mocks.voice.setup.chooseDestination("env-b" as EnvironmentId);
+  });
+  await screen.rerender(<Probe />);
+  await vi.waitFor(() => expect(mocks.voice.state.phase).toBe("recording"));
+  expect(new Set([...mocks.platforms, ...mocks.microphoneRequests])).toEqual(new Set(["env-b"]));
+});
+
+it("refuses an environment on an older voice protocol by name and sends no audio", async () => {
+  setup({ destination: "env-a" });
+  mocks.protocols.set("env-a", undefined);
+  await using _screen = await render(<Probe />);
+  expect(mocks.voice.available).toBe(false);
+  expect(mocks.voice.unavailableReason).toBe(
+    "env-a runs an older voice protocol (found none, needs 2); update that environment to dictate there.",
+  );
+  await act(() => mocks.voice.start());
+  expectNoAudioSent();
+});
+
+it.each([true, false])(
+  "sends audio with silence filtering %s only to the chosen environment",
+  async (speechSilenceFiltering) => {
+    setup({ destination: "env-a" });
+    mocks.settings = { speechSilenceFiltering };
+    await using _screen = await render(<Probe />);
+    expect(mocks.voice.transcriptionEnvironmentId).toBe("env-a");
+    await act(() => mocks.voice.start());
+    expect(mocks.voice.state.phase).toBe("recording");
+    await act(() => mocks.voice.stop());
+    expect(
+      new Set([...mocks.platforms, ...mocks.microphoneRequests, ...mocks.transcribeCalls]),
+    ).toEqual(new Set(["env-a"]));
+    expect(mocks.statusRequests.every((id) => id === "env-a")).toBe(true);
+    expect(mocks.recordingOptions[0]?.speechSilenceFiltering).toBe(speechSilenceFiltering);
+    // Cleanup is a separate opt-in and stays off by default.
+    expect(mocks.cleanupCalls).toEqual([]);
+    expect(mocks.committed).toHaveBeenCalledExactlyOnceWith("dictated", expect.anything());
+  },
+);
+
+it.each([
+  ["is disconnected", () => mocks.connected.delete("env-a")],
+  ["cannot operate", () => mocks.canDictate.delete("env-a")],
+  ["does not support transcription", () => mocks.voiceCapable.delete("env-a")],
+])(
+  "does not fall back to another environment when the chosen one %s",
+  async (_, breakDestination) => {
+    setup({ destination: "env-a" });
+    breakDestination();
+    await using _screen = await render(<Probe />);
+    await act(() => mocks.voice.start());
+    expectNoAudioSent();
+    expect(mocks.voice.available).toBe(false);
+  },
+);
+
+it.each([
+  ["revoked", null],
+  ["moved to another environment", "env-b"],
+  ["renewed for the same environment", "env-a"],
+])("abandons an in-progress recording when consent is %s", async (_, next) => {
+  setup({ destination: "env-a" });
+  await using screen = await render(<Probe />);
+  await act(() => mocks.voice.start());
+  expect(mocks.voice.state.phase).toBe("recording");
+  setDestination(next);
+  await screen.rerender(<Probe />);
+  expect(mocks.voice.state.phase).toBe("idle");
+  await act(() => mocks.voice.stop());
+  expect(mocks.transcribeCalls).toEqual([]);
+  expect(mocks.committed).not.toHaveBeenCalled();
+});
+
+it("retries a failed transcription on the same chosen environment", async () => {
+  setup({ destination: "env-a" });
+  mocks.transcripts = [new Error("inference failed"), "second try"];
+  await using _screen = await render(<Probe />);
+  await act(() => mocks.voice.start());
+  await act(() => mocks.voice.stop());
+  expect(mocks.voice.state).toMatchObject({ phase: "error", errorAction: "retry" });
+  await act(() => mocks.voice.start());
+  if (mocks.voice.state.phase === "recording") await act(() => mocks.voice.stop());
+  expect(mocks.transcribeCalls).toEqual(["env-a", "env-a"]);
+  expect(mocks.committed).toHaveBeenCalledExactlyOnceWith("second try", expect.anything());
+});
+
+it("reopens setup after reconnecting during a download and ignores its stale completion", async () => {
+  setup({ destination: "env-a" });
+  mocks.modelState = "missing-model";
+  let finishDownload!: () => void;
+  mocks.download.mockReturnValue(
+    new Promise<void>((resolve) => {
+      finishDownload = resolve;
+    }),
+  );
+  await using screen = await render(<Probe />);
+  await act(() => mocks.voice.start());
+  let done: Promise<void> | undefined;
+  await act(() => {
+    done = mocks.voice.setup.download();
+  });
+  expect(mocks.voice.setup.downloading).toBe(true);
+  mocks.connected.delete("env-a");
+  await screen.rerender(<Probe />);
+  expect(mocks.voice.setup.open).toBe(false);
+  mocks.connected.add("env-a");
+  await screen.rerender(<Probe />);
+  await act(() => mocks.voice.start());
+  expect(mocks.voice.setup).toMatchObject({ open: true, downloading: false, step: 0 });
+  finishDownload();
+  await act(async () => {
+    await done;
+  });
+  expect(mocks.voice.setup.error).toBeNull();
+});
+
+it("does not resend a failed recording after consent is revoked", async () => {
+  setup({ destination: "env-a" });
+  mocks.transcripts = [new Error("inference failed")];
+  await using screen = await render(<Probe />);
+  await act(() => mocks.voice.start());
+  await act(() => mocks.voice.stop());
+  expect(mocks.voice.state.phase).toBe("error");
+  setDestination(null);
+  await screen.rerender(<Probe />);
+  await act(() => mocks.voice.start());
+  expect(mocks.transcribeCalls).toEqual(["env-a"]);
+  expect(mocks.microphoneRequests).toEqual(["env-a"]);
+  expect(mocks.committed).not.toHaveBeenCalled();
+});
+
+it("revokes across windows even before the storage event and survives stale preference writes", async () => {
+  setup({ destination: "env-a" });
+  await using _screen = await render(<Probe />);
+  await act(() => mocks.voice.start());
+  expect(mocks.voice.state.phase).toBe("recording");
+  const other = document.createElement("iframe");
+  document.body.append(other);
+  try {
+    const storage = other.contentWindow!.localStorage;
+    const key = "houston:voice-audio-grant:v1";
+    const grant = JSON.parse(storage.getItem(key)!) as { id: string };
+    const canSend = bindAudioGrant(grant.id);
+    expect(canSend()).toBe(true);
+    storage.removeItem(key);
+    expect(canSend()).toBe(false);
+    writeBrowserClientSettings({ ...DEFAULT_CLIENT_SETTINGS, wordWrap: false });
+    await vi.waitFor(() => expect(mocks.voice.needsDestination).toBe(true));
+    expect(mocks.voice.state.phase).toBe("idle");
+    await act(() => mocks.voice.stop());
+    expect(mocks.transcribeCalls).toEqual([]);
+    setDestination("env-a");
+    expect(canSend()).toBe(false);
+  } finally {
+    other.remove();
+  }
+});
+
+it("cleans the transcript only after cleanup is separately enabled", async () => {
+  setup({ destination: "env-a" });
+  chooseTranscriptCleanup(true);
+  const nearby = "x".repeat(1_024);
+  mocks.draft = "unrelated private paragraph " + nearby;
+  await using screen = await render(<Probe />);
+  await act(() => mocks.voice.start());
+  await act(() => mocks.voice.stop());
+  expect(mocks.cleanupCalls).toHaveLength(1);
+  expect(mocks.cleanupDraft).toHaveBeenCalledExactlyOnceWith({
+    text: nearby,
+    selection: { start: nearby.length, end: nearby.length },
+  });
+  expect(mocks.committed).toHaveBeenCalledExactlyOnceWith(
+    mocks.draft + " Cleaned dictated",
+    expect.anything(),
+  );
+
+  await act(() => mocks.voice.start());
+  chooseTranscriptCleanup(false);
+  await screen.rerender(<Probe />);
+  await act(() => mocks.voice.stop());
+  expect(mocks.cleanupCalls).toHaveLength(1);
+});
+
+// The settings model test must show what the model heard, not what a provider rewrote.
+it.each([
+  { cleanup: false, authorized: true },
+  { cleanup: undefined, authorized: false },
+])(
+  "keeps a recording without authorized cleanup off the provider: $cleanup / $authorized",
+  async ({ cleanup, authorized }) => {
+    setup({ destination: "env-a" });
+    chooseTranscriptCleanup(true);
+    mocks.settings.speechCorrectionWord = "sorry";
+    if (!authorized) mocks.canDictate.delete(THREAD_ENV);
+    mocks.projectWords = { "proj-1": [{ term: "Acme", aliases: ["ack me"] }] };
+    await using _screen = await render(
+      <Probe {...(cleanup === undefined ? {} : { cleanup })} projectId="proj-1" />,
+    );
+    await act(() => mocks.voice.start());
+    await act(() => mocks.voice.stop());
+    expect(mocks.cleanupCalls).toEqual([]);
+    expect(mocks.recordingOptions.at(-1)?.speechCustomWords).toEqual(mocks.projectWords["proj-1"]);
+    expect(mocks.recordingOptions.at(-1)?.speechCorrectionWord).toBeUndefined();
+    expect(mocks.transcribeCalls).toEqual(["env-a"]);
+    expect(mocks.committed).toHaveBeenCalledExactlyOnceWith("dictated", expect.anything());
+  },
+);
+
+it("sends the project's vocabulary and name as hints, and the cue only with cleanup on", async () => {
+  setup({ destination: "env-a" });
+  mocks.settings.speechCustomWords = [{ term: "Effect", aliases: ["a fact"] }];
+  mocks.settings.speechCorrectionWord = "scratch that";
+  // Stored on the draft's environment under its project, never read from the audio destination.
+  mocks.projectWords = { "proj-1": [{ term: "effect", aliases: ["affect"] }] };
+  await using screen = await render(<Probe projectId="proj-1" projectName="Acme App" />);
+  await act(() => mocks.voice.start());
+  await act(() => mocks.voice.stop());
+  expect(mocks.recordingOptions.at(-1)?.speechCustomWords).toEqual([
+    { term: "Acme App", aliases: [] },
+    { term: "effect", aliases: ["affect"] },
+  ]);
+  expect(mocks.cleanupCalls).toEqual([]);
+
+  chooseTranscriptCleanup(true);
+  await screen.rerender(<Probe projectId="proj-1" projectName="Acme App" />);
+  await act(() => mocks.voice.start());
+  await act(() => mocks.voice.stop());
+  expect(mocks.recordingOptions.at(-1)?.speechCustomWords.map(({ term }) => term)).toEqual([
+    "scratch that",
+    "Acme App",
+    "effect",
+  ]);
+  expect(mocks.cleanupOptions.at(-1)).toMatchObject({ speechCorrectionWord: "scratch that" });
+  expect(mocks.recordingOptions.at(-1)?.speechCorrectionWord).toBe("scratch that");
+  chooseTranscriptCleanup(false);
+  await act(() => mocks.voice.start());
+  await act(() => mocks.voice.stop());
+  expect(mocks.recordingOptions.at(-1)?.speechCorrectionWord).toBeUndefined();
+  expect(mocks.recordingOptions.at(-1)?.speechCustomWords.map(({ term }) => term)).not.toContain(
+    "scratch that",
+  );
+});
+
+it("shares one status probe per destination across every mounted editor", async () => {
+  setup({ destination: "env-a" });
+  await using _screen = await render(
+    <>
+      <Probe />
+      <Probe />
+      <Probe />
+    </>,
+  );
+  expect(mocks.voice.available).toBe(true);
+  expect(mocks.statusRequests).toEqual(["env-a"]);
+});
+
+it("lets the user retry after a status failure without reselecting the destination", async () => {
+  setup({ destination: "env-a" });
+  mocks.statusUnavailable = true;
+  await using _screen = await render(<Probe />);
+  expect(mocks.statusRequests).toEqual(["env-a"]);
+  expect(mocks.voice.available).toBe(true);
+  expect(mocks.microphoneRequests).toEqual([]);
+  mocks.statusUnavailable = false;
+  await act(() => mocks.voice.start());
+  await act(() => mocks.voice.stop());
+  expect(mocks.transcribeCalls).toEqual(["env-a"]);
+});
 
 it("queues a recording while the environment is transcribing and starts when it drains", async () => {
-  setup();
+  setup({ destination: "env-a" });
   using _timers = fakeTimers();
   mocks.microphoneFailure = false;
   mocks.busy = true;
-  const probe = createProbe();
-  await using _screen = await render(probe.view());
+  await using _screen = await render(<Probe />);
   let starting!: Promise<void>;
   await act(async () => {
-    starting = probe.voice.start();
+    starting = mocks.voice.start();
     for (let i = 0; i < 10; i++) await Promise.resolve();
   });
-  expect(probe.voice.state.phase).toBe("preparing");
-  expect(mocks.microphoneRequests).toBe(0);
+  expect(mocks.voice.state.phase).toBe("preparing");
+  expect(mocks.microphoneRequests).toHaveLength(0);
   mocks.busy = false;
   await act(async () => {
     await vi.advanceTimersByTimeAsync(250);
     await starting;
   });
-  expect(probe.voice.state.phase).toBe("recording");
-  expect(mocks.microphoneRequests).toBe(1);
+  expect(mocks.voice.state.phase).toBe("recording");
+  expect(mocks.microphoneRequests).toHaveLength(1);
 });
 it("starts a recording requested while a cancelled stream is finishing", async () => {
-  setup();
+  setup({ destination: "env-a" });
   using _timers = fakeTimers();
   mocks.microphoneFailure = false;
-  const probe = createProbe();
-  await using _screen = await render(probe.view());
-  await act(() => probe.voice.start());
-  expect(probe.voice.state.phase).toBe("recording");
-  await act(() => probe.voice.cancel());
+  await using _screen = await render(<Probe />);
+  await act(() => mocks.voice.start());
+  expect(mocks.voice.state.phase).toBe("recording");
+  await act(() => mocks.voice.cancel());
   mocks.busy = true;
   let starting!: Promise<void>;
   await act(async () => {
-    starting = probe.voice.start();
+    starting = mocks.voice.start();
     for (let i = 0; i < 10; i++) await Promise.resolve();
   });
-  expect(probe.voice.state.phase).toBe("preparing");
-  expect(mocks.microphoneRequests).toBe(1);
+  expect(mocks.voice.state.phase).toBe("preparing");
+  expect(mocks.microphoneRequests).toHaveLength(1);
   mocks.busy = false;
   await act(async () => {
     await vi.advanceTimersByTimeAsync(250);
     await starting;
   });
-  expect(probe.voice.state.phase).toBe("recording");
-  expect(mocks.microphoneRequests).toBe(2);
+  expect(mocks.voice.state.phase).toBe("recording");
+  expect(mocks.microphoneRequests).toHaveLength(2);
 });
 it("discards a queued recording when cancelled again", async () => {
-  setup();
+  setup({ destination: "env-a" });
   using _timers = fakeTimers();
   mocks.microphoneFailure = false;
-  const probe = createProbe();
-  await using _screen = await render(probe.view());
-  await act(() => probe.voice.start());
-  await act(() => probe.voice.cancel());
+  await using _screen = await render(<Probe />);
+  await act(() => mocks.voice.start());
+  await act(() => mocks.voice.cancel());
   mocks.busy = true;
   let starting!: Promise<void>;
   await act(async () => {
-    starting = probe.voice.start();
+    starting = mocks.voice.start();
     for (let i = 0; i < 10; i++) await Promise.resolve();
   });
-  expect(probe.voice.state.phase).toBe("preparing");
-  await act(() => probe.voice.cancel());
+  expect(mocks.voice.state.phase).toBe("preparing");
+  await act(() => mocks.voice.cancel());
   mocks.busy = false;
   await act(async () => {
     await vi.advanceTimersByTimeAsync(250);
     await starting;
   });
-  expect(probe.voice.state.phase).toBe("idle");
-  expect(mocks.microphoneRequests).toBe(1);
+  expect(mocks.voice.state.phase).toBe("idle");
+  expect(mocks.microphoneRequests).toHaveLength(1);
 });
 it("discards a queued recording when the draft owner changes", async () => {
-  setup();
+  setup({ destination: "env-a" });
   using _timers = fakeTimers();
   mocks.microphoneFailure = false;
-  const probe = createProbe();
-  await using _screen = await render(probe.view());
-  await act(() => probe.voice.start());
-  await act(() => probe.voice.cancel());
+  await using _screen = await render(<Probe />);
+  await act(() => mocks.voice.start());
+  await act(() => mocks.voice.cancel());
   mocks.busy = true;
   let starting!: Promise<void>;
   await act(async () => {
-    starting = probe.voice.start();
+    starting = mocks.voice.start();
     for (let i = 0; i < 10; i++) await Promise.resolve();
   });
-  mocks.ownerKey = "another-draft";
-  await _screen.rerender(probe.view());
+  await _screen.rerender(<Probe ownerKey="another-draft" />);
   mocks.busy = false;
   await act(async () => {
     await vi.advanceTimersByTimeAsync(250);
     await starting;
   });
-  expect(probe.voice.state.phase).toBe("idle");
-  expect(mocks.microphoneRequests).toBe(1);
+  expect(mocks.voice.state.phase).toBe("idle");
+  expect(mocks.microphoneRequests).toHaveLength(1);
 });
 it("opens setup before requesting microphone access for a missing model", async () => {
-  setup();
-  mocks.missingModel = true;
-  const probe = createProbe();
-  await using _screen = await render(probe.view());
-  await act(() => probe.voice.start());
-  expect(probe.voice.setup.open).toBe(true);
-  expect(probe.voice.setup.step).toBe(0);
-  expect(mocks.microphoneRequests).toBe(0);
+  setup({ destination: "env-a" });
+  mocks.modelState = "missing-model";
+  await using _screen = await render(<Probe />);
+  await act(() => mocks.voice.start());
+  expect(mocks.voice.setup.open).toBe(true);
+  expect(mocks.voice.setup.step).toBe(0);
+  expect(mocks.microphoneRequests).toHaveLength(0);
 
-  await act(() => probe.voice.setup.download());
-  expect(probe.voice.setup.step).toBe(1);
-  expect(mocks.microphoneRequests).toBe(0);
+  await act(() => mocks.voice.setup.download());
+  expect(mocks.voice.setup.step).toBe(1);
+  expect(mocks.microphoneRequests).toHaveLength(0);
 
-  await act(() => probe.voice.setup.startRecording());
-  expect(mocks.microphoneRequests).toBe(1);
+  await act(() => mocks.voice.setup.startRecording());
+  expect(mocks.microphoneRequests).toHaveLength(1);
 });
 it("keeps setup open after cancelling a download and allows a fresh retry", async () => {
-  setup();
-  mocks.missingModel = true;
-  mocks.downloadGate = Promise.withResolvers<void>();
-  const probe = createProbe();
-  await using _screen = await render(probe.view());
-  await act(() => probe.voice.start());
+  setup({ destination: "env-a" });
+  mocks.modelState = "missing-model";
+  const gate = Promise.withResolvers<void>();
+  mocks.download.mockReturnValue(gate.promise);
+  mocks.cancelDownload.mockImplementation(async () => gate.resolve());
+  await using _screen = await render(<Probe />);
+  await act(() => mocks.voice.start());
   let downloading!: Promise<void>;
   await act(async () => {
-    downloading = probe.voice.setup.download();
+    downloading = mocks.voice.setup.download();
     for (let i = 0; i < 10; i++) await Promise.resolve();
   });
-  expect(probe.voice.setup.downloading).toBe(true);
+  expect(mocks.voice.setup.downloading).toBe(true);
   await act(async () => {
-    await probe.voice.setup.cancelDownload();
+    await mocks.voice.setup.cancelDownload();
     await downloading;
   });
-  expect(probe.voice.setup.open).toBe(true);
-  expect(probe.voice.setup.step).toBe(0);
-  expect(probe.voice.setup.cancelled).toBe(true);
-  expect(probe.voice.setup.error).toBeNull();
-  expect(probe.voice.setup.downloading).toBe(false);
-  expect(mocks.microphoneRequests).toBe(0);
+  expect(mocks.voice.setup.open).toBe(true);
+  expect(mocks.voice.setup.step).toBe(0);
+  expect(mocks.voice.setup.cancelled).toBe(true);
+  expect(mocks.voice.setup.error).toBeNull();
+  expect(mocks.voice.setup.downloading).toBe(false);
+  expect(mocks.microphoneRequests).toHaveLength(0);
 
-  mocks.downloadGate = null;
+  mocks.download.mockResolvedValue(undefined);
   mocks.downloadCancelled = false;
-  await act(() => probe.voice.setup.download());
-  expect(probe.voice.setup.cancelled).toBe(false);
-  expect(probe.voice.setup.step).toBe(1);
-});
-it("uses the primary environment for transcription by default", async () => {
-  setup();
-  const probe = createProbe();
-  await using _screen = await render(probe.view());
-  expect(mocks.preparedEnvironmentIds).toContain(mocks.primaryEnvironmentId);
-
-  mocks.transcriptionEnvironmentId = "voice-environment" as EnvironmentId;
-  await _screen.rerender(probe.view());
-  expect(mocks.preparedEnvironmentIds).toContain(mocks.transcriptionEnvironmentId);
+  await act(() => mocks.voice.setup.download());
+  expect(mocks.voice.setup.cancelled).toBe(false);
+  expect(mocks.voice.setup.step).toBe(1);
 });
 it("clears the previous connection's recording error when replacing the controller", async () => {
-  setup();
-  const probe = createProbe();
-  await using _screen = await render(probe.view());
-  await act(() => probe.voice.start());
-  expect(probe.voice.state.phase).toBe("error");
-  const previousConnection = mocks.prepared;
-  mocks.prepared = {} as PreparedConnection;
-  await _screen.rerender(probe.view());
-  expect(probe.voice.state).toEqual({ phase: "idle", error: null, errorAction: null });
-  mocks.prepared = previousConnection;
-  await _screen.rerender(probe.view());
-  expect(probe.voice.state).toEqual({ phase: "idle", error: null, errorAction: null });
+  setup({ destination: "env-a" });
+  mocks.microphoneFailure = true;
+  await using _screen = await render(<Probe />);
+  await act(() => mocks.voice.start());
+  expect(mocks.voice.state.phase).toBe("error");
+  mocks.prepared.clear();
+  await _screen.rerender(<Probe />);
+  expect(mocks.voice.state).toEqual({ phase: "idle", error: null, errorAction: null });
+  await _screen.rerender(<Probe />);
+  expect(mocks.voice.state).toEqual({ phase: "idle", error: null, errorAction: null });
 });
 
 it(" replacing post-processing settings does not strand recording state", async () => {
-  setup();
+  setup({ destination: "env-a" });
   mocks.microphoneFailure = false;
-  const probe = createProbe();
-  await using _screen = await render(probe.view());
-  await act(() => probe.voice.start());
-  expect(probe.voice.state.phase).toBe("recording");
-  mocks.postProcessingEnabled = true;
-  await _screen.rerender(probe.view());
-  await act(() => probe.voice.cancel());
-  expect(probe.voice.state.phase).toBe("idle");
-  mocks.postProcessingEnabled = false;
+  await using _screen = await render(<Probe />);
+  await act(() => mocks.voice.start());
+  expect(mocks.voice.state.phase).toBe("recording");
+  chooseTranscriptCleanup(true);
+  await _screen.rerender(<Probe />);
+  await act(() => mocks.voice.cancel());
+  expect(mocks.voice.state.phase).toBe("idle");
+  chooseTranscriptCleanup(false);
 });
 
 it("updates the recording meter without rerendering the draft owner", async () => {
-  setup();
-  mocks.microphoneFailure = false;
-  let voice!: ReturnType<typeof useEnvironmentSpeechInput>;
-  const onChange = vi.fn((value: typeof voice) => {
-    voice = value;
-  });
-  await using screen = await render(<Probe ownerKey="meter" onChange={onChange} />);
-  await act(() => voice.start());
-  expect(voice.state.phase).toBe("recording");
-  onChange.mockClear();
+  setup({ destination: "env-a" });
+  const onRender = vi.fn();
+  function Counting() {
+    onRender();
+    return <Probe />;
+  }
+  await using screen = await render(<Counting />);
+  await act(() => mocks.voice.start());
+  expect(mocks.voice.state.phase).toBe("recording");
+  const before = onRender.mock.calls.length;
   for (const level of [0.2, 0.4, 0.6, 0.8]) {
     await act(() => mocks.onLevel(level));
   }
-  expect(onChange).not.toHaveBeenCalled();
+  expect(onRender.mock.calls.length).toBe(before);
   expect(
     screen.container
       .querySelector('[aria-label="Recording"] div[aria-hidden] > span:last-child')
       ?.getAttribute("style"),
   ).toContain("scaleY(0.8)");
-  expect(voice.level.getSnapshot()).toBe(0.8);
-  await act(() => voice.cancel());
+  expect(mocks.voice.level.getSnapshot()).toBe(0.8);
+  await act(() => mocks.voice.cancel());
 });

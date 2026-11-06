@@ -260,6 +260,47 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
     }).pipe(Effect.provide(layerServerSettings())),
   );
 
+  it.effect(
+    "exposes dictation keys from an older server read-only and keeps them in the file",
+    () =>
+      Effect.gen(function* () {
+        const config = yield* ServerConfig.ServerConfig;
+        const fs = yield* FileSystem.FileSystem;
+        const service = yield* ServerSettingsModule.ServerSettingsService;
+        yield* fs.writeFileString(
+          config.settingsPath,
+          JSON.stringify({
+            speechLanguage: "pt",
+            speechCustomWords: [{ term: "Houston", aliases: ["hust"] }],
+            speechPostProcessingEnabled: true,
+            speechLanguageUnknown: "ignored",
+          }),
+        );
+
+        const loaded = yield* service.getSettings;
+        assert.deepStrictEqual<unknown>(loaded.legacySpeech, {
+          speechLanguage: "pt",
+          speechCustomWords: [{ term: "Houston", aliases: ["hust"] }],
+          speechPostProcessingEnabled: true,
+        });
+
+        yield* service.updateSettings({ responseStreamingMode: "turn" });
+        const written = JSON.parse(yield* fs.readFileString(config.settingsPath));
+        assert.equal(written.responseStreamingMode, "turn");
+        assert.equal(written.speechLanguage, "pt");
+        assert.equal(written.speechPostProcessingEnabled, true);
+        assert.equal("legacySpeech" in written, false);
+      }).pipe(Effect.provide(layerServerSettings())),
+  );
+
+  it.effect("has no legacy dictation import when the file holds none", () =>
+    Effect.gen(function* () {
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const settings = yield* service.getSettings;
+      assert.equal("legacySpeech" in settings, false);
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
   it.effect("tells clients it reads idle compaction modes before any settings are saved", () =>
     Effect.gen(function* () {
       const service = yield* ServerSettingsModule.ServerSettingsService;

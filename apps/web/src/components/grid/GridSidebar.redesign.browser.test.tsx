@@ -19,6 +19,12 @@ vi.mock(import("@effect/atom-react"), async (original) => ({
   useAtomValue: (() => []) as never,
 }));
 
+vi.mock(import("../../state/environments"), async (original) => ({
+  ...(await original()),
+  usePrimaryEnvironmentId: (() => "env-1") as never,
+  useEnvironmentMachines: (() => new Map()) as never,
+}));
+
 vi.mock(import("../../state/session"), async (original) => ({
   ...(await original()),
   readEnvironmentScope: () => true,
@@ -28,6 +34,7 @@ vi.mock(import("../../state/entities"), async (original) => ({
   ...(await original()),
   readEnvironmentServerConfigLoaded: () => true,
   readEnvironmentSupportsAutoSettleOptOut: () => true,
+  useServerConfigs: () => new Map(),
 }));
 
 function thread(overrides: Record<string, unknown> = {}): EnvironmentThreadShell {
@@ -257,6 +264,26 @@ describe("grid sidebar", () => {
       .toBeLessThanOrEqual(actions.getBoundingClientRect().left);
   });
 
+  it("hides the heading actions again once a clicked heading loses the pointer, and shows them on keyboard focus", async () => {
+    const value = grid({ id: "grid-h", name: "Grid 1" });
+    await using screen = await render(group(value, [thread({ id: "thread-h" })]));
+    const heading = headingFor(screen, "grid-h");
+    const add = screen.getByRole("button", { name: "New thread in Grid 1" }).element();
+    const more = screen.getByRole("button", { name: "Grid actions for Grid 1" }).element();
+    const opacity = (element: Element) => Number(getComputedStyle(element).opacity);
+
+    await userEvent.click(heading);
+    await userEvent.unhover(heading);
+    await expect.poll(() => opacity(add)).toBe(0);
+    expect(opacity(more)).toBe(0);
+
+    await userEvent.keyboard("{Tab}");
+    await userEvent.keyboard("{Shift>}{Tab}{/Shift}");
+    expect(document.activeElement).toBe(heading);
+    await expect.poll(() => opacity(add)).toBe(1);
+    expect(opacity(more)).toBe(1);
+  });
+
   it("renames a grid with F2 on its heading", async () => {
     const value = grid({ id: "grid-f", name: "Grid 1" });
     useGridStore.setState({ grids: [value] });
@@ -310,10 +337,25 @@ describe("grid sidebar", () => {
     expect(heading.className).not.toContain("bg-sidebar-row-selected");
   });
 
-  it("tints the open grid's heading when collapsing hides its focused thread", async () => {
+  it("hands the open grid's selection fill to its revealed thread row while collapsed", async () => {
     const threads = [thread({ id: "thread-a" }), thread({ id: "thread-b", title: "Second" })];
     await using screen = await render(
       group(grid({ id: "grid-a", name: "v2 port", focusedThreadId: "thread-a" }), threads, {
+        open: true,
+        collapsed: true,
+      }),
+    );
+
+    const heading = screen.getByRole("button", { name: /^v2 port 1$/ }).element();
+    expect(heading.className).not.toContain("bg-sidebar-row-selected");
+    expect(screen.container.querySelector("[data-thread-key$=':thread-a']")).not.toBeNull();
+    expect(screen.container.querySelector("[data-thread-key$=':thread-b']")).toBeNull();
+  });
+
+  it("tints the open grid's heading when collapsing hides every row", async () => {
+    const threads = [thread({ id: "thread-a" }), thread({ id: "thread-b", title: "Second" })];
+    await using screen = await render(
+      group(grid({ id: "grid-a", name: "v2 port", focusedThreadId: null }), threads, {
         open: true,
         collapsed: true,
       }),
@@ -600,6 +642,43 @@ describe("View options", () => {
       __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, sidebarRowShowBranch: false });
       await using hidden = await render(group(grid(), [thread()]), { router: false });
       expect(hidden.container.textContent).not.toContain("houston/split-drawer-state");
+    } finally {
+      __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
+    }
+  });
+
+  it("badges a merged pull request on the row and drops the badge when Rows show hides it", async () => {
+    const merged = {
+      number: 88,
+      url: "https://github.com/acme/app/pull/88",
+      linkedAt: "2026-01-01T00:00:00.000Z",
+      snapshot: {
+        state: "merged",
+        isDraft: false,
+        title: "Ship it",
+        updatedAt: "2026-01-02T00:00:00.000Z",
+        checksState: "failing",
+      },
+    };
+    __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
+    try {
+      {
+        await using shown = await render(group(grid(), [thread({ pullRequests: [merged] })]), {
+          router: false,
+        });
+        const badge = shown.container.querySelector("[data-thread-pull-request]");
+        expect(badge?.textContent).toBe("#88");
+        expect(badge?.classList.contains("text-merged-foreground")).toBe(true);
+        expect(badge?.querySelectorAll("svg")).toHaveLength(1);
+      }
+      __setClientSettingsForTests({
+        ...DEFAULT_CLIENT_SETTINGS,
+        sidebarRowShowPullRequest: false,
+      });
+      await using hidden = await render(group(grid(), [thread({ pullRequests: [merged] })]), {
+        router: false,
+      });
+      expect(hidden.container.querySelector("[data-thread-pull-request]")).toBeNull();
     } finally {
       __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
     }

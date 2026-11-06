@@ -74,6 +74,7 @@ import {
   type ComposerSubmissionIntent,
   collapseExpandedComposerCursor,
   composerRequiresModifier,
+  composerSubmissionIntentForKey,
   composerStateAtPromptEnd,
   detectComposerTrigger,
   expandCollapsedComposerCursor,
@@ -194,7 +195,8 @@ import {
 } from "~/lib/composerContextRecords";
 import { rememberCopiedComposerAttachments } from "~/lib/copiedComposerAttachments";
 import { useThreadContextDrop, threadContextDropTargetProps } from "./threadContextDrag";
-import { readThreadShell } from "~/state/entities";
+import { readThreadShell, useProject } from "~/state/entities";
+import { scopeProjectRef } from "@houston-app/client-runtime/environment";
 import { useLinkedEnvironments } from "~/state/peerLinks";
 import { encodeComposerContextFragment } from "@houston-app/shared/composerContextClipboard";
 import type { ComposerContextRecord, ThreadPullRequestLink } from "@houston-app/contracts";
@@ -221,6 +223,7 @@ import {
 import { VoiceInputSetup } from "./VoiceInputSetup";
 import { useEnvironmentSpeechInput } from "../../speech/useEnvironmentSpeechInput";
 import { useDictationShortcut } from "../../speech/useDictationShortcut";
+import { useDictationSubmissionShortcut } from "../../speech/useDictationSubmissionShortcut";
 import { ComposerFooterPrimaryActions } from "./ComposerFooterControls";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
@@ -765,6 +768,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerContextActions = {
     environmentId,
     cwd: gitCwd ?? undefined,
+    projectId: activeProjectId ?? undefined,
     expandImage: (imageId: string) => {
       const preview = buildExpandedImagePreview(composerImages, imageId);
       if (preview) onExpandImage(preview);
@@ -1944,15 +1948,26 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   };
   const readComposerSnapshotStable = useStableCallback(readComposerSnapshot);
 
+  const dictationDisabled =
+    projectSelectionRequired || activePendingProgress?.activeQuestion?.allowCustomAnswer === false;
+  const activeProject = useProject(
+    activeProjectId ? scopeProjectRef(environmentId, activeProjectId) : null,
+  );
   const speechInput = useEnvironmentSpeechInput({
     environmentId,
+    projectId: activeProjectId,
+    projectName: activeProject?.title ?? null,
     ownerKey: JSON.stringify([composerDraftTarget, activePendingProgress?.activeQuestion?.id]),
     draftText: prompt,
+    disabled: dictationDisabled,
     readDraft: () => {
       const snapshot = readComposerSnapshot();
       return {
         text: snapshot.value,
-        selection: { start: snapshot.expandedCursor, end: snapshot.expandedCursor },
+        selection: composerEditorRef.current?.readSelectionRange() ?? {
+          start: snapshot.expandedCursor,
+          end: snapshot.expandedCursor,
+        },
       };
     },
     commitDraft: (text, selection) => {
@@ -1967,8 +1982,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       window.requestAnimationFrame(() => composerEditorRef.current?.focusAt(cursor));
     },
   });
-  const dictationDisabled =
-    projectSelectionRequired || activePendingProgress?.activeQuestion?.allowCustomAnswer === false;
+  const { blocksSubmission: voiceInputActive, submitAfterDictation } = speechInput;
   const dictationShortcutLabel = useDictationShortcut({
     keybindings,
     speech: speechInput,
@@ -1989,10 +2003,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   ) : speechInput.unavailableReason ? (
     <ComposerSpeechUnavailableMic reason={speechInput.unavailableReason} />
   ) : null;
-  const voiceSendDisabledReason = speechInput.blocksSubmission
-    ? "Finish or discard voice input before sending"
-    : sendDisabledReason;
-  const isSubmissionDisabled = isSendDisabled || speechInput.blocksSubmission;
+  const voiceSendDisabledReason =
+    sendDisabledReason ?? (speechInput.preparing ? "Preparing voice input" : null);
+  const isSubmissionDisabled = isSendDisabled;
 
   const resolveActiveComposerTrigger = (): {
     snapshot: { value: string; cursor: number; expandedCursor: number };
@@ -2266,11 +2279,20 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     return showPlanFollowUpPrompt || composerSendState.hasSendableContent;
   };
 
+  const submitComposerRef = useRef<
+    (dispatchMode?: ComposerDispatchMode, submissionIntent?: ComposerSubmissionIntent) => void
+  >(() => {});
   const submitComposer = (
     event?: { preventDefault: () => void },
     dispatchMode?: ComposerDispatchMode,
     submissionIntent?: ComposerSubmissionIntent,
   ) => {
+    // A send during dictation waits for the transcript to land in the draft, then submits it.
+    if (voiceInputActive) {
+      event?.preventDefault();
+      submitAfterDictation(() => submitComposerRef.current(dispatchMode, submissionIntent));
+      return;
+    }
     // `!command` targets the thread's terminal, so it runs even while a turn is busy or the
     // provider is unavailable; a pending question, approval or literal answer owns the draft.
     const shellCommandHandled = dispatchShellCommandSubmission({
@@ -2346,6 +2368,29 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
   };
   const submitComposerStable = useStableCallback(submitComposer);
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- Publishes the committed submission handler to the asynchronous dictation completion.
+  useLayoutEffect(() => {
+    submitComposerRef.current = (mode, intent) => submitComposerStable(undefined, mode, intent);
+  }, [submitComposerStable]);
+  useDictationSubmissionShortcut({
+    enabled: voiceInputActive && !speechInput.preparing,
+    formRef: composerFormRef,
+    onKeyDown: (event) => {
+      const intent = composerSubmissionIntentForKey({
+        event,
+        keybindings,
+        isSoftwareKeyboardOpen,
+        isDraftThread: routeKind === "draft",
+        isRunning: phase === "running",
+        sendShortcut: settings.sendShortcut,
+        prompt: promptRef.current,
+      });
+      if (!intent) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      submitComposer(undefined, resolveSubmitDispatchMode(intent === "alternate"), intent);
+    },
+  });
   const handleSubmitMessage = (event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
     submitComposer(event, resolveSubmitDispatchMode(event.metaKey || event.ctrlKey));
@@ -3555,6 +3600,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               downloading={speechInput.setup.downloading}
               cancelled={speechInput.setup.cancelled}
               error={speechInput.setup.error}
+              choosingDestination={speechInput.setup.choosingDestination}
+              onChooseDestination={speechInput.setup.chooseDestination}
               onOpenChange={speechInput.setup.setOpen}
               onDownload={() => void speechInput.setup.download()}
               onCancelDownload={() => void speechInput.setup.cancelDownload()}
@@ -3929,7 +3976,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     showPlanFollowUpPrompt={
                       pendingUserInputs.length === 0 && showPlanFollowUpPrompt
                     }
-                    promptHasText={prompt.trim().length > 0}
+                    promptHasText={prompt.trim().length > 0 || voiceInputActive}
+                    voiceInputActive={voiceInputActive}
                     isSendBusy={isSendBusy}
                     sendDisabledReason={voiceSendDisabledReason}
                     isEnvironmentUnavailable={
@@ -3938,7 +3986,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       projectSelectionRequired
                     }
                     isPreparingWorktree={isPreparingWorktree}
-                    hasSendableContent={composerSendState.hasSendableContent}
+                    hasSendableContent={composerSendState.hasSendableContent || voiceInputActive}
                     canResume={showResumeAction}
                     preserveComposerFocusOnPointerDown={isMobileViewport}
                     isEditingQueuedMessage={isEditingQueuedMessage}

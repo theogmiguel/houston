@@ -4,6 +4,8 @@ import {
   ProjectId,
   ProjectScript,
   keepUnknownOverrideKeys,
+  LEGACY_SPEECH_SETTING_KEYS,
+  LegacySpeechSettings,
   ProjectSettingsOverrides,
   type ProviderInstanceConfig,
   type ProviderInstanceMutation,
@@ -68,6 +70,7 @@ export {
 } from "@houston-app/shared/serverSettings";
 
 const encodeServerSettings = Schema.encodeEffect(ServerSettings);
+const encodeUnknownJsonPretty = Schema.encodeUnknownEffect(fromJsonStringPretty(Schema.Unknown));
 const encodeServerSettingsJson = Schema.encodeUnknownEffect(fromJsonStringPretty(ServerSettings));
 const decodeServerSettings = Schema.decodeUnknownEffect(ServerSettings);
 
@@ -357,6 +360,26 @@ const LegacyProviderSettingsJson = fromLenientJson(
     github: Schema.optionalKey(Schema.Record(Schema.String, Schema.Unknown)),
   }),
 );
+const decodeLegacySpeechSettingsExit = Schema.decodeUnknownExit(LegacySpeechSettings);
+
+/** The dictation keys an older server stored, or undefined when the file holds none usable. */
+function readLegacySpeechKeys(parsed: unknown): LegacySpeechSettings | undefined {
+  if (typeof parsed !== "object" || parsed === null) return undefined;
+  const record = parsed as Record<string, unknown>;
+  const present: Record<string, unknown> = {};
+  for (const key of LEGACY_SPEECH_SETTING_KEYS) {
+    if (record[key] !== undefined) present[key] = record[key];
+  }
+  if (Object.keys(present).length === 0) return undefined;
+  // A key that no longer decodes is left out of the import; the file keeps it either way.
+  const decoded: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(present)) {
+    const single = decodeLegacySpeechSettingsExit({ [key]: value });
+    if (Exit.isSuccess(single)) Object.assign(decoded, single.value);
+  }
+  return Object.keys(decoded).length === 0 ? undefined : (decoded as LegacySpeechSettings);
+}
+
 const decodeLegacyProviderSettingsJsonExit = Schema.decodeUnknownExit(LegacyProviderSettingsJson);
 
 const LEGACY_BITBUCKET_SECRET_NAMES: Readonly<Record<string, string>> = {
@@ -696,14 +719,35 @@ const make = Effect.gen(function* () {
 
   const writeSettingsAtomically = Effect.fnUntraced(
     function* (settings: ServerSettings) {
-      const stripped = stripDefaultServerSettings(settings, managed.defaults) ?? {};
-      const sparseSettingsJson = yield* encodeServerSettingsJson(
+      const { legacySpeech: _readOnlyLegacySpeech, ...writable } = settings;
+      const stripped = stripDefaultServerSettings(writable, managed.defaults) ?? {};
+      const storedForWrite = yield* readStoredSettings;
+      const encodedJson = yield* encodeServerSettingsJson(
         managed.keepStored === undefined
           ? stripped
-          : managed.keepStored(stripped, settings, yield* readStoredSettings, (key) =>
+          : managed.keepStored(stripped, settings, storedForWrite, (key) =>
               ATOMIC_SETTINGS_KEYS.has(key),
             ),
       );
+      // Older dictation keys stay in the file exactly as stored, so a downgrade or a second
+      // device's import still finds them; the server never writes them itself.
+      const storedLegacy =
+        typeof storedForWrite === "object" && storedForWrite !== null
+          ? LEGACY_SPEECH_SETTING_KEYS.filter(
+              (key) => (storedForWrite as Record<string, unknown>)[key] !== undefined,
+            )
+          : [];
+      const reparsed =
+        storedLegacy.length === 0 ? undefined : decodeSettingsFileJsonExit(encodedJson);
+      const sparseSettingsJson =
+        reparsed === undefined || !Exit.isSuccess(reparsed)
+          ? encodedJson
+          : yield* encodeUnknownJsonPretty({
+              ...(reparsed.value as Record<string, unknown>),
+              ...Object.fromEntries(
+                storedLegacy.map((key) => [key, (storedForWrite as Record<string, unknown>)[key]]),
+              ),
+            });
 
       return yield* writeFileStringAtomically({
         filePath: settingsPath,
@@ -758,6 +802,7 @@ const make = Effect.gen(function* () {
     let legacyProviders: Readonly<Record<string, unknown>> | undefined;
     let legacySourceControl: Parameters<typeof migrateLegacySourceControlSettings>[1] = {};
     let parseFailure = Option.none<unknown>();
+    let legacySpeechFromFile: LegacySpeechSettings | undefined;
 
     if (yield* readConfigExists) {
       const raw = yield* readRawConfig;
@@ -765,6 +810,9 @@ const make = Effect.gen(function* () {
       const decoded = Exit.isFailure(parsed)
         ? parsed
         : decodePersistedServerSettingsExit(managed.withDefaults(parsed.value));
+      legacySpeechFromFile = Exit.isSuccess(parsed)
+        ? readLegacySpeechKeys(parsed.value)
+        : undefined;
       const legacySettings = decodeLegacyProviderSettingsJsonExit(raw);
       if (legacySettings._tag === "Success") {
         legacyProviders = legacySettings.value.providers;
@@ -893,7 +941,11 @@ const make = Effect.gen(function* () {
         yield* secretStore.remove(move.from).pipe(Effect.ignore);
       }
     }
-    return { settings: migrated, parseFailure };
+    const legacySpeech = settingsFileTrusted ? legacySpeechFromFile : undefined;
+    return {
+      settings: legacySpeech === undefined ? migrated : { ...migrated, legacySpeech },
+      parseFailure,
+    };
   });
 
   const settingsCache = yield* Cache.makeWith((_key: typeof cacheKey) => loadSettingsFromDisk, {
