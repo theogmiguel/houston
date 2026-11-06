@@ -269,9 +269,16 @@ export const QUERIES: ReadonlyArray<QuerySpec> = [
   {
     name: "boot.providerThreadRefs",
     path: "boot",
-    calls: "ProjectionStore.listProviderThreadRefs()",
+    calls: "ProjectionStore.listProviderThreadRefs(project threads) (resume session picker)",
     grows: "breadth",
-    run: () => Effect.flatMap(projectionStore, (store) => store.listProviderThreadRefs()),
+    run: (c) =>
+      Effect.flatMap(projectionStore, (store) =>
+        store.listProviderThreadRefs(
+          c.manifest.unit.threads
+            .filter((thread) => thread.projectId === c.typical.projectId)
+            .map(tid),
+        ),
+      ),
   },
   {
     name: "boot.delegatedAndSubagents",
