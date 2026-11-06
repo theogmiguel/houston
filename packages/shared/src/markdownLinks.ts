@@ -346,6 +346,8 @@ function markdownRunEndFinder(markdown: string, delimiter: RegExp) {
   };
 }
 
+// Each finder owns its `g` regex and moves its `lastIndex`, so the scanners build their own.
+/* oxlint-disable houston/no-function-scoped-regex */
 function markdownLinkTailScanner(markdown: string) {
   const whitespaceEnd = markdownRunEndFinder(markdown, /\S/g);
   const titleEnd = markdownRunEndFinder(markdown, /["']/g);
@@ -384,6 +386,7 @@ function markdownLinkDestinationScanner(markdown: string) {
     return end === null ? null : { hrefStart, hrefEnd, end };
   };
 }
+/* oxlint-enable houston/no-function-scoped-regex */
 
 export function extractMarkdownLinkHrefs(markdown: string): string[] {
   const hrefs: string[] = [];

@@ -12,6 +12,8 @@ const KEY = String.raw`\b((?:[A-Za-z0-9_]*(?:token|secret|password|passwd|api[_-
 
 export type CredentialRules = ReadonlyArray<readonly [RegExp, string]>;
 
+// Callers build their rules once at module scope, and the rules are only used with `replace`.
+/* oxlint-disable houston/no-function-scoped-regex */
 export const credentialRules = (placeholder: string): CredentialRules => [
   [/\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/g, placeholder],
   [/\b(?:glpat|xox[abprs])-[A-Za-z0-9-]{10,}\b/g, placeholder],
@@ -24,6 +26,7 @@ export const credentialRules = (placeholder: string): CredentialRules => [
   [new RegExp(`${KEY})(?!${escape(placeholder)}|["'])[^\\s"',}]+`, "gi"), `$1${placeholder}`],
   [/(\/\/[^/\s:@]+:)[^@\s/]+@/g, `$1${placeholder}@`],
 ];
+/* oxlint-enable houston/no-function-scoped-regex */
 
 export const applyCredentialRules = (text: string, rules: CredentialRules) =>
   rules.reduce((current, [pattern, replacement]) => current.replace(pattern, replacement), text);
