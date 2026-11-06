@@ -566,8 +566,8 @@ importers:
         specifier: 3.6.0
         version: 3.6.0
       transcribe-cpp:
-        specifier: 0.2.3
-        version: 0.2.3
+        specifier: 0.4.1
+        version: 0.4.1
       undici:
         specifier: 'catalog:'
         version: 8.11.2
@@ -587,6 +587,9 @@ importers:
       '@effect/vitest':
         specifier: 4.1.2
         version: 4.1.2(patch_hash=299510b71c36537a832a67e9d160a5f112a5f326a29e95c41cb45fc8234e47c7)(@astrojs/compiler-rs@0.5.1)(@tsc-rs/typescript@0.8.0)(@types/node@24.12.4)(@vitest/browser-playwright@5.0.5)(@vitest/ui@5.0.5)(@volar/typescript@2.4.28(@tsc-rs/typescript@0.8.0))(bufferutil@4.1.0)(effect@4.1.2)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.0(@noble/hashes@1.8.0))(playwright@1.60.0)(terser@5.48.0)(unrun@0.2.39)(utf-8-validate@6.0.6)(yaml@2.9.0)
+      '@handy-computer/models':
+        specifier: 0.2.3
+        version: 0.2.3
       '@houston-app/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -2982,6 +2985,10 @@ packages:
   '@fontsource-variable/jetbrains-mono@5.3.0':
     resolution: {integrity: sha512-F32xpS2NsGYoQi2ADSkKTgpJj7ozajsGgDJ8woTnqjmIB+dxDIqImjl4pXZVEExu8UFZ2ndhmX18EBS/hdz3Lw==}
 
+  '@handy-computer/models@0.2.3':
+    resolution: {integrity: sha512-EcyPojMY8hG5adDZGR/2h/m9jniqAnSND00gmiAErRLB1BQqMD9jrJaqsfoYF/UfPC8ocKZFUNSkTegoYqjF5w==}
+    engines: {node: '>=20.10'}
+
   '@hono/node-server@1.19.17':
     resolution: {integrity: sha512-dSneS5qhiauZWGDCeK4o695Xd9nUNjviSZCMQrj10eetr8Uln1ucn6bbphOM6UynAMMtNIzZNSpL9vnASJwrPQ==}
     engines: {node: '>=18.14.1'}
@@ -5019,30 +5026,30 @@ packages:
   '@tiptap/starter-kit@3.31.3':
     resolution: {integrity: sha512-WKof9RewdmGHvWJ1wn0/HVNG2mV+HOgVRyJkKekuM9fgr6BZAAH/xZsWE1eon+94JnQ+KtK2ThydXQM/qc6b2A==}
 
-  '@transcribe-cpp/darwin-arm64-metal@0.2.3':
-    resolution: {integrity: sha512-Ha1fvOHhCpPzCE40o1/Ub0M9QMIy0Ec9IXhCQrqsKW8XqOuSExnnTD1wUWljHC6FlB/hQjBlP0PTE/bFyue0iQ==}
+  '@transcribe-cpp/darwin-arm64-metal@0.4.1':
+    resolution: {integrity: sha512-Sg8obJiDeBxSWQvFcHxlVJoY5X+BzMFMNH+5LU5oVfj8iHJ0dj0uVlBUrNIN6D2xCBksoLVOEMCbasqUXv/DLw==}
     cpu: [arm64]
     os: [darwin]
 
-  '@transcribe-cpp/darwin-x64-cpu@0.2.3':
-    resolution: {integrity: sha512-ObdPJo53DtmfrVsx9y1P5BGPD1EYqpmkEBreIW1PKL3JRMabfZVSaW1CtRCLd6RI/zZlnr9MSlBHrEqoTiTf3g==}
+  '@transcribe-cpp/darwin-x64-cpu@0.4.1':
+    resolution: {integrity: sha512-lRP/Mr8msBMUHXkLPtGZoVhNXgxdTV3tzEmpLki0VeBP3LraPC73m9PjfhzoYNEwXEnpqdLwNaTnuCHOwJRugw==}
     cpu: [x64]
     os: [darwin]
 
-  '@transcribe-cpp/linux-arm64-cpu-vulkan@0.2.3':
-    resolution: {integrity: sha512-grwFOA02qD28Y/vaP+gvrY9vue3WX6xJaNEJSaObbHHxF0+5IpC8gQxL31tKnn4S2rZxQ6oMpmgrkxEKvsdx6w==}
+  '@transcribe-cpp/linux-arm64-cpu-vulkan@0.4.1':
+    resolution: {integrity: sha512-b010Fhfnqe4jGJLMhvx6LucvysxK638qY2eww1oaaErzkAKutdN0uRx84vsfXVxVr3lKlzdL5vq6Zv/QfAArTA==}
     cpu: [arm64]
     os: [linux]
     libc: [glibc]
 
-  '@transcribe-cpp/linux-x64-cpu-vulkan@0.2.3':
-    resolution: {integrity: sha512-zCI5x6uqTdPLV9SBC7PCXtukroOB7OJfhimrJbsEijhyD0ECqnSKZIqw6WZTuGuEIZbgUeZLLGb9cW7yteeM+A==}
+  '@transcribe-cpp/linux-x64-cpu-vulkan@0.4.1':
+    resolution: {integrity: sha512-AuiE8PSFbDndLJDpt8lilZIyg2syQSRBmZQWklx0rd9vF1M/Wfn4StKUXTGC4rouQOTJPy3ViioGLpyYr6unaw==}
     cpu: [x64]
     os: [linux]
     libc: [glibc]
 
-  '@transcribe-cpp/win32-x64-cpu-vulkan@0.2.3':
-    resolution: {integrity: sha512-j/DnABYXf/7kAQXIpV1psBGD4MNhHGr3HT5iTnNHK3eqQOF95MbLTC3uVZ3r37w55HojulWePLkk31y29zKsQA==}
+  '@transcribe-cpp/win32-x64-cpu-vulkan@0.4.1':
+    resolution: {integrity: sha512-0W8yQ6SgmPKgVaLHVGkj5gr2uzMS9mAVHMCJKZCFdhvQxeQlUbrvN/8ooyYD7S5qmLsLNEHt0ecMMVgsoWUu9A==}
     cpu: [x64]
     os: [win32]
 
@@ -8452,8 +8459,8 @@ packages:
     resolution: {integrity: sha512-bLVMLPtstlZ4iMQHpFHTR7GAGj2jxi8Dg0s2h2MafAE4uSWF98FC/3MomU51iQAMf8/qDUbKWf5GxuvvVcXEhw==}
     engines: {node: '>=20'}
 
-  transcribe-cpp@0.2.3:
-    resolution: {integrity: sha512-7SLtSAsZs82VwhoNHILCPwz+suMjYn8trTI7+1oAHQR9YwgkZuO48qB/fHvF7pEXR3URdpNupt8hkGTZnVhUXA==}
+  transcribe-cpp@0.4.1:
+    resolution: {integrity: sha512-6+cemagaGsOC8X3XWPCn7Ek+jjwyH2/NdTyBcEH7FtFjC3Ciyih2Xx6/GSRirZolxmxENtbvfwu1WV5RzutgCw==}
     engines: {node: '>=22'}
 
   trim-lines@3.0.1:
@@ -9984,6 +9991,8 @@ snapshots:
   '@fontsource-variable/inter@5.3.0': {}
 
   '@fontsource-variable/jetbrains-mono@5.3.0': {}
+
+  '@handy-computer/models@0.2.3': {}
 
   '@hono/node-server@1.19.17(hono@4.13.7)':
     dependencies:
@@ -11546,19 +11555,19 @@ snapshots:
       '@tiptap/extensions': 3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3)
       '@tiptap/pm': 3.31.3
 
-  '@transcribe-cpp/darwin-arm64-metal@0.2.3':
+  '@transcribe-cpp/darwin-arm64-metal@0.4.1':
     optional: true
 
-  '@transcribe-cpp/darwin-x64-cpu@0.2.3':
+  '@transcribe-cpp/darwin-x64-cpu@0.4.1':
     optional: true
 
-  '@transcribe-cpp/linux-arm64-cpu-vulkan@0.2.3':
+  '@transcribe-cpp/linux-arm64-cpu-vulkan@0.4.1':
     optional: true
 
-  '@transcribe-cpp/linux-x64-cpu-vulkan@0.2.3':
+  '@transcribe-cpp/linux-x64-cpu-vulkan@0.4.1':
     optional: true
 
-  '@transcribe-cpp/win32-x64-cpu-vulkan@0.2.3':
+  '@transcribe-cpp/win32-x64-cpu-vulkan@0.4.1':
     optional: true
 
   '@tsc-rs/darwin-arm64@0.8.0':
@@ -16025,15 +16034,15 @@ snapshots:
       punycode: 2.3.1
     optional: true
 
-  transcribe-cpp@0.2.3:
+  transcribe-cpp@0.4.1:
     dependencies:
       koffi: 3.3.6
     optionalDependencies:
-      '@transcribe-cpp/darwin-arm64-metal': 0.2.3
-      '@transcribe-cpp/darwin-x64-cpu': 0.2.3
-      '@transcribe-cpp/linux-arm64-cpu-vulkan': 0.2.3
-      '@transcribe-cpp/linux-x64-cpu-vulkan': 0.2.3
-      '@transcribe-cpp/win32-x64-cpu-vulkan': 0.2.3
+      '@transcribe-cpp/darwin-arm64-metal': 0.4.1
+      '@transcribe-cpp/darwin-x64-cpu': 0.4.1
+      '@transcribe-cpp/linux-arm64-cpu-vulkan': 0.4.1
+      '@transcribe-cpp/linux-x64-cpu-vulkan': 0.4.1
+      '@transcribe-cpp/win32-x64-cpu-vulkan': 0.4.1
 
   trim-lines@3.0.1: {}
 

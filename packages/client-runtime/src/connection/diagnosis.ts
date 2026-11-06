@@ -1,10 +1,6 @@
 import * as DateTime from "effect/DateTime";
 
-import type {
-  ConnectionAttemptError,
-  ConnectionHop,
-  SupervisorConnectionState,
-} from "./model.ts";
+import type { ConnectionAttemptError, ConnectionHop, SupervisorConnectionState } from "./model.ts";
 
 export type ConnectionHopResult = "ok" | "failed" | "unchecked";
 

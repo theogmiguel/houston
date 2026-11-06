@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
-  applySpeechCustomWords,
   applySpeechAliases,
+  makeSpeechTextCorrector,
   normalizeSpeechCustomWords,
-  transcriptionCustomWords,
 } from "./customWords.ts";
+
+const applySpeechCustomWords = (text: string, words: readonly string[]) =>
+  makeSpeechTextCorrector(words)(text);
 
 describe("speech custom words", () => {
   it.each([
@@ -42,17 +44,21 @@ describe("speech custom words", () => {
     expect(applySpeechCustomWords("Chat\nG P T", ["ChatGPT"])).toBe("Chat\nG P T");
   });
 
-  it("normalizes, deduplicates, and removes unsafe prompt characters", () => {
+  it("normalizes and deduplicates terms, keeping apostrophes", () => {
     expect(
       normalizeSpeechCustomWords([
-        { term: "  T3   Code ", aliases: ["T three code"] },
-        { term: "T3 Code", aliases: [] },
-        { term: "<Effect>", aliases: [] },
+        { term: "  Houston   Code ", aliases: ["Houston coat"] },
+        { term: "Houston Code", aliases: [] },
+        { term: "O'Brien", aliases: [] },
       ]),
     ).toEqual([
-      { term: "T3 Code", aliases: ["T three code"] },
-      { term: "Effect", aliases: [] },
+      { term: "Houston Code", aliases: ["Houston coat"] },
+      { term: "O'Brien", aliases: [] },
     ]);
+  });
+
+  it("keeps a possessive on a corrected term", () => {
+    expect(applySpeechCustomWords("this is handee's turn", ["Handy"])).toBe("this is Handy's turn");
   });
 
   it("replaces aliases as complete phrases without changing punctuation", () => {
@@ -61,30 +67,5 @@ describe("speech custom words", () => {
       "Use MiniMax, not mini maximum.",
     );
     expect(applySpeechAliases("Use minimum max!", words)).toBe("Use MiniMax!");
-  });
-
-  it("prioritizes the correction word without changing saved dictionary words", () => {
-    const speechCustomWords = Array.from({ length: 100 }, (_, index) => ({
-      term: `word${index}`,
-      aliases: [],
-    }));
-    const settings = {
-      speechCustomWords,
-      speechCorrectionWord: "err",
-      speechPostProcessingEnabled: true,
-    };
-    expect(transcriptionCustomWords(settings)).toEqual([
-      "err",
-      ...speechCustomWords.slice(0, 99).map(({ term }) => term),
-    ]);
-    expect(settings.speechCustomWords).toEqual(speechCustomWords);
-    expect(transcriptionCustomWords({ ...settings, speechPostProcessingEnabled: false })).toEqual(
-      speechCustomWords.map(({ term }) => term),
-    );
-    expect(transcriptionCustomWords(settings, "Acme Studio")).toEqual([
-      "err",
-      "Acme Studio",
-      ...speechCustomWords.slice(0, 98).map(({ term }) => term),
-    ]);
   });
 });

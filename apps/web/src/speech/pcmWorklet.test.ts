@@ -84,3 +84,55 @@ it("softens peaks, reaches sustained levels, and releases more slowly than it ri
   for (let i = 0; i < 39; i++) processor.process([[new Float32Array(2_400)]]);
   expect(levels.at(-1)).toBeLessThan(0.0001);
 });
+
+it("meters microphone-only capture like transcription without emitting PCM", async () => {
+  type Options = { processorOptions: { meterOnly: boolean } };
+  type Capture = {
+    port: { onmessage: (event: { data: string }) => void };
+    process(inputs: Float32Array[][]): boolean;
+  };
+  const posted = new Map<object, unknown[]>();
+  let Processor!: new (options?: Options) => Capture;
+  vi.stubGlobal("sampleRate", 48_000);
+  vi.stubGlobal(
+    "AudioWorkletProcessor",
+    class {
+      readonly port = {
+        onmessage: (_event: { data: string }) => {},
+        postMessage: (value: unknown) => {
+          posted.set(this, [...(posted.get(this) ?? []), value]);
+        },
+      };
+    },
+  );
+  vi.stubGlobal("registerProcessor", (_name: string, processor: typeof Processor) => {
+    Processor = processor;
+  });
+  await import("./pcmWorklet");
+  const transcription = new Processor();
+  const microphone = new Processor({ processorOptions: { meterOnly: true } });
+  transcription.port.onmessage({ data: "start" });
+  microphone.port.onmessage({ data: "start" });
+  const feed = (samples: Float32Array) => {
+    transcription.process([[samples]]);
+    microphone.process([[samples]]);
+  };
+  const levels = (processor: Capture) =>
+    (posted.get(processor) ?? []).filter((data) => typeof data === "number");
+
+  feed(new Float32Array(2_399).fill(0.1));
+  expect(levels(microphone)).toHaveLength(0);
+  feed(new Float32Array(1).fill(0.1));
+  expect(levels(microphone)).toHaveLength(1);
+  feed(new Float32Array(48_000).fill(0.25));
+  feed(new Float32Array(2_400));
+
+  expect(levels(microphone)).toEqual(levels(transcription));
+  expect(levels(microphone)).toHaveLength(22);
+  expect(posted.get(transcription)!.some((data) => data instanceof Float32Array)).toBe(true);
+  expect(posted.get(microphone)!.every((data) => typeof data === "number")).toBe(true);
+
+  microphone.port.onmessage({ data: "stop" });
+  expect(posted.get(microphone)!.at(-1)).toBe("stopped");
+  expect(posted.get(microphone)!.some((data) => data instanceof Float32Array)).toBe(false);
+});

@@ -7,6 +7,7 @@ import {
   type ManagedPolicyDocument,
   type ServerProvider,
   type ServerSettings as Settings,
+  type SpeechPostProcessingOptions,
 } from "@houston-app/contracts";
 import { it } from "@effect/vitest";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
@@ -23,9 +24,14 @@ import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as SpeechService from "./SpeechService.ts";
+import * as SpeechModelStore from "./SpeechModelStore.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 
-const CLEANUP_ENABLED: Settings = { ...DEFAULT_SERVER_SETTINGS, speechPostProcessingEnabled: true };
+const SETTINGS: Settings = DEFAULT_SERVER_SETTINGS;
+const DEFAULT_OPTIONS: SpeechPostProcessingOptions = {
+  speechCustomWords: [],
+  speechPostProcessingPrompt: { mode: "default", customInstructions: "" },
+};
 
 const codexProvider: ServerProvider = {
   instanceId: ProviderInstanceId.make("codex"),
@@ -58,12 +64,23 @@ const codexProvider: ServerProvider = {
 };
 
 const runPostProcess = (
-  input: { readonly transcript: string; readonly cwd: string; readonly settings: Settings },
+  input: {
+    readonly transcript: string;
+    readonly cwd: string;
+    readonly settings: Settings;
+    readonly options?: Partial<SpeechPostProcessingOptions>;
+  },
   generate: TextGeneration.TextGeneration["Service"]["generateTranscriptionPostProcessing"],
   providers: ReadonlyArray<ServerProvider> = [codexProvider],
   policy?: ManagedPolicyDocument,
 ) =>
-  postProcessTranscript(input).pipe(
+  postProcessTranscript({
+    transcript: input.transcript,
+    cwd: input.cwd,
+    settings: input.settings,
+    draft: { text: "", selection: { start: 0, end: 0 } },
+    options: { ...DEFAULT_OPTIONS, ...input.options },
+  }).pipe(
     Effect.provide(
       Layer.mergeAll(
         ManagedPolicy.layerTest(policy),
@@ -86,13 +103,29 @@ const unavailableProviders = [
 ] satisfies ReadonlyArray<ServerProvider>;
 
 describe("postProcessTranscript", () => {
+  it.effect("returns the transcript untouched when no provider is usable", () =>
+    Effect.gen(function* () {
+      const generate = vi.fn(() => Effect.succeed({ transcription: "unexpected" }));
+      for (const providers of [[], ...unavailableProviders.map((provider) => [provider])]) {
+        expect(
+          yield* runPostProcess(
+            { transcript: "raw text", cwd: "C:/neutral", settings: SETTINGS },
+            generate,
+            providers,
+          ),
+        ).toBe("raw text");
+      }
+      expect(generate).not.toHaveBeenCalled();
+    }),
+  );
+
   it.effect.each(["cursor", "claudeAgent"])(
     "enforces managed allowed driver %s even when denied providers are ready",
     (allowedDriver) =>
       Effect.gen(function* () {
         const generate = vi.fn(() => Effect.succeed({ transcription: "Clean text." }));
         const result = yield* runPostProcess(
-          { transcript: "raw text", cwd: "C:/neutral", settings: CLEANUP_ENABLED },
+          { transcript: "raw text", cwd: "C:/neutral", settings: SETTINGS },
           generate,
           [
             codexProvider,
@@ -141,20 +174,26 @@ describe("postProcessTranscript", () => {
         return { transcription: "Clean text." };
       });
       const speech = yield* SpeechService.SpeechService;
-      const result = yield* speech.postProcess({ transcript: "raw" }).pipe(
-        Effect.provide(
-          Layer.mergeAll(
-            ManagedPolicy.layerTest(),
-            Layer.mock(ProviderRegistry.ProviderRegistry)({
-              getProviders: Effect.succeed([codexProvider]),
-            }),
-            Layer.mock(TextGeneration.TextGeneration)({
-              generateTranscriptionPostProcessing: generate,
-            }),
+      const result = yield* speech
+        .postProcess({
+          transcript: "raw",
+          draft: { text: "", selection: { start: 0, end: 0 } },
+          options: DEFAULT_OPTIONS,
+        })
+        .pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              ManagedPolicy.layerTest(),
+              Layer.mock(ProviderRegistry.ProviderRegistry)({
+                getProviders: Effect.succeed([codexProvider]),
+              }),
+              Layer.mock(TextGeneration.TextGeneration)({
+                generateTranscriptionPostProcessing: generate,
+              }),
+            ),
           ),
-        ),
-        Effect.result,
-      );
+          Effect.result,
+        );
       if (fail)
         expect(Result.isFailure(result) && result.failure).toMatchObject({
           _tag: "SpeechOperationError",
@@ -168,7 +207,18 @@ describe("postProcessTranscript", () => {
       Effect.provide(
         SpeechService.layer.pipe(
           Layer.provide(ServerConfig.layerTest("/tmp", { prefix: "speech-post-process-" })),
-          Layer.provide(ServerSettings.layerTest({ speechPostProcessingEnabled: true })),
+          Layer.provide(ServerSettings.layerTest()),
+          Layer.provide(
+            Layer.succeed(
+              SpeechModelStore.SpeechModelStore,
+              SpeechModelStore.SpeechModelStore.of({
+                isReady: () => Effect.succeed(false),
+                installedPath: () => Effect.sync(() => undefined),
+                download: () => Effect.succeed("unused.gguf"),
+                remove: () => Effect.void,
+              }),
+            ),
+          ),
           Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
         ),
       ),
@@ -202,7 +252,7 @@ describe("postProcessTranscript", () => {
         };
         expect(
           yield* runPostProcess(
-            { transcript: "raw", cwd: "C:/neutral", settings: CLEANUP_ENABLED },
+            { transcript: "raw", cwd: "C:/neutral", settings: SETTINGS },
             generate,
             [codex, claude],
           ),
@@ -223,10 +273,7 @@ describe("postProcessTranscript", () => {
           >[0],
         ) => Effect.succeed({ transcription: "  Clean text.  " }),
       );
-      const settings = {
-        ...CLEANUP_ENABLED,
-        speechPostProcessingEnabled: true,
-      };
+      const settings = SETTINGS;
 
       expect(
         yield* runPostProcess(
@@ -241,7 +288,11 @@ describe("postProcessTranscript", () => {
       expect(generate).toHaveBeenCalledWith(
         expect.objectContaining({
           cwd: "C:/neutral",
-          modelSelection: settings.speechPostProcessingModelSelection,
+          modelSelection: {
+            instanceId: "codex",
+            model: "gpt-6-luna",
+            options: [{ id: "reasoningEffort", value: "low" }],
+          },
           prompt: expect.stringContaining("<transcript>\nuh clean text\n</transcript>"),
         }),
       );
@@ -262,8 +313,8 @@ describe("postProcessTranscript", () => {
         {
           transcript: "clean text",
           cwd: "C:/neutral",
-          settings: {
-            ...CLEANUP_ENABLED,
+          settings: SETTINGS,
+          options: {
             speechPostProcessingPrompt: {
               mode: "custom",
               customInstructions: "Keep technical terms verbatim.",
@@ -291,10 +342,8 @@ describe("postProcessTranscript", () => {
         {
           transcript: "clean text",
           cwd: "C:/neutral",
-          settings: {
-            ...CLEANUP_ENABLED,
-            speechPostProcessingPrompt: { mode: "custom", customInstructions: "" },
-          },
+          settings: SETTINGS,
+          options: { speechPostProcessingPrompt: { mode: "custom", customInstructions: "" } },
         },
         generate,
       );
@@ -302,56 +351,15 @@ describe("postProcessTranscript", () => {
     }),
   );
 
-  it.effect("keeps transcripts local with the default settings", () =>
-    Effect.gen(function* () {
-      const generate = vi.fn(() => Effect.succeed({ transcription: "Clean text." }));
-      expect(
-        yield* runPostProcess(
-          { transcript: "raw text", cwd: "C:/neutral", settings: DEFAULT_SERVER_SETTINGS },
-          generate,
-          [codexProvider],
-        ),
-      ).toBe("raw text");
-      expect(generate).not.toHaveBeenCalled();
-    }),
-  );
-
-  it.effect("does not call a provider when disabled", () =>
-    Effect.gen(function* () {
-      const generate = vi.fn(() => Effect.succeed({ transcription: "unexpected" }));
-      expect(
-        yield* runPostProcess(
-          {
-            transcript: "raw text",
-            cwd: "C:/neutral",
-            settings: { ...CLEANUP_ENABLED, speechPostProcessingEnabled: false },
-          },
-          generate,
-        ),
-      ).toBe("raw text");
-      expect(generate).not.toHaveBeenCalled();
-      for (const providers of [[], ...unavailableProviders.map((provider) => [provider])]) {
-        expect(
-          yield* runPostProcess(
-            { transcript: "raw text", cwd: "C:/neutral", settings: CLEANUP_ENABLED },
-            generate,
-            providers,
-          ),
-        ).toBe("raw text");
-      }
-      expect(generate).not.toHaveBeenCalled();
-    }),
-  );
-
   it.effect("adds context-sensitive correction instructions to the prompt", () =>
     Effect.gen(function* () {
       const generate = vi.fn(() => Effect.succeed({ transcription: "I want yellow." }));
-      const settings = { ...CLEANUP_ENABLED, speechCorrectionWord: "err" };
       yield* runPostProcess(
         {
           transcript: "I want orange, err, yellow.",
           cwd: "C:/neutral",
-          settings,
+          settings: SETTINGS,
+          options: { speechCorrectionWord: "err" },
         },
         generate,
       );
@@ -384,7 +392,7 @@ describe("postProcessTranscript", () => {
           {
             transcript: "raw text",
             cwd: "C:/neutral",
-            settings: { ...CLEANUP_ENABLED, speechPostProcessingEnabled: true },
+            settings: SETTINGS,
           },
           () => Effect.succeed({ transcription: "   " }),
         ),
@@ -399,10 +407,8 @@ describe("postProcessTranscript", () => {
           {
             transcript: "Use MiniMax.",
             cwd: "C:/neutral",
-            settings: {
-              ...CLEANUP_ENABLED,
-              speechCustomWords: [{ term: "MiniMax", aliases: ["mini max"] }],
-            },
+            settings: SETTINGS,
+            options: { speechCustomWords: [{ term: "MiniMax", aliases: ["mini max"] }] },
           },
           () => Effect.succeed({ transcription: "Use mini max." }),
         ),

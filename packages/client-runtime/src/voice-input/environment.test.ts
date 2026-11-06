@@ -3,7 +3,8 @@ import { it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Result from "effect/Result";
 import { FetchHttpClient } from "effect/http";
-import { decodeSpeechProjectNameHeader, EnvironmentId } from "@houston-app/contracts";
+import { DEFAULT_SPEECH_TRANSCRIPTION_OPTIONS, EnvironmentId } from "@houston-app/contracts";
+import { decodeSpeechPcmRequest } from "@houston-app/shared/speech";
 import * as Schema from "effect/Schema";
 import {
   PrimaryConnectionTarget,
@@ -34,7 +35,11 @@ it.effect.each(["http://remote.example", "http://127.0.0.1.evil.example", "http:
   (url) =>
     Effect.gen(function* () {
       const fetch = vi.fn(async () => Response.json({ text: "hello" }));
-      const result = yield* transcribeEnvironmentPcm(prepared(url), new Uint8Array(4)).pipe(
+      const result = yield* transcribeEnvironmentPcm(
+        prepared(url),
+        new Uint8Array(4),
+        DEFAULT_SPEECH_TRANSCRIPTION_OPTIONS,
+      ).pipe(
         Effect.provide(FetchHttpClient.layer),
         Effect.provideService(FetchHttpClient.Fetch, fetch),
         Effect.result,
@@ -54,7 +59,11 @@ it.effect.each([
   Effect.gen(function* () {
     const fetch = vi.fn(async () => Response.json({ text: "hello" }));
     expect(
-      yield* transcribeEnvironmentPcm(prepared(url), new Uint8Array(4)).pipe(
+      yield* transcribeEnvironmentPcm(
+        prepared(url),
+        new Uint8Array(4),
+        DEFAULT_SPEECH_TRANSCRIPTION_OPTIONS,
+      ).pipe(
         Effect.provide(FetchHttpClient.layer),
         Effect.provideService(FetchHttpClient.Fetch, fetch),
       ),
@@ -76,6 +85,7 @@ it.effect("does not send browser cookies with bearer-authenticated voice request
     yield* transcribeEnvironmentPcm(
       prepared("https://remote.example", { _tag: "Bearer", token: "secret" }),
       new Uint8Array(4),
+      DEFAULT_SPEECH_TRANSCRIPTION_OPTIONS,
     ).pipe(
       Effect.provide(FetchHttpClient.layer),
       Effect.provideService(FetchHttpClient.Fetch, fetch),
@@ -88,37 +98,40 @@ it.effect("does not send browser cookies with bearer-authenticated voice request
   }),
 );
 
-it.effect("sends a project name outside Latin-1 in a header the server reads back", () =>
+it.effect("sends the recording's options in the request body, not in headers", () =>
   Effect.gen(function* () {
-    let header: string | null = null;
+    let body: Uint8Array | undefined;
     const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-      // The real Headers constructor throws for code points above U+00FF.
-      header = new Headers(init?.headers).get("x-houston-project-name");
+      body = new Uint8Array(await new Response(init?.body).arrayBuffer());
       return Response.json({ text: "hello" });
     });
-    const name = "Maria’s 日本語 app 🚀 100%";
+    const options = {
+      ...DEFAULT_SPEECH_TRANSCRIPTION_OPTIONS,
+      speechLanguage: "pt" as const,
+      speechCustomWords: [{ term: "Houston", aliases: ["hust"] }],
+    };
     yield* transcribeEnvironmentPcm(
       prepared("http://localhost:3000"),
-      new Uint8Array(4),
-      name,
+      new Uint8Array([1, 2, 3, 4]),
+      options,
     ).pipe(
       Effect.provide(FetchHttpClient.layer),
       Effect.provideService(FetchHttpClient.Fetch, fetch),
     );
-    expect(header).not.toBeNull();
-    expect(decodeSpeechProjectNameHeader(header!)).toBe(name);
-    expect(decodeSpeechProjectNameHeader("Plain 100% name")).toBe("Plain 100% name");
+    expect(body).toBeDefined();
+    const decoded = decodeSpeechPcmRequest(body!);
+    expect(decoded.options).toEqual(options);
+    expect(Array.from(decoded.pcm)).toEqual([1, 2, 3, 4]);
   }),
 );
 
-it.effect("opens speech streaming with a media ticket and encoded project name", () =>
+it.effect("opens speech streaming with a media ticket", () =>
   Effect.gen(function* () {
     const fetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
       Response.json({ ticket: "voice-ticket", expiresAt: "2026-10-25T12:00:00.000Z" }),
     );
     const streamUrl = yield* getEnvironmentSpeechStreamUrl(
       prepared("https://remote.example", { _tag: "Bearer", token: "credential" }),
-      "Maria’s 日本語 app",
     ).pipe(
       Effect.provide(FetchHttpClient.layer),
       Effect.provideService(FetchHttpClient.Fetch, fetch),
@@ -134,6 +147,6 @@ it.effect("opens speech streaming with a media ticket and encoded project name",
     expect(url.protocol).toBe("wss:");
     expect(url.pathname).toBe("/ws/voice");
     expect(url.searchParams.get("wsTicket")).toBe("voice-ticket");
-    expect(url.searchParams.get("projectName")).toBe("Maria’s 日本語 app");
+    expect(url.searchParams.has("projectName")).toBe(false);
   }),
 );
