@@ -12,7 +12,7 @@ describe("db-load plan checks", () => {
     expect(
       fullScansInPlan(sql, ["SCAN t", "SEARCH event USING INDEX idx (stream_id=?)"], growing),
     ).toEqual(["orchestration_v2_projection_threads"]);
-    expect(fullScansInPlan(sql, ["SCAN event USING COVERING INDEX idx"], growing)).toEqual([
+    expect(fullScansInPlan(sql, ["  SCAN event USING COVERING INDEX idx"], growing)).toEqual([
       "orchestration_events",
     ]);
   });
@@ -26,6 +26,7 @@ describe("db-load plan checks", () => {
           "SCAN projection_projects",
           "SCAN CONSTANT ROW",
           "SCAN (subquery-1)",
+          "  SCAN orchestration_events VIRTUAL TABLE INDEX 192:M1",
           "SEARCH orchestration_events USING INTEGER PRIMARY KEY (rowid>?)",
         ],
         growing,

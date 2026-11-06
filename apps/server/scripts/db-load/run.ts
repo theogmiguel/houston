@@ -163,8 +163,9 @@ export function fullScansInPlan(
   const aliases = tableAliases(sql);
   const scans = new Set<string>();
   for (const detail of plan) {
-    const match = /^SCAN ([A-Za-z_][A-Za-z0-9_]*)/.exec(detail);
-    if (match === null) continue;
+    const match = /^\s*SCAN ([A-Za-z_][A-Za-z0-9_]*)/.exec(detail);
+    // A virtual table with a constraint (an FTS MATCH) is a lookup; INDEX 0 means no constraint.
+    if (match === null || /VIRTUAL TABLE INDEX [1-9]/.test(detail)) continue;
     const name = match[1]!;
     const table = growingTables.has(name) ? name : aliases.get(name);
     if (table !== undefined && growingTables.has(table)) scans.add(table);

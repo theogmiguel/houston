@@ -197,13 +197,6 @@ export const QUERIES: ReadonlyArray<QuerySpec> = [
       ),
   },
   {
-    name: "boot.unreadableThreadIds",
-    path: "boot",
-    calls: "ProjectionStore.getUnreadableThreadIds",
-    grows: "breadth",
-    run: () => Effect.flatMap(projectionStore, (store) => store.getUnreadableThreadIds()),
-  },
-  {
     name: "boot.limitRecovery",
     path: "boot",
     calls: "ProjectionStore.getLimitRecoveryCandidates + getLimitRecoveryWakeAt",
