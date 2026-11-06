@@ -456,7 +456,7 @@ export function SnapShotSettings() {
             <SettingsRow
               {...searchableSetting("snap-shot-accessibility")}
               title="Include app text"
-              description="Attach the text of the captured window alongside the image. When Windows exposes it."
+              description="Attach the text of the captured window alongside the image, when the desktop exposes it."
               status={snapShotAccessibilityUnavailableMessage(state)}
               control={
                 <Switch
@@ -479,20 +479,6 @@ export function SnapShotSettings() {
       <SettingsSection id="snap-shot-feedback" title="Feedback">
         <SettingsUnavailableGroup message={unavailableMessage}>
           <>
-            <SettingsRow
-              {...searchableSetting("snap-shot-sound")}
-              title="Capture sound"
-              control={
-                <Switch
-                  checked={soundSelection !== "off"}
-                  disabled={!captureAvailable}
-                  aria-label="Capture sound"
-                  onCheckedChange={(checked) =>
-                    void save(snapShotSoundPatch(checked ? "soft-pop" : "off"))
-                  }
-                />
-              }
-            />
             <SettingsRow
               {...searchableSetting("snap-shot-flash")}
               title="Capture flash"
@@ -520,7 +506,7 @@ export function SnapShotSettings() {
               }
             />
             <SettingsRow
-              title="Capture sound style"
+              {...searchableSetting("snap-shot-sound")}
               description="Choose the sound played when capture starts."
               control={
                 <Menu>

@@ -268,7 +268,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "project-overview",
     title: "Project overview",
     to: "/settings/projects",
-    searchTerms: ["name icon emoji image checkout remove delete"],
+    searchTerms: ["name checkout remove delete"],
   },
   {
     id: "default-model",
@@ -320,7 +320,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "setting-glass-opacity",
     title: "Glass opacity",
     to: "/settings/appearance",
-    searchTerms: ["transparent transparency solid menus dialogs composer"],
+    searchTerms: ["transparent transparency solid translucent banners alerts composer"],
   },
   {
     id: "diff-color-scheme",
@@ -355,15 +355,16 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["latex tex katex equations formulas markdown"],
   },
   {
-    id: "panel-animations",
-    title: "Panel animations",
+    id: "animations",
+    title: "Animations",
     to: "/settings/appearance",
+    searchTerms: ["motion reduce transitions menus dialogs panels"],
   },
   {
     id: "environment-identification",
     title: "Environment identification",
     to: "/settings/appearance",
-    searchTerms: ["dev channel artwork pill label hide none"],
+    searchTerms: ["dev nightly channel pill label hide none"],
     targetId: "appearance-interface",
   },
   {
@@ -652,6 +653,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Quit shortcut",
     to: "/settings/general",
     searchTerms: ["quit ctrl q hold press twice direct confirmation"],
+    desktopOnly: true,
   },
   {
     id: "keep-in-tray",
@@ -728,28 +730,28 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "speech-post-processing",
-    title: "Voice post-processing",
+    title: "Clean up transcripts",
     to: "/settings/voice",
     searchTerms: ["speech transcription polish clean provider"],
     desktopOnly: true,
   },
   {
     id: "speech-post-processing-model",
-    title: "Voice post-processing model",
+    title: "Cleanup model",
     to: "/settings/voice",
     searchTerms: ["speech transcription provider model"],
     desktopOnly: true,
   },
   {
     id: "speech-correction-word",
-    title: "Explicit correction cue",
+    title: "Correction cue",
     to: "/settings/voice",
     searchTerms: ["speech voice self correction revise err"],
     desktopOnly: true,
   },
   {
     id: "speech-post-processing-prompt",
-    title: "Voice post-processing prompt",
+    title: "Cleanup instructions",
     to: "/settings/voice",
     searchTerms: ["speech transcription instructions cleanup"],
     desktopOnly: true,
@@ -780,16 +782,16 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/about",
   },
   {
-    id: "legacy-plan-mode",
-    title: "Plan mode (legacy)",
+    id: "plan-mode",
+    title: "Plan mode",
     to: "/settings/labs",
-    searchTerms: ["build plan composer old"],
+    searchTerms: ["build plan composer"],
   },
   {
-    id: "legacy-context-window-indicator",
-    title: "Context window indicator (legacy)",
+    id: "context-window-indicator",
+    title: "Context window indicator",
     to: "/settings/labs",
-    searchTerms: ["composer meter usage tokens circle old"],
+    searchTerms: ["composer meter usage tokens circle"],
   },
   {
     id: "keybindings",
@@ -832,6 +834,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Capture sound",
     to: "/settings/snap-shot",
     targetId: "snap-shot-enabled",
+    searchTerms: ["audio style off whoosh click"],
   },
   {
     id: "snap-shot-flash",
@@ -889,7 +892,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Device sources",
     to: "/settings/devices",
     searchTerms: [
-      "device hosts ssh remote mac mini identity key connection eas expo cloud simlock pool gateway local simulators",
+      "device hosts ssh remote mac mini identity key connection eas expo cloud simlock pool gateway local simulators xcode android studio avd",
     ],
   },
   {
@@ -897,6 +900,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Agents can use devices",
     to: "/settings/devices",
     targetId: "devices",
+    scope: "project-defaults",
     searchTerms: ["allow simulator emulator ios android drive tools sessions"],
   },
   {
@@ -905,13 +909,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/devices",
     targetId: "devices",
     searchTerms: ["device hub simulator emulator ios android install start version"],
-  },
-  {
-    id: "device-platform-support",
-    title: "Local simulators",
-    to: "/settings/devices",
-    targetId: "device-sources",
-    searchTerms: ["simulator support xcode android studio sdk avd runtime"],
   },
   {
     id: "browser-profiles",
@@ -998,9 +995,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Remove agent credits when merging",
     to: "/settings/source-control",
     scope: "project-defaults",
-    searchTerms: [
-      `pull request ${SOURCE_CONTROL_HOST_LABELS} squash co-authored-by attribution claude codex generated`,
-    ],
+    searchTerms: ["pull request github squash co-authored-by attribution claude codex generated"],
   },
   {
     id: "pull-request-merge-method",

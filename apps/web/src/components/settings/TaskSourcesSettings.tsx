@@ -727,7 +727,7 @@ function ProviderCard({
             />
             <SettingsRow
               title="Label"
-              description="Only issues with this label become tasks."
+              description="Issues with this label become tasks."
               control={
                 <Input
                   font="mono"
@@ -741,6 +741,7 @@ function ProviderCard({
             />
             <SettingsRow
               title="Assigned user"
+              description="Issues assigned to this user become tasks, with or without the label."
               control={
                 <Input
                   font="mono"

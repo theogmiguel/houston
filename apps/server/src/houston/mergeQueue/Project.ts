@@ -21,6 +21,7 @@ import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as VcsProcess from "../../vcs/VcsProcess.ts";
 import { managedWorktreesDirectories } from "../../worktreesDirectory.ts";
+import { confinedGitEnv } from "../confinedGit.ts";
 import { HoustonBuildSlot } from "./BuildSlot.ts";
 import {
   line,
@@ -43,31 +44,15 @@ export interface GitResult {
   readonly stderr: string;
 }
 
-// Command-scope config for every queue git process and the git it starts. Automatic gc and
-// maintenance leave a child holding the output pipe and, on Windows, the scratch worktree.
+// Automatic gc and maintenance leave a child holding the output pipe and, on Windows, the
+// scratch worktree. The user's config stops at the scratch worktree through `confinedGitEnv`.
 const QUEUE_GIT_CONFIG: ReadonlyArray<readonly [string, string]> = [
   ["gc.auto", "0"],
   ["maintenance.auto", "false"],
-  // The user's config stops at the scratch worktree: no other branch, hook, tag or submodule.
-  ["rebase.updateRefs", "false"],
-  ["core.hooksPath", "/dev/null"],
-  ["commit.gpgSign", "false"],
-  ["rerere.enabled", "false"],
-  ["submodule.recurse", "false"],
-  ["fetch.recurseSubmodules", "false"],
-  ["push.followTags", "false"],
-  ["push.recurseSubmodules", "no"],
-  ["push.gpgSign", "false"],
-  ["core.fsmonitor", "false"],
 ];
 
-const queueGitEnv = (): NodeJS.ProcessEnv => {
-  const env: NodeJS.ProcessEnv = { ...process.env, GIT_TERMINAL_PROMPT: "0" };
-  for (const [key, value] of QUEUE_GIT_CONFIG) {
-    Object.assign(env, VcsProcess.gitConfigEnv(env, key, value, process.platform));
-  }
-  return env;
-};
+const queueGitEnv = (): NodeJS.ProcessEnv =>
+  confinedGitEnv({ ...process.env, GIT_TERMINAL_PROMPT: "0" }, process.platform, QUEUE_GIT_CONFIG);
 
 /** Runs git in `cwd`; a git that could not run fails with its error's text. */
 export const git = (

@@ -8,7 +8,6 @@ import { type ComponentProps, useId, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { settlePromise, squashAtomCommandFailure } from "@houston-app/client-runtime/state/runtime";
 import { isDesktopHost } from "../../env";
-import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { cn } from "../../lib/utils";
 import { ensureLocalApi } from "../../localApi";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
@@ -47,6 +46,7 @@ import {
   useUpdateEverythingRun,
 } from "./updateEverythingRun";
 import { type ReportLocalUpdateError, useUpdateEverything } from "./useUpdateEverything";
+import { useReducedMotion } from "../../hooks/useReducedMotion";
 
 type SidebarUpdatePopoverChangeDetails = Parameters<
   NonNullable<ComponentProps<typeof Popover>["onOpenChange"]>
@@ -244,7 +244,7 @@ function SidebarUpdateControl() {
   const suppressReleaseNotesFocusOpen = useRef(false);
   const releaseNotesPopupRef = useRef<HTMLDivElement>(null);
   const releaseNotesTriggerId = useId();
-  const prefersReducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
+  const prefersReducedMotion = useReducedMotion();
 
   const updateStatus = state?.status;
   const [isCheckAnimationLatched, setIsCheckAnimationLatched] = useState(

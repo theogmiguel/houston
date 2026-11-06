@@ -128,9 +128,6 @@ function PreviewPanelShellFrame(
               "flex-1"
             : "shrink-0 border-l border-(--divider)"
           : "w-full",
-        collapsible &&
-          "[[data-panel-animations=true]_&]:transition-[width] [[data-panel-animations=true]_&]:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:ease-standard",
-        collapsible && open && "[[data-panel-animations=true]_&]:starting:w-0!",
         collapsible && !open && "pointer-events-none",
       )}
       style={

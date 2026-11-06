@@ -113,3 +113,5 @@ or your own decision.
 A scheduled task survives closing the window because the server owns it. **New task** sets
 the prompt, schedule, project, provider and model; each row can be enabled, run now or
 deleted, and shows its next run and webhook deliveries.
+A task not bound to a thread runs in a new worktree, which follows **Settings ▸ Worktrees ▸
+Start from remote** (or the project's override).

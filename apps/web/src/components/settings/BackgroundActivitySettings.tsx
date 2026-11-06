@@ -28,6 +28,7 @@ import {
   backgroundActivityOverrideSettings,
   backgroundActivitySharedPolicySettings,
   durationToSeconds,
+  gitFetchIntervalLabel,
   normalizeIntervalSeconds,
   PROVIDER_HEALTH_INTERVAL_STEP_SECONDS,
   resolveBackgroundActivityProfileOption,
@@ -56,14 +57,7 @@ const BACKGROUND_ACTIVITY_PROFILE_DESCRIPTIONS: Record<BackgroundActivityProfile
 };
 
 const ADVANCED_BACKGROUND_ACTIVITY_DESCRIPTION = "Uses custom intervals.";
-const GIT_FETCH_INTERVAL_OPTIONS = [
-  { seconds: 30, label: "Every 30 seconds" },
-  { seconds: 60, label: "Every minute" },
-  { seconds: 300, label: "Every 5 minutes" },
-  { seconds: 900, label: "Every 15 minutes" },
-  { seconds: 1800, label: "Every 30 minutes" },
-  { seconds: 3600, label: "Every hour" },
-] as const;
+const GIT_FETCH_INTERVAL_OPTION_SECONDS = [0, 15, 30, 60, 300, 900, 1800, 3600] as const;
 
 function resetBackgroundActivitySettings() {
   return {
@@ -248,7 +242,7 @@ export function GitFetchIntervalRow() {
           value={String(automaticGitFetchIntervalSeconds)}
           onValueChange={(value) => {
             const seconds = Number(value);
-            if (!Number.isInteger(seconds) || seconds <= 0) return;
+            if (!Number.isInteger(seconds) || seconds < 0) return;
             updateSettings(
               backgroundActivityOverrideSettings(
                 settings.backgroundActivity,
@@ -261,16 +255,12 @@ export function GitFetchIntervalRow() {
           }}
         >
           <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Git fetch interval">
-            <SelectValue>
-              {GIT_FETCH_INTERVAL_OPTIONS.find(
-                (option) => option.seconds === automaticGitFetchIntervalSeconds,
-              )?.label ?? `${automaticGitFetchIntervalSeconds}s`}
-            </SelectValue>
+            <SelectValue>{gitFetchIntervalLabel(automaticGitFetchIntervalSeconds)}</SelectValue>
           </SelectTrigger>
           <SelectPopup align="end" alignItemWithTrigger={false}>
-            {GIT_FETCH_INTERVAL_OPTIONS.map((option) => (
-              <SelectItem hideIndicator key={option.seconds} value={String(option.seconds)}>
-                {option.label}
+            {GIT_FETCH_INTERVAL_OPTION_SECONDS.map((seconds) => (
+              <SelectItem hideIndicator key={seconds} value={String(seconds)}>
+                {gitFetchIntervalLabel(seconds)}
               </SelectItem>
             ))}
           </SelectPopup>
