@@ -1748,12 +1748,6 @@ export function GridGroup({
   );
 }
 
-// Hold (22px) + Close (~60px) + More (22px) + gaps, and the Wake/Reopen button (~72px).
-const ROW_TITLE_CLEAR_ACTIONS = "group-hover/th:pr-27 group-has-[:focus-visible]/th:pr-27";
-const ROW_TITLE_CLEARED_ACTIONS = "pr-27";
-const ROW_TITLE_CLEAR_SHELF_ACTION = "group-hover/th:pr-19 group-has-[:focus-visible]/th:pr-19";
-const ROW_TITLE_CLEARED_SHELF_ACTION = "pr-19";
-
 function ThreadStateMark({
   state,
   startedAt,
@@ -1924,6 +1918,8 @@ export function ThreadCard({
     onCloseThread: onClose,
     onHoldThread: (snoozedUntil) => onHold({ snoozedUntil }),
     onSetAutoSettle: onSetAutoClose,
+    onReopenThread: onReopen,
+    onWakeThread: onWake,
   });
 
   const applyPreset = (preset: Pick<SnoozePreset, "snoozedUntil"> | undefined) => {
@@ -1932,8 +1928,6 @@ export function ThreadCard({
 
   const close = () => {
     onClose();
-    onReopenThread: onReopen,
-    onWakeThread: onWake,
   };
 
   // Hidden, not disabled, while the actions are in use: a disabled tooltip ignores the pointer
@@ -2050,13 +2044,7 @@ export function ThreadCard({
                   setRenaming(true);
                 }
               }}
-              className={cn(
-                "flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left outline-none",
-                // The hover actions overlay the row; reserve their width so the title truncates before them.
-                shelf === null ? ROW_TITLE_CLEAR_ACTIONS : ROW_TITLE_CLEAR_SHELF_ACTION,
-                actionsVisible &&
-                  (shelf === null ? ROW_TITLE_CLEARED_ACTIONS : ROW_TITLE_CLEARED_SHELF_ACTION),
-              )}
+              className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left outline-none"
             >
               <span
                 className={cn(
@@ -2066,103 +2054,106 @@ export function ThreadCard({
               >
                 <HighlightedText text={thread.title} query={query} />
               </span>
-              <span
-                className={cn(
-                  "shrink-0",
-                  ROW_STATUS_RECEDE,
-                  MOTION_FEEDBACK_OPACITY,
-                  actionsVisible && ROW_STATUS_HIDDEN,
-                )}
-              >
-                <span className="text-xs text-secondary-label tabular-nums">
-                  {timeLabel ?? threadTimeLabel(thread, nowMinute)}
-                </span>
-              </span>
             </button>
           )}
-          <span
-            className={cn(
-              "absolute top-2 right-2.5 flex h-[22px] items-center gap-0.5",
-              MOTION_FEEDBACK_OPACITY,
-              actionsVisible ? ROW_ACTIONS_VISIBLE : ROW_ACTIONS_REVEAL,
-            )}
-            onMouseEnter={() => setActionsHovered(true)}
-            onMouseLeave={() => setActionsHovered(false)}
-          >
-            {shelf !== null ? (
-              <button
-                type="button"
-                aria-label={shelf === "snoozed" ? "Wake thread now" : "Reopen thread"}
-                onClick={shelf === "snoozed" ? onWake : onReopen}
-                className={cn(
-                  "inline-flex h-[22px] cursor-pointer items-center gap-1 rounded-(--r-badge) px-1.5 text-xs text-secondary-foreground hover:bg-(--sel) hover:text-foreground",
-                  FOCUS_ACTION_CLS,
-                )}
-              >
-                {shelf === "snoozed" ? (
-                  <>
-                    <AlarmClockOffIcon aria-hidden className="size-3.5" />
-                    Wake
-                  </>
-                ) : (
-                  <>
-                    <Undo2Icon aria-hidden className="size-3.5" />
-                    Reopen
-                  </>
-                )}
-              </button>
-            ) : (
-              <>
-                <Menu onOpenChange={setHoldMenuOpen}>
-                  <MenuTrigger
-                    render={
-                      <button
-                        type="button"
-                        aria-label="Hold"
-                        className={cn(
-                          "inline-grid size-[22px] cursor-pointer place-items-center rounded-(--r-badge) text-secondary-foreground hover:bg-(--sel) hover:text-foreground",
-                          FOCUS_ACTION_CLS,
-                        )}
-                      >
-                        <ClockIcon aria-hidden className="size-3.5" />
-                      </button>
-                    }
-                  />
-                  <MenuPopup side="bottom" align="end">
-                    <HoldMenuItems
-                      presets={presets}
-                      onPick={applyPreset}
-                      onPickTime={onPickHoldTime}
-                    />
-                  </MenuPopup>
-                </Menu>
+          {/* The time and the hover actions share one grid cell, so the title truncates at the wider of the two. */}
+          <span className="grid shrink-0 items-center justify-items-end">
+            <span
+              className={cn(
+                "col-start-1 row-start-1",
+                ROW_STATUS_RECEDE,
+                MOTION_FEEDBACK_OPACITY,
+                actionsVisible && ROW_STATUS_HIDDEN,
+              )}
+            >
+              <span className="text-xs text-secondary-label tabular-nums">
+                {timeLabel ?? threadTimeLabel(thread, nowMinute)}
+              </span>
+            </span>
+            <span
+              className={cn(
+                "relative col-start-1 row-start-1 flex h-[22px] items-center gap-0.5",
+                MOTION_FEEDBACK_OPACITY,
+                actionsVisible ? ROW_ACTIONS_VISIBLE : ROW_ACTIONS_REVEAL,
+              )}
+              onMouseEnter={() => setActionsHovered(true)}
+              onMouseLeave={() => setActionsHovered(false)}
+            >
+              {shelf !== null ? (
                 <button
                   type="button"
-                  aria-label="Close thread"
-                  onClick={close}
+                  aria-label={shelf === "snoozed" ? "Wake thread now" : "Reopen thread"}
+                  onClick={shelf === "snoozed" ? onWake : onReopen}
                   className={cn(
                     "inline-flex h-[22px] cursor-pointer items-center gap-1 rounded-(--r-badge) px-1.5 text-xs text-secondary-foreground hover:bg-(--sel) hover:text-foreground",
                     FOCUS_ACTION_CLS,
                   )}
                 >
-                  <XIcon aria-hidden className="size-3.5" />
-                  Close
-                </button>
-                <button
-                  ref={actionsButtonRef}
-                  type="button"
-                  aria-label={`Thread actions for ${thread.title}`}
-                  aria-haspopup="menu"
-                  onClick={openCardMenuFromButton}
-                  className={cn(
-                    "inline-grid size-5.5 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-foreground hover:bg-(--sel) hover:text-foreground",
-                    FOCUS_ACTION_CLS,
+                  {shelf === "snoozed" ? (
+                    <>
+                      <AlarmClockOffIcon aria-hidden className="size-3.5" />
+                      Wake
+                    </>
+                  ) : (
+                    <>
+                      <Undo2Icon aria-hidden className="size-3.5" />
+                      Reopen
+                    </>
                   )}
-                >
-                  <MoreHorizontalIcon aria-hidden className="size-3.5" />
                 </button>
-              </>
-            )}
+              ) : (
+                <>
+                  <Menu onOpenChange={setHoldMenuOpen}>
+                    <MenuTrigger
+                      render={
+                        <button
+                          type="button"
+                          aria-label="Hold"
+                          className={cn(
+                            "inline-grid size-[22px] cursor-pointer place-items-center rounded-(--r-badge) text-secondary-foreground hover:bg-(--sel) hover:text-foreground",
+                            FOCUS_ACTION_CLS,
+                          )}
+                        >
+                          <ClockIcon aria-hidden className="size-3.5" />
+                        </button>
+                      }
+                    />
+                    <MenuPopup side="bottom" align="end">
+                      <HoldMenuItems
+                        presets={presets}
+                        onPick={applyPreset}
+                        onPickTime={onPickHoldTime}
+                      />
+                    </MenuPopup>
+                  </Menu>
+                  <button
+                    type="button"
+                    aria-label="Close thread"
+                    onClick={close}
+                    className={cn(
+                      "inline-flex h-[22px] cursor-pointer items-center gap-1 rounded-(--r-badge) px-1.5 text-xs text-secondary-foreground hover:bg-(--sel) hover:text-foreground",
+                      FOCUS_ACTION_CLS,
+                    )}
+                  >
+                    <XIcon aria-hidden className="size-3.5" />
+                    Close
+                  </button>
+                  <button
+                    ref={actionsButtonRef}
+                    type="button"
+                    aria-label={`Thread actions for ${thread.title}`}
+                    aria-haspopup="menu"
+                    onClick={openCardMenuFromButton}
+                    className={cn(
+                      "inline-grid size-5.5 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-foreground hover:bg-(--sel) hover:text-foreground",
+                      FOCUS_ACTION_CLS,
+                    )}
+                  >
+                    <MoreHorizontalIcon aria-hidden className="size-3.5" />
+                  </button>
+                </>
+              )}
+            </span>
           </span>
         </div>
         <div className="flex min-w-0 items-center gap-2 text-caption leading-3.75 text-secondary-label">

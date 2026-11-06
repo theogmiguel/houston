@@ -260,10 +260,8 @@ describe("ThreadCard", () => {
     expect(rowStyle.transitionDuration).toBe("0.1s");
     expect(rowStyle.transitionTimingFunction).toBe("cubic-bezier(0.2, 0, 0, 1)");
 
-    const reveal = [...row.querySelectorAll("span")].find((span) =>
-      span.className.includes("right-2.5"),
-    );
-    if (reveal === undefined) throw new Error("The thread card has no action reveal span.");
+    const reveal = screen.getByRole("button", { name: "Close thread" }).element().parentElement;
+    if (reveal === null) throw new Error("The thread card has no action reveal span.");
     const revealStyle = getComputedStyle(reveal);
     expect(revealStyle.transitionProperty).toBe("opacity");
     expect(revealStyle.transitionDuration).toBe("0.1s");

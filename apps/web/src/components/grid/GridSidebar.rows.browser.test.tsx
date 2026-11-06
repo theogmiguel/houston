@@ -111,6 +111,88 @@ function titleOf(row: HTMLElement): HTMLElement {
   return row.querySelector<HTMLElement>("[data-card-open] > span")!;
 }
 
+describe("ThreadCard title against the trailing time and actions", () => {
+  it("keeps a Closed row's title clear of its Reopen button", async () => {
+    await using screen = await render(
+      <div style={{ width: 240 }}>
+        {card(thread({ id: "thread-closed", title: LONG_TITLE }), {
+          shelf: "settled",
+          timeLabel: "3d",
+        })}
+      </div>,
+    );
+    const row = rowOf(screen.container);
+    await userEvent.hover(row);
+    const reopen = screen.getByRole("button", { name: "Reopen thread" }).element();
+    await expect.element(screen.getByRole("button", { name: "Reopen thread" })).toBeVisible();
+
+    expect(titleOf(row).getBoundingClientRect().right).toBeLessThanOrEqual(
+      reopen.getBoundingClientRect().left,
+    );
+  });
+
+  it("keeps an On hold row's title readable beside its Wake button at the narrowest width", async () => {
+    await using screen = await render(
+      <div style={{ width: 240 }}>
+        {card(thread({ id: "thread-held", title: LONG_TITLE }), {
+          shelf: "snoozed",
+          timeLabel: "tomorrow at 9:00 AM",
+        })}
+      </div>,
+    );
+    const row = rowOf(screen.container);
+    await userEvent.hover(row);
+    const wake = screen.getByRole("button", { name: "Wake thread now" }).element();
+    await expect.element(screen.getByRole("button", { name: "Wake thread now" })).toBeVisible();
+
+    const title = titleOf(row).getBoundingClientRect();
+    expect(title.right).toBeLessThanOrEqual(wake.getBoundingClientRect().left);
+    // The invisible wake time must not take room on top of the actions.
+    expect(title.width).toBeGreaterThanOrEqual(60);
+  });
+
+  it("cross-fades the time label and the actions in one grid cell", async () => {
+    await using screen = await render(
+      <div style={{ width: 240 }}>
+        {card(thread({ title: LONG_TITLE }), {
+          shelf: "snoozed",
+          timeLabel: "tomorrow at 9:00 AM",
+        })}
+      </div>,
+    );
+    const row = rowOf(screen.container);
+    const label = screen.getByText("tomorrow at 9:00 AM").element();
+    const actions = screen.getByRole("button", { name: "Wake thread now" }).element()
+      .parentElement as HTMLElement;
+    const labelBox = label.getBoundingClientRect();
+    const actionsBox = actions.getBoundingClientRect();
+
+    expect(actions.parentElement).toBe(label.parentElement!.parentElement);
+    expect(Math.abs(labelBox.right - actionsBox.right)).toBeLessThanOrEqual(1);
+    expect(getComputedStyle(label.parentElement!).display).not.toBe("none");
+    expect(getComputedStyle(actions).display).not.toBe("none");
+    await userEvent.hover(row);
+    await vi.waitFor(() => expect(getComputedStyle(label.parentElement!).opacity).toBe("0"));
+    expect(getComputedStyle(actions).opacity).toBe("1");
+  });
+});
+
+describe("ThreadCard hover actions over the fading time", () => {
+  it("keeps every action the hit target at its own centre while the time label is faded", async () => {
+    await using screen = await render(<div style={{ width: 300 }}>{card(thread())}</div>);
+    await userEvent.hover(rowOf(screen.container));
+
+    for (const name of ["Hold", "Close thread", /Thread actions for/]) {
+      const button = screen.getByRole("button", { name }).element();
+      await expect.element(screen.getByRole("button", { name })).toBeVisible();
+      await userEvent.hover(button);
+      const box = button.getBoundingClientRect();
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      expect(hit === button || button.contains(hit)).toBe(true);
+    }
+  });
+});
+
 describe("ThreadCard on a shelf", () => {
   it("opens the row without selecting it when a selection modifier is held", async () => {
     const onSelect = vi.fn();
