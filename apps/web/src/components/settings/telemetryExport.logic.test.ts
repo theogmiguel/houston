@@ -138,6 +138,10 @@ describe("Datadog Agent host", () => {
       "[::1]",
       "::1]:4318",
       "agent.local?x",
+      // IPv6-shaped inputs whose brackets close early and point the URL at another host.
+      "a:b]@evil.com#[",
+      "1:2]@evil.com/[::1",
+      "::1]/x?[",
     ]) {
       expect(parseAgentDraft({ host, port }), host).toEqual({ _tag: "Invalid", problem });
     }

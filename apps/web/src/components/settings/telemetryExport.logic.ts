@@ -3,6 +3,7 @@ import {
   DATADOG_AGENT_DEFAULT,
   type DatadogSite,
   type HoustonObservabilityPreset,
+  isAgentHost,
 } from "@houston-app/contracts/houston/observability";
 
 export type TelemetryDestination = "off" | "otlp" | "datadog" | "datadog-agent";
@@ -147,15 +148,6 @@ export const agentDraftOf = (preset: AgentPreset): AgentDraft => ({
 });
 
 const PORT_SHAPE = /^\d{1,5}$/;
-
-// The server builds http://<host>:<port>/v1/<signal>, bracketing a host that contains ":" as an
-// IPv6 address, so a host is valid only when that URL parses back to exactly this host.
-const isAgentHost = (host: string) => {
-  const ipv6 = host.includes(":");
-  const parsed = URL.parse(`http://${ipv6 ? `[${host}]` : host}`);
-  if (parsed === null) return false;
-  return ipv6 || parsed.hostname === host.toLowerCase();
-};
 
 /** The Agent preset a draft saves as, or why it cannot be saved yet. */
 export const parseAgentDraft = (
