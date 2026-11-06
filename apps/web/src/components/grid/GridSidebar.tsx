@@ -2052,6 +2052,19 @@ export function ThreadCard({
               >
                 <HighlightedText text={thread.title} query={query} />
               </span>
+              {/* Right-aligned on the title line so ages scan down one column; it recedes while
+                  the hover actions take the corner. */}
+              <span
+                data-thread-time=""
+                className={cn(
+                  "shrink-0",
+                  ROW_STATUS_RECEDE,
+                  MOTION_FEEDBACK_OPACITY,
+                  actionsVisible && ROW_STATUS_HIDDEN,
+                )}
+              >
+                {timeLabel ?? threadTimeLabel(thread, nowMinute)}
+              </span>
             </button>
           )}
           <span
@@ -2143,18 +2156,14 @@ export function ThreadCard({
           data-thread-meta=""
           className="flex min-w-0 items-center gap-2 text-xs leading-3.5 text-secondary-label"
         >
-          <span className="flex min-w-0 flex-1 items-center gap-1">
-            {showBranch ? (
-              <>
-                <GitBranchIcon aria-hidden className="mr-1 size-3 shrink-0" />
-                <span className="min-w-0 truncate">{branchName ?? "no branch"}</span>
-              </>
-            ) : null}
-            <span data-thread-time="" className="shrink-0 tabular-nums">
-              {showBranch ? "· " : ""}
-              {timeLabel ?? threadTimeLabel(thread, nowMinute)}
-            </span>
-          </span>
+          {showBranch ? (
+            <>
+              <GitBranchIcon aria-hidden className="size-3 shrink-0" />
+              <span className="min-w-0 flex-1 truncate">{branchName ?? "no branch"}</span>
+            </>
+          ) : (
+            <span className="flex-1" />
+          )}
           {(thread.tags ?? []).map((tag) => (
             <span key={tag} data-thread-tag="" className={SIDEBAR_THREAD_TAG_CLASS}>
               {tag}

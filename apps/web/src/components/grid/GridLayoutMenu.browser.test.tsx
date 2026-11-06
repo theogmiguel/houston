@@ -111,4 +111,24 @@ describe("GridLayoutMenu", () => {
     await userEvent.hover(screen.getByRole("button", { name: "Tidy panes" }));
     await expect.element(page.getByText("Open a second pane to tidy the grid")).toBeVisible();
   });
+
+  it("draws the main and menu buttons as one split button of equal height", async () => {
+    await using screen = await mount(grid(threads(["thread-a", "thread-b"])));
+
+    const group = screen.getByRole("group").element();
+    const main = screen.getByRole("button", { name: "Tidy panes" }).element();
+    const menu = screen.getByRole("button", { name: "Choose tidy layout" }).element();
+    const separator = group.querySelector<HTMLElement>('[data-slot="separator"]')!;
+
+    const groupBox = group.getBoundingClientRect();
+    expect(groupBox.height).toBe(28);
+    expect(main.getBoundingClientRect().height).toBe(menu.getBoundingClientRect().height);
+    expect(main.getBoundingClientRect().height).toBe(groupBox.height - 2);
+    expect(getComputedStyle(group).borderTopLeftRadius).toBe("6px");
+    // The container owns the outer corners: the joined edges stay square.
+    expect(getComputedStyle(main).borderTopRightRadius).toBe("0px");
+    expect(getComputedStyle(menu).borderTopLeftRadius).toBe("0px");
+    expect(separator.getBoundingClientRect().width).toBe(1);
+    expect(separator.getBoundingClientRect().height).toBe(main.getBoundingClientRect().height);
+  });
 });

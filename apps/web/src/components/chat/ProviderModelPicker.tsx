@@ -5,7 +5,7 @@ import {
   type ProviderDriverKind,
   type ResolvedKeybindingsConfig,
 } from "@houston-app/contracts";
-import { createContext, memo, useRef, useState, type ReactNode } from "react";
+import { memo, useRef, useState, type ReactNode } from "react";
 import { BotIcon, ChevronDownIcon } from "lucide-react";
 import { Badge } from "../ui/badge";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
@@ -73,8 +73,13 @@ function lockBackgroundScroll(popup: HTMLElement | null) {
   };
 }
 
-/** What a docked effort column needs from its picker: the model it serves. */
-export const DockedPickerContext = createContext<{ modelLabel: string }>({ modelLabel: "" });
+/**
+ * The composer card a docked picker lines up with: its left edge starts where the card's does, so
+ * the context row under the card shows no chip edge beside the popup.
+ */
+function composerCardOf(trigger: HTMLElement | null): HTMLElement | null {
+  return trigger?.closest<HTMLElement>('[data-inline-resting-controls="true"]') ?? null;
+}
 
 export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   environmentId: EnvironmentId | null;
@@ -214,9 +219,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     return {
       ...selection,
       entry,
-      label: model
-        ? `${getDisplayModelName(model)}${unavailable}`
-        : selection.model,
+      label: model ? `${getDisplayModelName(model)}${unavailable}` : selection.model,
       fullLabel: model ? `${getDisplayModelName(model)}${unavailable}` : selection.model,
     };
   });
@@ -387,38 +390,34 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         }}
         initialFocus={searchInputRef}
         align="start"
+        {...(docked
+          ? { anchor: () => composerCardOf(triggerRef.current) ?? triggerRef.current }
+          : {})}
         className="before:hidden"
         padding="none"
         touchBackdrop
       >
         {props.effortColumn ? (
-          <DockedPickerContext value={{ modelLabel: triggerTitle }}>
-            <div className={DOCKED_PICKER_FRAME_CLASS}>
-              <div className={DOCKED_PICKER_ROW_CLASS}>
-                {picker}
-                <div
-                  data-model-picker-effort
-                  className={DOCKED_EFFORT_COLUMN_CLASS}
-                  onKeyDown={(event) => {
-                    if (
-                      event.key !== "ArrowLeft" ||
-                      event.altKey ||
-                      event.ctrlKey ||
-                      event.metaKey
-                    ) {
-                      return;
-                    }
-                    event.preventDefault();
-                    event.stopPropagation();
-                    searchInputRef.current?.focus();
-                  }}
-                >
-                  {props.effortColumn}
-                </div>
+          <div className={DOCKED_PICKER_FRAME_CLASS}>
+            <div className={DOCKED_PICKER_ROW_CLASS}>
+              {picker}
+              <div
+                data-model-picker-effort
+                className={DOCKED_EFFORT_COLUMN_CLASS}
+                onKeyDown={(event) => {
+                  if (event.key !== "ArrowLeft" || event.altKey || event.ctrlKey || event.metaKey) {
+                    return;
+                  }
+                  event.preventDefault();
+                  event.stopPropagation();
+                  searchInputRef.current?.focus();
+                }}
+              >
+                {props.effortColumn}
               </div>
-              {props.footer}
             </div>
-          </DockedPickerContext>
+            {props.footer}
+          </div>
         ) : (
           picker
         )}

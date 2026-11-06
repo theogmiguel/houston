@@ -1020,6 +1020,16 @@ function markdownHeadingRenderer(level: 1 | 2 | 3 | 4 | 5 | 6) {
   };
 }
 
+// Short inline code is an identifier or flag such as `Retry-After`: breaking it at a hyphen
+// leaves two half chips on adjacent lines. 32 monospace characters stay under 250px at the chip
+// size, so keeping them whole can never overflow even the narrowest chat column; longer spans
+// (paths, URLs, commands) keep wrapping so they cannot overflow it.
+const SHORT_INLINE_CODE_MAX_LENGTH = 32;
+
+function shortInlineCode(text: string): boolean {
+  return text.length <= SHORT_INLINE_CODE_MAX_LENGTH;
+}
+
 // Native word selection stops at hyphens and dots, so a double-click takes the whole span.
 function selectInlineCode(event: ReactMouseEvent<HTMLElement>) {
   window.getSelection()?.selectAllChildren(event.currentTarget);
@@ -1419,7 +1429,12 @@ const CHAT_MARKDOWN_COMPONENTS = {
         );
       }
       return (
-        <code {...props} className={className} onDoubleClick={selectInlineCode}>
+        <code
+          {...props}
+          className={className}
+          data-short-inline-code={shortInlineCode(codeText) ? "" : undefined}
+          onDoubleClick={selectInlineCode}
+        >
           {children}
         </code>
       );

@@ -7,7 +7,7 @@ import {
 import type { ProviderOptionDescriptor, RuntimeMode } from "@houston-app/contracts";
 import type { EffortDisplay } from "@houston-app/contracts/settings";
 import { CheckIcon, ChevronUpIcon } from "lucide-react";
-import { type KeyboardEvent, type ReactNode, use, useRef } from "react";
+import { type KeyboardEvent, type ReactNode, useRef } from "react";
 
 import { cn } from "~/lib/utils";
 import { Menu, MenuPopup, MenuTrigger } from "./menu";
@@ -16,7 +16,6 @@ import type { ComposerControlSize } from "../chat/ComposerControl";
 import { ComposerPermissionsSection, type RuntimeModeOption } from "../chat/ComposerFooterControls";
 import { composerFloatingLayerProps, focusCheckedPermission } from "../chat/composerEventScope";
 import { EffortGlyph, FastBolt, resolveEffortGlyph } from "../chat/EffortGlyph";
-import { DockedPickerContext } from "../chat/ProviderModelPicker";
 import {
   getTraitsSectionVisibility,
   type TraitsSelectionInput,
@@ -302,7 +301,6 @@ function NoEffortRow() {
 
 /** The model picker's effort column: the selected model's levels and its other options. */
 export function ComposerEffortColumn(props: { traits: TraitsSelectionInput | null }) {
-  const picker = use(DockedPickerContext);
   const visibility = props.traits ? getTraitsSectionVisibility(props.traits) : null;
   const effort =
     props.traits && visibility
@@ -318,9 +316,6 @@ export function ComposerEffortColumn(props: { traits: TraitsSelectionInput | nul
       <div className="shrink-0 px-3 pt-2.5">
         <div className="flex h-8 items-center gap-2 border-b border-border pb-1.5 text-sm">
           <span className="text-(--houston)">{effort?.descriptor.label ?? "Effort"}</span>
-          <span className="ms-auto min-w-0 truncate text-(--houston) text-xs">
-            {picker.modelLabel}
-          </span>
         </div>
       </div>
       {/* pt-2.5 puts the first level on the same line as the first model. */}

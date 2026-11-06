@@ -3,6 +3,7 @@ import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import { ChevronRightIcon } from "lucide-react";
 import { type ReactNode, type RefObject, useEffect, useState } from "react";
 import { cn } from "~/lib/utils";
+import { observeResize } from "~/lib/observeResize";
 import { textDirection } from "~/textDirection";
 import { shortcutLabelForCommand } from "../keybindings";
 import {
@@ -97,7 +98,7 @@ interface CommandPaletteVirtualizedResultsProps extends Omit<CommandPaletteResul
  * list taller than what is left would cut its last row in half; this measures the rows and returns
  * the viewport height that ends at the last one that fits.
  */
-function useWholeRowViewportHeight(listRef: RefObject<LegendListRef | null>, rowCount: number) {
+function useWholeRowViewportHeight(listRef: RefObject<LegendListRef | null>) {
   const [maxHeight, setMaxHeight] = useState<number | undefined>(undefined);
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- measures rendered row geometry, which only exists after layout
   useEffect(() => {
@@ -121,7 +122,10 @@ function useWholeRowViewportHeight(listRef: RefObject<LegendListRef | null>, row
           Number.parseFloat(viewportStyle.paddingTop) -
           Number.parseFloat(viewportStyle.paddingBottom),
       );
-      const chrome = popup.offsetHeight - wrapper.offsetHeight;
+      // The popup clips its content, so a list taller than the popup makes `offsetHeight` understate
+      // the chrome around it; `scrollHeight` is the content's full height.
+      const popupBorders = popup.offsetHeight - popup.clientHeight;
+      const chrome = popup.scrollHeight + popupBorders - wrapper.offsetHeight;
       const top = scroller.getBoundingClientRect().top;
       // The list wraps its rows in one or two single-child containers.
       let rowParent: Element = content;
@@ -141,11 +145,9 @@ function useWholeRowViewportHeight(listRef: RefObject<LegendListRef | null>, row
       setMaxHeight((current) => (current === next ? current : next));
     };
     measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(content);
-    observer.observe(popup);
-    return () => observer.disconnect();
-  }, [listRef, rowCount]);
+    // Row changes resize the content, so observing it also re-measures when the results change.
+    return observeResize([content, popup], measure);
+  }, [listRef]);
   return maxHeight;
 }
 
@@ -154,7 +156,7 @@ function useWholeRowViewportHeight(listRef: RefObject<LegendListRef | null>, row
 export function CommandPaletteVirtualizedResults(props: CommandPaletteVirtualizedResultsProps) {
   const { listRef } = props;
   const [scrollFade, setScrollFade] = useState({ top: false, bottom: false });
-  const maxHeight = useWholeRowViewportHeight(listRef, props.rows.length);
+  const maxHeight = useWholeRowViewportHeight(listRef);
   const updateScrollFade = () => {
     const scrollElement = listRef.current?.getScrollableNode?.();
     if (!(scrollElement instanceof HTMLElement)) return;

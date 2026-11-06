@@ -88,4 +88,39 @@ describe("CommandPalette list edge", () => {
         .toEqual({ cutPx: 0, overflowing: true });
     },
   );
+  it("cuts no row and overflows nothing at 1440x900", async () => {
+    useCommandPaletteStore.setState(useCommandPaletteStore.getInitialState(), true);
+    await page.viewport(1440, 900);
+    await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
+
+    openCommandPalette({});
+    await expect
+      .element(page.getByPlaceholder("Search commands, projects, and threads..."))
+      .toBeVisible();
+
+    await expect
+      .poll(() => {
+        const popup = document.querySelector<HTMLElement>('[data-slot="command-dialog-popup"]');
+        const scroller = document.querySelector<HTMLElement>('[data-slot="command-list"] > div');
+        if (!popup || !scroller) return "no list";
+        const popupBox = popup.getBoundingClientRect();
+        const listBox = scroller.getBoundingClientRect();
+        let rowParent: Element = scroller;
+        while (rowParent.children.length === 1 && rowParent.firstElementChild?.firstElementChild) {
+          rowParent = rowParent.firstElementChild;
+        }
+        const rows = Array.from(rowParent.children).filter(
+          (row): row is HTMLElement => row instanceof HTMLElement && row.offsetHeight > 0,
+        );
+        const visible = rows.filter((row) => row.getBoundingClientRect().top < listBox.bottom - 1);
+        const last = visible.at(-1)?.getBoundingClientRect();
+        if (!last) return "no rows";
+        return {
+          overflowing: scroller.scrollHeight - scroller.clientHeight > 1,
+          cutPx: Math.max(0, Math.round(last.bottom - listBox.bottom)),
+          listOverflowsDialogPx: Math.max(0, Math.round(listBox.bottom - popupBox.bottom)),
+        };
+      })
+      .toEqual({ overflowing: true, cutPx: 0, listOverflowsDialogPx: 0 });
+  });
 });

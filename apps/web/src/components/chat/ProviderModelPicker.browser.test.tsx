@@ -12,6 +12,7 @@ import "~/index.css";
 
 import { render } from "../../../test/render";
 import { deriveProviderInstanceEntries } from "../../providerInstances";
+import { ComposerEffortColumn } from "../ui/composer-model-effort";
 import { TooltipProvider } from "../ui/tooltip";
 import { ProviderModelPicker } from "./ProviderModelPicker";
 
@@ -239,4 +240,50 @@ it("docks an effort column beside the list and stays open after a model pick", a
   await expect
     .poll(() => document.querySelector("[data-model-picker-content]") !== null)
     .toBe(true);
+});
+
+it("lines the docked popup up with the composer card and titles the effort column without the model name", async () => {
+  await page.viewport(1440, 900);
+  await using _screen = await render(
+    <TooltipProvider delay={0}>
+      <div style={{ paddingTop: 120, paddingLeft: 160 }}>
+        <div
+          data-inline-resting-controls="true"
+          style={{ width: 640, padding: "12px 32px" }}
+          className="rounded-xl border border-border"
+        >
+          <ProviderModelPicker
+            environmentId={null}
+            activeInstanceId={CLAUDE}
+            model="opus"
+            lockedProvider={null}
+            instanceEntries={entries}
+            keybindings={compileResolvedKeybindingsConfig([])}
+            modelOptionsByInstance={new Map([[CLAUDE, provider.models]])}
+            isComposerOwned
+            effortColumn={<ComposerEffortColumn traits={null} />}
+            onInstanceModelChange={() => {}}
+          />
+        </div>
+      </div>
+    </TooltipProvider>,
+    { router: false },
+  );
+
+  await page.getByRole("button", { name: /Opus 5\.5/ }).click();
+  await expect.poll(() => document.querySelector("[data-model-picker-effort]") !== null).toBe(true);
+
+  const column = document.querySelector<HTMLElement>("[data-model-picker-effort]")!;
+  // The header names the column only: the selected model is already shown in the list beside it.
+  expect(column.textContent).toContain("Effort");
+  expect(column.textContent).not.toContain("Claude Opus 5.5");
+
+  await expect
+    .poll(() => {
+      const card = document.querySelector<HTMLElement>('[data-inline-resting-controls="true"]');
+      const popup = document.querySelector<HTMLElement>('[data-slot="popover-positioner"]');
+      if (!card || !popup) return null;
+      return Math.round(popup.getBoundingClientRect().left - card.getBoundingClientRect().left);
+    })
+    .toBe(0);
 });

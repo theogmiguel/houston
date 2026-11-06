@@ -32,6 +32,7 @@ import { ProjectCloneToastCoordinator } from "../components/ProjectCloneToastCoo
 import { ChatGptWelcomeCoordinator } from "../components/settings/ChatGptWelcomeCoordinator";
 import { ThemeEditorHost } from "../components/settings/ThemeEditorHost";
 import { RouteErrorActions } from "../components/RouteErrorActions";
+import { ErrorLogDisclosure } from "../components/ui/error-log-disclosure";
 import { Button } from "../components/ui/button";
 import { StandalonePage, StandalonePageHeader } from "../components/ui/standalone-page";
 import { AnchoredToastProvider, ToastProvider } from "../components/ui/toast";
@@ -230,14 +231,7 @@ function ServerUnavailableView({ error }: { error: PrimaryEnvironmentRequestErro
 
       <RouteErrorActions report={report} />
 
-      <details className="mt-5 overflow-hidden rounded-lg border border-border/70 bg-background/55">
-        <summary className="cursor-pointer px-3 py-1.5 text-xs font-medium text-muted-foreground">
-          Show log
-        </summary>
-        <pre className="max-h-64 overflow-auto border-t border-border/70 bg-background/80 px-3 py-2 text-xs whitespace-pre-wrap text-foreground/85">
-          {report}
-        </pre>
-      </details>
+      <ErrorLogDisclosure report={report} />
     </StandalonePage>
   );
 }

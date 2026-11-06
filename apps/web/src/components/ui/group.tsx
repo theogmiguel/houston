@@ -9,8 +9,15 @@ const groupVariants = cva(
   {
     defaultVariants: {
       orientation: "horizontal",
+      variant: "default",
     },
     variants: {
+      variant: {
+        default: "",
+        // One 28px outlined container that owns the outer corners; the halves fill its inner height.
+        split:
+          "h-7 items-stretch rounded-[var(--r-ctl)] border border-border *:data-slot:not-data-[slot=separator]:h-full *:data-slot:not-data-[slot=separator]:rounded-[calc(var(--r-ctl)-1px)]",
+      },
       orientation: {
         horizontal:
           "*:[[data-slot]~[data-slot]:not([data-slot=separator])]:before:-start-[0.5px] *:data-slot:not-data-[slot=separator]:has-[~[data-slot]]:before:-end-[0.5px] *:pointer-coarse:after:min-w-auto *:data-slot:has-[~[data-slot]]:rounded-e-none *:data-slot:has-[~[data-slot]]:border-e-0 *:data-slot:has-[~[data-slot]]:before:rounded-e-none *:[[data-slot]~[data-slot]]:rounded-s-none *:[[data-slot]~[data-slot]]:border-s-0 *:[[data-slot]~[data-slot]]:before:rounded-s-none",
@@ -24,16 +31,18 @@ const groupVariants = cva(
 function Group({
   className,
   orientation,
+  variant,
   children,
   ...props
 }: {
   className?: string;
   orientation?: VariantProps<typeof groupVariants>["orientation"];
+  variant?: VariantProps<typeof groupVariants>["variant"];
   children: React.ReactNode;
 } & React.ComponentProps<"div">) {
   return (
     <div
-      className={cn(groupVariants({ orientation }), className)}
+      className={cn(groupVariants({ orientation, variant }), className)}
       data-orientation={orientation}
       data-slot="group"
       role="group"

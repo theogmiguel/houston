@@ -17,4 +17,15 @@ describe("RouteErrorActions", () => {
       screen.getByRole("button", { name: "Try again" }).element().querySelector("svg"),
     ).not.toBeNull();
   });
+
+  it("gives Reload app and Copy error one secondary look beside the single primary", async () => {
+    await using screen = await render(<RouteErrorActions report="report" />);
+
+    const look = (name: string) => {
+      const style = getComputedStyle(screen.getByRole("button", { name }).element());
+      return [style.backgroundColor, style.borderTopColor, style.color];
+    };
+    expect(look("Reload app")).toEqual(look("Copy error"));
+    expect(look("Try again")).not.toEqual(look("Reload app"));
+  });
 });

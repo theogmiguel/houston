@@ -8,7 +8,7 @@ import { preorderThreads, type TidyShape } from "../../grid/tree";
 import { shortcutLabelForCommand } from "../../keybindings";
 import { primaryServerKeybindingsAtom } from "../../state/server";
 import { Button } from "../ui/button";
-import { Group } from "../ui/group";
+import { Group, GroupSeparator } from "../ui/group";
 import { Menu, MenuItem, MenuPopup, MenuShortcut, MenuTrigger } from "../ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
@@ -40,7 +40,10 @@ const TIDY_OPTIONS: ReadonlyArray<{
 
 const DISABLED_REASON = "Open a second pane to tidy the grid";
 
-/** The top-bar Tidy control: a click rebuilds the grid as balanced; the menu picks another shape. */
+/**
+ * The top-bar Tidy control: a click rebuilds the grid as balanced; the menu picks another shape.
+ * Both halves fill one 28px outlined container, so they read as one split button.
+ */
 export function GridLayoutMenu({
   grid,
   onArrange,
@@ -61,7 +64,7 @@ export function GridLayoutMenu({
   };
 
   return (
-    <Group className="[-webkit-app-region:no-drag]">
+    <Group variant="split" className="[-webkit-app-region:no-drag]">
       <Tooltip>
         <TooltipTrigger
           render={
@@ -80,6 +83,7 @@ export function GridLayoutMenu({
           {canTidy ? "Tidy panes into a balanced grid" : DISABLED_REASON}
         </TooltipPopup>
       </Tooltip>
+      <GroupSeparator />
       <Menu>
         <MenuTrigger
           render={

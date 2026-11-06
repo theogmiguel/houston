@@ -31,6 +31,30 @@ export const DIFF_VIEW_UNSAFE_CSS = `${DIFF_SURFACE_THEME_UNSAFE_CSS}
   background-color: color-mix(in srgb, var(--code-foreground) 48%, transparent) !important;
 }
 
+/* The scrollbar sits under the file, often out of view, so a clipped line also gets a fade at
+   the right edge. The mask is static: a 24px fade on a tile 24px wider than the box would
+   push it out of sight, so scroll position alone picks which of the two states shows. The
+   timeline is inactive when nothing overflows, which leaves the wide tile (no fade) in place,
+   and the fade is only fully on until the last 24px of scroll, where the end of the line is
+   reached. */
+[data-overflow="scroll"] [data-code] {
+  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+  mask-repeat: no-repeat;
+  mask-size: calc(100% + 24px) 100%;
+  animation: diffs-overflow-fade linear both;
+  animation-timeline: scroll(self inline);
+  animation-range: calc(100% - 24px) 100%;
+}
+
+@keyframes diffs-overflow-fade {
+  from {
+    mask-size: 100% 100%;
+  }
+  to {
+    mask-size: calc(100% + 24px) 100%;
+  }
+}
+
 :is(
   [data-line],
   [data-line-annotation],

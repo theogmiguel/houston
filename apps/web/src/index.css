@@ -2202,6 +2202,26 @@ code {
   font-size: 0.85em;
 }
 
+/* The age on a sidebar thread row's title line: a muted 12px tabular column. */
+[data-thread-time] {
+  color: var(--color-secondary-label);
+  font-size: var(--text-xs);
+  line-height: var(--text-xs--line-height);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A zero in a diff stat is not a change: it stays muted instead of taking the addition or
+   deletion colour. */
+[data-zero]:is(.text-diff-addition-foreground, .text-diff-deletion-foreground) {
+  color: var(--color-muted-foreground);
+}
+
+/* Set for spans short enough to never overflow the column (see ChatMarkdown): a hyphen or
+   space inside one is not a place to break. */
+.chat-markdown :not(pre) > code[data-short-inline-code] {
+  white-space: nowrap;
+}
+
 .chat-markdown strong {
   font-weight: 600;
 }

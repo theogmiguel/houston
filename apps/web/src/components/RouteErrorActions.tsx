@@ -18,10 +18,10 @@ export function RouteErrorActions({ report }: { report: string }) {
         <RefreshIcon />
         Try again
       </Button>
-      <Button variant="outline" onClick={() => window.location.reload()}>
+      <Button variant="secondary" onClick={() => window.location.reload()}>
         Reload app
       </Button>
-      <Button variant="outline" onClick={() => copyToClipboard(report)}>
+      <Button variant="secondary" onClick={() => copyToClipboard(report)}>
         <MorphIcon className={cn(isCopied && "text-success")} icon={isCopied ? Check : Copy} />
         {isCopied ? "Copied" : "Copy error"}
       </Button>

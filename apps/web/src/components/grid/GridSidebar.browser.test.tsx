@@ -361,7 +361,7 @@ describe("ThreadCard layout", () => {
 
     const meta = row.querySelector<HTMLElement>("[data-thread-meta]")!;
     const title = screen.getByText("Split drawer state from the thread store").element();
-    const time = meta.querySelector<HTMLElement>("[data-thread-time]")!;
+    const time = row.querySelector<HTMLElement>("[data-thread-time]")!;
     const branch = screen.getByText("houston/split-drawer-state").element();
     expect(meta.contains(branch)).toBe(true);
     expect(getComputedStyle(branch).fontFamily).not.toContain("Mono");
@@ -370,14 +370,19 @@ describe("ThreadCard layout", () => {
     expect(getComputedStyle(title).fontWeight).toBe("500");
     expect(getComputedStyle(time).fontSize).toBe("12px");
 
-    // The time follows the branch on the second line, so the title keeps the full row width.
+    // The time is a right-aligned column on the title line; the branch has the second line alone.
     const titleBox = title.getBoundingClientRect();
     const timeBox = time.getBoundingClientRect();
     const branchBox = branch.getBoundingClientRect();
-    expect(timeBox.left).toBeGreaterThanOrEqual(branchBox.right);
-    expect(Math.abs(timeBox.top - branchBox.top)).toBeLessThan(6);
-    expect(timeBox.top).toBeGreaterThan(titleBox.bottom - 2);
+    expect(meta.contains(time)).toBe(false);
+    expect(timeBox.left).toBeGreaterThan(titleBox.left);
+    expect(Math.abs(timeBox.top - titleBox.top)).toBeLessThan(6);
     expect(branchBox.top).toBeGreaterThan(titleBox.bottom - 2);
+    expect(getComputedStyle(time).fontVariantNumeric).toContain("tabular-nums");
+    // The age shares the branch's muted label colour.
+    expect(getComputedStyle(time).color).toBe(getComputedStyle(branch).color);
+    const rowBox = row.getBoundingClientRect();
+    expect(rowBox.right - timeBox.right).toBeLessThanOrEqual(16);
     expect(row.textContent).not.toContain("not in a grid");
   });
 
@@ -474,7 +479,7 @@ describe("ThreadCard status marks", () => {
     expect(getComputedStyle(screen.getByText("Running").element()).color).toBe(accentColor());
   });
 
-  it("puts the time after the branch on the meta line and gives the title the full row", async () => {
+  it("keeps the time on the title line and the state and tags on the one meta line", async () => {
     await using screen = await render(
       card(
         thread({
@@ -497,18 +502,12 @@ describe("ThreadCard status marks", () => {
     expect(status?.textContent).toContain("Running");
     const tags = [...meta!.querySelectorAll("[data-thread-tag]")].map((tag) => tag.textContent);
     expect(tags).toEqual(["bug", "linux"]);
-    const time = meta!.querySelector<HTMLElement>("[data-thread-time]");
-    expect(time?.textContent).toBe("· 9:00");
+    expect(meta!.querySelector("[data-thread-time]")).toBeNull();
+    const time = screen.container.querySelector<HTMLElement>("[data-thread-time]");
+    expect(time?.textContent).toBe("9:00");
     expect(time).toBeVisible();
-    const branchIcon = meta!.querySelector("svg")!.getBoundingClientRect();
-    expect(time!.getBoundingClientRect().left).toBeGreaterThan(branchIcon.right);
-    expect(meta!.querySelectorAll("[data-thread-time]")).toHaveLength(1);
-
-    const button = screen.container.querySelector<HTMLElement>("[data-card-open]")!;
-    expect(button.textContent).not.toContain("9:00");
-    expect(titleOf(screen).getBoundingClientRect().right).toBeGreaterThan(
-      meta!.getBoundingClientRect().right - 24,
-    );
+    // Exactly one trailing indicator on the meta line: no time beside it.
+    expect(meta!.textContent).not.toContain("9:00");
   });
 
   it("shows nothing for a thread with nothing running", async () => {
