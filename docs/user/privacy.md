@@ -27,7 +27,8 @@ an OTLP HTTP receiver you choose, such as a local Jaeger or Grafana instance. Le
 empty to export nothing. Changes apply after the server restarts.
 
 An export contains span names and timings, Houston's own ids, outcomes and error types, the
-host of each outgoing request and SQL statement templates. It never contains paths, URLs beyond
-their host, error messages, prompts, agent responses, file contents or credentials; a log
-message keeps only its text, shortened, with paths, URLs and credentials removed. The trace file on
-this machine keeps full detail.
+host of each outgoing request, SQL statements with their values as placeholders, and the
+service's name, version, release channel and Node.js version. Log records carry their level,
+time, ids and error type, but no message text. An export never contains paths, URLs beyond
+their host, error or log messages, the machine's name, prompts, agent responses, file contents
+or credentials. The trace file on this machine keeps full detail.
