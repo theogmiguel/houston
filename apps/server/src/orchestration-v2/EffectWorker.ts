@@ -30,6 +30,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import { continueRestartedRun } from "./RestartContinuation.ts";
 import { userFacingDispatchErrorMessage } from "./UserFacingErrors.ts";
 import { MessageDeliveryWriter } from "../houston/messageDelivery.ts";
+import * as TraceContext from "../houston/observability/TraceContext.ts";
 
 export class OrchestrationEffectExecutionError extends Schema.TaggedError<OrchestrationEffectExecutionError>()(
   "OrchestrationEffectExecutionError",
@@ -889,7 +890,11 @@ export const layerWithOptions = (
 
           const execution = executor
             .execute(effect, { willRetry: effect.attemptCount < maxAttempts })
-            .pipe(boundExecution(effect), Effect.as("executed" as const));
+            .pipe(
+              boundExecution(effect),
+              Effect.as("executed" as const),
+              TraceContext.withinTraceContext(TraceContext.forOutboxEffect(effect)),
+            );
           const exit = yield* Effect.exit(Effect.raceFirst(execution, cancellation)).pipe(
             Effect.ensuring(outbox.clearCancellation(effect.id)),
           );

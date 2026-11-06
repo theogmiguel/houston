@@ -31,6 +31,7 @@ import * as ThreadCommandExecutor from "../orchestration-v2/ThreadCommandExecuto
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import { advertisedJsonSchema } from "./advertisedJsonSchema.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
+import * as TraceContext from "../houston/observability/TraceContext.ts";
 import * as McpToolAccess from "./McpToolAccess.ts";
 import * as OrchestratorMcpService from "./OrchestratorMcpService.ts";
 import { PreviewControlsToolkit } from "./toolkits/previewControls/tools.ts";
@@ -301,6 +302,10 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
         linkedEnvironments,
       }),
       Effect.map(normalizeMcpHttpResponse),
+      TraceContext.withTraceContext({
+        clientKind: "mcp",
+        ...(limited.thread === undefined ? {} : { threadId: limited.thread.threadId }),
+      }),
     );
   }) satisfies McpAuthMiddleware;
 }).pipe(Effect.withSpan("McpHttpServer.makeAuthMiddleware"));
