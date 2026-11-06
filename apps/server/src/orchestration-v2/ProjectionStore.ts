@@ -551,11 +551,10 @@ export interface ProjectionStoreV2Shape {
     ReadonlyArray<{ readonly threadId: ThreadId; readonly worktreePath: string }>,
     ProjectionStoreV2Error
   >;
-  /** Every app thread's provider threads, for resolving a native session to its thread. */
-  readonly listProviderThreadRefs: () => Effect.Effect<
-    ReadonlyArray<OrchestrationV2ProviderThread>,
-    ProjectionStoreV2Error
-  >;
+  /** The active provider thread of each listed thread, for resolving a native session to its thread. */
+  readonly listProviderThreadRefs: (
+    threadIds: ReadonlyArray<ThreadId>,
+  ) => Effect.Effect<ReadonlyArray<OrchestrationV2ProviderThread>, ProjectionStoreV2Error>;
   /**
    * Delegated tasks in a linked environment with work left for this one: no
    * result yet, or cancelled or stopped here without that stop reaching there,
@@ -6635,11 +6634,16 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
     const listProviderThreadRefs: ProjectionStoreV2Shape["listProviderThreadRefs"] = Effect.fn(
       "ProjectionStore.listProviderThreadRefs",
     )(
-      function* () {
+      function* (threadIds) {
+        // Houston: one key lookup per listed thread, not every provider thread of every thread.
         const rows = yield* sql<PayloadRow>`
-          SELECT payload_json
-          FROM orchestration_v2_projection_provider_threads
-          WHERE thread_id IS NOT NULL
+          SELECT provider.payload_json
+          FROM json_each(${encodeIdList(threadIds)}) AS listed
+          CROSS JOIN orchestration_v2_projection_threads AS thread
+            ON thread.thread_id = listed.value
+          CROSS JOIN orchestration_v2_projection_provider_threads AS provider
+            ON provider.provider_thread_id = thread.active_provider_thread_id
+          WHERE provider.thread_id = thread.thread_id
         `;
         const decoded = yield* Effect.forEach(rows, (row) =>
           Effect.option(decodeProviderThreadPayload(row.payload_json)),
