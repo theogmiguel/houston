@@ -810,14 +810,14 @@ function UsageOverview({
                 </colgroup>
                 <thead>
                   <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                    <th className="py-2 font-normal">{shownHourly ? "Hour" : "Day"}</th>
+                    <th className="py-2 pl-2 font-normal">{shownHourly ? "Hour" : "Day"}</th>
                     {activeProviders.map((provider) => (
                       <th key={provider} className="py-2 pl-4 text-right font-normal">
                         {PROVIDER_PRESENTATION[provider].label}
                       </th>
                     ))}
                     <th className="py-2 pl-4 text-right font-normal">Total</th>
-                    <th className="py-2 pl-4 text-right font-normal">Tokens</th>
+                    <th className="py-2 pr-2 pl-4 text-right font-normal">Tokens</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -836,7 +836,7 @@ function UsageOverview({
                         key={"hourStart" in period ? period.hourStart : period.day}
                         className="border-b border-border/50 transition-colors hover:bg-muted/50"
                       >
-                        <td className="py-2 text-foreground">
+                        <td className="py-2 pl-2 text-foreground">
                           {"hourStart" in period
                             ? formatHourShort(period.hourStart, shownWindow.timeZone, hour12)
                             : formatDayShort(period.day)}
@@ -862,7 +862,7 @@ function UsageOverview({
                         </td>
                         <td
                           className={cn(
-                            "py-2 pl-4 text-right text-muted-foreground tabular-nums",
+                            "py-2 pr-2 pl-4 text-right text-muted-foreground tabular-nums",
                             figureClass(loadingPartial),
                           )}
                         >
