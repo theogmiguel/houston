@@ -2,7 +2,6 @@ import {
   IsoDateTime,
   MessageId,
   OrchestrationThreadSearchSource,
-  OrchestrationV2AppThreadJson,
   OrchestrationV2ThreadOpens,
   ThreadLinkedPullRequest,
   ThreadPullRequestLink,
@@ -231,11 +230,49 @@ export const messageHitsQuery = (
     LIMIT ${MESSAGE_HIT_LIMIT}
   `;
 
+// Only the fields the palette scorer reads: decoding every active thread's payload cost more
+// than the scoring.
 const TitleCandidateRow = Schema.Struct({
-  thread: Schema.fromJsonString(OrchestrationV2AppThreadJson),
+  id: ThreadId,
+  projectId: ProjectId,
+  title: Schema.String,
+  branch: Schema.NullOr(Schema.String),
+  pullRequests: Schema.NullOr(Schema.fromJsonString(Schema.Array(ThreadPullRequestLink))),
+  linkedPullRequest: Schema.NullOr(Schema.fromJsonString(ThreadLinkedPullRequest)),
+  branchPullRequest: Schema.NullOr(Schema.fromJsonString(ThreadLinkedPullRequest)),
+  opens: Schema.NullOr(Schema.String),
+  createdAt: IsoDateTime,
   projectTitle: Schema.String,
   latestUserMessageAt: Schema.NullOr(IsoDateTime),
 });
+
+export const titleCandidatesQuery = (
+  sql: SqlClient.SqlClient,
+  { projectId }: { readonly projectId: string | null },
+) => sql`
+  SELECT
+    threads.thread_id AS id,
+    threads.project_id AS "projectId",
+    json_extract(threads.payload_json, '$.title') AS title,
+    json_extract(threads.payload_json, '$.branch') AS branch,
+    json_extract(threads.payload_json, '$.pullRequests') AS "pullRequests",
+    json_extract(threads.payload_json, '$.linkedPullRequest') AS "linkedPullRequest",
+    json_extract(threads.payload_json, '$.branchPullRequest') AS "branchPullRequest",
+    json_extract(threads.payload_json, '$.opens') AS opens,
+    json_extract(threads.payload_json, '$.createdAt') AS "createdAt",
+    projects.title AS "projectTitle",
+    ${latestUserMessageAt(sql)} AS "latestUserMessageAt"
+  FROM orchestration_v2_projection_threads AS threads
+  INNER JOIN projection_projects AS projects
+    ON projects.project_id = threads.project_id
+  WHERE threads.deleted_at IS NULL
+    AND threads.archived_at IS NULL
+    AND projects.deleted_at IS NULL
+    AND json_extract(threads.payload_json, '$.lineage.relationshipToParent')
+      IS NOT 'subagent'
+    AND json_extract(threads.payload_json, '$.lineage.sideChat') IS NOT 1
+    AND (${projectId} IS NULL OR threads.project_id = ${projectId})
+`;
 
 export interface ThreadSearchHit {
   readonly threadId: ThreadId;
@@ -320,22 +357,7 @@ export const make = Effect.gen(function* () {
   const titleCandidates = SqlSchema.findAll({
     Request: Schema.Struct({ projectId: Schema.NullOr(ProjectId) }),
     Result: TitleCandidateRow,
-    execute: ({ projectId }) => sql`
-      SELECT
-        threads.payload_json AS thread,
-        projects.title AS "projectTitle",
-        ${latestUserMessageAt(sql)} AS "latestUserMessageAt"
-      FROM orchestration_v2_projection_threads AS threads
-      INNER JOIN projection_projects AS projects
-        ON projects.project_id = threads.project_id
-      WHERE threads.deleted_at IS NULL
-        AND threads.archived_at IS NULL
-        AND projects.deleted_at IS NULL
-        AND json_extract(threads.payload_json, '$.lineage.relationshipToParent')
-          IS NOT 'subagent'
-        AND json_extract(threads.payload_json, '$.lineage.sideChat') IS NOT 1
-        AND (${projectId} IS NULL OR threads.project_id = ${projectId})
-    `,
+    execute: (request) => titleCandidatesQuery(sql, request),
   });
 
   const olderSettledTitleCandidates = SqlSchema.findAll({
@@ -524,33 +546,35 @@ export const make = Effect.gen(function* () {
     const candidates = yield* read(titleCandidates({ projectId: input.projectId ?? null }));
     const subjectById = new Map(
       candidates.map((row): [ThreadId, ThreadSearchSubject] => [
-        row.thread.id,
+        row.id,
         {
-          id: row.thread.id,
-          title: row.thread.title,
-          branch: row.thread.branch,
+          id: row.id,
+          title: row.title,
+          branch: row.branch,
           projectTitle: row.projectTitle,
-          pullRequests: threadSearchPullRequests(row.thread),
+          pullRequests: threadSearchPullRequests({
+            pullRequests: row.pullRequests ?? undefined,
+            linkedPullRequest: row.linkedPullRequest,
+            branchPullRequest: row.branchPullRequest,
+          }),
           // Like the clients: what the user last wrote, else when the thread began.
-          activityAt: Date.parse(
-            row.latestUserMessageAt ?? DateTime.formatIso(row.thread.createdAt),
-          ),
-          opens: row.thread.opens ?? null,
+          activityAt: Date.parse(row.latestUserMessageAt ?? row.createdAt),
+          opens: Option.getOrNull(decodeThreadOpens(row.opens)),
         },
       ]),
     );
     const titleHits: ThreadSearchHit[] = rankSearchItems(candidates, (row, options) =>
       // An agent's search has no use for the user's palette picks.
-      scoreThreadSearch(normalizedQuery, subjectById.get(row.thread.id)!, now, {
+      scoreThreadSearch(normalizedQuery, subjectById.get(row.id)!, now, {
         ...options,
         picks: false,
       }),
     )
       .slice(0, limit)
       .map(({ item }) => ({
-        threadId: item.thread.id,
-        projectId: item.thread.projectId,
-        title: item.thread.title,
+        threadId: item.id,
+        projectId: item.projectId,
+        title: item.title,
         source: "title",
       }));
     const shown = new Set(titleHits.map((hit) => hit.threadId));
