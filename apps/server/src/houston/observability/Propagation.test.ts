@@ -102,6 +102,10 @@ describe("outgoing HTTP trace context", () => {
       "http://100.101.102.103:3773/",
       "https://desk.tail1234.ts.net/",
       "http://studio.local:3773/",
+      // Hosts fetch resolves to loopback through its URL parser.
+      "http://0x7f000001:3773/",
+      "http://127.1:3773/",
+      "http://localhost.:3773/",
     ]) {
       assert.isTrue(propagatesTo(url), url);
     }
@@ -113,6 +117,16 @@ describe("outgoing HTTP trace context", () => {
       "https://fd.example.com/",
       "http://172.32.0.1/",
       "not a url",
+      // fetch connects to evil.com: a backslash ends the authority, so 127.0.0.1 is not the host.
+      "http://evil.com\\@127.0.0.1/x",
+      "http://evil.com\\@localhost/x",
+      "http://user:pass@evil.com/",
+      "http://127.0.0.1.evil.com/",
+      "http://localhost.evil.com/",
+      "http://[::ffff:8.8.8.8]/",
+      // IPv4-mapped loopback is not recognised; missing a private host only drops the headers.
+      "http://[::ffff:7f00:1]/",
+      "http://[::ffff:127.0.0.1]/",
     ]) {
       assert.isFalse(propagatesTo(url), url);
     }
@@ -131,10 +145,14 @@ describe("outgoing HTTP trace context", () => {
       const client = withPrivatePropagation(base);
       yield* client.get("http://127.0.0.1:4096/session").pipe(Effect.withTracer(recording.tracer));
       yield* client.get("https://api.github.com/user").pipe(Effect.withTracer(recording.tracer));
+      yield* client.get("http://evil.com\\@127.0.0.1/x").pipe(Effect.withTracer(recording.tracer));
 
       assert.property(sent[0], "traceparent");
-      assert.notProperty(sent[1], "traceparent");
-      assert.notProperty(sent[1], "b3");
+      for (const headers of sent.slice(1)) {
+        assert.notProperty(headers, "traceparent");
+        assert.notProperty(headers, "b3");
+      }
+      assert.lengthOf(sent, 3);
     }),
   );
 });

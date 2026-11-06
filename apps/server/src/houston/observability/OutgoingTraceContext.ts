@@ -5,11 +5,13 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as HttpClient from "effect/http/HttpClient";
 
-const URL_HOST = /^[a-z][a-z0-9+.-]*:\/\/(?:[^@/?#]*@)?(\[[^\]]*\]|[^:/?#]*)/i;
 const IPV4 = /^(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/;
 
 export const isPrivateHost = (host: string): boolean => {
-  const name = host.toLowerCase().replace(/^\[|\]$/g, "");
+  const name = host
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "")
+    .replace(/\.$/, "");
   if (name === "localhost" || name.endsWith(".localhost")) return true;
   if (name.endsWith(".local") || name.endsWith(".ts.net")) return true;
   if (
@@ -33,8 +35,9 @@ export const isPrivateHost = (host: string): boolean => {
   );
 };
 
+// The WHATWG parser fetch connects with: a pattern can read a different host from the same text.
 export const propagatesTo = (url: string): boolean => {
-  const host = URL_HOST.exec(url)?.[1];
+  const host = URL.parse(url)?.hostname;
   return host !== undefined && isPrivateHost(host);
 };
 
