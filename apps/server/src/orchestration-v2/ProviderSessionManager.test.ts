@@ -38,6 +38,7 @@ import { HttpServer } from "effect/http";
 
 import { ProviderWorkspaceMissingError } from "../provider/Errors.ts";
 import * as TraceContext from "../houston/observability/TraceContext.ts";
+import * as WideEvents from "../houston/observability/WideEvents.ts";
 import * as RecordingTracer from "../observability/testing/RecordingTracer.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ProjectService from "../project/ProjectService.ts";
@@ -1177,17 +1178,20 @@ it.effect(
         yield* eventSink.write({
           events: [yield* makeThreadCreatedEvent({ idAllocator, threadId, now, projectId })],
         });
+        // The outbox effect that opens the session links its work to the dispatching command.
+        const commandId = "command:provider-session-manager-pump-trace";
+        yield* WideEvents.rememberCommandSpan(commandId).pipe(
+          Effect.withSpan("ws.rpc.orchestrationV2.dispatchCommand"),
+        );
+        const openedBefore = recording.ended.length;
         const runtime = yield* manager
           .open({ threadId, providerSessionId, modelSelection, runtimePolicy })
           .pipe(
-            TraceContext.withTraceContext({
-              threadId,
-              projectId,
-              runId: "run-1",
-              commandId: "command-1",
-            }),
-            Effect.linkSpans(OPENING_COMMAND_SPAN),
+            TraceContext.withTraceContext({ threadId, projectId, runId: "run-1", commandId }),
+            WideEvents.linkToCommand(commandId, "run-1"),
           );
+        const opening = recording.ended.slice(openedBefore);
+        assert.isTrue(opening.some((span) => span.links.length === 1));
         const subscription = yield* runtime.subscribeEvents!;
         const adapterQueue = (yield* Ref.get(state)).eventQueues.get(String(providerSessionId));
         assert.isDefined(adapterQueue);
