@@ -65,10 +65,27 @@ export function buildThreadRouteParams(ref: ScopedThreadRef): {
   };
 }
 
-/** Whether a (decoded) location pathname is `ref`'s own thread route, `/$environmentId/$threadId`. */
+/**
+ * Whether a location pathname is `ref`'s own thread route, `/$environmentId/$threadId`.
+ * Ids such as `mcp:<uuid>` reach the address bar percent-encoded, so each segment is compared decoded.
+ */
 export function isThreadRoutePathname(pathname: string, ref: ScopedThreadRef): boolean {
   const { environmentId, threadId } = buildThreadRouteParams(ref);
-  return pathname.replace(/\/$/, "") === `/${environmentId}/${threadId}`;
+  const segments = pathname.replace(/\/$/, "").split("/").map(decodeSegment);
+  return (
+    segments.length === 3 &&
+    segments[0] === "" &&
+    segments[1] === environmentId &&
+    segments[2] === threadId
+  );
+}
+
+function decodeSegment(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
 }
 
 export function buildDraftThreadRouteParams(draftId: DraftId): {

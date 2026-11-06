@@ -412,6 +412,16 @@ describe("ThreadCard selected state", () => {
     expect(row.querySelector("[aria-current]")).not.toBeNull();
   });
 
+  it("marks a thread whose id needs URL encoding as open when its route is encoded", async () => {
+    await using screen = await render(card(thread({ id: "mcp:thread-a" as never })), {
+      router: "/env-1/mcp%3Athread-a",
+    });
+    const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
+
+    expect(row.hasAttribute("data-thread-current")).toBe(true);
+    expect(getComputedStyle(row).backgroundColor).toBe(tokenBackground("--sidebar-row-selected"));
+  });
+
   it("leaves a thread that is not open without a background", async () => {
     await using screen = await render(card(thread()), { router: "/env-1/another-thread" });
     const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;

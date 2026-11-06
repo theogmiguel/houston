@@ -81,6 +81,18 @@ function composerCardOf(trigger: HTMLElement | null): HTMLElement | null {
   return trigger?.closest<HTMLElement>('[data-inline-resting-controls="true"]') ?? null;
 }
 
+/**
+ * How far below the composer card the context row ends. A docked popup that has no room above
+ * the card opens below it and starts past this distance, so it never covers the row.
+ */
+function contextStripClearance(card: HTMLElement | null): number {
+  const strip = card
+    ?.closest('[data-chat-composer-form="true"]')
+    ?.querySelector<HTMLElement>('[data-slot="composer-context-strip"]');
+  if (!card || !strip) return 0;
+  return Math.max(0, strip.getBoundingClientRect().bottom - card.getBoundingClientRect().bottom);
+}
+
 export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   environmentId: EnvironmentId | null;
   activeInstanceId: ProviderInstanceId;
@@ -391,7 +403,15 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         initialFocus={searchInputRef}
         align="start"
         {...(docked
-          ? { anchor: () => composerCardOf(triggerRef.current) ?? triggerRef.current }
+          ? {
+              anchor: () => composerCardOf(triggerRef.current) ?? triggerRef.current,
+              // Above the card when it fits; the flip below clears the context row.
+              side: "top" as const,
+              sideOffset: ({ side }: { side: string }) =>
+                side === "bottom"
+                  ? contextStripClearance(composerCardOf(triggerRef.current)) + 4
+                  : 4,
+            }
           : {})}
         className="before:hidden"
         padding="none"

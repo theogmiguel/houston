@@ -46,4 +46,8 @@ it("sets timeline prose at 14px on a 22px line and keeps inline code inside the 
   const chip = getComputedStyle(withCode!.querySelector("code")!);
   expect(chip.fontSize).toBe("12px");
   expect(chip.lineHeight).toBe("18px");
+  // The chip is a fill and a radius only: six edges per paragraph read as boxes.
+  expect(chip.borderTopWidth).toBe("0px");
+  expect(chip.paddingLeft).toBe("4px");
+  expect(chip.paddingTop).toBe("1px");
 });

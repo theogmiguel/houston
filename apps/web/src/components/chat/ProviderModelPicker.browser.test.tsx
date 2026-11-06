@@ -5,7 +5,7 @@ import {
   type ServerProvider,
 } from "@houston-app/contracts";
 import { compileResolvedKeybindingsConfig } from "@houston-app/shared/keybindings";
-import { expect, it } from "vite-plus/test";
+import { describe, expect, it } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 
 import "~/index.css";
@@ -286,4 +286,66 @@ it("lines the docked popup up with the composer card and titles the effort colum
       return Math.round(popup.getBoundingClientRect().left - card.getBoundingClientRect().left);
     })
     .toBe(0);
+});
+
+describe("docked popup and the composer context row", () => {
+  async function openDocked(paddingTop: number) {
+    await page.viewport(1440, 900);
+    const screen = await render(
+      <TooltipProvider delay={0}>
+        <form data-chat-composer-form="true" style={{ width: 760, marginLeft: 160, paddingTop }}>
+          <div
+            data-inline-resting-controls="true"
+            style={{ padding: "12px 32px" }}
+            className="rounded-xl border border-border"
+          >
+            <ProviderModelPicker
+              environmentId={null}
+              activeInstanceId={CLAUDE}
+              model="opus"
+              lockedProvider={null}
+              instanceEntries={entries}
+              keybindings={compileResolvedKeybindingsConfig([])}
+              modelOptionsByInstance={new Map([[CLAUDE, provider.models]])}
+              isComposerOwned
+              effortColumn={<ComposerEffortColumn traits={null} />}
+              onInstanceModelChange={() => {}}
+            />
+          </div>
+          <div data-slot="composer-context-strip" style={{ marginTop: 4, height: 22 }}>
+            Local checkout
+          </div>
+        </form>
+      </TooltipProvider>,
+      { router: false },
+    );
+    await page.getByRole("button", { name: /Opus 5\.5/ }).click();
+    await expect
+      .poll(() => document.querySelector("[data-model-picker-effort]") !== null)
+      .toBe(true);
+    return screen;
+  }
+
+  function rects() {
+    const card = document.querySelector<HTMLElement>('[data-inline-resting-controls="true"]')!;
+    const strip = document.querySelector<HTMLElement>('[data-slot="composer-context-strip"]')!;
+    const popup = document.querySelector<HTMLElement>('[data-slot="popover-positioner"]')!;
+    return {
+      card: card.getBoundingClientRect(),
+      strip: strip.getBoundingClientRect(),
+      popup: popup.getBoundingClientRect(),
+    };
+  }
+
+  it("opens above the card when there is room, clear of the context row", async () => {
+    await using _screen = await openDocked(560);
+
+    await expect.poll(() => rects().popup.bottom <= rects().card.top).toBe(true);
+  });
+
+  it("opens below the context row when there is no room above", async () => {
+    await using _screen = await openDocked(20);
+
+    await expect.poll(() => rects().popup.top >= rects().strip.bottom).toBe(true);
+  });
 });

@@ -243,7 +243,7 @@ describe("Providers page row insets", () => {
       expect(
         [style.paddingLeft, style.paddingRight, style.paddingTop, style.paddingBottom],
         row.textContent?.slice(0, 40),
-      ).toEqual(["14px", "14px", "10px", "10px"]);
+      ).toEqual(["16px", "16px", "12px", "12px"]);
     }
   });
 

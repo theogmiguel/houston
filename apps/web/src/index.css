@@ -2749,13 +2749,13 @@ code {
   margin-bottom: 0;
 }
 
-/* Inline code is the board's chip: 12px mono on the field fill with its own
-   hairline, not a tinted text run. */
+/* Inline code is the board's chip: 12px mono on the field fill, with no edge so a
+   paragraph of them reads as prose, not as a field of boxes. */
 .messages-timeline-scroll .chat-markdown :not(pre) > code {
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--r-badge);
   background: var(--field);
-  padding: 1px 5px;
+  padding: 1px 4px;
   color: var(--t1);
   font-family: var(--font-mono);
   font-size: var(--text-mono);
