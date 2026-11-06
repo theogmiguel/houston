@@ -10,7 +10,10 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
+import type * as Tracer from "effect/Tracer";
 
+import * as TraceContext from "../houston/observability/TraceContext.ts";
+import * as RecordingTracer from "../observability/testing/RecordingTracer.ts";
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as VcsStatusBroadcaster from "../vcs/VcsStatusBroadcaster.ts";
 import * as WorkspaceEntries from "../workspace/WorkspaceEntries.ts";
@@ -133,6 +136,9 @@ const makeBackgroundRefreshLayer = (input: {
 const takeEvents = (events: Queue.Queue<string>, count: number) =>
   Effect.replicateEffect(Queue.take(events), count);
 
+const houstonContextOf = (span: Tracer.NativeSpan) =>
+  Object.fromEntries([...span.attributes].filter(([key]) => key.startsWith("houston.")));
+
 it.effect("finalizes without waiting for a pull request refresh that never returns", () =>
   Effect.gen(function* () {
     const events = yield* Queue.unbounded<string>();
@@ -187,6 +193,50 @@ it.effect("coalesces refreshes requested while one is still running", () =>
     assert.deepEqual(yield* Queue.clear(events), []);
   }),
 );
+
+it.effect("a refresh drained after a later run is queued carries that run, not the first", () => {
+  const recording = RecordingTracer.make();
+  return Effect.gen(function* () {
+    const events = yield* Queue.unbounded<string>();
+    const gate = yield* Deferred.make<void>();
+    const { layer, finalizeInput } = makeBackgroundRefreshLayer({
+      events,
+      pullRequestRefresh: Deferred.await(gate),
+    });
+    yield* Effect.gen(function* () {
+      const service = yield* RunFinalization.RunFinalizationService;
+      const finalize = (run: string) => {
+        const input = finalizeInput(run);
+        return service.finalize(input).pipe(
+          TraceContext.withTraceContext({
+            threadId: input.threadId,
+            runId: run,
+            commandId: `command-${run}`,
+          }),
+        );
+      };
+      // Run 1's finalize starts the drain; run 2's refresh waits in its queue.
+      yield* finalize("run-1");
+      yield* takeEvents(events, 3);
+      yield* finalize("run-2");
+      yield* Deferred.succeed(gate, undefined);
+      yield* takeEvents(events, 3);
+    }).pipe(Effect.provide(layer));
+
+    const threadId = finalizeInput("run-1").threadId;
+    assert.deepStrictEqual(
+      recording.named("RunFinalizationService.refresh").map(houstonContextOf),
+      [
+        { "houston.thread.id": threadId, "houston.run.id": "run-1" },
+        { "houston.thread.id": threadId, "houston.run.id": "run-2" },
+      ],
+    );
+    assert.deepStrictEqual(
+      recording.named("RunFinalizationService.drainRefreshes").map(houstonContextOf),
+      [{}],
+    );
+  }).pipe(Effect.withTracer(recording.tracer));
+});
 
 it.live("refreshes a run's pull request after the next queued run has started", () =>
   Effect.gen(function* () {
