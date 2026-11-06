@@ -257,6 +257,26 @@ describe("grid sidebar", () => {
       .toBeLessThanOrEqual(actions.getBoundingClientRect().left);
   });
 
+  it("hides the heading actions again once a clicked heading loses the pointer, and shows them on keyboard focus", async () => {
+    const value = grid({ id: "grid-h", name: "Grid 1" });
+    await using screen = await render(group(value, [thread({ id: "thread-h" })]));
+    const heading = headingFor(screen, "grid-h");
+    const add = screen.getByRole("button", { name: "New thread in Grid 1" }).element();
+    const more = screen.getByRole("button", { name: "Grid actions for Grid 1" }).element();
+    const opacity = (element: Element) => Number(getComputedStyle(element).opacity);
+
+    await userEvent.click(heading);
+    await userEvent.unhover(heading);
+    await expect.poll(() => opacity(add)).toBe(0);
+    expect(opacity(more)).toBe(0);
+
+    await userEvent.keyboard("{Tab}");
+    await userEvent.keyboard("{Shift>}{Tab}{/Shift}");
+    expect(document.activeElement).toBe(heading);
+    await expect.poll(() => opacity(add)).toBe(1);
+    expect(opacity(more)).toBe(1);
+  });
+
   it("renames a grid with F2 on its heading", async () => {
     const value = grid({ id: "grid-f", name: "Grid 1" });
     useGridStore.setState({ grids: [value] });
