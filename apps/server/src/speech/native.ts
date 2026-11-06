@@ -11,8 +11,9 @@ type Reply = {
   readonly text?: string;
   readonly error?: string;
   readonly supportsStreaming?: boolean;
+  readonly supportsLongForm?: boolean;
   readonly supportsTranslation?: boolean;
-  readonly supportsInitialPrompt?: boolean;
+  readonly supportsVocabulary?: boolean;
   readonly backend?: string;
   readonly revision?: number;
   readonly preview?: SpeechStreamText | null;
@@ -36,13 +37,26 @@ const workerCommand = () =>
     ? { command: process.execPath, args: ["__speech-worker"] }
     : { command: process.execPath, args: [workerEntry, "__speech-worker"] };
 
-const spawnWorker = () => {
+const spawnWorker = (cpuOnly = false) => {
   const { command, args } = workerCommand();
   return NodeChildProcess.spawn(command, args, {
     stdio: ["ignore", "ignore", "inherit", "ipc"],
     serialization: "advanced",
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: "1",
+      // Backend registration can initialize drivers even when model placement is CPU.
+      ...(cpuOnly ? { TRANSCRIBE_BACKENDS: "cpu" } : {}),
+    },
   });
+};
+
+export type NativeSpeechOptions = {
+  readonly timestamps: "none";
+  readonly task?: "translate";
+  readonly targetLanguage?: "en";
+  readonly language?: string;
+  readonly vocabulary?: readonly string[];
 };
 
 export async function listNativeSpeechGpuDevices(moduleUrl = defaultSpeechModuleUrl()) {
@@ -79,16 +93,9 @@ export async function listNativeSpeechGpuDevices(moduleUrl = defaultSpeechModule
     });
     child.once("error", reject);
     child.once("exit", (code) => reject(new Error(`Speech device discovery exited (${code}).`)));
-    child.send(
-      {
-        kind: "devices",
-        moduleUrl,
-        koffiModuleUrl: defaultSpeechModuleUrl(),
-      },
-      (error) => {
-        if (error) reject(error);
-      },
-    );
+    child.send({ kind: "devices", moduleUrl }, (error) => {
+      if (error) reject(error);
+    });
   }).finally(() => {
     clearTimeout(timeout);
     if (child.connected) child.disconnect();
@@ -96,14 +103,29 @@ export async function listNativeSpeechGpuDevices(moduleUrl = defaultSpeechModule
   });
 }
 
+/** Loads a model in an isolated process. "auto" retries on the CPU when GPU setup fails. */
 export async function loadNativeSpeechModel(
   path: string,
   signal: AbortSignal,
   moduleUrl = defaultSpeechModuleUrl(),
   acceleration = "auto",
 ) {
+  try {
+    return await loadNativeSpeechModelOnce(path, signal, moduleUrl, acceleration);
+  } catch (error) {
+    if (acceleration !== "auto" || signal.aborted) throw error;
+    return await loadNativeSpeechModelOnce(path, signal, moduleUrl, "cpu");
+  }
+}
+
+async function loadNativeSpeechModelOnce(
+  path: string,
+  signal: AbortSignal,
+  moduleUrl: string,
+  acceleration: string,
+) {
   signal.throwIfAborted();
-  const child = spawnWorker();
+  const child = spawnWorker(acceleration === "cpu");
   let stopped = false;
   let pending: ReturnType<typeof Promise.withResolvers<Reply>> | undefined;
   const exited = Promise.withResolvers<void>();
@@ -159,33 +181,21 @@ export async function loadNativeSpeechModel(
     stop();
     await exited.promise;
   };
-  let supportsStreaming: boolean;
-  let supportsTranslation: boolean;
-  let supportsInitialPrompt: boolean;
-  let backend: string;
+  let loaded: Reply;
   try {
-    const loaded = await send({
-      kind: "load",
-      path,
-      moduleUrl,
-      koffiModuleUrl: defaultSpeechModuleUrl(),
-      acceleration,
-    });
-    supportsStreaming = loaded.supportsStreaming === true;
-    supportsTranslation = loaded.supportsTranslation === true;
-    supportsInitialPrompt = loaded.supportsInitialPrompt === true;
-    backend = loaded.backend ?? "unknown";
+    loaded = await send({ kind: "load", path, moduleUrl, acceleration });
   } catch (error) {
     await dispose();
     throw error;
   }
   return {
-    backend,
-    supportsStreaming,
-    supportsTranslation,
-    supportsInitialPrompt,
-    begin: async (language?: string) => {
-      await send({ kind: "begin", language });
+    backend: loaded.backend ?? "unknown",
+    supportsStreaming: loaded.supportsStreaming === true,
+    supportsLongForm: loaded.supportsLongForm === true,
+    supportsTranslation: loaded.supportsTranslation === true,
+    supportsVocabulary: loaded.supportsVocabulary === true,
+    begin: async (options: NativeSpeechOptions, filterSilence: boolean, vadPath?: string) => {
+      await send({ kind: "begin", options, filterSilence, vadPath });
     },
     feed: async (pcm: Float32Array) => {
       const reply = await send({ kind: "feed", pcm });
@@ -220,15 +230,11 @@ export async function loadNativeSpeechModel(
     },
     transcribe: async (
       pcm: Float32Array,
-      options: {
-        readonly timestamps: "none";
-        readonly task?: "translate";
-        readonly targetLanguage?: "en";
-        readonly language?: string;
-        readonly family?: { readonly kind: "whisper"; readonly initialPrompt: string };
-      },
+      options: NativeSpeechOptions,
+      filterSilence: boolean,
+      vadPath?: string,
     ) => {
-      const result = await send({ kind: "transcribe", pcm, options });
+      const result = await send({ kind: "transcribe", pcm, options, filterSilence, vadPath });
       if (typeof result.text !== "string") throw new Error("Invalid speech process response.");
       return { text: result.text };
     },

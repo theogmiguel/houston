@@ -551,7 +551,7 @@ overlay icon on Windows. macOS desktop notification delivery is explicitly unsup
 
 ## Microphone capture
 
-The composer's dictation mic records through `navigator.mediaDevices.getUserMedia({ audio: true })`
+Dictation records through `navigator.mediaDevices.getUserMedia({ audio: true })`
 in the Electron renderer. The host serves the app from a secure custom protocol, so the page
 has `navigator.mediaDevices`; microphone permission follows Chromium's and the OS's rules for
 the app. A denied microphone reaches the renderer as the same recording start error as a
@@ -562,6 +562,20 @@ process: `apps/server/src/speech/native.ts` starts the packaged executable with 
 `__speech-worker` command. The packaged server is a Node single executable, where `import()`
 cannot load a module from the file system, so the worker loads transcribe-cpp through
 `createRequire` while development and tests keep the ESM loader.
+
+The audio destination is a per-device grant in local storage (`houston:voice-audio-grant:v1`),
+separate from synced settings so a stale settings write cannot restore it. Each choice gets a
+fresh grant id; a recording is bound to the id it started with and is discarded when the grant
+changes. Cleanup consent uses its own key for the same reason. Dictation preferences are client
+settings sent with each recording, so one environment can transcribe for any client; only the
+project dictionary, model, acceleration and unload policy live on the environment. Clients
+refuse an environment whose `voiceProtocol` is not the version they speak instead of sending
+it a payload it cannot decode.
+
+The desktop browser's annotation editor runs in the guest page, but recording stays in the app
+renderer: the pick preload relays trusted key events and draft edits over IPC tagged with a
+per-pick session id, and the renderer pushes recording state back. Events and state for another
+session are dropped on both sides.
 
 ## Testing
 

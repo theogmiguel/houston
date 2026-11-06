@@ -3,6 +3,8 @@ import { ChevronDownIcon } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 import * as Schema from "effect/Schema";
 
+import type { OlderSettledScope } from "@houston-app/client-runtime/state/threads";
+import { useOlderSettledShelf, useOlderSettledShelfGrowth } from "../../state/olderSettledShelf";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { AnimatedHeight } from "../AnimatedHeight";
 import { useThreadDropZone, type ThreadDragSource } from "../../grid/threadDrag";
@@ -16,6 +18,9 @@ import {
   SNOOZED_SHELF_EXPANDED_KEY,
 } from "../sidebar/shelfState";
 
+const NO_SCOPES: ReadonlyArray<OlderSettledScope> = [];
+const NO_THREADS: ReadonlyArray<EnvironmentThreadShell> = [];
+
 export type ShelfName = "snoozed" | "settled";
 
 export interface GridShelvesProps {
@@ -26,6 +31,16 @@ export interface GridShelvesProps {
   /** A thread is being dragged, so Closed reads as a place it can go. */
   closedDragActive?: boolean;
   onClosedDrop?: (source: ThreadDragSource) => void;
+  /** Both shelves show every row they hold, such as while a search lists its matches. */
+  forceExpanded?: boolean;
+  /**
+   * Where older Closed threads load from, and every thread the client holds in those scopes. Shells
+   * leave older closed threads out, so the shelf reads them from the server as it is paged.
+   */
+  older?: {
+    readonly scopes: ReadonlyArray<OlderSettledScope>;
+    readonly threads: ReadonlyArray<EnvironmentThreadShell>;
+  };
 }
 
 /**
@@ -39,6 +54,8 @@ export function GridShelves({
   closedDropTarget = false,
   closedDragActive = false,
   onClosedDrop,
+  forceExpanded = false,
+  older,
 }: GridShelvesProps) {
   const closedRef = useRef<HTMLDivElement | null>(null);
   useThreadDropZone(
@@ -57,13 +74,23 @@ export function GridShelves({
     Schema.Boolean,
   );
   const [settledVisibleCount, setSettledVisibleCount] = useState(SETTLED_TAIL_INITIAL_COUNT);
-  const visibleClosed = closed.slice(0, settledVisibleCount);
-  const hiddenClosedCount = Math.max(0, closed.length - visibleClosed.length);
+  const snoozedOpen = forceExpanded || snoozedExpanded;
+  const settledOpen = forceExpanded || settledExpanded;
+  const olderShelf = useOlderSettledShelf({
+    scopes: older?.scopes ?? NO_SCOPES,
+    expanded: settledExpanded,
+    visibleCount: settledVisibleCount,
+  });
+  const listedClosed = closed.filter(olderShelf.isListed);
+  useOlderSettledShelfGrowth(olderShelf, listedClosed);
+  const closedCount = closed.length + olderShelf.unloadedCount(older?.threads ?? NO_THREADS);
+  const visibleClosed = forceExpanded ? listedClosed : listedClosed.slice(0, settledVisibleCount);
+  const hiddenClosedCount = forceExpanded ? 0 : Math.max(0, closedCount - visibleClosed.length);
 
   return (
     <div className="flex flex-col gap-px" data-testid="grid-shelves">
       <AnimatedHeight>
-        {snoozedExpanded ? (
+        {snoozedOpen ? (
           <div
             className="flex max-h-56 flex-col gap-px overflow-y-auto pb-1"
             data-testid="grid-snoozed-shelf-list"
@@ -80,7 +107,7 @@ export function GridShelves({
         label="On hold"
         count={held.length}
         toggle={{
-          expanded: snoozedExpanded,
+          expanded: snoozedOpen,
           onToggle: () => setSnoozedExpanded((value) => !value),
         }}
       />
@@ -92,7 +119,7 @@ export function GridShelves({
         )}
       >
         <AnimatedHeight>
-          {settledExpanded ? (
+          {settledOpen ? (
             <div
               className="flex max-h-56 flex-col gap-px overflow-y-auto pb-1"
               data-testid="grid-settled-shelf-list"
@@ -103,14 +130,22 @@ export function GridShelves({
               {hiddenClosedCount > 0 ? (
                 <button
                   type="button"
-                  onClick={() => setSettledVisibleCount((count) => count + SETTLED_TAIL_PAGE_COUNT)}
+                  disabled={olderShelf.loading}
+                  onClick={() => {
+                    olderShelf.retry();
+                    setSettledVisibleCount((count) => count + SETTLED_TAIL_PAGE_COUNT);
+                  }}
                   className={cn(
                     "flex h-7 items-center gap-2 rounded-(--r-ctl) pr-2 pl-7.5 text-left text-xs text-secondary-label hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
                     MOTION_FEEDBACK_DEFAULT_EASE,
                   )}
                 >
                   <ChevronDownIcon aria-hidden className="size-3 shrink-0" />
-                  Show {Math.min(hiddenClosedCount, SETTLED_TAIL_PAGE_COUNT)} more
+                  {olderShelf.loading
+                    ? "Loading"
+                    : olderShelf.failed
+                      ? "Could not load older threads. Retry"
+                      : `Show ${Math.min(hiddenClosedCount, SETTLED_TAIL_PAGE_COUNT)} more`}
                 </button>
               ) : null}
             </div>
@@ -120,11 +155,11 @@ export function GridShelves({
           variant="rail"
           shelf="settled"
           label="Closed"
-          count={closed.length}
+          count={closedCount}
           dragging={closedDragActive}
           isDropTarget={closedDropTarget}
           toggle={{
-            expanded: settledExpanded,
+            expanded: settledOpen,
             onToggle: () => setSettledExpanded((value) => !value),
           }}
         />
