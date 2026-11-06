@@ -77,6 +77,8 @@ export interface QuerySpec {
   readonly calls: string;
   /** Which dimension the cost should follow: every table (breadth) or one thread's length (depth). */
   readonly grows: "breadth" | "depth";
+  /** Overrides the per-query time cap for a query too heavy to repeat often at large scales. */
+  readonly capMs?: number;
   readonly run: (context: QueryContext) => Effect.Effect<unknown, unknown, Services>;
 }
 
@@ -404,6 +406,8 @@ export const QUERIES: ReadonlyArray<QuerySpec> = [
     path: "interactive",
     calls: "ProjectionStore.getThreadProjection (unbounded snapshot)",
     grows: "depth",
+    // About 5 s and gigabytes per call at 100x: five repetitions there.
+    capMs: 25_000,
     run: (c) => Effect.flatMap(projectionStore, (store) => store.getThreadProjection(tid(c.deep))),
   },
   // Search.

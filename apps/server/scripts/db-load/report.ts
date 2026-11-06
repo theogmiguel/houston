@@ -168,6 +168,11 @@ function statusCell(query: QueryResult, scale: number): string {
     : `<td class="fail" title="${escape(failing.reasons.join("; "))}">✕ ${ms(p95)}${failing.reasons.some((r) => r.startsWith("full scan")) ? " ⊘" : ""}</td>`;
 }
 
+function memoryCell(query: QueryResult): string {
+  const memory = [...query.scales].reverse().find((s) => s.memory !== undefined)?.memory;
+  return memory === undefined ? "–" : `${memory.resultHeapMb} / ${memory.peakRssGrowthMb}`;
+}
+
 function severity(query: QueryResult): number {
   const worst = query.scales.reduce(
     (max, s) => Math.max(max, (s.summary?.p95 ?? 0) / query.budgetMs),
@@ -221,7 +226,7 @@ export function renderReport(
       (q) =>
         `<tr><td class="l">${escape(q.name)}</td><td class="l">${q.path}</td><td>${q.budgetMs}</td>${scales.map((s) => statusCell(q, s)).join("")}` +
         `<td>${q.fitP50 === undefined ? "–" : q.fitP50.exponent.toFixed(2)}</td><td class="${(q.projectedP95At1000 ?? 0) > q.budgetMs ? "fail" : "ok"}">${ms(q.projectedP95At1000)}</td>` +
-        `<td class="l">${escape(q.calls)}</td></tr>`,
+        `<td>${memoryCell(q)}</td><td class="l">${escape(q.calls)}</td></tr>`,
     )
     .join("");
   const plans = queries
@@ -264,7 +269,7 @@ ${
 ${legend}
 <div class="grid">${cards}</div>
 <h2>p95 by scale (ms)</h2>
-<table><tr><th class="l">query</th><th class="l">path</th><th>budget</th>${scales.map((s) => `<th>${s}x</th>`).join("")}<th>exponent</th><th>1000x (proj.)</th><th class="l">calls</th></tr>${summaryRows}</table>
+<table><tr><th class="l">query</th><th class="l">path</th><th>budget</th>${scales.map((s) => `<th>${s}x</th>`).join("")}<th>exponent</th><th>1000x (proj.)</th><th>result heap / peak RSS rise (MB, largest scale)</th><th class="l">calls</th></tr>${summaryRows}</table>
 <h2>Statements and query plans (largest scale)</h2>
 ${plans}
 </div></body></html>`;

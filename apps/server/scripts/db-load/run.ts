@@ -2,6 +2,7 @@
 import * as Effect from "effect/Effect";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as NodeOS from "node:os";
+import * as NodeProcess from "node:process";
 import * as NodeSqlite from "node:sqlite";
 
 import { storesLayer, type DatabaseManifest } from "./build.ts";
@@ -35,6 +36,37 @@ export interface ScaleResult {
   readonly summary: Summary | null;
   readonly statements: ReadonlyArray<CapturedStatement>;
   readonly error?: string;
+  readonly memory?: MemoryProbe;
+}
+
+/** One call's memory: what its result keeps after GC, and how far it raised the process's peak RSS. */
+export interface MemoryProbe {
+  readonly resultHeapMb: number;
+  readonly peakRssGrowthMb: number;
+  readonly peakRssMb: number;
+}
+
+const gc = (globalThis as { gc?: () => void }).gc;
+const MB = 1024 * 1024;
+
+async function probeMemory(
+  runtime: StoresRuntime,
+  effect: Effect.Effect<unknown, unknown, Services>,
+): Promise<MemoryProbe> {
+  gc?.();
+  const heapBefore = NodeProcess.memoryUsage().heapUsed;
+  // maxRSS is in kilobytes and only rises, so the growth is this call's new peak, if any.
+  const peakBefore = NodeProcess.resourceUsage().maxRSS;
+  const result = await runtime.runPromise(effect);
+  gc?.();
+  const heapAfter = NodeProcess.memoryUsage().heapUsed;
+  const peakAfter = NodeProcess.resourceUsage().maxRSS;
+  void result;
+  return {
+    resultHeapMb: Math.round(((heapAfter - heapBefore) / MB) * 10) / 10,
+    peakRssGrowthMb: Math.round(((peakAfter - peakBefore) * 1024) / MB),
+    peakRssMb: Math.round((peakAfter * 1024) / MB),
+  };
 }
 
 export interface QueryResult {
@@ -213,12 +245,10 @@ export async function runScale(
   growingTables: ReadonlySet<string>,
 ) {
   const runtime = ManagedRuntime.make(storesLayer(manifest.dbPath));
-  const queries =
-    options.only === undefined
-      ? QUERIES
-      : QUERIES.filter((q) => options.only!.some((name) => q.name.startsWith(name)));
+  const queries = selectedQueries(options.only);
   const samples = new Map<string, Array<number>>();
   const errors = new Map<string, string>();
+  const memory = new Map<string, MemoryProbe>();
   try {
     const context = await runtime.runPromise(makeContext(manifest));
     const plan: Array<QuerySpec> = [];
@@ -228,10 +258,11 @@ export async function runScale(
         let warm = 0;
         for (let i = 0; i < options.warmup; i++) warm = await timeOnce(runtime, effect);
         const each = Math.max(warm, 0.01);
+        const capMs = query.capMs ?? options.capMs;
         // Slow queries keep at least 5 repetitions within the per-query time cap.
         const reps =
-          each * options.minReps > options.capMs
-            ? Math.max(5, Math.floor(options.capMs / each))
+          each * options.minReps > capMs
+            ? Math.max(5, Math.floor(capMs / each))
             : Math.min(
                 options.maxReps,
                 Math.max(options.minReps, Math.ceil(options.targetMs / each)),
@@ -254,6 +285,10 @@ export async function runScale(
       } catch (error) {
         errors.set(query.name, describeError(error));
       }
+    }
+    for (const query of queries) {
+      if (!errors.has(query.name))
+        memory.set(query.name, await probeMemory(runtime, query.run(context)));
     }
   } finally {
     await runtime.dispose();
@@ -307,6 +342,7 @@ export async function runScale(
         samples: values.map((value) => Math.round(value * 1_000) / 1_000),
         summary: values.length > 0 ? summarize(values) : null,
         statements: statements.get(query.name) ?? [],
+        ...(memory.has(query.name) ? { memory: memory.get(query.name)! } : {}),
         ...(errors.has(query.name) ? { error: errors.get(query.name)! } : {}),
       };
       return [query.name, result] as const;
@@ -377,29 +413,39 @@ export function judge(
   return { ...query, fitP50, fitP95, projectedP95At1000, failing };
 }
 
-export async function runAll(
+export function selectedQueries(only: ReadonlyArray<string> | undefined): ReadonlyArray<QuerySpec> {
+  return only === undefined
+    ? QUERIES
+    : QUERIES.filter((q) => only.some((name) => q.name.startsWith(name)));
+}
+
+/** One scale's results by query name, as a child process writes them. */
+export type ScaleResults = Readonly<Record<string, ScaleResult>>;
+
+export async function measureScale(
+  manifest: DatabaseManifest,
   manifests: ReadonlyArray<DatabaseManifest>,
   options: RunOptions,
-): Promise<RunResults> {
-  const startedAt = new Date().toISOString();
-  const growing = growingTablesOf(manifests);
-  const perScale = new Map<number, Map<string, ScaleResult>>();
-  for (const manifest of manifests) {
-    options.log(`${manifest.scale}x: measuring (${manifest.totalRows} rows)`);
-    perScale.set(manifest.scale, await runScale(manifest, options, growing));
-  }
-  const queries = (
-    options.only === undefined
-      ? QUERIES
-      : QUERIES.filter((q) => options.only!.some((name) => q.name.startsWith(name)))
-  ).map((query) =>
+): Promise<ScaleResults> {
+  options.log(`${manifest.scale}x: measuring (${manifest.totalRows} rows)`);
+  return Object.fromEntries(await runScale(manifest, options, growingTablesOf(manifests)));
+}
+
+/** Judges every query across the measured scales and adds the run's metadata. */
+export function assembleResults(
+  manifests: ReadonlyArray<DatabaseManifest>,
+  perScale: ReadonlyMap<number, ScaleResults>,
+  options: Pick<RunOptions, "label" | "gitSha" | "only"> & { readonly startedAt: string },
+): RunResults {
+  const startedAt = options.startedAt;
+  const queries = selectedQueries(options.only).map((query) =>
     judge({
       name: query.name,
       path: query.path,
       calls: query.calls,
       grows: query.grows,
       budgetMs: BUDGET_MS[query.path],
-      scales: manifests.map((m) => perScale.get(m.scale)!.get(query.name)!),
+      scales: manifests.map((m) => perScale.get(m.scale)![query.name]!),
     }),
   );
   const cpus = NodeOS.cpus();
