@@ -2,13 +2,14 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
-import { scopeThreadRef } from "@houston-app/client-runtime/environment";
+import { scopedThreadKey, scopeThreadRef } from "@houston-app/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { render } from "../../../test/render";
 import { TooltipProvider } from "../ui/tooltip";
 import { ThreadCard } from "./GridSidebar";
+import { ThreadJumpHintContext } from "./threadJumpHints";
 
 const fixture = vi.hoisted(() => ({
   terminalIds: [] as string[],
@@ -81,7 +82,7 @@ function thread(overrides: Partial<EnvironmentThreadShell> = {}): EnvironmentThr
 
 function card(
   value: EnvironmentThreadShell,
-  props: { onOpen?: () => void; focused?: boolean } = {},
+  props: { onOpen?: () => void; focused?: boolean; timeLabel?: string } = {},
 ) {
   return (
     <TooltipProvider delay={0}>
@@ -95,6 +96,7 @@ function card(
         selected={false}
         dragging={false}
         workspaceTitle="Houston"
+        timeLabel={props.timeLabel ?? null}
         onOpen={props.onOpen ?? (() => {})}
         onSelect={() => {}}
         onClose={() => {}}
@@ -200,5 +202,24 @@ describe("thread row indicators", () => {
     expect(screen.container.querySelector("[data-thread-key]")?.hasAttribute("aria-busy")).toBe(
       false,
     );
+  });
+
+  it("shows the jump shortcut in place of the age while the hints are up", async () => {
+    reset();
+    const key = scopedThreadKey(draftRef);
+    await using screen = await render(
+      <ThreadJumpHintContext.Provider value={new Map([[key, "Ctrl+2"]])}>
+        {card(thread(), { timeLabel: "5m" })}
+      </ThreadJumpHintContext.Provider>,
+    );
+    expect(screen.container.querySelector("[data-thread-jump-hint]")?.textContent).toBe("Ctrl+2");
+    expect(screen.container.textContent).not.toContain("5m");
+  });
+
+  it("shows the age and no badge when the hints are down", async () => {
+    reset();
+    await using screen = await render(card(thread(), { timeLabel: "5m" }));
+    expect(screen.container.querySelector("[data-thread-jump-hint]")).toBeNull();
+    expect(screen.container.textContent).toContain("5m");
   });
 });
