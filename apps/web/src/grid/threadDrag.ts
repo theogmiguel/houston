@@ -6,6 +6,14 @@ import {
   type RefObject,
 } from "react";
 
+import { scopeThreadRef } from "@houston-app/client-runtime/environment";
+import type { EnvironmentId, ThreadId } from "@houston-app/contracts";
+
+import {
+  dropThreadContext,
+  endThreadContextDrag,
+  moveThreadContextDrag,
+} from "../components/chat/threadContextDrag";
 import { useStableCallback } from "../hooks/useStableCallback";
 import type { ThreadDropRefusal } from "./projectMove";
 import type { Side } from "./tree";
@@ -17,6 +25,11 @@ export interface ThreadDragSource {
   readonly threadId: string;
   readonly environmentId: string;
   readonly projectId: string;
+  /**
+   * The thread's title. A source that has one can also be dropped on a chat composer, which takes
+   * the thread as context; a source without one only moves within the grids.
+   */
+  readonly title?: string;
 }
 
 /** What a live drag would do if it ended under the pointer. */
@@ -56,6 +69,7 @@ const zones = new Set<ThreadDropZone>();
 const listeners = new Set<() => void>();
 let state: ThreadDragState | null = null;
 let activeZone: ThreadDropZone | null = null;
+let lastPoint: ThreadDragPoint | null = null;
 let cancelGesture: (() => void) | null = null;
 let releaseSelection: (() => void) | null = null;
 
@@ -169,7 +183,13 @@ function sameTarget(left: ThreadDropTarget | null, right: ThreadDropTarget | nul
 function updateDrag(source: ThreadDragSource, point: ThreadDragPoint): void {
   const found = resolveDrop(point, source);
   activeZone = found?.zone ?? null;
+  lastPoint = point;
   const target = found?.target ?? null;
+  // Over no rail or grid target, a titled thread can still land on a chat composer.
+  if (source.title !== undefined) {
+    if (target === null) moveThreadContextDrag(point, { title: source.title, count: 1 });
+    else endThreadContextDrag();
+  }
   if (state !== null && sameTarget(state.target, target)) return;
   publish({ source, target });
 }
@@ -184,6 +204,8 @@ function beginDragState(source: ThreadDragSource): void {
 
 function endDragState(): void {
   activeZone = null;
+  lastPoint = null;
+  endThreadContextDrag();
   releaseSelection?.();
   releaseSelection = null;
   publish(null);
@@ -237,8 +259,14 @@ function trackGesture(
     if (!gesture.dragging) return;
     const zone = activeZone;
     const target = state?.target ?? null;
+    const releasedAt = lastPoint;
     endDragState();
     if (commit && zone !== null && target !== null) zone.drop(source, target);
+    else if (commit && source.title !== undefined && releasedAt !== null) {
+      dropThreadContext(releasedAt, [
+        scopeThreadRef(source.environmentId as EnvironmentId, source.threadId as ThreadId),
+      ]);
+    }
     swallowNextClick();
   };
 
