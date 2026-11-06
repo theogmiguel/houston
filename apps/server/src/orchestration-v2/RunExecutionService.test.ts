@@ -38,6 +38,8 @@ import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import { SqlError, classifySqliteError } from "effect/sql/SqlError";
 
+import * as TraceContext from "../houston/observability/TraceContext.ts";
+import * as RecordingTracer from "../observability/testing/RecordingTracer.ts";
 import { toPersistenceSqlError } from "../persistence/Errors.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as CheckpointService from "./CheckpointService.ts";
@@ -824,6 +826,76 @@ it.effect("rechecks run ownership immediately before calling the provider", () =
     assert.equal(yield* Ref.get(providerStarts), 0);
   }).pipe(Effect.provide(layerRunExecutionTest)),
 );
+
+it.effect("a run's event ingestion carries its own run, not an earlier one's", () => {
+  const recording = RecordingTracer.make();
+  return Effect.gen(function* () {
+    const runExecution = yield* RunExecutionService.RunExecutionServiceV2;
+    const threadId = ThreadId.make("thread:run-execution-trace");
+    const providerInstanceId = ProviderInstanceId.make("codex");
+    const start = Effect.fnUntraced(function* (ordinal: number) {
+      const ingesting = yield* Deferred.make<void>();
+      const runId = RunId.make(`run:run-execution-trace-${ordinal}`);
+      const attemptId = RunAttemptId.make(`attempt:run-execution-trace-${ordinal}`);
+      // Read by the run's forked ingestion fiber.
+      const events = Stream.fromEffect(
+        Effect.void.pipe(
+          Effect.withSpan("Test.runEvents", { attributes: { ordinal } }),
+          Effect.andThen(Deferred.succeed(ingesting, undefined)),
+        ),
+      ).pipe(Stream.drain, Stream.concat(Stream.never));
+      yield* runExecution
+        .startRootRun({
+          commandId: CommandId.make(`command:run-execution-trace-${ordinal}`),
+          appThread: rootAppThread(threadId),
+          providerSessionId: ProviderSessionId.make("session:run-execution-trace"),
+          session: {
+            events,
+            startTurn: () => Effect.void,
+          } as unknown as ProviderAdapter.ProviderAdapterV2SessionRuntime,
+          run: { id: runId, threadId, ordinal, providerInstanceId } as OrchestrationV2Run,
+          rootNode: {
+            id: NodeId.make(`node:run-execution-trace-${ordinal}`),
+          } as OrchestrationV2ExecutionNode,
+          checkpointScope: {
+            id: CheckpointScopeId.make(`checkpoint-scope:run-execution-trace-${ordinal}`),
+          } as OrchestrationV2CheckpointScope,
+          providerThread: {
+            id: ProviderThreadId.make("provider-thread:run-execution-trace"),
+            driver,
+          } as OrchestrationV2ProviderThread,
+          attempt: { id: attemptId, providerTurnId: null } as OrchestrationV2RunAttempt,
+          attemptId,
+          providerTurnOrdinal: ordinal,
+          message: {
+            messageId: MessageId.make(`message:run-execution-trace-${ordinal}`),
+            text: "Continue.",
+            attachments: [],
+            createdBy: "user",
+            creationSource: "web",
+          },
+          modelSelection: { instanceId: providerInstanceId, model: "gpt-5.4" },
+          runtimePolicy: {
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            cwd: process.cwd(),
+          },
+        })
+        .pipe(TraceContext.withTraceContext({ runId, commandId: `command-${ordinal}` }));
+      yield* Deferred.await(ingesting);
+      return runId;
+    });
+
+    const runs = [yield* start(1), yield* start(2)];
+    for (const [index, runId] of runs.entries()) {
+      const span = recording
+        .named("Test.runEvents")
+        .find((candidate) => candidate.attributes.get("ordinal") === index + 1);
+      assert.strictEqual(span?.attributes.get("houston.run.id"), runId);
+      assert.strictEqual(span?.attributes.get("houston.command.id"), `command-${index + 1}`);
+    }
+  }).pipe(Effect.withTracer(recording.tracer), Effect.provide(layerRunExecutionTest));
+});
 
 it.effect("passes the thread's MCP app context to the provider under a safe key", () =>
   Effect.gen(function* () {

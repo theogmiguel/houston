@@ -85,6 +85,38 @@ describe("TraceContext", () => {
     }),
   );
 
+  it.effect("withoutTurnContext keeps the thread and drops the turn's ids for a fork", () =>
+    Effect.gen(function* () {
+      const recording = RecordingTracer.make();
+      const logged: Array<unknown> = [];
+      yield* Effect.gen(function* () {
+        const session = yield* Effect.logInfo("session").pipe(
+          Effect.withSpan("Session.read"),
+          TraceContext.withoutTurnContext,
+          Effect.forkChild,
+        );
+        yield* Fiber.join(session);
+      }).pipe(
+        TraceContext.withTraceContext({
+          ...COMMAND,
+          runId: "run-1",
+          effectType: "provider-turn.start",
+        }),
+        Effect.withTracer(recording.tracer),
+        Effect.provide(
+          Logger.layer([
+            Logger.make((options) => {
+              logged.push(options.fiber.getRef(References.CurrentLogAnnotations));
+            }),
+          ]),
+        ),
+      );
+      const expected = { "houston.thread.id": "thread-1" };
+      assert.deepStrictEqual(contextOf(recording.named("Session.read")[0]!.attributes), expected);
+      assert.deepStrictEqual(logged, [expected]);
+    }),
+  );
+
   it("takes the run id from an outbox request that has one", () => {
     assert.deepStrictEqual(
       TraceContext.forOutboxEffect({
