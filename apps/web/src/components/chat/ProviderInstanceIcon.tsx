@@ -57,6 +57,27 @@ export function resolveProviderInstanceAcpRegistryIconUrl(input: {
   );
 }
 
+/** Whether a provider has a brand glyph of its own; otherwise a mark falls back to initials. */
+export function providerHasBrandGlyph(input: {
+  readonly driverKind: ProviderDriverKind;
+  readonly acpRegistryAgentId?: string | undefined;
+  readonly acpRegistryIconUrl?: string | undefined;
+}): boolean {
+  if (input.driverKind === "acpRegistry") {
+    return (
+      resolveProviderInstanceAcpRegistryIconUrl({
+        driverKind: input.driverKind,
+        agentId: input.acpRegistryAgentId,
+        iconUrl: input.acpRegistryIconUrl,
+      }) !== null
+    );
+  }
+  return (
+    providerClients.get(input.driverKind)?.icon !== undefined ||
+    PROVIDER_ICON_BY_PROVIDER[input.driverKind] !== undefined
+  );
+}
+
 export const ProviderInstanceIcon = memo(function ProviderInstanceIcon(props: {
   driverKind: ProviderDriverKind;
   displayName: string;

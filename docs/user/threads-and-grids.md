@@ -66,8 +66,11 @@ project's actions. Under the label are the project's grids, then its threads tha
 grid**. Grid rows name only the grid. Threads started without a project sit at the foot of
 the list under **No project**. With no projects at all, the rail offers **Add project**.
 
-A collapsed project or grid shows how many threads it hides and a dot for the most urgent
-one, and it still lists the thread that is open.
+Every project and grid heading shows how many threads it holds, and small pips for the
+threads that failed or wait for you. Hovering or focusing a heading swaps the pips for its
+actions, including **New thread** (the **+** button). A collapsed project or grid still lists
+the thread that is open, and the project heading stays pinned at the top of the list while
+its threads scroll.
 
 **Filter by project** in the rail header limits the sections, the shelves, search and the
 older Closed threads Houston loads to the projects you pick. Click a project to choose only
@@ -86,24 +89,27 @@ message match opens its thread with Find on the matched text. With no match the 
 
 ### Rows
 
-Every thread row is two lines tall. The first line has the thread's status glyph in a fixed
-column on the left, the title, the pull request badge, the provider mark and the age. On hover
-or focus the age gives way to the row's actions. The second line is muted and shows, in this
-order and cut off from the end when it runs out of room:
+Every thread row is two lines tall. The status glyph, a distinct shape and colour for each
+state, sits in a fixed column on the left. The first line holds only the title and the age;
+on hover or focus the age gives way to the row's actions. The second line is muted and shows,
+in this order:
 
-- the status word where the state asks something of you or runs quietly: **Approval**,
-  **Input**, **Request**, **Needs you**, **Failed**, **Limited**, **Goal**, **Waiting** (with
-  how long) or **Back**, which has a dismiss control;
+- the status word, always: **Approval**, **Input**, **Request**, **Needs you**, **Failed**,
+  **Limited**, **Goal**, **Waiting**, **Running**, **Ready**, **Idle** or **Back** (which has
+  a dismiss control). A running or waiting thread says for how long ("Running for 7m"), and
+  its age shows the same duration;
 - an unsent draft, with **Discard**;
+- the linked pull request: its glyph carries the state colour and the number stays neutral;
 - the checkout's uncommitted line counts;
 - a running terminal, which opens that terminal;
 - whether the thread uses a worktree or the project's local checkout, with its branch when
   that is not the default branch, and a machine icon when the thread runs on another machine;
-- running subagents, then tags;
+- running subagents, then tags (as `#tag` text);
 - a regenerating title.
 
-A row with nothing else to show names its calm state there (**Ready**, **Idle** or
-**Running**). Closed rows show how long ago the thread closed.
+The provider mark closes the line at the right, under the age. When the items do not fit,
+whole items drop from the end behind a **+N** counter; hovering it lists what is hidden.
+Closed rows show how long ago the thread closed.
 
 Hovering a row opens a card with the project, the machine when there are several, the
 checkout and branch (with a warning when the checkout is on a different branch than the

@@ -1,4 +1,4 @@
-import { useState, type ComponentProps } from "react";
+import { useEffect, useState, type ComponentProps } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 
@@ -11,6 +11,7 @@ import type { GridRecord } from "../../grid/gridStore";
 import { clearThreadSelection } from "../../grid/sidebar";
 import { useRevealOpenThread } from "../../grid/useRevealOpenThread";
 import { attachSidebarTree } from "../../lib/sidebarTree";
+import { AnimatedHeight } from "../AnimatedHeight";
 import { TooltipProvider } from "../ui/tooltip";
 import { SidebarProjectSection } from "./GridSidebar";
 import type { SidebarProjectSection as SidebarProjectSectionModel } from "./sidebarProjectSections";
@@ -219,5 +220,53 @@ describe("useRevealOpenThread", () => {
     const scroller = screen.container.querySelector<HTMLElement>("[data-testid='scroller']")!;
     await screen.rerender(<Reveal openKey="env:missing" />);
     expect(scroller.scrollTop).toBe(0);
+  });
+});
+
+/**
+ * A rail whose first section loads after the open thread's row exists: its height animates open
+ * (AnimatedHeight) and pushes the second section, which holds the open thread, down the scroller.
+ */
+function GrowingRail({ openKey }: { openKey: string }) {
+  const [root, setRoot] = useState<HTMLDivElement | null>(null);
+  const [firstRows, setFirstRows] = useState(1);
+  const ref = { current: root };
+  useRevealOpenThread(ref, openKey);
+  useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect -- the fixture grows its first section once, after mount
+    setFirstRows(12);
+  }, []);
+  return (
+    <div ref={setRoot} style={{ height: 120, overflow: "auto" }} data-testid="scroller">
+      <AnimatedHeight>
+        {Array.from({ length: firstRows }, (_, index) => (
+          <div key={index} data-thread-key={`env:first-${index}`} style={{ height: 40 }}>
+            first {index}
+          </div>
+        ))}
+      </AnimatedHeight>
+      <AnimatedHeight>
+        <div data-thread-key="env:open" style={{ height: 40 }}>
+          open
+        </div>
+      </AnimatedHeight>
+    </div>
+  );
+}
+
+describe("useRevealOpenThread while the rail is still growing", () => {
+  it("keeps the open thread's row in view after the sections above it finish opening", async () => {
+    await using screen = await render(<GrowingRail openKey="env:open" />, { router: false });
+    const scroller = screen.container.querySelector<HTMLElement>("[data-testid='scroller']")!;
+    const row = screen.container.querySelector<HTMLElement>("[data-thread-key='env:open']")!;
+    // The first section has finished opening once the scroller holds all of its 12 rows.
+    await expect.poll(() => row.offsetTop).toBeGreaterThanOrEqual(12 * 40);
+    await expect
+      .poll(() => {
+        const rect = row.getBoundingClientRect();
+        const view = scroller.getBoundingClientRect();
+        return rect.top >= view.top && rect.bottom <= view.bottom;
+      })
+      .toBe(true);
   });
 });

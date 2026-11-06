@@ -140,8 +140,8 @@ function section(
 const needsYou = () => thread("asks", { hasPendingUserInput: true });
 const running = () => thread("busy", { runtime: { status: "running" } as never });
 
-describe("collapsed roll-up", () => {
-  it("shows the hidden thread count and the most urgent state on a collapsed project", async () => {
+describe("heading count and attention pips", () => {
+  it("shows the thread count and a pip for the threads that need the user on a collapsed project", async () => {
     await using screen = await render(
       <TooltipProvider delay={0}>
         <SidebarProjectSection
@@ -155,14 +155,49 @@ describe("collapsed roll-up", () => {
       </TooltipProvider>,
     );
     const label = screen.getByRole("button", { name: /^Houston/ }).element();
-    expect(label.textContent).toContain("3");
-    expect(label.querySelector("[role='img']")?.getAttribute("aria-label")).toBe(
-      "A hidden thread needs you",
-    );
+    expect(label.querySelector("[data-heading-count]")?.textContent).toBe("3");
+    expect(
+      label.querySelector("[data-attention-pip='needs-you']")?.getAttribute("aria-label"),
+    ).toBe("1 thread needs you");
+    expect(label.querySelector("[data-attention-pip='failed']")).toBeNull();
     expect(screen.container.textContent).not.toContain("busy");
   });
 
-  it("shows no status dot when nothing hidden is urgent", async () => {
+  it("counts failed threads apart from threads that need the user, on an expanded project too", async () => {
+    const failed = thread("broke", {
+      latestRun: {
+        id: "run-broke",
+        status: "failed",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        completedAt: "2026-01-01T00:01:00.000Z",
+      } as never,
+      runtime: { status: "failed", lastErrorClass: "provider_error" } as never,
+    });
+    await using screen = await render(
+      <TooltipProvider delay={0}>
+        <SidebarProjectSection
+          {...props(
+            section([
+              {
+                grid: grid("g1", null),
+                threads: [failed, needsYou(), thread("asks-too", { hasPendingApprovals: true })],
+              },
+            ]),
+            { collapsed: false },
+          )}
+        />
+      </TooltipProvider>,
+    );
+    const label = screen.getByRole("button", { name: /^Houston/ }).element();
+    expect(label.querySelector("[data-attention-pip='failed']")?.getAttribute("aria-label")).toBe(
+      "1 thread failed",
+    );
+    expect(
+      label.querySelector("[data-attention-pip='needs-you']")?.getAttribute("aria-label"),
+    ).toBe("2 threads need you");
+  });
+
+  it("shows no pip when no thread is urgent", async () => {
     await using screen = await render(
       <TooltipProvider delay={0}>
         <SidebarProjectSection
@@ -170,10 +205,10 @@ describe("collapsed roll-up", () => {
         />
       </TooltipProvider>,
     );
-    expect(screen.container.querySelector("[role='img']")).toBeNull();
+    expect(screen.container.querySelector("[data-attention-pips]")).toBeNull();
   });
 
-  it("keeps the open thread's row under a collapsed project and leaves it out of the count", async () => {
+  it("keeps the open thread's row under a collapsed project and counts it with the rest", async () => {
     await using screen = await render(
       <TooltipProvider delay={0}>
         <SidebarProjectSection
@@ -188,7 +223,7 @@ describe("collapsed roll-up", () => {
     );
     expect(screen.container.querySelector("[data-thread-key$='open-one']")).not.toBeNull();
     expect(screen.container.querySelector("[data-thread-key$=':other']")).toBeNull();
-    expect(screen.getByRole("button", { name: /^Houston 1$/ }).element()).toBeVisible();
+    expect(screen.getByRole("button", { name: /^Houston 2$/ }).element()).toBeVisible();
   });
 
   it("shows no thread row under a collapsed project when no grid is open", async () => {
@@ -202,7 +237,7 @@ describe("collapsed roll-up", () => {
     expect(screen.container.querySelector("[data-thread-key]")).toBeNull();
   });
 
-  it("rolls up a collapsed grid and keeps its open thread visible", async () => {
+  it("counts a collapsed grid, flags its urgent thread and keeps its open thread visible", async () => {
     await using screen = await render(
       <TooltipProvider delay={0}>
         <SidebarProjectSection
@@ -215,9 +250,10 @@ describe("collapsed roll-up", () => {
       </TooltipProvider>,
     );
     const heading = screen.getByRole("button", { name: /^g1/ }).element();
-    expect(heading.querySelector("[role='img']")?.getAttribute("aria-label")).toBe(
-      "A hidden thread needs you",
-    );
+    expect(heading.querySelector("[data-heading-count]")?.textContent).toBe("2");
+    expect(
+      heading.querySelector("[data-attention-pip='needs-you']")?.getAttribute("aria-label"),
+    ).toBe("1 thread needs you");
     expect(screen.container.querySelector("[data-thread-key$=':a']")).not.toBeNull();
     expect(screen.container.querySelector("[data-thread-key$=':asks']")).toBeNull();
   });

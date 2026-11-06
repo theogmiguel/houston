@@ -188,7 +188,7 @@ describe("grid sidebar", () => {
       </>,
     );
 
-    expect(screen.getByRole("button", { name: /^v2 rebuild$/ }).element()).toBeVisible();
+    expect(screen.getByRole("button", { name: /^v2 rebuild 2$/ }).element()).toBeVisible();
     expect(screen.getByRole("button", { name: /^Grid 2 empty$/ }).element()).toBeVisible();
     expect(screen.container.textContent).not.toContain("notes");
     expect(screen.container.textContent).not.toContain("Workspaces");
@@ -203,10 +203,10 @@ describe("grid sidebar", () => {
       }),
     );
 
-    expect(screen.getByRole("button", { name: /^Landing copy$/ }).element()).toBeVisible();
+    expect(screen.getByRole("button", { name: /^Landing copy 1$/ }).element()).toBeVisible();
     expect(screen.container.textContent).not.toContain("houston-site");
     const row = screen.container.querySelector("[data-thread-key]") as HTMLElement;
-    expect(getComputedStyle(row).paddingLeft).toBe("20px");
+    expect(getComputedStyle(row).paddingLeft).toBe("8px");
 
     await userEvent.click(screen.getByText("Split drawer state from the thread store").element());
     expect(onOpenThread).toHaveBeenCalledWith("grid-c", "thread-c");
@@ -321,8 +321,8 @@ describe("grid sidebar", () => {
       </>,
     );
 
-    const open = screen.getByRole("button", { name: /^v2 rebuild$/ }).element();
-    const closed = screen.getByRole("button", { name: /^Review$/ }).element();
+    const open = screen.getByRole("button", { name: /^v2 rebuild 2$/ }).element();
+    const closed = screen.getByRole("button", { name: /^Review 2$/ }).element();
     expect(open.className).toContain("bg-sidebar-row-selected");
     expect(closed.className).not.toContain("bg-sidebar-row-selected");
   });
@@ -335,7 +335,7 @@ describe("grid sidebar", () => {
       }),
     );
 
-    const heading = screen.getByRole("button", { name: /^v2 rebuild$/ }).element();
+    const heading = screen.getByRole("button", { name: /^v2 rebuild 2$/ }).element();
     expect(heading.className).not.toContain("bg-sidebar-row-selected");
   });
 
@@ -348,7 +348,7 @@ describe("grid sidebar", () => {
       }),
     );
 
-    const heading = screen.getByRole("button", { name: /^v2 rebuild 1$/ }).element();
+    const heading = screen.getByRole("button", { name: /^v2 rebuild 2$/ }).element();
     expect(heading.className).not.toContain("bg-sidebar-row-selected");
     expect(screen.container.querySelector("[data-thread-key$=':thread-a']")).not.toBeNull();
     expect(screen.container.querySelector("[data-thread-key$=':thread-b']")).toBeNull();
@@ -668,8 +668,12 @@ describe("View options", () => {
         await using shown = await render(group(grid(), [thread({ pullRequests: [merged] })]));
         const badge = shown.container.querySelector("[data-thread-pull-request]");
         expect(badge?.textContent).toBe("#88");
-        expect(badge?.classList.contains("text-merged-foreground")).toBe(true);
-        expect(badge?.querySelectorAll("svg")).toHaveLength(1);
+        expect(badge?.querySelector("svg")?.classList.contains("text-merged-foreground")).toBe(
+          true,
+        );
+        expect(badge?.querySelector("span")?.classList.contains("text-merged-foreground")).toBe(
+          false,
+        );
       }
       __setClientSettingsForTests({
         ...DEFAULT_CLIENT_SETTINGS,

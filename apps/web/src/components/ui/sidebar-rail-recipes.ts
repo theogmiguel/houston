@@ -64,3 +64,12 @@ export const ROW_TITLE_INPUT_CLS =
 export const ROW_TITLE_INPUT_INVALID_CLS =
   "border-error-foreground focus-visible:border-error-foreground";
 export const ROW_TITLE_MESSAGE_CLS = "text-2xs text-error-foreground";
+
+/**
+ * Scroll margins of a thread row, so scrolling it into view leaves it clear of the sticky project
+ * heading above (32px plus its border) and of the 24px fade above the footer.
+ */
+export const ROW_SCROLL_MARGIN_CLS = "scroll-mt-9 scroll-mb-8";
+
+/** A thread row's title: 14px medium on the first line. */
+export const ROW_TITLE_TEXT_CLS = "text-sm leading-5 font-medium text-foreground";

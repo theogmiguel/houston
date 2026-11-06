@@ -123,7 +123,7 @@ describe("thread row indicators", () => {
   it("shows no indicator for a quiet local thread", async () => {
     reset();
     await using screen = await render(card(thread()));
-    expect(screen.container.querySelector("[data-thread-indicators]")).toBeNull();
+    expect(screen.container.querySelector("[data-thread-diff], [data-thread-draft]")).toBeNull();
     expect(screen.getByRole("img", { name: "Local checkout" }).element()).toBeVisible();
   });
 

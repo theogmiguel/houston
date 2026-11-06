@@ -103,6 +103,7 @@ import { ThreadSearchMatchExcerpt } from "../ThreadSearchMatch";
 import { ThreadStateGlyph, threadStateTextClass, type ThreadState } from "../ui/thread-state-glyph";
 import { makeWorkspaceFileDropHandlers } from "../chat/workspaceFileDrop";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
+import { ProviderMark } from "../ui/provider-mark";
 import { getTriggerDisplayModelName } from "../chat/providerIconUtils";
 import { shouldShowInstanceBadge, type ProviderInstanceEntry } from "../../providerInstances";
 import { useThreadRunningTerminalIds } from "../../state/terminalSessions";
@@ -161,7 +162,7 @@ function terminalProcessLabel(count: number): string {
 export function SidebarProviderStack(props: {
   thread: SidebarThreadSummary;
   providerEntryByInstanceId: ReadonlyMap<string, SidebarProviderEntry>;
-  /** Draws only the current provider, muted and uncoloured, for rows that rest quietly. */
+  /** Draws only the current provider as the rail's 14px mark, for rows that rest quietly. */
   quiet?: boolean;
 }) {
   const stack = resolveThreadProviderStack(props.thread);
@@ -172,6 +173,18 @@ export function SidebarProviderStack(props: {
     currentEntry,
     props.providerEntryByInstanceId.values(),
   );
+  if (props.quiet) {
+    return (
+      <ProviderMark
+        driverKind={currentEntry.driverKind}
+        displayName={currentEntry.displayName}
+        accentColor={currentEntry.accentColor}
+        acpRegistryAgentId={currentEntry.acpRegistryAgentId}
+        acpRegistryIconUrl={currentEntry.acpRegistryIconUrl}
+        showBadge={showInstanceBadge}
+      />
+    );
+  }
   const current = (
     <ProviderInstanceIcon
       driverKind={currentEntry.driverKind}
@@ -181,10 +194,10 @@ export function SidebarProviderStack(props: {
       acpRegistryIconUrl={currentEntry.acpRegistryIconUrl}
       showBadge={showInstanceBadge}
       size="compact"
-      iconClassName={props.quiet ? "opacity-50 grayscale" : "opacity-60"}
+      iconClassName="opacity-60"
     />
   );
-  if (stack.length === 1 || props.quiet) {
+  if (stack.length === 1) {
     return <span className="inline-flex shrink-0 items-center">{current}</span>;
   }
   return (

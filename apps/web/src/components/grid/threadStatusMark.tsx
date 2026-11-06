@@ -1,5 +1,4 @@
 import { scopeThreadRef } from "@houston-app/client-runtime/environment";
-import { CircleIcon } from "lucide-react";
 import { ROW_BACK_DISMISS_CLS } from "../ui/sidebar-rail-recipes";
 import {
   formatWorkingDurationLabel,
@@ -8,24 +7,23 @@ import {
 } from "@houston-app/client-runtime/state/models";
 import { threadWokeAt } from "@houston-app/client-runtime/state/thread-settled";
 
-import { gridThreadStatusWord } from "../../grid/statusWord";
+import {
+  gridThreadStatusKind,
+  gridThreadStatusWord,
+  type ThreadStatusKind,
+} from "../../grid/statusWord";
 import type { GridThreadState } from "../../grid/sidebar";
 import { useAcknowledgeThreadWoke } from "../../hooks/useThreadActions";
 import { useNowSecond } from "../../hooks/useNowSecond";
 import { cn } from "../../lib/utils";
-import { ThreadStateGlyph, threadStateTextClass, type ThreadState } from "../ui/thread-state-glyph";
 import {
-  SIDEBAR_THREAD_STATUS_ATTENTION_CLASS,
-  SIDEBAR_THREAD_STATUS_CLASS,
-  SIDEBAR_THREAD_STATUS_QUIET_CLASS,
-} from "../ui/thread-tag-recipes";
+  ThreadStatusKindGlyph,
+  threadStatusKindTextClass,
+  threadStatusWordClass,
+} from "../ui/thread-status-kind-glyph";
+import { SIDEBAR_THREAD_STATUS_CLASS } from "../ui/thread-tag-recipes";
 
-function RunningElapsed({ startedAt }: { startedAt: string }) {
-  const nowMs = useNowSecond();
-  const startedMs = Date.parse(startedAt);
-  if (Number.isNaN(startedMs)) return null;
-  return <span>{formatWorkingDurationLabel(nowMs - startedMs)}</span>;
-}
+const BACK_WORD_CLASS = threadStatusWordClass("back");
 
 /**
  * The Back word is a button: pressing it marks the wake as seen.
@@ -33,11 +31,18 @@ function RunningElapsed({ startedAt }: { startedAt: string }) {
 export function BackWord({ thread, nowIso }: { thread: EnvironmentThreadShell; nowIso: string }) {
   const acknowledge = useAcknowledgeThreadWoke();
   const wokeAt = threadWokeAt(thread, { now: nowIso }) ?? thread.unsettledAt;
-  if (wokeAt === null) return <span className={SIDEBAR_THREAD_STATUS_CLASS}>Back</span>;
+  if (wokeAt === null) {
+    return (
+      <span data-thread-status="" className={cn(SIDEBAR_THREAD_STATUS_CLASS, BACK_WORD_CLASS)}>
+        Back
+      </span>
+    );
+  }
   return (
     <button
       type="button"
       aria-label="Dismiss back notification"
+      data-thread-status=""
       data-thread-back-dismiss=""
       onPointerDown={(event) => event.stopPropagation()}
       onClick={(event) => {
@@ -45,49 +50,69 @@ export function BackWord({ thread, nowIso }: { thread: EnvironmentThreadShell; n
         event.stopPropagation();
         acknowledge(scopeThreadRef(thread.environmentId, thread.id), wokeAt);
       }}
-      className={cn(SIDEBAR_THREAD_STATUS_CLASS, ROW_BACK_DISMISS_CLS)}
+      className={cn(SIDEBAR_THREAD_STATUS_CLASS, BACK_WORD_CLASS, ROW_BACK_DISMISS_CLS)}
     >
       Back
     </button>
   );
 }
 
+/** The start-based duration of a running row, ticking each second; null for an unreadable start. */
+function useRunningDuration(startedAt: string): string | null {
+  const nowMs = useNowSecond();
+  const startedMs = Date.parse(startedAt);
+  return Number.isNaN(startedMs) ? null : formatWorkingDurationLabel(nowMs - startedMs);
+}
+
+/** The duration the second line states for a running row: " for 7m". */
+function RunningElapsed({ startedAt }: { startedAt: string }) {
+  const duration = useRunningDuration(startedAt);
+  return duration === null ? null : <> for {duration}</>;
+}
+
 /**
- * The row's leading status mark: a state glyph named for assistive tech. Idle is a faint ring, so
- * the column carries a mark on every row and the glyphs line up down the list.
+ * The age cell of a running row: the same start-based duration its second line states, so the two
+ * can never read as different clocks.
+ */
+export function RunningAge({ startedAt }: { startedAt: string }) {
+  return <>{useRunningDuration(startedAt)}</>;
+}
+
+/**
+ * The row's leading status mark: one 14px shape per status kind, named for assistive tech. Idle
+ * is a faint ring, so the column carries a mark on every row and the glyphs line up down the list.
  */
 export function ThreadStatusGlyph({
   thread,
   state,
+  kind = gridThreadStatusKind(thread, state),
 }: {
   thread: EnvironmentThreadShell;
   state: GridThreadState;
+  /** Overrides the kind the thread's state implies, as a Closed shelf row does. */
+  kind?: ThreadStatusKind;
 }) {
-  const calm = state === "idle";
   return (
     <span
       role="img"
-      aria-label={gridThreadStatusWord(thread, state) ?? "Idle"}
+      aria-label={kind === "closed" ? "Closed" : (gridThreadStatusWord(thread, state) ?? "Idle")}
       data-thread-status-glyph=""
+      data-status-kind={kind}
       className={cn(
         "inline-grid size-3.5 shrink-0 place-items-center",
-        calm ? "text-(--houston)" : threadStateTextClass(state),
+        threadStatusKindTextClass(kind),
       )}
     >
-      {calm ? (
-        <CircleIcon aria-hidden className="size-3" />
-      ) : (
-        <ThreadStateGlyph state={state} className="size-3" />
-      )}
+      <ThreadStatusKindGlyph kind={kind} />
     </span>
   );
 }
 
 /**
- * The status word on the row's second line. States that ask something of the user (Approval,
- * Input, Request, Needs you, Failed, Limited) or run quietly (Waiting, Goal, with the elapsed
- * time) always name themselves, and Back carries its dismiss control. A calm state (Ready, Idle,
- * Running) appears only when nothing else fills the line, so every row keeps the same height.
+ * The status word on the row's second line, always shown and first in the line. Attention states
+ * (Approval, Input, Request, Needs you, Failed, Limited, Waiting, Goal, Running, Back) name
+ * themselves in the hue of their glyph; Ready and Idle stay muted. A running row says how long it
+ * has been going ("Running for 7m"), and its age cell states the same start-based duration.
  */
 export function ThreadStatusWord({
   thread,
@@ -101,20 +126,18 @@ export function ThreadStatusWord({
   if (state === "back") return <BackWord thread={thread} nowIso={nowIso} />;
   const startedAt = resolveThreadWorkingStartedAt(thread);
   const word = gridThreadStatusWord(thread, state) ?? "Idle";
-  const attention =
-    state === "needs" || state === "failed" || (state === "running" && word !== "Running");
+  const kind = gridThreadStatusKind(thread, state);
   return (
     <span
       data-thread-status=""
-      className={cn(
-        SIDEBAR_THREAD_STATUS_CLASS,
-        attention
-          ? [SIDEBAR_THREAD_STATUS_ATTENTION_CLASS, threadStateTextClass(state as ThreadState)]
-          : [SIDEBAR_THREAD_STATUS_QUIET_CLASS, "hidden only:inline-flex"],
-      )}
+      className={cn(SIDEBAR_THREAD_STATUS_CLASS, threadStatusWordClass(kind))}
     >
-      <span>{word}</span>
-      {state === "running" && startedAt !== null ? <RunningElapsed startedAt={startedAt} /> : null}
+      <span>
+        {word}
+        {state === "running" && startedAt !== null ? (
+          <RunningElapsed startedAt={startedAt} />
+        ) : null}
+      </span>
     </span>
   );
 }

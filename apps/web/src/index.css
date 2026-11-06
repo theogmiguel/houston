@@ -308,6 +308,8 @@ body {
   --text-2xs--line-height: 0.875rem;
   --text-3xs: 0.625rem;
   --text-3xs--line-height: calc(0.875 / 0.625);
+  --text-monogram: 0.5625rem;
+  --text-monogram--line-height: 1;
   --text-4xs: 0.5rem;
   --text-4xs--line-height: 1;
   --text-5xs: 0.4375rem;

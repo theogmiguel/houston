@@ -27,9 +27,13 @@ import {
 } from "./menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./tooltip";
 
-/** A grid heading reads as one quiet line: name, then workspace, then empty. */
+/**
+ * A heading is one 12px/600 line: chevron, name, muted count, then the attention pips. A grid
+ * heading is a project heading one step in. The actions overlay the pips and reserve their room
+ * only while the heading is hovered or focused, so the name keeps the width otherwise.
+ */
 export const SIDEBAR_GRID_HEADING_CLS =
-  "group/grid flex h-(--h-row) w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg py-0 pr-13 pl-2 text-left text-xs transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+  "group/grid flex h-8 w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-lg py-0 pr-2 pl-4 text-left text-xs transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover group-hover/grid:pr-13 group-has-focus-visible/grid:pr-13 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
 export const SIDEBAR_GRID_HEADING_ACTIVE_CLS = "bg-sidebar-row-selected";
 
@@ -41,21 +45,38 @@ export const SIDEBAR_GRID_NAME_CLS =
 
 export const SIDEBAR_GRID_EMPTY_CLS = "ml-auto shrink-0 text-xs text-secondary-label";
 
-export const SIDEBAR_GRID_COUNT_CLS = "ml-auto shrink-0 text-xs text-secondary-label tabular-nums";
+/** The muted thread count that follows a heading's name. */
+export const SIDEBAR_GRID_COUNT_CLS =
+  "shrink-0 text-xs font-medium text-secondary-label tabular-nums";
 
-/** A project reads as a list item, like the rail's navigation rows, above its grids. */
-export const SIDEBAR_PROJECT_ROW_CLS = "group/project relative mt-1 flex items-center first:mt-0";
+/**
+ * A project heading sticks to the top of the rail's scroll area on the rail's own background at
+ * full ink, and gains a 1px bottom border only while it is stuck (`data-stuck`). It sticks 1px
+ * above the top so the observer that sets `data-stuck` sees it clipped.
+ */
+export const SIDEBAR_PROJECT_ROW_CLS =
+  "group/project sticky -top-px z-10 mt-1 flex items-center border-b border-transparent bg-sidebar first:mt-0 data-stuck:border-sidebar-border";
 
 export const SIDEBAR_PROJECT_LABEL_CLS =
-  "flex h-(--h-row) w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg py-0 pr-8 pl-2 text-left text-sm text-secondary-foreground transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+  "flex h-8 w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-lg py-0 pr-2 pl-2 text-left text-xs font-semibold text-sidebar-foreground transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
-export const SIDEBAR_PROJECT_ICON_CLS = "size-4 shrink-0 text-secondary-label";
+/** A project label's room for its three hover actions (New thread, New grid, Project actions). */
+export const SIDEBAR_PROJECT_ACTIONS_ROOM_CLS =
+  "group-hover/project:pr-17 group-has-focus-visible/project:pr-17";
 
-export const SIDEBAR_PROJECT_LABEL_TEXT_CLS = "min-w-0 flex-1 truncate";
+export const SIDEBAR_PROJECT_LABEL_TEXT_CLS = "min-w-0 truncate";
 
-export const SIDEBAR_PROJECT_SUMMARY_CLS = "shrink-0 text-2xs text-secondary-label";
+/** The project heading's muted thread count. */
+export const SIDEBAR_PROJECT_SUMMARY_CLS = SIDEBAR_GRID_COUNT_CLS;
 
-/** The project label's New grid action, revealed on hover or keyboard focus, not a click's focus. */
+/** The heading's pips: hidden while the hover actions show in their place. */
+export const SIDEBAR_HEADING_PIPS_CLS =
+  "ml-auto flex shrink-0 items-center gap-1 transition-opacity duration-(--motion-feedback) ease-standard group-hover/project:opacity-0 group-has-focus-visible/project:opacity-0 group-hover/grid:opacity-0 group-has-focus-visible/grid:opacity-0";
+
+const SIDEBAR_HEADING_PIP_CLS =
+  "inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-2xs leading-none font-semibold tabular-nums";
+
+/** The project label's New thread and New grid actions, revealed on hover or keyboard focus, not a click's focus. */
 export const SIDEBAR_PROJECT_ACTION_CLS =
   "inline-grid size-5 shrink-0 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-label opacity-0 transition-opacity duration-(--motion-feedback) ease-standard hover:bg-(--sel) hover:text-foreground group-hover/project:opacity-100 group-has-focus-visible/project:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
@@ -63,16 +84,54 @@ export const SIDEBAR_PROJECT_ACTION_CLS =
 export const SIDEBAR_PROJECT_EMPTY_ACTION_CLS =
   "flex h-(--h-row) w-full cursor-pointer items-center gap-2 rounded-lg py-0 pr-2 pl-7.5 text-left text-xs text-secondary-label transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
+/**
+ * The attention pips of a project or grid heading: a failed count, then a count of threads that
+ * wait for the user. Nothing renders when neither has a thread.
+ */
+export function SidebarAttentionPips({
+  failed,
+  needsYou,
+}: {
+  readonly failed: number;
+  readonly needsYou: number;
+}) {
+  if (failed === 0 && needsYou === 0) return null;
+  return (
+    <span data-attention-pips="" className={SIDEBAR_HEADING_PIPS_CLS}>
+      {failed === 0 ? null : (
+        <span
+          role="img"
+          aria-label={failed === 1 ? "1 thread failed" : `${failed} threads failed`}
+          data-attention-pip="failed"
+          className={cn(SIDEBAR_HEADING_PIP_CLS, "bg-error-surface text-error-foreground")}
+        >
+          <span aria-hidden>{failed}</span>
+        </span>
+      )}
+      {needsYou === 0 ? null : (
+        <span
+          role="img"
+          aria-label={needsYou === 1 ? "1 thread needs you" : `${needsYou} threads need you`}
+          data-attention-pip="needs-you"
+          className={cn(SIDEBAR_HEADING_PIP_CLS, "bg-warning-surface text-warning-foreground")}
+        >
+          <span aria-hidden>{needsYou}</span>
+        </span>
+      )}
+    </span>
+  );
+}
+
 /** The grid rail's header controls: outside the window drag region so they stay clickable. */
 export const SIDEBAR_HEADER_ACTIONS_CLS =
   "relative z-10 flex shrink-0 items-center gap-0.5 [-webkit-app-region:no-drag]";
 
 /**
- * Every thread row, in a grid or directly under its project, sits 12px right of the project's
- * folder icon, so the project to thread nesting reads while a 264px sidebar still leaves the
- * title about 200px.
+ * Every thread row, in a grid or directly under its project, starts at the rail's own inset: its
+ * status glyph sits under the project heading's chevron, so a 264px sidebar leaves the title the
+ * rest of the width.
  */
-export const SIDEBAR_THREAD_ROW_INDENT_CLS = "pl-5";
+export const SIDEBAR_THREAD_ROW_INDENT_CLS = "pl-2";
 
 /** A fixed 12px box in both states; the chevron rotates inside instead of swapping icons. */
 export const SIDEBAR_GRID_CHEVRON_BOX_CLS =

@@ -169,18 +169,23 @@ describe("ThreadCard title against the trailing time and actions", () => {
     const row = rowOf(screen.container);
     const time = screen.getByText("3d").element();
     // The hidden Hold, Close and More buttons take no room until the row is hovered: the age
-    // ends the title line at the row's edge, behind the reserved provider slot, and the title runs
-    // up to that slot.
+    // ends the title line at the row's edge and the title runs up to it. The provider mark closes
+    // the second line, right under the age.
     const providerSlot = row.querySelector<HTMLElement>("[data-thread-provider-mark]")!;
+    const titleLine = row.querySelector<HTMLElement>("[data-thread-title-line]")!;
     expect(
       row.getBoundingClientRect().right - time.getBoundingClientRect().right,
     ).toBeLessThanOrEqual(12);
-    expect(providerSlot.getBoundingClientRect().right).toBeLessThanOrEqual(
-      time.getBoundingClientRect().left,
+    // The 8px line gap plus the age cell's 28px minimum, which a short age sits right-aligned in.
+    expect(
+      time.getBoundingClientRect().left - titleOf(row).getBoundingClientRect().right,
+    ).toBeLessThanOrEqual(24);
+    expect(providerSlot.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      titleLine.getBoundingClientRect().bottom,
     );
     expect(
-      providerSlot.getBoundingClientRect().left - titleOf(row).getBoundingClientRect().right,
-    ).toBeLessThanOrEqual(12);
+      Math.abs(providerSlot.getBoundingClientRect().right - time.getBoundingClientRect().right),
+    ).toBeLessThanOrEqual(1);
 
     await userEvent.hover(row);
     const hold = screen.getByRole("button", { name: "Hold" });

@@ -42,7 +42,7 @@ export const FOCUS_ACTION_CLS =
 
 /** A clickable badge inside a rail row: padded for a comfortable target, aligned with its text. */
 export const ROW_BADGE_BUTTON_CLS =
-  "-mx-1 inline-flex shrink-0 cursor-pointer items-center gap-0.75 rounded-(--r-badge) px-1 tabular-nums hover:bg-(--sel)";
+  "-mx-1 inline-flex shrink-0 cursor-pointer items-center gap-0.75 rounded-(--r-badge) px-1 tabular-nums text-secondary-foreground hover:bg-(--sel)";
 
 /** A thread card's actions stay hidden until the card or its title has focus. */
 export const ROW_ACTIONS_REVEAL =
@@ -694,10 +694,11 @@ function SidebarContent({
   return (
     <>
       {fixedHeader ? <div className="w-full shrink-0">{fixedHeader}</div> : null}
-      {/* A 24px fade over the bottom edge: the row cut by the footer dissolves, and the fade leaves at the end of the list. */}
+      {/* A 24px fade over the bottom edge: the row cut by the footer dissolves, and the fade leaves at the end of the list. The top stays crisp: a project heading sticks there at full ink. */}
       <ScrollArea
         hideScrollbars
         scrollFade
+        scrollFadeTop={false}
         scrollFadePadding={false}
         // Rows provide keyboard access; exclude the viewport from tab order to flatten VoiceOver's WebKit
         // interaction boundary.

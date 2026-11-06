@@ -113,7 +113,7 @@ describe("thread status words", () => {
     expect(statusLine(request.container)).toBe("Request");
   });
 
-  it("shows the elapsed time beside Waiting", async () => {
+  it("says how long a thread has been Waiting", async () => {
     await using screen = await render(
       card(
         thread({
@@ -126,7 +126,7 @@ describe("thread status words", () => {
         }),
       ),
     );
-    await expect.poll(() => statusLine(screen.container)).toMatch(/^Waiting\d+h \d+m$/);
+    await expect.poll(() => statusLine(screen.container)).toMatch(/^Waiting for \d+h \d+m$/);
   });
 
   it("shows Goal for a running thread pursuing a goal", async () => {

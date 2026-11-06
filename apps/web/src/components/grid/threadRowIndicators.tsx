@@ -25,6 +25,7 @@ import { formatWorktreePathForDisplay } from "../../worktreeCleanup";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { useSidebarRowSubscriptionLease } from "../Sidebar.logic";
 import { ThreadTerminalStatusButton } from "../ThreadStatusIndicators";
+import { RowMetaItem } from "../ui/sidebar-row-meta";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 /**
@@ -95,72 +96,98 @@ export function ThreadCheckoutMark({
 }
 
 /** The machine icon of a thread that runs on another machine; nothing for a local thread. */
-export function ThreadRemoteMark({ thread }: { thread: EnvironmentThreadShell }) {
+export function ThreadRemoteItem({ thread }: { thread: EnvironmentThreadShell }) {
   const machines = useEnvironmentMachines();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   if (primaryEnvironmentId === null || thread.environmentId === primaryEnvironmentId) return null;
   return (
-    <span
-      role="img"
-      aria-label="Runs on another machine"
-      data-thread-remote=""
-      className="inline-flex shrink-0 items-center"
-    >
-      <EnvironmentMachineIcon
-        aria-hidden
-        kind={machines.get(thread.environmentId) ?? "server"}
-        className="size-3"
-      />
-    </span>
+    <RowMetaItem label="Runs on another machine">
+      <span
+        role="img"
+        aria-label="Runs on another machine"
+        data-thread-remote=""
+        className="inline-flex shrink-0 items-center"
+      >
+        <EnvironmentMachineIcon
+          aria-hidden
+          kind={machines.get(thread.environmentId) ?? "server"}
+          className="size-3"
+        />
+      </span>
+    </RowMetaItem>
   );
 }
 
-/**
- * Indicators for what is going on around a thread, in the order the row's second line shows them:
- * an unsent draft, uncommitted changes and a running terminal.
- */
-export function ThreadRowIndicators({
+/** The unsent-draft mark of a row, right after its status word; absent while the thread is open. */
+export function ThreadDraftItem({
+  thread,
+  focused,
+}: {
+  thread: EnvironmentThreadShell;
+  focused: boolean;
+}) {
+  const threadRef = scopeThreadRef(thread.environmentId, thread.id);
+  const hasDraft = useThreadHasUnsentDraft(threadRef) && !focused;
+  if (!hasDraft) return null;
+  return (
+    <RowMetaItem label="Unsent draft">
+      <DraftMark threadRef={threadRef} title={thread.title} />
+    </RowMetaItem>
+  );
+}
+
+/** The checkout's uncommitted line totals, in the muted ink until the row is hovered or open. */
+export function ThreadDiffItem({
   thread,
   rowRef,
   focused,
   emphasized,
-  onActivate,
 }: {
   thread: EnvironmentThreadShell;
   rowRef: RefObject<HTMLElement | null>;
   focused: boolean;
   /** The row is the open or a selected thread: its diff totals show their colours at rest. */
   emphasized: boolean;
-  /** Opens the thread, where a terminal indicator reveals its terminal. */
+}) {
+  const diff = useThreadDiffTotals(thread, rowRef, focused);
+  if (diff === null) return null;
+  return (
+    <RowMetaItem label={`Uncommitted changes ${formatGridDiffCounts(diff)}`}>
+      <span
+        role="img"
+        aria-label={`Uncommitted changes ${formatGridDiffCounts(diff)}`}
+        data-thread-diff=""
+        className={`shrink-0 ${ROW_DIFF_COUNTS_CLS}`}
+      >
+        <span className={rowDiffAddedCls(emphasized)}>+{formatDiffCount(diff.insertions)}</span>{" "}
+        <span className={rowDiffRemovedCls(emphasized)}>−{formatDiffCount(diff.deletions)}</span>
+      </span>
+    </RowMetaItem>
+  );
+}
+
+/** The running-terminal button of a row; absent while the thread has no running terminal. */
+export function ThreadTerminalItem({
+  thread,
+  onActivate,
+}: {
+  thread: EnvironmentThreadShell;
+  /** Opens the thread, where the button reveals its terminal. */
   onActivate: () => void;
 }) {
-  const threadRef = scopeThreadRef(thread.environmentId, thread.id);
   const terminalIds = useThreadRunningTerminalIds({
     environmentId: thread.environmentId,
     threadId: thread.id,
   });
-  const hasDraft = useThreadHasUnsentDraft(threadRef) && !focused;
-  const diff = useThreadDiffTotals(thread, rowRef, focused);
-  if (terminalIds.length === 0 && !hasDraft && diff === null) return null;
+  if (terminalIds.length === 0) return null;
   return (
-    <span className="inline-flex shrink-0 items-center gap-2" data-thread-indicators="">
-      {hasDraft ? <DraftMark threadRef={threadRef} title={thread.title} /> : null}
-      {diff === null ? null : (
-        <span
-          role="img"
-          aria-label={`Uncommitted changes ${formatGridDiffCounts(diff)}`}
-          className={`shrink-0 ${ROW_DIFF_COUNTS_CLS}`}
-        >
-          <span className={rowDiffAddedCls(emphasized)}>+{formatDiffCount(diff.insertions)}</span>{" "}
-          <span className={rowDiffRemovedCls(emphasized)}>−{formatDiffCount(diff.deletions)}</span>
-        </span>
-      )}
+    <RowMetaItem label={terminalIds.length === 1 ? "Terminal running" : "Terminals running"}>
       <ThreadTerminalStatusButton
-        threadRef={threadRef}
+        threadRef={scopeThreadRef(thread.environmentId, thread.id)}
         terminalIds={terminalIds}
         onThreadActivate={onActivate}
       />
-    </span>
+    </RowMetaItem>
   );
 }
 
