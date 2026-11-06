@@ -201,6 +201,7 @@ import {
   readTailscaleStatus,
 } from "@houston-app/tailscale";
 import * as ServerActivation from "./serverActivation.ts";
+import * as OutgoingTraceContext from "./houston/observability/OutgoingTraceContext.ts";
 
 // Escaped MCP handoff provenance can exceed find-my-way's 100-character segment default.
 const HTTP_ROUTER_CONFIG = {
@@ -978,7 +979,7 @@ const layerMakeServer = Layer.unwrap(
       Layer.provide(layerActivation),
       Layer.provideMerge(layerHttpServer),
       Layer.provide(layerApplicationObservability),
-      Layer.provideMerge(FetchHttpClient.layer),
+      Layer.provideMerge(OutgoingTraceContext.layer(FetchHttpClient.layer)),
       Layer.provide(VcsProcess.layer),
       Layer.provideMerge(AgentScopeLive.layer),
       Layer.provideMerge(layerPlatformServices),

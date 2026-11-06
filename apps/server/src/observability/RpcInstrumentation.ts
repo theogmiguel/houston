@@ -294,17 +294,21 @@ const RPC_AGGREGATES = {
   [WS_METHODS.subscribeAuthAccess]: "auth",
 } as const satisfies Readonly<Record<WsRpcMethod, string>>;
 
-const RPC_SPAN_PREFIX = "ws.rpc";
-const DEFAULT_RPC_SPAN_ATTRIBUTES = {
+// RpcServer opens each call's span as `ws.rpc.<method>`, continuing the client's trace.
+export const RPC_SPAN_PREFIX = "ws.rpc";
+export const DEFAULT_RPC_SPAN_ATTRIBUTES = {
   "rpc.transport": "websocket",
   "rpc.system": "effect-rpc",
 } as const;
-const RPC_METHODS_WITH_TRACING_DISABLED: ReadonlySet<string> = new Set([
-  WS_METHODS.serverGetTraceDiagnostics,
-  WS_METHODS.serverGetProcessDiagnostics,
-  WS_METHODS.serverGetProcessResourceHistory,
-  WS_METHODS.serverSignalProcess,
-]);
+// Diagnostics reads would trace themselves; their spans are unsampled, so nothing below records.
+export const RPC_SPANS_UNSAMPLED: ReadonlySet<string> = new Set(
+  [
+    WS_METHODS.serverGetTraceDiagnostics,
+    WS_METHODS.serverGetProcessDiagnostics,
+    WS_METHODS.serverGetProcessResourceHistory,
+    WS_METHODS.serverSignalProcess,
+  ].map((method) => `${RPC_SPAN_PREFIX}.${method}`),
+);
 
 /** Add after RpcScopeAuthorization to wrap authorization and record rejected calls. */
 export class RpcInstrumentation extends RpcMiddleware.Service<RpcInstrumentation>()(
@@ -321,19 +325,15 @@ export const makeRpcInstrumentationLayer = (connection: {
       withMetrics({ counter: rpcRequestsTotal, timer: rpcRequestDuration, attributes: { method } }),
     );
 
-    if (RPC_METHODS_WITH_TRACING_DISABLED.has(method)) {
+    if (RPC_SPANS_UNSAMPLED.has(`${RPC_SPAN_PREFIX}.${method}`)) {
       return measured.pipe(Effect.provideService(References.TracerEnabled, false));
     }
-    return measured.pipe(
+    return Effect.annotateCurrentSpan({
+      "rpc.aggregate": RPC_AGGREGATES[method as WsRpcMethod],
+    }).pipe(
+      Effect.andThen(measured),
       connection.clientKind === undefined
         ? (traced) => traced
         : TraceContext.withTraceContext({ clientKind: connection.clientKind }),
-      Effect.withSpan(`${RPC_SPAN_PREFIX}.${method}`, {
-        attributes: {
-          ...DEFAULT_RPC_SPAN_ATTRIBUTES,
-          "rpc.method": method,
-          "rpc.aggregate": RPC_AGGREGATES[method as WsRpcMethod],
-        },
-      }),
     );
   });

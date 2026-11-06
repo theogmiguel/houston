@@ -118,27 +118,33 @@ describe("TraceContext", () => {
     });
   });
 
-  it.effect("RPC calls carry the connecting client's kind on the root span and below", () =>
-    Effect.gen(function* () {
-      const recording = RecordingTracer.make();
-      const middleware = yield* Effect.provide(
-        RpcInstrumentation,
-        makeRpcInstrumentationLayer({ clientKind: "desktop" }),
-      );
-      const options = { rpc: { _tag: "server.getConfig" } } as unknown as Parameters<
-        typeof middleware
-      >[1];
-      const handler = Effect.void.pipe(
-        Effect.withSpan("ServerConfig.get"),
-      ) as unknown as Parameters<typeof middleware>[0];
-      yield* middleware(handler, options).pipe(Effect.withTracer(recording.tracer));
-      for (const name of ["ws.rpc.server.getConfig", "ServerConfig.get"]) {
-        assert.strictEqual(
-          recording.named(name)[0]?.attributes.get("houston.client.kind"),
-          "desktop",
-          name,
+  it.effect(
+    "RPC calls carry the connecting client's kind and aggregate on the root span and below",
+    () =>
+      Effect.gen(function* () {
+        const recording = RecordingTracer.make();
+        const middleware = yield* Effect.provide(
+          RpcInstrumentation,
+          makeRpcInstrumentationLayer({ clientKind: "desktop" }),
         );
-      }
-    }),
+        const options = { rpc: { _tag: "server.getConfig" } } as unknown as Parameters<
+          typeof middleware
+        >[1];
+        const handler = Effect.void.pipe(
+          Effect.withSpan("ServerConfig.get"),
+        ) as unknown as Parameters<typeof middleware>[0];
+        // RpcServer opens the ws.rpc span around the middleware.
+        yield* middleware(handler, options).pipe(
+          Effect.withSpan("ws.rpc.server.getConfig"),
+          Effect.withTracer(recording.tracer),
+        );
+        for (const name of ["ws.rpc.server.getConfig", "ServerConfig.get"]) {
+          assert.strictEqual(
+            recording.named(name)[0]?.attributes.get("houston.client.kind"),
+            "desktop",
+            name,
+          );
+        }
+      }),
   );
 });

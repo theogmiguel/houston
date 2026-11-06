@@ -245,6 +245,8 @@ import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import { requiredScopeForDeviceList, rpcAuthorizationError } from "./auth/RpcAuthorization.ts";
 import * as RpcAuthorization from "./auth/RpcAuthorization.ts";
 import {
+  DEFAULT_RPC_SPAN_ATTRIBUTES,
+  RPC_SPAN_PREFIX,
   RpcInstrumentation,
   makeRpcInstrumentationLayer,
 } from "./observability/RpcInstrumentation.ts";
@@ -3592,8 +3594,9 @@ export const layerWsRpc = (
 
 // Default socket-level Defect frames end every pending client request.
 export const WS_RPC_SERVER_OPTIONS = {
-  disableTracing: true,
   disableFatalDefects: true,
+  spanPrefix: RPC_SPAN_PREFIX,
+  spanAttributes: DEFAULT_RPC_SPAN_ATTRIBUTES,
 } as const;
 
 export const layer = Layer.unwrap(

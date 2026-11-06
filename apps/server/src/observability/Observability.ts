@@ -11,13 +11,16 @@ import * as OtlpExporter from "effect/observability/OtlpExporter";
 import * as OtlpMetrics from "effect/observability/OtlpMetrics";
 import * as OtlpTracer from "effect/observability/OtlpTracer";
 import * as Statement from "effect/sql/Statement";
+import * as CodexProtocol from "effect-codex-app-server/protocol";
 
 import * as ServerConfig from "../config.ts";
 import * as ResourceAttribution from "../resourceTelemetry/ResourceAttribution.ts";
 import * as ServerLogger from "../serverLogger.ts";
 import * as ExportTracer from "../houston/observability/ExportTracer.ts";
+import * as UnsampledSpans from "../houston/observability/UnsampledSpans.ts";
 import * as BrowserTraceCollector from "./BrowserTraceCollector.ts";
 import * as HeapAttribution from "./HeapAttribution.ts";
+import { RPC_SPANS_UNSAMPLED } from "./RpcInstrumentation.ts";
 
 export const layer = Layer.unwrap(
   Effect.gen(function* () {
@@ -35,6 +38,8 @@ export const layer = Layer.unwrap(
       Layer.succeed(References.TracerTimingEnabled, config.traceTimingEnabled),
       // Preserve SQL spans while awaiting connections so lock waits can be recorded on them.
       Layer.succeed(Statement.SpanPropagationEnabled, true),
+      // Houston: the Codex app-server receives trace context only while traces are exported.
+      Layer.succeed(CodexProtocol.PropagateTraceContext, config.otlpTracesUrl !== undefined),
       HttpObservability.layer,
     );
 
@@ -75,7 +80,9 @@ export const layer = Layer.unwrap(
           ...(delegate ? { delegate } : {}),
         });
 
-        const heapAttribution = yield* HeapAttribution.make(tracer);
+        const heapAttribution = yield* HeapAttribution.make(
+          UnsampledSpans.make(tracer, RPC_SPANS_UNSAMPLED),
+        );
         yield* heapAttribution.run;
 
         return Layer.mergeAll(
