@@ -26,6 +26,8 @@ export interface GridShelvesProps {
   /** A thread is being dragged, so Closed reads as a place it can go. */
   closedDragActive?: boolean;
   onClosedDrop?: (source: ThreadDragSource) => void;
+  /** Both shelves show every row they hold, such as while a search lists its matches. */
+  forceExpanded?: boolean;
 }
 
 /**
@@ -39,6 +41,7 @@ export function GridShelves({
   closedDropTarget = false,
   closedDragActive = false,
   onClosedDrop,
+  forceExpanded = false,
 }: GridShelvesProps) {
   const closedRef = useRef<HTMLDivElement | null>(null);
   useThreadDropZone(
@@ -57,13 +60,15 @@ export function GridShelves({
     Schema.Boolean,
   );
   const [settledVisibleCount, setSettledVisibleCount] = useState(SETTLED_TAIL_INITIAL_COUNT);
-  const visibleClosed = closed.slice(0, settledVisibleCount);
+  const snoozedOpen = forceExpanded || snoozedExpanded;
+  const settledOpen = forceExpanded || settledExpanded;
+  const visibleClosed = forceExpanded ? closed : closed.slice(0, settledVisibleCount);
   const hiddenClosedCount = Math.max(0, closed.length - visibleClosed.length);
 
   return (
     <div className="flex flex-col gap-px" data-testid="grid-shelves">
       <AnimatedHeight>
-        {snoozedExpanded ? (
+        {snoozedOpen ? (
           <div
             className="flex max-h-56 flex-col gap-px overflow-y-auto pb-1"
             data-testid="grid-snoozed-shelf-list"
@@ -80,7 +85,7 @@ export function GridShelves({
         label="On hold"
         count={held.length}
         toggle={{
-          expanded: snoozedExpanded,
+          expanded: snoozedOpen,
           onToggle: () => setSnoozedExpanded((value) => !value),
         }}
       />
@@ -92,7 +97,7 @@ export function GridShelves({
         )}
       >
         <AnimatedHeight>
-          {settledExpanded ? (
+          {settledOpen ? (
             <div
               className="flex max-h-56 flex-col gap-px overflow-y-auto pb-1"
               data-testid="grid-settled-shelf-list"
@@ -124,7 +129,7 @@ export function GridShelves({
           dragging={closedDragActive}
           isDropTarget={closedDropTarget}
           toggle={{
-            expanded: settledExpanded,
+            expanded: settledOpen,
             onToggle: () => setSettledExpanded((value) => !value),
           }}
         />

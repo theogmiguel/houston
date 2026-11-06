@@ -4,7 +4,9 @@ import "~/index.css";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
 import { render } from "../../../test/render";
 import { TooltipProvider } from "../ui/tooltip";
+import { scopedThreadKey, scopeThreadRef } from "@houston-app/client-runtime/environment";
 import { ThreadCard } from "./GridSidebar";
+import { SidebarSearchHighlightContext } from "./sidebarSearchResults";
 
 vi.mock(import("@effect/atom-react"), async (original) => ({
   ...(await original()),
@@ -124,5 +126,25 @@ describe("ThreadCard branch", () => {
 
     await expect.element(screen.getByText("houston/recorded", { exact: true })).toBeInTheDocument();
     expect(screen.container.textContent).not.toContain("main");
+  });
+});
+
+describe("ThreadCard search highlight", () => {
+  it("marks the row that Enter would open and no other", async () => {
+    const key = scopedThreadKey(scopeThreadRef("env-1" as never, "thread-a" as never));
+    await using highlighted = await render(
+      <SidebarSearchHighlightContext.Provider value={key}>
+        {card(thread())}
+      </SidebarSearchHighlightContext.Provider>,
+    );
+    expect(highlighted.container.querySelector("[data-search-highlighted]")).not.toBeNull();
+    await highlighted[Symbol.asyncDispose]();
+
+    await using other = await render(
+      <SidebarSearchHighlightContext.Provider value="env-1:other">
+        {card(thread())}
+      </SidebarSearchHighlightContext.Provider>,
+    );
+    expect(other.container.querySelector("[data-search-highlighted]")).toBeNull();
   });
 });
