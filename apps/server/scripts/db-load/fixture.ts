@@ -1,6 +1,6 @@
 // @effect-diagnostics globalDate:off - generated timestamps derive from a fixed base, not the clock.
 // One unit of a heavy user's history, written through the server's own write paths (EventSink,
-// ProjectStore, HoustonTaskStore). Sizes follow a real v2 database (docs/operations/development.md).
+// ProjectStore, HoustonTaskStore). Row sizes follow the payload distributions of a real v2 database.
 import {
   CommandId,
   OrchestrationV2DomainEvent,
@@ -46,7 +46,7 @@ export interface UnitShape {
   readonly runBuckets: ReadonlyArray<readonly [number, number, number]>;
 }
 
-// A heavy user after a few months: about 150 threads and 1,300 turns across six projects.
+// A heavy user after a few months: about 150 threads and 1,100 turns across six projects.
 // The bucket mix gives a median of 4 turns and a tail of 30-80 turn threads, the shape seen on
 // real databases (most threads short, a few long-running ones).
 export const HEAVY_USER_UNIT: UnitShape = {

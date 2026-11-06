@@ -240,12 +240,14 @@ checkouts need this suite and the same generator version; `--a-label` and `--b-l
 - **Size.** A unit takes about 170 MB and 90 seconds; 100x needs about 18 GB and an hour.
   1000x needs more disk than a workstation usually has, so reports project it from the fit.
 - **Queries.** `queries.ts` calls the stores the server calls (shell, boot recovery, thread
-  open, search, turn start, stream writes, maintenance). Writes are idempotent re-writes or run
-  in a rolled-back transaction, so repetitions see the same state.
+  open, search, turn start, stream writes, maintenance). Maintenance passes run in a rolled-back
+  transaction; stream writes re-write an existing item and append one event each,
+  as a streaming update does, so each run adds a few hundred events to a reused database.
 - **Budgets (p95).** Interactive reads 16 ms (one 60 Hz frame), per-event stream work 8 ms
   (tens of events per second share the writer), turn start 50 ms, boot and search 100 ms,
   maintenance 250 ms (it holds the writer while a turn streams).
-- **Statistics.** Three warm-up runs, then repetitions sized to the query (30 to 200) in a
+- **Statistics.** Three warm-up runs, then repetitions sized to the query (30 to 200; a
+  query slower than its time cap keeps at least 5, so its p95 is close to its maximum) in a
   seeded random order. Results hold every sample, p50 and p95 with bootstrap 95% intervals, the
   power-law exponent against row count (or deep-thread turns) and each statement's
   `EXPLAIN QUERY PLAN`. A query fails at a scale when its p95 exceeds its path's budget, a plan

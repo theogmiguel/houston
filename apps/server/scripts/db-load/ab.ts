@@ -43,6 +43,18 @@ export function blockOrder<T>(a: T, b: T, block: number): readonly [T, T] {
   return block % 2 === 0 ? [a, b] : [b, a];
 }
 
+/** A side's copy is reused only while it came from the same build of the source database. */
+export function copyIsCurrent(manifestPath: string, source: DatabaseManifest): boolean {
+  if (!NodeFS.existsSync(manifestPath)) return false;
+  const copy = JSON.parse(NodeFS.readFileSync(manifestPath, "utf8")) as Partial<DatabaseManifest>;
+  return (
+    copy.generatorVersion === source.generatorVersion &&
+    copy.seed === source.seed &&
+    copy.buildSeconds === source.buildSeconds &&
+    copy.totalRows === source.totalRows
+  );
+}
+
 /** Each side gets its own database copies, so one side's migrations never reach the other's data. */
 export function copyDatabasesFor(
   side: AbSide,
@@ -54,7 +66,7 @@ export function copyDatabasesFor(
   for (const manifest of manifests) {
     const target = scaleDir(sideDir, manifest.scale);
     const manifestPath = NodePath.join(target, "manifest.json");
-    if (NodeFS.existsSync(manifestPath)) continue;
+    if (copyIsCurrent(manifestPath, manifest)) continue;
     log(`${side.name}: copying ${manifest.scale}x database`);
     NodeFS.mkdirSync(target, { recursive: true });
     const dbPath = NodePath.join(target, "state.sqlite");
