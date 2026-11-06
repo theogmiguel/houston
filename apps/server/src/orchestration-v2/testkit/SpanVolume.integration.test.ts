@@ -26,12 +26,12 @@ const CASES = [
   {
     fixture: "subagent",
     driver: "claudeAgent",
-    total: 25_927,
+    total: 17_249,
     ceilings: {
-      sqlite: 11_552,
-      "sql.transaction": 1493,
-      BEGIN: 1493,
-      COMMIT: 1493,
+      sqlite: 4731,
+      "sql.transaction": 1299,
+      BEGIN: 1299,
+      COMMIT: 1299,
       reportTurnTerminal: 1000,
       "orchestrationV2.EventSink.write": 985,
       "MessageDeliveryWriter.observe": 985,
@@ -53,12 +53,12 @@ const CASES = [
   {
     fixture: "subagent",
     driver: "codex",
-    total: 19_467,
+    total: 14_152,
     ceilings: {
-      sqlite: 7257,
-      "sql.transaction": 1358,
-      BEGIN: 1358,
-      COMMIT: 1358,
+      sqlite: 3064,
+      "sql.transaction": 1239,
+      BEGIN: 1239,
+      COMMIT: 1239,
       "orchestrationV2.EventSink.write": 1009,
       reportTurnTerminal: 1000,
       "MessageDeliveryWriter.observe": 991,
@@ -120,23 +120,25 @@ type ProviderReplayTranscriptOf = Parameters<
 
 const HARNESS_SPANS = new Set(["runOrchestratorReplayFixture", "awaitDispatch"]);
 
-// Counts spans by name, leaving out the scenario's own projection polls and everything under them.
+// Counts spans by name, leaving out the scenario's own projection polls, the database setup
+// (migrations and read-model repair run once per database, not per event) and everything under them.
 const countingTracer = () => {
   const counts = new Map<string, number>();
-  const polling = new WeakSet<Tracer.AnySpan>();
+  const excluded = new WeakSet<Tracer.AnySpan>();
   const tracer = Tracer.make({
     span(options) {
       const span = new Tracer.NativeSpan(options);
       const parent = span.parent._tag === "Some" ? span.parent.value : undefined;
+      // Only a call the scenario makes; a parentless one is session work (withoutTurnContext).
       const fromHarness =
-        parent === undefined ||
-        (parent._tag === "Span" &&
-          (HARNESS_SPANS.has(parent.name) || parent.name.startsWith("scenario.")));
+        parent?._tag === "Span" &&
+        (HARNESS_SPANS.has(parent.name) || parent.name.startsWith("scenario."));
       if (
-        (parent !== undefined && polling.has(parent)) ||
+        (parent !== undefined && excluded.has(parent)) ||
+        options.name === "Sqlite.setup" ||
         (options.name === "OrchestratorV2.getThreadProjection" && fromHarness)
       ) {
-        polling.add(span);
+        excluded.add(span);
       } else {
         counts.set(options.name, (counts.get(options.name) ?? 0) + 1);
       }

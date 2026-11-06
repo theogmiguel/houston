@@ -3,6 +3,12 @@ import type { ExtraProps as ReactMarkdownExtraProps } from "react-markdown";
 
 import { fnv1a32, type DiffThemeName } from "../../lib/diffRendering";
 
+const WHITESPACE_RUN = /\s+/;
+const OPENING_PATTERN = /^(?:`{3,}|~{3,})/;
+const CLOSING_PATTERN = /(?:^|\n)[ \t>]*(`{3,}|~{3,})[ \t\r]*$/;
+const TRAILING_CARRIAGE_RETURN = /\r$/;
+const ANY_LINE_BREAK = /\r\n|\r|\n/;
+
 const CODE_FENCE_LANGUAGE_REGEX = /(?:^|\s)language-([^\s]+)/;
 
 export function extractFenceLanguage(className: string | undefined): string {
@@ -20,7 +26,10 @@ export function extractFenceTitle(meta: string | undefined): string | null {
   const attrMatch = FENCE_TITLE_ATTR_REGEX.exec(meta);
   const attrTitle = attrMatch?.[1] ?? attrMatch?.[2] ?? attrMatch?.[3];
   if (attrTitle) return attrTitle;
-  return meta.split(/\s+/).find((candidate) => FENCE_FILENAME_TOKEN_REGEX.test(candidate)) ?? null;
+  return (
+    meta.split(WHITESPACE_RUN).find((candidate) => FENCE_FILENAME_TOKEN_REGEX.test(candidate)) ??
+    null
+  );
 }
 
 export function extractPreCodeMeta(node: unknown): string | undefined {
@@ -50,10 +59,10 @@ export function isClosedCodeFence(
   const end = node?.position?.end.offset;
   if (start === undefined || end === undefined) return false;
   const source = text.slice(start, end);
-  const opening = /^(?:`{3,}|~{3,})/.exec(source)?.[0];
+  const opening = OPENING_PATTERN.exec(source)?.[0];
   // One class for the blockquote prefix: nested quantifiers here backtrack
   // exponentially on code lines that start with many `> ` markers.
-  const closing = /(?:^|\n)[ \t>]*(`{3,}|~{3,})[ \t\r]*$/.exec(source)?.[1];
+  const closing = CLOSING_PATTERN.exec(source)?.[1];
   return (
     opening !== undefined &&
     closing !== undefined &&
@@ -61,7 +70,8 @@ export function isClosedCodeFence(
     closing.length >= opening.length &&
     // Only a real closer is omitted from parsed code. A CRLF stream cut after
     // CR must not count as an extra source line.
-    source.replace(/\r$/, "").split(/\r\n|\r|\n/).length > code.split(/\r\n|\r|\n/).length
+    source.replace(TRAILING_CARRIAGE_RETURN, "").split(ANY_LINE_BREAK).length >
+      code.split(ANY_LINE_BREAK).length
   );
 }
 

@@ -2,6 +2,13 @@ import * as Effect from "effect/Effect";
 import * as Migrator from "effect/sql/Migrator";
 import * as SqlClient from "effect/sql/SqlClient";
 
+import {
+  createProjectionReadIndexes,
+  createShellReadModels,
+  createTimelineReadIndexes,
+  createTurnStartReadModels,
+} from "./projectionReadModels.ts";
+
 // Upstream's migrator skips every id up to the highest it recorded, so Houston's schema keeps its
 // own history table and ids; upstream's table and ids stay untouched.
 const HOUSTON_MIGRATIONS_TABLE = "houston_sql_migrations";
@@ -774,6 +781,10 @@ const houstonMigrationEntries = [
   [9, "NightShift", NightShift],
   [10, "DropNightShiftAndHarnessReview", DropNightShiftAndHarnessReview],
   [11, "SecretStoreImport", SecretStoreImport],
+  [12, "ProjectionReadIndexes", createProjectionReadIndexes],
+  [13, "ShellReadModels", createShellReadModels],
+  [16, "TimelineReadIndex", createTimelineReadIndexes],
+  [17, "TurnStartReadModels", createTurnStartReadModels],
 ] as const;
 
 // Ids land in merge order, so a database can record a higher id before a lower one; every

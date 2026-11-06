@@ -12,6 +12,10 @@ import { createCanvasFrameSink, type DeviceFrameSink } from "./frame.ts";
 import { type DeviceHubAccess, withDeviceHubQuery } from "./hubAccess.ts";
 import type { DevicePlatform } from "@houston-app/contracts";
 
+const HID_USAGE_FOR_CODE_PATTERN = /^Key[A-Z]$/;
+const HID_USAGE_FOR_CODE_PATTERN_2 = /^Digit[1-9]$/;
+const READ_WEB_RTC_PATTERN = /^a=candidate:.* typ (?:srflx|relay)\b/m;
+
 export type DeviceStreamStatus = "connecting" | "streaming" | "error";
 
 export interface DeviceScreenSize {
@@ -371,8 +375,8 @@ const HID_USAGE_BY_CODE: Readonly<Record<string, number>> = {
 };
 
 function hidUsageForCode(code: string): number | null {
-  if (/^Key[A-Z]$/.test(code)) return 0x04 + (code.charCodeAt(3) - 65);
-  if (/^Digit[1-9]$/.test(code)) return 0x1e + (code.charCodeAt(5) - 49);
+  if (HID_USAGE_FOR_CODE_PATTERN.test(code)) return 0x04 + (code.charCodeAt(3) - 65);
+  if (HID_USAGE_FOR_CODE_PATTERN_2.test(code)) return 0x1e + (code.charCodeAt(5) - 49);
   if (code === "Digit0") return 0x27;
   return HID_USAGE_BY_CODE[code] ?? null;
 }
@@ -1002,7 +1006,7 @@ export function createDeviceStreamClient(
       const sdp = connection.localDescription?.sdp ?? "";
       if (
         !gathered &&
-        !/^a=candidate:.* typ (?:srflx|relay)\b/m.test(sdp) &&
+        !READ_WEB_RTC_PATTERN.test(sdp) &&
         iceGatheringDeadlineMs < ICE_GATHERING_MAX_TIMEOUT_MS
       ) {
         iceGatheringDeadlineMs = Math.min(iceGatheringDeadlineMs * 2, ICE_GATHERING_MAX_TIMEOUT_MS);

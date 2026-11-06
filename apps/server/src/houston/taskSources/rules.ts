@@ -19,6 +19,9 @@ import {
 } from "@houston-app/contracts/houston/taskSources";
 import * as Schema from "effect/Schema";
 
+const CONTROL_CHAR = /[\u0000-\u001f\u007f]/;
+const POSITIVE_INTEGER = /^[1-9][0-9]*$/;
+
 export const POLL_INTERVAL_SECONDS = 20;
 export const GITHUB_PAGE_SIZE = 100;
 export const GITHUB_MAX_PAGES = 20;
@@ -245,10 +248,7 @@ export const checkNotionSettings = (
     if (value === null) {
       return required ? refuse("invalid", operation, `${field} is required`, { field }) : undefined;
     }
-    if (
-      bytes(value) > HOUSTON_TASK_SOURCE_LIMITS.propertyIdBytes ||
-      /[\u0000-\u001f\u007f]/.test(value)
-    ) {
+    if (bytes(value) > HOUSTON_TASK_SOURCE_LIMITS.propertyIdBytes || CONTROL_CHAR.test(value)) {
       return refuse(
         "invalid",
         operation,
@@ -1079,13 +1079,13 @@ export const githubPullRequestUrl = (url: string, repository: string): string | 
   const prefix = `https://github.com/${repository}/pull/`;
   if (!url.startsWith(prefix)) return null;
   const number = url.slice(prefix.length);
-  return /^[1-9][0-9]*$/.test(number) ? url : null;
+  return POSITIVE_INTEGER.test(number) ? url : null;
 };
 
 /** The issue number of a GitHub source link `owner/repo#N` in `repository`, or null. */
 export const issueNumberOf = (externalId: string, repository: string): number | null => {
   const [repo, number] = externalId.split("#");
-  return repo === repository && number !== undefined && /^[1-9][0-9]*$/.test(number)
+  return repo === repository && number !== undefined && POSITIVE_INTEGER.test(number)
     ? Number(number)
     : null;
 };

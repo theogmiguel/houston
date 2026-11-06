@@ -151,6 +151,7 @@ describe("remote", () => {
     expect(readPairingAppLink(appLink)).toBe(pairingUrl);
     expect(readPairingAppLink(appLink.replace("houston:", "houston-dev:"))).toBe(pairingUrl);
     expect(readPairingAppLink("houston://pair")).toBeNull();
+    expect(readPairingAppLink("not a url")).toBeNull();
     expect(readPairingAppLink(appLink.replace("//pair?", "//pair/other?"))).toBeNull();
     expect(
       readPairingAppLink(`houston://threads?pairingUrl=${encodeURIComponent(pairingUrl)}`),

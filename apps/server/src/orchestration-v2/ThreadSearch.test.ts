@@ -7,6 +7,7 @@ import {
   ThreadId,
   type OrchestrationV2DomainEvent,
   type ThreadLinkedPullRequest,
+  type ThreadPullRequestLink,
 } from "@houston-app/contracts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -69,9 +70,11 @@ const thread = (
     readonly subagentOf?: ThreadId;
     readonly sideChatOf?: ThreadId;
     readonly title?: string;
+    readonly branch?: string;
     readonly settledAt?: DateTime.Utc;
     readonly linkedPullRequest?: ThreadLinkedPullRequest;
     readonly branchPullRequest?: ThreadLinkedPullRequest;
+    readonly pullRequests?: ReadonlyArray<ThreadPullRequestLink>;
   } = {},
 ): OrchestrationV2DomainEvent => ({
   id: EventId.make(`created:${threadId}`),
@@ -89,10 +92,11 @@ const thread = (
     modelSelection: { instanceId: providerInstanceId, model: "gpt-5" },
     runtimeMode: "full-access",
     interactionMode: "default",
-    branch: null,
+    branch: overrides.branch ?? null,
     worktreePath: null,
     linkedPullRequest: overrides.linkedPullRequest ?? null,
     branchPullRequest: overrides.branchPullRequest ?? null,
+    ...(overrides.pullRequests === undefined ? {} : { pullRequests: overrides.pullRequests }),
     activeProviderThreadId: null,
     lineage: overrides.subagentOf
       ? {
@@ -1085,6 +1089,117 @@ it.layer(layerTest)("ThreadSearch.searchThreads", (it) => {
         ),
         ["Clean up auth tokens"],
       );
+    }),
+  );
+
+  it.effect("matches the branch, linked pull requests and project title, like the palette", () =>
+    Effect.gen(function* () {
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const search = yield* ThreadSearch.ThreadSearch;
+      const project = ProjectId.make("project:kingfisher");
+      const otherProject = ProjectId.make("project:dipper");
+      yield* createProject(project);
+      yield* createProject(otherProject);
+      const pullRequest = (number: number): ThreadLinkedPullRequest => ({
+        projectId: project,
+        repository: "acme/kingfisher",
+        number,
+        url: `https://github.com/acme/kingfisher/pull/${number}`,
+      });
+      const branch = ThreadId.make("thread:kingfisher-branch");
+      const linked = ThreadId.make("thread:kingfisher-linked");
+      const branchLinked = ThreadId.make("thread:kingfisher-branch-linked");
+      const elsewhere = ThreadId.make("thread:dipper");
+      yield* Effect.forEach(
+        [
+          thread(branch, project, { title: "Alpha", branch: "feature/osprey-nest" }),
+          thread(linked, project, { title: "Beta", linkedPullRequest: pullRequest(4301) }),
+          thread(branchLinked, project, { title: "Gamma", branchPullRequest: pullRequest(4302) }),
+          thread(elsewhere, otherProject, { title: "Delta" }),
+        ],
+        projections.apply,
+        { discard: true },
+      );
+      const find = (query: string) =>
+        search
+          .searchThreads({ query })
+          .pipe(Effect.map(({ matches }) => matches.map((match) => [match.threadId, match.title])));
+      assert.deepEqual(yield* find("osprey"), [[branch, "Alpha"]]);
+      assert.deepEqual(yield* find("#4301"), [[linked, "Beta"]]);
+      assert.deepEqual(yield* find("acme/kingfisher#4302"), [[branchLinked, "Gamma"]]);
+      assert.deepEqual(yield* find("dipper"), [[elsewhere, "Delta"]]);
+      assert.deepEqual(
+        (yield* search.searchThreads({ query: "alpha" })).matches.map((match) => match.projectId),
+        [project],
+      );
+    }),
+  );
+
+  it.effect("matches a linked pull request's synced title and reference, like the palette", () =>
+    Effect.gen(function* () {
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const search = yield* ThreadSearch.ThreadSearch;
+      const project = ProjectId.make("project:heron");
+      yield* createProject(project);
+      const syncedAt = DateTime.formatIso(at(5));
+      const link: ThreadPullRequestLink = {
+        host: "github.com",
+        repository: "acme/heron",
+        number: 4401,
+        url: "https://github.com/acme/heron/pull/4401",
+        source: "manual",
+        linkedAt: syncedAt,
+        snapshot: {
+          state: "open",
+          title: "Teach the sandpiper parser",
+          headBranch: "feature/parser",
+          baseBranch: "main",
+          isDraft: false,
+          updatedAt: syncedAt,
+          syncedAt,
+        },
+        stack: null,
+      };
+      const tracked = ThreadId.make("thread:heron-tracked");
+      yield* Effect.forEach(
+        [
+          thread(tracked, project, { title: "Epsilon", pullRequests: [link] }),
+          thread(ThreadId.make("thread:heron-other"), project, { title: "Zeta" }),
+        ],
+        projections.apply,
+        { discard: true },
+      );
+      const find = (query: string) =>
+        search
+          .searchThreads({ query })
+          .pipe(Effect.map(({ matches }) => matches.map((match) => [match.threadId, match.title])));
+      assert.deepEqual(yield* find("sandpiper"), [[tracked, "Epsilon"]]);
+      assert.deepEqual(yield* find("acme/heron#4401"), [[tracked, "Epsilon"]]);
+    }),
+  );
+
+  it.effect("reads the fields the palette scores, never whole thread payloads", () =>
+    Effect.gen(function* () {
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const sql = yield* SqlClient.SqlClient;
+      const project = ProjectId.make("project:columns");
+      yield* createProject(project);
+      yield* projections.apply(thread(ThreadId.make("thread:columns"), project));
+      const rows = yield* ThreadSearch.titleCandidatesQuery(sql, { projectId: project });
+      assert.equal(rows.length, 1);
+      assert.deepEqual(Object.keys(rows[0]!).toSorted(), [
+        "branch",
+        "branchPullRequest",
+        "createdAt",
+        "id",
+        "latestUserMessageAt",
+        "linkedPullRequest",
+        "opens",
+        "projectId",
+        "projectTitle",
+        "pullRequests",
+        "title",
+      ]);
     }),
   );
 });
