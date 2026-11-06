@@ -631,6 +631,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["add project base directory folder browser path home"],
   },
   {
+    id: "host-folder-clone-layout",
+    title: "Clone into host folders",
+    to: "/settings/threads",
+    scope: "environment-defaults",
+    searchTerms: ["clone destination host owner repository root layout"],
+  },
+  {
     id: "unpin-confirmation",
     title: "Unpin confirmation",
     to: "/settings/general",

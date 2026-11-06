@@ -14,6 +14,10 @@ folder, or **Clone a repository** to clone a Git URL to a chosen machine and loc
 `Start without a project` opens a thread with no project; a thread without a folder can be
 turned into a project from its thread actions later.
 
+To clone into `<host>/<owner>/<repo>` folders, turn on **Clone into host folders** under
+**Settings ▸ Threads**. Clones then default to that path under the add-project base directory,
+and you can still change the destination before cloning.
+
 The add-project palette, opened from **Add project** at the top of the sidebar or from the
 command palette, lists **Open folder…**, **Clone repository…** and **New project…**,
 followed by the provider repositories Houston can clone from. **New project…** appears when

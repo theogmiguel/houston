@@ -78,8 +78,8 @@ Claude has two switches, both on by default:
 
 Default model, fallback model, default permissions, where new threads start (local checkout
 or new worktree), hold presets, resume and hold behavior at usage limits, auto-close on
-merge and after inactivity, the add-project base directory, text generation model and
-instructions, and response streaming.
+merge and after inactivity, the add-project base directory, host-folder clone layout, text
+generation model and instructions, and response streaming.
 
 ## Browser
 
