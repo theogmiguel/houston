@@ -41,6 +41,9 @@ import { isOpenRun, priorityFromValue, priorityValue, refuse, v1PathMatches } fr
 import { DEFAULT_START_MODEL, encodeSelection } from "./TaskService.ts";
 import { HoustonTaskStore, nowIso } from "./TaskStore.ts";
 
+const TRAILING_PATH_SEPARATORS = /[\\/]+$/u;
+const PATH_SEPARATOR = /[\\/]/u;
+
 const OPERATION = "houston.tasks.importV1.run";
 const V1_DATABASE = "houston.db";
 // SQLite keeps a WAL database's uncheckpointed pages and its index beside the file.
@@ -341,10 +344,7 @@ const make = Effect.gen(function* () {
       }
       const name = typeof workspace.name === "string" ? workspace.name.trim() : "";
       const fallback =
-        path
-          .replace(/[\\/]+$/u, "")
-          .split(/[\\/]/u)
-          .at(-1) ?? path;
+        path.replace(TRAILING_PATH_SEPARATORS, "").split(PATH_SEPARATOR).at(-1) ?? path;
       const id = yield* random.uuidV4();
       const added = yield* projectService
         .bootstrap({

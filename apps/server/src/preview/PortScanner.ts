@@ -166,11 +166,9 @@ const localServerKey = (host: string, port: number): string =>
 const urlPort = (url: URL): number =>
   url.port.length > 0 ? Number.parseInt(url.port, 10) : url.protocol === "http:" ? 80 : 443;
 
-const webProbeCacheKey = (raw: string): string => {
-  const url = new URL(raw);
-  url.hash = "";
-  return url.href;
-};
+// The configured URL without its fragment; leaves the caller's URL unchanged.
+const webProbeCacheKey = (url: URL): string =>
+  url.hash.length > 0 ? url.href.slice(0, -url.hash.length) : url.href;
 
 const normalizeConfiguredUrls = (urls: ReadonlyArray<string>): ReadonlyArray<string> => [
   ...new Set(
@@ -199,7 +197,7 @@ const projectWebProbeSnapshot = (
     const serverKey = localServerKey(url.hostname, port);
     if (!firstConfiguredByServer.has(serverKey)) firstConfiguredByServer.set(serverKey, raw);
     if (visibleByServer.has(serverKey)) continue;
-    const configured = snapshot.configured.get(webProbeCacheKey(raw));
+    const configured = snapshot.configured.get(webProbeCacheKey(url));
     if (configured) visibleByServer.set(serverKey, { ...configured, url: raw });
   }
   // An owned listener whose configured check failed still opens at this caller's configured URL.
@@ -712,7 +710,7 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
       const url = new URL(raw);
       const port = urlPort(url);
       const key = localServerKey(url.hostname, port);
-      const resourceKey = webProbeCacheKey(raw);
+      const resourceKey = webProbeCacheKey(url);
       if (configuredResources.has(resourceKey)) continue;
       configuredResources.add(resourceKey);
       groups.push({

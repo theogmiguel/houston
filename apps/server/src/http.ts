@@ -49,6 +49,7 @@ import {
   failEnvironmentAuthInvalid,
   failEnvironmentInternal,
 } from "./auth/http.ts";
+import * as ExportRedaction from "./houston/observability/ExportRedaction.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import { WEBHOOK_ROUTE_PREFIX } from "./scheduledTasks/ScheduledTaskService.ts";
 import {
@@ -362,7 +363,7 @@ export const layerOtlpTracesProxyRoute = HttpRouter.add(
 
     return yield* httpClient
       .post(otlpTracesUrl, {
-        body: serialization.traces(bodyJson),
+        body: serialization.traces(ExportRedaction.exportedTraceData(bodyJson)),
         headers: otlpHeaders,
       })
       .pipe(
@@ -440,7 +441,7 @@ export const layerAssetRoute = HttpRouter.add(
           // The URL can carry a token in its query string, and the error keeps the request it
           // failed on; the host and the failure kind are enough to diagnose.
           Effect.logWarning("Failed to fetch source control media.", {
-            host: URL.canParse(asset.url) ? new URL(asset.url).host : undefined,
+            host: URL.parse(asset.url)?.host,
             reason: cause.reason._tag,
           }),
         ),

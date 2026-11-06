@@ -4,6 +4,7 @@ import namespaceNodeImports from "./rules/namespace-node-imports.ts";
 import noDomTestEnvironment from "./rules/no-dom-test-environment.ts";
 import noEmDashCopy from "./rules/no-em-dash-copy.ts";
 import noFrameWaitsInBrowserTests from "./rules/no-frame-waits-in-browser-tests.ts";
+import noFunctionScopedRegex from "./rules/no-function-scoped-regex.ts";
 import noGlobalProcessRuntime from "./rules/no-global-process-runtime.ts";
 import noHermesUnsupportedApis from "./rules/no-hermes-unsupported-apis.ts";
 import noHooklessUseFunction from "./rules/no-hookless-use-function.ts";
@@ -33,6 +34,7 @@ import preferEffectFn from "./rules/prefer-effect-fn.ts";
 import requireCenteredScrollGutter from "./rules/require-centered-scroll-gutter.ts";
 import requireDisposableRender from "./rules/require-disposable-render.ts";
 import requireSuppressionReason from "./rules/require-suppression-reason.ts";
+import requireTracedDefinition from "./rules/require-traced-definition.ts";
 
 export default definePlugin({
   meta: {
@@ -43,6 +45,7 @@ export default definePlugin({
     "no-dom-test-environment": noDomTestEnvironment,
     "no-em-dash-copy": noEmDashCopy,
     "no-frame-waits-in-browser-tests": noFrameWaitsInBrowserTests,
+    "no-function-scoped-regex": noFunctionScopedRegex,
     "no-global-process-runtime": noGlobalProcessRuntime,
     "no-hermes-unsupported-apis": noHermesUnsupportedApis,
     "no-hookless-use-function": noHooklessUseFunction,
@@ -72,5 +75,6 @@ export default definePlugin({
     "require-centered-scroll-gutter": requireCenteredScrollGutter,
     "require-disposable-render": requireDisposableRender,
     "require-suppression-reason": requireSuppressionReason,
+    "require-traced-definition": requireTracedDefinition,
   },
 });

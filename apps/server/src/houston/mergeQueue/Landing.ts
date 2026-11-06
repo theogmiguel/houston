@@ -42,6 +42,8 @@ import {
 import { HoustonMergeQueueStore, nowIso } from "./Store.ts";
 import { HoustonMergeVerifier } from "./Verifier.ts";
 
+const PUSH_REJECTED = /stale info|fetch first|rejected/;
+
 const OPERATION = "houston.mergeQueue.mergeHead";
 /** After a push, GitHub is read this many times, this far apart, to see the pushed head. */
 const AFTER_PUSH_READS = 6;
@@ -80,7 +82,7 @@ export const pushWithLease = (
       if (result.exitCode === 0) return Effect.void;
       const said = `${result.stdout}${result.stderr}`;
       return Effect.fail(
-        /stale info|fetch first|rejected/.test(said)
+        PUSH_REJECTED.test(said)
           ? `the push to ${branch} was refused: ${remote}/${branch} is no longer at the recorded ${oldSha}, so the lease did not hold and nothing was overwritten`
           : `pushing ${newSha} to ${remote}/${branch} failed (exit ${result.exitCode}): ${said.trim()}`,
       );

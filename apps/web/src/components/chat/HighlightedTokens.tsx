@@ -4,6 +4,10 @@ import { resolveDiffThemeName } from "../../lib/diffRendering";
 import type { EmbeddedScript } from "../../lib/embeddedScripts";
 import { getSyntaxHighlighterPromise } from "../../lib/syntaxHighlighting";
 
+const LINE_BREAK = /\r?\n/gu;
+const WORDS_OF_PATTERN = /(\s+)/u;
+const WORDS_OF_PATTERN_2 = /^\s/u;
+
 interface SyntaxToken {
   readonly content: string;
   readonly offset: number;
@@ -113,7 +117,7 @@ function restyledLines(
 ): SyntaxToken[][] {
   const lines: SyntaxToken[][] = [];
   let start = 0;
-  for (const lineBreak of [...code.matchAll(/\r?\n/gu), undefined]) {
+  for (const lineBreak of [...code.matchAll(LINE_BREAK), undefined]) {
     const end = lineBreak?.index ?? code.length;
     const tokens: SyntaxToken[] = [];
     for (let index = start; index < end;) {
@@ -145,7 +149,7 @@ export function keyedLines<Token extends SyntaxToken>(
   code: string,
   lines: ReadonlyArray<ReadonlyArray<Token>>,
 ) {
-  const endings = code.match(/\r?\n/gu) ?? [];
+  const endings = code.match(LINE_BREAK) ?? [];
   let lineStart = 0;
   return lines.map((tokens, index) => {
     const text = tokens.map((token) => token.content).join("");
@@ -166,9 +170,9 @@ export function wordsOf(tokens: ReadonlyArray<SyntaxToken>): Array<string | Word
   let word: Word | null = null;
   for (const token of tokens) {
     let offset = token.offset;
-    for (const text of token.content.split(/(\s+)/u)) {
+    for (const text of token.content.split(WORDS_OF_PATTERN)) {
       if (text === "") continue;
-      if (/^\s/u.test(text)) {
+      if (WORDS_OF_PATTERN_2.test(text)) {
         parts.push(text);
         word = null;
       } else {

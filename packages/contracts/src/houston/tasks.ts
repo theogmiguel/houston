@@ -10,6 +10,9 @@ import {
 } from "../baseSchemas.ts";
 import { ModelSelection } from "../modelSelection.ts";
 
+const TASK_REF = /^[Hh][Oo][Uu]-([1-9][0-9]*)$/;
+const POSITIVE_INTEGER = /^[1-9][0-9]*$/;
+
 /** The bounds every write is checked against; a refusal names the bound and the actual value. */
 export const HOUSTON_TASK_LIMITS = {
   /** Characters in a title, an acceptance item and an initiative name. */
@@ -116,9 +119,9 @@ export type ParsedHoustonTaskRef =
 
 /** Null when `ref` is not a key or a decimal id. */
 export const parseHoustonTaskRef = (ref: string): ParsedHoustonTaskRef | null => {
-  const key = /^[Hh][Oo][Uu]-([1-9][0-9]*)$/.exec(ref);
+  const key = TASK_REF.exec(ref);
   if (key !== null) return { kind: "number", number: Number(key[1]) };
-  return /^[1-9][0-9]*$/.test(ref) ? { kind: "id", id: Number(ref) } : null;
+  return POSITIVE_INTEGER.test(ref) ? { kind: "id", id: Number(ref) } : null;
 };
 
 export const HoustonTaskErrorKind = Schema.Literals([

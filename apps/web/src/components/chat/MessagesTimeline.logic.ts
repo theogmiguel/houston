@@ -78,6 +78,12 @@ import {
 } from "@houston-app/shared/toolActivity";
 import { isWindowsAbsolutePath } from "@houston-app/shared/path";
 
+const WHITESPACE_RUN = /\s+/g;
+const LINE_BREAK_CHAR = /[\r\n]/;
+const TRAILING_SLASHES = /\/+$/;
+const DOT_SLASH_PREFIX = /^\.\//;
+const LEADING_SLASHES = /^\/+/;
+
 function timelineEntryRunId(entry: TimelineEntry): RunId | null {
   if (entry.kind === "message") {
     return entry.message.role === "assistant" ? (entry.message.runId ?? null) : null;
@@ -98,7 +104,8 @@ function workEntryIsActiveTurnActivity(entry: WorkLogEntry): boolean {
 }
 
 function singleToolCallLabel(entry: WorkLogEntry): string {
-  if (entry.itemType === "reasoning") return entry.detail?.trim().replace(/\s+/g, " ") || "Thought";
+  if (entry.itemType === "reasoning")
+    return entry.detail?.trim().replace(WHITESPACE_RUN, " ") || "Thought";
   const toolPresentation = resolveWorkEntryToolPresentation(entry, "completed");
   if (toolPresentation) return toolPresentation.displayName;
   const item = entry.structuredPayload;
@@ -137,7 +144,7 @@ function workEntryReadPaths(entry: WorkLogEntry, workspaceRoot: string | undefin
 export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string | undefined) {
   if (entry.itemType === "system_notice") return entry.label;
   if (entry.itemType === "reasoning" || entry.tone === "thinking") {
-    const thought = entry.detail?.trim().replace(/\s+/g, " ");
+    const thought = entry.detail?.trim().replace(WHITESPACE_RUN, " ");
     return thought || entry.label;
   }
   const toolPresentation = resolveWorkEntryToolPresentation(entry);
@@ -163,7 +170,7 @@ export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string
   if (title) return title;
   const compactDetail = entry.detail?.trim();
   const detailIsSearchOutput =
-    (action === "code-search" || action === "search") && /[\r\n]/.test(compactDetail ?? "");
+    (action === "code-search" || action === "search") && LINE_BREAK_CHAR.test(compactDetail ?? "");
   if (compactDetail && !providerRetry && action !== "read" && !detailIsSearchOutput) {
     return compactDetail;
   }
@@ -221,8 +228,8 @@ export function workEntryReadOutput(
           if (!workspaceRoot || trimmed.startsWith("/") || isWindowsAbsolutePath(trimmed)) {
             return trimmed;
           }
-          const root = workspaceRoot.replaceAll("\\", "/").replace(/\/+$/, "");
-          const relative = trimmed.replace(/^\.\//, "").replace(/^\/+/, "");
+          const root = workspaceRoot.replaceAll("\\", "/").replace(TRAILING_SLASHES, "");
+          const relative = trimmed.replace(DOT_SLASH_PREFIX, "").replace(LEADING_SLASHES, "");
           return `${root}/${relative}`;
         })
         .filter((path) => path.length > 0),
@@ -242,7 +249,7 @@ export function liveWorkEntryLabel(
   const status = liveActivityToolStatus(entry.toolLifecycleStatus, active);
   if (entry.itemType === "reasoning") {
     return (
-      entry.detail?.trim().replace(/\s+/g, " ") ||
+      entry.detail?.trim().replace(WHITESPACE_RUN, " ") ||
       (status === "inProgress" ? "Thinking" : "Thought")
     );
   }
