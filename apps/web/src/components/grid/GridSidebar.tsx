@@ -17,11 +17,9 @@ import {
   AlarmClockOffIcon,
   ChevronRightIcon,
   ClockIcon,
-  CpuIcon,
   EyeOffIcon,
   FolderIcon,
   FolderOpenIcon,
-  GitBranchIcon,
   Grid2X2PlusIcon,
   MessageSquarePlusIcon,
   MoreHorizontalIcon,
@@ -119,6 +117,7 @@ import { ThreadStateMark } from "./threadStatusMark";
 import { ThreadCheckoutMark, ThreadRowIndicators } from "./threadRowIndicators";
 import { GridShelves } from "./GridShelves";
 import { readLocalApi } from "../../localApi";
+import { ThreadHoverCard } from "./threadHoverCard";
 import { useProjectSectionMenu } from "./projectSectionMenu";
 import { gridHeadingMenuItems, hiddenGridIdFromAction } from "./gridHeadingMenu";
 import {
@@ -2151,7 +2150,6 @@ export function ThreadCard({
   const bulkMenu = useContext(ThreadBulkMenuContext);
   const regeneratingTitle = thread.titleRegeneration != null;
   const canHold = canSnooze(thread, { now: nowIso });
-  const modelLabel = thread.modelSelection?.model ?? null;
   const actionsVisible = actionsHovered || holdMenuOpen || actionsMenuOpen;
   const [previewOpen, setPreviewOpen] = useState(false);
   const rowRef = useRef<HTMLDivElement | null>(null);
@@ -2535,21 +2533,13 @@ export function ThreadCard({
         ) : null}
       </TooltipTrigger>
       <TooltipPopup side="bottom" align="start" className="max-w-65">
-        <div className="flex flex-col gap-1.5 px-3 py-2.5 text-xs leading-4 text-secondary-foreground">
-          <span className="text-xs leading-4 font-semibold text-foreground">{thread.title}</span>
-          <span className="flex items-center gap-1.5">
-            <ChevronRightIcon aria-hidden className="size-3" />
-            {workspaceTitle}
-          </span>
-          <span className="flex items-center gap-1.5">
-            <GitBranchIcon aria-hidden className="size-3" />
-            {branchName ?? "no branch"}
-          </span>
-          <span className="flex items-center gap-1.5">
-            <CpuIcon aria-hidden className="size-3" />
-            {modelLabel ?? "model"}
-          </span>
-        </div>
+        <ThreadHoverCard
+          thread={thread}
+          workspaceTitle={workspaceTitle}
+          providerEntries={providerEntries}
+          branchName={branchName}
+          nowMs={Date.parse(`${nowMinute}:00.000Z`)}
+        />
       </TooltipPopup>
     </Tooltip>
   );
