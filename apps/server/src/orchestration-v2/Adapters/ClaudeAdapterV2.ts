@@ -226,6 +226,24 @@ import {
   subagentThreadTitle,
 } from "@houston-app/provider-core/server/subagentProjection";
 
+const PARSE_CLAUDE_INTEGER_PATTERN = /[_,\u00A0\u202F ]/g;
+const TRAILING_LINE_BREAK = /\r?\n$/;
+const MATCH_PATTERN = /claude-[a-z]+-(\d+)(?:-(\d{1,2}))?(?!\d)/u;
+const WHITESPACE_RUN = /\s+/g;
+const ESTIMATE_CLAUDE_PDF_PAGES_PATTERN = /^[1-9]\d{0,8}$/;
+const IS_CLAUDE_PROMPT_UUID_PATTERN = /^[^-]+-[^-]+-[^-]+-[^-]+-[^-]+$/;
+const NORMALIZED_CLAUDE_TOOL_NAME_PATTERN = /[\s_-]/g;
+const TOOL_NAMES_PATTERN = /^mcp__claude_ai_/u;
+const GATEWAY_RESET_AT_PATTERN =
+  /^API Error: 503 \[[^\]\r\n]+\] \[429\]: \{"type":"error","error":\{"type":"rate_limit_error",[^\r\n]*\} \(reset after (?:(\d+)h ?)?(?:(\d+)m ?)?(?:(\d+)s)?\)/;
+const RESET_AT_PATTERN = /\(reset after (?:(\d+)h ?)?(?:(\d+)m ?)?(?:(\d+)s)?\)/;
+const MATCH_PATTERN_2 = /^Task #(\S+) created successfully: (.+)$/s;
+const NON_ID_CHAR = /[^a-zA-Z0-9_-]/g;
+const READ_CLAUDE_TASK_LIST_PATTERN = /^\d+\.json$/;
+const GITDIR_LINE = /^gitdir:\s*(.+)$/m;
+const LINE_BREAK_CHAR = /[\r\n]/;
+const CAN_USE_TOOL_EFFECT_PATTERN = /^Dangerous rm(?:dir)?\b/i;
+
 export const CLAUDE_PROVIDER = ProviderDriverKind.make("claudeAgent");
 const CLAUDE_AGENT_SDK_QUERY_PROTOCOL = "claude-agent-sdk.query" as const;
 
@@ -1668,7 +1686,7 @@ function parseClaudeInteger(text: string): number {
     return Number.isInteger(number) ? number : Number.NaN;
   }
   if (value.length <= 32 && CLAUDE_GROUPED_INTEGER.test(value)) {
-    return Number.parseInt(value.replace(/[_,\u00A0\u202F ]/g, ""), 10);
+    return Number.parseInt(value.replace(PARSE_CLAUDE_INTEGER_PATTERN, ""), 10);
   }
   return Number.parseInt(value, 10);
 }
@@ -1748,7 +1766,7 @@ export function makeClaudeQueryOptions(input: {
   // appendSystemPrompt, so launch-argument text has to travel in that value.
   // The CLI puts file text before inline text and trims one trailing newline.
   const launchAppendSystemPrompt = [
-    input.appendSystemPromptFileText?.replace(/\r?\n$/, ""),
+    input.appendSystemPromptFileText?.replace(TRAILING_LINE_BREAK, ""),
     launchArgAppendSystemPrompt,
   ].filter((text): text is string => typeof text === "string" && text.length > 0);
   const requestThinkingSummaries =
@@ -2027,7 +2045,7 @@ function textFromClaudeContent(content: SDKAssistantMessage["message"]["content"
 
 // Claude 5.1+ emits at most one pre-tool text block as thinking; treat only a second consecutive thinking block as text.
 function claudeWritesUpdatesAsThinking(model: string): boolean {
-  const match = /claude-[a-z]+-(\d+)(?:-(\d{1,2}))?(?!\d)/u.exec(model);
+  const match = MATCH_PATTERN.exec(model);
   if (match === null) return false;
   const major = Number(match[1]);
   return major > 5 || (major === 5 && Number(match[2] ?? 0) >= 1);
@@ -2099,7 +2117,7 @@ function isClaudeGoalAcknowledgement(message: SDKMessage): boolean {
 const providerGoalsEqual = Schema.toEquivalence(Schema.NullOr(OrchestrationV2ProviderGoal));
 
 function normalizeClaudeResultText(text: string): string {
-  return text.replace(/\s+/g, " ").trim();
+  return text.replace(WHITESPACE_RUN, " ").trim();
 }
 
 function assistantTextFromSdkMessage(
@@ -2439,7 +2457,7 @@ const estimateClaudePdfPages = (bytes: Buffer): number | null => {
       if (token === "/Pages") pageTree = true;
     }
     if (previous === "/Count") {
-      if (!/^[1-9]\d{0,8}$/.test(token)) return null;
+      if (!ESTIMATE_CLAUDE_PDF_PAGES_PATTERN.test(token)) return null;
       let next = i;
       while (next < bytes.length) {
         if (bytes[next]! <= 32) next++;
@@ -2683,7 +2701,7 @@ const makeClaudeUserMessageWithAttachments = Effect.fnUntraced(function* (input:
 });
 
 export function isClaudePromptUuid(value: string): value is NonNullable<SDKUserMessage["uuid"]> {
-  return /^[^-]+-[^-]+-[^-]+-[^-]+-[^-]+$/.test(value);
+  return IS_CLAUDE_PROMPT_UUID_PATTERN.test(value);
 }
 
 type ClaudeAssistantContentBlock = SDKAssistantMessage["message"]["content"][number];
@@ -3002,7 +3020,7 @@ interface ClaudeToolClassification {
 }
 
 function normalizedClaudeToolName(toolName: string): string {
-  return toolName.toLowerCase().replaceAll(/[\s_-]/g, "");
+  return toolName.toLowerCase().replaceAll(NORMALIZED_CLAUDE_TOOL_NAME_PATTERN, "");
 }
 
 const CLAUDE_KNOWN_TOOL_CLASSIFICATIONS: Record<
@@ -3563,7 +3581,7 @@ function claudeToolPresentationsFromAssistantMessage(
   const toolNames = new Map(
     claudeToolUseBlocksFromAssistantMessage(message).map((tool) => [
       tool.id,
-      tool.name.replace(/^mcp__claude_ai_/u, "mcp__"),
+      tool.name.replace(TOOL_NAMES_PATTERN, "mcp__"),
     ]),
   );
   for (const entry of meta) {
@@ -4059,12 +4077,7 @@ function providerFailureFromResult(
     message.is_error &&
     message.terminal_reason === "api_error" &&
     message.api_error_status === 503
-      ? gatewayCooldownResetAt(
-          /^API Error: 503 \[[^\]\r\n]+\] \[429\]: \{"type":"error","error":\{"type":"rate_limit_error",[^\r\n]*\} \(reset after (?:(\d+)h ?)?(?:(\d+)m ?)?(?:(\d+)s)?\)/.exec(
-            message.result,
-          ),
-          completedAt,
-        )
+      ? gatewayCooldownResetAt(GATEWAY_RESET_AT_PATTERN.exec(message.result), completedAt)
       : undefined;
   if (gatewayResetAt !== undefined) {
     return makeProviderFailure({
@@ -4105,10 +4118,7 @@ function providerFailureFromResult(
   // API-key sessions get no rate_limit_info, so a gateway's 429 carries its reset only as text.
   const resetAt =
     apiErrorStatus === 429 && message.result.startsWith("API Error:")
-      ? gatewayCooldownResetAt(
-          /\(reset after (?:(\d+)h ?)?(?:(\d+)m ?)?(?:(\d+)s)?\)/.exec(message.result),
-          completedAt,
-        )
+      ? gatewayCooldownResetAt(RESET_AT_PATTERN.exec(message.result), completedAt)
       : undefined;
   return makeProviderFailure({
     message: listedError ?? structuredError ?? failureHint ?? message.result,
@@ -4735,8 +4745,7 @@ function applyClaudeTaskTool(
 function claudeCreatedTaskFromText(
   result: unknown,
 ): { readonly id: string; readonly subject: string } | undefined {
-  const match =
-    typeof result === "string" ? /^Task #(\S+) created successfully: (.+)$/s.exec(result) : null;
+  const match = typeof result === "string" ? MATCH_PATTERN_2.exec(result) : null;
   return match === null ? undefined : { id: match[1]!, subject: match[2]!.trim() };
 }
 
@@ -4765,10 +4774,10 @@ const readClaudeTaskList = Effect.fnUntraced(
       ? path.resolve(input.cwd ?? ".", configDirOverride)
       : yield* resolveClaudeHomePath({ homePath: "" });
     const listId = input.environment.CLAUDE_CODE_TASK_LIST_ID?.trim() || input.nativeThreadId;
-    const directory = path.join(configDir, "tasks", listId.replace(/[^a-zA-Z0-9_-]/g, "-"));
+    const directory = path.join(configDir, "tasks", listId.replace(NON_ID_CHAR, "-"));
     const tasks = new Map<string, Omit<OrchestrationV2PlanStep, "id">>();
     const names = (yield* fileSystem.readDirectory(directory))
-      .filter((name) => /^\d+\.json$/.test(name))
+      .filter((name) => READ_CLAUDE_TASK_LIST_PATTERN.test(name))
       .toSorted((left, right) => Number.parseInt(left, 10) - Number.parseInt(right, 10));
     for (const name of names) {
       const contents = yield* fileSystem
@@ -4923,7 +4932,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
   const mainCheckoutRoot = (checkout: string) =>
     fileSystem.readFileString(path.join(checkout, ".git")).pipe(
       Effect.flatMap((pointer) => {
-        const gitDir = /^gitdir:\s*(.+)$/m.exec(pointer)?.[1]?.trim();
+        const gitDir = GITDIR_LINE.exec(pointer)?.[1]?.trim();
         if (gitDir === undefined) return Effect.succeed(checkout);
         const worktreeGitDir = path.resolve(checkout, gitDir);
         return fileSystem.readFileString(path.join(worktreeGitDir, "commondir")).pipe(
@@ -6033,7 +6042,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           const viewedImagePath =
             readPath &&
             readPath.length <= 4096 &&
-            !/[\r\n]/.test(readPath) &&
+            !LINE_BREAK_CHAR.test(readPath) &&
             isWorkspaceImagePreviewPath(readPath)
               ? readPath
               : undefined;
@@ -7559,7 +7568,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               presentation:
                 presentations.get(toolUse.id) ??
                 mcpToolPresentation({
-                  toolName: toolUse.name.replace(/^mcp__claude_ai_/u, "mcp__"),
+                  toolName: toolUse.name.replace(TOOL_NAMES_PATTERN, "mcp__"),
                 }),
               startedAt: at,
             });
@@ -9773,7 +9782,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               presentation:
                 toolPresentations.get(toolUse.id) ??
                 mcpToolPresentation({
-                  toolName: toolUse.name.replace(/^mcp__claude_ai_/u, "mcp__"),
+                  toolName: toolUse.name.replace(TOOL_NAMES_PATTERN, "mcp__"),
                 }),
             });
             const heldPlan = heldProposedPlansByToolUseId.get(toolUse.id);
@@ -10552,7 +10561,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             toolName === "Bash" &&
             activePermissionMode === "bypassPermissions" &&
             callbackOptions.matchedAskRule === undefined &&
-            (/^Dangerous rm(?:dir)?\b/i.test(safetyReason) ||
+            (CAN_USE_TOOL_EFFECT_PATTERN.test(safetyReason) ||
               safetyReason === "This shell -c script runs rm and could not be checked" ||
               safetyReason === "A permission rule denies a command in this shell -c script")
           ) {

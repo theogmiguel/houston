@@ -121,5 +121,7 @@ describe("link round trips", () => {
     expect(promptLinkAppPath("https://app.example.test/new?prompt=hi")).toBeNull();
     expect(promptLinkAppPath("https://evil.test/new?prompt=hi")).toBeNull();
     expect(promptLinkAppPath("houston://app/index.html")).toBeNull();
+    expect(promptLinkAppPath("not a url", "https://app.example.test")).toBeNull();
+    expect(promptLinkAppPath("https://app.example.test/new?prompt=hi", "not a url")).toBeNull();
   });
 });

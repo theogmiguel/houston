@@ -12,6 +12,13 @@ import {
   splitFilePathPosition,
 } from "./fileLinks.ts";
 
+const TRAILING_PATH_SEPARATORS = /[/\\]+$/;
+const PATH_SEPARATOR = /[\\/]/;
+const FILE_SCHEME = /^file:/i;
+const DOT_SLASH_PREFIX = /^\.\//;
+const TRAILING_SLASHES = /\/+$/;
+const IS_WINDOWS_DRIVE_PATH_HREF_PATTERN = /^[A-Za-z]:[\\/]/;
+
 const RELATIVE_PATH_PREFIX_PATTERN = /^(~\/|\.{1,2}\/)/;
 
 // Names may use any script (`線性代數/考試.pdf`) and routing punctuation (`posts.$id.tsx`,
@@ -191,10 +198,7 @@ export function inlineCodeFilePathCandidate(codeText: string): string | null {
     const firstSegment = withoutPosition.split("/")[0] ?? withoutPosition;
     if (looksLikeHostname(firstSegment, hasPosition)) return null;
     const basename =
-      withoutPosition
-        .replace(/[/\\]+$/, "")
-        .split(/[\\/]/)
-        .at(-1) ?? "";
+      withoutPosition.replace(TRAILING_PATH_SEPARATORS, "").split(PATH_SEPARATOR).at(-1) ?? "";
     if (VERSION_SUFFIX_PATTERN.test(basename)) return null;
     if (!hasPosition && !FILE_EXTENSION_PATTERN.test(basename)) return null;
   }
@@ -233,7 +237,7 @@ export function splitMarkdownLinkSearchAndHash(value: string): {
  * null for a `file:` URL that does not parse. Clients and the guest media route both read it here.
  */
 export function markdownDestinationHostPath(source: string): string | null {
-  if (/^file:/i.test(source)) {
+  if (FILE_SCHEME.test(source)) {
     const target = parseFileUrlHref(source);
     return target === null
       ? null
@@ -248,7 +252,7 @@ export function isMarkdownFileLinkLabel(label: string, href: string): boolean {
   const destination = parseMarkdownFileLink(href);
   if (!destination) return false;
   const normalize = (path: string) =>
-    path.replaceAll("\\", "/").replace(/^\.\//, "").replace(/\/+$/, "");
+    path.replaceAll("\\", "/").replace(DOT_SLASH_PREFIX, "").replace(TRAILING_SLASHES, "");
   const labelPosition = splitFilePathPosition(label.trim());
   if (
     (labelPosition.line !== undefined && labelPosition.line !== destination.line) ||
@@ -342,6 +346,8 @@ function markdownRunEndFinder(markdown: string, delimiter: RegExp) {
   };
 }
 
+// Each finder owns its `g` regex and moves its `lastIndex`, so the scanners build their own.
+/* oxlint-disable houston/no-function-scoped-regex */
 function markdownLinkTailScanner(markdown: string) {
   const whitespaceEnd = markdownRunEndFinder(markdown, /\S/g);
   const titleEnd = markdownRunEndFinder(markdown, /["']/g);
@@ -380,6 +386,7 @@ function markdownLinkDestinationScanner(markdown: string) {
     return end === null ? null : { hrefStart, hrefEnd, end };
   };
 }
+/* oxlint-enable houston/no-function-scoped-regex */
 
 export function extractMarkdownLinkHrefs(markdown: string): string[] {
   const hrefs: string[] = [];
@@ -424,5 +431,5 @@ export function resolveMarkdownFileLinkTarget(
 }
 
 export function isWindowsDrivePathHref(href: string): boolean {
-  return /^[A-Za-z]:[\\/]/.test(safeDecodeURIComponent(href));
+  return IS_WINDOWS_DRIVE_PATH_HREF_PATTERN.test(safeDecodeURIComponent(href));
 }

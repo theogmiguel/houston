@@ -57,6 +57,12 @@ import {
   type AcpToolCallState,
 } from "./runtimeModel.ts";
 
+const DECODE_MOUNT_INFO_PATH_PATTERN = /\\([0-7]{3})/g;
+const MATCHES_PATTERN = /^0::(\/.*)$/gm;
+const STATE_PATTERN = /(?:^|\n)populated ([01])(?:\n|$)/;
+const WHITESPACE_RUN = /\s+/;
+const POSITIVE_INTEGER = /^[1-9][0-9]*$/;
+
 const MAX_SHOWN_TOOL_CALL_IDS = 256;
 
 interface AcpToolCallTrackedState {
@@ -218,13 +224,13 @@ export interface AcpPosixOwnershipRoot {
 }
 
 function decodeMountInfoPath(value: string): string {
-  return value.replace(/\\([0-7]{3})/g, (_match, octal: string) =>
+  return value.replace(DECODE_MOUNT_INFO_PATH_PATTERN, (_match, octal: string) =>
     String.fromCharCode(Number.parseInt(octal, 8)),
   );
 }
 
 export function parseUnifiedCgroupPath(contents: string): string | undefined {
-  const matches = [...contents.matchAll(/^0::(\/.*)$/gm)];
+  const matches = [...contents.matchAll(MATCHES_PATTERN)];
   return matches.length === 1 ? matches[0]![1] : undefined;
 }
 
@@ -337,7 +343,7 @@ function defaultCgroupOwnerIsAlive(pid: number): boolean {
 }
 
 function defaultReadCgroupPopulated(siblingPath: string): "0" | "1" | undefined {
-  const state = /(?:^|\n)populated ([01])(?:\n|$)/.exec(
+  const state = STATE_PATTERN.exec(
     NodeFS.readFileSync(NodePath.join(siblingPath, "cgroup.events"), "utf8"),
   )?.[1];
   return state === "0" || state === "1" ? state : undefined;
@@ -419,7 +425,7 @@ function tryCreateLinuxCgroupLease(
     relativePath: childRelative,
     kill: () => NodeFS.writeFileSync(NodePath.join(childPath, "cgroup.kill"), "1\n"),
     populated: () => {
-      const state = /(?:^|\n)populated ([01])(?:\n|$)/.exec(
+      const state = STATE_PATTERN.exec(
         NodeFS.readFileSync(NodePath.join(childPath, "cgroup.events"), "utf8"),
       )?.[1];
       if (state === undefined) throw new Error("ACP cgroup.events has no populated state");
@@ -555,7 +561,7 @@ function readLinuxProcessIdentity(pid: number): AcpPosixProcessIdentity | undefi
     const fields = stat
       .slice(commandEnd + 2)
       .trim()
-      .split(/\s+/);
+      .split(WHITESPACE_RUN);
     // After comm: state, ppid, pgrp, session, … starttime (field 22 / index 19).
     const state = fields[0];
     const ppid = Number(fields[1]);
@@ -593,7 +599,7 @@ function readLinuxChildPids(pid: number): ReadonlyArray<number> {
   let taskIds: ReadonlyArray<string> = [];
   try {
     taskIds = NodeFS.readdirSync(`/proc/${pid}/task`).filter((entry) =>
-      /^[1-9][0-9]*$/.test(entry),
+      POSITIVE_INTEGER.test(entry),
     );
   } catch {
     return [];
@@ -602,7 +608,7 @@ function readLinuxChildPids(pid: number): ReadonlyArray<number> {
     try {
       for (const childPid of NodeFS.readFileSync(`/proc/${pid}/task/${taskId}/children`, "utf8")
         .trim()
-        .split(/\s+/)
+        .split(WHITESPACE_RUN)
         .filter(Boolean)
         .map(Number)) {
         childPids.add(childPid);
@@ -623,7 +629,7 @@ function makeLinuxProcessTreeController(): AcpPosixProcessTreeController {
     identity: readLinuxProcessIdentity,
     snapshot: () =>
       NodeFS.readdirSync("/proc", { withFileTypes: true }).flatMap((entry) => {
-        if (!entry.isDirectory() || !/^[1-9][0-9]*$/.test(entry.name)) return [];
+        if (!entry.isDirectory() || !POSITIVE_INTEGER.test(entry.name)) return [];
         const identity = readLinuxProcessIdentity(Number(entry.name));
         return identity === undefined ? [] : [identity];
       }),

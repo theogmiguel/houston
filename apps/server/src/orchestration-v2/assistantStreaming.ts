@@ -1,6 +1,8 @@
 import type { ResponseStreamingMode } from "@houston-app/contracts";
 import type * as ProviderAdapter from "@houston-app/provider-core/server/ProviderAdapter";
 
+const LINE_PATTERN = /[ \t\r]+$/;
+
 // List fences can open at any indentation; closers may be at most three spaces deeper.
 const MARKDOWN_FENCE_PATTERN = /^( *)(`{3,}|~{3,})/;
 // CommonMark blank lines contain only spaces and tabs.
@@ -21,7 +23,7 @@ export function splitBufferedAssistantText(text: string): { ready: string; rest:
     const newline = text.indexOf("\n", lineStart);
     const line = text
       .slice(lineStart, newline === -1 ? text.length : newline)
-      .replace(/[ \t\r]+$/, "");
+      .replace(LINE_PATTERN, "");
     if (
       openFence === null &&
       lineStart > 0 &&

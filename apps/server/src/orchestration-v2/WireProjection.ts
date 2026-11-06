@@ -21,6 +21,10 @@ import {
   toolOutputIndicatesFailure,
 } from "@houston-app/shared/toolOutput";
 
+const PREFIX_PATTERN = /\uFFFD$/u;
+const START_PATTERN = /\S/u;
+const WHITESPACE = /\s/u;
+
 // A checkpoint over vendored or generated trees can list 15k+ files; the card needs a prefix.
 const MAX_WIRE_CHECKPOINT_FILES = 200;
 const MAX_DETAIL_STRING_BYTES = 32_768;
@@ -45,7 +49,7 @@ function truncateDetail(
   const prefix = Buffer.from(value.slice(0, budget), "utf8")
     .subarray(0, budget)
     .toString("utf8")
-    .replace(/\uFFFD$/u, "");
+    .replace(PREFIX_PATTERN, "");
   return `${prefix}${TRUNCATION_MARKER}`;
 }
 
@@ -81,13 +85,13 @@ function summarizeDynamicValue(value: unknown): unknown {
   }
 
   // Splitting and normalizing every line can allocate far more than the input.
-  const start = /\S/u.exec(serialized)?.index;
+  const start = START_PATTERN.exec(serialized)?.index;
   let firstLine = start === undefined ? "Large tool output" : "";
   let pendingSpace = false;
   for (let index = start ?? serialized.length; index < serialized.length; index += 1) {
     const character = serialized[index]!;
     if (character === "\n") break;
-    if (/\s/u.test(character)) {
+    if (WHITESPACE.test(character)) {
       pendingSpace = true;
       continue;
     }

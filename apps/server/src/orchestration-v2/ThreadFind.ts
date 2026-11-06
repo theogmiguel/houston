@@ -1,3 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off - digests payloads synchronously inside a scan.
+import * as NodeCrypto from "node:crypto";
+
 import {
   OrchestrationV2TurnItemJson,
   type OrchestrationV2ProjectedTurnItem,
@@ -31,8 +34,18 @@ interface FindRow {
   readonly sourceThreadId: ThreadId;
   readonly sourceItemId: TurnItemId;
 }
+/** What an earlier scan for the same query learned from one item version. */
+interface ScannedItem {
+  readonly digest: string;
+  readonly runId: OrchestrationV2TurnItem["runId"];
+  readonly count: number;
+  readonly foldedAnswer: string | null;
+}
 interface FindPayload extends FindRow {
-  readonly payload: string;
+  /** Null when `scanned` holds what this version yields. */
+  readonly payload: string | null;
+  readonly digest: string;
+  readonly scanned: ScannedItem | undefined;
   readonly entryId: string;
   readonly type: OrchestrationV2TurnItem["type"];
 }
@@ -41,6 +54,11 @@ interface FindDocument extends FindRow {
   readonly runId: OrchestrationV2TurnItem["runId"];
   readonly count: number;
 }
+const scannedItemKey = (row: FindRow) => `${row.sourceThreadId}\u0000${row.sourceItemId}`;
+// A rebuild after a write re-reads every payload but decodes and parses only the versions whose
+// digest changed; decoding and parsing are most of a long thread's scan.
+const payloadDigest = (payload: string) =>
+  NodeCrypto.createHash("sha256").update(payload).digest("base64");
 class TextKey extends Data.Class<{
   text: string;
   role: "user" | "assistant" | "plan";
@@ -197,6 +215,7 @@ export const makeThreadFind = Effect.fn("makeThreadFind")(function* (
   const load = Effect.fn("ThreadFind.load")(function* (
     threadId: ThreadId,
     rows: readonly FindRow[],
+    scanned: ReadonlyMap<string, ScannedItem> | undefined,
   ) {
     if (rows.length === 0) return [];
     const sources = yield* encodeSources(
@@ -223,17 +242,24 @@ export const makeThreadFind = Effect.fn("makeThreadFind")(function* (
       if (!items) byThread.set(row.thread_id, (items = new Map()));
       items.set(row.turn_item_id, row);
     }
-    return yield* Effect.forEach(rows, (row) => {
-      const payload = byThread.get(row.sourceThreadId)?.get(row.sourceItemId);
-      return payload === undefined
-        ? Effect.fail(new ProjectionStoreReadError({ threadId }))
-        : Effect.succeed({
-            ...row,
-            payload: payload.payload_json,
-            entryId: payload.entry_id,
-            type: payload.item_type,
-          });
-    });
+    return yield* Effect.forEach(
+      rows,
+      (row): Effect.Effect<FindPayload, ProjectionStoreReadError> => {
+        const payload = byThread.get(row.sourceThreadId)?.get(row.sourceItemId);
+        if (payload === undefined) return Effect.fail(new ProjectionStoreReadError({ threadId }));
+        const digest = payloadDigest(payload.payload_json);
+        const previous = scanned?.get(scannedItemKey(row));
+        const reused = previous?.digest === digest ? previous : undefined;
+        return Effect.succeed({
+          ...row,
+          payload: reused === undefined ? payload.payload_json : null,
+          digest,
+          scanned: reused,
+          entryId: payload.entry_id,
+          type: payload.item_type,
+        });
+      },
+    );
   });
   // Scans visit every message; a cache smaller than the thread churns without hits.
   const textCache = yield* Cache.make({
@@ -253,6 +279,7 @@ export const makeThreadFind = Effect.fn("makeThreadFind")(function* (
       sequence: number;
       documents: readonly FindDocument[];
       sourceThreadIds: readonly ThreadId[];
+      items: ReadonlyMap<string, ScannedItem>;
     }
   >();
   const readRevision = Effect.fn("ThreadFind.readRevision")(function* (
@@ -312,7 +339,9 @@ export const makeThreadFind = Effect.fn("makeThreadFind")(function* (
         );
       const payloads: FindPayload[] = [];
       for (let start = 0; start < candidates.length; start += 128) {
-        payloads.push(...(yield* load(threadId, candidates.slice(start, start + 128))));
+        payloads.push(
+          ...(yield* load(threadId, candidates.slice(start, start + 128), cached?.items)),
+        );
       }
       return { payloads, cwd, sequence, cacheKey, sourceThreadIds };
     },
@@ -333,20 +362,36 @@ export const makeThreadFind = Effect.fn("makeThreadFind")(function* (
         const data = yield* snapshot(input);
         if (data.result) return Stream.succeed(data.result);
         const { payloads, cwd, sequence, cacheKey, sourceThreadIds } = data;
-        const decode = (row: FindPayload) =>
-          decodeItem(row.payload).pipe(
+        let decodedItems = 0;
+        const decode = (row: FindPayload, payload: string) => {
+          decodedItems += 1;
+          return decodeItem(payload).pipe(
             Effect.map((item) => ({ ...row, item })),
             Effect.mapError(
               (cause) => new ProjectionStoreReadError({ threadId: input.threadId, cause }),
             ),
           );
+        };
+        const items = new Map<string, ScannedItem>();
         // Answers rendered inside question cards must not appear as separate matches.
         const foldedAnswers = new Set<string>();
         for (const payload of payloads) {
           if (payload.type !== "user_input_request") continue;
-          const { item } = yield* decode(payload);
-          if (item.type === "user_input_request" && item.questionAnswer)
-            foldedAnswers.add(`async-answer:${item.questionAnswer.requestId}`);
+          let foldedAnswer = payload.scanned?.foldedAnswer ?? null;
+          if (payload.payload !== null) {
+            const { item } = yield* decode(payload, payload.payload);
+            foldedAnswer =
+              item.type === "user_input_request" && item.questionAnswer
+                ? `async-answer:${item.questionAnswer.requestId}`
+                : null;
+          }
+          if (foldedAnswer !== null) foldedAnswers.add(foldedAnswer);
+          items.set(scannedItemKey(payload), {
+            digest: payload.digest,
+            runId: null,
+            count: 0,
+            foldedAnswer,
+          });
         }
         const rows = payloads.filter(
           (row) =>
@@ -357,30 +402,50 @@ export const makeThreadFind = Effect.fn("makeThreadFind")(function* (
         const count = Effect.fnUntraced(function* (row: FindPayload) {
           const cached = documents.get(row.position);
           if (cached) return cached;
-          const decoded = yield* decode(row);
-          const key = textKey(decoded.item, cwd, input.skills ?? []);
-          const segments = yield* Cache.get(
-            key.text.length <= 32_768 ? textCache : largeTextCache,
-            key,
-          );
-          const document = documentFor(decoded, countSegments(segments, input.query));
+          let document: FindDocument;
+          if (row.payload === null && row.scanned !== undefined) {
+            document = {
+              position: row.position,
+              visibility: row.visibility,
+              sourceThreadId: row.sourceThreadId,
+              sourceItemId: row.sourceItemId,
+              entryId: row.entryId,
+              runId: row.scanned.runId,
+              count: row.scanned.count,
+            };
+          } else {
+            const decoded = yield* decode(row, row.payload ?? "");
+            const key = textKey(decoded.item, cwd, input.skills ?? []);
+            const segments = yield* Cache.get(
+              key.text.length <= 32_768 ? textCache : largeTextCache,
+              key,
+            );
+            document = documentFor(decoded, countSegments(segments, input.query));
+            yield* Effect.yieldNow;
+          }
           documents.set(row.position, document);
-          yield* Effect.yieldNow;
+          items.set(scannedItemKey(row), {
+            digest: row.digest,
+            runId: document.runId,
+            count: document.count,
+            foldedAnswer: null,
+          });
           return document;
         });
-        const finish = Effect.gen(function* () {
+        const finishScan = Effect.fn("ThreadFind.finish")(function* () {
           for (const row of rows) yield* count(row);
           const ordered = rows.map((row) => documents.get(row.position)!);
           scans.delete(cacheKey);
-          scans.set(cacheKey, { sequence, documents: ordered, sourceThreadIds });
+          scans.set(cacheKey, { sequence, documents: ordered, sourceThreadIds, items });
           if (scans.size > 8) {
             const oldest = scans.keys().next().value;
             if (oldest !== undefined) scans.delete(oldest);
           }
+          yield* Effect.annotateCurrentSpan("thread_find.decoded_items", decodedItems);
           return resultForSelection(selectMatch(ordered, input), ordered, sequence);
         });
         if (input.index !== undefined || (input.offset ?? 0) !== 0)
-          return Stream.fromEffect(finish);
+          return Stream.fromEffect(finishScan());
         const anchor = Math.max(
           0,
           rows.findIndex((row) => row.entryId === input.start?.entryId),
@@ -402,9 +467,9 @@ export const makeThreadFind = Effect.fn("makeThreadFind")(function* (
             activeIndex: 0,
             match: { entryId: document.entryId, runId: document.runId, occurrence },
           };
-          return Stream.concat(Stream.succeed(first), Stream.fromEffect(finish));
+          return Stream.concat(Stream.succeed(first), Stream.fromEffect(finishScan()));
         }
-        return Stream.fromEffect(finish);
+        return Stream.fromEffect(finishScan());
       }),
     );
   return {

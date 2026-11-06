@@ -21,6 +21,10 @@ import type { HoustonTaskRunState } from "@houston-app/contracts/houston/tasks";
 
 import { redactSecrets, stripAnsi } from "./redact.ts";
 
+const LINE_BREAK_CHAR = /[\r\n]/;
+const CARRIAGE_RETURN = /\r\n?/g;
+const TRAILING_NEWLINES = /\n+$/;
+
 /** What a verification keeps of the command's output, and what a failure reports of it. */
 export const OUTPUT_KEEP_BYTES = 64 * 1024;
 const TAIL_MAX_LINES = 40;
@@ -625,7 +629,7 @@ export const checkSettings = (
       { limit, actual: bytes },
     );
   }
-  if (/[\r\n]/.test(command)) {
+  if (LINE_BREAK_CHAR.test(command)) {
     return refuse("invalid", operation, "the verification command must be one line");
   }
   const { minimum, maximum } = HOUSTON_MERGE_QUEUE_LIMITS.timeLimitMinutes;
@@ -715,8 +719,8 @@ export const keepTail = (kept: Uint8Array, chunk: Uint8Array): Uint8Array => {
 /** The last lines of the output, without colour codes or secrets. */
 export const reportTail = (bytes: Uint8Array): string => {
   const text = redactSecrets(stripAnsi(new TextDecoder().decode(bytes)))
-    .replace(/\r\n?/g, "\n")
-    .replace(/\n+$/, "");
+    .replace(CARRIAGE_RETURN, "\n")
+    .replace(TRAILING_NEWLINES, "");
   const tail = text.split("\n").slice(-TAIL_MAX_LINES).join("\n");
   const chars = [...tail];
   return chars.length > TAIL_MAX_CHARS ? chars.slice(-TAIL_MAX_CHARS).join("") : tail;

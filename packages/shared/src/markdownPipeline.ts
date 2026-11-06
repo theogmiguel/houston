@@ -17,6 +17,37 @@ import {
 import { isWindowsDrivePathHref, normalizeMarkdownLinkDestination } from "./markdownLinks.ts";
 import { THREAD_LINK_PROTOCOL } from "./threadLinks.ts";
 
+const CLOSING_PATTERN = /^<\/([a-z]+)\s*>$/i;
+const OPENING_PATTERN = /^<([a-z]+)(?:\s|\/?>)/i;
+const RAW_TEXT_TAGS = [
+  "script",
+  "style",
+  "textarea",
+  "title",
+  "xmp",
+  "iframe",
+  "noembed",
+  "noframes",
+  "plaintext",
+];
+const RAW_TEXT_TAG = new RegExp(`^(?:${RAW_TEXT_TAGS.join("|")})$`);
+// The scan shares these `g` regexes: it sets `lastIndex` before every `exec`.
+const RAW_TEXT_CLOSERS = new Map(
+  RAW_TEXT_TAGS.map((tag) => [tag, new RegExp(`</${tag}\\s*>`, "gi")] as const),
+);
+// Whole tags, attributes and comments, so embedded closing-anchor text cannot match a placeholder.
+const HTML_TAG_OR_COMMENT = /<!--[\s\S]*?(?:-->|$)|<\/?[A-Za-z](?:[^"'<>]|"[^"]*"|'[^']*')*>/g;
+const EMPTY_ANCHOR_TAG = /^<a\s*\/?>$/i;
+const WHITESPACE = /\s/;
+const TRAILING_COMMAS = /,+$/;
+const ENDS_LINE_PATTERN = /\n[ \t]*$/;
+const STARTS_LINE_PATTERN = /^[ \t]*\n/;
+const TRAILING_LINE_BREAK_SPACE = /[ \t]*\n[ \t]*$/;
+const HTTP_SCHEME = /^https?:\/\//i;
+const LEADING_EMPHASIS_MARKS = /^[_~]+/;
+const WINDOWS_DRIVE_PATH = /^[A-Za-z]:[\\/]/;
+const INSIGHT_BLOCK_HEADER = /^★ Insight(?:\s|─)/mu;
+
 type MarkdownImageHastNode = {
   type?: string;
   value?: string;
@@ -69,12 +100,10 @@ function rehypePreserveBareAnchorPlaceholders() {
     let rawTextTag: string | undefined;
     const visit = (node: MarkdownImageHastNode) => {
       if (node.type === "raw" && typeof node.value === "string") {
-        // Scan whole tags, attributes, and comments so embedded closing-anchor text cannot match a placeholder.
-        const tags = /<!--[\s\S]*?(?:-->|$)|<\/?[A-Za-z](?:[^"'<>]|"[^"]*"|'[^']*')*>/g;
         let offset = 0;
         while (rawTextTag !== "plaintext") {
           // Raw text ends at its closing tag even inside comment-looking text.
-          const matcher = rawTextTag ? new RegExp(`</${rawTextTag}\\s*>`, "gi") : tags;
+          const matcher = (rawTextTag && RAW_TEXT_CLOSERS.get(rawTextTag)) || HTML_TAG_OR_COMMENT;
           matcher.lastIndex = offset;
           const match = matcher.exec(node.value);
           if (!match) break;
@@ -85,15 +114,12 @@ function rehypePreserveBareAnchorPlaceholders() {
             continue;
           }
           if (tag.startsWith("<!--")) continue;
-          const closing = /^<\/([a-z]+)\s*>$/i.exec(tag)?.[1]?.toLowerCase();
-          const opening = /^<([a-z]+)(?:\s|\/?>)/i.exec(tag)?.[1]?.toLowerCase();
-          if (
-            opening &&
-            /^(?:script|style|textarea|title|xmp|iframe|noembed|noframes|plaintext)$/.test(opening)
-          ) {
+          const closing = CLOSING_PATTERN.exec(tag)?.[1]?.toLowerCase();
+          const opening = OPENING_PATTERN.exec(tag)?.[1]?.toLowerCase();
+          if (opening && RAW_TEXT_TAG.test(opening)) {
             rawTextTag = opening;
           } else if (opening === "a") {
-            anchors.push(node.value === tag && /^<a\s*\/?>$/i.test(tag) ? node : null);
+            anchors.push(node.value === tag && EMPTY_ANCHOR_TAG.test(tag) ? node : null);
           } else if (closing === "a") {
             anchors.pop();
           }
@@ -127,7 +153,9 @@ function moveColorSchemeSourcesToImage(picture: MarkdownImageHastNode) {
     const candidate = Array.isArray(srcSet) ? srcSet[0] : srcSet;
     // A candidate's URL runs to the first space (a descriptor such as `2x` may follow).
     const url =
-      typeof candidate === "string" ? candidate.trim().split(/\s/, 1)[0]?.replace(/,+$/, "") : "";
+      typeof candidate === "string"
+        ? candidate.trim().split(WHITESPACE, 1)[0]?.replace(TRAILING_COMMAS, "")
+        : "";
     const key = scheme?.toLowerCase() === "dark" ? "dataDarkSrc" : "dataLightSrc";
     // As in a browser, the first source that matches a scheme is the one shown.
     if (scheme && url && image.properties?.[key] === undefined) {
@@ -313,11 +341,11 @@ const isImageNode = (node: PhrasingContent | undefined): boolean =>
 const endsLine = (node: PhrasingContent | undefined) =>
   node === undefined ||
   node.type === "break" ||
-  (node.type === "text" && /\n[ \t]*$/.test(node.value));
+  (node.type === "text" && ENDS_LINE_PATTERN.test(node.value));
 const startsLine = (node: PhrasingContent | undefined) =>
   node === undefined ||
   node.type === "break" ||
-  (node.type === "text" && /^[ \t]*\n/.test(node.value));
+  (node.type === "text" && STARTS_LINE_PATTERN.test(node.value));
 
 function breakLinesAroundImages(paragraph: Paragraph) {
   const children = paragraph.children;
@@ -334,11 +362,11 @@ function breakLinesAroundImages(paragraph: Paragraph) {
     const parts: PhrasingContent[] = [];
     let value = child.value;
     if (afterImage) {
-      value = value.replace(/^[ \t]*\n/, "");
+      value = value.replace(STARTS_LINE_PATTERN, "");
       parts.push({ type: "break" });
     }
-    const breakAfter = beforeImage && /\n[ \t]*$/.test(value);
-    if (breakAfter) value = value.replace(/[ \t]*\n[ \t]*$/, "");
+    const breakAfter = beforeImage && ENDS_LINE_PATTERN.test(value);
+    if (breakAfter) value = value.replace(TRAILING_LINE_BREAK_SPACE, "");
     if (value) parts.push({ type: "text", value });
     if (breakAfter) parts.push({ type: "break" });
     return parts;
@@ -378,8 +406,8 @@ function remarkKeepAutolinkSuffixes(): Transformer<Root> {
       for (let index = 0; index < node.children.length; index++) {
         const child = node.children[index];
         const next = node.children[index + 1];
-        if (child?.type === "link" && /^https?:\/\//i.test(child.url) && next?.type === "text") {
-          const suffix = /^[_~]+/.exec(next.value)?.[0];
+        if (child?.type === "link" && HTTP_SCHEME.test(child.url) && next?.type === "text") {
+          const suffix = LEADING_EMPHASIS_MARKS.exec(next.value)?.[0];
           if (!suffix) continue;
           const label = child.children.length === 1 ? child.children[0] : undefined;
           if (label?.type !== "text") continue;
@@ -441,7 +469,7 @@ function remarkNormalizeLinksAndTagInlineCode() {
       if (
         (node.type === "link" || node.type === "definition") &&
         typeof node.url === "string" &&
-        /^[A-Za-z]:[\\/]/.test(node.url)
+        WINDOWS_DRIVE_PATH.test(node.url)
       ) {
         node.url = `file:///${node.url.replaceAll("\\", "/")}`;
       }
@@ -463,7 +491,7 @@ function remarkNormalizeLinksAndTagInlineCode() {
 }
 
 export function shouldPreserveAssistantLineBreaks(text: string): boolean {
-  return /^★ Insight(?:\s|─)/mu.test(text);
+  return INSIGHT_BLOCK_HEADER.test(text);
 }
 
 const imageSourceProcessor = unified()

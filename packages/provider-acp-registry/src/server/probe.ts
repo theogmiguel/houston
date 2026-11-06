@@ -54,8 +54,8 @@ const boundedOpaqueValue = (value: string, maximumLength: number): string | unde
   value.length > 0 && value === value.trim() && value.length <= maximumLength ? value : undefined;
 
 export function normalizeAcpRegistryWebUrl(value: string): string | undefined {
-  if (value.length > 2_048 || !URL.canParse(value)) return undefined;
-  const url = new URL(value);
+  const url = value.length > 2_048 ? null : URL.parse(value);
+  if (!url) return undefined;
   return url.protocol === "https:" || url.protocol === "http:" ? url.href : undefined;
 }
 
