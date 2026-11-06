@@ -1,6 +1,11 @@
 import * as Effect from "effect/Effect";
 
-import { buildDatabase, type DatabaseManifest } from "./build.ts";
+import {
+  buildDatabase,
+  UPGRADABLE_GENERATOR_VERSION,
+  upgradeDatabase,
+  type DatabaseManifest,
+} from "./build.ts";
 import { readManifest, scaleDir } from "./paths.ts";
 
 /** Builds (or reuses) the database of each scale. */
@@ -13,6 +18,16 @@ export async function ensureDatabases(input: {
 }): Promise<Array<DatabaseManifest>> {
   const manifests: Array<DatabaseManifest> = [];
   for (const scale of input.scales) {
+    const stale = input.rebuild
+      ? undefined
+      : readManifest(input.dataDir, scale, input.seed, [UPGRADABLE_GENERATOR_VERSION]);
+    if (stale !== undefined) {
+      input.log(`${scale}x: upgrading generator version ${stale.generatorVersion} in place`);
+      manifests.push(
+        await Effect.runPromise(upgradeDatabase(stale, scaleDir(input.dataDir, scale))),
+      );
+      continue;
+    }
     const cached = input.rebuild ? undefined : readManifest(input.dataDir, scale, input.seed);
     if (cached !== undefined) {
       input.log(`${scale}x: reusing ${cached.dbPath} (${cached.totalRows} rows)`);

@@ -14,11 +14,12 @@ export function readManifest(
   dataDir: string,
   scale: number,
   seed: number,
+  versions: ReadonlyArray<number> = [GENERATOR_VERSION],
 ): DatabaseManifest | undefined {
   const path = NodePath.join(scaleDir(dataDir, scale), "manifest.json");
   if (!NodeFS.existsSync(path)) return undefined;
   const manifest = JSON.parse(NodeFS.readFileSync(path, "utf8")) as DatabaseManifest;
-  if (manifest.generatorVersion !== GENERATOR_VERSION || manifest.seed !== seed) return undefined;
+  if (!versions.includes(manifest.generatorVersion) || manifest.seed !== seed) return undefined;
   if (!NodeFS.existsSync(manifest.dbPath)) return undefined;
   return manifest;
 }

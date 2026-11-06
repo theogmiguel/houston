@@ -28,7 +28,7 @@ const NOW_MS = Date.parse(NOW_ISO);
 const DAY_MS = 86_400_000;
 
 const decodeEventSync = Schema.decodeUnknownSync(Schema.toCodecJson(OrchestrationV2DomainEvent));
-function decodeEvent(encoded: Record<string, unknown>): DomainEvent {
+export function decodeEvent(encoded: Record<string, unknown>): DomainEvent {
   try {
     return decodeEventSync(encoded);
   } catch (error) {

@@ -23,6 +23,8 @@ export const RESULTS_VERSION = 1;
 export interface CapturedStatement {
   readonly sql: string;
   readonly executions: number;
+  /** SQLite time of one capture call on a main-thread connection; indicative, not a sample. */
+  readonly ms?: number;
   readonly plan: ReadonlyArray<string>;
   /** Growing tables this statement scans in full (a SCAN, with or without an index). */
   readonly fullScans: ReadonlyArray<string>;
@@ -125,7 +127,10 @@ export interface RunOptions {
 
 interface Capture {
   active: boolean;
-  readonly statements: Map<string, { executions: number; params: ReadonlyArray<unknown> }>;
+  readonly statements: Map<
+    string,
+    { executions: number; params: ReadonlyArray<unknown>; ms: number }
+  >;
 }
 const capture: Capture = { active: false, statements: new Map() };
 let patched = false;
@@ -140,13 +145,20 @@ function patchStatements() {
   for (const method of ["all", "get", "run", "iterate"]) {
     const original = proto[method]!;
     proto[method] = function (this: NodeSqlite.StatementSync, ...args: Array<unknown>) {
-      if (capture.active) {
+      if (!capture.active) return original.apply(this, args);
+      const started = performance.now();
+      try {
+        return original.apply(this, args);
+      } finally {
+        const ms = performance.now() - started;
         const entry = capture.statements.get(this.sourceSQL);
         if (entry === undefined)
-          capture.statements.set(this.sourceSQL, { executions: 1, params: args });
-        else entry.executions++;
+          capture.statements.set(this.sourceSQL, { executions: 1, params: args, ms });
+        else {
+          entry.executions++;
+          entry.ms += ms;
+        }
       }
-      return original.apply(this, args);
     };
   }
 }
@@ -316,11 +328,12 @@ export async function runScale(
         query.name,
         [...capture.statements.entries()]
           .filter(([sql]) => !NOT_PLANNED.test(sql))
-          .map(([sql, { executions, params }]) => {
+          .map(([sql, { executions, params, ms }]) => {
             const { plan, planError } = explain(planner, sql, params);
             return {
               sql: sql.replace(/\s+/g, " ").trim(),
               executions,
+              ms: Math.round(ms * 100) / 100,
               plan,
               fullScans: fullScansInPlan(sql, plan, growingTables),
               ...(planError === undefined ? {} : { planError }),

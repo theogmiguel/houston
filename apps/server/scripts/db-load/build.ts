@@ -21,7 +21,9 @@ import * as SqlitePersistence from "../../src/persistence/Sqlite.ts";
 import { cloneUnits } from "./clone.ts";
 import {
   DEEP_THREAD_BASE_RUNS,
+  decodeEvent,
   HEAVY_USER_UNIT,
+  NOW_ISO,
   writeDeepThread,
   writeUnit,
   type ThreadProbe,
@@ -30,7 +32,7 @@ import {
 } from "./fixture.ts";
 
 /** Bump when the generator's output changes, so cached databases are rebuilt. */
-export const GENERATOR_VERSION = 2;
+export const GENERATOR_VERSION = 3;
 
 export interface DatabaseManifest {
   readonly generatorVersion: number;
@@ -108,6 +110,94 @@ const pruneEventLog = Effect.fn("DbLoad.pruneEventLog")(function* () {
   return yield* maintenance.pruneEventStore();
 });
 
+/** Version 2 databases lack only the auto-settle pass, so they are upgraded in place. */
+export const UPGRADABLE_GENERATOR_VERSION = 2;
+
+const DAY_MS = 86_400_000;
+// The default sidebarAutoSettleAfterDays; threads idle longer are settled by the server.
+const AUTO_SETTLE_AFTER_DAYS = 3;
+
+function stableHash(value: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < value.length; i++)
+    hash = Math.imul(hash ^ value.charCodeAt(i), 0x01000193) >>> 0;
+  return hash;
+}
+
+// A long-lived install has settled every thread idle past the auto-settle window, except
+// pinned threads and threads with auto-settle turned off (about one in 33 here).
+const autoSettleIdleThreads = Effect.fn("DbLoad.autoSettleIdleThreads")(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  const sink = yield* EventSink.EventSinkV2;
+  const cutoff = new Date(Date.parse(NOW_ISO) - AUTO_SETTLE_AFTER_DAYS * DAY_MS).toISOString();
+  const rows = yield* sql<{
+    readonly thread_id: string;
+    readonly updated_at: string;
+    readonly payload_json: string;
+  }>`
+    SELECT thread_id, updated_at, payload_json FROM orchestration_v2_projection_threads
+    WHERE deleted_at IS NULL AND archived_at IS NULL
+      AND json_extract(payload_json, '$.settledAt') IS NULL AND updated_at < ${cutoff}
+    ORDER BY thread_id
+  `;
+  const idle = rows.filter((row) => stableHash(row.thread_id) % 33 !== 0);
+  for (let start = 0; start < idle.length; start += 200) {
+    const events = idle.slice(start, start + 200).map((row) => {
+      const settledAt = new Date(
+        Date.parse(row.updated_at) + AUTO_SETTLE_AFTER_DAYS * DAY_MS,
+      ).toISOString();
+      return decodeEvent({
+        id: `event:db-load:auto-settle:${row.thread_id}`,
+        type: "thread.settled",
+        threadId: row.thread_id,
+        occurredAt: settledAt,
+        payload: { ...(JSON.parse(row.payload_json) as Record<string, unknown>), settledAt },
+      });
+    });
+    yield* sink.write({ events });
+  }
+  return new Set(idle.map((row) => row.thread_id));
+});
+
+const finishDatabase = Effect.fn("DbLoad.finishDatabase")(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    UPDATE orchestration_v2_projection_metadata
+    SET last_sequence = (SELECT MAX(sequence) FROM orchestration_events)
+    WHERE projection_name = 'thread-projections'
+  `;
+  yield* sql`PRAGMA wal_checkpoint(TRUNCATE)`;
+  return yield* countRows();
+});
+
+const markSettled = (unit: UnitManifest, settled: ReadonlySet<string>): UnitManifest => ({
+  ...unit,
+  threads: unit.threads.map((thread) =>
+    settled.has(thread.threadId) ? { ...thread, settled: true } : thread,
+  ),
+});
+
+/** Applies the auto-settle pass to a version 2 database and rewrites its manifest. */
+export const upgradeDatabase = Effect.fn("DbLoad.upgradeDatabase")(function* (
+  manifest: DatabaseManifest,
+  dir: string,
+) {
+  const { settled, rowCounts } = yield* Effect.gen(function* () {
+    const settled = yield* autoSettleIdleThreads();
+    return { settled, rowCounts: yield* finishDatabase() };
+  }).pipe(Effect.provide(storesLayer(manifest.dbPath)));
+  const upgraded: DatabaseManifest = {
+    ...manifest,
+    generatorVersion: GENERATOR_VERSION,
+    unit: markSettled(manifest.unit, settled),
+    rowCounts,
+    totalRows: Object.values(rowCounts).reduce((total, n) => total + n, 0),
+    fileBytes: NodeFS.statSync(manifest.dbPath).size,
+  };
+  NodeFS.writeFileSync(NodePath.join(dir, "manifest.json"), JSON.stringify(upgraded, null, 1));
+  return upgraded;
+});
+
 export const buildDatabase = (input: {
   readonly dir: string;
   readonly scale: number;
@@ -144,16 +234,12 @@ export const buildDatabase = (input: {
       projectId: unit.projectIds[0]!,
     });
     yield* settleOutbox();
-    yield* sql`
-      UPDATE orchestration_v2_projection_metadata
-      SET last_sequence = (SELECT MAX(sequence) FROM orchestration_events)
-      WHERE projection_name = 'thread-projections'
-    `;
+    const settled = yield* autoSettleIdleThreads();
+    input.log(`auto-settled ${settled.size} idle threads`);
     input.log("rebuilding message search");
     yield* rebuildMessageSearch(sql);
-    yield* sql`PRAGMA wal_checkpoint(TRUNCATE)`;
-    const rowCounts = yield* countRows();
-    return { unit, deep, rowCounts };
+    const rowCounts = yield* finishDatabase();
+    return { unit: markSettled(unit, settled), deep, rowCounts };
   });
   return program.pipe(
     Effect.provide(storesLayer(dbPath)),

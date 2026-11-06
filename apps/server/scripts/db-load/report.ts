@@ -236,7 +236,7 @@ export function renderReport(
       const body = largest.statements
         .map(
           (st) =>
-            `<pre>${escape(st.sql)}\n-- executions: ${st.executions}${st.fullScans.length > 0 ? ` · FULL SCAN: ${st.fullScans.join(", ")}` : ""}\n${escape(st.plan.join("\n"))}${st.planError === undefined ? "" : `\n-- plan error: ${escape(st.planError)}`}</pre>`,
+            `<pre>${escape(st.sql)}\n-- executions: ${st.executions}${st.ms === undefined ? "" : ` · ${ms(st.ms)} ms in SQLite (one call)`}${st.fullScans.length > 0 ? ` · FULL SCAN: ${st.fullScans.join(", ")}` : ""}\n${escape(st.plan.join("\n"))}${st.planError === undefined ? "" : `\n-- plan error: ${escape(st.planError)}`}</pre>`,
         )
         .join("");
       const counts = q.scales
