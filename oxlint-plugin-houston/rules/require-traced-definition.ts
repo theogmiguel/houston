@@ -7,11 +7,14 @@ const COMBINATOR_CALLEE =
 const COMBINATOR_NAMESPACES = new Set(["Match", "Schema", "Config"]);
 const HOUSTON_SPAN_NAME = /^[A-Z][A-Za-z0-9]*(\.[a-z][A-Za-z0-9]*)+$/;
 const MIN_REASON_LENGTH = 10;
-// A reason says why the definition has no span of its own.
+// A reason says why the definition has no span of its own: it names the span or tracing, or a
+// hot path that runs per unit of work. "Cached per project" or "the caller owns the scope" do not.
 const NO_SPAN_REASON =
-  /\b(span|spans|trac(e|ed|es|ing)|hot[ -]?path|per[ -][a-z]+|owns?|owner|enclosing)\b/i;
+  /\b(spans?|trac(e|ed|es|ing)|hot[ -]?path|per[ -](event|chunk|message|item|frame|row|request|call|line|tick|byte|token|delta|record|statement|query|update|entry)s?)\b/i;
 // Bodies passed to these calls build a value, possibly a service object.
 const FACTORY_BODY_CALLEES = new Set(["gen", "fn", "fnUntraced"]);
+// Callbacks of these calls build a service when the call feeds a layer.
+const BUILDER_CALLEES = new Set(["map", "flatMap", "andThen"]);
 const FACTORY_NAME = /^make([A-Z]|$)/;
 
 type Fn = ESTree.ArrowFunctionExpression | ESTree.Function;
@@ -354,9 +357,165 @@ export default defineRule({
       );
     };
 
+    const isLayerCall = (node: Node): boolean =>
+      node.type === "CallExpression" && calleeNamespace(innermostCallee(node)) === "Layer";
+
+    // `value.pipe(..., Layer.effect(Tag))`: the call whose callee is `value.pipe`, or undefined.
+    const pipeMethodCall = (value: Node): ESTree.CallExpression | undefined => {
+      const member = value.parent;
+      if (member?.type !== "MemberExpression" || member.object !== value) return undefined;
+      if (calleeName(member) !== "pipe") return undefined;
+      const call = member.parent;
+      return call?.type === "CallExpression" && call.callee === member ? call : undefined;
+    };
+
+    const hasLayerArgument = (call: ESTree.CallExpression, except?: Node): boolean =>
+      call.arguments.some((argument) => argument !== except && isLayerCall(unwrap(argument)));
+
+    const variableOf = (identifier: ESTree.BindingIdentifier) => {
+      let scope = context.sourceCode.getScope(identifier);
+      while (true) {
+        const variable = scope.set.get(identifier.name);
+        if (variable !== undefined) return variable;
+        if (scope.upper === null) return undefined;
+        scope = scope.upper;
+      }
+    };
+
+    // A local binding feeds a factory when one of its references does: `Layer.effect(Tag, live)`.
+    const resolving = new Set<Node>();
+    const referencesFeed = (
+      id: ESTree.BindingIdentifier,
+      feeds: (reference: Node) => boolean,
+    ): boolean => {
+      if (resolving.has(id)) return false;
+      const variable = variableOf(id);
+      if (variable === undefined) return false;
+      resolving.add(id);
+      try {
+        return variable.references.some(
+          (reference) => reference.identifier !== id && feeds(reference.identifier as Node),
+        );
+      } finally {
+        resolving.delete(id);
+      }
+    };
+
+    const bindingFeeds = (
+      declarator: ESTree.VariableDeclarator,
+      feeds: (reference: Node) => boolean,
+    ): boolean => declarator.id.type === "Identifier" && referencesFeed(declarator.id, feeds);
+
+    // A value that becomes a member of a service object, directly or through a local binding.
+    const feedsServiceObject = (start: Node): boolean => {
+      let node = start;
+      let parent: Node | null = node.parent;
+      while (parent !== null && isWrapper(parent)) {
+        node = parent;
+        parent = parent.parent;
+      }
+      if (parent?.type === "Property") {
+        return (
+          parent.value === node &&
+          parent.parent.type === "ObjectExpression" &&
+          isServiceObject(parent.parent)
+        );
+      }
+      if (parent?.type === "VariableDeclarator" && parent.init === node) {
+        return !isExportedDeclarator(parent) && bindingFeeds(parent, feedsServiceObject);
+      }
+      return false;
+    };
+
+    // A private helper builds a service when a call to it becomes a service member.
+    const isCalledIntoService = (reference: Node): boolean =>
+      reference.parent?.type === "CallExpression" &&
+      reference.parent.callee === reference &&
+      feedsServiceObject(reference.parent);
+
+    // Whether a value flows into a `Layer.*` call, directly, through pipes or a local binding.
+    const feedsLayer = (start: Node): boolean => {
+      let node = start;
+      while (true) {
+        const parent: Node | null = node.parent;
+        if (parent === null) return false;
+        if (isWrapper(parent)) {
+          node = parent;
+          continue;
+        }
+        const piped = pipeMethodCall(node);
+        if (piped !== undefined) {
+          if (hasLayerArgument(piped)) return true;
+          node = piped;
+          continue;
+        }
+        if (
+          parent.type === "CallExpression" &&
+          parent.arguments.includes(node as ESTree.Expression)
+        ) {
+          if (calleeNamespace(innermostCallee(parent)) === "Layer") return true;
+          const callee = unwrap(parent.callee);
+          const isPipe =
+            (callee.type === "MemberExpression" && calleeName(callee) === "pipe") ||
+            isPipeFunction(callee);
+          if (!isPipe) return false;
+          if (hasLayerArgument(parent, node)) return true;
+          node = parent;
+          continue;
+        }
+        if (parent.type === "VariableDeclarator" && parent.init === node) {
+          return bindingFeeds(parent, feedsLayer);
+        }
+        return false;
+      }
+    };
+
+    // An object literal reachable from an export: an exported binding's value, an argument of an
+    // exported call or of an exported class's base, or a property value of such an object.
+    const isExportedObject = (object: Node): boolean => {
+      let node = object;
+      while (true) {
+        const parent: Node | null = node.parent;
+        if (parent === null) return false;
+        if (isWrapper(parent)) {
+          node = parent;
+          continue;
+        }
+        switch (parent.type) {
+          case "VariableDeclarator":
+            return parent.init === node && isExportedDeclarator(parent);
+          case "ExportDefaultDeclaration":
+            return true;
+          case "Property":
+            if (parent.value !== node) return false;
+            node = parent.parent;
+            continue;
+          case "CallExpression":
+            if (!parent.arguments.includes(node as ESTree.Expression) && parent.callee !== node) {
+              return false;
+            }
+            if (isCombinatorCall(parent)) return false;
+            node = parent;
+            continue;
+          case "ClassDeclaration":
+          case "ClassExpression":
+            return parent.superClass === node && isExportedClass(parent.body);
+          default:
+            return false;
+        }
+      }
+    };
+
+    // A map, flatMap or andThen callback builds a service when its call feeds a layer.
+    const isBuilderCallback = (fn: Node, call: ESTree.CallExpression): boolean =>
+      call.arguments.includes(fn as ESTree.Expression) &&
+      BUILDER_CALLEES.has(calleeName(innermostCallee(call)) ?? "") &&
+      feedsLayer(call);
+
     // A value built by an Effect.gen / Effect.fn call is a service when that call feeds a layer,
-    // an exported or `make*` binding, a `make` option, a class member or a public function.
-    const isFactoryCall = (start: ESTree.CallExpression): boolean => {
+    // an exported, `make*` or layer-fed binding, an option of a service or exported object, a
+    // class member or a public function.
+    const isFactoryCall = (start: Node): boolean => {
       let call: Node = start;
       while (true) {
         const parent: Node | null = call.parent;
@@ -365,25 +524,34 @@ export default defineRule({
           call = parent;
           continue;
         }
-        if (
-          parent.type === "MemberExpression" &&
-          calleeName(parent) === "pipe" &&
-          parent.parent?.type === "CallExpression" &&
-          parent.parent.callee === parent
-        ) {
-          call = parent.parent;
+        const piped = pipeMethodCall(call);
+        if (piped !== undefined) {
+          if (hasLayerArgument(piped)) return true;
+          call = piped;
           continue;
         }
         switch (parent.type) {
           case "CallExpression": {
             const callee = innermostCallee(parent);
             if (calleeNamespace(callee) === "Layer") return true;
-            return isPipeFunction(unwrap(callee)) && isFactoryCall(parent);
+            if (!isPipeFunction(unwrap(callee))) return false;
+            return hasLayerArgument(parent, call) || isFactoryCall(parent);
           }
           case "VariableDeclarator":
-            return isExportedDeclarator(parent) || FACTORY_NAME.test(declaratorName(parent));
+            return (
+              parent.init === call &&
+              (isExportedDeclarator(parent) ||
+                FACTORY_NAME.test(declaratorName(parent)) ||
+                bindingFeeds(parent, isFactoryCall))
+            );
           case "Property":
-            return keyName(parent.key) === "make";
+            return (
+              parent.value === call &&
+              parent.parent.type === "ObjectExpression" &&
+              (keyName(parent.key) === "make" ||
+                isServiceObject(parent.parent) ||
+                isExportedObject(parent.parent))
+            );
           case "PropertyDefinition":
             return parent.static === true || isExportedClass(parent.parent);
           case "ReturnStatement": {
@@ -407,7 +575,8 @@ export default defineRule({
         return (
           parent?.type === "ExportNamedDeclaration" ||
           parent?.type === "ExportDefaultDeclaration" ||
-          FACTORY_NAME.test(fn.id?.name ?? "")
+          FACTORY_NAME.test(fn.id?.name ?? "") ||
+          (fn.id !== null && fn.id !== undefined && referencesFeed(fn.id, isCalledIntoService))
         );
       }
       let node: Node = fn;
@@ -421,7 +590,11 @@ export default defineRule({
         case "ExportDefaultDeclaration":
           return true;
         case "VariableDeclarator":
-          return isExportedDeclarator(parent) || FACTORY_NAME.test(declaratorName(parent));
+          return (
+            isExportedDeclarator(parent) ||
+            FACTORY_NAME.test(declaratorName(parent)) ||
+            bindingFeeds(parent, isCalledIntoService)
+          );
         case "Property":
           return (
             parent.value === node &&
@@ -434,7 +607,8 @@ export default defineRule({
         case "CallExpression": {
           if (!parent.arguments.includes(node as ESTree.Expression)) return false;
           const name = calleeName(innermostCallee(parent));
-          return name !== undefined && FACTORY_BODY_CALLEES.has(name) && isFactoryCall(parent);
+          if (name !== undefined && FACTORY_BODY_CALLEES.has(name)) return isFactoryCall(parent);
+          return isBuilderCallback(node, parent);
         }
         default:
           return false;
@@ -457,7 +631,9 @@ export default defineRule({
         case "ArrowFunctionExpression": {
           if (parent.body !== node) return false;
           const call = parent.parent;
-          if (call?.type === "CallExpression" && isCombinatorCall(call)) return false;
+          if (call?.type === "CallExpression" && isCombinatorCall(call)) {
+            return isBuilderCallback(parent, call);
+          }
           return isPublicFunction(parent);
         }
         case "VariableDeclarator":

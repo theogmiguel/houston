@@ -361,6 +361,147 @@ describe("houston/require-traced-definition", () => {
     (output) => assert.match(output, /without a reason/),
   );
 
+  rule.invalid(
+    "reports fnUntraced whose comment names a cache or a scope owner, not a span",
+    `
+    import * as Effect from "effect/Effect";
+    // Cached per project.
+    export const read = Effect.fnUntraced(function* () { yield* Effect.void; });
+  `,
+    (output) => assert.match(output, /without a reason/),
+  );
+
+  rule.invalid(
+    "reports fnUntraced whose comment says the caller owns the scope",
+    `
+    import * as Effect from "effect/Effect";
+    // The caller owns the scope.
+    export const open = Effect.fnUntraced(function* () { yield* Effect.void; });
+  `,
+    (output) => assert.match(output, /without a reason/),
+  );
+
+  // A service built in a local binding, a callback or an option still has public members.
+  const probes: ReadonlyArray<readonly [string, string]> = [
+    [
+      "a local Effect.gen passed to Layer.effect",
+      `const live = Effect.gen(function* () { return { read: (id: string) => Effect.succeed(id) }; });
+      export const layer = Layer.effect(Tag, live);`,
+    ],
+    [
+      "a local Effect.gen with pipe(orDie) passed to Layer.effect",
+      `const live = Effect.gen(function* () {
+        return { read: (id: string) => Effect.succeed(id) };
+      }).pipe(Effect.orDie);
+      export const layer = Layer.effect(Tag, live);`,
+    ],
+    [
+      "a local Effect.gen piped into Layer.effect",
+      `const live = Effect.gen(function* () { return { read: (id: string) => Effect.succeed(id) }; });
+      export const layer = live.pipe(Layer.effect(Tag));`,
+    ],
+    [
+      "a local Effect.gen passed to Layer.scoped",
+      `const live = Effect.gen(function* () { return { read: (id: string) => Effect.succeed(id) }; });
+      export const layer = Layer.scoped(Tag, live);`,
+    ],
+    [
+      "a service class built from an effect option",
+      `export class Svc extends Service<Svc>()("Svc", {
+        effect: Effect.gen(function* () { return { read: (id: string) => Effect.succeed(id) }; }),
+      }) {}`,
+    ],
+    [
+      "an Effect.map callback passed to Layer.effect",
+      `export const layer = Layer.effect(Tag, Effect.map(Dep, (d) => ({ read: (id: string) => Effect.succeed(id) })));`,
+    ],
+    [
+      "an Effect.map callback piped from a dependency into Layer.effect",
+      `export const layer = Layer.effect(Tag, Dep.pipe(Effect.map((d) => ({ read: (id: string) => Effect.succeed(id) }))));`,
+    ],
+    [
+      "an Effect.flatMap callback returning Effect.succeed into Layer.effect",
+      `export const layer = Layer.effect(Tag, Effect.flatMap(Dep, (d) => Effect.succeed({ read: (id: string) => Effect.succeed(id) })));`,
+    ],
+    [
+      "a driver's create body",
+      `export const Driver = {
+        create: Effect.fn("Driver.create")(function* () {
+          const read = (id: string) => Effect.succeed(id);
+          return { read };
+        }),
+      };`,
+    ],
+    [
+      "an adapter a private helper builds for a driver's instance",
+      `function select() { return { read: (id: string) => Effect.succeed(id) }; }
+      export const Driver = {
+        create: Effect.fn("Driver.create")(function* () {
+          const adapter = select();
+          return { adapter };
+        }),
+      };`,
+    ],
+    [
+      "a handle returned by a service method",
+      `export const layer = Layer.effect(Tag, Effect.gen(function* () {
+        return Runner.of({
+          open: Effect.fn("Runner.open")(function* () {
+            return { read: (id: string) => Effect.succeed(id) };
+          }),
+        });
+      }));`,
+    ],
+  ];
+  for (const [name, body] of probes) {
+    rule.invalid(
+      `reports a member of ${name}`,
+      `
+      import * as Effect from "effect/Effect";
+      import * as Layer from "effect/Layer";
+      declare const Tag: never;
+      declare const Dep: Effect.Effect<number>;
+      declare const Runner: { of: <A>(value: A) => A };
+      declare const Service: <S>() => (key: string, options: unknown) => new () => S;
+      ${body}
+    `,
+      (output) => assert.match(output, /'read' is public/),
+    );
+  }
+
+  rule.valid(
+    "allows a local Effect.gen that no layer or export uses",
+    `
+    import * as Effect from "effect/Effect";
+    const options = Effect.gen(function* () { return { read: (id: string) => Effect.succeed(id) }; });
+    export const count = 1;
+    export const run = Effect.fn("Options.run")(function* () { yield* options; });
+  `,
+  );
+
+  rule.valid(
+    "allows a private helper's handle that a traced method uses internally",
+    `
+    import * as Effect from "effect/Effect";
+    function helper() { return { read: (id: string) => Effect.succeed(id) }; }
+    export const run = Effect.fn("Helper.run")(function* () {
+      const handle = helper();
+      yield* handle.read("a");
+    });
+  `,
+  );
+
+  rule.valid(
+    "allows a no-op Context.Reference default",
+    `
+    import * as Context from "effect/Context";
+    import * as Effect from "effect/Effect";
+    export class Analytics extends Context.Reference<{
+      readonly record: () => Effect.Effect<void>;
+    }>("Analytics", { defaultValue: () => ({ record: () => Effect.void }) }) {}
+  `,
+  );
+
   rule.valid(
     "allows fnUntraced whose comment names a hot path or an owning span",
     `
