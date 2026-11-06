@@ -347,7 +347,6 @@ export default defineConfig({
           "apps/server/src/houston/slack/**",
           "apps/server/src/houston/taskSources/**",
           "apps/server/src/houston/tasks/**",
-          "apps/server/src/htmlRender/**",
           "apps/server/src/mcp/**",
           "apps/server/src/observability/**",
           "apps/server/src/orchestration-v2/**",
