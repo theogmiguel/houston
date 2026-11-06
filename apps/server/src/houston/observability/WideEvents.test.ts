@@ -7,7 +7,6 @@ import {
   type OrchestrationV2Run,
   type OrchestrationV2StoredEvent,
 } from "@houston-app/contracts";
-import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -88,25 +87,28 @@ describe("houston.run", () => {
     }),
   );
 
-  it.effect("exports a rolled-back run as an interrupt, not a failure", () =>
+  it.effect("is not emitted when a rollback rewrites a finished run", () =>
     Effect.gen(function* () {
       const recording = RecordingTracer.make();
-      yield* WideEvents.emitRun({
-        runId: "run:wide:rolled-back",
-        context: { threadId },
-        status: "rolled_back",
+      const finished = {
+        id: RunId.make("run:wide:rolled-back"),
         startedAt: at("2026-11-06T12:00:01.000Z"),
         completedAt: at("2026-11-06T12:00:03.000Z"),
-        queueWaitMs: undefined,
-        durationMs: 2000,
-      }).pipe(Effect.withTracer(recording.tracer));
-      const span = recording.named("houston.run")[0]!;
-      assert.strictEqual(span.attributes.get("houston.outcome"), "interrupt");
-      assert.isTrue(
-        span.status._tag === "Ended" &&
-          span.status.exit._tag === "Failure" &&
-          Cause.hasInterruptsOnly(span.status.exit.cause),
+      };
+      // A rollback stamps the rollback time as the completion of runs it rewrites.
+      yield* record([
+        runUpdated(1, {
+          ...finished,
+          status: "rolled_back",
+          completedAt: at("2026-11-06T12:05:00.000Z"),
+        }),
+      ]).pipe(Effect.withTracer(recording.tracer));
+      assert.deepStrictEqual(recording.named("houston.run"), []);
+
+      yield* record([runUpdated(2, { ...finished, status: "completed" })]).pipe(
+        Effect.withTracer(recording.tracer),
       );
+      assert.lengthOf(recording.named("houston.run"), 1);
     }),
   );
 
