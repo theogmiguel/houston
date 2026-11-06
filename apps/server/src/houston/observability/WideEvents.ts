@@ -6,7 +6,8 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
 import * as References from "effect/References";
-import type * as Tracer from "effect/Tracer";
+import * as Tracer from "effect/Tracer";
+import type { OrchestrationV2RunStatus } from "@houston-app/contracts";
 
 import { outcomeFromExit } from "../../observability/Attributes.ts";
 import { toAttributes, withinTraceContext, type TraceContext } from "./TraceContext.ts";
@@ -20,14 +21,27 @@ const remember = <K, V>(map: Map<K, V>, key: K, value: V) => {
   if (map.size > REMEMBERED_TRACES) map.delete(map.keys().next().value!);
 };
 
-const commandSpans = new Map<string, Tracer.AnySpan>();
-const runSpans = new Map<string, Tracer.AnySpan>();
+// Link targets only: the ids, not the ended span with its attributes and events.
+const commandSpans = new Map<string, Tracer.ExternalSpan>();
+const runSpans = new Map<string, Tracer.ExternalSpan>();
 
 /** Remembers the span that dispatched a command, so outbox work can link back to it. */
 // oxlint-disable-next-line houston/require-traced-definition -- it records the current span; a span of its own would be recorded instead
 export const rememberCommandSpan = (commandId: string): Effect.Effect<void> =>
   Effect.currentSpan.pipe(
-    Effect.tap((span) => Effect.sync(() => remember(commandSpans, commandId, span))),
+    Effect.tap((span) =>
+      Effect.sync(() =>
+        remember(
+          commandSpans,
+          commandId,
+          Tracer.externalSpan({
+            traceId: span.traceId,
+            spanId: span.spanId,
+            sampled: span.sampled,
+          }),
+        ),
+      ),
+    ),
     Effect.ignore,
   );
 
@@ -47,7 +61,7 @@ const toNanos = (time: DateTime.Utc) => BigInt(DateTime.toEpochMillis(time)) * 1
 export interface RunEvent {
   readonly runId: string;
   readonly context: TraceContext;
-  readonly status: string;
+  readonly status: OrchestrationV2RunStatus;
   readonly startedAt: DateTime.Utc;
   readonly completedAt: DateTime.Utc;
   readonly queueWaitMs: number | undefined;
@@ -55,12 +69,25 @@ export interface RunEvent {
 }
 
 // The run's status as a span exit, so exporters see the same outcome and error tag.
-const runExit = (status: string): Exit.Exit<unknown, unknown> =>
-  status === "completed"
-    ? Exit.void
-    : status === "cancelled" || status === "interrupted"
-      ? Exit.interrupt()
-      : Exit.fail({ _tag: "RunFailed" });
+const runExit = (status: OrchestrationV2RunStatus): Exit.Exit<unknown, unknown> => {
+  switch (status) {
+    case "completed":
+      return Exit.void;
+    // A rollback is the user undoing the run, which orchestration treats as a cancel.
+    case "cancelled":
+    case "interrupted":
+    case "rolled_back":
+      return Exit.interrupt();
+    case "failed":
+      return Exit.fail({ _tag: "RunFailed" });
+    case "preparing":
+    case "queued":
+    case "starting":
+    case "running":
+    case "waiting":
+      return Exit.fail({ _tag: "RunUnfinished" });
+  }
+};
 
 // Emits `houston.run` from the run's stored start to its completion. No I/O, so it is safe
 // where run metrics are recorded under the publish lane.
@@ -91,7 +118,12 @@ export const emitRun = Effect.fnUntraced(function* (event: RunEvent) {
   span.end(toNanos(event.completedAt), exit);
 });
 
-/** Runs one background job tick as the root span `houston.job.<name>`. */
+/** A loop's check for due work, untraced: an idle tick then exports nothing. */
+// oxlint-disable-next-line houston/require-traced-definition -- it switches tracing off for the wrapped check
+export const findWork = <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  Effect.withTracerEnabled(self, false);
+
+/** Runs one background job tick that found work as the root span `houston.job.<name>`. */
 export const jobTick =
   (name: string, context: TraceContext = {}) =>
   <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>

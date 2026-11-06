@@ -99,12 +99,13 @@ const withoutTurnKeys = (
   return kept;
 };
 
-/** Drops the turn's ids, which forks inherit: for a fiber started in one turn that serves later ones. */
+/** Drops the turn's ids and span links, which forks inherit, for a fiber that serves later turns. */
 // oxlint-disable-next-line houston/require-traced-definition -- a combinator: the wrapped effect owns its spans
 export const withoutTurnContext = <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
   self.pipe(
     Effect.updateService(References.TracerSpanAnnotations, withoutTurnKeys),
     Effect.updateService(References.CurrentLogAnnotations, withoutTurnKeys),
+    Effect.provideService(References.TracerSpanLinks, []),
   );
 
 /** The context of one provider turn, for a session fiber that serves it. */

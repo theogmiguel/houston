@@ -132,14 +132,17 @@ export const makeReader = Effect.fn("HoustonMergeQueueReader.make")(function* (o
     );
 
   const readAll = Effect.gen(function* () {
-    for (const projectId of yield* store.projectsWithEntries) yield* readProject(projectId);
+    const projectIds = yield* WideEvents.findWork(store.projectsWithEntries);
+    if (projectIds.length === 0) return;
+    yield* Effect.forEach(projectIds, readProject, { discard: true }).pipe(
+      WideEvents.jobTick("mergeQueue.read"),
+    );
   });
 
   if (options.loops) {
     loops += 1;
     yield* Effect.forever(
       readAll.pipe(
-        WideEvents.jobTick("mergeQueue.read"),
         Effect.andThen(
           Effect.sleep(Duration.seconds(HOUSTON_MERGE_QUEUE_LIMITS.readIntervalSeconds)),
         ),

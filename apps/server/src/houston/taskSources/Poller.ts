@@ -238,21 +238,26 @@ const make = Effect.gen(function* () {
     lock.withPermits(1)(pollUnlocked(projectId, provider));
 
   const pollAll = Effect.gen(function* () {
-    for (const row of yield* store.enabledRows) {
-      yield* poll(row.project_id as ProjectId, row.provider).pipe(
-        Effect.catchCause((cause) =>
-          Effect.logWarning(`Task source poll of ${row.project_id} ${row.provider} failed.`, cause),
+    const rows = yield* WideEvents.findWork(store.enabledRows);
+    if (rows.length === 0) return;
+    yield* Effect.forEach(
+      rows,
+      (row) =>
+        poll(row.project_id as ProjectId, row.provider).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning(
+              `Task source poll of ${row.project_id} ${row.provider} failed.`,
+              cause,
+            ),
+          ),
         ),
-      );
-    }
+      { discard: true },
+    ).pipe(WideEvents.jobTick("taskSources.poll"));
   });
 
   loops += 1;
   yield* Effect.forever(
-    pollAll.pipe(
-      WideEvents.jobTick("taskSources.poll"),
-      Effect.andThen(Effect.sleep(Duration.seconds(POLL_INTERVAL_SECONDS))),
-    ),
+    pollAll.pipe(Effect.andThen(Effect.sleep(Duration.seconds(POLL_INTERVAL_SECONDS)))),
   ).pipe(Effect.forkScoped);
 
   return HoustonTaskSourcePoller.of({
