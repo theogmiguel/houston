@@ -128,6 +128,8 @@ import {
   type ProviderOperateAccess,
   resolveRemoteOperateAccess,
   resolveSelectedProviderEnvironmentId,
+  PROVIDER_DETAIL_SPLIT_CLASS,
+  PROVIDER_SETTINGS_PAGE_WIDTH,
 } from "./ProviderSettingsPanel.logic";
 
 function providerInstanceName(instance: ProviderInstanceConfig): string {
@@ -308,7 +310,10 @@ interface ProviderSettingsTarget {
 
 export function ProviderSettingsPanel(target: ProviderSettingsTarget) {
   return (
-    <SettingsPageContainer className="@container/providers gap-8">
+    <SettingsPageContainer
+      width={PROVIDER_SETTINGS_PAGE_WIDTH}
+      className="@container/providers gap-8"
+    >
       <ProviderSettingsPanelContent
         key={`${target.environmentId ?? ""}:${target.instanceId ?? ""}`}
         {...target}
@@ -1063,8 +1068,7 @@ export function EnvironmentProviderSettings({
           className={cn(
             providerCardHeightClassName,
             "overflow-hidden",
-            selectedRow &&
-              "@min-[48rem]/providers:grid @min-[48rem]/providers:grid-cols-[17rem_minmax(0,1fr)]",
+            selectedRow && PROVIDER_DETAIL_SPLIT_CLASS,
           )}
         >
           <div

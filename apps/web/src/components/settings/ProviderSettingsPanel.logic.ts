@@ -130,3 +130,10 @@ export function classifyProviderEnvironmentAccess(input: {
   }
   return { kind: "editable" };
 }
+
+/** The Providers page width; it must clear the 48rem query that puts the detail beside the list. */
+export const PROVIDER_SETTINGS_PAGE_WIDTH = "expanded" as const;
+
+/** Puts the selected provider's detail beside the list once the page is 48rem wide. */
+export const PROVIDER_DETAIL_SPLIT_CLASS =
+  "@min-[48rem]/providers:grid @min-[48rem]/providers:grid-cols-[17rem_minmax(0,1fr)]";
