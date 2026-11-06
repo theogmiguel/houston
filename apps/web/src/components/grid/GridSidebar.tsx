@@ -93,7 +93,9 @@ import {
   type GridThreadState,
   type ThreadSelection,
 } from "../../grid/sidebar";
+import { collapsedRollup, revealedOpenThread } from "../../grid/collapsedRollup";
 import { PullRequestChecksGlyph, PullRequestGlyph } from "../pullRequest/pullRequestIcons";
+import { SidebarStatusGlyph } from "../sidebar/SidebarStatusGlyph";
 import { GridShelves } from "./GridShelves";
 import { readLocalApi } from "../../localApi";
 import { useProjectSectionMenu } from "./projectSectionMenu";
@@ -1271,7 +1273,13 @@ export function SidebarProjectSection({
 }) {
   const gridCount = section.grids.length;
   const projectMenu = section.isScratch ? undefined : onOpenProjectMenu;
-  const summary = gridCount === 0 ? "No grids" : gridCount === 1 ? "1 grid" : `${gridCount} grids`;
+  const revealed = collapsed ? revealedOpenThread(section.grids, openGridId) : null;
+  const hiddenThreads = collapsed
+    ? [...section.grids.flatMap((entry) => entry.threads), ...section.ungroupedThreads].filter(
+        (thread) => thread.id !== revealed?.thread.id,
+      )
+    : [];
+  const rollup = collapsedRollup(hiddenThreads);
 
   return (
     <div
@@ -1308,7 +1316,12 @@ export function SidebarProjectSection({
                   <FolderOpenIcon aria-hidden className={SIDEBAR_PROJECT_ICON_CLS} />
                 )}
                 <span className={SIDEBAR_PROJECT_LABEL_TEXT_CLS}>{section.title}</span>
-                {collapsed ? <span className={SIDEBAR_PROJECT_SUMMARY_CLS}>{summary}</span> : null}
+                {collapsed && rollup.dot !== null ? (
+                  <SidebarStatusGlyph state={rollup.dot.state} label={rollup.dot.label} />
+                ) : null}
+                {collapsed && rollup.count > 0 ? (
+                  <span className={SIDEBAR_PROJECT_SUMMARY_CLS}>{rollup.count}</span>
+                ) : null}
               </button>
             }
           />
@@ -1339,7 +1352,41 @@ export function SidebarProjectSection({
         )}
       </div>
       <AnimatedHeight>
-        {collapsed ? null : (
+        {collapsed ? (
+          revealed === null ? null : (
+            <div className="flex flex-col gap-px">
+              <ThreadCard
+                key={revealed.thread.id}
+                gridId={revealed.grid.id}
+                thread={revealed.thread}
+                query={query}
+                providerEntries={providerEntries}
+                nowIso={nowIso}
+                focused
+                selected={selection.selectedThreadKeys.has(
+                  scopedThreadKey(
+                    scopeThreadRef(revealed.thread.environmentId, revealed.thread.id),
+                  ),
+                )}
+                dragging={dragging?.threadId === revealed.thread.id}
+                runningSubagents={runningSubagents.get(subagentParentKey(revealed.thread)) ?? 0}
+                workspaceTitle={section.title}
+                onOpen={() => onOpenThread(revealed.grid.id, revealed.thread.id)}
+                onSelect={(input) => onSelectThread(revealed.thread, input)}
+                onClose={() => onCloseThread(revealed.thread)}
+                onHold={(preset) => onHoldThread(revealed.thread, preset)}
+                onPickHoldTime={onPickHoldTime}
+                onRename={(title) => onRenameThread(revealed.thread, title)}
+                onSetAutoClose={(enabled) => onSetAutoClose(revealed.thread, enabled)}
+                onDropOnThread={(source) =>
+                  onDropOnThread(source, revealed.grid.id, revealed.thread.id)
+                }
+                onOpenGrid={(targetGridId) => onOpenThread(targetGridId, revealed.thread.id)}
+                handleNewThread={handleNewThread}
+              />
+            </div>
+          )
+        ) : (
           <div className="flex flex-col gap-px">
             {section.grids.map(({ grid, threads }) => (
               <GridGroup
@@ -1500,6 +1547,11 @@ export function GridGroup({
     () => ({ kind: "grid", gridId: grid.id }),
     (source) => onDropOnGrid(source, grid.id),
   );
+  const revealedThread =
+    collapsed && open ? threads.find((thread) => thread.id === grid.focusedThreadId) : undefined;
+  const gridRollup = collapsedRollup(
+    collapsed ? threads.filter((thread) => thread.id !== revealedThread?.id) : [],
+  );
   const readyThreads = threads.filter(
     (thread) => resolveGridThreadState(thread, nowIso) === "ready",
   );
@@ -1644,7 +1696,17 @@ export function GridGroup({
                   {threads.length === 0 ? (
                     <span className={SIDEBAR_GRID_EMPTY_CLS}>empty</span>
                   ) : collapsed ? (
-                    <span className={SIDEBAR_GRID_COUNT_CLS}>{threads.length}</span>
+                    <>
+                      {gridRollup.dot === null ? null : (
+                        <SidebarStatusGlyph
+                          state={gridRollup.dot.state}
+                          label={gridRollup.dot.label}
+                        />
+                      )}
+                      {gridRollup.count > 0 ? (
+                        <span className={SIDEBAR_GRID_COUNT_CLS}>{gridRollup.count}</span>
+                      ) : null}
+                    </>
                   ) : null}
                 </button>
               }
@@ -1696,9 +1758,9 @@ export function GridGroup({
         )}
       </div>
       <AnimatedHeight>
-        {collapsed ? null : (
+        {collapsed && revealedThread === undefined ? null : (
           <div className="flex flex-col gap-px">
-            {threads.map((thread) => (
+            {(revealedThread === undefined ? threads : [revealedThread]).map((thread) => (
               <ThreadCard
                 key={thread.id}
                 gridId={grid.id}
