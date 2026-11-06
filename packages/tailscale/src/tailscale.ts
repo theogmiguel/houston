@@ -531,9 +531,8 @@ const decodeTailscaleServeStatusJson = Schema.decodeUnknownOption(
 const reaches = (hostname: string, bindHost: string): "exact" | "either" | undefined => {
   let address = normalizeHostname(hostname);
   // Compare IPv6 by value: 0:0:0:0:0:ffff:7f00:1 is ::ffff:7f00:1.
-  if (address.includes(":") && URL.canParse(`http://[${address}]`)) {
-    address = normalizeHostname(new URL(`http://[${address}]`).hostname);
-  }
+  const bracketed = address.includes(":") ? URL.parse(`http://[${address}]`) : null;
+  if (bracketed) address = normalizeHostname(bracketed.hostname);
   // An IPv4-mapped address can be written as hex, such as ::ffff:7f00:1 for 127.0.0.1.
   const mapped = /^::ffff:([\da-f]{1,4}):([\da-f]{1,4})$/u.exec(address);
   if (mapped !== null) {
