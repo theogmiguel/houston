@@ -216,6 +216,19 @@ describe("the shell read models", () => {
       yield* sql`DELETE FROM orchestration_v2_projection_turn_items WHERE turn_item_id = 'item:3'`;
       yield* assertReadModelsMatch;
 
+      // A REPLACE removes the old row without a DELETE statement, also when it moves the item.
+      const replaceItem = (id: string, runId: string) => sql`
+        INSERT OR REPLACE INTO orchestration_v2_projection_turn_items (turn_item_id, thread_id,
+          run_id, node_id, provider_thread_id, provider_turn_id, parent_item_id, ordinal, type,
+          status, updated_at, payload_json)
+        VALUES (${id}, 'parent', ${runId}, NULL, NULL, NULL, NULL, 9, 'command_execution',
+          'completed', ${AT}, '{}')
+      `;
+      yield* replaceItem("item:1", "run:a");
+      yield* replaceItem("item:1", "run:c");
+      yield* replaceItem("item:new", "run:c");
+      yield* assertReadModelsMatch;
+
       // A copy through SELECT *, then a replay's wipe and refill.
       yield* sql`CREATE TEMP TABLE copied AS SELECT * FROM orchestration_v2_projection_threads
         WHERE thread_id = 'parent'`;
@@ -279,6 +292,25 @@ describe("the shell read models", () => {
       assert.isFalse(yield* ensureHoustonReadModels());
       yield* insertItem("item:next", "parent", "run:a", 2);
       yield* assertReadModelsMatch;
+    }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
+  );
+
+  it.effect("an open recreates a dropped read-model table and refills it", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      for (const [id, payload] of THREADS) yield* insertThread(id, payload);
+      yield* insertItem("item:1", "parent", "run:a", 1);
+      yield* sql`DROP TABLE houston_turn_item_counts`;
+      yield* sql`DROP TABLE houston_thread_shell`;
+      assert.isTrue(yield* ensureHoustonReadModels());
+      yield* insertItem("item:2", "parent", "run:a", 2);
+      yield* insertThread("late", { lineage: { rootThreadId: "late" } });
+      yield* assertReadModelsMatch;
+      const indexes = yield* sql<{ readonly name: string }>`
+        SELECT name FROM sqlite_schema WHERE name = 'houston_thread_shell_active_idx'
+      `;
+      assert.lengthOf(indexes, 1);
+      assert.isFalse(yield* ensureHoustonReadModels());
     }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
   );
 

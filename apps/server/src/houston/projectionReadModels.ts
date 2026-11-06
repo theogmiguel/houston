@@ -55,7 +55,22 @@ const THREAD_SHELL_TABLE = `
   ) WITHOUT ROWID
 `;
 
-// Payload columns keep json_extract's value types (no affinity), as the reads compare them.
+// The payload keys the row needs, extracted in one pass into a small JSON array; each column then
+// reads that array, not the payload. Columns keep json_extract's value types (no affinity).
+const THREAD_SHELL_KEYS = [
+  "$.archivedAt",
+  "$.lineage",
+  "$.settledOverride",
+  "$.settledAt",
+  "$.pinnedAt",
+  "$.snoozedUntil",
+  "$.worktreePath",
+  "$.forkedFrom",
+  "$.pullRequests",
+] as const;
+const key = (path: (typeof THREAD_SHELL_KEYS)[number], subpath = "") =>
+  `json_extract(row.k, '$[${THREAD_SHELL_KEYS.indexOf(path)}]${subpath}')`;
+
 const threadShellRow = (source: string) => `
   INSERT INTO houston_thread_shell (
     thread_id, project_id, updated_at, deleted, archived, payload_valid, relationship_to_parent,
@@ -63,24 +78,23 @@ const threadShellRow = (source: string) => `
     snoozed_until, worktree_path, forked_from_run_source_thread_id, watches_pull_request
   )
   SELECT row.thread_id, row.project_id, row.updated_at, row.deleted_at IS NOT NULL,
-    json_extract(row.p, '$.archivedAt') IS NOT NULL,
-    row.p IS NOT NULL,
-    json_extract(row.p, '$.lineage.relationshipToParent'),
-    json_extract(row.p, '$.lineage.parentThreadId'),
-    json_extract(row.p, '$.lineage.rootThreadId'),
-    json_extract(row.p, '$.lineage.sideChat'),
-    json_extract(row.p, '$.settledOverride'),
-    json_extract(row.p, '$.settledAt'),
-    json_extract(row.p, '$.pinnedAt'),
-    json_extract(row.p, '$.snoozedUntil'),
-    json_extract(row.p, '$.worktreePath'),
+    ${key("$.archivedAt")} IS NOT NULL,
+    row.k IS NOT NULL,
+    ${key("$.lineage", ".relationshipToParent")},
+    ${key("$.lineage", ".parentThreadId")},
+    ${key("$.lineage", ".rootThreadId")},
+    ${key("$.lineage", ".sideChat")},
+    ${key("$.settledOverride")},
+    ${key("$.settledAt")},
+    ${key("$.pinnedAt")},
+    ${key("$.snoozedUntil")},
+    ${key("$.worktreePath")},
     CASE
-      WHEN json_extract(row.p, '$.forkedFrom.type') = 'run'
-        AND json_extract(row.p, '$.lineage.sideChat') IS NOT 1
-        THEN json_extract(row.p, '$.forkedFrom.threadId')
+      WHEN ${key("$.forkedFrom", ".type")} = 'run' AND ${key("$.lineage", ".sideChat")} IS NOT 1
+        THEN ${key("$.forkedFrom", ".threadId")}
     END,
     EXISTS (
-      SELECT 1 FROM json_each(row.p, '$.pullRequests') link
+      SELECT 1 FROM json_each(row.k, '$[${THREAD_SHELL_KEYS.indexOf("$.pullRequests")}]') link
       WHERE CASE WHEN link.type = 'object' THEN json_type(link.value, '$.watch') IS NOT NULL END
     )
   FROM (${source}) row
@@ -89,7 +103,9 @@ const threadShellRow = (source: string) => `
 const threadShellSource = (from: string) => `
   SELECT ${from}.thread_id AS thread_id, ${from}.project_id AS project_id,
     ${from}.updated_at AS updated_at, ${from}.deleted_at AS deleted_at,
-    CASE WHEN json_valid(${from}.payload_json) THEN ${from}.payload_json END AS p
+    CASE WHEN json_valid(${from}.payload_json)
+      THEN json_extract(${from}.payload_json, ${THREAD_SHELL_KEYS.map((path) => `'${path}'`).join(", ")})
+    END AS k
 `;
 
 // Turn items per thread and run ('' for items without a run), so shell counts read one row per run.
@@ -308,50 +324,70 @@ const createReadIndexes = Effect.fn("createHoustonReadIndexes")(function* (
 export const createProjectionReadIndexes = createReadIndexes(BOOT_READ_INDEXES);
 
 /** Houston migration 13: the shell's read models, filled from the rows already stored. */
-export const createShellReadModels = Effect.gen(function* () {
+// The read models' own tables and indexes, created if missing by the migration and at every open.
+const READ_MODEL_TABLES: ReadonlyArray<readonly [name: string, ddl: ReadonlyArray<string>]> = [
+  [
+    "houston_thread_shell",
+    [
+      THREAD_SHELL_TABLE,
+      `CREATE INDEX IF NOT EXISTS houston_thread_shell_active_idx
+        ON houston_thread_shell(updated_at, thread_id) WHERE deleted = 0 AND archived = 0`,
+      "CREATE INDEX IF NOT EXISTS houston_thread_shell_root_idx ON houston_thread_shell(root_thread_id)",
+      `CREATE INDEX IF NOT EXISTS houston_thread_shell_worktree_idx
+        ON houston_thread_shell(worktree_path) WHERE worktree_path IS NOT NULL`,
+    ],
+  ],
+  [
+    "houston_user_messages",
+    [
+      USER_MESSAGES_TABLE,
+      `CREATE INDEX IF NOT EXISTS houston_user_messages_latest_idx
+        ON houston_user_messages(thread_id, updated_at DESC, message_id DESC)
+        WHERE idle_compaction = 0`,
+      `CREATE INDEX IF NOT EXISTS houston_user_messages_latest_authored_idx
+        ON houston_user_messages(thread_id, updated_at DESC, message_id DESC)
+        WHERE user_authored = 1 AND idle_compaction = 0`,
+    ],
+  ],
+  ["houston_turn_item_counts", [TURN_ITEM_COUNTS_TABLE]],
+];
+
+const createReadModelTables = Effect.fn("createHoustonReadModelTables")(function* () {
   const sql = yield* SqlClient.SqlClient;
-  yield* sql.unsafe(THREAD_SHELL_TABLE);
-  yield* sql`
-    CREATE INDEX houston_thread_shell_active_idx ON houston_thread_shell(updated_at, thread_id)
-    WHERE deleted = 0 AND archived = 0
-  `;
-  yield* sql`CREATE INDEX houston_thread_shell_root_idx ON houston_thread_shell(root_thread_id)`;
-  yield* sql`
-    CREATE INDEX houston_thread_shell_worktree_idx ON houston_thread_shell(worktree_path)
-    WHERE worktree_path IS NOT NULL
-  `;
-  yield* sql.unsafe(USER_MESSAGES_TABLE);
-  yield* sql`
-    CREATE INDEX houston_user_messages_latest_idx
-    ON houston_user_messages(thread_id, updated_at DESC, message_id DESC) WHERE idle_compaction = 0
-  `;
-  yield* sql`
-    CREATE INDEX houston_user_messages_latest_authored_idx
-    ON houston_user_messages(thread_id, updated_at DESC, message_id DESC)
-    WHERE user_authored = 1 AND idle_compaction = 0
-  `;
-  yield* sql.unsafe(TURN_ITEM_COUNTS_TABLE);
+  for (const [, ddl] of READ_MODEL_TABLES) {
+    for (const statement of ddl) yield* sql.unsafe(statement);
+  }
+});
+
+/** Houston migration 13: the shell's read models, filled from the rows already stored. */
+export const createShellReadModels = Effect.gen(function* () {
+  yield* createReadModelTables();
   yield* createTriggers();
   yield* rebuildReadModels();
   yield* createReadIndexes(SHELL_READ_INDEXES);
 });
 
-// Rebuilding a projection table drops its triggers and indexes: at open, missing indexes are
-// recreated, and a missing trigger recreates all and rebuilds the read models in one transaction.
+// Rebuilding a projection table drops its triggers and indexes, and a read-model table can go
+// missing: at open every missing object is recreated, and a missing table or trigger rebuilds the
+// read models from the upstream rows, all in one transaction.
 export const ensureHoustonReadModels = Effect.fn("ensureHoustonReadModels")(function* () {
   const sql = yield* SqlClient.SqlClient;
-  const tables = yield* sql<{ readonly name: string }>`
-    SELECT name FROM sqlite_schema WHERE type = 'table' AND name = 'houston_thread_shell'
-  `;
-  if (tables.length === 0) return false;
-  // Houston indexes on upstream tables are recreated when a table rebuild dropped them.
-  yield* createReadIndexes([...BOOT_READ_INDEXES, ...SHELL_READ_INDEXES]);
   const present = new Set(
     (yield* sql<{ readonly name: string }>`
-      SELECT name FROM sqlite_schema WHERE type = 'trigger' AND name LIKE 'houston_%'
+      SELECT name FROM sqlite_schema WHERE type IN ('table', 'trigger') AND name LIKE 'houston_%'
     `).map((row) => row.name),
   );
-  if (TRIGGERS.every(([name]) => present.has(name))) return false;
-  yield* sql.withTransaction(Effect.andThen(createTriggers(), rebuildReadModels()));
-  return true;
+  const complete =
+    READ_MODEL_TABLES.every(([name]) => present.has(name)) &&
+    TRIGGERS.every(([name]) => present.has(name));
+  return yield* sql.withTransaction(
+    Effect.gen(function* () {
+      yield* createReadModelTables();
+      yield* createReadIndexes([...BOOT_READ_INDEXES, ...SHELL_READ_INDEXES]);
+      if (complete) return false;
+      yield* createTriggers();
+      yield* rebuildReadModels();
+      return true;
+    }),
+  );
 });

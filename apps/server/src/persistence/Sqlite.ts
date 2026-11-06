@@ -19,6 +19,8 @@ const layerSetup = Layer.effectDiscard(
     // CLI and server write from separate processes; wait rather than fail with SQLITE_BUSY.
     yield* sql`PRAGMA busy_timeout = 5000;`;
     yield* sql`PRAGMA foreign_keys = ON;`;
+    // Houston: a REPLACE then fires delete triggers, which keep houston/projectionReadModels.ts exact.
+    yield* sql`PRAGMA recursive_triggers = ON;`;
     // Existing databases need doctor's offline VACUUM to add pointer maps for this mode.
     const tables = yield* sql<{
       readonly count: number;
