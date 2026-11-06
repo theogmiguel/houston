@@ -7,6 +7,7 @@ import {
   ThreadId,
   type OrchestrationV2DomainEvent,
   type ThreadLinkedPullRequest,
+  type ThreadPullRequestLink,
 } from "@houston-app/contracts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -73,6 +74,7 @@ const thread = (
     readonly settledAt?: DateTime.Utc;
     readonly linkedPullRequest?: ThreadLinkedPullRequest;
     readonly branchPullRequest?: ThreadLinkedPullRequest;
+    readonly pullRequests?: ReadonlyArray<ThreadPullRequestLink>;
   } = {},
 ): OrchestrationV2DomainEvent => ({
   id: EventId.make(`created:${threadId}`),
@@ -94,6 +96,7 @@ const thread = (
     worktreePath: null,
     linkedPullRequest: overrides.linkedPullRequest ?? null,
     branchPullRequest: overrides.branchPullRequest ?? null,
+    ...(overrides.pullRequests === undefined ? {} : { pullRequests: overrides.pullRequests }),
     activeProviderThreadId: null,
     lineage: overrides.subagentOf
       ? {
@@ -1129,6 +1132,49 @@ it.layer(layerTest)("ThreadSearch.searchThreads", (it) => {
         (yield* search.searchThreads({ query: "alpha" })).matches.map((match) => match.projectId),
         [project],
       );
+    }),
+  );
+
+  it.effect("matches a linked pull request's synced title and reference, like the palette", () =>
+    Effect.gen(function* () {
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const search = yield* ThreadSearch.ThreadSearch;
+      const project = ProjectId.make("project:heron");
+      yield* createProject(project);
+      const syncedAt = DateTime.formatIso(at(5));
+      const link: ThreadPullRequestLink = {
+        host: "github.com",
+        repository: "acme/heron",
+        number: 4401,
+        url: "https://github.com/acme/heron/pull/4401",
+        source: "manual",
+        linkedAt: syncedAt,
+        snapshot: {
+          state: "open",
+          title: "Teach the sandpiper parser",
+          headBranch: "feature/parser",
+          baseBranch: "main",
+          isDraft: false,
+          updatedAt: syncedAt,
+          syncedAt,
+        },
+        stack: null,
+      };
+      const tracked = ThreadId.make("thread:heron-tracked");
+      yield* Effect.forEach(
+        [
+          thread(tracked, project, { title: "Epsilon", pullRequests: [link] }),
+          thread(ThreadId.make("thread:heron-other"), project, { title: "Zeta" }),
+        ],
+        projections.apply,
+        { discard: true },
+      );
+      const find = (query: string) =>
+        search
+          .searchThreads({ query })
+          .pipe(Effect.map(({ matches }) => matches.map((match) => [match.threadId, match.title])));
+      assert.deepEqual(yield* find("sandpiper"), [[tracked, "Epsilon"]]);
+      assert.deepEqual(yield* find("acme/heron#4401"), [[tracked, "Epsilon"]]);
     }),
   );
 
