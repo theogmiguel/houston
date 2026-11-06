@@ -276,7 +276,7 @@ export async function runScale(
           each * options.minReps > capMs
             ? Math.max(5, Math.floor(capMs / each))
             : Math.min(
-                options.maxReps,
+                query.maxReps ?? options.maxReps,
                 Math.max(options.minReps, Math.ceil(options.targetMs / each)),
               );
         for (let i = 0; i < reps; i++) plan.push(query);

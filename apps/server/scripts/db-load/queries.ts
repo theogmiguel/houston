@@ -79,6 +79,8 @@ export interface QuerySpec {
   readonly grows: "breadth" | "depth";
   /** Overrides the per-query time cap for a query too heavy to repeat often at large scales. */
   readonly capMs?: number;
+  /** Caps repetitions when the warm-up hides a slow path (a cache the other queries invalidate). */
+  readonly maxReps?: number;
   readonly run: (context: QueryContext) => Effect.Effect<unknown, unknown, Services>;
 }
 
@@ -438,6 +440,8 @@ export const QUERIES: ReadonlyArray<QuerySpec> = [
     path: "search",
     calls: "ProjectionStore.searchThread (find in thread)",
     grows: "depth",
+    // Stream writes to this thread invalidate its find cache, so about half the calls rebuild it.
+    maxReps: 40,
     run: (c) =>
       Effect.flatMap(projectionStore, (store) =>
         store.searchThread({ threadId: tid(c.deep), query: "deadline" as never }),
