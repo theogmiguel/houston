@@ -1442,6 +1442,85 @@ it.effect("reconciles SSH host settings without publishing no-op changes", () =>
   ),
 );
 
+describe("Simlock identity check", () => {
+  // The identity RPC probes a gateway the user typed, so it follows the same switch as the hosts.
+  const probe = Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-device-simlock-" });
+    const settings = yield* ServerSettings.ServerSettingsService;
+    const requests: string[] = [];
+    const localHost: DeviceHost.DeviceHost["Service"] = {
+      id: LOCAL_DEVICE_HOST_ID,
+      label: "This machine",
+      summary: Effect.succeed({
+        id: LOCAL_DEVICE_HOST_ID,
+        label: "Local",
+        kind: "local",
+        platforms: [],
+        hubInstalled: false,
+        agentDeviceInstalled: false,
+      }),
+      platformAvailability: (platform) => Effect.succeed({ platform, available: false }),
+      current: Effect.succeed(null),
+      ensureReady: () => Effect.die("Unexpected device launch"),
+      ensureAgentReady: () => Effect.die("Unexpected agent launch"),
+      stop: Effect.void,
+      stopAgent: Effect.void,
+    };
+    const service = yield* DeviceService.make.pipe(
+      Effect.provideService(DeviceHost.DeviceHost, localHost),
+      Effect.provideService(ServerSettings.ServerSettingsService, settings),
+      Effect.provideService(FileSystem.FileSystem, FileSystem.makeNoop({})),
+      Effect.provideService(ProcessRunner.ProcessRunner, {
+        run: () => Effect.die("Unexpected helper launch"),
+      }),
+      Effect.provideService(
+        HttpClient.HttpClient,
+        HttpClient.make((request) =>
+          Effect.sync(() => {
+            requests.push(request.url);
+            return HttpClientResponse.fromWeb(request, new Response("down", { status: 503 }));
+          }),
+        ),
+      ),
+      Effect.provideService(
+        ChildProcessSpawner.ChildProcessSpawner,
+        ChildProcessSpawner.make(() => Effect.die("Unexpected process")),
+      ),
+      Effect.provide(Layer.mergeAll(ServerConfig.layerTest(baseDir, baseDir), NetService.layer)),
+    );
+    return { service, settings, requests };
+  });
+  const input = { gatewayUrl: "https://gateway.example:4700", agentToken: "agent-token" };
+  const layer = Layer.mergeAll(ServerSettings.layerTest(), NodeServices.layer, NodeCrypto.layer);
+
+  it.effect("refuses while Simlock device hosts are off and contacts no gateway", () =>
+    Effect.gen(function* () {
+      const { service, requests } = yield* probe;
+
+      const failure = yield* Effect.flip(service.simlockIdentity(input));
+
+      expect(failure._tag).toBe("DeviceSimlockIdentityError");
+      expect(failure.reason).toBe(
+        'Simlock device hosts are off. Turn on "Simlock device hosts" in Settings > Labs to check a gateway.',
+      );
+      expect(requests).toEqual([]);
+    }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+
+  it.effect("reaches the gateway once Simlock device hosts are on", () =>
+    Effect.gen(function* () {
+      const { service, settings, requests } = yield* probe;
+      yield* settings.updateSettings({ simlockDeviceHostsEnabled: true });
+
+      yield* Effect.flip(service.simlockIdentity(input));
+
+      expect(requests).toHaveLength(1);
+      expect(requests[0]).toContain("gateway.example");
+    }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+});
+
 it.effect("a failed tool update reports npm's exit code but not its output", () =>
   Effect.gen(function* () {
     const host: DeviceHost.DeviceHost["Service"] = {

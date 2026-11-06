@@ -1566,6 +1566,12 @@ export const make = Effect.gen(function* () {
     "DeviceService.simlockIdentity",
   )(
     function* (input) {
+      const saved = yield* settings.getSettings;
+      if (!saved.simlockDeviceHostsEnabled)
+        return yield* new DeviceSimlockIdentityError({
+          reason:
+            'Simlock device hosts are off. Turn on "Simlock device hosts" in Settings > Labs to check a gateway.',
+        });
       const environment = yield* HostProcess.Environment;
       const gatewayUrl = (
         input.gatewayUrl || SimlockDeviceHost.machineSimlockToken(environment)?.gatewayUrl
@@ -1577,9 +1583,7 @@ export const make = Effect.gen(function* () {
       const savedHost =
         input.hostId === undefined
           ? undefined
-          : (yield* settings.getSettings).simlockDeviceHosts.find(
-              (host) => host.id === input.hostId,
-            );
+          : saved.simlockDeviceHosts.find((host) => host.id === input.hostId);
       const token = input.agentToken
         ? { agentToken: input.agentToken, source: "entered" as const }
         : SimlockDeviceHost.resolveSimlockToken(gatewayUrl, savedHost, environment);

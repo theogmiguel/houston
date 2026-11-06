@@ -22,7 +22,9 @@ any telemetry service.
 
 If transcript cleanup is enabled, the finished **text** of the transcript (never the audio)
 is sent to the text generation provider selected in Settings ▸ Voice for punctuation, filler
-words and spoken corrections. Cleanup is off by default, so transcripts stay on the machine.
+words and spoken corrections, together with the text currently in the composer before and
+after the cursor, which the provider uses to resolve ambiguous speech. Cleanup is off by
+default, so transcripts and composer text stay on the machine.
 
 ## Settings
 

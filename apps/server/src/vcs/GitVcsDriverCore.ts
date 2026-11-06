@@ -44,6 +44,7 @@ import { resolveProjectFileBackedSetting } from "@houston-app/shared/projectSett
 import { gitCommandDuration, gitCommandsTotal, withMetrics } from "../observability/Metrics.ts";
 import * as GitVcsDriver from "./GitVcsDriver.ts";
 import { removeEmptyDirectory } from "./removeEmptyDirectory.ts";
+import { confinedGitEnv } from "../houston/confinedGit.ts";
 import { gitSpawnEnv, gitConfigEnv } from "./VcsProcess.ts";
 import { carryOverWorktreeInclude } from "./worktreeInclude.ts";
 import { removeLinkedWorktree } from "./worktreeRemoval.ts";
@@ -3449,6 +3450,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       timeoutMs: 30_000,
       appendTruncationMarker: true,
       allowNonZeroExit: true,
+      // The pull advances this branch only: no user hook, fsmonitor command or submodule recursion.
+      env: confinedGitEnv(process.env, hostPlatform),
     };
     let args = ["pull", "--ff-only"];
     let result = yield* executeGitWithStableDiagnostics(
