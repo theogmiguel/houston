@@ -2166,11 +2166,13 @@ export function ThreadCard({
             <span className="flex-1" />
           )}
           {showSubagents && runningSubagents > 0 ? (
-            <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap">
+            <span className="inline-flex min-w-0 items-center gap-1 whitespace-nowrap">
               <UsersIcon aria-hidden className="size-3 shrink-0" />
-              {runningSubagents === 1
-                ? "1 subagent running"
-                : `${runningSubagents} subagents running`}
+              <span className="truncate">
+                {runningSubagents === 1
+                  ? "1 subagent running"
+                  : `${runningSubagents} subagents running`}
+              </span>
             </span>
           ) : null}
           {showPullRequest && pullRequestNumber !== null ? (

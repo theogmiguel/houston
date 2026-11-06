@@ -190,3 +190,31 @@ describe("ThreadCard for a thread no grid shows", () => {
     expect(screen.getByTestId("drop-target").element().textContent).toBe("none");
   });
 });
+
+describe("ThreadCard second line at the narrowest sidebar", () => {
+  it("truncates the subagent label and keeps the provider mark inside the row", async () => {
+    __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS });
+    await using screen = await render(
+      <div style={{ width: 240 }}>
+        {card(
+          thread({
+            branch: "houston/a-very-long-branch-name-for-narrow-widths",
+            pullRequests: [
+              { number: 4812, url: "https://example.test/pr/4812", snapshot: { state: "open" } },
+            ] as never,
+          }),
+          { runningSubagents: 12 },
+        )}
+      </div>,
+    );
+    const row = rowOf(screen.container);
+    const mark = row.querySelector<HTMLElement>("[data-thread-provider-mark]")!;
+    const label = screen.getByText(/subagents? running|agents/).element();
+    const rowBox = row.getBoundingClientRect();
+
+    expect(mark.getBoundingClientRect().right).toBeLessThanOrEqual(rowBox.right);
+    expect(mark.getBoundingClientRect().width).toBeGreaterThan(0);
+    expect(label.getBoundingClientRect().right).toBeLessThanOrEqual(rowBox.right);
+    expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth);
+  });
+});
