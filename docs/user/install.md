@@ -70,7 +70,7 @@ Code and Codex on the selected computers).
 
 The server listens on this machine only unless network access is turned on in
 **Settings ▸ Connections ▸ Sharing & access**. Each agent sends your prompts and the files it
-reads to its own provider; Houston has no telemetry service.
+reads to its own provider. See [Privacy and diagnostics](privacy.md).
 
 ## Platform differences
 

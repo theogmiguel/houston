@@ -22,8 +22,8 @@ the server's orchestration tools.
 - **Workspace tools.** Git changes, files, an editor, a browser and pull requests open in the
   right panel next to the thread. Pull requests include a local merge queue.
 - **Session insights.** Thread status, notifications and usage estimates help track work.
-- **Local control plane.** Houston has no account, hosted control plane or telemetry. Session
-  state remains local, and secrets managed by Houston are kept in files only your user can read.
+- **Local control plane.** Houston has no account or hosted control plane. Session state remains
+  local, and secrets managed by Houston are kept in files only your user can read.
 
 ## Supported agents
 
@@ -67,7 +67,7 @@ The architecture is documented in [`docs/internals/overview.md`](docs/internals/
 ## Privacy and updates
 
 Local-first does not mean offline. Agent CLIs, Git and GitHub operations, browser and MCP
-integrations and model downloads use their respective network services when invoked. Houston has no hosted account or telemetry service. Its background
+integrations and model downloads use their respective network services when invoked. Houston has no hosted account; [Privacy and diagnostics](docs/user/privacy.md) describes usage and crash data. Its background
 update check queries GitHub, can be disabled, and never installs without an explicit click.
 
 ## Documentation

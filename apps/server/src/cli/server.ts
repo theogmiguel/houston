@@ -8,7 +8,6 @@ import * as CliError from "effect/cli/CliError";
 
 import * as ServerConfig from "../config.ts";
 import { HostedLaunch, isHostedLaunch, withHostedBaseDir } from "../houston/baseDir.ts";
-import { withoutTelemetry } from "../houston/noTelemetry.ts";
 import { awaitLauncherLoss } from "../launcherWatch.ts";
 import { runServer } from "../server.ts";
 import { type CliServerFlags, resolveServerConfig, sharedServerCommandFlags } from "./config.ts";
@@ -31,10 +30,8 @@ const runServerCommand = Effect.fn("server.runServerCommand")(function* (
   },
 ) {
   const logLevel = yield* GlobalFlag.LogLevel;
-  const config = withoutTelemetry(
-    yield* withHostedBaseDir(flags, (hostedFlags) =>
-      resolveServerConfig(hostedFlags, logLevel, options),
-    ),
+  const config = yield* withHostedBaseDir(flags, (hostedFlags) =>
+    resolveServerConfig(hostedFlags, logLevel, options),
   );
   const run = runServer.pipe(
     Effect.provideService(ServerConfig.ServerConfig, config),
