@@ -367,7 +367,7 @@ describe("ThreadCard layout", () => {
     expect(getComputedStyle(branch).fontFamily).not.toContain("Mono");
     expect(getComputedStyle(branch).fontSize).toBe("12px");
     expect(getComputedStyle(title).fontSize).toBe("13px");
-    expect(getComputedStyle(title).fontWeight).toBe("400");
+    expect(getComputedStyle(title).fontWeight).toBe("500");
     expect(getComputedStyle(time).fontSize).toBe("12px");
 
     // The age sits right-aligned on the title line; the second line holds the branch alone.
@@ -632,11 +632,11 @@ describe("ThreadCard layout and contrast", () => {
     expect(getComputedStyle(title).color).toBe(classColor("text-foreground"));
   });
 
-  it("sets a resting title in normal weight and the regular foreground", async () => {
+  it("sets a resting title in medium weight and the regular foreground", async () => {
     await using screen = await render(card(thread()));
 
     const title = titleOf(screen);
-    expect(getComputedStyle(title).fontWeight).toBe("400");
+    expect(getComputedStyle(title).fontWeight).toBe("500");
     expect(getComputedStyle(title).color).toBe(classColor("text-foreground"));
   });
 

@@ -5,12 +5,11 @@ import "~/index.css";
 import { render } from "../../test/render";
 import { ServerUnavailableCard } from "./ServerUnavailableCard";
 
-const DETAIL =
-  "Tried 127.0.0.1:3773 · PrimaryEnvironmentRequestError (HTTP 500) during fetch-session-state";
+const DETAIL = "Couldn't reach the server at localhost:10443.";
 const TRANSPARENT = "rgba(0, 0, 0, 0)";
 
 describe("ServerUnavailableCard", () => {
-  it("shows a danger icon beside the title and the address and error the client got", async () => {
+  it("shows a danger icon beside the title and a one-sentence detail", async () => {
     await page.viewport(1440, 900);
     await using screen = await render(<ServerUnavailableCard report="report" detail={DETAIL} />);
 
@@ -31,24 +30,18 @@ describe("ServerUnavailableCard", () => {
     expect(getComputedStyle(detail.element()).fontFamily).not.toMatch(/mono/i);
   });
 
-  it("breaks a long detail only at the separator, never inside a part", async () => {
-    await page.viewport(1440, 900);
-    const detail =
-      "Tried houston-server.internal.example.test:10443 · PrimaryEnvironmentRequestError (HTTP 500) during fetch-session-state";
+  it("wraps a long sentence inside the card instead of overflowing it", async () => {
+    await page.viewport(390, 800);
+    const detail = "Couldn't reach the server at houston-server.internal.example.test:10443.";
     await using screen = await render(<ServerUnavailableCard report="report" detail={detail} />);
 
     const line = screen.container.querySelector<HTMLElement>(
       "[data-slot='standalone-page-detail']",
     )!;
-    const parts = [...line.querySelectorAll<HTMLElement>("span")];
-    expect(parts.map((part) => part.textContent)).toEqual(detail.split(" · "));
-    for (const part of parts) {
-      expect(part.getClientRects(), `"${part.textContent}" on one line`).toHaveLength(1);
-    }
-    expect(
-      parts[1]!.getBoundingClientRect().top,
-      "the second part starts a new line",
-    ).toBeGreaterThan(parts[0]!.getBoundingClientRect().bottom - 1);
+    expect(line.textContent).toBe(detail);
+    expect(line.textContent).not.toContain("PrimaryEnvironmentRequestError");
+    expect(line.scrollWidth).toBeLessThanOrEqual(line.clientWidth);
+    expect(line.getBoundingClientRect().right).toBeLessThanOrEqual(window.innerWidth);
   });
 
   it("offers one primary action, one secondary action and a ghost Copy error", async () => {

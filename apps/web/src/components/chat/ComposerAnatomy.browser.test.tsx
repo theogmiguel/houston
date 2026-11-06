@@ -126,23 +126,20 @@ it(
     expect(footer!.querySelectorAll('button[type="submit"]')).toHaveLength(1);
     expect(lastButton().type).toBe("submit");
 
-    // The send button is a 32px circle at full opacity: neutral with nothing to send, accent once
-    // there is something to send.
+    // The send button is a 32px accent-filled circle, dimmer while there is nothing to send.
     const send = lastButton();
     const emptyStyle = getComputedStyle(send);
     expect(send.disabled).toBe(true);
     expect(send.getBoundingClientRect().width).toBe(32);
     expect(send.getBoundingClientRect().height).toBe(32);
-    expect(emptyStyle.backgroundColor).toBe(resolveColor("var(--secondary)"));
-    expect(emptyStyle.backgroundColor).not.toBe(resolveColor("var(--accent)"));
-    expect(Number(emptyStyle.opacity)).toBe(1);
+    expect(emptyStyle.backgroundColor).toBe(resolveColor("var(--accent)"));
+    expect(Number(emptyStyle.opacity)).toBeCloseTo(0.6, 2);
 
     await userEvent.click(page.getByTestId("composer-editor"));
     await userEvent.keyboard("hello");
     await vi.waitFor(() => expect(send.disabled).toBe(false));
     const readyStyle = getComputedStyle(send);
-    // The fill eases from neutral to accent, so wait for the transition to land.
-    await vi.waitFor(() => expect(readyStyle.backgroundColor).toBe(resolveColor("var(--accent)")));
+    expect(readyStyle.backgroundColor).toBe(resolveColor("var(--accent)"));
     expect(Number(readyStyle.opacity)).toBe(1);
     await userEvent.keyboard("{Control>}a{/Control}{Backspace}");
 

@@ -1867,7 +1867,6 @@ export function ThreadCard({
       isThreadRoutePathname(location.pathname, scopeThreadRef(thread.environmentId, thread.id)),
   });
   const active = focused || routeActive;
-  const attention = state === "needs" || state === "ready" || state === "back";
   const startedAt = resolveThreadWorkingStartedAt(thread);
   const pullRequestNumber = openPullRequestNumber(thread);
   const pullRequestChecksState =
@@ -2046,12 +2045,7 @@ export function ThreadCard({
               aria-current={active ? "true" : undefined}
               className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left outline-none"
             >
-              <span
-                className={cn(
-                  "min-w-0 flex-1 truncate text-headline leading-4.5 text-foreground",
-                  attention || active ? "font-medium" : "font-normal",
-                )}
-              >
+              <span className="min-w-0 flex-1 truncate text-headline leading-4.5 font-medium text-foreground">
                 <HighlightedText text={thread.title} query={query} />
               </span>
               {/* Right-aligned on the title line so ages scan down one column; it recedes while

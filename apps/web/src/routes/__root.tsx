@@ -50,7 +50,10 @@ import {
   resolveInitialServerAuthGateState,
 } from "../environments/primary";
 import { PrimaryEnvironmentRequestError } from "../environments/primary/auth";
-import { serverUnavailableDetail } from "../components/serverUnavailableDetail";
+import {
+  serverUnavailableDetail,
+  serverUnavailableOutcome,
+} from "../components/serverUnavailableDetail";
 import { hasHostedPairingRequest, isHostedStaticApp } from "../hostedPairing";
 import { useHostedPromptLinkLanding } from "../components/promptLinks/HostedPromptLinkLanding";
 import { isLocalEnvironmentDisabled } from "../localEnvironment";
@@ -225,7 +228,8 @@ function RootRouteErrorView({ error }: ErrorComponentProps) {
 
 function ServerUnavailableView({ error }: { error: PrimaryEnvironmentRequestError }) {
   const pathname = useLocation({ select: (location) => location.pathname });
-  const report = errorReport(error, pathname);
+  // The card's headline is a sentence; the error tag and operation live in the log and the copy.
+  const report = `${serverUnavailableOutcome(error)}\n\n${errorReport(error, pathname)}`;
   return (
     <ServerUnavailableCard
       report={report}

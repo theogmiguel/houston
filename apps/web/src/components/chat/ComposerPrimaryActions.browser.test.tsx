@@ -38,26 +38,22 @@ function sendButtonStyle() {
   return { disabled: (button as HTMLButtonElement).disabled, style };
 }
 
-function resolved(property: "backgroundColor" | "color", value: string) {
-  const probe = document.createElement("span");
-  document.body.append(probe);
-  probe.style[property] = value;
-  const result = getComputedStyle(probe)[property];
-  probe.remove();
-  return result;
-}
-
-it("fills an empty composer's send button neutral at full opacity, disabled with a not-allowed cursor", async () => {
+it("keeps an empty composer's send button accent-filled, dimmed to 60% and disabled", async () => {
   await using _screen = await renderSend(false);
   const { disabled, style } = sendButtonStyle();
   expect(disabled).toBe(true);
-  expect(style.opacity).toBe("1");
-  const wrapper = page.getByRole("button", { name: "Submit message" }).element().parentElement!;
-  expect(getComputedStyle(wrapper).cursor).toBe("not-allowed");
+  expect(Number(style.opacity)).toBeCloseTo(0.6, 2);
 
-  expect(style.backgroundColor).toBe(resolved("backgroundColor", "var(--secondary)"));
-  expect(style.color).toBe(resolved("color", "var(--color-muted-foreground)"));
-  expect(style.backgroundColor).not.toBe(resolved("backgroundColor", "var(--accent)"));
+  const probe = document.createElement("span");
+  document.body.append(probe);
+  probe.style.backgroundColor = "var(--accent)";
+  const accent = getComputedStyle(probe).backgroundColor;
+  probe.style.color = "var(--primary-foreground)";
+  const ink = getComputedStyle(probe).color;
+  probe.remove();
+
+  expect(style.backgroundColor).toBe(accent);
+  expect(style.color).toBe(ink);
 });
 
 it("renders the send button with the full accent fill once there is content", async () => {
@@ -72,5 +68,4 @@ it("renders the send button with the full accent fill once there is content", as
   const accent = getComputedStyle(probe).backgroundColor;
   probe.remove();
   expect(style.backgroundColor).toBe(accent);
-  expect(style.color).toBe(resolved("color", "var(--primary-foreground)"));
 });

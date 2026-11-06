@@ -2210,11 +2210,6 @@ code {
   font-variant-numeric: tabular-nums;
 }
 
-/* The inert send button takes no pointer events, so its wrapper carries the cursor. */
-[data-send-inert] {
-  cursor: not-allowed;
-}
-
 /* The one-row changed-files summary: muted 12px text with the file name at full ink. */
 [data-changed-files-state="compact"] {
   color: var(--color-secondary-label);
