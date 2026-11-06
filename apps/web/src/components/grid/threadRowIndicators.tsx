@@ -1,4 +1,12 @@
 import { formatDiffCount } from "@houston-app/client-runtime/diff-count";
+import {
+  ROW_DIFF_ADDED_CLS,
+  ROW_DIFF_COUNTS_CLS,
+  ROW_DIFF_REMOVED_CLS,
+  ROW_DRAFT_CROSS_CLS,
+  ROW_DRAFT_MARK_CLS,
+  ROW_DRAFT_PENCIL_CLS,
+} from "../ui/sidebar-rail-recipes";
 import { scopeProjectRef, scopeThreadRef } from "@houston-app/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
 import { FolderGit2Icon, GitBranchIcon, SquarePenIcon, XIcon } from "lucide-react";
@@ -142,10 +150,10 @@ export function ThreadRowIndicators({
         <span
           role="img"
           aria-label={`Uncommitted changes ${formatGridDiffCounts(diff)}`}
-          className="shrink-0 font-mono text-2xs tabular-nums"
+          className={`shrink-0 ${ROW_DIFF_COUNTS_CLS}`}
         >
-          <span className="text-diff-addition-foreground">+{formatDiffCount(diff.insertions)}</span>{" "}
-          <span className="text-diff-deletion-foreground">−{formatDiffCount(diff.deletions)}</span>
+          <span className={ROW_DIFF_ADDED_CLS}>+{formatDiffCount(diff.insertions)}</span>{" "}
+          <span className={ROW_DIFF_REMOVED_CLS}>−{formatDiffCount(diff.deletions)}</span>
         </span>
       )}
       {remote ? <RemoteMachineMark thread={thread} /> : null}
@@ -176,20 +184,17 @@ function DraftMark({
               discardComposerDraft(threadRef);
             }}
             className={cn(
-              "group/draft inline-grid size-3.5 shrink-0 cursor-pointer place-items-center rounded-(--r-badge) text-warning-foreground outline-none",
-              "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+              "inline-grid size-3.5 shrink-0 place-items-center rounded-(--r-badge)",
+              ROW_DRAFT_MARK_CLS,
             )}
           />
         }
       >
         <SquarePenIcon
           aria-hidden
-          className="col-start-1 row-start-1 size-3 group-hover/draft:invisible group-focus-visible/draft:invisible"
+          className={`col-start-1 row-start-1 size-3 ${ROW_DRAFT_PENCIL_CLS}`}
         />
-        <XIcon
-          aria-hidden
-          className="invisible col-start-1 row-start-1 size-3 group-hover/draft:visible group-focus-visible/draft:visible"
-        />
+        <XIcon aria-hidden className={`col-start-1 row-start-1 size-3 ${ROW_DRAFT_CROSS_CLS}`} />
       </TooltipTrigger>
       <TooltipPopup side="top">Unsent draft. Click to discard</TooltipPopup>
     </Tooltip>

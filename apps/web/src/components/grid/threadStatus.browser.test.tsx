@@ -152,7 +152,7 @@ describe("thread status words", () => {
     await using screen = await render(card(thread({ unsettledAt: "2026-01-01T11:00:00.000Z" })));
     expect(statusLine(screen.container)).toBe("Back");
     await userEvent.click(
-      screen.getByRole("button", { name: "Dismiss Back notification" }).element(),
+      screen.getByRole("button", { name: "Dismiss back notification" }).element(),
     );
     expect(acknowledged).toHaveLength(1);
     expect(acknowledged[0]?.wokeAt).toBe("2026-01-01T11:00:00.000Z");

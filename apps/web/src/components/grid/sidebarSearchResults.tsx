@@ -1,4 +1,11 @@
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
+import {
+  RAIL_NOTICE_CLS,
+  RAIL_RESULT_ROW_CLS,
+  RAIL_RESULT_SNIPPET_CLS,
+  RAIL_RESULT_TITLE_CLS,
+  RAIL_SECTION_LABEL_CLS,
+} from "../ui/sidebar-rail-recipes";
 import { createContext, useContext, useEffect, useRef } from "react";
 
 import { cn } from "../../lib/utils";
@@ -14,11 +21,14 @@ export const SidebarSearchHighlightContext = createContext<string | null>(null);
 export function useSearchHighlight(key: string) {
   const highlighted = useContext(SidebarSearchHighlightContext) === key;
   const ref = useRef<HTMLElement | null>(null);
+  const attach = (element: HTMLElement | null) => {
+    ref.current = element;
+  };
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- brings the highlighted result into view in the rail's scroll container
   useEffect(() => {
     if (highlighted) ref.current?.scrollIntoView({ block: "nearest" });
   }, [highlighted]);
-  return { highlighted, ref };
+  return { highlighted, attach };
 }
 
 export interface ContentResult {
@@ -33,7 +43,7 @@ export function SidebarContentResults({ results }: { results: ReadonlyArray<Cont
   if (results.length === 0) return null;
   return (
     <div className="flex flex-col gap-px pt-1" data-testid="sidebar-content-results">
-      <div className="px-2 py-1 text-xs font-medium text-secondary-label">In messages</div>
+      <div className={`px-2 py-1 ${RAIL_SECTION_LABEL_CLS}`}>In messages</div>
       {results.map((result) => (
         <ContentResultRow key={result.key} result={result} />
       ))}
@@ -42,31 +52,27 @@ export function SidebarContentResults({ results }: { results: ReadonlyArray<Cont
 }
 
 function ContentResultRow({ result }: { result: ContentResult }) {
-  const { highlighted, ref } = useSearchHighlight(result.key);
+  const { highlighted, attach } = useSearchHighlight(result.key);
   return (
     <button
-      ref={(element) => {
-        ref.current = element;
-      }}
+      ref={attach}
       type="button"
       data-search-highlighted={highlighted || undefined}
       onClick={result.onOpen}
       className={cn(
-        `flex w-full cursor-pointer flex-col gap-0.5 rounded-lg px-2.5 py-1.5 text-left outline-none ${MOTION_FEEDBACK}`,
+        `flex w-full flex-col gap-0.5 px-2.5 py-1.5 ${RAIL_RESULT_ROW_CLS} ${MOTION_FEEDBACK}`,
         highlighted ? "bg-(--sidebar-row-active)" : "hover:bg-(--sidebar-row-hover)",
       )}
     >
-      <span className="truncate text-sm text-sidebar-foreground">{result.thread.title}</span>
-      <span className="line-clamp-2 text-xs break-words text-secondary-label">
-        {result.snippet}
-      </span>
+      <span className={`truncate ${RAIL_RESULT_TITLE_CLS}`}>{result.thread.title}</span>
+      <span className={RAIL_RESULT_SNIPPET_CLS}>{result.snippet}</span>
     </button>
   );
 }
 
 export function SidebarNoSearchResults({ query }: { query: string }) {
   return (
-    <div role="status" className="px-2.5 py-3 text-sm text-secondary-label">
+    <div role="status" className={`px-2.5 py-3 ${RAIL_NOTICE_CLS}`}>
       No threads found for “{query}”
     </div>
   );

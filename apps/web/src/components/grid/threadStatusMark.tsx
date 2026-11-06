@@ -1,4 +1,5 @@
 import { scopeThreadRef } from "@houston-app/client-runtime/environment";
+import { ROW_BACK_DISMISS_CLS, ROW_STATE_WORD_CLS } from "../ui/sidebar-rail-recipes";
 import {
   formatWorkingDurationLabel,
   resolveThreadWorkingStartedAt,
@@ -28,7 +29,7 @@ function BackWord({ thread, nowIso }: { thread: EnvironmentThreadShell; nowIso: 
   return (
     <button
       type="button"
-      aria-label="Dismiss Back notification"
+      aria-label="Dismiss back notification"
       data-thread-back-dismiss=""
       onPointerDown={(event) => event.stopPropagation()}
       onClick={(event) => {
@@ -36,7 +37,7 @@ function BackWord({ thread, nowIso }: { thread: EnvironmentThreadShell; nowIso: 
         event.stopPropagation();
         acknowledge(scopeThreadRef(thread.environmentId, thread.id), wokeAt);
       }}
-      className="cursor-pointer rounded-(--r-badge) outline-none hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      className={ROW_BACK_DISMISS_CLS}
     >
       Back
     </button>
@@ -62,7 +63,8 @@ export function ThreadStateMark({
   return (
     <span
       className={cn(
-        "inline-flex shrink-0 items-center gap-1 text-caption leading-3.75 font-medium whitespace-nowrap tabular-nums",
+        "inline-flex shrink-0 items-center gap-1",
+        ROW_STATE_WORD_CLS,
         threadStateTextClass(state),
       )}
     >

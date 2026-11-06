@@ -1,10 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import {
-  isAtomCommandInterrupted,
-  squashAtomCommandFailure,
-  settlePromise,
-  type AtomCommandResult,
-} from "@houston-app/client-runtime/state/runtime";
+import { settlePromise } from "@houston-app/client-runtime/state/runtime";
 import {
   scopedThreadKey,
   scopeProjectRef,
@@ -84,7 +79,6 @@ import {
   updateThreadSelection,
   visibleGridThreads,
   type AttentionCard,
-  type GridThreadState,
   type ThreadSelection,
 } from "../../grid/sidebar";
 import { collapsedRollup, revealedOpenThread } from "../../grid/collapsedRollup";
@@ -404,9 +398,10 @@ export function GridSidebar() {
         (ref) => workspaceKeyOf(ref.environmentId, ref.projectId) === openWorkspaceKey,
       ),
     );
+    // oxlint-disable-next-line react/set-state-in-effect -- the filter is persisted client state that navigation must be able to widen
     if (hidden) changeProjectFilter([]);
     // Only a change of the open workspace widens; choosing a filter while a thread is open keeps it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- the filter and project list are read when the open workspace changes, not on every change of them
   }, [openWorkspaceKey]);
 
   const createGridInWorkspace = (workspaceKey: string, name?: string) => {
@@ -2289,7 +2284,7 @@ export function ThreadCard({
           <div
             ref={(element) => {
               rowRef.current = element;
-              searchHighlight.ref.current = element;
+              searchHighlight.attach(element);
             }}
             data-search-highlighted={searchHighlight.highlighted || undefined}
             data-file-drop-over={fileDrop.over || undefined}

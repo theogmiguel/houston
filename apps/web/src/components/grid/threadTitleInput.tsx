@@ -1,4 +1,9 @@
 import { useId, useRef, useState } from "react";
+import {
+  ROW_TITLE_INPUT_CLS,
+  ROW_TITLE_INPUT_INVALID_CLS,
+  ROW_TITLE_MESSAGE_CLS,
+} from "../ui/sidebar-rail-recipes";
 
 import { cn } from "../../lib/utils";
 
@@ -59,12 +64,13 @@ export function ThreadTitleInput({
           if (event.key === "Escape") finish(onCancel);
         }}
         className={cn(
-          "h-6 min-w-0 flex-1 rounded-(--r-ctl) border border-input bg-background px-1.5 text-xs text-foreground outline-none focus:border-ring",
-          empty && "border-error-foreground focus:border-error-foreground",
+          "h-6 min-w-0 flex-1 rounded-(--r-ctl) px-1.5",
+          ROW_TITLE_INPUT_CLS,
+          empty && ROW_TITLE_INPUT_INVALID_CLS,
         )}
       />
       {empty ? (
-        <p id={messageId} role="alert" className="text-2xs text-error-foreground">
+        <p id={messageId} role="alert" className={ROW_TITLE_MESSAGE_CLS}>
           {EMPTY_THREAD_TITLE_MESSAGE}
         </p>
       ) : null}

@@ -14,6 +14,8 @@ const fixture = vi.hoisted(() => ({
   shown: [] as Array<{ items: Array<{ id: string; label: string }>; position: unknown }>,
   confirm: true as boolean | undefined,
   custom: null as { snoozedUntil: string } | null,
+  customAsked: 0,
+  confirmAsked: 0,
   markUnread: [] as unknown[],
   deleted: [] as unknown[],
   regenerated: [] as unknown[],
@@ -37,11 +39,17 @@ vi.mock(import("../../localApi"), async (original) => {
 });
 vi.mock(import("../../confirmDialog"), async (original) => ({
   ...(await original()),
-  requestConfirmDialog: (() => Promise.resolve(fixture.confirm)) as never,
+  requestConfirmDialog: (() => {
+    fixture.confirmAsked += 1;
+    return Promise.resolve(fixture.confirm);
+  }) as never,
 }));
 vi.mock(import("../CustomSnoozeDialog"), async (original) => ({
   ...(await original()),
-  requestCustomSnooze: (async () => fixture.custom) as never,
+  requestCustomSnooze: (async () => {
+    fixture.customAsked += 1;
+    return fixture.custom;
+  }) as never,
 }));
 vi.mock(import("../../hooks/useThreadActions"), async (original) => ({
   ...(await original()),
@@ -113,6 +121,8 @@ function reset() {
   fixture.shown = [];
   fixture.confirm = true;
   fixture.custom = null;
+  fixture.customAsked = 0;
+  fixture.confirmAsked = 0;
   fixture.markUnread = [];
   fixture.deleted = [];
   fixture.regenerated = [];
@@ -246,7 +256,8 @@ describe("bulk thread menu", () => {
   it("holds nothing when the custom time dialog is dismissed", async () => {
     reset();
     const { screen, handlers } = await run("hold:custom", [thread("a"), thread("b")]);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await vi.waitFor(() => expect(fixture.customAsked).toBe(1));
+    await Promise.resolve();
     expect(handlers.onHold).not.toHaveBeenCalled();
     expect(handlers.onDone).not.toHaveBeenCalled();
     await screen[Symbol.asyncDispose]();
@@ -281,7 +292,8 @@ describe("bulk thread menu", () => {
     reset();
     fixture.confirm = false;
     const { screen, handlers } = await run("delete", [thread("a"), thread("b")]);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await vi.waitFor(() => expect(fixture.confirmAsked).toBe(1));
+    await Promise.resolve();
     expect(fixture.deleted).toEqual([]);
     expect(handlers.onDone).not.toHaveBeenCalled();
     await screen[Symbol.asyncDispose]();

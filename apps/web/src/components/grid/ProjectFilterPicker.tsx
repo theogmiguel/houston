@@ -1,4 +1,5 @@
 import type { EnvironmentId, EnvironmentMachineKind } from "@houston-app/contracts";
+import { RAIL_FILTER_DOT_CLS, RAIL_MENU_ROW_BUTTON_CLS } from "../ui/sidebar-rail-recipes";
 import { CheckIcon, FolderIcon, ListFilterIcon, SettingsIcon } from "lucide-react";
 import { createContext, useContext, type MouseEvent as ReactMouseEvent } from "react";
 
@@ -85,7 +86,7 @@ export function ProjectFilterPicker({
           {filtered ? (
             <span
               aria-hidden
-              className="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-(--accent-ink)"
+              className={`absolute top-0.5 right-0.5 size-1.5 bg-(--accent-ink) ${RAIL_FILTER_DOT_CLS}`}
             />
           ) : null}
         </TooltipTrigger>
@@ -142,7 +143,7 @@ export function ProjectFilterPicker({
                   event.stopPropagation();
                   onOpenSettings(group);
                 }}
-                className="ml-auto inline-grid size-5 shrink-0 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-label hover:bg-(--sel) hover:text-foreground"
+                className={`ml-auto inline-grid size-5 shrink-0 place-items-center ${RAIL_MENU_ROW_BUTTON_CLS}`}
               >
                 <SettingsIcon aria-hidden className="size-3.5" />
               </button>

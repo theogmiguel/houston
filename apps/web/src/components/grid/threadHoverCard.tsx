@@ -1,4 +1,12 @@
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
+import {
+  HOVER_CARD_BODY_CLS,
+  HOVER_CARD_MUTED_CLS,
+  HOVER_CARD_TEXT_CLS,
+  HOVER_CARD_TITLE_CLS,
+  HOVER_CARD_WARN_CLS,
+} from "../ui/sidebar-rail-recipes";
+import { cn } from "../../lib/utils";
 import { scopeProjectRef } from "@houston-app/client-runtime/environment";
 import {
   AlertTriangleIcon,
@@ -6,7 +14,6 @@ import {
   CpuIcon,
   FolderGit2Icon,
   GitBranchIcon,
-  GitPullRequestIcon,
   RepeatIcon,
   ServerIcon,
   SquareTerminalIcon,
@@ -21,21 +28,16 @@ import { useEnvironmentQuery } from "../../state/query";
 import { useThreadRunningTerminalIds } from "../../state/terminalSessions";
 import { vcsEnvironment } from "../../state/vcs";
 import { formatUpcomingTimestamp } from "../../timestampFormat";
+import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { useClientSettings } from "../../hooks/useSettings";
 
-function Line({ icon, children, tone }: { icon: ReactNode; children: ReactNode; tone?: "warn" }) {
+function Line({ icon, children, warn }: { icon: ReactNode; children: ReactNode; warn?: boolean }) {
   return (
-    <span
-      className={
-        tone === "warn"
-          ? "flex items-start gap-1.5 text-warning-foreground"
-          : "flex items-start gap-1.5"
-      }
-    >
+    <span className={cn("flex items-start gap-1.5", warn && HOVER_CARD_WARN_CLS)}>
       <span aria-hidden className="mt-0.5 shrink-0 [&_svg]:size-3">
         {icon}
       </span>
-      <span className="min-w-0 break-words">{children}</span>
+      <span className={`min-w-0 ${HOVER_CARD_TEXT_CLS}`}>{children}</span>
     </span>
   );
 }
@@ -95,24 +97,22 @@ export function ThreadHoverCard({
 
   return (
     <div
-      className="flex flex-col gap-1.5 px-3 py-2.5 text-xs leading-4 text-secondary-foreground"
+      className={`flex flex-col gap-1.5 px-3 py-2.5 ${HOVER_CARD_BODY_CLS}`}
       data-thread-hover-card=""
     >
-      <span className="text-xs leading-4 font-semibold break-words text-foreground">
-        {thread.title}
-      </span>
+      <span className={HOVER_CARD_TITLE_CLS}>{thread.title}</span>
       <Line icon={<ChevronRightIcon />}>{workspaceTitle}</Line>
       {details.environment === null ? null : (
         <Line icon={<ServerIcon />}>{details.environment}</Line>
       )}
       <Line icon={details.checkout === "worktree" ? <FolderGit2Icon /> : <GitBranchIcon />}>
         {shownBranch ?? "no branch"}
-        <span className="text-secondary-label">
+        <span className={HOVER_CARD_MUTED_CLS}>
           {details.checkout === "worktree" ? " · worktree" : " · local checkout"}
         </span>
       </Line>
       {details.branchWarning === null ? null : (
-        <Line icon={<AlertTriangleIcon />} tone="warn">
+        <Line icon={<AlertTriangleIcon />} warn>
           {details.branchWarning}
         </Line>
       )}
@@ -130,23 +130,23 @@ export function ThreadHoverCard({
         </Line>
       )}
       {details.problem === null ? null : (
-        <Line icon={<AlertTriangleIcon />} tone="warn">
+        <Line icon={<AlertTriangleIcon />} warn>
           {details.problem.kind === "limit"
             ? `Usage limit reached. Resets ${formatUpcomingTimestamp(details.problem.resetAt, timestampFormat)}`
             : details.problem.text}
         </Line>
       )}
       {details.pullRequests.map((pullRequest) => (
-        <Line key={pullRequest.number} icon={<GitPullRequestIcon />}>
+        <Line key={pullRequest.number} icon={<PullRequestGlyph.pullRequest />}>
           #{pullRequest.number}
           {pullRequest.title === null ? "" : ` ${pullRequest.title}`}
           {pullRequest.state === null ? null : (
-            <span className="text-secondary-label"> · {pullRequest.state}</span>
+            <span className={HOVER_CARD_MUTED_CLS}> · {pullRequest.state}</span>
           )}
         </Line>
       ))}
       {details.morePullRequests === 0 ? null : (
-        <span className="pl-4.5 text-secondary-label">+{details.morePullRequests} more</span>
+        <span className={`pl-4.5 ${HOVER_CARD_MUTED_CLS}`}>+{details.morePullRequests} more</span>
       )}
     </div>
   );

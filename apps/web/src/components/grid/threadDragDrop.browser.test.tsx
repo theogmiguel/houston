@@ -1,6 +1,6 @@
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
 import { useRef } from "react";
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import "~/index.css";
 import { useComposerDraftStore } from "../../composerDraftStore";
@@ -10,7 +10,8 @@ import { THREAD_CONTEXT_DROP_EVENT } from "../chat/threadContextDrag";
 import { render } from "../../../test/render";
 import { useRowFileDrop } from "./useRowFileDrop";
 
-afterEach(() => endThreadDrag());
+/** Ends any drag a test leaves running, so the next test can start one. */
+const endDragAfter = () => ({ [Symbol.dispose]: () => endThreadDrag() });
 
 const source = (title?: string) => ({
   gridId: null,
@@ -56,6 +57,7 @@ describe("dragging a thread onto a chat composer", () => {
   }
 
   it("marks the composer while a titled thread is over it and drops the thread's ref on release", async () => {
+    using _drag = endDragAfter();
     const onDrop = vi.fn();
     await using screen = await render(<Target onDrop={onDrop} />, { router: false });
     const target = screen.container.querySelector<HTMLElement>("[data-thread-context-drop]")!;
@@ -69,6 +71,7 @@ describe("dragging a thread onto a chat composer", () => {
   });
 
   it("does nothing for a source without a title, or when the drag is cancelled", async () => {
+    using _drag = endDragAfter();
     const onDrop = vi.fn();
     await using screen = await render(<Target onDrop={onDrop} />, { router: false });
     const target = screen.container.querySelector<HTMLElement>("[data-thread-context-drop]")!;
@@ -85,6 +88,7 @@ describe("dragging a thread onto a chat composer", () => {
   });
 
   it("lets a rail zone take the drop instead of the composer", async () => {
+    using _drag = endDragAfter();
     const onDrop = vi.fn();
     const zoneDrop = vi.fn();
     function Both() {
@@ -141,6 +145,7 @@ describe("press-and-sweep across row actions", () => {
   };
 
   it("applies the action to every row swept, the first included, and swallows the click", async () => {
+    using _drag = endDragAfter();
     const apply = vi.fn();
     const onClick = vi.fn();
     await using screen = await render(<Rows apply={apply} onClick={onClick} />, { router: false });
@@ -159,6 +164,7 @@ describe("press-and-sweep across row actions", () => {
   });
 
   it("leaves a press that stays on its row as a plain click", async () => {
+    using _drag = endDragAfter();
     const apply = vi.fn();
     const onClick = vi.fn();
     await using screen = await render(<Rows apply={apply} onClick={onClick} />, { router: false });
@@ -173,6 +179,7 @@ describe("press-and-sweep across row actions", () => {
   });
 
   it("applies nothing when the sweep is cancelled with Escape", async () => {
+    using _drag = endDragAfter();
     const apply = vi.fn();
     await using screen = await render(<Rows apply={apply} onClick={() => {}} />, { router: false });
     const rows = [...screen.container.querySelectorAll("[data-thread-key]")];
@@ -209,6 +216,7 @@ describe("dropping files on a rail row", () => {
   }
 
   it("adds the files to that thread's draft and highlights the row while they hover", async () => {
+    using _drag = endDragAfter();
     await using screen = await render(<Row />, { router: false });
     const row = screen.container.querySelector<HTMLElement>("[data-testid='row']")!;
     const file = new File(["hello"], "notes.txt", { type: "text/plain" });
@@ -225,6 +233,7 @@ describe("dropping files on a rail row", () => {
   });
 
   it("ignores a drag that carries no files", async () => {
+    using _drag = endDragAfter();
     await using screen = await render(<Row />, { router: false });
     const row = screen.container.querySelector<HTMLElement>("[data-testid='row']")!;
     const event = new DragEvent("dragover", {
