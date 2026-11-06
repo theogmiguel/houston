@@ -1744,7 +1744,9 @@ describe("changed-files card beside the pending-changes row", () => {
   it("restores the file list once the pending-changes row goes away", async () => {
     setup();
     const props = { ...baseProps(), timelineEntries: entries, turnDiffSummaries };
-    await using screen = await renderElement(<MessagesTimeline {...props} changeBannerRunId={latest} />);
+    await using screen = await renderElement(
+      <MessagesTimeline {...props} changeBannerRunId={latest} />,
+    );
     expect(cardStates(screen.container)).toEqual(["tree", "folded"]);
     await screen.rerender(<MessagesTimeline {...props} changeBannerRunId={null} />);
     expect(cardStates(screen.container)).toEqual(["tree", "tree"]);

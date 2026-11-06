@@ -99,9 +99,9 @@ it("opens no tooltip when closing the drawer returns focus to the toggle", async
   await userEvent.keyboard("{Escape}");
 
   await vi.waitFor(() => expect(threadsNav()).toBeNull(), { timeout: 5_000 });
-  await vi.waitFor(() => expect(document.activeElement?.getAttribute("aria-label")).toBe(
-    "Toggle main sidebar",
-  ));
+  await vi.waitFor(() =>
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("Toggle main sidebar"),
+  );
   // Base UI opens focus tooltips after a short delay; wait past it.
   await new Promise((resolve) => setTimeout(resolve, 600));
   expect(toggleTooltip()).toBeNull();
@@ -142,7 +142,5 @@ it("draws the closed drawer's toggle like any other header icon button at rest",
   expect(getComputedStyle(element).backgroundColor).toBe("rgba(0, 0, 0, 0)");
 
   await userEvent.hover(toggle);
-  await expect
-    .poll(() => getComputedStyle(element).backgroundColor)
-    .not.toBe("rgba(0, 0, 0, 0)");
+  await expect.poll(() => getComputedStyle(element).backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
 });

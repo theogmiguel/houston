@@ -55,9 +55,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
   };
   // Every row of a provider repeats the same effort, so only the selected row states it.
   const traitsLabel = props.traits
-    ? formatModelPickerTraits(
-        props.isSelected ? props.traits : { ...props.traits, effort: null },
-      )
+    ? formatModelPickerTraits(props.isSelected ? props.traits : { ...props.traits, effort: null })
     : null;
   const providerLabel = props.showProvider
     ? getProviderRowLabel(props.providerDisplayName, props.subProvider)

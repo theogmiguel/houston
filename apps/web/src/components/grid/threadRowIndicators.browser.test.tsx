@@ -175,7 +175,9 @@ describe("thread row indicators", () => {
     reset();
     fixture.totals = { insertions: 12, deletions: 3 };
     const colors = (container: HTMLElement) => {
-      const [added, removed] = [...container.querySelectorAll("[aria-label^='Uncommitted'] > span")];
+      const [added, removed] = [
+        ...container.querySelectorAll("[aria-label^='Uncommitted'] > span"),
+      ];
       const probe = (name: string) => {
         const el = document.createElement("span");
         el.className = name;

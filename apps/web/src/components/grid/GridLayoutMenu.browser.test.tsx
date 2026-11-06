@@ -151,8 +151,14 @@ describe("GridLayoutMenu", () => {
       </TooltipProvider>,
     );
 
-    const sibling = screen.getByRole("button", { name: "Sibling" }).element().getBoundingClientRect();
-    const main = screen.getByRole("button", { name: "Tidy panes" }).element().getBoundingClientRect();
+    const sibling = screen
+      .getByRole("button", { name: "Sibling" })
+      .element()
+      .getBoundingClientRect();
+    const main = screen
+      .getByRole("button", { name: "Tidy panes" })
+      .element()
+      .getBoundingClientRect();
     const group = screen.getByRole("group").element().getBoundingClientRect();
     expect(group.top).toBe(sibling.top);
     expect(main.top).toBe(sibling.top);

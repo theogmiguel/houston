@@ -23,7 +23,9 @@ describe("ComposerSurface.Main", () => {
           <p>Ask anything</p>
         </ComposerSurface.Main>,
       );
-      const main = screen.container.querySelector<HTMLElement>("[data-chat-composer-main-surface]")!;
+      const main = screen.container.querySelector<HTMLElement>(
+        "[data-chat-composer-main-surface]",
+      )!;
       const style = getComputedStyle(main);
       expect(style.borderTopWidth, dark ? "dark" : "light").toBe("1px");
       expect(style.borderTopStyle).toBe("solid");

@@ -155,12 +155,8 @@ export function ThreadRowIndicators({
           aria-label={`Uncommitted changes ${formatGridDiffCounts(diff)}`}
           className={`shrink-0 ${ROW_DIFF_COUNTS_CLS}`}
         >
-          <span className={rowDiffAddedCls(emphasized)}>
-            +{formatDiffCount(diff.insertions)}
-          </span>{" "}
-          <span className={rowDiffRemovedCls(emphasized)}>
-            −{formatDiffCount(diff.deletions)}
-          </span>
+          <span className={rowDiffAddedCls(emphasized)}>+{formatDiffCount(diff.insertions)}</span>{" "}
+          <span className={rowDiffRemovedCls(emphasized)}>−{formatDiffCount(diff.deletions)}</span>
         </span>
       )}
       {remote ? <RemoteMachineMark thread={thread} /> : null}
