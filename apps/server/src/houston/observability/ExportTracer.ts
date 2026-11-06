@@ -2,12 +2,15 @@ import type * as Exit from "effect/Exit";
 import * as Tracer from "effect/Tracer";
 
 import {
-  LOG_EVENT_NAME,
   endAttributes,
+  exportedEventName,
   exportedAttributes,
   exportedExit,
   exportedRecord,
 } from "./ExportRedaction.ts";
+
+const exportedLinks = (links: ReadonlyArray<Tracer.SpanLink>): Array<Tracer.SpanLink> =>
+  links.map((link) => ({ span: link.span, attributes: exportedRecord(link.attributes) }));
 
 class ExportSpan implements Tracer.Span {
   readonly _tag = "Span";
@@ -53,15 +56,15 @@ class ExportSpan implements Tracer.Span {
   }
 
   event(name: string, startTime: bigint, attributes?: Record<string, unknown>): void {
-    // A log call's event is named by its message text.
-    const isLog = attributes !== undefined && "effect.logLevel" in attributes;
-    this.delegate.event(isLog ? LOG_EVENT_NAME : name, startTime, exportedRecord(attributes));
+    this.delegate.event(
+      exportedEventName(name, Object.keys(attributes ?? {})),
+      startTime,
+      exportedRecord(attributes),
+    );
   }
 
   addLinks(links: ReadonlyArray<Tracer.SpanLink>): void {
-    this.delegate.addLinks(
-      links.map((link) => ({ span: link.span, attributes: exportedRecord(link.attributes) })),
-    );
+    this.delegate.addLinks(exportedLinks(links));
   }
 }
 
@@ -69,6 +72,7 @@ class ExportSpan implements Tracer.Span {
 // their error tag, and every span ends with its outcome.
 export const make = (delegate: Tracer.Tracer): Tracer.Tracer =>
   Tracer.make({
-    span: (options) => new ExportSpan(delegate.span(options)),
+    span: (options) =>
+      new ExportSpan(delegate.span({ ...options, links: exportedLinks(options.links) })),
     ...(delegate.context === undefined ? {} : { context: delegate.context }),
   });
