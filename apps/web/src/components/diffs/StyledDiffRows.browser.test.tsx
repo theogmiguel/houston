@@ -119,20 +119,20 @@ describe("added and removed rows", { timeout: 30_000 }, () => {
 });
 
 describe("horizontal overflow cue", { timeout: 30_000 }, () => {
-  const fadeOn = "100% 100%";
-  const fadeOff = "calc(100% + 24px) 100%";
   const scroller = (all: Element[]) =>
     all.find((e) => e.hasAttribute("data-code")) as HTMLElement | undefined;
+  // The fade is a pseudo-element on the sticky gutter; its opacity is the on/off state.
+  const fadeOpacity = (code: HTMLElement) =>
+    getComputedStyle(code.querySelector("[data-gutter]")!, "::after").opacity;
 
   it("fades the right edge while a line runs past it, and not once the end is reached", async () => {
     const view = await mount(LONG_LINE, "dark");
     await using _screen = view.screen;
     const code = scroller(view.all())!;
     expect(code.scrollWidth).toBeGreaterThan(code.clientWidth);
-    expect(getComputedStyle(code).maskImage).toContain("linear-gradient");
-    await expect.poll(() => getComputedStyle(code).maskSize).toBe(fadeOn);
+    await expect.poll(() => fadeOpacity(code)).toBe("1");
     code.scrollLeft = code.scrollWidth;
-    await expect.poll(() => getComputedStyle(code).maskSize).toBe(fadeOff);
+    await expect.poll(() => fadeOpacity(code)).toBe("0");
   });
 
   it("shows no fade when every line fits", async () => {
@@ -140,6 +140,6 @@ describe("horizontal overflow cue", { timeout: 30_000 }, () => {
     await using _screen = view.screen;
     const code = scroller(view.all())!;
     expect(code.scrollWidth).toBeLessThanOrEqual(code.clientWidth);
-    await expect.poll(() => getComputedStyle(code).maskSize).toBe(fadeOff);
+    expect(fadeOpacity(code)).toBe("0");
   });
 });
