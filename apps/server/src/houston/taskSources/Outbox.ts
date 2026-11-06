@@ -56,6 +56,7 @@ import {
   settingsFromRow,
   type SourceEvent,
 } from "./SourceStore.ts";
+import * as WideEvents from "../observability/WideEvents.ts";
 
 type Json = Readonly<Record<string, unknown>>;
 const JsonText = Schema.fromJsonString(Schema.Unknown);
@@ -876,7 +877,7 @@ const makeDrain = Effect.gen(function* () {
 
   yield* Effect.forever(
     Effect.sleep(Duration.seconds(POLL_INTERVAL_SECONDS)).pipe(
-      Effect.andThen(drain),
+      Effect.andThen(drain.pipe(WideEvents.jobTick("taskSources.writeBack"))),
       Effect.catchCause((cause) =>
         Effect.logWarning("Task source write-back drain failed.", cause),
       ),

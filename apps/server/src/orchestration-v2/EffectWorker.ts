@@ -31,6 +31,7 @@ import { continueRestartedRun } from "./RestartContinuation.ts";
 import { userFacingDispatchErrorMessage } from "./UserFacingErrors.ts";
 import { MessageDeliveryWriter } from "../houston/messageDelivery.ts";
 import * as TraceContext from "../houston/observability/TraceContext.ts";
+import * as WideEvents from "../houston/observability/WideEvents.ts";
 
 export class OrchestrationEffectExecutionError extends Schema.TaggedError<OrchestrationEffectExecutionError>()(
   "OrchestrationEffectExecutionError",
@@ -893,6 +894,10 @@ export const layerWithOptions = (
             .pipe(
               boundExecution(effect),
               Effect.as("executed" as const),
+              WideEvents.linkToCommand(
+                effect.commandId,
+                TraceContext.forOutboxEffect(effect).runId,
+              ),
               TraceContext.withinTraceContext(TraceContext.forOutboxEffect(effect)),
             );
           const exit = yield* Effect.exit(Effect.raceFirst(execution, cancellation)).pipe(

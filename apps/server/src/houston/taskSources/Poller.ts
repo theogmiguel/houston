@@ -32,6 +32,7 @@ import {
 } from "./rules.ts";
 import { HoustonTaskSourceStore, settingsFromRow, type SourceEvent } from "./SourceStore.ts";
 import { HoustonTaskSourceSync } from "./Sync.ts";
+import * as WideEvents from "../observability/WideEvents.ts";
 
 export { TOKEN_MISSING, TOKEN_UNAVAILABLE } from "./rules.ts";
 
@@ -248,7 +249,10 @@ const make = Effect.gen(function* () {
 
   loops += 1;
   yield* Effect.forever(
-    pollAll.pipe(Effect.andThen(Effect.sleep(Duration.seconds(POLL_INTERVAL_SECONDS)))),
+    pollAll.pipe(
+      WideEvents.jobTick("taskSources.poll"),
+      Effect.andThen(Effect.sleep(Duration.seconds(POLL_INTERVAL_SECONDS))),
+    ),
   ).pipe(Effect.forkScoped);
 
   return HoustonTaskSourcePoller.of({

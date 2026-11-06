@@ -20,6 +20,7 @@ import {
 } from "./rules.ts";
 import { HoustonMergeQueueStore, nowIso } from "./Store.ts";
 import { HoustonMergeVerifier } from "./Verifier.ts";
+import * as WideEvents from "../observability/WideEvents.ts";
 
 export class HoustonMergeQueueReader extends Context.Service<
   HoustonMergeQueueReader,
@@ -138,6 +139,7 @@ export const makeReader = Effect.fn("HoustonMergeQueueReader.make")(function* (o
     loops += 1;
     yield* Effect.forever(
       readAll.pipe(
+        WideEvents.jobTick("mergeQueue.read"),
         Effect.andThen(
           Effect.sleep(Duration.seconds(HOUSTON_MERGE_QUEUE_LIMITS.readIntervalSeconds)),
         ),

@@ -216,6 +216,7 @@ import * as ReviewService from "./review/ReviewService.ts";
 import * as HoustonResumeSessions from "./houston/resumeSessions.ts";
 import * as HoustonReviewState from "./houston/reviewState.ts";
 import * as TraceContext from "./houston/observability/TraceContext.ts";
+import * as WideEvents from "./houston/observability/WideEvents.ts";
 import * as HoustonRpcSerialization from "./houston/rpcSerialization.ts";
 import * as HoustonTaskService from "./houston/tasks/TaskService.ts";
 import * as HoustonTaskRuns from "./houston/tasks/TaskRuns.ts";
@@ -2072,6 +2073,7 @@ export const layerWsRpc = (
               ? { "orchestration_v2.source_thread_id": command.sourceThreadId }
               : {}),
           }).pipe(
+            Effect.andThen(WideEvents.rememberCommandSpan(command.commandId)),
             Effect.andThen(
               startup
                 .enqueueCommand(
