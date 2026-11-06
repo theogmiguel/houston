@@ -2094,7 +2094,6 @@ export function GridGroup({
   );
 }
 
-
 /**
  * The branch a thread works on: the one it recorded, or else the branch its
  * checkout (its worktree, or the project's own folder) currently has.
@@ -2433,99 +2432,99 @@ export function ThreadCard({
                 <JumpHintBadge label={jumpHint} />
               )}
             </span>
-          <span
-            className={cn(
-              "col-start-1 row-start-1 flex h-[22px] items-center gap-0.5",
-              MOTION_FEEDBACK_OPACITY,
-              actionsVisible ? ROW_ACTIONS_IN_FLOW : ROW_ACTIONS_OUT_OF_FLOW,
-              actionsVisible ? ROW_ACTIONS_VISIBLE : ROW_ACTIONS_REVEAL,
-            )}
-            onMouseEnter={() => setActionsHovered(true)}
-            onMouseLeave={() => setActionsHovered(false)}
-          >
-            {shelf !== null ? (
-              <button
-                type="button"
-                aria-label={shelf === "snoozed" ? "Wake thread now" : "Reopen thread"}
-                {...sweepActionProps(shelf === "snoozed" ? "wake" : "reopen")}
-                onPointerDown={(event) =>
-                  sweep?.(event, shelf === "snoozed" ? "wake" : "reopen", threadKey)
-                }
-                onClick={shelf === "snoozed" ? onWake : onReopen}
-                className={cn(
-                  "inline-flex h-[22px] cursor-pointer items-center gap-1 rounded-(--r-badge) px-1.5 text-xs text-secondary-foreground data-sweep-hit:bg-(--sel) hover:bg-(--sel) hover:text-foreground",
-                  FOCUS_ACTION_CLS,
-                )}
-              >
-                {shelf === "snoozed" ? (
-                  <>
-                    <AlarmClockOffIcon aria-hidden className="size-3.5" />
-                    Wake
-                  </>
-                ) : (
-                  <>
-                    <Undo2Icon aria-hidden className="size-3.5" />
-                    Reopen
-                  </>
-                )}
-              </button>
-            ) : (
-              <>
-                {canHold ? (
-                  <Menu onOpenChange={setHoldMenuOpen}>
-                    <MenuTrigger
-                      render={
-                        <button
-                          type="button"
-                          aria-label="Hold"
-                          className={cn(
-                            "inline-grid size-[22px] cursor-pointer place-items-center rounded-(--r-badge) text-secondary-foreground hover:bg-(--sel) hover:text-foreground",
-                            FOCUS_ACTION_CLS,
-                          )}
-                        >
-                          <ClockIcon aria-hidden className="size-3.5" />
-                        </button>
-                      }
-                    />
-                    <MenuPopup side="bottom" align="end">
-                      <HoldMenuItems
-                        presets={presets}
-                        onPick={applyPreset}
-                        onPickTime={onPickHoldTime}
-                      />
-                    </MenuPopup>
-                  </Menu>
-                ) : null}
+            <span
+              className={cn(
+                "col-start-1 row-start-1 flex h-[22px] items-center gap-0.5",
+                MOTION_FEEDBACK_OPACITY,
+                actionsVisible ? ROW_ACTIONS_IN_FLOW : ROW_ACTIONS_OUT_OF_FLOW,
+                actionsVisible ? ROW_ACTIONS_VISIBLE : ROW_ACTIONS_REVEAL,
+              )}
+              onMouseEnter={() => setActionsHovered(true)}
+              onMouseLeave={() => setActionsHovered(false)}
+            >
+              {shelf !== null ? (
                 <button
                   type="button"
-                  aria-label="Close thread"
-                  {...sweepActionProps("close")}
-                  onPointerDown={(event) => sweep?.(event, "close", threadKey)}
-                  onClick={close}
+                  aria-label={shelf === "snoozed" ? "Wake thread now" : "Reopen thread"}
+                  {...sweepActionProps(shelf === "snoozed" ? "wake" : "reopen")}
+                  onPointerDown={(event) =>
+                    sweep?.(event, shelf === "snoozed" ? "wake" : "reopen", threadKey)
+                  }
+                  onClick={shelf === "snoozed" ? onWake : onReopen}
                   className={cn(
                     "inline-flex h-[22px] cursor-pointer items-center gap-1 rounded-(--r-badge) px-1.5 text-xs text-secondary-foreground data-sweep-hit:bg-(--sel) hover:bg-(--sel) hover:text-foreground",
                     FOCUS_ACTION_CLS,
                   )}
                 >
-                  <XIcon aria-hidden className="size-3.5" />
-                  Close
-                </button>
-                <button
-                  ref={actionsButtonRef}
-                  type="button"
-                  aria-label={`Thread actions for ${thread.title}`}
-                  aria-haspopup="menu"
-                  onClick={openCardMenuFromButton}
-                  className={cn(
-                    "inline-grid size-5.5 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-foreground hover:bg-(--sel) hover:text-foreground",
-                    FOCUS_ACTION_CLS,
+                  {shelf === "snoozed" ? (
+                    <>
+                      <AlarmClockOffIcon aria-hidden className="size-3.5" />
+                      Wake
+                    </>
+                  ) : (
+                    <>
+                      <Undo2Icon aria-hidden className="size-3.5" />
+                      Reopen
+                    </>
                   )}
-                >
-                  <MoreHorizontalIcon aria-hidden className="size-3.5" />
                 </button>
-              </>
-            )}
-          </span>
+              ) : (
+                <>
+                  {canHold ? (
+                    <Menu onOpenChange={setHoldMenuOpen}>
+                      <MenuTrigger
+                        render={
+                          <button
+                            type="button"
+                            aria-label="Hold"
+                            className={cn(
+                              "inline-grid size-[22px] cursor-pointer place-items-center rounded-(--r-badge) text-secondary-foreground hover:bg-(--sel) hover:text-foreground",
+                              FOCUS_ACTION_CLS,
+                            )}
+                          >
+                            <ClockIcon aria-hidden className="size-3.5" />
+                          </button>
+                        }
+                      />
+                      <MenuPopup side="bottom" align="end">
+                        <HoldMenuItems
+                          presets={presets}
+                          onPick={applyPreset}
+                          onPickTime={onPickHoldTime}
+                        />
+                      </MenuPopup>
+                    </Menu>
+                  ) : null}
+                  <button
+                    type="button"
+                    aria-label="Close thread"
+                    {...sweepActionProps("close")}
+                    onPointerDown={(event) => sweep?.(event, "close", threadKey)}
+                    onClick={close}
+                    className={cn(
+                      "inline-flex h-[22px] cursor-pointer items-center gap-1 rounded-(--r-badge) px-1.5 text-xs text-secondary-foreground data-sweep-hit:bg-(--sel) hover:bg-(--sel) hover:text-foreground",
+                      FOCUS_ACTION_CLS,
+                    )}
+                  >
+                    <XIcon aria-hidden className="size-3.5" />
+                    Close
+                  </button>
+                  <button
+                    ref={actionsButtonRef}
+                    type="button"
+                    aria-label={`Thread actions for ${thread.title}`}
+                    aria-haspopup="menu"
+                    onClick={openCardMenuFromButton}
+                    className={cn(
+                      "inline-grid size-5.5 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-foreground hover:bg-(--sel) hover:text-foreground",
+                      FOCUS_ACTION_CLS,
+                    )}
+                  >
+                    <MoreHorizontalIcon aria-hidden className="size-3.5" />
+                  </button>
+                </>
+              )}
+            </span>
           </span>
         </div>
         <div className="flex min-w-0 items-center gap-2 text-caption leading-3.75 text-secondary-label">
