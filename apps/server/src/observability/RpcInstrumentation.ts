@@ -5,6 +5,8 @@ import * as References from "effect/References";
 import type * as RpcGroup from "effect/rpc/RpcGroup";
 import * as RpcMiddleware from "effect/rpc/RpcMiddleware";
 
+import * as TraceContext from "../houston/observability/TraceContext.ts";
+import type { ClientKind } from "../houston/observability/TraceContext.ts";
 import { rpcRequestDuration, rpcRequestsTotal, withMetrics } from "./Metrics.ts";
 
 type WsRpcMethod = RpcGroup.Rpcs<typeof WsRpcGroup>["_tag"];
@@ -309,22 +311,29 @@ export class RpcInstrumentation extends RpcMiddleware.Service<RpcInstrumentation
   "houston/server/RpcInstrumentation",
 ) {}
 
-export const rpcInstrumentationLayer = Layer.succeed(RpcInstrumentation)((effect, { rpc }) => {
-  const method = rpc._tag;
-  const measured = effect.pipe(
-    withMetrics({ counter: rpcRequestsTotal, timer: rpcRequestDuration, attributes: { method } }),
-  );
+/** Instrumentation for one socket; `clientKind` is the surface the client declared when it connected. */
+export const makeRpcInstrumentationLayer = (connection: {
+  readonly clientKind?: ClientKind | undefined;
+}) =>
+  Layer.succeed(RpcInstrumentation)((effect, { rpc }) => {
+    const method = rpc._tag;
+    const measured = effect.pipe(
+      withMetrics({ counter: rpcRequestsTotal, timer: rpcRequestDuration, attributes: { method } }),
+    );
 
-  if (RPC_METHODS_WITH_TRACING_DISABLED.has(method)) {
-    return measured.pipe(Effect.provideService(References.TracerEnabled, false));
-  }
-  return measured.pipe(
-    Effect.withSpan(`${RPC_SPAN_PREFIX}.${method}`, {
-      attributes: {
-        ...DEFAULT_RPC_SPAN_ATTRIBUTES,
-        "rpc.method": method,
-        "rpc.aggregate": RPC_AGGREGATES[method as WsRpcMethod],
-      },
-    }),
-  );
-});
+    if (RPC_METHODS_WITH_TRACING_DISABLED.has(method)) {
+      return measured.pipe(Effect.provideService(References.TracerEnabled, false));
+    }
+    return measured.pipe(
+      connection.clientKind === undefined
+        ? (traced) => traced
+        : TraceContext.withTraceContext({ clientKind: connection.clientKind }),
+      Effect.withSpan(`${RPC_SPAN_PREFIX}.${method}`, {
+        attributes: {
+          ...DEFAULT_RPC_SPAN_ATTRIBUTES,
+          "rpc.method": method,
+          "rpc.aggregate": RPC_AGGREGATES[method as WsRpcMethod],
+        },
+      }),
+    );
+  });

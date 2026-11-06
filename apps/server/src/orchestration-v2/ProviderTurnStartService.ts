@@ -55,6 +55,7 @@ import {
   makeProviderFailure,
 } from "@houston-app/provider-core/server/failure";
 import * as RunExecutionService from "./RunExecutionService.ts";
+import * as TraceContext from "../houston/observability/TraceContext.ts";
 import * as RuntimePolicy from "./RuntimePolicy.ts";
 import {
   isRestartNoteContinuation,
@@ -1733,10 +1734,15 @@ export const layer: Layer.Layer<
           // Storage cleanup removes worktrees under the same lease. Only startup
           // holds it; the provider turn runs after it is released.
           const { thread } = yield* projectionStore.getThreadRecords(input.threadId, []);
+          const threadContext = TraceContext.forThread(thread);
+          yield* TraceContext.annotate(threadContext);
+          const startTurn = start(input).pipe(TraceContext.withinTraceContext(threadContext));
           const providerTurn = yield* thread.worktreePath === null
-            ? start(input)
-            : withWorkspaceLease(path.resolve(thread.worktreePath), start(input));
-          if (providerTurn !== undefined) yield* providerTurn;
+            ? startTurn
+            : withWorkspaceLease(path.resolve(thread.worktreePath), startTurn);
+          if (providerTurn !== undefined) {
+            yield* providerTurn.pipe(TraceContext.withinTraceContext(threadContext));
+          }
         },
         (effect, input) =>
           effect.pipe(
@@ -1745,6 +1751,7 @@ export const layer: Layer.Layer<
                 ? cause
                 : new ProviderTurnStartError({ runId: input.runId, cause }),
             ),
+            TraceContext.withTraceContext({ threadId: input.threadId, runId: input.runId }),
           ),
       ),
     });

@@ -215,6 +215,7 @@ import { linkCreatedPullRequest } from "./git/linkCreatedPullRequest.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as HoustonResumeSessions from "./houston/resumeSessions.ts";
 import * as HoustonReviewState from "./houston/reviewState.ts";
+import * as TraceContext from "./houston/observability/TraceContext.ts";
 import * as HoustonRpcSerialization from "./houston/rpcSerialization.ts";
 import * as HoustonTaskService from "./houston/tasks/TaskService.ts";
 import * as HoustonTaskRuns from "./houston/tasks/TaskRuns.ts";
@@ -242,7 +243,10 @@ import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import { requiredScopeForDeviceList, rpcAuthorizationError } from "./auth/RpcAuthorization.ts";
 import * as RpcAuthorization from "./auth/RpcAuthorization.ts";
-import { RpcInstrumentation, rpcInstrumentationLayer } from "./observability/RpcInstrumentation.ts";
+import {
+  RpcInstrumentation,
+  makeRpcInstrumentationLayer,
+} from "./observability/RpcInstrumentation.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
@@ -878,6 +882,24 @@ const enrichProjectShells = Effect.fn("ws.orchestrationV2.enrichProjectShells")(
       ),
     ),
 );
+
+// The thread a dispatched command acts on, as its spans name it.
+const dispatchTargetThreadId = (command: OrchestrationV2Command) =>
+  command.type === "thread.fork" || command.type === "thread.merge_back"
+    ? command.targetThreadId
+    : command.type === "delegated_task.request" ||
+        command.type === "delegated_task.wake-policy" ||
+        command.type === "delegated_task.completion-delivery.acknowledge" ||
+        command.type === "delegated_task.completion-delivery.dispose" ||
+        command.type === "thread.created.record"
+      ? command.parentThreadId
+      : command.type === "houston.aside.start"
+        ? command.asideThreadId
+        : command.type === "houston.second-opinion.request"
+          ? command.reviewThreadId
+          : command.type === "houston.side-thread.send"
+            ? command.sideThreadId
+            : command.threadId;
 
 export const subscribeOrchestrationV2Thread = Effect.fn("ws.orchestrationV2.subscribeThread")(
   function* (input: {
@@ -2045,22 +2067,7 @@ export const layerWsRpc = (
           Effect.annotateCurrentSpan({
             "orchestration_v2.command_id": command.commandId,
             "orchestration_v2.command_type": command.type,
-            "orchestration_v2.thread_id":
-              command.type === "thread.fork" || command.type === "thread.merge_back"
-                ? command.targetThreadId
-                : command.type === "delegated_task.request" ||
-                    command.type === "delegated_task.wake-policy" ||
-                    command.type === "delegated_task.completion-delivery.acknowledge" ||
-                    command.type === "delegated_task.completion-delivery.dispose" ||
-                    command.type === "thread.created.record"
-                  ? command.parentThreadId
-                  : command.type === "houston.aside.start"
-                    ? command.asideThreadId
-                    : command.type === "houston.second-opinion.request"
-                      ? command.reviewThreadId
-                      : command.type === "houston.side-thread.send"
-                        ? command.sideThreadId
-                        : command.threadId,
+            "orchestration_v2.thread_id": dispatchTargetThreadId(command),
             ...(command.type === "thread.fork" || command.type === "thread.merge_back"
               ? { "orchestration_v2.source_thread_id": command.sourceThreadId }
               : {}),
@@ -2096,6 +2103,11 @@ export const layerWsRpc = (
                   }),
                 ),
             ),
+            TraceContext.withTraceContext({
+              commandId: command.commandId,
+              commandType: command.type,
+              threadId: dispatchTargetThreadId(command),
+            }),
           ),
         [ORCHESTRATION_V2_WS_METHODS.stopWorkflow]: (input) => threadManagement.stopWorkflow(input),
         [ORCHESTRATION_V2_WS_METHODS.forceStopThread]: (input) =>
@@ -3630,7 +3642,10 @@ export const layer = Layer.unwrap(
           yield* RpcServer.make(ServerWsRpcGroup, WS_RPC_SERVER_OPTIONS).pipe(
             Effect.provideService(RpcServer.Protocol, withTerminalOutputWindow(protocol)),
             Effect.provide(
-              Layer.merge(RpcAuthorization.layer(session.scopes), rpcInstrumentationLayer),
+              Layer.merge(
+                RpcAuthorization.layer(session.scopes),
+                makeRpcInstrumentationLayer({ clientKind: clientAnalyticsProps.surface }),
+              ),
             ),
             Effect.forkScoped,
           );

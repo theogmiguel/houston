@@ -64,10 +64,12 @@ import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Logger from "effect/Logger";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
+import * as References from "effect/References";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
@@ -79,6 +81,8 @@ import { getModelSelectionStringOptionValue } from "@houston-app/shared/model";
 import { SpawnExecutableResolution } from "@houston-app/shared/shell";
 
 import * as PortScanner from "../../preview/PortScanner.ts";
+import * as TraceContext from "../../houston/observability/TraceContext.ts";
+import * as RecordingTracer from "../../observability/testing/RecordingTracer.ts";
 import { attachmentRelativePath } from "../../attachmentStore.ts";
 import { WorkflowAgentTranscriptReadObserver } from "../workflowAgentTranscript.ts";
 import * as ServerConfig from "../../config.ts";
@@ -125,6 +129,9 @@ beforeEach(() => {
 });
 
 const DEFAULT_CLAUDE_SETTINGS = Schema.decodeSync(ClaudeSettings)({});
+
+const houstonContextOf = (attributes: ReadonlyMap<string, unknown>): Record<string, unknown> =>
+  Object.fromEntries([...attributes].filter(([key]) => key.startsWith("houston.")));
 const AUTO_COMPACT_CLAUDE_SETTINGS = Schema.decodeSync(ClaudeSettings)({
   autoCompactWindow: "300000",
 });
@@ -3409,6 +3416,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     readonly freshQueueOnReopen?: boolean;
     readonly forkSession?: ClaudeAdapterV2.ClaudeAgentSdkQueryRunnerShape["forkSession"];
     readonly allocateSessionId?: Effect.Effect<string>;
+    /** Runs in the session's query-stream fiber as each message is read. */
+    readonly onMessage?: (message: SDKMessage) => Effect.Effect<void>;
   }) =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
@@ -3492,6 +3501,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                   ? yield* Queue.unbounded<SDKMessage>()
                   : sdkMessages;
               const messages = Stream.fromQueue(processMessages).pipe(
+                Stream.tap((message) => options?.onMessage?.(message) ?? Effect.void),
                 Stream.flatMap((message) =>
                   Stream.make(message).pipe(
                     Stream.concat(
@@ -7055,6 +7065,109 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         ),
       ),
     ),
+  );
+
+  it.effect(
+    "a query opened in one turn stamps each later turn's spans and logs with that turn",
+    () => {
+      const recording = RecordingTracer.make();
+      const logged: Array<Readonly<Record<string, unknown>>> = [];
+      return Effect.gen(function* () {
+        const harness = yield* makeWakeHarnessWithOptions({
+          onMessage: () =>
+            Effect.logInfo("session message").pipe(Effect.withSpan("Test.sessionMessage")),
+        });
+        const now = yield* DateTime.now;
+        const turn = (ordinal: number) => {
+          const input = makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now,
+            attemptId: RunAttemptId.make(`attempt-claude-trace-${ordinal}`),
+            providerTurnOrdinal: ordinal,
+            text: "Continue.",
+            attachments: [],
+          });
+          return harness.runtime.startTurn(input).pipe(
+            TraceContext.withTraceContext({
+              threadId: input.threadId,
+              runId: input.runId,
+              commandId: `command-${ordinal}`,
+            }),
+            Effect.as(input.runId),
+            // The query stream is forked inside the first turn's trace.
+            ordinal === 1 ? Effect.withSpan("Turn1.root") : (self) => self,
+          );
+        };
+        const finish = (ordinal: number) =>
+          harness
+            .offerAndWait(makeResultFrame({ uuid: `trace-result-${ordinal}`, result: "Done." }))
+            .pipe(Effect.andThen(Queue.take(harness.terminalReceipts)));
+
+        const runs: Array<string> = [];
+        for (const ordinal of [1, 2, 3]) {
+          const spansBefore = recording.ended.length;
+          const logsBefore = logged.length;
+          const runId = yield* turn(ordinal);
+          yield* finish(ordinal);
+          runs.push(runId);
+
+          // Each span and log carries this turn's ids, or none: never an earlier turn's.
+          const spans = recording.ended.slice(spansBefore);
+          for (const span of spans) {
+            const context = houstonContextOf(span.attributes);
+            assert.oneOf(context["houston.run.id"], [runId, undefined], span.name);
+            assert.oneOf(
+              context["houston.command.id"],
+              [`command-${ordinal}`, undefined],
+              span.name,
+            );
+            assert.oneOf(context["houston.thread.id"], [harness.threadId, undefined], span.name);
+          }
+          // The turn's own call carries its ids; the query stream's reads belong to no turn.
+          assert.deepStrictEqual(
+            houstonContextOf(recording.named("ClaudeAdapterV2.startTurn").at(-1)!.attributes),
+            {
+              "houston.thread.id": harness.threadId,
+              "houston.run.id": runId,
+              "houston.command.id": `command-${ordinal}`,
+            },
+          );
+          const sessionSpans = spans.filter((span) => span.name === "Test.sessionMessage");
+          assert.isAbove(sessionSpans.length, 0);
+          for (const span of sessionSpans) {
+            assert.deepStrictEqual(houstonContextOf(span.attributes), {});
+          }
+          const logs = logged.slice(logsBefore);
+          assert.isAbove(logs.length, 0);
+          for (const annotations of logs) {
+            assert.oneOf(annotations["houston.run.id"], [runId, undefined]);
+            assert.oneOf(annotations["houston.command.id"], [`command-${ordinal}`, undefined]);
+          }
+        }
+        assert.strictEqual(new Set(runs).size, 3);
+        // The query stream's reads start traces of their own, never inside the opening turn's.
+        const opening = recording.named("Turn1.root")[0]!;
+        const reads = recording.named("Test.sessionMessage");
+        assert.isAbove(reads.length, 0);
+        for (const span of reads) assert.notStrictEqual(span.traceId, opening.traceId);
+      }).pipe(
+        Effect.withTracer(recording.tracer),
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+            Logger.layer([
+              Logger.make((options) => {
+                logged.push(options.fiber.getRef(References.CurrentLogAnnotations));
+              }),
+            ]),
+          ),
+        ),
+      );
+    },
   );
 
   it.effect("keeps a later future-window event-supplied Claude reset over the embedded reset", () =>

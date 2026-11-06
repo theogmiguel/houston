@@ -26,14 +26,19 @@ import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Logger from "effect/Logger";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
+import * as References from "effect/References";
 import * as Stream from "effect/Stream";
+import * as Tracer from "effect/Tracer";
 import { TestClock } from "effect/testing";
 import { HttpServer } from "effect/http";
 
 import { ProviderWorkspaceMissingError } from "../provider/Errors.ts";
+import * as TraceContext from "../houston/observability/TraceContext.ts";
+import * as RecordingTracer from "../observability/testing/RecordingTracer.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as McpProviderSession from "@houston-app/provider-core/server/mcpSession";
@@ -191,6 +196,15 @@ const emptyState: TestProviderRuntimeState = {
   unloadedNativeThreadIds: [],
   eventQueues: new Map(),
 };
+
+// The command span an outbox effect links its work to (EffectWorker).
+const OPENING_COMMAND_SPAN = Tracer.externalSpan({
+  traceId: "0".repeat(31) + "1",
+  spanId: "0".repeat(15) + "1",
+});
+
+const houstonContextOf = (span: Tracer.NativeSpan) =>
+  Object.fromEntries([...span.attributes].filter(([key]) => key.startsWith("houston.")));
 
 const modelSelection = {
   instanceId: ProviderInstanceId.make("codex"),
@@ -1071,6 +1085,352 @@ it.effect("ProviderSessionManagerV2 closes every live session for a provider ins
       ),
     );
   }),
+);
+
+it.effect(
+  "ProviderSessionManagerV2 opens a session without the opening turn's run on its fibers",
+  () => {
+    const recording = RecordingTracer.make();
+    const logged: Array<Readonly<Record<string, unknown>>> = [];
+    return Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const emit = yield* Deferred.make<void>();
+      const emitted = yield* Deferred.make<void>();
+      // An adapter's process reader: forked while the session opens, it serves every later turn.
+      const beforeOpen = () =>
+        Deferred.await(emit).pipe(
+          Effect.andThen(
+            Effect.logInfo("session fiber").pipe(Effect.withSpan("Test.sessionFiber")),
+          ),
+          Effect.andThen(Deferred.succeed(emitted, undefined)),
+          Effect.forkDetach,
+          Effect.asVoid,
+        );
+
+      const effect = Effect.gen(function* () {
+        const eventSink = yield* EventSink.EventSinkV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        const now = yield* DateTime.now;
+        const threadId = ThreadId.make("thread-provider-session-manager-trace-context");
+        const providerSessionId = yield* idAllocator.allocate.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+          threadId,
+        });
+        yield* eventSink.write({
+          events: [yield* makeThreadCreatedEvent({ idAllocator, threadId, now })],
+        });
+        yield* manager
+          .open({ threadId, providerSessionId, modelSelection, runtimePolicy })
+          .pipe(
+            TraceContext.withTraceContext({ threadId, runId: "run-1", commandId: "command-1" }),
+            Effect.linkSpans(OPENING_COMMAND_SPAN),
+          );
+        yield* Deferred.succeed(emit, undefined);
+        yield* Deferred.await(emitted);
+
+        // The adapter's fiber knows no thread or turn; the adapter annotates what it serves.
+        const span = recording.named("Test.sessionFiber")[0];
+        assert.isDefined(span);
+        assert.deepStrictEqual(houstonContextOf(span!), {});
+        assert.deepStrictEqual(span?.links, []);
+        assert.deepStrictEqual(logged, [{}]);
+      });
+
+      yield* effect.pipe(
+        Effect.provide(layerTest({ state, idleTimeoutMs: 60_000, beforeOpen })),
+        Effect.withTracer(recording.tracer),
+        Effect.provide(
+          Logger.layer([
+            Logger.make((options) => {
+              if (String(options.message) === "session fiber") {
+                logged.push(options.fiber.getRef(References.CurrentLogAnnotations));
+              }
+            }),
+          ]),
+        ),
+      );
+    });
+  },
+);
+
+// Lets the pump end the spans of the event it just persisted.
+const settlePump = Effect.repeat(Effect.yieldNow, { times: 20 });
+
+it.effect(
+  "ProviderSessionManagerV2 pumps later events without the opening turn's ids or links",
+  () => {
+    const recording = RecordingTracer.make();
+    return Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const effect = Effect.gen(function* () {
+        const eventSink = yield* EventSink.EventSinkV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        const now = yield* DateTime.now;
+        const projectId = ProjectId.make("project-pump-trace");
+        const threadId = ThreadId.make("thread-provider-session-manager-pump-trace");
+        const providerSessionId = yield* idAllocator.allocate.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+          threadId,
+        });
+        yield* eventSink.write({
+          events: [yield* makeThreadCreatedEvent({ idAllocator, threadId, now, projectId })],
+        });
+        const runtime = yield* manager
+          .open({ threadId, providerSessionId, modelSelection, runtimePolicy })
+          .pipe(
+            TraceContext.withTraceContext({
+              threadId,
+              projectId,
+              runId: "run-1",
+              commandId: "command-1",
+            }),
+            Effect.linkSpans(OPENING_COMMAND_SPAN),
+          );
+        const subscription = yield* runtime.subscribeEvents!;
+        const adapterQueue = (yield* Ref.get(state)).eventQueues.get(String(providerSessionId));
+        assert.isDefined(adapterQueue);
+
+        const spansBefore = recording.ended.length;
+        // Offered from outside any turn, as a provider reports between turns.
+        yield* Queue.offer(adapterQueue!, {
+          type: "provider_session.updated",
+          driver: CODEX_DRIVER,
+          providerSession: { ...runtime.providerSession, updatedAt: now },
+        });
+        yield* subscription.events.pipe(Stream.runHead, Effect.withTracerEnabled(false));
+        yield* settlePump;
+
+        const pumped = recording.ended.slice(spansBefore);
+        assert.isAbove(pumped.length, 0);
+        for (const span of pumped) {
+          // The session's only thread is the event's thread.
+          assert.deepStrictEqual(
+            houstonContextOf(span),
+            { "houston.thread.id": threadId, "houston.project.id": projectId },
+            span.name,
+          );
+          assert.deepStrictEqual(span.links, [], span.name);
+        }
+      });
+
+      yield* effect.pipe(
+        Effect.provide(layerTest({ state, idleTimeoutMs: 60_000 })),
+        Effect.withTracer(recording.tracer),
+      );
+    });
+  },
+);
+
+it.effect(
+  "ProviderSessionManagerV2 gives each event of a shared session its own thread and project",
+  () => {
+    const recording = RecordingTracer.make();
+    return Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const effect = Effect.gen(function* () {
+        const eventSink = yield* EventSink.EventSinkV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        const now = yield* DateTime.now;
+        // One app-server per provider instance serves every thread, in any project.
+        const providerSessionId = idAllocator.derive.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+        });
+        const threads = [
+          {
+            threadId: ThreadId.make("thread-provider-session-manager-shared-trace-a"),
+            projectId: ProjectId.make("project-shared-trace-a"),
+            runId: "run-a",
+          },
+          {
+            threadId: ThreadId.make("thread-provider-session-manager-shared-trace-b"),
+            projectId: ProjectId.make("project-shared-trace-b"),
+            runId: "run-b",
+          },
+        ] as const;
+        for (const thread of threads) {
+          yield* eventSink.write({
+            events: [yield* makeThreadCreatedEvent({ idAllocator, now, ...thread })],
+          });
+          yield* manager
+            .open({ threadId: thread.threadId, providerSessionId, modelSelection, runtimePolicy })
+            .pipe(
+              TraceContext.withTraceContext({
+                ...thread,
+                commandId: `command-${thread.runId}`,
+              }),
+            );
+        }
+        const adapterQueue = (yield* Ref.get(state)).eventQueues.get(String(providerSessionId));
+        assert.isDefined(adapterQueue);
+
+        // Thread B's events first: the session was opened by thread A's turn.
+        for (const thread of [threads[1], threads[0]]) {
+          const pending = yield* makePendingRuntimeRequestEvents({
+            idAllocator,
+            threadId: thread.threadId,
+            providerSessionId,
+            providerThread: makeProviderThread({
+              idAllocator,
+              threadId: thread.threadId,
+              providerSessionId,
+              now,
+            }),
+            now,
+          });
+          const afterSequence = yield* eventSink.latestSequence({ threadId: thread.threadId });
+          const persisted = yield* eventSink
+            .stream({ threadId: thread.threadId, afterSequence })
+            .pipe(
+              Stream.filter((stored) => stored.event.type === "turn-item.updated"),
+              Stream.runHead,
+              Effect.withTracerEnabled(false),
+              Effect.forkScoped,
+            );
+          const spansBefore = recording.ended.length;
+          yield* Queue.offerAll(adapterQueue!, pending.providerEvents);
+          yield* Fiber.join(persisted);
+          yield* settlePump;
+
+          const pumped = recording.ended.slice(spansBefore);
+          assert.isAbove(pumped.length, 0);
+          for (const span of pumped) {
+            assert.deepStrictEqual(
+              houstonContextOf(span),
+              {
+                "houston.thread.id": thread.threadId,
+                "houston.project.id": thread.projectId,
+              },
+              span.name,
+            );
+          }
+        }
+      });
+
+      yield* effect.pipe(
+        Effect.provide(layerTest({ state, idleTimeoutMs: 60_000 })),
+        Effect.withTracer(recording.tracer),
+      );
+    });
+  },
+);
+
+it.effect("ProviderSessionManagerV2 pumps later events outside the opening turn's trace", () => {
+  const recording = RecordingTracer.make();
+  return Effect.gen(function* () {
+    const state = yield* Ref.make(emptyState);
+    const effect = Effect.gen(function* () {
+      const eventSink = yield* EventSink.EventSinkV2;
+      const idAllocator = yield* IdAllocator.IdAllocatorV2;
+      const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+      const now = yield* DateTime.now;
+      const threadId = ThreadId.make("thread-provider-session-manager-pump-root");
+      const providerSessionId = yield* idAllocator.allocate.providerSession({
+        providerInstanceId: modelSelection.instanceId,
+        threadId,
+      });
+      yield* eventSink.write({
+        events: [yield* makeThreadCreatedEvent({ idAllocator, threadId, now })],
+      });
+      const runtime = yield* manager
+        .open({ threadId, providerSessionId, modelSelection, runtimePolicy })
+        .pipe(Effect.withSpan("Turn1.root"));
+      const turnRoot = recording.named("Turn1.root")[0];
+      assert.isDefined(turnRoot);
+      const subscription = yield* runtime.subscribeEvents!;
+      const adapterQueue = (yield* Ref.get(state)).eventQueues.get(String(providerSessionId));
+      assert.isDefined(adapterQueue);
+
+      const spansBefore = recording.ended.length;
+      yield* Queue.offer(adapterQueue!, {
+        type: "provider_session.updated",
+        driver: CODEX_DRIVER,
+        providerSession: { ...runtime.providerSession, updatedAt: now },
+      });
+      yield* subscription.events.pipe(Stream.runHead, Effect.withTracerEnabled(false));
+      yield* settlePump;
+
+      // The pump's fiber has no parent span, so each span it starts is a root of its own.
+      const pumped = recording.ended.slice(spansBefore);
+      assert.isAbove(pumped.length, 0);
+      for (const span of pumped) {
+        assert.notStrictEqual(span.traceId, turnRoot!.traceId, span.name);
+      }
+    });
+
+    yield* effect.pipe(
+      Effect.provide(layerTest({ state, idleTimeoutMs: 60_000 })),
+      Effect.withTracer(recording.tracer),
+    );
+  });
+});
+
+it.effect(
+  "ProviderSessionManagerV2 forgets a detached thread's context on its shared session",
+  () => {
+    const recording = RecordingTracer.make();
+    return Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const effect = Effect.gen(function* () {
+        const eventSink = yield* EventSink.EventSinkV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        const now = yield* DateTime.now;
+        const providerSessionId = idAllocator.derive.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+        });
+        const kept = {
+          threadId: ThreadId.make("thread-provider-session-manager-prune-kept"),
+          projectId: ProjectId.make("project-prune-kept"),
+        };
+        const detached = {
+          threadId: ThreadId.make("thread-provider-session-manager-prune-detached"),
+          projectId: ProjectId.make("project-prune-detached"),
+        };
+        for (const thread of [kept, detached]) {
+          yield* eventSink.write({
+            events: [yield* makeThreadCreatedEvent({ idAllocator, now, ...thread })],
+          });
+          yield* manager
+            .open({ threadId: thread.threadId, providerSessionId, modelSelection, runtimePolicy })
+            .pipe(TraceContext.withTraceContext(thread));
+        }
+        yield* manager.detach({ providerSessionId, threadId: detached.threadId });
+        const adapterQueue = (yield* Ref.get(state)).eventQueues.get(String(providerSessionId));
+        assert.isDefined(adapterQueue);
+
+        // A late event that still names the detached thread carries only that thread's id.
+        const pending = yield* makePendingRuntimeRequestEvents({
+          idAllocator,
+          threadId: detached.threadId,
+          providerSessionId,
+          providerThread: makeProviderThread({
+            idAllocator,
+            threadId: detached.threadId,
+            providerSessionId,
+            now,
+          }),
+          now,
+        });
+        const spansBefore = recording.ended.length;
+        yield* Queue.offerAll(adapterQueue!, pending.providerEvents);
+        yield* settlePump;
+
+        const pumped = recording.ended.slice(spansBefore);
+        assert.isAbove(pumped.length, 0);
+        for (const span of pumped) {
+          assert.notProperty(houstonContextOf(span), "houston.project.id", span.name);
+        }
+      });
+
+      yield* effect.pipe(
+        Effect.provide(layerTest({ state, idleTimeoutMs: 60_000 })),
+        Effect.withTracer(recording.tracer),
+      );
+    });
+  },
 );
 
 it.effect("ProviderSessionManagerV2 opens a duplicate session only once", () =>
