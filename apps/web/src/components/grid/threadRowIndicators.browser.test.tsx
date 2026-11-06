@@ -82,7 +82,7 @@ function thread(overrides: Partial<EnvironmentThreadShell> = {}): EnvironmentThr
 
 function card(
   value: EnvironmentThreadShell,
-  props: { onOpen?: () => void; focused?: boolean; timeLabel?: string } = {},
+  props: { onOpen?: () => void; focused?: boolean; selected?: boolean; timeLabel?: string } = {},
 ) {
   return (
     <TooltipProvider delay={0}>
@@ -93,7 +93,7 @@ function card(
         providerEntries={new Map()}
         nowIso="2026-01-01T00:00:00.000Z"
         focused={props.focused ?? false}
-        selected={false}
+        selected={props.selected ?? false}
         dragging={false}
         workspaceTitle="Houston"
         timeLabel={props.timeLabel ?? null}
@@ -169,6 +169,49 @@ describe("thread row indicators", () => {
     await using screen = await render(card(thread()));
     const stats = screen.getByRole("img", { name: "Uncommitted changes +12 −3" }).element();
     expect(stats.textContent).toBe("+12 −3");
+  });
+
+  it("mutes the line totals at rest and colours them on hover, focus and for the open or selected row", async () => {
+    reset();
+    fixture.totals = { insertions: 12, deletions: 3 };
+    const colors = (container: HTMLElement) => {
+      const [added, removed] = [...container.querySelectorAll("[aria-label^='Uncommitted'] > span")];
+      const probe = (name: string) => {
+        const el = document.createElement("span");
+        el.className = name;
+        container.append(el);
+        const color = getComputedStyle(el).color;
+        el.remove();
+        return color;
+      };
+      return {
+        added: getComputedStyle(added!).color,
+        removed: getComputedStyle(removed!).color,
+        meta: getComputedStyle(container.querySelector("[data-thread-meta]")!).color,
+        addition: probe("text-diff-addition-foreground"),
+        deletion: probe("text-diff-deletion-foreground"),
+      };
+    };
+
+    await using rest = await render(card(thread()));
+    const resting = colors(rest.container);
+    expect(resting.added).toBe(resting.meta);
+    expect(resting.removed).toBe(resting.meta);
+    expect(resting.addition).not.toBe(resting.meta);
+
+    await userEvent.hover(rest.getByRole("img", { name: "Uncommitted changes +12 −3" }).element());
+    await expect.poll(() => colors(rest.container).added).toBe(resting.addition);
+    expect(colors(rest.container).removed).toBe(resting.deletion);
+
+    await using selected = await render(card(thread(), { selected: true }));
+    const selectedColors = colors(selected.container);
+    expect(selectedColors.added).toBe(selectedColors.addition);
+    expect(selectedColors.removed).toBe(selectedColors.deletion);
+
+    await using open = await render(card(thread(), { focused: true }));
+    const openColors = colors(open.container);
+    expect(openColors.added).toBe(openColors.addition);
+    expect(openColors.removed).toBe(openColors.deletion);
   });
 
   it("shows no totals for a clean checkout", async () => {

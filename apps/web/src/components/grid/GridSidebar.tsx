@@ -2409,6 +2409,7 @@ export function ThreadCard({
             thread={thread}
             rowRef={rowRef}
             focused={focused}
+            emphasized={active || selected}
             onActivate={onOpen}
           />
           {/*

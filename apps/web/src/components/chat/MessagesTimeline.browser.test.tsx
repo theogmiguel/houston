@@ -1686,6 +1686,71 @@ describe("ChangedFilesCard", () => {
   );
 });
 
+describe("changed-files card beside the pending-changes row", () => {
+  const diffFor = (runId: RunId, assistantId: string) =>
+    ({
+      runId,
+      checkpointTurnCount: 1,
+      checkpointRef: `checkpoint-${runId}` as never,
+      status: "ready",
+      files: [{ path: "CHANGELOG.md", kind: "modified", additions: 5, deletions: 0 }],
+      assistantMessageId: MessageId.make(assistantId),
+      completedAt: CREATED_AT,
+    }) as const;
+  const earlier = RunId.make("run-earlier");
+  const latest = RunId.make("run-latest");
+  const entries: Entry[] = [
+    message("First", { role: "user", runId: earlier }, "user-earlier"),
+    message("First done", { role: "assistant", runId: earlier }, "final-earlier"),
+    message("Second", { role: "user", runId: latest }, "user-latest"),
+    message("Second done", { role: "assistant", runId: latest }, "final-latest"),
+  ];
+  const turnDiffSummaries = [diffFor(earlier, "final-earlier"), diffFor(latest, "final-latest")];
+  const cardStates = (root: HTMLElement) =>
+    [...root.querySelectorAll<HTMLElement>("[data-changed-files-state]")].map(
+      (card) => card.dataset.changedFilesState,
+    );
+
+  it("shows every turn's card with its file list when no pending-changes row covers a run", async () => {
+    setup();
+    await using screen = await renderTimeline(entries, { turnDiffSummaries });
+    expect(cardStates(screen.container)).toEqual(["tree", "tree"]);
+    expect(screen.container.textContent).toContain("CHANGELOG.md");
+  });
+
+  it("folds only the covered turn's card to its header and lets the user open it", async () => {
+    setup();
+    const onOpenTurnDiff = vi.fn();
+    await using screen = await renderTimeline(entries, {
+      turnDiffSummaries,
+      changeBannerRunId: latest,
+      onOpenTurnDiff,
+    });
+    expect(cardStates(screen.container)).toEqual(["tree", "folded"]);
+    const folded = screen.container.querySelector<HTMLElement>(
+      '[data-changed-files-state="folded"]',
+    )!;
+    expect(folded.textContent).toContain("1 changed file");
+    expect(folded.textContent).not.toContain("CHANGELOG.md");
+
+    await click(folded.querySelector<HTMLElement>('button[aria-label="Open diff"]')!);
+    expect(onOpenTurnDiff).toHaveBeenCalledWith(latest, "CHANGELOG.md");
+
+    await click(folded.querySelector<HTMLElement>('button[aria-label="Show changed files"]')!);
+    expect(folded.dataset.changedFilesState).toBe("tree");
+    expect(folded.textContent).toContain("CHANGELOG.md");
+  });
+
+  it("restores the file list once the pending-changes row goes away", async () => {
+    setup();
+    const props = { ...baseProps(), timelineEntries: entries, turnDiffSummaries };
+    await using screen = await renderElement(<MessagesTimeline {...props} changeBannerRunId={latest} />);
+    expect(cardStates(screen.container)).toEqual(["tree", "folded"]);
+    await screen.rerender(<MessagesTimeline {...props} changeBannerRunId={null} />);
+    expect(cardStates(screen.container)).toEqual(["tree", "tree"]);
+  });
+});
+
 describe("turn rhythm", () => {
   const diffSummary = (runId: RunId, assistantId: string) =>
     ({

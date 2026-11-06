@@ -132,3 +132,17 @@ it("opens the toggle's tooltip on keyboard focus after the drawer has closed", a
   await vi.waitFor(() => expect(toggleTooltip()).not.toBeNull(), { timeout: 5_000 });
 });
 
+it("draws the closed drawer's toggle like any other header icon button at rest", async () => {
+  const { screen } = await mountApp(800);
+  await using _screen = screen;
+  const toggle = screen.getByRole("button", { name: "Toggle main sidebar" });
+  await expect.element(toggle).toBeVisible();
+  const element = toggle.element();
+  expect(element.getAttribute("aria-pressed")).toBe("false");
+  expect(getComputedStyle(element).backgroundColor).toBe("rgba(0, 0, 0, 0)");
+
+  await userEvent.hover(toggle);
+  await expect
+    .poll(() => getComputedStyle(element).backgroundColor)
+    .not.toBe("rgba(0, 0, 0, 0)");
+});

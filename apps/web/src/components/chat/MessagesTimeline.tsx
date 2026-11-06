@@ -253,6 +253,8 @@ interface MessagesTimelineProps {
   detailBehindShell?: boolean;
   runningRunId?: RunId | null;
   turnDiffSummaries: ReadonlyArray<TurnDiffSummary>;
+  /** The run whose changes the composer's pending-changes row already shows. */
+  changeBannerRunId?: RunId | null;
   routeThreadKey: string;
   displayThreadKey?: string;
   /** Off where another region already speaks the thread's status, like a subagent's bar. */
@@ -370,6 +372,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   detailBehindShell = false,
   runningRunId = null,
   turnDiffSummaries,
+  changeBannerRunId = null,
   routeThreadKey,
   displayThreadKey,
   announceTurnStatus = true,
@@ -1047,6 +1050,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     openPullRequest,
     onOpenToolDiff,
     onOpenTurnDiff,
+    changeBannerRunId,
     onOpenThread,
     renderHtmlRender,
     turnItemSource,

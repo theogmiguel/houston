@@ -3016,6 +3016,8 @@ export default function ChatView(props: ChatViewProps) {
         disabled={isRevertingCheckpoint || phase === "running"}
       />
     );
+  // The run the composer's pending-changes row already summarises; its turn card folds to a header.
+  const changeBannerRunId = changedFilesBar === null ? null : (latestTurnDiff?.runId ?? null);
   const timelinePendingApprovals =
     activePendingApproval === null
       ? pendingApprovals
@@ -3636,6 +3638,7 @@ export default function ChatView(props: ChatViewProps) {
                 )}
                 runningRunId={activeRunningTurnId}
                 turnDiffSummaries={turnDiffSummaries}
+                changeBannerRunId={changeBannerRunId}
                 activeThreadEnvironmentId={
                   displayedThreadRef?.environmentId ?? activeThread.environmentId
                 }

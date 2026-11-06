@@ -486,6 +486,7 @@ function AssistantChangedFilesSectionInner({
   );
   const setExpanded = useUiStateStore((store) => store.setThreadChangedFilesExpanded);
   const allDirectoriesExpanded = persistedExpanded ?? false;
+  const coveredByBanner = ctx.changeBannerRunId === turnSummary.runId;
 
   const thread = useThreadShell(ctx.threadRef);
   const activeProject = useProject(
@@ -501,6 +502,7 @@ function AssistantChangedFilesSectionInner({
       files={checkpointFiles}
       totals={checkpointFileTotals(turnSummary)}
       allDirectoriesExpanded={allDirectoriesExpanded}
+      coveredByBanner={coveredByBanner}
       resolvedTheme={resolvedTheme}
       onToggleAllDirectories={() =>
         setExpanded(routeThreadKey, turnSummary.runId, !allDirectoriesExpanded)

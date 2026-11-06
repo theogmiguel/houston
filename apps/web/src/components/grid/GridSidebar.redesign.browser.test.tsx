@@ -65,7 +65,7 @@ function thread(overrides: Record<string, unknown> = {}): EnvironmentThreadShell
 function grid(overrides: Partial<GridRecord> = {}): GridRecord {
   return {
     id: "grid-a",
-    name: "v2 port",
+    name: "v2 rebuild",
     environmentId: "env-1",
     projectId: "project-1",
     workspaceKey: "env-1:project-1",
@@ -173,7 +173,7 @@ function CollapsibleGroup({
 
 describe("grid sidebar", () => {
   it("lists a grid without repeating its project name", async () => {
-    const first = grid({ id: "grid-a", name: "v2 port" });
+    const first = grid({ id: "grid-a", name: "v2 rebuild" });
     const second = grid({
       id: "grid-b",
       name: "Grid 2",
@@ -188,7 +188,7 @@ describe("grid sidebar", () => {
       </>,
     );
 
-    expect(screen.getByRole("button", { name: /^v2 port$/ }).element()).toBeVisible();
+    expect(screen.getByRole("button", { name: /^v2 rebuild$/ }).element()).toBeVisible();
     expect(screen.getByRole("button", { name: /^Grid 2 empty$/ }).element()).toBeVisible();
     expect(screen.container.textContent).not.toContain("notes");
     expect(screen.container.textContent).not.toContain("Workspaces");
@@ -316,12 +316,12 @@ describe("grid sidebar", () => {
     const threads = [thread({ id: "thread-a" }), thread({ id: "thread-b", title: "Second" })];
     await using screen = await render(
       <>
-        {group(grid({ id: "grid-a", name: "v2 port" }), threads, { open: true })}
+        {group(grid({ id: "grid-a", name: "v2 rebuild" }), threads, { open: true })}
         {group(grid({ id: "grid-b", name: "Review" }), threads, { open: false })}
       </>,
     );
 
-    const open = screen.getByRole("button", { name: /^v2 port$/ }).element();
+    const open = screen.getByRole("button", { name: /^v2 rebuild$/ }).element();
     const closed = screen.getByRole("button", { name: /^Review$/ }).element();
     expect(open.className).toContain("bg-sidebar-row-selected");
     expect(closed.className).not.toContain("bg-sidebar-row-selected");
@@ -330,25 +330,25 @@ describe("grid sidebar", () => {
   it("leaves the open grid's heading untinted while its focused thread row shows the selection", async () => {
     const threads = [thread({ id: "thread-a" }), thread({ id: "thread-b", title: "Second" })];
     await using screen = await render(
-      group(grid({ id: "grid-a", name: "v2 port", focusedThreadId: "thread-a" }), threads, {
+      group(grid({ id: "grid-a", name: "v2 rebuild", focusedThreadId: "thread-a" }), threads, {
         open: true,
       }),
     );
 
-    const heading = screen.getByRole("button", { name: /^v2 port$/ }).element();
+    const heading = screen.getByRole("button", { name: /^v2 rebuild$/ }).element();
     expect(heading.className).not.toContain("bg-sidebar-row-selected");
   });
 
   it("hands the open grid's selection fill to its revealed thread row while collapsed", async () => {
     const threads = [thread({ id: "thread-a" }), thread({ id: "thread-b", title: "Second" })];
     await using screen = await render(
-      group(grid({ id: "grid-a", name: "v2 port", focusedThreadId: "thread-a" }), threads, {
+      group(grid({ id: "grid-a", name: "v2 rebuild", focusedThreadId: "thread-a" }), threads, {
         open: true,
         collapsed: true,
       }),
     );
 
-    const heading = screen.getByRole("button", { name: /^v2 port 1$/ }).element();
+    const heading = screen.getByRole("button", { name: /^v2 rebuild 1$/ }).element();
     expect(heading.className).not.toContain("bg-sidebar-row-selected");
     expect(screen.container.querySelector("[data-thread-key$=':thread-a']")).not.toBeNull();
     expect(screen.container.querySelector("[data-thread-key$=':thread-b']")).toBeNull();
@@ -357,13 +357,13 @@ describe("grid sidebar", () => {
   it("tints the open grid's heading when collapsing hides every row", async () => {
     const threads = [thread({ id: "thread-a" }), thread({ id: "thread-b", title: "Second" })];
     await using screen = await render(
-      group(grid({ id: "grid-a", name: "v2 port", focusedThreadId: null }), threads, {
+      group(grid({ id: "grid-a", name: "v2 rebuild", focusedThreadId: null }), threads, {
         open: true,
         collapsed: true,
       }),
     );
 
-    const heading = screen.getByRole("button", { name: /^v2 port 2$/ }).element();
+    const heading = screen.getByRole("button", { name: /^v2 rebuild 2$/ }).element();
     expect(heading.className).toContain("bg-sidebar-row-selected");
   });
 
@@ -378,7 +378,7 @@ describe("grid sidebar", () => {
         {counts.map((count) => (
           <CollapsibleGroup
             key={count}
-            value={grid({ id: `grid-${count}`, name: "v2 port" })}
+            value={grid({ id: `grid-${count}`, name: "v2 rebuild" })}
             threads={makeThreads(count)}
           />
         ))}
