@@ -580,10 +580,13 @@ export function SettingsPageContainer({
   children,
   className,
   width = "readable",
+  searchTargetFallbacks,
 }: {
   children: ReactNode;
   className?: string;
   width?: WorkspacePageWidth;
+  /** Anchor to focus instead when a hash names a row that is not mounted, or an id that moved. */
+  searchTargetFallbacks?: Readonly<Record<string, string | undefined>>;
 }) {
   const navigate = useNavigate();
   const hash = useLocation({ select: (location) => location.hash });
@@ -603,7 +606,7 @@ export function SettingsPageContainer({
 
   return (
     <SettingsSearchTargetProvider
-      targetId={targetId}
+      targetId={targetId === null ? null : (searchTargetFallbacks?.[targetId] ?? targetId)}
       highlightTarget={highlightTarget}
       onTargetHandled={clearTargetHash}
     >

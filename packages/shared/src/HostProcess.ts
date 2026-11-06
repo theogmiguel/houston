@@ -18,6 +18,23 @@ export const Architecture = Context.Reference<NodeJS.Architecture>(
   },
 );
 
+/** The C library of a Linux host: glibc ("gnu") or anything else ("musl"). Native speech needs glibc. */
+export const LinuxLibc = Context.Reference<"gnu" | "musl">(
+  "@houston-app/shared/HostProcess/LinuxLibc",
+  {
+    defaultValue: () => {
+      try {
+        const report = process.report?.getReport() as
+          | { header?: { glibcVersionRuntime?: unknown } }
+          | undefined;
+        return typeof report?.header?.glibcVersionRuntime === "string" ? "gnu" : "musl";
+      } catch {
+        return "musl";
+      }
+    },
+  },
+);
+
 export const Hostname = Context.Reference<string>("@houston-app/shared/HostProcess/Hostname", {
   defaultValue: () => NodeOS.hostname(),
 });

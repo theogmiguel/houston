@@ -3,9 +3,9 @@ import {
   isProviderAvailable,
   isProviderTextGenerationCapable,
   type ServerSettings,
+  type SpeechPostProcessingOptions,
 } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
-import * as Schema from "effect/Schema";
 import { resolveSpeechPostProcessingModelSelection } from "@houston-app/shared/serverSettings";
 
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
@@ -14,21 +14,22 @@ import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import { buildTranscriptionPostProcessingPrompt } from "../textGeneration/TranscriptionPostProcessing.ts";
 import { applySpeechAliases } from "./customWords.ts";
 
-const quoteCorrectionWord = Schema.encodeSync(Schema.fromJsonString(Schema.String));
-
+/**
+ * Cleans a transcript with a text-generation provider. The request itself is the consent to send
+ * the transcript there: the device decides, and the server holds no switch for it.
+ */
 export const postProcessTranscript = Effect.fn("speech.postProcessTranscript")(function* (input: {
   readonly transcript: string;
-  readonly draft?: {
+  readonly draft: {
     readonly text: string;
     readonly selection: { readonly start: number; readonly end: number };
   };
+  readonly options: SpeechPostProcessingOptions;
   readonly cwd: string;
   readonly settings: ServerSettings;
 }) {
-  if (!input.settings.speechPostProcessingEnabled || input.transcript.trim().length === 0) {
-    return input.transcript;
-  }
-  const { mode, customInstructions } = input.settings.speechPostProcessingPrompt;
+  if (input.transcript.trim().length === 0) return input.transcript;
+  const { mode, customInstructions } = input.options.speechPostProcessingPrompt;
   const instructions =
     (mode === "custom" ? customInstructions.trim() : "") || DEFAULT_SPEECH_POST_PROCESSING_PROMPT;
   const registry = yield* ProviderRegistry.ProviderRegistry;
@@ -52,11 +53,10 @@ export const postProcessTranscript = Effect.fn("speech.postProcessTranscript")(f
   }
   const textGeneration = yield* TextGeneration.TextGeneration;
   const { prompt } = buildTranscriptionPostProcessingPrompt(
-    input.settings.speechCorrectionWord.trim()
-      ? `${instructions}\n\nCorrection cue: ${quoteCorrectionWord(input.settings.speechCorrectionWord.trim())}. Only when this cue clearly marks a spoken self-correction, apply the correction the speaker made and omit the cue from the result. The correction may revise, add to, or retract earlier speech. Preserve everything else. If the cue is an intended part of the sentence, keep it. Use the surrounding context to decide; do not assume every occurrence is a correction.`
-      : instructions,
+    instructions,
     input.transcript,
     input.draft,
+    input.options.speechCorrectionWord,
   );
   const generated = yield* textGeneration.generateTranscriptionPostProcessing({
     cwd: input.cwd,
@@ -65,6 +65,6 @@ export const postProcessTranscript = Effect.fn("speech.postProcessTranscript")(f
   });
   const text = generated.transcription.trim();
   return text.length > 0
-    ? applySpeechAliases(text, input.settings.speechCustomWords)
+    ? applySpeechAliases(text, input.options.speechCustomWords)
     : input.transcript;
 });

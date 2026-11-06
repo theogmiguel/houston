@@ -134,7 +134,8 @@ export function readLocalStorageValue<T, E>(
 /** Fires on writes from this tab and from other tabs. */
 export function subscribeLocalStorageKey(key: string, onChange: () => void): () => void {
   const handleStorageChange = (event: StorageEvent) => {
-    if (event.key === key) {
+    // A null key means the whole storage area was cleared.
+    if (event.key === key || event.key === null) {
       onChange();
     }
   };

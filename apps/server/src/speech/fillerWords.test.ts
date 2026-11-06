@@ -46,7 +46,11 @@ describe("removeSpeechFillerWords", () => {
     expect(removeSpeechFillerWords("humming thumbnail")).toBe("humming thumbnail");
   });
 
-  it("preserves a configured correction cue", () => {
+  it("preserves a configured correction cue, including one made of several words", () => {
     expect(removeSpeechFillerWords("Orange, um, yellow", "en", "um")).toBe("Orange, um, yellow");
+    expect(removeSpeechFillerWords("uh make it 42 I mean   24", "en", "I mean")).toBe(
+      "make it 42 I mean 24",
+    );
+    expect(removeSpeechFillerWords("um sorry. um", "en", "sorry")).toBe("sorry.");
   });
 });

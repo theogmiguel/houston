@@ -16,14 +16,17 @@ class PcmCaptureProcessor extends AudioWorkletProcessor {
   private levelSamples = 0;
   private levelEnergy = 0;
   private level = 0;
+  private readonly meterOnly: boolean;
 
-  constructor() {
+  constructor(options?: { readonly processorOptions?: { readonly meterOnly?: boolean } }) {
     super();
+    // Meter-only capture drives a level display and never emits PCM, so test recordings stay local.
+    this.meterOnly = options?.processorOptions?.meterOnly === true;
     this.port.onmessage = ({ data }) => {
       if (data === "start") this.recording = true;
       if (data === "stop") {
         this.recording = false;
-        if (!this.flushed) this.append(this.resampler.flush());
+        if (!this.meterOnly && !this.flushed) this.append(this.resampler.flush());
         this.flushed = true;
         if (this.length) this.publish();
         this.port.postMessage("stopped");
@@ -72,7 +75,7 @@ class PcmCaptureProcessor extends AudioWorkletProcessor {
         this.levelSamples = 0;
       }
     }
-    this.append(this.resampler.push(mono));
+    if (!this.meterOnly) this.append(this.resampler.push(mono));
     return true;
   }
 }

@@ -7,6 +7,7 @@ import {
   AuthPreviewOperateScope,
   type EditorId,
   type EnvironmentId,
+  type ProjectId,
   type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
 } from "@houston-app/contracts";
@@ -142,6 +143,7 @@ const NO_FILE_REVISION_ATOM = Atom.make(null);
 
 interface FilePreviewPanelProps {
   environmentId: EnvironmentId;
+  projectId?: ProjectId | undefined;
   cwd: string;
   projectName: string;
   relativePath: string | null;
@@ -660,6 +662,7 @@ function useEditableAfterHighlight(file: FileContents) {
 
 interface EditableFileSurfaceProps {
   environmentId: EnvironmentId;
+  projectId?: ProjectId | undefined;
   cwd: string;
   relativePath: string;
   composerDraftTarget: ScopedThreadRef | DraftId;
@@ -680,6 +683,7 @@ interface FileSelectionOverride {
 
 function EditableFileSurface({
   environmentId,
+  projectId,
   cwd,
   relativePath,
   composerDraftTarget,
@@ -947,6 +951,14 @@ function EditableFileSurface({
                 {annotation.metadata.entries.map((entry) => (
                   <DiffCommentAnnotation
                     key={entry.id}
+                    environmentId={environmentId}
+                    projectId={projectId}
+                    ownerKey={JSON.stringify([
+                      environmentId,
+                      composerDraftTarget,
+                      relativePath,
+                      entry.id,
+                    ])}
                     kind={entry.kind}
                     rangeLabel={formatFileCommentRange(entry.startLine, entry.endLine)}
                     text={entry.text}
@@ -1039,6 +1051,7 @@ function initialExplorerOpen(): boolean {
 
 export default function FilePreviewPanel({
   environmentId,
+  projectId,
   cwd,
   projectName,
   relativePath: requestedPath,
@@ -1598,6 +1611,7 @@ export default function FilePreviewPanel({
                 <EditableFileSurface
                   key={`${relativePath}:${resolvedTheme}`}
                   environmentId={environmentId}
+                  projectId={projectId}
                   cwd={cwd}
                   relativePath={relativePath}
                   composerDraftTarget={composerDraftTarget}
