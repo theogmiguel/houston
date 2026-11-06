@@ -241,8 +241,20 @@ export const layerRuns = (harness: RunsHarness, options: RunsOptions = {}) => {
     ),
   );
   const registry = harness.doubles.registry.pipe(Layer.provide(McpProviderSessions.layer));
+  // A whole-thread projection decodes the thread's full history; task runs read only the
+  // records they use, so every task-run test fails if one returns.
+  const recordsOnly = Layer.effect(
+    Orchestrator.OrchestratorV2,
+    Effect.map(Orchestrator.OrchestratorV2, (orchestrator) => ({
+      ...orchestrator,
+      getThreadProjection: (threadId: ThreadId) =>
+        Effect.die(new Error(`task runs read the whole projection of thread ${threadId}`)),
+    })),
+  ).pipe(Layer.provide(orchestration));
   const runs = HoustonTaskRuns.layer.pipe(
-    Layer.provide(Layer.mergeAll(launch, orchestration, registry, threadManagement, tasks)),
+    Layer.provide(
+      Layer.mergeAll(launch, orchestration, registry, threadManagement, tasks, recordsOnly),
+    ),
   );
   return Layer.mergeAll(runs, tasks, orchestration, threadManagement, launch);
 };

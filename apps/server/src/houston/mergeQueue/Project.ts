@@ -34,6 +34,9 @@ import {
 } from "./rules.ts";
 import { HoustonMergeQueueStore } from "./Store.ts";
 
+const LINE_BREAK = /\r?\n/;
+const WORKTREE_BRANCH_LINE = /^branch refs\/heads\/(.+)$/;
+
 /** Local git work; fetches and pushes cross the network and get longer. */
 export const GIT_LOCAL_TIMEOUT_MS = 120_000;
 export const GIT_NETWORK_TIMEOUT_MS = 600_000;
@@ -208,7 +211,7 @@ const make = Effect.gen(function* () {
     const remotes = yield* withVcs(gitOk(project.workspaceRoot, ["remote"])).pipe(
       Effect.mapError(() => unsupported(`${project.workspaceRoot} is not a git repository`)),
     );
-    const names = remotes.split(/\r?\n/).filter((name) => name.length > 0);
+    const names = remotes.split(LINE_BREAK).filter((name) => name.length > 0);
     const remote = names.includes("origin") ? "origin" : names[0];
     if (remote === undefined) return yield* unsupported(`${project.title} has no git remote`);
     // The configured URL, before any insteadOf rewrite, names the host.
@@ -299,9 +302,9 @@ const make = Effect.gen(function* () {
     ).pipe(Effect.orElseSucceed(() => ""));
     const worktrees = new Map<string, string>();
     let current: string | null = null;
-    for (const entry of listed.split(/\r?\n/)) {
+    for (const entry of listed.split(LINE_BREAK)) {
       if (entry.startsWith("worktree ")) current = entry.slice("worktree ".length);
-      const branch = /^branch refs\/heads\/(.+)$/.exec(entry)?.[1];
+      const branch = WORKTREE_BRANCH_LINE.exec(entry)?.[1];
       if (
         branch !== undefined &&
         current !== null &&

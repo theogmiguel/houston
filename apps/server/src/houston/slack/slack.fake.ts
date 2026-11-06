@@ -6,6 +6,8 @@ import * as NodeHttp from "node:http";
 import * as NodeWS from "@effect/platform-node/NodeWS";
 import * as Effect from "effect/Effect";
 
+const API_METHOD_PATH = /^\/api\/([a-zA-Z.]+)$/;
+
 export const FAKE_TEAM = "T1";
 export const FAKE_BOT = "UBOT";
 /** The secret Socket Mode URLs carry; like a token, it must reach no file, log or reply. */
@@ -203,7 +205,7 @@ export const makeSlackFake = Effect.acquireRelease(
           response.end(file === undefined ? "" : Buffer.from(file.body));
           return;
         }
-        const match = /^\/api\/([a-zA-Z.]+)$/.exec(path);
+        const match = API_METHOD_PATH.exec(path);
         const text = Buffer.concat(chunks).toString("utf8");
         const body: Record<string, string> = {};
         for (const [key, value] of new URLSearchParams(text)) body[key] = value;

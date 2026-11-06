@@ -13,6 +13,18 @@ import {
   type HoustonTaskStatus,
 } from "@houston-app/contracts/houston/tasks";
 
+const TRAILING_REPLACEMENT_CHARS = /�+$/;
+const NON_ASCII_LETTER = /(?![a-z])\p{L}/gu;
+const NON_ALPHANUMERIC_RUN = /[^a-z0-9]+/g;
+const EDGE_DASHES = /^-+|-+$/g;
+const TRAILING_DASHES = /-+$/;
+const DRIVE_LETTER = /^[A-Za-z]:/;
+const PATH_SEPARATOR = /[\\/]/;
+const BACKSLASH = /\\/;
+const SLASH = /\//;
+const PATH_SEPARATORS = /[\\/]+/;
+const SLASH_RUN = /\/+/;
+
 export const OPEN_RUN_STATES: ReadonlySet<HoustonTaskRunState> = new Set([
   "preparing",
   "running",
@@ -114,7 +126,7 @@ export const cutBytes = (text: string, limit: number): string => {
   const kept = Buffer.from(text, "utf8")
     .subarray(0, Math.max(0, limit - utf8Bytes(note)))
     .toString("utf8")
-    .replace(/�+$/, "");
+    .replace(TRAILING_REPLACEMENT_CHARS, "");
   return `${kept}${note}`;
 };
 
@@ -335,11 +347,11 @@ export const branchSlug = (title: string): string =>
   title
     .toLowerCase()
     // A letter outside ASCII is dropped, so it does not split its word.
-    .replaceAll(/(?![a-z])\p{L}/gu, "")
-    .replaceAll(/[^a-z0-9]+/g, "-")
-    .replaceAll(/^-+|-+$/g, "")
+    .replaceAll(NON_ASCII_LETTER, "")
+    .replaceAll(NON_ALPHANUMERIC_RUN, "-")
+    .replaceAll(EDGE_DASHES, "")
     .slice(0, SLUG_CHARS)
-    .replace(/-+$/, "");
+    .replace(TRAILING_DASHES, "");
 
 export const taskBranch = (number: number, title: string): string => {
   const slug = branchSlug(title);
@@ -472,8 +484,8 @@ export const checkFindings = (
       path.length > HOUSTON_TASK_LIMITS.findingPathChars ||
       path.startsWith("/") ||
       path.startsWith("\\") ||
-      /^[A-Za-z]:/.test(path) ||
-      path.split(/[\\/]/).includes("..")
+      DRIVE_LETTER.test(path) ||
+      path.split(PATH_SEPARATOR).includes("..")
     ) {
       return field(
         "path",
@@ -520,10 +532,10 @@ export const smallDiffReason = (size: { readonly lines: number; readonly files: 
 export const v1PathMatches = (v1Path: string, root: string, platform: NodeJS.Platform): boolean => {
   if (platform === "win32") {
     const normalize = (path: string) =>
-      withoutTrailingSeparators(path.replaceAll("/", "\\"), /\\/).toLowerCase();
+      withoutTrailingSeparators(path.replaceAll("/", "\\"), BACKSLASH).toLowerCase();
     return normalize(v1Path) === normalize(root);
   }
-  return withoutTrailingSeparators(v1Path, /\//) === withoutTrailingSeparators(root, /\//);
+  return withoutTrailingSeparators(v1Path, SLASH) === withoutTrailingSeparators(root, SLASH);
 };
 
 /** `v1Path` relative to `root` with `/` separators when it lies strictly inside it, compared as
@@ -534,7 +546,7 @@ export const v1PathUnder = (
   platform: NodeJS.Platform,
 ): string | null => {
   const windows = platform === "win32";
-  const separator = windows ? /[\\/]/ : /\//;
+  const separator = windows ? PATH_SEPARATOR : SLASH;
   const fold = (path: string) => (windows ? path.replaceAll("/", "\\").toLowerCase() : path);
   const base = fold(withoutTrailingSeparators(root, separator));
   const path = withoutTrailingSeparators(v1Path, separator);
@@ -542,7 +554,7 @@ export const v1PathUnder = (
   if (!fold(path).startsWith(prefix)) return null;
   const inside = path
     .slice(prefix.length)
-    .split(windows ? /[\\/]+/ : /\/+/)
+    .split(windows ? PATH_SEPARATORS : SLASH_RUN)
     .filter(Boolean);
   return inside.length === 0 || inside.some((segment) => segment === "..")
     ? null

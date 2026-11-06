@@ -134,6 +134,12 @@ import {
 } from "@houston-app/provider-core/server/subagentProjection";
 import * as ProviderAdapter from "@houston-app/provider-core/server/ProviderAdapter";
 
+const ACP_POST_SETTLE_WAKE_EVIDENCE_PATTERN = /<monitor-event\b/i;
+const ACP_POST_SETTLE_WAKE_EVIDENCE_PATTERN_2 = /Monitor\s+["']?[0-9a-f-]{8,}["']?\s+ended/i;
+const IS_MONITOR_END_NOTICE_TEXT_PATTERN = /Monitor\s+["']?[0-9a-f-]{8,}/i;
+const IS_MONITOR_END_NOTICE_TEXT_PATTERN_2 = /ended/i;
+const LABEL_PATTERN = /:\s*$/u;
+
 export const ACP_PROTOCOL = "acp.ndjson-jsonrpc" as const;
 
 // Grok summaries can trail hydrated tools by over two seconds; shorter waits split the wake.
@@ -1365,7 +1371,10 @@ export function acpPostSettleWakeEvidence(
     const text = update.content.text;
     if ((flavor.extractBackgroundToolMutation?.(text) ?? []).length > 0) return false;
     if (update.sessionUpdate === "agent_message_chunk" && text.trim().length === 0) return false;
-    if (/<monitor-event\b/i.test(text) || /Monitor\s+["']?[0-9a-f-]{8,}["']?\s+ended/i.test(text)) {
+    if (
+      ACP_POST_SETTLE_WAKE_EVIDENCE_PATTERN.test(text) ||
+      ACP_POST_SETTLE_WAKE_EVIDENCE_PATTERN_2.test(text)
+    ) {
       return false;
     }
   }
@@ -3553,7 +3562,8 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
         };
 
         const isMonitorEndNoticeText = (text: string): boolean =>
-          /Monitor\s+["']?[0-9a-f-]{8,}/i.test(text) && /ended/i.test(text);
+          IS_MONITOR_END_NOTICE_TEXT_PATTERN.test(text) &&
+          IS_MONITOR_END_NOTICE_TEXT_PATTERN_2.test(text);
 
         const hasDeferredBackgroundWork = (context: ActiveAcpTurn): boolean => {
           if (context.awaitingBackgroundHydration.size > 0) return true;
@@ -4011,7 +4021,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                 const backendSearch = acpBackendWebSearch(rawInputRecord, rawOutputRecord);
                 if (backendSearch !== undefined) {
                   const label = nonEmptyText(toolCall.data.title, title ?? "Web search").replace(
-                    /:\s*$/u,
+                    LABEL_PATTERN,
                     "",
                   );
                   turnItem = {
@@ -5017,8 +5027,8 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                 yield* applyLateBackgroundMutation(notification.sessionId, lateBackgroundMutation);
               }
               const lateMonitorChatter =
-                /<monitor-event\b/i.test(text) ||
-                /Monitor\s+["']?[0-9a-f-]{8,}["']?\s+ended/i.test(text);
+                ACP_POST_SETTLE_WAKE_EVIDENCE_PATTERN.test(text) ||
+                ACP_POST_SETTLE_WAKE_EVIDENCE_PATTERN_2.test(text);
               if (
                 text.trim().length > 0 &&
                 lateBackgroundMutations.length === 0 &&

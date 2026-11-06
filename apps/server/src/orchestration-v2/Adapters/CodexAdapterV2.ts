@@ -158,6 +158,12 @@ import {
 import * as IdAllocator from "@houston-app/provider-core/server/IdAllocator";
 import * as ProviderAdapter from "@houston-app/provider-core/server/ProviderAdapter";
 
+const MATCH_PATTERN = /\b(\d+)\s*\/\s*(\d+)\b/u;
+const REDACT_CODEX_PROTOCOL_VALUE_PATTERN = /^Bearer\s+/i;
+const NORMALIZED_PATTERN = /[^a-z0-9]/gi;
+const VERSION_PATTERN = /\/(\S+)/u;
+const CODEX_APP_SERVER_REQUEST_ERROR_PATTERN = /\bsession \S+ is archived\b|\bcodex unarchive\b/i;
+
 const CODEX_PROVIDER = ProviderDriverKind.make("codex");
 const CODEX_CAPACITY_MAX_RETRIES = 5;
 export const CODEX_DRIVER_KIND = CODEX_PROVIDER;
@@ -1083,7 +1089,7 @@ export const resolveCodexRollbackTurnCount = Effect.fn("CodexAdapterV2.resolveRo
 function parseCodexRetryProgress(
   message: string,
 ): Pick<OrchestrationV2ProviderRetry, "attempt" | "maxAttempts"> | null {
-  const match = /\b(\d+)\s*\/\s*(\d+)\b/u.exec(message);
+  const match = MATCH_PATTERN.exec(message);
   if (match?.[1] === undefined || match[2] === undefined) {
     return null;
   }
@@ -1550,7 +1556,7 @@ function redactCodexProtocolValue(value: unknown): unknown {
     if (typeof value !== "string") {
       return value;
     }
-    if (/^Bearer\s+/i.test(value)) {
+    if (REDACT_CODEX_PROTOCOL_VALUE_PATTERN.test(value)) {
       return "[REDACTED]";
     }
     const trimmed = value.trim();
@@ -1582,7 +1588,7 @@ function redactCodexProtocolValue(value: unknown): unknown {
 }
 
 function isSensitiveCodexProtocolKey(key: string): boolean {
-  const normalized = key.replace(/[^a-z0-9]/gi, "").toLowerCase();
+  const normalized = key.replace(NORMALIZED_PATTERN, "").toLowerCase();
   return (
     normalized.endsWith("authorization") ||
     normalized.endsWith("apikey") ||
@@ -1837,7 +1843,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                       : Effect.fail(error),
                 }),
               );
-            const version = userAgent && /\/(\S+)/u.exec(userAgent)?.[1];
+            const version = userAgent && VERSION_PATTERN.exec(userAgent)?.[1];
             const advisory =
               version && adapterOptions.compatibility
                 ? yield* adapterOptions.compatibility(version)
@@ -6807,7 +6813,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           return yield* resume.pipe(
             Effect.catchTags({
               CodexAppServerRequestError: (cause) =>
-                /\bsession \S+ is archived\b|\bcodex unarchive\b/i.test(cause.errorMessage)
+                CODEX_APP_SERVER_REQUEST_ERROR_PATTERN.test(cause.errorMessage)
                   ? client.raw
                       .request("thread/unarchive", { threadId })
                       .pipe(Effect.andThen(resume))
@@ -8023,7 +8029,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                   fork.pipe(
                     Effect.catchTags({
                       CodexAppServerRequestError: (cause) =>
-                        /\bsession \S+ is archived\b|\bcodex unarchive\b/i.test(cause.errorMessage)
+                        CODEX_APP_SERVER_REQUEST_ERROR_PATTERN.test(cause.errorMessage)
                           ? client.raw
                               .request("thread/unarchive", { threadId })
                               .pipe(Effect.andThen(fork))

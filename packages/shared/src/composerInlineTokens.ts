@@ -1,5 +1,7 @@
 import { markdownMathRanges } from "./markdownMath.ts";
 
+const LABEL_PATTERN = /\\(.)/g;
+
 export type ComposerInlineToken =
   | {
       readonly type: "mention";
@@ -44,7 +46,7 @@ function collectMentionTokens(text: string): ComposerInlineToken[] {
   for (const match of text.matchAll(FILE_LINK_TOKEN_REGEX)) {
     const fullMatch = match[0];
     const prefix = match[1] ?? "";
-    const label = (match[2] ?? "").replace(/\\(.)/g, "$1");
+    const label = (match[2] ?? "").replace(LABEL_PATTERN, "$1");
     const encodedPath = match[3] ?? "";
     let path = encodedPath;
     try {
@@ -71,7 +73,8 @@ function collectMentionTokens(text: string): ComposerInlineToken[] {
     const fullMatch = match[0];
     const prefix = match[1] ?? "";
     const quotedPath = match[2];
-    const path = quotedPath !== undefined ? quotedPath.replace(/\\(.)/g, "$1") : (match[3] ?? "");
+    const path =
+      quotedPath !== undefined ? quotedPath.replace(LABEL_PATTERN, "$1") : (match[3] ?? "");
     if (
       !path ||
       (quotedPath === undefined &&

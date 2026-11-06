@@ -183,8 +183,8 @@ const APP_SCHEME = /^houston(?:-[a-z]+)?:$/;
 const THREAD_PATH = /^\/([^/]+)\/([^/]+)\/?$/;
 
 export function promptLinkAppPath(value: string, hostedAppUrl?: string): string | null {
-  if (!URL.canParse(value)) return null;
-  const url = new URL(value);
+  const url = URL.parse(value);
+  if (!url) return null;
   if (APP_SCHEME.test(url.protocol)) {
     if (url.host === "new" && (url.pathname === "" || url.pathname === "/")) {
       return `/new${url.search}`;
@@ -193,7 +193,7 @@ export function promptLinkAppPath(value: string, hostedAppUrl?: string): string 
     return thread ? `/${thread[1]}/${thread[2]}${url.search}` : null;
   }
   if (hostedAppUrl === undefined) return null;
-  if (!URL.canParse(hostedAppUrl) || url.origin !== new URL(hostedAppUrl).origin) return null;
+  if (url.origin !== URL.parse(hostedAppUrl)?.origin) return null;
   if (url.pathname === "/new") return `/new${url.search}`;
   const thread = url.searchParams.has("prompt") ? THREAD_PATH.exec(url.pathname) : null;
   return thread ? `/${thread[1]}/${thread[2]}${url.search}` : null;

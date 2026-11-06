@@ -29,6 +29,17 @@ import {
   type T3ToolSummaryCall,
 } from "@houston-app/client-runtime/t3ToolSummary";
 
+const NORMALIZE_COMPACT_TOOL_LABEL_PATTERN = /\s+(?:complete|completed)\s*$/i;
+const WORK_LOG_ENTRY_IS_LOCAL_CODE_SEARCH_PATTERN = /\bgrep\b/i;
+const LINE_BREAK_CHAR = /[\r\n]/;
+const HEADING_PATTERN = /^\s*\*\*([^*\r\n]+)\*\*[ \t]*\r?(?:\n|$)/;
+const TEXT_PATTERN = /!?\[([^\]]*)\]\([^)]*\)/g;
+const TEXT_PATTERN_2 = /^[ \t]*(?:#{1,6}|[-*+]|\d+\.)[ \t]+/gm;
+const TEXT_PATTERN_3 = /`+|\*\*|~~/g;
+const TEXT_PATTERN_4 = /(^|[^\w*])[*_]([^*_\n]+)[*_](?![\w*])/g;
+const WHITESPACE_RUN = /\s+/g;
+const END_PATTERN = /[.?!]["'”’)]?(?=\s)/;
+
 export type WorkLogToolLifecycleStatus = RuntimeItemStatus | "stopped" | "idle";
 
 export function toolItemForDisplay(item: OrchestrationV2TurnItem): OrchestrationV2TurnItem {
@@ -128,7 +139,7 @@ export type ToolGroupSummaryKind =
   | "mixed";
 
 export function normalizeCompactToolLabel(value: string): string {
-  return value.replace(/\s+(?:complete|completed)\s*$/i, "").trim();
+  return value.replace(NORMALIZE_COMPACT_TOOL_LABEL_PATTERN, "").trim();
 }
 
 function workEntryToolName(
@@ -322,7 +333,9 @@ function workLogEntryIsLocalCodeSearch(entry: WorkLogPresentationEntry): boolean
   return (
     entry.itemType === "file_search" ||
     (entry.itemType === "web_search" &&
-      /\bgrep\b/i.test(normalizeCompactToolLabel(entry.toolTitle ?? entry.label)))
+      WORK_LOG_ENTRY_IS_LOCAL_CODE_SEARCH_PATTERN.test(
+        normalizeCompactToolLabel(entry.toolTitle ?? entry.label),
+      ))
   );
 }
 
@@ -382,7 +395,7 @@ export function workEntryViewedImagePath(entry: WorkLogPresentationEntry): strin
   const viewedImagePath = entry.viewedImagePath?.trim();
   if (
     viewedImagePath !== undefined &&
-    !/[\r\n]/.test(viewedImagePath) &&
+    !LINE_BREAK_CHAR.test(viewedImagePath) &&
     isWorkspaceImagePreviewPath(viewedImagePath)
   ) {
     return viewedImagePath;
@@ -390,7 +403,7 @@ export function workEntryViewedImagePath(entry: WorkLogPresentationEntry): strin
   const detail = entry.detail?.trim();
   return toolGroupAction(entry) === "read" &&
     detail !== undefined &&
-    !/[\r\n]/.test(detail) &&
+    !LINE_BREAK_CHAR.test(detail) &&
     isWorkspaceImagePreviewPath(detail)
     ? detail
     : null;
@@ -654,15 +667,15 @@ export function toolGroupSummaryKind(
 }
 
 export function liveThoughtLine(markdown: string): string {
-  const heading = /^\s*\*\*([^*\r\n]+)\*\*[ \t]*\r?(?:\n|$)/.exec(markdown)?.[1];
+  const heading = HEADING_PATTERN.exec(markdown)?.[1];
   const text = (heading ?? markdown)
-    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/^[ \t]*(?:#{1,6}|[-*+]|\d+\.)[ \t]+/gm, "")
-    .replace(/`+|\*\*|~~/g, "")
-    .replace(/(^|[^\w*])[*_]([^*_\n]+)[*_](?![\w*])/g, "$1$2")
-    .replace(/\s+/g, " ")
+    .replace(TEXT_PATTERN, "$1")
+    .replace(TEXT_PATTERN_2, "")
+    .replace(TEXT_PATTERN_3, "")
+    .replace(TEXT_PATTERN_4, "$1$2")
+    .replace(WHITESPACE_RUN, " ")
     .trim();
   if (heading !== undefined) return text;
-  const end = /[.?!]["'”’)]?(?=\s)/.exec(text);
+  const end = END_PATTERN.exec(text);
   return end ? text.slice(0, end.index + end[0].length) : text;
 }

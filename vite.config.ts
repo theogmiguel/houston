@@ -347,7 +347,6 @@ export default defineConfig({
           "apps/server/src/houston/slack/**",
           "apps/server/src/houston/taskSources/**",
           "apps/server/src/houston/tasks/**",
-          "apps/server/src/htmlRender/**",
           "apps/server/src/mcp/**",
           "apps/server/src/observability/**",
           "apps/server/src/orchestration-v2/**",
@@ -401,6 +400,15 @@ export default defineConfig({
       {
         files: ["apps/**/src/**", "packages/**/src/**"],
         rules: { "houston/no-dom-test-environment": "error" },
+      },
+      {
+        // The host is outside this rule; existing sites are counted in scripts/lint-baseline.json.
+        files: ["apps/server/src/**", "apps/web/src/**", "packages/*/src/**"],
+        excludeFiles: [
+          "**/*.{test,spec,testkit,fixture}.{ts,tsx}",
+          "**/{test,tests,testkit,testing,fixtures}/**",
+        ],
+        rules: { "houston/no-function-scoped-regex": "error" },
       },
       {
         files: ["packages/client-runtime/src/state/**", "apps/{web,mobile,desktop}/src/**"],
