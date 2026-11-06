@@ -31,6 +31,12 @@ import { continueRestartedRun } from "./RestartContinuation.ts";
 import { userFacingDispatchErrorMessage } from "./UserFacingErrors.ts";
 import { MessageDeliveryWriter } from "../houston/messageDelivery.ts";
 
+const IS_NON_RETRYABLE_PROVIDER_TURN_CONTROL_FAILURE_PATTERN = /is not active/i;
+const IS_NON_RETRYABLE_PROVIDER_TURN_CONTROL_FAILURE_PATTERN_2 =
+  /hard teardown is already in progress/i;
+const IS_NON_RETRYABLE_PROVIDER_TURN_CONTROL_FAILURE_PATTERN_3 = /treating as already interrupted/i;
+const IS_NON_RETRYABLE_PROVIDER_TURN_CONTROL_FAILURE_PATTERN_4 = /treating as already stopped/i;
+
 export class OrchestrationEffectExecutionError extends Schema.TaggedError<OrchestrationEffectExecutionError>()(
   "OrchestrationEffectExecutionError",
   {
@@ -51,10 +57,10 @@ function isNonRetryableProviderTurnControlFailure(effectType: string, errorText:
     return false;
   }
   return (
-    /is not active/i.test(errorText) ||
-    /hard teardown is already in progress/i.test(errorText) ||
-    /treating as already interrupted/i.test(errorText) ||
-    /treating as already stopped/i.test(errorText)
+    IS_NON_RETRYABLE_PROVIDER_TURN_CONTROL_FAILURE_PATTERN.test(errorText) ||
+    IS_NON_RETRYABLE_PROVIDER_TURN_CONTROL_FAILURE_PATTERN_2.test(errorText) ||
+    IS_NON_RETRYABLE_PROVIDER_TURN_CONTROL_FAILURE_PATTERN_3.test(errorText) ||
+    IS_NON_RETRYABLE_PROVIDER_TURN_CONTROL_FAILURE_PATTERN_4.test(errorText)
   );
 }
 

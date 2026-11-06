@@ -7,6 +7,12 @@ import { unified } from "unified";
 
 import type { MessagesTimelineRow } from "./MessagesTimeline.logic";
 
+const MARKDOWN_NODE_TEXT_PATTERN = /<!--[\s\S]*?(?:-->|$)/g;
+const MARKDOWN_NODE_TEXT_PATTERN_2 = /<\/?([a-z][\w-]*)(?:[^"'<>]|"[^"]*"|'[^']*')*>/gi;
+const MARKDOWN_NODE_TEXT_PATTERN_3 =
+  /^(?:address|article|aside|blockquote|br|dd|details|div|dl|dt|figcaption|figure|footer|h[1-6]|header|hr|li|main|nav|ol|p|pre|section|summary|table|tbody|td|th|thead|tr|ul)$/i;
+const WHITESPACE_RUN = /\s+/g;
+
 export interface TimelineMinimapItem {
   readonly id: string;
   readonly rowIndex: number;
@@ -70,13 +76,9 @@ const INLINE_PARENT_TYPES = new Set<Nodes["type"]>([
 function markdownNodeText(node: Nodes): string {
   if (node.type === "html") {
     return node.value
-      .replace(/<!--[\s\S]*?(?:-->|$)/g, "")
-      .replace(/<\/?([a-z][\w-]*)(?:[^"'<>]|"[^"]*"|'[^']*')*>/gi, (_, tag: string) =>
-        /^(?:address|article|aside|blockquote|br|dd|details|div|dl|dt|figcaption|figure|footer|h[1-6]|header|hr|li|main|nav|ol|p|pre|section|summary|table|tbody|td|th|thead|tr|ul)$/i.test(
-          tag,
-        )
-          ? " "
-          : "",
+      .replace(MARKDOWN_NODE_TEXT_PATTERN, "")
+      .replace(MARKDOWN_NODE_TEXT_PATTERN_2, (_, tag: string) =>
+        MARKDOWN_NODE_TEXT_PATTERN_3.test(tag) ? " " : "",
       );
   }
   if (node.type === "break") return " ";
@@ -90,7 +92,7 @@ function markdownNodeText(node: Nodes): string {
 }
 
 function compactMinimapPreview(text: string | null | undefined) {
-  const compact = text?.replace(/\s+/g, " ").trim() ?? "";
+  const compact = text?.replace(WHITESPACE_RUN, " ").trim() ?? "";
   return compact.length > 0 ? compact : null;
 }
 

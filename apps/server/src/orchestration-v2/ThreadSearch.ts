@@ -36,6 +36,10 @@ import { threadSearchPullRequests } from "@houston-app/shared/threadPullRequests
 import { indexedMessageCondition, nonPlaceholderMessageCondition } from "./messageSearchIndex.ts";
 import { loadOlderSettledThreadsPage } from "./ShellStream.ts";
 
+const WHITESPACE = /\s/;
+const SHOWN_PATTERN = /\*\*|`+/g;
+const WHITESPACE_RUN = /\s+/g;
+
 // When the user last wrote in the thread aliased `threads`, as the clients
 // rank recency; agent notices in the user role do not count.
 const latestUserMessageAt = (sql: SqlClient.SqlClient) => sql`(
@@ -136,7 +140,7 @@ const isLowSurrogate = (code: number) => code >= 0xdc00 && code <= 0xdfff;
  */
 export function buildSearchSnippet(text: string, matchStart: number): string {
   let start = Math.max(0, matchStart - SNIPPET_LEAD);
-  const wordStart = text.slice(start, matchStart).search(/\s/);
+  const wordStart = text.slice(start, matchStart).search(WHITESPACE);
   if (start > 0 && wordStart !== -1) start += wordStart + 1;
   // Cut between characters, not inside an emoji's surrogate pair.
   if (isLowSurrogate(text.charCodeAt(start))) start++;
@@ -145,8 +149,8 @@ export function buildSearchSnippet(text: string, matchStart: number): string {
   // Emphasis and code marks do not show in a thread either.
   const shown = text
     .slice(start, rawEnd)
-    .replace(/\*\*|`+/g, "")
-    .replace(/\s+/g, " ")
+    .replace(SHOWN_PATTERN, "")
+    .replace(WHITESPACE_RUN, " ")
     .trim();
   let end = Math.min(shown.length, SNIPPET_LENGTH - 2);
   if (isLowSurrogate(shown.charCodeAt(end))) end--;

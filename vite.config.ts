@@ -403,6 +403,15 @@ export default defineConfig({
         rules: { "houston/no-dom-test-environment": "error" },
       },
       {
+        // The host is outside this rule; existing sites are counted in scripts/lint-baseline.json.
+        files: ["apps/server/src/**", "apps/web/src/**", "packages/*/src/**"],
+        excludeFiles: [
+          "**/*.{test,spec,testkit,fixture}.{ts,tsx}",
+          "**/{test,tests,testkit,testing,fixtures}/**",
+        ],
+        rules: { "houston/no-function-scoped-regex": "error" },
+      },
+      {
         files: ["packages/client-runtime/src/state/**", "apps/{web,mobile,desktop}/src/**"],
         rules: { "houston/no-rpc-permission-bypass": ["error", { allowRawClientAccess: false }] },
       },
