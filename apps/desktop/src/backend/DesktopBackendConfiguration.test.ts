@@ -106,4 +106,20 @@ describe("resolvePrimaryStartConfig", () => {
       assert.isUndefined(config.env.PATH);
     }),
   );
+
+  // A server told the shell environment is prepared skips its own PATH probe, so the
+  // channel that delivers the desktop's discovered environment must come with the claim.
+  it.effect("opens the channel that delivers the prepared shell environment", () =>
+    Effect.gen(function* () {
+      const config = yield* resolve(
+        environmentFor("linux", "/app"),
+        { PATH: "/usr/bin" },
+        probeFor([]),
+      );
+
+      assert.isTrue(config.bootstrap.shellEnvironmentPrepared);
+      assert.strictEqual(config.bootstrap.desktopTelemetryFd, 4);
+      assert.strictEqual(config.bootstrap.desktopTelemetryControlFd, 5);
+    }),
+  );
 });

@@ -507,6 +507,9 @@ export const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration
           : input.shellEnvironmentPrepared,
       tailscaleServeEnabled: backendExposure.tailscaleServeEnabled,
       tailscaleServePort: backendExposure.tailscaleServePort,
+      // Carries the desktop's discovered shell environment, which a prepared server waits for.
+      desktopTelemetryFd: 4,
+      desktopTelemetryControlFd: 5,
       desktopBrowserFd: 6,
       desktopBrowserControlFd: 7,
       ...Option.match(input.resourceMonitorPath, {
