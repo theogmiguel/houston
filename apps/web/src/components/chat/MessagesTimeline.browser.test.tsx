@@ -208,6 +208,13 @@ function renderTimeline(entries: ReadonlyArray<Entry>, props: Partial<TimelinePr
   );
 }
 
+/** The 1440x900 capture viewport for one test, restoring the previous size on dispose. */
+async function desktopViewport(): Promise<AsyncDisposable> {
+  const previous = { width: window.innerWidth, height: window.innerHeight };
+  await page.viewport(1440, 900);
+  return { [Symbol.asyncDispose]: () => page.viewport(previous.width, previous.height) };
+}
+
 async function click(element: HTMLElement) {
   await act(async () => element.click());
 }
@@ -335,6 +342,44 @@ describe("MessagesTimeline work rows", () => {
       }
     },
   );
+});
+
+describe("MessagesTimeline top fade", () => {
+  it("fades rows under the header only while the list is scrolled", async () => {
+    await using _viewport = await desktopViewport();
+    const props = baseProps();
+    const container = document.createElement("div");
+    container.style.cssText = "height: 600px; width: 900px; display: flex; flex-direction: column;";
+    await using _screen = await render(
+      <MessagesTimeline
+        {...props}
+        topFadeEnabled
+        timelineEntries={Array.from({ length: 30 }, (_, index) =>
+          message(`Context ${index}\n\n`.repeat(8), { role: "assistant" }, `fade-${index}`),
+        )}
+      />,
+      { container },
+    );
+    const viewport = props.listRef.current!.getScrollableNode()!;
+    await act(() => {
+      viewport.scrollTop = 0;
+      viewport.dispatchEvent(new Event("scroll"));
+    });
+    await vi.waitFor(() => expect(getComputedStyle(viewport).maskImage).toBe("none"));
+
+    await act(() => {
+      viewport.scrollTop = 400;
+      viewport.dispatchEvent(new Event("scroll"));
+    });
+    await vi.waitFor(() => expect(getComputedStyle(viewport).maskImage).not.toBe("none"));
+    expect(getComputedStyle(viewport).transitionProperty).not.toContain("mask");
+
+    await act(() => {
+      viewport.scrollTop = 0;
+      viewport.dispatchEvent(new Event("scroll"));
+    });
+    await vi.waitFor(() => expect(getComputedStyle(viewport).maskImage).toBe("none"));
+  });
 });
 
 describe("MessagesTimeline messages", () => {
@@ -1431,6 +1476,18 @@ function ChangedFilesTimeline() {
 }
 
 describe("ChangedFilesCard", () => {
+  it("scrolls its header with the card instead of holding a copy under the chat header", async () => {
+    await using screen = await render(<ChangedFilesTimeline />);
+    const header = screen.container.querySelector<HTMLElement>("[data-changed-files-header]")!;
+    expect(getComputedStyle(header).position).toBe("static");
+  });
+
+  it("rounds its rows with the control radius", async () => {
+    await using screen = await render(<ChangedFilesTimeline />);
+    const row = screen.container.querySelector<HTMLElement>('[data-changed-file-row="src"] button')!;
+    expect(getComputedStyle(row).borderTopLeftRadius).toBe("6px");
+  });
+
   it.each(["folder", "all folders"])(
     "measures %s collapse and expansion in the same commit",
     async (toggle) => {

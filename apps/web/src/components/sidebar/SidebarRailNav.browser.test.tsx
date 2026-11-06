@@ -30,6 +30,17 @@ describe("SidebarRailNav", () => {
     expect(text).toContain("Workspaces");
   });
 
+  it("draws every navigation icon at 16px", async () => {
+    await using screen = await render(<SidebarRailNav search={<span>Search</span>} />);
+
+    const icon = screen
+      .getByRole("button", { name: /Pull requests/ })
+      .element()
+      .querySelector("svg")!;
+    expect(icon.getBoundingClientRect().width).toBe(16);
+    expect(icon.getBoundingClientRect().height).toBe(16);
+  });
+
   it("eases its rows on the feedback role", async () => {
     await using screen = await render(<SidebarRailNav search={<span>Search</span>} />);
 

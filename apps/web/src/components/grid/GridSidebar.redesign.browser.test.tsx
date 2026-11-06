@@ -199,7 +199,7 @@ describe("grid sidebar", () => {
     expect(screen.getByRole("button", { name: /^Landing copy$/ }).element()).toBeVisible();
     expect(screen.container.textContent).not.toContain("houston-site");
     const row = screen.container.querySelector("[data-thread-key]") as HTMLElement;
-    expect(row.className).toContain("pl-7.5");
+    expect(getComputedStyle(row).paddingLeft).toBe("8px");
 
     await userEvent.click(screen.getByText("Split drawer state from the thread store").element());
     expect(onOpenThread).toHaveBeenCalledWith("grid-c", "thread-c");

@@ -49,7 +49,7 @@ export const SIDEBAR_PROJECT_ROW_CLS = "group/project relative mt-1 flex items-c
 export const SIDEBAR_PROJECT_LABEL_CLS =
   "flex h-(--h-row) w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg py-0 pr-8 pl-2 text-left text-sm text-secondary-foreground transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
-export const SIDEBAR_PROJECT_ICON_CLS = "size-[15px] shrink-0 text-secondary-label";
+export const SIDEBAR_PROJECT_ICON_CLS = "size-4 shrink-0 text-secondary-label";
 
 export const SIDEBAR_PROJECT_LABEL_TEXT_CLS = "min-w-0 flex-1 truncate";
 
@@ -69,9 +69,10 @@ export const SIDEBAR_HEADER_ACTIONS_CLS =
 
 /**
  * Every thread row, in a grid or directly under its project, starts at the same inset: the
- * project and grid names above it. Nesting shows through the headings, not through the row.
+ * project's folder icon above it. Nesting shows through the headings, not through the row, and
+ * the title keeps the width the indent would take.
  */
-export const SIDEBAR_THREAD_ROW_INDENT_CLS = "pl-7.5";
+export const SIDEBAR_THREAD_ROW_INDENT_CLS = "pl-2";
 
 /** A fixed 12px box in both states; the chevron rotates inside instead of swapping icons. */
 export const SIDEBAR_GRID_CHEVRON_BOX_CLS =

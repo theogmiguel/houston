@@ -19,6 +19,7 @@ import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   AlarmClockOffIcon,
   ChevronRightIcon,
+  CircleIcon,
   ClockIcon,
   CpuIcon,
   EyeOffIcon,
@@ -173,7 +174,13 @@ import {
 } from "../ui/sidebar";
 import { MOTION_FEEDBACK, MOTION_FEEDBACK_OPACITY } from "../ui/motion-recipes";
 import { isThreadRoutePathname } from "../../threadRoutes";
-import { SIDEBAR_THREAD_TAG_CLASS } from "../ui/thread-tag-recipes";
+import {
+  SIDEBAR_THREAD_STATUS_ATTENTION_CLASS,
+  SIDEBAR_THREAD_STATUS_CLASS,
+  SIDEBAR_THREAD_STATUS_LINE_CLASS,
+  SIDEBAR_THREAD_STATUS_QUIET_CLASS,
+  SIDEBAR_THREAD_TAG_CLASS,
+} from "../ui/thread-tag-recipes";
 import {
   SIDEBAR_GRID_ACTION_CLS,
   SIDEBAR_GRID_CHEVRON_BOX_CLS,
@@ -907,7 +914,7 @@ export function GridSidebar() {
         />
       </SidebarHeader>
       <SidebarContent>
-        <div className="flex min-h-full flex-col px-2 pb-6">
+        <div className="flex min-h-full flex-col px-2 pb-10">
           <SidebarProjectsHeader
             options={sidebarOptions}
             onChange={(patch) => void updateClientSettings(sidebarOptionsPatch(patch))}
@@ -1728,7 +1735,7 @@ export function GridGroup({
 }
 
 /** States that ask for the user's eyes keep their colour; the rest rest in neutral ink. */
-function isAttentionState(state: GridThreadState): boolean {
+function isAttentionState(state: GridThreadState): state is "running" | "needs" | "failed" {
   return state === "running" || state === "needs" || state === "failed";
 }
 
@@ -1739,30 +1746,24 @@ function ThreadStateMark({
   state: GridThreadState;
   startedAt: string | null;
 }) {
-  if (state === "idle") return null;
-  const label = gridThreadStateLabel(state);
-  if (!isAttentionState(state)) {
-    return (
-      <span
-        data-thread-status=""
-        className="inline-flex shrink-0 items-center text-secondary-label"
-      >
-        <ThreadStateGlyph state={state} className="size-3" />
-        <span className="sr-only">{label}</span>
-      </span>
-    );
-  }
+  const label = gridThreadStateLabel(state) ?? "Idle";
   const elapsed =
     state === "running" && startedAt !== null ? <RunningElapsed startedAt={startedAt} /> : null;
   return (
     <span
       data-thread-status=""
       className={cn(
-        "inline-flex shrink-0 items-center gap-1 text-xs leading-3.5 font-medium whitespace-nowrap tabular-nums",
-        threadStateTextClass(state),
+        SIDEBAR_THREAD_STATUS_CLASS,
+        isAttentionState(state)
+          ? [SIDEBAR_THREAD_STATUS_ATTENTION_CLASS, threadStateTextClass(state)]
+          : SIDEBAR_THREAD_STATUS_QUIET_CLASS,
       )}
     >
-      <ThreadStateGlyph state={state} className="size-3" />
+      {state === "idle" ? (
+        <CircleIcon aria-hidden className="size-3.5 shrink-0" />
+      ) : (
+        <ThreadStateGlyph state={state} className="size-3.5" />
+      )}
       <span>{label}</span>
       {elapsed}
     </span>
@@ -2150,57 +2151,64 @@ export function ThreadCard({
         </div>
         <div
           data-thread-meta=""
-          className="flex min-w-0 items-center gap-2 text-xs leading-3.5 text-secondary-label"
+          className="mt-0.5 flex min-w-0 items-center gap-2 text-xs leading-3.5 text-secondary-label"
         >
           {showBranch ? (
             <>
-              <GitBranchIcon aria-hidden className="size-3 shrink-0" />
+              <GitBranchIcon aria-hidden className="size-3.5 shrink-0" />
               <span className="min-w-0 flex-1 truncate">{branchName ?? "no branch"}</span>
             </>
           ) : (
             <span className="flex-1" />
           )}
-          {(thread.tags ?? []).map((tag) => (
-            <span key={tag} data-thread-tag="" className={SIDEBAR_THREAD_TAG_CLASS}>
-              {tag}
-            </span>
-          ))}
-          {showSubagents && runningSubagents > 0 ? (
-            <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap">
-              <UsersIcon aria-hidden className="size-3 shrink-0" />
-              {runningSubagents === 1
-                ? "1 subagent running"
-                : `${runningSubagents} subagents running`}
-            </span>
-          ) : null}
           {showPullRequest && pullRequestNumber !== null ? (
             <span className="inline-flex shrink-0 items-center gap-0.75 tabular-nums">
-              <PullRequestGlyph.pullRequest aria-hidden className="size-3 shrink-0" />
+              <PullRequestGlyph.pullRequest aria-hidden className="size-3.5 shrink-0" />
               <span>#{pullRequestNumber}</span>
               {pullRequestChecksState === null ? null : (
                 <PullRequestChecksGlyph state={pullRequestChecksState} />
               )}
             </span>
           ) : null}
+          <span
+            data-thread-provider-mark=""
+            className="inline-grid size-3.5 shrink-0 place-items-center"
+          >
+            {providerEntry !== undefined ? (
+              <SidebarProviderStack
+                thread={thread}
+                providerEntryByInstanceId={providerEntries}
+                quiet
+              />
+            ) : null}
+          </span>
+        </div>
+        <div
+          data-thread-status-line=""
+          className={SIDEBAR_THREAD_STATUS_LINE_CLASS}
+        >
           <ThreadStateMark state={state} startedAt={startedAt} />
-          {/* One trailing indicator per row: the provider mark rests in the slot only while no state shows. */}
-          {state === "idle" ? (
+          {showSubagents && runningSubagents > 0 ? (
             <span
-              data-thread-provider-mark=""
-              className={cn(
-                "inline-grid size-3.5 shrink-0 place-items-center",
-                ROW_STATUS_RECEDE,
-                MOTION_FEEDBACK_OPACITY,
-                actionsVisible && ROW_STATUS_HIDDEN,
-              )}
+              role="img"
+              aria-label={
+                runningSubagents === 1
+                  ? "1 subagent running"
+                  : `${runningSubagents} subagents running`
+              }
+              className="inline-flex shrink-0 items-center gap-1 tabular-nums"
             >
-              {providerEntry !== undefined ? (
-                <SidebarProviderStack
-                  thread={thread}
-                  providerEntryByInstanceId={providerEntries}
-                  quiet
-                />
-              ) : null}
+              <UsersIcon aria-hidden className="size-3.5 shrink-0" />
+              <span aria-hidden>{runningSubagents}</span>
+            </span>
+          ) : null}
+          {(thread.tags ?? []).length > 0 ? (
+            <span className="flex min-w-0 items-center gap-1 overflow-hidden">
+              {(thread.tags ?? []).map((tag) => (
+                <span key={tag} data-thread-tag="" className={SIDEBAR_THREAD_TAG_CLASS}>
+                  {tag}
+                </span>
+              ))}
             </span>
           ) : null}
         </div>

@@ -19,7 +19,7 @@
 10 apps/web/src/components/chat/AssistantCitationCommentEditor.tsx
 2 apps/web/src/components/chat/AssistantModelAttributionLine.tsx
 7 apps/web/src/components/chat/ChangedFilesBar.tsx
-41 apps/web/src/components/chat/ChangedFilesTree.tsx
+39 apps/web/src/components/chat/ChangedFilesTree.tsx
 2 apps/web/src/components/chat/ChatBannerLane.tsx
 3 apps/web/src/components/chat/ChatCanvas.tsx
 21 apps/web/src/components/chat/ChatComposer.tsx
@@ -111,7 +111,7 @@
 2 apps/web/src/components/chat/ThreadStatusLine.tsx
 16 apps/web/src/components/chat/TimelineAssistantRows.tsx
 27 apps/web/src/components/chat/TimelineFileChangeCard.tsx
-46 apps/web/src/components/chat/TimelineMinimap.tsx
+43 apps/web/src/components/chat/TimelineMinimap.tsx
 17 apps/web/src/components/chat/TimelineOverlays.tsx
 24 apps/web/src/components/chat/TimelinePendingApprovalRow.tsx
 10 apps/web/src/components/chat/TimelinePlanCard.tsx
@@ -206,9 +206,9 @@
 6 apps/web/src/components/grid/GridHost.tsx
 2 apps/web/src/components/grid/GridLayoutMenu.tsx
 5 apps/web/src/components/grid/GridShelves.tsx
-94 apps/web/src/components/grid/GridSidebar.tsx
+88 apps/web/src/components/grid/GridSidebar.tsx
 4 apps/web/src/components/grid/GridThreadBranch.tsx
-13 apps/web/src/components/grid/GridThreadCell.tsx
+12 apps/web/src/components/grid/GridThreadCell.tsx
 13 apps/web/src/components/HostedEmptyState.tsx
 2 apps/web/src/components/HoustonWordmark.tsx
 4 apps/web/src/components/Icons.tsx
@@ -222,7 +222,7 @@
 2 apps/web/src/components/PersistentThreadTerminals.tsx
 10 apps/web/src/components/preview/AgentBrowserCursor.tsx
 16 apps/web/src/components/preview/BrowserMockup.tsx
-32 apps/web/src/components/preview/PreviewChromeRow.tsx
+30 apps/web/src/components/preview/PreviewChromeRow.tsx
 10 apps/web/src/components/preview/PreviewEmptyState.tsx
 1 apps/web/src/components/preview/PreviewFaviconIcon.tsx
 4 apps/web/src/components/preview/PreviewMoreMenu.tsx

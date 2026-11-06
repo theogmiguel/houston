@@ -42,6 +42,12 @@ describe("DraftHeroProjectHeading", () => {
     expect(getComputedStyle(name).fontSize).toBe(getComputedStyle(heading).fontSize);
   });
 
+  it("sets the heading in medium weight", async () => {
+    await using screen = await render(hero("atlas-api"));
+
+    expect(getComputedStyle(screen.getByRole("heading").element()).fontWeight).toBe("500");
+  });
+
   it("wraps a very long name below the sentence instead of overflowing", async () => {
     await using _viewport = await narrowViewport();
     await using screen = await render(

@@ -231,7 +231,7 @@ export function PreviewChromeRow({
 
         {leadingActions}
 
-        <div className="relative mx-1 flex h-7 min-w-0 flex-1 items-center rounded-md bg-[var(--field)] px-2.5 font-mono text-xs">
+        <div className="relative mx-1 flex h-7 min-w-0 flex-1 items-center rounded-(--r-ctl) bg-[var(--field)] px-2.5 font-mono text-xs">
           {showParts ? (
             <span
               aria-hidden
@@ -275,7 +275,7 @@ export function PreviewChromeRow({
             disabled={inputDisabled}
             data-preview-url-input
             className={cn(
-              "absolute inset-0 h-full w-full rounded-md bg-transparent px-2.5 font-mono text-xs text-[var(--t1)] outline-none placeholder:text-[var(--houston)]",
+              "absolute inset-0 h-full w-full rounded-(--r-ctl) bg-transparent px-2.5 font-mono text-xs text-[var(--t1)] outline-none placeholder:text-[var(--houston)]",
               showParts && "text-transparent caret-transparent selection:bg-transparent",
             )}
           />

@@ -183,7 +183,8 @@ html[data-theme-reveal] *::after {
   --workspace-titlebar-control-size: 1.75rem;
   --workspace-titlebar-control-gap: 0.75rem;
   --workspace-titlebar-scroll-fade-height: 1.5rem;
-  /* The composer board draws its lane at 760px; the timeline overrides to 720px. */
+  /* One lane width for the composer and the timeline, so the changed-files card, the messages
+     and the composer share their left and right edges. */
   --chat-content-max-width: 47.5rem;
   --thread-details-panel-width: 17.5rem;
   /* The prompt on phones: iOS zooms into any input under 16px on focus. */
@@ -2377,15 +2378,13 @@ code {
 }
 
 /* Chat width setting. Comfortable keeps the default --chat-content-max-width, which sizes the
-   composer and ChatCanvas's width probe, and the timeline's own narrower lane. */
+   composer, the timeline lane and ChatCanvas's width probe. */
 :root[data-chat-width="wide"] {
   --chat-content-max-width: 72rem;
-  --chat-timeline-max-width: 72rem;
 }
 
 :root[data-chat-width="full"] {
   --chat-content-max-width: 100%;
-  --chat-timeline-max-width: 100%;
 }
 
 :root[data-diff-color-scheme="blue-orange"] {
@@ -2716,15 +2715,13 @@ code {
   outline-offset: -2px;
 }
 
-/* The Timeline board draws the message column at 720px, narrower than the
-   composer lane, so the timeline scopes the shared lane width. */
 .messages-timeline-scroll {
-  --chat-content-max-width: var(--chat-timeline-max-width, 45rem);
-  /* The top fade is as tall as the 44px header so rows dissolve under it instead of being cut. */
-  --workspace-titlebar-scroll-fade-height: 2.75rem;
+  /* A short fade, shown only while the list is scrolled, so a row passing under the header
+     dissolves instead of being cut. The list's header spacer is as tall, so rows rest below it. */
+  --workspace-titlebar-scroll-fade-height: 2rem;
 }
 
-/* The timeline prose measure and rhythm: 14/22 in a 720px lane (leading 1.57, the range the
+/* The timeline prose measure and rhythm: 14/22 in the shared lane (leading 1.57, the range the
    reference chat apps use), with one block gap. */
 .messages-timeline-scroll .chat-markdown {
   font-size: var(--text-prose);

@@ -943,7 +943,10 @@ const ConversationTimeline = memo(function ConversationTimeline({
     }
   };
 
+  // Rows pass under the header only once the list is scrolled; at the top there is nothing to dissolve.
+  const [scrolledFromTop, setScrolledFromTop] = useState(false);
   const handleScroll = () => {
+    setScrolledFromTop((listRef.current?.getScrollableNode()?.scrollTop ?? 0) > 0);
     if (restoringThreadPosition || listRef.current?.getState?.().data !== rows) return;
     const isAtEnd = rememberPosition(liveFollowEnabled && !anchoredEndSpace);
     if (isAtEnd !== undefined && !citationPositioning) {
@@ -1370,7 +1373,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
               onItemSizeChanged={handleItemSizeChanged}
               className={cn(
                 "messages-timeline-scroll scrollbar-gutter-both h-full min-h-0 overflow-x-hidden overscroll-y-contain [overflow-anchor:none]",
-                topFadeEnabled && "topbar-scroll-fade",
+                topFadeEnabled && scrolledFromTop && "topbar-scroll-fade",
               )}
               ListHeaderComponent={listHeader}
               ListFooterComponent={timelineListFooter}

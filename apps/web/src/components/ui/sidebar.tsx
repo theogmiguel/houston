@@ -661,11 +661,19 @@ function SidebarHeader({ className, ...props }: React.ComponentProps<"div">) {
   );
 }
 
-function SidebarFooter({ className, ...props }: React.ComponentProps<"div">) {
+function SidebarFooter({
+  className,
+  separated = false,
+  ...props
+}: React.ComponentProps<"div"> & {
+  /** Draws a 1px top edge, so a scrolling list above never runs into the footer. */
+  separated?: boolean;
+}) {
   return (
     <div
       className={cn(
         "flex flex-col gap-2 px-[var(--sidebar-content-inset)] pt-1 pb-[var(--sidebar-content-inset)]",
+        separated && "border-t border-sidebar-border pt-1.5",
         className,
       )}
       data-sidebar="footer"
