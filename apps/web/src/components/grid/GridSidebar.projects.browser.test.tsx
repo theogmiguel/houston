@@ -36,6 +36,12 @@ vi.mock(import("@effect/atom-react"), async (original) => ({
   useAtomValue: (() => []) as never,
 }));
 
+vi.mock(import("../../state/environments"), async (original) => ({
+  ...(await original()),
+  usePrimaryEnvironmentId: (() => "env-1") as never,
+  useEnvironmentMachines: (() => new Map()) as never,
+}));
+
 vi.mock(import("../../state/session"), async (original) => ({
   ...(await original()),
   readEnvironmentScope: () => true,
@@ -237,13 +243,13 @@ describe("project sections", () => {
     const sections = projectSections();
     await using first = await render(<CollapsibleSections sections={sections} />);
     await userEvent.click(first.getByRole("button", { name: /^Houston$/ }).element());
-    const label = first.getByRole("button", { name: /^Houston 2 grids$/ }).element();
+    const label = first.getByRole("button", { name: /^Houston 2$/ }).element();
     expect(label.getAttribute("aria-expanded")).toBe("false");
     expect(first.container.textContent).not.toContain("Grid 1");
     await first[Symbol.asyncDispose]();
 
     await using second = await render(<CollapsibleSections sections={sections} />);
-    const restored = second.getByRole("button", { name: /^Houston 2 grids$/ }).element();
+    const restored = second.getByRole("button", { name: /^Houston 2$/ }).element();
     expect(restored.getAttribute("aria-expanded")).toBe("false");
     expect(second.container.textContent).not.toContain("Grid 1");
   });
@@ -295,6 +301,87 @@ describe("project sections", () => {
     await userEvent.keyboard("{Shift>}{Tab}{/Shift}");
     expect(document.activeElement).toBe(label);
     await expect.poll(opacity).toBe(1);
+  });
+
+  it("expands a collapsed project while a search is active so its matches show", async () => {
+    resetTestState();
+    await using screen = await render(
+      <TooltipProvider delay={0}>
+        <SidebarProjectSection
+          {...sectionProps(projectSections()[0]!, { collapsed: true, query: "thread-a" })}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByRole("button", { name: /^Houston$/ }).element()).toBeVisible();
+    expect(screen.container.textContent).toContain("Grid 1");
+    expect(
+      screen
+        .getByRole("button", { name: /^Houston$/ })
+        .element()
+        .getAttribute("aria-expanded"),
+    ).toBe("true");
+  });
+
+  it("keeps a collapsed project collapsed without a search", async () => {
+    resetTestState();
+    await using screen = await render(
+      <TooltipProvider delay={0}>
+        <SidebarProjectSection {...sectionProps(projectSections()[0]!, { collapsed: true })} />
+      </TooltipProvider>,
+    );
+
+    expect(screen.container.textContent).not.toContain("Grid 1");
+  });
+
+  it("opens the project menu from an actions button beside New grid", async () => {
+    resetTestState();
+    const onOpenProjectMenu = vi.fn();
+    await using screen = await render(
+      <TooltipProvider delay={0}>
+        <SidebarProjectSection {...sectionProps(projectSections()[1]!, { onOpenProjectMenu })} />
+      </TooltipProvider>,
+    );
+
+    const more = screen.getByRole("button", { name: "Project actions for notes" }).element();
+    const rect = more.getBoundingClientRect();
+    await userEvent.click(more);
+
+    expect(more.getAttribute("aria-haspopup")).toBe("menu");
+    expect(onOpenProjectMenu).toHaveBeenCalledExactlyOnceWith({ x: rect.left, y: rect.bottom + 4 });
+  });
+
+  it("keeps a long project name clear of both project buttons", async () => {
+    resetTestState();
+    const container = document.createElement("div");
+    container.style.width = "220px";
+    await using screen = await render(
+      <TooltipProvider delay={0}>
+        <SidebarProjectSection
+          {...sectionProps(
+            section({ title: "a project with a very long name that must truncate" }),
+            { onOpenProjectMenu: () => {} },
+          )}
+        />
+      </TooltipProvider>,
+      { container },
+    );
+
+    const label = screen
+      .getByRole("button", { name: /^a project with a very long name/ })
+      .element();
+    const text = label.querySelector("span")!;
+    const add = screen.getByRole("button", { name: /^New grid in / }).element();
+    const more = screen.getByRole("button", { name: /^Project actions for / }).element();
+    const boundary = container.getBoundingClientRect().right + 1;
+
+    expect(text.getBoundingClientRect().right).toBeLessThanOrEqual(
+      Math.min(add.getBoundingClientRect().left, more.getBoundingClientRect().left),
+    );
+    expect(more.getBoundingClientRect().right).toBeLessThanOrEqual(boundary);
+    expect(add.getBoundingClientRect().right).toBeLessThanOrEqual(
+      more.getBoundingClientRect().left,
+    );
   });
 
   it("creates a grid from the project label's action", async () => {
