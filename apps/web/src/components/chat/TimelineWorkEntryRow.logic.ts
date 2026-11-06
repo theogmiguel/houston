@@ -10,6 +10,10 @@ import { workEntryDisplayLabel } from "./MessagesTimeline.logic";
 import { type TimelineWorkEntry, type TimelineRow } from "./timelineRowContext";
 import { type WorkEntryIconName } from "./TimelineToolActivityIcon";
 
+const WHITESPACE_RUN = /\s+/g;
+const STRIP_ACTION_PATTERN =
+  /^(?:Read|Read file|Read \d+ files?|Searched|Editing|Edited|Changed|Ran)\s+/i;
+
 export function toolGroupSummaryIconName(
   kind: Extract<TimelineRow, { kind: "work-toggle" }>["summaryKind"],
 ): WorkEntryIconName {
@@ -199,8 +203,8 @@ export function remarkThoughtPreview(fallback: string) {
     const children: RootContent[] = [];
     const append = (value: string) => {
       const last = children.at(-1);
-      const text = value.replace(/\s+/g, " ");
-      if (last?.type === "text") last.value = (last.value + text).replace(/\s+/g, " ");
+      const text = value.replace(WHITESPACE_RUN, " ");
+      if (last?.type === "text") last.value = (last.value + text).replace(WHITESPACE_RUN, " ");
       else children.push({ type: "text", value: text });
     };
     const visit = (node: Root | RootContent) => {
@@ -278,10 +282,7 @@ export function workEntryToolParts(
   const actionKey = toolGroupAction(entry);
   const action = TOOL_ACTION_LABEL[actionKey] ?? entry.toolTitle?.trim() ?? "Used";
   const label = workEntryDisplayLabel(entry, workspaceRoot);
-  const stripAction = (value: string) =>
-    value
-      .replace(/^(?:Read|Read file|Read \d+ files?|Searched|Editing|Edited|Changed|Ran)\s+/i, "")
-      .trim();
+  const stripAction = (value: string) => value.replace(STRIP_ACTION_PATTERN, "").trim();
 
   let value = "";
   if (actionKey === "command") {

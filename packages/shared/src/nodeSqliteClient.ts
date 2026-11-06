@@ -27,6 +27,9 @@ import type { Borrower, Connection } from "effect/sql/SqlConnection";
 import { SqlError, classifySqliteError } from "effect/sql/SqlError";
 import * as Statement from "effect/sql/Statement";
 
+const ENDS_READ_TRANSACTION_PATTERN = /^\s*ROLLBACK\b|^\s*COMMIT\b/i;
+const BEGIN_STATEMENT = /^\s*BEGIN\b/i;
+
 const ATTR_DB_SYSTEM_NAME = "db.system.name";
 
 export interface SqliteClientConfig {
@@ -291,7 +294,7 @@ const failed = (cause: unknown, message: string, operation: string) =>
   new SqlError({ reason: classifyError(cause, message, operation) });
 
 // Read-transaction cleanup succeeds after worker exit because it can no longer change anything.
-const endsReadTransaction = (sql: string) => /^\s*ROLLBACK\b|^\s*COMMIT\b/i.test(sql);
+const endsReadTransaction = (sql: string) => ENDS_READ_TRANSACTION_PATTERN.test(sql);
 
 // WAL readers run concurrently; one worker serialized every read behind the slowest transaction.
 const READER_POOL_SIZE = 4;
@@ -411,7 +414,7 @@ const makeReader = Effect.fnUntraced(function* (
       },
       executeUnprepared(sql, params, rowTransform) {
         // Read snapshots need deferred BEGIN; readonly connections reject IMMEDIATE and EXCLUSIVE.
-        const statement = /^\s*BEGIN\b/i.test(sql) ? "BEGIN" : sql;
+        const statement = BEGIN_STATEMENT.test(sql) ? "BEGIN" : sql;
         const effect = request({
           sql: statement,
           params: params ?? [],

@@ -1,7 +1,11 @@
 // Credential shapes and paths Houston masks wherever text leaves the server: the merge queue's
 // verification output, Slack messages and pull requests.
 
-const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const REGEX_SPECIAL_CHARS = /[.*+?^${}()|[\]\\]/g;
+const TRAILING_PATH_SEPARATORS = /[\\/]+$/;
+const ESCAPED_PATH_SEPARATOR = /\\\\|\//g;
+
+const escape = (text: string) => text.replace(REGEX_SPECIAL_CHARS, "\\$&");
 
 // A credential-named key, bare or quoted as in JSON, then `=` or `:`.
 const KEY = String.raw`\b((?:[A-Za-z0-9_]*(?:token|secret|password|passwd|api[_-]?key))["']?\s*[=:]\s*`;
@@ -33,9 +37,9 @@ export const cutAbsolutePaths = (text: string) => text.replace(ABSOLUTE_PATH, "$
 
 /** `text` with paths under `root` made relative to it, in either slash form and any case. */
 export const relativeToRoot = (text: string, root: string) => {
-  const trimmed = root.replace(/[\\/]+$/, "");
+  const trimmed = root.replace(TRAILING_PATH_SEPARATORS, "");
   if (trimmed.length === 0) return text;
-  const pattern = escape(trimmed).replace(/\\\\|\//g, "[\\\\/]");
+  const pattern = escape(trimmed).replace(ESCAPED_PATH_SEPARATOR, "[\\\\/]");
   return text.replace(
     new RegExp(`${pattern}(?:([\\\\/])|(?=$|[\\s'"\`)]))`, "gim"),
     (_match, separator: string | undefined) => (separator === undefined ? "." : ""),

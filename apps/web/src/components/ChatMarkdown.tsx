@@ -220,6 +220,14 @@ import {
 } from "./chat/MarkdownCodeBlock.logic";
 import { reportMarkdownActionFailure } from "./chat/markdownActionFailure";
 
+const MATCH_PATTERN = /^(?:\s*(?:[-+*]|\d+[.)])\s+)(\[[ xX]\])/;
+const FILE_SCHEME = /^file:/i;
+const PULL_REQUEST_COPY_PATTERN = /\/commit\/([0-9a-f]{7,40})$/iu;
+const COPY_MARKDOWN_PATTERN = /[\\[\]]/g;
+const QUERY_OR_FRAGMENT = /[?#]/;
+const PATH_SEPARATOR = /[\\/]/;
+const INCREMENTAL_PARSING_PATTERN = /(?:^|\n) {0,3}(?:`{3}|~{3})/;
+
 const isAssetNotFoundError = Schema.is(AssetWorkspaceAssetNotFoundError);
 
 interface ChatMarkdownProps {
@@ -327,7 +335,7 @@ function findTaskListMarkerOffset(markdown: string, listItemStart: number): numb
     listItemStart,
     firstLineEnd === -1 ? markdown.length : firstLineEnd,
   );
-  const match = firstLine.match(/^(?:\s*(?:[-+*]|\d+[.)])\s+)(\[[ xX]\])/);
+  const match = firstLine.match(MATCH_PATTERN);
   if (!match?.[1]) return null;
   return listItemStart + firstLine.indexOf(match[1]);
 }
@@ -384,7 +392,7 @@ const GITHUB_ALERT_PRESENTATIONS: Record<
 function rewriteFileUriHref(href: string): string | null {
   // Browsers parse some scheme-like text (`d:alert(1)`) as a `file:` URL on
   // Windows, so only destinations authored as file URLs are rewritten.
-  return /^file:/i.test(href) ? rewriteMarkdownFileUriHref(href) : null;
+  return FILE_SCHEME.test(href) ? rewriteMarkdownFileUriHref(href) : null;
 }
 
 function normalizeMarkdownLinkHrefKey(href: string): string {
@@ -1177,7 +1185,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
       );
       const pullRequestCopy =
         pullRequestAutolink === "commit"
-          ? /\/commit\/([0-9a-f]{7,40})$/iu.exec(href ?? "")?.[1]
+          ? PULL_REQUEST_COPY_PATTERN.exec(href ?? "")?.[1]
           : pullRequestAutolink === "reference" || pullRequestAutolink === "mention"
             ? plainHastText(node)
             : undefined;
@@ -1382,7 +1390,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
     const copyMarkdown =
       source.startsWith("[") && source.includes("](")
         ? source
-        : `[${(label || fileLinkMeta.basename).replace(/[\\[\]]/g, "\\$&")}](${normalizedHref})`;
+        : `[${(label || fileLinkMeta.basename).replace(COPY_MARKDOWN_PATTERN, "\\$&")}](${normalizedHref})`;
     const chip = fileLinkChip(fileLinkMeta, copyMarkdown, normalizedHref);
     return isMarkdownFileLinkLabel(label, normalizedHref) ? (
       chip
@@ -1474,7 +1482,9 @@ const CHAT_MARKDOWN_COMPONENTS = {
     if (mediaKind === "audio") {
       const filePath = imageSource._tag === "WorkspaceFile" ? imageSource.path : null;
       const name =
-        (filePath ?? classifiedSrc.split(/[?#]/, 1)[0] ?? "").split(/[\\/]/).at(-1) ||
+        (filePath ?? classifiedSrc.split(QUERY_OR_FRAGMENT, 1)[0] ?? "")
+          .split(PATH_SEPARATOR)
+          .at(-1) ||
         altText ||
         "Audio";
       if (imageSource._tag !== "Direct" && !(filePath && threadRef)) {
@@ -1803,7 +1813,7 @@ function ChatMarkdown({
     props.isStreaming === true &&
     streamingBlocks === null &&
     extraRemarkPlugins.length === 0 &&
-    /(?:^|\n) {0,3}(?:`{3}|~{3})/.test(text);
+    INCREMENTAL_PARSING_PATTERN.test(text);
   const Root = inline ? "span" : "div";
   const bindMarkdownRef = (node: HTMLElement | null) => {
     markdownRef.current = node;

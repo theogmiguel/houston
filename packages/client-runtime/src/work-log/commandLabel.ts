@@ -1,3 +1,49 @@
+const SHELL_COMMAND_ARGUMENT_INDEX_PATTERN = /^-[a-zA-Z]*c[a-zA-Z]*$/;
+const IS_WINDOWS_PATH_PATTERN = /^(?:[A-Za-z]:|\.{1,2})(?:\\[^\s]*)?$/u;
+const WHITESPACE = /\s/u;
+const TRAILING_CARRIAGE_RETURN = /\r$/u;
+const COMPARABLE_LINE_PATTERN = /^\t+/u;
+const INDEX_AFTER_SHELL_REDIRECTION_PATTERN = /^[<>]\(/u;
+const MATCH_PATTERN =
+  /^(?:(?:(?:\d+|\*|\{[A-Za-z_][A-Za-z0-9_]*\})?(?:<<<|<<-|<<|<>|>>|>\||<&|>&|<|>))|&>>|&>)(.*)$/u;
+const TRANSPARENT_WRAPPER_COMMAND_INDEX_PATTERN = /^-[adkpqr]+$/u;
+const TRANSPARENT_WRAPPER_COMMAND_INDEX_PATTERN_2 = /^-(?:arm64|arm64e|i386|x86_64)$/u;
+const TRANSPARENT_WRAPPER_COMMAND_INDEX_PATTERN_3 = /^(?:\d+(?:\.\d*)?|\.\d+)[smhd]?$/u;
+const STATIC_PROGRAM_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9+.-]*:(?![\\/])/u;
+const PATH_SEPARATOR = /[\\/]/u;
+const LEADING_POWER_SHELL_LITERAL_PATTERN = /^\S+/u;
+const MATCH_PATTERN_2 = /^\s*&\s+([\s\S]*)$/u;
+const ASSIGNMENT_PATTERN =
+  /^\s*\$(?:(env|global|local|script):)?[A-Za-z_][A-Za-z0-9_]*\s*=\s*([\s\S]*)$/iu;
+const POWER_SHELL_ASSIGNMENT_PROGRAM_NAME_PATTERN = /^(?:\[ordered\]\s*)?@\s*[{(]/iu;
+const DIRECT_COMMAND_PATTERN = /^(?:@?\(\s*)?([A-Za-z][A-Za-z0-9_.-]*)\b/u;
+const ASSIGNMENT_PATTERN_2 = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/su;
+const LITERAL_ASSIGNMENT_PROGRAM_PATTERN = /[$`]/u;
+const REFERENCE_PATTERN =
+  /^\$(?:([A-Za-z_][A-Za-z0-9_]*)|\{([A-Za-z_][A-Za-z0-9_]*)(?:\[@\])?\})$/u;
+const LITERAL_COMMAND_ALIAS_PROGRAM_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*\+?=/u;
+const WRAPPED_SHELL_COMMAND_PROGRAM_NAME_PATTERN = /^-a.+/u;
+const WRAPPED_SHELL_COMMAND_PROGRAM_NAME_PATTERN_2 = /^-[cl]+$/u;
+const PARSE_COMMAND_PROGRAM_NAME_PATTERN =
+  /^(?:catch|finally|for|foreach|function|if|param|switch|try|while)\s*[{(]/iu;
+const PARSE_COMMAND_PROGRAM_NAME_PATTERN_2 = /^[A-Za-z_][A-Za-z0-9_]*\s*\(\s*\)\s*\{/u;
+const PARSE_COMMAND_PROGRAM_NAME_PATTERN_3 = /^@["'](?:\r?\n)/u;
+const WINDOWS_PATH_PATTERN =
+  /^\s*((?:\.{1,2}|%[A-Za-z_][A-Za-z0-9_]*%|\$env:[A-Za-z_][A-Za-z0-9_]*)\\\S+)/iu;
+const PARSE_COMMAND_PROGRAM_NAME_PATTERN_4 = /[\s()=]/u;
+const PARSE_COMMAND_PROGRAM_NAME_PATTERN_5 = /^[A-Za-z_][A-Za-z0-9_]*\+?=/;
+const PATH_SEPARATOR_2 = /[\\/]/;
+const PARSE_COMMAND_PROGRAM_NAME_PATTERN_6 = /^-[A-Za-z].+/;
+const PARSE_COMMAND_PROGRAM_NAME_PATTERN_7 = /\.exe$/i;
+const PARSE_COMMAND_PROGRAM_NAME_PATTERN_8 = /^[A-Za-z_][A-Za-z0-9_]*\(\)\{$/u;
+const PROGRAM_PATTERN = /\.exe$/iu;
+const CMDLET_PATTERN = /^([A-Z][a-z]+(?:[A-Z][a-z]+)?)-[A-Z][A-Za-z]*$/u;
+const PROGRAM_PATTERN_2 = /^(?:&\s*)?(?:"([^"]*)"|'([^']*)'|(\S+))/u;
+const NAME_PATTERN = /\.exe$/u;
+const IS_POWER_SHELL_SCRIPT_PATTERN = /^&\s*\S/u;
+const IS_POWER_SHELL_SCRIPT_PATTERN_2 = /^\$(?:env|global|local|script):/iu;
+const IS_POWER_SHELL_SCRIPT_PATTERN_3 = /^\$[A-Za-z_]\w*\s+=/u;
+
 type CommandWrapper = "env" | "sudo";
 type CommandProgramContext = "exec" | "shell";
 
@@ -202,7 +248,8 @@ function shellCommandArgumentIndex(tokens: ReadonlyArray<string>, start: number)
       index += 1;
       continue;
     }
-    if (option === "--command" || /^-[a-zA-Z]*c[a-zA-Z]*$/.test(option)) return index + 1;
+    if (option === "--command" || SHELL_COMMAND_ARGUMENT_INDEX_PATTERN.test(option))
+      return index + 1;
   }
   return null;
 }
@@ -238,7 +285,7 @@ function tokenizeShellCommand(command: string): string[] | null {
     }
     if (character === "\\" && quote !== "'") {
       const nextCharacter = input[index + 1];
-      const isWindowsPath = quote === null && /^(?:[A-Za-z]:|\.{1,2})(?:\\[^\s]*)?$/u.test(current);
+      const isWindowsPath = quote === null && IS_WINDOWS_PATH_PATTERN.test(current);
       if (
         (quote === '"' || isWindowsPath) &&
         nextCharacter !== undefined &&
@@ -320,7 +367,7 @@ function tokenizeShellCommand(command: string): string[] | null {
       tokenStarted = true;
       continue;
     }
-    if (/\s/u.test(character)) {
+    if (WHITESPACE.test(character)) {
       if (substitutionDepth > 0 || parameterExpansionDepth > 0) {
         current += character;
         tokenStarted = true;
@@ -417,7 +464,7 @@ function readHeredocDelimiter(
       quote = character;
       continue;
     }
-    if (/\s/u.test(character) || ";&|<>()".includes(character)) break;
+    if (WHITESPACE.test(character) || ";&|<>()".includes(character)) break;
     delimiter += character;
   }
 
@@ -436,8 +483,8 @@ function commandAfterHeredocs(
     while (cursor <= command.length) {
       const newlineIndex = command.indexOf("\n", cursor);
       const lineEnd = newlineIndex === -1 ? command.length : newlineIndex;
-      const line = command.slice(cursor, lineEnd).replace(/\r$/u, "");
-      const comparableLine = heredoc.stripTabs ? line.replace(/^\t+/u, "") : line;
+      const line = command.slice(cursor, lineEnd).replace(TRAILING_CARRIAGE_RETURN, "");
+      const comparableLine = heredoc.stripTabs ? line.replace(COMPARABLE_LINE_PATTERN, "") : line;
       cursor = newlineIndex === -1 ? command.length : newlineIndex + 1;
       if (comparableLine === heredoc.delimiter) {
         foundDelimiter = true;
@@ -517,7 +564,7 @@ function splitFirstShellCommand(command: string): ShellCommandSplit {
     }
     if (
       character === "#" &&
-      (index === 0 || /\s/u.test(command[index - 1]!) || ";&|(".includes(command[index - 1]!))
+      (index === 0 || WHITESPACE.test(command[index - 1]!) || ";&|(".includes(command[index - 1]!))
     ) {
       inComment = true;
       commentStart = index;
@@ -598,7 +645,7 @@ function splitFirstShellCommand(command: string): ShellCommandSplit {
 
     const firstCommand = commandWithoutShellComments(command, index, comments).trimStart();
     let nextCommandIndex = index + (isDoubleOperator ? 2 : 1);
-    while (/\s/u.test(command[nextCommandIndex] ?? "")) nextCommandIndex += 1;
+    while (WHITESPACE.test(command[nextCommandIndex] ?? "")) nextCommandIndex += 1;
     const nextCommand = command.slice(nextCommandIndex).trim();
     return {
       firstCommand,
@@ -663,10 +710,8 @@ function withoutShellLineContinuations(command: string): string {
 
 function indexAfterShellRedirection(tokens: ReadonlyArray<string>, index: number): number | null {
   const token = tokens[index];
-  if (!token || /^[<>]\(/u.test(token)) return null;
-  const match = token.match(
-    /^(?:(?:(?:\d+|\*|\{[A-Za-z_][A-Za-z0-9_]*\})?(?:<<<|<<-|<<|<>|>>|>\||<&|>&|<|>))|&>>|&>)(.*)$/u,
-  );
+  if (!token || INDEX_AFTER_SHELL_REDIRECTION_PATTERN.test(token)) return null;
+  const match = token.match(MATCH_PATTERN);
   if (!match) return null;
   if (match[1]) return index + 1;
   return tokens[index + 1] === undefined ? tokens.length + 1 : index + 2;
@@ -695,20 +740,21 @@ function transparentWrapperCommandIndex(
   if (wrapper === "script") {
     // BSD `script` takes an output file before the optional command. Requiring
     // an option and both operands avoids guessing about a plain `script file`.
-    return /^-[adkpqr]+$/u.test(tokens[index + 1] ?? "") && tokens[index + 3] !== undefined
+    return TRANSPARENT_WRAPPER_COMMAND_INDEX_PATTERN.test(tokens[index + 1] ?? "") &&
+      tokens[index + 3] !== undefined
       ? index + 3
       : null;
   }
 
   if (wrapper === "arch") {
-    if (/^-(?:arm64|arm64e|i386|x86_64)$/u.test(tokens[index + 1] ?? "")) {
+    if (TRANSPARENT_WRAPPER_COMMAND_INDEX_PATTERN_2.test(tokens[index + 1] ?? "")) {
       return tokens[index + 2] !== undefined ? index + 2 : null;
     }
     return tokens[index + 1] === "-arch" && tokens[index + 3] !== undefined ? index + 3 : null;
   }
 
   if (wrapper === "timeout" || wrapper === "gtimeout") {
-    return /^(?:\d+(?:\.\d*)?|\.\d+)[smhd]?$/u.test(tokens[index + 1] ?? "") &&
+    return TRANSPARENT_WRAPPER_COMMAND_INDEX_PATTERN_3.test(tokens[index + 1] ?? "") &&
       tokens[index + 2] !== undefined
       ? index + 2
       : null;
@@ -719,11 +765,11 @@ function transparentWrapperCommandIndex(
 
 function staticProgramName(value: string): string | null {
   const trimmedValue = value.trim();
-  if (!trimmedValue || /^[A-Za-z][A-Za-z0-9+.-]*:(?![\\/])/u.test(trimmedValue)) return null;
-  const program = trimmedValue.split(/[\\/]/u).at(-1);
+  if (!trimmedValue || STATIC_PROGRAM_NAME_PATTERN.test(trimmedValue)) return null;
+  const program = trimmedValue.split(PATH_SEPARATOR).at(-1);
   if (
     !program ||
-    (/\s/u.test(program) && !/[\\/]/u.test(trimmedValue)) ||
+    (WHITESPACE.test(program) && !PATH_SEPARATOR.test(trimmedValue)) ||
     NON_PROGRAM_PREFIX_CHARACTERS.includes(program[0] ?? "") ||
     NON_PROGRAM_SUFFIX_CHARACTERS.includes(program.at(-1) ?? "")
   ) {
@@ -735,7 +781,8 @@ function staticProgramName(value: string): string | null {
 function leadingPowerShellLiteral(command: string): string | null {
   const input = command.trimStart();
   const quote = input[0];
-  if (quote !== '"' && quote !== "'") return staticProgramName(input.match(/^\S+/u)?.[0] ?? "");
+  if (quote !== '"' && quote !== "'")
+    return staticProgramName(input.match(LEADING_POWER_SHELL_LITERAL_PATTERN)?.[0] ?? "");
 
   let value = "";
   for (let index = 1; index < input.length; index += 1) {
@@ -759,7 +806,7 @@ function leadingPowerShellLiteral(command: string): string | null {
 }
 
 function powerShellCallOperatorProgramName(command: string): string | null | undefined {
-  const match = command.match(/^\s*&\s+([\s\S]*)$/u);
+  const match = command.match(MATCH_PATTERN_2);
   return match ? leadingPowerShellLiteral(match[1]!) : undefined;
 }
 
@@ -774,9 +821,7 @@ function powerShellAssignmentProgramName(
   remainingCommand: string | null,
   segmentsRemaining: number,
 ): PowerShellAssignment {
-  const assignment = command.match(
-    /^\s*\$(?:(env|global|local|script):)?[A-Za-z_][A-Za-z0-9_]*\s*=\s*([\s\S]*)$/iu,
-  );
+  const assignment = command.match(ASSIGNMENT_PATTERN);
   if (!assignment) return { matched: false, program: null };
 
   if (assignment[1]?.toLowerCase() === "env") {
@@ -791,13 +836,13 @@ function powerShellAssignmentProgramName(
   const value = assignment[2]!.trim();
   // The POSIX-oriented segment splitter does not balance PowerShell arrays or
   // hashtables. Do not mistake a key after an internal semicolon for a command.
-  if (/^(?:\[ordered\]\s*)?@\s*[{(]/iu.test(value)) {
+  if (POWER_SHELL_ASSIGNMENT_PROGRAM_NAME_PATTERN.test(value)) {
     return { matched: true, program: null };
   }
   const calledProgram = powerShellCallOperatorProgramName(value);
   if (calledProgram !== undefined) return { matched: true, program: calledProgram };
 
-  const directCommand = value.match(/^(?:@?\(\s*)?([A-Za-z][A-Za-z0-9_.-]*)\b/u)?.[1];
+  const directCommand = value.match(DIRECT_COMMAND_PATTERN)?.[1];
   if (directCommand && !NON_DESCRIPTIVE_SHELL_PROGRAMS.has(directCommand.toLowerCase())) {
     const parsedCommand = commandProgramNameInternal(value, depth + 1, "shell", segmentsRemaining);
     return { matched: true, program: parsedCommand ?? directCommand };
@@ -892,16 +937,16 @@ function startProcessProgramName(tokens: ReadonlyArray<string>, start: number): 
 function literalAssignmentProgram(
   token: string,
 ): { readonly name: string; readonly program: string | null } | null {
-  const assignment = token.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/su);
+  const assignment = token.match(ASSIGNMENT_PATTERN_2);
   if (!assignment) return null;
   const name = assignment[1]!;
   let value = assignment[2]!.trim();
-  if (!value || /[$`]/u.test(value)) return { name, program: null };
+  if (!value || LITERAL_ASSIGNMENT_PROGRAM_PATTERN.test(value)) return { name, program: null };
 
   if (value.startsWith("(") && value.endsWith(")")) {
     const arrayTokens = tokenizeShellCommand(value.slice(1, -1));
     value = arrayTokens?.[0] ?? "";
-  } else if (/\s/u.test(value) && !/[\\/]/u.test(value)) {
+  } else if (WHITESPACE.test(value) && !PATH_SEPARATOR.test(value)) {
     return { name, program: null };
   }
 
@@ -909,9 +954,7 @@ function literalAssignmentProgram(
 }
 
 function referencedCommandAlias(token: string): string | null {
-  const reference = token.match(
-    /^\$(?:([A-Za-z_][A-Za-z0-9_]*)|\{([A-Za-z_][A-Za-z0-9_]*)(?:\[@\])?\})$/u,
-  );
+  const reference = token.match(REFERENCE_PATTERN);
   return reference?.[1] ?? reference?.[2] ?? null;
 }
 
@@ -934,7 +977,7 @@ function literalCommandAliasProgramName(command: string): string | null {
         commandIndex = indexAfterRedirection;
         continue;
       }
-      if (/^[A-Za-z_][A-Za-z0-9_]*\+?=/u.test(tokens[commandIndex] ?? "")) {
+      if (LITERAL_COMMAND_ALIAS_PROGRAM_NAME_PATTERN.test(tokens[commandIndex] ?? "")) {
         commandIndex += 1;
         continue;
       }
@@ -1019,7 +1062,10 @@ function wrappedShellCommandProgramName(
         index += 2;
         continue;
       }
-      if (/^-a.+/u.test(option) || /^-[cl]+$/u.test(option)) {
+      if (
+        WRAPPED_SHELL_COMMAND_PROGRAM_NAME_PATTERN.test(option) ||
+        WRAPPED_SHELL_COMMAND_PROGRAM_NAME_PATTERN_2.test(option)
+      ) {
         index += 1;
         continue;
       }
@@ -1037,7 +1083,7 @@ function wrappedShellCommandProgramName(
     targetIndex = indexAfterRedirection;
   }
   const target = wrappedTokens[targetIndex];
-  if (target && /^[A-Za-z_][A-Za-z0-9_]*\+?=/u.test(target)) return null;
+  if (target && LITERAL_COMMAND_ALIAS_PROGRAM_NAME_PATTERN.test(target)) return null;
 
   const wrappedProgram = commandProgramNameInternal(
     serializeShellTokens(wrappedTokens),
@@ -1069,19 +1115,15 @@ function parseCommandProgramName(
   if (depth >= 8 || segmentsRemaining <= 0) return null;
   const commandWithoutComments = commandWithoutLeadingShellComments(command);
   if (commandWithoutComments === null) return null;
-  if (
-    /^(?:catch|finally|for|foreach|function|if|param|switch|try|while)\s*[{(]/iu.test(
-      commandWithoutComments,
-    )
-  ) {
+  if (PARSE_COMMAND_PROGRAM_NAME_PATTERN.test(commandWithoutComments)) {
     return null;
   }
-  if (/^[A-Za-z_][A-Za-z0-9_]*\s*\(\s*\)\s*\{/u.test(commandWithoutComments)) return null;
+  if (PARSE_COMMAND_PROGRAM_NAME_PATTERN_2.test(commandWithoutComments)) return null;
   // `&&` and `||` inside a `[[ ... ]]` expression are not top-level command
   // separators. Keep the label conservative instead of scanning the test body.
   if (commandWithoutComments.startsWith("[[")) return null;
   const commandSplit = splitFirstShellCommand(commandWithoutComments);
-  if (/^@["'](?:\r?\n)/u.test(commandSplit.firstCommand.trimStart())) {
+  if (PARSE_COMMAND_PROGRAM_NAME_PATTERN_3.test(commandSplit.firstCommand.trimStart())) {
     return commandSplit.remainingCommand
       ? commandProgramNameInternal(
           commandSplit.remainingCommand,
@@ -1098,9 +1140,7 @@ function parseCommandProgramName(
     segmentsRemaining,
   );
   if (powerShellAssignment.matched) return powerShellAssignment.program;
-  const windowsPath = commandSplit.firstCommand.match(
-    /^\s*((?:\.{1,2}|%[A-Za-z_][A-Za-z0-9_]*%|\$env:[A-Za-z_][A-Za-z0-9_]*)\\\S+)/iu,
-  )?.[1];
+  const windowsPath = commandSplit.firstCommand.match(WINDOWS_PATH_PATTERN)?.[1];
   if (windowsPath) return staticProgramName(windowsPath);
   const tokens = tokenizeShellCommand(withoutShellLineContinuations(commandSplit.firstCommand));
   if (tokens === null) return null;
@@ -1108,8 +1148,8 @@ function parseCommandProgramName(
   if (
     tokens.length === 1 &&
     (firstCharacter === '"' || firstCharacter === "'") &&
-    /[\s()=]/u.test(tokens[0] ?? "") &&
-    !/[\\/]/u.test(tokens[0] ?? "")
+    PARSE_COMMAND_PROGRAM_NAME_PATTERN_4.test(tokens[0] ?? "") &&
+    !PATH_SEPARATOR.test(tokens[0] ?? "")
   ) {
     return commandSplit.remainingCommand
       ? commandProgramNameInternal(
@@ -1136,7 +1176,7 @@ function parseCommandProgramName(
       index = indexAfterRedirection;
       continue;
     }
-    if (/^[A-Za-z_][A-Za-z0-9_]*\+?=/.test(token)) {
+    if (PARSE_COMMAND_PROGRAM_NAME_PATTERN_5.test(token)) {
       sawAssignment = true;
       index += 1;
       continue;
@@ -1164,7 +1204,7 @@ function parseCommandProgramName(
           )
         : null;
     }
-    const tokenProgram = token.split(/[\\/]/).at(-1);
+    const tokenProgram = token.split(PATH_SEPARATOR_2).at(-1);
     const isUnqualifiedToken = token === tokenProgram;
     if (tokenProgram === "env" || tokenProgram === "sudo") {
       wrapper = tokenProgram;
@@ -1209,7 +1249,7 @@ function parseCommandProgramName(
         index += 1;
         continue;
       }
-      if (/^-[A-Za-z].+/.test(token) && !token.startsWith("--")) {
+      if (PARSE_COMMAND_PROGRAM_NAME_PATTERN_6.test(token) && !token.startsWith("--")) {
         let consumesNextToken = false;
         for (const [optionIndex, option] of token.slice(1).split("").entries()) {
           const shortOption = `-${option}`;
@@ -1225,7 +1265,12 @@ function parseCommandProgramName(
       }
       return null;
     }
-    if (tokenProgram && SHELL_PROGRAMS.has(tokenProgram.replace(/\.exe$/i, "").toLowerCase())) {
+    if (
+      tokenProgram &&
+      SHELL_PROGRAMS.has(
+        tokenProgram.replace(PARSE_COMMAND_PROGRAM_NAME_PATTERN_7, "").toLowerCase(),
+      )
+    ) {
       const scriptIndex = shellCommandArgumentIndex(tokens, index + 1);
       if (scriptIndex !== null) {
         const script = tokens[scriptIndex];
@@ -1321,7 +1366,7 @@ function parseCommandProgramName(
       NON_PROGRAM_PREFIX_CHARACTERS.includes(tokenProgram[0] ?? "") ||
       NON_PROGRAM_SUFFIX_CHARACTERS.includes(tokenProgram.at(-1) ?? "") ||
       tokenProgram.endsWith("()") ||
-      /^[A-Za-z_][A-Za-z0-9_]*\(\)\{$/u.test(tokenProgram)
+      PARSE_COMMAND_PROGRAM_NAME_PATTERN_8.test(tokenProgram)
     ) {
       return null;
     }
@@ -1381,10 +1426,7 @@ function withoutShellWrapper(command: string): string {
   const split = splitFirstShellCommand(trimmed);
   if (split.remainingCommand !== null) return trimmed;
   const tokens = tokenizeShellCommand(trimmed);
-  const program = tokens?.[0]
-    ?.split(/[\\/]/u)
-    .at(-1)
-    ?.replace(/\.exe$/iu, "");
+  const program = tokens?.[0]?.split(PATH_SEPARATOR).at(-1)?.replace(PROGRAM_PATTERN, "");
   if (!tokens || !program || !SHELL_PROGRAMS.has(program)) return trimmed;
   const scriptIndex = shellCommandArgumentIndex(tokens, 1);
   // Positional arguments can affect the script; keep those invocations intact.
@@ -1401,31 +1443,31 @@ const POWERSHELL_VERBS = new Set(
 );
 
 function isPowerShellCmdlet(word: string): boolean {
-  const cmdlet = /^([A-Z][a-z]+(?:[A-Z][a-z]+)?)-[A-Z][A-Za-z]*$/u.exec(word);
+  const cmdlet = CMDLET_PATTERN.exec(word);
   return cmdlet !== null && POWERSHELL_VERBS.has(cmdlet[1]!);
 }
 
 export function commandHighlightLanguage(command: string): "powershell" | "shellscript" {
-  const program = /^(?:&\s*)?(?:"([^"]*)"|'([^']*)'|(\S+))/u.exec(command.trim());
+  const program = PROGRAM_PATTERN_2.exec(command.trim());
   const name = (program?.[1] ?? program?.[2] ?? program?.[3] ?? "")
-    .split(/[\\/]/u)
+    .split(PATH_SEPARATOR)
     .at(-1)
     ?.toLowerCase()
-    .replace(/\.exe$/u, "");
+    .replace(NAME_PATTERN, "");
   if (name && POWERSHELL_PROGRAMS.has(name)) return "powershell";
   return isPowerShellScript(command) ? "powershell" : "shellscript";
 }
 
 function isPowerShellScript(command: string): boolean {
   let rest: string | null = command.trim();
-  if (/^&\s*\S/u.test(rest)) return true;
+  if (IS_POWER_SHELL_SCRIPT_PATTERN.test(rest)) return true;
   for (let segment = 0; rest && segment < MAX_COMMAND_SEGMENTS; segment += 1) {
     const { firstCommand, remainingCommand } = splitFirstShellCommand(rest);
     const statement = firstCommand.trim();
     if (
-      /^\$(?:env|global|local|script):/iu.test(statement) ||
-      /^\$[A-Za-z_]\w*\s+=/u.test(statement) ||
-      isPowerShellCmdlet(statement.match(/^\S+/u)?.[0] ?? "")
+      IS_POWER_SHELL_SCRIPT_PATTERN_2.test(statement) ||
+      IS_POWER_SHELL_SCRIPT_PATTERN_3.test(statement) ||
+      isPowerShellCmdlet(statement.match(LEADING_POWER_SHELL_LITERAL_PATTERN)?.[0] ?? "")
     ) {
       return true;
     }
