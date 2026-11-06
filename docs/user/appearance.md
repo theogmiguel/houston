@@ -13,6 +13,10 @@ The same page sets **Contrast**, **Glass opacity**, **Animations**, **Environmen
 identification**, **Chat width**, **Effort display**, **Render math** and whether branch and
 worktree controls stay visible below the composer in active threads.
 
+**Environment identification** shows a Dev or Nightly pill beside the name in the sidebar
+header, on by default. Release builds show no pill. **Chat width** sets the width of the message
+timeline: Comfortable, Wide or Full. Grid cells keep their own widths.
+
 **Animations** is on by default. Turning it off stops menu, dialog, list and grid motion
 across the application, as the system's reduce-motion setting also does. Panels and drawers
 open and close without animation either way.

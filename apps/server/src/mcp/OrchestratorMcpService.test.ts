@@ -2768,6 +2768,7 @@ describe("OrchestratorMcpService provider resolution", () => {
     const service = (
       git: Partial<GitVcsDriver.GitVcsDriver["Service"]>,
       saved: Ref.Ref<ReadonlyArray<ScheduledTask["workspaceStrategy"]>>,
+      settings: Parameters<typeof ServerSettings.layerTest>[0] = {},
     ) =>
       OrchestratorMcpService.layer.pipe(
         Layer.provide(Layer.mock(ThreadLaunchService.ThreadLaunchService)({})),
@@ -2777,7 +2778,7 @@ describe("OrchestratorMcpService provider resolution", () => {
             NodeServices.layer,
             NodeCrypto.layer,
             Layer.mock(ThreadManagementService.ThreadManagementService)({}),
-            ServerSettings.layerTest(),
+            ServerSettings.layerTest(settings),
             Layer.mock(ProviderRegistry.ProviderRegistry)({ getProviders: Effect.succeed([]) }),
             Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({
               list: () => Effect.succeed([]),
@@ -2819,6 +2820,41 @@ describe("OrchestratorMcpService provider resolution", () => {
         yield* mcp.scheduleTask(client, { projectId, prompt: "Check the build", schedule });
         assert.deepEqual(yield* Ref.get(saved), [
           { type: "worktree", baseRef: "origin/master", startFromOrigin: true },
+        ]);
+      }),
+    );
+
+    it.effect.each([
+      {
+        name: "the global setting is off",
+        settings: { newWorktreesStartFromOrigin: false },
+        startFromOrigin: false,
+      },
+      {
+        name: "the project turns it off over a global on",
+        settings: {
+          newWorktreesStartFromOrigin: true,
+          projectSettingsOverrides: { [projectId]: { newWorktreesStartFromOrigin: false } },
+        },
+        startFromOrigin: false,
+      },
+      {
+        name: "the project turns it on over a global off",
+        settings: {
+          newWorktreesStartFromOrigin: false,
+          projectSettingsOverrides: { [projectId]: { newWorktreesStartFromOrigin: true } },
+        },
+        startFromOrigin: true,
+      },
+    ])("reads start-from-remote when $name", ({ settings, startFromOrigin }) =>
+      Effect.gen(function* () {
+        const saved = yield* Ref.make<ReadonlyArray<ScheduledTask["workspaceStrategy"]>>([]);
+        const mcp = yield* OrchestratorMcpService.OrchestratorMcpService.pipe(
+          Effect.provide(service(masterRepository, saved, settings)),
+        );
+        yield* mcp.scheduleTask(client, { projectId, prompt: "Check the build", schedule });
+        assert.deepEqual(yield* Ref.get(saved), [
+          { type: "worktree", baseRef: "origin/master", startFromOrigin },
         ]);
       }),
     );

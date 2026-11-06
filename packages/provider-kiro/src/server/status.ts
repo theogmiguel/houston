@@ -80,8 +80,8 @@ const snapshot = (
   probe: ProviderProbeResult,
   listed?: ReadonlyArray<ServerProviderModel>,
   agents?: ProviderOptionDescriptor,
-) =>
-  buildServerProvider({
+): ServerProviderDraft => ({
+  ...buildServerProvider({
     // Gives the snapshot its version advisory; Kiro runs no enrichment pass.
     driver: KIRO_DRIVER_KIND,
     presentation: KIRO_PRESENTATION,
@@ -91,7 +91,10 @@ const snapshot = (
     // `/compact` runs `_kiro/session/compact`; see compactKiroSession.
     slashCommands: [COMPACT_SLASH_COMMAND],
     probe,
-  });
+  }),
+  // The driver's text generation always fails, so the model picker must not offer Kiro.
+  supportsTextGeneration: false,
+});
 
 export const buildInitialKiroProviderSnapshot = Effect.fn(
   "KiroProvider.buildInitialKiroProviderSnapshot",

@@ -1,8 +1,10 @@
 import { type ProviderInstanceId, type ServerProvider } from "@houston-app/contracts";
+import type { TimestampFormat } from "@houston-app/contracts/settings";
 import { memo } from "react";
 import { InfoIcon, XIcon } from "lucide-react";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "../ui/alert";
 import { Button, InlineButton } from "../ui/button";
+import { useClientSettings } from "~/hooks/useSettings";
 import { formatProviderDriverKindLabel } from "../../providerModels";
 import { getProviderReadinessAction, getProviderSummary } from "../settings/providerStatus";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -72,10 +74,13 @@ export function hasProviderSetup(status: ServerProvider): boolean {
   );
 }
 
-export function getProviderStatusMessage(status: ServerProvider): string {
+export function getProviderStatusMessage(
+  status: ServerProvider,
+  timestampFormat: TimestampFormat,
+): string {
   const readiness = status.readiness;
   if (readiness !== undefined && readiness.state !== "ready") {
-    const action = getProviderReadinessAction(readiness);
+    const action = getProviderReadinessAction(readiness, timestampFormat);
     return [readiness.message, action].filter(Boolean).join(" ");
   }
   if (
@@ -114,6 +119,7 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
   onOpenProviderSetup?: (instanceId: ProviderInstanceId) => void;
   status: ServerProvider | null;
 }) {
+  const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
   if (!status || getProviderStatusBannerKey(status) === null) {
     return null;
   }
@@ -124,13 +130,13 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
   const isUnauthenticated = status.status === "error" && status.auth.status === "unauthenticated";
   const incompatible = getIncompatibleVersion(status);
   const title = hasReadinessState
-    ? `${providerName}: ${getProviderSummary(status).headline.toLowerCase()}`
+    ? `${providerName}: ${getProviderSummary(status, timestampFormat).headline.toLowerCase()}`
     : isUnauthenticated
       ? `${providerName} is unauthenticated`
       : incompatible
         ? `${providerName} ${status.version ?? ""} is ${incompatible.status === "broken" ? "known to be broken" : "unsupported"}`
         : `${providerName} provider status`;
-  const message = incompatible?.message ?? getProviderStatusMessage(status);
+  const message = incompatible?.message ?? getProviderStatusMessage(status, timestampFormat);
   const isWarning = hasReadinessState
     ? readiness.state !== "rejected"
     : incompatible?.status !== "broken" && (status.status === "warning" || incompatible !== null);

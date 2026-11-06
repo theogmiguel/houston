@@ -29,11 +29,14 @@ const provider: ServerProvider = {
 describe("getProviderSummary", () => {
   it("does not hide a provider error behind a previous authenticated state", () => {
     expect(
-      getProviderSummary({
-        ...provider,
-        status: "error",
-        message: "The provider process failed to start.",
-      }),
+      getProviderSummary(
+        {
+          ...provider,
+          status: "error",
+          message: "The provider process failed to start.",
+        },
+        "locale",
+      ),
     ).toEqual({
       headline: "Unavailable",
       detail: "The provider process failed to start.",
@@ -42,12 +45,15 @@ describe("getProviderSummary", () => {
 
   it("keeps authentication failures actionable when their provider status is error", () => {
     expect(
-      getProviderSummary({
-        ...provider,
-        status: "error",
-        auth: { status: "unauthenticated" },
-        message: "Run codex login.",
-      }),
+      getProviderSummary(
+        {
+          ...provider,
+          status: "error",
+          auth: { status: "unauthenticated" },
+          message: "Run codex login.",
+        },
+        "locale",
+      ),
     ).toEqual({
       headline: "Not authenticated",
       detail: "Run codex login.",
@@ -68,7 +74,7 @@ describe("Antigravity with unchecked sign-in", () => {
   it("presents an unchecked Google sign-in neutrally without claiming authentication is required", () => {
     for (const auth of [unchecked.auth, { status: "unknown", type: "oauth-personal" }] as const) {
       const candidate = { ...unchecked, auth };
-      expect.soft(getProviderSummary(candidate)).toEqual({
+      expect.soft(getProviderSummary(candidate, "locale")).toEqual({
         headline: "Installed · Sign-in not checked",
         detail: unchecked.message,
       });
@@ -130,7 +136,7 @@ describe("Antigravity with unchecked sign-in", () => {
     ] as const;
     for (const { name, change, headline, status } of cases) {
       const candidate = { ...unchecked, ...change };
-      expect.soft(getProviderSummary(candidate).headline, name).toBe(headline);
+      expect.soft(getProviderSummary(candidate, "locale").headline, name).toBe(headline);
       expect.soft(getProviderStatusKey(candidate), name).toBe(status);
     }
   });
@@ -252,7 +258,7 @@ describe("provider readiness", () => {
         at: "2026-09-22T11:59:00Z",
       },
     };
-    expect(getProviderSummary(rejected)).toEqual({
+    expect(getProviderSummary(rejected, "locale")).toEqual({
       headline: "Credentials rejected",
       detail:
         "This account is not allowed to use the provider. Reauthorize the account (api_error_403) or use another provider.",
@@ -273,7 +279,7 @@ describe("provider readiness", () => {
         at: "2026-09-22T11:00:00Z",
       },
     };
-    const summary = getProviderSummary(limited);
+    const summary = getProviderSummary(limited, "locale");
     expect(summary.headline).toBe("Out of usage");
     expect(summary.detail).toContain("Resets in 3 h 30 min.");
     vi.useRealTimers();
@@ -317,14 +323,14 @@ describe("provider readiness", () => {
     ] as const;
     for (const { readiness, headline, status } of cases) {
       const candidate = { ...provider, readiness };
-      expect.soft(getProviderSummary(candidate).headline).toBe(headline);
+      expect.soft(getProviderSummary(candidate, "locale").headline).toBe(headline);
       expect.soft(getProviderStatusKey(candidate)).toBe(status);
     }
   });
 
   it("falls back to probe fields when the server reports ready", () => {
     const ready = { ...provider, readiness: { state: "ready" as const } };
-    expect(getProviderSummary(ready)).toEqual({
+    expect(getProviderSummary(ready, "locale")).toEqual({
       headline: "Authenticated · ChatGPT",
       detail: null,
     });
@@ -332,7 +338,18 @@ describe("provider readiness", () => {
   });
 
   it("formats a reset window that already passed", () => {
-    expect(formatReadinessReset("2026-09-22T11:00:00Z", now)).toBe("Usage is available again.");
-    expect(formatReadinessReset("not a date", now)).toBeNull();
+    expect(formatReadinessReset("2026-09-22T11:00:00Z", "locale", now)).toBe(
+      "Usage is available again.",
+    );
+    expect(formatReadinessReset("not a date", "locale", now)).toBeNull();
+  });
+
+  it("writes a reset more than a day away in the chosen time format", () => {
+    const resetsAt = "2026-09-25T14:00:00Z";
+    const twelveHour = formatReadinessReset(resetsAt, "12-hour", now);
+    const twentyFourHour = formatReadinessReset(resetsAt, "24-hour", now);
+    expect(twelveHour).toMatch(/^Resets .*\b(AM|PM)\b.*\.$/i);
+    expect(twentyFourHour).toMatch(/^Resets /);
+    expect(twentyFourHour).not.toMatch(/\b(AM|PM)\b/i);
   });
 });

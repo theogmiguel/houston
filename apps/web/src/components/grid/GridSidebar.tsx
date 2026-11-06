@@ -132,7 +132,7 @@ import { isModelPickerOpen } from "../../modelPickerVisibility";
 import { updateClientSettings, useClientSettings } from "../../hooks/useSettings";
 import { useNowMinute } from "../../hooks/useNowMinute";
 import { useNowSecond } from "../../hooks/useNowSecond";
-import { formatRelativeTimeLabel } from "../../timestampFormat";
+import { formatRelativeTimeLabel, formatUpcomingTimestamp } from "../../timestampFormat";
 import { AnimatedHeight } from "../AnimatedHeight";
 import { isAppModalPage } from "../sidebar/mainAppLocation";
 import { SidebarChromeFooter, SidebarChromeHeader } from "../sidebar/SidebarChrome";
@@ -221,15 +221,6 @@ function threadTimeLabel(thread: EnvironmentThreadShell, nowMinute: string): str
     / ago$/,
     "",
   );
-}
-
-function wakeTimeLabel(snoozedUntil: string, now = new Date()): string {
-  const date = new Date(snoozedUntil);
-  const time = date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-  // A hold longer than a day needs its date; a bare time reads as today.
-  return date.toDateString() === now.toDateString()
-    ? time
-    : `${date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}, ${time}`;
 }
 
 function HighlightedText({ text, query }: { text: string; query: string }) {
@@ -1008,7 +999,7 @@ export function GridSidebar() {
               }
               timeLabel={
                 shelf === "snoozed" && thread.snoozedUntil !== null
-                  ? wakeTimeLabel(thread.snoozedUntil)
+                  ? formatUpcomingTimestamp(thread.snoozedUntil, timestampFormat)
                   : null
               }
               shelf={shelf}

@@ -67,6 +67,7 @@ import {
 } from "@houston-app/contracts";
 import { getProviderOptionCurrentValue } from "@houston-app/shared/model";
 import { runRanAfter } from "@houston-app/shared/orchestrationV2ThreadError";
+import { resolveProjectSettings } from "@houston-app/shared/projectSettings";
 import { formatThreadLink } from "@houston-app/shared/threadLinks";
 import {
   normalizeThreadPullRequestKey,
@@ -1883,10 +1884,14 @@ const make = Effect.gen(function* () {
   )(function* (boundToThread: boolean, projectId: ProjectId) {
     if (boundToThread) return { type: "root" as const };
     const { workspaceRoot } = yield* requireProject(projectId);
+    const settings = yield* serverSettings.getSettings.pipe(
+      Effect.mapError(() => failure("orchestration_error", "Unable to read server settings.")),
+    );
     return {
       type: "worktree" as const,
       baseRef: yield* resolveScheduledTaskBaseRef(workspaceRoot),
-      startFromOrigin: true,
+      startFromOrigin: resolveProjectSettings(settings, projectId).settings
+        .newWorktreesStartFromOrigin,
     };
   });
 
