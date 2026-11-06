@@ -23,6 +23,8 @@ import {
   HoustonTaskToolkit,
 } from "./tools.ts";
 
+const TRAILING_REPLACEMENT_CHARS = /�+$/;
+
 const ACCESS_SETTING = "Settings ▸ Tasks ▸ Agent access";
 const SUBMIT_TOOLS: ReadonlySet<string> = new Set([
   "houston_task_plan_submit",
@@ -42,7 +44,7 @@ const capText = (text: string): string => {
   const cut = Buffer.from(text, "utf8")
     .subarray(0, HOUSTON_TASK_TOOL_TEXT_BYTES)
     .toString("utf8")
-    .replace(/�+$/, "");
+    .replace(TRAILING_REPLACEMENT_CHARS, "");
   return `${cut}\n… [cut at ${HOUSTON_TASK_TOOL_TEXT_BYTES} bytes; the full text is ${bytes} bytes]`;
 };
 

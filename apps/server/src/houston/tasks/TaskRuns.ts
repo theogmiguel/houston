@@ -792,7 +792,7 @@ const make = Effect.gen(function* () {
     // when the previous thread cannot be read, the rework runs approval-required.
     const authority =
       options.action === "houston:rework"
-        ? yield* orchestrator.getThreadProjection(previous.thread_id as ThreadId).pipe(
+        ? yield* orchestrator.getThreadRecords(previous.thread_id as ThreadId, []).pipe(
             Effect.map(({ thread }): LaunchAuthority =>
               thread.createdBy === "user"
                 ? USER_LAUNCH
@@ -1762,6 +1762,15 @@ const make = Effect.gen(function* () {
     );
   });
 
+  /** The thread's latest thread run, read alone; `None` when the thread cannot be read. */
+  const latestThreadRun = (threadId: ThreadId) =>
+    orchestrator
+      .getThreadRecords(threadId, ["runs"], { runStatuses: [], includeLatestRun: true })
+      .pipe(
+        Effect.map(({ runs }) => runs.at(-1)),
+        Effect.option,
+      );
+
   /** Removes a review's own tree once the review has ended and its thread no longer runs in it;
    * a review that reused the implementer's clean worktree leaves that worktree alone. */
   const releaseReviewTree = Effect.fn("HoustonTaskRuns.releaseReviewTree")(function* (
@@ -1771,10 +1780,7 @@ const make = Effect.gen(function* () {
     if (review.kind !== "review" || OPEN_RUN_STATES.has(review.state)) return;
     if (tree === null || !tree.endsWith(`-review-${review.attempt}`)) return;
     if (review.thread_id !== null) {
-      const projection = yield* orchestrator
-        .getThreadProjection(review.thread_id as ThreadId)
-        .pipe(Effect.option);
-      const latest = Option.isSome(projection) ? projection.value.runs.at(-1) : undefined;
+      const latest = Option.getOrUndefined(yield* latestThreadRun(review.thread_id as ThreadId));
       if (latest !== undefined && LIVE_THREAD_RUN.has(latest.status)) return;
     }
     const row = yield* taskOf(review.task_id);
@@ -2021,13 +2027,11 @@ const make = Effect.gen(function* () {
       WHERE state IN ('preparing', 'running', 'validating') AND thread_id IS NOT NULL
     `);
     for (const row of working) {
-      const projection = yield* orchestrator
-        .getThreadProjection(row.thread_id as ThreadId)
-        .pipe(Effect.option);
-      const latest = Option.isSome(projection) ? projection.value.runs.at(-1) : undefined;
+      const found = yield* latestThreadRun(row.thread_id as ThreadId);
+      const latest = Option.getOrUndefined(found);
       if (latest !== undefined && LIVE_THREAD_RUN.has(latest.status)) continue;
       // A thread prepared for a prefilled brief has no run yet.
-      if (row.state === "preparing" && Option.isSome(projection) && latest === undefined) continue;
+      if (row.state === "preparing" && Option.isSome(found) && latest === undefined) continue;
       yield* store.write(
         setRunState(
           row.id,

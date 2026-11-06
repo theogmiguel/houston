@@ -5,6 +5,11 @@ import remarkParse from "remark-parse";
 import remarkGfm from "remark-gfm";
 import { unified } from "unified";
 
+const OPEN_PATTERN = /^[ \t]*(`{3,}|~{3,})/;
+const CLOSE_PATTERN = /\n[ \t>]*(`{3,}|~{3,})[ \t\r]*$/;
+const DISPLAY_PATTERN = /^(?:\$\$|\\\[)/;
+const MAY_CONTAIN_MATH_PATTERN = /(?:`{3,}|~{3,})[ \t]*math\b/;
+
 const mathParser = unified()
   .use(remarkParse)
   .use(remarkGfm)
@@ -38,11 +43,11 @@ export function markdownMathRanges(source: string, tree?: Root) {
       if (start === undefined || end === undefined) return;
       const authored = source.slice(start, end);
       if (node.type === "code") {
-        const open = /^[ \t]*(`{3,}|~{3,})/.exec(authored)?.[1];
-        const close = /\n[ \t>]*(`{3,}|~{3,})[ \t\r]*$/.exec(authored)?.[1];
+        const open = OPEN_PATTERN.exec(authored)?.[1];
+        const close = CLOSE_PATTERN.exec(authored)?.[1];
         if (!open || !close || open[0] !== close[0] || close.length < open.length) return;
       }
-      const display = node.type !== "inlineMath" || /^(?:\$\$|\\\[)/.test(authored);
+      const display = node.type !== "inlineMath" || DISPLAY_PATTERN.test(authored);
       ranges.push({ start, end, source: authored, tex: node.value, display, inTable: table });
     } else if ("children" in node) node.children.forEach((child) => visit(child, table));
   };
@@ -56,7 +61,7 @@ function mayContainMath(text: string): boolean {
     text.includes("$") ||
     text.includes("\\(") ||
     text.includes("\\[") ||
-    /(?:`{3,}|~{3,})[ \t]*math\b/.test(text)
+    MAY_CONTAIN_MATH_PATTERN.test(text)
   );
 }
 

@@ -22,6 +22,10 @@ import { observeResize } from "../../lib/observeResize";
 import { isLayoutResizing, onLayoutResizeEnd } from "../../motion/layoutResize";
 import { prefersReducedMotion, subscribeReducedMotion } from "../../motion/registry";
 
+const QUOTE_TERMINAL_FONT_FAMILIES_PATTERN = /^(['"]).*\1$/;
+const QUOTE_TERMINAL_FONT_FAMILIES_PATTERN_2 = /^[a-zA-Z][a-zA-Z0-9-]*$/;
+const IS_MIDDLE_CLICK_PASTE_PLATFORM_PATTERN = /linux|bsd/i;
+
 const DEFAULT_TERMINAL_FONT_SIZE = 12;
 const MIN_TERMINAL_FONT_SIZE = 6;
 const MAX_TERMINAL_FONT_SIZE = 32;
@@ -71,8 +75,8 @@ function quoteTerminalFontFamilies(list: string): string {
     .map((name) => {
       const bare = name.trim();
       if (bare.length === 0) return "";
-      if (/^(['"]).*\1$/.test(bare)) return bare;
-      if (/^[a-zA-Z][a-zA-Z0-9-]*$/.test(bare)) return bare;
+      if (QUOTE_TERMINAL_FONT_FAMILIES_PATTERN.test(bare)) return bare;
+      if (QUOTE_TERMINAL_FONT_FAMILIES_PATTERN_2.test(bare)) return bare;
       return `"${bare.replaceAll('"', "")}"`;
     })
     .filter((name) => name.length > 0)
@@ -369,7 +373,7 @@ function isTerminalPasteShortcut(
 
 // X11/Wayland expects middle-click paste; macOS and Windows use it for autoscroll.
 function isMiddleClickPastePlatform(): boolean {
-  return /linux|bsd/i.test(navigator.platform);
+  return IS_MIDDLE_CLICK_PASTE_PLATFORM_PATTERN.test(navigator.platform);
 }
 
 function isTerminalCompositionCommitInput(event: Pick<InputEvent, "inputType">): boolean {

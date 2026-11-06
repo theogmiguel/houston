@@ -91,7 +91,7 @@ const make = Effect.gen(function* () {
   const ownedSessions = Effect.fn("HoustonResumeSessions.ownedSessions")(
     function* (threads: ProjectThreads) {
       const threadsById = new Map(threads.map((thread) => [thread.id, thread]));
-      const refs = yield* projections.listProviderThreadRefs();
+      const refs = yield* projections.listProviderThreadRefs(threads.map((thread) => thread.id));
       const owned = new Map<string, OwnedSession>();
       for (const ref of refs) {
         if (ref.appThreadId === null || ref.nativeThreadRef === null) continue;

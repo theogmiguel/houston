@@ -26,12 +26,12 @@ const CASES = [
   {
     fixture: "subagent",
     driver: "claudeAgent",
-    total: 25_927,
+    total: 27_882,
     ceilings: {
-      sqlite: 11_552,
-      "sql.transaction": 1493,
-      BEGIN: 1493,
-      COMMIT: 1493,
+      sqlite: 13_075,
+      "sql.transaction": 1567,
+      BEGIN: 1567,
+      COMMIT: 1567,
       reportTurnTerminal: 1000,
       "orchestrationV2.EventSink.write": 985,
       "MessageDeliveryWriter.observe": 985,
@@ -53,12 +53,12 @@ const CASES = [
   {
     fixture: "subagent",
     driver: "codex",
-    total: 19_467,
+    total: 20_669,
     ceilings: {
-      sqlite: 7257,
-      "sql.transaction": 1358,
-      BEGIN: 1358,
-      COMMIT: 1358,
+      sqlite: 8193,
+      "sql.transaction": 1404,
+      BEGIN: 1404,
+      COMMIT: 1404,
       "orchestrationV2.EventSink.write": 1009,
       reportTurnTerminal: 1000,
       "MessageDeliveryWriter.observe": 991,
@@ -128,10 +128,10 @@ const countingTracer = () => {
     span(options) {
       const span = new Tracer.NativeSpan(options);
       const parent = span.parent._tag === "Some" ? span.parent.value : undefined;
+      // Only a call the scenario makes; a parentless one is session work (withoutTurnContext).
       const fromHarness =
-        parent === undefined ||
-        (parent._tag === "Span" &&
-          (HARNESS_SPANS.has(parent.name) || parent.name.startsWith("scenario.")));
+        parent?._tag === "Span" &&
+        (HARNESS_SPANS.has(parent.name) || parent.name.startsWith("scenario."));
       if (
         (parent !== undefined && polling.has(parent)) ||
         (options.name === "OrchestratorV2.getThreadProjection" && fromHarness)

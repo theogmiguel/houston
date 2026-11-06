@@ -60,6 +60,10 @@ import {
   type AcpAdapterV2RuntimeInput,
 } from "@houston-app/provider-acp/server/adapter";
 
+const IS_COPILOT_PATTERN = /^copilot(\.exe|\.cmd)?$/i;
+const PATH_SEPARATOR = /[\\/]/;
+const IS_CLAUDE_PATTERN = /^claude-agent-acp(\.exe|\.cmd)?$/i;
+
 export const ACP_REGISTRY_PROVIDER = ProviderDriverKind.make("acpRegistry");
 export const ACP_REGISTRY_DEFAULT_INSTANCE_ID = defaultInstanceIdForDriver(ACP_REGISTRY_PROVIDER);
 
@@ -191,13 +195,11 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
   const isCopilot =
     registryAgentId === "github-copilot-cli" ||
     (options.settings.source === "local" &&
-      /^copilot(\.exe|\.cmd)?$/i.test(options.settings.commandPath.split(/[\\/]/).pop() ?? ""));
+      IS_COPILOT_PATTERN.test(options.settings.commandPath.split(PATH_SEPARATOR).pop() ?? ""));
   const isClaude =
     registryAgentId === "claude-acp" ||
     (options.settings.source === "local" &&
-      /^claude-agent-acp(\.exe|\.cmd)?$/i.test(
-        options.settings.commandPath.split(/[\\/]/).pop() ?? "",
-      ));
+      IS_CLAUDE_PATTERN.test(options.settings.commandPath.split(PATH_SEPARATOR).pop() ?? ""));
   const runtimeOptions = isClaude
     ? {
         ...options,

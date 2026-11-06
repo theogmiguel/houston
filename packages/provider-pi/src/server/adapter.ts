@@ -72,6 +72,11 @@ import {
 } from "./mcpInjection.ts";
 import { PI_FILE_CHANGE_TOOLS } from "./mcpExtensionSource.ts";
 
+const TOOL_NAME_PATTERN = /^Allow (\S+)\?$/;
+const BACKSLASH = /\\/g;
+const TRAILING_SLASHES = /\/+$/;
+const NAME_PATTERN = /\.[^.]+$/;
+
 export const PI_PROVIDER = ProviderDriverKind.make("pi");
 const PI_DRIVER_KIND = PI_PROVIDER;
 const DEFAULT_PI_SETTINGS = Schema.decodeSync(PiSettings)({});
@@ -391,7 +396,7 @@ interface PendingPiPrompt {
 }
 
 function piApprovalRequestKind(title: string): "command" | "file-change" {
-  const toolName = /^Allow (\S+)\?$/.exec(title)?.[1];
+  const toolName = TOOL_NAME_PATTERN.exec(title)?.[1];
   return toolName !== undefined &&
     (PI_FILE_CHANGE_TOOLS as ReadonlyArray<string>).includes(toolName)
     ? "file-change"
@@ -3376,8 +3381,8 @@ function piSubagentOutput(result: unknown): string {
 
 function piExtensionDisplayName(extensionPath: string | undefined): string {
   if (extensionPath === undefined) return "Pi extension";
-  const normalized = extensionPath.replace(/\\/g, "/").replace(/\/+$/, "");
-  const name = normalized.slice(normalized.lastIndexOf("/") + 1).replace(/\.[^.]+$/, "");
+  const normalized = extensionPath.replace(BACKSLASH, "/").replace(TRAILING_SLASHES, "");
+  const name = normalized.slice(normalized.lastIndexOf("/") + 1).replace(NAME_PATTERN, "");
   return name.length === 0 ? "Pi extension" : name;
 }
 
