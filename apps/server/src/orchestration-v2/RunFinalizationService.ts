@@ -6,6 +6,7 @@ import * as FiberSet from "effect/FiberSet";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import * as TraceContext from "../houston/observability/TraceContext.ts";
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as VcsStatusBroadcaster from "../vcs/VcsStatusBroadcaster.ts";
 import * as WorkspaceEntries from "../workspace/WorkspaceEntries.ts";
@@ -73,6 +74,7 @@ const make = Effect.gen(function* () {
             cause,
           }),
       ),
+      TraceContext.withinTraceContext({ threadId: request.threadId, runId: request.runId }),
     );
   const drain = Effect.fn("RunFinalizationService.drainRefreshes")(
     function* (key: string) {
@@ -105,7 +107,10 @@ const make = Effect.gen(function* () {
       queued.set(key, request);
       if (running.has(key)) return Effect.void;
       running.add(key);
-      return FiberSet.run(refreshes, drain(key)).pipe(Effect.asVoid);
+      // The drain also serves refreshes later runs queue, so it carries none of this run's context.
+      return FiberSet.run(refreshes, drain(key).pipe(TraceContext.withoutTurnContext)).pipe(
+        Effect.asVoid,
+      );
     });
 
   const finalize: RunFinalizationService["Service"]["finalize"] = Effect.fn(
