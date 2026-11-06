@@ -15,6 +15,16 @@ vi.mock(import("@effect/atom-react"), async (original) => ({
   useAtomValue: (() => []) as never,
 }));
 
+vi.mock(import("../../state/environments"), async (original) => ({
+  ...(await original()),
+  usePrimaryEnvironmentId: (() => "env-1") as never,
+  useEnvironmentMachines: (() => new Map()) as never,
+}));
+
+vi.mock(import("../../hooks/useSupportsMultiplePullRequests"), () => ({
+  useSupportsMultiplePullRequests: () => false,
+}));
+
 vi.mock(import("../../state/session"), async (original) => ({
   ...(await original()),
   readEnvironmentScope: () => true,
@@ -149,6 +159,25 @@ describe("ThreadCard title against the trailing time and actions", () => {
     expect(title.right).toBeLessThanOrEqual(wake.getBoundingClientRect().left);
     // The invisible wake time must not take room on top of the actions.
     expect(title.width).toBeGreaterThanOrEqual(60);
+  });
+
+  it("gives a resting row's title the width up to its time label", async () => {
+    await using screen = await render(
+      <div style={{ width: 320 }}>{card(thread({ title: LONG_TITLE }), { timeLabel: "3d" })}</div>,
+    );
+    const row = rowOf(screen.container);
+    const time = screen.getByText("3d").element();
+    // The hidden Hold, Close and More buttons take no room until the row is hovered.
+    expect(
+      time.getBoundingClientRect().left - titleOf(row).getBoundingClientRect().right,
+    ).toBeLessThanOrEqual(12);
+
+    await userEvent.hover(row);
+    const hold = screen.getByRole("button", { name: "Hold" });
+    await expect.element(hold).toBeVisible();
+    expect(titleOf(row).getBoundingClientRect().right).toBeLessThanOrEqual(
+      hold.element().getBoundingClientRect().left,
+    );
   });
 
   it("cross-fades the time label and the actions in one grid cell", async () => {

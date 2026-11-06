@@ -39,6 +39,29 @@ vi.mock(import("@effect/atom-react"), async (original) => ({
     atom?.providerEntriesProbe === true ? new Map() : []) as never,
 }));
 
+vi.mock(import("../../state/environments"), async (original) => ({
+  ...(await original()),
+  usePrimaryEnvironmentId: (() => "env-1") as never,
+  useEnvironmentMachines: (() => new Map()) as never,
+}));
+
+// Every closed thread here is loaded, so the server holds no older ones.
+vi.mock(import("../../state/olderSettledShelf"), async (original) => ({
+  ...(await original()),
+  useOlderSettledShelf: (() => ({
+    environments: new Map(),
+    visibleCount: 0,
+    pages: new Map(),
+    grow: () => {},
+    isListed: () => true,
+    unloadedCount: () => 0,
+    loading: false,
+    failed: false,
+    retry: () => {},
+  })) as never,
+  useOlderSettledShelfGrowth: () => {},
+}));
+
 vi.mock(import("../../state/session"), async (original) => ({
   ...(await original()),
   readEnvironmentScope: () => true,

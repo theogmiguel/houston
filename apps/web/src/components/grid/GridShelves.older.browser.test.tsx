@@ -63,7 +63,7 @@ describe("Closed shelf with older threads on the server", () => {
     shelf.unloaded = 40;
     await using screen = await open();
     await expect
-      .element(screen.getByRole("treeitem", { name: /Closed/ }))
+      .element(screen.getByRole("button", { name: /Closed/ }))
       .toHaveTextContent("Closed52");
     await expect.element(screen.getByRole("button", { name: "Show 25 more" })).toBeInTheDocument();
   });
