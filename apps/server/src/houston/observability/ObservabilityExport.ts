@@ -8,8 +8,12 @@ import {
 } from "@houston-app/contracts/houston/observability";
 import type { OtlpProtocol, SignalExport } from "@houston-app/shared/observability";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
+import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientRequest from "effect/http/HttpClientRequest";
+import * as HttpClientResponse from "effect/http/HttpClientResponse";
 
 import * as ServerConfig from "../../config.ts";
 import { HoustonSecrets } from "../secrets/HoustonSecrets.ts";
@@ -68,6 +72,34 @@ export const readDatadogKey = Effect.fn("ObservabilityExport.readDatadogKey")(fu
     .pipe(Effect.orElseSucceed(() => Option.none()));
   return Option.map(stored, Redacted.value);
 });
+
+/**
+ * The exporters' HTTP client with the key re-read before each request to a Datadog intake: the
+ * exporters are built once at start-up, so removing the key stops their next export and
+ * replacing it sends the new one. Requests to other URLs pass through unchanged.
+ */
+export const datadogKeyGate = Effect.gen(function* () {
+  const client = yield* HttpClient.HttpClient;
+  const secrets = yield* Effect.serviceOption(HoustonSecrets);
+  const currentKey = readDatadogKey().pipe(
+    Option.isSome(secrets) ? Effect.provideService(HoustonSecrets, secrets.value) : (self) => self,
+  );
+  return HttpClient.transform(client, (response, request) =>
+    INTAKE_URL.test(request.url)
+      ? Effect.flatMap(currentKey, (key) =>
+          Option.isNone(key)
+            ? // Dropped here, with a success status so the exporter does not retry it.
+              Effect.succeed(
+                HttpClientResponse.fromWeb(request, new Response(null, { status: 204 })),
+              )
+            : client.execute(HttpClientRequest.setHeader(request, "dd-api-key", key.value)),
+        )
+      : response,
+  );
+});
+
+/** Provides datadogKeyGate in place of the HTTP client an exporter would use. */
+export const layerDatadogKeyGate = Layer.effect(HttpClient.HttpClient, datadogKeyGate);
 
 const running = (config: ServerConfig.ServerConfig["Service"], signal: Signal) => {
   switch (signal) {

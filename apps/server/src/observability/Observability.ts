@@ -75,7 +75,11 @@ export const layer = Layer.unwrap(
                   exportInterval: `${traces.exportIntervalMs} millis`,
                   headers: traces.headers,
                   resource,
-                }),
+                }).pipe(
+                  traces.destination === "datadog"
+                    ? Effect.provide(ObservabilityExport.layerDatadogKeyGate)
+                    : (self) => self,
+                ),
               );
 
         const tracer = yield* makeLocalFileTracer({
@@ -108,7 +112,12 @@ export const layer = Layer.unwrap(
             headers: metrics.headers,
             temporality: metrics.temporality,
             resource,
-          }).pipe(Layer.provide(SharedObservability.layerOtlpSerialization(metrics.protocol)));
+          }).pipe(
+            Layer.provide(SharedObservability.layerOtlpSerialization(metrics.protocol)),
+            metrics.destination === "datadog"
+              ? Layer.provide(ObservabilityExport.layerDatadogKeyGate)
+              : (self) => self,
+          );
 
     const layerOtelWarnings = Layer.effectDiscard(
       Effect.forEach(config.otelEnvironment.warnings, (warning) => Effect.logWarning(warning)),

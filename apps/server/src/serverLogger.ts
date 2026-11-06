@@ -65,7 +65,12 @@ export const layer = Effect.gen(function* () {
           exportInterval: `${logs.exportIntervalMs} millis`,
           headers: logs.headers,
           resource: ExportRedaction.exportedResource(ServerConfig.otlpResource(config, hostName)),
-        }).pipe(Effect.map(ExportLogger.redacting));
+        }).pipe(
+          Effect.map(ExportLogger.redacting),
+          logs.destination === "datadog"
+            ? Effect.provide(ObservabilityExport.layerDatadogKeyGate)
+            : (self) => self,
+        );
 
   // Logger.layer replaces the whole set; name every logger here.
   // OTLP includes traced messages as log records, so also using tracerLogger would duplicate in-span exports.
