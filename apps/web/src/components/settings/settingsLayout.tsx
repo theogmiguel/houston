@@ -250,7 +250,7 @@ export function SettingsSection({
       ) : (
         <div data-settings-scroll-target className="flex items-center justify-between gap-4 px-1">
           <div className="flex min-w-0 items-center gap-1">
-            <h2 className="flex items-center gap-2 text-[11px] leading-[14px] font-semibold text-muted-foreground">
+            <h2 className="flex items-center gap-2 text-headline font-semibold text-foreground/80">
               {icon}
               {title}
             </h2>

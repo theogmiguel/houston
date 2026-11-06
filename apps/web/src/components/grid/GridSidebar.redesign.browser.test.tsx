@@ -559,11 +559,11 @@ describe("View options", () => {
     __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
     try {
       {
-        await using shown = await render(group(grid(), [thread()]), { router: false });
+        await using shown = await render(group(grid(), [thread()]), { router: "/" });
         expect(shown.container.textContent).toContain("houston/split-drawer-state");
       }
       __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, sidebarRowShowBranch: false });
-      await using hidden = await render(group(grid(), [thread()]), { router: false });
+      await using hidden = await render(group(grid(), [thread()]), { router: "/" });
       expect(hidden.container.textContent).not.toContain("houston/split-drawer-state");
     } finally {
       __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);

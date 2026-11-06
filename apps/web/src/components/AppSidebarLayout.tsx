@@ -2,6 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
 import {
   useEffect,
+  useRef,
   useState,
   useSyncExternalStore,
   type CSSProperties,
@@ -313,10 +314,19 @@ function SidebarControl() {
   const shortcutLabel = shortcutLabelForCommand(keybindings, "sidebar.toggle", {
     context: { usagePageOpen },
   });
+  // Closing the narrow drawer returns focus to the toggle without the user moving it there; the
+  // tooltip it would open covers the breadcrumb and stays until focus leaves.
+  const focusRestoredRef = useRef(false);
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- marks the focus the drawer's close hands back to the toggle
+  useEffect(() => {
+    if (isMobile && !isSidebarVisible) focusRestoredRef.current = true;
+  }, [isMobile, isSidebarVisible]);
 
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- window keydown listener that toggles the sidebar on its shortcut
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      // Tab moves focus on purpose, so the toggle's tooltip may open again.
+      if (event.key === "Tab") focusRestoredRef.current = false;
       if (event.defaultPrevented) return;
       if (
         event.target instanceof HTMLElement &&
@@ -373,13 +383,22 @@ function SidebarControl() {
       )}
       data-sidebar-control=""
     >
-      <Tooltip>
+      <Tooltip
+        onOpenChange={(open, details) => {
+          if (open && details.reason === "trigger-focus" && focusRestoredRef.current) {
+            details.cancel();
+          }
+        }}
+      >
         <TooltipTrigger
           render={
             <SidebarTrigger
               variant="ghost"
               className="pointer-events-auto"
               aria-label="Toggle main sidebar"
+              onBlur={() => {
+                focusRestoredRef.current = false;
+              }}
             />
           }
         />

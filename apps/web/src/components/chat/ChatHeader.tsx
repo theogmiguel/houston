@@ -335,7 +335,7 @@ export const ChatHeader = memo(function ChatHeader({
               autoFocus
               dir="auto"
               aria-label="Thread title"
-              className="min-w-0 flex-1 rounded-sm bg-transparent text-headline font-semibold text-foreground outline-none ring-1 ring-inset ring-ring/50 focus:ring-ring"
+              className="min-w-0 flex-1 rounded-sm bg-transparent text-headline font-medium text-foreground outline-none ring-1 ring-inset ring-ring/50 focus:ring-ring"
               defaultValue={renamingTitle}
               onBlur={(event) => {
                 if (renameCommittedRef.current) return;
@@ -368,7 +368,7 @@ export const ChatHeader = memo(function ChatHeader({
                 }
               >
                 <h2
-                  className="min-w-0 text-headline font-semibold"
+                  className="min-w-0 text-headline font-medium"
                   dir={textDirection(activeThreadTitle)}
                 >
                   <WorkspaceBreadcrumbText>{activeThreadTitle}</WorkspaceBreadcrumbText>

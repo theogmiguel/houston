@@ -787,6 +787,22 @@ describe("MessagesTimeline agent messages", () => {
     expect(screen.text()).not.toContain("drops the index");
   });
 
+  it("shows a collapsed agent message as a quiet row without outline or fill, and fills it once opened", async () => {
+    setup();
+    await using screen = await renderTimeline([
+      message(AGENT_MESSAGE, { createdBy: "agent", senderThreadId: SENDER_THREAD_ID }),
+    ]);
+    const row = screen.button(/^Agent/);
+    const card = row.parentElement!;
+    const collapsed = getComputedStyle(card);
+    expect(collapsed.borderTopWidth).toBe("0px");
+    expect(collapsed.backgroundColor).toBe("rgba(0, 0, 0, 0)");
+
+    await click(row);
+    expect(getComputedStyle(card).borderTopWidth).toBe("0px");
+    expect(getComputedStyle(card).backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+  });
+
   it("leaves messages sent by Houston as full bubbles", async () => {
     setup();
     await using screen = await renderTimeline([
@@ -816,6 +832,19 @@ describe("MessagesTimeline agent messages", () => {
     expect(range.getBoundingClientRect().bottom).toBeLessThanOrEqual(
       body.getBoundingClientRect().bottom,
     );
+  });
+});
+
+describe("MessagesTimeline minimap", () => {
+  it("stays hidden until the pointer is over the conversation", async () => {
+    setup();
+    await using screen = await renderTimeline([
+      message("First question", {}, "message-1"),
+      message("Second question", {}, "message-2"),
+    ]);
+    const minimap = screen.container.querySelector<HTMLElement>('[data-testid="timeline-minimap"]');
+    expect(minimap, "two user messages should mount the minimap").not.toBeNull();
+    expect(getComputedStyle(minimap!).opacity).toBe("0");
   });
 });
 

@@ -126,7 +126,7 @@ function SettingsContentLayout() {
             data-drag-region="deep"
             className="flex h-10 shrink-0 items-center gap-2 ps-3.5 pe-2 custom-chrome:pe-(--workspace-native-controls-inset)"
           >
-            <SettingsBreadcrumb pathname={location.pathname} />
+            <SettingsBreadcrumb />
             <div className="ms-auto flex shrink-0 items-center gap-1">
               {location.pathname === "/settings/about" ||
               location.pathname === "/settings/open-source-licenses" ||

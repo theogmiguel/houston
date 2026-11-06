@@ -107,6 +107,33 @@ it("caps the composer's model trigger so a long model name truncates", async () 
   expect(trigger.element().getBoundingClientRect().width).toBeLessThanOrEqual(224);
 });
 
+it("names the model in the trigger exactly as its row in the list does", async () => {
+  await using _screen = await render(
+    <TooltipProvider delay={0}>
+      <ProviderModelPicker
+        environmentId={null}
+        activeInstanceId={CLAUDE}
+        model="opus"
+        lockedProvider={null}
+        instanceEntries={entries}
+        keybindings={compileResolvedKeybindingsConfig([])}
+        modelOptionsByInstance={new Map([[CLAUDE, provider.models]])}
+        isComposerOwned
+        onInstanceModelChange={() => {}}
+      />
+    </TooltipProvider>,
+    { router: false },
+  );
+
+  const trigger = page.getByRole("button", { name: /Opus 5\.5/ });
+  await expect.element(trigger).toBeVisible();
+  const label = trigger.element().querySelector("[data-chat-provider-model-picker-label]");
+  expect(label?.textContent).toBe("Claude Opus 5.5");
+
+  await trigger.click();
+  await expect.element(page.getByRole("option", { name: /Claude Opus 5\.5/ })).toBeVisible();
+});
+
 it("draws the provider's mark beside the model name", async () => {
   await using _screen = await render(
     <TooltipProvider delay={0}>
@@ -158,7 +185,7 @@ it("opens the model menu at one fixed height however few models the provider lis
 
   await page.getByRole("button", { name: /Opus 5\.5/ }).click();
   const content = () => document.querySelector<HTMLElement>('[data-model-picker-content="true"]');
-  await expect.poll(() => content()?.getBoundingClientRect().height).toBe(346);
+  await expect.poll(() => content()?.getBoundingClientRect().height).toBe(272);
 });
 
 it("docks an effort column beside the list and stays open after a model pick", async () => {

@@ -161,6 +161,8 @@ function terminalProcessLabel(count: number): string {
 export function SidebarProviderStack(props: {
   thread: SidebarThreadSummary;
   providerEntryByInstanceId: ReadonlyMap<string, SidebarProviderEntry>;
+  /** Draws only the current provider, muted and uncoloured, for rows that rest quietly. */
+  quiet?: boolean;
 }) {
   const stack = resolveThreadProviderStack(props.thread);
   const currentInstanceId = stack[stack.length - 1]!;
@@ -179,10 +181,10 @@ export function SidebarProviderStack(props: {
       acpRegistryIconUrl={currentEntry.acpRegistryIconUrl}
       showBadge={showInstanceBadge}
       size="compact"
-      iconClassName="opacity-60"
+      iconClassName={props.quiet ? "opacity-50 grayscale" : "opacity-60"}
     />
   );
-  if (stack.length === 1) {
+  if (stack.length === 1 || props.quiet) {
     return <span className="inline-flex shrink-0 items-center">{current}</span>;
   }
   return (

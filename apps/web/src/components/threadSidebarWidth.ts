@@ -1,5 +1,6 @@
 export const THREAD_SIDEBAR_WIDTH_STORAGE_KEY = "chat_thread_sidebar_width";
-const THREAD_SIDEBAR_DEFAULT_WIDTH = 340;
+// Reference thread rails run 250-290px; 288 fits two-line rows and the brand row.
+const THREAD_SIDEBAR_DEFAULT_WIDTH = 288;
 const THREAD_SIDEBAR_MIN_WIDTH = 240;
 const THREAD_SIDEBAR_MAX_WIDTH = 440;
 export const THREAD_MAIN_CONTENT_MIN_WIDTH = 40 * 16;

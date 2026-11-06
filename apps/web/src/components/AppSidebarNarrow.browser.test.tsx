@@ -83,3 +83,52 @@ it("docks the thread rail beside the page at 1280px", async () => {
     screen.container.querySelector('[data-slot="sidebar"][data-state="expanded"]'),
   ).not.toBeNull();
 });
+
+const toggleTooltip = () =>
+  [...document.querySelectorAll<HTMLElement>('[data-slot="tooltip-popup"]')].find((popup) =>
+    popup.textContent?.startsWith("Toggle main sidebar"),
+  ) ?? null;
+
+it("opens no tooltip when closing the drawer returns focus to the toggle", async () => {
+  const { screen } = await mountApp(800);
+  await using _screen = screen;
+  const toggle = screen.getByRole("button", { name: "Toggle main sidebar" });
+  await userEvent.click(toggle);
+  await vi.waitFor(() => expect(threadsNav()).not.toBeNull(), { timeout: 5_000 });
+
+  await userEvent.keyboard("{Escape}");
+
+  await vi.waitFor(() => expect(threadsNav()).toBeNull(), { timeout: 5_000 });
+  await vi.waitFor(() => expect(document.activeElement?.getAttribute("aria-label")).toBe(
+    "Toggle main sidebar",
+  ));
+  // Base UI opens focus tooltips after a short delay; wait past it.
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  expect(toggleTooltip()).toBeNull();
+
+  // Hover still opens it, and so does focus the user moves there with Tab.
+  await userEvent.hover(toggle);
+  await vi.waitFor(() => expect(toggleTooltip()).not.toBeNull(), { timeout: 10_000 });
+});
+
+it("opens the toggle's tooltip on keyboard focus after the drawer has closed", async () => {
+  const { screen } = await mountApp(800);
+  await using _screen = screen;
+  await userEvent.click(screen.getByRole("button", { name: "Toggle main sidebar" }));
+  await vi.waitFor(() => expect(threadsNav()).not.toBeNull(), { timeout: 5_000 });
+  await userEvent.keyboard("{Escape}");
+  await vi.waitFor(() => expect(threadsNav()).toBeNull(), { timeout: 5_000 });
+
+  await vi.waitFor(
+    () => expect(document.activeElement?.getAttribute("aria-label")).toBe("Toggle main sidebar"),
+    { timeout: 10_000 },
+  );
+
+  // Focus leaves the toggle, then the user returns to it with the keyboard.
+  (document.activeElement as HTMLElement).blur();
+  await userEvent.keyboard("{Tab}");
+  document.querySelector<HTMLElement>('[aria-label="Toggle main sidebar"]')?.focus();
+
+  await vi.waitFor(() => expect(toggleTooltip()).not.toBeNull(), { timeout: 5_000 });
+});
+

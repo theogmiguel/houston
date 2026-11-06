@@ -116,9 +116,9 @@ export function TimelineMinimap({
     <div
       className={cn(
         "group/minimap pointer-events-none absolute inset-y-0 left-0 z-40 hidden w-18 [@media(pointer:fine)]:block",
-        hasPersistentGutter
-          ? "opacity-100"
-          : "opacity-0 transition-opacity duration-150 hover:opacity-100 focus-within:opacity-100",
+        // The rail appears while the pointer is over the conversation or focus is inside it, so
+        // an idle thread shows no floating dashes beside the sidebar edge.
+        "opacity-0 transition-opacity duration-(--motion-feedback) [[data-assistant-citation-viewport]:hover_&]:opacity-100 hover:opacity-100 focus-within:opacity-100",
       )}
       data-testid="timeline-minimap"
       data-persistent-gutter={hasPersistentGutter ? "true" : "false"}

@@ -907,7 +907,7 @@ export function GridSidebar() {
         />
       </SidebarHeader>
       <SidebarContent>
-        <div className="flex min-h-full flex-col px-2 pb-2">
+        <div className="flex min-h-full flex-col px-2 pb-6">
           <SidebarProjectsHeader
             options={sidebarOptions}
             onChange={(patch) => void updateClientSettings(sidebarOptionsPatch(patch))}
@@ -2047,7 +2047,7 @@ export function ThreadCard({
               <span
                 className={cn(
                   "min-w-0 flex-1 truncate text-headline leading-4.5 text-foreground",
-                  attention || active ? "font-semibold" : "font-medium",
+                  attention || active || selected ? "font-medium" : "font-normal",
                 )}
               >
                 <HighlightedText text={thread.title} query={query} />
@@ -2186,19 +2186,26 @@ export function ThreadCard({
             </span>
           ) : null}
           <ThreadStateMark state={state} startedAt={startedAt} />
-          <span
-            data-thread-provider-mark=""
-            className={cn(
-              "inline-grid size-3.5 shrink-0 place-items-center",
-              ROW_STATUS_RECEDE,
-              MOTION_FEEDBACK_OPACITY,
-              actionsVisible && ROW_STATUS_HIDDEN,
-            )}
-          >
-            {providerEntry !== undefined ? (
-              <SidebarProviderStack thread={thread} providerEntryByInstanceId={providerEntries} />
-            ) : null}
-          </span>
+          {/* One trailing indicator per row: the provider mark rests in the slot only while no state shows. */}
+          {state === "idle" ? (
+            <span
+              data-thread-provider-mark=""
+              className={cn(
+                "inline-grid size-3.5 shrink-0 place-items-center",
+                ROW_STATUS_RECEDE,
+                MOTION_FEEDBACK_OPACITY,
+                actionsVisible && ROW_STATUS_HIDDEN,
+              )}
+            >
+              {providerEntry !== undefined ? (
+                <SidebarProviderStack
+                  thread={thread}
+                  providerEntryByInstanceId={providerEntries}
+                  quiet
+                />
+              ) : null}
+            </span>
+          ) : null}
         </div>
         {selected ? (
           <span className="sr-only" aria-live="polite">

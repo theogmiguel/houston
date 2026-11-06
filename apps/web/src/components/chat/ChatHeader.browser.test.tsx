@@ -20,6 +20,7 @@ vi.mock(import("~/hooks/useThreadActionMenu"), () => ({
   useThreadActionMenu: () => ({ openMenu: async () => {}, closeMenu: () => {} }),
 }));
 
+import "~/index.css";
 import { render } from "../../../test/render";
 import { ChatHeader } from "./ChatHeader";
 
@@ -69,3 +70,23 @@ it.each(["blur", "Enter"] as const)(
     expect(persisted.title).toBe("My edited title");
   },
 );
+
+it("sets the project segment in regular muted ink and the thread title in medium foreground", async () => {
+  await using screen = await render(
+    <ChatHeader
+      activeThreadEnvironmentId={EnvironmentId.make("environment")}
+      activeThreadId={ThreadId.make("thread")}
+      activeThreadTitle="Add a retry-after hint"
+      isServerThread
+      activeProject={{ title: "atlas-api", isScratch: false } as never}
+      parentThreadLink={null}
+      onOpenThread={() => {}}
+    />,
+  );
+
+  const project = getComputedStyle(screen.getByText("atlas-api").element());
+  const title = getComputedStyle(screen.getByRole("heading", { level: 2 }).element());
+  expect(project.fontWeight).toBe("400");
+  expect(title.fontWeight).toBe("500");
+  expect(project.color).not.toBe(title.color);
+});

@@ -9,7 +9,7 @@ export function AssistantModelAttributionLine({
   if (attribution === null) return null;
   return (
     <p
-      className="mt-1 truncate text-xs text-muted-foreground"
+      className="mt-1 truncate text-callout text-secondary-label"
       data-assistant-model-attribution="true"
     >
       {attribution.providerDisplayName} · {attribution.modelLabel}

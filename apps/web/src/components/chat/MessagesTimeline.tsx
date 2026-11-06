@@ -1723,7 +1723,7 @@ function AttemptFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "at
           {row.label}
           {error ? ` · ${error}` : ""}
         </span>
-        <span className="text-2xs text-muted-foreground">Cut off by a steer</span>
+        <span className="text-callout text-secondary-label">Cut off by a steer</span>
       </button>
       {loading ? <WorkHistorySkeleton /> : null}
     </div>

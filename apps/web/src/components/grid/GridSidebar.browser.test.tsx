@@ -8,6 +8,7 @@ import { beginThreadDragAt, endThreadDrag, getThreadDragSource } from "../../gri
 import { act, fakeTimers, render, type Screen } from "../../../test/render";
 import { TooltipProvider } from "../ui/tooltip";
 import { ThreadCard } from "./GridSidebar";
+import type { SidebarProviderEntry } from "../sidebar/SidebarThreadRow";
 
 vi.mock(import("@effect/atom-react"), async (original) => ({
   ...(await original()),
@@ -63,6 +64,7 @@ function card(
     focused?: boolean;
     selected?: boolean;
     gridId?: string | null;
+    providerEntries?: ReadonlyMap<string, SidebarProviderEntry>;
   } = {},
 ) {
   return (
@@ -71,7 +73,7 @@ function card(
         gridId={overrides.gridId === undefined ? "grid-a" : overrides.gridId}
         thread={value}
         query=""
-        providerEntries={new Map()}
+        providerEntries={overrides.providerEntries ?? new Map()}
         nowIso="2026-01-01T00:00:00.000Z"
         focused={overrides.focused ?? false}
         selected={overrides.selected ?? false}
@@ -365,7 +367,7 @@ describe("ThreadCard layout", () => {
     expect(getComputedStyle(branch).fontFamily).not.toContain("Mono");
     expect(getComputedStyle(branch).fontSize).toBe("12px");
     expect(getComputedStyle(title).fontSize).toBe("13px");
-    expect(getComputedStyle(title).fontWeight).toBe("500");
+    expect(getComputedStyle(title).fontWeight).toBe("400");
 
     // The time sits on the title's line, to its right.
     const titleBox = title.getBoundingClientRect();
@@ -397,7 +399,7 @@ describe("ThreadCard selected state", () => {
     expect(row.hasAttribute("data-thread-current")).toBe(true);
     expect(getComputedStyle(row).backgroundColor).toBe(tokenBackground("--sidebar-row-selected"));
     const title = screen.getByText("Split drawer state from the thread store").element();
-    expect(getComputedStyle(title).fontWeight).toBe("600");
+    expect(getComputedStyle(title).fontWeight).toBe("500");
     expect(row.querySelector("[aria-current]")).not.toBeNull();
   });
 
@@ -600,12 +602,46 @@ describe("ThreadCard layout and contrast", () => {
     expect(getComputedStyle(title).color).toBe(classColor("text-foreground"));
   });
 
-  it("keeps an attention title at full contrast and semibold", async () => {
+  it("keeps an attention title at full contrast and medium weight", async () => {
     await using screen = await render(card(thread({ hasPendingUserInput: true })));
     const title = titleOf(screen);
 
-    expect(title.className).toContain("font-semibold");
+    expect(title.className).toContain("font-medium");
     expect(getComputedStyle(title).color).toBe(classColor("text-foreground"));
+  });
+
+  it("sets a resting title in regular weight", async () => {
+    await using screen = await render(card(thread()));
+
+    expect(getComputedStyle(titleOf(screen)).fontWeight).toBe("400");
+  });
+
+  it("draws the provider mark muted and uncoloured, and not beside a state mark", async () => {
+    const providerEntries = new Map([
+      [
+        "claude",
+        {
+          instanceId: "claude",
+          driverKind: "claudeAgent",
+          enabled: true,
+          displayName: "Claude",
+          models: [],
+        } as unknown as SidebarProviderEntry,
+      ],
+    ]);
+    const claudeThread = {
+      modelSelection: { instanceId: "claude", model: "claude-haiku-5-5" },
+      providerInstanceHistory: [],
+    };
+    await using idle = await render(card(thread(claudeThread as never), { providerEntries }));
+    const mark = idle.container.querySelector("[data-thread-provider-mark]") as HTMLElement;
+    expect(mark.innerHTML).toContain("grayscale");
+
+    await using attention = await render(
+      card(thread({ ...claudeThread, hasPendingUserInput: true } as never), { providerEntries }),
+    );
+    expect(attention.container.querySelector("[data-thread-status]")).not.toBeNull();
+    expect(attention.container.querySelector("[data-thread-provider-mark]")).toBeNull();
   });
 });
 

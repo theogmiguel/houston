@@ -76,7 +76,7 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
             />
           </AssistantCitationSource>
         </div>
-        {row.message.runId ? <AssistantModelAttributionRow runId={row.message.runId} /> : null}
+        {row.showAssistantMeta && row.message.runId ? <AssistantModelAttributionRow runId={row.message.runId} /> : null}
         {ctx.onOpenTurnDiff ? (
           <AssistantChangedFilesSection
             turnSummary={row.assistantTurnDiffSummary}

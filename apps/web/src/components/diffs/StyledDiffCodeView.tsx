@@ -20,6 +20,17 @@ export const DIFF_VIEW_UNSAFE_CSS = `${DIFF_SURFACE_THEME_UNSAFE_CSS}
   --diffs-code-grid: var(--diffs-grid-number-column-width) minmax(0, 1fr);
 }
 
+/* Without wrapping, a long line runs past the panel edge. The library paints the horizontal
+   scrollbar thumb transparent until the pointer is over the file, so nothing says the line
+   continues. Keep a thumb visible at rest, stronger on hover. */
+[data-overflow="scroll"] [data-code]::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--code-foreground) 28%, transparent) !important;
+}
+
+[data-overflow="scroll"] [data-code]::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--code-foreground) 48%, transparent) !important;
+}
+
 :is(
   [data-line],
   [data-line-annotation],

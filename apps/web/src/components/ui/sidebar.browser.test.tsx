@@ -1,8 +1,16 @@
 import { page, userEvent } from "vite-plus/test/browser";
 import { describe, expect, it, vi } from "vite-plus/test";
 
+import "~/index.css";
 import { render } from "../../../test/render";
-import { Sidebar, SidebarProvider, SidebarRail, SidebarTrigger, useSidebar } from "./sidebar";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarProvider,
+  SidebarRail,
+  SidebarTrigger,
+  useSidebar,
+} from "./sidebar";
 
 function CollapseFromInside() {
   const { setOpen } = useSidebar();
@@ -43,6 +51,29 @@ describe("Sidebar", () => {
     await vi.waitFor(() => expect(sidebar.inert).toBe(true));
     const trigger = screen.container.querySelector('[data-slot="sidebar-trigger"]');
     await vi.waitFor(() => expect(document.activeElement).toBe(trigger));
+  });
+
+  it("fades scrolled content over 24px at its edges so a row never ends flush", async () => {
+    await page.viewport(1280, 400);
+    await using screen = await render(
+      <SidebarProvider defaultOpen className="h-dvh! min-h-0!">
+        <Sidebar collapsible="offcanvas">
+          <SidebarContent>
+            {Array.from({ length: 40 }, (_, index) => (
+              <div key={index} className="h-9 shrink-0">
+                Row {index}
+              </div>
+            ))}
+          </SidebarContent>
+        </Sidebar>
+      </SidebarProvider>,
+      { router: false /* no routes involved */ },
+    );
+
+    const viewport = screen.container.querySelector<HTMLElement>(
+      '[data-slot="scroll-area-viewport"]',
+    )!;
+    expect(getComputedStyle(viewport).getPropertyValue("--fade-size")).toBe("1.5rem");
   });
 
   it("abandons a rail drag when the sidebar collapses mid-drag", async () => {

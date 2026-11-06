@@ -2689,6 +2689,8 @@ code {
    composer lane, so the timeline scopes the shared lane width. */
 .messages-timeline-scroll {
   --chat-content-max-width: var(--chat-timeline-max-width, 45rem);
+  /* The top fade is as tall as the 44px header so rows dissolve under it instead of being cut. */
+  --workspace-titlebar-scroll-fade-height: 2.75rem;
 }
 
 /* The timeline prose measure and rhythm: 14/20 in a 720px lane, with one

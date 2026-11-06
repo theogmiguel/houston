@@ -370,7 +370,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     <button
       type={showResume ? "button" : "submit"}
       className={cn(
-        "relative isolate flex size-8 items-center justify-center overflow-hidden rounded-full bg-(--accent) text-(--primary-foreground) transition-colors duration-150 enabled:cursor-pointer enabled:hover:bg-(--accent-hover) disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-4 [&_svg]:pointer-events-none",
+        "relative isolate flex size-8 items-center justify-center overflow-hidden rounded-full bg-(--accent) text-(--primary-foreground) transition-colors duration-150 enabled:cursor-pointer enabled:hover:bg-(--accent-hover) disabled:pointer-events-none disabled:bg-(--sel) disabled:text-(--houston) [&_svg]:size-4 [&_svg]:pointer-events-none",
         boardFocusRing,
       )}
       {...pointerFocusProps}

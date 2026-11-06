@@ -14,7 +14,7 @@ import { cn } from "~/lib/utils";
 import { ModelPickerContent, resolveModelPickerSelectedModel } from "./ModelPickerContent";
 import { ChatGptSharingControl } from "./ChatGptSharingControl";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
-import { ModelEsque, getDisplayModelName, getTriggerDisplayModelName } from "./providerIconUtils";
+import { ModelEsque, getDisplayModelName } from "./providerIconUtils";
 import { type ProviderInstanceEntry } from "../../providerInstances";
 import { ComposerControl, type ComposerControlSize } from "./ComposerControl";
 import { takeOpenTarget, useComposerMenuProps } from "./composerEventScope";
@@ -146,10 +146,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     (activeEntry?.driverKind === "opencode" || activeEntry?.driverKind === "antigravity"
       ? undefined
       : selectedInstanceOptions[0]);
-  // The footer shows the catalog's short name, as the board's split control does.
-  const triggerModelName = selectedModel
-    ? getTriggerDisplayModelName(selectedModel, activeEntry?.driverKind)
-    : null;
+  // The trigger names the model exactly as its row in the list does.
+  const triggerModelName = selectedModel ? getDisplayModelName(selectedModel) : null;
   const triggerTitle = triggerModelName
     ? triggerModelName
     : props.model === ANTIGRAVITY_DEFAULT_MODEL
@@ -217,7 +215,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       ...selection,
       entry,
       label: model
-        ? `${getTriggerDisplayModelName(model, entry?.driverKind)}${unavailable}`
+        ? `${getDisplayModelName(model)}${unavailable}`
         : selection.model,
       fullLabel: model ? `${getDisplayModelName(model)}${unavailable}` : selection.model,
     };

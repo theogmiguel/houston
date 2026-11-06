@@ -2,6 +2,8 @@ import { EnvironmentId, ProjectId } from "@houston-app/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
+import "~/index.css";
+
 import type {
   SidebarProjectGroupMember,
   SidebarProjectSnapshot,
@@ -138,6 +140,21 @@ describe("settings scope sentence", () => {
     await expect.element(projectTrigger()).toHaveTextContent("All projects");
     await expect.element(environmentTrigger()).toHaveTextContent("All environments");
     expect(projectTrigger().element().querySelector("svg")).not.toBeNull();
+  });
+
+  it("keeps the sentence at body size, regular weight, with the chosen values medium", async () => {
+    setup();
+    await using screen = await render(<SettingsScopeSentence />, { router: "/settings/providers" });
+
+    const sentence = screen.getByText("Applying settings for").element().closest("p")!;
+    const sentenceStyle = getComputedStyle(sentence);
+    expect(sentenceStyle.fontSize).toBe("13px");
+    expect(sentenceStyle.fontWeight).toBe("400");
+    for (const trigger of [projectTrigger(), environmentTrigger()]) {
+      const style = getComputedStyle(trigger.element());
+      expect(style.fontSize).toBe("13px");
+      expect(style.fontWeight).toBe("500");
+    }
   });
 
   it("keeps the project selection and its menu primitive rows", async () => {
