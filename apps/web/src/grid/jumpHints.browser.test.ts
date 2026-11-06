@@ -1,19 +1,24 @@
-import type { ResolvedKeybindingsConfig } from "@houston-app/contracts";
+import {
+  THREAD_JUMP_KEYBINDING_COMMANDS,
+  type ResolvedKeybindingsConfig,
+} from "@houston-app/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { jumpHintLabels } from "./jumpHints";
 
-const jumpBindings: ResolvedKeybindingsConfig = Array.from({ length: 9 }, (_, index) => ({
-  command: `thread.jump.${index + 1}` as const,
-  shortcut: {
-    key: String(index + 1),
-    metaKey: false,
-    ctrlKey: false,
-    shiftKey: false,
-    altKey: false,
-    modKey: true,
-  },
-}));
+const jumpBindings: ResolvedKeybindingsConfig = THREAD_JUMP_KEYBINDING_COMMANDS.map(
+  (command, index) => ({
+    command,
+    shortcut: {
+      key: String(index + 1),
+      metaKey: false,
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: false,
+      modKey: true,
+    },
+  }),
+);
 
 describe("jumpHintLabels", () => {
   it("labels the first nine rows in order with distinct shortcuts", () => {

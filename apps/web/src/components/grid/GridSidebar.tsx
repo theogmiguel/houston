@@ -107,7 +107,9 @@ import {
 } from "./ProjectFilterPicker";
 import { jumpHintLabels } from "../../grid/jumpHints";
 import { useShortcutModifierState } from "../../shortcutModifierState";
+import { reportFailure } from "./reportFailure";
 import { SidebarNoProjects } from "./SidebarNoProjects";
+import { ThreadTitleInput } from "./threadTitleInput";
 import { JumpHintBadge, ThreadJumpHintContext, useThreadJumpHint } from "./threadJumpHints";
 import { ThreadStateMark } from "./threadStatusMark";
 import { ThreadCheckoutMark, ThreadRowIndicators } from "./threadRowIndicators";
@@ -164,7 +166,11 @@ import {
   EMPTY_PROVIDER_ENTRIES,
   sidebarProviderEntriesAtom,
 } from "../sidebar/sidebarProviderEntries";
-import { useSnoozeWakeClock, useThreadJumpHintsVisible } from "../Sidebar.logic";
+import {
+  isTrailingDoubleClick,
+  useSnoozeWakeClock,
+  useThreadJumpHintsVisible,
+} from "../Sidebar.logic";
 import { resolveSnoozePresets, type SnoozePreset } from "../Sidebar.snooze";
 import {
   Menu,
@@ -219,19 +225,6 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 
 type DraggedThread = ThreadDragSource;
-
-function reportFailure(title: string, result: AtomCommandResult<unknown, unknown>): boolean {
-  if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return false;
-  const error = squashAtomCommandFailure(result);
-  toastManager.add(
-    stackedThreadToast({
-      type: "error",
-      title,
-      description: error instanceof Error ? error.message : "An error occurred.",
-    }),
-  );
-  return true;
-}
 
 function threadTimeLabel(thread: EnvironmentThreadShell, nowMinute: string): string {
   const timestamp = thread.latestUserMessageAt ?? thread.updatedAt;
@@ -549,13 +542,7 @@ export function GridSidebar() {
         environmentId: thread.environmentId,
         input: { threadId: thread.id, title },
       });
-      if (result._tag === "Failure") {
-        toastManager.add({
-          type: "error",
-          title: "Failed to rename thread",
-          description: "The server did not accept the new title.",
-        });
-      }
+      reportFailure("Failed to rename thread", result);
     })();
   };
 
@@ -1968,7 +1955,6 @@ export function ThreadCard({
   handleNewThread?: NewThreadHandler | undefined;
 }) {
   const [renaming, setRenaming] = useState(false);
-  const [name, setName] = useState(thread.title);
   const [actionsHovered, setActionsHovered] = useState(false);
   const [holdMenuOpen, setHoldMenuOpen] = useState(false);
   const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
@@ -2000,10 +1986,7 @@ export function ThreadCard({
   const rowRef = useRef<HTMLDivElement | null>(null);
   const actionsButtonRef = useRef<HTMLButtonElement | null>(null);
   const threadRef = scopeThreadRef(thread.environmentId, thread.id);
-  const startRename = () => {
-    setName(thread.title);
-    setRenaming(true);
-  };
+  const startRename = () => setRenaming(true);
   const openCardMenu = async (position: { x: number; y: number }) => {
     setActionsMenuOpen(true);
     await openMenu(position).finally(() => setActionsMenuOpen(false));
@@ -2125,23 +2108,13 @@ export function ThreadCard({
       >
         <div className="flex min-h-[22px] min-w-0 items-center gap-2">
           {renaming ? (
-            <input
-              autoFocus
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              onBlur={() => {
+            <ThreadTitleInput
+              title={thread.title}
+              onCommit={(next) => {
                 setRenaming(false);
-                onRename(name.trim());
+                onRename(next);
               }}
-              onKeyDown={(event) => {
-                event.stopPropagation();
-                if (event.key === "Enter") event.currentTarget.blur();
-                if (event.key === "Escape") {
-                  setName(thread.title);
-                  setRenaming(false);
-                }
-              }}
-              className="h-6 min-w-0 flex-1 rounded-(--r-ctl) border border-input bg-background px-1.5 text-xs text-foreground outline-none focus:border-ring"
+              onCancel={() => setRenaming(false)}
             />
           ) : (
             <button
@@ -2153,13 +2126,18 @@ export function ThreadCard({
                   onSelect({ shiftKey: event.shiftKey, toggleKey: event.metaKey || event.ctrlKey });
                   return;
                 }
+                // The second click of a double-click renames; it must not open the thread again.
+                if (isTrailingDoubleClick(event.detail)) return;
                 onOpen();
+              }}
+              onDoubleClick={(event) => {
+                event.preventDefault();
+                startRename();
               }}
               onKeyDown={(event: ReactKeyboardEvent<HTMLButtonElement>) => {
                 if (event.key === "F2") {
                   event.preventDefault();
-                  setName(thread.title);
-                  setRenaming(true);
+                  startRename();
                 }
               }}
               className={cn(
