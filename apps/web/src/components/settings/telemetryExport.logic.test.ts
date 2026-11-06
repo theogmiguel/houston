@@ -2,11 +2,14 @@ import { DEFAULT_SERVER_SETTINGS } from "@houston-app/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  agentDraftOf,
   datadogIntakeUrl,
   datadogKeyProblem,
+  datadogKeyStatusLabel,
   destinationOf,
   initialPreset,
   observabilityPatch,
+  parseAgentDraft,
   rejectedLabel,
 } from "./telemetryExport.logic";
 
@@ -89,5 +92,45 @@ describe("telemetry export checks", () => {
     const problem = datadogKeyProblem("secret-token");
     expect(problem).toContain("has 12");
     expect(problem).not.toContain("secret-token");
+  });
+});
+
+describe("Datadog Agent fields", () => {
+  it("keep every intermediate value the user types, and report what blocks saving", () => {
+    const draft = agentDraftOf(AGENT);
+    expect(draft).toEqual({ host: "127.0.0.1", port: "4318" });
+    // Backspacing the port through "431", "43", "4" and "" keeps each value as typed.
+    for (const port of ["431", "43", "4"]) {
+      expect(parseAgentDraft({ ...draft, port })).toEqual({
+        _tag: "Valid",
+        preset: { ...AGENT, port: Number(port) },
+      });
+    }
+    expect(parseAgentDraft({ ...draft, port: "" })).toEqual({
+      _tag: "Invalid",
+      problem: "Enter the Agent's OTLP port, from 1 to 65535.",
+    });
+    expect(parseAgentDraft({ ...draft, port: "70000" })._tag).toBe("Invalid");
+    expect(parseAgentDraft({ ...draft, port: "43.5" })._tag).toBe("Invalid");
+    // An emptied host stays empty instead of snapping back to the default.
+    expect(parseAgentDraft({ ...draft, host: "" })).toEqual({
+      _tag: "Invalid",
+      problem: "Enter the Agent's host, such as 127.0.0.1.",
+    });
+    expect(parseAgentDraft({ host: " agent.local ", port: " 4317 " })).toEqual({
+      _tag: "Valid",
+      preset: { _tag: "DatadogAgent", host: "agent.local", port: 4317 },
+    });
+  });
+});
+
+describe("Datadog API key status", () => {
+  it("names a refused status query instead of showing nothing", () => {
+    expect(datadogKeyStatusLabel({ data: { present: true }, error: null })).toBe("Saved");
+    expect(datadogKeyStatusLabel({ data: { present: false }, error: null })).toBe("Not set");
+    expect(datadogKeyStatusLabel({ data: null, error: null })).toBe("Checking…");
+    expect(datadogKeyStatusLabel({ data: null, error: "This server has no secret store." })).toBe(
+      "Unavailable",
+    );
   });
 });

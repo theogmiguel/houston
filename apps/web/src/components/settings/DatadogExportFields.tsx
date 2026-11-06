@@ -19,16 +19,18 @@ import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
+import { Text } from "../ui/text";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ConnectionStatusDot } from "../ConnectionStatusDot";
 import {
+  type AgentDraft,
   DATADOG_SIGNAL_DESCRIPTIONS,
   DATADOG_SITE_LABELS,
   datadogKeyProblem,
+  datadogKeyStatusLabel,
 } from "./telemetryExport.logic";
 
 type DatadogPreset = Extract<HoustonObservabilityPreset, { _tag: "Datadog" }>;
-type AgentPreset = Extract<HoustonObservabilityPreset, { _tag: "DatadogAgent" }>;
 
 export interface SignalStatus {
   readonly label: string;
@@ -88,16 +90,16 @@ function DatadogKeyField({
     <div className="grid gap-1.5">
       <div className="flex items-center justify-between gap-3">
         <Label htmlFor="datadog-api-key">API key</Label>
-        <span className="text-xs text-muted-foreground">
-          {status.data === null ? "" : present ? "Saved" : "Not set"}
-        </span>
+        <Text variant="callout" tone="muted">
+          {datadogKeyStatusLabel(status)}
+        </Text>
       </div>
       <div className="flex gap-2">
         <Input
           id="datadog-api-key"
           size="compact"
           type="password"
-          autoComplete="off"
+          autoComplete="new-password"
           placeholder={
             present ? "Enter a new key to replace the saved one" : "32 hexadecimal characters"
           }
@@ -129,14 +131,19 @@ function DatadogKeyField({
           </Button>
         )}
       </div>
-      {(problem ?? failure) && (
-        <p role="alert" className="text-xs text-destructive-foreground">
-          {problem ?? failure}
-        </p>
+      {status.data === null && status.error !== null && (
+        <Text as="p" role="alert" variant="callout" tone="danger">
+          {status.failure?.message ?? status.error}
+        </Text>
       )}
-      <p className="text-xs text-muted-foreground">
+      {(problem ?? failure) && (
+        <Text as="p" role="alert" variant="callout" tone="danger">
+          {problem ?? failure}
+        </Text>
+      )}
+      <Text as="p" variant="callout" tone="muted">
         Stored in the server's secret store on that machine and sent only to the chosen site.
-      </p>
+      </Text>
     </div>
   );
 }
@@ -204,13 +211,15 @@ export function DatadogExportFields({
                   />
                   <TooltipPopup>{DATADOG_SIGNAL_DESCRIPTIONS[signal]}</TooltipPopup>
                 </Tooltip>
-                <span className="text-sm">{label}</span>
+                <Text>{label}</Text>
               </div>
               <div className="flex items-center gap-2">
                 {enabled && status && (
-                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1.5">
                     <ConnectionStatusDot dotClassName={status.dot} />
-                    {status.label}
+                    <Text variant="callout" tone="muted">
+                      {status.label}
+                    </Text>
                   </span>
                 )}
                 {enabled && onTest && (
@@ -234,13 +243,16 @@ export function DatadogExportFields({
 }
 
 export function DatadogAgentFields({
-  preset,
+  draft,
+  problem,
   disabled,
   onChange,
 }: {
-  readonly preset: AgentPreset;
+  readonly draft: AgentDraft;
+  /** Why the draft cannot be saved yet, or null. */
+  readonly problem: string | null;
   readonly disabled: boolean;
-  readonly onChange: (preset: AgentPreset) => void;
+  readonly onChange: (draft: AgentDraft) => void;
 }) {
   return (
     <div className="grid gap-1.5">
@@ -250,30 +262,29 @@ export function DatadogAgentFields({
           id="datadog-agent-host"
           size="compact"
           aria-label="Agent host"
-          value={preset.host}
+          aria-invalid={problem !== null && draft.host.trim() === ""}
+          value={draft.host}
           disabled={disabled}
-          onChange={(event) =>
-            onChange({ ...preset, host: event.target.value.trim() || "127.0.0.1" })
-          }
+          onChange={(event) => onChange({ ...draft, host: event.target.value })}
         />
         <Input
           size="compact"
-          type="number"
-          min={1}
-          max={65535}
+          inputMode="numeric"
           aria-label="Agent port"
-          value={String(preset.port)}
+          aria-invalid={problem !== null && draft.host.trim() !== ""}
+          value={draft.port}
           disabled={disabled}
-          onChange={(event) => {
-            const port = Number(event.target.value);
-            if (Number.isInteger(port) && port >= 1 && port <= 65_535)
-              onChange({ ...preset, port });
-          }}
+          onChange={(event) => onChange({ ...draft, port: event.target.value })}
         />
       </div>
-      <p className="text-xs text-muted-foreground">
+      {problem !== null && (
+        <Text as="p" role="alert" variant="callout" tone="danger">
+          {problem}
+        </Text>
+      )}
+      <Text as="p" variant="callout" tone="muted">
         The Agent holds the API key and needs its OTLP HTTP receiver turned on.
-      </p>
+      </Text>
     </div>
   );
 }

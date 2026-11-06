@@ -132,3 +132,43 @@ export const datadogKeyProblem = (key: string): string | null => {
     ? null
     : `A Datadog API key is 32 hexadecimal characters; this one has ${trimmed.length}.`;
 };
+
+type AgentPreset = Extract<HoustonObservabilityPreset, { _tag: "DatadogAgent" }>;
+
+/** The Agent host and port as typed; they are checked only when saving. */
+export interface AgentDraft {
+  readonly host: string;
+  readonly port: string;
+}
+
+export const agentDraftOf = (preset: AgentPreset): AgentDraft => ({
+  host: preset.host,
+  port: String(preset.port),
+});
+
+const PORT_SHAPE = /^\d{1,5}$/;
+
+/** The Agent preset a draft saves as, or why it cannot be saved yet. */
+export const parseAgentDraft = (
+  draft: AgentDraft,
+):
+  | { readonly _tag: "Valid"; readonly preset: AgentPreset }
+  | { readonly _tag: "Invalid"; readonly problem: string } => {
+  const host = draft.host.trim();
+  if (host === "")
+    return { _tag: "Invalid", problem: "Enter the Agent's host, such as 127.0.0.1." };
+  const port = draft.port.trim();
+  const number = PORT_SHAPE.test(port) ? Number(port) : Number.NaN;
+  if (!(number >= 1 && number <= 65_535))
+    return { _tag: "Invalid", problem: "Enter the Agent's OTLP port, from 1 to 65535." };
+  return { _tag: "Valid", preset: { _tag: "DatadogAgent", host, port: number } };
+};
+
+/** The API key field's status label; a refused status query says so instead of showing nothing. */
+export const datadogKeyStatusLabel = (status: {
+  readonly data: { readonly present: boolean } | null;
+  readonly error: string | null;
+}): string => {
+  if (status.data !== null) return status.data.present ? "Saved" : "Not set";
+  return status.error === null ? "Checking…" : "Unavailable";
+};

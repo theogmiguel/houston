@@ -12,15 +12,19 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
+import { Text } from "../ui/text";
 import { ConnectionStatusDot } from "../ConnectionStatusDot";
 import { DatadogAgentFields, DatadogExportFields } from "./DatadogExportFields";
 import {
+  type AgentDraft,
   DESTINATION_LABELS,
   type TelemetryDestination,
+  agentDraftOf,
   datadogIntakeUrl,
   destinationOf,
   initialPreset,
   observabilityPatch,
+  parseAgentDraft,
   rejectedLabel,
 } from "./telemetryExport.logic";
 import { useSettingsScope } from "./SettingsScopeContext";
@@ -146,8 +150,17 @@ function TelemetryExportForm() {
   const destination = destinationDraft ?? savedDestination;
   const [presetDraft, setPresetDraft] = useState<typeof saved.preset | null>(null);
   const preset = presetDraft ?? initialPreset(destination, saved.preset);
-  const patch = observabilityPatch(saved, destination, preset, values);
-  const changed = patch !== null;
+  const [agentDraft, setAgentDraft] = useState<AgentDraft | null>(null);
+  const agent =
+    preset?._tag === "DatadogAgent" && agentDraft !== null ? parseAgentDraft(agentDraft) : null;
+  const patch = observabilityPatch(
+    saved,
+    destination,
+    agent?._tag === "Valid" ? agent.preset : preset,
+    values,
+  );
+  const blocked = agent?._tag === "Invalid";
+  const changed = patch !== null || blocked;
 
   const sendCheck = async (key: SignalKey, signal: OtlpSignal, url: string) => {
     if (!environmentId) return;
@@ -196,7 +209,7 @@ function TelemetryExportForm() {
         className="grid gap-4 px-4 py-4 sm:px-5"
         onSubmit={async (event) => {
           event.preventDefault();
-          if (!environment || saving) return;
+          if (!environment || saving || blocked) return;
           setSaving(true);
           setMessage(null);
           const result = await updateSettings({
@@ -208,14 +221,15 @@ function TelemetryExportForm() {
             setDraft({});
             setDestinationDraft(null);
             setPresetDraft(null);
+            setAgentDraft(null);
             setMessage("Saved. Restart the server to apply.");
           }
         }}
       >
-        <p className="text-xs text-muted-foreground">
+        <Text as="p" variant="callout" tone="muted">
           Send traces, metrics, and logs to an OTLP HTTP receiver or to Datadog. Restart the server
           to apply. Environment variables override these settings.
-        </p>
+        </Text>
         <div className="grid gap-1.5">
           <Label htmlFor="telemetry-destination">Destination</Label>
           <Select
@@ -225,6 +239,7 @@ function TelemetryExportForm() {
               if (!isDestination(value)) return;
               setDestinationDraft(value === savedDestination ? null : value);
               setPresetDraft(null);
+              setAgentDraft(null);
               setMessage(null);
             }}
           >
@@ -264,32 +279,36 @@ function TelemetryExportForm() {
         )}
         {destination !== "otlp" &&
           overrides.map(({ descriptor, override }) => (
-            <p key={descriptor.key} className="break-all text-xs text-muted-foreground">
+            <Text as="p" key={descriptor.key} variant="callout" tone="muted" breakWords>
               {descriptor.label}: {override.label.toLowerCase()} to {override.url}
               {override.variable && (
                 <>
                   {" "}
-                  from <code className="font-mono">{override.variable}</code>
+                  from{" "}
+                  <Text as="code" variant="callout" tone="inherit" mono>
+                    {override.variable}
+                  </Text>
                 </>
               )}
               , which overrides this destination.
-            </p>
+            </Text>
           ))}
         {preset?._tag === "DatadogAgent" && (
           <DatadogAgentFields
-            preset={preset}
+            draft={agentDraft ?? agentDraftOf(preset)}
+            problem={agent?._tag === "Invalid" ? agent.problem : null}
             disabled={saving || !canEdit}
             onChange={(next) => {
-              setPresetDraft(next);
+              setAgentDraft(next);
               setMessage(null);
             }}
           />
         )}
         {!canEdit && (
-          <p className="text-xs text-muted-foreground">
+          <Text as="p" variant="callout" tone="muted">
             This connection lacks permission to change settings on{" "}
             {environment?.label ?? "the selected environment"}.
-          </p>
+          </Text>
         )}
         {destination === "otlp" &&
           SIGNALS.map((descriptor) => {
@@ -310,7 +329,11 @@ function TelemetryExportForm() {
                     {status && <ConnectionStatusDot dotClassName={status.dot} />}
                     <Label htmlFor={key}>{label} endpoint</Label>
                   </div>
-                  {status && <span className="text-xs text-muted-foreground">{status.label}</span>}
+                  {status && (
+                    <Text variant="callout" tone="muted">
+                      {status.label}
+                    </Text>
+                  )}
                 </div>
                 <div className="flex gap-2">
                   <Input
@@ -346,23 +369,26 @@ function TelemetryExportForm() {
                   )}
                 </div>
                 {(saved[key] !== (running?.[key] ?? "") || override?.variable) && (
-                  <p className="break-all text-xs text-muted-foreground">
+                  <Text as="p" variant="callout" tone="muted" breakWords>
                     Running: {running?.[key] || "Disabled"}
                     {override?.variable && (
                       <>
                         {" "}
-                        from <code className="font-mono">{override.variable}</code>
+                        from{" "}
+                        <Text as="code" variant="callout" tone="inherit" mono>
+                          {override.variable}
+                        </Text>
                       </>
                     )}
-                  </p>
+                  </Text>
                 )}
               </div>
             );
           })}
         <div className="flex items-center justify-between gap-3">
-          <p role="status" className="text-xs text-muted-foreground">
+          <Text as="p" role="status" variant="callout" tone="muted">
             {message}
-          </p>
+          </Text>
           <div className="flex shrink-0 gap-2">
             <Button
               type="button"
@@ -373,6 +399,7 @@ function TelemetryExportForm() {
                 setDraft({});
                 setDestinationDraft(null);
                 setPresetDraft(null);
+                setAgentDraft(null);
                 setMessage(null);
                 if (!canCheck) return;
                 for (const descriptor of SIGNALS) {
@@ -384,7 +411,7 @@ function TelemetryExportForm() {
             >
               Discard
             </Button>
-            <Button type="submit" size="xs" disabled={!changed || saving || !canEdit}>
+            <Button type="submit" size="xs" disabled={!changed || blocked || saving || !canEdit}>
               {saving ? "Saving…" : "Save"}
             </Button>
           </div>
