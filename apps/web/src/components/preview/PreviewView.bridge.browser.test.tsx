@@ -54,6 +54,7 @@ const mocks = vi.hoisted(() => {
         setAnnotationSendEnabled,
         cancelPickElement,
         pickElement,
+        annotationVoice: { onEvent: () => () => {}, update: async () => {} },
         captureScreenshot,
         pictureInPicture: {
           open: openPictureInPicture,
@@ -206,7 +207,12 @@ describe("preview toolbar with the desktop preview bridge", () => {
     await using _screen = await render(view());
 
     await userEvent.click(page.getByRole("button", { name: "Annotate preview" }));
-    await vi.waitFor(() => expect(mocks.pickElement).toHaveBeenCalledWith(TEST_RUNTIME_TAB_ID));
+    await vi.waitFor(() =>
+      expect(mocks.pickElement).toHaveBeenCalledWith(
+        TEST_RUNTIME_TAB_ID,
+        expect.objectContaining({ sessionId: expect.any(String), shortcuts: expect.any(Array) }),
+      ),
+    );
     expect(mocks.setAnnotationSendEnabled).toHaveBeenCalledWith(TEST_RUNTIME_TAB_ID, false);
 
     await userEvent.click(page.getByRole("button", { name: "Preview menu" }));

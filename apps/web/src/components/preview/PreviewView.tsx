@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 import { scopedThreadKey } from "@houston-app/client-runtime/environment";
 import { settlePromise } from "@houston-app/client-runtime/state/runtime";
 import {
@@ -12,6 +13,7 @@ import {
   AuthOrchestrationOperateScope,
   DEFAULT_BROWSER_PROFILE_ID,
   FILL_PREVIEW_VIEWPORT,
+  type DesktopPreviewAnnotationVoiceConfig,
   type PreviewAnnotationPayload,
   type ScopedThreadRef,
   DEFAULT_PREVIEW_ZOOM_FACTOR,
@@ -103,6 +105,9 @@ import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { observeResize } from "~/lib/observeResize";
 import { randomUUID } from "~/lib/utils";
+import { effectiveShortcutsForCommand } from "~/keybindings";
+import { primaryServerKeybindingsAtom } from "~/state/server";
+import { PreviewAnnotationSpeech } from "./PreviewAnnotationSpeech";
 
 interface Props {
   threadRef: ScopedThreadRef;
@@ -164,6 +169,9 @@ export function PreviewView({
     Boolean(onSendAnnotation);
   const activeRecordingTabIds = useActiveBrowserRecordingTabIds();
   const pickActiveRef = useRef<{ cancelled: boolean } | null>(null);
+  const [annotationVoice, setAnnotationVoice] =
+    useState<DesktopPreviewAnnotationVoiceConfig | null>(null);
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const panelMaximized = useRightPanelStore(
     (state) => selectThreadRightPanelState(state.byThreadKey, threadRef).maximized === true,
   );
@@ -838,11 +846,20 @@ export function PreviewView({
     let submitted = false;
     pickActiveRef.current = pickRequest;
     setPickActive(true);
+    // The guest learns only the dictation chords, never the whole keybinding config.
+    const voice: DesktopPreviewAnnotationVoiceConfig = {
+      sessionId: randomUUID(),
+      shortcuts: effectiveShortcutsForCommand(keybindings, "composer.dictation", {
+        context: { previewFocus: true, previewOpen: true, editableFocus: true },
+      }),
+    };
+    setAnnotationVoice(voice);
     const finishPick = () => {
       const isCurrentPick = pickActiveRef.current === pickRequest;
       if (isCurrentPick) {
         pickActiveRef.current = null;
         setPickActive(false);
+        setAnnotationVoice(null);
       }
       if (
         (isCurrentPick || submitted) &&
@@ -863,12 +880,13 @@ export function PreviewView({
           readEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope),
       );
       if (pickRequest.cancelled) return;
-      const result = await bridge.pickElement(runtimeTabId);
+      const result = await bridge.pickElement(runtimeTabId, voice);
       if (!result || pickRequest.cancelled) return;
       // The accepted pick must survive further clicks, tab changes, and unmount; stop cancellation here.
       if (pickActiveRef.current === pickRequest) {
         pickActiveRef.current = null;
         setPickActive(false);
+        setAnnotationVoice(null);
         submitted = true;
       }
       const { annotation: picked, submission, screenshotFailed = false } = result;
@@ -930,6 +948,7 @@ export function PreviewView({
         void previewBridge.cancelPickElement(runtimeTabId).catch(() => undefined);
       }
       setPickActive(false);
+      setAnnotationVoice(null);
     };
   }, [runtimeTabId]);
 
@@ -988,6 +1007,15 @@ export function PreviewView({
       className="relative flex min-h-0 flex-1 flex-col bg-background"
       data-thread-key={scopedThreadKey(threadRef)}
     >
+      {pickActive && runtimeTabId && annotationVoice ? (
+        <PreviewAnnotationSpeech
+          key={annotationVoice.sessionId}
+          threadRef={threadRef}
+          tabId={runtimeTabId}
+          config={annotationVoice}
+          keybindings={keybindings}
+        />
+      ) : null}
       <PreviewChromeRow
         url={url}
         loading={loading || serverStreamPending}

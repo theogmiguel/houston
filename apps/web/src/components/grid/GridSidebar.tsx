@@ -2,6 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
+  settlePromise,
   type AtomCommandResult,
 } from "@houston-app/client-runtime/state/runtime";
 import {
@@ -95,7 +96,9 @@ import {
 } from "../../grid/sidebar";
 import { PullRequestChecksGlyph, PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { GridShelves } from "./GridShelves";
+import { readLocalApi } from "../../localApi";
 import { useProjectSectionMenu } from "./projectSectionMenu";
+import { gridHeadingMenuItems, hiddenGridIdFromAction } from "./gridHeadingMenu";
 import {
   COLLAPSED_GRIDS_STORAGE_KEY,
   COLLAPSED_PROJECTS_STORAGE_KEY,
@@ -153,7 +156,6 @@ import {
   MenuItem,
   MenuPopup,
   MenuSeparator,
-  MenuShortcut,
   MenuSub,
   MenuSubPopup,
   MenuSubTrigger,
@@ -1532,62 +1534,76 @@ export function GridGroup({
     setRenaming(false);
   };
 
-  const gridMenuItems = (
-    <>
-      <MenuItem onClick={onCreateThread}>New thread</MenuItem>
-      <MenuItem onClick={startRenaming}>
-        Rename grid
-        <MenuShortcut>F2</MenuShortcut>
-      </MenuItem>
-      <MenuSeparator />
-      <MenuItem onClick={() => (grid.pinnedAt === null ? pinGrid(grid.id) : unpinGrid(grid.id))}>
-        {grid.pinnedAt === null ? "Pin grid" : "Unpin grid"}
-      </MenuItem>
-      {manualOrder ? (
-        <>
-          <MenuItem onClick={() => moveGridInWorkspace(grid.id, -1)}>Move grid up</MenuItem>
-          <MenuItem onClick={() => moveGridInWorkspace(grid.id, 1)}>Move grid down</MenuItem>
-        </>
-      ) : null}
-      <MenuItem onClick={() => setGridHidden(grid.id, true)}>Hide grid</MenuItem>
-      <MenuItem onClick={() => void deleteGridWithConfirm(grid, deleteGrid)}>Delete grid</MenuItem>
-      <MenuSeparator />
-      <MenuItem disabled={readyThreads.length === 0} onClick={closeAllReady}>
-        Close all ready
-      </MenuItem>
-      <MenuSeparator />
-      <MenuSub>
-        <MenuSubTrigger>
-          Workspace
-          <ChevronRightIcon aria-hidden className="ml-auto size-3.5 text-secondary-label" />
-        </MenuSubTrigger>
-        <MenuSubPopup>
-          <MenuItem onClick={onCreateGrid}>New grid in {workspaceTitle}</MenuItem>
-          {hiddenGrids.length > 0 ? (
-            <MenuSub>
-              <MenuSubTrigger>
-                Show hidden grids
-                <ChevronRightIcon aria-hidden className="ml-auto size-3.5 text-secondary-label" />
-              </MenuSubTrigger>
-              <MenuSubPopup>
-                {hiddenGrids.map((hiddenGrid) => (
-                  <MenuItem key={hiddenGrid.id} onClick={() => onShowGrid(hiddenGrid.id)}>
-                    <EyeOffIcon aria-hidden className="size-3.5" />
-                    <span className="min-w-0 flex-1 truncate">{hiddenGrid.name}</span>
-                    <span className="text-2xs text-secondary-label">Show</span>
-                  </MenuItem>
-                ))}
-              </MenuSubPopup>
-            </MenuSub>
-          ) : null}
-        </MenuSubPopup>
-      </MenuSub>
-    </>
-  );
+  const actionsButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const openGridMenu = async (position: { x: number; y: number }) => {
+    const api = readLocalApi();
+    if (!api) return;
+    const items = gridHeadingMenuItems({
+      pinned: grid.pinnedAt !== null,
+      manualOrder,
+      readyCount: readyThreads.length,
+      workspaceTitle,
+      hiddenGrids,
+    });
+    setMenuOpen(true);
+    const clicked = await settlePromise(() => api.contextMenu.show(items, position));
+    setMenuOpen(false);
+    if (clicked._tag === "Failure" || clicked.value === null) return;
+    const action = clicked.value;
+    const hiddenGridId = hiddenGridIdFromAction(action);
+    if (hiddenGridId !== null) {
+      onShowGrid(hiddenGridId);
+      return;
+    }
+    switch (action) {
+      case "new-thread":
+        onCreateThread();
+        return;
+      case "rename":
+        startRenaming();
+        return;
+      case "toggle-pin":
+        if (grid.pinnedAt === null) pinGrid(grid.id);
+        else unpinGrid(grid.id);
+        return;
+      case "move-up":
+        moveGridInWorkspace(grid.id, -1);
+        return;
+      case "move-down":
+        moveGridInWorkspace(grid.id, 1);
+        return;
+      case "hide":
+        setGridHidden(grid.id, true);
+        return;
+      case "delete":
+        await deleteGridWithConfirm(grid, deleteGrid);
+        return;
+      case "close-ready":
+        closeAllReady();
+        return;
+      case "new-grid":
+        onCreateGrid();
+        return;
+    }
+  };
+  const openGridMenuBelow = (element: HTMLElement | null) => {
+    const rect = element?.getBoundingClientRect();
+    if (rect === undefined) return;
+    void openGridMenu({ x: rect.left, y: rect.bottom + 4 });
+  };
 
   return (
     <div className="mt-1 flex flex-col gap-px" data-grid-key={grid.id}>
-      <div ref={headerRef} className="group/grid relative flex items-center">
+      <div
+        ref={headerRef}
+        className="group/grid relative flex items-center"
+        onContextMenu={(event) => {
+          if (renaming) return;
+          event.preventDefault();
+          void openGridMenu({ x: event.clientX, y: event.clientY });
+        }}
+      >
         {renaming ? (
           <input
             autoFocus
@@ -1614,6 +1630,11 @@ export function GridGroup({
                     if (event.key === "F2") {
                       event.preventDefault();
                       startRenaming();
+                      return;
+                    }
+                    if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+                      event.preventDefault();
+                      openGridMenuBelow(event.currentTarget);
                     }
                   }}
                   aria-expanded={!collapsed}
@@ -1675,25 +1696,21 @@ export function GridGroup({
                 </TooltipPopup>
               </Tooltip>
             </span>
-            <Menu>
-              <MenuTrigger
-                render={
-                  <button
-                    type="button"
-                    aria-label={`Grid actions for ${grid.name}`}
-                    className={cn(
-                      SIDEBAR_GRID_ACTION_CLS,
-                      "absolute right-1 top-1/2 -translate-y-1/2",
-                    )}
-                  />
-                }
-              >
-                <MoreHorizontalIcon aria-hidden className="size-3.5" />
-              </MenuTrigger>
-              <MenuPopup side="bottom" align="end">
-                {gridMenuItems}
-              </MenuPopup>
-            </Menu>
+            <button
+              ref={actionsButtonRef}
+              type="button"
+              aria-label={`Grid actions for ${grid.name}`}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              onClick={() => openGridMenuBelow(actionsButtonRef.current)}
+              className={cn(
+                SIDEBAR_GRID_ACTION_CLS,
+                "absolute right-1 top-1/2 -translate-y-1/2",
+                menuOpen && "opacity-100",
+              )}
+            >
+              <MoreHorizontalIcon aria-hidden className="size-3.5" />
+            </button>
           </>
         )}
       </div>
@@ -1740,6 +1757,12 @@ function threadStatusInk(state: GridThreadState): string[] {
     ? [SIDEBAR_THREAD_STATUS_QUIET_CLASS]
     : [SIDEBAR_THREAD_STATUS_ATTENTION_CLASS, threadStateTextClass(state)];
 }
+
+// Hold (22px) + Close (~60px) + More (22px) + gaps, and the Wake/Reopen button (~72px).
+const ROW_TITLE_CLEAR_ACTIONS = "group-hover/th:pr-27 group-has-[:focus-visible]/th:pr-27";
+const ROW_TITLE_CLEARED_ACTIONS = "pr-27";
+const ROW_TITLE_CLEAR_SHELF_ACTION = "group-hover/th:pr-19 group-has-[:focus-visible]/th:pr-19";
+const ROW_TITLE_CLEARED_SHELF_ACTION = "pr-19";
 
 function ThreadStateMark({
   state,
@@ -2041,7 +2064,13 @@ export function ThreadCard({
                 }
               }}
               aria-current={active ? "true" : undefined}
-              className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left outline-none"
+              className={cn(
+                "flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left outline-none",
+                // The hover actions overlay the row; reserve their width so the title truncates before them.
+                shelf === null ? ROW_TITLE_CLEAR_ACTIONS : ROW_TITLE_CLEAR_SHELF_ACTION,
+                actionsVisible &&
+                  (shelf === null ? ROW_TITLE_CLEARED_ACTIONS : ROW_TITLE_CLEARED_SHELF_ACTION),
+              )}
             >
               <span className="min-w-0 flex-1 truncate text-headline leading-4.5 font-medium text-foreground">
                 <HighlightedText text={thread.title} query={query} />

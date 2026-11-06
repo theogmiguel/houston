@@ -1,11 +1,12 @@
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
-import { encodeSpeechProjectNameHeader, SPEECH_STREAM_PATH } from "@houston-app/contracts";
+import { encodeSpeechPcmRequest } from "@houston-app/shared/speech";
+import { SPEECH_STREAM_PATH } from "@houston-app/contracts";
 import type {
   SpeechAcceleration,
-  SpeechCustomWords,
-  SpeechLanguage,
   SpeechModelUnloadTimeout,
+  SpeechPostProcessingOptions,
+  SpeechTranscriptionOptions,
 } from "@houston-app/contracts";
 import { RemoteEnvironmentAuthFetchError } from "../rpc/http.ts";
 
@@ -76,10 +77,7 @@ export const getEnvironmentSpeechStatus = (prepared: PreparedConnection) =>
     run: ({ client, headers }) => client.status({ headers }),
   });
 
-export const getEnvironmentSpeechStreamUrl = (
-  prepared: PreparedConnection,
-  projectName?: string,
-) => {
+export const getEnvironmentSpeechStreamUrl = (prepared: PreparedConnection) => {
   let endpoint = prepared.httpBaseUrl;
   return request({
     group: "auth",
@@ -95,20 +93,24 @@ export const getEnvironmentSpeechStreamUrl = (
       const url = new URL(SPEECH_STREAM_PATH, endpoint);
       url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
       url.searchParams.set("wsTicket", Redacted.value(ticket));
-      if (projectName) url.searchParams.set("projectName", projectName);
       return url.toString();
     }),
   );
 };
 
-export const getEnvironmentSpeechModels = (prepared: PreparedConnection) =>
-  request({
+export const getEnvironmentSpeechModels = (
+  prepared: PreparedConnection,
+  includeBenchmarks = false,
+) => {
+  const query = includeBenchmarks ? { benchmarks: "1" as const } : {};
+  return request({
     group: "voice",
     prepared,
     method: "GET",
-    path: (urls) => urls.models(),
-    run: ({ client, headers }) => client.models({ headers }),
+    path: (urls) => urls.models({ query }),
+    run: ({ client, headers }) => client.models({ headers, query }),
   });
+};
 
 export const prepareEnvironmentSpeechModel = (prepared: PreparedConnection) =>
   request({
@@ -152,7 +154,7 @@ export const cancelEnvironmentSpeechModelDownload = (
 export const transcribeEnvironmentPcm = (
   prepared: PreparedConnection,
   pcm: Uint8Array,
-  projectName?: string,
+  options: SpeechTranscriptionOptions,
 ) =>
   request({
     group: "voice",
@@ -160,17 +162,10 @@ export const transcribeEnvironmentPcm = (
     method: "POST",
     path: (urls) => urls.transcribe(),
     run: ({ client, headers }) =>
-      client.transcribe({
-        headers: {
-          ...headers,
-          ...(projectName
-            ? { "x-houston-project-name": encodeSpeechProjectNameHeader(projectName) }
-            : {}),
-        },
-        payload: pcm,
-      }),
+      client.transcribe({ headers, payload: encodeSpeechPcmRequest(pcm, options) }),
   });
 
+/** Sends the transcript and draft context to a text-generation provider on `prepared`. */
 export const postProcessEnvironmentTranscript = (
   prepared: PreparedConnection,
   transcript: string,
@@ -178,37 +173,15 @@ export const postProcessEnvironmentTranscript = (
     readonly text: string;
     readonly selection: { readonly start: number; readonly end: number };
   },
+  options: SpeechPostProcessingOptions,
 ) =>
   request({
     group: "voice",
     prepared,
     method: "POST",
     path: (urls) => urls.postProcess(),
-    run: ({ client, headers }) => client.postProcess({ headers, payload: { transcript, draft } }),
-  });
-
-export const updateEnvironmentSpeechCustomWords = (
-  prepared: PreparedConnection,
-  words: SpeechCustomWords,
-) =>
-  request({
-    group: "voice",
-    prepared,
-    method: "POST",
-    path: (urls) => urls.updateCustomWords(),
-    run: ({ client, headers }) => client.updateCustomWords({ headers, payload: { words } }),
-  });
-
-export const updateEnvironmentSpeechFillerWordRemoval = (
-  prepared: PreparedConnection,
-  enabled: boolean,
-) =>
-  request({
-    group: "voice",
-    prepared,
-    method: "POST",
-    path: (urls) => urls.updateFillerWordRemoval(),
-    run: ({ client, headers }) => client.updateFillerWordRemoval({ headers, payload: { enabled } }),
+    run: ({ client, headers }) =>
+      client.postProcess({ headers, payload: { transcript, draft, options } }),
   });
 
 export const updateEnvironmentSpeechAcceleration = (
@@ -234,30 +207,6 @@ export const updateEnvironmentSpeechModelUnloadTimeout = (
     path: (urls) => urls.updateModelUnloadTimeout(),
     run: ({ client, headers }) =>
       client.updateModelUnloadTimeout({ headers, payload: { timeout } }),
-  });
-
-export const updateEnvironmentSpeechLanguage = (
-  prepared: PreparedConnection,
-  language: SpeechLanguage,
-) =>
-  request({
-    group: "voice",
-    prepared,
-    method: "POST",
-    path: (urls) => urls.updateLanguage(),
-    run: ({ client, headers }) => client.updateLanguage({ headers, payload: { language } }),
-  });
-
-export const updateEnvironmentSpeechTranslation = (
-  prepared: PreparedConnection,
-  enabled: boolean,
-) =>
-  request({
-    group: "voice",
-    prepared,
-    method: "POST",
-    path: (urls) => urls.updateTranslation(),
-    run: ({ client, headers }) => client.updateTranslation({ headers, payload: { enabled } }),
   });
 
 export const removeEnvironmentSpeechModel = (prepared: PreparedConnection, modelId: string) =>

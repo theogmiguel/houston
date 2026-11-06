@@ -43,6 +43,7 @@ vi.mock(import("../../state/use-atom-command"), () => ({
 import { render } from "../../../test/render";
 import { makeThreadProjectionFixture } from "../../test-fixtures";
 import { ToastProvider } from "../ui/toast";
+import { ThreadOpenProvider } from "../grid/threadOpenContext";
 import { ThreadRelationshipsPanel } from "./ThreadRelationshipsControl";
 
 const environmentId = EnvironmentId.make("environment");
@@ -190,6 +191,55 @@ it("opens an idle child from Lineage when its shell has not been loaded", async 
   await vi.waitFor(() =>
     expect(screen.router?.state.location.pathname).toBe("/local/omitted-child"),
   );
+});
+
+it("opens a subagent through the grid cell's opener instead of leaving the grid", async () => {
+  setup();
+  const projection = makeThreadProjectionFixture();
+  const childId = ThreadId.make("grid-child");
+  const environmentId = EnvironmentId.make("local");
+  state.projection = {
+    ...projection,
+    subagents: [
+      {
+        id: NodeId.make("agent"),
+        threadId: projection.thread.id,
+        runId: null,
+        parentNodeId: NodeId.make("parent"),
+        origin: "app_owned",
+        createdBy: "agent",
+        driver: "codex",
+        providerInstanceId: projection.thread.providerInstanceId,
+        providerThreadId: null,
+        childThreadId: childId,
+        nativeTaskRef: null,
+        prompt: "Inspect the change",
+        title: "Grid child",
+        model: null,
+        status: "completed",
+        result: null,
+        startedAt: null,
+        completedAt: projection.thread.updatedAt,
+        updatedAt: projection.thread.updatedAt,
+      },
+    ],
+  };
+  const open = vi.fn();
+  await using screen = await render(
+    <ThreadOpenProvider open={open}>
+      <ThreadRelationshipsPanel
+        environmentId={environmentId}
+        threadId={projection.thread.id}
+        showLineage
+        showSideChats
+      />
+    </ThreadOpenProvider>,
+  );
+  const pathname = screen.router?.state.location.pathname;
+  await screen.getByRole("button", { name: /Previous agents/ }).click();
+  await screen.getByRole("button", { name: /Grid child/ }).click();
+  await vi.waitFor(() => expect(open).toHaveBeenCalledWith({ environmentId, threadId: childId }));
+  expect(screen.router?.state.location.pathname).toBe(pathname);
 });
 
 it("shows a lineage thread's full title in its tooltip", async () => {

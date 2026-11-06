@@ -12,6 +12,7 @@ import {
   ClientSettingsPatch,
   ClaudeSettings,
   DEFAULT_SERVER_SETTINGS,
+  PROJECT_SCOPED_SERVER_SETTING_KEYS,
   globalIdleCompaction,
   idleCompactionPatch,
   requiredScopesForProjectMutation,
@@ -562,44 +563,71 @@ describe("ClientSettings microphone", () => {
     );
   });
 
-  it("follows the primary transcription environment by default", () => {
-    expect(decodeClientSettings({}).voiceTranscriptionEnvironmentId).toBeNull();
-  });
-
-  it("accepts a transcription environment selection", () => {
-    expect(
-      decodeClientSettingsPatch({ voiceTranscriptionEnvironmentId: "environment-2" })
-        .voiceTranscriptionEnvironmentId,
-    ).toBe("environment-2");
+  it("keeps dictation preferences on the device and drops the old environment pin", () => {
+    const decoded = decodeClientSettings({
+      voiceTranscriptionEnvironmentId: "environment-2",
+      speechPostProcessingEnabled: true,
+    });
+    expect(decoded).not.toHaveProperty("voiceTranscriptionEnvironmentId");
+    expect(decoded).not.toHaveProperty("speechPostProcessingEnabled");
+    expect(decoded).toMatchObject({
+      speechLanguage: "auto",
+      speechTranslateToEnglish: false,
+      speechCustomWords: [],
+      speechSilenceFiltering: true,
+      speechRemoveFillerWords: true,
+      speechPostProcessingPrompt: { mode: "default", customInstructions: "" },
+      speechCorrectionWord: "",
+    });
+    expect(() => decodeClientSettingsPatch({ speechCorrectionWord: "x".repeat(51) })).toThrow();
   });
 });
 
-describe("ServerSettings speech model", () => {
-  it("uses the recommended local transcription model by default", () => {
-    expect(DEFAULT_SERVER_SETTINGS.speechModelId).toBe(
-      "handy-computer/parakeet-unified-en-0.6b-gguf",
-    );
+describe("ServerSettings speech", () => {
+  it("stores the model and resources on the environment", () => {
+    expect(DEFAULT_SERVER_SETTINGS).toMatchObject({
+      speechModelId: "handy-computer/parakeet-unified-en-0.6b-gguf",
+      speechAcceleration: "auto",
+      speechModelUnloadTimeout: "min_15",
+      speechProjectCustomWords: [],
+      speechPostProcessingModelSelection: null,
+    });
+    expect(DEFAULT_SERVER_SETTINGS).not.toHaveProperty("speechLanguage");
+    expect(DEFAULT_SERVER_SETTINGS).not.toHaveProperty("speechCustomWords");
+    expect(DEFAULT_SERVER_SETTINGS).not.toHaveProperty("speechPostProcessingEnabled");
+    expect(PROJECT_SCOPED_SERVER_SETTING_KEYS).toContain("speechProjectCustomWords");
   });
 
-  it("starts with no custom transcription words", () => {
-    expect(DEFAULT_SERVER_SETTINGS.speechAcceleration).toBe("auto");
-    expect(DEFAULT_SERVER_SETTINGS.speechModelUnloadTimeout).toBe("min_15");
-    expect(DEFAULT_SERVER_SETTINGS.speechLanguage).toBe("auto");
-    expect(DEFAULT_SERVER_SETTINGS.speechCustomWords).toEqual([]);
-    expect(DEFAULT_SERVER_SETTINGS.speechRemoveFillerWords).toBe(true);
-    expect(DEFAULT_SERVER_SETTINGS.speechPostProcessingEnabled).toBe(false);
-    expect(DEFAULT_SERVER_SETTINGS.speechCorrectionWord).toBe("");
-    expect(DEFAULT_SERVER_SETTINGS.speechPostProcessingModelSelection).not.toBe(
-      DEFAULT_SERVER_SETTINGS.textGenerationModelSelection,
-    );
-    expect(DEFAULT_SERVER_SETTINGS.speechPostProcessingModelSelection).toMatchObject({
+  it("decodes the cleanup model that older servers defaulted to as unset", () => {
+    const legacyDefault = {
+      instanceId: "codex",
       model: "gpt-6-luna",
       options: [{ id: "reasoningEffort", value: "low" }],
-    });
-    expect(DEFAULT_SERVER_SETTINGS.speechPostProcessingPrompt).toEqual({
-      mode: "default",
-      customInstructions: "",
-    });
+    };
+    expect(
+      decodeServerSettings({ speechPostProcessingModelSelection: legacyDefault })
+        .speechPostProcessingModelSelection,
+    ).toBeNull();
+    const chosen = { instanceId: "codex", model: "gpt-6-luna", options: [] };
+    expect(
+      decodeServerSettings({ speechPostProcessingModelSelection: chosen })
+        .speechPostProcessingModelSelection,
+    ).toEqual(chosen);
+    expect(
+      decodeServerSettingsPatch({ speechPostProcessingModelSelection: null })
+        .speechPostProcessingModelSelection,
+    ).toBeNull();
+  });
+
+  it("reads the retired dictation keys only through legacySpeech", () => {
+    const legacySpeech = {
+      speechLanguage: "pt",
+      speechCustomWords: [{ term: "Houston", aliases: [] }],
+      speechPostProcessingPrompt: { mode: "custom" as const, customInstructions: "Keep names." },
+    };
+    expect(decodeServerSettings({ legacySpeech }).legacySpeech).toEqual(legacySpeech);
+    expect(decodeServerSettings({ speechLanguage: "pt" })).not.toHaveProperty("speechLanguage");
+    expect(() => decodeServerSettings({ legacySpeech: { speechLanguage: "x" } })).toThrow();
   });
 });
 

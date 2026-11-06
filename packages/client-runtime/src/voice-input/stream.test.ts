@@ -1,5 +1,9 @@
 import { afterEach, expect, it, vi } from "vite-plus/test";
-import { SPEECH_STREAM_MAX_QUEUED_BYTES, type SpeechStreamEvent } from "@houston-app/contracts";
+import {
+  DEFAULT_SPEECH_TRANSCRIPTION_OPTIONS,
+  SPEECH_STREAM_MAX_QUEUED_BYTES,
+  type SpeechStreamEvent,
+} from "@houston-app/contracts";
 import { openSpeechStream } from "./stream.ts";
 
 class TestSocket extends EventTarget {
@@ -26,14 +30,26 @@ async function connect() {
   const onError = vi.fn();
   const pending = openSpeechStream({
     url: "wss://environment.test/ws/voice",
+    options: DEFAULT_SPEECH_TRANSCRIPTION_OPTIONS,
     signal: abort.signal,
     onText,
     onError,
     createSocket: () => socket as unknown as WebSocket,
   });
+  socket.dispatchEvent(new Event("open"));
+  // The start command is asserted on its own; the tests below count audio and finish frames.
+  const start = socket.sent.shift();
   socket.receive({ type: "ready" });
-  return { socket, abort, onText, onError, stream: await pending };
+  return { socket, abort, onText, onError, start, stream: await pending };
 }
+
+it("opens with the recording's options in the start command", async () => {
+  const { start } = await connect();
+  expect(JSON.parse(start as string)).toEqual({
+    type: "start",
+    options: DEFAULT_SPEECH_TRANSCRIPTION_OPTIONS,
+  });
+});
 
 it("drains ordered PCM before finishing and replaces tentative hypotheses", async () => {
   const { socket, stream, onText } = await connect();

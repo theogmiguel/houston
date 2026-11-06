@@ -19,7 +19,7 @@ export function shouldFinishDictationOnRelease(
 
 type SpeechActions = {
   available: boolean;
-  state: VoiceInputState<true>;
+  state: VoiceInputState;
   start(): Promise<void>;
   stop(): Promise<void>;
   cancel(): void;
@@ -100,7 +100,12 @@ export function useDictationShortcut(input: ShortcutInput) {
       if (!ownsShortcut(id.current)) return;
       if (event.isComposing || event.keyCode === 229) return;
       const { speech } = current.current;
-      if (event.key === "Escape" && (pressed.current !== null || speech.state.phase !== "idle")) {
+      if (event.defaultPrevented || isCommandPaletteOpen()) return;
+      if (
+        event.key === "Escape" &&
+        (pressed.current !== null ||
+          (speech.state.phase !== "idle" && speech.state.phase !== "error"))
+      ) {
         event.preventDefault();
         event.stopImmediatePropagation();
         pressed.current = null;
@@ -108,29 +113,34 @@ export function useDictationShortcut(input: ShortcutInput) {
         speech.cancel();
         return;
       }
-      if (event.defaultPrevented || isCommandPaletteOpen()) return;
       const { keybindings, terminalOpen, modelPickerOpen, disabled } = current.current;
+      const previewFocus = current.current.previewFocus ?? false;
       const command = resolveShortcutCommand(event, keybindings, {
         context: {
           terminalFocus: getTerminalFocusOwner() !== null,
           terminalOpen,
           modelPickerOpen,
-          previewFocus: current.current.previewFocus ?? false,
-          previewOpen: current.current.previewFocus ?? false,
+          previewFocus,
+          previewOpen: previewFocus,
+          ...(previewFocus ? { editableFocus: true } : {}),
         },
       });
       if (command !== "composer.dictation") return;
+      const canStart = speech.state.phase === "idle" || speech.state.phase === "error";
+      // Dictation that cannot start leaves the chord to whatever else binds it.
+      if (canStart && (!speech.available || disabled)) return;
       event.preventDefault();
       event.stopPropagation();
-      if (event.repeat || pressed.current) return;
+      if (event.repeat || (!canStart && speech.state.phase !== "recording")) return;
+      // macOS may omit the previous non-modifier keyup while Command is held.
+      pressed.current = null;
+      generation.current += 1;
       if (speech.state.phase === "recording") {
         void speech.stop();
         return;
       }
-      if (speech.state.phase !== "idle" && speech.state.phase !== "error") return;
-      if (!speech.available || disabled) return;
       pressed.current = {
-        generation: ++generation.current,
+        generation: generation.current,
         code: event.code || event.key,
         startedAt: performance.now(),
         mode,
@@ -139,12 +149,15 @@ export function useDictationShortcut(input: ShortcutInput) {
     };
     const onBlur = () => finish(null);
 
-    const unsubscribe = subscribeKeys?.({ keydown: onKeyDown, keyup: finish, blur: onBlur });
-    if (!subscribeKeys) {
-      window.addEventListener("keydown", onKeyDown, true);
-      window.addEventListener("keyup", finish, true);
-      window.addEventListener("blur", onBlur);
-    }
+    // Keys relayed from an outside editor replay on the window, so they meet the same ownership rules.
+    const unsubscribe = subscribeKeys?.({
+      keydown: (event) => window.dispatchEvent(event),
+      keyup: (event) => window.dispatchEvent(event),
+      blur: onBlur,
+    });
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("keyup", finish, true);
+    window.addEventListener("blur", onBlur);
     return () => {
       disposed = true;
       pressed.current = null;

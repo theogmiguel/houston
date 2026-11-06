@@ -1,11 +1,11 @@
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import { it } from "@effect/vitest";
-import { expect } from "vite-plus/test";
+import { expect, vi } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { HttpRouter, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http";
-import { SpeechStreamEvent } from "@houston-app/contracts";
+import { SpeechStreamEvent, DEFAULT_SPEECH_TRANSCRIPTION_OPTIONS } from "@houston-app/contracts";
 import type { SpeechService, SpeechStream } from "./SpeechService.ts";
 import { runSpeechSocket } from "./stream.ts";
 import type * as NetAddress from "effect/net/NetAddress";
@@ -14,6 +14,9 @@ const decodeEvent = Schema.decodeUnknownSync(Schema.fromJsonString(SpeechStreamE
 
 function client(url: string) {
   const socket = new WebSocket(url);
+  socket.addEventListener("open", () =>
+    socket.send(JSON.stringify({ type: "start", options: DEFAULT_SPEECH_TRANSCRIPTION_OPTIONS })),
+  );
   const events: SpeechStreamEvent[] = [];
   let waiter: ReturnType<typeof Promise.withResolvers<SpeechStreamEvent>> | undefined;
   socket.addEventListener("message", ({ data }) => {
@@ -160,6 +163,28 @@ it.live("processes pipelined audio before the finish command", () => {
         expect(await connection.next()).toEqual({ type: "finished", text: "done" });
       } finally {
         connection.socket.close();
+      }
+    },
+  ).pipe(Effect.scoped, Effect.provide(NodeHttpServer.layerTest));
+});
+
+it.live("refuses audio sent before the start command and names what is missing", () => {
+  const started = vi.fn();
+  return withServer(
+    () => Effect.sync(started).pipe(Effect.as({ feed: () => Effect.never, finish: Effect.never })),
+    async (url) => {
+      const socket = new WebSocket(url);
+      const message = Promise.withResolvers<string>();
+      socket.addEventListener("open", () => socket.send(new Float32Array([0.25])));
+      socket.addEventListener("message", ({ data }) => message.resolve(String(data)));
+      try {
+        expect(decodeEvent(await message.promise)).toEqual({
+          type: "error",
+          message: "Start speech transcription before sending audio.",
+        });
+        expect(started).not.toHaveBeenCalled();
+      } finally {
+        socket.close();
       }
     },
   ).pipe(Effect.scoped, Effect.provide(NodeHttpServer.layerTest));

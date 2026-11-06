@@ -222,6 +222,41 @@ describe("grid sidebar", () => {
     expect(useGridStore.getState().grids[0]?.name).toBe("Review");
   });
 
+  it("opens the grid menu on right-click and runs its actions", async () => {
+    const value = grid({ id: "grid-m", name: "Grid 1" });
+    useGridStore.setState({ grids: [value] });
+    await using screen = await render(group(value, [thread({ id: "thread-m" })]));
+
+    await userEvent.click(headingFor(screen, "grid-m"), { button: "right" });
+    await userEvent.click(page.getByRole("menuitem", { name: "Pin grid" }).element());
+    await expect.poll(() => useGridStore.getState().grids[0]?.pinnedAt).not.toBeNull();
+
+    await userEvent.click(headingFor(screen, "grid-m"), { button: "right" });
+    await userEvent.click(page.getByRole("menuitem", { name: "Rename grid" }).element());
+    const input = screen.getByRole("textbox");
+    await expect.element(input).toHaveFocus();
+    await userEvent.fill(input.element(), "Renamed");
+    await userEvent.keyboard("{Enter}");
+    expect(useGridStore.getState().grids[0]?.name).toBe("Renamed");
+  });
+
+  it("keeps a long thread title clear of the row's hover actions", async () => {
+    const value = grid({ id: "grid-l", name: "Grid 1" });
+    const title = "App de desenvolvimento para testes com um nome bem comprido";
+    await using screen = await render(
+      <div style={{ width: 300 }}>{group(value, [thread({ id: "thread-l", title })])}</div>,
+    );
+
+    const row = screen.container.querySelector("[data-thread-key]") as HTMLElement;
+    await userEvent.hover(row);
+    const titleText = row.querySelector("[data-card-open] > span") as HTMLElement;
+    const close = screen.getByRole("button", { name: "Close thread" }).element();
+    const actions = close.parentElement as HTMLElement;
+    await expect
+      .poll(() => titleText.getBoundingClientRect().right)
+      .toBeLessThanOrEqual(actions.getBoundingClientRect().left);
+  });
+
   it("renames a grid with F2 on its heading", async () => {
     const value = grid({ id: "grid-f", name: "Grid 1" });
     useGridStore.setState({ grids: [value] });
