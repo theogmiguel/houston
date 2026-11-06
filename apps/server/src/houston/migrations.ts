@@ -786,7 +786,7 @@ const houstonMigrationEntries = [
   [9, "NightShift", NightShift],
   [10, "DropNightShiftAndHarnessReview", DropNightShiftAndHarnessReview],
   [11, "SecretStoreImport", SecretStoreImport],
-  [12, "EventPromptReferences", EventPromptReferences],
+  [14, "EventPromptReferences", EventPromptReferences],
 ] as const;
 
 // Ids land in merge order, so a database can record a higher id before a lower one; every
