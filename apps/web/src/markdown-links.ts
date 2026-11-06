@@ -11,6 +11,10 @@ import { parseFileUrlHref, splitFilePathPosition } from "@houston-app/shared/fil
 import { formatWorkspaceRelativePath } from "./filePathDisplay";
 import { isTerminalLinkActivation } from "./terminal-links";
 
+const PDF_EXTENSION = /\.pdf$/i;
+const QUERY_OR_FRAGMENT = /[?#]/;
+const INLINE_CODE_PATH_NAMES_FROM_WORKSPACE_ROOT_PATTERN = /^(?:~|\.{1,2})\//;
+
 export interface MarkdownFileLinkMeta {
   filePath: string;
   workspaceLookupPath: string | null;
@@ -30,7 +34,7 @@ export function shouldOpenMarkdownFileLinkInEditor(
 }
 
 export function shouldOpenMarkdownFileLinkInBrowserByDefault(path: string): boolean {
-  return /\.pdf$/i.test(path.split(/[?#]/, 1)[0] ?? "");
+  return PDF_EXTENSION.test(path.split(QUERY_OR_FRAGMENT, 1)[0] ?? "");
 }
 
 export function rewriteMarkdownFileUriHref(href: string | undefined): string | null {
@@ -60,7 +64,7 @@ function inlineCodePathNamesFromWorkspaceRoot(
   baseDir: string | undefined,
 ): boolean {
   if (!cwd || !baseDir || !isRelativeFilePath(candidate)) return false;
-  if (/^(?:~|\.{1,2})\//.test(candidate)) return false;
+  if (INLINE_CODE_PATH_NAMES_FROM_WORKSPACE_ROOT_PATTERN.test(candidate)) return false;
   if (!splitFilePathPosition(candidate).path.includes("/")) return false;
   return workspaceRelativeFilePath(baseDir, cwd) !== null;
 }

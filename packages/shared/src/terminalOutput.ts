@@ -1,5 +1,9 @@
 /** Server/client folds must agree: only the last LIVE_LINES are cursor-addressable, with no wrapping.
  * SGR resets at line boundaries for safe tail cuts; unfinished escapes carry through pending. */
+const CSI_PATTERN = /^[?>=]/u;
+const MATCH_PATTERN = /^rgb\((\d+),(\d+),(\d+)\)$/u;
+const TERMINAL_OUTPUT_SPANS_PATTERN = /^0;/u;
+
 export interface TerminalOutputState {
   /** Fixed lines followed by the live window; contains only SGR escapes. */
   readonly text: string;
@@ -393,7 +397,7 @@ class Terminal {
   }
 
   csi(params: string, final: string): void {
-    if (/^[?>=]/u.test(params)) return; // Mode switches (cursor visibility, bracketed paste).
+    if (CSI_PATTERN.test(params)) return; // Mode switches (cursor visibility, bracketed paste).
     if (final === "m") {
       const key = `${this.pen}|${params}`;
       let pen = penTransitions.get(key);
@@ -755,7 +759,7 @@ function parseCssColor(color: string): Rgb | undefined {
       Number.parseInt(color.slice(offset, offset + 2), 16),
     ) as unknown as Rgb;
   }
-  const match = /^rgb\((\d+),(\d+),(\d+)\)$/u.exec(color);
+  const match = MATCH_PATTERN.exec(color);
   return match === null ? undefined : [Number(match[1]), Number(match[2]), Number(match[3])];
 }
 
@@ -834,7 +838,7 @@ export function terminalOutputSpans(
     const end = text.indexOf("m", escape);
     if (end === -1) break;
     const params = text.slice(escape + 2, end);
-    pen = params === "0" ? "" : params.replace(/^0;/u, "");
+    pen = params === "0" ? "" : params.replace(TERMINAL_OUTPUT_SPANS_PATTERN, "");
     cursor = end + 1;
   }
   if (cursor < text.length) {

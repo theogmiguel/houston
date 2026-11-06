@@ -82,6 +82,10 @@ import {
 } from "@houston-app/provider-core/server/subagentProjection";
 import { openCodeCommandFailed, openCodeToolTurnItem } from "./toolItems.ts";
 
+const TRAILING_SLASH = /\/$/;
+const NON_ID_CHAR = /[^a-zA-Z0-9_-]/g;
+const MATCH_PATTERN = /^\/(\S+)(?:\s+([\s\S]*))?$/;
+
 export const OPENCODE_PROVIDER = ProviderDriverKind.make("opencode");
 export const OPENCODE_DEFAULT_INSTANCE_ID = defaultInstanceIdForDriver(OPENCODE_PROVIDER);
 export const OPENCODE_SDK_PROTOCOL = "opencode-sdk.sse" as const;
@@ -683,7 +687,7 @@ export function openCodePermissionRules(
         if (typeof root === "string" && root.trim().length > 0) {
           rules.push({
             permission: "external_directory",
-            pattern: `${root.replace(/\/$/, "")}/*`,
+            pattern: `${root.replace(TRAILING_SLASH, "")}/*`,
             action: "allow",
           });
         }
@@ -1613,8 +1617,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
             if (serverNames !== undefined) turn.mcpServerNames = serverNames;
           }
           const matchingServers = turn.mcpServerNames?.filter(
-            (name) =>
-              !isNativeTool && part.tool.startsWith(`${name.replace(/[^a-zA-Z0-9_-]/g, "_")}_`),
+            (name) => !isNativeTool && part.tool.startsWith(`${name.replace(NON_ID_CHAR, "_")}_`),
           );
           const serverName = matchingServers?.length === 1 ? matchingServers[0] : undefined;
           const presentation =
@@ -1622,7 +1625,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               ? {}
               : mcpToolPresentation({
                   serverName,
-                  toolName: part.tool.slice(serverName.replace(/[^a-zA-Z0-9_-]/g, "_").length + 1),
+                  toolName: part.tool.slice(serverName.replace(NON_ID_CHAR, "_").length + 1),
                   title: toolTitle(part) === part.tool ? undefined : toolTitle(part),
                 });
           const turnItem: OrchestrationV2TurnItem = matchingServers?.length
@@ -3013,7 +3016,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
             .map((part) => part.text)
             .join("\n")
             .trim();
-          const match = text?.match(/^\/(\S+)(?:\s+([\s\S]*))?$/);
+          const match = text?.match(MATCH_PATTERN);
           const command = match
             ? (yield* OpenCodeRuntime.loadOpenCodeCommands(client).pipe(
                 Effect.timeout("10 seconds"),

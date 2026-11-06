@@ -1,6 +1,8 @@
 import { memo } from "react";
 import { cn } from "~/lib/utils";
 
+const TRAILING_DOT_ZERO = /\.0$/;
+
 export function hasNonZeroStat(stat: { additions: number; deletions: number }): boolean {
   return stat.additions > 0 || stat.deletions > 0;
 }
@@ -9,14 +11,14 @@ export function formatCompactDiffCount(value: number): string {
   if (value < 1000) return String(value);
   if (value < 999_500) {
     const k = value / 1000;
-    return `${k < 10 ? k.toFixed(1).replace(/\.0$/, "") : Math.round(k)}k`;
+    return `${k < 10 ? k.toFixed(1).replace(TRAILING_DOT_ZERO, "") : Math.round(k)}k`;
   }
   if (value < 999_500_000) {
     const m = value / 1_000_000;
-    return `${m < 10 ? m.toFixed(1).replace(/\.0$/, "") : Math.round(m)}m`;
+    return `${m < 10 ? m.toFixed(1).replace(TRAILING_DOT_ZERO, "") : Math.round(m)}m`;
   }
   const b = value / 1_000_000_000;
-  return `${b < 10 ? b.toFixed(1).replace(/\.0$/, "") : Math.round(b)}b`;
+  return `${b < 10 ? b.toFixed(1).replace(TRAILING_DOT_ZERO, "") : Math.round(b)}b`;
 }
 
 export const DiffStatLabel = memo(function DiffStatLabel(props: {

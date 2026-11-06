@@ -79,6 +79,26 @@ import * as NativeTelemetryClient from "../resourceTelemetry/NativeTelemetryClie
 import { terminalOutputStream } from "./OutputProtocol.ts";
 import * as PtyAdapter from "@houston-app/shared/PtyAdapter";
 
+const PATH_SEPARATOR = /[\\/]/;
+const SLASH = /\//;
+const WHITESPACE_RUN = /\s+/g;
+const NORMALIZE_SHELL_COMMAND_PATTERN = /^['"]|['"]$/g;
+const PARTS_PATTERN = /\\+/;
+const SLASH_RUN = /\/+/;
+const TRAILING_PATH_SEPARATORS = /[\\/]+$/g;
+const JOIN_WINDOWS_PATH_PATTERN = /^[\\/]+|[\\/]+$/g;
+const LINE_BREAK = /\r?\n/g;
+const MATCH_PATTERN = /^\s*(\d+)\s+(\d+)\s+(.+)$/;
+const NEUTRALIZE_INHERITED_HISTORY_PATTERN = /\u001b(?:\[\?([0-9;]+)([hl])|(c))/gu;
+const SHOULD_STRIP_CSI_SEQUENCE_PATTERN = /^[0-9;?]*$/;
+const SHOULD_STRIP_CSI_SEQUENCE_PATTERN_2 = /^[>0-9;?]*$/;
+const SHOULD_STRIP_CSI_SEQUENCE_PATTERN_3 = /^[0-9;?]*\$$/;
+const SHOULD_STRIP_CSI_SEQUENCE_PATTERN_4 = /^>[0-9;]*$/;
+const SHOULD_STRIP_DCS_SEQUENCE_PATTERN = /^[01]?[$+][qr]/;
+const SHOULD_STRIP_OSC_SEQUENCE_PATTERN = /^(10|11|12);(?:\?|rgb:)/;
+const LEGACY_SAFE_THREAD_ID_PATTERN = /[^a-zA-Z0-9._-]/g;
+const TRAILING_SLASHES = /\/+$/;
+
 export {
   TerminalCwdError,
   TerminalCwdNotDirectoryError,
@@ -370,7 +390,7 @@ function normalizeChildCommandName(raw: string, platform: NodeJS.Platform): stri
     trimmed = trimmed.slice(1, -1).trim();
   }
   // Process names and macOS `comm` paths can contain spaces ("Google Chrome").
-  const separators = platform === "win32" ? /[\\/]/ : /\//;
+  const separators = platform === "win32" ? PATH_SEPARATOR : SLASH;
   const base = (trimmed.split(separators).at(-1) ?? trimmed).trim();
   const withoutExe =
     platform === "win32" && base.toLowerCase().endsWith(".exe") ? base.slice(0, -4) : base;
@@ -531,16 +551,16 @@ function normalizeShellCommand(
     return trimmed;
   }
 
-  const firstToken = trimmed.split(/\s+/g)[0]?.trim();
+  const firstToken = trimmed.split(WHITESPACE_RUN)[0]?.trim();
   if (!firstToken) return null;
-  return firstToken.replace(/^['"]|['"]$/g, "");
+  return firstToken.replace(NORMALIZE_SHELL_COMMAND_PATTERN, "");
 }
 
 function basenameForPlatform(command: string, platform: NodeJS.Platform): string {
   const normalized =
     platform === "win32" ? command.replaceAll("/", "\\") : command.replaceAll("\\", "/");
   const parts = normalized
-    .split(platform === "win32" ? /\\+/ : /\/+/)
+    .split(platform === "win32" ? PARTS_PATTERN : SLASH_RUN)
     .filter((part) => part.length > 0);
   return parts.at(-1) ?? normalized;
 }
@@ -548,8 +568,8 @@ function basenameForPlatform(command: string, platform: NodeJS.Platform): string
 function joinWindowsPath(...parts: ReadonlyArray<string>): string {
   return parts
     .map((part, index) => {
-      if (index === 0) return part.replace(/[\\/]+$/g, "");
-      return part.replace(/^[\\/]+|[\\/]+$/g, "");
+      if (index === 0) return part.replace(TRAILING_PATH_SEPARATORS, "");
+      return part.replace(JOIN_WINDOWS_PATH_PATTERN, "");
     })
     .filter((part) => part.length > 0)
     .join("\\");
@@ -707,9 +727,9 @@ function subprocessSnapshotPollDelayMs(
 function parsePosixProcessTable(stdout: string): TerminalProcessTableSnapshot {
   const childrenByParent = new Map<number, number[]>();
   const commandById = new Map<number, string>();
-  for (const line of stdout.split(/\r?\n/g)) {
+  for (const line of stdout.split(LINE_BREAK)) {
     // The final comm column can contain spaces; only the first two tokens are structural.
-    const match = /^\s*(\d+)\s+(\d+)\s+(.+)$/.exec(line);
+    const match = MATCH_PATTERN.exec(line);
     if (!match) continue;
     const pid = Number(match[1]);
     const ppid = Number(match[2]);
@@ -858,7 +878,7 @@ const windowsProcessTableSnapshot = Effect.fn("terminal.windowsProcessTableSnaps
       stdoutTruncated: result.stdoutTruncated,
     });
   }
-  const processes = result.stdout.split(/\r?\n/g).flatMap((line) => {
+  const processes = result.stdout.split(LINE_BREAK).flatMap((line) => {
     const [pidRaw, ppidRaw, name = ""] = line.trim().split("|", 3);
     const pid = Number(pidRaw);
     const ppid = Number(ppidRaw);
@@ -1071,7 +1091,7 @@ function neutralizeInheritedHistory(history: string, maxLines: number, maxBytes:
   // An unconditional 1049 reset restores a stale saved cursor on the main
   // screen. The exit must match the inherited screen's cursor-save behavior.
   let alternateScreen: number | undefined;
-  for (const match of history.matchAll(/\u001b(?:\[\?([0-9;]+)([hl])|(c))/gu)) {
+  for (const match of history.matchAll(NEUTRALIZE_INHERITED_HISTORY_PATTERN)) {
     if (match[3]) alternateScreen = undefined;
     for (const parameter of (match[1] ?? "").split(";")) {
       const mode = Number(parameter);
@@ -1099,18 +1119,18 @@ function shouldStripCsiSequence(body: string, finalByte: string): boolean {
   if (finalByte === "n") {
     return true;
   }
-  if (finalByte === "R" && /^[0-9;?]*$/.test(body)) {
+  if (finalByte === "R" && SHOULD_STRIP_CSI_SEQUENCE_PATTERN.test(body)) {
     return true;
   }
-  if (finalByte === "c" && /^[>0-9;?]*$/.test(body)) {
+  if (finalByte === "c" && SHOULD_STRIP_CSI_SEQUENCE_PATTERN_2.test(body)) {
     return true;
   }
   // Strip DECRQM/DECRPM query traffic to prevent echoed replies during replay; $ guards preserve setters.
-  if ((finalByte === "p" || finalByte === "y") && /^[0-9;?]*\$$/.test(body)) {
+  if ((finalByte === "p" || finalByte === "y") && SHOULD_STRIP_CSI_SEQUENCE_PATTERN_3.test(body)) {
     return true;
   }
   // XTVERSION query (>q). DECSCUSR (space-intermediate q) stays.
-  if (finalByte === "q" && /^>[0-9;]*$/.test(body)) {
+  if (finalByte === "q" && SHOULD_STRIP_CSI_SEQUENCE_PATTERN_4.test(body)) {
     return true;
   }
   // Kitty keyboard protocol query/reply (?u). Restore-cursor (bare u) stays.
@@ -1122,11 +1142,11 @@ function shouldStripCsiSequence(body: string, finalByte: string): boolean {
 
 // Strip DECRQSS/XTGETTCAP query traffic; replaying queries triggers fresh replies without visual value.
 function shouldStripDcsSequence(content: string): boolean {
-  return /^[01]?[$+][qr]/.test(content);
+  return SHOULD_STRIP_DCS_SEQUENCE_PATTERN.test(content);
 }
 
 function shouldStripOscSequence(content: string): boolean {
-  return /^(10|11|12);(?:\?|rgb:)/.test(content);
+  return SHOULD_STRIP_OSC_SEQUENCE_PATTERN.test(content);
 }
 
 function stripStringTerminator(value: string): string {
@@ -1275,7 +1295,7 @@ function sanitizeTerminalHistoryChunk(
 }
 
 function legacySafeThreadId(threadId: string): string {
-  return threadId.replace(/[^a-zA-Z0-9._-]/g, "_");
+  return threadId.replace(LEGACY_SAFE_THREAD_ID_PATTERN, "_");
 }
 
 function encodedHistoryThreadPart(threadId: string): string {
@@ -1331,7 +1351,7 @@ function stripAppImageRuntimeEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
     delete scrubbed[key];
   }
 
-  const appDir = env.APPDIR?.replace(/\/+$/, "");
+  const appDir = env.APPDIR?.replace(TRAILING_SLASHES, "");
   if (appDir) {
     for (const key of APPIMAGE_PATH_LIKE_ENV_KEYS) {
       const value = scrubbed[key];

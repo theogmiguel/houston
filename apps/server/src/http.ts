@@ -441,7 +441,7 @@ export const layerAssetRoute = HttpRouter.add(
           // The URL can carry a token in its query string, and the error keeps the request it
           // failed on; the host and the failure kind are enough to diagnose.
           Effect.logWarning("Failed to fetch source control media.", {
-            host: URL.canParse(asset.url) ? new URL(asset.url).host : undefined,
+            host: URL.parse(asset.url)?.host,
             reason: cause.reason._tag,
           }),
         ),

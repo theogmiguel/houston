@@ -47,6 +47,31 @@ it.effect(
     }),
 );
 
+it.effect("skips a link that does not parse and still resolves the next one", () =>
+  Effect.gen(function* () {
+    const calls: string[] = [];
+    const result = yield* resolveThreadTitleLinks({
+      cwd: "/tmp",
+      message: "https://[::zz https://forge.test/change/1",
+    }).pipe(
+      Effect.provide(
+        layerRegistry({
+          resolveLink: ({ url }) =>
+            Effect.sync(() => {
+              calls.push(url.href);
+              return { title: "Change", body: "" };
+            }),
+        }),
+      ),
+    );
+    expect(calls).toEqual(["https://forge.test/change/1"]);
+    expect(result).toBe(
+      `https://forge.test/change/1
+${encodeSubject({ title: "Change", body: "" })}`,
+    );
+  }),
+);
+
 it.effect("keeps lookup failure out of generation and skips unlinked messages", () =>
   Effect.gen(function* () {
     expect(yield* resolveThreadTitleLinks({ cwd: "/tmp", message: "Fix pairing" })).toBeUndefined();

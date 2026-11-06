@@ -93,6 +93,9 @@ import {
   userMessageFileLabel,
 } from "./TimelineUserMessageRow.logic";
 
+const EXTENSION_PATTERN = /\.([a-z0-9]{1,8})$/i;
+const LINE_BREAK = /\r?\n/;
+
 // Drawn inside the media so dark screenshots keep an edge on the dark background.
 const MEDIA_EDGE_CLASS_NAME =
   "relative after:pointer-events-none after:absolute after:inset-0 after:z-10 after:rounded-[inherit] after:ring-1 after:ring-inset after:ring-black/9 dark:after:ring-white/12";
@@ -110,7 +113,7 @@ function UserFileCard({
   const ctx = use(TimelineRowCtx);
   const pastedText = file.source?._tag === "pasted-text";
   const label = userMessageFileLabel(file);
-  const extension = /\.([a-z0-9]{1,8})$/i.exec(file.name)?.[1]?.toUpperCase() ?? "File";
+  const extension = EXTENSION_PATTERN.exec(file.name)?.[1]?.toUpperCase() ?? "File";
   const identity = (
     <>
       <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-background/60">
@@ -285,7 +288,7 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
   const { text, scheduledTaskId } = resolveUserMessagePresentation(row.message);
   const summary =
     useScheduledTaskTitle(ctx.activeThreadEnvironmentId, scheduledTaskId) ??
-    text.trim().split(/\r?\n/, 1)[0] ??
+    text.trim().split(LINE_BREAK, 1)[0] ??
     "";
 
   const revertTurnCount = row.revertTurnCount;
@@ -548,7 +551,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   const promptLink = promptLinkFor(plainText);
   const foldSummary =
     plainText
-      .split(/\r?\n/)
+      .split(LINE_BREAK)
       .find((line) => line.trim().length > 0)
       ?.trim() ?? "";
   const mediaCopyRecords = mediaOnly
