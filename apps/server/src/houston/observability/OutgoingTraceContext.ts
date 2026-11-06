@@ -19,7 +19,8 @@ const isPrivateIpv6 = (address: string): boolean => {
 
 // Only addresses and the exact name `localhost`: a name under any suffix can resolve publicly.
 export const isPrivateHost = (host: string): boolean => {
-  const name = host.toLowerCase().replace(/\.$/, "");
+  const lower = host.toLowerCase();
+  const name = lower.endsWith(".") ? lower.slice(0, -1) : lower;
   if (name === "localhost") return true;
   if (name.startsWith("[") && name.endsWith("]")) return isPrivateIpv6(name.slice(1, -1));
   const ipv4 = IPV4.exec(name);
