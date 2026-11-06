@@ -86,12 +86,13 @@ should sit quieter than their label.
 
 ### Borders and dividers
 
-| Token            | Use it for                                                                         |
-| ---------------- | ---------------------------------------------------------------------------------- |
-| `--border`       | Ordinary hairlines: inputs, cards, control edges.                                  |
-| `--divider`      | One-pixel seams between shell surfaces: sidebar, top bar, grid cells, right panel. |
-| `--border-hover` | The hover state of an ordinary hairline.                                           |
-| `--line-strong`  | The interactive edge of a field or a selected control.                             |
+| Token            | Use it for                                                                                                                                                |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--border`       | Ordinary hairlines: inputs, cards, control edges.                                                                                                         |
+| `--divider`      | One-pixel seams between shell surfaces: sidebar, top bar, grid cells, right panel.                                                                        |
+| `--card-edge`    | Edges of raised content cards (settings groups, changed files, plans); one step firmer than `--border` in light. Use it through `--contrast-card-border`. |
+| `--border-hover` | The hover state of an ordinary hairline.                                                                                                                  |
+| `--line-strong`  | The interactive edge of a field or a selected control.                                                                                                    |
 
 ### Accent
 
