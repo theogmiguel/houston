@@ -236,7 +236,9 @@ checkouts need this suite and the same generator version; `--a-label` and `--b-l
   tasks) through `EventSink`, `ProjectStore` and `HoustonTaskStore`, runs the daily event-log
   prune, the three-day auto-settle and the outbox retention prune, then copies the unit `scale - 1` times with every id and
   timestamp rewritten. A separate deep thread holds `60 × scale` turns for reads that follow one
-  thread's length.
+  thread's length. The prune mark is then set to the cloned history's head, as after an
+  install's previous daily pass, so `maint.pruneEventLog` measures a steady-state pass over the
+  rows written after it rather than a first pass over every copy.
 - **Size.** A unit takes about 170 MB and 90 seconds; 100x needs about 18 GB and an hour.
   1000x needs more disk than a workstation usually has, so reports project it from the fit.
 - **Queries.** `queries.ts` calls the stores the server calls (shell, boot recovery, thread

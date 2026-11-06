@@ -32,7 +32,7 @@ import {
 } from "./fixture.ts";
 
 /** Bump when the generator's output changes, so cached databases are rebuilt. */
-export const GENERATOR_VERSION = 5;
+export const GENERATOR_VERSION = 6;
 
 export interface DatabaseManifest {
   readonly generatorVersion: number;
@@ -110,8 +110,20 @@ const pruneEventLog = Effect.fn("DbLoad.pruneEventLog")(function* () {
   return yield* maintenance.pruneEventStore();
 });
 
-/** Versions 2 to 4 differ only in the settle and retention passes, so they are upgraded in place. */
-export const UPGRADABLE_GENERATOR_VERSIONS = [2, 3, 4];
+// A long-lived install has pruned through its previous daily pass. The prune mark and the task-run
+// cursor sit at the cloned history's head, so maint.pruneEventLog measures a steady-state pass
+// over what came after it (the deep thread), not a first pass over every cloned unit.
+const markPrunedThrough = Effect.fn("DbLoad.markPrunedThrough")(function* (head: number) {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    UPDATE orchestration_v2_projection_metadata SET last_sequence = ${head}
+    WHERE projection_name = ${EVENT_LOG_PRUNE_MARK}
+  `;
+  yield* sql`UPDATE houston_task_runs_cursor SET sequence = ${head} WHERE id = 1`;
+});
+
+/** Versions 2 to 5 differ only in the settle, retention and prune-mark passes, so they are upgraded in place. */
+export const UPGRADABLE_GENERATOR_VERSIONS = [2, 3, 4, 5];
 
 const DAY_MS = 86_400_000;
 // The default sidebarAutoSettleAfterDays; threads idle longer are settled by the server.
@@ -198,6 +210,13 @@ export const upgradeDatabase = Effect.fn("DbLoad.upgradeDatabase")(function* (
   dir: string,
 ) {
   const { settled, rowCounts } = yield* Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    // The deep thread is written right after the clones, so the clone head precedes its first row.
+    const deepStart = yield* sql<{ readonly sequence: number }>`
+      SELECT MIN(sequence) AS sequence FROM orchestration_events
+      WHERE stream_id = ${manifest.deep.threadId}
+    `;
+    yield* markPrunedThrough(deepStart[0]!.sequence - 1);
     const settled = yield* autoSettleIdleThreads();
     yield* pruneSettledEffects();
     return { settled, rowCounts: yield* finishDatabase() };
@@ -242,6 +261,11 @@ export const buildDatabase = (input: {
         input.log(`clone: ${done}/${total} units`);
       }
     });
+    yield* markPrunedThrough(
+      (yield* sql<{ readonly head: number }>`
+        SELECT COALESCE(MAX(sequence), 0) AS head FROM orchestration_events
+      `)[0]!.head,
+    );
     const deepRuns = DEEP_THREAD_BASE_RUNS * input.scale;
     input.log(`deep thread: ${deepRuns} turns`);
     const deep = yield* writeDeepThread({
