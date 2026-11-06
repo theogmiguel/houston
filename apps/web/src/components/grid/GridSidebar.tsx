@@ -81,7 +81,7 @@ import {
   clearThreadSelection,
   gridThreadStateLabel,
   nextAttentionCard,
-  openPullRequestNumber,
+  resolveRowPullRequest,
   partitionShelfThreads,
   resolveGridThreadState,
   runningSubagentsByParentThread,
@@ -93,7 +93,7 @@ import {
   type GridThreadState,
   type ThreadSelection,
 } from "../../grid/sidebar";
-import { PullRequestChecksGlyph, PullRequestGlyph } from "../pullRequest/pullRequestIcons";
+import { ThreadRowPullRequestBadge } from "./ThreadRowPullRequestBadge";
 import { GridShelves } from "./GridShelves";
 import { readLocalApi } from "../../localApi";
 import { useProjectSectionMenu } from "./projectSectionMenu";
@@ -1869,10 +1869,7 @@ export function ThreadCard({
   const state = resolveGridThreadState(thread, nowIso);
   const attention = state === "needs" || state === "ready" || state === "back";
   const startedAt = resolveThreadWorkingStartedAt(thread);
-  const pullRequestNumber = openPullRequestNumber(thread);
-  const pullRequestChecksState =
-    thread.pullRequests.find((entry) => entry.number === pullRequestNumber)?.snapshot
-      ?.checksState ?? null;
+  const rowPullRequest = resolveRowPullRequest(thread);
   const providerEntry = providerEntries.get(thread.providerInstanceId);
   const presets = resolveSnoozePresets(
     new Date(`${nowMinute}:00.000Z`),
@@ -2180,14 +2177,13 @@ export function ThreadCard({
               </span>
             </span>
           ) : null}
-          {showPullRequest && pullRequestNumber !== null ? (
-            <span className="inline-flex shrink-0 items-center gap-0.75 tabular-nums">
-              <PullRequestGlyph.pullRequest aria-hidden className="size-3 shrink-0" />
-              <span>#{pullRequestNumber}</span>
-              {pullRequestChecksState === null ? null : (
-                <PullRequestChecksGlyph state={pullRequestChecksState} />
-              )}
-            </span>
+          {showPullRequest && rowPullRequest !== null ? (
+            <ThreadRowPullRequestBadge
+              threadRef={threadRef}
+              pullRequest={rowPullRequest}
+              pullRequestCount={thread.pullRequests.length}
+              onOpenThread={onOpen}
+            />
           ) : null}
           <span
             data-thread-provider-mark=""

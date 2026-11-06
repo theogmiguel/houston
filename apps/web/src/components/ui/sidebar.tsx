@@ -39,6 +39,10 @@ export const FOCUS_ROW_CLS =
 export const FOCUS_ACTION_CLS =
   "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
+/** A clickable badge inside a rail row: padded for a comfortable target, aligned with its text. */
+export const ROW_BADGE_BUTTON_CLS =
+  "-mx-1 inline-flex shrink-0 cursor-pointer items-center gap-0.75 rounded-(--r-badge) px-1 tabular-nums hover:bg-(--sel)";
+
 /** A thread card's actions stay hidden until the card or its title has focus. */
 export const ROW_ACTIONS_REVEAL =
   "pointer-events-none opacity-0 group-hover/th:pointer-events-auto group-hover/th:opacity-100 group-has-[:focus-visible]/th:pointer-events-auto group-has-[:focus-visible]/th:opacity-100";
