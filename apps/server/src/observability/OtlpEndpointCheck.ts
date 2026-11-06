@@ -13,6 +13,7 @@ import { FetchHttpClient, HttpClient } from "effect/http";
 import { OtlpSerialization } from "effect/observability";
 
 import * as ServerConfig from "../config.ts";
+import * as ObservabilityExport from "../houston/observability/ObservabilityExport.ts";
 
 const CHECK_TIMEOUT = "5 seconds";
 
@@ -52,11 +53,23 @@ const make = Effect.gen(function* () {
     url,
   }: OtlpEndpointCheckInput) {
     const { url: runningUrl, export: signalExport } = running[signal];
-    const headers = url === runningUrl ? signalExport.headers : undefined;
+    // Houston: a Datadog intake gets the stored key, and only Datadog's own host receives it.
+    const datadogKey = ObservabilityExport.isDatadogIntake(url, signal)
+      ? Option.getOrUndefined(yield* ObservabilityExport.readDatadogKey())
+      : undefined;
+    const headers =
+      datadogKey !== undefined
+        ? ObservabilityExport.datadogHeaders(signal, datadogKey)
+        : url === runningUrl
+          ? signalExport.headers
+          : undefined;
+    const protocol = ObservabilityExport.isDatadogIntake(url, signal)
+      ? "http/protobuf"
+      : signalExport.protocol;
     const body = yield* Effect.gen(function* () {
       const serialization = yield* OtlpSerialization.OtlpSerialization;
       return emptyExport(serialization, signal);
-    }).pipe(Effect.provide(layerOtlpSerialization(signalExport.protocol)));
+    }).pipe(Effect.provide(layerOtlpSerialization(protocol)));
     const startedAt = yield* Clock.currentTimeMillis;
     // Close after reading status so open bodies cannot hang; disable tracing to keep URLs and credentials out of spans.
     const response = yield* HttpClient.withScope(httpClient)

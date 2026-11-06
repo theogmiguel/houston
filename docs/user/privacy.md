@@ -32,3 +32,11 @@ service's name, version, release channel and Node.js version. Log records carry 
 time, ids and error type, but no message text. An export never contains paths, URLs beyond
 their host, error or log messages, the machine's name, prompts, agent responses, file contents
 or credentials. The trace file on this machine keeps full detail.
+
+**Datadog** as the destination sends that export to the Datadog site you choose
+(`https://otlp.<site>`) with your Datadog API key. Traces are on by default; metrics and logs
+are off until you turn them on. The key is stored in the server's secret store on this machine,
+never in settings, and Houston sends it only to that site. Choosing **Off** or removing the key
+stops the export. **Datadog Agent on this machine** sends the same export to a local Agent
+without a key; the Agent forwards it with its own. Houston ships no Datadog key and sends
+nothing to Datadog unless you configure it.

@@ -215,6 +215,7 @@ import { linkCreatedPullRequest } from "./git/linkCreatedPullRequest.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as HoustonResumeSessions from "./houston/resumeSessions.ts";
 import * as HoustonReviewState from "./houston/reviewState.ts";
+import * as DatadogKey from "./houston/observability/DatadogKey.ts";
 import * as TraceContext from "./houston/observability/TraceContext.ts";
 import * as WideEvents from "./houston/observability/WideEvents.ts";
 import * as HoustonRpcSerialization from "./houston/rpcSerialization.ts";
@@ -3299,6 +3300,9 @@ export const layerWsRpc = (
         [WS_METHODS.houstonSlackSubscribe]: () => houstonSlack.subscribe,
         [WS_METHODS.houstonSlackImportV1Status]: () => houstonSlackImport.status,
         [WS_METHODS.houstonSlackImportV1Run]: () => houstonSlackImport.run,
+        [WS_METHODS.houstonObservabilitySetDatadogKey]: (input) => DatadogKey.set(input.key),
+        [WS_METHODS.houstonObservabilityClearDatadogKey]: () => DatadogKey.clear(),
+        [WS_METHODS.houstonObservabilityGetDatadogKeyStatus]: () => DatadogKey.status(),
         [WS_METHODS.houstonMergeQueueGet]: (input) => houstonMergeQueue.get(input),
         [WS_METHODS.houstonMergeQueueSubscribe]: (input) => houstonMergeQueue.subscribe(input),
         [WS_METHODS.houstonMergeQueueSubscribeSummary]: (input) =>

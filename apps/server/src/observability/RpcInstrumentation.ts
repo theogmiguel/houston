@@ -247,6 +247,9 @@ const RPC_AGGREGATES = {
   [WS_METHODS.houstonSlackSubscribe]: "houstonSlack",
   [WS_METHODS.houstonSlackImportV1Status]: "houstonSlack",
   [WS_METHODS.houstonSlackImportV1Run]: "houstonSlack",
+  [WS_METHODS.houstonObservabilitySetDatadogKey]: "houston",
+  [WS_METHODS.houstonObservabilityClearDatadogKey]: "houston",
+  [WS_METHODS.houstonObservabilityGetDatadogKeyStatus]: "houston",
   [WS_METHODS.houstonMergeQueueGet]: "houstonMergeQueue",
   [WS_METHODS.houstonMergeQueueSubscribe]: "houstonMergeQueue",
   [WS_METHODS.houstonMergeQueueSubscribeSummary]: "houstonMergeQueue",
@@ -307,6 +310,8 @@ export const RPC_SPANS_UNSAMPLED: ReadonlySet<string> = new Set(
     WS_METHODS.serverGetProcessDiagnostics,
     WS_METHODS.serverGetProcessResourceHistory,
     WS_METHODS.serverSignalProcess,
+    // Its payload is a credential.
+    WS_METHODS.houstonObservabilitySetDatadogKey,
   ].map((method) => `${RPC_SPAN_PREFIX}.${method}`),
 );
 

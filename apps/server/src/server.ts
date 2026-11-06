@@ -212,7 +212,12 @@ const HTTP_ROUTER_CONFIG = {
 const HTTP_PREEMPTIVE_SHUTDOWN_GRACE_MS = 0;
 const layerResourceAttribution = ResourceAttribution.layer;
 const layerApplicationObservability = EventLoopMonitor.layer.pipe(
-  Layer.provideMerge(Observability.layer),
+  // Houston: a Datadog preset reads its API key from the secret store when export starts.
+  Layer.provideMerge(
+    Observability.layer.pipe(
+      Layer.provide(HoustonSecrets.layer.pipe(Layer.provide(ServerSecretStore.layer))),
+    ),
+  ),
   Layer.provideMerge(layerResourceAttribution),
 );
 

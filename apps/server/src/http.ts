@@ -50,6 +50,7 @@ import {
   failEnvironmentInternal,
 } from "./auth/http.ts";
 import * as ExportRedaction from "./houston/observability/ExportRedaction.ts";
+import * as ObservabilityExport from "./houston/observability/ObservabilityExport.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import { WEBHOOK_ROUTE_PREFIX } from "./scheduledTasks/ScheduledTaskService.ts";
 import {
@@ -341,9 +342,7 @@ export const layerOtlpTracesProxyRoute = HttpRouter.add(
   Effect.gen(function* () {
     yield* authenticateRawRouteWithScope(AuthOrchestrationOperateScope);
     const request = yield* HttpServerRequest.HttpServerRequest;
-    const config = yield* ServerConfig.ServerConfig;
-    const otlpTracesUrl = config.otlpTracesUrl;
-    const otlpHeaders = config.otlpTracesExport.headers;
+    const target = yield* ObservabilityExport.resolve("traces", { quiet: true });
     const browserTraceCollector = yield* BrowserTraceCollector.BrowserTraceCollector;
     const httpClient = yield* HttpClient.HttpClient;
     const serialization = yield* OtlpSerialization.OtlpSerialization;
@@ -357,14 +356,14 @@ export const layerOtlpTracesProxyRoute = HttpRouter.add(
       Effect.catch((cause) => Effect.logWarning("Failed to decode browser OTLP traces", { cause })),
     );
 
-    if (otlpTracesUrl === undefined) {
+    if (target === undefined) {
       return HttpServerResponse.empty({ status: 204 });
     }
 
     return yield* httpClient
-      .post(otlpTracesUrl, {
+      .post(target.url, {
         body: serialization.traces(ExportRedaction.exportedTraceData(bodyJson)),
-        headers: otlpHeaders,
+        headers: target.headers,
       })
       .pipe(
         Effect.flatMap(HttpClientResponse.filterStatusOk),
@@ -372,7 +371,7 @@ export const layerOtlpTracesProxyRoute = HttpRouter.add(
         Effect.tapError((cause) =>
           Effect.logWarning("Failed to export browser OTLP traces", {
             cause,
-            otlpTracesUrl,
+            otlpTracesUrl: target.url,
           }),
         ),
         Effect.orElseSucceed(() =>
