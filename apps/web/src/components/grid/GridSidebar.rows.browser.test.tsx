@@ -133,6 +133,38 @@ describe("ThreadCard on a shelf", () => {
 
     expect(onSelect).toHaveBeenCalledExactlyOnceWith({ shiftKey: false, toggleKey: true });
   });
+
+  it("reopens through the same action as the Reopen button when chosen from the menu", async () => {
+    const onReopen = vi.fn();
+    await using screen = await render(
+      card(thread({ settledOverride: "settled" }), {
+        shelf: "settled",
+        onReopen,
+        timeLabel: "3d",
+      }),
+    );
+
+    await userEvent.click(rowOf(screen.container), { button: "right" });
+    await userEvent.click(page.getByRole("menuitem", { name: "Reopen thread" }).element());
+
+    await vi.waitFor(() => expect(onReopen).toHaveBeenCalledTimes(1));
+  });
+
+  it("wakes through the same action as the Wake button when chosen from the menu", async () => {
+    const onWake = vi.fn();
+    await using screen = await render(
+      card(thread({ snoozedUntil: "2099-01-01T09:00:00.000Z" }), {
+        shelf: "snoozed",
+        onWake,
+        timeLabel: "tomorrow at 9:00 AM",
+      }),
+    );
+
+    await userEvent.click(rowOf(screen.container), { button: "right" });
+    await userEvent.click(page.getByRole("menuitem", { name: "Bring thread back" }).element());
+
+    await vi.waitFor(() => expect(onWake).toHaveBeenCalledTimes(1));
+  });
 });
 
 describe("ThreadCard for a thread no grid shows", () => {

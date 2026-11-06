@@ -1918,6 +1918,8 @@ export function ThreadCard({
 
   const close = () => {
     onClose();
+    onReopenThread: onReopen,
+    onWakeThread: onWake,
   };
 
   // Hidden, not disabled, while the actions are in use: a disabled tooltip ignores the pointer
