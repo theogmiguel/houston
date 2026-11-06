@@ -100,8 +100,13 @@ describe("outgoing HTTP trace context", () => {
       "http://10.0.0.5/",
       "http://172.20.0.1/",
       "http://100.101.102.103:3773/",
-      "https://desk.tail1234.ts.net/",
-      "http://studio.local:3773/",
+      // Unique local (fc00::/7) and link-local (fe80::/10) IPv6, by their first 7 and 10 bits.
+      "http://[fc00::1]/",
+      "http://[fcde:1::2]/",
+      "http://[fd12:3456::1]/",
+      "http://[fe80::1]/",
+      "http://[febf:ffff::1]/",
+      "http://[0:0:0:0:0:0:0:1]/",
       // Hosts fetch resolves to loopback through its URL parser.
       "http://0x7f000001:3773/",
       "http://127.1:3773/",
@@ -124,6 +129,22 @@ describe("outgoing HTTP trace context", () => {
       "http://127.0.0.1.evil.com/",
       "http://localhost.evil.com/",
       "http://[::ffff:8.8.8.8]/",
+      // Names are not addresses: Funnel serves tailnet names publicly, and DNS or unicast
+      // resolution can send *.localhost and *.local anywhere.
+      "https://desk.tail1234.ts.net/",
+      "http://studio.local:3773/",
+      "http://app.localhost:3773/",
+      "http://localhost.local/",
+      // A short first hextet is not the prefix: fc::1 is 00fc::1.
+      "http://[fc::1]/",
+      "http://[fd::1]/",
+      "http://[fe8::1]/",
+      "http://[fec0::1]/",
+      "http://[ff02::1]/",
+      "http://[2001:db8::1]/",
+      "http://[::2]/",
+      "http://fc00/",
+      "http://fd.local/",
       // IPv4-mapped loopback is not recognised; missing a private host only drops the headers.
       "http://[::ffff:7f00:1]/",
       "http://[::ffff:127.0.0.1]/",
