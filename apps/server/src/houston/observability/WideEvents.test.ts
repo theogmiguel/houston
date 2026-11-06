@@ -7,12 +7,15 @@ import {
   type OrchestrationV2Run,
   type OrchestrationV2StoredEvent,
 } from "@houston-app/contracts";
+import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
 
 import * as RecordingTracer from "../../observability/testing/RecordingTracer.ts";
 import { makeRunOutcomeRecorder } from "../../orchestration-v2/RunMetrics.ts";
+import * as TraceContext from "./TraceContext.ts";
 import * as WideEvents from "./WideEvents.ts";
 
 const at = (iso: string) => DateTime.makeUnsafe(iso);
@@ -85,6 +88,28 @@ describe("houston.run", () => {
     }),
   );
 
+  it.effect("exports a rolled-back run as an interrupt, not a failure", () =>
+    Effect.gen(function* () {
+      const recording = RecordingTracer.make();
+      yield* WideEvents.emitRun({
+        runId: "run:wide:rolled-back",
+        context: { threadId },
+        status: "rolled_back",
+        startedAt: at("2026-11-06T12:00:01.000Z"),
+        completedAt: at("2026-11-06T12:00:03.000Z"),
+        queueWaitMs: undefined,
+        durationMs: 2000,
+      }).pipe(Effect.withTracer(recording.tracer));
+      const span = recording.named("houston.run")[0]!;
+      assert.strictEqual(span.attributes.get("houston.outcome"), "interrupt");
+      assert.isTrue(
+        span.status._tag === "Ended" &&
+          span.status.exit._tag === "Failure" &&
+          Cause.hasInterruptsOnly(span.status.exit.cause),
+      );
+    }),
+  );
+
   it.effect("is not emitted for a run without a completion time", () =>
     Effect.gen(function* () {
       const recording = RecordingTracer.make();
@@ -133,6 +158,36 @@ describe("houston.run", () => {
         [command.spanId],
       );
       assert.strictEqual(run.attributes.get("houston.outcome"), "success");
+      // Only the ids are kept, not the ended span object.
+      assert.deepStrictEqual(
+        execute.links.map((link) => link.span._tag),
+        ["ExternalSpan"],
+      );
+      assert.strictEqual(execute.links[0]!.span.traceId, command.traceId);
+    }),
+  );
+
+  it.effect("a session fork keeps no link to the command that opened it", () =>
+    Effect.gen(function* () {
+      const recording = RecordingTracer.make();
+      yield* WideEvents.rememberCommandSpan("command:wide:fork").pipe(
+        Effect.withSpan("ws.rpc.orchestrationV2.dispatchCommand"),
+        Effect.withTracer(recording.tracer),
+      );
+      yield* Effect.gen(function* () {
+        const session = yield* Effect.void.pipe(
+          Effect.withSpan("Session.read"),
+          TraceContext.withoutTurnContext,
+          Effect.forkChild,
+        );
+        yield* Fiber.join(session);
+      }).pipe(
+        Effect.withSpan("OrchestrationEffectExecutorV2.execute"),
+        WideEvents.linkToCommand("command:wide:fork", undefined),
+        Effect.withTracer(recording.tracer),
+      );
+      assert.lengthOf(recording.named("OrchestrationEffectExecutorV2.execute")[0]!.links, 1);
+      assert.lengthOf(recording.named("Session.read")[0]!.links, 0);
     }),
   );
 });
