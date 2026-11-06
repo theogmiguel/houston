@@ -42,7 +42,6 @@ import {
 import { deriveSubagentElapsedMs } from "@houston-app/shared/orchestrationTiming";
 import { groupBy } from "effect/Array";
 import * as DateTime from "effect/DateTime";
-import { useNavigate } from "@tanstack/react-router";
 import {
   ChevronDownIcon,
   MoreHorizontalIcon,
@@ -53,7 +52,7 @@ import {
 import { useRef, useState, type ReactNode } from "react";
 
 import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
-import { buildThreadRouteParams } from "../../threadRoutes";
+import { useThreadOpen } from "../grid/threadOpenContext";
 import {
   useProjects,
   useQuietThreadShell,
@@ -241,7 +240,7 @@ function RemoteSubagentRow(props: {
   };
   readonly provider: ServerProvider | undefined;
 }) {
-  const navigate = useNavigate();
+  const openThread = useThreadOpen();
   const environment = useEnvironment(props.agent.remoteChild.environmentId);
   const { remoteChild } = props.agent;
   const status = props.agent.status;
@@ -263,12 +262,7 @@ function RemoteSubagentRow(props: {
               aria-disabled={environment === null || undefined}
               onClick={() => {
                 if (environment === null) return;
-                void navigate({
-                  to: "/$environmentId/$threadId",
-                  params: buildThreadRouteParams(
-                    scopeThreadRef(remoteChild.environmentId, remoteChild.threadId),
-                  ),
-                });
+                openThread(scopeThreadRef(remoteChild.environmentId, remoteChild.threadId));
               }}
             />
           }
@@ -306,7 +300,7 @@ function DelegatedFromRow(props: {
   readonly delegatedFrom: OrchestrationV2DelegatedFrom;
   readonly fallbackLabel: string | undefined;
 }) {
-  const navigate = useNavigate();
+  const openThread = useThreadOpen();
   const { delegatedFrom } = props;
   const environment = useEnvironment(delegatedFrom.environmentId);
   const parentRef = scopeThreadRef(delegatedFrom.environmentId, delegatedFrom.threadId);
@@ -327,10 +321,7 @@ function DelegatedFromRow(props: {
               aria-disabled={environment === null || undefined}
               onClick={() => {
                 if (environment === null) return;
-                void navigate({
-                  to: "/$environmentId/$threadId",
-                  params: buildThreadRouteParams(parentRef),
-                });
+                openThread(parentRef);
               }}
             />
           }
@@ -391,7 +382,7 @@ export function ThreadRelationshipsPanel(props: {
       ? scopeThreadRef(props.environmentId, parentShell.id)
       : null;
   const parentProjection = useThreadProjection(parentRef)?.projection;
-  const navigate = useNavigate();
+  const openScopedThread = useThreadOpen();
   const mergeBack = useAtomCommand(threadEnvironment.mergeBack);
   const stopSession = useAtomCommand(threadEnvironment.stopSession);
   const interruptTurn = useAtomCommand(threadEnvironment.interruptTurn);
@@ -522,10 +513,7 @@ export function ThreadRelationshipsPanel(props: {
   // Idle children can be omitted from the shell; opening one loads its own detail.
   const openThread = (threadId: ThreadId) => {
     if (openSideChatTab(ref, graph.nodes.get(threadId)?.thread ?? null)) return;
-    void navigate({
-      to: "/$environmentId/$threadId",
-      params: buildThreadRouteParams(scopeThreadRef(props.environmentId, threadId)),
-    });
+    openScopedThread(scopeThreadRef(props.environmentId, threadId));
   };
 
   const merge = async () => {
