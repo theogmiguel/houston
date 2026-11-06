@@ -18,6 +18,7 @@ import * as ResourceAttribution from "../resourceTelemetry/ResourceAttribution.t
 import * as ServerLogger from "../serverLogger.ts";
 import * as ExportRedaction from "../houston/observability/ExportRedaction.ts";
 import * as ExportTracer from "../houston/observability/ExportTracer.ts";
+import * as ObservabilityExport from "../houston/observability/ObservabilityExport.ts";
 import * as UnsampledSpans from "../houston/observability/UnsampledSpans.ts";
 import * as BrowserTraceCollector from "./BrowserTraceCollector.ts";
 import * as HeapAttribution from "./HeapAttribution.ts";
@@ -27,10 +28,13 @@ export const layer = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
 
-    const traces = config.otlpTracesExport;
-    const metrics = config.otlpMetricsExport;
+    // Houston: each signal's URL, headers and protocol, including a Datadog preset's.
+    const traces = yield* ObservabilityExport.resolve("traces");
+    const metrics = yield* ObservabilityExport.resolve("metrics");
     // Keep serialization in context for the browser trace forwarder's exporter.
-    const layerSerialization = SharedObservability.layerOtlpSerialization(traces.protocol);
+    const layerSerialization = SharedObservability.layerOtlpSerialization(
+      traces?.protocol ?? config.otlpTracesExport.protocol,
+    );
     const resource = ExportRedaction.exportedResource(
       ServerConfig.otlpResource(config, yield* HostProcess.Hostname),
     );
@@ -42,7 +46,7 @@ export const layer = Layer.unwrap(
       // Preserve SQL spans while awaiting connections so lock waits can be recorded on them.
       Layer.succeed(Statement.SpanPropagationEnabled, true),
       // Houston: the Codex app-server receives trace context only while traces are exported.
-      Layer.succeed(CodexProtocol.PropagateTraceContext, config.otlpTracesUrl !== undefined),
+      Layer.succeed(CodexProtocol.PropagateTraceContext, traces !== undefined),
       HttpObservability.layer,
     );
 
@@ -63,15 +67,19 @@ export const layer = Layer.unwrap(
             }),
         });
         const delegate =
-          config.otlpTracesUrl === undefined
+          traces === undefined
             ? undefined
             : ExportTracer.make(
                 yield* OtlpTracer.make({
-                  url: config.otlpTracesUrl,
+                  url: traces.url,
                   exportInterval: `${traces.exportIntervalMs} millis`,
                   headers: traces.headers,
                   resource,
-                }),
+                }).pipe(
+                  traces.destination === "datadog"
+                    ? Effect.provide(ObservabilityExport.layerDatadogKeyGate)
+                    : (self) => self,
+                ),
               );
 
         const tracer = yield* makeLocalFileTracer({
@@ -96,14 +104,20 @@ export const layer = Layer.unwrap(
     ).pipe(Layer.provide(OtlpExporter.layerFlusher), Layer.provideMerge(layerSerialization));
 
     const metricsLayer =
-      config.otlpMetricsUrl === undefined
+      metrics === undefined
         ? Layer.empty
         : OtlpMetrics.layer({
-            url: config.otlpMetricsUrl,
+            url: metrics.url,
             exportInterval: `${metrics.exportIntervalMs} millis`,
             headers: metrics.headers,
+            temporality: metrics.temporality,
             resource,
-          }).pipe(Layer.provide(SharedObservability.layerOtlpSerialization(metrics.protocol)));
+          }).pipe(
+            Layer.provide(SharedObservability.layerOtlpSerialization(metrics.protocol)),
+            metrics.destination === "datadog"
+              ? Layer.provide(ObservabilityExport.layerDatadogKeyGate)
+              : (self) => self,
+          );
 
     const layerOtelWarnings = Layer.effectDiscard(
       Effect.forEach(config.otelEnvironment.warnings, (warning) => Effect.logWarning(warning)),

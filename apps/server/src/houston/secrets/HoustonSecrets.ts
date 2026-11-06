@@ -83,6 +83,13 @@ export const layer = Layer.effect(
   Effect.map(ServerSecretStore.ServerSecretStore, fromStore),
 );
 
+// The same seam over the same store, for observability, built before the database the keychain
+// import needs. No token the import copies is read before the runtime runs the import.
+export const layerWithoutImport = Layer.effect(
+  HoustonSecrets,
+  Effect.map(ServerSecretStore.ServerSecretStore, fromStore),
+);
+
 const unavailableWith = (operation: string, reason: string) =>
   Effect.fail(new SecretStoreUnavailable({ operation, reason }));
 

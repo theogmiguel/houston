@@ -50,6 +50,10 @@
     "./houston/slack": {
       "types": "./src/houston/slack.ts",
       "import": "./src/houston/slack.ts"
+    },
+    "./houston/observability": {
+      "types": "./src/houston/observability.ts",
+      "import": "./src/houston/observability.ts"
     }
   },
   "scripts": {

@@ -139,6 +139,10 @@ Provider update checks, continuing threads after a restart, background activity,
 storage, browser artifacts and rotated logs, diagnostics, and **Coming from Houston 1**. See
 [Updating Houston](updating.md#coming-from-houston-1).
 
+Diagnostics includes **OpenTelemetry export**, which sends traces, metrics and logs to an OTLP
+receiver you choose, to Datadog, or to a Datadog Agent on this machine. See
+[Exporting diagnostics yourself](privacy.md#exporting-diagnostics-yourself).
+
 ## Labs
 
 Linked environments (beta), Simlock device hosts (alpha), and optional composer features that
