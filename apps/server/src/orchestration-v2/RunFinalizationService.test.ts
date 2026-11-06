@@ -216,7 +216,7 @@ it.effect("a refresh drained after a later run is queued carries that run, not t
         );
       };
       // Run 1's finalize starts the drain; run 2's refresh waits in its queue.
-      yield* finalize("run-1");
+      yield* finalize("run-1").pipe(Effect.withSpan("Turn1.root"));
       yield* takeEvents(events, 3);
       yield* finalize("run-2");
       yield* Deferred.succeed(gate, undefined);
@@ -235,6 +235,10 @@ it.effect("a refresh drained after a later run is queued carries that run, not t
       recording.named("RunFinalizationService.drainRefreshes").map(houstonContextOf),
       [{}],
     );
+    // The drain serves later runs too, so it starts a trace of its own.
+    const drainSpan = recording.named("RunFinalizationService.drainRefreshes")[0]!;
+    assert.isTrue(Option.isNone(drainSpan.parent));
+    assert.notStrictEqual(drainSpan.traceId, recording.named("Turn1.root")[0]!.traceId);
   }).pipe(Effect.withTracer(recording.tracer));
 });
 
