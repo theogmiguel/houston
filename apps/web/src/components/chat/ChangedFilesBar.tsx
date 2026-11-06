@@ -69,7 +69,7 @@ export const ChangedFilesBar = memo(function ChangedFilesBar({
       >
         Keep all
       </Button>
-      <Button type="button" size="xs" variant="outline" onClick={onReview} disabled={disabled}>
+      <Button type="button" size="xs" variant="default" onClick={onReview} disabled={disabled}>
         Review
       </Button>
     </div>

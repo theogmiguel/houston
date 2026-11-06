@@ -1,6 +1,6 @@
 import { flushSync } from "react-dom";
 import { AudioPreview } from "../files/AudioPreview";
-import { page } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 import {
   ComposerContextId,
   EnvironmentId,
@@ -859,7 +859,7 @@ describe("MessagesTimeline agent messages", () => {
     expect(screen.text()).not.toContain("drops the index");
   });
 
-  it("keeps a collapsed agent message in a raised, borderless bubble at full-strength ink", async () => {
+  it("keeps a collapsed agent message as a borderless, shadowless chip and raises it once opened", async () => {
     setup();
     await using screen = await renderTimeline([
       message(AGENT_MESSAGE, { createdBy: "agent", senderThreadId: SENDER_THREAD_ID }),
@@ -868,16 +868,55 @@ describe("MessagesTimeline agent messages", () => {
     const card = row.parentElement!;
     const collapsed = getComputedStyle(card);
     expect(collapsed.borderTopWidth).toBe("0px");
-    expect(collapsed.boxShadow).not.toBe("none");
+    expect(collapsed.boxShadow).toBe("none");
     expect(collapsed.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
     const collapsedColor = collapsed.color;
 
     await click(row);
     const opened = getComputedStyle(card);
     expect(opened.borderTopWidth).toBe("0px");
+    expect(opened.boxShadow).not.toBe("none");
     expect(opened.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
     expect(opened.color).toBe(collapsedColor);
   });
+
+  it("mutes the collapsed agent chip's summary and chevron", async () => {
+    setup();
+    await using screen = await renderTimeline([
+      message(AGENT_MESSAGE, { createdBy: "agent", senderThreadId: SENDER_THREAD_ID }),
+    ]);
+    const row = screen.button(/^Agent: Review finished/);
+    const card = row.parentElement!;
+    const summary = [...row.querySelectorAll("span")].find((node) =>
+      node.textContent?.startsWith("Review finished"),
+    )!;
+    expect(getComputedStyle(summary).color).not.toBe(getComputedStyle(card).color);
+    expect(getComputedStyle(row.querySelector("svg:last-of-type")!).color).not.toBe(
+      getComputedStyle(card).color,
+    );
+  });
+
+  it.each([
+    [1440, true],
+    [800, false],
+  ])(
+    "shows the agent chip's text label only when wide (%ipx viewport: %s)",
+    async (width, labelVisible) => {
+      setup();
+      const restore = { width: window.innerWidth, height: window.innerHeight };
+      await page.viewport(width, 900);
+      await using _viewport = {
+        [Symbol.asyncDispose]: () => page.viewport(restore.width, restore.height),
+      };
+      await using screen = await renderTimeline([
+        message(AGENT_MESSAGE, { createdBy: "agent", senderThreadId: SENDER_THREAD_ID }),
+      ]);
+      const row = screen.button(/^Agent: Review finished/);
+      const label = [...row.querySelectorAll("span")].find((node) => node.textContent === "Agent")!;
+      expect(getComputedStyle(label).display === "none").toBe(!labelVisible);
+      expect(row.getAttribute("aria-label")).toContain("Agent");
+    },
+  );
 
   it.each([1440, 800])(
     "sizes a short agent message to its text, right-aligned, at a %ipx viewport",
@@ -1052,6 +1091,43 @@ describe("MessagesTimeline expanded tool rows", () => {
     expect(rowBox.right).toBeCloseTo(proseBox.right, 0);
     expect(getComputedStyle(row).borderTopWidth).toBe("0px");
     expect(getComputedStyle(row).borderLeftWidth).toBe("0px");
+    expect(getComputedStyle(row).backgroundColor).toBe("rgba(0, 0, 0, 0)");
+  });
+
+  it("shows a tool row's timestamp right after its label on hover, in the muted ink", async () => {
+    await using _viewport = await desktopViewport();
+    setup();
+    const runId = RunId.make("meta-run");
+    await using screen = await renderTimeline(
+      [
+        message("Question", { runId }, "meta-user"),
+        work("meta-tool", {
+          runId,
+          label: "Ran ls",
+          command: "ls -la",
+          tone: "tool",
+          itemType: "command_execution",
+          toolLifecycleStatus: "completed",
+        }),
+        message("Done listing the directory", { role: "assistant", runId }, "meta-final"),
+      ],
+      { runs: [] },
+    );
+    const heading = [...screen.container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => /^Worked for/.test(button.textContent ?? ""),
+    );
+    if (heading) await click(heading);
+    const row = screen.button("ls -la");
+    await userEvent.hover(row);
+    const timestamp = row.querySelector<HTMLElement>('[data-slot="tooltip-trigger"]')!;
+    await vi.waitFor(() => expect(getComputedStyle(timestamp).opacity).toBe("1"));
+    const label = row.querySelector<HTMLElement>("p")!;
+    const gap = timestamp.getBoundingClientRect().left - label.getBoundingClientRect().right;
+    expect(gap).toBeGreaterThanOrEqual(0);
+    expect(gap).toBeLessThanOrEqual(12);
+    expect(
+      row.getBoundingClientRect().right - timestamp.getBoundingClientRect().right,
+    ).toBeGreaterThan(24);
   });
 });
 

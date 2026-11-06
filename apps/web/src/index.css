@@ -2681,6 +2681,20 @@ code {
 }
 
 @layer components {
+  /* A static accent wash behind the new-thread hero; it carries no animation and is dropped
+     wherever the user asks for less transparency or more contrast. */
+  [data-chat-composer-overlay][data-draft-hero] {
+    background: radial-gradient(
+      ellipse 55% 50% at 50% 46%,
+      color-mix(in srgb, var(--accent) 4%, transparent),
+      transparent 70%
+    );
+  }
+  @media (forced-colors: active), (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
+    [data-chat-composer-overlay][data-draft-hero] {
+      background: none;
+    }
+  }
   .chat-composer-lane {
     padding-inline-start: calc(
       env(safe-area-inset-left) + 0.75rem + var(--chat-lane-inset-start, 0px)

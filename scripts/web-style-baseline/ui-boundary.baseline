@@ -110,7 +110,7 @@
 9 apps/web/src/components/chat/ThreadServersPanel.tsx
 2 apps/web/src/components/chat/ThreadStatusLine.tsx
 16 apps/web/src/components/chat/TimelineAssistantRows.tsx
-27 apps/web/src/components/chat/TimelineFileChangeCard.tsx
+25 apps/web/src/components/chat/TimelineFileChangeCard.tsx
 43 apps/web/src/components/chat/TimelineMinimap.tsx
 17 apps/web/src/components/chat/TimelineOverlays.tsx
 24 apps/web/src/components/chat/TimelinePendingApprovalRow.tsx

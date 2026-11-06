@@ -437,8 +437,10 @@ function AgentFoldedHeader(props: {
         aria-hidden="true"
         className="size-3.5 shrink-0 text-(--secondary-label)"
       />
-      <span className="max-w-[50%] shrink-0 truncate text-(--secondary-label)">{props.sender}</span>
-      <span ref={setSummaryNode} className="min-w-0 flex-1 truncate">
+      <span className="max-w-[50%] shrink-0 truncate text-(--secondary-label) max-[900px]:hidden">
+        {props.sender}
+      </span>
+      <span ref={setSummaryNode} className="min-w-0 flex-1 truncate text-(--secondary-label)">
         {props.summary}
       </span>
       {expandable ? (
@@ -916,7 +918,9 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       ) : null}
       <div
         className={cn(
-          "relative min-w-0 max-w-[82%] rounded-(--r-group) bg-(--bubble) text-prose leading-5 text-(--bubble-ink) shadow-composer",
+          "relative min-w-0 max-w-[82%] rounded-(--r-group) text-prose leading-5 text-(--bubble-ink)",
+          // A collapsed agent message is a quiet chip: a soft fill, no edge. Opened, it is a card.
+          folded && !expanded ? "bg-(--hover)" : "bg-(--bubble) shadow-composer",
           mediaAboveText && "rounded-tr-(--r-badge)",
           BUBBLE_CHIP_CLASS_NAME,
           !folded && !mediaOnly && !fileCardsOnly && !audioOnly && "px-3.5 py-2.5",

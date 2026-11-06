@@ -39,6 +39,8 @@ function Main({ className, ...props }: ComponentProps<"div">) {
       className={cn(
         "relative z-10 w-full overflow-hidden rounded-xl border border-(--line-strong) bg-(--composer)",
         SURFACE_LIFT_CLASS,
+        // On the new-thread page the composer is the page's one surface, so it rises a step.
+        "[[data-draft-hero]_&]:bg-(--surface-raised) [[data-draft-hero]_&]:shadow-(--shadow-1)",
         // Under the changed-files bar the two read as one stack: the card drops its top edge.
         "[[data-changed-files-bar]+[data-slot=composer-shell]:not(.hidden)_&]:rounded-t-none [[data-changed-files-bar]+[data-slot=composer-shell]:not(.hidden)_&]:border-t-0",
         className,

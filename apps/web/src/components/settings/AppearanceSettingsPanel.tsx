@@ -123,7 +123,7 @@ export function AppearanceSettingsPanel() {
             <div className="flex w-full items-center gap-3 sm:w-52">
               <span
                 aria-hidden="true"
-                className="min-w-9 text-right font-mono text-xs tabular-nums text-muted-foreground"
+                className="min-w-9 text-right font-sans text-xs tabular-nums text-muted-foreground"
               >
                 {formatAppearanceContrast(settings.appearanceContrast)}
               </span>
@@ -218,7 +218,7 @@ export function AppearanceSettingsPanel() {
             <div className="flex w-full items-center gap-3 sm:w-52">
               <span
                 aria-hidden="true"
-                className="min-w-8 text-right font-mono text-xs tabular-nums text-muted-foreground"
+                className="min-w-8 text-right font-sans text-xs tabular-nums text-muted-foreground"
               >
                 {settings.glassOpacity}
               </span>

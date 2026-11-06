@@ -123,4 +123,47 @@ describe("CommandPalette list edge", () => {
       })
       .toEqual({ overflowing: true, cutPx: 0, listOverflowsDialogPx: 0 });
   });
+
+  async function openPalette(height: number) {
+    useCommandPaletteStore.setState(useCommandPaletteStore.getInitialState(), true);
+    await page.viewport(1440, height);
+    const screen = await render(<CommandPalette>{null}</CommandPalette>);
+    openCommandPalette({});
+    await expect
+      .element(page.getByPlaceholder("Search commands, projects, and threads..."))
+      .toBeVisible();
+    return screen;
+  }
+
+  const scroller = () =>
+    [...document.querySelectorAll<HTMLElement>('[data-slot="command-list"] *')].find((node) =>
+      ["auto", "scroll"].includes(getComputedStyle(node).overflowY),
+    );
+
+  /** The gap between the last rendered row's bottom and the footer's top. */
+  function gapToFooter() {
+    const footer = document.querySelector<HTMLElement>('[data-slot="command-footer"]')!;
+    const rows = [...document.querySelectorAll<HTMLElement>('[data-slot="command-item"]')];
+    const last = rows.filter((row) => row.getBoundingClientRect().bottom > 0).at(-1)!;
+    return footer.getBoundingClientRect().top - last.getBoundingClientRect().bottom;
+  }
+
+  it("leaves the last row undimmed when the whole list fits", async () => {
+    await using _screen = await openPalette(1600);
+    await expect.poll(() => scroller() !== undefined).toBe(true);
+    const list = scroller()!;
+    expect(list.scrollHeight - list.clientHeight).toBeLessThanOrEqual(1);
+    expect(getComputedStyle(list).maskImage).toBe("none");
+    expect(gapToFooter()).toBeGreaterThanOrEqual(8);
+  });
+
+  it("drops the bottom fade once the list is scrolled to its end, and keeps 8px above the footer", async () => {
+    await using _screen = await openPalette(480);
+    await expect.poll(() => scroller()?.scrollHeight ?? 0).toBeGreaterThan(0);
+    const list = scroller()!;
+    await expect.poll(() => getComputedStyle(list).maskImage).toContain("calc(100% - 32px)");
+    list.scrollTop = list.scrollHeight;
+    await expect.poll(() => getComputedStyle(list).maskImage).not.toContain("calc(100% - 32px)");
+    expect(gapToFooter()).toBeGreaterThanOrEqual(8);
+  });
 });

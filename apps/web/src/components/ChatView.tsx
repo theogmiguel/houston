@@ -3707,9 +3707,12 @@ export default function ChatView(props: ChatViewProps) {
               }}
               inert={isRevertingCheckpoint}
               data-chat-composer-overlay="true"
+              data-draft-hero={isDraftHeroState ? "true" : undefined}
               className={
                 isDraftHeroState
-                  ? "pointer-events-none absolute inset-0 z-20 flex items-center"
+                  ? // 93% tall, so the stack centres a little above the pane's middle and the
+                    // headline above it brings the group's centre to about 42% of the pane.
+                    "pointer-events-none absolute inset-x-0 top-0 z-20 flex h-[93%] items-center"
                   : "pointer-events-none absolute inset-x-0 bottom-0 z-20 pt-1.5 sm:pt-2"
               }
             >

@@ -61,4 +61,20 @@ describe("AppearanceSettingsPanel", () => {
     const edges = labels.map((name) => textLeft(heading(name)));
     expect(edges, `left edges of ${labels.join(", ")}`).toEqual(edges.map(() => edges[0]));
   });
+
+  it("sets the slider values in the interface face with tabular figures", async () => {
+    await page.viewport(1440, 900);
+    await using screen = await mountAppearance();
+
+    const sliders = [...screen.container.querySelectorAll<HTMLInputElement>("input[type=range]")];
+    expect(sliders.length).toBeGreaterThanOrEqual(2);
+    const sans = getComputedStyle(document.body).fontFamily;
+    for (const slider of sliders) {
+      const value = slider.previousElementSibling as HTMLElement;
+      expect(value.textContent, "the value sits before its slider").toMatch(/\d/);
+      const style = getComputedStyle(value);
+      expect(style.fontFamily).toBe(sans);
+      expect(style.fontVariantNumeric).toContain("tabular-nums");
+    }
+  });
 });

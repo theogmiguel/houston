@@ -1,6 +1,5 @@
 import type { OrchestrationV2TurnItem } from "@houston-app/contracts";
 import { expect, it } from "vite-plus/test";
-import { userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import { render } from "../../../test/render";
@@ -19,6 +18,15 @@ function fileChange(extra: Partial<FileChangeItem> = {}): FileChangeItem {
   } as FileChangeItem;
 }
 
+function resolveRadius(value: string): string {
+  const probe = document.createElement("span");
+  probe.style.borderTopLeftRadius = value;
+  document.body.append(probe);
+  const radius = getComputedStyle(probe).borderTopLeftRadius;
+  probe.remove();
+  return radius;
+}
+
 function resolveColor(value: string): string {
   const probe = document.createElement("span");
   probe.style.color = value;
@@ -28,54 +36,28 @@ function resolveColor(value: string): string {
   return color;
 }
 
-const noBorder = (style: CSSStyleDeclaration) =>
-  style.borderTopWidth === "0px" && style.borderBottomWidth === "0px";
-
-it("draws a change without a diff body as a borderless row that fills on hover and focus", async () => {
+it("draws a change without a diff body as the bordered card, with the open icon inside on the right", async () => {
   await using screen = await render(
     <TimelineFileChangeCard item={fileChange()} workspaceRoot="/work" onOpenDiff={() => {}} />,
     { router: false },
   );
   const section = screen.container.querySelector<HTMLElement>("section")!;
-  const path = screen.getByText("work/atlas-api/CHANGELOG.md").element();
-  const icon = section.querySelector("svg")!;
-  expect(section.dataset.fileChangeVariant).toBe("reference");
+  const style = getComputedStyle(section);
+  expect(style.borderTopWidth).toBe("1px");
+  expect(style.borderTopColor).toBe(resolveColor("var(--contrast-card-border)"));
+  expect(style.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+  expect(style.borderTopLeftRadius).toBe(resolveRadius("var(--r-group)"));
 
-  // Rest: no border, no fill, no lift; icon and path in the muted ink.
-  const rest = getComputedStyle(section);
-  expect(noBorder(rest)).toBe(true);
-  expect(rest.backgroundColor).toBe("rgba(0, 0, 0, 0)");
-  expect(rest.boxShadow).toBe("none");
-  expect(getComputedStyle(path).color).toBe(resolveColor("var(--houston)"));
-  expect(getComputedStyle(icon).color).toBe(resolveColor("var(--houston)"));
-  // The icon sits on the prose edge: the row's own padding is cancelled by its negative margin.
-  const contentLeft = icon.getBoundingClientRect().left;
-  expect(contentLeft).toBeCloseTo(
-    section.getBoundingClientRect().left + Number.parseFloat(rest.paddingLeft),
-    1,
-  );
-  expect(Number.parseFloat(rest.marginLeft)).toBe(-Number.parseFloat(rest.paddingLeft));
-
-  // Hover: the row fills and the path takes the default ink.
-  await userEvent.hover(path);
-  await expect.poll(() => getComputedStyle(section).backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
-  await expect.poll(() => getComputedStyle(path).color).toBe(resolveColor("var(--t1)"));
-  expect(noBorder(getComputedStyle(section))).toBe(true);
-
-  // Keyboard focus: same fill and ink, with the button's focus ring kept.
-  await userEvent.unhover(path);
-  await expect.poll(() => getComputedStyle(section).backgroundColor).toBe("rgba(0, 0, 0, 0)");
-  await userEvent.tab();
-  const button = screen.getByRole("button", { name: "Open diff" }).element();
-  expect(document.activeElement).toBe(button);
-  await expect.poll(() => getComputedStyle(section).backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
-  await expect.poll(() => getComputedStyle(path).color).toBe(resolveColor("var(--t1)"));
-  const focus = getComputedStyle(button);
-  expect(focus.outlineStyle).toBe("solid");
-  expect(Number.parseFloat(focus.outlineWidth)).toBe(2);
+  // The open icon sits inside the card, at its right edge.
+  const open = screen.getByRole("button", { name: "Open diff" }).element();
+  const box = section.getBoundingClientRect();
+  const openBox = open.getBoundingClientRect();
+  expect(openBox.right).toBeLessThanOrEqual(box.right);
+  expect(box.right - openBox.right).toBeLessThan(12);
+  expect(openBox.left).toBeGreaterThan(box.left + box.width / 2);
 });
 
-it("keeps the bordered card when the change carries a diff body", async () => {
+it("matches the changed-files card's border and radius", async () => {
   await using screen = await render(
     <TimelineFileChangeCard
       item={fileChange({ diffStr: "@@ -1,1 +1,2 @@\n context\n+added\n" })}
@@ -83,7 +65,7 @@ it("keeps the bordered card when the change carries a diff body", async () => {
     />,
     { router: false },
   );
-  const section = screen.container.querySelector<HTMLElement>("section")!;
-  expect(section.dataset.fileChangeVariant).toBe("card");
-  expect(getComputedStyle(section).borderTopWidth).toBe("1px");
+  const style = getComputedStyle(screen.container.querySelector<HTMLElement>("section")!);
+  expect(style.borderTopWidth).toBe("1px");
+  expect(style.borderTopColor).toBe(resolveColor("var(--contrast-card-border)"));
 });

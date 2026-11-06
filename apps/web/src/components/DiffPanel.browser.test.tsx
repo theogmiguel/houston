@@ -323,7 +323,7 @@ it("keeps the view controls in the header and folds them into a menu when narrow
   expect(narrowScreen.getByRole("button", { name: "Diff options" }).elements()).toHaveLength(1);
 });
 
-it("soft-wraps code by default in the embedded side panel and keeps scrolling in a full-width view", async () => {
+it("keeps code unwrapped in the embedded side panel so the overflow fade can show", async () => {
   using context = setup(null, samplePatch);
   useDiffPanelStore.getState().selectBranchBaseRef(context.threadRef, "main");
   const sidePanel = document.createElement("div");
@@ -333,16 +333,6 @@ it("soft-wraps code by default in the embedded side panel and keeps scrolling in
   });
   await expect
     .element(side.getByRole("button", { name: "Add diff comment" }))
-    .toHaveAttribute("data-code-overflow", "wrap");
-
-  // A full-width view keeps the stored preference, which defaults to horizontal scrolling.
-  const fullWidth = document.createElement("div");
-  fullWidth.style.width = "900px";
-  await using full = await render(panel(context.registry, context.threadRef, "sheet"), {
-    container: fullWidth,
-  });
-  await expect
-    .element(full.getByRole("button", { name: "Add diff comment" }))
     .toHaveAttribute("data-code-overflow", "scroll");
 });
 

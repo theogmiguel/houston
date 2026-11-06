@@ -22,6 +22,7 @@ vi.mock(import("~/hooks/useThreadActionMenu"), () => ({
 
 import "~/index.css";
 import { render } from "../../../test/render";
+import { TooltipProvider } from "../ui/tooltip";
 import { ChatHeader } from "./ChatHeader";
 
 function header(title: string) {
@@ -132,3 +133,28 @@ it.each([640, 1100])(
     expect(gap).toBeGreaterThanOrEqual(headerWidth > 900 ? 48 : 0);
   },
 );
+
+it("shows the full thread title in a tooltip when the title is cut", async () => {
+  const longTitle =
+    "Investigate intermittent ECONNRESET errors on the /v1/webhooks/ingest endpoint when payloads exceed 1 MB behind the load balancer";
+  await using screen = await render(
+    <TooltipProvider delay={0}>
+      <div style={{ width: 640 }} className="flex items-center gap-2 px-3">
+        <ChatHeader
+          activeThreadEnvironmentId={EnvironmentId.make("environment")}
+          activeThreadId={ThreadId.make("thread")}
+          activeThreadTitle={longTitle}
+          isServerThread
+          activeProject={{ title: "atlas-api", isScratch: false } as never}
+          parentThreadLink={null}
+          onOpenThread={() => {}}
+        />
+      </div>
+    </TooltipProvider>,
+  );
+  const trigger = screen.getByRole("button", { name: `Thread actions for ${longTitle}` });
+  await userEvent.hover(trigger);
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-slot="tooltip-popup"]')?.textContent).toBe(longTitle),
+  );
+});
