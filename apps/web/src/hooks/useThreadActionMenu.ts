@@ -100,6 +100,11 @@ export function useThreadActionMenu(input: {
   readonly onWakeThread?: (() => void) | undefined;
   /** A grid cell closes itself once its thread is archived. */
   readonly onThreadArchived?: (() => void) | undefined;
+  /** The rail's project filter for this thread's project; absent hides Filter by project. */
+  readonly projectFilter?:
+    | { readonly label: string; readonly isActive: boolean; readonly onToggle: () => void }
+    | null
+    | undefined;
 }) {
   const { threadRef, onStartRename, onFind, handleNewThread, grid, cell } = input;
   const {
@@ -181,7 +186,10 @@ export function useThreadActionMenu(input: {
       canFind: thread !== null && onFind !== undefined,
       canStartBranchThread: handleNewThread !== undefined,
       branch: thread?.branch ?? null,
-      projectFilter: null,
+      projectFilter:
+        input.projectFilter == null
+          ? null
+          : { label: input.projectFilter.label, isActive: input.projectFilter.isActive },
       isSettled: thread !== null && supports.settlement && thread.settledOverride === "settled",
       autoSettleEnabled: thread?.autoSettleDisabledAt == null,
       tags: threadTags,
@@ -313,6 +321,9 @@ export function useThreadActionMenu(input: {
       case "find":
         if (onFind === undefined) findThread(threadRef);
         else onFind(threadRef);
+        return;
+      case "filter-by-project":
+        input.projectFilter?.onToggle();
         return;
       case "project-settings":
         await openThreadProjectSettings(threadRef);

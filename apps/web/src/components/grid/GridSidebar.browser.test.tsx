@@ -14,6 +14,12 @@ vi.mock(import("@effect/atom-react"), async (original) => ({
   useAtomValue: (() => []) as never,
 }));
 
+vi.mock(import("../../state/environments"), async (original) => ({
+  ...(await original()),
+  usePrimaryEnvironmentId: (() => "env-1") as never,
+  useEnvironmentMachines: (() => new Map()) as never,
+}));
+
 vi.mock(import("../../state/session"), async (original) => ({
   ...(await original()),
   readEnvironmentScope: () => true,
@@ -129,6 +135,7 @@ describe("ThreadCard drag source", () => {
       threadId: "thread-a",
       environmentId: "env-1",
       projectId: "project-1",
+      title: "Split drawer state from the thread store",
     });
     endThreadDrag();
   });
@@ -424,7 +431,7 @@ describe("ThreadCard status marks", () => {
       card(thread({ hasPendingUserInput: true }), { timeLabel: null }),
     );
 
-    const label = screen.getByText("Needs you").element();
+    const label = screen.getByText("Input").element();
     const outline = label.parentElement?.querySelector("svg path");
     expect(outline).not.toBeNull();
     expect(getComputedStyle(outline!).fill).toBe("none");

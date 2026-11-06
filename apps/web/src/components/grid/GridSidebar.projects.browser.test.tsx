@@ -36,6 +36,12 @@ vi.mock(import("@effect/atom-react"), async (original) => ({
   useAtomValue: (() => []) as never,
 }));
 
+vi.mock(import("../../state/environments"), async (original) => ({
+  ...(await original()),
+  usePrimaryEnvironmentId: (() => "env-1") as never,
+  useEnvironmentMachines: (() => new Map()) as never,
+}));
+
 vi.mock(import("../../state/session"), async (original) => ({
   ...(await original()),
   readEnvironmentScope: () => true,
@@ -237,13 +243,13 @@ describe("project sections", () => {
     const sections = projectSections();
     await using first = await render(<CollapsibleSections sections={sections} />);
     await userEvent.click(first.getByRole("button", { name: /^Houston$/ }).element());
-    const label = first.getByRole("button", { name: /^Houston 2 grids$/ }).element();
+    const label = first.getByRole("button", { name: /^Houston 2$/ }).element();
     expect(label.getAttribute("aria-expanded")).toBe("false");
     expect(first.container.textContent).not.toContain("Grid 1");
     await first[Symbol.asyncDispose]();
 
     await using second = await render(<CollapsibleSections sections={sections} />);
-    const restored = second.getByRole("button", { name: /^Houston 2 grids$/ }).element();
+    const restored = second.getByRole("button", { name: /^Houston 2$/ }).element();
     expect(restored.getAttribute("aria-expanded")).toBe("false");
     expect(second.container.textContent).not.toContain("Grid 1");
   });

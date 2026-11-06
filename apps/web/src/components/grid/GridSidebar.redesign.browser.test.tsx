@@ -19,6 +19,12 @@ vi.mock(import("@effect/atom-react"), async (original) => ({
   useAtomValue: (() => []) as never,
 }));
 
+vi.mock(import("../../state/environments"), async (original) => ({
+  ...(await original()),
+  usePrimaryEnvironmentId: (() => "env-1") as never,
+  useEnvironmentMachines: (() => new Map()) as never,
+}));
+
 vi.mock(import("../../state/session"), async (original) => ({
   ...(await original()),
   readEnvironmentScope: () => true,
@@ -331,10 +337,25 @@ describe("grid sidebar", () => {
     expect(heading.className).not.toContain("bg-sidebar-row-selected");
   });
 
-  it("tints the open grid's heading when collapsing hides its focused thread", async () => {
+  it("hands the open grid's selection fill to its revealed thread row while collapsed", async () => {
     const threads = [thread({ id: "thread-a" }), thread({ id: "thread-b", title: "Second" })];
     await using screen = await render(
       group(grid({ id: "grid-a", name: "v2 port", focusedThreadId: "thread-a" }), threads, {
+        open: true,
+        collapsed: true,
+      }),
+    );
+
+    const heading = screen.getByRole("button", { name: /^v2 port 1$/ }).element();
+    expect(heading.className).not.toContain("bg-sidebar-row-selected");
+    expect(screen.container.querySelector("[data-thread-key$=':thread-a']")).not.toBeNull();
+    expect(screen.container.querySelector("[data-thread-key$=':thread-b']")).toBeNull();
+  });
+
+  it("tints the open grid's heading when collapsing hides every row", async () => {
+    const threads = [thread({ id: "thread-a" }), thread({ id: "thread-b", title: "Second" })];
+    await using screen = await render(
+      group(grid({ id: "grid-a", name: "v2 port", focusedThreadId: null }), threads, {
         open: true,
         collapsed: true,
       }),
