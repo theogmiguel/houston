@@ -762,6 +762,18 @@ const SecretStoreImport = Effect.gen(function* () {
   `;
 });
 
+// The event-log prune reads only rows that borrow an anchor's prompt instead of every retained
+// event. The predicate must equal borrowsPrompt in orchestration-v2/ProjectionMaintenance.ts.
+const EventPromptReferences = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE INDEX IF NOT EXISTS houston_orch_events_prompt_references_idx
+    ON orchestration_events(sequence)
+    WHERE event_type IN ('subagent.updated', 'turn-item.updated')
+      AND json_type(payload_json, '$.promptSequence') = 'integer'
+  `;
+});
+
 const houstonMigrationEntries = [
   [1, "ReviewFilesViewed", ReviewFilesViewed],
   [2, "TasksBacklog", TasksBacklog],
@@ -774,6 +786,7 @@ const houstonMigrationEntries = [
   [9, "NightShift", NightShift],
   [10, "DropNightShiftAndHarnessReview", DropNightShiftAndHarnessReview],
   [11, "SecretStoreImport", SecretStoreImport],
+  [12, "EventPromptReferences", EventPromptReferences],
 ] as const;
 
 // Ids land in merge order, so a database can record a higher id before a lower one; every

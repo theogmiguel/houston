@@ -363,6 +363,76 @@ it.effect("keeps the anchor a retained stream head borrows from", () =>
   }).pipe(Effect.provide(layerTest)),
 );
 
+it.effect("reads borrowed prompts through their partial index, not every retained event", () =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const plan = (statement: Statement.Statement<unknown>) => {
+      const [query, params] = statement.compile();
+      return sql
+        .unsafe<{ readonly detail: string }>(`EXPLAIN QUERY PLAN ${query}`, params)
+        .pipe(Effect.map((rows) => rows.map((row) => row.detail)));
+    };
+    const references = yield* plan(
+      ProjectionMaintenance.promptReferencesQuery(sql, { afterSequence: 0, throughSequence: 10 }),
+    );
+    const heads = yield* plan(ProjectionMaintenance.keptHeadReferencesQuery(sql, 10));
+    for (const detail of [references, heads]) {
+      assert.match(detail[0] ?? "", /USING INDEX houston_orch_events_prompt_references_idx/);
+      assert.notMatch(detail.join("\n"), /\bSCAN\b/);
+    }
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("keeps every borrowed anchor when the borrowing rows span several pages", () =>
+  Effect.gen(function* () {
+    const sink = yield* EventSink.EventSinkV2;
+    const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
+    const sql = yield* SqlClient.SqlClient;
+    const now = yield* DateTime.now;
+    const threadId = ThreadId.make("thread:prune-pages");
+    yield* sink.write({ events: [threadCreated(makeThread(threadId, now), now)] });
+    // Composed fixture: rows written directly, as the projections had applied them. 1,201 anchors,
+    // then 1,200 rows borrowing from all but the newest, more than two reference pages.
+    const insertRows = (count: number, payloadFor: string) => sql`
+      WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ${count})
+      INSERT INTO orchestration_events (
+        event_id, aggregate_kind, stream_id, stream_version, event_type,
+        occurred_at, actor_kind, payload_json, metadata_json, application_event_version
+      )
+      SELECT
+        'event:prune-pages:' || (SELECT MAX(sequence) + i FROM orchestration_events),
+        'thread', ${threadId},
+        (SELECT MAX(stream_version) FROM orchestration_events WHERE stream_id = ${threadId}) + i,
+        'subagent.updated', '2026-11-01T00:00:00.000Z', 'server',
+        ${sql.unsafe(payloadFor)}, '{}', 2
+      FROM n
+    `;
+    const markProjected = sql`
+      UPDATE orchestration_v2_projection_metadata
+      SET last_sequence = (SELECT MAX(sequence) FROM orchestration_events)
+      WHERE projection_name = 'thread-projections'
+    `;
+    const firstAnchor =
+      (yield* sql<{ readonly sequence: number }>`
+        SELECT MAX(sequence) + 1 AS sequence FROM orchestration_events
+      `)[0]?.sequence ?? 0;
+    yield* insertRows(1201, `json_object('prompt', 'Review prompt ' || i)`);
+    yield* markProjected;
+    yield* maintenance.pruneEventStore();
+    yield* insertRows(1200, `json_object('prompt', '', 'promptSequence', ${firstAnchor} - 1 + i)`);
+    yield* markProjected;
+    yield* TestClock.adjust("1 day");
+
+    assert.equal((yield* maintenance.pruneEventStore()).deletedEventCount, 1);
+    const anchors = yield* sql<{ readonly count: number; readonly newest: number }>`
+      SELECT COUNT(*) AS count, MAX(sequence) AS newest FROM orchestration_events
+      WHERE stream_id = ${threadId} AND json_type(payload_json, '$.promptSequence') IS NULL
+        AND event_type = 'subagent.updated'
+    `;
+    assert.deepEqual(anchors[0], { count: 1200, newest: firstAnchor + 1199 });
+  }).pipe(Effect.provide(layerTest)),
+);
+
 it.effect("keeps an anchor that a row appended during the pass borrows from", () =>
   Effect.scoped(
     Effect.gen(function* () {

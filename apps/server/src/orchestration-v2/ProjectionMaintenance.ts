@@ -42,7 +42,46 @@ export class ProjectionMaintenanceV2 extends Context.Service<
 const RETAINED_EVENT_HISTORY = Duration.days(1);
 // Small pages bound work on the reader worker and synchronous fallback.
 const PAGE_SIZE = 50;
-const REFERENCE_SCAN_WINDOW = 1000;
+// Borrowing rows are small (their prompt is empty), so a page of them stays cheap to read.
+const REFERENCE_PAGE_SIZE = 500;
+
+// Rows that borrow an anchor's prompt. Houston's partial index
+// houston_orch_events_prompt_references_idx has this exact predicate, so keep the two equal.
+const borrowsPrompt = (sql: SqlClient.SqlClient) => sql`
+  event.event_type IN ('subagent.updated', 'turn-item.updated')
+  AND json_type(event.payload_json, '$.promptSequence') = 'integer'
+`;
+
+/** A page of the anchors that rows in `(afterSequence, throughSequence]` borrow from. */
+export const promptReferencesQuery = (
+  sql: SqlClient.SqlClient,
+  input: { readonly afterSequence: number; readonly throughSequence: number },
+) => sql<{ readonly sequence: number; readonly prompt_sequence: number }>`
+  SELECT
+    event.sequence,
+    json_extract(event.payload_json, '$.promptSequence') AS prompt_sequence
+  FROM orchestration_events AS event
+  WHERE event.sequence > ${input.afterSequence}
+    AND event.sequence <= ${input.throughSequence}
+    AND ${borrowsPrompt(sql)}
+  ORDER BY event.sequence ASC
+  LIMIT ${REFERENCE_PAGE_SIZE}
+`;
+
+/** Anchors borrowed by stream heads at or below `throughSequence`, which pruning keeps. */
+export const keptHeadReferencesQuery = (sql: SqlClient.SqlClient, throughSequence: number) => sql<{
+  readonly prompt_sequence: number;
+}>`
+  SELECT json_extract(event.payload_json, '$.promptSequence') AS prompt_sequence
+  FROM orchestration_events AS event
+  WHERE event.sequence <= ${throughSequence}
+    AND ${borrowsPrompt(sql)}
+    AND event.sequence = (
+      SELECT MAX(newer.sequence) FROM orchestration_events AS newer
+      WHERE newer.aggregate_kind = event.aggregate_kind
+        AND newer.stream_id = event.stream_id
+    )
+`;
 
 type MetadataRow = {
   readonly projection_name: string;
@@ -78,18 +117,14 @@ export const layer: Layer.Layer<ProjectionMaintenanceV2, never, SqlClient.SqlCli
     ) {
       const referenced = new Set<number>();
       for (let cursor = afterSequence; cursor < throughSequence;) {
-        const windowEnd = Math.min(cursor + REFERENCE_SCAN_WINDOW, throughSequence);
-        const rows = yield* sql<{ readonly prompt_sequence: number }>`
-          SELECT json_extract(payload_json, '$.promptSequence') AS prompt_sequence
-          FROM orchestration_events
-          WHERE sequence > ${cursor}
-            AND sequence <= ${windowEnd}
-            AND event_type IN ('subagent.updated', 'turn-item.updated')
-            AND json_type(payload_json, '$.promptSequence') = 'integer'
-        `.pipe(NodeSqliteClient.readOnly);
+        const rows = yield* promptReferencesQuery(sql, {
+          afterSequence: cursor,
+          throughSequence,
+        }).pipe(NodeSqliteClient.readOnly);
         for (const row of rows) referenced.add(row.prompt_sequence);
-        cursor = windowEnd;
         yield* betweenPages;
+        if (rows.length < REFERENCE_PAGE_SIZE) break;
+        cursor = rows.at(-1)?.sequence ?? throughSequence;
       }
       return referenced;
     });
@@ -101,17 +136,9 @@ export const layer: Layer.Layer<ProjectionMaintenanceV2, never, SqlClient.SqlCli
     ) {
       const referenced = yield* readPromptReferences(throughSequence, head, betweenPages);
       // Stream heads at or below the boundary are kept, so the anchors they borrow must stay too.
-      const keptHeadReferences = yield* sql<{ readonly prompt_sequence: number }>`
-        SELECT json_extract(event.payload_json, '$.promptSequence') AS prompt_sequence
-        FROM (
-          SELECT MAX(sequence) AS sequence FROM orchestration_events
-          GROUP BY aggregate_kind, stream_id
-        ) AS heads
-        JOIN orchestration_events AS event ON event.sequence = heads.sequence
-        WHERE heads.sequence <= ${throughSequence}
-          AND event.event_type IN ('subagent.updated', 'turn-item.updated')
-          AND json_type(event.payload_json, '$.promptSequence') = 'integer'
-      `.pipe(NodeSqliteClient.readOnly);
+      const keptHeadReferences = yield* keptHeadReferencesQuery(sql, throughSequence).pipe(
+        NodeSqliteClient.readOnly,
+      );
       for (const row of keptHeadReferences) referenced.add(row.prompt_sequence);
       yield* betweenPages;
       let referencesThrough = head;
