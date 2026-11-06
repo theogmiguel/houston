@@ -28,11 +28,14 @@ conflicts with the task, explain the conflict and obtain maintainer direction.
   `<channel dir>/v2/userdata/server-runtime.json`.
 - **Local state** (`<channel dir>/v2`): one user, one machine, one SQLite database per channel.
   Upstream's tables follow upstream's migrations; Houston's tables live on the Houston migration
-  track (`houston_sql_migrations`), whose ids never enter upstream's migrator. Houston has no
-  telemetry service: analytics and every OTLP export are off by construction, and no setting or
-  environment variable turns them on. Local-first does not mean offline: a network-backed feature
-  can be turned off, sends nothing while off, and sends no credential or user content to a
-  destination the user did not configure. Updates require an explicit user action.
+  track (`houston_sql_migrations`), whose ids never enter upstream's migrator. Telemetry is
+  allowed to improve Houston: anonymous usage data and crash and diagnostic data (OpenTelemetry
+  traces, metrics and logs). It never includes source code, prompts, agent responses, file
+  contents, credentials or paths, can be turned off, and `docs/user/privacy.md` lists what is sent,
+  to whom and how to turn it off before it ships. Local-first does not mean offline: a
+  network-backed feature can be turned off, sends nothing while off, and sends no credential or
+  user content to a destination the user did not configure. Updates require an explicit user
+  action.
 - **v1 state** (`~/.houston`): v2 never deletes, moves or opens v1's state read-write. A one-time
   import reads v1's `houston.db` read-only. The host's one v1 cleanup reads the channel
   directory and edits only the agent CLI configs v1 changed.

@@ -29,6 +29,8 @@ For an installed build, use the documentation at its version tag from the
 - [Appearance](user/appearance.md) — themes, typography, chat and diff settings
 - [Notifications](user/notifications.md) — thread and in-app notices
 - [Updating Houston](user/updating.md) — the update check, and the one-time Houston 1 import
+- [Privacy and diagnostics](user/privacy.md) — what leaves the machine, usage and crash data,
+  and exporting diagnostics
 
 ## Working on Houston
 
