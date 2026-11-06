@@ -234,7 +234,7 @@ checkouts need this suite and the same generator version; `--a-label` and `--b-l
   reused while the generator version and `--seed` match; `--rebuild` regenerates them. Each build
   runs both migration tracks, writes one unit (6 projects, 150 threads, about 1,100 turns, 40
   tasks) through `EventSink`, `ProjectStore` and `HoustonTaskStore`, runs the daily event-log
-  prune and the three-day auto-settle, then copies the unit `scale - 1` times with every id and
+  prune, the three-day auto-settle and the outbox retention prune, then copies the unit `scale - 1` times with every id and
   timestamp rewritten. A separate deep thread holds `60 × scale` turns for reads that follow one
   thread's length.
 - **Size.** A unit takes about 170 MB and 90 seconds; 100x needs about 18 GB and an hour.

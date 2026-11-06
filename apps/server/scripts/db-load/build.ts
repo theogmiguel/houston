@@ -32,7 +32,7 @@ import {
 } from "./fixture.ts";
 
 /** Bump when the generator's output changes, so cached databases are rebuilt. */
-export const GENERATOR_VERSION = 4;
+export const GENERATOR_VERSION = 5;
 
 export interface DatabaseManifest {
   readonly generatorVersion: number;
@@ -110,8 +110,8 @@ const pruneEventLog = Effect.fn("DbLoad.pruneEventLog")(function* () {
   return yield* maintenance.pruneEventStore();
 });
 
-/** Versions 2 and 3 differ only in the settle pass, so they are upgraded in place. */
-export const UPGRADABLE_GENERATOR_VERSIONS = [2, 3];
+/** Versions 2 to 4 differ only in the settle and retention passes, so they are upgraded in place. */
+export const UPGRADABLE_GENERATOR_VERSIONS = [2, 3, 4];
 
 const DAY_MS = 86_400_000;
 // The default sidebarAutoSettleAfterDays; threads idle longer are settled by the server.
@@ -168,6 +168,12 @@ const autoSettleIdleThreads = Effect.fn("DbLoad.autoSettleIdleThreads")(function
   return new Set(idle.map((row) => row.thread_id));
 });
 
+// The hourly prune keeps only a week of settled effects, so an old install's outbox is small.
+const pruneSettledEffects = Effect.fn("DbLoad.pruneSettledEffects")(function* () {
+  const outbox = yield* EffectOutbox.EffectOutboxV2;
+  return yield* outbox.pruneSettled;
+});
+
 const finishDatabase = Effect.fn("DbLoad.finishDatabase")(function* () {
   const sql = yield* SqlClient.SqlClient;
   yield* sql`
@@ -193,6 +199,7 @@ export const upgradeDatabase = Effect.fn("DbLoad.upgradeDatabase")(function* (
 ) {
   const { settled, rowCounts } = yield* Effect.gen(function* () {
     const settled = yield* autoSettleIdleThreads();
+    yield* pruneSettledEffects();
     return { settled, rowCounts: yield* finishDatabase() };
   }).pipe(Effect.provide(storesLayer(manifest.dbPath)));
   const upgraded: DatabaseManifest = {
@@ -245,6 +252,7 @@ export const buildDatabase = (input: {
     yield* settleOutbox();
     const settled = yield* autoSettleIdleThreads();
     input.log(`auto-settled ${settled.size} idle threads`);
+    input.log(`pruned ${yield* pruneSettledEffects()} settled effects`);
     input.log("rebuilding message search");
     yield* rebuildMessageSearch(sql);
     const rowCounts = yield* finishDatabase();
