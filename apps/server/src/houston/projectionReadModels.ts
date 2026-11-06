@@ -310,6 +310,15 @@ const SHELL_READ_INDEXES: ReadonlyArray<ReadIndex> = [
   ],
 ];
 
+// Migration 16: the timeline page's item index without payloads, a covering index of the columns
+// visibility and paging read.
+const TIMELINE_READ_INDEXES: ReadonlyArray<ReadIndex> = [
+  [
+    "houston_turn_items_timeline_idx",
+    "orchestration_v2_projection_turn_items(thread_id, ordinal, turn_item_id, run_id, node_id, parent_item_id, type, status)",
+  ],
+];
+
 const createReadIndexes = Effect.fn("createHoustonReadIndexes")(function* (
   indexes: ReadonlyArray<ReadIndex>,
 ) {
@@ -322,6 +331,9 @@ const createReadIndexes = Effect.fn("createHoustonReadIndexes")(function* (
 
 /** Houston migration 12: indexes for the boot reads. */
 export const createProjectionReadIndexes = createReadIndexes(BOOT_READ_INDEXES);
+
+/** Houston migration 16: the timeline page's covering index. */
+export const createTimelineReadIndexes = createReadIndexes(TIMELINE_READ_INDEXES);
 
 // The read models' own tables and indexes, created if missing by the migration and at every open.
 const READ_MODEL_TABLES: ReadonlyArray<readonly [name: string, ddl: ReadonlyArray<string>]> = [
@@ -382,7 +394,11 @@ export const ensureHoustonReadModels = Effect.fn("ensureHoustonReadModels")(func
   return yield* sql.withTransaction(
     Effect.gen(function* () {
       yield* createReadModelTables();
-      yield* createReadIndexes([...BOOT_READ_INDEXES, ...SHELL_READ_INDEXES]);
+      yield* createReadIndexes([
+        ...BOOT_READ_INDEXES,
+        ...SHELL_READ_INDEXES,
+        ...TIMELINE_READ_INDEXES,
+      ]);
       if (complete) return false;
       yield* createTriggers();
       yield* rebuildReadModels();

@@ -29,6 +29,7 @@ const HOUSTON_TRACK: Array<readonly [number, string]> = [
   [11, "SecretStoreImport"],
   [12, "ProjectionReadIndexes"],
   [13, "ShellReadModels"],
+  [16, "TimelineReadIndex"],
 ];
 const TASK_TABLES = [
   "houston_task_acceptance",
