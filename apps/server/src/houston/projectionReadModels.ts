@@ -25,6 +25,26 @@ const idleCompactionSql = (payload: string) => {
   END`;
 };
 
+// The turn-start command filters: a trimmed text of /compact (any case) or one starting with /goal.
+// Most texts are rejected on the first character of the left-trimmed first 64. When those still hold
+// 8, they decide the prefix, so a long text is trimmed whole only when it starts with /compact or with
+// 64 whitespace characters.
+const commandKindSql = (payload: string) => {
+  const text = `json_extract(${payload}, '$.text')`;
+  const head = `ltrim(substr(${text}, 1, 64), ${JAVASCRIPT_TRIM_CHARS})`;
+  const compact = `lower(trim(${text}, ${JAVASCRIPT_TRIM_CHARS})) = '/compact'`;
+  return `CASE
+    WHEN json_valid(${payload}) IS NOT 1 THEN NULL
+    WHEN substr(${head}, 1, 1) NOT IN ('/', '') THEN NULL
+    WHEN length(${head}) >= 8 THEN CASE
+      WHEN substr(${head}, 1, 5) = '/goal' THEN 'goal'
+      WHEN lower(substr(${head}, 1, 8)) = '/compact' AND ${compact} THEN 'compact'
+    END
+    WHEN substr(ltrim(${text}, ${JAVASCRIPT_TRIM_CHARS}), 1, 5) = '/goal' THEN 'goal'
+    WHEN ${compact} THEN 'compact'
+  END`;
+};
+
 const userAuthoredSql = (payload: string) =>
   `CASE WHEN json_valid(${payload}) THEN json_extract(${payload}, '$.createdBy') = 'user' ELSE 0 END`;
 
@@ -132,22 +152,25 @@ const countItem = (row: "new" | "old", delta: 1 | -1) => `
   WHERE thread_id = ${row}.thread_id AND run_id = coalesce(${row}.run_id, '') AND item_count <= 0;
 `;
 
-// One row per user message: when it was updated and whether it is an idle compaction or written by
-// the user. A user message's write parses its payload once; other messages skip the triggers.
+// One row per user message: when it was updated, whether it is an idle compaction or written by the
+// user, and its turn-start command. A user message's write parses its payload once; other messages
+// skip the triggers.
 const USER_MESSAGES_TABLE = `
   CREATE TABLE IF NOT EXISTS houston_user_messages (
     message_id TEXT PRIMARY KEY,
     thread_id TEXT,
     updated_at TEXT,
     idle_compaction INTEGER,
-    user_authored INTEGER
+    user_authored INTEGER,
+    command_kind TEXT
   ) WITHOUT ROWID
 `;
 
 const userMessageRow = (from: string, where: string) => `
-  INSERT INTO houston_user_messages (message_id, thread_id, updated_at, idle_compaction, user_authored)
+  INSERT INTO houston_user_messages (message_id, thread_id, updated_at, idle_compaction,
+    user_authored, command_kind)
   SELECT row.message_id, row.thread_id, row.updated_at, ${idleCompactionSql("row.payload_json")},
-    ${userAuthoredSql("row.payload_json")}
+    ${userAuthoredSql("row.payload_json")}, ${commandKindSql("row.payload_json")}
   FROM (SELECT ${from}.message_id AS message_id, ${from}.thread_id AS thread_id,
     ${from}.updated_at AS updated_at, ${from}.payload_json AS payload_json ${where}) row
 `;
@@ -227,12 +250,8 @@ const TRIGGERS: ReadonlyArray<readonly [name: string, sql: string]> = [
   ],
 ];
 
-const rebuildReadModels = Effect.fn("rebuildHoustonReadModels")(function* () {
+const rebuildUserMessages = Effect.fn("rebuildHoustonUserMessages")(function* () {
   const sql = yield* SqlClient.SqlClient;
-  yield* sql`DELETE FROM houston_thread_shell`;
-  yield* sql.unsafe(
-    threadShellRow(`${threadShellSource("t")} FROM orchestration_v2_projection_threads t`),
-  );
   yield* sql`DELETE FROM houston_user_messages`;
   yield* sql.unsafe(
     userMessageRow(
@@ -240,6 +259,15 @@ const rebuildReadModels = Effect.fn("rebuildHoustonReadModels")(function* () {
       "FROM orchestration_v2_projection_messages message WHERE message.role = 'user'",
     ),
   );
+});
+
+const rebuildReadModels = Effect.fn("rebuildHoustonReadModels")(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`DELETE FROM houston_thread_shell`;
+  yield* sql.unsafe(
+    threadShellRow(`${threadShellSource("t")} FROM orchestration_v2_projection_threads t`),
+  );
+  yield* rebuildUserMessages();
   yield* sql`DELETE FROM houston_turn_item_counts`;
   yield* sql`
     INSERT INTO houston_turn_item_counts (thread_id, run_id, item_count)
@@ -319,6 +347,18 @@ const TIMELINE_READ_INDEXES: ReadonlyArray<ReadIndex> = [
   ],
 ];
 
+// Migration 17: turn-start reads every attempt and provider turn of the thread in these orders.
+const TURN_START_READ_INDEXES: ReadonlyArray<ReadIndex> = [
+  [
+    "houston_run_attempts_thread_order_idx",
+    "orchestration_v2_projection_run_attempts(thread_id, run_id, attempt_ordinal)",
+  ],
+  [
+    "houston_provider_turns_thread_order_idx",
+    "orchestration_v2_projection_provider_turns(thread_id, provider_thread_id, ordinal)",
+  ],
+];
+
 const createReadIndexes = Effect.fn("createHoustonReadIndexes")(function* (
   indexes: ReadonlyArray<ReadIndex>,
 ) {
@@ -358,6 +398,8 @@ const READ_MODEL_TABLES: ReadonlyArray<readonly [name: string, ddl: ReadonlyArra
       `CREATE INDEX IF NOT EXISTS houston_user_messages_latest_authored_idx
         ON houston_user_messages(thread_id, updated_at DESC, message_id DESC)
         WHERE user_authored = 1 AND idle_compaction = 0`,
+      `CREATE INDEX IF NOT EXISTS houston_user_messages_command_idx
+        ON houston_user_messages(thread_id) WHERE command_kind IS NOT NULL`,
     ],
   ],
   ["houston_turn_item_counts", [TURN_ITEM_COUNTS_TABLE]],
@@ -398,6 +440,7 @@ export const ensureHoustonReadModels = Effect.fn("ensureHoustonReadModels")(func
         ...BOOT_READ_INDEXES,
         ...SHELL_READ_INDEXES,
         ...TIMELINE_READ_INDEXES,
+        ...TURN_START_READ_INDEXES,
       ]);
       if (complete) return false;
       yield* createTriggers();
@@ -405,4 +448,20 @@ export const ensureHoustonReadModels = Effect.fn("ensureHoustonReadModels")(func
       return true;
     }),
   );
+});
+
+// Migration 17: the user-message command column. A database that ran migration 13 before the column
+// existed gains it here; one created since already has it.
+export const createTurnStartReadModels = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  const columns = yield* sql<{ readonly name: string }>`
+    SELECT name FROM pragma_table_info('houston_user_messages')
+  `;
+  if (!columns.some((column) => column.name === "command_kind")) {
+    yield* sql`ALTER TABLE houston_user_messages ADD COLUMN command_kind TEXT`;
+  }
+  yield* createReadModelTables();
+  yield* createTriggers();
+  yield* rebuildUserMessages();
+  yield* createReadIndexes(TURN_START_READ_INDEXES);
 });
