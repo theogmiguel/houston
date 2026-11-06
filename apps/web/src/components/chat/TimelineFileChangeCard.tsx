@@ -2,6 +2,7 @@ import type { OrchestrationV2TurnItem } from "@houston-app/contracts";
 import { ExternalLinkIcon, FileIcon } from "lucide-react";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
 import { cn } from "~/lib/utils";
+import { SURFACE_LIFT_CLASS } from "~/components/ui/surface-recipes";
 
 type FileChangeItem = Extract<OrchestrationV2TurnItem, { type: "file_change" }>;
 
@@ -81,7 +82,10 @@ export function TimelineFileChangeCard({
   return (
     <section
       aria-label={`Diff for ${item.fileName}`}
-      className="overflow-hidden rounded-(--r-group) border border-border bg-card"
+      className={cn(
+        "overflow-hidden rounded-(--r-group) border border-border bg-card",
+        SURFACE_LIFT_CLASS,
+      )}
     >
       <div className="flex h-9 items-center gap-2 border-b border-border pe-1.5 ps-3">
         <FileIcon aria-hidden className="size-3.5 shrink-0 text-(--houston)" />

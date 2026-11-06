@@ -83,7 +83,7 @@ describe("SettingsBreadcrumb", () => {
 });
 
 describe("SettingsSection label", () => {
-  it("labels a group at body size, semibold, below full foreground emphasis", async () => {
+  it("labels a group at 14px, semibold, below full foreground emphasis", async () => {
     await using screen = await render(
       <SettingsSection title="Advanced">
         <p>content</p>
@@ -93,11 +93,49 @@ describe("SettingsSection label", () => {
 
     const label = screen.getByRole("heading", { level: 2, name: "Advanced" }).element();
     const style = getComputedStyle(label);
-    expect(style.fontSize).toBe("13px");
+    expect(style.fontSize).toBe("14px");
     expect(style.fontWeight).toBe("600");
     const section = label.closest("section")!;
     expect(label.getBoundingClientRect().left).toBe(section.getBoundingClientRect().left);
     // foreground/80 is a translucent colour, so its alpha is below 1.
     expect(style.color).toMatch(/^(rgba\(.*,\s*0\.8\)|color\(.*\/\s*0\.8\)|oklab\(.*\/\s*0\.8\))/);
+  });
+});
+
+/** Resolves any CSS colour, translucent ones included, to the opaque RGB it paints over `base`. */
+function flatten(color: string, base: string): [number, number, number] {
+  const context = document.createElement("canvas").getContext("2d", { willReadFrequently: true })!;
+  context.fillStyle = base;
+  context.fillRect(0, 0, 1, 1);
+  context.fillStyle = color;
+  context.fillRect(0, 0, 1, 1);
+  const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
+  return [r!, g!, b!];
+}
+
+function luminance(color: [number, number, number]): number {
+  const [r, g, b] = color.map((channel) => {
+    const value = channel / 255;
+    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  }) as [number, number, number];
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+describe("settings helper text contrast", () => {
+  it("keeps description text at 4.5:1 or better on the dark card", async () => {
+    document.documentElement.classList.add("dark");
+    using _dark = { [Symbol.dispose]: () => document.documentElement.classList.remove("dark") };
+    await using screen = await render(
+      <div className="bg-card">
+        <p className="text-xs leading-4 text-muted-foreground">Helper text</p>
+      </div>,
+    );
+    const text = screen.getByText("Helper text").element();
+    const fill = getComputedStyle(text.parentElement!).backgroundColor;
+    const [lighter, darker] = [
+      luminance(flatten(getComputedStyle(text).color, fill)),
+      luminance(flatten(fill, "#000")),
+    ].toSorted((a, b) => b - a);
+    expect((lighter! + 0.05) / (darker! + 0.05)).toBeGreaterThanOrEqual(4.5);
   });
 });

@@ -68,11 +68,11 @@ export const SIDEBAR_HEADER_ACTIONS_CLS =
   "relative z-10 flex shrink-0 items-center gap-0.5 [-webkit-app-region:no-drag]";
 
 /**
- * Every thread row, in a grid or directly under its project, starts at the same inset: the
- * project's folder icon above it. Nesting shows through the headings, not through the row, and
- * the title keeps the width the indent would take.
+ * Every thread row, in a grid or directly under its project, sits 12px right of the project's
+ * folder icon, so the project to thread nesting reads while a 312px sidebar still leaves the
+ * title 240px.
  */
-export const SIDEBAR_THREAD_ROW_INDENT_CLS = "pl-2";
+export const SIDEBAR_THREAD_ROW_INDENT_CLS = "pl-5";
 
 /** A fixed 12px box in both states; the chevron rotates inside instead of swapping icons. */
 export const SIDEBAR_GRID_CHEVRON_BOX_CLS =

@@ -208,10 +208,10 @@ function renderTimeline(entries: ReadonlyArray<Entry>, props: Partial<TimelinePr
   );
 }
 
-/** The 1440x900 capture viewport for one test, restoring the previous size on dispose. */
-async function desktopViewport(): Promise<AsyncDisposable> {
+/** A capture viewport (1440x900 by default) for one test, restoring the previous size on dispose. */
+async function desktopViewport(width = 1440, height = 900): Promise<AsyncDisposable> {
   const previous = { width: window.innerWidth, height: window.innerHeight };
-  await page.viewport(1440, 900);
+  await page.viewport(width, height);
   return { [Symbol.asyncDispose]: () => page.viewport(previous.width, previous.height) };
 }
 
@@ -345,6 +345,32 @@ describe("MessagesTimeline work rows", () => {
 });
 
 describe("MessagesTimeline top fade", () => {
+  it("dissolves the rows at the top edge of the 800px capture frame once scrolled", async () => {
+    await using _viewport = await desktopViewport(800, 900);
+    const props = baseProps();
+    const container = document.createElement("div");
+    container.style.cssText = "height: 600px; width: 780px; display: flex; flex-direction: column;";
+    await using _screen = await render(
+      <MessagesTimeline
+        {...props}
+        topFadeEnabled
+        timelineEntries={Array.from({ length: 30 }, (_, index) =>
+          message(`Context ${index}\n\n`.repeat(8), { role: "assistant" }, `narrow-${index}`),
+        )}
+      />,
+      { container },
+    );
+    const viewport = props.listRef.current!.getScrollableNode()!;
+    await act(() => {
+      viewport.scrollTop = 400;
+      viewport.dispatchEvent(new Event("scroll"));
+    });
+    await vi.waitFor(() => expect(getComputedStyle(viewport).maskImage).not.toBe("none"));
+    const style = getComputedStyle(viewport);
+    expect(style.maskImage).toContain("linear-gradient");
+    expect(style.maskSize.split(",")[0]).toBe("100% 33px");
+  });
+
   it("fades rows under the header only while the list is scrolled", async () => {
     await using _viewport = await desktopViewport();
     const props = baseProps();

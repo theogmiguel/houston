@@ -1173,7 +1173,9 @@ body {
   --sidebar-control-surface: var(--content);
   --sidebar-row-hover: var(--hover);
   --sidebar-row-active: var(--sel);
-  --sidebar-row-selected: var(--sel);
+  /* The open row carries a faint brand wash in the light palette, where the neutral overlay
+     is near-identical to the rail; the dark palette keeps the neutral overlay. */
+  --sidebar-row-selected: color-mix(in srgb, var(--accent) 8%, transparent);
   --sidebar-border: var(--border);
   --code-background: var(--code-bg);
   --code-foreground: var(--t1);
@@ -1263,10 +1265,11 @@ body {
   --sidebar-control-surface: var(--content);
   --sidebar-row-hover: var(--hover);
   --sidebar-row-active: var(--sel);
-  --sidebar-row-selected: var(--sel);
+  --sidebar-row-selected: color-mix(in srgb, var(--accent) 8%, transparent);
   --sidebar-border: var(--border);
 
   @variant dark {
+    --sidebar-row-selected: var(--sel);
     --card: #202023;
     --sidebar-control-surface: var(--card);
     /* Row metadata sits a step below read titles. */

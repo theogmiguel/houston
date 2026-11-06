@@ -794,7 +794,7 @@ export default function DiffPanel({
       const fallback = file ? getDiffLineStat([file]) : { additions: 0, deletions: 0 };
       return {
         path,
-        status,
+        status: file?.cacheKey?.endsWith(":pending") ? undefined : status,
         additions: stat?.additions ?? fallback.additions,
         deletions: stat?.deletions ?? fallback.deletions,
       };

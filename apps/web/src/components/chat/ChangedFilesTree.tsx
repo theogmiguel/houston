@@ -6,6 +6,7 @@ import { buildTurnDiffTree, type TurnDiffTreeNode } from "../../lib/turnDiffTree
 import { ChevronRightIcon, FileDiffIcon } from "lucide-react";
 import { ChevronsDownUp, ChevronsUpDown, Folder, FolderClosed } from "lucide";
 import { cn } from "~/lib/utils";
+import { SURFACE_LIFT_CLASS } from "~/components/ui/surface-recipes";
 import { DiffStatLabel, hasNonZeroStat } from "./DiffStatLabel";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 import { Button } from "../ui/button";
@@ -52,7 +53,10 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
 
   return (
     <div
-      className="@container/changed-files mt-3 overflow-hidden rounded-lg border border-border bg-card"
+      className={cn(
+        "@container/changed-files mt-3 overflow-hidden rounded-lg border border-border bg-card",
+        SURFACE_LIFT_CLASS,
+      )}
       data-changed-files-state="tree"
     >
       <div

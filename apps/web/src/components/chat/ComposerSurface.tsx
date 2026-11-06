@@ -1,6 +1,7 @@
 import type { ComponentProps } from "react";
 
 import { cn } from "~/lib/utils";
+import { SURFACE_LIFT_CLASS } from "~/components/ui/surface-recipes";
 
 function Shell({
   contextRow = false,
@@ -37,6 +38,7 @@ function Main({ className, ...props }: ComponentProps<"div">) {
       data-chat-composer-main-surface="true"
       className={cn(
         "relative z-10 w-full overflow-hidden rounded-xl border border-(--line-strong) bg-(--composer)",
+        SURFACE_LIFT_CLASS,
         // Under the changed-files bar the two read as one stack: the card drops its top edge.
         "[[data-changed-files-bar]+[data-slot=composer-shell]:not(.hidden)_&]:rounded-t-none [[data-changed-files-bar]+[data-slot=composer-shell]:not(.hidden)_&]:border-t-0",
         className,

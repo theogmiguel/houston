@@ -1734,9 +1734,11 @@ export function GridGroup({
   );
 }
 
-/** States that ask for the user's eyes keep their colour; the rest rest in neutral ink. */
-function isAttentionState(state: GridThreadState): state is "running" | "needs" | "failed" {
-  return state === "running" || state === "needs" || state === "failed";
+/** Running, needs you, ready and failed take the state's ink; idle and back stay muted. */
+function threadStatusInk(state: GridThreadState): string[] {
+  return state === "idle" || state === "back"
+    ? [SIDEBAR_THREAD_STATUS_QUIET_CLASS]
+    : [SIDEBAR_THREAD_STATUS_ATTENTION_CLASS, threadStateTextClass(state)];
 }
 
 function ThreadStateMark({
@@ -1752,12 +1754,7 @@ function ThreadStateMark({
   return (
     <span
       data-thread-status=""
-      className={cn(
-        SIDEBAR_THREAD_STATUS_CLASS,
-        isAttentionState(state)
-          ? [SIDEBAR_THREAD_STATUS_ATTENTION_CLASS, threadStateTextClass(state)]
-          : SIDEBAR_THREAD_STATUS_QUIET_CLASS,
-      )}
+      className={cn(SIDEBAR_THREAD_STATUS_CLASS, threadStatusInk(state))}
     >
       {state === "idle" ? (
         <CircleIcon aria-hidden className="size-3.5 shrink-0" />
@@ -1991,7 +1988,7 @@ export function ThreadCard({
               onOpen();
             }}
             className={cn(
-              `group/th relative flex w-full flex-col rounded-lg py-1.5 pr-2.5 text-left outline-none ${MOTION_FEEDBACK} ${FOCUS_ROW_CLS}`,
+              `group/th relative flex w-full flex-col rounded-lg py-1 pr-2 text-left outline-none ${MOTION_FEEDBACK} ${FOCUS_ROW_CLS}`,
               SIDEBAR_THREAD_ROW_INDENT_CLS,
               "cursor-pointer",
               dragging && "opacity-50",
@@ -2044,7 +2041,7 @@ export function ThreadCard({
                 }
               }}
               aria-current={active ? "true" : undefined}
-              className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left outline-none"
+              className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left outline-none"
             >
               <span className="min-w-0 flex-1 truncate text-headline leading-4.5 font-medium text-foreground">
                 <HighlightedText text={thread.title} query={query} />
@@ -2066,7 +2063,7 @@ export function ThreadCard({
           )}
           <span
             className={cn(
-              "absolute top-1 right-2.5 flex h-[22px] items-center gap-0.5",
+              "absolute top-0 right-2 flex h-[22px] items-center gap-0.5",
               MOTION_FEEDBACK_OPACITY,
               actionsVisible ? ROW_ACTIONS_VISIBLE : ROW_ACTIONS_REVEAL,
             )}
@@ -2151,7 +2148,7 @@ export function ThreadCard({
         </div>
         <div
           data-thread-meta=""
-          className="mt-0.5 flex min-w-0 items-center gap-2 text-xs leading-3.5 text-secondary-label"
+          className="flex min-w-0 items-center gap-2 text-xs leading-3.5 text-secondary-label"
         >
           {showBranch ? (
             <>
