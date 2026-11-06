@@ -1698,7 +1698,7 @@ export function makeClaudeQueryOptions(input: {
   readonly cwd: string | null;
   readonly attachmentsDir?: string;
   readonly settings?: ClaudeSettings;
-  /** The effective Claude in Chrome switch, after any ~/.claude.json default. */
+  /** The provider's Claude in Chrome switch; `--chrome` is passed only when it is on. */
   readonly claudeInChrome?: boolean;
   readonly sdkSettings?: string | ClaudeSdkSettings;
   readonly environment?: NodeJS.ProcessEnv;

@@ -73,7 +73,7 @@ export function ProjectsSettings() {
             footer={
               <p className="px-1 text-xs leading-4 text-muted-foreground">
                 A project's settings override the defaults marked with the layers icon. A
-                houston.json in the repository overrides both.
+                houston.json in the repository applies only where neither sets a value.
               </p>
             }
           >

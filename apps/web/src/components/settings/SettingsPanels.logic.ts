@@ -18,6 +18,11 @@ import {
 import * as Duration from "effect/Duration";
 import * as Equal from "effect/Equal";
 
+import {
+  isDefaultThreadDetailsVisibility,
+  resolveThreadDetailsVisibility,
+} from "../chat/threadDetailsItems";
+
 export function isProjectGroupingEnabled(mode: SidebarProjectGroupingMode): boolean {
   return mode !== "separate";
 }
@@ -70,6 +75,23 @@ export function hasChangedBackgroundActivitySettings(
       DEFAULT_UNIFIED_SETTINGS.providerHealthRefreshInterval,
     )
   );
+}
+
+/** Appearance settings stored outside the typography and theme groups. */
+export function getChangedDisplaySettingLabels(
+  settings: Pick<
+    UnifiedSettings,
+    "fontSmoothing" | "threadDetailsItems" | "threadDetailsUsageEnabled"
+  >,
+): string[] {
+  return [
+    ...(settings.fontSmoothing !== DEFAULT_UNIFIED_SETTINGS.fontSmoothing
+      ? ["Font smoothing"]
+      : []),
+    ...(!isDefaultThreadDetailsVisibility(resolveThreadDetailsVisibility(settings))
+      ? ["Thread details"]
+      : []),
+  ];
 }
 
 type TypographySettings = Pick<
@@ -232,6 +254,16 @@ type BackgroundActivityOverridePatch = Partial<{
 
 export function durationToSeconds(duration: Duration.Duration): number {
   return Math.round(Duration.toMillis(duration) / 1_000);
+}
+
+/** 0 turns the automatic fetch off; the profiles and the advanced dialog can also set other values. */
+export function gitFetchIntervalLabel(seconds: number): string {
+  if (seconds === 0) return "Off";
+  if (seconds === 60) return "Every minute";
+  if (seconds === 3600) return "Every hour";
+  if (seconds % 3600 === 0) return `Every ${seconds / 3600} hours`;
+  if (seconds % 60 === 0) return `Every ${seconds / 60} minutes`;
+  return `Every ${seconds} seconds`;
 }
 
 export function normalizeIntervalSeconds(value: number | null, minimum = 0): number {

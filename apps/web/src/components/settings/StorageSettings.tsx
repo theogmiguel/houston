@@ -549,7 +549,7 @@ export function WorktreeCleanupSection() {
     worktreeUnchanged: false,
   } as const satisfies Partial<WorktreeCleanupRules>;
   const cleanupModes = [
-    { value: "archived", label: "When archived", enabled: settings.worktreeOnDelete },
+    { value: "deleted", label: "When deleted", enabled: settings.worktreeOnDelete },
     { value: "merged", label: "When merged", enabled: settings.worktreeOnMerge },
     { value: "inactive", label: "When inactive", enabled: settings.worktreeAfterDays !== null },
   ] as const;
@@ -567,13 +567,26 @@ export function WorktreeCleanupSection() {
       : cleanupValue === "off"
         ? "Off"
         : (cleanupModes.find((entry) => entry.value === cleanupValue)?.label ?? "Off");
+  const cleanupRuleKeys = [
+    "worktreeOnDelete",
+    "worktreeOnMerge",
+    "worktreeAfterDays",
+    "worktreeSettledAfterDays",
+    "worktreeUnchanged",
+  ] as const satisfies ReadonlyArray<keyof WorktreeCleanupRules>;
+  const cleanupStatus = cleanupRuleKeys.some((key) => ruleStatus(key))
+    ? "Mixed across selected machines"
+    : undefined;
+  const cleanupManagedPaths = isProjectScope
+    ? ["worktreeCleanup"]
+    : ["worktreeCleanup", ...cleanupRuleKeys.map((key) => `storageCleanup.${key}`)];
   const handleCleanupChange = (value: string | null) => {
     if (value === null) return;
     if (value === "off") {
       updateWorktree({ ...cleanupRulesOff });
       return;
     }
-    if (value === "archived") {
+    if (value === "deleted") {
       updateWorktree({ ...cleanupRulesOff, worktreeOnDelete: true });
       return;
     }
@@ -591,15 +604,18 @@ export function WorktreeCleanupSection() {
       <>
         <SettingsRow
           title="Worktree cleanup"
-          description="Remove a worktree when its thread closes or is archived."
+          description="Remove a worktree automatically when its thread is deleted, its pull request merges, or it sits inactive."
+          status={cleanupStatus}
+          managedPaths={cleanupManagedPaths}
+          serverScoped={!isProjectScope}
           control={
-            <Select value={cleanupValue} onValueChange={handleCleanupChange}>
+            <Select value={cleanupStatus ? null : cleanupValue} onValueChange={handleCleanupChange}>
               <SelectTrigger size="sm" aria-label="Worktree cleanup">
-                <SelectValue>{cleanupLabel}</SelectValue>
+                <SelectValue>{cleanupStatus ? "Mixed" : cleanupLabel}</SelectValue>
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>
                 <SelectItem value="off">Off</SelectItem>
-                <SelectItem value="archived">When archived</SelectItem>
+                <SelectItem value="deleted">When deleted</SelectItem>
                 <SelectItem value="merged">When merged</SelectItem>
                 <SelectItem value="inactive">When inactive</SelectItem>
                 {cleanupValue === "custom" ? <SelectItem value="custom">Custom</SelectItem> : null}
@@ -607,24 +623,51 @@ export function WorktreeCleanupSection() {
             </Select>
           }
         />
-        <SettingsRow
-          title="Keep worktrees with local changes"
-          description="Never remove a worktree with uncommitted or unpushed work."
-          control={
-            <Switch
-              aria-label="Keep worktrees with local changes"
-              checked={settings.worktreeKeepWhen !== "tracked-changes"}
-              onCheckedChange={(keep) =>
-                updateWorktree({
-                  worktreeKeepWhen: keep ? "uncommitted-changes" : "tracked-changes",
-                })
-              }
-            />
-          }
-        />
-        <AdvancedSettings
-          targetIds={["storage-worktrees", searchableSetting("storage-worktree-keep-when").id]}
-        >
+        {connectedEnvironments.every(
+          (environment) =>
+            environment.serverConfig?.environment.capabilities.storageCleanupRun === true,
+        ) && (
+          <SettingsRow
+            {...searchableSetting("storage-worktree-keep-when")}
+            status={ruleStatus("worktreeKeepWhen")}
+            managedPaths={lockablePath("worktreeKeepWhen")}
+            description={
+              settings.worktreeKeepWhen === "any-local-files"
+                ? "Includes ignored files, except node_modules."
+                : settings.worktreeKeepWhen === "tracked-changes"
+                  ? "Deletes untracked and ignored files, including .env."
+                  : "Keeps edits and untracked files. Deletes ignored files, including .env."
+            }
+            serverScoped={!isProjectScope}
+            control={
+              <Select
+                value={ruleStatus("worktreeKeepWhen") ? null : settings.worktreeKeepWhen}
+                onValueChange={(next) => {
+                  if (
+                    next === "any-local-files" ||
+                    next === "uncommitted-changes" ||
+                    next === "tracked-changes"
+                  )
+                    updateWorktree({ worktreeKeepWhen: next });
+                }}
+              >
+                <SelectTrigger size="sm" aria-label="Keep worktrees with local changes">
+                  <SelectValue>
+                    {ruleStatus("worktreeKeepWhen")
+                      ? "Mixed"
+                      : KEEP_WHEN_LABELS[settings.worktreeKeepWhen]}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  <SelectItem value="any-local-files">Any local files</SelectItem>
+                  <SelectItem value="uncommitted-changes">Uncommitted changes</SelectItem>
+                  <SelectItem value="tracked-changes">Edited tracked files</SelectItem>
+                </SelectPopup>
+              </Select>
+            }
+          />
+        )}
+        <AdvancedSettings targetIds={["storage-worktrees"]}>
           {isProjectScope && (
             <SettingsRow
               title="Automatic worktree cleanup"
@@ -754,50 +797,6 @@ export function WorktreeCleanupSection() {
               />
             }
           />
-          {connectedEnvironments.every(
-            (environment) =>
-              environment.serverConfig?.environment.capabilities.storageCleanupRun === true,
-          ) && (
-            <SettingsRow
-              {...searchableSetting("storage-worktree-keep-when")}
-              status={ruleStatus("worktreeKeepWhen")}
-              managedPaths={lockablePath("worktreeKeepWhen")}
-              description={
-                settings.worktreeKeepWhen === "any-local-files"
-                  ? "Includes ignored files, except node_modules."
-                  : settings.worktreeKeepWhen === "tracked-changes"
-                    ? "Deletes untracked and ignored files, including .env."
-                    : "Keeps edits and untracked files. Deletes ignored files, including .env."
-              }
-              serverScoped={!isProjectScope}
-              control={
-                <Select
-                  value={ruleStatus("worktreeKeepWhen") ? null : settings.worktreeKeepWhen}
-                  onValueChange={(next) => {
-                    if (
-                      next === "any-local-files" ||
-                      next === "uncommitted-changes" ||
-                      next === "tracked-changes"
-                    )
-                      updateWorktree({ worktreeKeepWhen: next });
-                  }}
-                >
-                  <SelectTrigger size="sm" aria-label="Keep worktrees with local changes">
-                    <SelectValue>
-                      {ruleStatus("worktreeKeepWhen")
-                        ? "Mixed"
-                        : KEEP_WHEN_LABELS[settings.worktreeKeepWhen]}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectPopup align="end" alignItemWithTrigger={false}>
-                    <SelectItem value="any-local-files">Any local files</SelectItem>
-                    <SelectItem value="uncommitted-changes">Uncommitted changes</SelectItem>
-                    <SelectItem value="tracked-changes">Edited tracked files</SelectItem>
-                  </SelectPopup>
-                </Select>
-              }
-            />
-          )}
         </AdvancedSettings>
       </>
     </SettingsSection>

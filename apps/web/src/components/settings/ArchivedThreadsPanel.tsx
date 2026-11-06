@@ -200,7 +200,7 @@ export function ArchivedThreadsPanel() {
             align="start"
             ghostRows={3}
             title="No archived threads"
-            description="Threads you archive stay searchable here and can be restored at any time."
+            description="Archived threads can be restored at any time."
           >
             <PageEmptyTiles narrow>
               <PageEmptyTile

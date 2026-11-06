@@ -4,8 +4,8 @@ A thread's context use is shown in its **details** card under **Usage** when the
 reports it: tokens used, the limit and the percentage left. The latest completed reading is
 kept while the agent works and is replaced after compaction.
 
-**Settings ▸ Labs ▸ Context window indicator (legacy)** adds a small meter to the composer
-for existing installations that prefer it. It is off unless you turn it on.
+**Settings ▸ Labs ▸ Context window indicator** adds a small meter to the composer. It is
+optional and off by default.
 
 ## What it reads
 

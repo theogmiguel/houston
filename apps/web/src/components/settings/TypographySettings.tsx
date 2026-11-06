@@ -13,6 +13,7 @@ import {
 } from "@houston-app/contracts/settings";
 import * as Schema from "effect/Schema";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
+import { isMacPlatform } from "../../lib/utils";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 import { Input } from "../ui/input";
 import {
@@ -431,7 +432,7 @@ export function TypographySection() {
     <SettingsSection id="typography" title="Typography">
       {showAdvanced ? <FontSettingsGroup /> : <SimpleFontRows />}
       <SeparateFontsRow checked={showAdvanced} onCheckedChange={setAdvanced} />
-      <FontSmoothingRow />
+      {isMacPlatform(navigator.platform) ? <FontSmoothingRow /> : null}
       {!showAdvanced ? (
         <>
           <InterfaceFontSizeRow />

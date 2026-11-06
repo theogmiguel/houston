@@ -63,6 +63,7 @@ export function VoicePostProcessingSettings({ advanced = false }: { readonly adv
   );
   const provider: ProviderDriverKind = instanceEntry?.driverKind ?? DEFAULT_DRIVER_KIND;
   const hasServerTargets = connectedEnvironments.length > 0;
+  const cleanupEnabled = settings.speechPostProcessingEnabled;
   const customInstructions = settings.speechPostProcessingPrompt.customInstructions;
   const promptMode = editingCustomInstructions
     ? "custom"
@@ -171,6 +172,7 @@ export function VoicePostProcessingSettings({ advanced = false }: { readonly adv
                   key={settings.speechCorrectionWord}
                   defaultValue={settings.speechCorrectionWord}
                   maxLength={50}
+                  disabled={!cleanupEnabled}
                   placeholder="err"
                   aria-label="Explicit correction cue"
                   onBlur={(event) =>
@@ -188,6 +190,7 @@ export function VoicePostProcessingSettings({ advanced = false }: { readonly adv
             description="Use the default prompt or write your own."
             control={
               <Select
+                disabled={!cleanupEnabled}
                 value={promptMode}
                 onValueChange={(mode) => {
                   if (!mode) return;
@@ -234,6 +237,7 @@ export function VoicePostProcessingSettings({ advanced = false }: { readonly adv
                   ref={customInstructionsRef}
                   defaultValue={customInstructions}
                   maxLength={10_000}
+                  disabled={!cleanupEnabled}
                   rows={8}
                   placeholder="Write instructions for cleaning voice transcripts."
                   aria-label="Custom voice post-processing instructions"
