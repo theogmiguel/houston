@@ -44,7 +44,7 @@ describe("ServerUnavailableCard", () => {
     expect(line.getBoundingClientRect().right).toBeLessThanOrEqual(window.innerWidth);
   });
 
-  it("offers one primary action and two actions that share the secondary look", async () => {
+  it("offers one primary action, one secondary action and a ghost Copy error", async () => {
     await using screen = await render(<ServerUnavailableCard report="report" detail={DETAIL} />);
 
     const paint = (name: string) => {
@@ -52,7 +52,7 @@ describe("ServerUnavailableCard", () => {
       return [style.backgroundColor, style.borderTopColor];
     };
     expect(paint("Try again")).not.toEqual(paint("Reload app"));
-    expect(paint("Copy error")).toEqual(paint("Reload app"));
+    expect(paint("Copy error")).toEqual([TRANSPARENT, TRANSPARENT]);
     expect(paint("Reload app")[0]).not.toBe(TRANSPARENT);
   });
 });

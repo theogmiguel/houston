@@ -409,11 +409,12 @@ export function FoldedMessageHeader(props: {
 }
 
 /**
- * The collapsed line of a message from another agent. The sender sits in a meta line above the
- * bubble, so the bubble holds only the summary. The chevron appears only when expanding reveals
- * more than the line already shows; its space stays reserved so the bubble keeps one width.
+ * The collapsed line of a message from another agent: the sender leads in the muted ink, then the
+ * summary. The chevron appears only when expanding reveals more than the line already shows; its
+ * space stays reserved so the bubble keeps one width.
  */
 function AgentFoldedHeader(props: {
+  sender: string;
   summary: string;
   hasMore: boolean;
   expanded: boolean;
@@ -432,6 +433,11 @@ function AgentFoldedHeader(props: {
   const ChevronIcon = props.expanded ? ChevronUpIcon : ChevronDownIcon;
   const content = (
     <>
+      <MessagesSquareIcon
+        aria-hidden="true"
+        className="size-3.5 shrink-0 text-(--secondary-label)"
+      />
+      <span className="max-w-[50%] shrink-0 truncate text-(--secondary-label)">{props.sender}</span>
       <span ref={setSummaryNode} className="min-w-0 flex-1 truncate">
         {props.summary}
       </span>
@@ -447,6 +453,7 @@ function AgentFoldedHeader(props: {
     <button
       type="button"
       aria-expanded={props.expanded}
+      aria-label={`${props.sender}: ${props.summary}`}
       data-scroll-anchor-ignore
       onClick={props.onToggle}
       className={cn(
@@ -886,15 +893,12 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       className="group @container flex flex-col items-end gap-1"
       data-user-message-attribution={folded ? "agent" : undefined}
     >
-      {userMessage.attribution === "houston" || folded ? (
+      {userMessage.attribution === "houston" ? (
         <p
-          className="me-1 flex max-w-[82%] items-center gap-1 text-callout text-secondary-label"
-          data-user-message-attribution={folded ? undefined : "houston"}
-          data-user-message-sender={folded ? "" : undefined}
-          aria-hidden={folded ? "true" : undefined}
+          className="me-1 text-callout text-secondary-label"
+          data-user-message-attribution="houston"
         >
-          {folded ? <MessagesSquareIcon className="size-3 shrink-0" /> : null}
-          <span className="truncate">{folded ? `From ${senderLabel}` : "Sent by Houston"}</span>
+          Sent by Houston
         </p>
       ) : null}
       {(row.message.inputIntent === "steer" ||
@@ -925,6 +929,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         )}
         {folded ? (
           <AgentFoldedHeader
+            sender={senderLabel}
             summary={foldSummary}
             hasMore={foldHasMore}
             expanded={expanded}

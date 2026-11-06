@@ -1037,7 +1037,7 @@ body {
      the semantic names copied feature components use alias them, so a value
      can only drift here, next to the value the board prints. */
   --rail: #ececef;
-  --content: #fbfbfc;
+  --content: #f5f5f7;
   --card: #ffffff;
   --raised: #ffffff;
   --term: #ffffff;
@@ -2759,9 +2759,9 @@ code {
   color: var(--t1);
   font-family: var(--font-mono);
   font-size: var(--text-mono);
-  /* The mono face sits on another baseline, so inheriting the prose line height would
-     stretch any line that holds a chip. */
-  line-height: 1;
+  /* The chip's own line height (18px) is shorter than the 22px prose line, so it never
+     stretches a line that holds one, yet its text keeps normal leading. */
+  line-height: var(--text-mono--line-height);
 }
 
 /* Grid surface. One thread on screen reads as one surface with the top strip: no card, the

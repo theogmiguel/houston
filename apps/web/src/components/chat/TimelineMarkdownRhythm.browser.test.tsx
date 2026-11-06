@@ -42,4 +42,8 @@ it("sets timeline prose at 14px on a 22px line and keeps inline code inside the 
   expect(style.fontSize).toBe("14px");
   expect(style.lineHeight).toBe("22px");
   expect(withCode!.getBoundingClientRect().height).toBe(plain!.getBoundingClientRect().height);
+
+  const chip = getComputedStyle(withCode!.querySelector("code")!);
+  expect(chip.fontSize).toBe("12px");
+  expect(chip.lineHeight).toBe("18px");
 });

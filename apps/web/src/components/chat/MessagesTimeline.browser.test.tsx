@@ -772,8 +772,9 @@ describe("MessagesTimeline agent messages", () => {
       [message(AGENT_MESSAGE, { createdBy: "agent", senderThreadId: SENDER_THREAD_ID })],
       { onOpenThread },
     );
-    const row = screen.button(/^Review finished/);
-    expect(screen.text()).toContain("From Agent");
+    const row = screen.button(/^Agent: Review finished/);
+    expect(screen.container.querySelector("[data-user-message-attribution] > p")).toBeNull();
+    expect(row.textContent).toMatch(/^Agent\s*Review finished/);
     expect(row.getAttribute("aria-expanded")).toBe("false");
     expect(screen.text()).not.toContain("drops the index");
     expect(screen.buttons("Open thread")).toHaveLength(0);
@@ -783,7 +784,7 @@ describe("MessagesTimeline agent messages", () => {
     await click(screen.button("Open thread"));
     expect(onOpenThread).toHaveBeenCalledWith(SENDER_THREAD_ID);
 
-    await click(screen.button(/^Review finished/));
+    await click(screen.button(/^Agent: Review finished/));
     expect(screen.text()).not.toContain("drops the index");
   });
 
@@ -792,7 +793,7 @@ describe("MessagesTimeline agent messages", () => {
     await using screen = await renderTimeline([
       message(AGENT_MESSAGE, { createdBy: "agent", senderThreadId: SENDER_THREAD_ID }),
     ]);
-    const row = screen.button(/^Review finished/);
+    const row = screen.button(/^Agent: Review finished/);
     const card = row.parentElement!;
     const collapsed = getComputedStyle(card);
     expect(collapsed.borderTopWidth).toBe("0px");
@@ -828,9 +829,7 @@ describe("MessagesTimeline agent messages", () => {
         { container },
       );
       const bubbleOf = () =>
-        screen.container.querySelector<HTMLElement>(
-          "[data-user-message-attribution] > div:not([data-user-message-sender])",
-        );
+        screen.container.querySelector<HTMLElement>("[data-user-message-attribution] > div");
       await vi.waitFor(() => expect(bubbleOf()).not.toBeNull());
       const bubble = bubbleOf()!;
       const lane = bubble.parentElement!.getBoundingClientRect();
@@ -846,7 +845,7 @@ describe("MessagesTimeline agent messages", () => {
     await using screen = await renderTimeline([
       message(AGENT_MESSAGE, { createdBy: "agent", senderThreadId: SENDER_THREAD_ID }, "long"),
     ]);
-    const chevron = screen.button(/^Review finished/).querySelector("svg")!;
+    const chevron = screen.button(/^Agent: Review finished/).querySelector("svg")!;
     expect(getComputedStyle(chevron).visibility).toBe("visible");
   });
 
@@ -871,7 +870,9 @@ describe("MessagesTimeline agent messages", () => {
       },
     );
     await vi.waitFor(() =>
-      expect(screen.button(/^Checked the next file/).getAttribute("aria-expanded")).toBe("true"),
+      expect(screen.button(/^Agent: Checked the next file/).getAttribute("aria-expanded")).toBe(
+        "true",
+      ),
     );
     const { range } = collectThreadFindRanges(screen.container, "drops the index")[0]!;
     const body = screen.container.querySelector("[data-user-message-body]")!;
