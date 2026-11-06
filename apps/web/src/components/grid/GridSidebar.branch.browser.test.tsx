@@ -5,6 +5,7 @@ import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/m
 import { render } from "../../../test/render";
 import { TooltipProvider } from "../ui/tooltip";
 import { scopedThreadKey, scopeThreadRef } from "@houston-app/client-runtime/environment";
+import { endThreadDrag, getThreadDragSource } from "../../grid/threadDrag";
 import { ThreadCard } from "./GridSidebar";
 import { SidebarSearchHighlightContext } from "./sidebarSearchResults";
 
@@ -146,5 +147,59 @@ describe("ThreadCard search highlight", () => {
       </SidebarSearchHighlightContext.Provider>,
     );
     expect(other.container.querySelector("[data-search-highlighted]")).toBeNull();
+  });
+});
+
+describe("ThreadCard shelf row drag", () => {
+  it("starts a drag from a Closed row that carries the thread, so it can return to the rail", async () => {
+    await using screen = await render(
+      <TooltipProvider delay={0}>
+        <ThreadCard
+          gridId={null}
+          thread={thread({ settledOverride: "settled" })}
+          query=""
+          providerEntries={new Map()}
+          nowIso="2026-01-01T00:00:00.000Z"
+          focused={false}
+          selected={false}
+          dragging={false}
+          workspaceTitle="Houston"
+          shelf="settled"
+          onOpen={() => {}}
+          onSelect={() => {}}
+          onClose={() => {}}
+          onHold={() => {}}
+          onPickHoldTime={async () => null}
+          onRename={() => {}}
+          onSetAutoClose={() => {}}
+          onDropOnThread={() => {}}
+        />
+      </TooltipProvider>,
+    );
+    const handle = screen.container.querySelector<HTMLElement>("[data-card-open]")!;
+    const rect = handle.getBoundingClientRect();
+    const at = (type: string, dx: number) =>
+      (type === "pointerdown" ? handle : window).dispatchEvent(
+        new PointerEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          pointerId: 3,
+          button: 0,
+          pointerType: "mouse",
+          clientX: rect.left + 4 + dx,
+          clientY: rect.top + 4,
+        }),
+      );
+    at("pointerdown", 0);
+    at("pointermove", 30);
+    try {
+      expect(getThreadDragSource()).toMatchObject({
+        gridId: null,
+        threadId: "thread-a",
+        title: "Local checkout thread",
+      });
+    } finally {
+      endThreadDrag();
+    }
   });
 });

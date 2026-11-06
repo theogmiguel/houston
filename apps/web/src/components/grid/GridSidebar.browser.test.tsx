@@ -135,6 +135,7 @@ describe("ThreadCard drag source", () => {
       threadId: "thread-a",
       environmentId: "env-1",
       projectId: "project-1",
+      title: "Split drawer state from the thread store",
     });
     endThreadDrag();
   });

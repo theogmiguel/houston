@@ -117,6 +117,10 @@ import { ThreadStateMark } from "./threadStatusMark";
 import { ThreadCheckoutMark, ThreadRowIndicators } from "./threadRowIndicators";
 import { GridShelves } from "./GridShelves";
 import { readLocalApi } from "../../localApi";
+import { ThreadContextDragGhost } from "../chat/ThreadContextDragGhost";
+import { RowActionSweepContext, type RowActionSweep } from "./rowActionSweepContext";
+import { beginRowActionSweep, sweepActionProps } from "../../grid/rowActionSweep";
+import { useRowFileDrop } from "./useRowFileDrop";
 import { ThreadHoverCard } from "./threadHoverCard";
 import { useProjectSectionMenu } from "./projectSectionMenu";
 import { gridHeadingMenuItems, hiddenGridIdFromAction } from "./gridHeadingMenu";
@@ -199,6 +203,7 @@ import {
 } from "../ui/sidebar";
 import type { EnvironmentId, ThreadId } from "@houston-app/contracts";
 import { MOTION_FEEDBACK, MOTION_FEEDBACK_OPACITY } from "../ui/motion-recipes";
+import { shelfReturnAction } from "../../grid/shelfReturn";
 import { olderSettledScopesForProjects } from "../../grid/olderSettledScopes";
 import {
   clampSearchHighlight,
@@ -733,6 +738,7 @@ export function GridSidebar() {
   // A drag lands the thread in the target grid but does not move the user; the
   // toast offers the grid and the way back.
   const moveThreadToGrid = (source: DraggedThread, targetGridId: string) => {
+    if (returnShelfThreadFromDrag(source)) return;
     if (source.gridId === targetGridId) return;
     const thread = threadById.get(source.threadId);
     const target = gridById(useGridStore.getState().grids, targetGridId);
@@ -779,6 +785,7 @@ export function GridSidebar() {
     targetGridId: string,
     targetThreadId: string,
   ) => {
+    if (returnShelfThreadFromDrag(source)) return;
     if (source.gridId === targetGridId) {
       useGridStore.getState().reorderGridThreads(targetGridId, source.threadId, targetThreadId);
       return;
@@ -795,18 +802,28 @@ export function GridSidebar() {
     if (target !== null) openThread(target.gridId, target.threadId);
   };
 
-  const wakeShelfThread = (thread: EnvironmentThreadShell) => {
+  const wakeShelfThread = (thread: EnvironmentThreadShell, open = true) => {
     void (async () => {
       const result = await actions.unsnoozeThread(scopeThreadRef(thread.environmentId, thread.id));
-      if (!reportFailure("Failed to bring thread back", result)) openReturnedThread(thread);
+      if (!reportFailure("Failed to bring thread back", result) && open) openReturnedThread(thread);
     })();
   };
 
-  const reopenShelfThread = (thread: EnvironmentThreadShell) => {
+  const reopenShelfThread = (thread: EnvironmentThreadShell, open = true) => {
     void (async () => {
       const result = await actions.unsettleThread(scopeThreadRef(thread.environmentId, thread.id));
-      if (!reportFailure("Failed to reopen thread", result)) openReturnedThread(thread);
+      if (!reportFailure("Failed to reopen thread", result) && open) openReturnedThread(thread);
     })();
+  };
+
+  // A shelf row dropped into the rail returns to its grid without moving the user.
+  const returnShelfThreadFromDrag = (source: DraggedThread) => {
+    const thread = threadById.get(source.threadId);
+    if (thread === undefined) return false;
+    const action = shelfReturnAction(thread, nowIso);
+    if (action === "wake") wakeShelfThread(thread, false);
+    else if (action === "reopen") reopenShelfThread(thread, false);
+    return action !== null;
   };
 
   const workspaceKeys = new Set(
@@ -888,6 +905,20 @@ export function GridSidebar() {
     ),
   ];
 
+  // A press-and-sweep across Close, Reopen or Wake buttons applies that action to every row swept.
+  const rowSweep: RowActionSweep = (event, action, threadKey) =>
+    beginRowActionSweep(event, {
+      action,
+      threadKey,
+      apply: (swept, keys) => {
+        const targets = keys.flatMap((key) =>
+          threads.filter((thread) => threadKeyOf(thread) === key),
+        );
+        if (swept === "close") closeThreads(targets);
+        else if (swept === "reopen") for (const thread of targets) reopenShelfThread(thread, false);
+        else for (const thread of targets) wakeShelfThread(thread, false);
+      },
+    });
   const searching = query.length > 0;
   const heldShown = searching
     ? shelves.held.filter((thread) => threadMatchesGridSearch(thread, query))
@@ -986,331 +1017,346 @@ export function GridSidebar() {
   return (
     <ProjectFilterContext.Provider value={threadProjectFilter}>
       <SidebarSearchHighlightContext.Provider value={highlightedSearchKey}>
-        <ThreadJumpHintContext.Provider value={jumpHints}>
-          <ThreadBulkMenuContext.Provider
-            value={
-              selection.selectedThreadKeys.size > 1
-                ? (position) => void openBulkMenu(position)
-                : null
-            }
-          >
-            <SidebarChromeHeader isDesktopHost={isDesktopHost} />
-            <SidebarHeader>
-              <SidebarRailNav
-                pullRequestCount={pullRequestCount}
-                taskCount={taskCount}
-                sectionHeading={false}
-                search={
-                  <label className="flex h-7 w-full shrink-0 items-center gap-2 rounded-(--control-radius) px-2 text-sm text-secondary-foreground hover:bg-sidebar-row-hover focus-within:ring-2 focus-within:ring-ring focus-within:ring-inset">
-                    <SearchIcon aria-hidden className="size-[15px] shrink-0 text-secondary-label" />
-                    <input
-                      value={search}
-                      onChange={(event) => {
-                        setSearch(event.target.value);
-                        setSearchIndex(0);
-                      }}
-                      onKeyDown={(event) => {
-                        if ((event.key === "ArrowDown" || event.key === "ArrowUp") && searching) {
-                          event.preventDefault();
-                          setSearchIndex(
-                            moveSearchHighlight(
-                              clampSearchHighlight(searchIndex, searchResultOrder.length),
-                              searchResultOrder.length,
-                              event.key === "ArrowDown" ? 1 : -1,
-                            ),
-                          );
-                          return;
-                        }
-                        if (event.key === "Escape") {
-                          event.stopPropagation();
-                          setSearch("");
-                        }
-                        if (event.key === "Enter") {
-                          if (openHighlightedSearchResult()) return;
-                          const matchedGrid = sections
-                            .flatMap((section) => section.grids.map((entry) => entry.grid))
-                            .find((grid) =>
-                              grid.name.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
+        <RowActionSweepContext.Provider value={rowSweep}>
+          <ThreadJumpHintContext.Provider value={jumpHints}>
+            <ThreadBulkMenuContext.Provider
+              value={
+                selection.selectedThreadKeys.size > 1
+                  ? (position) => void openBulkMenu(position)
+                  : null
+              }
+            >
+              <ThreadContextDragGhost />
+              <SidebarChromeHeader isDesktopHost={isDesktopHost} />
+              <SidebarHeader>
+                <SidebarRailNav
+                  pullRequestCount={pullRequestCount}
+                  taskCount={taskCount}
+                  sectionHeading={false}
+                  search={
+                    <label className="flex h-7 w-full shrink-0 items-center gap-2 rounded-(--control-radius) px-2 text-sm text-secondary-foreground hover:bg-sidebar-row-hover focus-within:ring-2 focus-within:ring-ring focus-within:ring-inset">
+                      <SearchIcon
+                        aria-hidden
+                        className="size-[15px] shrink-0 text-secondary-label"
+                      />
+                      <input
+                        value={search}
+                        onChange={(event) => {
+                          setSearch(event.target.value);
+                          setSearchIndex(0);
+                        }}
+                        onKeyDown={(event) => {
+                          if ((event.key === "ArrowDown" || event.key === "ArrowUp") && searching) {
+                            event.preventDefault();
+                            setSearchIndex(
+                              moveSearchHighlight(
+                                clampSearchHighlight(searchIndex, searchResultOrder.length),
+                                searchResultOrder.length,
+                                event.key === "ArrowDown" ? 1 : -1,
+                              ),
                             );
-                          if (matchedGrid !== undefined) {
-                            const candidate = railTargets.find(
-                              (target) => target.gridId === matchedGrid.id,
-                            );
-                            if (candidate !== undefined) openRailTarget(candidate);
-                            else
-                              void navigate({
-                                to: "/grid/$gridId",
-                                params: { gridId: matchedGrid.id },
-                              });
                             return;
                           }
-                          const matchedProject = projects.find((project) =>
-                            project.title.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
-                          );
-                          const workspaceTarget =
-                            matchedProject === undefined
-                              ? undefined
-                              : railTargets.find(
-                                  (target) => target.environmentId === matchedProject.environmentId,
-                                );
-                          if (workspaceTarget !== undefined) openRailTarget(workspaceTarget);
-                        }
-                      }}
-                      placeholder="Search"
-                      aria-label="Search workspaces, grids and threads"
-                      className="min-w-0 flex-1 bg-transparent text-inherit outline-none placeholder:text-secondary-label"
-                    />
-                    {query.length > 0 ? (
-                      <button
-                        type="button"
-                        aria-label="Clear search"
-                        onClick={() => setSearch("")}
-                        className="inline-grid size-5 shrink-0 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-label hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
-                      >
-                        <XIcon aria-hidden className="size-3" />
-                      </button>
-                    ) : searchShortcutLabel ? (
-                      <SidebarRailKbd>{searchShortcutLabel}</SidebarRailKbd>
-                    ) : null}
-                  </label>
-                }
-              />
-            </SidebarHeader>
-            <SidebarContent>
-              <div
-                ref={(element) => {
-                  railRef.current = element;
-                  return attachSidebarTree(element);
-                }}
-                className="flex min-h-full flex-col px-2 pb-2"
-              >
-                <SidebarProjectsHeader
-                  options={sidebarOptions}
-                  onChange={(patch) => void updateClientSettings(sidebarOptionsPatch(patch))}
-                  onReset={() => void updateClientSettings(SIDEBAR_OPTIONS_DEFAULTS)}
-                  hiddenGridGroups={hiddenGridGroups}
-                  projectFilter={
-                    openProjectGroups.length > 1 ? (
-                      <ProjectFilterPicker
-                        groups={openProjectGroups}
-                        activeKeys={filterKeys}
-                        primaryEnvironmentId={primaryEnvironmentId}
-                        machineByEnvironmentId={environmentMachines}
-                        onChange={changeProjectFilter}
-                        onOpenSettings={openProjectSettings}
+                          if (event.key === "Escape") {
+                            event.stopPropagation();
+                            setSearch("");
+                          }
+                          if (event.key === "Enter") {
+                            if (openHighlightedSearchResult()) return;
+                            const matchedGrid = sections
+                              .flatMap((section) => section.grids.map((entry) => entry.grid))
+                              .find((grid) =>
+                                grid.name.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
+                              );
+                            if (matchedGrid !== undefined) {
+                              const candidate = railTargets.find(
+                                (target) => target.gridId === matchedGrid.id,
+                              );
+                              if (candidate !== undefined) openRailTarget(candidate);
+                              else
+                                void navigate({
+                                  to: "/grid/$gridId",
+                                  params: { gridId: matchedGrid.id },
+                                });
+                              return;
+                            }
+                            const matchedProject = projects.find((project) =>
+                              project.title.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
+                            );
+                            const workspaceTarget =
+                              matchedProject === undefined
+                                ? undefined
+                                : railTargets.find(
+                                    (target) =>
+                                      target.environmentId === matchedProject.environmentId,
+                                  );
+                            if (workspaceTarget !== undefined) openRailTarget(workspaceTarget);
+                          }
+                        }}
+                        placeholder="Search"
+                        aria-label="Search workspaces, grids and threads"
+                        className="min-w-0 flex-1 bg-transparent text-inherit outline-none placeholder:text-secondary-label"
                       />
-                    ) : null
+                      {query.length > 0 ? (
+                        <button
+                          type="button"
+                          aria-label="Clear search"
+                          onClick={() => setSearch("")}
+                          className="inline-grid size-5 shrink-0 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-label hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                        >
+                          <XIcon aria-hidden className="size-3" />
+                        </button>
+                      ) : searchShortcutLabel ? (
+                        <SidebarRailKbd>{searchShortcutLabel}</SidebarRailKbd>
+                      ) : null}
+                    </label>
                   }
                 />
-                <div className="flex flex-col gap-px">
-                  {sections.length === 0 && query.length === 0 ? <SidebarNoProjects /> : null}
-                  {sections.map((section) => (
-                    <SidebarProjectSection
-                      key={section.projectKey}
-                      section={section}
+              </SidebarHeader>
+              <SidebarContent>
+                <div
+                  ref={(element) => {
+                    railRef.current = element;
+                    return attachSidebarTree(element);
+                  }}
+                  className="flex min-h-full flex-col px-2 pb-2"
+                >
+                  <SidebarProjectsHeader
+                    options={sidebarOptions}
+                    onChange={(patch) => void updateClientSettings(sidebarOptionsPatch(patch))}
+                    onReset={() => void updateClientSettings(SIDEBAR_OPTIONS_DEFAULTS)}
+                    hiddenGridGroups={hiddenGridGroups}
+                    projectFilter={
+                      openProjectGroups.length > 1 ? (
+                        <ProjectFilterPicker
+                          groups={openProjectGroups}
+                          activeKeys={filterKeys}
+                          primaryEnvironmentId={primaryEnvironmentId}
+                          machineByEnvironmentId={environmentMachines}
+                          onChange={changeProjectFilter}
+                          onOpenSettings={openProjectSettings}
+                        />
+                      ) : null
+                    }
+                  />
+                  <div className="flex flex-col gap-px">
+                    {sections.length === 0 && query.length === 0 ? <SidebarNoProjects /> : null}
+                    {sections.map((section) => (
+                      <SidebarProjectSection
+                        key={section.projectKey}
+                        section={section}
+                        query={query}
+                        openGridId={openGrid?.id ?? null}
+                        collapsed={collapsedProjects.collapsed.has(section.projectKey)}
+                        onToggleCollapsed={() => collapsedProjects.toggle(section.projectKey)}
+                        collapsedGridIds={collapsedGrids.collapsed}
+                        onToggleGridCollapsed={collapsedGrids.toggle}
+                        providerEntries={
+                          providerEntriesByEnvironment.get(section.environmentId) ??
+                          EMPTY_PROVIDER_ENTRIES
+                        }
+                        nowIso={nowIso}
+                        selection={selection}
+                        runningSubagents={runningSubagentsByThread}
+                        dragging={dragging}
+                        dropTarget={dropTarget}
+                        onOpenThread={openThread}
+                        onSelectThread={selectThread}
+                        onCloseThread={(thread) => closeThreads([thread])}
+                        onHoldThread={(thread, preset) =>
+                          holdThreads([thread], preset.snoozedUntil)
+                        }
+                        onPickHoldTime={pickHoldTime}
+                        onDropOnGrid={(source, targetGridId) =>
+                          moveThreadToGrid(source, targetGridId)
+                        }
+                        onDropOnThread={dropThreadOnThread}
+                        onCreateGrid={() =>
+                          createGridInWorkspace(
+                            workspaceKeyOf(section.environmentId, section.projectId),
+                          )
+                        }
+                        onOpenProjectMenu={(position) => {
+                          const group = projectGroups.find(
+                            (candidate) => candidate.projectKey === section.projectKey,
+                          );
+                          if (group === undefined) return;
+                          void openProjectMenu(group, position, () =>
+                            createGridInWorkspace(
+                              workspaceKeyOf(section.environmentId, section.projectId),
+                            ),
+                          );
+                        }}
+                        onCreateThread={(gridId) => {
+                          const grid = gridById(grids, gridId);
+                          if (grid !== null) createThreadInGrid(grid);
+                        }}
+                        onRenameThread={renameThread}
+                        onSetAutoClose={setAutoClose}
+                        handleNewThread={handleNewThread}
+                        onShowGrid={(gridId) =>
+                          useGridStore.getState().setGridHidden(gridId, false)
+                        }
+                        onOpenUngroupedThread={(thread) =>
+                          openRailTarget({
+                            gridId: null,
+                            environmentId: thread.environmentId,
+                            projectId: thread.projectId,
+                            threadId: thread.id,
+                          })
+                        }
+                      />
+                    ))}
+                    {searching ? <SidebarContentResults results={contentResults} /> : null}
+                    {searching &&
+                    sections.length === 0 &&
+                    titleResultThreads.length === 0 &&
+                    contentResults.length === 0 &&
+                    !messageSearch.isPending ? (
+                      <SidebarNoSearchResults query={query} />
+                    ) : null}
+                  </div>
+                </div>
+              </SidebarContent>
+              <div
+                ref={attachSidebarTree}
+                className="shrink-0 px-2 pt-1 pb-1"
+                data-testid="grid-shelves-pin"
+              >
+                <Separator className="mb-1" data-shelves-rule="" />
+                <GridShelves
+                  held={heldShown}
+                  closed={closedShown}
+                  forceExpanded={searching}
+                  older={{
+                    scopes: olderSettledScopesForProjects(projects),
+                    threads: threads.filter((thread) =>
+                      workspaceKeys.has(workspaceKeyOf(thread.environmentId, thread.projectId)),
+                    ),
+                  }}
+                  closedDropTarget={dropTarget === "shelf:closed"}
+                  closedDragActive={dragging !== null}
+                  onClosedDrop={(source) => {
+                    const thread = threadById.get(source.threadId);
+                    if (thread !== undefined) closeThreads([thread]);
+                  }}
+                  renderCard={(thread, shelf) => (
+                    <ThreadCard
+                      key={thread.id}
+                      gridId={null}
+                      thread={thread}
                       query={query}
-                      openGridId={openGrid?.id ?? null}
-                      collapsed={collapsedProjects.collapsed.has(section.projectKey)}
-                      onToggleCollapsed={() => collapsedProjects.toggle(section.projectKey)}
-                      collapsedGridIds={collapsedGrids.collapsed}
-                      onToggleGridCollapsed={collapsedGrids.toggle}
                       providerEntries={
-                        providerEntriesByEnvironment.get(section.environmentId) ??
+                        providerEntriesByEnvironment.get(thread.environmentId) ??
                         EMPTY_PROVIDER_ENTRIES
                       }
                       nowIso={nowIso}
-                      selection={selection}
-                      runningSubagents={runningSubagentsByThread}
-                      dragging={dragging}
-                      dropTarget={dropTarget}
-                      onOpenThread={openThread}
-                      onSelectThread={selectThread}
-                      onCloseThread={(thread) => closeThreads([thread])}
-                      onHoldThread={(thread, preset) => holdThreads([thread], preset.snoozedUntil)}
+                      focused={false}
+                      selected={selection.selectedThreadKeys.has(
+                        scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+                      )}
+                      dragging={false}
+                      runningSubagents={
+                        runningSubagentsByThread.get(subagentParentKey(thread)) ?? 0
+                      }
+                      workspaceTitle={
+                        workspaceTitles.get(
+                          workspaceKeyOf(thread.environmentId, thread.projectId),
+                        ) ?? ""
+                      }
+                      timeLabel={
+                        shelf === "snoozed" && thread.snoozedUntil !== null
+                          ? formatUpcomingTimestamp(thread.snoozedUntil, timestampFormat)
+                          : shelf === "settled"
+                            ? closedAgeLabel(thread, Date.parse(`${nowMinute}:00.000Z`))
+                            : null
+                      }
+                      shelf={shelf}
+                      onOpen={() => {
+                        if (shelf === "snoozed") wakeShelfThread(thread);
+                        else reopenShelfThread(thread);
+                      }}
+                      onSelect={(input) => selectThread(thread, input)}
+                      onClose={() => {}}
+                      onHold={() => {}}
                       onPickHoldTime={pickHoldTime}
-                      onDropOnGrid={(source, targetGridId) =>
-                        moveThreadToGrid(source, targetGridId)
-                      }
-                      onDropOnThread={dropThreadOnThread}
-                      onCreateGrid={() =>
-                        createGridInWorkspace(
-                          workspaceKeyOf(section.environmentId, section.projectId),
-                        )
-                      }
-                      onOpenProjectMenu={(position) => {
-                        const group = projectGroups.find(
-                          (candidate) => candidate.projectKey === section.projectKey,
-                        );
-                        if (group === undefined) return;
-                        void openProjectMenu(group, position, () =>
-                          createGridInWorkspace(
-                            workspaceKeyOf(section.environmentId, section.projectId),
-                          ),
-                        );
-                      }}
-                      onCreateThread={(gridId) => {
-                        const grid = gridById(grids, gridId);
-                        if (grid !== null) createThreadInGrid(grid);
-                      }}
-                      onRenameThread={renameThread}
-                      onSetAutoClose={setAutoClose}
-                      handleNewThread={handleNewThread}
-                      onShowGrid={(gridId) => useGridStore.getState().setGridHidden(gridId, false)}
-                      onOpenUngroupedThread={(thread) =>
-                        openRailTarget({
-                          gridId: null,
-                          environmentId: thread.environmentId,
-                          projectId: thread.projectId,
-                          threadId: thread.id,
-                        })
-                      }
+                      onRename={(title) => renameThread(thread, title)}
+                      onSetAutoClose={() => {}}
+                      onWake={() => wakeShelfThread(thread)}
+                      onReopen={() => reopenShelfThread(thread)}
+                      onDropOnThread={() => {}}
                     />
-                  ))}
-                  {searching ? <SidebarContentResults results={contentResults} /> : null}
-                  {searching &&
-                  sections.length === 0 &&
-                  titleResultThreads.length === 0 &&
-                  contentResults.length === 0 &&
-                  !messageSearch.isPending ? (
-                    <SidebarNoSearchResults query={query} />
-                  ) : null}
-                </div>
+                  )}
+                />
               </div>
-            </SidebarContent>
-            <div
-              ref={attachSidebarTree}
-              className="shrink-0 px-2 pt-1 pb-1"
-              data-testid="grid-shelves-pin"
-            >
-              <Separator className="mb-1" data-shelves-rule="" />
-              <GridShelves
-                held={heldShown}
-                closed={closedShown}
-                forceExpanded={searching}
-                older={{
-                  scopes: olderSettledScopesForProjects(projects),
-                  threads: threads.filter((thread) =>
-                    workspaceKeys.has(workspaceKeyOf(thread.environmentId, thread.projectId)),
-                  ),
-                }}
-                closedDropTarget={dropTarget === "shelf:closed"}
-                closedDragActive={dragging !== null}
-                onClosedDrop={(source) => {
-                  const thread = threadById.get(source.threadId);
-                  if (thread !== undefined) closeThreads([thread]);
-                }}
-                renderCard={(thread, shelf) => (
-                  <ThreadCard
-                    key={thread.id}
-                    gridId={null}
-                    thread={thread}
-                    query={query}
-                    providerEntries={
-                      providerEntriesByEnvironment.get(thread.environmentId) ??
-                      EMPTY_PROVIDER_ENTRIES
-                    }
-                    nowIso={nowIso}
-                    focused={false}
-                    selected={selection.selectedThreadKeys.has(
-                      scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-                    )}
-                    dragging={false}
-                    runningSubagents={runningSubagentsByThread.get(subagentParentKey(thread)) ?? 0}
-                    workspaceTitle={
-                      workspaceTitles.get(workspaceKeyOf(thread.environmentId, thread.projectId)) ??
-                      ""
-                    }
-                    timeLabel={
-                      shelf === "snoozed" && thread.snoozedUntil !== null
-                        ? formatUpcomingTimestamp(thread.snoozedUntil, timestampFormat)
-                        : shelf === "settled"
-                          ? closedAgeLabel(thread, Date.parse(`${nowMinute}:00.000Z`))
-                          : null
-                    }
-                    shelf={shelf}
-                    onOpen={() => {
-                      if (shelf === "snoozed") wakeShelfThread(thread);
-                      else reopenShelfThread(thread);
-                    }}
-                    onSelect={(input) => selectThread(thread, input)}
-                    onClose={() => {}}
-                    onHold={() => {}}
-                    onPickHoldTime={pickHoldTime}
-                    onRename={(title) => renameThread(thread, title)}
-                    onSetAutoClose={() => {}}
-                    onWake={() => wakeShelfThread(thread)}
-                    onReopen={() => reopenShelfThread(thread)}
-                    onDropOnThread={() => {}}
-                  />
-                )}
-              />
-            </div>
-            {selection.selectedThreadKeys.size > 0 ? (
-              <div className="flex items-center gap-1 px-2 pb-2">
-                <div className="flex h-8 min-w-0 flex-1 items-center gap-1 rounded-(--r-ctl) border border-sidebar-border bg-(--surface-raised) px-2.5 text-xs text-secondary-foreground">
-                  <span className="flex-1 truncate font-semibold text-foreground">
-                    {selection.selectedThreadKeys.size} selected
-                  </span>
-                  <Menu>
-                    <MenuTrigger
-                      render={
-                        <button
-                          type="button"
-                          className="inline-flex h-6 cursor-pointer items-center rounded-(--r-ctl) border border-(--line-strong) px-2 text-xs text-foreground hover:bg-sidebar-row-hover"
-                        />
-                      }
-                    >
-                      Hold
-                    </MenuTrigger>
-                    <MenuPopup side="top" align="end">
-                      {selectionPresets.map((preset) => (
-                        <MenuItem
-                          key={preset.id}
-                          onClick={() => holdThreads(selectedThreads, preset.snoozedUntil)}
-                        >
-                          {preset.label}
-                          <span className="ml-auto text-2xs text-secondary-label">
-                            {preset.whenLabel}
-                          </span>
-                        </MenuItem>
-                      ))}
-                      <MenuSeparator />
-                      <MenuItem
-                        onClick={() => {
-                          void (async () => {
-                            const picked = await requestCustomSnooze();
-                            if (picked !== null) holdThreads(selectedThreads, picked.snoozedUntil);
-                          })();
-                        }}
+              {selection.selectedThreadKeys.size > 0 ? (
+                <div className="flex items-center gap-1 px-2 pb-2">
+                  <div className="flex h-8 min-w-0 flex-1 items-center gap-1 rounded-(--r-ctl) border border-sidebar-border bg-(--surface-raised) px-2.5 text-xs text-secondary-foreground">
+                    <span className="flex-1 truncate font-semibold text-foreground">
+                      {selection.selectedThreadKeys.size} selected
+                    </span>
+                    <Menu>
+                      <MenuTrigger
+                        render={
+                          <button
+                            type="button"
+                            className="inline-flex h-6 cursor-pointer items-center rounded-(--r-ctl) border border-(--line-strong) px-2 text-xs text-foreground hover:bg-sidebar-row-hover"
+                          />
+                        }
                       >
-                        Pick a time…
-                      </MenuItem>
-                    </MenuPopup>
-                  </Menu>
-                  <button
-                    type="button"
-                    className="inline-flex h-6 cursor-pointer items-center rounded-(--r-ctl) border border-(--line-strong) px-2 text-xs text-foreground hover:bg-sidebar-row-hover"
-                    onClick={() => {
-                      closeThreads(selectedThreads);
-                      setSelection(clearThreadSelection());
-                    }}
-                  >
-                    Close
-                  </button>
-                  <span className="ml-1 inline-flex h-4 items-center rounded-(--r-badge) border border-sidebar-border px-1 text-3xs text-secondary-label">
-                    Esc
-                  </span>
+                        Hold
+                      </MenuTrigger>
+                      <MenuPopup side="top" align="end">
+                        {selectionPresets.map((preset) => (
+                          <MenuItem
+                            key={preset.id}
+                            onClick={() => holdThreads(selectedThreads, preset.snoozedUntil)}
+                          >
+                            {preset.label}
+                            <span className="ml-auto text-2xs text-secondary-label">
+                              {preset.whenLabel}
+                            </span>
+                          </MenuItem>
+                        ))}
+                        <MenuSeparator />
+                        <MenuItem
+                          onClick={() => {
+                            void (async () => {
+                              const picked = await requestCustomSnooze();
+                              if (picked !== null)
+                                holdThreads(selectedThreads, picked.snoozedUntil);
+                            })();
+                          }}
+                        >
+                          Pick a time…
+                        </MenuItem>
+                      </MenuPopup>
+                    </Menu>
+                    <button
+                      type="button"
+                      className="inline-flex h-6 cursor-pointer items-center rounded-(--r-ctl) border border-(--line-strong) px-2 text-xs text-foreground hover:bg-sidebar-row-hover"
+                      onClick={() => {
+                        closeThreads(selectedThreads);
+                        setSelection(clearThreadSelection());
+                      }}
+                    >
+                      Close
+                    </button>
+                    <span className="ml-1 inline-flex h-4 items-center rounded-(--r-badge) border border-sidebar-border px-1 text-3xs text-secondary-label">
+                      Esc
+                    </span>
+                  </div>
                 </div>
-              </div>
-            ) : null}
-            <SidebarChromeFooter />
-            {dragging !== null ? (
-              <span aria-hidden className="sr-only">
-                Dragging thread
-              </span>
-            ) : null}
-          </ThreadBulkMenuContext.Provider>
-        </ThreadJumpHintContext.Provider>
+              ) : null}
+              <SidebarChromeFooter />
+              {dragging !== null ? (
+                <span aria-hidden className="sr-only">
+                  Dragging thread
+                </span>
+              ) : null}
+            </ThreadBulkMenuContext.Provider>
+          </ThreadJumpHintContext.Provider>
+        </RowActionSweepContext.Provider>
       </SidebarSearchHighlightContext.Provider>
     </ProjectFilterContext.Provider>
   );
@@ -2146,8 +2192,10 @@ export function ThreadCard({
   );
   const threadKey = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
   const searchHighlight = useSearchHighlight(threadKey);
+  const fileDrop = useRowFileDrop(thread);
   const jumpHint = useThreadJumpHint(threadKey);
   const bulkMenu = useContext(ThreadBulkMenuContext);
+  const sweep = useContext(RowActionSweepContext);
   const regeneratingTitle = thread.titleRegeneration != null;
   const canHold = canSnooze(thread, { now: nowIso });
   const actionsVisible = actionsHovered || holdMenuOpen || actionsMenuOpen;
@@ -2209,7 +2257,7 @@ export function ThreadCard({
   const previewSuppressed = actionsHovered || holdMenuOpen || actionsMenuOpen;
 
   const startRowDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (renaming || shelf !== null) return;
+    if (renaming) return;
     const target = event.target;
     if (target instanceof Element) {
       if (target.closest("input, textarea, [contenteditable='true']") !== null) return;
@@ -2222,6 +2270,7 @@ export function ThreadCard({
       threadId: thread.id,
       environmentId: thread.environmentId,
       projectId: thread.projectId,
+      title: thread.title,
     });
   };
   useThreadDropZone(
@@ -2243,6 +2292,8 @@ export function ThreadCard({
               searchHighlight.ref.current = element;
             }}
             data-search-highlighted={searchHighlight.highlighted || undefined}
+            data-file-drop-over={fileDrop.over || undefined}
+            {...fileDrop.handlers}
             onPointerDown={startRowDrag}
             tabIndex={-1}
             data-thread-key={threadKey}
@@ -2292,6 +2343,7 @@ export function ThreadCard({
               notInGrid ? "pl-2" : "pl-7.5",
               "cursor-pointer",
               dragging && "opacity-50",
+              fileDrop.over && "bg-(--accent-muted) ring-1 ring-(--accent-ink) ring-inset",
               selected
                 ? "bg-(--row-current)"
                 : searchHighlight.highlighted
@@ -2385,9 +2437,13 @@ export function ThreadCard({
               <button
                 type="button"
                 aria-label={shelf === "snoozed" ? "Wake thread now" : "Reopen thread"}
+                {...sweepActionProps(shelf === "snoozed" ? "wake" : "reopen")}
+                onPointerDown={(event) =>
+                  sweep?.(event, shelf === "snoozed" ? "wake" : "reopen", threadKey)
+                }
                 onClick={shelf === "snoozed" ? onWake : onReopen}
                 className={cn(
-                  "inline-flex h-[22px] cursor-pointer items-center gap-1 rounded-(--r-badge) px-1.5 text-xs text-secondary-foreground hover:bg-(--sel) hover:text-foreground",
+                  "inline-flex h-[22px] cursor-pointer items-center gap-1 rounded-(--r-badge) px-1.5 text-xs text-secondary-foreground data-sweep-hit:bg-(--sel) hover:bg-(--sel) hover:text-foreground",
                   FOCUS_ACTION_CLS,
                 )}
               >
@@ -2433,9 +2489,11 @@ export function ThreadCard({
                 <button
                   type="button"
                   aria-label="Close thread"
+                  {...sweepActionProps("close")}
+                  onPointerDown={(event) => sweep?.(event, "close", threadKey)}
                   onClick={close}
                   className={cn(
-                    "inline-flex h-[22px] cursor-pointer items-center gap-1 rounded-(--r-badge) px-1.5 text-xs text-secondary-foreground hover:bg-(--sel) hover:text-foreground",
+                    "inline-flex h-[22px] cursor-pointer items-center gap-1 rounded-(--r-badge) px-1.5 text-xs text-secondary-foreground data-sweep-hit:bg-(--sel) hover:bg-(--sel) hover:text-foreground",
                     FOCUS_ACTION_CLS,
                   )}
                 >
