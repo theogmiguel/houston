@@ -7095,6 +7095,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
               commandId: `command-${ordinal}`,
             }),
             Effect.as(input.runId),
+            // The query stream is forked inside the first turn's trace.
+            ordinal === 1 ? Effect.withSpan("Turn1.root") : (self) => self,
           );
         };
         const finish = (ordinal: number) =>
@@ -7144,6 +7146,11 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           }
         }
         assert.strictEqual(new Set(runs).size, 3);
+        // The query stream's reads start traces of their own, never inside the opening turn's.
+        const opening = recording.named("Turn1.root")[0]!;
+        const reads = recording.named("Test.sessionMessage");
+        assert.isAbove(reads.length, 0);
+        for (const span of reads) assert.notStrictEqual(span.traceId, opening.traceId);
       }).pipe(
         Effect.withTracer(recording.tracer),
         Effect.provide(

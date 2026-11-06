@@ -2,6 +2,7 @@ import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Logger from "effect/Logger";
+import * as Option from "effect/Option";
 import * as References from "effect/References";
 import * as Tracer from "effect/Tracer";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -128,6 +129,24 @@ describe("TraceContext", () => {
       assert.deepStrictEqual(contextOf(span.attributes), expected);
       assert.deepStrictEqual(span.links, []);
       assert.deepStrictEqual(logged, [expected]);
+    }),
+  );
+
+  it.effect("withoutTurnContext starts a fork's spans in a trace of their own", () =>
+    Effect.gen(function* () {
+      const recording = RecordingTracer.make();
+      yield* Effect.gen(function* () {
+        const session = yield* Effect.void.pipe(
+          Effect.withSpan("Session.read"),
+          TraceContext.withoutTurnContext,
+          Effect.forkChild,
+        );
+        yield* Fiber.join(session);
+      }).pipe(Effect.withSpan("Turn1.root"), Effect.withTracer(recording.tracer));
+      const root = recording.named("Turn1.root")[0]!;
+      const session = recording.named("Session.read")[0]!;
+      assert.isTrue(Option.isNone(session.parent));
+      assert.notStrictEqual(session.traceId, root.traceId);
     }),
   );
 

@@ -1321,6 +1321,129 @@ it.effect(
   },
 );
 
+it.effect(
+  "ProviderSessionManagerV2 pumps each later event in a trace of its own, not the opening turn's",
+  () => {
+    const recording = RecordingTracer.make();
+    return Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const effect = Effect.gen(function* () {
+        const eventSink = yield* EventSink.EventSinkV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        const now = yield* DateTime.now;
+        const threadId = ThreadId.make("thread-provider-session-manager-pump-root");
+        const providerSessionId = yield* idAllocator.allocate.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+          threadId,
+        });
+        yield* eventSink.write({
+          events: [yield* makeThreadCreatedEvent({ idAllocator, threadId, now })],
+        });
+        const runtime = yield* manager
+          .open({ threadId, providerSessionId, modelSelection, runtimePolicy })
+          .pipe(Effect.withSpan("Turn1.root"));
+        const turnRoot = recording.named("Turn1.root")[0];
+        assert.isDefined(turnRoot);
+        const subscription = yield* runtime.subscribeEvents!;
+        const adapterQueue = (yield* Ref.get(state)).eventQueues.get(String(providerSessionId));
+        assert.isDefined(adapterQueue);
+
+        const spansBefore = recording.ended.length;
+        yield* Queue.offer(adapterQueue!, {
+          type: "provider_session.updated",
+          driver: CODEX_DRIVER,
+          providerSession: { ...runtime.providerSession, updatedAt: now },
+        });
+        yield* subscription.events.pipe(Stream.runHead, Effect.withTracerEnabled(false));
+        yield* settlePump;
+
+        const pumped = recording.ended.slice(spansBefore);
+        const roots = pumped.filter((span) => Option.isNone(span.parent));
+        assert.deepStrictEqual(
+          roots.map((span) => span.name),
+          ["ProviderSessionManager.pumpEvent"],
+        );
+        for (const span of pumped) {
+          assert.strictEqual(span.traceId, roots[0]!.traceId, span.name);
+          assert.notStrictEqual(span.traceId, turnRoot!.traceId, span.name);
+        }
+      });
+
+      yield* effect.pipe(
+        Effect.provide(layerTest({ state, idleTimeoutMs: 60_000 })),
+        Effect.withTracer(recording.tracer),
+      );
+    });
+  },
+);
+
+it.effect(
+  "ProviderSessionManagerV2 forgets a detached thread's context on its shared session",
+  () => {
+    const recording = RecordingTracer.make();
+    return Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const effect = Effect.gen(function* () {
+        const eventSink = yield* EventSink.EventSinkV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        const now = yield* DateTime.now;
+        const providerSessionId = idAllocator.derive.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+        });
+        const kept = {
+          threadId: ThreadId.make("thread-provider-session-manager-prune-kept"),
+          projectId: ProjectId.make("project-prune-kept"),
+        };
+        const detached = {
+          threadId: ThreadId.make("thread-provider-session-manager-prune-detached"),
+          projectId: ProjectId.make("project-prune-detached"),
+        };
+        for (const thread of [kept, detached]) {
+          yield* eventSink.write({
+            events: [yield* makeThreadCreatedEvent({ idAllocator, now, ...thread })],
+          });
+          yield* manager
+            .open({ threadId: thread.threadId, providerSessionId, modelSelection, runtimePolicy })
+            .pipe(TraceContext.withTraceContext(thread));
+        }
+        yield* manager.detach({ providerSessionId, threadId: detached.threadId });
+        const adapterQueue = (yield* Ref.get(state)).eventQueues.get(String(providerSessionId));
+        assert.isDefined(adapterQueue);
+
+        // A late event that still names the detached thread carries only that thread's id.
+        const pending = yield* makePendingRuntimeRequestEvents({
+          idAllocator,
+          threadId: detached.threadId,
+          providerSessionId,
+          providerThread: makeProviderThread({
+            idAllocator,
+            threadId: detached.threadId,
+            providerSessionId,
+            now,
+          }),
+          now,
+        });
+        const spansBefore = recording.ended.length;
+        yield* Queue.offerAll(adapterQueue!, pending.providerEvents);
+        yield* settlePump;
+
+        const pumped = recording.ended.slice(spansBefore);
+        assert.isAbove(pumped.length, 0);
+        for (const span of pumped) {
+          assert.notProperty(houstonContextOf(span), "houston.project.id", span.name);
+        }
+      });
+
+      yield* effect.pipe(
+        Effect.provide(layerTest({ state, idleTimeoutMs: 60_000 })),
+        Effect.withTracer(recording.tracer),
+      );
+    });
+  },
+);
+
 it.effect("ProviderSessionManagerV2 opens a duplicate session only once", () =>
   Effect.gen(function* () {
     const state = yield* Ref.make(emptyState);
