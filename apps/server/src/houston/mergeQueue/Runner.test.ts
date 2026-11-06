@@ -10,7 +10,9 @@ import type { HoustonMergeQueueError } from "@houston-app/contracts/houston/merg
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 
+import * as RecordingTracer from "../../observability/testing/RecordingTracer.ts";
 import { HoustonBuildSlot } from "./BuildSlot.ts";
 import {
   entryOf,
@@ -90,6 +92,35 @@ describe("an unresolved review thread lets the next entry merge and goes first o
       );
     },
   );
+});
+
+describe("an idle pass exports no span", () => {
+  it.live("an idle pass and read export nothing; a read with work is one job span", () => {
+    const github = makeGitHub(makeRepos());
+    const recording = RecordingTracer.make();
+    return withQueue(
+      github,
+      Effect.gen(function* () {
+        const runner = yield* HoustonMergeQueueRunner;
+        const reader = yield* HoustonMergeQueueReader;
+        yield* runner.pass;
+        yield* reader.readAll;
+        assert.deepStrictEqual(
+          recording.ended.map((span) => span.name),
+          [],
+        );
+
+        yield* queueScenario(github, [1], { command: "git --version" });
+        const before = recording.ended.length;
+        yield* reader.readAll;
+        const roots = recording.ended
+          .slice(before)
+          .filter((span) => Option.isNone(span.parent))
+          .map((span) => span.name);
+        assert.deepStrictEqual(roots, ["houston.job.mergeQueue.read"]);
+      }).pipe(Effect.withTracer(recording.tracer)),
+    );
+  });
 });
 
 describe("one slot serialises verification across projects", () => {

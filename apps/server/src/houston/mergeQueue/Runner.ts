@@ -311,18 +311,18 @@ export const makeRunner = Effect.fn("HoustonMergeQueueRunner.make")(function* (o
 
   const pass = passLock.withPermits(1)(
     Effect.gen(function* () {
-      const ids = yield* store.projectsWithEntries;
-      yield* Effect.forEach(ids, step, { concurrency: "unbounded", discard: true });
+      const ids = yield* WideEvents.findWork(store.projectsWithEntries);
+      if (ids.length === 0) return;
+      yield* Effect.forEach(ids, step, { concurrency: "unbounded", discard: true }).pipe(
+        WideEvents.jobTick("mergeQueue.pass"),
+      );
     }),
   );
 
   if (options.loops) {
     loops += 1;
     yield* Effect.forever(
-      pass.pipe(
-        WideEvents.jobTick("mergeQueue.pass"),
-        Effect.andThen(Queue.take(store.wakes).pipe(Effect.timeoutOption(PASS_INTERVAL))),
-      ),
+      pass.pipe(Effect.andThen(Queue.take(store.wakes).pipe(Effect.timeoutOption(PASS_INTERVAL)))),
     ).pipe(Effect.forkScoped);
   }
 
