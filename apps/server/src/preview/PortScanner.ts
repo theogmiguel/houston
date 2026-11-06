@@ -166,11 +166,9 @@ const localServerKey = (host: string, port: number): string =>
 const urlPort = (url: URL): number =>
   url.port.length > 0 ? Number.parseInt(url.port, 10) : url.protocol === "http:" ? 80 : 443;
 
-// Clears the fragment in place: callers pass a URL they parsed for this key and its host.
-const webProbeCacheKey = (url: URL): string => {
-  url.hash = "";
-  return url.href;
-};
+// The configured URL without its fragment; leaves the caller's URL unchanged.
+const webProbeCacheKey = (url: URL): string =>
+  url.hash.length > 0 ? url.href.slice(0, -url.hash.length) : url.href;
 
 const normalizeConfiguredUrls = (urls: ReadonlyArray<string>): ReadonlyArray<string> => [
   ...new Set(
