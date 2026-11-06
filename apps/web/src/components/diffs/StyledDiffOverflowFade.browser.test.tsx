@@ -6,7 +6,7 @@ import { resolveDiffThemeName } from "~/lib/diffRendering";
 import { render } from "../../../test/render";
 import { StyledDiffCodeView } from "./StyledDiffCodeView";
 
-const FADE_PX = 24;
+const FADE_PX = 48;
 // The right side panel of the 1440px layout.
 const PANEL_WIDTH = 399;
 const LONG_LINE = `const added = Math.ceil((Math.max(1, 2) * 1000 + Math.random() * 4000) / 100) * 100 + more_and_more_text;`;

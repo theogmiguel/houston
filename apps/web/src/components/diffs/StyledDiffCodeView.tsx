@@ -46,8 +46,9 @@ export const DIFF_VIEW_UNSAFE_CSS = `${DIFF_SURFACE_THEME_UNSAFE_CSS}
   position: absolute;
   top: 0;
   bottom: 0;
-  left: calc(100cqi - 24px);
-  width: 24px;
+  /* About six code glyphs: narrower, the fade reads as a clipped glyph rather than a fade. */
+  left: calc(100cqi - 48px);
+  width: 48px;
   pointer-events: none;
   background: linear-gradient(to right, transparent, var(--code-background));
   opacity: 0;
