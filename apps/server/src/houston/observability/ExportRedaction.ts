@@ -7,7 +7,6 @@ import * as Exit from "effect/Exit";
 import * as Predicate from "effect/Predicate";
 
 import { outcomeFromExit } from "../../observability/Attributes.ts";
-import { applyCredentialRules, credentialRules, cutAbsolutePaths } from "../redact.ts";
 
 const EXPORTED_PREFIXES = ["houston.", "rpc.", "orchestration_v2."];
 const EXPORTED_KEYS: ReadonlySet<string> = new Set([
@@ -30,14 +29,42 @@ const EXPORTED_KEYS: ReadonlySet<string> = new Set([
 ]);
 // Statement templates carry placeholders; a long one is cut rather than dropped.
 const QUERY_TEXT_MAX_CHARS = 2048;
-// Log messages are reduced to their first string; this bounds one that interpolates a payload.
-const LOG_MESSAGE_MAX_CHARS = 256;
 const URL_ORIGIN = /^([a-z][a-z0-9+.-]*):\/\/(?:[^@/?#]*@)?(\[[^\]]*\]|[^:/?#]*)/i;
-const URL_ANYWHERE = /\b[a-z][a-z0-9+.-]*:\/\/\S+/gi;
-const CREDENTIALS = credentialRules("[redacted]");
 
-/** Event name for a span event that a log call produced; its text is the log message. */
+// The resource names the service, its version, channel and runtime; never the machine.
+const RESOURCE_PREFIXES = ["service.", "telemetry.sdk.", "houston.", "process.runtime."];
+const RESOURCE_KEYS: ReadonlySet<string> = new Set(["deployment.environment.name"]);
+const LOG_LEVEL_KEY = "effect.logLevel";
+const INTERRUPTED = "Interrupted";
+
+// A log message is often a template filled with error text, paths or titles, and nothing marks
+// which part is constant, so exported logs and log span events carry this instead.
 export const LOG_EVENT_NAME = "log";
+
+// Code-defined event names (`exception`, `git.hook.started`); a log call's event is named by its
+// message, so any other name is exported as `log`.
+const EVENT_NAME = /^(exception|[a-z][a-z0-9_]*(\.[a-z0-9_]+)+)$/;
+
+export const exportedEventName = (name: string, attributeKeys: Iterable<string>): string => {
+  for (const key of attributeKeys) if (key === LOG_LEVEL_KEY) return LOG_EVENT_NAME;
+  return EVENT_NAME.test(name) ? name : LOG_EVENT_NAME;
+};
+
+export const isExportedResourceKey = (key: string): boolean =>
+  RESOURCE_KEYS.has(key) || RESOURCE_PREFIXES.some((prefix) => key.startsWith(prefix));
+
+export const exportedResourceAttributes = <V>(
+  attributes: Readonly<Record<string, V>>,
+): Record<string, V> =>
+  Object.fromEntries(Object.entries(attributes).filter(([key]) => isExportedResourceKey(key)));
+
+/** An OTLP exporter's resource option with only allowlisted attributes. */
+export const exportedResource = <T extends { readonly attributes?: Record<string, unknown> }>(
+  resource: T,
+): T =>
+  resource.attributes === undefined
+    ? resource
+    : { ...resource, attributes: exportedResourceAttributes(resource.attributes) };
 
 export const isExportedKey = (key: string): boolean =>
   EXPORTED_KEYS.has(key) || EXPORTED_PREFIXES.some((prefix) => key.startsWith(prefix));
@@ -101,15 +128,23 @@ export const errorTag = (exit: Exit.Exit<unknown, unknown>): string | undefined 
   return undefined;
 };
 
-/** A cause reduced to its error tag: messages, stacks and payloads can hold paths and user text. */
+// A cause reduced to its error tag, or "Interrupted": messages, stacks, payloads and interruptor
+// stacks can hold paths and user text.
 export const exportedCause = (cause: Cause.Cause<unknown>): Cause.Cause<unknown> => {
-  if (cause.reasons.length === 0 || Cause.hasInterruptsOnly(cause)) return cause;
-  const tag = errorTag(Exit.failCause(cause)) ?? "UnknownError";
+  if (cause.reasons.length === 0) return cause;
+  const tag = Cause.hasInterruptsOnly(cause)
+    ? INTERRUPTED
+    : (errorTag(Exit.failCause(cause)) ?? "UnknownError");
   return Cause.die({ name: tag, message: tag });
 };
 
+// An interrupted span stays interrupted (exporters print no error for it), without its interruptor.
 export const exportedExit = (exit: Exit.Exit<unknown, unknown>): Exit.Exit<unknown, unknown> =>
-  Exit.isSuccess(exit) ? Exit.void : Exit.failCause(exportedCause(exit.cause));
+  Exit.isSuccess(exit)
+    ? Exit.void
+    : Cause.hasInterruptsOnly(exit.cause)
+      ? Exit.interrupt()
+      : Exit.failCause(exportedCause(exit.cause));
 
 /** Outcome attributes a span gains as it ends. */
 export const endAttributes = (
@@ -122,17 +157,6 @@ export const endAttributes = (
         ["houston.outcome", outcomeFromExit(exit)],
         ["houston.error.tag", tag],
       ];
-};
-
-/** A log message as exported: its first string, without paths, URLs or credentials. */
-export const exportedLogMessage = (message: unknown): string => {
-  const first = Array.isArray(message) ? message.find(Predicate.isString) : message;
-  if (!Predicate.isString(first)) return LOG_EVENT_NAME;
-  const scrubbed = applyCredentialRules(cutAbsolutePaths(first), CREDENTIALS).replace(
-    URL_ANYWHERE,
-    "[url]",
-  );
-  return scrubbed.slice(0, LOG_MESSAGE_MAX_CHARS);
 };
 
 type OtlpSpan = OtlpTracer.ScopeSpan["spans"][number];
@@ -166,7 +190,10 @@ const exportedSpan = (span: OtlpSpan): OtlpSpan => {
     attributes: exportedKeyValues(span.attributes),
     events: (span.events ?? []).map((event) => ({
       ...event,
-      name: event.name === "exception" ? event.name : LOG_EVENT_NAME,
+      name: exportedEventName(
+        event.name,
+        (event.attributes ?? []).map((attribute) => attribute.key),
+      ),
       attributes: exportedKeyValues(event.attributes),
     })),
     links: (span.links ?? []).map((link) => ({
@@ -181,6 +208,12 @@ const exportedSpan = (span: OtlpSpan): OtlpSpan => {
 export const exportedTraceData = (data: OtlpTracer.TraceData): OtlpTracer.TraceData => ({
   resourceSpans: (data.resourceSpans ?? []).map((resourceSpan) => ({
     ...resourceSpan,
+    resource: {
+      ...resourceSpan.resource,
+      attributes: (resourceSpan.resource?.attributes ?? []).filter((attribute) =>
+        isExportedResourceKey(attribute.key),
+      ),
+    },
     scopeSpans: (resourceSpan.scopeSpans ?? []).map((scopeSpan) => ({
       ...scopeSpan,
       spans: (scopeSpan.spans ?? []).map(exportedSpan),

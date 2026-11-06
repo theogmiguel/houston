@@ -16,6 +16,7 @@ import * as CodexProtocol from "effect-codex-app-server/protocol";
 import * as ServerConfig from "../config.ts";
 import * as ResourceAttribution from "../resourceTelemetry/ResourceAttribution.ts";
 import * as ServerLogger from "../serverLogger.ts";
+import * as ExportRedaction from "../houston/observability/ExportRedaction.ts";
 import * as ExportTracer from "../houston/observability/ExportTracer.ts";
 import * as UnsampledSpans from "../houston/observability/UnsampledSpans.ts";
 import * as BrowserTraceCollector from "./BrowserTraceCollector.ts";
@@ -30,7 +31,9 @@ export const layer = Layer.unwrap(
     const metrics = config.otlpMetricsExport;
     // Keep serialization in context for the browser trace forwarder's exporter.
     const layerSerialization = SharedObservability.layerOtlpSerialization(traces.protocol);
-    const resource = ServerConfig.otlpResource(config, yield* HostProcess.Hostname);
+    const resource = ExportRedaction.exportedResource(
+      ServerConfig.otlpResource(config, yield* HostProcess.Hostname),
+    );
     const attribution = yield* ResourceAttribution.ResourceAttribution;
 
     const layerTraceReferences = Layer.mergeAll(
@@ -111,7 +114,9 @@ export const layer = Layer.unwrap(
         Layer.mergeAll(ServerLogger.layer, layerTraceReferences, layerTracer, metricsLayer),
       ),
       Layer.provide(
-        OtelEnvironment.layerResourceAttributes(config.otelEnvironment.resourceAttributes),
+        OtelEnvironment.layerResourceAttributes(
+          ExportRedaction.exportedResourceAttributes(config.otelEnvironment.resourceAttributes),
+        ),
       ),
     );
   }),
