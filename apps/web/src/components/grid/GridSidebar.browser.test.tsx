@@ -348,6 +348,85 @@ describe("ThreadCard", () => {
   });
 });
 
+describe("ThreadCard layout", () => {
+  it("is two lines, about 44px tall, with the branch in sans on the second", async () => {
+    await using screen = await render(card(thread({ tags: [] } as never)));
+    const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
+
+    const height = row.getBoundingClientRect().height;
+    expect(height).toBeGreaterThanOrEqual(42);
+    expect(height).toBeLessThanOrEqual(46);
+
+    const meta = row.querySelector<HTMLElement>("[data-thread-meta]")!;
+    const title = screen.getByText("Split drawer state from the thread store").element();
+    const time = screen.getByText("9:00").element();
+    const branch = screen.getByText("houston/split-drawer-state").element();
+    expect(meta.contains(branch)).toBe(true);
+    expect(getComputedStyle(branch).fontFamily).not.toContain("Mono");
+    expect(getComputedStyle(branch).fontSize).toBe("12px");
+    expect(getComputedStyle(title).fontSize).toBe("13px");
+    expect(getComputedStyle(title).fontWeight).toBe("500");
+
+    // The time sits on the title's line, to its right.
+    const titleBox = title.getBoundingClientRect();
+    const timeBox = time.getBoundingClientRect();
+    expect(timeBox.left).toBeGreaterThan(titleBox.left);
+    expect(Math.abs(timeBox.top - titleBox.top)).toBeLessThan(6);
+    expect(branch.getBoundingClientRect().top).toBeGreaterThan(titleBox.bottom - 2);
+    expect(row.textContent).not.toContain("not in a grid");
+  });
+
+  it("starts a flat row and a grid row at the same inset", async () => {
+    await using grid = await render(card(thread(), { gridId: "grid-a" }));
+    const gridLeft = getComputedStyle(
+      grid.container.querySelector<HTMLElement>("[data-thread-key]")!,
+    ).paddingLeft;
+    await using flat = await render(card(thread(), { gridId: null }));
+    const flatLeft = getComputedStyle(
+      flat.container.querySelector<HTMLElement>("[data-thread-key]")!,
+    ).paddingLeft;
+    expect(flatLeft).toBe(gridLeft);
+  });
+});
+
+describe("ThreadCard selected state", () => {
+  it("paints the open thread's row with the selected background and a stronger title", async () => {
+    await using screen = await render(card(thread()), { router: "/env-1/thread-a" });
+    const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
+
+    expect(row.hasAttribute("data-thread-current")).toBe(true);
+    expect(getComputedStyle(row).backgroundColor).toBe(tokenBackground("--sidebar-row-selected"));
+    const title = screen.getByText("Split drawer state from the thread store").element();
+    expect(getComputedStyle(title).fontWeight).toBe("600");
+    expect(row.querySelector("[aria-current]")).not.toBeNull();
+  });
+
+  it("leaves a thread that is not open without a background", async () => {
+    await using screen = await render(card(thread()), { router: "/env-1/another-thread" });
+    const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
+
+    expect(row.hasAttribute("data-thread-current")).toBe(false);
+    expect(getComputedStyle(row).backgroundColor).toBe("rgba(0, 0, 0, 0)");
+  });
+
+  it("treats the focused cell of the open grid as the open thread", async () => {
+    await using screen = await render(card(thread(), { focused: true }));
+    const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
+
+    expect(row.hasAttribute("data-thread-current")).toBe(true);
+    expect(getComputedStyle(row).backgroundColor).toBe(tokenBackground("--sidebar-row-selected"));
+  });
+});
+
+function tokenBackground(token: string): string {
+  const probe = document.createElement("span");
+  probe.style.backgroundColor = `var(${token})`;
+  document.body.append(probe);
+  const color = getComputedStyle(probe).backgroundColor;
+  probe.remove();
+  return color;
+}
+
 function tokenColor(token: string): string {
   const probe = document.createElement("span");
   probe.style.color = `var(${token})`;
@@ -390,7 +469,7 @@ describe("ThreadCard status marks", () => {
     expect(getComputedStyle(screen.getByText("Running").element()).color).toBe(accentColor());
   });
 
-  it("keeps the time on the title line and puts the state and tags on a third line", async () => {
+  it("keeps the time on the title line and the state and tags on the one meta line", async () => {
     await using screen = await render(
       card(
         thread({
@@ -407,18 +486,41 @@ describe("ThreadCard status marks", () => {
       ),
     );
 
-    const status = screen.container.querySelector("[data-thread-status]");
-    expect(status).not.toBeNull();
-    expect(status!.textContent).toContain("Running");
-    const tags = [...status!.querySelectorAll("[data-thread-tag]")].map((tag) => tag.textContent);
+    const meta = screen.container.querySelector("[data-thread-meta]");
+    expect(meta).not.toBeNull();
+    const status = meta!.querySelector("[data-thread-status]");
+    expect(status?.textContent).toContain("Running");
+    const tags = [...meta!.querySelectorAll("[data-thread-tag]")].map((tag) => tag.textContent);
     expect(tags).toEqual(["bug", "linux"]);
     expect(screen.getByText("9:00").element()).toBeVisible();
   });
 
-  it("says Idle on the third line of a thread with nothing running", async () => {
+  it("shows nothing for a thread with nothing running", async () => {
     await using screen = await render(card(thread()));
-    const status = screen.container.querySelector("[data-thread-status]");
-    expect(status?.textContent).toBe("Idle");
+    expect(screen.container.querySelector("[data-thread-status]")).toBeNull();
+    expect(screen.container.textContent).not.toContain("Idle");
+  });
+
+  it("keeps a ready thread's mark neutral instead of success green", async () => {
+    await using screen = await render(
+      card(
+        thread({
+          lastVisitedAt: "2025-12-31T23:00:00.000Z",
+          latestRun: {
+            id: "run-1",
+            status: "completed",
+            startedAt: "2025-12-31T23:30:00.000Z",
+            completedAt: "2025-12-31T23:45:00.000Z",
+          } as never,
+        }),
+      ),
+    );
+
+    const status = screen.container.querySelector<HTMLElement>("[data-thread-status]");
+    expect(status).not.toBeNull();
+    expect(status!.textContent).toBe("Ready");
+    expect(getComputedStyle(status!).color).toBe(tokenColor("--contrast-secondary-label"));
+    expect(getComputedStyle(status!).color).not.toBe(tokenColor("--success-foreground"));
   });
 
   it("draws the other state marks as stroked outlines, not filled discs", async () => {
@@ -493,7 +595,7 @@ describe("ThreadCard layout and contrast", () => {
     const row = screen.container.querySelector("[data-thread-key]") as HTMLElement;
     const title = titleOf(screen);
 
-    expect(row.className).toContain("bg-(--sidebar-row-active)");
+    expect(row.className).toContain("bg-sidebar-row-selected");
     expect(title.className).toContain("text-foreground");
     expect(getComputedStyle(title).color).toBe(classColor("text-foreground"));
   });

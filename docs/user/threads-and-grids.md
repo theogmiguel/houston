@@ -127,7 +127,7 @@ stays out of the thread until you choose **Send to thread**.
 Each thread has a terminal drawer for shell commands (`Ctrl+J`). The right panel is a
 separate set of surfaces; see [The right panel](right-panel.md). A thread's **details**
 control (`Ctrl+Shift+B`) shows its environment, branch, pull requests, scripts, local
-servers, context and usage limits.
+servers, context and usage limits. The card starts closed and stays as you leave it.
 
 A cheap command that needs a real terminal, such as `sudo apt install` or
 `git push --force-with-lease`, can start with `!`: `!sudo apt install foo` opens the

@@ -67,8 +67,11 @@ export const SIDEBAR_PROJECT_EMPTY_ACTION_CLS =
 export const SIDEBAR_HEADER_ACTIONS_CLS =
   "relative z-10 flex shrink-0 items-center gap-0.5 [-webkit-app-region:no-drag]";
 
-/** A thread row that no grid shows, sitting directly under the project's grids. */
-export const SIDEBAR_THREAD_NOT_IN_GRID_CLS = "shrink-0 truncate text-2xs text-secondary-label";
+/**
+ * Every thread row, in a grid or directly under its project, starts at the same inset: the
+ * project and grid names above it. Nesting shows through the headings, not through the row.
+ */
+export const SIDEBAR_THREAD_ROW_INDENT_CLS = "pl-7.5";
 
 /** A fixed 12px box in both states; the chevron rotates inside instead of swapping icons. */
 export const SIDEBAR_GRID_CHEVRON_BOX_CLS =

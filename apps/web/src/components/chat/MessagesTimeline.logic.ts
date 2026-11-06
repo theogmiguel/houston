@@ -498,6 +498,8 @@ const LIVE_ACTIVITY_ROW_ID = "live-activity-row";
 
 export type MessagesTimelineRow = MessagesTimelineRowContent & {
   readonly continuesWorkLog?: boolean;
+  /** The last row of an expanded turn fold: it owns the gap before whatever follows the group. */
+  readonly endsFoldGroup?: boolean;
 };
 
 type MessagesTimelineRowContent =
@@ -1729,11 +1731,13 @@ export function deriveMessagesTimelineRows(input: {
     );
   };
 
+  const entryRowStarts: Array<{ readonly entryId: string; readonly start: number }> = [];
   for (let index = 0; index < timelineEntries.length; index += 1) {
     const timelineEntry = timelineEntries[index];
     if (!timelineEntry) {
       continue;
     }
+    entryRowStarts.push({ entryId: timelineEntry.id, start: nextRows.length });
 
     if (input.isWorking && index === activeTurnHeaderIndex) {
       appendWorkingRow();
@@ -2201,7 +2205,11 @@ export function deriveMessagesTimelineRows(input: {
   }
 
   const result = attachTrailingToolGroupsToAssistant(
-    attachCreatedThreadSummaries(nextRows, timelineEntries, collapsedFoldMemberIds),
+    attachCreatedThreadSummaries(
+      closeExpandedFolds(nextRows, entryRowStarts, foldsByAnchorEntryId, input.expandedRunIds),
+      timelineEntries,
+      collapsedFoldMemberIds,
+    ),
   );
   return result.map((row, index) => {
     if (timelineRowIsWorkLog(row) && timelineRowIsWorkLog(result[index + 1])) {
@@ -2216,6 +2224,54 @@ export function deriveMessagesTimelineRows(input: {
     if (!groupedWithNext && !groupedWithPrevious) return row;
     return { ...row, groupedWithNext, groupedWithPrevious, continuesSteer };
   });
+}
+
+/**
+ * An expanded fold shows its tool rows as one group. A compaction divider that happened midway
+ * belongs to the thread, not to the group, so it moves below the group's last row, and that row
+ * is marked so the group keeps a gap before the next card.
+ */
+function closeExpandedFolds(
+  rows: ReadonlyArray<MessagesTimelineRow>,
+  entryRowStarts: ReadonlyArray<{ readonly entryId: string; readonly start: number }>,
+  folds: ReadonlyMap<string, TurnFold>,
+  expandedRunIds: ReadonlySet<RunId> | undefined,
+): MessagesTimelineRow[] {
+  const ownerOfRow = (rowIndex: number): string | null => {
+    let owner: string | null = null;
+    for (const { entryId, start } of entryRowStarts) {
+      if (start > rowIndex) break;
+      owner = entryId;
+    }
+    return owner;
+  };
+  let owned = rows.map((row, index) => ({ row, owner: ownerOfRow(index) }));
+  for (const fold of folds.values()) {
+    if (!expandedRunIds?.has(fold.runId)) continue;
+    const rowsOf = (entryIds: ReadonlySet<string>) =>
+      owned.flatMap(({ row, owner }, index) =>
+        owner !== null && entryIds.has(owner) && row.kind !== "turn-fold" ? [index] : [],
+      );
+    // Only the entries the fold hides form the group; the terminal reply and cards stay outside.
+    const lastGroupRow = rowsOf(fold.hiddenEntryIds)
+      .filter((index) => owned[index]!.row.kind !== "context-compaction")
+      .at(-1);
+    if (lastGroupRow === undefined) continue;
+    const dividers = rowsOf(fold.entryIds).filter(
+      (index) => index < lastGroupRow && owned[index]!.row.kind === "context-compaction",
+    );
+    const dividerSet = new Set(dividers);
+    const next: typeof owned = [];
+    for (const [index, entry] of owned.entries()) {
+      if (dividerSet.has(index)) continue;
+      next.push(
+        index === lastGroupRow ? { ...entry, row: { ...entry.row, endsFoldGroup: true } } : entry,
+      );
+      if (index === lastGroupRow) next.push(...dividers.map((divider) => owned[divider]!));
+    }
+    owned = next;
+  }
+  return owned.map(({ row }) => row);
 }
 
 function timelineRowIsOwnUserMessage(

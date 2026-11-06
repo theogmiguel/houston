@@ -71,4 +71,71 @@ describe("Sidebar", () => {
 
     expect(onResize).toHaveBeenCalledTimes(1);
   });
+
+  describe("below the dock breakpoint", () => {
+    function docked(screen: { container: HTMLElement }) {
+      return screen.container.querySelector<HTMLElement>('[data-slot="sidebar"]');
+    }
+
+    it("turns the rail into a closed drawer that the toggle opens", async () => {
+      await page.viewport(900, 800);
+      await using screen = await render(<Harness />, { router: false /* no routes involved */ });
+
+      expect(docked(screen)).toBeNull();
+      expect(document.querySelector('[data-slot="sidebar"][data-mobile="true"]')).toBeNull();
+
+      await userEvent.click(
+        screen.container.querySelector<HTMLElement>('[data-slot="sidebar-trigger"]')!,
+      );
+
+      await vi.waitFor(() =>
+        expect(
+          document.querySelector('[data-slot="sidebar"][data-mobile="true"]'),
+        ).not.toBeNull(),
+      );
+    });
+
+    it("keeps the rail docked from 960px up", async () => {
+      await page.viewport(960, 800);
+      await using screen = await render(<Harness />, { router: false /* no routes involved */ });
+
+      expect(docked(screen)).not.toBeNull();
+      expect(document.querySelector('[data-slot="sidebar"][data-mobile="true"]')).toBeNull();
+    });
+
+    it("docks the rail again when the window widens, keeping a manual collapse", async () => {
+      await page.viewport(1280, 800);
+      await using screen = await render(<Harness />, { router: false /* no routes involved */ });
+      await userEvent.click(screen.getByRole("button", { name: "Collapse" }));
+      await vi.waitFor(() => expect(docked(screen)?.inert).toBe(true));
+
+      await page.viewport(900, 800);
+      await vi.waitFor(() => expect(docked(screen)).toBeNull());
+      await page.viewport(1280, 800);
+
+      await vi.waitFor(() => expect(docked(screen)).not.toBeNull());
+      expect(docked(screen)!.inert).toBe(true);
+    });
+
+    it("returns to an expanded docked rail, not an open drawer, after widening", async () => {
+      await page.viewport(900, 800);
+      await using screen = await render(<Harness />, { router: false /* no routes involved */ });
+      await userEvent.click(
+        screen.container.querySelector<HTMLElement>('[data-slot="sidebar-trigger"]')!,
+      );
+      await vi.waitFor(() =>
+        expect(
+          document.querySelector('[data-slot="sidebar"][data-mobile="true"]'),
+        ).not.toBeNull(),
+      );
+
+      await page.viewport(1280, 800);
+
+      await vi.waitFor(() => expect(docked(screen)).not.toBeNull());
+      expect(docked(screen)!.inert).toBe(false);
+      await page.viewport(900, 800);
+      await vi.waitFor(() => expect(docked(screen)).toBeNull());
+      expect(document.querySelector('[data-slot="sidebar"][data-mobile="true"]')).toBeNull();
+    });
+  });
 });

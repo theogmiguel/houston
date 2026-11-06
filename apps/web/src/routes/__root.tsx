@@ -8,9 +8,7 @@ import {
   type ErrorComponentProps,
   useLocation,
   useNavigate,
-  useRouter,
 } from "@tanstack/react-router";
-import { Check, Copy } from "lucide";
 import * as Schema from "effect/Schema";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
@@ -33,13 +31,11 @@ import { ReopenClosedViewShortcut } from "../components/ReopenClosedViewShortcut
 import { ProjectCloneToastCoordinator } from "../components/ProjectCloneToastCoordinator";
 import { ChatGptWelcomeCoordinator } from "../components/settings/ChatGptWelcomeCoordinator";
 import { ThemeEditorHost } from "../components/settings/ThemeEditorHost";
-import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
+import { RouteErrorActions } from "../components/RouteErrorActions";
 import { Button } from "../components/ui/button";
-import { MorphIcon } from "~/components/MorphIcon";
 import { StandalonePage, StandalonePageHeader } from "../components/ui/standalone-page";
 import { AnchoredToastProvider, ToastProvider } from "../components/ui/toast";
 import { isDesktopHost } from "../env";
-import { cn } from "../lib/utils";
 import { useClientSettings } from "../hooks/useSettings";
 import {
   deriveLogicalProjectKeyFromSettings,
@@ -223,7 +219,6 @@ function RootRouteErrorView({ error }: ErrorComponentProps) {
 }
 
 function ServerUnavailableView({ error }: { error: PrimaryEnvironmentRequestError }) {
-  const router = useRouter();
   const pathname = useLocation({ select: (location) => location.pathname });
   const report = errorReport(error, pathname);
   return (
@@ -233,15 +228,7 @@ function ServerUnavailableView({ error }: { error: PrimaryEnvironmentRequestErro
         description="Your threads are saved. Start the server to see them."
       />
 
-      <div className="mt-5 flex flex-wrap gap-2">
-        <Button size="sm" onClick={() => void router.invalidate()}>
-          Try again
-        </Button>
-        <Button size="sm" variant="outline" onClick={() => window.location.reload()}>
-          Reload app
-        </Button>
-        <CopyErrorButton report={report} />
-      </div>
+      <RouteErrorActions report={report} />
 
       <details className="mt-5 overflow-hidden rounded-lg border border-border/70 bg-background/55">
         <summary className="cursor-pointer px-3 py-1.5 text-xs font-medium text-muted-foreground">
@@ -256,7 +243,6 @@ function ServerUnavailableView({ error }: { error: PrimaryEnvironmentRequestErro
 }
 
 function GenericRouteErrorView({ error }: Pick<ErrorComponentProps, "error">) {
-  const router = useRouter();
   const message = errorMessage(error);
   // Router pathname rather than window.location: desktop uses hash history, where the window path is always "/".
   const pathname = useLocation({ select: (location) => location.pathname });
@@ -266,15 +252,7 @@ function GenericRouteErrorView({ error }: Pick<ErrorComponentProps, "error">) {
     <StandalonePage>
       <StandalonePageHeader title="Something went wrong." description={message} />
 
-      <div className="mt-5 flex flex-wrap gap-2">
-        <Button size="sm" onClick={() => void router.invalidate()}>
-          Try again
-        </Button>
-        <Button size="sm" variant="outline" onClick={() => window.location.reload()}>
-          Reload app
-        </Button>
-        <CopyErrorButton report={report} />
-      </div>
+      <RouteErrorActions report={report} />
 
       <div className="mt-5 overflow-hidden rounded-lg border border-border/70 bg-background/55">
         <p className="px-3 py-1.5 text-xs font-medium text-muted-foreground">Error report</p>
@@ -283,17 +261,6 @@ function GenericRouteErrorView({ error }: Pick<ErrorComponentProps, "error">) {
         </pre>
       </div>
     </StandalonePage>
-  );
-}
-
-function CopyErrorButton({ report }: { report: string }) {
-  const { copyToClipboard, isCopied } = useCopyToClipboard({ target: "error-report" });
-
-  return (
-    <Button size="sm" variant="outline" onClick={() => copyToClipboard(report)}>
-      <MorphIcon className={cn(isCopied && "text-success")} icon={isCopied ? Check : Copy} />
-      {isCopied ? "Copied" : "Copy error"}
-    </Button>
   );
 }
 

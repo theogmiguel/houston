@@ -14,20 +14,25 @@ const GroupedRows = createContext(false);
 export function WorkLogBlock({
   layout = "standalone",
   continues = false,
+  endsGroup = false,
   children,
 }: {
   layout?: "standalone" | "group-header" | "group-content";
   continues?: boolean | undefined;
+  /** The last row of an expanded group: it leaves the same gap a message does. */
+  endsGroup?: boolean | undefined;
   children: ReactNode;
 }) {
   return (
     <div
       className={
-        continues || layout === "group-header"
-          ? "pb-0"
-          : layout === "group-content"
-            ? "pb-1"
-            : "pb-2"
+        endsGroup
+          ? "pb-4"
+          : continues || layout === "group-header"
+            ? "pb-0"
+            : layout === "group-content"
+              ? "pb-1"
+              : "pb-2"
       }
     >
       {children}

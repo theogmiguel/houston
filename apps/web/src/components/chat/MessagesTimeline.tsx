@@ -1491,6 +1491,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       {isWorkLogRow ? (
         <WorkLogBlock
           continues={row.continuesWorkLog}
+          endsGroup={row.endsFoldGroup}
           layout={
             isExpandedToolGroup
               ? "group-content"

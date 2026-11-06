@@ -5,7 +5,7 @@ import "~/index.css";
 
 import { render } from "../../../test/render";
 import { TimelineRowTimestamp } from "./TimelineRowParts";
-import { WorkLogButton, WorkLogList } from "./WorkLog";
+import { WorkLogBlock, WorkLogButton, WorkLogList } from "./WorkLog";
 
 it("keeps the row's end padding between the trailing timestamp and the hover edge", async () => {
   await using screen = await render(
@@ -29,4 +29,22 @@ it("keeps the row's end padding between the trailing timestamp and the hover edg
   const timestampRight = timestamp!.getBoundingClientRect().right;
   const paddingRight = Number.parseFloat(getComputedStyle(row).paddingRight);
   expect(rowRight - timestampRight).toBe(paddingRight);
+});
+
+it("leaves a message-sized gap below the last row of an expanded group", async () => {
+  await using screen = await render(
+    <div>
+      <WorkLogBlock layout="group-content" continues>
+        <span>inside</span>
+      </WorkLogBlock>
+      <WorkLogBlock layout="group-content" endsGroup>
+        <span>last</span>
+      </WorkLogBlock>
+    </div>,
+  );
+
+  const gap = (label: string) =>
+    getComputedStyle(screen.getByText(label).element().parentElement!).paddingBottom;
+  expect(gap("inside")).toBe("0px");
+  expect(gap("last")).toBe("16px");
 });

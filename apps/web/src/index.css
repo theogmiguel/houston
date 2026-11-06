@@ -242,6 +242,8 @@ html[data-theme-reveal] *::after {
     Consolas, "Liberation Mono", monospace;
   /* Display face for empty states and first run; never chrome or tables. */
   --font-serif: "Source Serif 4", Georgia, serif;
+  /* Below this width the thread rail becomes a drawer (components/ui/sidebar.tsx mirrors it). */
+  --breakpoint-dock: 60rem;
 }
 
 /* Motion roles. Components name a role (`duration-(--motion-overlay-in) ease-standard`),
@@ -1228,7 +1230,7 @@ body {
   --scrim: rgba(0, 0, 0, 0.28);
   --pane: #0f0f11;
   --pane-head: #18181b;
-  --composer: #18181b;
+  --composer: var(--card);
   --focus-frame: #6f6f7a;
   --claude: #d97757;
   --codex: rgba(255, 255, 255, 0.92);

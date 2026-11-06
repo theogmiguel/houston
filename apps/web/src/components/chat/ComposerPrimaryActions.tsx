@@ -199,7 +199,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           <button
             type="button"
             className={cn(
-              "flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-full bg-(--send) text-(--send-ink) transition-colors duration-150 hover:bg-(--send)/90 disabled:pointer-events-none disabled:opacity-64 [&_svg]:pointer-events-none [&_svg]:size-3.5",
+              "flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full bg-(--accent) text-(--primary-foreground) transition-colors duration-150 hover:bg-(--accent-hover) disabled:pointer-events-none disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:size-3.5",
               boardFocusRing,
             )}
             {...pointerFocusProps}
@@ -370,11 +370,8 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     <button
       type={showResume ? "button" : "submit"}
       className={cn(
-        "relative isolate flex size-7 items-center justify-center overflow-hidden rounded-full transition-colors duration-150 enabled:cursor-pointer disabled:pointer-events-none [&_svg]:size-3.5 [&_svg]:pointer-events-none",
+        "relative isolate flex size-8 items-center justify-center overflow-hidden rounded-full bg-(--accent) text-(--primary-foreground) transition-colors duration-150 enabled:cursor-pointer enabled:hover:bg-(--accent-hover) disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-4 [&_svg]:pointer-events-none",
         boardFocusRing,
-        hasSendableContent
-          ? "bg-(--send) text-(--send-ink) enabled:hover:bg-(--send)/90 disabled:bg-(--sel) disabled:text-(--houston)"
-          : "bg-(--sel) text-(--houston)",
       )}
       {...pointerFocusProps}
       onClick={showResume ? onResume : onSubmitMessage}

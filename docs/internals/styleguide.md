@@ -132,11 +132,11 @@ neutral hover surface, not white text for a brand plate.
 
 ## Typography
 
-| Family         | Token          | Use                                                                                            |
-| -------------- | -------------- | ---------------------------------------------------------------------------------------------- |
-| Inter Variable | `--font-sans`  | All interface and body text. Bundled through `@fontsource-variable/inter`.                     |
-| JetBrains Mono | `--font-mono`  | Paths, IDs, branches, code, terminal-adjacent values. System fallback when the face is absent. |
-| Source Serif 4 | `--font-serif` | Display moments only: welcome screens and empty states. System serif fallback.                 |
+| Family         | Token          | Use                                                                                                 |
+| -------------- | -------------- | --------------------------------------------------------------------------------------------------- |
+| Inter Variable | `--font-sans`  | All interface and body text. Bundled through `@fontsource-variable/inter`.                          |
+| JetBrains Mono | `--font-mono`  | Paths, IDs, branches, code, terminal-adjacent values. System fallback when the face is absent.      |
+| Source Serif 4 | `--font-serif` | The first-run recovery title only. System serif fallback. Welcome and empty-state titles use Inter. |
 
 Body text is 13px / 18px, set on `<body>`. Hierarchy comes from weight and ink before size.
 
@@ -265,7 +265,8 @@ drop shadow or a card border.
 - **Bottom terminal.** The `ThreadTerminalDrawer` is a bottom sheet over the thread and is
   dismissed without closing the agent session.
 - **Settings.** `/settings/<section>` is a full-window route with its own left navigation
-  and a 720px (`--settings-w`) content column. The page header is the 40px top bar.
+  and a 720px (`--settings-w`) content column. The page header is the 40px top bar; each page
+  opens with its title and a one-line description from `SettingsPageContainer`, then the scope line.
 - **Content pages.** `WorkspacePageContainer` owns the column: `readable` is 896px
   (`max-w-4xl`), `wide` is 1040px, and `expanded` is 1152px (`max-w-6xl`). There is no
   `--page-w` token; `page-width` rejects a per-page pixel width.
@@ -355,8 +356,10 @@ its current value and the requested operation in the error.
 
 ### Thread composer
 
-The composer is the primary surface. The context strip sits above the card, the controls
-inside keep their own focus rings, and the footer ends in one primary action whose icon
+The composer is the primary surface: one card holding the input and its toolbar. The context
+row (project, environment, branch, permissions) sits below the card as borderless muted text,
+and the changed-files bar attaches to the card's top edge. The controls inside keep their own
+focus rings, and the footer ends in one primary action whose icon
 names what Enter does. The timeline is 14/20 prose in a 720px lane with a 0.75rem block gap.
 
 ### Pull requests and usage

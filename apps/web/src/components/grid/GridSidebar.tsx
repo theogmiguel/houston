@@ -168,9 +168,11 @@ import {
   ROW_STATUS_RECEDE,
   SidebarContent,
   SidebarHeader,
+  useSidebar,
   useSidebarVisibility,
 } from "../ui/sidebar";
 import { MOTION_FEEDBACK, MOTION_FEEDBACK_OPACITY } from "../ui/motion-recipes";
+import { isThreadRoutePathname } from "../../threadRoutes";
 import { SIDEBAR_THREAD_TAG_CLASS } from "../ui/thread-tag-recipes";
 import {
   SIDEBAR_GRID_ACTION_CLS,
@@ -192,7 +194,7 @@ import {
   SIDEBAR_PROJECT_ROW_CLS,
   SIDEBAR_PROJECT_SUMMARY_CLS,
   SIDEBAR_SECTION_ACTION_CLS,
-  SIDEBAR_THREAD_NOT_IN_GRID_CLS,
+  SIDEBAR_THREAD_ROW_INDENT_CLS,
   SidebarOptionsMenu,
   SidebarSectionHeaderRow,
   type SidebarGridOptions,
@@ -288,6 +290,11 @@ export function GridSidebar() {
   const pullRequestCount = useOpenPullRequestCount();
   const taskCount = useTaskYourTurnCount();
   const sidebarVisible = useSidebarVisibility();
+  const { isMobile: sidebarIsDrawer, setOpenMobile: setSidebarDrawerOpen } = useSidebar();
+  // Navigating from the drawer lands on the page it opened; it never stays over it.
+  useEffect(() => {
+    if (sidebarIsDrawer) setSidebarDrawerOpen(false);
+  }, [pathname, sidebarIsDrawer, setSidebarDrawerOpen]);
   const nowMinute = useNowMinute();
   const wakeClock = useSnoozeWakeClock(threads);
   const nowIso = new Date(wakeClock).toISOString();
@@ -1396,7 +1403,6 @@ export function SidebarProjectSection({
                 )}
                 dragging={dragging?.threadId === thread.id}
                 workspaceTitle={section.title}
-                notInGrid
                 runningSubagents={runningSubagents.get(subagentParentKey(thread)) ?? 0}
                 onOpen={() => onOpenUngroupedThread(thread)}
                 onSelect={(input) => onSelectThread(thread, input)}
@@ -1715,6 +1721,11 @@ export function GridGroup({
   );
 }
 
+/** States that ask for the user's eyes keep their colour; the rest rest in neutral ink. */
+function isAttentionState(state: GridThreadState): boolean {
+  return state === "running" || state === "needs" || state === "failed";
+}
+
 function ThreadStateMark({
   state,
   startedAt,
@@ -1723,17 +1734,30 @@ function ThreadStateMark({
   startedAt: string | null;
 }) {
   if (state === "idle") return null;
+  const label = gridThreadStateLabel(state);
+  if (!isAttentionState(state)) {
+    return (
+      <span
+        data-thread-status=""
+        className="inline-flex shrink-0 items-center text-secondary-label"
+      >
+        <ThreadStateGlyph state={state} className="size-3" />
+        <span className="sr-only">{label}</span>
+      </span>
+    );
+  }
   const elapsed =
     state === "running" && startedAt !== null ? <RunningElapsed startedAt={startedAt} /> : null;
   return (
     <span
+      data-thread-status=""
       className={cn(
-        "inline-flex shrink-0 items-center gap-1 text-caption leading-3.75 font-medium whitespace-nowrap tabular-nums",
+        "inline-flex shrink-0 items-center gap-1 text-xs leading-3.5 font-medium whitespace-nowrap tabular-nums",
         threadStateTextClass(state),
       )}
     >
-      <ThreadStateGlyph state={state} />
-      <span>{gridThreadStateLabel(state)}</span>
+      <ThreadStateGlyph state={state} className="size-3" />
+      <span>{label}</span>
       {elapsed}
     </span>
   );
@@ -1779,7 +1803,6 @@ export function ThreadCard({
   timeLabel = null,
   shelf = null,
   runningSubagents = 0,
-  notInGrid = false,
   onOpen,
   onSelect,
   onClose,
@@ -1805,8 +1828,6 @@ export function ThreadCard({
   timeLabel?: string | null;
   shelf?: "snoozed" | "settled" | null;
   runningSubagents?: number;
-  /** A thread no grid shows: its row sits at project level and its meta says so. */
-  notInGrid?: boolean;
   onOpen: () => void;
   onSelect: (input: { shiftKey: boolean; toggleKey: boolean }) => void;
   onClose: () => void;
@@ -1834,6 +1855,12 @@ export function ThreadCard({
   const showPullRequest = useClientSettings((settings) => settings.sidebarRowShowPullRequest);
   const showSubagents = useClientSettings((settings) => settings.sidebarRowShowSubagents);
   const state = resolveGridThreadState(thread, nowIso);
+  // The open thread: the focused cell of the open grid, or the thread's own route.
+  const routeActive = useLocation({
+    select: (location) =>
+      isThreadRoutePathname(location.pathname, scopeThreadRef(thread.environmentId, thread.id)),
+  });
+  const active = focused || routeActive;
   const attention = state === "needs" || state === "ready" || state === "back";
   const startedAt = resolveThreadWorkingStartedAt(thread);
   const pullRequestNumber = openPullRequestNumber(thread);
@@ -1933,6 +1960,7 @@ export function ThreadCard({
             onPointerDown={startRowDrag}
             tabIndex={-1}
             data-thread-key={threadKey}
+            data-thread-current={active ? "" : undefined}
             onContextMenu={(event) => {
               if (renaming) return;
               event.preventDefault();
@@ -1957,20 +1985,20 @@ export function ThreadCard({
               onOpen();
             }}
             className={cn(
-              `group/th relative flex w-full flex-col gap-1 rounded-lg py-2 pr-2.5 text-left outline-none ${MOTION_FEEDBACK} ${FOCUS_ROW_CLS}`,
-              notInGrid ? "pl-2" : "pl-7.5",
+              `group/th relative flex w-full flex-col rounded-lg py-1.5 pr-2.5 text-left outline-none ${MOTION_FEEDBACK} ${FOCUS_ROW_CLS}`,
+              SIDEBAR_THREAD_ROW_INDENT_CLS,
               "cursor-pointer",
               dragging && "opacity-50",
               selected
                 ? "bg-(--row-current)"
-                : focused
-                  ? "bg-(--sidebar-row-active)"
+                : active
+                  ? "bg-sidebar-row-selected"
                   : "hover:bg-(--sidebar-row-hover)",
             )}
           />
         }
       >
-        <div className="flex min-h-[22px] min-w-0 items-center gap-2">
+        <div className="flex min-h-4.5 min-w-0 items-center gap-2">
           {renaming ? (
             <input
               autoFocus
@@ -2009,12 +2037,13 @@ export function ThreadCard({
                   setRenaming(true);
                 }
               }}
+              aria-current={active ? "true" : undefined}
               className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left outline-none"
             >
               <span
                 className={cn(
-                  "min-w-0 flex-1 truncate text-headline leading-4.75 text-foreground",
-                  attention ? "font-semibold" : "font-medium",
+                  "min-w-0 flex-1 truncate text-headline leading-4.5 text-foreground",
+                  attention || active ? "font-semibold" : "font-medium",
                 )}
               >
                 <HighlightedText text={thread.title} query={query} />
@@ -2035,7 +2064,7 @@ export function ThreadCard({
           )}
           <span
             className={cn(
-              "absolute top-2 right-2.5 flex h-[22px] items-center gap-0.5",
+              "absolute top-1 right-2.5 flex h-[22px] items-center gap-0.5",
               MOTION_FEEDBACK_OPACITY,
               actionsVisible ? ROW_ACTIONS_VISIBLE : ROW_ACTIONS_REVEAL,
             )}
@@ -2118,20 +2147,23 @@ export function ThreadCard({
             )}
           </span>
         </div>
-        <div className="flex min-w-0 items-center gap-2 text-caption leading-3.75 text-secondary-label">
+        <div
+          data-thread-meta=""
+          className="flex min-w-0 items-center gap-2 text-xs leading-3.5 text-secondary-label"
+        >
           {showBranch ? (
             <>
               <GitBranchIcon aria-hidden className="size-3 shrink-0" />
-              <span className="min-w-0 flex-1 truncate font-mono text-2xs">
-                {branchName ?? "no branch"}
-                {notInGrid ? " · not in a grid" : ""}
-              </span>
+              <span className="min-w-0 flex-1 truncate">{branchName ?? "no branch"}</span>
             </>
-          ) : notInGrid ? (
-            <span className={SIDEBAR_THREAD_NOT_IN_GRID_CLS}>not in a grid</span>
           ) : (
             <span className="flex-1" />
           )}
+          {(thread.tags ?? []).map((tag) => (
+            <span key={tag} data-thread-tag="" className={SIDEBAR_THREAD_TAG_CLASS}>
+              {tag}
+            </span>
+          ))}
           {showSubagents && runningSubagents > 0 ? (
             <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap">
               <UsersIcon aria-hidden className="size-3 shrink-0" />
@@ -2149,6 +2181,7 @@ export function ThreadCard({
               )}
             </span>
           ) : null}
+          <ThreadStateMark state={state} startedAt={startedAt} />
           <span
             data-thread-provider-mark=""
             className={cn(
@@ -2162,22 +2195,6 @@ export function ThreadCard({
               <SidebarProviderStack thread={thread} providerEntryByInstanceId={providerEntries} />
             ) : null}
           </span>
-        </div>
-        {/* Every row is three lines tall: the third says what the agent is doing, then its tags. */}
-        <div
-          data-thread-status=""
-          className="flex min-w-0 items-center gap-1.5 text-caption leading-3.75 text-secondary-label"
-        >
-          {state === "idle" ? (
-            <span>Idle</span>
-          ) : (
-            <ThreadStateMark state={state} startedAt={startedAt} />
-          )}
-          {(thread.tags ?? []).map((tag) => (
-            <span key={tag} data-thread-tag="" className={SIDEBAR_THREAD_TAG_CLASS}>
-              {tag}
-            </span>
-          ))}
         </div>
         {selected ? (
           <span className="sr-only" aria-live="polite">

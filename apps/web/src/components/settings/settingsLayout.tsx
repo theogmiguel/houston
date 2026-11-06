@@ -21,9 +21,15 @@ import {
 import { cn } from "../../lib/utils";
 import { WorkspacePageContainer, type WorkspacePageWidth } from "../WorkspacePageContainer";
 import { Button } from "../ui/button";
+import { PageHeading } from "../ui/page-heading";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { useOptionalSettingsScope } from "./SettingsScopeContext";
 import { SettingsScopeSentence } from "./SettingsScopeSentence";
+import {
+  SETTINGS_SECTION_DESCRIPTIONS,
+  SETTINGS_SECTION_LABELS,
+  type SettingsPath,
+} from "./settingsSearch";
 import {
   isProjectScopedSettingKey,
   listProjectOverrides,
@@ -576,6 +582,31 @@ export function SettingResetButton({
   );
 }
 
+const SETTINGS_DETAIL_PAGE_HEADINGS: Readonly<
+  Record<string, { readonly title: string; readonly description: string }>
+> = {
+  "/settings/open-source-licenses": {
+    title: "Open source licenses",
+    description: "The third-party software this app includes.",
+  },
+};
+
+/** The title and one-line description every settings page opens with. */
+function SettingsPageHeading() {
+  const pathname = useLocation({
+    select: (location) => location.pathname.replace(/\/+$/, "") || "/",
+  });
+  const section =
+    (Object.hasOwn(SETTINGS_SECTION_LABELS, pathname)
+      ? {
+          title: SETTINGS_SECTION_LABELS[pathname as SettingsPath],
+          description: SETTINGS_SECTION_DESCRIPTIONS[pathname as SettingsPath],
+        }
+      : undefined) ?? SETTINGS_DETAIL_PAGE_HEADINGS[pathname];
+  if (section === undefined) return null;
+  return <PageHeading title={section.title} description={section.description} />;
+}
+
 export function SettingsPageContainer({
   children,
   className,
@@ -618,7 +649,10 @@ export function SettingsPageContainer({
             className,
           )}
         >
-          <SettingsScopeSentence />
+          <div className="flex flex-col gap-3">
+            <SettingsPageHeading />
+            <SettingsScopeSentence />
+          </div>
           {children}
         </WorkspacePageContainer>
       </div>

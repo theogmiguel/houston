@@ -141,8 +141,8 @@ export function CommandPaletteVirtualizedResults(props: CommandPaletteVirtualize
         onScroll={updateScrollFade}
         contentContainerClassName="px-2"
         className={cn(
-          "min-h-0 scroll-py-6 overflow-x-hidden overscroll-y-contain py-2 [&::-webkit-scrollbar-track]:my-2",
-          getVirtualizedScrollFadeClassName(scrollFade),
+          "min-h-0 scroll-py-6 overflow-x-hidden overscroll-y-contain pt-2 pb-4 [&::-webkit-scrollbar-track]:my-2",
+          getVirtualizedScrollFadeClassName(scrollFade, { tall: true }),
         )}
       />
     </CommandListVirtualized>

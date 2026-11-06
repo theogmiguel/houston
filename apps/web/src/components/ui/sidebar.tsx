@@ -26,7 +26,8 @@ import { announceSidebarVisibility } from "~/lib/accessibilityAnnouncements";
 const SIDEBAR_COOKIE_NAME = "sidebar_state";
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
 const SIDEBAR_WIDTH = "16rem";
-const SIDEBAR_WIDTH_MOBILE = "calc(100vw - var(--spacing(3)))";
+// The drawer keeps a docked rail's proportions and leaves a sliver of the page visible behind it.
+const SIDEBAR_WIDTH_MOBILE = "min(20rem, calc(100vw - var(--spacing(3))))";
 const SIDEBAR_WIDTH_ICON = "3rem";
 const SIDEBAR_RESIZE_DEFAULT_MIN_WIDTH = 16 * 16;
 const SIDEBAR_TITLEBAR_CONTROL_SIZE = "max-sm:[--workspace-titlebar-control-size:--spacing(8)]";
@@ -125,8 +126,9 @@ function useSidebarVisibility() {
   return isMobile ? openMobile : open;
 }
 
-// The `max-md` breakpoint, also read when a shortcut fires.
-const SIDEBAR_MOBILE_QUERY = "(max-width: 767px)";
+// The `max-dock` breakpoint (`--breakpoint-dock` in index.css), also read when a shortcut fires.
+// Below it the rail is a drawer: a docked 240px+ rail leaves too little room for a thread.
+const SIDEBAR_MOBILE_QUERY = "(width < 60rem)";
 
 function isMobileViewport(): boolean {
   return typeof window !== "undefined" && window.matchMedia(SIDEBAR_MOBILE_QUERY).matches;
@@ -222,6 +224,12 @@ function SidebarProvider({
   const setMobileSheetElement = (element: HTMLDivElement | null) => {
     setMobileSheetMounted(element !== null);
   };
+
+  // The drawer is transient: a window widened past the breakpoint docks the rail by the user's
+  // own `open` preference, and narrowing again starts with the drawer closed.
+  React.useEffect(() => {
+    if (!isMobile) store.setOpenMobile(false);
+  }, [isMobile, store]);
 
   const state = resolveSidebarState({ isMobile, open, openMobile });
 
@@ -369,7 +377,7 @@ function Sidebar({
   return (
     <SidebarInstanceContext value={instanceContextValue}>
       <div
-        className="group peer hidden text-sidebar-foreground md:block"
+        className="group peer hidden text-sidebar-foreground dock:block"
         data-collapsible={state === "collapsed" ? collapsible : ""}
         data-collapsible-mode={collapsible}
         inert={offcanvasCollapsed}
@@ -391,7 +399,7 @@ function Sidebar({
         />
         <div
           className={cn(
-            "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) md:flex",
+            "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) dock:flex",
             side === "left"
               ? "left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]"
               : "right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]",
@@ -632,7 +640,7 @@ function SidebarInset({ className, ...props }: React.ComponentProps<"main">) {
     <main
       className={cn(
         "relative flex min-w-0 w-full flex-1 flex-col bg-background",
-        "md:peer-data-[variant=inset]:peer-data-[state=collapsed]:ms-2 md:peer-data-[variant=inset]:m-2 md:peer-data-[variant=inset]:ms-0 md:peer-data-[variant=inset]:rounded-[var(--r-group)]",
+        "dock:peer-data-[variant=inset]:peer-data-[state=collapsed]:ms-2 dock:peer-data-[variant=inset]:m-2 dock:peer-data-[variant=inset]:ms-0 dock:peer-data-[variant=inset]:rounded-[var(--r-group)]",
         className,
       )}
       data-slot="sidebar-inset"

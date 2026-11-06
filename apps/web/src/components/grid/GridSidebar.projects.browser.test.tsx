@@ -220,7 +220,7 @@ describe("project sections", () => {
     expect(screen.getByRole("button", { name: /^Grid 2 empty$/ }).element()).toBeVisible();
     expect(screen.getByRole("button", { name: "New grid in notes" }).element()).toBeVisible();
     expect(screen.getByRole("button", { name: "New grid" }).element()).toBeVisible();
-    expect(screen.container.textContent).toContain("not in a grid");
+    expect(screen.container.textContent).not.toContain("not in a grid");
     expect(screen.container.textContent).not.toContain("Ungrouped");
   });
 

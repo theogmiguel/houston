@@ -25,8 +25,9 @@ open and close without animation either way.
 
 **Settings ▸ Appearance ▸ Typography** sets the interface font and size, and the code font
 used by code blocks, diffs and file previews. **Separate fonts** adds independent prompt and
-terminal fonts. **Word wrap** wraps long lines in code blocks, diffs and file previews by
-default.
+terminal fonts. **Word wrap** wraps long lines in code blocks, diffs and file previews. It is
+off by default, so long lines scroll sideways; diffs and file previews also have their own wrap
+toggle.
 Each font picker has a reset button. A font must be installed on the machine; Houston does
 not download fonts.
 

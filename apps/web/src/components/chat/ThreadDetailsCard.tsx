@@ -37,7 +37,7 @@ export function ThreadDetailsCard({
   anchor,
   handle,
   contentKey,
-  defaultOpen = true,
+  defaultOpen = false,
   allowInline = true,
   open,
   onOpenChange,
@@ -50,7 +50,7 @@ export function ThreadDetailsCard({
   handle: ReturnType<typeof PopoverCreateHandle>;
   /** Changes when the set of rendered items changes, so cached heights are measured again. */
   contentKey: string;
-  /** Route threads open by default; a grid cell stays closed until its top bar toggles it. */
+  /** Closed until the header toggle or its shortcut opens it; a stored choice wins. */
   defaultOpen?: boolean;
   /** Compact and glance grid panes have no room for an inline card, so they only pop over. */
   allowInline?: boolean;

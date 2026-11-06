@@ -611,3 +611,13 @@ describe("ClientSettings composer context strip", () => {
     ).toBe(false);
   });
 });
+
+describe("ClientSettingsSchema wordWrap", () => {
+  it("defaults to no wrapping so code keeps its indentation", () => {
+    expect(decodeClientSettings({}).wordWrap).toBe(false);
+  });
+
+  it("keeps a saved choice to wrap", () => {
+    expect(decodeClientSettings({ wordWrap: true }).wordWrap).toBe(true);
+  });
+});

@@ -61,8 +61,17 @@ async function bootDraftComposer() {
   return app;
 }
 
+function resolveColor(cssValue: string): string {
+  const probe = document.createElement("div");
+  probe.style.backgroundColor = cssValue;
+  document.body.append(probe);
+  const resolved = getComputedStyle(probe).backgroundColor;
+  probe.remove();
+  return resolved;
+}
+
 it(
-  "lays out the context strip, the footer's primary action and the model shortcut",
+  "puts the context row under one composer card and starts with thread details closed",
   async () => {
     using _environment = installFakeEnvironment([]);
     await using _app = await bootDraftComposer();
@@ -78,18 +87,24 @@ it(
     );
     const card = document.querySelector<HTMLElement>("[data-chat-composer-main-surface]");
     expect(card).not.toBeNull();
-    // The strip precedes the card in the DOM and its lower edge slides under the card's top.
-    expect(strip.compareDocumentPosition(card!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The strip follows the card in the DOM and sits entirely below it, as plain text controls.
+    expect(strip.compareDocumentPosition(card!) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
     const stripBox = strip.getBoundingClientRect();
     const cardBox = card!.getBoundingClientRect();
-    expect(stripBox.bottom).toBeGreaterThan(cardBox.top);
-    expect(stripBox.top).toBeLessThan(cardBox.top);
-    // Inset from the card's edges, like a tab.
-    expect(stripBox.left).toBeGreaterThan(cardBox.left);
-    expect(stripBox.right).toBeLessThan(cardBox.right);
+    expect(stripBox.top).toBeGreaterThanOrEqual(cardBox.bottom);
+    expect(stripBox.left).toBeGreaterThanOrEqual(cardBox.left);
+    expect(stripBox.right).toBeLessThanOrEqual(cardBox.right + 1);
+    const stripStyle = getComputedStyle(strip);
+    expect(stripStyle.borderTopWidth).toBe("0px");
+    expect(stripStyle.backgroundColor).toBe("rgba(0, 0, 0, 0)");
+    expect(stripStyle.fontSize).toBe("12px");
+
+    // The details card opens only from its toggle or shortcut.
+    expect(document.querySelector('[aria-label="Thread details"]')).toBeNull();
 
     const footer = document.querySelector<HTMLElement>('[data-chat-composer-footer="true"]');
     expect(footer).not.toBeNull();
+    expect(cardBox.top).toBeLessThanOrEqual(footer!.getBoundingClientRect().top);
     const lastButton = () => [...footer!.querySelectorAll<HTMLButtonElement>("button")].at(-1)!;
     // The label reads "Environment disconnected" until the connection is up.
     await vi.waitFor(() => expect(lastButton().getAttribute("aria-label")).toBe("Submit message"), {
@@ -99,7 +114,23 @@ it(
     expect(footer!.querySelectorAll('button[type="submit"]')).toHaveLength(1);
     expect(lastButton().type).toBe("submit");
 
+    // The send button is a 32px accent-filled circle, dimmer while there is nothing to send.
+    const send = lastButton();
+    const emptyStyle = getComputedStyle(send);
+    expect(send.disabled).toBe(true);
+    expect(send.getBoundingClientRect().width).toBe(32);
+    expect(send.getBoundingClientRect().height).toBe(32);
+    expect(emptyStyle.backgroundColor).toBe(resolveColor("var(--accent)"));
+    expect(Number(emptyStyle.opacity)).toBeLessThan(0.5);
+
     await userEvent.click(page.getByTestId("composer-editor"));
+    await userEvent.keyboard("hello");
+    await vi.waitFor(() => expect(send.disabled).toBe(false));
+    const readyStyle = getComputedStyle(send);
+    expect(readyStyle.backgroundColor).toBe(resolveColor("var(--accent)"));
+    expect(Number(readyStyle.opacity)).toBe(1);
+    await userEvent.keyboard("{Control>}a{/Control}{Backspace}");
+
     await userEvent.keyboard("{Control>}{Shift>}m{/Shift}{/Control}");
     await expect.element(page.getByPlaceholder("Search models")).toBeVisible();
   },

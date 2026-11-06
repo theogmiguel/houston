@@ -28,7 +28,12 @@ function CommandDialogTrigger(props: CommandDialogPrimitive.Trigger.Props) {
 function CommandDialogBackdrop({ className, ...props }: CommandDialogPrimitive.Backdrop.Props) {
   return (
     <CommandDialogPrimitive.Backdrop
-      className={cn(DIALOG_BACKDROP_CLASS, className)}
+      // The palette floats over a busy workspace, so it dims more than an ordinary dialog.
+      className={cn(
+        DIALOG_BACKDROP_CLASS,
+        "[--dialog-scrim:color-mix(in_srgb,#000_60%,transparent)]",
+        className,
+      )}
       data-slot="command-dialog-backdrop"
       {...props}
     />

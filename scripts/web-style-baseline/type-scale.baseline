@@ -9,7 +9,7 @@
 1 apps/web/src/components/ui/alert.tsx
 2 apps/web/src/components/ui/badge.tsx
 2 apps/web/src/components/ui/button.tsx
-3 apps/web/src/components/ui/empty.tsx
+2 apps/web/src/components/ui/empty.tsx
 1 apps/web/src/components/ui/input-group.tsx
 1 apps/web/src/components/ui/input.tsx
 1 apps/web/src/components/ui/kbd.tsx
