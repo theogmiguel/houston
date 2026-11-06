@@ -850,12 +850,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       ) : null}
       <div
         className={cn(
-          "relative min-w-0 max-w-[82%] rounded-(--r-group) text-prose leading-5",
-          // A message from another agent is context, not the user's own: collapsed it is a quiet
-          // disclosure row; opened, it takes the bubble fill.
-          folded && !expanded
-            ? "text-secondary-label hover:text-foreground"
-            : "bg-(--bubble) text-(--bubble-ink)",
+          "relative min-w-0 max-w-[82%] rounded-(--r-group) border border-border bg-(--bubble) text-prose leading-5 text-(--bubble-ink)",
           mediaAboveText && "rounded-tr-(--r-badge)",
           BUBBLE_CHIP_CLASS_NAME,
           !folded && !mediaOnly && !fileCardsOnly && !audioOnly && "px-3.5 py-2.5",

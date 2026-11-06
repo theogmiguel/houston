@@ -62,22 +62,23 @@ describe("SettingsPageContainer heading", () => {
 });
 
 describe("SettingsBreadcrumb", () => {
-  it("names the settings area without repeating the page title", async () => {
-    await using screen = await render(
-      <>
-        <SettingsBreadcrumb />
-        <SettingsPageContainer>
-          <p>content</p>
-        </SettingsPageContainer>
-      </>,
-      { router: "/settings/providers" },
-    );
+  it("shows Settings / <Page> for the current settings page", async () => {
+    await using screen = await render(<SettingsBreadcrumb pathname="/settings/providers" />, {
+      router: "/settings/providers",
+    });
+
+    const crumbs = screen.getByRole("navigation", { name: "Settings breadcrumb" }).element();
+    expect(crumbs.textContent).toBe("Settings/Providers");
+    expect(crumbs.querySelector("[aria-current=page]")?.textContent).toBe("Providers");
+  });
+
+  it("names only Settings for a path without a page label", async () => {
+    await using screen = await render(<SettingsBreadcrumb pathname="/settings" />, {
+      router: "/settings",
+    });
 
     const crumbs = screen.getByRole("navigation", { name: "Settings breadcrumb" }).element();
     expect(crumbs.textContent).toBe("Settings");
-    await expect
-      .element(screen.getByRole("heading", { level: 1, name: "Providers" }))
-      .toBeVisible();
   });
 });
 
@@ -94,6 +95,8 @@ describe("SettingsSection label", () => {
     const style = getComputedStyle(label);
     expect(style.fontSize).toBe("13px");
     expect(style.fontWeight).toBe("600");
+    const section = label.closest("section")!;
+    expect(label.getBoundingClientRect().left).toBe(section.getBoundingClientRect().left);
     // foreground/80 is a translucent colour, so its alpha is below 1.
     expect(style.color).toMatch(/^(rgba\(.*,\s*0\.8\)|color\(.*\/\s*0\.8\)|oklab\(.*\/\s*0\.8\))/);
   });

@@ -248,7 +248,7 @@ export function SettingsSection({
       {hideTitle ? (
         <h2 className="sr-only">{title}</h2>
       ) : (
-        <div data-settings-scroll-target className="flex items-center justify-between gap-4 px-1">
+        <div data-settings-scroll-target className="flex items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-1">
             <h2 className="flex items-center gap-2 text-headline font-semibold text-foreground/80">
               {icon}

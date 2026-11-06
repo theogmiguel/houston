@@ -99,6 +99,18 @@ it(
     expect(stripStyle.backgroundColor).toBe("rgba(0, 0, 0, 0)");
     expect(stripStyle.fontSize).toBe("12px");
 
+    // The text sits well inside the card, and the resting input is a roomy 72px box.
+    const editor = document.querySelector<HTMLElement>('[data-testid="composer-editor"]')!;
+    const editorBox = editor.getBoundingClientRect();
+    const editorStyle = getComputedStyle(editor);
+    expect(editorBox.left + parseFloat(editorStyle.paddingLeft) - cardBox.left).toBeGreaterThanOrEqual(
+      16,
+    );
+    expect(editorBox.top + parseFloat(editorStyle.paddingTop) - cardBox.top).toBeGreaterThanOrEqual(
+      10,
+    );
+    expect(editorBox.height).toBeGreaterThanOrEqual(72);
+
     // The details card opens only from its toggle or shortcut.
     expect(document.querySelector('[aria-label="Thread details"]')).toBeNull();
 
@@ -121,7 +133,7 @@ it(
     expect(send.getBoundingClientRect().width).toBe(32);
     expect(send.getBoundingClientRect().height).toBe(32);
     expect(emptyStyle.backgroundColor).toBe(resolveColor("var(--accent)"));
-    expect(Number(emptyStyle.opacity)).toBeLessThan(0.5);
+    expect(Number(emptyStyle.opacity)).toBeCloseTo(0.6, 2);
 
     await userEvent.click(page.getByTestId("composer-editor"));
     await userEvent.keyboard("hello");

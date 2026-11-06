@@ -1,4 +1,8 @@
-import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@houston-app/contracts";
+import {
+  ProviderDriverKind,
+  ProviderInstanceId,
+  type ServerProvider,
+} from "@houston-app/contracts";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
@@ -51,7 +55,7 @@ const missing = (driver: string) =>
     auth: { status: "unknown" },
   });
 
-it("states ready providers in one line and keeps install links behind a disclosure", async () => {
+it("lists every provider with its version and sign-in state or install hint", async () => {
   state.providers = [
     provider("claudeAgent"),
     provider("codex"),
@@ -60,20 +64,24 @@ it("states ready providers in one line and keeps install links behind a disclosu
   ];
   await using _screen = await render(<NoProjectsHero />, { router: "/" });
 
-  await expect.element(page.getByText("Claude Code and Codex ready")).toBeVisible();
-  const disclosure = page.getByRole("button", { name: "2 more providers to set up" });
-  await expect.element(disclosure).toBeVisible();
-  expect(page.getByText("How to install").elements()).toHaveLength(0);
-
-  await userEvent.click(disclosure);
-  await expect.element(page.getByText("OpenCode")).toBeVisible();
-  await expect.element(page.getByRole("button", { name: "How to install" }).first()).toBeVisible();
+  await expect.element(page.getByText("Claude Code", { exact: true })).toBeVisible();
+  await expect.element(page.getByText("Codex", { exact: true })).toBeVisible();
+  await expect.element(page.getByText("OpenCode", { exact: true })).toBeVisible();
+  expect(page.getByText("1.0.0 · signed in").elements()).toHaveLength(2);
+  expect(page.getByText("Not installed").elements()).toHaveLength(2);
+  expect(page.getByRole("button", { name: "How to install" }).elements()).toHaveLength(2);
 });
 
-it("shows no disclosure when every provider is ready", async () => {
-  state.providers = [provider("claudeAgent"), provider("codex")];
+it("sets the install action apart from the muted 'Not installed' status", async () => {
+  state.providers = [provider("claudeAgent"), missing("opencode")];
   await using _screen = await render(<NoProjectsHero />, { router: "/" });
 
-  await expect.element(page.getByText("Claude Code and Codex ready")).toBeVisible();
-  expect(page.getByRole("button", { name: /to set up/ }).elements()).toHaveLength(0);
+  const status = getComputedStyle(page.getByText("Not installed").element());
+  const action = getComputedStyle(page.getByRole("button", { name: "How to install" }).element());
+  expect(action.color).not.toBe(status.color);
+  await userEvent.hover(page.getByRole("button", { name: "How to install" }));
+  expect(
+    getComputedStyle(page.getByRole("button", { name: "How to install" }).element())
+      .textDecorationLine,
+  ).toBe("underline");
 });

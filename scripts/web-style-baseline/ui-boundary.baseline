@@ -118,7 +118,7 @@
 19 apps/web/src/components/chat/TimelineRowParts.tsx
 17 apps/web/src/components/chat/TimelineSystemDivider.tsx
 4 apps/web/src/components/chat/TimelineToolActivityIcon.tsx
-107 apps/web/src/components/chat/TimelineUserMessageRow.tsx
+108 apps/web/src/components/chat/TimelineUserMessageRow.tsx
 6 apps/web/src/components/chat/TimelineV2EventRow.tsx
 45 apps/web/src/components/chat/TimelineWorkEntryRow.tsx
 25 apps/web/src/components/chat/TimelineWorkGroupRows.tsx
@@ -206,7 +206,7 @@
 6 apps/web/src/components/grid/GridHost.tsx
 2 apps/web/src/components/grid/GridLayoutMenu.tsx
 5 apps/web/src/components/grid/GridShelves.tsx
-98 apps/web/src/components/grid/GridSidebar.tsx
+96 apps/web/src/components/grid/GridSidebar.tsx
 4 apps/web/src/components/grid/GridThreadBranch.tsx
 13 apps/web/src/components/grid/GridThreadCell.tsx
 13 apps/web/src/components/HostedEmptyState.tsx
@@ -215,7 +215,7 @@
 9 apps/web/src/components/ManagedPolicy.tsx
 18 apps/web/src/components/media/MediaVideoPlayer.tsx
 9 apps/web/src/components/NoActiveThreadState.tsx
-9 apps/web/src/components/NoProjectsHero.tsx
+21 apps/web/src/components/NoProjectsHero.tsx
 9 apps/web/src/components/onboarding/FirstRunGate.tsx
 150 apps/web/src/components/onboarding/WelcomeWizard.tsx
 7 apps/web/src/components/permissions/PermissionChecklist.tsx
@@ -368,6 +368,7 @@
 8 apps/web/src/components/settings/SecretsSettings.tsx
 5 apps/web/src/components/settings/SessionPermissions.tsx
 39 apps/web/src/components/settings/SettingInheritance.tsx
+2 apps/web/src/components/settings/SettingsBreadcrumb.tsx
 7 apps/web/src/components/settings/SettingsFontPreviews.tsx
 7 apps/web/src/components/settings/SettingsGroup.tsx
 26 apps/web/src/components/settings/settingsLayout.tsx

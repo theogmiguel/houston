@@ -90,3 +90,45 @@ it("sets the project segment in regular muted ink and the thread title in medium
   expect(title.fontWeight).toBe("500");
   expect(project.color).not.toBe(title.color);
 });
+
+it.each([640, 1100])(
+  "truncates a long thread title with an ellipsis in a %ipx header, clear of the toolbar",
+  async (headerWidth) => {
+    const longTitle =
+      "Investigate intermittent ECONNRESET errors on the /v1/webhooks/ingest endpoint when payloads exceed 1 MB behind the load balancer";
+    await using screen = await render(
+      <div style={{ width: headerWidth }} className="flex items-center gap-2 px-3">
+        <ChatHeader
+          activeThreadEnvironmentId={EnvironmentId.make("environment")}
+          activeThreadId={ThreadId.make("thread")}
+          activeThreadTitle={longTitle}
+          isServerThread
+          activeProject={{ title: "atlas-api", isScratch: false } as never}
+          parentThreadLink={null}
+          onOpenThread={() => {}}
+        />
+        <div data-testid="toolbar" className="ms-auto flex shrink-0 gap-1">
+          <button type="button" className="size-7">
+            A
+          </button>
+          <button type="button" className="size-7">
+            B
+          </button>
+        </div>
+      </div>,
+    );
+
+    const text = screen
+      .getByRole("heading", { level: 2 })
+      .element()
+      .querySelector<HTMLElement>("[data-slot=workspace-breadcrumb-text]")!;
+    const toolbar = screen.getByTestId("toolbar").element();
+    expect(text.scrollWidth, "the title overflows its box, so it is cut").toBeGreaterThan(
+      text.clientWidth,
+    );
+    expect(getComputedStyle(text).textOverflow).toBe("ellipsis");
+    // A wide header keeps a readable measure instead of running to the toolbar.
+    const gap = toolbar.getBoundingClientRect().left - text.getBoundingClientRect().right;
+    expect(gap).toBeGreaterThanOrEqual(headerWidth > 900 ? 48 : 0);
+  },
+);

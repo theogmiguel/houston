@@ -43,4 +43,49 @@ describe("CommandPalette list edge", () => {
       })
       .toEqual({ overflows: true, faded: true });
   });
+
+  // The default action list is about 436px tall, so these windows leave it taller than its panel.
+  it.each([420, 480, 560])(
+    "ends the list under a whole row in a %ipx-tall window",
+    async (height) => {
+      useCommandPaletteStore.setState(useCommandPaletteStore.getInitialState(), true);
+      await page.viewport(800, height);
+      await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
+
+      openCommandPalette({});
+      await expect
+        .element(page.getByPlaceholder("Search commands, projects, and threads..."))
+        .toBeVisible();
+
+      await expect
+        .poll(() => {
+          const scroller = document.querySelector<HTMLElement>(
+            '[data-slot="command-list"] .virtualized-scroll-fade',
+          );
+          if (!scroller) return "no list";
+          const listBox = scroller.getBoundingClientRect();
+          let rowParent: Element = scroller;
+          while (
+            rowParent.children.length === 1 &&
+            rowParent.firstElementChild?.firstElementChild
+          ) {
+            rowParent = rowParent.firstElementChild;
+          }
+          const rows = Array.from(rowParent.children).filter(
+            (row): row is HTMLElement => row instanceof HTMLElement && row.offsetHeight > 0,
+          );
+          const visible = rows.filter(
+            (row) => row.getBoundingClientRect().top < listBox.bottom - 1,
+          );
+          const last = visible.at(-1)?.getBoundingClientRect();
+          if (!last) return "no rows";
+          const overflowing = scroller.scrollHeight - scroller.clientHeight > 1;
+          return {
+            cutPx: Math.max(0, Math.round(last.bottom - listBox.bottom)),
+            overflowing,
+          };
+        })
+        .toEqual({ cutPx: 0, overflowing: true });
+    },
+  );
 });

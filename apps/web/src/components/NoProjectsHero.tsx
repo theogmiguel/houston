@@ -1,6 +1,12 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { ServerProvider } from "@houston-app/contracts";
-import { FolderPlusIcon, GitForkIcon, MessageSquareDashedIcon } from "lucide-react";
+import {
+  CheckIcon,
+  CircleMinusIcon,
+  FolderPlusIcon,
+  GitForkIcon,
+  MessageSquareDashedIcon,
+} from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 
 import { APP_DISPLAY_NAME } from "../branding";
@@ -18,9 +24,7 @@ import {
   usePrimaryEnvironmentId,
 } from "../state/environments";
 import { primaryServerProvidersAtom } from "../state/server";
-import { formatReadyProviders } from "../onboarding/welcomeProviders.logic";
 import { Button } from "./ui/button";
-import { ProviderStatusSummary } from "./ui/provider-status-summary";
 import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from "./ui/empty";
 import { SidebarInset } from "./ui/sidebar";
 import { HoustonMark } from "./HoustonWordmark";
@@ -84,29 +88,6 @@ export function NoProjectsHero() {
     const provider = byDriver.get(driver);
     return provider === undefined ? [] : [{ driver, provider }];
   }).slice(0, 5);
-  const readyProviders = visibleProviders.filter(
-    ({ provider }) => getOnboardingProviderState(provider) === "ready",
-  );
-  const pendingProviders = visibleProviders.filter(
-    ({ provider }) => getOnboardingProviderState(provider) !== "ready",
-  );
-  const pendingRows = pendingProviders.map(({ driver, provider }) => {
-    const state = getOnboardingProviderState(provider);
-    return {
-      key: driver,
-      label: providerLabel(provider),
-      detail: providerDetail(provider),
-      actionLabel:
-        state === "signIn" || provider.auth.status === "unauthenticated"
-          ? "Sign in"
-          : !provider.installed
-            ? "How to install"
-            : null,
-    };
-  });
-  const readyLabel = formatReadyProviders(
-    readyProviders.map(({ provider }) => providerLabel(provider)),
-  );
   const scratchTargetEnvironmentId = scratchEnvironmentId(primaryEnvironmentId);
   const openProviderSetup = () => {
     void navigate({ to: "/settings/providers" });
@@ -154,13 +135,52 @@ export function NoProjectsHero() {
               </Button>
             </div>
             {visibleProviders.length > 0 ? (
-              <ProviderStatusSummary
-                className="mt-4"
-                readyLabel={readyLabel}
-                readyCount={readyProviders.length}
-                pending={pendingRows}
-                onAction={openProviderSetup}
-              />
+              <div className="mt-5 w-full overflow-hidden rounded-(--r-group) border border-border bg-card text-left">
+                {visibleProviders.map(({ driver, provider }, index) => {
+                  const state = getOnboardingProviderState(provider);
+                  const actionLabel =
+                    state === "signIn" || provider.auth.status === "unauthenticated"
+                      ? "Sign in"
+                      : !provider.installed
+                        ? "How to install"
+                        : null;
+                  return (
+                    <div
+                      key={driver}
+                      className={`flex h-9 items-center gap-2.5 px-3.5 ${index === 0 ? "" : "border-t border-border"}`}
+                    >
+                      {state === "ready" ? (
+                        <CheckIcon className="size-3.5 shrink-0 text-success" aria-hidden="true" />
+                      ) : (
+                        <CircleMinusIcon
+                          className="size-3.5 shrink-0 text-icon-muted"
+                          aria-hidden="true"
+                        />
+                      )}
+                      <span
+                        className={`min-w-0 flex-1 truncate text-sm ${state === "ready" ? "text-foreground" : "text-secondary-foreground"}`}
+                      >
+                        {providerLabel(provider)}
+                      </span>
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {providerDetail(provider)}
+                      </span>
+                      {actionLabel !== null ? (
+                        <Button
+                          size="xs"
+                          variant={actionLabel === "How to install" ? "link" : "ghost"}
+                          className={
+                            actionLabel === "How to install" ? "text-info-foreground" : undefined
+                          }
+                          onClick={openProviderSetup}
+                        >
+                          {actionLabel}
+                        </Button>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
             ) : null}
             {scratchTargetEnvironmentId === null ? null : (
               <Button

@@ -92,7 +92,7 @@ export const SIDEBAR_SECTION_ACTION_CLS =
   "-my-1.5 inline-grid size-6 shrink-0 cursor-pointer place-items-center rounded-(--r-ctl) text-secondary-label transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
 const SIDEBAR_SECTION_HEADER_ROW_CLS =
-  "group/section flex h-(--h-row) shrink-0 items-center gap-1 rounded-lg pr-1 pl-2 text-xs font-semibold uppercase tracking-wide text-secondary-label";
+  "group/section flex h-(--h-row) shrink-0 items-center gap-1 rounded-lg pr-1 pl-2 text-xs font-semibold text-secondary-label";
 
 const SIDEBAR_SECTION_HEADER_ACTIONS_CLS =
   "ml-auto flex items-center gap-0.5 opacity-0 transition-opacity duration-(--motion-feedback) ease-standard group-hover/section:opacity-100 group-focus-within/section:opacity-100";

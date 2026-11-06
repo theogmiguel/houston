@@ -3,8 +3,8 @@ import { assert, describe, it } from "vite-plus/test";
 import { resolveInitialThreadSidebarWidth } from "./threadSidebarWidth";
 
 describe("thread sidebar width", () => {
-  it("opens at the 288px default rail", () => {
-    assert.equal(resolveInitialThreadSidebarWidth(null, 1600), 288);
+  it("opens at the 312px default rail", () => {
+    assert.equal(resolveInitialThreadSidebarWidth(null, 1600), 312);
   });
 
   it("keeps a stored width and clamps it to the viewport", () => {

@@ -3,6 +3,8 @@ import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@houston
 import type { Thread } from "../types";
 import { makeThreadFixture } from "../test-fixtures";
 import {
+  COMMAND_PALETTE_LIST_BOTTOM_INSET_PX,
+  snapCommandPaletteListHeight,
   newThreadNoProjectIndex,
   buildNestedSearchItems,
   resolveCommandPaletteProject,
@@ -972,5 +974,38 @@ describe("add-project intent", () => {
       { _tag: "OpenAddProject", request: { action: "clone" } },
     );
     expect(state.openIntent).toEqual({ kind: "add-project", request: { action: "clone" } });
+  });
+});
+
+describe("snapCommandPaletteListHeight", () => {
+  const rowBottoms = [32, 64, 112, 144];
+
+  it("ends the list at the last row that fits whole with the bottom inset reserved", () => {
+    expect(
+      snapCommandPaletteListHeight({
+        rowBottoms,
+        contentHeightPx: 300,
+        availablePx: 112 + COMMAND_PALETTE_LIST_BOTTOM_INSET_PX,
+      }),
+    ).toBe(112);
+    expect(
+      snapCommandPaletteListHeight({
+        rowBottoms,
+        contentHeightPx: 300,
+        availablePx: 112 + COMMAND_PALETTE_LIST_BOTTOM_INSET_PX - 1,
+      }),
+    ).toBe(64);
+  });
+
+  it("leaves the list alone when its content already fits", () => {
+    expect(
+      snapCommandPaletteListHeight({ rowBottoms, contentHeightPx: 150, availablePx: 200 }),
+    ).toBeUndefined();
+  });
+
+  it("leaves the list alone when not even the first row fits", () => {
+    expect(
+      snapCommandPaletteListHeight({ rowBottoms, contentHeightPx: 300, availablePx: 30 }),
+    ).toBeUndefined();
   });
 });

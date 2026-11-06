@@ -398,6 +398,9 @@ describe("project sections", () => {
     );
 
     expect(screen.container.textContent).toContain("Projects");
+    const label = getComputedStyle(screen.getByText("Projects").element());
+    expect(label.textTransform).toBe("none");
+    expect(label.letterSpacing).toBe("normal");
     const add = screen.getByRole("button", { name: "Add project" }).element();
     const viewOptions = screen.getByRole("button", { name: "View options" }).element();
     const actions = add.parentElement as HTMLElement;

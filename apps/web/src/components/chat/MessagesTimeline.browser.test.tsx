@@ -787,7 +787,7 @@ describe("MessagesTimeline agent messages", () => {
     expect(screen.text()).not.toContain("drops the index");
   });
 
-  it("shows a collapsed agent message as a quiet row without outline or fill, and fills it once opened", async () => {
+  it("keeps a collapsed agent message in the filled, outlined bubble at full-strength ink", async () => {
     setup();
     await using screen = await renderTimeline([
       message(AGENT_MESSAGE, { createdBy: "agent", senderThreadId: SENDER_THREAD_ID }),
@@ -795,12 +795,15 @@ describe("MessagesTimeline agent messages", () => {
     const row = screen.button(/^Agent/);
     const card = row.parentElement!;
     const collapsed = getComputedStyle(card);
-    expect(collapsed.borderTopWidth).toBe("0px");
-    expect(collapsed.backgroundColor).toBe("rgba(0, 0, 0, 0)");
+    expect(collapsed.borderTopWidth).toBe("1px");
+    expect(collapsed.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+    const collapsedColor = collapsed.color;
 
     await click(row);
-    expect(getComputedStyle(card).borderTopWidth).toBe("0px");
-    expect(getComputedStyle(card).backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+    const opened = getComputedStyle(card);
+    expect(opened.borderTopWidth).toBe("1px");
+    expect(opened.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+    expect(opened.color).toBe(collapsedColor);
   });
 
   it("leaves messages sent by Houston as full bubbles", async () => {

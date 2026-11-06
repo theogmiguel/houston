@@ -329,7 +329,8 @@ export const ChatHeader = memo(function ChatHeader({
             </WorkspaceBreadcrumbSeparator>
           </>
         ) : null}
-        <WorkspaceBreadcrumbItem current className="min-w-10 flex-1">
+        {/* 48rem keeps a long title cut with an ellipsis well short of the toolbar in a wide header. */}
+        <WorkspaceBreadcrumbItem current className="min-w-10 max-w-3xl flex-1">
           {renamingTitle !== null ? (
             <input
               autoFocus

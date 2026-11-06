@@ -361,20 +361,23 @@ describe("ThreadCard layout", () => {
 
     const meta = row.querySelector<HTMLElement>("[data-thread-meta]")!;
     const title = screen.getByText("Split drawer state from the thread store").element();
-    const time = screen.getByText("9:00").element();
+    const time = meta.querySelector<HTMLElement>("[data-thread-time]")!;
     const branch = screen.getByText("houston/split-drawer-state").element();
     expect(meta.contains(branch)).toBe(true);
     expect(getComputedStyle(branch).fontFamily).not.toContain("Mono");
     expect(getComputedStyle(branch).fontSize).toBe("12px");
     expect(getComputedStyle(title).fontSize).toBe("13px");
-    expect(getComputedStyle(title).fontWeight).toBe("400");
+    expect(getComputedStyle(title).fontWeight).toBe("500");
+    expect(getComputedStyle(time).fontSize).toBe("12px");
 
-    // The time sits on the title's line, to its right.
+    // The time follows the branch on the second line, so the title keeps the full row width.
     const titleBox = title.getBoundingClientRect();
     const timeBox = time.getBoundingClientRect();
-    expect(timeBox.left).toBeGreaterThan(titleBox.left);
-    expect(Math.abs(timeBox.top - titleBox.top)).toBeLessThan(6);
-    expect(branch.getBoundingClientRect().top).toBeGreaterThan(titleBox.bottom - 2);
+    const branchBox = branch.getBoundingClientRect();
+    expect(timeBox.left).toBeGreaterThanOrEqual(branchBox.right);
+    expect(Math.abs(timeBox.top - branchBox.top)).toBeLessThan(6);
+    expect(timeBox.top).toBeGreaterThan(titleBox.bottom - 2);
+    expect(branchBox.top).toBeGreaterThan(titleBox.bottom - 2);
     expect(row.textContent).not.toContain("not in a grid");
   });
 
@@ -399,7 +402,7 @@ describe("ThreadCard selected state", () => {
     expect(row.hasAttribute("data-thread-current")).toBe(true);
     expect(getComputedStyle(row).backgroundColor).toBe(tokenBackground("--sidebar-row-selected"));
     const title = screen.getByText("Split drawer state from the thread store").element();
-    expect(getComputedStyle(title).fontWeight).toBe("500");
+    expect(getComputedStyle(title).fontWeight).toBe("600");
     expect(row.querySelector("[aria-current]")).not.toBeNull();
   });
 
@@ -471,7 +474,7 @@ describe("ThreadCard status marks", () => {
     expect(getComputedStyle(screen.getByText("Running").element()).color).toBe(accentColor());
   });
 
-  it("keeps the time on the title line and the state and tags on the one meta line", async () => {
+  it("puts the time after the branch on the meta line and gives the title the full row", async () => {
     await using screen = await render(
       card(
         thread({
@@ -494,7 +497,18 @@ describe("ThreadCard status marks", () => {
     expect(status?.textContent).toContain("Running");
     const tags = [...meta!.querySelectorAll("[data-thread-tag]")].map((tag) => tag.textContent);
     expect(tags).toEqual(["bug", "linux"]);
-    expect(screen.getByText("9:00").element()).toBeVisible();
+    const time = meta!.querySelector<HTMLElement>("[data-thread-time]");
+    expect(time?.textContent).toBe("· 9:00");
+    expect(time).toBeVisible();
+    const branchIcon = meta!.querySelector("svg")!.getBoundingClientRect();
+    expect(time!.getBoundingClientRect().left).toBeGreaterThan(branchIcon.right);
+    expect(meta!.querySelectorAll("[data-thread-time]")).toHaveLength(1);
+
+    const button = screen.container.querySelector<HTMLElement>("[data-card-open]")!;
+    expect(button.textContent).not.toContain("9:00");
+    expect(titleOf(screen).getBoundingClientRect().right).toBeGreaterThan(
+      meta!.getBoundingClientRect().right - 24,
+    );
   });
 
   it("shows nothing for a thread with nothing running", async () => {
@@ -602,18 +616,18 @@ describe("ThreadCard layout and contrast", () => {
     expect(getComputedStyle(title).color).toBe(classColor("text-foreground"));
   });
 
-  it("keeps an attention title at full contrast and medium weight", async () => {
+  it("keeps an attention title at full contrast and semibold weight", async () => {
     await using screen = await render(card(thread({ hasPendingUserInput: true })));
     const title = titleOf(screen);
 
-    expect(title.className).toContain("font-medium");
+    expect(title.className).toContain("font-semibold");
     expect(getComputedStyle(title).color).toBe(classColor("text-foreground"));
   });
 
-  it("sets a resting title in regular weight", async () => {
+  it("sets a resting title in medium weight", async () => {
     await using screen = await render(card(thread()));
 
-    expect(getComputedStyle(titleOf(screen)).fontWeight).toBe("400");
+    expect(getComputedStyle(titleOf(screen)).fontWeight).toBe("500");
   });
 
   it("draws the provider mark muted and uncoloured, and not beside a state mark", async () => {

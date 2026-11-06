@@ -38,22 +38,22 @@ function sendButtonStyle() {
   return { disabled: (button as HTMLButtonElement).disabled, style };
 }
 
-it("renders an empty composer's send button as a neutral disc, not a dimmed accent", async () => {
+it("keeps an empty composer's send button accent-filled, dimmed to 60% and disabled", async () => {
   await using _screen = await renderSend(false);
   const { disabled, style } = sendButtonStyle();
   expect(disabled).toBe(true);
-  expect(style.opacity).toBe("1");
+  expect(Number(style.opacity)).toBeCloseTo(0.6, 2);
 
   const probe = document.createElement("span");
   document.body.append(probe);
-  probe.style.backgroundColor = "var(--sel)";
-  const neutral = getComputedStyle(probe).backgroundColor;
   probe.style.backgroundColor = "var(--accent)";
   const accent = getComputedStyle(probe).backgroundColor;
+  probe.style.color = "var(--primary-foreground)";
+  const ink = getComputedStyle(probe).color;
   probe.remove();
 
-  expect(style.backgroundColor).toBe(neutral);
-  expect(style.backgroundColor).not.toBe(accent);
+  expect(style.backgroundColor).toBe(accent);
+  expect(style.color).toBe(ink);
 });
 
 it("renders the send button with the full accent fill once there is content", async () => {
