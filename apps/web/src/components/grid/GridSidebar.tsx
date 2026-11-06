@@ -92,6 +92,19 @@ import { collapsedRollup, revealedOpenThread } from "../../grid/collapsedRollup"
 import { PullRequestChecksGlyph, PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { SidebarStatusGlyph } from "../sidebar/SidebarStatusGlyph";
 import { closedAgeLabel } from "../../grid/statusWord";
+import {
+  activeProjectFilterKeys,
+  applyProjectFilter,
+  groupContainsWorkspace,
+} from "../../grid/projectFilter";
+import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
+import { useUiStateStore } from "../../uiStateStore";
+import { useEnvironmentMachines, usePrimaryEnvironmentId } from "../../state/environments";
+import {
+  ProjectFilterContext,
+  ProjectFilterPicker,
+  useThreadProjectFilter,
+} from "./ProjectFilterPicker";
 import { ThreadStateMark } from "./threadStatusMark";
 import { ThreadCheckoutMark, ThreadRowIndicators } from "./threadRowIndicators";
 import { GridShelves } from "./GridShelves";
@@ -254,7 +267,11 @@ export function GridSidebar() {
   // Reading the same project groups as the rest of the app makes the rail obey
   // pin, grouping and sort order instead of raw store order.
   const projectGroups = useSidebarProjectGroups();
-  const orderedProjectGroups = orderSidebarProjectGroups(projectGroups);
+  const openProjectGroups = orderSidebarProjectGroups(projectGroups);
+  const storedFilterKeys = useUiStateStore((store) => store.sidebarProjectScopeKeys);
+  const setStoredFilterKeys = useUiStateStore((store) => store.setSidebarProjectScopeKeys);
+  const filterKeys = activeProjectFilterKeys(openProjectGroups, storedFilterKeys);
+  const orderedProjectGroups = applyProjectFilter(openProjectGroups, filterKeys);
   const projects = orderedProjectGroups.flatMap((group) =>
     group.memberProjects.flatMap((member) => {
       const project = allProjects.find(
@@ -322,6 +339,48 @@ export function GridSidebar() {
     useGridStore.getState().focusThread(gridId, threadId);
     void navigate({ to: "/grid/$gridId", params: { gridId } });
   };
+
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const environmentMachines = useEnvironmentMachines();
+  // A selection made under one filter can hold threads the next filter hides.
+  const changeProjectFilter = (keys: string[]) => {
+    setSelection(clearThreadSelection());
+    setStoredFilterKeys(keys);
+  };
+  const openProjectSettings = (group: SidebarProjectSnapshot) => {
+    void navigate({
+      to: "/settings/projects",
+      search: { project: group.projectKey, machine: undefined },
+    });
+  };
+  const threadProjectFilter = (workspace: { environmentId: string; projectId: string }) => {
+    const group = openProjectGroups.find((candidate) =>
+      groupContainsWorkspace(candidate, workspace),
+    );
+    if (group === undefined) return null;
+    const isActive = filterKeys.includes(group.projectKey);
+    return {
+      label: group.displayName,
+      isActive,
+      onToggle: () => changeProjectFilter(isActive ? [] : [group.projectKey]),
+    };
+  };
+
+  // Opening a thread the filter hides (history, a link, the palette) widens the
+  // filter once, so the row the user navigated to is on the rail.
+  const openWorkspaceKey = openGrid?.workspaceKey ?? null;
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- widens the persisted project filter when navigation lands on a project the filter hides
+  useEffect(() => {
+    if (openWorkspaceKey === null || filterKeys.length === 0) return;
+    const hidden = !orderedProjectGroups.some((group) =>
+      group.memberProjectRefs.some(
+        (ref) => workspaceKeyOf(ref.environmentId, ref.projectId) === openWorkspaceKey,
+      ),
+    );
+    if (hidden) changeProjectFilter([]);
+    // Only a change of the open workspace widens; choosing a filter while a thread is open keeps it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openWorkspaceKey]);
 
   const createGridInWorkspace = (workspaceKey: string, name?: string) => {
     const project = projects.find(
@@ -812,7 +871,7 @@ export function GridSidebar() {
   });
 
   return (
-    <>
+    <ProjectFilterContext.Provider value={threadProjectFilter}>
       <SidebarChromeHeader isDesktopHost={isDesktopHost} />
       <SidebarHeader>
         <SidebarRailNav
@@ -902,6 +961,18 @@ export function GridSidebar() {
             onChange={(patch) => void updateClientSettings(sidebarOptionsPatch(patch))}
             onReset={() => void updateClientSettings(SIDEBAR_OPTIONS_DEFAULTS)}
             hiddenGridGroups={hiddenGridGroups}
+            projectFilter={
+              openProjectGroups.length > 1 ? (
+                <ProjectFilterPicker
+                  groups={openProjectGroups}
+                  activeKeys={filterKeys}
+                  primaryEnvironmentId={primaryEnvironmentId}
+                  machineByEnvironmentId={environmentMachines}
+                  onChange={changeProjectFilter}
+                  onOpenSettings={openProjectSettings}
+                />
+              ) : null
+            }
           />
           <div className="flex flex-col gap-px">
             {sections.length === 0 && query.length === 0 ? (
@@ -1086,7 +1157,7 @@ export function GridSidebar() {
           Dragging thread
         </span>
       ) : null}
-    </>
+    </ProjectFilterContext.Provider>
   );
 }
 
@@ -1152,6 +1223,7 @@ export function SidebarProjectsHeader({
   onChange,
   onReset,
   hiddenGridGroups = [],
+  projectFilter = null,
 }: {
   options: SidebarGridOptions;
   onChange: (patch: Partial<SidebarGridOptions>) => void;
@@ -1161,12 +1233,15 @@ export function SidebarProjectsHeader({
     title: string;
     grids: ReadonlyArray<GridRecord>;
   }>;
+  /** The project filter picker, when there is more than one project to choose from. */
+  projectFilter?: ReactNode;
 }) {
   return (
     <SidebarSectionHeaderRow
       title="Projects"
       actions={
         <>
+          {projectFilter}
           {hiddenGridGroups.length > 0 ? (
             <HiddenGridsMenu
               groups={hiddenGridGroups}
@@ -1925,9 +2000,14 @@ export function ThreadCard({
     if (rect === undefined || rect === null) return;
     void openCardMenu({ x: rect.left, y: rect.bottom + 4 });
   };
+  const projectFilter = useThreadProjectFilter({
+    environmentId: thread.environmentId,
+    projectId: thread.projectId,
+  });
   const { openMenu } = useThreadActionMenu({
     threadRef,
     thread,
+    projectFilter,
     onStartRename: startRename,
     handleNewThread,
     grid: {

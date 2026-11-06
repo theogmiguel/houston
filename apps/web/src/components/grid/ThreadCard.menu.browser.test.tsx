@@ -8,6 +8,7 @@ import type { ThreadActionMenuId } from "../threadActionMenu.logic";
 import { render } from "../../../test/render";
 import { TooltipProvider } from "../ui/tooltip";
 import { ThreadCard } from "./GridSidebar";
+import { ProjectFilterContext, type ThreadProjectFilter } from "./ProjectFilterPicker";
 
 const menu = vi.hoisted(() => ({
   show: vi.fn<
@@ -108,32 +109,41 @@ function thread(overrides: Partial<EnvironmentThreadShell> = {}): EnvironmentThr
   } as EnvironmentThreadShell;
 }
 
-function card(overrides: { onOpen?: () => void; onOpenGrid?: (gridId: string) => void } = {}) {
+function card(
+  overrides: {
+    onOpen?: () => void;
+    onOpenGrid?: (gridId: string) => void;
+    projectFilter?: ThreadProjectFilter;
+  } = {},
+) {
+  const projectFilter = overrides.projectFilter;
   return (
-    <TooltipProvider delay={60_000}>
-      <ThreadCard
-        gridId="grid-a"
-        thread={thread()}
-        query=""
-        providerEntries={new Map()}
-        nowIso="2026-01-01T00:00:00.000Z"
-        focused={false}
-        selected={false}
-        dragging={false}
-        workspaceTitle="Houston"
-        timeLabel="9:00"
-        onOpen={overrides.onOpen ?? (() => {})}
-        onSelect={() => {}}
-        onClose={() => {}}
-        onHold={() => {}}
-        onPickHoldTime={async () => null}
-        onRename={() => {}}
-        onSetAutoClose={() => {}}
-        onDropOnThread={() => {}}
-        onOpenGrid={overrides.onOpenGrid ?? (() => {})}
-        handleNewThread={async () => null}
-      />
-    </TooltipProvider>
+    <ProjectFilterContext.Provider value={projectFilter === undefined ? null : () => projectFilter}>
+      <TooltipProvider delay={60_000}>
+        <ThreadCard
+          gridId="grid-a"
+          thread={thread()}
+          query=""
+          providerEntries={new Map()}
+          nowIso="2026-01-01T00:00:00.000Z"
+          focused={false}
+          selected={false}
+          dragging={false}
+          workspaceTitle="Houston"
+          timeLabel="9:00"
+          onOpen={overrides.onOpen ?? (() => {})}
+          onSelect={() => {}}
+          onClose={() => {}}
+          onHold={() => {}}
+          onPickHoldTime={async () => null}
+          onRename={() => {}}
+          onSetAutoClose={() => {}}
+          onDropOnThread={() => {}}
+          onOpenGrid={overrides.onOpenGrid ?? (() => {})}
+          handleNewThread={async () => null}
+        />
+      </TooltipProvider>
+    </ProjectFilterContext.Provider>
   );
 }
 
@@ -233,5 +243,40 @@ describe("ThreadCard thread menu", () => {
     expect(labels(menuItems())).not.toContain("Unpin thread");
     expect(menuItems().map((item) => item.id)).not.toContain("pin");
     expect(menuItems().map((item) => item.id)).not.toContain("unpin");
+  });
+
+  it("offers Filter by project only when the rail has a filter for the thread's project", async () => {
+    resetMenu();
+    await using without = await render(card());
+    without.container
+      .querySelector<HTMLElement>("[data-thread-key]")!
+      .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+    await vi.waitFor(() => expect(menu.show).toHaveBeenCalledOnce());
+    expect(labels(menuItems())).not.toContain("Filter by Houston");
+
+    resetMenu();
+    await using withFilter = await render(
+      card({ projectFilter: { label: "Houston", isActive: false, onToggle: () => {} } }),
+    );
+    withFilter.container
+      .querySelector<HTMLElement>("[data-thread-key]")!
+      .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+    await vi.waitFor(() => expect(menu.show).toHaveBeenCalledOnce());
+    expect(labels(menuItems())).toContain("Filter by Houston");
+  });
+
+  it("toggles the project filter when Filter by project is chosen, and offers Show all projects while it is on", async () => {
+    resetMenu();
+    menu.show.mockImplementation(async () => "filter-by-project");
+    const onToggle = vi.fn();
+    await using screen = await render(
+      card({ projectFilter: { label: "Houston", isActive: true, onToggle } }),
+    );
+    screen.container
+      .querySelector<HTMLElement>("[data-thread-key]")!
+      .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+
+    await vi.waitFor(() => expect(onToggle).toHaveBeenCalledOnce());
+    expect(labels(menuItems())).toContain("Show all projects");
   });
 });
