@@ -11,7 +11,18 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { ConnectionStatusDot } from "../ConnectionStatusDot";
+import { DatadogAgentFields, DatadogExportFields } from "./DatadogExportFields";
+import {
+  DESTINATION_LABELS,
+  type TelemetryDestination,
+  datadogIntakeUrl,
+  destinationOf,
+  initialPreset,
+  observabilityPatch,
+  rejectedLabel,
+} from "./telemetryExport.logic";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { useScopedSettings } from "./useScopedSettings";
 import { SettingsSection } from "./settingsLayout";
@@ -60,7 +71,20 @@ type EndpointCheck = { readonly url: string; readonly result: OtlpEndpointCheckR
 
 const isHttpUrl = (url: string) => /^https?:\/\/./i.test(url);
 
-function endpointStatus(url: string, check: EndpointCheck | undefined) {
+const DESTINATIONS: ReadonlyArray<TelemetryDestination> = [
+  "off",
+  "otlp",
+  "datadog",
+  "datadog-agent",
+];
+const isDestination = (value: unknown): value is TelemetryDestination =>
+  (DESTINATIONS as ReadonlyArray<unknown>).includes(value);
+
+function endpointStatus(
+  url: string,
+  check: EndpointCheck | undefined,
+  destination: TelemetryDestination = "otlp",
+) {
   if (url === "") return { label: "Off", dot: "bg-muted-foreground/40" };
   if (check?.url !== url) return { label: "Not checked", dot: "bg-muted-foreground/40" };
   const { result } = check;
@@ -69,7 +93,7 @@ function endpointStatus(url: string, check: EndpointCheck | undefined) {
     case "Accepted":
       return { label: `Connected · ${Math.round(result.latencyMs)} ms`, dot: "bg-success" };
     case "Rejected":
-      return { label: `Rejected · HTTP ${result.status}`, dot: "bg-destructive" };
+      return { label: rejectedLabel(result.status, destination), dot: "bg-destructive" };
     case "Unreachable":
       return { label: result.timedOut ? "Timed out" : "Unreachable", dot: "bg-destructive" };
   }
@@ -113,8 +137,17 @@ function TelemetryExportForm() {
   const updateSettings = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: true });
   const checkOtlpEndpoint = useAtomCommand(serverEnvironment.checkOtlpEndpoint);
   const values = { ...saved, ...draft };
-  const changedSignals = SIGNALS.filter(({ key }) => values[key].trim() !== saved[key]);
-  const changed = changedSignals.length > 0;
+  const overrides = SIGNALS.flatMap((descriptor) => {
+    const override = runningOverride(running, descriptor);
+    return override === undefined ? [] : [{ descriptor, override }];
+  });
+  const savedDestination = destinationOf(saved, overrides.length > 0);
+  const [destinationDraft, setDestinationDraft] = useState<TelemetryDestination | null>(null);
+  const destination = destinationDraft ?? savedDestination;
+  const [presetDraft, setPresetDraft] = useState<typeof saved.preset | null>(null);
+  const preset = presetDraft ?? initialPreset(destination, saved.preset);
+  const patch = observabilityPatch(saved, destination, preset, values);
+  const changed = patch !== null;
 
   const sendCheck = async (key: SignalKey, signal: OtlpSignal, url: string) => {
     if (!environmentId) return;
@@ -146,6 +179,17 @@ function TelemetryExportForm() {
     if (canCheck) sendPendingChecks();
   }, [canCheck]);
 
+  const signalKey = (signal: OtlpSignal) =>
+    SIGNALS.find((descriptor) => descriptor.signal === signal)!.key;
+  const datadogStatus = (signal: OtlpSignal) => {
+    if (!canCheck || preset?._tag !== "Datadog") return null;
+    return endpointStatus(
+      datadogIntakeUrl(preset.site, signal),
+      checks[signalKey(signal)],
+      "datadog",
+    );
+  };
+
   return (
     <SettingsSection title="OpenTelemetry export" id="telemetry-export">
       <form
@@ -157,98 +201,164 @@ function TelemetryExportForm() {
           setMessage(null);
           const result = await updateSettings({
             environmentId: environment.environmentId,
-            input: {
-              patch: {
-                observability: Object.fromEntries(
-                  changedSignals.map(({ key }) => [key, values[key]]),
-                ),
-              },
-            },
+            input: { patch: { observability: patch ?? {} } },
           });
           setSaving(false);
           if (result._tag === "Success") {
             setDraft({});
+            setDestinationDraft(null);
+            setPresetDraft(null);
             setMessage("Saved. Restart the server to apply.");
           }
         }}
       >
         <p className="text-xs text-muted-foreground">
-          Send traces, metrics, and logs to an OTLP HTTP receiver. Restart the server to apply.
-          Environment variables override these settings.
+          Send traces, metrics, and logs to an OTLP HTTP receiver or to Datadog. Restart the server
+          to apply. Environment variables override these settings.
         </p>
+        <div className="grid gap-1.5">
+          <Label htmlFor="telemetry-destination">Destination</Label>
+          <Select
+            value={destination}
+            disabled={saving || !canEdit}
+            onValueChange={(value) => {
+              if (!isDestination(value)) return;
+              setDestinationDraft(value === savedDestination ? null : value);
+              setPresetDraft(null);
+              setMessage(null);
+            }}
+          >
+            <SelectTrigger id="telemetry-destination" size="sm" aria-label="Destination">
+              <SelectValue>{DESTINATION_LABELS[destination]}</SelectValue>
+            </SelectTrigger>
+            <SelectPopup alignItemWithTrigger={false}>
+              {DESTINATIONS.map((option) => (
+                <SelectItem key={option} hideIndicator value={option}>
+                  {DESTINATION_LABELS[option]}
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
+        </div>
+        {preset?._tag === "Datadog" && environmentId !== undefined && (
+          <DatadogExportFields
+            environmentId={environmentId}
+            preset={preset}
+            disabled={saving || !canEdit}
+            statuses={{
+              traces: datadogStatus("traces"),
+              metrics: datadogStatus("metrics"),
+              logs: datadogStatus("logs"),
+            }}
+            onChange={(next) => {
+              setPresetDraft(next);
+              setMessage(null);
+            }}
+            onTest={
+              canCheck
+                ? (signal) =>
+                    checkEndpoint(signalKey(signal), signal, datadogIntakeUrl(preset.site, signal))
+                : null
+            }
+          />
+        )}
+        {destination !== "otlp" &&
+          overrides.map(({ descriptor, override }) => (
+            <p key={descriptor.key} className="break-all text-xs text-muted-foreground">
+              {descriptor.label}: {override.label.toLowerCase()} to {override.url}
+              {override.variable && (
+                <>
+                  {" "}
+                  from <code className="font-mono">{override.variable}</code>
+                </>
+              )}
+              , which overrides this destination.
+            </p>
+          ))}
+        {preset?._tag === "DatadogAgent" && (
+          <DatadogAgentFields
+            preset={preset}
+            disabled={saving || !canEdit}
+            onChange={(next) => {
+              setPresetDraft(next);
+              setMessage(null);
+            }}
+          />
+        )}
         {!canEdit && (
           <p className="text-xs text-muted-foreground">
             This connection lacks permission to change settings on{" "}
             {environment?.label ?? "the selected environment"}.
           </p>
         )}
-        {SIGNALS.map((descriptor) => {
-          const { key, label, signal } = descriptor;
-          const override = runningOverride(running, descriptor);
-          const url = override?.url ?? values[key].trim();
-          const check = canCheck ? endpointStatus(url, checks[key]) : null;
-          const status = override
-            ? {
-                label: check ? `${override.label} · ${check.label}` : override.label,
-                dot: check?.dot ?? "bg-muted-foreground/40",
-              }
-            : check;
-          return (
-            <div key={key} className="grid gap-1.5">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-1.5">
-                  {status && <ConnectionStatusDot dotClassName={status.dot} />}
-                  <Label htmlFor={key}>{label} endpoint</Label>
+        {destination === "otlp" &&
+          SIGNALS.map((descriptor) => {
+            const { key, label, signal } = descriptor;
+            const override = runningOverride(running, descriptor);
+            const url = override?.url ?? values[key].trim();
+            const check = canCheck ? endpointStatus(url, checks[key]) : null;
+            const status = override
+              ? {
+                  label: check ? `${override.label} · ${check.label}` : override.label,
+                  dot: check?.dot ?? "bg-muted-foreground/40",
+                }
+              : check;
+            return (
+              <div key={key} className="grid gap-1.5">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-1.5">
+                    {status && <ConnectionStatusDot dotClassName={status.dot} />}
+                    <Label htmlFor={key}>{label} endpoint</Label>
+                  </div>
+                  {status && <span className="text-xs text-muted-foreground">{status.label}</span>}
                 </div>
-                {status && <span className="text-xs text-muted-foreground">{status.label}</span>}
-              </div>
-              <div className="flex gap-2">
-                <Input
-                  id={key}
-                  size="compact"
-                  type="url"
-                  pattern="[Hh][Tt][Tt][Pp][Ss]?://.*"
-                  title="Enter an HTTP or HTTPS endpoint, or leave empty to disable export."
-                  placeholder={`http://localhost:4318/v1/${signal}`}
-                  value={values[key]}
-                  disabled={saving || !canEdit}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    // Clear restored drafts so later saves cannot overwrite another client's changes.
-                    setDraft((previous) => {
-                      const next = { ...previous, [key]: value };
-                      if (value.trim() === saved[key]) delete next[key];
-                      return next;
-                    });
-                    setMessage(null);
-                  }}
-                />
-                {canCheck && (
-                  <Button
-                    type="button"
+                <div className="flex gap-2">
+                  <Input
+                    id={key}
                     size="compact"
-                    variant="outline"
-                    disabled={!isHttpUrl(url) || checks[key]?.result === null}
-                    onClick={() => void checkEndpoint(key, signal, url)}
-                  >
-                    Test
-                  </Button>
+                    type="url"
+                    pattern="[Hh][Tt][Tt][Pp][Ss]?://.*"
+                    title="Enter an HTTP or HTTPS endpoint, or leave empty to disable export."
+                    placeholder={`http://localhost:4318/v1/${signal}`}
+                    value={values[key]}
+                    disabled={saving || !canEdit}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      // Clear restored drafts so later saves cannot overwrite another client's changes.
+                      setDraft((previous) => {
+                        const next = { ...previous, [key]: value };
+                        if (value.trim() === saved[key]) delete next[key];
+                        return next;
+                      });
+                      setMessage(null);
+                    }}
+                  />
+                  {canCheck && (
+                    <Button
+                      type="button"
+                      size="compact"
+                      variant="outline"
+                      disabled={!isHttpUrl(url) || checks[key]?.result === null}
+                      onClick={() => void checkEndpoint(key, signal, url)}
+                    >
+                      Test
+                    </Button>
+                  )}
+                </div>
+                {(saved[key] !== (running?.[key] ?? "") || override?.variable) && (
+                  <p className="break-all text-xs text-muted-foreground">
+                    Running: {running?.[key] || "Disabled"}
+                    {override?.variable && (
+                      <>
+                        {" "}
+                        from <code className="font-mono">{override.variable}</code>
+                      </>
+                    )}
+                  </p>
                 )}
               </div>
-              {(saved[key] !== (running?.[key] ?? "") || override?.variable) && (
-                <p className="break-all text-xs text-muted-foreground">
-                  Running: {running?.[key] || "Disabled"}
-                  {override?.variable && (
-                    <>
-                      {" "}
-                      from <code className="font-mono">{override.variable}</code>
-                    </>
-                  )}
-                </p>
-              )}
-            </div>
-          );
-        })}
+            );
+          })}
         <div className="flex items-center justify-between gap-3">
           <p role="status" className="text-xs text-muted-foreground">
             {message}
@@ -261,6 +371,8 @@ function TelemetryExportForm() {
               disabled={!changed || saving || !canEdit}
               onClick={() => {
                 setDraft({});
+                setDestinationDraft(null);
+                setPresetDraft(null);
                 setMessage(null);
                 if (!canCheck) return;
                 for (const descriptor of SIGNALS) {
