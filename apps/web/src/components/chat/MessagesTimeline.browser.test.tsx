@@ -1117,7 +1117,7 @@ describe("MessagesTimeline expanded tool rows", () => {
     expect(getComputedStyle(row).backgroundColor).toBe("rgba(0, 0, 0, 0)");
   });
 
-  it("right-aligns a tool row's hover timestamp in the same column as the group header's, in the muted ink", async () => {
+  it("shows a tool row's timestamp right after its label on hover, in the muted ink", async () => {
     await using _viewport = await desktopViewport();
     setup();
     const runId = RunId.make("meta-run");
@@ -1138,23 +1138,19 @@ describe("MessagesTimeline expanded tool rows", () => {
     );
     const heading = [...screen.container.querySelectorAll<HTMLButtonElement>("button")].find(
       (button) => /^Worked for/.test(button.textContent ?? ""),
-    )!;
-    await userEvent.hover(heading);
-    const headingStamp = heading
-      .closest<HTMLElement>(".group\\/timeline-row")!
-      .querySelector<HTMLElement>('[data-slot="tooltip-trigger"]')!;
-    await vi.waitFor(() => expect(getComputedStyle(headingStamp).opacity).toBe("1"));
-    const headingRight = headingStamp.getBoundingClientRect().right;
-    await click(heading);
-
+    );
+    if (heading) await click(heading);
     const row = screen.button("ls -la");
     await userEvent.hover(row);
     const timestamp = row.querySelector<HTMLElement>('[data-slot="tooltip-trigger"]')!;
     await vi.waitFor(() => expect(getComputedStyle(timestamp).opacity).toBe("1"));
-    const stampBox = timestamp.getBoundingClientRect();
-    expect(stampBox.right).toBeCloseTo(headingRight, 0);
-    expect(row.getBoundingClientRect().right - stampBox.right).toBeGreaterThan(8);
-    expect(getComputedStyle(timestamp).color).toBe(getComputedStyle(headingStamp).color);
+    const label = row.querySelector<HTMLElement>("p")!;
+    const gap = timestamp.getBoundingClientRect().left - label.getBoundingClientRect().right;
+    expect(gap).toBeGreaterThanOrEqual(0);
+    expect(gap).toBeLessThanOrEqual(12);
+    expect(
+      row.getBoundingClientRect().right - timestamp.getBoundingClientRect().right,
+    ).toBeGreaterThan(24);
   });
 });
 

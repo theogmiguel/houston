@@ -643,15 +643,8 @@ function WorkGroupHeader(props: {
         )
       }
       label={<span className="block truncate text-body text-(--t2)">{props.label}</span>}
-      trailing={
-        <>
-          <TimelineRowTimestamp
-            createdAt={props.createdAt}
-            timestampFormat={props.timestampFormat}
-          />
-          {/* Reserves the chevron slot of a tool row so both timestamps share one column. */}
-          <span aria-hidden className="size-4 shrink-0" />
-        </>
+      meta={
+        <TimelineRowTimestamp createdAt={props.createdAt} timestampFormat={props.timestampFormat} />
       }
     />
   );

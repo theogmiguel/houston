@@ -14,7 +14,6 @@ export function ServerUnavailableCard({
     <StandalonePage>
       <StandalonePageHeader
         status="danger"
-        brand={false}
         title="Houston's server isn't running"
         description="Your threads are saved. Start the server to see them."
         detail={detail}

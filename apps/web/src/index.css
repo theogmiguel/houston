@@ -2681,27 +2681,18 @@ code {
 }
 
 @layer components {
-  /* A static dot grid behind the new-thread hero, faded out by a radial mask centred on it. A
-     plain low-alpha gradient bands on dark canvases; dots do not. The grid sits on a
-     pseudo-element so the mask never touches the composer, and it is dropped wherever the user
-     asks for less transparency or more contrast. */
-  [data-chat-composer-overlay][data-draft-hero]::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    pointer-events: none;
-    background-image: radial-gradient(
-      circle,
-      color-mix(in srgb, var(--foreground) 9%, transparent) 0.5px,
-      transparent 1px
+  /* A static accent wash behind the new-thread hero; it carries no animation and is dropped
+     wherever the user asks for less transparency or more contrast. */
+  [data-chat-composer-overlay][data-draft-hero] {
+    background: radial-gradient(
+      ellipse 55% 50% at 50% 46%,
+      color-mix(in srgb, var(--accent) 4%, transparent),
+      transparent 70%
     );
-    background-size: 7px 7px;
-    mask-image: radial-gradient(ellipse 55% 50% at 50% 46%, #000, transparent 70%);
   }
   @media (forced-colors: active), (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
-    [data-chat-composer-overlay][data-draft-hero]::before {
-      content: none;
+    [data-chat-composer-overlay][data-draft-hero] {
+      background: none;
     }
   }
   .chat-composer-lane {

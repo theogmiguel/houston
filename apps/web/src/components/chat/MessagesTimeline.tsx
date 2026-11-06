@@ -1699,8 +1699,7 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
         <TimelineRowTimestamp
           createdAt={row.createdAt}
           timestampFormat={ctx.timestampFormat}
-          // Ends where a work row's timestamp does: its row inset, end padding, chevron slot and gap.
-          className="me-8"
+          className="me-2"
         />
       </div>
       {loading ? <WorkHistorySkeleton /> : null}
