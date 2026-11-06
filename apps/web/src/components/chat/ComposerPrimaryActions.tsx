@@ -366,15 +366,23 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         ? `Click to ${followUpBehavior}, ${isMacPlatform(navigator.platform) ? "⌘" : "Ctrl"}-click${alternateShortcutLabel ? ` or ${alternateShortcutLabel}` : ""} to ${alternateAction}`
         : submitLabel);
 
-  // The inert send button keeps its solid accent fill; the not-allowed cursor on the tooltip
-  // wrapper (the button itself takes no pointer events) is what marks it unavailable.
+  // The inert send button takes the neutral secondary fill so it never reads as ready; the
+  // not-allowed cursor on the tooltip wrapper (the button itself takes no pointer events) marks
+  // it unavailable. A busy send keeps the accent fill around its spinner.
   const sendInert =
-    isSendBusy || isSendDisabled || isEnvironmentUnavailable || (!hasSendableContent && !showResume);
+    isSendBusy ||
+    isSendDisabled ||
+    isEnvironmentUnavailable ||
+    (!hasSendableContent && !showResume);
+  const sendNeutral = sendInert && !isSendBusy;
   const sendButton = (
     <button
       type={showResume ? "button" : "submit"}
       className={cn(
-        "relative isolate flex size-8 items-center justify-center overflow-hidden rounded-full bg-(--accent) text-(--primary-foreground) transition-colors duration-150 enabled:cursor-pointer enabled:hover:bg-(--accent-hover) disabled:pointer-events-none [&_svg]:size-4 [&_svg]:pointer-events-none",
+        "relative isolate flex size-8 items-center justify-center overflow-hidden rounded-full transition-colors duration-150 enabled:cursor-pointer enabled:hover:bg-(--accent-hover) disabled:pointer-events-none [&_svg]:size-4 [&_svg]:pointer-events-none",
+        sendNeutral
+          ? "bg-(--secondary) text-(--color-muted-foreground)"
+          : "bg-(--accent) text-(--primary-foreground)",
         boardFocusRing,
       )}
       {...pointerFocusProps}

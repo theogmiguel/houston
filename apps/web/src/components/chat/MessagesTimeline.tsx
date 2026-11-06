@@ -259,8 +259,6 @@ interface MessagesTimelineProps {
   announceTurnStatus?: boolean;
   onOpenToolDiff?: (target: ToolCallDiffTarget) => void;
   onOpenTurnDiff?: (runId: RunId, filePath?: string) => void;
-  /** The run the composer's pending-changes banner covers; its changed-files card shrinks to one row. */
-  pendingChangesRunId?: RunId | null;
   onOpenThread: (threadId: OrchestrationV2TurnItem["threadId"]) => void;
   renderHtmlRender?: TimelineRowSharedState["renderHtmlRender"];
   turnItemSource?: TimelineRowSharedState["turnItemSource"];
@@ -377,7 +375,6 @@ const ConversationTimeline = memo(function ConversationTimeline({
   announceTurnStatus = true,
   onOpenToolDiff,
   onOpenTurnDiff,
-  pendingChangesRunId = null,
   onOpenThread,
   renderHtmlRender,
   turnItemSource,
@@ -1047,7 +1044,6 @@ const ConversationTimeline = memo(function ConversationTimeline({
     openPullRequest,
     onOpenToolDiff,
     onOpenTurnDiff,
-    pendingChangesRunId,
     onOpenThread,
     renderHtmlRender,
     turnItemSource,
@@ -1449,6 +1445,27 @@ function getItemType(item: MessagesTimelineRow) {
   return `message:${item.message.role}:${lengthBucket}`;
 }
 
+/** The space a row leaves below it; a turn's closing assistant row leaves none, its footer does. */
+function rowBottomPadding(row: TimelineRow) {
+  if (row.kind === "turn-fold" || row.kind === "working" || row.kind === "context-compaction") {
+    return "pb-1.5";
+  }
+  if (row.kind === "message" && row.groupedWithNext) return "pb-1";
+  if (row.kind === "message" && row.message.role === "assistant") {
+    return row.showAssistantMeta ? "pb-0" : "pb-2";
+  }
+  switch (row.kind) {
+    case "worktree-setup":
+    case "event":
+    case "attempt-fold":
+    case "html-render":
+    case "mcp-app":
+      return "pb-2";
+    default:
+      return "pb-4";
+  }
+}
+
 const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: TimelineRow }) {
   const isExpandedToolGroup = row.kind === "work" && row.isExpandedToolGroup;
   const isSubagentGroup = row.kind === "event" && row.projectedItem.item.type === "subagent";
@@ -1464,22 +1481,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
   return (
     <div
       className={cn(
-        isWorkLogRow || isSubagentGroup
-          ? undefined
-          : row.kind === "turn-fold" || row.kind === "working"
-            ? "pb-1.5"
-            : row.kind === "message" && row.groupedWithNext
-              ? "pb-1"
-              : (row.kind === "message" &&
-                    row.message.role === "assistant" &&
-                    !row.showAssistantMeta) ||
-                  row.kind === "worktree-setup" ||
-                  row.kind === "event" ||
-                  row.kind === "attempt-fold" ||
-                  row.kind === "html-render" ||
-                  row.kind === "mcp-app"
-                ? "pb-2"
-                : "pb-4",
+        isWorkLogRow || isSubagentGroup ? undefined : rowBottomPadding(row),
         (row.kind === "message" && row.message.role === "assistant") ||
           row.kind === "assistant-meta"
           ? "group/assistant"

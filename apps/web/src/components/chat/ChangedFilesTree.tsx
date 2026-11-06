@@ -35,14 +35,11 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
   onToggleAllDirectories: () => void;
   onOpenTurnDiff: (runId: RunId, filePath?: string) => void;
   onFileContextMenu?: ChangedFileContextMenuHandler | undefined;
-  /** One borderless "Edited …" row, for the turn the composer's pending-changes banner covers. */
-  compact?: boolean | undefined;
 }) {
   const {
     runId,
     files,
     totals,
-    compact = false,
     allDirectoriesExpanded,
     resolvedTheme,
     onToggleAllDirectories,
@@ -53,46 +50,9 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
   const hiddenFileCount = totals.count - files.length;
   const hasDirectories = files.some((file) => /[/\\]/.test(file.path));
 
-  if (compact) {
-    return (
-      <div
-        data-changed-files-state="compact"
-        className="mt-4 flex h-7 min-w-0 items-center gap-2"
-      >
-        <FileDiffIcon aria-hidden className="size-3.5 shrink-0" />
-        <span className="min-w-0 truncate">
-          Edited{" "}
-          <span data-changed-files-name="">
-            {totals.count === 1 && files[0] !== undefined
-              ? files[0].path
-              : `${totals.count.toLocaleString()} files`}
-          </span>
-        </span>
-        {hasNonZeroStat(totals) && (
-          <DiffStatLabel
-            additions={totals.additions}
-            deletions={totals.deletions}
-            layout="inline"
-            className="shrink-0"
-          />
-        )}
-        <Button
-          type="button"
-          size="xs"
-          variant="ghost-muted"
-          aria-label="Open diff"
-          className="shrink-0"
-          onClick={() => onOpenTurnDiff(runId, files[0]?.path)}
-        >
-          Open diff
-        </Button>
-      </div>
-    );
-  }
-
   return (
     <div
-      className="@container/changed-files mt-4 overflow-hidden rounded-lg border border-border bg-card"
+      className="@container/changed-files mt-3 overflow-hidden rounded-lg border border-border bg-card"
       data-changed-files-state="tree"
     >
       <div

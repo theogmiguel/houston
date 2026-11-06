@@ -2202,8 +2202,11 @@ code {
   font-size: 0.85em;
 }
 
-/* Ages in the sidebar's meta line keep digit widths so they scan as a column. */
+/* The age on a sidebar thread row's title line: a muted 12px tabular column. */
 [data-thread-time] {
+  color: var(--color-secondary-label);
+  font-size: var(--text-xs);
+  line-height: var(--text-xs--line-height);
   font-variant-numeric: tabular-nums;
 }
 

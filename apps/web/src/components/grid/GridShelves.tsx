@@ -59,11 +59,15 @@ export function GridShelves({
   const [settledVisibleCount, setSettledVisibleCount] = useState(SETTLED_TAIL_INITIAL_COUNT);
   const visibleClosed = closed.slice(0, settledVisibleCount);
   const hiddenClosedCount = Math.max(0, closed.length - visibleClosed.length);
+  // An empty shelf is noise at the foot of the rail. Closed stays while a thread is dragged
+  // because its row is the drop target.
+  const showHeld = held.length > 0;
+  const showClosed = closed.length > 0 || closedDragActive || closedDropTarget;
 
   return (
     <div className="flex flex-col gap-px" data-testid="grid-shelves">
       <AnimatedHeight>
-        {snoozedExpanded ? (
+        {showHeld && snoozedExpanded ? (
           <div
             className="flex max-h-56 flex-col gap-px overflow-y-auto pb-1"
             data-testid="grid-snoozed-shelf-list"
@@ -74,16 +78,18 @@ export function GridShelves({
           </div>
         ) : null}
       </AnimatedHeight>
-      <SidebarShelfHeader
-        variant="rail"
-        shelf="snoozed"
-        label="On hold"
-        count={held.length}
-        toggle={{
-          expanded: snoozedExpanded,
-          onToggle: () => setSnoozedExpanded((value) => !value),
-        }}
-      />
+      {showHeld ? (
+        <SidebarShelfHeader
+          variant="rail"
+          shelf="snoozed"
+          label="On hold"
+          count={held.length}
+          toggle={{
+            expanded: snoozedExpanded,
+            onToggle: () => setSnoozedExpanded((value) => !value),
+          }}
+        />
+      ) : null}
       <div
         ref={closedRef}
         className={cn(
@@ -116,18 +122,20 @@ export function GridShelves({
             </div>
           ) : null}
         </AnimatedHeight>
-        <SidebarShelfHeader
-          variant="rail"
-          shelf="settled"
-          label="Closed"
-          count={closed.length}
-          dragging={closedDragActive}
-          isDropTarget={closedDropTarget}
-          toggle={{
-            expanded: settledExpanded,
-            onToggle: () => setSettledExpanded((value) => !value),
-          }}
-        />
+        {showClosed ? (
+          <SidebarShelfHeader
+            variant="rail"
+            shelf="settled"
+            label="Closed"
+            count={closed.length}
+            dragging={closedDragActive}
+            isDropTarget={closedDropTarget}
+            toggle={{
+              expanded: settledExpanded,
+              onToggle: () => setSettledExpanded((value) => !value),
+            }}
+          />
+        ) : null}
       </div>
     </div>
   );

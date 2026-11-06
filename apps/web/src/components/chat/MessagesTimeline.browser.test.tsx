@@ -1347,75 +1347,79 @@ describe("ChangedFilesCard", () => {
   );
 });
 
-describe("ChangedFilesCard when the composer banner covers the turn", () => {
-  const diffSummary = (runId: RunId, assistantId: string, path: string) =>
+describe("turn rhythm", () => {
+  const diffSummary = (runId: RunId, assistantId: string) =>
     ({
       runId,
       checkpointTurnCount: 1,
       checkpointRef: `checkpoint-${runId}` as never,
       status: "ready",
-      files: [{ path, kind: "modified", additions: 5, deletions: 0 }],
+      files: [{ path: "CHANGELOG.md", kind: "modified", additions: 5, deletions: 0 }],
       assistantMessageId: MessageId.make(assistantId),
       completedAt: CREATED_AT,
     }) as const;
 
-  it("draws the covered turn as one borderless row and keeps older turns as cards", async () => {
+  it("puts 32px between turns however a turn ends and smaller fixed steps inside one", async () => {
     setup();
-    const first = RunId.make("run-1");
-    const second = RunId.make("run-2");
-    const onOpenTurnDiff = vi.fn();
-    await using screen = await renderTimeline(
-      [
-        message("First", { role: "user", runId: first }, "user-1"),
-        message("Done one", { role: "assistant", runId: first }, "assistant-1"),
-        message("Second", { role: "user", runId: second }, "user-2"),
-        message("Done two", { role: "assistant", runId: second }, "assistant-2"),
-      ],
-      {
-        onOpenTurnDiff,
-        pendingChangesRunId: second,
-        turnDiffSummaries: [
-          diffSummary(first, "assistant-1", "src/old.ts"),
-          diffSummary(second, "assistant-2", "CHANGELOG.md"),
-        ],
-      },
-    );
-
-    const cards = screen.container.querySelectorAll<HTMLElement>(
-      '[data-changed-files-state="tree"]',
-    );
+    const entries: Entry[] = [];
+    const runs: NonNullable<TimelineProps["runs"]>[number][] = [];
+    const diffs: ReturnType<typeof diffSummary>[] = [];
+    for (const n of [1, 2, 3]) {
+      const runId = RunId.make(`run-${n}`);
+      const instanceId = ProviderInstanceId.make("claude");
+      runs.push({
+        id: runId,
+        providerInstanceId: instanceId,
+        modelSelection: { instanceId, model: "claude-haiku-5-5" },
+      } as never);
+      entries.push(message(`Question ${n}`, { role: "user", runId }, `user-${n}`));
+      entries.push(message(`Progress ${n}`, { role: "assistant", runId }, `progress-${n}`));
+      if (n === 2) {
+        entries.push(
+          work("compact-2", {
+            runId,
+            label: "Context compacted",
+            tone: "info",
+            sourceActivityKind: "context-compaction",
+          }),
+        );
+      }
+      entries.push(message(`Answer ${n}`, { role: "assistant", runId }, `final-${n}`));
+      if (n === 2) diffs.push(diffSummary(runId, `final-${n}`));
+    }
+    await using screen = await renderTimeline(entries, { runs, turnDiffSummaries: diffs });
+    const root = screen.container;
+    const rowOf = (kind: string, text: string) => {
+      const row = [
+        ...root.querySelectorAll<HTMLElement>(`[data-timeline-row-kind="${kind}"]`),
+      ].find((candidate) => candidate.textContent?.includes(text));
+      if (!row) throw new Error(`Missing ${kind} row containing ${JSON.stringify(text)}`);
+      return row;
+    };
+    const attributions = root.querySelectorAll<HTMLElement>("[data-assistant-model-attribution]");
+    const cards = root.querySelectorAll<HTMLElement>("[data-changed-files-state]");
+    expect(attributions).toHaveLength(3);
     expect(cards).toHaveLength(1);
-    expect(getComputedStyle(cards[0]!).borderTopWidth).toBe("1px");
+    const top = (element: Element) => element.getBoundingClientRect().top;
+    const bottom = (element: Element) => element.getBoundingClientRect().bottom;
+    // A user bubble starts at its row's top edge.
+    const turnGaps = [
+      top(rowOf("message", "Question 2")) - bottom(attributions[0]!),
+      top(rowOf("message", "Question 3")) - bottom(cards[0]!),
+    ];
+    expect(turnGaps).toEqual([32, 32]);
 
-    const rows = screen.container.querySelectorAll<HTMLElement>(
-      '[data-changed-files-state="compact"]',
-    );
-    expect(rows).toHaveLength(1);
-    const row = rows[0]!;
-    expect(row.textContent).toContain("Edited CHANGELOG.md");
-    expect(row.textContent).toContain("+5");
-    expect(getComputedStyle(row).borderTopWidth).toBe("0px");
-    expect(row.getBoundingClientRect().height).toBeLessThanOrEqual(32);
-    expect(screen.container.textContent).not.toContain("1 changed file +5");
+    const answer = (n: number) =>
+      rowOf("message", `Answer ${n}`).querySelector<HTMLElement>("[data-thread-find-text]")!;
+    expect(top(attributions[0]!) - bottom(answer(1))).toBe(8);
+    expect(top(cards[0]!) - bottom(attributions[1]!)).toBe(12);
 
-    await click(row.querySelector<HTMLElement>('button[aria-label="Open diff"]')!);
-    expect(onOpenTurnDiff).toHaveBeenCalledWith(second, "CHANGELOG.md");
-  });
-
-  it("keeps the full card for the latest turn while no banner covers it", async () => {
-    setup();
-    const run = RunId.make("run-1");
-    await using screen = await renderTimeline(
-      [
-        message("First", { role: "user", runId: run }, "user-1"),
-        message("Done", { role: "assistant", runId: run }, "assistant-1"),
-      ],
-      { turnDiffSummaries: [diffSummary(run, "assistant-1", "CHANGELOG.md")] },
-    );
-    expect(
-      screen.container.querySelectorAll('[data-changed-files-state="tree"]'),
-    ).toHaveLength(1);
-    expect(screen.container.querySelector('[data-changed-files-state="compact"]')).toBeNull();
+    const divider = root.querySelector<HTMLElement>('[role="separator"]')!;
+    const folds = root.querySelectorAll<HTMLElement>('[data-timeline-row-kind="turn-fold"] button');
+    // The divider sits inside the turn: the same small step above and below it.
+    expect([top(divider) - bottom(folds[1]!), top(answer(2)) - bottom(divider)]).toEqual([6, 8]);
+    // "Worked for" row to the body of the answer.
+    expect([1, 3].map((n) => top(answer(n)) - bottom(folds[n - 1]!))).toEqual([8, 8]);
   });
 });
 

@@ -978,59 +978,61 @@ export function GridSidebar() {
           </div>
         </div>
       </SidebarContent>
-      <div className="shrink-0 px-2 pt-1 pb-1" data-testid="grid-shelves-pin">
-        <Separator className="mb-1" data-shelves-rule="" />
-        <GridShelves
-          held={shelves.held}
-          closed={shelves.closed}
-          closedDropTarget={dropTarget === "shelf:closed"}
-          closedDragActive={dragging !== null}
-          onClosedDrop={(source) => {
-            const thread = threadById.get(source.threadId);
-            if (thread !== undefined) closeThreads([thread]);
-          }}
-          renderCard={(thread, shelf) => (
-            <ThreadCard
-              key={thread.id}
-              gridId={null}
-              thread={thread}
-              query=""
-              providerEntries={
-                providerEntriesByEnvironment.get(thread.environmentId) ?? EMPTY_PROVIDER_ENTRIES
-              }
-              nowIso={nowIso}
-              focused={false}
-              selected={selection.selectedThreadKeys.has(
-                scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-              )}
-              dragging={false}
-              runningSubagents={runningSubagentsByThread.get(subagentParentKey(thread)) ?? 0}
-              workspaceTitle={
-                workspaceTitles.get(workspaceKeyOf(thread.environmentId, thread.projectId)) ?? ""
-              }
-              timeLabel={
-                shelf === "snoozed" && thread.snoozedUntil !== null
-                  ? formatUpcomingTimestamp(thread.snoozedUntil, timestampFormat)
-                  : null
-              }
-              shelf={shelf}
-              onOpen={() => {
-                if (shelf === "snoozed") wakeShelfThread(thread);
-                else reopenShelfThread(thread);
-              }}
-              onSelect={(input) => selectThread(thread, input)}
-              onClose={() => {}}
-              onHold={() => {}}
-              onPickHoldTime={pickHoldTime}
-              onRename={(title) => renameThread(thread, title)}
-              onSetAutoClose={() => {}}
-              onWake={() => wakeShelfThread(thread)}
-              onReopen={() => reopenShelfThread(thread)}
-              onDropOnThread={() => {}}
-            />
-          )}
-        />
-      </div>
+      {shelves.held.length > 0 || shelves.closed.length > 0 || dragging !== null ? (
+        <div className="shrink-0 px-2 pt-1 pb-1" data-testid="grid-shelves-pin">
+          <Separator className="mb-1" data-shelves-rule="" />
+          <GridShelves
+            held={shelves.held}
+            closed={shelves.closed}
+            closedDropTarget={dropTarget === "shelf:closed"}
+            closedDragActive={dragging !== null}
+            onClosedDrop={(source) => {
+              const thread = threadById.get(source.threadId);
+              if (thread !== undefined) closeThreads([thread]);
+            }}
+            renderCard={(thread, shelf) => (
+              <ThreadCard
+                key={thread.id}
+                gridId={null}
+                thread={thread}
+                query=""
+                providerEntries={
+                  providerEntriesByEnvironment.get(thread.environmentId) ?? EMPTY_PROVIDER_ENTRIES
+                }
+                nowIso={nowIso}
+                focused={false}
+                selected={selection.selectedThreadKeys.has(
+                  scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+                )}
+                dragging={false}
+                runningSubagents={runningSubagentsByThread.get(subagentParentKey(thread)) ?? 0}
+                workspaceTitle={
+                  workspaceTitles.get(workspaceKeyOf(thread.environmentId, thread.projectId)) ?? ""
+                }
+                timeLabel={
+                  shelf === "snoozed" && thread.snoozedUntil !== null
+                    ? formatUpcomingTimestamp(thread.snoozedUntil, timestampFormat)
+                    : null
+                }
+                shelf={shelf}
+                onOpen={() => {
+                  if (shelf === "snoozed") wakeShelfThread(thread);
+                  else reopenShelfThread(thread);
+                }}
+                onSelect={(input) => selectThread(thread, input)}
+                onClose={() => {}}
+                onHold={() => {}}
+                onPickHoldTime={pickHoldTime}
+                onRename={(title) => renameThread(thread, title)}
+                onSetAutoClose={() => {}}
+                onWake={() => wakeShelfThread(thread)}
+                onReopen={() => reopenShelfThread(thread)}
+                onDropOnThread={() => {}}
+              />
+            )}
+          />
+        </div>
+      ) : null}
       {selection.selectedThreadKeys.size > 0 ? (
         <div className="flex items-center gap-1 px-2 pb-2">
           <div className="flex h-8 min-w-0 flex-1 items-center gap-1 rounded-(--r-ctl) border border-sidebar-border bg-(--surface-raised) px-2.5 text-xs text-secondary-foreground">
@@ -2052,6 +2054,19 @@ export function ThreadCard({
               >
                 <HighlightedText text={thread.title} query={query} />
               </span>
+              {/* Right-aligned on the title line so ages scan down one column; it recedes while
+                  the hover actions take the corner. */}
+              <span
+                data-thread-time=""
+                className={cn(
+                  "shrink-0",
+                  ROW_STATUS_RECEDE,
+                  MOTION_FEEDBACK_OPACITY,
+                  actionsVisible && ROW_STATUS_HIDDEN,
+                )}
+              >
+                {timeLabel ?? threadTimeLabel(thread, nowMinute)}
+              </span>
             </button>
           )}
           <span
@@ -2143,18 +2158,14 @@ export function ThreadCard({
           data-thread-meta=""
           className="flex min-w-0 items-center gap-2 text-xs leading-3.5 text-secondary-label"
         >
-          <span className="flex min-w-0 flex-1 items-center gap-1">
-            {showBranch ? (
-              <>
-                <GitBranchIcon aria-hidden className="mr-1 size-3 shrink-0" />
-                <span className="min-w-0 truncate">{branchName ?? "no branch"}</span>
-              </>
-            ) : null}
-            <span data-thread-time="" className="shrink-0">
-              {showBranch ? "· " : ""}
-              {timeLabel ?? threadTimeLabel(thread, nowMinute)}
-            </span>
-          </span>
+          {showBranch ? (
+            <>
+              <GitBranchIcon aria-hidden className="size-3 shrink-0" />
+              <span className="min-w-0 flex-1 truncate">{branchName ?? "no branch"}</span>
+            </>
+          ) : (
+            <span className="flex-1" />
+          )}
           {(thread.tags ?? []).map((tag) => (
             <span key={tag} data-thread-tag="" className={SIDEBAR_THREAD_TAG_CLASS}>
               {tag}

@@ -28,6 +28,27 @@ describe("ServerUnavailableCard", () => {
     const detail = screen.getByText(DETAIL);
     await expect.element(detail).toBeVisible();
     expect(getComputedStyle(detail.element()).fontSize).toBe("12px");
+    expect(getComputedStyle(detail.element()).fontFamily).not.toMatch(/mono/i);
+  });
+
+  it("breaks a long detail only at the separator, never inside a part", async () => {
+    await page.viewport(1440, 900);
+    const detail =
+      "Tried houston-server.internal.example.test:10443 · PrimaryEnvironmentRequestError (HTTP 500) during fetch-session-state";
+    await using screen = await render(<ServerUnavailableCard report="report" detail={detail} />);
+
+    const line = screen.container.querySelector<HTMLElement>(
+      "[data-slot='standalone-page-detail']",
+    )!;
+    const parts = [...line.querySelectorAll<HTMLElement>("span")];
+    expect(parts.map((part) => part.textContent)).toEqual(detail.split(" · "));
+    for (const part of parts) {
+      expect(part.getClientRects(), `"${part.textContent}" on one line`).toHaveLength(1);
+    }
+    expect(
+      parts[1]!.getBoundingClientRect().top,
+      "the second part starts a new line",
+    ).toBeGreaterThan(parts[0]!.getBoundingClientRect().bottom - 1);
   });
 
   it("offers one primary action, one secondary action and a ghost Copy error", async () => {

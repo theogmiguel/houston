@@ -103,9 +103,9 @@ it(
     const editor = document.querySelector<HTMLElement>('[data-testid="composer-editor"]')!;
     const editorBox = editor.getBoundingClientRect();
     const editorStyle = getComputedStyle(editor);
-    expect(editorBox.left + parseFloat(editorStyle.paddingLeft) - cardBox.left).toBeGreaterThanOrEqual(
-      16,
-    );
+    expect(
+      editorBox.left + parseFloat(editorStyle.paddingLeft) - cardBox.left,
+    ).toBeGreaterThanOrEqual(16);
     expect(editorBox.top + parseFloat(editorStyle.paddingTop) - cardBox.top).toBeGreaterThanOrEqual(
       10,
     );
@@ -126,20 +126,23 @@ it(
     expect(footer!.querySelectorAll('button[type="submit"]')).toHaveLength(1);
     expect(lastButton().type).toBe("submit");
 
-    // The send button is a 32px accent-filled circle, at full opacity even with nothing to send.
+    // The send button is a 32px circle at full opacity: neutral with nothing to send, accent once
+    // there is something to send.
     const send = lastButton();
     const emptyStyle = getComputedStyle(send);
     expect(send.disabled).toBe(true);
     expect(send.getBoundingClientRect().width).toBe(32);
     expect(send.getBoundingClientRect().height).toBe(32);
-    expect(emptyStyle.backgroundColor).toBe(resolveColor("var(--accent)"));
+    expect(emptyStyle.backgroundColor).toBe(resolveColor("var(--secondary)"));
+    expect(emptyStyle.backgroundColor).not.toBe(resolveColor("var(--accent)"));
     expect(Number(emptyStyle.opacity)).toBe(1);
 
     await userEvent.click(page.getByTestId("composer-editor"));
     await userEvent.keyboard("hello");
     await vi.waitFor(() => expect(send.disabled).toBe(false));
     const readyStyle = getComputedStyle(send);
-    expect(readyStyle.backgroundColor).toBe(resolveColor("var(--accent)"));
+    // The fill eases from neutral to accent, so wait for the transition to land.
+    await vi.waitFor(() => expect(readyStyle.backgroundColor).toBe(resolveColor("var(--accent)")));
     expect(Number(readyStyle.opacity)).toBe(1);
     await userEvent.keyboard("{Control>}a{/Control}{Backspace}");
 
