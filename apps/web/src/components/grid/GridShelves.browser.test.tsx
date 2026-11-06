@@ -30,10 +30,10 @@ describe("GridShelves", () => {
     );
 
     await expect
-      .element(screen.getByRole("treeitem", { name: /On hold/ }))
+      .element(screen.getByRole("button", { name: /On hold/ }))
       .toHaveTextContent("On hold2");
     await expect
-      .element(screen.getByRole("treeitem", { name: /Closed/ }))
+      .element(screen.getByRole("button", { name: /Closed/ }))
       .toHaveTextContent("Closed1");
     expect(screen.container.querySelectorAll('[data-testid="shelf-card"]')).toHaveLength(0);
   });
@@ -86,12 +86,37 @@ describe("GridShelves", () => {
       { router: false },
     );
 
-    await userEvent.click(screen.getByRole("treeitem", { name: /On hold/ }));
+    await userEvent.click(screen.getByRole("button", { name: /On hold/ }));
     await expect.element(screen.getByText("Audit release notes")).toBeVisible();
     await expect.element(screen.getByText("Refresh fixtures")).toBeVisible();
 
-    await userEvent.click(screen.getByRole("treeitem", { name: /Closed/ }));
+    await userEvent.click(screen.getByRole("button", { name: /Closed/ }));
     await expect.element(screen.getByText("Old work")).toBeVisible();
+  });
+
+  it("lets keyboard users focus each shelf header and toggle it with Enter and Space", async () => {
+    localStorage.clear();
+    await using screen = await render(
+      <GridShelves
+        held={held}
+        closed={closed}
+        renderCard={(thread) => <span data-testid="shelf-card">{thread.title}</span>}
+      />,
+      { router: false },
+    );
+
+    for (const name of [/On hold/, /Closed/]) {
+      const header = screen.getByRole("button", { name }).element();
+      expect(header.tabIndex).toBe(0);
+      expect(header.getAttribute("role")).toBeNull();
+      header.focus();
+      expect(document.activeElement).toBe(header);
+      expect(header.getAttribute("aria-expanded")).toBe("false");
+      await userEvent.keyboard("{Enter}");
+      expect(header.getAttribute("aria-expanded")).toBe("true");
+      await userEvent.keyboard(" ");
+      expect(header.getAttribute("aria-expanded")).toBe("false");
+    }
   });
 
   it("draws both shelf rows alike until a thread is dragged toward Closed", async () => {
