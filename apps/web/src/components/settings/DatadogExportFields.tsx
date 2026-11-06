@@ -28,6 +28,7 @@ import {
   DATADOG_SITE_LABELS,
   datadogKeyProblem,
   datadogKeyStatusLabel,
+  parseAgentDraft,
 } from "./telemetryExport.logic";
 
 type DatadogPreset = Extract<HoustonObservabilityPreset, { _tag: "Datadog" }>;
@@ -254,6 +255,9 @@ export function DatadogAgentFields({
   readonly disabled: boolean;
   readonly onChange: (draft: AgentDraft) => void;
 }) {
+  // The host is at fault when the draft stays invalid with any valid port.
+  const hostInvalid =
+    problem !== null && parseAgentDraft({ ...draft, port: "1" })._tag === "Invalid";
   return (
     <div className="grid gap-1.5">
       <Label htmlFor="datadog-agent-host">Agent OTLP receiver</Label>
@@ -262,7 +266,7 @@ export function DatadogAgentFields({
           id="datadog-agent-host"
           size="compact"
           aria-label="Agent host"
-          aria-invalid={problem !== null && draft.host.trim() === ""}
+          aria-invalid={hostInvalid}
           value={draft.host}
           disabled={disabled}
           onChange={(event) => onChange({ ...draft, host: event.target.value })}
@@ -271,7 +275,7 @@ export function DatadogAgentFields({
           size="compact"
           inputMode="numeric"
           aria-label="Agent port"
-          aria-invalid={problem !== null && draft.host.trim() !== ""}
+          aria-invalid={problem !== null && !hostInvalid}
           value={draft.port}
           disabled={disabled}
           onChange={(event) => onChange({ ...draft, port: event.target.value })}

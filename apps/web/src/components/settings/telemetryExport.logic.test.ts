@@ -124,6 +124,39 @@ describe("Datadog Agent fields", () => {
   });
 });
 
+describe("Datadog Agent host", () => {
+  const port = "4318";
+  const problem =
+    "Enter only the Agent's host name or IP address, such as 127.0.0.1, without a scheme, port or path.";
+  it("refuses a scheme, port, path or whitespace, which would build a broken URL", () => {
+    for (const host of [
+      "localhost:4318",
+      "http://127.0.0.1",
+      "127.0.0.1/v1",
+      "agent local",
+      "user@agent.local",
+      "[::1]",
+      "::1]:4318",
+      "agent.local?x",
+    ]) {
+      expect(parseAgentDraft({ host, port }), host).toEqual({ _tag: "Invalid", problem });
+    }
+  });
+
+  it("accepts host names, IPv4 and bare IPv6 addresses", () => {
+    for (const host of [
+      "127.0.0.1",
+      "localhost",
+      "Agent.Local",
+      "dd-agent.internal",
+      "::1",
+      "fe80::1",
+    ]) {
+      expect(parseAgentDraft({ host, port })._tag, host).toBe("Valid");
+    }
+  });
+});
+
 describe("Datadog API key status", () => {
   it("names a refused status query instead of showing nothing", () => {
     expect(datadogKeyStatusLabel({ data: { present: true }, error: null })).toBe("Saved");

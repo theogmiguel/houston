@@ -148,6 +148,15 @@ export const agentDraftOf = (preset: AgentPreset): AgentDraft => ({
 
 const PORT_SHAPE = /^\d{1,5}$/;
 
+// The server builds http://<host>:<port>/v1/<signal>, bracketing a host that contains ":" as an
+// IPv6 address, so a host is valid only when that URL parses back to exactly this host.
+const isAgentHost = (host: string) => {
+  const ipv6 = host.includes(":");
+  const parsed = URL.parse(`http://${ipv6 ? `[${host}]` : host}`);
+  if (parsed === null) return false;
+  return ipv6 || parsed.hostname === host.toLowerCase();
+};
+
 /** The Agent preset a draft saves as, or why it cannot be saved yet. */
 export const parseAgentDraft = (
   draft: AgentDraft,
@@ -157,6 +166,12 @@ export const parseAgentDraft = (
   const host = draft.host.trim();
   if (host === "")
     return { _tag: "Invalid", problem: "Enter the Agent's host, such as 127.0.0.1." };
+  if (!isAgentHost(host))
+    return {
+      _tag: "Invalid",
+      problem:
+        "Enter only the Agent's host name or IP address, such as 127.0.0.1, without a scheme, port or path.",
+    };
   const port = draft.port.trim();
   const number = PORT_SHAPE.test(port) ? Number(port) : Number.NaN;
   if (!(number >= 1 && number <= 65_535))
