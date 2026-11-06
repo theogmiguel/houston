@@ -878,9 +878,7 @@ export const make = Effect.gen(function* () {
     // non-default port in the context's host, and the mark is then ignored.
     createsChangeRequestsIn: Effect.fn("GitHubSourceControlProvider.createsChangeRequestsIn")(
       function* ({ cwd, context, repository }) {
-        const host = URL.canParse(context.provider.baseUrl)
-          ? new URL(context.provider.baseUrl).host
-          : null;
+        const host = URL.parse(context.provider.baseUrl)?.host ?? null;
         const target = repository?.toLowerCase();
         const fromEnvironment = parseGitHubRepositorySelector(
           environment.GH_REPO ?? "",
@@ -890,8 +888,7 @@ export const make = Effect.gen(function* () {
           const { host: targetHost, owner, name } = fromEnvironment;
           return (
             host !== null &&
-            URL.canParse(`https://${targetHost}`) &&
-            new URL(`https://${targetHost}`).host === host &&
+            URL.parse(`https://${targetHost}`)?.host === host &&
             `${owner}/${name}`.toLowerCase() === target
           );
         }

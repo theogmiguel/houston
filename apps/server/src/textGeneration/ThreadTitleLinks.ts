@@ -14,8 +14,8 @@ export const resolveThreadTitleLinks = Effect.fn("resolveThreadTitleLinks")(func
   const links = new Map<string, NonNullable<ReturnType<typeof providers.resolveLink>>>();
   for (const match of input.message.matchAll(/https:\/\/[^\s<>"')\]`]+/g)) {
     const candidate = match[0].replace(/[.,;!?]+$/, "");
-    if (!URL.canParse(candidate)) continue;
-    const url = new URL(candidate);
+    const url = URL.parse(candidate);
+    if (!url) continue;
     url.hash = "";
     url.search = "";
     if (links.has(url.href)) continue;
