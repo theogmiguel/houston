@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 
-import { useMediaQuery } from "~/hooks/useMediaQuery";
 import { Text } from "./text";
+import { useReducedMotion } from "../../hooks/useReducedMotion";
 
 const WAVEFORM_BAR_COUNT = 28;
 const WAVEFORM_BAR_IDS = Array.from({ length: WAVEFORM_BAR_COUNT }, (_, index) => String(index));
 
 /** Microphone levels, newest at the right, with opacity and height carrying the level. */
 export function VoiceWaveform(props: { level: number }) {
-  const prefersReducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
+  const prefersReducedMotion = useReducedMotion();
   const barsRef = useRef<Array<HTMLSpanElement | null>>([]);
   const levelsRef = useRef(Array<number>(WAVEFORM_BAR_COUNT).fill(0));
 

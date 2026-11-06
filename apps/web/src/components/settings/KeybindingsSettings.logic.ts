@@ -376,7 +376,7 @@ export function commandLabel(command: KeybindingCommand): string {
   if (command === "composer.sendAndNewThread") return "Composer: Send and Start New Thread";
   if (command === "thread.steerQueuedMessage") return "Queue: Send First Queued Message";
   if (command === "thread.editQueuedMessage") return "Queue: Edit Last Queued Message";
-  if (command === "thread.copyReference") return "Pull Request: Copy Link or Thread";
+  if (command === "thread.copyReference") return "Thread: Copy PR Link or Thread";
   if (command === "thread.settle") return "Thread: Close";
   if (command === "thread.pin") return "Thread: Pin thread";
   const usageMetric = METRIC_OPTIONS.find((option) => option.command === command);

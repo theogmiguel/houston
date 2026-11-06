@@ -316,6 +316,21 @@ describe("resolveIdleCompaction", () => {
   });
 });
 
+describe("ClientSettings environment identification", () => {
+  it("defaults to the pill", () => {
+    expect(decodeClientSettings({}).environmentIdentificationMode).toBe("pill");
+  });
+
+  it.each(["artwork", "nightly-artwork", "dev-artwork", "pill", "none"])(
+    "still decodes the stored mode %s",
+    (mode) => {
+      expect(decodeClientSettings({ environmentIdentificationMode: mode })).toMatchObject({
+        environmentIdentificationMode: mode,
+      });
+    },
+  );
+});
+
 describe("ClientSettings notifications", () => {
   it("requires opt-in when existing settings omit notification preferences", () => {
     expect(decodeClientSettings({}).notificationMode).toBe("off");
@@ -334,6 +349,19 @@ describe("ClientSettings quit confirmation", () => {
 
     expect(settings.confirmQuit).toBe(mode);
     expect(encodeClientSettings(settings).confirmQuit).toBe(mode);
+  });
+});
+
+describe("ClientSettings animations", () => {
+  it("plays animations by default", () => {
+    expect(decodeClientSettings({}).animationsEnabled).toBe(true);
+  });
+
+  it("ignores the retired panel animation duration", () => {
+    const settings = decodeClientSettings({ panelAnimationDurationMs: 150 });
+
+    expect(settings.animationsEnabled).toBe(true);
+    expect(encodeClientSettings(settings)).not.toHaveProperty("panelAnimationDurationMs");
   });
 });
 

@@ -159,16 +159,6 @@ export const AppearanceContrast = Schema.Int.check(
 );
 export type AppearanceContrast = typeof AppearanceContrast.Type;
 const DEFAULT_APPEARANCE_CONTRAST: AppearanceContrast = 100;
-export const MIN_PANEL_ANIMATION_DURATION_MS = 0;
-export const MAX_PANEL_ANIMATION_DURATION_MS = 400;
-export const PanelAnimationDurationMs = Schema.Int.check(
-  Schema.isBetween({
-    minimum: MIN_PANEL_ANIMATION_DURATION_MS,
-    maximum: MAX_PANEL_ANIMATION_DURATION_MS,
-  }),
-);
-export type PanelAnimationDurationMs = typeof PanelAnimationDurationMs.Type;
-const DEFAULT_PANEL_ANIMATION_DURATION_MS: PanelAnimationDurationMs = 0;
 
 export const MIN_INTERFACE_FONT_SIZE = 12;
 export const MAX_INTERFACE_FONT_SIZE = 20;
@@ -202,8 +192,8 @@ export const TerminalFontSize = Schema.Int.check(
 export type TerminalFontSize = typeof TerminalFontSize.Type;
 const DEFAULT_TERMINAL_FONT_SIZE: TerminalFontSize = 12;
 
-// "artwork" follows the running channel and shows nothing on Latest. The fixed artwork
-// modes let any channel opt into a specific channel's art.
+// Only "pill" and "none" are offered. The artwork literals stay decodable because settings
+// files written by earlier builds contain them; they display as "pill".
 export const EnvironmentIdentificationMode = Schema.Literals([
   "artwork",
   "nightly-artwork",
@@ -212,7 +202,7 @@ export const EnvironmentIdentificationMode = Schema.Literals([
   "none",
 ]);
 export type EnvironmentIdentificationMode = typeof EnvironmentIdentificationMode.Type;
-export const DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE: EnvironmentIdentificationMode = "artwork";
+export const DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE: EnvironmentIdentificationMode = "pill";
 
 export const SnapShotKeyChord = KeybindingShortcut.check(
   Schema.makeFilter(
@@ -382,10 +372,8 @@ export const ClientSettingsSchema = Schema.Struct({
   appearanceContrast: AppearanceContrast.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_APPEARANCE_CONTRAST)),
   ),
-  // Zero avoids per-frame layout work from width/height transitions.
-  panelAnimationDurationMs: PanelAnimationDurationMs.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_PANEL_ANIMATION_DURATION_MS)),
-  ),
+  // Off behaves like the system's reduced-motion preference across the whole app.
+  animationsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   browserDefaultViewport: PreviewViewportSetting.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_BROWSER_VIEWPORT)),
   ),
@@ -1890,7 +1878,7 @@ export const ClientSettingsPatch = Schema.Struct({
   loadBalancingEnabled: Schema.optionalKey(Schema.Boolean),
   loadBalancingWeights: Schema.optionalKey(LoadBalancingWeights),
   appearanceContrast: Schema.optionalKey(AppearanceContrast),
-  panelAnimationDurationMs: Schema.optionalKey(PanelAnimationDurationMs),
+  animationsEnabled: Schema.optionalKey(Schema.Boolean),
   browserDefaultViewport: Schema.optionalKey(PreviewViewportSetting),
   browserDefaultZoomFactor: Schema.optionalKey(PreviewZoomFactor),
   browserDefaultAppearance: Schema.optionalKey(PreviewAppearancePreference),

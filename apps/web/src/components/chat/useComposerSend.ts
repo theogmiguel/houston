@@ -205,8 +205,6 @@ interface ComposerSendInput {
   readonly isSendBusy: boolean;
   readonly sendQueuesBehindSetup: boolean;
   readonly isDraftHeroState: boolean;
-  readonly panelAnimationsActive: boolean;
-  readonly panelAnimationDurationMs: number;
   readonly keepFullHistory: boolean;
   readonly resumeCompactionTokens: number | null;
   readonly showPlanFollowUpPrompt: boolean;
@@ -303,8 +301,6 @@ export function useComposerSend(input: ComposerSendInput) {
     isSendBusy,
     sendQueuesBehindSetup,
     isDraftHeroState,
-    panelAnimationsActive,
-    panelAnimationDurationMs,
     keepFullHistory,
     resumeCompactionTokens,
     showPlanFollowUpPrompt,
@@ -1031,10 +1027,7 @@ export function useComposerSend(input: ComposerSendInput) {
           });
           resolveDockStarted?.();
         },
-        {
-          active: panelAnimationsActive,
-          durationMs: panelAnimationDurationMs,
-        },
+        { active: false, durationMs: 0 },
       );
       void dockTransition.catch(() => resolveDockStarted?.());
       await dockStarted;

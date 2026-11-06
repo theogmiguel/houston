@@ -26,7 +26,6 @@ import {
   EmptyTitle,
 } from "../ui/empty";
 import { Skeleton } from "../ui/skeleton";
-import { Switch } from "../ui/switch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 import { GitIcon, JujutsuIcon, type Icon } from "../Icons";
@@ -267,8 +266,10 @@ function DiscoveryItemRow({
                 />
               </Button>
             ) : null}
-            {!isVcsNotReady(item) ? (
-              <Switch checked={enabled} disabled aria-label={`${item.label} availability`} />
+            {enabled ? (
+              <Badge variant="success" size="sm">
+                Ready
+              </Badge>
             ) : null}
           </div>
         </div>

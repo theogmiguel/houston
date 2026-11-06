@@ -939,6 +939,73 @@ describe("pullCurrentBranch", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
+  // Each variant is a way the user's own configuration makes git run a program during a pull.
+  it.effect.each(["post-merge hook", "core.hooksPath hook"] as const)(
+    "a pull runs no program from the checkout's configuration: %s",
+    (variant) =>
+      Effect.gen(function* () {
+        // The probe scripts are POSIX shell.
+        if (HostProcess.Platform.defaultValue() === "win32") return;
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const fs = yield* FileSystem.FileSystem;
+        const { cwd, remoteHead } = yield* cloneBehindRemote;
+        const scratch = yield* makeTmpDir("git-vcs-driver-marker-");
+        const marker = `${scratch}/ran`;
+        const script = `#!/bin/sh\necho ran >> "${marker}"\n`;
+        const install = (file: string) =>
+          Effect.gen(function* () {
+            yield* fs.writeFileString(file, script);
+            yield* fs.chmod(file, 0o755);
+          });
+        if (variant === "post-merge hook") {
+          yield* fs.makeDirectory(`${cwd}/.git/hooks`, { recursive: true });
+          yield* install(`${cwd}/.git/hooks/post-merge`);
+        } else {
+          yield* fs.makeDirectory(`${scratch}/hooks`, { recursive: true });
+          yield* install(`${scratch}/hooks/post-merge`);
+          yield* git(cwd, ["config", "core.hooksPath", `${scratch}/hooks`]);
+        }
+
+        const result = yield* driver.pullCurrentBranch(cwd);
+
+        assert.equal(result.status, "pulled");
+        assert.equal(yield* git(cwd, ["rev-parse", "HEAD"]), remoteHead);
+        assert.isFalse(yield* fs.exists(marker), `${variant} ran during the pull`);
+      }).pipe(Effect.provide(layerTest)),
+  );
+
+  // The status reads around a pull legitimately run the user's fsmonitor, so its override is
+  // checked on the pull's own environment.
+  it.effect("a pull overrides submodule recursion and fsmonitor for the git it starts", () =>
+    Effect.gen(function* () {
+      const recorded: Array<string> = [];
+      const { cwd } = yield* cloneBehindRemote;
+      yield* git(cwd, ["config", "submodule.recurse", "true"]);
+      yield* git(cwd, ["config", "fetch.recurseSubmodules", "on-demand"]);
+      yield* git(cwd, ["config", "core.fsmonitor", "/bin/true"]);
+      const delegate = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const spawner = ChildProcessSpawner.make((command) => {
+        if (ChildProcess.isStandardCommand(command) && command.args.includes("pull")) {
+          const env = command.options.env ?? {};
+          const count = Number(env.GIT_CONFIG_COUNT ?? "0");
+          for (let index = 0; index < count; index += 1) {
+            recorded.push(`${env[`GIT_CONFIG_KEY_${index}`]}=${env[`GIT_CONFIG_VALUE_${index}`]}`);
+          }
+        }
+        return delegate.spawn(command);
+      });
+      const recordingDriver = yield* makeGitVcsDriverCore().pipe(
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      );
+
+      yield* recordingDriver.pullCurrentBranch(cwd);
+
+      assert.include(recorded, "submodule.recurse=false");
+      assert.include(recorded, "fetch.recurseSubmodules=false");
+      assert.include(recorded, "core.fsmonitor=false");
+    }).pipe(Effect.provide(layerTest)),
+  );
+
   it.effect.each([false, true])(
     "pulls past an unrelated lock with custom fetch mapping=%s",
     (customMapping) =>

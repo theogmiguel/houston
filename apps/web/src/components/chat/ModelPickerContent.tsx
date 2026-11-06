@@ -47,6 +47,7 @@ import {
   shortcutLabelForCommand,
 } from "../../keybindings";
 import {
+  useClientSettings,
   useEnvironmentModelPreferences,
   useToggleEnvironmentModelFavorite,
 } from "~/hooks/useSettings";
@@ -201,6 +202,7 @@ function ModelPickerProviderNotices({
   onOpenProviderSetup: ((instanceId: ProviderInstanceId) => void) | undefined;
 }) {
   const navigate = useNavigate();
+  const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
   return (
     <>
       {setupEntries.length > 0 ? (
@@ -208,7 +210,7 @@ function ModelPickerProviderNotices({
           {setupEntries.map((entry) => (
             <div key={entry.instanceId} className="px-1 py-1.5 text-xs leading-snug">
               <p className="line-clamp-3 text-muted-foreground">
-                {getProviderStatusMessage(entry.snapshot)}
+                {getProviderStatusMessage(entry.snapshot, timestampFormat)}
               </p>
               <InlineButton
                 className="mt-1"

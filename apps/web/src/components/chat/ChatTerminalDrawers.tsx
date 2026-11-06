@@ -8,7 +8,6 @@ import { useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useComposerDraftStore } from "../../composerDraftStore";
 import type { TerminalContextSelection } from "../../lib/terminalContext";
-import { usePanelAnimationSettings, usePanelPresence } from "../../panelAnimations";
 import { useThreadRefs } from "../../state/entities";
 import { useTerminalUiStateStore } from "../../terminalUiStateStore";
 import {
@@ -54,15 +53,6 @@ export function ChatTerminalDrawers(props: ChatTerminalDrawersProps) {
   const draftThreadKeys = Object.values(draftThreadsByThreadKey).map((draftThread) =>
     scopedThreadKey(scopeThreadRef(draftThread.environmentId, draftThread.threadId)),
   );
-  const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
-    usePanelAnimationSettings();
-  const activeTerminalDrawerPresence = usePanelPresence(
-    Boolean(activeThreadKey && props.activeTerminalOpen),
-    true,
-    panelAnimationsActive,
-    activeThreadKey,
-    panelAnimationDurationMs,
-  );
   const [mountedTerminalThreadKeys, setMountedTerminalThreadKeys] = useState<string[]>([]);
   const existingOpenTerminalThreadKeys = (() => {
     const existingThreadKeys = new Set<string>([...serverThreadKeys, ...draftThreadKeys]);
@@ -72,7 +62,7 @@ export function ChatTerminalDrawers(props: ChatTerminalDrawersProps) {
     currentThreadIds: mountedTerminalThreadKeys,
     openThreadIds: existingOpenTerminalThreadKeys,
     activeThreadId: activeThreadKey,
-    activeThreadTerminalOpen: activeTerminalDrawerPresence.present,
+    activeThreadTerminalOpen: Boolean(activeThreadKey && props.activeTerminalOpen),
     maxHiddenThreadCount: MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
   });
   if (

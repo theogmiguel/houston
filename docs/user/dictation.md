@@ -22,14 +22,22 @@ any telemetry service.
 
 If transcript cleanup is enabled, the finished **text** of the transcript (never the audio)
 is sent to the text generation provider selected in Settings ▸ Voice for punctuation, filler
-words and spoken corrections. Cleanup is off by default, so transcripts stay on the machine.
+words and spoken corrections, together with the text currently in the composer before and
+after the cursor, which the provider uses to resolve ambiguous speech. Cleanup is off by
+default, so transcripts and composer text stay on the machine.
 
 ## Settings
 
 Settings ▸ Voice selects the transcription environment and microphone, downloads and removes
 models, sets the language and translation, chooses CPU or GPU acceleration, and sets how long
 an idle model stays in memory. It also holds the dictionary for names and technical terms,
-the filler-word removal toggle, and the cleanup prompt.
+the filler-word removal toggle, and the cleanup prompt. The dictionary accepts accented and
+non-Latin spellings such as `Aplicação`, except Chinese, Japanese and Korean terms.
+
+Filler-word removal drops hesitation sounds such as "uh" and "hmm" in any language, plus
+language-specific ones for English, German, French, Portuguese and Spanish. With the language
+set to Auto, only the language-neutral sounds are removed. Words that are also vocabulary,
+such as "um" in Portuguese or the laughter "ha", are kept.
 
 Dictation is available where the composer accepts text. A thread whose question requires a
 fixed answer does not offer it.

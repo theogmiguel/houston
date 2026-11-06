@@ -33,6 +33,7 @@ import {
   TerminalIcon,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useClientSettings } from "../../hooks/useSettings";
 
 import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../../appearanceFonts";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
@@ -871,10 +872,11 @@ function AgentCard({
   readonly terminalAvailable: boolean;
   readonly onOpenTerminal: () => void;
 }) {
+  const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
   const meta = providerClients.get(ProviderDriverKind.make(driver));
   const displayName =
     provider?.displayName || (driver === "claudeAgent" ? "Claude Code" : (meta?.label ?? driver));
-  const summary = getProviderSummary(provider);
+  const summary = getProviderSummary(provider, timestampFormat);
   const providerState = getOnboardingProviderState(provider);
 
   return (

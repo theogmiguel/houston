@@ -1,3 +1,5 @@
+import { prefersReducedMotion } from "../hooks/useReducedMotion";
+
 const motionTiming = { duration: 150, easing: "ease-out" };
 const rowTravel = (height: number) => Math.min(height, 40);
 // Fades clone removed rows and animate clones and entries; intervening layout reads force reflows.
@@ -15,9 +17,6 @@ function progress(animation: Animation) {
 export function createSidebarListMotion(parent: HTMLUListElement) {
   let positions: Map<HTMLElement, RowPosition> | null = null;
   let disposed = false;
-  const reducedMotion = parent.ownerDocument.defaultView?.matchMedia(
-    "(prefers-reduced-motion: reduce)",
-  );
   const running = new Map<HTMLElement, { animation: Animation; offset: number }>();
   const entering = new Map<HTMLElement, { animation: Animation; travel: number }>();
   const exiting = new Map<HTMLElement, Animation>();
@@ -145,7 +144,7 @@ export function createSidebarListMotion(parent: HTMLUListElement) {
       const shouldAnimate =
         animate &&
         positions !== null &&
-        !reducedMotion?.matches &&
+        !prefersReducedMotion() &&
         fadeCount <= MAX_FADED_ROWS_PER_UPDATE;
       const movedDelta = new Map<HTMLElement, number>();
       const nextOrder = [...next.keys()];
@@ -218,7 +217,7 @@ export function createSidebarListMotion(parent: HTMLUListElement) {
         }
       }
       if (released !== null) {
-        if (!reducedMotion?.matches) {
+        if (!prefersReducedMotion()) {
           for (const [node, position] of next) {
             const top = released.get(node);
             if (top !== undefined) move(node, top - position.top);

@@ -4,8 +4,12 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   backgroundActivitySharedPolicySettings,
   getChangedBrowserSettingLabels,
+  getChangedDisplaySettingLabels,
+  gitFetchIntervalLabel,
+  durationToSeconds,
   hasChangedBackgroundActivitySettings,
 } from "./SettingsPanels.logic";
+import { resolveServerBackgroundActivitySettings } from "@houston-app/shared/backgroundActivitySettings";
 
 describe("background activity settings restore", () => {
   it("detects legacy interval values even when the structured setting is at its default", () => {
@@ -86,5 +90,50 @@ describe("getChangedBrowserSettingLabels", () => {
         browserCustomSearchUrl: "https://search.example/?q=%s",
       }),
     ).toEqual(["Search engine"]);
+  });
+});
+
+describe("display settings restore", () => {
+  it("lists nothing at the defaults", () => {
+    expect(getChangedDisplaySettingLabels(DEFAULT_UNIFIED_SETTINGS)).toEqual([]);
+  });
+
+  it("lists font smoothing and thread details once they differ from the defaults", () => {
+    expect(
+      getChangedDisplaySettingLabels({
+        ...DEFAULT_UNIFIED_SETTINGS,
+        fontSmoothing: !DEFAULT_UNIFIED_SETTINGS.fontSmoothing,
+        threadDetailsItems: { servers: false },
+      }),
+    ).toEqual(["Font smoothing", "Thread details"]);
+  });
+});
+
+describe("gitFetchIntervalLabel", () => {
+  it.each([
+    [0, "Off"],
+    [15, "Every 15 seconds"],
+    [45, "Every 45 seconds"],
+    [60, "Every minute"],
+    [300, "Every 5 minutes"],
+    [900, "Every 15 minutes"],
+    [3600, "Every hour"],
+    [7200, "Every 2 hours"],
+  ])("labels %i seconds as %s", (seconds, label) => {
+    expect(gitFetchIntervalLabel(seconds)).toBe(label);
+  });
+
+  it.each([
+    ["performance", "Every 15 seconds"],
+    ["balanced", "Every 30 seconds"],
+    ["battery-saver", "Off"],
+  ] as const)("labels the interval the %s profile sets as %s", (profile, label) => {
+    const resolved = resolveServerBackgroundActivitySettings({
+      ...DEFAULT_UNIFIED_SETTINGS,
+      backgroundActivity: { schemaVersion: 1, profile, overrides: {} },
+    });
+    expect(gitFetchIntervalLabel(durationToSeconds(resolved.automaticGitFetchInterval))).toBe(
+      label,
+    );
   });
 });

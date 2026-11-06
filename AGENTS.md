@@ -32,8 +32,10 @@ conflicts with the task, explain the conflict and obtain maintainer direction.
   allowed to improve Houston: anonymous usage data and crash and diagnostic data (OpenTelemetry
   traces, metrics and logs). It never includes source code, prompts, agent responses, file
   contents, credentials or paths, can be turned off, and `docs/user/privacy.md` lists what is sent,
-  to whom and how to turn it off before it ships. Local-first does not mean offline: a network-backed feature
-  states what it transmits and when. Updates require an explicit user action.
+  to whom and how to turn it off before it ships. Local-first does not mean offline: a
+  network-backed feature can be turned off, sends nothing while off, and sends no credential or
+  user content to a destination the user did not configure. Updates require an explicit user
+  action.
 - **v1 state** (`~/.houston`): v2 never deletes, moves or opens v1's state read-write. A one-time
   import reads v1's `houston.db` read-only. The host's one v1 cleanup reads the channel
   directory and edits only the agent CLI configs v1 changed.
@@ -119,8 +121,10 @@ Before completing a change, identify which of these checks apply:
   value. Errors for limits name the limit, actual value and requested operation.
 - **Platforms:** Linux and Windows are supported release platforms. A platform-specific behaviour
   has an equivalent elsewhere or a named limitation.
-- **Network:** a feature that sends anything off the machine lists each call, its cadence and its
-  limits, and sends nothing while disabled.
+- **Network:** a feature that sends anything off the machine can be disabled and sends nothing
+  while disabled, never sends credentials or user content to a destination the user did not
+  configure, and has user-facing text that is true about what it sends (it need not enumerate
+  every call).
 - **Documentation:** describe user-visible behaviour in the PR title used for release
   notes. Update the relevant `docs/user/` page when usage changes.
 
@@ -232,4 +236,7 @@ The renderer ships in an Electron webview, so motion must stay on the compositor
   (`motion/maximizeMotion.ts`), both on the `registry.ts` spring. Measure grid changes with
   the frame probe (`source: "frame-probe"` in
   `~/.houston-dev/v2/userdata/logs/app-debug.ndjson`).
-- Reduced motion turns every role to 0ms in CSS and `resolveMotion` returns `off` in script.
+- Reduced motion (the system preference or the Appearance **Animations** switch) turns every
+  role to 0ms in CSS and `resolveMotion` returns `off` in script. Gate motion only through the
+  `motion-safe`/`motion-reduce` variants or `prefersReducedMotion`/`useReducedMotion`, never a
+  direct `prefers-reduced-motion` query.

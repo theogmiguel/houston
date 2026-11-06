@@ -21,6 +21,7 @@ import {
 import { observeResize } from "../../lib/observeResize";
 import { requestWorkspaceFocus } from "../../lib/workspaceFocus";
 import { readInlineDetailsHandoff, recordInlineDetailsHandoff } from "./inlineDetailsFollow";
+import { prefersReducedMotion } from "../../hooks/useReducedMotion";
 
 // The grid cannot paint a card across its cell borders, so a focus move becomes a short
 // slide and fade from the previous cell's side instead of a full cross-cell flight.
@@ -30,10 +31,6 @@ const FOLLOW_DURATION_MS = 200;
 
 const cappedOffset = (delta: number, max: number) =>
   Math.sign(delta) * Math.min(Math.abs(delta), max);
-
-const prefersReducedMotion = () =>
-  typeof window.matchMedia === "function" &&
-  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 export function ThreadDetailsCard({
   threadRef,

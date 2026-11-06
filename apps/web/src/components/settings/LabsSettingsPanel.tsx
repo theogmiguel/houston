@@ -3,21 +3,22 @@ import { Link } from "@tanstack/react-router";
 import { ScopedSwitch } from "./ScopedSwitch";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
-import { LegacyFeaturesSection } from "./SettingsPanels";
+import { ComposerFeaturesSection } from "./SettingsPanels";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 
-/** Features still settling in, and legacy behavior kept for people who rely on it. */
+/** Optional features that are off by default. */
 export function LabsSettingsPanel() {
   return (
     <SettingsPageContainer>
       <p className="px-1 text-sm text-muted-foreground">
-        Experiments that may change or disappear. Each one is off unless you turn it on.
+        Optional features, each off unless you turn it on. Some are experiments that may change or
+        disappear.
       </p>
       <SettingsSection id="labs-environments" title="Environments">
         <LinkedEnvironmentsRow />
         <SimlockHostsRow />
       </SettingsSection>
-      <LegacyFeaturesSection />
+      <ComposerFeaturesSection />
     </SettingsPageContainer>
   );
 }
