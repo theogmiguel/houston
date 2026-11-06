@@ -11,7 +11,7 @@ import type * as OtlpTracer from "effect/observability/OtlpTracer";
 
 import * as RecordingTracer from "../../observability/testing/RecordingTracer.ts";
 import * as ExportLogger from "./ExportLogger.ts";
-import { exportedTraceData } from "./ExportRedaction.ts";
+import { exportedResource, exportedTraceData } from "./ExportRedaction.ts";
 import * as ExportTracer from "./ExportTracer.ts";
 
 class ReadFailed extends Data.TaggedError("ReadFailed")<{ readonly message: string }> {}
@@ -54,6 +54,43 @@ const failingWork = Effect.fail(
 );
 
 describe("ExportTracer", () => {
+  it.effect("exports a log span event as 'log' without the interpolated error text", () =>
+    Effect.gen(function* () {
+      const { tracer, exported } = yield* makeStack();
+      yield* Effect.logError(`x failed: ${new Error("git: /rel/secret-branch")}`).pipe(
+        Effect.withSpan("Git.push"),
+        Effect.withTracer(tracer),
+        Effect.provide(Logger.layer([Logger.tracerLogger])),
+      );
+      const span = exported.named("Git.push")[0]!;
+      assert.deepStrictEqual(
+        span.events.map(([name]) => name),
+        ["log"],
+      );
+      assert.notInclude(
+        JSON.stringify(span.events.map(([name, , attributes]) => [name, attributes])),
+        "secret-branch",
+      );
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("filters the attributes of links given when a span starts", () =>
+    Effect.gen(function* () {
+      const { tracer, exported } = yield* makeStack();
+      const linked = yield* Effect.makeSpan("Linked").pipe(Effect.withTracer(tracer));
+      yield* Effect.void.pipe(
+        Effect.withSpan("Linking", {
+          links: [{ span: linked, attributes: { "git.cwd": PRIVATE_PATH, "houston.run.id": "r" } }],
+        }),
+        Effect.withTracer(tracer),
+      );
+      assert.deepStrictEqual(
+        exported.named("Linking")[0]!.links.map((link) => link.attributes),
+        [{ "houston.run.id": "r" }],
+      );
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("exports only allowlisted attributes while the local file keeps all", () =>
     Effect.gen(function* () {
       const { tracer, exported, local } = yield* makeStack();
@@ -124,7 +161,7 @@ describe("ExportTracer", () => {
 });
 
 describe("ExportLogger", () => {
-  it.effect("exports a scrubbed message, allowlisted annotations and the error tag", () =>
+  it.effect("exports no message text, allowlisted annotations and the error tag", () =>
     Effect.gen(function* () {
       const seen: Array<{ message: unknown; annotations: unknown; cause: Cause.Cause<unknown> }> =
         [];
@@ -146,9 +183,26 @@ describe("ExportLogger", () => {
 
       const [entry] = seen;
       assert.isDefined(entry);
-      assert.strictEqual(entry!.message, "failed to read a.ts from [url] token=[redacted]");
+      assert.strictEqual(entry!.message, "log");
       assert.deepStrictEqual(entry!.annotations, { "houston.thread.id": "thread-1" });
       assert.notInclude(Cause.pretty(entry!.cause), PRIVATE_PATH);
+    }),
+  );
+
+  it.effect("exports an interruption as a fixed Interrupted without its interruptor stack", () =>
+    Effect.gen(function* () {
+      const causes: Array<Cause.Cause<unknown>> = [];
+      const capture = Logger.make((options) => {
+        causes.push(options.cause);
+      });
+      yield* Effect.logWarning("stopped", Cause.interrupt(1)).pipe(
+        Effect.provide(Logger.layer([ExportLogger.redacting(capture)])),
+      );
+      const errors = Cause.prettyErrors(causes[0]!, { includeCauseInStack: true });
+      assert.deepStrictEqual(
+        errors.map((error) => [error.name, error.message, error.stack]),
+        [["Interrupted", "Interrupted", "Interrupted: Interrupted"]],
+      );
     }),
   );
 });
@@ -158,7 +212,14 @@ describe("exportedTraceData", () => {
     const data = {
       resourceSpans: [
         {
-          resource: { attributes: [], droppedAttributesCount: 0 },
+          resource: {
+            attributes: [
+              { key: "service.name", value: { stringValue: "houston-web" } },
+              { key: "host.name", value: { stringValue: "alice-laptop" } },
+              { key: "user.email", value: { stringValue: "alice@example.com" } },
+            ],
+            droppedAttributesCount: 0,
+          },
           scopeSpans: [
             {
               scope: { name: "houston-web" },
@@ -185,6 +246,15 @@ describe("exportedTraceData", () => {
                       ],
                       droppedAttributesCount: 0,
                     },
+                    {
+                      name: "exception",
+                      timeUnixNano: "2",
+                      attributes: [
+                        { key: "exception.type", value: { stringValue: "TypeError" } },
+                        { key: "exception.message", value: { stringValue: PRIVATE_PATH } },
+                      ],
+                      droppedAttributesCount: 0,
+                    },
                   ],
                   droppedEventsCount: 0,
                   status: { code: 2, message: PRIVATE_PATH },
@@ -207,7 +277,43 @@ describe("exportedTraceData", () => {
       span.attributes.map((attribute) => attribute.key),
       ["houston.thread.id", "url.scheme", "server.address"],
     );
-    assert.strictEqual(span.events[0]!.name, "log");
+    // Same naming rule as server span events: an arbitrary name is a log message.
+    assert.deepStrictEqual(
+      span.events.map((event) => event.name),
+      ["log", "exception"],
+    );
+    assert.deepStrictEqual(
+      exported.resourceSpans[0]!.resource.attributes.map((attribute) => attribute.key),
+      ["service.name"],
+    );
+    assert.notInclude(text, "alice");
     assert.strictEqual(span.status.code, 2);
+  });
+});
+
+describe("exportedResource", () => {
+  it("keeps the service, channel and runtime and drops the machine", () => {
+    assert.deepStrictEqual(
+      exportedResource<{ serviceName: string; attributes: Record<string, unknown> }>({
+        serviceName: "houston-server",
+        attributes: {
+          "service.instance.id": "abc",
+          "houston.release.channel": "dev",
+          "deployment.environment.name": "development",
+          "process.runtime.name": "nodejs",
+          "host.name": "alice-laptop",
+          "os.description": "Windows 11",
+        },
+      }),
+      {
+        serviceName: "houston-server",
+        attributes: {
+          "service.instance.id": "abc",
+          "houston.release.channel": "dev",
+          "deployment.environment.name": "development",
+          "process.runtime.name": "nodejs",
+        },
+      },
+    );
   });
 });
