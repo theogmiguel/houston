@@ -96,6 +96,7 @@ import {
 import { collapsedRollup, revealedOpenThread } from "../../grid/collapsedRollup";
 import { PullRequestChecksGlyph, PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { SidebarStatusGlyph } from "../sidebar/SidebarStatusGlyph";
+import { ThreadCheckoutMark, ThreadRowIndicators } from "./threadRowIndicators";
 import { GridShelves } from "./GridShelves";
 import { readLocalApi } from "../../localApi";
 import { useProjectSectionMenu } from "./projectSectionMenu";
@@ -1675,6 +1676,7 @@ export function GridGroup({
                     SIDEBAR_GRID_HEADING_CLS,
                     // One selection fill at a time: the focused thread row carries it while visible.
                     open &&
+                      revealedThread === undefined &&
                       (collapsed ||
                         !threads.some((thread) => thread.id === grid.focusedThreadId)) &&
                       SIDEBAR_GRID_HEADING_ACTIVE_CLS,
@@ -1932,6 +1934,7 @@ export function ThreadCard({
     thread.environmentId,
   );
   const threadKey = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
+  const regeneratingTitle = thread.titleRegeneration != null;
   const modelLabel = thread.modelSelection?.model ?? null;
   const actionsVisible = actionsHovered || holdMenuOpen || actionsMenuOpen;
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -2018,6 +2021,7 @@ export function ThreadCard({
             onPointerDown={startRowDrag}
             tabIndex={-1}
             data-thread-key={threadKey}
+            aria-busy={regeneratingTitle || undefined}
             onContextMenu={(event) => {
               if (renaming) return;
               event.preventDefault();
@@ -2106,6 +2110,7 @@ export function ThreadCard({
                 className={cn(
                   "min-w-0 flex-1 truncate text-headline leading-4.75 text-foreground",
                   attention ? "font-semibold" : "font-medium",
+                  regeneratingTitle && "opacity-55",
                 )}
               >
                 <HighlightedText text={thread.title} query={query} />
@@ -2212,7 +2217,7 @@ export function ThreadCard({
         <div className="flex min-w-0 items-center gap-2 text-caption leading-3.75 text-secondary-label">
           {showBranch ? (
             <>
-              <GitBranchIcon aria-hidden className="size-3 shrink-0" />
+              <ThreadCheckoutMark thread={thread} />
               <span className="min-w-0 flex-1 truncate font-mono text-2xs">
                 {branchName ?? "no branch"}
                 {notInGrid ? " · not in a grid" : ""}
@@ -2223,6 +2228,12 @@ export function ThreadCard({
           ) : (
             <span className="flex-1" />
           )}
+          <ThreadRowIndicators
+            thread={thread}
+            rowRef={rowRef}
+            focused={focused}
+            onActivate={onOpen}
+          />
           {showSubagents && runningSubagents > 0 ? (
             <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap">
               <UsersIcon aria-hidden className="size-3 shrink-0" />

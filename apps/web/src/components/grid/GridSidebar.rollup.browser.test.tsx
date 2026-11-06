@@ -21,6 +21,12 @@ vi.mock(import("@effect/atom-react"), async (original) => ({
   ...(await original()),
   useAtomValue: (() => []) as never,
 }));
+vi.mock(import("../../state/environments"), async (original) => ({
+  ...(await original()),
+  usePrimaryEnvironmentId: (() => "env-1") as never,
+  useEnvironmentMachines: (() => new Map()) as never,
+}));
+
 vi.mock(import("../../state/session"), async (original) => ({
   ...(await original()),
   readEnvironmentScope: () => true,

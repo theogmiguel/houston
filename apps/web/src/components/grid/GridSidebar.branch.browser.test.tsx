@@ -11,6 +11,12 @@ vi.mock(import("@effect/atom-react"), async (original) => ({
   useAtomValue: (() => []) as never,
 }));
 
+vi.mock(import("../../state/environments"), async (original) => ({
+  ...(await original()),
+  usePrimaryEnvironmentId: (() => "env-1") as never,
+  useEnvironmentMachines: (() => new Map()) as never,
+}));
+
 vi.mock(import("../../state/session"), async (original) => ({
   ...(await original()),
   readEnvironmentScope: () => true,
@@ -113,11 +119,10 @@ describe("ThreadCard branch", () => {
     expect(statusCwds).toContain("/worktrees/x");
   });
 
-  it("keeps the thread's recorded branch without asking the checkout", async () => {
-    statusCwds.length = 0;
+  it("keeps the thread's recorded branch over the checkout's current one", async () => {
     await using screen = await render(card(thread({ branch: "houston/recorded" })));
 
     await expect.element(screen.getByText("houston/recorded", { exact: true })).toBeInTheDocument();
-    expect(statusCwds).toEqual([]);
+    expect(screen.container.textContent).not.toContain("main");
   });
 });
