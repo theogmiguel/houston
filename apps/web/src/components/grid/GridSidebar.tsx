@@ -11,11 +11,7 @@ import {
   scopeThreadRef,
 } from "@houston-app/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
-import { effectiveSnoozed } from "@houston-app/client-runtime/state/thread-settled";
-import {
-  formatWorkingDurationLabel,
-  resolveThreadWorkingStartedAt,
-} from "@houston-app/client-runtime/state/models";
+import { canSnooze, effectiveSnoozed } from "@houston-app/client-runtime/state/thread-settled";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   AlarmClockOffIcon,
@@ -79,7 +75,6 @@ import {
 import {
   attentionCardsForGrids,
   clearThreadSelection,
-  gridThreadStateLabel,
   nextAttentionCard,
   openPullRequestNumber,
   partitionShelfThreads,
@@ -96,6 +91,8 @@ import {
 import { collapsedRollup, revealedOpenThread } from "../../grid/collapsedRollup";
 import { PullRequestChecksGlyph, PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { SidebarStatusGlyph } from "../sidebar/SidebarStatusGlyph";
+import { closedAgeLabel } from "../../grid/statusWord";
+import { ThreadStateMark } from "./threadStatusMark";
 import { ThreadCheckoutMark, ThreadRowIndicators } from "./threadRowIndicators";
 import { GridShelves } from "./GridShelves";
 import { readLocalApi } from "../../localApi";
@@ -137,7 +134,6 @@ import { cn } from "../../lib/utils";
 import { isModelPickerOpen } from "../../modelPickerVisibility";
 import { updateClientSettings, useClientSettings } from "../../hooks/useSettings";
 import { useNowMinute } from "../../hooks/useNowMinute";
-import { useNowSecond } from "../../hooks/useNowSecond";
 import { formatRelativeTimeLabel, formatUpcomingTimestamp } from "../../timestampFormat";
 import { AnimatedHeight } from "../AnimatedHeight";
 import { isAppModalPage } from "../sidebar/mainAppLocation";
@@ -146,7 +142,6 @@ import { SidebarRailKbd, SidebarRailNav } from "../sidebar/SidebarRailNav";
 import { useOpenPullRequestCount } from "../pullRequest/useOpenPullRequestCount";
 import { useTaskYourTurnCount } from "../../state/tasks";
 import { SidebarProviderStack, type SidebarProviderEntry } from "../sidebar/SidebarThreadRow";
-import { ThreadStateGlyph, threadStateTextClass } from "../ui/thread-state-glyph";
 import {
   EMPTY_PROVIDER_ENTRIES,
   sidebarProviderEntriesAtom,
@@ -1005,7 +1000,9 @@ export function GridSidebar() {
               timeLabel={
                 shelf === "snoozed" && thread.snoozedUntil !== null
                   ? formatUpcomingTimestamp(thread.snoozedUntil, timestampFormat)
-                  : null
+                  : shelf === "settled"
+                    ? closedAgeLabel(thread, Date.parse(`${nowMinute}:00.000Z`))
+                    : null
               }
               shelf={shelf}
               onOpen={() => {
@@ -1802,37 +1799,6 @@ const ROW_TITLE_CLEARED_ACTIONS = "pr-27";
 const ROW_TITLE_CLEAR_SHELF_ACTION = "group-hover/th:pr-19 group-has-[:focus-visible]/th:pr-19";
 const ROW_TITLE_CLEARED_SHELF_ACTION = "pr-19";
 
-function ThreadStateMark({
-  state,
-  startedAt,
-}: {
-  state: GridThreadState;
-  startedAt: string | null;
-}) {
-  if (state === "idle") return null;
-  const elapsed =
-    state === "running" && startedAt !== null ? <RunningElapsed startedAt={startedAt} /> : null;
-  return (
-    <span
-      className={cn(
-        "inline-flex shrink-0 items-center gap-1 text-caption leading-3.75 font-medium whitespace-nowrap tabular-nums",
-        threadStateTextClass(state),
-      )}
-    >
-      <ThreadStateGlyph state={state} />
-      <span>{gridThreadStateLabel(state)}</span>
-      {elapsed}
-    </span>
-  );
-}
-
-function RunningElapsed({ startedAt }: { startedAt: string }) {
-  const nowMs = useNowSecond();
-  const startedMs = Date.parse(startedAt);
-  if (Number.isNaN(startedMs)) return null;
-  return <span>{formatWorkingDurationLabel(nowMs - startedMs)}</span>;
-}
-
 /**
  * The branch a thread works on: the one it recorded, or else the branch its
  * checkout (its worktree, or the project's own folder) currently has.
@@ -1922,7 +1888,6 @@ export function ThreadCard({
   const showSubagents = useClientSettings((settings) => settings.sidebarRowShowSubagents);
   const state = resolveGridThreadState(thread, nowIso);
   const attention = state === "needs" || state === "ready" || state === "back";
-  const startedAt = resolveThreadWorkingStartedAt(thread);
   const pullRequestNumber = openPullRequestNumber(thread);
   const pullRequestChecksState =
     thread.pullRequests.find((entry) => entry.number === pullRequestNumber)?.snapshot
@@ -1935,6 +1900,7 @@ export function ThreadCard({
   );
   const threadKey = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
   const regeneratingTitle = thread.titleRegeneration != null;
+  const canHold = canSnooze(thread, { now: nowIso });
   const modelLabel = thread.modelSelection?.model ?? null;
   const actionsVisible = actionsHovered || holdMenuOpen || actionsMenuOpen;
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -2162,29 +2128,31 @@ export function ThreadCard({
               </button>
             ) : (
               <>
-                <Menu onOpenChange={setHoldMenuOpen}>
-                  <MenuTrigger
-                    render={
-                      <button
-                        type="button"
-                        aria-label="Hold"
-                        className={cn(
-                          "inline-grid size-[22px] cursor-pointer place-items-center rounded-(--r-badge) text-secondary-foreground hover:bg-(--sel) hover:text-foreground",
-                          FOCUS_ACTION_CLS,
-                        )}
-                      >
-                        <ClockIcon aria-hidden className="size-3.5" />
-                      </button>
-                    }
-                  />
-                  <MenuPopup side="bottom" align="end">
-                    <HoldMenuItems
-                      presets={presets}
-                      onPick={applyPreset}
-                      onPickTime={onPickHoldTime}
+                {canHold ? (
+                  <Menu onOpenChange={setHoldMenuOpen}>
+                    <MenuTrigger
+                      render={
+                        <button
+                          type="button"
+                          aria-label="Hold"
+                          className={cn(
+                            "inline-grid size-[22px] cursor-pointer place-items-center rounded-(--r-badge) text-secondary-foreground hover:bg-(--sel) hover:text-foreground",
+                            FOCUS_ACTION_CLS,
+                          )}
+                        >
+                          <ClockIcon aria-hidden className="size-3.5" />
+                        </button>
+                      }
                     />
-                  </MenuPopup>
-                </Menu>
+                    <MenuPopup side="bottom" align="end">
+                      <HoldMenuItems
+                        presets={presets}
+                        onPick={applyPreset}
+                        onPickTime={onPickHoldTime}
+                      />
+                    </MenuPopup>
+                  </Menu>
+                ) : null}
                 <button
                   type="button"
                   aria-label="Close thread"
@@ -2273,7 +2241,7 @@ export function ThreadCard({
           {state === "idle" ? (
             <span>Idle</span>
           ) : (
-            <ThreadStateMark state={state} startedAt={startedAt} />
+            <ThreadStateMark thread={thread} state={state} nowIso={nowIso} />
           )}
           {(thread.tags ?? []).map((tag) => (
             <span key={tag} data-thread-tag="" className={SIDEBAR_THREAD_TAG_CLASS}>

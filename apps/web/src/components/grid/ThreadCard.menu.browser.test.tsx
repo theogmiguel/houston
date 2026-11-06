@@ -59,6 +59,7 @@ vi.mock(import("../../state/entities"), async (original) => ({
 }));
 
 vi.mock("../../hooks/useThreadActions", () => ({
+  useAcknowledgeThreadWoke: () => () => {},
   canTurnThreadIntoProject: () => false,
   useThreadActions: () => ({
     archiveThread: async () => ({ _tag: "Success" }),

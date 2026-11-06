@@ -432,7 +432,7 @@ describe("ThreadCard status marks", () => {
       card(thread({ hasPendingUserInput: true }), { timeLabel: null }),
     );
 
-    const label = screen.getByText("Needs you").element();
+    const label = screen.getByText("Input").element();
     const outline = label.parentElement?.querySelector("svg path");
     expect(outline).not.toBeNull();
     expect(getComputedStyle(outline!).fill).toBe("none");
