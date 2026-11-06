@@ -326,7 +326,7 @@ body {
   --text-body: 0.8125rem;
   --text-body--line-height: 1.125rem;
   --text-prose: 0.875rem;
-  --text-prose--line-height: 1.25rem;
+  --text-prose--line-height: 1.375rem;
   --text-callout: 0.75rem;
   --text-callout--line-height: 1rem;
   --text-caption: 0.6875rem;
@@ -1037,7 +1037,7 @@ body {
      the semantic names copied feature components use alias them, so a value
      can only drift here, next to the value the board prints. */
   --rail: #ececef;
-  --content: #f5f5f7;
+  --content: #fbfbfc;
   --card: #ffffff;
   --raised: #ffffff;
   --term: #ffffff;
@@ -2724,11 +2724,11 @@ code {
   --workspace-titlebar-scroll-fade-height: 2.75rem;
 }
 
-/* The timeline prose measure and rhythm: 14/20 in a 720px lane, with one
-   block gap. Values come from the Timeline board's assistant section. */
+/* The timeline prose measure and rhythm: 14/22 in a 720px lane (leading 1.57, the range the
+   reference chat apps use), with one block gap. */
 .messages-timeline-scroll .chat-markdown {
   font-size: var(--text-prose);
-  line-height: 1.25rem;
+  line-height: var(--text-prose--line-height);
 }
 
 .messages-timeline-scroll .chat-markdown p,
@@ -2759,7 +2759,9 @@ code {
   color: var(--t1);
   font-family: var(--font-mono);
   font-size: var(--text-mono);
-  line-height: inherit;
+  /* The mono face sits on another baseline, so inheriting the prose line height would
+     stretch any line that holds a chip. */
+  line-height: 1;
 }
 
 /* Grid surface. One thread on screen reads as one surface with the top strip: no card, the

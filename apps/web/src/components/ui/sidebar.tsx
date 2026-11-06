@@ -685,6 +685,7 @@ function SidebarContent({
   return (
     <>
       {fixedHeader ? <div className="w-full shrink-0">{fixedHeader}</div> : null}
+      {/* The fade spans one 44px row, so the row cut by the footer dissolves instead of ending mid-title. */}
       <ScrollArea
         hideScrollbars
         scrollFade
@@ -692,7 +693,7 @@ function SidebarContent({
         // Rows provide keyboard access; exclude the viewport from tab order to flatten VoiceOver's WebKit
         // interaction boundary.
         viewportTabIndex={-1}
-        className="h-auto min-h-0 flex-1 [&>[data-slot=scroll-area-viewport]]:[--fade-size:1.5rem]"
+        className="h-auto min-h-0 flex-1 [&>[data-slot=scroll-area-viewport]]:[--fade-size:2.75rem]"
       >
         <div
           className={cn(

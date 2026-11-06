@@ -403,7 +403,7 @@ function legacyThemeMode(theme: ThemePreference): ThemeAppearance | null {
 // so a theme editor preview and the page agree before a custom theme applies.
 const STANDARD_WEB_THEME_COLORS: Record<ThemeAppearance, Partial<ThemeColors>> = {
   light: {
-    canvas: "#f5f5f7",
+    canvas: "#fbfbfc",
     chrome: "#ececef",
     toolbar: "#ececef",
     surface: "#ffffff",

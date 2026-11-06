@@ -14,7 +14,8 @@ import { useQuietThreadShell } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { replaceComposerContextReferences } from "@houston-app/shared/composerContextReferences";
-import { memo, use, useState, type ReactNode } from "react";
+import { observeResize } from "~/lib/observeResize";
+import { memo, use, useLayoutEffect, useState, type ReactNode } from "react";
 import {
   createMessageAttachmentPreviewProjector,
   selectMessageImageResources,
@@ -29,6 +30,7 @@ import ChatMarkdown from "../ChatMarkdown";
 import {
   CalendarClockIcon,
   ChevronDownIcon,
+  ChevronUpIcon,
   DownloadIcon,
   EyeIcon,
   type LucideIcon,
@@ -406,6 +408,59 @@ export function FoldedMessageHeader(props: {
   );
 }
 
+/**
+ * The collapsed line of a message from another agent. The sender sits in a meta line above the
+ * bubble, so the bubble holds only the summary. The chevron appears only when expanding reveals
+ * more than the line already shows; its space stays reserved so the bubble keeps one width.
+ */
+function AgentFoldedHeader(props: {
+  summary: string;
+  hasMore: boolean;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const [summaryNode, setSummaryNode] = useState<HTMLSpanElement | null>(null);
+  const [clamped, setClamped] = useState(false);
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- mirrors the summary's measured overflow, which only the DOM knows
+  useLayoutEffect(() => {
+    if (summaryNode === null) return;
+    return observeResize(summaryNode, () =>
+      setClamped(summaryNode.scrollWidth > summaryNode.clientWidth),
+    );
+  }, [summaryNode]);
+  const expandable = props.hasMore || clamped || props.expanded;
+  const ChevronIcon = props.expanded ? ChevronUpIcon : ChevronDownIcon;
+  const content = (
+    <>
+      <span ref={setSummaryNode} className="min-w-0 flex-1 truncate">
+        {props.summary}
+      </span>
+      {expandable ? (
+        <ChevronIcon aria-hidden="true" className="size-3.5 shrink-0 text-(--houston)" />
+      ) : (
+        <span aria-hidden="true" className="size-3.5 shrink-0" />
+      )}
+    </>
+  );
+  const className = "flex w-full min-w-0 items-center gap-2 px-3.5 py-2.5";
+  return expandable ? (
+    <button
+      type="button"
+      aria-expanded={props.expanded}
+      data-scroll-anchor-ignore
+      onClick={props.onToggle}
+      className={cn(
+        className,
+        "rounded-(--r-group) focus-visible:outline-2 focus-visible:outline-ring",
+      )}
+    >
+      {content}
+    </button>
+  ) : (
+    <div className={className}>{content}</div>
+  );
+}
+
 function UserMessageProjectedStatus({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const status = row.projectedItem?.item.status;
   if (
@@ -551,6 +606,10 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       .split(/\r?\n/)
       .find((line) => line.trim().length > 0)
       ?.trim() ?? "";
+  // A folded message has more to show when it runs past its first line or carries attachments.
+  const foldHasMore =
+    plainText.split(/\r?\n/).filter((line) => line.trim().length > 0).length > 1 ||
+    (row.message.attachments ?? []).length > 0;
   const mediaCopyRecords = mediaOnly
     ? resolvedContext.records.flatMap((record) => {
         const known = asKnownContextRecord(record);
@@ -827,12 +886,15 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       className="group @container flex flex-col items-end gap-1"
       data-user-message-attribution={folded ? "agent" : undefined}
     >
-      {userMessage.attribution === "houston" ? (
+      {userMessage.attribution === "houston" || folded ? (
         <p
-          className="me-1 text-callout text-secondary-label"
-          data-user-message-attribution="houston"
+          className="me-1 flex max-w-[82%] items-center gap-1 text-callout text-secondary-label"
+          data-user-message-attribution={folded ? undefined : "houston"}
+          data-user-message-sender={folded ? "" : undefined}
+          aria-hidden={folded ? "true" : undefined}
         >
-          Sent by Houston
+          {folded ? <MessagesSquareIcon className="size-3 shrink-0" /> : null}
+          <span className="truncate">{folded ? `From ${senderLabel}` : "Sent by Houston"}</span>
         </p>
       ) : null}
       {(row.message.inputIntent === "steer" ||
@@ -850,7 +912,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       ) : null}
       <div
         className={cn(
-          "relative min-w-0 max-w-[82%] rounded-(--r-group) border border-border bg-(--bubble) text-prose leading-5 text-(--bubble-ink)",
+          "relative min-w-0 max-w-[82%] rounded-(--r-group) bg-(--bubble) text-prose leading-5 text-(--bubble-ink) shadow-composer",
           mediaAboveText && "rounded-tr-(--r-badge)",
           BUBBLE_CHIP_CLASS_NAME,
           !folded && !mediaOnly && !fileCardsOnly && !audioOnly && "px-3.5 py-2.5",
@@ -862,10 +924,9 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           <MessageAuthorHeading>{folded ? senderLabel : "You"}</MessageAuthorHeading>
         )}
         {folded ? (
-          <FoldedMessageHeader
-            icon={MessagesSquareIcon}
-            label={senderLabel}
+          <AgentFoldedHeader
             summary={foldSummary}
+            hasMore={foldHasMore}
             expanded={expanded}
             onToggle={() => setExpanded((value) => !value)}
           />
@@ -877,7 +938,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             hidden={folded && !expanded}
             dir={markdownProseDirection(resolvedContext.text)}
             className={cn(
-              folded && "px-3 pb-3",
+              folded && "px-3.5 pb-3",
               folded && !ctx.findActive && "max-h-96 overflow-auto",
             )}
           >

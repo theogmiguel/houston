@@ -325,7 +325,6 @@ export function GridThreadCell({
             layout.timelineMaxWidth === null
               ? "100%"
               : `${layout.composerMaxWidth ?? layout.timelineMaxWidth}px`,
-          ...(density === "solo" ? { "--text-prose--line-height": "1.3125rem" } : {}),
           ...(showLabel ? { "--pane-label-inset": "2.625rem" } : {}),
           ...(dragging ? { opacity: 0.45 } : {}),
         } as CSSProperties

@@ -111,14 +111,14 @@
 2 apps/web/src/components/chat/ThreadStatusLine.tsx
 16 apps/web/src/components/chat/TimelineAssistantRows.tsx
 27 apps/web/src/components/chat/TimelineFileChangeCard.tsx
-47 apps/web/src/components/chat/TimelineMinimap.tsx
+46 apps/web/src/components/chat/TimelineMinimap.tsx
 17 apps/web/src/components/chat/TimelineOverlays.tsx
 24 apps/web/src/components/chat/TimelinePendingApprovalRow.tsx
 10 apps/web/src/components/chat/TimelinePlanCard.tsx
 19 apps/web/src/components/chat/TimelineRowParts.tsx
 17 apps/web/src/components/chat/TimelineSystemDivider.tsx
 4 apps/web/src/components/chat/TimelineToolActivityIcon.tsx
-108 apps/web/src/components/chat/TimelineUserMessageRow.tsx
+107 apps/web/src/components/chat/TimelineUserMessageRow.tsx
 6 apps/web/src/components/chat/TimelineV2EventRow.tsx
 45 apps/web/src/components/chat/TimelineWorkEntryRow.tsx
 25 apps/web/src/components/chat/TimelineWorkGroupRows.tsx
@@ -133,7 +133,7 @@
 8 apps/web/src/components/chat/WorkLog.tsx
 55 apps/web/src/components/chat/WorktreeSetupCard.tsx
 9 apps/web/src/components/chat/ZoomableImage.tsx
-34 apps/web/src/components/ChatMarkdown.tsx
+33 apps/web/src/components/ChatMarkdown.tsx
 12 apps/web/src/components/ChatView.tsx
 8 apps/web/src/components/CommandBlock.tsx
 12 apps/web/src/components/CommandPalette.tsx

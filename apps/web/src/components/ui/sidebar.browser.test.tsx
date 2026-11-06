@@ -53,7 +53,7 @@ describe("Sidebar", () => {
     await vi.waitFor(() => expect(document.activeElement).toBe(trigger));
   });
 
-  it("fades scrolled content over 24px at its edges so a row never ends flush", async () => {
+  it("fades scrolled content over a whole row at its edges, and not once the list is scrolled clear", async () => {
     await page.viewport(1280, 400);
     await using screen = await render(
       <SidebarProvider defaultOpen className="h-dvh! min-h-0!">
@@ -73,7 +73,16 @@ describe("Sidebar", () => {
     const viewport = screen.container.querySelector<HTMLElement>(
       '[data-slot="scroll-area-viewport"]',
     )!;
-    expect(getComputedStyle(viewport).getPropertyValue("--fade-size")).toBe("1.5rem");
+    expect(getComputedStyle(viewport).getPropertyValue("--fade-size")).toBe("2.75rem");
+    expect(getComputedStyle(viewport).maskImage).not.toBe("none");
+    await vi.waitFor(() =>
+      expect(viewport.style.getPropertyValue("--scroll-area-overflow-y-end")).not.toBe("0px"),
+    );
+
+    viewport.scrollTop = viewport.scrollHeight;
+    await vi.waitFor(() =>
+      expect(viewport.style.getPropertyValue("--scroll-area-overflow-y-end")).toBe("0px"),
+    );
   });
 
   it("abandons a rail drag when the sidebar collapses mid-drag", async () => {

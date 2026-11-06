@@ -84,7 +84,7 @@ describe("Houston primitives", () => {
     const read = (name: string) => getComputedStyle(root).getPropertyValue(name).trim();
     const paper = {
       "--rail": "#ececef",
-      "--content": "#f5f5f7",
+      "--content": "#fbfbfc",
       "--card": "#ffffff",
       "--raised": "#ffffff",
       "--term": "#ffffff",

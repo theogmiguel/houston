@@ -772,8 +772,8 @@ describe("MessagesTimeline agent messages", () => {
       [message(AGENT_MESSAGE, { createdBy: "agent", senderThreadId: SENDER_THREAD_ID })],
       { onOpenThread },
     );
-    const row = screen.button(/^Agent/);
-    expect(row.textContent).toContain("Review finished");
+    const row = screen.button(/^Review finished/);
+    expect(screen.text()).toContain("From Agent");
     expect(row.getAttribute("aria-expanded")).toBe("false");
     expect(screen.text()).not.toContain("drops the index");
     expect(screen.buttons("Open thread")).toHaveLength(0);
@@ -783,27 +783,71 @@ describe("MessagesTimeline agent messages", () => {
     await click(screen.button("Open thread"));
     expect(onOpenThread).toHaveBeenCalledWith(SENDER_THREAD_ID);
 
-    await click(screen.button(/^Agent/));
+    await click(screen.button(/^Review finished/));
     expect(screen.text()).not.toContain("drops the index");
   });
 
-  it("keeps a collapsed agent message in the filled, outlined bubble at full-strength ink", async () => {
+  it("keeps a collapsed agent message in a raised, borderless bubble at full-strength ink", async () => {
     setup();
     await using screen = await renderTimeline([
       message(AGENT_MESSAGE, { createdBy: "agent", senderThreadId: SENDER_THREAD_ID }),
     ]);
-    const row = screen.button(/^Agent/);
+    const row = screen.button(/^Review finished/);
     const card = row.parentElement!;
     const collapsed = getComputedStyle(card);
-    expect(collapsed.borderTopWidth).toBe("1px");
+    expect(collapsed.borderTopWidth).toBe("0px");
+    expect(collapsed.boxShadow).not.toBe("none");
     expect(collapsed.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
     const collapsedColor = collapsed.color;
 
     await click(row);
     const opened = getComputedStyle(card);
-    expect(opened.borderTopWidth).toBe("1px");
+    expect(opened.borderTopWidth).toBe("0px");
     expect(opened.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
     expect(opened.color).toBe(collapsedColor);
+  });
+
+  it.each([1440, 800])(
+    "sizes a short agent message to its text, right-aligned, at a %ipx viewport",
+    async (width) => {
+      setup();
+      const restore = { width: window.innerWidth, height: window.innerHeight };
+      await page.viewport(width, 900);
+      await using _viewport = {
+        [Symbol.asyncDispose]: () => page.viewport(restore.width, restore.height),
+      };
+      const container = document.createElement("div");
+      container.style.cssText = "width: 100vw; display: flex; flex-direction: column;";
+      await using screen = await render(
+        <MessagesTimeline
+          {...baseProps()}
+          timelineEntries={[
+            message("Done", { createdBy: "agent", senderThreadId: SENDER_THREAD_ID }),
+          ]}
+        />,
+        { container },
+      );
+      const bubbleOf = () =>
+        screen.container.querySelector<HTMLElement>(
+          "[data-user-message-attribution] > div:not([data-user-message-sender])",
+        );
+      await vi.waitFor(() => expect(bubbleOf()).not.toBeNull());
+      const bubble = bubbleOf()!;
+      const lane = bubble.parentElement!.getBoundingClientRect();
+      const box = bubble.getBoundingClientRect();
+      expect(box.width).toBeLessThan(lane.width / 3);
+      expect(lane.right - box.right).toBeLessThan(16);
+      expect(bubble.querySelectorAll("button")).toHaveLength(0);
+    },
+  );
+
+  it("shows the expand chevron only when the agent message has more than its first line", async () => {
+    setup();
+    await using screen = await renderTimeline([
+      message(AGENT_MESSAGE, { createdBy: "agent", senderThreadId: SENDER_THREAD_ID }, "long"),
+    ]);
+    const chevron = screen.button(/^Review finished/).querySelector("svg")!;
+    expect(getComputedStyle(chevron).visibility).toBe("visible");
   });
 
   it("leaves messages sent by Houston as full bubbles", async () => {
@@ -827,7 +871,7 @@ describe("MessagesTimeline agent messages", () => {
       },
     );
     await vi.waitFor(() =>
-      expect(screen.button(/^Agent/).getAttribute("aria-expanded")).toBe("true"),
+      expect(screen.button(/^Checked the next file/).getAttribute("aria-expanded")).toBe("true"),
     );
     const { range } = collectThreadFindRanges(screen.container, "drops the index")[0]!;
     const body = screen.container.querySelector("[data-user-message-body]")!;
@@ -848,6 +892,76 @@ describe("MessagesTimeline minimap", () => {
     const minimap = screen.container.querySelector<HTMLElement>('[data-testid="timeline-minimap"]');
     expect(minimap, "two user messages should mount the minimap").not.toBeNull();
     expect(getComputedStyle(minimap!).opacity).toBe("0");
+  });
+});
+
+describe("MessagesTimeline work rows ink", () => {
+  it("renders a reasoning row in the muted ink, below a tool row's label", async () => {
+    setup();
+    const runId = RunId.make("ink-run");
+    await using screen = await renderTimeline(
+      [
+        message("Question", { runId }, "ink-user"),
+        work("ink-thought", {
+          runId,
+          label: "Thinking",
+          detail: "I need to check whether the changelog exists before reading it.",
+          tone: "thinking",
+          itemType: "reasoning",
+          toolLifecycleStatus: "completed",
+        }),
+        work("ink-tool", {
+          runId,
+          label: "Ran ls",
+          command: "ls -la",
+          tone: "tool",
+          itemType: "command_execution",
+          toolLifecycleStatus: "completed",
+        }),
+        message("Done", { role: "assistant", runId }, "ink-final"),
+      ],
+      { runs: [] },
+    );
+    const heading = [...screen.container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => /^Worked for/.test(button.textContent ?? ""),
+    );
+    if (heading) await click(heading);
+    const reasoning = [...screen.container.querySelectorAll<HTMLElement>("p span")].find((node) =>
+      node.textContent?.includes("I need to check whether"),
+    );
+    expect(reasoning, screen.text()).toBeDefined();
+    const tool = [...screen.container.querySelectorAll<HTMLElement>("p span")].find(
+      (node) => node.textContent === "Ran",
+    );
+    expect(tool, screen.text()).toBeDefined();
+    const probe = document.createElement("span");
+    probe.style.color = "var(--houston)";
+    screen.container.append(probe);
+    const muted = getComputedStyle(probe).color;
+    expect(getComputedStyle(reasoning!).color).toBe(muted);
+    expect(getComputedStyle(tool!).color).not.toBe(muted);
+  });
+});
+
+describe("MessagesTimeline minimap rail", () => {
+  it("centres every tick on a visible track so the rail reads as one control", async () => {
+    setup();
+    await using screen = await renderTimeline([
+      message("First question", {}, "message-1"),
+      message("Second question", {}, "message-2"),
+      message("Third question", {}, "message-3"),
+    ]);
+    const track = screen.container.querySelector<HTMLElement>("[data-minimap-track]")!;
+    expect(track, "the rail draws its track").not.toBeNull();
+    expect(getComputedStyle(track).backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+    const trackBox = track.getBoundingClientRect();
+    const trackCenter = trackBox.left + trackBox.width / 2;
+    const strips = screen.container.querySelectorAll<HTMLElement>("[data-minimap-strip]");
+    expect(strips.length).toBeGreaterThanOrEqual(2);
+    for (const strip of strips) {
+      const box = strip.getBoundingClientRect();
+      expect(Math.abs(box.left + box.width / 2 - trackCenter)).toBeLessThanOrEqual(1);
+    }
   });
 });
 
