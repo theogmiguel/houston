@@ -200,6 +200,7 @@ import {
 } from "../ui/sidebar";
 import type { EnvironmentId, ThreadId } from "@houston-app/contracts";
 import { MOTION_FEEDBACK, MOTION_FEEDBACK_OPACITY } from "../ui/motion-recipes";
+import { olderSettledScopesForProjects } from "../../grid/olderSettledScopes";
 import {
   clampSearchHighlight,
   contentOnlyMatches,
@@ -1187,6 +1188,12 @@ export function GridSidebar() {
                 held={heldShown}
                 closed={closedShown}
                 forceExpanded={searching}
+                older={{
+                  scopes: olderSettledScopesForProjects(projects),
+                  threads: threads.filter((thread) =>
+                    workspaceKeys.has(workspaceKeyOf(thread.environmentId, thread.projectId)),
+                  ),
+                }}
                 closedDropTarget={dropTarget === "shelf:closed"}
                 closedDragActive={dragging !== null}
                 onClosedDrop={(source) => {
