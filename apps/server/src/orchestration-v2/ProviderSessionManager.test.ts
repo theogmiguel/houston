@@ -26,14 +26,18 @@ import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Logger from "effect/Logger";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
+import * as References from "effect/References";
 import * as Stream from "effect/Stream";
 import { TestClock } from "effect/testing";
 import { HttpServer } from "effect/http";
 
 import { ProviderWorkspaceMissingError } from "../provider/Errors.ts";
+import * as TraceContext from "../houston/observability/TraceContext.ts";
+import * as RecordingTracer from "../observability/testing/RecordingTracer.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as McpProviderSession from "@houston-app/provider-core/server/mcpSession";
@@ -1071,6 +1075,72 @@ it.effect("ProviderSessionManagerV2 closes every live session for a provider ins
       ),
     );
   }),
+);
+
+it.effect(
+  "ProviderSessionManagerV2 opens a session without the opening turn's run on its fibers",
+  () => {
+    const recording = RecordingTracer.make();
+    const logged: Array<Readonly<Record<string, unknown>>> = [];
+    return Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const emit = yield* Deferred.make<void>();
+      const emitted = yield* Deferred.make<void>();
+      // An adapter's process reader: forked while the session opens, it serves every later turn.
+      const beforeOpen = () =>
+        Deferred.await(emit).pipe(
+          Effect.andThen(
+            Effect.logInfo("session fiber").pipe(Effect.withSpan("Test.sessionFiber")),
+          ),
+          Effect.andThen(Deferred.succeed(emitted, undefined)),
+          Effect.forkDetach,
+          Effect.asVoid,
+        );
+
+      const effect = Effect.gen(function* () {
+        const eventSink = yield* EventSink.EventSinkV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        const now = yield* DateTime.now;
+        const threadId = ThreadId.make("thread-provider-session-manager-trace-context");
+        const providerSessionId = yield* idAllocator.allocate.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+          threadId,
+        });
+        yield* eventSink.write({
+          events: [yield* makeThreadCreatedEvent({ idAllocator, threadId, now })],
+        });
+        yield* manager
+          .open({ threadId, providerSessionId, modelSelection, runtimePolicy })
+          .pipe(
+            TraceContext.withTraceContext({ threadId, runId: "run-1", commandId: "command-1" }),
+          );
+        yield* Deferred.succeed(emit, undefined);
+        yield* Deferred.await(emitted);
+
+        const span = recording.named("Test.sessionFiber")[0];
+        assert.isDefined(span);
+        assert.isUndefined(span?.attributes.get("houston.run.id"));
+        assert.isUndefined(span?.attributes.get("houston.command.id"));
+        assert.strictEqual(span?.attributes.get("houston.thread.id"), threadId);
+        assert.deepStrictEqual(logged, [{ "houston.thread.id": threadId }]);
+      });
+
+      yield* effect.pipe(
+        Effect.provide(layerTest({ state, idleTimeoutMs: 60_000, beforeOpen })),
+        Effect.withTracer(recording.tracer),
+        Effect.provide(
+          Logger.layer([
+            Logger.make((options) => {
+              if (String(options.message) === "session fiber") {
+                logged.push(options.fiber.getRef(References.CurrentLogAnnotations));
+              }
+            }),
+          ]),
+        ),
+      );
+    });
+  },
 );
 
 it.effect("ProviderSessionManagerV2 opens a duplicate session only once", () =>

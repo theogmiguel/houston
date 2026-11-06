@@ -2,6 +2,7 @@
 // closed enums, numbers or booleans; paths, titles, prompts and user text are not fields here,
 // so they cannot be passed.
 import * as Effect from "effect/Effect";
+import * as References from "effect/References";
 
 import { normalizeModelMetricLabel } from "../../observability/Attributes.ts";
 
@@ -78,6 +79,38 @@ export const withinTraceContext =
     const attributes = toAttributes(context);
     return self.pipe(Effect.annotateSpans(attributes), Effect.annotateLogs(attributes));
   };
+
+// The fields that name one unit of work. Thread, project, provider and model stay: they do not
+// change within a session.
+const TURN_KEYS: ReadonlyArray<string> = [
+  KEYS.runId,
+  KEYS.turnId,
+  KEYS.commandId,
+  KEYS.commandType,
+  KEYS.effectType,
+];
+
+const withoutTurnKeys = (
+  annotations: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> => {
+  if (!TURN_KEYS.some((key) => key in annotations)) return annotations;
+  const kept = { ...annotations };
+  for (const key of TURN_KEYS) delete kept[key];
+  return kept;
+};
+
+/** Drops the turn's ids, which forks inherit: for a fiber started in one turn that serves later ones. */
+// oxlint-disable-next-line houston/require-traced-definition -- a combinator: the wrapped effect owns its spans
+export const withoutTurnContext = <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  self.pipe(
+    Effect.updateService(References.TracerSpanAnnotations, withoutTurnKeys),
+    Effect.updateService(References.CurrentLogAnnotations, withoutTurnKeys),
+  );
+
+/** The context of one provider turn, for a session fiber that serves it. */
+export const forTurn = (turn: { readonly runId: string }): TraceContext => ({
+  runId: turn.runId,
+});
 
 /** The context of one outbox effect: its command, thread, request type and run when it has one. */
 export const forOutboxEffect = (effect: {
