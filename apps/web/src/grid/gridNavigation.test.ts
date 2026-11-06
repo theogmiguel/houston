@@ -1,8 +1,24 @@
 import { EnvironmentId, ProjectId, ThreadId } from "@houston-app/contracts";
-import { afterEach, describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { resolveGridThreadTarget } from "./gridNavigation";
 import { gridContainingThread, useGridStore, workspaceKeyOf } from "./gridStore";
+import { preorderThreads } from "./tree";
+
+const parentByThreadId = new Map<string, string>();
+
+vi.mock(import("../state/entities"), async (original) => ({
+  ...(await original()),
+  readThreadShell: ((ref: { threadId: string }) =>
+    parentByThreadId.has(ref.threadId)
+      ? {
+          id: ref.threadId,
+          settledOverride: null,
+          snoozedUntil: null,
+          lineage: { parentThreadId: parentByThreadId.get(ref.threadId) },
+        }
+      : null) as never,
+}));
 
 const environmentId = EnvironmentId.make("env-1");
 const projectId = ProjectId.make("project-1");
@@ -10,6 +26,7 @@ const threadId = ThreadId.make("thread-1");
 const workspaceKey = workspaceKeyOf(environmentId, projectId);
 
 afterEach(() => {
+  parentByThreadId.clear();
   useGridStore.setState({ grids: [], closedCells: {}, threadOrigins: {} });
 });
 
@@ -40,5 +57,30 @@ describe("resolveGridThreadTarget", () => {
       gridId,
       threadId,
     });
+  });
+
+  it("opens a subagent in its parent's cell instead of adding a cell", () => {
+    const parentId = ThreadId.make("thread-parent");
+    const childId = ThreadId.make("thread-child");
+    parentByThreadId.set(childId, parentId);
+    const gridId = useGridStore.getState().createGrid({ environmentId, projectId, workspaceKey });
+    useGridStore.getState().addThread(gridId, parentId);
+
+    expect(resolveGridThreadTarget({ environmentId, projectId, threadId: childId })).toEqual({
+      gridId,
+      threadId: childId,
+    });
+    const tree = useGridStore.getState().grids.find((grid) => grid.id === gridId)?.tree ?? null;
+    expect(tree === null ? [] : preorderThreads(tree).map((leaf) => leaf.threadId)).toEqual([
+      childId,
+    ]);
+  });
+
+  it("leaves a subagent whose parent no grid shows on its own page", () => {
+    const childId = ThreadId.make("thread-child");
+    parentByThreadId.set(childId, "thread-parent");
+
+    expect(resolveGridThreadTarget({ environmentId, projectId, threadId: childId })).toBeNull();
+    expect(useGridStore.getState().grids).toEqual([]);
   });
 });
