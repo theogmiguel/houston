@@ -26,12 +26,12 @@ const CASES = [
   {
     fixture: "subagent",
     driver: "claudeAgent",
-    total: 27_882,
+    total: 17_249,
     ceilings: {
-      sqlite: 13_075,
-      "sql.transaction": 1567,
-      BEGIN: 1567,
-      COMMIT: 1567,
+      sqlite: 4731,
+      "sql.transaction": 1299,
+      BEGIN: 1299,
+      COMMIT: 1299,
       reportTurnTerminal: 1000,
       "orchestrationV2.EventSink.write": 985,
       "MessageDeliveryWriter.observe": 985,
@@ -53,12 +53,12 @@ const CASES = [
   {
     fixture: "subagent",
     driver: "codex",
-    total: 20_669,
+    total: 14_152,
     ceilings: {
-      sqlite: 8193,
-      "sql.transaction": 1404,
-      BEGIN: 1404,
-      COMMIT: 1404,
+      sqlite: 3064,
+      "sql.transaction": 1239,
+      BEGIN: 1239,
+      COMMIT: 1239,
       "orchestrationV2.EventSink.write": 1009,
       reportTurnTerminal: 1000,
       "MessageDeliveryWriter.observe": 991,
@@ -120,10 +120,11 @@ type ProviderReplayTranscriptOf = Parameters<
 
 const HARNESS_SPANS = new Set(["runOrchestratorReplayFixture", "awaitDispatch"]);
 
-// Counts spans by name, leaving out the scenario's own projection polls and everything under them.
+// Counts spans by name, leaving out the scenario's own projection polls, the database setup
+// (migrations and read-model repair run once per database, not per event) and everything under them.
 const countingTracer = () => {
   const counts = new Map<string, number>();
-  const polling = new WeakSet<Tracer.AnySpan>();
+  const excluded = new WeakSet<Tracer.AnySpan>();
   const tracer = Tracer.make({
     span(options) {
       const span = new Tracer.NativeSpan(options);
@@ -133,10 +134,11 @@ const countingTracer = () => {
         parent?._tag === "Span" &&
         (HARNESS_SPANS.has(parent.name) || parent.name.startsWith("scenario."));
       if (
-        (parent !== undefined && polling.has(parent)) ||
+        (parent !== undefined && excluded.has(parent)) ||
+        options.name === "Sqlite.setup" ||
         (options.name === "OrchestratorV2.getThreadProjection" && fromHarness)
       ) {
-        polling.add(span);
+        excluded.add(span);
       } else {
         counts.set(options.name, (counts.get(options.name) ?? 0) + 1);
       }
