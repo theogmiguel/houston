@@ -323,7 +323,6 @@ const createReadIndexes = Effect.fn("createHoustonReadIndexes")(function* (
 /** Houston migration 12: indexes for the boot reads. */
 export const createProjectionReadIndexes = createReadIndexes(BOOT_READ_INDEXES);
 
-/** Houston migration 13: the shell's read models, filled from the rows already stored. */
 // The read models' own tables and indexes, created if missing by the migration and at every open.
 const READ_MODEL_TABLES: ReadonlyArray<readonly [name: string, ddl: ReadonlyArray<string>]> = [
   [
