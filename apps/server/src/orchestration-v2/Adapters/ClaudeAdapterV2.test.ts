@@ -64,10 +64,12 @@ import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Logger from "effect/Logger";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
+import * as References from "effect/References";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
@@ -79,6 +81,8 @@ import { getModelSelectionStringOptionValue } from "@houston-app/shared/model";
 import { SpawnExecutableResolution } from "@houston-app/shared/shell";
 
 import * as PortScanner from "../../preview/PortScanner.ts";
+import * as TraceContext from "../../houston/observability/TraceContext.ts";
+import * as RecordingTracer from "../../observability/testing/RecordingTracer.ts";
 import { attachmentRelativePath } from "../../attachmentStore.ts";
 import { WorkflowAgentTranscriptReadObserver } from "../workflowAgentTranscript.ts";
 import * as ServerConfig from "../../config.ts";
@@ -3409,6 +3413,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     readonly freshQueueOnReopen?: boolean;
     readonly forkSession?: ClaudeAdapterV2.ClaudeAgentSdkQueryRunnerShape["forkSession"];
     readonly allocateSessionId?: Effect.Effect<string>;
+    /** Runs in the session's query-stream fiber as each message is read. */
+    readonly onMessage?: (message: SDKMessage) => Effect.Effect<void>;
   }) =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
@@ -3492,6 +3498,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                   ? yield* Queue.unbounded<SDKMessage>()
                   : sdkMessages;
               const messages = Stream.fromQueue(processMessages).pipe(
+                Stream.tap((message) => options?.onMessage?.(message) ?? Effect.void),
                 Stream.flatMap((message) =>
                   Stream.make(message).pipe(
                     Stream.concat(
@@ -7055,6 +7062,80 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         ),
       ),
     ),
+  );
+
+  it.effect(
+    "a query opened in one turn stamps no earlier run on a later turn's spans and logs",
+    () => {
+      const recording = RecordingTracer.make();
+      const logged: Array<Readonly<Record<string, unknown>>> = [];
+      return Effect.gen(function* () {
+        const harness = yield* makeWakeHarnessWithOptions({
+          onMessage: () =>
+            Effect.logInfo("session message").pipe(Effect.withSpan("Test.sessionMessage")),
+        });
+        const now = yield* DateTime.now;
+        const turn = (ordinal: number) => {
+          const input = makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now,
+            attemptId: RunAttemptId.make(`attempt-claude-trace-${ordinal}`),
+            providerTurnOrdinal: ordinal,
+            text: "Continue.",
+            attachments: [],
+          });
+          return harness.runtime.startTurn(input).pipe(
+            TraceContext.withTraceContext({
+              runId: input.runId,
+              commandId: `command-${ordinal}`,
+            }),
+            Effect.as(input.runId),
+          );
+        };
+        const finish = (ordinal: number) =>
+          harness
+            .offerAndWait(makeResultFrame({ uuid: `trace-result-${ordinal}`, result: "Done." }))
+            .pipe(Effect.andThen(Queue.take(harness.terminalReceipts)));
+
+        const firstRun = yield* turn(1);
+        yield* finish(1);
+        const spansBefore = recording.ended.length;
+        const logsBefore = logged.length;
+        const secondRun = yield* turn(2);
+        yield* finish(2);
+
+        const later = recording.ended.slice(spansBefore);
+        const sessionSpans = later.filter((span) => span.name === "Test.sessionMessage");
+        assert.isAbove(sessionSpans.length, 0);
+        for (const span of later) {
+          assert.notStrictEqual(span.attributes.get("houston.run.id"), firstRun, span.name);
+          assert.notStrictEqual(span.attributes.get("houston.command.id"), "command-1", span.name);
+        }
+        const laterLogs = logged.slice(logsBefore);
+        assert.isAbove(laterLogs.length, 0);
+        for (const annotations of laterLogs) {
+          assert.notStrictEqual(annotations["houston.run.id"], firstRun);
+          assert.notStrictEqual(annotations["houston.command.id"], "command-1");
+        }
+        assert.notStrictEqual(secondRun, firstRun);
+      }).pipe(
+        Effect.withTracer(recording.tracer),
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+            Logger.layer([
+              Logger.make((options) => {
+                logged.push(options.fiber.getRef(References.CurrentLogAnnotations));
+              }),
+            ]),
+          ),
+        ),
+      );
+    },
   );
 
   it.effect("keeps a later future-window event-supplied Claude reset over the embedded reset", () =>

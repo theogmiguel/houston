@@ -1,6 +1,7 @@
 import { pipe } from "effect/Function";
 import * as DocumentText from "../../provider/DocumentText.ts";
 import { revertCodexThread } from "../../provider/CodexThreadRevert.ts";
+import * as TraceContext from "../../houston/observability/TraceContext.ts";
 import { historyResponseItems } from "@houston-app/provider-core/server/handoffBudget";
 import { makeProviderTextDeltaCoalescer } from "./ProviderTextDeltaCoalescer.ts";
 import {
@@ -8105,6 +8106,8 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 cause,
               }),
           ),
+          // The client's fibers serve every later turn of the session.
+          TraceContext.withoutTurnContext,
         ),
     ),
   });
