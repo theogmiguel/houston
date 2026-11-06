@@ -42,7 +42,7 @@ describe("revealedOpenThread", () => {
     ({ id, focusedThreadId }) as unknown as GridRecord;
   const entries = [
     { grid: grid("a", "t1"), threads: [shell({ id: "t1" }), shell({ id: "t2" })] },
-    { grid: grid("b", "gone"), threads: [shell({ id: "t3" })] },
+    { grid: grid("b", "gone"), threads: [shell({ id: "thread-c" })] },
   ];
 
   it("returns the focused thread of the open grid", () => {

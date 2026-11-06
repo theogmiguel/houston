@@ -63,7 +63,71 @@ The sidebar lists **Pull requests**, **Tasks** and **Usage**, then one section p
 Each section label collapses with **Enter** or **Space** and keeps its state. Under the
 label are the project's grids, then its threads that no grid shows, marked **not in a
 grid**. Grid rows name only the grid. Threads started without a project sit at the foot of
-the list under **No project**. Search filters projects, grids and threads.
+the list under **No project**. With no projects at all, the rail offers **Add project**.
+
+A collapsed project or grid shows how many threads it hides and a dot for the most urgent
+one, and it still lists the thread that is open.
+
+**Filter by project** in the rail header limits the sections, the shelves, search and the
+older Closed threads Houston loads to the projects you pick. Click a project to choose only
+that one, `Shift`-click to add or remove others, and choose it again to clear the filter.
+The filter persists across restarts. The gear beside a project, or a right-click on it,
+opens its **Project settings**; projects from different machines show where they run.
+
+### Search
+
+Search filters projects, grids and threads by title, branch and pull request number, and
+also lists threads whose messages match under **In messages**, with the matching snippet.
+It covers **On hold** and **Closed** threads, which expand while a search runs. `Down` and
+`Up` move the highlighted result, `Enter` opens it, and `Escape` clears the search. A
+message match opens its thread with Find on the matched text. With no match the rail says
+**No threads found**.
+
+### Rows
+
+Each thread row shows its state in a word: **Approval**, **Input**, **Request**, **Needs
+you**, **Failed**, **Limited**, **Goal**, **Waiting** (with how long), **Running**, **Ready**
+or **Back**. A **Back** badge has a dismiss control. Closed rows show how long ago the
+thread closed. A row also shows, when they apply:
+
+- a running terminal, which opens that terminal;
+- an unsent draft, with **Discard**;
+- the checkout's uncommitted line counts;
+- whether the thread uses a worktree or the project's local checkout;
+- a machine icon when the thread runs on another machine;
+- a regenerating title.
+
+Hovering a row opens a card with the project, the machine when there are several, the
+checkout and branch (with a warning when the checkout is on a different branch than the
+thread's), the provider and model, the providers the thread was handed off between, running
+terminal processes, the last error or usage limit, and linked pull requests.
+
+The first nine rows show their `Ctrl+1` … `Ctrl+9` jump label while the modifier is held.
+**Hold** is hidden for a thread that cannot be held.
+
+### Selecting and navigating
+
+`Up`, `Down`, `Home` and `End` move between rows, and `Left` and `Right` collapse or expand
+a section, or move to its parent or first child. `Enter` or `Space` opens the focused row; `Shift`- or `Ctrl`-click selects
+several. Opening a thread clears the selection and scrolls its row into view.
+Double-click a thread's title, or press `F2`, to rename it; `Enter` or leaving the field
+saves, `Escape` cancels, and an empty title is refused with a message. If the server
+refuses the name, its message is shown.
+
+Right-click a selected row to act on the whole selection: **Close**, **Hold**,
+**Regenerate titles**, **Mark unread** or **Delete**, each with the count. **Delete**
+asks for confirmation.
+
+### Dragging
+
+- Drag a row onto a chat composer to attach that thread as context.
+- Drag a **Closed** or **On hold** row into the rail to reopen or wake it in the grid it
+  left.
+- Drop files from a file manager onto a row to add them to that thread's draft; they go
+  out with its next message. Files over an environment's limit, or beyond the attachment
+  cap, are refused with a message naming the limit.
+- Press **Close**, **Reopen thread** or **Wake thread now** on one row and sweep across the
+  same button on other rows to apply it to every row swept. `Escape` cancels the sweep.
 
 A grid's menu offers **New thread**, **Rename grid** (`F2`), **Pin grid** / **Unpin grid**,
 **Move grid up** / **Move grid down**, **Hide grid**, **Delete grid**, **Close all ready**,
@@ -75,7 +139,9 @@ The foot of the rail carries two shelves:
 - **On hold** lists threads with a hold that has not expired. **Wake thread now** returns
   one early. Hold presets are set in **Settings ▸ Threads ▸ Hold options**.
 - **Closed** lists closed threads. **Reopen thread** returns one to its grid. A thread can
-  also be dragged onto **Closed**.
+  also be dragged onto **Closed**. Houston loads older closed threads from the server as
+  you choose **Show more**; the button reads **Loading** while it works and offers **Retry**
+  if the read fails.
 
 Pinned grids and pinned threads come first. **Settings ▸ General ▸ Sidebar** sets project
 grouping and order.
