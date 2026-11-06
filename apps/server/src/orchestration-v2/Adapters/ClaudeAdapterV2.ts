@@ -147,6 +147,7 @@ import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
+import * as TraceContext from "../../houston/observability/TraceContext.ts";
 import { snapshotMcpApp } from "../../mcpApps/McpAppSnapshot.ts";
 import { resolveClaudeSdkExecutablePath } from "../../provider/Drivers/ClaudeExecutable.ts";
 import {
@@ -9543,6 +9544,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 }).pipe(
                   Effect.provideService(FileSystem.FileSystem, fileSystem),
                   Effect.provideService(Path.Path, path),
+                  // Keeps the trace context of the turn that ran the foreground command.
                   Effect.forkIn(sessionScope),
                 );
                 taskOutputTails.set(tailedCall.nativeItemId, { fiber, stop });
@@ -11172,7 +11174,15 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                       resultsReportingNewContextWindow.add(message);
                     }
                   }
-                  return handleSdkMessage({ query: querySession, message });
+                  return Ref.get(activeTurn).pipe(
+                    Effect.flatMap((turn) =>
+                      handleSdkMessage({ query: querySession, message }).pipe(
+                        TraceContext.withinTraceContext(
+                          turn === null ? {} : TraceContext.forTurn(turn.input),
+                        ),
+                      ),
+                    ),
+                  );
                 }),
               ),
             ),
@@ -11205,6 +11215,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               }),
             ),
             Effect.ensuring(Deferred.succeed(closed, undefined)),
+            TraceContext.withoutTurnContext,
             Effect.forkIn(sessionScope),
           );
           return context;

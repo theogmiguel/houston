@@ -5,6 +5,8 @@ import * as References from "effect/References";
 import type * as RpcGroup from "effect/rpc/RpcGroup";
 import * as RpcMiddleware from "effect/rpc/RpcMiddleware";
 
+import * as TraceContext from "../houston/observability/TraceContext.ts";
+import type { ClientKind } from "../houston/observability/TraceContext.ts";
 import { rpcRequestDuration, rpcRequestsTotal, withMetrics } from "./Metrics.ts";
 
 type WsRpcMethod = RpcGroup.Rpcs<typeof WsRpcGroup>["_tag"];
@@ -245,6 +247,9 @@ const RPC_AGGREGATES = {
   [WS_METHODS.houstonSlackSubscribe]: "houstonSlack",
   [WS_METHODS.houstonSlackImportV1Status]: "houstonSlack",
   [WS_METHODS.houstonSlackImportV1Run]: "houstonSlack",
+  [WS_METHODS.houstonObservabilitySetDatadogKey]: "houston",
+  [WS_METHODS.houstonObservabilityClearDatadogKey]: "houston",
+  [WS_METHODS.houstonObservabilityGetDatadogKeyStatus]: "houston",
   [WS_METHODS.houstonMergeQueueGet]: "houstonMergeQueue",
   [WS_METHODS.houstonMergeQueueSubscribe]: "houstonMergeQueue",
   [WS_METHODS.houstonMergeQueueSubscribeSummary]: "houstonMergeQueue",
@@ -292,39 +297,48 @@ const RPC_AGGREGATES = {
   [WS_METHODS.subscribeAuthAccess]: "auth",
 } as const satisfies Readonly<Record<WsRpcMethod, string>>;
 
-const RPC_SPAN_PREFIX = "ws.rpc";
-const DEFAULT_RPC_SPAN_ATTRIBUTES = {
+// RpcServer opens each call's span as `ws.rpc.<method>`, continuing the client's trace.
+export const RPC_SPAN_PREFIX = "ws.rpc";
+export const DEFAULT_RPC_SPAN_ATTRIBUTES = {
   "rpc.transport": "websocket",
   "rpc.system": "effect-rpc",
 } as const;
-const RPC_METHODS_WITH_TRACING_DISABLED: ReadonlySet<string> = new Set([
-  WS_METHODS.serverGetTraceDiagnostics,
-  WS_METHODS.serverGetProcessDiagnostics,
-  WS_METHODS.serverGetProcessResourceHistory,
-  WS_METHODS.serverSignalProcess,
-]);
+// Diagnostics reads would trace themselves; their spans are unsampled, so nothing below records.
+export const RPC_SPANS_UNSAMPLED: ReadonlySet<string> = new Set(
+  [
+    WS_METHODS.serverGetTraceDiagnostics,
+    WS_METHODS.serverGetProcessDiagnostics,
+    WS_METHODS.serverGetProcessResourceHistory,
+    WS_METHODS.serverSignalProcess,
+    // Its payload is a credential.
+    WS_METHODS.houstonObservabilitySetDatadogKey,
+  ].map((method) => `${RPC_SPAN_PREFIX}.${method}`),
+);
 
 /** Add after RpcScopeAuthorization to wrap authorization and record rejected calls. */
 export class RpcInstrumentation extends RpcMiddleware.Service<RpcInstrumentation>()(
   "houston/server/RpcInstrumentation",
 ) {}
 
-export const rpcInstrumentationLayer = Layer.succeed(RpcInstrumentation)((effect, { rpc }) => {
-  const method = rpc._tag;
-  const measured = effect.pipe(
-    withMetrics({ counter: rpcRequestsTotal, timer: rpcRequestDuration, attributes: { method } }),
-  );
+/** Instrumentation for one socket; `clientKind` is the surface the client declared when it connected. */
+export const makeRpcInstrumentationLayer = (connection: {
+  readonly clientKind?: ClientKind | undefined;
+}) =>
+  Layer.succeed(RpcInstrumentation)((effect, { rpc }) => {
+    const method = rpc._tag;
+    const measured = effect.pipe(
+      withMetrics({ counter: rpcRequestsTotal, timer: rpcRequestDuration, attributes: { method } }),
+    );
 
-  if (RPC_METHODS_WITH_TRACING_DISABLED.has(method)) {
-    return measured.pipe(Effect.provideService(References.TracerEnabled, false));
-  }
-  return measured.pipe(
-    Effect.withSpan(`${RPC_SPAN_PREFIX}.${method}`, {
-      attributes: {
-        ...DEFAULT_RPC_SPAN_ATTRIBUTES,
-        "rpc.method": method,
-        "rpc.aggregate": RPC_AGGREGATES[method as WsRpcMethod],
-      },
-    }),
-  );
-});
+    if (RPC_SPANS_UNSAMPLED.has(`${RPC_SPAN_PREFIX}.${method}`)) {
+      return measured.pipe(Effect.provideService(References.TracerEnabled, false));
+    }
+    return Effect.annotateCurrentSpan({
+      "rpc.aggregate": RPC_AGGREGATES[method as WsRpcMethod],
+    }).pipe(
+      Effect.andThen(measured),
+      connection.clientKind === undefined
+        ? (traced) => traced
+        : TraceContext.withTraceContext({ clientKind: connection.clientKind }),
+    );
+  });

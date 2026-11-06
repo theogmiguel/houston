@@ -27,6 +27,7 @@ import {
 } from "./rules.ts";
 import { HoustonMergeQueueStore, nowIso } from "./Store.ts";
 import { HoustonMergeVerifier } from "./Verifier.ts";
+import * as WideEvents from "../observability/WideEvents.ts";
 
 /** Steps one project may take in one pass, so one queue cannot hold a pass for long. */
 const STEPS_PER_PASS = 8;
@@ -310,8 +311,11 @@ export const makeRunner = Effect.fn("HoustonMergeQueueRunner.make")(function* (o
 
   const pass = passLock.withPermits(1)(
     Effect.gen(function* () {
-      const ids = yield* store.projectsWithEntries;
-      yield* Effect.forEach(ids, step, { concurrency: "unbounded", discard: true });
+      const ids = yield* WideEvents.findWork(store.projectsWithEntries);
+      if (ids.length === 0) return;
+      yield* Effect.forEach(ids, step, { concurrency: "unbounded", discard: true }).pipe(
+        WideEvents.jobTick("mergeQueue.pass"),
+      );
     }),
   );
 

@@ -32,6 +32,7 @@ import {
 } from "./rules.ts";
 import { HoustonTaskSourceStore, settingsFromRow, type SourceEvent } from "./SourceStore.ts";
 import { HoustonTaskSourceSync } from "./Sync.ts";
+import * as WideEvents from "../observability/WideEvents.ts";
 
 export { TOKEN_MISSING, TOKEN_UNAVAILABLE } from "./rules.ts";
 
@@ -237,13 +238,21 @@ const make = Effect.gen(function* () {
     lock.withPermits(1)(pollUnlocked(projectId, provider));
 
   const pollAll = Effect.gen(function* () {
-    for (const row of yield* store.enabledRows) {
-      yield* poll(row.project_id as ProjectId, row.provider).pipe(
-        Effect.catchCause((cause) =>
-          Effect.logWarning(`Task source poll of ${row.project_id} ${row.provider} failed.`, cause),
+    const rows = yield* WideEvents.findWork(store.enabledRows);
+    if (rows.length === 0) return;
+    yield* Effect.forEach(
+      rows,
+      (row) =>
+        poll(row.project_id as ProjectId, row.provider).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning(
+              `Task source poll of ${row.project_id} ${row.provider} failed.`,
+              cause,
+            ),
+          ),
         ),
-      );
-    }
+      { discard: true },
+    ).pipe(WideEvents.jobTick("taskSources.poll"));
   });
 
   loops += 1;

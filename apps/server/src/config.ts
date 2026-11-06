@@ -1,3 +1,4 @@
+import type { HoustonObservabilityPreset } from "@houston-app/contracts/houston/observability";
 import * as Context from "effect/Context";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
@@ -83,6 +84,8 @@ export class ServerConfig extends Context.Service<
     readonly otlpMetricsVariable?: string;
     readonly otlpLogsSource?: OtlpEndpointSource;
     readonly otlpLogsVariable?: string;
+    /** Houston: the settings export preset; a signal uses it when its URL is the preset's. */
+    readonly otlpPreset?: HoustonObservabilityPreset;
     readonly otelEnvironment: OtelEnvironment.OtelEnvironment;
     readonly mode: RuntimeMode;
     readonly port: number;

@@ -259,6 +259,12 @@ import {
   HoustonSlackStreamEvent,
 } from "./houston/slack.ts";
 import {
+  HoustonDatadogKeyInput,
+  HoustonDatadogKeyStatus,
+  HoustonObservabilityEmptyInput,
+  HoustonObservabilityError,
+} from "./houston/observability.ts";
+import {
   HoustonMergeQueueEmptyResult,
   HoustonMergeQueueEnqueueInput,
   HoustonMergeQueueEntry,
@@ -643,6 +649,9 @@ export const WS_METHODS = {
   houstonSlackSubscribe: "houston.slack.subscribe",
   houstonSlackImportV1Status: "houston.slack.importV1.status",
   houstonSlackImportV1Run: "houston.slack.importV1.run",
+  houstonObservabilitySetDatadogKey: "houston.observability.setDatadogKey",
+  houstonObservabilityClearDatadogKey: "houston.observability.clearDatadogKey",
+  houstonObservabilityGetDatadogKeyStatus: "houston.observability.getDatadogKeyStatus",
   houstonMergeQueueGet: "houston.mergeQueue.get",
   houstonMergeQueueSubscribe: "houston.mergeQueue.subscribe",
   houstonMergeQueueSubscribeSummary: "houston.mergeQueue.subscribeSummary",
@@ -2107,6 +2116,38 @@ const WsHoustonSlackImportV1RunRpc = Rpc.make(WS_METHODS.houstonSlackImportV1Run
   error: HoustonSlackRpcError,
 });
 
+const HoustonObservabilityRpcError = Schema.Union([
+  HoustonObservabilityError,
+  EnvironmentAuthorizationError,
+]);
+
+const WsHoustonObservabilitySetDatadogKeyRpc = Rpc.make(
+  WS_METHODS.houstonObservabilitySetDatadogKey,
+  {
+    payload: HoustonDatadogKeyInput,
+    success: HoustonDatadogKeyStatus,
+    error: HoustonObservabilityRpcError,
+  },
+);
+
+const WsHoustonObservabilityClearDatadogKeyRpc = Rpc.make(
+  WS_METHODS.houstonObservabilityClearDatadogKey,
+  {
+    payload: HoustonObservabilityEmptyInput,
+    success: HoustonDatadogKeyStatus,
+    error: HoustonObservabilityRpcError,
+  },
+);
+
+const WsHoustonObservabilityGetDatadogKeyStatusRpc = Rpc.make(
+  WS_METHODS.houstonObservabilityGetDatadogKeyStatus,
+  {
+    payload: HoustonObservabilityEmptyInput,
+    success: HoustonDatadogKeyStatus,
+    error: HoustonObservabilityRpcError,
+  },
+);
+
 const HoustonMergeQueueRpcError = Schema.Union([
   HoustonMergeQueueError,
   EnvironmentAuthorizationError,
@@ -2827,6 +2868,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonSlackSubscribeRpc,
   WsHoustonSlackImportV1StatusRpc,
   WsHoustonSlackImportV1RunRpc,
+  WsHoustonObservabilitySetDatadogKeyRpc,
+  WsHoustonObservabilityClearDatadogKeyRpc,
+  WsHoustonObservabilityGetDatadogKeyStatusRpc,
   WsHoustonMergeQueueGetRpc,
   WsHoustonMergeQueueSubscribeRpc,
   WsHoustonMergeQueueSubscribeSummaryRpc,

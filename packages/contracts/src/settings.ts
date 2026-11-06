@@ -1,4 +1,5 @@
 import { EasDeviceHostConfigs, SimlockDeviceHostConfigs, SshDeviceHostConfigs } from "./device.ts";
+import { HoustonObservabilityPreset, LenientObservabilityPreset } from "./houston/observability.ts";
 import {
   AuthOrchestrationOperateScope,
   AuthSettingsWriteScope,
@@ -953,6 +954,8 @@ export const ObservabilitySettings = Schema.Struct({
   otlpTracesUrl: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   otlpMetricsUrl: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   otlpLogsUrl: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  // Houston: a Datadog destination; its API key lives in the server's secret store.
+  preset: Schema.optionalKey(LenientObservabilityPreset),
 });
 export type ObservabilitySettings = typeof ObservabilitySettings.Type;
 
@@ -1821,6 +1824,8 @@ export const ServerSettingsPatch = Schema.Struct({
       otlpTracesUrl: Schema.optionalKey(TrimmedString),
       otlpMetricsUrl: Schema.optionalKey(TrimmedString),
       otlpLogsUrl: Schema.optionalKey(TrimmedString),
+      // Houston: replaces the stored preset whole; null removes it.
+      preset: Schema.optionalKey(Schema.NullOr(HoustonObservabilityPreset)),
     }),
   ),
   /** Merges per host, replacing patched fields whole; redaction markers retain secrets, empty or omitted secrets remove them. */

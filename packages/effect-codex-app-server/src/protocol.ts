@@ -1,4 +1,5 @@
 import * as Cause from "effect/Cause";
+import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -99,6 +100,22 @@ function isIncomingNotification(value: unknown): value is CodexAppServerIncoming
 function isIncomingResponse(value: unknown): value is typeof JsonRpcResponseEnvelope.Type {
   return isJsonRpcResponseEnvelope(value);
 }
+
+// Houston: whether requests carry the current span as W3C trace context. Off unless the server
+// exports traces, so the app-server sees no ids nobody collects.
+export const PropagateTraceContext = Context.Reference<boolean>(
+  "effect-codex-app-server/PropagateTraceContext",
+  { defaultValue: () => false },
+);
+
+const requestTraceContext = Effect.gen(function* () {
+  if (!(yield* PropagateTraceContext)) return undefined;
+  const span = yield* Effect.option(Effect.currentSpan);
+  if (Option.isNone(span) || !span.value.sampled) return undefined;
+  return {
+    traceparent: `00-${span.value.traceId.padStart(32, "0")}-${span.value.spanId}-01`,
+  };
+});
 
 const encodeJsonString = Schema.encodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
 const decodeJsonString = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
@@ -508,6 +525,7 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
         "rpc.request_id": requestId,
       };
       yield* Effect.annotateCurrentSpan(attributes);
+      const trace = yield* requestTraceContext;
       const deferred = yield* Deferred.make<unknown, CodexError.CodexAppServerError>();
       return yield* Effect.acquireUseRelease(
         Ref.update(pending, (current) =>
@@ -519,6 +537,7 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
               id: requestId,
               method,
               ...(payload !== undefined ? { params: payload } : {}),
+              ...(trace === undefined ? {} : { trace }),
             }).pipe(Effect.withSpan("CodexAppServerProtocol.request.enqueue", { attributes }));
             // Includes queue/stdin delivery, Codex work and response routing, not just Houston CPU.
             return yield* Deferred.await(deferred).pipe(

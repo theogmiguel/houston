@@ -385,7 +385,6 @@
 11 apps/web/src/components/settings/SourceControlTokenSettings.tsx
 6 apps/web/src/components/settings/SourceControlWritingSettings.tsx
 20 apps/web/src/components/settings/StorageSettings.tsx
-12 apps/web/src/components/settings/TelemetryExportSettings.tsx
 55 apps/web/src/components/settings/ThemeColorPicker.tsx
 43 apps/web/src/components/settings/ThemeEditorPanel.tsx
 50 apps/web/src/components/settings/ThemeImportDialog.tsx

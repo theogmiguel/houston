@@ -37,6 +37,7 @@ import {
   type RemoteRecord,
   type StoredSettings,
 } from "./rules.ts";
+import * as OutgoingTraceContext from "../observability/OutgoingTraceContext.ts";
 
 const TRAILING_SLASHES = /\/+$/;
 
@@ -161,13 +162,13 @@ export const make = Effect.fn("HoustonTaskSources.makeNotionClient")(function* (
 });
 
 export const layer = Layer.effect(NotionClient, make({ origin: NOTION_ORIGIN })).pipe(
-  Layer.provide(FetchHttpClient.layer),
+  Layer.provide(OutgoingTraceContext.layer(FetchHttpClient.layer)),
 );
 
 /** A client of a loopback fake; tests only. */
 export const layerTest = (origin: string) =>
   Layer.effect(NotionClient, make({ origin, allowLoopback: true })).pipe(
-    Layer.provide(FetchHttpClient.layer),
+    Layer.provide(OutgoingTraceContext.layer(FetchHttpClient.layer)),
   );
 
 // Reads.
