@@ -28,6 +28,7 @@ vi.mock(import("../../state/entities"), async (original) => ({
   ...(await original()),
   readEnvironmentServerConfigLoaded: () => true,
   readEnvironmentSupportsAutoSettleOptOut: () => true,
+  useServerConfigs: () => new Map(),
 }));
 
 function thread(overrides: Record<string, unknown> = {}): EnvironmentThreadShell {
@@ -600,6 +601,43 @@ describe("View options", () => {
       __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, sidebarRowShowBranch: false });
       await using hidden = await render(group(grid(), [thread()]), { router: false });
       expect(hidden.container.textContent).not.toContain("houston/split-drawer-state");
+    } finally {
+      __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
+    }
+  });
+
+  it("badges a merged pull request on the row and drops the badge when Rows show hides it", async () => {
+    const merged = {
+      number: 88,
+      url: "https://github.com/acme/app/pull/88",
+      linkedAt: "2026-01-01T00:00:00.000Z",
+      snapshot: {
+        state: "merged",
+        isDraft: false,
+        title: "Ship it",
+        updatedAt: "2026-01-02T00:00:00.000Z",
+        checksState: "failing",
+      },
+    };
+    __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
+    try {
+      {
+        await using shown = await render(group(grid(), [thread({ pullRequests: [merged] })]), {
+          router: false,
+        });
+        const badge = shown.container.querySelector("[data-thread-pull-request]");
+        expect(badge?.textContent).toBe("#88");
+        expect(badge?.classList.contains("text-merged-foreground")).toBe(true);
+        expect(badge?.querySelectorAll("svg")).toHaveLength(1);
+      }
+      __setClientSettingsForTests({
+        ...DEFAULT_CLIENT_SETTINGS,
+        sidebarRowShowPullRequest: false,
+      });
+      await using hidden = await render(group(grid(), [thread({ pullRequests: [merged] })]), {
+        router: false,
+      });
+      expect(hidden.container.querySelector("[data-thread-pull-request]")).toBeNull();
     } finally {
       __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
     }
