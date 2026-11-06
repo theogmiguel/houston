@@ -71,11 +71,12 @@ describe("the timeline page", () => {
       const threadId = events.find((event) => event.type === "thread.created")?.threadId;
       assert.isDefined(threadId);
       const { statements, tracer } = traceStatements();
-      yield* store
+      const page = yield* store
         .getTimelinePage(threadId, { view: "messages", limit: 50 })
         .pipe(Effect.withTracer(tracer));
+      // The planner picks the index by itself; the query does not name it.
       const itemIndex = statements.filter((statement) =>
-        statement.includes("houston_turn_items_timeline_idx"),
+        statement.includes("SELECT item.turn_item_id, item.run_id"),
       );
       assert.lengthOf(itemIndex, 1);
       const plan = (yield* sql.unsafe<{ readonly detail: string }>(
@@ -91,6 +92,12 @@ describe("the timeline page", () => {
           /payload_json\s+FROM\s+orchestration_v2_projection_(runs|run_attempts)\b/,
         );
       }
+      // Without the index (a table rebuild before the repair runs) the page is slower, not failed.
+      yield* sql`DROP INDEX houston_turn_items_timeline_idx`;
+      assert.deepEqual(
+        yield* store.getTimelinePage(threadId, { view: "messages", limit: 50 }),
+        page,
+      );
     }).pipe(Effect.provide(storeLayer)),
   );
 });
