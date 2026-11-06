@@ -19,6 +19,7 @@ import * as Semaphore from "effect/Semaphore";
 import { FetchHttpClient, HttpClient } from "effect/http";
 
 import * as ProcessRunner from "../processRunner.ts";
+import * as OutgoingTraceContext from "../houston/observability/OutgoingTraceContext.ts";
 
 const Version = Schema.String.check(Schema.isPattern(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/));
 const Manifest = Schema.Struct({
@@ -151,5 +152,5 @@ export const make = Effect.fn("NpmRelease.make")(function* () {
 });
 
 export const layer = Layer.effect(NpmRelease, make()).pipe(
-  Layer.provide([ProcessRunner.layer, FetchHttpClient.layer]),
+  Layer.provide([ProcessRunner.layer, OutgoingTraceContext.layer(FetchHttpClient.layer)]),
 );
