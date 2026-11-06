@@ -1,8 +1,10 @@
 // The request context every span and log record carries. Values are ids Houston generated,
 // closed enums, numbers or booleans; paths, titles, prompts and user text are not fields here,
 // so they cannot be passed.
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as References from "effect/References";
+import * as Tracer from "effect/Tracer";
 
 import { normalizeModelMetricLabel } from "../../observability/Attributes.ts";
 
@@ -104,13 +106,21 @@ const withoutRequestKeys = (
   return kept;
 };
 
-/** For a fiber one request starts that serves later ones: keeps only the provider, and no links. */
+/**
+ * For a fiber one request starts that serves later ones: keeps only the provider, no links and
+ * no parent span, so its spans start traces of their own instead of joining the opening request's.
+ */
 // oxlint-disable-next-line houston/require-traced-definition -- a combinator: the wrapped effect owns its spans
 export const withoutTurnContext = <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
   self.pipe(
     Effect.updateService(References.TracerSpanAnnotations, withoutRequestKeys),
     Effect.updateService(References.CurrentLogAnnotations, withoutRequestKeys),
     Effect.provideService(References.TracerSpanLinks, []),
+    Effect.updateContext(
+      (context: Context.Context<R>) =>
+        // ParentSpan is a fiber reference, never a requirement of `self`.
+        Context.omit(Tracer.ParentSpan)(context) as Context.Context<R>,
+    ),
   );
 
 /** The thread fields of the current context, to annotate a session fiber's work for that thread. */

@@ -1336,6 +1336,8 @@ export const layerWithOptions = (
           attachedThreadIds.delete(input.threadId);
           const loadedProviderThreadKeyByThread = new Map(entry.loadedProviderThreadKeyByThread);
           loadedProviderThreadKeyByThread.delete(input.threadId);
+          // In place: the event pump reads this map through the entry it started with.
+          entry.traceContextByThread.delete(input.threadId);
           const updated = new Map(current);
           updated.set(key, {
             ...entry,
@@ -1739,6 +1741,22 @@ export const layerWithOptions = (
         },
       );
 
+      // A thread can switch models between turns on one session; its events name the current one.
+      const refreshThreadModel = (
+        providerSessionId: ProviderSessionId,
+        threadId: ThreadId,
+        model: string | undefined,
+      ) =>
+        Ref.get(sessions).pipe(
+          Effect.map((current) => {
+            const entry = current.get(sessionKey(providerSessionId));
+            const context = entry?.traceContextByThread.get(threadId);
+            const family = TraceContext.modelFamily(model);
+            if (entry === undefined || context === undefined || family === undefined) return;
+            entry.traceContextByThread.set(threadId, { ...context, model: family });
+          }),
+        );
+
       const decorateRuntime = (
         runtime: ProviderAdapter.ProviderAdapterV2SessionRuntime,
         eventSubscribers: Ref.Ref<
@@ -1773,6 +1791,9 @@ export const layerWithOptions = (
               }),
             ).pipe(
               Effect.andThen(runtime.ensureThread(input)),
+              Effect.tap(() =>
+                refreshThreadModel(providerSessionId, input.threadId, input.modelSelection.model),
+              ),
               Effect.tap((providerThread) =>
                 markProviderThreadLoaded({
                   providerSessionId,
@@ -1817,6 +1838,9 @@ export const layerWithOptions = (
               ),
               Effect.flatMap((loaded) =>
                 loaded ? Effect.succeed(input.providerThread) : runtime.resumeThread(input),
+              ),
+              Effect.tap(() =>
+                refreshThreadModel(providerSessionId, threadId, input.modelSelection?.model),
               ),
               Effect.tap((providerThread) =>
                 markProviderThreadLoaded({
@@ -2111,7 +2135,16 @@ export const layerWithOptions = (
             );
           });
         return entry.runtime.events.pipe(
-          Stream.runForEach((event) => withEventTraceContext(entry, event, pumpEvent(event))),
+          // Each event is its own trace: the session outlives the turn that opened it.
+          Stream.runForEach((event) =>
+            withEventTraceContext(
+              entry,
+              event,
+              pumpEvent(event).pipe(
+                Effect.withSpan("ProviderSessionManager.pumpEvent", { root: true }),
+              ),
+            ),
+          ),
           Effect.exit,
           Effect.flatMap((exit) =>
             Effect.gen(function* () {
@@ -2542,6 +2575,8 @@ export const layerWithOptions = (
                 entry.loadedProviderThreadKeyByThread,
               );
               loadedProviderThreadKeyByThread.delete(input.threadId);
+              // In place: the event pump reads this map through the entry it started with.
+              entry.traceContextByThread.delete(input.threadId);
               const mcpCredentialIdByThread =
                 input.revokeMcpCredential === true
                   ? (() => {
