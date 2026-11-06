@@ -44,7 +44,6 @@ import type {
   RunAttemptId,
 } from "@houston-app/contracts";
 import {
-  IDLE_COMPACTION_TEXT,
   idleCompactionOf,
   OrchestrationV2AppThreadJson as OrchestrationV2AppThreadJsonSchema,
   OrchestrationV2CheckpointJson as OrchestrationV2CheckpointJsonSchema,
@@ -93,6 +92,7 @@ import type * as Statement from "effect/sql/Statement";
 
 import { MCP_APP_OUTPUT_KEY } from "@houston-app/shared/mcpApp";
 import { threadHtmlRenderAttachmentIds } from "../attachmentStore.ts";
+import { pendingBackgroundTasksSql } from "../houston/projectionReadModels.ts";
 import {
   isThreadHistoryUserTurn,
   isConversationHistoryItem,
@@ -4076,7 +4076,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             SELECT json_extract(payload_json, '$.limitRecovery.resetAt') AS reset_at,
               json_extract(payload_json, '$.snoozedUntil') AS snoozed_until
             FROM orchestration_v2_projection_threads
-            -- Houston: matches houston_threads_limit_auto_resume_idx (houston/migrations.ts).
+            -- Houston: matches houston_threads_limit_auto_resume_idx (houston/projectionReadModels.ts).
             WHERE deleted_at IS NULL
               AND CASE WHEN json_valid(payload_json)
                 THEN json_extract(payload_json, '$.limitRecovery.autoResume') = 1 ELSE 0 END
@@ -6036,34 +6036,24 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           ),
         );
 
-    // Mirror idleCompactionOf, including JavaScript trim whitespace.
-    const isIdleCompactionMessage = (alias: string) => {
-      const payload = sql.literal(`${alias}.payload_json`);
-      return sql`(
-        ${sql.literal(`${alias}.role`)} = 'user'
-        AND lower(trim(json_extract(${payload}, '$.text'),
-          char(9, 10, 11, 12, 13, 32, 160, 5760, 8192, 8193, 8194, 8195,
-            8196, 8197, 8198, 8199, 8200, 8201, 8202, 8232, 8233, 8239, 8287, 12288, 65279)
-        )) = ${IDLE_COMPACTION_TEXT}
-        AND coalesce(json_array_length(${payload}, '$.attachments'), 0) = 0
-        AND (
-          json_extract(${payload}, '$.idleCompaction') IS NOT NULL
-          OR (
-            json_extract(${payload}, '$.createdBy') = 'agent'
-            AND json_extract(${payload}, '$.creationSource') = 'server'
-          )
-        )
-      )`;
-    };
+    // Houston: user messages with their idle-compaction and authorship flags, kept by
+    // houston/projectionReadModels.ts, so these lookups parse no message payload.
+    const latestUserMessageAtSql = (authoredOnly = false) => sql`(
+      SELECT message.updated_at FROM houston_user_messages message
+      WHERE message.thread_id = t.thread_id${authoredOnly ? sql` AND message.user_authored = 1` : sql``}
+        AND message.idle_compaction = 0
+      ORDER BY message.updated_at DESC, message.message_id DESC
+      LIMIT 1
+    )`;
     // Mirrors isSilentRunForShell.
     const isSilentShellRun = (alias: string) => {
       const run = sql.literal(alias);
       return sql`(
         ${run}.status <> 'failed'
         AND EXISTS (
-          SELECT 1 FROM orchestration_v2_projection_messages prompt
+          SELECT 1 FROM houston_user_messages prompt
           WHERE prompt.message_id = json_extract(${run}.payload_json, '$.userMessageId')
-            AND ${isIdleCompactionMessage("prompt")}
+            AND prompt.idle_compaction = 1
         ) AND NOT EXISTS (
           SELECT 1 FROM orchestration_v2_projection_turn_items compaction
           WHERE compaction.thread_id = ${run}.thread_id AND compaction.run_id = ${run}.run_id
@@ -6088,12 +6078,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             SELECT
               t.thread_id,
               t.payload_json,
-              CASE
-                WHEN json_extract(t.payload_json, '$.forkedFrom.type') = 'run'
-                  AND json_extract(t.payload_json, '$.lineage.sideChat') IS NOT 1
-                  THEN json_extract(t.payload_json, '$.forkedFrom.threadId')
-                ELSE NULL
-              END AS forked_from_run_source_thread_id,
+              shell.forked_from_run_source_thread_id,
               presented.run_id AS latest_run_id,
               presented.status AS latest_run_status,
               presented.requested_at AS latest_run_requested_at,
@@ -6185,25 +6170,8 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 ORDER BY link.updated_at DESC, link.turn_item_id DESC
                 LIMIT 1
               ) AS pending_link_request_payload_json,
-              (
-                SELECT message.updated_at
-                FROM orchestration_v2_projection_messages message
-                WHERE message.thread_id = t.thread_id
-                  AND message.role = 'user'
-                  AND NOT ${isIdleCompactionMessage("message")}
-                ORDER BY message.updated_at DESC, message.message_id DESC
-                LIMIT 1
-              ) AS latest_user_message_at,
-              (
-                SELECT message.updated_at
-                FROM orchestration_v2_projection_messages message
-                WHERE message.thread_id = t.thread_id
-                  AND message.role = 'user'
-                  AND json_extract(message.payload_json, '$.createdBy') = 'user'
-                  AND NOT ${isIdleCompactionMessage("message")}
-                ORDER BY message.updated_at DESC, message.message_id DESC
-                LIMIT 1
-              ) AS latest_user_authored_message_at,
+              ${latestUserMessageAtSql()} AS latest_user_message_at,
+              ${latestUserMessageAtSql(true)} AS latest_user_authored_message_at,
               EXISTS (
                 SELECT 1
                 FROM orchestration_v2_projection_plans plan
@@ -6212,6 +6180,8 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                   AND plan.status = 'active'
               ) AS has_actionable_proposed_plan
             FROM orchestration_v2_projection_threads t
+            -- Houston: payload keys of the thread row, kept by houston/projectionReadModels.ts.
+            JOIN houston_thread_shell shell ON shell.thread_id = t.thread_id
             LEFT JOIN orchestration_v2_projection_runs active ON active.run_id = (
               SELECT r.run_id
               FROM orchestration_v2_projection_runs r
@@ -6247,6 +6217,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             LEFT JOIN orchestration_v2_projection_runs blocked ON blocked.run_id = (
               SELECT candidate.run_id
               FROM orchestration_v2_projection_runs candidate
+                INDEXED BY houston_runs_latest_executed_idx
               WHERE candidate.thread_id = t.thread_id
                 AND candidate.status <> 'queued'
                 AND NOT (
@@ -6269,20 +6240,17 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                   : sql``
             }${
               unsettledOnly
-                ? sql` AND json_extract(t.payload_json, '$.settledAt') IS NULL AND json_extract(t.payload_json, '$.settledOverride') IS NOT 'settled'`
+                ? sql` AND shell.settled_at IS NULL AND shell.settled_override IS NOT 'settled'`
                 : sql``
             }${
               familyOf === undefined
                 ? sql``
-                : sql` AND json_extract(t.payload_json, '$.lineage.rootThreadId') = (
-                    SELECT json_extract(member.payload_json, '$.lineage.rootThreadId')
-                    FROM orchestration_v2_projection_threads member
+                : sql` AND shell.root_thread_id = (
+                    SELECT member.root_thread_id FROM houston_thread_shell member
                     WHERE member.thread_id = ${familyOf}
                   )`
             }${
-              worktreePath === undefined
-                ? sql``
-                : sql` AND json_extract(t.payload_json, '$.worktreePath') = ${worktreePath}`
+              worktreePath === undefined ? sql`` : sql` AND shell.worktree_path = ${worktreePath}`
             }${threadIds === undefined ? sql`` : sql` AND t.thread_id IN (SELECT value FROM json_each(${encodeIdList(threadIds)}))`}
             ORDER BY t.updated_at ASC, t.thread_id ASC
           `;
@@ -6299,29 +6267,25 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             WHERE thread_id IN (SELECT value FROM json_each(${encodeIdList(threadIds)}))
           `;
 
+    // Houston: item counts per thread and run are kept by houston/projectionReadModels.ts ('' = no run).
     const selectShellRunItemCounts = (threadIds: ReadonlyArray<ThreadId>) =>
       sql<ShellRunItemCountRow>`
-        SELECT thread_id, run_id, COUNT(*) AS item_count
-        FROM orchestration_v2_projection_turn_items
-        WHERE run_id IS NOT NULL AND thread_id IN (SELECT value FROM json_each(${encodeIdList(threadIds)}))
-        GROUP BY thread_id, run_id
+        SELECT thread_id, run_id, item_count
+        FROM houston_turn_item_counts
+        WHERE run_id <> '' AND thread_id IN (SELECT value FROM json_each(${encodeIdList(threadIds)}))
       `;
 
-    // Count all selected threads in one index walk; fork sources still need per-run counts.
+    // One count row per run of the selected threads; fork sources still need per-run counts.
     const selectShellItemCounts = (threadIds: ReadonlyArray<ThreadId>) =>
       sql<ShellItemCountRow>`
         SELECT counts.thread_id,
-          SUM(CASE WHEN counts.run_id IS NULL OR r.status <> 'rolled_back'
+          SUM(CASE WHEN counts.run_id = '' OR r.status <> 'rolled_back'
             THEN counts.item_count ELSE 0 END) AS item_count,
-          SUM(CASE WHEN counts.run_id IS NULL THEN counts.item_count ELSE 0 END)
+          SUM(CASE WHEN counts.run_id = '' THEN counts.item_count ELSE 0 END)
             AS runless_item_count
-        FROM (
-          SELECT thread_id, run_id, COUNT(*) AS item_count
-          FROM orchestration_v2_projection_turn_items
-          WHERE thread_id IN (SELECT value FROM json_each(${encodeIdList(threadIds)}))
-          GROUP BY thread_id, run_id
-        ) counts
+        FROM houston_turn_item_counts counts
         LEFT JOIN orchestration_v2_projection_runs r ON r.run_id = counts.run_id
+        WHERE counts.thread_id IN (SELECT value FROM json_each(${encodeIdList(threadIds)}))
         GROUP BY counts.thread_id
       `;
 
@@ -6453,23 +6417,8 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               r.requested_at AS latest_run_requested_at,
               json_extract(r.payload_json, '$.startedAt') AS latest_run_started_at,
               r.completed_at AS latest_run_completed_at,
-              (
-                SELECT message.updated_at
-                FROM orchestration_v2_projection_messages message
-                WHERE message.thread_id = t.thread_id AND message.role = 'user'
-                  AND NOT ${isIdleCompactionMessage("message")}
-                ORDER BY message.updated_at DESC, message.message_id DESC
-                LIMIT 1
-              ) AS latest_user_message_at,
-              (
-                SELECT message.updated_at
-                FROM orchestration_v2_projection_messages message
-                WHERE message.thread_id = t.thread_id AND message.role = 'user'
-                  AND json_extract(message.payload_json, '$.createdBy') = 'user'
-                  AND NOT ${isIdleCompactionMessage("message")}
-                ORDER BY message.updated_at DESC, message.message_id DESC
-                LIMIT 1
-              ) AS latest_user_authored_message_at
+              ${latestUserMessageAtSql()} AS latest_user_message_at,
+              ${latestUserMessageAtSql(true)} AS latest_user_authored_message_at
             FROM orchestration_v2_projection_threads t
             LEFT JOIN orchestration_v2_projection_runs r ON r.run_id = (
               SELECT latest.run_id FROM orchestration_v2_projection_runs latest
@@ -6595,7 +6544,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           const rows = yield* sql<PayloadRow>`
           SELECT payload_json
           FROM orchestration_v2_projection_threads
-          -- Houston: matches houston_threads_pull_requests_idx (houston/migrations.ts).
+          -- Houston: matches houston_threads_pull_requests_idx (houston/projectionReadModels.ts).
           WHERE deleted_at IS NULL${threadId === undefined ? sql`` : sql` AND thread_id = ${threadId}`}
             AND CASE WHEN json_valid(payload_json) THEN
               json_extract(payload_json, '$.archivedAt') IS NULL
@@ -6622,7 +6571,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       sql<{ readonly thread_id: string; readonly worktree_path: string }>`
         SELECT thread_id, json_extract(payload_json, '$.worktreePath') AS worktree_path
         FROM orchestration_v2_projection_threads
-        -- Houston: matches houston_threads_worktree_idx (houston/migrations.ts).
+        -- Houston: matches houston_threads_worktree_idx (houston/projectionReadModels.ts).
         WHERE deleted_at IS NULL
           AND CASE WHEN json_valid(payload_json)
             THEN json_extract(payload_json, '$.worktreePath') IS NOT NULL ELSE 0 END
@@ -7015,7 +6964,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         const rows = yield* sql<{ readonly thread_id: string }>`
         SELECT thread_id
         FROM orchestration_v2_projection_threads
-        -- Houston: matches houston_threads_subagent_idx (houston/migrations.ts).
+        -- Houston: matches houston_threads_subagent_idx (houston/projectionReadModels.ts).
         WHERE deleted_at IS NULL
           AND CASE WHEN json_valid(payload_json) THEN
             json_extract(payload_json, '$.archivedAt') IS NULL
@@ -7045,58 +6994,63 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         readonly settled_at: string | null;
         readonly pinned_at: string | null;
         readonly snoozed_until: string | null;
+        readonly payload_valid: number;
         readonly may_be_live: number;
       }>`
         SELECT
-          t.thread_id,
-          t.project_id,
-          json_extract(t.payload_json, '$.lineage.relationshipToParent') AS relationship_to_parent,
-          json_extract(t.payload_json, '$.lineage.parentThreadId') AS parent_thread_id,
-          json_extract(t.payload_json, '$.lineage.rootThreadId') AS root_thread_id,
-          json_extract(t.payload_json, '$.lineage.sideChat') AS side_chat,
-          json_extract(t.payload_json, '$.settledOverride') AS settled_override,
-          json_extract(t.payload_json, '$.settledAt') AS settled_at,
-          json_extract(t.payload_json, '$.pinnedAt') AS pinned_at,
-          json_extract(t.payload_json, '$.snoozedUntil') AS snoozed_until,
+          shell.thread_id,
+          shell.project_id,
+          shell.payload_valid,
+          shell.relationship_to_parent,
+          shell.parent_thread_id,
+          shell.root_thread_id,
+          shell.side_chat,
+          shell.settled_override,
+          shell.settled_at,
+          shell.pinned_at,
+          shell.snoozed_until,
           -- A superset of isLiveSubagentShell: the sources of its run status, pending request,
           -- and pending background work.
           (
             EXISTS (
               SELECT 1 FROM orchestration_v2_projection_runs r
-              WHERE r.thread_id = t.thread_id
+              WHERE r.thread_id = shell.thread_id
                 AND r.status IN ('queued', 'preparing', 'starting', 'running', 'waiting')
             )
             OR EXISTS (
               SELECT 1 FROM orchestration_v2_projection_runtime_requests request
-              WHERE request.thread_id = t.thread_id AND request.status = 'pending'
+              WHERE request.thread_id = shell.thread_id AND request.status = 'pending'
             )
             -- Same predicates as the shell's pending item and link reads, for their partial indexes.
             OR EXISTS (
               SELECT 1 FROM orchestration_v2_projection_turn_items item
-              WHERE item.thread_id = t.thread_id
+              WHERE item.thread_id = shell.thread_id
                 AND item.type IN ('command_execution', 'dynamic_tool', 'subagent')
                 AND item.status NOT IN ('completed', 'interrupted', 'failed', 'cancelled')
             )
             OR EXISTS (
               SELECT 1 FROM orchestration_v2_projection_turn_items link_request
-              WHERE link_request.thread_id = t.thread_id
+              WHERE link_request.thread_id = shell.thread_id
                 AND link_request.type = 'link_request' AND link_request.status = 'waiting'
             )
             OR EXISTS (
               SELECT 1 FROM orchestration_v2_projection_provider_threads provider_thread
-              WHERE provider_thread.thread_id = t.thread_id
-                AND json_array_length(provider_thread.payload_json, '$.pendingBackgroundTasks') > 0
+                INDEXED BY houston_provider_threads_background_idx
+              WHERE provider_thread.thread_id = shell.thread_id
+                AND ${sql.literal(pendingBackgroundTasksSql("provider_thread.payload_json"))}
             )
-            OR EXISTS (
-              SELECT 1 FROM json_each(t.payload_json, '$.pullRequests') link
-              WHERE json_type(link.value, '$.watch') IS NOT NULL
-            )
+            OR shell.watches_pull_request = 1
           ) AS may_be_live
-        FROM orchestration_v2_projection_threads t
-        WHERE t.deleted_at IS NULL
-          AND json_extract(t.payload_json, '$.archivedAt') IS NULL
-        ORDER BY t.updated_at ASC, t.thread_id ASC
+        -- Houston: payload keys of the thread row, kept by houston/projectionReadModels.ts.
+        FROM houston_thread_shell shell
+        WHERE shell.deleted = 0 AND shell.archived = 0
+        ORDER BY shell.updated_at ASC, shell.thread_id ASC
       `;
+      // Parsing the payload failed this read before the keys moved to columns; it still does.
+      const malformed = rows.find((row) => row.payload_valid !== 1);
+      if (malformed !== undefined) {
+        return yield* Effect.fail(`Thread ${malformed.thread_id} has malformed payload_json.`);
+      }
       return rows.map((row): ActiveShellIndexEntry => ({
         id: ThreadId.make(row.thread_id),
         projectId: ProjectId.make(row.project_id),
