@@ -487,7 +487,8 @@ describe("V2 thread find", () => {
           .pipe(Effect.withTracer(tracer));
       assert.equal((yield* search()).totalMatches, 20);
       const changed = items[1]!;
-      if (changed.type !== "assistant_message") return;
+      if (changed.type !== "assistant_message")
+        throw new Error(`expected an assistant message, got ${changed.type}`);
       yield* putItems([{ ...changed, text: "needle needle" }], "changed");
       const after = yield* search({ index: 2 });
       assert.equal(after.totalMatches, 22);
@@ -519,7 +520,8 @@ describe("V2 thread find", () => {
       });
       yield* results(warm);
       const changed = items[1]!;
-      if (changed.type !== "assistant_message") return;
+      if (changed.type !== "assistant_message")
+        throw new Error(`expected an assistant message, got ${changed.type}`);
       yield* putItems([{ ...changed, text: "needle other needle" }], "text");
       yield* assertWarmMatchesFresh;
       yield* putItems(
