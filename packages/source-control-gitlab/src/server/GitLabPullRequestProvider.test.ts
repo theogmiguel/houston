@@ -510,7 +510,8 @@ describe("optional activity reads", () => {
       }),
     listNotes: () => Effect.succeed({ comments: [comment], truncated: false }),
     listCommits: () => Effect.succeed([commit]),
-    listDiscussions: () => Effect.succeed({ threads: [], truncated: false }),
+    listDiscussions: () =>
+      Effect.succeed({ threads: [], overviewFindingIds: [], truncated: false }),
     listReactions: () =>
       Effect.succeed({
         reactions: [],
@@ -564,6 +565,32 @@ describe("optional activity reads", () => {
       }),
   );
 
+  it.effect("turns the first note of an open overview discussion into a review finding", () =>
+    Effect.gen(function* () {
+      const finding = { ...comment, id: "10", body: "Mention the flag in the README" };
+      const reply = { ...comment, id: "11", body: "Will do" };
+      const provider = yield* make.pipe(
+        Effect.provide(
+          Layer.mock(GitLabPullRequestCli.GitLabPullRequestCli)({
+            ...reads,
+            listNotes: () =>
+              Effect.succeed({ comments: [comment, finding, reply], truncated: false }),
+            listDiscussions: () =>
+              Effect.succeed({ threads: [], overviewFindingIds: ["10"], truncated: false }),
+          }),
+        ),
+      );
+
+      const { comments } = yield* provider.getChangeRequestActivity(reference);
+
+      expect(comments.map((item) => [item.id, item.kind])).toEqual([
+        ["42", "issue-comment"],
+        ["10", "review-comment"],
+        ["11", "issue-comment"],
+      ]);
+    }),
+  );
+
   it.effect("dates edited comments in the conversation and in threads", () =>
     Effect.gen(function* () {
       const editedAt = "2026-07-02T00:00:00Z";
@@ -584,6 +611,7 @@ describe("optional activity reads", () => {
                     comments: [comment],
                   },
                 ],
+                overviewFindingIds: [],
                 truncated: false,
               }),
             listReactions: () =>
@@ -623,6 +651,7 @@ describe("optional activity reads", () => {
                     comments: [comment],
                   },
                 ],
+                overviewFindingIds: [],
                 truncated: false,
               }),
           }),
@@ -699,6 +728,7 @@ describe("optional activity reads", () => {
                     ],
                   },
                 ],
+                overviewFindingIds: [],
                 truncated: false,
               }),
             listReactions: () =>
