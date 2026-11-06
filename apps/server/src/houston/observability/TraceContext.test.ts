@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Logger from "effect/Logger";
 import * as References from "effect/References";
+import * as Tracer from "effect/Tracer";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import {
@@ -85,7 +86,7 @@ describe("TraceContext", () => {
     }),
   );
 
-  it.effect("withoutTurnContext keeps the thread and drops the turn's ids for a fork", () =>
+  it.effect("withoutTurnContext keeps only the provider and no links for a fork", () =>
     Effect.gen(function* () {
       const recording = RecordingTracer.make();
       const logged: Array<unknown> = [];
@@ -100,8 +101,19 @@ describe("TraceContext", () => {
         TraceContext.withTraceContext({
           ...COMMAND,
           runId: "run-1",
+          turnId: "turn-1",
           effectType: "provider-turn.start",
+          projectId: "project-1",
+          model: "gpt-5",
+          provider: "codex",
+          clientKind: "desktop",
+          clientId: 7,
+          jobName: "scheduled-task",
+          jobId: "job-1",
+          delegated: true,
+          subagent: false,
         }),
+        Effect.linkSpans(Tracer.externalSpan({ traceId: "a".repeat(32), spanId: "b".repeat(16) })),
         Effect.withTracer(recording.tracer),
         Effect.provide(
           Logger.layer([
@@ -111,11 +123,52 @@ describe("TraceContext", () => {
           ]),
         ),
       );
-      const expected = { "houston.thread.id": "thread-1" };
-      assert.deepStrictEqual(contextOf(recording.named("Session.read")[0]!.attributes), expected);
+      const expected = { "houston.provider": "codex" };
+      const span = recording.named("Session.read")[0]!;
+      assert.deepStrictEqual(contextOf(span.attributes), expected);
+      assert.deepStrictEqual(span.links, []);
       assert.deepStrictEqual(logged, [expected]);
     }),
   );
+
+  it.effect("currentThreadContext reads the thread's fields and nothing of the turn", () =>
+    Effect.gen(function* () {
+      const context = yield* TraceContext.currentThreadContext.pipe(
+        TraceContext.withTraceContext({
+          ...COMMAND,
+          runId: "run-1",
+          projectId: "project-1",
+          model: "gpt-5",
+          provider: "codex",
+          delegated: true,
+        }),
+      );
+      assert.deepStrictEqual(context, {
+        threadId: "thread-1",
+        projectId: "project-1",
+        model: "gpt-5",
+        delegated: true,
+      });
+      assert.deepStrictEqual(yield* TraceContext.currentThreadContext, {});
+    }),
+  );
+
+  it("forTurn names the turn's run, thread, project and model family", () => {
+    assert.deepStrictEqual(
+      TraceContext.forTurn({
+        runId: "run-1",
+        threadId: "thread-1",
+        appThread: { projectId: "project-1" },
+        modelSelection: { model: "claude-opus-4-1" },
+      }),
+      {
+        runId: "run-1",
+        threadId: "thread-1",
+        projectId: "project-1",
+        model: "claude",
+      },
+    );
+  });
 
   it("takes the run id from an outbox request that has one", () => {
     assert.deepStrictEqual(

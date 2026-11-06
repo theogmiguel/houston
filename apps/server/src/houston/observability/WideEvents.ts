@@ -73,7 +73,7 @@ const runExit = (status: OrchestrationV2RunStatus): Exit.Exit<unknown, unknown> 
   switch (status) {
     case "completed":
       return Exit.void;
-    // A rollback is the user undoing the run, which orchestration treats as a cancel.
+    // Run metrics never emit a rolled-back run (it rewrites finished runs); mapped as a cancel.
     case "cancelled":
     case "interrupted":
     case "rolled_back":
