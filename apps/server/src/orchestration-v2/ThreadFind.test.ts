@@ -496,6 +496,45 @@ describe("V2 thread find", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
+  it.effect("a warm search after writes returns what a fresh store returns", () =>
+    Effect.gen(function* () {
+      const warm = yield* setup;
+      const items = Array.from({ length: 12 }, (_, i) =>
+        item(`message:${i}`, (i + 1) * 10, i % 3 === 0 ? "needle" : "other"),
+      );
+      yield* putItems(items);
+      const searches = [
+        { threadId, query: "needle" },
+        { threadId, query: "needle", index: 3 },
+        { threadId, query: "needle", start: { entryId: "message:6", occurrence: 0 }, offset: 1 },
+        { threadId, query: "other", index: 2 },
+      ];
+      const results = (projection: ProjectionStore.ProjectionStoreV2Shape) =>
+        Effect.forEach(searches, (input) => projection.searchThread(input));
+      const assertWarmMatchesFresh = Effect.gen(function* () {
+        const fresh = yield* ProjectionStore.ProjectionStoreV2.pipe(
+          Effect.provide(Layer.fresh(ProjectionStore.layer)),
+        );
+        assert.deepEqual(yield* results(warm), yield* results(fresh));
+      });
+      yield* results(warm);
+      const changed = items[1]!;
+      if (changed.type !== "assistant_message") return;
+      yield* putItems([{ ...changed, text: "needle other needle" }], "text");
+      yield* assertWarmMatchesFresh;
+      yield* putItems(
+        [
+          { ...items[0]!, ordinal: 115 },
+          { ...items[9]!, ordinal: 5 },
+        ],
+        "reorder",
+      );
+      yield* assertWarmMatchesFresh;
+      yield* putItems([item("inserted", 65, "needle needle")], "insert");
+      yield* assertWarmMatchesFresh;
+    }).pipe(Effect.provide(layerTest)),
+  );
+
   it.effect("invalidates cached counts when streamed text changes or a run rolls back", () =>
     Effect.gen(function* () {
       const projection = yield* setup;
