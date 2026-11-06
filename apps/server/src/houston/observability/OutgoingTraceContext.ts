@@ -6,22 +6,22 @@ import * as Layer from "effect/Layer";
 import * as HttpClient from "effect/http/HttpClient";
 
 const IPV4 = /^(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/;
+const IPV6_FIRST_HEXTET = /^([0-9a-f]{1,4}):/;
 
+// Loopback, unique local (fc00::/7) and link-local (fe80::/10) IPv6 addresses.
+const isPrivateIpv6 = (address: string): boolean => {
+  if (address === "::1") return true;
+  const hextet = IPV6_FIRST_HEXTET.exec(address);
+  if (hextet === null) return false;
+  const first = Number.parseInt(hextet[1]!, 16);
+  return (first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80;
+};
+
+// Only addresses and the exact name `localhost`: a name under any suffix can resolve publicly.
 export const isPrivateHost = (host: string): boolean => {
-  const name = host
-    .toLowerCase()
-    .replace(/^\[|\]$/g, "")
-    .replace(/\.$/, "");
-  if (name === "localhost" || name.endsWith(".localhost")) return true;
-  if (name.endsWith(".local") || name.endsWith(".ts.net")) return true;
-  if (
-    name === "::1" ||
-    name.startsWith("fc") ||
-    name.startsWith("fd") ||
-    name.startsWith("fe80:")
-  ) {
-    return name.includes(":");
-  }
+  const name = host.toLowerCase().replace(/\.$/, "");
+  if (name === "localhost") return true;
+  if (name.startsWith("[") && name.endsWith("]")) return isPrivateIpv6(name.slice(1, -1));
   const ipv4 = IPV4.exec(name);
   if (ipv4 === null) return false;
   const [first, second] = [Number(ipv4[1]), Number(ipv4[2])];
