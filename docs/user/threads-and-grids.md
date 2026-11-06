@@ -60,10 +60,12 @@ using a thread shortcut.
 ## The sidebar
 
 The sidebar lists **Pull requests**, **Tasks** and **Usage**, then one section per project.
-Each section label collapses with **Enter** or **Space** and keeps its state. Under the
-label are the project's grids, then its threads that no grid shows, marked **not in a
-grid**. Grid rows name only the grid. Threads started without a project sit at the foot of
-the list under **No project**. Search filters projects, grids and threads.
+Each section label collapses with **Enter** or **Space** and keeps its state; a search opens
+every section it matches in. The **…** button beside the label, or a right-click, opens the
+project's actions. Under the label are the project's grids, then its threads that no grid
+shows, marked **not in a grid**. Grid rows name only the grid. Threads started without a
+project sit at the foot of the list under **No project**. Search filters projects, grids and
+threads.
 
 A grid's menu offers **New thread**, **Rename grid** (`F2`), **Pin grid** / **Unpin grid**,
 **Move grid up** / **Move grid down**, **Hide grid**, **Delete grid**, **Close all ready**,
@@ -77,14 +79,14 @@ The foot of the rail carries two shelves:
 - **Closed** lists closed threads. **Reopen thread** returns one to its grid. A thread can
   also be dragged onto **Closed**.
 
-Pinned grids and pinned threads come first. **Settings ▸ General ▸ Sidebar** sets project
+Pinned grids come first in their project. **Settings ▸ General ▸ Sidebar** sets project
 grouping and order.
 
 ## Thread actions
 
 A thread's menu offers:
 
-- **New thread on `<branch>`**, **Find in thread**, **Pin thread** / **Unpin thread**
+- **New thread on `<branch>`**, **Find in thread**
 - **Close thread** (`Ctrl+Shift+S`) or **Reopen thread**
 - **Hold** with a preset, or **Bring thread back**
 - **Rename thread** (`F2`), **Regenerate title**, **Mark unread**

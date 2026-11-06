@@ -39,9 +39,6 @@ export const FOCUS_ROW_CLS =
 export const FOCUS_ACTION_CLS =
   "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
-/** A row's hover actions stay reachable as soon as the row has keyboard focus. */
-export const ROW_ACTIONS_FOCUS_REVEAL = "group-has-[:focus-visible]/th:flex";
-
 /** A thread card's actions stay hidden until the card or its title has focus. */
 export const ROW_ACTIONS_REVEAL =
   "pointer-events-none opacity-0 group-hover/th:pointer-events-auto group-hover/th:opacity-100 group-has-[:focus-visible]/th:pointer-events-auto group-has-[:focus-visible]/th:opacity-100";

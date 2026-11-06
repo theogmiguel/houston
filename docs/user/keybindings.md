@@ -75,8 +75,9 @@ In a diff, `Ctrl+F` opens find, `Enter` and `Shift+Enter` move between matches, 
 toggles case matching. In Changes, `/` focuses the file filter and `J`/`K` move between
 matches.
 
-In the sidebar, `F2` renames the selected thread or grid. Drag to reorder pinned and active
-threads; the rail follows the same order.
+In the sidebar, `F2` renames the selected thread or grid. Drag a thread onto another thread
+in its grid to reorder it, onto a grid heading to move it to that grid, or onto **Closed** to
+close it.
 
 ## Usage
 
