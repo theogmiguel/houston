@@ -328,6 +328,56 @@ describe("project sections", () => {
     expect(screen.container.textContent).not.toContain("Grid 1");
   });
 
+  it("opens the project menu from an actions button beside New grid", async () => {
+    resetTestState();
+    const onOpenProjectMenu = vi.fn();
+    await using screen = await render(
+      <TooltipProvider delay={0}>
+        <SidebarProjectSection {...sectionProps(projectSections()[1]!, { onOpenProjectMenu })} />
+      </TooltipProvider>,
+    );
+
+    const more = screen.getByRole("button", { name: "Project actions for notes" }).element();
+    const rect = more.getBoundingClientRect();
+    await userEvent.click(more);
+
+    expect(more.getAttribute("aria-haspopup")).toBe("menu");
+    expect(onOpenProjectMenu).toHaveBeenCalledExactlyOnceWith({ x: rect.left, y: rect.bottom + 4 });
+  });
+
+  it("keeps a long project name clear of both project buttons", async () => {
+    resetTestState();
+    const container = document.createElement("div");
+    container.style.width = "220px";
+    await using screen = await render(
+      <TooltipProvider delay={0}>
+        <SidebarProjectSection
+          {...sectionProps(
+            section({ title: "a project with a very long name that must truncate" }),
+            { onOpenProjectMenu: () => {} },
+          )}
+        />
+      </TooltipProvider>,
+      { container },
+    );
+
+    const label = screen
+      .getByRole("button", { name: /^a project with a very long name/ })
+      .element();
+    const text = label.querySelector("span")!;
+    const add = screen.getByRole("button", { name: /^New grid in / }).element();
+    const more = screen.getByRole("button", { name: /^Project actions for / }).element();
+    const boundary = container.getBoundingClientRect().right + 1;
+
+    expect(text.getBoundingClientRect().right).toBeLessThanOrEqual(
+      Math.min(add.getBoundingClientRect().left, more.getBoundingClientRect().left),
+    );
+    expect(more.getBoundingClientRect().right).toBeLessThanOrEqual(boundary);
+    expect(add.getBoundingClientRect().right).toBeLessThanOrEqual(
+      more.getBoundingClientRect().left,
+    );
+  });
+
   it("creates a grid from the project label's action", async () => {
     resetTestState();
     const onCreateGrid = vi.fn();

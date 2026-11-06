@@ -1302,7 +1302,7 @@ export function SidebarProjectSection({
                   const rect = event.currentTarget.getBoundingClientRect();
                   projectMenu({ x: rect.left, y: rect.bottom + 4 });
                 }}
-                className={SIDEBAR_PROJECT_LABEL_CLS}
+                className={cn(SIDEBAR_PROJECT_LABEL_CLS, projectMenu !== undefined && "pr-14")}
               >
                 {collapsed ? (
                   <FolderIcon aria-hidden className={SIDEBAR_PROJECT_ICON_CLS} />
@@ -1319,7 +1319,7 @@ export function SidebarProjectSection({
           </TooltipPopup>
         </Tooltip>
         {section.isScratch ? null : (
-          <span className="absolute inset-y-0 right-1 flex items-center">
+          <span className="absolute inset-y-0 right-1 flex items-center gap-0.5">
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -1337,6 +1337,20 @@ export function SidebarProjectSection({
                 {`New grid in ${section.title}`}
               </TooltipPopup>
             </Tooltip>
+            {projectMenu === undefined ? null : (
+              <button
+                type="button"
+                aria-label={`Project actions for ${section.title}`}
+                aria-haspopup="menu"
+                onClick={(event) => {
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  projectMenu({ x: rect.left, y: rect.bottom + 4 });
+                }}
+                className={SIDEBAR_PROJECT_ACTION_CLS}
+              >
+                <MoreHorizontalIcon aria-hidden className="size-3.5" />
+              </button>
+            )}
           </span>
         )}
       </div>
