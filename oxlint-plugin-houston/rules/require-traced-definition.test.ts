@@ -211,4 +211,164 @@ describe("houston/require-traced-definition", () => {
     export const save = Effect.fn("HoustonTasks.save")(function* () { yield* Effect.void; });
   `,
   );
+  // Export forms that do not declare in place.
+  rule.invalid(
+    "reports a local definition exported by specifier",
+    `
+    import * as Effect from "effect/Effect";
+    const run = () => Effect.void;
+    export { run };
+  `,
+    (output) => assert.match(output, /'run' is public/),
+  );
+
+  rule.invalid(
+    "reports a local definition exported under another name",
+    `
+    import * as Effect from "effect/Effect";
+    function run() { return Effect.void; }
+    export { run as start };
+  `,
+  );
+
+  rule.valid(
+    "skips re-exports from another module",
+    `
+    export { run } from "./other.ts";
+    export * from "./more.ts";
+  `,
+  );
+
+  rule.invalid(
+    "reports an exported default arrow",
+    `
+    import * as Effect from "effect/Effect";
+    export default () => Effect.void;
+  `,
+    (output) => assert.match(output, /'default' is public/),
+  );
+
+  rule.invalid(
+    "reports an exported default function expression",
+    `
+    import * as Effect from "effect/Effect";
+    export default (function () { return Effect.void; });
+  `,
+  );
+
+  rule.invalid(
+    "reports a default export of a local definition",
+    `
+    import * as Effect from "effect/Effect";
+    const run = () => Effect.void;
+    export default run;
+  `,
+  );
+
+  // pipe(<root>, ...) starts from its first argument.
+  rule.invalid(
+    "reports a pipe from effect/Function rooted at an Effect",
+    `
+    import * as Effect from "effect/Effect";
+    import { pipe } from "effect/Function";
+    export const run = () => pipe(Effect.succeed(1), Effect.asVoid);
+  `,
+  );
+
+  rule.invalid(
+    "reports a pipe from effect rooted at an Effect",
+    `
+    import { Effect, pipe } from "effect";
+    export const run = () => pipe(Effect.succeed(1), Effect.asVoid);
+  `,
+  );
+
+  rule.valid(
+    "does not treat another pipe function as rooted at its argument",
+    `
+    import * as Effect from "effect/Effect";
+    const pipe = <A>(value: A) => value;
+    export const run = () => pipe(Effect.void);
+  `,
+  );
+
+  // Returned objects are services only in public functions and service factories.
+  rule.valid(
+    "allows objects built inside map, flatMap and andThen callbacks",
+    `
+    import * as Effect from "effect/Effect";
+    export const program = Effect.succeed(1).pipe(
+      Effect.map((n) => ({ read: () => Effect.succeed(n) })),
+      Effect.flatMap((value) => Effect.succeed({ read: () => Effect.succeed(value) })),
+      Effect.andThen((value) => ({ again: () => Effect.succeed(value) })),
+    );
+  `,
+  );
+
+  rule.valid(
+    "allows an object returned by a private helper",
+    `
+    import * as Effect from "effect/Effect";
+    const options = (n: number) => {
+      return { read: () => Effect.succeed(n) };
+    };
+    export const count = options(1);
+  `,
+  );
+
+  rule.invalid(
+    "reports an object returned by a layer's Effect.gen body",
+    `
+    import * as Effect from "effect/Effect";
+    import * as Layer from "effect/Layer";
+    declare const Tag: never;
+    export const layer = Layer.effect(Tag, Effect.gen(function* () {
+      return { read: () => Effect.void };
+    }));
+  `,
+    (output) => assert.match(output, /'read' is public/),
+  );
+
+  rule.invalid(
+    "reports an object returned by an exported Effect.gen constructor",
+    `
+    import * as Effect from "effect/Effect";
+    export const make = Effect.gen(function* () {
+      return { read: () => Effect.void };
+    }).pipe(Effect.orDie);
+  `,
+  );
+
+  rule.invalid(
+    "reports an object returned by a make* function",
+    `
+    import * as Effect from "effect/Effect";
+    const makeStore = () => {
+      return { read: () => Effect.void };
+    };
+    export const store = makeStore();
+  `,
+  );
+
+  // A reason says why there is no span.
+  rule.invalid(
+    "reports fnUntraced whose comment does not say why it has no span",
+    `
+    import * as Effect from "effect/Effect";
+    /** Reads the cached value and returns it to the caller quickly. */
+    export const read = Effect.fnUntraced(function* () { yield* Effect.void; });
+  `,
+    (output) => assert.match(output, /without a reason/),
+  );
+
+  rule.valid(
+    "allows fnUntraced whose comment names a hot path or an owning span",
+    `
+    import * as Effect from "effect/Effect";
+    // Hot path: runs per provider event.
+    export const ingest = Effect.fnUntraced(function* () { yield* Effect.void; });
+    // The enclosing operation owns the span.
+    export const merge = Effect.fnUntraced(function* () { yield* Effect.void; });
+  `,
+  );
 });

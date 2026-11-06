@@ -3,10 +3,16 @@ import { defineRule, type ESTree } from "@oxlint/plugins";
 // Object literals passed to these calls are callbacks or schemas, not service objects.
 const SERVICE_FACTORIES = new Set(["of", "succeed", "sync", "make"]);
 const COMBINATOR_CALLEE =
-  /^(catchTags?|catchIf|match\w*|orElse\w*|tap\w*|all|forEach|when\w*|retry|repeat|timeout\w*|acquireRelease|ensuring|onExit|onError|mapError|Struct|Union|Class|TaggedClass|TaggedError|toHandlers)$/;
+  /^(catchTags?|catchIf|match\w*|orElse\w*|tap\w*|all|forEach|when\w*|retry|repeat|timeout\w*|acquireRelease|ensuring|onExit|onError|mapError|map|flatMap|andThen|Struct|Union|Class|TaggedClass|TaggedError|toHandlers)$/;
 const COMBINATOR_NAMESPACES = new Set(["Match", "Schema", "Config"]);
 const HOUSTON_SPAN_NAME = /^[A-Z][A-Za-z0-9]*(\.[a-z][A-Za-z0-9]*)+$/;
 const MIN_REASON_LENGTH = 10;
+// A reason says why the definition has no span of its own.
+const NO_SPAN_REASON =
+  /\b(span|spans|trac(e|ed|es|ing)|hot[ -]?path|per[ -][a-z]+|owns?|owner|enclosing)\b/i;
+// Bodies passed to these calls build a value, possibly a service object.
+const FACTORY_BODY_CALLEES = new Set(["gen", "fn", "fnUntraced"]);
+const FACTORY_NAME = /^make([A-Z]|$)/;
 
 type Fn = ESTree.ArrowFunctionExpression | ESTree.Function;
 type Node = ESTree.Node;
@@ -23,6 +29,11 @@ const unwrap = (node: Node): Node => {
   }
   return current;
 };
+
+const isWrapper = (node: Node) =>
+  node.type === "ParenthesizedExpression" ||
+  node.type === "TSAsExpression" ||
+  node.type === "TSSatisfiesExpression";
 
 const isFunction = (node: Node): node is Fn =>
   node.type === "ArrowFunctionExpression" ||
@@ -46,15 +57,49 @@ const calleeNamespace = (callee: Node): string | undefined =>
     ? callee.object.name
     : undefined;
 
-const isCombinatorCall = (call: ESTree.CallExpression): boolean => {
+const innermostCallee = (call: ESTree.CallExpression): Node => {
   let callee: Node = call.callee;
   while (callee.type === "CallExpression") callee = callee.callee;
+  return callee;
+};
+
+const isCombinatorCall = (call: ESTree.CallExpression): boolean => {
+  const callee = innermostCallee(call);
   const name = calleeName(callee);
   const namespace = calleeNamespace(callee);
   return (
     (name !== undefined && COMBINATOR_CALLEE.test(name)) ||
     (namespace !== undefined && COMBINATOR_NAMESPACES.has(namespace))
   );
+};
+
+const keyName = (key: Node): string | undefined =>
+  key.type === "Identifier"
+    ? key.name
+    : key.type === "Literal" && typeof key.value === "string"
+      ? key.value
+      : undefined;
+
+const enclosingFunction = (node: Node): Fn | undefined => {
+  let current: Node | null = node.parent;
+  while (current !== null && !isFunction(current)) current = current.parent;
+  return current ?? undefined;
+};
+
+const isExportedDeclarator = (declarator: ESTree.VariableDeclarator) =>
+  declarator.parent.parent?.type === "ExportNamedDeclaration";
+
+const declaratorName = (declarator: ESTree.VariableDeclarator) =>
+  declarator.id.type === "Identifier" ? declarator.id.name : "";
+
+const isExportedClass = (classBody: Node): boolean => {
+  if (classBody.type !== "ClassBody") return false;
+  const parent = classBody.parent.parent;
+  if (parent === null) return false;
+  if (parent.type === "ExportNamedDeclaration" || parent.type === "ExportDefaultDeclaration") {
+    return true;
+  }
+  return parent.type === "VariableDeclarator" && isExportedDeclarator(parent);
 };
 
 export default defineRule({
@@ -71,8 +116,10 @@ export default defineRule({
     const houstonFile = /\/src\/(?:.+\/)?houston\//.test(filename);
     const reported = new Set<Node>();
 
-    // Resolves an identifier to the effect module it imports, or undefined.
-    const effectModuleOf = (identifier: ESTree.IdentifierReference): string | undefined => {
+    // The import an identifier is bound to: its source and imported name ("*" for a namespace).
+    const importOf = (
+      identifier: ESTree.IdentifierReference | ESTree.BindingIdentifier,
+    ): { readonly source: string; readonly imported: string } | undefined => {
       let scope = context.sourceCode.getScope(identifier);
       while (true) {
         const variable = scope.set.get(identifier.name);
@@ -80,12 +127,13 @@ export default defineRule({
           for (const def of variable.defs) {
             if (def.type !== "ImportBinding" || def.parent?.type !== "ImportDeclaration") continue;
             const source = def.parent.source.value;
-            if (def.node.type === "ImportNamespaceSpecifier" && source.startsWith("effect/")) {
-              return source.slice("effect/".length);
-            }
-            if (source === "effect" && def.node.type === "ImportSpecifier") {
+            if (def.node.type === "ImportNamespaceSpecifier") return { source, imported: "*" };
+            if (def.node.type === "ImportSpecifier") {
               const imported = def.node.imported;
-              return imported.type === "Identifier" ? imported.name : imported.value;
+              return {
+                source,
+                imported: imported.type === "Identifier" ? imported.name : imported.value,
+              };
             }
           }
           return undefined;
@@ -93,6 +141,42 @@ export default defineRule({
         if (scope.upper === null) return undefined;
         scope = scope.upper;
       }
+    };
+
+    // Resolves an identifier to the effect module it imports, or undefined.
+    const effectModuleOf = (identifier: ESTree.IdentifierReference): string | undefined => {
+      const binding = importOf(identifier);
+      if (binding === undefined) return undefined;
+      if (binding.imported === "*") {
+        return binding.source.startsWith("effect/")
+          ? binding.source.slice("effect/".length)
+          : undefined;
+      }
+      return binding.source === "effect" ? binding.imported : undefined;
+    };
+
+    // `pipe(a, f, g)` from effect or effect/Function starts from its first argument.
+    const isPipeFunction = (callee: Node): boolean => {
+      if (callee.type === "Identifier") {
+        const binding = importOf(callee);
+        return (
+          binding !== undefined &&
+          binding.imported === "pipe" &&
+          (binding.source === "effect" || binding.source === "effect/Function")
+        );
+      }
+      return (
+        callee.type === "MemberExpression" &&
+        callee.object.type === "Identifier" &&
+        calleeName(callee) === "pipe" &&
+        effectModuleOf(callee.object) === "Function"
+      );
+    };
+
+    const pipeStart = (node: Node): Node | undefined => {
+      if (node.type !== "CallExpression" || !isPipeFunction(unwrap(node.callee))) return undefined;
+      const first = node.arguments[0];
+      return first === undefined || first.type === "SpreadElement" ? undefined : unwrap(first);
     };
 
     // `Effect.fn(...)` / `Effect.fnUntraced(...)` at the root of a definition's value.
@@ -110,6 +194,8 @@ export default defineRule({
         calleeName(node.callee) === "pipe"
       ) {
         node = unwrap(node.callee.object);
+      } else {
+        node = pipeStart(node) ?? node;
       }
       if (node.type !== "CallExpression") return undefined;
       let inner: ESTree.CallExpression = node;
@@ -143,6 +229,11 @@ export default defineRule({
       }
       while (true) {
         if (node.type === "CallExpression") {
+          const start = pipeStart(node);
+          if (start !== undefined) {
+            node = start;
+            continue;
+          }
           const callee = unwrap(node.callee);
           node =
             callee.type === "MemberExpression" && calleeName(callee) === "pipe"
@@ -219,7 +310,8 @@ export default defineRule({
         .some(
           (comment) =>
             !/^\s*(oxlint|eslint)-/.test(comment.value) &&
-            comment.value.trim().length >= MIN_REASON_LENGTH,
+            comment.value.trim().length >= MIN_REASON_LENGTH &&
+            NO_SPAN_REASON.test(comment.value),
         );
 
     const report = (site: Node, message: string) => {
@@ -239,7 +331,7 @@ export default defineRule({
         } else if (form.kind === "untraced" && !hasReasonComment(site)) {
           report(
             site,
-            `'${name}' is public and uses Effect.fnUntraced without a reason: add a comment saying why it has no span, or use Effect.fn("Module.${name}").`,
+            `'${name}' is public and uses Effect.fnUntraced without a reason: add a comment saying why it has no span (an enclosing span owns it, a hot or per-event path), or use Effect.fn("Module.${name}").`,
           );
         } else if (
           form.kind === "named" &&
@@ -262,35 +354,125 @@ export default defineRule({
       );
     };
 
-    const isServiceObject = (object: ESTree.ObjectExpression): boolean => {
-      let node: Node = object;
-      let parent: Node | null = object.parent;
-      while (
-        parent !== null &&
-        (parent.type === "ParenthesizedExpression" ||
-          parent.type === "TSAsExpression" ||
-          parent.type === "TSSatisfiesExpression")
-      ) {
+    // A value built by an Effect.gen / Effect.fn call is a service when that call feeds a layer,
+    // an exported or `make*` binding, a `make` option, a class member or a public function.
+    const isFactoryCall = (start: ESTree.CallExpression): boolean => {
+      let call: Node = start;
+      while (true) {
+        const parent: Node | null = call.parent;
+        if (parent === null) return false;
+        if (isWrapper(parent)) {
+          call = parent;
+          continue;
+        }
+        if (
+          parent.type === "MemberExpression" &&
+          calleeName(parent) === "pipe" &&
+          parent.parent?.type === "CallExpression" &&
+          parent.parent.callee === parent
+        ) {
+          call = parent.parent;
+          continue;
+        }
+        switch (parent.type) {
+          case "CallExpression": {
+            const callee = innermostCallee(parent);
+            if (calleeNamespace(callee) === "Layer") return true;
+            return isPipeFunction(unwrap(callee)) && isFactoryCall(parent);
+          }
+          case "VariableDeclarator":
+            return isExportedDeclarator(parent) || FACTORY_NAME.test(declaratorName(parent));
+          case "Property":
+            return keyName(parent.key) === "make";
+          case "PropertyDefinition":
+            return parent.static === true || isExportedClass(parent.parent);
+          case "ReturnStatement": {
+            const fn = enclosingFunction(parent);
+            return fn !== undefined && isPublicFunction(fn);
+          }
+          case "ArrowFunctionExpression":
+            return parent.body === call && isPublicFunction(parent);
+          case "ExportDefaultDeclaration":
+            return true;
+          default:
+            return false;
+        }
+      }
+    };
+
+    // Whether a function's own binding makes it public or a service factory.
+    const isPublicFunction = (fn: Fn): boolean => {
+      if (fn.type === "FunctionDeclaration") {
+        const parent = fn.parent;
+        return (
+          parent?.type === "ExportNamedDeclaration" ||
+          parent?.type === "ExportDefaultDeclaration" ||
+          FACTORY_NAME.test(fn.id?.name ?? "")
+        );
+      }
+      let node: Node = fn;
+      let parent: Node | null = fn.parent;
+      while (parent !== null && isWrapper(parent)) {
         node = parent;
         parent = parent.parent;
       }
       if (parent === null) return false;
       switch (parent.type) {
-        case "ReturnStatement":
+        case "ExportDefaultDeclaration":
           return true;
+        case "VariableDeclarator":
+          return isExportedDeclarator(parent) || FACTORY_NAME.test(declaratorName(parent));
+        case "Property":
+          return (
+            parent.value === node &&
+            parent.parent.type === "ObjectExpression" &&
+            isServiceObject(parent.parent)
+          );
+        case "MethodDefinition":
+        case "PropertyDefinition":
+          return isExportedClass(parent.parent);
+        case "CallExpression": {
+          if (!parent.arguments.includes(node as ESTree.Expression)) return false;
+          const name = calleeName(innermostCallee(parent));
+          return name !== undefined && FACTORY_BODY_CALLEES.has(name) && isFactoryCall(parent);
+        }
+        default:
+          return false;
+      }
+    };
+
+    const isServiceObject = (object: ESTree.ObjectExpression): boolean => {
+      let node: Node = object;
+      let parent: Node | null = object.parent;
+      while (parent !== null && isWrapper(parent)) {
+        node = parent;
+        parent = parent.parent;
+      }
+      if (parent === null) return false;
+      switch (parent.type) {
+        case "ReturnStatement": {
+          const fn = enclosingFunction(parent);
+          return fn !== undefined && isPublicFunction(fn);
+        }
         case "ArrowFunctionExpression": {
           if (parent.body !== node) return false;
           const call = parent.parent;
-          return !(call?.type === "CallExpression" && isCombinatorCall(call));
+          if (call?.type === "CallExpression" && isCombinatorCall(call)) return false;
+          return isPublicFunction(parent);
         }
         case "VariableDeclarator":
-          return parent.init === node && parent.parent.parent?.type === "ExportNamedDeclaration";
+          return parent.init === node && isExportedDeclarator(parent);
         case "CallExpression": {
           if (!parent.arguments.includes(node as ESTree.Expression)) return false;
-          let callee: Node = parent.callee;
-          while (callee.type === "CallExpression") callee = callee.callee;
-          const name = calleeName(callee);
-          return name !== undefined && SERVICE_FACTORIES.has(name) && !isCombinatorCall(parent);
+          const name = calleeName(innermostCallee(parent));
+          if (name === undefined || !SERVICE_FACTORIES.has(name) || isCombinatorCall(parent)) {
+            return false;
+          }
+          // `Tag.of` always builds a service; `succeed`, `sync` and `make` only at module level or
+          // inside a public function or service factory, not in a callback.
+          if (name === "of") return true;
+          const fn = enclosingFunction(parent);
+          return fn === undefined || isPublicFunction(fn);
         }
         case "Property":
           return (
@@ -303,14 +485,7 @@ export default defineRule({
       }
     };
 
-    const keyName = (key: Node): string | undefined =>
-      key.type === "Identifier"
-        ? key.name
-        : key.type === "Literal" && typeof key.value === "string"
-          ? key.value
-          : undefined;
-
-    // `{ read }` or `{ read: read }` in a service object: check the local definition.
+    // `{ read }`, `{ read: read }` or `export { read }`: check the local definition.
     const checkReferencedLocal = (
       identifier: ESTree.IdentifierReference | ESTree.BindingIdentifier,
     ) => {
@@ -335,27 +510,20 @@ export default defineRule({
       }
     };
 
-    const isExportedClass = (classBody: Node): boolean => {
-      if (classBody.type !== "ClassBody") return false;
-      const klass = classBody.parent;
-      const parent = klass.parent;
-      if (parent === null) return false;
-      if (parent.type === "ExportNamedDeclaration" || parent.type === "ExportDefaultDeclaration") {
-        return true;
-      }
-      return (
-        parent.type === "VariableDeclarator" &&
-        parent.parent.parent?.type === "ExportNamedDeclaration"
-      );
-    };
-
     const isPrivateMember = (member: ESTree.MethodDefinition | ESTree.PropertyDefinition) =>
       member.key.type === "PrivateIdentifier" || member.accessibility === "private";
 
     return {
       ExportNamedDeclaration(node) {
         const declaration = node.declaration;
-        if (declaration === null || declaration === undefined) return;
+        if (declaration === null || declaration === undefined) {
+          // `export { f }` and `export { f as g }` of a local definition; re-exports are skipped.
+          if (node.source !== null && node.source !== undefined) return;
+          for (const specifier of node.specifiers) {
+            if (specifier.local.type === "Identifier") checkReferencedLocal(specifier.local);
+          }
+          return;
+        }
         if (declaration.type === "FunctionDeclaration" && declaration.id) {
           check(declaration, declaration.id.name, declaration);
         } else if (declaration.type === "VariableDeclaration") {
@@ -370,7 +538,15 @@ export default defineRule({
         const declaration = node.declaration;
         if (declaration.type === "FunctionDeclaration") {
           check(declaration, declaration.id?.name ?? "default", declaration);
+          return;
         }
+        if (declaration.type === "ClassDeclaration") return;
+        const value = unwrap(declaration);
+        if (value.type === "Identifier") {
+          checkReferencedLocal(value);
+          return;
+        }
+        check(declaration, "default", declaration);
       },
       Property(node) {
         if (node.kind !== "init" || node.computed) return;
