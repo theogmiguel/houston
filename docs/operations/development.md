@@ -251,7 +251,9 @@ checkouts need this suite and the same generator version; `--a-label` and `--b-l
   seeded random order. Results hold every sample, p50 and p95 with bootstrap 95% intervals, the
   power-law exponent against row count (or deep-thread turns) and each statement's
   `EXPLAIN QUERY PLAN`. A query fails at a scale when its p95 exceeds its path's budget, a plan
-  scans a growing table, or its executed statements grow with the data. `compare` reports the
+  scans a growing table, or its executed statements grow with the data. A query that returns or
+  counts every row by design (`readsAll` in `queries.ts`) reports its full scans as a scan marker
+  instead, so it fails only on its budget or statement growth. `compare` reports the
   median ratio with a bootstrap interval and a Holm-adjusted Mann-Whitney U test.
 - **Isolation.** Each scale runs in its own process with a bounded heap (`--heap-mb`, 6144) and
   writes `scale-<n>x.json`; a rerun reuses finished scales unless `--rerun` is given.

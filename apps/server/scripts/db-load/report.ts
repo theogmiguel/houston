@@ -163,6 +163,9 @@ function statusCell(query: QueryResult, scale: number): string {
   if (s.error !== undefined) return `<td class="fail">✕ error</td>`;
   const failing = query.failing.find((f) => f.scale === scale);
   const p95 = s.summary?.p95;
+  const scan = query.scans?.find((f) => f.scale === scale);
+  if (failing === undefined && scan !== undefined)
+    return `<td class="ok" title="${escape(`reads every row by design: ${scan.tables.join(", ")}`)}">${ms(p95)} ◌</td>`;
   return failing === undefined
     ? `<td class="ok">${ms(p95)}</td>`
     : `<td class="fail" title="${escape(failing.reasons.join("; "))}">✕ ${ms(p95)}${failing.reasons.some((r) => r.startsWith("full scan")) ? " ⊘" : ""}</td>`;
@@ -202,6 +205,7 @@ export function renderReport(
   const scales = results.databases.map((d) => d.scale);
   const queries = [...results.queries].sort((a, b) => severity(b) - severity(a));
   const failing = queries.filter((q) => q.failing.length > 0).length;
+  const scanning = queries.filter((q) => (q.scans?.length ?? 0) > 0).length;
   const cards = queries
     .map((query) => {
       const series = [
@@ -247,13 +251,13 @@ export function renderReport(
     .join("\n");
   const legend =
     compare === undefined
-      ? `<div class="legend"><span><span class="swatch" style="background:var(--series-1)"></span>p50 (solid), p95 (dotted), band between</span><span>dashed line: budget</span><span><span class="fail">●</span> fails at that scale (✕ in tables, ⊘ = full scan)</span><span>faded point at 1000x: projected from the fit</span></div>`
+      ? `<div class="legend"><span><span class="swatch" style="background:var(--series-1)"></span>p50 (solid), p95 (dotted), band between</span><span>dashed line: budget</span><span><span class="fail">●</span> fails at that scale (✕ in tables, ⊘ = full scan)</span><span>◌ full read by design, not a failure</span><span>faded point at 1000x: projected from the fit</span></div>`
       : `<div class="legend"><span><span class="swatch" style="background:var(--series-1)"></span>before (${escape(compare.before.label)})</span><span><span class="swatch" style="background:var(--series-2)"></span>after (${escape(results.label)})</span><span>solid p50, dotted p95; dashed line: budget</span><span><span class="fail">●</span> fails</span></div>`;
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><title>SQLite load test: ${escape(results.label)}</title><style>${STYLE}</style></head>
 <body><div class="viz-root">
 <h1>SQLite load test: ${escape(results.label)}</h1>
-<p class="meta">${escape(results.gitSha.slice(0, 12))} · ${escape(results.startedAt)} · ${escape(results.machine.cpu)} (${results.machine.cpus} threads, ${results.machine.memoryGb} GB) · ${escape(results.machine.platform)} · Node ${escape(results.machine.node)} · ${failing} of ${queries.length} queries fail at some scale</p>
+<p class="meta">${escape(results.gitSha.slice(0, 12))} · ${escape(results.startedAt)} · ${escape(results.machine.cpu)} (${results.machine.cpus} threads, ${results.machine.memoryGb} GB) · ${escape(results.machine.platform)} · Node ${escape(results.machine.node)} · ${failing} of ${queries.length} queries fail at some scale · ${scanning} read every row by design</p>
 <h2>Databases</h2>
 <table><tr><th>scale</th><th>rows</th><th>file</th><th>deep thread turns</th><th>turn items</th><th>events</th><th>threads</th></tr>
 ${results.databases.map((d) => `<tr><td>${d.scale}x</td><td>${d.totalRows.toLocaleString("en-US")}</td><td>${(d.fileBytes / 1e6).toFixed(0)} MB</td><td>${d.deepTurns.toLocaleString("en-US")}</td><td>${(d.rowCounts.orchestration_v2_projection_turn_items ?? 0).toLocaleString("en-US")}</td><td>${(d.rowCounts.orchestration_events ?? 0).toLocaleString("en-US")}</td><td>${(d.rowCounts.orchestration_v2_projection_threads ?? 0).toLocaleString("en-US")}</td></tr>`).join("")}

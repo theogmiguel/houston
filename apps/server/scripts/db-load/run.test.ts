@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import { cloneStatement } from "./clone.ts";
-import { fullScansInPlan } from "./run.ts";
+import { QUERIES } from "./queries.ts";
+import { fullScansInPlan, judge, type ScaleResult } from "./run.ts";
+import { summarize } from "./stats.ts";
 
 const growing = new Set(["orchestration_v2_projection_threads", "orchestration_events"]);
 
@@ -32,6 +34,48 @@ describe("db-load plan checks", () => {
         growing,
       ),
     ).toEqual([]);
+  });
+
+  it("marks an expected full read as a scan, and any other full scan as failing", () => {
+    const scaleWithScan = (scale: number): ScaleResult => ({
+      scale,
+      size: scale * 1_000,
+      samples: [1, 1, 1],
+      summary: summarize([1, 1, 1]),
+      statements: [
+        { sql: "SELECT", executions: 1, plan: ["SCAN projects"], fullScans: ["projects"] },
+      ],
+    });
+    const judged = (readsAll: boolean) =>
+      judge({
+        name: "q",
+        path: "boot",
+        calls: "q",
+        grows: "breadth",
+        budgetMs: 100,
+        ...(readsAll ? { readsAll: true as const } : {}),
+        scales: [scaleWithScan(1), scaleWithScan(10)],
+      });
+    const expected = judged(true);
+    expect(expected.failing).toEqual([]);
+    expect(expected.scans).toEqual([
+      { scale: 1, tables: ["projects"] },
+      { scale: 10, tables: ["projects"] },
+    ]);
+    const unexpected = judged(false);
+    expect(unexpected.scans).toEqual([]);
+    expect(unexpected.failing.map((f) => f.reasons)).toEqual([
+      ["full scan: projects"],
+      ["full scan: projects"],
+    ]);
+  });
+
+  it("marks only the queries that list every row by design as full reads", () => {
+    expect(QUERIES.filter((query) => query.readsAll).map((query) => query.name)).toEqual([
+      "boot.countThreads",
+      "boot.projects",
+      "boot.tasks",
+    ]);
   });
 
   it("clones a unit by rewriting its token and year and offsetting task ids", () => {

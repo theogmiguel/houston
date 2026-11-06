@@ -77,6 +77,7 @@ export interface QueryResult {
   readonly calls: string;
   readonly grows: "breadth" | "depth";
   readonly budgetMs: number;
+  readonly readsAll?: true | undefined;
   readonly scales: ReadonlyArray<ScaleResult>;
   readonly fitP50?: PowerLawFit | undefined;
   readonly fitP95?: PowerLawFit | undefined;
@@ -85,6 +86,11 @@ export interface QueryResult {
   readonly failing: ReadonlyArray<{
     readonly scale: number;
     readonly reasons: ReadonlyArray<string>;
+  }>;
+  /** Full scans of a query that reads every row by design; they do not fail it. Absent in older results. */
+  readonly scans?: ReadonlyArray<{
+    readonly scale: number;
+    readonly tables: ReadonlyArray<string>;
   }>;
 }
 
@@ -383,7 +389,7 @@ export function growingTablesOf(manifests: ReadonlyArray<DatabaseManifest>): Set
 }
 
 export function judge(
-  query: Omit<QueryResult, "failing" | "fitP50" | "fitP95" | "projectedP95At1000">,
+  query: Omit<QueryResult, "failing" | "scans" | "fitP50" | "fitP95" | "projectedP95At1000">,
 ): QueryResult {
   const measured = query.scales.filter((s) => s.summary !== null);
   const fitP50 = fitPowerLaw(
@@ -404,14 +410,24 @@ export function judge(
   const smallest = [...query.scales]
     .sort((a, b) => a.scale - b.scale)
     .find((s) => s.statements.length > 0);
+  const scanned = (s: ScaleResult) => [
+    ...new Set(s.statements.flatMap((statement) => statement.fullScans)),
+  ];
+  const scans =
+    query.readsAll === true
+      ? query.scales
+          .map((s) => ({ scale: s.scale, tables: scanned(s) }))
+          .filter((s) => s.tables.length > 0)
+      : [];
   const failing = query.scales
     .map((s) => {
       const reasons: Array<string> = [];
       if (s.error !== undefined) reasons.push("error");
       if (s.summary !== null && s.summary.p95 > query.budgetMs)
         reasons.push(`p95 ${s.summary.p95.toFixed(1)} ms > ${query.budgetMs} ms`);
-      const scanned = [...new Set(s.statements.flatMap((statement) => statement.fullScans))];
-      if (scanned.length > 0) reasons.push(`full scan: ${scanned.join(", ")}`);
+      const tables = scanned(s);
+      if (query.readsAll !== true && tables.length > 0)
+        reasons.push(`full scan: ${tables.join(", ")}`);
       // A paged sweep or a per-row loop shows as statement executions that grow with the data.
       if (
         smallest !== undefined &&
@@ -423,7 +439,7 @@ export function judge(
       return { scale: s.scale, reasons };
     })
     .filter((f) => f.reasons.length > 0);
-  return { ...query, fitP50, fitP95, projectedP95At1000, failing };
+  return { ...query, fitP50, fitP95, projectedP95At1000, failing, scans };
 }
 
 export function selectedQueries(only: ReadonlyArray<string> | undefined): ReadonlyArray<QuerySpec> {
@@ -458,6 +474,7 @@ export function assembleResults(
       calls: query.calls,
       grows: query.grows,
       budgetMs: BUDGET_MS[query.path],
+      readsAll: query.readsAll,
       scales: manifests.map((m) => perScale.get(m.scale)![query.name]!),
     }),
   );

@@ -81,6 +81,8 @@ export interface QuerySpec {
   readonly capMs?: number;
   /** Caps repetitions when the warm-up hides a slow path (a cache the other queries invalidate). */
   readonly maxReps?: number;
+  /** Returns or counts every row by design, so its full scans are reported, not failed. */
+  readonly readsAll?: true;
   readonly run: (context: QueryContext) => Effect.Effect<unknown, unknown, Services>;
 }
 
@@ -206,6 +208,7 @@ export const QUERIES: ReadonlyArray<QuerySpec> = [
   {
     name: "boot.countThreads",
     path: "boot",
+    readsAll: true,
     calls: "ProjectionStore.countThreads",
     grows: "breadth",
     run: () => Effect.flatMap(projectionStore, (store) => store.countThreads()),
@@ -290,6 +293,7 @@ export const QUERIES: ReadonlyArray<QuerySpec> = [
   {
     name: "boot.projects",
     path: "boot",
+    readsAll: true,
     calls: "ProjectStoreV2.listShells()",
     grows: "breadth",
     run: () => Effect.flatMap(projectStore, (projects) => projects.listShells()),
@@ -297,6 +301,7 @@ export const QUERIES: ReadonlyArray<QuerySpec> = [
   {
     name: "boot.tasks",
     path: "boot",
+    readsAll: true,
     calls: "HoustonTaskStore.summaries({scope: all})",
     grows: "breadth",
     run: () => Effect.flatMap(taskStore, (tasks) => tasks.summaries({ scope: "all" })),
