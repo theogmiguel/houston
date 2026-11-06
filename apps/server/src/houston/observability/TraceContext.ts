@@ -80,38 +80,65 @@ export const withinTraceContext =
     return self.pipe(Effect.annotateSpans(attributes), Effect.annotateLogs(attributes));
   };
 
-// The fields that name one unit of work. Thread, project, provider and model stay: they do not
-// change within a session.
-const TURN_KEYS: ReadonlyArray<string> = [
-  KEYS.runId,
-  KEYS.turnId,
-  KEYS.commandId,
-  KEYS.commandType,
-  KEYS.effectType,
-];
+// The fields that name one thread. A provider session can serve several threads in different
+// projects (Codex runs one app-server per provider instance), so a session fiber keeps none.
+const THREAD_FIELDS = [
+  "projectId",
+  "threadId",
+  "model",
+  "delegated",
+  "subagent",
+] as const satisfies ReadonlyArray<keyof TraceContextFields>;
 
-const withoutTurnKeys = (
+// Everything but the provider names the request a fiber was started for or its thread.
+const REQUEST_KEYS: ReadonlyArray<string> = Object.entries(KEYS)
+  .filter(([field]) => field !== "provider")
+  .map(([, key]) => key);
+
+const withoutRequestKeys = (
   annotations: Readonly<Record<string, unknown>>,
 ): Readonly<Record<string, unknown>> => {
-  if (!TURN_KEYS.some((key) => key in annotations)) return annotations;
+  if (!REQUEST_KEYS.some((key) => key in annotations)) return annotations;
   const kept = { ...annotations };
-  for (const key of TURN_KEYS) delete kept[key];
+  for (const key of REQUEST_KEYS) delete kept[key];
   return kept;
 };
 
-/** Drops the turn's ids and span links, which forks inherit, for a fiber that serves later turns. */
+/** For a fiber one request starts that serves later ones: keeps only the provider, and no links. */
 // oxlint-disable-next-line houston/require-traced-definition -- a combinator: the wrapped effect owns its spans
 export const withoutTurnContext = <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
   self.pipe(
-    Effect.updateService(References.TracerSpanAnnotations, withoutTurnKeys),
-    Effect.updateService(References.CurrentLogAnnotations, withoutTurnKeys),
+    Effect.updateService(References.TracerSpanAnnotations, withoutRequestKeys),
+    Effect.updateService(References.CurrentLogAnnotations, withoutRequestKeys),
     Effect.provideService(References.TracerSpanLinks, []),
   );
 
-/** The context of one provider turn, for a session fiber that serves it. */
-export const forTurn = (turn: { readonly runId: string }): TraceContext => ({
-  runId: turn.runId,
+/** The thread fields of the current context, to annotate a session fiber's work for that thread. */
+export const currentThreadContext: Effect.Effect<TraceContext> = Effect.gen(function* () {
+  const annotations = yield* References.TracerSpanAnnotations;
+  const context: Record<string, unknown> = {};
+  for (const field of THREAD_FIELDS) {
+    const value = annotations[KEYS[field]];
+    if (value !== undefined) context[field] = value;
+  }
+  return context as TraceContext;
 });
+
+/** The context of one provider turn, for a session fiber that serves it. */
+export const forTurn = (turn: {
+  readonly runId: string;
+  readonly threadId: string;
+  readonly appThread: { readonly projectId: string };
+  readonly modelSelection: { readonly model: string };
+}): TraceContext => {
+  const model = modelFamily(turn.modelSelection.model);
+  return {
+    runId: turn.runId,
+    threadId: turn.threadId,
+    projectId: turn.appThread.projectId,
+    ...(model === undefined ? {} : { model }),
+  };
+};
 
 /** The context of one outbox effect: its command, thread, request type and run when it has one. */
 export const forOutboxEffect = (effect: {

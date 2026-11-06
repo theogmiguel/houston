@@ -129,6 +129,9 @@ beforeEach(() => {
 });
 
 const DEFAULT_CLAUDE_SETTINGS = Schema.decodeSync(ClaudeSettings)({});
+
+const houstonContextOf = (attributes: ReadonlyMap<string, unknown>): Record<string, unknown> =>
+  Object.fromEntries([...attributes].filter(([key]) => key.startsWith("houston.")));
 const AUTO_COMPACT_CLAUDE_SETTINGS = Schema.decodeSync(ClaudeSettings)({
   autoCompactWindow: "300000",
 });
@@ -7065,7 +7068,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
   );
 
   it.effect(
-    "a query opened in one turn stamps no earlier run on a later turn's spans and logs",
+    "a query opened in one turn stamps each later turn's spans and logs with that turn",
     () => {
       const recording = RecordingTracer.make();
       const logged: Array<Readonly<Record<string, unknown>>> = [];
@@ -7087,6 +7090,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           });
           return harness.runtime.startTurn(input).pipe(
             TraceContext.withTraceContext({
+              threadId: input.threadId,
               runId: input.runId,
               commandId: `command-${ordinal}`,
             }),
@@ -7098,27 +7102,48 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             .offerAndWait(makeResultFrame({ uuid: `trace-result-${ordinal}`, result: "Done." }))
             .pipe(Effect.andThen(Queue.take(harness.terminalReceipts)));
 
-        const firstRun = yield* turn(1);
-        yield* finish(1);
-        const spansBefore = recording.ended.length;
-        const logsBefore = logged.length;
-        const secondRun = yield* turn(2);
-        yield* finish(2);
+        const runs: Array<string> = [];
+        for (const ordinal of [1, 2, 3]) {
+          const spansBefore = recording.ended.length;
+          const logsBefore = logged.length;
+          const runId = yield* turn(ordinal);
+          yield* finish(ordinal);
+          runs.push(runId);
 
-        const later = recording.ended.slice(spansBefore);
-        const sessionSpans = later.filter((span) => span.name === "Test.sessionMessage");
-        assert.isAbove(sessionSpans.length, 0);
-        for (const span of later) {
-          assert.notStrictEqual(span.attributes.get("houston.run.id"), firstRun, span.name);
-          assert.notStrictEqual(span.attributes.get("houston.command.id"), "command-1", span.name);
+          // Each span and log carries this turn's ids, or none: never an earlier turn's.
+          const spans = recording.ended.slice(spansBefore);
+          for (const span of spans) {
+            const context = houstonContextOf(span.attributes);
+            assert.oneOf(context["houston.run.id"], [runId, undefined], span.name);
+            assert.oneOf(
+              context["houston.command.id"],
+              [`command-${ordinal}`, undefined],
+              span.name,
+            );
+            assert.oneOf(context["houston.thread.id"], [harness.threadId, undefined], span.name);
+          }
+          // The turn's own call carries its ids; the query stream's reads belong to no turn.
+          assert.deepStrictEqual(
+            houstonContextOf(recording.named("ClaudeAdapterV2.startTurn").at(-1)!.attributes),
+            {
+              "houston.thread.id": harness.threadId,
+              "houston.run.id": runId,
+              "houston.command.id": `command-${ordinal}`,
+            },
+          );
+          const sessionSpans = spans.filter((span) => span.name === "Test.sessionMessage");
+          assert.isAbove(sessionSpans.length, 0);
+          for (const span of sessionSpans) {
+            assert.deepStrictEqual(houstonContextOf(span.attributes), {});
+          }
+          const logs = logged.slice(logsBefore);
+          assert.isAbove(logs.length, 0);
+          for (const annotations of logs) {
+            assert.oneOf(annotations["houston.run.id"], [runId, undefined]);
+            assert.oneOf(annotations["houston.command.id"], [`command-${ordinal}`, undefined]);
+          }
         }
-        const laterLogs = logged.slice(logsBefore);
-        assert.isAbove(laterLogs.length, 0);
-        for (const annotations of laterLogs) {
-          assert.notStrictEqual(annotations["houston.run.id"], firstRun);
-          assert.notStrictEqual(annotations["houston.command.id"], "command-1");
-        }
-        assert.notStrictEqual(secondRun, firstRun);
+        assert.strictEqual(new Set(runs).size, 3);
       }).pipe(
         Effect.withTracer(recording.tracer),
         Effect.provide(
