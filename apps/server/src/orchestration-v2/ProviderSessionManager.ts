@@ -2135,16 +2135,9 @@ export const layerWithOptions = (
             );
           });
         return entry.runtime.events.pipe(
-          // Each event is its own trace: the session outlives the turn that opened it.
-          Stream.runForEach((event) =>
-            withEventTraceContext(
-              entry,
-              event,
-              pumpEvent(event).pipe(
-                Effect.withSpan("ProviderSessionManager.pumpEvent", { root: true }),
-              ),
-            ),
-          ),
+          // No span per event: the fiber has no parent (withoutTurnContext), so the work an event
+          // does starts traces of its own, and an event that only passes through costs none.
+          Stream.runForEach((event) => withEventTraceContext(entry, event, pumpEvent(event))),
           Effect.exit,
           Effect.flatMap((exit) =>
             Effect.gen(function* () {
