@@ -49,6 +49,7 @@ import {
   failEnvironmentAuthInvalid,
   failEnvironmentInternal,
 } from "./auth/http.ts";
+import * as ExportRedaction from "./houston/observability/ExportRedaction.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import { WEBHOOK_ROUTE_PREFIX } from "./scheduledTasks/ScheduledTaskService.ts";
 import {
@@ -362,7 +363,7 @@ export const layerOtlpTracesProxyRoute = HttpRouter.add(
 
     return yield* httpClient
       .post(otlpTracesUrl, {
-        body: serialization.traces(bodyJson),
+        body: serialization.traces(ExportRedaction.exportedTraceData(bodyJson)),
         headers: otlpHeaders,
       })
       .pipe(

@@ -10,6 +10,8 @@ import * as OtlpExporter from "effect/observability/OtlpExporter";
 import * as OtlpLogger from "effect/observability/OtlpLogger";
 
 import * as ServerConfig from "./config.ts";
+import * as ExportLogger from "./houston/observability/ExportLogger.ts";
+import * as ExportRedaction from "./houston/observability/ExportRedaction.ts";
 
 // HTTP errors logged with --log-ws-events carry the request URL and its connection ticket.
 const redactingCredentials = <Output>(logger: Logger.Logger<unknown, Output>) =>
@@ -61,8 +63,8 @@ export const layer = Effect.gen(function* () {
           url: config.otlpLogsUrl,
           exportInterval: `${logs.exportIntervalMs} millis`,
           headers: logs.headers,
-          resource: ServerConfig.otlpResource(config, hostName),
-        }).pipe(Effect.map(redactingCredentials));
+          resource: ExportRedaction.exportedResource(ServerConfig.otlpResource(config, hostName)),
+        }).pipe(Effect.map(ExportLogger.redacting));
 
   // Logger.layer replaces the whole set; name every logger here.
   // OTLP includes traced messages as log records, so also using tracerLogger would duplicate in-span exports.
