@@ -63,39 +63,81 @@ export const datadogHeaders = (signal: Signal, key: string): Record<string, stri
     : {}),
 });
 
+export type DatadogKeyRead =
+  | { readonly _tag: "Present"; readonly key: string }
+  | { readonly _tag: "Absent" }
+  /** The secret store failed; `reason` is its error message, which never holds the key. */
+  | { readonly _tag: "Unreadable"; readonly reason: string };
+
+/** Whether the Datadog API key is stored, absent, or unreadable because the secret store failed. */
+export const readDatadogKeyState = Effect.fn("ObservabilityExport.readDatadogKeyState")(
+  function* () {
+    const secrets = yield* Effect.serviceOption(HoustonSecrets);
+    if (Option.isNone(secrets)) return { _tag: "Absent" } as DatadogKeyRead;
+    return yield* secrets.value.get(DATADOG_KEY_SECRET).pipe(
+      Effect.map((stored): DatadogKeyRead =>
+        Option.isSome(stored)
+          ? { _tag: "Present", key: Redacted.value(stored.value) }
+          : { _tag: "Absent" },
+      ),
+      Effect.catch((error) =>
+        Effect.succeed<DatadogKeyRead>({ _tag: "Unreadable", reason: error.message }),
+      ),
+    );
+  },
+);
+
 /** The stored Datadog API key, or none when there is no secret store, no key or it is unreadable. */
 export const readDatadogKey = Effect.fn("ObservabilityExport.readDatadogKey")(function* () {
-  const secrets = yield* Effect.serviceOption(HoustonSecrets);
-  if (Option.isNone(secrets)) return Option.none<string>();
-  const stored = yield* secrets.value
-    .get(DATADOG_KEY_SECRET)
-    .pipe(Effect.orElseSucceed(() => Option.none()));
-  return Option.map(stored, Redacted.value);
+  const read = yield* readDatadogKeyState();
+  return read._tag === "Present" ? Option.some(read.key) : Option.none<string>();
 });
+
+/** Why a Datadog signal is not exported, for a warning that never contains the key. */
+export const pausedMessage = (
+  signal: Signal,
+  read: Exclude<DatadogKeyRead, { _tag: "Present" }>,
+) =>
+  read._tag === "Absent"
+    ? `Datadog ${signal} export is off: no Datadog API key is stored (Settings, Diagnostics, OpenTelemetry export).`
+    : `Datadog ${signal} export is off: the Datadog API key could not be read from the secret store (${read.reason}).`;
 
 /**
  * The exporters' HTTP client with the key re-read before each request to a Datadog intake: the
  * exporters are built once at start-up, so removing the key stops their next export and
- * replacing it sends the new one. Requests to other URLs pass through unchanged.
+ * replacing it sends the new one. Requests to other URLs pass through unchanged. A warning is
+ * logged each time the key turns absent or unreadable, and a note when it is back.
  */
 export const datadogKeyGate = Effect.gen(function* () {
   const client = yield* HttpClient.HttpClient;
   const secrets = yield* Effect.serviceOption(HoustonSecrets);
-  const currentKey = readDatadogKey().pipe(
+  const currentKey = readDatadogKeyState().pipe(
     Option.isSome(secrets) ? Effect.provideService(HoustonSecrets, secrets.value) : (self) => self,
   );
-  return HttpClient.transform(client, (response, request) =>
-    INTAKE_URL.test(request.url)
-      ? Effect.flatMap(currentKey, (key) =>
-          Option.isNone(key)
-            ? // Dropped here, with a success status so the exporter does not retry it.
-              Effect.succeed(
-                HttpClientResponse.fromWeb(request, new Response(null, { status: 204 })),
-              )
-            : client.execute(HttpClientRequest.setHeader(request, "dd-api-key", key.value)),
-        )
-      : response,
-  );
+  // The exporter exists because a key was stored at start-up.
+  let last: DatadogKeyRead["_tag"] = "Present";
+  const report = (signal: Signal, read: DatadogKeyRead) => {
+    if (read._tag === last) return Effect.void;
+    last = read._tag;
+    return read._tag === "Present"
+      ? Effect.logInfo(`Datadog ${signal} export resumed with the stored Datadog API key.`)
+      : Effect.logWarning(pausedMessage(signal, read));
+  };
+  return HttpClient.transform(client, (response, request) => {
+    const signal = INTAKE_URL.exec(request.url)?.[2] as Signal | undefined;
+    if (signal === undefined) return response;
+    return Effect.flatMap(currentKey, (read) =>
+      Effect.andThen(
+        report(signal, read),
+        read._tag === "Present"
+          ? client.execute(HttpClientRequest.setHeader(request, "dd-api-key", read.key))
+          : // Dropped here, with a success status so the exporter does not retry it.
+            Effect.succeed(
+              HttpClientResponse.fromWeb(request, new Response(null, { status: 204 })),
+            ),
+      ),
+    );
+  });
 });
 
 /** Provides datadogKeyGate in place of the HTTP client an exporter would use. */
@@ -152,17 +194,15 @@ export const resolve = Effect.fn("ObservabilityExport.resolve")(function* (
       destination: "datadog-agent",
     } satisfies SignalTarget;
   }
-  const key = yield* readDatadogKey();
-  if (Option.isNone(key)) {
+  const read = yield* readDatadogKeyState();
+  if (read._tag !== "Present") {
     if (options.quiet === true) return undefined;
-    yield* Effect.logWarning(
-      `Datadog ${signal} export is off: no Datadog API key is stored (Settings, Diagnostics, OpenTelemetry export).`,
-    );
+    yield* Effect.logWarning(pausedMessage(signal, read));
     return undefined;
   }
   return {
     url,
-    headers: datadogHeaders(signal, key.value),
+    headers: datadogHeaders(signal, read.key),
     protocol: "http/protobuf",
     exportIntervalMs: signalExport.exportIntervalMs,
     temporality: "delta",

@@ -10,15 +10,20 @@ import {
   type HoustonObservabilityPreset as Preset,
 } from "@houston-app/contracts/houston/observability";
 import * as NetService from "@houston-app/shared/Net";
+import * as SharedObservability from "@houston-app/shared/observability";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Logger from "effect/Logger";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import * as TestClock from "effect/testing/TestClock";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
+import * as OtlpExporter from "effect/observability/OtlpExporter";
+import * as OtlpTracer from "effect/observability/OtlpTracer";
 
 import { type CliServerFlags, resolveServerConfig } from "../../cli/config.ts";
 import * as ServerConfig from "../../config.ts";
@@ -260,6 +265,99 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Datadog preset",
         { url: "http://127.0.0.1:9/v1/traces", key: KEY },
       ]);
     }),
+  );
+
+  it.effect("warns once each time the key turns absent or unreadable, never with the key", () =>
+    Effect.gen(function* () {
+      const logs: Array<{ readonly level: string; readonly message: string }> = [];
+      const logger = Logger.make((options) => {
+        logs.push({ level: options.logLevel, message: String(options.message) });
+      });
+      const client = HttpClient.make((request) =>
+        Effect.succeed(HttpClientResponse.fromWeb(request, new Response(null, { status: 202 }))),
+      );
+      const { memory, layer } = withSecrets({ [DatadogKey.DATADOG_KEY_SECRET]: KEY });
+      const gated = yield* ObservabilityExport.datadogKeyGate.pipe(
+        Effect.provideService(HttpClient.HttpClient, client),
+        Effect.provide(layer),
+      );
+      const post = gated
+        .post("https://otlp.us5.datadoghq.com/v1/traces")
+        .pipe(Effect.provide(Logger.layer([logger])));
+      yield* post;
+      memory.entries.delete(DatadogKey.DATADOG_KEY_SECRET);
+      yield* post;
+      yield* post;
+      memory.failWith = "permission denied";
+      yield* post;
+      yield* post;
+      memory.failWith = null;
+      memory.entries.set(DatadogKey.DATADOG_KEY_SECRET, KEY);
+      yield* post;
+      assert.deepStrictEqual(
+        logs.map((log) => log.level),
+        ["Warn", "Warn", "Info"],
+      );
+      assert.include(logs[0]!.message, "no Datadog API key is stored");
+      assert.include(logs[1]!.message, "could not be read from the secret store");
+      assert.include(logs[1]!.message, "permission denied");
+      assert.include(logs[2]!.message, "resumed");
+      assert.notInclude(JSON.stringify(logs), KEY);
+    }),
+  );
+
+  it.effect(
+    "the real trace exporter sends one batch per interval and none once the key is gone",
+    () =>
+      Effect.gen(function* () {
+        let sent = 0;
+        const client = HttpClient.make((request) =>
+          Effect.sync(() => {
+            sent++;
+            return HttpClientResponse.fromWeb(request, new Response(null, { status: 202 }));
+          }),
+        );
+        const { memory, layer } = withSecrets({ [DatadogKey.DATADOG_KEY_SECRET]: KEY });
+        const keyReads = () =>
+          memory.calls.filter(
+            (call) => call.op === "get" && call.name === DatadogKey.DATADOG_KEY_SECRET,
+          ).length;
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const tracer = yield* OtlpTracer.make({
+              url: "https://otlp.us5.datadoghq.com/v1/traces",
+              exportInterval: "1 second",
+              headers: ObservabilityExport.datadogHeaders("traces", KEY),
+              resource: { serviceName: "houston-test" },
+            }).pipe(Effect.provide(ObservabilityExport.layerDatadogKeyGate));
+            const interval = Effect.gen(function* () {
+              yield* Effect.void.pipe(Effect.withSpan("probe"), Effect.withTracer(tracer));
+              yield* TestClock.adjust("1 second");
+              for (let i = 0; i < 20; i++) yield* Effect.yieldNow;
+            });
+            yield* interval;
+            assert.deepStrictEqual([keyReads(), sent], [1, 1]);
+            yield* DatadogKey.clear().pipe(Effect.provide(layer));
+            yield* interval;
+            yield* interval;
+            // The gate is asked once per interval and answers without sending: no retries.
+            assert.deepStrictEqual([keyReads(), sent], [3, 1]);
+            yield* TestClock.adjust("5 seconds");
+            for (let i = 0; i < 20; i++) yield* Effect.yieldNow;
+            assert.deepStrictEqual([keyReads(), sent], [3, 1]);
+          }).pipe(
+            Effect.provideService(HttpClient.HttpClient, client),
+            Effect.provide(
+              Layer.mergeAll(
+                layer,
+                OtlpExporter.layerFlusher,
+                SharedObservability.layerOtlpSerialization("http/protobuf"),
+                Logger.layer([]),
+              ),
+            ),
+          ),
+        );
+      }),
   );
 
   it.effect("the Test button sends the key to a Datadog intake only", () =>
