@@ -106,6 +106,8 @@ import {
   useThreadProjectFilter,
 } from "./ProjectFilterPicker";
 import { jumpHintLabels } from "../../grid/jumpHints";
+import { useRevealOpenThread } from "../../grid/useRevealOpenThread";
+import { attachSidebarTree } from "../../lib/sidebarTree";
 import { useShortcutModifierState } from "../../shortcutModifierState";
 import { reportFailure } from "./reportFailure";
 import { SidebarNoProjects } from "./SidebarNoProjects";
@@ -325,6 +327,7 @@ export function GridSidebar() {
           ? "shelf:closed"
           : null;
   const openGridDraft = useOpenGridDraft();
+  const railRef = useRef<HTMLDivElement | null>(null);
 
   const actions = useThreadActions();
   const handleNewThread = useNewThreadHandler();
@@ -334,6 +337,8 @@ export function GridSidebar() {
   });
 
   const openThread = (gridId: string, threadId: string) => {
+    // Opening a thread ends a multi-selection; its rows may be on other panes now.
+    if (selection.selectedThreadKeys.size > 0) setSelection(clearThreadSelection());
     useGridStore.getState().focusThread(gridId, threadId);
     void navigate({ to: "/grid/$gridId", params: { gridId } });
   };
@@ -476,6 +481,13 @@ export function GridSidebar() {
     openGrid === null || openGrid.focusedThreadId === null
       ? null
       : { gridId: openGrid.id, threadId: openGrid.focusedThreadId };
+  const openShell = currentFocus === null ? undefined : threadById.get(currentFocus.threadId);
+  useRevealOpenThread(
+    railRef,
+    openShell === undefined
+      ? null
+      : scopedThreadKey(scopeThreadRef(openShell.environmentId, openShell.id)),
+  );
 
   const removeFromSelection = (threadsToRemove: ReadonlyArray<EnvironmentThreadShell>) => {
     const keys = new Set(
@@ -959,7 +971,13 @@ export function GridSidebar() {
           />
         </SidebarHeader>
         <SidebarContent>
-          <div className="flex min-h-full flex-col px-2 pb-2">
+          <div
+            ref={(element) => {
+              railRef.current = element;
+              return attachSidebarTree(element);
+            }}
+            className="flex min-h-full flex-col px-2 pb-2"
+          >
             <SidebarProjectsHeader
               options={sidebarOptions}
               onChange={(patch) => void updateClientSettings(sidebarOptionsPatch(patch))}
@@ -1041,7 +1059,11 @@ export function GridSidebar() {
             </div>
           </div>
         </SidebarContent>
-        <div className="shrink-0 px-2 pt-1 pb-1" data-testid="grid-shelves-pin">
+        <div
+          ref={attachSidebarTree}
+          className="shrink-0 px-2 pt-1 pb-1"
+          data-testid="grid-shelves-pin"
+        >
           <Separator className="mb-1" data-shelves-rule="" />
           <GridShelves
             held={shelves.held}
@@ -1281,6 +1303,14 @@ export function SidebarAddProjectButton() {
   );
 }
 
+function projectRowId(section: Pick<SidebarProjectSectionModel, "environmentId" | "projectId">) {
+  return `project:${workspaceKeyOf(section.environmentId, section.projectId)}`;
+}
+
+function gridRowId(grid: Pick<GridRecord, "id">) {
+  return `grid:${grid.id}`;
+}
+
 /** A project's grids, then the threads no grid shows, under one collapsible label. */
 export function SidebarProjectSection({
   section,
@@ -1369,6 +1399,7 @@ export function SidebarProjectSection({
             render={
               <button
                 type="button"
+                data-sidebar-row={projectRowId(section)}
                 aria-expanded={!collapsed}
                 onClick={onToggleCollapsed}
                 onContextMenu={(event) => {
@@ -1448,6 +1479,7 @@ export function SidebarProjectSection({
                 dragging={dragging?.threadId === revealed.thread.id}
                 runningSubagents={runningSubagents.get(subagentParentKey(revealed.thread)) ?? 0}
                 workspaceTitle={section.title}
+                treeParent={gridRowId(revealed.grid)}
                 onOpen={() => onOpenThread(revealed.grid.id, revealed.thread.id)}
                 onSelect={(input) => onSelectThread(revealed.thread, input)}
                 onClose={() => onCloseThread(revealed.thread)}
@@ -1522,6 +1554,7 @@ export function SidebarProjectSection({
                 )}
                 dragging={dragging?.threadId === thread.id}
                 workspaceTitle={section.title}
+                treeParent={projectRowId(section)}
                 notInGrid
                 runningSubagents={runningSubagents.get(subagentParentKey(thread)) ?? 0}
                 onOpen={() => onOpenUngroupedThread(thread)}
@@ -1735,6 +1768,8 @@ export function GridGroup({
               render={
                 <button
                   type="button"
+                  data-sidebar-row={gridRowId(grid)}
+                  data-sidebar-parent={`project:${grid.workspaceKey}`}
                   onClick={onToggleCollapsed}
                   onKeyDown={(event) => {
                     if (event.key === "F2") {
@@ -1853,6 +1888,7 @@ export function GridGroup({
                 dragging={dragging?.threadId === thread.id}
                 runningSubagents={runningSubagents.get(subagentParentKey(thread)) ?? 0}
                 workspaceTitle={workspaceTitle}
+                treeParent={gridRowId(grid)}
                 onOpen={() => onOpenThread(grid.id, thread.id)}
                 onSelect={(input) => onSelectThread(thread, input)}
                 onClose={() => onCloseThread(thread)}
@@ -1912,6 +1948,7 @@ export function ThreadCard({
   shelf = null,
   runningSubagents = 0,
   notInGrid = false,
+  treeParent,
   onOpen,
   onSelect,
   onClose,
@@ -1939,6 +1976,8 @@ export function ThreadCard({
   runningSubagents?: number;
   /** A thread no grid shows: its row sits at project level and its meta says so. */
   notInGrid?: boolean;
+  /** The row id of the grid or project this row sits under, for arrow-key navigation. */
+  treeParent?: string | undefined;
   onOpen: () => void;
   onSelect: (input: { shiftKey: boolean; toggleKey: boolean }) => void;
   onClose: () => void;
@@ -2068,6 +2107,8 @@ export function ThreadCard({
             onPointerDown={startRowDrag}
             tabIndex={-1}
             data-thread-key={threadKey}
+            data-sidebar-row={threadKey}
+            data-sidebar-parent={treeParent}
             aria-busy={regeneratingTitle || undefined}
             onContextMenu={(event) => {
               if (renaming) return;
@@ -2075,9 +2116,24 @@ export function ThreadCard({
               void openCardMenu({ x: event.clientX, y: event.clientY });
             }}
             onKeyDown={(event) => {
-              if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
-              event.preventDefault();
-              openCardMenuFromRow();
+              if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+                event.preventDefault();
+                openCardMenuFromRow();
+                return;
+              }
+              // The row's own keys; its buttons keep theirs.
+              if (event.target !== event.currentTarget) return;
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                if (event.shiftKey || event.metaKey || event.ctrlKey) {
+                  onSelect({ shiftKey: event.shiftKey, toggleKey: event.metaKey || event.ctrlKey });
+                } else {
+                  onOpen();
+                }
+              } else if (event.key === "F2") {
+                event.preventDefault();
+                startRename();
+              }
             }}
             onClick={(event) => {
               if (
