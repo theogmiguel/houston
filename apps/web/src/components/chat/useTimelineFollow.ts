@@ -39,6 +39,7 @@ import type { ThreadStructure } from "@houston-app/client-runtime/state/shell";
 import type { deriveThreadActivityRun } from "@houston-app/client-runtime/state/thread-execution";
 import type { EnvironmentThreadStatus } from "@houston-app/client-runtime/state/threads";
 import type { TimelineEntry } from "../../session-logic";
+import { prefersReducedMotion } from "../../hooks/useReducedMotion";
 
 const TIMELINE_SCROLL_CANCEL_SENTINEL = Object.freeze({});
 
@@ -336,7 +337,7 @@ export function useTimelineFollow(input: TimelineFollowInput) {
       if (!list) return;
       void Promise.resolve(
         list.scrollToEnd?.({
-          animated: animated && !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+          animated: animated && !prefersReducedMotion(),
         }),
       ).then(() =>
         settleListScrollToEnd(
@@ -428,7 +429,7 @@ export function useTimelineFollow(input: TimelineFollowInput) {
         void list
           .scrollToIndex({
             index: anchorIndex,
-            animated: !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+            animated: !prefersReducedMotion(),
             viewPosition: 0,
             viewOffset: CHAT_LIST_ANCHOR_OFFSET,
           })

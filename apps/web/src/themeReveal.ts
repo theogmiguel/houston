@@ -1,4 +1,5 @@
 import { flushSync } from "react-dom";
+import { prefersReducedMotion } from "./hooks/useReducedMotion";
 
 export const THEME_REVEAL_DURATION_MS = 400;
 
@@ -63,7 +64,7 @@ export function revealThemeFromClick(
   const viewTransitionDocument = document as ViewTransitionDocument;
   const rect = isElement(origin) ? origin.getBoundingClientRect() : origin;
   const viewport = { width: window.innerWidth, height: window.innerHeight };
-  const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+  const reducedMotion = prefersReducedMotion();
   const startViewTransition = viewTransitionDocument.startViewTransition;
 
   if (reducedMotion || typeof startViewTransition !== "function") {

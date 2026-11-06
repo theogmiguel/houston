@@ -43,7 +43,7 @@ describe("motion roles", () => {
     const { readFile } = await import("node:fs/promises");
     const css = await readFile(new URL("../index.css", import.meta.url), "utf8");
     const start = css.indexOf("--motion-feedback");
-    const root = css.slice(start, css.indexOf("@media (prefers-reduced-motion", start));
+    const root = css.slice(start, css.indexOf("@variant motion-reduce", start));
     const fromCss = Object.fromEntries(
       [...root.matchAll(/--motion-([a-z-]+): (\d+)ms;/g)].map(([, name, ms]) => [name, Number(ms)]),
     );
@@ -51,5 +51,31 @@ describe("motion roles", () => {
     for (const [name, points] of Object.entries(MOTION_EASE)) {
       expect(css).toContain(`--ease-${name}: cubic-bezier(${points.join(", ")});`);
     }
+  });
+});
+
+describe("reduced motion", () => {
+  // Shadow-root sheets cannot use the stylesheet's variants; each pairs its media query
+  // with a `:host-context([data-motion="off"])` rule instead.
+  const OWNERS = new Set([
+    "motion/registry.ts",
+    "index.css",
+    "pierre-tree-theme.ts",
+    "components/diffs/StyledDiffCodeView.tsx",
+  ]);
+
+  it("is read only through the registry, so the Animations setting reaches every animation", async () => {
+    const { readdir, readFile } = await import("node:fs/promises");
+    const root = new URL("../", import.meta.url);
+    const files = await readdir(root, { recursive: true });
+    const offenders: string[] = [];
+    for (const file of files) {
+      if (!/\.(ts|tsx|css)$/.test(file) || /\.test\.tsx?$/.test(file) || OWNERS.has(file)) continue;
+      const source = await readFile(new URL(file, root), "utf8");
+      if (source.includes("prefers-reduced-motion")) offenders.push(file);
+    }
+    expect(offenders, "use prefersReducedMotion/useReducedMotion or the motion-* variants").toEqual(
+      [],
+    );
   });
 });

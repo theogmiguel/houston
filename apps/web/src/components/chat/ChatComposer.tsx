@@ -287,7 +287,6 @@ import {
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { useSoftwareKeyboardOpen } from "../../hooks/useSoftwareKeyboardOpen";
 import { useStableCallback } from "../../hooks/useStableCallback";
-import { usePanelAnimationSettings } from "../../panelAnimations";
 import { readEnvironmentScope } from "../../state/session";
 import type { ReviewCommentContext } from "../../reviewCommentContext";
 import { useComposerRestingTransition } from "./useComposerRestingTransition";
@@ -2512,14 +2511,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         onShowMore={expandMobileComposer}
       />
     ) : null;
-  const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
-    usePanelAnimationSettings();
   const composerMainSurfaceRef = useComposerRestingTransition(
     composerControlsCollapsed,
     restingComposerControlsRef,
     onComposerOverlayHeightChange,
-    panelAnimationsActive,
-    panelAnimationDurationMs,
+    false,
+    0,
   );
   const restingHiddenBlockCount = showInlineRestingControls
     ? restingControlsHiddenBlockCount

@@ -352,6 +352,19 @@ describe("ClientSettings quit confirmation", () => {
   });
 });
 
+describe("ClientSettings animations", () => {
+  it("plays animations by default", () => {
+    expect(decodeClientSettings({}).animationsEnabled).toBe(true);
+  });
+
+  it("ignores the retired panel animation duration", () => {
+    const settings = decodeClientSettings({ panelAnimationDurationMs: 150 });
+
+    expect(settings.animationsEnabled).toBe(true);
+    expect(encodeClientSettings(settings)).not.toHaveProperty("panelAnimationDurationMs");
+  });
+});
+
 describe("provider enabled defaults", () => {
   it("resolves instance enabled state with explicit false winning", () => {
     const grok = ProviderDriverKind.make("grok");

@@ -7,6 +7,25 @@
 @custom-variant wco (&:is(.wco, .wco *));
 /* Custom frameless window chrome: Houston draws the title bar and its window controls. */
 @custom-variant custom-chrome (&:is(.custom-chrome, .custom-chrome *));
+/* Reduced motion is the system preference or the Appearance "Animations" switch, which
+   sets data-motion="off" on the root. Every motion gate goes through these two variants.
+   The switch matches by ancestor so the variants also apply to pseudo-elements; they
+   never match the root element itself. */
+@custom-variant motion-reduce {
+  @media (prefers-reduced-motion: reduce) {
+    @slot;
+  }
+  :where([data-motion="off"]) & {
+    @slot;
+  }
+}
+@custom-variant motion-safe {
+  @media (prefers-reduced-motion: no-preference) {
+    :where(:root:not([data-motion="off"])) & {
+      @slot;
+    }
+  }
+}
 
 /* Secondary hovering pointers reveal sidebar actions on touch-primary devices. */
 @custom-variant any-hover {
@@ -255,8 +274,9 @@ html[data-theme-reveal] *::after {
   --motion-content-delay: 60ms;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  :root {
+/* On body rather than :root: the switch's variant matches descendants of the root. */
+body {
+  @variant motion-reduce {
     --motion-overlay-in: 0ms;
     --motion-overlay-out: 0ms;
     --motion-modal-in: 0ms;
@@ -650,18 +670,20 @@ html[data-theme-reveal] *::after {
 }
 
 @utility live-tool-shine {
-  @media (prefers-reduced-motion: no-preference) and (forced-colors: none) {
-    color: transparent;
-    background-image:
-      linear-gradient(to right, transparent, var(--contrast-foreground), transparent),
-      linear-gradient(var(--contrast-secondary-label), var(--contrast-secondary-label));
-    background-size:
-      4.5rem 100%,
-      100% 100%;
-    background-repeat: no-repeat;
-    background-clip: text;
-    animation: live-tool-shine 2.2s steps(30) infinite;
-    animation-play-state: var(--visible-animation-state, paused);
+  @variant motion-safe {
+    @media (forced-colors: none) {
+      color: transparent;
+      background-image:
+        linear-gradient(to right, transparent, var(--contrast-foreground), transparent),
+        linear-gradient(var(--contrast-secondary-label), var(--contrast-secondary-label));
+      background-size:
+        4.5rem 100%,
+        100% 100%;
+      background-repeat: no-repeat;
+      background-clip: text;
+      animation: live-tool-shine 2.2s steps(30) infinite;
+      animation-play-state: var(--visible-animation-state, paused);
+    }
   }
 }
 
@@ -723,7 +745,13 @@ html[data-theme-reveal] *::after {
   animation-play-state: var(--visible-animation-state, paused);
   will-change: var(--visible-animation-will-change, auto);
 
-  @media (prefers-reduced-motion: reduce), (forced-colors: active) {
+  @variant motion-reduce {
+    animation: none;
+    opacity: 0;
+    will-change: auto;
+  }
+
+  @media (forced-colors: active) {
     animation: none;
     opacity: 0;
     will-change: auto;
@@ -736,7 +764,12 @@ html[data-theme-reveal] *::after {
   animation-play-state: var(--visible-animation-state, paused);
   will-change: var(--visible-animation-will-change, auto);
 
-  @media (prefers-reduced-motion: reduce), (forced-colors: active) {
+  @variant motion-reduce {
+    animation: none;
+    will-change: auto;
+  }
+
+  @media (forced-colors: active) {
     animation: none;
     will-change: auto;
   }
@@ -2236,10 +2269,10 @@ code {
    when an element is first inserted, and the rule is gated on data-streaming,
    so opening a finished thread never replays the fade. Opacity only, one
    shot, no layout change. */
-@media (prefers-reduced-motion: no-preference) {
-  .chat-markdown[data-streaming] > *,
-  .chat-markdown[data-streaming] .chat-markdown-shiki,
-  .chat-markdown[data-streaming] .chat-markdown-mermaid {
+.chat-markdown[data-streaming] > *,
+.chat-markdown[data-streaming] .chat-markdown-shiki,
+.chat-markdown[data-streaming] .chat-markdown-mermaid {
+  @variant motion-safe {
     transition: opacity 600ms ease-out;
 
     @starting-style {
@@ -2430,14 +2463,16 @@ code {
   animation: preview-loading-progress 5.3s cubic-bezier(0.1, 0.5, 0.2, 1) forwards;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .preview-loading-progress,
-  .preview-loading-progress[data-loading="true"] {
+.preview-loading-progress,
+.preview-loading-progress[data-loading="true"] {
+  @variant motion-reduce {
     transition: none;
     animation: none;
   }
+}
 
-  .preview-loading-progress[data-loading="true"] {
+.preview-loading-progress[data-loading="true"] {
+  @variant motion-reduce {
     transform: scaleX(0.9);
   }
 }
@@ -2861,12 +2896,12 @@ html[data-theme-reveal] [data-grid-surface] [data-grid-cell]::before {
   transition: flex-basis var(--grid-morph-duration) var(--grid-morph-ease);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  [data-grid-surface],
-  [data-grid-surface] [data-grid-cell]::before,
-  [data-grid-surface] [data-pane-label],
-  [data-grid-surface] [data-grid-slot],
-  [data-grid-surface] [data-grid-gutter] {
+[data-grid-surface],
+[data-grid-surface] [data-grid-cell]::before,
+[data-grid-surface] [data-pane-label],
+[data-grid-surface] [data-grid-slot],
+[data-grid-surface] [data-grid-gutter] {
+  @variant motion-reduce {
     transition: none !important;
   }
 }

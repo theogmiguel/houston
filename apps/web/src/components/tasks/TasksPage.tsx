@@ -15,8 +15,6 @@ import { useOpenThreadInGrid } from "~/grid/openThreadInGrid";
 import { requestConfirmDialog } from "~/confirmDialog";
 import { isDesktopHost } from "~/env";
 import { isTerminalFocused } from "~/lib/terminalFocus";
-import { cn } from "~/lib/utils";
-import { usePanelAnimationSettings, usePanelPresence } from "~/panelAnimations";
 import {
   selectActiveRightPanelSurface,
   selectSelectedRightPanelSurface,
@@ -248,16 +246,6 @@ export function TasksPage() {
   const taskSurfaces = rightPanelState.surfaces.filter(
     (surface): surface is Extract<RightPanelSurface, { kind: "task" }> => surface.kind === "task",
   );
-  const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
-    usePanelAnimationSettings();
-  const projectPanelPresence = usePanelPresence(
-    projectPanel !== null,
-    projectPanel,
-    panelAnimationsActive,
-    TASKS_PANEL_REF.threadId,
-    panelAnimationDurationMs,
-  );
-  const renderedProjectPanel = projectPanelPresence.value;
   const taskRightPanelOpen =
     rightPanelState.isOpen && activeTaskSurface !== null && environmentId !== null;
 
@@ -591,25 +579,17 @@ export function TasksPage() {
             </div>
           </div>
         </div>
-        {/* An open project panel wins over the task's right panel; a closing one yields to it. */}
-        {renderedProjectPanel !== null && (projectPanel !== null || !taskRightPanelOpen) ? (
+        {/* An open project panel wins over the task's right panel. */}
+        {projectPanel !== null ? (
           <aside
-            className={cn(
-              "flex shrink-0 flex-col overflow-clip",
-              projectPanel !== null ? "w-[420px]" : "w-0",
-              panelAnimationsActive &&
-                "[[data-panel-animations=true]_&]:transition-[width] [[data-panel-animations=true]_&]:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:ease-standard",
-              panelAnimationsActive &&
-                projectPanel !== null &&
-                "[[data-panel-animations=true]_&]:starting:w-0!",
-            )}
+            className="flex w-[420px] shrink-0 flex-col overflow-clip"
             data-slot="tasks-project-panel"
           >
             <div className="flex min-h-0 flex-1 flex-col p-2">
               <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 <TaskProjectPanel
                   environmentId={environmentId as EnvironmentId}
-                  group={renderedProjectPanel}
+                  group={projectPanel}
                   onClose={() => setProjectPanel(null)}
                 />
               </Card>

@@ -90,13 +90,6 @@ vi.mock("~/state/environments", () => ({
 vi.mock("~/state/server", () => ({
   primaryServerKeybindingsAtom: Atom.make({}),
 }));
-vi.mock("~/panelAnimations", () => ({
-  usePanelAnimationSettings: () => ({ active: false, durationMs: 0 }),
-  usePanelPresence: (open: boolean, value: unknown) => ({
-    present: open,
-    value: open ? value : null,
-  }),
-}));
 vi.mock("~/grid/openThreadInGrid", () => ({ useOpenThreadInGrid: () => async () => {} }));
 vi.mock("./TaskDetailPanel", () => ({
   TaskDetailPanel: ({ taskKey }: { taskKey: string }) => <div data-task-detail>{taskKey}</div>,

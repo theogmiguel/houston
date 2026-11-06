@@ -25,7 +25,7 @@ Search Settings by feature or setting name. `Esc` clears an active search.
 
 ## Appearance
 
-Colors and themes, light/dark/system mode, contrast, glass opacity, panel animations,
+Colors and themes, light/dark/system mode, contrast, glass opacity, animations,
 environment identification, chat width, effort display, math rendering and composer
 context. **Typography** sets interface, prompt, code and terminal fonts, their sizes, word
 wrap and separate fonts. Custom themes can be created, duplicated, edited, exported and

@@ -233,4 +233,7 @@ The renderer ships in an Electron webview, so motion must stay on the compositor
   (`motion/maximizeMotion.ts`), both on the `registry.ts` spring. Measure grid changes with
   the frame probe (`source: "frame-probe"` in
   `~/.houston-dev/v2/userdata/logs/app-debug.ndjson`).
-- Reduced motion turns every role to 0ms in CSS and `resolveMotion` returns `off` in script.
+- Reduced motion (the system preference or the Appearance **Animations** switch) turns every
+  role to 0ms in CSS and `resolveMotion` returns `off` in script. Gate motion only through the
+  `motion-safe`/`motion-reduce` variants or `prefersReducedMotion`/`useReducedMotion`, never a
+  direct `prefers-reduced-motion` query.

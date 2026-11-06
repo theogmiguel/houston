@@ -201,6 +201,12 @@ export const DIFF_VIEW_UNSAFE_CSS = `${DIFF_SURFACE_THEME_UNSAFE_CSS}
     transition: none;
   }
 }
+
+/* The Appearance "Animations" switch; this sheet lives in a shadow root. */
+:host-context([data-motion="off"]) [data-diff],
+:host-context([data-motion="off"]) [data-file] {
+  transition: none;
+}
 `;
 
 export type StyledDiffCodeViewOptions<LAnnotation> = Omit<
