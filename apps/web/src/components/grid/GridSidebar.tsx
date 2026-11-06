@@ -1207,7 +1207,7 @@ export function SidebarProjectSection({
   section,
   query,
   openGridId,
-  collapsed,
+  collapsed: collapsedPreference,
   onToggleCollapsed,
   collapsedGridIds,
   onToggleGridCollapsed,
@@ -1270,6 +1270,8 @@ export function SidebarProjectSection({
   onOpenProjectMenu?: ((position: { x: number; y: number }) => void) | undefined;
 }) {
   const gridCount = section.grids.length;
+  // A search shows every match, so it opens a project the user collapsed.
+  const collapsed = query.length === 0 && collapsedPreference;
   const projectMenu = section.isScratch ? undefined : onOpenProjectMenu;
   const summary = gridCount === 0 ? "No grids" : gridCount === 1 ? "1 grid" : `${gridCount} grids`;
 

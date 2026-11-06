@@ -297,6 +297,37 @@ describe("project sections", () => {
     await expect.poll(opacity).toBe(1);
   });
 
+  it("expands a collapsed project while a search is active so its matches show", async () => {
+    resetTestState();
+    await using screen = await render(
+      <TooltipProvider delay={0}>
+        <SidebarProjectSection
+          {...sectionProps(projectSections()[0]!, { collapsed: true, query: "thread-a" })}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByRole("button", { name: /^Houston$/ }).element()).toBeVisible();
+    expect(screen.container.textContent).toContain("Grid 1");
+    expect(
+      screen
+        .getByRole("button", { name: /^Houston$/ })
+        .element()
+        .getAttribute("aria-expanded"),
+    ).toBe("true");
+  });
+
+  it("keeps a collapsed project collapsed without a search", async () => {
+    resetTestState();
+    await using screen = await render(
+      <TooltipProvider delay={0}>
+        <SidebarProjectSection {...sectionProps(projectSections()[0]!, { collapsed: true })} />
+      </TooltipProvider>,
+    );
+
+    expect(screen.container.textContent).not.toContain("Grid 1");
+  });
+
   it("creates a grid from the project label's action", async () => {
     resetTestState();
     const onCreateGrid = vi.fn();
