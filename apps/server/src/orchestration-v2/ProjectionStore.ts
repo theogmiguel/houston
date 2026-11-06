@@ -5607,21 +5607,116 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       readonly item: TimelineIndexItem;
       readonly synthetic?: OrchestrationV2TurnItem;
     };
+    const timelinePageIndexRows = Effect.fn("ProjectionStore.timelinePageIndexRows")(function* (
+      threadId: ThreadId,
+      cancelledRunIds: ReadonlyArray<RunId>,
+    ) {
+      const rows = yield* sql<{
+        readonly turn_item_id: string;
+        readonly run_id: string | null;
+        readonly node_id: string | null;
+        readonly parent_item_id: string | null;
+        readonly type: OrchestrationV2TurnItem["type"];
+        readonly status: OrchestrationV2TurnItem["status"];
+        readonly ordinal: number;
+      }>`
+        SELECT item.turn_item_id, item.run_id, item.node_id, item.parent_item_id, item.type,
+          item.status, item.ordinal
+        FROM orchestration_v2_projection_turn_items AS item
+          INDEXED BY houston_turn_items_timeline_idx
+        WHERE item.thread_id = ${threadId}
+        ORDER BY item.ordinal ASC, item.turn_item_id ASC
+      `;
+      const intents =
+        cancelledRunIds.length === 0
+          ? []
+          : yield* sql<{
+              readonly turn_item_id: string;
+              readonly input_intent: string | null;
+            }>`
+              SELECT turn_item_id, json_extract(payload_json, '$.inputIntent') AS input_intent
+              FROM orchestration_v2_projection_turn_items
+              WHERE thread_id = ${threadId} AND type = 'user_message'
+                AND run_id IN (SELECT value FROM json_each(${encodeIdList(cancelledRunIds)}))
+            `;
+      const intentById = new Map(intents.map((row) => [row.turn_item_id, row.input_intent]));
+      return rows.map((row) => ({
+        ...row,
+        input_intent: (intentById.get(row.turn_item_id) ?? null) as NonNullable<
+          TimelineIndexItem["inputIntent"]
+        > | null,
+        created_by: null,
+        message_id: null,
+        persistent_output: 0,
+        attempt_id: null,
+        attempt_status: null,
+      }));
+    });
+    // Houston: visibility and fork inheritance need only these run and attempt columns, so the
+    // timeline reads them instead of decoding every run and attempt payload of the thread.
+    type TimelineRecords = {
+      readonly thread: OrchestrationV2ThreadProjection["thread"];
+      readonly runs: ReadonlyArray<Pick<OrchestrationV2Run, "id" | "status" | "ordinal">>;
+      readonly attempts: ReadonlyArray<
+        Pick<OrchestrationV2ThreadProjection["attempts"][number], "runId" | "rootNodeId" | "status">
+      >;
+    };
+    const readTimelineRecords = Effect.fn("ProjectionStore.readTimelineRecords")(
+      function* (threadId: ThreadId) {
+        const thread = yield* getThread(threadId);
+        const runs = yield* sql<{
+          readonly run_id: string;
+          readonly status: OrchestrationV2Run["status"];
+          readonly ordinal: number;
+        }>`
+          SELECT run_id, status, ordinal FROM orchestration_v2_projection_runs
+          WHERE thread_id = ${threadId} ORDER BY ordinal ASC
+        `;
+        const attempts = yield* sql<{
+          readonly run_id: string;
+          readonly root_node_id: string;
+          readonly status: TimelineRecords["attempts"][number]["status"];
+        }>`
+          SELECT run_id, root_node_id, status FROM orchestration_v2_projection_run_attempts
+          WHERE thread_id = ${threadId} ORDER BY run_id ASC, attempt_ordinal ASC
+        `;
+        return {
+          thread,
+          runs: runs.map((run) => ({
+            id: RunId.make(run.run_id),
+            status: run.status,
+            ordinal: run.ordinal,
+          })),
+          attempts: attempts.map((attempt) => ({
+            runId: RunId.make(attempt.run_id),
+            rootNodeId: NodeId.make(attempt.root_node_id),
+            status: attempt.status,
+          })),
+        } satisfies TimelineRecords;
+      },
+      (effect, threadId) => effect.pipe(Effect.mapError(controlReadError(threadId))),
+    );
     const readTimelineIndex: (
       threadId: ThreadId,
       seen: ReadonlySet<ThreadId>,
       includePersistentOutput?: boolean,
+      pageFieldsOnly?: boolean,
     ) => Effect.Effect<
       {
-        readonly records: ProjectionRecords<"runs" | "attempts">;
+        readonly records: TimelineRecords;
         readonly local: ReadonlyArray<TimelineIndexRow>;
         readonly visible: ReadonlyArray<TimelineIndexRow>;
       },
       ProjectionStoreV2Error
     > = Effect.fn("ProjectionStore.readTimelineIndex")(
-      function* (threadId: ThreadId, seen: ReadonlySet<ThreadId>, includePersistentOutput = false) {
-        const records = yield* getThreadRecords(threadId, ["runs", "attempts"]);
-        const rows = yield* sql<{
+      function* (
+        threadId: ThreadId,
+        seen: ReadonlySet<ThreadId>,
+        includePersistentOutput = false,
+        pageFieldsOnly = false,
+      ) {
+        const records = yield* readTimelineRecords(threadId);
+        type IndexRow = {
           turn_item_id: string;
           run_id: string | null;
           node_id: string | null;
@@ -5635,7 +5730,15 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           persistent_output: number;
           attempt_id: string | null;
           attempt_status: string | null;
-        }>`SELECT item.turn_item_id, item.run_id, item.node_id, item.parent_item_id, item.type, item.status, item.ordinal,
+        };
+        // Houston: a page needs no payload key except a cancelled queued turn's inputIntent, so it
+        // reads the covering timeline index (houston/projectionReadModels.ts) and fetches only those.
+        const rows: ReadonlyArray<IndexRow> = pageFieldsOnly
+          ? yield* timelinePageIndexRows(
+              threadId,
+              records.runs.flatMap((run) => (run.status === "cancelled" ? [run.id] : [])),
+            )
+          : yield* sql<IndexRow>`SELECT item.turn_item_id, item.run_id, item.node_id, item.parent_item_id, item.type, item.status, item.ordinal,
           ${includePersistentOutput ? sql`attempt.attempt_id` : sql`NULL`} AS attempt_id,
           ${includePersistentOutput ? sql`attempt.status` : sql`NULL`} AS attempt_status,
           ${
@@ -5693,6 +5796,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           fork.threadId,
           new Set([...seen, threadId]),
           includePersistentOutput,
+          pageFieldsOnly,
         );
         const sourceRun = source.records.runs.find((run) => run.id === fork.runId);
         let inherited: Array<TimelineIndexRow> = [];
@@ -5881,7 +5985,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       sql
         .withTransaction(
           Effect.gen(function* () {
-            const index = yield* readTimelineIndex(threadId, new Set());
+            const index = yield* readTimelineIndex(threadId, new Set(), false, true);
             const matching = index.visible
               .map((row, position) => ({ ...row, position }))
               .filter((row) =>
