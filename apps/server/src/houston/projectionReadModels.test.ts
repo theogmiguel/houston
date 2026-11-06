@@ -491,6 +491,90 @@ describe("the user-message read model returns what the payload filters returned"
   );
 });
 
+describe("the turn-start command flag returns what the payload filter returned", () => {
+  const JAVASCRIPT_TRIM =
+    " \t\n\r\v\f\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff";
+  const COMMANDS: ReadonlyArray<readonly [string, unknown]> = [
+    ["compact", { text: "/compact" }],
+    ["compact-padded", { text: "\u00a0 /COMPACT\n" }],
+    ["compact-attachment", { text: "/compact", attachments: [{}] }],
+    ["compact-args", { text: "/compact now" }],
+    ["goal", { text: "/goal ship it" }],
+    ["goal-padded", { text: "  /goal" }],
+    ["goal-long", { text: `\u3000/goal ${"x".repeat(70_000)}` }],
+    ["goal-case", { text: "/Goal ship it" }],
+    ["goals", { text: "/goals" }],
+    ["goal-deep", { text: `${" ".repeat(70)}/goal x` }],
+    ["compact-deep", { text: `${" ".repeat(70)}/Compact${" ".repeat(3)}` }],
+    ["short", { text: " /go" }],
+    ["plain", { text: "fix the build" }],
+    ["no-text", {}],
+  ];
+
+  it.effect("flags the user messages the /compact and /goal filters matched", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      for (const [index, [id, payload]] of COMMANDS.entries()) {
+        yield* insertMessage(id, "thread", index, payload);
+      }
+      const legacy = yield* sql<{ readonly message_id: string }>`
+        SELECT message_id FROM orchestration_v2_projection_messages
+        WHERE thread_id = 'thread' AND (
+          (role = 'user' AND lower(trim(json_extract(payload_json, '$.text'), ${JAVASCRIPT_TRIM})) = '/compact')
+          OR (role = 'user' AND trim(json_extract(payload_json, '$.text'), ${JAVASCRIPT_TRIM}) GLOB '/goal*')
+        ) ORDER BY message_id
+      `;
+      const flagged = yield* sql<{ readonly message_id: string }>`
+        SELECT message_id FROM houston_user_messages
+        WHERE thread_id = 'thread' AND command_kind IS NOT NULL ORDER BY message_id
+      `;
+      assert.deepEqual(flagged, legacy);
+      assert.deepEqual(
+        legacy.map((row) => row.message_id),
+        [
+          "compact",
+          "compact-attachment",
+          "compact-deep",
+          "compact-padded",
+          "goal",
+          "goal-deep",
+          "goal-long",
+          "goal-padded",
+          "goals",
+        ],
+      );
+    }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
+  );
+
+  it.effect("migration 17 adds the flag to a database that ran migration 13 without it", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* runMigrations();
+      yield* runHoustonMigrations();
+      // Composed fixture: migration 13 as it shipped before the command column.
+      yield* sql`DROP INDEX houston_user_messages_command_idx`;
+      for (const name of ["insert", "update", "delete"]) {
+        yield* sql.unsafe(`DROP TRIGGER houston_user_messages_${name}`);
+      }
+      yield* sql`ALTER TABLE houston_user_messages DROP COLUMN command_kind`;
+      yield* sql`DELETE FROM houston_sql_migrations WHERE migration_id = 17`;
+      yield* sql`INSERT INTO orchestration_v2_projection_messages (message_id, thread_id, run_id,
+        node_id, role, streaming, created_at, updated_at, payload_json)
+        VALUES ('before', 'thread', NULL, NULL, 'user', 0, ${AT}, ${AT}, '{"text":"/compact"}')`;
+      assert.deepEqual(yield* runHoustonMigrations(), [[17, "TurnStartReadModels"]]);
+      yield* insertMessage("after", "thread", 1, { text: "/goal again" });
+      assert.deepEqual(
+        yield* sql`SELECT message_id, command_kind FROM houston_user_messages ORDER BY message_id`,
+        [
+          { message_id: "after", command_kind: "goal" },
+          { message_id: "before", command_kind: "compact" },
+        ],
+      );
+      assert.deepEqual(yield* runHoustonMigrations(), []);
+    }).pipe(Effect.provide(Layer.fresh(NodeSqliteClient.layer({ filename: ":memory:" })))),
+  );
+});
+
 describe("shell reads use the read models instead of scanning", () => {
   const plan = (statement: string) =>
     Effect.flatMap(SqlClient.SqlClient, (sql) =>

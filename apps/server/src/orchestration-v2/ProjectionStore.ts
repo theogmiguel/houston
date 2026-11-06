@@ -4456,12 +4456,14 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             `.pipe(Effect.flatMap(decodeRows(decodeProviderSessionPayload, threadId)));
             const messages = yield* sql<PayloadRow>`
               SELECT payload_json FROM orchestration_v2_projection_messages
-              WHERE thread_id = ${threadId} AND (
-                message_id IN (SELECT json_extract(payload_json, '$.userMessageId') FROM orchestration_v2_projection_runs
-                  WHERE thread_id = ${threadId} AND run_id = ${runId})
-                OR (role = 'user' AND lower(trim(json_extract(payload_json, '$.text'), ${javascriptTrimWhitespace})) = '/compact')
-                -- Earlier /goal turns defer context too; parseGoalCommand narrows this prefix match.
-                OR (role = 'user' AND trim(json_extract(payload_json, '$.text'), ${javascriptTrimWhitespace}) GLOB '/goal*')
+              WHERE thread_id = ${threadId} AND message_id IN (
+                SELECT json_extract(payload_json, '$.userMessageId') FROM orchestration_v2_projection_runs
+                  WHERE thread_id = ${threadId} AND run_id = ${runId}
+                -- Houston: /compact and earlier /goal turns (which defer context too; parseGoalCommand
+                -- narrows the prefix match), flagged on write by houston/projectionReadModels.ts.
+                UNION ALL
+                SELECT message_id FROM houston_user_messages
+                WHERE thread_id = ${threadId} AND command_kind IS NOT NULL
               ) ORDER BY created_at ASC, message_id ASC
             `.pipe(Effect.flatMap(decodeRows(decodeMessagePayload, threadId)));
             const conversation = yield* sql<{ present: number }>`

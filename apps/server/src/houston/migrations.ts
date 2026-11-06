@@ -6,6 +6,7 @@ import {
   createProjectionReadIndexes,
   createShellReadModels,
   createTimelineReadIndexes,
+  createTurnStartReadModels,
 } from "./projectionReadModels.ts";
 
 // Upstream's migrator skips every id up to the highest it recorded, so Houston's schema keeps its
@@ -783,6 +784,7 @@ const houstonMigrationEntries = [
   [12, "ProjectionReadIndexes", createProjectionReadIndexes],
   [13, "ShellReadModels", createShellReadModels],
   [16, "TimelineReadIndex", createTimelineReadIndexes],
+  [17, "TurnStartReadModels", createTurnStartReadModels],
 ] as const;
 
 // Ids land in merge order, so a database can record a higher id before a lower one; every

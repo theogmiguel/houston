@@ -30,6 +30,7 @@ const HOUSTON_TRACK: Array<readonly [number, string]> = [
   [12, "ProjectionReadIndexes"],
   [13, "ShellReadModels"],
   [16, "TimelineReadIndex"],
+  [17, "TurnStartReadModels"],
 ];
 const TASK_TABLES = [
   "houston_task_acceptance",
