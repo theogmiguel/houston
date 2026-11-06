@@ -28,6 +28,7 @@ const HOUSTON_TRACK: Array<readonly [number, string]> = [
   [10, "DropNightShiftAndHarnessReview"],
   [11, "SecretStoreImport"],
   [12, "ProjectionReadIndexes"],
+  [13, "ShellReadModels"],
 ];
 const TASK_TABLES = [
   "houston_task_acceptance",
@@ -145,7 +146,7 @@ describe("the Houston track applies every id it has not recorded", () => {
     `).map((row) => row.name);
   });
 
-  it.effect("a database at upstream's head applies 1..12 in id order", () =>
+  it.effect("a database at upstream's head applies every Houston id in id order", () =>
     withDatabaseFile((file) =>
       Effect.gen(function* () {
         yield* runMigrations();

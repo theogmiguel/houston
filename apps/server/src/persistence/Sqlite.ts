@@ -7,6 +7,7 @@ import * as NodeSqliteClient from "@houston-app/shared/nodeSqliteClient";
 
 import { runMigrations } from "./Migrations.ts";
 import { runHoustonMigrations } from "../houston/migrations.ts";
+import { ensureHoustonReadModels } from "../houston/projectionReadModels.ts";
 import { initializeV2Database } from "./initializeV2Database.ts";
 import * as ServerConfig from "../config.ts";
 
@@ -36,6 +37,7 @@ const layerSetup = Layer.effectDiscard(
     yield* sql.unsafe(`PRAGMA journal_size_limit = ${WAL_SIZE_LIMIT_BYTES};`);
     yield* runMigrations();
     yield* runHoustonMigrations();
+    yield* ensureHoustonReadModels();
     // Collecting stats scans every page, and stale small-table stats cause scans after growth; use indexes by default.
     // Connections cache stats; reload after deleting them.
     const statTables = yield* sql`SELECT 1 FROM sqlite_schema WHERE name = 'sqlite_stat1'`;
