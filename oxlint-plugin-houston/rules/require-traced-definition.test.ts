@@ -351,6 +351,47 @@ describe("houston/require-traced-definition", () => {
   );
 
   // A reason says why there is no span.
+  rule.valid(
+    "accepts reasons naming every unit of work, untraced, or written after the =",
+    `
+    import * as Effect from "effect/Effect";
+    // Runs for every domain event; most events return before any work is needed.
+    export const handle = Effect.fnUntraced(function* () { yield* Effect.void; });
+    // Desktop telemetry refreshes this process set on every sample.
+    export const setExternalProcesses: (processes: ReadonlyArray<number>) => Effect.Effect<void> =
+      Effect.fnUntraced(function* () { yield* Effect.void; });
+    // Providers call this on every token-usage tick, usually without changing the snapshot.
+    export const applyUsageLimits = Effect.fnUntraced(function* () { yield* Effect.void; });
+    /** Stay untraced so this helper does not introduce another lazy frame to retain. */
+    export const detachStackFrame = Effect.fnUntraced(function* () { yield* Effect.void; });
+    /** Media routes authenticate the way the /ws upgrade does. */
+    export const authenticateMediaRequest =
+      /* Request instrumentation already owns the span; keep this helper in that context. */
+      Effect.fnUntraced(function* () { yield* Effect.void; });
+  `,
+  );
+
+  rule.invalid(
+    "reports fnUntraced whose comment explains batching, not why it has no span",
+    `
+    import * as Effect from "effect/Effect";
+    // Keep each source batch together so a synchronization marker cannot pass
+    // events already pulled from PubSub but still being coalesced.
+    export const offerAll = Effect.fnUntraced(function* () { yield* Effect.void; });
+  `,
+    (output) => assert.match(output, /without a reason/),
+  );
+
+  rule.invalid(
+    "reports fnUntraced whose comment names every project, not a unit of work",
+    `
+    import * as Effect from "effect/Effect";
+    // Shared by every project.
+    export const read = Effect.fnUntraced(function* () { yield* Effect.void; });
+  `,
+    (output) => assert.match(output, /without a reason/),
+  );
+
   rule.invalid(
     "reports fnUntraced whose comment does not say why it has no span",
     `

@@ -8,9 +8,10 @@ const COMBINATOR_NAMESPACES = new Set(["Match", "Schema", "Config"]);
 const HOUSTON_SPAN_NAME = /^[A-Z][A-Za-z0-9]*(\.[a-z][A-Za-z0-9]*)+$/;
 const MIN_REASON_LENGTH = 10;
 // A reason says why the definition has no span of its own: it names the span or tracing, or a
-// hot path that runs per unit of work. "Cached per project" or "the caller owns the scope" do not.
+// hot path that runs per (or on every) unit of work, which one qualifier word may precede.
+// "Cached per project" or "the caller owns the scope" do not.
 const NO_SPAN_REASON =
-  /\b(spans?|trac(e|ed|es|ing)|hot[ -]?path|per[ -](event|chunk|message|item|frame|row|request|call|line|tick|byte|token|delta|record|statement|query|update|entry)s?)\b/i;
+  /\b(spans?|(un)?trac(e|ed|es|ing)|hot[ -]?path|(per|every)[ -]([\w-]+ )?(event|chunk|message|item|frame|row|request|call|line|tick|byte|token|delta|record|statement|query|update|entry|sample)s?)\b/i;
 // Bodies passed to these calls build a value, possibly a service object.
 const FACTORY_BODY_CALLEES = new Set(["gen", "fn", "fnUntraced"]);
 // Callbacks of these calls build a service when the call feeds a layer.
@@ -307,15 +308,19 @@ export default defineRule({
       return site;
     };
 
+    // Before the declaration, or between `=` and the initializer.
     const hasReasonComment = (site: Node): boolean =>
-      context.sourceCode
-        .getCommentsBefore(commentAnchor(site))
-        .some(
-          (comment) =>
-            !/^\s*(oxlint|eslint)-/.test(comment.value) &&
-            comment.value.trim().length >= MIN_REASON_LENGTH &&
-            NO_SPAN_REASON.test(comment.value),
-        );
+      [
+        ...context.sourceCode.getCommentsBefore(commentAnchor(site)),
+        ...(site.type === "VariableDeclarator" && site.init
+          ? context.sourceCode.getCommentsBefore(site.init)
+          : []),
+      ].some(
+        (comment) =>
+          !/^\s*(oxlint|eslint)-/.test(comment.value) &&
+          comment.value.trim().length >= MIN_REASON_LENGTH &&
+          NO_SPAN_REASON.test(comment.value),
+      );
 
     const report = (site: Node, message: string) => {
       if (reported.has(site)) return;
