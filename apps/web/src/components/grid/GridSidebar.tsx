@@ -105,6 +105,7 @@ import {
   ProjectFilterPicker,
   useThreadProjectFilter,
 } from "./ProjectFilterPicker";
+import { SidebarNoProjects } from "./SidebarNoProjects";
 import { ThreadStateMark } from "./threadStatusMark";
 import { ThreadCheckoutMark, ThreadRowIndicators } from "./threadRowIndicators";
 import { GridShelves } from "./GridShelves";
@@ -975,11 +976,7 @@ export function GridSidebar() {
             }
           />
           <div className="flex flex-col gap-px">
-            {sections.length === 0 && query.length === 0 ? (
-              <p className="px-2 py-3 text-xs text-secondary-label">
-                Open a project to create its first grid.
-              </p>
-            ) : null}
+            {sections.length === 0 && query.length === 0 ? <SidebarNoProjects /> : null}
             {sections.map((section) => (
               <SidebarProjectSection
                 key={section.projectKey}
