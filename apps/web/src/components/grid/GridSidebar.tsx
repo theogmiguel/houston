@@ -179,7 +179,8 @@ import { isThreadRoutePathname } from "../../threadRoutes";
 import {
   SIDEBAR_THREAD_STATUS_ATTENTION_CLASS,
   SIDEBAR_THREAD_STATUS_CLASS,
-  SIDEBAR_THREAD_STATUS_LINE_CLASS,
+  SIDEBAR_THREAD_EXTRAS_LINE_CLASS,
+  SIDEBAR_THREAD_META_TEXT_CLASS,
   SIDEBAR_THREAD_STATUS_QUIET_CLASS,
   SIDEBAR_THREAD_TAG_CLASS,
 } from "../ui/thread-tag-recipes";
@@ -1775,10 +1776,7 @@ function ThreadStateMark({
   const elapsed =
     state === "running" && startedAt !== null ? <RunningElapsed startedAt={startedAt} /> : null;
   return (
-    <span
-      data-thread-status=""
-      className={cn(SIDEBAR_THREAD_STATUS_CLASS, threadStatusInk(state))}
-    >
+    <span data-thread-status="" className={cn(SIDEBAR_THREAD_STATUS_CLASS, threadStatusInk(state))}>
       {state === "idle" ? (
         <CircleIcon aria-hidden className="size-3.5 shrink-0" />
       ) : (
@@ -1797,11 +1795,18 @@ function RunningElapsed({ startedAt }: { startedAt: string }) {
   return <span>{formatWorkingDurationLabel(nowMs - startedMs)}</span>;
 }
 
+/** Branch names every checkout is assumed to treat as the project's default. */
+const CONVENTIONAL_DEFAULT_BRANCHES: ReadonlySet<string> = new Set(["main", "master"]);
+
 /**
  * The branch a thread works on: the one it recorded, or else the branch its
- * checkout (its worktree, or the project's own folder) currently has.
+ * checkout (its worktree, or the project's own folder) currently has. `isDefault`
+ * is the checkout's own answer when the branch came from it, else `main` or `master`.
  */
-function useThreadBranchName(thread: EnvironmentThreadShell): string | null {
+function useThreadBranch(thread: EnvironmentThreadShell): {
+  name: string | null;
+  isDefault: boolean;
+} {
   const readsCheckout = thread.branch === null;
   const project = useProject(
     readsCheckout && thread.worktreePath === null
@@ -1814,7 +1819,12 @@ function useThreadBranchName(thread: EnvironmentThreadShell): string | null {
       ? vcsEnvironment.status({ environmentId: thread.environmentId, input: { cwd } })
       : null,
   );
-  return thread.branch ?? status.data?.refName ?? null;
+  const name = thread.branch ?? status.data?.refName ?? null;
+  const conventional = name !== null && CONVENTIONAL_DEFAULT_BRANCHES.has(name);
+  return {
+    name,
+    isDefault: thread.branch === null ? (status.data?.isDefaultRef ?? conventional) : conventional,
+  };
 }
 
 export function ThreadCard({
@@ -1878,7 +1888,7 @@ export function ThreadCard({
   const nowMinute = useNowMinute();
   const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
   const showBranch = useClientSettings((settings) => settings.sidebarRowShowBranch);
-  const branchName = useThreadBranchName(thread);
+  const { name: branchName, isDefault: branchIsDefault } = useThreadBranch(thread);
   const showPullRequest = useClientSettings((settings) => settings.sidebarRowShowPullRequest);
   const showSubagents = useClientSettings((settings) => settings.sidebarRowShowSubagents);
   const state = resolveGridThreadState(thread, nowIso);
@@ -1902,6 +1912,11 @@ export function ThreadCard({
   const threadKey = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
   const modelLabel = thread.modelSelection?.model ?? null;
   const actionsVisible = actionsHovered || holdMenuOpen || actionsMenuOpen;
+  // The hover actions overlay the row's top corner; its lines reserve their width so text truncates before them.
+  const rowClearance = cn(
+    shelf === null ? ROW_TITLE_CLEAR_ACTIONS : ROW_TITLE_CLEAR_SHELF_ACTION,
+    actionsVisible && (shelf === null ? ROW_TITLE_CLEARED_ACTIONS : ROW_TITLE_CLEARED_SHELF_ACTION),
+  );
   const [previewOpen, setPreviewOpen] = useState(false);
   const rowRef = useRef<HTMLDivElement | null>(null);
   const actionsButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -2011,7 +2026,7 @@ export function ThreadCard({
               onOpen();
             }}
             className={cn(
-              `group/th relative flex w-full flex-col rounded-lg py-1 pr-2 text-left outline-none ${MOTION_FEEDBACK} ${FOCUS_ROW_CLS}`,
+              `group/th relative flex w-full flex-col rounded-lg py-1.5 pr-2 text-left outline-none ${MOTION_FEEDBACK} ${FOCUS_ROW_CLS}`,
               SIDEBAR_THREAD_ROW_INDENT_CLS,
               "cursor-pointer",
               dragging && "opacity-50",
@@ -2024,7 +2039,39 @@ export function ThreadCard({
           />
         }
       >
-        <div className="flex min-h-4.5 min-w-0 items-center gap-2">
+        <div
+          data-thread-meta=""
+          className={cn(
+            "flex min-w-0 items-center gap-2",
+            SIDEBAR_THREAD_META_TEXT_CLASS,
+            rowClearance,
+          )}
+        >
+          {showBranch && branchName !== null && !branchIsDefault ? (
+            <span data-thread-branch="" className="inline-flex min-w-0 items-center gap-1">
+              <GitBranchIcon aria-hidden className="size-3.5 shrink-0" />
+              <span className="min-w-0 truncate">{branchName}</span>
+            </span>
+          ) : null}
+          <ThreadStateMark state={state} startedAt={startedAt} />
+          {/* Right-aligned on the meta line so ages scan down one column; it recedes while
+              the hover actions take the corner. */}
+          <span
+            data-thread-time=""
+            className={cn(
+              "ml-auto shrink-0",
+              ROW_STATUS_RECEDE,
+              MOTION_FEEDBACK_OPACITY,
+              actionsVisible && ROW_STATUS_HIDDEN,
+            )}
+          >
+            {timeLabel ?? threadTimeLabel(thread, nowMinute)}
+          </span>
+        </div>
+        <div
+          data-thread-title-line=""
+          className={cn("mt-1 flex min-h-4.5 min-w-0 items-center gap-0.75", rowClearance)}
+        >
           {renaming ? (
             <input
               autoFocus
@@ -2064,35 +2111,42 @@ export function ThreadCard({
                 }
               }}
               aria-current={active ? "true" : undefined}
-              className={cn(
-                "flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left outline-none",
-                // The hover actions overlay the row; reserve their width so the title truncates before them.
-                shelf === null ? ROW_TITLE_CLEAR_ACTIONS : ROW_TITLE_CLEAR_SHELF_ACTION,
-                actionsVisible &&
-                  (shelf === null ? ROW_TITLE_CLEARED_ACTIONS : ROW_TITLE_CLEARED_SHELF_ACTION),
-              )}
+              className="flex min-w-0 flex-1 cursor-pointer items-center text-left outline-none"
             >
               <span className="min-w-0 flex-1 truncate text-headline leading-4.5 font-medium text-foreground">
                 <HighlightedText text={thread.title} query={query} />
               </span>
-              {/* Right-aligned on the title line so ages scan down one column; it recedes while
-                  the hover actions take the corner. */}
-              <span
-                data-thread-time=""
-                className={cn(
-                  "shrink-0",
-                  ROW_STATUS_RECEDE,
-                  MOTION_FEEDBACK_OPACITY,
-                  actionsVisible && ROW_STATUS_HIDDEN,
-                )}
-              >
-                {timeLabel ?? threadTimeLabel(thread, nowMinute)}
-              </span>
             </button>
           )}
+          {showPullRequest && pullRequestNumber !== null ? (
+            <span className={cn("shrink-0", SIDEBAR_THREAD_META_TEXT_CLASS)}>
+              <span className="inline-flex shrink-0 items-center gap-0.75 tabular-nums">
+                <PullRequestGlyph.pullRequest aria-hidden className="size-3.5 shrink-0" />
+                <span>#{pullRequestNumber}</span>
+                {pullRequestChecksState === null ? null : (
+                  <PullRequestChecksGlyph state={pullRequestChecksState} />
+                )}
+              </span>
+            </span>
+          ) : null}
+          <span
+            data-thread-provider-mark=""
+            className={cn(
+              "inline-grid size-3.5 shrink-0 place-items-center",
+              SIDEBAR_THREAD_META_TEXT_CLASS,
+            )}
+          >
+            {providerEntry !== undefined ? (
+              <SidebarProviderStack
+                thread={thread}
+                providerEntryByInstanceId={providerEntries}
+                quiet
+              />
+            ) : null}
+          </span>
           <span
             className={cn(
-              "absolute top-0 right-2 flex h-[22px] items-center gap-0.5",
+              "absolute top-0.5 right-2 flex h-[22px] items-center gap-0.5",
               MOTION_FEEDBACK_OPACITY,
               actionsVisible ? ROW_ACTIONS_VISIBLE : ROW_ACTIONS_REVEAL,
             )}
@@ -2175,69 +2229,33 @@ export function ThreadCard({
             )}
           </span>
         </div>
-        <div
-          data-thread-meta=""
-          className="flex min-w-0 items-center gap-2 text-xs leading-3.5 text-secondary-label"
-        >
-          {showBranch ? (
-            <>
-              <GitBranchIcon aria-hidden className="size-3.5 shrink-0" />
-              <span className="min-w-0 flex-1 truncate">{branchName ?? "no branch"}</span>
-            </>
-          ) : (
-            <span className="flex-1" />
-          )}
-          {showPullRequest && pullRequestNumber !== null ? (
-            <span className="inline-flex shrink-0 items-center gap-0.75 tabular-nums">
-              <PullRequestGlyph.pullRequest aria-hidden className="size-3.5 shrink-0" />
-              <span>#{pullRequestNumber}</span>
-              {pullRequestChecksState === null ? null : (
-                <PullRequestChecksGlyph state={pullRequestChecksState} />
-              )}
-            </span>
-          ) : null}
-          <span
-            data-thread-provider-mark=""
-            className="inline-grid size-3.5 shrink-0 place-items-center"
-          >
-            {providerEntry !== undefined ? (
-              <SidebarProviderStack
-                thread={thread}
-                providerEntryByInstanceId={providerEntries}
-                quiet
-              />
+        {(thread.tags ?? []).length > 0 || (showSubagents && runningSubagents > 0) ? (
+          <div data-thread-extras-line="" className={SIDEBAR_THREAD_EXTRAS_LINE_CLASS}>
+            {(thread.tags ?? []).length > 0 ? (
+              <span className="flex min-w-0 items-center gap-1 overflow-hidden">
+                {(thread.tags ?? []).map((tag) => (
+                  <span key={tag} data-thread-tag="" className={SIDEBAR_THREAD_TAG_CLASS}>
+                    {tag}
+                  </span>
+                ))}
+              </span>
             ) : null}
-          </span>
-        </div>
-        <div
-          data-thread-status-line=""
-          className={SIDEBAR_THREAD_STATUS_LINE_CLASS}
-        >
-          <ThreadStateMark state={state} startedAt={startedAt} />
-          {showSubagents && runningSubagents > 0 ? (
-            <span
-              role="img"
-              aria-label={
-                runningSubagents === 1
-                  ? "1 subagent running"
-                  : `${runningSubagents} subagents running`
-              }
-              className="inline-flex shrink-0 items-center gap-1 tabular-nums"
-            >
-              <UsersIcon aria-hidden className="size-3.5 shrink-0" />
-              <span aria-hidden>{runningSubagents}</span>
-            </span>
-          ) : null}
-          {(thread.tags ?? []).length > 0 ? (
-            <span className="flex min-w-0 items-center gap-1 overflow-hidden">
-              {(thread.tags ?? []).map((tag) => (
-                <span key={tag} data-thread-tag="" className={SIDEBAR_THREAD_TAG_CLASS}>
-                  {tag}
-                </span>
-              ))}
-            </span>
-          ) : null}
-        </div>
+            {showSubagents && runningSubagents > 0 ? (
+              <span
+                role="img"
+                aria-label={
+                  runningSubagents === 1
+                    ? "1 subagent running"
+                    : `${runningSubagents} subagents running`
+                }
+                className="inline-flex shrink-0 items-center gap-1 tabular-nums"
+              >
+                <UsersIcon aria-hidden className="size-3.5 shrink-0" />
+                <span aria-hidden>{runningSubagents}</span>
+              </span>
+            ) : null}
+          </div>
+        ) : null}
         {selected ? (
           <span className="sr-only" aria-live="polite">
             Selected

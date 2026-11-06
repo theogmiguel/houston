@@ -9,7 +9,7 @@ export const PANE_THREAD_TAG_CLASS =
 /** The count that follows two pane tags, such as "+2". */
 export const PANE_THREAD_TAG_COUNT_CLASS = "text-2xs text-(--houston)";
 
-/** The status mark and its label on a sidebar thread card's third line. */
+/** The status mark and its label on a sidebar thread card's meta line. */
 export const SIDEBAR_THREAD_STATUS_CLASS =
   "inline-flex shrink-0 items-center gap-1 text-xs leading-3.5 whitespace-nowrap tabular-nums";
 
@@ -17,6 +17,8 @@ export const SIDEBAR_THREAD_STATUS_CLASS =
 export const SIDEBAR_THREAD_STATUS_ATTENTION_CLASS = "font-medium";
 export const SIDEBAR_THREAD_STATUS_QUIET_CLASS = "text-secondary-label";
 
-/** The third line of a sidebar thread card: status, subagents, then tags. */
-export const SIDEBAR_THREAD_STATUS_LINE_CLASS =
-  "mt-0.5 flex min-w-0 items-center gap-2 text-xs leading-3.5 text-secondary-label";
+/** The ink and size of a sidebar thread card's secondary text: meta line, badges and marks. */
+export const SIDEBAR_THREAD_META_TEXT_CLASS = "text-xs leading-3.5 text-secondary-label";
+
+/** The optional third line of a sidebar thread card: tags, then the subagent count. */
+export const SIDEBAR_THREAD_EXTRAS_LINE_CLASS = `mt-0.5 flex min-w-0 items-center gap-2 ${SIDEBAR_THREAD_META_TEXT_CLASS}`;
