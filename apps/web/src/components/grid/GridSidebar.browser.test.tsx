@@ -704,24 +704,38 @@ describe("ThreadCard status marks", () => {
       },
     };
     const cases = [
-      { label: "Running", value: runningThread, ink: "text-(--accent-ink)" },
-      { label: "Needs you", value: { hasPendingUserInput: true }, ink: "text-(--warn-ink)" },
-      { label: "Ready", value: readyThread, ink: "text-success-foreground" },
-      { label: "Failed", value: failedThread, ink: "text-error-foreground" },
-      { label: "Idle", value: {}, ink: "text-secondary-label" },
+      { label: "Running", value: runningThread, ink: "text-(--accent-ink)", glyph: null },
+      {
+        label: "Needs you",
+        value: { hasPendingUserInput: true },
+        ink: "text-(--warn-ink)",
+        glyph: null,
+      },
+      {
+        label: "Ready",
+        value: readyThread,
+        ink: "text-secondary-label",
+        glyph: "text-success-foreground",
+      },
+      { label: "Failed", value: failedThread, ink: "text-error-foreground", glyph: null },
+      { label: "Idle", value: {}, ink: "text-secondary-label", glyph: null },
     ];
     const colors = new Set<string>();
     const glyphs = new Set<string>();
-    for (const { label, value, ink } of cases) {
+    for (const { label, value, ink, glyph } of cases) {
       await using screen = await render(card(thread(value as never), { timeLabel: null }));
       const status = screen.container.querySelector<HTMLElement>("[data-thread-status]")!;
       expect(status.textContent).toContain(label);
       const color = getComputedStyle(status).color;
       expect(color, label).toBe(classColor(ink));
       colors.add(color);
-      glyphs.add(status.querySelector("svg")!.innerHTML);
+      const glyphSvg = status.querySelector("svg")!;
+      // Calm states quiet the word and keep the state's colour on the glyph alone.
+      expect(getComputedStyle(glyphSvg).color, `${label} glyph`).toBe(classColor(glyph ?? ink));
+      glyphs.add(glyphSvg.innerHTML);
     }
-    expect(colors.size).toBe(cases.length);
+    // Ready and Idle share the muted word ink: four distinct word colours across five states.
+    expect(colors.size).toBe(cases.length - 1);
     expect(glyphs.size).toBe(cases.length);
   });
 

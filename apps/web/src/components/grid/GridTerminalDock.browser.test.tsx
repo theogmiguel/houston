@@ -2,6 +2,7 @@ import "~/index.css";
 import { EMPTY_TERMINAL_SESSION_STATE } from "@houston-app/client-runtime/state/terminal";
 import { EnvironmentId, ProjectId, ThreadId } from "@houston-app/contracts";
 import { expect, it, vi } from "vite-plus/test";
+import { page } from "vite-plus/test/browser";
 
 vi.mock(import("~/state/server"), async () => {
   const { Atom } = await import("effect/reactivity");
@@ -127,6 +128,12 @@ function cellMarkup(cell: GridCellRenderProps) {
 }
 
 it("opens one terminal docked below the whole grid, outside every cell", async () => {
+  // The terminal toggle sits in the header only at widths where the sidebar docks.
+  const previous = { width: window.innerWidth, height: window.innerHeight };
+  await page.viewport(1440, 900);
+  await using _viewport = {
+    [Symbol.asyncDispose]: () => page.viewport(previous.width, previous.height),
+  };
   useTerminalUiStateStore.setState({
     terminalUiStateByThreadKey: {},
     suppressedTerminalIdsByThreadKey: {},

@@ -11,7 +11,7 @@ import { useRightPanelStore } from "../../rightPanelStore";
 import { primaryServerKeybindingsAtom } from "../../state/server";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../../terminalUiStateStore";
 import { PanelLayoutControls } from "../chat/PanelLayoutControls";
-import { GridLayoutMenu } from "./GridLayoutMenu";
+import { GridLayoutMenu, GridLayoutMenuItems } from "./GridLayoutMenu";
 
 /** The grid route's titlebar controls follow the focused pane's thread. */
 export function GridTopBarControls({
@@ -84,6 +84,9 @@ export function GridTopBarControls({
       rightPanelOpen={rightPanelOpen}
       rightPanelShortcutLabel={shortcutLabelForCommand(keybindings, "rightPanel.toggle")}
       gridLayoutControl={<GridLayoutMenu grid={grid} {...(onArrange ? { onArrange } : {})} />}
+      gridLayoutMenuItems={
+        <GridLayoutMenuItems grid={grid} {...(onArrange ? { onArrange } : {})} />
+      }
       onToggleTerminal={() => {
         if (gridTerminalRef !== null) {
           toggleGridTerminal(gridTerminalRef);

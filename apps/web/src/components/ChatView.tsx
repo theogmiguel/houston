@@ -367,7 +367,7 @@ import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { observeResize } from "~/lib/observeResize";
 import { ThreadVisitWatermark } from "./chat/ThreadVisitWatermark";
 import { ChatTerminalDrawers } from "./chat/ChatTerminalDrawers";
-import { GridLayoutMenu } from "./grid/GridLayoutMenu";
+import { GridLayoutMenu, GridLayoutMenuItems } from "./grid/GridLayoutMenu";
 import { toggleGridTerminal } from "../grid/gridTerminal";
 import { useGridStore } from "../grid/gridStore";
 import { preorderThreads } from "../grid/tree";
@@ -3527,6 +3527,7 @@ export default function ChatView(props: ChatViewProps) {
             <ChatHeaderPanelControls
               {...panelToggleControlProps}
               gridLayoutControl={<GridLayoutMenu grid={activeGrid} />}
+              gridLayoutMenuItems={<GridLayoutMenuItems grid={activeGrid} />}
             />
           </header>
         )}

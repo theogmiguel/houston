@@ -1752,9 +1752,12 @@ export function GridGroup({
   );
 }
 
-/** Running, needs you, ready and failed take the state's ink; idle and back stay muted. */
+/**
+ * Running, needs you and failed colour the whole mark; ready, idle and back keep the word in the
+ * muted meta ink (ready still colours its glyph through `ThreadStateGlyph`'s `colored`).
+ */
 function threadStatusInk(state: GridThreadState): string[] {
-  return state === "idle" || state === "back"
+  return state === "idle" || state === "back" || state === "ready"
     ? [SIDEBAR_THREAD_STATUS_QUIET_CLASS]
     : [SIDEBAR_THREAD_STATUS_ATTENTION_CLASS, threadStateTextClass(state)];
 }
@@ -1780,7 +1783,7 @@ function ThreadStateMark({
       {state === "idle" ? (
         <CircleIcon aria-hidden className="size-3.5 shrink-0" />
       ) : (
-        <ThreadStateGlyph state={state} className="size-3.5" />
+        <ThreadStateGlyph state={state} className="size-3.5" colored={state === "ready"} />
       )}
       <span>{label}</span>
       {elapsed}

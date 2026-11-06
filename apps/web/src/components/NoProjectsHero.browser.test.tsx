@@ -112,3 +112,22 @@ it("sets the install action apart from the muted 'Not installed' status", async 
       .textDecorationLine,
   ).toBe("underline");
 });
+
+it("sets the disclaimer in 12px sans and Set up Houston as a ghost button", async () => {
+  state.providers = [provider("claudeAgent")];
+  await using _screen = await render(<NoProjectsHero />, { router: "/" });
+
+  const disclaimer = page.getByText(/Houston sends nothing/).element();
+  const style = getComputedStyle(disclaimer);
+  expect(style.fontSize).toBe("12px");
+  expect(style.fontFamily).not.toContain("JetBrains");
+  expect(disclaimer.querySelector(".font-mono")).toBeNull();
+
+  const setup = getComputedStyle(page.getByRole("button", { name: "Set up Houston" }).element());
+  // The ghost recipe: transparent fill, a leading icon and the 22px compact height.
+  expect(setup.backgroundColor).toBe("rgba(0, 0, 0, 0)");
+  expect(setup.height).toBe("22px");
+  expect(
+    page.getByRole("button", { name: "Set up Houston" }).element().querySelector("svg"),
+  ).not.toBeNull();
+});

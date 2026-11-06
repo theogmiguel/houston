@@ -70,6 +70,32 @@ function resolveColor(cssValue: string): string {
   return resolved;
 }
 
+/** Rasterises any CSS colour (including color-mix results) to opaque sRGB channels over `over`. */
+function rasterColor(cssValue: string, over: string): [number, number, number] {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1;
+  canvas.height = 1;
+  const context = canvas.getContext("2d")!;
+  context.fillStyle = over;
+  context.fillRect(0, 0, 1, 1);
+  context.fillStyle = cssValue;
+  context.fillRect(0, 0, 1, 1);
+  const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
+  return [r!, g!, b!];
+}
+
+function contrastRatio(a: [number, number, number], b: [number, number, number]): number {
+  const luminance = (rgb: [number, number, number]) => {
+    const [r, g, bl] = rgb.map((channel) => {
+      const c = channel / 255;
+      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    }) as [number, number, number];
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+  };
+  const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number];
+  return (light + 0.05) / (dark + 0.05);
+}
+
 it(
   "puts the context row under one composer card and starts with thread details closed",
   async () => {
@@ -99,6 +125,22 @@ it(
     expect(stripStyle.backgroundColor).toBe("rgba(0, 0, 0, 0)");
     expect(stripStyle.fontSize).toBe("12px");
 
+    // Every control in the row is 12px sans in the muted label ink, readable against the canvas.
+    const controls = [...strip.querySelectorAll<HTMLElement>("[data-composer-context-control]")];
+    expect(controls.length).toBeGreaterThan(0);
+    const canvasColor = resolveColor("var(--background)");
+    for (const control of controls) {
+      const style = getComputedStyle(control);
+      expect(style.fontSize, control.textContent ?? "").toBe("12px");
+      expect(style.color).toBe(resolveColor("var(--contrast-secondary-label)"));
+      expect(
+        contrastRatio(rasterColor(style.color, canvasColor), rasterColor(canvasColor, "#fff")),
+      ).toBeGreaterThanOrEqual(4.5);
+    }
+    for (const label of strip.querySelectorAll<HTMLElement>("[data-composer-label] *")) {
+      expect(getComputedStyle(label).fontFamily).not.toContain("JetBrains");
+    }
+
     // The text sits well inside the card, and the resting input is a roomy 72px box.
     const editor = document.querySelector<HTMLElement>('[data-testid="composer-editor"]')!;
     const editorBox = editor.getBoundingClientRect();
@@ -126,21 +168,23 @@ it(
     expect(footer!.querySelectorAll('button[type="submit"]')).toHaveLength(1);
     expect(lastButton().type).toBe("submit");
 
-    // The send button is a 32px accent-filled circle, dimmer while there is nothing to send.
+    // The send button is a 32px circle: a neutral inert control while there is nothing to send.
     const send = lastButton();
     const emptyStyle = getComputedStyle(send);
     expect(send.disabled).toBe(true);
     expect(send.getBoundingClientRect().width).toBe(32);
     expect(send.getBoundingClientRect().height).toBe(32);
-    expect(emptyStyle.backgroundColor).toBe(resolveColor("var(--accent)"));
-    expect(Number(emptyStyle.opacity)).toBeCloseTo(0.6, 2);
+    expect(emptyStyle.backgroundColor).toBe(resolveColor("var(--sel)"));
+    expect(emptyStyle.opacity).toBe("1");
 
     await userEvent.click(page.getByTestId("composer-editor"));
     await userEvent.keyboard("hello");
     await vi.waitFor(() => expect(send.disabled).toBe(false));
-    const readyStyle = getComputedStyle(send);
-    expect(readyStyle.backgroundColor).toBe(resolveColor("var(--accent)"));
-    expect(Number(readyStyle.opacity)).toBe(1);
+    // The fill moves from the neutral disabled recipe to the accent over the feedback role.
+    await vi.waitFor(() =>
+      expect(getComputedStyle(send).backgroundColor).toBe(resolveColor("var(--accent)")),
+    );
+    expect(Number(getComputedStyle(send).opacity)).toBe(1);
     await userEvent.keyboard("{Control>}a{/Control}{Backspace}");
 
     await userEvent.keyboard("{Control>}{Shift>}m{/Shift}{/Control}");

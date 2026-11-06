@@ -376,7 +376,10 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     <button
       type={showResume ? "button" : "submit"}
       className={cn(
-        "relative isolate flex size-8 items-center justify-center overflow-hidden rounded-full bg-(--accent) text-(--primary-foreground) transition-colors duration-150 enabled:cursor-pointer enabled:hover:bg-(--accent-hover) disabled:pointer-events-none disabled:opacity-60 [&_svg]:size-4 [&_svg]:pointer-events-none",
+        "relative isolate flex size-8 items-center justify-center overflow-hidden rounded-full bg-(--accent) text-(--primary-foreground) transition-colors duration-150 enabled:cursor-pointer enabled:hover:bg-(--accent-hover) disabled:pointer-events-none [&_svg]:size-4 [&_svg]:pointer-events-none",
+        // Idle-disabled reads as inert (neutral fill, muted glyph); a busy send keeps the accent
+        // so the spinner still reads as work in progress.
+        isSendBusy ? "disabled:opacity-60" : "disabled:bg-(--sel) disabled:text-(--houston)",
         boardFocusRing,
       )}
       {...pointerFocusProps}

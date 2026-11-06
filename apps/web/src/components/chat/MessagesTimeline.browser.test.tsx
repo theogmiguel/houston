@@ -1015,6 +1015,46 @@ describe("MessagesTimeline work rows ink", () => {
   });
 });
 
+describe("MessagesTimeline expanded tool rows", () => {
+  it("fills the prose column edge to edge, with no border, at 1440x900", async () => {
+    await using _viewport = await desktopViewport();
+    setup();
+    const runId = RunId.make("align-run");
+    await using screen = await renderTimeline(
+      [
+        message("Question", { runId }, "align-user"),
+        work("align-tool", {
+          runId,
+          label: "Ran ls",
+          command: "ls -la",
+          tone: "tool",
+          itemType: "command_execution",
+          toolLifecycleStatus: "completed",
+        }),
+        message("Done listing the directory", { role: "assistant", runId }, "align-final"),
+      ],
+      { runs: [] },
+    );
+    const heading = [...screen.container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => /^Worked for/.test(button.textContent ?? ""),
+    );
+    if (heading) await click(heading);
+    const row = screen.button("ls -la");
+    await click(row);
+    await vi.waitFor(() => expect(row.getAttribute("aria-expanded")).toBe("true"));
+    const prose = [...screen.container.querySelectorAll<HTMLElement>("p")].find(
+      (node) => node.textContent === "Done listing the directory",
+    )!;
+    expect(prose).toBeDefined();
+    const rowBox = row.getBoundingClientRect();
+    const proseBox = prose.getBoundingClientRect();
+    expect(rowBox.left).toBeCloseTo(proseBox.left, 0);
+    expect(rowBox.right).toBeCloseTo(proseBox.right, 0);
+    expect(getComputedStyle(row).borderTopWidth).toBe("0px");
+    expect(getComputedStyle(row).borderLeftWidth).toBe("0px");
+  });
+});
+
 describe("MessagesTimeline minimap rail", () => {
   it("centres every tick on a visible track so the rail reads as one control", async () => {
     setup();
@@ -1510,7 +1550,9 @@ describe("ChangedFilesCard", () => {
 
   it("rounds its rows with the control radius", async () => {
     await using screen = await render(<ChangedFilesTimeline />);
-    const row = screen.container.querySelector<HTMLElement>('[data-changed-file-row="src"] button')!;
+    const row = screen.container.querySelector<HTMLElement>(
+      '[data-changed-file-row="src"] button',
+    )!;
     expect(getComputedStyle(row).borderTopLeftRadius).toBe("6px");
   });
 

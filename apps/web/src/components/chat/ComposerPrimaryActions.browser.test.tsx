@@ -32,28 +32,29 @@ function renderSend(hasSendableContent: boolean) {
   );
 }
 
+function tokenColor(property: "backgroundColor" | "color", value: string) {
+  const probe = document.createElement("span");
+  document.body.append(probe);
+  probe.style[property] = value;
+  const resolved = getComputedStyle(probe)[property];
+  probe.remove();
+  return resolved;
+}
+
 function sendButtonStyle() {
   const button = page.getByRole("button", { name: "Submit message" }).element();
   const style = getComputedStyle(button);
   return { disabled: (button as HTMLButtonElement).disabled, style };
 }
 
-it("keeps an empty composer's send button accent-filled, dimmed to 60% and disabled", async () => {
+it("draws an empty composer's send button as an inert neutral control", async () => {
   await using _screen = await renderSend(false);
   const { disabled, style } = sendButtonStyle();
   expect(disabled).toBe(true);
-  expect(Number(style.opacity)).toBeCloseTo(0.6, 2);
-
-  const probe = document.createElement("span");
-  document.body.append(probe);
-  probe.style.backgroundColor = "var(--accent)";
-  const accent = getComputedStyle(probe).backgroundColor;
-  probe.style.color = "var(--primary-foreground)";
-  const ink = getComputedStyle(probe).color;
-  probe.remove();
-
-  expect(style.backgroundColor).toBe(accent);
-  expect(style.color).toBe(ink);
+  expect(style.opacity).toBe("1");
+  expect(style.backgroundColor).toBe(tokenColor("backgroundColor", "var(--sel)"));
+  expect(style.color).toBe(tokenColor("color", "var(--houston)"));
+  expect(style.backgroundColor).not.toBe(tokenColor("backgroundColor", "var(--accent)"));
 });
 
 it("renders the send button with the full accent fill once there is content", async () => {
@@ -62,10 +63,6 @@ it("renders the send button with the full accent fill once there is content", as
   expect(disabled).toBe(false);
   expect(style.opacity).toBe("1");
 
-  const probe = document.createElement("span");
-  document.body.append(probe);
-  probe.style.backgroundColor = "var(--accent)";
-  const accent = getComputedStyle(probe).backgroundColor;
-  probe.remove();
-  expect(style.backgroundColor).toBe(accent);
+  expect(style.backgroundColor).toBe(tokenColor("backgroundColor", "var(--accent)"));
+  expect(style.color).toBe(tokenColor("color", "var(--primary-foreground)"));
 });

@@ -128,7 +128,7 @@ function useSidebarVisibility() {
 
 // The `max-dock` breakpoint (`--breakpoint-dock` in index.css), also read when a shortcut fires.
 // Below it the rail is a drawer: a docked 240px+ rail leaves too little room for a thread.
-const SIDEBAR_MOBILE_QUERY = "(width < 60rem)";
+export const SIDEBAR_MOBILE_QUERY = "(width < 60rem)";
 
 function isMobileViewport(): boolean {
   return typeof window !== "undefined" && window.matchMedia(SIDEBAR_MOBILE_QUERY).matches;

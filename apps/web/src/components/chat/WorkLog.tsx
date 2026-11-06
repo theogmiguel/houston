@@ -84,7 +84,9 @@ const interactionClassName =
 function useRowClassName(interactive: boolean) {
   const grouped = use(GroupedRows);
   return cn(
-    "group/timeline-row relative w-full min-w-0 rounded-(--r-ctl) px-2 text-left transition-colors",
+    // The 4px inset puts the hover fill on the prose column's edges (messages use px-1); the 4px
+    // padding keeps the icon and label where an 8px-padded full-width row had them.
+    "group/timeline-row relative mx-1 w-[calc(100%-0.5rem)] min-w-0 rounded-(--r-ctl) px-1 text-left transition-colors",
     grouped ? "py-0" : "py-0.5",
     interactive && "hover:bg-(--hover)",
     interactive && interactionClassName,

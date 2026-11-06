@@ -54,10 +54,12 @@ function ContextStrip({ className, ...props }: ComponentProps<"div">) {
     <div
       data-slot="composer-context-strip"
       className={cn(
-        "group/composer-context relative z-0 mt-1 flex w-full min-w-0 items-center gap-px overflow-x-clip px-1 text-(--houston) text-xs",
-        // Every strip control is a borderless 22px text button in the muted ink.
-        "[&_[data-composer-context-control]]:h-5.5! [&_[data-composer-context-control]]:rounded-md! [&_[data-composer-context-control]]:border-0! [&_[data-composer-context-control]]:px-1.5! [&_[data-composer-context-control]]:font-normal [&_[data-composer-context-control]]:text-(--houston)! [&_[data-composer-context-control]]:text-xs!",
-        "[&_[data-composer-label]]:font-normal [&_[data-composer-label]]:text-(--houston)",
+        "group/composer-context relative z-0 mt-1 flex w-full min-w-0 items-center gap-px overflow-x-clip px-1 text-(--contrast-secondary-label) text-xs",
+        // Every strip control is a borderless 22px, 12px sans text button in the muted label ink.
+        "[&_[data-composer-context-control]]:h-5.5! [&_[data-composer-context-control]]:rounded-md! [&_[data-composer-context-control]]:border-0! [&_[data-composer-context-control]]:px-1.5! [&_[data-composer-context-control]]:font-normal [&_[data-composer-context-control]]:text-secondary-label! [&_[data-composer-context-control]]:text-xs!",
+        "[&_[data-composer-label]]:font-normal [&_[data-composer-label]]:text-secondary-label",
+        // Branch names inside a label render mono elsewhere; the strip keeps one sans face.
+        "[&_[data-composer-label]_*]:font-sans",
         className,
       )}
       {...props}

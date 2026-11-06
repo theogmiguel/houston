@@ -13,7 +13,7 @@ export const PANE_THREAD_TAG_COUNT_CLASS = "text-2xs text-(--houston)";
 export const SIDEBAR_THREAD_STATUS_CLASS =
   "inline-flex shrink-0 items-center gap-1 text-xs leading-3.5 whitespace-nowrap tabular-nums";
 
-/** Running, needs you, ready and failed take the state's ink; idle stays muted. */
+/** Running, needs you and failed take the state's ink; ready, idle and back keep the word muted. */
 export const SIDEBAR_THREAD_STATUS_ATTENTION_CLASS = "font-medium";
 export const SIDEBAR_THREAD_STATUS_QUIET_CLASS = "text-secondary-label";
 

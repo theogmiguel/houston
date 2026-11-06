@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { ServerProvider } from "@houston-app/contracts";
-import { FolderPlusIcon, GitForkIcon, MessageSquareDashedIcon } from "lucide-react";
+import { FolderPlusIcon, GitForkIcon, MessageSquareDashedIcon, SettingsIcon } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 
 import { APP_DISPLAY_NAME } from "../branding";
@@ -206,17 +206,16 @@ export function NoProjectsHero() {
                 Start without a project
               </Button>
             )}
-            <p className="mt-2 max-w-[52ch] text-xs leading-4 text-muted-foreground">
-              The server listens on{" "}
-              <span className="font-mono">{serverAddress ?? "this machine"}</span> only. Each agent
-              sends your prompts and the files it reads to its own provider; Houston sends nothing
-              else.
+            <p className="mt-2 max-w-[52ch] text-xs leading-4 text-secondary-label">
+              The server listens on {serverAddress ?? "this machine"} only. Each agent sends your
+              prompts and the files it reads to its own provider; Houston sends nothing else.
             </p>
             <Button
               variant="ghost"
-              size="xs"
+              size="sm"
               onClick={() => void navigate({ to: "/welcome", hash: "setup" })}
             >
+              <SettingsIcon className="size-4" />
               Set up Houston
             </Button>
           </div>
