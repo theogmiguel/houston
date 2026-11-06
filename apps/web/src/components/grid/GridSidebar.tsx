@@ -1010,11 +1010,11 @@ export function GridSidebar() {
                 else reopenShelfThread(thread);
               }}
               onSelect={(input) => selectThread(thread, input)}
-              onClose={() => {}}
-              onHold={() => {}}
+              onClose={() => closeThreads([thread])}
+              onHold={(preset) => holdThreads([thread], preset.snoozedUntil)}
               onPickHoldTime={pickHoldTime}
               onRename={(title) => renameThread(thread, title)}
-              onSetAutoClose={() => {}}
+              onSetAutoClose={(enabled) => setAutoClose(thread, enabled)}
               onWake={() => wakeShelfThread(thread)}
               onReopen={() => reopenShelfThread(thread)}
               onDropOnThread={() => {}}
