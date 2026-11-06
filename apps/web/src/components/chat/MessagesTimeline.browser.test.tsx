@@ -871,19 +871,32 @@ describe("MessagesTimeline agent messages", () => {
   const bubbleOf = (container: HTMLElement) =>
     container.querySelector<HTMLElement>("[data-user-message-attribution] > div")!;
 
-  it("labels a prompt another agent sent quietly above its bubble", async () => {
+  it("marks a prompt another agent sent with an icon inside its bubble, not a line above it", async () => {
     setup();
     await using screen = await renderTimeline([
       message(AGENT_MESSAGE, { createdBy: "agent", senderThreadId: SENDER_THREAD_ID }),
     ]);
-    const label = screen.container.querySelector<HTMLElement>("[data-user-message-source]")!;
-    expect(label.textContent).toBe("Sent by an agent");
+    const marker = screen.container.querySelector<HTMLElement>("[data-user-message-source]")!;
+    expect(marker.getAttribute("aria-label")).toBe("Sent by an agent");
+    expect(marker.textContent).toBe("");
     const bubble = bubbleOf(screen.container);
-    expect(label.getBoundingClientRect().bottom).toBeLessThanOrEqual(
-      bubble.getBoundingClientRect().top,
-    );
-    expect(getComputedStyle(label).color).not.toBe(getComputedStyle(bubble).color);
+    const box = bubble.getBoundingClientRect();
+    const iconBox = marker.getBoundingClientRect();
+    expect(bubble.contains(marker)).toBe(true);
+    expect(iconBox.left - box.left).toBeLessThan(20);
+    expect(iconBox.top - box.top).toBeLessThan(16);
     expect(screen.container.querySelectorAll("[data-user-message-source]")).toHaveLength(1);
+  });
+
+  it("keeps the timestamp hidden until the row is hovered or focused", async () => {
+    setup();
+    await using screen = await renderTimeline([
+      message(AGENT_MESSAGE, { createdBy: "agent", senderThreadId: SENDER_THREAD_ID }),
+    ]);
+    const stamp = screen.container.querySelector<HTMLElement>("[data-user-message-timestamp]")!;
+    expect(getComputedStyle(stamp).opacity).toBe("0");
+    await userEvent.hover(bubbleOf(screen.container));
+    await vi.waitFor(() => expect(getComputedStyle(stamp).opacity).toBe("1"));
   });
 
   it("shows a short agent prompt in full, as a bubble with the user bubble's padding", async () => {
@@ -893,32 +906,90 @@ describe("MessagesTimeline agent messages", () => {
     ]);
     const bubble = bubbleOf(screen.container);
     const style = getComputedStyle(bubble);
-    expect([style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft]).toEqual(
-      ["10px", "14px", "10px", "14px"],
-    );
+    expect([style.paddingTop, style.paddingRight, style.paddingBottom]).toEqual([
+      "10px",
+      "14px",
+      "10px",
+    ]);
     expect(style.boxShadow).not.toBe("none");
     expect(screen.text()).toContain("The migration drops the index before backfilling it.");
     expect(screen.buttons("Show full message")).toHaveLength(0);
   });
 
-  it("folds a long agent prompt to three lines and opens it from a click on the text or its button", async () => {
+  it("folds a long agent prompt on whole lines and opens it from a click on the text or its inline button", async () => {
     setup();
     await using screen = await renderTimeline([
       message(LONG_AGENT_MESSAGE, { createdBy: "agent", senderThreadId: SENDER_THREAD_ID }),
     ]);
     const body = () => screen.container.querySelector<HTMLElement>("[data-user-message-body]")!;
     await vi.waitFor(() => expect(body().dataset.userMessageCollapsed).toBe("true"));
-    expect(body().getBoundingClientRect().height).toBeLessThanOrEqual(60);
+    // Four whole lines (one per paragraph here) end the box; nothing is masked or cut.
+    const box = body().getBoundingClientRect();
+    const paragraphs = [...body().querySelectorAll("p")];
+    const shown = paragraphs.filter((p) => p.getBoundingClientRect().bottom <= box.bottom + 1);
+    expect(shown).toHaveLength(4);
+    expect(Math.abs(shown[3]!.getBoundingClientRect().bottom - box.bottom)).toBeLessThanOrEqual(1);
+    expect(getComputedStyle(body()).maskImage).toBe("none");
+    // The control sits on the last line, inside the body's box.
+    const control = screen.button("Show full message").getBoundingClientRect();
+    expect(control.bottom).toBeLessThanOrEqual(body().getBoundingClientRect().bottom + 1);
 
     await click(body());
     await vi.waitFor(() => expect(body().dataset.userMessageCollapsed).toBe("false"));
-    expect(body().getBoundingClientRect().height).toBeGreaterThan(60);
+    expect(body().getBoundingClientRect().height).toBeGreaterThan(80);
     expect(screen.text()).toContain("The migration drops the index.");
 
     await click(screen.button("Show less"));
     await vi.waitFor(() => expect(body().dataset.userMessageCollapsed).toBe("true"));
     await click(screen.button("Show full message"));
     await vi.waitFor(() => expect(body().dataset.userMessageCollapsed).toBe("false"));
+  });
+
+  it("opens a folded agent prompt on its first line even when something scrolls its last line into view", async () => {
+    setup();
+    await using screen = await renderTimeline([
+      message(LONG_AGENT_MESSAGE, { createdBy: "agent", senderThreadId: SENDER_THREAD_ID }),
+    ]);
+    const body = () => screen.container.querySelector<HTMLElement>("[data-user-message-body]")!;
+    await vi.waitFor(() => expect(body().dataset.userMessageCollapsed).toBe("true"));
+    const paragraphs = body().querySelectorAll("p");
+    paragraphs[paragraphs.length - 1]!.scrollIntoView({ block: "end" });
+    body().scrollTop = 200;
+    await vi.waitFor(() => expect(body().scrollTop).toBe(0));
+    expect(paragraphs[0]!.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      body().getBoundingClientRect().top - 1,
+    );
+  });
+
+  it("offers the full-message control only while the prompt overflows, and re-measures on resize", async () => {
+    setup();
+    const restore = { width: window.innerWidth, height: window.innerHeight };
+    await using _viewport = {
+      [Symbol.asyncDispose]: () => page.viewport(restore.width, restore.height),
+    };
+    await page.viewport(1000, 900);
+    const container = document.createElement("div");
+    container.style.cssText = "width: 100vw; display: flex; flex-direction: column;";
+    const text = "word ".repeat(50).trim();
+    await using screen = await render(
+      <MessagesTimeline
+        {...baseProps()}
+        timelineEntries={[message(text, { createdBy: "agent", senderThreadId: SENDER_THREAD_ID })]}
+      />,
+      { container },
+    );
+    const body = () => screen.container.querySelector<HTMLElement>("[data-user-message-body]")!;
+    const fullMessageButtons = () =>
+      [...screen.container.querySelectorAll("button")].filter(
+        (button) => button.textContent === "Show full message",
+      );
+    await vi.waitFor(() => expect(body()).not.toBeNull());
+    await vi.waitFor(() => expect(body().dataset.userMessageCollapsed).toBe("false"));
+    expect(fullMessageButtons()).toHaveLength(0);
+    await page.viewport(420, 900);
+    await vi.waitFor(() => expect(fullMessageButtons()).toHaveLength(1));
+    await page.viewport(1000, 900);
+    await vi.waitFor(() => expect(fullMessageButtons()).toHaveLength(0));
   });
 
   it("opens the sending agent's thread from the row's actions", async () => {
@@ -983,7 +1054,7 @@ describe("MessagesTimeline agent messages", () => {
       },
     );
     const body = () => screen.container.querySelector<HTMLElement>("[data-user-message-body]")!;
-    // The fold opens once find reaches a match below its three lines.
+    // The fold opens once find reaches a match below its folded lines.
     await vi.waitFor(() => {
       const { range } = collectThreadFindRanges(screen.container, "drops the index")[0]!;
       expect(range.getBoundingClientRect().height).toBeGreaterThan(0);
@@ -1173,6 +1244,59 @@ describe("MessagesTimeline expanded work group", () => {
   });
 });
 
+describe("MessagesTimeline expanded turn with a read of an edited file", () => {
+  it("shows one time and no second card for the file at 1440x900", async () => {
+    await using _viewport = await desktopViewport();
+    setup();
+    const runId = RunId.make("s2b-run");
+    const onOpenToolDiff = vi.fn();
+    await using screen = await renderTimeline(
+      [
+        message("Add a changelog entry", { runId }, "s2b-user"),
+        work("s2b-read", {
+          runId,
+          label: "Read atlas-api/CHANGELOG.md",
+          requestKind: "file-read",
+          changedFiles: ["atlas-api/CHANGELOG.md"],
+          tone: "tool",
+          toolLifecycleStatus: "completed",
+        }),
+        work("s2b-edit", {
+          runId,
+          label: "Edited",
+          tone: "tool",
+          itemType: "file_change",
+          toolLifecycleStatus: "completed",
+          structuredPayload: {
+            type: "file_change",
+            fileName: "atlas-api/CHANGELOG.md",
+            additions: 5,
+            deletions: 0,
+          },
+          projectedItem: v2Item("file_change", {
+            id: "s2b-edit",
+            fileName: "atlas-api/CHANGELOG.md",
+            status: "running",
+          }),
+        }),
+        message("Added the entry", { role: "assistant", runId }, "s2b-final"),
+      ],
+      { runs: [], onOpenToolDiff },
+    );
+    const heading = [...screen.container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => /^Worked for/.test(button.textContent ?? ""),
+    )!;
+    await click(heading);
+    await vi.waitFor(() => expect(heading.getAttribute("aria-expanded")).toBe("true"));
+    await vi.waitFor(() => expect(screen.container.textContent).toContain("CHANGELOG.md"));
+    expect(screen.container.querySelector("[aria-label^='Diff for']")).toBeNull();
+    const readRow = screen.container.querySelector<HTMLElement>("[data-timeline-row-kind='work']")!;
+    expect(readRow.querySelectorAll('span[data-slot="tooltip-trigger"]')).toHaveLength(0);
+    await click(readRow.querySelector<HTMLElement>('button[aria-label="Open diff"]')!);
+    expect(onOpenToolDiff).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("MessagesTimeline expanded tool rows", () => {
   it("fills the prose column edge to edge, with no border, at 1440x900", async () => {
     await using _viewport = await desktopViewport();
@@ -1222,6 +1346,8 @@ describe("MessagesTimeline expanded tool rows", () => {
         message("Question", { runId }, "meta-user"),
         work("meta-tool", {
           runId,
+          // A later minute than the fold header's, so the row keeps its own time.
+          createdAt: "2026-03-17T19:20:28.000Z",
           label: "Ran ls",
           command: "ls -la",
           tone: "tool",
@@ -1843,7 +1969,7 @@ describe("changed-files card beside the pending-changes row", () => {
 });
 
 describe("answer model line", () => {
-  it("names the model on the first answer and when it changes, not on each repeat", async () => {
+  it("shows the model only where it changes, and names it on hover for every answer", async () => {
     setup();
     const entries: Entry[] = [];
     const runs: NonNullable<TimelineProps["runs"]>[number][] = [];
@@ -1865,7 +1991,19 @@ describe("answer model line", () => {
       [...screen.container.querySelectorAll<HTMLElement>('[data-timeline-row-kind="message"]')]
         .find((row) => row.textContent?.includes(`Answer ${n}`))
         ?.querySelector("[data-assistant-model-attribution]") ?? null;
-    expect([1, 2, 3, 4].map((n) => lineFor(n) !== null)).toEqual([true, false, true, true]);
+    expect([1, 2, 3, 4].map((n) => lineFor(n) !== null)).toEqual([false, false, true, true]);
+    const hoverLineFor = (n: number) =>
+      [...screen.container.querySelectorAll<HTMLElement>('[data-timeline-row-kind="message"]')]
+        .find((row) => row.textContent?.includes(`Answer ${n}`))
+        ?.querySelector<HTMLElement>("[data-assistant-model-hover]") ?? null;
+    expect([1, 2, 3, 4].map((n) => hoverLineFor(n)?.textContent)).toEqual([
+      "claude · claude-haiku-5-5",
+      "claude · claude-haiku-5-5",
+      "claude · claude-sonnet-5-5",
+      "claude · claude-haiku-5-5",
+    ]);
+    // The hover line shares the footer that reveals on hover, so it is hidden at rest.
+    expect(getComputedStyle(hoverLineFor(2)!.parentElement!).opacity).toBe("0");
   });
 });
 
@@ -1921,21 +2059,22 @@ describe("turn rhythm", () => {
     };
     const attributions = root.querySelectorAll<HTMLElement>("[data-assistant-model-attribution]");
     const cards = root.querySelectorAll<HTMLElement>("[data-changed-files-state]");
-    expect(attributions).toHaveLength(3);
+    // The first answer has no previous one to differ from, so only the answers after a change show the model.
+    expect(attributions).toHaveLength(2);
     expect(cards).toHaveLength(1);
     const top = (element: Element) => element.getBoundingClientRect().top;
     const bottom = (element: Element) => element.getBoundingClientRect().bottom;
     // A user bubble starts at its row's top edge.
+    const answer = (n: number) =>
+      rowOf("message", `Answer ${n}`).querySelector<HTMLElement>("[data-thread-find-text]")!;
     const turnGaps = [
-      top(rowOf("message", "Question 2")) - bottom(attributions[0]!),
+      top(rowOf("message", "Question 2")) - bottom(answer(1)),
       top(rowOf("message", "Question 3")) - bottom(cards[0]!),
     ];
     expect(turnGaps).toEqual([24, 24]);
 
-    const answer = (n: number) =>
-      rowOf("message", `Answer ${n}`).querySelector<HTMLElement>("[data-thread-find-text]")!;
-    expect(top(attributions[0]!) - bottom(answer(1))).toBe(8);
-    expect(top(cards[0]!) - bottom(attributions[1]!)).toBe(12);
+    expect(top(attributions[0]!) - bottom(answer(2))).toBe(8);
+    expect(top(cards[0]!) - bottom(attributions[0]!)).toBe(12);
 
     const divider = root.querySelector<HTMLElement>('[role="separator"]')!;
     const folds = root.querySelectorAll<HTMLElement>('[data-timeline-row-kind="turn-fold"] button');

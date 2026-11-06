@@ -1520,6 +1520,9 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
             <WorkGroupSection
               anchorKey={row.id}
               createdAt={row.createdAt}
+              {...(row.headerCreatedAt !== undefined
+                ? { headerCreatedAt: row.headerCreatedAt }
+                : {})}
               groupedEntries={row.groupedEntries}
               isExpandedToolGroup={row.isExpandedToolGroup}
               displayLabel={row.displayLabel}

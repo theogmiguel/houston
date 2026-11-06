@@ -59,6 +59,7 @@ import { formatWorkingTimerNow, resolveBlockedThreadStatus } from "./TimelineWor
 export const WorkGroupSection = memo(function WorkGroupSection({
   anchorKey,
   createdAt,
+  headerCreatedAt,
   disclosureAnchorKey = anchorKey,
   groupedEntries,
   isExpandedToolGroup,
@@ -67,6 +68,8 @@ export const WorkGroupSection = memo(function WorkGroupSection({
   anchorKey: string;
   /** The group header's time; a row inside the group drops its own time when it is the same. */
   createdAt: string;
+  /** The time of an expanded fold's header above these rows. */
+  headerCreatedAt?: string;
   disclosureAnchorKey?: string;
   groupedEntries: Extract<MessagesTimelineRow, { kind: "work" }>["groupedEntries"];
   isExpandedToolGroup: boolean;
@@ -109,6 +112,7 @@ export const WorkGroupSection = memo(function WorkGroupSection({
           workEntry={workEntry}
           workspaceRoot={workspaceRoot}
           displayLabel={displayLabel}
+          headerCreatedAt={headerCreatedAt}
           onToggleEntry={onToggleStandaloneEntry}
         />
       ))}

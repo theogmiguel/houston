@@ -15,7 +15,15 @@ import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { replaceComposerContextReferences } from "@houston-app/shared/composerContextReferences";
 import { observeResize } from "~/lib/observeResize";
-import { memo, use, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import {
+  memo,
+  use,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import {
   createMessageAttachmentPreviewProjector,
   selectMessageImageResources,
@@ -28,6 +36,7 @@ import {
 } from "../../types";
 import ChatMarkdown from "../ChatMarkdown";
 import {
+  BotIcon,
   CalendarClockIcon,
   ChevronDownIcon,
   DownloadIcon,
@@ -59,7 +68,6 @@ import { formatBytes } from "../../lib/formatBytes";
 import { shouldCollapseUserMessage } from "./MessagesTimeline.logic";
 import { messageDeliveryPresentation } from "./messageDelivery";
 import type { MessageDelivery } from "@houston-app/contracts/houston/messageDelivery";
-import { Text } from "../ui/text";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   asKnownContextRecord,
@@ -827,17 +835,6 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       className="group @container flex flex-col items-end gap-1"
       data-user-message-attribution={folded ? "agent" : undefined}
     >
-      {folded ? (
-        <Text
-          as="p"
-          variant="callout"
-          tone="muted"
-          className="me-1"
-          data-user-message-source="agent"
-        >
-          {senderShell ? `From ${senderLabel}` : "Sent by an agent"}
-        </Text>
-      ) : null}
       {userMessage.attribution === "houston" ? (
         <p
           className="me-1 text-callout text-secondary-label"
@@ -866,8 +863,28 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           mediaAboveText && "rounded-tr-(--r-badge)",
           BUBBLE_CHIP_CLASS_NAME,
           !mediaOnly && !fileCardsOnly && !audioOnly && "px-3.5 py-2.5",
+          folded && "ps-9",
         )}
       >
+        {folded ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <span
+                  role="img"
+                  aria-label={senderShell ? `From ${senderLabel}` : "Sent by an agent"}
+                  data-user-message-source="agent"
+                  className="absolute start-3.5 top-3.25 text-(--houston)"
+                />
+              }
+            >
+              <BotIcon aria-hidden="true" className="size-3.5" />
+            </TooltipTrigger>
+            <TooltipPopup side="top">
+              {senderShell ? `From ${senderLabel}` : "Sent by an agent"}
+            </TooltipPopup>
+          </Tooltip>
+        ) : null}
         {/* Outside the fold so a collapsed message still has a heading to navigate to. */}
         {mediaAboveText ? null : (
           <MessageAuthorHeading>{folded ? senderLabel : "You"}</MessageAuthorHeading>
@@ -1007,7 +1024,15 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             </InlineButton>
           ) : null}
           <Tooltip>
-            <TooltipTrigger render={<p className="text-(--houston) text-callout tabular-nums" />}>
+            <TooltipTrigger
+              render={
+                <p
+                  data-user-message-timestamp=""
+                  data-reveal-on-hover={folded ? "" : undefined}
+                  className="text-(--houston) text-callout tabular-nums"
+                />
+              }
+            >
               {formatDayAwareTimestamp(row.message.createdAt, ctx.timestampFormat)}
             </TooltipTrigger>
             <TooltipPopup>
@@ -1135,12 +1160,23 @@ const COLLAPSED_USER_MESSAGE_FADE_HEIGHT_REM = 1.75;
 
 const COLLAPSED_USER_MESSAGE_FADE_MASK = `linear-gradient(to bottom, black calc(100% - ${COLLAPSED_USER_MESSAGE_FADE_HEIGHT_REM}rem), transparent)`;
 
-// A clamped prompt is only three lines tall, so its fade covers the last half line.
-const CLAMPED_PROMPT_FADE_MASK =
-  "linear-gradient(to bottom, black calc(100% - 0.625rem), transparent)";
+/** Lines of an agent-sent prompt shown before it folds; the clamp cuts between lines, never through one. */
+const AGENT_PROMPT_CLAMP_LINES = 4;
 
-/** Lines of an agent-sent prompt shown before it folds, at the bubble's 20px line height. */
-const AGENT_PROMPT_CLAMP_LINES = 3;
+/**
+ * Whether the text needs more lines than its clamp allows. A line-clamped box reports its clamped
+ * height as its scroll height, so the clamp is lifted for the measurement and restored before paint.
+ */
+function overflowsLineClamp(body: HTMLElement): boolean {
+  const clampedHeight = body.getBoundingClientRect().height;
+  const { display, webkitLineClamp } = body.style;
+  body.style.display = "block";
+  body.style.webkitLineClamp = "none";
+  const naturalHeight = body.scrollHeight;
+  body.style.display = display;
+  body.style.webkitLineClamp = webkitLineClamp;
+  return naturalHeight > clampedHeight + 1;
+}
 
 const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(props: {
   text: string;
@@ -1162,7 +1198,7 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
   useLayoutEffect(() => {
     const body = bodyRef.current;
     if (!clamped || expanded || body === null) return;
-    return observeResize(body, () => setOverflowsClamp(body.scrollHeight > body.clientHeight + 1));
+    return observeResize(body, () => setOverflowsClamp(overflowsLineClamp(body)));
   }, [clamped, expanded]);
   const canCollapse =
     props.collapsible !== false &&
@@ -1171,8 +1207,31 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
   const isCollapsed = canCollapse && !expanded;
   const showCollapseControl = canCollapse;
 
+  const clampStyle: CSSProperties | undefined =
+    clamped && !expanded
+      ? {
+          ...(isCollapsed ? { cursor: "pointer" } : {}),
+          display: "-webkit-box",
+          WebkitBoxOrient: "vertical",
+          WebkitLineClamp: props.clampLines ?? AGENT_PROMPT_CLAMP_LINES,
+        }
+      : undefined;
+  const toggle = (
+    <Button
+      type="button"
+      size="xs"
+      variant="ghost-muted"
+      aria-expanded={expanded}
+      data-scroll-anchor-ignore
+      onClick={() => setExpanded((value) => !value)}
+      className={clamped && !expanded ? "-me-1.5" : "-ml-1"}
+    >
+      {expanded ? "Show less" : "Show full message"}
+    </Button>
+  );
+
   return (
-    <div>
+    <div className={cn(clamped && !expanded && "relative")}>
       {hasVisibleBody ? (
         <div
           ref={(node) => {
@@ -1185,19 +1244,22 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
             clamped && !expanded && "overflow-hidden",
           )}
           style={{
-            ...(isCollapsed && clamped ? { cursor: "pointer" } : {}),
-            ...(clamped && !expanded
-              ? { maxHeight: `${(props.clampLines ?? AGENT_PROMPT_CLAMP_LINES) * 1.25}rem` }
-              : {}),
-            ...(isCollapsed
+            ...clampStyle,
+            ...(isCollapsed && !clamped
               ? {
-                  WebkitMaskImage: clamped
-                    ? CLAMPED_PROMPT_FADE_MASK
-                    : COLLAPSED_USER_MESSAGE_FADE_MASK,
-                  maskImage: clamped ? CLAMPED_PROMPT_FADE_MASK : COLLAPSED_USER_MESSAGE_FADE_MASK,
+                  WebkitMaskImage: COLLAPSED_USER_MESSAGE_FADE_MASK,
+                  maskImage: COLLAPSED_USER_MESSAGE_FADE_MASK,
                 }
               : {}),
           }}
+          // Focus or find can scroll a clipped box; a folded prompt always opens on its first line.
+          onScroll={
+            clamped && !expanded
+              ? (event) => {
+                  event.currentTarget.scrollTop = 0;
+                }
+              : undefined
+          }
           onClick={
             isCollapsed && clamped
               ? (event) => {
@@ -1212,7 +1274,7 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
           data-thread-find-fold={isCollapsed ? "" : undefined}
           data-user-message-collapsed={isCollapsed ? "true" : "false"}
           data-user-message-collapsible={canCollapse ? "true" : "false"}
-          data-user-message-fade={isCollapsed ? "true" : "false"}
+          data-user-message-fade={isCollapsed && !clamped ? "true" : "false"}
         >
           <UserMessageBody
             text={props.text}
@@ -1222,21 +1284,18 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
           />
         </div>
       ) : null}
-      {showCollapseControl ? (
+      {showCollapseControl && clamped && !expanded ? (
+        // Sits on the last visible line, after the truncated text; the gradient hides the glyphs under it.
+        <div
+          className="absolute end-0 bottom-0 ps-6"
+          style={{ backgroundImage: "linear-gradient(to left, var(--bubble) 75%, transparent)" }}
+          data-user-message-footer="true"
+        >
+          {toggle}
+        </div>
+      ) : showCollapseControl ? (
         <div className="mt-1.5 flex items-center justify-end gap-2" data-user-message-footer="true">
-          {showCollapseControl ? (
-            <Button
-              type="button"
-              size="xs"
-              variant="ghost-muted"
-              aria-expanded={expanded}
-              data-scroll-anchor-ignore
-              onClick={() => setExpanded((value) => !value)}
-              className="-ml-1"
-            >
-              {expanded ? "Show less" : "Show full message"}
-            </Button>
-          ) : null}
+          {toggle}
         </div>
       ) : null}
     </div>

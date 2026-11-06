@@ -169,12 +169,17 @@ describe("ThreadCard title against the trailing time and actions", () => {
     const row = rowOf(screen.container);
     const time = screen.getByText("3d").element();
     // The hidden Hold, Close and More buttons take no room until the row is hovered: the age
-    // ends the title line at the row's edge and the title runs up to it.
+    // ends the title line at the row's edge, behind the reserved provider slot, and the title runs
+    // up to that slot.
+    const providerSlot = row.querySelector<HTMLElement>("[data-thread-provider-mark]")!;
     expect(
       row.getBoundingClientRect().right - time.getBoundingClientRect().right,
     ).toBeLessThanOrEqual(12);
+    expect(providerSlot.getBoundingClientRect().right).toBeLessThanOrEqual(
+      time.getBoundingClientRect().left,
+    );
     expect(
-      time.getBoundingClientRect().left - titleOf(row).getBoundingClientRect().right,
+      providerSlot.getBoundingClientRect().left - titleOf(row).getBoundingClientRect().right,
     ).toBeLessThanOrEqual(12);
 
     await userEvent.hover(row);

@@ -529,6 +529,8 @@ type MessagesTimelineRowContent =
       groupedEntries: WorkLogEntry[];
       isExpandedToolGroup: boolean;
       displayLabel?: string;
+      /** The time on the expanded fold's header above this row; the row drops its own when equal. */
+      headerCreatedAt?: string;
     }
   | {
       kind: "work-live";
@@ -677,15 +679,17 @@ function sameFilePath(a: string, b: string): boolean {
 }
 
 /**
- * An expanded group that ends in a read of a file, directly followed by that file's edit card:
- * the group's read row takes the edit as its open-diff action and the card is not drawn. Returns
- * the replacement for the group's row, or null when the card stands on its own.
+ * A visible read of a file (the last row of an expanded group, or a lone read row) directly
+ * followed by that file's edit card: the read row takes the edit as its open-diff action and the
+ * card is not drawn. Returns the replacement for the read's row, or null when the card stands on
+ * its own.
  */
 export function mergeFileChangeIntoRead(
   previous: MessagesTimelineRow | undefined,
   fileChange: WorkLogEntry,
 ): Extract<MessagesTimelineRow, { kind: "work" }> | null {
-  if (previous?.kind !== "work" || !previous.isExpandedToolGroup) return null;
+  if (previous?.kind !== "work") return null;
+  if (!previous.isExpandedToolGroup && previous.groupedEntries.length !== 1) return null;
   const item = fileChange.structuredPayload;
   if (item?.type !== "file_change") return null;
   const read = previous.groupedEntries.at(-1);
@@ -1567,10 +1571,18 @@ export function deriveMessagesTimelineRows(input: {
     }
   }
   const expandedFoldEntryIds = new Set<string>();
+  const expandedFoldHeaderTime = new Map<string, string>();
   for (const fold of foldsByAnchorEntryId.values()) {
     if (!input.expandedRunIds?.has(fold.runId)) continue;
-    for (const entryId of fold.entryIds) expandedFoldEntryIds.add(entryId);
+    for (const entryId of fold.entryIds) {
+      expandedFoldEntryIds.add(entryId);
+      expandedFoldHeaderTime.set(entryId, fold.createdAt);
+    }
   }
+  const headerTimeOf = (entryId: string) => {
+    const headerCreatedAt = expandedFoldHeaderTime.get(entryId);
+    return headerCreatedAt === undefined ? {} : { headerCreatedAt };
+  };
   const collapsedSupersededEntryIds = new Set<string>();
   for (const fold of supersededFoldsByAnchorEntryId.values()) {
     if (!input.expandedAttemptIds?.has(fold.attemptId)) {
@@ -1922,6 +1934,7 @@ export function deriveMessagesTimelineRows(input: {
           createdAt: timelineEntry.createdAt,
           groupedEntries: [timelineEntry.entry],
           isExpandedToolGroup: false,
+          ...headerTimeOf(timelineEntry.id),
         });
         continue;
       }
@@ -1992,6 +2005,7 @@ export function deriveMessagesTimelineRows(input: {
             createdAt: timelineEntry.createdAt,
             groupedEntries: visibleGroupedEntries,
             isExpandedToolGroup: false,
+            ...headerTimeOf(timelineEntry.id),
             displayLabel:
               toolGroupAction(singleEntry) === "edit"
                 ? summarizeToolGroup(visibleGroupedEntries).summary
@@ -2646,6 +2660,7 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
       return (
         a.isExpandedToolGroup === bw.isExpandedToolGroup &&
         a.displayLabel === bw.displayLabel &&
+        a.headerCreatedAt === bw.headerCreatedAt &&
         Equal.equals(a.groupedEntries, bw.groupedEntries)
       );
     }

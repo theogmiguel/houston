@@ -94,8 +94,11 @@ export function ThreadCheckoutMark({
   );
 }
 
-function RemoteMachineMark({ thread }: { thread: EnvironmentThreadShell }) {
+/** The machine icon of a thread that runs on another machine; nothing for a local thread. */
+export function ThreadRemoteMark({ thread }: { thread: EnvironmentThreadShell }) {
   const machines = useEnvironmentMachines();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  if (primaryEnvironmentId === null || thread.environmentId === primaryEnvironmentId) return null;
   return (
     <span
       role="img"
@@ -113,8 +116,8 @@ function RemoteMachineMark({ thread }: { thread: EnvironmentThreadShell }) {
 }
 
 /**
- * Indicators for what is going on around a thread: a running terminal, an
- * unsent draft, uncommitted changes and a remote environment.
+ * Indicators for what is going on around a thread, in the order the row's second line shows them:
+ * an unsent draft, uncommitted changes and a running terminal.
  */
 export function ThreadRowIndicators({
   thread,
@@ -138,16 +141,9 @@ export function ThreadRowIndicators({
   });
   const hasDraft = useThreadHasUnsentDraft(threadRef) && !focused;
   const diff = useThreadDiffTotals(thread, rowRef, focused);
-  const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const remote = primaryEnvironmentId !== null && thread.environmentId !== primaryEnvironmentId;
-  if (terminalIds.length === 0 && !hasDraft && diff === null && !remote) return null;
+  if (terminalIds.length === 0 && !hasDraft && diff === null) return null;
   return (
-    <span className="inline-flex shrink-0 items-center gap-1.5" data-thread-indicators="">
-      <ThreadTerminalStatusButton
-        threadRef={threadRef}
-        terminalIds={terminalIds}
-        onThreadActivate={onActivate}
-      />
+    <span className="inline-flex shrink-0 items-center gap-2" data-thread-indicators="">
       {hasDraft ? <DraftMark threadRef={threadRef} title={thread.title} /> : null}
       {diff === null ? null : (
         <span
@@ -159,12 +155,16 @@ export function ThreadRowIndicators({
           <span className={rowDiffRemovedCls(emphasized)}>−{formatDiffCount(diff.deletions)}</span>
         </span>
       )}
-      {remote ? <RemoteMachineMark thread={thread} /> : null}
+      <ThreadTerminalStatusButton
+        threadRef={threadRef}
+        terminalIds={terminalIds}
+        onThreadActivate={onActivate}
+      />
     </span>
   );
 }
 
-/** The unsent-draft pen; hovering or focusing it turns it into the Discard draft action. */
+/** The unsent-draft pen and word; hovering or focusing it turns the pen into the Discard draft action. */
 function DraftMark({
   threadRef,
   title,
@@ -187,17 +187,20 @@ function DraftMark({
               discardComposerDraft(threadRef);
             }}
             className={cn(
-              "inline-grid size-3.5 shrink-0 place-items-center rounded-(--r-badge)",
+              "inline-flex shrink-0 items-center gap-1 rounded-(--r-badge)",
               ROW_DRAFT_MARK_CLS,
             )}
           />
         }
       >
-        <SquarePenIcon
-          aria-hidden
-          className={`col-start-1 row-start-1 size-3 ${ROW_DRAFT_PENCIL_CLS}`}
-        />
-        <XIcon aria-hidden className={`col-start-1 row-start-1 size-3 ${ROW_DRAFT_CROSS_CLS}`} />
+        <span className="inline-grid size-3.5 place-items-center">
+          <SquarePenIcon
+            aria-hidden
+            className={`col-start-1 row-start-1 size-3 ${ROW_DRAFT_PENCIL_CLS}`}
+          />
+          <XIcon aria-hidden className={`col-start-1 row-start-1 size-3 ${ROW_DRAFT_CROSS_CLS}`} />
+        </span>
+        <span>Draft</span>
       </TooltipTrigger>
       <TooltipPopup side="top">Unsent draft. Click to discard</TooltipPopup>
     </Tooltip>

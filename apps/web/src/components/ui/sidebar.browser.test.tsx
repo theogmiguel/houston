@@ -73,12 +73,12 @@ describe("Sidebar", () => {
     const viewport = screen.container.querySelector<HTMLElement>(
       '[data-slot="scroll-area-viewport"]',
     )!;
-    expect(getComputedStyle(viewport).getPropertyValue("--fade-size")).toBe("2.75rem");
+    expect(getComputedStyle(viewport).getPropertyValue("--fade-size")).toBe("1.5rem");
     // The fade is driven by the viewport's measured overflow, not by a scroll-state query, so it is
-    // present in every Chromium: the bottom layer dissolves the last 44px while content remains below.
+    // present in every Chromium: the bottom layer dissolves the last 24px while content remains below.
     await vi.waitFor(() =>
       expect(getComputedStyle(viewport).maskImage).toContain(
-        "linear-gradient(rgb(0, 0, 0) calc(100% - 44px), rgba(0, 0, 0, 0) 100%)",
+        "linear-gradient(rgb(0, 0, 0) calc(100% - 24px), rgba(0, 0, 0, 0) 100%)",
       ),
     );
 
@@ -87,7 +87,7 @@ describe("Sidebar", () => {
       expect(viewport.style.getPropertyValue("--scroll-area-overflow-y-end")).toBe("0px"),
     );
     expect(getComputedStyle(viewport).maskImage).not.toContain(
-      "linear-gradient(rgb(0, 0, 0) calc(100% - 44px), rgba(0, 0, 0, 0) 100%)",
+      "linear-gradient(rgb(0, 0, 0) calc(100% - 24px), rgba(0, 0, 0, 0) 100%)",
     );
   });
 

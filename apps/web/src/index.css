@@ -2222,6 +2222,22 @@ code {
   font-variant-numeric: tabular-nums;
 }
 
+/* A time that shows only while its message row is hovered or holds focus (always on touch). */
+[data-reveal-on-hover] {
+  opacity: 0;
+  transition: opacity var(--motion-feedback) var(--ease-standard);
+}
+
+:where(.group):is(:hover, :focus-within) [data-reveal-on-hover] {
+  opacity: 1;
+}
+
+@media (pointer: coarse) {
+  [data-reveal-on-hover] {
+    opacity: 1;
+  }
+}
+
 /* The one-row changed-files summary: muted 12px text with the file name at full ink. */
 [data-changed-files-state="compact"] {
   color: var(--color-secondary-label);

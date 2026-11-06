@@ -158,6 +158,8 @@ type WorkEntryRowProps = {
   workEntry: TimelineWorkEntry;
   workspaceRoot: string | undefined;
   displayLabel?: string | undefined;
+  /** The time on the header above a row that is not inside a work group. */
+  headerCreatedAt?: string | undefined;
   onToggleEntry?: ((collapsed: boolean) => void) | undefined;
 };
 
@@ -184,7 +186,7 @@ export const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: WorkEn
 });
 
 function WorkEntryLogRow(props: WorkEntryRowProps) {
-  const { workEntry, workspaceRoot, displayLabel } = props;
+  const { workEntry, workspaceRoot, displayLabel, headerCreatedAt } = props;
   const ctx = use(TimelineRowCtx);
   const { threadRef, onImageExpand, timestampFormat } = ctx;
   const { retryableWorkspacePreparationRunIds, onRetryWorkspacePreparation } = ctx;
@@ -401,10 +403,11 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
   const toolParts =
     isReasoning || workEntry.questionAnswer ? null : workEntryToolParts(workEntry, workspaceRoot);
   // A row inside a group shows its time only when it differs from the group header's.
+  const headerTime = groupView?.createdAt ?? headerCreatedAt;
   const repeatsGroupTime =
-    groupView !== null &&
+    headerTime !== undefined &&
     formatDayAwareTimestamp(workEntry.createdAt, timestampFormat) ===
-      formatDayAwareTimestamp(groupView.createdAt, timestampFormat);
+      formatDayAwareTimestamp(headerTime, timestampFormat);
   const mergedFileChange = workEntry.mergedFileChange;
   const mergedTarget = mergedFileChange?.projectedItem;
   const mergedItem = mergedTarget?.item;

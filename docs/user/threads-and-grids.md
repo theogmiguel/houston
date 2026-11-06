@@ -86,17 +86,24 @@ message match opens its thread with Find on the matched text. With no match the 
 
 ### Rows
 
-Each thread row shows its state in a word: **Approval**, **Input**, **Request**, **Needs
-you**, **Failed**, **Limited**, **Goal**, **Waiting** (with how long), **Running**, **Ready**
-or **Back**. A **Back** badge has a dismiss control. Closed rows show how long ago the
-thread closed. A row also shows, when they apply:
+Every thread row is two lines tall. The first line has the thread's status glyph in a fixed
+column on the left, the title, the pull request badge, the provider mark and the age. On hover
+or focus the age gives way to the row's actions. The second line is muted and shows, in this
+order and cut off from the end when it runs out of room:
 
-- a running terminal, which opens that terminal;
+- the status word where the state asks something of you or runs quietly: **Approval**,
+  **Input**, **Request**, **Needs you**, **Failed**, **Limited**, **Goal**, **Waiting** (with
+  how long) or **Back**, which has a dismiss control;
 - an unsent draft, with **Discard**;
 - the checkout's uncommitted line counts;
-- whether the thread uses a worktree or the project's local checkout;
-- a machine icon when the thread runs on another machine;
+- a running terminal, which opens that terminal;
+- whether the thread uses a worktree or the project's local checkout, with its branch when
+  that is not the default branch, and a machine icon when the thread runs on another machine;
+- running subagents, then tags;
 - a regenerating title.
+
+A row with nothing else to show names its calm state there (**Ready**, **Idle** or
+**Running**). Closed rows show how long ago the thread closed.
 
 Hovering a row opens a card with the project, the machine when there are several, the
 checkout and branch (with a warning when the checkout is on a different branch than the

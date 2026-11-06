@@ -18,6 +18,7 @@ import { CopyButton } from "../ui/copy-button";
 import { AssistantCitationSource } from "./AssistantCitationSource";
 import { resolveAssistantMessageCopyState } from "./MessagesTimeline.logic";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { Text } from "../ui/text";
 import { cn } from "~/lib/utils";
 import { useUiStateStore } from "~/uiStateStore";
 import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../timestampFormat";
@@ -104,6 +105,7 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
             message={row.message}
             showCopyButton={row.showAssistantCopyButton}
             copyStreaming={row.assistantCopyStreaming}
+            modelRunId={row.message.runId ?? null}
           />
         ) : null}
         <SecondOpinionCardForRun runId={row.message.runId} />
@@ -206,8 +208,8 @@ function AssistantSecondOpinionButton({
 
 /**
  * Subscribes to the answer's run: attribution needs the model it ran on, which imported or
- * run-less messages do not carry. It is shown on the first answer and whenever the model
- * differs from the previous answer's.
+ * run-less messages do not carry. It is visible only when the model differs from the previous
+ * answer's; every answer names its model on hover or focus, beside the timestamp.
  */
 function AssistantModelAttributionRow({
   runId,
@@ -220,12 +222,13 @@ function AssistantModelAttributionRow({
   const providers = useAtomValue(
     serverEnvironment.providersValueAtom(ctx.activeThreadEnvironmentId),
   );
+  if (previousRunId === null) return null;
   const attribution = resolveAssistantModelAttribution({ runs: ctx.runs, runId, providers });
-  // A run of answers from one model names it once, on the first of them.
-  const previous =
-    previousRunId === null
-      ? null
-      : resolveAssistantModelAttribution({ runs: ctx.runs, runId: previousRunId, providers });
+  const previous = resolveAssistantModelAttribution({
+    runs: ctx.runs,
+    runId: previousRunId,
+    providers,
+  });
   if (
     attribution !== null &&
     previous !== null &&
@@ -310,6 +313,7 @@ function AssistantMessageMeta({
   showCopyButton,
   copyStreaming,
   alwaysVisible = false,
+  modelRunId = null,
 }: {
   className?: string;
   projectedItem?: Extract<TimelineRow, { kind: "message" }>["projectedItem"];
@@ -317,8 +321,14 @@ function AssistantMessageMeta({
   showCopyButton: boolean;
   copyStreaming: boolean;
   alwaysVisible?: boolean;
+  /** The run whose model the hover line names; the line is absent when it is unknown. */
+  modelRunId?: RunId | null;
 }) {
   const ctx = use(TimelineRowCtx);
+  const providers = useAtomValue(
+    serverEnvironment.providersValueAtom(ctx.activeThreadEnvironmentId),
+  );
+  const attribution = resolveAssistantModelAttribution({ runs: ctx.runs, runId: modelRunId, providers });
 
   return (
     <div
@@ -345,6 +355,11 @@ function AssistantMessageMeta({
       ) : null}
       {projectedItem?.item.type === "assistant_message" ? (
         <AssistantSecondOpinionButton projectedItem={projectedItem} />
+      ) : null}
+      {attribution !== null && !message.streaming ? (
+        <Text as="span" variant="callout" tone="muted" data-assistant-model-hover="true">
+          {attribution.providerDisplayName} · {attribution.modelLabel}
+        </Text>
       ) : null}
       {!message.streaming && (
         <Tooltip>

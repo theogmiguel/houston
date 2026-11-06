@@ -431,41 +431,47 @@ describe("ThreadCard layout", () => {
     }
   });
 
-  it("is a single line when the thread has no branch, changes or terminals to report", async () => {
+  it("is two lines tall when the thread has nothing to report, and names its calm status on the second", async () => {
     await using screen = await render(card(thread({ tags: [], branch: "main" } as never)));
     const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
     const height = row.getBoundingClientRect().height;
-    expect(height).toBeGreaterThanOrEqual(30);
-    expect(height).toBeLessThanOrEqual(34);
+    expect(height).toBeGreaterThanOrEqual(48);
+    expect(height).toBeLessThanOrEqual(50);
     const meta = row.querySelector<HTMLElement>("[data-thread-meta]")!;
-    expect(getComputedStyle(meta).display).toBe("none");
+    expect(getComputedStyle(meta).display).toBe("flex");
+    const word = meta.querySelector<HTMLElement>("[data-thread-status]")!;
+    expect(word.textContent).toBe("Idle");
+    expect(getComputedStyle(word).display).not.toBe("none");
   });
 
-  it("adds a third line only when the thread has tags or running subagents", async () => {
+  it("keeps tags and running subagents on the second line, at the same row height as a plain row", async () => {
+    await using plain = await render(card(thread({ tags: [] } as never)));
+    const plainHeight = plain.container
+      .querySelector<HTMLElement>("[data-thread-key]")!
+      .getBoundingClientRect().height;
+
     await using tagged = await render(card(thread({ tags: ["bug"] } as never)));
     const taggedRow = tagged.container.querySelector<HTMLElement>("[data-thread-key]")!;
-    const extras = taggedRow.querySelector<HTMLElement>("[data-thread-extras-line]")!;
-    expect(extras.querySelector("[data-thread-tag]")?.textContent).toBe("bug");
-    const taggedHeight = taggedRow.getBoundingClientRect().height;
-    expect(taggedHeight).toBeGreaterThanOrEqual(62);
-    expect(taggedHeight).toBeLessThanOrEqual(68);
+    const meta = taggedRow.querySelector<HTMLElement>("[data-thread-meta]")!;
+    expect(meta.querySelector("[data-thread-tag]")?.textContent).toBe("bug");
+    expect(taggedRow.querySelector("[data-thread-extras-line]")).toBeNull();
+    expect(taggedRow.getBoundingClientRect().height).toBe(plainHeight);
+    // The calm status gives way to the tags: the line is not filled twice.
+    expect(getComputedStyle(meta.querySelector("[data-thread-status]")!).display).toBe("none");
     expect(
-      extras.getBoundingClientRect().top >=
+      meta.getBoundingClientRect().top >=
         taggedRow.querySelector("[data-thread-title-line]")!.getBoundingClientRect().bottom,
     ).toBe(true);
-
-    await using plain = await render(card(thread({ tags: [] } as never)));
-    expect(plain.container.querySelector("[data-thread-extras-line]")).toBeNull();
   });
 
-  it("gives the title at least 200px of a 264px sidebar before it truncates", async () => {
+  it("gives the title about 180px of a 280px sidebar before it truncates", async () => {
     await using screen = await render(
-      <div style={{ width: 247 }}>
+      <div style={{ width: 263 }}>
         {card(thread({ title: "T".repeat(200) }), { timeLabel: "6m" })}
       </div>,
     );
     const title = screen.container.querySelector<HTMLElement>("[data-card-open] > span")!;
-    expect(title.getBoundingClientRect().width).toBeGreaterThanOrEqual(190);
+    expect(title.getBoundingClientRect().width).toBeGreaterThanOrEqual(170);
   });
 
   it("shows the branch only when it is not the default branch", async () => {
@@ -670,10 +676,15 @@ describe("ThreadCard status marks", () => {
     }
     const mark = screen.getByRole("img", { name: "Running" }).element();
     expect(getComputedStyle(mark).color).toBe(accentColor());
-    expect(mark.closest("[data-thread-status]")!.textContent).toBe("");
+    expect(mark.hasAttribute("data-thread-status-glyph")).toBe(true);
+    expect(mark.textContent).toBe("");
+    // The glyph leads the row, left of the title; a plain running thread needs no word.
+    const titleBox = titleOf(screen).getBoundingClientRect();
+    expect(mark.getBoundingClientRect().right).toBeLessThanOrEqual(titleBox.left);
+    expect(screen.container.querySelector("[data-thread-meta] [data-thread-status]")).not.toBeNull();
   });
 
-  it("puts the age and the status mark on the title line and the tags on the third line", async () => {
+  it("puts the age on the title line, the status glyph before it and the tags on the second line", async () => {
     await using screen = await render(
       card(
         thread({
@@ -692,33 +703,32 @@ describe("ThreadCard status marks", () => {
 
     const titleLine = screen.container.querySelector<HTMLElement>("[data-thread-title-line]")!;
     const meta = screen.container.querySelector<HTMLElement>("[data-thread-meta]")!;
-    const extras = screen.container.querySelector<HTMLElement>("[data-thread-extras-line]")!;
-    const status = titleLine.querySelector<HTMLElement>("[data-thread-status]")!;
-    expect(status.querySelector("[role=img]")?.getAttribute("aria-label")).toBe("Running");
-    expect(meta.querySelector("[data-thread-status]")).toBeNull();
-    expect(extras.querySelector("[data-thread-status]")).toBeNull();
-    const tags = [...extras.querySelectorAll<HTMLElement>("[data-thread-tag]")];
+    const glyph = screen.getByRole("img", { name: "Running" }).element();
+    expect(titleLine.contains(glyph)).toBe(false);
+    expect(glyph.getBoundingClientRect().top).toBeLessThan(titleLine.getBoundingClientRect().bottom);
+    const tags = [...meta.querySelectorAll<HTMLElement>("[data-thread-tag]")];
     expect(tags.map((tag) => tag.textContent)).toEqual(["bug", "linux"]);
-    expect(meta.querySelector("[data-thread-tag]")).toBeNull();
     expect(getComputedStyle(tags[0]!).backgroundColor).not.toBe(tokenBackground("--sel"));
     const time = titleLine.querySelector<HTMLElement>("[data-thread-time]");
     expect(time?.textContent).toBe("9:00");
     expect(time).toBeVisible();
     expect(screen.container.querySelectorAll("[data-thread-time]")).toHaveLength(1);
 
-    // The age precedes the status mark, and the mark closes the title line at the row's right edge.
+    // The age closes the title line at the row's right edge, after the title.
     const timeBox = time!.getBoundingClientRect();
     const rowBox = screen.container.querySelector("[data-thread-key]")!.getBoundingClientRect();
-    expect(timeBox.right).toBeLessThanOrEqual(status.getBoundingClientRect().left);
-    expect(rowBox.right - status.getBoundingClientRect().right).toBeLessThan(16);
+    expect(titleOf(screen).getBoundingClientRect().right).toBeLessThanOrEqual(timeBox.left);
+    expect(rowBox.right - timeBox.right).toBeLessThan(16);
   });
 
-  it("draws no status mark for a thread with nothing running", async () => {
+  it("draws a quiet ring named Idle for a thread with nothing running", async () => {
     await using screen = await render(card(thread()));
-    expect(screen.container.querySelector("[data-thread-status]")).toBeNull();
+    const mark = screen.getByRole("img", { name: "Idle" }).element();
+    expect(mark.hasAttribute("data-thread-status-glyph")).toBe(true);
+    expect(screen.container.querySelector("[data-streaming-glyph]")).toBeNull();
   });
 
-  it("gives each status its own glyph and ink, and none for idle", async () => {
+  it("gives each status its own glyph and ink, and the same word on the second line", async () => {
     const readyThread = {
       lastVisitedAt: "2025-12-31T23:00:00.000Z",
       latestRun: {
@@ -766,20 +776,23 @@ describe("ThreadCard status marks", () => {
     const glyphs = new Set<string>();
     for (const { label, value, ink, glyph } of cases) {
       await using screen = await render(card(thread(value as never), { timeLabel: null }));
-      const status = screen.container.querySelector<HTMLElement>("[data-thread-status]")!;
-      // The glyph is named for assistive tech; only the states that ask something say the word.
-      const named = status.querySelector("[role=img]")!;
+      const named = screen.container.querySelector<HTMLElement>("[data-thread-status-glyph]")!;
+      // The glyph is named for assistive tech and the word on the second line says the same.
       expect(named.getAttribute("aria-label"), label).toBe(label);
+      expect(
+        screen.container.querySelector("[data-thread-meta] [data-thread-status]")?.textContent,
+        label,
+      ).toContain(label);
       const color = getComputedStyle(named).color;
       expect(color, label).toBe(classColor(glyph ?? ink));
       colors.add(color);
-      glyphs.add(status.querySelector("svg")!.innerHTML);
+      glyphs.add(named.querySelector("svg")!.innerHTML);
     }
     expect(colors.size).toBe(cases.length);
     expect(glyphs.size).toBe(cases.length);
   });
 
-  it("fits two lines in 48 to 50px with a 14px meta line", async () => {
+  it("fits two lines in 48 to 50px with a 16px meta line holding 14px text", async () => {
     await using screen = await render(card(thread({ tags: [] } as never)));
     const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
     const height = row.getBoundingClientRect().height;
@@ -882,14 +895,16 @@ describe("ThreadCard layout and contrast", () => {
     expect(getComputedStyle(title).color).toBe(classColor("text-foreground"));
   });
 
-  it("marks the provider only after a handoff between providers, muted and uncoloured", async () => {
+  it("marks the provider on every row, muted and uncoloured, beside the age", async () => {
     const providerEntries = handoffProviderEntries();
     const claudeThread = {
       modelSelection: { instanceId: "claude", model: "claude-haiku-5-5" },
       providerInstanceHistory: [],
     };
     await using single = await render(card(thread(claudeThread as never), { providerEntries }));
-    expect(single.container.querySelector("[data-thread-provider-mark]")).toBeNull();
+    const singleMark = single.container.querySelector<HTMLElement>("[data-thread-provider-mark]")!;
+    expect(singleMark.innerHTML).toContain("grayscale");
+    expect(singleMark.closest("[data-thread-title-line]")).not.toBeNull();
 
     await using handedOff = await render(
       card(
@@ -905,6 +920,8 @@ describe("ThreadCard layout and contrast", () => {
     const mark = handedOff.container.querySelector("[data-thread-provider-mark]");
     expect(mark?.innerHTML).toContain("grayscale");
     expect(mark?.closest("[data-thread-title-line]")).not.toBeNull();
+    const time = handedOff.container.querySelector<HTMLElement>("[data-thread-time]")!;
+    expect(mark!.getBoundingClientRect().right).toBeLessThanOrEqual(time.getBoundingClientRect().left);
   });
 });
 

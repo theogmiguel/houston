@@ -4488,6 +4488,53 @@ describe("expanded turn fold", () => {
     expect(groupRows.at(-1)).toMatchObject({ endsFoldGroup: true });
     expect(groupRows.slice(0, -1).some((row) => row.endsFoldGroup === true)).toBe(false);
   });
+
+  it("hands the edit to a lone read of the same file and carries the fold header's time to its rows", () => {
+    const read = {
+      id: "entry-read",
+      kind: "work" as const,
+      createdAt: at(2),
+      entry: {
+        id: "read",
+        createdAt: at(2),
+        runId,
+        label: "Read atlas-api/CHANGELOG.md",
+        requestKind: "file-read" as const,
+        changedFiles: ["atlas-api/CHANGELOG.md"],
+        tone: "tool" as const,
+        toolLifecycleStatus: "completed" as const,
+      },
+    };
+    const edit = {
+      id: "entry-edit",
+      kind: "work" as const,
+      createdAt: at(3),
+      entry: {
+        id: "edit",
+        createdAt: at(3),
+        runId,
+        label: "Edited",
+        tone: "tool" as const,
+        itemType: "file_change" as const,
+        structuredPayload: {
+          type: "file_change" as const,
+          fileName: "/repo/atlas-api/CHANGELOG.md",
+        },
+      },
+    };
+    const result = rows([
+      message("user-1", "user", "Go", 0),
+      read,
+      edit,
+      message("assistant-1", "assistant", "Done", 20),
+    ] as never);
+
+    const work = result.filter((row) => row.kind === "work");
+    expect(work.flatMap((row) => row.groupedEntries.map((entry) => entry.id))).toEqual(["read"]);
+    expect(work[0]?.groupedEntries[0]?.mergedFileChange?.id).toBe("edit");
+    const fold = result.find((row) => row.kind === "turn-fold")!;
+    expect(work[0]?.headerCreatedAt).toBe(fold.createdAt);
+  });
 });
 
 describe("a read followed by that file's edit", () => {

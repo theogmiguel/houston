@@ -1,4 +1,5 @@
 import { scopeThreadRef } from "@houston-app/client-runtime/environment";
+import { CircleIcon } from "lucide-react";
 import { ROW_BACK_DISMISS_CLS } from "../ui/sidebar-rail-recipes";
 import {
   formatWorkingDurationLabel,
@@ -12,7 +13,7 @@ import type { GridThreadState } from "../../grid/sidebar";
 import { useAcknowledgeThreadWoke } from "../../hooks/useThreadActions";
 import { useNowSecond } from "../../hooks/useNowSecond";
 import { cn } from "../../lib/utils";
-import { ThreadStateGlyph, threadStateTextClass } from "../ui/thread-state-glyph";
+import { ThreadStateGlyph, threadStateTextClass, type ThreadState } from "../ui/thread-state-glyph";
 import {
   SIDEBAR_THREAD_STATUS_ATTENTION_CLASS,
   SIDEBAR_THREAD_STATUS_CLASS,
@@ -27,8 +28,7 @@ function RunningElapsed({ startedAt }: { startedAt: string }) {
 }
 
 /**
- * The Back word is a button: pressing it marks the wake as seen. It sits on the row's meta line,
- * clear of the title line's right edge, where hovering swaps the status for the row's actions.
+ * The Back word is a button: pressing it marks the wake as seen.
  */
 export function BackWord({ thread, nowIso }: { thread: EnvironmentThreadShell; nowIso: string }) {
   const acknowledge = useAcknowledgeThreadWoke();
@@ -52,48 +52,69 @@ export function BackWord({ thread, nowIso }: { thread: EnvironmentThreadShell; n
   );
 }
 
-/** Attention states name themselves at the row's edge; calm ones are a mark only. */
-function threadStatusInk(state: Exclude<GridThreadState, "idle">): string[] {
-  return state === "back" || state === "ready"
-    ? [SIDEBAR_THREAD_STATUS_QUIET_CLASS]
-    : [SIDEBAR_THREAD_STATUS_ATTENTION_CLASS, threadStateTextClass(state)];
-}
-
 /**
- * A row's status mark at the right edge: a small state glyph named for assistive tech, plus the
- * specific word where the state asks something of the user (Approval, Input, Request, Failed)
- * or is quietly running (Waiting, Goal, with the elapsed time). Idle has no mark; a plain
- * running, ready or back thread is the glyph alone.
+ * The row's leading status mark: a state glyph named for assistive tech. Idle is a faint ring, so
+ * the column carries a mark on every row and the glyphs line up down the list.
  */
-export function ThreadStateMark({
+export function ThreadStatusGlyph({
   thread,
   state,
 }: {
   thread: EnvironmentThreadShell;
   state: GridThreadState;
 }) {
-  if (state === "idle") return null;
-  const startedAt = resolveThreadWorkingStartedAt(thread);
-  const word = gridThreadStatusWord(thread, state) ?? "Idle";
-  const showsWord =
-    state === "needs" || state === "failed" || (state === "running" && word !== "Running");
-  const glyph = (
+  const calm = state === "idle";
+  return (
     <span
       role="img"
-      aria-label={word}
+      aria-label={gridThreadStatusWord(thread, state) ?? "Idle"}
       data-thread-status-glyph=""
-      className={cn("inline-grid size-3.5 shrink-0 place-items-center", threadStateTextClass(state))}
+      className={cn(
+        "inline-grid size-3.5 shrink-0 place-items-center",
+        calm ? "text-(--houston)" : threadStateTextClass(state),
+      )}
     >
-      <ThreadStateGlyph state={state} className="size-3" />
+      {calm ? (
+        <CircleIcon aria-hidden className="size-3" />
+      ) : (
+        <ThreadStateGlyph state={state} className="size-3" />
+      )}
     </span>
   );
+}
+
+/**
+ * The status word on the row's second line. States that ask something of the user (Approval,
+ * Input, Request, Needs you, Failed, Limited) or run quietly (Waiting, Goal, with the elapsed
+ * time) always name themselves, and Back carries its dismiss control. A calm state (Ready, Idle,
+ * Running) appears only when nothing else fills the line, so every row keeps the same height.
+ */
+export function ThreadStatusWord({
+  thread,
+  state,
+  nowIso,
+}: {
+  thread: EnvironmentThreadShell;
+  state: GridThreadState;
+  nowIso: string;
+}) {
+  if (state === "back") return <BackWord thread={thread} nowIso={nowIso} />;
+  const startedAt = resolveThreadWorkingStartedAt(thread);
+  const word = gridThreadStatusWord(thread, state) ?? "Idle";
+  const attention =
+    state === "needs" || state === "failed" || (state === "running" && word !== "Running");
   return (
-    <span data-thread-status="" className={cn(SIDEBAR_THREAD_STATUS_CLASS, threadStatusInk(state))}>
-      {showsWord ? <span aria-hidden>{word}</span> : null}
-      {showsWord && state === "running" && startedAt !== null ? (
-        <RunningElapsed startedAt={startedAt} />
-      ) : null}
-      {glyph}
+    <span
+      data-thread-status=""
+      className={cn(
+        SIDEBAR_THREAD_STATUS_CLASS,
+        attention
+          ? [SIDEBAR_THREAD_STATUS_ATTENTION_CLASS, threadStateTextClass(state as ThreadState)]
+          : [SIDEBAR_THREAD_STATUS_QUIET_CLASS, "hidden only:inline-flex"],
+      )}
+    >
+      <span>{word}</span>
+      {state === "running" && startedAt !== null ? <RunningElapsed startedAt={startedAt} /> : null}
     </span>
   );
 }

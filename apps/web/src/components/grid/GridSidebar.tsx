@@ -5,10 +5,7 @@ import {
   scopeProjectRef,
   scopeThreadRef,
 } from "@houston-app/client-runtime/environment";
-import {
-  resolveThreadProviderStack,
-  type EnvironmentThreadShell,
-} from "@houston-app/client-runtime/state/models";
+import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
 import { canSnooze, effectiveSnoozed } from "@houston-app/client-runtime/state/thread-settled";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
@@ -110,8 +107,8 @@ import { SidebarNoProjects } from "./SidebarNoProjects";
 import { ThreadBulkMenuContext, useBulkThreadMenu } from "./useBulkThreadMenu";
 import { ThreadTitleInput } from "./threadTitleInput";
 import { JumpHintBadge, ThreadJumpHintContext, useThreadJumpHint } from "./threadJumpHints";
-import { BackWord, ThreadStateMark } from "./threadStatusMark";
-import { ThreadCheckoutMark, ThreadRowIndicators } from "./threadRowIndicators";
+import { ThreadStatusGlyph, ThreadStatusWord } from "./threadStatusMark";
+import { ThreadCheckoutMark, ThreadRemoteMark, ThreadRowIndicators } from "./threadRowIndicators";
 import { GridShelves } from "./GridShelves";
 import { readLocalApi } from "../../localApi";
 import { ThreadContextDragGhost } from "../chat/ThreadContextDragGhost";
@@ -219,7 +216,6 @@ import {
   type ContentResult,
 } from "./sidebarSearchResults";
 import {
-  SIDEBAR_THREAD_EXTRAS_LINE_CLASS,
   SIDEBAR_THREAD_META_TEXT_CLASS,
   SIDEBAR_THREAD_TAG_CLASS,
 } from "../ui/thread-tag-recipes";
@@ -2209,9 +2205,6 @@ export function ThreadCard({
   const active = focused || routeActive;
   const rowPullRequest = resolveRowPullRequest(thread);
   const providerEntry = providerEntries.get(thread.providerInstanceId);
-  // The provider is in the hover card; the row marks it only after a handoff between providers.
-  const showProviderMark =
-    providerEntry !== undefined && resolveThreadProviderStack(thread).length > 1;
   const presets = resolveSnoozePresets(
     new Date(`${nowMinute}:00.000Z`),
     timestampFormat,
@@ -2390,6 +2383,10 @@ export function ThreadCard({
           />
         }
       >
+        {/* The status glyph sits in the row's left padding, so it lines up down the list. */}
+        <span className="absolute top-2.25 left-1 flex">
+          <ThreadStatusGlyph thread={thread} state={state} />
+        </span>
         <div data-thread-title-line="" className="flex min-h-5.5 min-w-0 items-center gap-1.5">
           {renaming ? (
             <ThreadTitleInput
@@ -2445,30 +2442,31 @@ export function ThreadCard({
               onOpenThread={onOpen}
             />
           ) : null}
-          {showProviderMark ? (
-            <span
-              data-thread-provider-mark=""
-              className={cn(
-                "inline-grid size-3.5 shrink-0 place-items-center",
-                SIDEBAR_THREAD_META_TEXT_CLASS,
-              )}
-            >
+          {/* Reserved on every row so the provider marks line up beside the age. */}
+          <span
+            data-thread-provider-mark=""
+            className={cn(
+              "inline-grid size-3.5 shrink-0 place-items-center",
+              SIDEBAR_THREAD_META_TEXT_CLASS,
+            )}
+          >
+            {providerEntry !== undefined ? (
               <SidebarProviderStack
                 thread={thread}
                 providerEntryByInstanceId={providerEntries}
                 quiet
               />
-            </span>
-          ) : null}
+            ) : null}
+          </span>
           {/*
-            The age, the status mark and the hover actions share one grid cell at the title line's
-            right edge, so ages and marks scan down one column. Hidden actions leave the flow;
-            shown, they join it and the title truncates before them.
+            The age and the hover actions share one grid cell at the title line's right edge, so ages
+            scan down one column whatever the row carries. Hidden actions leave the flow; shown, they
+            join it and the title truncates before them.
           */}
           <span className="relative ml-auto grid h-5.5 shrink-0 grid-rows-1 items-center justify-items-end">
             <span
               className={cn(
-                "col-start-1 row-start-1 flex items-center gap-1.5",
+                "col-start-1 row-start-1 flex min-w-7 items-center justify-end",
                 ROW_STATUS_RECEDE,
                 MOTION_FEEDBACK_OPACITY,
                 actionsVisible && ROW_STATUS_HIDDEN,
@@ -2479,7 +2477,6 @@ export function ThreadCard({
               ) : shelf === null ? (
                 timeNode
               ) : null}
-              <ThreadStateMark thread={thread} state={state} />
             </span>
             <span
               className={cn(
@@ -2577,18 +2574,27 @@ export function ThreadCard({
           </span>
         </div>
         {/*
-          Where the thread works and what is changing: branch, checkout, diff totals, terminals,
-          draft and remote marks. A thread with none of them has no second line.
+          One muted line in priority order: status word, draft, line totals, terminal, checkout and
+          machine, subagents, tags, title regeneration. It truncates from the end, so tags give way
+          first. A row with nothing to show names its calm status, which keeps every row two lines.
         */}
         <div
           data-thread-meta=""
           className={cn(
-            "mt-0.5 flex min-w-0 items-center gap-2 empty:hidden",
+            "mt-0.5 flex h-4 min-w-0 items-center gap-2 overflow-hidden",
             SIDEBAR_THREAD_META_TEXT_CLASS,
           )}
         >
           {/* A shelf row's label ("tomorrow at 9:00 AM", "Closed 2h") is too long for the title line. */}
           {shelf !== null && jumpHint === null ? timeNode : null}
+          <ThreadStatusWord thread={thread} state={state} nowIso={nowIso} />
+          <ThreadRowIndicators
+            thread={thread}
+            rowRef={rowRef}
+            focused={focused}
+            emphasized={active || selected}
+            onActivate={onOpen}
+          />
           {showBranch && branchName !== null && !branchIsDefault ? (
             <span data-thread-branch="" className="inline-flex min-w-0 items-center gap-1">
               <ThreadCheckoutMark thread={thread} />
@@ -2597,42 +2603,36 @@ export function ThreadCard({
           ) : showBranch && thread.worktreePath?.trim() ? (
             <ThreadCheckoutMark thread={thread} />
           ) : null}
-          {state === "back" ? <BackWord thread={thread} nowIso={nowIso} /> : null}
-          <ThreadRowIndicators
-            thread={thread}
-            rowRef={rowRef}
-            focused={focused}
-            emphasized={active || selected}
-            onActivate={onOpen}
-          />
+          <ThreadRemoteMark thread={thread} />
+          {showSubagents && runningSubagents > 0 ? (
+            <span
+              role="img"
+              aria-label={
+                runningSubagents === 1
+                  ? "1 subagent running"
+                  : `${runningSubagents} subagents running`
+              }
+              className="inline-flex shrink-0 items-center gap-1 tabular-nums"
+            >
+              <UsersIcon aria-hidden className="size-3.5 shrink-0" />
+              <span aria-hidden>{runningSubagents}</span>
+            </span>
+          ) : null}
+          {(thread.tags ?? []).length > 0 ? (
+            <span className="flex min-w-0 items-center gap-1 overflow-hidden">
+              {(thread.tags ?? []).map((tag) => (
+                <span key={tag} data-thread-tag="" className={SIDEBAR_THREAD_TAG_CLASS}>
+                  {tag}
+                </span>
+              ))}
+            </span>
+          ) : null}
+          {regeneratingTitle ? (
+            <span data-thread-regenerating="" className="shrink-0">
+              Renaming…
+            </span>
+          ) : null}
         </div>
-        {(thread.tags ?? []).length > 0 || (showSubagents && runningSubagents > 0) ? (
-          <div data-thread-extras-line="" className={SIDEBAR_THREAD_EXTRAS_LINE_CLASS}>
-            {(thread.tags ?? []).length > 0 ? (
-              <span className="flex min-w-0 items-center gap-1 overflow-hidden">
-                {(thread.tags ?? []).map((tag) => (
-                  <span key={tag} data-thread-tag="" className={SIDEBAR_THREAD_TAG_CLASS}>
-                    {tag}
-                  </span>
-                ))}
-              </span>
-            ) : null}
-            {showSubagents && runningSubagents > 0 ? (
-              <span
-                role="img"
-                aria-label={
-                  runningSubagents === 1
-                    ? "1 subagent running"
-                    : `${runningSubagents} subagents running`
-                }
-                className="inline-flex shrink-0 items-center gap-1 tabular-nums"
-              >
-                <UsersIcon aria-hidden className="size-3.5 shrink-0" />
-                <span aria-hidden>{runningSubagents}</span>
-              </span>
-            ) : null}
-          </div>
-        ) : null}
         {selected ? (
           <span className="sr-only" aria-live="polite">
             Selected

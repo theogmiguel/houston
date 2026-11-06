@@ -362,6 +362,27 @@ it("names Changes once: the embedded panel leaves the heading to its tab, a shee
   expect(heading(sheetRoot)).toHaveLength(1);
 });
 
+it("labels the comparison target so the 400px header reads on its own", async () => {
+  using context = setup(null, samplePatch);
+  useDiffPanelStore.getState().selectBranchBaseRef(context.threadRef, "main");
+  const root = document.createElement("div");
+  root.style.width = "400px";
+  await using screen = await render(panel(context.registry, context.threadRef, "embedded"), {
+    container: root,
+  });
+  await expect.element(screen.getByRole("button", { name: "Add diff comment" })).toBeInTheDocument();
+  const label = [...root.querySelectorAll<HTMLElement>("span[aria-hidden]")].find(
+    (span) => span.textContent === "Against",
+  );
+  expect(label).toBeDefined();
+  expect(getComputedStyle(label!).display).not.toBe("none");
+  expect(root.textContent).not.toMatch(/\bvs\b/);
+  const trigger = root.querySelector<HTMLElement>('[aria-label^="Change comparison target"]')!;
+  expect(label!.getBoundingClientRect().right).toBeLessThanOrEqual(
+    trigger.getBoundingClientRect().left,
+  );
+});
+
 it("offers undo for the comments it added to the composer", async () => {
   using context = setup(null, samplePatch);
   useDiffPanelStore.getState().selectBranchBaseRef(context.threadRef, "main");

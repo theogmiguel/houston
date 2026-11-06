@@ -1,7 +1,7 @@
 export const THREAD_SIDEBAR_WIDTH_STORAGE_KEY = "chat_thread_sidebar_width";
-// 264px: rows lead with the title and keep age and status in a narrow right cluster, so the rail
-// stays lighter than the conversation. A width the user dragged to is kept.
-const THREAD_SIDEBAR_DEFAULT_WIDTH = 264;
+// 280px: a row's title shares its line with the pull request badge, the provider mark and the age
+// slot, and still shows about 180px of title. A width the user dragged to is kept.
+const THREAD_SIDEBAR_DEFAULT_WIDTH = 280;
 const THREAD_SIDEBAR_MIN_WIDTH = 240;
 const THREAD_SIDEBAR_MAX_WIDTH = 440;
 export const THREAD_MAIN_CONTENT_MIN_WIDTH = 40 * 16;

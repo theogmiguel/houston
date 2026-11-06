@@ -50,7 +50,10 @@ export const DIFF_VIEW_UNSAFE_CSS = `${DIFF_SURFACE_THEME_UNSAFE_CSS}
   left: calc(100cqi - 48px);
   width: 48px;
   pointer-events: none;
-  background: linear-gradient(to right, transparent, var(--code-background));
+  /* The fade alone reads as a line that ends there; an edge shadow on top marks a scroll edge. */
+  background:
+    linear-gradient(to left, color-mix(in srgb, var(--code-foreground) 34%, transparent), transparent 8px),
+    linear-gradient(to right, transparent, var(--code-background));
   opacity: 0;
 }
 

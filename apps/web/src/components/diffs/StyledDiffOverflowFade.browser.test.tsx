@@ -78,7 +78,8 @@ describe("the right-edge fade of non-wrapping diffs", () => {
     expect(view.code.scrollWidth).toBeGreaterThan(view.code.clientWidth);
     expect(view.code.clientWidth).toBe(PANEL_WIDTH);
     await expect.poll(() => view.fade().opacity).toBe("1");
-    expect(view.fade().backgroundImage).toContain("linear-gradient");
+    // A fade plus an edge shadow, so the clipped edge reads as a scroll edge and not as the line's end.
+    expect(view.fade().backgroundImage.match(/linear-gradient/g)).toHaveLength(2);
     expect(view.fade().position).toBe("absolute");
     expect(view.fade().width).toBe(`${FADE_PX}px`);
     // The gutter is sticky at the left edge of the viewport, so the fade's left offset puts it
