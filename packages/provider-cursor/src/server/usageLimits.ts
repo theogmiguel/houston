@@ -18,6 +18,8 @@ import {
 } from "@houston-app/provider-core/server/usageLimits";
 import * as CursorKeychain from "./CursorKeychain.ts";
 
+const TRAILING_SLASH = /\/$/;
+
 const CursorCredentials = Schema.Struct({ accessToken: Schema.optional(Schema.String) });
 const DEFAULT_CURSOR_API_ENDPOINT = "https://api2.cursor.sh";
 const decodeCredentials = Schema.decodeEffect(Schema.fromJsonString(CursorCredentials));
@@ -75,7 +77,7 @@ export const readCursorUsageLimits = Effect.fn("readCursorUsageLimits")(function
       settings.apiEndpoint?.trim() ||
       environment.CURSOR_API_ENDPOINT?.trim() ||
       DEFAULT_CURSOR_API_ENDPOINT
-    ).replace(/\/$/, "");
+    ).replace(TRAILING_SLASH, "");
     let token = environment.CURSOR_AUTH_TOKEN?.trim();
     // An explicit API key can name a different account from the stored login.
     if (!token && environment.CURSOR_API_KEY?.trim()) {

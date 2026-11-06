@@ -3,6 +3,8 @@ import { parseDiffFromFile } from "@pierre/diffs";
 import type { FileDiffMetadata } from "@pierre/diffs/types";
 import { READABLE_LIGHT_THEME_NAME } from "./readableSyntaxTheme";
 
+const WHITESPACE = /\s/g;
+
 // Light mode uses a darker pierre-light so syntax stays readable on every code surface.
 export const DIFF_THEME_NAMES = {
   light: READABLE_LIGHT_THEME_NAME,
@@ -82,11 +84,11 @@ function hideWhitespaceChanges(file: FileDiffMetadata): FileDiffMetadata {
   const hunks = file.hunks.map((hunk) => {
     const oldContents = file.deletionLines
       .slice(hunk.deletionLineIndex, hunk.deletionLineIndex + hunk.deletionCount)
-      .map((line) => `${line.replace(/\s/g, "")}\n`)
+      .map((line) => `${line.replace(WHITESPACE, "")}\n`)
       .join("");
     const newContents = file.additionLines
       .slice(hunk.additionLineIndex, hunk.additionLineIndex + hunk.additionCount)
-      .map((line) => `${line.replace(/\s/g, "")}\n`)
+      .map((line) => `${line.replace(WHITESPACE, "")}\n`)
       .join("");
     const filtered = parseDiffFromFile(
       { name: file.name, contents: oldContents },

@@ -16,6 +16,8 @@ import {
   makeUsageLimits,
 } from "@houston-app/provider-core/server/usageLimits";
 
+const NON_ALPHANUMERIC_RUN = /[^a-z0-9]+/g;
+
 const SESSION_MINS = 5 * 60;
 const WEEK_MINS = 7 * 24 * 60;
 
@@ -48,7 +50,7 @@ export const makeClaudeScopedLimitNames = Ref.make<ClaudeScopedLimitNames>({
 });
 
 function scopedWindowId(displayName: string): string {
-  return `seven_day_${displayName.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`;
+  return `seven_day_${displayName.toLowerCase().replace(NON_ALPHANUMERIC_RUN, "_")}`;
 }
 
 function scopedWindow(

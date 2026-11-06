@@ -12,6 +12,10 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { writeFileStringAtomically } from "@houston-app/shared/atomicWrite";
 import { signalProcessGroup } from "@houston-app/provider-core/server/processGroup";
 
+const WHITESPACE_RUN = /\s+/;
+const COMMAND_PATTERN = /\0$/;
+const DIGITS_ONLY = /^\d+$/;
+
 const ProcessIdentity = Schema.Struct({ pid: Schema.Int, startTime: Schema.String });
 type ProcessIdentity = typeof ProcessIdentity.Type;
 
@@ -105,7 +109,7 @@ export const make = Effect.fn("OpenCodeServerLedger.make")(function* (input: {
     const fields = stat
       .slice(stat.lastIndexOf(")") + 2)
       .trim()
-      .split(/\s+/);
+      .split(WHITESPACE_RUN);
     const pgid = Number(fields[2]);
     const startTime = fields[19];
     if (!Number.isSafeInteger(pgid) || startTime === undefined) return undefined;
@@ -115,7 +119,7 @@ export const make = Effect.fn("OpenCodeServerLedger.make")(function* (input: {
       pid,
       pgid,
       startTime,
-      command: cmdline.replace(/\0$/, "").replaceAll("\0", " "),
+      command: cmdline.replace(COMMAND_PATTERN, "").replaceAll("\0", " "),
       zombie: fields[0] === "Z",
     } satisfies ObservedProcess;
   });
@@ -153,7 +157,7 @@ export const make = Effect.fn("OpenCodeServerLedger.make")(function* (input: {
       return fs.readDirectory("/proc").pipe(
         Effect.flatMap((names) =>
           Effect.forEach(
-            names.filter((name) => /^\d+$/.test(name)),
+            names.filter((name) => DIGITS_ONLY.test(name)),
             (name) => observeLinux(Number(name), pgid).pipe(Effect.orElseSucceed(() => undefined)),
             { concurrency: 16 },
           ),

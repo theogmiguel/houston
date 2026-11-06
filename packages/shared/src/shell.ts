@@ -13,6 +13,13 @@ import * as Path from "effect/Path";
 import type { ShellEnvironmentPatch } from "@houston-app/contracts";
 import * as HostProcess from "./HostProcess.ts";
 import * as Context from "effect/Context";
+
+const ESCAPED_PATTERN = /(\\*)"/g;
+const ESCAPE_WINDOWS_SHELL_ARG_PATTERN = /(\\*)$/;
+const VALUE_PATTERN = /^\r?\n/;
+const TRAILING_LINE_BREAK = /\r?\n$/;
+const STRIP_WRAPPING_QUOTES_PATTERN = /^"+|"+$/g;
+const LINE_BREAK = /\r?\n/;
 const SHELL_ENV_NAME_PATTERN = /^[A-Z0-9_]+$/;
 const WINDOWS_PATH_DELIMITER = ";";
 const POSIX_PATH_DELIMITER = ":";
@@ -53,9 +60,9 @@ const WINDOWS_SHELL_META_CHARS = /([()\][%!^"`<>&|;, *?])/g;
 
 // Escape dynamic arguments for both cmd.exe and the target's CommandLineToArgvW parsing.
 function escapeWindowsShellArg(arg: string): string {
-  let escaped = arg.replace(/(\\*)"/g, '$1$1\\"');
+  let escaped = arg.replace(ESCAPED_PATTERN, '$1$1\\"');
   // Double up trailing backslashes so the closing quote is not escaped away.
-  escaped = escaped.replace(/(\\*)$/, "$1$1");
+  escaped = escaped.replace(ESCAPE_WINDOWS_SHELL_ARG_PATTERN, "$1$1");
   escaped = `"${escaped}"`;
   return escaped.replace(WINDOWS_SHELL_META_CHARS, "^$1");
 }
@@ -277,8 +284,8 @@ function extractEnvironmentValue(output: string, name: string): string | undefin
 
   const value = output
     .slice(valueStartIndex, endIndex)
-    .replace(/^\r?\n/, "")
-    .replace(/\r?\n$/, "");
+    .replace(VALUE_PATTERN, "")
+    .replace(TRAILING_LINE_BREAK, "");
 
   return value.length > 0 ? value : undefined;
 }
@@ -396,7 +403,7 @@ export const readEnvironmentFromWindowsShell = Effect.fn("shell.readEnvironmentF
 );
 
 function stripWrappingQuotes(value: string): string {
-  return value.replace(/^"+|"+$/g, "");
+  return value.replace(STRIP_WRAPPING_QUOTES_PATTERN, "");
 }
 
 function pathDelimiterForPlatform(platform: NodeJS.Platform): string {
@@ -738,7 +745,7 @@ export function npmShimExecutable(
   if (path.extname(shimPath).toLowerCase() !== ".cmd") return undefined;
   // Match exactly because preserved SET whitespace can select a different file.
   const lines = readFile(shimPath)
-    ?.split(/\r?\n/)
+    ?.split(LINE_BREAK)
     .filter((line) => line.length > 0);
   if (lines?.length !== NPM_EXECUTABLE_SHIM_PREFIX.length + 1) return undefined;
   if (NPM_EXECUTABLE_SHIM_PREFIX.some((expected, index) => lines[index] !== expected)) {

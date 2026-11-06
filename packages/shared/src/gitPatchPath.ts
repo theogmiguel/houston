@@ -1,3 +1,5 @@
+const UNESCAPE_BODY_PATTERN = /^[0-7]{3}$/;
+
 const ESCAPE_BY_CHARACTER = new Map([
   ['"', '\\"'],
   ["\\", "\\\\"],
@@ -86,7 +88,7 @@ function unescapeBody(body: string): string {
       continue;
     }
     const octal = body.slice(at + 1, at + 4);
-    if (/^[0-7]{3}$/.test(octal)) {
+    if (UNESCAPE_BODY_PATTERN.test(octal)) {
       flush();
       bytes.push(Number.parseInt(octal, 8));
       at += 4;

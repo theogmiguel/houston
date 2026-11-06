@@ -11,6 +11,8 @@ import * as Schema from "effect/Schema";
 import { PositiveInt, TrimmedNonEmptyString } from "@houston-app/contracts";
 import { decodeJsonResult } from "@houston-app/shared/schemaJson";
 
+const TRAILING_SLASHES = /\/+$/;
+
 export interface NormalizedAzureDevOpsPullRequestRecord {
   readonly number: number;
   readonly title: string;
@@ -126,7 +128,7 @@ export function azureDevOpsPullRequestWebUrl(input: {
 
   const repositoryWebUrl = trimOptionalString(input.repositoryWebUrl);
   if (repositoryWebUrl) {
-    return `${repositoryWebUrl.replace(/\/+$/, "")}/pullrequest/${input.pullRequestId}`;
+    return `${repositoryWebUrl.replace(TRAILING_SLASHES, "")}/pullrequest/${input.pullRequestId}`;
   }
 
   const organizationBase = azureDevOpsOrganizationBaseFromRestApiUrl(input.restApiUrl);

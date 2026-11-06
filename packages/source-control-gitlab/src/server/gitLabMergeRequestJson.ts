@@ -25,6 +25,9 @@ import { TrimmedNonEmptyString } from "@houston-app/contracts";
 import { quoteGitPatchPath } from "@houston-app/shared/gitPatchPath";
 import { decodeJsonResult } from "@houston-app/shared/schemaJson";
 
+const MERGE_REQUEST_PATCH_PATTERN = /\n?$/;
+const DIGITS_ONLY = /^\d+$/;
+
 /** Unknown pipeline or merge status values must not fail the whole payload. */
 const RawUserSchema = Schema.Struct({
   id: Schema.optional(Schema.Int),
@@ -749,7 +752,11 @@ function mergeRequestPatch(entries: ReadonlyArray<unknown>): GitLabMergeRequestP
       `--- ${from}`,
       `+++ ${to}`,
     ].join("\n");
-    sections.push(hunks.length === 0 ? header : `${header}\n${hunks.replace(/\n?$/, "\n")}`);
+    sections.push(
+      hunks.length === 0
+        ? header
+        : `${header}\n${hunks.replace(MERGE_REQUEST_PATCH_PATTERN, "\n")}`,
+    );
   }
   return {
     patch: sections.join("\n"),
@@ -885,7 +892,7 @@ function toReactions(
 
 function noteIdOf(gid: string | null | undefined): string | null {
   const id = trimmed(gid)?.split("/").at(-1);
-  return id !== undefined && /^\d+$/.test(id) ? id : null;
+  return id !== undefined && DIGITS_ONLY.test(id) ? id : null;
 }
 
 export interface GitLabAwardEmojiPage {

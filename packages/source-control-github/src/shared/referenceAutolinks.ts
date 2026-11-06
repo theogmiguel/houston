@@ -1,5 +1,8 @@
 import type { ReferenceAutolink } from "@houston-app/source-control-core/shared/definition";
 
+const GIT_HUB_REFERENCE_AUTOLINKS_PATTERN = /^https?:$/u;
+const GIT_HUB_REFERENCE_AUTOLINKS_PATTERN_2 = /[a-f]/iu;
+
 // GitHub's autolinked references: `#12`, `repo#12` and `owner/repo#12`; a SHA of 7 to 40
 // characters, optionally `repo@` or `owner/repo@` qualified; `@user` and `@org/team`.
 const REFERENCE =
@@ -19,7 +22,7 @@ export function gitHubReferenceAutolinks(
     return [];
   }
   const [owner, repo] = url.pathname.split("/").filter(Boolean);
-  if (!owner || !repo || !/^https?:$/u.test(url.protocol)) return [];
+  if (!owner || !repo || !GIT_HUB_REFERENCE_AUTOLINKS_PATTERN.test(url.protocol)) return [];
   const repository = (qualifier: string | undefined) =>
     qualifier?.includes("/") ? qualifier : qualifier ? `${qualifier}/${repo}` : `${owner}/${repo}`;
   const links: ReferenceAutolink[] = [];
@@ -35,7 +38,7 @@ export function gitHubReferenceAutolinks(
       });
     } else if (sha) {
       // A run of digits is a number far more often than a SHA.
-      if (!/[a-f]/iu.test(sha)) continue;
+      if (!GIT_HUB_REFERENCE_AUTOLINKS_PATTERN_2.test(sha)) continue;
       links.push({
         index: match.index,
         text: matched,

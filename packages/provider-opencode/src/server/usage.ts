@@ -15,6 +15,8 @@ import * as SqlClient from "effect/sql/SqlClient";
 
 import type { OpenCodeSettings } from "../settings.ts";
 
+const READ_OPEN_CODE_USAGE_PATTERN = /^opencode(?:-[a-zA-Z0-9_-]+)?\.db$/;
+
 function object(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -123,7 +125,7 @@ export const readOpenCodeUsage = Effect.fn("readOpenCodeUsage")(function* (
   const databases = yield* fileSystem.readDirectory(root).pipe(
     Effect.flatMap((names) =>
       Effect.filter(
-        names.filter((name) => /^opencode(?:-[a-zA-Z0-9_-]+)?\.db$/.test(name)),
+        names.filter((name) => READ_OPEN_CODE_USAGE_PATTERN.test(name)),
         (name) =>
           entryInfo(path.join(root, name)).pipe(
             Effect.map((info) => info.type === "File"),

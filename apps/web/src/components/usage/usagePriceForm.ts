@@ -1,5 +1,8 @@
 import type { UsageModelPriceOverride } from "@houston-app/contracts";
 
+const IS_USAGE_PRICE_EDIT_PATTERN = /^\s*(?:\d*[.,]?\d*|(?:\d+[.,]?\d*|[.,]\d+)e[+-]?\d*)\s*$/i;
+const PARSE_USAGE_PRICE_FORM_PATTERN = /^(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i;
+
 export const USAGE_PRICE_FIELDS = [
   { key: "inputCostPerMillionTokens", label: "Input", optional: false },
   { key: "outputCostPerMillionTokens", label: "Output", optional: false },
@@ -25,7 +28,7 @@ export function usagePriceForm(model = "", price?: UsageModelPriceOverride): Usa
 /** Allow decimal/exponent edits and all deletions, including temporarily invalid values; saving validates
  * the result. */
 export function isUsagePriceEdit(previous: string, next: string): boolean {
-  if (/^\s*(?:\d*[.,]?\d*|(?:\d+[.,]?\d*|[.,]\d+)e[+-]?\d*)\s*$/i.test(next)) return true;
+  if (IS_USAGE_PRICE_EDIT_PATTERN.test(next)) return true;
   if (next.length >= previous.length) return false;
   let start = 0;
   while (start < next.length && next[start] === previous[start]) start++;
@@ -45,7 +48,7 @@ export function parseUsagePriceForm(
       if (field.optional) continue;
       return null;
     }
-    if (!/^(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(raw)) return null;
+    if (!PARSE_USAGE_PRICE_FORM_PATTERN.test(raw)) return null;
     const value = Number(raw);
     if (!Number.isFinite(value) || value < 0) return null;
     rates[field.key] = value;

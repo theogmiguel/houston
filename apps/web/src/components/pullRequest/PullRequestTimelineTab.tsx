@@ -60,6 +60,8 @@ import {
 import { PullRequestChecksGlyph, PullRequestGlyph } from "./pullRequestIcons";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
 
+const FRIENDLY_REVIEW_STATE_PATTERN = /^\w/u;
+
 interface ReactionSurface {
   readonly canReact: boolean;
   readonly environmentId: EnvironmentId;
@@ -159,7 +161,7 @@ function ActorTimelineMarker({
 
 function friendlyReviewState(value: string): string {
   const words = value.toLowerCase().replaceAll("_", " ").replaceAll("-", " ");
-  return words.replace(/^\w/u, (letter) => letter.toUpperCase());
+  return words.replace(FRIENDLY_REVIEW_STATE_PATTERN, (letter) => letter.toUpperCase());
 }
 
 function ReviewStateBadge({ state }: { state: string }) {

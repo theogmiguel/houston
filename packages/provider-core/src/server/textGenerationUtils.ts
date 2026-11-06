@@ -2,6 +2,11 @@ import { TextGenerationError } from "@houston-app/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+const LINE_BREAK = /\r?\n/g;
+const WITHOUT_TRAILING_PERIOD_PATTERN = /[.]+$/g;
+const NORMALIZED_PATTERN = /^['"`]+|['"`]+$/g;
+const WHITESPACE_RUN = /\s+/g;
+
 const isTextGenerationError = Schema.is(TextGenerationError);
 const decodeJsonThreadTitle = Schema.decodeOption(
   Schema.fromJsonString(Schema.Struct({ title: Schema.String })),
@@ -24,8 +29,8 @@ export function limitSection(value: string, maxChars: number): string {
 }
 
 export function sanitizeCommitSubject(raw: string): string {
-  const singleLine = raw.trim().split(/\r?\n/g)[0]?.trim() ?? "";
-  const withoutTrailingPeriod = singleLine.replace(/[.]+$/g, "").trim();
+  const singleLine = raw.trim().split(LINE_BREAK)[0]?.trim() ?? "";
+  const withoutTrailingPeriod = singleLine.replace(WITHOUT_TRAILING_PERIOD_PATTERN, "").trim();
   if (withoutTrailingPeriod.length === 0) {
     return "Update project files";
   }
@@ -45,7 +50,7 @@ export function sanitizeCommitSubject(raw: string): string {
 }
 
 export function sanitizePrTitle(raw: string): string {
-  const singleLine = raw.trim().split(/\r?\n/g)[0]?.trim() ?? "";
+  const singleLine = raw.trim().split(LINE_BREAK)[0]?.trim() ?? "";
   if (singleLine.length > 0) {
     return singleLine;
   }
@@ -60,11 +65,11 @@ export function sanitizeThreadTitle(raw: string): string {
   const title = Option.isSome(decoded) ? decoded.value.title : raw;
   const normalized = title
     .trim()
-    .split(/\r?\n/g)[0]
+    .split(LINE_BREAK)[0]
     ?.trim()
-    .replace(/^['"`]+|['"`]+$/g, "")
+    .replace(NORMALIZED_PATTERN, "")
     .trim()
-    .replace(/\s+/g, " ");
+    .replace(WHITESPACE_RUN, " ");
 
   if (!normalized || normalized.trim().length === 0) {
     return "New thread";

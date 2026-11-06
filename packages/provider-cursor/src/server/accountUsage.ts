@@ -15,6 +15,9 @@ import * as Schema from "effect/Schema";
 
 import * as CursorKeychain from "./CursorKeychain.ts";
 
+const BASE_PATTERN = /^cursor-/;
+const BASE_PATTERN_2 = /(?:-thinking)?(?:-(?:none|minimal|low|medium|high|xhigh|max))?(?:-fast)?$/;
+
 function object(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -27,9 +30,7 @@ function tokens(value: unknown): number {
 
 // Grok's xAI first-party rate entry has no bare alias.
 export function cursorRateModel(model: string): string {
-  const base = model
-    .replace(/^cursor-/, "")
-    .replace(/(?:-thinking)?(?:-(?:none|minimal|low|medium|high|xhigh|max))?(?:-fast)?$/, "");
+  const base = model.replace(BASE_PATTERN, "").replace(BASE_PATTERN_2, "");
   return base.startsWith("grok-") ? `xai/${base}` : base;
 }
 

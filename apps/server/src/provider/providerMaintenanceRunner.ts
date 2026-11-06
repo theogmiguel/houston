@@ -39,6 +39,13 @@ import {
 import * as ProviderLatestVersions from "@houston-app/provider-core/server/ProviderLatestVersions";
 import type { ProviderMaintenanceCapabilities } from "@houston-app/provider-core/server/maintenanceResolver";
 import { collectUint8StreamText } from "@houston-app/provider-core/server/collectStreamText";
+
+const PARTS_PATTERN = /\x1b\[(?:0*1?G|999D)/g;
+const ANY_LINE_BREAK = /\r\n|\r|\n/;
+const TO_PROGRESS_LINE_PATTERN = /\x1b(?:\[[0-9]*)?$/;
+const WHITESPACE_RUN = /\s+/g;
+const PATH_SEPARATOR = /[\\/]/;
+const RUN_COMMAND_AND_VERIFY_PATTERN = /^v/;
 const isServerProviderUpdateError = Schema.is(ServerProviderUpdateError);
 
 // Native updaters (`claude update`) download a ~300 MB binary without printing
@@ -209,15 +216,15 @@ export function splitOutputLines(
   partialLine: string,
   text: string,
 ): { readonly lines: ReadonlyArray<string>; readonly partialLine: string } {
-  const parts = (partialLine + text).replace(/\x1b\[(?:0*1?G|999D)/g, "\r").split(/\r\n|\r|\n/);
+  const parts = (partialLine + text).replace(PARTS_PATTERN, "\r").split(ANY_LINE_BREAK);
   return { partialLine: (parts.pop() ?? "").slice(-UPDATE_PARTIAL_LINE_MAX_LENGTH), lines: parts };
 }
 
 export function toProgressLine(line: string): string | null {
-  if (/\x1b(?:\[[0-9]*)?$/.test(line)) {
+  if (TO_PROGRESS_LINE_PATTERN.test(line)) {
     return null;
   }
-  const text = NodeUtil.stripVTControlCharacters(line).replace(/\s+/g, " ").trim();
+  const text = NodeUtil.stripVTControlCharacters(line).replace(WHITESPACE_RUN, " ").trim();
   if (text.length === 0) {
     return null;
   }
@@ -227,7 +234,7 @@ export function toProgressLine(line: string): string | null {
 }
 
 function describeCommand(command: ProviderMaintenanceCommandAction): string {
-  const executable = command.executable.split(/[\\/]/).pop() || command.executable;
+  const executable = command.executable.split(PATH_SEPARATOR).pop() || command.executable;
   return [executable, ...command.args].join(" ");
 }
 
@@ -251,10 +258,7 @@ function commandOutput(result: ProviderMaintenanceCommandResult): string | null 
 // Updaters print their reason last, usually on stderr.
 function lastOutputLine(result: ProviderMaintenanceCommandResult): string | null {
   for (const output of [result.stderr, result.stdout]) {
-    const line = output
-      .split(/\r\n|\r|\n/)
-      .map(toProgressLine)
-      .findLast(Boolean);
+    const line = output.split(ANY_LINE_BREAK).map(toProgressLine).findLast(Boolean);
     if (line) {
       return line;
     }
@@ -583,7 +587,7 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
                     (verifiedProvider.auth.status !== "unauthenticated" ||
                       !verifiedProvider.version)) ||
                   (targetVersion !== undefined &&
-                    installedVersion?.replace(/^v/, "") !== targetVersion)
+                    installedVersion?.replace(RUN_COMMAND_AND_VERIFY_PATTERN, "") !== targetVersion)
                 );
               });
             const stillOutdated =

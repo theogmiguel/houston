@@ -6,6 +6,13 @@ import { ColorHueSlider, ColorSaturationValuePlane } from "../ui/color-picker";
 import { Input } from "../ui/input";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+
+const GET_THEME_ROLE_LABEL_PATTERN = /([A-Z])/g;
+const GET_THEME_ROLE_LABEL_PATTERN_2 = /^./;
+const NORMALIZED_PATTERN = /^rgb\(\s*/i;
+const NORMALIZED_PATTERN_2 = /\s*\)$/;
+const CHANNELS_PATTERN = /[,\s]+/;
+const HANDLE_HEX_CHANGE_PATTERN = /^#[0-9a-f]{6}$/i;
 export function getThemeRoleLabel(role: ThemeColorRole): string {
   const labels: Partial<Record<ThemeColorRole, string>> = {
     canvas: "Background",
@@ -25,7 +32,9 @@ export function getThemeRoleLabel(role: ThemeColorRole): string {
   };
   const label = labels[role];
   if (label) return label;
-  return role.replace(/([A-Z])/g, " $1").replace(/^./, (character) => character.toUpperCase());
+  return role
+    .replace(GET_THEME_ROLE_LABEL_PATTERN, " $1")
+    .replace(GET_THEME_ROLE_LABEL_PATTERN_2, (character) => character.toUpperCase());
 }
 
 function themePickerAlphaSuffix(value: string): string {
@@ -44,14 +53,8 @@ function themeHexToRgb(hex: string) {
 }
 
 function themeRgbToHex(value: string): string | null {
-  const normalized = value
-    .trim()
-    .replace(/^rgb\(\s*/i, "")
-    .replace(/\s*\)$/, "");
-  const channels = normalized
-    .split(/[,\s]+/)
-    .filter(Boolean)
-    .map(Number);
+  const normalized = value.trim().replace(NORMALIZED_PATTERN, "").replace(NORMALIZED_PATTERN_2, "");
+  const channels = normalized.split(CHANNELS_PATTERN).filter(Boolean).map(Number);
   if (
     channels.length !== 3 ||
     channels.some((channel) => !Number.isInteger(channel) || channel < 0 || channel > 255)
@@ -140,7 +143,7 @@ function ThemeColorPickerPanel({
 
   const handleHexChange = (nextValue: string) => {
     setHexDraft(nextValue);
-    if (!/^#[0-9a-f]{6}$/i.test(nextValue)) return;
+    if (!HANDLE_HEX_CHANGE_PATTERN.test(nextValue)) return;
     const nextHsv = hexToHsv(nextValue);
     setHsv(nextHsv);
     setRgbDraft(themeRgbValue(nextValue));

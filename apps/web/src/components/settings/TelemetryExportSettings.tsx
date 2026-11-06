@@ -17,6 +17,8 @@ import { useScopedSettings } from "./useScopedSettings";
 import { SettingsSection } from "./settingsLayout";
 import { SettingsScopeNotice } from "./SettingsScopeNotice";
 
+const IS_HTTP_URL_PATTERN = /^https?:\/\/./i;
+
 const SIGNALS = [
   {
     key: "otlpTracesUrl",
@@ -58,7 +60,7 @@ function runningOverride(
 
 type EndpointCheck = { readonly url: string; readonly result: OtlpEndpointCheckResult | null };
 
-const isHttpUrl = (url: string) => /^https?:\/\/./i.test(url);
+const isHttpUrl = (url: string) => IS_HTTP_URL_PATTERN.test(url);
 
 function endpointStatus(url: string, check: EndpointCheck | undefined) {
   if (url === "") return { label: "Off", dot: "bg-muted-foreground/40" };

@@ -7,6 +7,8 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { parse as parseYamlDocument } from "yaml";
 
+const SKILL_PATH_SORT_KEY_PATTERN = /[!'()*?#]/g;
+
 /** Match Python os.path.expanduser: USERPROFILE, then HOMEDRIVE+HOMEPATH on Windows; HOME elsewhere. */
 export function resolveAntigravityUserHome(
   platform: NodeJS.Platform,
@@ -101,7 +103,7 @@ function parseSkillFrontmatter(contents: string, fileName: string) {
 /** The native loader orders child paths with Go's URL.EscapedPath encoding. */
 function skillPathSortKey(entry: string) {
   return encodeURI(entry).replace(
-    /[!'()*?#]/g,
+    SKILL_PATH_SORT_KEY_PATTERN,
     (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
   );
 }

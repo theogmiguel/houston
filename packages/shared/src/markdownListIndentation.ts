@@ -1,3 +1,5 @@
+const IS_SAME_LINE_OVER_INDENTED_CODE_PATTERN = /^[\t ]/;
+
 interface MarkdownPosition {
   readonly start?: {
     readonly line?: number;
@@ -36,7 +38,7 @@ function isSameLineOverIndentedCode(
     node.type !== "code" ||
     parent?.type !== "listItem" ||
     typeof node.value !== "string" ||
-    !/^[\t ]/.test(node.value)
+    !IS_SAME_LINE_OVER_INDENTED_CODE_PATTERN.test(node.value)
   ) {
     return false;
   }

@@ -23,6 +23,9 @@ import * as HostProcess from "@houston-app/shared/HostProcess";
 import { ExpoApiGraphQLGroup, type HoustonEasSimulatorSession } from "./ExpoApi.graphql.ts";
 import type { DeviceRunSessionStatus } from "../../schema/expo.graphql.ts";
 
+const CREDENTIAL_PATTERN = /^[\x21-\x7e]+$/;
+const TOKEN_PATTERN = /^Bearer /;
+
 const EXPO_GRAPHQL_URL = "https://api.expo.dev/graphql";
 const REQUEST_TIMEOUT = "30 seconds";
 
@@ -70,7 +73,7 @@ const credential = (
   header: ExpoCredential["header"]["name"],
   value: string,
 ) =>
-  /^[\x21-\x7e]+$/.test(value)
+  CREDENTIAL_PATTERN.test(value)
     ? Effect.succeed({
         source,
         header: {
@@ -199,7 +202,7 @@ const toExpoApiError = (
   // Expo's own messages are the reason the user acts on, but nothing promises
   // they never echo a request: the credential is cut out, and they are bounded.
   const secret = Redacted.value(credential.header.value);
-  const token = secret.replace(/^Bearer /, "");
+  const token = secret.replace(TOKEN_PATTERN, "");
   const scrub = (text: string) =>
     text.replaceAll(secret, "[redacted]").replaceAll(token, "[redacted]").slice(0, 300);
   const failure = (detail: string) =>

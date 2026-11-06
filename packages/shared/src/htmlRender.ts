@@ -6,6 +6,19 @@ import {
 } from "./themePalettes.ts";
 import { EVENT_CODE_SHORTCUT_KEYS } from "./keybindings.ts";
 
+const NAME_PATTERN = /[\\/:*?"<>|\p{Cc}]+/gu;
+const WHITESPACE_RUN = /\s+/g;
+const HTTP_SCHEME = /^https?:\/\//i;
+const READ_HTML_RENDER_IMAGE_REQUEST_PATTERN = /^(?:https?:\/\/|data:image\/)/i;
+const BOOTSTRAP_MARKUP_PATTERN = /<meta\s[^>]*charset/i;
+const BOOTSTRAP_MARKUP_PATTERN_2 = /<meta\s[^>]*name\s*=\s*["']?viewport/i;
+const SCAN_PATTERN =
+  /<!--[\s\S]*?(?:-->|$)|<(script|style|textarea|title|xmp|iframe|noembed|noframes|noscript)\b[\s\S]*?(?:<\/\1\s*>|$)|<plaintext\b[\s\S]*$/gi;
+const BLANK_NON_MARKUP_PATTERN = /<(\/?)template(?:\s[^>]*)?\/?>/gi;
+const HEAD_OPEN_PATTERN = /<head(?:\s[^>]*)?>/i;
+const HTML_OPEN_PATTERN = /<html(?:\s[^>]*)?>/i;
+const DOCTYPE_PATTERN = /^\s*<!doctype[^>]*>/i;
+
 export const HTML_RENDER_TOOL_NAME = "html_render";
 export const HTML_RENDER_MIN_HEIGHT = 80;
 export const HTML_RENDER_MAX_HEIGHT = 2000;
@@ -120,8 +133,8 @@ export function htmlRenderFrameHeight(
 
 export function htmlRenderFileName(title: string) {
   const name = title
-    .replace(/[\\/:*?"<>|\p{Cc}]+/gu, " ")
-    .replace(/\s+/g, " ")
+    .replace(NAME_PATTERN, " ")
+    .replace(WHITESPACE_RUN, " ")
     .trim()
     .slice(0, 120)
     .trim();
@@ -270,7 +283,7 @@ export function readHtmlRenderLinkRequest(data: unknown):
   if (typeof id !== "string" && typeof id !== "number") return undefined;
   if (typeof params !== "object" || params === null) return undefined;
   const { url, metaKey, ctrlKey } = params as Record<string, unknown>;
-  return typeof url === "string" && /^https?:\/\//i.test(url)
+  return typeof url === "string" && HTTP_SCHEME.test(url)
     ? { id, url, metaKey: metaKey === true, ctrlKey: ctrlKey === true }
     : undefined;
 }
@@ -284,7 +297,8 @@ export function readHtmlRenderImageRequest(
   if (jsonrpc !== "2.0" || method !== OPEN_IMAGE_METHOD) return undefined;
   if (typeof params !== "object" || params === null) return undefined;
   const { src, name } = params as Record<string, unknown>;
-  if (typeof src !== "string" || !/^(?:https?:\/\/|data:image\/)/i.test(src)) return undefined;
+  if (typeof src !== "string" || !READ_HTML_RENDER_IMAGE_REQUEST_PATTERN.test(src))
+    return undefined;
   const label = typeof name === "string" ? name.trim().slice(0, HTML_RENDER_MAX_TITLE_LENGTH) : "";
   return { src, name: label || "Image" };
 }
@@ -376,8 +390,8 @@ function bootstrapMarkup(markup: string): string {
   const light = htmlRenderTheme(HOUSTON_LIGHT_THEME_COLORS, "light");
   const defaultCss = `${rootRule(dark)}@media (prefers-color-scheme: light){${rootRule(light)}}${BASE_CSS}`;
   return [
-    /<meta\s[^>]*charset/i.test(markup.slice(0, 4096)) ? "" : '<meta charset="utf-8">',
-    /<meta\s[^>]*name\s*=\s*["']?viewport/i.test(markup)
+    BOOTSTRAP_MARKUP_PATTERN.test(markup.slice(0, 4096)) ? "" : '<meta charset="utf-8">',
+    BOOTSTRAP_MARKUP_PATTERN_2.test(markup)
       ? ""
       : '<meta name="viewport" content="width=device-width, initial-scale=1">',
     `<style id="houston-theme">${defaultCss}</style>`,
@@ -387,15 +401,12 @@ function bootstrapMarkup(markup: string): string {
 
 // Blank inert content without shifting offsets so it cannot receive the bootstrap.
 const blankNonMarkup = (html: string) => {
-  const scan = html.replace(
-    /<!--[\s\S]*?(?:-->|$)|<(script|style|textarea|title|xmp|iframe|noembed|noframes|noscript)\b[\s\S]*?(?:<\/\1\s*>|$)|<plaintext\b[\s\S]*$/gi,
-    (match) => " ".repeat(match.length),
-  );
+  const scan = html.replace(SCAN_PATTERN, (match) => " ".repeat(match.length));
   const parts: string[] = [];
   let depth = 0;
   let start = 0;
   let at = 0;
-  for (const match of scan.matchAll(/<(\/?)template(?:\s[^>]*)?\/?>/gi)) {
+  for (const match of scan.matchAll(BLANK_NON_MARKUP_PATTERN)) {
     if (!match[1]) {
       if (depth++ === 0) start = match.index;
     } else if (depth > 0 && --depth === 0) {
@@ -415,17 +426,17 @@ const blankNonMarkup = (html: string) => {
 export function injectHtmlRenderBootstrap(html: string): string {
   const scan = blankNonMarkup(html);
   const markup = bootstrapMarkup(scan);
-  const headOpen = /<head(?:\s[^>]*)?>/i.exec(scan);
+  const headOpen = HEAD_OPEN_PATTERN.exec(scan);
   if (headOpen) {
     const at = headOpen.index + headOpen[0].length;
     return html.slice(0, at) + markup + html.slice(at);
   }
-  const htmlOpen = /<html(?:\s[^>]*)?>/i.exec(scan);
+  const htmlOpen = HTML_OPEN_PATTERN.exec(scan);
   if (htmlOpen) {
     const at = htmlOpen.index + htmlOpen[0].length;
     return `${html.slice(0, at)}<head>${markup}</head>${html.slice(at)}`;
   }
-  const doctype = /^\s*<!doctype[^>]*>/i.exec(html);
+  const doctype = DOCTYPE_PATTERN.exec(html);
   if (doctype) {
     const at = doctype[0].length;
     return `${html.slice(0, at)}<head>${markup}</head>${html.slice(at)}`;

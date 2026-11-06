@@ -6,6 +6,8 @@ import * as Schema from "effect/Schema";
 
 import * as ProcessRunner from "../processRunner.ts";
 
+const LINE_BREAK = /\r?\n/g;
+
 interface ResolveServerEnvironmentLabelInput {
   readonly cwdBaseName: string;
 }
@@ -49,7 +51,7 @@ function normalizeLabel(value: string | null | undefined): string | null {
 }
 
 function parseMachineInfoValue(raw: string, key: string): string | null {
-  for (const line of raw.split(/\r?\n/g)) {
+  for (const line of raw.split(LINE_BREAK)) {
     const trimmed = line.trim();
     if (trimmed.length === 0 || trimmed.startsWith("#") || !trimmed.startsWith(`${key}=`)) {
       continue;

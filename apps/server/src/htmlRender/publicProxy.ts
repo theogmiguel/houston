@@ -5,6 +5,8 @@ import * as NodeOS from "node:os";
 
 import * as Effect from "effect/Effect";
 
+const DOTTED_PATTERN = /(\d+)\.(\d+)\.(\d+)\.(\d+)$/;
+
 const LOCAL_ADDRESSES = new NodeNet.BlockList();
 for (const [network, prefix] of [
   ["0.0.0.0", 8],
@@ -38,7 +40,7 @@ SIX_TO_FOUR.addSubnet("2002::", 16, "ipv6");
 
 const ipv6Groups = (address: string) => {
   const bare = address.split("%", 1)[0]!;
-  const dotted = /(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(bare);
+  const dotted = DOTTED_PATTERN.exec(bare);
   const text = dotted
     ? `${bare.slice(0, dotted.index)}${((+dotted[1]! << 8) | +dotted[2]!).toString(16)}:${((+dotted[3]! << 8) | +dotted[4]!).toString(16)}`
     : bare;

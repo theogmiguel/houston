@@ -2,6 +2,13 @@ import { EnvironmentId, ProviderInstanceId } from "@houston-app/contracts";
 import * as Schema from "effect/Schema";
 import { providerAuthReturnUrl } from "./providerAuthReturnUrl.ts";
 
+const CODEX_AUTHORIZATION_REQUEST_PATTERN = /^http:\/\/127\.0\.0\.1:[1-9]\d{0,4}\/auth\/callback$/u;
+const CODEX_AUTHORIZATION_REQUEST_PATTERN_2 = /^[\w-]{16,128}$/u;
+const CODEX_AUTHORIZATION_REQUEST_PATTERN_3 = /^[\w-]{43}$/u;
+const CODEX_AUTHORIZATION_REQUEST_PATTERN_4 = /^(dynamic_agent_client|oaiapp_[\w-]+)$/u;
+const CALLBACK_PATTERN = /^[a-z][a-z\d+.-]*:\/\//iu;
+const CODEX_CALLBACK_URL_PATTERN = /^oaiapp_[\w-]+$/u;
+
 export const CodexAuthHandoff = Schema.Struct({
   authorizationUrl: Schema.String.check(Schema.isMaxLength(16_384)),
   returnUrl: Schema.String.check(Schema.isMaxLength(4_096)),
@@ -43,13 +50,13 @@ export function codexAuthorizationRequest(value: string) {
   const redirect = new URL(redirectUri);
   const state = single("state");
   if (
-    !/^http:\/\/127\.0\.0\.1:[1-9]\d{0,4}\/auth\/callback$/u.test(redirectUri) ||
+    !CODEX_AUTHORIZATION_REQUEST_PATTERN.test(redirectUri) ||
     Number(redirect.port) > 65_535 ||
-    !/^[\w-]{16,128}$/u.test(state) ||
+    !CODEX_AUTHORIZATION_REQUEST_PATTERN_2.test(state) ||
     single("response_type") !== "code" ||
     single("code_challenge_method") !== "S256" ||
-    !/^[\w-]{43}$/u.test(single("code_challenge")) ||
-    !/^(dynamic_agent_client|oaiapp_[\w-]+)$/u.test(single("client_id"))
+    !CODEX_AUTHORIZATION_REQUEST_PATTERN_3.test(single("code_challenge")) ||
+    !CODEX_AUTHORIZATION_REQUEST_PATTERN_4.test(single("client_id"))
   )
     throw new Error("Invalid ChatGPT sign-in request.");
   return { authorizationUrl: url.toString(), redirectUri, state };
@@ -60,7 +67,7 @@ export function codexCallbackUrl(value: string, redirectUri: string, state: stri
   const pasted = value.trimStart();
   // Browsers can hide `http://` in the address bar, so a pasted callback may lack it.
   const callback = new URL(
-    /^[a-z][a-z\d+.-]*:\/\//iu.test(pasted) ? pasted : `${expected.protocol}//${pasted}`,
+    CALLBACK_PATTERN.test(pasted) ? pasted : `${expected.protocol}//${pasted}`,
   );
   const states = callback.searchParams.getAll("state");
   const codes = callback.searchParams.getAll("code");
@@ -76,7 +83,7 @@ export function codexCallbackUrl(value: string, redirectUri: string, state: stri
     states.length !== 1 ||
     states[0] !== state ||
     clients.length > 1 ||
-    (clients.length === 1 && !/^oaiapp_[\w-]+$/u.test(clients[0]!)) ||
+    (clients.length === 1 && !CODEX_CALLBACK_URL_PATTERN.test(clients[0]!)) ||
     !(
       (codes.length === 1 && Boolean(codes[0]) && errors.length === 0) ||
       (errors.length === 1 && Boolean(errors[0]) && codes.length === 0)

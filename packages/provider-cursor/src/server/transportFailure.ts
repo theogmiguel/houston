@@ -1,3 +1,5 @@
+const CONSUME_LINE_PATTERN = /^\s+at\s/;
+
 const maxLineLength = 4096;
 // Cursor also uses RetriableError for agent-loop failures; preserve those diagnostics.
 const transportError =
@@ -14,7 +16,7 @@ function consumeLine(state: ReplyState, line: string) {
   const text = line.trimEnd();
   if (transportError.test(text) || text === serverError) {
     state.failure = text;
-  } else if (text.trim() !== "" && !(state.failure && /^\s+at\s/.test(text))) {
+  } else if (text.trim() !== "" && !(state.failure && CONSUME_LINE_PATTERN.test(text))) {
     // Classify only whole-item dumps; explanations may quote the same diagnostic.
     state.disqualified = true;
     state.failure = undefined;

@@ -12,6 +12,8 @@ import * as EffectAcpErrors from "effect-acp/errors";
 import type * as EffectAcpSchema from "effect-acp/compat";
 import * as NodeBuffer from "node:buffer";
 
+const TERMINAL_EXIT_SIGNAL_PATTERN = /signal: '([^']+)'/u;
+
 const MAX_LIVE_TERMINALS = 16;
 const MAX_UNRELEASED_TERMINALS = 64;
 const MAX_RETAINED_TERMINALS = 32;
@@ -74,7 +76,7 @@ function terminalExitSignal(error: unknown): string | null {
   const cause = error instanceof Error ? error.cause : undefined;
   const message =
     cause instanceof Error ? cause.message : error instanceof Error ? error.message : "";
-  return message.match(/signal: '([^']+)'/u)?.[1] ?? null;
+  return message.match(TERMINAL_EXIT_SIGNAL_PATTERN)?.[1] ?? null;
 }
 
 export interface AcpTerminalOutputSnapshot {

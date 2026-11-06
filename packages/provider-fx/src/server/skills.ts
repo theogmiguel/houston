@@ -13,6 +13,14 @@ import * as Path from "effect/Path";
 import type * as PlatformError from "effect/PlatformError";
 import * as Stream from "effect/Stream";
 
+const TRIM_SPACE_TAB_PATTERN = /^[ \t]+|[ \t]+$/g;
+const QUOTED_PATTERN = /^['"]/;
+const QUOTED_PATTERN_2 = /['"]$/;
+const OPENING_PATTERN = /^---(\r?\n|$)/;
+const TRAILING_CARRIAGE_RETURN = /\r$/;
+const PARSE_SKILL_METADATA_PATTERN = /^[ \t]/;
+const INDENT_PATTERN = /^ */;
+
 /**
  * fx's menu order: managed `~/.fx/skills`, then the workspace's `.fx/skills`
  * and `skills/`, then every compatibility root (`skillGroupRank` in
@@ -90,7 +98,7 @@ function compareUtf8(left: string, right: string): number {
 }
 
 /** fx trims only spaces and tabs. */
-const trimSpaceTab = (value: string) => value.replace(/^[ \t]+|[ \t]+$/g, "");
+const trimSpaceTab = (value: string) => value.replace(TRIM_SPACE_TAB_PATTERN, "");
 
 /** fx's `invalidTextCause`: no ASCII control bytes (invalid UTF-8 shows up as one). */
 const hasControlByte = (value: string) => [...value].some((char) => char < " " || char === "\x7f");
@@ -98,7 +106,7 @@ const hasControlByte = (value: string) => [...value].some((char) => char < " " |
 /** fx's `parseRecognizedValue`: one quoted or bare scalar, no YAML. */
 function recognizedValue(raw: string): string | undefined {
   if (raw.startsWith("|") || raw.startsWith(">")) return undefined;
-  const quoted = /^['"]/.test(raw) || /['"]$/.test(raw);
+  const quoted = QUOTED_PATTERN.test(raw) || QUOTED_PATTERN_2.test(raw);
   if (!quoted) return raw;
   return raw.length >= 2 && raw[0] === raw.at(-1) ? raw.slice(1, -1) : undefined;
 }
@@ -113,7 +121,7 @@ function parseSkillMetadata(
   contents: string,
   folderName: string,
 ): { readonly name: string; readonly description?: string } | undefined {
-  const opening = /^---(\r?\n|$)/.exec(contents);
+  const opening = OPENING_PATTERN.exec(contents);
   if (opening === null) {
     return validSkillName(folderName) ? { name: folderName } : undefined;
   }
@@ -122,7 +130,8 @@ function parseSkillMetadata(
   const lines = contents.slice(opening[0].length).split("\n");
   const unterminated = (index: number) => index === lines.length - 1;
   const closing = lines.findIndex(
-    (line, index) => (unterminated(index) ? line : line.replace(/\r$/, "")) === "---",
+    (line, index) =>
+      (unterminated(index) ? line : line.replace(TRAILING_CARRIAGE_RETURN, "")) === "---",
   );
   if (closing === -1) return undefined;
   const throughClosing = opening[0] + lines.slice(0, closing + 1).join("\n");
@@ -130,7 +139,7 @@ function parseSkillMetadata(
   if (encoder.encode(contents.slice(0, bodyStart)).length > MAX_FRONTMATTER_BYTES) {
     return undefined;
   }
-  const header = lines.slice(0, closing).map((line) => line.replace(/\r$/, ""));
+  const header = lines.slice(0, closing).map((line) => line.replace(TRAILING_CARRIAGE_RETURN, ""));
 
   let name: string | undefined;
   let description: string | undefined;
@@ -141,7 +150,7 @@ function parseSkillMetadata(
     const line = header[index] ?? "";
     const trimmed = trimSpaceTab(line);
     if (trimmed.length === 0 || trimmed.startsWith("#")) continue;
-    if (previousRecognized && /^[ \t]/.test(line)) return undefined;
+    if (previousRecognized && PARSE_SKILL_METADATA_PATTERN.test(line)) return undefined;
     previousRecognized = false;
     const colon = trimmed.indexOf(":");
     if (colon === -1) continue;
@@ -168,7 +177,7 @@ function parseSkillMetadata(
             block.push(undefined);
             continue;
           }
-          const indent = /^ */.exec(next)?.[0].length ?? 0;
+          const indent = INDENT_PATTERN.exec(next)?.[0].length ?? 0;
           if (next[indent] === "\t") return undefined;
           if (indent === 0) break;
           if (baseIndent !== undefined && indent < baseIndent) return undefined;

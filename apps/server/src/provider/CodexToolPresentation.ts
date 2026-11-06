@@ -14,6 +14,8 @@ import {
   normalizeMcpText as normalizedDisplayName,
 } from "@houston-app/provider-core/server/mcpToolPresentation";
 
+const NORMALIZED_APP_ID_PATTERN = /^[A-Za-z0-9._-]+$/u;
+
 type CodexLifecycleItem = EffectCodexSchema.V2ItemCompletedNotification["item"];
 
 function asUnknownRecord(value: unknown): Record<string, unknown> | undefined {
@@ -35,7 +37,7 @@ function normalizedImageUrl(value: unknown): string | undefined {
 function normalizedAppId(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const appId = value.trim();
-  return appId.length > 0 && appId.length <= 512 && /^[A-Za-z0-9._-]+$/u.test(appId)
+  return appId.length > 0 && appId.length <= 512 && NORMALIZED_APP_ID_PATTERN.test(appId)
     ? appId
     : undefined;
 }

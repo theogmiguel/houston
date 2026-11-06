@@ -54,6 +54,9 @@ import { MiddleTruncate } from "./ui/middle-truncate";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "./ui/select";
 import { Toggle, ToggleGroup } from "./ui/toggle-group";
 
+const TRAILING_PATH_SEPARATORS = /[\\/]+$/;
+const PROJECT_SUBDIRECTORY_PATTERN = /^[\\/]/;
+
 interface AddProjectToMachineRequest {
   readonly projectRef: ScopedProjectRef;
   readonly targetEnvironmentId: EnvironmentId | null;
@@ -406,9 +409,9 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
  */
 function projectSubdirectory(repositoryRoot: string | undefined, workspaceRoot: string) {
   if (!repositoryRoot) return "";
-  const prefix = repositoryRoot.replace(/[\\/]+$/, "");
+  const prefix = repositoryRoot.replace(TRAILING_PATH_SEPARATORS, "");
   const rest = workspaceRoot.slice(prefix.length);
-  return workspaceRoot.startsWith(prefix) && /^[\\/]/.test(rest)
+  return workspaceRoot.startsWith(prefix) && PROJECT_SUBDIRECTORY_PATTERN.test(rest)
     ? rest.slice(1).replaceAll("\\", "/")
     : "";
 }

@@ -1,3 +1,7 @@
+const RUN_PATTERN = /^`+/;
+const WHITESPACE = /\s/;
+const CAN_CLOSE_PATTERN = /\w/;
+
 export type RichTextMark = "bold" | "italic" | "strike" | "code";
 
 interface RichTextSpan {
@@ -39,7 +43,7 @@ export function parseInlineMarkdown(text: string): RichTextSpan[] {
       continue;
     }
     if (char === "`") {
-      const run = text.slice(index).match(/^`+/)![0];
+      const run = text.slice(index).match(RUN_PATTERN)![0];
       const close = text.indexOf(run, index + run.length);
       if (
         run.length === 1 &&
@@ -64,8 +68,10 @@ export function parseInlineMarkdown(text: string): RichTextSpan[] {
     while (text[end] === char) end += 1;
     const before = text[index - 1] ?? "";
     const after = text[end] ?? "";
-    const canClose = before !== "" && !/\s/.test(before) && (char !== "_" || !/\w/.test(after));
-    const canOpen = after !== "" && !/\s/.test(after) && (char !== "_" || !/\w/.test(before));
+    const canClose =
+      before !== "" && !WHITESPACE.test(before) && (char !== "_" || !CAN_CLOSE_PATTERN.test(after));
+    const canOpen =
+      after !== "" && !WHITESPACE.test(after) && (char !== "_" || !CAN_CLOSE_PATTERN.test(before));
     while (index < end) {
       const top = stack.at(-1);
       const opensNestedBold =

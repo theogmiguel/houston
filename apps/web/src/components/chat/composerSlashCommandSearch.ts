@@ -8,6 +8,8 @@ import {
 import type { ComposerCommandItem } from "./ComposerCommandMenu";
 import { scoreProviderSkill } from "../../providerSkillSearch";
 
+const LEADING_SLASHES = /^\/+/;
+
 type SlashSearchItem = Extract<
   ComposerCommandItem,
   { type: "slash-command" | "provider-slash-command" | "skill" }
@@ -137,7 +139,7 @@ export function searchSlashCommandItems(
   items: ReadonlyArray<SlashSearchItem>,
   query: string,
 ): SlashSearchItem[] {
-  const normalizedQuery = normalizeSearchQuery(query, { trimLeadingPattern: /^\/+/ });
+  const normalizedQuery = normalizeSearchQuery(query, { trimLeadingPattern: LEADING_SLASHES });
   if (!normalizedQuery) {
     return [...items];
   }

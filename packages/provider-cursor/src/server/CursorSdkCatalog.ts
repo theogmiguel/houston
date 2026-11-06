@@ -12,6 +12,8 @@ import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+const TRAILING_SLASH = /\/$/;
+
 export interface CursorSdkCatalogSnapshot {
   readonly user: SDKUser | undefined;
   readonly models: ReadonlyArray<SDKModel>;
@@ -110,7 +112,7 @@ const makeLiveProbes = Effect.gen(function* () {
   const baseUrl = (yield* Config.String("CURSOR_BACKEND_URL").pipe(
     Config.withDefault("https://api.cursor.com"),
     Effect.orDie,
-  )).replace(/\/$/, "");
+  )).replace(TRAILING_SLASH, "");
   const request = Effect.fn("CursorSdkCatalog.request")(function* (apiKey: string, path: string) {
     const response = yield* client
       .execute(

@@ -1,3 +1,5 @@
+const LINE_BREAK = /\r?\n/;
+
 const HOST_LINE_PATTERN = /^(?:[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?|\[[a-f0-9:.]+\])(?::\d+)?$/iu;
 const LOGGED_IN_PATTERN = /Logged in to .+? as\s+([^\s(]+)/iu;
 
@@ -20,7 +22,7 @@ export function parseGitLabAuthStatusHosts(text: string): ReadonlyArray<GitLabAu
     currentLines = [];
   };
 
-  for (const rawLine of text.split(/\r?\n/)) {
+  for (const rawLine of text.split(LINE_BREAK)) {
     const line = rawLine.trim();
     if (line.length === 0) continue;
 

@@ -1,12 +1,15 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodePath from "node:path";
 
+const NORMALIZED_PATTERN = /^[/\\]+/;
+const BACKSLASH = /\\/g;
+
 export function normalizeAttachmentRelativePath(rawRelativePath: string): string | null {
-  const normalized = NodePath.normalize(rawRelativePath).replace(/^[/\\]+/, "");
+  const normalized = NodePath.normalize(rawRelativePath).replace(NORMALIZED_PATTERN, "");
   if (normalized.length === 0 || normalized.startsWith("..") || normalized.includes("\0")) {
     return null;
   }
-  return normalized.replace(/\\/g, "/");
+  return normalized.replace(BACKSLASH, "/");
 }
 
 export function resolveAttachmentRelativePath(input: {

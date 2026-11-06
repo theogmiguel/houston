@@ -1,5 +1,8 @@
 import { normalizeSearchQuery, scoreQueryMatch } from "@houston-app/shared/searchRanking";
 
+const WHITESPACE_RUN = /\s+/gu;
+const WHITESPACE_RUN_2 = /\s+/u;
+
 type ModelPickerSearchableModel = {
   driverKind: string;
   providerDisplayName: string;
@@ -41,7 +44,7 @@ function scoreModelPickerSearchToken(
 }
 
 function normalizeModelName(name: string): string {
-  return normalizeSearchQuery(name).replace(/\s+/gu, " ");
+  return normalizeSearchQuery(name).replace(WHITESPACE_RUN, " ");
 }
 
 function buildModelPickerSearchText(model: ModelPickerSearchableModel): string {
@@ -57,7 +60,7 @@ export function scoreModelPickerSearch(
   query: string,
 ): number | null {
   const tokens = normalizeSearchQuery(query)
-    .split(/\s+/u)
+    .split(WHITESPACE_RUN_2)
     .filter((token) => token.length > 0);
 
   if (tokens.length === 0) {

@@ -10,6 +10,14 @@ import {
   MIN_PROMPT_FONT_SIZE,
 } from "@houston-app/contracts";
 
+const QUOTE_FONT_FAMILY_NAME_PATTERN = /^(['"]).*\1$/;
+const QUOTE_FONT_FAMILY_NAME_PATTERN_2 = /^[a-zA-Z][a-zA-Z0-9-]*$/;
+const IS_FONT_FAMILY_AVAILABLE_PATTERN = /^(system-ui|sans-serif|serif|monospace|ui-monospace)$/i;
+const RESOLVE_GENERIC_FAMILY_LABEL_PATTERN = /mac|iphone|ipad|ipod/i;
+const FAMILY_PATTERN = /^(['"])(.*)\1$/;
+const RESOLVE_DEFAULT_FAMILY_LABEL_PATTERN =
+  /^(system-ui|sans-serif|serif|monospace|ui-monospace|-apple-system|BlinkMacSystemFont)$/i;
+
 export const DEFAULT_SANS_FONT_STACK =
   '"Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
 
@@ -40,8 +48,8 @@ export function resolveTerminalFontSizePreference(input: {
 function quoteFontFamilyName(name: string): string {
   const bare = name.trim();
   if (bare.length === 0) return "";
-  if (/^(['"]).*\1$/.test(bare)) return bare;
-  if (/^[a-zA-Z][a-zA-Z0-9-]*$/.test(bare)) return bare;
+  if (QUOTE_FONT_FAMILY_NAME_PATTERN.test(bare)) return bare;
+  if (QUOTE_FONT_FAMILY_NAME_PATTERN_2.test(bare)) return bare;
   return `"${bare.replaceAll('"', "")}"`;
 }
 
@@ -142,7 +150,7 @@ function probeWidth(fontList: string): number | null {
 export function isFontFamilyAvailable(family: string): boolean {
   const families = cssFontFamilies(family);
   if (families === null) return false;
-  if (/^(system-ui|sans-serif|serif|monospace|ui-monospace)$/i.test(families)) return true;
+  if (IS_FONT_FAMILY_AVAILABLE_PATTERN.test(families)) return true;
   try {
     for (const generic of ["monospace", "serif", "sans-serif"]) {
       const baseline = probeWidth(generic);
@@ -255,7 +263,7 @@ function resolveGenericFamilyLabel(generic: string): string | null {
     }
   }
   // Unnameable Apple faces need -apple-system metrics to distinguish the UI face from SF Mono.
-  if (/mac|iphone|ipad|ipod/i.test(navigator.platform)) {
+  if (RESOLVE_GENERIC_FAMILY_LABEL_PATTERN.test(navigator.platform)) {
     const systemWidth = measureDomProbeWidth("-apple-system");
     if (systemWidth !== null && widthsMatch(genericWidth, systemWidth)) return "SF Pro";
     return monoLike ? "SF Mono" : "SF Pro";
@@ -273,15 +281,11 @@ const PRODUCT_FONT_LABELS: Readonly<Record<string, string>> = {
 
 export function resolveDefaultFamilyLabel(stack: string): string | null {
   for (const raw of stack.split(",")) {
-    const family = raw.trim().replace(/^(['"])(.*)\1$/, "$2");
+    const family = raw.trim().replace(FAMILY_PATTERN, "$2");
     if (family.length === 0) continue;
     const productLabel = PRODUCT_FONT_LABELS[family];
     if (productLabel !== undefined) return productLabel;
-    if (
-      /^(system-ui|sans-serif|serif|monospace|ui-monospace|-apple-system|BlinkMacSystemFont)$/i.test(
-        family,
-      )
-    ) {
+    if (RESOLVE_DEFAULT_FAMILY_LABEL_PATTERN.test(family)) {
       const resolved = resolveGenericFamilyLabel(family);
       if (resolved !== null) return resolved;
       continue;

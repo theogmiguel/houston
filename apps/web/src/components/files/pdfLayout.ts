@@ -1,3 +1,8 @@
+const WHITESPACE = /\s/;
+const PDF_FIND_TEXT_PATTERN = /\p{L}/u;
+const WHITESPACE_RUN = /\s+/g;
+const PDF_FIND_INCLUDES_PATTERN = /(\p{L})-\n(?=\p{L})/gu;
+
 const PDF_PAGE_GAP = 16;
 export const PDF_MIN_ZOOM = 0.25;
 export const PDF_MAX_ZOOM = 3;
@@ -70,7 +75,7 @@ function pdfFindText(runs: readonly string[]) {
   const owner: number[] = [];
   for (let index = 0; index < chars.length; index++) {
     const { char, run } = chars[index]!;
-    if (/\s/.test(char)) {
+    if (WHITESPACE.test(char)) {
       if (!text.endsWith(" ")) {
         text += " ";
         last = " ";
@@ -79,8 +84,8 @@ function pdfFindText(runs: readonly string[]) {
     } else if (
       char === "-" &&
       chars[index + 1]?.char === "\n" &&
-      /\p{L}/u.test(last) &&
-      /\p{L}/u.test(chars[index + 2]?.char ?? "")
+      PDF_FIND_TEXT_PATTERN.test(last) &&
+      PDF_FIND_TEXT_PATTERN.test(chars[index + 2]?.char ?? "")
     ) {
       index++;
     } else {
@@ -95,19 +100,19 @@ function pdfFindText(runs: readonly string[]) {
 /** Whether a page's text holds the query, under the same rules as `pdfFindMatchRuns`, without
  * mapping characters back to runs: the page scan checks every page on each query. */
 export function pdfFindIncludes(text: string, query: string) {
-  const needle = query.toLowerCase().replace(/\s+/g, " ");
+  const needle = query.toLowerCase().replace(WHITESPACE_RUN, " ");
   if (!needle.trim()) return false;
   return text
     .toLowerCase()
-    .replace(/(\p{L})-\n(?=\p{L})/gu, "$1")
-    .replace(/\s+/g, " ")
+    .replace(PDF_FIND_INCLUDES_PATTERN, "$1")
+    .replace(WHITESPACE_RUN, " ")
     .includes(needle);
 }
 
 /** Which text runs hold part of a case-insensitive match, when pdf.js splits words across spans. */
 export function pdfFindMatchRuns(runs: readonly string[], query: string) {
   const { text, owner } = pdfFindText(runs);
-  const needle = query.toLowerCase().replace(/\s+/g, " ");
+  const needle = query.toLowerCase().replace(WHITESPACE_RUN, " ");
   const hits = runs.map(() => false);
   if (!needle.trim()) return hits;
   for (

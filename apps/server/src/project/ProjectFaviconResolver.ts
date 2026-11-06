@@ -14,6 +14,8 @@ import * as Schema from "effect/Schema";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as HoustonProjectFileLoader from "./HoustonProjectFileLoader.ts";
 
+const CLEAN_PATTERN = /^\//;
+
 const FAVICON_CACHE_CAPACITY = 512;
 const FAVICON_POSITIVE_CACHE_TTL = Duration.minutes(10);
 const FAVICON_NEGATIVE_CACHE_TTL = Duration.minutes(1);
@@ -143,7 +145,7 @@ export const make = Effect.gen(function* () {
   const projectFileLoader = yield* HoustonProjectFileLoader.HoustonProjectFileLoader;
 
   const resolveIconHref = (href: string): ReadonlyArray<string> => {
-    const clean = href.replace(/^\//, "");
+    const clean = href.replace(CLEAN_PATTERN, "");
     return [path.join("public", clean), clean];
   };
 

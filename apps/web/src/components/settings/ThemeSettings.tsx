@@ -54,6 +54,8 @@ import {
 } from "./ThemePreviewCircles";
 import { ThemeWireframe } from "./ThemeWireframe";
 
+const WHITESPACE_RUN = /\s+/;
+
 const MAINTAINER_THEMES: ReadonlyArray<ThemeDefinition> = [
   HOUSTON_CHAT_THEME,
   GROVE_THEME,
@@ -84,7 +86,7 @@ export function themeLibraryCount(
 
 function collectionVariantLabels(themes: ReadonlyArray<ThemeDefinition>): ReadonlyArray<string> {
   if (themes.length === 0) return [];
-  const words = themes.map((theme) => theme.label.trim().split(/\s+/));
+  const words = themes.map((theme) => theme.label.trim().split(WHITESPACE_RUN));
   const firstWords = words[0]!;
   const sharedWordCount = firstWords.findIndex((word, index) =>
     words.some((labelWords) => labelWords[index]?.toLocaleLowerCase() !== word.toLocaleLowerCase()),

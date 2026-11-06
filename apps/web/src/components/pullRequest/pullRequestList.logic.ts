@@ -22,6 +22,12 @@ import type {
 import { toSortableTimestamp } from "@houston-app/client-runtime/state/thread-sort";
 import type { PullRequestListSort } from "./pullRequestListPreferences";
 
+const LEADING_HASH = /^#/;
+const PULL_REQUEST_LABEL_COLOR_PATTERN = /^[0-9a-fA-F]{6}$/;
+const LEADING_HASH_2 = /^#/u;
+const DIGITS_ONLY = /^\d+$/u;
+const WHITESPACE_RUN = /\s+/u;
+
 export interface EnvironmentPullRequestEntry extends PullRequestListEntry {
   readonly environmentId: EnvironmentId;
 }
@@ -71,8 +77,8 @@ function normalize(value: string | null | undefined): string | null {
 }
 
 export function pullRequestLabelColor(color: string | null): string | null {
-  const hex = color?.trim().replace(/^#/, "") ?? "";
-  return /^[0-9a-fA-F]{6}$/.test(hex) ? `#${hex}` : null;
+  const hex = color?.trim().replace(LEADING_HASH, "") ?? "";
+  return PULL_REQUEST_LABEL_COLOR_PATTERN.test(hex) ? `#${hex}` : null;
 }
 
 export function collectPullRequestListFacets(
@@ -643,11 +649,11 @@ export function resolveSelectedEnvironmentId<Id extends string>(
 export function scorePullRequestMatch(entry: PullRequestListEntry, query: string): number {
   const needle = query.trim().toLowerCase();
   if (needle.length === 0) return 0;
-  const number = needle.replace(/^#/u, "");
-  if (/^\d+$/u.test(number)) return String(entry.number) === number ? 100 : 0;
+  const number = needle.replace(LEADING_HASH_2, "");
+  if (DIGITS_ONLY.test(number)) return String(entry.number) === number ? 100 : 0;
 
   const title = entry.title.toLowerCase();
-  const terms = needle.split(/\s+/u).filter((term) => term.length > 0);
+  const terms = needle.split(WHITESPACE_RUN).filter((term) => term.length > 0);
   if (title === needle) return 90;
   if (title.includes(needle)) return 80;
   if (terms.length > 1 && terms.every((term) => title.includes(term))) return 70;

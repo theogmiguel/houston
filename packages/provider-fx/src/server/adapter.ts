@@ -42,6 +42,9 @@ import {
 } from "@houston-app/provider-acp/server/adapter";
 import type { AcpToolCallState } from "@houston-app/provider-acp/server/runtimeModel";
 
+const CLIPPED_PATTERN = /^\{"ok":(true|false),"result":"((?:[^"\\]|\\.)*)/;
+const PREFIX_PATTERN = /\\u[0-9a-fA-F]{0,3}$/;
+
 export { FX_DRIVER_KIND } from "./acpSupport.ts";
 
 const DEFAULT_FX_SETTINGS = Schema.decodeSync(FxSettings)({});
@@ -107,9 +110,9 @@ function fxSubagentOutcome(
 ): { readonly ok: boolean; readonly result: string | null } | undefined {
   const whole = decodeFxSubagentResult(text);
   if (Option.isSome(whole)) return whole.value;
-  const clipped = /^\{"ok":(true|false),"result":"((?:[^"\\]|\\.)*)/.exec(text);
+  const clipped = CLIPPED_PATTERN.exec(text);
   if (clipped === null) return undefined;
-  const prefix = decodeJsonString(`"${(clipped[2] ?? "").replace(/\\u[0-9a-fA-F]{0,3}$/, "")}"`);
+  const prefix = decodeJsonString(`"${(clipped[2] ?? "").replace(PREFIX_PATTERN, "")}"`);
   const cut = text[clipped[0].length] !== '"';
   return {
     ok: clipped[1] === "true",

@@ -17,6 +17,8 @@ import {
 import * as ServerConfig from "../config.ts";
 import * as DocumentText from "../provider/DocumentText.ts";
 
+const NAME_PATTERN = /\.svg$/i;
+
 export class AttachmentClaimError extends Schema.TaggedError<AttachmentClaimError>()(
   "AttachmentClaimError",
   {
@@ -122,7 +124,7 @@ export const claimPendingAttachments = Effect.fn("AttachmentClaims.claimPendingA
             name:
               attachment.type === "file" &&
               isSvgAttachment(attachment) &&
-              !/\.svg$/i.test(attachment.name)
+              !NAME_PATTERN.test(attachment.name)
                 ? `${attachment.name}.svg`
                 : attachment.name,
             mimeType: attachment.mimeType.toLowerCase(),

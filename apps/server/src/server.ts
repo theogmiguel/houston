@@ -202,6 +202,8 @@ import {
 } from "@houston-app/tailscale";
 import * as ServerActivation from "./serverActivation.ts";
 
+const EDGE_BRACKETS = /^\[|\]$/gu;
+
 // Escaped MCP handoff provenance can exceed find-my-way's 100-character segment default.
 const HTTP_ROUTER_CONFIG = {
   maxParamLength: 512,
@@ -870,7 +872,7 @@ const layerMakeServer = Layer.unwrap(
               }).pipe(
                 Effect.as({
                   localPort,
-                  localHost: localHost.replace(/^\[|\]$/gu, ""),
+                  localHost: localHost.replace(EDGE_BRACKETS, ""),
                   servePort: config.tailscaleServePort,
                 }),
                 Effect.tap(() =>

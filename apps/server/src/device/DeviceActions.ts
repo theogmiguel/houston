@@ -16,6 +16,10 @@ import * as Schema from "effect/Schema";
 
 import type { DeviceHostReady } from "./DeviceHost.ts";
 
+const SIZE_PATTERN = /size: (\d+)x(\d+)/g;
+const ANDROID_SHELL_WORD_PATTERN = /^[\w@%+=:,./-]+$/;
+const FOCUSED_PATTERN = /m(?:CurrentFocus|FocusedApp)=\w+\{[^ ]+ u\d+ ([^/ ]+)\//;
+
 type Runner = DeviceHostReady["run"];
 
 const decodeAxStatus = Schema.decodeUnknownEffect(
@@ -174,7 +178,7 @@ const ANDROID_LANDSCAPE_NATIVE_ROTATION: Record<DeviceOrientation, DeviceOrienta
 // `wm size` reports the natural-orientation size; an `Override size:` line is what the window
 // manager uses and is printed after `Physical size:`.
 const isLandscapeNative = (wmSize: string | undefined) => {
-  const size = wmSize ? [...wmSize.matchAll(/size: (\d+)x(\d+)/g)].at(-1) : undefined;
+  const size = wmSize ? [...wmSize.matchAll(SIZE_PATTERN)].at(-1) : undefined;
   return size !== undefined && Number(size[1]) > Number(size[2]);
 };
 
@@ -343,7 +347,7 @@ const adb = (run: Runner, serial: string, args: ReadonlyArray<string>, operation
 
 // adb shell joins arguments without escaping before the device's shell parses them.
 const androidShellWord = (value: string) =>
-  /^[\w@%+=:,./-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`;
+  ANDROID_SHELL_WORD_PATTERN.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`;
 
 const runAndroid = Effect.fn("DeviceActions.runAndroid")(function* (
   run: Runner,
@@ -554,7 +558,7 @@ const readAndroid = Effect.fn("DeviceActions.readAndroid")(function* (run: Runne
     { concurrency: 5 },
   );
   const scale = fontScale && fontScale !== "null" ? Number(fontScale) : Number.NaN;
-  const focused = focus?.match(/m(?:CurrentFocus|FocusedApp)=\w+\{[^ ]+ u\d+ ([^/ ]+)\//);
+  const focused = focus?.match(FOCUSED_PATTERN);
   const settings: DeviceSettings = {
     ...(night?.includes("yes")
       ? { appearance: "dark" }

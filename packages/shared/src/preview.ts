@@ -3,6 +3,14 @@ import * as Schema from "effect/Schema";
 
 import { isLocalLoopbackHost } from "./hostClassification.ts";
 
+const PDF_EXTENSION = /\.pdf$/i;
+const PREVIEW_URL_PROTOCOL_PATTERN = /^([A-Za-z][A-Za-z\d+.-]*):/;
+const WHITESPACE = /\s/;
+const AUTHORITY_PATTERN = /[/?#]/;
+const HOST_PATTERN = /^[^@]*@/;
+const HOST_PATTERN_2 = /:\d+$/;
+const RESOLVE_ADDRESS_BAR_INPUT_PATTERN = /^[^.]+(?:\.[^.]+)+\.?$/;
+
 const TAB_ID_PREFIX = "tab_";
 let nextPreviewTabSequence = 0;
 
@@ -14,7 +22,7 @@ export function previewPdfAssetUrl(rawUrl: string, httpBaseUrl: string | null): 
     if (
       (url.protocol !== "http:" && url.protocol !== "https:") ||
       !url.pathname.startsWith("/api/assets/") ||
-      !/\.pdf$/i.test(url.pathname)
+      !PDF_EXTENSION.test(url.pathname)
     ) {
       return null;
     }
@@ -73,7 +81,7 @@ export class PreviewUrlNormalizationError extends Schema.TaggedError<PreviewUrlN
 export const isPreviewUrlNormalizationError = Schema.is(PreviewUrlNormalizationError);
 
 function previewUrlProtocol(rawUrl: string): string | undefined {
-  return /^([A-Za-z][A-Za-z\d+.-]*):/.exec(rawUrl)?.[1]?.toLowerCase().concat(":");
+  return PREVIEW_URL_PROTOCOL_PATTERN.exec(rawUrl)?.[1]?.toLowerCase().concat(":");
 }
 
 const ADDRESS_HOST_PATTERN = /^(?:localhost|\d{1,3}(?:\.\d{1,3}){3}|\[[\da-f:.]+\])$/i;
@@ -152,7 +160,7 @@ export function resolveAddressBarInput(
   const trimmed = rawInput.trim();
   if (URL_SCHEME_WITH_AUTHORITY_PATTERN.test(trimmed) || trimmed.length === 0)
     return normalizePreviewUrl(trimmed);
-  if (!/\s/.test(trimmed)) {
+  if (!WHITESPACE.test(trimmed)) {
     // Reject explicit schemes before URL normalization can misread mailto as bare-host credentials.
     const protocol = previewUrlProtocol(trimmed);
     if (
@@ -168,10 +176,14 @@ export function resolveAddressBarInput(
       }
       return normalizePreviewUrl(trimmed);
     }
-    const authority = trimmed.split(/[/?#]/, 1)[0] ?? "";
-    const host = authority.replace(/^[^@]*@/, "").replace(/:\d+$/, "");
-    const hasPort = host.length < authority.replace(/^[^@]*@/, "").length;
-    if (hasPort || ADDRESS_HOST_PATTERN.test(host) || /^[^.]+(?:\.[^.]+)+\.?$/.test(host)) {
+    const authority = trimmed.split(AUTHORITY_PATTERN, 1)[0] ?? "";
+    const host = authority.replace(HOST_PATTERN, "").replace(HOST_PATTERN_2, "");
+    const hasPort = host.length < authority.replace(HOST_PATTERN, "").length;
+    if (
+      hasPort ||
+      ADDRESS_HOST_PATTERN.test(host) ||
+      RESOLVE_ADDRESS_BAR_INPUT_PATTERN.test(host)
+    ) {
       try {
         return normalizePreviewUrl(trimmed);
       } catch {}

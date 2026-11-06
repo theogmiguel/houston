@@ -11,6 +11,9 @@ import * as GitHubAppSignIn from "./GitHubAppSignIn.ts";
 import * as GitHubRequestPolicy from "./GitHubRequestPolicy.ts";
 import * as GitHubRest from "./GitHubRest.ts";
 
+const OWNER_AND_NAME_PATTERN = /\.git\/?$/;
+const OWNER_AND_NAME_PATTERN_2 = /[/:]/;
+
 const Installations = Schema.fromJsonString(
   Schema.Struct({
     installations: Schema.Array(
@@ -74,8 +77,8 @@ function ownerAndName(repository: string): string {
   return repository
     .trim()
     .toLowerCase()
-    .replace(/\.git\/?$/, "")
-    .split(/[/:]/)
+    .replace(OWNER_AND_NAME_PATTERN, "")
+    .split(OWNER_AND_NAME_PATTERN_2)
     .filter((segment) => segment.length > 0)
     .slice(-2)
     .join("/");

@@ -6,6 +6,9 @@ import type { AcpAdapterV2Flavor } from "@houston-app/provider-acp/server/adapte
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 
+const EXTRACT_DROID_ELICITATION_FORM_PATTERN = /^question_[1-9]\d*$/;
+const SELECTED_OPTION_PATTERN = /^\n\nAttached (?:image|file) "(?:\\.|[^"\\\r\n])*": "/;
+
 const isDroidForm = Schema.is(
   Schema.Struct({
     properties: Schema.Record(Schema.String, Schema.Unknown),
@@ -36,7 +39,7 @@ export const extractDroidElicitationForm: NonNullable<
   const { properties, required } = request.requestedSchema;
   const questions: Array<OrchestrationV2UserInputQuestion> = [];
   for (const [id, field] of Object.entries(properties)) {
-    if (!/^question_[1-9]\d*$/.test(id)) continue;
+    if (!EXTRACT_DROID_ELICITATION_FORM_PATTERN.test(id)) continue;
     if (!isDroidQuestion(field) || !isDroidCompanion(properties[`${id}_other`])) return undefined;
     const options = field.oneOf
       .filter((option) => option.const !== "other")
@@ -71,9 +74,7 @@ export const extractDroidElicitationForm: NonNullable<
           const selectedOption = question.options.find(
             (option) =>
               option.value === answer.slice(0, attachmentStart) &&
-              /^\n\nAttached (?:image|file) "(?:\\.|[^"\\\r\n])*": "/.test(
-                answer.slice(attachmentStart),
-              ),
+              SELECTED_OPTION_PATTERN.test(answer.slice(attachmentStart)),
           );
           const text = selectedOption
             ? `${selectedOption.label}${answer.slice(attachmentStart)}`

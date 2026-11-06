@@ -10,6 +10,8 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 import type { ConnectionCatalogEntry } from "./catalog.ts";
 import { ConnectionBlockedError, type ConnectionAttemptError } from "./model.ts";
 
+const TRAILING_SLASHES = /\/+$/;
+
 export const PullRequestRoutingPermission = Schema.Literals(["off", "read", "read-write"]);
 export type PullRequestRoutingPermission = typeof PullRequestRoutingPermission.Type;
 export const StoredPullRequestRoutingPermission = Schema.Struct({
@@ -66,7 +68,7 @@ function routeConnectionKey(
     return JSON.stringify([
       target._tag,
       target.environmentId,
-      ...urls.map((url) => url.href.replace(/\/+$/, "")),
+      ...urls.map((url) => url.href.replace(TRAILING_SLASHES, "")),
     ]);
   } catch {
     return null;

@@ -19,6 +19,8 @@ import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
 import { StandalonePage, StandalonePageHeader } from "../ui/standalone-page";
 
+const ON_PHONE_PATTERN = /android|iphone|ipad/i;
+
 const OPENER_STORAGE_KEY = "houston:prompt-link-opener";
 const Opener = Schema.NullOr(Schema.Literals(["app", "browser"]));
 
@@ -101,7 +103,7 @@ function HostedPromptLinkLanding({
   const summary = summarize(appPath);
   const [remember, setRemember] = useState(false);
   const deepLink = promptLinkDeepLink(appPath);
-  const onPhone = /android|iphone|ipad/i.test(navigator.userAgent);
+  const onPhone = ON_PHONE_PATTERN.test(navigator.userAgent);
   const autoOpenedRef = useRef(false);
 
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- redirects window.location to the app deep link once when the user chose to always open in the app

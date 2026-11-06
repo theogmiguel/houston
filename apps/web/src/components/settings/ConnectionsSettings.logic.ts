@@ -25,6 +25,15 @@ import {
   resolveDesktopUpdateButtonAction,
 } from "../desktopUpdate.logic";
 
+const TRAILING_SLASH = /\/$/u;
+const BRACKETED_HOST_MATCH_PATTERN = /^\[([^\]]+)\](?::(\d+))?$/u;
+const DIGITS_ONLY = /^\d+$/u;
+const URL_LIKE_INPUT_PATTERN = /^[a-zA-Z][a-zA-Z\d+.-]*:\/\//u;
+const WITHOUT_IPC_PREFIX_PATTERN =
+  /^Error invoking remote method 'desktop:ensure-ssh-environment':\s*/u;
+const WITHOUT_TAGGED_ERROR_PREFIX_PATTERN = /^Ssh[A-Za-z]+Error:\s*/u;
+const ENDPOINT_DEFAULT_PREFERENCE_KEY_PATTERN = /:$/u;
+
 /** Keep terminal:read with terminal:operate to avoid creating unseen shells on every script run. */
 export function togglePairingScopeSelection(
   current: ReadonlyArray<AuthGrantScope>,
@@ -85,7 +94,7 @@ export function resolveTailscaleServeBaseUrl(
   try {
     const url = new URL(endpoint.httpBaseUrl);
     url.port = String(port);
-    return url.toString().replace(/\/$/u, "");
+    return url.toString().replace(TRAILING_SLASH, "");
   } catch {
     return endpoint.httpBaseUrl;
   }
@@ -202,7 +211,7 @@ export function parseManualDesktopSshTarget(input: {
     }
   }
 
-  const bracketedHostMatch = /^\[([^\]]+)\](?::(\d+))?$/u.exec(hostname);
+  const bracketedHostMatch = BRACKETED_HOST_MATCH_PATTERN.exec(hostname);
   if (bracketedHostMatch) {
     hostname = bracketedHostMatch[1]!.trim();
     if (bracketedHostMatch[2]) {
@@ -210,7 +219,7 @@ export function parseManualDesktopSshTarget(input: {
     }
   } else {
     const colonSegments = hostname.split(":");
-    if (colonSegments.length === 2 && /^\d+$/u.test(colonSegments[1] ?? "")) {
+    if (colonSegments.length === 2 && DIGITS_ONLY.test(colonSegments[1] ?? "")) {
       hostname = colonSegments[0]!.trim();
       port = Number.parseInt(colonSegments[1]!, 10);
     }
@@ -245,7 +254,7 @@ export function parsePairingUrlFields(
 
   try {
     const urlLikeInput =
-      /^[a-zA-Z][a-zA-Z\d+.-]*:\/\//u.test(trimmed) || trimmed.startsWith("//")
+      URL_LIKE_INPUT_PATTERN.test(trimmed) || trimmed.startsWith("//")
         ? trimmed
         : `https://${trimmed}`;
     const url = new URL(urlLikeInput, window.location.origin);
@@ -292,11 +301,11 @@ export function parseRemotePairingFields(input: {
 export function formatDesktopSshConnectionError(error: unknown): string {
   const fallback = "Failed to connect SSH host.";
   const rawMessage = error instanceof Error ? error.message : fallback;
-  const withoutIpcPrefix = rawMessage.replace(
-    /^Error invoking remote method 'desktop:ensure-ssh-environment':\s*/u,
+  const withoutIpcPrefix = rawMessage.replace(WITHOUT_IPC_PREFIX_PATTERN, "");
+  const withoutTaggedErrorPrefix = withoutIpcPrefix.replace(
+    WITHOUT_TAGGED_ERROR_PREFIX_PATTERN,
     "",
   );
-  const withoutTaggedErrorPrefix = withoutIpcPrefix.replace(/^Ssh[A-Za-z]+Error:\s*/u, "");
   return withoutTaggedErrorPrefix.trim() || fallback;
 }
 
@@ -396,7 +405,10 @@ export function endpointDefaultPreferenceKey(endpoint: AdvertisedEndpoint): stri
 
   let scheme = "unknown";
   try {
-    scheme = new URL(endpoint.httpBaseUrl).protocol.replace(/:$/u, "");
+    scheme = new URL(endpoint.httpBaseUrl).protocol.replace(
+      ENDPOINT_DEFAULT_PREFERENCE_KEY_PATTERN,
+      "",
+    );
   } catch {}
 
   return `${endpoint.provider.id}:${endpoint.reachability}:${scheme}:${endpoint.label}`;

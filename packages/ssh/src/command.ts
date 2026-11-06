@@ -14,6 +14,11 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import { buildSshChildEnvironment, type SshAuthOptions } from "./auth.ts";
 import { SshCommandError, SshInvalidTargetError } from "./errors.ts";
 
+const LINE_BREAK = /\r?\n/u;
+const WHITESPACE_RUN = /\s+/u;
+const REDACTED_PATTERN =
+  /("(?:access_token|bearerToken|credential|pairingToken|token)"\s*:\s*")[^"]+(")/giu;
+
 const DEFAULT_SSH_COMMAND_TIMEOUT_MS = 60_000;
 const MAX_SSH_ERROR_OUTPUT_LENGTH = 4_000;
 
@@ -45,12 +50,12 @@ export interface RunSshCommandOptions extends SshAuthOptions {
 
 export function parseSshResolveOutput(alias: string, stdout: string): DesktopSshEnvironmentTarget {
   const values = new Map<string, string>();
-  for (const line of stdout.split(/\r?\n/u)) {
+  for (const line of stdout.split(LINE_BREAK)) {
     const trimmed = line.trim();
     if (trimmed.length === 0) {
       continue;
     }
-    const [key, ...rest] = trimmed.split(/\s+/u);
+    const [key, ...rest] = trimmed.split(WHITESPACE_RUN);
     if (!key || rest.length === 0 || values.has(key)) {
       continue;
     }
@@ -121,7 +126,7 @@ export function getLastNonEmptyOutputLine(stdout: string): string | null {
   return (
     stdout
       .trim()
-      .split(/\r?\n/u)
+      .split(LINE_BREAK)
       .map((entry) => entry.trim())
       .findLast((entry) => entry.length > 0) ?? null
   );
@@ -137,10 +142,7 @@ const collectProcessOutput = <E>(stream: Stream.Stream<Uint8Array, E>): Effect.E
   );
 
 function redactSshErrorOutput(output: string, keepTail = false): string {
-  const redacted = output.replace(
-    /("(?:access_token|bearerToken|credential|pairingToken|token)"\s*:\s*")[^"]+(")/giu,
-    "$1[redacted]$2",
-  );
+  const redacted = output.replace(REDACTED_PATTERN, "$1[redacted]$2");
   if (redacted.length <= MAX_SSH_ERROR_OUTPUT_LENGTH) return redacted;
   return keepTail
     ? `[truncated]\n${redacted.slice(-MAX_SSH_ERROR_OUTPUT_LENGTH)}`

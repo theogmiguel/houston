@@ -32,6 +32,13 @@ import {
 import { appAtomRegistry, subscribeAtomChanges } from "./rpc/atomRegistry";
 import { primaryServerEnvironmentThemesAtom } from "./state/server";
 
+const IS_THEME_ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,47})$/;
+const PARSE_THEME_COLLECTION_PATTERN = /^[a-z0-9][a-z0-9.:-]{0,127}$/i;
+const ALPHA_PATTERN = /\/\s*none\s*\)$/i;
+const FORMAT_THEME_COLOR_NUMBER_PATTERN = /(?:\.0+|(?:(\.[0-9]*?)0+))$/;
+const NON_ALPHANUMERIC_RUN = /[^a-z0-9]+/g;
+const EDGE_DASHES = /^-+|-+$/g;
+
 export { EMBER_THEME, GROVE_THEME, IRIS_THEME, OCEAN_THEME, BASE_CHAT_THEME, THEME_COLOR_ROLES };
 export type { ThemeAppearance, ThemeColorRole, ThemeColors, ThemeDefinition, ThemeVariants };
 
@@ -112,7 +119,7 @@ export function isThemeColor(value: unknown): value is string {
 }
 
 function isThemeId(value: unknown): value is string {
-  return typeof value === "string" && /^[a-z0-9](?:[a-z0-9-]{0,47})$/.test(value);
+  return typeof value === "string" && IS_THEME_ID_PATTERN.test(value);
 }
 
 function isThemeLabel(value: unknown): value is string {
@@ -122,7 +129,7 @@ function isThemeLabel(value: unknown): value is string {
 function parseThemeCollection(value: unknown): ThemeCollection | undefined {
   return isRecord(value) &&
     typeof value.id === "string" &&
-    /^[a-z0-9][a-z0-9.:-]{0,127}$/i.test(value.id) &&
+    PARSE_THEME_COLLECTION_PATTERN.test(value.id) &&
     isThemeLabel(value.label)
     ? { id: value.id, label: value.label.trim() }
     : undefined;
@@ -466,7 +473,7 @@ function parseThemeColor(value: unknown): ParsedThemeColor | null {
   const chroma = color.c ?? 0;
   const hue = color.h ?? 0;
   // Missing CSS components are zero; Culori omits none alpha, so distinguish it from absent alpha.
-  const alpha = /\/\s*none\s*\)$/i.test(input) ? 0 : (color.alpha ?? 1);
+  const alpha = ALPHA_PATTERN.test(input) ? 0 : (color.alpha ?? 1);
   if (![lightness, chroma, hue, alpha].every(Number.isFinite)) return null;
   return {
     color: {
@@ -480,7 +487,7 @@ function parseThemeColor(value: unknown): ParsedThemeColor | null {
 
 function formatThemeColorNumber(value: number, precision: number): string {
   const rounded = Math.abs(value) < 10 ** -precision / 2 ? 0 : value;
-  return rounded.toFixed(precision).replace(/(?:\.0+|(?:(\.[0-9]*?)0+))$/, "$1");
+  return rounded.toFixed(precision).replace(FORMAT_THEME_COLOR_NUMBER_PATTERN, "$1");
 }
 
 function formatOklchThemeColor(color: ThemeOklch, alpha = 1): string {
@@ -1248,10 +1255,7 @@ export function getThemePreferenceMode(theme: ThemePreference): ThemeAppearance 
 
 export function themeIdFromName(name: string): string {
   const label = name.trim().toLowerCase();
-  const normalized = label
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 48);
+  const normalized = label.replace(NON_ALPHANUMERIC_RUN, "-").replace(EDGE_DASHES, "").slice(0, 48);
   if (normalized || !label) return normalized || "custom-theme";
 
   // Names without ASCII letters or digits still need independent, stable ids.

@@ -41,6 +41,8 @@ import {
 import { commandDisplayText } from "../work-log/commandLabel.ts";
 import { formatSubagentDisplayTitle } from "./subagentDisplay.ts";
 
+const TRAILING_DOT_ZERO = /\.0$/;
+
 const ACTIVITY_RUN_STATUSES = new Set(["preparing", "starting", "running", "waiting"]);
 const INTERRUPTIBLE_RUN_STATUSES = new Set(["preparing", "starting", "running"]);
 
@@ -474,7 +476,7 @@ function formatGoalTokens(tokens: number): string {
   if (tokens < 1_000) return `${tokens}`;
   const thousands = Math.round(tokens / 1_000);
   if (thousands < 1_000) return `${thousands}k`;
-  return `${(tokens / 1_000_000).toFixed(1).replace(/\.0$/, "")}m`;
+  return `${(tokens / 1_000_000).toFixed(1).replace(TRAILING_DOT_ZERO, "")}m`;
 }
 
 export function presentProviderGoal(

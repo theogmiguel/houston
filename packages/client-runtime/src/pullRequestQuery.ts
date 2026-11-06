@@ -1,5 +1,8 @@
 import type { PullRequestListFilters } from "@houston-app/contracts";
 
+const SPLIT_QUALIFIER_LIST_PATTERN = /(?:[^,"]|"[^"]*")+/g;
+const QUALIFIER_PATTERN = /^(-?)([A-Za-z][A-Za-z0-9_-]*):(.*)$/;
+
 const REVIEW_VALUES: Record<string, PullRequestListFilters["review"]> = {
   approved: "approved",
   changes_requested: "changes-requested",
@@ -24,7 +27,7 @@ function qualifierValue(raw: string): string {
 }
 
 function splitQualifierList(raw: string): string[] {
-  return (raw.match(/(?:[^,"]|"[^"]*")+/g) ?? [])
+  return (raw.match(SPLIT_QUALIFIER_LIST_PATTERN) ?? [])
     .map((part) => qualifierValue(part))
     .filter((part) => part.length > 0);
 }
@@ -48,7 +51,7 @@ export function parsePullRequestQuery(raw: string): {
   let review: PullRequestListFilters["review"];
   let checks: PullRequestListFilters["checks"];
   for (const [token] of raw.matchAll(QUERY_TOKEN)) {
-    const qualifier = /^(-?)([A-Za-z][A-Za-z0-9_-]*):(.*)$/.exec(token);
+    const qualifier = QUALIFIER_PATTERN.exec(token);
     const value = qualifier === null ? "" : qualifierValue(qualifier[3] ?? "");
     const negated = qualifier?.[1] === "-";
     switch (value.length === 0 ? "" : (qualifier?.[2]?.toLowerCase() ?? "")) {

@@ -37,6 +37,13 @@ import { readSourceControlHostSettings } from "@houston-app/source-control-core/
 import * as BitbucketClient from "../shared/definition.ts";
 import * as SourceControlRateLimit from "@houston-app/source-control-core/server/SourceControlRateLimit";
 
+const LEADING_HASH = /^#/;
+const URL_MATCH_PATTERN = /(?:pull-requests|pullrequests|pull-request|pull|pr)\/(\d+)(?:\D.*)?$/i;
+const NORMALIZED_PATTERN = /\.git$/u;
+const SCP_MATCH_PATTERN = /^[a-zA-Z0-9._-]+@[^:/]+:(.+)$/;
+const TRAILING_SLASHES = /\/+$/u;
+const HTTP_SCHEME = /^https?:\/\//u;
+
 const DEFAULT_API_BASE_URL = "https://api.bitbucket.org/2.0";
 const DEFAULT_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 const MAX_REDIRECTS = 3;
@@ -398,10 +405,8 @@ function nonEmpty(value: string | undefined): Option.Option<string> {
 }
 
 function normalizeChangeRequestId(reference: string): string {
-  const trimmed = reference.trim().replace(/^#/, "");
-  const urlMatch = /(?:pull-requests|pullrequests|pull-request|pull|pr)\/(\d+)(?:\D.*)?$/i.exec(
-    trimmed,
-  );
+  const trimmed = reference.trim().replace(LEADING_HASH, "");
+  const urlMatch = URL_MATCH_PATTERN.exec(trimmed);
   return urlMatch?.[1] ?? trimmed;
 }
 
@@ -437,7 +442,7 @@ function bitbucketStateFilter(states: ReadonlyArray<string>): string {
 }
 
 function parseBitbucketRepositorySlug(value: string): BitbucketRepositoryLocator | null {
-  const normalized = value.trim().replace(/\.git$/u, "");
+  const normalized = value.trim().replace(NORMALIZED_PATTERN, "");
   const parts = normalized.split("/").filter((part) => part.length > 0);
   if (parts.length < 2) return null;
   const workspace = parts.at(-2);
@@ -460,7 +465,7 @@ function requireRepositoryLocator(
 
 function parseBitbucketRemoteUrl(remoteUrl: string): BitbucketRepositoryLocator | null {
   const trimmed = remoteUrl.trim();
-  const scpMatch = /^[a-zA-Z0-9._-]+@[^:/]+:(.+)$/.exec(trimmed);
+  const scpMatch = SCP_MATCH_PATTERN.exec(trimmed);
   if (scpMatch?.[1]) {
     return parseBitbucketRepositorySlug(scpMatch[1]);
   }
@@ -666,7 +671,7 @@ export const make = Effect.gen(function* () {
   const servesProvider = (provider: SourceControlProviderInfo | null) =>
     provider?.kind === "bitbucket" && servesHost(URL.parse(provider.baseUrl)?.hostname ?? "");
 
-  const apiUrl = (path: string) => `${config.baseUrl.replace(/\/+$/u, "")}${path}`;
+  const apiUrl = (path: string) => `${config.baseUrl.replace(TRAILING_SLASHES, "")}${path}`;
 
   const currentCredential = host.settings.getWithSecrets(BitbucketClient.definition.kind).pipe(
     Effect.map((settings) =>
@@ -928,7 +933,7 @@ export const make = Effect.gen(function* () {
   const apiOrigin = originOf(config.baseUrl);
 
   const trustedUrl = (value: string): string | null => {
-    if (!/^https?:\/\//u.test(value)) return apiUrl(value);
+    if (!HTTP_SCHEME.test(value)) return apiUrl(value);
     const origin = originOf(value);
     return origin !== null && origin === apiOrigin ? value : null;
   };

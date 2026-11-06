@@ -102,6 +102,9 @@ import { UnifiedSettings } from "@houston-app/contracts/settings";
 
 const isElementContextDetails = Schema.is(ElementContextDetails);
 import { ReviewCommentContextSchema, type ReviewCommentContext } from "./reviewCommentContext";
+
+const MIGRATED_PROMPT_PATTERN =
+  /!?\[([^\]\r\n]*)\]\(houston-context:\/\/v1\/([a-z-]+)\/([^/()\r\n]+)\)/g;
 const isRuntimeMode = Schema.is(RuntimeMode);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
 const isReviewCommentContext = Schema.is(ReviewCommentContextSchema);
@@ -1915,7 +1918,7 @@ function normalizePersistedDraftsByThreadId(
       }
     }
     const migratedPrompt = promptCandidate.replace(
-      /!?\[([^\]\r\n]*)\]\(houston-context:\/\/v1\/([a-z-]+)\/([^/()\r\n]+)\)/g,
+      MIGRATED_PROMPT_PATTERN,
       (source, label: string, kind: string, id: string) => {
         const contextId = contextIds.get(`${kind}/${id}`);
         return contextId ? formatInlineContextReference({ kind, contextId, label }) : source;

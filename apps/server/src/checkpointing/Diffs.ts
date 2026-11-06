@@ -1,3 +1,5 @@
+const COUNTS_PATTERN = /^(\d+|-)\t(\d+|-)\t/;
+
 export interface TurnDiffFileSummary {
   readonly path: string;
   readonly previousPath?: string;
@@ -11,7 +13,7 @@ export function parseTurnDiffFilesFromNumstat(numstat: string): ReadonlyArray<Tu
 
   for (let index = 0; index < records.length; index += 1) {
     const record = records[index]!;
-    const counts = /^(\d+|-)\t(\d+|-)\t/.exec(record);
+    const counts = COUNTS_PATTERN.exec(record);
     if (!counts) continue;
 
     let path = record.slice(counts[0].length);

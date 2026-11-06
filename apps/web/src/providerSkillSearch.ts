@@ -10,6 +10,8 @@ import {
   scoreQueryMatch,
 } from "@houston-app/shared/searchRanking";
 
+const TRIM_LEADING_PATTERN = /^\p{Sc}+/u;
+
 export function scoreProviderSkill(skill: ServerProviderSkill, query: string): number | null {
   const normalizedName = skill.name.toLowerCase();
   const normalizedLabel = formatProviderSkillDisplayName(skill).toLowerCase();
@@ -75,7 +77,7 @@ export function searchProviderSkills(
   limit = Number.POSITIVE_INFINITY,
 ): ServerProviderSkill[] {
   const enabledSkills = dedupeProviderSkillsByName(skills.filter(isProviderSkillUserInvocable));
-  const normalizedQuery = normalizeSearchQuery(query, { trimLeadingPattern: /^\p{Sc}+/u });
+  const normalizedQuery = normalizeSearchQuery(query, { trimLeadingPattern: TRIM_LEADING_PATTERN });
 
   if (!normalizedQuery) {
     return enabledSkills;

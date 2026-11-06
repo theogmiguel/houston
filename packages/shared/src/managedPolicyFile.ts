@@ -12,6 +12,9 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import * as HostProcess from "./HostProcess.ts";
 
+const DETAIL_PATTERN = /\s*\n\s*/g;
+const READ_MACHINE_STRING_PATTERN = /\0+$/;
+
 export class ManagedPolicyFileError extends Schema.TaggedError<ManagedPolicyFileError>()(
   "ManagedPolicyFileError",
   {
@@ -55,7 +58,9 @@ const decodeDocument = (path: string, raw: unknown) => {
   if (Exit.isSuccess(decoded)) return Effect.succeed(decoded.value);
   const error = Cause.squash(decoded.cause);
   // The schema message names the offending key, e.g. `Expected no excess property at ["limits"]`.
-  const detail = Schema.isSchemaError(error) ? ` (${error.message.replace(/\s*\n\s*/g, " ")})` : "";
+  const detail = Schema.isSchemaError(error)
+    ? ` (${error.message.replace(DETAIL_PATTERN, " ")})`
+    : "";
   return Effect.fail(
     new ManagedPolicyFileError({
       path,
@@ -201,7 +206,10 @@ export const layerWindowsRegistry = (loadFfi: () => Promise<typeof import("ffi-r
             if (result.code === ERROR_FILE_NOT_FOUND) return undefined;
             if (result.code !== 0) return yield* new WindowsRegistryError({ code: result.code });
             // The size counts the terminating null RegGetValueW adds.
-            return result.data.subarray(0, result.bytes).toString("utf16le").replace(/\0+$/, "");
+            return result.data
+              .subarray(0, result.bytes)
+              .toString("utf16le")
+              .replace(READ_MACHINE_STRING_PATTERN, "");
           },
         ),
       });

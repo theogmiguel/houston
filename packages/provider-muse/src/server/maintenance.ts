@@ -16,6 +16,11 @@ import {
 import * as ProviderLatestVersions from "@houston-app/provider-core/server/ProviderLatestVersions";
 import { parseGenericCliVersion } from "@houston-app/provider-core/server/snapshotProbe";
 
+const PARSE_MUSE_VERSION_PATTERN = /\b\d+\.\d+\.\d+-R\d+(?:\.\d+)?\b/;
+const COMPARABLE_MUSE_VERSION_PATTERN = /-R(\d+)(?:\.(\d+))?$/;
+const COMPARABLE_MUSE_VERSION_PATTERN_2 = /\.$/;
+const SHELL_QUOTE_PATTERN = /^[\w./:@=-]+$/;
+
 const DRIVER = ProviderDriverKind.make("muse");
 const MUSE_CHANNELS = new Set(["muse-stable", "muse-canary"]);
 const ChannelManifest = Schema.Struct({
@@ -23,11 +28,13 @@ const ChannelManifest = Schema.Struct({
 });
 
 export function parseMuseVersion(output: string): string | null {
-  return output.match(/\b\d+\.\d+\.\d+-R\d+(?:\.\d+)?\b/)?.[0] ?? parseGenericCliVersion(output);
+  return output.match(PARSE_MUSE_VERSION_PATTERN)?.[0] ?? parseGenericCliVersion(output);
 }
 
 function comparableMuseVersion(version: string): string {
-  return version.replace(/-R(\d+)(?:\.(\d+))?$/, "-release.$1.$2").replace(/\.$/, ".0");
+  return version
+    .replace(COMPARABLE_MUSE_VERSION_PATTERN, "-release.$1.$2")
+    .replace(COMPARABLE_MUSE_VERSION_PATTERN_2, ".0");
 }
 
 const MUSE_REVISION = /-R\d+(?:\.\d+)?$/;
@@ -82,7 +89,7 @@ export const museMaintenance: ProviderMaintenanceCapabilitiesResolver = {
 };
 
 function shellQuote(word: string) {
-  return /^[\w./:@=-]+$/.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`;
+  return SHELL_QUOTE_PATTERN.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`;
 }
 
 export const latestMuseVersion = Effect.fn("latestMuseVersion")(function* (

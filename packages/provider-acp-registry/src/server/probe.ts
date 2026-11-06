@@ -36,6 +36,9 @@ import {
 import * as AcpRegistryRuntimeCoordinator from "./AcpRegistryRuntimeCoordinator.ts";
 import * as AcpSessionRuntime from "@houston-app/provider-acp/server/AcpSessionRuntime";
 
+const AUTHENTICATION_FAILED_PATTERN =
+  /\b(?:authenticat(?:e|ed|es|ing|ion)|credentials?|log(?:[\s-]+)?in)\b/iu;
+
 const MAX_AUTH_METHODS = 32;
 const MAX_MODELS = 256;
 const MAX_ID_LENGTH = 128;
@@ -283,7 +286,7 @@ export function acpRegistryProbeFailure(
   const detail = error._tag === "AcpTransportError" && error.detail ? error.detail : error.message;
   const authenticationFailed =
     (error._tag === "AcpRequestError" && error.code === -32000) ||
-    /\b(?:authenticat(?:e|ed|es|ing|ion)|credentials?|log(?:[\s-]+)?in)\b/iu.test(detail);
+    AUTHENTICATION_FAILED_PATTERN.test(detail);
   return new AcpRegistryOperationError({
     reason: authenticationFailed ? "authentication_failed" : "probe_failed",
     message: authenticationFailed

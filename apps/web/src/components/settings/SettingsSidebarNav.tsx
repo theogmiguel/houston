@@ -57,6 +57,8 @@ import { useSettingsSectionNavigation } from "./useSettingsSectionNavigation";
 import { workspaceAreaProps } from "../../lib/workspaceFocus";
 import { useCloseAppModal } from "../sidebar/mainAppLocation";
 
+const LEADING_HASH = /^#/;
+
 const SnapShotIcon = createLucideIcon("snap-shot", [
   [
     "path",
@@ -202,7 +204,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
     setCompactSearchOpen(false);
     const targetId = item.targetId ?? item.id;
     revealSettingsSearchTarget(targetId);
-    if (pathname === item.to && currentHash.replace(/^#/, "") === targetId) {
+    if (pathname === item.to && currentHash.replace(LEADING_HASH, "") === targetId) {
       scrollToSettingsTarget(targetId);
       return;
     }

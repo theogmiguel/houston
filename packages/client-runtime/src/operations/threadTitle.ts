@@ -3,6 +3,8 @@ import { assistantCitationsToPlainText } from "@houston-app/shared/assistantCita
 import { replaceComposerContextReferences } from "@houston-app/shared/composerContextReferences";
 import { truncate } from "@houston-app/shared/String";
 
+const WHITESPACE_RUN = /\s+/gu;
+
 export interface ThreadTitleSeedInput {
   readonly text: string;
   readonly attachments: ReadonlyArray<Pick<ChatAttachment, "type" | "name">>;
@@ -10,7 +12,7 @@ export interface ThreadTitleSeedInput {
 }
 
 function normalizeTitleSeed(value: string): string {
-  return assistantCitationsToPlainText(value).trim().replace(/\s+/gu, " ");
+  return assistantCitationsToPlainText(value).trim().replace(WHITESPACE_RUN, " ");
 }
 
 export function threadTitleTextFromPrompt(value: string): string {

@@ -9,15 +9,23 @@ import { satisfiesSemverRange } from "@houston-app/shared/semver";
 import * as Schema from "effect/Schema";
 import packageJson from "../../package.json" with { type: "json" };
 
+const STABLE_VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
+const WHITESPACE_RUN = /\s+/;
+const VERSION_RANGE_PATTERN = /^(?:\^|>=|>|<=|<|=)?v?\d+(?:\.\d+){0,2}$/;
+const UNPREFIXED_PATTERN = /^v/;
+const STABLE_PATTERN = /^(\d{4}\.\d{2}\.\d{2})-[a-f0-9]+$/;
+const STABLE_PATTERN_2 = /^agy_acp_server_(\d+\.\d+\.\d+)$/;
+const STABLE_PATTERN_3 = /^(\d+\.\d+\.\d+)-R\d+(?:\.\d+)?$/;
+
 const StableVersion = TrimmedNonEmptyString.pipe(
-  Schema.check(Schema.makeFilter((value) => /^\d+\.\d+\.\d+$/.test(value))),
+  Schema.check(Schema.makeFilter((value) => STABLE_VERSION_PATTERN.test(value))),
 );
 const VersionRange = TrimmedNonEmptyString.pipe(
   Schema.check(
     Schema.makeFilter((value) =>
       value.split("||").every((group) => {
-        const tokens = group.trim().split(/\s+/);
-        return tokens.every((token) => /^(?:\^|>=|>|<=|<|=)?v?\d+(?:\.\d+){0,2}$/.test(token));
+        const tokens = group.trim().split(WHITESPACE_RUN);
+        return tokens.every((token) => VERSION_RANGE_PATTERN.test(token));
       }),
     ),
   ),
@@ -65,18 +73,18 @@ export function resolveProviderCompatibility(
       entry.driver === driver && satisfiesSemverRange(houstonCodeVersion, entry.houstonCodeRange),
   );
   if (!policy) return undefined;
-  const unprefixed = version?.replace(/^v/, "");
+  const unprefixed = version?.replace(UNPREFIXED_PATTERN, "");
   // Strip Cursor build hashes, Google ACP release prefixes and Muse revisions; leave semver prereleases unknown.
   const stable =
     driver === "cursor"
-      ? unprefixed?.replace(/^(\d{4}\.\d{2}\.\d{2})-[a-f0-9]+$/, "$1")
+      ? unprefixed?.replace(STABLE_PATTERN, "$1")
       : driver === "antigravity"
-        ? unprefixed?.replace(/^agy_acp_server_(\d+\.\d+\.\d+)$/, "$1")
+        ? unprefixed?.replace(STABLE_PATTERN_2, "$1")
         : driver === "muse"
-          ? unprefixed?.replace(/^(\d+\.\d+\.\d+)-R\d+(?:\.\d+)?$/, "$1")
+          ? unprefixed?.replace(STABLE_PATTERN_3, "$1")
           : unprefixed;
   const status =
-    stable && /^\d+\.\d+\.\d+$/.test(stable)
+    stable && STABLE_VERSION_PATTERN.test(stable)
       ? (policy.ranges.find((entry) => satisfiesSemverRange(stable, entry.range))?.status ??
         "unknown")
       : "unknown";

@@ -2,6 +2,10 @@ import { ASSISTANT_CITATION_CONTEXT_LENGTH, type AssistantCitation } from "@hous
 
 import { mathWrapperOf } from "../markdown-clipboard";
 
+const WHITESPACE_RUN = /\s+/g;
+const WHITESPACE = /\s/;
+const RAW_TEXT_OFFSET_PATTERN = /\s+|\S+/g;
+
 export type AssistantTextSelector = {
   readonly text: string;
   readonly start: number;
@@ -40,7 +44,7 @@ const BLOCK_SELECTOR =
   "address, article, aside, blockquote, dd, div, dl, dt, figcaption, figure, footer, h1, h2, h3, h4, h5, h6, header, hr, li, main, nav, ol, p, pre, section, table, td, th, tr, ul";
 
 function normalizeWhitespace(text: string): string {
-  return text.replace(/\s+/g, " ");
+  return text.replace(WHITESPACE_RUN, " ");
 }
 
 function splitsSurrogatePair(text: string, offset: number): boolean {
@@ -59,7 +63,7 @@ export function createAssistantTextSelector(
 
   const normalized = normalizeWhitespace(text);
   let start = normalizeWhitespace(text.slice(0, rawStart)).length;
-  if (rawStart > 0 && /\s/.test(text[rawStart - 1]!) && /\s/.test(text[rawStart]!)) {
+  if (rawStart > 0 && WHITESPACE.test(text[rawStart - 1]!) && WHITESPACE.test(text[rawStart]!)) {
     start -= 1;
   }
   const end = normalizeWhitespace(text.slice(0, rawEnd)).length;
@@ -250,8 +254,8 @@ export function captureAssistantTextSelection(
 
 function rawTextOffset(text: string, normalizedOffset: number): number {
   let offset = 0;
-  for (const match of text.matchAll(/\s+|\S+/g)) {
-    const whitespace = /\s/.test(match[0][0]!);
+  for (const match of text.matchAll(RAW_TEXT_OFFSET_PATTERN)) {
+    const whitespace = WHITESPACE.test(match[0][0]!);
     const length = whitespace ? 1 : match[0].length;
     if (normalizedOffset <= offset + length) {
       return (

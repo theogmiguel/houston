@@ -51,6 +51,9 @@ import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as KnownWorkspaces from "../workspace/KnownWorkspaces.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 
+const HAS_REF_NAMED_PATTERN = /[*?[\\]/;
+const BRANCH_REF_PREFIX = /^refs\/heads\//;
+
 export class GitWorkflowService extends Context.Service<
   GitWorkflowService,
   {
@@ -357,7 +360,7 @@ export const make = Effect.gen(function* () {
     }),
     hasRefNamed: Effect.fn("GitWorkflowService.hasRefNamed")(function (input) {
       // Pattern characters would widen the ref match.
-      return /[*?[\\]/.test(input.refName)
+      return HAS_REF_NAMED_PATTERN.test(input.refName)
         ? Effect.succeed(false)
         : ensureGitCommand("GitWorkflowService.hasRefNamed", input.cwd).pipe(
             Effect.andThen(
@@ -403,7 +406,7 @@ export const make = Effect.gen(function* () {
         timeoutMs: 5_000,
       });
       if (result.exitCode === 0) {
-        return result.stdout.trim().replace(/^refs\/heads\//, "") || null;
+        return result.stdout.trim().replace(BRANCH_REF_PREFIX, "") || null;
       }
       if (result.exitCode === 1) return null;
       return yield* new GitCommandError({

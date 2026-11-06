@@ -7,6 +7,8 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { TrimmedNonEmptyString } from "@houston-app/contracts";
 
+const VERSION_PATTERN = /^v/;
+
 const CODEX_MATCHING: ModelCatalog.CatalogMatching = { family: codexModelFamily };
 
 const CodexModelAdapter = Schema.Struct({
@@ -19,7 +21,7 @@ function codexUpdateRequiredModels(
   catalog: ModelCatalog.ProviderCatalog | undefined,
   draft: ServerProviderDraft,
 ): ReadonlyArray<ServerProviderUpdateRequiredModel> {
-  const version = draft.version?.replace(/^v/, "");
+  const version = draft.version?.replace(VERSION_PATTERN, "");
   if (!catalog || !version || parseSemver(version) === null) return [];
   const discovered = new Set(draft.models.map((model) => codexModelFamily(model.slug)));
   return catalog.models.flatMap((entry) => {

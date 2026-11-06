@@ -1,5 +1,8 @@
 import { sourceControlClients, type ReferenceAutolink } from "./sourceControlClients.ts";
 
+const TEXT_PATTERN = /^\n+/u;
+const TRAILING_WHITESPACE = /\s+$/u;
+
 /** `id` is positional on purpose: the same attachment can be embedded twice in one body. */
 export type PullRequestBodySegment =
   | { readonly id: string; readonly kind: "markdown"; readonly text: string }
@@ -58,7 +61,7 @@ export function splitPullRequestBody(body: string): ReadonlyArray<PullRequestBod
   // Blank lines around a run are dropped, but never leading spaces: four of them open an
   // indented code block, so trimming a run would silently turn code into prose.
   const flushMarkdown = () => {
-    const text = markdown.join("\n").replace(/^\n+/u, "").replace(/\s+$/u, "");
+    const text = markdown.join("\n").replace(TEXT_PATTERN, "").replace(TRAILING_WHITESPACE, "");
     markdown.length = 0;
     if (text.trim().length > 0) {
       segments.push({ id: `markdown:${segments.length}`, kind: "markdown", text });

@@ -30,6 +30,8 @@ import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 
+const WHITESPACE_RUN = /\s+/;
+
 const isSetupError = Schema.is(ProviderSetupError);
 const RESOURCE = "https://api.openai.com/v1";
 const REQUIRED_SCOPE = "chatgpt.tokens.use.direct";
@@ -657,7 +659,7 @@ export const makeCodexChatGptAuth = Effect.fn("makeCodexChatGptAuth")(function* 
           "verify",
           "ChatGPT returned an unsupported connection. Sign in again.",
         );
-      const scopes = tokens.scope.split(/\s+/).filter(Boolean);
+      const scopes = tokens.scope.split(WHITESPACE_RUN).filter(Boolean);
       yield* withSessionLock(
         Effect.gen(function* () {
           yield* saveRegistration({
@@ -778,7 +780,7 @@ export const makeCodexChatGptAuth = Effect.fn("makeCodexChatGptAuth")(function* 
       refreshToken: tokens.refresh_token,
       expiresAt: (yield* Clock.currentTimeMillis) + tokens.expires_in * 1000,
       earliestRefreshAt: earliest(tokens.earliest_refresh_at),
-      scopes: tokens.scope.split(/\s+/).filter(Boolean),
+      scopes: tokens.scope.split(WHITESPACE_RUN).filter(Boolean),
     };
     yield* save(record);
     if (!record.scopes.includes(REQUIRED_SCOPE))

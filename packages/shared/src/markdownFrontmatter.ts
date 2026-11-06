@@ -1,3 +1,5 @@
+const MASK_MARKDOWN_FRONTMATTER_PATTERN = /[^\r\n]/g;
+
 const LEADING_FRONTMATTER =
   /^\uFEFF?---[ \t]*(?:\r\n|\r|\n)(?:[\s\S]*?(?:\r\n|\r|\n))?(?:---|\.\.\.)[ \t]*(?=\r\n|\r|\n|$)/;
 
@@ -7,5 +9,7 @@ const LEADING_FRONTMATTER =
  * line breaks stay, so source offsets (task checkbox edits) stay valid.
  */
 export function maskMarkdownFrontmatter(markdown: string): string {
-  return markdown.replace(LEADING_FRONTMATTER, (block) => block.replace(/[^\r\n]/g, " "));
+  return markdown.replace(LEADING_FRONTMATTER, (block) =>
+    block.replace(MASK_MARKDOWN_FRONTMATTER_PATTERN, " "),
+  );
 }

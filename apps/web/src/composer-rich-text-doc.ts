@@ -46,6 +46,23 @@ import { parseInlineMarkdown, RICH_TEXT_DELIMITERS, type RichTextMark } from "~/
 import { collectInlineContextIds } from "~/lib/composerContextReferences";
 import { composerMathRanges } from "@houston-app/shared/composerInlineTokens";
 
+const MATCH_PATTERN = /^([^`\n]+)`(?!`)/;
+const APPEND_TRANSACTION_PATTERN = /^`[^`]+`$/;
+const CLOSES_BACKTICK_PAIR_PATTERN = /(^|[^`])`$/;
+const LITERAL_BACKTICKS_BEFORE_PATTERN = /(?<!`)`(?!`)/g;
+const HANDLER_PATTERN = /\S/;
+const CODE_BLOCK_SOURCE_PATTERN = /^[`~]+/;
+const MATCH_PATTERN_2 = /^([ \t]*)-([ \t]+)\[([ xX])\]([ \t]*)/;
+const MATCH_PATTERN_3 = /^(`{3,}|~{3,})([^\n]*)$/;
+const MATCH_PATTERN_4 = /^(`{3,}|~{3,})[ \t]*\r?$/;
+const ORDERED_PATTERN = /^([ \t]*)(\d+[.)])((?:[ \t]+)|$)/;
+const BULLET_PATTERN = /^([ \t]*)([-*+])((?:[ \t]+)|$)/;
+const BUILD_TIPTAP_CONTENT_PATTERN = /^([-*_])(?:[ \t]*\1){2,}[ \t]*\r?$/;
+const HEADING_PATTERN = /^(#{1,6})([ \t]+)([^\n]*)$/;
+const QUOTE_PATTERN = /^(>[ \t]*)([^\n]*)$/;
+const APPEND_INLINE_RUNS_PATTERN = /^\s+$/;
+const ALIGN_LIST_ITEM_WITH_SIBLINGS_PATTERN = /^\d+[.)]$/;
+
 export type SkillMeta = { label: string; description: string | null };
 
 const MARK_NESTING_ORDER: RichTextMark[] = ["strike", "bold", "italic", "code"];
@@ -105,7 +122,7 @@ function codePairCaretPlugin(type: MarkType) {
           "\n",
           "\n",
         );
-        const match = /^([^`\n]+)`(?!`)/.exec(after);
+        const match = MATCH_PATTERN.exec(after);
         if (!match) return false;
         const end = from + match[1]!.length;
         let plain = true;
@@ -134,7 +151,7 @@ function codePairCaretPlugin(type: MarkType) {
       if (
         $start.nodeBefore?.text?.endsWith("`") ||
         $end.nodeAfter?.text?.startsWith("`") ||
-        !/^`[^`]+`$/.test(state.doc.textBetween(pair.from, pair.to))
+        !APPEND_TRANSACTION_PATTERN.test(state.doc.textBetween(pair.from, pair.to))
       ) {
         return null;
       }
@@ -160,7 +177,7 @@ function closesBacktickPair($pos: ResolvedPos): boolean {
   return (
     $pos.parent.isTextblock &&
     !$pos.parent.type.spec.code &&
-    /(^|[^`])`$/.test($pos.nodeBefore?.text ?? "") &&
+    CLOSES_BACKTICK_PAIR_PATTERN.test($pos.nodeBefore?.text ?? "") &&
     literalBackticksBefore($pos) % 2 === 1
   );
 }
@@ -241,7 +258,7 @@ function literalBackticksBefore($pos: ResolvedPos): number {
     if (node.marks.some((mark) => mark.type.spec.code)) return;
 
     const text = node.text!.slice(0, $pos.parentOffset - offset);
-    count += [...text.matchAll(/(?<!`)`(?!`)/g)].length;
+    count += [...text.matchAll(LITERAL_BACKTICKS_BEFORE_PATTERN)].length;
   });
   return count;
 }
@@ -259,7 +276,7 @@ function markInputRuleOutsideCode(find: RegExp, type: MarkType) {
       const textEnd = textStart + content.length;
       if (
         code &&
-        (state.doc.rangeHasMark(range.from + match[0].search(/\S/), textStart, code) ||
+        (state.doc.rangeHasMark(range.from + match[0].search(HANDLER_PATTERN), textStart, code) ||
           state.doc.rangeHasMark(textEnd, state.selection.from, code))
       ) {
         return null;
@@ -403,7 +420,7 @@ function codeBlockSource(
     ...content
       .split("\n")
       .filter((line) => isClosingFence(line, fence))
-      .map((line) => /^[`~]+/.exec(line)![0].length),
+      .map((line) => CODE_BLOCK_SOURCE_PATTERN.exec(line)![0].length),
   );
   if (longest > 0) {
     fence = fence[0]!.repeat(longest + 1);
@@ -526,7 +543,7 @@ interface TaskLinePrefix {
 }
 
 function parseTaskPrefix(head: string): { prefix: TaskLinePrefix; markerLength: number } | null {
-  const match = head.match(/^([ \t]*)-([ \t]+)\[([ xX])\]([ \t]*)/);
+  const match = head.match(MATCH_PATTERN_2);
   if (!match) return null;
   const after = head.slice(match[0].length);
   if (after.length > 0 && !match[4]) return null;
@@ -543,7 +560,7 @@ function parseTaskPrefix(head: string): { prefix: TaskLinePrefix; markerLength: 
 
 export function parseOpeningFence(line: string): { fence: string; language: string } | null {
   // Unlike `.`, `[^\n]` accepts the stored \r in CRLF lines.
-  const match = /^(`{3,}|~{3,})([^\n]*)$/.exec(line);
+  const match = MATCH_PATTERN_3.exec(line);
   if (!match) return null;
   const fence = match[1]!;
   const language = match[2]!;
@@ -552,7 +569,7 @@ export function parseOpeningFence(line: string): { fence: string; language: stri
 }
 
 export function isClosingFence(line: string, fence: string): boolean {
-  const match = /^(`{3,}|~{3,})[ \t]*\r?$/.exec(line);
+  const match = MATCH_PATTERN_4.exec(line);
   if (!match) return false;
   const run = match[1]!;
   return run[0] === fence[0] && run.length >= fence.length;
@@ -565,14 +582,14 @@ type ListLinePrefix =
 function parseListPrefix(line: string): { prefix: ListLinePrefix; markerLength: number } | null {
   const task = parseTaskPrefix(line);
   if (task) return { prefix: { kind: "task", ...task.prefix }, markerLength: task.markerLength };
-  const ordered = /^([ \t]*)(\d+[.)])((?:[ \t]+)|$)/.exec(line);
+  const ordered = ORDERED_PATTERN.exec(line);
   if (ordered) {
     return {
       prefix: { kind: "ordered", indent: ordered[1]!, marker: ordered[2]!, space: ordered[3]! },
       markerLength: ordered[0].length,
     };
   }
-  const bullet = /^([ \t]*)([-*+])((?:[ \t]+)|$)/.exec(line);
+  const bullet = BULLET_PATTERN.exec(line);
   if (bullet) {
     return {
       prefix: { kind: "bullet", indent: bullet[1]!, marker: bullet[2]!, space: bullet[3]! },
@@ -789,11 +806,11 @@ export function buildTiptapContent(
     }
     const opening = blockSyntax ? parseOpeningFence(line) : null;
     if (!opening) {
-      if (blockSyntax && /^([-*_])(?:[ \t]*\1){2,}[ \t]*\r?$/.test(line)) {
+      if (blockSyntax && BUILD_TIPTAP_CONTENT_PATTERN.test(line)) {
         entries.push({ rule: line });
         continue;
       }
-      const heading = blockSyntax ? /^(#{1,6})([ \t]+)([^\n]*)$/.exec(line) : null;
+      const heading = blockSyntax ? HEADING_PATTERN.exec(line) : null;
       if (heading) {
         entries.push({
           heading: {
@@ -804,7 +821,7 @@ export function buildTiptapContent(
         });
         continue;
       }
-      const quote = blockSyntax ? /^(>[ \t]*)([^\n]*)$/.exec(line) : null;
+      const quote = blockSyntax ? QUOTE_PATTERN.exec(line) : null;
       if (quote) entries.push({ quote: { prefix: quote[1]!, inline: buildInline(quote[2]!) } });
       else entries.push({ line: buildDocLine(line) });
       continue;
@@ -1065,7 +1082,7 @@ function appendInlineRuns(
         } else if (
           child.isText &&
           !child.marks.some((item) => item.type.name === "code") &&
-          /^\s+$/.test(child.text!)
+          APPEND_INLINE_RUNS_PATTERN.test(child.text!)
         ) {
           if (!hasContent)
             children[index] = child.mark(child.marks.filter((item) => item.type.name !== mark));
@@ -1177,10 +1194,16 @@ function alignListItemWithSiblings(tr: Transaction, itemType: string): void {
     attrs.markerSpace = sibling.attrs.markerSpace;
   } else {
     const marker = typeof sibling.attrs.marker === "string" ? sibling.attrs.marker : "-";
-    attrs.marker = index > 0 && /^\d+[.)]$/.test(marker) ? nextOrderedMarkerText(marker) : marker;
+    attrs.marker =
+      index > 0 && ALIGN_LIST_ITEM_WITH_SIBLINGS_PATTERN.test(marker)
+        ? nextOrderedMarkerText(marker)
+        : marker;
   }
   tr.setNodeMarkup($pos.before(-1), undefined, attrs);
-  if (typeof attrs.marker === "string" && /^\d+[.)]$/.test(attrs.marker)) {
+  if (
+    typeof attrs.marker === "string" &&
+    ALIGN_LIST_ITEM_WITH_SIBLINGS_PATTERN.test(attrs.marker)
+  ) {
     renumberFollowingItems(tr, $pos.before(-2), index, attrs.marker);
   }
 }

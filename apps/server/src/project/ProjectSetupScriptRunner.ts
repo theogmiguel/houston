@@ -26,6 +26,14 @@ import * as ServerSettings from "../serverSettings.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 import * as ProjectService from "./ProjectService.ts";
 
+const STRIP_TERMINAL_CONTROL_PATTERN =
+  /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Za-z0-9]|\x1b[=>]/g;
+const STRIP_TERMINAL_CONTROL_PATTERN_2 = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g;
+const PATH_SEPARATOR = /[/\\]/;
+const NAME_PATTERN = /\.exe$/;
+const LINE_BREAK = /\r?\n/g;
+const ANY_LINE_BREAK = /\r\n|\r|\n/;
+
 export interface ProjectSetupScriptRunnerResultNoScript {
   readonly status: "no-script";
 }
@@ -152,11 +160,8 @@ function completionSentinelPattern(token: string): RegExp {
 
 function stripTerminalControl(text: string): string {
   return text
-    .replace(
-      /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Za-z0-9]|\x1b[=>]/g,
-      "",
-    )
-    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "");
+    .replace(STRIP_TERMINAL_CONTROL_PATTERN, "")
+    .replace(STRIP_TERMINAL_CONTROL_PATTERN_2, "");
 }
 
 // Line editors (zsh, fish, bash 5.1+) enable bracketed paste when they start reading a command.
@@ -174,7 +179,9 @@ function lineEditorReading(text: string, previous: boolean): boolean {
 type CompletionShell = "posix" | "fish" | "powershell";
 
 function resolveCompletionShell(shell: string): CompletionShell | null {
-  const name = (shell.split(/[/\\]/).at(-1) ?? shell).toLowerCase().replace(/\.exe$/, "");
+  const name = (shell.split(PATH_SEPARATOR).at(-1) ?? shell)
+    .toLowerCase()
+    .replace(NAME_PATTERN, "");
   if (name === "cmd") return null;
   if (name === "fish") return "fish";
   if (name === "pwsh" || name === "powershell") return "powershell";
@@ -187,7 +194,7 @@ function wrapCommandForCompletion(
   shell: CompletionShell,
   sentinel: string,
 ): string {
-  const body = command.replace(/\r?\n/g, "\r");
+  const body = command.replace(LINE_BREAK, "\r");
   switch (shell) {
     case "powershell":
       return `$global:LASTEXITCODE = $null; & {\r${body}\r}; if ($null -ne $LASTEXITCODE) { $__houstonc = $LASTEXITCODE } elseif ($?) { $__houstonc = 0 } else { $__houstonc = 1 }; Write-Host "${sentinel}$__houstonc"`;
@@ -262,7 +269,7 @@ export const make = Effect.gen(function* () {
         if (event.type === "output") {
           lineBuffer += event.data;
           // Bare CR redraws progress in place; split redraws instead of growing one line.
-          const lines = lineBuffer.split(/\r\n|\r|\n/);
+          const lines = lineBuffer.split(ANY_LINE_BREAK);
           lineBuffer = lines.pop() ?? "";
           // Bound newline-free output; the sentinel has its own line, so retaining the tail is safe.
           if (lineBuffer.length > PARTIAL_LINE_MAX_LENGTH) {

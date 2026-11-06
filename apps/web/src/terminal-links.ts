@@ -1,5 +1,8 @@
 import { isMacPlatform } from "./lib/utils";
 
+const IS_HOUSTON_TASK_KEY_PATTERN = /^HOU-[1-9][0-9]*$/u;
+const HTTP_SCHEME = /^https?:\/\//iu;
+
 export type TerminalLinkKind = "url" | "path" | "task";
 
 export interface TerminalLinkMatch {
@@ -144,11 +147,11 @@ export function extractTerminalLinks(line: string): TerminalLinkMatch[] {
 }
 
 export function isHoustonTaskKey(value: string): boolean {
-  return /^HOU-[1-9][0-9]*$/u.test(value);
+  return IS_HOUSTON_TASK_KEY_PATTERN.test(value);
 }
 
 export function isTerminalUrl(value: string): boolean {
-  return /^https?:\/\//iu.test(value);
+  return HTTP_SCHEME.test(value);
 }
 
 export function collectWrappedTerminalLinkLine(

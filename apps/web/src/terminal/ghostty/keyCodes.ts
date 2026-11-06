@@ -1,5 +1,7 @@
 import { US_SHIFTED_TO_UNSHIFTED_KEYS } from "@houston-app/shared/keybindings";
 
+const GHOSTTY_UNSHIFTED_CODEPOINT_PATTERN = /^[A-Z]$/u;
+
 // This order mirrors GhosttyKey in ghostty/vt/key/event.h. The values are
 // intentionally derived from the official W3C-aligned enum instead of
 // maintaining a second keyboard protocol.
@@ -233,7 +235,7 @@ export function ghosttyUnshiftedCodepoint(
   if (layoutCharacter && [...layoutCharacter].length === 1) {
     return layoutCharacter.codePointAt(0) ?? 0;
   }
-  if (/^[A-Z]$/u.test(event.key)) return event.key.charCodeAt(0) + 32;
+  if (GHOSTTY_UNSHIFTED_CODEPOINT_PATTERN.test(event.key)) return event.key.charCodeAt(0) + 32;
   if (event.shiftKey) {
     const unshiftedCharacter = US_SHIFTED_TO_UNSHIFTED_KEYS.get(event.key);
     if (unshiftedCharacter) return unshiftedCharacter.codePointAt(0) ?? 0;

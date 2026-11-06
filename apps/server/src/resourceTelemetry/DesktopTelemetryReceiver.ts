@@ -38,6 +38,8 @@ import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { subscribeBeforeSnapshotWithoutMutex } from "../utils/subscribeBeforeSnapshot.ts";
 
+const EXTRAS_PATTERN = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g;
+
 const INITIAL_SAMPLE_DEADLINE_MS = 90_000;
 const MIN_SNAPSHOT_STALE_AFTER_MS = 90_000;
 const STALE_GRACE_MS = 30_000;
@@ -253,8 +255,7 @@ export function makeApplyDesktopShellEnvironmentSnapshot(
         const bundle = file ? yield* fs.readFileString(file) : undefined;
         yield* Effect.try({
           try: () => {
-            const extras =
-              bundle?.match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) ?? [];
+            const extras = bundle?.match(EXTRAS_PATTERN) ?? [];
             if (bundle?.trim() && extras.length === 0) {
               throw new Error("No PEM certificates found.");
             }

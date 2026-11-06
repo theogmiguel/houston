@@ -18,6 +18,10 @@ import * as GitHubAppSignIn from "./GitHubAppSignIn.ts";
 import * as GitHubCredentials from "./GitHubCredentials.ts";
 import * as GitHubQuota from "./GitHubQuota.ts";
 
+const IS_RATE_LIMITED_PATTERN = /rate limit (already )?exceeded/i;
+const IS_RATE_LIMITED_PATTERN_2 = /rate limit/i;
+const REFUSED_TO_APP_PATTERN = /not accessible by integration/i;
+
 const DEFAULT_TIMEOUT = Duration.seconds(30);
 /** GitHub's secondary limits penalize concurrent bursts. */
 const CONCURRENCY = 8;
@@ -162,13 +166,12 @@ export function isRateLimited(input: {
         errors.some(
           (error) =>
             error.type === "RATE_LIMITED" ||
-            (typeof error.message === "string" &&
-              /rate limit (already )?exceeded/i.test(error.message)),
+            (typeof error.message === "string" && IS_RATE_LIMITED_PATTERN.test(error.message)),
         ))) ||
     (status === 403 &&
       (headers["x-ratelimit-remaining"] === "0" ||
         headers["retry-after"] !== undefined ||
-        /rate limit/i.test(input.body ?? "")))
+        IS_RATE_LIMITED_PATTERN_2.test(input.body ?? "")))
   );
 }
 
@@ -249,7 +252,7 @@ function refusedToApp<A>(answer: GitHubAnswer<A>): boolean {
     case "Failed":
       return (
         answer.status === 403 &&
-        (answer.messages ?? []).some((message) => /not accessible by integration/i.test(message))
+        (answer.messages ?? []).some((message) => REFUSED_TO_APP_PATTERN.test(message))
       );
     default:
       return false;

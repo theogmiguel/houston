@@ -26,10 +26,14 @@ import { shouldCollapseUserMessage } from "./MessagesTimeline.logic";
 import { SubagentTooltipContent } from "./SubagentTooltipContent";
 import { EnvironmentSubagentAvatar } from "./V2LifecycleRow";
 
+const BACKTICK_RUN = /`+/g;
+const DETAIL_PATTERN = /`/g;
+const WHITESPACE_RUN = /\s+/g;
+
 const FOLDED_SCRIPT_MASK = "linear-gradient(to bottom, black calc(100% - 1.75rem), transparent)";
 
 function scriptMarkdown(script: string) {
-  const longestRun = Math.max(2, ...(script.match(/`+/g) ?? []).map((run) => run.length));
+  const longestRun = Math.max(2, ...(script.match(BACKTICK_RUN) ?? []).map((run) => run.length));
   const fence = "`".repeat(longestRun + 1);
   return `${fence}javascript\n${script.trimEnd()}\n${fence}`;
 }
@@ -117,8 +121,8 @@ function WorkflowMemberRow(props: {
       ? (member.error ?? member.result ?? member.progress)
       : member.progress
   )
-    ?.replace(/`/g, "")
-    .replace(/\s+/g, " ")
+    ?.replace(DETAIL_PATTERN, "")
+    .replace(WHITESPACE_RUN, " ")
     .trim();
   const className =
     "group/subagent flex w-full min-w-0 items-center gap-2.5 rounded-md px-2 py-1.5 text-left";

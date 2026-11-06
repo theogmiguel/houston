@@ -2,9 +2,16 @@ import * as DateTime from "effect/DateTime";
 
 import { LATEST_DATE_MS, type MuseSubscriptionUsage } from "./protocol.ts";
 
+const IS_MUSE_USAGE_LIMIT_FAILURE_PATTERN = /\b429\b/;
+const IS_MUSE_USAGE_LIMIT_FAILURE_PATTERN_2 = /quota|usage limit/i;
+
 /** Credential proxies may omit error.quota from 429 refusals; inspect text too. */
 export function isMuseUsageLimitFailure(message: string | undefined): boolean {
-  return message !== undefined && /\b429\b/.test(message) && /quota|usage limit/i.test(message);
+  return (
+    message !== undefined &&
+    IS_MUSE_USAGE_LIMIT_FAILURE_PATTERN.test(message) &&
+    IS_MUSE_USAGE_LIMIT_FAILURE_PATTERN_2.test(message)
+  );
 }
 
 const NAMED_RESET =

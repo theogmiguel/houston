@@ -118,6 +118,11 @@ import { useSettingsScope } from "./SettingsScopeContext";
 import { BrowserImportWizard, type WizardTarget } from "./BrowserImportWizard";
 import type { ImportOutcome } from "./browserImportWizard.logic";
 
+const IMPORT_POLICY_REFUSAL_PATTERN =
+  /The managed policy at .* importing browser cookies is not allowed\./u;
+const IMPORT_POLICY_REFUSAL_PATTERN_2 =
+  /(?:^|: )([^:]*'s policy does not allow importing browser cookies\.)/u;
+
 const FILL_VALUE = "fill";
 const RESPONSIVE_VALUE = "responsive";
 
@@ -196,8 +201,8 @@ export const importFailureReason = (cause: unknown): BrowserImportFailureReason 
 export const importPolicyRefusal = (cause: unknown): string | undefined => {
   const message = String((cause as { message?: unknown } | undefined)?.message ?? "");
   return (
-    /The managed policy at .* importing browser cookies is not allowed\./u.exec(message)?.[0] ??
-    /(?:^|: )([^:]*'s policy does not allow importing browser cookies\.)/u.exec(message)?.[1]
+    IMPORT_POLICY_REFUSAL_PATTERN.exec(message)?.[0] ??
+    IMPORT_POLICY_REFUSAL_PATTERN_2.exec(message)?.[1]
   );
 };
 

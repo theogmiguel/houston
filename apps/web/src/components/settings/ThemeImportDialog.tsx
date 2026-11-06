@@ -23,6 +23,10 @@ import { Button } from "../ui/button";
 import { Dialog, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "../ui/dialog";
 import { ThemeSearchSection } from "./ThemeSearchSection";
 
+const ESCAPE_JSON_HTML_PATTERN = /[&<>"']/g;
+const HIGHLIGHT_JSON_PATTERN = /^\s*:/;
+const PREFERRED_NAME_PATTERN = /\.[^.]+$/;
+
 /**
  * The guard runs on the size before the bytes are ever read: a large file
  * would otherwise be pulled into memory, highlighted, and rendered, which
@@ -46,7 +50,7 @@ function describeOversizedThemeFile(bytes: number): string | null {
 
 function escapeJsonHtml(value: string): string {
   return value.replace(
-    /[&<>"']/g,
+    ESCAPE_JSON_HTML_PATTERN,
     (character) =>
       ({
         "&": "&amp;",
@@ -71,7 +75,7 @@ function highlightJson(value: string): string {
 
     let tokenClass = "text-[var(--app-theme-secondary-foreground,var(--color-amber-600))]";
     if (token.startsWith('"')) {
-      tokenClass = /^\s*:/.test(value.slice(index + token.length))
+      tokenClass = HIGHLIGHT_JSON_PATTERN.test(value.slice(index + token.length))
         ? "text-[var(--app-theme-accent,var(--color-blue-600))]"
         : "text-[var(--app-theme-message-action,var(--color-emerald-600))]";
     } else if (token === "true" || token === "false" || token === "null") {
@@ -362,7 +366,7 @@ function ThemeImportBody({
     const failures: string[] = [];
     const preferredName =
       conflicts.length === 1 && fileName
-        ? humanizeThemeName(fileName.replace(/\.[^.]+$/, ""))
+        ? humanizeThemeName(fileName.replace(PREFERRED_NAME_PATTERN, ""))
         : null;
     for (const theme of conflicts) {
       try {

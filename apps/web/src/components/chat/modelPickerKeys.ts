@@ -1,5 +1,7 @@
 import type { ProviderInstanceId } from "@houston-app/contracts";
 
+const DIGITS_ONLY = /^\d+$/;
+
 const MODEL_KEY_PREFIX = "model:";
 const LEGACY_SECTION_KEY_PREFIX = "legacy-models:";
 
@@ -20,7 +22,7 @@ export function parseModelPickerModelKey(
   }
 
   const instanceIdLengthText = encoded.slice(0, separatorIndex);
-  if (!/^\d+$/.test(instanceIdLengthText)) {
+  if (!DIGITS_ONLY.test(instanceIdLengthText)) {
     return null;
   }
 

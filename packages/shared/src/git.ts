@@ -9,6 +9,32 @@ import type {
 import * as Arr from "effect/Array";
 import * as Result from "effect/Result";
 
+const NORMALIZED_PATTERN = /[̀-ͯ]/g;
+const NORMALIZED_PATTERN_2 = /['"`]/g;
+const NORMALIZED_PATTERN_3 = /^[./\s_-]+|[./\s_-]+$/g;
+const BRANCH_FRAGMENT_PATTERN = /[^a-z0-9/_-]+/g;
+const SLASH_RUN = /\/+/g;
+const BRANCH_FRAGMENT_PATTERN_2 = /-+/g;
+const BRANCH_FRAGMENT_PATTERN_3 = /^[./_-]+|[./_-]+$/g;
+const BRANCH_FRAGMENT_PATTERN_4 = /[./_-]+$/g;
+const FORMAT_GENERATED_BRANCH_NAME_PATTERN = /[^a-zA-Z0-9_-]+/g;
+const EDGE_DASHES = /^-+|-+$/g;
+const TOKEN_PATTERN = /[^0-9a-f]/g;
+const TOKEN_START_PATTERN = /[-/]/;
+const TRAILING_SLASHES = /\/+$/g;
+const LOWER_CASE_REMOTE_PATTERN = /\.git$/i;
+const PARSE_GIT_REMOTE_REPOSITORY_PATTERN = /^(?:ssh|https?|git):\/\//i;
+const SCP_STYLE_HOST_AND_PATH_PATTERN = /^[a-z]:/i;
+const SCP_STYLE_HOST_AND_PATH_PATTERN_2 =
+  /^(?:[a-zA-Z0-9._-]+@)?([^@:/\\\s]+):\/?([^/\s]+(?:\/[^/\s]+)+)$/i;
+const LINE_BREAK = /\r?\n/;
+const HEADER_PATTERN = /^\[\s*([^\]]*?)\s*\](.*)$/;
+const MATCH_PATTERN = /^bare\s*(?:=(.*)|[#;].*)?$/i;
+const JOINED_PATTERN = /\\\r?\n[ \t]*/g;
+const HEADER_PATTERN_2 = /^\[\s*remote(?:\s+"([^"]+)"|\.([^\]\s]+))\s*\](.*)$/i;
+const MATCH_PATTERN_2 = /^url\s*=\s*(.*)$/i;
+const SANITIZE_NEW_REF_NAME_PATTERN = /[ \t\n\r\f\v]+/g;
+
 export const WORKTREE_BRANCH_PREFIX = "houston";
 const TEMP_WORKTREE_HEX_TOKEN = "[0-9a-f]{8}";
 const TEMP_WORKTREE_UUID_V4_TOKEN =
@@ -20,19 +46,19 @@ const TEMP_WORKTREE_BRANCH_PATTERN = new RegExp(
 export function sanitizeBranchFragment(raw: string): string {
   const normalized = raw
     .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(NORMALIZED_PATTERN, "")
     .trim()
     .toLowerCase()
-    .replace(/['"`]/g, "")
-    .replace(/^[./\s_-]+|[./\s_-]+$/g, "");
+    .replace(NORMALIZED_PATTERN_2, "")
+    .replace(NORMALIZED_PATTERN_3, "");
 
   const branchFragment = normalized
-    .replace(/[^a-z0-9/_-]+/g, "-")
-    .replace(/\/+/g, "/")
-    .replace(/-+/g, "-")
-    .replace(/^[./_-]+|[./_-]+$/g, "")
+    .replace(BRANCH_FRAGMENT_PATTERN, "-")
+    .replace(SLASH_RUN, "/")
+    .replace(BRANCH_FRAGMENT_PATTERN_2, "-")
+    .replace(BRANCH_FRAGMENT_PATTERN_3, "")
     .slice(0, 64)
-    .replace(/[./_-]+$/g, "");
+    .replace(BRANCH_FRAGMENT_PATTERN_4, "");
 
   return branchFragment.length > 0 ? branchFragment : "update";
 }
@@ -45,9 +71,9 @@ export function formatGeneratedBranchName(raw: string, naming?: BranchNamingOpti
     .split("/")
     .map((part) =>
       part
-        .replace(/[^a-zA-Z0-9_-]+/g, "-")
-        .replace(/-+/g, "-")
-        .replace(/^-+|-+$/g, ""),
+        .replace(FORMAT_GENERATED_BRANCH_NAME_PATTERN, "-")
+        .replace(BRANCH_FRAGMENT_PATTERN_2, "-")
+        .replace(EDGE_DASHES, ""),
     )
     .filter(Boolean)
     .join("/");
@@ -103,17 +129,14 @@ export function deriveLocalBranchNameFromRemoteRef(branchName: string): string {
 export function buildTemporaryWorktreeBranchName(
   randomHex: (byteLength: number) => string,
 ): string {
-  const token = randomHex(4)
-    .toLowerCase()
-    .replace(/[^0-9a-f]/g, "")
-    .slice(0, 8);
+  const token = randomHex(4).toLowerCase().replace(TOKEN_PATTERN, "").slice(0, 8);
   return `${WORKTREE_BRANCH_PREFIX}/${token}`;
 }
 
 /** Flatten temporary houston/<hex> refs because an existing houston branch blocks nested refs. */
 export function flattenTemporaryWorktreeBranchName(refName: string): string {
   const normalized = refName.trim().toLowerCase();
-  const tokenStart = normalized.search(/[-/]/) + 1;
+  const tokenStart = normalized.search(TOKEN_START_PATTERN) + 1;
   const token = normalized.slice(tokenStart, tokenStart + 8);
   return `${WORKTREE_BRANCH_PREFIX}-${token}`;
 }
@@ -125,8 +148,8 @@ export function isTemporaryWorktreeBranch(refName: string): boolean {
 function lowerCaseRemote(value: string): string {
   return value
     .trim()
-    .replace(/\/+$/g, "")
-    .replace(/\.git$/i, "")
+    .replace(TRAILING_SLASHES, "")
+    .replace(LOWER_CASE_REMOTE_PATTERN, "")
     .toLowerCase();
 }
 
@@ -139,7 +162,7 @@ export function parseGitRemoteRepository(
 ): { readonly host: string; readonly path: string } | null {
   const normalized = lowerCaseRemote(value);
 
-  if (/^(?:ssh|https?|git):\/\//i.test(normalized)) {
+  if (PARSE_GIT_REMOTE_REPOSITORY_PATTERN.test(normalized)) {
     try {
       const url = new URL(normalized);
       const repositorySegments = url.pathname.split("/").filter((segment) => segment.length > 0);
@@ -152,9 +175,9 @@ export function parseGitRemoteRepository(
   }
 
   // A userless one-letter prefix is a Windows drive, not an SCP host.
-  const scpStyleHostAndPath = /^[a-z]:/i.test(normalized)
+  const scpStyleHostAndPath = SCP_STYLE_HOST_AND_PATH_PATTERN.test(normalized)
     ? null
-    : /^(?:[a-zA-Z0-9._-]+@)?([^@:/\\\s]+):\/?([^/\s]+(?:\/[^/\s]+)+)$/i.exec(normalized);
+    : SCP_STYLE_HOST_AND_PATH_PATTERN_2.exec(normalized);
   const scpHost = scpStyleHostAndPath?.[1];
   const scpPath = scpStyleHostAndPath?.[2];
   return scpHost && scpPath ? { host: scpHost, path: scpPath } : null;
@@ -193,16 +216,16 @@ function parseGitConfigValue(raw: string): string {
 export function isBareGitConfig(configText: string): boolean {
   let inCore = false;
   let bare = false;
-  for (const rawLine of configText.split(/\r?\n/)) {
+  for (const rawLine of configText.split(LINE_BREAK)) {
     let line = rawLine.trim();
     // Git accepts the first setting on the section header's own line.
-    const header = /^\[\s*([^\]]*?)\s*\](.*)$/.exec(line);
+    const header = HEADER_PATTERN.exec(line);
     if (header !== null) {
       inCore = header[1]!.toLowerCase() === "core";
       line = header[2]!.trim();
     }
     if (!inCore) continue;
-    const match = /^bare\s*(?:=(.*)|[#;].*)?$/i.exec(line);
+    const match = MATCH_PATTERN.exec(line);
     if (match === null) continue;
     const value = match[1] === undefined ? "true" : parseGitConfigValue(match[1]).toLowerCase();
     bare = value === "true" || value === "yes" || value === "on" || value === "1";
@@ -214,13 +237,13 @@ export function parseOriginUrlFromGitConfig(configText: string): string | null {
   let section: string | null = null;
   let originUrl: string | null = null;
   let firstRemoteUrl: string | null = null;
-  const joined = configText.replace(/\\\r?\n[ \t]*/g, "");
-  for (const rawLine of joined.split(/\r?\n/)) {
+  const joined = configText.replace(JOINED_PATTERN, "");
+  for (const rawLine of joined.split(LINE_BREAK)) {
     let line = rawLine.trim();
     if (line.length === 0 || line.startsWith("#") || line.startsWith(";")) continue;
     // Git preserves case in quoted remote subsections but lowercases legacy dotted ones,
     // and accepts the first setting on the section header's own line.
-    const header = /^\[\s*remote(?:\s+"([^"]+)"|\.([^\]\s]+))\s*\](.*)$/i.exec(line);
+    const header = HEADER_PATTERN_2.exec(line);
     if (header) {
       section = header[1] ?? header[2]?.toLowerCase() ?? null;
       line = header[3]!.trim();
@@ -229,7 +252,7 @@ export function parseOriginUrlFromGitConfig(configText: string): string | null {
       continue;
     }
     if (section === null) continue;
-    const match = /^url\s*=\s*(.*)$/i.exec(line);
+    const match = MATCH_PATTERN_2.exec(line);
     if (!match) continue;
     const url = parseGitConfigValue(match[1] ?? "");
     if (url.length === 0) continue;
@@ -264,7 +287,7 @@ function deriveLocalBranchNameCandidatesFromRemoteRef(
 
 // Replace only Git-rejected whitespace; nonbreaking spaces are valid ref characters.
 export function sanitizeNewRefName(rawName: string): string {
-  return rawName.trim().replace(/[ \t\n\r\f\v]+/g, "-");
+  return rawName.trim().replace(SANITIZE_NEW_REF_NAME_PATTERN, "-");
 }
 
 export function dedupeRemoteBranchesWithLocalMatches(

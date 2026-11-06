@@ -5,12 +5,20 @@ import {
   type ServerProvider,
 } from "@houston-app/contracts";
 
+const HUMANIZE_SLUG_PATTERN = /([a-z])([A-Z])/g;
+const HUMANIZE_SLUG_PATTERN_2 = /[_-]+/g;
+const HUMANIZE_SLUG_PATTERN_3 = /\b\w/g;
+const WORDS_PATTERN = /[^\P{P}'’]+/gu;
+const WHITESPACE_RUN = /\s+/u;
+const PROVIDER_INSTANCE_INITIALS_PATTERN = /^['’]+|['’]+$/gu;
+const NORMALIZE_PROVIDER_ACCENT_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/u;
+
 function humanizeSlug(slug: string): string {
   return slug
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/[_-]+/g, " ")
+    .replace(HUMANIZE_SLUG_PATTERN, "$1 $2")
+    .replace(HUMANIZE_SLUG_PATTERN_2, " ")
     .trim()
-    .replace(/\b\w/g, (char) => char.toUpperCase());
+    .replace(HUMANIZE_SLUG_PATTERN_3, (char) => char.toUpperCase());
 }
 
 export function resolveProviderInstanceDisplayName(
@@ -31,9 +39,9 @@ export function providerInstanceInitials(label: string): string {
   // inside a word stays ("Theo's Codex" is TC); a quoting one does not
   // ("Codex 'hub'" is CH).
   const words = label
-    .replace(/[^\P{P}'’]+/gu, " ")
-    .split(/\s+/u)
-    .map((word) => word.replace(/^['’]+|['’]+$/gu, ""))
+    .replace(WORDS_PATTERN, " ")
+    .split(WHITESPACE_RUN)
+    .map((word) => word.replace(PROVIDER_INSTANCE_INITIALS_PATTERN, ""))
     .filter(Boolean);
   if (words.length === 0) return "";
   if (words.length === 1) return Array.from(words[0]!).slice(0, 2).join("").toUpperCase();
@@ -46,7 +54,7 @@ export function providerInstanceInitials(label: string): string {
 export function normalizeProviderAccentColor(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   if (!trimmed) return undefined;
-  return /^#[0-9a-fA-F]{6}$/u.test(trimmed) ? trimmed : undefined;
+  return NORMALIZE_PROVIDER_ACCENT_COLOR_PATTERN.test(trimmed) ? trimmed : undefined;
 }
 
 export function providerAccentForegroundColor(accentColor: string) {

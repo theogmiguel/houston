@@ -45,6 +45,10 @@ import { readLocalApi } from "~/localApi";
 import { cn } from "~/lib/utils";
 import { primaryServerKeybindingsAtom, serverEnvironment } from "~/state/server";
 
+const PDF_EXTENSION = /\.pdf$/i;
+const QUERY_OR_FRAGMENT = /[?#]/;
+const NATIVE_PATTERN = /iPad|iPhone|iPod/;
+
 /**
  * The page reports the keys, and a page script can report any key it likes,
  * so only commands that change what the reader sees are here, never one that
@@ -70,7 +74,7 @@ const HTML_RENDER_SHORTCUT_COMMANDS: ReadonlySet<KeybindingCommand> = new Set([
 ]);
 
 export const isPdfPreviewFile = (path: string): boolean =>
-  /\.pdf$/i.test(path.split(/[?#]/, 1)[0] ?? "");
+  PDF_EXTENSION.test(path.split(QUERY_OR_FRAGMENT, 1)[0] ?? "");
 
 const PdfViewer = lazy(() => import("./PdfViewer"));
 
@@ -103,7 +107,7 @@ function PdfDocumentRevision(props: {
   const native =
     !isDesktopHost &&
     navigator.pdfViewerEnabled &&
-    !/iPad|iPhone|iPod/.test(navigator.userAgent) &&
+    !NATIVE_PATTERN.test(navigator.userAgent) &&
     !(navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   return native ? (
     // oxlint-disable-next-line react/iframe-missing-sandbox -- Chromium's PDF plugin requires an unsandboxed frame; src is an exact-file asset grant.

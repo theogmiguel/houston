@@ -59,13 +59,16 @@ import { MultipleAccountsNote } from "./MultipleAccountsNote";
 import { ProviderEnvironmentSection } from "./ProviderInstanceCard";
 import { useSecretSources } from "./SecretSourceInput";
 
+const NON_ALPHANUMERIC_RUN = /[^a-z0-9]+/g;
+const SLUGIFY_LABEL_PATTERN = /^_+|_+$/g;
+
 /** Limit the slug to 48 chars so the composed ProviderInstanceId fits its 64-char cap. */
 function slugifyLabel(value: string): string {
   return value
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
+    .replace(NON_ALPHANUMERIC_RUN, "_")
+    .replace(SLUGIFY_LABEL_PATTERN, "")
     .slice(0, 48);
 }
 

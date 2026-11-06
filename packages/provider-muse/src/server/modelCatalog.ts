@@ -6,6 +6,8 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { createMuseSdkHost, createMuseSdkHostEffect, type MuseSdkHost } from "./sdk.ts";
 
+const NAME_PATTERN = /\b[a-z]/g;
+
 type MuseReasoningEffort = NonNullable<SendUserTurnOptions<never>["reasoningEffort"]>;
 
 const REASONING_EFFORT_LABELS = {
@@ -125,7 +127,7 @@ export const discoverMuseModels = Effect.fn("discoverMuseModels")(function* (
     const label = model.displayLabel.trim() || model.modelId;
     const name =
       label === model.modelId && label.startsWith("muse-")
-        ? label.replaceAll("-", " ").replace(/\b[a-z]/g, (letter) => letter.toUpperCase())
+        ? label.replaceAll("-", " ").replace(NAME_PATTERN, (letter) => letter.toUpperCase())
         : label;
     return [
       {

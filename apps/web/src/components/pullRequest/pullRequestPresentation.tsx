@@ -32,6 +32,8 @@ import {
   type PullRequestGlyphIcon,
 } from "./pullRequestIcons";
 
+const IS_WORKFLOW_APPROVAL_CHECK_PATTERN = /\/actions\/runs\/\d+(?:\/|$)/u;
+
 export function PullRequestLabelChip({
   label,
   size = "sm",
@@ -176,7 +178,7 @@ function isWorkflowApprovalCheck(check: Pick<PullRequestCheck, "status" | "url">
   return (
     check.status === "action-required" &&
     check.url !== null &&
-    /\/actions\/runs\/\d+(?:\/|$)/u.test(check.url)
+    IS_WORKFLOW_APPROVAL_CHECK_PATTERN.test(check.url)
   );
 }
 

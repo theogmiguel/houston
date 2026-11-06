@@ -1,3 +1,8 @@
+const FILE_HEADER_MIME_TYPE_PATTERN = /\bpython[\d.]*\b/;
+const FILE_HEADER_MIME_TYPE_PATTERN_2 = /\b(?:node|nodejs)\b/;
+const FILE_HEADER_MIME_TYPE_PATTERN_3 = /\bruby\b/;
+const FILE_HEADER_MIME_TYPE_PATTERN_4 = /\b(?:sh|bash|zsh|fish)\b/;
+
 export function fileHeaderMimeType(bytes: Uint8Array): string | undefined {
   const startsWith = (signature: readonly number[], offset = 0) =>
     signature.every((byte, index) => bytes[offset + index] === byte);
@@ -12,9 +17,9 @@ export function fileHeaderMimeType(bytes: Uint8Array): string | undefined {
   if (header.startsWith("SQLite format 3\0")) return "application/vnd.sqlite3";
   if (!header.startsWith("#!")) return undefined;
   const interpreter = header.split("\n", 1)[0] ?? "";
-  if (/\bpython[\d.]*\b/.test(interpreter)) return "text/x-python";
-  if (/\b(?:node|nodejs)\b/.test(interpreter)) return "text/javascript";
-  if (/\bruby\b/.test(interpreter)) return "text/x-ruby";
-  if (/\b(?:sh|bash|zsh|fish)\b/.test(interpreter)) return "text/x-shellscript";
+  if (FILE_HEADER_MIME_TYPE_PATTERN.test(interpreter)) return "text/x-python";
+  if (FILE_HEADER_MIME_TYPE_PATTERN_2.test(interpreter)) return "text/javascript";
+  if (FILE_HEADER_MIME_TYPE_PATTERN_3.test(interpreter)) return "text/x-ruby";
+  if (FILE_HEADER_MIME_TYPE_PATTERN_4.test(interpreter)) return "text/x-shellscript";
   return undefined;
 }

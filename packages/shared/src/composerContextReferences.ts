@@ -10,6 +10,19 @@ import {
   type ThreadContextRecord,
 } from "@houston-app/contracts";
 
+const SLUG_PATTERN = /[^a-z0-9_-]+/gi;
+const EDGE_DASHES = /^-+|-+$/g;
+const CLEANED_PATTERN = /[[\]\\\r\n]/g;
+const WHITESPACE_RUN = /\s+/g;
+const IS_ATTACHMENT_ONLY_BOOTSTRAP_PROMPT_PATTERN = /^Ultrathink:\s*/i;
+const RESTORE_ATTACHMENT_ONLY_BOOTSTRAP_PROMPT_PATTERN = /^Ultrathink:\s*$/i;
+const SPACED_PATTERN = /-/g;
+const CLEAN_LABEL_PATTERN = /[\r\n;\]]/g;
+const AMPERSAND = /&/g;
+const ESCAPE_ATTRIBUTE_PATTERN = /"/g;
+const LESS_THAN = /</g;
+const GREATER_THAN = />/g;
+
 const CONTEXT_PROTOCOL = "houston-context:";
 const COMPOSER_CONTEXT_HREF_PREFIX = `${CONTEXT_PROTOCOL}//v1/`;
 const CONTEXT_KIND_PATTERN = /^[a-z][a-z0-9-]{0,39}$/;
@@ -35,10 +48,7 @@ function fnv1a64(value: string): string {
 
 export function toComposerContextId(producerId: string): ComposerContextId {
   if (CONTEXT_ID_PATTERN.test(producerId)) return producerId as ComposerContextId;
-  const slug = producerId
-    .replace(/[^a-z0-9_-]+/gi, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 48);
+  const slug = producerId.replace(SLUG_PATTERN, "-").replace(EDGE_DASHES, "").slice(0, 48);
   return `${slug || "ctx"}-${fnv1a64(producerId)}` as ComposerContextId;
 }
 
@@ -68,8 +78,8 @@ export function parseComposerContextHref(
 
 export function sanitizeComposerContextLabel(label: string, kind: ComposerContextKind): string {
   const cleaned = label
-    .replace(/[[\]\\\r\n]/g, " ")
-    .replace(/\s+/g, " ")
+    .replace(CLEANED_PATTERN, " ")
+    .replace(WHITESPACE_RUN, " ")
     .trim()
     .slice(0, COMPOSER_CONTEXT_LABEL_MAX_CHARS);
   return cleaned.length > 0 ? cleaned : kind;
@@ -134,7 +144,10 @@ export const ATTACHMENT_ONLY_BOOTSTRAP_PROMPT =
 
 /** Claude's ultrathink effort sends the prompt as `Ultrathink:\n<prompt>`. */
 export function isAttachmentOnlyBootstrapPrompt(text: string): boolean {
-  return text.replace(/^Ultrathink:\s*/i, "") === ATTACHMENT_ONLY_BOOTSTRAP_PROMPT;
+  return (
+    text.replace(IS_ATTACHMENT_ONLY_BOOTSTRAP_PROMPT_PATTERN, "") ===
+    ATTACHMENT_ONLY_BOOTSTRAP_PROMPT
+  );
 }
 
 export function stripAttachmentOnlyBootstrapPrompt(text: string): string {
@@ -150,7 +163,7 @@ export function restoreAttachmentOnlyBootstrapPrompt(
   if (!hasAttachments) return text;
   const trimmed = text.trim();
   if (trimmed.length === 0) return ATTACHMENT_ONLY_BOOTSTRAP_PROMPT;
-  return /^Ultrathink:\s*$/i.test(trimmed)
+  return RESTORE_ATTACHMENT_ONLY_BOOTSTRAP_PROMPT_PATTERN.test(trimmed)
     ? `Ultrathink:\n${ATTACHMENT_ONLY_BOOTSTRAP_PROMPT}`
     : text;
 }
@@ -181,7 +194,7 @@ const CONTEXT_ENVELOPE_TAG = "houston_context";
 const CONTEXT_ENTRY_TAG = "context";
 
 function kindDisplayName(kind: ComposerContextKind): string {
-  const spaced = kind.replace(/-/g, " ");
+  const spaced = kind.replace(SPACED_PATTERN, " ");
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
@@ -190,10 +203,7 @@ function formatComposerContextProviderMarker(
   label: string,
   contextId: ComposerContextId,
 ): string {
-  const cleanLabel = label
-    .replace(/[\r\n;\]]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  const cleanLabel = label.replace(CLEAN_LABEL_PATTERN, " ").replace(WHITESPACE_RUN, " ").trim();
   return `[${kindDisplayName(kind)}: ${escapeComposerContextPayloadText(cleanLabel)}; ref=${contextId}]`;
 }
 
@@ -207,10 +217,10 @@ function escapeComposerContextPayloadText(text: string): string {
 
 function escapeAttribute(value: string): string {
   return value
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+    .replace(AMPERSAND, "&amp;")
+    .replace(ESCAPE_ATTRIBUTE_PATTERN, "&quot;")
+    .replace(LESS_THAN, "&lt;")
+    .replace(GREATER_THAN, "&gt;");
 }
 
 function indent(text: string): string {

@@ -202,6 +202,9 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 
+const THREAD_TIME_LABEL_PATTERN = / ago$/;
+const OPEN_GRID_ID_PATTERN = /^\/grid\/([^/]+)/;
+
 type DraggedThread = ThreadDragSource;
 
 function reportFailure(title: string, result: AtomCommandResult<unknown, unknown>): boolean {
@@ -220,7 +223,7 @@ function reportFailure(title: string, result: AtomCommandResult<unknown, unknown
 function threadTimeLabel(thread: EnvironmentThreadShell, nowMinute: string): string {
   const timestamp = thread.latestUserMessageAt ?? thread.updatedAt;
   return formatRelativeTimeLabel(timestamp, Date.parse(`${nowMinute}:00.000Z`)).replace(
-    / ago$/,
+    THREAD_TIME_LABEL_PATTERN,
     "",
   );
 }
@@ -293,7 +296,7 @@ export function GridSidebar() {
   const nowMinute = useNowMinute();
   const wakeClock = useSnoozeWakeClock(threads);
   const nowIso = new Date(wakeClock).toISOString();
-  const openGridId = /^\/grid\/([^/]+)/.exec(pathname)?.[1] ?? null;
+  const openGridId = OPEN_GRID_ID_PATTERN.exec(pathname)?.[1] ?? null;
   const openGrid =
     openGridId === null ? null : (grids.find((grid) => grid.id === openGridId) ?? null);
 

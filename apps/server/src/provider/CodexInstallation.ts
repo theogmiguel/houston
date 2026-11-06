@@ -31,6 +31,11 @@ import * as ServerConfig from "../config.ts";
 import * as ModelManifest from "./ModelManifest.ts";
 import { resolveProviderCompatibility } from "./providerCompatibility.ts";
 
+const HAS_CODE_MODE_HOST_PATTERN = /^(?:volta-shim|mise|aqua-proxy)(?:\.exe)?$/iu;
+const VERSION_PATTERN = /^codex-cli (\d+\.\d+\.\d+)$/u;
+const LINE_BREAK = /\r?\n/u;
+const TRAILING_SLASH = /\/$/u;
+
 const DRIVER = ProviderDriverKind.make("codex");
 const STAGING_STALE_AFTER_MS = 24 * 60 * 60_000;
 const Version = Schema.String.check(Schema.isPattern(/^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?$/u));
@@ -339,8 +344,7 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
   // Native Codex needs its adjacent host; launchers resolve their own payloads.
   const hasCodeModeHost = Effect.fn("CodexInstallation.hasCodeModeHost")(
     function* (realExecutablePath: string) {
-      if (/^(?:volta-shim|mise|aqua-proxy)(?:\.exe)?$/iu.test(path.basename(realExecutablePath)))
-        return true;
+      if (HAS_CODE_MODE_HOST_PATTERN.test(path.basename(realExecutablePath))) return true;
       if (platform === "win32") {
         if (path.extname(realExecutablePath).toLowerCase() !== ".exe") return true;
         for (const extension of [".bunx", ".shim"]) {
@@ -404,7 +408,7 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
           ? cached.executable
           : yield* Effect.gen(function* () {
               const output = yield* runCommand(executablePath, ["--version"]);
-              const version = /^codex-cli (\d+\.\d+\.\d+)$/u.exec(output.trim())?.[1];
+              const version = VERSION_PATTERN.exec(output.trim())?.[1];
               if (!version) return null;
               yield* runCommand(executablePath, ["app-server", "--help"]);
               return {
@@ -571,14 +575,18 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
       );
       // Bare `tar` on Windows can resolve to Git's MSYS tar, which reads `C:\...` as a remote host.
       const tarCommand = cliArchiveTarCommand(platform, environment);
-      const entries = (yield* runCommand(tarCommand, ["-tzf", archivePath])).trim().split(/\r?\n/u);
-      const types = (yield* runCommand(tarCommand, ["-tvzf", archivePath])).trim().split(/\r?\n/u);
+      const entries = (yield* runCommand(tarCommand, ["-tzf", archivePath]))
+        .trim()
+        .split(LINE_BREAK);
+      const types = (yield* runCommand(tarCommand, ["-tvzf", archivePath]))
+        .trim()
+        .split(LINE_BREAK);
       if (
         entries.length > 10000 ||
         entries.length !== types.length ||
         types.some((line) => !["-", "d"].includes(line[0] ?? "")) ||
         entries.some((entry) => {
-          const parts = entry.replace(/\/$/u, "").split("/");
+          const parts = entry.replace(TRAILING_SLASH, "").split("/");
           return (
             !entry ||
             entry.includes("\\") ||

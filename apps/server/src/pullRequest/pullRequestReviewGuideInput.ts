@@ -1,13 +1,13 @@
 import type { PullRequestActivity, PullRequestDetail } from "@houston-app/contracts";
 import type { ReviewGuideGenerationInput } from "@houston-app/provider-core/server/textGeneration";
 
+const FLAT_PATTERN = /<!--[\s\S]*?-->/g;
+const WHITESPACE_RUN = /\s+/g;
+
 const SETTLED_REMARK_CHARS = 200;
 
 function oneLine(text: string): string {
-  const flat = text
-    .replace(/<!--[\s\S]*?-->/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  const flat = text.replace(FLAT_PATTERN, "").replace(WHITESPACE_RUN, " ").trim();
   return flat.length > SETTLED_REMARK_CHARS ? `${flat.slice(0, SETTLED_REMARK_CHARS)}…` : flat;
 }
 

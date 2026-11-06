@@ -4,6 +4,9 @@ import {
   toKindScopedComposerContextId,
 } from "@houston-app/shared/composerContextReferences";
 
+const CRLF = /\r\n/g;
+const NORMALIZE_TERMINAL_CONTEXT_TEXT_PATTERN = /^\n+|\n+$/g;
+
 export interface TerminalContextSelection {
   terminalId: string;
   terminalLabel: string;
@@ -36,7 +39,7 @@ export function formatTerminalContextReference(context: TerminalContextReference
 }
 
 export function normalizeTerminalContextText(text: string): string {
-  return text.replace(/\r\n/g, "\n").replace(/^\n+|\n+$/g, "");
+  return text.replace(CRLF, "\n").replace(NORMALIZE_TERMINAL_CONTEXT_TEXT_PATTERN, "");
 }
 
 function hasTerminalContextText(context: { text: string }): boolean {

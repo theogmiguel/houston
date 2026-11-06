@@ -57,6 +57,8 @@ import {
   resolveClaudeUpdateRequiredModels,
 } from "./ClaudeModelCatalog.ts";
 
+const WORD_SEPARATOR_RUN = /[\s_-]+/g;
+
 const DEFAULT_CLAUDE_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [],
 });
@@ -68,7 +70,7 @@ const CLAUDE_PRESENTATION = {
 } as const;
 function toTitleCaseWords(value: string): string {
   const parts: Array<string> = [];
-  for (const part of value.split(/[\s_-]+/g)) {
+  for (const part of value.split(WORD_SEPARATOR_RUN)) {
     if (part.length > 0) {
       parts.push(part[0]!.toUpperCase() + part.slice(1).toLowerCase());
     }
@@ -77,7 +79,7 @@ function toTitleCaseWords(value: string): string {
 }
 
 function claudeSubscriptionLabel(subscriptionType: string | undefined): string | undefined {
-  const normalized = subscriptionType?.toLowerCase().replace(/[\s_-]+/g, "");
+  const normalized = subscriptionType?.toLowerCase().replace(WORD_SEPARATOR_RUN, "");
   if (!normalized) return undefined;
 
   switch (normalized) {
@@ -114,7 +116,7 @@ function claudeSubscriptionLabel(subscriptionType: string | undefined): string |
 }
 
 function normalizeClaudeAuthMethod(authMethod: string | undefined): string | undefined {
-  const normalized = authMethod?.toLowerCase().replace(/[\s_-]+/g, "");
+  const normalized = authMethod?.toLowerCase().replace(WORD_SEPARATOR_RUN, "");
   if (!normalized) return undefined;
   if (
     normalized === "apikey" ||
@@ -129,7 +131,7 @@ function normalizeClaudeAuthMethod(authMethod: string | undefined): string | und
 function formatClaudeSubscriptionAuthLabel(subscriptionType: string): string {
   const subscriptionLabel =
     claudeSubscriptionLabel(subscriptionType) ?? toTitleCaseWords(subscriptionType);
-  const normalized = subscriptionLabel.toLowerCase().replace(/[\s_-]+/g, "");
+  const normalized = subscriptionLabel.toLowerCase().replace(WORD_SEPARATOR_RUN, "");
 
   if (normalized.startsWith("claude") && normalized.endsWith("subscription")) {
     return subscriptionLabel;

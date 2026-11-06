@@ -11,6 +11,8 @@ import { overlayMotionFromEdge } from "../ui/overlayMotion";
 import { ScrollArea } from "../ui/scroll-area";
 import { type PromptStashEntry } from "../../promptStashStore";
 
+const WHITESPACE_RUN = /\s+/g;
+
 const SNIPPET_MAX_CHARS = 90;
 
 function missingImageCount(entry: PromptStashEntry): number {
@@ -18,7 +20,7 @@ function missingImageCount(entry: PromptStashEntry): number {
 }
 
 function stashEntrySnippet(entry: PromptStashEntry): string {
-  const trimmed = assistantCitationsToPlainText(entry.prompt).trim().replace(/\s+/g, " ");
+  const trimmed = assistantCitationsToPlainText(entry.prompt).trim().replace(WHITESPACE_RUN, " ");
   if (trimmed.length > 0) {
     return trimmed.length > SNIPPET_MAX_CHARS ? `${trimmed.slice(0, SNIPPET_MAX_CHARS)}…` : trimmed;
   }

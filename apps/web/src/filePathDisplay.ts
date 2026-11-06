@@ -6,16 +6,20 @@ import {
 } from "@houston-app/shared/path";
 import { formatFilePathPosition, splitFilePathPosition } from "@houston-app/shared/fileLinks";
 
+const TRAILING_PATH_SEPARATORS = /[\\/]+$/;
+const STRIP_RELATIVE_PREFIXES_PATTERN = /^\.\/+/;
+const LEADING_SLASHES = /^\/+/;
+
 function normalizePathSeparators(path: string): string {
   return path.replaceAll("\\", "/");
 }
 
 function trimTrailingPathSeparators(path: string): string {
-  return path.replace(/[\\/]+$/, "");
+  return path.replace(TRAILING_PATH_SEPARATORS, "");
 }
 
 function stripRelativePrefixes(path: string): string {
-  return path.replace(/^\.\/+/, "").replace(/^\/+/, "");
+  return path.replace(STRIP_RELATIVE_PREFIXES_PATTERN, "").replace(LEADING_SLASHES, "");
 }
 
 export function formatWorkspaceRelativePath(

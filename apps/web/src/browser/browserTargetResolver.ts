@@ -12,6 +12,8 @@ import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
 import { isDesktopHost } from "~/env";
 import { readPreparedConnection } from "~/state/session";
 
+const EDGE_BRACKETS = /^\[|\]$/g;
+
 export { normalizeHostname, isLocalLoopbackHost } from "@houston-app/shared/hostClassification";
 
 const readEnvironmentUrl = (environmentId: EnvironmentId): URL => {
@@ -34,7 +36,7 @@ const resolveEnvironmentPortTarget = (
   }
   const protocol = target.protocol ?? "http";
   const path = target.path?.startsWith("/") ? target.path : `/${target.path ?? ""}`;
-  const normalizedEnvironmentHost = environmentUrl.hostname.replace(/^\[|\]$/g, "");
+  const normalizedEnvironmentHost = environmentUrl.hostname.replace(EDGE_BRACKETS, "");
   // localhost lets Chromium reach loopback servers bound to either IPv4 or IPv6.
   const resolvedHost = isLocalLoopbackHost(normalizedEnvironmentHost)
     ? "localhost"

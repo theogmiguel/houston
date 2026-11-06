@@ -30,6 +30,9 @@ import {
 import { PreviewImage } from "./PreviewImage";
 import { readBinaryPreview } from "./readBinaryPreview";
 
+const TRAILING_SLASH = /\/$/;
+const BINARY_VIEWER_PATTERN = /(?:[^/]+)?\/$/;
+
 const SourcePreview = lazy(() => import("./ReadOnlySourcePreview"));
 type Archive = Extract<BinaryWorkerResult, { type: "archive" }>;
 type Database = Extract<BinaryWorkerResult, { type: "sqlite" }>;
@@ -180,10 +183,11 @@ export default function BinaryViewer(props: {
   >();
   for (const item of archive?.entries ?? []) {
     if (!item.path.startsWith(folder)) continue;
-    const rest = item.path.slice(folder.length).replace(/\/$/, "");
+    const rest = item.path.slice(folder.length).replace(TRAILING_SLASH, "");
     if (!rest) continue;
     const slash = rest.indexOf("/");
-    const path = slash < 0 ? item.path.replace(/\/$/, "") : `${folder}${rest.slice(0, slash)}`;
+    const path =
+      slash < 0 ? item.path.replace(TRAILING_SLASH, "") : `${folder}${rest.slice(0, slash)}`;
     const directory = slash >= 0 || item.directory;
     const key = `${path}${directory ? "/" : ""}`;
     const previous = children.get(key);
@@ -201,7 +205,7 @@ export default function BinaryViewer(props: {
               setError(null);
               setEntry(null);
               if (selectedPath) setSelectedPath(null);
-              else setFolder(folder.replace(/(?:[^/]+)?\/$/, ""));
+              else setFolder(folder.replace(BINARY_VIEWER_PATTERN, ""));
             }}
           >
             <ChevronLeftIcon className="size-3.5" />

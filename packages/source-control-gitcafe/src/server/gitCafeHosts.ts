@@ -1,3 +1,6 @@
+const TRAILING_SLASHES = /\/+$/u;
+const REPOSITORY_PATTERN = /\.git$/u;
+
 export const GITCAFE_HOSTS = ["git.cafe", "staging.git.cafe"] as const;
 export type GitCafeHost = (typeof GITCAFE_HOSTS)[number];
 
@@ -18,10 +21,7 @@ const REMOTE_PATTERNS = [
 ];
 
 export function gitCafeRepositoryPath(path: string): string | null {
-  const repository = path
-    .trim()
-    .replace(/\/+$/u, "")
-    .replace(/\.git$/u, "");
+  const repository = path.trim().replace(TRAILING_SLASHES, "").replace(REPOSITORY_PATTERN, "");
   return REPOSITORY.test(repository) ? repository : null;
 }
 

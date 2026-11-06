@@ -7,6 +7,8 @@ import {
   SourceControlRepositoryInfo,
 } from "./sourceControl.ts";
 
+const PATH_SEPARATOR = /[/\\]/;
+
 export const PROJECT_CLONE_DETAIL_MAX_LENGTH = 200;
 export const PROJECT_CLONE_ERROR_MAX_LENGTH = 1000;
 
@@ -95,7 +97,9 @@ export function projectCloneDisplayName(
   snapshot: Pick<ProjectCloneSnapshot, "repository" | "destinationPath">,
 ): string {
   if (snapshot.repository) return snapshot.repository.nameWithOwner;
-  const segments = snapshot.destinationPath.split(/[/\\]/).filter((segment) => segment.length > 0);
+  const segments = snapshot.destinationPath
+    .split(PATH_SEPARATOR)
+    .filter((segment) => segment.length > 0);
   return segments[segments.length - 1] ?? snapshot.destinationPath;
 }
 

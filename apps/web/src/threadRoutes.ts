@@ -5,6 +5,8 @@ import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@houston-app/cont
 import * as Option from "effect/Option";
 import type { DraftId } from "./composerDraftStore";
 
+const TRAILING_SLASH = /\/$/;
+
 export type ThreadRouteTarget =
   | {
       kind: "server";
@@ -68,7 +70,7 @@ export function buildThreadRouteParams(ref: ScopedThreadRef): {
 /** Whether a (decoded) location pathname is `ref`'s own thread route, `/$environmentId/$threadId`. */
 export function isThreadRoutePathname(pathname: string, ref: ScopedThreadRef): boolean {
   const { environmentId, threadId } = buildThreadRouteParams(ref);
-  return pathname.replace(/\/$/, "") === `/${environmentId}/${threadId}`;
+  return pathname.replace(TRAILING_SLASH, "") === `/${environmentId}/${threadId}`;
 }
 
 export function buildDraftThreadRouteParams(draftId: DraftId): {

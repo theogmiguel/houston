@@ -12,6 +12,11 @@ import type {
   SourceControlRepositoryVisibility,
 } from "@houston-app/contracts";
 
+const WHITESPACE_RUN = /\s+/gu;
+const MATCH_PATTERN = /^([^:/\s]+):(.+)$/u;
+const MATCH_PATTERN_2 =
+  /^(?:[^@/\s]+@[^:/\s]+:|[^@:/\\\s]{2,}:(?!:)|(?:ssh|https?|git):\/\/[^/]+\/)((?:[^/\s]+\/)+[^/\s]+?)(?:\.git)?\/?$/iu;
+
 export interface SourceControlLinkSubject {
   readonly title: string;
   readonly body: string | null;
@@ -57,7 +62,7 @@ export function transportSafeSourceControlErrorValue(value: string): string {
     const codePoint = character.codePointAt(0);
     printable += codePoint !== undefined && (codePoint < 32 || codePoint === 127) ? " " : character;
   }
-  const normalized = printable.trim().replace(/\s+/gu, " ");
+  const normalized = printable.trim().replace(WHITESPACE_RUN, " ");
 
   let safe = normalized;
   try {
@@ -75,7 +80,7 @@ export function transportSafeSourceControlErrorValue(value: string): string {
 export function parseSourceControlOwnerRef(
   headSelector: string,
 ): SourceControlRefSelector | undefined {
-  const match = /^([^:/\s]+):(.+)$/u.exec(headSelector.trim());
+  const match = MATCH_PATTERN.exec(headSelector.trim());
   const owner = match?.[1]?.trim();
   const refName = match?.[2]?.trim();
   return owner && refName ? { owner, refName } : undefined;
@@ -105,10 +110,7 @@ export function repositoryPathFromRemoteUrl(url: string | null): string | null {
     return null;
   }
 
-  const match =
-    /^(?:[^@/\s]+@[^:/\s]+:|[^@:/\\\s]{2,}:(?!:)|(?:ssh|https?|git):\/\/[^/]+\/)((?:[^/\s]+\/)+[^/\s]+?)(?:\.git)?\/?$/iu.exec(
-      trimmed,
-    );
+  const match = MATCH_PATTERN_2.exec(trimmed);
   const path = match?.[1]?.trim() ?? "";
   return path.length > 0 ? path : null;
 }

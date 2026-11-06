@@ -12,6 +12,9 @@ import { resolveStorage } from "./lib/storage";
 import type { ThreadPanelPresentation } from "./rightPanelLayout";
 import type { ChatFileAttachment } from "./types";
 
+const RELATIVE_PATH_PATTERN = /^[A-Za-z]:\/+$/;
+const TRAILING_SLASHES = /\/+$/;
+
 const RIGHT_PANEL_KINDS = [
   "diff",
   "files",
@@ -816,9 +819,9 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
               return upsertSurface(current, singletonSurface("files"));
             }
             // Workspace entry paths use '/', including on Windows.
-            const relativePath = /^[A-Za-z]:\/+$/.test(requestedPath)
+            const relativePath = RELATIVE_PATH_PATTERN.test(requestedPath)
               ? requestedPath
-              : requestedPath.replace(/\/+$/, "") || requestedPath;
+              : requestedPath.replace(TRAILING_SLASHES, "") || requestedPath;
             const withoutStandaloneExplorer = current.surfaces.filter(
               (surface) => surface.kind !== "files",
             );

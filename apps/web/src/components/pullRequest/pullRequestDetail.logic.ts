@@ -41,6 +41,10 @@ import { inferReviewCommentFenceLanguage, type ReviewCommentContext } from "~/re
 import { reviewCommentContextId } from "~/lib/composerContextRecords";
 import { removeInlineContextReference } from "~/lib/composerContextReferences";
 
+const VISIBLE_BODY_PATTERN = /<!--[\s\S]*?-->/gu;
+const WHITESPACE_RUN = /\s+/gu;
+const REGEX_SPECIAL_CHARS = /[.*+?^${}()|[\]\\]/gu;
+
 export const PULL_REQUEST_MERGE_METHOD_LABELS: Record<PullRequestMergeMethod, string> = {
   merge: "Merge",
   squash: "Squash and merge",
@@ -524,7 +528,7 @@ export function groupPullRequestTimelineConversations(
 
 /** Marker-only bodies are empty; otherwise retain text, including fenced HTML comments. */
 export function visibleBody(body: string): string | null {
-  return body.replace(/<!--[\s\S]*?-->/gu, "").trim().length === 0 ? null : body.trim();
+  return body.replace(VISIBLE_BODY_PATTERN, "").trim().length === 0 ? null : body.trim();
 }
 
 function commentTimelineEvent(comment: PullRequestComment): PullRequestTimelineEvent {
@@ -803,7 +807,7 @@ function bounded(value: string): string {
 }
 
 function boundedField(value: string): string {
-  return bounded(value.replace(/\s+/gu, " "));
+  return bounded(value.replace(WHITESPACE_RUN, " "));
 }
 
 // Prompt builders are handed a change request's URL, not its detail; a URL no host claims reads
@@ -1241,7 +1245,7 @@ export function isPullRequestNotFound(failure: unknown): boolean {
 const OPERATION_PREFIX = /^Pull request operation \w+ failed:\s*/iu;
 
 const HOST_LABELS = sourceControlClients.definitions
-  .map((definition) => definition.label.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"))
+  .map((definition) => definition.label.replace(REGEX_SPECIAL_CHARS, "\\$&"))
   .join("|");
 
 const TOOL_NOISE = [

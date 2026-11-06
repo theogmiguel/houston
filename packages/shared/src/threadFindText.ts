@@ -38,6 +38,8 @@ import {
   CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS,
 } from "./markdownPipeline.ts";
 
+const LINE_BREAK = /\r?\n/g;
+
 // Inline wrappers (including Shiki token spans) must not split a search phrase.
 export const THREAD_FIND_BLOCK_TAGS = new Set([
   "address",
@@ -190,7 +192,7 @@ function markdownThreadFindText(
         }
         value = rendered + value.slice(cursor);
       }
-      text += inPre ? value : value.replace(/\r?\n/g, " ");
+      text += inPre ? value : value.replace(LINE_BREAK, " ");
     }
     const renderSkills =
       node.tagName === "code" || node.tagName === "a"

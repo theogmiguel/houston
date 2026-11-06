@@ -4,6 +4,9 @@ import type {
   PreviewAnnotationPayload,
 } from "@houston-app/contracts";
 
+const CRLF = /\r\n/g;
+const NORMALIZE_TEXT_PATTERN = /^\n+|\n+$/g;
+
 const ELEMENT_CONTEXT_HTML_PREVIEW_LIMIT = 4000;
 const ELEMENT_CONTEXT_STYLES_LIMIT = 4000;
 
@@ -24,7 +27,7 @@ function truncateString(value: string, limit: number): string {
 }
 
 function normalizeText(value: string): string {
-  return value.replace(/\r\n/g, "\n").replace(/^\n+|\n+$/g, "");
+  return value.replace(CRLF, "\n").replace(NORMALIZE_TEXT_PATTERN, "");
 }
 
 /** Clamps string fields to keep large outerHTML payloads within localStorage limits. */

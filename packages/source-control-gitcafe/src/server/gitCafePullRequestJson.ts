@@ -24,6 +24,9 @@ import type {
   ProviderDiffSlice,
 } from "@houston-app/source-control-core/server/PullRequestProvider";
 
+const TRAILING_NEWLINE = /\n$/u;
+const DIGITS_ONLY = /^\d+$/u;
+
 const Actor = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("local"),
@@ -624,7 +627,7 @@ export function toDiff(diff: typeof GitCafeDiff.Type): ProviderDiffSlice {
           if (isEOFMarker(line.origin)) {
             lines.push("\\ No newline at end of file");
           } else {
-            lines.push(`${line.origin}${line.content.replace(/\n$/u, "")}`);
+            lines.push(`${line.origin}${line.content.replace(TRAILING_NEWLINE, "")}`);
             if (
               ["+", "-", " "].includes(line.origin) &&
               !line.content.endsWith("\n") &&
@@ -668,7 +671,7 @@ type GitCafeCheck = (typeof GitCafeChecks.Type.items)[number];
 
 /** A check run's id, which grows with each run. Commit statuses (`status:…`) carry no such order. */
 function runOrder(check: GitCafeCheck): bigint | null {
-  return check.id != null && /^\d+$/u.test(check.id) ? BigInt(check.id) : null;
+  return check.id != null && DIGITS_ONLY.test(check.id) ? BigInt(check.id) : null;
 }
 
 /**

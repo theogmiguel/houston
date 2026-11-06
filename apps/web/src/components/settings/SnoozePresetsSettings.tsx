@@ -37,6 +37,8 @@ import {
   useUpdateScopedSettings,
 } from "./useScopedSettings";
 
+const SNOOZE_PRESET_FIELDS_PATTERN = /^\d{2}:\d{2}$/;
+
 const UNIT_MINUTES = { minutes: 1, hours: 60, days: 24 * 60 } as const;
 type DurationUnit = keyof typeof UNIT_MINUTES;
 const UNIT_LABELS: Record<DurationUnit, string> = {
@@ -427,7 +429,7 @@ function SnoozePresetFields(props: {
             aria-label="Time"
             value={preset.time}
             onChange={(event) => {
-              if (/^\d{2}:\d{2}$/.test(event.target.value)) {
+              if (SNOOZE_PRESET_FIELDS_PATTERN.test(event.target.value)) {
                 onChange({ ...preset, time: event.target.value });
               }
             }}

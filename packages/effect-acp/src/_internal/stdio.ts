@@ -8,6 +8,8 @@ import { ChildProcessSpawner } from "effect/process";
 
 import * as AcpError from "../errors.ts";
 
+const SIGNAL_PATTERN = /^Process interrupted due to receipt of signal: '(SIG[A-Z0-9]+)'$/;
+
 const encoder = new TextEncoder();
 
 export const makeChildStdio = (handle: ChildProcessSpawner.ChildProcessHandle) =>
@@ -59,9 +61,7 @@ export const makeTerminationError = (
         cause.reason.module === "ChildProcess" &&
         cause.reason.method === "exitCode" &&
         cause.reason.cause instanceof Error
-          ? /^Process interrupted due to receipt of signal: '(SIG[A-Z0-9]+)'$/.exec(
-              cause.reason.cause.message,
-            )?.[1]
+          ? SIGNAL_PATTERN.exec(cause.reason.cause.message)?.[1]
           : undefined;
       return signal === undefined
         ? new AcpError.AcpTransportError({

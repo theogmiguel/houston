@@ -34,6 +34,22 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { collectUint8StreamText } from "./collectStreamText.ts";
 import * as ProviderLatestVersions from "./ProviderLatestVersions.ts";
 
+const SAFE_WORD_PATTERN = /^[\w./:\\@=-]+$/;
+const SAFE_WORD_PATTERN_2 = /^[\w./:@=-]+$/;
+const QUOTE_SHELL_WORD_PATTERN = /['\u2018\u2019]/g;
+const MAKE_TARGETED_PROVIDER_UPDATE_ACTION_PATTERN = /^\d+\.\d+\.\d+$/;
+const MAKE_TARGETED_PROVIDER_UPDATE_ACTION_PATTERN_2 =
+  /^(?:npm-global:|bun-global$|pnpm-global$|vite-plus-global$|yarn-global$|volta$)/;
+const IS_VITE_PLUS_GLOBAL_COMMAND_PATH_PATTERN =
+  /\/(?:\.vite-plus|\.local\/share\/vite-plus|appdata\/local\/vite-plus)\/bin\//;
+const IS_YARN_GLOBAL_COMMAND_PATH_PATTERN = /\/yarn\/(?:data\/)?global\/node_modules\//;
+const IS_MISE_COMMAND_PATH_PATTERN = /\/mise(?:\.exe)?$/;
+const TRAILING_PATH_SEPARATORS = /[\\/]+$/;
+const LINE_BREAK = /\r?\n/;
+const MISE_TOOL_PATTERN = /\/mise\/installs\/([^/]+)\/[^/]+$/;
+const IS_MISE_WRAPPER_SCRIPT_PATTERN = /\bmise\s+(?:x|exec)\b/;
+const IS_VOLTA_PACKAGE_INSTALL_PATTERN = /\.exe$/;
+
 const LATEST_VERSION_TIMEOUT_MS = 4_000;
 const PROBE_TIMEOUT_MS = 10_000;
 const PROBE_MAX_BYTES = 256 * 1_024;
@@ -103,10 +119,10 @@ function nonEmptyString(value: unknown): string | null {
 }
 
 function quoteShellWord(word: string, platform: NodeJS.Platform): string {
-  const safeWord = platform === "win32" ? /^[\w./:\\@=-]+$/ : /^[\w./:@=-]+$/;
+  const safeWord = platform === "win32" ? SAFE_WORD_PATTERN : SAFE_WORD_PATTERN_2;
   if (safeWord.test(word)) return word;
   return platform === "win32"
-    ? `'${word.replace(/['\u2018\u2019]/g, "$&$&")}'`
+    ? `'${word.replace(QUOTE_SHELL_WORD_PATTERN, "$&$&")}'`
     : `'${word.replaceAll("'", "'\\''")}'`;
 }
 
@@ -157,16 +173,11 @@ export function makeTargetedProviderUpdateAction(
   capabilities: ProviderMaintenanceCapabilities,
   version: string,
 ): ProviderMaintenanceCommandAction | null {
-  if (!/^\d+\.\d+\.\d+$/.test(version)) return null;
+  if (!MAKE_TARGETED_PROVIDER_UPDATE_ACTION_PATTERN.test(version)) return null;
   const update = capabilities.update;
   const packageName = capabilities.packageName;
   if (!update || !packageName) return null;
-  if (
-    !/^(?:npm-global:|bun-global$|pnpm-global$|vite-plus-global$|yarn-global$|volta$)/.test(
-      update.lockKey,
-    )
-  )
-    return null;
+  if (!MAKE_TARGETED_PROVIDER_UPDATE_ACTION_PATTERN_2.test(update.lockKey)) return null;
   const packageIndex = update.args.findIndex(
     (arg) => arg === `${packageName}@latest` || arg === packageName,
   );
@@ -228,9 +239,7 @@ export function normalizeCommandPath(commandPath: string): string {
  * on Windows.
  */
 function isVitePlusGlobalCommandPath(commandPath: string): boolean {
-  return /\/(?:\.vite-plus|\.local\/share\/vite-plus|appdata\/local\/vite-plus)\/bin\//.test(
-    normalizeCommandPath(commandPath),
-  );
+  return IS_VITE_PLUS_GLOBAL_COMMAND_PATH_PATTERN.test(normalizeCommandPath(commandPath));
 }
 
 function isBunGlobalCommandPath(commandPath: string): boolean {
@@ -238,7 +247,7 @@ function isBunGlobalCommandPath(commandPath: string): boolean {
 }
 
 function isYarnGlobalCommandPath(commandPath: string): boolean {
-  return /\/yarn\/(?:data\/)?global\/node_modules\//.test(normalizeCommandPath(commandPath));
+  return IS_YARN_GLOBAL_COMMAND_PATH_PATTERN.test(normalizeCommandPath(commandPath));
 }
 
 /**
@@ -251,7 +260,7 @@ function isMiseCommandPath(commandPath: string): boolean {
     normalized.includes("/mise/installs/") ||
     normalized.includes("/mise/shims/") ||
     normalized.includes("/mise/command-wrappers/") ||
-    /\/mise(?:\.exe)?$/.test(normalized)
+    IS_MISE_COMMAND_PATH_PATTERN.test(normalized)
   );
 }
 
@@ -272,7 +281,7 @@ function isChocolateyClaudeCommandPath(commandPath: string, env: NodeJS.ProcessE
   if (chocolateyClaudeCommandPath.test(normalized)) return true;
   const root = nonEmptyString(env.ChocolateyInstall);
   if (!root) return false;
-  const prefix = normalizeCommandPath(root.replace(/[\\/]+$/, ""));
+  const prefix = normalizeCommandPath(root.replace(TRAILING_PATH_SEPARATORS, ""));
   return (
     normalized === `${prefix}/bin/claude.exe` ||
     normalized === `${prefix}/lib/claude-code/tools/claude.exe`
@@ -281,7 +290,7 @@ function isChocolateyClaudeCommandPath(commandPath: string, env: NodeJS.ProcessE
 
 /** `choco search --exact --limit-output` prints `<id>|<version>` for a match and nothing otherwise. */
 export function parseChocolateyLatestVersion(output: string, packageId: string): string | null {
-  for (const line of output.split(/\r?\n/)) {
+  for (const line of output.split(LINE_BREAK)) {
     const [id, version] = line.trim().split("|", 2);
     if (id?.toLowerCase() === packageId.toLowerCase()) return nonEmptyString(version);
   }
@@ -311,7 +320,7 @@ export function npmGlobalPrefixFromCommandPath(
     return null;
   }
   // Mise tool layouts resemble npm globals; only globals under its Node install belong to npm.
-  const miseTool = /\/mise\/installs\/([^/]+)\/[^/]+$/.exec(normalized.slice(0, packageIndex))?.[1];
+  const miseTool = MISE_TOOL_PATTERN.exec(normalized.slice(0, packageIndex))?.[1];
   if (miseTool && miseTool !== "node") {
     return null;
   }
@@ -722,7 +731,7 @@ const isMiseWrapperScript = Effect.fn("isMiseWrapperScript")(function* (
   const script = yield* fileSystem
     .readFileString(context.realCommandPath)
     .pipe(Effect.orElseSucceed(() => ""));
-  return script.startsWith("#!") && /\bmise\s+(?:x|exec)\b/.test(script);
+  return script.startsWith("#!") && IS_MISE_WRAPPER_SCRIPT_PATTERN.test(script);
 });
 
 // Volta bin links only identify its shim; the package image proves ownership.
@@ -732,8 +741,9 @@ const isVoltaPackageInstall = Effect.fn("isVoltaPackageInstall")(function* (
 ) {
   const path = yield* Path.Path;
   if (
-    path.basename(normalizeCommandPath(context.realCommandPath)).replace(/\.exe$/, "") !==
-    "volta-shim"
+    path
+      .basename(normalizeCommandPath(context.realCommandPath))
+      .replace(IS_VOLTA_PACKAGE_INSTALL_PATTERN, "") !== "volta-shim"
   ) {
     return false;
   }

@@ -1,6 +1,9 @@
 import type { ProjectEntry } from "@houston-app/contracts";
 import { normalizeSearchQuery } from "@houston-app/shared/searchRanking";
 
+const TRIM_LEADING_PATTERN = /^[@./]+/;
+const WHITESPACE = /\s/g;
+
 export const PROJECT_FILE_PICKER_RESULT_LIMIT = 200;
 
 export interface ProjectFilePickerMatch {
@@ -41,8 +44,8 @@ export function getProjectFilePickerMatches(
   if (limit <= 0) return [];
 
   const query = normalizeSearchQuery(rawQuery, {
-    trimLeadingPattern: /^[@./]+/,
-  }).replaceAll(/\s/g, "");
+    trimLeadingPattern: TRIM_LEADING_PATTERN,
+  }).replaceAll(WHITESPACE, "");
   const matches: ProjectFilePickerMatch[] = [];
 
   for (const entry of entries) {

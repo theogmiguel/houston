@@ -1,5 +1,7 @@
 import { getResolvedOrResolveTheme, registerCustomTheme, type DiffsTheme } from "@pierre/diffs";
 
+const MATCH_PATTERN = /^#([0-9a-f]{6})([0-9a-f]{2})?$/i;
+
 /** pierre-light with every syntax color darkened until it reads on every light code surface. */
 export const READABLE_LIGHT_THEME_NAME = "houston-light";
 
@@ -20,7 +22,7 @@ function contrastOnLightCode(rgb: readonly [number, number, number]): number {
 
 /** Darkens a #rrggbb(aa) color in steps that keep its hue until it reads on light code. */
 export function readableOnLightCode(color: string, minContrast = MIN_CONTRAST): string {
-  const match = /^#([0-9a-f]{6})([0-9a-f]{2})?$/i.exec(color);
+  const match = MATCH_PATTERN.exec(color);
   if (!match) return color;
   let rgb = [0, 2, 4].map((start) => Number.parseInt(match[1]!.slice(start, start + 2), 16)) as [
     number,

@@ -12,6 +12,12 @@ import * as AcpWireSchema from "effect-acp/schema-v1";
 
 import type { AcpToolCallState } from "@houston-app/provider-acp/server/runtimeModel";
 
+const SANITIZE_TOOL_VALUE_PATTERN = /^data:image\//i;
+const LOCAL_IMAGE_PATH_PATTERN = /^file:\/\//i;
+const LOCAL_IMAGE_PATH_PATTERN_2 = /^\/[a-z]:\//i;
+const LOCAL_IMAGE_PATH_PATTERN_3 = /^[a-z][a-z\d+.-]*:/i;
+const LOCAL_IMAGE_PATH_PATTERN_4 = /^[a-z]:[\\/]/i;
+
 const TOOL_TEXT_LIMIT = 8_000;
 const TOOL_TEXT_TRUNCATED = "[Earlier output truncated]\n\n";
 const QUESTION_LABEL_LIMIT = 512;
@@ -173,7 +179,7 @@ function sanitizeToolValue(value: unknown, budget: ToolPayloadBudget, depth: num
     return undefined;
   }
   if (typeof value === "string") {
-    if (/^data:image\//i.test(value) || budget.text <= 0) {
+    if (SANITIZE_TOOL_VALUE_PATTERN.test(value) || budget.text <= 0) {
       return undefined;
     }
     const text = boundText(value, Math.min(TOOL_TEXT_LIMIT, budget.text));
@@ -337,17 +343,19 @@ function localImagePath(imagePath: string | undefined): string | undefined {
   if (!isWorkspaceImagePreviewPath(path)) {
     return undefined;
   }
-  if (/^file:\/\//i.test(path)) {
+  if (LOCAL_IMAGE_PATH_PATTERN.test(path)) {
     try {
       const url = new URL(path);
       if (url.hostname && url.hostname !== "localhost") return undefined;
       const pathname = decodeURIComponent(url.pathname);
-      return /^\/[a-z]:\//i.test(pathname) ? pathname.slice(1) : pathname;
+      return LOCAL_IMAGE_PATH_PATTERN_2.test(pathname) ? pathname.slice(1) : pathname;
     } catch {
       return undefined;
     }
   }
-  return /^[a-z][a-z\d+.-]*:/i.test(path) && !/^[a-z]:[\\/]/i.test(path) ? undefined : path;
+  return LOCAL_IMAGE_PATH_PATTERN_3.test(path) && !LOCAL_IMAGE_PATH_PATTERN_4.test(path)
+    ? undefined
+    : path;
 }
 
 export function normalizeAntigravityToolCall(toolCall: AcpToolCallState): AcpToolCallState {

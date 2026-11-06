@@ -12,6 +12,9 @@ import {
 import { create } from "zustand";
 import type { ThreadFindPositionReader, ThreadFindStart } from "./threadFind";
 
+const TOGETHER_PATTERN = /[\u2018\u2019]/g;
+const FIND_FOR_MESSAGE_MATCH_PATTERN = /[\p{L}\p{N}]/u;
+
 export interface ThreadFindLocalSelection {
   readonly base: OrchestrationV2SearchThreadResult;
   readonly baseNavigationId: number;
@@ -178,7 +181,7 @@ export function findForMessageMatch(
 ): PendingThreadFind {
   const start = match.messageId ? { start: { entryId: match.messageId, occurrence: 0 } } : {};
   // Apostrophes are straight in the query; straightening keeps offsets.
-  const together = messagePhrase(query)?.exec(match.snippet.replace(/[\u2018\u2019]/g, "'"));
+  const together = messagePhrase(query)?.exec(match.snippet.replace(TOGETHER_PATTERN, "'"));
   if (together) {
     return {
       query: match.snippet.slice(together.index, together.index + together[0].length),
@@ -193,6 +196,7 @@ export function findForMessageMatch(
   const ranges = findSearchTokenRanges(match.snippet, word);
   // A whole word first, as search ranked it: "Café", not "Cafe" in "Cafeteria".
   const shown =
-    ranges.find((range) => !/[\p{L}\p{N}]/u.test(match.snippet[range.end] ?? "")) ?? ranges[0];
+    ranges.find((range) => !FIND_FOR_MESSAGE_MATCH_PATTERN.test(match.snippet[range.end] ?? "")) ??
+    ranges[0];
   return { query: shown ? match.snippet.slice(shown.start, shown.end) : word, ...start };
 }

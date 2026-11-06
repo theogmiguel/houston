@@ -54,6 +54,8 @@ import {
 } from "./codexUsageLimits.ts";
 import * as HostProcess from "@houston-app/shared/HostProcess";
 import packageJson from "../../package.json" with { type: "json" };
+
+const VERSION_MATCH_PATTERN = /\/([^\s]+)/;
 const isCodexAppServerSpawnError = Schema.is(CodexErrors.CodexAppServerSpawnError);
 const RATE_LIMITS_PROBE_TIMEOUT_MS = 3_000;
 
@@ -536,7 +538,7 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
   const spawnedAtMs = DateTime.toEpochMillis(yield* DateTime.now);
   const { client, initialize } = yield* withCodexAppServerClient(input);
 
-  const versionMatch = initialize.userAgent.match(/\/([^\s]+)/);
+  const versionMatch = initialize.userAgent.match(VERSION_MATCH_PATTERN);
   const version = versionMatch ? versionMatch[1] : undefined;
 
   const accountResponse = yield* client.request("account/read", {});

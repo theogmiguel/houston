@@ -10,6 +10,33 @@ import {
   type OfficeWorkerRequest,
 } from "./officePreviewProtocol";
 
+const OFFICE_XML_DECODER_PATTERN = /^<\?xml\s[^?]*\bencoding\s*=\s*["']([^"']+)["']/i;
+const OFFICE_XML_PATTERN = /^(<\?xml\s[^?]*\bencoding\s*=\s*)["'][^"']+["']/i;
+const WORD_DOCUMENTS_PATTERN = /\/>$/;
+const WORD_DOCUMENTS_PATTERN_2 = /<(?![!?/])/g;
+const MATCH_PATTERN = /^([A-Z]{1,3})([1-9]\d{0,6})$/;
+const BOUNDED_WORKSHEET_PATTERN = /^\d{1,6}$/;
+const BOUNDED_WORKSHEET_PATTERN_2 = /^[a-zA-Z]+$/;
+const OPENING_PATTERN = /\/?>$/;
+const BOUNDED_WORKSHEET_PATTERN_3 = /\s+t\s*=\s*(?:"[^"]*"|'[^']*')/;
+const BOUNDED_WORKSHEET_PATTERN_4 = />$/;
+const METADATA_PATTERN =
+  /(<((?:\w+:)?(?:dimension|mergeCell|col))\b(?:[^"'<>]|"[^"]*"|'[^']*')*>)(?:\s*<\/\2\s*>)?/g;
+const REPLACE_PATTERN = /\/?>/;
+const METADATA_PATTERN_2 = /<(?:\w+:)?col\b/;
+const BOUNDED_WORKSHEET_PATTERN_5 = /^<([^\s>]+)/;
+const BINARY_PATTERN = /(?:\+xml|\/xml)$/i;
+const BINARY_PATTERN_2 = /^(?:image|audio|video|font)\//i;
+const BINARY_PATTERN_3 = /^(?:png|jpe?g|gif|webp|bmp|tiff?|ico|bin|sigs|cer|ttf|otf|odttf|woff2?)$/;
+const METADATA_PATTERN_3 = /^\//;
+const EXTERNAL_PATTERN = /^(?:[a-z][a-z\d+.-]*:|\/\/)/i;
+const FOLDER_PATTERN = /_rels\/[^/]+\.rels$/;
+const OWNER_PATTERN = /_rels\/([^/]+)\.rels$/;
+const NOTE_PATTERN = /^(footnote|endnote|comment)Reference$/;
+const WORD_EXPANSION_PATTERN = /<(?:\w+:)?pageBreakBefore\b/;
+const REL_PATH_PATTERN = /([^/]+)$/;
+const BOUNDED_ARCHIVE_PATTERN = /\.(?:xml|rels)$/i;
+
 function xmlParser() {
   const parser = new SaxesParser({ xmlns: true });
   parser.on("doctype", () => {
@@ -24,14 +51,12 @@ function officeXmlDecoder(bytes: Uint8Array) {
   if ((bytes[0] === 0xfe && bytes[1] === 0xff) || (bytes[0] === 0 && bytes[1] === 0x3c))
     return new TextDecoder("utf-16be");
   const declaration = new TextDecoder().decode(bytes.subarray(0, 256));
-  return new TextDecoder(/^<\?xml\s[^?]*\bencoding\s*=\s*["']([^"']+)["']/i.exec(declaration)?.[1]);
+  return new TextDecoder(OFFICE_XML_DECODER_PATTERN.exec(declaration)?.[1]);
 }
 
 function officeXml(bytes: Uint8Array) {
   // Repacked XML is UTF-8, regardless of the source part's encoding.
-  return officeXmlDecoder(bytes)
-    .decode(bytes)
-    .replace(/^(<\?xml\s[^?]*\bencoding\s*=\s*)["'][^"']+["']/i, '$1"UTF-8"');
+  return officeXmlDecoder(bytes).decode(bytes).replace(OFFICE_XML_PATTERN, '$1"UTF-8"');
 }
 
 // Section properties terminate the section they describe, so the kept prefix
@@ -148,7 +173,7 @@ function wordDocuments(
   parser.on("opentag", (tag) => {
     names.push(tag.name);
     if (names.length === 2 && tag.local === "body") {
-      prefix = xml.slice(0, parser.position).replace(/\/>$/, ">");
+      prefix = xml.slice(0, parser.position).replace(WORD_DOCUMENTS_PATTERN, ">");
       suffix = `</${tag.name}></${names[0]}>`;
       boundary = batchStart = parser.position;
     } else if (prefix && names.length > 2) {
@@ -194,7 +219,7 @@ function wordDocuments(
     const section = sections.find((section) => section.body || section.end >= batch.end);
     const document = prefix + batch.content + (section?.xml ?? "") + suffix;
     length += batch.content.length;
-    markup += batch.content.match(/<(?![!?/])/g)?.length ?? 0;
+    markup += batch.content.match(WORD_DOCUMENTS_PATTERN_2)?.length ?? 0;
     if (length > 3 * 1024 * 1024 || markup > 100_000) {
       truncated = true;
       break;
@@ -241,7 +266,7 @@ function boundedWorksheet(
   } | null = null;
   let truncated = false;
   const coordinate = (ref: string) => {
-    const match = /^([A-Z]{1,3})([1-9]\d{0,6})$/.exec(ref);
+    const match = MATCH_PATTERN.exec(ref);
     if (!match) throw new Error("This workbook contains invalid cell coordinates.");
     let col = 0;
     for (const letter of match[1]!) col = col * 26 + letter.charCodeAt(0) - 64;
@@ -285,7 +310,7 @@ function boundedWorksheet(
         throw new Error("This workbook contains invalid row coordinates.");
       rowTag = xml
         .slice(xml.lastIndexOf("<", parser.position - 1), parser.position)
-        .replace(/\/>$/, ">");
+        .replace(WORD_DOCUMENTS_PATTERN, ">");
       column = 0;
       cells = rows.get(row) ?? new Map<number, string>();
       if (row > OFFICE_PREVIEW_MAX_ROWS)
@@ -313,13 +338,16 @@ function boundedWorksheet(
         letters = String.fromCharCode(65 + ((value - 1) % 26)) + letters;
       const style = attribute("s");
       const type = attribute("t");
-      if ((style && !/^\d{1,6}$/.test(style)) || (type && !/^[a-zA-Z]+$/.test(type)))
+      if (
+        (style && !BOUNDED_WORKSHEET_PATTERN.test(style)) ||
+        (type && !BOUNDED_WORKSHEET_PATTERN_2.test(type))
+      )
         throw new Error("This workbook contains invalid cell metadata.");
       cell = {
         start: parser.position,
         opening: xml
           .slice(xml.lastIndexOf("<", parser.position - 1), parser.position)
-          .replace(/\/?>$/, `${ref ? "" : ` r="${letters}${row}"`}>`),
+          .replace(OPENING_PATTERN, `${ref ? "" : ` r="${letters}${row}"`}>`),
         name: tag.name,
         prefix: tag.prefix ? `${tag.prefix}:` : "",
         selfClosing: tag.isSelfClosing,
@@ -351,8 +379,8 @@ function boundedWorksheet(
         cells.set(
           column,
           cell.opening
-            .replace(/\s+t\s*=\s*(?:"[^"]*"|'[^']*')/, "")
-            .replace(/>$/, ' t="inlineStr">') +
+            .replace(BOUNDED_WORKSHEET_PATTERN_3, "")
+            .replace(BOUNDED_WORKSHEET_PATTERN_4, ' t="inlineStr">') +
             `<${cell.prefix}is><${cell.prefix}t>` +
             escape(kept) +
             `</${cell.prefix}t></${cell.prefix}is></${cell.name}>`,
@@ -385,32 +413,29 @@ function boundedWorksheet(
     return a + ":" + letters + Math.min(OFFICE_PREVIEW_MAX_ROWS, last.line);
   };
   const metadata = (part: string) =>
-    part.replace(
-      /(<((?:\w+:)?(?:dimension|mergeCell|col))\b(?:[^"'<>]|"[^"]*"|'[^']*')*>)(?:\s*<\/\2\s*>)?/g,
-      (tag: string, opening: string) => {
-        const attributes = metadataAttributes.get(opening);
-        if (!attributes) return tag;
-        const replace = (name: string, value: string) => {
-          const pattern = new RegExp(`\\s${name}\\s*=\\s*(?:"[^"]*"|'[^']*')`);
-          tag = pattern.test(tag)
-            ? tag.replace(pattern, ` ${name}="${value}"`)
-            : tag.replace(/\/?>/, (end) => ` ${name}="${value}"${end}`);
-        };
-        if (attributes.ref !== undefined) {
-          const bounded = boundRange(attributes.ref);
-          if (!bounded) return "";
-          replace("ref", bounded);
-        }
-        if (/<(?:\w+:)?col\b/.test(opening)) {
-          const min = Math.max(1, Number(attributes.min ?? 1));
-          const max = Math.min(OFFICE_PREVIEW_MAX_COLUMNS, Number(attributes.max ?? 16384));
-          if (!Number.isInteger(min) || !Number.isInteger(max) || min > max) return "";
-          replace("min", String(min));
-          replace("max", String(max));
-        }
-        return tag;
-      },
-    );
+    part.replace(METADATA_PATTERN, (tag: string, opening: string) => {
+      const attributes = metadataAttributes.get(opening);
+      if (!attributes) return tag;
+      const replace = (name: string, value: string) => {
+        const pattern = new RegExp(`\\s${name}\\s*=\\s*(?:"[^"]*"|'[^']*')`);
+        tag = pattern.test(tag)
+          ? tag.replace(pattern, ` ${name}="${value}"`)
+          : tag.replace(REPLACE_PATTERN, (end) => ` ${name}="${value}"${end}`);
+      };
+      if (attributes.ref !== undefined) {
+        const bounded = boundRange(attributes.ref);
+        if (!bounded) return "";
+        replace("ref", bounded);
+      }
+      if (METADATA_PATTERN_2.test(opening)) {
+        const min = Math.max(1, Number(attributes.min ?? 1));
+        const max = Math.min(OFFICE_PREVIEW_MAX_COLUMNS, Number(attributes.max ?? 16384));
+        if (!Number.isInteger(min) || !Number.isInteger(max) || min > max) return "";
+        replace("min", String(min));
+        replace("max", String(max));
+      }
+      return tag;
+    });
   return {
     xml: emptyData
       ? metadata(xml)
@@ -421,7 +446,7 @@ function boundedWorksheet(
               `${rowTags.get(line) ?? `<row r="${line}">`}${[...values]
                 .sort(([a], [b]) => a - b)
                 .map(([, value]) => value)
-                .join("")}</${/^<([^\s>]+)/.exec(rowTags.get(line) ?? "<row>")![1]}>`,
+                .join("")}</${BOUNDED_WORKSHEET_PATTERN_5.exec(rowTags.get(line) ?? "<row>")![1]}>`,
           )
           .join("")}${metadata(xml.slice(dataEnd))}`,
     truncated,
@@ -534,15 +559,13 @@ function wordPartTypes() {
         extension === "rels" ||
         extension === "xml" ||
         xmlParts.has(path) ||
-        /(?:\+xml|\/xml)$/i.test(type)
+        BINARY_PATTERN.test(type)
       )
         return false;
       return (
         [...(roles.get(path) ?? [])].some((role) => WORD_BINARY_PARTS.has(role)) ||
-        /^(?:image|audio|video|font)\//i.test(type) ||
-        /^(?:png|jpe?g|gif|webp|bmp|tiff?|ico|bin|sigs|cer|ttf|otf|odttf|woff2?)$/.test(
-          extension,
-        ) ||
+        BINARY_PATTERN_2.test(type) ||
+        BINARY_PATTERN_3.test(extension) ||
         type === "application/octet-stream" ||
         type === "application/vnd.openxmlformats-package.digital-signature-origin"
       );
@@ -557,15 +580,14 @@ function wordPartTypes() {
           if (tag.local === "Default")
             defaults.set(attr("Extension").toLowerCase(), attr("ContentType"));
           if (tag.local === "Override")
-            overrides.set(attr("PartName").replace(/^\//, ""), attr("ContentType"));
+            overrides.set(attr("PartName").replace(METADATA_PATTERN_3, ""), attr("ContentType"));
         }
         if (tag.local !== "Relationship" || !path.endsWith(".rels")) return;
         const type = attr("Type");
         const role = type.slice(type.lastIndexOf("/") + 1);
         const external =
-          attr("TargetMode").toLowerCase() === "external" ||
-          /^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(attr("Target"));
-        const folder = path === "_rels/.rels" ? "" : path.replace(/_rels\/[^/]+\.rels$/, "");
+          attr("TargetMode").toLowerCase() === "external" || EXTERNAL_PATTERN.test(attr("Target"));
+        const folder = path === "_rels/.rels" ? "" : path.replace(FOLDER_PATTERN, "");
         // Preserve archive URL resolution, including literal query/fragment
         // characters in ZIP names rather than silently classifying another file.
         const target = new URL(attr("Target"), `https://docx.invalid/${folder}`)
@@ -583,7 +605,7 @@ function wordPartTypes() {
           const types = roles.get(target) ?? new Set<string>();
           types.add(role);
           roles.set(target, types);
-          const owner = path === "_rels/.rels" ? "" : path.replace(/_rels\/([^/]+)\.rels$/, "$1");
+          const owner = path === "_rels/.rels" ? "" : path.replace(OWNER_PATTERN, "$1");
           const refs = relationships.get(owner) ?? new Map<string, string>();
           if (!refs.has(attr("Id"))) refs.set(attr("Id"), target);
           relationships.set(owner, refs);
@@ -823,7 +845,7 @@ async function wordExpansion(
     parser.on("opentag", (tag) => {
       const attr = (name: string) =>
         Object.values(tag.attributes).find((a) => a.local === name)?.value ?? "";
-      const note = /^(footnote|endnote|comment)Reference$/.exec(tag.local)?.[1];
+      const note = NOTE_PATTERN.exec(tag.local)?.[1];
       if (note && noteParts.has(note)) add(`${noteParts.get(note)}#${attr("id")}`);
       if (tag.local === "headerReference" || tag.local === "footerReference") {
         const target = parts.relationships.get(path)?.get(attr("id"));
@@ -878,7 +900,7 @@ async function wordExpansion(
   for (const [path, roles] of parts.roles)
     if (
       roles.has("styles") &&
-      /<(?:\w+:)?pageBreakBefore\b/.test((await archive.file(path)?.async("string")) ?? "")
+      WORD_EXPANSION_PATTERN.test((await archive.file(path)?.async("string")) ?? "")
     )
       stylePageBreaks = true;
   for (const document of documents) {
@@ -912,7 +934,7 @@ async function wordExpansion(
   for (const [owner, refs] of parts.relationships) {
     const ids = new Set([...refs].filter(([, path]) => omitted.has(path)).map(([id]) => id));
     if (ids.size === 0) continue;
-    const relPath = owner ? owner.replace(/([^/]+)$/, "_rels/$1.rels") : "_rels/.rels";
+    const relPath = owner ? owner.replace(REL_PATH_PATTERN, "_rels/$1.rels") : "_rels/.rels";
     let xml = await archive.file(relPath)?.async("string");
     if (!xml) continue;
     const removed: { start: number; end: number }[] = [];
@@ -1071,7 +1093,10 @@ export async function boundedArchive(input: Extract<OfficeWorkerRequest, { type:
         continue;
       }
       if (media) mediaSizes.set(entry.name, Math.ceil((content.length * 4) / 3));
-      archive.file(entry.name, /\.(?:xml|rels)$/i.test(entry.name) ? officeXml(content) : content);
+      archive.file(
+        entry.name,
+        BOUNDED_ARCHIVE_PATTERN.test(entry.name) ? officeXml(content) : content,
+      );
     }
   }
   if (word) {

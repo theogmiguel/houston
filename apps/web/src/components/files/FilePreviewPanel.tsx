@@ -138,6 +138,9 @@ import {
   useProjectFileQuery,
 } from "./projectFilesQueryState";
 
+const IS_MERMAID_PATTERN = /\.(mmd|mermaid)$/i;
+const PATH_SEPARATOR = /[\\/]/;
+
 const NO_FILE_REVISION_ATOM = Atom.make(null);
 
 interface FilePreviewPanelProps {
@@ -1147,7 +1150,7 @@ export default function FilePreviewPanel({
   );
   const breadcrumbRef = useRef<HTMLDivElement>(null);
   const isMarkdown = previewPath ? isMarkdownPreviewFile(previewPath) : false;
-  const isMermaid = previewPath !== null && /\.(mmd|mermaid)$/i.test(previewPath);
+  const isMermaid = previewPath !== null && IS_MERMAID_PATTERN.test(previewPath);
   const [renderMermaidPreferred, setRenderMermaidPreferred] = useLocalStorage(
     "houston.renderMermaid",
     true,
@@ -1512,7 +1515,7 @@ export default function FilePreviewPanel({
             (isDocument || file.readError?.failure === "binary_file") ? (
             <AttachmentFilePreview
               key={`${environmentId}:${absolutePath}:${workspaceMutationId}:${fileRefreshRevision}`}
-              name={relativePath.split(/[\\/]/).at(-1) || relativePath}
+              name={relativePath.split(PATH_SEPARATOR).at(-1) || relativePath}
               mimeType="application/octet-stream"
               sizeBytes={0}
               asset={{
@@ -1707,7 +1710,7 @@ export function WorkspaceLargeTextPreview(props: {
               setTimeout(() => URL.revokeObjectURL(downloadUrl), 30_000);
               const anchor = document.createElement("a");
               anchor.href = downloadUrl;
-              anchor.download = props.name.split(/[\\/]/).at(-1) || props.name;
+              anchor.download = props.name.split(PATH_SEPARATOR).at(-1) || props.name;
               anchor.click();
             })()
               .catch(showError)

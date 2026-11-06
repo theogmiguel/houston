@@ -1,3 +1,6 @@
+const WHITESPACE = /\s/;
+const TOKENIZE_CLI_ARGS_PATTERN = /[\s'"]/;
+
 export interface ParsedCliArgs {
   readonly flags: Record<string, string | null>;
   readonly positionals: string[];
@@ -41,7 +44,7 @@ export function tokenizeCliArgs(args?: string): ReadonlyArray<string> {
     if (char === "'" || char === '"') {
       quote = char;
       quoted = true;
-    } else if (/\s/.test(char)) {
+    } else if (WHITESPACE.test(char)) {
       if (current || quoted) {
         tokens.push(current);
         current = "";
@@ -49,7 +52,7 @@ export function tokenizeCliArgs(args?: string): ReadonlyArray<string> {
       }
     } else if (char === "\\") {
       const next = input[index + 1];
-      if (next !== undefined && /[\s'"]/.test(next)) {
+      if (next !== undefined && TOKENIZE_CLI_ARGS_PATTERN.test(next)) {
         current += next;
         index++;
       } else {

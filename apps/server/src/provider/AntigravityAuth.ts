@@ -30,6 +30,8 @@ import {
 } from "./antigravityCallback.ts";
 import type { ProviderAuthController } from "./ProviderAuthService.ts";
 
+const SAFE_AUTH_FAILURE_PATTERN = /access_denied|denied access|cancelled/i;
+
 const AUTH_TIMEOUT_MS = 300_000;
 // A healthy agent shows the Google link or finishes within seconds. Its bundled Python has no
 // IPv4 fallback race, so a host with broken IPv6 waits about two minutes per Google request.
@@ -117,7 +119,7 @@ function safeAuthFailure(cause: Cause.Cause<unknown>, usesBrowser: boolean): str
       if (error.value.errorMessage.includes("SUBSCRIPTION_REQUIRED")) {
         return "Google requires an eligible Antigravity subscription for this account.";
       }
-      if (/access_denied|denied access|cancelled/i.test(error.value.errorMessage)) {
+      if (SAFE_AUTH_FAILURE_PATTERN.test(error.value.errorMessage)) {
         return "Google sign-in was not approved. Start sign-in again.";
       }
       if (error.value.method === "session/new" && error.value.code === -32603) {

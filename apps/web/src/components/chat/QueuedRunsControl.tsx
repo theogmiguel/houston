@@ -39,6 +39,8 @@ import { TimelineRowTimestamp } from "./TimelineRowParts";
 import { FoldedMessageHeader, useScheduledTaskTitle } from "./TimelineUserMessageRow";
 import { messageDeliveryPresentation } from "./messageDelivery";
 
+const LINE_BREAK = /\r?\n/;
+
 export interface EditQueuedRunRequest {
   readonly runId: RunId;
   readonly messageId: MessageId;
@@ -436,13 +438,13 @@ function QueuedMessage(props: {
       ? {
           icon: CalendarClockIcon,
           label: "Automation",
-          summary: taskTitle ?? props.previewText.split(/\r?\n/, 1)[0] ?? "",
+          summary: taskTitle ?? props.previewText.split(LINE_BREAK, 1)[0] ?? "",
         }
       : attribution === "agent"
         ? {
             icon: MessagesSquareIcon,
             label: senderShell?.title.trim() || "Agent",
-            summary: props.previewText.split(/\r?\n/).find((line) => line.trim()) ?? "",
+            summary: props.previewText.split(LINE_BREAK).find((line) => line.trim()) ?? "",
           }
         : null;
   const bodyVisible = fold === null || expanded;

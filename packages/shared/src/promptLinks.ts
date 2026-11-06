@@ -1,3 +1,12 @@
+const VISIBLE_PATTERN = /\r\n?|[\u2028\u2029]/g;
+const TRIMMED_NAME_PATTERN = /\.git$/i;
+const REPOSITORY_OF_PATTERN = /^\.+$/;
+const URL_PATTERN = /^https?:\/\/(?:www\.)?github\.com\/([^/?#]+)\/([^/?#]+)\/?$/i;
+const SHORT_PATTERN = /^([^/\s]+)\/([^/\s]+)$/;
+const MATCH_PATTERN =
+  /^https?:\/\/(?:www\.)?github\.com\/([^/?#]+)\/([^/?#]+)\/pull\/(\d+)(?:[/?#].*)?$/i;
+const MATCH_PATTERN_2 = /^([^/\s#]+)\/([^/\s#]+)(?:\/|#)(\d+)$/;
+
 export const PROMPT_LINK_MAX_PROMPT_LENGTH = 8_000;
 
 export interface PromptLinkRepository {
@@ -46,7 +55,7 @@ const isEmojiPart = (codePoint: number | undefined) =>
 export function sanitizeLinkedPrompt(raw: string): LinkedPrompt {
   let hiddenCharacters = 0;
   const visible = Array.from(
-    raw.replace(/\r\n?|[\u2028\u2029]/g, "\n").replace(HIDDEN_CHARACTERS, () => {
+    raw.replace(VISIBLE_PATTERN, "\n").replace(HIDDEN_CHARACTERS, () => {
       hiddenCharacters++;
       return "";
     }),
@@ -68,25 +77,23 @@ const OWNER = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
 const NAME = /^[A-Za-z0-9._-]{1,100}$/;
 
 function repositoryOf(owner: string, name: string): PromptLinkRepository | null {
-  const trimmedName = name.replace(/\.git$/i, "");
-  if (!OWNER.test(owner) || !NAME.test(trimmedName) || /^\.+$/.test(trimmedName)) return null;
+  const trimmedName = name.replace(TRIMMED_NAME_PATTERN, "");
+  if (!OWNER.test(owner) || !NAME.test(trimmedName) || REPOSITORY_OF_PATTERN.test(trimmedName))
+    return null;
   return { owner, name: trimmedName };
 }
 
 export function parsePromptLinkRepository(value: string): PromptLinkRepository | null {
   const trimmed = value.trim();
-  const url = /^https?:\/\/(?:www\.)?github\.com\/([^/?#]+)\/([^/?#]+)\/?$/i.exec(trimmed);
-  const short = /^([^/\s]+)\/([^/\s]+)$/.exec(trimmed);
+  const url = URL_PATTERN.exec(trimmed);
+  const short = SHORT_PATTERN.exec(trimmed);
   const match = url ?? short;
   return match?.[1] && match[2] ? repositoryOf(match[1], match[2]) : null;
 }
 
 function parsePromptLinkPullRequest(value: string): PromptLinkPullRequest | null {
   const trimmed = value.trim();
-  const match =
-    /^https?:\/\/(?:www\.)?github\.com\/([^/?#]+)\/([^/?#]+)\/pull\/(\d+)(?:[/?#].*)?$/i.exec(
-      trimmed,
-    ) ?? /^([^/\s#]+)\/([^/\s#]+)(?:\/|#)(\d+)$/.exec(trimmed);
+  const match = MATCH_PATTERN.exec(trimmed) ?? MATCH_PATTERN_2.exec(trimmed);
   if (!match?.[1] || !match[2] || !match[3]) return null;
   const repository = repositoryOf(match[1], match[2]);
   const number = Number(match[3]);

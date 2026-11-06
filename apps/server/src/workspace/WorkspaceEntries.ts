@@ -30,6 +30,10 @@ import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
 import * as WorkspaceSearchIndex from "./WorkspaceSearchIndex.ts";
 
+const ENDS_WITH_SEPARATOR_PATTERN = /[\\/]$/;
+const TRIM_LEADING_PATTERN = /^[@./]+/;
+const LIST_PATTERN = /^:|[*?[\\]/;
+
 export class WorkspaceEntriesWindowsPathUnsupportedError extends Schema.TaggedError<WorkspaceEntriesWindowsPathUnsupportedError>()(
   "WorkspaceEntriesWindowsPathUnsupportedError",
   {
@@ -204,7 +208,8 @@ export const make = Effect.gen(function* () {
   const browse: WorkspaceEntries["Service"]["browse"] = Effect.fn("WorkspaceEntries.browse")(
     function* (input) {
       const resolvedInputPath = yield* resolveBrowseTarget(input, path);
-      const endsWithSeparator = /[\\/]$/.test(input.partialPath) || input.partialPath === "~";
+      const endsWithSeparator =
+        ENDS_WITH_SEPARATOR_PATTERN.test(input.partialPath) || input.partialPath === "~";
       const parentPath = endsWithSeparator ? resolvedInputPath : path.dirname(resolvedInputPath);
       const prefix = endsWithSeparator ? "" : path.basename(resolvedInputPath);
 
@@ -254,7 +259,7 @@ export const make = Effect.gen(function* () {
     function* (input) {
       const normalizedCwd = yield* normalizeWorkspaceRoot(input.cwd);
       const normalizedQuery = normalizeSearchQuery(input.query, {
-        trimLeadingPattern: /^[@./]+/,
+        trimLeadingPattern: TRIM_LEADING_PATTERN,
       });
       return yield* Effect.gen(function* () {
         const searchIndex = yield* WorkspaceSearchIndex.WorkspaceSearchIndex;
@@ -415,7 +420,7 @@ export const make = Effect.gen(function* () {
           entries.length > IGNORE_CHECK_CHUNK_SIZE &&
           target.relativePath !== "" &&
           !throughSymlink &&
-          !/^:|[*?[\\]/.test(target.relativePath) &&
+          !LIST_PATTERN.test(target.relativePath) &&
           (yield* checkIgnore([target.relativePath]))?.exitCode === 0
         ) {
           return {

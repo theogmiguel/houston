@@ -38,6 +38,8 @@ import readline from "node:readline";
 
 import packageJson from "../package.json" with { type: "json" };
 
+const IS_PASSWORD_PROMPT_CANCELLATION_PATTERN = /cancelled|timed out/iu;
+
 const PROMPT_TIMEOUT_MS = 3 * 60 * 1000;
 
 type BridgeServices =
@@ -117,7 +119,10 @@ function serializeError(error: unknown): {
 }
 
 function isPasswordPromptCancellation(error: unknown): boolean {
-  return error instanceof SshPasswordPromptError && /cancelled|timed out/iu.test(error.message);
+  return (
+    error instanceof SshPasswordPromptError &&
+    IS_PASSWORD_PROMPT_CANCELLATION_PATTERN.test(error.message)
+  );
 }
 
 interface PendingPrompt {

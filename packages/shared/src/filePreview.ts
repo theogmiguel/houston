@@ -12,6 +12,19 @@ export {
 import { GENERIC_MIME_TYPES } from "./image.ts";
 import { videoMimeType } from "./video.ts";
 
+const FILE_PREVIEW_KIND_PATTERN = /^\.html?$/;
+const FILE_PREVIEW_KIND_PATTERN_2 = /^\.(md|markdown|mdown|mkd|mdx)$/;
+const FILE_PREVIEW_KIND_PATTERN_3 = /^\.(mmd|mermaid)$/;
+const FILE_PREVIEW_KIND_PATTERN_4 =
+  /^\.(txt|log|json|jsonc|jsonl|ndjson|yaml|yml|toml|ini|conf|config|env|csv|tsv|xml|css|scss|sass|less|js|jsx|mjs|cjs|ts|tsx|mts|cts|py|pyi|rb|go|rs|swift|kt|kts|java|c|h|cc|cpp|hpp|cs|php|sh|bash|zsh|fish|sql|graphql|gql|vue|svelte|r|lua|ex|exs|erl|hs|clj|dart|diff|patch|lock|properties|gradle)$/;
+const FILE_PREVIEW_KIND_PATTERN_5 =
+  /^(dockerfile|makefile|gemfile|rakefile|license|readme|\.gitignore|\.gitattributes|\.editorconfig|\.env)(\.|$)/i;
+const PATH_SEPARATOR = /[\\/]/;
+const FILE_PREVIEW_KIND_PATTERN_6 =
+  /^(application\/(json|.*\+json|xml|.*\+xml|javascript|x-javascript|yaml|x-yaml|toml|sql))$/;
+const IS_WORKSPACE_FONT_PREVIEW_PATH_PATTERN = /\.(ttf|otf|woff2?)$/i;
+const HOST_PREVIEW_MIME_TYPE_FROM_EXTENSION_PATTERN = /^\.[a-z0-9-]+$/i;
+
 export type FilePreviewKind =
   | "image"
   | "video"
@@ -66,9 +79,9 @@ export function filePreviewKind(
   if (mime.startsWith("audio/")) return "audio";
   if (generic) {
     if (extension === ".pdf") return "pdf";
-    if (/^\.html?$/.test(extension)) return "html";
-    if (/^\.(md|markdown|mdown|mkd|mdx)$/.test(extension)) return "markdown";
-    if (richDocuments && /^\.(mmd|mermaid)$/.test(extension)) return "mermaid";
+    if (FILE_PREVIEW_KIND_PATTERN.test(extension)) return "html";
+    if (FILE_PREVIEW_KIND_PATTERN_2.test(extension)) return "markdown";
+    if (richDocuments && FILE_PREVIEW_KIND_PATTERN_3.test(extension)) return "mermaid";
     if (richDocuments && isWorkspaceFontPreviewPath(name)) return "font";
     if (richDocuments && extension === ".rtf") return "text";
     const media = mediaMimeTypeFromExtension(extension);
@@ -76,22 +89,12 @@ export function filePreviewKind(
     if (media?.startsWith("video/")) return "video";
     if (audioMimeTypeFromExtension(extension) !== null) return "audio";
     if (
-      /^\.(txt|log|json|jsonc|jsonl|ndjson|yaml|yml|toml|ini|conf|config|env|csv|tsv|xml|css|scss|sass|less|js|jsx|mjs|cjs|ts|tsx|mts|cts|py|pyi|rb|go|rs|swift|kt|kts|java|c|h|cc|cpp|hpp|cs|php|sh|bash|zsh|fish|sql|graphql|gql|vue|svelte|r|lua|ex|exs|erl|hs|clj|dart|diff|patch|lock|properties|gradle)$/.test(
-        extension,
-      ) ||
-      /^(dockerfile|makefile|gemfile|rakefile|license|readme|\.gitignore|\.gitattributes|\.editorconfig|\.env)(\.|$)/i.test(
-        name.split(/[\\/]/).at(-1) ?? "",
-      )
+      FILE_PREVIEW_KIND_PATTERN_4.test(extension) ||
+      FILE_PREVIEW_KIND_PATTERN_5.test(name.split(PATH_SEPARATOR).at(-1) ?? "")
     )
       return "text";
   }
-  if (
-    mime.startsWith("text/") ||
-    /^(application\/(json|.*\+json|xml|.*\+xml|javascript|x-javascript|yaml|x-yaml|toml|sql))$/.test(
-      mime,
-    )
-  )
-    return "text";
+  if (mime.startsWith("text/") || FILE_PREVIEW_KIND_PATTERN_6.test(mime)) return "text";
   return "unsupported";
 }
 
@@ -199,11 +202,11 @@ const FONT_MIME_TYPE_BY_EXTENSION = new Map([
 ]);
 
 export function isWorkspaceFontPreviewPath(path: string): boolean {
-  return /\.(ttf|otf|woff2?)$/i.test(path);
+  return IS_WORKSPACE_FONT_PREVIEW_PATH_PATTERN.test(path);
 }
 
 export function hostPreviewMimeTypeFromExtension(extension: string): string | null {
-  if (!/^\.[a-z0-9-]+$/i.test(extension)) return null;
+  if (!HOST_PREVIEW_MIME_TYPE_FROM_EXTENSION_PATTERN.test(extension)) return null;
   return (
     mediaMimeTypeFromExtension(extension) ??
     audioMimeTypeFromExtension(extension) ??

@@ -27,6 +27,9 @@ import * as IdAllocator from "@houston-app/provider-core/server/IdAllocator";
 import { createOrchestrationV2TurnItemVisibility } from "@houston-app/shared/orchestrationV2Timeline";
 import type { ProjectionStoreV2Shape } from "./ProjectionStore.ts";
 
+const WHITESPACE_RUN = /\s+/g;
+const WHITESPACE = /\s/;
+
 export class ContextHandoffPrepareError extends Schema.TaggedError<ContextHandoffPrepareError>()(
   "ContextHandoffPrepareError",
   {
@@ -105,7 +108,7 @@ export class ContextHandoffServiceV2 extends Context.Service<
 >()("@houston-app/cli/orchestration-v2/ContextHandoffService/ContextHandoffServiceV2") {}
 
 function compactText(text: string, maxLength = 240): string {
-  const compacted = text.replace(/\s+/g, " ").trim();
+  const compacted = text.replace(WHITESPACE_RUN, " ").trim();
   if (compacted.length <= maxLength) {
     return compacted;
   }
@@ -315,10 +318,10 @@ function makeLegacyImportSummary(items: ReadonlyArray<OrchestrationV2TurnItem>):
     let bodyStart = Math.max(0, initialStart);
     if (
       bodyStart > 0 &&
-      !/\s/.test(section.body[bodyStart - 1] ?? "") &&
-      !/\s/.test(section.body[bodyStart] ?? "")
+      !WHITESPACE.test(section.body[bodyStart - 1] ?? "") &&
+      !WHITESPACE.test(section.body[bodyStart] ?? "")
     ) {
-      const nextWhitespace = section.body.slice(bodyStart).search(/\s/);
+      const nextWhitespace = section.body.slice(bodyStart).search(WHITESPACE);
       if (nextWhitespace !== -1) {
         bodyStart += nextWhitespace;
       }

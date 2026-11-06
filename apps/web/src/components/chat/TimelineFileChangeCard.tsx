@@ -3,6 +3,8 @@ import { ExternalLinkIcon, FileIcon } from "lucide-react";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
 import { cn } from "~/lib/utils";
 
+const HUNK_PATTERN = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
+
 type FileChangeItem = Extract<OrchestrationV2TurnItem, { type: "file_change" }>;
 
 interface DiffRow {
@@ -18,7 +20,7 @@ function parseDiff(item: FileChangeItem): DiffRow[] {
     let oldLine = 0;
     let newLine = 0;
     for (const line of raw.split("\n")) {
-      const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
+      const hunk = HUNK_PATTERN.exec(line);
       if (hunk) {
         oldLine = Number(hunk[1]);
         newLine = Number(hunk[2]);

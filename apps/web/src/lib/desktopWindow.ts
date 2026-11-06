@@ -1,5 +1,7 @@
 import type { HostBridge } from "@houston-app/contracts";
 
+const LEADING_HASH = /^#/;
+
 type HostWindowBridge = Pick<
   HostBridge,
   | "getClientPlatform"
@@ -55,7 +57,7 @@ export function hasCustomWindowChrome(): boolean {
 export function isQuickComposerWindow(): boolean {
   return (
     typeof window !== "undefined" &&
-    window.location.hash.replace(/^#/, "").startsWith("/quick-composer")
+    window.location.hash.replace(LEADING_HASH, "").startsWith("/quick-composer")
   );
 }
 

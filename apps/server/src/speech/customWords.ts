@@ -1,17 +1,26 @@
 import type { ServerSettings, SpeechCustomWords } from "@houston-app/contracts";
 
+const MATCH_KEY_PATTERN = /[\p{L}\p{N}]/u;
+const IS_MATCHABLE_KEY_PATTERN = /^[\p{Script=Latin}\p{Script=Cyrillic}\p{Script=Greek}\p{Nd}]+$/u;
+const LETTERS_PATTERN = /\p{L}/u;
+const PHONETIC_PATTERN = /^[a-z]+$/i;
+const TOKENS_PATTERN = /\S+/g;
+const LINE_BREAK_CHAR = /[\r\n]/;
+const NORMALIZE_WORD_PATTERN = /[<>"']/g;
+const WHITESPACE_RUN = /\s+/g;
+const REGEX_SPECIAL_CHARS = /[.*+?^${}()|[\]\\]/g;
+
 const MATCH_THRESHOLD = 0.18;
 
 const matchKey = (value: string) =>
   [...value]
-    .filter((character) => /[\p{L}\p{N}]/u.test(character))
+    .filter((character) => MATCH_KEY_PATTERN.test(character))
     .join("")
     .toLocaleLowerCase();
 
 // Scripts that separate words with spaces. CJK is excluded: one wrong character in a long
 // unspaced run would otherwise rewrite real text.
-const isMatchableKey = (value: string) =>
-  /^[\p{Script=Latin}\p{Script=Cyrillic}\p{Script=Greek}\p{Nd}]+$/u.test(value);
+const isMatchableKey = (value: string) => IS_MATCHABLE_KEY_PATTERN.test(value);
 
 const soundex = (value: string) => {
   const upper = value.toUpperCase();
@@ -55,8 +64,8 @@ const editDistance = (left: string, right: string) => {
 
 const punctuation = (value: string) => {
   const characters = [...value];
-  const first = characters.findIndex((character) => /[\p{L}\p{N}]/u.test(character));
-  const last = characters.findLastIndex((character) => /[\p{L}\p{N}]/u.test(character));
+  const first = characters.findIndex((character) => MATCH_KEY_PATTERN.test(character));
+  const last = characters.findLastIndex((character) => MATCH_KEY_PATTERN.test(character));
   return {
     prefix: first < 0 ? value : characters.slice(0, first).join(""),
     suffix: last < 0 ? "" : characters.slice(last + 1).join(""),
@@ -64,10 +73,10 @@ const punctuation = (value: string) => {
 };
 
 const preserveCase = (original: string, replacement: string) => {
-  const letters = [...original].filter((character) => /\p{L}/u.test(character));
+  const letters = [...original].filter((character) => LETTERS_PATTERN.test(character));
   if (letters.length > 0 && letters.every((character) => character === character.toUpperCase()))
     return replacement.toUpperCase();
-  const firstLetter = [...original].find((character) => /\p{L}/u.test(character));
+  const firstLetter = [...original].find((character) => LETTERS_PATTERN.test(character));
   if (firstLetter && firstLetter === firstLetter.toUpperCase()) {
     const [first = "", ...rest] = [...replacement];
     return first.toUpperCase() + rest.join("");
@@ -91,7 +100,7 @@ const bestMatch = (candidate: string, keys: readonly CustomWordKey[]) => {
     const longest = Math.max(candidate.length, custom.key.length);
     if (Math.abs(candidate.length - custom.key.length) > Math.max(longest * 0.25, 2)) continue;
     const distance = editDistance(candidate, custom.key) / longest;
-    const phonetic = /^[a-z]+$/i.test(candidate) && /^[a-z]+$/i.test(custom.key);
+    const phonetic = PHONETIC_PATTERN.test(candidate) && PHONETIC_PATTERN.test(custom.key);
     const score =
       phonetic && soundex(candidate) === soundex(custom.key) ? distance * 0.3 : distance;
     if (score < MATCH_THRESHOLD && (!best || score < best.score))
@@ -103,7 +112,7 @@ const bestMatch = (candidate: string, keys: readonly CustomWordKey[]) => {
 export function applySpeechCustomWords(text: string, words: readonly string[]): string {
   const keys = customWordKeys(words);
   if (keys.length === 0) return text;
-  const tokens = [...text.matchAll(/\S+/g)].map((match) => ({
+  const tokens = [...text.matchAll(TOKENS_PATTERN)].map((match) => ({
     value: match[0],
     start: match.index,
     end: match.index + match[0].length,
@@ -120,7 +129,7 @@ export function applySpeechCustomWords(text: string, words: readonly string[]): 
           .some(
             (token, offset) =>
               punctuation(token.value).suffix ||
-              /[\r\n]/.test(text.slice(token.end, slice[offset + 1]!.start)),
+              LINE_BREAK_CHAR.test(text.slice(token.end, slice[offset + 1]!.start)),
           )
       )
         continue;
@@ -150,10 +159,7 @@ export function applySpeechCustomWords(text: string, words: readonly string[]): 
 }
 
 const normalizeWord = (word: string) =>
-  word
-    .replace(/[<>"']/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  word.replace(NORMALIZE_WORD_PATTERN, "").replace(WHITESPACE_RUN, " ").trim();
 
 export function normalizeSpeechCustomWords(words: SpeechCustomWords): SpeechCustomWords {
   const seen = new Set<string>();
@@ -175,7 +181,7 @@ export function normalizeSpeechCustomWords(words: SpeechCustomWords): SpeechCust
     .slice(0, 100);
 }
 
-const escapePattern = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const escapePattern = (value: string) => value.replace(REGEX_SPECIAL_CHARS, "\\$&");
 
 export function makeSpeechAliasReplacer(words: SpeechCustomWords): (text: string) => string {
   const spellings = words
@@ -209,7 +215,7 @@ export function transcriptionCustomWords(
       ? [{ term: settings.speechCorrectionWord, aliases: [] }, ...settings.speechCustomWords]
       : settings.speechCustomWords,
   ).map(({ term }) => term);
-  const projectWord = projectName?.replace(/\s+/g, " ").trim() ?? "";
+  const projectWord = projectName?.replace(WHITESPACE_RUN, " ").trim() ?? "";
   if (
     !projectWord ||
     words.some((word) => word.toLocaleLowerCase() === projectWord.toLocaleLowerCase())

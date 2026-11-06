@@ -16,6 +16,8 @@ import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import { DeviceScreenshotToolkit, DeviceStandardToolkit, DeviceToolkit } from "./tools.ts";
 
+const SHELL_WORD_PATTERN = /^[a-zA-Z0-9_./:-]+$/;
+
 function agentDeviceTargetArgs(device: DeviceSummary): ReadonlyArray<string> {
   return device.platform === "ios"
     ? ["--platform", "ios", "--udid", device.id]
@@ -23,7 +25,7 @@ function agentDeviceTargetArgs(device: DeviceSummary): ReadonlyArray<string> {
 }
 
 const shellWord = (value: string) =>
-  /^[a-zA-Z0-9_./:-]+$/.test(value) ? value : "'" + value.replaceAll("'", "'\"'\"'") + "'";
+  SHELL_WORD_PATTERN.test(value) ? value : "'" + value.replaceAll("'", "'\"'\"'") + "'";
 
 /** `targetArgs` are the flags the command still needs; a bound launcher needs none. */
 export function agentDeviceQuickStart(

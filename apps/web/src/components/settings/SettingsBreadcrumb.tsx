@@ -5,6 +5,8 @@ import {
 } from "../WorkspaceBreadcrumb";
 import { SETTINGS_SECTION_LABELS } from "./settingsSearch";
 
+const TRAILING_SLASHES = /\/+$/;
+
 const SETTINGS_BREADCRUMB_LABELS: Readonly<Record<string, string>> = {
   ...SETTINGS_SECTION_LABELS,
   "/settings/diagnostics": "Diagnostics",
@@ -12,7 +14,7 @@ const SETTINGS_BREADCRUMB_LABELS: Readonly<Record<string, string>> = {
 };
 
 function settingsBreadcrumbLabel(pathname: string): string | null {
-  const normalizedPathname = pathname.replace(/\/+$/, "") || "/";
+  const normalizedPathname = pathname.replace(TRAILING_SLASHES, "") || "/";
   return SETTINGS_BREADCRUMB_LABELS[normalizedPathname] ?? null;
 }
 

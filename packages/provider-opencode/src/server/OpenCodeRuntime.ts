@@ -39,6 +39,10 @@ import { AgentScope } from "@houston-app/shared/AgentScope";
 import * as HostProcess from "@houston-app/shared/HostProcess";
 import { compareSemverVersions, parseSemver } from "@houston-app/shared/semver";
 import { resolveSpawnCommand } from "@houston-app/shared/shell";
+
+const CLASSIFY_STARTUP_EXIT_PATTERN = /SQLITE_BUSY|database is locked/i;
+const MATCH_PATTERN = /server listening on\s+(https?:\/\/[^\s]+)/i;
+const HEADER_PATTERN = /[^a-z0-9_-]+/g;
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 const OPENCODE_EMPTY_CONFIG_CONTENT = "{}";
 
@@ -113,7 +117,7 @@ export type OpenCodeStartupFailureReason = "databaseLocked";
 
 // Classify stderr database locks at exit so callers need not parse diagnostics.
 function classifyStartupExit(stderr: string): OpenCodeStartupFailureReason | undefined {
-  return /SQLITE_BUSY|database is locked/i.test(stderr) ? "databaseLocked" : undefined;
+  return CLASSIFY_STARTUP_EXIT_PATTERN.test(stderr) ? "databaseLocked" : undefined;
 }
 
 export const isOpenCodeRuntimeError = (u: unknown): u is OpenCodeRuntimeError =>
@@ -279,7 +283,7 @@ export class OpenCodeRuntime extends Context.Service<
 
 function parseServerUrlFromOutput(output: string): string | null {
   for (const line of output.split("\n")) {
-    const match = line.match(/server listening on\s+(https?:\/\/[^\s]+)/i);
+    const match = line.match(MATCH_PATTERN);
     if (match?.[1]) return match[1];
   }
   return null;
@@ -308,10 +312,7 @@ export function openCodeQuestionId(
   index: number,
   question: QuestionRequest["questions"][number],
 ): string {
-  const header = question.header
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, "-");
+  const header = question.header.trim().toLowerCase().replace(HEADER_PATTERN, "-");
   return header.length > 0 ? `question-${index}-${header}` : `question-${index}`;
 }
 

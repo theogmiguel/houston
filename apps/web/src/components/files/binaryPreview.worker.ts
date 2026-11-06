@@ -12,6 +12,17 @@ import {
   type BinaryWorkerResult,
 } from "./binaryPreviewProtocol";
 
+const NUMBER_PATTERN = /^[0-7]*$/;
+const DIGITS_ONLY = /^\d+$/;
+const TAR_ENTRIES_PATTERN = /\0.*$/s;
+const TAR_ENTRIES_PATTERN_2 = /^[1-9]\d*$/;
+const TAR_ENTRIES_PATTERN_3 = /^[+-]?\d+(?:\.\d+)?$/;
+const HANDLE_PATTERN = /\.(zip|jar)$/i;
+const HANDLE_PATTERN_2 = /\.(gz|tgz)$/i;
+const HANDLE_PATTERN_3 = /\.(tar\.gz|tgz)$/i;
+const PATH_PATTERN = /\.gz$/i;
+const HANDLE_PATTERN_4 = /\.tar$/i;
+
 let database: Database | null = null;
 let tables: string[] = [];
 let files = new Map<string, Uint8Array<ArrayBuffer>>();
@@ -48,7 +59,8 @@ function tarEntries(bytes: Uint8Array<ArrayBuffer>) {
     new TextDecoder().decode(bytes.subarray(offset, offset + length)).split("\0", 1)[0] ?? "";
   const number = (offset: number, length: number) => {
     const value = text(offset, length).trim();
-    if (!/^[0-7]*$/.test(value)) throw new Error("This TAR uses an unsupported numeric format.");
+    if (!NUMBER_PATTERN.test(value))
+      throw new Error("This TAR uses an unsupported numeric format.");
     return Number.parseInt(value || "0", 8);
   };
   let longPath: string | null = null;
@@ -67,7 +79,7 @@ function tarEntries(bytes: Uint8Array<ArrayBuffer>) {
     const metadata = type === "L" || type === "x" || type === "g";
     const attributes: Record<string, string> = metadata ? {} : { ...globalPax, ...localPax };
     const size = attributes.size ? Number(attributes.size) : number(offset + 124, 12);
-    if (attributes.size && !/^\d+$/.test(attributes.size))
+    if (attributes.size && !DIGITS_ONLY.test(attributes.size))
       throw new Error("An archive entry is too large or damaged.");
     const prefix =
       text(offset + 257, 6) === "ustar" && text(offset + 263, 2) === "00"
@@ -88,7 +100,7 @@ function tarEntries(bytes: Uint8Array<ArrayBuffer>) {
     )
       throw new Error("An archive entry is too large or damaged.");
     const content = bytes.subarray(offset + 512, offset + 512 + size);
-    if (type === "L") longPath = new TextDecoder().decode(content).replace(/\0.*$/s, "");
+    if (type === "L") longPath = new TextDecoder().decode(content).replace(TAR_ENTRIES_PATTERN, "");
     else if (type === "x" || type === "g") {
       if (size > 65536) throw new Error("Archive metadata is too large.");
       for (let cursor = 0; cursor < content.length;) {
@@ -99,7 +111,7 @@ function tarEntries(bytes: Uint8Array<ArrayBuffer>) {
         const length = Number(lengthText);
         const end = cursor + length;
         if (
-          !/^[1-9]\d*$/.test(lengthText) ||
+          !TAR_ENTRIES_PATTERN_2.test(lengthText) ||
           !Number.isSafeInteger(length) ||
           end > content.length ||
           end <= separator + 1 ||
@@ -119,7 +131,7 @@ function tarEntries(bytes: Uint8Array<ArrayBuffer>) {
         cursor = end;
       }
     } else if (type === "" || type === "0" || type === "5") {
-      if (attributes.mtime && !/^[+-]?\d+(?:\.\d+)?$/.test(attributes.mtime))
+      if (attributes.mtime && !TAR_ENTRIES_PATTERN_3.test(attributes.mtime))
         throw new Error("The TAR metadata is damaged.");
       const modified =
         (attributes.mtime ? Number(attributes.mtime) : number(offset + 136, 12)) * 1000;
@@ -209,7 +221,7 @@ async function handle(input: BinaryWorkerRequest) {
     files = new Map();
     let entries: ArchiveEntry[];
     if (
-      /\.(zip|jar)$/i.test(input.name) ||
+      HANDLE_PATTERN.test(input.name) ||
       (input.bytes.byteLength >= 4 &&
         [0x04034b50, 0x06054b50].includes(new DataView(input.bytes).getUint32(0, true)))
     ) {
@@ -223,12 +235,12 @@ async function handle(input: BinaryWorkerRequest) {
           modified: Number.isNaN(file.date.getTime()) ? null : file.date.toISOString(),
         };
       });
-    } else if (/\.(gz|tgz)$/i.test(input.name) || new Uint8Array(input.bytes)[0] === 0x1f) {
+    } else if (HANDLE_PATTERN_2.test(input.name) || new Uint8Array(input.bytes)[0] === 0x1f) {
       const bytes = await gunzip(input.bytes);
-      if (/\.(tar\.gz|tgz)$/i.test(input.name)) entries = tarEntries(bytes);
+      if (HANDLE_PATTERN_3.test(input.name)) entries = tarEntries(bytes);
       else {
-        const path = input.name.replace(/\.gz$/i, "") || "contents";
-        if (/\.tar$/i.test(path)) entries = tarEntries(bytes);
+        const path = input.name.replace(PATH_PATTERN, "") || "contents";
+        if (HANDLE_PATTERN_4.test(path)) entries = tarEntries(bytes);
         else {
           files.set(path, bytes);
           entries = [{ path, size: bytes.length, directory: false, modified: null }];

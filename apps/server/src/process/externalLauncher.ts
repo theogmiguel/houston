@@ -33,6 +33,8 @@ import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import { makeStaleWhileRevalidate } from "../environment/staleWhileRevalidate.ts";
+
+const LEADING_SLASHES = /^\/+/;
 export {
   ExternalLauncherError,
   ExternalLauncherBrowserSpawnError,
@@ -358,7 +360,7 @@ const fileManagerRevealKindForPlatform = Effect.fn(
 });
 
 function resolveWslFileManagerPath(target: string, distroName: string): string {
-  const relativePath = target.replace(/^\/+/, "").replaceAll("/", "\\");
+  const relativePath = target.replace(LEADING_SLASHES, "").replaceAll("/", "\\");
   return `\\\\wsl.localhost\\${distroName}${relativePath.length > 0 ? `\\${relativePath}` : ""}`;
 }
 

@@ -11,6 +11,8 @@ import { makePiRpcConnection, parsePiModelSlug, piRecordString } from "./rpc.ts"
 import { buildPiRpcLaunch, resolvePiLaunchArgs } from "./mcpInjection.ts";
 import * as TextGenerationOperations from "@houston-app/provider-core/server/textGenerationOperations";
 
+const STATUS_PATTERN = /^([45]\d\d)\b/;
+
 const PI_TIMEOUT_MS = 180_000;
 
 const isTextGenerationError = Schema.is(TextGenerationError);
@@ -18,7 +20,7 @@ const isTextGenerationError = Schema.is(TextGenerationError);
 // Pi's `errorMessage` is the provider's raw response text and can echo
 // credentials, so only a leading HTTP status reaches the error detail.
 const piTurnErrorDetail = (errorMessage: string | undefined) => {
-  const status = errorMessage?.match(/^([45]\d\d)\b/)?.[1];
+  const status = errorMessage?.match(STATUS_PATTERN)?.[1];
   return status === undefined
     ? "Pi could not generate text: the model provider reported an error."
     : `Pi could not generate text: the model provider returned HTTP ${status}.`;

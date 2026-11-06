@@ -11,6 +11,8 @@ import {
   type BundledFontScript,
 } from "@betteroffice/fonts";
 
+const BASE_PATTERN = /[\s-]+/;
+
 // Every face loads from the app's own files, so no font request leaves the machine. The Chinese, Japanese and Korean
 // faces are an add-on the app does not ship (see `fonts-cjk.ts`), yet the font package still maps East Asian families
 // such as Microsoft YaHei or Yu Gothic Medium to them, so every lookup passes through `shippedFace`.
@@ -60,11 +62,7 @@ function lastResortFace(
 
   if (shippedFace(face)) return face;
 
-  const base = family
-    .trim()
-    .split(/[\s-]+/)
-    .slice(0, -1)
-    .join(" ");
+  const base = family.trim().split(BASE_PATTERN).slice(0, -1).join(" ");
 
   return (
     shippedFace(resolveLastResortFace(base, bold, italic, office)) ??

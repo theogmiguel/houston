@@ -25,6 +25,13 @@ import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ProjectService from "./ProjectService.ts";
 
+const NON_ALPHANUMERIC_RUN = /[^a-z0-9]+/;
+const FOLDER_WORDS_PATTERN = /-+$/;
+const WORDS_PATTERN = /[^\p{L}\p{N}]+/u;
+const DESCRIBE_COMMIT_FAILURE_PATTERN =
+  /identity unknown|tell me who you are|no (name|email) was given/i;
+const ID_PATTERN = /[^a-z0-9]/g;
+
 export class ScratchUnavailableError extends Schema.TaggedError<ScratchUnavailableError>()(
   "ScratchUnavailableError",
   {},
@@ -113,12 +120,12 @@ export class ManagedProjectFolders extends Context.Service<
 const folderWords = (text: string) =>
   text
     .toLowerCase()
-    .split(/[^a-z0-9]+/)
+    .split(NON_ALPHANUMERIC_RUN)
     .filter(Boolean)
     .slice(0, 5)
     .join("-")
     .slice(0, 48)
-    .replace(/-+$/, "");
+    .replace(FOLDER_WORDS_PATTERN, "");
 
 const ICON_BACKGROUNDS = [
   "#dc2626",
@@ -150,7 +157,7 @@ function escapeXml(value: string): string {
 
 // ProjectFaviconResolver finds assets/icon.svg on every clone.
 function namedProjectIconSvg(name: string): string {
-  const words = name.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  const words = name.split(WORDS_PATTERN).filter(Boolean);
   const initials =
     words
       .slice(0, 2)
@@ -183,7 +190,7 @@ function namedProjectReadme(name: string): string {
 }
 
 function describeCommitFailure(stderr: string): string {
-  if (/identity unknown|tell me who you are|no (name|email) was given/i.test(stderr)) {
+  if (DESCRIBE_COMMIT_FAILURE_PATTERN.test(stderr)) {
     return "Git has no name or email on this machine. Set user.name and user.email, then commit.";
   }
   const lines = stderr
@@ -322,7 +329,7 @@ const make = Effect.gen(function* () {
     if (!(yield* isScratchRoot(input.projectId, root.value))) return Option.none();
     const date = DateTime.formatIso(yield* DateTime.now).slice(0, 10);
     const words = folderWords(input.text);
-    const id = input.threadId.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const id = input.threadId.toLowerCase().replace(ID_PATTERN, "");
     const folderFor = (idPart: string) =>
       path.join(root.value, [date, words, idPart].filter(Boolean).join("-"));
     yield* makeScratchFolder(root.value);

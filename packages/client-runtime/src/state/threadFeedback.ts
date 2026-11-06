@@ -6,6 +6,8 @@ import {
   type AtomCommandResult,
 } from "./runtime.ts";
 
+const MATCH_PATTERN = /^\/feedback(?:\s+([\s\S]*))?$/iu;
+
 type CodexFeedbackSubmissionDetails = {
   readonly id: MessageId;
   readonly command: string;
@@ -20,7 +22,7 @@ export type CodexFeedbackSubmission = CodexFeedbackSubmissionDetails &
   );
 
 export function parseCodexFeedbackCommand(text: string): { readonly reason?: string } | null {
-  const match = /^\/feedback(?:\s+([\s\S]*))?$/iu.exec(text.trim());
+  const match = MATCH_PATTERN.exec(text.trim());
   if (!match) {
     return null;
   }

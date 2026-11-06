@@ -2,6 +2,8 @@ import type { ScheduledTaskWebhookFilter } from "@houston-app/contracts";
 
 import { webhookExpressionResolver, type WebhookRequest } from "./webhookTemplate.ts";
 
+const MATCHES_WEBHOOK_FILTER_PATTERN = /\[\]/;
+
 export interface FailedWebhookFilter {
   readonly index: number;
   readonly path: string;
@@ -35,7 +37,7 @@ function matchesScalar(filter: ScheduledTaskWebhookFilter, text: string): boolea
  * the value, and `exists` when the list has an element.
  */
 function matchesWebhookFilter(filter: ScheduledTaskWebhookFilter, value: unknown): boolean {
-  if (Array.isArray(value) && /\[\]/.test(filter.path)) {
+  if (Array.isArray(value) && MATCHES_WEBHOOK_FILTER_PATTERN.test(filter.path)) {
     if (filter.op === "exists")
       return value.some((element) => element !== null && element !== undefined);
     const texts = value.map(scalarText).filter((text): text is string => text !== undefined);

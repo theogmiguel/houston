@@ -15,6 +15,18 @@ import {
   type ThemeDefinition,
 } from "./themePalette";
 
+const MATCH_PATTERN = /^color\(\s*(display-p3|srgb)\s+([^)]+)\)$/i;
+const WHITESPACE_RUN = /\s+/;
+const LEADING_HASH = /^#/;
+const PARSE_VS_CODE_COLOR_PATTERN = /^(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+const WHITESPACE = /\s/;
+const HUMANIZE_THEME_NAME_PATTERN = /[-_.]/;
+const HUMANIZE_THEME_NAME_PATTERN_2 = /[-_.]+/;
+const STRIP_APPEARANCE_PATTERN = /\b(?:light|dark)\b/gi;
+const WHITESPACE_RUN_2 = /\s+/g;
+const PAIR_VS_CODE_THEMES_PATTERN = /[a-z0-9]/i;
+const STEM_PATTERN = /\.[^.]+$/;
+
 type VsCodeRgba = { r: number; g: number; b: number; a: number };
 type VsCodeRgb = { r: number; g: number; b: number };
 
@@ -32,13 +44,13 @@ function encodeGamma(value: number): number {
 }
 
 function parseColorFunction(value: string): VsCodeRgba | null {
-  const match = /^color\(\s*(display-p3|srgb)\s+([^)]+)\)$/i.exec(value);
+  const match = MATCH_PATTERN.exec(value);
   if (!match) return null;
   const [space, body] = [match[1]!.toLowerCase(), match[2]!];
   const [channelPart, alphaPart] = body.split("/");
   const channels = channelPart!
     .trim()
-    .split(/\s+/)
+    .split(WHITESPACE_RUN)
     .map((part) => (part.endsWith("%") ? Number.parseFloat(part) / 100 : Number.parseFloat(part)));
   if (channels.length !== 3 || channels.some((channel) => !Number.isFinite(channel))) return null;
   const alphaRaw = alphaPart?.trim();
@@ -71,8 +83,8 @@ function parseVsCodeColor(value: unknown): VsCodeRgba | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   if (trimmed.startsWith("color(")) return parseColorFunction(trimmed);
-  const hex = trimmed.replace(/^#/, "");
-  if (!/^(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(hex)) return null;
+  const hex = trimmed.replace(LEADING_HASH, "");
+  if (!PARSE_VS_CODE_COLOR_PATTERN.test(hex)) return null;
   const expand = (part: string) =>
     part.length === 1 ? Number.parseInt(part + part, 16) : Number.parseInt(part, 16);
   if (hex.length <= 4) {
@@ -153,9 +165,9 @@ function resolveAppearance(value: Record<string, unknown>, canvas: VsCodeRgb): T
 
 export function humanizeThemeName(raw: string): string {
   const trimmed = raw.trim();
-  if (/\s/.test(trimmed) || !/[-_.]/.test(trimmed)) return trimmed;
+  if (WHITESPACE.test(trimmed) || !HUMANIZE_THEME_NAME_PATTERN.test(trimmed)) return trimmed;
   return trimmed
-    .split(/[-_.]+/)
+    .split(HUMANIZE_THEME_NAME_PATTERN_2)
     .filter(Boolean)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
@@ -391,17 +403,18 @@ export function pairVsCodeThemes(
   },
 ): ReadonlyArray<ThemeDefinition> {
   const stripAppearance = (label: string) =>
-    label
-      .replace(/\b(?:light|dark)\b/gi, " ")
-      .replace(/\s+/g, " ")
-      .trim();
+    label.replace(STRIP_APPEARANCE_PATTERN, " ").replace(WHITESPACE_RUN_2, " ").trim();
 
   type Group = { light: ThemeDefinition[]; dark: ThemeDefinition[]; order: number };
   const groups = new Map<string, Group>();
   const passthrough: Array<{ theme: ThemeDefinition; order: number }> = [];
   themes.forEach((theme, order) => {
     const key = stripAppearance(theme.label);
-    if (getThemeModes(theme).length !== 1 || key === theme.label || !/[a-z0-9]/i.test(key)) {
+    if (
+      getThemeModes(theme).length !== 1 ||
+      key === theme.label ||
+      !PAIR_VS_CODE_THEMES_PATTERN.test(key)
+    ) {
       passthrough.push({ theme, order });
       return;
     }
@@ -460,7 +473,7 @@ export function resolveThemeLabelCollisions(
   }
   const relabelled = entries.map(({ theme, sourceName }) => {
     if ((counts.get(theme.id) ?? 0) < 2) return theme;
-    const stem = sourceName?.replace(/\.[^.]+$/, "");
+    const stem = sourceName?.replace(STEM_PATTERN, "");
     const fromFile = stem ? humanizeThemeName(stem) : null;
     const renamed =
       fromFile && fromFile.toLowerCase() !== theme.label.toLowerCase()

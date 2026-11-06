@@ -7,6 +7,9 @@ import type {
   ToolActivitySurface,
 } from "@houston-app/contracts";
 
+const NATIVE_APP_REFERENCE_PATTERN = /^[A-Za-z0-9._-]+$/u;
+const LINE_BREAK_CHAR = /[\r\n]/;
+
 export interface ExtractedToolActivityPresentation {
   readonly viewedImagePath?: string;
   readonly toolSurface?: ToolActivitySurface;
@@ -53,7 +56,7 @@ function pageUrl(value: unknown): string | undefined {
 function nativeAppReference(value: unknown): ToolActivityNativeAppReference | undefined {
   const app = asRecord(value);
   const appId = trimmedString(app?.appId, 512);
-  if (app?._tag === "app-id" && appId && /^[A-Za-z0-9._-]+$/u.test(appId)) {
+  if (app?._tag === "app-id" && appId && NATIVE_APP_REFERENCE_PATTERN.test(appId)) {
     return { _tag: "app-id", appId };
   }
   const displayName = trimmedString(app?.displayName, 160);
@@ -135,7 +138,7 @@ export function extractToolActivityPresentation(
     ...(toolIcon ? { toolIcon } : {}),
     ...(toolSource ? { toolSource } : {}),
     ...(viewedImagePath &&
-    !/[\r\n]/.test(viewedImagePath) &&
+    !LINE_BREAK_CHAR.test(viewedImagePath) &&
     isWorkspaceImagePreviewPath(viewedImagePath)
       ? { viewedImagePath }
       : {}),

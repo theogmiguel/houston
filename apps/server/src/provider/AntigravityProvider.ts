@@ -35,6 +35,8 @@ import { resolveUsageLimitsAfterProbe } from "@houston-app/provider-core/server/
 
 import { antigravityThinkingConfig } from "./acp/AntigravityAcpSupport.ts";
 
+const IS_MISSING_INSTALLATION_PATTERN = /not installed|missing|incomplete|does not publish/i;
+
 const EMPTY_MODEL_CAPABILITIES = createModelCapabilities({ optionDescriptors: [] });
 const MAX_WORKSPACE_SNAPSHOTS = 32;
 const HEALTH_CHECK_TIMEOUT = "90 seconds";
@@ -138,7 +140,7 @@ function isMissingInstallation(error: EffectAcpErrors.AcpError | ProviderSetupEr
   return (
     error._tag === "ProviderSetupError" &&
     error.operation === "resolve" &&
-    /not installed|missing|incomplete|does not publish/i.test(error.detail)
+    IS_MISSING_INSTALLATION_PATTERN.test(error.detail)
   );
 }
 

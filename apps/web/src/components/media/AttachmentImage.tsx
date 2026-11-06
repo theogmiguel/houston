@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState, type ComponentProps, type SyntheticEvent } from "react";
 import { isHeicImageFile } from "../../lib/imageCompression";
 
+const FALLBACK_PATTERN = /\.tiff?$/i;
+const FALLBACK_PATTERN_2 = /^image\/tiff$/i;
+const BLOB_PATTERN = /\.hei[cf]$/i;
+const BLOB_PATTERN_2 = /^image\/hei[cf]$/i;
+
 type AttachmentImageProps = ComponentProps<"img"> & { name: string; mimeType?: string | undefined };
 
 // Keep import expressions outside hooks until React Compiler supports them.
@@ -9,8 +14,8 @@ const loadImageDecoder = () => import("../files/decodeImagePreview");
 export function AttachmentImage({ name, mimeType, ...props }: AttachmentImageProps) {
   const fallback =
     isHeicImageFile({ name, type: mimeType ?? "" }) ||
-    /\.tiff?$/i.test(name) ||
-    /^image\/tiff$/i.test(mimeType ?? "");
+    FALLBACK_PATTERN.test(name) ||
+    FALLBACK_PATTERN_2.test(mimeType ?? "");
   return fallback ? (
     <DecodedImage key={props.src} {...props} name={name} mimeType={mimeType} />
   ) : (
@@ -36,7 +41,7 @@ function DecodedImage({ name, mimeType, src, onError, ...props }: AttachmentImag
         if (signal.aborted) return;
         const blob = await decodeImagePreview(
           src,
-          /\.hei[cf]$/i.test(name) || /^image\/hei[cf]$/i.test(mimeType ?? ""),
+          BLOB_PATTERN.test(name) || BLOB_PATTERN_2.test(mimeType ?? ""),
           signal,
         );
         if (signal.aborted) return;

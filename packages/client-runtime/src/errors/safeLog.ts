@@ -1,3 +1,8 @@
+const SANITIZE_STACK_FRAME_PATTERN = /(?:https?|file):\/\/[^\s)]+/g;
+const LINE_BREAK = /\r?\n/;
+const READ_SAFE_STACK_PATTERN = /^\s*at\s+/;
+const READ_SAFE_STACK_PATTERN_2 = /^[^@\s]+@(?:https?|file):\/\//;
+
 const SAFE_ERROR_LABEL =
   /^(?:Error|EvalError|RangeError|ReferenceError|SyntaxError|TypeError|URIError|AggregateError|DOMException|[A-Za-z][A-Za-z0-9]*(?:Error|Failure))$/;
 const SAFE_TRACE_ID = /^[A-Za-z0-9._:-]{1,128}$/;
@@ -29,14 +34,14 @@ function sanitizeStackUrl(value: string): string {
 }
 
 function sanitizeStackFrame(frame: string): string {
-  return frame.replace(/(?:https?|file):\/\/[^\s)]+/g, sanitizeStackUrl);
+  return frame.replace(SANITIZE_STACK_FRAME_PATTERN, sanitizeStackUrl);
 }
 
 function readSafeStack(error: Error): string | undefined {
   try {
     const frames = error.stack
-      ?.split(/\r?\n/)
-      .filter((line) => /^\s*at\s+/.test(line) || /^[^@\s]+@(?:https?|file):\/\//.test(line))
+      ?.split(LINE_BREAK)
+      .filter((line) => READ_SAFE_STACK_PATTERN.test(line) || READ_SAFE_STACK_PATTERN_2.test(line))
       .slice(0, STACK_FRAME_LIMIT)
       .map(sanitizeStackFrame);
     return frames && frames.length > 0 ? frames.join("\n") : undefined;

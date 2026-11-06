@@ -24,6 +24,8 @@ import { MediaVideoPlayer } from "../media/MediaVideoPlayer";
 import type { ExpandedImagePreview } from "./ExpandedImagePreview";
 import { markdownImageGallery, markdownImageItems } from "./markdownImageGallery";
 
+const TRAILING_PATH_SEPARATORS = /[\\/]+$/;
+
 const CHAT_MARKDOWN_MEDIA_MAX_WIDTH_CLASS_NAME = "max-w-[min(100%,30rem)]";
 const CHAT_MARKDOWN_MEDIA_BOUNDS_CLASS_NAME = cn(
   "max-h-[30rem]",
@@ -357,7 +359,7 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
     resource._tag === "media-file"
       ? resource.path
       : resource._tag === "workspace-file" && props.workspaceRoot
-        ? `${props.workspaceRoot.replace(/[\\/]+$/, "")}/${resource.path}`
+        ? `${props.workspaceRoot.replace(TRAILING_PATH_SEPARATORS, "")}/${resource.path}`
         : undefined;
   const reference = path
     ? mediaFileReference(path, props.workspaceRoot)

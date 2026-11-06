@@ -1,5 +1,8 @@
 import type { HostClipboardImage } from "@houston-app/contracts";
 
+const HTML_IS_ONLY_AN_IMAGE_PATTERN = /<img\b/i;
+const HTML_IS_ONLY_AN_IMAGE_PATTERN_2 = /<[^>]*>/g;
+
 /**
  * True when the paste holds an image the webview could not hand over as a file: an empty
  * paste, or a browser's "Copy image" arriving as `text/html` wrapping an `<img>`.
@@ -23,8 +26,8 @@ function readClipboardText(clipboardData: DataTransfer, type: string): string {
 
 /** An image with no text around it, however the source app wraps it in markup. */
 function htmlIsOnlyAnImage(html: string): boolean {
-  if (!/<img\b/i.test(html)) return false;
-  return html.replace(/<[^>]*>/g, "").trim().length === 0;
+  if (!HTML_IS_ONLY_AN_IMAGE_PATTERN.test(html)) return false;
+  return html.replace(HTML_IS_ONLY_AN_IMAGE_PATTERN_2, "").trim().length === 0;
 }
 
 const EXTENSION_BY_MEDIA_TYPE: Readonly<Record<string, string>> = {

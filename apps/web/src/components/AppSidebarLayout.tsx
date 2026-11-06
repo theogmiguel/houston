@@ -57,6 +57,8 @@ import { appAtomRegistry } from "../rpc/atomRegistry";
 import { registerCommands, registerMenuAction } from "../shortcuts/dispatcher";
 import { resolveThreadRouteRef } from "../threadRoutes";
 
+const REGISTER_APP_SHELL_COMMANDS_PATTERN = /^\/settings(\/|$)/;
+
 const MACOS_TRAFFIC_LIGHTS_LEFT_INSET = "var(--desktop-window-controls-inset, 90px)";
 
 function subscribeToViewportWidth(onChange: () => void): () => void {
@@ -295,7 +297,7 @@ function registerAppShellCommands(router: AnyRouter, shellElement: Element): () 
     registerWorkspaceFocusCommands(router),
     registerPullRequestsEscapeCommand(router),
     registerMenuAction("open-settings", () => {
-      if (!/^\/settings(\/|$)/.test(router.state.location.pathname))
+      if (!REGISTER_APP_SHELL_COMMANDS_PATTERN.test(router.state.location.pathname))
         void router.navigate({ to: "/settings" });
     }),
   ];

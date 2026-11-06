@@ -12,6 +12,9 @@ import { ChildProcessSpawner } from "effect/process";
 
 import * as CodexError from "../errors.ts";
 
+const LINE_BREAK = /\r?\n/;
+const WHITESPACE_RUN = /\s+/g;
+
 const encoder = new TextEncoder();
 
 export const makeChildStdio = (
@@ -65,8 +68,8 @@ export const appendStderrTail = (current: string, chunk: string): string => {
 // Node launchers print the actionable error between a source excerpt and stack frames.
 export const stderrExcerpt = (tail: string): string | undefined => {
   const lines = NodeUtil.stripVTControlCharacters(tail)
-    .split(/\r?\n/)
-    .map((line) => line.trim().replace(/\s+/g, " "))
+    .split(LINE_BREAK)
+    .map((line) => line.trim().replace(WHITESPACE_RUN, " "))
     .filter((line) => line.length > 0);
   const line = lines.findLast((candidate) => ERROR_LINE_PATTERN.test(candidate)) ?? lines.at(-1);
   if (line === undefined) {

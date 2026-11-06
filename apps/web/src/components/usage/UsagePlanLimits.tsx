@@ -18,6 +18,8 @@ import { cn } from "../../lib/utils";
 import { limitPresentationsFor } from "./UsageLimits";
 import { usageRemainingFill, usageRemainingTone } from "./usageRemaining";
 
+const USAGE_PLAN_LIMITS_PATTERN = /^resets in /;
+
 const PACE_TEXT = { ahead: "ahead of pace", on: "on pace", under: "under pace" } as const;
 
 function accountLabel(account: LimitAccount): string {
@@ -146,7 +148,7 @@ export function UsagePlanLimits({
                       {remaining}%
                     </span>
                     <span className="truncate text-xs text-[var(--houston)]">
-                      {resets ? resets.replace(/^resets in /, "Resets in ") : ""}
+                      {resets ? resets.replace(USAGE_PLAN_LIMITS_PATTERN, "Resets in ") : ""}
                       {resets && pace ? " · " : ""}
                       {pace ? PACE_TEXT[pace] : ""}
                     </span>

@@ -20,6 +20,8 @@ import {
 } from "@houston-app/provider-core/server/usageLimits";
 import * as HostProcess from "@houston-app/shared/HostProcess";
 
+const TRAILING_SLASHES = /\/+$/;
+
 const AuthFile = Schema.Struct({ "opencode-go": Schema.optionalKey(Schema.Unknown) });
 const ApiAuth = Schema.Struct({ type: Schema.Literal("api"), key: Schema.String });
 const decodeAuthFile = Schema.decodeEffect(Schema.fromJsonString(AuthFile));
@@ -62,7 +64,10 @@ const readStoredApiKey = (databasePath: string, integrationId: "opencode" | "ope
       const server = stored?.metadata?.server;
       if (typeof server === "string") {
         const url = new URL(server);
-        if (`${url.origin}${url.pathname.replace(/\/+$/, "")}` !== "https://opencode.ai/console")
+        if (
+          `${url.origin}${url.pathname.replace(TRAILING_SLASHES, "")}` !==
+          "https://opencode.ai/console"
+        )
           return undefined;
       }
       return stored?.key.trim();

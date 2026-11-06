@@ -1,10 +1,13 @@
+const FILE_PREVIEW_DELIMITER_PATTERN = /\.csv$/i;
+const FILE_PREVIEW_DELIMITER_PATTERN_2 = /\.tsv$/i;
+
 export function filePreviewDelimiter(file: { name: string; mimeType?: string }): "," | "\t" | null {
   const mime = file.mimeType?.split(";", 1)[0]?.trim().toLowerCase();
   if (mime === "text/csv") return ",";
   if (mime === "text/tab-separated-values") return "\t";
   if (mime && mime !== "text/plain" && mime !== "application/octet-stream") return null;
-  if (/\.csv$/i.test(file.name)) return ",";
-  if (/\.tsv$/i.test(file.name)) return "\t";
+  if (FILE_PREVIEW_DELIMITER_PATTERN.test(file.name)) return ",";
+  if (FILE_PREVIEW_DELIMITER_PATTERN_2.test(file.name)) return "\t";
   return null;
 }
 

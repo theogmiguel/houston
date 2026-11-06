@@ -37,6 +37,8 @@ import * as DeviceHost from "./DeviceHost.ts";
 import { findEasProjectId } from "./easProjectId.ts";
 import { type ExpoApi, makeExpoApi, resolveExpoCredential } from "./ExpoApi.ts";
 
+const HELPER_PATTERN = /^\/vendor\/serve-sim\/helper\/([^/]+)\//;
+
 const POLL_INTERVAL = Duration.seconds(5);
 // How stale a running session's status may get before listing rechecks it.
 const STATUS_TTL_MS = 15_000;
@@ -789,7 +791,7 @@ export const make = Effect.fn("EasDeviceHost.make")(function* (config: EasDevice
         hubPath.startsWith(`${PLATFORMS[candidate].hubPrefix}/`),
       );
       if (!platform) return null;
-      const helper = /^\/vendor\/serve-sim\/helper\/([^/]+)\//.exec(hubPath);
+      const helper = HELPER_PATTERN.exec(hubPath);
       const deviceId = helper ? decodePathSegment(helper[1]!) : search.get("device");
       if (helper && deviceId === null) return null;
       const session =

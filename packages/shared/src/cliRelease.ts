@@ -1,5 +1,11 @@
 import { compareSemverVersions } from "./semver.ts";
 
+const TRAILING_SLASHES = /\/+$/;
+const LINE_BREAK = /\r?\n/;
+const MATCH_PATTERN = /^([0-9a-fA-F]{64})\s+\*?(\S.*)$/;
+const CHANNEL_PATTERN = /^[^-+]+-(nightly|preview)\.\d{8}\.\d+$/;
+const VERSION_PATTERN = /^v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/;
+
 const CLI_RELEASE_REPOSITORY = "theogmiguel/houston";
 export const CLI_RELEASES_PAGE_URL = `https://github.com/${CLI_RELEASE_REPOSITORY}/releases`;
 export const CLI_RELEASE_CHECKSUMS_FILE = "SHA256SUMS";
@@ -37,13 +43,13 @@ export function cliReleaseDownloadBaseUrl(
   version: string,
   baseUrl: string | undefined = CLI_RELEASE_DEFAULT_BASE_URL,
 ): string {
-  return `${(baseUrl?.trim() || CLI_RELEASE_DEFAULT_BASE_URL).replace(/\/+$/, "")}/v${version}`;
+  return `${(baseUrl?.trim() || CLI_RELEASE_DEFAULT_BASE_URL).replace(TRAILING_SLASHES, "")}/v${version}`;
 }
 
 export function parseChecksums(text: string): ReadonlyMap<string, string> {
   const checksums = new Map<string, string>();
-  for (const line of text.split(/\r?\n/)) {
-    const match = /^([0-9a-fA-F]{64})\s+\*?(\S.*)$/.exec(line.trim());
+  for (const line of text.split(LINE_BREAK)) {
+    const match = MATCH_PATTERN.exec(line.trim());
     if (match?.[1] !== undefined && match[2] !== undefined) {
       checksums.set(match[2], match[1].toLowerCase());
     }
@@ -59,7 +65,7 @@ export const CLI_RELEASE_CHANNELS: ReadonlyArray<CliReleaseChannel> = [
 ];
 
 export function cliReleaseChannelOf(version: string): CliReleaseChannel {
-  const channel = /^[^-+]+-(nightly|preview)\.\d{8}\.\d+$/.exec(version)?.[1];
+  const channel = CHANNEL_PATTERN.exec(version)?.[1];
   return channel === "nightly" || channel === "preview" ? channel : "stable";
 }
 
@@ -104,7 +110,7 @@ export function newestCliReleaseVersion(
 ): string | undefined {
   for (const release of releases) {
     if (release.draft) continue;
-    const version = /^v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/.exec(release.tag_name)?.[1];
+    const version = VERSION_PATTERN.exec(release.tag_name)?.[1];
     if (version === undefined) continue;
     if (cliReleaseChannelOf(version) === channel) return version;
   }

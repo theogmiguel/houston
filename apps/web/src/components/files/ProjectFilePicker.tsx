@@ -16,6 +16,8 @@ import {
 } from "./ProjectFilePicker.logic";
 import { useProjectFilePickerQuery } from "./projectFilesQueryState";
 
+const HAS_MATCHED_QUERY_PATTERN = /\S/;
+
 interface ProjectFilePickerProps {
   readonly setOpen: (open: boolean) => void;
 }
@@ -81,7 +83,7 @@ function OpenProjectFilePicker(props: ProjectFilePickerProps & { target: ActiveP
   const { resolvedTheme } = useTheme();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const matches = getProjectFilePickerMatches(result.entries, result.matchedQuery);
-  const hasMatchedQuery = /\S/.test(result.matchedQuery);
+  const hasMatchedQuery = HAS_MATCHED_QUERY_PATTERN.test(result.matchedQuery);
   const items: CommandPaletteActionItem[] = matches.map((match) => ({
     kind: "action",
     value: `file:${match.path}`,

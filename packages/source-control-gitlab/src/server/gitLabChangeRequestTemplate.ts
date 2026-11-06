@@ -3,6 +3,8 @@ import * as Option from "effect/Option";
 
 import type * as SourceControlHost from "@houston-app/source-control-core/server/SourceControlHost";
 
+const DETECT_PATTERN = /^100(?:644|755) blob ([0-9a-f]{40,64})\t(.+)$/;
+
 const TEMPLATE_DIRECTORY = ".gitlab/merge_request_templates";
 const TEMPLATE_MAX_BYTES = 8_000;
 const TREE_LIST_MAX_BYTES = 100_000;
@@ -26,7 +28,7 @@ export const detect = Effect.fn("gitLabChangeRequestTemplate.detect")(
 
     const objectId = listing.stdout
       .split("\0")
-      .map((record) => /^100(?:644|755) blob ([0-9a-f]{40,64})\t(.+)$/.exec(record))
+      .map((record) => DETECT_PATTERN.exec(record))
       .find((entry) => entry?.[2]?.toLowerCase() === `${TEMPLATE_DIRECTORY}/default.md`)?.[1];
     if (!objectId) {
       return Option.none();

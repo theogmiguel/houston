@@ -1,5 +1,7 @@
 import type { HoustonMcpToolSummaryAction } from "@houston-app/shared/houstonMcpToolPresentation";
 
+const FAILED_PATTERN = /(?:Error|Failure)$/;
+
 export interface T3ToolSummaryCall {
   readonly input: unknown;
   readonly output: unknown;
@@ -47,7 +49,7 @@ function readResult(value: unknown, depth = 0): ToolResult {
   const failed =
     record.isError === true ||
     record.is_error === true ||
-    (typeof record._tag === "string" && /(?:Error|Failure)$/.test(record._tag)) ||
+    (typeof record._tag === "string" && FAILED_PATTERN.test(record._tag)) ||
     record.error != null;
   const content = record.structuredContent ?? record.content;
   if (content !== undefined) {

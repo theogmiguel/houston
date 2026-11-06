@@ -2,6 +2,10 @@ import type { ProviderApprovalDecision, ProviderApprovalOption } from "@houston-
 import * as Schema from "effect/Schema";
 import type * as EffectCodexSchema from "effect-codex-app-server/schema";
 
+const APP_NAME_PATTERN = /^Allow ChatGPT to use (.+?)\?$/i;
+const CHOSEN_OPTION_PATTERN =
+  /^(?:once|accept|approve|allow)(?:[_\s-]*(?:once(?:[_\s-]*only)?|this[_\s-]*time))?$/i;
+
 const NullableMcpElicitationString = Schema.NullOr(Schema.String);
 const McpElicitationMetadata = Schema.Struct({
   app: Schema.optionalKey(NullableMcpElicitationString),
@@ -124,7 +128,7 @@ export function describeMcpElicitation(
     metadata?.target?.name ??
     metadata?.tool_params?.app_name ??
     metadata?.tool_params?.app ??
-    payload.message.match(/^Allow ChatGPT to use (.+?)\?$/i)?.[1] ??
+    payload.message.match(APP_NAME_PATTERN)?.[1] ??
     metadata?.connector_name ??
     metadata?.connectorName ??
     payload.serverName;
@@ -203,9 +207,8 @@ export function toMcpElicitationResponse(
     const chosenOption = options.find((option) =>
       persist
         ? mcpElicitationPersistenceDecision(option.value) === decision
-        : /^(?:once|accept|approve|allow)(?:[_\s-]*(?:once(?:[_\s-]*only)?|this[_\s-]*time))?$/i.test(
-            option.value.trim(),
-          ) && mcpElicitationPersistenceDecision(option.value) === null,
+        : CHOSEN_OPTION_PATTERN.test(option.value.trim()) &&
+          mcpElicitationPersistenceDecision(option.value) === null,
     );
     if (chosenOption) {
       content[key] = chosenOption.value;

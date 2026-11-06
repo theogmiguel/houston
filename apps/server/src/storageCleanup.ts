@@ -53,6 +53,12 @@ import * as HostProcess from "@houston-app/shared/HostProcess";
 import * as NodeSqliteClient from "@houston-app/shared/nodeSqliteClient";
 import { isNetworkPath } from "@houston-app/shared/path";
 
+const LINE_BREAK = /\r?\n/;
+const LOCAL_CHANGES_REASON_PATTERN = /^[RC]|^.[RC]/;
+const TRAILING_NEWLINE = /\n$/;
+const CLEAN_WORKTREES_PATTERN = /^ref: refs\/heads\/(.+)\tHEAD\r?$/m;
+const VISIT_PATTERN = /\.(?:log|ndjson)\.\d+$/;
+
 const decodeCleanupThread = Schema.decodeUnknownEffect(
   Schema.fromJsonString(OrchestrationV2AppThreadJson),
 );
@@ -79,8 +85,8 @@ const isGitCommandError = Schema.is(GitCommandError);
 
 function cleanupFailureReason(error: { readonly message: string }) {
   return isGitCommandError(error)
-    ? `${error.command}: ${error.detail.split(/\r?\n/)[0]}${error.reason ? ` (${error.reason})` : ""}`
-    : (error.message.split(/\r?\n/)[0] ?? error.message);
+    ? `${error.command}: ${error.detail.split(LINE_BREAK)[0]}${error.reason ? ` (${error.reason})` : ""}`
+    : (error.message.split(LINE_BREAK)[0] ?? error.message);
 }
 
 const worktreeCleanupEnabled = (rules: WorktreeCleanupRules) =>
@@ -590,7 +596,7 @@ const make = Effect.gen(function* () {
       )
         return null;
       return yield* failure(
-        result.stderr.trim().split(/\r?\n/)[0]?.slice(0, 1000) || "command failed",
+        result.stderr.trim().split(LINE_BREAK)[0]?.slice(0, 1000) || "command failed",
       );
     });
     const index = yield* read(["rev-parse", "--git-path", "index"]);
@@ -630,7 +636,7 @@ const make = Effect.gen(function* () {
     let count = 0;
     for (let i = 0; i < records.length; i++) {
       count++;
-      if (/^[RC]|^.[RC]/.test(records[i]!)) i++;
+      if (LOCAL_CHANGES_REASON_PATTERN.test(records[i]!)) i++;
     }
     if (count > 0) return `has uncommitted changes (${count} ${count === 1 ? "file" : "files"})`;
     if (rules.worktreeKeepWhen !== "any-local-files") return null;
@@ -659,7 +665,7 @@ const make = Effect.gen(function* () {
       const admin = yield* inspect(["rev-parse", "--absolute-git-dir"]);
       if (admin.stdoutTruncated || admin.stderrTruncated)
         return { force: false, reason: "submodule inspection exceeded the limit" };
-      const modules = path.join(admin.stdout.replace(/\n$/, ""), "modules");
+      const modules = path.join(admin.stdout.replace(TRAILING_NEWLINE, ""), "modules");
       const stored = yield* fs.exists(modules);
       if (!stored && !(yield* fs.exists(path.join(cwd, ".gitmodules"))))
         return { force: false, reason: null };
@@ -678,7 +684,7 @@ const make = Effect.gen(function* () {
         const directory = yield* inspect(["-C", submodule, "rev-parse", "--absolute-git-dir"]);
         if (directory.stdoutTruncated || directory.stderrTruncated)
           return { force: false, reason: "submodule inspection exceeded the limit" };
-        pending.push(directory.stdout.replace(/\n$/, ""));
+        pending.push(directory.stdout.replace(TRAILING_NEWLINE, ""));
       }
       const visited = new Set<string>();
       while (pending.length > 0) {
@@ -780,7 +786,7 @@ const make = Effect.gen(function* () {
         operation: "StorageCleanup.cleanupGit",
         command,
         cwd,
-        detail: result.stderr.trim().split(/\r?\n/)[0]?.slice(0, 1000) || "command failed",
+        detail: result.stderr.trim().split(LINE_BREAK)[0]?.slice(0, 1000) || "command failed",
       });
   });
 
@@ -980,8 +986,7 @@ const make = Effect.gen(function* () {
                   })
                   .pipe(
                     Effect.map(
-                      (result) =>
-                        /^ref: refs\/heads\/(.+)\tHEAD\r?$/m.exec(result.stdout)?.[1] ?? null,
+                      (result) => CLEAN_WORKTREES_PATTERN.exec(result.stdout)?.[1] ?? null,
                     ),
                     Effect.orElseSucceed(() => null),
                   );
@@ -1227,7 +1232,7 @@ const make = Effect.gen(function* () {
         const stat = yield* fs.stat(target);
         if (stat.type === "Directory" && rotatedLogs) {
           yield* visit(target);
-        } else if (stat.type === "File" && (!rotatedLogs || /\.(?:log|ndjson)\.\d+$/.test(name))) {
+        } else if (stat.type === "File" && (!rotatedLogs || VISIT_PATTERN.test(name))) {
           const modified = Option.getOrNull(stat.mtime);
           if (modified !== null && modified.getTime() < now - days * DAY_MS) {
             const current = (yield* settingsService.getSettings).storageCleanup;

@@ -12,6 +12,8 @@ import * as Schema from "effect/Schema";
 import { APP_VERSION } from "./branding";
 import { getLocalStorageItem, setLocalStorageItem } from "./hooks/useLocalStorage";
 
+const VERSION_CORE_PATTERN = /[-+].*$/;
+
 export interface VersionMismatch {
   readonly clientVersion: string;
   readonly serverVersion: string;
@@ -42,7 +44,7 @@ function normalizeVersion(version: string | null | undefined): string | null {
 }
 
 function versionCore(version: string): string {
-  return version.replace(/[-+].*$/, "");
+  return version.replace(VERSION_CORE_PATTERN, "");
 }
 
 export function resolveVersionMismatch(

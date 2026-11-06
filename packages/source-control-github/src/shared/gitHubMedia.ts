@@ -1,5 +1,7 @@
 import type { SourceControlMediaUrl } from "@houston-app/source-control-core/shared/definition";
 
+const NAME_PATTERN = /[\p{Cc}\\/]/gu;
+
 /**
  * Only hosts where a credential is what decides the answer belong here. `objects.githubusercontent.com`
  * and the `private-user-images` links GitHub's own HTML carries are already signed and load on their
@@ -29,7 +31,7 @@ function fileName(fetchUrl: string): string {
   } catch {
     decoded = segment;
   }
-  const name = decoded.replace(/[\p{Cc}\\/]/gu, "");
+  const name = decoded.replace(NAME_PATTERN, "");
   return name.length > 0 ? name : "github-media";
 }
 

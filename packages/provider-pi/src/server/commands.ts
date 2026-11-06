@@ -1,6 +1,8 @@
 import { type ServerProviderSkill, type ServerProviderSlashCommand } from "@houston-app/contracts";
 import * as Predicate from "effect/Predicate";
 
+const PARSE_PI_COMPACT_COMMAND_PATTERN = /^\s/;
+
 // Pi RPC get_commands omits TUI builtins. Advertise /compact so Houston can map it to RPC compact.
 const PI_COMPACT_SLASH_COMMAND: ServerProviderSlashCommand = {
   name: "compact",
@@ -18,7 +20,7 @@ export function parsePiCompactCommand(text: string): PiCompactCommand | null {
   if (!trimmed.startsWith("/compact")) return null;
   const rest = trimmed.slice("/compact".length);
   if (rest.length === 0) return {};
-  if (!/^\s/.test(rest)) return null;
+  if (!PARSE_PI_COMPACT_COMMAND_PATTERN.test(rest)) return null;
   const customInstructions = rest.trim();
   return customInstructions.length === 0 ? {} : { customInstructions };
 }

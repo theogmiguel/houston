@@ -35,6 +35,8 @@ import { formatRelativeTimeLabel } from "../timestampFormat";
 import { type Project, type SidebarThreadSummary, type Thread } from "../types";
 import { isSidebarHiddenThread } from "./Sidebar.logic";
 
+const STEM_PATTERN = /(\.\.\.|…)$/u;
+
 export const RECENT_THREAD_LIMIT = 12;
 export const ITEM_ICON_CLASS = "size-4 text-icon-muted";
 export const ADDON_ICON_CLASS = "size-4";
@@ -675,7 +677,7 @@ export function buildNestedSearchItems(
   const foldedQuery = foldSearchQuery(query);
   return items.flatMap((parent) => {
     if (parent.kind !== "submenu" || typeof parent.title !== "string") return [];
-    const stem = parent.title.replace(/(\.\.\.|…)$/u, "");
+    const stem = parent.title.replace(STEM_PATTERN, "");
     // A query that only names the submenu ("new thread in") wants the submenu row itself.
     if (foldSearchQuery(stem).startsWith(foldedQuery)) return [];
     const prefix = stem === parent.title ? `${stem}: ` : `${stem.trimEnd()} `;

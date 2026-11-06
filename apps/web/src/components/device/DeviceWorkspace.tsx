@@ -10,6 +10,8 @@ import { DeviceStreamView } from "./DeviceStreamView";
 import { DeviceToolsPanel } from "./DeviceToolsPanel";
 import { useDeviceControls } from "./useDeviceControls";
 
+const SAVE_SCREENSHOT_PATTERN = /[^a-z0-9-]/gi;
+
 const DOWNLOAD_URL_LIFETIME_MS = 60_000;
 
 export function DeviceWorkspace(props: {
@@ -51,7 +53,7 @@ export function DeviceWorkspace(props: {
         const url = URL.createObjectURL(image);
         const link = document.createElement("a");
         link.href = url;
-        link.download = `${props.device.name.replace(/[^a-z0-9-]/gi, "-")}-${Date.now()}.png`;
+        link.download = `${props.device.name.replace(SAVE_SCREENSHOT_PATTERN, "-")}-${Date.now()}.png`;
         document.body.append(link);
         link.click();
         link.remove();

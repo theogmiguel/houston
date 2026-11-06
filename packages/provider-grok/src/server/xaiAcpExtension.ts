@@ -11,6 +11,32 @@ import type * as EffectAcpSchema from "effect-acp/compat";
 import type * as AcpSessionRuntime from "@houston-app/provider-acp/server/AcpSessionRuntime";
 import type { AcpToolCallState } from "@houston-app/provider-acp/server/runtimeModel";
 
+const IS_X_AI_ASYNC_SPAWN_ACK_PATTERN = /subagent started in background/i;
+const IS_X_AI_ASYNC_SPAWN_ACK_PATTERN_2 = /get_command_or_subagent_output/i;
+const IS_X_AI_MONITOR_START_ACK_PATTERN = /monitor started\s*\(\s*task\s+/i;
+const LABEL_PATTERN = /^\[monitor\]\s*/;
+const NEWLINE = /\n/;
+const SUMMARY_PATTERN = /<\/?system-reminder>/gi;
+const STATUS_PATTERN = /exited\s*\(\s*code\s*0\s*\)/i;
+const STATUS_PATTERN_2 = /ended cleanly/i;
+const STATUS_PATTERN_3 = /exited|failed|error|signal/i;
+const LEADING_WHITESPACE = /^\s+/;
+const EXTRACT_X_AI_ACP_SUBAGENT_END_NOTICE_PATTERN = /completed successfully/i;
+const EXTRACT_X_AI_ACP_SUBAGENT_END_NOTICE_PATTERN_2 =
+  /\b(failed|errored|error|crashed|cancelled|canceled|interrupted|timed out)\b/i;
+const EXTRACT_X_AI_ACP_SUBAGENT_END_NOTICE_PATTERN_3 = /\b(completed|finished|ended)\b/i;
+const CLEANED_PATTERN = /<subagent_meta>[\s\S]*?<\/subagent_meta>/gi;
+const CLEANED_PATTERN_2 = /<subagent_result>[\s\S]*?<\/subagent_result>/gi;
+const MARKER_PATTERN = /=== Output ===\s*([\s\S]*)$/i;
+const STATUS_FROM_GET_OUTPUT_TOOL_PATTERN = /Status:\s*failed/i;
+const STATUS_FROM_GET_OUTPUT_TOOL_PATTERN_2 = /Exit Code:\s*-?(?!0\b)\d+/i;
+const STATUS_FROM_GET_OUTPUT_TOOL_PATTERN_3 = /Status:\s*completed/i;
+const STATUS_FROM_GET_OUTPUT_TOOL_PATTERN_4 = /Status:\s*success/i;
+const STATUS_FROM_GET_OUTPUT_TOOL_PATTERN_5 = /Status:\s*running/i;
+const STATUS_FROM_GET_OUTPUT_TOOL_PATTERN_6 = /Status:\s*pending/i;
+const BACKSLASH = /\\/g;
+const TRAILING_SLASHES = /\/+$/;
+
 export const xAiRateLimitedErrorCode = -32003;
 const completedXAiPromptIdLimit = 128;
 
@@ -191,16 +217,16 @@ function extractXAiChildSessionId(output: string | undefined): string | null {
 
 function isXAiAsyncSpawnAck(output: string | undefined): boolean {
   if (output === undefined) return false;
-  if (/subagent started in background/i.test(output)) return true;
+  if (IS_X_AI_ASYNC_SPAWN_ACK_PATTERN.test(output)) return true;
   return (
     new RegExp(`subagent_id:\\s*${XAI_UUID_RE}`, "i").test(output) &&
-    /get_command_or_subagent_output/i.test(output)
+    IS_X_AI_ASYNC_SPAWN_ACK_PATTERN_2.test(output)
   );
 }
 
 function isXAiMonitorStartAck(output: string | undefined): boolean {
   if (output === undefined) return false;
-  return /monitor started\s*\(\s*task\s+/i.test(output);
+  return IS_X_AI_MONITOR_START_ACK_PATTERN.test(output);
 }
 
 function isXAiSpawnOrTaskTool(
@@ -428,7 +454,7 @@ function xAiBackgroundTaskReport(
     monitorDescription ??
     nonEmptyString(snapshot?.description ?? undefined) ??
     nonEmptyString(update.description ?? undefined) ??
-    displayCommand?.replace(/^\[monitor\]\s*/, "") ??
+    displayCommand?.replace(LABEL_PATTERN, "") ??
     nonEmptyString(snapshot?.command) ??
     nonEmptyString(update.command);
   const named = label === undefined ? {} : { label };
@@ -635,15 +661,15 @@ export function extractXAiAcpBackgroundToolMutation(
     // Only the monitor header describes outcome; output can contain error words without failure.
     const outcomeClause = (endedMatch[0] ?? "").trim();
     const afterHeader = text.slice((endedMatch.index ?? 0) + endedMatch[0].length);
-    const outcomeTail = afterHeader.split(/\n/)[0] ?? "";
+    const outcomeTail = afterHeader.split(NEWLINE)[0] ?? "";
     const outcome = `${outcomeClause}${outcomeTail}`;
-    const summary = text.replace(/<\/?system-reminder>/gi, "").trim();
+    const summary = text.replace(SUMMARY_PATTERN, "").trim();
     mutations.push({
       taskId: endedMatch[1],
       status:
-        /exited\s*\(\s*code\s*0\s*\)/i.test(outcome) || /ended cleanly/i.test(outcome)
+        STATUS_PATTERN.test(outcome) || STATUS_PATTERN_2.test(outcome)
           ? "completed"
-          : /exited|failed|error|signal/i.test(outcome)
+          : STATUS_PATTERN_3.test(outcome)
             ? "failed"
             : "completed",
       appendOutput: summary.length > 0 ? `${summary}\n` : "Monitor ended.\n",
@@ -654,7 +680,7 @@ export function extractXAiAcpBackgroundToolMutation(
 }
 
 function stripLeadingBalancedParenGroup(text: string): string {
-  const trimmed = text.replace(/^\s+/, "");
+  const trimmed = text.replace(LEADING_WHITESPACE, "");
   if (!trimmed.startsWith("(")) return trimmed;
   let depth = 0;
   for (let index = 0; index < trimmed.length; index += 1) {
@@ -662,7 +688,7 @@ function stripLeadingBalancedParenGroup(text: string): string {
     if (char === "(") depth += 1;
     else if (char === ")") {
       depth -= 1;
-      if (depth === 0) return trimmed.slice(index + 1).replace(/^\s+/, "");
+      if (depth === 0) return trimmed.slice(index + 1).replace(LEADING_WHITESPACE, "");
     }
   }
   return trimmed;
@@ -673,13 +699,13 @@ export function extractXAiAcpSubagentEndNotice(text: string): XAiAcpSubagentEndN
   if (match?.[1] === undefined) return undefined;
   // Skip balanced descriptor parentheses so nested titles cannot supply false outcome verbs.
   const tail = stripLeadingBalancedParenGroup(text.slice((match.index ?? 0) + match[0].length));
-  if (/completed successfully/i.test(tail)) {
+  if (EXTRACT_X_AI_ACP_SUBAGENT_END_NOTICE_PATTERN.test(tail)) {
     return { childSessionId: match[1], status: "completed" };
   }
-  if (/\b(failed|errored|error|crashed|cancelled|canceled|interrupted|timed out)\b/i.test(tail)) {
+  if (EXTRACT_X_AI_ACP_SUBAGENT_END_NOTICE_PATTERN_2.test(tail)) {
     return { childSessionId: match[1], status: "failed" };
   }
-  if (/\b(completed|finished|ended)\b/i.test(tail)) {
+  if (EXTRACT_X_AI_ACP_SUBAGENT_END_NOTICE_PATTERN_3.test(tail)) {
     return { childSessionId: match[1], status: "completed" };
   }
   return undefined;
@@ -744,15 +770,12 @@ function resultFromGetOutputTool(
     nonEmptyString(result?.text) ??
     decodeByteText(result?.output);
   if (structured !== undefined) {
-    const cleaned = structured
-      .replace(/<subagent_meta>[\s\S]*?<\/subagent_meta>/gi, "")
-      .replace(/<subagent_result>[\s\S]*?<\/subagent_result>/gi, "")
-      .trim();
+    const cleaned = structured.replace(CLEANED_PATTERN, "").replace(CLEANED_PATTERN_2, "").trim();
     if (cleaned.length > 0) return cleaned;
     return null;
   }
   if (output === undefined) return null;
-  const marker = output.match(/=== Output ===\s*([\s\S]*)$/i);
+  const marker = output.match(MARKER_PATTERN);
   const body = (marker?.[1] ?? output).trim();
   return body.length > 0 ? body : null;
 }
@@ -772,13 +795,22 @@ function statusFromGetOutputTool(
     return result.exit_code === 0 ? "completed" : "failed";
   }
   if (output !== undefined) {
-    if (/Status:\s*failed/i.test(output) || /Exit Code:\s*-?(?!0\b)\d+/i.test(output)) {
+    if (
+      STATUS_FROM_GET_OUTPUT_TOOL_PATTERN.test(output) ||
+      STATUS_FROM_GET_OUTPUT_TOOL_PATTERN_2.test(output)
+    ) {
       return "failed";
     }
-    if (/Status:\s*completed/i.test(output) || /Status:\s*success/i.test(output)) {
+    if (
+      STATUS_FROM_GET_OUTPUT_TOOL_PATTERN_3.test(output) ||
+      STATUS_FROM_GET_OUTPUT_TOOL_PATTERN_4.test(output)
+    ) {
       return "completed";
     }
-    if (/Status:\s*running/i.test(output) || /Status:\s*pending/i.test(output)) {
+    if (
+      STATUS_FROM_GET_OUTPUT_TOOL_PATTERN_5.test(output) ||
+      STATUS_FROM_GET_OUTPUT_TOOL_PATTERN_6.test(output)
+    ) {
       return "running";
     }
   }
@@ -949,7 +981,7 @@ export function makeXAiExitPlanModeCapturedResponse(feedback?: string): XAiExitP
 }
 
 function normalizeFsPath(value: string): string {
-  return value.trim().replace(/\\/g, "/").replace(/\/+$/, "");
+  return value.trim().replace(BACKSLASH, "/").replace(TRAILING_SLASHES, "");
 }
 
 function pathHasTraversalSegment(normalized: string): boolean {
@@ -1003,7 +1035,7 @@ export function isGrokPlanMarkdownPath(
   if (typeof path !== "string") {
     return false;
   }
-  const normalized = path.trim().replace(/\\/g, "/");
+  const normalized = path.trim().replace(BACKSLASH, "/");
   const win32 = host.platform === "win32";
   const haystack = win32 ? normalized.toLowerCase() : normalized;
   if (

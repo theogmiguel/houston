@@ -16,6 +16,18 @@ import * as SourceControlHost from "@houston-app/source-control-core/server/Sour
 import { collectUint8StreamText } from "@houston-app/provider-core/server/collectStreamText";
 import type { SourceControlProviderContext } from "@houston-app/source-control-core/server/SourceControlProvider";
 
+const PARSE_FORGEJO_REMOTE_PATTERN = /^(?:https?|ssh):\/\//i;
+const EDGE_SLASHES = /^\/+|\/+$/g;
+const PATH_PATTERN = /\.git$/;
+const SSH_PATTERN = /^(?:[^@/]+@)?([^:/]+):([^/].*)$/;
+const SCHEME_PATTERN = /^http:\/\//i;
+const TRAILING_SLASHES = /\/+$/;
+const URL_PATTERN = /^\S+\s+(https?:\/\/\S+)\s+\(fetch\)(?:\s+\[[^\]]+\])?$/;
+const REPOSITORY_PATH_PATTERN = /\/pulls\/\d+.*$/;
+const RESOLVE_TARGET_PATTERN = /^[^/\s]+\/[^/\s]+$/;
+const LEADING_SLASHES = /^\/+/;
+const STATUS_PATTERN = /^HTTP\/\S+ (\d{3})/m;
+
 const encodeApiBody = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 
 export class ForgejoCliError extends Schema.TaggedError<ForgejoCliError>()("ForgejoCliError", {
@@ -151,27 +163,27 @@ export class ForgejoCli extends Context.Service<
 >()("@houston-app/source-control-forgejo/server/ForgejoCli") {}
 
 export function parseForgejoRemote(value: string) {
-  if (/^(?:https?|ssh):\/\//i.test(value)) {
+  if (PARSE_FORGEJO_REMOTE_PATTERN.test(value)) {
     try {
       const url = new URL(value);
       return {
         host: url.host.toLowerCase(),
         hostname: url.hostname.toLowerCase(),
         ssh: url.protocol === "ssh:",
-        path: url.pathname.replace(/^\/+|\/+$/g, "").replace(/\.git$/, ""),
+        path: url.pathname.replace(EDGE_SLASHES, "").replace(PATH_PATTERN, ""),
       };
     } catch {
       return null;
     }
   }
   // SCP remotes may omit the username; URL treats these as a custom scheme.
-  const ssh = /^(?:[^@/]+@)?([^:/]+):([^/].*)$/.exec(value);
+  const ssh = SSH_PATTERN.exec(value);
   return ssh?.[1] && ssh[2]
     ? {
         host: ssh[1].toLowerCase(),
         hostname: ssh[1].toLowerCase(),
         ssh: true,
-        path: ssh[2].replace(/\.git$/, ""),
+        path: ssh[2].replace(PATH_PATTERN, ""),
       }
     : null;
 }
@@ -302,7 +314,7 @@ export const make = Effect.gen(function* () {
       if (!url || url.path) return [];
       // fj omits the scheme in storage. Only an explicit matching HTTP remote opts into HTTP.
       const scheme =
-        remote && !remote.ssh && remote.host === url.host && /^http:\/\//i.test(remoteUrl ?? "")
+        remote && !remote.ssh && remote.host === url.host && SCHEME_PATTERN.test(remoteUrl ?? "")
           ? "http"
           : "https";
       const login = { name: host, url: `${scheme}://${host}`, user: "", default: "false" };
@@ -457,7 +469,8 @@ export const make = Effect.gen(function* () {
   )(function* (input) {
     const logins = yield* listLogins({ cwd: input.cwd, command: "fj", remoteUrl: input.baseUrl });
     const login = logins.find(
-      (item) => item.url.replace(/\/+$/, "") === input.baseUrl.replace(/\/+$/, ""),
+      (item) =>
+        item.url.replace(TRAILING_SLASHES, "") === input.baseUrl.replace(TRAILING_SLASHES, ""),
     );
     if (!login)
       return yield* new ForgejoCliError({
@@ -469,7 +482,7 @@ export const make = Effect.gen(function* () {
     const token = yield* authenticateFj(input.cwd, login);
     const currentUser = yield* requestFj({
       cwd: input.cwd,
-      baseUrl: login.url.replace(/\/+$/, ""),
+      baseUrl: login.url.replace(TRAILING_SLASHES, ""),
       token,
       path: "user",
     });
@@ -521,9 +534,7 @@ export const make = Effect.gen(function* () {
           ...new Set(
             result.stdout.split("\n").flatMap((line) => {
               // Partial clones append the promisor filter, e.g. `(fetch) [blob:none]`.
-              const url = /^\S+\s+(https?:\/\/\S+)\s+\(fetch\)(?:\s+\[[^\]]+\])?$/.exec(
-                line.trim(),
-              )?.[1];
+              const url = URL_PATTERN.exec(line.trim())?.[1];
               return url && parseForgejoRemote(url)?.host === input.host?.toLowerCase()
                 ? [url]
                 : [];
@@ -609,38 +620,51 @@ export const make = Effect.gen(function* () {
           "No matching Forgejo login. Use `fj auth login`, `fj auth add-token`, or `tea login add` for this server; choose a default when multiple tea accounts match.",
       });
     if (hostOnly)
-      return { command, login: login.name, repository: "", baseUrl: login.url.replace(/\/+$/, "") };
+      return {
+        command,
+        login: login.name,
+        repository: "",
+        baseUrl: login.url.replace(TRAILING_SLASHES, ""),
+      };
     const path =
       referenceRemote?.path ??
       (input.repository && !parseForgejoRemote(input.repository)
         ? input.repository
         : remote?.path) ??
       "";
-    const basePath = new URL(login.url).pathname.replace(/^\/+|\/+$/g, "");
+    const basePath = new URL(login.url).pathname.replace(EDGE_SLASHES, "");
     const relativePath =
       basePath && path.split("/").length > 2 && path.startsWith(`${basePath}/`)
         ? path.slice(basePath.length + 1)
         : path;
-    const repositoryPath = relativePath.replace(/\/pulls\/\d+.*$/, "").replace(/\.git$/, "");
+    const repositoryPath = relativePath
+      .replace(REPOSITORY_PATH_PATTERN, "")
+      .replace(PATH_PATTERN, "");
     if (command === "fj" && !repositoryPath.includes("/")) {
       login = { ...login, user: yield* getAccount({ cwd: input.cwd, baseUrl: login.url }) };
     }
     const repository = repositoryPath.includes("/")
       ? repositoryPath
       : `${login.user}/${repositoryPath}`;
-    if (!/^[^/\s]+\/[^/\s]+$/.test(repository))
+    if (!RESOLVE_TARGET_PATTERN.test(repository))
       return yield* new ForgejoCliError({
         command,
         cwd: input.cwd,
         detail: "Specify a Forgejo repository as owner/repository or its full server URL.",
       });
-    return { command, login: login.name, repository, baseUrl: login.url.replace(/\/+$/, "") };
+    return {
+      command,
+      login: login.name,
+      repository,
+      baseUrl: login.url.replace(TRAILING_SLASHES, ""),
+    };
   });
   const resolveRepository = (input: ForgejoRepositoryInput) => resolveTarget(input);
   const api = Effect.fn("ForgejoCli.api")(function* (input: ForgejoApiInput) {
     const repository = yield* resolveTarget(
       input,
-      input.path.replace(/^\/+/, "") === "user" && (!input.method || input.method === "GET"),
+      input.path.replace(LEADING_SLASHES, "") === "user" &&
+        (!input.method || input.method === "GET"),
     );
     const stdin =
       input.body === undefined
@@ -656,7 +680,7 @@ export const make = Effect.gen(function* () {
                 }),
             ),
           );
-    let path = input.path.replace(/^\/+/, "");
+    let path = input.path.replace(LEADING_SLASHES, "");
     if (input.repository && input.repository !== repository.repository) {
       // Repository identities retain the server mount path; API routes do not.
       const prefix = `repos/${input.repository.split("/").map(encodeURIComponent).join("/")}`;
@@ -698,7 +722,7 @@ export const make = Effect.gen(function* () {
       ...(stdin === undefined ? {} : { stdin }),
     });
     // tea reports HTTP failures with exit code zero; use its response status.
-    const status = Number(/^HTTP\/\S+ (\d{3})/m.exec(result.stderr)?.[1]);
+    const status = Number(STATUS_PATTERN.exec(result.stderr)?.[1]);
     if (!status || status >= 400)
       return yield* new ForgejoCliError({
         command: "tea",

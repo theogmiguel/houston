@@ -33,6 +33,12 @@ import * as ProcessRunner from "../processRunner.ts";
 import { writeAgentDeviceConfig } from "./AgentDeviceTarget.ts";
 import * as DeviceHost from "./DeviceHost.ts";
 
+const MATCH_PATTERN = /^simlock:(ios|android):(.+)$/;
+const TRAILING_SLASHES = /\/+$/;
+const TRAILING_SLASH = /\/$/;
+const AGENT_ENVIRONMENT_PATTERN =
+  /^AGENT_DEVICE_(DAEMON_BASE_URL|DAEMON_AUTH_TOKEN|CONFIG|STATE_DIR|SESSION)$/;
+
 const CATALOG_TTL_MS = 60_000;
 const REQUEST_TIMEOUT = Duration.seconds(15);
 // The gateway queues a lease request for up to five minutes when every device is busy.
@@ -79,7 +85,7 @@ interface Lease {
 
 const catalogId = (platform: DevicePlatform, model: string) => `simlock:${platform}:${model}`;
 const parseCatalogId = (id: string) => {
-  const match = /^simlock:(ios|android):(.+)$/.exec(id);
+  const match = MATCH_PATTERN.exec(id);
   return match ? { platform: match[1] as DevicePlatform, model: match[2]! } : null;
 };
 const platformVersion = (platform: DevicePlatform, runtime: string | undefined) =>
@@ -99,7 +105,7 @@ const sameOrigin = (left: string, right: string) => {
  * variables, which Simlock tells its clients to set. Null unless they point at a Simlock gateway.
  */
 export const machineSimlockToken = (environment: NodeJS.ProcessEnv) => {
-  const base = environment.AGENT_DEVICE_DAEMON_BASE_URL?.trim().replace(/\/+$/, "");
+  const base = environment.AGENT_DEVICE_DAEMON_BASE_URL?.trim().replace(TRAILING_SLASHES, "");
   const agentToken = environment.AGENT_DEVICE_DAEMON_AUTH_TOKEN?.trim();
   if (!base?.endsWith(AGENT_DEVICE_PATH) || !agentToken) return null;
   const gatewayUrl = base.slice(0, -AGENT_DEVICE_PATH.length);
@@ -151,7 +157,7 @@ export const simlockIdentity = Effect.fn("SimlockDeviceHost.identity")(function*
   const http = yield* HttpClient.HttpClient;
   return yield* http
     .execute(
-      HttpClientRequest.get(`${gatewayUrl.replace(/\/$/, "")}/v1/identity`).pipe(
+      HttpClientRequest.get(`${gatewayUrl.replace(TRAILING_SLASH, "")}/v1/identity`).pipe(
         HttpClientRequest.bearerToken(agentToken),
       ),
     )
@@ -182,7 +188,7 @@ export const make = Effect.fn("SimlockDeviceHost.make")(function* (
   const services = yield* Effect.context<FileSystem.FileSystem | Path.Path>();
   const environment = yield* HostProcess.Environment;
   const hostId = config.id;
-  const gateway = config.gatewayUrl.replace(/\/$/, "");
+  const gateway = config.gatewayUrl.replace(TRAILING_SLASH, "");
   const agentToken = resolveSimlockToken(config.gatewayUrl, config, environment)?.agentToken ?? "";
   const agentDeviceUrl = `${gateway}/v1/agent-device`;
   const hostDir = path.join(server.stateDir, "device", "simlock", hostId);
@@ -239,10 +245,7 @@ export const make = Effect.fn("SimlockDeviceHost.make")(function* (
       AGENT_DEVICE_NO_UPDATE_NOTIFIER: "1",
       NO_COLOR: "1",
       FORCE_COLOR: "0",
-    }).filter(
-      ([name]) =>
-        !/^AGENT_DEVICE_(DAEMON_BASE_URL|DAEMON_AUTH_TOKEN|CONFIG|STATE_DIR|SESSION)$/.test(name),
-    ),
+    }).filter(([name]) => !AGENT_ENVIRONMENT_PATTERN.test(name)),
   );
 
   /** Runs Houston's own agent-device CLI against the lease's session; its failure message is the reason. */

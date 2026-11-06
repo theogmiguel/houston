@@ -2,10 +2,12 @@ import { MIN_SCHEDULED_TASK_INTERVAL_MS, type ScheduledTaskSchedule } from "@hou
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 
+const MATCH_PATTERN = /^([01]?\d|2[0-3]):([0-5]\d)$/;
+
 const MINUTE_MS = 60_000;
 
 function parseTimeOfDay(value: string): { hour: number; minute: number } | null {
-  const match = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(value.trim());
+  const match = MATCH_PATTERN.exec(value.trim());
   if (!match) return null;
   return { hour: Number(match[1]), minute: Number(match[2]) };
 }

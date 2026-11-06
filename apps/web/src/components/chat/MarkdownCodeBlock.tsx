@@ -29,6 +29,9 @@ import {
 import { reportMarkdownActionFailure } from "./markdownActionFailure";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 
+const CAN_RUN_PATTERN = /^(?:sh|bash|zsh|fish|shell|powershell|pwsh)$/;
+const CAN_RUN_PATTERN_2 = /[\p{Cc}\p{Cf}]/u;
+
 const MAX_HIGHLIGHT_CACHE_ENTRIES = 500;
 const MAX_HIGHLIGHT_CACHE_MEMORY_BYTES = 50 * 1024 * 1024;
 
@@ -170,13 +173,13 @@ export function MarkdownCodeBlock({
   const canRun =
     onRunShellCommand !== undefined &&
     !isStreaming &&
-    /^(?:sh|bash|zsh|fish|shell|powershell|pwsh)$/.test(language) &&
+    CAN_RUN_PATTERN.test(language) &&
     code.endsWith("\n") &&
     command.length > 0 &&
     !command.endsWith("\\") &&
     // Control and invisible format characters (bidi overrides, zero-width) can
     // make the rendered command differ from what the terminal would receive.
-    !/[\p{Cc}\p{Cf}]/u.test(code.slice(0, -1));
+    !CAN_RUN_PATTERN_2.test(code.slice(0, -1));
 
   const handleCopy = () => copyToClipboard(code);
 

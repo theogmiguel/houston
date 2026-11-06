@@ -79,6 +79,10 @@ import { Separator } from "../ui/separator";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { VoicePostProcessingSettings } from "./VoicePostProcessingSettings";
 
+const NORMALIZE_DICTIONARY_TERM_PATTERN = /[<>"']/g;
+const WHITESPACE_RUN = /\s+/g;
+const PREPARE_BULK_WORDS_PATTERN = /\r\n?|\n/;
+
 const SYSTEM_DEFAULT = "system-default";
 const PRIMARY_ENVIRONMENT = "primary-environment";
 const deviceValue = (id: string) => `device:${id}`;
@@ -86,8 +90,8 @@ const environmentValue = (id: EnvironmentId) => `environment:${id}`;
 const formatSize = (bytes: number) => `${Math.round(bytes / 1024 / 1024)} MB`;
 const normalizeDictionaryTerm = (value: string) =>
   value
-    .replace(/[<>"']/g, "")
-    .replace(/\s+/g, " ")
+    .replace(NORMALIZE_DICTIONARY_TERM_PATTERN, "")
+    .replace(WHITESPACE_RUN, " ")
     .trim()
     .normalize("NFC");
 const prepareBulkWords = (draft: string, words: SpeechCustomWords) => {
@@ -101,7 +105,7 @@ const prepareBulkWords = (draft: string, words: SpeechCustomWords) => {
   let tooLong = 0;
   let overLimit = 0;
   let invalid = 0;
-  for (const line of draft.split(/\r\n?|\n/)) {
+  for (const line of draft.split(PREPARE_BULK_WORDS_PATTERN)) {
     if (!line.trim()) continue;
     const term = normalizeDictionaryTerm(line);
     if (!term) {
@@ -1103,8 +1107,8 @@ export function VoiceSettingsPanel() {
               <div aria-label="Dictionary entries" className="flex flex-wrap gap-1.5">
                 {customWords.map(({ term, aliases }) => {
                   const draft = (aliasDrafts[term] ?? "")
-                    .replace(/[<>"']/g, "")
-                    .replace(/\s+/g, " ")
+                    .replace(NORMALIZE_DICTIONARY_TERM_PATTERN, "")
+                    .replace(WHITESPACE_RUN, " ")
                     .trim();
                   const used = customWords.some((entry) =>
                     [entry.term, ...entry.aliases].some(

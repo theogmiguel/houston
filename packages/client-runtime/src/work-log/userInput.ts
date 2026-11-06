@@ -1,5 +1,7 @@
 import { type UserInputAttachmentAnswerPayload } from "@houston-app/contracts";
 
+const WHITESPACE_RUN = /\s+/g;
+
 function record(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -15,7 +17,7 @@ export function getQuestionAnswerText(value: unknown): string {
 
 export function getQuestionTextPreview(answer: UserInputAttachmentAnswerPayload): string {
   return Object.values(answer.questionTextById ?? {})
-    .map((text) => text.replace(/\s+/g, " ").trim())
+    .map((text) => text.replace(WHITESPACE_RUN, " ").trim())
     .filter(Boolean)
     .join(" · ");
 }
@@ -32,7 +34,7 @@ export function getQuestionAnswerPreview(answer: UserInputAttachmentAnswerPayloa
         ? attachments.join(", ")
         : Object.values(answer.questionTextById ?? {}).join(" · ")
   )
-    .replace(/\s+/g, " ")
+    .replace(WHITESPACE_RUN, " ")
     .trim();
 }
 

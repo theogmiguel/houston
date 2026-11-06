@@ -5,6 +5,8 @@ import * as NodeSea from "node:sea";
 import * as NodeURL from "node:url";
 import type { SpeechStreamText } from "@houston-app/contracts";
 
+const WHITESPACE_RUN = /\s+/;
+
 type SpeechModule = {
   readonly TranscribeModel: {
     load(path: string, options: { device?: unknown; backend?: string }): Promise<SpeechModel>;
@@ -81,7 +83,10 @@ const tentativeAfter = ({
   readonly tentative: string;
 }) => {
   if (!committed || full.startsWith(committed)) return tentative;
-  const words = full.trim().split(/\s+/).slice(committed.trim().split(/\s+/).length);
+  const words = full
+    .trim()
+    .split(WHITESPACE_RUN)
+    .slice(committed.trim().split(WHITESPACE_RUN).length);
   return words.length ? " " + words.join(" ") : "";
 };
 

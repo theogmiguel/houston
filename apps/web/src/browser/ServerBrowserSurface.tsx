@@ -47,6 +47,8 @@ import { refreshPreviewStreamAccess, usePreviewStreamAccess } from "~/state/prev
 import { observeResize } from "~/lib/observeResize";
 import { isLayoutResizing, onLayoutResizeEnd } from "~/motion/layoutResize";
 
+const TEXT_PATTERN = /^\u200b/;
+
 export interface ServerBrowserHandle {
   readonly navigate: (url: string) => void;
   readonly history: (delta: -1 | 1) => void;
@@ -811,7 +813,7 @@ export function ServerBrowserSurface(props: {
     else if (inputType === "deleteContentBackward") sendKeyPress(BACKSPACE);
     else if (inputType === "deleteContentForward") sendKeyPress(DELETE);
     else {
-      const text = textarea.value.replace(/^\u200b/, "");
+      const text = textarea.value.replace(TEXT_PATTERN, "");
       if (text) send({ type: "text", text });
     }
     resetInput(textarea);
@@ -888,7 +890,7 @@ export function ServerBrowserSurface(props: {
           onKeyUp={(event) => handleKey("up", event)}
           onInput={handleInput}
           onCompositionEnd={(event) => {
-            const text = event.data.replace(/^\u200b/, "");
+            const text = event.data.replace(TEXT_PATTERN, "");
             if (text) send({ type: "text", text });
             resetInput(event.currentTarget);
           }}

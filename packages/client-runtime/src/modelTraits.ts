@@ -11,6 +11,8 @@ import {
 } from "@houston-app/shared/model";
 import { REASONING_EFFORT_OPTION_IDS } from "./state/threadExecution.ts";
 
+const ULTRATHINK_IN_BODY_TEXT_PATTERN = /^Ultrathink:\s*/i;
+
 const REASONING_DESCRIPTOR_IDS: ReadonlySet<string> = new Set([
   ...REASONING_EFFORT_OPTION_IDS,
   "thinking",
@@ -83,7 +85,8 @@ export function getPromptControlledTraits(
     (primarySelectDescriptor?.promptInjectedValues?.length ?? 0) > 0 &&
     isClaudeUltrathinkPrompt(prompt);
   const ultrathinkInBodyText =
-    ultrathinkPromptControlled && isClaudeUltrathinkPrompt(prompt.replace(/^Ultrathink:\s*/i, ""));
+    ultrathinkPromptControlled &&
+    isClaudeUltrathinkPrompt(prompt.replace(ULTRATHINK_IN_BODY_TEXT_PATTERN, ""));
   return { primarySelectDescriptor, ultrathinkPromptControlled, ultrathinkInBodyText };
 }
 
@@ -101,7 +104,7 @@ export function getTraitSelectChange(
   return {
     prompt:
       isPrimary && selected.ultrathinkPromptControlled
-        ? prompt.replace(/^Ultrathink:\s*/i, "")
+        ? prompt.replace(ULTRATHINK_IN_BODY_TEXT_PATTERN, "")
         : prompt,
     modelOptions: buildProviderOptionSelectionsFromDescriptors(
       replaceDescriptorCurrentValue(selected.descriptors, descriptor.id, value),

@@ -11,6 +11,9 @@ import {
 import type { EnvironmentPresentation } from "./connection/presentation.ts";
 import { connectionRoutes, routeHttpBaseUrl } from "./connection/routes.ts";
 
+const WORDS_PATTERN = /[^\p{L}\p{N}]+/u;
+const WANTED_PATTERN = /^(?:my|our|the)\s+/;
+
 export type LinkRequestItem = Extract<OrchestrationV2TurnItem, { readonly type: "link_request" }>;
 
 /** Whether an environment offers links: it supports them and its Linked environments beta is on. */
@@ -105,12 +108,7 @@ export function linkableMachines(input: {
   return saved;
 }
 
-const words = (text: string) =>
-  ` ${text
-    .toLowerCase()
-    .split(/[^\p{L}\p{N}]+/u)
-    .join(" ")
-    .trim()} `;
+const words = (text: string) => ` ${text.toLowerCase().split(WORDS_PATTERN).join(" ").trim()} `;
 const NO_MATCH = 4;
 
 /**
@@ -120,10 +118,7 @@ const NO_MATCH = 4;
  */
 const hintRank = (label: string, hint: string) => {
   const name = label.trim().toLowerCase();
-  const wanted = hint
-    .trim()
-    .toLowerCase()
-    .replace(/^(?:my|our|the)\s+/, "");
+  const wanted = hint.trim().toLowerCase().replace(WANTED_PATTERN, "");
   if (name === wanted) return 0;
   if (name.startsWith(wanted)) return 1;
   if (name.includes(wanted)) return 2;

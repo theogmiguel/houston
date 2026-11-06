@@ -4,6 +4,9 @@ import { DEFAULT_SNOOZE_PRESETS, type SnoozePresetSetting } from "@houston-app/c
 
 import type { EnvironmentThreadShell, PendingSubagentRequest } from "./models.ts";
 
+const RESOLVE_CUSTOM_SNOOZE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const RESOLVE_CUSTOM_SNOOZE_PATTERN_2 = /^\d{2}:\d{2}$/;
+
 interface SettlementRunLike {
   readonly turnId?: unknown;
   readonly assistantMessageId?: unknown;
@@ -345,7 +348,11 @@ export function resolveCustomSnooze(input: CustomSnoozeInput, now: Date): string
     const unitMs = { minutes: 60_000, hours: HOUR_MS, days: 24 * HOUR_MS }[input.unit];
     wake = new Date(now.getTime() + amount * unitMs);
   } else {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date) || !/^\d{2}:\d{2}$/.test(input.time)) return null;
+    if (
+      !RESOLVE_CUSTOM_SNOOZE_PATTERN.test(input.date) ||
+      !RESOLVE_CUSTOM_SNOOZE_PATTERN_2.test(input.time)
+    )
+      return null;
     wake = new Date(`${input.date}T${input.time}:00`);
     // Reject rolled-over dates and nonexistent local times during DST changes.
     if (localSnoozeDate(wake) !== input.date || localSnoozeTime(wake) !== input.time) return null;

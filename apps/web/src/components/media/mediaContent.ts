@@ -1,4 +1,8 @@
 /** Resolves web references without inheriting the desktop renderer's custom app scheme. */
+const DECODE_PERCENT_BYTES_PATTERN = /(%[0-9a-f]{2})/i;
+const DECODE_PERCENT_BYTES_PATTERN_2 = /^%[0-9a-f]{2}$/i;
+const READ_MEDIA_BLOB_PATTERN = /^data:/i;
+
 export function resolveProtocolRelativeMediaUrl(src: string): string {
   if (!src.startsWith("//")) return src;
   const protocol =
@@ -11,9 +15,9 @@ function decodePercentBytes(payload: string) {
   const encoder = new TextEncoder();
   return Uint8Array.from(
     payload
-      .split(/(%[0-9a-f]{2})/i)
+      .split(DECODE_PERCENT_BYTES_PATTERN)
       .flatMap((part) =>
-        /^%[0-9a-f]{2}$/i.test(part)
+        DECODE_PERCENT_BYTES_PATTERN_2.test(part)
           ? [Number.parseInt(part.slice(1), 16)]
           : [...encoder.encode(part)],
       ),
@@ -41,7 +45,7 @@ function readDataUrlBlob(src: string): Blob {
 }
 
 async function readMediaBlob(src: string): Promise<Blob> {
-  if (/^data:/i.test(src)) return readDataUrlBlob(src);
+  if (READ_MEDIA_BLOB_PATTERN.test(src)) return readDataUrlBlob(src);
   let response: Response;
   try {
     response = await fetch(src);

@@ -50,6 +50,13 @@ import {
 import * as VcsDriver from "./VcsDriver.ts";
 import * as VcsProcess from "./VcsProcess.ts";
 
+const MATCH_PATTERN = /^(\S+)\s+(\S+)\s+\((fetch|push)\)(?:\s+\[[^\]]+\])?$/;
+const TRAILING_LINE_BREAK = /\r?\n$/u;
+const LINE_BREAK = /\r?\n/u;
+const CAPTURE_CHECKPOINT_PATTERN = /--(?:\[no-\])?sparse\b/;
+const STDIN_PATTERN = /^:000000 ([0-7]{6}) 0+ ([0-9a-f]+) A\t/gm;
+const EMPTIED_WORKSPACE_PATTERN = /^warning: failed to remove \.\/: [^\n]+$/;
+
 export interface ExecuteGitInput {
   readonly operation: string;
   readonly cwd: string;
@@ -569,7 +576,7 @@ function parseGitRemoteVerboseOutput(
     }
 
     // Partial clones append the promisor filter, e.g. `(fetch) [blob:none]`.
-    const match = /^(\S+)\s+(\S+)\s+\((fetch|push)\)(?:\s+\[[^\]]+\])?$/.exec(trimmed);
+    const match = MATCH_PATTERN.exec(trimmed);
     if (!match) {
       continue;
     }
@@ -678,7 +685,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
       },
     ).pipe(Effect.catchIf(isMissingExecutable, () => Effect.succeed(null)));
     if (result === null || result.exitCode !== 0) return null;
-    const lines = result.stdout.replace(/\r?\n$/u, "").split(/\r?\n/u);
+    const lines = result.stdout.replace(TRAILING_LINE_BREAK, "").split(LINE_BREAK);
     if (lines[0]?.trim() !== "true") return null;
     // A newline inside a path breaks the line framing; ask for each path on its own.
     if (lines.length !== 3) {
@@ -1016,7 +1023,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
             args: ["add", "-h"],
             allowNonZeroExit: true,
           });
-          sparseCheckout = /--(?:\[no-\])?sparse\b/.test(`${help.stdout}${help.stderr}`);
+          sparseCheckout = CAPTURE_CHECKPOINT_PATTERN.test(`${help.stdout}${help.stderr}`);
         }
         if (headExists) {
           const reusedIndex = yield* Effect.gen(function* () {
@@ -1208,10 +1215,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
               operation,
               cwd: input.cwd,
               args: [...indexConfig, "-c", "index.sparse=false", "update-index", "--index-info"],
-              stdin: additions.stdout.replace(
-                /^:000000 ([0-7]{6}) 0+ ([0-9a-f]+) A\t/gm,
-                "$1 $2\t",
-              ),
+              stdin: additions.stdout.replace(STDIN_PATTERN, "$1 $2\t"),
               env: commitEnv,
             });
           }
@@ -1425,7 +1429,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
         // Git can remove every child, then fail trying to remove './' itself.
         const emptiedWorkspace =
           cleaned.exitCode === 1 &&
-          /^warning: failed to remove \.\/: [^\n]+$/.test(cleaned.stderr.trim()) &&
+          EMPTIED_WORKSPACE_PATTERN.test(cleaned.stderr.trim()) &&
           (yield* fileSystem.readDirectory(input.cwd).pipe(
             Effect.map((entries) => entries.length === 0),
             Effect.orElseSucceed(() => false),

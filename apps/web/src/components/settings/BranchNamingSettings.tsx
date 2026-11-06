@@ -13,6 +13,9 @@ import {
   useUpdateScopedSettings,
 } from "./useScopedSettings";
 
+const TRAILING_SLASH = /\/$/u;
+const PARSE_BRANCH_TEMPLATE_PATTERN = /\{slug\}/gu;
+
 const MODES = {
   static: "Static prefix",
   semantic: "Semantic prefix",
@@ -22,8 +25,9 @@ const MODES = {
 function parseBranchTemplate(value: string): string {
   const trimmed = value.trim();
   if (trimmed.endsWith("/{slug}")) return trimmed.slice(0, -"/{slug}".length);
-  if (trimmed.endsWith("{slug}")) return trimmed.slice(0, -"{slug}".length).replace(/\/$/u, "");
-  return trimmed.replace(/\{slug\}/gu, "").replace(/\/$/u, "");
+  if (trimmed.endsWith("{slug}"))
+    return trimmed.slice(0, -"{slug}".length).replace(TRAILING_SLASH, "");
+  return trimmed.replace(PARSE_BRANCH_TEMPLATE_PATTERN, "").replace(TRAILING_SLASH, "");
 }
 
 function formatBranchTemplate(prefix: string): string {

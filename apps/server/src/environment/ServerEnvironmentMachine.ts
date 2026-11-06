@@ -5,6 +5,9 @@ import * as FileSystem from "effect/FileSystem";
 
 import * as ProcessRunner from "../processRunner.ts";
 
+const WHITESPACE_RUN = /\s+/g;
+const PRODUCT_NAME_PATTERN = /"product-name"\s*=\s*<"([^"]+)">/;
+
 const DMI_ROOT = "/sys/class/dmi/id";
 const KERNEL_RELEASE_PATH = "/proc/sys/kernel/osrelease";
 
@@ -64,7 +67,7 @@ function normalize(value: string | null | undefined): string | null {
 }
 
 function machineKindFromAppleProductName(name: string): EnvironmentMachineKind | null {
-  const normalized = name.trim().toLowerCase().replaceAll(/\s+/g, "");
+  const normalized = name.trim().toLowerCase().replaceAll(WHITESPACE_RUN, "");
   if (normalized.startsWith("macmini")) return "mac-mini";
   if (normalized.startsWith("macstudio")) return "mac-studio";
   if (normalized.startsWith("macbook")) return "laptop";
@@ -118,7 +121,7 @@ const runProbe = Effect.fn("runMachineProbe")(function* (input: {
 // Apple silicon exposes IOKit's marketing name; Intel needs the hw.model fallback.
 const detectDarwinMachineKind = Effect.fn("detectDarwinMachineKind")(function* () {
   const ioreg = yield* runProbe({ command: "ioreg", args: ["-rd1", "-n", "product"] });
-  const productName = ioreg?.match(/"product-name"\s*=\s*<"([^"]+)">/)?.[1] ?? null;
+  const productName = ioreg?.match(PRODUCT_NAME_PATTERN)?.[1] ?? null;
   const fromProductName =
     productName === null ? null : machineKindFromAppleProductName(productName);
   if (fromProductName !== null) {

@@ -14,6 +14,9 @@ import { MiddleTruncate } from "../ui/middle-truncate";
 import { MorphIcon } from "~/components/MorphIcon";
 import { observeResize } from "~/lib/observeResize";
 
+const PATH_SEPARATOR = /[/\\]/;
+const CHANGED_FILES_ROWS_PATTERN = /auto|scroll/;
+
 const EMPTY_DIRECTORY_OVERRIDES: Record<string, boolean> = {};
 const VIRTUALIZE_AFTER_ROWS = 250;
 const ROW_OVERSCAN = 8;
@@ -48,7 +51,7 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
   } = props;
   const syncTimelineLayout = useSyncLayout();
   const hiddenFileCount = totals.count - files.length;
-  const hasDirectories = files.some((file) => /[/\\]/.test(file.path));
+  const hasDirectories = files.some((file) => PATH_SEPARATOR.test(file.path));
 
   return (
     <div
@@ -293,7 +296,7 @@ function ChangedFilesRows({
     let scrollElement: HTMLElement | null = null;
     for (let parent = container.parentElement; parent; parent = parent.parentElement) {
       ancestors.push(parent);
-      if (/auto|scroll/.test(getComputedStyle(parent).overflowY)) {
+      if (CHANGED_FILES_ROWS_PATTERN.test(getComputedStyle(parent).overflowY)) {
         scrollElement = parent;
         break;
       }

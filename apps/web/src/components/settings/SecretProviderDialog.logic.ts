@@ -12,6 +12,10 @@ import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
+const NON_ALPHANUMERIC_RUN = /[^a-z0-9]+/g;
+const SLUG_PATTERN = /^-|-$/g;
+const SLUG_PATTERN_2 = /-$/;
+
 const decodeSecretProviderId = Schema.decodeOption(SecretProviderId);
 const decodeOnePasswordConfig = Schema.decodeUnknownOption(OnePasswordSecretProviderConfig);
 
@@ -32,10 +36,10 @@ export function classifySecretProvider(provider: SecretProviderConfig): Classifi
 function secretProviderIdFromName(name: string): SecretProviderId | null {
   const slug = name
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
+    .replace(NON_ALPHANUMERIC_RUN, "-")
+    .replace(SLUG_PATTERN, "")
     .slice(0, 64)
-    .replace(/-$/, "");
+    .replace(SLUG_PATTERN_2, "");
   return Option.getOrNull(decodeSecretProviderId(slug));
 }
 

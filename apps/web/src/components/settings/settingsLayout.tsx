@@ -38,6 +38,8 @@ import {
   type SettingOverridingProject,
 } from "./SettingInheritance";
 
+const LEADING_HASH = /^#/;
+
 const EMPTY_SETTING_KEYS: readonly (keyof ServerSettings)[] = [];
 const EMPTY_MANAGED_PATHS: readonly string[] = [];
 
@@ -590,7 +592,7 @@ export function SettingsPageContainer({
   const highlightTarget = useLocation({
     select: (location) => location.state.settingsTargetHighlight !== false,
   });
-  const targetId = hash.replace(/^#/, "") || null;
+  const targetId = hash.replace(LEADING_HASH, "") || null;
   const clearTargetHash = () => {
     void navigate({
       hash: "",

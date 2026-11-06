@@ -14,6 +14,8 @@ import * as GitHubQuota from "./GitHubQuota.ts";
 import * as GitHubRequestPolicy from "./GitHubRequestPolicy.ts";
 import * as SourceControlRateLimit from "@houston-app/source-control-core/server/SourceControlRateLimit";
 
+const LEADING_SLASHES = /^\/+/;
+
 const DEFAULT_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 const { gitHubApiUrls } = GitHubRequestPolicy;
 type GitHubApiError = GitHubRequestPolicy.GitHubApiError;
@@ -181,7 +183,7 @@ export const make = Effect.gen(function* () {
   });
 
   const rest: GitHubRest["Service"]["rest"] = (input) => {
-    const url = `${gitHubApiUrls(input.host).rest}/${input.path.replace(/^\/+/, "")}`;
+    const url = `${gitHubApiUrls(input.host).rest}/${input.path.replace(LEADING_SLASHES, "")}`;
     const base = HttpClientRequest.make(input.method ?? "GET")(url).pipe(
       HttpClientRequest.setHeader("accept", input.accept ?? "application/vnd.github+json"),
     );

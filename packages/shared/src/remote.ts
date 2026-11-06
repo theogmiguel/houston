@@ -1,5 +1,8 @@
 import * as Schema from "effect/Schema";
 
+const LEADING_SLASHES = /^\/+/;
+const NORMALIZED_INPUT_PATTERN = /^[a-zA-Z][a-zA-Z\d+-]*:\/\//;
+
 const PAIRING_TOKEN_PARAM = "token";
 const HOSTED_PAIRING_HOST_PARAM = "host";
 const HOSTED_PAIRING_LABEL_PARAM = "label";
@@ -83,8 +86,8 @@ const normalizeRemoteBaseUrl = (
     throw new RemoteBackendUrlMissingError();
   }
 
-  const withoutLeadingSlashes = trimmed.replace(/^\/+/, "");
-  const normalizedInput = /^[a-zA-Z][a-zA-Z\d+-]*:\/\//.test(withoutLeadingSlashes)
+  const withoutLeadingSlashes = trimmed.replace(LEADING_SLASHES, "");
+  const normalizedInput = NORMALIZED_INPUT_PATTERN.test(withoutLeadingSlashes)
     ? withoutLeadingSlashes
     : `https://${withoutLeadingSlashes}`;
   let url: URL;

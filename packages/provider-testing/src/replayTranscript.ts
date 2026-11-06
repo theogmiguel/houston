@@ -9,6 +9,8 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
+const LINE_BREAK = /\r?\n/u;
+
 export class ProviderReplayNdjsonLineParseError extends Schema.TaggedError<ProviderReplayNdjsonLineParseError>()(
   "ProviderReplayNdjsonLineParseError",
   {
@@ -119,7 +121,7 @@ export function decodeProviderReplayNdjson(
 ): Effect.Effect<ProviderReplayTranscript, ProviderReplayNdjsonParseError> {
   return Effect.gen(function* () {
     const lines = input
-      .split(/\r?\n/u)
+      .split(LINE_BREAK)
       .map((line, index) => ({ line: line.trim(), lineNumber: index + 1 }))
       .filter(({ line }) => line.length > 0);
 

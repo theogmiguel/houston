@@ -14,6 +14,10 @@ import * as HostProcess from "@houston-app/shared/HostProcess";
 import { SpawnExecutableResolution } from "@houston-app/shared/shell";
 import * as Effect from "effect/Effect";
 
+const MUSE_LAUNCH_PATTERN = /\.(?:cmd|bat)$/i;
+const WHITESPACE = /\s/;
+const ARGS_PATTERN = /[()&<>@^|]/g;
+
 export interface MuseSdkHost {
   readonly connection: Pick<
     Connection,
@@ -103,7 +107,7 @@ export const museLaunch = Effect.fn("museLaunch")(function* (
   const env = environment ?? (yield* HostProcess.Environment);
   const resolveExecutable = yield* SpawnExecutableResolution;
   const resolved = resolveExecutable(binaryPath, "win32", env) ?? binaryPath;
-  if (!/\.(?:cmd|bat)$/i.test(resolved)) return { command: resolved, args: [] };
+  if (!MUSE_LAUNCH_PATTERN.test(resolved)) return { command: resolved, args: [] };
   const systemRoot = windowsEnvironmentValue(env, "SystemRoot");
   return {
     command:
@@ -113,7 +117,7 @@ export const museLaunch = Effect.fn("museLaunch")(function* (
     args: [
       "/d",
       "/c",
-      ...(/\s/.test(resolved) ? ["@", resolved] : [resolved.replace(/[()&<>@^|]/g, "^$&")]),
+      ...(WHITESPACE.test(resolved) ? ["@", resolved] : [resolved.replace(ARGS_PATTERN, "^$&")]),
     ],
   };
 });

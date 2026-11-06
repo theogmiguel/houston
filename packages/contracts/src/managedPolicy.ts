@@ -5,6 +5,8 @@ import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { ProviderDriverKind, ProviderInstanceEnvironmentVariableName } from "./providerInstance.ts";
 import { isRuntimeModeAbove, RuntimeMode } from "./providerPolicy.ts";
 
+const HTTPS_URL_PATTERN = /^https:\/\/[^\s/]+/i;
+
 /**
  * One server setting an administrator manages, keyed in the policy by its dot path in the
  * encoded `ServerSettings` (for example `storageCleanup.logsAfterDays`). `locked: false`
@@ -48,7 +50,7 @@ export const ManagedUpdatesMode = Schema.Literals(["auto", "off"]);
 export type ManagedUpdatesMode = typeof ManagedUpdatesMode.Type;
 
 const HttpsUrl = TrimmedNonEmptyString.check(
-  Schema.makeFilter((value: string) => /^https:\/\/[^\s/]+/i.test(value.trim()), {
+  Schema.makeFilter((value: string) => HTTPS_URL_PATTERN.test(value.trim()), {
     expected: "an https URL",
   }),
 );

@@ -49,6 +49,9 @@ import {
   slashCommandItemsForPromptPosition,
 } from "./composerSlashCommandSearch";
 
+const DIGITS_ONLY = /^\d+$/u;
+const MATCHES_PATTERN = /^\d*$/u;
+
 const COMPOSER_PULL_REQUEST_LIST_LIMIT = 99;
 const COMPOSER_PULL_REQUEST_RESULT_LIMIT = 12;
 const EMPTY_PULL_REQUEST_LIST_TARGETS: ReadonlyArray<EnvironmentQueryTarget<PullRequestListInput>> =
@@ -105,7 +108,7 @@ export function useComposerMenuItems({
   const pullRequestTextQuery =
     composerTriggerKind === "pull-request" &&
     pullRequestTriggerQuery.length > 0 &&
-    !/^\d+$/u.test(pullRequestTriggerQuery)
+    !DIGITS_ONLY.test(pullRequestTriggerQuery)
       ? pullRequestTriggerQuery
       : null;
   const debouncedPullRequestTextQuery = useDebouncedValue(pullRequestTextQuery, 180);
@@ -284,7 +287,7 @@ export function useComposerMenuItems({
         exactPullRequestLookup.data?.number === pullRequestTriggerNumber
           ? [exactPullRequestLookup.data]
           : [];
-      const matches = /^\d*$/u.test(composerTrigger.query)
+      const matches = MATCHES_PATTERN.test(composerTrigger.query)
         ? filterComposerPullRequestMatches({
             entries: [...exactPullRequest, ...(pullRequestLookup.data?.entries ?? [])],
             linked: linkedPullRequests,

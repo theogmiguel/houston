@@ -36,6 +36,8 @@ import * as WorkspacePaths from "./WorkspacePaths.ts";
 import { fileHeaderMimeType } from "./fileHeaderMimeType.ts";
 import { moveToSystemTrash, TrashContext } from "./trash.ts";
 
+const NAME_PATTERN = /[. ]+$/;
+
 const PROJECT_READ_FILE_MAX_BYTES = 1024 * 1024;
 
 /** A stat-based content revision; a write names the revision its edit was based on. */
@@ -44,7 +46,7 @@ const fileRevision = (stat: NodeFS.Stats): string =>
 
 // NTFS reaches .git through trailing dots/spaces, stream suffixes and GIT~1; compare uppercased names.
 const isGitMetadataName = (segment: string) => {
-  const name = (segment.split(":")[0] ?? "").replace(/[. ]+$/, "").toUpperCase();
+  const name = (segment.split(":")[0] ?? "").replace(NAME_PATTERN, "").toUpperCase();
   return name === ".GIT" || name === "GIT~1";
 };
 

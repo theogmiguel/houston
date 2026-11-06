@@ -10,6 +10,11 @@ import {
   resolveThemeLabelCollisions,
 } from "./vscodeThemeImport";
 
+const OPEN_VSX_COLLECTION_ID_PATTERN = /^[a-z0-9][a-z0-9.:-]{0,127}$/;
+const DRIVE_LETTER = /^[a-zA-Z]:/;
+const WHITESPACE_RUN = /\s+/;
+const IMPORT_OPEN_VSX_THEME_EXTENSION_PATTERN = /^[a-f\d]{64}$/i;
+
 const OPEN_VSX_SEARCH_URL = "https://open-vsx.org/api/-/search";
 const MAX_VSIX_BYTES = 20 * 1024 * 1024;
 const MAX_SEARCH_BYTES = 512 * 1024;
@@ -127,7 +132,7 @@ function openVsxThemeId(extensionId: string, source: string): string {
 
 function openVsxCollectionId(extensionId: string): string {
   const normalized = `open-vsx:${extensionId.toLowerCase()}`;
-  return /^[a-z0-9][a-z0-9.:-]{0,127}$/.test(normalized)
+  return OPEN_VSX_COLLECTION_ID_PATTERN.test(normalized)
     ? normalized
     : `open-vsx:${shortHash(extensionId)}`;
 }
@@ -354,7 +359,7 @@ function normalizePackagePath(path: string, relativeTo = "extension/"): string {
     path.length > MAX_PACKAGE_PATH_LENGTH ||
     path.includes("\0") ||
     path.startsWith("/") ||
-    /^[a-zA-Z]:/.test(path)
+    DRIVE_LETTER.test(path)
   ) {
     throw new Error("Theme path is not a safe relative package path.");
   }
@@ -655,8 +660,8 @@ export async function importOpenVsxThemeExtension(
       ),
     )
     .trim()
-    .split(/\s+/)[0];
-  if (!expectedChecksum || !/^[a-f\d]{64}$/i.test(expectedChecksum)) {
+    .split(WHITESPACE_RUN)[0];
+  if (!expectedChecksum || !IMPORT_OPEN_VSX_THEME_EXTENSION_PATTERN.test(expectedChecksum)) {
     throw new Error("That Open VSX theme has an invalid checksum.");
   }
   signal?.throwIfAborted();

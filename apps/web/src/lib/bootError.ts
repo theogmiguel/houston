@@ -1,5 +1,10 @@
 import type { HostBridge, DesktopUpdateState } from "@houston-app/contracts";
 
+const REDACT_PATTERN = /\b[a-z][\w+.-]*:\/\/[^\s/?#'"()]+/gi;
+const REDACT_PATTERN_2 = /[?#][^\s'"()]*=[^\s'"()]*?((?::\d+){1,2})?(?=[\s'"()]|$)/g;
+const CHANNEL_PATTERN = /-(nightly|preview)\./;
+const FALLBACK_PATTERN = /Mac|iPhone|iPad/;
+
 const DOWNLOAD_URL = "https://github.com/theogmiguel/houston/releases/latest";
 const NIGHTLY_DOWNLOAD_URL = "https://github.com/theogmiguel/houston/releases";
 const ISSUE_URL = "https://github.com/theogmiguel/houston/issues/new";
@@ -52,9 +57,7 @@ function describeOne(value: unknown) {
 
 /** Hosts can name private machines, and pairing tokens live in query strings and hashes. */
 function redact(text: string) {
-  return text
-    .replace(/\b[a-z][\w+.-]*:\/\/[^\s/?#'"()]+/gi, "")
-    .replace(/[?#][^\s'"()]*=[^\s'"()]*?((?::\d+){1,2})?(?=[\s'"()]|$)/g, "$1");
+  return text.replace(REDACT_PATTERN, "").replace(REDACT_PATTERN_2, "$1");
 }
 
 export interface BootErrorEnvironment {
@@ -105,8 +108,7 @@ function readEnvironment(bridge: HostBridge | undefined): BootErrorEnvironment {
   const version = import.meta.env.APP_VERSION;
   return {
     version,
-    channel:
-      import.meta.env.VITE_RELEASE_CHANNEL || /-(nightly|preview)\./.exec(version)?.[1] || "stable",
+    channel: import.meta.env.VITE_RELEASE_CHANNEL || CHANNEL_PATTERN.exec(version)?.[1] || "stable",
     surface: bridge ? "desktop" : "web",
     platform: clientPlatform(bridge),
     userAgent: navigator.userAgent,
@@ -157,7 +159,7 @@ function copyText(target: HTMLElement, onCopied: () => void, onBlocked: (hint: s
     selectContents(target);
     if (copySelection()) return onCopied();
     onBlocked(
-      /Mac|iPhone|iPad/.test(navigator.platform) ? "Press ⌘C to copy" : "Press Ctrl+C to copy",
+      FALLBACK_PATTERN.test(navigator.platform) ? "Press ⌘C to copy" : "Press Ctrl+C to copy",
     );
   };
   const clipboard = window.isSecureContext ? navigator.clipboard : undefined;

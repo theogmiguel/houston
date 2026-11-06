@@ -18,6 +18,8 @@ import { resolvePathLinkTarget } from "@houston-app/shared/fileLinks";
 import { toastManager } from "./components/ui/toast";
 import { useAtomValue } from "@effect/atom-react";
 
+const DRIVE_LETTER = /^[a-zA-Z]:/;
+
 export type FileContextMenuAction =
   | "reveal-in-folder"
   | "open"
@@ -41,7 +43,7 @@ export function resolveFileContextMenuAbsolutePath(target: FileContextMenuTarget
   });
   if (workspaceFilePath === null) return null;
   if (target.workspaceRoot === undefined) {
-    return workspaceFilePath.startsWith("/") || /^[a-zA-Z]:/.test(workspaceFilePath)
+    return workspaceFilePath.startsWith("/") || DRIVE_LETTER.test(workspaceFilePath)
       ? workspaceFilePath
       : null;
   }

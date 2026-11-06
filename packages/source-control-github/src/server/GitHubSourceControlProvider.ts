@@ -71,6 +71,11 @@ import {
   PullRequestsByHead,
 } from "./sourceControlProvider.graphql.ts";
 
+const OWNER_MATCH_PATTERN = /^([^:/\s]+):(.+)$/u;
+const MATCH_PATTERN = /^\/([\w.-]+)\/([\w.-]+)\/(?:pull|issues)\/([1-9]\d*)(?:\/.*)?$/;
+const BARE_NAME_PATTERN = /\.git$/i;
+const LOCATOR_PATTERN = /^[^/\s]+$/;
+
 // Decode rows separately to isolate malformed PRs within shared documents.
 const LenientPullRequestsByHead = GraphQL.query(PullRequestsByHead.name, {
   // `GraphQLResolver.aliased` needs a template per lookup.
@@ -544,7 +549,7 @@ export const make = Effect.gen(function* () {
   }) {
     const locator = yield* resolveRepository(input);
     const limit = Math.min(Math.max(Math.trunc(input.limit), 1), 100);
-    const ownerMatch = /^([^:/\s]+):(.+)$/u.exec(input.headSelector.trim());
+    const ownerMatch = OWNER_MATCH_PATTERN.exec(input.headSelector.trim());
     const headRefName = ownerMatch?.[2] ?? input.headSelector.trim();
     const result = yield* graphqlRead(
       {
@@ -925,9 +930,7 @@ export const make = Effect.gen(function* () {
     resolveLink: (input) => {
       // Automatic enrichment must not send ambient CLI credentials to a host from message text.
       if (input.url.host !== "github.com") return undefined;
-      const match = /^\/([\w.-]+)\/([\w.-]+)\/(?:pull|issues)\/([1-9]\d*)(?:\/.*)?$/.exec(
-        input.url.pathname,
-      );
+      const match = MATCH_PATTERN.exec(input.url.pathname);
       if (!match) return undefined;
       return readLinkSubject(input, `repos/${match[1]}/${match[2]}/issues/${match[3]}`);
     },
@@ -1004,10 +1007,10 @@ export const make = Effect.gen(function* () {
             Effect.orElseSucceed(() => environment.GH_HOST ?? "github.com"),
           ))
         ).toLowerCase();
-        const bareName = input.repository.trim().replace(/\.git$/i, "");
+        const bareName = input.repository.trim().replace(BARE_NAME_PATTERN, "");
         const locator =
           parseGitHubRepositorySelector(input.repository, fallbackHost) ??
-          (/^[^/\s]+$/.test(bareName)
+          (LOCATOR_PATTERN.test(bareName)
             ? {
                 host: fallbackHost,
                 owner: yield* readViewerLogin(fallbackHost),

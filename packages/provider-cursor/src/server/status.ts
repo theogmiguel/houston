@@ -23,6 +23,8 @@ import {
 } from "@houston-app/provider-core/server/snapshotProbe";
 import * as CursorSdkCatalog from "./CursorSdkCatalog.ts";
 
+const WORD_SEPARATOR_RUN = /[\s_-]+/g;
+
 const CURSOR_PRESENTATION = {
   displayName: "Cursor",
   supportsConversationRollback: false,
@@ -79,7 +81,7 @@ function getCursorFallbackModels(
 
 function toTitleCaseWords(value: string): string {
   const parts: Array<string> = [];
-  for (const part of value.split(/[\s_-]+/g)) {
+  for (const part of value.split(WORD_SEPARATOR_RUN)) {
     if (part.length > 0) {
       parts.push(part.charAt(0).toUpperCase() + part.slice(1).toLowerCase());
     }

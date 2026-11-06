@@ -1,12 +1,14 @@
 import { constVoid } from "effect/Function";
 import type { CDPSession } from "playwright-core";
 
+const PDF_EXTENSION = /\.pdf$/i;
+
 const escapeHtml = (value: string) =>
   value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
 
 export const isPdfAssetUrl = (url: string) => {
   const { pathname } = new URL(url);
-  return pathname.startsWith("/api/assets/") && /\.pdf$/i.test(pathname);
+  return pathname.startsWith("/api/assets/") && PDF_EXTENSION.test(pathname);
 };
 
 export async function installPdfDocumentNavigation(cdp: CDPSession) {

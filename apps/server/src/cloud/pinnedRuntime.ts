@@ -26,6 +26,10 @@ import * as HostProcess from "@houston-app/shared/HostProcess";
 import * as ProcessRunner from "../processRunner.ts";
 import { isExactServiceVersion, parseServiceState, SERVICE_STATE_FILE } from "./serviceProtocol.ts";
 
+const LINE_BREAK = /\r?\n/;
+const WINDOWS_SHIM_TARGET_PATTERN = /^"([^"]+)"/m;
+const DIGITS_ONLY = /^\d+$/;
+
 const PINNED_RUNTIME_DIR = "runtime";
 const PINNED_RUNTIME_INSTALL_TIMEOUT = Duration.minutes(10);
 const PINNED_RUNTIME_DOWNLOAD_STALL_TIMEOUT = Duration.minutes(1);
@@ -411,13 +415,14 @@ export const recordPinnedRuntimeLauncher = Effect.fn("cloud.pinned_runtime.recor
     // Prune may run in another process, such as the service, whose working directory differs.
     const launcher = path.resolve(input.launcher);
     const recorded = yield* fs.readFileString(launchersFile).pipe(Effect.orElseSucceed(() => ""));
-    if (recorded.split(/\r?\n/).includes(launcher)) return;
+    if (recorded.split(LINE_BREAK).includes(launcher)) return;
     yield* fs.writeFileString(launchersFile, launcherRecords([launcher]), { flag: "a" });
   },
 );
 
 /** The executable a `houston.cmd` shim written by the install script or `houston update` runs. */
-export const windowsShimTarget = (contents: string) => /^"([^"]+)"/m.exec(contents)?.[1];
+export const windowsShimTarget = (contents: string) =>
+  WINDOWS_SHIM_TARGET_PATTERN.exec(contents)?.[1];
 
 /** Where the `houston` launchers written by the install scripts and `houston update` point. */
 const shellLauncherTargets = Effect.fn("cloud.pinned_runtime.shell_launcher_targets")(function* (
@@ -431,7 +436,7 @@ const shellLauncherTargets = Effect.fn("cloud.pinned_runtime.shell_launcher_targ
   const launcherName = platform === "win32" ? "houston.cmd" : "houston";
   const launchersFile = path.join(baseDir, PINNED_RUNTIME_DIR, PINNED_RUNTIME_LAUNCHERS_FILE);
   const recorded = (yield* fs.readFileString(launchersFile).pipe(Effect.orElseSucceed(() => "")))
-    .split(/\r?\n/)
+    .split(LINE_BREAK)
     .filter((launcher) => launcher.trim().length > 0);
   const found = [
     environment["HOUSTON_INSTALL_BIN_DIR"] || path.join(home, ".local", "bin"),
@@ -487,7 +492,7 @@ const runningExecutables = Effect.fn("cloud.pinned_runtime.running_executables")
     if (Option.isNone(pids)) return Option.none<string>();
     const executables: Array<string> = [];
     for (const pid of pids.value) {
-      if (!/^\d+$/.test(pid)) continue;
+      if (!DIGITS_ONLY.test(pid)) continue;
       // Unreadable ones belong to other users or are this user's non-dumpable daemons (systemd
       // --user, ssh-agent). Neither runs a houston runtime, and bailing on them would never prune.
       const executable = yield* fs.readLink(`/proc/${pid}/exe`).pipe(Effect.option);

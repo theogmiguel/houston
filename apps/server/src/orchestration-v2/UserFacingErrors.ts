@@ -2,6 +2,8 @@ import { PROVIDER_DISPLAY_NAMES, type ProviderDriverKind } from "@houston-app/co
 import * as Predicate from "effect/Predicate";
 import * as SqlError from "effect/sql/SqlError";
 
+const TRIMMED_PATTERN = /Agent$/i;
+
 const GENERIC_ERROR_PREFIXES = [
   "Failed to dispatch orchestration V2 command",
   "Failed to dispatch orchestration command ",
@@ -72,7 +74,7 @@ const CAPABILITY_REJECTION_MESSAGES: Record<string, (provider: string) => string
 function providerDisplayName(instanceId: string): string {
   const known = PROVIDER_DISPLAY_NAMES[instanceId as ProviderDriverKind];
   if (known !== undefined) return known;
-  const trimmed = instanceId.replace(/Agent$/i, "").trim();
+  const trimmed = instanceId.replace(TRIMMED_PATTERN, "").trim();
   if (trimmed.length === 0) return instanceId;
   return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
 }

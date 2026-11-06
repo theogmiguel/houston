@@ -3,6 +3,8 @@ import {
   composerMentionFromTreePath,
 } from "~/components/chat/composerMentionDrag";
 
+const TRAILING_SLASHES = /\/+$/;
+
 interface FileTreeDragTransfer {
   setData(format: string, data: string): void;
 }
@@ -60,7 +62,7 @@ export function createFileTreeDragMentionController(
       const dragged = selection.includes(itemPath) ? selection : [itemPath];
       const mentions = dragged
         .map((path) => {
-          const treePath = path.replace(/\/+$/, "");
+          const treePath = path.replace(TRAILING_SLASHES, "");
           return composerMentionFromTreePath(
             treePath && host.mentionPath ? host.mentionPath(treePath) : path,
           );

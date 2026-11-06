@@ -22,6 +22,8 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group"
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 
+const TRAILING_SLASH = /\/$/;
+
 class LicenseManifestLoadError extends Data.TaggedError("LicenseManifestLoadError")<{
   readonly message: string;
 }> {}
@@ -31,7 +33,7 @@ class LicenseManifestLoadError extends Data.TaggedError("LicenseManifestLoadErro
 const licenseManifestAtom = Atom.make(
   Effect.gen(function* () {
     const response = yield* HttpClient.get(
-      `${import.meta.env.BASE_URL.replace(/\/$/, "")}/third-party-licenses.json`,
+      `${import.meta.env.BASE_URL.replace(TRAILING_SLASH, "")}/third-party-licenses.json`,
     );
     if (response.status < 200 || response.status >= 300) {
       return yield* new LicenseManifestLoadError({

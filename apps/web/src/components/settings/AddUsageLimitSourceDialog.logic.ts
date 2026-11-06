@@ -1,5 +1,8 @@
 import { type UnifiedSettings, UsageLimitSourceId } from "@houston-app/contracts";
 
+const SLUG_PATTERN = /[^a-z0-9.-]+/g;
+const EDGE_DASHES = /^-+|-+$/g;
+
 export function sourceIdFromUrl(
   url: string,
   sources: UnifiedSettings["usageLimitSources"],
@@ -10,10 +13,7 @@ export function sourceIdFromUrl(
   try {
     host = new URL(url).host;
   } catch {}
-  const slug = host
-    .toLowerCase()
-    .replace(/[^a-z0-9.-]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+  const slug = host.toLowerCase().replace(SLUG_PATTERN, "-").replace(EDGE_DASHES, "");
   // Settings merge by ID, so adding a different hub must not replace an existing entry.
   const base = `cliproxy-${slug || "hub"}`;
   let id = base;

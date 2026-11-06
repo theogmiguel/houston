@@ -1,3 +1,11 @@
+const NORMALIZE_HOUSTON_MCP_TOOL_LABEL_PATTERN = /\s+(?:complete|completed)\s*$/i;
+const MCP_MATCH_PATTERN = /^mcp__(?<server>.+?)__(?<tool>.+)$/i;
+const NAMESPACE_MATCH_PATTERN =
+  /^(?<server>houston[-_]direct|houston|houston_code)(?:[.:/]|\s*·\s*|\s+)(?<tool>.+)$/i;
+const PREFIXED_PATTERN =
+  /^(?:mcp[-_]{1,2})?(?:houston[-_]direct|houston_code|houston)(?:__|[-_.:/ ])(?<tool>.+)$/i;
+const PARSE_HOUSTON_MCP_TOOL_NAME_PATTERN = /^houston-/i;
+
 export type HoustonMcpToolLogo = "houston";
 
 export interface HoustonMcpToolPresentation {
@@ -416,7 +424,7 @@ const HOUSTON_MCP_TOOLS: Readonly<Record<string, HoustonMcpToolDefinition>> = {
 export const HOUSTON_MCP_TOOL_NAMES: ReadonlySet<string> = new Set(Object.keys(HOUSTON_MCP_TOOLS));
 
 function normalizeHoustonMcpToolLabel(value: string): string {
-  return value.replace(/\s+(?:complete|completed)\s*$/i, "").trim();
+  return value.replace(NORMALIZE_HOUSTON_MCP_TOOL_LABEL_PATTERN, "").trim();
 }
 
 // Timelines resolve every work row's tool name on each update; names repeat across updates.
@@ -439,7 +447,7 @@ function resolveHoustonMcpToolName(value: string): string | null {
 function parseHoustonMcpToolName(value: string): string | null {
   const label = normalizeHoustonMcpToolLabel(value);
   if (Object.hasOwn(HOUSTON_MCP_TOOLS, label)) return label;
-  const mcpMatch = /^mcp__(?<server>.+?)__(?<tool>.+)$/i.exec(label);
+  const mcpMatch = MCP_MATCH_PATTERN.exec(label);
   if (mcpMatch?.groups) {
     const { server, tool } = mcpMatch.groups;
     return server !== undefined &&
@@ -449,22 +457,16 @@ function parseHoustonMcpToolName(value: string): string | null {
       : null;
   }
 
-  const namespaceMatch =
-    /^(?<server>houston[-_]direct|houston|houston_code)(?:[.:/]|\s*·\s*|\s+)(?<tool>.+)$/i.exec(
-      label,
-    );
+  const namespaceMatch = NAMESPACE_MATCH_PATTERN.exec(label);
   if (namespaceMatch?.groups) {
     return namespaceMatch.groups.tool ?? null;
   }
 
-  const prefixed =
-    /^(?:mcp[-_]{1,2})?(?:houston[-_]direct|houston_code|houston)(?:__|[-_.:/ ])(?<tool>.+)$/i.exec(
-      label,
-    );
+  const prefixed = PREFIXED_PATTERN.exec(label);
   const candidate = prefixed?.groups?.tool ?? label;
   if (Object.hasOwn(HOUSTON_MCP_TOOLS, candidate)) return candidate;
   // OpenCode 2 thread prefixes can contain underscores; choose the longest known tool-name suffix.
-  if (!/^houston-/i.test(label)) return null;
+  if (!PARSE_HOUSTON_MCP_TOOL_NAME_PATTERN.test(label)) return null;
   let longest: string | null = null;
   for (const tool of Object.keys(HOUSTON_MCP_TOOLS)) {
     if (label.endsWith(`_${tool}`) && tool.length > (longest?.length ?? 0)) longest = tool;

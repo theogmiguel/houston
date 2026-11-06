@@ -1,3 +1,6 @@
+const TRAILING_SLASHES = /\/+$/;
+const MARKDOWN_LABEL_PATTERN = /[\\[\]*_`<&]/g;
+
 export interface CodexFileCitationLink {
   readonly path: string;
   readonly href: string;
@@ -14,7 +17,7 @@ function positiveInteger(value: string | null | undefined): number | undefined {
 }
 
 function citationLabel(path: string): string {
-  const normalized = path.replaceAll("\\", "/").replace(/\/+$/, "");
+  const normalized = path.replaceAll("\\", "/").replace(TRAILING_SLASHES, "");
   return normalized.slice(normalized.lastIndexOf("/") + 1) || normalized || "File";
 }
 
@@ -39,7 +42,7 @@ export function resolveCodexFileCitationLink(
 }
 
 function markdownLabel(value: string): string {
-  return value.replace(/[\\[\]*_`<&]/g, "\\$&");
+  return value.replace(MARKDOWN_LABEL_PATTERN, "\\$&");
 }
 
 function markdownDestination(value: string): string {

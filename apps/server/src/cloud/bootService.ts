@@ -34,6 +34,14 @@ import {
   type ServiceState,
 } from "./serviceProtocol.ts";
 
+const QUOTE_SYSTEMD_VALUE_PATTERN = /[\s"'\\]/;
+const SYSTEMD_PATTERN = /^Environment=HOUSTON_HOME=(.*)$/m;
+const PLIST_PATTERN = /<key>HOUSTON_HOME<\/key>\s*<string>([^<]*)<\/string>/;
+const SYSTEMD_PATTERN_2 = /^ExecStart=("(?:\\.|[^"\\])*"|\S+)/m;
+const PLIST_PATTERN_2 = /<key>ProgramArguments<\/key>\s*<array>\s*<string>([^<]*)<\/string>/;
+const REPORTED_VERSION_PATTERN = /\bv(\S+)\s*$/;
+const NORMALIZE_UNIT_PATTERN = /(<key>PATH<\/key>\n\s*<string>)[^<]*(<\/string>)/;
+
 const BOOT_SERVICE_NAME = "houston";
 export const BOOT_SERVICE_UNIT_FILE = `${BOOT_SERVICE_NAME}.service`;
 // `.service` suffix keeps the label distinct from the desktop app's bundle id
@@ -57,7 +65,7 @@ function escapeSystemdSpecifiers(value: string): string {
 
 function quoteSystemdValue(value: string): string {
   const escaped = escapeSystemdSpecifiers(value);
-  return /[\s"'\\]/.test(escaped)
+  return QUOTE_SYSTEMD_VALUE_PATTERN.test(escaped)
     ? `"${escaped.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`
     : escaped;
 }
@@ -72,19 +80,17 @@ const unescapeXmlText = (value: string) =>
   value.replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
 
 export function bootServiceBaseDirOf(contents: string): string | undefined {
-  const systemd = /^Environment=HOUSTON_HOME=(.*)$/m.exec(contents)?.[1];
+  const systemd = SYSTEMD_PATTERN.exec(contents)?.[1];
   if (systemd !== undefined) return unquoteSystemdValue(systemd.trim());
-  const plist = /<key>HOUSTON_HOME<\/key>\s*<string>([^<]*)<\/string>/.exec(contents)?.[1];
+  const plist = PLIST_PATTERN.exec(contents)?.[1];
   return plist === undefined ? undefined : unescapeXmlText(plist);
 }
 
 /** The executable an installed unit or plist starts: the launcher's runtime. */
 export function bootServiceProgramOf(contents: string): string | undefined {
-  const systemd = /^ExecStart=("(?:\\.|[^"\\])*"|\S+)/m.exec(contents)?.[1];
+  const systemd = SYSTEMD_PATTERN_2.exec(contents)?.[1];
   if (systemd !== undefined) return unquoteSystemdValue(systemd);
-  const plist = /<key>ProgramArguments<\/key>\s*<array>\s*<string>([^<]*)<\/string>/.exec(
-    contents,
-  )?.[1];
+  const plist = PLIST_PATTERN_2.exec(contents)?.[1];
   return plist === undefined ? undefined : unescapeXmlText(plist);
 }
 
@@ -830,7 +836,7 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
                 }),
             ),
             Effect.flatMap((result) => {
-              const reportedVersion = /\bv(\S+)\s*$/.exec(result.stdout)?.[1];
+              const reportedVersion = REPORTED_VERSION_PATTERN.exec(result.stdout)?.[1];
               return result.code === 0 && reportedVersion === input.cliVersion
                 ? Effect.void
                 : Effect.fail(
@@ -1088,7 +1094,7 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
     const installedBaseDir = bootServiceBaseDirOf(unit);
     const normalizeUnit = (contents: string) =>
       detectedManager.kind === "launchd"
-        ? contents.replace(/(<key>PATH<\/key>\n\s*<string>)[^<]*(<\/string>)/, "$1$2")
+        ? contents.replace(NORMALIZE_UNIT_PATTERN, "$1$2")
         : contents;
     const problems: BootServiceProblem[] =
       detectedManager.kind === "systemd" ? [...(yield* readSystemdProblems(true))] : [];

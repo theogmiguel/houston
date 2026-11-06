@@ -106,6 +106,9 @@ import {
   TYPOGRAPHY_ADVANCED_STORAGE_KEY,
 } from "../appearanceFonts";
 
+const CRLF = /\r\n/g;
+const NORMALIZED_TEXT_PATTERN = /^\n+|\n+$/g;
+
 const MIN_DRAWER_HEIGHT = 180;
 const MAX_DRAWER_HEIGHT_RATIO = 0.75;
 
@@ -783,7 +786,9 @@ function TerminalSessionViewport({
         }
         const selectionText = activeTerminal.getSelection();
         const selectionPosition = activeTerminal.getSelectionPosition();
-        const normalizedText = selectionText.replace(/\r\n/g, "\n").replace(/^\n+|\n+$/g, "");
+        const normalizedText = selectionText
+          .replace(CRLF, "\n")
+          .replace(NORMALIZED_TEXT_PATTERN, "");
         if (!selectionPosition || normalizedText.length === 0) {
           return null;
         }

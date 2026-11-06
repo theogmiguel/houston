@@ -7,6 +7,10 @@ import * as Schema from "effect/Schema";
 
 import type { MuseItem } from "./protocol.ts";
 
+const MUSE_TOOL_PRESENTATION_PATTERN = /shell|bash|exec_command/i;
+const MUSE_TOOL_PRESENTATION_PATTERN_2 = /write|edit|patch/i;
+const MUSE_TOOL_PRESENTATION_PATTERN_3 = /web|browse|fetch/i;
+
 const decodeToolArgs = Schema.decodeUnknownSync(
   Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
 );
@@ -89,7 +93,7 @@ export function museToolPresentation(
     "";
   const output = detail ? [detail, text].filter(Boolean).join("\n") : text;
 
-  if (item.kind === "userShell" || /shell|bash|exec_command/i.test(item.tool ?? "")) {
+  if (item.kind === "userShell" || MUSE_TOOL_PRESENTATION_PATTERN.test(item.tool ?? "")) {
     return {
       ...shared,
       type: "command_execution",
@@ -98,7 +102,7 @@ export function museToolPresentation(
       ...(item.exitCode === undefined ? {} : { exitCode: item.exitCode }),
     };
   }
-  if (item.kind === "toolCall" && /write|edit|patch/i.test(toolName)) {
+  if (item.kind === "toolCall" && MUSE_TOOL_PRESENTATION_PATTERN_2.test(toolName)) {
     const fileName = stringArg("file_path", "path", "filePath")?.trim();
     if (fileName) {
       const oldStr = stringArg("old_string", "old_str", "oldStr", "oldText");
@@ -114,7 +118,7 @@ export function museToolPresentation(
       };
     }
   }
-  if (item.kind === "toolCall" && /web|browse|fetch/i.test(toolName)) {
+  if (item.kind === "toolCall" && MUSE_TOOL_PRESENTATION_PATTERN_3.test(toolName)) {
     const query = stringArg("query", "url", "pattern")?.trim();
     const pageUrl = stringArg("url")?.trim();
     const hits =

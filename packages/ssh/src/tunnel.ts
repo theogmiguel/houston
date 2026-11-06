@@ -44,6 +44,10 @@ import {
   SshReadinessError,
 } from "./errors.ts";
 
+const STRIP_TRAILING_NEWLINES_PATTERN = /\n+$/u;
+const RELEASE_BASE_URL_PATTERN = /\/v$/u;
+const NORMALIZED_PATTERN = /^\[(.*)\]$/;
+
 const DEFAULT_REMOTE_PORT = 3773;
 const REMOTE_PORT_SCAN_WINDOW = 200;
 const SSH_READY_TIMEOUT_MS = 20_000;
@@ -205,7 +209,7 @@ function normalizeSshErrorMessage(stderr: string, fallbackMessage: string): stri
 }
 
 function stripTrailingNewlines(value: string): string {
-  return value.replace(/\n+$/u, "");
+  return value.replace(STRIP_TRAILING_NEWLINES_PATTERN, "");
 }
 
 function shellSingleQuote(value: string): string {
@@ -799,7 +803,7 @@ export function buildRemoteHoustonRunnerScript(input?: RemoteHoustonRunnerOption
     throw new SshInvalidArchiveVersionError({ archiveVersion });
   }
   const releaseBaseUrl = cliReleaseDownloadBaseUrl("", input?.releaseBaseUrl ?? undefined).replace(
-    /\/v$/u,
+    RELEASE_BASE_URL_PATTERN,
     "",
   );
   return stripTrailingNewlines(
@@ -1061,10 +1065,7 @@ const waitForHttpReady = (input: {
   });
 
 function isLoopbackHostname(hostname: string): boolean {
-  const normalized = hostname
-    .trim()
-    .toLowerCase()
-    .replace(/^\[(.*)\]$/, "$1");
+  const normalized = hostname.trim().toLowerCase().replace(NORMALIZED_PATTERN, "$1");
   return normalized === "127.0.0.1" || normalized === "::1" || normalized === "localhost";
 }
 

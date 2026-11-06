@@ -17,6 +17,12 @@ import {
 } from "@houston-app/source-control-core/server/discovery";
 import { ForgejoPullRequestSchema, toForgejoChangeRequest } from "./forgejoPullRequests.ts";
 
+const HTTP_SCHEME = /^https?:\/\//iu;
+const TRAILING_SLASHES = /\/+$/;
+const EDGE_SLASHES = /^\/+|\/+$/g;
+const NUMBER_PATTERN = /(?:^#?|\/pulls\/)(\d+)(?:\/[^?#]*)?(?:[?#].*)?$/;
+const CHECKOUT_CHANGE_REQUEST_PATTERN = /^[0-9a-f]{7,64}$/i;
+
 const isForgejoCliError = Schema.is(ForgejoCli.ForgejoCliError);
 
 export const discovery = {
@@ -190,7 +196,7 @@ export const makeDiscovery = Effect.gen(function* () {
 
 export function repositoryNameFromRemoteUrl(url: string): string | null {
   const path = SourceControlProvider.repositoryPathFromRemoteUrl(url);
-  return path === null || !/^https?:\/\//iu.test(url.trim())
+  return path === null || !HTTP_SCHEME.test(url.trim())
     ? path
     : path.split("/").slice(-2).join("/");
 }
@@ -220,8 +226,8 @@ const refineRepositoryIdentity: NonNullable<
     },
   });
   if (context?.provider.kind !== "forgejo") return identity;
-  const baseUrl = context.provider.baseUrl.replace(/\/+$/, "");
-  const basePath = new URL(baseUrl).pathname.replace(/^\/+|\/+$/g, "");
+  const baseUrl = context.provider.baseUrl.replace(TRAILING_SLASHES, "");
+  const basePath = new URL(baseUrl).pathname.replace(EDGE_SLASHES, "");
   const path =
     !remote.ssh && basePath && remote.path.startsWith(`${basePath}/`)
       ? remote.path.slice(basePath.length + 1)
@@ -310,7 +316,7 @@ export const make = Effect.gen(function* () {
     >[0],
   ) {
     const repo = yield* cli.resolveRepository(input);
-    const number = /(?:^#?|\/pulls\/)(\d+)(?:\/[^?#]*)?(?:[?#].*)?$/.exec(input.reference)?.[1];
+    const number = NUMBER_PATTERN.exec(input.reference)?.[1];
     if (!number)
       return yield* new ForgejoCli.ForgejoCliError({
         command: "tea",
@@ -484,7 +490,7 @@ export const make = Effect.gen(function* () {
           });
         if (input.force) {
           // Non-commit server input could become git options.
-          if (!/^[0-9a-f]{7,64}$/i.test(pull.head.sha))
+          if (!CHECKOUT_CHANGE_REQUEST_PATTERN.test(pull.head.sha))
             return yield* new ForgejoCli.ForgejoCliError({
               command: repo.command ?? "tea",
               cwd: input.cwd,

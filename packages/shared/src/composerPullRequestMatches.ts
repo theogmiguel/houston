@@ -2,6 +2,8 @@ import type { ThreadPullRequestLink } from "@houston-app/contracts";
 
 import { visibleThreadPullRequests } from "./threadPullRequests.ts";
 
+const WHITESPACE_RUN = /\s+/u;
+
 export interface ComposerPullRequestMatch {
   readonly number: number;
   readonly projectId: string;
@@ -90,7 +92,7 @@ export function withLinkedComposerPullRequestsFirst<
   const keyOf = (entry: ComposerPullRequestMatch) =>
     `${entry.repository.trim().toLowerCase()}#${entry.number}`;
   const matchesByKey = new Map(input.matches.map((entry) => [keyOf(entry), entry]));
-  const words = input.query.toLowerCase().split(/\s+/u).filter(Boolean);
+  const words = input.query.toLowerCase().split(WHITESPACE_RUN).filter(Boolean);
   const linked = input.linked.flatMap((entry): Array<Entry | Linked> => {
     const match = matchesByKey.get(keyOf(entry));
     if (match !== undefined) return [match];

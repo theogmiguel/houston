@@ -1,3 +1,9 @@
+const NORMALIZED_PATTERN = /^v/;
+const VERSION_MATCH_PATTERN = /^(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:-[0-9A-Za-z.-]+)?$/;
+const WHITESPACE_RUN = /\s+/;
+const MATCH_PATTERN = /^(\^|>=|>|<=|<|=)?\s*v?(\d+(?:\.\d+){0,2})$/;
+const TARGET_MATCH_PATTERN = /^(\d+)(?:\.(\d+))?(?:\.(\d+))?$/;
+
 interface ParsedSemver {
   readonly major: number;
   readonly minor: number;
@@ -27,7 +33,7 @@ export function normalizeSemverVersion(version: string): string {
 }
 
 export function parseSemver(value: string): ParsedSemver | null {
-  const normalized = normalizeSemverVersion(value).replace(/^v/, "");
+  const normalized = normalizeSemverVersion(value).replace(NORMALIZED_PATTERN, "");
   const [main = "", ...prereleaseParts] = normalized.split("-");
   const prerelease = prereleaseParts.join("-");
   const segments = main.split(".");
@@ -141,10 +147,8 @@ export function compareSemverVersions(left: string, right: string): number {
 /** Keep plain JavaScript: SSH startup stringifies this for remote Node versions without known TS support. */
 export const satisfiesSemverRange: (rawVersion: string, range: string) => boolean =
   function satisfiesSemverRange(rawVersion, range) {
-    const normalizedVersion = String(rawVersion).trim().replace(/^v/, "");
-    const versionMatch = normalizedVersion.match(
-      /^(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:-[0-9A-Za-z.-]+)?$/,
-    );
+    const normalizedVersion = String(rawVersion).trim().replace(NORMALIZED_PATTERN, "");
+    const versionMatch = normalizedVersion.match(VERSION_MATCH_PATTERN);
     if (!versionMatch) {
       return false;
     }
@@ -156,12 +160,12 @@ export const satisfiesSemverRange: (rawVersion: string, range: string) => boolea
     };
 
     return range.split("||").some((group) => {
-      const comparators = group.trim().split(/\s+/).filter(Boolean);
+      const comparators = group.trim().split(WHITESPACE_RUN).filter(Boolean);
       if (comparators.length === 0) {
         return false;
       }
       return comparators.every((comparator) => {
-        const match = comparator.trim().match(/^(\^|>=|>|<=|<|=)?\s*v?(\d+(?:\.\d+){0,2})$/);
+        const match = comparator.trim().match(MATCH_PATTERN);
         if (!match) {
           return false;
         }
@@ -169,7 +173,7 @@ export const satisfiesSemverRange: (rawVersion: string, range: string) => boolea
         if (targetVersion === undefined) {
           return false;
         }
-        const targetMatch = targetVersion.match(/^(\d+)(?:\.(\d+))?(?:\.(\d+))?$/);
+        const targetMatch = targetVersion.match(TARGET_MATCH_PATTERN);
         if (!targetMatch) {
           return false;
         }

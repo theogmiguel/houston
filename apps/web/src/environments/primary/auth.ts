@@ -28,6 +28,8 @@ import { PrimaryEnvironmentHttpClient } from "./httpClient";
 import { PrimaryEnvironmentNotReadyError } from "./target";
 import { runPrimaryHttp } from "../../lib/runtime";
 
+const TRAILING_SLASHES = /\/+$/;
+
 const PrimaryEnvironmentRequestOperation = Schema.Literals([
   "fetch-session-state",
   "exchange-bootstrap-credential",
@@ -488,7 +490,7 @@ export async function revokeOtherServerClientSessions(): Promise<number> {
 
 export async function resolveInitialServerAuthGateState(): Promise<ServerAuthGateState> {
   // Preserve explicit grant replacement across the auth-gate reload triggered by token removal.
-  if (window.location.pathname.replace(/\/+$/, "") !== "/pair") {
+  if (window.location.pathname.replace(TRAILING_SLASHES, "") !== "/pair") {
     explicitPairingRequested = false;
   } else if (peekPairingTokenFromUrl()) {
     explicitPairingRequested = true;

@@ -4,6 +4,9 @@ import type * as SchemaIssue from "effect/SchemaIssue";
 
 import * as AcpSchema from "./_generated/schema.gen.ts";
 
+const SUMMARY_PATH_SEGMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+const DETAIL_PATTERN = /\.$/;
+
 const AcpRequestOperation = Schema.Literals([
   "decode-extension-request-payload",
   "encode-extension-response",
@@ -42,7 +45,7 @@ const MAX_SUMMARY_ISSUES = 3;
 const MAX_SUMMARY_PATH_SEGMENTS = 8;
 
 const summaryPathSegment = (segment: PropertyKey): string =>
-  typeof segment === "number" || /^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(String(segment))
+  typeof segment === "number" || SUMMARY_PATH_SEGMENT_PATTERN.test(String(segment))
     ? String(segment)
     : "*";
 
@@ -247,7 +250,7 @@ export class AcpTransportError extends Schema.TaggedError<AcpTransportError>()(
     const operation = this.operation ? ` ${this.operation}` : "";
     const method = this.method ? ` for method ${this.method}` : "";
     // Callers often pass a sentence; strip its period so the message ends with exactly one.
-    const detail = this.detail ? `: ${this.detail.replace(/\.$/, "")}` : "";
+    const detail = this.detail ? `: ${this.detail.replace(DETAIL_PATTERN, "")}` : "";
     return `ACP transport operation${operation} failed${method}${detail}.`;
   }
 }

@@ -124,6 +124,8 @@ import { ITEM_ROW_CLASSNAME } from "./itemRows";
 import { SavedBackendListRow } from "./SavedEnvironmentRows";
 import { AddEnvironmentDialog } from "./AddEnvironmentDialog";
 
+const DIGITS_ONLY = /^\d+$/u;
+
 const DEFAULT_TAILSCALE_SERVE_PORT = 443;
 const EMPTY_ADVERTISED_ENDPOINTS: ReadonlyArray<AdvertisedEndpoint> = [];
 
@@ -328,7 +330,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
   const trimmedTailscaleServePortInput = tailscaleServePortInput.trim();
   const parsedTailscaleServePort = Number(trimmedTailscaleServePortInput);
   const isTailscaleServePortValid =
-    /^\d+$/u.test(trimmedTailscaleServePortInput) &&
+    DIGITS_ONLY.test(trimmedTailscaleServePortInput) &&
     Number.isInteger(parsedTailscaleServePort) &&
     parsedTailscaleServePort >= 1 &&
     parsedTailscaleServePort <= 65_535;

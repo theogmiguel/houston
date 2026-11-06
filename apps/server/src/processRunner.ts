@@ -16,6 +16,8 @@ import {
   type CollectedUint8StreamText,
 } from "@houston-app/provider-core/server/collectStreamText";
 
+const COMMAND_NAME_PATTERN = /^.*[\\/]/;
+
 export interface ProcessRunInput {
   readonly command: string;
   readonly args: ReadonlyArray<string>;
@@ -261,7 +263,7 @@ function finalizeRunProcess<R>(
   );
 }
 
-const commandName = (command: string) => command.replace(/^.*[\\/]/, "");
+const commandName = (command: string) => command.replace(COMMAND_NAME_PATTERN, "");
 
 const runProcessCore = Effect.fn("processRunner.runProcessCore")(function* (
   spawner: ChildProcessSpawner.ChildProcessSpawner["Service"],

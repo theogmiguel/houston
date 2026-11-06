@@ -18,6 +18,8 @@ import * as ProcessRunner from "../processRunner.ts";
 import { projectLocationFlags, resolveCliAuthConfig } from "./config.ts";
 import { resolveEntryPath } from "./invocation.ts";
 
+const SERVICE_PROTECT_COMMAND_PATTERN = /\.service$/;
+
 export const layer = (config: ServerConfig.ServerConfig["Service"]) =>
   BootService.layer({
     baseDir: config.baseDir,
@@ -386,7 +388,9 @@ const serviceProtectCommand = Command.make("protect", {
               "It adds systemd drop-in files and changes nothing else. Undo with `houston service protect --undo`.",
             ].join("\n"),
           );
-          const names = remote.map((unit) => unit.replace(/\.service$/, "")).join(" and ");
+          const names = remote
+            .map((unit) => unit.replace(SERVICE_PROTECT_COMMAND_PATTERN, ""))
+            .join(" and ");
           const protectRemote =
             remote.length > 0 &&
             (yield* confirm(

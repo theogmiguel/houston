@@ -21,6 +21,8 @@ import * as Schema from "effect/Schema";
 import * as CursorSdk from "./CursorSdk.ts";
 import * as ProviderEventLoggers from "@houston-app/provider-core/server/ProviderEventLoggers";
 
+const IS_ACTIVE_RUN_CONFLICT_PATTERN = /already has active run/i;
+
 export const CURSOR_AGENT_SDK_PROTOCOL = "cursor-agent-sdk.local" as const;
 export const CURSOR_PROVIDER = ProviderDriverKind.make("cursor");
 
@@ -249,7 +251,7 @@ function runnerError(cause: unknown, method: string): CursorAgentSdkRunnerError 
 }
 
 function isActiveRunConflict(cause: unknown): boolean {
-  return cause instanceof Error && /already has active run/i.test(cause.message);
+  return cause instanceof Error && IS_ACTIVE_RUN_CONFLICT_PATTERN.test(cause.message);
 }
 
 export function isCursorCancellationError(cause: unknown): boolean {

@@ -9,6 +9,9 @@ import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { openDesktopUpdateReleaseNotes } from "../desktopUpdate.toast";
 import { Button } from "../ui/button";
 
+const DAY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+const HIGHLIGHT_PATTERN = /^\*\*([^*]+)\*\* (.+)$/;
+
 type DesktopUpdateShell = Pick<HostBridge, "openExternal">;
 
 function keyReleaseNoteItems(items: ReadonlyArray<string>) {
@@ -22,7 +25,7 @@ function keyReleaseNoteItems(items: ReadonlyArray<string>) {
 
 /** Feed times read "3h ago"; build days from a prerelease version read "today" or "2d ago". */
 function formatReleaseAge(releasedAt: string): string {
-  const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(releasedAt);
+  const day = DAY_PATTERN.exec(releasedAt);
   if (!day) return formatRelativeTimeLabel(releasedAt);
   const now = new Date();
   const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
@@ -161,7 +164,7 @@ export function SidebarUpdateReleaseNotes({
               </h3>
               <ul className="mt-1 grid gap-1 pl-4.5 text-headline leading-5 text-secondary-foreground">
                 {keyReleaseNoteItems(releaseNote.items).map(({ item, key }) => {
-                  const highlight = /^\*\*([^*]+)\*\* (.+)$/.exec(item);
+                  const highlight = HIGHLIGHT_PATTERN.exec(item);
                   return (
                     <li className="list-disc break-words" key={key}>
                       {highlight ? (

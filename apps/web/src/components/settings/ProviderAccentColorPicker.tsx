@@ -8,6 +8,8 @@ import { Button } from "../ui/button";
 import { Popover, PopoverClose, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { normalizeProviderAccentColor } from "../../providerInstances";
 
+const PROVIDER_CUSTOM_COLOR_PANEL_PATTERN = /^#[\da-f]{6}$/i;
+
 const FALLBACK_ACCENT_COLOR = "#2563eb";
 
 function ProviderCustomColorPanel(props: {
@@ -80,7 +82,7 @@ function ProviderCustomColorPanel(props: {
           onChange={(event) => {
             const nextColor = event.currentTarget.value;
             setHexDraft(nextColor);
-            if (!/^#[\da-f]{6}$/i.test(nextColor)) return;
+            if (!PROVIDER_CUSTOM_COLOR_PANEL_PATTERN.test(nextColor)) return;
             setHsv(hexToHsv(nextColor));
             onCommit(nextColor);
           }}

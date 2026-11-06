@@ -25,6 +25,16 @@ import type { SourceControlProcessInput } from "@houston-app/source-control-core
 import { gitCommandDuration, gitCommandsTotal, withMetrics } from "../observability/Metrics.ts";
 import * as ProcessRunner from "../processRunner.ts";
 
+const GIT_CONFIG_ENV_PATTERN = /^[ \t\r\n\v\f]*(?:\+?\d+|-0+)/;
+const IS_TRANSIENT_GIT_EXIT_PATTERN = /unable to create [^\n]*\.lock['"]?: file exists/i;
+const IS_TRANSIENT_GIT_EXIT_PATTERN_2 =
+  /(?:unable to stat|lstat\(|error: open\()[^\n]+: no such file or directory/i;
+const CAN_RETRY_FULL_FSYNC_PATTERN = /fsync error on [^\r\n]+: operation not supported\r?$/im;
+const CAN_RETRY_FULL_FSYNC_PATTERN_2 =
+  /cannot update ref [^\r\n]+: couldn't write '[^\r\n]+\.lock'\r?$/im;
+const RUN_UNBOUNDED_PATTERN =
+  /^fatal: unable to create ['"][^\r\n]*[/\\]index\.lock['"]: file exists\.?$/im;
+
 export interface VcsProcessInput {
   readonly operation: string;
   readonly command: string;
@@ -115,7 +125,7 @@ export const gitConfigEnv = (
     inherited !== undefined &&
     inherited !== "" &&
     // Match Git's strtoul count syntax, including whitespace, signs and non-negative -0.
-    /^[ \t\r\n\v\f]*(?:\+?\d+|-0+)/.exec(inherited)?.[0] !== inherited
+    GIT_CONFIG_ENV_PATTERN.exec(inherited)?.[0] !== inherited
   ) {
     return {};
   }
@@ -188,8 +198,7 @@ const classifyNonZeroExit = (
 
 // Classify before discarding stderr; keep paths and process output out of errors.
 const isTransientGitExit = (stderr: string) =>
-  /unable to create [^\n]*\.lock['"]?: file exists/i.test(stderr) ||
-  /(?:unable to stat|lstat\(|error: open\()[^\n]+: no such file or directory/i.test(stderr);
+  IS_TRANSIENT_GIT_EXIT_PATTERN.test(stderr) || IS_TRANSIENT_GIT_EXIT_PATTERN_2.test(stderr);
 
 // On macOS, Git's fsync uses F_FULLFSYNC; writeout-only still uses fsync(2).
 // Network mounts can reject F_FULLFSYNC. Ref writes omit errno, so retry their
@@ -199,8 +208,7 @@ const FULL_FSYNC_ARG = "core.fsyncMethod=fsync";
 const BATCH_FSYNC_ARG = "core.fsyncMethod=batch";
 const WRITEOUT_ONLY_FSYNC_ARG = "core.fsyncMethod=writeout-only";
 const canRetryFullFsync = (stderr: string) =>
-  /fsync error on [^\r\n]+: operation not supported\r?$/im.test(stderr) ||
-  /cannot update ref [^\r\n]+: couldn't write '[^\r\n]+\.lock'\r?$/im.test(stderr);
+  CAN_RETRY_FULL_FSYNC_PATTERN.test(stderr) || CAN_RETRY_FULL_FSYNC_PATTERN_2.test(stderr);
 
 export const make = Effect.gen(function* () {
   const processRunner = yield* ProcessRunner.ProcessRunner;
@@ -344,12 +352,7 @@ export const make = Effect.gen(function* () {
           ...(input.notFoundDetail === undefined ? {} : { notFoundDetail: input.notFoundDetail }),
         },
       );
-      if (
-        input.command === "git" &&
-        /^fatal: unable to create ['"][^\r\n]*[/\\]index\.lock['"]: file exists\.?$/im.test(
-          result.stderr,
-        )
-      ) {
+      if (input.command === "git" && RUN_UNBOUNDED_PATTERN.test(result.stderr)) {
         return yield* new VcsProcessExitError({
           ...error,
           detail: GIT_INDEX_LOCKED_DETAIL,

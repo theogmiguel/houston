@@ -5,6 +5,10 @@ import * as Hex from "effect/encoding/Hex";
 import { extendTailwindMerge } from "tailwind-merge";
 import { DraftId } from "../composerDraftStore";
 
+const IS_WINDOWS_PLATFORM_PATTERN = /^win(dows)?/i;
+const NORMALIZE_SEARCH_TEXT_PATTERN = /\p{M}/gu;
+const WHITESPACE_RUN = /\s+/g;
+
 // Register extra font sizes and background images so tailwind-merge does not
 // treat text-2xs or bg-composer-seam-below as colors.
 const twMerge = extendTailwindMerge({
@@ -21,11 +25,16 @@ export function cn(...inputs: CxOptions) {
 export { isMacPlatform };
 
 export function isWindowsPlatform(platform: string): boolean {
-  return /^win(dows)?/i.test(platform);
+  return IS_WINDOWS_PLATFORM_PATTERN.test(platform);
 }
 
 export function normalizeSearchText(value: string): string {
-  return value.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().replace(/\s+/g, " ").trim();
+  return value
+    .normalize("NFKD")
+    .replace(NORMALIZE_SEARCH_TEXT_PATTERN, "")
+    .toLowerCase()
+    .replace(WHITESPACE_RUN, " ")
+    .trim();
 }
 
 export function getLocalFileManagerName(platform: string): string {

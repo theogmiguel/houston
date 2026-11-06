@@ -11,6 +11,14 @@ import { resolveCommandPath } from "@houston-app/shared/shell";
 
 import packageJson from "../../package.json" with { type: "json" };
 
+const MATCH_PATTERN =
+  /^(.*)\/lib\/node_modules\/houston-app\/(?:dist\/bin\.mjs|bin\/houston\.mjs)$/;
+const INLINE_PATTERN = /\/(?:Cellar|Caskroom)\//i;
+const INLINE_PATTERN_2 = /\/mise\/installs\/(?!node\/)[^/]+\//;
+const CHANNEL_PATTERN = /^[^-+]+-(nightly|preview)\./;
+const SHELL_WORD_PATTERN = /^[\w@%+=:,./-]+$/;
+const POWERSHELL_WORD_PATTERN = /["\u201C\u201D\u201E]/g;
+
 export type CliRunner = "npx" | "pnpm dlx" | "bunx";
 
 /** Detection is best-effort; callers must fail closed to a plain `houston` command. */
@@ -68,9 +76,7 @@ export const resolveServerInstallation = Effect.gen(function* () {
   const path = yield* Path.Path;
   const platform = yield* HostProcess.Platform;
   const entry = yield* fs.realPath(yield* resolveEntryPath);
-  const match = /^(.*)\/lib\/node_modules\/houston-app\/(?:dist\/bin\.mjs|bin\/houston\.mjs)$/.exec(
-    entry,
-  );
+  const match = MATCH_PATTERN.exec(entry);
   if (!match) {
     const runner = detectCliRunner(entry);
     return runner === null
@@ -81,8 +87,8 @@ export const resolveServerInstallation = Effect.gen(function* () {
   const prefix = match[1] || "/";
   if (
     prefix.includes("/node_modules/") ||
-    /\/(?:Cellar|Caskroom)\//i.test(prefix) ||
-    /\/mise\/installs\/(?!node\/)[^/]+\//.test(prefix)
+    INLINE_PATTERN.test(prefix) ||
+    INLINE_PATTERN_2.test(prefix)
   )
     return null;
 
@@ -99,7 +105,7 @@ export const resolveServerInstallation = Effect.gen(function* () {
 
 /** The original package spec is unavailable at startup; infer its channel from the version. */
 function suggestedPackageSpec(version: string): string {
-  const channel = /^[^-+]+-(nightly|preview)\./.exec(version)?.[1];
+  const channel = CHANNEL_PATTERN.exec(version)?.[1];
   return channel === undefined ? SERVER_PACKAGE_NAME : `${SERVER_PACKAGE_NAME}@${channel}`;
 }
 
@@ -121,14 +127,11 @@ export const resolveCliCommand = (subcommand: string) =>
   );
 
 const shellWord = (value: string) =>
-  /^[\w@%+=:,./-]+$/.test(value) ? value : `'${value.replaceAll("'", `'"'"'`)}'`;
+  SHELL_WORD_PATTERN.test(value) ? value : `'${value.replaceAll("'", `'"'"'`)}'`;
 
 /** PowerShell also treats typographic quotes as delimiters; escape them and suppress expansion. */
 const powershellWord = (value: string) =>
-  `"${value
-    .replaceAll("`", "``")
-    .replaceAll("$", "`$")
-    .replace(/["\u201C\u201D\u201E]/g, "$&$&")}"`;
+  `"${value.replaceAll("`", "``").replaceAll("$", "`$").replace(POWERSHELL_WORD_PATTERN, "$&$&")}"`;
 
 const hostShellWord = (platform: NodeJS.Platform, value: string) =>
   platform === "win32" ? powershellWord(value) : shellWord(value);

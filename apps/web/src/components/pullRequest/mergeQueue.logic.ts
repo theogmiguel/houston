@@ -10,6 +10,8 @@ import {
   type HoustonMergeQueueVerification,
 } from "@houston-app/contracts/houston/mergeQueue";
 
+const LINE_BREAK_CHAR = /[\r\n]/;
+
 export type MergeQueueTone = "ok" | "warn" | "error" | "info" | "neutral";
 
 const STATUS_PRESENTATION: Record<
@@ -332,7 +334,7 @@ export function mergeQueueCommandError(command: string): string | null {
   if (bytes > limit) {
     return `The verification command is ${bytes} bytes; the limit is ${limit} bytes.`;
   }
-  if (/[\r\n]/.test(command)) return "The verification command must be one line.";
+  if (LINE_BREAK_CHAR.test(command)) return "The verification command must be one line.";
   return null;
 }
 

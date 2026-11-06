@@ -13,6 +13,8 @@ import * as Stream from "effect/Stream";
 
 import * as CodexError from "./errors.ts";
 import { JsonRpcId, JsonRpcResponseEnvelope } from "./_internal/shared.ts";
+
+const TRAILING_CARRIAGE_RETURN = /\r$/;
 const isJsonRpcId = Schema.is(JsonRpcId);
 const isJsonRpcResponseEnvelope = Schema.is(JsonRpcResponseEnvelope);
 const isCodexAppServerError = Schema.is(CodexError.CodexAppServerError);
@@ -436,7 +438,7 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
             }
             remainder.push(fragment);
             if (newline === -1) break;
-            const line = remainder.join("").replace(/\r$/, "");
+            const line = remainder.join("").replace(TRAILING_CARRIAGE_RETURN, "");
             remainder.length = 0;
             remainderBytes = 0;
             yield* handleLine(line);

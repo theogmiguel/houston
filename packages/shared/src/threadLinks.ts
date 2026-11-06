@@ -2,6 +2,9 @@ import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@houston-app/cont
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+const CLEANED_PATTERN = /[[\]\\\r\n]/g;
+const WHITESPACE_RUN = /\s+/g;
+
 export const THREAD_LINK_PROTOCOL = "houston-thread";
 const V1_PREFIX = `${THREAD_LINK_PROTOCOL}://v1/`;
 const V2_PREFIX = `${THREAD_LINK_PROTOCOL}://v2/`;
@@ -80,10 +83,7 @@ function threadLinkHref(link: ThreadLink): string {
 
 /** Without a label, an autolink: clients show the thread's current title. */
 export function formatThreadLink(ref: ThreadLink, label?: string): string {
-  const cleaned = label
-    ?.replace(/[[\]\\\r\n]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  const cleaned = label?.replace(CLEANED_PATTERN, " ").replace(WHITESPACE_RUN, " ").trim();
   return cleaned ? `[${cleaned}](${threadLinkHref(ref)})` : `<${threadLinkHref(ref)}>`;
 }
 

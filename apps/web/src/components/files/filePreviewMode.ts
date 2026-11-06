@@ -2,13 +2,16 @@ import type { AssetResource, ProjectReadFileError, ScopedThreadRef } from "@hous
 import { mediaFileReference } from "@houston-app/client-runtime/media-reference";
 import { isHostPath, workspaceRelativeFilePath } from "@houston-app/shared/path";
 
+const IS_MARKDOWN_PREVIEW_FILE_PATTERN = /\.(?:md|mdx|markdown|mdown|mkd)$/i;
+const SET_MARKDOWN_TASK_CHECKED_PATTERN = /[ xX]/;
+
 export function resolveFilePreviewPath(path: string | null, cwd: string): string | null {
   if (path === null) return null;
   return path === "." || workspaceRelativeFilePath(path, cwd) === "." ? null : path;
 }
 
 export const isMarkdownPreviewFile = (path: string): boolean =>
-  /\.(?:md|mdx|markdown|mdown|mkd)$/i.test(path);
+  IS_MARKDOWN_PREVIEW_FILE_PATTERN.test(path);
 
 export function filePreviewReadErrorMessage(error: ProjectReadFileError): string {
   switch (error.failure) {
@@ -48,7 +51,7 @@ export function setMarkdownTaskChecked(
   if (
     markerOffset < 0 ||
     markdown[markerOffset] !== "[" ||
-    !/[ xX]/.test(markdown[markerOffset + 1] ?? "") ||
+    !SET_MARKDOWN_TASK_CHECKED_PATTERN.test(markdown[markerOffset + 1] ?? "") ||
     markdown[markerOffset + 2] !== "]"
   ) {
     return markdown;

@@ -48,6 +48,13 @@ import { sessionModelStateFromInitialize } from "@houston-app/provider-acp/serve
 import { discoverGrokSkills } from "./skills.ts";
 import { grokProbeEnvironment } from "./probeEnvironment.ts";
 
+const AUTHENTICATED_PATTERN = /you are logged in/i;
+const AUTHENTICATED_PATTERN_2 = /not authenticated|not logged in/i;
+const LINE_BREAK = /\r?\n/;
+const BULLET_PATTERN = /^\s*[*-]\s+(\S+)(.*)$/;
+const PARSE_GROK_MODELS_CLI_OUTPUT_PATTERN = /\(default\)/i;
+const DISPLAY_NAME_FROM_GROK_MODEL_SLUG_PATTERN = /[-_]/g;
+
 const GROK_PRESENTATION = {
   displayName: "Grok",
   supportsConversationRollback: false,
@@ -256,16 +263,16 @@ export interface GrokModelsCliOutput {
 
 /** Exit status is always 0; only output text indicates login state. */
 export function parseGrokModelsCliOutput(output: string): GrokModelsCliOutput {
-  const authenticated = /you are logged in/i.test(output)
+  const authenticated = AUTHENTICATED_PATTERN.test(output)
     ? true
-    : /not authenticated|not logged in/i.test(output)
+    : AUTHENTICATED_PATTERN_2.test(output)
       ? false
       : null;
 
   const seen = new Set<string>();
   const models: ServerProviderModel[] = [];
-  for (const line of output.split(/\r?\n/)) {
-    const bullet = line.match(/^\s*[*-]\s+(\S+)(.*)$/);
+  for (const line of output.split(LINE_BREAK)) {
+    const bullet = line.match(BULLET_PATTERN);
     if (!bullet?.[1]) {
       continue;
     }
@@ -278,7 +285,7 @@ export function parseGrokModelsCliOutput(output: string): GrokModelsCliOutput {
       slug,
       name: displayNameFromGrokModelSlug(slug),
       isCustom: false,
-      ...(/\(default\)/i.test(bullet[2] ?? "") ? { isDefault: true } : {}),
+      ...(PARSE_GROK_MODELS_CLI_OUTPUT_PATTERN.test(bullet[2] ?? "") ? { isDefault: true } : {}),
       capabilities: EMPTY_CAPABILITIES,
     });
   }
@@ -287,7 +294,7 @@ export function parseGrokModelsCliOutput(output: string): GrokModelsCliOutput {
 
 function displayNameFromGrokModelSlug(slug: string): string {
   return slug
-    .split(/[-_]/g)
+    .split(DISPLAY_NAME_FROM_GROK_MODEL_SLUG_PATTERN)
     .map((part) => (part.toLowerCase() === "grok" ? "Grok" : part))
     .join(" ");
 }

@@ -32,8 +32,11 @@ import {
 
 import { resolveBrowserDefaults } from "./browserDefaults";
 
+const IS_BROWSER_PREVIEW_FILE_PATTERN = /\.(?:html?|pdf)$/i;
+const QUERY_OR_FRAGMENT = /[?#]/;
+
 export const isBrowserPreviewFile = (path: string): boolean =>
-  /\.(?:html?|pdf)$/i.test(path.split(/[?#]/, 1)[0] ?? "");
+  IS_BROWSER_PREVIEW_FILE_PATTERN.test(path.split(QUERY_OR_FRAGMENT, 1)[0] ?? "");
 
 export class BrowserPreviewUnavailableError extends Data.TaggedError(
   "BrowserPreviewUnavailableError",

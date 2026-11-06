@@ -18,6 +18,11 @@ import * as Schema from "effect/Schema";
 import type * as SourceControlProvider from "./SourceControlProvider.ts";
 import type * as SourceControlHost from "./SourceControlHost.ts";
 
+const LINE_BREAK = /\r?\n/;
+const SANITIZED_AUTH_LINES_PATTERN = /^[-\s]*token(?:\s+scopes?)?:/iu;
+const PARSE_CLI_HOST_PATTERN = /^[^a-z0-9]+/iu;
+const PARSE_CLI_HOST_PATTERN_2 = /^[a-z0-9][a-z0-9.-]*(?::\d+)?$/iu;
+
 export interface SourceControlAuthProbeInput {
   readonly stdout: string;
   readonly stderr: string;
@@ -98,7 +103,7 @@ interface DiscoveryProbeResult {
 
 export function firstNonEmptyLine(text: string): Option.Option<string> {
   const line = NodeUtil.stripVTControlCharacters(text)
-    .split(/\r?\n/)
+    .split(LINE_BREAK)
     .map((entry) => entry.trim())
     .find((entry) => entry.length > 0);
   return line === undefined ? Option.none() : Option.some(line);
@@ -156,10 +161,10 @@ export function combinedAuthOutput(input: SourceControlAuthProbeInput): string {
 
 function sanitizedAuthLines(text: string): ReadonlyArray<string> {
   const lines: string[] = [];
-  for (const entry of text.split(/\r?\n/)) {
+  for (const entry of text.split(LINE_BREAK)) {
     const line = entry.trim();
     if (line.length === 0) continue;
-    if (/^[-\s]*token(?:\s+scopes?)?:/iu.test(line)) continue;
+    if (SANITIZED_AUTH_LINES_PATTERN.test(line)) continue;
     lines.push(line);
   }
   return lines;
@@ -171,8 +176,8 @@ export function firstSafeAuthLine(text: string): string | undefined {
 
 export function parseCliHost(text: string): string | undefined {
   return sanitizedAuthLines(text)
-    .map((line) => line.replace(/^[^a-z0-9]+/iu, ""))
-    .find((line) => /^[a-z0-9][a-z0-9.-]*(?::\d+)?$/iu.test(line));
+    .map((line) => line.replace(PARSE_CLI_HOST_PATTERN, ""))
+    .find((line) => PARSE_CLI_HOST_PATTERN_2.test(line));
 }
 
 export function matchFirst(text: string, patterns: ReadonlyArray<RegExp>): string | undefined {

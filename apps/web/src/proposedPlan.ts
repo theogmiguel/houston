@@ -3,6 +3,11 @@ import {
   proposedPlanTitle,
 } from "@houston-app/shared/proposedPlanText";
 
+const LINE_BREAK = /\r?\n/;
+const SANITIZED_PATTERN = /[`'".,!?()[\]{}]+/g;
+const NON_ALPHANUMERIC_RUN = /[^a-z0-9]+/g;
+const EDGE_DASHES = /^-+|-+$/g;
+
 export function buildCollapsedProposedPlanPreviewMarkdown(
   planMarkdown: string,
   options?: {
@@ -12,7 +17,7 @@ export function buildCollapsedProposedPlanPreviewMarkdown(
   const maxLines = options?.maxLines ?? 8;
   const lines = stripDisplayedPlanMarkdown(planMarkdown)
     .trimEnd()
-    .split(/\r?\n/)
+    .split(LINE_BREAK)
     .map((line) => line.trimEnd());
   const previewLines: string[] = [];
   let visibleLineCount = 0;
@@ -48,9 +53,9 @@ export function buildCollapsedProposedPlanPreviewMarkdown(
 function sanitizePlanFileSegment(input: string): string {
   const sanitized = input
     .toLowerCase()
-    .replace(/[`'".,!?()[\]{}]+/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+    .replace(SANITIZED_PATTERN, "")
+    .replace(NON_ALPHANUMERIC_RUN, "-")
+    .replace(EDGE_DASHES, "");
   return sanitized.length > 0 ? sanitized : "plan";
 }
 

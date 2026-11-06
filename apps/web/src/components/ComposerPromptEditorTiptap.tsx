@@ -128,6 +128,14 @@ import { importPastedComposerText } from "./composerInlineTokenPaste";
 import { didComposerSelectionChangeVisibly } from "./composerSelection";
 import type { ComposerDraftContextRecords } from "./composerContextPresentation";
 
+const FIND_PATTERN = /^- \[([ xX])\] $/;
+const HANDLER_PATTERN = /\s$/;
+const CODE_MARKS_PATTERN = /^`+$/;
+const ADD_INPUT_RULES_PATTERN = /^(?<marker>[*+])(?<space>\s)$/;
+const ADD_INPUT_RULES_PATTERN_2 = /^(?<marker>-)(?<space>[ \t]+)(?<carried>[^\s[])$/;
+const ADD_INPUT_RULES_PATTERN_3 = /^(?<marker>\d+[.)])(?<space>\s)$/;
+const WHITESPACE = /\s/;
+
 export interface ComposerPromptEditorHandle {
   focus: () => void;
   focusAt: (cursor: number) => void;
@@ -654,7 +662,7 @@ const bulletToTaskInputRule = new InputRule({
 
 function taskInputRule(type: NodeType): InputRule {
   const rule = wrappingInputRule({
-    find: /^- \[([ xX])\] $/,
+    find: FIND_PATTERN,
     type,
     getAttributes: (match) => ({ checked: match[1]?.toLowerCase() === "x" }),
   });
@@ -690,7 +698,7 @@ const horizontalRuleInputRule = new InputRule({
   find: /^(---|\*\*\*|___)\s?$/,
   handler: ({ state, range, match, chain }) => {
     const source = match[0] ?? "---";
-    if (!source.startsWith("---") && !/\s$/.test(source)) return null;
+    if (!source.startsWith("---") && !HANDLER_PATTERN.test(source)) return null;
     const $from = state.doc.resolve(range.from);
     if ($from.parent.type.name !== "paragraph" || $from.depth !== 1) return null;
     chain()
@@ -777,7 +785,7 @@ function decorationsForSelection(state: EditorState): DecorationSet {
       // opening backtick joins the closing one inside the isolate, or the line
       // would put both on the same side of the code.
       const codeMarks =
-        rtl && baseSide === -1 && /^`+$/.test(text)
+        rtl && baseSide === -1 && CODE_MARKS_PATTERN.test(text)
           ? doc.resolve(at).nodeAfter?.marks.filter((mark) => mark.type.spec.code)
           : undefined;
       decorations.push(
@@ -944,13 +952,10 @@ function createComposerExtensions(richText: boolean) {
                   addInputRules() {
                     return this.name === "bulletList"
                       ? [
-                          listMarkerInputRule(/^(?<marker>[*+])(?<space>\s)$/, "bulletList"),
-                          listMarkerInputRule(
-                            /^(?<marker>-)(?<space>[ \t]+)(?<carried>[^\s[])$/,
-                            "bulletList",
-                          ),
+                          listMarkerInputRule(ADD_INPUT_RULES_PATTERN, "bulletList"),
+                          listMarkerInputRule(ADD_INPUT_RULES_PATTERN_2, "bulletList"),
                         ]
-                      : [listMarkerInputRule(/^(?<marker>\d+[.)])(?<space>\s)$/, "orderedList")];
+                      : [listMarkerInputRule(ADD_INPUT_RULES_PATTERN_3, "orderedList")];
                   },
                 }),
           ),
@@ -1430,7 +1435,7 @@ function ComposerPromptEditorTiptapInner(
           if (isChip(tokens[0]) && tokens[0]?.start === 0) {
             const map = serializeEditorDoc(view.state.doc);
             const offset = flatToMarkdown(map, pmToFlat(map, view.state.selection.from));
-            if (offset > 0 && !/\s/.test(map.value[offset - 1]!)) text = ` ${text}`;
+            if (offset > 0 && !WHITESPACE.test(map.value[offset - 1]!)) text = ` ${text}`;
           }
           const { $from } = view.state.selection;
           const lineBefore = $from.parent.textBetween(0, $from.parentOffset, undefined, "\uFFFC");

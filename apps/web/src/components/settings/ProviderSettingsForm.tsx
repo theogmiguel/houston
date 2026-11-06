@@ -30,6 +30,10 @@ export type SettingsFormDefinition = Pick<ProviderClientDefinition, "settingsSch
 };
 import { SettingsRow } from "./settingsLayout";
 
+const TITLEIZE_FIELD_KEY_PATTERN = /([a-z0-9])([A-Z])/g;
+const TITLEIZE_FIELD_KEY_PATTERN_2 = /[-_]+/g;
+const TITLEIZE_FIELD_KEY_PATTERN_3 = /^./;
+
 export interface ProviderSettingsFieldModel {
   readonly key: string;
   readonly control: ProviderSettingsFormControl;
@@ -48,9 +52,9 @@ export interface ProviderSettingsFieldModel {
 
 function titleizeFieldKey(key: string): string {
   return key
-    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-    .replace(/[-_]+/g, " ")
-    .replace(/^./, (char) => char.toUpperCase());
+    .replace(TITLEIZE_FIELD_KEY_PATTERN, "$1 $2")
+    .replace(TITLEIZE_FIELD_KEY_PATTERN_2, " ")
+    .replace(TITLEIZE_FIELD_KEY_PATTERN_3, (char) => char.toUpperCase());
 }
 
 function readFieldAnnotations(

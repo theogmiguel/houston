@@ -54,6 +54,8 @@ import {
   issueHeadlessServeAccessInfo,
 } from "./startupAccess.ts";
 
+const PATH_SEPARATOR = /[/\\]/;
+
 export class ServerRuntimeStartupError extends Schema.TaggedError<ServerRuntimeStartupError>()(
   "ServerRuntimeStartupError",
   {
@@ -248,7 +250,7 @@ export const autoPullProjects = Effect.fn("autoPullProjects")(function* (
 
 const resolveWelcomeBase = Effect.gen(function* () {
   const serverConfig = yield* ServerConfig.ServerConfig;
-  const segments = serverConfig.cwd.split(/[/\\]/).filter(Boolean);
+  const segments = serverConfig.cwd.split(PATH_SEPARATOR).filter(Boolean);
   const projectName = segments[segments.length - 1] ?? "project";
 
   return {

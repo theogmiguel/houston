@@ -88,6 +88,8 @@ import { keybindingSearchAnchorId, searchableSetting } from "./settingsSearch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { useAtomCommand } from "../../state/use-atom-command";
 
+const LEADING_HASH = /^#/;
+
 function KeybindingPill({ value }: { value: string }) {
   // Keys dedupe repeated parts; a literal "+" in a shortcut splits into empty strings.
   const seenParts = new Map<string, number>();
@@ -1409,7 +1411,9 @@ export function KeybindingsSettingsPanel() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [savingCommand, setSavingCommand] = useState<KeybindingCommand | null>(null);
   const [isAddingBinding, setIsAddingBinding] = useState(false);
-  const searchTargetId = useLocation({ select: (location) => location.hash.replace(/^#/, "") });
+  const searchTargetId = useLocation({
+    select: (location) => location.hash.replace(LEADING_HASH, ""),
+  });
   const [handledSearchTargetId, setHandledSearchTargetId] = useState(searchTargetId);
 
   if (searchTargetId !== handledSearchTargetId) {

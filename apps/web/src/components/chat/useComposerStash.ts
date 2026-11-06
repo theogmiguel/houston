@@ -68,6 +68,8 @@ import { BackgroundThreadContext } from "./backgroundThread";
 import { isInSideChatPane } from "../../lib/sideChatPane";
 import { useStableCallback } from "../../hooks/useStableCallback";
 
+const TRAILING_WHITESPACE = /\s+$/;
+
 /**
  * The prompt stash: saving the draft aside, restoring or deleting an entry, the badge pulse,
  * and the stash shortcut. Its state lives here so the composer body only wires it up.
@@ -228,7 +230,7 @@ export function useComposerStash(input: {
       restoredPrompt.length === 0
         ? currentPrompt
         : currentPrompt.trim().length
-          ? `${currentPrompt.replace(/\s+$/, "")}\n\n${restoredPrompt}`
+          ? `${currentPrompt.replace(TRAILING_WHITESPACE, "")}\n\n${restoredPrompt}`
           : restoredPrompt;
     let promptChanged = nextPrompt !== currentPrompt;
     if (promptChanged) {

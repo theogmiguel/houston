@@ -7,6 +7,8 @@ import * as NodeStream from "node:stream";
 import * as NodeStreamPromises from "node:stream/promises";
 import catalog from "./catalog.json" with { type: "json" };
 
+const RANGE_PATTERN = /^bytes (\d+)-(\d+)\/(\d+)$/;
+
 const WHISPER_LANGUAGES = [
   "en",
   "zh",
@@ -312,9 +314,7 @@ export async function downloadSpeechModel(
           throw new Error(`speech model download failed with status ${response.status}`);
         const resumed = offset > 0 && response.status === 206;
         if (resumed) {
-          const range = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(
-            response.headers.get("content-range") ?? "",
-          );
+          const range = RANGE_PATTERN.exec(response.headers.get("content-range") ?? "");
           if (
             !range ||
             Number(range[1]) !== offset ||

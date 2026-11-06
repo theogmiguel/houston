@@ -26,6 +26,14 @@ import { FetchHttpClient, HttpClient } from "effect/http";
 
 import * as ProcessRunner from "../processRunner.ts";
 
+const WHITESPACE_RUN = /\s+/;
+const LINE_BREAK = /\r?\n/g;
+const MATCH_PATTERN = /^"([^"]*)","(\d+)"/;
+const PARSE_TASKLIST_PROCESS_NAME_PATTERN = /\.exe$/i;
+const MATCH_PATTERN_2 = /^\s*(\d+)\s(.*)$/;
+const DIGITS_ONLY = /^\d+$/;
+const HELD_PATTERN = /^socket:\[(\d+)\]$/;
+
 export class PortDiscovery extends Context.Service<
   PortDiscovery,
   {
@@ -299,7 +307,7 @@ const parseWindowsListenerLine = (
   }
 
   // Foreign port `:0` identifies a listening TCP socket regardless of Windows locale.
-  const fields = trimmed.split(/\s+/);
+  const fields = trimmed.split(WHITESPACE_RUN);
   if (fields.length < 4 || fields[0]?.toUpperCase() !== "TCP") return null;
   const localEndpoint = fields[1] ?? "";
   const foreignEndpoint = fields[2] ?? "";
@@ -323,9 +331,10 @@ const exitedWithError = (result: ProcessRunner.ProcessRunOutput): boolean =>
   result.code !== null && result.code !== 0;
 
 const parseTasklistProcessName = (raw: string, pid: number): string | null => {
-  for (const line of raw.split(/\r?\n/g)) {
-    const match = /^"([^"]*)","(\d+)"/.exec(line.trim());
-    if (match && Number(match[2]) === pid) return match[1]!.replace(/\.exe$/i, "") || null;
+  for (const line of raw.split(LINE_BREAK)) {
+    const match = MATCH_PATTERN.exec(line.trim());
+    if (match && Number(match[2]) === pid)
+      return match[1]!.replace(PARSE_TASKLIST_PROCESS_NAME_PATTERN, "") || null;
   }
   return null;
 };
@@ -335,7 +344,7 @@ const parseWindowsListenerOutput = (
   owners: ReadonlyMap<number, ServerOwner> = new Map(),
 ): ReadonlyArray<DiscoveredLocalServer> => {
   const seen = new Map<number, DiscoveredLocalServer>();
-  for (const line of raw.split(/\r?\n/g)) {
+  for (const line of raw.split(LINE_BREAK)) {
     const parsed = parseWindowsListenerLine(line);
     if (!parsed) continue;
     const { port, pid: normalizedPid, processName } = parsed;
@@ -374,7 +383,7 @@ const parseProcNetTcp = (
 ): ReadonlyArray<{ readonly port: number; readonly inode: string }> => {
   const listeners: Array<{ port: number; inode: string }> = [];
   for (const line of raw.split("\n").slice(1)) {
-    const fields = line.trim().split(/\s+/);
+    const fields = line.trim().split(WHITESPACE_RUN);
     const [address, portHex] = fields[1]?.split(":") ?? [];
     if (fields[3] !== PROC_TCP_LISTEN || !address || !portHex) continue;
     if (!procLocalAddress(address.toUpperCase())) continue;
@@ -425,7 +434,7 @@ const parseProcEnvironThread = (raw: string): ThreadId | null => {
 const parsePsEnvironmentThreads = (raw: string): ReadonlyMap<number, ThreadId | null> => {
   const threads = new Map<number, ThreadId | null>();
   for (const line of raw.split("\n")) {
-    const match = /^\s*(\d+)\s(.*)$/.exec(line);
+    const match = MATCH_PATTERN_2.exec(line);
     if (!match) continue;
     const value = AGENT_THREAD_ASSIGNMENT.exec(match[2]!)?.[1];
     threads.set(Number(match[1]), value ? ThreadId.make(value) : null);
@@ -436,7 +445,7 @@ const parsePsEnvironmentThreads = (raw: string): ReadonlyMap<number, ThreadId | 
 const parseProcessTable = (raw: string): ReadonlyMap<number, ProcessTableRow> => {
   const rows = new Map<number, ProcessTableRow>();
   for (const line of raw.split("\n")) {
-    const [pid, ppid, pgid] = line.trim().split(/\s+/).map(Number);
+    const [pid, ppid, pgid] = line.trim().split(WHITESPACE_RUN).map(Number);
     if (Number.isInteger(pid) && Number.isInteger(ppid) && Number.isInteger(pgid)) {
       rows.set(pid!, { pid: pid!, ppid: ppid!, pgid: pgid! });
     }
@@ -597,7 +606,7 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
     const pids = (yield* fileSystem
       .readDirectory("/proc")
       .pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []))).filter((entry) =>
-      /^\d+$/.test(entry),
+      DIGITS_ONLY.test(entry),
     );
     let budget = PROC_FD_WALK_LIMIT;
     for (const pidText of pids) {
@@ -613,7 +622,7 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
           fileSystem.readLink(`/proc/${pidText}/fd/${fd}`).pipe(Effect.orElseSucceed(() => "")),
         { concurrency: 16 },
       );
-      const held = links.flatMap((link) => /^socket:\[(\d+)\]$/.exec(link)?.[1] ?? []);
+      const held = links.flatMap((link) => HELD_PATTERN.exec(link)?.[1] ?? []);
       const matched = held.filter((inode) => inodes.has(inode) && !owners.has(inode));
       if (matched.length === 0) continue;
       const processName = yield* fileSystem.readFileString(`/proc/${pidText}/comm`).pipe(

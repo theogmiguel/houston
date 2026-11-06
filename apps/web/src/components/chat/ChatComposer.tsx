@@ -305,6 +305,8 @@ import {
 import { ComposerControlsBar } from "./ComposerControlsBar";
 import { composerCommandKeyHandler } from "./composerCommandKey";
 
+const WHITESPACE = /\s/;
+
 function consumePasteAsTextShortcut(deadline: { current: number }): boolean {
   const armed = Date.now() <= deadline.current;
   deadline.current = 0;
@@ -2648,7 +2650,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     const needsLeadingSpace =
       (options?.ensureLeadingBoundary ?? false) &&
       cursor > 0 &&
-      !/\s/.test(prompt[cursor - 1] ?? "");
+      !WHITESPACE.test(prompt[cursor - 1] ?? "");
     const rangeEnd = extendReplacementRangeForTrailingSpace(prompt, cursor, text);
     return applyPromptReplacement(
       cursor,
@@ -3025,7 +3027,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         .join(" ")} `;
       const snapshot = readComposerSnapshotStable();
       const cursor = snapshot.expandedCursor;
-      const leadingSpace = cursor > 0 && !/\s/.test(snapshot.value[cursor - 1] ?? "");
+      const leadingSpace = cursor > 0 && !WHITESPACE.test(snapshot.value[cursor - 1] ?? "");
       const inserted =
         canAnswer &&
         applyPromptReplacementStable(

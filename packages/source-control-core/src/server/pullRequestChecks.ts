@@ -2,15 +2,18 @@ import type { PullRequestCheck } from "@houston-app/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 
+const FRACTION_PATTERN = /\.(\d+)(?=Z$|[+-]\d{2}:\d{2}$)/i;
+const DATE_PART_PATTERN = /[Tt]/;
+
 const zonedDateTimePattern =
   /^(?:\d{4}|[+-]\d{6})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?|24:00(?::00(?:\.0+)?)?)(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/i;
 
 // Parse whole seconds separately so sub-millisecond fractions keep their precision.
 function timestampParts(value: string) {
   if (!zonedDateTimePattern.test(value)) return { time: Number.NaN, fraction: "" };
-  const fraction = /\.(\d+)(?=Z$|[+-]\d{2}:\d{2}$)/i.exec(value);
+  const fraction = FRACTION_PATTERN.exec(value);
   // Date can normalize impossible days. Check the calendar date before applying the offset.
-  const datePart = value.split(/[Tt]/, 1)[0] ?? "";
+  const datePart = value.split(DATE_PART_PATTERN, 1)[0] ?? "";
   const date = DateTime.make(`${datePart}T00:00:00Z`);
   const parts = Option.isSome(date) ? DateTime.toPartsUtc(date.value) : null;
   const validDate =

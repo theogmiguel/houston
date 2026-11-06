@@ -28,6 +28,8 @@ import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 
+const CONSTRUCTOR_PATTERN = /(?<!\/\/[^/]*)[^/:]+\/[^/:]+\/?$/u;
+
 const PROVIDER_DETECTION_CACHE_CAPACITY = 2_048;
 const PROVIDER_DETECTION_CACHE_TTL = Duration.seconds(5);
 const UNKNOWN_REMOTE_CACHE_CAPACITY = 512;
@@ -173,7 +175,7 @@ class UnknownRemoteLookup {
     this.key = [
       context.provider.name,
       context.provider.baseUrl,
-      context.remoteUrl.trim().replace(/(?<!\/\/[^/]*)[^/:]+\/[^/:]+\/?$/u, ""),
+      context.remoteUrl.trim().replace(CONSTRUCTOR_PATTERN, ""),
       context.requestedHost ?? "",
     ].join("\n");
   }

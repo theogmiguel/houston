@@ -2,6 +2,9 @@ import { normalizeProjectPathForComparison } from "@houston-app/shared/path";
 
 import type { ThreadShell } from "./types";
 
+const BACKSLASH = /\\/g;
+const TRAILING_SLASHES = /\/+$/;
+
 export function getOrphanedWorktreePathForThread(
   threads: ReadonlyArray<Pick<ThreadShell, "id" | "worktreePath">>,
   threadId: ThreadShell["id"],
@@ -35,7 +38,7 @@ export function formatWorktreePathForDisplay(worktreePath: string): string {
     return worktreePath;
   }
 
-  const normalized = trimmed.replace(/\\/g, "/").replace(/\/+$/, "");
+  const normalized = trimmed.replace(BACKSLASH, "/").replace(TRAILING_SLASHES, "");
   const parts = normalized.split("/");
   const lastPart = parts[parts.length - 1]?.trim() ?? "";
   return lastPart.length > 0 ? lastPart : trimmed;

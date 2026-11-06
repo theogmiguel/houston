@@ -2,6 +2,9 @@ import { FAVICON_CAPTURED_AT_MAX, FAVICON_DATA_URL_MAX_LENGTH } from "@houston-a
 
 import { isLocalLoopbackHost, normalizeHostname } from "./browser/browserTargetResolver";
 
+const IS_STORABLE_FAVICON_DATA_URL_PATTERN = /[^a-z0-9+/=]/i;
+const IS_STORABLE_FAVICON_DATA_URL_PATTERN_2 = /^[a-z0-9+/]*={0,2}$/i;
+
 export type BrowserFaviconEntry = {
   dataUrl: string;
   capturedAt: number;
@@ -144,8 +147,8 @@ export function isStorableFaviconDataUrl(value: unknown): value is string {
   return (
     payload.length > 0 &&
     payload.length % 4 !== 1 &&
-    !/[^a-z0-9+/=]/i.test(payload) &&
-    /^[a-z0-9+/]*={0,2}$/i.test(payload)
+    !IS_STORABLE_FAVICON_DATA_URL_PATTERN.test(payload) &&
+    IS_STORABLE_FAVICON_DATA_URL_PATTERN_2.test(payload)
   );
 }
 

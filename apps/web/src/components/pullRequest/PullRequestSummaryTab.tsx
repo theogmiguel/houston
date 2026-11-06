@@ -85,6 +85,14 @@ import { sectionCollapseAnchorScrollTop } from "./pullRequestSummaryScroll.logic
 import { useClientSettings } from "../../hooks/useSettings";
 import { formatChatTimestampTooltip } from "../../timestampFormat";
 
+const WORDS_PATTERN = /_/g;
+const COLLAPSED_COMMENT_PATTERN = /<!--[\s\S]*?-->/gu;
+const COLLAPSED_COMMENT_PATTERN_2 = /^\s*>?\s*\[!\w+\]\s*$/gmu;
+const COLLAPSED_COMMENT_PATTERN_3 = /!?(\[([^\]]+)\])\([^)]*\)/gu;
+const COLLAPSED_COMMENT_PATTERN_4 = /^[\s>#*-]+/gmu;
+const COLLAPSED_COMMENT_PATTERN_5 = /[*`]/gu;
+const WHITESPACE_RUN = /\s+/g;
+
 function reviewerKey(login: string): string {
   return login.toLowerCase();
 }
@@ -154,7 +162,7 @@ function CommentLocation({
 }
 
 function reviewStateLabel(state: string): string {
-  const words = state.toLowerCase().replace(/_/g, " ");
+  const words = state.toLowerCase().replace(WORDS_PATTERN, " ");
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
@@ -265,12 +273,12 @@ function CollapsedComment({
               onClick={() => statusTriggerRef.current?.focus({ preventScroll: true })}
             >
               {body
-                .replace(/<!--[\s\S]*?-->/gu, "")
-                .replace(/^\s*>?\s*\[!\w+\]\s*$/gmu, "")
-                .replace(/!?(\[([^\]]+)\])\([^)]*\)/gu, "$2")
-                .replace(/^[\s>#*-]+/gmu, "")
-                .replace(/[*`]/gu, "")
-                .replace(/\s+/g, " ")
+                .replace(COLLAPSED_COMMENT_PATTERN, "")
+                .replace(COLLAPSED_COMMENT_PATTERN_2, "")
+                .replace(COLLAPSED_COMMENT_PATTERN_3, "$2")
+                .replace(COLLAPSED_COMMENT_PATTERN_4, "")
+                .replace(COLLAPSED_COMMENT_PATTERN_5, "")
+                .replace(WHITESPACE_RUN, " ")
                 .trim()}
             </CollapsibleTrigger>
           ) : null}

@@ -14,6 +14,8 @@ import { resolveBaseDir } from "../os-jank.ts";
 import { baseDirFlag } from "./config.ts";
 import { resolveRootCliCommand } from "./invocation.ts";
 
+const CANDIDATE_PATTERN = /Candidate:\s*(\S+)/;
+
 export class BrowserSetupStepError extends Schema.TaggedError<BrowserSetupStepError>()(
   "BrowserSetupStepError",
   { step: Schema.String, detail: Schema.String },
@@ -60,7 +62,7 @@ const aptOffers = Effect.fn("browserSetup.aptOffers")(function* (name: string) {
   const policy = yield* spawner
     .string(ChildProcess.make("apt-cache", ["policy", name], { stdin: "ignore", stderr: "ignore" }))
     .pipe(Effect.orElseSucceed(() => ""));
-  const candidate = /Candidate:\s*(\S+)/.exec(policy)?.[1];
+  const candidate = CANDIDATE_PATTERN.exec(policy)?.[1];
   return candidate !== undefined && candidate !== "(none)";
 });
 

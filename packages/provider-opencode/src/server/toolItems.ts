@@ -2,6 +2,10 @@ import type { OrchestrationV2TurnItem } from "@houston-app/contracts";
 import { resolveHoustonMcpToolId } from "@houston-app/shared/houstonMcpToolPresentation";
 import { formatReadToolLabel, formatSearchToolLabel } from "@houston-app/shared/toolActivity";
 
+const HEADER_PATTERN = /^<path>[^\r\n]+<\/path>\r?\n<type>(directory|file)<\/type>\r?\n/;
+const ENVELOPE_PATTERN = /^<entries>\r?\n([\s\S]*?)\r?\n<\/entries>(?=\r?\n|$)/;
+const ENVELOPE_PATTERN_2 = /^<content>(?:\r?\n)?([\s\S]*?)\r?\n<\/content>(?=\r?\n|$)/;
+
 // Search results stay on the timeline wire, so keep their text a preview.
 const SEARCH_PREVIEW_MAX_CHARS = 8_000;
 
@@ -69,14 +73,12 @@ function stableJson(value: unknown): string {
 }
 
 function nativeReadOutput(output: string): string {
-  const header = /^<path>[^\r\n]+<\/path>\r?\n<type>(directory|file)<\/type>\r?\n/.exec(output);
+  const header = HEADER_PATTERN.exec(output);
   if (header === null) return output;
   const body = output.slice(header[0].length);
   // File lines are numbered; only a closing tag on its own line ends the envelope.
   const envelope =
-    header[1] === "directory"
-      ? /^<entries>\r?\n([\s\S]*?)\r?\n<\/entries>(?=\r?\n|$)/.exec(body)
-      : /^<content>(?:\r?\n)?([\s\S]*?)\r?\n<\/content>(?=\r?\n|$)/.exec(body);
+    header[1] === "directory" ? ENVELOPE_PATTERN.exec(body) : ENVELOPE_PATTERN_2.exec(body);
   // OpenCode can append instructions after the envelope; keep that suffix verbatim.
   return envelope === null ? output : envelope[1] + body.slice(envelope[0].length);
 }

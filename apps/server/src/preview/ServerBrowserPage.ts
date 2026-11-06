@@ -23,6 +23,25 @@ import type { CDPSession, ConsoleMessage, Frame, Locator, Page } from "playwrigh
 import * as NodeCrypto from "node:crypto";
 import { BrowserControlInterrupted } from "./SessionControl.ts";
 
+const TO_OPERATION_ERROR_PATTERN =
+  /while parsing selector|Unknown engine|Unexpected token|strict mode violation/i;
+const TO_OPERATION_ERROR_PATTERN_2 = /not an <input>|not editable|not an editable/i;
+const ENGINES_PATTERN = /\\.|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`/g;
+const TARGET_LOCATOR_PATTERN = /(?:^|>>)\s*\*?aria-ref\s*=/;
+const REF_PATTERN = /^\s*aria-ref\s*=\s*(\S+)\s*$/;
+const VALUE_PATTERN = /^["']/;
+const VALUE_PATTERN_2 = /\\(x[\da-f]{2}|u[\da-f]{4}|.)/gi;
+const VALUE_PATTERN_3 = /[\t\n\r]/g;
+const VALUE_PATTERN_4 = /^[\u0000-\u0020]+/;
+const PARSED_PATTERN = /^data:([^,;]*)/i;
+const MEDIA_TYPE_PATTERN = /^[\w.+-]{1,64}\/[\w.+-]{1,64}$/;
+const CONSOLE_TEXT_PATTERN = /(?<![a-z\d])data:[^,;]*[,;][\s\S]*/i;
+const URL_PATTERN = /^(\s*- \/url: )(.*)$/s;
+const QUOTED_PATTERN = /[\\"\p{Cc}]/gu;
+const REGEX_SPECIAL_CHARS = /[.*+?^${}()|[\]\\]/g;
+const ACCESSIBILITY_TREE_PATTERN = /\[ref=((?:f\d+)?e\d+)\]/g;
+const DESCRIPTION_PATTERN = /ERR_[A-Z\d_]+/;
+
 const MAX_EVALUATION_BYTES = 64_000;
 const MAX_VISIBLE_TEXT_LENGTH = 20_000;
 const MAX_SCREENSHOT_WIDTH = 1280;
@@ -60,12 +79,10 @@ export const toOperationError = (
       timeoutMs === undefined ? undefined : { timeoutMs },
     );
   }
-  if (
-    /while parsing selector|Unknown engine|Unexpected token|strict mode violation/i.test(message)
-  ) {
+  if (TO_OPERATION_ERROR_PATTERN.test(message)) {
     return new ServerBrowserOperationError("PreviewAutomationInvalidSelectorError", firstLine);
   }
-  if (/not an <input>|not editable|not an editable/i.test(message)) {
+  if (TO_OPERATION_ERROR_PATTERN_2.test(message)) {
     return new ServerBrowserOperationError("PreviewAutomationTargetNotEditableError", firstLine);
   }
   return new ServerBrowserOperationError("PreviewAutomationExecutionError", firstLine);
@@ -105,12 +122,9 @@ const targetLocator = (
 ): Locator | null => {
   const selector = input.locator ?? input.selector;
   if (selector === undefined) return null;
-  const engines = selector.replace(
-    /\\.|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`/g,
-    " ",
-  );
-  if (/(?:^|>>)\s*\*?aria-ref\s*=/.test(engines)) {
-    const ref = /^\s*aria-ref\s*=\s*(\S+)\s*$/.exec(selector)?.[1];
+  const engines = selector.replace(ENGINES_PATTERN, " ");
+  if (TARGET_LOCATOR_PATTERN.test(engines)) {
+    const ref = REF_PATTERN.exec(selector)?.[1];
     const nativeRef = ref === undefined ? undefined : pageRefs.get(page)?.refs.get(ref);
     if (nativeRef === undefined) {
       throw new ServerBrowserOperationError(
@@ -167,18 +181,18 @@ export const withoutDataPayload = (url: string) => {
   // newlines anywhere. A snapshot's YAML value may be quoted and escaped; an escape that isn't a
   // tab or newline still decodes to something that can't start a scheme.
   const value = url
-    .replace(/^["']/, "")
-    .replace(/\\(x[\da-f]{2}|u[\da-f]{4}|.)/gi, (_escape, code: string) =>
+    .replace(VALUE_PATTERN, "")
+    .replace(VALUE_PATTERN_2, (_escape, code: string) =>
       code.length > 1
         ? String.fromCharCode(Number.parseInt(code.slice(1), 16))
         : ({ t: "\t", n: "\n", r: "\r", '"': '"', "\\": "\\" }[code] ?? "\u0001"),
     )
-    .replace(/[\t\n\r]/g, "")
-    .replace(/^[\u0000-\u0020]+/, "");
-  const parsed = /^data:([^,;]*)/i.exec(value);
+    .replace(VALUE_PATTERN_3, "")
+    .replace(VALUE_PATTERN_4, "");
+  const parsed = PARSED_PATTERN.exec(value);
   if (!parsed) return url;
   const type = parsed[1]!.trim();
-  const mediaType = /^[\w.+-]{1,64}\/[\w.+-]{1,64}$/.test(type) ? type : "";
+  const mediaType = MEDIA_TYPE_PATTERN.test(type) ? type : "";
   return `data:${mediaType},…`;
 };
 
@@ -191,14 +205,14 @@ export const withoutDataPayload = (url: string) => {
 export const consoleText = (message: ConsoleMessage) =>
   message.args().length > 0
     ? message.text()
-    : message.text().replace(/(?<![a-z\d])data:[^,;]*[,;][\s\S]*/i, withoutDataPayload);
+    : message.text().replace(CONSOLE_TEXT_PATTERN, withoutDataPayload);
 
 // Split on LF alone: a value keeps any U+2028 that a multiline regex would treat as a line end.
 const withoutTreeDataPayloads = (tree: string) =>
   tree
     .split("\n")
     .map((line) => {
-      const url = /^(\s*- \/url: )(.*)$/s.exec(line);
+      const url = URL_PATTERN.exec(line);
       return url ? url[1] + withoutDataPayload(url[2]!) : line;
     })
     .join("\n");
@@ -358,7 +372,7 @@ const dottedPattern = (values: ReadonlyArray<string>) => {
     .flatMap((value) => {
       const json = JSON.stringify(value).slice(1, -1);
       // Playwright writes control characters like JSON does, with \xNN for the unnamed ones.
-      const quoted = value.replace(/[\\"\p{Cc}]/gu, (char) =>
+      const quoted = value.replace(QUOTED_PATTERN, (char) =>
         '\\"\b\f\n\r\t'.includes(char)
           ? JSON.stringify(char).slice(1, -1)
           : `\\x${char.charCodeAt(0).toString(16).padStart(2, "0")}`,
@@ -369,7 +383,7 @@ const dottedPattern = (values: ReadonlyArray<string>) => {
     // Longest first, so a form inside another never leaves the rest showing.
     .toSorted((a, b) => b.form.length - a.form.length)
     .map(({ form, word }) => {
-      const literal = form.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const literal = form.replace(REGEX_SPECIAL_CHARS, "\\$&");
       return word ? `(?<![\\p{L}\\p{N}_])${literal}(?![\\p{L}\\p{N}_])` : literal;
     });
   if (sources.length === 0) return undefined;
@@ -576,7 +590,7 @@ const capture = async (
   const redacted = withoutTreeDataPayloads(tree);
   const accessibilityTree = (dotted ? maskTree(redacted, dotted) : redacted)
     .slice(0, MAX_VISIBLE_TEXT_LENGTH)
-    .replace(/\[ref=((?:f\d+)?e\d+)\]/g, (_match, nativeRef: string) => {
+    .replace(ACCESSIBILITY_TREE_PATTERN, (_match, nativeRef: string) => {
       const ref = `houston-${generation}-${nativeRef}`;
       state.refs.set(ref, nativeRef);
       return `[ref=${ref}]`;
@@ -896,7 +910,7 @@ const NET_ERROR_CODES: Readonly<Record<string, number>> = {
 
 export const parseNetError = (errorText: string) => {
   // Names can hold digits, as in ERR_HTTP2_PROTOCOL_ERROR.
-  const description = /ERR_[A-Z\d_]+/.exec(errorText)?.[0] ?? errorText;
+  const description = DESCRIPTION_PATTERN.exec(errorText)?.[0] ?? errorText;
   return { description, code: NET_ERROR_CODES[description] ?? -2 };
 };
 

@@ -24,6 +24,13 @@ import {
 } from "@houston-app/source-control-core/server/discovery";
 import { findAuthenticatedGitLabHost, parseGitLabAuthStatusHosts } from "./gitLabAuthStatus.ts";
 
+const ACCOUNT_PATTERN = /Logged in to .* as\s+([^\s(]+)/iu;
+const ACCOUNT_PATTERN_2 = /Logged in to .* account\s+([^\s(]+)/iu;
+const ACCOUNT_PATTERN_3 = /account:\s*([^\s(]+)/iu;
+const AUTHORITY_PATTERN = /^[a-z][a-z0-9+.-]*:\/\/([^/]+)/iu;
+const REMOTE_HOST_PATTERN = /^[^@:/]+@/u;
+const MATCH_PATTERN = /^\/(.+)\/-\/(merge_requests|issues)\/([1-9]\d*)(?:\/.*)?$/;
+
 const decodeLinkSubject = Schema.decodeUnknownEffect(
   Schema.fromJsonString(
     Schema.Struct({ title: Schema.String, description: Schema.NullOr(Schema.String) }),
@@ -61,11 +68,7 @@ function parseGitLabAuth(input: SourceControlAuthProbeInput) {
   const authenticatedHost = findAuthenticatedGitLabHost(parseGitLabAuthStatusHosts(output));
   const account =
     authenticatedHost?.account ??
-    matchFirst(output, [
-      /Logged in to .* as\s+([^\s(]+)/iu,
-      /Logged in to .* account\s+([^\s(]+)/iu,
-      /account:\s*([^\s(]+)/iu,
-    ]);
+    matchFirst(output, [ACCOUNT_PATTERN, ACCOUNT_PATTERN_2, ACCOUNT_PATTERN_3]);
   const host = authenticatedHost?.host ?? parseCliHost(output);
 
   if (account) {
@@ -151,10 +154,10 @@ export const discovery = {
   authRetryArgs: ["auth", "status", "--all"],
   // glab host matching requires the remote's exact spelling.
   remoteRefinementArgs: ({ provider, remoteUrl }) => {
-    const authority = /^[a-z][a-z0-9+.-]*:\/\/([^/]+)/iu.exec(remoteUrl.trim())?.[1];
+    const authority = AUTHORITY_PATTERN.exec(remoteUrl.trim())?.[1];
     const remoteHost = authority
       ? authority.slice(authority.lastIndexOf("@") + 1)
-      : remoteUrl.trim().replace(/^[^@:/]+@/u, "");
+      : remoteUrl.trim().replace(REMOTE_HOST_PATTERN, "");
     const host = remoteHost.toLowerCase().startsWith(provider.name.toLowerCase())
       ? remoteHost.slice(0, provider.name.length)
       : provider.name;
@@ -219,9 +222,7 @@ export const make = Effect.gen(function* () {
     resolveLink: (input) => {
       // Automatic enrichment must not send ambient CLI credentials to a host from message text.
       if (input.url.host !== "gitlab.com") return undefined;
-      const match = /^\/(.+)\/-\/(merge_requests|issues)\/([1-9]\d*)(?:\/.*)?$/.exec(
-        input.url.pathname,
-      );
+      const match = MATCH_PATTERN.exec(input.url.pathname);
       if (!match) return undefined;
       return readLinkSubject(
         input,

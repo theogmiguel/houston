@@ -7,6 +7,9 @@ import type {
 } from "@houston-app/contracts";
 import * as DateTime from "effect/DateTime";
 
+const TEXT_PATTERN = /<!--[\s\S]*?-->/g;
+const WHITESPACE_RUN = /\s+/g;
+
 /** Bounds consecutive comment-only wakes to stop bot reply loops; check, conflict, or push news resets it. */
 export const PULL_REQUEST_WATCH_WAKE_LIMIT = 10;
 /** How long a head may go without any check before the agent is told none reported. */
@@ -159,10 +162,7 @@ export function evaluatePullRequestWatch(
 }
 
 function snippet(body: string): string {
-  const text = body
-    .replaceAll(/<!--[\s\S]*?-->/g, " ")
-    .replaceAll(/\s+/g, " ")
-    .trim();
+  const text = body.replaceAll(TEXT_PATTERN, " ").replaceAll(WHITESPACE_RUN, " ").trim();
   if (text.length <= SNIPPET_LENGTH) return text;
   // Half an emoji serializes to a lone surrogate escape, which provider JSON parsers reject.
   const last = text.charCodeAt(SNIPPET_LENGTH - 4);

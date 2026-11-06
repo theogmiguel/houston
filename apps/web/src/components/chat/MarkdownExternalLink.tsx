@@ -7,6 +7,9 @@ import { sourceControlClients } from "@houston-app/client-runtime/source-control
 import { cn } from "../../lib/utils";
 import { sourceControlIcon } from "../../sourceControlPresentation";
 
+const PROTOCOL_PATTERN = /^(?:https?:\/\/)/i;
+const BREAKABLE_EXTERNAL_LINK_TEXT_PATTERN = /\s+|\S+/g;
+
 const MARKDOWN_LINK_FAVICON_CLASS_NAME = "block size-full shrink-0 select-none";
 
 const failedFaviconHosts = new Set<string>();
@@ -49,21 +52,23 @@ const MarkdownLinkFavicon = memo(function MarkdownLinkFavicon({ host }: { host: 
 });
 
 function leadingExternalLinkTextLength(text: string): number {
-  const protocol = /^(?:https?:\/\/)/i.exec(text)?.[0];
+  const protocol = PROTOCOL_PATTERN.exec(text)?.[0];
   if (protocol) return protocol.length;
   return Math.min(text.length, 1);
 }
 
 // Keep short labels such as PR numbers intact in narrow table columns.
 function breakableExternalLinkText(text: string): ReactNode[] {
-  return Array.from(text.matchAll(/\s+|\S+/g), ({ 0: word, index: start }) =>
-    word.length <= 16 ? (
-      word
-    ) : (
-      <span key={start} className="[overflow-wrap:anywhere]">
-        {word}
-      </span>
-    ),
+  return Array.from(
+    text.matchAll(BREAKABLE_EXTERNAL_LINK_TEXT_PATTERN),
+    ({ 0: word, index: start }) =>
+      word.length <= 16 ? (
+        word
+      ) : (
+        <span key={start} className="[overflow-wrap:anywhere]">
+          {word}
+        </span>
+      ),
   );
 }
 

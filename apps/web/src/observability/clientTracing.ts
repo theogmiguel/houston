@@ -17,6 +17,8 @@ import * as PrimaryEnvironmentHttpLayer from "../environments/primary/httpLayer"
 import { isDesktopHost } from "../env";
 import { APP_VERSION } from "~/branding";
 
+const SCHEME_PATTERN = /:$/;
+
 const DEFAULT_EXPORT_INTERVAL_MS = 1_000;
 interface NavigatorUserAgentData {
   readonly platform: string;
@@ -124,7 +126,7 @@ async function applyClientTracingConfig(): Promise<void> {
     const error = squashAtomCommandFailure(delegateResult);
     const tracesUrl = new URL(otlpTracesUrl);
     console.warn("Failed to configure client tracing exporter", {
-      scheme: tracesUrl.protocol.replace(/:$/, ""),
+      scheme: tracesUrl.protocol.replace(SCHEME_PATTERN, ""),
       host: tracesUrl.hostname,
       port: tracesUrl.port || undefined,
       exportIntervalMs,

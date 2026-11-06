@@ -11,6 +11,22 @@ import { normalizeHostname } from "@houston-app/shared/hostClassification";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as Result from "effect/Result";
 
+const INFER_DEVICE_TYPE_PATTERN = /bot|crawler|spider|slurp|curl|wget/;
+const INFER_DEVICE_TYPE_PATTERN_2 = /ipad|tablet/;
+const INFER_DEVICE_TYPE_PATTERN_3 = /iphone|android.+mobile|mobile/;
+const INFER_BROWSER_PATTERN = /edg(?:e|a|ios)?\//;
+const INFER_BROWSER_PATTERN_2 = /opr\/|opios\//;
+const INFER_BROWSER_PATTERN_3 = /firefox\/|fxios\//;
+const INFER_BROWSER_PATTERN_4 = /electron\//;
+const INFER_BROWSER_PATTERN_5 = /chrome\//;
+const INFER_BROWSER_PATTERN_6 = /crios\//;
+const INFER_BROWSER_PATTERN_7 = /safari\//;
+const INFER_OS_PATTERN = /iphone|ipad|ipod/;
+const INFER_OS_PATTERN_2 = /android/;
+const INFER_OS_PATTERN_3 = /mac os x|macintosh/;
+const INFER_OS_PATTERN_4 = /windows nt/;
+const INFER_OS_PATTERN_5 = /linux/;
+
 const SESSION_COOKIE_NAME = "houston_session";
 
 /** Cookies span ports; use separate names for servers sharing a hostname. */
@@ -114,13 +130,13 @@ function inferDeviceType(userAgent: string | undefined): AuthClientMetadataDevic
   }
 
   const normalized = userAgent.toLowerCase();
-  if (/bot|crawler|spider|slurp|curl|wget/.test(normalized)) {
+  if (INFER_DEVICE_TYPE_PATTERN.test(normalized)) {
     return "bot";
   }
-  if (/ipad|tablet/.test(normalized)) {
+  if (INFER_DEVICE_TYPE_PATTERN_2.test(normalized)) {
     return "tablet";
   }
-  if (/iphone|android.+mobile|mobile/.test(normalized)) {
+  if (INFER_DEVICE_TYPE_PATTERN_3.test(normalized)) {
     return "mobile";
   }
   return "desktop";
@@ -131,12 +147,14 @@ function inferBrowser(userAgent: string | undefined): string | undefined {
     return undefined;
   }
   const normalized = userAgent.toLowerCase();
-  if (/edg(?:e|a|ios)?\//.test(normalized)) return "Edge";
-  if (/opr\/|opios\//.test(normalized)) return "Opera";
-  if (/firefox\/|fxios\//.test(normalized)) return "Firefox";
-  if (/electron\//.test(normalized)) return "Electron";
-  if (/chrome\//.test(normalized) || /crios\//.test(normalized)) return "Chrome";
-  if (/safari\//.test(normalized) && !/chrome\//.test(normalized)) return "Safari";
+  if (INFER_BROWSER_PATTERN.test(normalized)) return "Edge";
+  if (INFER_BROWSER_PATTERN_2.test(normalized)) return "Opera";
+  if (INFER_BROWSER_PATTERN_3.test(normalized)) return "Firefox";
+  if (INFER_BROWSER_PATTERN_4.test(normalized)) return "Electron";
+  if (INFER_BROWSER_PATTERN_5.test(normalized) || INFER_BROWSER_PATTERN_6.test(normalized))
+    return "Chrome";
+  if (INFER_BROWSER_PATTERN_7.test(normalized) && !INFER_BROWSER_PATTERN_5.test(normalized))
+    return "Safari";
   return undefined;
 }
 
@@ -145,11 +163,11 @@ function inferOs(userAgent: string | undefined): string | undefined {
     return undefined;
   }
   const normalized = userAgent.toLowerCase();
-  if (/iphone|ipad|ipod/.test(normalized)) return "iOS";
-  if (/android/.test(normalized)) return "Android";
-  if (/mac os x|macintosh/.test(normalized)) return "macOS";
-  if (/windows nt/.test(normalized)) return "Windows";
-  if (/linux/.test(normalized)) return "Linux";
+  if (INFER_OS_PATTERN.test(normalized)) return "iOS";
+  if (INFER_OS_PATTERN_2.test(normalized)) return "Android";
+  if (INFER_OS_PATTERN_3.test(normalized)) return "macOS";
+  if (INFER_OS_PATTERN_4.test(normalized)) return "Windows";
+  if (INFER_OS_PATTERN_5.test(normalized)) return "Linux";
   return undefined;
 }
 

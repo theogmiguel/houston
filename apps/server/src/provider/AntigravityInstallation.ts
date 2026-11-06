@@ -41,6 +41,10 @@ import {
   type AntigravityReleaseAsset,
 } from "./antigravityRelease.ts";
 
+const FROM_EXTERNAL_PATTERN = /^[a-f0-9]{64}$/u;
+const PATH_CANDIDATES_PATTERN = /^"|"$/gu;
+const DETAIL_PATTERN = /\b(?:AF_INET6|enforce_kernel_ipv6_support)\b/;
+
 const DRIVER = ProviderDriverKind.make("antigravity");
 const DOWNLOAD_TIMEOUT = "45 minutes";
 const VALIDATION_TIMEOUT = "90 seconds";
@@ -261,7 +265,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
     if (
       Option.isSome(realVersions) &&
       path.dirname(directory) === realVersions.value &&
-      /^[a-f0-9]{64}$/u.test(path.basename(directory))
+      FROM_EXTERNAL_PATTERN.test(path.basename(directory))
     ) {
       const installed = yield* completedRelease(path.basename(directory));
       return { ...installed, executablePath, harnessPath, source } satisfies AntigravityExecutable;
@@ -282,7 +286,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
         : processEnvironment.PATH;
     return (pathValue ?? "")
       .split(platform === "win32" ? ";" : ":")
-      .map((directory) => directory.trim().replace(/^"|"$/gu, ""))
+      .map((directory) => directory.trim().replace(PATH_CANDIDATES_PATTERN, ""))
       .filter((directory) => directory.length > 0)
       .map((directory) => path.resolve(directory, binary));
   };
@@ -426,8 +430,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
       Effect.mapError((cause) => {
         if (isInstallationError(cause)) return cause;
         const detail =
-          isAcpProcessExitedError(cause) &&
-          /\b(?:AF_INET6|enforce_kernel_ipv6_support)\b/.test(cause.stderr ?? "")
+          isAcpProcessExitedError(cause) && DETAIL_PATTERN.test(cause.stderr ?? "")
             ? "Antigravity requires IPv6 socket support. Enable IPv6 in this environment. On WSL, remove ipv6.disable=1 from .wslconfig and run wsl --shutdown."
             : "The downloaded Antigravity runtime could not start in this environment.";
         return installationError("verify", detail, cause);

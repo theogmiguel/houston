@@ -11,6 +11,14 @@ import * as Semaphore from "effect/Semaphore";
 
 import { SshPasswordPromptError } from "./errors.ts";
 
+const TRAILING_PATH_SEPARATORS = /[\\/]+$/u;
+const IS_SSH_AUTH_FAILURE_PATTERN =
+  /permission denied \((?:publickey|password|keyboard-interactive|hostbased|gssapi-with-mic)[^)]*\)/u;
+const IS_SSH_AUTH_FAILURE_PATTERN_2 = /authentication failed/u;
+const IS_SSH_AUTH_FAILURE_PATTERN_3 = /too many authentication failures/u;
+const IS_SSH_AGENT_SIGNING_FAILURE_PATTERN =
+  /sign_and_send_pubkey: signing failed(?: for [^\n]* from agent:|: (?:agent refused operation|communication with agent failed))/u;
+
 export interface SshPasswordRequest {
   readonly destination: string;
   readonly username: string | null;
@@ -70,7 +78,7 @@ function joinSshAskpassPath(
   fileName: string,
   platform: NodeJS.Platform,
 ): string {
-  const trimmed = directory.replace(/[\\/]+$/u, "");
+  const trimmed = directory.replace(TRAILING_PATH_SEPARATORS, "");
   return platform === "win32" ? `${trimmed}\\${fileName}` : `${trimmed}/${fileName}`;
 }
 
@@ -239,18 +247,14 @@ export function isSshAuthFailure(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   const normalized = message.toLowerCase();
   return (
-    /permission denied \((?:publickey|password|keyboard-interactive|hostbased|gssapi-with-mic)[^)]*\)/u.test(
-      normalized,
-    ) ||
-    /authentication failed/u.test(normalized) ||
-    /too many authentication failures/u.test(normalized)
+    IS_SSH_AUTH_FAILURE_PATTERN.test(normalized) ||
+    IS_SSH_AUTH_FAILURE_PATTERN_2.test(normalized) ||
+    IS_SSH_AUTH_FAILURE_PATTERN_3.test(normalized)
   );
 }
 
 // A local agent signing failure cannot be remedied by the remote account password.
 export function isSshAgentSigningFailure(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return /sign_and_send_pubkey: signing failed(?: for [^\n]* from agent:|: (?:agent refused operation|communication with agent failed))/u.test(
-    message,
-  );
+  return IS_SSH_AGENT_SIGNING_FAILURE_PATTERN.test(message);
 }

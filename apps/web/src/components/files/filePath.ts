@@ -1,6 +1,10 @@
 import type { ProjectEntry } from "@houston-app/contracts";
 import { isWindowsAbsolutePath, isHostPath } from "@houston-app/shared/path";
 
+const PATH_SEPARATOR = /[\\/]/;
+const PATH_PATTERN = /^[A-Za-z]:$/;
+const IS_LISTABLE_HOST_FOLDER_PATTERN = /^\\\\[^\\/]+$/;
+
 export interface FileBreadcrumb {
   label: string;
   path: string;
@@ -14,7 +18,7 @@ export interface FileBreadcrumbChild extends ProjectEntry {
 export function fileBreadcrumbs(projectName: string, relativePath: string): FileBreadcrumb[] {
   const hostPath = isHostPath(relativePath);
   const separator = isWindowsAbsolutePath(relativePath) ? "\\" : "/";
-  const parts = relativePath.split(/[\\/]/).filter(Boolean);
+  const parts = relativePath.split(PATH_SEPARATOR).filter(Boolean);
   const root = relativePath.startsWith("\\\\") ? "\\\\" : relativePath.startsWith("/") ? "/" : "";
   return [
     ...(hostPath ? [] : [{ label: projectName, path: "", kind: "project" as const }]),
@@ -24,7 +28,7 @@ export function fileBreadcrumbs(projectName: string, relativePath: string): File
         label: part,
         // A bare drive (`C:`) means the drive's current directory; its root is `C:\`.
         // A bare `~` is not a host path; the home folder is `~/`.
-        path: /^[A-Za-z]:$/.test(path) ? `${path}\\` : hostPath && path === "~" ? "~/" : path,
+        path: PATH_PATTERN.test(path) ? `${path}\\` : hostPath && path === "~" ? "~/" : path,
         kind: index === parts.length - 1 ? ("file" as const) : ("directory" as const),
       };
     }),
@@ -38,7 +42,7 @@ export function breadcrumbPathOf(relativePath: string): string {
 
 /** UNC servers are not listable directories; their shares are. */
 export function isListableHostFolder(path: string): boolean {
-  return isHostPath(path) && !/^\\\\[^\\/]+$/.test(path);
+  return isHostPath(path) && !IS_LISTABLE_HOST_FOLDER_PATTERN.test(path);
 }
 
 function trailCrumbIndex(trail: string, path: string): number {

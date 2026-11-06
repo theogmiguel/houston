@@ -12,6 +12,9 @@ import {
   HOUSTON_PI_MCP_EXTENSION_PATH_ENV,
 } from "./mcpExtensionSource.ts";
 
+const BACKSLASH = /\\/g;
+const TRAILING_SLASHES = /\/+$/;
+
 const RESERVED_PI_LAUNCH_ARGUMENTS = new Set([
   "--continue",
   "-c",
@@ -164,7 +167,7 @@ function bearerTokenFromAuthorizationHeader(header: string): string {
 }
 
 function normalizedPiPath(value: string): string {
-  return value.replace(/\\/g, "/").replace(/\/+$/, "");
+  return value.replace(BACKSLASH, "/").replace(TRAILING_SLASHES, "");
 }
 
 function hasExplicitExtension(args: ReadonlyArray<string>, extensionPath: string): boolean {
@@ -221,7 +224,7 @@ function withoutToolSelectionArgs(args: ReadonlyArray<string>): ReadonlyArray<st
 }
 
 function piHoustonMcpExtensionDestPath(cacheDir: string): string {
-  return `${cacheDir.replace(/\\/g, "/")}/${PI_HOUSTON_MCP_EXTENSION_FILENAME}`;
+  return `${cacheDir.replace(BACKSLASH, "/")}/${PI_HOUSTON_MCP_EXTENSION_FILENAME}`;
 }
 
 export const materializePiHoustonMcpExtension = Effect.fn("materializePiHoustonMcpExtension")(

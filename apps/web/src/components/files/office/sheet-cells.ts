@@ -7,6 +7,9 @@ import {
   type Selection,
 } from "@betteroffice/xlsx/headless";
 
+const MATCH_PATTERN = /^\$?([A-Z]{1,3})\$?([1-9]\d*)$/i;
+const COLUMN_INDEX_PATTERN = /^[A-Z]{1,3}$/i;
+
 /** The sheet's last cell, zero-based: row 1,048,576 in column XFD. */
 export const lastCell = { row: 1048575, col: 16383 };
 
@@ -156,7 +159,7 @@ export function contains(range: CellRange, cell: CellAddr) {
 }
 
 function parseCell(a1: string): CellAddr | undefined {
-  const match = /^\$?([A-Z]{1,3})\$?([1-9]\d*)$/i.exec(a1);
+  const match = MATCH_PATTERN.exec(a1);
 
   if (!match) return undefined;
 
@@ -170,7 +173,7 @@ function parseCell(a1: string): CellAddr | undefined {
 
 /** A column's zero-based index from its letters; NaN for anything but one to three letters. */
 function columnIndex(letters: string) {
-  if (!/^[A-Z]{1,3}$/i.test(letters)) return Number.NaN;
+  if (!COLUMN_INDEX_PATTERN.test(letters)) return Number.NaN;
 
   return (
     [...letters.toUpperCase()].reduce(

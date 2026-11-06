@@ -1,3 +1,17 @@
+const MATCH_PATTERN = /^(\s*)([\s\S]*?)(\s*)$/;
+const BACKTICK_RUN = /`+/g;
+const LONGEST_RUN_PATTERN = /`{3,}/g;
+const OUTSIDE_CODE_FENCES_PATTERN = /((`{3,})[\s\S]*?(?:\2|$))/;
+const DECLARED_PATTERN = /(?:^|\s)language-(\S+)/;
+const TRAILING_NEWLINE = /\n$/;
+const NEWLINE_RUN = /\n+/g;
+const BLANK_LINE_RUN = /\n{3,}/g;
+const HTTP_SCHEME = /^https?:\/\//i;
+const HEADING_LEVEL_PATTERN = /^H([1-6])$/;
+const TIDY_MARKDOWN_PATTERN = /[ \t]+(?=\n)/g;
+const WHITESPACE_RUN = /\s+/g;
+const CSV_CELL_PATTERN = /[",\n]/;
+
 const SKIPPED_TAGS = new Set(["BUTTON", "INPUT", "SCRIPT", "STYLE", "TEMPLATE"]);
 const SKIPPED_CLASS_NAMES = ["select-none", "sr-only"];
 const SANITIZED_HTML_SELECTOR = [
@@ -22,7 +36,7 @@ function isSkippedElement(element: Element): boolean {
 }
 
 function wrapInlineMarker(content: string, marker: string): string {
-  const match = /^(\s*)([\s\S]*?)(\s*)$/.exec(content);
+  const match = MATCH_PATTERN.exec(content);
   const core = match?.[2] ?? "";
   if (!core) return content;
   return `${match?.[1] ?? ""}${marker}${core}${marker}${match?.[3] ?? ""}`;
@@ -40,7 +54,7 @@ function isBlockCodeElement(element: Element, content: string): boolean {
 }
 
 function wrapInlineCode(code: string): string {
-  const longestRun = [...(code.match(/`+/g) ?? [])].reduce(
+  const longestRun = [...(code.match(BACKTICK_RUN) ?? [])].reduce(
     (max, run) => Math.max(max, run.length),
     0,
   );
@@ -50,7 +64,7 @@ function wrapInlineCode(code: string): string {
 }
 
 function codeFenceFor(code: string): string {
-  const longestRun = [...(code.match(/`{3,}/g) ?? [])].reduce(
+  const longestRun = [...(code.match(LONGEST_RUN_PATTERN) ?? [])].reduce(
     (max, run) => Math.max(max, run.length),
     0,
   );
@@ -60,7 +74,7 @@ function codeFenceFor(code: string): string {
 function outsideCodeFences(markdown: string, tidy: (prose: string) => string): string {
   // A fence closes only at its own opening run, so split yields [prose, fence, run] triples.
   return markdown
-    .split(/((`{3,})[\s\S]*?(?:\2|$))/)
+    .split(OUTSIDE_CODE_FENCES_PATTERN)
     .map((part, index) => (index % 3 === 0 ? tidy(part) : index % 3 === 1 ? part : ""))
     .join("");
 }
@@ -68,13 +82,13 @@ function outsideCodeFences(markdown: string, tidy: (prose: string) => string): s
 function resolveCodeBlockLanguage(pre: Element): string | null {
   const declared =
     pre.closest("[data-language]")?.getAttribute("data-language") ??
-    /(?:^|\s)language-(\S+)/.exec(pre.querySelector("code")?.className ?? "")?.[1] ??
+    DECLARED_PATTERN.exec(pre.querySelector("code")?.className ?? "")?.[1] ??
     null;
   return declared && declared !== "text" ? declared : null;
 }
 
 export function serializeCodeBlockToMarkdown(source: string, language: string | null): string {
-  const code = source.replace(/\n$/, "");
+  const code = source.replace(TRAILING_NEWLINE, "");
   const fence = codeFenceFor(code);
   return `${fence}${language ?? ""}\n${code}\n${fence}\n\n`;
 }
@@ -84,7 +98,7 @@ function serializeCodeBlock(pre: Element): string {
 }
 
 function serializeTableCell(cell: Element): string {
-  return serializeChildren(cell, true).replace(/\n+/g, " ").trim();
+  return serializeChildren(cell, true).replace(NEWLINE_RUN, " ").trim();
 }
 
 function tableSeparatorFor(headerCells: Element[]): string {
@@ -129,7 +143,7 @@ function serializeListItem(
   const bullet = ordered ? `${index}. ` : "- ";
   const marker = `${bullet}${task}`;
   let content = outsideCodeFences(serializeChildren(item, inTableCell), (prose) =>
-    prose.replace(/\n{3,}/g, "\n\n"),
+    prose.replace(BLANK_LINE_RUN, "\n\n"),
   ).trim();
   if (!item.querySelector(":scope > p")) {
     content = outsideCodeFences(content, (prose) => prose.replace(/\n{2,}/g, "\n"));
@@ -152,7 +166,7 @@ function serializeList(list: Element, ordered: boolean, inTableCell: boolean): s
 
 function serializeBlockquote(quote: Element, inTableCell: boolean): string {
   const content = outsideCodeFences(serializeChildren(quote, inTableCell), (prose) =>
-    prose.replace(/\n{3,}/g, "\n\n"),
+    prose.replace(BLANK_LINE_RUN, "\n\n"),
   ).trim();
   if (!content) return "";
   const quoted = content
@@ -177,7 +191,7 @@ function serializeAnchor(anchor: Element, inTableCell: boolean): string {
   if (markdownCopy !== null) return escapeTablePipes(markdownCopy, inTableCell);
   const content = serializeChildren(anchor, inTableCell);
   const href = escapeTablePipes(anchor.getAttribute("href") ?? "", inTableCell);
-  if (!/^https?:\/\//i.test(href)) return content;
+  if (!HTTP_SCHEME.test(href)) return content;
   const label = content.trim();
   if (!label) return "";
   if (label === href) return href;
@@ -219,7 +233,7 @@ function serializeNode(node: Node, inTableCell = false): string {
   }
   if (isSkippedElement(element)) return "";
 
-  const headingLevel = /^H([1-6])$/.exec(element.tagName)?.[1];
+  const headingLevel = HEADING_LEVEL_PATTERN.exec(element.tagName)?.[1];
   if (headingLevel) {
     return `${"#".repeat(Number(headingLevel))} ${serializeChildren(element, inTableCell).trim()}\n\n`;
   }
@@ -325,13 +339,13 @@ function soleCodeBlock(container: Node): Element | null {
 
 function tidyMarkdown(markdown: string): string {
   return outsideCodeFences(markdown, (prose) =>
-    prose.replace(/[ \t]+(?=\n)/g, "").replace(/\n{3,}/g, "\n\n"),
+    prose.replace(TIDY_MARKDOWN_PATTERN, "").replace(BLANK_LINE_RUN, "\n\n"),
   ).trim();
 }
 
 export function serializeRenderedMarkdownFragment(container: Node): string {
   const codeBlock = soleCodeBlock(container);
-  if (codeBlock) return (codeBlock.textContent ?? "").replace(/\n$/, "");
+  if (codeBlock) return (codeBlock.textContent ?? "").replace(TRAILING_NEWLINE, "");
   return tidyMarkdown(serializeChildren(container));
 }
 
@@ -358,8 +372,8 @@ function csvCellText(cell: Element): string {
 }
 
 function csvCell(value: string): string {
-  const normalized = value.replace(/\s+/g, " ").trim();
-  return /[",\n]/.test(normalized) ? `"${normalized.replaceAll('"', '""')}"` : normalized;
+  const normalized = value.replace(WHITESPACE_RUN, " ").trim();
+  return CSV_CELL_PATTERN.test(normalized) ? `"${normalized.replaceAll('"', '""')}"` : normalized;
 }
 
 export function serializeTableElementToCsv(table: Element): string {

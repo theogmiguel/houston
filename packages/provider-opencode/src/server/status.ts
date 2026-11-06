@@ -25,6 +25,11 @@ import type { ProbedOpenCode } from "./versionProbe.ts";
 import type { Agent, ProviderListResponse } from "@opencode-ai/sdk/v2";
 import * as OpenCodeServerOwner from "./OpenCodeServerOwner.ts";
 
+const FORMAT_OPEN_CODE_PROBE_ERROR_PATTERN =
+  /(?:^|\s)(?:status(?:\s+code)?(?:\s*[:=]\s*|\s+)|http(?:\/\d(?:\.\d)?)?\s+)(?:401|403)\b/;
+const FORMAT_OPEN_CODE_PROBE_ERROR_PATTERN_2 = /\b(?:unauthorized|forbidden)\b/;
+const TITLE_CASE_SLUG_PATTERN = /[-_/]+/;
+
 const OPENCODE_PRESENTATION = {
   displayName: "OpenCode",
   showInteractionModeToggle: false,
@@ -77,10 +82,8 @@ function formatOpenCodeProbeError(input: {
   if (input.isExternalServer) {
     // Bare auth-code digits can be part of the endpoint's port or path.
     if (
-      /(?:^|\s)(?:status(?:\s+code)?(?:\s*[:=]\s*|\s+)|http(?:\/\d(?:\.\d)?)?\s+)(?:401|403)\b/.test(
-        lower,
-      ) ||
-      /\b(?:unauthorized|forbidden)\b/.test(lower)
+      FORMAT_OPEN_CODE_PROBE_ERROR_PATTERN.test(lower) ||
+      FORMAT_OPEN_CODE_PROBE_ERROR_PATTERN_2.test(lower)
     ) {
       return {
         installed: true,
@@ -171,7 +174,7 @@ const logDiscoveryFailure = Effect.fnUntraced(function* (input: {
 
 function titleCaseSlug(value: string): string {
   const segments: Array<string> = [];
-  for (const segment of value.split(/[-_/]+/)) {
+  for (const segment of value.split(TITLE_CASE_SLUG_PATTERN)) {
     if (segment.length > 0) {
       segments.push(segment.charAt(0).toUpperCase() + segment.slice(1));
     }

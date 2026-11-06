@@ -12,6 +12,12 @@ import { parse as parseYamlDocument } from "yaml";
 
 import { expandHomePath } from "@houston-app/provider-core/server/pathExpansion";
 
+const REPAIRED_PATTERN = /^([\w-]+:[ \t]*)([^\r\n]*)/gm;
+const SCALAR_PATTERN = /[ \t]+#/;
+const REPAIRED_PATTERN_2 = /:[ \t]/;
+const REPAIRED_PATTERN_3 = /^(?:["'[\]{}|>&*!#%@`]|[-?:](?:[ \t]|$))/;
+const NON_ID_CHAR = /[^a-zA-Z0-9_-]/g;
+
 type ClaudeSkillScope = "user" | "project";
 
 type ClaudeSkillRoot = {
@@ -69,10 +75,10 @@ function parseSkillFrontmatter(contents: string): SkillFrontmatter {
   } catch {
     // Repair Claude's accepted ': ' scalars without disturbing comments or YAML structure.
     const repaired = frontmatter.replace(
-      /^([\w-]+:[ \t]*)([^\r\n]*)/gm,
+      REPAIRED_PATTERN,
       (line, prefix: string, value: string) => {
-        const scalar = value.split(/[ \t]+#/)[0] ?? "";
-        if (!/:[ \t]/.test(scalar) || /^(?:["'[\]{}|>&*!#%@`]|[-?:](?:[ \t]|$))/.test(scalar)) {
+        const scalar = value.split(SCALAR_PATTERN)[0] ?? "";
+        if (!REPAIRED_PATTERN_2.test(scalar) || REPAIRED_PATTERN_3.test(scalar)) {
           return line;
         }
         return `${prefix}${JSON.stringify(scalar)}${value.slice(scalar.length)}`;
@@ -560,7 +566,7 @@ export const discoverClaudeSkills = Effect.fn("discoverClaudeSkills")(function* 
         const unprefixedName = declaredName?.startsWith(`${root.prefix}:`)
           ? declaredName.slice(root.prefix.length + 1)
           : declaredName;
-        name = `${root.prefix}:${(unprefixedName || entry).replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+        name = `${root.prefix}:${(unprefixedName || entry).replace(NON_ID_CHAR, "-")}`;
         // Advertise only exact native names the shared composer grammar can invoke.
         const [mention] = `$${name}`.matchAll(SKILL_MENTION_PATTERN);
         if (mention?.[2] !== name) continue;

@@ -11,6 +11,8 @@ import {
   runRanAfter,
 } from "@houston-app/shared/orchestrationV2ThreadError";
 
+const WHITESPACE_RUN = /\s+/g;
+
 type Work = OrchestrationV2RestartCancelledBackgroundWork;
 type Attempt = Pick<OrchestrationV2RunAttempt, "id" | "runId">;
 
@@ -18,7 +20,7 @@ const MAX_LABEL_LENGTH = 160;
 
 function compactLabel(value: unknown, maxLength = MAX_LABEL_LENGTH): string | undefined {
   if (typeof value !== "string") return undefined;
-  const text = value.replaceAll(/\s+/g, " ").trim();
+  const text = value.replaceAll(WHITESPACE_RUN, " ").trim();
   if (text.length === 0) return undefined;
   if (text.length <= maxLength) return text;
   // Half an emoji serializes to a lone surrogate escape, which provider JSON parsers reject.

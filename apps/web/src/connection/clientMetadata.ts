@@ -5,6 +5,24 @@ import type {
   HostBridge,
 } from "@houston-app/contracts";
 
+const IS_IPADOS_DESKTOP_USER_AGENT_PATTERN = /macintosh/i;
+const IS_IPADOS_DESKTOP_USER_AGENT_PATTERN_2 = /mac/i;
+const BROWSER_CLIENT_OS_PATTERN = /iphone|ipad|ipod/i;
+const BROWSER_CLIENT_OS_PATTERN_2 = /android/i;
+const BROWSER_CLIENT_OS_PATTERN_3 = /cros/i;
+const BROWSER_CLIENT_OS_PATTERN_4 = /windows/i;
+const BROWSER_CLIENT_OS_PATTERN_5 = /macintosh|mac os x/i;
+const BROWSER_CLIENT_OS_PATTERN_6 = /linux|x11/i;
+const BROWSER_FAMILY_PATTERN = /edg(?:e|a|ios)?\//i;
+const BROWSER_FAMILY_PATTERN_2 = /opr\/|opios\//i;
+const BROWSER_FAMILY_PATTERN_3 = /samsungbrowser\//i;
+const BROWSER_FAMILY_PATTERN_4 = /firefox\/|fxios\//i;
+const BROWSER_FAMILY_PATTERN_5 = /chrome\/|crios\//i;
+const BROWSER_FAMILY_PATTERN_6 = /safari\//i;
+const BROWSER_DEVICE_TYPE_PATTERN = /ipad|tablet|kindle|silk/i;
+const BROWSER_DEVICE_TYPE_PATTERN_2 = /mobile/i;
+const BROWSER_DEVICE_TYPE_PATTERN_3 = /iphone|ipod|android.+mobile|mobile/i;
+
 interface BrowserIdentity {
   readonly userAgent: string;
   readonly platform: string;
@@ -26,8 +44,8 @@ function clientOsFromElectronPlatform(platform: string | undefined): ClientOs {
 
 function isIpadosDesktopUserAgent(identity: BrowserIdentity): boolean {
   return (
-    /macintosh/i.test(identity.userAgent) &&
-    /mac/i.test(identity.platform) &&
+    IS_IPADOS_DESKTOP_USER_AGENT_PATTERN.test(identity.userAgent) &&
+    IS_IPADOS_DESKTOP_USER_AGENT_PATTERN_2.test(identity.platform) &&
     identity.maxTouchPoints > 1
   );
 }
@@ -35,23 +53,23 @@ function isIpadosDesktopUserAgent(identity: BrowserIdentity): boolean {
 function browserClientOs(identity: BrowserIdentity): ClientOs {
   const userAgent = identity.userAgent;
   if (userAgent.trim() === "") return "unknown";
-  if (/iphone|ipad|ipod/i.test(userAgent) || isIpadosDesktopUserAgent(identity)) return "iOS";
-  if (/android/i.test(userAgent)) return "Android";
-  if (/cros/i.test(userAgent)) return "ChromeOS";
-  if (/windows/i.test(userAgent)) return "Windows";
-  if (/macintosh|mac os x/i.test(userAgent)) return "macOS";
-  if (/linux|x11/i.test(userAgent)) return "Linux";
+  if (BROWSER_CLIENT_OS_PATTERN.test(userAgent) || isIpadosDesktopUserAgent(identity)) return "iOS";
+  if (BROWSER_CLIENT_OS_PATTERN_2.test(userAgent)) return "Android";
+  if (BROWSER_CLIENT_OS_PATTERN_3.test(userAgent)) return "ChromeOS";
+  if (BROWSER_CLIENT_OS_PATTERN_4.test(userAgent)) return "Windows";
+  if (BROWSER_CLIENT_OS_PATTERN_5.test(userAgent)) return "macOS";
+  if (BROWSER_CLIENT_OS_PATTERN_6.test(userAgent)) return "Linux";
   return "other";
 }
 
 function browserFamily(userAgent: string): string {
   if (userAgent.trim() === "") return "unknown";
-  if (/edg(?:e|a|ios)?\//i.test(userAgent)) return "Edge";
-  if (/opr\/|opios\//i.test(userAgent)) return "Opera";
-  if (/samsungbrowser\//i.test(userAgent)) return "Samsung Internet";
-  if (/firefox\/|fxios\//i.test(userAgent)) return "Firefox";
-  if (/chrome\/|crios\//i.test(userAgent)) return "Chrome";
-  if (/safari\//i.test(userAgent)) return "Safari";
+  if (BROWSER_FAMILY_PATTERN.test(userAgent)) return "Edge";
+  if (BROWSER_FAMILY_PATTERN_2.test(userAgent)) return "Opera";
+  if (BROWSER_FAMILY_PATTERN_3.test(userAgent)) return "Samsung Internet";
+  if (BROWSER_FAMILY_PATTERN_4.test(userAgent)) return "Firefox";
+  if (BROWSER_FAMILY_PATTERN_5.test(userAgent)) return "Chrome";
+  if (BROWSER_FAMILY_PATTERN_6.test(userAgent)) return "Safari";
   return "other";
 }
 
@@ -59,13 +77,14 @@ function browserDeviceType(identity: BrowserIdentity): AuthClientMetadataDeviceT
   const userAgent = identity.userAgent;
   if (userAgent.trim() === "") return "unknown";
   if (
-    /ipad|tablet|kindle|silk/i.test(userAgent) ||
-    (/android/i.test(userAgent) && !/mobile/i.test(userAgent)) ||
+    BROWSER_DEVICE_TYPE_PATTERN.test(userAgent) ||
+    (BROWSER_CLIENT_OS_PATTERN_2.test(userAgent) &&
+      !BROWSER_DEVICE_TYPE_PATTERN_2.test(userAgent)) ||
     isIpadosDesktopUserAgent(identity)
   ) {
     return "tablet";
   }
-  if (/iphone|ipod|android.+mobile|mobile/i.test(userAgent)) return "mobile";
+  if (BROWSER_DEVICE_TYPE_PATTERN_3.test(userAgent)) return "mobile";
   return "desktop";
 }
 

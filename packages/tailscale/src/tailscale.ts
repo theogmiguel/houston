@@ -8,6 +8,13 @@ import * as Stream from "effect/Stream";
 import { HttpClient, HttpClientRequest } from "effect/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
+const NORMALIZED_PATTERN = /\.$/u;
+const MAPPED_PATTERN = /^::ffff:([\da-f]{1,4}):([\da-f]{1,4})$/u;
+const LITERAL_PATTERN = /^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?!$)|$)){4}$/u;
+const DIGITS_ONLY = /^\d+$/u;
+const EXPAND_PROXY_PATTERN = /^(?:https?:\/\/|unix:)/u;
+const MATCH_PATTERN = /^(https?|tcp):\/\/(?:[^@/?#]*@)?(\[[^\]]*\]|[^/?#:]*)(?::(\d*))?/iu;
+
 export const DEFAULT_TAILSCALE_SERVE_PORT = 443;
 /**
  * Bounds `tailscale status` and `tailscale debug prefs`. Allows the 1.8-2.6 s
@@ -179,7 +186,7 @@ function normalizeMagicDnsName(status: TailscaleStatusJson): string | null {
     return null;
   }
 
-  const normalized = dnsName.trim().replace(/\.$/u, "");
+  const normalized = dnsName.trim().replace(NORMALIZED_PATTERN, "");
   return normalized.length > 0 ? normalized : null;
 }
 
@@ -535,7 +542,7 @@ const reaches = (hostname: string, bindHost: string): "exact" | "either" | undef
     address = normalizeHostname(new URL(`http://[${address}]`).hostname);
   }
   // An IPv4-mapped address can be written as hex, such as ::ffff:7f00:1 for 127.0.0.1.
-  const mapped = /^::ffff:([\da-f]{1,4}):([\da-f]{1,4})$/u.exec(address);
+  const mapped = MAPPED_PATTERN.exec(address);
   if (mapped !== null) {
     const high = Number.parseInt(mapped[1]!, 16);
     const low = Number.parseInt(mapped[2]!, 16);
@@ -544,9 +551,7 @@ const reaches = (hostname: string, bindHost: string): "exact" | "either" | undef
     address = address.slice("::ffff:".length);
   }
   // Strict, as Go's ParseIP is; anything else, such as `127.1` or `box.1`, goes to the resolver.
-  const literal =
-    address.includes(":") ||
-    /^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?!$)|$)){4}$/u.test(address);
+  const literal = address.includes(":") || LITERAL_PATTERN.test(address);
   if (!literal) return "either";
   if (address === "::")
     return bindHost === "127.0.0.1" || bindHost === "::1" ? "either" : undefined;
@@ -555,11 +560,11 @@ const reaches = (hostname: string, bindHost: string): "exact" | "either" | undef
 
 /** The URL Tailscale's proxy dials for a handler's `Proxy`, expanded as its `expandProxyArg` does. */
 const expandProxy = (proxy: string) =>
-  /^\d+$/u.test(proxy)
+  DIGITS_ONLY.test(proxy)
     ? `http://127.0.0.1:${proxy}`
     : proxy.startsWith("https+insecure://")
       ? `https://${proxy.slice("https+insecure://".length)}`
-      : /^(?:https?:\/\/|unix:)/u.test(proxy)
+      : EXPAND_PROXY_PATTERN.test(proxy)
         ? proxy
         : `http://${proxy}`;
 
@@ -568,7 +573,7 @@ const expandProxy = (proxy: string) =>
  * URL, which rejects `box.1` and rewrites `127.1`; none for a Unix socket.
  */
 const dialedHostPort = (url: string) => {
-  const match = /^(https?|tcp):\/\/(?:[^@/?#]*@)?(\[[^\]]*\]|[^/?#:]*)(?::(\d*))?/iu.exec(url);
+  const match = MATCH_PATTERN.exec(url);
   if (match === null) return undefined;
   const [, scheme = "", host = "", port] = match;
   return { host, port: port || (scheme.toLowerCase() === "https" ? "443" : "80") };

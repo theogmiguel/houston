@@ -14,6 +14,8 @@ import * as NetAddress from "effect/net/NetAddress";
 import * as ServerConfig from "./config.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 
+const IPV4_PATTERN = /^::ffff:/i;
+
 export interface HeadlessServeAccessInfo {
   readonly connectionString: string;
   readonly token: string;
@@ -56,7 +58,7 @@ export const VIRTUAL_INTERFACE =
  * plain or IPv4-mapped IPv6 form.
  */
 export const isPrivateNetworkAddress = (address: string): boolean => {
-  const ipv4 = address.replace(/^::ffff:/i, "");
+  const ipv4 = address.replace(IPV4_PATTERN, "");
   return NodeNet.isIPv4(ipv4) && !ipv4.startsWith("169.254.") && isPrivateNetworkHost(ipv4);
 };
 

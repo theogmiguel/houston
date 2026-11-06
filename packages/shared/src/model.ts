@@ -12,6 +12,15 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { copySorted } from "./Array.ts";
 
+const IS_CLAUDE_ULTRATHINK_PROMPT_PATTERN = /\bultrathink\b/i;
+const FORMAT_CODEX_MODEL_NAME_PATTERN = /^gpt/i;
+const FORMAT_CODEX_MODEL_NAME_PATTERN_2 = /-([a-z])/g;
+const FORMAT_MODEL_SLUG_NAME_PATTERN = /^gpt-\d/i;
+const FORMAT_MODEL_SLUG_NAME_PATTERN_2 =
+  /^(claude-(opus|sonnet|haiku|fable)|gemini|grok|composer)-\d/i;
+const FORMAT_MODEL_SLUG_NAME_PATTERN_3 = /^(claude-[a-z]+-\d+)-(\d{1,2})(?=-|\[|$)/i;
+const APPLY_CLAUDE_PROMPT_EFFORT_PREFIX_PATTERN = /^\/[^\s/]+(?:\s|$)/u;
+
 const DEFAULT_PROVIDER_DRIVER_KIND = ProviderDriverKind.make("codex");
 
 export function modelSelectionCommandType(
@@ -324,7 +333,7 @@ export function buildExplicitProviderOptionSelectionsFromDescriptors(
 }
 
 export function isClaudeUltrathinkPrompt(text: string | null | undefined): boolean {
-  return typeof text === "string" && /\bultrathink\b/i.test(text);
+  return typeof text === "string" && IS_CLAUDE_ULTRATHINK_PROMPT_PATTERN.test(text);
 }
 
 export function codexModelFamily(slug: string): string {
@@ -332,19 +341,21 @@ export function codexModelFamily(slug: string): string {
 }
 
 export function formatCodexModelName(name: string): string {
-  return name.replace(/^gpt/i, "GPT").replace(/-([a-z])/g, (_, c) => "-" + c.toUpperCase());
+  return name
+    .replace(FORMAT_CODEX_MODEL_NAME_PATTERN, "GPT")
+    .replace(FORMAT_CODEX_MODEL_NAME_PATTERN_2, (_, c) => "-" + c.toUpperCase());
 }
 
 export function formatModelSlugName(slug: string): string {
   const separator = slug.lastIndexOf("/") + 1;
   const prefix = slug.slice(0, separator);
   const name = slug.slice(separator);
-  if (/^gpt-\d/i.test(name)) return prefix + formatCodexModelName(name);
-  if (!/^(claude-(opus|sonnet|haiku|fable)|gemini|grok|composer)-\d/i.test(name)) return slug;
+  if (FORMAT_MODEL_SLUG_NAME_PATTERN.test(name)) return prefix + formatCodexModelName(name);
+  if (!FORMAT_MODEL_SLUG_NAME_PATTERN_2.test(name)) return slug;
   return (
     prefix +
     name
-      .replace(/^(claude-[a-z]+-\d+)-(\d{1,2})(?=-|\[|$)/i, "$1.$2")
+      .replace(FORMAT_MODEL_SLUG_NAME_PATTERN_3, "$1.$2")
       .split("-")
       .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
       .join(" ")
@@ -518,7 +529,7 @@ export function applyClaudePromptEffortPrefix(
     return trimmed;
   }
   // Prefixing slash commands prevents Claude invocation; command names allow any token without a second slash.
-  if (effort !== "ultrathink" || /^\/[^\s/]+(?:\s|$)/u.test(trimmed)) {
+  if (effort !== "ultrathink" || APPLY_CLAUDE_PROMPT_EFFORT_PREFIX_PATTERN.test(trimmed)) {
     return trimmed;
   }
   if (trimmed.startsWith("Ultrathink:")) {

@@ -11,6 +11,14 @@ import { parseKeybindingShortcut } from "@houston-app/shared/keybindings";
 import { formatShortcutKeyLabel, formatShortcutLabel, shortcutConflictKey } from "../keybindings";
 import { isMacPlatform, isWindowsPlatform } from "./utils";
 
+const TEXT_PATTERN = /^Press\s+/i;
+const GTK_PATTERN = /^((?:<[^<>]+>)+)([^<>]+)$/;
+const INPUT_PATTERN = /<([^<>]+)>/g;
+const INPUT_PATTERN_2 = /\b(super|win|primary)\b/gi;
+const PARSE_DESKTOP_SNAP_SHOT_SHORTCUT_PATTERN = /^[^\s<>]$/u;
+const PARSE_DESKTOP_SNAP_SHOT_SHORTCUT_PATTERN_2 =
+  /^(?:f(?:[1-9]|1\d|2[0-4])|enter|tab|escape|backspace|delete|insert|home|end|pageup|pagedown|arrow(?:left|right|up|down)|pause|printscreen)$/i;
+
 const DESKTOP_KEY_ALIASES: Readonly<Record<string, string>> = {
   return: "enter",
   page_up: "pageup",
@@ -24,11 +32,11 @@ const DESKTOP_KEY_ALIASES: Readonly<Record<string, string>> = {
 };
 
 export function parseDesktopSnapShotShortcut(label: string): KeybindingShortcut | null {
-  const text = label.trim().replace(/^Press\s+/i, "");
+  const text = label.trim().replace(TEXT_PATTERN, "");
   if (!text) return null;
-  const gtk = text.match(/^((?:<[^<>]+>)+)([^<>]+)$/);
-  const input = (gtk ? gtk[1]!.replace(/<([^<>]+)>/g, "$1+") + gtk[2]! : text).replace(
-    /\b(super|win|primary)\b/gi,
+  const gtk = text.match(GTK_PATTERN);
+  const input = (gtk ? gtk[1]!.replace(INPUT_PATTERN, "$1+") + gtk[2]! : text).replace(
+    INPUT_PATTERN_2,
     (modifier) => (modifier.toLowerCase() === "primary" ? "ctrl" : "meta"),
   );
   if (input !== "+" && input.endsWith("+") && !input.endsWith("++")) return null;
@@ -37,10 +45,8 @@ export function parseDesktopSnapShotShortcut(label: string): KeybindingShortcut 
   const key = DESKTOP_KEY_ALIASES[shortcut.key] ?? shortcut.key;
   if (
     key !== " " &&
-    !/^[^\s<>]$/u.test(key) &&
-    !/^(?:f(?:[1-9]|1\d|2[0-4])|enter|tab|escape|backspace|delete|insert|home|end|pageup|pagedown|arrow(?:left|right|up|down)|pause|printscreen)$/i.test(
-      key,
-    )
+    !PARSE_DESKTOP_SNAP_SHOT_SHORTCUT_PATTERN.test(key) &&
+    !PARSE_DESKTOP_SNAP_SHOT_SHORTCUT_PATTERN_2.test(key)
   ) {
     return null;
   }

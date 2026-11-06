@@ -65,6 +65,10 @@ import type {
   ProviderListCursor,
 } from "@houston-app/source-control-core/server/PullRequestProvider";
 
+const LISTABLE_PATTERN = /^(?:none|any)$/iu;
+const DIFF_CURSOR_PAGE_PATTERN = /^[1-9][0-9]{0,6}$/;
+const PATCH_PATTERN = /\n?$/;
+
 export class GitLabMergeRequestReadError extends Schema.TaggedError<GitLabMergeRequestReadError>()(
   "GitLabMergeRequestReadError",
   {
@@ -528,7 +532,7 @@ function filterParams(input: {
   const filters = input.filters;
   if (filters === undefined) return [];
   const listable = (names: ReadonlyArray<string>) =>
-    names.filter((name) => !name.includes(",") && !/^(?:none|any)$/iu.test(name.trim()));
+    names.filter((name) => !name.includes(",") && !LISTABLE_PATTERN.test(name.trim()));
   const required = listable(
     (filters.labels ?? []).flatMap((group) => (group.length === 1 ? group : [])),
   );
@@ -551,7 +555,7 @@ function filterParams(input: {
 }
 
 function diffCursorPage(cursor: string): number | null {
-  return /^[1-9][0-9]{0,6}$/.test(cursor) ? Number(cursor) : null;
+  return DIFF_CURSOR_PAGE_PATTERN.test(cursor) ? Number(cursor) : null;
 }
 
 function searchParams(search: string | undefined): ReadonlyArray<readonly [string, string]> {
@@ -812,7 +816,7 @@ export const make = Effect.gen(function* () {
         const morePages = !legacy && decoded.success.rawCount >= diffPageSize(input.commit);
         return Effect.succeed({
           // Terminate slices so a hunkless header cannot run into the next slice.
-          patch: patch.length === 0 ? patch : patch.replace(/\n?$/, "\n"),
+          patch: patch.length === 0 ? patch : patch.replace(PATCH_PATTERN, "\n"),
           truncated: decoded.success.truncated,
           nextCursor: morePages ? String(input.page + 1) : null,
         });

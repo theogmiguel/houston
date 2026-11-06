@@ -38,6 +38,8 @@ import * as Orchestrator from "./Orchestrator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import { isTerminalRunStatus } from "./ThreadManagementService.ts";
 
+const SHELL_SCRIPT_PATTERN = /\\(["\\$`])/gu;
+
 const SLOW_SYNC_INTERVAL_MS = 15 * 60 * 1_000;
 // Every server polls every open linked pull request, and most of them sit untouched for days.
 // One nobody has updated for QUIET_AFTER_MS is read on the quiet cadence instead of each sweep;
@@ -95,7 +97,7 @@ function shellScript(input: string): string {
     : Array.from(
         wrapped.matchAll(SHELL_WORD_PIECE),
         ([, double, single, escaped, bare]) =>
-          double?.replace(/\\(["\\$`])/gu, "$1") ?? single ?? escaped ?? bare,
+          double?.replace(SHELL_SCRIPT_PATTERN, "$1") ?? single ?? escaped ?? bare,
       ).join("");
 }
 

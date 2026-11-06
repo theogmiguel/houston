@@ -12,6 +12,8 @@ import * as Semaphore from "effect/Semaphore";
 import * as ProcessRunner from "../processRunner.ts";
 import DEVICE_TOOL_VERSIONS from "./deviceToolVersions.json" with { type: "json" };
 
+const INSPECT_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+(?:-[a-zA-Z0-9.-]+)?$/;
+
 const DEVICE_HUB_PACKAGE = "expo-device-hub";
 export const DEVICE_HUB_VERSION = DEVICE_TOOL_VERSIONS[DEVICE_HUB_PACKAGE];
 const AGENT_DEVICE_PACKAGE = "agent-device";
@@ -224,7 +226,7 @@ export const deviceToolVersions = Effect.fn("DeviceToolchain.versions")(function
       ),
     );
     const versions = yield* Effect.filter(names, (version) =>
-      /^[0-9]+\.[0-9]+\.[0-9]+(?:-[a-zA-Z0-9.-]+)?$/.test(version)
+      INSPECT_PATTERN.test(version)
         ? Effect.gen(function* () {
             const paths = toolPaths(path, baseDir, { ...spec, version });
             const sentinel = yield* fs.readFileString(paths.sentinelPath).pipe(

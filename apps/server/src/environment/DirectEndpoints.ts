@@ -27,6 +27,8 @@ import {
   VIRTUAL_INTERFACE,
 } from "../startupAccess.ts";
 
+const IS_TAILSCALE_INTERFACE_PATTERN = /^tailscale/i;
+
 type NetworkInterfacesMap = ReturnType<typeof NodeOS.networkInterfaces>;
 
 // Stay below the config discovery timeout so slow Tailscale drops only the tailnet name.
@@ -49,7 +51,7 @@ const isTailscaleInterface = (
   name: string,
   entries: ReadonlyArray<NodeOS.NetworkInterfaceInfo>,
 ): boolean =>
-  /^tailscale/i.test(name) ||
+  IS_TAILSCALE_INTERFACE_PATTERN.test(name) ||
   entries.some((entry) => entry.family === "IPv6" && isTailnetHost(entry.address));
 
 // Windows adapter names are mutable; Linux bridges can inherit these MACs.

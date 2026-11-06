@@ -2,6 +2,11 @@ import { isWindowsAbsolutePath } from "@houston-app/shared/path";
 
 import { safeDecodeURIComponent } from "@houston-app/shared/markdownLinks";
 
+const PREFIX_PATTERN = /^(?:[a-z]:\/|\/\/[^/]+\/[^/]+(?:\/|$))/i;
+const TRAILING_SLASH = /\/$/;
+const MEDIA_URL_REFERENCE_PATTERN = /^(?:https?:\/\/|\/\/)/i;
+const PATH_SEPARATOR = /[\\/]/;
+
 export type MediaReference =
   | {
       readonly kind: "file";
@@ -14,7 +19,7 @@ function absolutePathParts(path: string) {
   const windows = isWindowsAbsolutePath(path) || path.startsWith("//");
   const normalized = windows ? path.replaceAll("\\", "/") : path;
   const prefix = windows
-    ? /^(?:[a-z]:\/|\/\/[^/]+\/[^/]+(?:\/|$))/i.exec(normalized)?.[0]
+    ? PREFIX_PATTERN.exec(normalized)?.[0]
     : normalized.startsWith("/")
       ? "/"
       : undefined;
@@ -26,7 +31,7 @@ function absolutePathParts(path: string) {
     if (segment === "..") segments.pop();
     else segments.push(segment);
   }
-  const root = prefix.replace(/\/$/, "");
+  const root = prefix.replace(TRAILING_SLASH, "");
   return { root: windows ? root.toLowerCase() : root, segments, windows };
 }
 
@@ -61,7 +66,7 @@ export function mediaFileReference(
 export function mediaUrlReference(
   url: string,
 ): Extract<MediaReference, { kind: "url" }> | undefined {
-  if (!/^(?:https?:\/\/|\/\/)/i.test(url)) return undefined;
+  if (!MEDIA_URL_REFERENCE_PATTERN.test(url)) return undefined;
   try {
     const parsed = new URL(url.startsWith("//") ? `https:${url}` : url);
     return parsed.protocol === "http:" || parsed.protocol === "https:"
@@ -76,7 +81,7 @@ export function mediaUrlReference(
 export function mediaReferenceFileName(reference: MediaReference): string | undefined {
   if (reference.kind === "file") {
     const windows = isWindowsAbsolutePath(reference.path) || reference.path.startsWith("//");
-    return reference.path.split(windows ? /[\\/]/ : "/").at(-1) || undefined;
+    return reference.path.split(windows ? PATH_SEPARATOR : "/").at(-1) || undefined;
   }
 
   let basename: string | undefined;

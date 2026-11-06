@@ -29,6 +29,8 @@ import {
   SERVICE_STOP_MARKER_FILE,
 } from "./cloud/serviceProtocol.ts";
 
+const READ_SERVICE_ENVIRONMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
 const HANDOFF_DELAY_MS = 2_000;
 /**
  * Migrations count toward it and can scale with the database: tens of GB on a cold page cache
@@ -104,7 +106,7 @@ export async function readServiceEnvironment(
   }
   for (const [name, value] of Object.entries(NodeUtil.parseEnv(contents))) {
     if (
-      /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) &&
+      READ_SERVICE_ENVIRONMENT_PATTERN.test(name) &&
       !MANAGED_SERVICE_ENV_NAMES.has(name.toUpperCase())
     ) {
       environment[name] = value;

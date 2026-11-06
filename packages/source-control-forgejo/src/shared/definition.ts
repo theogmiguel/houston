@@ -15,6 +15,9 @@ import {
 } from "@houston-app/source-control-core/shared/definition";
 import { icon } from "./icon.ts";
 
+const BASE_URL_PATTERN = /^https?:/iu;
+const EDGE_SLASHES = /^\/+|\/+$/g;
+
 const CHECKOUT_COMMAND = /^tea\s+(?:pr|pulls)\s+checkout\s+(.+)$/i;
 const CHANGE_REQUEST_REFERENCE =
   /^https?:\/\/[^/\s]+\/(?:[^/\s]+\/)+[^/\s]+\/pulls\/(\d+)(?:[/?#].*)?$/i;
@@ -109,7 +112,7 @@ export const definition = defineSourceControl({
       ? {
           kind: KIND,
           name: "Forgejo",
-          baseUrl: /^https?:/iu.test(remoteUrl) ? new URL(remoteUrl).origin : `https://${host}`,
+          baseUrl: BASE_URL_PATTERN.test(remoteUrl) ? new URL(remoteUrl).origin : `https://${host}`,
         }
       : null,
   changeRequestHost,
@@ -120,18 +123,14 @@ export const definition = defineSourceControl({
       return isChangeRequestInProjectRepository(changeRequestHost(identity), identity, link);
     return (
       web.host.toLowerCase() === (link.authority ?? link.host).toLowerCase() &&
-      web.pathname.replace(/^\/+|\/+$/g, "").toLowerCase() === link.repository.toLowerCase()
+      web.pathname.replace(EDGE_SLASHES, "").toLowerCase() === link.repository.toLowerCase()
     );
   },
   // A server mounted below a path serves only repositories under that mount.
   canReadChangeRequestOnHost: (identity, link) => {
     const web = resolvedWebUrl(identity);
     if (!web) return isChangeRequestOnProjectHost(changeRequestHost(identity), identity, link);
-    const mount = web.pathname
-      .replace(/^\/+|\/+$/g, "")
-      .split("/")
-      .slice(0, -2)
-      .join("/");
+    const mount = web.pathname.replace(EDGE_SLASHES, "").split("/").slice(0, -2).join("/");
     return (
       web.host.toLowerCase() === (link.authority ?? link.host).toLowerCase() &&
       (!mount || link.repository.toLowerCase().startsWith(`${mount.toLowerCase()}/`))

@@ -6,6 +6,8 @@ import * as Schema from "effect/Schema";
 
 import { isLocalEnvironmentDisabled } from "../../localEnvironment";
 
+const NORMALIZE_HOSTNAME_PATTERN = /^\[(.*)\]$/;
+
 const PrimaryEnvironmentTargetSource = Schema.Literals([
   "configured",
   "window-origin",
@@ -152,10 +154,7 @@ function swapBaseUrlProtocol(
 }
 
 function normalizeHostname(hostname: string): string {
-  return hostname
-    .trim()
-    .toLowerCase()
-    .replace(/^\[(.*)\]$/, "$1");
+  return hostname.trim().toLowerCase().replace(NORMALIZE_HOSTNAME_PATTERN, "$1");
 }
 
 export function isLoopbackHostname(hostname: string): boolean {

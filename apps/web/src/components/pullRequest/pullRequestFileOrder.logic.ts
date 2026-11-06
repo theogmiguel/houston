@@ -2,6 +2,10 @@ import type { FileDiffMetadata } from "@pierre/diffs";
 
 import { resolveFileDiffPath } from "~/lib/diffRendering";
 
+const DIFF_FILE_TIER_PATTERN = /\.generated\./;
+const DIFF_FILE_TIER_PATTERN_2 = /\.(?:test|spec)\./;
+const NAME_PATTERN = /\.(?:test|spec)\..*$/;
+
 export type DiffFileTier = "source" | "test" | "generated";
 
 const GENERATED_FILE_NAMES = new Set([
@@ -32,13 +36,13 @@ function diffFileTier(path: string): DiffFileTier {
     name.endsWith(".snap") ||
     name.endsWith(".min.js") ||
     name.endsWith(".min.css") ||
-    /\.generated\./.test(name) ||
+    DIFF_FILE_TIER_PATTERN.test(name) ||
     segments.slice(0, -1).some((segment) => GENERATED_DIRECTORIES.has(segment))
   ) {
     return "generated";
   }
   if (
-    /\.(?:test|spec)\./.test(name) ||
+    DIFF_FILE_TIER_PATTERN_2.test(name) ||
     segments.slice(0, -1).some((segment) => TEST_DIRECTORIES.has(segment))
   ) {
     return "test";
@@ -120,7 +124,7 @@ function orderByImports(
 // `a.logic.test.ts` covers `a.logic.ts` while `a.browser.test.ts` covers `a.ts`, so the longest
 // dotted prefix that names a source file wins.
 function testedSourcePosition(path: string, sourcePositions: ReadonlyMap<string, number>): number {
-  let name = (path.split("/").at(-1) ?? "").replace(/\.(?:test|spec)\..*$/, "");
+  let name = (path.split("/").at(-1) ?? "").replace(NAME_PATTERN, "");
   while (true) {
     const position = sourcePositions.get(name);
     if (position !== undefined) return position;

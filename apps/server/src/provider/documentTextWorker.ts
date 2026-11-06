@@ -6,6 +6,16 @@ import { characterEntities } from "character-entities";
 import { SaxesParser } from "saxes";
 import * as Yauzl from "yauzl";
 
+const PARAGRAPHS_PATTERN = /^h[1-6]$/;
+const LEVEL_PATTERN = /^Heading([1-6])$/i;
+const REPEAT_COUNT_PATTERN = /^[0-9]+$/;
+const ARCHIVE_PATTERN = /\.(xml|rels|xhtml|html|htm|opf|svg)$/i;
+const HEX_PATTERN = /^'([0-9a-f]{2})/i;
+const WORD_PATTERN = /^([a-z]+)(-?\d+)? ?/i;
+const LETTERS_PATTERN = /^[A-Z]+/;
+const WHITESPACE_RUN = /\s+/g;
+const EXTRACT_DOCUMENT_TEXT_PATTERN = /\n(?:[ \t]*\n){2,}/g;
+
 const MAX_INPUT = 16 * 1024 * 1024;
 const MAX_EXPANDED = 32 * 1024 * 1024;
 const MAX_OUTPUT = 1_000_000;
@@ -85,14 +95,14 @@ function* paragraphs(node: XmlNode): Generator<TextPart, void> {
     if (typeof child === "string") yield child;
     else if (["br", "line-break", "cr"].includes(child.name)) yield "\n";
     else if (["tbl", "table"].includes(child.name)) yield* table(child);
-    else if (["p", "h"].includes(child.name) || /^h[1-6]$/.test(child.name)) {
+    else if (["p", "h"].includes(child.name) || PARAGRAPHS_PATTERN.test(child.name)) {
       const style = all(child, "pStyle").next().value?.attrs.val ?? "";
       const level =
         child.name === "h"
           ? Number(child.attrs["outline-level"]) || 1
-          : /^h[1-6]$/.test(child.name)
+          : PARAGRAPHS_PATTERN.test(child.name)
             ? Number(child.name[1])
-            : Number(style.match(/^Heading([1-6])$/i)?.[1]) || 0;
+            : Number(style.match(LEVEL_PATTERN)?.[1]) || 0;
       if (level) yield `${"#".repeat(Math.min(6, level))} `;
       yield* text(child);
       yield "\n";
@@ -109,7 +119,8 @@ function* inCell(parts: Iterable<TextPart>): Generator<TextPart, void> {
 }
 function repeatCount(value: string | undefined): number {
   if (value === undefined) return 1;
-  if (!/^[0-9]+$/.test(value) || Number(value) < 1) throw new Error("Invalid repeat count");
+  if (!REPEAT_COUNT_PATTERN.test(value) || Number(value) < 1)
+    throw new Error("Invalid repeat count");
   return Number(value);
 }
 function odfValue(cell: XmlNode): string {
@@ -199,7 +210,7 @@ async function archive(path: string): Promise<Map<string, string>> {
           reject(new Error("Encrypted archive"));
           return;
         }
-        if (!/\.(xml|rels|xhtml|html|htm|opf|svg)$/i.test(entry.fileName)) {
+        if (!ARCHIVE_PATTERN.test(entry.fileName)) {
           zip.readEntry();
           return;
         }
@@ -331,8 +342,8 @@ function* rtf(source: string): Generator<string, void> {
     } else if (char === "}") state = stack.pop() ?? state;
     else if (char === "\\") {
       const rest = source.slice(i + 1, i + 80);
-      const hex = /^'([0-9a-f]{2})/i.exec(rest);
-      const word = /^([a-z]+)(-?\d+)? ?/i.exec(rest);
+      const hex = HEX_PATTERN.exec(rest);
+      const word = WORD_PATTERN.exec(rest);
       if (hex) {
         if (fallback) fallback--;
         else if (!state.skip)
@@ -484,7 +495,7 @@ async function* document(path: string, extension: string): AsyncGenerator<TextPa
           let nextColumn = 0;
           let columnsTruncated = false;
           for (const cell of children(row).filter((node) => node.name === "c")) {
-            const letters = cell.attrs.r?.match(/^[A-Z]+/)?.[0];
+            const letters = cell.attrs.r?.match(LETTERS_PATTERN)?.[0];
             const column = letters
               ? [...letters].reduce((n, char) => n * 26 + char.charCodeAt(0) - 64, 0) - 1
               : nextColumn;
@@ -628,7 +639,7 @@ export async function extractDocumentText(path: string, extension: string): Prom
       let value = raw.slice(0, remaining).replaceAll("\0", "");
       remaining -= Math.min(raw.length, remaining);
       if (cellDepth) {
-        value = value.replaceAll(/\s+/g, " ");
+        value = value.replaceAll(WHITESPACE_RUN, " ");
         const trimmed = value.trim();
         if (trimmed) {
           result += (started && (space || value.startsWith(" ")) ? " " : "") + trimmed;
@@ -642,7 +653,7 @@ export async function extractDocumentText(path: string, extension: string): Prom
     if (!(error instanceof Truncation)) throw error;
     truncated = true;
   }
-  result = result.replaceAll(/\n(?:[ \t]*\n){2,}/g, "\n\n").trim();
+  result = result.replaceAll(EXTRACT_DOCUMENT_TEXT_PATTERN, "\n\n").trim();
   if (!result && !truncated) throw new Error("No text extracted");
   return result + (truncated ? TRUNCATED : "");
 }

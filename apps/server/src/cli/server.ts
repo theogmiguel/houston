@@ -12,6 +12,9 @@ import { awaitLauncherLoss } from "../launcherWatch.ts";
 import { runServer } from "../server.ts";
 import { type CliServerFlags, resolveServerConfig, sharedServerCommandFlags } from "./config.ts";
 
+const PATH_SEPARATOR = /[/\\]/;
+const EXPLICIT_PATH_PATTERN = /^[a-z]:/i;
+
 const encodeCommand = Schema.encodeEffect(Schema.fromJsonString(Schema.String));
 
 // The desktop launcher reads this process's stdout and stderr. Once it is gone,
@@ -65,8 +68,8 @@ export const runDefaultServerCommand = Effect.fn("server.runDefaultServerCommand
       cwd === "." ||
       cwd === ".." ||
       cwd === "~" ||
-      /[/\\]/.test(cwd) ||
-      (platform === "win32" && /^[a-z]:/i.test(cwd));
+      PATH_SEPARATOR.test(cwd) ||
+      (platform === "win32" && EXPLICIT_PATH_PATTERN.test(cwd));
     if (!explicitPath && (!(yield* fs.exists(cwd)) || (yield* fs.stat(cwd)).type !== "Directory")) {
       return yield* new CliError.UserError({
         cause: cwd,

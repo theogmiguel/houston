@@ -4,6 +4,9 @@ import * as Option from "effect/Option";
 
 import type * as SourceControlHost from "@houston-app/source-control-core/server/SourceControlHost";
 
+const PARSE_TEMPLATE_TREE_ENTRIES_PATTERN = /^[0-9a-f]{40,64}$/;
+const CANDIDATES_PATTERN = /\.(?:md|txt)$/i;
+
 const TEMPLATE_MAX_BYTES = 8_000;
 const TREE_LIST_MAX_BYTES = 100_000;
 const TRUNCATION_MARKER = "[truncated]";
@@ -53,7 +56,7 @@ function parseTemplateTreeEntries(output: string): ReadonlyArray<TemplateTreeEnt
       type !== "blob" ||
       (mode !== "100644" && mode !== "100755") ||
       !objectId ||
-      !/^[0-9a-f]{40,64}$/.test(objectId)
+      !PARSE_TEMPLATE_TREE_ENTRIES_PATTERN.test(objectId)
     ) {
       continue;
     }
@@ -109,7 +112,7 @@ const readTemplateDirectory = Effect.fn("gitHubChangeRequestTemplate.readTemplat
         return false;
       }
       const relativePath = entry.path.slice(prefix.length);
-      return !relativePath.includes("/") && /\.(?:md|txt)$/i.test(relativePath);
+      return !relativePath.includes("/") && CANDIDATES_PATTERN.test(relativePath);
     });
 
     const templates: string[] = [];

@@ -5,10 +5,13 @@ import type { EditorView } from "@tiptap/pm/view";
 
 import { isClosingFence, parseOpeningFence, serializeSelection } from "~/composer-rich-text-doc";
 
+const LEADING_WHITESPACE_PATTERN = /^[ \t]*/;
+const TRAILING_PATTERN = /\n[ \t]*\n[ \t]*$/;
+
 const CODE_BLOCK_INDENT = "  ";
 
 function leadingWhitespace(line: string): string {
-  return /^[ \t]*/.exec(line)?.[0] ?? "";
+  return LEADING_WHITESPACE_PATTERN.exec(line)?.[0] ?? "";
 }
 
 function outdentLine(line: string): string {
@@ -70,7 +73,7 @@ export function exitCodeBlockOnTrailingBlankLines(view: EditorView): boolean {
   const { $from, empty } = view.state.selection;
   if (!empty || $from.parent.type.spec.code !== true) return false;
   if ($from.parentOffset !== $from.parent.content.size) return false;
-  const trailing = /\n[ \t]*\n[ \t]*$/.exec($from.parent.textContent);
+  const trailing = TRAILING_PATTERN.exec($from.parent.textContent);
   if (!trailing) return false;
   const transaction = view.state.tr.delete($from.pos - trailing[0].length, $from.pos);
   // Close the fence on exit so following prose is not read as code.

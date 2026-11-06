@@ -76,6 +76,9 @@ import type {
   ThreadComment,
 } from "./pullRequestReviews.graphql.ts";
 
+const HEADER_PATTERN = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/u;
+const TO_FILES_PATCH_PATTERN = /\n?$/;
+
 interface ActorFields {
   readonly __typename?: string | undefined;
   readonly login?: string | null | undefined;
@@ -1478,7 +1481,7 @@ function reviewThreadSnippet(
   diffHunk: string | null | undefined,
 ): ReadonlyArray<PullRequestReviewThreadSnippetLine> {
   const lines = (diffHunk ?? "").split("\n");
-  const header = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/u.exec(lines[0] ?? "");
+  const header = HEADER_PATTERN.exec(lines[0] ?? "");
   if (header === null) return [];
   let oldLine = Number(header[1]);
   let newLine = Number(header[2]);
@@ -1812,7 +1815,11 @@ function toFilesPatch(entries: ReadonlyArray<unknown>): GitHubPullRequestFilesPa
       `--- ${status === "added" ? "/dev/null" : quoteGitPatchPath(`a/${oldPath}`)}`,
       `+++ ${status === "removed" ? "/dev/null" : quoteGitPatchPath(`b/${value.filename}`)}`,
     ].join("\n");
-    sections.push(hunks.length === 0 ? `${header}\n` : `${header}\n${hunks.replace(/\n?$/, "\n")}`);
+    sections.push(
+      hunks.length === 0
+        ? `${header}\n`
+        : `${header}\n${hunks.replace(TO_FILES_PATCH_PATTERN, "\n")}`,
+    );
   }
   return {
     patch: sections.join(""),

@@ -23,6 +23,8 @@ import * as HostProcess from "@houston-app/shared/HostProcess";
 import { createProviderVersionAdvisory } from "./maintenanceResolver.ts";
 import { collectUint8StreamText } from "./collectStreamText.ts";
 
+const MATCH_PATTERN = /\bv?(\d+\.\d+\.\d+)\b/;
+
 const WINDOWS_COMMAND_NOT_FOUND_PATTERNS = [
   /is not recognized as an internal or external command/i,
   /n.o . reconhecido como um comando interno/i,
@@ -132,7 +134,7 @@ export const spawnAndCollect = Effect.fn("snapshotProbe.spawnAndCollect")(functi
 
 export function parseGenericCliVersion(output: string): string | null {
   // Consume v before the digits; v2 has no internal word boundary.
-  const match = output.match(/\bv?(\d+\.\d+\.\d+)\b/);
+  const match = output.match(MATCH_PATTERN);
   return match?.[1] ?? null;
 }
 

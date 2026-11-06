@@ -6,6 +6,8 @@ import * as Context from "effect/Context";
 import { runSshCommand } from "@houston-app/ssh/command";
 import * as Effect from "effect/Effect";
 
+const EDGE_BRACKETS = /^\[|\]$/g;
+
 export const LocalDeviceHostAddresses = Context.Reference<ReadonlySet<string>>(
   "LocalDeviceHostAddresses",
   {
@@ -41,7 +43,7 @@ export const isLocalSshDeviceHost = Effect.fn("isLocalSshDeviceHost")(function* 
     ["proxycommand", "proxyjump"].some((key) => config.has(key) && config.get(key) !== "none")
   )
     return false;
-  const hostname = config.get("hostname")?.replace(/^\[|\]$/g, "");
+  const hostname = config.get("hostname")?.replace(EDGE_BRACKETS, "");
   if (!hostname) return false;
   const addresses = NodeNet.isIP(hostname)
     ? [hostname]

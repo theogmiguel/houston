@@ -1,5 +1,7 @@
 import { readHashParams } from "./remote.ts";
 
+const PARSE_LOOPBACK_PORT_PATTERN = /^\d{1,5}$/;
+
 const CONNECT_AUTH_STATE_PARAM = "state";
 const CONNECT_AUTH_CHALLENGE_PARAM = "challenge";
 const CONNECT_AUTH_PORT_PARAM = "port";
@@ -43,7 +45,7 @@ export function readConnectAuthorizeRequest(url: URL): ConnectAuthorizeRequest |
 }
 
 function parseLoopbackPort(value: string): number | null {
-  if (!/^\d{1,5}$/.test(value)) {
+  if (!PARSE_LOOPBACK_PORT_PATTERN.test(value)) {
     return null;
   }
   const port = Number(value);

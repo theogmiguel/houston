@@ -5,6 +5,8 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
+const COPY_PATTERN = /^\.v2-import-(?:(\d+)-)?[A-Za-z0-9]{6}$/;
+
 export class V2DatabaseImportError extends Schema.TaggedError<V2DatabaseImportError>()(
   "V2DatabaseImportError",
   { sourcePath: Schema.String, destinationPath: Schema.String, cause: Schema.Defect() },
@@ -35,7 +37,7 @@ const removeAbandonedCopies = Effect.fn("removeAbandonedCopies")(function* (dire
     ),
   );
   for (const entry of entries) {
-    const copy = /^\.v2-import-(?:(\d+)-)?[A-Za-z0-9]{6}$/.exec(entry);
+    const copy = COPY_PATTERN.exec(entry);
     if (copy === null || (copy[1] !== undefined && isProcessAlive(Number(copy[1])))) continue;
     yield* fs.remove(path.join(directory, entry), { recursive: true });
   }

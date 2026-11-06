@@ -34,6 +34,8 @@ import * as SourceControlProvider from "@houston-app/source-control-core/server/
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
 import * as HostProcess from "@houston-app/shared/HostProcess";
 import { cloneUrlForProtocol, cloneUrlProtocol } from "@houston-app/shared/cloneUrl";
+
+const NORMALIZED_CLONE_URL_PATTERN = /^([a-z][a-z0-9+.-]*:\/\/[^/?#]+)\?/i;
 const isSourceControlRepositoryError = Schema.is(SourceControlRepositoryError);
 const isSourceControlProviderError = Schema.is(SourceControlProviderError);
 const isGitCommandError = Schema.is(GitCommandError);
@@ -347,7 +349,7 @@ export const make = Effect.gen(function* () {
       });
     };
     // Git misreads @ in a pathless URL's query as userinfo and echoes its suffix as the host.
-    const normalizedCloneUrl = cloneUrl.replace(/^([a-z][a-z0-9+.-]*:\/\/[^/?#]+)\?/i, "$1/?");
+    const normalizedCloneUrl = cloneUrl.replace(NORMALIZED_CLONE_URL_PATTERN, "$1/?");
     yield* git
       .execute({
         operation: "SourceControlRepositoryService.cloneRepository",

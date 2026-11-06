@@ -36,6 +36,8 @@ import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as PreviewAutomationBroker from "../../PreviewAutomationBroker.ts";
 import { PreviewSnapshotToolkit, PreviewStandardToolkit, PreviewToolkit } from "./tools.ts";
 
+const HTTP_SCHEME = /^https?:\/\//i;
+
 /** Whether a preview the agent
  * said nothing about surfaces is the user's `browserAutoShowFloatingPreview`
  * preference, which is desktop-local and unreadable from here — filling in
@@ -90,7 +92,7 @@ const invoke = Effect.fn("PreviewToolkit.invoke")(function* <A>(
     .pipe(Effect.orElseSucceed(() => null));
   return {
     result,
-    ...(page?.url && /^https?:\/\//i.test(page.url) && page.url.length <= 4096
+    ...(page?.url && HTTP_SCHEME.test(page.url) && page.url.length <= 4096
       ? { toolIcon: { _tag: "website" as const, pageUrl: page.url } }
       : {}),
   };

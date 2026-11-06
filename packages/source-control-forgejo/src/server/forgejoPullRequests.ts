@@ -3,6 +3,8 @@ import * as Schema from "effect/Schema";
 import * as Option from "effect/Option";
 import type { ChangeRequest } from "@houston-app/contracts";
 
+const IS_DRAFT_PATTERN = /^(?:\[WIP\]|WIP:)/i;
+
 const Repository = Schema.Struct({
   full_name: Schema.String,
   owner: Schema.Struct({ login: Schema.String }),
@@ -32,7 +34,7 @@ export function toForgejoChangeRequest(raw: typeof ForgejoPullRequestSchema.Type
     title: raw.title,
     url: raw.html_url,
     state: raw.merged ? "merged" : raw.state === "closed" ? "closed" : "open",
-    isDraft: raw.draft ?? /^(?:\[WIP\]|WIP:)/i.test(raw.title),
+    isDraft: raw.draft ?? IS_DRAFT_PATTERN.test(raw.title),
     baseRefName: raw.base.ref,
     headRefName: raw.head.ref,
     ...(raw.head.sha.trim().length > 0 ? { headSha: raw.head.sha.trim() } : {}),

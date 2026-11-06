@@ -45,6 +45,8 @@ import {
 } from "./utils.ts";
 import { requestUrl } from "../requestUrl.ts";
 
+const TRAILING_SLASHES = /\/+$/u;
+
 // Request-derived origins support loopback, Tailscale and tunnels.
 // Signed client metadata keeps unauthenticated registration stateless.
 
@@ -129,7 +131,10 @@ const sameResource = (urls: McpOAuthUrls, presented: string | undefined): boolea
   if (presented === undefined) return true;
   try {
     const url = new URL(presented);
-    return url.hash === "" && `${url.origin}${url.pathname.replace(/\/+$/u, "")}` === urls.resource;
+    return (
+      url.hash === "" &&
+      `${url.origin}${url.pathname.replace(TRAILING_SLASHES, "")}` === urls.resource
+    );
   } catch {
     return false;
   }

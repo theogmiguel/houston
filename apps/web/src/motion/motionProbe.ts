@@ -4,6 +4,8 @@
  * animation drops frames, and is it the start (mount cost) or the middle (layout per frame)".
  */
 
+const WHITESPACE_RUN = /\s+/u;
+
 interface MotionEpisode {
   readonly engine: string;
   /** `data-slot` (or tag) of the elements that moved, most frequent first, with counts. */
@@ -63,7 +65,8 @@ function surfaceName(target: EventTarget | null): string {
     if (named.dataset.gridCell !== undefined) return "grid-cell";
     if (named.dataset.testid !== undefined) return `testid:${named.dataset.testid}`;
   }
-  const className = typeof target.className === "string" ? target.className.split(/\s+/u)[0] : "";
+  const className =
+    typeof target.className === "string" ? target.className.split(WHITESPACE_RUN)[0] : "";
   return `${target.tagName.toLowerCase()}${className ? `.${className}` : ""}`;
 }
 

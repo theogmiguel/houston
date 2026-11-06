@@ -15,6 +15,8 @@ import { OtlpResource, OtlpTracer, OtlpSerialization } from "effect/observabilit
 
 import { makeAsyncRotatingFileSink } from "./logging.ts";
 
+const IS_STRUCTURAL_TAG_PATTERN = /^[A-Za-z][A-Za-z0-9._:/-]*$/;
+
 export const OtlpProtocol = Schema.Literals(["http/json", "http/protobuf"]);
 export type OtlpProtocol = typeof OtlpProtocol.Type;
 export const layerOtlpSerialization = (protocol: OtlpProtocol) =>
@@ -126,7 +128,7 @@ function isStructuralTag(value: unknown): value is string {
     typeof value === "string" &&
     value.length > 0 &&
     value.length <= 128 &&
-    /^[A-Za-z][A-Za-z0-9._:/-]*$/.test(value)
+    IS_STRUCTURAL_TAG_PATTERN.test(value)
   );
 }
 

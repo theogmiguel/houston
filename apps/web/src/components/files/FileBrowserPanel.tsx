@@ -42,6 +42,8 @@ import {
 import { useDirectoryEntries } from "./useDirectoryEntries";
 import { useProjectPathSearch } from "~/state/queries";
 
+const VALID_NAME_PATTERN = /[\u0000-\u001f\u007f]/;
+
 const isProjectFileMutationError = Schema.is(ProjectFileMutationError);
 
 interface FileBrowserPanelProps {
@@ -197,7 +199,7 @@ export default function FileBrowserPanel({
     name !== ".." &&
     !name.includes("/") &&
     !name.includes("\\") &&
-    !/[\u0000-\u001f\u007f]/.test(name);
+    !VALID_NAME_PATTERN.test(name);
 
   const submitEdit = async (value: string) => {
     if (!editing || submittingRef.current) return;

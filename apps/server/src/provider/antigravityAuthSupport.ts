@@ -26,6 +26,10 @@ import {
   resolveAntigravityUserHome,
 } from "./Drivers/AntigravitySkills.ts";
 
+const WHITESPACE = /\s/;
+const PARSE_ANTIGRAVITY_AUTHORIZATION_URL_PATTERN = /^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}\/$/;
+const TRAILING_LINE_BREAK = /\r?\n$/;
+
 export const ANTIGRAVITY_AUTH_STDOUT_PREFIX =
   "Open the following link to authenticate the ACP server: ";
 export const ANTIGRAVITY_AUTH_BROWSER_MARKER = "__HOUSTON_ANTIGRAVITY_AUTH_URL__";
@@ -473,7 +477,7 @@ export const parseAntigravityAuthorizationUrl = Effect.fn("parseAntigravityAutho
   ): Effect.fn.Return<AntigravityAuthorizationUrl, AcpErrors.AcpError> {
     const invalidUrl = () =>
       authSupportError("Antigravity returned an invalid Google sign-in URL.");
-    if (authorizationUrl.length > maxAuthorizationUrlLength || /\s/.test(authorizationUrl)) {
+    if (authorizationUrl.length > maxAuthorizationUrlLength || WHITESPACE.test(authorizationUrl)) {
       return yield* invalidUrl();
     }
     const url = yield* decodeUrl(authorizationUrl).pipe(Effect.mapError(invalidUrl));
@@ -492,9 +496,9 @@ export const parseAntigravityAuthorizationUrl = Effect.fn("parseAntigravityAutho
       state === null ||
       state.length === 0 ||
       state.length > 512 ||
-      /\s/.test(state) ||
+      WHITESPACE.test(state) ||
       redirectUri === null ||
-      !/^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}\/$/.test(redirectUri)
+      !PARSE_ANTIGRAVITY_AUTHORIZATION_URL_PATTERN.test(redirectUri)
     ) {
       return yield* invalidUrl();
     }
@@ -515,7 +519,7 @@ export function makeAntigravityStdoutTransform(
     line: Uint8Array,
   ) {
     if (!authPrefixBytes.every((byte, index) => line[index] === byte)) return [line];
-    const message = new TextDecoder().decode(line).replace(/\r?\n$/, "");
+    const message = new TextDecoder().decode(line).replace(TRAILING_LINE_BREAK, "");
     const request = yield* parseAntigravityAuthorizationUrl(
       message.slice(ANTIGRAVITY_AUTH_STDOUT_PREFIX.length),
     );

@@ -6,6 +6,8 @@ import {
   type ComposerInlineToken,
 } from "@houston-app/shared/composerInlineTokens";
 
+const WHITESPACE = /\s/;
+
 export type ComposerPromptSegment =
   | {
       type: "text";
@@ -158,7 +160,7 @@ export function selectionTouchesMentionBoundary(
 
     if (
       beforeMentionIndex >= 0 &&
-      /\s/.test(prompt[beforeMentionIndex] ?? "") &&
+      WHITESPACE.test(prompt[beforeMentionIndex] ?? "") &&
       rangeIncludesIndex(start, end, beforeMentionIndex)
     ) {
       return true;
@@ -166,7 +168,7 @@ export function selectionTouchesMentionBoundary(
 
     if (
       afterMentionIndex < prompt.length &&
-      /\s/.test(prompt[afterMentionIndex] ?? "") &&
+      WHITESPACE.test(prompt[afterMentionIndex] ?? "") &&
       rangeIncludesIndex(start, end, afterMentionIndex)
     ) {
       return true;

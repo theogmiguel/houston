@@ -5,6 +5,10 @@ import {
   type ProjectScript,
 } from "@houston-app/contracts";
 import * as Schema from "effect/Schema";
+
+const NON_ALPHANUMERIC_RUN = /[^a-z0-9]+/g;
+const EDGE_DASHES = /^-+|-+$/g;
+const NORMALIZE_SCRIPT_ID_PATTERN = /-+$/g;
 const isScriptRunCommand = Schema.is(SCRIPT_RUN_COMMAND_PATTERN);
 
 export interface ProjectScriptInput {
@@ -54,15 +58,17 @@ function normalizeScriptId(value: string): string {
   const cleaned = value
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+    .replace(NON_ALPHANUMERIC_RUN, "-")
+    .replace(EDGE_DASHES, "");
   if (cleaned.length === 0) {
     return "script";
   }
   if (cleaned.length <= MAX_SCRIPT_ID_LENGTH) {
     return cleaned;
   }
-  return cleaned.slice(0, MAX_SCRIPT_ID_LENGTH).replace(/-+$/g, "") || "script";
+  return (
+    cleaned.slice(0, MAX_SCRIPT_ID_LENGTH).replace(NORMALIZE_SCRIPT_ID_PATTERN, "") || "script"
+  );
 }
 
 export function commandForProjectScript(scriptId: string): KeybindingCommand | null {

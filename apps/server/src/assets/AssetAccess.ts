@@ -71,6 +71,9 @@ import { extractIcnsPng } from "./icns.ts";
 import { openMediaFile, readMediaFileHeader, type OpenMediaFile } from "./MediaFile.ts";
 import * as HostProcess from "@houston-app/shared/HostProcess";
 
+const CLAIMS_PATTERN = /\.html?$/i;
+const PATH_SEPARATOR = /[\\/]/;
+
 export const ASSET_ROUTE_PREFIX = "/api/assets";
 
 const SIGNING_SECRET_NAME = "asset-access-signing-key";
@@ -514,7 +517,7 @@ const finalizeWorkspaceFileAsset = Effect.fn("AssetAccess.finalizeWorkspaceFileA
       ? yield* readImageDimensionsFromHeader(canonicalFile)
       : null;
     return {
-      claims: !/\.html?$/i.test(resolved.relativePath)
+      claims: !CLAIMS_PATTERN.test(resolved.relativePath)
         ? {
             version: 1 as const,
             kind: "workspace-file-exact" as const,
@@ -1031,7 +1034,7 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
       ? ({ kind: "file", path: exactWorkspaceFile } satisfies ResolvedAsset)
       : null;
   }
-  const segments = decodedPath.split(/[\\/]/);
+  const segments = decodedPath.split(PATH_SEPARATOR);
   if (
     decodedPath.length === 0 ||
     decodedPath.includes("\0") ||

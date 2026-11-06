@@ -1,5 +1,7 @@
 import type { EnvironmentId } from "@houston-app/contracts";
 
+const TRAILING_PATH_SEPARATORS = /[\\/]+$/;
+
 export function folderDropTarget(input: {
   localEnvironmentDisabled: boolean;
   environmentId: EnvironmentId;
@@ -17,7 +19,7 @@ export function folderDropTarget(input: {
 
 /** A URI-list entry's last segment, used to pair it with the folder File of the same name. */
 function pathBasename(path: string): string {
-  const trimmed = path.replace(/[\\/]+$/, "");
+  const trimmed = path.replace(TRAILING_PATH_SEPARATORS, "");
   return trimmed.slice(Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\")) + 1);
 }
 

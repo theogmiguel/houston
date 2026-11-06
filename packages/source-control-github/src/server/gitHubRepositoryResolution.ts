@@ -4,6 +4,13 @@ import { parseGitRemoteHost } from "@houston-app/source-control-core/shared/defi
 import { definition } from "../shared/definition.ts";
 import { isGitHubHost } from "./GitHubCredentials.ts";
 
+const PARSE_FETCH_REMOTES_PATTERN = /^(\S+)\s+(\S+)\s+\(fetch\)(?:\s+\[[^\]]+\])?$/u;
+const SELECT_GIT_HUB_BASE_REPOSITORY_PATTERN = /^remote\.(.+)\.gh-resolved\s+(\S+)$/u;
+const WITHOUT_GIT_SUFFIX_PATTERN = /\.git\/*$/i;
+const HTTP_SCHEME = /^https?:\/\//i;
+const NUMBERED_PATTERN = /^#?([1-9]\d*)$/;
+const MATCH_PATTERN = /^\/([^/]+)\/([^/]+)\/pull\/([1-9]\d*)(?:\/.*)?$/;
+
 export interface GitHubRepositoryLocator {
   readonly host: string;
   readonly owner: string;
@@ -16,7 +23,7 @@ export function parseFetchRemotes(
   // Partial clones append the promisor filter, e.g. `(fetch) [blob:none]`.
   return remotes
     .split("\n")
-    .map((line) => /^(\S+)\s+(\S+)\s+\(fetch\)(?:\s+\[[^\]]+\])?$/u.exec(line.trim()))
+    .map((line) => PARSE_FETCH_REMOTES_PATTERN.exec(line.trim()))
     .filter((match): match is RegExpExecArray => match !== null)
     .map((match) => ({ name: match[1]!, url: match[2]! }));
 }
@@ -40,7 +47,7 @@ export function selectGitHubBaseRepository(input: {
   }
   const marks = input.resolved
     .split("\n")
-    .map((line) => /^remote\.(.+)\.gh-resolved\s+(\S+)$/u.exec(line.trim()))
+    .map((line) => SELECT_GIT_HUB_BASE_REPOSITORY_PATTERN.exec(line.trim()))
     .filter((match): match is RegExpExecArray => match !== null && repositories.has(match[1]!));
   if (marks.length > 1) return null;
   const [mark] = marks;
@@ -108,9 +115,9 @@ export function parseGitHubRepositorySelector(
   defaultHost: string,
 ): GitHubRepositoryLocator | null {
   // Like gh, a clone URL's `.git` comes off the path, before any trailing slash, query or fragment.
-  const withoutGitSuffix = (path: string) => path.replace(/\.git\/*$/i, "");
+  const withoutGitSuffix = (path: string) => path.replace(WITHOUT_GIT_SUFFIX_PATTERN, "");
   const trimmed = selector.trim();
-  if (/^https?:\/\//i.test(trimmed)) {
+  if (HTTP_SCHEME.test(trimmed)) {
     try {
       const url = new URL(trimmed);
       const [owner, name, ...rest] = withoutGitSuffix(url.pathname).split("/").filter(Boolean);
@@ -136,12 +143,12 @@ export function parsePullRequestReference(
   | { readonly kind: "url"; readonly locator: GitHubRepositoryLocator; readonly number: number }
   | { readonly kind: "branch"; readonly headSelector: string } {
   const trimmed = reference.trim();
-  const numbered = /^#?([1-9]\d*)$/.exec(trimmed);
+  const numbered = NUMBERED_PATTERN.exec(trimmed);
   if (numbered) return { kind: "number", number: Number(numbered[1]) };
-  if (/^https?:\/\//i.test(trimmed)) {
+  if (HTTP_SCHEME.test(trimmed)) {
     try {
       const url = new URL(trimmed);
-      const match = /^\/([^/]+)\/([^/]+)\/pull\/([1-9]\d*)(?:\/.*)?$/.exec(url.pathname);
+      const match = MATCH_PATTERN.exec(url.pathname);
       if (match) {
         return {
           kind: "url",

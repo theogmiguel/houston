@@ -1,3 +1,7 @@
+const WHITESPACE = /\s/;
+const NON_VERSION_WORDS_PATTERN = /\(.*?\)/g;
+const NON_VERSION_WORDS_PATTERN_2 = /[\s-]+/;
+
 const FAMILY_PREFIXES = ["Claude ", "GPT-", "GPT ", "Gemini ", "Muse ", "Grok "] as const;
 
 // Words that describe a variant within a family rather than name a model. Off the
@@ -56,13 +60,13 @@ function withoutFamily(name: string, nativeFamilies: ReadonlyArray<string>): str
     ? nonVersionWords(rest).length > 0
     : namesModel(rest);
   if (!keep) return undefined;
-  return /\s/.test(rest) ? rest : rest.replaceAll("-", " ");
+  return WHITESPACE.test(rest) ? rest : rest.replaceAll("-", " ");
 }
 
 function nonVersionWords(text: string): ReadonlyArray<string> {
   return text
-    .replace(/\(.*?\)/g, " ")
-    .split(/[\s-]+/)
+    .replace(NON_VERSION_WORDS_PATTERN, " ")
+    .split(NON_VERSION_WORDS_PATTERN_2)
     .filter((word) => word.length > 0 && !VERSION.test(word));
 }
 

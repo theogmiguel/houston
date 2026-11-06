@@ -4,6 +4,10 @@ import * as Base64 from "effect/encoding/Base64";
 import * as Predicate from "effect/Predicate";
 import * as Result from "effect/Result";
 
+const HTTP_SCHEME = /^https?:\/\//i;
+const RAW_PATTERN = /[/?#]/;
+const DOWNLOAD_NAME_PATTERN = /[\\/:*?"<>|]/;
+
 const MAX_MESSAGE_BYTES = 256 * 1024;
 const MAX_PENDING_REQUESTS = 16;
 const TEARDOWN_TIMEOUT_MS = 2000;
@@ -259,7 +263,7 @@ export function makeMcpAppHost(options: McpAppHostOptions): McpAppHost {
       }
       case "ui/open-link": {
         const url = params.url;
-        if (typeof url !== "string" || !/^https?:\/\//i.test(url)) {
+        if (typeof url !== "string" || !HTTP_SCHEME.test(url)) {
           fail(id, -32602, "Only http(s) links can be opened.");
           return;
         }
@@ -468,10 +472,10 @@ function downloadName(uri: unknown, name: unknown): string {
     typeof name === "string" && name.trim() !== ""
       ? name
       : typeof uri === "string"
-        ? (uri.split(/[/?#]/).findLast(Boolean) ?? "download")
+        ? (uri.split(RAW_PATTERN).findLast(Boolean) ?? "download")
         : "download";
   const safe = Array.from(raw, (char) =>
-    /[\\/:*?"<>|]/.test(char) || char.charCodeAt(0) < 32 ? "-" : char,
+    DOWNLOAD_NAME_PATTERN.test(char) || char.charCodeAt(0) < 32 ? "-" : char,
   ).join("");
   return safe.slice(0, MAX_DOWNLOAD_NAME) || "download";
 }

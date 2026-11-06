@@ -9,6 +9,19 @@ import type JSZip from "jszip";
 
 import { type OfficeWorkerResult, type NotebookCell } from "./officePreviewProtocol";
 
+const PARSE_XML_PATTERN = /<!DOCTYPE\s+[^<>[\]]*>/gi;
+const PARSE_XML_PATTERN_2 = /<!\s*(DOCTYPE|ENTITY)/i;
+const ARCHIVE_PATH_PATTERN = /^(?:[a-z][a-z\d+.-]*:|\/|\\)/i;
+const QUERY_OR_FRAGMENT = /[?#]/;
+const BASE64_IMAGE_FITS_PATTERN = /^[a-z\d+/]*={0,2}$/i;
+const HTML_IMAGES_FIT_PATTERN = /data:image\/(?:png|jpeg|gif|webp);base64,([a-z\d+/]*={0,2})/gi;
+const TAG_PATTERN = /^\{[^}]*\}/;
+const EPUB_HTML_PATTERN = /^\d{1,4}$/;
+const LANGUAGE_PATTERN = /[^a-z\d+#-]/gi;
+const WHITESPACE = /\s/g;
+const OPEN_RTF_PATTERN = /^[\da-f]{2}$/i;
+const MATCH_PATTERN = /^([a-z]+)(-?\d+)? ?/i;
+
 const ODS_PREVIEW_MAX_ROWS = 500;
 const ODS_PREVIEW_MAX_COLUMNS = 50;
 
@@ -33,10 +46,10 @@ const namespacePrefixes: Record<string, string> = {
 };
 function parseXml(source: string): XmlNode {
   // EPUB XHTML commonly declares an external DTD. Discard it without resolving it.
-  source = source.replaceAll(/<!DOCTYPE\s+[^<>[\]]*>/gi, "");
+  source = source.replaceAll(PARSE_XML_PATTERN, "");
   if (
     source.length > 8 * 1024 * 1024 ||
-    /<!\s*(DOCTYPE|ENTITY)/i.test(source) ||
+    PARSE_XML_PATTERN_2.test(source) ||
     XMLValidator.validate(source) !== true
   )
     throw new Error("This document contains invalid or unsupported XML.");
@@ -119,11 +132,11 @@ function text(node: XmlNode): string {
   return node.name === "#text" ? decodeEntities(node.text) : node.children.map(text).join("");
 }
 function archivePath(base: string, href: string): string | null {
-  if (/^(?:[a-z][a-z\d+.-]*:|\/|\\)/i.test(href)) return null;
+  if (ARCHIVE_PATH_PATTERN.test(href)) return null;
   const parts = base.split("/").slice(0, -1);
   let decoded: string;
   try {
-    decoded = decodeURIComponent(href.split(/[?#]/, 1)[0] ?? "");
+    decoded = decodeURIComponent(href.split(QUERY_OR_FRAGMENT, 1)[0] ?? "");
   } catch {
     return null;
   }
@@ -141,7 +154,7 @@ function imageFits(bytes: Uint8Array) {
 }
 function base64ImageFits(base64: string) {
   return (
-    /^[a-z\d+/]*={0,2}$/i.test(base64) &&
+    BASE64_IMAGE_FITS_PATTERN.test(base64) &&
     base64.length % 4 !== 1 &&
     (!base64.endsWith("=") || base64.length % 4 === 0) &&
     imageFits(
@@ -154,9 +167,7 @@ function base64ImageFits(base64: string) {
 }
 function htmlImagesFit(html: string) {
   // HTML attribute entities can obscure a data URL until the client parses it.
-  for (const match of decodeHTMLAttribute(html).matchAll(
-    /data:image\/(?:png|jpeg|gif|webp);base64,([a-z\d+/]*={0,2})/gi,
-  ))
+  for (const match of decodeHTMLAttribute(html).matchAll(HTML_IMAGES_FIT_PATTERN))
     if (!base64ImageFits(match[1]!)) return false;
   return true;
 }
@@ -223,11 +234,7 @@ const HTML_TAGS = new Set([
 ]);
 async function epubHtml(node: XmlNode, archive: JSZip, base: string): Promise<string> {
   if (node.name === "#text") return pipe(text(node), escape, boundedMarkup);
-  const tag =
-    node.name
-      .replace(/^\{[^}]*\}/, "")
-      .split(":")
-      .at(-1) ?? "";
+  const tag = node.name.replace(TAG_PATTERN, "").split(":").at(-1) ?? "";
   if (["head", "script", "style", "iframe", "object", "embed", "svg", "math", "form"].includes(tag))
     return "";
   if (tag === "br" || tag === "hr") return boundedMarkup(`<${tag}>`);
@@ -242,7 +249,7 @@ async function epubHtml(node: XmlNode, archive: JSZip, base: string): Promise<st
     tag === "td" || tag === "th"
       ? ["colspan", "rowspan"]
           .map((name) =>
-            /^\d{1,4}$/.test(node.attrs[name] ?? "") ? ` ${name}="${node.attrs[name]}"` : "",
+            EPUB_HTML_PATTERN.test(node.attrs[name] ?? "") ? ` ${name}="${node.attrs[name]}"` : "",
           )
           .join("")
       : "";
@@ -430,7 +437,7 @@ export function openNotebook(bytes: ArrayBuffer): OfficeWorkerResult {
   if (notebook.nbformat !== 4 || !Array.isArray(notebook.cells) || notebook.cells.length > 500)
     throw new Error("Preview supports version 4 notebooks with up to 500 cells.");
   const language = String(record(record(notebook.metadata).language_info).name ?? "text")
-    .replaceAll(/[^a-z\d+#-]/gi, "")
+    .replaceAll(LANGUAGE_PATTERN, "")
     .slice(0, 40);
   const cells: NotebookCell[] = notebook.cells.map((value) => {
     const cell = record(value);
@@ -445,7 +452,7 @@ export function openNotebook(bytes: ArrayBuffer): OfficeWorkerResult {
           const data = record(output.data);
           for (const mime of ["image/png", "image/jpeg", "image/gif", "image/webp"]) {
             if (data[mime]) {
-              const base64 = notebookText(data[mime], 4 * 1024 * 1024).replaceAll(/\s/g, "");
+              const base64 = notebookText(data[mime], 4 * 1024 * 1024).replaceAll(WHITESPACE, "");
               if (base64ImageFits(base64))
                 return { kind: "image" as const, text: `data:${mime};base64,${base64}` };
             }
@@ -546,7 +553,7 @@ export function openRtf(bytes: ArrayBuffer): OfficeWorkerResult {
       const next = source[i];
       if (next === "'") {
         const hex = source.slice(i + 1, i + 3);
-        if (!/^[\da-f]{2}$/i.test(hex)) throw new Error("Invalid rich text byte escape.");
+        if (!OPEN_RTF_PATTERN.test(hex)) throw new Error("Invalid rich text byte escape.");
         i += 3;
         emitByte(Number.parseInt(hex, 16));
         continue;
@@ -562,7 +569,7 @@ export function openRtf(bytes: ArrayBuffer): OfficeWorkerResult {
         i++;
         continue;
       }
-      const match = /^([a-z]+)(-?\d+)? ?/i.exec(source.slice(i));
+      const match = MATCH_PATTERN.exec(source.slice(i));
       if (!match) {
         if (next === "~") emit("\u00a0");
         i++;

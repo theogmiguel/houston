@@ -1,3 +1,6 @@
+const WHITESPACE_RUN = /\s+/;
+const LEADING_PATTERN = /^\s*/;
+
 export const CODE_BLOCK_LANGUAGES = [
   { id: "", label: "Plain text" },
   { id: "asm", label: "Assembly" },
@@ -63,12 +66,12 @@ const LANGUAGE_ALIASES: Record<string, string> = {
 };
 
 export function languageOfInfoString(info: string): string {
-  return info.trim().split(/\s+/, 1)[0] ?? "";
+  return info.trim().split(WHITESPACE_RUN, 1)[0] ?? "";
 }
 
 /** Plain text clears the language unless trailing metadata would be parsed as one. */
 export function withInfoStringLanguage(info: string, language: string): string {
-  const leading = /^\s*/.exec(info)![0];
+  const leading = LEADING_PATTERN.exec(info)![0];
   const rest = info.slice(leading.length + languageOfInfoString(info).length);
   if (language) return `${leading}${language}${rest}`;
   return rest.trim() ? `${leading}text${rest}` : "";

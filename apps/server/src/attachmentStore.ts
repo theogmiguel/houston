@@ -12,6 +12,13 @@ import {
 } from "./attachmentPaths.ts";
 import { inferImageExtension, SAFE_IMAGE_FILE_EXTENSIONS } from "./imageMime.ts";
 
+const SEGMENT_PATTERN = /[^a-z0-9_-]+/gi;
+const SEGMENT_PATTERN_2 = /-+/g;
+const SEGMENT_PATTERN_3 = /^[-_]+|[-_]+$/g;
+const SEGMENT_PATTERN_4 = /[-_]+$/g;
+const ATTACHMENT_FILE_EXTENSION_PATTERN = /^\.[a-z0-9]{1,10}$/;
+const NORMALIZED_PATTERN = /^\./;
+
 const ATTACHMENT_FILENAME_EXTENSIONS = [...SAFE_IMAGE_FILE_EXTENSIONS, ".bin"];
 export const ATTACHMENT_ID_THREAD_SEGMENT_MAX_CHARS = 80;
 const ATTACHMENT_ID_THREAD_SEGMENT_PATTERN = "[a-z0-9_]+(?:-[a-z0-9_]+)*";
@@ -30,11 +37,11 @@ export function toSafeThreadAttachmentSegment(threadId: string): string | null {
   const segment = threadId
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9_-]+/gi, "-")
-    .replace(/-+/g, "-")
-    .replace(/^[-_]+|[-_]+$/g, "")
+    .replace(SEGMENT_PATTERN, "-")
+    .replace(SEGMENT_PATTERN_2, "-")
+    .replace(SEGMENT_PATTERN_3, "")
     .slice(0, ATTACHMENT_ID_THREAD_SEGMENT_MAX_CHARS)
-    .replace(/[-_]+$/g, "");
+    .replace(SEGMENT_PATTERN_4, "");
   if (segment.length === 0) {
     return null;
   }
@@ -44,7 +51,7 @@ export function toSafeThreadAttachmentSegment(threadId: string): string | null {
 export function attachmentFileExtension(fileName: string): string {
   const extension = NodePath.extname(fileName).toLowerCase();
   // .part is reserved for pending uploads; the stale-upload sweep would delete stored files.
-  if (extension === ".part" || !/^\.[a-z0-9]{1,10}$/.test(extension)) {
+  if (extension === ".part" || !ATTACHMENT_FILE_EXTENSION_PATTERN.test(extension)) {
     return ".bin";
   }
   return extension;
@@ -54,7 +61,7 @@ function attachmentIdExtensionSuffix(extension: string | undefined): string {
   if (!extension) {
     return "";
   }
-  const normalized = extension.replace(/^\./, "").toLowerCase();
+  const normalized = extension.replace(NORMALIZED_PATTERN, "").toLowerCase();
   return new RegExp(`^${ATTACHMENT_ID_FILE_EXTENSION_PATTERN}$`).test(normalized)
     ? `-${normalized}`
     : "-bin";

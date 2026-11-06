@@ -3,6 +3,8 @@
 import * as Lucide from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
+const TO_KEBAB_NAME_PATTERN = /[A-Z][a-z]*|[0-9]+[a-z]*/g;
+
 const iconComponents = new Set<unknown>(Object.values(Lucide.icons));
 const lucideExports: Record<string, unknown> = Lucide;
 
@@ -16,7 +18,7 @@ function toPascalName(name: string): string {
 
 // Lucide digit names can differ from this inverse; both forms resolve through toPascalName.
 function toKebabName(pascalName: string): string {
-  return (pascalName.match(/[A-Z][a-z]*|[0-9]+[a-z]*/g) ?? []).join("-").toLowerCase();
+  return (pascalName.match(TO_KEBAB_NAME_PATTERN) ?? []).join("-").toLowerCase();
 }
 
 export const lucideIconNames: ReadonlyArray<string> = Object.keys(Lucide.icons).map(toKebabName);

@@ -80,6 +80,10 @@ import { makeExpoApi, resolveExpoCredential } from "./ExpoApi.ts";
 import * as Exit from "effect/Exit";
 import * as LocalDeviceHost from "./LocalDeviceHost.ts";
 
+const LINE_BREAK = /\r?\n/u;
+const OPEN_PATTERN = /^\s*V\S*[ \t]+libx264(?:[ \t]|$)/m;
+const TRAILING_SLASH = /\/$/;
+
 export const DEVICE_HUB_ROUTE_PREFIX = "/api/device-hub";
 
 const sshProbeFailureMessage = (error: DeviceHost.DeviceHostError): string => {
@@ -96,7 +100,7 @@ const sshProbeFailureMessage = (error: DeviceHost.DeviceHostError): string => {
   if (
     cause.exitCode === 1 &&
     cause.stderr
-      .split(/\r?\n/u)
+      .split(LINE_BREAK)
       .some((line) => line.trim() === "Node is missing from the non-interactive SSH PATH")
   )
     return "Connected over SSH, but Node is not on this host's PATH for non-interactive SSH commands.";
@@ -760,7 +764,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
               "Android emulator video needs working ffmpeg with the libx264 encoder. Install it on the device host's PATH or set SERVE_EMU_FFMPEG there, then retry opening the emulator. After changing PATH or SERVE_EMU_FFMPEG, turn device support off and on for SSH hosts, or restart the local environment server.",
           });
         }
-        if (!/^\s*V\S*[ \t]+libx264(?:[ \t]|$)/m.test(`${encoders.stdout}\n${encoders.stderr}`)) {
+        if (!OPEN_PATTERN.test(`${encoders.stdout}\n${encoders.stderr}`)) {
           return yield* new DevicePlatformUnavailableError({
             hostId: host.id,
             platform: "android",
@@ -1575,7 +1579,7 @@ export const make = Effect.gen(function* () {
       const environment = yield* HostProcess.Environment;
       const gatewayUrl = (
         input.gatewayUrl || SimlockDeviceHost.machineSimlockToken(environment)?.gatewayUrl
-      )?.replace(/\/$/, "");
+      )?.replace(TRAILING_SLASH, "");
       if (!gatewayUrl)
         return yield* new DeviceSimlockIdentityError({
           reason: "This machine's agent-device does not point at a Simlock gateway.",

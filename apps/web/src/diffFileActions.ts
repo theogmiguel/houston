@@ -4,6 +4,9 @@ import { isWindowsAbsolutePath, normalizeProjectPathForComparison } from "@houst
 import { useRightPanelStore } from "./rightPanelStore";
 import { resolvePathLinkTarget } from "@houston-app/shared/fileLinks";
 
+const DRIVE_LETTER = /^[a-zA-Z]:/;
+const PATH_SEPARATORS = /[\\/]+/;
+
 interface OpenDiffFilePrimaryActionInput {
   readonly threadRef: ScopedThreadRef | null;
   readonly filePath: string;
@@ -13,7 +16,7 @@ interface OpenDiffFilePrimaryActionInput {
 }
 
 function normalizedRelativePathSegments(filePath: string): ReadonlyArray<string> | null {
-  if (filePath.startsWith("/") || isWindowsAbsolutePath(filePath) || /^[a-zA-Z]:/.test(filePath)) {
+  if (filePath.startsWith("/") || isWindowsAbsolutePath(filePath) || DRIVE_LETTER.test(filePath)) {
     return null;
   }
 
@@ -43,7 +46,7 @@ function repositoryRelativeWorkspaceSegments(
 
   return normalizedWorkspaceRoot
     .slice(repositoryPrefix.length)
-    .split(/[\\/]+/)
+    .split(PATH_SEPARATORS)
     .filter(Boolean);
 }
 

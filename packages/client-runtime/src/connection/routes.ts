@@ -14,6 +14,8 @@ import {
 } from "./catalog.ts";
 import { BearerConnectionTarget, type ConnectionTarget } from "./model.ts";
 
+const TRAILING_SLASHES = /\/+$/;
+
 export type ConnectionRouteKind = "loopback" | "lan" | "tailnet" | "vpn" | "public" | "ssh";
 
 export function connectionRouteId(target: ConnectionTarget): string {
@@ -138,7 +140,7 @@ function routeAddressKey(route: ConnectionRoute): string | null {
   const profile = Option.getOrNull(route.profile);
   switch (profile?._tag) {
     case "BearerConnectionProfile":
-      return `bearer:${profile.httpBaseUrl.replace(/\/+$/, "")}`;
+      return `bearer:${profile.httpBaseUrl.replace(TRAILING_SLASHES, "")}`;
     case "SshConnectionProfile":
       return `ssh:${sshTargetKey(profile.target)}`;
     default:
@@ -209,7 +211,7 @@ export function mergeLearnedRoutes(input: {
     reported.set(url.origin, url);
     if (endpoint.kind === "tailnet") tailscaleOrigins.add(url.origin);
   }
-  const normalized = (url: string) => url.replace(/\/+$/, "");
+  const normalized = (url: string) => url.replace(TRAILING_SLASHES, "");
   const known = new Set(
     saved.flatMap((route) => {
       const url = routeHttpBaseUrl(route);

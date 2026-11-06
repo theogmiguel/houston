@@ -40,6 +40,10 @@ import { projectLocationFlags, resolveCliAuthConfig } from "./config.ts";
 import { createUpdateProgress } from "./updateProgress.ts";
 import * as CliService from "./service.ts";
 
+const DIGITS_ONLY = /^\d+$/;
+const BELONGS_TO_BOOT_SERVICE_PATTERN = /__service-launcher/;
+const VALIDATE_PATTERN = /\bv(\S+)\s*$/;
+
 export class CliUpdateError extends Schema.TaggedError<CliUpdateError>()("CliUpdateError", {
   reason: Schema.String,
 }) {
@@ -295,14 +299,14 @@ const belongsToBootService = Effect.fn("cli.update.belongs_to_boot_service")(fun
       })
       .pipe(Effect.option);
     const ppid = Option.isSome(parent) && parent.value.code === 0 ? parent.value.stdout.trim() : "";
-    if (!/^\d+$/.test(ppid)) return false;
+    if (!DIGITS_ONLY.test(ppid)) return false;
     const command = yield* runner
       .run({ command: "ps", args: ["-o", "command=", "-p", ppid], timeout: Duration.seconds(5) })
       .pipe(
         Effect.map((result) => (result.code === 0 ? result.stdout : "")),
         Effect.orElseSucceed(() => ""),
       );
-    return /__service-launcher/.test(command);
+    return BELONGS_TO_BOOT_SERVICE_PATTERN.test(command);
   }
   return false;
 });
@@ -474,7 +478,7 @@ export const runUpdate = Effect.fn("cli.update.run")(function* (input: {
               new PinnedRuntimeInstallError({ step: "verifying the downloaded houston", cause }),
           ),
           Effect.flatMap((result) =>
-            result.code === 0 && /\bv(\S+)\s*$/.exec(result.stdout)?.[1] === targetVersion
+            result.code === 0 && VALIDATE_PATTERN.exec(result.stdout)?.[1] === targetVersion
               ? Effect.void
               : Effect.fail(
                   new PinnedRuntimeInstallError({

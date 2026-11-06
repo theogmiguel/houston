@@ -56,6 +56,8 @@ import * as RunFinalizationService from "./RunFinalizationService.ts";
 import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
 import { userFacingDatabaseErrorMessage } from "./UserFacingErrors.ts";
 
+const KEY_PATTERN = /[^\w.-]/g;
+
 export interface ProviderEventRoutingState {
   readonly ownedThreadIds: ReadonlySet<ThreadId>;
   // After root settlement, new children belong to the live run unless their coordinator still holds this run open.
@@ -1660,7 +1662,7 @@ export const layer: Layer.Layer<
           // The item id alone is unique and needs no escaping; server and
           // tool names are free text that would break the tag Codex wraps
           // the context in.
-          key: `mcp_app_${entry.itemId.replace(/[^\w.-]/g, "_")}`,
+          key: `mcp_app_${entry.itemId.replace(KEY_PATTERN, "_")}`,
           text: entry.text,
         }));
         const turnInput = {

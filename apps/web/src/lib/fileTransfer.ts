@@ -1,4 +1,6 @@
 /** Newline-separated absolute paths that Houston's own drag sources advertise. */
+const DRIVE_LETTER = /^[A-Za-z]:/;
+
 export const FILE_PATH_MIME = "application/x-file-path";
 /** RFC 2483; what GTK file managers put on a drag or copy. */
 export const URI_LIST_MIME = "text/uri-list";
@@ -56,7 +58,7 @@ export function parseUriList(text: string): string[] {
     } catch {
       continue;
     }
-    if (path.startsWith("/") && /^[A-Za-z]:/.test(path.slice(1))) path = path.slice(1);
+    if (path.startsWith("/") && DRIVE_LETTER.test(path.slice(1))) path = path.slice(1);
     if (path) paths.push(path);
   }
   return paths;

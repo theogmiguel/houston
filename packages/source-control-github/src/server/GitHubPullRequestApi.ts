@@ -119,6 +119,8 @@ import type {
   ProviderListCursor,
 } from "@houston-app/source-control-core/server/PullRequestProvider";
 
+const DIFF_CURSOR_PAGE_PATTERN = /^[1-9][0-9]{0,6}$/;
+
 export class GitHubPullRequestReadError extends Schema.TaggedError<GitHubPullRequestReadError>()(
   "GitHubPullRequestReadError",
   {
@@ -739,7 +741,7 @@ function parseRepositorySelector(value: string): {
 
 /** Bound decimal length to prevent exponential notation in request paths. */
 function diffCursorPage(cursor: string): number | null {
-  return /^[1-9][0-9]{0,6}$/.test(cursor) ? Number(cursor) : null;
+  return DIFF_CURSOR_PAGE_PATTERN.test(cursor) ? Number(cursor) : null;
 }
 
 /** Quote user text so GitHub cannot interpret it as qualifiers that widen the listing. */

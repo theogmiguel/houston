@@ -61,6 +61,11 @@ import {
 } from "./ResourceTelemetryDiagnostics.logic";
 import { SettingsSection } from "./settingsLayout";
 
+const TRAILING_ZERO_DECIMALS = /\.0+$/;
+const WHITESPACE_RUN = /\s+/;
+const NORMALIZED_PATTERN = /^['"]|['"]$/g;
+const PATH_SEPARATOR = /[\\/]/;
+
 const HISTORY_WINDOWS = [
   { label: "5m", windowMs: 5 * 60_000, bucketMs: 15_000 },
   { label: "15m", windowMs: 15 * 60_000, bucketMs: 30_000 },
@@ -74,16 +79,19 @@ function formatRate(value: number): string {
 
 function formatCpuTime(valueMs: number): string {
   const seconds = valueMs / 1_000;
-  if (seconds < 60) return `${seconds.toFixed(seconds >= 10 ? 1 : 2).replace(/\.0+$/, "")}s`;
+  if (seconds < 60)
+    return `${seconds.toFixed(seconds >= 10 ? 1 : 2).replace(TRAILING_ZERO_DECIMALS, "")}s`;
   const minutes = seconds / 60;
-  if (minutes < 60) return `${minutes.toFixed(minutes >= 10 ? 1 : 2).replace(/\.0+$/, "")}m`;
-  return `${(minutes / 60).toFixed(2).replace(/\.0+$/, "")}h`;
+  if (minutes < 60)
+    return `${minutes.toFixed(minutes >= 10 ? 1 : 2).replace(TRAILING_ZERO_DECIMALS, "")}m`;
+  return `${(minutes / 60).toFixed(2).replace(TRAILING_ZERO_DECIMALS, "")}h`;
 }
 
 function formatDurationMicros(value: number): string {
   if (value < 1_000) return `${Math.round(value)} µs`;
-  if (value < 1_000_000) return `${(value / 1_000).toFixed(2).replace(/\.0+$/, "")} ms`;
-  return `${(value / 1_000_000).toFixed(2).replace(/\.0+$/, "")} s`;
+  if (value < 1_000_000)
+    return `${(value / 1_000).toFixed(2).replace(TRAILING_ZERO_DECIMALS, "")} ms`;
+  return `${(value / 1_000_000).toFixed(2).replace(TRAILING_ZERO_DECIMALS, "")} s`;
 }
 
 function formatSampleInterval(valueMs: number): string {
@@ -96,9 +104,9 @@ function formatSampleInterval(valueMs: number): string {
 
 function formatProcessName(process: Pick<ResourceTelemetryProcess, "command" | "name">): string {
   if (process.name.trim()) return process.name;
-  const firstToken = process.command.trim().split(/\s+/)[0] ?? process.command;
-  const normalized = firstToken.replace(/^['"]|['"]$/g, "");
-  return normalized.split(/[\\/]/).findLast((segment) => segment.length > 0) ?? normalized;
+  const firstToken = process.command.trim().split(WHITESPACE_RUN)[0] ?? process.command;
+  const normalized = firstToken.replace(NORMALIZED_PATTERN, "");
+  return normalized.split(PATH_SEPARATOR).findLast((segment) => segment.length > 0) ?? normalized;
 }
 
 function categoryLabel(category: ResourceTelemetryProcessCategory): string {
@@ -788,7 +796,7 @@ function AttributionTable({ entries }: { entries: ReadonlyArray<ResourceAttribut
               </td>
               <td className="px-3 py-2 text-right font-mono tabular-nums">{entry.count}</td>
               <td className="px-3 py-2 text-right font-mono tabular-nums text-muted-foreground sm:pr-5">
-                {(entry.durationMs / 1_000).toFixed(2).replace(/\.0+$/, "")}s
+                {(entry.durationMs / 1_000).toFixed(2).replace(TRAILING_ZERO_DECIMALS, "")}s
               </td>
             </tr>
           ))}

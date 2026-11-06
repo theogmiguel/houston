@@ -1,5 +1,7 @@
 import { isAbsolutePath, isWindowsAbsolutePath } from "@houston-app/shared/path";
 
+const PATH_SEPARATORS = /[\\/]+/;
+
 export const WORKSPACE_BASENAME_LOOKUP_LIMIT = 25;
 
 // All callers open one panel; the newest click must win across callers.
@@ -51,8 +53,8 @@ export function pickWorkspaceBasenameMatch(
 // Repository-relative paths can repeat the project's suffix in subfolder projects.
 export function stripRepeatedWorkspacePrefix(relativePath: string, cwd: string): string | null {
   if (isAbsolutePath(relativePath)) return null;
-  const pathSegments = relativePath.split(/[\\/]+/);
-  const cwdSegments = cwd.split(/[\\/]+/).filter(Boolean);
+  const pathSegments = relativePath.split(PATH_SEPARATORS);
+  const cwdSegments = cwd.split(PATH_SEPARATORS).filter(Boolean);
   const fold = isWindowsAbsolutePath(cwd)
     ? (segment: string | undefined) => segment?.toLowerCase()
     : (segment: string | undefined) => segment;

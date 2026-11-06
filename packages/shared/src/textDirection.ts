@@ -1,3 +1,5 @@
+const WHITESPACE_RUN = /\s+/;
+
 export type TextDirection = "ltr" | "rtl";
 
 // Hebrew through Arabic Extended-A, their presentation forms, and the
@@ -38,8 +40,10 @@ function wordDirection(word: string): TextDirection | undefined {
 export function textDirection(text: string): TextDirection | undefined {
   if (!RTL_LETTER.test(text)) return LETTER.test(text) ? "ltr" : undefined;
   return majority(
-    text.split(SENTENCE_END).map((sentence) => majority(sentence.split(/\s+/).map(wordDirection))),
-    () => majority(text.split(/\s+/).map(wordDirection)),
+    text
+      .split(SENTENCE_END)
+      .map((sentence) => majority(sentence.split(WHITESPACE_RUN).map(wordDirection))),
+    () => majority(text.split(WHITESPACE_RUN).map(wordDirection)),
   );
 }
 

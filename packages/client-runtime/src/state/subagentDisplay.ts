@@ -9,6 +9,13 @@ import { fileBasename } from "@houston-app/shared/path";
 import { resolveModelShortName } from "../providerClients.ts";
 import { isTerminalSubagentStatus } from "./subagentRuntime.ts";
 
+const DISPLAY_TITLE_PATTERN = /^Subagent:\s*/i;
+const PATH_PATTERN = /^\/root\/(?:[^/]+\/)*([^/]+)\/?$/u;
+const NAME_PATTERN = /[_\s]+/gu;
+const FORMAT_SUBAGENT_DISPLAY_TITLE_PATTERN = /(^|\s)\S/gu;
+const REGEX_SPECIAL_CHARS = /[.*+?^${}()|[\]\\]/g;
+const WHITESPACE_RUN = /\s+/gu;
+
 export function subagentGroupSummary(
   members: ReadonlyArray<{ readonly status: OrchestrationV2TurnItemStatus }>,
 ) {
@@ -40,12 +47,15 @@ export function summarizeSubagentStatuses(
 }
 
 export function formatSubagentDisplayTitle(title: string): string {
-  const displayTitle = title.replace(/^Subagent:\s*/i, "");
-  const path = /^\/root\/(?:[^/]+\/)*([^/]+)\/?$/u.exec(displayTitle);
+  const displayTitle = title.replace(DISPLAY_TITLE_PATTERN, "");
+  const path = PATH_PATTERN.exec(displayTitle);
   if (path === null) return displayTitle;
 
-  const name = path[1]!.replace(/[_\s]+/gu, " ").trim();
-  return name.replace(/(^|\s)\S/gu, (letter) => letter.toUpperCase()) || displayTitle;
+  const name = path[1]!.replace(NAME_PATTERN, " ").trim();
+  return (
+    name.replace(FORMAT_SUBAGENT_DISPLAY_TITLE_PATTERN, (letter) => letter.toUpperCase()) ||
+    displayTitle
+  );
 }
 
 export function resolveSubagentMetadata(input: {
@@ -80,7 +90,7 @@ export function resolveSubagentMetadata(input: {
     ? reportedLabel
         .replace(
           new RegExp(
-            `^${qualifier.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:\\s*[.:/-]\\s*|\\s+)`,
+            `^${qualifier.replace(REGEX_SPECIAL_CHARS, "\\$&")}(?:\\s*[.:/-]\\s*|\\s+)`,
             "iu",
           ),
           "",
@@ -120,7 +130,7 @@ export function subagentDetailPreview(input: {
   const preferred = terminal ? input.result : input.progress;
   const fallback = terminal ? input.progress : input.result;
   const detail = preferred?.trimStart() || fallback?.trimStart() || "";
-  if (detail.length <= 280) return detail.trimEnd().replace(/\s+/gu, " ") || null;
+  if (detail.length <= 280) return detail.trimEnd().replace(WHITESPACE_RUN, " ") || null;
   const whitespace = /\s+/uy;
   let compact = "";
   for (let index = 0; index < detail.length; index += 1) {

@@ -1,5 +1,15 @@
 import type { ToolLifecycleItemType } from "@houston-app/contracts";
 
+const DYNAMIC_TOOL_SURFACE_PATTERN = /\bsky\s*\./u;
+const DYNAMIC_TOOL_SURFACE_PATTERN_2 = /["']@oai\/sky["']/u;
+const MATCH_PATTERN = /^(?<output>[\s\S]*?)(?:\s*<exited with exit code \d+>)\s*$/iu;
+const BACKTICK_MATCH_PATTERN = /`([^`]+)`/u;
+const WHITESPACE_RUN = /\s+/gu;
+const NORMALIZE_EQUIVALENT_VALUE_PATTERN = /\s+(?:complete|completed|started)\s*$/iu;
+const TOOL_NAME_TOKEN_PATTERN = /__|[./]/u;
+const TOOL_NAME_TOKEN_PATTERN_2 = /[_\s-]/gu;
+const PATH_SEPARATOR = /[\\/]/u;
+
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -39,7 +49,7 @@ export function dynamicToolSurface(toolName: string | null | undefined, input: u
   const code = asRecord(input)?.code;
   return isJavaScriptReplTool(toolName) &&
     typeof code === "string" &&
-    (/\bsky\s*\./u.test(code) || /["']@oai\/sky["']/u.test(code))
+    (DYNAMIC_TOOL_SURFACE_PATTERN.test(code) || DYNAMIC_TOOL_SURFACE_PATTERN_2.test(code))
     ? ("computer" as const)
     : undefined;
 }
@@ -94,7 +104,7 @@ function stripTrailingExitCode(value: string | undefined): string | undefined {
   if (!trimmed) {
     return undefined;
   }
-  const match = /^(?<output>[\s\S]*?)(?:\s*<exited with exit code \d+>)\s*$/iu.exec(trimmed);
+  const match = MATCH_PATTERN.exec(trimmed);
   const output = match?.groups?.output?.trim() ?? trimmed;
   return output.length > 0 ? output : undefined;
 }
@@ -103,7 +113,7 @@ function extractCommandFromTitle(title: string | undefined): string | undefined 
   if (!title) {
     return undefined;
   }
-  const backtickMatch = /`([^`]+)`/u.exec(title);
+  const backtickMatch = BACKTICK_MATCH_PATTERN.exec(title);
   return backtickMatch?.[1]?.trim() || undefined;
 }
 
@@ -227,8 +237,8 @@ function normalizeEquivalentValue(value: string | undefined): string | undefined
     return undefined;
   }
   return trimmed
-    .replace(/\s+/gu, " ")
-    .replace(/\s+(?:complete|completed|started)\s*$/iu, "")
+    .replace(WHITESPACE_RUN, " ")
+    .replace(NORMALIZE_EQUIVALENT_VALUE_PATTERN, "")
     .trim();
 }
 
@@ -242,10 +252,10 @@ export type ToolActivityAction = "command" | "read" | "file_change" | "search" |
 
 function toolNameToken(value: string | undefined): string | undefined {
   const trimmed = asTrimmedString(value);
-  if (!trimmed || /__|[./]/u.test(trimmed)) {
+  if (!trimmed || TOOL_NAME_TOKEN_PATTERN.test(trimmed)) {
     return undefined;
   }
-  return trimmed.replace(/[_\s-]/gu, "").toLowerCase();
+  return trimmed.replace(TOOL_NAME_TOKEN_PATTERN_2, "").toLowerCase();
 }
 
 export function classifyToolActivity(input: {
@@ -355,7 +365,7 @@ function searchTargetName(value: string | undefined): string | undefined {
   if (!value) {
     return undefined;
   }
-  return value.split(/[\\/]/u).findLast((part) => part.length > 0 && part !== ".");
+  return value.split(PATH_SEPARATOR).findLast((part) => part.length > 0 && part !== ".");
 }
 
 export function formatSearchToolLabel(

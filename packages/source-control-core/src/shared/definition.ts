@@ -15,6 +15,9 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 
+const TRAILING_SLASHES = /\/+$/u;
+const PARSE_GIT_REMOTE_HOST_PATTERN = /:\d+$/u;
+
 /**
  * The two strings are what `changeRequestHost` and the project's `repositoryIdentity` produce
  * from a git remote — lower case, no port, the full path below the host — because links are
@@ -411,7 +414,7 @@ export function parseChangeRequestPath(url: URL, route: RegExp): ParsedChangeReq
 }
 
 export function changeRequestUrlBelow(webUrl: string, route: string): string {
-  return `${webUrl.replace(/\/+$/u, "")}/${route}`;
+  return `${webUrl.replace(TRAILING_SLASHES, "")}/${route}`;
 }
 
 /** An HTTP remote on `host` names the server's web origin, port included; SSH remotes do not. */
@@ -515,7 +518,7 @@ export function parseGitRemoteHost(remoteUrl: string): GitRemoteHost | null {
   try {
     hostname = new URL(`https://${host}`).hostname.toLowerCase();
   } catch {
-    hostname = host.replace(/:\d+$/u, "").toLowerCase();
+    hostname = host.replace(PARSE_GIT_REMOTE_HOST_PATTERN, "").toLowerCase();
   }
   return { remoteUrl: trimmed, host, hostname };
 }

@@ -11,6 +11,8 @@ import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as OpenCodeRuntime from "./OpenCodeRuntime.ts";
 import { parseGenericCliVersion } from "@houston-app/provider-core/server/snapshotProbe";
 
+const TRAILING_SLASHES = /\/+$/;
+
 export interface ProbedOpenCode {
   readonly generation: "v1" | "v2";
   readonly version: string;
@@ -105,7 +107,7 @@ const probeOpenCodeServer = Effect.fn("probeOpenCodeServer")(function* (
     : undefined;
   for (const path of ["/api/info", "/global/health"] as const) {
     const url = new URL(baseUrl);
-    url.pathname = `${url.pathname.replace(/\/+$/, "")}${path}`;
+    url.pathname = `${url.pathname.replace(TRAILING_SLASHES, "")}${path}`;
     const request = HttpClientRequest.get(url.href);
     const result = yield* client
       .execute(

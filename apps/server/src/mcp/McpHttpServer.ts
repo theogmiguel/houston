@@ -75,6 +75,10 @@ import { HoustonSlackToolkit } from "../houston/slack/toolkit/tools.ts";
 import * as HoustonTaskHandlers from "../houston/tasks/toolkit/handlers.ts";
 import { HoustonTaskToolkit } from "../houston/tasks/toolkit/tools.ts";
 
+const NON_ALPHANUMERIC_RUN = /[^a-z0-9]+/g;
+const EDGE_DASHES = /^-+|-+$/g;
+const SLUG_PATTERN = /-+$/g;
+
 const mcpResourceMetadataUrl = (request: HttpServerRequest.HttpServerRequest) =>
   requestUrl(request).pipe(
     Option.map((url) => `${url.origin}/.well-known/oauth-protected-resource/mcp`),
@@ -487,10 +491,10 @@ const screenshotSiteSlug = (rawUrl: string): string => {
   try {
     const slug = new URL(rawUrl).hostname
       .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
+      .replace(NON_ALPHANUMERIC_RUN, "-")
+      .replace(EDGE_DASHES, "")
       .slice(0, MAX_SCREENSHOT_SITE_SLUG_LENGTH)
-      .replace(/-+$/g, "");
+      .replace(SLUG_PATTERN, "");
     return slug || "site";
   } catch {
     return "site";

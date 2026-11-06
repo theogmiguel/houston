@@ -11,6 +11,8 @@ import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 
+const LENGTH_PATTERN = /^content-length:\s*(\d+)\s*$/im;
+
 const STILL_FRAME_DELAY = Duration.millis(100);
 
 const HEADER_END = Buffer.from("\r\n\r\n");
@@ -22,7 +24,7 @@ type Part = Arr.NonEmptyReadonlyArray<Uint8Array>;
 
 const partLength = (headers: string) => {
   if (!headers.startsWith("--")) return undefined;
-  const length = Number(/^content-length:\s*(\d+)\s*$/im.exec(headers)?.[1]);
+  const length = Number(LENGTH_PATTERN.exec(headers)?.[1]);
   return length <= MAX_PART_BYTES ? length : undefined;
 };
 

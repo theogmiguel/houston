@@ -27,6 +27,9 @@ import * as GitCafeApi from "./GitCafeApi.ts";
 import * as GitCafeCredentials from "./GitCafeCredentials.ts";
 import * as GitCafeHosts from "./gitCafeHosts.ts";
 
+const LINE_BREAK = /\r?\n/u;
+const NUMBER_PATTERN = /^#?([1-9]\d*)$/u;
+
 const AUTH_HOST = "git.cafe";
 const ADMISSION_TIMEOUT = "30 seconds";
 const ADMISSION_POLL_INTERVAL = "500 millis";
@@ -58,7 +61,7 @@ const decodeFailure = Schema.decodeUnknownResult(
   ),
 );
 const cliFailure = (output: string) =>
-  [output.trim(), ...output.split(/\r?\n/u).toReversed()]
+  [output.trim(), ...output.split(LINE_BREAK).toReversed()]
     .map((line) => decodeFailure(line.trim()))
     .find(Result.isSuccess)?.success.error;
 
@@ -252,7 +255,7 @@ export const make = Effect.gen(function* () {
       ? urlHost
         ? String(match.number)
         : undefined
-      : /^#?([1-9]\d*)$/u.exec(input.reference.trim())?.[1];
+      : NUMBER_PATTERN.exec(input.reference.trim())?.[1];
     if (number === undefined)
       return yield* error(
         "getChangeRequest",

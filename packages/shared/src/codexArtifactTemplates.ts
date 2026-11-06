@@ -1,3 +1,6 @@
+const WHITESPACE = /\s/;
+const NEEDS_LEADING_SPACE_PATTERN = /\s$/;
+
 const CODEX_ARTIFACT_TEMPLATE_KINDS = [
   "document",
   "presentation",
@@ -124,12 +127,12 @@ export function appendCodexArtifactTemplateUsePrompt(
   const alreadyEndsWithPrompt =
     promptStart >= 0 &&
     trimmedDraft.slice(promptStart) === prompt &&
-    (promptStart === 0 || /\s/.test(trimmedDraft[promptStart - 1] ?? ""));
+    (promptStart === 0 || WHITESPACE.test(trimmedDraft[promptStart - 1] ?? ""));
 
   if (alreadyEndsWithPrompt) {
     return draft;
   }
 
-  const needsLeadingSpace = draft.length > 0 && !/\s$/.test(draft);
+  const needsLeadingSpace = draft.length > 0 && !NEEDS_LEADING_SPACE_PATTERN.test(draft);
   return `${draft}${needsLeadingSpace ? " " : ""}${prompt}`;
 }

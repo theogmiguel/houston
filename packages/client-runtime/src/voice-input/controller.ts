@@ -2,6 +2,10 @@ import { replaceTextRange } from "@houston-app/shared/composerTrigger";
 
 import type { PreparedVoiceTranscription, VoiceTranscriber } from "./transcription.ts";
 
+const LEFT_NEEDS_BOUNDARY_PATTERN = /[A-Za-z0-9.!?,:;)\]}'"]/;
+const WHITESPACE = /\s/;
+const RIGHT_NEEDS_BOUNDARY_PATTERN = /[A-Za-z0-9([{'"]/;
+
 export const VOICE_RECORDING_LIMIT_SECONDS = 5 * 60;
 
 export type VoiceInputPhase<WithPostProcessing extends boolean = false> =
@@ -115,12 +119,12 @@ export function resolveTranscriptCommit(
     const right = captured.text[captured.selection.start];
     const leftNeedsBoundary =
       left !== undefined &&
-      /[A-Za-z0-9.!?,:;)\]}'"]/.test(left) &&
-      (right === undefined || /\s/.test(right));
+      LEFT_NEEDS_BOUNDARY_PATTERN.test(left) &&
+      (right === undefined || WHITESPACE.test(right));
     const rightNeedsBoundary =
       right !== undefined &&
-      /[A-Za-z0-9([{'"]/.test(right) &&
-      (left === undefined || /\s/.test(left));
+      RIGHT_NEEDS_BOUNDARY_PATTERN.test(right) &&
+      (left === undefined || WHITESPACE.test(left));
     insertion = `${leftNeedsBoundary ? " " : ""}${replacement}${rightNeedsBoundary ? " " : ""}`;
   }
 

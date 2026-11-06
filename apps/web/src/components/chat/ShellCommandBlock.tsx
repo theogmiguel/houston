@@ -8,6 +8,8 @@ import { useRenderedAppearance } from "../../hooks/useTheme";
 import { RenderErrorBoundary } from "../RenderErrorBoundary";
 import { HighlightedTokens } from "./HighlightedTokens";
 
+const PLAIN_WORDS_PATTERN = /(\s+)/u;
+
 const WORD_CLASS_NAME = "inline-block max-w-full [overflow-wrap:anywhere]";
 
 let embeddedScriptsModule: Promise<typeof import("../../lib/embeddedScripts")> | undefined;
@@ -18,7 +20,7 @@ function loadEmbeddedScripts() {
 
 // Match highlighted layout to prevent reflow when the grammar arrives.
 function PlainWords({ code }: { code: string }) {
-  return code.split(/(\s+)/u).map((part, index) =>
+  return code.split(PLAIN_WORDS_PATTERN).map((part, index) =>
     index % 2 === 1 || part === "" ? (
       part
     ) : (

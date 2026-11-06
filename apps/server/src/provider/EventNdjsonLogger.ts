@@ -25,6 +25,9 @@ import {
 } from "../attachmentStore.ts";
 import type * as ResourceAttribution from "../resourceTelemetry/ResourceAttribution.ts";
 
+const IS_PROVIDER_LOG_FILE_PATTERN = /\.log(?:\.\d+)?$/u;
+const IS_PROVIDER_LOG_FILE_PATTERN_2 = /^\[[^\]\r\n]+\] (?:NTIVE|CANON|ORCH): /u;
+
 const MEBIBYTE = 1024 * 1024;
 const DAY_MS = 24 * 60 * 60 * 1_000;
 const DEFAULT_MAX_BYTES = 10 * MEBIBYTE;
@@ -389,14 +392,14 @@ async function isProviderLogFile(
   fileName: string,
   filePrefix: string,
 ): Promise<boolean> {
-  if (!/\.log(?:\.\d+)?$/u.test(fileName)) return false;
+  if (!IS_PROVIDER_LOG_FILE_PATTERN.test(fileName)) return false;
   if (fileName.startsWith(filePrefix)) return true;
 
   const descriptor = await NodeFS.promises.open(filePath, "r");
   try {
     const header = Buffer.alloc(256);
     const { bytesRead } = await descriptor.read(header, 0, header.byteLength, 0);
-    return /^\[[^\]\r\n]+\] (?:NTIVE|CANON|ORCH): /u.test(header.toString("utf8", 0, bytesRead));
+    return IS_PROVIDER_LOG_FILE_PATTERN_2.test(header.toString("utf8", 0, bytesRead));
   } finally {
     await descriptor.close();
   }

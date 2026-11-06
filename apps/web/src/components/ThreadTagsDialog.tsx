@@ -13,6 +13,8 @@ import {
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 
+const MULTILINE_PATTERN = /[\p{Cc}]/u;
+
 type Request = {
   readonly current: ReadonlyArray<string>;
   readonly resolve: (tags: ReadonlyArray<string> | null) => void;
@@ -55,7 +57,7 @@ function parseTags(value: string): ReadonlyArray<string> | string {
   if (tooLong !== undefined) {
     return `A tag must be at most ${MAX_TAG_LENGTH} characters; "${tooLong}" is ${tooLong.length}.`;
   }
-  const multiline = tags.find((tag) => /[\p{Cc}]/u.test(tag));
+  const multiline = tags.find((tag) => MULTILINE_PATTERN.test(tag));
   if (multiline !== undefined) {
     return "A tag must be a single line of text.";
   }

@@ -1,5 +1,10 @@
 import type { DevicePlatform } from "@houston-app/contracts";
 
+const RESOLVE_DEVICE_MODEL_ID_PATTERN = /^iPhone Duo$/i;
+const RESOLVE_DEVICE_MODEL_ID_PATTERN_2 = /^iPhone 18 Pro Max$/i;
+const RESOLVE_DEVICE_MODEL_ID_PATTERN_3 = /^iPhone 18 Pro$/i;
+const RESOLVE_DEVICE_MODEL_ID_PATTERN_4 = /^iPad Pro 13-inch \(M5\)$/i;
+
 export type DeviceModelId = "iphone-18-pro" | "iphone-18-pro-max" | "ipad-pro-13-m5" | "iphone-duo";
 
 export interface DeviceModelSource {
@@ -17,10 +22,10 @@ export type DeviceAssetSource = DeviceModelSource | DeviceAccessorySource;
 
 export function resolveDeviceModelId(platform: DevicePlatform, name: string): DeviceModelId | null {
   if (platform !== "ios") return null;
-  if (/^iPhone Duo$/i.test(name)) return "iphone-duo";
-  if (/^iPhone 18 Pro Max$/i.test(name)) return "iphone-18-pro-max";
-  if (/^iPhone 18 Pro$/i.test(name)) return "iphone-18-pro";
-  if (/^iPad Pro 13-inch \(M5\)$/i.test(name)) return "ipad-pro-13-m5";
+  if (RESOLVE_DEVICE_MODEL_ID_PATTERN.test(name)) return "iphone-duo";
+  if (RESOLVE_DEVICE_MODEL_ID_PATTERN_2.test(name)) return "iphone-18-pro-max";
+  if (RESOLVE_DEVICE_MODEL_ID_PATTERN_3.test(name)) return "iphone-18-pro";
+  if (RESOLVE_DEVICE_MODEL_ID_PATTERN_4.test(name)) return "ipad-pro-13-m5";
   return null;
 }
 

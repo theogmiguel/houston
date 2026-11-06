@@ -17,6 +17,9 @@ import { gitHubMediaUrl } from "./gitHubMedia.ts";
 import { icon } from "./icon.ts";
 import { gitHubReferenceAutolinks } from "./referenceAutolinks.ts";
 
+const IS_REPOSITORY_PATH_PATTERN = /^[\w.-]+$/u;
+const TRAILING_SLASHES = /\/+$/u;
+
 const CHECKOUT_COMMAND = /^gh\s+pr\s+checkout\s+(.+)$/i;
 const CHANGE_REQUEST_REFERENCE =
   /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/pull\/(\d+)(?:[/?#].*)?$/i;
@@ -40,7 +43,9 @@ function isRepositoryPath(repository: string): boolean {
     segments.length === 2 &&
     // GitHub owner and repository names are only these characters, so nothing here can
     // be an encoded dot segment, query or fragment that `new URL` would reinterpret.
-    segments.every((segment) => /^[\w.-]+$/u.test(segment) && segment !== "." && segment !== "..")
+    segments.every(
+      (segment) => IS_REPOSITORY_PATH_PATTERN.test(segment) && segment !== "." && segment !== "..",
+    )
   );
 }
 
@@ -127,7 +132,8 @@ export const definition = defineSourceControl({
       ? null
       : new URL(`/${encodeURIComponent(login)}`, repositoryUrl).toString(),
   referenceAutolinks: gitHubReferenceAutolinks,
-  changeRequestChecksUrl: (changeRequestUrl) => `${changeRequestUrl.replace(/\/+$/u, "")}/checks`,
+  changeRequestChecksUrl: (changeRequestUrl) =>
+    `${changeRequestUrl.replace(TRAILING_SLASHES, "")}/checks`,
   // Before servers reported their actions, GitHub was the only host they acted on from a list.
   changeRequestActionsWhenUnreported: new Set(["close", "merge", "ready", "reopen"] as const),
   // One search reads every repository on the host.

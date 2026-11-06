@@ -17,6 +17,16 @@ import * as IdAllocator from "./IdAllocator.ts";
 import type { ProviderAdapterFailureReason } from "./ProviderAdapter.ts";
 import * as Schema from "effect/Schema";
 
+const PROCESS_EXIT_STATUS_PATTERN = /^SIG[A-Z0-9]{1,16}$/u;
+const TRAILING_PATTERN = /[),.;!?]+$/u;
+const REDACT_PROVIDER_FAILURE_TEXT_PATTERN = /\bhttps?:\/\/[^\s<>"']+/giu;
+const REDACT_PROVIDER_FAILURE_TEXT_PATTERN_2 = /\b(Bearer|Basic)\s+[^\s,;]+/giu;
+const REDACT_PROVIDER_FAILURE_TEXT_PATTERN_3 =
+  /(["'][\w-]*(?:access[_-]?token|api[_-]?key|authorization|credential|password|secret|token)["']\s*:\s*["'])[^"']*(["'])/giu;
+const REDACT_PROVIDER_FAILURE_TEXT_PATTERN_4 =
+  /((?<![\w-])[\w-]*(?:access[_-]?token|api[_-]?key|authorization|credential|password|secret|token)\b\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/giu;
+const REDACT_PROVIDER_FAILURE_TEXT_PATTERN_5 = /\bsk-[A-Za-z0-9_-]{16,}\b/gu;
+
 export class ContextHandoffBudgetError extends Schema.TaggedError<ContextHandoffBudgetError>()(
   "ContextHandoffBudgetError",
   {},
@@ -152,7 +162,7 @@ function curatedCauseMessages(cause: unknown): {
 // Only the structured status; stderr and the spawner cause can carry provider output.
 function processExitStatus(exited: object): string {
   const { signal, code } = exited as Record<string, unknown>;
-  if (typeof signal === "string" && /^SIG[A-Z0-9]{1,16}$/u.test(signal)) {
+  if (typeof signal === "string" && PROCESS_EXIT_STATUS_PATTERN.test(signal)) {
     return ` after signal ${signal}`;
   }
   return typeof code === "number" && Number.isSafeInteger(code) ? ` with code ${code}` : "";
@@ -178,7 +188,7 @@ function stringField(value: unknown, key: "message" | "code"): string | undefine
 }
 
 function redactUrl(match: string): string {
-  const trailing = /[),.;!?]+$/u.exec(match)?.[0] ?? "";
+  const trailing = TRAILING_PATTERN.exec(match)?.[0] ?? "";
   const candidate = trailing.length === 0 ? match : match.slice(0, -trailing.length);
   try {
     const url = new URL(candidate);
@@ -210,17 +220,11 @@ function replaceUnsafeControlCharacters(value: string): string {
 
 function redactProviderFailureText(value: string): string {
   return replaceUnsafeControlCharacters(value)
-    .replace(/\bhttps?:\/\/[^\s<>"']+/giu, redactUrl)
-    .replace(/\b(Bearer|Basic)\s+[^\s,;]+/giu, "$1 [REDACTED]")
-    .replace(
-      /(["'][\w-]*(?:access[_-]?token|api[_-]?key|authorization|credential|password|secret|token)["']\s*:\s*["'])[^"']*(["'])/giu,
-      "$1[REDACTED]$2",
-    )
-    .replace(
-      /((?<![\w-])[\w-]*(?:access[_-]?token|api[_-]?key|authorization|credential|password|secret|token)\b\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/giu,
-      "$1[REDACTED]",
-    )
-    .replace(/\bsk-[A-Za-z0-9_-]{16,}\b/gu, "[REDACTED]")
+    .replace(REDACT_PROVIDER_FAILURE_TEXT_PATTERN, redactUrl)
+    .replace(REDACT_PROVIDER_FAILURE_TEXT_PATTERN_2, "$1 [REDACTED]")
+    .replace(REDACT_PROVIDER_FAILURE_TEXT_PATTERN_3, "$1[REDACTED]$2")
+    .replace(REDACT_PROVIDER_FAILURE_TEXT_PATTERN_4, "$1[REDACTED]")
+    .replace(REDACT_PROVIDER_FAILURE_TEXT_PATTERN_5, "[REDACTED]")
     .trim();
 }
 

@@ -15,6 +15,8 @@ import * as Schema from "effect/Schema";
 
 import { createTranscriptJsonReader } from "../project/AgentSessionJson.ts";
 
+const REGEX_SPECIAL_CHARS = /[.*+?^${}()|[\]\\]/g;
+
 export interface TranscriptFile {
   readonly path: string;
   readonly size: number;
@@ -154,7 +156,7 @@ export function transcriptLineGate(markers: readonly [string, ...string[]]) {
     return (line: Buffer) => line.includes(marker);
   }
   const pattern = new RegExp(
-    markers.map((marker) => marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"),
+    markers.map((marker) => marker.replace(REGEX_SPECIAL_CHARS, "\\$&")).join("|"),
   );
   return (line: Buffer) => pattern.test(line.toString("latin1"));
 }

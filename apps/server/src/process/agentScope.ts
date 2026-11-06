@@ -18,6 +18,8 @@ import * as Path from "effect/Path";
 import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
 
+const WHITESPACE_RUN = /\s+/;
+
 const AGENT_SLICE = "app-houston-agents.slice";
 // Owns every agent slice and competes with the server's unit or scope under app.slice.
 const AGENTS_PARENT_SLICE = "app-houston.slice";
@@ -102,7 +104,7 @@ export function parseProcStat(text: string): ProcessStat | undefined {
   const fields = text
     .slice(close + 2)
     .trim()
-    .split(/\s+/);
+    .split(WHITESPACE_RUN);
   const state = fields[0] ?? "";
   const ppid = Number(fields[1]);
   const session = Number(fields[3]);

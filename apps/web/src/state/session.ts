@@ -13,6 +13,8 @@ import { connectionAtomRuntime } from "../connection/runtime";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentAtomList, environmentIdsKey } from "./environmentAtomList";
 
+const ENVIRONMENTS_WITH_SCOPE_ATOM_PATTERN = /\n(.*)/s;
+
 export const environmentSession = createEnvironmentSessionAtoms(connectionAtomRuntime);
 export const environmentSessionStatesAtom = environmentAtomList(
   "web-environment-session-states",
@@ -43,7 +45,10 @@ export function sessionHasScope(
 }
 
 const environmentsWithScopeAtom = Atom.family((key: string) => {
-  const [scope, idsKey = ""] = key.split(/\n(.*)/s) as [AuthEnvironmentScope, string?];
+  const [scope, idsKey = ""] = key.split(ENVIRONMENTS_WITH_SCOPE_ATOM_PATTERN) as [
+    AuthEnvironmentScope,
+    string?,
+  ];
   const ids = idsKey === "" ? [] : (idsKey.split("\n") as EnvironmentId[]);
   const statesAtom = environmentSessionStatesAtom(idsKey);
   return Atom.make((get) => {

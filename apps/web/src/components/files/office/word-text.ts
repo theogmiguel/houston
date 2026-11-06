@@ -12,6 +12,9 @@ import {
 import { wordLink } from "./links";
 import { lineHeight, type WordSpan } from "./word-protocol";
 
+const SEPARATED_PATTERN = /\s$/u;
+const SEPARATED_PATTERN_2 = /^\s/u;
+
 /** Measures text in the layer's font. */
 export type TextMeasure = {
   /** The natural width of `text` at a font size of 1. */
@@ -138,7 +141,7 @@ function regionText(
 
 /** Neighbours on a line with a gap between them and no space on either side of it read as separate words. */
 function separated(previous: Piece, next: Piece) {
-  if (/\s$/u.test(previous.text) || /^\s/u.test(next.text)) return false;
+  if (SEPARATED_PATTERN.test(previous.text) || SEPARATED_PATTERN_2.test(next.text)) return false;
 
   // A number's painted width runs up to its text, over the tab between them.
   if (previous.marker) return true;

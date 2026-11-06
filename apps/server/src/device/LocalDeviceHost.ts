@@ -50,6 +50,9 @@ import {
   DEVICE_HUB_VERSION,
 } from "./DeviceToolchain.ts";
 
+const HUB_ENVIRONMENT_PATTERN = /\bemulated\b/;
+const HUB_ENVIRONMENT_PATTERN_2 = /\bimagefile\b/;
+
 const HUB_READY_TIMEOUT_MS = 30_000;
 const DAEMON_READY_TIMEOUT_MS = 30_000;
 const DAEMON_POLL_MS = 100;
@@ -223,7 +226,9 @@ const hubEnvironment = Effect.fn("LocalDeviceHost.hubEnvironment")(function* (
           Effect.map((result) => {
             const help = `${result.stdout}\n${result.stderr}`;
             // The hub wires imagefile cameras unconditionally; older SDK emulators reject that mode.
-            return result.code === 0 && /\bemulated\b/.test(help) && !/\bimagefile\b/.test(help)
+            return result.code === 0 &&
+              HUB_ENVIRONMENT_PATTERN.test(help) &&
+              !HUB_ENVIRONMENT_PATTERN_2.test(help)
               ? `-camera-${facing} emulated`
               : "";
           }),

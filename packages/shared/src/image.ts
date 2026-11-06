@@ -1,4 +1,6 @@
 // Match PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPES so unsupported images remain sendable as files.
+const IS_SVG_ATTACHMENT_PATTERN = /\.svg$/i;
+
 const IMAGE_MIME_TYPE_BY_EXTENSION = new Map([
   ["gif", "image/gif"],
   ["jpeg", "image/jpeg"],
@@ -25,7 +27,8 @@ export function isSvgAttachment(attachment: {
   const mimeType = attachment.mimeType.split(";", 1)[0]?.trim().toLowerCase() ?? "";
   return (
     mimeType === "image/svg+xml" ||
-    ((mimeType === "" || GENERIC_MIME_TYPES.has(mimeType)) && /\.svg$/i.test(attachment.name))
+    ((mimeType === "" || GENERIC_MIME_TYPES.has(mimeType)) &&
+      IS_SVG_ATTACHMENT_PATTERN.test(attachment.name))
   );
 }
 

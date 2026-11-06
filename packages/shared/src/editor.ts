@@ -7,6 +7,8 @@ import * as Path from "effect/Path";
 import * as HostProcess from "./HostProcess.ts";
 import { isCommandAvailable } from "./shell.ts";
 
+const IS_VERSIONED_BUNDLE_PATTERN = /^\d[\d.]*$/;
+
 type Editor = (typeof EDITORS)[number];
 
 const installNames: Partial<Record<Editor["id"], ReadonlyArray<string>>> = {
@@ -22,7 +24,7 @@ const installNames: Partial<Record<Editor["id"], ReadonlyArray<string>>> = {
 // Prefix-only matches could select Insiders when resolving stable VS Code.
 const isVersionedBundle = (entry: string, name: string) => {
   if (!entry.startsWith(`${name} `) || !entry.endsWith(".app")) return false;
-  return /^\d[\d.]*$/.test(entry.slice(name.length + 1, -".app".length));
+  return IS_VERSIONED_BUNDLE_PATTERN.test(entry.slice(name.length + 1, -".app".length));
 };
 
 export const resolveEditorCommand = Effect.fn("editor.resolveEditorCommand")(function* (

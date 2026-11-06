@@ -50,6 +50,8 @@ import * as ManagedLimits from "../policy/managedLimits.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import { requestUrl } from "../requestUrl.ts";
 
+const PARSE_BEARER_TOKEN_PATTERN = /^Bearer /i;
+
 const DEFAULT_SESSION_SUBJECT = "cli-issued-session";
 export const INTERNAL_ADMINISTRATIVE_BOOTSTRAP_SUBJECT = "administrative-bootstrap";
 
@@ -631,7 +633,7 @@ const mapSessionVerificationErrors = <A, R>(
 
 export function parseBearerToken(request: HttpServerRequest.HttpServerRequest): string | null {
   const header = request.headers["authorization"];
-  if (typeof header !== "string" || !/^Bearer /i.test(header)) {
+  if (typeof header !== "string" || !PARSE_BEARER_TOKEN_PATTERN.test(header)) {
     return null;
   }
   const token = header.slice(AUTHORIZATION_PREFIX.length).trim();

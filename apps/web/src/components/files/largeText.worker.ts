@@ -8,6 +8,9 @@ import {
   type TextPreviewResult,
 } from "./largeTextProtocol";
 
+const ROWS_PATTERN = /\r?\n$|\r$/;
+const ROWS_PATTERN_2 = /\r\n|\n|\r/;
+
 const chunks: { start: number; blob: Blob }[] = [];
 const offsets: Uint32Array[] = [new Uint32Array(65536)];
 let entries = 1;
@@ -53,8 +56,8 @@ async function page(index: number) {
         maxCellLength: 1024 * 1024,
       }).rows
     : text
-        .replace(/\r?\n$|\r$/, "")
-        .split(/\r\n|\n|\r/)
+        .replace(ROWS_PATTERN, "")
+        .split(ROWS_PATTERN_2)
         .map((line) => [line]);
   reply({ type: "page", index, rows });
 }

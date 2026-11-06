@@ -13,6 +13,8 @@ import type { GitHubPullRequestDetail } from "./gitHubPullRequestJson.ts";
 import type { GitHubPullRequestApiError } from "./GitHubPullRequestApi.ts";
 import type { ProviderRepositoryRef } from "@houston-app/source-control-core/server/PullRequestProvider";
 
+const NEXT_PATTERN = /rel="next"/;
+
 const HeadSchema = Schema.Struct({
   head: Schema.Struct({
     sha: Schema.String.check(Schema.isPattern(/^[a-f0-9]{40,64}$/)),
@@ -131,7 +133,7 @@ export const makeChecksRevalidator = Effect.gen(function* () {
             }
             const validator = {
               etag: response.headers["etag"]?.trim(),
-              next: /rel="next"/.test(response.headers["link"] ?? ""),
+              next: NEXT_PATTERN.test(response.headers["link"] ?? ""),
               body: response.body,
             };
             entry.validators.set(endpoint, validator);

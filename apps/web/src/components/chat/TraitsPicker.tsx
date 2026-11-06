@@ -56,6 +56,10 @@ import { focusRequestedPermission, useComposerMenuProps } from "./composerEventS
 import { EffortGlyph, resolveEffortGlyph } from "./EffortGlyph";
 import { useComposerMenuState } from "./useComposerMenuState";
 
+const READ_PROMPT_ULTRATHINK_PATTERN = /^Ultrathink:\s*/i;
+const SAVED_OPTION_LABEL_PATTERN = /([a-z0-9])([A-Z])/g;
+const SAVED_OPTION_LABEL_PATTERN_2 = /^./;
+
 type ProviderOptions = ReadonlyArray<ProviderOptionSelection>;
 
 /**
@@ -66,7 +70,9 @@ export type PromptUltrathink = "none" | "prefix" | "body";
 
 export function readPromptUltrathink(prompt: string): PromptUltrathink {
   if (!isClaudeUltrathinkPrompt(prompt)) return "none";
-  return isClaudeUltrathinkPrompt(prompt.replace(/^Ultrathink:\s*/i, "")) ? "body" : "prefix";
+  return isClaudeUltrathinkPrompt(prompt.replace(READ_PROMPT_ULTRATHINK_PATTERN, ""))
+    ? "body"
+    : "prefix";
 }
 
 const SAVED_OPTION_LABELS: Readonly<Record<string, string>> = {
@@ -79,7 +85,9 @@ const SAVED_OPTION_LABELS: Readonly<Record<string, string>> = {
 function savedOptionLabel(id: string): string {
   return (
     SAVED_OPTION_LABELS[id] ??
-    id.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/^./, (character) => character.toUpperCase())
+    id
+      .replace(SAVED_OPTION_LABEL_PATTERN, "$1 $2")
+      .replace(SAVED_OPTION_LABEL_PATTERN_2, (character) => character.toUpperCase())
   );
 }
 
@@ -605,7 +613,7 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
       );
       return;
     }
-    onPromptEdit?.((prompt) => prompt.replace(/^Ultrathink:\s*/i, ""));
+    onPromptEdit?.((prompt) => prompt.replace(READ_PROMPT_ULTRATHINK_PATTERN, ""));
   };
   const otherSelectDescriptors = selectDescriptors.filter(
     (descriptor) =>

@@ -9,6 +9,8 @@ import {
 import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 
+const WHITESPACE_RUN = /\s+/g;
+
 const encodePromptJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 interface SnapShotPromptAccessibilityNode {
@@ -37,7 +39,7 @@ type SnapShotPromptAccessibility =
     };
 
 function normalizedAccessibilityLabel(value: string): string {
-  return value.trim().replaceAll(/\s+/g, " ").toLowerCase();
+  return value.trim().replaceAll(WHITESPACE_RUN, " ").toLowerCase();
 }
 
 function isRedundantWindowButtonDescription(node: SnapShotAccessibilityNode): boolean {

@@ -87,6 +87,8 @@ import {
 } from "./providerRuntime.ts";
 import { ThreadTokenUsageSnapshot } from "./providerRuntime.ts";
 
+const MATCH_PATTERN = /^\/goal(?:\s+([\s\S]*))?$/u;
+
 export const OrchestrationV2Actor = Schema.Literals(["user", "agent", "system"]);
 export type OrchestrationV2Actor = typeof OrchestrationV2Actor.Type;
 
@@ -563,7 +565,7 @@ export function parseGoalCommand(message: {
   readonly attachments?: ReadonlyArray<unknown> | undefined;
 }): OrchestrationV2GoalCommand | null {
   if ((message.attachments?.length ?? 0) > 0) return null;
-  const match = /^\/goal(?:\s+([\s\S]*))?$/u.exec(message.text.trim());
+  const match = MATCH_PATTERN.exec(message.text.trim());
   if (match === null) return null;
   const argument = (match[1] ?? "").trim();
   switch (argument.toLowerCase()) {

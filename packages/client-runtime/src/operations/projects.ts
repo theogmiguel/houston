@@ -27,6 +27,12 @@ import type { EnvironmentProject } from "../state/models.ts";
 import { sourceControlClients } from "../sourceControlClients.ts";
 import type { SourceControlDefinition } from "../sourceControlClients.ts";
 
+const QUERY_OR_FRAGMENT = /[?#]/;
+const HAS_HOST_PATTERN = /^[^/\\:]+@[^/\\:]+:/;
+const SEGMENTS_PATTERN = /[/\\:]+/;
+const DIGITS_ONLY = /^\d+$/;
+const PATH_SEPARATOR = /[\\/]/;
+
 export type AddProjectRemoteSource = SourceControlProviderKind | "url";
 
 export function canCreateProjectInEnvironment(
@@ -191,17 +197,17 @@ export function getAddProjectInitialQuery(baseDirectory: string | null | undefin
 }
 
 export function getCloneDirectoryName(repositoryOrRemoteUrl: string | null | undefined): string {
-  const withoutQuery = (repositoryOrRemoteUrl ?? "").split(/[?#]/)[0]?.trim() ?? "";
+  const withoutQuery = (repositoryOrRemoteUrl ?? "").split(QUERY_OR_FRAGMENT)[0]?.trim() ?? "";
   const schemeIndex = withoutQuery.indexOf("://");
-  const hasHost = schemeIndex >= 0 || /^[^/\\:]+@[^/\\:]+:/.test(withoutQuery);
+  const hasHost = schemeIndex >= 0 || HAS_HOST_PATTERN.test(withoutQuery);
   const pathPart = schemeIndex >= 0 ? withoutQuery.slice(schemeIndex + "://".length) : withoutQuery;
-  const segments = pathPart.split(/[/\\:]+/).filter((segment) => segment.trim().length > 0);
+  const segments = pathPart.split(SEGMENTS_PATTERN).filter((segment) => segment.trim().length > 0);
   if (hasHost && segments.length < 2) {
     return "";
   }
 
   const lastSegment = segments.at(-1)?.trim() ?? "";
-  if (hasHost && segments.length === 2 && /^\d+$/.test(lastSegment)) {
+  if (hasHost && segments.length === 2 && DIGITS_ONLY.test(lastSegment)) {
     return "";
   }
   return lastSegment.endsWith(".git") ? lastSegment.slice(0, -".git".length) : lastSegment;
@@ -254,7 +260,7 @@ export function getNewProjectRepository(
   target: Pick<NewProjectPublishTarget, "owner">,
   workspaceRoot: string,
 ): string {
-  const folderName = workspaceRoot.split(/[\\/]/).filter(Boolean).at(-1) ?? "";
+  const folderName = workspaceRoot.split(PATH_SEPARATOR).filter(Boolean).at(-1) ?? "";
   return target.owner ? `${target.owner}/${folderName}` : folderName;
 }
 

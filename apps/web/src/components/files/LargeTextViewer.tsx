@@ -6,6 +6,9 @@ import { FileSurfaceFailure, FileSurfaceLoading, FileSurfaceNotice } from "./fil
 import { PREVIEW_PAGE_ROWS, type TextPreviewResult } from "./largeTextProtocol";
 import VirtualTablePreview from "./VirtualTablePreview";
 
+const ROWS_PATTERN = /\r?\n$|\r$/;
+const ROWS_PATTERN_2 = /\r\n|\n|\r/;
+
 const FIRST_SCREEN_BYTES = 16 * 1024;
 
 function firstScreen(text: string, delimiter: "," | "\t" | null, complete: boolean) {
@@ -17,8 +20,8 @@ function firstScreen(text: string, delimiter: "," | "\t" | null, complete: boole
         maxCellLength: FIRST_SCREEN_BYTES,
       }).rows
     : text
-        .replace(/\r?\n$|\r$/, "")
-        .split(/\r\n|\n|\r/)
+        .replace(ROWS_PATTERN, "")
+        .split(ROWS_PATTERN_2)
         .slice(0, PREVIEW_PAGE_ROWS * 2 + 1)
         .map((line) => [line]);
   // A byte range can end inside a quoted record or a UTF-8 character.

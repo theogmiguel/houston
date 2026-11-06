@@ -10,6 +10,10 @@ import {
 } from "@houston-app/contracts";
 import { createModelCapabilities, resolveSelectableModel } from "@houston-app/shared/model";
 
+const FORMAT_PROVIDER_DRIVER_KIND_LABEL_PATTERN = /([a-z])([A-Z])/g;
+const FORMAT_PROVIDER_DRIVER_KIND_LABEL_PATTERN_2 = /[_-]+/g;
+const FORMAT_PROVIDER_DRIVER_KIND_LABEL_PATTERN_3 = /\b\w/g;
+
 const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [],
 });
@@ -17,10 +21,10 @@ const DEFAULT_DRIVER_KIND = ProviderDriverKind.make("codex");
 
 export function formatProviderDriverKindLabel(provider: ProviderDriverKind): string {
   return provider
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/[_-]+/g, " ")
+    .replace(FORMAT_PROVIDER_DRIVER_KIND_LABEL_PATTERN, "$1 $2")
+    .replace(FORMAT_PROVIDER_DRIVER_KIND_LABEL_PATTERN_2, " ")
     .trim()
-    .replace(/\b\w/g, (char) => char.toUpperCase());
+    .replace(FORMAT_PROVIDER_DRIVER_KIND_LABEL_PATTERN_3, (char) => char.toUpperCase());
 }
 
 export function getProviderModels(

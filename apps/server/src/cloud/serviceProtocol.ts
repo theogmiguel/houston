@@ -1,5 +1,7 @@
 import type { ServerSelfUpdateOutcome } from "@houston-app/contracts";
 
+const DIGITS_ONLY = /^\d+$/;
+
 // Bump for incompatible runtime layout changes; launchers survive self-updates. Protocol 3 requires standalone executables.
 export const SERVICE_LAUNCHER_PROTOCOL = 3 as const;
 export const SERVICE_LAUNCHER_CONTEXT_ENV = "HOUSTON_SERVICE_LAUNCHER_CONTEXT";
@@ -130,8 +132,8 @@ export function compareExactServiceVersions(left: string, right: string): number
     const y = b.prerelease[index];
     if (x === undefined || y === undefined) return x === undefined ? -1 : 1;
     if (x === y) continue;
-    const xNumeric = /^\d+$/.test(x);
-    const yNumeric = /^\d+$/.test(y);
+    const xNumeric = DIGITS_ONLY.test(x);
+    const yNumeric = DIGITS_ONLY.test(y);
     if (xNumeric && yNumeric) return BigInt(x) < BigInt(y) ? -1 : 1;
     if (xNumeric !== yNumeric) return xNumeric ? -1 : 1;
     return x < y ? -1 : 1;

@@ -55,6 +55,8 @@ import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import { HoustonReadOnlyThreads, mayHoldHoustonTools } from "../houston/sideThreads.ts";
 
+const RAW_TOKEN_PATTERN = /^Bearer\s+/;
+
 const DEFAULT_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 const DEFAULT_MAX_IDLE_PIN_MS = 4 * 60 * 60 * 1000;
 const RELEASE_SCOPE_CLOSE_TIMEOUT_MS = 30 * 1000;
@@ -476,7 +478,7 @@ export const layerWithOptions = (
                 if (existing !== undefined) {
                   // Reserve before async validation so release cannot revoke between validation and reservation.
                   reserveMcpCredential(threadId, existing.providerSessionId);
-                  const rawToken = existing.authorizationHeader.replace(/^Bearer\s+/, "");
+                  const rawToken = existing.authorizationHeader.replace(RAW_TOKEN_PATTERN, "");
                   // Interrupted resolution must release the reservation before the caller learns of it.
                   const resolved = yield* mcpSessionRegistry
                     .resolve(rawToken)

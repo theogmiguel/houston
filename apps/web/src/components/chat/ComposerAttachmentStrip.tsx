@@ -47,6 +47,8 @@ import {
 } from "./SnapShotAttachmentDetails";
 import { prepareVideoFirstFrame } from "../../lib/videoFirstFrame";
 
+const EXTENSION_PATTERN = /(\.[^./\\]+)$/;
+
 const ATTACHMENT_TILE_CLASS =
   "group/tile relative size-14 shrink-0 snap-start overflow-hidden rounded-lg";
 
@@ -146,7 +148,7 @@ function AttachmentTileRetryButton(props: {
 }
 
 function filePickerAccept(name: string): string | undefined {
-  const extension = name.match(/(\.[^./\\]+)$/)?.[1];
+  const extension = name.match(EXTENSION_PATTERN)?.[1];
   return extension;
 }
 

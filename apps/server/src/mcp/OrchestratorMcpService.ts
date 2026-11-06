@@ -129,6 +129,9 @@ import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as PeerForwarding from "../peer/PeerForwarding.ts";
 import * as RemoteDelegation from "../peer/RemoteDelegation.ts";
 
+const WHITESPACE_RUN = /\s+/;
+const PROVIDER_WORDS_PATTERN = /[^\p{L}\p{N}]+/u;
+
 const DEFAULT_WAIT_TIMEOUT_MS = 10 * 60 * 1_000;
 const MAX_WAIT_TIMEOUT_MS = 60 * 60 * 1_000;
 const TASK_WAKE_EVENTS = [
@@ -308,8 +311,8 @@ function listCapabilityModels(input: {
   const providerText = `${instanceId} ${driver} ${displayName ?? ""}`.toLowerCase();
   // Whole ids like "codex-work" and their parts both name the provider.
   const providerWords = new Set([
-    ...providerText.split(/\s+/),
-    ...providerText.split(/[^\p{L}\p{N}]+/u),
+    ...providerText.split(WHITESPACE_RUN),
+    ...providerText.split(PROVIDER_WORDS_PATTERN),
   ]);
   const modelText = (model: ServerProviderModel) =>
     `${model.slug} ${model.name} ${model.subProvider ?? ""}`.toLowerCase();
@@ -2278,7 +2281,7 @@ const make = Effect.gen(function* () {
         Effect.mapError(() => failure("orchestration_error", "Unable to read server settings.")),
       );
       const inherited = parent?.thread.modelSelection;
-      const searchTerms = input.search?.toLowerCase().split(/\s+/).filter(Boolean) ?? [];
+      const searchTerms = input.search?.toLowerCase().split(WHITESPACE_RUN).filter(Boolean) ?? [];
       return {
         parentThreadId: parent?.thread.id ?? null,
         inheritedProviderInstanceId: inherited?.instanceId ?? null,

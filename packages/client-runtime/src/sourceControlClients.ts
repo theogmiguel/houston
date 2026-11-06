@@ -8,6 +8,9 @@ import {
 import type { ServerSettings, SourceControlAppAccessInput } from "@houston-app/contracts";
 import { parseGitRemoteRepository } from "@houston-app/shared/git";
 
+const AS_WRITTEN_PATTERN = /\.git\/?$/i;
+const AS_WRITTEN_PATTERN_2 = /[/:]/;
+
 export {
   isMonochromeSourceControlIcon,
   UNKNOWN_SOURCE_CONTROL_CLIENT,
@@ -53,8 +56,8 @@ export function appSignInTargetForRemote(remoteUrl: string): {
   // The parser lowercases; keep the remote's own casing for display when it names the same path.
   const asWritten = remoteUrl
     .trim()
-    .replace(/\.git\/?$/i, "")
-    .split(/[/:]/)
+    .replace(AS_WRITTEN_PATTERN, "")
+    .split(AS_WRITTEN_PATTERN_2)
     .slice(-2)
     .join("/");
   const repository = asWritten.toLowerCase() === parsed.path ? asWritten : parsed.path;

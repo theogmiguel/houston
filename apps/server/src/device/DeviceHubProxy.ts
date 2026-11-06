@@ -20,6 +20,9 @@ import { authenticateMediaRequest } from "../auth/http.ts";
 import * as DeviceService from "./DeviceService.ts";
 import { repeatStillFrame } from "./mjpegStillFrame.ts";
 
+const CONTROLS_DEVICE_PATTERN = /\/api\/(stream-(mode|settings)|fold)$/;
+const HANDLER_PATTERN = /^http/;
+
 const ALLOWED_PATHS: ReadonlyArray<RegExp> = [
   /^\/api\/devices$/,
   /^\/vendor\/serve-sim\/api$/,
@@ -199,7 +202,7 @@ const handler = Effect.gen(function* () {
   }
   const controlsDevice =
     (upgrade && hubPath !== "/api/devices/ws") ||
-    (!readOnly && /\/api\/(stream-(mode|settings)|fold)$/.test(hubPath));
+    (!readOnly && CONTROLS_DEVICE_PATTERN.test(hubPath));
   yield* authenticateMediaRequest(
     controlsDevice ? AuthOrchestrationOperateScope : AuthOrchestrationReadScope,
   );
@@ -222,7 +225,7 @@ const handler = Effect.gen(function* () {
   if (upgrade) {
     return yield* proxyWebSocket(
       request,
-      upstreamUrl.replace(/^http/, "ws"),
+      upstreamUrl.replace(HANDLER_PATTERN, "ws"),
       routed?.protocols,
       routed?.headers,
     );

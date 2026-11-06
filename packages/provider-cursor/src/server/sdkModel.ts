@@ -2,6 +2,8 @@ import type { ModelSelection as CursorSdkModelSelection, ModelParameterValue } f
 import type { ModelSelection, ServerProviderModel } from "@houston-app/contracts";
 import { getProviderOptionCurrentValue } from "@houston-app/shared/model";
 
+const MATCH_PATTERN = /^(\d+)([km])$/i;
+
 const CURSOR_SDK_PARAMETER_TO_PROVIDER_OPTION: Readonly<Record<string, string>> = {
   context: "contextWindow",
   fast: "fastMode",
@@ -49,7 +51,7 @@ export function cursorContextWindowTokens(
       ?.capabilities?.optionDescriptors?.find((option) => option.id === "contextWindow");
     value = getProviderOptionCurrentValue(descriptor);
   }
-  const match = /^(\d+)([km])$/i.exec(typeof value === "string" ? value.trim() : "");
+  const match = MATCH_PATTERN.exec(typeof value === "string" ? value.trim() : "");
   if (match === null) return undefined;
   const tokens = Number(match[1]) * (match[2]?.toLowerCase() === "m" ? 1_000_000 : 1_000);
   return Number.isSafeInteger(tokens) && tokens > 0 ? tokens : undefined;

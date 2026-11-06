@@ -9,6 +9,9 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as ProcessRunner from "../processRunner.ts";
 import { BOOT_SERVICE_UNIT_FILE } from "./bootService.ts";
 
+const PATH_PATTERN = /\/user$/;
+const PARSE_UNITS_PATTERN = /\n\s*\n/;
+
 const PROTECT_DROP_IN = "90-houston-protect.conf";
 const LEGACY_PROTECT_DROP_IN = "90-t3code-protect.conf";
 const SYSTEM_UNIT_DIR = "/etc/systemd/system";
@@ -84,7 +87,7 @@ export function protectionPlan(input: {
     ],
     managerDefaults: {
       unit: "user.conf",
-      path: `${input.userUnitDir.replace(/\/user$/, "")}/user.conf.d/${PROTECT_DROP_IN}`,
+      path: `${input.userUnitDir.replace(PATH_PATTERN, "")}/user.conf.d/${PROTECT_DROP_IN}`,
       contents: "[Manager]\nDefaultOOMScoreAdjust=200\n",
     },
     user: [
@@ -163,7 +166,7 @@ export class ServiceProtectionError extends Schema.TaggedError<ServiceProtection
 
 function parseUnits(text: string): Array<Map<string, string>> {
   return text
-    .split(/\n\s*\n/)
+    .split(PARSE_UNITS_PATTERN)
     .map(
       (block) =>
         new Map(

@@ -15,6 +15,12 @@ import { sourceControlDefinitions } from "../sourceControl/sourceControlDefiniti
 import { gitSpawnEnv } from "../vcs/VcsProcess.ts";
 import * as HostProcess from "@houston-app/shared/HostProcess";
 
+const FILE_SCHEME = /^file:/i;
+const IS_LOCAL_REMOTE_URL_PATTERN = /^[a-z][a-z0-9+.-]*:\/\//i;
+const IS_LOCAL_REMOTE_URL_PATTERN_2 = /^[a-z]:[\\/]/i;
+const PATH_SEPARATOR = /[\\/]/;
+const MATCH_PATTERN = /^(\S+)\s+(\S+)\s+\((fetch|push)\)(?:\s+\[[^\]]+\])?$/;
+
 const DEFAULT_REPOSITORY_IDENTITY_CACHE_CAPACITY = 512;
 // Minute-by-minute sweeps need cached hits; clone, publish and PR discovery force refresh.
 const DEFAULT_POSITIVE_CACHE_TTL = Duration.minutes(15);
@@ -39,12 +45,12 @@ export class RepositoryIdentityResolver extends Context.Service<
 
 // Local paths such as GitButler's gb-local=. would give unrelated repos the same identity.
 function isLocalRemoteUrl(url: string): boolean {
-  if (/^file:/i.test(url)) return true;
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(url)) return false;
-  if (/^[a-z]:[\\/]/i.test(url)) return true;
+  if (FILE_SCHEME.test(url)) return true;
+  if (IS_LOCAL_REMOTE_URL_PATTERN.test(url)) return false;
+  if (IS_LOCAL_REMOTE_URL_PATTERN_2.test(url)) return true;
   // Git treats `host:path` as scp-style only when the colon precedes any slash.
   const colonIndex = url.indexOf(":");
-  const slashIndex = url.search(/[\\/]/);
+  const slashIndex = url.search(PATH_SEPARATOR);
   return colonIndex === -1 || (slashIndex !== -1 && slashIndex < colonIndex);
 }
 
@@ -54,7 +60,7 @@ function parseRemoteFetchUrls(stdout: string): Map<string, string> {
     const trimmed = line.trim();
     if (trimmed.length === 0) continue;
     // Partial clones append the promisor filter, e.g. `(fetch) [blob:none]`.
-    const match = /^(\S+)\s+(\S+)\s+\((fetch|push)\)(?:\s+\[[^\]]+\])?$/.exec(trimmed);
+    const match = MATCH_PATTERN.exec(trimmed);
     if (!match) continue;
     const [, remoteName = "", remoteUrl = "", direction = ""] = match;
     if (

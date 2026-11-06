@@ -14,6 +14,8 @@ import {
 } from "./baseSchemas.ts";
 import { SourceControlProviderKind } from "./sourceControl.ts";
 
+const RESOLVE_PULL_REQUEST_AUTHOR_FILTER_PATTERN = /^@?me$/i;
+
 export const PullRequestInvolvement = Schema.Literals(["all", "reviewing", "authored"]);
 export type PullRequestInvolvement = typeof PullRequestInvolvement.Type;
 
@@ -921,7 +923,7 @@ export function resolvePullRequestAuthorFilter(
   viewer: string | null | undefined,
 ): string {
   const trimmed = author.trim();
-  if (!/^@?me$/i.test(trimmed)) return trimmed;
+  if (!RESOLVE_PULL_REQUEST_AUTHOR_FILTER_PATTERN.test(trimmed)) return trimmed;
   return viewer === null || viewer === undefined || viewer.trim().length === 0 ? trimmed : viewer;
 }
 

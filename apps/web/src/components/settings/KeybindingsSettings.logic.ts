@@ -17,6 +17,10 @@ import { shortcutConflictKey, shortcutKeyFromEvent } from "../../keybindings";
 import { isMacPlatform } from "../../lib/utils";
 import { METRIC_OPTIONS, WINDOW_OPTIONS } from "../usage/usageShortcuts";
 
+const TITLE_CASE_COMMAND_SEGMENT_PATTERN = /([a-z0-9])([A-Z])/g;
+const TITLE_CASE_COMMAND_SEGMENT_PATTERN_2 = /[-_\s]+/;
+const NORMALIZE_SHORTCUT_KEY_TOKEN_PATTERN = /^f\d{1,2}$/;
+
 // Rank every usage command; mixing rank and alphabetical comparisons makes order input-dependent.
 const usageCommandOrder = new Map<KeybindingCommand, number>(
   [
@@ -401,7 +405,9 @@ export function commandLabel(command: KeybindingCommand): string {
 
 function titleCaseCommandSegment(segment: string): string {
   const words: Array<string> = [];
-  for (const part of segment.replace(/([a-z0-9])([A-Z])/g, "$1 $2").split(/[-_\s]+/)) {
+  for (const part of segment
+    .replace(TITLE_CASE_COMMAND_SEGMENT_PATTERN, "$1 $2")
+    .split(TITLE_CASE_COMMAND_SEGMENT_PATTERN_2)) {
     if (part.length > 0) {
       words.push(part.slice(0, 1).toUpperCase() + part.slice(1));
     }
@@ -440,7 +446,7 @@ function normalizeShortcutKeyToken(key: string): string | null {
   if (normalized === "arrowleft") return "arrowleft";
   if (normalized === "arrowright") return "arrowright";
   if (normalized.length === 1) return normalized;
-  if (/^f\d{1,2}$/.test(normalized)) return normalized;
+  if (NORMALIZE_SHORTCUT_KEY_TOKEN_PATTERN.test(normalized)) return normalized;
   if (normalized === "enter" || normalized === "tab" || normalized === "backspace") {
     return normalized;
   }

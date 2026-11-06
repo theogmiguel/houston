@@ -16,6 +16,8 @@ import { readSourceControlHostSettings } from "@houston-app/source-control-core/
 
 import * as GitCafeClient from "../shared/definition.ts";
 
+const LINE_BREAK = /\r?\n/u;
+
 const TOKEN_TTL = Duration.minutes(5);
 const MISSING_TTL = Duration.seconds(10);
 
@@ -84,7 +86,7 @@ export function environmentToken(
 }
 
 function credentialPassword(output: string): string | null {
-  for (const line of output.split(/\r?\n/u)) {
+  for (const line of output.split(LINE_BREAK)) {
     if (line.startsWith("password=")) return line.slice("password=".length).trim() || null;
   }
   return null;

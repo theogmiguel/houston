@@ -283,6 +283,8 @@ import { useThreadActions } from "../hooks/useThreadActions";
 import { useOpenGridDraft } from "../grid/useOpenGridDraft";
 import { threadRecentUse } from "@houston-app/shared/paletteSearch";
 
+const NON_ALPHANUMERIC_RUN = /[^a-z0-9]+/u;
+
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
 const NEW_THREAD_IN_GROUP = "projects";
 
@@ -1590,10 +1592,7 @@ function OpenCommandPaletteDialog(props: {
       "repo",
       "git",
       ...sourceControlClients.definitions.flatMap((definition) =>
-        definition.pickerLabel
-          .toLowerCase()
-          .split(/[^a-z0-9]+/u)
-          .filter(Boolean),
+        definition.pickerLabel.toLowerCase().split(NON_ALPHANUMERIC_RUN).filter(Boolean),
       ),
       "url",
       "environment",
@@ -1639,7 +1638,7 @@ function OpenCommandPaletteDialog(props: {
               definition.changeRequest.plural,
               `${shortLabel}s`,
               shortLabel,
-              ...definition.label.toLowerCase().split(/[^a-z0-9]+/u),
+              ...definition.label.toLowerCase().split(NON_ALPHANUMERIC_RUN),
             ].filter(Boolean);
           }),
         ),

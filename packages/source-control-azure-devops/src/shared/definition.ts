@@ -10,6 +10,14 @@ import {
 } from "@houston-app/source-control-core/shared/definition";
 import { icon } from "./icon.ts";
 
+const MATCH_PATTERN =
+  /^(ssh\.dev\.azure\.com|vs-ssh\.visualstudio\.com)\/v3\/([^/]+)\/([^/]+)\/([^/]+)$/u;
+const CANONICAL_PATTERN =
+  /^(?:ssh\.dev\.azure\.com|vs-ssh\.visualstudio\.com)\/v3\/([^/]+)\/([^/]+)\/([^/]+)$/u;
+const CANONICAL_PATTERN_2 =
+  /^([^.]+)\.visualstudio\.com\/(?:defaultcollection\/)?([^/]+)\/_git\/([^/]+)$/u;
+const WHITESPACE_RUN = /\s+/;
+
 // Azure DevOps Server runs on any hostname; its `_git` route identifies it.
 const CHANGE_REQUEST_PATH = /^\/((?:[^/]+\/)*_git\/[^/]+)\/pullrequest\/(\d+)(?:\/|$)/u;
 const COMMIT_PATH = /^\/((?:[^/]+\/)*_git\/[^/]+)\/commit\/([0-9a-f]+)\/?$/iu;
@@ -24,8 +32,7 @@ const CHANGE_REQUEST_REFERENCE =
  * to every comparison made against a pull request URL, which arrives in the web spelling.
  */
 function repositoryKeyFromRemote(key: string): string | null {
-  const match =
-    /^(ssh\.dev\.azure\.com|vs-ssh\.visualstudio\.com)\/v3\/([^/]+)\/([^/]+)\/([^/]+)$/u.exec(key);
+  const match = MATCH_PATTERN.exec(key);
   if (match === null) return null;
   const [, host, organization, project, repository] = match;
   return host === "ssh.dev.azure.com"
@@ -36,14 +43,8 @@ function repositoryKeyFromRemote(key: string): string | null {
 /** Every spelling of an Azure DevOps Services repository, on `dev.azure.com`. */
 function canonicalRepositoryKey(key: string): string | null {
   const canonical = key
-    .replace(
-      /^(?:ssh\.dev\.azure\.com|vs-ssh\.visualstudio\.com)\/v3\/([^/]+)\/([^/]+)\/([^/]+)$/u,
-      "dev.azure.com/$1/$2/_git/$3",
-    )
-    .replace(
-      /^([^.]+)\.visualstudio\.com\/(?:defaultcollection\/)?([^/]+)\/_git\/([^/]+)$/u,
-      "dev.azure.com/$1/$2/_git/$3",
-    );
+    .replace(CANONICAL_PATTERN, "dev.azure.com/$1/$2/_git/$3")
+    .replace(CANONICAL_PATTERN_2, "dev.azure.com/$1/$2/_git/$3");
   return canonical.startsWith("dev.azure.com/") ? canonical : null;
 }
 
@@ -56,7 +57,7 @@ function decodeUrlPathSegment(segment: string): string {
 }
 
 function checkoutCommandId(args: string): string | null {
-  const parts = args.trim().split(/\s+/).filter(Boolean);
+  const parts = args.trim().split(WHITESPACE_RUN).filter(Boolean);
   for (const [index, part] of parts.entries()) {
     if (part === "--id" || part === "-i") return parts[index + 1] ?? null;
     if (part.startsWith("--id=")) return part.slice("--id=".length) || null;

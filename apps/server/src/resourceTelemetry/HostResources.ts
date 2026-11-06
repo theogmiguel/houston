@@ -9,6 +9,12 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
+const PAGE_SIZE_PATTERN = /page size of (\d+) bytes/;
+const FREE_PATTERN = /^Pages free:\s+(\d+)\./m;
+const INACTIVE_PATTERN = /^Pages inactive:\s+(\d+)\./m;
+const SPECULATIVE_PATTERN = /^Pages speculative:\s+(\d+)\./m;
+const AVAILABLE_PATTERN = /^MemAvailable:\s+(\d+)\s+kB$/m;
+
 export class HostResources extends Context.Service<
   HostResources,
   { readonly read: Effect.Effect<HostResourcesSnapshot> }
@@ -27,10 +33,10 @@ function readCpu() {
 }
 
 function darwinAvailableMemory(output: string): number | null {
-  const pageSize = /page size of (\d+) bytes/.exec(output)?.[1];
-  const free = /^Pages free:\s+(\d+)\./m.exec(output)?.[1];
-  const inactive = /^Pages inactive:\s+(\d+)\./m.exec(output)?.[1];
-  const speculative = /^Pages speculative:\s+(\d+)\./m.exec(output)?.[1];
+  const pageSize = PAGE_SIZE_PATTERN.exec(output)?.[1];
+  const free = FREE_PATTERN.exec(output)?.[1];
+  const inactive = INACTIVE_PATTERN.exec(output)?.[1];
+  const speculative = SPECULATIVE_PATTERN.exec(output)?.[1];
   if (!pageSize || !free || !inactive || !speculative) return null;
   // vm_stat excludes speculative from free; add it once, without overlapping purgeable pages.
   const available = (Number(free) + Number(inactive) + Number(speculative)) * Number(pageSize);
@@ -59,7 +65,7 @@ const make = Effect.fn("makeHostResources")(function* () {
       const meminfo = yield* fs
         .readFileString("/proc/meminfo")
         .pipe(Effect.orElseSucceed(() => ""));
-      const available = /^MemAvailable:\s+(\d+)\s+kB$/m.exec(meminfo)?.[1];
+      const available = AVAILABLE_PATTERN.exec(meminfo)?.[1];
       if (available) availableMemoryBytes = Number(available) * 1024;
     } else if (platform === "darwin") {
       const output = yield* spawner

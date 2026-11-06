@@ -3,6 +3,8 @@ import { toKindScopedComposerContextId } from "@houston-app/shared/composerConte
 import { threadTranscriptHeader } from "@houston-app/shared/threadTranscript";
 import * as DateTime from "effect/DateTime";
 
+const TITLE_PATTERN = /[^\p{L}\p{N}._ -]/gu;
+
 export function threadContextAttachment(
   environmentId: EnvironmentId,
   transcript: OrchestrationV2ThreadTranscript,
@@ -12,7 +14,7 @@ export function threadContextAttachment(
     "thread",
     `${environmentId}:${transcript.threadId}:${updatedAt}`,
   );
-  const title = transcript.title.replace(/[^\p{L}\p{N}._ -]/gu, "_").slice(0, 64) || "Thread";
+  const title = transcript.title.replace(TITLE_PATTERN, "_").slice(0, 64) || "Thread";
   return new File(
     [
       threadTranscriptHeader(environmentId, transcript),

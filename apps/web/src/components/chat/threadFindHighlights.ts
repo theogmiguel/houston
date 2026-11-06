@@ -2,6 +2,8 @@ import { findThreadSearchOccurrences } from "@houston-app/shared/threadSearch";
 import { useEffect, useEffectEvent, useRef } from "react";
 import { THREAD_FIND_BLOCK_TAGS } from "@houston-app/shared/threadFindText";
 
+const LINE_BREAK = /\r?\n/g;
+
 const THREAD_FIND_HIGHLIGHT_NAME = "houston-thread-find";
 const THREAD_FIND_ACTIVE_HIGHLIGHT_NAME = "houston-thread-find-active";
 
@@ -60,7 +62,7 @@ export function collectThreadFindRanges(container: HTMLElement, query: string): 
       if (node.nodeType === 3) {
         const value = node.nodeValue ?? "";
         const start = text.length;
-        text += inPre ? value : value.replace(/\r?\n/g, " ");
+        text += inPre ? value : value.replace(LINE_BREAK, " ");
         nodes.push({ node, start, end: text.length });
       }
       for (const child of node.childNodes) visit(child, inPre || tag === "pre");

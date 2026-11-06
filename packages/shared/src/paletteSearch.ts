@@ -4,6 +4,14 @@ import type { OrchestrationV2ThreadOpens } from "@houston-app/contracts";
 
 import { WORKTREE_BRANCH_PREFIX } from "./git.ts";
 
+const FOLD_CHARACTER_PATTERN = /[‘’]/;
+const FOLD_IN_PLACE_PATTERN = /[\u0080-\uffff]/g;
+const WHITESPACE_RUN = /\s+/;
+const REGEX_SPECIAL_CHARS = /[.*+?^${}()|[\]\\]/g;
+const PICKED_QUERY_PATTERN = /[\ud800-\udbff]$/;
+const FIELD_QUERY_PATTERN = /^(?:pr|pull request|pull)\s*(?=#?\d)/;
+const FIELD_QUERY_PATTERN_2 = /^#\s*/;
+
 const ALPHANUMERIC = /[\p{L}\p{N}]/u;
 const LOWERCASE = /\p{Ll}/u;
 const UPPERCASE = /\p{Lu}/u;
@@ -41,7 +49,7 @@ function foldCharacter(character: string): string {
     .replace(COMBINING_MARKS, "")
     .toLowerCase()
     .replace("ς", "σ")
-    .replace(/[‘’]/, "'");
+    .replace(FOLD_CHARACTER_PATTERN, "'");
 }
 
 /**
@@ -51,7 +59,7 @@ function foldCharacter(character: string): string {
  */
 function foldInPlace(text: string): string {
   return text
-    .replace(/[\u0080-\uffff]/g, (character) => {
+    .replace(FOLD_IN_PLACE_PATTERN, (character) => {
       const folded = foldCharacter(character);
       return folded.length === 1 ? folded : character;
     })
@@ -137,7 +145,7 @@ const WRAPPING_QUOTES = /^\s*["'`“”‘’]+|["'`“”‘’]+\s*$/g;
 /** Folded, whitespace-collapsed query; empty when there is nothing to match. */
 export function foldSearchQuery(query: string): string {
   return foldInPlace(query.replace(WRAPPING_QUOTES, "").normalize("NFC"))
-    .split(/\s+/)
+    .split(WHITESPACE_RUN)
     .filter((token) => token.length > 0)
     .join(" ");
 }
@@ -466,7 +474,7 @@ export function messageSearchTokens(query: string): {
     .replace(CURLY_APOSTROPHES, "'")
     .normalize("NFC")
     .toLowerCase()
-    .split(/\s+/)
+    .split(WHITESPACE_RUN)
     .filter((token) => token.length > 0);
   const searchable = (token: string) => {
     const length = Array.from(token).length;
@@ -488,7 +496,7 @@ export function messagePhrase(query: string): RegExp | null {
   return words.length > 1
     ? new RegExp(
         `(?<![\\p{L}\\p{N}])${words
-          .map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+          .map((word) => word.replace(REGEX_SPECIAL_CHARS, "\\$&"))
           .join("\\s+")}(?![\\p{L}\\p{N}])`,
         "iu",
       )
@@ -752,7 +760,7 @@ const THREAD_SEARCH_PICK_MAX_LENGTH = 32;
  */
 export function pickedQuery(query: string): string {
   const cut = foldSearchQuery(query).slice(0, THREAD_SEARCH_PICK_MAX_LENGTH);
-  return (/[\ud800-\udbff]$/.test(cut) ? cut.slice(0, -1) : cut).trim();
+  return (PICKED_QUERY_PATTERN.test(cut) ? cut.slice(0, -1) : cut).trim();
 }
 
 function decay(ageMs: number): number {
@@ -985,8 +993,8 @@ function threadFieldQuery(normalizedQuery: string): string {
     lastFieldQuery = {
       query: normalizedQuery,
       fieldQuery: normalizedQuery
-        .replace(/^(?:pr|pull request|pull)\s*(?=#?\d)/, "")
-        .replace(/^#\s*/, "")
+        .replace(FIELD_QUERY_PATTERN, "")
+        .replace(FIELD_QUERY_PATTERN_2, "")
         .replace(WORKTREE_BRANCH_PREFIX_PATTERN, ""),
     };
   }

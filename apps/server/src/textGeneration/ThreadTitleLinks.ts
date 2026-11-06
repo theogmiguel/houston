@@ -2,6 +2,9 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 
+const RESOLVE_THREAD_TITLE_LINKS_PATTERN = /https:\/\/[^\s<>"')\]`]+/g;
+const CANDIDATE_PATTERN = /[.,;!?]+$/;
+
 const encodeSubject = Schema.encodeEffect(
   Schema.fromJsonString(Schema.Struct({ title: Schema.String, body: Schema.String })),
 );
@@ -12,8 +15,8 @@ export const resolveThreadTitleLinks = Effect.fn("resolveThreadTitleLinks")(func
 }) {
   const providers = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
   const links = new Map<string, NonNullable<ReturnType<typeof providers.resolveLink>>>();
-  for (const match of input.message.matchAll(/https:\/\/[^\s<>"')\]`]+/g)) {
-    const candidate = match[0].replace(/[.,;!?]+$/, "");
+  for (const match of input.message.matchAll(RESOLVE_THREAD_TITLE_LINKS_PATTERN)) {
+    const candidate = match[0].replace(CANDIDATE_PATTERN, "");
     if (!URL.canParse(candidate)) continue;
     const url = new URL(candidate);
     url.hash = "";

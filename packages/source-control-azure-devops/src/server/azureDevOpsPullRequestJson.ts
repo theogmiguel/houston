@@ -18,6 +18,8 @@ import { decodeJsonResult } from "@houston-app/shared/schemaJson";
 
 import { azureDevOpsPullRequestWebUrl } from "./azureDevOpsPullRequests.ts";
 
+const LEADING_SLASHES = /^\/+/;
+
 // CLI fields vary by command; unknown enum values must not fail the payload.
 const RawIdentitySchema = Schema.Struct({
   displayName: Schema.optional(Schema.NullOr(Schema.String)),
@@ -400,7 +402,7 @@ const decodeItemContent = decodeJsonResult(RawItemContentSchema);
 /** Preserve whitespace to match patch paths and viewed marks. */
 function toRepositoryPath(value: string | null | undefined): string | null {
   if (value === undefined || value === null) return null;
-  const path = value.replace(/^\/+/, "");
+  const path = value.replace(LEADING_SLASHES, "");
   return path.length === 0 ? null : path;
 }
 

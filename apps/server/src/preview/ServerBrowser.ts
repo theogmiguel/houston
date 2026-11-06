@@ -90,6 +90,11 @@ import { presentAsChrome, ServerBrowserContexts } from "./ServerBrowserContexts.
 import { BrowserControlInterrupted, SessionControl } from "./SessionControl.ts";
 import { installPdfDocumentNavigation, isPdfAssetUrl } from "./PdfDocumentNavigation.ts";
 
+const OUTPUT_PATTERN = /sandboxing failed/i;
+const ADOPT_POPUP_PATTERN = /^https?:/i;
+const NAVIGATE_PATTERN = /ERR_[A-Z_]+/;
+const DESCRIBE_CONFIRMATION_TARGET_PATTERN = /aria-ref\s*=/;
+
 const SERVER_HOST_CLIENT_ID = SERVER_BROWSER_AUTOMATION_CLIENT_ID;
 const RENDER_SCALE = 2;
 // Chromium allows three unacked frames, so 100 ms pacing caps viewers near 30 fps.
@@ -595,9 +600,7 @@ const make = Effect.gen(function* () {
         PreviewBrowserHost.diagnoseLaunchFailure({
           executable,
           setupCommand,
-          output: /sandboxing failed/i.test(String(cause))
-            ? PreviewBrowserHost.NO_SANDBOX_SIGNATURE
-            : "",
+          output: OUTPUT_PATTERN.test(String(cause)) ? PreviewBrowserHost.NO_SANDBOX_SIGNATURE : "",
         }),
       ),
     onContextClose: (context) => {
@@ -1409,7 +1412,7 @@ const make = Effect.gen(function* () {
     await runPromise(
       openTab({
         threadId: opener.threadId,
-        ...(/^https?:/i.test(url) ? { url } : {}),
+        ...(ADOPT_POPUP_PATTERN.test(url) ? { url } : {}),
         runtime: "server",
         ...(opener.profileId === undefined ? {} : { profileId: opener.profileId }),
         ...(opener.control.agentId === null
@@ -1745,7 +1748,7 @@ const make = Effect.gen(function* () {
           `${url} is a file this browser cannot show, so it was downloaded instead. preview_status lists it under downloads.`,
         );
       }
-      if (/ERR_[A-Z_]+/.test(message)) {
+      if (NAVIGATE_PATTERN.test(message)) {
         throw new ServerBrowserPage.ServerBrowserOperationError(
           "PreviewAutomationExecutionError",
           `Navigation to ${url} failed: ${ServerBrowserPage.parseNetError(message).description}`,
@@ -2059,7 +2062,7 @@ const make = Effect.gen(function* () {
       );
     try {
       // Refs resolve against the snapshot's own map; a raw locator call would report them stale.
-      if (selector !== null && !/aria-ref\s*=/.test(selector)) {
+      if (selector !== null && !DESCRIBE_CONFIRMATION_TARGET_PATTERN.test(selector)) {
         const info = await read(tab.page.locator(selector).first());
         return {
           element: { tagName: info.tagName, text: info.text, selector },

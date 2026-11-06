@@ -1,3 +1,5 @@
+const IS_V_KEY_PATTERN = /^[a-z]$/;
+
 export const PASTED_TEXT_ATTACHMENT_THRESHOLD_BYTES = 32 * 1024;
 
 const textEncoder = new TextEncoder();
@@ -7,7 +9,7 @@ export type PastedTextDisposition = "attachment" | "inline";
 /** Non-Latin layouts (Cyrillic, Greek) report the typed letter; fall back to the physical key. */
 function isVKey(event: { readonly key: string; readonly code?: string }): boolean {
   const key = event.key.toLowerCase();
-  return /^[a-z]$/.test(key) ? key === "v" : event.code === "KeyV";
+  return IS_V_KEY_PATTERN.test(key) ? key === "v" : event.code === "KeyV";
 }
 
 export function isPasteAsTextShortcut(

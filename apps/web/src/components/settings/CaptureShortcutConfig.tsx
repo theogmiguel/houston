@@ -20,6 +20,8 @@ import { toastManager } from "../ui/toast";
 import { shortcutToKeybindingInput } from "./KeybindingsSettings.logic";
 import { useSnapShotShortcutRecorder } from "./useSnapShotShortcutRecorder";
 
+const SHORTCUT_PATTERN = /super/gi;
+
 const DEFAULT_SHORTCUT = parseKeybindingShortcut("Ctrl+Shift+2")!;
 
 export function CaptureShortcutConfig({
@@ -51,7 +53,8 @@ export function CaptureShortcutConfig({
   const shortcutKeys = (keys ?? preview?.shortcut)?.trim();
   const recorder = useSnapShotShortcutRecorder({
     shortcut: shortcutKeys
-      ? (parseKeybindingShortcut(shortcutKeys.replace(/super/gi, "meta")) ?? DEFAULT_SHORTCUT)
+      ? (parseKeybindingShortcut(shortcutKeys.replace(SHORTCUT_PATTERN, "meta")) ??
+        DEFAULT_SHORTCUT)
       : DEFAULT_SHORTCUT,
     disabled: busy,
     allowModifierPairs: false,

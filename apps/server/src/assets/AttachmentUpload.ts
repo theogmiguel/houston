@@ -38,6 +38,8 @@ import * as ServerConfig from "../config.ts";
 import { inferImageExtension } from "../imageMime.ts";
 import * as DocumentText from "../provider/DocumentText.ts";
 
+const NAME_PATTERN = /\.svg$/i;
+
 export const ATTACHMENT_UPLOAD_ROUTE_PREFIX = "/api/attachments/upload";
 
 const SIGNING_SECRET_NAME = "asset-access-signing-key";
@@ -100,7 +102,7 @@ export const issueAttachmentUploadUrl = Effect.fn("AttachmentUpload.issueUrl")(f
 
   const attachmentType = input.type ?? "image";
   const name =
-    attachmentType === "file" && isSvgAttachment(input) && !/\.svg$/i.test(input.name)
+    attachmentType === "file" && isSvgAttachment(input) && !NAME_PATTERN.test(input.name)
       ? `${input.name}.svg`
       : input.name;
   const attachmentId = createPendingAttachmentId(

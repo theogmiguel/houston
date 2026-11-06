@@ -10,6 +10,13 @@ import {
   THREAD_JUMP_KEYBINDING_COMMANDS,
 } from "@houston-app/contracts";
 
+const IS_MAC_PLATFORM_PATTERN = /mac|iphone|ipad|ipod/i;
+const SHORTCUT_KEY_FROM_EVENT_PATTERN = /^[a-z]$/;
+const LETTER_CODE_PATTERN = /^Key([A-Z])$/;
+const MATCHES_KEYBINDING_SHORTCUT_PATTERN = /^[a-z0-9]$/i;
+const WHITESPACE = /\s/;
+const IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_.-]*/;
+
 export interface ShortcutEventLike {
   getModifierState?: (key: "AltGraph") => boolean;
   type?: string;
@@ -78,7 +85,7 @@ export const US_SHIFTED_TO_UNSHIFTED_KEYS: ReadonlyMap<string, string> = new Map
 ]);
 
 export function isMacPlatform(platform: string): boolean {
-  return /mac|iphone|ipad|ipod/i.test(platform);
+  return IS_MAC_PLATFORM_PATTERN.test(platform);
 }
 
 export function normalizeEventKey(key: string): string {
@@ -89,7 +96,7 @@ export function normalizeEventKey(key: string): string {
 
 export function shortcutKeyFromEvent(event: Pick<ShortcutEventLike, "key" | "code">): string {
   const layoutKey = normalizeEventKey(event.key);
-  if (/^[a-z]$/.test(layoutKey)) return layoutKey;
+  if (SHORTCUT_KEY_FROM_EVENT_PATTERN.test(layoutKey)) return layoutKey;
   const physicalKey = event.code ? EVENT_CODE_SHORTCUT_KEYS[event.code] : undefined;
   return physicalKey ?? layoutKey;
 }
@@ -97,8 +104,8 @@ export function shortcutKeyFromEvent(event: Pick<ShortcutEventLike, "key" | "cod
 export function resolveEventKeys(event: ShortcutEventLike): Set<string> {
   const layoutKey = normalizeEventKey(event.key);
   const keys = new Set([layoutKey]);
-  const letterCode = event.code?.match(/^Key([A-Z])$/)?.[1];
-  if (letterCode && !/^[a-z]$/.test(layoutKey)) {
+  const letterCode = event.code?.match(LETTER_CODE_PATTERN)?.[1];
+  if (letterCode && !SHORTCUT_KEY_FROM_EVENT_PATTERN.test(layoutKey)) {
     keys.add(letterCode.toLowerCase());
   }
   keys.add(shortcutKeyFromEvent(event));
@@ -129,7 +136,7 @@ export function matchesKeybindingShortcut(
   if (
     !isMacPlatform(platform) &&
     event.getModifierState?.("AltGraph") &&
-    !/^[a-z0-9]$/i.test(event.key)
+    !MATCHES_KEYBINDING_SHORTCUT_PATTERN.test(event.key)
   )
     return false;
   if (!matchesKeybindingShortcutModifiers(event, shortcut, platform)) return false;
@@ -334,7 +341,7 @@ function tokenizeWhenExpression(expression: string): WhenToken[] | null {
     const current = expression[index];
     if (!current) break;
 
-    if (/\s/.test(current)) {
+    if (WHITESPACE.test(current)) {
       index += 1;
       continue;
     }
@@ -364,7 +371,7 @@ function tokenizeWhenExpression(expression: string): WhenToken[] | null {
       continue;
     }
 
-    const identifier = /^[A-Za-z_][A-Za-z0-9_.-]*/.exec(expression.slice(index));
+    const identifier = IDENTIFIER_PATTERN.exec(expression.slice(index));
     if (!identifier) {
       return null;
     }

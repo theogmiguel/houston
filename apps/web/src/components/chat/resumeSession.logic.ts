@@ -1,6 +1,8 @@
 import type { ThreadId } from "@houston-app/contracts";
 import type { HoustonResumeSession } from "@houston-app/contracts/houston/resumeSessions";
 
+const TRAILING_SLASHES = /\/+$/;
+
 export const RESUME_PROVIDER_LABELS = {
   claudeAgent: "Claude Code",
   codex: "Codex",
@@ -36,7 +38,7 @@ export function resumeSessionTitle(session: HoustonResumeSession): string {
 }
 
 function normalizedPath(value: string): string {
-  return value.replaceAll("\\", "/").replace(/\/+$/, "");
+  return value.replaceAll("\\", "/").replace(TRAILING_SLASHES, "");
 }
 
 export function resumeSessionLocation(

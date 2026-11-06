@@ -10,6 +10,8 @@ import type {
 } from "@houston-app/contracts";
 import * as DateTime from "effect/DateTime";
 
+const TRAILING_DOT_ZERO = /\.0$/;
+
 function asFiniteNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
@@ -185,12 +187,12 @@ export function formatContextWindowTokens(value: number | null): string {
     return `${Math.round(value)}`;
   }
   if (value < 10_000) {
-    return `${(value / 1_000).toFixed(1).replace(/\.0$/, "")}k`;
+    return `${(value / 1_000).toFixed(1).replace(TRAILING_DOT_ZERO, "")}k`;
   }
   if (value < 999_500) {
     return `${Math.round(value / 1_000)}k`;
   }
-  return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, "")}m`;
+  return `${(value / 1_000_000).toFixed(1).replace(TRAILING_DOT_ZERO, "")}m`;
 }
 
 /** Picker-sized label for a token count, such as "200K" or "1M"; null when there is no size. */
@@ -202,7 +204,7 @@ export function formatCompactContextWindowTokens(value: number | null | undefine
     return `${Math.round(value)}`;
   }
   if (value < 1_000_000) {
-    return `${Number((value / 1_000).toFixed(1).replace(/\.0$/, ""))}K`;
+    return `${Number((value / 1_000).toFixed(1).replace(TRAILING_DOT_ZERO, ""))}K`;
   }
-  return `${Number((value / 1_000_000).toFixed(1).replace(/\.0$/, ""))}M`;
+  return `${Number((value / 1_000_000).toFixed(1).replace(TRAILING_DOT_ZERO, ""))}M`;
 }

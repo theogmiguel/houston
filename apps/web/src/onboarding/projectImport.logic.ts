@@ -5,6 +5,10 @@ import type {
   ProjectId,
 } from "@houston-app/contracts";
 
+const SPLIT_ONBOARDING_PROJECT_PATH_PATTERN = /^[A-Za-z]:[\\/]+$/;
+const SPLIT_ONBOARDING_PROJECT_PATH_PATTERN_2 = /^[\\/]{2}[^\\/]+[\\/][^\\/]+[\\/]*$/;
+const TRAILING_PATH_SEPARATORS = /[\\/]+$/;
+
 const RECENT_PROJECT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 const DEFAULT_SELECTION_MIN_THREADS = 3;
 
@@ -125,10 +129,13 @@ export function splitOnboardingProjectPath(path: string): {
   readonly name: string;
   readonly parent: string;
 } {
-  if (/^[A-Za-z]:[\\/]+$/.test(path) || /^[\\/]{2}[^\\/]+[\\/][^\\/]+[\\/]*$/.test(path)) {
+  if (
+    SPLIT_ONBOARDING_PROJECT_PATH_PATTERN.test(path) ||
+    SPLIT_ONBOARDING_PROJECT_PATH_PATTERN_2.test(path)
+  ) {
     return { name: path, parent: "" };
   }
-  const trimmed = path.replace(/[\\/]+$/, "");
+  const trimmed = path.replace(TRAILING_PATH_SEPARATORS, "");
   const separatorIndex = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
   if (trimmed.length === 0) return { name: path, parent: "" };
   if (separatorIndex < 0) return { name: trimmed, parent: "" };

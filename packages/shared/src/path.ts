@@ -1,5 +1,19 @@
+const IS_WINDOWS_DRIVE_PATH_PATTERN = /^[a-zA-Z]:([/\\]|$)/;
+const IS_NETWORK_PATH_PATTERN = /^[\\/]{2}/;
+const IS_ROOT_PATH_PATTERN = /^[a-zA-Z]:[/\\]$/;
+const TRAILING_SLASHES = /\/+$/g;
+const TRAILING_PATH_SEPARATORS = /[\\/]+$/g;
+const TRIM_TRAILING_PATH_SEPARATORS_PATTERN = /^[a-zA-Z]:$/;
+const SLUG_PATTERN = /[̀-ͯ]/g;
+const NON_ALPHANUMERIC_RUN = /[^a-z0-9]+/g;
+const SLUG_PATTERN_2 = /^-+/;
+const SLUG_PATTERN_3 = /-+$/;
+const TRAILING_PATH_SEPARATORS_2 = /[/\\]+$/;
+const TRAILING_SLASHES_2 = /\/+$/;
+const AFTER_FOLDER_PATTERN = /[/\\]$/;
+
 export function isWindowsDrivePath(value: string): boolean {
-  return /^[a-zA-Z]:([/\\]|$)/.test(value);
+  return IS_WINDOWS_DRIVE_PATH_PATTERN.test(value);
 }
 
 export function isUncPath(value: string): boolean {
@@ -12,7 +26,7 @@ export function isUncPath(value: string): boolean {
  * user's NTLM credentials, so agent-authored paths must not reach one.
  */
 export function isNetworkPath(value: string): boolean {
-  return /^[\\/]{2}/.test(value);
+  return IS_NETWORK_PATH_PATTERN.test(value);
 }
 
 export function isWindowsAbsolutePath(value: string): boolean {
@@ -32,7 +46,7 @@ export function isExplicitRelativePath(value: string): boolean {
 
 function isRootPath(value: string): boolean {
   // Bare C: means the current directory on C, not its root; require the drive separator.
-  return value === "/" || value === "\\" || /^[a-zA-Z]:[/\\]$/.test(value);
+  return value === "/" || value === "\\" || IS_ROOT_PATH_PATTERN.test(value);
 }
 
 function trimTrailingPathSeparators(value: string): string {
@@ -40,12 +54,12 @@ function trimTrailingPathSeparators(value: string): string {
     return value;
   }
   const trimmed = value.startsWith("/")
-    ? value.replace(/\/+$/g, "")
-    : value.replace(/[\\/]+$/g, "");
+    ? value.replace(TRAILING_SLASHES, "")
+    : value.replace(TRAILING_PATH_SEPARATORS, "");
   if (trimmed.length === 0) {
     return value;
   }
-  return /^[a-zA-Z]:$/.test(trimmed) ? `${trimmed}\\` : trimmed;
+  return TRIM_TRAILING_PATH_SEPARATORS_PATTERN.test(trimmed) ? `${trimmed}\\` : trimmed;
 }
 
 export function normalizeProjectPathForDispatch(value: string): string {
@@ -66,12 +80,12 @@ const WINDOWS_RESERVED_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/;
 export function newProjectFolderName(name: string): string {
   const slug = name
     .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(SLUG_PATTERN, "")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+/, "")
+    .replace(NON_ALPHANUMERIC_RUN, "-")
+    .replace(SLUG_PATTERN_2, "")
     .slice(0, 64)
-    .replace(/-+$/, "");
+    .replace(SLUG_PATTERN_3, "");
   if (slug.length === 0) return "project";
   return WINDOWS_RESERVED_NAME.test(slug) ? `${slug}-project` : slug;
 }
@@ -84,7 +98,7 @@ export function stripSlashPrefixedWindowsDrive(path: string): string {
 }
 
 export function fileBasename(path: string): string {
-  const trimmed = path.replace(/[/\\]+$/, "");
+  const trimmed = path.replace(TRAILING_PATH_SEPARATORS_2, "");
   if (trimmed.length === 0) return path;
   const separatorIndex = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
   return separatorIndex >= 0 ? trimmed.slice(separatorIndex + 1) : trimmed;
@@ -98,11 +112,11 @@ export function workspaceRelativeFilePath(
   const normalizedPath = stripSlashPrefixedWindowsDrive(path.replaceAll("\\", "/"));
   const normalizedRoot = stripSlashPrefixedWindowsDrive(
     workspaceRoot.replaceAll("\\", "/"),
-  ).replace(/\/+$/, "");
+  ).replace(TRAILING_SLASHES_2, "");
   const caseInsensitive = isWindowsAbsolutePath(stripSlashPrefixedWindowsDrive(workspaceRoot));
   const pathForCompare = caseInsensitive ? normalizedPath.toLowerCase() : normalizedPath;
   const rootForCompare = caseInsensitive ? normalizedRoot.toLowerCase() : normalizedRoot;
-  if (pathForCompare.replace(/\/+$/, "") === rootForCompare) return ".";
+  if (pathForCompare.replace(TRAILING_SLASHES_2, "") === rootForCompare) return ".";
   if (!pathForCompare.startsWith(`${rootForCompare}/`)) return null;
   const relativePath = normalizedPath.slice(normalizedRoot.length + 1);
   // `/repo/../x` starts with the root but escapes it; the server rejects that as a workspace path.
@@ -146,7 +160,7 @@ export function resolvePastedPath(previous: string, next: string): string {
   }
 
   // Without a trailing separator, `/a` then `/a/b` is a longer path, not one pasted after a folder.
-  const afterFolder = /[/\\]$/.test(previous) && next.startsWith(previous);
+  const afterFolder = AFTER_FOLDER_PATTERN.test(previous) && next.startsWith(previous);
   const path = afterFolder ? next.slice(previous.length) : next;
   if (!isHostPath(path)) return next;
   // `\` separates folders in Windows paths, so it only escapes in `/` and `~/` paths.
@@ -155,7 +169,7 @@ export function resolvePastedPath(previous: string, next: string): string {
 
 export function resolveWorkspaceFilePath(path: string, workspaceRoot: string): string {
   if (isAbsolutePath(path) || path.startsWith("~/") || path.startsWith("~\\")) return path;
-  const base = workspaceRoot.replace(/[/\\]+$/, "");
+  const base = workspaceRoot.replace(TRAILING_PATH_SEPARATORS_2, "");
   return isWindowsAbsolutePath(workspaceRoot)
     ? `${base}\\${path.replaceAll("/", "\\")}`
     : `${base}/${path}`;
