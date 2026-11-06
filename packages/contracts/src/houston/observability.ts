@@ -27,10 +27,38 @@ export const DatadogSignals = Schema.Struct({
 });
 export type DatadogSignals = typeof DatadogSignals.Type;
 
+// The server sends to http://<host>:<port> (bracketed if it contains ":"); a valid host parses back
+// alone, so no credentials, port, path, query or fragment can send traces elsewhere.
+export const isAgentHost = (host: string): boolean => {
+  if (host === "" || host.trim() !== host) return false;
+  const ipv6 = host.includes(":");
+  const parsed = URL.parse(`http://${ipv6 ? `[${host}]` : host}`);
+  if (parsed === null) return false;
+  if (
+    parsed.username !== "" ||
+    parsed.password !== "" ||
+    parsed.port !== "" ||
+    parsed.pathname !== "/" ||
+    parsed.search !== "" ||
+    parsed.hash !== ""
+  )
+    return false;
+  return ipv6 ? parsed.hostname.startsWith("[") : parsed.hostname === host.toLowerCase();
+};
+
+const AgentHost = TrimmedNonEmptyString.check(
+  Schema.makeFilter(
+    (host: string) =>
+      isAgentHost(host) ||
+      `The Datadog Agent host "${host}" is not a host name or IP address; expected one such as 127.0.0.1, agent.local or ::1, without a scheme, port, path or credentials.`,
+    { expected: "a host name or IP address" },
+  ),
+);
+
 export const HoustonObservabilityPreset = Schema.Union([
   Schema.TaggedStruct("Datadog", { site: DatadogSite, signals: DatadogSignals }),
   Schema.TaggedStruct("DatadogAgent", {
-    host: TrimmedNonEmptyString,
+    host: AgentHost,
     port: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65_535 })),
   }),
 ]);
