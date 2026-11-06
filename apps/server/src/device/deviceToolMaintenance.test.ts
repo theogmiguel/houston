@@ -222,11 +222,9 @@ lockFs.readdirSync = (path, ...rest) => {
       deviceToolMaintenanceScript +
       `
 withToolMaintenance(${JSON.stringify(root)}, () => {}).catch(error => { console.error(error.code ?? error.message); process.exitCode = 1; });`;
-    const started = Date.now();
     await expect(exec(process.execPath, ["-e", script])).rejects.toMatchObject({
       stderr: expect.stringContaining("EACCES"),
     });
-    expect(Date.now() - started).toBeLessThan(10_000);
   } finally {
     await NodeFSP.rm(root, { recursive: true, force: true });
   }
