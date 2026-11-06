@@ -221,15 +221,23 @@ heavy user's history. Run it from `apps/server` on an idle machine:
 pnpm bench:db-load run --scales 1,10,100 --label before --out <dir>   # build or reuse, then time
 pnpm bench:db-load compare --before <dir>/results.json --after <dir2>/results.json --out <dir3>
 pnpm bench:db-load report --results <dir>/results.json                # re-render report.html
+pnpm bench:db-load ab --a <before checkout> --b <after checkout> --scales 1,10,100 --out <dir>
 ```
+
+`ab` is the before/after measurement: per scale it alternates the two checkouts in ABBA blocks
+(`--blocks 4`), so both see the same machine state, then merges each side's samples and writes
+both result files, `comparison.txt` and `report.html`. Each side measures its own copy of the
+databases (`houston-db-load/ab-<label>/`), so one side's migrations never reach the other's. Both
+checkouts need this suite and the same generator version; `--a-label` and `--b-label` name them.
 
 - **Data.** Databases live under `%TEMP%` or `$TMPDIR` in `houston-db-load/<scale>x/` and are
   reused while the generator version and `--seed` match; `--rebuild` regenerates them. Each build
   runs both migration tracks, writes one unit (6 projects, 150 threads, about 1,100 turns, 40
   tasks) through `EventSink`, `ProjectStore` and `HoustonTaskStore`, runs the daily event-log
-  prune, then copies the unit `scale - 1` times with every id and timestamp rewritten. A
-  separate deep thread holds `60 × scale` turns for reads that follow one thread's length.
-- **Size.** A unit takes about 170 MB and 90 seconds; 100x needs about 18 GB and half an hour.
+  prune and the three-day auto-settle, then copies the unit `scale - 1` times with every id and
+  timestamp rewritten. A separate deep thread holds `60 × scale` turns for reads that follow one
+  thread's length.
+- **Size.** A unit takes about 170 MB and 90 seconds; 100x needs about 18 GB and an hour.
   1000x needs more disk than a workstation usually has, so reports project it from the fit.
 - **Queries.** `queries.ts` calls the stores the server calls (shell, boot recovery, thread
   open, search, turn start, stream writes, maintenance). Writes are idempotent re-writes or run
@@ -243,6 +251,8 @@ pnpm bench:db-load report --results <dir>/results.json                # re-rende
   `EXPLAIN QUERY PLAN`. A query fails at a scale when its p95 exceeds its path's budget, a plan
   scans a growing table, or its executed statements grow with the data. `compare` reports the
   median ratio with a bootstrap interval and a Holm-adjusted Mann-Whitney U test.
+- **Isolation.** Each scale runs in its own process with a bounded heap (`--heap-mb`, 6144) and
+  writes `scale-<n>x.json`; a rerun reuses finished scales unless `--rerun` is given.
 
 ## Maintaining model data
 

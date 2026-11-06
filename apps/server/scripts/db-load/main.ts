@@ -8,6 +8,7 @@ import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import * as NodeUtil from "node:util";
 
+import { blockOrder, copyDatabasesFor, measureBlock, mergeBlocks } from "./ab.ts";
 import { ensureDatabases } from "./buildMain.ts";
 import { compareResults, formatComparison, type Comparison } from "./compare.ts";
 import { DEFAULT_DATA_DIR } from "./paths.ts";
@@ -37,6 +38,11 @@ const { positionals, values } = NodeUtil.parseArgs({
     before: { type: "string" },
     after: { type: "string" },
     results: { type: "string" },
+    a: { type: "string" },
+    b: { type: "string" },
+    "a-label": { type: "string", default: "before" },
+    "b-label": { type: "string", default: "after" },
+    blocks: { type: "string", default: "4" },
   },
 });
 
@@ -61,14 +67,15 @@ const write = (dir: string, name: string, content: string) => {
   log(`wrote ${path}`);
 };
 
-function gitSha(): string {
+function gitSha(root?: string): string {
   try {
-    const sha = NodeChildProcess.execFileSync("git", ["rev-parse", "HEAD"], {
-      encoding: "utf8",
-    }).trim();
-    const dirty = NodeChildProcess.execFileSync("git", ["status", "--porcelain", "--", "src"], {
-      encoding: "utf8",
-    }).trim();
+    const options = { encoding: "utf8" as const, ...(root === undefined ? {} : { cwd: root }) };
+    const sha = NodeChildProcess.execFileSync("git", ["rev-parse", "HEAD"], options).trim();
+    const dirty = NodeChildProcess.execFileSync(
+      "git",
+      ["status", "--porcelain", "--", "apps/server/src"],
+      options,
+    ).trim();
     return dirty.length > 0 ? `${sha}+dirty` : sha;
   } catch {
     return "unknown";
@@ -189,6 +196,84 @@ switch (command) {
     write(outDir(values.label), `scale-${scale}x.json`, JSON.stringify(measured));
     break;
   }
+  case "ab": {
+    if (values.a === undefined || values.b === undefined) {
+      throw new Error("ab needs --a <checkout root> and --b <checkout root>.");
+    }
+    const manifests = await ensureDatabases({
+      dataDir: values["data-dir"],
+      scales,
+      seed,
+      rebuild: values.rebuild,
+      log,
+    });
+    const sides = [
+      { name: values["a-label"], root: NodePath.resolve(values.a) },
+      { name: values["b-label"], root: NodePath.resolve(values.b) },
+    ] as const;
+    const dir = outDir(`${sides[0].name}-vs-${sides[1].name}`);
+    const sideData = sides.map((side) =>
+      copyDatabasesFor(side, values["data-dir"], manifests, log),
+    );
+    const blocks = Number(values.blocks);
+    const share = (value: string) => String(Math.max(1, Math.ceil(Number(value) / blocks)));
+    // Each block takes a share of the repetitions, so the total matches a single run.
+    const args = [
+      "--scales",
+      values.scales,
+      "--seed",
+      values.seed,
+      "--target-ms",
+      share(values["target-ms"]),
+      "--min-reps",
+      share(values["min-reps"]),
+      "--max-reps",
+      share(values["max-reps"]),
+      "--cap-ms",
+      share(values["cap-ms"]),
+      "--warmup",
+      values.warmup,
+      ...(values.only === undefined ? [] : ["--only", values.only]),
+    ];
+    const startedAt = new Date().toISOString();
+    const perSide = sides.map(() => new Map<number, ScaleResults>());
+    for (const manifest of manifests) {
+      const parts: Array<Array<ScaleResults>> = sides.map(() => []);
+      for (let block = 0; block < blocks; block++) {
+        for (const index of blockOrder(0, 1, block)) {
+          const side = sides[index]!;
+          log(`${manifest.scale}x block ${block + 1}/${blocks}: ${side.name}`);
+          parts[index]!.push(
+            measureBlock({
+              side,
+              sideDataDir: sideData[index]!,
+              scale: manifest.scale,
+              out: NodePath.join(dir, side.name, `block-${block}`),
+              heapMb: values["heap-mb"],
+              args: [...args, "--label", `${side.name}-block-${block}`],
+            }),
+          );
+        }
+      }
+      sides.forEach((_, index) => perSide[index]!.set(manifest.scale, mergeBlocks(parts[index]!)));
+    }
+    const [before, after] = sides.map((side, index) =>
+      assembleResults(manifests, perSide[index]!, {
+        label: side.name,
+        gitSha: gitSha(side.root),
+        only: values.only?.split(","),
+        startedAt,
+      }),
+    ) as [RunResults, RunResults];
+    const comparison = compareResults(before, after);
+    console.log(formatComparison(comparison));
+    write(dir, `${before.label}.json`, JSON.stringify(before));
+    write(dir, `${after.label}.json`, JSON.stringify(after));
+    write(dir, "comparison.json", JSON.stringify(comparison, null, 1));
+    write(dir, "comparison.txt", formatComparison(comparison));
+    write(dir, "report.html", renderReport(after, { before, comparison }));
+    break;
+  }
   case "compare": {
     if (values.before === undefined || values.after === undefined) {
       throw new Error("compare needs --before <results.json> and --after <results.json>.");
@@ -218,6 +303,6 @@ switch (command) {
   }
   default:
     throw new Error(
-      `Unknown command "${command}"; expected build, run, measure, compare or report.`,
+      `Unknown command "${command}"; expected build, run, measure, ab, compare or report.`,
     );
 }
