@@ -190,8 +190,10 @@ describe("ServerLoggerLive", () => {
         ),
       );
 
+      // An exported failure keeps only its error type; the request line never leaves.
       const body = requests.map((request) => request.body).join("\n");
-      assert.include(body, "wsTicket=<redacted>&dpop=<redacted>");
+      assert.include(body, "exception.type");
+      assert.notInclude(body, "wsTicket");
       assert.notInclude(body, "ticket-secret");
       assert.notInclude(body, "proof-secret");
     }),

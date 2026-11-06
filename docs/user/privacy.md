@@ -25,3 +25,9 @@ Houston does not use your data to train AI models.
 **Settings ▸ Diagnostics ▸ OpenTelemetry export** sends the server's traces, metrics and logs to
 an OTLP HTTP receiver you choose, such as a local Jaeger or Grafana instance. Leave the fields
 empty to export nothing. Changes apply after the server restarts.
+
+An export contains span names and timings, Houston's own ids, outcomes and error types, the
+host of each outgoing request and SQL statement templates. It never contains paths, URLs beyond
+their host, error messages, prompts, agent responses, file contents or credentials; a log
+message keeps only its text, shortened, with paths, URLs and credentials removed. The trace file on
+this machine keeps full detail.
