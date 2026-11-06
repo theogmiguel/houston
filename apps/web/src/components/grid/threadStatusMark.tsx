@@ -1,5 +1,4 @@
 import { scopeThreadRef } from "@houston-app/client-runtime/environment";
-import { CircleIcon } from "lucide-react";
 import { ROW_BACK_DISMISS_CLS } from "../ui/sidebar-rail-recipes";
 import {
   formatWorkingDurationLabel,
@@ -27,11 +26,14 @@ function RunningElapsed({ startedAt }: { startedAt: string }) {
   return <span>{formatWorkingDurationLabel(nowMs - startedMs)}</span>;
 }
 
-/** The Back word is a button: pressing it marks the wake as seen. */
-function BackWord({ thread, nowIso }: { thread: EnvironmentThreadShell; nowIso: string }) {
+/**
+ * The Back word is a button: pressing it marks the wake as seen. It sits on the row's meta line,
+ * clear of the title line's right edge, where hovering swaps the status for the row's actions.
+ */
+export function BackWord({ thread, nowIso }: { thread: EnvironmentThreadShell; nowIso: string }) {
   const acknowledge = useAcknowledgeThreadWoke();
   const wokeAt = threadWokeAt(thread, { now: nowIso }) ?? thread.unsettledAt;
-  if (wokeAt === null) return <span>Back</span>;
+  if (wokeAt === null) return <span className={SIDEBAR_THREAD_STATUS_CLASS}>Back</span>;
   return (
     <button
       type="button"
@@ -43,47 +45,55 @@ function BackWord({ thread, nowIso }: { thread: EnvironmentThreadShell; nowIso: 
         event.stopPropagation();
         acknowledge(scopeThreadRef(thread.environmentId, thread.id), wokeAt);
       }}
-      className={ROW_BACK_DISMISS_CLS}
+      className={cn(SIDEBAR_THREAD_STATUS_CLASS, ROW_BACK_DISMISS_CLS)}
     >
       Back
     </button>
   );
 }
 
-/**
- * Running, needs you and failed colour the whole mark; ready, idle and back keep the word in the
- * muted meta ink (ready still colours its glyph through `ThreadStateGlyph`'s `colored`).
- */
-function threadStatusInk(state: GridThreadState): string[] {
-  return state === "idle" || state === "back" || state === "ready"
+/** Attention states name themselves at the row's edge; calm ones are a mark only. */
+function threadStatusInk(state: Exclude<GridThreadState, "idle">): string[] {
+  return state === "back" || state === "ready"
     ? [SIDEBAR_THREAD_STATUS_QUIET_CLASS]
     : [SIDEBAR_THREAD_STATUS_ATTENTION_CLASS, threadStateTextClass(state)];
 }
 
 /**
- * A row's status mark: the glyph and the specific word, with the elapsed time
- * for every running state, waiting included.
+ * A row's status mark at the right edge: a small state glyph named for assistive tech, plus the
+ * specific word where the state asks something of the user (Approval, Input, Request, Failed)
+ * or is quietly running (Waiting, Goal, with the elapsed time). Idle has no mark; a plain
+ * running, ready or back thread is the glyph alone.
  */
 export function ThreadStateMark({
   thread,
   state,
-  nowIso,
 }: {
   thread: EnvironmentThreadShell;
   state: GridThreadState;
-  nowIso: string;
 }) {
+  if (state === "idle") return null;
   const startedAt = resolveThreadWorkingStartedAt(thread);
   const word = gridThreadStatusWord(thread, state) ?? "Idle";
+  const showsWord =
+    state === "needs" || state === "failed" || (state === "running" && word !== "Running");
+  const glyph = (
+    <span
+      role="img"
+      aria-label={word}
+      data-thread-status-glyph=""
+      className={cn("inline-grid size-3.5 shrink-0 place-items-center", threadStateTextClass(state))}
+    >
+      <ThreadStateGlyph state={state} className="size-3" />
+    </span>
+  );
   return (
     <span data-thread-status="" className={cn(SIDEBAR_THREAD_STATUS_CLASS, threadStatusInk(state))}>
-      {state === "idle" ? (
-        <CircleIcon aria-hidden className="size-3.5 shrink-0" />
-      ) : (
-        <ThreadStateGlyph state={state} className="size-3.5" colored={state === "ready"} />
-      )}
-      {state === "back" ? <BackWord thread={thread} nowIso={nowIso} /> : <span>{word}</span>}
-      {state === "running" && startedAt !== null ? <RunningElapsed startedAt={startedAt} /> : null}
+      {showsWord ? <span aria-hidden>{word}</span> : null}
+      {showsWord && state === "running" && startedAt !== null ? (
+        <RunningElapsed startedAt={startedAt} />
+      ) : null}
+      {glyph}
     </span>
   );
 }

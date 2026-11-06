@@ -5,7 +5,10 @@ import {
   scopeProjectRef,
   scopeThreadRef,
 } from "@houston-app/client-runtime/environment";
-import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
+import {
+  resolveThreadProviderStack,
+  type EnvironmentThreadShell,
+} from "@houston-app/client-runtime/state/models";
 import { canSnooze, effectiveSnoozed } from "@houston-app/client-runtime/state/thread-settled";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
@@ -107,7 +110,7 @@ import { SidebarNoProjects } from "./SidebarNoProjects";
 import { ThreadBulkMenuContext, useBulkThreadMenu } from "./useBulkThreadMenu";
 import { ThreadTitleInput } from "./threadTitleInput";
 import { JumpHintBadge, ThreadJumpHintContext, useThreadJumpHint } from "./threadJumpHints";
-import { ThreadStateMark } from "./threadStatusMark";
+import { BackWord, ThreadStateMark } from "./threadStatusMark";
 import { ThreadCheckoutMark, ThreadRowIndicators } from "./threadRowIndicators";
 import { GridShelves } from "./GridShelves";
 import { readLocalApi } from "../../localApi";
@@ -233,7 +236,6 @@ import {
   SIDEBAR_GRID_NAME_CLS,
   SIDEBAR_GRID_RENAME_CLS,
   SIDEBAR_PROJECT_ACTION_CLS,
-  SIDEBAR_PROJECT_EMPTY_ACTION_CLS,
   SIDEBAR_PROJECT_LABEL_CLS,
   SIDEBAR_PROJECT_ICON_CLS,
   SIDEBAR_PROJECT_LABEL_TEXT_CLS,
@@ -1562,7 +1564,6 @@ export function SidebarProjectSection({
   /** Opens the project's actions at a viewport point; the scratch section has none. */
   onOpenProjectMenu?: ((position: { x: number; y: number }) => void) | undefined;
 }) {
-  const gridCount = section.grids.length;
   // A search shows every match, so it opens a project the user collapsed.
   const collapsed = query.length === 0 && collapsedPreference;
   const projectMenu = section.isScratch ? undefined : onOpenProjectMenu;
@@ -1729,17 +1730,6 @@ export function SidebarProjectSection({
                 onCreateGrid={onCreateGrid}
               />
             ))}
-            {gridCount === 0 && !section.isScratch ? (
-              <button
-                type="button"
-                aria-label="New grid"
-                onClick={onCreateGrid}
-                className={SIDEBAR_PROJECT_EMPTY_ACTION_CLS}
-              >
-                <Grid2X2PlusIcon aria-hidden className="size-3.5" />
-                <span>New grid</span>
-              </button>
-            ) : null}
             {section.ungroupedThreads.map((thread) => (
               <ThreadCard
                 key={thread.id}
@@ -2219,6 +2209,9 @@ export function ThreadCard({
   const active = focused || routeActive;
   const rowPullRequest = resolveRowPullRequest(thread);
   const providerEntry = providerEntries.get(thread.providerInstanceId);
+  // The provider is in the hover card; the row marks it only after a handoff between providers.
+  const showProviderMark =
+    providerEntry !== undefined && resolveThreadProviderStack(thread).length > 1;
   const presets = resolveSnoozePresets(
     new Date(`${nowMinute}:00.000Z`),
     timestampFormat,
@@ -2238,6 +2231,11 @@ export function ThreadCard({
   const actionsButtonRef = useRef<HTMLButtonElement | null>(null);
   const threadRef = scopeThreadRef(thread.environmentId, thread.id);
   const startRename = () => setRenaming(true);
+  const timeNode = (
+    <span data-thread-time="" className={cn("tabular-nums", SIDEBAR_THREAD_META_TEXT_CLASS)}>
+      {timeLabel ?? threadTimeLabel(thread, nowMinute)}
+    </span>
+  );
   const openCardMenu = async (position: { x: number; y: number }) => {
     setActionsMenuOpen(true);
     await openMenu(position).finally(() => setActionsMenuOpen(false));
@@ -2376,7 +2374,7 @@ export function ThreadCard({
               onOpen();
             }}
             className={cn(
-              `group/th relative flex w-full flex-col rounded-lg py-1.5 pr-2 text-left outline-none ${MOTION_FEEDBACK} ${FOCUS_ROW_CLS}`,
+              `group/th relative flex w-full flex-col rounded-lg py-1.25 pr-2 text-left outline-none ${MOTION_FEEDBACK} ${FOCUS_ROW_CLS}`,
               SIDEBAR_THREAD_ROW_INDENT_CLS,
               "cursor-pointer",
               dragging && "opacity-50",
@@ -2392,47 +2390,96 @@ export function ThreadCard({
           />
         }
       >
-        <div
-          data-thread-meta=""
-          className={cn("flex min-w-0 items-center gap-2", SIDEBAR_THREAD_META_TEXT_CLASS)}
-        >
-          {showBranch && branchName !== null && !branchIsDefault ? (
-            <span data-thread-branch="" className="inline-flex min-w-0 items-center gap-1">
-              <ThreadCheckoutMark thread={thread} />
-              <span className="min-w-0 truncate">{branchName}</span>
-            </span>
-          ) : showBranch && thread.worktreePath?.trim() ? (
-            <ThreadCheckoutMark thread={thread} />
+        <div data-thread-title-line="" className="flex min-h-5.5 min-w-0 items-center gap-1.5">
+          {renaming ? (
+            <ThreadTitleInput
+              title={thread.title}
+              onCommit={(next) => {
+                setRenaming(false);
+                onRename(next);
+              }}
+              onCancel={() => setRenaming(false)}
+            />
+          ) : (
+            <button
+              type="button"
+              data-card-open=""
+              onClick={(event) => {
+                if (shelf === null && (event.shiftKey || event.metaKey || event.ctrlKey)) {
+                  event.preventDefault();
+                  onSelect({ shiftKey: event.shiftKey, toggleKey: event.metaKey || event.ctrlKey });
+                  return;
+                }
+                // The second click of a double-click renames; it must not open the thread again.
+                if (isTrailingDoubleClick(event.detail)) return;
+                onOpen();
+              }}
+              onDoubleClick={(event) => {
+                event.preventDefault();
+                startRename();
+              }}
+              onKeyDown={(event: ReactKeyboardEvent<HTMLButtonElement>) => {
+                if (event.key === "F2") {
+                  event.preventDefault();
+                  startRename();
+                }
+              }}
+              aria-current={active ? "true" : undefined}
+              className="flex min-w-0 flex-1 cursor-pointer items-center text-left outline-none"
+            >
+              <span
+                className={cn(
+                  "min-w-0 flex-1 truncate text-headline leading-4.5 font-medium text-foreground",
+                  regeneratingTitle && "opacity-55",
+                )}
+              >
+                <HighlightedText text={thread.title} query={query} />
+              </span>
+            </button>
+          )}
+          {showPullRequest && rowPullRequest !== null ? (
+            <ThreadRowPullRequestBadge
+              threadRef={threadRef}
+              pullRequest={rowPullRequest}
+              pullRequestCount={thread.pullRequests.length}
+              onOpenThread={onOpen}
+            />
           ) : null}
-          <ThreadStateMark thread={thread} state={state} nowIso={nowIso} />
-          <ThreadRowIndicators
-            thread={thread}
-            rowRef={rowRef}
-            focused={focused}
-            emphasized={active || selected}
-            onActivate={onOpen}
-          />
+          {showProviderMark ? (
+            <span
+              data-thread-provider-mark=""
+              className={cn(
+                "inline-grid size-3.5 shrink-0 place-items-center",
+                SIDEBAR_THREAD_META_TEXT_CLASS,
+              )}
+            >
+              <SidebarProviderStack
+                thread={thread}
+                providerEntryByInstanceId={providerEntries}
+                quiet
+              />
+            </span>
+          ) : null}
           {/*
-            The age and the hover actions share one grid cell at the meta line's right edge, so ages
-            scan down one column. Hidden actions leave the flow; shown, they join it and the meta
-            line truncates before them. The title line below is never covered.
+            The age, the status mark and the hover actions share one grid cell at the title line's
+            right edge, so ages and marks scan down one column. Hidden actions leave the flow;
+            shown, they join it and the title truncates before them.
           */}
-          <span className="relative ml-auto grid h-3.5 shrink-0 grid-rows-1 items-center justify-items-end">
+          <span className="relative ml-auto grid h-5.5 shrink-0 grid-rows-1 items-center justify-items-end">
             <span
               className={cn(
-                "col-start-1 row-start-1",
+                "col-start-1 row-start-1 flex items-center gap-1.5",
                 ROW_STATUS_RECEDE,
                 MOTION_FEEDBACK_OPACITY,
                 actionsVisible && ROW_STATUS_HIDDEN,
               )}
             >
-              {jumpHint === null ? (
-                <span data-thread-time="" className="tabular-nums">
-                  {timeLabel ?? threadTimeLabel(thread, nowMinute)}
-                </span>
-              ) : (
+              {jumpHint !== null ? (
                 <JumpHintBadge label={jumpHint} />
-              )}
+              ) : shelf === null ? (
+                timeNode
+              ) : null}
+              <ThreadStateMark thread={thread} state={state} />
             </span>
             <span
               className={cn(
@@ -2529,79 +2576,35 @@ export function ThreadCard({
             </span>
           </span>
         </div>
+        {/*
+          Where the thread works and what is changing: branch, checkout, diff totals, terminals,
+          draft and remote marks. A thread with none of them has no second line.
+        */}
         <div
-          data-thread-title-line=""
-          className="mt-1 flex min-h-4.5 min-w-0 items-center gap-0.75"
-        >
-          {renaming ? (
-            <ThreadTitleInput
-              title={thread.title}
-              onCommit={(next) => {
-                setRenaming(false);
-                onRename(next);
-              }}
-              onCancel={() => setRenaming(false)}
-            />
-          ) : (
-            <button
-              type="button"
-              data-card-open=""
-              onClick={(event) => {
-                if (shelf === null && (event.shiftKey || event.metaKey || event.ctrlKey)) {
-                  event.preventDefault();
-                  onSelect({ shiftKey: event.shiftKey, toggleKey: event.metaKey || event.ctrlKey });
-                  return;
-                }
-                // The second click of a double-click renames; it must not open the thread again.
-                if (isTrailingDoubleClick(event.detail)) return;
-                onOpen();
-              }}
-              onDoubleClick={(event) => {
-                event.preventDefault();
-                startRename();
-              }}
-              onKeyDown={(event: ReactKeyboardEvent<HTMLButtonElement>) => {
-                if (event.key === "F2") {
-                  event.preventDefault();
-                  startRename();
-                }
-              }}
-              aria-current={active ? "true" : undefined}
-              className="flex min-w-0 flex-1 cursor-pointer items-center text-left outline-none"
-            >
-              <span
-                className={cn(
-                  "min-w-0 flex-1 truncate text-headline leading-4.5 font-medium text-foreground",
-                  regeneratingTitle && "opacity-55",
-                )}
-              >
-                <HighlightedText text={thread.title} query={query} />
-              </span>
-            </button>
+          data-thread-meta=""
+          className={cn(
+            "mt-0.5 flex min-w-0 items-center gap-2 empty:hidden",
+            SIDEBAR_THREAD_META_TEXT_CLASS,
           )}
-          {showPullRequest && rowPullRequest !== null ? (
-            <ThreadRowPullRequestBadge
-              threadRef={threadRef}
-              pullRequest={rowPullRequest}
-              pullRequestCount={thread.pullRequests.length}
-              onOpenThread={onOpen}
-            />
+        >
+          {/* A shelf row's label ("tomorrow at 9:00 AM", "Closed 2h") is too long for the title line. */}
+          {shelf !== null && jumpHint === null ? timeNode : null}
+          {showBranch && branchName !== null && !branchIsDefault ? (
+            <span data-thread-branch="" className="inline-flex min-w-0 items-center gap-1">
+              <ThreadCheckoutMark thread={thread} />
+              <span className="min-w-0 truncate">{branchName}</span>
+            </span>
+          ) : showBranch && thread.worktreePath?.trim() ? (
+            <ThreadCheckoutMark thread={thread} />
           ) : null}
-          <span
-            data-thread-provider-mark=""
-            className={cn(
-              "inline-grid size-3.5 shrink-0 place-items-center",
-              SIDEBAR_THREAD_META_TEXT_CLASS,
-            )}
-          >
-            {providerEntry !== undefined ? (
-              <SidebarProviderStack
-                thread={thread}
-                providerEntryByInstanceId={providerEntries}
-                quiet
-              />
-            ) : null}
-          </span>
+          {state === "back" ? <BackWord thread={thread} nowIso={nowIso} /> : null}
+          <ThreadRowIndicators
+            thread={thread}
+            rowRef={rowRef}
+            focused={focused}
+            emphasized={active || selected}
+            onActivate={onOpen}
+          />
         </div>
         {(thread.tags ?? []).length > 0 || (showSubagents && runningSubagents > 0) ? (
           <div data-thread-extras-line="" className={SIDEBAR_THREAD_EXTRAS_LINE_CLASS}>

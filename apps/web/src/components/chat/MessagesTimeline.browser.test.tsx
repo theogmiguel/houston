@@ -182,9 +182,12 @@ function v2Item(type: string, fields: Record<string, unknown>) {
   } as never;
 }
 
-async function renderElement(element: ReactElement, options: { router?: false } = {}) {
+async function renderElement(
+  element: ReactElement,
+  { width = 900, ...options }: { router?: false; width?: number } = {},
+) {
   const container = document.createElement("div");
-  container.style.cssText = "height: 1200px; width: 900px; display: flex; flex-direction: column;";
+  container.style.cssText = `height: 1200px; width: ${width}px; display: flex; flex-direction: column;`;
   const screen = await render(element, { container, ...options });
   const buttons = (name: string | RegExp) =>
     [...container.querySelectorAll<HTMLElement>("button, [role=button]")].filter((button) => {
@@ -202,9 +205,14 @@ async function renderElement(element: ReactElement, options: { router?: false } 
   });
 }
 
-function renderTimeline(entries: ReadonlyArray<Entry>, props: Partial<TimelineProps> = {}) {
+function renderTimeline(
+  entries: ReadonlyArray<Entry>,
+  props: Partial<TimelineProps> = {},
+  options: { width?: number } = {},
+) {
   return renderElement(
     <MessagesTimeline {...baseProps()} timelineEntries={entries as Entry[]} {...props} />,
+    options,
   );
 }
 
@@ -859,87 +867,70 @@ const SENDER_THREAD_ID = ThreadId.make("thread-sender");
 const AGENT_MESSAGE = "Review finished\n\nThe migration drops the index before backfilling it.";
 
 describe("MessagesTimeline agent messages", () => {
-  it("folds a message from another agent into a one-line preview", async () => {
+  const LONG_AGENT_MESSAGE = `${"Checked the next file.\n\n".repeat(8)}The migration drops the index.`;
+  const bubbleOf = (container: HTMLElement) =>
+    container.querySelector<HTMLElement>("[data-user-message-attribution] > div")!;
+
+  it("labels a prompt another agent sent quietly above its bubble", async () => {
+    setup();
+    await using screen = await renderTimeline([
+      message(AGENT_MESSAGE, { createdBy: "agent", senderThreadId: SENDER_THREAD_ID }),
+    ]);
+    const label = screen.container.querySelector<HTMLElement>("[data-user-message-source]")!;
+    expect(label.textContent).toBe("Sent by an agent");
+    const bubble = bubbleOf(screen.container);
+    expect(label.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+      bubble.getBoundingClientRect().top,
+    );
+    expect(getComputedStyle(label).color).not.toBe(getComputedStyle(bubble).color);
+    expect(screen.container.querySelectorAll("[data-user-message-source]")).toHaveLength(1);
+  });
+
+  it("shows a short agent prompt in full, as a bubble with the user bubble's padding", async () => {
+    setup();
+    await using screen = await renderTimeline([
+      message(AGENT_MESSAGE, { createdBy: "agent", senderThreadId: SENDER_THREAD_ID }),
+    ]);
+    const bubble = bubbleOf(screen.container);
+    const style = getComputedStyle(bubble);
+    expect([style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft]).toEqual(
+      ["10px", "14px", "10px", "14px"],
+    );
+    expect(style.boxShadow).not.toBe("none");
+    expect(screen.text()).toContain("The migration drops the index before backfilling it.");
+    expect(screen.buttons("Show full message")).toHaveLength(0);
+  });
+
+  it("folds a long agent prompt to three lines and opens it from a click on the text or its button", async () => {
+    setup();
+    await using screen = await renderTimeline([
+      message(LONG_AGENT_MESSAGE, { createdBy: "agent", senderThreadId: SENDER_THREAD_ID }),
+    ]);
+    const body = () => screen.container.querySelector<HTMLElement>("[data-user-message-body]")!;
+    await vi.waitFor(() => expect(body().dataset.userMessageCollapsed).toBe("true"));
+    expect(body().getBoundingClientRect().height).toBeLessThanOrEqual(60);
+
+    await click(body());
+    await vi.waitFor(() => expect(body().dataset.userMessageCollapsed).toBe("false"));
+    expect(body().getBoundingClientRect().height).toBeGreaterThan(60);
+    expect(screen.text()).toContain("The migration drops the index.");
+
+    await click(screen.button("Show less"));
+    await vi.waitFor(() => expect(body().dataset.userMessageCollapsed).toBe("true"));
+    await click(screen.button("Show full message"));
+    await vi.waitFor(() => expect(body().dataset.userMessageCollapsed).toBe("false"));
+  });
+
+  it("opens the sending agent's thread from the row's actions", async () => {
     setup();
     const onOpenThread = vi.fn();
     await using screen = await renderTimeline(
       [message(AGENT_MESSAGE, { createdBy: "agent", senderThreadId: SENDER_THREAD_ID })],
       { onOpenThread },
     );
-    const row = screen.button(/^Agent: Review finished/);
-    expect(screen.container.querySelector("[data-user-message-attribution] > p")).toBeNull();
-    expect(row.textContent).toMatch(/^Agent\s*Review finished/);
-    expect(row.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.text()).not.toContain("drops the index");
-    expect(screen.buttons("Open thread")).toHaveLength(0);
-
-    await click(row);
-    expect(screen.text()).toContain("The migration drops the index before backfilling it.");
     await click(screen.button("Open thread"));
     expect(onOpenThread).toHaveBeenCalledWith(SENDER_THREAD_ID);
-
-    await click(screen.button(/^Agent: Review finished/));
-    expect(screen.text()).not.toContain("drops the index");
   });
-
-  it("keeps a collapsed agent message as a borderless, shadowless chip and raises it once opened", async () => {
-    setup();
-    await using screen = await renderTimeline([
-      message(AGENT_MESSAGE, { createdBy: "agent", senderThreadId: SENDER_THREAD_ID }),
-    ]);
-    const row = screen.button(/^Agent: Review finished/);
-    const card = row.parentElement!;
-    const collapsed = getComputedStyle(card);
-    expect(collapsed.borderTopWidth).toBe("0px");
-    expect(collapsed.boxShadow).toBe("none");
-    expect(collapsed.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
-    const collapsedColor = collapsed.color;
-
-    await click(row);
-    const opened = getComputedStyle(card);
-    expect(opened.borderTopWidth).toBe("0px");
-    expect(opened.boxShadow).not.toBe("none");
-    expect(opened.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
-    expect(opened.color).toBe(collapsedColor);
-  });
-
-  it("mutes the collapsed agent chip's summary and chevron", async () => {
-    setup();
-    await using screen = await renderTimeline([
-      message(AGENT_MESSAGE, { createdBy: "agent", senderThreadId: SENDER_THREAD_ID }),
-    ]);
-    const row = screen.button(/^Agent: Review finished/);
-    const card = row.parentElement!;
-    const summary = [...row.querySelectorAll("span")].find((node) =>
-      node.textContent?.startsWith("Review finished"),
-    )!;
-    expect(getComputedStyle(summary).color).not.toBe(getComputedStyle(card).color);
-    expect(getComputedStyle(row.querySelector("svg:last-of-type")!).color).not.toBe(
-      getComputedStyle(card).color,
-    );
-  });
-
-  it.each([
-    [1440, true],
-    [800, false],
-  ])(
-    "shows the agent chip's text label only when wide (%ipx viewport: %s)",
-    async (width, labelVisible) => {
-      setup();
-      const restore = { width: window.innerWidth, height: window.innerHeight };
-      await page.viewport(width, 900);
-      await using _viewport = {
-        [Symbol.asyncDispose]: () => page.viewport(restore.width, restore.height),
-      };
-      await using screen = await renderTimeline([
-        message(AGENT_MESSAGE, { createdBy: "agent", senderThreadId: SENDER_THREAD_ID }),
-      ]);
-      const row = screen.button(/^Agent: Review finished/);
-      const label = [...row.querySelectorAll("span")].find((node) => node.textContent === "Agent")!;
-      expect(getComputedStyle(label).display === "none").toBe(!labelVisible);
-      expect(row.getAttribute("aria-label")).toContain("Agent");
-    },
-  );
 
   it.each([1440, 800])(
     "sizes a short agent message to its text, right-aligned, at a %ipx viewport",
@@ -961,10 +952,8 @@ describe("MessagesTimeline agent messages", () => {
         />,
         { container },
       );
-      const bubbleOf = () =>
-        screen.container.querySelector<HTMLElement>("[data-user-message-attribution] > div");
-      await vi.waitFor(() => expect(bubbleOf()).not.toBeNull());
-      const bubble = bubbleOf()!;
+      await vi.waitFor(() => expect(bubbleOf(screen.container)).not.toBeNull());
+      const bubble = bubbleOf(screen.container);
       const lane = bubble.parentElement!.getBoundingClientRect();
       const box = bubble.getBoundingClientRect();
       expect(box.width).toBeLessThan(lane.width / 3);
@@ -973,21 +962,12 @@ describe("MessagesTimeline agent messages", () => {
     },
   );
 
-  it("shows the expand chevron only when the agent message has more than its first line", async () => {
-    setup();
-    await using screen = await renderTimeline([
-      message(AGENT_MESSAGE, { createdBy: "agent", senderThreadId: SENDER_THREAD_ID }, "long"),
-    ]);
-    const chevron = screen.button(/^Agent: Review finished/).querySelector("svg")!;
-    expect(getComputedStyle(chevron).visibility).toBe("visible");
-  });
-
   it("leaves messages sent by Houston as full bubbles", async () => {
     setup();
     await using screen = await renderTimeline([
       message(AGENT_MESSAGE, { createdBy: "agent", creationSource: "server" }),
     ]);
-    expect(screen.buttons(/^Agent/)).toHaveLength(0);
+    expect(screen.container.querySelector("[data-user-message-source]")).toBeNull();
     expect(screen.text()).toContain("drops the index");
   });
 
@@ -1002,30 +982,56 @@ describe("MessagesTimeline agent messages", () => {
         activeFindMatch: { entryId: "entry-message-1", runId: null, occurrence: 0 },
       },
     );
-    await vi.waitFor(() =>
-      expect(screen.button(/^Agent: Checked the next file/).getAttribute("aria-expanded")).toBe(
-        "true",
-      ),
-    );
-    const { range } = collectThreadFindRanges(screen.container, "drops the index")[0]!;
-    const body = screen.container.querySelector("[data-user-message-body]")!;
-    expect(range.getBoundingClientRect().height).toBeGreaterThan(0);
-    expect(range.getBoundingClientRect().bottom).toBeLessThanOrEqual(
-      body.getBoundingClientRect().bottom,
-    );
+    const body = () => screen.container.querySelector<HTMLElement>("[data-user-message-body]")!;
+    // The fold opens once find reaches a match below its three lines.
+    await vi.waitFor(() => {
+      const { range } = collectThreadFindRanges(screen.container, "drops the index")[0]!;
+      expect(range.getBoundingClientRect().height).toBeGreaterThan(0);
+      expect(range.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+        body().getBoundingClientRect().bottom,
+      );
+    });
+    expect(body().dataset.userMessageCollapsed).toBe("false");
   });
 });
 
 describe("MessagesTimeline minimap", () => {
+  const turns = (count: number) =>
+    Array.from({ length: count }, (_, index) =>
+      message(`Question ${index + 1}`, {}, `message-${index + 1}`),
+    );
+  const minimapOf = (root: HTMLElement) =>
+    root.querySelector<HTMLElement>('[data-testid="timeline-minimap"]');
+
   it("stays hidden until the pointer is over the conversation", async () => {
     setup();
-    await using screen = await renderTimeline([
-      message("First question", {}, "message-1"),
-      message("Second question", {}, "message-2"),
-    ]);
-    const minimap = screen.container.querySelector<HTMLElement>('[data-testid="timeline-minimap"]');
-    expect(minimap, "two user messages should mount the minimap").not.toBeNull();
-    expect(getComputedStyle(minimap!).opacity).toBe("0");
+    await using screen = await renderTimeline(turns(8), {}, { width: 1128 });
+    await vi.waitFor(() => expect(minimapOf(screen.container)).not.toBeNull());
+    expect(getComputedStyle(minimapOf(screen.container)!).opacity).toBe("0");
+  });
+
+  it("is absent below 8 turns, where the scroll bar already orients the reader", async () => {
+    setup();
+    await using screen = await renderTimeline(turns(7), {}, { width: 1128 });
+    await vi.waitFor(() =>
+      expect(screen.container.querySelector("[data-timeline-root]")).not.toBeNull(),
+    );
+    expect(minimapOf(screen.container)).toBeNull();
+  });
+
+  it("is absent when the conversation is narrower than 1000px (800px), however long", async () => {
+    setup();
+    await using screen = await renderTimeline(turns(12), {}, { width: 800 });
+    await vi.waitFor(() =>
+      expect(screen.container.querySelector("[data-timeline-root]")).not.toBeNull(),
+    );
+    expect(minimapOf(screen.container)).toBeNull();
+  });
+
+  it("appears at 1440px once the thread has 8 turns", async () => {
+    setup();
+    await using screen = await renderTimeline(turns(12), {}, { width: 1128 });
+    await vi.waitFor(() => expect(minimapOf(screen.container)).not.toBeNull());
   });
 });
 
@@ -1074,6 +1080,96 @@ describe("MessagesTimeline work rows ink", () => {
     const muted = getComputedStyle(probe).color;
     expect(getComputedStyle(reasoning!).color).toBe(muted);
     expect(getComputedStyle(tool!).color).not.toBe(muted);
+  });
+});
+
+describe("MessagesTimeline expanded work group", () => {
+  const groupEntries = (editedFile: string): Entry[] => [
+    work("group-ran", {
+      label: "Ran ls",
+      command: "ls -la",
+      tone: "tool",
+      itemType: "command_execution",
+      toolLifecycleStatus: "completed",
+    }),
+    work("group-read", {
+      label: "Read atlas-api/CHANGELOG.md",
+      requestKind: "file-read",
+      changedFiles: ["atlas-api/CHANGELOG.md"],
+      tone: "tool",
+      toolLifecycleStatus: "completed",
+    }),
+    work("group-edit", {
+      label: "Edited",
+      tone: "tool",
+      itemType: "file_change",
+      toolLifecycleStatus: "completed",
+      structuredPayload: {
+        type: "file_change",
+        fileName: editedFile,
+        additions: 5,
+        deletions: 0,
+      },
+      projectedItem: v2Item("file_change", {
+        id: "group-edit",
+        fileName: editedFile,
+        status: "running",
+      }),
+    }),
+  ];
+  const expandGroup = async (screen: Awaited<ReturnType<typeof renderTimeline>>) => {
+    const toggle = screen.container.querySelector<HTMLElement>("button[aria-expanded=false]")!;
+    await click(toggle);
+    await vi.waitFor(() =>
+      expect(screen.container.querySelector('[role="region"][aria-label="Tool calls"]')).not.toBe(
+        null,
+      ),
+    );
+  };
+
+  it("drops a row's time when it repeats the group header's time", async () => {
+    setup();
+    await using screen = await renderTimeline(groupEntries("atlas-api/README.md"));
+    const headerTimes = () =>
+      screen.container.querySelectorAll('button[aria-expanded] [data-slot="tooltip-trigger"]');
+    expect(headerTimes()).toHaveLength(1);
+    await expandGroup(screen);
+    const region = screen.container.querySelector<HTMLElement>('[aria-label="Tool calls"]')!;
+    await vi.waitFor(() => expect(region.querySelectorAll("[role=button]").length).toBeGreaterThan(0));
+    expect(region.querySelectorAll('[data-slot="tooltip-trigger"]')).toHaveLength(0);
+  });
+
+  it("opens the diff from the read row instead of drawing a card for the same file", async () => {
+    setup();
+    const onOpenToolDiff = vi.fn();
+    await using screen = await renderTimeline(groupEntries("atlas-api/CHANGELOG.md"), {
+      onOpenToolDiff,
+    });
+    // While the group is collapsed its read row is out of sight, so the card still stands.
+    expect(screen.container.querySelector("[aria-label^='Diff for']")).not.toBeNull();
+    await expandGroup(screen);
+    await vi.waitFor(() =>
+      expect(screen.container.querySelector("[aria-label^='Diff for']")).toBeNull(),
+    );
+    const open = await vi.waitFor(() => {
+      const button = screen.container.querySelector<HTMLElement>(
+        '[aria-label="Tool calls"] button[aria-label="Open diff"]',
+      );
+      expect(button).not.toBeNull();
+      return button!;
+    });
+    await click(open);
+    expect(onOpenToolDiff).toHaveBeenCalledWith({
+      threadId: "thread-1",
+      itemId: "group-edit",
+      revision: "live",
+    });
+  });
+
+  it("keeps the card when the edit is to another file", async () => {
+    setup();
+    await using screen = await renderTimeline(groupEntries("atlas-api/README.md"));
+    expect(screen.container.querySelector("[aria-label='Diff for atlas-api/README.md']")).not.toBeNull();
   });
 });
 
@@ -1157,11 +1253,16 @@ describe("MessagesTimeline expanded tool rows", () => {
 describe("MessagesTimeline minimap rail", () => {
   it("centres every tick on a visible track so the rail reads as one control", async () => {
     setup();
-    await using screen = await renderTimeline([
-      message("First question", {}, "message-1"),
-      message("Second question", {}, "message-2"),
-      message("Third question", {}, "message-3"),
-    ]);
+    await using screen = await renderTimeline(
+      Array.from({ length: 8 }, (_, index) =>
+        message(`Question ${index + 1}`, {}, `message-${index + 1}`),
+      ),
+      {},
+      { width: 1128 },
+    );
+    await vi.waitFor(() =>
+      expect(screen.container.querySelector("[data-minimap-track]")).not.toBeNull(),
+    );
     const track = screen.container.querySelector<HTMLElement>("[data-minimap-track]")!;
     expect(track, "the rail draws its track").not.toBeNull();
     expect(getComputedStyle(track).backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
@@ -1718,38 +1819,53 @@ describe("changed-files card beside the pending-changes row", () => {
     expect(screen.container.textContent).toContain("CHANGELOG.md");
   });
 
-  it("folds only the covered turn's card to its header and lets the user open it", async () => {
+  it("hides the covered turn's card entirely and keeps older turns' cards", async () => {
     setup();
-    const onOpenTurnDiff = vi.fn();
     await using screen = await renderTimeline(entries, {
       turnDiffSummaries,
       changeBannerRunId: latest,
-      onOpenTurnDiff,
     });
-    expect(cardStates(screen.container)).toEqual(["tree", "folded"]);
-    const folded = screen.container.querySelector<HTMLElement>(
-      '[data-changed-files-state="folded"]',
-    )!;
-    expect(folded.textContent).toContain("1 changed file");
-    expect(folded.textContent).not.toContain("CHANGELOG.md");
-
-    await click(folded.querySelector<HTMLElement>('button[aria-label="Open diff"]')!);
-    expect(onOpenTurnDiff).toHaveBeenCalledWith(latest, "CHANGELOG.md");
-
-    await click(folded.querySelector<HTMLElement>('button[aria-label="Show changed files"]')!);
-    expect(folded.dataset.changedFilesState).toBe("tree");
-    expect(folded.textContent).toContain("CHANGELOG.md");
+    expect(cardStates(screen.container)).toEqual(["tree"]);
+    expect(screen.container.textContent).not.toContain("Show changed files");
+    expect(screen.container.querySelectorAll('button[aria-label="Open diff"]')).toHaveLength(1);
   });
 
-  it("restores the file list once the pending-changes row goes away", async () => {
+  it("restores the latest turn's card once the pending-changes row goes away", async () => {
     setup();
     const props = { ...baseProps(), timelineEntries: entries, turnDiffSummaries };
     await using screen = await renderElement(
       <MessagesTimeline {...props} changeBannerRunId={latest} />,
     );
-    expect(cardStates(screen.container)).toEqual(["tree", "folded"]);
+    expect(cardStates(screen.container)).toEqual(["tree"]);
     await screen.rerender(<MessagesTimeline {...props} changeBannerRunId={null} />);
     expect(cardStates(screen.container)).toEqual(["tree", "tree"]);
+  });
+});
+
+describe("answer model line", () => {
+  it("names the model on the first answer and when it changes, not on each repeat", async () => {
+    setup();
+    const entries: Entry[] = [];
+    const runs: NonNullable<TimelineProps["runs"]>[number][] = [];
+    const models = ["claude-haiku-5-5", "claude-haiku-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"];
+    for (const [index, model] of models.entries()) {
+      const n = index + 1;
+      const runId = RunId.make(`run-${n}`);
+      const instanceId = ProviderInstanceId.make("claude");
+      runs.push({
+        id: runId,
+        providerInstanceId: instanceId,
+        modelSelection: { instanceId, model },
+      } as never);
+      entries.push(message(`Question ${n}`, { role: "user", runId }, `user-${n}`));
+      entries.push(message(`Answer ${n}`, { role: "assistant", runId }, `final-${n}`));
+    }
+    await using screen = await renderTimeline(entries, { runs });
+    const lineFor = (n: number) =>
+      [...screen.container.querySelectorAll<HTMLElement>('[data-timeline-row-kind="message"]')]
+        .find((row) => row.textContent?.includes(`Answer ${n}`))
+        ?.querySelector("[data-assistant-model-attribution]") ?? null;
+    expect([1, 2, 3, 4].map((n) => lineFor(n) !== null)).toEqual([true, false, true, true]);
   });
 });
 
@@ -1765,7 +1881,7 @@ describe("turn rhythm", () => {
       completedAt: CREATED_AT,
     }) as const;
 
-  it("puts 32px between turns however a turn ends and smaller fixed steps inside one", async () => {
+  it("puts 24px between turns however a turn ends and smaller fixed steps inside one", async () => {
     setup();
     const entries: Entry[] = [];
     const runs: NonNullable<TimelineProps["runs"]>[number][] = [];
@@ -1773,10 +1889,11 @@ describe("turn rhythm", () => {
     for (const n of [1, 2, 3]) {
       const runId = RunId.make(`run-${n}`);
       const instanceId = ProviderInstanceId.make("claude");
+      // The model alternates so every answer names it (an unchanged model is named once).
       runs.push({
         id: runId,
         providerInstanceId: instanceId,
-        modelSelection: { instanceId, model: "claude-haiku-5-5" },
+        modelSelection: { instanceId, model: n === 2 ? "claude-sonnet-5-5" : "claude-haiku-5-5" },
       } as never);
       entries.push(message(`Question ${n}`, { role: "user", runId }, `user-${n}`));
       entries.push(message(`Progress ${n}`, { role: "assistant", runId }, `progress-${n}`));
@@ -1813,7 +1930,7 @@ describe("turn rhythm", () => {
       top(rowOf("message", "Question 2")) - bottom(attributions[0]!),
       top(rowOf("message", "Question 3")) - bottom(cards[0]!),
     ];
-    expect(turnGaps).toEqual([32, 32]);
+    expect(turnGaps).toEqual([24, 24]);
 
     const answer = (n: number) =>
       rowOf("message", `Answer ${n}`).querySelector<HTMLElement>("[data-thread-find-text]")!;

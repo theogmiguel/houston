@@ -336,6 +336,32 @@ it("keeps code unwrapped in the embedded side panel so the overflow fade can sho
     .toHaveAttribute("data-code-overflow", "scroll");
 });
 
+it("names Changes once: the embedded panel leaves the heading to its tab, a sheet keeps it", async () => {
+  using context = setup(null, samplePatch);
+  useDiffPanelStore.getState().selectBranchBaseRef(context.threadRef, "main");
+  const heading = (root: HTMLElement) =>
+    [...root.querySelectorAll("span")].filter(
+      (span) => span.textContent === "Changes" && span.className.includes("text-headline"),
+    );
+  const embeddedRoot = document.createElement("div");
+  embeddedRoot.style.width = "400px";
+  await using embedded = await render(panel(context.registry, context.threadRef, "embedded"), {
+    container: embeddedRoot,
+  });
+  await expect
+    .element(embedded.getByRole("button", { name: "Add diff comment" }))
+    .toBeInTheDocument();
+  expect(heading(embeddedRoot)).toHaveLength(0);
+
+  const sheetRoot = document.createElement("div");
+  sheetRoot.style.width = "700px";
+  await using sheet = await render(panel(context.registry, context.threadRef, "sheet"), {
+    container: sheetRoot,
+  });
+  await expect.element(sheet.getByRole("button", { name: "Add diff comment" })).toBeInTheDocument();
+  expect(heading(sheetRoot)).toHaveLength(1);
+});
+
 it("offers undo for the comments it added to the composer", async () => {
   using context = setup(null, samplePatch);
   useDiffPanelStore.getState().selectBranchBaseRef(context.threadRef, "main");

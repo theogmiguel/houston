@@ -150,7 +150,8 @@ describe("thread status words", () => {
 
   it("dismisses the Back mark from its word", async () => {
     await using screen = await render(card(thread({ unsettledAt: "2026-01-01T11:00:00.000Z" })));
-    expect(statusLine(screen.container)).toBe("Back");
+    expect(screen.container.querySelector("[data-thread-back-dismiss]")?.textContent).toBe("Back");
+    expect(screen.getByRole("img", { name: "Back" }).element()).toBeInTheDocument();
     await userEvent.click(
       screen.getByRole("button", { name: "Dismiss back notification" }).element(),
     );

@@ -41,11 +41,11 @@ import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { SecondOpinionReviewCard } from "./SecondOpinionReviewCard";
 
 /**
- * The hover footer closes a turn. Its 6px lead, 24px height and the 2px row padding add up to
- * the 32px between turns (`pb-0` on the row in `MessagesTimeline`), so the gap does not depend
- * on whether the footer is showing.
+ * The hover footer closes a turn. Its 6px lead, 24px buttons less the 8px they hang below it,
+ * and the 2px row padding add up to the 24px between turns (`pb-0` on the row in
+ * `MessagesTimeline`), so the gap does not depend on whether the footer is showing.
  */
-const ASSISTANT_TURN_FOOTER_CLASS_NAME = "mt-1.5 h-6";
+const ASSISTANT_TURN_FOOTER_CLASS_NAME = "mt-1.5 -mb-2 h-6";
 
 export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
@@ -84,7 +84,10 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
           </AssistantCitationSource>
         </div>
         {row.showAssistantMeta && row.message.runId ? (
-          <AssistantModelAttributionRow runId={row.message.runId} />
+          <AssistantModelAttributionRow
+            runId={row.message.runId}
+            previousRunId={row.previousAnswerRunId ?? null}
+          />
         ) : null}
         {ctx.onOpenTurnDiff ? (
           <AssistantChangedFilesSection
@@ -203,18 +206,35 @@ function AssistantSecondOpinionButton({
 
 /**
  * Subscribes to the answer's run: attribution needs the model it ran on, which imported or
- * run-less messages do not carry.
+ * run-less messages do not carry. It is shown on the first answer and whenever the model
+ * differs from the previous answer's.
  */
-function AssistantModelAttributionRow({ runId }: { runId: RunId | null | undefined }) {
+function AssistantModelAttributionRow({
+  runId,
+  previousRunId,
+}: {
+  runId: RunId | null | undefined;
+  previousRunId: RunId | null;
+}) {
   const ctx = use(TimelineRowCtx);
   const providers = useAtomValue(
     serverEnvironment.providersValueAtom(ctx.activeThreadEnvironmentId),
   );
-  return (
-    <AssistantModelAttributionLine
-      attribution={resolveAssistantModelAttribution({ runs: ctx.runs, runId, providers })}
-    />
-  );
+  const attribution = resolveAssistantModelAttribution({ runs: ctx.runs, runId, providers });
+  // A run of answers from one model names it once, on the first of them.
+  const previous =
+    previousRunId === null
+      ? null
+      : resolveAssistantModelAttribution({ runs: ctx.runs, runId: previousRunId, providers });
+  if (
+    attribution !== null &&
+    previous !== null &&
+    previous.providerDisplayName === attribution.providerDisplayName &&
+    previous.modelLabel === attribution.modelLabel
+  ) {
+    return null;
+  }
+  return <AssistantModelAttributionLine attribution={attribution} />;
 }
 
 function AssistantForkButton({
@@ -451,9 +471,12 @@ const AssistantChangedFilesSection = memo(function AssistantChangedFilesSection(
   displayThreadKey?: string;
   onOpenTurnDiff: (runId: RunId, filePath?: string) => void;
 }) {
+  const ctx = use(TimelineRowCtx);
   if (!turnSummary) return null;
   const checkpointFiles = turnSummary.files;
   if (checkpointFiles.length === 0) return null;
+  // The composer's pending-changes row already summarises this run; one summary per turn.
+  if (ctx.changeBannerRunId === turnSummary.runId) return null;
 
   return (
     <AssistantChangedFilesSectionInner
@@ -486,7 +509,6 @@ function AssistantChangedFilesSectionInner({
   );
   const setExpanded = useUiStateStore((store) => store.setThreadChangedFilesExpanded);
   const allDirectoriesExpanded = persistedExpanded ?? false;
-  const coveredByBanner = ctx.changeBannerRunId === turnSummary.runId;
 
   const thread = useThreadShell(ctx.threadRef);
   const activeProject = useProject(
@@ -502,7 +524,6 @@ function AssistantChangedFilesSectionInner({
       files={checkpointFiles}
       totals={checkpointFileTotals(turnSummary)}
       allDirectoriesExpanded={allDirectoriesExpanded}
-      coveredByBanner={coveredByBanner}
       resolvedTheme={resolvedTheme}
       onToggleAllDirectories={() =>
         setExpanded(routeThreadKey, turnSummary.runId, !allDirectoriesExpanded)

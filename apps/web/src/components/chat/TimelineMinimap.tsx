@@ -8,7 +8,7 @@ import {
   resolveTimelineMinimapInteractiveWidth,
   resolveTimelineMinimapNavigationInteractive,
   resolveTimelineMinimapTopPercent,
-  TIMELINE_MINIMAP_MIN_ITEMS,
+  resolveTimelineMinimapAvailable,
 } from "./MessagesTimeline.logic";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
@@ -37,6 +37,7 @@ function onMouseButtonsReleased(onRelease: () => void): () => void {
 export function TimelineMinimap({
   hasPersistentGutter,
   hitStripWidth,
+  viewportWidth,
   currentIndex,
   items,
   stripMap,
@@ -45,6 +46,8 @@ export function TimelineMinimap({
 }: {
   hasPersistentGutter: boolean;
   hitStripWidth: number;
+  /** The conversation scroller's width; the rail is hidden when it is narrow. */
+  viewportWidth: number;
   currentIndex: number | null;
   items: ReadonlyArray<TimelineMinimapItem>;
   stripMap: Map<string, HTMLSpanElement>;
@@ -108,7 +111,7 @@ export function TimelineMinimap({
     });
   };
 
-  if (items.length < TIMELINE_MINIMAP_MIN_ITEMS) {
+  if (!resolveTimelineMinimapAvailable(items.length, viewportWidth)) {
     return null;
   }
 

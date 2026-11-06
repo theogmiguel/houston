@@ -133,6 +133,8 @@ export interface WorkGroupViewState {
 }
 
 export const WorkGroupViewCtx = createContext<{
+  /** The group header's time. */
+  createdAt: string;
   state: WorkGroupViewState;
   onToggleEntry: (collapsed: boolean) => void;
 } | null>(null);

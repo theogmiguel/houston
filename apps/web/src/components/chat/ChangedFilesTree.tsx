@@ -13,7 +13,6 @@ import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { MiddleTruncate } from "../ui/middle-truncate";
 import { MorphIcon } from "~/components/MorphIcon";
-import { DisclosureChevron } from "../ui/disclosure-chevron";
 import { observeResize } from "~/lib/observeResize";
 
 const EMPTY_DIRECTORY_OVERRIDES: Record<string, boolean> = {};
@@ -33,11 +32,6 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
   files: ReadonlyArray<TurnDiffFileChange>;
   totals: OrchestrationV2CheckpointFileTotals;
   allDirectoriesExpanded: boolean;
-  /**
-   * The composer's pending-changes row already summarises this run: the card folds to its
-   * header until the user opens it.
-   */
-  coveredByBanner?: boolean;
   resolvedTheme: "light" | "dark";
   onToggleAllDirectories: () => void;
   onOpenTurnDiff: (runId: RunId, filePath?: string) => void;
@@ -48,15 +42,12 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
     files,
     totals,
     allDirectoriesExpanded,
-    coveredByBanner = false,
     resolvedTheme,
     onToggleAllDirectories,
     onOpenTurnDiff,
     onFileContextMenu,
   } = props;
   const syncTimelineLayout = useSyncLayout();
-  const [openedWhileCovered, setOpenedWhileCovered] = useState(false);
-  const folded = coveredByBanner && !openedWhileCovered;
   const hiddenFileCount = totals.count - files.length;
   const hasDirectories = files.some((file) => /[/\\]/.test(file.path));
 
@@ -66,7 +57,7 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
         "@container/changed-files mt-3 overflow-hidden rounded-lg border border-(--contrast-card-border) bg-card",
         SURFACE_LIFT_CLASS,
       )}
-      data-changed-files-state={folded ? "folded" : "tree"}
+      data-changed-files-state="tree"
     >
       <div
         data-changed-files-header=""
@@ -86,30 +77,7 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
           )}
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          {coveredByBanner && (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    size="icon-xs"
-                    variant="ghost-muted"
-                    aria-label={folded ? "Show changed files" : "Hide changed files"}
-                    aria-expanded={!folded}
-                    data-scroll-anchor-ignore
-                    onClick={() => {
-                      setOpenedWhileCovered((open) => !open);
-                      syncTimelineLayout();
-                    }}
-                  />
-                }
-              >
-                <DisclosureChevron open={!folded} />
-              </TooltipTrigger>
-              <TooltipPopup side="top">{folded ? "Show files" : "Hide files"}</TooltipPopup>
-            </Tooltip>
-          )}
-          {hasDirectories && !folded && (
+          {hasDirectories && (
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -157,18 +125,16 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
           </Tooltip>
         </div>
       </div>
-      {folded ? null : (
-        <ChangedFilesTree
-          key={`${runId}:${allDirectoriesExpanded}`}
-          runId={runId}
-          files={files}
-          allDirectoriesExpanded={allDirectoriesExpanded}
-          resolvedTheme={resolvedTheme}
-          onOpenTurnDiff={onOpenTurnDiff}
-          onFileContextMenu={onFileContextMenu}
-        />
-      )}
-      {hiddenFileCount > 0 && !folded && (
+      <ChangedFilesTree
+        key={`${runId}:${allDirectoriesExpanded}`}
+        runId={runId}
+        files={files}
+        allDirectoriesExpanded={allDirectoriesExpanded}
+        resolvedTheme={resolvedTheme}
+        onOpenTurnDiff={onOpenTurnDiff}
+        onFileContextMenu={onFileContextMenu}
+      />
+      {hiddenFileCount > 0 && (
         <div className="px-3 pb-2">
           <Button
             type="button"

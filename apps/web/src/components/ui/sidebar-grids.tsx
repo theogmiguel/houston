@@ -69,8 +69,8 @@ export const SIDEBAR_HEADER_ACTIONS_CLS =
 
 /**
  * Every thread row, in a grid or directly under its project, sits 12px right of the project's
- * folder icon, so the project to thread nesting reads while a 312px sidebar still leaves the
- * title 240px.
+ * folder icon, so the project to thread nesting reads while a 264px sidebar still leaves the
+ * title about 200px.
  */
 export const SIDEBAR_THREAD_ROW_INDENT_CLS = "pl-5";
 

@@ -2233,11 +2233,6 @@ code {
   color: var(--color-foreground);
 }
 
-/* A folded card is only its header, so the header's divider has nothing to separate. */
-[data-changed-files-state="folded"] > [data-changed-files-header] {
-  border-bottom-width: 0;
-}
-
 /* A zero in a diff stat is not a change: it stays muted instead of taking the addition or
    deletion colour. */
 [data-zero]:is(.text-diff-addition-foreground, .text-diff-deletion-foreground) {

@@ -99,6 +99,11 @@ export interface WorkLogEntry {
   readonly structuredPayload?: OrchestrationV2TurnItem;
   readonly sourceItemType?: OrchestrationV2TurnItem["type"];
   readonly projectedItem?: OrchestrationV2ProjectedTurnItem;
+  /**
+   * The edit of the same file that directly follows a read of it: the read row opens its diff
+   * instead of the timeline drawing a second card for the file.
+   */
+  readonly mergedFileChange?: WorkLogEntry;
 }
 
 export type PendingApproval = ThreadPendingApproval;

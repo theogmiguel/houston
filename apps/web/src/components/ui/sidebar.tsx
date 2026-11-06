@@ -702,7 +702,11 @@ function SidebarContent({
         // Rows provide keyboard access; exclude the viewport from tab order to flatten VoiceOver's WebKit
         // interaction boundary.
         viewportTabIndex={-1}
-        className="h-auto min-h-0 flex-1 [&>[data-slot=scroll-area-viewport]]:[--fade-size:2.75rem]"
+        className={cn(
+          "h-auto min-h-0 flex-1 [&>[data-slot=scroll-area-viewport]]:[--fade-size:2.75rem]",
+          // A chevron over the fade says more rows continue below; it leaves at the end of the list.
+          "after:pointer-events-none after:absolute after:bottom-2.5 after:left-1/2 after:size-1.5 after:-translate-x-1/2 after:rotate-45 after:border-r-[1.5px] after:border-b-[1.5px] after:border-(--houston) after:opacity-0 after:transition-opacity after:duration-(--motion-feedback) after:ease-standard after:content-[''] data-overflow-y-end:after:opacity-100",
+        )}
       >
         <div
           className={cn(

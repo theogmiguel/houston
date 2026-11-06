@@ -818,6 +818,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
           ...(alwaysRenderKeys.length === 0 ? {} : { keys: alwaysRenderKeys }),
         };
   const [minimapHitStripWidth, setMinimapHitStripWidth] = useState(0);
+  const [minimapViewportWidth, setMinimapViewportWidth] = useState(0);
   const [minimapCurrentIndex, setMinimapCurrentIndex] = useState<number | null>(null);
   const handleAnchorReady = (info: { anchorIndex: number | undefined }) => {
     if (anchorMessageId !== null && info.anchorIndex !== undefined) {
@@ -977,6 +978,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     setMinimapHasPersistentGutter((current) =>
       current === nextHasPersistentGutter ? current : nextHasPersistentGutter,
     );
+    setMinimapViewportWidth(Math.round(viewportWidth));
     setMinimapHitStripWidth(resolveTimelineMinimapHitStripWidth(viewportWidth, contentWidth));
   };
   // Rows added, removed or rewrapped (chat width) change the content size,
@@ -1386,6 +1388,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
               items={minimapItems}
               hasPersistentGutter={minimapHasPersistentGutter}
               hitStripWidth={minimapHitStripWidth}
+              viewportWidth={minimapViewportWidth}
               currentIndex={minimapCurrentIndex}
               stripMap={minimapStripMap}
               onWheel={forwardMinimapWheel}
@@ -1516,6 +1519,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
           {row.kind === "work" ? (
             <WorkGroupSection
               anchorKey={row.id}
+              createdAt={row.createdAt}
               groupedEntries={row.groupedEntries}
               isExpandedToolGroup={row.isExpandedToolGroup}
               displayLabel={row.displayLabel}

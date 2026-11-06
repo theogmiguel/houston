@@ -58,12 +58,15 @@ import { formatWorkingTimerNow, resolveBlockedThreadStatus } from "./TimelineWor
 
 export const WorkGroupSection = memo(function WorkGroupSection({
   anchorKey,
+  createdAt,
   disclosureAnchorKey = anchorKey,
   groupedEntries,
   isExpandedToolGroup,
   displayLabel,
 }: {
   anchorKey: string;
+  /** The group header's time; a row inside the group drops its own time when it is the same. */
+  createdAt: string;
   disclosureAnchorKey?: string;
   groupedEntries: Extract<MessagesTimelineRow, { kind: "work" }>["groupedEntries"];
   isExpandedToolGroup: boolean;
@@ -90,6 +93,7 @@ export const WorkGroupSection = memo(function WorkGroupSection({
       <ExpandedWorkGroupEntries
         key={`${routeThreadKey}:${anchorKey}`}
         anchorKey={anchorKey}
+        createdAt={createdAt}
         disclosureAnchorKey={disclosureAnchorKey}
         entries={nonEmptyEntries}
         workspaceRoot={workspaceRoot}
@@ -125,11 +129,13 @@ const compactWorkEntryHeight = 28;
 
 function ExpandedWorkGroupEntries({
   anchorKey,
+  createdAt,
   disclosureAnchorKey,
   entries,
   workspaceRoot,
 }: {
   anchorKey: string;
+  createdAt: string;
   disclosureAnchorKey: string;
   entries: TimelineWorkEntry[];
   workspaceRoot: string | undefined;
@@ -155,6 +161,7 @@ function ExpandedWorkGroupEntries({
   }
 
   const groupView = {
+    createdAt,
     state: viewState,
     onToggleEntry: (collapsed: boolean) => onToggleWorkEntry(disclosureAnchorKey, collapsed),
   };

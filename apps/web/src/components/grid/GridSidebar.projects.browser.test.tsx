@@ -225,7 +225,9 @@ describe("project sections", () => {
     expect(screen.getByRole("button", { name: /^Grid 1$/ }).element()).toBeVisible();
     expect(screen.getByRole("button", { name: /^Grid 2 empty$/ }).element()).toBeVisible();
     expect(screen.getByRole("button", { name: "New grid in notes" }).element()).toBeVisible();
-    expect(screen.getByRole("button", { name: "New grid" }).element()).toBeVisible();
+    // An empty project has no "New grid" row of its own: the header action is the one way in.
+    expect(screen.container.querySelectorAll('button[aria-label="New grid"]')).toHaveLength(0);
+    expect(screen.container.textContent).not.toContain("New grid");
     expect(screen.container.textContent).not.toContain("not in a grid");
     expect(screen.container.textContent).not.toContain("Ungrouped");
   });

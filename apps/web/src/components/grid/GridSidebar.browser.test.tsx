@@ -57,6 +57,22 @@ function thread(overrides: Partial<EnvironmentThreadShell> = {}): EnvironmentThr
   } as EnvironmentThreadShell;
 }
 
+/** Claude and Codex instances, for rows that mark a provider handoff. */
+function handoffProviderEntries(): ReadonlyMap<string, SidebarProviderEntry> {
+  return new Map(
+    ["claude", "codex"].map((instanceId) => [
+      instanceId,
+      {
+        instanceId,
+        driverKind: instanceId === "claude" ? "claudeAgent" : "codex",
+        enabled: true,
+        displayName: instanceId,
+        models: [],
+      } as unknown as SidebarProviderEntry,
+    ]),
+  );
+}
+
 function card(
   value: EnvironmentThreadShell,
   overrides: {
@@ -181,8 +197,16 @@ describe("ThreadCard drag source", () => {
 });
 
 describe("ThreadCard", () => {
-  it("keeps the provider mark on the title line while the card actions are showing", async () => {
-    await using screen = await render(card(thread()));
+  it("keeps the provider mark on the title line, left of the card actions, while they show", async () => {
+    await using screen = await render(
+      card(
+        thread({
+          modelSelection: { instanceId: "claude", model: "claude-haiku-5-5" },
+          providerInstanceHistory: ["codex"],
+        } as never),
+        { providerEntries: handoffProviderEntries() },
+      ),
+    );
 
     const cardElement = screen.container.querySelector("[data-thread-key]") as HTMLElement;
     const mark = screen.container.querySelector("[data-thread-provider-mark]") as HTMLElement;
@@ -194,8 +218,8 @@ describe("ThreadCard", () => {
     const actions = screen.getByRole("button", { name: /Thread actions for/ }).element();
     await vi.waitFor(() => expect(getComputedStyle(actions.parentElement!).opacity).toBe("1"));
     expect(getComputedStyle(mark).opacity).toBe("1");
-    expect(mark.getBoundingClientRect().top).toBeGreaterThanOrEqual(
-      actions.parentElement!.getBoundingClientRect().bottom,
+    expect(mark.getBoundingClientRect().right).toBeLessThanOrEqual(
+      actions.parentElement!.getBoundingClientRect().left,
     );
   });
 
@@ -363,7 +387,7 @@ describe("ThreadCard", () => {
 });
 
 describe("ThreadCard layout", () => {
-  it("is two lines without tags or subagents: meta, then title", async () => {
+  it("leads with the title; a thread on its own branch adds one muted meta line below it", async () => {
     await using screen = await render(
       card(thread({ tags: [], branch: "houston/split-drawer-state" } as never)),
     );
@@ -380,21 +404,21 @@ describe("ThreadCard layout", () => {
     const time = row.querySelector<HTMLElement>("[data-thread-time]")!;
     const branch = screen.getByText("houston/split-drawer-state").element();
     expect(meta.contains(branch)).toBe(true);
-    expect(meta.contains(time)).toBe(true);
-    expect(meta.querySelector("[data-thread-status]")?.textContent).toContain("Idle");
     expect(titleLine.contains(title)).toBe(true);
+    expect(titleLine.contains(time)).toBe(true);
+    expect(meta.contains(time)).toBe(false);
     expect(getComputedStyle(branch).fontFamily).not.toContain("Mono");
     expect(getComputedStyle(branch).fontSize).toBe("12px");
     expect(getComputedStyle(title).fontSize).toBe("13px");
     expect(getComputedStyle(title).fontWeight).toBe("500");
     expect(getComputedStyle(time).fontSize).toBe("12px");
 
-    // The meta line leads: branch, status, then the age at the row's right edge.
+    // The title leads, the meta line follows, and the age ends the title line at the right edge.
     const metaBox = meta.getBoundingClientRect();
     const titleBox = title.getBoundingClientRect();
     const timeBox = time.getBoundingClientRect();
     const rowBox = row.getBoundingClientRect();
-    expect(metaBox.bottom).toBeLessThanOrEqual(titleBox.top);
+    expect(titleBox.bottom).toBeLessThanOrEqual(metaBox.top);
     expect(rowBox.right - timeBox.right).toBeLessThan(16);
     expect(time.textContent).toMatch(/^\S+$/);
     expect(getComputedStyle(time).fontVariantNumeric).toContain("tabular-nums");
@@ -405,6 +429,16 @@ describe("ThreadCard layout", () => {
     for (const icon of row.querySelectorAll<SVGElement>("[data-thread-meta] svg")) {
       expect(icon.getBoundingClientRect().width).toBe(14);
     }
+  });
+
+  it("is a single line when the thread has no branch, changes or terminals to report", async () => {
+    await using screen = await render(card(thread({ tags: [], branch: "main" } as never)));
+    const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
+    const height = row.getBoundingClientRect().height;
+    expect(height).toBeGreaterThanOrEqual(30);
+    expect(height).toBeLessThanOrEqual(34);
+    const meta = row.querySelector<HTMLElement>("[data-thread-meta]")!;
+    expect(getComputedStyle(meta).display).toBe("none");
   });
 
   it("adds a third line only when the thread has tags or running subagents", async () => {
@@ -424,14 +458,14 @@ describe("ThreadCard layout", () => {
     expect(plain.container.querySelector("[data-thread-extras-line]")).toBeNull();
   });
 
-  it("gives the title at least 250px of a 312px sidebar before it truncates", async () => {
+  it("gives the title at least 200px of a 264px sidebar before it truncates", async () => {
     await using screen = await render(
-      <div style={{ width: 295 }}>
+      <div style={{ width: 247 }}>
         {card(thread({ title: "T".repeat(200) }), { timeLabel: "6m" })}
       </div>,
     );
     const title = screen.container.querySelector<HTMLElement>("[data-card-open] > span")!;
-    expect(title.getBoundingClientRect().width).toBeGreaterThanOrEqual(250);
+    expect(title.getBoundingClientRect().width).toBeGreaterThanOrEqual(190);
   });
 
   it("shows the branch only when it is not the default branch", async () => {
@@ -450,7 +484,7 @@ describe("ThreadCard layout", () => {
   });
 
   it("keeps a long title clear of the hover actions in an active row and in a shelf row", async () => {
-    // The actions take the meta line's right corner; the title line below never runs under them.
+    // The actions join the title line at its right edge; the title truncates before them.
     const longTitle = thread({ title: "T".repeat(200) });
     const rows = [
       { label: "active", options: {}, actionsName: /Thread actions for/ },
@@ -469,11 +503,7 @@ describe("ThreadCard layout", () => {
 
       const actionsBox = reveal.getBoundingClientRect();
       const titleBox = titleOf(screen).getBoundingClientRect();
-      const clearBelow = titleBox.top >= actionsBox.bottom;
-      const clearBeside = titleBox.right <= actionsBox.left;
-      expect(clearBelow || clearBeside, label).toBe(true);
-      // The title keeps its width: the actions do not shorten the line below them.
-      expect(titleBox.right, label).toBeGreaterThan(actionsBox.left);
+      expect(titleBox.right, label).toBeLessThanOrEqual(actionsBox.left);
     }
   });
 
@@ -613,7 +643,7 @@ function accentColor(): string {
 }
 
 describe("ThreadCard status marks", () => {
-  it("draws a running thread's mark as the accent dotted ring", async () => {
+  it("draws a running thread's mark as the accent dotted ring, named Running", async () => {
     await using screen = await render(
       card(
         thread({
@@ -638,10 +668,12 @@ describe("ThreadCard status marks", () => {
     for (const dot of dots) {
       expect(getComputedStyle(dot).fill).toBe(accentColor());
     }
-    expect(getComputedStyle(screen.getByText("Running").element()).color).toBe(accentColor());
+    const mark = screen.getByRole("img", { name: "Running" }).element();
+    expect(getComputedStyle(mark).color).toBe(accentColor());
+    expect(mark.closest("[data-thread-status]")!.textContent).toBe("");
   });
 
-  it("puts status and the age on the meta line and the tags on the third line", async () => {
+  it("puts the age and the status mark on the title line and the tags on the third line", async () => {
     await using screen = await render(
       card(
         thread({
@@ -658,35 +690,35 @@ describe("ThreadCard status marks", () => {
       ),
     );
 
+    const titleLine = screen.container.querySelector<HTMLElement>("[data-thread-title-line]")!;
     const meta = screen.container.querySelector<HTMLElement>("[data-thread-meta]")!;
     const extras = screen.container.querySelector<HTMLElement>("[data-thread-extras-line]")!;
-    const status = meta.querySelector<HTMLElement>("[data-thread-status]");
-    expect(status?.textContent).toContain("Running");
+    const status = titleLine.querySelector<HTMLElement>("[data-thread-status]")!;
+    expect(status.querySelector("[role=img]")?.getAttribute("aria-label")).toBe("Running");
+    expect(meta.querySelector("[data-thread-status]")).toBeNull();
     expect(extras.querySelector("[data-thread-status]")).toBeNull();
     const tags = [...extras.querySelectorAll<HTMLElement>("[data-thread-tag]")];
     expect(tags.map((tag) => tag.textContent)).toEqual(["bug", "linux"]);
     expect(meta.querySelector("[data-thread-tag]")).toBeNull();
     expect(getComputedStyle(tags[0]!).backgroundColor).not.toBe(tokenBackground("--sel"));
-    const time = meta.querySelector<HTMLElement>("[data-thread-time]");
+    const time = titleLine.querySelector<HTMLElement>("[data-thread-time]");
     expect(time?.textContent).toBe("9:00");
     expect(time).toBeVisible();
     expect(screen.container.querySelectorAll("[data-thread-time]")).toHaveLength(1);
 
-    // The status leads the meta line and the age ends it at the row's right edge.
+    // The age precedes the status mark, and the mark closes the title line at the row's right edge.
     const timeBox = time!.getBoundingClientRect();
     const rowBox = screen.container.querySelector("[data-thread-key]")!.getBoundingClientRect();
-    expect(status!.getBoundingClientRect().right).toBeLessThanOrEqual(timeBox.left);
-    expect(rowBox.right - timeBox.right).toBeLessThan(16);
+    expect(timeBox.right).toBeLessThanOrEqual(status.getBoundingClientRect().left);
+    expect(rowBox.right - status.getBoundingClientRect().right).toBeLessThan(16);
   });
 
-  it("labels a thread with nothing running Idle, in the muted ink", async () => {
+  it("draws no status mark for a thread with nothing running", async () => {
     await using screen = await render(card(thread()));
-    const status = screen.container.querySelector<HTMLElement>("[data-thread-status]");
-    expect(status?.textContent).toBe("Idle");
-    expect(getComputedStyle(status!).color).toBe(tokenColor("--contrast-secondary-label"));
+    expect(screen.container.querySelector("[data-thread-status]")).toBeNull();
   });
 
-  it("gives each status its own glyph and ink, with idle a muted hollow circle", async () => {
+  it("gives each status its own glyph and ink, and none for idle", async () => {
     const readyThread = {
       lastVisitedAt: "2025-12-31T23:00:00.000Z",
       latestRun: {
@@ -725,28 +757,25 @@ describe("ThreadCard status marks", () => {
       {
         label: "Ready",
         value: readyThread,
-        ink: "text-secondary-label",
-        glyph: "text-success-foreground",
+        ink: "text-success-foreground",
+        glyph: null,
       },
       { label: "Failed", value: failedThread, ink: "text-error-foreground", glyph: null },
-      { label: "Idle", value: {}, ink: "text-secondary-label", glyph: null },
     ];
     const colors = new Set<string>();
     const glyphs = new Set<string>();
     for (const { label, value, ink, glyph } of cases) {
       await using screen = await render(card(thread(value as never), { timeLabel: null }));
       const status = screen.container.querySelector<HTMLElement>("[data-thread-status]")!;
-      expect(status.textContent).toContain(label);
-      const color = getComputedStyle(status).color;
-      expect(color, label).toBe(classColor(ink));
+      // The glyph is named for assistive tech; only the states that ask something say the word.
+      const named = status.querySelector("[role=img]")!;
+      expect(named.getAttribute("aria-label"), label).toBe(label);
+      const color = getComputedStyle(named).color;
+      expect(color, label).toBe(classColor(glyph ?? ink));
       colors.add(color);
-      const glyphSvg = status.querySelector("svg")!;
-      // Calm states quiet the word and keep the state's colour on the glyph alone.
-      expect(getComputedStyle(glyphSvg).color, `${label} glyph`).toBe(classColor(glyph ?? ink));
-      glyphs.add(glyphSvg.innerHTML);
+      glyphs.add(status.querySelector("svg")!.innerHTML);
     }
-    // Ready and Idle share the muted word ink: four distinct word colours across five states.
-    expect(colors.size).toBe(cases.length - 1);
+    expect(colors.size).toBe(cases.length);
     expect(glyphs.size).toBe(cases.length);
   });
 
@@ -765,8 +794,8 @@ describe("ThreadCard status marks", () => {
       card(thread({ hasPendingUserInput: true }), { timeLabel: null }),
     );
 
-    const label = screen.getByText("Input").element();
-    const outline = label.parentElement?.querySelector("svg path");
+    const label = screen.getByRole("img", { name: "Input" }).element();
+    const outline = label.querySelector("svg path");
     expect(outline).not.toBeNull();
     expect(getComputedStyle(outline!).fill).toBe("none");
     expect(getComputedStyle(outline!).stroke).not.toBe("none");
@@ -853,34 +882,29 @@ describe("ThreadCard layout and contrast", () => {
     expect(getComputedStyle(title).color).toBe(classColor("text-foreground"));
   });
 
-  it("draws the provider mark muted and uncoloured, beside a state mark too", async () => {
-    const providerEntries = new Map([
-      [
-        "claude",
-        {
-          instanceId: "claude",
-          driverKind: "claudeAgent",
-          enabled: true,
-          displayName: "Claude",
-          models: [],
-        } as unknown as SidebarProviderEntry,
-      ],
-    ]);
+  it("marks the provider only after a handoff between providers, muted and uncoloured", async () => {
+    const providerEntries = handoffProviderEntries();
     const claudeThread = {
       modelSelection: { instanceId: "claude", model: "claude-haiku-5-5" },
       providerInstanceHistory: [],
     };
-    await using idle = await render(card(thread(claudeThread as never), { providerEntries }));
-    const mark = idle.container.querySelector("[data-thread-provider-mark]") as HTMLElement;
-    expect(mark.innerHTML).toContain("grayscale");
+    await using single = await render(card(thread(claudeThread as never), { providerEntries }));
+    expect(single.container.querySelector("[data-thread-provider-mark]")).toBeNull();
 
-    await using attention = await render(
-      card(thread({ ...claudeThread, hasPendingUserInput: true } as never), { providerEntries }),
+    await using handedOff = await render(
+      card(
+        thread({
+          ...claudeThread,
+          hasPendingUserInput: true,
+          providerInstanceHistory: ["codex"],
+        } as never),
+        { providerEntries },
+      ),
     );
-    expect(attention.container.querySelector("[data-thread-status]")).not.toBeNull();
-    const attentionMark = attention.container.querySelector("[data-thread-provider-mark]");
-    expect(attentionMark?.innerHTML).toContain("grayscale");
-    expect(attentionMark?.closest("[data-thread-title-line]")).not.toBeNull();
+    expect(handedOff.container.querySelector("[data-thread-status]")).not.toBeNull();
+    const mark = handedOff.container.querySelector("[data-thread-provider-mark]");
+    expect(mark?.innerHTML).toContain("grayscale");
+    expect(mark?.closest("[data-thread-title-line]")).not.toBeNull();
   });
 });
 

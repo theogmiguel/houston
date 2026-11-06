@@ -33,8 +33,16 @@ import {
 } from "../../session-logic";
 import ChatMarkdown from "../ChatMarkdown";
 import { ChatMarkdownAssetImage } from "./ChatMarkdownMedia";
-import { CheckIcon, ChevronRightIcon, CircleAlertIcon, XIcon, RotateCcwIcon } from "lucide-react";
+import {
+  CheckIcon,
+  ChevronRightIcon,
+  CircleAlertIcon,
+  ExternalLinkIcon,
+  XIcon,
+  RotateCcwIcon,
+} from "lucide-react";
 import { Button, InlineButton } from "../ui/button";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { useAssetUrls } from "../../assets/assetUrls";
 import { useThreadShell } from "../../state/entities";
 import {
@@ -45,7 +53,7 @@ import {
   workEntryReadOutput,
 } from "./MessagesTimeline.logic";
 import { cn } from "~/lib/utils";
-import { formatUpcomingTimestamp } from "../../timestampFormat";
+import { formatDayAwareTimestamp, formatUpcomingTimestamp } from "../../timestampFormat";
 import { FetchedToolOutput, V2ItemInspector } from "./V2ItemInspector";
 import { SubagentNotificationLink } from "./V2LifecycleRow";
 import {
@@ -392,6 +400,23 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
             );
   const toolParts =
     isReasoning || workEntry.questionAnswer ? null : workEntryToolParts(workEntry, workspaceRoot);
+  // A row inside a group shows its time only when it differs from the group header's.
+  const repeatsGroupTime =
+    groupView !== null &&
+    formatDayAwareTimestamp(workEntry.createdAt, timestampFormat) ===
+      formatDayAwareTimestamp(groupView.createdAt, timestampFormat);
+  const mergedFileChange = workEntry.mergedFileChange;
+  const mergedTarget = mergedFileChange?.projectedItem;
+  const mergedItem = mergedTarget?.item;
+  const onOpenMergedDiff =
+    ctx.onOpenToolDiff && mergedTarget && mergedItem?.type === "file_change"
+      ? () =>
+          ctx.onOpenToolDiff?.({
+            threadId: mergedTarget.sourceThreadId,
+            itemId: mergedTarget.sourceItemId,
+            revision: turnItemDetailRevision(mergedItem),
+          })
+      : undefined;
   const iconWrapperClass = cn(
     "flex size-3.5 items-center justify-center",
     showWarningIndicator
@@ -507,10 +532,34 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
         </div>
       }
       meta={
-        <TimelineRowTimestamp createdAt={workEntry.createdAt} timestampFormat={timestampFormat} />
+        repeatsGroupTime ? null : (
+          <TimelineRowTimestamp createdAt={workEntry.createdAt} timestampFormat={timestampFormat} />
+        )
       }
       trailing={
         <>
+          {mergedFileChange ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    size="icon-micro"
+                    variant="ghost-muted"
+                    aria-label="Open diff"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onOpenMergedDiff?.();
+                    }}
+                    onKeyDown={stopRowToggle}
+                  />
+                }
+              >
+                <ExternalLinkIcon aria-hidden />
+              </TooltipTrigger>
+              <TooltipPopup side="top">Open diff</TooltipPopup>
+            </Tooltip>
+          ) : null}
           {toolParts?.additions !== undefined || toolParts?.deletions !== undefined ? (
             <span className="shrink-0 text-callout text-(--houston) tabular-nums">
               {toolParts.additions ? (

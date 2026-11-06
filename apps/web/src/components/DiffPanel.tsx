@@ -768,7 +768,11 @@ export default function DiffPanel({
   };
   const renderLoadingBoundary = () =>
     remainingFileCount > 0 ? (
-      <DiffFileLoadingBoundary load={loadNextFiles} count={remainingFileCount} />
+      <DiffFileLoadingBoundary
+        load={loadNextFiles}
+        count={remainingFileCount}
+        loading={areFilePatchesPending}
+      />
     ) : null;
   const codeViewFiles = shownFileEntries.map(({ fileDiff, fileKey, fileVersion }) => ({
     fileDiff,
@@ -1147,9 +1151,12 @@ export default function DiffPanel({
   const headerRow = (
     <>
       <div className="@container/diff-refs flex min-w-0 flex-1 items-center gap-3 [-webkit-app-region:no-drag]">
-        <span className="shrink-0 truncate text-headline font-semibold text-foreground">
-          {selectedScopeLabel}
-        </span>
+        {/* The embedded panel sits under a "Changes" tab, which already names the default scope. */}
+        {mode === "embedded" && selectedScopeLabel === "Changes" ? null : (
+          <span className="shrink-0 truncate text-headline font-semibold text-foreground">
+            {selectedScopeLabel}
+          </span>
+        )}
         {canSelectBranchBase && (
           <div
             className="flex min-w-0 max-w-full items-center gap-2 overflow-hidden text-xs text-muted-foreground"

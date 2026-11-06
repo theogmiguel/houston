@@ -4489,3 +4489,45 @@ describe("expanded turn fold", () => {
     expect(groupRows.slice(0, -1).some((row) => row.endsFoldGroup === true)).toBe(false);
   });
 });
+
+describe("a read followed by that file's edit", () => {
+  const at = "2026-10-01T06:19:10Z";
+  const entry = (id: string, fields: Record<string, unknown>): TimelineEntry =>
+    ({
+      kind: "work",
+      id,
+      createdAt: at,
+      entry: { id, createdAt: at, label: id, tone: "tool", ...fields },
+    }) as TimelineEntry;
+  const command = entry("ran", { itemType: "command_execution", command: "ls" });
+  const read = entry("read", { requestKind: "file-read", changedFiles: ["atlas-api/CHANGELOG.md"] });
+  const edit = (fileName: string) =>
+    entry("edit", { itemType: "file_change", structuredPayload: { type: "file_change", fileName } });
+  const rows = (timelineEntries: ReadonlyArray<TimelineEntry>, expanded: boolean) =>
+    deriveMessagesTimelineRows({
+      timelineEntries,
+      isWorking: false,
+      runningRunId: null,
+      activeTurnStartedAt: null,
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+      ...(expanded ? { expandedWorkGroupIds: new Set(["work-group:ran"]) } : {}),
+    });
+  const cards = (derived: ReturnType<typeof rows>) =>
+    derived.filter(
+      (row) => row.kind === "work" && row.groupedEntries[0]?.itemType === "file_change",
+    );
+
+  it("hands the edit to the read row instead of drawing a second card for the file", () => {
+    const derived = rows([command, read, edit("/repo/atlas-api/CHANGELOG.md")], true);
+    expect(cards(derived)).toHaveLength(0);
+    const group = derived.find((row) => row.kind === "work" && row.isExpandedToolGroup);
+    expect(group?.kind === "work" && group.groupedEntries.map((e) => e.id)).toEqual(["ran", "read"]);
+    expect(group?.kind === "work" && group.groupedEntries[1]?.mergedFileChange?.id).toBe("edit");
+  });
+
+  it("keeps the card for another file and while the group is collapsed", () => {
+    expect(cards(rows([command, read, edit("atlas-api/README.md")], true))).toHaveLength(1);
+    expect(cards(rows([command, read, edit("atlas-api/CHANGELOG.md")], false))).toHaveLength(1);
+  });
+});

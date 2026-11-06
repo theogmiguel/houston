@@ -282,7 +282,19 @@ export function workEntryIsVisibleInGroup(
   );
 }
 const TIMELINE_MINIMAP_ITEM_SPACING = 8;
-export const TIMELINE_MINIMAP_MIN_ITEMS = 2;
+/** Below this many turns the scroll bar already orients the reader; ticks only add clutter. */
+export const TIMELINE_MINIMAP_MIN_ITEMS = 8;
+/**
+ * Under this scroller width the conversation fills the pane, so the rail would float over text
+ * or the sidebar edge instead of sitting in a gutter.
+ */
+export const TIMELINE_MINIMAP_MIN_VIEWPORT_WIDTH = 1000;
+
+export function resolveTimelineMinimapAvailable(itemCount: number, viewportWidth: number): boolean {
+  return (
+    itemCount >= TIMELINE_MINIMAP_MIN_ITEMS && viewportWidth >= TIMELINE_MINIMAP_MIN_VIEWPORT_WIDTH
+  );
+}
 const TIMELINE_MINIMAP_MAX_HEIGHT_CSS = "calc(100vh - 18rem)";
 const TIMELINE_MINIMAP_PERSISTENT_GUTTER = 48;
 
@@ -608,6 +620,8 @@ type MessagesTimelineRowContent =
       groupedWithPrevious?: boolean;
       /** Set when the message above is a steer too, so the label shows once. */
       continuesSteer?: boolean;
+      /** The run behind the answer above, so a model line shows only when the model changed. */
+      previousAnswerRunId?: RunId | null;
     }
   | {
       kind: "assistant-meta";
@@ -651,6 +665,37 @@ type MessagesTimelineRowContent =
 export interface StableMessagesTimelineRowsState {
   byId: Map<string, MessagesTimelineRow>;
   result: MessagesTimelineRow[];
+}
+
+function sameFilePath(a: string, b: string): boolean {
+  const normalize = (path: string) =>
+    path.trim().replaceAll("\\", "/").replace(/^\.\//, "").replace(/^\/+/, "");
+  const left = normalize(a);
+  const right = normalize(b);
+  if (left.length === 0 || right.length === 0) return false;
+  return left === right || left.endsWith(`/${right}`) || right.endsWith(`/${left}`);
+}
+
+/**
+ * An expanded group that ends in a read of a file, directly followed by that file's edit card:
+ * the group's read row takes the edit as its open-diff action and the card is not drawn. Returns
+ * the replacement for the group's row, or null when the card stands on its own.
+ */
+export function mergeFileChangeIntoRead(
+  previous: MessagesTimelineRow | undefined,
+  fileChange: WorkLogEntry,
+): Extract<MessagesTimelineRow, { kind: "work" }> | null {
+  if (previous?.kind !== "work" || !previous.isExpandedToolGroup) return null;
+  const item = fileChange.structuredPayload;
+  if (item?.type !== "file_change") return null;
+  const read = previous.groupedEntries.at(-1);
+  if (read === undefined || toolGroupAction(read) !== "read") return null;
+  const readPaths = workEntryReadRawPaths(read);
+  if (readPaths.length !== 1 || !sameFilePath(readPaths[0]!, item.fileName)) return null;
+  return {
+    ...previous,
+    groupedEntries: [...previous.groupedEntries.slice(0, -1), { ...read, mergedFileChange: fileChange }],
+  };
 }
 
 function workGroupId(timelineEntryId: string): string {
@@ -1863,6 +1908,14 @@ export function deriveMessagesTimelineRows(input: {
         timelineEntry.entry.itemType === "file_change" ||
         timelineEntry.entry.questionAnswer !== undefined
       ) {
+        const merged =
+          timelineEntry.entry.itemType === "file_change"
+            ? mergeFileChangeIntoRead(nextRows.at(-1), timelineEntry.entry)
+            : null;
+        if (merged !== null) {
+          nextRows[nextRows.length - 1] = merged;
+          continue;
+        }
         nextRows.push({
           kind: "work",
           id: timelineEntry.id,
@@ -2211,7 +2264,16 @@ export function deriveMessagesTimelineRows(input: {
       collapsedFoldMemberIds,
     ),
   );
+  let previousAnswerRunId: RunId | null = null;
   return result.map((row, index) => {
+    if (row.kind === "message" && row.message.role === "assistant" && row.message.runId) {
+      const before = previousAnswerRunId;
+      previousAnswerRunId = row.message.runId;
+      if (before !== null && before !== row.message.runId) {
+        return { ...row, previousAnswerRunId: before };
+      }
+      return row;
+    }
     if (timelineRowIsWorkLog(row) && timelineRowIsWorkLog(result[index + 1])) {
       return { ...row, continuesWorkLog: true };
     }
@@ -2628,7 +2690,8 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
         a.revertTurnCount === bm.revertTurnCount &&
         a.groupedWithNext === bm.groupedWithNext &&
         a.groupedWithPrevious === bm.groupedWithPrevious &&
-        a.continuesSteer === bm.continuesSteer
+        a.continuesSteer === bm.continuesSteer &&
+        a.previousAnswerRunId === bm.previousAnswerRunId
       );
     }
   }
