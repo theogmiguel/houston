@@ -117,10 +117,10 @@ import {
   filePreviewReadErrorMessage,
   isMarkdownPreviewFile,
   resolveFilePreviewPath,
-  setMarkdownTaskChecked,
   shouldShowFileExplorer,
   workspaceAssetResource,
 } from "./filePreviewMode";
+import { setMarkdownTaskChecked } from "@houston-app/shared/markdownTaskList";
 import {
   changeFileSaveSession,
   overwriteFileSaveSession,
