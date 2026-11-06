@@ -61,8 +61,43 @@ async function bootDraftComposer() {
   return app;
 }
 
+function resolveColor(cssValue: string): string {
+  const probe = document.createElement("div");
+  probe.style.backgroundColor = cssValue;
+  document.body.append(probe);
+  const resolved = getComputedStyle(probe).backgroundColor;
+  probe.remove();
+  return resolved;
+}
+
+/** Rasterises any CSS colour (including color-mix results) to opaque sRGB channels over `over`. */
+function rasterColor(cssValue: string, over: string): [number, number, number] {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1;
+  canvas.height = 1;
+  const context = canvas.getContext("2d")!;
+  context.fillStyle = over;
+  context.fillRect(0, 0, 1, 1);
+  context.fillStyle = cssValue;
+  context.fillRect(0, 0, 1, 1);
+  const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
+  return [r!, g!, b!];
+}
+
+function contrastRatio(a: [number, number, number], b: [number, number, number]): number {
+  const luminance = (rgb: [number, number, number]) => {
+    const [r, g, bl] = rgb.map((channel) => {
+      const c = channel / 255;
+      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    }) as [number, number, number];
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+  };
+  const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number];
+  return (light + 0.05) / (dark + 0.05);
+}
+
 it(
-  "lays out the context strip, the footer's primary action and the model shortcut",
+  "puts the context row under one composer card and starts with thread details closed",
   async () => {
     using _environment = installFakeEnvironment([]);
     await using _app = await bootDraftComposer();
@@ -78,18 +113,52 @@ it(
     );
     const card = document.querySelector<HTMLElement>("[data-chat-composer-main-surface]");
     expect(card).not.toBeNull();
-    // The strip precedes the card in the DOM and its lower edge slides under the card's top.
-    expect(strip.compareDocumentPosition(card!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The strip follows the card in the DOM and sits entirely below it, as plain text controls.
+    expect(strip.compareDocumentPosition(card!) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
     const stripBox = strip.getBoundingClientRect();
     const cardBox = card!.getBoundingClientRect();
-    expect(stripBox.bottom).toBeGreaterThan(cardBox.top);
-    expect(stripBox.top).toBeLessThan(cardBox.top);
-    // Inset from the card's edges, like a tab.
-    expect(stripBox.left).toBeGreaterThan(cardBox.left);
-    expect(stripBox.right).toBeLessThan(cardBox.right);
+    expect(stripBox.top).toBeGreaterThanOrEqual(cardBox.bottom);
+    expect(stripBox.left).toBeGreaterThanOrEqual(cardBox.left);
+    expect(stripBox.right).toBeLessThanOrEqual(cardBox.right + 1);
+    const stripStyle = getComputedStyle(strip);
+    expect(stripStyle.borderTopWidth).toBe("0px");
+    expect(stripStyle.backgroundColor).toBe("rgba(0, 0, 0, 0)");
+    expect(stripStyle.fontSize).toBe("12px");
+
+    // Every control in the row is 12px sans in the muted label ink, readable against the canvas.
+    const controls = [...strip.querySelectorAll<HTMLElement>("[data-composer-context-control]")];
+    expect(controls.length).toBeGreaterThan(0);
+    const canvasColor = resolveColor("var(--background)");
+    for (const control of controls) {
+      const style = getComputedStyle(control);
+      expect(style.fontSize, control.textContent ?? "").toBe("12px");
+      expect(style.color).toBe(resolveColor("var(--contrast-secondary-label)"));
+      expect(
+        contrastRatio(rasterColor(style.color, canvasColor), rasterColor(canvasColor, "#fff")),
+      ).toBeGreaterThanOrEqual(4.5);
+    }
+    for (const label of strip.querySelectorAll<HTMLElement>("[data-composer-label] *")) {
+      expect(getComputedStyle(label).fontFamily).not.toContain("JetBrains");
+    }
+
+    // The text sits well inside the card, and the resting input is a roomy 72px box.
+    const editor = document.querySelector<HTMLElement>('[data-testid="composer-editor"]')!;
+    const editorBox = editor.getBoundingClientRect();
+    const editorStyle = getComputedStyle(editor);
+    expect(
+      editorBox.left + parseFloat(editorStyle.paddingLeft) - cardBox.left,
+    ).toBeGreaterThanOrEqual(16);
+    expect(editorBox.top + parseFloat(editorStyle.paddingTop) - cardBox.top).toBeGreaterThanOrEqual(
+      10,
+    );
+    expect(editorBox.height).toBeGreaterThanOrEqual(72);
+
+    // The details card opens only from its toggle or shortcut.
+    expect(document.querySelector('[aria-label="Thread details"]')).toBeNull();
 
     const footer = document.querySelector<HTMLElement>('[data-chat-composer-footer="true"]');
     expect(footer).not.toBeNull();
+    expect(cardBox.top).toBeLessThanOrEqual(footer!.getBoundingClientRect().top);
     const lastButton = () => [...footer!.querySelectorAll<HTMLButtonElement>("button")].at(-1)!;
     // The label reads "Environment disconnected" until the connection is up.
     await vi.waitFor(() => expect(lastButton().getAttribute("aria-label")).toBe("Submit message"), {
@@ -99,7 +168,25 @@ it(
     expect(footer!.querySelectorAll('button[type="submit"]')).toHaveLength(1);
     expect(lastButton().type).toBe("submit");
 
+    // The send button is a 32px circle: a neutral inert control while there is nothing to send.
+    const send = lastButton();
+    const emptyStyle = getComputedStyle(send);
+    expect(send.disabled).toBe(true);
+    expect(send.getBoundingClientRect().width).toBe(32);
+    expect(send.getBoundingClientRect().height).toBe(32);
+    expect(emptyStyle.backgroundColor).toBe(resolveColor("var(--sel)"));
+    expect(emptyStyle.opacity).toBe("1");
+
     await userEvent.click(page.getByTestId("composer-editor"));
+    await userEvent.keyboard("hello");
+    await vi.waitFor(() => expect(send.disabled).toBe(false));
+    // The fill moves from the neutral disabled recipe to the accent over the feedback role.
+    await vi.waitFor(() =>
+      expect(getComputedStyle(send).backgroundColor).toBe(resolveColor("var(--accent)")),
+    );
+    expect(Number(getComputedStyle(send).opacity)).toBe(1);
+    await userEvent.keyboard("{Control>}a{/Control}{Backspace}");
+
     await userEvent.keyboard("{Control>}{Shift>}m{/Shift}{/Control}");
     await expect.element(page.getByPlaceholder("Search models")).toBeVisible();
   },

@@ -825,7 +825,9 @@ export function ServerBrowserSurface(props: {
     >
       <div
         className={cn(
-          "visible relative z-20 flex h-8 shrink-0 items-center justify-between gap-2 border-border bg-[var(--rail)] px-3 text-[var(--t1)]",
+          // The server refuses a take-over while another viewer holds control, so that button stays
+          // disabled; the lighter fade keeps its outline and label readable on the band.
+          "visible relative z-20 flex h-8 shrink-0 items-center justify-between gap-2 border-border bg-[var(--rail)] px-3 text-[var(--t1)] [&_button:disabled]:opacity-70",
           controlPosition === "bottom" ? "order-last border-t" : "border-b",
         )}
       >
@@ -834,9 +836,8 @@ export function ServerBrowserSurface(props: {
         </span>
         {control?.canOperate ? (
           <Button
-            className="text-[var(--t1)]"
-            variant="ghost"
-            size="sm"
+            variant="outline"
+            size="xs"
             disabled={control.controller === "another-viewer"}
             onClick={() =>
               send({ type: control.controller === "you" ? "releaseControl" : "takeControl" })

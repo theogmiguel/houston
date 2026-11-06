@@ -1,8 +1,16 @@
 import { page, userEvent } from "vite-plus/test/browser";
 import { describe, expect, it, vi } from "vite-plus/test";
 
+import "~/index.css";
 import { render } from "../../../test/render";
-import { Sidebar, SidebarProvider, SidebarRail, SidebarTrigger, useSidebar } from "./sidebar";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarProvider,
+  SidebarRail,
+  SidebarTrigger,
+  useSidebar,
+} from "./sidebar";
 
 function CollapseFromInside() {
   const { setOpen } = useSidebar();
@@ -45,6 +53,44 @@ describe("Sidebar", () => {
     await vi.waitFor(() => expect(document.activeElement).toBe(trigger));
   });
 
+  it("fades scrolled content over a whole row at its edges, and not once the list is scrolled clear", async () => {
+    await page.viewport(1280, 400);
+    await using screen = await render(
+      <SidebarProvider defaultOpen className="h-dvh! min-h-0!">
+        <Sidebar collapsible="offcanvas">
+          <SidebarContent>
+            {Array.from({ length: 40 }, (_, index) => (
+              <div key={index} className="h-9 shrink-0">
+                Row {index}
+              </div>
+            ))}
+          </SidebarContent>
+        </Sidebar>
+      </SidebarProvider>,
+      { router: false /* no routes involved */ },
+    );
+
+    const viewport = screen.container.querySelector<HTMLElement>(
+      '[data-slot="scroll-area-viewport"]',
+    )!;
+    expect(getComputedStyle(viewport).getPropertyValue("--fade-size")).toBe("2.75rem");
+    // The fade is driven by the viewport's measured overflow, not by a scroll-state query, so it is
+    // present in every Chromium: the bottom layer dissolves the last 44px while content remains below.
+    await vi.waitFor(() =>
+      expect(getComputedStyle(viewport).maskImage).toContain(
+        "linear-gradient(rgb(0, 0, 0) calc(100% - 44px), rgba(0, 0, 0, 0) 100%)",
+      ),
+    );
+
+    viewport.scrollTop = viewport.scrollHeight;
+    await vi.waitFor(() =>
+      expect(viewport.style.getPropertyValue("--scroll-area-overflow-y-end")).toBe("0px"),
+    );
+    expect(getComputedStyle(viewport).maskImage).not.toContain(
+      "linear-gradient(rgb(0, 0, 0) calc(100% - 44px), rgba(0, 0, 0, 0) 100%)",
+    );
+  });
+
   it("abandons a rail drag when the sidebar collapses mid-drag", async () => {
     await page.viewport(1280, 800);
     const onResize = vi.fn();
@@ -70,5 +116,68 @@ describe("Sidebar", () => {
     rail.dispatchEvent(new PointerEvent("pointerup", { ...pointer, clientX: left + 80 }));
 
     expect(onResize).toHaveBeenCalledTimes(1);
+  });
+
+  describe("below the dock breakpoint", () => {
+    function docked(screen: { container: HTMLElement }) {
+      return screen.container.querySelector<HTMLElement>('[data-slot="sidebar"]');
+    }
+
+    it("turns the rail into a closed drawer that the toggle opens", async () => {
+      await page.viewport(900, 800);
+      await using screen = await render(<Harness />, { router: false /* no routes involved */ });
+
+      expect(docked(screen)).toBeNull();
+      expect(document.querySelector('[data-slot="sidebar"][data-mobile="true"]')).toBeNull();
+
+      await userEvent.click(
+        screen.container.querySelector<HTMLElement>('[data-slot="sidebar-trigger"]')!,
+      );
+
+      await vi.waitFor(() =>
+        expect(document.querySelector('[data-slot="sidebar"][data-mobile="true"]')).not.toBeNull(),
+      );
+    });
+
+    it("keeps the rail docked from 960px up", async () => {
+      await page.viewport(960, 800);
+      await using screen = await render(<Harness />, { router: false /* no routes involved */ });
+
+      expect(docked(screen)).not.toBeNull();
+      expect(document.querySelector('[data-slot="sidebar"][data-mobile="true"]')).toBeNull();
+    });
+
+    it("docks the rail again when the window widens, keeping a manual collapse", async () => {
+      await page.viewport(1280, 800);
+      await using screen = await render(<Harness />, { router: false /* no routes involved */ });
+      await userEvent.click(screen.getByRole("button", { name: "Collapse" }));
+      await vi.waitFor(() => expect(docked(screen)?.inert).toBe(true));
+
+      await page.viewport(900, 800);
+      await vi.waitFor(() => expect(docked(screen)).toBeNull());
+      await page.viewport(1280, 800);
+
+      await vi.waitFor(() => expect(docked(screen)).not.toBeNull());
+      expect(docked(screen)!.inert).toBe(true);
+    });
+
+    it("returns to an expanded docked rail, not an open drawer, after widening", async () => {
+      await page.viewport(900, 800);
+      await using screen = await render(<Harness />, { router: false /* no routes involved */ });
+      await userEvent.click(
+        screen.container.querySelector<HTMLElement>('[data-slot="sidebar-trigger"]')!,
+      );
+      await vi.waitFor(() =>
+        expect(document.querySelector('[data-slot="sidebar"][data-mobile="true"]')).not.toBeNull(),
+      );
+
+      await page.viewport(1280, 800);
+
+      await vi.waitFor(() => expect(docked(screen)).not.toBeNull());
+      expect(docked(screen)!.inert).toBe(false);
+      await page.viewport(900, 800);
+      await vi.waitFor(() => expect(docked(screen)).toBeNull());
+      expect(document.querySelector('[data-slot="sidebar"][data-mobile="true"]')).toBeNull();
+    });
   });
 });

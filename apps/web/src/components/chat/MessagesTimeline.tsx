@@ -253,6 +253,8 @@ interface MessagesTimelineProps {
   detailBehindShell?: boolean;
   runningRunId?: RunId | null;
   turnDiffSummaries: ReadonlyArray<TurnDiffSummary>;
+  /** The run whose changes the composer's pending-changes row already shows. */
+  changeBannerRunId?: RunId | null;
   routeThreadKey: string;
   displayThreadKey?: string;
   /** Off where another region already speaks the thread's status, like a subagent's bar. */
@@ -370,6 +372,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   detailBehindShell = false,
   runningRunId = null,
   turnDiffSummaries,
+  changeBannerRunId = null,
   routeThreadKey,
   displayThreadKey,
   announceTurnStatus = true,
@@ -943,7 +946,10 @@ const ConversationTimeline = memo(function ConversationTimeline({
     }
   };
 
+  // Rows pass under the header only once the list is scrolled; at the top there is nothing to dissolve.
+  const [scrolledFromTop, setScrolledFromTop] = useState(false);
   const handleScroll = () => {
+    setScrolledFromTop((listRef.current?.getScrollableNode()?.scrollTop ?? 0) > 0);
     if (restoringThreadPosition || listRef.current?.getState?.().data !== rows) return;
     const isAtEnd = rememberPosition(liveFollowEnabled && !anchoredEndSpace);
     if (isAtEnd !== undefined && !citationPositioning) {
@@ -1044,6 +1050,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     openPullRequest,
     onOpenToolDiff,
     onOpenTurnDiff,
+    changeBannerRunId,
     onOpenThread,
     renderHtmlRender,
     turnItemSource,
@@ -1370,7 +1377,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
               onItemSizeChanged={handleItemSizeChanged}
               className={cn(
                 "messages-timeline-scroll scrollbar-gutter-both h-full min-h-0 overflow-x-hidden overscroll-y-contain [overflow-anchor:none]",
-                topFadeEnabled && "topbar-scroll-fade",
+                topFadeEnabled && scrolledFromTop && "topbar-scroll-fade",
               )}
               ListHeaderComponent={listHeader}
               ListFooterComponent={timelineListFooter}
@@ -1445,6 +1452,27 @@ function getItemType(item: MessagesTimelineRow) {
   return `message:${item.message.role}:${lengthBucket}`;
 }
 
+/** The space a row leaves below it; a turn's closing assistant row leaves none, its footer does. */
+function rowBottomPadding(row: TimelineRow) {
+  if (row.kind === "turn-fold" || row.kind === "working" || row.kind === "context-compaction") {
+    return "pb-1.5";
+  }
+  if (row.kind === "message" && row.groupedWithNext) return "pb-1";
+  if (row.kind === "message" && row.message.role === "assistant") {
+    return row.showAssistantMeta ? "pb-0" : "pb-2";
+  }
+  switch (row.kind) {
+    case "worktree-setup":
+    case "event":
+    case "attempt-fold":
+    case "html-render":
+    case "mcp-app":
+      return "pb-2";
+    default:
+      return "pb-4";
+  }
+}
+
 const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: TimelineRow }) {
   const isExpandedToolGroup = row.kind === "work" && row.isExpandedToolGroup;
   const isSubagentGroup = row.kind === "event" && row.projectedItem.item.type === "subagent";
@@ -1460,22 +1488,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
   return (
     <div
       className={cn(
-        isWorkLogRow || isSubagentGroup
-          ? undefined
-          : row.kind === "turn-fold" || row.kind === "working"
-            ? "pb-1.5"
-            : row.kind === "message" && row.groupedWithNext
-              ? "pb-1"
-              : (row.kind === "message" &&
-                    row.message.role === "assistant" &&
-                    !row.showAssistantMeta) ||
-                  row.kind === "worktree-setup" ||
-                  row.kind === "event" ||
-                  row.kind === "attempt-fold" ||
-                  row.kind === "html-render" ||
-                  row.kind === "mcp-app"
-                ? "pb-2"
-                : "pb-4",
+        isWorkLogRow || isSubagentGroup ? undefined : rowBottomPadding(row),
         (row.kind === "message" && row.message.role === "assistant") ||
           row.kind === "assistant-meta"
           ? "group/assistant"
@@ -1491,6 +1504,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       {isWorkLogRow ? (
         <WorkLogBlock
           continues={row.continuesWorkLog}
+          endsGroup={row.endsFoldGroup}
           layout={
             isExpandedToolGroup
               ? "group-content"
@@ -1722,7 +1736,7 @@ function AttemptFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "at
           {row.label}
           {error ? ` · ${error}` : ""}
         </span>
-        <span className="text-2xs text-muted-foreground">Cut off by a steer</span>
+        <span className="text-callout text-secondary-label">Cut off by a steer</span>
       </button>
       {loading ? <WorkHistorySkeleton /> : null}
     </div>

@@ -65,7 +65,7 @@ function thread(overrides: Record<string, unknown> = {}): EnvironmentThreadShell
 function grid(overrides: Partial<GridRecord> = {}): GridRecord {
   return {
     id: "grid-a",
-    name: "v2 port",
+    name: "v2 rebuild",
     environmentId: "env-1",
     projectId: "project-1",
     workspaceKey: "env-1:project-1",
@@ -173,7 +173,7 @@ function CollapsibleGroup({
 
 describe("grid sidebar", () => {
   it("lists a grid without repeating its project name", async () => {
-    const first = grid({ id: "grid-a", name: "v2 port" });
+    const first = grid({ id: "grid-a", name: "v2 rebuild" });
     const second = grid({
       id: "grid-b",
       name: "Grid 2",
@@ -188,7 +188,7 @@ describe("grid sidebar", () => {
       </>,
     );
 
-    expect(screen.getByRole("button", { name: /^v2 port$/ }).element()).toBeVisible();
+    expect(screen.getByRole("button", { name: /^v2 rebuild$/ }).element()).toBeVisible();
     expect(screen.getByRole("button", { name: /^Grid 2 empty$/ }).element()).toBeVisible();
     expect(screen.container.textContent).not.toContain("notes");
     expect(screen.container.textContent).not.toContain("Workspaces");
@@ -206,7 +206,7 @@ describe("grid sidebar", () => {
     expect(screen.getByRole("button", { name: /^Landing copy$/ }).element()).toBeVisible();
     expect(screen.container.textContent).not.toContain("houston-site");
     const row = screen.container.querySelector("[data-thread-key]") as HTMLElement;
-    expect(row.className).toContain("pl-7.5");
+    expect(getComputedStyle(row).paddingLeft).toBe("20px");
 
     await userEvent.click(screen.getByText("Split drawer state from the thread store").element());
     expect(onOpenThread).toHaveBeenCalledWith("grid-c", "thread-c");
@@ -259,9 +259,11 @@ describe("grid sidebar", () => {
     const titleText = row.querySelector("[data-card-open] > span") as HTMLElement;
     const close = screen.getByRole("button", { name: "Close thread" }).element();
     const actions = close.parentElement as HTMLElement;
-    await expect
-      .poll(() => titleText.getBoundingClientRect().right)
-      .toBeLessThanOrEqual(actions.getBoundingClientRect().left);
+    await expect.poll(() => getComputedStyle(actions).opacity).toBe("1");
+    // The actions take the meta line's right corner; the title line below never runs under them.
+    const titleBox = titleText.getBoundingClientRect();
+    const actionsBox = actions.getBoundingClientRect();
+    expect(titleBox.top >= actionsBox.bottom || titleBox.right <= actionsBox.left).toBe(true);
   });
 
   it("hides the heading actions again once a clicked heading loses the pointer, and shows them on keyboard focus", async () => {
@@ -314,12 +316,12 @@ describe("grid sidebar", () => {
     const threads = [thread({ id: "thread-a" }), thread({ id: "thread-b", title: "Second" })];
     await using screen = await render(
       <>
-        {group(grid({ id: "grid-a", name: "v2 port" }), threads, { open: true })}
+        {group(grid({ id: "grid-a", name: "v2 rebuild" }), threads, { open: true })}
         {group(grid({ id: "grid-b", name: "Review" }), threads, { open: false })}
       </>,
     );
 
-    const open = screen.getByRole("button", { name: /^v2 port$/ }).element();
+    const open = screen.getByRole("button", { name: /^v2 rebuild$/ }).element();
     const closed = screen.getByRole("button", { name: /^Review$/ }).element();
     expect(open.className).toContain("bg-sidebar-row-selected");
     expect(closed.className).not.toContain("bg-sidebar-row-selected");
@@ -328,25 +330,25 @@ describe("grid sidebar", () => {
   it("leaves the open grid's heading untinted while its focused thread row shows the selection", async () => {
     const threads = [thread({ id: "thread-a" }), thread({ id: "thread-b", title: "Second" })];
     await using screen = await render(
-      group(grid({ id: "grid-a", name: "v2 port", focusedThreadId: "thread-a" }), threads, {
+      group(grid({ id: "grid-a", name: "v2 rebuild", focusedThreadId: "thread-a" }), threads, {
         open: true,
       }),
     );
 
-    const heading = screen.getByRole("button", { name: /^v2 port$/ }).element();
+    const heading = screen.getByRole("button", { name: /^v2 rebuild$/ }).element();
     expect(heading.className).not.toContain("bg-sidebar-row-selected");
   });
 
   it("hands the open grid's selection fill to its revealed thread row while collapsed", async () => {
     const threads = [thread({ id: "thread-a" }), thread({ id: "thread-b", title: "Second" })];
     await using screen = await render(
-      group(grid({ id: "grid-a", name: "v2 port", focusedThreadId: "thread-a" }), threads, {
+      group(grid({ id: "grid-a", name: "v2 rebuild", focusedThreadId: "thread-a" }), threads, {
         open: true,
         collapsed: true,
       }),
     );
 
-    const heading = screen.getByRole("button", { name: /^v2 port 1$/ }).element();
+    const heading = screen.getByRole("button", { name: /^v2 rebuild 1$/ }).element();
     expect(heading.className).not.toContain("bg-sidebar-row-selected");
     expect(screen.container.querySelector("[data-thread-key$=':thread-a']")).not.toBeNull();
     expect(screen.container.querySelector("[data-thread-key$=':thread-b']")).toBeNull();
@@ -355,13 +357,13 @@ describe("grid sidebar", () => {
   it("tints the open grid's heading when collapsing hides every row", async () => {
     const threads = [thread({ id: "thread-a" }), thread({ id: "thread-b", title: "Second" })];
     await using screen = await render(
-      group(grid({ id: "grid-a", name: "v2 port", focusedThreadId: null }), threads, {
+      group(grid({ id: "grid-a", name: "v2 rebuild", focusedThreadId: null }), threads, {
         open: true,
         collapsed: true,
       }),
     );
 
-    const heading = screen.getByRole("button", { name: /^v2 port 2$/ }).element();
+    const heading = screen.getByRole("button", { name: /^v2 rebuild 2$/ }).element();
     expect(heading.className).toContain("bg-sidebar-row-selected");
   });
 
@@ -376,7 +378,7 @@ describe("grid sidebar", () => {
         {counts.map((count) => (
           <CollapsibleGroup
             key={count}
-            value={grid({ id: `grid-${count}`, name: "v2 port" })}
+            value={grid({ id: `grid-${count}`, name: "v2 rebuild" })}
             threads={makeThreads(count)}
           />
         ))}
@@ -636,11 +638,11 @@ describe("View options", () => {
     __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
     try {
       {
-        await using shown = await render(group(grid(), [thread()]), { router: false });
+        await using shown = await render(group(grid(), [thread()]), { router: "/" });
         expect(shown.container.textContent).toContain("houston/split-drawer-state");
       }
       __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, sidebarRowShowBranch: false });
-      await using hidden = await render(group(grid(), [thread()]), { router: false });
+      await using hidden = await render(group(grid(), [thread()]), { router: "/" });
       expect(hidden.container.textContent).not.toContain("houston/split-drawer-state");
     } finally {
       __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
@@ -663,9 +665,7 @@ describe("View options", () => {
     __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
     try {
       {
-        await using shown = await render(group(grid(), [thread({ pullRequests: [merged] })]), {
-          router: false,
-        });
+        await using shown = await render(group(grid(), [thread({ pullRequests: [merged] })]));
         const badge = shown.container.querySelector("[data-thread-pull-request]");
         expect(badge?.textContent).toBe("#88");
         expect(badge?.classList.contains("text-merged-foreground")).toBe(true);
@@ -675,9 +675,7 @@ describe("View options", () => {
         ...DEFAULT_CLIENT_SETTINGS,
         sidebarRowShowPullRequest: false,
       });
-      await using hidden = await render(group(grid(), [thread({ pullRequests: [merged] })]), {
-        router: false,
-      });
+      await using hidden = await render(group(grid(), [thread({ pullRequests: [merged] })]));
       expect(hidden.container.querySelector("[data-thread-pull-request]")).toBeNull();
     } finally {
       __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);

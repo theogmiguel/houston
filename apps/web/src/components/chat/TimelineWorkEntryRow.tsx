@@ -408,9 +408,12 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
     ? "font-medium text-warning"
     : showDestructiveRowStyle
       ? "font-medium text-destructive"
-      : workLogEntryIsToolLike(workEntry)
-        ? "text-secondary-label"
-        : "text-foreground/80";
+      : isReasoning
+        ? // Thinking steps sit below the tool calls they surround, so the calls lead the group.
+          "text-(--houston)"
+        : workLogEntryIsToolLike(workEntry)
+          ? "text-secondary-label"
+          : "text-foreground/80";
   const threadLabel = isReasoning ? null : threadReadLabel(previewText, threadTarget);
   const accessiblePreview = [threadLabel?.text ?? previewText, answerPreview]
     .filter(Boolean)
@@ -454,11 +457,9 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
         </span>
       }
       label={
-        <div className="min-w-0 flex-1 overflow-hidden">
-          <p className="flex min-w-0 w-full items-baseline gap-2 text-body ">
-            <span
-              className={cn(answerPreview ? "min-w-0" : "min-w-0 flex-1", "truncate", headingClass)}
-            >
+        <div className="min-w-0 overflow-hidden">
+          <p className="flex min-w-0 items-baseline gap-2 text-body ">
+            <span className={cn("min-w-0 truncate", headingClass)}>
               {isReasoning && !expanded ? (
                 <ChatMarkdown
                   inline
@@ -504,6 +505,9 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
             ) : null}
           </p>
         </div>
+      }
+      meta={
+        <TimelineRowTimestamp createdAt={workEntry.createdAt} timestampFormat={timestampFormat} />
       }
       trailing={
         <>
@@ -570,7 +574,6 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
           toolParts?.exitCode === undefined ? (
             <XIcon aria-hidden className={cn("size-3 shrink-0", failedToolIconClassName)} />
           ) : null}
-          <TimelineRowTimestamp createdAt={workEntry.createdAt} timestampFormat={timestampFormat} />
           <span
             className={cn(
               "flex size-4 shrink-0 items-center justify-center",

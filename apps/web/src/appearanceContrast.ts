@@ -8,3 +8,8 @@ export function applyAppearanceContrast(root: HTMLElement, contrast: AppearanceC
     `${Math.max(contrast - 100, 0) / 4}%`,
   );
 }
+
+/** The slider's own value as a percentage, so the label reads the same scale as the thumb. */
+export function formatAppearanceContrast(contrast: AppearanceContrast): string {
+  return `${contrast}%`;
+}

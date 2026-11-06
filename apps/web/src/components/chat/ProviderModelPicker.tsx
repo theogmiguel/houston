@@ -5,7 +5,7 @@ import {
   type ProviderDriverKind,
   type ResolvedKeybindingsConfig,
 } from "@houston-app/contracts";
-import { createContext, memo, useRef, useState, type ReactNode } from "react";
+import { memo, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { BotIcon, ChevronDownIcon } from "lucide-react";
 import { Badge } from "../ui/badge";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
@@ -14,7 +14,7 @@ import { cn } from "~/lib/utils";
 import { ModelPickerContent, resolveModelPickerSelectedModel } from "./ModelPickerContent";
 import { ChatGptSharingControl } from "./ChatGptSharingControl";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
-import { ModelEsque, getDisplayModelName, getTriggerDisplayModelName } from "./providerIconUtils";
+import { ModelEsque, getDisplayModelName } from "./providerIconUtils";
 import { type ProviderInstanceEntry } from "../../providerInstances";
 import { ComposerControl, type ComposerControlSize } from "./ComposerControl";
 import { takeOpenTarget, useComposerMenuProps } from "./composerEventScope";
@@ -73,8 +73,40 @@ function lockBackgroundScroll(popup: HTMLElement | null) {
   };
 }
 
-/** What a docked effort column needs from its picker: the model it serves. */
-export const DockedPickerContext = createContext<{ modelLabel: string }>({ modelLabel: "" });
+/**
+ * The composer card a docked picker lines up with: its left edge starts where the card's does, so
+ * the context row under the card shows no chip edge beside the popup.
+ */
+function composerCardOf(trigger: HTMLElement | null): HTMLElement | null {
+  return trigger?.closest<HTMLElement>('[data-inline-resting-controls="true"]') ?? null;
+}
+
+/**
+ * How far below the composer card the context row ends. A docked popup that has no room above
+ * the card opens below it and starts past this distance, so it never covers the row.
+ */
+function contextStripClearance(card: HTMLElement | null): number {
+  const strip = card
+    ?.closest('[data-chat-composer-form="true"]')
+    ?.querySelector<HTMLElement>('[data-slot="composer-context-strip"]');
+  if (!card || !strip) return 0;
+  return Math.max(0, strip.getBoundingClientRect().bottom - card.getBoundingClientRect().bottom);
+}
+
+/** Space kept between a docked popup and the header it must not cross. */
+const HEADER_CLEARANCE_PX = 8;
+
+/**
+ * Where a docked popup's top edge may start: just under the route header of the column the
+ * picker sits in. A grid cell has no header, so it keeps the default collision padding.
+ */
+function headerClearanceOf(trigger: HTMLElement | null): number | null {
+  const header = trigger
+    ?.closest<HTMLElement>("[data-chat-column]")
+    ?.querySelector<HTMLElement>("[data-chat-header]");
+  if (!header) return null;
+  return Math.ceil(header.getBoundingClientRect().bottom) + HEADER_CLEARANCE_PX;
+}
 
 export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   environmentId: EnvironmentId | null;
@@ -131,6 +163,14 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   const size = props.size ?? "sm";
   const iconOnly = props.iconOnly === true;
   const docked = props.effortColumn !== undefined;
+  const [headerClearance, setHeaderClearance] = useState<number | null>(null);
+  // The route header is a DOM node outside React, measured each time the popup opens (also when a
+  // shortcut opens it through `props.open`, which no handler of this component sees).
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- measures the header's rect, which only the DOM knows
+  useLayoutEffect(() => {
+    if (!docked || !isMenuOpen) return;
+    setHeaderClearance(headerClearanceOf(triggerRef.current));
+  }, [docked, isMenuOpen]);
 
   const activeEntry =
     props.instanceEntries.find((entry) => entry.instanceId === props.activeInstanceId) ?? null;
@@ -146,10 +186,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     (activeEntry?.driverKind === "opencode" || activeEntry?.driverKind === "antigravity"
       ? undefined
       : selectedInstanceOptions[0]);
-  // The footer shows the catalog's short name, as the board's split control does.
-  const triggerModelName = selectedModel
-    ? getTriggerDisplayModelName(selectedModel, activeEntry?.driverKind)
-    : null;
+  // The trigger names the model exactly as its row in the list does.
+  const triggerModelName = selectedModel ? getDisplayModelName(selectedModel) : null;
   const triggerTitle = triggerModelName
     ? triggerModelName
     : props.model === ANTIGRAVITY_DEFAULT_MODEL
@@ -216,9 +254,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     return {
       ...selection,
       entry,
-      label: model
-        ? `${getTriggerDisplayModelName(model, entry?.driverKind)}${unavailable}`
-        : selection.model,
+      label: model ? `${getDisplayModelName(model)}${unavailable}` : selection.model,
       fullLabel: model ? `${getDisplayModelName(model)}${unavailable}` : selection.model,
     };
   });
@@ -389,38 +425,45 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         }}
         initialFocus={searchInputRef}
         align="start"
+        {...(docked
+          ? {
+              anchor: () => composerCardOf(triggerRef.current) ?? triggerRef.current,
+              // Above the card when it fits; the flip below clears the context row.
+              side: "top" as const,
+              ...(headerClearance === null
+                ? {}
+                : { collisionPadding: { top: headerClearance, right: 5, bottom: 5, left: 5 } }),
+              sideOffset: ({ side }: { side: string }) =>
+                side === "bottom"
+                  ? contextStripClearance(composerCardOf(triggerRef.current)) + 4
+                  : 4,
+            }
+          : {})}
         className="before:hidden"
         padding="none"
         touchBackdrop
       >
         {props.effortColumn ? (
-          <DockedPickerContext value={{ modelLabel: triggerTitle }}>
-            <div className={DOCKED_PICKER_FRAME_CLASS}>
-              <div className={DOCKED_PICKER_ROW_CLASS}>
-                {picker}
-                <div
-                  data-model-picker-effort
-                  className={DOCKED_EFFORT_COLUMN_CLASS}
-                  onKeyDown={(event) => {
-                    if (
-                      event.key !== "ArrowLeft" ||
-                      event.altKey ||
-                      event.ctrlKey ||
-                      event.metaKey
-                    ) {
-                      return;
-                    }
-                    event.preventDefault();
-                    event.stopPropagation();
-                    searchInputRef.current?.focus();
-                  }}
-                >
-                  {props.effortColumn}
-                </div>
+          <div className={DOCKED_PICKER_FRAME_CLASS}>
+            <div className={DOCKED_PICKER_ROW_CLASS}>
+              {picker}
+              <div
+                data-model-picker-effort
+                className={DOCKED_EFFORT_COLUMN_CLASS}
+                onKeyDown={(event) => {
+                  if (event.key !== "ArrowLeft" || event.altKey || event.ctrlKey || event.metaKey) {
+                    return;
+                  }
+                  event.preventDefault();
+                  event.stopPropagation();
+                  searchInputRef.current?.focus();
+                }}
+              >
+                {props.effortColumn}
               </div>
-              {props.footer}
             </div>
-          </DockedPickerContext>
+            {props.footer}
+          </div>
         ) : (
           picker
         )}

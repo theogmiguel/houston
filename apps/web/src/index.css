@@ -183,7 +183,8 @@ html[data-theme-reveal] *::after {
   --workspace-titlebar-control-size: 1.75rem;
   --workspace-titlebar-control-gap: 0.75rem;
   --workspace-titlebar-scroll-fade-height: 1.5rem;
-  /* The composer board draws its lane at 760px; the timeline overrides to 720px. */
+  /* One lane width for the composer and the timeline, so the changed-files card, the messages
+     and the composer share their left and right edges. */
   --chat-content-max-width: 47.5rem;
   --thread-details-panel-width: 17.5rem;
   /* The prompt on phones: iOS zooms into any input under 16px on focus. */
@@ -242,6 +243,8 @@ html[data-theme-reveal] *::after {
     Consolas, "Liberation Mono", monospace;
   /* Display face for empty states and first run; never chrome or tables. */
   --font-serif: "Source Serif 4", Georgia, serif;
+  /* Below this width the thread rail becomes a drawer (components/ui/sidebar.tsx mirrors it). */
+  --breakpoint-dock: 60rem;
 }
 
 /* Motion roles. Components name a role (`duration-(--motion-overlay-in) ease-standard`),
@@ -324,7 +327,7 @@ body {
   --text-body: 0.8125rem;
   --text-body--line-height: 1.125rem;
   --text-prose: 0.875rem;
-  --text-prose--line-height: 1.25rem;
+  --text-prose--line-height: 1.375rem;
   --text-callout: 0.75rem;
   --text-callout--line-height: 1rem;
   --text-caption: 0.6875rem;
@@ -1044,6 +1047,8 @@ body {
   --t2: #424245;
   --houston: #5b5b60;
   --border: rgba(0, 0, 0, 0.09);
+  /* White cards on the light canvas need the next step up from --border to separate. */
+  --card-edge: var(--divider);
   /* Shell dividers: one step above --border so a 1px seam reads on both panes,
      and below the 16% interactive line so it never reads as a control. */
   --divider: rgba(0, 0, 0, 0.14);
@@ -1170,7 +1175,9 @@ body {
   --sidebar-control-surface: var(--content);
   --sidebar-row-hover: var(--hover);
   --sidebar-row-active: var(--sel);
-  --sidebar-row-selected: var(--sel);
+  /* The open row carries a faint brand wash in the light palette, where the neutral overlay
+     is near-identical to the rail; the dark palette keeps the neutral overlay. */
+  --sidebar-row-selected: color-mix(in srgb, var(--accent) 8%, transparent);
   --sidebar-border: var(--border);
   --code-background: var(--code-bg);
   --code-foreground: var(--t1);
@@ -1195,6 +1202,7 @@ body {
   --t2: rgba(255, 255, 255, 0.66);
   --houston: rgba(255, 255, 255, 0.52);
   --border: rgba(255, 255, 255, 0.09);
+  --card-edge: var(--border);
   --divider: rgba(255, 255, 255, 0.14);
   --border-hover: rgba(255, 255, 255, 0.16);
   --line-strong: rgba(255, 255, 255, 0.16);
@@ -1228,7 +1236,7 @@ body {
   --scrim: rgba(0, 0, 0, 0.28);
   --pane: #0f0f11;
   --pane-head: #18181b;
-  --composer: #18181b;
+  --composer: var(--card);
   --focus-frame: #6f6f7a;
   --claude: #d97757;
   --codex: rgba(255, 255, 255, 0.92);
@@ -1260,10 +1268,11 @@ body {
   --sidebar-control-surface: var(--content);
   --sidebar-row-hover: var(--hover);
   --sidebar-row-active: var(--sel);
-  --sidebar-row-selected: var(--sel);
+  --sidebar-row-selected: color-mix(in srgb, var(--accent) 8%, transparent);
   --sidebar-border: var(--border);
 
   @variant dark {
+    --sidebar-row-selected: var(--sel);
     --card: #202023;
     --sidebar-control-surface: var(--card);
     /* Row metadata sits a step below read titles. */
@@ -1676,6 +1685,11 @@ html[data-theme-id="t3-chat"] [data-app-sidebar] {
   --contrast-border: color-mix(
     in srgb,
     color-mix(in srgb, var(--border) var(--appearance-contrast-base), transparent),
+    var(--foreground) var(--appearance-contrast-border-boost)
+  );
+  --contrast-card-border: color-mix(
+    in srgb,
+    color-mix(in srgb, var(--card-edge) var(--appearance-contrast-base), transparent),
     var(--foreground) var(--appearance-contrast-border-boost)
   );
   --contrast-foreground: color-mix(
@@ -2200,6 +2214,42 @@ code {
   font-size: 0.85em;
 }
 
+/* The age on a sidebar thread row's title line: a muted 12px tabular column. */
+[data-thread-time] {
+  color: var(--color-secondary-label);
+  font-size: var(--text-xs);
+  line-height: var(--text-xs--line-height);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The one-row changed-files summary: muted 12px text with the file name at full ink. */
+[data-changed-files-state="compact"] {
+  color: var(--color-secondary-label);
+  font-size: var(--text-xs);
+  line-height: var(--text-xs--line-height);
+}
+
+[data-changed-files-state="compact"] [data-changed-files-name] {
+  color: var(--color-foreground);
+}
+
+/* A folded card is only its header, so the header's divider has nothing to separate. */
+[data-changed-files-state="folded"] > [data-changed-files-header] {
+  border-bottom-width: 0;
+}
+
+/* A zero in a diff stat is not a change: it stays muted instead of taking the addition or
+   deletion colour. */
+[data-zero]:is(.text-diff-addition-foreground, .text-diff-deletion-foreground) {
+  color: var(--color-muted-foreground);
+}
+
+/* Set for spans short enough to never overflow the column (see ChatMarkdown): a hyphen or
+   space inside one is not a place to break. */
+.chat-markdown :not(pre) > code[data-short-inline-code] {
+  white-space: nowrap;
+}
+
 .chat-markdown strong {
   font-weight: 600;
 }
@@ -2344,15 +2394,13 @@ code {
 }
 
 /* Chat width setting. Comfortable keeps the default --chat-content-max-width, which sizes the
-   composer and ChatCanvas's width probe, and the timeline's own narrower lane. */
+   composer, the timeline lane and ChatCanvas's width probe. */
 :root[data-chat-width="wide"] {
   --chat-content-max-width: 72rem;
-  --chat-timeline-max-width: 72rem;
 }
 
 :root[data-chat-width="full"] {
   --chat-content-max-width: 100%;
-  --chat-timeline-max-width: 100%;
 }
 
 :root[data-diff-color-scheme="blue-orange"] {
@@ -2638,6 +2686,20 @@ code {
 }
 
 @layer components {
+  /* A static accent wash behind the new-thread hero; it carries no animation and is dropped
+     wherever the user asks for less transparency or more contrast. */
+  [data-chat-composer-overlay][data-draft-hero] {
+    background: radial-gradient(
+      ellipse 55% 50% at 50% 46%,
+      color-mix(in srgb, var(--accent) 4%, transparent),
+      transparent 70%
+    );
+  }
+  @media (forced-colors: active), (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
+    [data-chat-composer-overlay][data-draft-hero] {
+      background: none;
+    }
+  }
   .chat-composer-lane {
     padding-inline-start: calc(
       env(safe-area-inset-left) + 0.75rem + var(--chat-lane-inset-start, 0px)
@@ -2683,17 +2745,18 @@ code {
   outline-offset: -2px;
 }
 
-/* The Timeline board draws the message column at 720px, narrower than the
-   composer lane, so the timeline scopes the shared lane width. */
 .messages-timeline-scroll {
-  --chat-content-max-width: var(--chat-timeline-max-width, 45rem);
+  /* A fade, shown only while the list is scrolled, so a row passing under the header dissolves
+     instead of being cut. It is tall enough that a card's divider line under the header is
+     already faint. The list's header spacer is as tall, so rows rest below it. */
+  --workspace-titlebar-scroll-fade-height: 3rem;
 }
 
-/* The timeline prose measure and rhythm: 14/20 in a 720px lane, with one
-   block gap. Values come from the Timeline board's assistant section. */
+/* The timeline prose measure and rhythm: 14/22 in the shared lane (leading 1.57, the range the
+   reference chat apps use), with one block gap. */
 .messages-timeline-scroll .chat-markdown {
   font-size: var(--text-prose);
-  line-height: 1.25rem;
+  line-height: var(--text-prose--line-height);
 }
 
 .messages-timeline-scroll .chat-markdown p,
@@ -2714,17 +2777,19 @@ code {
   margin-bottom: 0;
 }
 
-/* Inline code is the board's chip: 12px mono on the field fill with its own
-   hairline, not a tinted text run. */
+/* Inline code is the board's chip: 12px mono on the field fill, with no edge so a
+   paragraph of them reads as prose, not as a field of boxes. */
 .messages-timeline-scroll .chat-markdown :not(pre) > code {
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--r-badge);
   background: var(--field);
-  padding: 1px 5px;
+  padding: 1px 4px;
   color: var(--t1);
   font-family: var(--font-mono);
   font-size: var(--text-mono);
-  line-height: inherit;
+  /* The chip's own line height (18px) is shorter than the 22px prose line, so it never
+     stretches a line that holds one, yet its text keeps normal leading. */
+  line-height: var(--text-mono--line-height);
 }
 
 /* Grid surface. One thread on screen reads as one surface with the top strip: no card, the

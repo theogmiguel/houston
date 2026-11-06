@@ -20,6 +20,46 @@ export const DIFF_VIEW_UNSAFE_CSS = `${DIFF_SURFACE_THEME_UNSAFE_CSS}
   --diffs-code-grid: var(--diffs-grid-number-column-width) minmax(0, 1fr);
 }
 
+/* Without wrapping, a long line runs past the panel edge. The library paints the horizontal
+   scrollbar thumb transparent until the pointer is over the file, so nothing says the line
+   continues. Keep a thumb visible at rest, stronger on hover. */
+[data-overflow="scroll"] [data-code]::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--code-foreground) 28%, transparent) !important;
+}
+
+[data-overflow="scroll"] [data-code]::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--code-foreground) 48%, transparent) !important;
+}
+
+/* The scrollbar sits under the file, often out of view, so a clipped line also gets a fade at
+   the right edge of the visible column. The sticky gutter always sits at the left edge of the
+   scroll viewport, so a pseudo-element anchored to it by container width lands on the right
+   edge wherever the file is scrolled. The scroll-state query shows it only while there is more
+   to the right. It is state, not an animation, so it also holds where animations are
+   finished or disabled. Without scroll-state support the fade is simply absent. */
+[data-overflow="scroll"] [data-code] {
+  container-type: inline-size scroll-state;
+}
+
+[data-overflow="scroll"] [data-code] [data-gutter]::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  /* About six code glyphs: narrower, the fade reads as a clipped glyph rather than a fade. */
+  left: calc(100cqi - 48px);
+  width: 48px;
+  pointer-events: none;
+  background: linear-gradient(to right, transparent, var(--code-background));
+  opacity: 0;
+}
+
+@container scroll-state(scrollable: right) {
+  [data-overflow="scroll"] [data-code] [data-gutter]::after {
+    opacity: 1;
+  }
+}
+
 :is(
   [data-line],
   [data-line-annotation],

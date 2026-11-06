@@ -6,12 +6,14 @@ import { buildTurnDiffTree, type TurnDiffTreeNode } from "../../lib/turnDiffTree
 import { ChevronRightIcon, FileDiffIcon } from "lucide-react";
 import { ChevronsDownUp, ChevronsUpDown, Folder, FolderClosed } from "lucide";
 import { cn } from "~/lib/utils";
+import { SURFACE_LIFT_CLASS } from "~/components/ui/surface-recipes";
 import { DiffStatLabel, hasNonZeroStat } from "./DiffStatLabel";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { MiddleTruncate } from "../ui/middle-truncate";
 import { MorphIcon } from "~/components/MorphIcon";
+import { DisclosureChevron } from "../ui/disclosure-chevron";
 import { observeResize } from "~/lib/observeResize";
 
 const EMPTY_DIRECTORY_OVERRIDES: Record<string, boolean> = {};
@@ -31,6 +33,11 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
   files: ReadonlyArray<TurnDiffFileChange>;
   totals: OrchestrationV2CheckpointFileTotals;
   allDirectoriesExpanded: boolean;
+  /**
+   * The composer's pending-changes row already summarises this run: the card folds to its
+   * header until the user opens it.
+   */
+  coveredByBanner?: boolean;
   resolvedTheme: "light" | "dark";
   onToggleAllDirectories: () => void;
   onOpenTurnDiff: (runId: RunId, filePath?: string) => void;
@@ -41,23 +48,29 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
     files,
     totals,
     allDirectoriesExpanded,
+    coveredByBanner = false,
     resolvedTheme,
     onToggleAllDirectories,
     onOpenTurnDiff,
     onFileContextMenu,
   } = props;
   const syncTimelineLayout = useSyncLayout();
+  const [openedWhileCovered, setOpenedWhileCovered] = useState(false);
+  const folded = coveredByBanner && !openedWhileCovered;
   const hiddenFileCount = totals.count - files.length;
   const hasDirectories = files.some((file) => /[/\\]/.test(file.path));
 
   return (
     <div
-      className="@container/changed-files mt-4 overflow-hidden rounded-lg border border-border bg-card"
-      data-changed-files-state="tree"
+      className={cn(
+        "@container/changed-files mt-3 overflow-hidden rounded-lg border border-(--contrast-card-border) bg-card",
+        SURFACE_LIFT_CLASS,
+      )}
+      data-changed-files-state={folded ? "folded" : "tree"}
     >
       <div
         data-changed-files-header=""
-        className="sticky top-2 z-10 flex h-9 items-center justify-between gap-2 border-b border-border bg-card px-3"
+        className="flex h-9 items-center justify-between gap-2 border-b border-(--contrast-card-border) bg-card px-3"
       >
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-foreground">
           <span>
@@ -73,7 +86,30 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
           )}
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          {hasDirectories && (
+          {coveredByBanner && (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    size="icon-xs"
+                    variant="ghost-muted"
+                    aria-label={folded ? "Show changed files" : "Hide changed files"}
+                    aria-expanded={!folded}
+                    data-scroll-anchor-ignore
+                    onClick={() => {
+                      setOpenedWhileCovered((open) => !open);
+                      syncTimelineLayout();
+                    }}
+                  />
+                }
+              >
+                <DisclosureChevron open={!folded} />
+              </TooltipTrigger>
+              <TooltipPopup side="top">{folded ? "Show files" : "Hide files"}</TooltipPopup>
+            </Tooltip>
+          )}
+          {hasDirectories && !folded && (
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -121,16 +157,18 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
           </Tooltip>
         </div>
       </div>
-      <ChangedFilesTree
-        key={`${runId}:${allDirectoriesExpanded}`}
-        runId={runId}
-        files={files}
-        allDirectoriesExpanded={allDirectoriesExpanded}
-        resolvedTheme={resolvedTheme}
-        onOpenTurnDiff={onOpenTurnDiff}
-        onFileContextMenu={onFileContextMenu}
-      />
-      {hiddenFileCount > 0 && (
+      {folded ? null : (
+        <ChangedFilesTree
+          key={`${runId}:${allDirectoriesExpanded}`}
+          runId={runId}
+          files={files}
+          allDirectoriesExpanded={allDirectoriesExpanded}
+          resolvedTheme={resolvedTheme}
+          onOpenTurnDiff={onOpenTurnDiff}
+          onFileContextMenu={onFileContextMenu}
+        />
+      )}
+      {hiddenFileCount > 0 && !folded && (
         <div className="px-3 pb-2">
           <Button
             type="button"
@@ -200,7 +238,7 @@ const ChangedFilesTree = memo(function ChangedFilesTree(props: {
           type="button"
           data-scroll-anchor-ignore
           aria-expanded={isExpanded}
-          className="group flex h-7 w-full cursor-pointer items-center gap-2 rounded-md py-1.5 pr-2 text-left transition-colors hover:bg-hover/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+          className="group flex h-7 w-full cursor-pointer items-center gap-2 rounded-(--r-ctl) py-1.5 pr-2 text-left transition-colors hover:bg-hover/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
           style={{ paddingLeft: `${leftPadding}px` }}
           onClick={() => toggleDirectory(node.path)}
         >
@@ -231,7 +269,7 @@ const ChangedFilesTree = memo(function ChangedFilesTree(props: {
       <button
         key={`file:${node.path}`}
         type="button"
-        className="group flex h-7 w-full cursor-pointer items-center gap-2 rounded-md py-1.5 pr-2 text-left transition-colors hover:bg-hover/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+        className="group flex h-7 w-full cursor-pointer items-center gap-2 rounded-(--r-ctl) py-1.5 pr-2 text-left transition-colors hover:bg-hover/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
         style={{ paddingLeft: `${leftPadding}px` }}
         onClick={() => onOpenTurnDiff(runId, node.path)}
         onContextMenu={

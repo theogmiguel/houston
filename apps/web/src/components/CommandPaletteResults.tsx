@@ -1,8 +1,9 @@
 import { type ResolvedKeybindingsConfig } from "@houston-app/contracts";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import { ChevronRightIcon } from "lucide-react";
-import { type ReactNode, type RefObject, useState } from "react";
+import { type ReactNode, type RefObject, useEffect, useState } from "react";
 import { cn } from "~/lib/utils";
+import { observeResize } from "~/lib/observeResize";
 import { textDirection } from "~/textDirection";
 import { shortcutLabelForCommand } from "../keybindings";
 import {
@@ -10,6 +11,8 @@ import {
   type CommandPaletteGroup,
   type CommandPaletteRow,
   type CommandPaletteSubmenuItem,
+  COMMAND_PALETTE_LIST_BOTTOM_INSET_PX,
+  snapCommandPaletteListHeight,
 } from "./CommandPalette.logic";
 import {
   CommandCollection,
@@ -90,11 +93,70 @@ interface CommandPaletteVirtualizedResultsProps extends Omit<CommandPaletteResul
   listRef: RefObject<LegendListRef | null>;
 }
 
+/**
+ * Caps the list so it ends under a whole row. The palette's height is capped by its popup, and a
+ * list taller than what is left would cut its last row in half; this measures the rows and returns
+ * the viewport height that ends at the last one that fits.
+ */
+function useWholeRowViewportHeight(listRef: RefObject<LegendListRef | null>) {
+  const [maxHeight, setMaxHeight] = useState<number | undefined>(undefined);
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- measures rendered row geometry, which only exists after layout
+  useEffect(() => {
+    const scroller = listRef.current?.getScrollableNode?.();
+    if (!(scroller instanceof HTMLElement)) return;
+    const content = scroller.firstElementChild;
+    const wrapper = scroller.closest<HTMLElement>('[data-slot="command-list"]');
+    const popup = scroller.closest<HTMLElement>('[data-slot="command-dialog-popup"]');
+    const viewport = popup?.parentElement;
+    if (!(content instanceof HTMLElement) || !wrapper || !popup || !viewport) return;
+    const measure = () => {
+      // Layout pixels: the popup scales while it opens, which distorts client rects.
+      const scale =
+        scroller.offsetHeight > 0
+          ? scroller.getBoundingClientRect().height / scroller.offsetHeight
+          : 1;
+      const viewportStyle = getComputedStyle(viewport);
+      const popupLimit = Math.min(
+        Number.parseFloat(getComputedStyle(popup).maxHeight) || Number.POSITIVE_INFINITY,
+        viewport.clientHeight -
+          Number.parseFloat(viewportStyle.paddingTop) -
+          Number.parseFloat(viewportStyle.paddingBottom),
+      );
+      // The popup clips its content, so a list taller than the popup makes `offsetHeight` understate
+      // the chrome around it; `scrollHeight` is the content's full height.
+      const popupBorders = popup.offsetHeight - popup.clientHeight;
+      const chrome = popup.scrollHeight + popupBorders - wrapper.offsetHeight;
+      const top = scroller.getBoundingClientRect().top;
+      // The list wraps its rows in one or two single-child containers.
+      let rowParent: Element = content;
+      while (rowParent.children.length === 1 && rowParent.firstElementChild?.firstElementChild) {
+        rowParent = rowParent.firstElementChild;
+      }
+      const rowBottoms = Array.from(rowParent.children).flatMap((row) =>
+        row instanceof HTMLElement && row.offsetHeight > 0
+          ? [(row.getBoundingClientRect().bottom - top) / scale + scroller.scrollTop]
+          : [],
+      );
+      const next = snapCommandPaletteListHeight({
+        rowBottoms,
+        contentHeightPx: scroller.scrollHeight,
+        availablePx: popupLimit - chrome,
+      });
+      setMaxHeight((current) => (current === next ? current : next));
+    };
+    measure();
+    // Row changes resize the content, so observing it also re-measures when the results change.
+    return observeResize([content, popup], measure);
+  }, [listRef]);
+  return maxHeight;
+}
+
 /** Pass flat items with virtualized to Command, scroll highlights via listRef, and handle Enter for
  * unmounted rows. */
 export function CommandPaletteVirtualizedResults(props: CommandPaletteVirtualizedResultsProps) {
   const { listRef } = props;
   const [scrollFade, setScrollFade] = useState({ top: false, bottom: false });
+  const maxHeight = useWholeRowViewportHeight(listRef);
   const updateScrollFade = () => {
     const scrollElement = listRef.current?.getScrollableNode?.();
     if (!(scrollElement instanceof HTMLElement)) return;
@@ -140,9 +202,12 @@ export function CommandPaletteVirtualizedResults(props: CommandPaletteVirtualize
         onLayout={updateScrollFade}
         onScroll={updateScrollFade}
         contentContainerClassName="px-2"
+        {...(maxHeight === undefined
+          ? {}
+          : { style: { maxHeight, marginBottom: COMMAND_PALETTE_LIST_BOTTOM_INSET_PX } })}
         className={cn(
-          "min-h-0 scroll-py-6 overflow-x-hidden overscroll-y-contain py-2 [&::-webkit-scrollbar-track]:my-2",
-          getVirtualizedScrollFadeClassName(scrollFade),
+          "min-h-0 scroll-py-6 overflow-x-hidden overscroll-y-contain pt-2 pb-4 [&::-webkit-scrollbar-track]:my-2",
+          getVirtualizedScrollFadeClassName(scrollFade, { tall: true }),
         )}
       />
     </CommandListVirtualized>

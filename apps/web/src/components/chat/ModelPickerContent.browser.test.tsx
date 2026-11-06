@@ -191,3 +191,35 @@ it("keeps cross-provider selected models in the open provider tab", async () => 
   await expect.element(page.getByRole("option", { name: /GPT-5\.6 Luna/ })).toBeVisible();
   await expect.element(page.getByRole("option", { name: /Claude Opus 5\.5/ })).toBeVisible();
 });
+
+it("states the reasoning effort only on the selected model row", async () => {
+  const container = document.createElement("div");
+  container.style.width = "520px";
+  container.style.height = "520px";
+  const searchInputRef = createRef<HTMLInputElement>();
+
+  await using _screen = await render(
+    <TooltipProvider delay={0}>
+      <ModelPickerContent
+        environmentId={null}
+        activeInstanceId={CLAUDE}
+        model="opus"
+        lockedProvider={null}
+        instanceEntries={entries}
+        modelOptionsByInstance={modelOptionsByInstance}
+        terminalOpen={false}
+        onInstanceModelChange={() => {}}
+        searchInputRef={searchInputRef}
+      />
+    </TooltipProvider>,
+    { container },
+  );
+
+  const selected = page.getByRole("option", { name: /Claude Opus 5\.5/ });
+  const other = page.getByRole("option", { name: /Claude Sonnet 5\.5/ });
+  await expect.element(selected).toBeVisible();
+  await expect.element(other).toBeVisible();
+  expect(selected.element().textContent).toContain("200k · High");
+  expect(other.element().textContent).toContain("200k");
+  expect(other.element().textContent).not.toContain("High");
+});

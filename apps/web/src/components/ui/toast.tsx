@@ -616,7 +616,7 @@ function Toasts({ position }: { position: ToastPosition }) {
           return (
             <Toast.Root
               className={cn(
-                "dropdown-glass absolute z-[calc(9999-var(--toast-index))] w-full overflow-visible select-none rounded-lg text-popover-foreground shadow-xl shadow-black/25 transition-[transform,opacity] duration-(--motion-toast-in) ease-standard data-ending-style:duration-(--motion-toast-out) data-ending-style:ease-exit",
+                "dropdown-glass absolute z-[calc(9999-var(--toast-index))] w-full overflow-visible select-none rounded-lg text-popover-foreground transition-[transform,opacity] duration-(--motion-toast-in) ease-standard data-ending-style:duration-(--motion-toast-out) data-ending-style:ease-exit",
                 "data-[position*=right]:right-0 data-[position*=right]:left-auto",
                 "data-[position*=left]:right-auto data-[position*=left]:left-0",
                 "data-[position*=center]:right-0 data-[position*=center]:left-0",
@@ -760,7 +760,7 @@ function AnchoredToasts() {
               >
                 <Toast.Root
                   className={cn(
-                    "dropdown-glass relative overflow-visible text-balance text-popover-foreground text-xs shadow-xl shadow-black/25 transition-[scale,opacity] duration-(--motion-toast-in) ease-standard data-ending-style:duration-(--motion-toast-out) data-ending-style:ease-exit data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0",
+                    "dropdown-glass relative overflow-visible text-balance text-popover-foreground text-xs transition-[scale,opacity] duration-(--motion-toast-in) ease-standard data-ending-style:duration-(--motion-toast-out) data-ending-style:ease-exit data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0",
                     tooltipStyle ? "rounded-md" : "rounded-lg",
                   )}
                   data-slot="toast-popup"

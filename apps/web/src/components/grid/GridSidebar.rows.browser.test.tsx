@@ -66,7 +66,6 @@ function thread(overrides: Record<string, unknown> = {}): EnvironmentThreadShell
 interface CardOverrides {
   shelf?: "snoozed" | "settled" | null;
   gridId?: string | null;
-  notInGrid?: boolean;
   timeLabel?: string | null;
   runningSubagents?: number;
   onOpen?: () => void;
@@ -91,7 +90,6 @@ function card(value: EnvironmentThreadShell, overrides: CardOverrides = {}) {
         workspaceTitle="Houston"
         timeLabel={overrides.timeLabel === undefined ? "9:00" : overrides.timeLabel}
         shelf={overrides.shelf ?? null}
-        notInGrid={overrides.notInGrid ?? false}
         runningSubagents={overrides.runningSubagents ?? 0}
         onOpen={overrides.onOpen ?? (() => {})}
         onSelect={overrides.onSelect ?? (() => {})}
@@ -121,6 +119,11 @@ function titleOf(row: HTMLElement): HTMLElement {
   return row.querySelector<HTMLElement>("[data-card-open] > span")!;
 }
 
+/** The title never runs under a row action: it sits on the line below it or ends before it. */
+function expectTitleClearOf(title: DOMRect, action: DOMRect) {
+  expect(title.top >= action.bottom || title.right <= action.left).toBe(true);
+}
+
 describe("ThreadCard title against the trailing time and actions", () => {
   it("keeps a Closed row's title clear of its Reopen button", async () => {
     await using screen = await render(
@@ -136,9 +139,7 @@ describe("ThreadCard title against the trailing time and actions", () => {
     const reopen = screen.getByRole("button", { name: "Reopen thread" }).element();
     await expect.element(screen.getByRole("button", { name: "Reopen thread" })).toBeVisible();
 
-    expect(titleOf(row).getBoundingClientRect().right).toBeLessThanOrEqual(
-      reopen.getBoundingClientRect().left,
-    );
+    expectTitleClearOf(titleOf(row).getBoundingClientRect(), reopen.getBoundingClientRect());
   });
 
   it("keeps an On hold row's title readable beside its Wake button at the narrowest width", async () => {
@@ -156,27 +157,33 @@ describe("ThreadCard title against the trailing time and actions", () => {
     await expect.element(screen.getByRole("button", { name: "Wake thread now" })).toBeVisible();
 
     const title = titleOf(row).getBoundingClientRect();
-    expect(title.right).toBeLessThanOrEqual(wake.getBoundingClientRect().left);
+    expectTitleClearOf(title, wake.getBoundingClientRect());
     // The invisible wake time must not take room on top of the actions.
     expect(title.width).toBeGreaterThanOrEqual(60);
   });
 
-  it("gives a resting row's title the width up to its time label", async () => {
+  it("gives a resting row's title the full width of its line and its time the row's edge", async () => {
     await using screen = await render(
       <div style={{ width: 320 }}>{card(thread({ title: LONG_TITLE }), { timeLabel: "3d" })}</div>,
     );
     const row = rowOf(screen.container);
     const time = screen.getByText("3d").element();
-    // The hidden Hold, Close and More buttons take no room until the row is hovered.
+    const mark = row.querySelector<HTMLElement>("[data-thread-provider-mark]")!;
+    // The hidden Hold, Close and More buttons take no room until the row is hovered: the age
+    // ends the meta line at the row's edge and the title runs up to the provider mark.
     expect(
-      time.getBoundingClientRect().left - titleOf(row).getBoundingClientRect().right,
+      row.getBoundingClientRect().right - time.getBoundingClientRect().right,
+    ).toBeLessThanOrEqual(12);
+    expect(
+      mark.getBoundingClientRect().left - titleOf(row).getBoundingClientRect().right,
     ).toBeLessThanOrEqual(12);
 
     await userEvent.hover(row);
     const hold = screen.getByRole("button", { name: "Hold" });
     await expect.element(hold).toBeVisible();
-    expect(titleOf(row).getBoundingClientRect().right).toBeLessThanOrEqual(
-      hold.element().getBoundingClientRect().left,
+    expectTitleClearOf(
+      titleOf(row).getBoundingClientRect(),
+      hold.element().getBoundingClientRect(),
     );
   });
 
@@ -284,7 +291,7 @@ describe("ThreadCard for a thread no grid shows", () => {
     const onDropOnThread = vi.fn();
     await using screen = await render(
       <>
-        {card(thread(), { gridId: null, notInGrid: true, onDropOnThread })}
+        {card(thread(), { gridId: null, onDropOnThread })}
         <DropTargetProbe />
       </>,
     );
@@ -302,8 +309,8 @@ describe("ThreadCard for a thread no grid shows", () => {
   });
 });
 
-describe("ThreadCard second line at the narrowest sidebar", () => {
-  it("truncates the subagent label and keeps the provider mark inside the row", async () => {
+describe("ThreadCard lines at the narrowest sidebar", () => {
+  it("keeps the subagent count and the provider mark inside the row", async () => {
     __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS });
     await using screen = await render(
       <div style={{ width: 240 }}>
@@ -320,7 +327,7 @@ describe("ThreadCard second line at the narrowest sidebar", () => {
     );
     const row = rowOf(screen.container);
     const mark = row.querySelector<HTMLElement>("[data-thread-provider-mark]")!;
-    const label = screen.getByText(/subagents? running|agents/).element();
+    const label = screen.getByRole("img", { name: /subagents? running/ }).element();
     const rowBox = row.getBoundingClientRect();
 
     expect(mark.getBoundingClientRect().right).toBeLessThanOrEqual(rowBox.right);

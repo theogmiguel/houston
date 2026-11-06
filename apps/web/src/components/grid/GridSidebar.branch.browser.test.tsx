@@ -51,7 +51,8 @@ vi.mock(import("../../state/vcs"), async (original) => {
 vi.mock(import("../../state/query"), async (original) => ({
   ...(await original()),
   useEnvironmentQuery: ((atom: { cwd: string } | null) => ({
-    data: atom === null ? null : { refName: atom.cwd === "/repo" ? "main" : "feature/x" },
+    data:
+      atom === null ? null : { refName: atom.cwd === "/repo" ? "houston/current" : "feature/x" },
   })) as never,
 }));
 
@@ -111,7 +112,7 @@ describe("ThreadCard branch", () => {
   it("shows the project checkout's current branch for a thread without its own branch", async () => {
     await using screen = await render(card(thread()));
 
-    await expect.element(screen.getByText("main", { exact: true })).toBeInTheDocument();
+    await expect.element(screen.getByText("houston/current", { exact: true })).toBeInTheDocument();
     expect(screen.container.textContent).not.toContain("no branch");
   });
 
@@ -126,7 +127,7 @@ describe("ThreadCard branch", () => {
     await using screen = await render(card(thread({ branch: "houston/recorded" })));
 
     await expect.element(screen.getByText("houston/recorded", { exact: true })).toBeInTheDocument();
-    expect(screen.container.textContent).not.toContain("main");
+    expect(screen.container.textContent).not.toContain("houston/current");
   });
 });
 

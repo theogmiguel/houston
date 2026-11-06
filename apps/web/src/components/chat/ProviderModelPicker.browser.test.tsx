@@ -5,13 +5,14 @@ import {
   type ServerProvider,
 } from "@houston-app/contracts";
 import { compileResolvedKeybindingsConfig } from "@houston-app/shared/keybindings";
-import { expect, it } from "vite-plus/test";
+import { describe, expect, it } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 
 import "~/index.css";
 
 import { render } from "../../../test/render";
 import { deriveProviderInstanceEntries } from "../../providerInstances";
+import { ComposerEffortColumn } from "../ui/composer-model-effort";
 import { TooltipProvider } from "../ui/tooltip";
 import { ProviderModelPicker } from "./ProviderModelPicker";
 
@@ -107,6 +108,33 @@ it("caps the composer's model trigger so a long model name truncates", async () 
   expect(trigger.element().getBoundingClientRect().width).toBeLessThanOrEqual(224);
 });
 
+it("names the model in the trigger exactly as its row in the list does", async () => {
+  await using _screen = await render(
+    <TooltipProvider delay={0}>
+      <ProviderModelPicker
+        environmentId={null}
+        activeInstanceId={CLAUDE}
+        model="opus"
+        lockedProvider={null}
+        instanceEntries={entries}
+        keybindings={compileResolvedKeybindingsConfig([])}
+        modelOptionsByInstance={new Map([[CLAUDE, provider.models]])}
+        isComposerOwned
+        onInstanceModelChange={() => {}}
+      />
+    </TooltipProvider>,
+    { router: false },
+  );
+
+  const trigger = page.getByRole("button", { name: /Opus 5\.5/ });
+  await expect.element(trigger).toBeVisible();
+  const label = trigger.element().querySelector("[data-chat-provider-model-picker-label]");
+  expect(label?.textContent).toBe("Claude Opus 5.5");
+
+  await trigger.click();
+  await expect.element(page.getByRole("option", { name: /Claude Opus 5\.5/ })).toBeVisible();
+});
+
 it("draws the provider's mark beside the model name", async () => {
   await using _screen = await render(
     <TooltipProvider delay={0}>
@@ -158,7 +186,7 @@ it("opens the model menu at one fixed height however few models the provider lis
 
   await page.getByRole("button", { name: /Opus 5\.5/ }).click();
   const content = () => document.querySelector<HTMLElement>('[data-model-picker-content="true"]');
-  await expect.poll(() => content()?.getBoundingClientRect().height).toBe(346);
+  await expect.poll(() => content()?.getBoundingClientRect().height).toBe(272);
 });
 
 it("docks an effort column beside the list and stays open after a model pick", async () => {
@@ -212,4 +240,162 @@ it("docks an effort column beside the list and stays open after a model pick", a
   await expect
     .poll(() => document.querySelector("[data-model-picker-content]") !== null)
     .toBe(true);
+});
+
+it("lines the docked popup up with the composer card and titles the effort column without the model name", async () => {
+  await page.viewport(1440, 900);
+  await using _screen = await render(
+    <TooltipProvider delay={0}>
+      <div style={{ paddingTop: 120, paddingLeft: 160 }}>
+        <div
+          data-inline-resting-controls="true"
+          style={{ width: 640, padding: "12px 32px" }}
+          className="rounded-xl border border-border"
+        >
+          <ProviderModelPicker
+            environmentId={null}
+            activeInstanceId={CLAUDE}
+            model="opus"
+            lockedProvider={null}
+            instanceEntries={entries}
+            keybindings={compileResolvedKeybindingsConfig([])}
+            modelOptionsByInstance={new Map([[CLAUDE, provider.models]])}
+            isComposerOwned
+            effortColumn={<ComposerEffortColumn traits={null} />}
+            onInstanceModelChange={() => {}}
+          />
+        </div>
+      </div>
+    </TooltipProvider>,
+    { router: false },
+  );
+
+  await page.getByRole("button", { name: /Opus 5\.5/ }).click();
+  await expect.poll(() => document.querySelector("[data-model-picker-effort]") !== null).toBe(true);
+
+  const column = document.querySelector<HTMLElement>("[data-model-picker-effort]")!;
+  // The header names the column only: the selected model is already shown in the list beside it.
+  expect(column.textContent).toContain("Effort");
+  expect(column.textContent).not.toContain("Claude Opus 5.5");
+
+  await expect
+    .poll(() => {
+      const card = document.querySelector<HTMLElement>('[data-inline-resting-controls="true"]');
+      const popup = document.querySelector<HTMLElement>('[data-slot="popover-positioner"]');
+      if (!card || !popup) return null;
+      return Math.round(popup.getBoundingClientRect().left - card.getBoundingClientRect().left);
+    })
+    .toBe(0);
+});
+
+describe("docked popup and the composer context row", () => {
+  async function openDocked(paddingTop: number) {
+    await page.viewport(1440, 900);
+    const screen = await render(
+      <TooltipProvider delay={0}>
+        <form data-chat-composer-form="true" style={{ width: 760, marginLeft: 160, paddingTop }}>
+          <div
+            data-inline-resting-controls="true"
+            style={{ padding: "12px 32px" }}
+            className="rounded-xl border border-border"
+          >
+            <ProviderModelPicker
+              environmentId={null}
+              activeInstanceId={CLAUDE}
+              model="opus"
+              lockedProvider={null}
+              instanceEntries={entries}
+              keybindings={compileResolvedKeybindingsConfig([])}
+              modelOptionsByInstance={new Map([[CLAUDE, provider.models]])}
+              isComposerOwned
+              effortColumn={<ComposerEffortColumn traits={null} />}
+              onInstanceModelChange={() => {}}
+            />
+          </div>
+          <div data-slot="composer-context-strip" style={{ marginTop: 4, height: 22 }}>
+            Local checkout
+          </div>
+        </form>
+      </TooltipProvider>,
+      { router: false },
+    );
+    await page.getByRole("button", { name: /Opus 5\.5/ }).click();
+    await expect
+      .poll(() => document.querySelector("[data-model-picker-effort]") !== null)
+      .toBe(true);
+    return screen;
+  }
+
+  function rects() {
+    const card = document.querySelector<HTMLElement>('[data-inline-resting-controls="true"]')!;
+    const strip = document.querySelector<HTMLElement>('[data-slot="composer-context-strip"]')!;
+    const popup = document.querySelector<HTMLElement>('[data-slot="popover-positioner"]')!;
+    return {
+      card: card.getBoundingClientRect(),
+      strip: strip.getBoundingClientRect(),
+      popup: popup.getBoundingClientRect(),
+    };
+  }
+
+  it("opens above the card when there is room, clear of the context row", async () => {
+    await using _screen = await openDocked(560);
+
+    await expect.poll(() => rects().popup.bottom <= rects().card.top).toBe(true);
+  });
+
+  it("opens below the context row when there is no room above", async () => {
+    await using _screen = await openDocked(20);
+
+    await expect.poll(() => rects().popup.top >= rects().strip.bottom).toBe(true);
+  });
+
+  it("never extends above the header of its column", async () => {
+    await page.viewport(1440, 900);
+    await using _screen = await render(
+      <TooltipProvider delay={0}>
+        <div data-chat-column="">
+          <header data-chat-header="" style={{ height: 44 }} />
+          <form
+            data-chat-composer-form="true"
+            style={{ width: 760, marginLeft: 160, paddingTop: 250 }}
+          >
+            <div
+              data-inline-resting-controls="true"
+              style={{ padding: "12px 32px" }}
+              className="rounded-xl border border-border"
+            >
+              <ProviderModelPicker
+                environmentId={null}
+                activeInstanceId={CLAUDE}
+                model="opus"
+                lockedProvider={null}
+                instanceEntries={entries}
+                keybindings={compileResolvedKeybindingsConfig([])}
+                modelOptionsByInstance={new Map([[CLAUDE, provider.models]])}
+                isComposerOwned
+                effortColumn={<ComposerEffortColumn traits={null} />}
+                onInstanceModelChange={() => {}}
+              />
+            </div>
+            <div data-slot="composer-context-strip" style={{ marginTop: 4, height: 22 }}>
+              Local checkout
+            </div>
+          </form>
+        </div>
+      </TooltipProvider>,
+      { router: false },
+    );
+    await page.getByRole("button", { name: /Opus 5\.5/ }).click();
+    await expect
+      .poll(() => document.querySelector("[data-model-picker-effort]") !== null)
+      .toBe(true);
+
+    const header = document.querySelector<HTMLElement>("[data-chat-header]")!;
+    await expect
+      .poll(() => {
+        const popup = document.querySelector<HTMLElement>('[data-slot="popover-positioner"]')!;
+        return popup.getBoundingClientRect().top - header.getBoundingClientRect().bottom;
+      })
+      .toBeGreaterThanOrEqual(8);
+  });
 });

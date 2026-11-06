@@ -107,6 +107,34 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/archived": "Archive",
 };
 
+/** The one line under each page's title. */
+export const SETTINGS_SECTION_DESCRIPTIONS: Readonly<Record<SettingsPath, string>> = {
+  "/settings/diagnostics": "Telemetry export and the data this app can send out.",
+  "/settings/projects": "How each project runs agents and what its actions do.",
+  "/settings/general": "Project grouping, notifications, time format and confirmations.",
+  "/settings/voice": "Dictation shortcut, microphone and transcription models.",
+  "/settings/appearance": "Theme, contrast, chat width and motion.",
+  "/settings/chat": "Composer behavior, send shortcut and slash menu.",
+  "/settings/diffs": "How changes and pull requests are shown.",
+  "/settings/keybindings": "Keyboard shortcuts for commands.",
+  "/settings/snap-shot": "Capture shortcut and what a SnapShot includes.",
+  "/settings/providers": "Agent providers, their health and usage limits.",
+  "/settings/threads": "Default model, permissions and what happens when limits hit.",
+  "/settings/browser": "Agent browser access, profiles and recording.",
+  "/settings/devices": "Devices that agents can drive.",
+  "/settings/scheduled-tasks": "Prompts that run on a schedule.",
+  "/settings/source-control": "Pull, merge and writing defaults for source control.",
+  "/settings/worktrees": "Where worktrees live and when they are cleaned up.",
+  "/settings/connections": "Linked environments and how work is balanced across them.",
+  "/settings/task-sources": "Slack and tracker sources that feed tasks.",
+  "/settings/access": "Network access and who can reach this server.",
+  "/settings/secrets": "Providers that supply secrets to agents.",
+  "/settings/maintenance": "Storage cleanup, update checks and background activity.",
+  "/settings/labs": "Early features that may change.",
+  "/settings/about": "Version and open source licenses.",
+  "/settings/archived": "Threads you archived.",
+};
+
 /** Sidebar order. A group without a heading is set apart by space alone. */
 export const SETTINGS_NAV_GROUPS: ReadonlyArray<{
   readonly heading: string | null;

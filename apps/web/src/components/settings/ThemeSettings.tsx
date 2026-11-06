@@ -859,7 +859,7 @@ export function ThemeLibrary({
     <div className="space-y-3">
       {view !== "library" ? (
         <>
-          <h3 className="flex items-center px-1 text-[11px] leading-[14px] font-semibold text-muted-foreground">
+          <h3 className="flex items-center text-2xs leading-3.5 font-semibold text-muted-foreground">
             {searchableSetting("color-scheme").title}
           </h3>
           {renderModeTiles()}

@@ -1,8 +1,8 @@
 import { formatDiffCount } from "@houston-app/client-runtime/diff-count";
 import {
-  ROW_DIFF_ADDED_CLS,
   ROW_DIFF_COUNTS_CLS,
-  ROW_DIFF_REMOVED_CLS,
+  rowDiffAddedCls,
+  rowDiffRemovedCls,
   ROW_DRAFT_CROSS_CLS,
   ROW_DRAFT_MARK_CLS,
   ROW_DRAFT_PENCIL_CLS,
@@ -70,7 +70,7 @@ export function ThreadCheckoutMark({
   if (!worktreePath) {
     return (
       <span role="img" aria-label="Local checkout" className="inline-flex shrink-0">
-        <GitBranchIcon aria-hidden className="size-3" />
+        <GitBranchIcon aria-hidden className="size-3.5" />
       </span>
     );
   }
@@ -87,7 +87,7 @@ export function ThreadCheckoutMark({
           />
         }
       >
-        <FolderGit2Icon aria-hidden className="size-3" />
+        <FolderGit2Icon aria-hidden className="size-3.5" />
       </TooltipTrigger>
       <TooltipPopup side="top">{label}</TooltipPopup>
     </Tooltip>
@@ -120,11 +120,14 @@ export function ThreadRowIndicators({
   thread,
   rowRef,
   focused,
+  emphasized,
   onActivate,
 }: {
   thread: EnvironmentThreadShell;
   rowRef: RefObject<HTMLElement | null>;
   focused: boolean;
+  /** The row is the open or a selected thread: its diff totals show their colours at rest. */
+  emphasized: boolean;
   /** Opens the thread, where a terminal indicator reveals its terminal. */
   onActivate: () => void;
 }) {
@@ -152,8 +155,8 @@ export function ThreadRowIndicators({
           aria-label={`Uncommitted changes ${formatGridDiffCounts(diff)}`}
           className={`shrink-0 ${ROW_DIFF_COUNTS_CLS}`}
         >
-          <span className={ROW_DIFF_ADDED_CLS}>+{formatDiffCount(diff.insertions)}</span>{" "}
-          <span className={ROW_DIFF_REMOVED_CLS}>−{formatDiffCount(diff.deletions)}</span>
+          <span className={rowDiffAddedCls(emphasized)}>+{formatDiffCount(diff.insertions)}</span>{" "}
+          <span className={rowDiffRemovedCls(emphasized)}>−{formatDiffCount(diff.deletions)}</span>
         </span>
       )}
       {remote ? <RemoteMachineMark thread={thread} /> : null}

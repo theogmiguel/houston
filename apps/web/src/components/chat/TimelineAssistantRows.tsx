@@ -40,6 +40,13 @@ import { MessagesSquareIcon } from "lucide-react";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { SecondOpinionReviewCard } from "./SecondOpinionReviewCard";
 
+/**
+ * The hover footer closes a turn. Its 6px lead, 24px height and the 2px row padding add up to
+ * the 32px between turns (`pb-0` on the row in `MessagesTimeline`), so the gap does not depend
+ * on whether the footer is showing.
+ */
+const ASSISTANT_TURN_FOOTER_CLASS_NAME = "mt-1.5 h-6";
+
 export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
   // The timeline holds a streaming message's row while only its text grows.
@@ -76,7 +83,9 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
             />
           </AssistantCitationSource>
         </div>
-        {row.message.runId ? <AssistantModelAttributionRow runId={row.message.runId} /> : null}
+        {row.showAssistantMeta && row.message.runId ? (
+          <AssistantModelAttributionRow runId={row.message.runId} />
+        ) : null}
         {ctx.onOpenTurnDiff ? (
           <AssistantChangedFilesSection
             turnSummary={row.assistantTurnDiffSummary}
@@ -87,7 +96,7 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
         ) : null}
         {row.showAssistantMeta ? (
           <AssistantMessageMeta
-            className="mt-1.5"
+            className={ASSISTANT_TURN_FOOTER_CLASS_NAME}
             projectedItem={row.projectedItem}
             message={row.message}
             showCopyButton={row.showAssistantCopyButton}
@@ -106,7 +115,11 @@ function SecondOpinionCardForRun({ runId }: { readonly runId: RunId | null | und
   const review =
     runId === null || runId === undefined ? undefined : ctx.secondOpinion?.reviews.get(runId);
   if (review === undefined) return null;
-  return <SecondOpinionReviewCard threadRef={review} />;
+  return (
+    <div className="pb-8">
+      <SecondOpinionReviewCard threadRef={review} />
+    </div>
+  );
 }
 
 /** Asks another provider for a read-only review of this turn. */
@@ -473,6 +486,7 @@ function AssistantChangedFilesSectionInner({
   );
   const setExpanded = useUiStateStore((store) => store.setThreadChangedFilesExpanded);
   const allDirectoriesExpanded = persistedExpanded ?? false;
+  const coveredByBanner = ctx.changeBannerRunId === turnSummary.runId;
 
   const thread = useThreadShell(ctx.threadRef);
   const activeProject = useProject(
@@ -488,6 +502,7 @@ function AssistantChangedFilesSectionInner({
       files={checkpointFiles}
       totals={checkpointFileTotals(turnSummary)}
       allDirectoriesExpanded={allDirectoriesExpanded}
+      coveredByBanner={coveredByBanner}
       resolvedTheme={resolvedTheme}
       onToggleAllDirectories={() =>
         setExpanded(routeThreadKey, turnSummary.runId, !allDirectoriesExpanded)

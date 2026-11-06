@@ -278,6 +278,9 @@ export const DIFF_SURFACE_THEME_UNSAFE_CSS = `
   --diffs-token-light-bg: transparent;
   --diffs-token-dark-bg: transparent;
 
+  /* The library blends only 12% (light) or 20% (dark) of the addition and deletion colours into
+     the row, so these are mix targets, not final backgrounds: a changed row reads as a full-row
+     tint of about 12% in light and 10% in dark. */
   /* Gutter, context, and row tints all derive from the code surface the diff
      body sits on. Mixing from the canvas leaves the gutter looking unthemed
      when a palette separates the two. */
@@ -291,12 +294,12 @@ export const DIFF_SURFACE_THEME_UNSAFE_CSS = `
   --diffs-bg-buffer-override: color-mix(in srgb, var(--code-background) 90%, var(--code-foreground));
 
   --diffs-bg-addition-override: light-dark(
-    color-mix(in srgb, var(--code-background) 50%, var(--diff-addition)),
-    color-mix(in srgb, var(--code-background) 70%, var(--diff-addition))
+    var(--diff-addition),
+    color-mix(in srgb, var(--code-background) 50%, var(--diff-addition))
   );
   --diffs-bg-addition-number-override: light-dark(
-    color-mix(in srgb, var(--code-background) 35%, var(--diff-addition)),
-    color-mix(in srgb, var(--code-background) 60%, var(--diff-addition))
+    var(--diff-addition),
+    color-mix(in srgb, var(--code-background) 30%, var(--diff-addition))
   );
   --diffs-bg-addition-hover-override: color-mix(in srgb, var(--code-background) 85%, var(--diff-addition));
   --diffs-bg-addition-emphasis-override: color-mix(
@@ -306,12 +309,12 @@ export const DIFF_SURFACE_THEME_UNSAFE_CSS = `
   );
 
   --diffs-bg-deletion-override: light-dark(
-    color-mix(in srgb, var(--code-background) 50%, var(--diff-deletion)),
-    color-mix(in srgb, var(--code-background) 70%, var(--diff-deletion))
+    var(--diff-deletion),
+    color-mix(in srgb, var(--code-background) 50%, var(--diff-deletion))
   );
   --diffs-bg-deletion-number-override: light-dark(
-    color-mix(in srgb, var(--code-background) 35%, var(--diff-deletion)),
-    color-mix(in srgb, var(--code-background) 60%, var(--diff-deletion))
+    var(--diff-deletion),
+    color-mix(in srgb, var(--code-background) 30%, var(--diff-deletion))
   );
   --diffs-bg-deletion-hover-override: color-mix(
     in srgb,

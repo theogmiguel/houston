@@ -56,7 +56,7 @@ export function SidebarRailActionRow({
           : "text-secondary-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
       )}
     >
-      <span className="inline-grid size-[15px] shrink-0 place-items-center text-secondary-label [&>svg]:size-[15px]">
+      <span className="inline-grid size-4 shrink-0 place-items-center text-secondary-label [&>svg]:size-4">
         {icon}
       </span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
@@ -95,7 +95,7 @@ export function SidebarRailSectionHeading({
             MOTION_FEEDBACK,
           )}
         >
-          <PlusIcon aria-hidden className="size-[15px]" />
+          <PlusIcon aria-hidden className="size-4" />
         </button>
       ) : null}
     </div>
@@ -115,7 +115,7 @@ export function SidebarRailSearchButton() {
         MOTION_FEEDBACK,
       )}
     >
-      <SearchIcon aria-hidden className="size-[15px] shrink-0 text-secondary-label" />
+      <SearchIcon aria-hidden className="size-4 shrink-0 text-secondary-label" />
       <span className="min-w-0 flex-1 truncate">Search</span>
       {shortcut ? <SidebarRailKbd>{shortcut}</SidebarRailKbd> : null}
     </button>

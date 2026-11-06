@@ -48,7 +48,7 @@ export const SETTINGS_DEVICE_ONLY_PATHS: ReadonlySet<string> = new Set([
 ]);
 
 const SCOPE_TRIGGER_CLS =
-  "h-auto min-h-0 min-w-0 max-w-72 justify-start gap-1 px-1 py-0 text-[15px] leading-[22px] font-semibold text-foreground hover:bg-hover sm:text-[15px]";
+  "h-auto min-h-0 min-w-0 max-w-72 justify-start gap-1 px-1 py-0 font-medium text-foreground text-[length:var(--text-body)] hover:bg-hover";
 const SCOPE_TRIGGER_ICON_CLS = "size-3.5 shrink-0 text-muted-foreground";
 const SCOPE_SECONDARY_CLS = "text-xs text-muted-foreground";
 const SCOPE_PATH_CLS = `${SCOPE_SECONDARY_CLS} font-mono`;
@@ -83,7 +83,7 @@ export function SettingsScopeSentence() {
     onChange: scope.selectScope,
   };
   return (
-    <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-[15px] leading-[22px] text-muted-foreground">
+    <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-body text-muted-foreground">
       <span className="flex min-w-0 items-center gap-1">
         <span className="shrink-0">Applying settings for</span>
         <ProjectScopeMenu {...props} />

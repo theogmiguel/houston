@@ -95,12 +95,15 @@ vi.mock("./diffs/AnnotatableCodeView", async () => {
     AnnotatableCodeView: ({
       composerDraftTarget,
       onCommentAdded,
+      options,
     }: {
       composerDraftTarget: ScopedThreadRef | DraftId;
       onCommentAdded?: (commentId: string) => void;
+      options?: { overflow?: string };
     }) => (
       <button
         type="button"
+        data-code-overflow={options?.overflow}
         onClick={() => {
           useComposerDraftStore.getState().addReviewComment(composerDraftTarget, {
             id: "diff-comment-1",
@@ -281,7 +284,7 @@ const samplePatch = [
 function panel(
   registry: ReturnType<typeof AtomRegistry.make>,
   threadRef: ScopedThreadRef,
-  mode?: "sheet",
+  mode?: "sheet" | "embedded",
 ) {
   return (
     <RegistryContext.Provider value={registry}>
@@ -303,20 +306,34 @@ it("keeps the view controls in the header and folds them into a menu when narrow
     container: wide,
   });
   await expect
-    .element(wideScreen.getByRole("button", { name: "Disable diff line wrapping" }))
+    .element(wideScreen.getByRole("button", { name: "Enable diff line wrapping" }))
     .toBeVisible();
+  // Wrapping is off by default and the header carries one overflow menu, not two.
+  expect(wideScreen.getByRole("button", { name: "Diff options" }).elements()).toHaveLength(1);
 
   const narrow = document.createElement("div");
   narrow.style.width = "320px";
   await using narrowScreen = await render(panel(context.registry, context.threadRef, "sheet"), {
     container: narrow,
   });
-  await expect
-    .element(narrowScreen.getByRole("button", { name: "More diff actions" }))
-    .toBeVisible();
+  await expect.element(narrowScreen.getByRole("button", { name: "Diff options" })).toBeVisible();
   expect(
-    narrowScreen.getByRole("button", { name: "Disable diff line wrapping" }).elements(),
+    narrowScreen.getByRole("button", { name: "Enable diff line wrapping" }).elements(),
   ).toHaveLength(0);
+  expect(narrowScreen.getByRole("button", { name: "Diff options" }).elements()).toHaveLength(1);
+});
+
+it("keeps code unwrapped in the embedded side panel so the overflow fade can show", async () => {
+  using context = setup(null, samplePatch);
+  useDiffPanelStore.getState().selectBranchBaseRef(context.threadRef, "main");
+  const sidePanel = document.createElement("div");
+  sidePanel.style.width = "400px";
+  await using side = await render(panel(context.registry, context.threadRef, "embedded"), {
+    container: sidePanel,
+  });
+  await expect
+    .element(side.getByRole("button", { name: "Add diff comment" }))
+    .toHaveAttribute("data-code-overflow", "scroll");
 });
 
 it("offers undo for the comments it added to the composer", async () => {

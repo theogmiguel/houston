@@ -19,6 +19,7 @@ export function formatCompactDiffCount(value: number): string {
   return `${b < 10 ? b.toFixed(1).replace(/\.0$/, "") : Math.round(b)}b`;
 }
 
+// A zero count carries no change, so only a non-zero side takes the diff colour (index.css).
 export const DiffStatLabel = memo(function DiffStatLabel(props: {
   additions: number;
   deletions: number;
@@ -37,10 +38,18 @@ export const DiffStatLabel = memo(function DiffStatLabel(props: {
         className,
       )}
     >
-      <span aria-hidden="true" className="font-mono text-diff-addition-foreground">
+      <span
+        aria-hidden="true"
+        data-zero={additions === 0 ? "" : undefined}
+        className="font-mono text-diff-addition-foreground"
+      >
         +{formatCompactDiffCount(additions)}
       </span>
-      <span aria-hidden="true" className="font-mono text-diff-deletion-foreground">
+      <span
+        aria-hidden="true"
+        data-zero={deletions === 0 ? "" : undefined}
+        className="font-mono text-diff-deletion-foreground"
+      >
         -{formatCompactDiffCount(deletions)}
       </span>
     </span>

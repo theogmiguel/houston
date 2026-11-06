@@ -908,3 +908,26 @@ export function newThreadNoProjectIndex(
   const pinnedCount = projects.filter((entry) => entry.pinned).length;
   return Math.min(pinnedCount + 1, projects.length);
 }
+
+/** Margin kept under a snapped list so its last row does not touch the panel edge; matches the list's top padding. */
+export const COMMAND_PALETTE_LIST_BOTTOM_INSET_PX = 8;
+
+/**
+ * The list viewport height that ends at the bottom of the last row that fits whole in
+ * `availablePx` once the bottom inset is reserved, or
+ * `undefined` when every row fits already or none does. `rowBottoms` are the rows' bottom edges
+ * in list-content pixels, top padding included.
+ */
+export function snapCommandPaletteListHeight(input: {
+  readonly rowBottoms: ReadonlyArray<number>;
+  readonly contentHeightPx: number;
+  readonly availablePx: number;
+}): number | undefined {
+  if (input.contentHeightPx <= input.availablePx) return undefined;
+  const limit = input.availablePx - COMMAND_PALETTE_LIST_BOTTOM_INSET_PX;
+  let snapped: number | undefined;
+  for (const bottom of input.rowBottoms) {
+    if (bottom <= limit && (snapped === undefined || bottom > snapped)) snapped = bottom;
+  }
+  return snapped;
+}

@@ -197,7 +197,8 @@ export async function fetchSessionState(): Promise<AuthSessionState> {
   });
 }
 
-function readHttpApiStatus(error: unknown): number | null {
+/** The HTTP status a request failure carries, or null when no response came back. */
+export function readHttpApiStatus(error: unknown): number | null {
   if (isEnvironmentHttpCommonError(error)) {
     return readEnvironmentHttpErrorStatus(error);
   }

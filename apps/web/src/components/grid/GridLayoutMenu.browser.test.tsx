@@ -17,6 +17,7 @@ vi.mock(import("~/state/server"), async () => {
 import { type GridRecord, useGridStore } from "../../grid/gridStore";
 import { type LayoutNode, preorderLeaves, threadLeaf } from "../../grid/tree";
 import { render } from "../../../test/render";
+import { Button } from "../ui/button";
 import { TooltipProvider } from "../ui/tooltip";
 import { GridLayoutMenu } from "./GridLayoutMenu";
 
@@ -110,5 +111,58 @@ describe("GridLayoutMenu", () => {
     expect(screen.getByRole("button", { name: "Tidy panes" }).element().ariaDisabled).toBe("true");
     await userEvent.hover(screen.getByRole("button", { name: "Tidy panes" }));
     await expect.element(page.getByText("Open a second pane to tidy the grid")).toBeVisible();
+  });
+
+  it("draws the main and menu buttons as one split button of equal height", async () => {
+    await using screen = await mount(grid(threads(["thread-a", "thread-b"])));
+
+    const group = screen.getByRole("group").element();
+    const main = screen.getByRole("button", { name: "Tidy panes" }).element();
+    const menu = screen.getByRole("button", { name: "Choose tidy layout" }).element();
+    const separator = group.querySelector<HTMLElement>('[data-slot="separator"]')!;
+
+    const groupBox = group.getBoundingClientRect();
+    expect(groupBox.height).toBe(28);
+    expect(main.getBoundingClientRect().height).toBe(28);
+    expect(menu.getBoundingClientRect().height).toBe(28);
+    expect(getComputedStyle(group).borderTopLeftRadius).toBe("6px");
+    // The outline is an overlay with the same radius, so it takes no layout space.
+    const outline = getComputedStyle(group, "::after");
+    expect(outline.borderTopWidth).toBe("1px");
+    expect(outline.borderTopLeftRadius).toBe("6px");
+    expect(getComputedStyle(group).borderTopWidth).toBe("0px");
+    // The container owns the outer corners: the joined edges stay square.
+    expect(getComputedStyle(main).borderTopLeftRadius).toBe("6px");
+    expect(getComputedStyle(main).borderTopRightRadius).toBe("0px");
+    expect(getComputedStyle(menu).borderTopLeftRadius).toBe("0px");
+    expect(getComputedStyle(menu).borderTopRightRadius).toBe("6px");
+    expect(separator.getBoundingClientRect().width).toBe(1);
+    expect(separator.getBoundingClientRect().height).toBe(28);
+  });
+
+  it("shares its top edge and height with a sibling icon button in the header row", async () => {
+    seed(grid(threads(["thread-a", "thread-b"])));
+    await using screen = await render(
+      <TooltipProvider delay={0}>
+        <div className="flex h-10 items-center gap-1">
+          <Button variant="ghost" size="icon" aria-label="Sibling" />
+          <GridLayoutMenu grid={grid(threads(["thread-a", "thread-b"]))} />
+        </div>
+      </TooltipProvider>,
+    );
+
+    const sibling = screen
+      .getByRole("button", { name: "Sibling" })
+      .element()
+      .getBoundingClientRect();
+    const main = screen
+      .getByRole("button", { name: "Tidy panes" })
+      .element()
+      .getBoundingClientRect();
+    const group = screen.getByRole("group").element().getBoundingClientRect();
+    expect(group.top).toBe(sibling.top);
+    expect(main.top).toBe(sibling.top);
+    expect(main.height).toBe(sibling.height);
+    expect(group.height).toBe(sibling.height);
   });
 });

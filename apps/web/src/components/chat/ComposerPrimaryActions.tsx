@@ -202,7 +202,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           <button
             type="button"
             className={cn(
-              "flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-full bg-(--send) text-(--send-ink) transition-colors duration-150 hover:bg-(--send)/90 disabled:pointer-events-none disabled:opacity-64 [&_svg]:pointer-events-none [&_svg]:size-3.5",
+              "flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full bg-(--accent) text-(--primary-foreground) transition-colors duration-150 hover:bg-(--accent-hover) disabled:pointer-events-none disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:size-3.5",
               boardFocusRing,
             )}
             {...pointerFocusProps}
@@ -372,24 +372,25 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         ? `Click to ${followUpBehavior}, ${isMacPlatform(navigator.platform) ? "⌘" : "Ctrl"}-click${alternateShortcutLabel ? ` or ${alternateShortcutLabel}` : ""} to ${alternateAction}`
         : submitLabel);
 
+  const isSendButtonDisabled =
+    isSendBusy ||
+    isSendDisabled ||
+    isEnvironmentUnavailable ||
+    (!hasSendableContent && !showResume);
+
   const sendButton = (
     <button
       type={showResume ? "button" : "submit"}
       className={cn(
-        "relative isolate flex size-7 items-center justify-center overflow-hidden rounded-full transition-colors duration-150 enabled:cursor-pointer disabled:pointer-events-none [&_svg]:size-3.5 [&_svg]:pointer-events-none",
+        "relative isolate flex size-8 items-center justify-center overflow-hidden rounded-full bg-(--accent) text-(--primary-foreground) transition-colors duration-(--motion-feedback) enabled:cursor-pointer enabled:hover:bg-(--accent-hover) disabled:pointer-events-none [&_svg]:size-4 [&_svg]:pointer-events-none",
+        // Idle-disabled reads as inert (neutral fill, muted glyph at full opacity); a busy send
+        // keeps the accent so the spinner still reads as work in progress.
+        isSendBusy ? "disabled:opacity-60" : "disabled:bg-(--sel) disabled:text-(--houston)",
         boardFocusRing,
-        hasSendableContent
-          ? "bg-(--send) text-(--send-ink) enabled:hover:bg-(--send)/90 disabled:bg-(--sel) disabled:text-(--houston)"
-          : "bg-(--sel) text-(--houston)",
       )}
       {...pointerFocusProps}
       onClick={showResume ? onResume : onSubmitMessage}
-      disabled={
-        isSendBusy ||
-        isSendDisabled ||
-        isEnvironmentUnavailable ||
-        (!hasSendableContent && !showResume)
-      }
+      disabled={isSendButtonDisabled}
       aria-label={submitStatus ?? submitLabel}
     >
       {isSendBusy ? (
@@ -408,7 +409,13 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
 
   const submit = (
     <Tooltip key="submit">
-      <TooltipTrigger render={<span className="inline-flex" />}>{sendButton}</TooltipTrigger>
+      <TooltipTrigger
+        render={
+          <span className={cn("inline-flex", isSendButtonDisabled && "cursor-not-allowed")} />
+        }
+      >
+        {sendButton}
+      </TooltipTrigger>
       <TooltipPopup>{submitTooltip}</TooltipPopup>
     </Tooltip>
   );

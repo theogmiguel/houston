@@ -1060,7 +1060,7 @@ export function ProviderInstanceCard({
       <div
         data-slot="settings-row"
         className={cn(
-          "group flex min-h-18 items-center gap-3 px-3 py-3 transition-colors sm:px-4",
+          "group flex min-h-18 items-center gap-3 px-4 py-3 transition-colors",
           selected ? "bg-foreground/[0.06]" : "hover:bg-muted/25",
         )}
       >
@@ -1088,7 +1088,7 @@ export function ProviderInstanceCard({
               ) : null}
               {versionAdvisoryNode}
             </span>
-            <span className="mt-0.5 flex items-start gap-1.5 text-xs leading-normal text-muted-foreground/80">
+            <span className="mt-0.5 flex items-start gap-1.5 text-xs leading-normal text-muted-foreground">
               {statusDotNode && !updateProgress ? (
                 <span className="flex h-[1.45em] shrink-0 items-center">{statusDotNode}</span>
               ) : null}

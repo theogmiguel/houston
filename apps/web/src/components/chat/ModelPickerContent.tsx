@@ -831,9 +831,10 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       <WindowKeyDownListener onKeyDown={onWindowKeyDown} />
       <div
         // One fixed size whatever the tab, its model count or the search holds, so switching tabs
-        // or typing never moves the rail under the cursor.
+        // or typing never moves the rail under the cursor. It fits the effort column and a
+        // four-model tab; longer lists scroll.
         className={cn(
-          "relative flex h-86.5 max-h-(--available-height) w-[26.75rem] max-w-[calc(100vw-2rem)] flex-row overflow-hidden bg-(--raised)",
+          "relative flex h-68 max-h-(--available-height) w-[26.75rem] max-w-[calc(100vw-2rem)] flex-row overflow-hidden bg-(--raised)",
           props.docked ? MODEL_PICKER_DOCKED_CLASS : "rounded-lg border border-border",
         )}
         data-model-picker-content="true"

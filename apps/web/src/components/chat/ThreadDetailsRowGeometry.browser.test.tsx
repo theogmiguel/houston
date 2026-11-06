@@ -56,6 +56,7 @@ function Card() {
           threadRef={threadRef}
           anchor={anchor}
           handle={PopoverCreateHandle()}
+          defaultOpen
           contentKey="geometry"
         >
           {() => (

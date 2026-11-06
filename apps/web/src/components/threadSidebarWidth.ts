@@ -1,5 +1,6 @@
 export const THREAD_SIDEBAR_WIDTH_STORAGE_KEY = "chat_thread_sidebar_width";
-const THREAD_SIDEBAR_DEFAULT_WIDTH = 340;
+// 312px keeps two-line row titles from truncating early while leaving the main column room.
+const THREAD_SIDEBAR_DEFAULT_WIDTH = 312;
 const THREAD_SIDEBAR_MIN_WIDTH = 240;
 const THREAD_SIDEBAR_MAX_WIDTH = 440;
 export const THREAD_MAIN_CONTENT_MIN_WIDTH = 40 * 16;

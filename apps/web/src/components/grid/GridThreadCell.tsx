@@ -325,14 +325,12 @@ export function GridThreadCell({
             layout.timelineMaxWidth === null
               ? "100%"
               : `${layout.composerMaxWidth ?? layout.timelineMaxWidth}px`,
-          ...(density === "solo" ? { "--text-prose--line-height": "1.3125rem" } : {}),
           ...(showLabel ? { "--pane-label-inset": "2.625rem" } : {}),
           ...(dragging ? { opacity: 0.45 } : {}),
         } as CSSProperties
       }
       className={cn(
         "group/pane relative flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden",
-        density === "solo" && "[&_.chat-content-lane]:max-w-[45rem]",
         // A composer drawer or notice keeps the stacked card: the compact row would squeeze
         // the question panel, the notices and the textarea into zero-width flex columns.
         density === "compact" &&

@@ -2,11 +2,16 @@ import { ScrollArea as ScrollAreaPrimitive } from "@base-ui/react/scroll-area";
 
 import { cn } from "~/lib/utils";
 
-function getVirtualizedScrollFadeClassName({ top, bottom }: { top: boolean; bottom: boolean }) {
+function getVirtualizedScrollFadeClassName(
+  { top, bottom }: { top: boolean; bottom: boolean },
+  { tall = false }: { tall?: boolean } = {},
+) {
   if (!top && !bottom) return undefined;
 
   return cn(
-    "virtualized-scroll-fade [--fade-size:1.5rem]",
+    "virtualized-scroll-fade",
+    // A tall fade spans a whole 32px list row, so an edge row never ends on crisp glyphs.
+    tall ? "[--fade-size:2rem]" : "[--fade-size:1.5rem]",
     top &&
       bottom &&
       "[--virtualized-scroll-fade-mask:linear-gradient(to_bottom,transparent,black_var(--fade-size),black_calc(100%-var(--fade-size)),transparent)]",

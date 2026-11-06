@@ -4391,3 +4391,101 @@ describe("shouldCollapseUserMessage", () => {
     expect(shouldCollapseUserMessage(`${citation} ${"More text. ".repeat(60)}`)).toBe(true);
   });
 });
+
+describe("expanded turn fold", () => {
+  const runId = RunId.make("turn-1");
+  const at = (second: number) => `2026-01-01T00:00:${String(second).padStart(2, "0")}Z`;
+  const toolEntry = (name: string, second: number) => ({
+    id: `entry-${name}`,
+    kind: "work" as const,
+    createdAt: at(second),
+    entry: {
+      id: name,
+      createdAt: at(second),
+      runId,
+      label: "Ran command",
+      tone: "tool" as const,
+      itemType: "command_execution" as const,
+      toolLifecycleStatus: "completed" as const,
+    },
+  });
+  const compactionEntry = (second: number) => ({
+    id: "entry-compaction",
+    kind: "work" as const,
+    createdAt: at(second),
+    entry: {
+      id: "compaction",
+      createdAt: at(second),
+      runId,
+      label: "Context compacted",
+      tone: "info" as const,
+      sourceActivityKind: "context-compaction" as const,
+    },
+  });
+  const message = (id: string, role: "user" | "assistant", text: string, second: number) => ({
+    id: `entry-${id}`,
+    kind: "message" as const,
+    createdAt: at(second),
+    message: {
+      id: id as never,
+      role,
+      text,
+      runId,
+      ...(role === "user" ? { inputIntent: "turn_start" as const } : {}),
+      createdAt: at(second),
+      updatedAt: at(second),
+      streaming: false,
+    },
+  });
+  const rows = (timelineEntries: ReadonlyArray<TimelineEntry>) =>
+    deriveMessagesTimelineRows({
+      timelineEntries,
+      expandedRunIds: new Set([runId]),
+      isWorking: false,
+      activeTurnStartedAt: null,
+      latestRun: {
+        runId,
+        status: "completed",
+        startedAt: at(0),
+        completedAt: at(21),
+      },
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+    });
+
+  it("draws the compaction divider after the group's tool rows, not between them", () => {
+    const result = rows([
+      message("user-1", "user", "Go", 0),
+      toolEntry("w1", 1),
+      toolEntry("w2", 2),
+      compactionEntry(3),
+      toolEntry("w3", 4),
+      toolEntry("w4", 5),
+      message("assistant-1", "assistant", "Done", 20),
+    ] as never);
+
+    expect(result.map((row) => row.kind)).toEqual([
+      "message",
+      "turn-fold",
+      "work",
+      "work",
+      "context-compaction",
+      "message",
+    ]);
+  });
+
+  it("marks the last row of the group so the next card gets a gap", () => {
+    const result = rows([
+      message("user-1", "user", "Go", 0),
+      toolEntry("w1", 1),
+      toolEntry("w2", 2),
+      compactionEntry(3),
+      toolEntry("w3", 4),
+      message("assistant-1", "assistant", "Done", 20),
+    ] as never);
+
+    const groupRows = result.filter((row) => row.kind === "work");
+    expect(groupRows.at(-1)).toMatchObject({ endsFoldGroup: true });
+    expect(groupRows.slice(0, -1).some((row) => row.endsFoldGroup === true)).toBe(false);
+  });
+});

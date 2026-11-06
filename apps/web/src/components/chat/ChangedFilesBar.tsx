@@ -31,7 +31,7 @@ export const ChangedFilesBar = memo(function ChangedFilesBar({
   return (
     <div
       data-changed-files-bar="true"
-      className="flex h-9 min-w-0 items-center gap-2 rounded-lg border border-border bg-card px-2.5"
+      className="flex h-9 min-w-0 items-center gap-2 rounded-xl border border-(--line-strong) bg-(--composer) px-2.5 has-[+[data-slot=composer-shell]:not(.hidden)]:rounded-b-none has-[+[data-slot=composer-shell]:not(.hidden)]:border-b-(--border)"
     >
       <button
         type="button"
@@ -69,7 +69,7 @@ export const ChangedFilesBar = memo(function ChangedFilesBar({
       >
         Keep all
       </Button>
-      <Button type="button" size="xs" variant="outline" onClick={onReview} disabled={disabled}>
+      <Button type="button" size="xs" variant="default" onClick={onReview} disabled={disabled}>
         Review
       </Button>
     </div>

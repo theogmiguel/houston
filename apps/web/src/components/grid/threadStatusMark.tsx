@@ -1,5 +1,6 @@
 import { scopeThreadRef } from "@houston-app/client-runtime/environment";
-import { ROW_BACK_DISMISS_CLS, ROW_STATE_WORD_CLS } from "../ui/sidebar-rail-recipes";
+import { CircleIcon } from "lucide-react";
+import { ROW_BACK_DISMISS_CLS } from "../ui/sidebar-rail-recipes";
 import {
   formatWorkingDurationLabel,
   resolveThreadWorkingStartedAt,
@@ -13,6 +14,11 @@ import { useAcknowledgeThreadWoke } from "../../hooks/useThreadActions";
 import { useNowSecond } from "../../hooks/useNowSecond";
 import { cn } from "../../lib/utils";
 import { ThreadStateGlyph, threadStateTextClass } from "../ui/thread-state-glyph";
+import {
+  SIDEBAR_THREAD_STATUS_ATTENTION_CLASS,
+  SIDEBAR_THREAD_STATUS_CLASS,
+  SIDEBAR_THREAD_STATUS_QUIET_CLASS,
+} from "../ui/thread-tag-recipes";
 
 function RunningElapsed({ startedAt }: { startedAt: string }) {
   const nowMs = useNowSecond();
@@ -45,6 +51,16 @@ function BackWord({ thread, nowIso }: { thread: EnvironmentThreadShell; nowIso: 
 }
 
 /**
+ * Running, needs you and failed colour the whole mark; ready, idle and back keep the word in the
+ * muted meta ink (ready still colours its glyph through `ThreadStateGlyph`'s `colored`).
+ */
+function threadStatusInk(state: GridThreadState): string[] {
+  return state === "idle" || state === "back" || state === "ready"
+    ? [SIDEBAR_THREAD_STATUS_QUIET_CLASS]
+    : [SIDEBAR_THREAD_STATUS_ATTENTION_CLASS, threadStateTextClass(state)];
+}
+
+/**
  * A row's status mark: the glyph and the specific word, with the elapsed time
  * for every running state, waiting included.
  */
@@ -57,18 +73,15 @@ export function ThreadStateMark({
   state: GridThreadState;
   nowIso: string;
 }) {
-  if (state === "idle") return null;
   const startedAt = resolveThreadWorkingStartedAt(thread);
-  const word = gridThreadStatusWord(thread, state);
+  const word = gridThreadStatusWord(thread, state) ?? "Idle";
   return (
-    <span
-      className={cn(
-        "inline-flex shrink-0 items-center gap-1",
-        ROW_STATE_WORD_CLS,
-        threadStateTextClass(state),
+    <span data-thread-status="" className={cn(SIDEBAR_THREAD_STATUS_CLASS, threadStatusInk(state))}>
+      {state === "idle" ? (
+        <CircleIcon aria-hidden className="size-3.5 shrink-0" />
+      ) : (
+        <ThreadStateGlyph state={state} className="size-3.5" colored={state === "ready"} />
       )}
-    >
-      <ThreadStateGlyph state={state} />
       {state === "back" ? <BackWord thread={thread} nowIso={nowIso} /> : <span>{word}</span>}
       {state === "running" && startedAt !== null ? <RunningElapsed startedAt={startedAt} /> : null}
     </span>

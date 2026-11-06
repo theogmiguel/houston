@@ -116,9 +116,9 @@ export function TimelineMinimap({
     <div
       className={cn(
         "group/minimap pointer-events-none absolute inset-y-0 left-0 z-40 hidden w-18 [@media(pointer:fine)]:block",
-        hasPersistentGutter
-          ? "opacity-100"
-          : "opacity-0 transition-opacity duration-150 hover:opacity-100 focus-within:opacity-100",
+        // The rail appears while the pointer is over the conversation or focus is inside it, so
+        // an idle thread shows no floating dashes beside the sidebar edge.
+        "opacity-0 transition-opacity duration-(--motion-feedback) [[data-assistant-citation-viewport]:hover_&]:opacity-100 hover:opacity-100 focus-within:opacity-100",
       )}
       data-testid="timeline-minimap"
       data-persistent-gutter={hasPersistentGutter ? "true" : "false"}
@@ -204,20 +204,18 @@ export function TimelineMinimap({
             }}
             type="button"
           >
-            <div className="absolute top-0 left-3 h-full w-px bg-border/15" />
+            <div className="absolute top-0 left-3 h-full w-px bg-border" data-minimap-track />
             {items.map((item, index) => {
               const top = `${resolveTimelineMinimapTopPercent(index, items.length)}%`;
               const activeDistance =
                 resolvedActiveIndex === null ? null : Math.abs(index - resolvedActiveIndex);
               return (
-                // Compositor-friendly on purpose: in-view state and the hover
-                // fisheye animate constantly (every scroll tick and streaming
-                // update flips a band of strips), so the strip animates only
-                // transform and opacity.
+                // Ticks sit centred on the track so the rail reads as one ruler. Only transform and
+                // opacity animate: scroll and streaming flip a band of strips every frame.
                 <span
                   aria-hidden="true"
                   className={cn(
-                    "pointer-events-none absolute left-0 h-0.5 w-6 origin-left -translate-y-1/2 rounded-full transition-transform duration-150 after:absolute after:inset-0 after:rounded-full after:bg-foreground/55 after:opacity-0 after:transition-opacity after:duration-150 data-[in-view=true]:after:opacity-100",
+                    "pointer-events-none absolute left-3 h-0.5 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full transition-transform duration-150 after:absolute after:inset-0 after:rounded-full after:bg-foreground/55 after:opacity-0 after:transition-opacity after:duration-150 data-[in-view=true]:after:opacity-100",
                     activeDistance === 0 ? "bg-muted-foreground/60" : "bg-muted-foreground/25",
                     activeDistance === 0
                       ? "scale-x-100"
@@ -251,7 +249,7 @@ export function TimelineMinimap({
                   transform: `translateY(${activeTooltipTranslate})`,
                 }}
               >
-                <span className="dropdown-glass block rounded-xl p-3 text-left text-popover-foreground shadow-xl shadow-black/25">
+                <span className="dropdown-glass block rounded-(--r-group) p-3 text-left text-popover-foreground">
                   <span className="block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium leading-5">
                     {activeItem.userText ?? "User message"}
                   </span>
