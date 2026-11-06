@@ -32,7 +32,7 @@ import {
 } from "./fixture.ts";
 
 /** Bump when the generator's output changes, so cached databases are rebuilt. */
-export const GENERATOR_VERSION = 3;
+export const GENERATOR_VERSION = 4;
 
 export interface DatabaseManifest {
   readonly generatorVersion: number;
@@ -110,8 +110,8 @@ const pruneEventLog = Effect.fn("DbLoad.pruneEventLog")(function* () {
   return yield* maintenance.pruneEventStore();
 });
 
-/** Version 2 databases lack only the auto-settle pass, so they are upgraded in place. */
-export const UPGRADABLE_GENERATOR_VERSION = 2;
+/** Versions 2 and 3 differ only in the settle pass, so they are upgraded in place. */
+export const UPGRADABLE_GENERATOR_VERSIONS = [2, 3];
 
 const DAY_MS = 86_400_000;
 // The default sidebarAutoSettleAfterDays; threads idle longer are settled by the server.
@@ -136,22 +136,31 @@ const autoSettleIdleThreads = Effect.fn("DbLoad.autoSettleIdleThreads")(function
     readonly payload_json: string;
   }>`
     SELECT thread_id, updated_at, payload_json FROM orchestration_v2_projection_threads
-    WHERE deleted_at IS NULL AND archived_at IS NULL
-      AND json_extract(payload_json, '$.settledAt') IS NULL AND updated_at < ${cutoff}
+    WHERE deleted_at IS NULL AND archived_at IS NULL AND (
+      (json_extract(payload_json, '$.settledAt') IS NULL AND updated_at < ${cutoff})
+      -- Older generator versions settled without the override the settle command sets.
+      OR (json_extract(payload_json, '$.settledAt') IS NOT NULL
+        AND json_extract(payload_json, '$.settledOverride') IS NOT 'settled')
+    )
     ORDER BY thread_id
   `;
-  const idle = rows.filter((row) => stableHash(row.thread_id) % 33 !== 0);
+  const idle = rows.filter(
+    (row) => row.payload_json.includes('"settledAt":"') || stableHash(row.thread_id) % 33 !== 0,
+  );
   for (let start = 0; start < idle.length; start += 200) {
     const events = idle.slice(start, start + 200).map((row) => {
-      const settledAt = new Date(
-        Date.parse(row.updated_at) + AUTO_SETTLE_AFTER_DAYS * DAY_MS,
-      ).toISOString();
+      const thread = JSON.parse(row.payload_json) as Record<string, unknown>;
+      const settledAt =
+        typeof thread.settledAt === "string"
+          ? thread.settledAt
+          : new Date(Date.parse(row.updated_at) + AUTO_SETTLE_AFTER_DAYS * DAY_MS).toISOString();
       return decodeEvent({
-        id: `event:db-load:auto-settle:${row.thread_id}`,
+        id: `event:db-load:settle:${GENERATOR_VERSION}:${row.thread_id}`,
         type: "thread.settled",
         threadId: row.thread_id,
         occurredAt: settledAt,
-        payload: { ...(JSON.parse(row.payload_json) as Record<string, unknown>), settledAt },
+        // The fields the server's thread.settle command sets.
+        payload: { ...thread, settledOverride: "settled", settledAt, unsettledAt: null },
       });
     });
     yield* sink.write({ events });
@@ -177,7 +186,7 @@ const markSettled = (unit: UnitManifest, settled: ReadonlySet<string>): UnitMani
   ),
 });
 
-/** Applies the auto-settle pass to a version 2 database and rewrites its manifest. */
+/** Applies the settle pass to an older database and rewrites its manifest. */
 export const upgradeDatabase = Effect.fn("DbLoad.upgradeDatabase")(function* (
   manifest: DatabaseManifest,
   dir: string,

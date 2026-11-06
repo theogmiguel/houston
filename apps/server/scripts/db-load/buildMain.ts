@@ -2,7 +2,7 @@ import * as Effect from "effect/Effect";
 
 import {
   buildDatabase,
-  UPGRADABLE_GENERATOR_VERSION,
+  UPGRADABLE_GENERATOR_VERSIONS,
   upgradeDatabase,
   type DatabaseManifest,
 } from "./build.ts";
@@ -20,7 +20,7 @@ export async function ensureDatabases(input: {
   for (const scale of input.scales) {
     const stale = input.rebuild
       ? undefined
-      : readManifest(input.dataDir, scale, input.seed, [UPGRADABLE_GENERATOR_VERSION]);
+      : readManifest(input.dataDir, scale, input.seed, UPGRADABLE_GENERATOR_VERSIONS);
     if (stale !== undefined) {
       input.log(`${scale}x: upgrading generator version ${stale.generatorVersion} in place`);
       manifests.push(

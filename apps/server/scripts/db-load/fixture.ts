@@ -773,11 +773,21 @@ const writeThread = Effect.fnUntraced(function* (input: {
     updatedAt: iso(clock),
     lastVisitedAt: iso(clock),
   };
-  const closing: Array<DomainEvent> = [event("thread.visited", updated)];
-  if (plan.settled)
-    closing.push(event("thread.settled", { ...updated, settledAt: tick(60_000, 3_600_000) }));
-  if (plan.archived)
-    closing.push(event("thread.archived", { ...updated, archivedAt: tick(60_000, 3_600_000) }));
+  let closed: Json = updated;
+  const closing: Array<DomainEvent> = [event("thread.visited", closed)];
+  if (plan.settled) {
+    closed = {
+      ...closed,
+      settledOverride: "settled",
+      settledAt: tick(60_000, 3_600_000),
+      unsettledAt: null,
+    };
+    closing.push(event("thread.settled", closed));
+  }
+  if (plan.archived) {
+    closed = { ...closed, archivedAt: tick(60_000, 3_600_000) };
+    closing.push(event("thread.archived", closed));
+  }
   yield* write(`${token}:command:${threadId}:close`, closing);
 
   return {
