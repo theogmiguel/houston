@@ -111,6 +111,30 @@ function titleOf(row: HTMLElement): HTMLElement {
   return row.querySelector<HTMLElement>("[data-card-open] > span")!;
 }
 
+describe("ThreadCard on a shelf", () => {
+  it("opens the row without selecting it when a selection modifier is held", async () => {
+    const onSelect = vi.fn();
+    const onOpen = vi.fn();
+    await using screen = await render(
+      card(thread(), { shelf: "settled", onSelect, onOpen, timeLabel: "3d" }),
+    );
+
+    await userEvent.click(titleOf(rowOf(screen.container)), { modifiers: ["Control"] });
+    await userEvent.click(titleOf(rowOf(screen.container)), { modifiers: ["Shift"] });
+
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("still selects a regular row on a modified click", async () => {
+    const onSelect = vi.fn();
+    await using screen = await render(card(thread(), { onSelect }));
+
+    await userEvent.click(titleOf(rowOf(screen.container)), { modifiers: ["Control"] });
+
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith({ shiftKey: false, toggleKey: true });
+  });
+});
+
 describe("ThreadCard for a thread no grid shows", () => {
   it("does not register a drop target", async () => {
     using _drag = { [Symbol.dispose]: () => endThreadDrag() };

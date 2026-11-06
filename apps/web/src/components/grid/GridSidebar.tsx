@@ -1975,7 +1975,7 @@ export function ThreadCard({
               ) {
                 return;
               }
-              if (event.shiftKey || event.metaKey || event.ctrlKey) {
+              if (shelf === null && (event.shiftKey || event.metaKey || event.ctrlKey)) {
                 onSelect({ shiftKey: event.shiftKey, toggleKey: event.metaKey || event.ctrlKey });
                 return;
               }
@@ -2020,7 +2020,7 @@ export function ThreadCard({
               type="button"
               data-card-open=""
               onClick={(event) => {
-                if (event.shiftKey || event.metaKey || event.ctrlKey) {
+                if (shelf === null && (event.shiftKey || event.metaKey || event.ctrlKey)) {
                   event.preventDefault();
                   onSelect({ shiftKey: event.shiftKey, toggleKey: event.metaKey || event.ctrlKey });
                   return;
