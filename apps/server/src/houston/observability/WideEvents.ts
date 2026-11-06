@@ -89,8 +89,8 @@ const runExit = (status: OrchestrationV2RunStatus): Exit.Exit<unknown, unknown> 
   }
 };
 
-// Emits `houston.run` from the run's stored start to its completion. No I/O, so it is safe
-// where run metrics are recorded under the publish lane.
+// Untraced: it opens the `houston.run` span itself, from the run's stored start to its
+// completion. No I/O, so it is safe where run metrics are recorded under the publish lane.
 export const emitRun = Effect.fnUntraced(function* (event: RunEvent) {
   if (!(yield* References.TracerEnabled)) return;
   const tracer = yield* Effect.tracer;
