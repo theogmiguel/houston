@@ -27,6 +27,7 @@ const HOUSTON_TRACK: Array<readonly [number, string]> = [
   [9, "NightShift"],
   [10, "DropNightShiftAndHarnessReview"],
   [11, "SecretStoreImport"],
+  [12, "ProjectionReadIndexes"],
 ];
 const TASK_TABLES = [
   "houston_task_acceptance",
@@ -144,9 +145,10 @@ describe("the Houston track applies every id it has not recorded", () => {
     `).map((row) => row.name);
   });
 
-  it.effect("a fresh database applies 1..11 in id order", () =>
+  it.effect("a database at upstream's head applies 1..12 in id order", () =>
     withDatabaseFile((file) =>
       Effect.gen(function* () {
+        yield* runMigrations();
         assert.deepEqual(yield* runHoustonMigrations(), HOUSTON_TRACK);
         assert.deepEqual(yield* houstonHistory, HOUSTON_TRACK);
       }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: file }))),
@@ -489,6 +491,98 @@ describe("an upstream database gains the Houston track", () => {
           assert.deepEqual(yield* upstreamHistory, before);
         }).pipe(Effect.provide(openThroughSqlite(file)));
       }),
+    ),
+  );
+});
+
+describe("the projection read indexes cover rows written before them", () => {
+  it.effect("threads and provider threads already stored are indexed by their payload keys", () =>
+    withDatabaseFile((file) =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* runMigrations();
+        const thread = (id: string, payload: object, archivedAt: string | null = null) => sql`
+          INSERT INTO orchestration_v2_projection_threads (thread_id, project_id, title,
+            default_provider, provider_instance_id, runtime_mode, interaction_mode, created_at,
+            updated_at, archived_at, deleted_at, payload_json)
+          VALUES (${id}, 'project', ${id}, 'codex', 'codex', 'full-access', 'default', '2026-01-01',
+            ${`2026-01-0${id.length}`}, ${archivedAt}, NULL,
+            ${JSON.stringify({ ...payload, archivedAt })})
+        `;
+        yield* thread("worktree", {
+          worktreePath: "/work/tree",
+          lineage: { relationshipToParent: "subagent" },
+          pullRequests: [{ number: 1 }],
+          limitRecovery: { autoResume: true },
+        });
+        yield* thread("plain", { worktreePath: null, pullRequests: [] });
+        yield* thread("archived", { worktreePath: "/work/old" }, "2026-01-02");
+        yield* sql`
+          INSERT INTO orchestration_v2_projection_provider_threads (provider_thread_id, thread_id,
+            provider, status, updated_at, payload_json)
+          VALUES ('provider:pending', 'plain', 'codex', 'idle', '2026-01-01',
+            ${JSON.stringify({ pendingBackgroundTasks: [{ id: "task" }] })}),
+            ('provider:idle', 'plain', 'codex', 'idle', '2026-01-01', '{}')
+        `;
+        yield* runHoustonMigrations();
+        const indexed = (index: string, where: string) =>
+          sql
+            .unsafe<{ readonly id: string }>(
+              index === "houston_provider_threads_pending_idx"
+                ? `SELECT provider_thread_id AS id FROM orchestration_v2_projection_provider_threads
+                    INDEXED BY ${index} WHERE ${where} ORDER BY id`
+                : `SELECT thread_id AS id FROM orchestration_v2_projection_threads
+                    INDEXED BY ${index} WHERE ${where} ORDER BY id`,
+            )
+            .pipe(Effect.map((rows) => rows.map((row) => row.id)));
+        const valid = (condition: string) =>
+          `CASE WHEN json_valid(payload_json) THEN ${condition} ELSE 0 END`;
+        assert.deepEqual(
+          yield* indexed(
+            "houston_threads_worktree_idx",
+            `deleted_at IS NULL AND ${valid("json_extract(payload_json, '$.worktreePath') IS NOT NULL")}`,
+          ),
+          ["archived", "worktree"],
+        );
+        assert.deepEqual(
+          yield* indexed(
+            "houston_threads_subagent_idx",
+            `deleted_at IS NULL AND ${valid("json_extract(payload_json, '$.archivedAt') IS NULL AND json_extract(payload_json, '$.lineage.relationshipToParent') = 'subagent'")}`,
+          ),
+          ["worktree"],
+        );
+        assert.deepEqual(
+          yield* indexed(
+            "houston_threads_pull_requests_idx",
+            `deleted_at IS NULL AND ${valid("json_extract(payload_json, '$.archivedAt') IS NULL AND json_array_length(payload_json, '$.pullRequests') > 0")}`,
+          ),
+          ["worktree"],
+        );
+        assert.deepEqual(
+          yield* indexed(
+            "houston_threads_limit_auto_resume_idx",
+            `deleted_at IS NULL AND ${valid("json_extract(payload_json, '$.limitRecovery.autoResume') = 1")}`,
+          ),
+          ["worktree"],
+        );
+        assert.deepEqual(
+          yield* indexed(
+            "houston_provider_threads_pending_idx",
+            `status = 'active' OR ${valid("json_array_length(payload_json, '$.pendingBackgroundTasks') > 0")}`,
+          ),
+          ["provider:pending"],
+        );
+        // A malformed payload stays writable and leaves every index.
+        yield* sql`UPDATE orchestration_v2_projection_threads SET payload_json = 'not json'
+          WHERE thread_id = 'worktree'`;
+        assert.deepEqual(
+          yield* indexed(
+            "houston_threads_worktree_idx",
+            `deleted_at IS NULL AND ${valid("json_extract(payload_json, '$.worktreePath') IS NOT NULL")}`,
+          ),
+          ["archived"],
+        );
+      }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: file }))),
     ),
   );
 });

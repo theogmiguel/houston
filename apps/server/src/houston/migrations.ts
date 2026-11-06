@@ -762,6 +762,46 @@ const SecretStoreImport = Effect.gen(function* () {
   `;
 });
 
+// Boot reads filter threads and provider threads on keys kept only in upstream's payload_json.
+// Partial expression indexes hold just the rows that match, so the reads stop parsing every
+// payload; no column is added. Each read repeats its index's WHERE terms word for word.
+const ProjectionReadIndexes = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE INDEX IF NOT EXISTS houston_threads_worktree_idx
+    ON orchestration_v2_projection_threads(
+      thread_id, json_extract(payload_json, '$.worktreePath')
+    )
+    WHERE deleted_at IS NULL AND CASE WHEN json_valid(payload_json)
+      THEN json_extract(payload_json, '$.worktreePath') IS NOT NULL ELSE 0 END
+  `;
+  yield* sql`
+    CREATE INDEX IF NOT EXISTS houston_threads_subagent_idx ON orchestration_v2_projection_threads(thread_id)
+    WHERE deleted_at IS NULL AND CASE WHEN json_valid(payload_json) THEN
+      json_extract(payload_json, '$.archivedAt') IS NULL
+      AND json_extract(payload_json, '$.lineage.relationshipToParent') = 'subagent' ELSE 0 END
+  `;
+  yield* sql`
+    CREATE INDEX IF NOT EXISTS houston_threads_pull_requests_idx
+    ON orchestration_v2_projection_threads(updated_at, thread_id)
+    WHERE deleted_at IS NULL AND CASE WHEN json_valid(payload_json) THEN
+      json_extract(payload_json, '$.archivedAt') IS NULL
+      AND json_array_length(payload_json, '$.pullRequests') > 0 ELSE 0 END
+  `;
+  yield* sql`
+    CREATE INDEX IF NOT EXISTS houston_threads_limit_auto_resume_idx
+    ON orchestration_v2_projection_threads(thread_id)
+    WHERE deleted_at IS NULL AND CASE WHEN json_valid(payload_json)
+      THEN json_extract(payload_json, '$.limitRecovery.autoResume') = 1 ELSE 0 END
+  `;
+  yield* sql`
+    CREATE INDEX IF NOT EXISTS houston_provider_threads_pending_idx
+    ON orchestration_v2_projection_provider_threads(provider_thread_id, thread_id, owner_node_id)
+    WHERE status = 'active' OR CASE WHEN json_valid(payload_json)
+      THEN json_array_length(payload_json, '$.pendingBackgroundTasks') > 0 ELSE 0 END
+  `;
+});
+
 const houstonMigrationEntries = [
   [1, "ReviewFilesViewed", ReviewFilesViewed],
   [2, "TasksBacklog", TasksBacklog],
@@ -774,6 +814,7 @@ const houstonMigrationEntries = [
   [9, "NightShift", NightShift],
   [10, "DropNightShiftAndHarnessReview", DropNightShiftAndHarnessReview],
   [11, "SecretStoreImport", SecretStoreImport],
+  [12, "ProjectionReadIndexes", ProjectionReadIndexes],
 ] as const;
 
 // Ids land in merge order, so a database can record a higher id before a lower one; every
