@@ -158,3 +158,41 @@ it("serializes competing maintenance processes after reclaiming a stale lock", a
     await NodeFSP.rm(root, { recursive: true, force: true });
   }
 });
+
+// Windows reports EPERM while another process renames or deletes the lock directory.
+it("retries when the lock directory is momentarily unreadable", async () => {
+  const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "houston-tool-eperm-"));
+  try {
+    const lock = NodePath.join(root, ".maintenance-lock");
+    await NodeFSP.mkdir(lock);
+    await NodeFSP.writeFile(
+      NodePath.join(lock, "stale-owner.json"),
+      JSON.stringify({ pid: 2147483647, identity: "dead" }),
+    );
+    const failOnce = `
+const lockFs = require('node:fs');
+const realReaddir = lockFs.readdirSync;
+const realUnlink = lockFs.unlinkSync;
+let readdirFailed = false;
+let unlinkFailed = false;
+const transient = () => Object.assign(new Error('EPERM: operation not permitted'), { code: 'EPERM' });
+lockFs.readdirSync = (path, ...rest) => {
+  if (!readdirFailed && String(path).endsWith('.maintenance-lock')) { readdirFailed = true; throw transient(); }
+  return realReaddir(path, ...rest);
+};
+lockFs.unlinkSync = (path, ...rest) => {
+  if (!unlinkFailed && String(path).endsWith('stale-owner.json')) { unlinkFailed = true; throw transient(); }
+  return realUnlink(path, ...rest);
+};
+`;
+    const script =
+      failOnce +
+      deviceToolMaintenanceScript +
+      `
+withToolMaintenance(${JSON.stringify(root)}, () => {}).catch(error => { console.error(error); process.exitCode = 1; });`;
+    await exec(process.execPath, ["-e", script]);
+    await expect(NodeFSP.stat(lock)).rejects.toThrow();
+  } finally {
+    await NodeFSP.rm(root, { recursive: true, force: true });
+  }
+});

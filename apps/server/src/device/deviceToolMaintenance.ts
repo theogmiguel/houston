@@ -36,14 +36,15 @@ async function withToolMaintenance(root, operation) {
       catch (error) {
         if (!['EEXIST', 'ENOTEMPTY', 'EPERM', 'EACCES'].includes(error.code)) throw error;
         let files = [];
-        try { files = maintenanceFs.readdirSync(lock); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+        // Windows reports EPERM or EACCES while another process renames or deletes the lock; retry.
+        try { files = maintenanceFs.readdirSync(lock); } catch (error) { if (!['ENOENT', 'EPERM', 'EACCES'].includes(error.code)) throw error; }
         if (files.length === 1) {
           const previousFile = maintenancePath.join(lock, files[0]);
           let previous;
           try { previous = JSON.parse(maintenanceFs.readFileSync(previousFile, 'utf8')); } catch {}
           if (Number.isSafeInteger(previous?.pid) && previous.pid > 0 && !maintenanceAlive(previous.pid)) {
             // The unique filename belongs only to that owner. Never unlink a replacement owner's file.
-            try { maintenanceFs.unlinkSync(previousFile); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+            try { maintenanceFs.unlinkSync(previousFile); } catch (error) { if (!['ENOENT', 'EPERM', 'EACCES'].includes(error.code)) throw error; }
           }
         }
         // A concurrent acquirer publishes its owner file with the directory, so this cannot remove it.
