@@ -20,6 +20,7 @@ import {
 } from "./rules.ts";
 import { HoustonMergeQueueStore, nowIso } from "./Store.ts";
 import { HoustonMergeVerifier } from "./Verifier.ts";
+import * as WideEvents from "../observability/WideEvents.ts";
 
 export class HoustonMergeQueueReader extends Context.Service<
   HoustonMergeQueueReader,
@@ -131,7 +132,11 @@ export const makeReader = Effect.fn("HoustonMergeQueueReader.make")(function* (o
     );
 
   const readAll = Effect.gen(function* () {
-    for (const projectId of yield* store.projectsWithEntries) yield* readProject(projectId);
+    const projectIds = yield* WideEvents.findWork(store.projectsWithEntries);
+    if (projectIds.length === 0) return;
+    yield* Effect.forEach(projectIds, readProject, { discard: true }).pipe(
+      WideEvents.jobTick("mergeQueue.read"),
+    );
   });
 
   if (options.loops) {

@@ -31,6 +31,7 @@ import { continueRestartedRun } from "./RestartContinuation.ts";
 import { userFacingDispatchErrorMessage } from "./UserFacingErrors.ts";
 import { MessageDeliveryWriter } from "../houston/messageDelivery.ts";
 import * as TraceContext from "../houston/observability/TraceContext.ts";
+import * as WideEvents from "../houston/observability/WideEvents.ts";
 
 const IS_NON_RETRYABLE_PROVIDER_TURN_CONTROL_FAILURE_PATTERN = /is not active/i;
 const IS_NON_RETRYABLE_PROVIDER_TURN_CONTROL_FAILURE_PATTERN_2 =
@@ -899,6 +900,10 @@ export const layerWithOptions = (
             .pipe(
               boundExecution(effect),
               Effect.as("executed" as const),
+              WideEvents.linkToCommand(
+                effect.commandId,
+                TraceContext.forOutboxEffect(effect).runId,
+              ),
               TraceContext.withinTraceContext(TraceContext.forOutboxEffect(effect)),
             );
           const exit = yield* Effect.exit(Effect.raceFirst(execution, cancellation)).pipe(
