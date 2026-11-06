@@ -24,6 +24,7 @@ import {
   THREAD_HISTORY_PAGE_POLICY,
   THREAD_HISTORY_SNAPSHOT_ROW_LIMIT,
 } from "../../src/orchestration-v2/threadHistoryPaging.ts";
+import { loadSubscriberShellSnapshot } from "../../src/orchestration-v2/ShellStream.ts";
 import * as ThreadSearch from "../../src/orchestration-v2/ThreadSearch.ts";
 import { EVENT_LOG_PRUNE_MARK } from "../../src/persistence/OrchestrationEventStore.ts";
 import type { DatabaseManifest } from "./build.ts";
@@ -133,14 +134,36 @@ export const QUERIES: ReadonlyArray<QuerySpec> = [
     name: "shell.subscribe",
     path: "boot",
     calls:
-      "ProjectionStore.listActiveShellIndex + readShellSnapshot({location: active}) (ws subscribeShell)",
+      "ShellStream.loadSubscriberShellSnapshot (ws subscribeShell, trimming older settled and idle subagents)",
     grows: "breadth",
     run: Effect.fn("DbLoad.shellSubscribe")(function* () {
       const store = yield* ProjectionStore.ProjectionStoreV2;
-      yield* store.listActiveShellIndex();
-      const decode = yield* store.readShellSnapshot({ location: "active" });
-      return yield* decode;
+      const projects = yield* ProjectStore.ProjectStoreV2;
+      const events = yield* EventStore.EventStoreV2;
+      return yield* loadSubscriberShellSnapshot({
+        sql: yield* SqlClient.SqlClient,
+        listShellIndex: store.listActiveShellIndex(),
+        readThreads: (threadIds) =>
+          store.readShellSnapshot({
+            location: "active",
+            ...(threadIds === undefined ? {} : { threadIds }),
+          }),
+        listProjects: projects.listShells(),
+        latestSequence: events.latestApplicationSequence,
+        options: { omitIdleSubagents: true, omitOlderSettled: true },
+      });
     }),
+  },
+  {
+    name: "shell.allActive",
+    path: "boot",
+    calls:
+      "ProjectionStore.readShellSnapshot({location: active}) (untrimmed subscribers, HTTP shell snapshot)",
+    grows: "breadth",
+    run: () =>
+      Effect.flatMap(projectionStore, (store) =>
+        Effect.flatten(store.readShellSnapshot({ location: "active" })),
+      ),
   },
   {
     name: "shell.archive",
