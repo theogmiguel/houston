@@ -35,13 +35,13 @@ Changing network access restarts the server. Existing tunnels keep working.
 
 **Settings ▸ Connections ▸ Task sources** configures where tasks come from:
 
-- **Slack** — connect with an app token and a bot token, store them in the OS keychain,
+- **Slack** — connect with an app token and a bot token, which Houston stores as secrets,
   set the owner whose white-check reaction starts a request, map up to 16 channels to
   projects, and choose the language for Houston's Slack text. A mapped channel turns a bot
   mention into a pending task. See [Tasks](tasks.md#sources).
 - **Project sources** — for one project, connect GitHub issues (repository, label,
   assigned user, token) or Notion (integration token, tasks data source, assignee, active
-  statuses and property mapping). Tokens are stored in the keychain.
+  statuses and property mapping). Tokens are stored as secrets.
 - **Houston 1 data** — import task-source settings and links from Houston 1.
 
 ## Secrets
@@ -50,6 +50,10 @@ Changing network access restarts the server. Existing tunnels keep working.
 as the source of a provider credential. A saved credential is never shown again; replace or
 clear it instead.
 
-Provider credentials and tokens are kept in the operating system keychain, scoped to the
-channel, project and provider. They are never written to the database, logs, traces or RPC
-replies.
+Provider credentials and tokens are kept in the server's secret store, one file per secret
+in the `secrets` folder of the channel's state directory, scoped to the channel, project and
+provider. They are never written to the database, logs, traces or RPC replies. The store
+needs no operating system keychain, so it works on servers and headless machines. The trade-off:
+any process running as your user can read the files, and a backup of the state directory
+includes them. Tokens an earlier version kept in the keychain are copied into the store on
+first start; the keychain entries stay, and you can delete them yourself.

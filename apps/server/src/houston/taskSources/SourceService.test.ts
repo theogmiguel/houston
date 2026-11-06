@@ -1,5 +1,5 @@
 // Settings, credentials and project deletion through the service over the real project service,
-// the memory keychain and a loopback Notion fake.
+// the memory secret store and a loopback Notion fake.
 import { assert, describe, it } from "@effect/vitest";
 import type { ProjectId } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
@@ -7,10 +7,11 @@ import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as SqlClient from "effect/sql/SqlClient";
 
-import { makeMemory, type MemoryKeychain } from "../secrets/HoustonKeychain.ts";
+import { makeMemory, type MemorySecrets } from "../secrets/HoustonSecrets.ts";
 import * as HoustonTaskService from "../tasks/TaskService.ts";
 import { createProject, deleteProject } from "../tasks/tasks.testkit.ts";
 import { HoustonTaskSourcePoller, TOKEN_MISSING, TOKEN_UNAVAILABLE } from "./Poller.ts";
+import { trackerSecretName } from "./rules.ts";
 import { HoustonTaskSourceService } from "./SourceService.ts";
 import { HoustonTaskSourceStore, sweep } from "./SourceStore.ts";
 import {
@@ -29,15 +30,15 @@ const TOKEN = "ntn_service_test_token_31a7";
 const withSources = <A, E>(
   body: (
     fake: NotionFake,
-    keychain: MemoryKeychain,
+    secrets: MemorySecrets,
   ) => Effect.Effect<A, E, Layer.Success<ReturnType<typeof layerSources>>>,
 ) =>
   Effect.gen(function* () {
     const fake = yield* makeNotionFake;
-    const keychain = makeMemory();
+    const secrets = makeMemory();
     notionServes(fake, () => []);
-    return yield* body(fake, keychain).pipe(
-      Effect.provide(layerSources({ keychain, notionOrigin: fake.origin })),
+    return yield* body(fake, secrets).pipe(
+      Effect.provide(layerSources({ secrets, notionOrigin: fake.origin })),
     );
   }).pipe(Effect.scoped);
 
@@ -265,12 +266,11 @@ describe("a stale settings revision is refused", () => {
   );
 });
 
-describe("a notion token goes to the keychain only", () => {
-  it.effect("a notion token goes to the keychain only", () =>
-    withSources((_fake, keychain) =>
+describe("a notion token goes to the secret store only", () => {
+  it.effect("a notion token goes to the secret store only", () =>
+    withSources((_fake, secrets) =>
       Effect.gen(function* () {
         const sources = yield* HoustonTaskSourceService;
-        const store = yield* HoustonTaskSourceStore;
         const projectId = yield* createProject("token");
         const result = yield* sources.setCredential({
           projectId,
@@ -278,9 +278,9 @@ describe("a notion token goes to the keychain only", () => {
           token: Redacted.make(`  ${TOKEN}  `),
         });
         assert.deepEqual(result, { hasCredential: true });
-        const service = store.tokenService(projectId, "notion");
-        assert.match(service, /^houston-v2-tracker-notion-[0-9a-f]{16}$/);
-        assert.deepEqual([...keychain.entries], [[`${service}\u0000integration-token`, TOKEN]]);
+        const name = trackerSecretName(projectId, "notion");
+        assert.match(name, /^houston-tracker-notion-[A-Za-z0-9_-]+-integration-token$/);
+        assert.deepEqual([...secrets.entries], [[name, TOKEN]]);
 
         const blank = yield* failure(
           sources.setCredential({ projectId, provider: "notion", token: Redacted.make("   ") }),
@@ -310,10 +310,7 @@ describe("a notion token goes to the keychain only", () => {
         assert.include(over.message, "2049 bytes");
         assert.include(over.message, "2048 bytes");
         assert.include(over.message, "Notion integration token");
-        assert.strictEqual(
-          keychain.entries.get(`${service}\u0000integration-token`),
-          "x".repeat(2_048),
-        );
+        assert.strictEqual(secrets.entries.get(name), "x".repeat(2_048));
         const github = yield* failure(
           sources.setCredential({
             projectId,
@@ -335,13 +332,13 @@ describe("a notion token goes to the keychain only", () => {
   );
 });
 
-describe("an unreachable keychain is refused by name", () => {
-  it.effect("an unreachable keychain is refused by name", () =>
-    withSources((fake, keychain) =>
+describe("an unreachable secret store is refused by name", () => {
+  it.effect("an unreachable secret store is refused by name", () =>
+    withSources((fake, secrets) =>
       Effect.gen(function* () {
         const sources = yield* HoustonTaskSourceService;
         const poller = yield* HoustonTaskSourcePoller;
-        const projectId = yield* createProject("no-keychain");
+        const projectId = yield* createProject("no-secret-store");
         yield* sources.setCredential({
           projectId,
           provider: "notion",
@@ -349,15 +346,15 @@ describe("an unreachable keychain is refused by name", () => {
         });
         yield* sources.setSettings({ projectId, provider: "notion", settings: notionSettings() });
         fake.requests.length = 0;
-        keychain.failWith = "org.freedesktop.secrets was not provided by any .service files";
-        keychain.entries.clear();
+        secrets.failWith = "org.freedesktop.secrets was not provided by any .service files";
+        secrets.entries.clear();
         const refused = yield* failure(
           sources.setCredential({ projectId, provider: "notion", token: Redacted.make(TOKEN) }),
         );
-        assert.strictEqual(refused.kind, "keychain_unavailable");
+        assert.strictEqual(refused.kind, "secret_store_unavailable");
         assert.include(refused.message, "org.freedesktop.secrets was not provided");
         assert.notInclude(refused.message, TOKEN);
-        assert.strictEqual(keychain.entries.size, 0);
+        assert.strictEqual(secrets.entries.size, 0);
         const [, notion] = yield* sources.getSettings({ projectId });
         assert.isFalse(notion?.hasCredential);
         const polled = yield* poller.poll(projectId, "notion");
@@ -372,7 +369,7 @@ describe("an unreachable keychain is refused by name", () => {
 
 describe("clearing the token stops the next poll", () => {
   it.effect("clearing the token stops the next poll", () =>
-    withSources((fake, keychain) =>
+    withSources((fake, secrets) =>
       Effect.gen(function* () {
         const sources = yield* HoustonTaskSourceService;
         const poller = yield* HoustonTaskSourcePoller;
@@ -386,7 +383,7 @@ describe("clearing the token stops the next poll", () => {
         assert.deepEqual(yield* sources.clearCredential({ projectId, provider: "notion" }), {
           hasCredential: false,
         });
-        assert.strictEqual(keychain.entries.size, 0);
+        assert.strictEqual(secrets.entries.size, 0);
         yield* sources.clearCredential({ projectId, provider: "notion" });
         const [, notion] = yield* sources.getSettings({ projectId });
         assert.isFalse(notion?.hasCredential);
@@ -403,7 +400,7 @@ describe("clearing the token stops the next poll", () => {
 
 describe("deleting a project removes its sources and token", () => {
   it.effect("deleting a project removes its sources and token", () =>
-    withSources((_fake, keychain) =>
+    withSources((_fake, secrets) =>
       Effect.gen(function* () {
         const sources = yield* HoustonTaskSourceService;
         const store = yield* HoustonTaskSourceStore;
@@ -447,23 +444,21 @@ describe("deleting a project removes its sources and token", () => {
           UNION ALL SELECT project_id FROM houston_task_source_poll
         `).map((row) => row.project_id);
         assert.deepEqual(left, [kept, kept]);
-        const keychainOf = (projectId: string) =>
-          keychain.entries.has(`${store.tokenService(projectId, "notion")}\u0000integration-token`);
-        assert.isFalse(keychainOf(doomed));
-        assert.isTrue(keychainOf(kept));
+        const stored = (projectId: string) =>
+          secrets.entries.has(trackerSecretName(projectId, "notion"));
+        assert.isFalse(stored(doomed));
+        assert.isTrue(stored(kept));
         assert.strictEqual((yield* store.linksOf(task.id)).length, 1);
       }),
     ),
   );
 
   it.effect("deleting a project removes a token set before any settings", () =>
-    withSources((_fake, keychain) =>
+    withSources((_fake, secrets) =>
       Effect.gen(function* () {
         const sources = yield* HoustonTaskSourceService;
-        const store = yield* HoustonTaskSourceStore;
         const sql = yield* SqlClient.SqlClient;
-        const entry = (projectId: string) =>
-          `${store.tokenService(projectId, "notion")}\u0000integration-token`;
+        const entry = (projectId: string) => trackerSecretName(projectId, "notion");
         const early = yield* createProject("token-only");
         const live = yield* createProject("token-live");
         for (const projectId of [early, live] as Array<ProjectId>) {
@@ -488,21 +483,21 @@ describe("deleting a project removes its sources and token", () => {
 
         // Through the server: the deletion hook removes the entry and its record.
         yield* deleteProject(early);
-        assert.isFalse(keychain.entries.has(entry(early)));
-        assert.isTrue(keychain.entries.has(entry(live)));
+        assert.isFalse(secrets.entries.has(entry(early)));
+        assert.isTrue(secrets.entries.has(entry(live)));
         assert.deepEqual(yield* sql`SELECT project_id FROM houston_task_source_credentials`, [
           { project_id: live },
         ]);
 
         // Outside the server (`houston project` deletes without the hook): the startup sweep removes it.
-        keychain.entries.set(entry(early), TOKEN);
+        secrets.entries.set(entry(early), TOKEN);
         yield* sql`
           INSERT INTO houston_task_source_credentials (project_id, provider)
           VALUES (${early}, 'notion')
         `;
         yield* sweep;
-        assert.isFalse(keychain.entries.has(entry(early)));
-        assert.isTrue(keychain.entries.has(entry(live)));
+        assert.isFalse(secrets.entries.has(entry(early)));
+        assert.isTrue(secrets.entries.has(entry(live)));
         assert.deepEqual(yield* sql`SELECT project_id FROM houston_task_source_credentials`, [
           { project_id: live },
         ]);

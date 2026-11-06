@@ -10,11 +10,10 @@ import * as Redacted from "effect/Redacted";
 import * as SqlClient from "effect/sql/SqlClient";
 import { TestClock } from "effect/testing";
 
-import * as ServerConfig from "../../config.ts";
-import { makeMemory } from "../secrets/HoustonKeychain.ts";
+import { makeMemory } from "../secrets/HoustonSecrets.ts";
 import * as HoustonTaskService from "../tasks/TaskService.ts";
 import { createProject } from "../tasks/tasks.testkit.ts";
-import { slackKeychainService } from "./rules.ts";
+import { slackSecretName } from "./rules.ts";
 import { HoustonSlackOutbox } from "./Outbox.ts";
 import { HoustonSlackService } from "./Service.ts";
 import { mentionEnvelope, mentionEvent } from "./slack.fake.ts";
@@ -351,20 +350,20 @@ describe("a reconnect replays what was missed within 24 hours", () => {
 
 describe("each attempt and tick reads the current tokens", () => {
   it.effect("each attempt and tick reads the current tokens", () => {
-    const keychain = makeMemory();
+    const secrets = makeMemory();
     return runSlack(
       (fake) =>
         Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           const slack = yield* HoustonSlackService;
           const outbox = yield* HoustonSlackOutbox;
-          const config = yield* ServerConfig.ServerConfig;
-          const service = slackKeychainService(config.baseDir);
           const projectId = yield* createProject("tokens");
           yield* connectSlack(projectId);
           yield* untilConnected;
+          const tokenNames = [slackSecretName("app-token"), slackSecretName("bot-token")];
           const reads = () =>
-            keychain.calls.filter((call) => call.op === "get" && call.service === service).length;
+            secrets.calls.filter((call) => call.op === "get" && tokenNames.includes(call.name))
+              .length;
 
           yield* slack.connect({
             appToken: Redacted.make("xapp-1-A0NEW-replaced"),
@@ -398,7 +397,7 @@ describe("each attempt and tick reads the current tokens", () => {
           yield* advance(30);
           assert.strictEqual(reads(), after);
         }),
-      { keychain },
+      { secrets },
     );
   });
 });
@@ -432,12 +431,11 @@ describe("the server and the harness start one slack loop", () => {
         yield* realTurn;
         assert.lengthOf(fake.callsOf("chat.postMessage"), 10);
 
-        // The server's assembly uses the live client and keychain; no test uses the live client.
+        // The server's assembly uses the live client; no test uses the live client.
         const root = NodePath.resolve(import.meta.dirname, "../..");
         const server = NodeFS.readFileSync(NodePath.join(root, "server.ts"), "utf8");
         assert.strictEqual(server.split("layerSlack(").length - 1, 1);
         assert.include(server, "SlackWebApi.layer,");
-        // HoustonKeychain.test.ts proves server.ts is the only assembly of the live keychain.
         assert.include(server, "Layer.provideMerge(HoustonSlackStore.layer)");
         const tests = NodeFS.readdirSync(root, { recursive: true, withFileTypes: true })
           .filter((entry) => entry.isFile() && entry.name.endsWith(".test.ts"))

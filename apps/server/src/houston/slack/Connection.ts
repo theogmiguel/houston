@@ -27,7 +27,7 @@ import {
   slackTs,
   type SlackContext,
 } from "./rules.ts";
-import { HoustonSlackStore, KEYCHAIN_UNAVAILABLE } from "./Store.ts";
+import { HoustonSlackStore, SECRETS_UNAVAILABLE } from "./Store.ts";
 import { SlackWebApi } from "./WebApi.ts";
 
 // Slack's own timings for Socket Mode clients, as Houston 1 used them.
@@ -336,8 +336,8 @@ const make = Effect.gen(function* () {
       }
       const tokens = yield* store.readTokens;
       if (tokens.kind === "unavailable") {
-        yield* Effect.logWarning(`Slack: the OS keychain could not be read: ${tokens.reason}`);
-        yield* store.setStatus({ connection: "retrying", error: KEYCHAIN_UNAVAILABLE });
+        yield* Effect.logWarning(`Slack: the secret store could not be read: ${tokens.reason}`);
+        yield* store.setStatus({ connection: "retrying", error: SECRETS_UNAVAILABLE });
         yield* Effect.sleep(backoff(failures));
         failures += 1;
         continue;

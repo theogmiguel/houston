@@ -23,7 +23,7 @@ the server's orchestration tools.
   right panel next to the thread. Pull requests include a local merge queue.
 - **Session insights.** Thread status, notifications and usage estimates help track work.
 - **Local control plane.** Houston has no account or hosted control plane. Session state remains
-  local, and secrets managed by Houston use the operating system keychain.
+  local, and secrets managed by Houston are kept in files only your user can read.
 
 ## Supported agents
 

@@ -86,7 +86,7 @@ export const HoustonTaskSourceSettings = Schema.Struct({
   notionProjectDescriptionPropertyId: Schema.NullOr(Schema.String),
   notionPrUrlPropertyId: Schema.NullOr(Schema.String),
   notionStatusMapping: HoustonTaskSourceStatusMapping,
-  /** Whether the OS keychain holds this project's token; always false for GitHub Issues. */
+  /** Whether the secret store holds this project's token; always false for GitHub Issues. */
   hasCredential: Schema.Boolean,
   lastSyncAt: Schema.NullOr(IsoDateTime),
   lastError: Schema.NullOr(Schema.String),
@@ -176,7 +176,7 @@ export const HoustonTaskSourceErrorKind = Schema.Literals([
   "not_found",
   "conflict",
   "credential_missing",
-  "keychain_unavailable",
+  "secret_store_unavailable",
   "remote",
   "unsupported",
 ]);

@@ -18,7 +18,7 @@ import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as SqlClient from "effect/sql/SqlClient";
 
-import { makeMemory } from "../secrets/HoustonKeychain.ts";
+import { makeMemory } from "../secrets/HoustonSecrets.ts";
 import { createProject } from "../tasks/tasks.testkit.ts";
 import { HoustonTaskV1Import } from "../tasks/V1Import.ts";
 import { type V1Fixture, writeV1Database } from "../tasks/v1Fixture.ts";
@@ -371,11 +371,11 @@ describe("v1 intake arrives disabled with its filed requests", () => {
   });
 });
 
-describe("the slack import reads no keychain, never writes v1, and stores all or nothing", () => {
-  it.effect("the slack import reads no keychain, never writes v1, and stores all or nothing", () =>
+describe("the slack import reads no secret, never writes v1, and stores all or nothing", () => {
+  it.effect("the slack import reads no secret, never writes v1, and stores all or nothing", () =>
     Effect.gen(function* () {
       // Another WAL connection holds v1 open with an uncheckpointed write.
-      const keychain = makeMemory();
+      const secrets = makeMemory();
       yield* withChannel((dirs) =>
         runSlack(
           () =>
@@ -395,12 +395,12 @@ describe("the slack import reads no keychain, never writes v1, and stores all or
                 yield* (yield* HoustonTaskV1Import).run;
                 const before = hashes(dirs.source);
                 assert.notStrictEqual(before["-wal"], "absent");
-                const calls = keychain.calls.length;
+                const calls = secrets.calls.length;
                 yield* imports.status;
                 const result = yield* imports.run;
                 yield* imports.status;
                 assert.strictEqual(result.imported.requests, 2);
-                assert.strictEqual(keychain.calls.length, calls, "the import reads no keychain");
+                assert.strictEqual(secrets.calls.length, calls, "the import reads no secret");
                 assert.deepEqual(hashes(dirs.source), before);
                 const again = failureOf(yield* Effect.exit(imports.run));
                 assert.strictEqual(again.kind, "invalid");
@@ -409,7 +409,7 @@ describe("the slack import reads no keychain, never writes v1, and stores all or
                 daemon.close();
               }
             }),
-          { baseDir: dirs.baseDir, keychain },
+          { baseDir: dirs.baseDir, secrets },
         ),
       );
 

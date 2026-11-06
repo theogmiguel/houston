@@ -199,7 +199,7 @@ const TasksBacklog = Effect.gen(function* () {
 });
 
 // Task sources: tracker settings per project and provider, poll cursors, links with their
-// three-way snapshot, the write-back outbox and the marker namespace. Tokens live in the OS keychain.
+// three-way snapshot, the write-back outbox and the marker namespace. Tokens live in the secret store.
 const TaskSources = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   yield* sql`
@@ -274,7 +274,7 @@ const TaskSources = Effect.gen(function* () {
       counts_json TEXT NOT NULL
     )
   `;
-  // Which projects have an OS keychain entry, so a deleted project's entry can be found.
+  // Which projects have a stored token, so a deleted project's token can be found.
   yield* sql`
     CREATE TABLE IF NOT EXISTS houston_task_source_credentials (
       project_id TEXT NOT NULL,
@@ -565,7 +565,7 @@ const TaskRunsCursor = Effect.gen(function* () {
 });
 
 // Slack intake: one settings row, the channel map with catch-up cursors, the filed requests and
-// what each owes Slack. Both tokens live in the OS keychain; no column holds one.
+// what each owes Slack. Both tokens live in the secret store; no column holds one.
 const SlackIntake = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   yield* sql`
@@ -749,6 +749,19 @@ const TaskSourceMarkerKey = Effect.gen(function* () {
   yield* sql`ALTER TABLE houston_task_source_identity ADD COLUMN marker_key TEXT`;
 });
 
+// The one-time copy of tokens from the OS keychain, where earlier builds kept them, into the
+// secret store. The row exists once every token on record has been read or accounted for.
+const SecretStoreImport = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_secret_store_import (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      imported_at TEXT NOT NULL,
+      counts_json TEXT NOT NULL
+    )
+  `;
+});
+
 const houstonMigrationEntries = [
   [1, "ReviewFilesViewed", ReviewFilesViewed],
   [2, "TasksBacklog", TasksBacklog],
@@ -760,6 +773,7 @@ const houstonMigrationEntries = [
   [8, "SlackIntake", SlackIntake],
   [9, "NightShift", NightShift],
   [10, "DropNightShiftAndHarnessReview", DropNightShiftAndHarnessReview],
+  [11, "SecretStoreImport", SecretStoreImport],
 ] as const;
 
 // Ids land in merge order, so a database can record a higher id before a lower one; every

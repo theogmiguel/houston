@@ -1,4 +1,4 @@
-// Connecting the Slack app, its tokens in the (memory) keychain, the settings and channel map,
+// Connecting the Slack app, its tokens in the (memory) secret store, the settings and channel map,
 // over one database with the loopback fake Slack.
 import { assert, describe, it } from "@effect/vitest";
 import { HoustonSlackError } from "@houston-app/contracts/houston/slack";
@@ -7,10 +7,9 @@ import * as Redacted from "effect/Redacted";
 import * as SqlClient from "effect/sql/SqlClient";
 import { TestClock } from "effect/testing";
 
-import * as ServerConfig from "../../config.ts";
-import { makeMemory } from "../secrets/HoustonKeychain.ts";
+import { makeMemory } from "../secrets/HoustonSecrets.ts";
 import { createProject, deleteProject } from "../tasks/tasks.testkit.ts";
-import { slackKeychainService } from "./rules.ts";
+import { slackSecretName } from "./rules.ts";
 import { HoustonSlackService } from "./Service.ts";
 import { mentionEvent } from "./slack.fake.ts";
 import {
@@ -32,12 +31,6 @@ const refusal = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
       return error as unknown as HoustonSlackError;
     }),
   );
-
-const keyOf = (service: string, account: string) => `${service}\u0000${account}`;
-
-const serviceName = Effect.map(ServerConfig.ServerConfig, (config) =>
-  slackKeychainService(config.baseDir),
-);
 
 const settingsRow = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -121,22 +114,20 @@ describe("slack info starts empty and returns current values", () => {
   );
 });
 
-describe("connect stores both tokens in the keychain and checks them with auth.test", () => {
-  it.effect("connect stores both tokens in the keychain and checks them with auth.test", () => {
-    const keychain = makeMemory();
+describe("connect stores both tokens in the secret store and checks them with auth.test", () => {
+  it.effect("connect stores both tokens in the secret store and checks them with auth.test", () => {
+    const secrets = makeMemory();
     return runSlack(
       (fake) =>
         Effect.gen(function* () {
           const slack = yield* HoustonSlackService;
-          const service = yield* serviceName;
-          assert.match(service, /^houston-v2-slack-connection-[0-9a-f]{16}$/);
           const info = yield* slack.connect({
             appToken: Redacted.make(" xapp-1-A "),
             botToken: Redacted.make("xoxb-1-b"),
           });
-          assert.strictEqual(keychain.entries.get(keyOf(service, "app-token")), "xapp-1-A");
-          assert.strictEqual(keychain.entries.get(keyOf(service, "bot-token")), "xoxb-1-b");
-          assert.lengthOf(keychain.entries, 2);
+          assert.strictEqual(secrets.entries.get(slackSecretName("app-token")), "xapp-1-A");
+          assert.strictEqual(secrets.entries.get(slackSecretName("bot-token")), "xoxb-1-b");
+          assert.lengthOf(secrets.entries, 2);
           const authTests = fake.callsOf("auth.test");
           assert.lengthOf(authTests, 1);
           assert.strictEqual(authTests[0]?.token, "xoxb-1-b");
@@ -157,19 +148,19 @@ describe("connect stores both tokens in the keychain and checks them with auth.t
           assert.isTrue(again.hasTokens);
 
           // Neither token and none stored: credential_missing.
-          keychain.entries.clear();
+          secrets.entries.clear();
           const missing = yield* refusal(slack.connect({}));
           assert.strictEqual(missing.kind, "credential_missing");
           assert.strictEqual(missing.operation, "houston.slack.connect");
         }),
-      { keychain },
+      { secrets },
     );
   });
 });
 
 describe("a refused token stores nothing", () => {
   it.effect("a refused token stores nothing", () => {
-    const keychain = makeMemory();
+    const secrets = makeMemory();
     return runSlack(
       (fake) =>
         Effect.gen(function* () {
@@ -191,25 +182,24 @@ describe("a refused token stores nothing", () => {
             assert.notInclude(refused.message, "swapped-secret");
             assert.notInclude(refused.message, BOT_TOKEN);
           }
-          assert.lengthOf(keychain.entries, 0);
-          assert.isFalse(keychain.calls.some((call) => call.op === "set"));
+          assert.lengthOf(secrets.entries, 0);
+          assert.isFalse(secrets.calls.some((call) => call.op === "set"));
           assert.lengthOf(fake.calls, 0);
           assert.strictEqual(yield* fingerprint, before);
           assert.isFalse((yield* slack.get).enabled);
         }),
-      { keychain },
+      { secrets },
     );
   });
 });
 
 describe("a token slack refuses is removed again", () => {
   it.effect("a token slack refuses is removed again", () => {
-    const keychain = makeMemory();
+    const secrets = makeMemory();
     return runSlack(
       (fake) =>
         Effect.gen(function* () {
           const slack = yield* HoustonSlackService;
-          const service = yield* serviceName;
           const answers = [
             { body: { ok: false, error: "invalid_auth" }, code: "invalid_auth" },
             { status: 500, body: {}, code: "500" },
@@ -227,27 +217,27 @@ describe("a token slack refuses is removed again", () => {
             assert.include(refused.message, "auth.test");
             assert.include(refused.message, answer.code);
             assert.notInclude(refused.message, BOT_TOKEN);
-            assert.isFalse(keychain.entries.has(keyOf(service, "app-token")));
-            assert.isFalse(keychain.entries.has(keyOf(service, "bot-token")));
+            assert.isFalse(secrets.entries.has(slackSecretName("app-token")));
+            assert.isFalse(secrets.entries.has(slackSecretName("bot-token")));
             assert.isFalse((yield* slack.get).enabled);
           }
-          assert.isTrue(keychain.calls.some((call) => call.op === "remove"));
+          assert.isTrue(secrets.calls.some((call) => call.op === "remove"));
           assert.lengthOf(fake.callsOf("apps.connections.open"), 0);
         }),
-      { keychain },
+      { secrets },
     );
   });
 });
 
-describe("an unreachable keychain is refused by name", () => {
-  it.effect("an unreachable keychain is refused by name", () => {
-    const keychain = makeMemory();
+describe("an unreachable secret store is refused by name", () => {
+  it.effect("an unreachable secret store is refused by name", () => {
+    const secrets = makeMemory();
     return runSlack(
       (fake) =>
         Effect.gen(function* () {
           const slack = yield* HoustonSlackService;
-          const projectId = yield* createProject("keychain");
-          keychain.failWith = "the Secret Service is not running";
+          const projectId = yield* createProject("secret-store");
+          secrets.failWith = "the secrets directory is not writable";
           yield* slack.configure({
             ownerUserId: OWNER,
             channels: [{ channelId: "C1", projectId }],
@@ -258,21 +248,21 @@ describe("an unreachable keychain is refused by name", () => {
               botToken: Redacted.make(BOT_TOKEN),
             }),
           );
-          assert.strictEqual(refused.kind, "keychain_unavailable");
-          assert.include(refused.message, "the Secret Service is not running");
-          assert.lengthOf(keychain.entries, 0);
+          assert.strictEqual(refused.kind, "secret_store_unavailable");
+          assert.include(refused.message, "the secrets directory is not writable");
+          assert.lengthOf(secrets.entries, 0);
           assert.isFalse((yield* slack.get).hasTokens);
           assert.lengthOf(fake.calls, 0);
 
-          // An intake enabled before the keychain went away stays retrying and sends nothing.
-          keychain.failWith = null;
+          // An intake enabled before the secret store went away stays retrying and sends nothing.
+          secrets.failWith = null;
           yield* connectSlack(projectId);
           yield* untilConnected;
           yield* until(
             "the catch-up",
             slack.get.pipe(Effect.map((info) => info.lastCatchupAt !== null)),
           );
-          keychain.failWith = "the Secret Service is not running";
+          secrets.failWith = "the secrets directory is not writable";
           const sent = fake.calls.length;
           for (const socket of fake.sockets) socket.close();
           yield* untilAdvancing(
@@ -281,7 +271,7 @@ describe("an unreachable keychain is refused by name", () => {
               Effect.map(
                 (info) =>
                   info.connection === "retrying" &&
-                  info.error === "Slack tokens are not available from the OS keychain",
+                  info.error === "Slack tokens are not available from the secret store",
               ),
             ),
           );
@@ -291,25 +281,24 @@ describe("an unreachable keychain is refused by name", () => {
           assert.isFalse(info.hasTokens);
           assert.strictEqual(fake.calls.length, sent);
         }),
-      { keychain },
+      { secrets },
     );
   });
 });
 
 describe("one token without the other is an error, not absence", () => {
   it.effect("one token without the other is an error, not absence", () => {
-    const keychain = makeMemory();
+    const secrets = makeMemory();
     return runSlack(
       (fake) =>
         Effect.gen(function* () {
           const slack = yield* HoustonSlackService;
           const projectId = yield* createProject("half");
-          const service = yield* serviceName;
           yield* connectSlack(projectId);
           yield* untilConnected;
           const opens = fake.callsOf("apps.connections.open").length;
 
-          keychain.entries.delete(keyOf(service, "app-token"));
+          secrets.entries.delete(slackSecretName("app-token"));
           const noApp = yield* slack.get;
           assert.isFalse(noApp.hasTokens);
           assert.include(noApp.error ?? "", "app-level token");
@@ -318,21 +307,21 @@ describe("one token without the other is an error, not absence", () => {
           yield* advance(70);
           assert.strictEqual(fake.callsOf("apps.connections.open").length, opens);
 
-          keychain.entries.set(keyOf(service, "app-token"), APP_TOKEN);
-          keychain.entries.delete(keyOf(service, "bot-token"));
+          secrets.entries.set(slackSecretName("app-token"), APP_TOKEN);
+          secrets.entries.delete(slackSecretName("bot-token"));
           const noBot = yield* slack.get;
           assert.isFalse(noBot.hasTokens);
           assert.include(noBot.error ?? "", "bot token");
           assert.include(noBot.error ?? "", "connect again with both");
         }),
-      { keychain },
+      { secrets },
     );
   });
 });
 
 describe("disconnect closes the socket and removes both tokens", () => {
   it.effect("disconnect closes the socket and removes both tokens", () => {
-    const keychain = makeMemory();
+    const secrets = makeMemory();
     return runSlack(
       (fake) =>
         Effect.gen(function* () {
@@ -349,7 +338,7 @@ describe("disconnect closes the socket and removes both tokens", () => {
             "the socket closed",
             Effect.sync(() => fake.sockets.every((socket) => socket.closed)),
           );
-          assert.lengthOf(keychain.entries, 0);
+          assert.lengthOf(secrets.entries, 0);
           assert.isNull((yield* settingsRow)?.credential_set_at);
           // Absent entries succeed.
           assert.isFalse((yield* slack.disconnect).enabled);
@@ -359,16 +348,16 @@ describe("disconnect closes the socket and removes both tokens", () => {
             VALUES (1, 'disabled-probe', 'dm', 'probe', '2026-10-30T00:00:00.000Z')
           `;
           const sent = fake.calls.length;
-          const reads = keychain.calls.length;
+          const reads = secrets.calls.length;
           yield* advance(60);
           assert.strictEqual(fake.calls.length, sent);
-          assert.strictEqual(keychain.calls.length, reads);
+          assert.strictEqual(secrets.calls.length, reads);
           assert.lengthOf(
             fake.sockets.filter((socket) => !socket.closed),
             0,
           );
         }),
-      { keychain },
+      { secrets },
     );
   });
 });

@@ -185,7 +185,7 @@ function SlackTokenFields({
       </label>
       <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 pt-1">
         <Text variant="caption" tone="muted">
-          Both tokens go to the OS keychain.
+          Both tokens are stored as secrets on the server.
         </Text>
         <Button size="sm" disabled={!canConnect || busy} onClick={() => void submit()}>
           Connect
@@ -291,7 +291,7 @@ function SlackConfigured({
 
   const runDisconnect = async () => {
     const confirmed = await requestConfirmDialog(
-      "Disconnect Slack? Houston stops reading its mapped channels and removes both tokens from the OS keychain.",
+      "Disconnect Slack? Houston stops reading its mapped channels and removes both tokens.",
     );
     if (confirmed !== true) return;
     setBusy("disconnect");
@@ -341,7 +341,7 @@ function SlackConfigured({
         />
         <SettingsRow
           title="Tokens"
-          description="App token and bot token stored in the OS keychain."
+          description="App token and bot token, stored as secrets on the server."
           control={
             <Button size="sm" variant="outline" onClick={() => setReplacing((value) => !value)}>
               {replacing ? "Cancel" : "Replace…"}
@@ -760,11 +760,11 @@ function ProviderCard({
           <>
             <SettingsRow
               title="Integration token"
-              description="Stored in the OS keychain. A saved token is never shown again."
+              description="Stored as a secret on the server. A saved token is never shown again."
               control={
                 settings.hasCredential ? (
                   <div className="flex items-center gap-2">
-                    <Badge variant="success">In keychain</Badge>
+                    <Badge variant="success">Saved</Badge>
                     <Button
                       size="xs"
                       variant="outline"
@@ -807,7 +807,7 @@ function ProviderCard({
             {settings.hasCredential && replacingToken ? (
               <SettingsRow
                 title="New token"
-                description="Replaces the token in the OS keychain."
+                description="Replaces the saved token."
                 control={
                   <div className="flex items-center gap-1.5">
                     <Input

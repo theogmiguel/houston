@@ -1,5 +1,5 @@
 // The one-time import of Houston 1's task source connections, after the Tasks import. Like it,
-// v1's database is read from a temporary copy and never written. No keychain entry is read:
+// v1's database is read from a temporary copy and never written. No v1 credential is read:
 // sources arrive disabled, and a Notion source asks for its token again.
 import * as NodeSqlite from "node:sqlite";
 

@@ -82,7 +82,7 @@ const HoustonSlackChannelMapInput = Schema.Struct({
 /** The intake's settings and connection. Never a token. */
 export const HoustonSlackInfo = Schema.Struct({
   enabled: Schema.Boolean,
-  /** Whether the OS keychain holds both tokens. */
+  /** Whether the secret store holds both tokens. */
   hasTokens: Schema.Boolean,
   connection: HoustonSlackConnection,
   team: Schema.NullOr(Schema.String),
@@ -129,7 +129,7 @@ export const HoustonSlackErrorKind = Schema.Literals([
   "not_found",
   "conflict",
   "credential_missing",
-  "keychain_unavailable",
+  "secret_store_unavailable",
   "remote",
   "unsupported",
   "not_slack",

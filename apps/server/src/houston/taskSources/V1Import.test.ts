@@ -14,7 +14,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as SqlClient from "effect/sql/SqlClient";
 
-import { makeMemory } from "../secrets/HoustonKeychain.ts";
+import { makeMemory } from "../secrets/HoustonSecrets.ts";
 import * as HoustonTaskV1Import from "../tasks/V1Import.ts";
 import { createProject } from "../tasks/tasks.testkit.ts";
 import { writeV1Database } from "../tasks/v1Fixture.ts";
@@ -309,8 +309,8 @@ const digest = (file: string) =>
     ? NodeCrypto.createHash("sha256").update(NodeFS.readFileSync(file)).digest("hex")
     : "absent";
 
-describe("the import reads no keychain and never writes v1", () => {
-  it.effect("the import reads no keychain and never writes v1", () =>
+describe("the import reads no secret and never writes v1", () => {
+  it.effect("the import reads no secret and never writes v1", () =>
     withChannel((dirs) => {
       writeV1(dirs.source, {}, { wal: true });
       // Another connection holds v1 open in WAL mode, as a running v1 daemon would.
@@ -318,19 +318,19 @@ describe("the import reads no keychain and never writes v1", () => {
       holder.exec("PRAGMA journal_mode = WAL");
       holder.exec("INSERT INTO settings (key, value) VALUES ('held', 'open')");
       const files = [dirs.source, `${dirs.source}-wal`, `${dirs.source}-shm`];
-      const keychain = makeMemory();
+      const secrets = makeMemory();
       return Effect.gen(function* () {
         const { tasksImport, sourcesImport } = yield* services;
         yield* createProject("shop", ROOT);
         yield* tasksImport.run;
         const before = files.map(digest);
-        keychain.calls.length = 0;
+        secrets.calls.length = 0;
         yield* sourcesImport.status;
         yield* sourcesImport.run;
-        assert.deepEqual(keychain.calls, []);
+        assert.deepEqual(secrets.calls, []);
         assert.deepEqual(files.map(digest), before);
       }).pipe(
-        Effect.provide(layerSources(options(dirs, { keychain }))),
+        Effect.provide(layerSources(options(dirs, { secrets }))),
         Effect.ensuring(Effect.sync(() => holder.close())),
       );
     }),

@@ -26,6 +26,7 @@ const HOUSTON_TRACK: Array<readonly [number, string]> = [
   [8, "SlackIntake"],
   [9, "NightShift"],
   [10, "DropNightShiftAndHarnessReview"],
+  [11, "SecretStoreImport"],
 ];
 const TASK_TABLES = [
   "houston_task_acceptance",
@@ -143,7 +144,7 @@ describe("the Houston track applies every id it has not recorded", () => {
     `).map((row) => row.name);
   });
 
-  it.effect("a fresh database applies 1..10 in id order", () =>
+  it.effect("a fresh database applies 1..11 in id order", () =>
     withDatabaseFile((file) =>
       Effect.gen(function* () {
         assert.deepEqual(yield* runHoustonMigrations(), HOUSTON_TRACK);
@@ -152,7 +153,7 @@ describe("the Houston track applies every id it has not recorded", () => {
     ),
   );
 
-  it.effect("a database that recorded 1..7 and 9..10 gets 8 applied, then nothing", () =>
+  it.effect("a database that recorded 1..7 and 9..11 gets 8 applied, then nothing", () =>
     withDatabaseFile((file) =>
       Effect.gen(function* () {
         // Composed fixture: a migrated database without id 8's tables and row is the state of one

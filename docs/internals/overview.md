@@ -16,7 +16,7 @@ codebase.
 │ houston (Electron host)      │ (loopback, token)  │ server (apps/server, detached)       │
 │  ┌────────────────────────┐  │◄──────────────────►│  threads · turns · runs              │
 │  │ renderer (apps/web)     │  │                    │  provider adapters · orchestration-v2│
-│  └────────────────────────┘  │                    │  MCP toolkits · SQLite · keychain    │
+│  └────────────────────────┘  │                    │  MCP toolkits · SQLite · secrets     │
 │  backend (start/attach),     │   spawns detached  └──────────────┬───────────────────────┘
 │  desktop bridge, tray,       │                                   │ SDK / app-server / ACP
 │  v1 cleanup, native crates   │                    ┌──────────────▼───────────────────────┐
@@ -126,9 +126,13 @@ server uses the PID that file names.
 One SQLite database per channel, under `<channel dir>/v2/`. Upstream's tables follow
 upstream's migrations; Houston's tables live on the Houston migration track
 (`houston_sql_migrations`), applied after upstream's and never entering its migrator. Secrets
-live in the OS keychain, scoped by channel directory, project and provider. The one-time
-import of Houston 1 workspaces, Tasks, task sources and Slack reads v1's `houston.db`
-read-only.
+live in the server's secret store, one 0600 file per secret in a 0700 `secrets` directory
+beside the database, so a channel's tokens are scoped by its directory and by project and
+provider. A server needs no OS keychain, which is often absent or locked on a headless host.
+At startup, tokens an earlier build kept in the OS keychain are copied into the store once;
+the keychain is read, never written or deleted, and an unavailable keychain is a warning that
+retries at the next start. The one-time import of Houston 1 workspaces, Tasks, task sources
+and Slack reads v1's `houston.db` read-only.
 
 ## Platform notes
 

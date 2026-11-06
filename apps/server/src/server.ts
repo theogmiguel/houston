@@ -123,7 +123,9 @@ import * as HoustonTaskRuns from "./houston/tasks/TaskRuns.ts";
 import * as HoustonTaskService from "./houston/tasks/TaskService.ts";
 import * as HoustonTaskStore from "./houston/tasks/TaskStore.ts";
 import * as HoustonTaskV1Import from "./houston/tasks/V1Import.ts";
-import * as HoustonKeychain from "./houston/secrets/HoustonKeychain.ts";
+import * as HoustonSecrets from "./houston/secrets/HoustonSecrets.ts";
+import * as LegacyKeychain from "./houston/secrets/LegacyKeychain.ts";
+import * as SecretStoreImport from "./houston/secrets/SecretStoreImport.ts";
 import * as HoustonTaskSourceNotion from "./houston/taskSources/NotionClient.ts";
 import * as HoustonTaskSourceOutbox from "./houston/taskSources/Outbox.ts";
 import * as HoustonTaskSourceStore from "./houston/taskSources/SourceStore.ts";
@@ -561,6 +563,16 @@ export const layerHoustonTaskPersistence = Layer.empty.pipe(
   Layer.provideMerge(HoustonTaskSourceOutbox.layer),
 );
 
+// Tokens earlier builds kept in the OS keychain are copied in before any consumer reads one.
+const layerHoustonSecrets = HoustonSecrets.layer.pipe(
+  Layer.tap((context) =>
+    SecretStoreImport.importKeychainSecrets.pipe(
+      Effect.provide(context),
+      Effect.provide(LegacyKeychain.layerLive),
+    ),
+  ),
+);
+
 const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   layerThreadSettlementWorker,
   layerIdleCompactionWorker,
@@ -632,7 +644,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
         HoustonTaskV1Import.layer.pipe(Layer.provideMerge(RuntimeLayer.layerProjectService)),
       ),
     ),
-    // The task source poller reads GitHub through its own client and the token from the OS keychain.
+    // The task source poller reads GitHub through its own client and the token from the secret store.
     Layer.provideMerge(
       layerTaskSources(
         Layer.mergeAll(GitHubRest.layerWithDependencies, HoustonTaskSourceNotion.layer),
@@ -652,7 +664,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
     // Below the orchestration runtime so its ProjectService sees the store on project deletion.
     Layer.provideMerge(Layer.mergeAll(HoustonTaskSourceStore.layer, HoustonMergeQueueStore.layer)),
     Layer.provideMerge(HoustonSlackStore.layer),
-    Layer.provideMerge(HoustonKeychain.layerLive),
+    Layer.provideMerge(layerHoustonSecrets),
     Layer.provideMerge(layerHoustonTaskPersistence),
     Layer.provideMerge(layerPersistence),
     Layer.provideMerge(

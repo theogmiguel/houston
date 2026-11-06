@@ -20,19 +20,18 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as SqlClient from "effect/sql/SqlClient";
 
-import * as ServerConfig from "../../config.ts";
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
-import { HoustonKeychain } from "../secrets/HoustonKeychain.ts";
+import { HoustonSecrets } from "../secrets/HoustonSecrets.ts";
 import { HoustonTaskStore, nowIso } from "../tasks/TaskStore.ts";
 import {
   APP_TOKEN_ACCOUNT,
   BOT_TOKEN_ACCOUNT,
   reactionMove,
-  slackKeychainService,
+  slackSecretName,
   type StatusReaction,
 } from "./rules.ts";
 
-export const KEYCHAIN_UNAVAILABLE = "Slack tokens are not available from the OS keychain";
+export const SECRETS_UNAVAILABLE = "Slack tokens are not available from the secret store";
 
 const encodeBlocks = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
@@ -121,10 +120,9 @@ export class HoustonSlackStore extends Context.Service<
     readonly events: PubSub.PubSub<HoustonSlackStreamEvent>;
     readonly settings: Effect.Effect<SettingsRow | undefined>;
     readonly channels: Effect.Effect<ReadonlyArray<ChannelRow>>;
-    readonly tokenService: string;
-    /** Both tokens, read from the OS keychain now. */
+    /** Both tokens, read from the secret store now. */
     readonly readTokens: Effect.Effect<TokenRead>;
-    /** The info; `fresh` reads the keychain, otherwise the last read is reported. */
+    /** The info; `fresh` reads the secret store, otherwise the last read is reported. */
     readonly info: (fresh: boolean) => Effect.Effect<HoustonSlackInfo>;
     readonly setStatus: (patch: Partial<SlackStatus>) => Effect.Effect<void>;
     readonly requestById: (id: number) => Effect.Effect<RequestRow | undefined>;
@@ -144,8 +142,7 @@ export class HoustonSlackStore extends Context.Service<
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const tasks = yield* HoustonTaskStore;
-  const keychain = yield* HoustonKeychain;
-  const config = yield* ServerConfig.ServerConfig;
+  const secrets = yield* HoustonSecrets;
   const events = yield* PubSub.unbounded<HoustonSlackStreamEvent>();
   const lock = yield* Semaphore.make(1);
   const status = yield* Ref.make<SlackStatus>({
@@ -154,9 +151,8 @@ const make = Effect.gen(function* () {
     lastCatchupAt: null,
     error: null,
   });
-  // The last keychain read, so a published info event does not read the keychain again.
+  // The last read, so a published info event does not read the secret store again.
   const tokensSeen = yield* Ref.make<TokenRead>({ kind: "none" });
-  const tokenService = slackKeychainService(config.baseDir);
   const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.orDie(effect);
 
   const settings = run(sql<SettingsRow>`SELECT * FROM houston_slack_settings WHERE id = 1`).pipe(
@@ -169,8 +165,8 @@ const make = Effect.gen(function* () {
   const readTokens = Effect.gen(function* () {
     const read = yield* Effect.result(
       Effect.all([
-        keychain.get(tokenService, APP_TOKEN_ACCOUNT),
-        keychain.get(tokenService, BOT_TOKEN_ACCOUNT),
+        secrets.get(slackSecretName(APP_TOKEN_ACCOUNT)),
+        secrets.get(slackSecretName(BOT_TOKEN_ACCOUNT)),
       ]),
     );
     const result: TokenRead =
@@ -182,13 +178,13 @@ const make = Effect.gen(function* () {
             ? {
                 kind: "half",
                 message:
-                  "the Slack bot token (xoxb-) is missing from the OS keychain; connect again with both",
+                  "the Slack bot token (xoxb-) is missing from the secret store; connect again with both",
               }
             : Option.isSome(read.success[1])
               ? {
                   kind: "half",
                   message:
-                    "the Slack app-level token (xapp-) is missing from the OS keychain; connect again with both",
+                    "the Slack app-level token (xapp-) is missing from the secret store; connect again with both",
                 }
               : { kind: "none" };
     yield* Ref.set(tokensSeen, result);
@@ -351,7 +347,6 @@ const make = Effect.gen(function* () {
     events,
     settings,
     channels,
-    tokenService,
     readTokens,
     info,
     setStatus,

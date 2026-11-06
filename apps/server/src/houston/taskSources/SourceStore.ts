@@ -18,11 +18,10 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as SqlClient from "effect/sql/SqlClient";
 
-import * as ServerConfig from "../../config.ts";
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
-import { HoustonKeychain, keychainService } from "../secrets/HoustonKeychain.ts";
+import { HoustonSecrets } from "../secrets/HoustonSecrets.ts";
 import { HoustonTaskStore } from "../tasks/TaskStore.ts";
-import { TOKEN_ACCOUNT, storedSettings, unsetSettings, type StoredSettings } from "./rules.ts";
+import { storedSettings, trackerSecretName, unsetSettings, type StoredSettings } from "./rules.ts";
 
 export const StoredSettingsJson = Schema.fromJsonString(
   Schema.Struct({
@@ -145,9 +144,7 @@ export class HoustonTaskSourceStore extends Context.Service<
     readonly linksWithConflicts: (
       projectId?: string,
     ) => Effect.Effect<ReadonlyArray<HoustonTaskSourceLink>>;
-    /** The OS keychain service of a project's tracker token. */
-    readonly tokenService: (projectId: string, provider: HoustonTaskSourceProvider) => string;
-    /** Whether the keychain holds the token; false when it cannot be read. */
+    /** Whether the secret store holds the token; false when it cannot be read. */
     readonly hasCredential: (
       projectId: string,
       provider: HoustonTaskSourceProvider,
@@ -156,7 +153,7 @@ export class HoustonTaskSourceStore extends Context.Service<
     readonly settingsOf: (
       projectId: ProjectId,
     ) => Effect.Effect<ReadonlyArray<HoustonTaskSourceSettings>>;
-    /** Drops the record of a keychain entry once the entry is removed. */
+    /** Drops the record of a stored token once the token is removed. */
     readonly forgetCredential: (
       projectId: string,
       provider: HoustonTaskSourceProvider,
@@ -169,8 +166,7 @@ export class HoustonTaskSourceStore extends Context.Service<
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const tasks = yield* HoustonTaskStore;
-  const keychain = yield* HoustonKeychain;
-  const config = yield* ServerConfig.ServerConfig;
+  const secrets = yield* HoustonSecrets;
   const events = yield* PubSub.unbounded<SourceEvent>();
   const lock = yield* Semaphore.make(1);
 
@@ -202,13 +198,10 @@ const make = Effect.gen(function* () {
       Effect.orDie,
     );
 
-  const tokenService = (projectId: string, provider: HoustonTaskSourceProvider) =>
-    keychainService({ baseDir: config.baseDir, purpose: "tracker", projectId, provider });
-
   const hasCredential = (projectId: string, provider: HoustonTaskSourceProvider) =>
     provider === "github_issues"
       ? Effect.succeed(false)
-      : keychain.get(tokenService(projectId, provider), TOKEN_ACCOUNT).pipe(
+      : secrets.get(trackerSecretName(projectId, provider)).pipe(
           Effect.map(Option.isSome),
           Effect.orElseSucceed(() => false),
         );
@@ -276,7 +269,7 @@ const make = Effect.gen(function* () {
       }),
     ).pipe(Effect.orDie);
 
-  // A record whose keychain removal fails stays, so the next startup sweep tries again.
+  // A record whose token removal fails stays, so the next startup sweep tries again.
   const projectRemoved = Effect.fn("HoustonTaskSourceStore.projectRemoved")(function* (
     projectId: ProjectId,
   ) {
@@ -291,7 +284,7 @@ const make = Effect.gen(function* () {
       }),
     ).pipe(Effect.orDie);
     for (const { provider } of recorded) {
-      yield* keychain.remove(tokenService(projectId, provider), TOKEN_ACCOUNT).pipe(
+      yield* secrets.remove(trackerSecretName(projectId, provider)).pipe(
         Effect.andThen(forgetCredential(projectId, provider)),
         Effect.catchCause((cause) =>
           Effect.logWarning(
@@ -313,7 +306,6 @@ const make = Effect.gen(function* () {
     pollRow,
     linksOf,
     linksWithConflicts,
-    tokenService,
     hasCredential,
     settingsOf,
     forgetCredential,

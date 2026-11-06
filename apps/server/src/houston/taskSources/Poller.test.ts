@@ -247,7 +247,7 @@ describe("the server and the harness start one poller", () => {
     }).pipe(Effect.provide(layerSources())),
   );
 
-  it("the server's layer builds it with the OS keychain and upstream's GitHub client", () => {
+  it("the server's layer builds it with the secret store and upstream's GitHub client", () => {
     const server = NodeFS.readFileSync(
       NodePath.resolve(import.meta.dirname, "../../server.ts"),
       "utf8",
@@ -260,6 +260,6 @@ describe("the server and the harness start one poller", () => {
     );
     assert.include(call, "GitHubRest.layerWithDependencies");
     assert.include(call, "HoustonTaskSourceNotion.layer");
-    assert.lengthOf(server.match(/HoustonKeychain\.layerLive/g) ?? [], 1);
+    assert.lengthOf(server.match(/HoustonSecrets\.layer\b/g) ?? [], 1);
   });
 });
