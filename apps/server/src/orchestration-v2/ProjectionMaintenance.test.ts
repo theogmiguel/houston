@@ -19,6 +19,7 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
+import * as Tracer from "effect/Tracer";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Statement from "effect/sql/Statement";
 
@@ -360,6 +361,122 @@ it.effect("keeps the anchor a retained stream head borrows from", () =>
         : null,
       "Review prompt A. ".repeat(40),
     );
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("reads borrowed prompts over a sequence range, not by scanning the whole log", () =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const plan = (statement: Statement.Statement<unknown>) => {
+      const [query, params] = statement.compile();
+      return sql
+        .unsafe<{ readonly detail: string }>(`EXPLAIN QUERY PLAN ${query}`, params)
+        .pipe(Effect.map((rows) => rows.map((row) => row.detail)));
+    };
+    const references = yield* plan(
+      ProjectionMaintenance.promptReferencesQuery(sql, { afterSequence: 0, throughSequence: 10 }),
+    );
+    const heads = yield* plan(ProjectionMaintenance.keptHeadReferencesQuery(sql, 10));
+    for (const detail of [references, heads]) {
+      assert.match(detail[0] ?? "", /USING INTEGER PRIMARY KEY \(rowid/);
+      assert.notMatch(detail.join("\n"), /\bSCAN\b/);
+    }
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("a pass reads borrowed prompts only after the previous pass's head", () =>
+  Effect.gen(function* () {
+    const sink = yield* EventSink.EventSinkV2;
+    const eventStore = yield* EventStore.EventStoreV2;
+    const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
+    const ranges: Array<readonly [unknown, unknown]> = [];
+    const tracer = Tracer.make({
+      span(options) {
+        const span = new Tracer.NativeSpan(options);
+        const end = span.end.bind(span);
+        span.end = (endTime, exit) => {
+          end(endTime, exit);
+          if (span.name === "ProjectionMaintenance.readPromptReferences")
+            ranges.push([
+              span.attributes.get("event_prune.references_after"),
+              span.attributes.get("event_prune.references_through"),
+            ]);
+        };
+        return span;
+      },
+    });
+    const prune = maintenance.pruneEventStore().pipe(Effect.withTracer(tracer));
+    const now = yield* DateTime.now;
+    const threadId = ThreadId.make("thread:prune-ranges");
+    yield* sink.write({ events: [threadCreated(makeThread(threadId, now), now)] });
+    yield* sink.write({ events: subagentEvents(threadId, now, 0) });
+    // The first pass only marks the head.
+    yield* prune;
+    const firstHead = yield* eventStore.latestSequence();
+    yield* sink.write({ events: subagentEvents(threadId, now, 0, "repeat") });
+    yield* TestClock.adjust("1 day");
+    yield* prune;
+    const secondHead = yield* eventStore.latestSequence();
+    yield* sink.write({ events: subagentEvents(threadId, now, 1, "later") });
+    yield* TestClock.adjust("1 day");
+    yield* prune;
+    const thirdHead = yield* eventStore.latestSequence();
+    assert.isAbove(secondHead, firstHead);
+    assert.isAbove(thirdHead, secondHead);
+    assert.deepEqual(ranges, [
+      [firstHead, secondHead],
+      [secondHead, thirdHead],
+    ]);
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("keeps every borrowed anchor when the borrowing rows span several pages", () =>
+  Effect.gen(function* () {
+    const sink = yield* EventSink.EventSinkV2;
+    const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
+    const sql = yield* SqlClient.SqlClient;
+    const now = yield* DateTime.now;
+    const threadId = ThreadId.make("thread:prune-pages");
+    yield* sink.write({ events: [threadCreated(makeThread(threadId, now), now)] });
+    // Composed fixture: rows written directly, as the projections had applied them. 1,201 anchors,
+    // then 1,200 rows borrowing from all but the newest, more than two reference pages.
+    const insertRows = (count: number, payloadFor: string) => sql`
+      WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ${count})
+      INSERT INTO orchestration_events (
+        event_id, aggregate_kind, stream_id, stream_version, event_type,
+        occurred_at, actor_kind, payload_json, metadata_json, application_event_version
+      )
+      SELECT
+        'event:prune-pages:' || (SELECT MAX(sequence) + i FROM orchestration_events),
+        'thread', ${threadId},
+        (SELECT MAX(stream_version) FROM orchestration_events WHERE stream_id = ${threadId}) + i,
+        'subagent.updated', '2026-11-01T00:00:00.000Z', 'server',
+        ${sql.unsafe(payloadFor)}, '{}', 2
+      FROM n
+    `;
+    const markProjected = sql`
+      UPDATE orchestration_v2_projection_metadata
+      SET last_sequence = (SELECT MAX(sequence) FROM orchestration_events)
+      WHERE projection_name = 'thread-projections'
+    `;
+    const firstAnchor =
+      (yield* sql<{ readonly sequence: number }>`
+        SELECT MAX(sequence) + 1 AS sequence FROM orchestration_events
+      `)[0]?.sequence ?? 0;
+    yield* insertRows(1201, `json_object('prompt', 'Review prompt ' || i)`);
+    yield* markProjected;
+    yield* maintenance.pruneEventStore();
+    yield* insertRows(1200, `json_object('prompt', '', 'promptSequence', ${firstAnchor} - 1 + i)`);
+    yield* markProjected;
+    yield* TestClock.adjust("1 day");
+
+    assert.equal((yield* maintenance.pruneEventStore()).deletedEventCount, 1);
+    const anchors = yield* sql<{ readonly count: number; readonly newest: number }>`
+      SELECT COUNT(*) AS count, MAX(sequence) AS newest FROM orchestration_events
+      WHERE stream_id = ${threadId} AND json_type(payload_json, '$.promptSequence') IS NULL
+        AND event_type = 'subagent.updated'
+    `;
+    assert.deepEqual(anchors[0], { count: 1200, newest: firstAnchor + 1199 });
   }).pipe(Effect.provide(layerTest)),
 );
 
