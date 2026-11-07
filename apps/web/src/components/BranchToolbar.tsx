@@ -13,7 +13,6 @@ import {
   FolderGit2Icon,
   FolderGitIcon,
   FolderIcon,
-  GitBranchIcon,
   LaptopIcon,
   PlusIcon,
   ScaleIcon,
@@ -82,10 +81,9 @@ import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
 import {
   CONTEXT_CHIP_BRANCH_CLS,
   CONTEXT_CHIP_CHEVRON_CLS,
-  CONTEXT_CHIP_ENV_CLS,
-  CONTEXT_CHIP_ENV_ICON_CLS,
+  CONTEXT_CHIP_BRANCH_MONO_CLS,
+  CONTEXT_RUN_HIDDEN_WIDE_CLS,
   CONTEXT_CHIP_PANEL_CLS,
-  CONTEXT_CHIP_SEPARATOR_CLS,
   CONTEXT_CHIP_TRIGGER_CLS,
 } from "./ui/composer-anatomy-recipes";
 import { useComposerMenuProps } from "./chat/composerEventScope";
@@ -99,8 +97,11 @@ export interface BranchToolbarHandle {
 
 interface BranchToolbarProps {
   layout?: "composer" | "panel";
-  /** The strip under the card, or the chips folded into the composer's own toolbar. */
-  variant?: "strip" | "inline";
+  /**
+   * The strip under the card, the chips folded into the composer's own toolbar, or the tray
+   * attached to the top of a wide composer.
+   */
+  variant?: "strip" | "inline" | "tray";
   /** The composer measured itself narrow: the workspace controls collapse into one chip. */
   forceNarrow?: boolean;
   panelSection?: "all" | "workspace" | "branch";
@@ -690,6 +691,8 @@ export const BranchToolbar = memo(function BranchToolbar({
     activeThreadBranchOverride ?? shell?.branch ?? previousWorktreeSeed?.branch ?? null;
   const branchLabel = resolvedBranch ?? envModeLabel;
   // A branch that is only the mode's name ("Local") would repeat it: show one part.
+  const chipLabelClass =
+    resolvedBranch === null ? CONTEXT_CHIP_BRANCH_CLS : CONTEXT_CHIP_BRANCH_MONO_CLS;
   const workspaceChipShowsEnvMode = branchLabel !== envModeLabel;
 
   const projectChip = !isServerThread ? (
@@ -701,8 +704,9 @@ export const BranchToolbar = memo(function BranchToolbar({
       <ComposerContextLabel>{activeProject.title}</ComposerContextLabel>
     </span>
   ) : null;
+  const hideRunContextWide = isServerThread && variant !== "tray";
   const runContextNode = showGitControls ? (
-    <div className={cn("contents", isServerThread && "@xl/composer-surface:hidden")}>
+    <div className={cn("contents", hideRunContextWide && CONTEXT_RUN_HIDDEN_WIDE_CLS)}>
       <RunContextSelector
         forceNewWorktree={forceNewWorktree}
         autoEnvironmentLabel={autoEnvironmentLabel}
@@ -727,7 +731,7 @@ export const BranchToolbar = memo(function BranchToolbar({
     </div>
   ) : null;
   const environmentNode =
-    isServerThread && (showGitControls || showEnvironmentIndicator) ? (
+    isServerThread && variant !== "tray" && (showGitControls || showEnvironmentIndicator) ? (
       <div
         className={cn(
           "min-h-7 min-w-10 items-center gap-1 sm:min-h-6",
@@ -769,11 +773,12 @@ export const BranchToolbar = memo(function BranchToolbar({
         ) : null}
       </div>
     ) : null;
-  const branchNode = showGitControls ? (
+  const branchSelector = (part: "all" | "pr" | "branch", className: string) => (
     <BranchToolbarBranchSelector
+      part={part}
       forceNewWorktree={forceNewWorktree}
-      ref={branchSelectorRef}
-      className="min-w-0 flex-1 justify-end @xl/composer-surface:ml-auto"
+      {...(part === "pr" ? {} : { ref: branchSelectorRef })}
+      className={className}
       environmentId={environmentId}
       threadId={threadId}
       {...(draftId ? { draftId } : {})}
@@ -786,7 +791,10 @@ export const BranchToolbar = memo(function BranchToolbar({
       {...(onCheckoutPullRequestRequest ? { onCheckoutPullRequestRequest } : {})}
       {...(onComposerFocusRequest ? { onComposerFocusRequest } : {})}
     />
-  ) : null;
+  );
+  const branchNode = showGitControls
+    ? branchSelector("all", "min-w-0 flex-1 justify-end @xl/composer-surface:ml-auto")
+    : null;
   const uploadsNode =
     runningUploads.length > 0 && aggregateUploadProgress !== null ? (
       <span
@@ -800,10 +808,17 @@ export const BranchToolbar = memo(function BranchToolbar({
     ) : null;
 
   if (narrow) {
-    // One chip holds the workspace, branch and access controls, so the toolbar keeps its row.
+    // One chip holds the checkout, branch and pull request, so the toolbar keeps its row.
+    const WorkspaceIcon = effectiveEnvMode === "worktree" ? FolderGit2Icon : LaptopIcon;
     return (
       <>
         {projectChip}
+        <Separator
+          orientation="vertical"
+          aria-hidden
+          data-composer-divider
+          className="mx-1 h-4! shrink-0"
+        />
         <Popover>
           <PopoverTrigger
             render={
@@ -820,44 +835,42 @@ export const BranchToolbar = memo(function BranchToolbar({
               />
             }
           >
-            <GitBranchIcon aria-hidden className={CONTEXT_CHIP_CHEVRON_CLS} />
-            <span data-composer-label className={CONTEXT_CHIP_BRANCH_CLS}>
+            <WorkspaceIcon aria-hidden className={CONTEXT_CHIP_CHEVRON_CLS} />
+            <span data-composer-label className={chipLabelClass}>
               {branchLabel}
             </span>
-            {workspaceChipShowsEnvMode ? (
-              <>
-                <span aria-hidden className={CONTEXT_CHIP_SEPARATOR_CLS}>
-                  ·
-                </span>
-                <span className={CONTEXT_CHIP_ENV_CLS}>{envModeLabel}</span>
-                {effectiveEnvMode === "worktree" ? (
-                  <FolderGit2Icon
-                    role="img"
-                    aria-label={envModeLabel}
-                    className={CONTEXT_CHIP_ENV_ICON_CLS}
-                  />
-                ) : (
-                  <LaptopIcon
-                    role="img"
-                    aria-label={envModeLabel}
-                    className={CONTEXT_CHIP_ENV_ICON_CLS}
-                  />
-                )}
-              </>
-            ) : null}
             <ChevronDownIcon aria-hidden className={CONTEXT_CHIP_CHEVRON_CLS} />
           </PopoverTrigger>
           <PopoverPopup side="top" align="start" padding="none" className="before:hidden">
             <div className={CONTEXT_CHIP_PANEL_CLS}>
               {runContextNode}
-              {branchNode}
+              {showGitControls ? branchSelector("branch", "min-w-0 flex-1 justify-end") : null}
               {environmentNode}
               {trailing}
             </div>
           </PopoverPopup>
         </Popover>
+        {showGitControls ? branchSelector("pr", "ms-0.5 shrink-0") : null}
         {uploadsNode}
       </>
+    );
+  }
+
+  if (variant === "tray") {
+    return (
+      <div
+        ref={attachStrip}
+        data-composer-context-tray-content
+        className="flex min-w-0 flex-1 items-center gap-1"
+      >
+        {projectChip}
+        {runContextNode}
+        <div className="ms-auto flex min-w-0 items-center gap-1">
+          {showGitControls ? branchSelector("all", "min-w-0 justify-end") : null}
+          {uploadsNode}
+          {trailing}
+        </div>
+      </div>
     );
   }
 

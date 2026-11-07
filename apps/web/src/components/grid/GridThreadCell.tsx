@@ -362,6 +362,8 @@ export function GridThreadCell({
             layout.timelineMaxWidth === null
               ? "100%"
               : `${layout.composerMaxWidth ?? layout.timelineMaxWidth}px`,
+          // A pane is narrower than a window: its composer keeps room for the wide form.
+          "--chat-lane-gutter": "1rem",
           ...(dragging ? { opacity: 0.45 } : {}),
         } as CSSProperties
       }

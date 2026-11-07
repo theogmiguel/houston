@@ -313,7 +313,7 @@ function paintedBackground(element: Element | null): string {
   return "rgba(0, 0, 0, 0)";
 }
 
-it("paints the top bar on the canvas and only the pane gutter on the chrome plane", async () => {
+it("paints the grid top bar and the pane gutter as one chrome surface", async () => {
   const { screen } = await mountSeededGrid();
   await using _screen = screen;
   const probe = (variable: string) => {
@@ -325,7 +325,7 @@ it("paints the top bar on the canvas and only the pane gutter on the chrome plan
     return colour;
   };
   const header = screen.container.querySelector("header");
-  expect(paintedBackground(header)).toBe(probe("--content"));
+  expect(paintedBackground(header)).toBe(probe("--grid-gutter"));
   const surface = screen.container.querySelector("[data-grid-surface]");
   expect(surface?.hasAttribute("data-multi")).toBe(true);
   expect(paintedBackground(surface)).toBe(probe("--grid-gutter"));

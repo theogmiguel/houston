@@ -92,28 +92,36 @@ it(
     );
     const cardBox = card.getBoundingClientRect();
 
-    // One anatomy: the workspace, branch and access chips live in the composer's own toolbar,
-    // never in a second band under the card.
+    // Wide form: the checkout, branch and access controls sit in a tray attached above the card,
+    // never in a second band under it and never in the card's own toolbar.
     expect(document.querySelector('[data-slot="composer-context-strip"]')).toBeNull();
-    const footer = await vi.waitFor(
+    const tray = await vi.waitFor(
       () => {
-        const found = document.querySelector<HTMLElement>('[data-chat-composer-footer="true"]');
+        const found = document.querySelector<HTMLElement>('[data-composer-context-tray="true"]');
         if (found?.querySelector("[data-composer-context-control]") == null) {
-          throw new Error("context controls are not in the composer footer yet");
+          throw new Error("context controls are not in the composer tray yet");
         }
         return found;
       },
       { timeout: 10_000 },
     );
-    expect(footer.getBoundingClientRect().top).toBeLessThan(cardBox.bottom);
-    const contextControls = [
-      ...footer.querySelectorAll<HTMLElement>("[data-composer-context-control]"),
-    ];
-    expect(contextControls.length).toBeGreaterThan(0);
-    for (const control of contextControls) {
-      expect(card.contains(control)).toBe(true);
-      expect(control.getBoundingClientRect().right).toBeLessThanOrEqual(cardBox.right + 1);
+    const footer = document.querySelector<HTMLElement>('[data-chat-composer-footer="true"]')!;
+    expect(footer.querySelector("[data-composer-context-control]")).toBeNull();
+    expect(footer.querySelector('[aria-label^="Workspace:"]')).toBeNull();
+    const trayBox = tray.getBoundingClientRect();
+    const cardWithTray = card.getBoundingClientRect();
+    // Inset from the card on both sides, sitting on top of it.
+    expect(trayBox.left - cardWithTray.left).toBeGreaterThanOrEqual(8);
+    expect(cardWithTray.right - trayBox.right).toBeGreaterThanOrEqual(8);
+    expect(trayBox.top).toBeLessThan(cardWithTray.top);
+    expect(trayBox.bottom).toBeLessThanOrEqual(cardWithTray.top + 12);
+    expect(getComputedStyle(tray).borderBottomWidth).toBe("0px");
+    expect(getComputedStyle(tray).flexWrap).not.toBe("wrap");
+    for (const control of tray.querySelectorAll<HTMLElement>("[data-composer-context-control]")) {
+      expect(control.getBoundingClientRect().right).toBeLessThanOrEqual(trayBox.right + 1);
     }
+    expect(footer.getBoundingClientRect().top).toBeLessThan(cardBox.bottom);
+    expect(card.contains(footer)).toBe(true);
 
     // A wide composer spells out the mention syntax in the placeholder.
     const editorPlaceholder =
@@ -218,8 +226,17 @@ it(
       const contextControls = [
         ...footer.querySelectorAll<HTMLElement>("[data-composer-context-control]"),
       ];
-      // Below 520 the workspace, branch and access controls fold into one chip.
-      if (width < 520) expect(contextControls.length).toBeLessThanOrEqual(2);
+      const trayNow = document.querySelector<HTMLElement>('[data-composer-context-tray="true"]');
+      if (width >= 520) {
+        // Wide form: the tray holds the context; the body has no workspace chip.
+        expect(trayNow).not.toBeNull();
+        expect(contextControls).toHaveLength(0);
+        expect(trayNow!.querySelector("[data-composer-context-control]")).not.toBeNull();
+      } else {
+        // Compact form: no tray; one workspace chip folds checkout, branch and access.
+        expect(trayNow).toBeNull();
+        expect(contextControls.length).toBeLessThanOrEqual(2);
+      }
 
       // Two rows at every width: the input alone on row 1, the toolbar under it.
       const editorTop = document
@@ -248,6 +265,11 @@ it(
       // The workspace chip never repeats a segment ("Local · Local").
       const workspaceChip = footer.querySelector<HTMLElement>('[aria-label^="Workspace:"]');
       if (workspaceChip !== null) {
+        // With no branch known the chip shows the checkout label and no branch icon.
+        expect(workspaceChip.textContent?.trim()).toMatch(/^(Local|Worktree)$/);
+        expect(workspaceChip.querySelector(".lucide-git-branch")).toBeNull();
+        // A 1px divider separates the model chip from the workspace group.
+        expect(footer.querySelector("[data-composer-divider]")).not.toBeNull();
         const segments = (workspaceChip.textContent ?? "")
           .split("·")
           .map((part) => part.trim())

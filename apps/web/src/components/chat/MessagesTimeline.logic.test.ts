@@ -3878,6 +3878,42 @@ it("folds a system restart notice into the turn's fold line", () => {
   expect(ids.indexOf(`turn-fold:${run}`)).toBeLessThan(ids.indexOf("restart-notice"));
 });
 
+it("folds a restart notice into the running turn's working row", () => {
+  const time = (second: number) => new Date(Date.UTC(2026, 0, 1, 0, 0, second)).toISOString();
+  const run = RunId.make("running-resumed");
+  const notice = {
+    kind: "work" as const,
+    id: "restart-notice",
+    createdAt: time(1),
+    entry: {
+      id: "restart-notice",
+      runId: run,
+      createdAt: time(1),
+      label: "Houston restarted and resumed this turn",
+      tone: "info" as const,
+      itemType: "notification" as const,
+      structuredPayload: {
+        type: "notification",
+        source: { kind: "system" },
+      } as never,
+    },
+  };
+  const rows = deriveMessagesTimelineRows({
+    timelineEntries: [notice],
+    latestRun: { runId: run, status: "running" as const, startedAt: time(1), completedAt: null },
+    isWorking: true,
+    activeTurnStartedAt: time(1),
+    turnDiffSummaries: [],
+    supportsConversationRollback: false,
+  });
+  expect(rows.map((row) => row.id)).not.toContain("restart-notice");
+  const working = rows.find((row) => row.kind === "working");
+  expect(working && "notice" in working ? working.notice : null).toEqual({
+    label: "resumed after restart",
+    text: "Houston restarted and resumed this turn",
+  });
+});
+
 it("keeps the working header in place across worktree setup handoff", () => {
   const snapshot: WorktreeSetupSnapshot = {
     threadId: ThreadId.make("thread-setup"),

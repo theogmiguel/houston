@@ -305,6 +305,7 @@ import {
   usePreparingComposerImages,
 } from "./preparingComposerImages";
 import { ComposerControlsBar } from "./ComposerControlsBar";
+import { CONTEXT_TRAY_CLS } from "../ui/composer-anatomy-recipes";
 import { composerCommandKeyHandler } from "./composerCommandKey";
 
 function consumePasteAsTextShortcut(deadline: { current: number }): boolean {
@@ -410,7 +411,9 @@ export interface ChatComposerProps {
    * The workspace, branch and access chips, rendered in the composer toolbar. The composer
    * tells them when its own width is narrow enough to collapse them.
    */
-  contextControls?: ReactElement<{ forceNarrow?: boolean }> | undefined;
+  contextControls?:
+    | ReactElement<{ forceNarrow?: boolean; variant?: "strip" | "inline" | "tray" }>
+    | undefined;
   /** When the active turn started; the running status in the composer footer. */
   activeTurnStartedAt?: string | null | undefined;
   projectSelectionRequired: boolean;
@@ -3594,6 +3597,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       {...threadContextDropTargetProps()}
     >
       <div className="relative">
+        {contextControls && !composerNarrow ? (
+          <div data-composer-context-tray="true" className={CONTEXT_TRAY_CLS}>
+            {cloneElement(contextControls, { forceNarrow: false, variant: "tray" })}
+          </div>
+        ) : null}
         <ComposerSurface.Main
           ref={composerMainSurfaceRef}
           data-inline-resting-controls="true"
@@ -3936,8 +3944,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     className="relative flex min-w-0 flex-1 items-center gap-0.5"
                   >
                     {composerControls}
-                    {contextControls
-                      ? cloneElement(contextControls, { forceNarrow: composerNarrow })
+                    {contextControls && composerNarrow
+                      ? cloneElement(contextControls, { forceNarrow: true })
                       : null}
                     <ComposerStashBadge
                       count={stashQueue.length}

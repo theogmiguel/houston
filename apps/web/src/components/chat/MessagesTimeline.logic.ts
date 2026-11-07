@@ -551,6 +551,8 @@ type MessagesTimelineRowContent =
       createdAt: string | null;
       /** A running compaction owns the working row, so its divider appears only once it ends. */
       compacting?: true;
+      /** The system notice that opened the running turn: a short label and the full text. */
+      notice?: { readonly label: string; readonly text: string };
     }
   | {
       kind: "thinking";
@@ -1812,6 +1814,17 @@ export function deriveMessagesTimelineRows(input: {
   const activeCompactionRunId = compactsOnReturn
     ? runningCompactionRunId
     : (resumeCompactionEntry?.entry.runId ?? null);
+  // A system notice that opened the running turn shows on the working row, not as its own row.
+  const runningLeadNotice =
+    input.isWorking && activeTurnHeaderIndex > 0
+      ? timelineEntries[activeTurnHeaderIndex - 1]
+      : undefined;
+  const runningLeadNoticeId =
+    runningLeadNotice !== undefined &&
+    timelineEntryIsSystemNotice(runningLeadNotice) &&
+    !foldsByAnchorEntryId.has(runningLeadNotice.id)
+      ? runningLeadNotice.id
+      : null;
   const appendWorkingRow = () => {
     if (compactionOnlyRunFinished) return;
     if (runningCompactionRunId !== null && activeCompactionRunId === null) return;
@@ -1823,6 +1836,14 @@ export function deriveMessagesTimelineRows(input: {
         input.activeTurnStartedAt ??
         null,
       ...(activeCompactionRunId !== null ? { compacting: true as const } : {}),
+      ...(runningLeadNotice !== undefined && runningLeadNoticeId !== null
+        ? {
+            notice: {
+              label: systemNoticeFoldLabel(runningLeadNotice),
+              text: runningLeadNotice.kind === "work" ? runningLeadNotice.entry.label : "",
+            },
+          }
+        : {}),
     });
   };
   let hasActivityRow = false;
@@ -1893,6 +1914,10 @@ export function deriveMessagesTimelineRows(input: {
     }
 
     if (collapsedEntryIds.has(timelineEntry.id)) {
+      continue;
+    }
+
+    if (timelineEntry.id === runningLeadNoticeId) {
       continue;
     }
 

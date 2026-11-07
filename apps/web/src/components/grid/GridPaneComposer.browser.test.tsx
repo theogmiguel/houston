@@ -3,7 +3,7 @@ import { ProjectId } from "@houston-app/contracts";
 import { DEFAULT_CLIENT_SETTINGS } from "@houston-app/contracts/settings";
 import type * as Context from "effect/Context";
 import { expect, it, vi } from "vite-plus/test";
-import { page } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 
@@ -75,10 +75,18 @@ async function renderGrid(gridId: string, width = 1000) {
 // Boots the whole app and a three-cell grid; on a loaded 4-vCPU CI runner that has exceeded the default 15 s budget.
 const APP_BOOT_TEST_TIMEOUT_MS = 45_000;
 
+function overlapping(first: HTMLElement, second: HTMLElement): boolean {
+  const a = first.getBoundingClientRect();
+  const b = second.getBoundingClientRect();
+  return (
+    a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1
+  );
+}
+
 // Runs first: the fake environment serves the thread-shell list once per app runtime, so a
 // branch set on a later test's threads would never reach the shell this chip reads.
 it(
-  "keeps a 24-character branch readable in the folded workspace chip of a 370px pane",
+  "folds checkout, branch and pull request into the compact chip, and moves them to the tray when the pane widens",
   async () => {
     const branch = "feature/worktree-chip-12";
     expect(branch).toHaveLength(24);
@@ -87,6 +95,18 @@ it(
         ...threadWithHistory("pane-branch-a", 1),
         branch,
         worktreePath: "/tmp/worktrees/pane-branch-a",
+        pullRequests: [
+          {
+            host: "github.com",
+            repository: "acme/atlas-api",
+            number: 622,
+            url: "https://github.com/acme/atlas-api/pull/622",
+            source: "manual",
+            linkedAt: "2026-01-01T00:00:00.000Z",
+            snapshot: null,
+            stack: null,
+          },
+        ],
       },
       threadWithHistory("pane-branch-b", 1),
     ]);
@@ -96,44 +116,136 @@ it(
     });
     const gridId = seedGrid(["pane-branch-a", "pane-branch-b"]);
     await using screen = await renderGrid(gridId, 760);
-    await vi.waitFor(() => expect(cellsOf(screen.container)).toHaveLength(2));
-    const cell = cellsOf(screen.container).find(
-      (candidate) => candidate.getAttribute("data-thread-id") === "pane-branch-a",
-    )!;
-    expect(cell.getBoundingClientRect().width).toBeGreaterThan(340);
-    expect(cell.getBoundingClientRect().width).toBeLessThan(400);
-    // Re-query on every attempt: the chip renders before the branch arrives and may be replaced.
+    await vi.waitFor(() => expect(cellsOf(screen.container)).toHaveLength(2), {
+      timeout: 10_000,
+    });
+    const cellA = () =>
+      cellsOf(screen.container).find(
+        (candidate) => candidate.getAttribute("data-thread-id") === "pane-branch-a",
+      )!;
+    expect(cellA().getBoundingClientRect().width).toBeGreaterThan(340);
+    expect(cellA().getBoundingClientRect().width).toBeLessThan(400);
+
+    // Compact form. Re-query on every attempt: the chip renders before the branch arrives.
     const chip = await vi.waitFor(
       () => {
-        const found = cell.querySelector<HTMLElement>('[aria-label^="Workspace:"]');
+        const found = cellA().querySelector<HTMLElement>('[aria-label^="Workspace:"]');
         expect(found?.getAttribute("aria-label")).toBe(`Workspace: ${branch}, Worktree`);
         return found!;
       },
       { timeout: 10_000 },
     );
     expect(chip.getAttribute("title")).toBe(`${branch} · Worktree`);
+    expect(cellA().querySelector('[data-composer-context-tray="true"]')).toBeNull();
+    const footer = cellA().querySelector<HTMLElement>('[data-chat-composer-footer="true"]')!;
 
-    // The checkout label is an icon named "Worktree"; the branch keeps its room.
-    const envIcon = chip.querySelector<SVGElement>('svg[aria-label="Worktree"]')!;
-    expect(envIcon.getBoundingClientRect().width).toBeGreaterThan(0);
-    const envText = [...chip.querySelectorAll<HTMLElement>("span")].find(
-      (node) => node.textContent === "Worktree",
-    )!;
-    expect(getComputedStyle(envText).display).toBe("none");
+    // The branch keeps room for ten characters and reads in the mono face.
     const label = chip.querySelector<HTMLElement>("[data-composer-label]")!;
     expect(label.textContent).toBe(branch);
+    expect(getComputedStyle(label).fontFamily).toMatch(/mono/i);
     const probe = document.createElement("span");
-    probe.className = "text-xs";
+    probe.className = "font-mono text-xs";
     probe.style.cssText = "position:absolute;visibility:hidden;white-space:pre";
     probe.textContent = "0".repeat(10);
     document.body.append(probe);
     const tenCharacters = probe.getBoundingClientRect().width;
     probe.remove();
     expect(label.getBoundingClientRect().width).toBeGreaterThanOrEqual(tenCharacters - 1);
+
+    // A divider separates the model chip from the workspace group; the PR chip follows the chip.
+    const divider = footer.querySelector<HTMLElement>("[data-composer-divider]")!;
+    expect(divider.getBoundingClientRect().width).toBeLessThanOrEqual(1.5);
+    const prChip = await vi.waitFor(() => {
+      const found = footer.querySelector<HTMLElement>('a[aria-label*="622"]');
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    expect(prChip.textContent).toContain("622");
+    expect(prChip.getBoundingClientRect().left).toBeGreaterThanOrEqual(
+      chip.getBoundingClientRect().right + 3.5,
+    );
+    const modelChip = footer.querySelector<HTMLElement>("[data-chat-provider-model-picker]")!;
+    expect(modelChip.getBoundingClientRect().right).toBeLessThanOrEqual(
+      divider.getBoundingClientRect().left,
+    );
+    const compactControls = [...footer.querySelectorAll<HTMLElement>("button, a")].filter(
+      (control) =>
+        control.getClientRects().length > 0 && getComputedStyle(control).visibility !== "hidden",
+    );
+    for (const [index, first] of compactControls.entries()) {
+      for (const second of compactControls.slice(index + 1)) {
+        expect(
+          overlapping(first, second),
+          `${first.ariaLabel} ${JSON.stringify(first.getBoundingClientRect())} overlaps ${second.ariaLabel} ${JSON.stringify(second.getBoundingClientRect())}`,
+        ).toBe(false);
+      }
+    }
+
+    // The chip opens one menu with the checkout and the branch.
+    await userEvent.click(chip);
+    const panel = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLElement>('[data-slot="popover-popup"]');
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    expect(panel.querySelectorAll("[data-composer-context-control]").length).toBeGreaterThan(1);
+    await userEvent.keyboard("{Escape}");
+    await vi.waitFor(() =>
+      expect(document.querySelector('[data-slot="popover-popup"]')).toBeNull(),
+    );
+
+    // Wide form: the same controls move to the tray above the card.
+    await page.viewport(1400, 800);
+    screen.container.style.width = "1400px";
+    const tray = await vi.waitFor(
+      () => {
+        expect(cellA().getBoundingClientRect().width).toBeGreaterThanOrEqual(560);
+        const found = cellA().querySelector<HTMLElement>('[data-composer-context-tray="true"]');
+        const surfaceWidth = cellA()
+          .querySelector<HTMLElement>('[data-chat-composer-surface="true"]')
+          ?.getBoundingClientRect().width;
+        expect(
+          found,
+          `cell ${cellA().getBoundingClientRect().width}, surface ${surfaceWidth}`,
+        ).not.toBeNull();
+        return found!;
+      },
+      { timeout: 10_000 },
+    );
+    const wideFooter = cellA().querySelector<HTMLElement>('[data-chat-composer-footer="true"]')!;
+    expect(wideFooter.querySelector('[aria-label^="Workspace:"]')).toBeNull();
+    expect(wideFooter.querySelector("[data-composer-context-control]")).toBeNull();
+    expect(tray.textContent).toContain("Worktree");
+    expect(tray.querySelector('a[aria-label*="622"]')).not.toBeNull();
+    const trayBranch = tray.querySelector<HTMLElement>(".font-mono")!;
+    expect(trayBranch.textContent).toContain("feature/");
+    // Checkout on the left; the pull request, then the branch, on the right.
+    const checkout = tray.querySelector<HTMLElement>("[data-composer-context-control]")!;
+    const trayPr = tray.querySelector<HTMLElement>('a[aria-label*="622"]')!;
+    expect(checkout.getBoundingClientRect().right).toBeLessThanOrEqual(
+      trayPr.getBoundingClientRect().left,
+    );
+    expect(trayPr.getBoundingClientRect().right).toBeLessThanOrEqual(
+      trayBranch.getBoundingClientRect().left + 1,
+    );
+    expect(tray.scrollWidth).toBeLessThanOrEqual(tray.clientWidth + 1);
+    for (const control of tray.querySelectorAll<HTMLElement>("button, a")) {
+      expect(
+        overlapping(control, tray.querySelector<HTMLElement>("[data-composer-context-control]")!) &&
+          control !== checkout,
+      ).toBe(false);
+    }
+
+    // Access stays reachable: it lives in the model picker's footer.
+    const widePicker = wideFooter.querySelector<HTMLElement>("[data-chat-provider-model-picker]")!;
+    await userEvent.click(widePicker);
+    await vi.waitFor(() =>
+      expect(document.querySelector("[data-composer-permissions-trigger]")).not.toBeNull(),
+    );
+    await userEvent.keyboard("{Escape}");
   },
   APP_BOOT_TEST_TIMEOUT_MS,
 );
-
 it(
   "keeps the two-row composer with its model and workspace chips in a narrow pane",
   async () => {
@@ -258,6 +370,14 @@ it(
         box.top < submitBox.bottom - 1 &&
         submitBox.top < box.bottom - 1;
       expect(overlaps, `${control.ariaLabel} overlaps Submit`).toBe(false);
+      // Controls on Submit's row keep at least 4px between them and Submit.
+      const sameRow = box.top < submitBox.bottom && submitBox.top < box.bottom;
+      if (sameRow && box.right <= submitBox.left + 1) {
+        expect(
+          submitBox.left - box.right,
+          `${control.ariaLabel} gap to Submit`,
+        ).toBeGreaterThanOrEqual(3.5);
+      }
     }
     // The question card hides no toolbar control: the provider stays visible in the model chip.
     const modelChip = footer.querySelector<HTMLElement>("[data-chat-provider-model-picker]");

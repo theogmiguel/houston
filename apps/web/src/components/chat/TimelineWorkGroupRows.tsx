@@ -23,6 +23,7 @@ import {
   type MessagesTimelineRow,
 } from "./MessagesTimeline.logic";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { Spinner } from "../ui/spinner";
 import { ThreadStateGlyph, THREAD_STATE_TEXT_CLASS } from "../ui/thread-state-glyph";
 import { WorktreeSetupCard } from "./WorktreeSetupCard";
@@ -334,8 +335,26 @@ export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: 
         {backgroundWorktreeSetup ? (
           <BackgroundWorktreeSetupChip snapshot={backgroundWorktreeSetup} />
         ) : null}
+        {row.notice && !shimmer ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <span
+                  tabIndex={0}
+                  data-working-notice=""
+                  className="min-w-0 truncate text-(--t2)"
+                />
+              }
+            >
+              · {row.notice.label}
+            </TooltipTrigger>
+            <TooltipPopup>{row.notice.text}</TooltipPopup>
+          </Tooltip>
+        ) : null}
         {!shimmer && !compacting && !isPreparingWorktree ? (
-          <span className="text-callout text-(--houston)">Esc to interrupt</span>
+          <span className="shrink-0 text-callout text-(--houston)">
+            {row.notice ? <span aria-hidden>· </span> : null}Esc to interrupt
+          </span>
         ) : null}
       </div>
     </div>

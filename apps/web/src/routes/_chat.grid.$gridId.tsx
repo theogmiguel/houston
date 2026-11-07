@@ -364,6 +364,7 @@ function GridRoute() {
     >
       <div ref={setGridRow} className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <div
+          data-grid-page=""
           className={cn(
             "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden",
             focusedRightPanelMaximized && "hidden",
