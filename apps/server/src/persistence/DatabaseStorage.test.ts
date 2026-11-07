@@ -1,6 +1,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as HostProcess from "@houston-app/shared/HostProcess";
+import * as NodeSqliteClient from "@houston-app/shared/nodeSqliteClient";
 import { assert, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -275,6 +276,60 @@ it.effect("the compaction pass merges the message search index", () =>
         Layer.provideMerge(
           ServerConfig.layerTest(process.cwd(), { prefix: "database-storage-merge-" }),
         ),
+        Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+      ),
+    ),
+  ),
+);
+
+// Windows cannot truncate a file that any connection maps, readers included.
+it.effect("reclaim shrinks the file while every reader is open", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const config = yield* ServerConfig.ServerConfig;
+    yield* Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const storage = yield* DatabaseStorage.DatabaseStorage;
+      const fileBytes = Effect.gen(function* () {
+        yield* sql<{ readonly busy: number }>`PRAGMA wal_checkpoint(TRUNCATE)`.pipe(
+          Effect.repeat({ while: (rows) => rows[0]?.busy !== 0, times: 1_000 }),
+        );
+        return Number((yield* fs.stat(config.dbPath)).size);
+      });
+      yield* sql`CREATE TABLE discarded (value BLOB)`;
+      yield* sql`INSERT INTO discarded VALUES (zeroblob(2097152))`;
+      // Readers then read the blob from the database file, not the WAL; a mapping reader would pin it.
+      yield* fileBytes;
+      yield* Effect.forEach(
+        Array.from({ length: 8 }),
+        () =>
+          sql`SELECT hex(substr(value, 2097000, 8)) AS tail FROM discarded`.pipe(
+            NodeSqliteClient.readOnly,
+          ),
+        { concurrency: "unbounded" },
+      );
+      yield* sql`DROP TABLE discarded`;
+      const free = yield* freePages;
+      assert.isAbove(free, 0);
+      const before = yield* fileBytes;
+
+      yield* storage.reclaim;
+
+      assert.equal(yield* freePages, 0);
+      const pageSize = (yield* sql<{ readonly page_size: number }>`PRAGMA page_size`)[0]!.page_size;
+      // Moving pages can also release a pointer-map page.
+      assert.isAtLeast(before - (yield* fileBytes), free * pageSize);
+    }).pipe(
+      Effect.provide(
+        DatabaseStorage.layer.pipe(
+          Layer.provide(ProjectionMaintenance.layer),
+          Layer.provideMerge(Sqlite.layerFromPath(config.dbPath)),
+        ),
+      ),
+    );
+  }).pipe(
+    Effect.provide(
+      ServerConfig.layerTest(process.cwd(), { prefix: "database-storage-readers-" }).pipe(
         Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       ),
     ),
