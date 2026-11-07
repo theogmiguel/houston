@@ -7,6 +7,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as HostProcess from "@houston-app/shared/HostProcess";
+import * as NodeSqliteClient from "@houston-app/shared/nodeSqliteClient";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -99,3 +100,58 @@ it.effect("drops planner statistics a database already has", () => {
     Effect.ensuring(Effect.sync(() => NodeFS.rmSync(tempDir, { recursive: true, force: true }))),
   );
 });
+
+it("maps the database on Linux and macOS and never on Windows, which cannot truncate a mapped file", () => {
+  for (const platform of ["linux", "darwin"] as const) {
+    const pragmas = SqlitePersistence.connectionPragmas(platform);
+    assert.deepEqual(pragmas.writer, ["mmap_size = 1073741824"]);
+    assert.deepEqual(pragmas.readers, ["mmap_size = 1073741824"]);
+  }
+  const windows = SqlitePersistence.connectionPragmas("win32");
+  assert.deepEqual(windows.writer, []);
+  assert.deepEqual(windows.readers, ["cache_size = -32768"]);
+});
+
+it.effect("opens the writer and every reader with the platform's settings", () =>
+  Effect.gen(function* () {
+    const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "houston-sqlite-pragmas-"));
+    const settings = (platform: NodeJS.Platform) =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const connection = Effect.all([
+          sql<{ readonly mmap_size: number }>`PRAGMA mmap_size`,
+          sql<{ readonly cache_size: number }>`PRAGMA cache_size`,
+        ]).pipe(Effect.map(([mmap, cache]) => [{ ...mmap[0], ...cache[0] }]));
+        const writer = yield* connection;
+        // Concurrent reads spread over the whole reader pool.
+        const readers = yield* Effect.forEach(
+          Array.from({ length: 8 }),
+          () => connection.pipe(NodeSqliteClient.readOnly),
+          { concurrency: "unbounded" },
+        );
+        return { writer, readers };
+      }).pipe(
+        Effect.provide(
+          SqlitePersistence.layerFromPath(NodePath.join(tempDir, `${platform}.sqlite`)).pipe(
+            Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+          ),
+        ),
+        Effect.provideService(HostProcess.Platform, platform),
+      );
+
+    return yield* Effect.gen(function* () {
+      const linux = yield* settings("linux");
+      assert.deepEqual(linux.writer, [{ mmap_size: 1073741824, cache_size: -2000 }]);
+      for (const reader of linux.readers) {
+        assert.deepEqual(reader, [{ mmap_size: 1073741824, cache_size: -2000 }]);
+      }
+      const windows = yield* settings("win32");
+      assert.deepEqual(windows.writer, [{ mmap_size: 0, cache_size: -2000 }]);
+      for (const reader of windows.readers) {
+        assert.deepEqual(reader, [{ mmap_size: 0, cache_size: -32768 }]);
+      }
+    }).pipe(
+      Effect.ensuring(Effect.sync(() => NodeFS.rmSync(tempDir, { recursive: true, force: true }))),
+    );
+  }),
+);

@@ -38,6 +38,8 @@ export interface SqliteClientConfig {
   readonly spanAttributes?: Record<string, unknown> | undefined;
   /** Ignored for in-memory databases, which cannot share a second connection. */
   readonly readerWorker?: boolean | undefined;
+  /** PRAGMA assignments each reader runs after opening, such as `cache_size = -32768`. */
+  readonly readerPragmas?: ReadonlyArray<string> | undefined;
   /** Ignored for in-memory databases. */
   readonly checkpointWorker?: boolean | undefined;
 }
@@ -213,6 +215,7 @@ try {
     allowExtension: workerData.allowExtension,
   });
   next.exec("PRAGMA busy_timeout = 5000;");
+  for (const pragma of workerData.pragmas) next.exec("PRAGMA " + pragma + ";");
   // Without WAL a reader's shared lock blocks the writer's commits, so refuse.
   const mode = String(next.prepare("PRAGMA journal_mode").get().journal_mode).toLowerCase();
   if (mode !== "wal") throw new Error("database uses journal_mode " + mode + ", not wal");
@@ -325,6 +328,7 @@ const makeReader = Effect.fnUntraced(function* (
         filename: options.filename,
         allowExtension: false,
         prepareCacheSize: 200,
+        pragmas: options.readerPragmas ?? [],
       },
     });
     let announce: (startup: ReaderStartup) => void = () => {};

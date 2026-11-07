@@ -3,6 +3,7 @@ import * as Layer from "effect/Layer";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as HostProcess from "@houston-app/shared/HostProcess";
 import * as NodeSqliteClient from "@houston-app/shared/nodeSqliteClient";
 
 import { runMigrations } from "./Migrations.ts";
@@ -12,6 +13,22 @@ import { initializeV2Database } from "./initializeV2Database.ts";
 import * as ServerConfig from "../config.ts";
 
 const WAL_SIZE_LIMIT_BYTES = 32 * 1024 * 1024;
+
+// Mapped reads skip SQLite's copy into its page cache: 12-43% off boot, shell and thread-open reads.
+// The mapping is address space over the OS file cache that all connections share, not heap; it
+// counts towards resident memory as pages are touched, up to the file size.
+const MMAP_SIZE_BYTES = 1024 * 1024 * 1024;
+// 4 readers x 32 MiB: at most 128 MiB of heap over SQLite's default 2 MB per reader.
+const WINDOWS_READER_CACHE_KIB = 32 * 1024;
+
+/**
+ * Windows cannot truncate a file any connection maps, so reclaim would stop shrinking it there;
+ * its readers get a larger page cache instead. The checkpoint connection only copies WAL frames.
+ */
+export const connectionPragmas = (platform: NodeJS.Platform) =>
+  platform === "win32"
+    ? { writer: [], readers: [`cache_size = -${WINDOWS_READER_CACHE_KIB}`] }
+    : { writer: [`mmap_size = ${MMAP_SIZE_BYTES}`], readers: [`mmap_size = ${MMAP_SIZE_BYTES}`] };
 
 const layerSetup = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -37,6 +54,9 @@ const layerSetup = Layer.effectDiscard(
     yield* sql`PRAGMA temp_store = MEMORY;`;
     // PASSIVE checkpoints retain peak WAL size until the last connection closes.
     yield* sql.unsafe(`PRAGMA journal_size_limit = ${WAL_SIZE_LIMIT_BYTES};`);
+    for (const pragma of connectionPragmas(yield* HostProcess.Platform).writer) {
+      yield* sql.unsafe(`PRAGMA ${pragma};`);
+    }
     yield* runMigrations();
     yield* runHoustonMigrations();
     yield* ensureHoustonReadModels();
@@ -60,6 +80,7 @@ export const layerFromPath = Effect.fn("makeSqlitePersistenceLive")(function* (d
     NodeSqliteClient.layer({
       filename: dbPath,
       readerWorker: true,
+      readerPragmas: connectionPragmas(yield* HostProcess.Platform).readers,
       // Run checkpoint fsyncs off the event loop so slow disk flushes cannot stall clients.
       checkpointWorker: true,
       spanAttributes: {
