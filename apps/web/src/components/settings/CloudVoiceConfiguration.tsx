@@ -16,7 +16,6 @@ import {
   CLOUD_SPEECH_PROVIDER_NAMES,
   CloudSpeechApiKey,
   CloudSpeechModelId,
-  isSecretReference,
   SETTINGS_SECRET_MAX_BYTES,
   type CloudSpeechModel,
   type CloudSpeechProvider,
@@ -369,7 +368,7 @@ export function CloudVoiceConfiguration({
         </DialogHeader>
         {!remove && <DialogPanel>{body}</DialogPanel>}
         {error && (
-          <Text as="p" variant="callout" tone="danger" role="alert" className="px-6">
+          <Text as="p" variant="callout" tone="danger" role="alert" className="mx-6">
             {error}
           </Text>
         )}

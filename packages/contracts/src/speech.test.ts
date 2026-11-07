@@ -18,6 +18,7 @@ import {
 const decodeStatus = Schema.decodeUnknownSync(EnvironmentSpeechStatus);
 const decodeTranscription = Schema.decodeUnknownSync(EnvironmentSpeechTranscriptionResult);
 const decodeStreamCommand = Schema.decodeUnknownSync(SpeechStreamCommand);
+const decodeCloudSpeechKeys = Schema.decodeSync(CloudSpeechKeys);
 const decodeTranscriptionOptions = Schema.decodeUnknownSync(SpeechTranscriptionOptions);
 const readyStatus = {
   supported: true,
@@ -119,7 +120,7 @@ describe("cloud speech contracts", () => {
   });
 
   it("decodes key status from servers that predate OpenRouter", () => {
-    expect(Schema.decodeSync(CloudSpeechKeys)({ openai: true, xai: false })).toEqual({
+    expect(decodeCloudSpeechKeys({ openai: true, xai: false })).toEqual({
       openai: true,
       xai: false,
     });

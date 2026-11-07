@@ -55,6 +55,8 @@ const CATALOG_TTL = "10 minutes";
  */
 const TRANSCRIBE_TIMEOUT = "2 minutes";
 
+// Dictionary terms containing markup characters or line breaks are not sent to OpenAI as keywords.
+const OPENAI_UNSAFE_KEYWORD = /[<>\r\n]/;
 const isApiKey = Schema.is(CloudSpeechApiKey);
 const isModelId = Schema.is(CloudSpeechModelId);
 const sameCredential = Schema.toEquivalence(SettingsSecretValue);
@@ -101,7 +103,7 @@ function audioBody(
   form.set("model", endpoints[provider].model);
   if (language !== "auto") form.set(provider === "openai" ? "languages[]" : "language", language);
   for (const { term } of options.speechCustomWords) {
-    if (provider === "openai" && /[<>\r\n]/.test(term)) continue;
+    if (provider === "openai" && OPENAI_UNSAFE_KEYWORD.test(term)) continue;
     form.append(provider === "openai" ? "keywords[]" : "keyterm", term);
   }
   if (provider === "xai") {
