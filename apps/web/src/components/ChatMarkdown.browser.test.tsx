@@ -293,6 +293,31 @@ describe("ChatMarkdown finished blocks", () => {
     expect(screen.container.querySelectorAll(".chat-markdown-file-link")).toHaveLength(20);
   });
 
+  it("classifies no block again when a thread's split messages remount", async () => {
+    setup();
+    const messages = Array.from({ length: 6 }, (_, message) =>
+      Array.from(
+        { length: 120 },
+        (_, index) => `Message ${message} block ${index} edits \`src/m${message}/f${index}.ts\`.`,
+      ).join("\n\n"),
+    );
+    const thread = () => (
+      <div>
+        {messages.map((text) => (
+          <ChatMarkdown key={text.slice(0, 9)} cwd="/tmp/project" text={text} isStreaming={false} />
+        ))}
+      </div>
+    );
+    {
+      await using first = await render(thread());
+      await expect.element(first.getByText("Message 5 block 119", { exact: false })).toBeVisible();
+    }
+    linkScans.length = 0;
+    await using screen = await render(thread());
+    await expect.element(screen.getByText("Message 5 block 119", { exact: false })).toBeVisible();
+    expect(linkScans).toHaveLength(0);
+  });
+
   // An extra remark plugin keeps a message in one tree, which is the reference rendering.
   const ONE_TREE = [() => undefined];
   const html = (element: HTMLElement) => element.innerHTML.replace(GENERATED_ID, "_r_");

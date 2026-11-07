@@ -500,10 +500,10 @@ function lruSet<V>(cache: Map<string, V>, key: string, value: V, limit: number):
   return value;
 }
 
-// Finished messages and the finished blocks of streaming ones; a thread's mounted rows and a few
-// long answers streaming at once fit. An entry keeps its whole text alive, so the texts are
-// bounded too: 4 MiB is about two million characters, more than a long thread's finished text.
-const FINISHED_SOURCES_LIMIT = 512;
+// Finished messages and their blocks, one entry each: a long thread's mounted messages at a hundred
+// blocks or more apiece fit. An entry keeps its whole text alive, so the texts are bounded too:
+// 4 MiB is about two million characters, more than a long thread's finished text.
+const FINISHED_SOURCES_LIMIT = 4096;
 const FINISHED_SOURCES_MAX_BYTES = 4 * 1024 * 1024;
 const finishedSources = new FinishedTextCache<{
   readonly cwd: string | undefined;
