@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 
+import { SETTINGS_SECRET_MAX_BYTES } from "./settingsSecretValue.ts";
 import {
+  CLOUD_SPEECH_ERROR_REASONS,
+  CloudSpeechApiKey,
+  CloudSpeechError,
+  CloudSpeechKeys,
+  CloudSpeechModelId,
   DEFAULT_SPEECH_TRANSCRIPTION_OPTIONS,
   EnvironmentSpeechStatus,
   EnvironmentSpeechTranscriptionResult,
@@ -76,5 +82,46 @@ describe("environment speech contracts", () => {
 
   it("accepts a transcription result", () => {
     expect(decodeTranscription({ text: "hello" })).toEqual({ text: "hello" });
+  });
+});
+
+describe("cloud speech contracts", () => {
+  const decodeKey = Schema.decodeUnknownSync(CloudSpeechApiKey);
+  const decodeModel = Schema.decodeUnknownSync(CloudSpeechModelId);
+
+  it("accepts a normal key and refuses one above the credential bound, naming both sizes", () => {
+    expect(decodeKey("  sk-test_123  ")).toBe("sk-test_123");
+    const oversize = "k".repeat(SETTINGS_SECRET_MAX_BYTES + 1);
+    expect(() => decodeKey(oversize)).toThrow(
+      `${SETTINGS_SECRET_MAX_BYTES + 1} bytes, over the limit of ${SETTINGS_SECRET_MAX_BYTES} bytes`,
+    );
+  });
+
+  it.each(["has space", "https://api.example.test/key", "tab\tkey", "clé"])(
+    "refuses the key shape %j",
+    (key) => {
+      expect(() => decodeKey(key)).toThrow();
+    },
+  );
+
+  it("accepts exact author/model slugs and refuses router shortcuts", () => {
+    expect(decodeModel("acme/transcribe-1")).toBe("acme/transcribe-1");
+    for (const slug of ["openrouter/auto", "acme", "acme/model:nitro", "/model", "acme/"]) {
+      expect(() => decodeModel(slug)).toThrow();
+    }
+  });
+
+  it("names the provider in every error reason", () => {
+    for (const reason of CLOUD_SPEECH_ERROR_REASONS) {
+      const message = new CloudSpeechError({ provider: "xai", reason }).message;
+      expect(message, reason).toContain("xAI");
+    }
+  });
+
+  it("decodes key status from servers that predate OpenRouter", () => {
+    expect(Schema.decodeSync(CloudSpeechKeys)({ openai: true, xai: false })).toEqual({
+      openai: true,
+      xai: false,
+    });
   });
 });
