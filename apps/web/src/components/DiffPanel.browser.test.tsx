@@ -371,7 +371,9 @@ it("labels the comparison target so the 400px header reads on its own", async ()
   await using screen = await render(panel(context.registry, context.threadRef, "embedded"), {
     container: root,
   });
-  await expect.element(screen.getByRole("button", { name: "Add diff comment" })).toBeInTheDocument();
+  await expect
+    .element(screen.getByRole("button", { name: "Add diff comment" }))
+    .toBeInTheDocument();
   const label = [...root.querySelectorAll<HTMLElement>("span[aria-hidden]")].find(
     (span) => span.textContent === "Against",
   );

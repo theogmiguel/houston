@@ -9,7 +9,9 @@ function viewportOf(container: HTMLElement): HTMLElement {
 }
 
 function bottomFadePx(viewport: HTMLElement): number {
-  return Number.parseFloat(getComputedStyle(viewport).getPropertyValue("--scroll-area-overflow-y-end"));
+  return Number.parseFloat(
+    getComputedStyle(viewport).getPropertyValue("--scroll-area-overflow-y-end"),
+  );
 }
 
 describe("SidebarContent overflow cue", () => {

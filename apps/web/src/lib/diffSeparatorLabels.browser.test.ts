@@ -30,7 +30,11 @@ describe("separatorLabel", () => {
 
 describe("relabelDiffSeparators", () => {
   it("rewrites both statements the viewer produces", () => {
-    const host = containerWith("18 unmodified lines", "1 unmodified line", "More unchanged context may be available");
+    const host = containerWith(
+      "18 unmodified lines",
+      "1 unmodified line",
+      "More unchanged context may be available",
+    );
     relabelDiffSeparators(host);
     expect(labels(host)).toEqual(["Show 18 more lines", "Show 1 more line", "Expand context"]);
   });
