@@ -59,7 +59,10 @@ it.effect("a reclaim pass shrinks the database file", () =>
       const sql = yield* SqlClient.SqlClient;
       const storage = yield* DatabaseStorage.DatabaseStorage;
       const fileBytes = Effect.gen(function* () {
-        yield* sql`PRAGMA wal_checkpoint(TRUNCATE)`;
+        // SQLite reports busy at once, without waiting, while the checkpoint worker is mid-checkpoint.
+        yield* sql<{ readonly busy: number }>`PRAGMA wal_checkpoint(TRUNCATE)`.pipe(
+          Effect.repeat({ while: (rows) => rows[0]?.busy !== 0, times: 1_000 }),
+        );
         return Number((yield* fs.stat(config.dbPath)).size);
       });
       yield* sql`CREATE TABLE discarded (value BLOB)`;
