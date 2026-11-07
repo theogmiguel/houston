@@ -388,6 +388,12 @@ describe("ChatMarkdown finished blocks", () => {
     "~~~md\n```\n<b>x\n```\n~~~\n\nafter",
     "> | a | b |\n> | - | - |\n> | `x | <b>` | y |\n\nstill</b>",
     "Use `lines[1:]` and `x[::2]`.\n\n```python\nprint(a[1:])\n```\n\nDone.",
+    "x <https://x.y/?q=`> <b>bold <https://x.y/?r=`>\n\nstill bold",
+    "See https://x.y/?q=` <b>bold ` x\n\nstill bold",
+    "See www.x.y/a-` <b>bold ` x\n\nstill bold",
+    "- a\n\n  ```\n  x\n  \t```\n\n  [r]: https://example.com/r\n\n  ```\n\nSee [r].",
+    "- a\n\n  ```\n  x\n  \t```\n\n  <b>bold\n\n  ```\n\nstill bold",
+    "- a\n\n  ```\n  x\n  \t```\n\n  ## Setup\n\n  ```\n\n## Setup",
   ])("renders a finished message as one tree renders it: %j", async (text) => {
     setup();
     await using split = await renderText(text);
