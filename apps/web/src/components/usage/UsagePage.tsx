@@ -103,7 +103,12 @@ import {
   resolveUsageShortcut,
   type UsageMetric,
 } from "./usageShortcuts";
-import { PROVIDER_ORDER, PROVIDER_PRESENTATION, providersWithUsage } from "./usageProviders";
+import {
+  PROVIDER_ORDER,
+  PROVIDER_PRESENTATION,
+  providersWithUsage,
+  rankProvidersByMetric,
+} from "./usageProviders";
 import {
   readUsagePagePreferences,
   saveUsagePagePreferences,
@@ -620,16 +625,17 @@ function UsageOverview({
     breakdown === "model" && metric === "tokens"
       ? sortModelsByTokens(merged.models)
       : merged.models;
+  const rankedProviders = rankProvidersByMetric(activeProviders, merged.providers, metric);
   const cursorInsertAt =
-    Math.max(activeProviders.indexOf("codex"), activeProviders.indexOf("claude")) + 1;
+    Math.max(rankedProviders.indexOf("codex"), rankedProviders.indexOf("claude")) + 1;
   const cacheReadShare = merged.totalTokens > 0 ? merged.cachedInputTokens / merged.totalTokens : 0;
   const averageCostPerDay = merged.costUsd / Math.max(days.length, 1);
   const summaryRows: ReadonlyArray<AgentSummaryRow> = [
-    ...activeProviders
+    ...rankedProviders
       .slice(0, cursorInsertAt)
       .map((provider) => ({ kind: "usage" as const, provider })),
     ...cursorAccessEnvironments.map((environment) => ({ kind: "enable" as const, environment })),
-    ...activeProviders
+    ...rankedProviders
       .slice(cursorInsertAt)
       .map((provider) => ({ kind: "usage" as const, provider })),
   ];
