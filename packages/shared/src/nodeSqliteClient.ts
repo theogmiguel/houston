@@ -42,11 +42,9 @@ export interface SqliteClientConfig {
   readonly checkpointWorker?: boolean | undefined;
 }
 
-// run() steps once, which completes DML; a column-less PRAGMA such as incremental_vacuum
-// does one unit of work per step, so it is stepped until done. A bare `incremental_vacuum`
-// therefore empties the whole freelist in one writer hold (about 2 s for 30,000 pages); pass a
-// bounded count, as the storage reclaim pass does. Raw mode still steps once, and no caller uses it
-// for such a PRAGMA.
+// run() steps once; a column-less PRAGMA such as incremental_vacuum works per step, so it is
+// stepped until done (raw mode still steps once). A bare incremental_vacuum thus empties the whole
+// freelist in one writer hold (about 2 s for 30,000 pages); pass a bounded count.
 const PRAGMA_STATEMENT = /^\s*PRAGMA\b/iu;
 
 // SqlClient masks transaction acquisition, so readOnly carries the caller's interruption policy.
