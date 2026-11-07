@@ -9,6 +9,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as HostProcess from "@houston-app/shared/HostProcess";
+import * as NodeSqliteClient from "@houston-app/shared/nodeSqliteClient";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -186,3 +187,44 @@ it.effect("drops planner statistics a database already has", () => {
     Effect.ensuring(Effect.sync(() => NodeFS.rmSync(tempDir, { recursive: true, force: true }))),
   );
 });
+
+it.effect(
+  "opens the writer with the default page cache and every reader with a larger one, mapping nothing",
+  () =>
+    Effect.gen(function* () {
+      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "houston-sqlite-pragmas-"));
+      const settings = Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const connection = Effect.all([
+          sql<{ readonly mmap_size: number }>`PRAGMA mmap_size`,
+          sql<{ readonly cache_size: number }>`PRAGMA cache_size`,
+        ]).pipe(Effect.map(([mmap, cache]) => [{ ...mmap[0], ...cache[0] }]));
+        const writer = yield* connection;
+        // Concurrent reads spread over the whole reader pool.
+        const readers = yield* Effect.forEach(
+          Array.from({ length: 8 }),
+          () => connection.pipe(NodeSqliteClient.readOnly),
+          { concurrency: "unbounded" },
+        );
+        return { writer, readers };
+      }).pipe(
+        Effect.provide(
+          SqlitePersistence.layerFromPath(NodePath.join(tempDir, "pragmas.sqlite")).pipe(
+            Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+          ),
+        ),
+      );
+
+      return yield* Effect.gen(function* () {
+        const { writer, readers } = yield* settings;
+        assert.deepEqual(writer, [{ mmap_size: 0, cache_size: -2000 }]);
+        for (const reader of readers) {
+          assert.deepEqual(reader, [{ mmap_size: 0, cache_size: -32768 }]);
+        }
+      }).pipe(
+        Effect.ensuring(
+          Effect.sync(() => NodeFS.rmSync(tempDir, { recursive: true, force: true })),
+        ),
+      );
+    }),
+);

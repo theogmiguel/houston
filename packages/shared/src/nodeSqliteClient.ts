@@ -38,9 +38,16 @@ export interface SqliteClientConfig {
   readonly spanAttributes?: Record<string, unknown> | undefined;
   /** Ignored for in-memory databases, which cannot share a second connection. */
   readonly readerWorker?: boolean | undefined;
+  /** PRAGMA assignments each reader runs after opening, such as `cache_size = -32768`. */
+  readonly readerPragmas?: ReadonlyArray<string> | undefined;
   /** Ignored for in-memory databases. */
   readonly checkpointWorker?: boolean | undefined;
 }
+
+// run() steps once; a column-less PRAGMA such as incremental_vacuum works per step, so it is
+// stepped until done (raw mode still steps once). A bare incremental_vacuum thus empties the whole
+// freelist in one writer hold (about 2 s for 30,000 pages); pass a bounded count.
+const PRAGMA_STATEMENT = /^\s*PRAGMA\b/iu;
 
 // SqlClient masks transaction acquisition, so readOnly carries the caller's interruption policy.
 const ReadOnly = Context.Reference<typeof Effect.interruptible | undefined>(
@@ -208,6 +215,7 @@ try {
     allowExtension: workerData.allowExtension,
   });
   next.exec("PRAGMA busy_timeout = 5000;");
+  for (const pragma of workerData.pragmas) next.exec("PRAGMA " + pragma + ";");
   // Without WAL a reader's shared lock blocks the writer's commits, so refuse.
   const mode = String(next.prepare("PRAGMA journal_mode").get().journal_mode).toLowerCase();
   if (mode !== "wal") throw new Error("database uses journal_mode " + mode + ", not wal");
@@ -320,6 +328,7 @@ const makeReader = Effect.fnUntraced(function* (
         filename: options.filename,
         allowExtension: false,
         prepareCacheSize: 200,
+        pragmas: options.readerPragmas ?? [],
       },
     });
     let announce: (startup: ReaderStartup) => void = () => {};
@@ -892,7 +901,7 @@ const make = Effect.fn("makeWithDatabase")(function* (
         ? yield* startCheckpointWorker(options.filename, db)
         : undefined;
 
-    const statementReaderCache = new WeakMap<NodeSqlite.StatementSync, boolean>();
+    const statementShapeCache = new WeakMap<NodeSqlite.StatementSync, "rows" | "steps" | "once">();
     interface CheckpointClassification {
       backpressure: boolean;
       check: boolean;
@@ -958,13 +967,18 @@ const make = Effect.fn("makeWithDatabase")(function* (
         return constants.SQLITE_OK;
       });
     }
-    const hasRows = (statement: NodeSqlite.StatementSync): boolean => {
-      const cached = statementReaderCache.get(statement);
+    const statementShape = (statement: NodeSqlite.StatementSync) => {
+      const cached = statementShapeCache.get(statement);
       if (cached !== undefined) {
         return cached;
       }
-      const value = statement.columns().length > 0;
-      statementReaderCache.set(statement, value);
+      const value =
+        statement.columns().length > 0
+          ? "rows"
+          : PRAGMA_STATEMENT.test(statement.sourceSQL)
+            ? "steps"
+            : "once";
+      statementShapeCache.set(statement, value);
       return value;
     };
 
@@ -1004,10 +1018,15 @@ const make = Effect.fn("makeWithDatabase")(function* (
           try {
             const value = withClassification(classification, () => {
               statement.setReadBigInts(Boolean(Context.get(fiber.context, Client.SafeIntegers)));
-              if (hasRows(statement)) {
+              const shape = statementShape(statement);
+              if (shape === "rows") {
                 arrays = mode === "values";
                 if (arrays) statement.setReturnArrays(true);
                 return statement.all(...(params as any));
+              }
+              if (shape === "steps" && mode !== "raw") {
+                statement.all(...(params as any));
+                return [];
               }
               const result = statement.run(...(params as any));
               return mode === "raw" ? (result as unknown as ReadonlyArray<unknown>) : [];
