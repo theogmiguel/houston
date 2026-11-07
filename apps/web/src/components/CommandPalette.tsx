@@ -90,6 +90,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type ReactNode,
 } from "react";
 import type { LegendListRef } from "@legendapp/list/react";
 import { useAtomValue } from "@effect/atom-react";
@@ -163,7 +164,12 @@ import {
   resolveProjectPathForDispatch,
 } from "@houston-app/client-runtime/state/projects";
 import { resolvePastedPath } from "@houston-app/shared/path";
-import { getCommandPaletteReturnFocus } from "../commandPaletteStore";
+import {
+  dispatchCommandPalette,
+  getCommandPaletteReturnFocus,
+  useCommandPaletteMount,
+  useCommandPaletteStore,
+} from "../commandPaletteStore";
 import {
   PULL_REQUESTS_PANEL_REF,
   selectSelectedRightPanelSurface,
@@ -259,11 +265,12 @@ import { ProjectContentSearchDialog } from "./search/ProjectContentSearchDialog"
 import { settingsForThisPlatform, SETTINGS_SECTION_LABELS } from "./settings/settingsSearch";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { resolveShortcutCommand, threadJumpIndexFromCommand } from "../keybindings";
-import { CommandDialogPopup, CommandFooterAction } from "./ui/command";
+import { CommandDialog, CommandDialogPopup, CommandFooterAction } from "./ui/command";
 import { Kbd } from "./ui/kbd";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { suggestAppAccessForRemote } from "./sourceControlAppAccessToast";
-import { useComposerHandleContext } from "../composerHandleContext";
+import { ComposerHandleContext, useComposerHandleContext } from "../composerHandleContext";
+import type { ChatComposerHandle } from "./chat/ChatComposer";
 import { pickableProjectGroups } from "@houston-app/client-runtime/state/project-grouping";
 import { buildSidebarProjectPickerEntries } from "../sidebarProjectGrouping";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
@@ -305,7 +312,44 @@ function openIntentView(intent: CommandPaletteOpenIntent | null): CommandPalette
 
 const NEW_THREAD_NO_PROJECT_VALUE = "new-thread-in:no-project";
 
-export function CommandPaletteDialog(props: {
+export function CommandPalette({ children }: { children: ReactNode }) {
+  useCommandPaletteMount();
+  const state = useCommandPaletteStore();
+  const setOpen = (open: boolean) => dispatchCommandPalette({ _tag: "SetOpen", open });
+  const openChildSearch = (mode: "files" | "content", context: CommandPaletteReturnContext) =>
+    dispatchCommandPalette({ _tag: "OpenChildSearch", mode, context });
+  const composerHandleRef = useRef<ChatComposerHandle | null>(null);
+
+  return (
+    <ComposerHandleContext value={composerHandleRef}>
+      <CommandDialog
+        open={state.open}
+        onOpenChange={(open, eventDetails) => {
+          if (!open && eventDetails.reason === "escape-key" && state.mode !== "command") {
+            eventDetails.cancel();
+            dispatchCommandPalette({ _tag: "BackToCommand" });
+            return;
+          }
+          setOpen(open);
+        }}
+      >
+        <div className="contents" inert={state.open}>
+          {children}
+        </div>
+        <CommandPaletteDialog
+          mode={state.mode}
+          session={state.session}
+          openIntent={state.openIntent}
+          setOpen={setOpen}
+          openChildSearch={openChildSearch}
+          initialContext={state.restoredSearch}
+        />
+      </CommandDialog>
+    </ComposerHandleContext>
+  );
+}
+
+function CommandPaletteDialog(props: {
   readonly mode: SearchOverlayMode;
   readonly session: number;
   readonly openIntent: CommandPaletteOpenIntent | null;
