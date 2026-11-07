@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, type ComponentProps, type ReactNode } from "re
 
 import { LazySurfaceBoundary, lazySurface } from "../LazySurface";
 import type ThreadTerminalDrawer from "../ThreadTerminalDrawer";
+import { TerminalDrawerPlaceholder } from "../ui/terminal-drawer-placeholder";
 import {
   chatColumnOf,
   clampDrawerHeight,
@@ -36,16 +37,12 @@ function DrawerPlaceholder({
     placeholder.style.height = `${clampDrawerHeight(height, maxHeight)}px`;
   });
   return (
-    <div
+    <TerminalDrawerPlaceholder
       ref={placeholderRef}
-      data-thread-terminal-drawer-placeholder
-      className="relative flex shrink-0 flex-col overflow-hidden border-t border-border/80 bg-background"
-      style={{
-        height: `${clampDrawerHeight(height, resolveTerminalDrawerMaxHeight(readDrawerLayout(null)))}px`,
-      }}
+      height={clampDrawerHeight(height, resolveTerminalDrawerMaxHeight(readDrawerLayout(null)))}
     >
       {children}
-    </div>
+    </TerminalDrawerPlaceholder>
   );
 }
 
