@@ -38,7 +38,7 @@ import { dedupeRemoteBranchesWithLocalMatches } from "@houston-app/shared/git";
 import * as HostProcess from "@houston-app/shared/HostProcess";
 import { compactTraceAttributes } from "@houston-app/shared/observability";
 import { decodeJsonResult } from "@houston-app/shared/schemaJson";
-import { resolveSpawnCommand } from "@houston-app/shared/shell";
+import { resolveSpawnCommand, runsGitWithoutConsole } from "@houston-app/shared/shell";
 import { parseHoustonProjectFile } from "@houston-app/shared/houstonProjectFile";
 import { resolveProjectFileBackedSetting } from "@houston-app/shared/projectSettings";
 import { gitCommandDuration, gitCommandsTotal, withMetrics } from "../observability/Metrics.ts";
@@ -1039,6 +1039,9 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
               cwd: commandInput.cwd,
               env: spawnEnv,
               forceKillAfter: input.forceKillAfterMs,
+              ...(runsGitWithoutConsole(hostPlatform, executable, commandInput.args)
+                ? { detached: true, windowsHide: true }
+                : {}),
             }),
           )
           .pipe(
