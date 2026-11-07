@@ -5,7 +5,10 @@ import {
 } from "@houston-app/contracts";
 
 import {
+  cloudSpeechDisclosure,
+  cloudSpeechLanguages,
   decodeSpeechPcmRequest,
+  effectiveSpeechLanguage,
   encodeSpeechPcmRequest,
   resolveSpeechVocabulary,
 } from "./speech.ts";
@@ -72,5 +75,27 @@ describe("resolveSpeechVocabulary", () => {
     ]);
     expect(resolved.filter(({ term }) => term === "word1")).toHaveLength(1);
     expect(resolved.at(-1)?.term).toBe("word97");
+  });
+});
+
+describe("cloud speech disclosure and languages", () => {
+  it("names the provider and the forwarding environment", () => {
+    expect(cloudSpeechDisclosure("openai", "Work VM")).toBe(
+      "After you stop, Work VM sends your recording and vocabulary hints, including project names, to OpenAI.",
+    );
+    expect(cloudSpeechDisclosure("xai", "Work VM")).toContain("to xAI.");
+  });
+
+  it("tells the user OpenRouter receives no hints and requests zero retention", () => {
+    const text = cloudSpeechDisclosure("openrouter", "Work VM");
+    expect(text).toContain("Work VM sends the recording to OpenRouter");
+    expect(text).toContain("zero data retention");
+    expect(text).not.toContain("vocabulary");
+  });
+
+  it("sends an explicit hint only for languages every cloud API accepts", () => {
+    expect(effectiveSpeechLanguage(cloudSpeechLanguages, "pt")).toBe("pt");
+    expect(effectiveSpeechLanguage(cloudSpeechLanguages, "sw")).toBe("auto");
+    expect(effectiveSpeechLanguage(cloudSpeechLanguages, "auto")).toBe("auto");
   });
 });

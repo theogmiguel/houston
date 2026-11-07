@@ -21,8 +21,10 @@ import {
   resolveProviderInstanceEnabled,
   ServerSettings,
   ServerSettingsPatch,
+  VoiceTranscriptionDestination,
   withIdleCompaction,
 } from "./settings.ts";
+import { SETTINGS_SECRET_MAX_BYTES } from "./settingsSecretValue.ts";
 
 const decodeClientSettings = Schema.decodeUnknownSync(ClientSettingsSchema);
 const decodeClientSettingsPatch = Schema.decodeUnknownSync(ClientSettingsPatch);
@@ -580,6 +582,52 @@ describe("ClientSettings microphone", () => {
       speechCorrectionWord: "",
     });
     expect(() => decodeClientSettingsPatch({ speechCorrectionWord: "x".repeat(51) })).toThrow();
+  });
+});
+
+describe("VoiceTranscriptionDestination", () => {
+  const decode = Schema.decodeUnknownSync(VoiceTranscriptionDestination);
+  const environmentId = "environment-1";
+
+  it("keeps decoding an environment destination", () => {
+    expect(decode({ kind: "environment", environmentId })).toEqual({
+      kind: "environment",
+      environmentId,
+    });
+  });
+
+  it("accepts a cloud grant per provider and requires an exact model for OpenRouter", () => {
+    for (const provider of ["openai", "xai"]) {
+      expect(decode({ kind: "cloud", environmentId, provider })).toMatchObject({ provider });
+    }
+    expect(() => decode({ kind: "cloud", environmentId, provider: "openrouter" })).toThrow();
+    expect(
+      decode({ kind: "cloud", environmentId, provider: "openrouter", model: "acme/voice-1" }),
+    ).toMatchObject({ model: "acme/voice-1" });
+    expect(() =>
+      decode({ kind: "cloud", environmentId, provider: "openrouter", model: "openrouter/auto" }),
+    ).toThrow();
+  });
+});
+
+describe("ServerSettings cloud speech credentials", () => {
+  it("defaults to no keys and accepts literals and references per provider", () => {
+    expect(DEFAULT_SERVER_SETTINGS.cloudSpeechCredentials).toEqual({
+      openai: "",
+      xai: "",
+      openrouter: "",
+    });
+    const reference = { provider: "vault", reference: "voice/key" };
+    expect(
+      decodeServerSettingsPatch({ cloudSpeechCredentials: { openai: "sk-1", xai: reference } }),
+    ).toEqual({ cloudSpeechCredentials: { openai: "sk-1", xai: reference } });
+  });
+
+  it("refuses a key over the credential bound, naming the sizes", () => {
+    const oversize = "k".repeat(SETTINGS_SECRET_MAX_BYTES + 1);
+    expect(() =>
+      decodeServerSettingsPatch({ cloudSpeechCredentials: { openrouter: oversize } }),
+    ).toThrow(`over the limit of ${SETTINGS_SECRET_MAX_BYTES} bytes`);
   });
 });
 
