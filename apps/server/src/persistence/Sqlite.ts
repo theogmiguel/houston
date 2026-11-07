@@ -17,7 +17,7 @@ const WAL_SIZE_LIMIT_BYTES = 32 * 1024 * 1024;
 // took 19-23% off deep thread-open and boot reads at 10x. No connection maps the file (mmap_size):
 // Windows cannot truncate a mapped file, and elsewhere a mapped-page I/O error ends the server.
 const READER_CACHE_KIB = 32 * 1024;
-export const READER_PRAGMAS = [`cache_size = -${READER_CACHE_KIB}`];
+const READER_PRAGMAS = [`cache_size = -${READER_CACHE_KIB}`];
 
 const layerSetup = Layer.effectDiscard(
   Effect.gen(function* () {
