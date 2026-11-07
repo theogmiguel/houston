@@ -1475,6 +1475,46 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
       }).pipe(Effect.provide(layerServerSettingsWithSecrets())),
   );
 
+  it.effect("keeps cloud dictation keys in the secret store under their own names", () =>
+    Effect.gen(function* () {
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const config = yield* ServerConfig.ServerConfig;
+      const fs = yield* FileSystem.FileSystem;
+      const store = yield* ServerSecretStore.ServerSecretStore;
+      const reference = {
+        provider: SecretProviderId.make("personal"),
+        reference: "op://Private/Voice/key",
+      };
+      const saved = yield* service.updateSettings({
+        cloudSpeechCredentials: { openai: "openai-secret", xai: reference },
+      });
+      assert.deepEqual(saved.cloudSpeechCredentials, {
+        openai: "openai-secret",
+        xai: reference,
+        openrouter: "",
+      });
+      const client = ServerSettingsModule.redactServerSettingsForClient(saved);
+      assert.deepEqual(client.cloudSpeechCredentials, {
+        openai: "••••••",
+        xai: reference,
+        openrouter: "",
+      });
+      assert.notInclude(JSON.stringify(client), "openai-secret");
+      assert.notInclude(yield* fs.readFileString(config.settingsPath), "openai-secret");
+      assert.isTrue(Option.isSome(yield* store.get("voice-cloud-openai")));
+      assert.isTrue(Option.isNone(yield* store.get("voice-cloud-xai")));
+      const echoed = yield* service.updateSettings({
+        cloudSpeechCredentials: client.cloudSpeechCredentials,
+      });
+      assert.equal(echoed.cloudSpeechCredentials.openai, "openai-secret");
+      const cleared = yield* service.updateSettings({
+        cloudSpeechCredentials: { openai: "", xai: "" },
+      });
+      assert.deepEqual(cleared.cloudSpeechCredentials, { openai: "", xai: "", openrouter: "" });
+      assert.isTrue(Option.isNone(yield* store.get("voice-cloud-openai")));
+    }).pipe(Effect.provide(layerServerSettingsWithSecrets())),
+  );
+
   it.effect("moves saved provider credentials to the secret store when settings load", () =>
     Effect.gen(function* () {
       const service = yield* ServerSettingsModule.ServerSettingsService;

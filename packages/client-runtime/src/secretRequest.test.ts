@@ -13,6 +13,7 @@ import {
   secretRequestFailureMessage,
   secretRequestPrivacyNote,
   secretRequestSources,
+  configuredSecretSources,
 } from "./secretRequest.ts";
 
 describe("secretRequestDisplay", () => {
@@ -70,6 +71,13 @@ describe("secretRequestSources", () => {
     ]);
     expect(secretRequestSources({}, providers)).toEqual([]);
     expect(secretRequestSources({ secretRequestReferences: true }, {})).toEqual([]);
+  });
+
+  it("lists configured providers for a setting without the reference-answer flag", () => {
+    expect(configuredSecretSources(providers)).toMatchObject([
+      { id: onePassword, label: "1Password" },
+    ]);
+    expect(configuredSecretSources({})).toEqual([]);
   });
 
   it("answers with a reference only in the provider's syntax", () => {

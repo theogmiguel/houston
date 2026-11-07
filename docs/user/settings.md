@@ -38,7 +38,8 @@ The rich-text composer, the send shortcut, whether skills appear in the `/` menu
 
 ## Voice
 
-Where microphone audio goes (this device only, Off by default), the microphone and its test,
+How speech is transcribed (an environment or a cloud provider with its API key; this device only, Off by
+default), the microphone and its test,
 the dictation shortcut, speech models and their comparison by language, language and
 translation, the personal and project dictionaries, silence filtering, filler-word removal,
 transcript cleanup, acceleration and model unload. See [Dictation](dictation.md).

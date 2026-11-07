@@ -35,6 +35,7 @@ import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as NodePtyAdapter from "./terminal/NodePtyAdapter.ts";
 import * as PullRequestHttp from "./pullRequest/http.ts";
 import * as SpeechModelStore from "./speech/SpeechModelStore.ts";
+import * as CloudSpeech from "./speech/CloudSpeech.ts";
 import * as SpeechService from "./speech/SpeechService.ts";
 import { speechHttpApiLayer } from "./speech/http.ts";
 import { speechStreamRouteLayer } from "./speech/stream.ts";
@@ -790,6 +791,7 @@ const layerMakeRoutes = Layer.mergeAll(
   // Share the service so HTTP/WS clients single-flight reads and invalidate each other's cached patches.
   Layer.provide(layerPullRequestService),
   Layer.provide(SpeechService.layer.pipe(Layer.provide(SpeechModelStore.layer))),
+  Layer.provide(CloudSpeech.layer.pipe(Layer.provide(FetchHttpClient.layer))),
   // The same activity instance RunExecutionService reports to, by layer memoization.
   Layer.provide(
     ServerBrowser.layer.pipe(

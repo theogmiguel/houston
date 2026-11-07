@@ -1,4 +1,6 @@
 import {
+  CLOUD_SPEECH_PROVIDER_NAMES,
+  type CloudSpeechProvider,
   SPEECH_MAX_OPTIONS_BYTES,
   type SpeechCustomWords,
   SpeechTranscriptionOptions,
@@ -7,6 +9,22 @@ import * as Schema from "effect/Schema";
 
 const decodeOptions = Schema.decodeUnknownSync(Schema.fromJsonString(SpeechTranscriptionOptions));
 const encodeOptions = Schema.encodeSync(Schema.fromJsonString(SpeechTranscriptionOptions));
+
+/** What a device is told before it opts into sending recordings to `provider` through `environment`. */
+export function cloudSpeechDisclosure(provider: CloudSpeechProvider, environment: string) {
+  return provider === "openrouter"
+    ? `After you stop, ${environment} sends the recording to OpenRouter. OpenRouter chooses who runs your model. Houston requests zero data retention; your OpenRouter account may allow safety retention.`
+    : `After you stop, ${environment} sends your recording and vocabulary hints, including project names, to ${CLOUD_SPEECH_PROVIDER_NAMES[provider]}.`;
+}
+
+/** Explicit language hints every cloud API accepts; other languages are still detected. */
+export const cloudSpeechLanguages = {
+  supportsLanguageDetection: true,
+  languages:
+    "ar bg ca cs da de el en es fa fi fr hi hr hu id it ja ko mk ms nl pl pt ro ru sk sv th tr uk ur vi zh".split(
+      " ",
+    ),
+};
 
 /** Resolve the language the model can produce from the requested language. */
 export function effectiveSpeechLanguage(

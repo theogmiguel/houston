@@ -148,6 +148,8 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   commandOutputStreaming: Schema.optionalKey(Schema.Boolean),
   /** Server can transcribe 16 kHz mono PCM audio on the environment machine. */
   voiceTranscription: Schema.optionalKey(Schema.Boolean),
+  /** Server can forward a finished recording to a cloud transcription provider. */
+  cloudVoiceTranscription: Schema.optionalKey(Schema.Boolean),
   /**
    * Version of the dictation wire protocol: options travel with each recording and the project
    * name is not sent. Servers that predate it omit the field and refuse the new requests.
