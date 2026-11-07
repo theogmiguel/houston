@@ -295,7 +295,7 @@ describe("EventSink live streams per thread", () => {
         const pull = yield* subscribedOnA("staying");
         assert.lengthOf(opened.subscriptions, 1);
         const queue = opened.subscriptions[0] as PubSub.Subscription<unknown>;
-        yield* Effect.scoped(subscribedOnA("closing"));
+        yield* Effect.scoped(Effect.asVoid(subscribedOnA("closing")));
 
         // Counted at the queue, so a stream cut off from its thread fails here instead of blocking.
         const queued = yield* PubSub.remaining(queue);
