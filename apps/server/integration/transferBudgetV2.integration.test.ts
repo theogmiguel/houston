@@ -6,6 +6,7 @@ import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeWS from "@effect/platform-node/NodeWS";
 import {
   ORCHESTRATION_PROTOCOL_HEADER,
   ORCHESTRATION_PROTOCOL_VERSION,
@@ -466,4 +467,87 @@ it.live("reports V2 thread HTTP and WebSocket transfer budgets", () =>
     yield* Effect.log(report);
     assert.deepEqual(transferBudgetViolations(runs), []);
   }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
+// RpcServer holds each chunk until the client acknowledges the previous one, so a client that
+// never acknowledges sees only the first chunk. That chunk must already end the initial sync.
+const initialChunksWithoutAck = Effect.fn("transfer.initialChunksWithoutAck")(function* (
+  url: string,
+  tag: string,
+  payload: object,
+) {
+  const chunks: Array<ReadonlyArray<StreamItem>> = [];
+  const socket = new NodeWS.WebSocket(url);
+  yield* Effect.addFinalizer(() => Effect.sync(() => socket.terminate()));
+  yield* Effect.callback<void>((resume) => {
+    socket.once("error", (cause) => resume(Effect.die(cause)));
+    socket.once("open", () =>
+      socket.send(JSON.stringify({ _tag: "Request", id: "1", tag, payload, headers: [] })),
+    );
+    socket.on("message", (data) => {
+      const message = JSON.parse(String(data)) as {
+        readonly _tag: string;
+        readonly values?: ReadonlyArray<StreamItem>;
+      };
+      if (message._tag !== "Chunk" || message.values === undefined) return;
+      chunks.push(message.values);
+      if (message.values.some((item) => item.kind === "synchronized")) resume(Effect.void);
+    });
+  }).pipe(Effect.timeoutOrElse({ duration: "5 seconds", orElse: () => Effect.void }));
+  return chunks.map((values) => values.map((item) => item.kind));
+});
+
+it.live("sends a subscription's initial items and completion marker before any ack", () =>
+  Effect.gen(function* () {
+    const provider = ProviderDriverKind.make("codex");
+    const sink = yield* EventSink.EventSinkV2;
+    yield* sink.write({ events: [threadCreated(provider)] });
+    const before = (yield* sink.write({ events: turnEvents(provider, 0, false) })).at(-1)!;
+    yield* sink.write({ events: turnEvents(provider, 1, false) });
+    const context = yield* Effect.context<Layer.Success<typeof layerServices>>();
+    const server = yield* Layer.build(
+      HttpRouter.serve(layerRoutes, { disableListenLog: true }).pipe(
+        Layer.provide(Layer.succeedContext(context)),
+        Layer.provideMerge(
+          NodeHttpServer.layer(NodeHttp.createServer, { host: "127.0.0.1", port: 0 }),
+        ),
+      ),
+    );
+    const address = Context.get(server, HttpServer.HttpServer).address;
+    if (!("port" in address)) return yield* Effect.die("Expected TCP server");
+    const url = `ws://127.0.0.1:${address.port}/ws`;
+    const thread = (afterSequence?: number) =>
+      initialChunksWithoutAck(url, ORCHESTRATION_V2_WS_METHODS.subscribeThread, {
+        threadId: THREAD_ID,
+        ...(afterSequence === undefined ? {} : { afterSequence }),
+        requestCompletionMarker: true,
+        acceptBoundedSnapshot: true,
+        acceptCompactTurnItems: true,
+        acceptCompactIds: true,
+        acceptDedupedBodies: true,
+      });
+    const shell = (afterSequence?: number) =>
+      initialChunksWithoutAck(url, ORCHESTRATION_V2_WS_METHODS.subscribeShell, {
+        ...(afterSequence === undefined ? {} : { afterSequence }),
+        requestCompletionMarker: true,
+        omitIdleSubagents: true,
+        omitOlderSettled: true,
+      });
+
+    assert.deepEqual(yield* thread(), [["snapshot", "synchronized"]]);
+    const threadReplay = yield* thread(before.sequence);
+    assert.equal(threadReplay.length, 1);
+    assert.isAbove(threadReplay[0]!.length, 2);
+    assert.deepEqual(threadReplay[0]!.at(-1), "synchronized");
+    assert.isTrue(threadReplay[0]!.slice(0, -1).every((kind) => kind === "event"));
+    assert.deepEqual(yield* shell(), [["snapshot", "synchronized"]]);
+    assert.deepEqual(yield* shell(before.sequence), [["thread.updated", "synchronized"]]);
+  }).pipe(
+    Effect.scoped,
+    Effect.provide(
+      Layer.fresh(layerServices).pipe(
+        Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+      ),
+    ),
+  ),
 );
