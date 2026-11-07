@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
+import * as NodeSqliteClient from "@houston-app/shared/nodeSqliteClient";
 import { makeLocalFileTracer, type TraceRecord } from "@houston-app/shared/observability";
 import * as Cause from "effect/Cause";
 import * as Data from "effect/Data";
@@ -7,6 +8,8 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Logger from "effect/Logger";
 import * as References from "effect/References";
+import * as SqlClient from "effect/sql/SqlClient";
+import * as TestClock from "effect/testing/TestClock";
 import type * as OtlpTracer from "effect/observability/OtlpTracer";
 
 import * as RecordingTracer from "../../observability/testing/RecordingTracer.ts";
@@ -316,4 +319,116 @@ describe("exportedResource", () => {
       },
     );
   });
+});
+
+describe("ExportTracer SQLite spans", () => {
+  const exportedNames = (exported: ReturnType<typeof RecordingTracer.make>) =>
+    exported.ended.map((span) => span.name);
+  const localNames = (local: ReadonlyArray<TraceRecord>) => local.map((record) => record.name);
+  const transaction = <A, E, R>(body: Effect.Effect<A, E, R>) =>
+    Effect.withSpan(Effect.withSpan(Effect.void, "BEGIN"), "sql.transaction").pipe(
+      Effect.andThen(body),
+      Effect.tap(Effect.withSpan(Effect.void, "COMMIT")),
+      Effect.withSpan("sql.transaction"),
+    );
+
+  it.effect("keeps fast successful SQLite spans local and exports their parent", () =>
+    Effect.gen(function* () {
+      const { tracer, exported, local } = yield* makeStack();
+      yield* Effect.withSpan(Effect.void, "sqlite").pipe(
+        Effect.withSpan("Projection.read"),
+        Effect.withTracer(tracer),
+      );
+      assert.deepStrictEqual(exportedNames(exported), ["Projection.read"]);
+      assert.deepStrictEqual(localNames(local), ["sqlite", "Projection.read"]);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("exports a slow SQLite span with every SQLite ancestor", () =>
+    Effect.gen(function* () {
+      const { tracer, exported, local } = yield* makeStack();
+      yield* Effect.withSpan(Effect.void, "sqlite").pipe(
+        Effect.andThen(Effect.withSpan(TestClock.adjust("5 millis"), "sqlite")),
+        Effect.withSpan("sql.transaction"),
+        Effect.withSpan("EventSink.write"),
+        Effect.withTracer(tracer),
+      );
+      assert.deepStrictEqual(exportedNames(exported), [
+        "sqlite",
+        "sql.transaction",
+        "EventSink.write",
+      ]);
+      assert.strictEqual(local.length, 4);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("exports a failed SQLite span with its ancestors and outcome", () =>
+    Effect.gen(function* () {
+      const { tracer, exported } = yield* makeStack();
+      yield* Effect.fail(new ReadFailed({ message: "SQLITE_BUSY" })).pipe(
+        Effect.withSpan("COMMIT"),
+        Effect.withSpan("sql.transaction"),
+        Effect.withTracer(tracer),
+        Effect.exit,
+      );
+      assert.deepStrictEqual(exportedNames(exported), ["COMMIT", "sql.transaction"]);
+      assert.strictEqual(exported.named("COMMIT")[0]!.attributes.get("houston.outcome"), "failure");
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("exports a transaction that contains an exported span, without its fast controls", () =>
+    Effect.gen(function* () {
+      const { tracer, exported, local } = yield* makeStack();
+      yield* transaction(Effect.withSpan(Effect.void, "EventStore.append")).pipe(
+        Effect.withTracer(tracer),
+      );
+      assert.deepStrictEqual(exportedNames(exported), ["EventStore.append", "sql.transaction"]);
+      assert.deepStrictEqual(localNames(local).toSorted(), [
+        "BEGIN",
+        "COMMIT",
+        "EventStore.append",
+        "sql.transaction",
+        "sql.transaction",
+      ]);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("keeps every span of a fast transaction through the SQLite client local", () =>
+    Effect.gen(function* () {
+      const { tracer, exported, local } = yield* makeStack();
+      yield* Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`CREATE TABLE t (id INTEGER PRIMARY KEY)`;
+        yield* sql.withTransaction(
+          Effect.gen(function* () {
+            yield* sql`INSERT INTO t (id) VALUES (1)`;
+            yield* sql.withTransaction(sql`INSERT INTO t (id) VALUES (2)`);
+          }),
+        );
+        yield* sql
+          .withTransaction(Effect.fail(new ReadFailed({ message: "rolled back" })))
+          .pipe(Effect.exit);
+      }).pipe(
+        Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" })),
+        Effect.withSpan("Store.write"),
+        Effect.withTracer(tracer),
+        // The statements' own clock: a CI stall must not turn a statement into a slow one.
+        Effect.provide(TestClock.layer()),
+      );
+      const clientNames = ["sqlite", "sql.transaction", "BEGIN", "COMMIT", "SAVEPOINT", "ROLLBACK"];
+      const recorded = new Set(localNames(local));
+      for (const name of clientNames) assert.isTrue(recorded.has(name), `${name} recorded locally`);
+      // Of the client's spans, only the failed transaction leaves; its fast ROLLBACK stays local.
+      const names = exportedNames(exported);
+      assert.include(names, "Store.write");
+      assert.deepStrictEqual(
+        names.filter((name) => clientNames.includes(name)),
+        ["sql.transaction"],
+      );
+      assert.strictEqual(
+        exported.named("sql.transaction")[0]!.attributes.get("houston.outcome"),
+        "failure",
+      );
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
 });
