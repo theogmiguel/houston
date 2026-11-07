@@ -190,7 +190,7 @@ import { resolveLinkTarget } from "../browser/browserLinkTarget";
 import { PullRequestLinkPreview } from "./pullRequest/PullRequestLinkPreview";
 import { MarkdownCodeBlock, SuspenseShikiCodeBlock } from "./chat/MarkdownCodeBlock";
 import { createMarkdownRenderer } from "./chat/markdownRenderer";
-import { splitMarkdownBlocks } from "./chat/markdownStreamBlocks";
+import { headingIdsMayCollide, splitMarkdownBlocks } from "./chat/markdownStreamBlocks";
 import { MarkdownMermaidCodeBlock } from "./chat/MarkdownMermaidCodeBlock";
 import { MarkdownTable } from "./chat/MarkdownTable";
 import { MarkdownDetails } from "./chat/MarkdownDetails";
@@ -525,26 +525,24 @@ function finishedFileLinkSources(
   return sources;
 }
 
-/**
- * While streaming renders each block apart, links are found per block too, so a tick scans only
- * the last block and reuses the finished ones. A finished message is scanned once per text.
- */
+// A split message's links are found per block too, so a streamed tick scans only the growing last
+// block. Finished text, whole or a block, is scanned once.
 function fileLinkSourcesKey(
   text: string,
   isStreaming: boolean,
-  streamingBlocks: ReadonlyArray<string> | null,
+  blocks: ReadonlyArray<string> | null,
   cwd: string | undefined,
   imageBaseDir: string | undefined,
 ): string {
   const parts =
-    streamingBlocks === null
+    blocks === null
       ? [
           isStreaming
             ? scanFileLinkSources(text, cwd, imageBaseDir)
             : finishedFileLinkSources(text, cwd, imageBaseDir),
         ]
-      : streamingBlocks.map((block, index) =>
-          index === streamingBlocks.length - 1
+      : blocks.map((block, index) =>
+          isStreaming && index === blocks.length - 1
             ? scanFileLinkSources(block, cwd, imageBaseDir)
             : finishedFileLinkSources(block, cwd, imageBaseDir),
         );
@@ -617,8 +615,8 @@ function useChatMarkdownState({
   renderContextReference,
   headingLevelOffset = 0,
   sourceControlMedia = false,
-  streamingBlocks = null,
-}: ChatMarkdownProps & { readonly streamingBlocks?: ReadonlyArray<string> | null }) {
+  blocks = null,
+}: ChatMarkdownProps & { readonly blocks?: ReadonlyArray<string> | null }) {
   const resolvedTheme = useRenderedAppearance();
   const markdownRef = useRef<HTMLElement>(null);
   const mediaRequestId = useRef(0);
@@ -795,7 +793,7 @@ function useChatMarkdownState({
   // Keyed by the file links found, not the text, so streamed text that adds none keeps the
   // renderer context, and every block reading it, unchanged.
   // A template literal marks the key as a string, so the compiler memoizes the maps on its value.
-  const fileLinksKey = `${fileLinkSourcesKey(text, isStreaming, streamingBlocks, cwd, imageBaseDir)}`;
+  const fileLinksKey = `${fileLinkSourcesKey(text, isStreaming, blocks, cwd, imageBaseDir)}`;
   const { markdownFileLinkMetaByHref, inlineCodeFileLinkMetaByText, fileLinkParentSuffixByPath } =
     resolveFileLinkSources(fileLinksKey, cwd, imageBaseDir);
   const resolveThreadPullRequest = (
@@ -1133,9 +1131,10 @@ const CHAT_MARKDOWN_COMPONENTS = {
     );
   },
   li: function MarkdownListItem({ node, children, ...props }) {
-    const { skills, threadRef } = use(ChatMarkdownRendererContext);
+    const { skills, threadRef, onTaskListChange } = use(ChatMarkdownRendererContext);
     // Resolve checkbox markers by offset to avoid rerendering list items on every streamed token.
-    const isTaskItem = String(props.className ?? "").includes("task-list-item");
+    const isTaskItem =
+      Boolean(onTaskListChange) && String(props.className ?? "").includes("task-list-item");
     return (
       <li {...props} data-list-item-offset={isTaskItem ? node?.position?.start.offset : undefined}>
         {renderSkillInlineMarkdownChildren(children, skills, threadRef)}
@@ -1845,19 +1844,20 @@ function ChatMarkdown({
   extraRemarkPlugins = EMPTY_REMARK_PLUGINS,
   ...props
 }: ChatMarkdownProps) {
-  // Streaming re-renders only the last block; offsets for task edits need the whole text.
-  const streamingBlocks =
-    props.isStreaming === true &&
+  // Streamed and finished text render as the same blocks, so an update or the turn's end
+  // re-renders only the last one. Offsets for task edits need the whole text.
+  const splitBlocks =
     !inline &&
     extraRemarkPlugins.length === 0 &&
-    !props.onTaskListChange
+    !props.onTaskListChange &&
+    (props.isStreaming === true || !headingIdsMayCollide(text))
       ? splitMarkdownBlocks(text)
       : null;
   const { componentState, handleCopy, markdownRef, localMediaPreview, closeLocalMediaPreview } =
-    useChatMarkdownState({ text, inline, streamingBlocks, ...props });
+    useChatMarkdownState({ text, inline, blocks: splitBlocks, ...props });
   const incrementalParsing =
     props.isStreaming === true &&
-    streamingBlocks === null &&
+    splitBlocks === null &&
     extraRemarkPlugins.length === 0 &&
     CODE_FENCE_OPENING.test(text);
   const Root = inline ? "span" : "div";
@@ -1879,7 +1879,7 @@ function ChatMarkdown({
   const remarkPlugins = incrementalParsing
     ? [...sharedRemarkPlugins, ...extraRemarkPlugins, createIncrementalMarkdownPlugin()]
     : withExtraPlugins(sharedRemarkPlugins, extraRemarkPlugins);
-  const blocks = streamingBlocks ?? [text];
+  const blocks = splitBlocks ?? [text];
 
   return (
     <Root
@@ -1895,20 +1895,23 @@ function ChatMarkdown({
     >
       <ChatMarkdownRendererContext value={componentState}>
         {blocks.map((source, index) => (
-          <MarkdownSource
-            // oxlint-disable-next-line react/no-array-index-key -- streamed blocks only change at the end
-            key={index}
-            text={source}
-            remarkPlugins={remarkPlugins}
-            rehypePlugins={
-              parseRawHtml
-                ? CHAT_MARKDOWN_RENDER_REHYPE_PLUGINS
-                : CHAT_MARKDOWN_LITERAL_HTML_REHYPE_PLUGINS
-            }
-            shared={!uncachedPlugins}
-            // Every block before the last is finished, so its parse can be reused.
-            cache={!props.isStreaming || index < blocks.length - 1}
-          />
+          // oxlint-disable-next-line react/no-array-index-key -- blocks only change at the end
+          <React.Fragment key={index}>
+            {/* One tree puts this text node between top-level blocks; find and copy read it. */}
+            {index > 0 ? "\n" : null}
+            <MarkdownSource
+              text={source}
+              remarkPlugins={remarkPlugins}
+              rehypePlugins={
+                parseRawHtml
+                  ? CHAT_MARKDOWN_RENDER_REHYPE_PLUGINS
+                  : CHAT_MARKDOWN_LITERAL_HTML_REHYPE_PLUGINS
+              }
+              shared={!uncachedPlugins}
+              // Every block before the last is finished, so its parse can be reused.
+              cache={!props.isStreaming || index < blocks.length - 1}
+            />
+          </React.Fragment>
         ))}
       </ChatMarkdownRendererContext>
       {localMediaPreview ? (

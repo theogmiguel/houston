@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import ReactMarkdown from "react-markdown";
 import { describe, expect, it } from "vite-plus/test";
 
-import { splitMarkdownBlocks } from "./markdownStreamBlocks";
+import { headingIdsMayCollide, splitMarkdownBlocks } from "./markdownStreamBlocks";
 
 // Whitespace between top-level blocks collapses in the rendered message.
 const html = (source: string) =>
@@ -59,5 +59,23 @@ describe("splitMarkdownBlocks", () => {
     "a\r\n\r\nb",
   ])("keeps text with document-wide syntax whole: %j", (text) => {
     expect(splitMarkdownBlocks(text)).toBeNull();
+  });
+});
+
+describe("headingIdsMayCollide", () => {
+  it.each([
+    ["## Setup\n\ntext\n\n## Setup", true],
+    ["## Setup\n\n## setup!", true],
+    ["## Fix 1\n\n## Fix-1", true],
+    ["## [Link](x)\n\n## Other", true],
+    ["## A &amp; B", true],
+    ['<span id="x">a</span>\n\n## A', true],
+    ["Title\n---\n\n## Other", true],
+    ["> ## Quoted\n\n- ## Listed\n\n## Quoted", true],
+    ["## One\n\n## Two\n\n### Three", false],
+    ["```sh\n# install\n```\n\n```sh\n# install\n```\n\n## Install steps", false],
+    ["No headings at all.\n\n---\n\nAfter a break.", false],
+  ])("%j: %s", (text, collides) => {
+    expect(headingIdsMayCollide(text)).toBe(collides);
   });
 });

@@ -45,3 +45,41 @@ export function splitMarkdownBlocks(text: string): string[] | null {
   blocks.push(text.slice(blockStart));
   return blocks;
 }
+
+const SETEXT_UNDERLINE = /^ {0,3}(?:=+|-+)[ \t]*$/;
+const ATX_HEADING = /^(?:[ \t>]|[-*+][ \t]|\d{1,9}[.)][ \t])*#{1,6}(?:[ \t]+(.*))?$/;
+// Heading text whose rendered words can differ from its source: links, entities, escapes, HTML, math.
+const REWRITTEN_HEADING_TEXT = /[[\]&<\\$]/;
+const HEADING_KEY_DROP = /[^\p{L}\p{M}\p{N}]/gu;
+const ELEMENT_ID = /<h[1-6]|\bid\s*=/i;
+
+// Heading ids are unique only within one rendered tree, so two headings in different blocks
+// that could share an id rule out rendering the blocks apart.
+export function headingIdsMayCollide(text: string): boolean {
+  if (ELEMENT_ID.test(text)) return true;
+  const seen = new Set<string>();
+  let previousLine = "";
+  let fence: string | null = null;
+  for (const line of text.split("\n")) {
+    const opener = FENCE_PATTERN.exec(line)?.[1];
+    if (fence !== null) {
+      if (opener && opener[0] === fence[0] && opener.length >= fence.length) fence = null;
+      continue;
+    }
+    if (opener) {
+      fence = opener;
+      continue;
+    }
+    if (previousLine.trim() !== "" && SETEXT_UNDERLINE.test(line)) return true;
+    previousLine = line;
+    const heading = ATX_HEADING.exec(line);
+    if (!heading) continue;
+    const content = heading[1] ?? "";
+    if (REWRITTEN_HEADING_TEXT.test(content)) return true;
+    const key = content.toLowerCase().replace(HEADING_KEY_DROP, "");
+    if (key === "") continue;
+    if (seen.has(key)) return true;
+    seen.add(key);
+  }
+  return false;
+}

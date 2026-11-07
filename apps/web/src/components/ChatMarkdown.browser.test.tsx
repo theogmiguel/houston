@@ -268,6 +268,47 @@ it("classifies a finished message's links once, however often it remounts", asyn
   expect(linkResolutions.count).toBe(0);
 });
 
+// React numbers generated ids per mount, so two mounts differ there alone.
+const GENERATED_ID = /_r_[0-9a-z]+_/g;
+
+describe("ChatMarkdown finished blocks", () => {
+  const blocks = (count: number) =>
+    Array.from(
+      { length: count },
+      (_, index) => `Paragraph ${index} edits [file ${index}](src/file${index}.ts).`,
+    ).join("\n\n");
+
+  it("parses only the last block again when a streamed reply finishes", async () => {
+    setup();
+    const text = `${blocks(20)}\n\nThe last block.`;
+    const message = (isStreaming: boolean) => (
+      <ChatMarkdown cwd="/tmp/project" text={text} isStreaming={isStreaming} />
+    );
+    await using screen = await render(message(true));
+    await expect.element(screen.getByText("The last block.")).toBeVisible();
+    parsedSources.length = 0;
+    await screen.rerender(message(false));
+    await expect.element(screen.getByText("The last block.")).toBeVisible();
+    expect(parsedSources.filter((source) => source.includes("Paragraph"))).toEqual([]);
+    expect(screen.container.querySelectorAll(".chat-markdown-file-link")).toHaveLength(20);
+  });
+
+  // An extra remark plugin keeps a message in one tree, which is the reference rendering.
+  const ONE_TREE = [() => undefined];
+  const html = (element: HTMLElement) => element.innerHTML.replace(GENERATED_ID, "_r_");
+  it.each([
+    "# Plan\n\n## Steps\n\n1. first `src/a.ts`\n2. second\n\n- [ ] open task\n- [x] done task\n\n### Notes\n\n> [!NOTE]\n> keep\n\n| a | b |\n| - | - |\n| [x](src/x.ts) | 2 |\n\n```ts\nconst a = 1;\n```\n\nThe end, see https://example.com.",
+    "## Setup\n\nText\n\n## Setup\n\nMore text",
+    "Intro\n\n3. starts at three\n4. four\n\n---\n\n* star list\n\n  continued",
+  ])("renders a finished message as one tree renders it: %j", async (text) => {
+    setup();
+    await using split = await renderText(text);
+    const splitHtml = html(split.container);
+    await using whole = await renderText(text, { extraRemarkPlugins: ONE_TREE });
+    expect(splitHtml).toBe(html(whole.container));
+  });
+});
+
 describe("ChatMarkdown favicon privacy", () => {
   it("suppresses private link images while preserving public links across updates", async () => {
     setup();
