@@ -236,6 +236,27 @@ const layerBase: Layer.Layer<
       OrchestrationV2DomainEvent["type"],
       PubSub.PubSub<OrchestrationV2StoredEvent>
     >();
+    // A thread's subscribers queue only its events; an entry lives while the thread has subscribers.
+    const liveEventsByThread = new Map<
+      ThreadId,
+      { readonly pubsub: PubSub.PubSub<OrchestrationV2StoredEvent>; subscribers: number }
+    >();
+    const threadLiveEvents = (threadId: ThreadId) =>
+      Effect.acquireRelease(
+        PubSub.unbounded<OrchestrationV2StoredEvent>().pipe(
+          Effect.map((created) => {
+            const lane = liveEventsByThread.get(threadId) ?? { pubsub: created, subscribers: 0 };
+            lane.subscribers += 1;
+            liveEventsByThread.set(threadId, lane);
+            return lane;
+          }),
+        ),
+        (lane) =>
+          Effect.sync(() => {
+            lane.subscribers -= 1;
+            if (lane.subscribers === 0) liveEventsByThread.delete(threadId);
+          }),
+      ).pipe(Effect.map((lane) => lane.pubsub));
     const publishLiveEvents =
       /* This helper runs for individual orchestration events; the enclosing operation owns the span. */
       Effect.fnUntraced(function* (events: ReadonlyArray<OrchestrationV2StoredEvent>) {
@@ -245,6 +266,11 @@ const layerBase: Layer.Layer<
             pubsub,
             events.filter((stored) => stored.event.type === type),
           );
+        }
+        if (liveEventsByThread.size === 0) return;
+        for (const stored of events) {
+          const lane = liveEventsByThread.get(stored.event.threadId);
+          if (lane !== undefined) yield* PubSub.publish(lane.pubsub, stored);
         }
       });
     const runOutcomes = makeRunOutcomeRecorder((threadId) =>
@@ -857,7 +883,9 @@ const layerBase: Layer.Layer<
       return Stream.unwrap(
         Effect.gen(function* () {
           let pubsub = liveEvents;
-          if (input?.eventType !== undefined) {
+          if (input?.threadId !== undefined) {
+            pubsub = yield* threadLiveEvents(input.threadId);
+          } else if (input?.eventType !== undefined) {
             const existing = liveEventsByType.get(input.eventType);
             if (existing !== undefined) {
               pubsub = existing;
