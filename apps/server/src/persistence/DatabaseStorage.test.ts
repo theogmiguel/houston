@@ -70,13 +70,18 @@ it.effect("a reclaim pass shrinks the database file", () =>
       yield* sql`DROP TABLE discarded`;
       const free = yield* freePages;
       assert.isAbove(free, 2 * DatabaseStorage.RECLAIM_PAGES_PER_STATEMENT);
+      const pageCount = sql<{ readonly page_count: number }>`PRAGMA page_count`.pipe(
+        Effect.map((rows) => rows[0]?.page_count ?? 0),
+      );
+      const pagesBefore = yield* pageCount;
       const before = yield* fileBytes;
 
       yield* storage.reclaim;
 
       assert.equal(yield* freePages, 0);
-      const pageSize = (yield* sql<{ readonly page_size: number }>`PRAGMA page_size`)[0]!.page_size;
       // Moving pages can also release a pointer-map page.
+      assert.isAtLeast(pagesBefore - (yield* pageCount), free);
+      const pageSize = (yield* sql<{ readonly page_size: number }>`PRAGMA page_size`)[0]!.page_size;
       assert.isAtLeast(before - (yield* fileBytes), free * pageSize);
     }).pipe(
       Effect.provide(
