@@ -14,7 +14,6 @@ const sourceFiles = NodeFS.readdirSync(sourceRoot, { recursive: true })
 // Modules too large for the boot bundle that only some views need: each may be imported
 // statically only from modules already behind a route split or `import()`.
 const LAZY_MODULES: Record<string, ReadonlyArray<string>> = {
-  "components/ui/calendar": [],
   "components/ThreadTerminalDrawer": [
     "components/onboarding/WelcomeWizard.tsx",
     "components/settings/ProviderAuthTerminal.tsx",
