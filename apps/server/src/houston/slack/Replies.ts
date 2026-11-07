@@ -1,14 +1,13 @@
 // What each open request is owed when its task or run changes in Houston: derived from the rows
-// every 5 seconds and on each Tasks change, then queued in the outbox under a dedupe key.
+// on each Tasks change and every 5 seconds (a minute while Slack is off), then queued in the
+// outbox under a dedupe key.
 import { HOUSTON_SLACK_LIMITS } from "@houston-app/contracts/houston/slack";
 import { houstonTaskKey } from "@houston-app/contracts/houston/tasks";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
-import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
-import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Stream from "effect/Stream";
@@ -29,10 +28,8 @@ import {
   type PostContext,
   type ResultForm,
 } from "./rules.ts";
-import { HoustonSlackStore, type RequestRow, type SettingsRow } from "./Store.ts";
+import { forkTicks, HoustonSlackStore, type RequestRow, type SettingsRow } from "./Store.ts";
 import { slackText } from "./text.ts";
-
-const TICK = Duration.seconds(5);
 
 export class HoustonSlackReplies extends Context.Service<
   HoustonSlackReplies,
@@ -419,13 +416,20 @@ const make = Effect.gen(function* () {
     }
     yield* conversation.deliverAnswers;
     yield* intake.startQueued;
+    return settings?.enabled === 1;
   });
 
-  const tick = intake
+  // A failed tick keeps the enabled pace.
+  const pacedTick = intake
     .withLock(derive)
-    .pipe(Effect.catchCause((cause) => Effect.logWarning("Slack replies tick failed.", cause)));
+    .pipe(
+      Effect.catchCause((cause) =>
+        Effect.logWarning("Slack replies tick failed.", cause).pipe(Effect.as(true)),
+      ),
+    );
+  const tick = Effect.asVoid(pacedTick);
 
-  yield* tick.pipe(Effect.repeat(Schedule.spaced(TICK)), Effect.forkScoped);
+  yield* forkTicks(pacedTick);
   const changes = yield* PubSub.subscribe(taskStore.changes);
   yield* Stream.fromSubscription(changes).pipe(
     Stream.runForEach(() => tick),
