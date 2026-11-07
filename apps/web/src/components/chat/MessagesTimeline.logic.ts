@@ -973,6 +973,22 @@ function timelineEntryStartsResponse(entry: TimelineEntry): boolean {
   );
 }
 
+function timelineEntryIsSystemNotice(entry: TimelineEntry): boolean {
+  return (
+    entry.kind === "work" &&
+    entry.entry.structuredPayload?.type === "notification" &&
+    entry.entry.structuredPayload.source.kind === "system"
+  );
+}
+
+/** The short fold-line form of a system notice's summary. */
+function systemNoticeFoldLabel(entry: TimelineEntry): string {
+  const summary = entry.kind === "work" ? entry.entry.label : "";
+  if (/resumed/i.test(summary)) return "resumed after restart";
+  if (/restarted/i.test(summary)) return "restarted";
+  return summary;
+}
+
 function timelineEntryEnd(entry: TimelineEntry): string {
   return entry.kind === "message" ? entry.message.updatedAt : entry.createdAt;
 }
@@ -1129,6 +1145,8 @@ function deriveTurnFolds(input: {
     // Entry timestamps omit startup and can collapse steered turns to an instant.
     startBoundary: string | null;
     anchorEntryId: string;
+    /** A system notice (such as a restart) that opened the turn; the fold absorbs it. */
+    leadNotice: TimelineEntry | null;
     /**
      * Each steer after the turn has produced output starts a new segment at
      * this index into `entries`, so the steer sits between the work it split.
@@ -1141,12 +1159,20 @@ function deriveTurnFolds(input: {
   // Key runless responses per prompt to prevent V2 runs unfolding imported turns.
   let runlessKey: RunId | null = null;
   let responseKey: RunId | null = null;
-  let pendingBoundary: { createdAt: string; anchorEntryId: string } | null = null;
+  let pendingBoundary: {
+    createdAt: string;
+    anchorEntryId: string;
+    leadNotice: TimelineEntry | null;
+  } | null = null;
   for (const [index, entry] of input.timelineEntries.entries()) {
     if (timelineEntryStartsResponse(entry)) {
       const nextEntry = input.timelineEntries[index + 1];
       pendingBoundary = nextEntry
-        ? { createdAt: entry.createdAt, anchorEntryId: nextEntry.id }
+        ? {
+            createdAt: entry.createdAt,
+            anchorEntryId: nextEntry.id,
+            leadNotice: timelineEntryIsSystemNotice(entry) ? entry : null,
+          }
         : null;
       const boundaryRunId = responseBoundaryRunId(entry);
       runlessKey = boundaryRunId == null ? RunId.make(`runless:${entry.id}`) : null;
@@ -1185,6 +1211,7 @@ function deriveTurnFolds(input: {
         hasStreamingMessage: false,
         startBoundary: pendingBoundary?.createdAt ?? null,
         anchorEntryId: pendingBoundary?.anchorEntryId ?? entry.id,
+        leadNotice: pendingBoundary?.leadNotice ?? null,
         steerSegments: [],
       };
       pendingBoundary = null;
@@ -1294,14 +1321,27 @@ function deriveTurnFolds(input: {
     const segmentWorkSummary = (entries: ReadonlyArray<TimelineEntry>) =>
       boardWorkSummary(entries.flatMap((entry) => (entry.kind === "work" ? [entry.entry] : [])));
     const firstSegment = group.entries.slice(0, group.steerSegments[0]?.startIndex);
-    foldsByAnchorEntryId.set(group.anchorEntryId, {
+    const leadNotice = group.leadNotice;
+    const firstSummary = [
+      segmentWorkSummary(firstSegment),
+      leadNotice ? systemNoticeFoldLabel(leadNotice) : null,
+    ]
+      .filter((part): part is string => !!part)
+      .join(" · ");
+    foldsByAnchorEntryId.set(leadNotice?.id ?? group.anchorEntryId, {
       runId,
-      anchorEntryId: group.anchorEntryId,
+      anchorEntryId: leadNotice?.id ?? group.anchorEntryId,
       createdAt: group.startBoundary ?? firstEntry.createdAt,
-      hiddenEntryIds: segmentHiddenIds(firstSegment),
-      entryIds: new Set(firstSegment.map((entry) => entry.id)),
+      hiddenEntryIds: new Set([
+        ...(leadNotice ? [leadNotice.id] : []),
+        ...segmentHiddenIds(firstSegment),
+      ]),
+      entryIds: new Set([
+        ...(leadNotice ? [leadNotice.id] : []),
+        ...firstSegment.map((entry) => entry.id),
+      ]),
       label,
-      summary: segmentWorkSummary(firstSegment),
+      summary: firstSummary || null,
     });
     for (const [index, { startIndex, steer }] of group.steerSegments.entries()) {
       const entries = group.entries.slice(startIndex, group.steerSegments[index + 1]?.startIndex);

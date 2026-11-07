@@ -11,6 +11,8 @@ import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   AlarmClockOffIcon,
   ChevronRightIcon,
+  FolderIcon,
+  FolderOpenIcon,
   ClockIcon,
   EyeOffIcon,
   Grid2X2PlusIcon,
@@ -1751,14 +1753,12 @@ export function SidebarProjectSection({
                 }}
                 className={SIDEBAR_PROJECT_LABEL_CLS}
               >
-                <span className={SIDEBAR_GRID_CHEVRON_BOX_CLS} data-project-chevron-box="">
-                  <ChevronRightIcon
-                    aria-hidden
-                    className={cn(
-                      SIDEBAR_GRID_CHEVRON_CLS,
-                      !collapsed && SIDEBAR_GRID_CHEVRON_EXPANDED_CLS,
-                    )}
-                  />
+                <span className={SIDEBAR_GRID_CHEVRON_BOX_CLS} data-project-icon-box="">
+                  {collapsed ? (
+                    <FolderIcon aria-hidden className="size-3" />
+                  ) : (
+                    <FolderOpenIcon aria-hidden className="size-3" />
+                  )}
                 </span>
                 <span className={SIDEBAR_PROJECT_LABEL_TEXT_CLS}>{section.title}</span>
                 {sectionThreads.length === 0 ? null : (

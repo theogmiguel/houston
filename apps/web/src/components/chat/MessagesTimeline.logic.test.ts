@@ -3809,6 +3809,75 @@ it.each([true, false])(
   },
 );
 
+it("folds a system restart notice into the turn's fold line", () => {
+  const time = (second: number) => new Date(Date.UTC(2026, 0, 1, 0, 0, second)).toISOString();
+  const run = RunId.make("resumed");
+  const notice = {
+    kind: "work" as const,
+    id: "restart-notice",
+    createdAt: time(1),
+    entry: {
+      id: "restart-notice",
+      runId: run,
+      createdAt: time(1),
+      label: "Houston restarted and resumed this turn",
+      tone: "info" as const,
+      itemType: "notification" as const,
+      structuredPayload: {
+        type: "notification",
+        source: { kind: "system" },
+      } as never,
+    },
+  };
+  const read = {
+    kind: "work" as const,
+    id: "read-file",
+    createdAt: time(2),
+    entry: {
+      id: "read-file",
+      runId: run,
+      createdAt: time(2),
+      label: "Read file",
+      tone: "tool" as const,
+      itemType: "command_execution" as const,
+    },
+  };
+  const answer = {
+    kind: "message" as const,
+    id: "done",
+    createdAt: time(5),
+    message: {
+      id: MessageId.make("done"),
+      role: "assistant" as const,
+      text: "done",
+      runId: run,
+      createdAt: time(5),
+      updatedAt: time(5),
+      streaming: false,
+    },
+  };
+  const input = {
+    timelineEntries: [notice, read, answer],
+    latestRun: {
+      runId: run,
+      status: "completed" as const,
+      startedAt: time(1),
+      completedAt: time(5),
+    },
+    isWorking: false,
+    activeTurnStartedAt: null,
+    turnDiffSummaries: [],
+    supportsConversationRollback: false,
+  };
+  const collapsed = deriveMessagesTimelineRows(input);
+  expect(collapsed.map((row) => row.id)).not.toContain("restart-notice");
+  const fold = collapsed.find((row) => row.kind === "turn-fold");
+  expect(fold && "summary" in fold ? fold.summary : null).toContain("resumed after restart");
+  const expanded = deriveMessagesTimelineRows({ ...input, expandedRunIds: new Set([run]) });
+  const ids = expanded.map((row) => row.id);
+  expect(ids.indexOf(`turn-fold:${run}`)).toBeLessThan(ids.indexOf("restart-notice"));
+});
+
 it("keeps the working header in place across worktree setup handoff", () => {
   const snapshot: WorktreeSetupSnapshot = {
     threadId: ThreadId.make("thread-setup"),

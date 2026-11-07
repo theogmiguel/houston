@@ -12,10 +12,6 @@ import { GridThreadBranch } from "../components/grid/GridThreadBranch";
 import { GridThreadCell } from "../components/grid/GridThreadCell";
 import { GridTerminalDock } from "../components/grid/GridTerminalDock";
 import { clearInlineDetailsHandoff } from "../components/chat/inlineDetailsFollow";
-import {
-  EMPTY_PROVIDER_ENTRIES,
-  sidebarProviderEntriesAtom,
-} from "../components/sidebar/sidebarProviderEntries";
 import { GridTopBarControls } from "../components/grid/GridTopBarControls";
 import { Button } from "../components/ui/button";
 import { SidebarInset } from "../components/ui/sidebar";
@@ -77,7 +73,6 @@ function GridRoute() {
   const reorderGridThreads = useGridStore((store) => store.reorderGridThreads);
   const moveThreadToCell = useGridStore((store) => store.moveThreadToCell);
   const openDraft = useOpenGridDraft();
-  const providerEntriesByEnvironment = useAtomValue(sidebarProviderEntriesAtom);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const prefersSheetPanel = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
   const [gridRow, setGridRow] = useState<HTMLDivElement | null>(null);
@@ -294,8 +289,6 @@ function GridRoute() {
   const visibleThreadIds = new Set(
     (grid.tree === null ? [] : preorderThreads(grid.tree)).map((leaf) => leaf.threadId),
   );
-  const providerEntries =
-    providerEntriesByEnvironment.get(grid.environmentId) ?? EMPTY_PROVIDER_ENTRIES;
   // A split picker never offers a thread another grid already shows, nor a
   // closed, held, archived or subagent thread: one thread, one ChatView.
   const availableThreads = ungroupedWorkspaceThreads({
@@ -543,7 +536,6 @@ function GridRoute() {
                 focused={focused}
                 maximized={maximized}
                 availableThreads={availableThreads}
-                providerEntries={providerEntries}
                 rightPanelPortal={
                   node.threadId === panelThreadId && rightPanelHost !== null
                     ? {

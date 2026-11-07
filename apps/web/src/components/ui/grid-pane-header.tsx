@@ -4,14 +4,13 @@ import { cn } from "~/lib/utils";
 import { GridPaneRenameInput } from "./grid-pane";
 
 /**
- * A grid pane's header bar: the thread's status, title and provider mark, and the pane
- * actions. It sits on the pane surface, so the conversation scrolls beneath it rather than
- * behind a floating label.
+ * A grid pane's header bar: the thread's status, title and the pane actions.
+ * It sits on the pane surface, so the conversation scrolls beneath it rather than behind a
+ * floating label.
  */
 export function GridPaneHeader(props: {
   title: string;
   status: ReactNode;
-  providerStack: ReactNode;
   focused: boolean;
   renaming: boolean;
   renameValue: string;
@@ -52,11 +51,6 @@ export function GridPaneHeader(props: {
           )}
         >
           {props.title}
-        </span>
-      )}
-      {props.providerStack === null ? null : (
-        <span data-pane-provider="" className="flex shrink-0 items-center">
-          {props.providerStack}
         </span>
       )}
       <div

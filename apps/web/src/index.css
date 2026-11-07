@@ -416,6 +416,10 @@ body {
   --color-status-input-ink: var(--status-input-ink);
   --color-status-approval: var(--status-approval);
   --color-status-approval-ink: var(--status-approval-ink);
+  --color-status-failed: var(--status-failed);
+  --color-status-failed-ink: var(--status-failed-ink);
+  --color-status-ready: var(--status-ready);
+  --color-status-ready-ink: var(--status-ready-ink);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-ring: var(--ring);
   --color-input: var(--contrast-input);
@@ -1090,18 +1094,23 @@ body {
   --warn-ink: #9a4a06;
   --info-ink: #155e75;
   /* Thread status hues. Accent violet stays interaction-only, so state never borrows it:
-     running is blue, back is pink, waiting is slate, input is amber and approval is orange.
-     Each `-ink` keeps 4.5:1 on the canvas and the raised card. */
-  --status-running: #2563eb;
-  --status-running-ink: #2563eb;
-  --status-back: #db2777;
-  --status-back-ink: #be185d;
-  --status-waiting: #64748b;
-  --status-waiting-ink: #64748b;
-  --status-input: var(--warn);
-  --status-input-ink: var(--warn-ink);
-  --status-approval: #ea580c;
-  --status-approval-ink: #c2410c;
+     running is blue, back is teal, waiting is slate, input and approval share amber. The
+     glyph takes the bright step and the status word the dark `-ink` step of one hue; each
+     `-ink` keeps 4.5:1 on the canvas and the sidebar chrome, each glyph 3:1 on the canvas. */
+  --status-running: #3b82f6;
+  --status-running-ink: #1d4ed8;
+  --status-back: #0d9488;
+  --status-back-ink: #0f766e;
+  --status-waiting: #7a8aa0;
+  --status-waiting-ink: #475569;
+  --status-input: #d97706;
+  --status-input-ink: #92400e;
+  --status-approval: var(--status-input);
+  --status-approval-ink: var(--status-input-ink);
+  --status-failed: #ef4444;
+  --status-failed-ink: #b91c1c;
+  --status-ready: #16a34a;
+  --status-ready-ink: #166534;
   /* A merged pull request: the one status colour Houston has no other use for. */
   --merged: #7c3aed;
   --merged-ink: #6d28d9;
@@ -1263,17 +1272,21 @@ body {
   --warn-ink: #f5a524;
   --info-ink: #7cb7ff;
   /* Thread status hues, the same families as the light palette, brightened for the dark
-     canvas and the raised card; each `-ink` keeps 4.5:1 on both. */
+     canvas and the raised card; glyph and `-ink` share one value and keep 4.5:1 on both. */
   --status-running: #64a0ff;
   --status-running-ink: #64a0ff;
-  --status-back: #ec4899;
-  --status-back-ink: #ec4899;
+  --status-back: #2dd4bf;
+  --status-back-ink: #2dd4bf;
   --status-waiting: #94a3b8;
   --status-waiting-ink: #94a3b8;
   --status-input: var(--warn);
   --status-input-ink: var(--warn-ink);
-  --status-approval: #fb923c;
-  --status-approval-ink: #fb923c;
+  --status-approval: var(--status-input);
+  --status-approval-ink: var(--status-input-ink);
+  --status-failed: var(--stop);
+  --status-failed-ink: var(--stop-ink);
+  --status-ready: var(--ok);
+  --status-ready-ink: var(--ok-ink);
   --merged: #a78bfa;
   --merged-ink: #c4b5fd;
   --danger-fill: #d93a30;

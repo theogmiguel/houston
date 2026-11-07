@@ -178,9 +178,14 @@ function v2Item(type: string, fields: Record<string, unknown>) {
 
 async function renderElement(
   element: ReactElement,
-  { width = 900, ...options }: { router?: false; width?: number } = {},
+  {
+    width = 900,
+    grid = false,
+    ...options
+  }: { router?: false; width?: number; grid?: boolean } = {},
 ) {
   const container = document.createElement("div");
+  if (grid) container.setAttribute("data-grid-cell", "");
   container.style.cssText = `height: 1200px; width: ${width}px; display: flex; flex-direction: column;`;
   const screen = await render(element, { container, ...options });
   const buttons = (name: string | RegExp) =>
@@ -202,7 +207,7 @@ async function renderElement(
 function renderTimeline(
   entries: ReadonlyArray<Entry>,
   props: Partial<TimelineProps> = {},
-  options: { width?: number } = {},
+  options: { width?: number; grid?: boolean } = {},
 ) {
   return renderElement(
     <MessagesTimeline {...baseProps()} timelineEntries={entries as Entry[]} {...props} />,
@@ -2542,38 +2547,45 @@ describe("MessagesTimeline rhythm", () => {
 
 describe("MessagesTimeline compact density", () => {
   it.each([
-    { width: 340, compact: true },
-    { width: 900, compact: false },
-  ])("hides the latest answer's footer until hover at $width px", async ({ width, compact }) => {
-    setup();
-    const runId = RunId.make(`compact-run-${width}`);
-    await using screen = await renderTimeline(
-      [
-        message("Question", { runId }, "compact-user"),
-        message(
-          "Running the integration suite against the staging snapshot.",
-          {
-            role: "assistant",
-            runId,
-          },
-          "compact-answer",
-        ),
-      ],
-      { latestRun: { runId, status: "completed", startedAt: CREATED_AT, completedAt: CREATED_AT } },
-      { width },
-    );
-    const root = screen.container;
-    const footer = await vi.waitFor(() => {
-      const found = root.querySelector<HTMLElement>("[data-assistant-meta-footer]");
-      expect(found).not.toBeNull();
-      return found!;
-    });
-    expect(Number(getComputedStyle(footer).opacity)).toBe(compact ? 0 : 1);
-    // Focus reveals it, so the actions stay reachable by keyboard.
-    footer.querySelector<HTMLElement>("button")?.focus();
-    await vi.waitFor(() => expect(Number(getComputedStyle(footer).opacity)).toBe(1));
-    expect(root.scrollWidth).toBeLessThanOrEqual(root.clientWidth + 1);
-  });
+    { width: 340, grid: false, compact: true },
+    { width: 570, grid: true, compact: true },
+    { width: 570, grid: false, compact: false },
+    { width: 900, grid: false, compact: false },
+  ])(
+    "hides the latest answer's footer until hover at $width px (grid pane: $grid)",
+    async ({ width, grid, compact }) => {
+      setup();
+      const runId = RunId.make(`compact-run-${width}-${grid}`);
+      await using screen = await renderTimeline(
+        [
+          message("Question", { runId }, "compact-user"),
+          message(
+            "Running the integration suite against the staging snapshot.",
+            {
+              role: "assistant",
+              runId,
+            },
+            "compact-answer",
+          ),
+        ],
+        {
+          latestRun: { runId, status: "completed", startedAt: CREATED_AT, completedAt: CREATED_AT },
+        },
+        { width, grid },
+      );
+      const root = screen.container;
+      const footer = await vi.waitFor(() => {
+        const found = root.querySelector<HTMLElement>("[data-assistant-meta-footer]");
+        expect(found).not.toBeNull();
+        return found!;
+      });
+      expect(Number(getComputedStyle(footer).opacity)).toBe(compact ? 0 : 1);
+      // Focus reveals it, so the actions stay reachable by keyboard.
+      footer.querySelector<HTMLElement>("button")?.focus();
+      await vi.waitFor(() => expect(Number(getComputedStyle(footer).opacity)).toBe(1));
+      expect(root.scrollWidth).toBeLessThanOrEqual(root.clientWidth + 1);
+    },
+  );
 });
 
 describe("MessagesTimeline failure card", () => {

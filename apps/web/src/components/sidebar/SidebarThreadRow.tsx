@@ -526,7 +526,7 @@ function topStatusClassName(status: TopStatus): string {
 
 function TopStatusIcon(props: { status: TopStatus; className: string }) {
   if ("state" in props.status) {
-    return <ThreadStateGlyph state={props.status.state} className={props.className} />;
+    return <ThreadStateGlyph state={props.status.state} colored className={props.className} />;
   }
   const Icon = TOP_STATUS_ICONS[props.status.icon];
   return <Icon aria-hidden className={cn("shrink-0", props.className)} />;

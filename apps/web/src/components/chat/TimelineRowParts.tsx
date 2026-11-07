@@ -1,7 +1,7 @@
 import { type ReactNode } from "react";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
-import { RUNNING_INK_CLS } from "../ui/work-log-recipes";
+import { RUNNING_GLYPH_CLS, RUNNING_INK_CLS } from "../ui/work-log-recipes";
 import { type TimestampFormat } from "@houston-app/contracts/settings";
 import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../timestampFormat";
 
@@ -87,7 +87,7 @@ export function StreamingGlyph({
       viewBox="0 0 14 14"
       className={cn(
         "size-3.5 shrink-0 animate-spin [animation-duration:1.1s] motion-reduce:animate-none",
-        RUNNING_INK_CLS,
+        statusKind === undefined ? RUNNING_INK_CLS : RUNNING_GLYPH_CLS,
         className,
       )}
     >

@@ -668,7 +668,7 @@ describe("ThreadCard status marks", () => {
     const glyph = mark.querySelector<SVGElement>('svg[data-status-kind="running"]');
     expect(glyph).not.toBeNull();
     expect(getComputedStyle(glyph!).animationName).not.toBe("none");
-    expect(getComputedStyle(mark).color).toBe(tokenColor("--status-running-ink"));
+    expect(getComputedStyle(mark).color).toBe(tokenColor("--status-running"));
     expect(mark.hasAttribute("data-thread-status-glyph")).toBe(true);
     expect(mark.textContent).toBe("");
     // The glyph leads the row, left of the title; a plain running thread needs no word.
@@ -754,24 +754,23 @@ describe("ThreadCard status marks", () => {
       },
     };
     const cases = [
-      { label: "Running", value: runningThread, ink: "text-status-running-ink", glyph: null },
+      // The glyph takes the status hue; the word on line 2 uses the darker ink step.
+      { label: "Running", value: runningThread, glyph: "text-status-running" },
       {
         label: "Input",
         value: { hasPendingUserInput: true },
-        ink: "text-status-input-ink",
-        glyph: null,
+        glyph: "text-status-input",
       },
       {
         label: "Ready",
         value: readyThread,
-        ink: "text-success-foreground",
-        glyph: null,
+        glyph: "text-status-ready",
       },
-      { label: "Failed", value: failedThread, ink: "text-error-foreground", glyph: null },
+      { label: "Failed", value: failedThread, glyph: "text-status-failed" },
     ];
     const colors = new Set<string>();
     const glyphs = new Set<string>();
-    for (const { label, value, ink, glyph } of cases) {
+    for (const { label, value, glyph } of cases) {
       await using screen = await render(card(thread(value as never), { timeLabel: null }));
       const named = screen.container.querySelector<HTMLElement>("[data-thread-status-glyph]")!;
       // The glyph is named for assistive tech and the word on the second line says the same.
@@ -781,7 +780,7 @@ describe("ThreadCard status marks", () => {
         label,
       ).toContain(label);
       const color = getComputedStyle(named).color;
-      expect(color, label).toBe(classColor(glyph ?? ink));
+      expect(color, label).toBe(classColor(glyph));
       colors.add(color);
       glyphs.add(named.querySelector("svg")!.innerHTML);
     }
@@ -808,7 +807,7 @@ describe("ThreadCard status marks", () => {
     expect(outline).not.toBeNull();
     expect(getComputedStyle(outline!).fill).toBe("none");
     expect(getComputedStyle(outline!).stroke).not.toBe("none");
-    expect(getComputedStyle(outline!).stroke).toBe(tokenColor("--status-input-ink"));
+    expect(getComputedStyle(outline!).stroke).toBe(tokenColor("--status-input"));
   });
 });
 

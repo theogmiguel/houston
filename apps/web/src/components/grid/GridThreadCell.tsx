@@ -13,7 +13,6 @@ import {
 import ChatView, { type RightPanelPortalTarget } from "../ChatView";
 import { resolveThreadStatusPill } from "../Sidebar.logic";
 
-import { SidebarProviderStack, type SidebarProviderEntry } from "../sidebar/SidebarThreadRow";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { type DraftId, useComposerDraftStore } from "../../composerDraftStore";
@@ -43,7 +42,6 @@ export function GridThreadCell({
   focused,
   maximized = false,
   availableThreads,
-  providerEntries,
   onFocus,
   onClose,
   onArchiveClose,
@@ -70,7 +68,6 @@ export function GridThreadCell({
   /** This cell is shown alone; the grid tree keeps every other cell. */
   maximized?: boolean;
   availableThreads: ReadonlyArray<{ threadId: string; title: string }>;
-  providerEntries: ReadonlyMap<string, SidebarProviderEntry>;
   onFocus: () => void;
   onClose: () => void;
   /** Removes the cell without adding it to the reopen stack. */
@@ -377,11 +374,6 @@ export function GridThreadCell({
       <GridPaneHeader
         title={title}
         status={shell === null ? null : <PaneThreadStatusMark thread={shell} status={status} />}
-        providerStack={
-          shell === null ? null : (
-            <SidebarProviderStack thread={shell} providerEntryByInstanceId={providerEntries} />
-          )
-        }
         focused={focused}
         renaming={renaming}
         renameValue={renameValue}

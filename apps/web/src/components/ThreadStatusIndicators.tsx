@@ -50,7 +50,11 @@ import {
 
 import type { SidebarThreadSummary } from "../types";
 import { formatWorktreePathForDisplay } from "../worktreeCleanup";
-import { ThreadStatusKindGlyph, threadStatusKindTextClass } from "./ui/thread-state-glyph";
+import {
+  ThreadStatusKindGlyph,
+  threadStatusKindGlyphClass,
+  threadStatusKindTextClass,
+} from "./ui/thread-state-glyph";
 import { gridThreadStatusKind } from "../grid/statusWord";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import {
@@ -626,7 +630,7 @@ function ThreadStatusLabel({
               aria-label={status.label}
               className={cn(
                 "inline-flex size-3.5 shrink-0 items-center justify-center",
-                threadStatusKindTextClass(kind),
+                threadStatusKindGlyphClass(kind),
               )}
             />
           }
@@ -652,7 +656,9 @@ function ThreadStatusLabel({
           />
         }
       >
-        <ThreadStatusKindGlyph kind={kind} className="size-3.5" />
+        <span className={cn("inline-flex", threadStatusKindGlyphClass(kind))}>
+          <ThreadStatusKindGlyph kind={kind} className="size-3.5" />
+        </span>
         <span className="hidden md:inline">{status.label}</span>
       </TooltipTrigger>
       <TooltipPopup side="top">{status.label}</TooltipPopup>

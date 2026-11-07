@@ -123,7 +123,6 @@ function render(node: ThreadNode) {
       grid={grid()}
       focused
       availableThreads={[]}
-      providerEntries={new Map()}
       onFocus={() => {}}
       onClose={() => {}}
       onSplit={() => {}}
@@ -163,7 +162,6 @@ describe("GridThreadCell", () => {
         }}
         focused
         availableThreads={[]}
-        providerEntries={new Map()}
         onFocus={() => {}}
         onClose={() => {}}
         onSplit={() => {}}

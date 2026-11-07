@@ -14,6 +14,7 @@ import {
   FolderGitIcon,
   FolderIcon,
   GitBranchIcon,
+  LaptopIcon,
   PlusIcon,
   ScaleIcon,
 } from "lucide-react";
@@ -82,6 +83,7 @@ import {
   CONTEXT_CHIP_BRANCH_CLS,
   CONTEXT_CHIP_CHEVRON_CLS,
   CONTEXT_CHIP_ENV_CLS,
+  CONTEXT_CHIP_ENV_ICON_CLS,
   CONTEXT_CHIP_PANEL_CLS,
   CONTEXT_CHIP_SEPARATOR_CLS,
   CONTEXT_CHIP_TRIGGER_CLS,
@@ -809,6 +811,7 @@ export const BranchToolbar = memo(function BranchToolbar({
                 size="xs"
                 data-composer-context-control
                 className={CONTEXT_CHIP_TRIGGER_CLS}
+                title={workspaceChipShowsEnvMode ? `${branchLabel} · ${envModeLabel}` : branchLabel}
                 aria-label={
                   workspaceChipShowsEnvMode
                     ? `Workspace: ${branchLabel}, ${envModeLabel}`
@@ -827,6 +830,19 @@ export const BranchToolbar = memo(function BranchToolbar({
                   ·
                 </span>
                 <span className={CONTEXT_CHIP_ENV_CLS}>{envModeLabel}</span>
+                {effectiveEnvMode === "worktree" ? (
+                  <FolderGit2Icon
+                    role="img"
+                    aria-label={envModeLabel}
+                    className={CONTEXT_CHIP_ENV_ICON_CLS}
+                  />
+                ) : (
+                  <LaptopIcon
+                    role="img"
+                    aria-label={envModeLabel}
+                    className={CONTEXT_CHIP_ENV_ICON_CLS}
+                  />
+                )}
               </>
             ) : null}
             <ChevronDownIcon aria-hidden className={CONTEXT_CHIP_CHEVRON_CLS} />

@@ -20,7 +20,6 @@ import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { composerFloatingLayerProps } from "./composerEventScope";
-import { COMPOSER_STOP_RUNNING_CLS } from "../ui/composer-anatomy-recipes";
 import {
   alternateComposerDispatchAction,
   resolveComposerDispatchMode,
@@ -217,8 +216,6 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
             className={cn(
               "flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full bg-(--sel) text-(--t1) transition-colors duration-150 hover:bg-(--hover) disabled:pointer-events-none disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:size-3.5",
               boardFocusRing,
-              // The running state lives on this button: a status-coloured ring, no separate label.
-              running && COMPOSER_STOP_RUNNING_CLS,
             )}
             {...pointerFocusProps}
             disabled={!canOperateThread}

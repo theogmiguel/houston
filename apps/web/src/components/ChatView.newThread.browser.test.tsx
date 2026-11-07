@@ -174,6 +174,7 @@ it(
     const { card, pane } = composerBoxes();
     await expect.poll(() => popup.getBoundingClientRect().top).toBeGreaterThanOrEqual(card.bottom);
     expect(popup.getBoundingClientRect().bottom).toBeLessThanOrEqual(pane.bottom + 1);
+    expect(popup.getBoundingClientRect().bottom).toBeLessThanOrEqual(window.innerHeight);
   },
   APP_BOOT_TEST_TIMEOUT_MS,
 );

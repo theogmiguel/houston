@@ -6,3 +6,6 @@ export const NESTED_WORK_RAIL_CLASS = `ms-3.5 border-s border-border ps-2.5 ${NE
 
 /** Ink for a run that is in progress: the running status hue, never the accent. */
 export const RUNNING_INK_CLS = "text-status-running-ink";
+
+/** The running ring when it stands for a thread status: the bright glyph step of the hue. */
+export const RUNNING_GLYPH_CLS = "text-status-running";

@@ -32,7 +32,7 @@ export type ThreadState = Extract<
 /**
  * Status ink comes from the status tokens, never from the accent: violet marks interaction
  * (buttons, focus, selection) and state owns a hue of its own. Every `-ink` token keeps
- * 4.5:1 on the canvas and the raised card in both themes.
+ * 4.5:1 on the canvas and the sidebar chrome in both themes.
  */
 export const THREAD_STATUS_KIND_TEXT_CLASS: Record<ThreadStatusKind, string> = {
   approval: "text-status-approval-ink",
@@ -40,15 +40,39 @@ export const THREAD_STATUS_KIND_TEXT_CLASS: Record<ThreadStatusKind, string> = {
   request: "text-status-input-ink",
   needs: "text-status-input-ink",
   limited: "text-status-input-ink",
-  failed: "text-error-foreground",
+  failed: "text-status-failed-ink",
   waiting: "text-status-waiting-ink",
   running: "text-status-running-ink",
   goal: "text-status-running-ink",
   back: "text-status-back-ink",
-  ready: "text-success-foreground",
+  ready: "text-status-ready-ink",
   idle: "text-secondary-label",
   closed: "text-secondary-label",
 };
+
+/**
+ * The glyph's class: the bright step of the status hue. It differs from the word's ink in
+ * the light theme and is the same value in the dark one.
+ */
+export const THREAD_STATUS_KIND_GLYPH_CLASS: Record<ThreadStatusKind, string> = {
+  approval: "text-status-approval",
+  input: "text-status-input",
+  request: "text-status-input",
+  needs: "text-status-input",
+  limited: "text-status-input",
+  failed: "text-status-failed",
+  waiting: "text-status-waiting",
+  running: "text-status-running",
+  goal: "text-status-running",
+  back: "text-status-back",
+  ready: "text-status-ready",
+  idle: "text-secondary-label",
+  closed: "text-secondary-label",
+};
+
+export function threadStatusKindGlyphClass(kind: ThreadStatusKind): string {
+  return THREAD_STATUS_KIND_GLYPH_CLASS[kind];
+}
 
 export const THREAD_STATE_TEXT_CLASS: Record<ThreadState, string> = {
   running: THREAD_STATUS_KIND_TEXT_CLASS.running,
@@ -195,6 +219,6 @@ export function ThreadStateGlyph({
   /** Paint the glyph with the state's ink instead of the caller's currentColor. */
   colored?: boolean;
 }) {
-  const ink = colored ? threadStateTextClass(state) : "";
+  const ink = colored ? threadStatusKindGlyphClass(state) : "";
   return <ThreadStatusKindGlyph kind={state} className={cn(ink, className)} />;
 }

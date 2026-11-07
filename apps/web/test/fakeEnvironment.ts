@@ -196,6 +196,10 @@ export interface FakeThread {
   readonly subagentOf?: ThreadId;
   readonly id: ThreadId;
   readonly title: string;
+  /** The checked-out branch the shell reports; defaults to `main`. */
+  readonly branch?: string;
+  /** A worktree path the shell reports, which puts the thread in worktree mode. */
+  readonly worktreePath?: string;
   readonly runs: ReadonlyArray<OrchestrationV2Run>;
   readonly items: ReadonlyArray<OrchestrationV2TurnItem>;
   /** Runtime requests (pending questions, approvals) the thread projection reports. */
@@ -235,8 +239,8 @@ function shellOf(thread: FakeThread): OrchestrationV2ThreadShell {
     modelSelection: MODEL,
     runtimeMode: "full-access",
     interactionMode: "default",
-    branch: "main",
-    worktreePath: null,
+    branch: thread.branch ?? "main",
+    worktreePath: thread.worktreePath ?? null,
     ...(thread.pullRequests ? { pullRequests: thread.pullRequests } : {}),
     activeProviderThreadId: null,
     lineage: {

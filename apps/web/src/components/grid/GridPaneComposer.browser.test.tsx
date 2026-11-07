@@ -63,17 +63,76 @@ const cellsOf = (container: HTMLElement) => [
   ...container.querySelectorAll<HTMLElement>("[data-grid-cell]"),
 ];
 
-async function renderGrid(gridId: string) {
-  await page.viewport(1000, 800);
+async function renderGrid(gridId: string, width = 1000) {
+  await page.viewport(width, 800);
   const router = getRouter(createMemoryHistory({ initialEntries: [`/grid/${gridId}`] }));
   await router.load();
   const container = document.createElement("div");
-  container.style.cssText = "height: 800px; width: 1000px;";
+  container.style.cssText = `height: 800px; width: ${width}px;`;
   return render(<AppRoot router={router} />, { container, router: false });
 }
 
 // Boots the whole app and a three-cell grid; on a loaded 4-vCPU CI runner that has exceeded the default 15 s budget.
 const APP_BOOT_TEST_TIMEOUT_MS = 45_000;
+
+// Runs first: the fake environment serves the thread-shell list once per app runtime, so a
+// branch set on a later test's threads would never reach the shell this chip reads.
+it(
+  "keeps a 24-character branch readable in the folded workspace chip of a 370px pane",
+  async () => {
+    const branch = "feature/worktree-chip-12";
+    expect(branch).toHaveLength(24);
+    using _environment = installFakeEnvironment([
+      {
+        ...threadWithHistory("pane-branch-a", 1),
+        branch,
+        worktreePath: "/tmp/worktrees/pane-branch-a",
+      },
+      threadWithHistory("pane-branch-b", 1),
+    ]);
+    __setClientSettingsForTests({
+      ...DEFAULT_CLIENT_SETTINGS,
+      onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+    });
+    const gridId = seedGrid(["pane-branch-a", "pane-branch-b"]);
+    await using screen = await renderGrid(gridId, 760);
+    await vi.waitFor(() => expect(cellsOf(screen.container)).toHaveLength(2));
+    const cell = cellsOf(screen.container).find(
+      (candidate) => candidate.getAttribute("data-thread-id") === "pane-branch-a",
+    )!;
+    expect(cell.getBoundingClientRect().width).toBeGreaterThan(340);
+    expect(cell.getBoundingClientRect().width).toBeLessThan(400);
+    // Re-query on every attempt: the chip renders before the branch arrives and may be replaced.
+    const chip = await vi.waitFor(
+      () => {
+        const found = cell.querySelector<HTMLElement>('[aria-label^="Workspace:"]');
+        expect(found?.getAttribute("aria-label")).toBe(`Workspace: ${branch}, Worktree`);
+        return found!;
+      },
+      { timeout: 10_000 },
+    );
+    expect(chip.getAttribute("title")).toBe(`${branch} · Worktree`);
+
+    // The checkout label is an icon named "Worktree"; the branch keeps its room.
+    const envIcon = chip.querySelector<SVGElement>('svg[aria-label="Worktree"]')!;
+    expect(envIcon.getBoundingClientRect().width).toBeGreaterThan(0);
+    const envText = [...chip.querySelectorAll<HTMLElement>("span")].find(
+      (node) => node.textContent === "Worktree",
+    )!;
+    expect(getComputedStyle(envText).display).toBe("none");
+    const label = chip.querySelector<HTMLElement>("[data-composer-label]")!;
+    expect(label.textContent).toBe(branch);
+    const probe = document.createElement("span");
+    probe.className = "text-xs";
+    probe.style.cssText = "position:absolute;visibility:hidden;white-space:pre";
+    probe.textContent = "0".repeat(10);
+    document.body.append(probe);
+    const tenCharacters = probe.getBoundingClientRect().width;
+    probe.remove();
+    expect(label.getBoundingClientRect().width).toBeGreaterThanOrEqual(tenCharacters - 1);
+  },
+  APP_BOOT_TEST_TIMEOUT_MS,
+);
 
 it(
   "keeps the two-row composer with its model and workspace chips in a narrow pane",
@@ -200,6 +259,10 @@ it(
         submitBox.top < box.bottom - 1;
       expect(overlaps, `${control.ariaLabel} overlaps Submit`).toBe(false);
     }
+    // The question card hides no toolbar control: the provider stays visible in the model chip.
+    const modelChip = footer.querySelector<HTMLElement>("[data-chat-provider-model-picker]");
+    expect(modelChip).not.toBeNull();
+    expect(modelChip!.getAttribute("title") ?? "").not.toBe("");
     // The answer field is the first row; the toolbar sits under it.
     const editor = cell.querySelector<HTMLElement>('[data-testid="composer-editor"]')!;
     expect(footer.getBoundingClientRect().top).toBeGreaterThanOrEqual(

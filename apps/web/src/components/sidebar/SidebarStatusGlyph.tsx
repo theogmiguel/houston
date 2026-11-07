@@ -2,7 +2,7 @@ import { cn } from "../../lib/utils";
 import type { ThreadStatusPill } from "../Sidebar.logic";
 import {
   ThreadStatusKindGlyph,
-  threadStatusKindTextClass,
+  threadStatusKindGlyphClass,
   type ThreadState,
   type ThreadStatusKind,
 } from "../ui/thread-state-glyph";
@@ -32,7 +32,7 @@ export function SidebarStatusGlyph({
       aria-label={label ?? GLYPH_LABEL[state]}
       className={cn(
         "inline-grid size-3.5 shrink-0 place-items-center",
-        threadStatusKindTextClass(kind),
+        threadStatusKindGlyphClass(kind),
       )}
     >
       <ThreadStatusKindGlyph kind={kind} />

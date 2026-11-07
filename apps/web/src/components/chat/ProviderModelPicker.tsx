@@ -96,10 +96,19 @@ function headerClearanceOf(trigger: HTMLElement | null): number | null {
 }
 
 /**
- * The least room under the new-thread composer that still opens the docked popup downward: the
- * popup scrolls inside its list, and the group centred at 1440x900 leaves about 300px.
+ * The docked popup's height with eight model rows, the search field and the effort panel,
+ * measured in the browser; used until the open popup can be measured itself.
  */
-const DRAFT_HERO_MIN_ROOM_BELOW_PX = 240;
+const DOCKED_PICKER_FULL_HEIGHT_PX = 304;
+
+/** The gap and collision padding the positioner keeps around the popup. */
+const DOCKED_PICKER_EDGE_ROOM_PX = 9;
+
+/**
+ * How much of the model list the new-thread page lets the popup give up to stay under the
+ * composer; the list scrolls inside for the clipped rows. Past this the popup opens above.
+ */
+const DRAFT_HERO_MAX_LIST_SHRINK_PX = 48;
 
 export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   environmentId: EnvironmentId | null;
@@ -183,13 +192,20 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     const bottomLimit = boundaryRect?.bottom ?? window.innerHeight;
     const roomAbove = cardRect.top - topLimit;
     const roomBelow = bottomLimit - cardRect.bottom;
-    // More room wins; a tie opens downward, which is where the new-thread page wants it. The
-    // new-thread group is centred, so there the popup opens downward whenever the room under
-    // the card can seat it, rather than covering the hero above.
     const inDraftHero = card.closest("[data-draft-hero]") !== null;
-    const opensDownward = inDraftHero
-      ? roomBelow >= DRAFT_HERO_MIN_ROOM_BELOW_PX || roomAbove <= roomBelow
-      : roomAbove <= roomBelow;
+    const needed =
+      (popupRef.current?.scrollHeight ?? DOCKED_PICKER_FULL_HEIGHT_PX) + DOCKED_PICKER_EDGE_ROOM_PX;
+    const fitsBelow = roomBelow >= needed;
+    const fitsAbove = roomAbove >= needed;
+    // The new-thread page keeps the popup under the card unless that would clip more than a few
+    // rows. Elsewhere the side where the whole popup fits wins; with both or neither, the roomier
+    // side does, and the popup's own height cap applies.
+    const opensDownward =
+      inDraftHero && needed - roomBelow <= DRAFT_HERO_MAX_LIST_SHRINK_PX
+        ? true
+        : fitsBelow !== fitsAbove
+          ? fitsBelow
+          : roomAbove <= roomBelow;
     setDockSide(opensDownward ? "bottom" : "top");
   }, [docked, isMenuOpen]);
 

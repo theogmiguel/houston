@@ -249,7 +249,6 @@ async function renderCell(
       focused={options?.focused ?? true}
       maximized={options?.maximized ?? false}
       availableThreads={options?.availableThreads ?? []}
-      providerEntries={new Map()}
       onFocus={() => {}}
       onClose={options?.onClose ?? (() => {})}
       onArchiveClose={options?.onArchiveClose}
@@ -888,7 +887,7 @@ describe("GridThreadCell shortcut scope", () => {
 
 describe("GridThreadCell pane header", () => {
   it.each([570, 340])(
-    "shows only status, title and provider mark at a %ipx pane width",
+    "shows only status and title in the header at a %ipx pane width",
     async (paneWidth) => {
       state.draftSession = null;
       state.pill = { state: "failed", label: "Failed" } as typeof state.pill;
@@ -910,17 +909,8 @@ describe("GridThreadCell pane header", () => {
       // No coloured bar on the pane's top edge, whatever the thread's status.
       const style = getComputedStyle(header);
       expect(style.borderTopWidth).toBe("0px");
-      const title = [...header.querySelectorAll("span")].find(
-        (span) => span.textContent === "Alpha thread" && span.children.length === 0,
-      )!;
-      const mark = header.querySelector<HTMLElement>('[data-testid="pane-provider-mark"]')!;
-      expect(mark.getBoundingClientRect().left).toBeGreaterThanOrEqual(
-        title.getBoundingClientRect().right - 1,
-      );
-      const cell = screen.container.querySelector<HTMLElement>("[data-grid-cell]")!;
-      expect(mark.getBoundingClientRect().right).toBeGreaterThan(
-        cell.getBoundingClientRect().right - 16,
-      );
+      expect(header.querySelector('[data-testid="pane-provider-mark"]')).toBeNull();
+      expect(header.querySelector("[data-pane-provider]")).toBeNull();
       expect(header.scrollWidth).toBeLessThanOrEqual(header.clientWidth + 1);
     },
   );

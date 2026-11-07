@@ -214,7 +214,7 @@ function heading(screen: { container: HTMLElement }, title: string): HTMLElement
 }
 
 describe("project and grid headings", () => {
-  it("sets the project name at 12px/600 with a chevron, a muted count and no pips", async () => {
+  it("sets the project name at 12px/600 with a folder icon, a muted count and no pips", async () => {
     resetTestState();
     await using screen = await render(<CollapsibleSections sections={[projectWithGrid()]} />);
 
@@ -222,7 +222,8 @@ describe("project and grid headings", () => {
     const name = button.querySelector<HTMLElement>("span.truncate")!;
     expect(getComputedStyle(name).fontSize).toBe("12px");
     expect(getComputedStyle(name).fontWeight).toBe("600");
-    expect(button.querySelector("[data-project-chevron-box] svg")).not.toBeNull();
+    expect(button.querySelector("[data-project-icon-box] svg.lucide-folder-open")).not.toBeNull();
+    expect(button.querySelector("[data-project-chevron-box]")).toBeNull();
 
     const count = button.querySelector<HTMLElement>("[data-heading-count]")!;
     expect(count.textContent).toBe("4");
@@ -233,6 +234,19 @@ describe("project and grid headings", () => {
     const projectHeading = button.closest<HTMLElement>("[data-project-heading]")!;
     expect(projectHeading.querySelector("[data-attention-pips], [data-attention-pip]")).toBeNull();
     expect(projectHeading.textContent).toBe("Houston4");
+  });
+
+  it("swaps the folder icon with the expanded state and keeps the toggle semantics", async () => {
+    resetTestState();
+    await using screen = await render(<CollapsibleSections sections={[projectWithGrid()]} />);
+    const button = heading(screen, "Houston");
+    expect(button.getAttribute("aria-expanded")).toBe("true");
+    expect(button.querySelector("[data-project-icon-box] svg.lucide-folder-open")).not.toBeNull();
+    button.click();
+    await vi.waitFor(() => expect(button.getAttribute("aria-expanded")).toBe("false"));
+    expect(button.querySelector("[data-project-icon-box] svg.lucide-folder")).not.toBeNull();
+    expect(button.querySelector("svg.lucide-folder-open")).toBeNull();
+    expect(button.querySelector("[data-heading-count]")?.textContent).toBe("4");
   });
 
   it("shows neither a count nor pips on an empty project", async () => {
@@ -285,7 +299,7 @@ describe("project and grid headings", () => {
     const project = heading(screen, "Houston");
     const gridHeading = heading(screen, "Grid 1");
     const projectChevron = project
-      .querySelector("[data-project-chevron-box]")!
+      .querySelector("[data-project-icon-box]")!
       .getBoundingClientRect();
     const gridChevron = gridHeading
       .querySelector("[data-grid-chevron-box]")!

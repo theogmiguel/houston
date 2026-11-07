@@ -121,7 +121,7 @@ it(
       "";
     expect(editorPlaceholder).toBe("Ask anything. @ files, $ skills, / commands");
 
-    // The text sits well inside the card, and the resting input is a roomy 72px box.
+    // The text sits well inside the card, and the resting input is one line tall.
     const editor = document.querySelector<HTMLElement>('[data-testid="composer-editor"]')!;
     const editorBox = editor.getBoundingClientRect();
     const editorStyle = getComputedStyle(editor);
@@ -131,7 +131,7 @@ it(
     expect(editorBox.top + parseFloat(editorStyle.paddingTop) - cardBox.top).toBeGreaterThanOrEqual(
       10,
     );
-    expect(editorBox.height).toBeGreaterThanOrEqual(72);
+    expect(editorBox.height).toBeLessThanOrEqual(40);
 
     // The details card opens only from its toggle or shortcut.
     expect(document.querySelector('[aria-label="Thread details"]')).toBeNull();
@@ -196,6 +196,24 @@ it(
       if (placeholderBox !== undefined) {
         expect(placeholderBox.getBoundingClientRect().height).toBeLessThanOrEqual(24);
       }
+
+      // The empty composer rests at one input line plus the 40px toolbar, grows while typing and
+      // shrinks back when the text is gone.
+      const restingHeight = surface.getBoundingClientRect().height;
+      const inputRowHeight = restingHeight - footer.getBoundingClientRect().height;
+      expect(inputRowHeight, `resting input row height at ${width}px`).toBeLessThanOrEqual(64);
+      expect(restingHeight, `resting composer height at ${width}px`).toBeLessThanOrEqual(80);
+      await userEvent.click(page.getByTestId("composer-editor"));
+      await userEvent.keyboard("one{Shift>}{Enter}{/Shift}two{Shift>}{Enter}{/Shift}three");
+      await userEvent.keyboard("{Shift>}{Enter}{/Shift}four{Shift>}{Enter}{/Shift}five");
+      await userEvent.keyboard("{Shift>}{Enter}{/Shift}six");
+      await vi.waitFor(() =>
+        expect(surface.getBoundingClientRect().height).toBeGreaterThan(restingHeight + 60),
+      );
+      await userEvent.keyboard("{Control>}a{/Control}{Backspace}");
+      await vi.waitFor(() =>
+        expect(Math.abs(surface.getBoundingClientRect().height - restingHeight)).toBeLessThan(2),
+      );
 
       const contextControls = [
         ...footer.querySelectorAll<HTMLElement>("[data-composer-context-control]"),

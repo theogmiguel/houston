@@ -103,7 +103,7 @@ import { FaviconImage } from "./preview/PreviewFaviconIcon";
 import { previewBridge } from "./preview/previewBridge";
 import {
   ThreadStatusKindGlyph,
-  threadStatusKindTextClass,
+  threadStatusKindGlyphClass,
   type ThreadStatusKind,
 } from "./ui/thread-state-glyph";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
@@ -732,7 +732,7 @@ function SideChatTabIcon(props: { environmentId: EnvironmentId | null; threadId:
       <MessageSquareText className="size-3 shrink-0" />
       {state === null ? null : (
         <span
-          className={cn("absolute -top-1 -right-1", threadStatusKindTextClass(state.kind))}
+          className={cn("absolute -top-1 -right-1", threadStatusKindGlyphClass(state.kind))}
           aria-hidden
         >
           <ThreadStatusKindGlyph kind={state.kind} className="size-2.5" />
@@ -1533,7 +1533,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     >
       <div
         className={cn(
-          "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1 pl-2",
+          "group/panel-header flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1 pl-2",
           props.mode === "inline" && !props.layoutControls ? "pr-3" : "pr-1",
           ownsDesktopTitleBar && "drag-region",
           ownsDesktopTitleBar &&

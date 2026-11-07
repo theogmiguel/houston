@@ -16,7 +16,7 @@ import { cn } from "../../lib/utils";
 import type { ThreadStatusKind } from "../ui/thread-state-glyph";
 import {
   ThreadStatusKindGlyph,
-  threadStatusKindTextClass,
+  threadStatusKindGlyphClass,
   threadStatusWordClass,
 } from "../ui/thread-state-glyph";
 import { SIDEBAR_THREAD_STATUS_CLASS } from "../ui/thread-tag-recipes";
@@ -91,7 +91,7 @@ export function ThreadStatusGlyph({
       data-status-kind={kind}
       className={cn(
         "inline-grid size-3.5 shrink-0 place-items-center",
-        threadStatusKindTextClass(kind),
+        threadStatusKindGlyphClass(kind),
       )}
     >
       <ThreadStatusKindGlyph kind={kind} />
