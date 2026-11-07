@@ -3,7 +3,6 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
-import * as Cache from "effect/Cache";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -510,7 +509,21 @@ export const CommandResolutionCache = Context.Reference<Map<string, CommandResol
 interface PathDirectoryListing {
   readonly modified: number | null | undefined;
   readonly names: ReadonlySet<string> | undefined;
+  readonly expiresAtNanos: bigint;
 }
+
+type PathDirectoryListings = Map<string, PathDirectoryListing>;
+
+// A Windows miss would otherwise stat every PATH directory × PATHEXT case variant (hundreds of
+// probes per command). Listings are revalidated by directory mtime on every lookup and expire with
+// the resolution cache, so a file added within one mtime tick of a listing is still found.
+const PATH_DIRECTORY_LISTING_MAX_ENTRIES = 512;
+
+/** Process-wide PATH directory listings that Windows lookups use outside `withPathDirectoryListings`. */
+export const PathDirectoryListingCache = Context.Reference<PathDirectoryListings>(
+  "@houston-app/shared/shell/PathDirectoryListingCache",
+  { defaultValue: () => new Map() },
+);
 
 const directoryMtime = (directory: string) =>
   FileSystem.FileSystem.use((fileSystem) => fileSystem.stat(directory)).pipe(
@@ -521,31 +534,42 @@ const directoryMtime = (directory: string) =>
   );
 
 // Timestamp before reading so concurrent additions change the next mtime check; missing listings fall back to direct probes.
-const listPathDirectory = Effect.fnUntraced(function* (
+const pathDirectoryListing = Effect.fnUntraced(function* (
+  listings: PathDirectoryListings,
   directory: string,
+  nowNanos: bigint,
 ): Effect.fn.Return<PathDirectoryListing, never, FileSystem.FileSystem> {
   const modified = yield* directoryMtime(directory);
-  if (modified == null) return { modified, names: modified === null ? new Set() : undefined };
-  const entries = yield* FileSystem.FileSystem.use((fileSystem) =>
-    fileSystem.readDirectory(directory),
-  ).pipe(Effect.orElseSucceed(() => undefined));
-  return { modified, names: entries && new Set(entries.map((entry) => entry.toLowerCase())) };
+  const cached = listings.get(directory);
+  if (cached !== undefined && cached.modified === modified && cached.expiresAtNanos > nowNanos) {
+    return cached;
+  }
+  const expiresAtNanos = nowNanos + COMMAND_RESOLUTION_CACHE_TTL_NANOS;
+  let names: ReadonlySet<string> | undefined = modified === null ? new Set() : undefined;
+  if (modified != null) {
+    const entries = yield* FileSystem.FileSystem.use((fileSystem) =>
+      fileSystem.readDirectory(directory),
+    ).pipe(Effect.orElseSucceed(() => undefined));
+    names = entries && new Set(entries.map((entry) => entry.toLowerCase()));
+  }
+  const listing = { modified, names, expiresAtNanos };
+  listings.delete(directory);
+  if (listings.size >= PATH_DIRECTORY_LISTING_MAX_ENTRIES) {
+    const oldestKey = listings.keys().next().value;
+    if (oldestKey !== undefined) listings.delete(oldestKey);
+  }
+  listings.set(directory, listing);
+  return listing;
 });
 
-const PathDirectoryListings = Context.Reference<
-  Cache.Cache<string, PathDirectoryListing, never, FileSystem.FileSystem> | undefined
->("@houston-app/shared/shell/PathDirectoryListings", { defaultValue: () => undefined });
+const ScopedPathDirectoryListings = Context.Reference<PathDirectoryListings | undefined>(
+  "@houston-app/shared/shell/PathDirectoryListings",
+  { defaultValue: () => undefined },
+);
 
-export const withPathDirectoryListings =
-  /* Directory reads are cached inside one shell operation; a span for each lookup adds noise. */
-  Effect.fnUntraced(function* <A, E, R>(effect: Effect.Effect<A, E, R>) {
-    const listings = yield* Cache.make({
-      capacity: 1024,
-      lookup: listPathDirectory,
-      requireServicesAt: "lookup",
-    });
-    return yield* effect.pipe(Effect.provideService(PathDirectoryListings, listings));
-  });
+/** Lists PATH directories (on every platform) through listings private to `effect`. */
+export const withPathDirectoryListings = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  Effect.provideService(effect, ScopedPathDirectoryListings, new Map());
 
 // An injected resolver or locator may answer differently for the same search, so its
 // entries are kept apart from every other resolver's.
@@ -646,13 +670,12 @@ const resolveCommandPathForPlatform = Effect.fn("shell.resolveCommandPathForPlat
     pathEntries.push(pathEntry);
   }
 
-  const listings = yield* PathDirectoryListings;
+  // POSIX probes one candidate per directory, which a listing would not make cheaper.
+  const listings =
+    (yield* ScopedPathDirectoryListings) ??
+    (platform === "win32" ? yield* PathDirectoryListingCache : undefined);
   for (const pathEntry of pathEntries) {
-    let listing = listings && (yield* Cache.get(listings, pathEntry));
-    if (listings && listing?.names && listing.modified !== (yield* directoryMtime(pathEntry))) {
-      yield* Cache.invalidate(listings, pathEntry);
-      listing = yield* Cache.get(listings, pathEntry);
-    }
+    const listing = listings && (yield* pathDirectoryListing(listings, pathEntry, nowNanos));
     for (const candidate of commandCandidates) {
       if (listing?.names && !listing.names.has(candidate.toLowerCase())) continue;
       const candidatePath = path.join(pathEntry, candidate);
