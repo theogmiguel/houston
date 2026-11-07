@@ -66,6 +66,7 @@ import { mediaUrlReference } from "@houston-app/client-runtime/media-reference";
 import { mediaKindFromPath, mediaMimeTypeFromExtension } from "@houston-app/shared/mediaPreview";
 import { InlineAudioPreview } from "./files/InlineAudioPreview";
 import { HostImageUrlContext } from "./chat/hostImageUrl";
+import { FinishedTextCache } from "./chat/finishedTextCache";
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -500,28 +501,27 @@ function lruSet<V>(cache: Map<string, V>, key: string, value: V, limit: number):
 }
 
 // Finished messages and the finished blocks of streaming ones; a thread's mounted rows and a few
-// long answers streaming at once fit. Keyed by the text itself, so an entry holds no copy of it.
+// long answers streaming at once fit. An entry keeps its whole text alive, so the texts are
+// bounded too: 4 MiB is about two million characters, more than a long thread's finished text.
 const FINISHED_SOURCES_LIMIT = 512;
-const finishedSources = new Map<
-  string,
-  {
-    readonly cwd: string | undefined;
-    readonly imageBaseDir: string | undefined;
-    readonly sources: FileLinkSources;
-  }
->();
+const FINISHED_SOURCES_MAX_BYTES = 4 * 1024 * 1024;
+const finishedSources = new FinishedTextCache<{
+  readonly cwd: string | undefined;
+  readonly imageBaseDir: string | undefined;
+  readonly sources: FileLinkSources;
+}>(FINISHED_SOURCES_LIMIT, FINISHED_SOURCES_MAX_BYTES);
 
 function finishedFileLinkSources(
   text: string,
   cwd: string | undefined,
   imageBaseDir: string | undefined,
 ): FileLinkSources {
-  const cached = lruGet(finishedSources, text);
+  const cached = finishedSources.get(text);
   if (cached !== undefined && cached.cwd === cwd && cached.imageBaseDir === imageBaseDir) {
     return cached.sources;
   }
   const sources = scanFileLinkSources(text, cwd, imageBaseDir);
-  lruSet(finishedSources, text, { cwd, imageBaseDir, sources }, FINISHED_SOURCES_LIMIT);
+  finishedSources.set(text, { cwd, imageBaseDir, sources });
   return sources;
 }
 
