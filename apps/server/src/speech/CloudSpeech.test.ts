@@ -32,7 +32,7 @@ it.effect.each(["openai", "xai"] as const)("sends only to %s using its own saved
     let resolved: string | undefined;
     let cached: string | undefined;
     const read = vi.fn(() => Effect.sync(() => [(cached ??= resolved)]));
-    const upstream = vi.fn<typeof fetch>(async () => Response.json({ text: "hello" }));
+    const providerFetch = vi.fn<typeof fetch>(async () => Response.json({ text: "hello" }));
     const service = yield* makeService({
       read,
       label: () => Effect.succeed("Work"),
@@ -48,15 +48,15 @@ it.effect.each(["openai", "xai"] as const)("sends only to %s using its own saved
           speechLanguage: "en",
           speechCustomWords: [{ term: "Houston", aliases: [] }],
         })
-        .pipe(Effect.provideService(FetchHttpClient.Fetch, upstream));
+        .pipe(Effect.provideService(FetchHttpClient.Fetch, providerFetch));
     yield* service.setKey(provider === "openai" ? "xai" : "openai", Redacted.make("other"));
     expect((yield* Effect.flip(transcribe()))._tag).toBe("CloudSpeechError");
     yield* service.setKey(provider, Redacted.make("chosen"));
     expect(yield* service.configured).toEqual({ openai: true, xai: true, openrouter: false });
     yield* Effect.flip(transcribe(new Uint8Array(3)));
-    expect(upstream).not.toHaveBeenCalled();
+    expect(providerFetch).not.toHaveBeenCalled();
     expect(yield* transcribe()).toBe("hello");
-    const [url, init] = upstream.mock.calls[0]!;
+    const [url, init] = providerFetch.mock.calls[0]!;
     expect(String(url)).toBe(
       {
         openai: "https://api.openai.com/v1/audio/transcriptions",
@@ -75,21 +75,23 @@ it.effect.each(["openai", "xai"] as const)("sends only to %s using its own saved
     const wav = new DataView(yield* Effect.promise(() => (form.get("file") as Blob).arrayBuffer()));
     expect(wav.getUint32(24, true)).toBe(16_000);
     expect(wav.getInt16(46, true)).toBe(16384);
-    upstream.mockResolvedValueOnce(new Response("sensitive upstream diagnostic", { status: 401 }));
+    providerFetch.mockResolvedValueOnce(
+      new Response("sensitive provider diagnostic", { status: 401 }),
+    );
     const rejected = yield* Effect.flip(transcribe());
     expect(rejected).toMatchObject({ provider, reason: "rejected-key" });
-    expect(rejected.message).not.toContain("sensitive upstream diagnostic");
+    expect(rejected.message).not.toContain("sensitive provider diagnostic");
     yield* service.setKey(provider, null);
     expect((yield* service.configured)[provider]).toBe(false);
     yield* Effect.flip(transcribe());
-    expect(upstream).toHaveBeenCalledTimes(2);
+    expect(providerFetch).toHaveBeenCalledTimes(2);
     yield* service.setKey(provider, reference);
     expect((yield* service.configured)[provider]).toBe(true);
     expect(read).not.toHaveBeenCalled();
     resolved = "resolved-fixture";
     expect(yield* transcribe()).toBe("hello");
     expect(read).toHaveBeenCalledWith([reference]);
-    expect(new Headers(upstream.mock.calls[2]?.[1]?.headers).get("authorization")).toBe(
+    expect(new Headers(providerFetch.mock.calls[2]?.[1]?.headers).get("authorization")).toBe(
       "Bearer resolved-fixture",
     );
     resolved = undefined;
@@ -97,20 +99,20 @@ it.effect.each(["openai", "xai"] as const)("sends only to %s using its own saved
       provider,
       reason: "unreadable-key",
     });
-    expect(upstream).toHaveBeenCalledTimes(3);
+    expect(providerFetch).toHaveBeenCalledTimes(3);
   }),
 );
 
 it.effect("uploads to OpenRouter only for a listed exact model, as zero-retention JSON WAV", () =>
   Effect.gen(function* () {
-    const upstream = vi.fn<typeof fetch>(async (input) =>
+    const providerFetch = vi.fn<typeof fetch>(async (input) =>
       new URL(String(input)).pathname.endsWith("/models")
         ? Response.json({ data: [{ id: "acme/transcribe-1" }, { id: "acme/transcribe-2" }] })
         : Response.json({ text: "hello" }),
     );
     const service = yield* makeService();
     const uploads = () =>
-      upstream.mock.calls.filter(([url]) => String(url).endsWith("/audio/transcriptions"));
+      providerFetch.mock.calls.filter(([url]) => String(url).endsWith("/audio/transcriptions"));
     const transcribe = (model: string | undefined) =>
       service
         .transcribe(
@@ -123,10 +125,10 @@ it.effect("uploads to OpenRouter only for a listed exact model, as zero-retentio
           },
           model,
         )
-        .pipe(Effect.provideService(FetchHttpClient.Fetch, upstream));
+        .pipe(Effect.provideService(FetchHttpClient.Fetch, providerFetch));
     yield* service.setKey("openrouter", Redacted.make("router-key"));
     expect(yield* Effect.flip(transcribe(undefined))).toMatchObject({ provider: "openrouter" });
-    upstream.mockResolvedValueOnce(new Response(null, { status: 503 }));
+    providerFetch.mockResolvedValueOnce(new Response(null, { status: 503 }));
     expect(yield* Effect.flip(transcribe("acme/transcribe-2"))).toMatchObject({
       reason: "unavailable",
     });
@@ -137,7 +139,7 @@ it.effect("uploads to OpenRouter only for a listed exact model, as zero-retentio
     expect(uploads()).toEqual([]);
     expect(yield* transcribe("acme/transcribe-2")).toBe("hello");
     const [[url, init]] = uploads() as [[URL, RequestInit]];
-    expect(new URL(String(upstream.mock.calls[0]![0])).searchParams.get("zdr")).toBe("true");
+    expect(new URL(String(providerFetch.mock.calls[0]![0])).searchParams.get("zdr")).toBe("true");
     expect(String(url)).toBe("https://openrouter.ai/api/v1/audio/transcriptions");
     expect(init.redirect).toBe("error");
     const headers = new Headers(init.headers);
@@ -170,7 +172,7 @@ it.effect("removing a key while a catalog read is pending prevents the upload", 
     const catalogStarted = Promise.withResolvers<void>();
     const catalog = Promise.withResolvers<Response>();
     const uploads: string[] = [];
-    const upstream: typeof fetch = async (input) => {
+    const providerFetch: typeof fetch = async (input) => {
       if (new URL(String(input)).pathname.endsWith("/models")) {
         catalogStarted.resolve();
         return catalog.promise;
@@ -186,7 +188,7 @@ it.effect("removing a key while a catalog read is pending prevents the upload", 
         DEFAULT_SPEECH_TRANSCRIPTION_OPTIONS,
         "acme/voice",
       )
-      .pipe(Effect.provideService(FetchHttpClient.Fetch, upstream), Effect.forkChild);
+      .pipe(Effect.provideService(FetchHttpClient.Fetch, providerFetch), Effect.forkChild);
     yield* Effect.promise(() => catalogStarted.promise);
     yield* service.setKey("openrouter", null);
     catalog.resolve(Response.json({ data: [{ id: "acme/voice" }] }));
@@ -204,7 +206,7 @@ it.effect("replacing a key during the vault read stops the upload with key-chang
     };
     const readStarted = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
-    const upstream = vi.fn<typeof fetch>(async () => Response.json({ text: "unexpected" }));
+    const providerFetch = vi.fn<typeof fetch>(async () => Response.json({ text: "unexpected" }));
     const service = yield* makeService({
       invalidate: () => Effect.void,
       read: () =>
@@ -217,12 +219,12 @@ it.effect("replacing a key during the vault read stops the upload with key-chang
     yield* service.setKey("openai", reference);
     const job = yield* service
       .transcribe("openai", PCM(), DEFAULT_SPEECH_TRANSCRIPTION_OPTIONS)
-      .pipe(Effect.provideService(FetchHttpClient.Fetch, upstream), Effect.forkChild);
+      .pipe(Effect.provideService(FetchHttpClient.Fetch, providerFetch), Effect.forkChild);
     yield* Effect.promise(() => readStarted.promise);
     yield* service.setKey("openai", Redacted.make("replacement"));
     release.resolve();
     const exit = yield* Fiber.await(job);
-    expect(upstream).not.toHaveBeenCalled();
+    expect(providerFetch).not.toHaveBeenCalled();
     expect(JSON.stringify(exit)).toContain("key-changed");
   }),
 );
@@ -232,11 +234,11 @@ it.effect("refuses a response over the size limit, naming the provider, limit an
     const service = yield* makeService();
     yield* service.setKey("openai", Redacted.make("chosen"));
     const huge = "x".repeat(CloudSpeech.MAX_TRANSCRIPTION_RESPONSE_BYTES + 1);
-    const upstream = vi.fn<typeof fetch>(async () => Response.json({ text: huge }));
+    const providerFetch = vi.fn<typeof fetch>(async () => Response.json({ text: huge }));
     const error = yield* Effect.flip(
       service
         .transcribe("openai", PCM(), DEFAULT_SPEECH_TRANSCRIPTION_OPTIONS)
-        .pipe(Effect.provideService(FetchHttpClient.Fetch, upstream)),
+        .pipe(Effect.provideService(FetchHttpClient.Fetch, providerFetch)),
     );
     expect(error).toMatchObject({ provider: "openai", reason: "response-too-large" });
     expect(error.message).toContain(String(CloudSpeech.MAX_TRANSCRIPTION_RESPONSE_BYTES));
@@ -258,9 +260,9 @@ it.effect(
           id: `bulk/model-${index}`,
         })),
       ];
-      const upstream = vi.fn<typeof fetch>(async () => Response.json({ data: entries }));
+      const providerFetch = vi.fn<typeof fetch>(async () => Response.json({ data: entries }));
       const models = yield* service.models.pipe(
-        Effect.provideService(FetchHttpClient.Fetch, upstream),
+        Effect.provideService(FetchHttpClient.Fetch, providerFetch),
       );
       expect(models.slice(0, 2)).toEqual([
         { id: "acme/ok-1", name: "Acme One" },

@@ -241,7 +241,7 @@ it.effect("does not send cloud audio to a remote environment over plain HTTP", (
   }),
 );
 
-it.effect("reports a provider failure by its message, without the upstream body", () =>
+it.effect("reports a provider failure by its message, without the provider's body", () =>
   Effect.gen(function* () {
     const fetch = cloudFetch(() =>
       Response.json(
