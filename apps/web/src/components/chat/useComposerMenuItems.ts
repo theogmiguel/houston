@@ -67,6 +67,7 @@ export function useComposerMenuItems({
   planModeUiEnabled,
   sideChatAvailable,
   sideChatDisabledReason,
+  freshSessionAvailable,
   compactSlashCommandAvailable,
   activeProjectId,
   selectedProvider,
@@ -87,6 +88,7 @@ export function useComposerMenuItems({
   readonly planModeUiEnabled: boolean;
   readonly sideChatAvailable: boolean;
   readonly sideChatDisabledReason: string | null;
+  readonly freshSessionAvailable: boolean;
   readonly compactSlashCommandAvailable: boolean;
   readonly activeProjectId: ProjectId | null;
   readonly selectedProvider: ProviderDriverKind;
@@ -225,6 +227,7 @@ export function useComposerMenuItems({
         sideChatDisabledReason,
         claudeInChrome: selectedProvider === "claudeAgent",
         resumeAvailable: activeProjectId !== null,
+        freshSessionAvailable,
       });
       const slashMenuSkills = getProviderSkillsForSlashMenu(
         selectedProviderSkills,
@@ -253,8 +256,11 @@ export function useComposerMenuItems({
           skill.description ??
           (skill.scope ? `${skill.scope} skill` : ""),
       }));
+      // Houston's `/clear` replaces the provider's, which would clear a session Houston still treats as live.
       const visibleProviderSlashCommandItems = providerSlashCommandItems.filter(
-        (item) => item.command.name !== "compact" || compactSlashCommandAvailable,
+        (item) =>
+          (item.command.name !== "compact" || compactSlashCommandAvailable) &&
+          (item.command.name !== "clear" || !freshSessionAvailable),
       );
       const slashCommandItems = slashCommandItemsForPromptPosition(
         [...builtInCommands, ...visibleProviderSlashCommandItems, ...skillItems],

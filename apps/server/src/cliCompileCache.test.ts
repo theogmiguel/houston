@@ -15,7 +15,10 @@ it.live("enables CLI caching while respecting overrides and unavailable storage"
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const root = yield* fs.makeTempDirectoryScoped({ prefix: "houston-cli-cache-test-" });
     const report = `import { getCompileCacheDir, registerHooks } from 'node:module'; registerHooks({ resolve(specifier, context, nextResolve) { if (specifier === './binCli.ts') console.error('CACHE=' + (getCompileCacheDir() ?? 'disabled')); return nextResolve(specifier, context); } });`;
-    const run = Effect.fn("cliCompileCache.test.run")(function* (env: Record<string, string>) {
+    const run = Effect.fn("cliCompileCache.test.run")(function* (
+      env: Record<string, string>,
+      args: ReadonlyArray<string> = ["--help"],
+    ) {
       const child = yield* spawner.spawn(
         ChildProcess.make(
           process.execPath,
@@ -24,7 +27,7 @@ it.live("enables CLI caching while respecting overrides and unavailable storage"
             "--import",
             `data:text/javascript,${encodeURIComponent(report)}`,
             NodeURL.fileURLToPath(new URL("./bin.ts", import.meta.url)),
-            "--help",
+            ...args,
           ],
           {
             env: {
@@ -52,6 +55,15 @@ it.live("enables CLI caching while respecting overrides and unavailable storage"
     expect(normal.stderr.replaceAll("\\", "/")).toContain(
       `CACHE=${root}/cache/houston/compile-cache`.replaceAll("\\", "/"),
     );
+    // The bare launcher runs before the CLI module graph loads; flags and help use the full CLI.
+    const launcher = yield* run({ HOUSTON_HOME: "" }, ["__service-launcher"]);
+    expect(launcher.exitCode).toBe(1);
+    expect(launcher.stderr).toContain("[service-launcher] HOUSTON_HOME is required");
+    expect(launcher.stderr).not.toContain("CACHE=");
+    const launcherHelp = yield* run({ HOUSTON_HOME: "" }, ["__service-launcher", "--help"]);
+    expect(launcherHelp.exitCode).toBe(0);
+    expect(launcherHelp.stderr).toContain("CACHE=");
+    expect(launcherHelp.stdout).toContain("__service-launcher");
     const appImage = yield* run({ APPIMAGE: `${root}/Houston.AppImage` });
     expect(appImage.exitCode).toBe(0);
     expect(appImage.stderr).toContain("CACHE=disabled");

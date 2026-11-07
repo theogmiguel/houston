@@ -14,6 +14,10 @@ folder, or **Clone a repository** to clone a Git URL to a chosen machine and loc
 `Start without a project` opens a thread with no project; a thread without a folder can be
 turned into a project from its thread actions later.
 
+To clone into `<host>/<owner>/<repo>` folders, turn on **Clone into host folders** under
+**Settings ▸ Threads**. Clones then default to that path under the add-project base directory,
+and you can still change the destination before cloning.
+
 The add-project palette, opened from **Add project** at the top of the sidebar or from the
 command palette, lists **Open folder…**, **Clone repository…** and **New project…**,
 followed by the provider repositories Houston can clone from. **New project…** appears when
@@ -26,6 +30,8 @@ Pinned projects lead the list.
 
 Project actions are commands a project can run from a thread, such as a dev server, tests
 or lint. Add them under **Settings ▸ Projects ▸ Actions** or from the thread's action menu.
+An action with **Stop when the thread settles** turned on stops its terminal and child
+processes when the thread settles; an agent's own shell command is never attached to it.
 
 ## Creating a thread
 

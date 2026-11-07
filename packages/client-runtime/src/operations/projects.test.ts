@@ -4,7 +4,10 @@ import { EnvironmentId, ProjectId } from "@houston-app/contracts";
 
 import {
   findExistingAddProject,
+  getCloneDestinationPath,
+  getCloneDirectoryLeafName,
   getCloneDirectoryName,
+  getCloneDirectoryPath,
   getDefaultCloneUrl,
   githubIncompleteOwnerRepositoryMessage,
   normalizePastedCloneUrl,
@@ -92,6 +95,38 @@ describe("add project shared logic", () => {
     expect(getCloneDirectoryName("C:\\src\\repo.git")).toBe("repo");
     expect(getCloneDirectoryName("git@github.com:repo.git")).toBe("repo");
     expect(getCloneDirectoryName("  https://github.com/owner/repo.git  ")).toBe("repo");
+  });
+
+  it("lays clone folders out as host/owner/repo only when asked, and only when the URL is safe", () => {
+    expect(getCloneDirectoryPath("git@github.com:owner/repo.git", false)).toBe("repo");
+    expect(getCloneDirectoryPath("git@github.com:owner/repo.git", true)).toBe(
+      "github.com/owner/repo",
+    );
+    expect(getCloneDirectoryPath("ssh://git@gitlab.com:2222/group/sub/repo.git", true)).toBe(
+      "gitlab.com/group/sub/repo",
+    );
+    expect(getCloneDirectoryPath("https://github.com/owner/../../repo", true)).toBe("repo");
+    expect(getCloneDirectoryPath("/srv/git/repo.git", true)).toBe("repo");
+    expect(
+      getCloneDirectoryPath(
+        "git@ssh.dev.azure.com:v3/org/Project/My%20Repo",
+        false,
+        "Project/My Repo",
+      ),
+    ).toBe("My Repo");
+    expect(
+      getCloneDirectoryLeafName(
+        "git@ssh.dev.azure.com:v3/org/Project/My%20Repo",
+        true,
+        "Project/My Repo",
+      ),
+    ).toBe("My%20Repo");
+    expect(
+      getCloneDestinationPath(
+        "C:\\Users\\me\\repos",
+        getCloneDirectoryPath("git@github.com:owner/repo.git", true),
+      ),
+    ).toBe("C:\\Users\\me\\repos\\github.com\\owner\\repo");
   });
 
   it("keeps a numeric repository name that sits on a path", () => {
