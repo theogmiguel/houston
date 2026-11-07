@@ -95,6 +95,12 @@ function headerClearanceOf(trigger: HTMLElement | null): number | null {
   return Math.ceil(header.getBoundingClientRect().bottom) + HEADER_CLEARANCE_PX;
 }
 
+/**
+ * The least room under the new-thread composer that still opens the docked popup downward: the
+ * popup scrolls inside its list, and the group centred at 1440x900 leaves about 300px.
+ */
+const DRAFT_HERO_MIN_ROOM_BELOW_PX = 240;
+
 export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   environmentId: EnvironmentId | null;
   activeInstanceId: ProviderInstanceId;
@@ -177,8 +183,14 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     const bottomLimit = boundaryRect?.bottom ?? window.innerHeight;
     const roomAbove = cardRect.top - topLimit;
     const roomBelow = bottomLimit - cardRect.bottom;
-    // More room wins; a tie opens downward, which is where the new-thread page wants it.
-    setDockSide(roomAbove > roomBelow ? "top" : "bottom");
+    // More room wins; a tie opens downward, which is where the new-thread page wants it. The
+    // new-thread group is centred, so there the popup opens downward whenever the room under
+    // the card can seat it, rather than covering the hero above.
+    const inDraftHero = card.closest("[data-draft-hero]") !== null;
+    const opensDownward = inDraftHero
+      ? roomBelow >= DRAFT_HERO_MIN_ROOM_BELOW_PX || roomAbove <= roomBelow
+      : roomAbove <= roomBelow;
+    setDockSide(opensDownward ? "bottom" : "top");
   }, [docked, isMenuOpen]);
 
   const activeEntry =
@@ -349,6 +361,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
             size={size}
             data-chat-provider-model-picker="true"
             data-chat-provider-model-picker-icon-only={iconOnly ? "true" : undefined}
+            {...(iconOnly ? { title: triggerTooltipContent } : {})}
             data-composer-shortcut={props.triggerShortcuts}
             onClick={(event) => {
               if (!isMenuOpen || !docked) return;

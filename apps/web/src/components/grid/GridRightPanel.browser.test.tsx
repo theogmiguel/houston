@@ -198,3 +198,134 @@ it("opens both pull request surfaces for a thread with a linked pull request", a
     expect(screen.container.querySelector('[aria-label="Close #12"]')).not.toBeNull();
   });
 });
+
+async function mountSeededGrid() {
+  const gridId = seedGrid();
+  const router = getRouter(createMemoryHistory({ initialEntries: [`/grid/${gridId}`] }));
+  await router.load();
+  const container = document.createElement("div");
+  container.style.cssText = "height: 900px; width: 1400px;";
+  const screen = await render(<AppRoot router={router} />, { container, router: false });
+  await vi.waitFor(() => {
+    expect(screen.container.querySelectorAll("[data-grid-cell]")).toHaveLength(2);
+  });
+  return { gridId, screen };
+}
+
+const panelOwnerKey = (root: HTMLElement) =>
+  root.querySelector("[data-grid-right-panel-host] [data-preview-panel-mode]") === null
+    ? null
+    : Object.entries(useRightPanelStore.getState().byThreadKey).find(
+        ([, state]) => state.isOpen,
+      )?.[0];
+
+it("shows the project's title, not a fixed name, as the grid breadcrumb's first crumb", async () => {
+  const { screen } = await mountSeededGrid();
+  await using _screen = screen;
+  const crumb = screen.container.querySelector("[data-grid-crumb-project]");
+  expect(crumb?.textContent?.trim()).toBe("render");
+  expect(screen.container.querySelector("header")?.textContent).not.toContain("Houston");
+});
+
+it("follows the focused pane's panel by default and keeps a pinned panel on its thread", async () => {
+  const { gridId, screen } = await mountSeededGrid();
+  await using _screen = screen;
+  const cells = () => [...screen.container.querySelectorAll<HTMLElement>("[data-grid-cell]")];
+
+  const focusedIndex = () => cells().findIndex((cell) => cell.dataset.focused === "true");
+  useGridStore.getState().focusThread(gridId, "thread-grid-a");
+  await vi.waitFor(() => expect(focusedIndex()).toBe(0));
+  screen.container.querySelector<HTMLButtonElement>('[aria-label="Toggle right panel"]')!.click();
+  await vi.waitFor(() => {
+    expect(
+      screen.container.querySelector("[data-grid-right-panel-host] [data-preview-panel-mode]"),
+    ).not.toBeNull();
+  });
+  expect(panelOwnerKey(screen.container)).toContain("thread-grid-a");
+  expect(screen.container.querySelector("[data-grid-right-panel-owner]")).toBeNull();
+
+  // Default: focusing the other pane swaps the panel to that pane's thread, which is closed.
+  useGridStore.getState().focusThread(gridId, "thread-grid-b");
+  await vi.waitFor(() => {
+    expect(
+      screen.container.querySelector("[data-grid-right-panel-host] [data-preview-panel-mode]"),
+    ).toBeNull();
+  });
+
+  useGridStore.getState().focusThread(gridId, "thread-grid-a");
+  await vi.waitFor(() => expect(focusedIndex()).toBe(0));
+  await vi.waitFor(() => {
+    expect(
+      screen.container.querySelector("[data-grid-right-panel-host] [data-preview-panel-mode]"),
+    ).not.toBeNull();
+  });
+  const pin = await vi.waitFor(() => {
+    const found = screen.container.querySelector<HTMLButtonElement>(
+      '[data-grid-right-panel-pin] button[aria-label^="Pin to "]',
+    );
+    expect(found).not.toBeNull();
+    return found!;
+  });
+  expect(pin.getAttribute("aria-pressed")).toBe("false");
+  pin.click();
+  await vi.waitFor(() => {
+    expect(useGridStore.getState().grids[0]!.panelPinnedThreadId).toBe("thread-grid-a");
+    expect(pin.getAttribute("aria-pressed")).toBe("true");
+  });
+  expect(screen.container.querySelector("[data-grid-right-panel-owner]")?.textContent).toBe(
+    THREADS[0]!.title,
+  );
+
+  // Pinned: focusing B keeps A's panel.
+  useGridStore.getState().focusThread(gridId, "thread-grid-b");
+  await vi.waitFor(() => expect(focusedIndex()).toBe(1));
+  expect(
+    screen.container.querySelector("[data-grid-right-panel-host] [data-preview-panel-mode]"),
+  ).not.toBeNull();
+  expect(panelOwnerKey(screen.container)).toContain("thread-grid-a");
+
+  // The toggle acts on the pinned thread: closing clears the pin.
+  screen.container.querySelector<HTMLButtonElement>('[aria-label="Toggle right panel"]')!.click();
+  await vi.waitFor(() => {
+    expect(
+      screen.container.querySelector("[data-grid-right-panel-host] [data-preview-panel-mode]"),
+    ).toBeNull();
+    expect(useGridStore.getState().grids[0]!.panelPinnedThreadId).toBeUndefined();
+  });
+});
+
+it("unpins when the pinned thread leaves the grid", async () => {
+  const { gridId, screen } = await mountSeededGrid();
+  await using _screen = screen;
+  useGridStore.getState().setPanelPinnedThread(gridId, "thread-grid-b");
+  expect(useGridStore.getState().grids[0]!.panelPinnedThreadId).toBe("thread-grid-b");
+  useGridStore.getState().removeThreadFromGrid(gridId, "thread-grid-b");
+  expect(useGridStore.getState().grids[0]!.panelPinnedThreadId).toBeUndefined();
+});
+
+function paintedBackground(element: Element | null): string {
+  for (let node = element; node !== null; node = node.parentElement) {
+    const colour = getComputedStyle(node).backgroundColor;
+    if (colour !== "rgba(0, 0, 0, 0)" && colour !== "transparent") return colour;
+  }
+  return "rgba(0, 0, 0, 0)";
+}
+
+it("paints the top bar on the canvas and only the pane gutter on the chrome plane", async () => {
+  const { screen } = await mountSeededGrid();
+  await using _screen = screen;
+  const probe = (variable: string) => {
+    const element = document.createElement("div");
+    element.style.backgroundColor = `var(${variable})`;
+    document.body.append(element);
+    const colour = getComputedStyle(element).backgroundColor;
+    element.remove();
+    return colour;
+  };
+  const header = screen.container.querySelector("header");
+  expect(paintedBackground(header)).toBe(probe("--content"));
+  const surface = screen.container.querySelector("[data-grid-surface]");
+  expect(surface?.hasAttribute("data-multi")).toBe(true);
+  expect(paintedBackground(surface)).toBe(probe("--grid-gutter"));
+  expect(probe("--grid-gutter")).not.toBe(probe("--content"));
+});

@@ -74,9 +74,9 @@ export const ROW_SCROLL_MARGIN_CLS = "scroll-mt-9 scroll-mb-8";
 /** A thread row's title: 14px medium on the first line. */
 export const ROW_TITLE_TEXT_CLS = "text-sm leading-5 font-medium text-foreground";
 
-/** A labelled shortcut of the rail's shortcut row: a 16px icon over an 11px name. */
+/** An icon-only shortcut of the rail's shortcut row: a 16px icon in a 28px-tall button. */
 export const RAIL_SHORTCUT_CLS =
-  "group/shortcut flex h-11 min-w-0 flex-1 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-(--control-radius) px-1 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+  "group/shortcut flex h-7 min-w-0 flex-1 cursor-pointer items-center justify-center rounded-(--control-radius) px-1 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 export const RAIL_SHORTCUT_ACTIVE_CLS = "bg-sidebar-row-selected text-sidebar-foreground";
 export const RAIL_SHORTCUT_REST_CLS =
   "text-secondary-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground";
@@ -89,5 +89,3 @@ export const RAIL_SHORTCUT_ICON_REST_CLS = "text-secondary-label";
 /** The count rides the icon's top-right corner rather than widening the button. */
 export const RAIL_SHORTCUT_COUNT_CLS =
   "absolute -top-1.5 -right-2 min-w-3 rounded-full bg-sidebar-row-active px-0.5 text-center text-3xs leading-none font-semibold text-sidebar-foreground tabular-nums";
-
-export const RAIL_SHORTCUT_LABEL_CLS = "max-w-full truncate text-2xs leading-none";

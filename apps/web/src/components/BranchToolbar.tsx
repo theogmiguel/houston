@@ -84,6 +84,7 @@ import {
   CONTEXT_CHIP_ENV_CLS,
   CONTEXT_CHIP_PANEL_CLS,
   CONTEXT_CHIP_SEPARATOR_CLS,
+  CONTEXT_CHIP_TRIGGER_CLS,
 } from "./ui/composer-anatomy-recipes";
 import { useComposerMenuProps } from "./chat/composerEventScope";
 import { cn } from "~/lib/utils";
@@ -682,11 +683,12 @@ export const BranchToolbar = memo(function BranchToolbar({
   }
 
   const narrow = forceNarrow ?? labelsNarrow;
-  const branchLabel =
-    activeThreadBranchOverride ??
-    shell?.branch ??
-    previousWorktreeSeed?.branch ??
-    resolveEnvModeLabel(effectiveEnvMode, true);
+  const envModeLabel = resolveEnvModeLabel(effectiveEnvMode, true);
+  const resolvedBranch =
+    activeThreadBranchOverride ?? shell?.branch ?? previousWorktreeSeed?.branch ?? null;
+  const branchLabel = resolvedBranch ?? envModeLabel;
+  // A branch that is only the mode's name ("Local") would repeat it: show one part.
+  const workspaceChipShowsEnvMode = branchLabel !== envModeLabel;
 
   const projectChip = !isServerThread ? (
     <span
@@ -806,7 +808,12 @@ export const BranchToolbar = memo(function BranchToolbar({
               <ComposerControl
                 size="xs"
                 data-composer-context-control
-                aria-label={`Workspace: ${branchLabel}, ${resolveEnvModeLabel(effectiveEnvMode, true)}`}
+                className={CONTEXT_CHIP_TRIGGER_CLS}
+                aria-label={
+                  workspaceChipShowsEnvMode
+                    ? `Workspace: ${branchLabel}, ${envModeLabel}`
+                    : `Workspace: ${branchLabel}`
+                }
               />
             }
           >
@@ -814,12 +821,14 @@ export const BranchToolbar = memo(function BranchToolbar({
             <span data-composer-label className={CONTEXT_CHIP_BRANCH_CLS}>
               {branchLabel}
             </span>
-            <span aria-hidden className={CONTEXT_CHIP_SEPARATOR_CLS}>
-              ·
-            </span>
-            <span className={CONTEXT_CHIP_ENV_CLS}>
-              {resolveEnvModeLabel(effectiveEnvMode, true)}
-            </span>
+            {workspaceChipShowsEnvMode ? (
+              <>
+                <span aria-hidden className={CONTEXT_CHIP_SEPARATOR_CLS}>
+                  ·
+                </span>
+                <span className={CONTEXT_CHIP_ENV_CLS}>{envModeLabel}</span>
+              </>
+            ) : null}
             <ChevronDownIcon aria-hidden className={CONTEXT_CHIP_CHEVRON_CLS} />
           </PopoverTrigger>
           <PopoverPopup side="top" align="start" padding="none" className="before:hidden">

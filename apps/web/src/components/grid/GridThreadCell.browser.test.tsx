@@ -107,7 +107,7 @@ vi.mock("./ThreadRowPullRequestBadge", () => ({
 }));
 
 vi.mock("../sidebar/SidebarThreadRow", () => ({
-  SidebarProviderStack: () => null,
+  SidebarProviderStack: () => <span data-testid="pane-provider-mark" className="size-3.5" />,
 }));
 
 const shell = {
@@ -887,53 +887,43 @@ describe("GridThreadCell shortcut scope", () => {
 });
 
 describe("GridThreadCell pane header", () => {
-  it("shows the project, title and pull request at a 570px pane width", async () => {
-    state.draftSession = null;
-    const container = document.createElement("div");
-    container.style.width = "570px";
-    container.style.height = "420px";
-    await using screen = await renderCell(
-      { kind: "thread", threadId: "thread-a", id: "p1" },
-      twoThreadTree(),
-      { container },
-    );
+  it.each([570, 340])(
+    "shows only status, title and provider mark at a %ipx pane width",
+    async (paneWidth) => {
+      state.draftSession = null;
+      state.pill = { state: "failed", label: "Failed" } as typeof state.pill;
+      const container = document.createElement("div");
+      container.style.width = `${paneWidth}px`;
+      container.style.height = "420px";
+      await using screen = await renderCell(
+        { kind: "thread", threadId: "thread-a", id: "p1" },
+        twoThreadTree(),
+        { container },
+      );
 
-    const header = screen.container.querySelector<HTMLElement>("[data-pane-header]")!;
-    expect(header.textContent).toContain("atlas-api");
-    expect(header.textContent).toContain("Alpha thread");
-    expect(header.querySelector('[data-testid="pane-pr"]')).not.toBeNull();
-    const projectName = [...header.querySelectorAll("span")].find(
-      (span) => span.textContent === "atlas-api" && span.children.length === 0,
-    )!;
-    expect(getComputedStyle(projectName).position).not.toBe("absolute");
-  });
-
-  it("collapses the project to its icon at a 340px pane width", async () => {
-    state.draftSession = null;
-    const container = document.createElement("div");
-    container.style.width = "340px";
-    container.style.height = "420px";
-    await using screen = await renderCell(
-      { kind: "thread", threadId: "thread-a", id: "p1" },
-      twoThreadTree(),
-      { container },
-    );
-
-    const header = screen.container.querySelector<HTMLElement>("[data-pane-header]")!;
-    expect(header.textContent).toContain("Alpha thread");
-    const projectName = [...header.querySelectorAll("span")].find(
-      (span) => span.textContent === "atlas-api" && span.children.length === 0,
-    )!;
-    // Still announced, drawn as the project's icon and tooltip.
-    await vi.waitFor(() => expect(getComputedStyle(projectName).position).toBe("absolute"));
-    expect(header.querySelector('[aria-label="atlas-api"]')).not.toBeNull();
-    // Nothing overflows the pane horizontally.
-    const cell = screen.container.querySelector<HTMLElement>("[data-grid-cell]")!;
-    expect(header.getBoundingClientRect().width).toBeLessThanOrEqual(
-      cell.getBoundingClientRect().width + 1,
-    );
-    expect(header.scrollWidth).toBeLessThanOrEqual(header.clientWidth + 1);
-  });
+      const header = screen.container.querySelector<HTMLElement>("[data-pane-header]")!;
+      expect(header.textContent).toContain("Alpha thread");
+      expect(header.textContent).not.toContain("atlas-api");
+      expect(header.querySelector("[data-thread-project]")).toBeNull();
+      expect(header.querySelector('[data-testid="pane-pr"]')).toBeNull();
+      expect(header.querySelector("[data-pane-tags]")).toBeNull();
+      // No coloured bar on the pane's top edge, whatever the thread's status.
+      const style = getComputedStyle(header);
+      expect(style.borderTopWidth).toBe("0px");
+      const title = [...header.querySelectorAll("span")].find(
+        (span) => span.textContent === "Alpha thread" && span.children.length === 0,
+      )!;
+      const mark = header.querySelector<HTMLElement>('[data-testid="pane-provider-mark"]')!;
+      expect(mark.getBoundingClientRect().left).toBeGreaterThanOrEqual(
+        title.getBoundingClientRect().right - 1,
+      );
+      const cell = screen.container.querySelector<HTMLElement>("[data-grid-cell]")!;
+      expect(mark.getBoundingClientRect().right).toBeGreaterThan(
+        cell.getBoundingClientRect().right - 16,
+      );
+      expect(header.scrollWidth).toBeLessThanOrEqual(header.clientWidth + 1);
+    },
+  );
 
   it("rings the focused pane and dims an unfocused header", async () => {
     state.draftSession = null;

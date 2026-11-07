@@ -1,3 +1,4 @@
+import { useThreadErrorCardShows } from "./ThreadErrorBanner";
 import { TimelinePendingApprovalRow } from "./TimelinePendingApprovalRow";
 import { WorkLogDetails, WorkLogRow } from "./WorkLog";
 import {
@@ -215,6 +216,9 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
     setExpanded(next);
   };
   const failureItem = workEntry.projectedItem?.item;
+  const cardShowsFailure = useThreadErrorCardShows(
+    failureItem?.type === "error" ? failureItem.failure.message : "",
+  );
   const activity = use(TimelineRowActivityCtx);
   const pendingApproval =
     failureItem?.type === "approval_request"
@@ -257,6 +261,8 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
     );
   }
   if (failureItem?.type === "error" && failureItem.status === "failed") {
+    // The composer-slot card carries this failure; the timeline repeats it only once dismissed.
+    if (cardShowsFailure) return null;
     const warning = failureItem.failure.class === "usage_limit";
     const resetAt = failureItem.failure.resetAt;
     const resetTime = resetAt ? formatUpcomingTimestamp(resetAt, timestampFormat) : null;

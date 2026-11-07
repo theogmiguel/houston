@@ -1,7 +1,9 @@
 /** Visual recipes for the composer toolbar's collapsed workspace chip and its running stop. */
 
 /** The single workspace chip that replaces the checkout, branch and access controls. */
-export const CONTEXT_CHIP_BRANCH_CLS = "max-w-20 truncate text-xs";
+/** The chip yields width to the primary actions: its branch truncates before anything overlaps. */
+export const CONTEXT_CHIP_TRIGGER_CLS = "min-w-0 shrink";
+export const CONTEXT_CHIP_BRANCH_CLS = "min-w-0 max-w-20 truncate text-xs";
 export const CONTEXT_CHIP_SEPARATOR_CLS = "text-(--houston) text-xs";
 export const CONTEXT_CHIP_ENV_CLS = "shrink-0 text-xs";
 export const CONTEXT_CHIP_CHEVRON_CLS = "size-3 shrink-0";

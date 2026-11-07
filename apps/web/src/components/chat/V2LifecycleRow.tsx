@@ -1,4 +1,5 @@
 import { ThreadHoverCardPopup } from "../ThreadHoverCard";
+import { RUNNING_INK_CLS } from "../ui/work-log-recipes";
 import { AgentElapsed } from "./AgentElapsed";
 import { projectedSubagentsToRuntime } from "@houston-app/client-runtime/state/subagentRuntime";
 import type { ReactNode } from "react";
@@ -482,7 +483,7 @@ function SubagentTimelineLink(props: {
         className={cn(
           "inline-flex shrink-0 items-center gap-1 text-xs font-medium",
           running
-            ? "text-(--accent-ink)"
+            ? RUNNING_INK_CLS
             : failed
               ? "text-destructive"
               : status === "completed"

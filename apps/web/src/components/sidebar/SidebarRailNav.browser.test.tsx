@@ -94,7 +94,7 @@ describe("SidebarRailNav", () => {
     expect(openAddProjectDialog).toHaveBeenCalledTimes(1);
   });
 
-  it("folds pull requests, tasks and usage into one labelled row under search", async () => {
+  it("folds pull requests, tasks and usage into one icon-only row under search", async () => {
     for (const width of [264, 280]) {
       await using screen = await render(
         <div style={{ width }}>
@@ -113,24 +113,21 @@ describe("SidebarRailNav", () => {
       // One row: equal tops and heights, side by side inside the rail, each tall enough to hit.
       for (const box of boxes) {
         expect(box.top).toBe(boxes[0]!.top);
-        expect(box.height).toBe(44);
+        expect(box.height).toBe(28);
         expect(box.width).toBeGreaterThan(40);
       }
       const rail = screen.container.firstElementChild!.getBoundingClientRect();
       expect(boxes[2]!.right).toBeLessThanOrEqual(rail.right + 0.5);
       expect(boxes[0]!.left).toBeGreaterThanOrEqual(rail.left - 0.5);
-      // Search plus the labelled shortcut row.
+      // Search plus the icon-only shortcut row.
       const shortcuts = screen.container.querySelector("[data-rail-shortcuts]")!;
-      expect(shortcuts.getBoundingClientRect().height).toBe(44);
+      expect(shortcuts.getBoundingClientRect().height).toBe(28);
       for (const name of names) {
-        const label = screen
-          .getByRole("button", { name })
-          .element()
-          .querySelector<HTMLElement>("[data-rail-shortcut-label]")!;
-        expect(label.textContent).toBe(name.replace(/, \d+$/, ""));
-        expect(getComputedStyle(label).fontSize).toBe("11px");
+        const button = screen.getByRole("button", { name }).element();
+        expect(button.querySelector("[data-rail-shortcut-label]")).toBeNull();
+        expect(button.textContent ?? "").toBe(name.match(/\d+$/)?.[0] ?? "");
       }
-      expect(rail.height).toBeLessThanOrEqual(82);
+      expect(rail.height).toBeLessThanOrEqual(66);
     }
   });
 

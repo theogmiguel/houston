@@ -78,7 +78,6 @@ import {
   type AttentionCard,
   type ThreadSelection,
 } from "../../grid/sidebar";
-import { attentionPips } from "../../grid/attentionPips";
 import { revealedOpenThread } from "../../grid/collapsedRollup";
 import { ThreadRowPullRequestBadge } from "./ThreadRowPullRequestBadge";
 import { closedAgeLabel } from "../../grid/statusWord";
@@ -248,7 +247,6 @@ import {
   SIDEBAR_SECTION_ACTION_CLS,
   SIDEBAR_THREAD_PROJECT_CLS,
   SIDEBAR_THREAD_ROW_INDENT_CLS,
-  SidebarAttentionPips,
   SidebarOptionsMenu,
   SidebarSectionHeaderRow,
   type SidebarGridOptions,
@@ -1541,16 +1539,6 @@ function gridRowId(grid: Pick<GridRecord, "id">) {
 }
 
 /** A project's grids, then the threads no grid shows, under one collapsible label. */
-/** Scrolls the rail to a thread's row and focuses it; false when the row is not rendered. */
-function revealThreadRow(root: Element | null, threadKey: string): boolean {
-  const scope = root?.closest<HTMLElement>("[data-slot=scroll-area-viewport]") ?? document;
-  const row = scope.querySelector<HTMLElement>(`[data-sidebar-row="${CSS.escape(threadKey)}"]`);
-  if (row === null) return false;
-  row.scrollIntoView({ block: "nearest" });
-  row.focus({ preventScroll: true });
-  return true;
-}
-
 export function SidebarNeedsYouSection({
   entries,
   providerEntriesByEnvironment,
@@ -1721,16 +1709,8 @@ export function SidebarProjectSection({
     ...section.ungroupedThreads,
   ];
   const needsYouThreads = section.needsYouThreads ?? [];
-  // Pips follow every thread the project owns, including the ones the Needs you section lifts.
-  const pips = attentionPips([...sectionThreads, ...needsYouThreads], nowIso);
   const headingRef = useRef<HTMLDivElement | null>(null);
   const stuck = useStuckToTop(headingRef);
-  const jumpToThread = (threadKey: string) => {
-    if (revealThreadRow(headingRef.current, threadKey)) return;
-    if (!collapsed) return;
-    onToggleCollapsed();
-    requestAnimationFrame(() => revealThreadRow(headingRef.current, threadKey));
-  };
   const projectRef = scopeProjectRef(
     EnvironmentId.make(section.environmentId),
     ProjectId.make(section.projectId),
@@ -1793,7 +1773,6 @@ export function SidebarProjectSection({
             {section.title}
           </TooltipPopup>
         </Tooltip>
-        <SidebarAttentionPips pips={pips} onJump={jumpToThread} />
         {section.isScratch ? null : (
           <span className="ms-auto flex shrink-0 items-center gap-0.5 pr-1">
             {handleNewThread === undefined ? null : (
@@ -2042,13 +2021,6 @@ export function GridGroup({
   );
   const revealedThread =
     collapsed && open ? threads.find((thread) => thread.id === grid.focusedThreadId) : undefined;
-  const gridPips = attentionPips(threads, nowIso);
-  const jumpToGridThread = (threadKey: string) => {
-    if (revealThreadRow(headerRef.current, threadKey)) return;
-    if (!collapsed) return;
-    onToggleCollapsed();
-    requestAnimationFrame(() => revealThreadRow(headerRef.current, threadKey));
-  };
   const readyThreads = threads.filter(
     (thread) => resolveGridThreadState(thread, nowIso) === "ready",
   );
@@ -2210,7 +2182,6 @@ export function GridGroup({
             </TooltipPopup>
           </Tooltip>
         )}
-        <SidebarAttentionPips pips={gridPips} onJump={jumpToGridThread} />
         {renaming ? null : (
           <span className="ms-auto flex shrink-0 items-center gap-0.5 pr-1">
             <Tooltip>

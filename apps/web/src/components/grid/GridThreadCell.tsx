@@ -1,5 +1,5 @@
-import { scopeProjectRef, scopeThreadRef } from "@houston-app/client-runtime/environment";
-import type { EnvironmentId, ProjectId, ScopedThreadRef, ThreadId } from "@houston-app/contracts";
+import { scopeThreadRef } from "@houston-app/client-runtime/environment";
+import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@houston-app/contracts";
 import { EllipsisIcon, Maximize2Icon, Minimize2Icon, SquareMenuIcon, XIcon } from "lucide-react";
 import {
   useEffect,
@@ -17,14 +17,13 @@ import { SidebarProviderStack, type SidebarProviderEntry } from "../sidebar/Side
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { type DraftId, useComposerDraftStore } from "../../composerDraftStore";
-import { useProject, useQuietThreadShell } from "../../state/entities";
+import { useQuietThreadShell } from "../../state/entities";
 import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
 import { paneDensityLayout } from "../../grid/density";
 import { subscribeGridCellRename } from "../../grid/gridCellCommands";
 import { gridTerminalThreadRef } from "../../grid/gridTerminal";
 import { MAX_GRID_THREADS, type GridRecord, useGridStore } from "../../grid/gridStore";
 import type { ThreadDropRefusal } from "../../grid/projectMove";
-import { resolveRowPullRequest } from "../../grid/sidebar";
 import { type Side, type SplitSide, type ThreadNode, preorderThreads } from "../../grid/tree";
 import { getThreadDragSource } from "../../grid/threadDrag";
 import { Button } from "../ui/button";
@@ -152,21 +151,6 @@ export function GridThreadCell({
 
   const status = shell === null ? null : resolveThreadStatusPill({ thread: shell });
   const title = draftId !== undefined ? "New thread" : (shell?.title ?? "Untitled thread");
-  const project = useProject(scopeProjectRef(environmentId, grid.projectId as ProjectId));
-  const projectTitle = draftId !== undefined || project === null ? null : project.title;
-  const pullRequest = shell === null ? null : resolveRowPullRequest(shell);
-  const pullRequestCount = shell?.pullRequests.length ?? 0;
-  // A thread that wants a person marks its pane's top edge in the status hue.
-  const attentionColor =
-    status === null
-      ? null
-      : status.state === "failed"
-        ? "var(--stop)"
-        : status.state === "needs"
-          ? "var(--warn)"
-          : status.state === "back"
-            ? "var(--status-back)"
-            : null;
   const showDraft = draftId !== undefined && draftSession !== null;
   const threadCount = grid.tree === null ? 0 : preorderThreads(grid.tree).length;
   // A maximized cell is a solo thread: one thread, the widest measure.
@@ -386,16 +370,11 @@ export function GridThreadCell({
       }
       className={cn(
         "@container/pane group/pane relative flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden",
-        // A composer drawer or notice keeps the stacked card: the compact row would squeeze
-        // the question panel, the notices and the textarea into zero-width flex columns.
-        density === "compact" &&
-          "[&_[data-chat-composer-resting-row]]:hidden [&_[data-chat-composer-surface]:not(:has([data-chat-composer-top-drawer],[data-composer-banner-shelf]))]:flex [&_[data-chat-composer-surface]:not(:has([data-chat-composer-top-drawer],[data-composer-banner-shelf]))]:items-center [&_[data-chat-composer-body]]:min-w-0 [&_[data-chat-composer-body]]:flex-1 [&_[data-chat-composer-body]]:pt-2 [&_[data-chat-composer-body]]:pb-2 [&_[data-chat-composer-footer]]:w-auto [&_[data-chat-composer-footer]]:shrink-0 [&_[data-chat-composer-footer]]:pb-2",
         density === "glance" &&
           "[&_[data-chat-composer-resting-row]]:hidden [&_[data-changed-files-state=tree]]:hidden [&_[data-changed-files-bar]]:hidden",
       )}
     >
       <GridPaneHeader
-        projectTitle={projectTitle}
         title={title}
         status={shell === null ? null : <PaneThreadStatusMark thread={shell} status={status} />}
         providerStack={
@@ -403,13 +382,7 @@ export function GridThreadCell({
             <SidebarProviderStack thread={shell} providerEntryByInstanceId={providerEntries} />
           )
         }
-        tags={shell?.tags ?? []}
-        pullRequest={pullRequest}
-        pullRequestCount={pullRequestCount}
-        threadRef={threadRef}
-        width={width}
         focused={focused}
-        attentionColor={attentionColor}
         renaming={renaming}
         renameValue={renameValue}
         onChangeRename={setRenameValue}

@@ -1083,6 +1083,11 @@ export function boardWorkSummary(entries: ReadonlyArray<WorkLogEntry>): string |
   if (command) parts.push(`ran ${command} ${command === 1 ? "command" : "commands"}`);
   const codeSearch = (counts.get("code-search") ?? 0) + (counts.get("search") ?? 0);
   if (codeSearch) parts.push(`searched ${codeSearch} ${codeSearch === 1 ? "time" : "times"}`);
+  // A call into a named integration reads as "used Houston" on the fold line.
+  const sourceNames = [
+    ...new Set(target.flatMap((entry) => (entry.toolSource ? [entry.toolSource.name] : []))),
+  ];
+  if (sourceNames.length > 0) parts.push(`used ${sourceNames.slice(0, 2).join(", ")}`);
   if (parts.length === 0) {
     return toolEntries.length === 0 && target.length === 1
       ? "thought"

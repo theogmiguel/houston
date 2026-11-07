@@ -1329,7 +1329,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
         <TimelineRowActivityCtx value={activityState}>
           <TooltipScrollDismissArea
             ref={attachTimelineViewportElement}
-            className="relative h-full min-h-0"
+            className="@container/timeline relative h-full min-h-0"
             data-assistant-citation-viewport="true"
           >
             {onCiteAssistantText && citationThreadRef ? (
@@ -1500,7 +1500,9 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
           continues={row.continuesWorkLog}
           endsGroup={row.endsFoldGroup}
           leadsToTurn={row.leadsToTurn}
-          nested={row.kind === "work" && row.headerCreatedAt !== undefined && !row.isExpandedToolGroup}
+          nested={
+            row.kind === "work" && row.headerCreatedAt !== undefined && !row.isExpandedToolGroup
+          }
           layout={
             isExpandedToolGroup
               ? "group-content"

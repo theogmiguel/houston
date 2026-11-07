@@ -4,6 +4,7 @@ import type {
   OrchestrationV2ProviderGoal,
   ThreadId,
 } from "@houston-app/contracts";
+import { RUNNING_INK_CLS } from "../ui/work-log-recipes";
 import type {
   EnvironmentThreadShell,
   ThreadStructure,
@@ -191,7 +192,7 @@ export function backgroundWorkNowItem(input: {
     icon: rows.every(isCommand) ? <TerminalIcon /> : <CircleDashedIcon />,
     title: only ? (
       <>
-        <span className="text-(--accent-ink)">{verb}</span>{" "}
+        <span className={RUNNING_INK_CLS}>{verb}</span>{" "}
         <span
           className={cn(
             isCommand(only) && "font-mono in-data-[slot=popover-popup]:whitespace-pre-wrap",

@@ -104,11 +104,9 @@ it.each([1440, 800])(
     const headingBox = heading.getBoundingClientRect();
     const contextBox = context.getBoundingClientRect();
 
-    // The composer card is the page's centrepiece, not a footer.
-    const composerCentre = card.top + card.height / 2;
-    expect(Math.abs(composerCentre - (pane.top + pane.height / 2))).toBeLessThan(
-      pane.height * 0.08,
-    );
+    // Hero, tray and composer are centred on the canvas as one block.
+    const groupCentre = (headingBox.top + card.bottom) / 2;
+    expect(Math.abs(groupCentre - (pane.top + pane.height / 2))).toBeLessThanOrEqual(24);
 
     // Hero, tray, composer: one stacked group, the tray 8px over the card.
     expect(headingBox.bottom).toBeLessThan(contextBox.top);
@@ -137,18 +135,45 @@ it.each([1440, 800])(
 );
 
 it(
-  "leaves the new-thread composer more room below it than above at 1440x900",
+  "centres the whole new-thread group on the canvas at 1440x900 and keeps the model picker's room below",
   async () => {
     using _environment = installFakeEnvironment(PROJECT_THREADS);
     await using _viewport = await viewport(1440);
     await using _app = await openNewThread();
 
-    const { card, header, pane } = composerBoxes();
-    const roomAbove = card.top - header.bottom;
+    const { card, pane } = composerBoxes();
+    const headingBox = page
+      .getByRole("heading", { name: /What should we build/ })
+      .element()
+      .getBoundingClientRect();
+    const groupCentre = (headingBox.top + card.bottom) / 2;
+    expect(Math.abs(groupCentre - (pane.top + pane.height / 2))).toBeLessThanOrEqual(24);
+    // The model picker opens downward here: it keeps its room under the card, and the group
+    // leaves as much room under it as over the hero, give or take the centring tolerance.
     const roomBelow = pane.bottom - card.bottom;
-    expect(roomBelow).toBeGreaterThan(roomAbove);
-    // The docked model picker needs the full 300px under the card.
-    expect(roomBelow).toBeGreaterThanOrEqual(304);
+    const roomAboveGroup = headingBox.top - pane.top;
+    expect(Math.abs(roomBelow - roomAboveGroup)).toBeLessThanOrEqual(48);
+    expect(roomBelow).toBeGreaterThanOrEqual(240);
+  },
+  APP_BOOT_TEST_TIMEOUT_MS,
+);
+
+it(
+  "opens the model picker downward from the centred new-thread composer",
+  async () => {
+    using _environment = installFakeEnvironment(PROJECT_THREADS);
+    await using _viewport = await viewport(1440);
+    await using _app = await openNewThread();
+
+    document.querySelector<HTMLElement>('[data-chat-provider-model-picker="true"]')!.click();
+    const popup = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLElement>('[data-slot="popover-positioner"]');
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    const { card, pane } = composerBoxes();
+    await expect.poll(() => popup.getBoundingClientRect().top).toBeGreaterThanOrEqual(card.bottom);
+    expect(popup.getBoundingClientRect().bottom).toBeLessThanOrEqual(pane.bottom + 1);
   },
   APP_BOOT_TEST_TIMEOUT_MS,
 );

@@ -7,6 +7,7 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { GridEmptyDraft } from "../components/grid/GridEmptyDraft";
 import { GridHost } from "../components/grid/GridHost";
+import { GridRightPanelPin } from "../components/chat/GridRightPanelPin";
 import { GridThreadBranch } from "../components/grid/GridThreadBranch";
 import { GridThreadCell } from "../components/grid/GridThreadCell";
 import { GridTerminalDock } from "../components/grid/GridTerminalDock";
@@ -91,19 +92,31 @@ function GridRoute() {
     storeMaximizedThreadId(gridId, threadId);
   const focusedThreadId = grid?.focusedThreadId ?? null;
   const previousFocusedThreadIdRef = useRef<string | null>(focusedThreadId);
-  const focusedRef =
-    grid === null || focusedThreadId === null
+  // The panel follows the focused cell unless the grid pins it to one thread.
+  const pinnedPanelThreadId = grid?.panelPinnedThreadId ?? null;
+  const panelThreadId = pinnedPanelThreadId ?? focusedThreadId;
+  const setPanelPinnedThread = useGridStore((store) => store.setPanelPinnedThread);
+  const panelRef =
+    grid === null || panelThreadId === null
       ? null
-      : scopeThreadRef(grid.environmentId as EnvironmentId, focusedThreadId as ThreadId);
-  const focusedThreadKey = focusedRef === null ? null : scopedThreadKey(focusedRef);
+      : scopeThreadRef(grid.environmentId as EnvironmentId, panelThreadId as ThreadId);
+  const panelThreadKey = panelRef === null ? null : scopedThreadKey(panelRef);
   const focusedRightPanel = useRightPanelStore((state) =>
-    focusedThreadKey === null ? null : (state.byThreadKey[focusedThreadKey] ?? null),
+    panelThreadKey === null ? null : (state.byThreadKey[panelThreadKey] ?? null),
   );
   const focusedRightPanelOpen = focusedRightPanel?.isOpen === true;
   const focusedRightPanelMaximized = focusedRightPanelOpen && focusedRightPanel?.maximized === true;
   const panelBesideGrid =
     focusedRightPanelOpen && (!prefersSheetPanel || focusedRightPanelMaximized);
   const gridDetailsOpen = grid?.detailsOpen === true;
+
+  // A pin outlives only the panel it keeps: closing the panel, by any control, unpins it.
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- unpins the grid when the pinned thread's panel closes
+  useEffect(() => {
+    if (pinnedPanelThreadId !== null && !focusedRightPanelOpen) {
+      setPanelPinnedThread(gridId, null);
+    }
+  }, [focusedRightPanelOpen, gridId, pinnedPanelThreadId, setPanelPinnedThread]);
 
   const toggleThreadDetails = useStableCallback(() => {
     const current = useGridStore.getState().grids.find((entry) => entry.id === gridId);
@@ -161,10 +174,11 @@ function GridRoute() {
         toggleThreadDetails();
         return;
       }
-      if (current.focusedThreadId === null) return;
+      const shortcutThreadId = current.panelPinnedThreadId ?? current.focusedThreadId;
+      if (shortcutThreadId === null) return;
       const ref = scopeThreadRef(
         current.environmentId as EnvironmentId,
-        current.focusedThreadId as ThreadId,
+        shortcutThreadId as ThreadId,
       );
       const store = useRightPanelStore.getState();
       const threadPanel = store.byThreadKey[scopedThreadKey(ref)];
@@ -175,6 +189,7 @@ function GridRoute() {
       if (command === "rightPanel.toggle" && threadPanel?.isOpen === true) {
         store.setMaximized(ref, false);
         store.close(ref);
+        useGridStore.getState().setPanelPinnedThread(gridId, null);
         return;
       }
       if (command === "rightPanel.toggle") {
@@ -367,7 +382,9 @@ function GridRoute() {
             besidePanel={panelBesideGrid}
           >
             <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-              <span className="shrink-0">Houston</span>
+              <span className="shrink-0" data-grid-crumb-project="">
+                {projectTitleOf(grid)}
+              </span>
               <span aria-hidden>/</span>
               {/* The last crumb is the current place: the grid, or the one thread on screen. */}
               {[
@@ -415,6 +432,7 @@ function GridRoute() {
               grid={grid}
               gridTerminalRef={gridTerminalRef}
               emptyDraftThreadId={emptyDraftThreadId}
+              rightPanelThreadId={panelThreadId}
               threadPanelAnchorRef={threadDetailsAnchorRef}
               onArrange={() => setMaximizedThreadId(null)}
               {...(grid.tree === null
@@ -527,8 +545,23 @@ function GridRoute() {
                 availableThreads={availableThreads}
                 providerEntries={providerEntries}
                 rightPanelPortal={
-                  focused && rightPanelHost !== null
-                    ? { host: rightPanelHost, container: gridRow }
+                  node.threadId === panelThreadId && rightPanelHost !== null
+                    ? {
+                        host: rightPanelHost,
+                        container: gridRow,
+                        headerControls: (
+                          <GridRightPanelPin
+                            threadTitle={
+                              workspaceThreads.find((thread) => thread.id === node.threadId)
+                                ?.title ?? "Untitled thread"
+                            }
+                            pinned={pinnedPanelThreadId === node.threadId}
+                            onPinnedChange={(pinned) =>
+                              setPanelPinnedThread(grid.id, pinned ? node.threadId : null)
+                            }
+                          />
+                        ),
+                      }
                     : null
                 }
                 threadDetailsAnchor={focused ? threadDetailsAnchorRef : null}

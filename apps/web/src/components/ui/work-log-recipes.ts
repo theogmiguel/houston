@@ -3,3 +3,6 @@ export const NESTED_WORK_TYPE_CLASS = "[--text-body--line-height:1rem] [--text-b
 
 /** The thin left rail the rows of an expanded work group hang from, under the header. */
 export const NESTED_WORK_RAIL_CLASS = `ms-3.5 border-s border-border ps-2.5 ${NESTED_WORK_TYPE_CLASS}`;
+
+/** Ink for a run that is in progress: the running status hue, never the accent. */
+export const RUNNING_INK_CLS = "text-status-running-ink";

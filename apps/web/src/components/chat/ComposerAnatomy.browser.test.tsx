@@ -203,6 +203,55 @@ it(
       // Below 520 the workspace, branch and access controls fold into one chip.
       if (width < 520) expect(contextControls.length).toBeLessThanOrEqual(2);
 
+      // Two rows at every width: the input alone on row 1, the toolbar under it.
+      const editorTop = document
+        .querySelector<HTMLElement>('[data-testid="composer-editor"]')!
+        .getBoundingClientRect().top;
+      const editorBottom = document
+        .querySelector<HTMLElement>('[data-testid="composer-editor"]')!
+        .getBoundingClientRect().bottom;
+      const toolbarControls = [...footer.querySelectorAll<HTMLElement>("button")].filter(
+        (control) =>
+          control.getClientRects().length > 0 && getComputedStyle(control).visibility !== "hidden",
+      );
+      for (const control of toolbarControls) {
+        expect(control.getBoundingClientRect().top).toBeGreaterThanOrEqual(editorBottom - 1);
+        expect(control.getBoundingClientRect().top).toBeGreaterThan(editorTop);
+      }
+      // The model chip stays at every width; below 380px it is the provider mark only.
+      const modelChip = footer.querySelector<HTMLElement>("[data-chat-provider-model-picker]");
+      expect(modelChip).not.toBeNull();
+      if (width < 380) {
+        await vi.waitFor(() =>
+          expect(modelChip!.dataset.chatProviderModelPickerIconOnly).toBe("true"),
+        );
+        expect(modelChip!.getAttribute("title") ?? "").not.toBe("");
+      }
+      // The workspace chip never repeats a segment ("Local · Local").
+      const workspaceChip = footer.querySelector<HTMLElement>('[aria-label^="Workspace:"]');
+      if (workspaceChip !== null) {
+        const segments = (workspaceChip.textContent ?? "")
+          .split("·")
+          .map((part) => part.trim())
+          .filter(Boolean);
+        expect(new Set(segments).size).toBe(segments.length);
+      }
+      // No control overlaps another.
+      for (const [index, first] of toolbarControls.entries()) {
+        for (const second of toolbarControls.slice(index + 1)) {
+          const a = first.getBoundingClientRect();
+          const b = second.getBoundingClientRect();
+          const overlaps =
+            a.left < b.right - 1 &&
+            b.left < a.right - 1 &&
+            a.top < b.bottom - 1 &&
+            b.top < a.bottom - 1;
+          expect(overlaps, `${first.ariaLabel} overlaps ${second.ariaLabel} at ${width}px`).toBe(
+            false,
+          );
+        }
+      }
+
       const surfaceBox = surface.getBoundingClientRect();
       for (const button of footer.querySelectorAll<HTMLElement>("button")) {
         expect(button.getBoundingClientRect().right).toBeLessThanOrEqual(surfaceBox.right + 1);

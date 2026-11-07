@@ -88,6 +88,16 @@ describe("status colours", () => {
     }
   });
 
+  it.each([
+    [false, "--status-running", [37, 99, 235]],
+    [true, "--status-running", [100, 160, 255]],
+    [false, "--status-waiting", [100, 116, 139]],
+    [true, "--status-waiting", [148, 163, 184]],
+  ] as const)("paints running blue and waiting slate (dark=%s, %s)", (dark, variable, rgb) => {
+    using _theme = themed(dark);
+    expect(painted(variable)).toEqual(rgb);
+  });
+
   it("compiles the status utility classes the chips and pips paint", () => {
     const probe = document.createElement("span");
     probe.className = "bg-status-back/15 text-status-back-ink";

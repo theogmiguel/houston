@@ -1090,14 +1090,14 @@ body {
   --warn-ink: #9a4a06;
   --info-ink: #155e75;
   /* Thread status hues. Accent violet stays interaction-only, so state never borrows it:
-     running is teal, back is pink, waiting is sky, input is amber and approval is orange.
+     running is blue, back is pink, waiting is slate, input is amber and approval is orange.
      Each `-ink` keeps 4.5:1 on the canvas and the raised card. */
-  --status-running: #0d9488;
-  --status-running-ink: #0f766e;
+  --status-running: #2563eb;
+  --status-running-ink: #2563eb;
   --status-back: #db2777;
   --status-back-ink: #be185d;
-  --status-waiting: #0284c7;
-  --status-waiting-ink: #0369a1;
+  --status-waiting: #64748b;
+  --status-waiting-ink: #64748b;
   --status-input: var(--warn);
   --status-input-ink: var(--warn-ink);
   --status-approval: #ea580c;
@@ -1264,12 +1264,12 @@ body {
   --info-ink: #7cb7ff;
   /* Thread status hues, the same families as the light palette, brightened for the dark
      canvas and the raised card; each `-ink` keeps 4.5:1 on both. */
-  --status-running: #14b8a6;
-  --status-running-ink: #14b8a6;
+  --status-running: #64a0ff;
+  --status-running-ink: #64a0ff;
   --status-back: #ec4899;
   --status-back-ink: #ec4899;
-  --status-waiting: #38bdf8;
-  --status-waiting-ink: #38bdf8;
+  --status-waiting: #94a3b8;
+  --status-waiting-ink: #94a3b8;
   --status-input: var(--warn);
   --status-input-ink: var(--warn-ink);
   --status-approval: #fb923c;
@@ -1570,13 +1570,6 @@ html[data-theme-token-probe] *::after {
 
 #theme-inspector-hover[data-placement="below"] [data-theme-inspector-hover-label] {
   top: calc(100% + 0.35rem);
-}
-
-/* The chat's top bar rides the chrome plane with the sidebar, one step under the canvas.
-   A theme file replaces it below with its own toolbar role. */
-[data-chat-header],
-:has(> [data-grid-surface]) > header {
-  background-color: var(--app-chrome-background);
 }
 
 /* Workspace actions use a small, separate chrome hierarchy. Keeping these
@@ -2796,15 +2789,6 @@ code {
         3rem + var(--chat-lane-inset-end, 0px) - var(--chat-timeline-gutter, 0px)
       );
     }
-  }
-}
-
-/* A short window cannot seat the new-thread group above a centred composer without crowding
-   the top bar, so there the group rests at the foot of the pane with the hero over it. */
-@media (max-height: 44rem) {
-  [data-chat-composer-overlay][data-draft-hero] {
-    align-items: flex-end;
-    padding-bottom: 4rem;
   }
 }
 

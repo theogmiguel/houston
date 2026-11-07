@@ -17,7 +17,6 @@ import {
   RAIL_SHORTCUT_ICON_ACTIVE_CLS,
   RAIL_SHORTCUT_ICON_CLS,
   RAIL_SHORTCUT_ICON_REST_CLS,
-  RAIL_SHORTCUT_LABEL_CLS,
   RAIL_SHORTCUT_REST_CLS,
 } from "../ui/sidebar-rail-recipes";
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
@@ -35,9 +34,9 @@ export function SidebarRailKbd({ children }: { children: ReactNode }) {
 }
 
 /**
- * One labelled shortcut of the rail's shortcut row: a 16px icon over an 11px name, the
- * active route filled and marked with `aria-current`. The name is also the accessible
- * name and the tooltip, with the shortcut when one opens it.
+ * One icon-only shortcut of the rail's shortcut row, the active route filled and marked with
+ * `aria-current`. The name is the accessible name and the tooltip, with the shortcut when one
+ * opens it.
  */
 function SidebarRailShortcut({
   icon,
@@ -82,9 +81,6 @@ function SidebarRailShortcut({
         >
           {icon}
           {shown === null ? null : <span className={RAIL_SHORTCUT_COUNT_CLS}>{shown}</span>}
-        </span>
-        <span aria-hidden data-rail-shortcut-label="" className={RAIL_SHORTCUT_LABEL_CLS}>
-          {label}
         </span>
       </TooltipTrigger>
       <TooltipPopup side="bottom">

@@ -77,6 +77,26 @@ describe("boardWorkSummary", () => {
     ];
     expect(boardWorkSummary(entries)).toBe("read 9 files · edited 3 · ran 2 commands");
   });
+
+  it("names an integration the turn called, so the fold line reads 'ran 1 command · used Houston'", () => {
+    const entry = (id: string, fields: Record<string, unknown>) =>
+      ({
+        id,
+        createdAt: "2026-10-30T12:00:00Z",
+        label: id,
+        tone: "tool" as const,
+        ...fields,
+      }) as never;
+    expect(
+      boardWorkSummary([
+        entry("command", { itemType: "command_execution" }),
+        entry("houston", {
+          itemType: "dynamic_tool",
+          toolSource: { key: "houston", name: "Houston", kind: "integration" },
+        }),
+      ]),
+    ).toBe("ran 1 command · used Houston");
+  });
 });
 
 describe("deriveMessagesTimelineRows", () => {

@@ -68,4 +68,35 @@ describe("grid persistence", () => {
     useGridStore.getState().setGridDetailsOpen("g-1", false);
     expect(readFlag()).toBeUndefined();
   });
+
+  it("keeps a pinned right panel through a reload and drops it with its thread", () => {
+    const readPin = () =>
+      parseGrids(
+        (
+          JSON.parse(data.get(GRID_STORAGE_KEY) ?? "null") as {
+            state: { grids: unknown };
+          }
+        ).state.grids,
+      )[0]!.panelPinnedThreadId;
+
+    useGridStore.getState().setPanelPinnedThread("g-1", "thread-b");
+    expect(readPin()).toBe("thread-b");
+
+    useGridStore.getState().setPanelPinnedThread("g-1", "thread-missing");
+    expect(readPin()).toBe("thread-b");
+
+    useGridStore.getState().removeThreadFromGrid("g-1", "thread-b");
+    expect(readPin()).toBeUndefined();
+  });
+
+  it("parses a stored pin only when its thread is in the tree", () => {
+    const stored = { ...created[0]!, panelPinnedThreadId: "thread-a" };
+    expect(parseGrids([stored])[0]!.panelPinnedThreadId).toBe("thread-a");
+    expect(parseGrids([{ ...stored, panelPinnedThreadId: "thread-gone" }])[0]).not.toHaveProperty(
+      "panelPinnedThreadId",
+    );
+    expect(parseGrids([{ ...stored, panelPinnedThreadId: 7 }])[0]).not.toHaveProperty(
+      "panelPinnedThreadId",
+    );
+  });
 });

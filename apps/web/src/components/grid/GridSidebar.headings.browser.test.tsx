@@ -214,7 +214,7 @@ function heading(screen: { container: HTMLElement }, title: string): HTMLElement
 }
 
 describe("project and grid headings", () => {
-  it("sets the project name at 12px/600 with a chevron, a muted count and the attention pips", async () => {
+  it("sets the project name at 12px/600 with a chevron, a muted count and no pips", async () => {
     resetTestState();
     await using screen = await render(<CollapsibleSections sections={[projectWithGrid()]} />);
 
@@ -227,21 +227,12 @@ describe("project and grid headings", () => {
     const count = button.querySelector<HTMLElement>("[data-heading-count]")!;
     expect(count.textContent).toBe("4");
     expect(getComputedStyle(count).color).not.toBe(getComputedStyle(name).color);
-    // The count follows the name; the pips follow the count.
+    // The count follows the name.
     expect(count.getBoundingClientRect().left - name.getBoundingClientRect().right).toBeLessThan(9);
 
     const projectHeading = button.closest<HTMLElement>("[data-project-heading]")!;
-    const pips = projectHeading.querySelector<HTMLElement>("[data-attention-pips]")!;
-    expect(pips.getBoundingClientRect().left - count.getBoundingClientRect().right).toBeLessThan(9);
-    expect(pips.querySelector("[data-attention-pip='failed']")?.textContent).toBe("2");
-    expect(pips.querySelector("[data-attention-pip='needs']")?.textContent).toBe("1");
-    expect(screen.getByRole("button", { name: "2 threads failed" }).element()).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "1 thread needs input or approval" }).element(),
-    ).toBeInTheDocument();
-    expect(pips.getBoundingClientRect().right).toBeLessThanOrEqual(
-      projectHeading.getBoundingClientRect().right,
-    );
+    expect(projectHeading.querySelector("[data-attention-pips], [data-attention-pip]")).toBeNull();
+    expect(projectHeading.textContent).toBe("Houston4");
   });
 
   it("shows neither a count nor pips on an empty project", async () => {
@@ -275,10 +266,6 @@ describe("project and grid headings", () => {
     const button = heading(screen, "Houston");
     await userEvent.hover(button);
     await vi.waitFor(() => expect(getComputedStyle(plus).opacity).toBe("1"));
-    const pips = button
-      .closest<HTMLElement>("[data-project-heading]")!
-      .querySelector<HTMLElement>("[data-attention-pips]")!;
-    expect(getComputedStyle(pips).opacity).toBe("1");
 
     await userEvent.unhover(button);
     await vi.waitFor(() => expect(getComputedStyle(plus).opacity).toBe("0"));
@@ -313,10 +300,8 @@ describe("project and grid headings", () => {
       gridCount.getBoundingClientRect().left - gridName.getBoundingClientRect().right,
     ).toBeLessThan(9);
     expect(
-      gridHeading
-        .closest<HTMLElement>("[data-grid-key]")!
-        .querySelector("[data-attention-pip='failed']")?.textContent,
-    ).toBe("1");
+      gridHeading.closest<HTMLElement>("[data-grid-key]")!.querySelector("[data-attention-pip]"),
+    ).toBeNull();
   });
 });
 

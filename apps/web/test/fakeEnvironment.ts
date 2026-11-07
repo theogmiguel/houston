@@ -7,6 +7,9 @@ import {
   EventId,
   ExecutionEnvironmentDescriptor,
   MessageId,
+  NodeId,
+  ProviderSessionId,
+  RuntimeRequestId,
   ORCHESTRATION_PROTOCOL_VERSION,
   ORCHESTRATION_V2_WS_METHODS,
   ProjectId,
@@ -21,6 +24,7 @@ import {
   type OrchestrationProjectShell,
   type OrchestrationV2ProjectedTurnItem,
   type OrchestrationV2Run,
+  type OrchestrationV2RuntimeRequest,
   type OrchestrationV2ShellStreamItem,
   type OrchestrationV2ThreadProjection,
   type OrchestrationV2ThreadShell,
@@ -194,6 +198,8 @@ export interface FakeThread {
   readonly title: string;
   readonly runs: ReadonlyArray<OrchestrationV2Run>;
   readonly items: ReadonlyArray<OrchestrationV2TurnItem>;
+  /** Runtime requests (pending questions, approvals) the thread projection reports. */
+  readonly runtimeRequests?: ReadonlyArray<OrchestrationV2RuntimeRequest>;
 }
 
 /** A thread of `turns` user prompts, each answered in markdown with a list and inline code. */
@@ -304,7 +310,7 @@ function projectionOf(thread: FakeThread): OrchestrationV2ThreadProjection {
     providerSessions: [],
     providerThreads: [],
     providerTurns: [],
-    runtimeRequests: [],
+    runtimeRequests: [...(thread.runtimeRequests ?? [])],
     messages: [],
     plans: [],
     turnItems: [...thread.items],
@@ -539,6 +545,49 @@ export function runningRun(threadId: ThreadId, id: string, ordinal: number, user
     status: "running" as const,
     completedAt: null,
   };
+}
+
+/**
+ * A thread with one pending question: a user-input request and the item that carries its
+ * questions, as the provider adapter reports them while a run waits for an answer.
+ */
+export function threadWithPendingQuestion(name: string): FakeThread {
+  const history = threadWithHistory(name, 1);
+  const id = ThreadId.make(name);
+  const runId = RunId.make(`${name}-run-0`);
+  const requestId = RuntimeRequestId.make(`${name}-question`);
+  const item = {
+    ...base(id, runId, `${name}-question-item`, 10),
+    status: "running" as const,
+    type: "user_input_request",
+    requestId,
+    questions: [
+      {
+        id: "q1",
+        header: "Fixture",
+        question: "Should this fixture prefer strict schemas or UI flexibility?",
+        options: [
+          { label: "Strict schemas (Recommended)", description: "Prefer strict schemas" },
+          { label: "UI flexibility", description: "Prefer UI flexibility" },
+        ],
+      },
+    ],
+  } satisfies OrchestrationV2TurnItem;
+  const request = {
+    id: requestId,
+    nodeId: NodeId.make(`${name}-node`),
+    providerTurnId: null,
+    nativeRequestRef: null,
+    kind: "user_input",
+    status: "pending",
+    responseCapability: {
+      type: "live",
+      providerSessionId: ProviderSessionId.make(`${name}-session`),
+    },
+    createdAt: AT,
+    resolvedAt: null,
+  } satisfies OrchestrationV2RuntimeRequest;
+  return { ...history, items: [...history.items, item], runtimeRequests: [request] };
 }
 
 export { userItem };

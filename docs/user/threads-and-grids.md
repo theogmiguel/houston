@@ -217,6 +217,11 @@ separate set of surfaces; see [The right panel](right-panel.md). A thread's **de
 control (`Ctrl+Shift+B`) shows its environment, branch, pull requests, scripts, local
 servers, context and usage limits. The card starts closed and stays as you leave it.
 
+In a grid, the right panel follows the focused pane: focusing another pane shows that
+thread's panel. The pin in the panel header (**Pin to** the thread's title) keeps the panel
+on its thread while you work in other panes, and the header then names the thread. Unpin it,
+or close the panel, to return to following focus.
+
 A cheap command that needs a real terminal, such as `sudo apt install` or
 `git push --force-with-lease`, can start with `!`: `!sudo apt install foo` opens the
 thread's drawer and runs there instead of going to the agent. Leading the draft with a space

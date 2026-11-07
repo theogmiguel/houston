@@ -39,6 +39,7 @@ import { remarkThoughtPreview } from "./TimelineWorkEntryRow.logic";
 import { parseMarkdownWithMath } from "@houston-app/shared/markdownMath";
 import { collectThreadFindRanges } from "./threadFindHighlights";
 import { toastManager } from "../ui/toast";
+import { ThreadErrorCardProvider } from "./ThreadErrorBanner";
 import type { CitedHistory } from "./citationProcedure";
 import type { TimelineNavigation } from "./timelineViewport";
 import { rememberTimelinePosition } from "./timelineScrollAnchoring";
@@ -2536,5 +2537,104 @@ describe("MessagesTimeline rhythm", () => {
     const phone = await bubbleWidth(400);
     expect(phone.lane).toBeLessThan(480);
     expect(phone.bubble).toBeGreaterThanOrEqual(phone.lane - 1);
+  });
+});
+
+describe("MessagesTimeline compact density", () => {
+  it.each([
+    { width: 340, compact: true },
+    { width: 900, compact: false },
+  ])("hides the latest answer's footer until hover at $width px", async ({ width, compact }) => {
+    setup();
+    const runId = RunId.make(`compact-run-${width}`);
+    await using screen = await renderTimeline(
+      [
+        message("Question", { runId }, "compact-user"),
+        message(
+          "Running the integration suite against the staging snapshot.",
+          {
+            role: "assistant",
+            runId,
+          },
+          "compact-answer",
+        ),
+      ],
+      { latestRun: { runId, status: "completed", startedAt: CREATED_AT, completedAt: CREATED_AT } },
+      { width },
+    );
+    const root = screen.container;
+    const footer = await vi.waitFor(() => {
+      const found = root.querySelector<HTMLElement>("[data-assistant-meta-footer]");
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    expect(Number(getComputedStyle(footer).opacity)).toBe(compact ? 0 : 1);
+    // Focus reveals it, so the actions stay reachable by keyboard.
+    footer.querySelector<HTMLElement>("button")?.focus();
+    await vi.waitFor(() => expect(Number(getComputedStyle(footer).opacity)).toBe(1));
+    expect(root.scrollWidth).toBeLessThanOrEqual(root.clientWidth + 1);
+  });
+});
+
+describe("MessagesTimeline failure card", () => {
+  const failureEntry = (message: string): Entry =>
+    work("failed-run", {
+      label: "Provider error",
+      tone: "error",
+      itemType: "error",
+      projectedItem: v2Item("error", {
+        id: "failed-run",
+        status: "failed",
+        failure: { class: "provider", message, code: null, retryable: false },
+      }),
+    });
+  const BUILD_CACHE_ERROR = "Build cache at 127.0.0.1:9 refused the connection (ECONNREFUSED)";
+
+  it("shows the failure inline only while the composer-slot card is not showing it", async () => {
+    setup();
+    const timeline = (cardError: string | null) => (
+      <ThreadErrorCardProvider value={cardError}>
+        <MessagesTimeline {...baseProps()} timelineEntries={[failureEntry(BUILD_CACHE_ERROR)]} />
+      </ThreadErrorCardProvider>
+    );
+    await using withCard = await renderElement(timeline(BUILD_CACHE_ERROR));
+    expect(withCard.container.querySelector('[data-v2-item-type="error"]')).toBeNull();
+    expect(withCard.text()).not.toContain("ECONNREFUSED");
+
+    // Once the card is dismissed the timeline carries the error, so it stays reachable.
+    await using dismissed = await renderElement(timeline(null));
+    await vi.waitFor(() =>
+      expect(dismissed.container.querySelector('[data-v2-item-type="error"]')).not.toBeNull(),
+    );
+    expect(dismissed.text()).toContain("ECONNREFUSED");
+  });
+});
+
+describe("MessagesTimeline running colour", () => {
+  it("draws the working row's label and glyph in the running status ink", async () => {
+    setup();
+    const runId = RunId.make("running-ink-run");
+    await using screen = await renderTimeline(
+      [message("Question", { runId }, "running-ink-user")],
+      {
+        isWorking: true,
+        activeTurnStartedAt: CREATED_AT,
+        latestRun: { runId, status: "running", startedAt: CREATED_AT, completedAt: null },
+      },
+    );
+    const probe = document.createElement("span");
+    probe.style.color = "var(--status-running-ink)";
+    screen.container.append(probe);
+    const running = getComputedStyle(probe).color;
+    const label = await vi.waitFor(() => {
+      const found = [...screen.container.querySelectorAll<HTMLElement>("span")].find(
+        (node) => node.textContent === "Running" && node.children.length === 0,
+      );
+      expect(found).toBeDefined();
+      return found!;
+    });
+    expect(getComputedStyle(label).color).toBe(running);
+    const glyph = screen.container.querySelector<SVGElement>("[data-streaming-glyph]")!;
+    expect(getComputedStyle(glyph).color).toBe(running);
   });
 });

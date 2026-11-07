@@ -1,6 +1,5 @@
 import type { ComponentProps } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
@@ -141,8 +140,8 @@ function section(
 const needsYou = () => thread("asks", { hasPendingUserInput: true });
 const running = () => thread("busy", { runtime: { status: "running" } as never });
 
-describe("heading count and attention pips", () => {
-  it("shows the thread count and a pip for the threads that need the user on a collapsed project", async () => {
+describe("heading count", () => {
+  it("shows the thread count and no pip on a collapsed project whose threads need the user", async () => {
     await using screen = await render(
       <TooltipProvider delay={0}>
         <SidebarProjectSection
@@ -156,16 +155,13 @@ describe("heading count and attention pips", () => {
       </TooltipProvider>,
     );
     const label = screen.getByRole("button", { name: /^Houston/ }).element();
-    const headingRow = label.closest<HTMLElement>("[data-project-heading]")!;
     expect(label.querySelector("[data-heading-count]")?.textContent).toBe("3");
-    expect(
-      headingRow.querySelector("[data-attention-pip='needs']")?.getAttribute("aria-label"),
-    ).toBe("1 thread needs input or approval");
-    expect(headingRow.querySelector("[data-attention-pip='failed']")).toBeNull();
+    expect(screen.container.querySelector("[data-attention-pips]")).toBeNull();
+    expect(screen.container.querySelector("[data-attention-pip]")).toBeNull();
     expect(screen.container.textContent).not.toContain("busy");
   });
 
-  it("counts failed threads apart from threads that need the user, on an expanded project too", async () => {
+  it("shows no pip on an expanded project with a failed thread and threads that need the user", async () => {
     const failed = thread("broke", {
       latestRun: {
         id: "run-broke",
@@ -191,68 +187,8 @@ describe("heading count and attention pips", () => {
       </TooltipProvider>,
     );
     const label = screen.getByRole("button", { name: /^Houston/ }).element();
-    const headingRow = label.closest<HTMLElement>("[data-project-heading]")!;
-    expect(
-      headingRow.querySelector("[data-attention-pip='failed']")?.getAttribute("aria-label"),
-    ).toBe("1 thread failed");
-    expect(
-      headingRow.querySelector("[data-attention-pip='needs']")?.getAttribute("aria-label"),
-    ).toBe("2 threads need input or approval");
-  });
-
-  it("counts a thread that came back with the back glyph and its own label", async () => {
-    const cameBack = thread("came-back", {
-      lastVisitedAt: "2025-12-31T23:58:00.000Z",
-      unsettledAt: "2025-12-31T23:59:00.000Z",
-    });
-    await using screen = await render(
-      <TooltipProvider delay={0}>
-        <SidebarProjectSection
-          {...props(section([{ grid: grid("g1", null), threads: [cameBack] }]))}
-        />
-      </TooltipProvider>,
-    );
-    const pip = screen.container.querySelector<HTMLElement>(
-      "[data-project-heading] [data-attention-pip='back']",
-    )!;
-    expect(pip.getAttribute("aria-label")).toBe("1 thread came back");
-    expect(pip.querySelector('[data-status-kind="back"]')).not.toBeNull();
-  });
-
-  it("jumps from a pip to the first row of its family", async () => {
-    await using screen = await render(
-      <TooltipProvider delay={0}>
-        <SidebarProjectSection
-          {...props(
-            section([
-              {
-                grid: grid("g1", null),
-                threads: [thread("idle"), needsYou(), thread("other")],
-              },
-            ]),
-            { collapsed: false },
-          )}
-        />
-      </TooltipProvider>,
-    );
-    const pip = screen.container.querySelector<HTMLElement>(
-      "[data-project-heading] [data-attention-pip='needs']",
-    )!;
-    expect(pip.getAttribute("aria-label")).toBe("1 thread needs input or approval");
-    await userEvent.click(pip);
-    expect(document.activeElement).toBe(
-      screen.container.querySelector("[data-thread-key$=':asks']"),
-    );
-  });
-
-  it("shows no pip when no thread is urgent", async () => {
-    await using screen = await render(
-      <TooltipProvider delay={0}>
-        <SidebarProjectSection
-          {...props(section([{ grid: grid("g1", null), threads: [thread("a")] }]))}
-        />
-      </TooltipProvider>,
-    );
+    expect(label.querySelector("[data-heading-count]")?.textContent).toBe("3");
+    expect(screen.container.querySelector("[data-attention-pip]")).toBeNull();
     expect(screen.container.querySelector("[data-attention-pips]")).toBeNull();
   });
 
@@ -285,7 +221,7 @@ describe("heading count and attention pips", () => {
     expect(screen.container.querySelector("[data-thread-key]")).toBeNull();
   });
 
-  it("counts a collapsed grid, flags its urgent thread and keeps its open thread visible", async () => {
+  it("counts a collapsed grid without a pip and keeps its open thread visible", async () => {
     await using screen = await render(
       <TooltipProvider delay={0}>
         <SidebarProjectSection
@@ -300,9 +236,7 @@ describe("heading count and attention pips", () => {
     const heading = screen.getByRole("button", { name: /^g1/ }).element();
     const gridRow = heading.closest<HTMLElement>("[data-grid-key]")!;
     expect(heading.querySelector("[data-heading-count]")?.textContent).toBe("2");
-    expect(gridRow.querySelector("[data-attention-pip='needs']")?.getAttribute("aria-label")).toBe(
-      "1 thread needs input or approval",
-    );
+    expect(gridRow.querySelector("[data-attention-pip]")).toBeNull();
     expect(screen.container.querySelector("[data-thread-key$=':a']")).not.toBeNull();
     expect(screen.container.querySelector("[data-thread-key$=':asks']")).toBeNull();
   });

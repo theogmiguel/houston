@@ -206,7 +206,7 @@
 5 apps/web/src/components/grid/GridShelves.tsx
 68 apps/web/src/components/grid/GridSidebar.tsx
 4 apps/web/src/components/grid/GridThreadBranch.tsx
-3 apps/web/src/components/grid/GridThreadCell.tsx
+2 apps/web/src/components/grid/GridThreadCell.tsx
 13 apps/web/src/components/HostedEmptyState.tsx
 2 apps/web/src/components/HoustonWordmark.tsx
 4 apps/web/src/components/Icons.tsx

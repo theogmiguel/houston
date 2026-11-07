@@ -26,13 +26,11 @@ import {
   MenuTrigger,
 } from "./menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./tooltip";
-import { ThreadStatusKindGlyph } from "./thread-state-glyph";
-import type { AttentionPip } from "../../grid/attentionPips";
 
 /**
- * A heading is one 12px/600 line: chevron, name, muted count, then the attention pips. A grid
- * heading is a project heading one step in. The actions overlay the pips and reserve their room
- * only while the heading is hovered or focused, so the name keeps the width otherwise.
+ * A heading is one 12px/600 line: chevron, name, muted count. A grid heading is a
+ * project heading one step in. The actions reserve their room only while the heading is hovered
+ * or focused, so the name keeps the width otherwise.
  */
 export const SIDEBAR_GRID_HEADING_CLS =
   "group/grid flex h-8 min-w-0 shrink cursor-pointer items-center gap-1.5 rounded-lg py-0 pr-1 pl-4 text-left text-xs transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
@@ -68,9 +66,6 @@ export const SIDEBAR_PROJECT_LABEL_TEXT_CLS = "min-w-0 truncate";
 /** The project heading's muted thread count. */
 export const SIDEBAR_PROJECT_SUMMARY_CLS = SIDEBAR_GRID_COUNT_CLS;
 
-/** The heading's pips: always visible so they stay reachable; the hover actions reserve their own room. */
-export const SIDEBAR_HEADING_PIPS_CLS = "flex shrink-0 items-center gap-1";
-
 /** The opt-in "Needs you" shelf above the projects, its heading and the project's roll-up line. */
 export const SIDEBAR_NEEDS_YOU_SECTION_CLS = "flex flex-col gap-0.5";
 
@@ -84,28 +79,6 @@ export const SIDEBAR_PROJECT_NEEDS_YOU_CLS = "px-2 py-1 text-xs text-secondary-l
 /** A row outside a project group names its project first on the second line. */
 export const SIDEBAR_THREAD_PROJECT_CLS = "min-w-0 truncate";
 
-const SIDEBAR_HEADING_PIP_CLS =
-  "inline-flex h-4 min-w-4 cursor-pointer items-center justify-center gap-0.5 rounded-full px-1 text-2xs leading-none font-semibold tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
-
-const ATTENTION_PIP_CLASS = {
-  failed: "bg-error-surface text-error-foreground",
-  needs: "bg-warning-surface text-status-input-ink",
-  back: "bg-status-back/15 text-status-back-ink",
-} as const;
-
-const ATTENTION_PIP_KIND = {
-  failed: "failed",
-  needs: "needs",
-  back: "back",
-} as const;
-
-const ATTENTION_PIP_LABEL = {
-  failed: (count: number) => (count === 1 ? "1 thread failed" : `${count} threads failed`),
-  needs: (count: number) =>
-    count === 1 ? "1 thread needs input or approval" : `${count} threads need input or approval`,
-  back: (count: number) => (count === 1 ? "1 thread came back" : `${count} threads came back`),
-} as const;
-
 /** The project label's New thread and New grid actions, revealed on hover or keyboard focus, not a click's focus. */
 export const SIDEBAR_PROJECT_ACTION_CLS =
   "inline-grid size-5 shrink-0 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-label opacity-0 transition-opacity duration-(--motion-feedback) ease-standard hover:bg-(--sel) hover:text-foreground group-hover/project:opacity-100 group-has-focus-visible/project:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
@@ -113,50 +86,6 @@ export const SIDEBAR_PROJECT_ACTION_CLS =
 /** Indented to the project name, so it reads as the empty project's content. */
 export const SIDEBAR_PROJECT_EMPTY_ACTION_CLS =
   "flex h-(--h-row) w-full cursor-pointer items-center gap-2 rounded-lg py-0 pr-2 pl-7.5 text-left text-xs text-secondary-label transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
-
-/**
- * The attention pips of a project or grid heading. Each pip carries the glyph and ink of the
- * status it counts and jumps to that family's first row; nothing renders when no row needs a pip.
- */
-export function SidebarAttentionPips({
-  pips,
-  onJump,
-}: {
-  readonly pips: ReadonlyArray<AttentionPip>;
-  readonly onJump: (firstThreadKey: string) => void;
-}) {
-  if (pips.length === 0) return null;
-  return (
-    <span data-attention-pips="" className={SIDEBAR_HEADING_PIPS_CLS}>
-      {pips.map((pip) => {
-        const label = ATTENTION_PIP_LABEL[pip.group](pip.count);
-        return (
-          <Tooltip key={pip.group}>
-            <TooltipTrigger
-              render={
-                <button
-                  type="button"
-                  aria-label={label}
-                  data-attention-pip={pip.group}
-                  onClick={() => onJump(pip.firstThreadKey)}
-                  className={cn(
-                    SIDEBAR_HEADING_PIP_CLS,
-                    ATTENTION_PIP_CLASS[pip.group],
-                    "transition-opacity duration-(--motion-feedback) ease-standard hover:opacity-80",
-                  )}
-                />
-              }
-            >
-              <ThreadStatusKindGlyph kind={ATTENTION_PIP_KIND[pip.group]} className="size-3" />
-              <span aria-hidden>{pip.count}</span>
-            </TooltipTrigger>
-            <TooltipPopup side="bottom">{label}</TooltipPopup>
-          </Tooltip>
-        );
-      })}
-    </span>
-  );
-}
 
 /** The grid rail's header controls: outside the window drag region so they stay clickable. */
 export const SIDEBAR_HEADER_ACTIONS_CLS =

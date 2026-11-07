@@ -334,10 +334,12 @@ function AssistantMessageMeta({
 
   return (
     <div
+      data-assistant-meta-footer=""
       className={cn(
         "flex items-center gap-2 text-xs tabular-nums transition-opacity duration-200",
+        // A compact timeline (a grid pane) keeps even the latest answer's footer to hover and focus.
         alwaysVisible
-          ? "opacity-100"
+          ? "opacity-0 @min-[560px]/timeline:opacity-100 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover/assistant:opacity-100"
           : "opacity-0 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover/assistant:opacity-100",
         className,
       )}

@@ -13,7 +13,7 @@ import { workEntryDisplayIndicatesToolFailure } from "../../session-logic";
 import ChatMarkdown from "../ChatMarkdown";
 import { ChevronDownIcon, ChevronRightIcon, Minimize2Icon, XIcon } from "lucide-react";
 import { Button } from "../ui/button";
-import { NESTED_WORK_TYPE_CLASS } from "../ui/work-log-recipes";
+import { NESTED_WORK_TYPE_CLASS, RUNNING_INK_CLS } from "../ui/work-log-recipes";
 import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
 import {
   liveWorkEntryLabel,
@@ -303,7 +303,7 @@ export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: 
     <CompactingLabel createdAt={row.createdAt} />
   ) : row.createdAt ? (
     <>
-      <span className={needsUser ? THREAD_STATE_TEXT_CLASS.needs : "text-(--accent-ink)"}>
+      <span className={needsUser ? THREAD_STATE_TEXT_CLASS.needs : RUNNING_INK_CLS}>
         {needsUser?.label ?? "Running"}
       </span>
       <span>

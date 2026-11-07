@@ -18,6 +18,7 @@ export function GridTopBarControls({
   grid,
   gridTerminalRef = null,
   emptyDraftThreadId = null,
+  rightPanelThreadId = null,
   threadPanelAnchorRef,
   detailsOpen,
   onToggleDetails,
@@ -28,6 +29,8 @@ export function GridTopBarControls({
   gridTerminalRef?: ScopedThreadRef | null;
   /** The centred composer of an empty grid has no tree leaf yet. */
   emptyDraftThreadId?: string | null;
+  /** The thread whose right panel the grid shows: the pinned thread, else the focused one. */
+  rightPanelThreadId?: string | null;
   /** Anchors the focused cell's popover details card under the top bar control. */
   threadPanelAnchorRef?: RefObject<HTMLElement | null>;
   /** The grid's one details flag; when the grid owns it the control follows it. */
@@ -54,9 +57,12 @@ export function GridTopBarControls({
       ? false
       : selectThreadTerminalUiState(state.terminalUiStateByThreadKey, terminalRef).terminalOpen,
   );
+  const panelRef =
+    rightPanelThreadId === null
+      ? focusedRef
+      : scopeThreadRef(grid.environmentId as EnvironmentId, rightPanelThreadId as ThreadId);
   const rightPanelOpen = useRightPanelStore(
-    (state) =>
-      focusedRef !== null && state.byThreadKey[scopedThreadKey(focusedRef)]?.isOpen === true,
+    (state) => panelRef !== null && state.byThreadKey[scopedThreadKey(panelRef)]?.isOpen === true,
   );
   const threadPanelPresentation = useRightPanelStore((state) =>
     threadPanelRef === null
@@ -83,7 +89,7 @@ export function GridTopBarControls({
       threadPanelPresentation="inline"
       {...(grid.tree === null && threadPanelAnchorRef ? { threadPanelAnchorRef } : {})}
       threadPanelShortcutLabel={shortcutLabelForCommand(keybindings, "threadPanel.toggle")}
-      rightPanelAvailable={focusedRef !== null}
+      rightPanelAvailable={panelRef !== null}
       rightPanelOpen={rightPanelOpen}
       rightPanelShortcutLabel={shortcutLabelForCommand(keybindings, "rightPanel.toggle")}
       gridLayoutControl={<GridLayoutMenu grid={grid} {...(onArrange ? { onArrange } : {})} />}
@@ -111,9 +117,9 @@ export function GridTopBarControls({
         store.setThreadPanelOpen(threadPanelRef, "popover", open);
       }}
       onToggleRightPanel={() => {
-        if (focusedRef === null) return;
+        if (panelRef === null) return;
         // Opening shows the launcher until a surface or the + menu creates a tab.
-        useRightPanelStore.getState().toggleVisibility(focusedRef);
+        useRightPanelStore.getState().toggleVisibility(panelRef);
       }}
     />
   );

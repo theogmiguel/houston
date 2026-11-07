@@ -4,7 +4,7 @@ import {
   CHATGPT_WORKSPACE_ADMIN_REQUEST,
   CHATGPT_WORKSPACE_USAGE_LIMIT_CODE,
 } from "@houston-app/shared/usageLimits";
-import { memo } from "react";
+import { createContext, memo, useContext } from "react";
 import { writeTextToClipboard } from "../../hooks/useCopyToClipboard";
 import { Alert, AlertAction, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
@@ -55,6 +55,21 @@ export function shouldShowThreadErrorBanner(
   isDismissed: boolean,
 ): boolean {
   return getThreadErrorBannerKey(threadKey, error) !== null && !isDismissed;
+}
+
+/** The error the composer-slot card is showing now; null once it is dismissed or absent. */
+const ThreadErrorCardContext = createContext<string | null>(null);
+export const ThreadErrorCardProvider = ThreadErrorCardContext.Provider;
+
+/** Whether the composer-slot card already shows this failure, so the timeline need not. */
+export function useThreadErrorCardShows(failureMessage: string): boolean {
+  const cardError = useContext(ThreadErrorCardContext);
+  if (cardError === null) return false;
+  const shown = cardError.trim();
+  const message = failureMessage.trim();
+  return (
+    shown.length > 0 && message.length > 0 && (shown.includes(message) || message.includes(shown))
+  );
 }
 
 const sessionDismissedThreadErrorBannerKeys = new Set<string>();

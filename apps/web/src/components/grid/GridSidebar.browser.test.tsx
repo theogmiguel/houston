@@ -648,7 +648,7 @@ function tokenColor(token: string): string {
 }
 
 describe("ThreadCard status marks", () => {
-  it("draws a running thread's mark as the teal spinner, named Running", async () => {
+  it("draws a running thread's mark as the running-blue spinner, named Running", async () => {
     await using screen = await render(
       card(
         thread({
