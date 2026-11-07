@@ -107,7 +107,7 @@
 1 apps/web/src/components/chat/ThreadNow.tsx
 13 apps/web/src/components/chat/ThreadRelationshipIcon.tsx
 41 apps/web/src/components/chat/ThreadRelationshipsControl.tsx
-9 apps/web/src/components/chat/ThreadServersPanel.tsx
+8 apps/web/src/components/chat/ThreadServersPanel.tsx
 2 apps/web/src/components/chat/ThreadStatusLine.tsx
 16 apps/web/src/components/chat/TimelineAssistantRows.tsx
 27 apps/web/src/components/chat/TimelineFileChangeCard.tsx
@@ -115,7 +115,7 @@
 17 apps/web/src/components/chat/TimelineOverlays.tsx
 24 apps/web/src/components/chat/TimelinePendingApprovalRow.tsx
 10 apps/web/src/components/chat/TimelinePlanCard.tsx
-19 apps/web/src/components/chat/TimelineRowParts.tsx
+17 apps/web/src/components/chat/TimelineRowParts.tsx
 17 apps/web/src/components/chat/TimelineSystemDivider.tsx
 4 apps/web/src/components/chat/TimelineToolActivityIcon.tsx
 108 apps/web/src/components/chat/TimelineUserMessageRow.tsx
@@ -177,7 +177,7 @@
 6 apps/web/src/components/diffs/StyledDiffCodeView.tsx
 2 apps/web/src/components/DiffWorkerPoolProvider.tsx
 14 apps/web/src/components/files/AttachmentFilePreview.tsx
-8 apps/web/src/components/files/AudioPreview.tsx
+7 apps/web/src/components/files/AudioPreview.tsx
 65 apps/web/src/components/files/BinaryViewer.tsx
 6 apps/web/src/components/files/BrowserDocumentFrame.tsx
 10 apps/web/src/components/files/DocumentPages.tsx
