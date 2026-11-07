@@ -663,12 +663,12 @@ function fetchFailureDetail(stderr: string): string | undefined {
   return undefined;
 }
 
-const IS_REF_LOCK_FAILURE_PATTERN =
+const REF_LOCK_FAILURE =
   /^(?:(?:error|fatal): cannot lock ref\b|fatal: Unable to create ['"].+\.lock['"]:|error: fetching ref \S+ failed: (?:incorrect old value provided|reference already exists)$)/i;
 
 // Git 2.53+ reports ref races as fetching-ref failures; older versions say cannot lock ref.
 function isRefLockFailure(stderr: string): boolean {
-  return stderr.split(LINE_BREAK).some((line) => IS_REF_LOCK_FAILURE_PATTERN.test(line.trim()));
+  return stderr.split(LINE_BREAK).some((line) => REF_LOCK_FAILURE.test(line.trim()));
 }
 
 interface Trace2Monitor {
@@ -986,13 +986,13 @@ export const windowsLongPathConfigEnv = (
 ): NodeJS.ProcessEnv =>
   platform === "win32" ? gitConfigEnv(env, "core.longpaths", "true", platform) : {};
 
-const READ_CURRENT_UPSTREAM_REF_PATTERN = /^refs\/(?:remotes|heads)\//;
+const REMOTE_OR_HEAD_REF_PREFIX = /^refs\/(?:remotes|heads)\//;
 const REGEX_SPECIAL_CHARACTER = /[.*+?^${}()|[\]\\]/g;
 const SHORT_REF_PATTERN = /^refs\/remotes\//;
 const WHITESPACE_RUN = /\s+/;
 const GITDIR_LINE = /^gitdir:\s*(.+)$/m;
 const PATH_SEPARATOR = /[\\/]/;
-const RESOLVE_REVIEW_COMMIT_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
+const COMMIT_HASH = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
 const DEFAULT_BRANCH_PATTERN = /^refs\/remotes\/origin\//;
 const DIRECTORY_NAME_PATTERN = /\//g;
 const TRAILING_HIGH_SURROGATE = /[\uD800-\uDBFF]$/;
@@ -1370,7 +1370,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       cwd,
       ["rev-parse", "--symbolic-full-name", "@{upstream}"],
       true,
-    ).pipe(Effect.map((stdout) => stdout.trim().replace(READ_CURRENT_UPSTREAM_REF_PATTERN, "")));
+    ).pipe(Effect.map((stdout) => stdout.trim().replace(REMOTE_OR_HEAD_REF_PREFIX, "")));
 
     if (upstreamRef.length === 0 || upstreamRef === "@{upstream}") {
       return null;
@@ -3880,7 +3880,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     cwd: string,
     sha: string,
   ) {
-    if (!RESOLVE_REVIEW_COMMIT_PATTERN.test(sha)) {
+    if (!COMMIT_HASH.test(sha)) {
       return yield* reviewCommitError(cwd, "Selected commit is invalid or no longer available.");
     }
     const present = yield* executeGit(
@@ -3984,12 +3984,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       const sha = fields[index];
       const subject = fields[index + 1];
       const committedAt = fields[index + 2];
-      if (
-        !sha ||
-        subject === undefined ||
-        !committedAt ||
-        !RESOLVE_REVIEW_COMMIT_PATTERN.test(sha)
-      ) {
+      if (!sha || subject === undefined || !committedAt || !COMMIT_HASH.test(sha)) {
         return yield* reviewCommitError(cwd, "Could not read branch commit metadata.");
       }
       commits.push({ sha, subject: subject.slice(0, REVIEW_BRANCH_SUBJECT_LIMIT), committedAt });

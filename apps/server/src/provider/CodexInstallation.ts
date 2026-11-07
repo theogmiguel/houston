@@ -31,7 +31,7 @@ import * as ServerConfig from "../config.ts";
 import * as ModelManifest from "./ModelManifest.ts";
 import { resolveProviderCompatibility } from "./providerCompatibility.ts";
 
-const HAS_CODE_MODE_HOST_PATTERN = /^(?:volta-shim|mise|aqua-proxy)(?:\.exe)?$/iu;
+const CODE_MODE_HOST_SHIM = /^(?:volta-shim|mise|aqua-proxy)(?:\.exe)?$/iu;
 const CODEX_CLI_VERSION = /^codex-cli (\d+\.\d+\.\d+)$/u;
 const LINE_BREAK = /\r?\n/u;
 const TRAILING_SLASH = /\/$/u;
@@ -344,7 +344,7 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
   // Native Codex needs its adjacent host; launchers resolve their own payloads.
   const hasCodeModeHost = Effect.fn("CodexInstallation.hasCodeModeHost")(
     function* (realExecutablePath: string) {
-      if (HAS_CODE_MODE_HOST_PATTERN.test(path.basename(realExecutablePath))) return true;
+      if (CODE_MODE_HOST_SHIM.test(path.basename(realExecutablePath))) return true;
       if (platform === "win32") {
         if (path.extname(realExecutablePath).toLowerCase() !== ".exe") return true;
         for (const extension of [".bunx", ".shim"]) {

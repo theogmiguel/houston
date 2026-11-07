@@ -201,11 +201,11 @@ function isXAiAsyncSpawnAck(output: string | undefined): boolean {
   );
 }
 
-const IS_X_AI_MONITOR_START_ACK_PATTERN = /monitor started\s*\(\s*task\s+/i;
+const MONITOR_STARTED_MESSAGE = /monitor started\s*\(\s*task\s+/i;
 
 function isXAiMonitorStartAck(output: string | undefined): boolean {
   if (output === undefined) return false;
-  return IS_X_AI_MONITOR_START_ACK_PATTERN.test(output);
+  return MONITOR_STARTED_MESSAGE.test(output);
 }
 
 function isXAiSpawnOrTaskTool(

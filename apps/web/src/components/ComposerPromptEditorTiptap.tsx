@@ -615,11 +615,11 @@ const bulletToTaskInputRule = new InputRule({
   },
 });
 
-const FIND_PATTERN = /^- \[([ xX])\] $/;
+const TASK_LIST_MARKER = /^- \[([ xX])\] $/;
 
 function taskInputRule(type: NodeType): InputRule {
   const rule = wrappingInputRule({
-    find: FIND_PATTERN,
+    find: TASK_LIST_MARKER,
     type,
     getAttributes: (match) => ({ checked: match[1]?.toLowerCase() === "x" }),
   });

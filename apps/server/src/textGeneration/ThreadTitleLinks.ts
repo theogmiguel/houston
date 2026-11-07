@@ -6,7 +6,7 @@ const encodeSubject = Schema.encodeEffect(
   Schema.fromJsonString(Schema.Struct({ title: Schema.String, body: Schema.String })),
 );
 
-const RESOLVE_THREAD_TITLE_LINKS_PATTERN = /https:\/\/[^\s<>"')\]`]+/g;
+const HTTPS_URL = /https:\/\/[^\s<>"')\]`]+/g;
 const TRAILING_PUNCTUATION = /[.,;!?]+$/;
 
 export const resolveThreadTitleLinks = Effect.fn("resolveThreadTitleLinks")(function* (input: {
@@ -15,7 +15,7 @@ export const resolveThreadTitleLinks = Effect.fn("resolveThreadTitleLinks")(func
 }) {
   const providers = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
   const links = new Map<string, NonNullable<ReturnType<typeof providers.resolveLink>>>();
-  for (const match of input.message.matchAll(RESOLVE_THREAD_TITLE_LINKS_PATTERN)) {
+  for (const match of input.message.matchAll(HTTPS_URL)) {
     const candidate = match[0].replace(TRAILING_PUNCTUATION, "");
     const url = URL.parse(candidate);
     if (!url) continue;

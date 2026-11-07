@@ -287,7 +287,7 @@ export class StorageCleanup extends Context.Service<
 
 const LOCAL_CHANGES_REASON_PATTERN = /^[RC]|^.[RC]/;
 const TRAILING_NEWLINE = /\n$/;
-const CLEAN_WORKTREES_PATTERN = /^ref: refs\/heads\/(.+)\tHEAD\r?$/m;
+const HEAD_BRANCH_LINE = /^ref: refs\/heads\/(.+)\tHEAD\r?$/m;
 const ROTATED_LOG_SUFFIX = /\.(?:log|ndjson)\.\d+$/;
 
 const make = Effect.gen(function* () {
@@ -986,9 +986,7 @@ const make = Effect.gen(function* () {
                     timeoutMs: 20_000,
                   })
                   .pipe(
-                    Effect.map(
-                      (result) => CLEAN_WORKTREES_PATTERN.exec(result.stdout)?.[1] ?? null,
-                    ),
+                    Effect.map((result) => HEAD_BRANCH_LINE.exec(result.stdout)?.[1] ?? null),
                     Effect.orElseSucceed(() => null),
                   );
               }

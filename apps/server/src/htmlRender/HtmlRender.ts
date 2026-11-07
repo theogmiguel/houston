@@ -183,7 +183,7 @@ const dataUriPrefix = (path: string) =>
 const latin1 = (bytes: Uint8Array, start: number, end: number) =>
   String.fromCharCode(...bytes.subarray(start, end));
 
-const IS_IMAGE_BYTES_PATTERN = /^ftyp(?:avif|avis|mif1)$/;
+const AVIF_BRAND = /^ftyp(?:avif|avis|mif1)$/;
 
 // Validate bytes, not filenames, so renamed files or symlinks cannot inline secrets.
 const isImageBytes = (bytes: Uint8Array) => {
@@ -195,7 +195,7 @@ const isImageBytes = (bytes: Uint8Array) => {
     head.startsWith("\0\0\x01\0") ||
     (head.startsWith("BM") && head.slice(6, 10) === "\0\0\0\0") ||
     (head.startsWith("RIFF") && head.slice(8, 12) === "WEBP") ||
-    IS_IMAGE_BYTES_PATTERN.test(head.slice(4, 12))
+    AVIF_BRAND.test(head.slice(4, 12))
   ) {
     return true;
   }

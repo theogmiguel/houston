@@ -101,7 +101,7 @@ const LEGACY_STAT_CONCURRENCY = 4;
 // Batch stats so huge directories do not stay in memory.
 const LEGACY_STAT_BATCH = 256;
 
-const READ_OPEN_CODE_USAGE_PATTERN = /^opencode(?:-[a-zA-Z0-9_-]+)?\.db$/;
+const OPEN_CODE_DATABASE_FILE = /^opencode(?:-[a-zA-Z0-9_-]+)?\.db$/;
 
 export const readOpenCodeUsage = Effect.fn("readOpenCodeUsage")(function* (
   root: string,
@@ -125,7 +125,7 @@ export const readOpenCodeUsage = Effect.fn("readOpenCodeUsage")(function* (
   const databases = yield* fileSystem.readDirectory(root).pipe(
     Effect.flatMap((names) =>
       Effect.filter(
-        names.filter((name) => READ_OPEN_CODE_USAGE_PATTERN.test(name)),
+        names.filter((name) => OPEN_CODE_DATABASE_FILE.test(name)),
         (name) =>
           entryInfo(path.join(root, name)).pipe(
             Effect.map((info) => info.type === "File"),

@@ -199,10 +199,10 @@ const FONT_MIME_TYPE_BY_EXTENSION = new Map([
   [".woff2", "font/woff2"],
 ]);
 
-const IS_WORKSPACE_FONT_PREVIEW_PATH_PATTERN = /\.(ttf|otf|woff2?)$/i;
+const FONT_FILE_SUFFIX = /\.(ttf|otf|woff2?)$/i;
 
 export function isWorkspaceFontPreviewPath(path: string): boolean {
-  return IS_WORKSPACE_FONT_PREVIEW_PATH_PATTERN.test(path);
+  return FONT_FILE_SUFFIX.test(path);
 }
 
 const HOST_PREVIEW_MIME_TYPE_FROM_EXTENSION_PATTERN = /^\.[a-z0-9-]+$/i;

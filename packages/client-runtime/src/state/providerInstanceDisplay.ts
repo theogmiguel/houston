@@ -51,12 +51,12 @@ export function providerInstanceInitials(label: string): string {
     .join("");
 }
 
-const NORMALIZE_PROVIDER_ACCENT_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/u;
+const HEX_COLOR_WITH_HASH = /^#[0-9a-fA-F]{6}$/u;
 
 export function normalizeProviderAccentColor(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   if (!trimmed) return undefined;
-  return NORMALIZE_PROVIDER_ACCENT_COLOR_PATTERN.test(trimmed) ? trimmed : undefined;
+  return HEX_COLOR_WITH_HASH.test(trimmed) ? trimmed : undefined;
 }
 
 export function providerAccentForegroundColor(accentColor: string) {

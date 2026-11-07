@@ -124,7 +124,7 @@ export function forgejoActor(
     : null;
 }
 
-const IS_DRAFT_PATTERN = /^(?:\[WIP\]|WIP:)/i;
+const WIP_PREFIX = /^(?:\[WIP\]|WIP:)/i;
 
 export function forgejoChangeRequest(pr: typeof ForgejoPullRequest.Type) {
   return {
@@ -136,7 +136,7 @@ export function forgejoChangeRequest(pr: typeof ForgejoPullRequest.Type) {
     baseBranch: pr.base.ref,
     headRepositoryNameWithOwner: pr.head.repo?.full_name ?? null,
     state: pr.merged ? "merged" : pr.state === "closed" ? "closed" : "open",
-    isDraft: pr.draft ?? IS_DRAFT_PATTERN.test(pr.title),
+    isDraft: pr.draft ?? WIP_PREFIX.test(pr.title),
     // A false value also covers drafts and unfinished or failed conflict checks.
     mergeability: pr.mergeable === true ? "mergeable" : "unknown",
     additions: pr.additions ?? 0,

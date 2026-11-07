@@ -54,7 +54,7 @@ export function releaseClaimedRoles(
 
 const NON_ALPHANUMERIC_RUN = /[^a-z0-9]+/g;
 const EDGE_HYPHENS = /^-+|-+$/g;
-const NORMALIZE_SCRIPT_ID_PATTERN = /-+$/g;
+const TRAILING_HYPHENS = /-+$/g;
 
 function normalizeScriptId(value: string): string {
   const cleaned = value
@@ -68,9 +68,7 @@ function normalizeScriptId(value: string): string {
   if (cleaned.length <= MAX_SCRIPT_ID_LENGTH) {
     return cleaned;
   }
-  return (
-    cleaned.slice(0, MAX_SCRIPT_ID_LENGTH).replace(NORMALIZE_SCRIPT_ID_PATTERN, "") || "script"
-  );
+  return cleaned.slice(0, MAX_SCRIPT_ID_LENGTH).replace(TRAILING_HYPHENS, "") || "script";
 }
 
 export function commandForProjectScript(scriptId: string): KeybindingCommand | null {

@@ -150,13 +150,13 @@ export class ForgejoCli extends Context.Service<
   }
 >()("@houston-app/source-control-forgejo/server/ForgejoCli") {}
 
-const PARSE_FORGEJO_REMOTE_PATTERN = /^(?:https?|ssh):\/\//i;
+const URL_SCHEME_PREFIX = /^(?:https?|ssh):\/\//i;
 const EDGE_SLASHES = /^\/+|\/+$/g;
 const GIT_SUFFIX = /\.git$/;
 const SSH_PATTERN = /^(?:[^@/]+@)?([^:/]+):([^/].*)$/;
 
 export function parseForgejoRemote(value: string) {
-  if (PARSE_FORGEJO_REMOTE_PATTERN.test(value)) {
+  if (URL_SCHEME_PREFIX.test(value)) {
     try {
       const url = new URL(value);
       return {
@@ -218,7 +218,7 @@ const HTTP_ONLY_PREFIX = /^http:\/\//i;
 const TRAILING_SLASHES = /\/+$/;
 const FETCH_REMOTE_LINE = /^\S+\s+(https?:\/\/\S+)\s+\(fetch\)(?:\s+\[[^\]]+\])?$/;
 const REPOSITORY_PATH_PATTERN = /\/pulls\/\d+.*$/;
-const RESOLVE_TARGET_PATTERN = /^[^/\s]+\/[^/\s]+$/;
+const OWNER_REPOSITORY_TARGET = /^[^/\s]+\/[^/\s]+$/;
 const LEADING_SLASHES = /^\/+/;
 const HTTP_STATUS_LINE = /^HTTP\/\S+ (\d{3})/m;
 
@@ -647,7 +647,7 @@ export const make = Effect.gen(function* () {
     const repository = repositoryPath.includes("/")
       ? repositoryPath
       : `${login.user}/${repositoryPath}`;
-    if (!RESOLVE_TARGET_PATTERN.test(repository))
+    if (!OWNER_REPOSITORY_TARGET.test(repository))
       return yield* new ForgejoCliError({
         command,
         cwd: input.cwd,

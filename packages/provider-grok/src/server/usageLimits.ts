@@ -39,11 +39,11 @@ const GrokUsageResponse = Schema.Struct({
   ),
 });
 
-const PARSE_PERIOD_BOUNDARY_PATTERN =
+const ISO_TIMESTAMP =
   /^(?:\d{4}|[+-]\d{6})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?|24:00(?::00(?:\.0+)?)?)(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/;
 
 function parsePeriodBoundary(value: string | undefined) {
-  if (!value || value !== value.trim() || !PARSE_PERIOD_BOUNDARY_PATTERN.test(value)) {
+  if (!value || value !== value.trim() || !ISO_TIMESTAMP.test(value)) {
     return Number.NaN;
   }
   // Date parsing can normalize impossible calendar dates instead of rejecting them.
@@ -90,7 +90,7 @@ export function grokUsageResponseToLimits(
   return makeUsageLimits({ checkedAt, windows: [window] });
 }
 
-const READ_GROK_CREDENTIAL_PATTERN =
+const GROK_CREDENTIAL_KEY =
   /^\s*(?:\[\[?\s*)?["']?(?:auth|grok_com_config|endpoints)["']?\s*[.\]=]/m;
 
 const readGrokCredential = Effect.fn("readGrokCredential")(function* (
@@ -139,7 +139,7 @@ const readGrokCredential = Effect.fn("readGrokCredential")(function* (
       }),
     );
     // These sections can change the selected account or endpoint. Leave custom deployments to the CLI.
-    if (READ_GROK_CREDENTIAL_PATTERN.test(config)) {
+    if (GROK_CREDENTIAL_KEY.test(config)) {
       return undefined;
     }
   }

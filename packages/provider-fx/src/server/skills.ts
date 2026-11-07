@@ -110,7 +110,7 @@ function recognizedValue(raw: string): string | undefined {
 
 const OPENING_PATTERN = /^---(\r?\n|$)/;
 const TRAILING_CARRIAGE_RETURN = /\r$/;
-const PARSE_SKILL_METADATA_PATTERN = /^[ \t]/;
+const LEADING_INDENT = /^[ \t]/;
 const INDENT_PATTERN = /^ */;
 
 /**
@@ -152,7 +152,7 @@ function parseSkillMetadata(
     const line = header[index] ?? "";
     const trimmed = trimSpaceTab(line);
     if (trimmed.length === 0 || trimmed.startsWith("#")) continue;
-    if (previousRecognized && PARSE_SKILL_METADATA_PATTERN.test(line)) return undefined;
+    if (previousRecognized && LEADING_INDENT.test(line)) return undefined;
     previousRecognized = false;
     const colon = trimmed.indexOf(":");
     if (colon === -1) continue;

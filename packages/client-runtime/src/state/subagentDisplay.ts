@@ -43,7 +43,7 @@ export function summarizeSubagentStatuses(
 const DISPLAY_TITLE_PATTERN = /^Subagent:\s*/i;
 const SUBAGENT_ROOT_PATH = /^\/root\/(?:[^/]+\/)*([^/]+)\/?$/u;
 const UNDERSCORE_OR_SPACE_RUN = /[_\s]+/gu;
-const FORMAT_SUBAGENT_DISPLAY_TITLE_PATTERN = /(^|\s)\S/gu;
+const WORD_INITIAL = /(^|\s)\S/gu;
 
 export function formatSubagentDisplayTitle(title: string): string {
   const displayTitle = title.replace(DISPLAY_TITLE_PATTERN, "");
@@ -51,10 +51,7 @@ export function formatSubagentDisplayTitle(title: string): string {
   if (path === null) return displayTitle;
 
   const name = path[1]!.replace(UNDERSCORE_OR_SPACE_RUN, " ").trim();
-  return (
-    name.replace(FORMAT_SUBAGENT_DISPLAY_TITLE_PATTERN, (letter) => letter.toUpperCase()) ||
-    displayTitle
-  );
+  return name.replace(WORD_INITIAL, (letter) => letter.toUpperCase()) || displayTitle;
 }
 
 const REGEX_SPECIAL_CHARACTER = /[.*+?^${}()|[\]\\]/g;

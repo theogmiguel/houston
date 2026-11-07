@@ -27,7 +27,7 @@ const isDroidQuestion = Schema.is(
 );
 const isDroidCompanion = Schema.is(Schema.Struct({ type: Schema.Literal("string") }));
 
-const EXTRACT_DROID_ELICITATION_FORM_PATTERN = /^question_[1-9]\d*$/;
+const ELICITATION_QUESTION_ID = /^question_[1-9]\d*$/;
 const SELECTED_OPTION_PATTERN = /^\n\nAttached (?:image|file) "(?:\\.|[^"\\\r\n])*": "/;
 
 // Droid pairs each choice with an optional *_other field. The client already
@@ -39,7 +39,7 @@ export const extractDroidElicitationForm: NonNullable<
   const { properties, required } = request.requestedSchema;
   const questions: Array<OrchestrationV2UserInputQuestion> = [];
   for (const [id, field] of Object.entries(properties)) {
-    if (!EXTRACT_DROID_ELICITATION_FORM_PATTERN.test(id)) continue;
+    if (!ELICITATION_QUESTION_ID.test(id)) continue;
     if (!isDroidQuestion(field) || !isDroidCompanion(properties[`${id}_other`])) return undefined;
     const options = field.oneOf
       .filter((option) => option.const !== "other")

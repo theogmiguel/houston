@@ -192,14 +192,14 @@ export function getAddProjectInitialQuery(baseDirectory: string | null | undefin
 }
 
 const QUERY_OR_FRAGMENT = /[?#]/;
-const HAS_HOST_PATTERN = /^[^/\\:]+@[^/\\:]+:/;
+const SCP_STYLE_REMOTE_PREFIX = /^[^/\\:]+@[^/\\:]+:/;
 const PATH_OR_COLON_RUN = /[/\\:]+/;
 const DIGITS_ONLY = /^\d+$/;
 
 export function getCloneDirectoryName(repositoryOrRemoteUrl: string | null | undefined): string {
   const withoutQuery = (repositoryOrRemoteUrl ?? "").split(QUERY_OR_FRAGMENT)[0]?.trim() ?? "";
   const schemeIndex = withoutQuery.indexOf("://");
-  const hasHost = schemeIndex >= 0 || HAS_HOST_PATTERN.test(withoutQuery);
+  const hasHost = schemeIndex >= 0 || SCP_STYLE_REMOTE_PREFIX.test(withoutQuery);
   const pathPart = schemeIndex >= 0 ? withoutQuery.slice(schemeIndex + "://".length) : withoutQuery;
   const segments = pathPart.split(PATH_OR_COLON_RUN).filter((segment) => segment.trim().length > 0);
   if (hasHost && segments.length < 2) {

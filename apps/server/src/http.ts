@@ -70,16 +70,15 @@ const HTML_CONTENT_SECURITY_POLICY =
 
 // Proxies may strip disposition; force document-capable downloads to octet-stream.
 const DOWNLOAD_MIME_TYPE_PATTERN = /^[\w!#$&^.+-]+\/[\w!#$&^.+-]+$/;
-const IS_SAFE_DOWNLOAD_MIME_TYPE_PATTERN = /(?:^text\/html$|\/xml(?:$|-)|\+xml$)/i;
+const DOWNLOAD_UNSAFE_MIME_TYPE = /(?:^text\/html$|\/xml(?:$|-)|\+xml$)/i;
 
 const isSafeDownloadMimeType = (mimeType: string): boolean =>
   DOWNLOAD_MIME_TYPE_PATTERN.test(mimeType) &&
-  !IS_SAFE_DOWNLOAD_MIME_TYPE_PATTERN.test(mimeType.trim().toLowerCase());
-const IS_SAFE_INLINE_MEDIA_MIME_TYPE_PATTERN = /^(?:audio|video)\//i;
+  !DOWNLOAD_UNSAFE_MIME_TYPE.test(mimeType.trim().toLowerCase());
+const AUDIO_OR_VIDEO_MIME_PREFIX = /^(?:audio|video)\//i;
 
 const isSafeInlineMediaMimeType = (mimeType: string): boolean =>
-  DOWNLOAD_MIME_TYPE_PATTERN.test(mimeType) &&
-  IS_SAFE_INLINE_MEDIA_MIME_TYPE_PATTERN.test(mimeType);
+  DOWNLOAD_MIME_TYPE_PATTERN.test(mimeType) && AUDIO_OR_VIDEO_MIME_PREFIX.test(mimeType);
 const isSafeInlineDocumentMimeType = (mimeType: string): boolean =>
   mimeType.toLowerCase() === "application/pdf" || mimeType.toLowerCase() === "text/html";
 
@@ -210,7 +209,7 @@ export const assetFileResponse = Effect.fn("assetFileResponse")(function* (
   }
   const mediaFile = asset.file;
   const mediaInfo = mediaFile ? yield* statMediaFile(asset.path, mediaFile) : undefined;
-  const isMedia = IS_SAFE_INLINE_MEDIA_MIME_TYPE_PATTERN.test(headers["Content-Type"] ?? "");
+  const isMedia = AUDIO_OR_VIDEO_MIME_PREFIX.test(headers["Content-Type"] ?? "");
   if (isMedia) {
     // Without file identity, validators cannot guarantee byte equality; attachments must also expire with their URL.
     headers["Cache-Control"] = "private, no-store";

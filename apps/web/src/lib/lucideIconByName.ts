@@ -14,11 +14,11 @@ function toPascalName(name: string): string {
     .join("");
 }
 
-const TO_KEBAB_NAME_PATTERN = /[A-Z][a-z]*|[0-9]+[a-z]*/g;
+const PASCAL_CASE_WORD = /[A-Z][a-z]*|[0-9]+[a-z]*/g;
 
 // Lucide digit names can differ from this inverse; both forms resolve through toPascalName.
 function toKebabName(pascalName: string): string {
-  return (pascalName.match(TO_KEBAB_NAME_PATTERN) ?? []).join("-").toLowerCase();
+  return (pascalName.match(PASCAL_CASE_WORD) ?? []).join("-").toLowerCase();
 }
 
 export const lucideIconNames: ReadonlyArray<string> = Object.keys(Lucide.icons).map(toKebabName);

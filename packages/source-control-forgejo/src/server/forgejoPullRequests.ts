@@ -25,7 +25,7 @@ export const ForgejoPullRequestSchema = Schema.Struct({
   merged_at: Schema.optional(Schema.NullOr(Schema.String)),
   updated_at: Schema.optional(Schema.OptionFromNullOr(Schema.DateTimeUtcFromString)),
 });
-const IS_DRAFT_PATTERN = /^(?:\[WIP\]|WIP:)/i;
+const WIP_PREFIX = /^(?:\[WIP\]|WIP:)/i;
 
 export function toForgejoChangeRequest(raw: typeof ForgejoPullRequestSchema.Type): ChangeRequest {
   return {
@@ -34,7 +34,7 @@ export function toForgejoChangeRequest(raw: typeof ForgejoPullRequestSchema.Type
     title: raw.title,
     url: raw.html_url,
     state: raw.merged ? "merged" : raw.state === "closed" ? "closed" : "open",
-    isDraft: raw.draft ?? IS_DRAFT_PATTERN.test(raw.title),
+    isDraft: raw.draft ?? WIP_PREFIX.test(raw.title),
     baseRefName: raw.base.ref,
     headRefName: raw.head.ref,
     ...(raw.head.sha.trim().length > 0 ? { headSha: raw.head.sha.trim() } : {}),

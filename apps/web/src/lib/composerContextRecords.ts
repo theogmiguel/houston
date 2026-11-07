@@ -85,14 +85,14 @@ export function reviewCommentContextLabel(comment: ReviewCommentPresentation): s
   return `${prefix}${basename(comment.filePath)} ${rangeLabel}`;
 }
 
-const IS_PULL_REQUEST_SUMMARY_CONTEXT_PATTERN = /^PR #\d+$/u;
+const PULL_REQUEST_REFERENCE = /^PR #\d+$/u;
 
 export function isPullRequestSummaryContext(comment: ReviewCommentPresentation): boolean {
   if (comment.pullRequest !== undefined) return true;
   return (
     comment.sectionId.startsWith("pull-request:") &&
     comment.diff.trim().length === 0 &&
-    IS_PULL_REQUEST_SUMMARY_CONTEXT_PATTERN.test(comment.filePath)
+    PULL_REQUEST_REFERENCE.test(comment.filePath)
   );
 }
 

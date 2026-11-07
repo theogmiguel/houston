@@ -55,7 +55,7 @@ function changeRequestHost(identity: ChangeRequestHostIdentity): string {
 }
 
 const HTTP_SCHEME_ONLY = /^https?:/iu;
-const IS_CHANGE_REQUEST_IN_REPOSITORY_PATTERN = /^\/+|\/+$/g;
+const SURROUNDING_SLASHES = /^\/+|\/+$/g;
 
 export const definition = defineSourceControl({
   kind: KIND,
@@ -123,19 +123,14 @@ export const definition = defineSourceControl({
       return isChangeRequestInProjectRepository(changeRequestHost(identity), identity, link);
     return (
       web.host.toLowerCase() === (link.authority ?? link.host).toLowerCase() &&
-      web.pathname.replace(IS_CHANGE_REQUEST_IN_REPOSITORY_PATTERN, "").toLowerCase() ===
-        link.repository.toLowerCase()
+      web.pathname.replace(SURROUNDING_SLASHES, "").toLowerCase() === link.repository.toLowerCase()
     );
   },
   // A server mounted below a path serves only repositories under that mount.
   canReadChangeRequestOnHost: (identity, link) => {
     const web = resolvedWebUrl(identity);
     if (!web) return isChangeRequestOnProjectHost(changeRequestHost(identity), identity, link);
-    const mount = web.pathname
-      .replace(IS_CHANGE_REQUEST_IN_REPOSITORY_PATTERN, "")
-      .split("/")
-      .slice(0, -2)
-      .join("/");
+    const mount = web.pathname.replace(SURROUNDING_SLASHES, "").split("/").slice(0, -2).join("/");
     return (
       web.host.toLowerCase() === (link.authority ?? link.host).toLowerCase() &&
       (!mount || link.repository.toLowerCase().startsWith(`${mount.toLowerCase()}/`))

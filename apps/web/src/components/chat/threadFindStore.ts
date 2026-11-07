@@ -167,7 +167,7 @@ export function useThreadFindOpen(thread: ScopedThreadRef | null, enabled: boole
 }
 
 const TOGETHER_PATTERN = /[\u2018\u2019]/g;
-const FIND_FOR_MESSAGE_MATCH_PATTERN = /[\p{L}\p{N}]/u;
+const LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
 
 /**
  * The find a message search result opens, at the matched message: the whole
@@ -196,7 +196,6 @@ export function findForMessageMatch(
   const ranges = findSearchTokenRanges(match.snippet, word);
   // A whole word first, as search ranked it: "Café", not "Cafe" in "Cafeteria".
   const shown =
-    ranges.find((range) => !FIND_FOR_MESSAGE_MATCH_PATTERN.test(match.snippet[range.end] ?? "")) ??
-    ranges[0];
+    ranges.find((range) => !LETTER_OR_DIGIT.test(match.snippet[range.end] ?? "")) ?? ranges[0];
   return { query: shown ? match.snippet.slice(shown.start, shown.end) : word, ...start };
 }

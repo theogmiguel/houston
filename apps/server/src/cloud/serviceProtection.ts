@@ -163,11 +163,11 @@ export class ServiceProtectionError extends Schema.TaggedError<ServiceProtection
   }
 }
 
-const PARSE_UNITS_PATTERN = /\n\s*\n/;
+const BLANK_LINE = /\n\s*\n/;
 
 function parseUnits(text: string): Array<Map<string, string>> {
   return text
-    .split(PARSE_UNITS_PATTERN)
+    .split(BLANK_LINE)
     .map(
       (block) =>
         new Map(

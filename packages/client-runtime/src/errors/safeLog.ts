@@ -32,10 +32,10 @@ function sanitizeStackUrl(value: string): string {
   }
 }
 
-const SANITIZE_STACK_FRAME_PATTERN = /(?:https?|file):\/\/[^\s)]+/g;
+const URL_IN_STACK_FRAME = /(?:https?|file):\/\/[^\s)]+/g;
 
 function sanitizeStackFrame(frame: string): string {
-  return frame.replace(SANITIZE_STACK_FRAME_PATTERN, sanitizeStackUrl);
+  return frame.replace(URL_IN_STACK_FRAME, sanitizeStackUrl);
 }
 
 const LINE_BREAK = /\r?\n/;

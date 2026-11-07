@@ -194,14 +194,14 @@ function kindDisplayName(kind: ComposerContextKind): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
-const CLEAN_LABEL_PATTERN = /[\r\n;\]]/g;
+const LABEL_BREAK_CHARACTER = /[\r\n;\]]/g;
 
 function formatComposerContextProviderMarker(
   kind: ComposerContextKind,
   label: string,
   contextId: ComposerContextId,
 ): string {
-  const cleanLabel = label.replace(CLEAN_LABEL_PATTERN, " ").replace(WHITESPACE_RUNS, " ").trim();
+  const cleanLabel = label.replace(LABEL_BREAK_CHARACTER, " ").replace(WHITESPACE_RUNS, " ").trim();
   return `[${kindDisplayName(kind)}: ${escapeComposerContextPayloadText(cleanLabel)}; ref=${contextId}]`;
 }
 

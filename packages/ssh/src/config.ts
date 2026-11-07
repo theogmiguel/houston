@@ -156,7 +156,7 @@ function matchesHostPatterns(alias: string, patterns: ReadonlyArray<string>): bo
   return matched;
 }
 
-const RESOLVE_CONFIGURED_HOSTNAME_PATTERN = /%(?!h)/u;
+const HOSTNAME_PERCENT_TOKEN = /%(?!h)/u;
 
 function resolveConfiguredHostname(alias: string, rules: ReadonlyArray<HostNameRule>) {
   for (const { conditions, hostname } of rules) {
@@ -167,7 +167,7 @@ function resolveConfiguredHostname(alias: string, rules: ReadonlyArray<HostNameR
     }
     // SSH takes the first value; an uncertain earlier value blocks later fallbacks.
     if (conditions.includes(null) || hostname === null) return null;
-    if (RESOLVE_CONFIGURED_HOSTNAME_PATTERN.test(hostname) || hostname.includes("$")) return null;
+    if (HOSTNAME_PERCENT_TOKEN.test(hostname) || hostname.includes("$")) return null;
     return hostname.replaceAll("%h", alias);
   }
   return null;

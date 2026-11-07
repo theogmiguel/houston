@@ -33,7 +33,7 @@ import { appAtomRegistry, subscribeAtomChanges } from "./rpc/atomRegistry";
 import { primaryServerEnvironmentThemesAtom } from "./state/server";
 
 const ALPHA_PATTERN = /\/\s*none\s*\)$/i;
-const FORMAT_THEME_COLOR_NUMBER_PATTERN = /(?:\.0+|(?:(\.[0-9]*?)0+))$/;
+const TRAILING_ZEROS = /(?:\.0+|(?:(\.[0-9]*?)0+))$/;
 
 export { EMBER_THEME, GROVE_THEME, IRIS_THEME, OCEAN_THEME, BASE_CHAT_THEME, THEME_COLOR_ROLES };
 export type { ThemeAppearance, ThemeColorRole, ThemeColors, ThemeDefinition, ThemeVariants };
@@ -114,22 +114,22 @@ export function isThemeColor(value: unknown): value is string {
   return typeof value === "string" && toCanonicalThemeColor(value) !== null;
 }
 
-const IS_THEME_ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,47})$/;
+const THEME_ID = /^[a-z0-9](?:[a-z0-9-]{0,47})$/;
 
 function isThemeId(value: unknown): value is string {
-  return typeof value === "string" && IS_THEME_ID_PATTERN.test(value);
+  return typeof value === "string" && THEME_ID.test(value);
 }
 
 function isThemeLabel(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0 && value.trim().length <= 48;
 }
 
-const PARSE_THEME_COLLECTION_PATTERN = /^[a-z0-9][a-z0-9.:-]{0,127}$/i;
+const THEME_COLLECTION_ID = /^[a-z0-9][a-z0-9.:-]{0,127}$/i;
 
 function parseThemeCollection(value: unknown): ThemeCollection | undefined {
   return isRecord(value) &&
     typeof value.id === "string" &&
-    PARSE_THEME_COLLECTION_PATTERN.test(value.id) &&
+    THEME_COLLECTION_ID.test(value.id) &&
     isThemeLabel(value.label)
     ? { id: value.id, label: value.label.trim() }
     : undefined;
@@ -487,7 +487,7 @@ function parseThemeColor(value: unknown): ParsedThemeColor | null {
 
 function formatThemeColorNumber(value: number, precision: number): string {
   const rounded = Math.abs(value) < 10 ** -precision / 2 ? 0 : value;
-  return rounded.toFixed(precision).replace(FORMAT_THEME_COLOR_NUMBER_PATTERN, "$1");
+  return rounded.toFixed(precision).replace(TRAILING_ZEROS, "$1");
 }
 
 function formatOklchThemeColor(color: ThemeOklch, alpha = 1): string {

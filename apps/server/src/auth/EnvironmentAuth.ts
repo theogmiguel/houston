@@ -640,11 +640,11 @@ export function parseBearerToken(request: HttpServerRequest.HttpServerRequest): 
   return token.length > 0 ? token : null;
 }
 
-const PARSE_DPOP_TOKEN_PATTERN = /^DPoP /i;
+const DPOP_SCHEME_PREFIX = /^DPoP /i;
 
 function parseDpopToken(request: HttpServerRequest.HttpServerRequest): string | null {
   const header = request.headers["authorization"];
-  if (typeof header !== "string" || !PARSE_DPOP_TOKEN_PATTERN.test(header)) {
+  if (typeof header !== "string" || !DPOP_SCHEME_PREFIX.test(header)) {
     return null;
   }
   const token = header.slice(DPOP_AUTHORIZATION_PREFIX.length).trim();

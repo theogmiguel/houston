@@ -24,10 +24,10 @@ const ChannelManifest = Schema.Struct({
   version: Schema.String.check(Schema.isPattern(/^\d+\.\d+\.\d+-R\d+(?:\.\d+)?$/)),
 });
 
-const PARSE_MUSE_VERSION_PATTERN = /\b\d+\.\d+\.\d+-R\d+(?:\.\d+)?\b/;
+const MUSE_RELEASE_VERSION = /\b\d+\.\d+\.\d+-R\d+(?:\.\d+)?\b/;
 
 export function parseMuseVersion(output: string): string | null {
-  return output.match(PARSE_MUSE_VERSION_PATTERN)?.[0] ?? parseGenericCliVersion(output);
+  return output.match(MUSE_RELEASE_VERSION)?.[0] ?? parseGenericCliVersion(output);
 }
 
 const RELEASE_SUFFIX = /-R(\d+)(?:\.(\d+))?$/;

@@ -204,10 +204,10 @@ function normalizeSshErrorMessage(stderr: string, fallbackMessage: string): stri
   return cleaned.length > 0 ? cleaned : fallbackMessage;
 }
 
-const STRIP_TRAILING_NEWLINES_PATTERN = /\n+$/u;
+const TRAILING_NEWLINES = /\n+$/u;
 
 function stripTrailingNewlines(value: string): string {
-  return value.replace(STRIP_TRAILING_NEWLINES_PATTERN, "");
+  return value.replace(TRAILING_NEWLINES, "");
 }
 
 function shellSingleQuote(value: string): string {

@@ -39,11 +39,11 @@ export function breadcrumbPathOf(relativePath: string): string {
   return fileBreadcrumbs("", relativePath).at(-1)?.path ?? relativePath;
 }
 
-const IS_LISTABLE_HOST_FOLDER_PATTERN = /^\\\\[^\\/]+$/;
+const UNC_HOST_ROOT = /^\\\\[^\\/]+$/;
 
 /** UNC servers are not listable directories; their shares are. */
 export function isListableHostFolder(path: string): boolean {
-  return isHostPath(path) && !IS_LISTABLE_HOST_FOLDER_PATTERN.test(path);
+  return isHostPath(path) && !UNC_HOST_ROOT.test(path);
 }
 
 function trailCrumbIndex(trail: string, path: string): number {

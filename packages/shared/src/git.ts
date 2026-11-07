@@ -142,7 +142,7 @@ function lowerCaseRemote(value: string): string {
   return value.trim().replace(TRAILING_SLASHES, "").replace(GIT_SUFFIX, "").toLowerCase();
 }
 
-const PARSE_GIT_REMOTE_REPOSITORY_PATTERN = /^(?:ssh|https?|git):\/\//i;
+const REMOTE_URL_SCHEME = /^(?:ssh|https?|git):\/\//i;
 const WINDOWS_DRIVE_PREFIX = /^[a-z]:/i;
 const SCP_REMOTE = /^(?:[a-zA-Z0-9._-]+@)?([^@:/\\\s]+):\/?([^/\s]+(?:\/[^/\s]+)+)$/i;
 
@@ -155,7 +155,7 @@ export function parseGitRemoteRepository(
 ): { readonly host: string; readonly path: string } | null {
   const normalized = lowerCaseRemote(value);
 
-  if (PARSE_GIT_REMOTE_REPOSITORY_PATTERN.test(normalized)) {
+  if (REMOTE_URL_SCHEME.test(normalized)) {
     try {
       const url = new URL(normalized);
       const repositorySegments = url.pathname.split("/").filter((segment) => segment.length > 0);
@@ -328,11 +328,11 @@ function deriveLocalBranchNameCandidatesFromRemoteRef(
   return [...candidates];
 }
 
-const SANITIZE_NEW_REF_NAME_PATTERN = /[ \t\n\r\f\v]+/g;
+const WHITESPACE_RUN = /[ \t\n\r\f\v]+/g;
 
 // Replace only Git-rejected whitespace; nonbreaking spaces are valid ref characters.
 export function sanitizeNewRefName(rawName: string): string {
-  return rawName.trim().replace(SANITIZE_NEW_REF_NAME_PATTERN, "-");
+  return rawName.trim().replace(WHITESPACE_RUN, "-");
 }
 
 export function dedupeRemoteBranchesWithLocalMatches(

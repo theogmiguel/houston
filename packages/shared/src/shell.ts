@@ -13,7 +13,7 @@ import type { ShellEnvironmentPatch } from "@houston-app/contracts";
 import * as HostProcess from "./HostProcess.ts";
 import * as Context from "effect/Context";
 
-const STRIP_WRAPPING_QUOTES_PATTERN = /^"+|"+$/g;
+const WRAPPING_QUOTES = /^"+|"+$/g;
 const SHELL_ENV_NAME_PATTERN = /^[A-Z0-9_]+$/;
 const WINDOWS_PATH_DELIMITER = ";";
 const POSIX_PATH_DELIMITER = ":";
@@ -403,7 +403,7 @@ export const readEnvironmentFromWindowsShell = Effect.fn("shell.readEnvironmentF
 );
 
 function stripWrappingQuotes(value: string): string {
-  return value.replace(STRIP_WRAPPING_QUOTES_PATTERN, "");
+  return value.replace(WRAPPING_QUOTES, "");
 }
 
 function pathDelimiterForPlatform(platform: NodeJS.Platform): string {

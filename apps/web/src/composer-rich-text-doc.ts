@@ -735,7 +735,7 @@ function textJsonForSpan(text: string, marks: RichTextMark[]): Record<string, un
   return json;
 }
 
-const BUILD_TIPTAP_CONTENT_PATTERN = /^([-*_])(?:[ \t]*\1){2,}[ \t]*\r?$/;
+const THEMATIC_BREAK_LINE = /^([-*_])(?:[ \t]*\1){2,}[ \t]*\r?$/;
 const HEADING_PATTERN = /^(#{1,6})([ \t]+)([^\n]*)$/;
 const QUOTE_PATTERN = /^(>[ \t]*)([^\n]*)$/;
 
@@ -836,7 +836,7 @@ export function buildTiptapContent(
     }
     const opening = blockSyntax ? parseOpeningFence(line) : null;
     if (!opening) {
-      if (blockSyntax && BUILD_TIPTAP_CONTENT_PATTERN.test(line)) {
+      if (blockSyntax && THEMATIC_BREAK_LINE.test(line)) {
         entries.push({ rule: line });
         continue;
       }

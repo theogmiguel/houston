@@ -71,14 +71,14 @@ function parseColorFunction(value: string): VsCodeRgba | null {
 }
 
 const LEADING_HASH = /^#/;
-const PARSE_VS_CODE_COLOR_PATTERN = /^(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+const HEX_COLOR_DIGITS = /^(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 
 function parseVsCodeColor(value: unknown): VsCodeRgba | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   if (trimmed.startsWith("color(")) return parseColorFunction(trimmed);
   const hex = trimmed.replace(LEADING_HASH, "");
-  if (!PARSE_VS_CODE_COLOR_PATTERN.test(hex)) return null;
+  if (!HEX_COLOR_DIGITS.test(hex)) return null;
   const expand = (part: string) =>
     part.length === 1 ? Number.parseInt(part + part, 16) : Number.parseInt(part, 16);
   if (hex.length <= 4) {

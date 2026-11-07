@@ -1049,7 +1049,7 @@ function initialExplorerOpen(): boolean {
   }
 }
 
-const IS_MERMAID_PATTERN = /\.(mmd|mermaid)$/i;
+const MERMAID_SUFFIX = /\.(mmd|mermaid)$/i;
 const PATH_SEPARATOR = /[\\/]/;
 
 export default function FilePreviewPanel({
@@ -1163,7 +1163,7 @@ export default function FilePreviewPanel({
   );
   const breadcrumbRef = useRef<HTMLDivElement>(null);
   const isMarkdown = previewPath ? isMarkdownPreviewFile(previewPath) : false;
-  const isMermaid = previewPath !== null && IS_MERMAID_PATTERN.test(previewPath);
+  const isMermaid = previewPath !== null && MERMAID_SUFFIX.test(previewPath);
   const [renderMermaidPreferred, setRenderMermaidPreferred] = useLocalStorage(
     "houston.renderMermaid",
     true,

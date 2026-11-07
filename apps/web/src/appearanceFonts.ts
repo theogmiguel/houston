@@ -141,13 +141,13 @@ function probeWidth(fontList: string): number | null {
   return fontProbeContext.measureText(FONT_PROBE_TEXT).width;
 }
 
-const IS_FONT_FAMILY_AVAILABLE_PATTERN = /^(system-ui|sans-serif|serif|monospace|ui-monospace)$/i;
+const GENERIC_FONT_FAMILY = /^(system-ui|sans-serif|serif|monospace|ui-monospace)$/i;
 
 /** Probes canvas metrics because document.fonts.check() accepts uninstalled families. */
 export function isFontFamilyAvailable(family: string): boolean {
   const families = cssFontFamilies(family);
   if (families === null) return false;
-  if (IS_FONT_FAMILY_AVAILABLE_PATTERN.test(families)) return true;
+  if (GENERIC_FONT_FAMILY.test(families)) return true;
   try {
     for (const generic of ["monospace", "serif", "sans-serif"]) {
       const baseline = probeWidth(generic);
@@ -246,7 +246,7 @@ function widthsMatch(left: number, right: number): boolean {
   return Math.abs(left - right) < 0.01;
 }
 
-const RESOLVE_GENERIC_FAMILY_LABEL_PATTERN = /mac|iphone|ipad|ipod/i;
+const APPLE_PLATFORM = /mac|iphone|ipad|ipod/i;
 
 function resolveGenericFamilyLabel(generic: string): string | null {
   const lower = generic.toLowerCase();
@@ -262,7 +262,7 @@ function resolveGenericFamilyLabel(generic: string): string | null {
     }
   }
   // Unnameable Apple faces need -apple-system metrics to distinguish the UI face from SF Mono.
-  if (RESOLVE_GENERIC_FAMILY_LABEL_PATTERN.test(navigator.platform)) {
+  if (APPLE_PLATFORM.test(navigator.platform)) {
     const systemWidth = measureDomProbeWidth("-apple-system");
     if (systemWidth !== null && widthsMatch(genericWidth, systemWidth)) return "SF Pro";
     return monoLike ? "SF Mono" : "SF Pro";
@@ -279,7 +279,7 @@ const PRODUCT_FONT_LABELS: Readonly<Record<string, string>> = {
 };
 
 const FAMILY_PATTERN = /^(['"])(.*)\1$/;
-const RESOLVE_DEFAULT_FAMILY_LABEL_PATTERN =
+const SYSTEM_FONT_FAMILY =
   /^(system-ui|sans-serif|serif|monospace|ui-monospace|-apple-system|BlinkMacSystemFont)$/i;
 
 export function resolveDefaultFamilyLabel(stack: string): string | null {
@@ -288,7 +288,7 @@ export function resolveDefaultFamilyLabel(stack: string): string | null {
     if (family.length === 0) continue;
     const productLabel = PRODUCT_FONT_LABELS[family];
     if (productLabel !== undefined) return productLabel;
-    if (RESOLVE_DEFAULT_FAMILY_LABEL_PATTERN.test(family)) {
+    if (SYSTEM_FONT_FAMILY.test(family)) {
       const resolved = resolveGenericFamilyLabel(family);
       if (resolved !== null) return resolved;
       continue;

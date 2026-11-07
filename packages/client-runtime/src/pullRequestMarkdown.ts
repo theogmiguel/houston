@@ -290,14 +290,14 @@ export function changeRequestReferenceAutolinker(
     : (text) => find(text, repositoryUrl);
 }
 
-const RESOLVE_CHANGE_REQUEST_MEDIA_URL_PATTERN = /^\/(?![/\\])/u;
+const ROOT_RELATIVE_PATH = /^\/(?![/\\])/u;
 
 /**
  * Forges link uploads root-relative, as GitCafe's `/api/attachments/<id>`. In a change request
  * body that always means the forge's origin, never a path on the machine rendering it.
  */
 export function resolveChangeRequestMediaUrl(url: string, changeRequestUrl: string): string {
-  if (!RESOLVE_CHANGE_REQUEST_MEDIA_URL_PATTERN.test(url)) return url;
+  if (!ROOT_RELATIVE_PATH.test(url)) return url;
   try {
     return new URL(url, changeRequestUrl).href;
   } catch {

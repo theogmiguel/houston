@@ -792,8 +792,8 @@ function sameTranscriptIdentity(left: TranscriptIdentity, right: TranscriptIdent
 }
 
 const GITDIR_LINE = /^gitdir:\s*(.+)$/m;
-const READ_GIT_IDENTITIES_PATTERN = /[\\/]worktrees[\\/][^\\/]+[\\/]?$/;
-const READ_GIT_BRANCH_PATTERN = /^ref:\s*refs\/heads\/(.+)$/m;
+const LINKED_WORKTREE_GITDIR_SUFFIX = /[\\/]worktrees[\\/][^\\/]+[\\/]?$/;
+const HEAD_BRANCH_REF = /^ref:\s*refs\/heads\/(.+)$/m;
 
 /** @public */
 export const make = Effect.gen(function* () {
@@ -931,7 +931,7 @@ export const make = Effect.gen(function* () {
         continue;
       }
       const gitDir = path.resolve(directory, target);
-      if (READ_GIT_IDENTITIES_PATTERN.test(gitDir)) {
+      if (LINKED_WORKTREE_GITDIR_SUFFIX.test(gitDir)) {
         linkedWorktrees.push({ directory, gitDir });
       } else repositories.push({ directory, gitDir, linkedWorktree: false });
     }
@@ -1923,7 +1923,7 @@ export const make = Effect.gen(function* () {
       .readFileString(path.join(gitDir, "HEAD"))
       .pipe(Effect.orElseSucceed(() => ""));
     // A detached HEAD stores the commit, not a branch name.
-    return READ_GIT_BRANCH_PATTERN.exec(head.trim())?.[1]?.trim() || null;
+    return HEAD_BRANCH_REF.exec(head.trim())?.[1]?.trim() || null;
   });
 
   const readTranscriptSummary = Effect.fn("AgentSessionScanner.readTranscriptSummary")(function* (

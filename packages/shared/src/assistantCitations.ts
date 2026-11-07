@@ -50,7 +50,7 @@ export function formatAssistantCitationHref(citation: AssistantCitation): string
   return `${CITATION_HREF_PREFIX}${path}?${query}`;
 }
 
-const PARSE_ASSISTANT_CITATION_HREF_PATTERN = /^\d{1,16}$/;
+const CITATION_NUMBER = /^\d{1,16}$/;
 
 export function parseAssistantCitationHref(href: string): AssistantCitation | null {
   if (!href.startsWith(CITATION_HREF_PREFIX) || href.length > MAX_CITATION_HREF_LENGTH) {
@@ -80,11 +80,7 @@ export function parseAssistantCitationHref(href: string): AssistantCitation | nu
     }
     const start = url.searchParams.get("start") ?? "";
     const end = url.searchParams.get("end") ?? "";
-    if (
-      !PARSE_ASSISTANT_CITATION_HREF_PATTERN.test(start) ||
-      !PARSE_ASSISTANT_CITATION_HREF_PATTERN.test(end)
-    )
-      return null;
+    if (!CITATION_NUMBER.test(start) || !CITATION_NUMBER.test(end)) return null;
     return Option.getOrNull(
       decodeCitation({
         version: 1,

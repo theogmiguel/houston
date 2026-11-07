@@ -252,11 +252,11 @@ export function isSshAuthFailure(error: unknown): boolean {
   );
 }
 
-const IS_SSH_AGENT_SIGNING_FAILURE_PATTERN =
+const SIGNING_FAILURE_MESSAGE =
   /sign_and_send_pubkey: signing failed(?: for [^\n]* from agent:|: (?:agent refused operation|communication with agent failed))/u;
 
 // A local agent signing failure cannot be remedied by the remote account password.
 export function isSshAgentSigningFailure(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return IS_SSH_AGENT_SIGNING_FAILURE_PATTERN.test(message);
+  return SIGNING_FAILURE_MESSAGE.test(message);
 }

@@ -22,19 +22,19 @@ export function usagePriceForm(model = "", price?: UsageModelPriceOverride): Usa
   };
 }
 
-const IS_USAGE_PRICE_EDIT_PATTERN = /^\s*(?:\d*[.,]?\d*|(?:\d+[.,]?\d*|[.,]\d+)e[+-]?\d*)\s*$/i;
+const PARTIAL_DECIMAL_INPUT = /^\s*(?:\d*[.,]?\d*|(?:\d+[.,]?\d*|[.,]\d+)e[+-]?\d*)\s*$/i;
 
 /** Allow decimal/exponent edits and all deletions, including temporarily invalid values; saving validates
  * the result. */
 export function isUsagePriceEdit(previous: string, next: string): boolean {
-  if (IS_USAGE_PRICE_EDIT_PATTERN.test(next)) return true;
+  if (PARTIAL_DECIMAL_INPUT.test(next)) return true;
   if (next.length >= previous.length) return false;
   let start = 0;
   while (start < next.length && next[start] === previous[start]) start++;
   return next.slice(start) === previous.slice(previous.length - (next.length - start));
 }
 
-const PARSE_USAGE_PRICE_FORM_PATTERN = /^(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i;
+const DECIMAL_PRICE = /^(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i;
 
 /** Blank cache prices use the input rate; explicit zero means free. */
 export function parseUsagePriceForm(
@@ -49,7 +49,7 @@ export function parseUsagePriceForm(
       if (field.optional) continue;
       return null;
     }
-    if (!PARSE_USAGE_PRICE_FORM_PATTERN.test(raw)) return null;
+    if (!DECIMAL_PRICE.test(raw)) return null;
     const value = Number(raw);
     if (!Number.isFinite(value) || value < 0) return null;
     rates[field.key] = value;

@@ -220,7 +220,7 @@ function nonRepositoryListRefs(): VcsListRefsResult {
   };
 }
 
-const HAS_REF_NAMED_PATTERN = /[*?[\\]/;
+const REF_GLOB_CHARACTER = /[*?[\\]/;
 const HEADS_REF_PREFIX = /^refs\/heads\//;
 
 /** @public */
@@ -360,7 +360,7 @@ export const make = Effect.gen(function* () {
     }),
     hasRefNamed: Effect.fn("GitWorkflowService.hasRefNamed")(function (input) {
       // Pattern characters would widen the ref match.
-      return HAS_REF_NAMED_PATTERN.test(input.refName)
+      return REF_GLOB_CHARACTER.test(input.refName)
         ? Effect.succeed(false)
         : ensureGitCommand("GitWorkflowService.hasRefNamed", input.cwd).pipe(
             Effect.andThen(

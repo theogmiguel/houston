@@ -53,10 +53,10 @@ export function formatFilePathPosition(position: FilePathPosition): string {
   return `${position.path}:${position.line}${position.column ? `:${position.column}` : ""}`;
 }
 
-const IS_WINDOWS_PATH_STYLE_PATTERN = /[A-Za-z]:\\/;
+const WINDOWS_DRIVE_BACKSLASH = /[A-Za-z]:\\/;
 
 function isWindowsPathStyle(value: string): boolean {
-  return isWindowsAbsolutePath(value) || IS_WINDOWS_PATH_STYLE_PATTERN.test(value);
+  return isWindowsAbsolutePath(value) || WINDOWS_DRIVE_BACKSLASH.test(value);
 }
 
 const TRAILING_PATH_SEPARATORS = /[\\/]+$/;

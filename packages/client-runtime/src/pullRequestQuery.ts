@@ -23,10 +23,10 @@ function qualifierValue(raw: string): string {
   return raw.replaceAll('"', "").trim();
 }
 
-const SPLIT_QUALIFIER_LIST_PATTERN = /(?:[^,"]|"[^"]*")+/g;
+const QUALIFIER_VALUE = /(?:[^,"]|"[^"]*")+/g;
 
 function splitQualifierList(raw: string): string[] {
-  return (raw.match(SPLIT_QUALIFIER_LIST_PATTERN) ?? [])
+  return (raw.match(QUALIFIER_VALUE) ?? [])
     .map((part) => qualifierValue(part))
     .filter((part) => part.length > 0);
 }

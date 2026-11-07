@@ -496,7 +496,7 @@ export function isChangeRequestInProjectRepository(
 
 const SCP_REMOTE = /^[a-zA-Z0-9._-]+@([^:/]+):/;
 
-const PARSE_GIT_REMOTE_HOST_PATTERN = /:\d+$/u;
+const TRAILING_PORT = /:\d+$/u;
 
 /** Null when the remote names no host, such as a local path. */
 export function parseGitRemoteHost(remoteUrl: string): GitRemoteHost | null {
@@ -519,7 +519,7 @@ export function parseGitRemoteHost(remoteUrl: string): GitRemoteHost | null {
   try {
     hostname = new URL(`https://${host}`).hostname.toLowerCase();
   } catch {
-    hostname = host.replace(PARSE_GIT_REMOTE_HOST_PATTERN, "").toLowerCase();
+    hostname = host.replace(TRAILING_PORT, "").toLowerCase();
   }
   return { remoteUrl: trimmed, host, hostname };
 }

@@ -229,11 +229,11 @@ function formatProcessName(command: string): string {
   return segments.at(-1) ?? normalized;
 }
 
-const FORMAT_PROCESS_TYPE_PATTERN = /\b(codex|claude|opencode|cursor)\b/i;
+const AGENT_PROCESS_NAME = /\b(codex|claude|opencode|cursor)\b/i;
 
 function formatProcessType(process: ServerProcessDiagnosticsEntry): string {
   if (process.depth > 0) return "Subprocess";
-  if (FORMAT_PROCESS_TYPE_PATTERN.test(process.command)) return "Agent";
+  if (AGENT_PROCESS_NAME.test(process.command)) return "Agent";
   return "Process";
 }
 

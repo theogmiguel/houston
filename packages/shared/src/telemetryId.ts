@@ -8,8 +8,7 @@ import * as Hex from "effect/encoding/Hex";
 export const hashTelemetryId = (value: string): string =>
   Hex.encode(sha256(new TextEncoder().encode(value)));
 
-const IS_TELEMETRY_ID_HASH_PATTERN = /^[0-9a-f]{64}$/u;
+const SHA256_HEX = /^[0-9a-f]{64}$/u;
 
 /** True for a `hashTelemetryId` result. The server accepts only this shape from clients. */
-export const isTelemetryIdHash = (value: string): boolean =>
-  IS_TELEMETRY_ID_HASH_PATTERN.test(value);
+export const isTelemetryIdHash = (value: string): boolean => SHA256_HEX.test(value);

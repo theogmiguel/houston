@@ -36,7 +36,7 @@ interface TemplateTreeEntry {
   readonly path: string;
 }
 
-const PARSE_TEMPLATE_TREE_ENTRIES_PATTERN = /^[0-9a-f]{40,64}$/;
+const TREE_ENTRY_OBJECT_ID = /^[0-9a-f]{40,64}$/;
 
 function parseTemplateTreeEntries(output: string): ReadonlyArray<TemplateTreeEntry> {
   const entries: TemplateTreeEntry[] = [];
@@ -55,7 +55,7 @@ function parseTemplateTreeEntries(output: string): ReadonlyArray<TemplateTreeEnt
       type !== "blob" ||
       (mode !== "100644" && mode !== "100755") ||
       !objectId ||
-      !PARSE_TEMPLATE_TREE_ENTRIES_PATTERN.test(objectId)
+      !TREE_ENTRY_OBJECT_ID.test(objectId)
     ) {
       continue;
     }

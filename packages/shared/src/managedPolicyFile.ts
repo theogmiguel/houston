@@ -138,7 +138,7 @@ const ERROR_FILE_NOT_FOUND = 2;
 const ERROR_MORE_DATA = 234;
 const ERROR_UNSUPPORTED_TYPE = 1630;
 
-const READ_MACHINE_STRING_PATTERN = /\0+$/;
+const TRAILING_NULS = /\0+$/;
 
 /**
  * Each app passes how it loads ffi-rs: a server single-executable resolves packages on disk only
@@ -210,7 +210,7 @@ export const layerWindowsRegistry = (loadFfi: () => Promise<typeof import("ffi-r
             return result.data
               .subarray(0, result.bytes)
               .toString("utf16le")
-              .replace(READ_MACHINE_STRING_PATTERN, "");
+              .replace(TRAILING_NULS, "");
           },
         ),
       });

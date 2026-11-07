@@ -10,7 +10,7 @@ const TRUNCATION_MARKER = "[truncated]";
 
 type ExecuteGit = SourceControlHost.SourceControlHost["Service"]["git"]["execute"];
 
-const DETECT_PATTERN = /^100(?:644|755) blob ([0-9a-f]{40,64})\t(.+)$/;
+const TEMPLATE_BLOB_ENTRY = /^100(?:644|755) blob ([0-9a-f]{40,64})\t(.+)$/;
 
 export const detect = Effect.fn("gitLabChangeRequestTemplate.detect")(
   function* (cwd: string, treeish: string, executeGit: ExecuteGit) {
@@ -28,7 +28,7 @@ export const detect = Effect.fn("gitLabChangeRequestTemplate.detect")(
 
     const objectId = listing.stdout
       .split("\0")
-      .map((record) => DETECT_PATTERN.exec(record))
+      .map((record) => TEMPLATE_BLOB_ENTRY.exec(record))
       .find((entry) => entry?.[2]?.toLowerCase() === `${TEMPLATE_DIRECTORY}/default.md`)?.[1];
     if (!objectId) {
       return Option.none();

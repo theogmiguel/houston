@@ -219,7 +219,7 @@ export function getProviderSummary(
 }
 
 const ANTIGRAVITY_PATTERN = /^agy_acp_server_(\d{4})(\d{2})(\d{2})_\d+(?:_(\w+))?$/;
-const GET_PROVIDER_VERSION_LABEL_PATTERN = /^\d/;
+const LEADING_DIGIT = /^\d/;
 
 export function getProviderVersionLabel(version: string | null | undefined) {
   if (!version) return null;
@@ -228,7 +228,7 @@ export function getProviderVersionLabel(version: string | null | undefined) {
     const [, year, month, day, candidate] = antigravity;
     return `${year}-${month}-${day}${candidate ? ` ${candidate}` : ""}`;
   }
-  return GET_PROVIDER_VERSION_LABEL_PATTERN.test(version) ? `v${version}` : version;
+  return LEADING_DIGIT.test(version) ? `v${version}` : version;
 }
 
 const COMPATIBILITY_TITLES = {

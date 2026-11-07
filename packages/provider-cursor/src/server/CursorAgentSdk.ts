@@ -248,10 +248,10 @@ function runnerError(cause: unknown, method: string): CursorAgentSdkRunnerError 
     : new CursorAgentSdkRunnerError({ method, cause });
 }
 
-const IS_ACTIVE_RUN_CONFLICT_PATTERN = /already has active run/i;
+const ACTIVE_RUN_CONFLICT_MESSAGE = /already has active run/i;
 
 function isActiveRunConflict(cause: unknown): boolean {
-  return cause instanceof Error && IS_ACTIVE_RUN_CONFLICT_PATTERN.test(cause.message);
+  return cause instanceof Error && ACTIVE_RUN_CONFLICT_MESSAGE.test(cause.message);
 }
 
 export function isCursorCancellationError(cause: unknown): boolean {

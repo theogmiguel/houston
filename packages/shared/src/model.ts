@@ -353,10 +353,10 @@ export function buildExplicitProviderOptionSelectionsFromDescriptors(
   return normalized && normalized.length > 0 ? normalized : undefined;
 }
 
-const IS_CLAUDE_ULTRATHINK_PROMPT_PATTERN = /\bultrathink\b/i;
+const ULTRATHINK_WORD = /\bultrathink\b/i;
 
 export function isClaudeUltrathinkPrompt(text: string | null | undefined): boolean {
-  return typeof text === "string" && IS_CLAUDE_ULTRATHINK_PROMPT_PATTERN.test(text);
+  return typeof text === "string" && ULTRATHINK_WORD.test(text);
 }
 
 export function codexModelFamily(slug: string): string {

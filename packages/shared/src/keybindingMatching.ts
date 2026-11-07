@@ -46,10 +46,10 @@ export const EVENT_CODE_SHORTCUT_KEYS: Readonly<Record<string, string>> = {
   Slash: "/",
 };
 
-const IS_MAC_PLATFORM_PATTERN = /mac|iphone|ipad|ipod/i;
+const APPLE_PLATFORM = /mac|iphone|ipad|ipod/i;
 
 export function isMacPlatform(platform: string): boolean {
-  return IS_MAC_PLATFORM_PATTERN.test(platform);
+  return APPLE_PLATFORM.test(platform);
 }
 
 export function normalizeEventKey(key: string): string {

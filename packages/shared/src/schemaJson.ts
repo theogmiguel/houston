@@ -21,7 +21,7 @@ export const decodeJsonResult = <S extends Schema.Codec<unknown, unknown, never,
 const decodeJsonString = Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown));
 
 const STRIPPED_PATTERN = /("(?:[^"\\]|\\.)*")|\/\/[^\r\n]*|\/\*[\s\S]*?\*\//g;
-const PARSE_LENIENT_JSON_GETTER_PATTERN = /("(?:[^"\\]|\\.)*")|,(\s*[}\]])/g;
+const STRING_OR_TRAILING_COMMA = /("(?:[^"\\]|\\.)*")|,(\s*[}\]])/g;
 
 const parseLenientJsonGetter = SchemaGetter.transformEffect((input: string) => {
   // Match comments together so URLs stay inside blocks; whitespace keeps adjacent tokens apart.
@@ -30,7 +30,7 @@ const parseLenientJsonGetter = SchemaGetter.transformEffect((input: string) => {
   );
 
   stripped = stripped.replace(
-    PARSE_LENIENT_JSON_GETTER_PATTERN,
+    STRING_OR_TRAILING_COMMA,
     (match, stringLiteral: string | undefined, bracket: string | undefined) =>
       stringLiteral ? match : (bracket ?? ""),
   );

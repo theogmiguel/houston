@@ -34,7 +34,7 @@ function isGitHubHost(hostname: string): boolean {
   return host === "github.com" || host.endsWith(".ghe.com") || host.split(".").includes("github");
 }
 
-const IS_REPOSITORY_PATH_PATTERN = /^[\w.-]+$/u;
+const REPOSITORY_SEGMENT = /^[\w.-]+$/u;
 
 function isRepositoryPath(repository: string): boolean {
   const segments = repository.split("/");
@@ -43,7 +43,7 @@ function isRepositoryPath(repository: string): boolean {
     // GitHub owner and repository names are only these characters, so nothing here can
     // be an encoded dot segment, query or fragment that `new URL` would reinterpret.
     segments.every(
-      (segment) => IS_REPOSITORY_PATH_PATTERN.test(segment) && segment !== "." && segment !== "..",
+      (segment) => REPOSITORY_SEGMENT.test(segment) && segment !== "." && segment !== "..",
     )
   );
 }

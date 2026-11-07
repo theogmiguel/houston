@@ -1,14 +1,14 @@
-const IS_WINDOWS_DRIVE_PATH_PATTERN = /^[a-zA-Z]:([/\\]|$)/;
+const WINDOWS_DRIVE_PATH = /^[a-zA-Z]:([/\\]|$)/;
 
 export function isWindowsDrivePath(value: string): boolean {
-  return IS_WINDOWS_DRIVE_PATH_PATTERN.test(value);
+  return WINDOWS_DRIVE_PATH.test(value);
 }
 
 export function isUncPath(value: string): boolean {
   return value.startsWith("\\\\");
 }
 
-const IS_NETWORK_PATH_PATTERN = /^[\\/]{2}/;
+const DOUBLE_SEPARATOR_PREFIX = /^[\\/]{2}/;
 
 /**
  * Windows treats `/` and `\` alike, so any two leading separators name a UNC
@@ -16,7 +16,7 @@ const IS_NETWORK_PATH_PATTERN = /^[\\/]{2}/;
  * user's NTLM credentials, so agent-authored paths must not reach one.
  */
 export function isNetworkPath(value: string): boolean {
-  return IS_NETWORK_PATH_PATTERN.test(value);
+  return DOUBLE_SEPARATOR_PREFIX.test(value);
 }
 
 export function isWindowsAbsolutePath(value: string): boolean {
@@ -34,11 +34,11 @@ export function isExplicitRelativePath(value: string): boolean {
   );
 }
 
-const IS_ROOT_PATH_PATTERN = /^[a-zA-Z]:[/\\]$/;
+const DRIVE_ROOT = /^[a-zA-Z]:[/\\]$/;
 
 function isRootPath(value: string): boolean {
   // Bare C: means the current directory on C, not its root; require the drive separator.
-  return value === "/" || value === "\\" || IS_ROOT_PATH_PATTERN.test(value);
+  return value === "/" || value === "\\" || DRIVE_ROOT.test(value);
 }
 
 const TRAILING_SLASHES = /\/+$/g;

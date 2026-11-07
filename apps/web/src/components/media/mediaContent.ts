@@ -43,10 +43,10 @@ function readDataUrlBlob(src: string): Blob {
   }
 }
 
-const READ_MEDIA_BLOB_PATTERN = /^data:/i;
+const DATA_URL_PREFIX = /^data:/i;
 
 async function readMediaBlob(src: string): Promise<Blob> {
-  if (READ_MEDIA_BLOB_PATTERN.test(src)) return readDataUrlBlob(src);
+  if (DATA_URL_PREFIX.test(src)) return readDataUrlBlob(src);
   let response: Response;
   try {
     response = await fetch(src);

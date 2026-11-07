@@ -110,7 +110,7 @@ function activitySource(value: unknown): ToolActivitySource | undefined {
   return { key, name, kind, ...(icon ? { icon } : {}) };
 }
 
-const EXTRACT_TOOL_ACTIVITY_PRESENTATION_PATTERN = /[\r\n]/;
+const LINE_BREAK = /[\r\n]/;
 
 export function extractToolActivityPresentation(
   payloadValue: unknown,
@@ -139,7 +139,7 @@ export function extractToolActivityPresentation(
     ...(toolIcon ? { toolIcon } : {}),
     ...(toolSource ? { toolSource } : {}),
     ...(viewedImagePath &&
-    !EXTRACT_TOOL_ACTIVITY_PRESENTATION_PATTERN.test(viewedImagePath) &&
+    !LINE_BREAK.test(viewedImagePath) &&
     isWorkspaceImagePreviewPath(viewedImagePath)
       ? { viewedImagePath }
       : {}),

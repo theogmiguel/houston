@@ -34,7 +34,7 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { collectUint8StreamText } from "./collectStreamText.ts";
 import * as ProviderLatestVersions from "./ProviderLatestVersions.ts";
 
-const IS_MISE_WRAPPER_SCRIPT_PATTERN = /\bmise\s+(?:x|exec)\b/;
+const MISE_EXEC_INVOCATION = /\bmise\s+(?:x|exec)\b/;
 const EXE_SUFFIX = /\.exe$/;
 
 const LATEST_VERSION_TIMEOUT_MS = 4_000;
@@ -228,7 +228,7 @@ export function normalizeCommandPath(commandPath: string): string {
   return commandPath.replaceAll("\\", "/").toLowerCase();
 }
 
-const IS_VITE_PLUS_GLOBAL_COMMAND_PATH_PATTERN =
+const VITE_PLUS_BIN_PATH =
   /\/(?:\.vite-plus|\.local\/share\/vite-plus|appdata\/local\/vite-plus)\/bin\//;
 
 /**
@@ -237,20 +237,20 @@ const IS_VITE_PLUS_GLOBAL_COMMAND_PATH_PATTERN =
  * on Windows.
  */
 function isVitePlusGlobalCommandPath(commandPath: string): boolean {
-  return IS_VITE_PLUS_GLOBAL_COMMAND_PATH_PATTERN.test(normalizeCommandPath(commandPath));
+  return VITE_PLUS_BIN_PATH.test(normalizeCommandPath(commandPath));
 }
 
 function isBunGlobalCommandPath(commandPath: string): boolean {
   return normalizeCommandPath(commandPath).includes("/.bun/bin/");
 }
 
-const IS_YARN_GLOBAL_COMMAND_PATH_PATTERN = /\/yarn\/(?:data\/)?global\/node_modules\//;
+const YARN_GLOBAL_MODULES_PATH = /\/yarn\/(?:data\/)?global\/node_modules\//;
 
 function isYarnGlobalCommandPath(commandPath: string): boolean {
-  return IS_YARN_GLOBAL_COMMAND_PATH_PATTERN.test(normalizeCommandPath(commandPath));
+  return YARN_GLOBAL_MODULES_PATH.test(normalizeCommandPath(commandPath));
 }
 
-const IS_MISE_COMMAND_PATH_PATTERN = /\/mise(?:\.exe)?$/;
+const MISE_EXECUTABLE_SUFFIX = /\/mise(?:\.exe)?$/;
 
 /**
  * Version-manager installs are pinned in its config, so updating them means editing that.
@@ -262,7 +262,7 @@ function isMiseCommandPath(commandPath: string): boolean {
     normalized.includes("/mise/installs/") ||
     normalized.includes("/mise/shims/") ||
     normalized.includes("/mise/command-wrappers/") ||
-    IS_MISE_COMMAND_PATH_PATTERN.test(normalized)
+    MISE_EXECUTABLE_SUFFIX.test(normalized)
   );
 }
 
@@ -739,7 +739,7 @@ const isMiseWrapperScript = Effect.fn("isMiseWrapperScript")(function* (
   const script = yield* fileSystem
     .readFileString(context.realCommandPath)
     .pipe(Effect.orElseSucceed(() => ""));
-  return script.startsWith("#!") && IS_MISE_WRAPPER_SCRIPT_PATTERN.test(script);
+  return script.startsWith("#!") && MISE_EXEC_INVOCATION.test(script);
 });
 
 // Volta bin links only identify its shim; the package image proves ownership.

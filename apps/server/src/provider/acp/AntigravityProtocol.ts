@@ -168,14 +168,14 @@ interface ToolPayloadBudget {
   text: number;
 }
 
-const SANITIZE_TOOL_VALUE_PATTERN = /^data:image\//i;
+const IMAGE_DATA_URL_PREFIX = /^data:image\//i;
 
 function sanitizeToolValue(value: unknown, budget: ToolPayloadBudget, depth: number): unknown {
   if (depth > 12 || budget.nodes-- <= 0) {
     return undefined;
   }
   if (typeof value === "string") {
-    if (SANITIZE_TOOL_VALUE_PATTERN.test(value) || budget.text <= 0) {
+    if (IMAGE_DATA_URL_PREFIX.test(value) || budget.text <= 0) {
       return undefined;
     }
     const text = boundText(value, Math.min(TOOL_TEXT_LIMIT, budget.text));

@@ -536,7 +536,7 @@ export interface BootServiceHost {
 }
 
 const REPORTED_VERSION_PATTERN = /\bv(\S+)\s*$/;
-const NORMALIZE_UNIT_PATTERN = /(<key>PATH<\/key>\n\s*<string>)[^<]*(<\/string>)/;
+const PATH_ENVIRONMENT_PLIST_ENTRY = /(<key>PATH<\/key>\n\s*<string>)[^<]*(<\/string>)/;
 
 export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
   readonly baseDir: string;
@@ -1098,7 +1098,7 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
     const installedBaseDir = bootServiceBaseDirOf(unit);
     const normalizeUnit = (contents: string) =>
       detectedManager.kind === "launchd"
-        ? contents.replace(NORMALIZE_UNIT_PATTERN, "$1$2")
+        ? contents.replace(PATH_ENVIRONMENT_PLIST_ENTRY, "$1$2")
         : contents;
     const problems: BootServiceProblem[] =
       detectedManager.kind === "systemd" ? [...(yield* readSystemdProblems(true))] : [];

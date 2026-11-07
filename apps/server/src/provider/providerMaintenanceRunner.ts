@@ -42,7 +42,7 @@ import { collectUint8StreamText } from "@houston-app/provider-core/server/collec
 
 const PROGRESS_CURSOR_RESET = /\x1b\[(?:0*1?G|999D)/g;
 const LINE_BREAK = /\r\n|\r|\n/;
-const TO_PROGRESS_LINE_PATTERN = /\x1b(?:\[[0-9]*)?$/;
+const TRAILING_PARTIAL_ESCAPE = /\x1b(?:\[[0-9]*)?$/;
 const WHITESPACE_RUN = /\s+/g;
 const LEADING_V = /^v/;
 const isServerProviderUpdateError = Schema.is(ServerProviderUpdateError);
@@ -220,7 +220,7 @@ export function splitOutputLines(
 }
 
 export function toProgressLine(line: string): string | null {
-  if (TO_PROGRESS_LINE_PATTERN.test(line)) {
+  if (TRAILING_PARTIAL_ESCAPE.test(line)) {
     return null;
   }
   const text = NodeUtil.stripVTControlCharacters(line).replace(WHITESPACE_RUN, " ").trim();

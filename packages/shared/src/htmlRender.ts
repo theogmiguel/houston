@@ -280,7 +280,7 @@ export function readHtmlRenderLinkRequest(data: unknown):
     : undefined;
 }
 
-const READ_HTML_RENDER_IMAGE_REQUEST_PATTERN = /^(?:https?:\/\/|data:image\/)/i;
+const IMAGE_REQUEST_PREFIX = /^(?:https?:\/\/|data:image\/)/i;
 
 /** Published local images arrive as `data:image/` URLs. */
 export function readHtmlRenderImageRequest(
@@ -291,8 +291,7 @@ export function readHtmlRenderImageRequest(
   if (jsonrpc !== "2.0" || method !== OPEN_IMAGE_METHOD) return undefined;
   if (typeof params !== "object" || params === null) return undefined;
   const { src, name } = params as Record<string, unknown>;
-  if (typeof src !== "string" || !READ_HTML_RENDER_IMAGE_REQUEST_PATTERN.test(src))
-    return undefined;
+  if (typeof src !== "string" || !IMAGE_REQUEST_PREFIX.test(src)) return undefined;
   const label = typeof name === "string" ? name.trim().slice(0, HTML_RENDER_MAX_TITLE_LENGTH) : "";
   return { src, name: label || "Image" };
 }

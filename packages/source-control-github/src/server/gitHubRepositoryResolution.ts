@@ -10,7 +10,7 @@ export interface GitHubRepositoryLocator {
   readonly name: string;
 }
 
-const PARSE_FETCH_REMOTES_PATTERN = /^(\S+)\s+(\S+)\s+\(fetch\)(?:\s+\[[^\]]+\])?$/u;
+const FETCH_REMOTE_LINE = /^(\S+)\s+(\S+)\s+\(fetch\)(?:\s+\[[^\]]+\])?$/u;
 
 export function parseFetchRemotes(
   remotes: string,
@@ -18,7 +18,7 @@ export function parseFetchRemotes(
   // Partial clones append the promisor filter, e.g. `(fetch) [blob:none]`.
   return remotes
     .split("\n")
-    .map((line) => PARSE_FETCH_REMOTES_PATTERN.exec(line.trim()))
+    .map((line) => FETCH_REMOTE_LINE.exec(line.trim()))
     .filter((match): match is RegExpExecArray => match !== null)
     .map((match) => ({ name: match[1]!, url: match[2]! }));
 }

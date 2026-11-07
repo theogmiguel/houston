@@ -1,7 +1,7 @@
 import type { SpeechCustomWords } from "@houston-app/contracts";
 
 const MATCH_KEY_PATTERN = /[\p{L}\p{N}]/u;
-const IS_MATCHABLE_KEY_PATTERN = /^[\p{Script=Latin}\p{Script=Cyrillic}\p{Script=Greek}\p{Nd}]+$/u;
+const MATCHABLE_SCRIPT_WORD = /^[\p{Script=Latin}\p{Script=Cyrillic}\p{Script=Greek}\p{Nd}]+$/u;
 const LETTERS_PATTERN = /\p{L}/u;
 const POSSESSIVE_PATTERN = /['’]s$/iu;
 const INNER_POSSESSIVES_PATTERN = /['’]s(?=\s)/giu;
@@ -26,7 +26,7 @@ export function makeSpeechTextCorrector(
 
   // Scripts that separate words with spaces. CJK is excluded: one wrong character in a long
   // unspaced run would otherwise rewrite real text.
-  const isMatchableKey = (value: string) => IS_MATCHABLE_KEY_PATTERN.test(value);
+  const isMatchableKey = (value: string) => MATCHABLE_SCRIPT_WORD.test(value);
 
   const soundex = (value: string) => {
     const upper = value.toUpperCase();

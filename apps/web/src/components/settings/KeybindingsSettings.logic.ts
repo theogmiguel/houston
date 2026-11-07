@@ -424,7 +424,7 @@ function recordedLayoutShortcutKey(
   return unshiftedKey === physicalKey ? physicalKey : layoutKey;
 }
 
-const NORMALIZE_SHORTCUT_KEY_TOKEN_PATTERN = /^f\d{1,2}$/;
+const FUNCTION_KEY = /^f\d{1,2}$/;
 
 function normalizeShortcutKeyToken(key: string): string | null {
   const normalized = key.toLowerCase();
@@ -445,7 +445,7 @@ function normalizeShortcutKeyToken(key: string): string | null {
   if (normalized === "arrowleft") return "arrowleft";
   if (normalized === "arrowright") return "arrowright";
   if (normalized.length === 1) return normalized;
-  if (NORMALIZE_SHORTCUT_KEY_TOKEN_PATTERN.test(normalized)) return normalized;
+  if (FUNCTION_KEY.test(normalized)) return normalized;
   if (normalized === "enter" || normalized === "tab" || normalized === "backspace") {
     return normalized;
   }
