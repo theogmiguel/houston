@@ -16,6 +16,7 @@ import {
   EnvironmentId,
   EnvironmentAuthenticatedAuth,
   EnvironmentAuthenticatedPrincipal,
+  EventId,
   ORCHESTRATION_V2_WS_METHODS,
   OrchestrationV2RpcSchemas,
   OrchestrationV2ThreadBoundedSnapshot,
@@ -24,7 +25,9 @@ import {
   OrchestrationV2ShellSnapshot,
   OrchestrationV2GetThreadProjectionError,
   OrchestrationV2GetShellSnapshotError,
+  ProjectId,
   ProviderDriverKind,
+  ProviderInstanceId,
   type OrchestrationV2ThreadStreamItem,
   type OrchestrationV2ShellStreamItem,
 } from "@houston-app/contracts";
@@ -542,6 +545,33 @@ it.live("sends a subscription's initial items and completion marker before any a
     assert.isTrue(threadReplay[0]!.slice(0, -1).every((kind) => kind === "event"));
     assert.deepEqual(yield* shell(), [["snapshot", "synchronized"]]);
     assert.deepEqual(yield* shell(before.sequence), [["thread.updated", "synchronized"]]);
+
+    // With a resolved project, resume sends its metadata snapshot ahead of the replay, in the same chunk.
+    const projectId = ProjectId.make("transfer-project");
+    yield* (yield* ProjectStore.ProjectStoreV2).apply({
+      sequence: 1,
+      eventId: EventId.make("transfer-project-created"),
+      aggregateKind: "project",
+      aggregateId: projectId,
+      occurredAt: "2026-03-24T00:00:00.000Z",
+      commandId: null,
+      causationEventId: null,
+      correlationId: null,
+      metadata: {},
+      type: "project.created",
+      payload: {
+        projectId,
+        title: "Transfer project",
+        workspaceRoot: "/tmp/transfer-project",
+        defaultModelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+        scripts: [],
+        createdAt: "2026-03-24T00:00:00.000Z",
+        updatedAt: "2026-03-24T00:00:00.000Z",
+      },
+    });
+    assert.deepEqual(yield* shell(before.sequence), [
+      ["snapshot", "thread.updated", "synchronized"],
+    ]);
   }).pipe(
     Effect.scoped,
     Effect.provide(
