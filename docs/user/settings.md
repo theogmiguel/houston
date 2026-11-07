@@ -89,7 +89,8 @@ browser access, automatic floating preview, and recording options.
 ## Devices
 
 Device sources, whether agents may use devices, and device hub settings. Platform support
-limits are named on the page.
+limits are named on the page. SSH device hosts currently need macOS or Linux; to use devices
+on a Windows machine, run Houston there and connect to its environment.
 
 ## Scheduled tasks
 
