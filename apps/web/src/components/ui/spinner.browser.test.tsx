@@ -57,7 +57,9 @@ describe("spinning glyphs", () => {
       </div>,
       { router: false },
     );
-    const visible = screen.container.querySelector('[data-testid="visible"] [data-streaming-glyph]')!;
+    const visible = screen.container.querySelector(
+      '[data-testid="visible"] [data-streaming-glyph]',
+    )!;
     const hidden = screen.container.querySelector('[data-testid="hidden"] [data-streaming-glyph]')!;
     await expect.poll(() => getComputedStyle(visible).animationPlayState).toBe("running");
     expect(getComputedStyle(hidden).animationPlayState).toBe("paused");
