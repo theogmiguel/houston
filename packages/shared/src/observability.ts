@@ -121,12 +121,11 @@ export interface OtlpTraceRecord extends BaseTraceRecord {
 
 export type TraceRecord = EffectTraceRecord | OtlpTraceRecord;
 
+const TAG_NAME = /^[A-Za-z][A-Za-z0-9._:/-]*$/;
+
 function isStructuralTag(value: unknown): value is string {
   return (
-    typeof value === "string" &&
-    value.length > 0 &&
-    value.length <= 128 &&
-    /^[A-Za-z][A-Za-z0-9._:/-]*$/.test(value)
+    typeof value === "string" && value.length > 0 && value.length <= 128 && TAG_NAME.test(value)
   );
 }
 

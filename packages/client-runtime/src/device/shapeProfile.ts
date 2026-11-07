@@ -103,14 +103,17 @@ const ANDROID_TABLET_SHAPE: DeviceShapeProfile = {
   backColor: 0x697b80,
 };
 
+const NAMED_TABLET_PATTERN = /\b(ipad|tablet)\b/i;
+const NAMED_PHONE_PATTERN = /\b(iphone|phone)\b/i;
+
 export function resolveDeviceShape(options: {
   platform: DevicePlatform;
   name?: string;
   portraitAspect: number;
 }): DeviceShapeProfile {
   const name = options.name ?? "";
-  const namedTablet = /\b(ipad|tablet)\b/i.test(name);
-  const namedPhone = /\b(iphone|phone)\b/i.test(name);
+  const namedTablet = NAMED_TABLET_PATTERN.test(name);
+  const namedPhone = NAMED_PHONE_PATTERN.test(name);
   const tablet = namedTablet || (!namedPhone && options.portraitAspect >= 0.6);
   return options.platform === "ios"
     ? tablet

@@ -41,6 +41,8 @@ const UsageResponse = Schema.Struct({
   usage: Schema.Struct({ rolling: UsageWindow, weekly: UsageWindow, monthly: UsageWindow }),
 });
 
+const TRAILING_SLASHES = /\/+$/;
+
 // Select before decoding so an OAuth or self-hosted connection cannot fall
 // through to another stored account. NULL-active rows predate the selection flag.
 const readStoredApiKey = (databasePath: string, integrationId: "opencode" | "opencode-go") =>
@@ -62,7 +64,10 @@ const readStoredApiKey = (databasePath: string, integrationId: "opencode" | "ope
       const server = stored?.metadata?.server;
       if (typeof server === "string") {
         const url = new URL(server);
-        if (`${url.origin}${url.pathname.replace(/\/+$/, "")}` !== "https://opencode.ai/console")
+        if (
+          `${url.origin}${url.pathname.replace(TRAILING_SLASHES, "")}` !==
+          "https://opencode.ai/console"
+        )
           return undefined;
       }
       return stored?.key.trim();

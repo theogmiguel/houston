@@ -39,8 +39,10 @@ const EXCLUDED_SELECTOR = `${CONTROL_SELECTOR}, [hidden], [aria-hidden=true], sc
 const BLOCK_SELECTOR =
   "address, article, aside, blockquote, dd, div, dl, dt, figcaption, figure, footer, h1, h2, h3, h4, h5, h6, header, hr, li, main, nav, ol, p, pre, section, table, td, th, tr, ul";
 
+const WHITESPACE_RUN = /\s+/g;
+
 function normalizeWhitespace(text: string): string {
-  return text.replace(/\s+/g, " ");
+  return text.replace(WHITESPACE_RUN, " ");
 }
 
 function splitsSurrogatePair(text: string, offset: number): boolean {
@@ -48,6 +50,8 @@ function splitsSurrogatePair(text: string, offset: number): boolean {
   const after = text.charCodeAt(offset);
   return before >= 0xd800 && before <= 0xdbff && after >= 0xdc00 && after <= 0xdfff;
 }
+
+const WHITESPACE_CHAR = /\s/;
 
 export function createAssistantTextSelector(
   text: string,
@@ -59,7 +63,11 @@ export function createAssistantTextSelector(
 
   const normalized = normalizeWhitespace(text);
   let start = normalizeWhitespace(text.slice(0, rawStart)).length;
-  if (rawStart > 0 && /\s/.test(text[rawStart - 1]!) && /\s/.test(text[rawStart]!)) {
+  if (
+    rawStart > 0 &&
+    WHITESPACE_CHAR.test(text[rawStart - 1]!) &&
+    WHITESPACE_CHAR.test(text[rawStart]!)
+  ) {
     start -= 1;
   }
   const end = normalizeWhitespace(text.slice(0, rawEnd)).length;
@@ -248,10 +256,12 @@ export function captureAssistantTextSelection(
   return selector === null ? null : { source, selector, range };
 }
 
+const RAW_TEXT_OFFSET_PATTERN = /\s+|\S+/g;
+
 function rawTextOffset(text: string, normalizedOffset: number): number {
   let offset = 0;
-  for (const match of text.matchAll(/\s+|\S+/g)) {
-    const whitespace = /\s/.test(match[0][0]!);
+  for (const match of text.matchAll(RAW_TEXT_OFFSET_PATTERN)) {
+    const whitespace = WHITESPACE_CHAR.test(match[0][0]!);
     const length = whitespace ? 1 : match[0].length;
     if (normalizedOffset <= offset + length) {
       return (

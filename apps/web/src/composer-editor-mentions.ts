@@ -141,6 +141,8 @@ function splitPromptTextIntoComposerSegments(text: string): ComposerPromptSegmen
   return segments;
 }
 
+const WHITESPACE_CHAR = /\s/;
+
 export function selectionTouchesMentionBoundary(
   prompt: string,
   start: number,
@@ -158,7 +160,7 @@ export function selectionTouchesMentionBoundary(
 
     if (
       beforeMentionIndex >= 0 &&
-      /\s/.test(prompt[beforeMentionIndex] ?? "") &&
+      WHITESPACE_CHAR.test(prompt[beforeMentionIndex] ?? "") &&
       rangeIncludesIndex(start, end, beforeMentionIndex)
     ) {
       return true;
@@ -166,7 +168,7 @@ export function selectionTouchesMentionBoundary(
 
     if (
       afterMentionIndex < prompt.length &&
-      /\s/.test(prompt[afterMentionIndex] ?? "") &&
+      WHITESPACE_CHAR.test(prompt[afterMentionIndex] ?? "") &&
       rangeIncludesIndex(start, end, afterMentionIndex)
     ) {
       return true;

@@ -350,6 +350,8 @@ function providerThreadLoadKey(input: {
   });
 }
 
+const BEARER_PREFIX = /^Bearer\s+/;
+
 export const layerWithOptions = (
   options: ProviderSessionManagerV2LayerOptions = {},
 ): Layer.Layer<
@@ -510,7 +512,7 @@ export const layerWithOptions = (
                 if (existing !== undefined) {
                   // Reserve before async validation so release cannot revoke between validation and reservation.
                   reserveMcpCredential(threadId, existing.providerSessionId);
-                  const rawToken = existing.authorizationHeader.replace(/^Bearer\s+/, "");
+                  const rawToken = existing.authorizationHeader.replace(BEARER_PREFIX, "");
                   // Interrupted resolution must release the reservation before the caller learns of it.
                   const resolved = yield* mcpSessionRegistry
                     .resolve(rawToken)

@@ -23,6 +23,11 @@ const decodeHandoff = Schema.decodeUnknownSync(Schema.fromJsonString(CodexAuthHa
 const encodeDelivery = Schema.encodeSync(Schema.fromJsonString(Delivery));
 const decodeDelivery = Schema.decodeUnknownSync(Schema.fromJsonString(Delivery));
 
+const CODEX_CALLBACK_URL = /^http:\/\/127\.0\.0\.1:[1-9]\d{0,4}\/auth\/callback$/u;
+const OAUTH_STATE = /^[\w-]{16,128}$/u;
+const PKCE_CHALLENGE = /^[\w-]{43}$/u;
+const CODEX_CLIENT_ID = /^(dynamic_agent_client|oaiapp_[\w-]+)$/u;
+
 export function codexAuthorizationRequest(value: string) {
   const url = new URL(value);
   if (
@@ -43,24 +48,27 @@ export function codexAuthorizationRequest(value: string) {
   const redirect = new URL(redirectUri);
   const state = single("state");
   if (
-    !/^http:\/\/127\.0\.0\.1:[1-9]\d{0,4}\/auth\/callback$/u.test(redirectUri) ||
+    !CODEX_CALLBACK_URL.test(redirectUri) ||
     Number(redirect.port) > 65_535 ||
-    !/^[\w-]{16,128}$/u.test(state) ||
+    !OAUTH_STATE.test(state) ||
     single("response_type") !== "code" ||
     single("code_challenge_method") !== "S256" ||
-    !/^[\w-]{43}$/u.test(single("code_challenge")) ||
-    !/^(dynamic_agent_client|oaiapp_[\w-]+)$/u.test(single("client_id"))
+    !PKCE_CHALLENGE.test(single("code_challenge")) ||
+    !CODEX_CLIENT_ID.test(single("client_id"))
   )
     throw new Error("Invalid ChatGPT sign-in request.");
   return { authorizationUrl: url.toString(), redirectUri, state };
 }
+
+const CALLBACK_PATTERN = /^[a-z][a-z\d+.-]*:\/\//iu;
+const CODEX_CALLBACK_URL_PATTERN = /^oaiapp_[\w-]+$/u;
 
 export function codexCallbackUrl(value: string, redirectUri: string, state: string) {
   const expected = new URL(redirectUri);
   const pasted = value.trimStart();
   // Browsers can hide `http://` in the address bar, so a pasted callback may lack it.
   const callback = new URL(
-    /^[a-z][a-z\d+.-]*:\/\//iu.test(pasted) ? pasted : `${expected.protocol}//${pasted}`,
+    CALLBACK_PATTERN.test(pasted) ? pasted : `${expected.protocol}//${pasted}`,
   );
   const states = callback.searchParams.getAll("state");
   const codes = callback.searchParams.getAll("code");
@@ -76,7 +84,7 @@ export function codexCallbackUrl(value: string, redirectUri: string, state: stri
     states.length !== 1 ||
     states[0] !== state ||
     clients.length > 1 ||
-    (clients.length === 1 && !/^oaiapp_[\w-]+$/u.test(clients[0]!)) ||
+    (clients.length === 1 && !CODEX_CALLBACK_URL_PATTERN.test(clients[0]!)) ||
     !(
       (codes.length === 1 && Boolean(codes[0]) && errors.length === 0) ||
       (errors.length === 1 && Boolean(errors[0]) && codes.length === 0)

@@ -954,6 +954,8 @@ export const PullRequestUnavailableReason = Schema.Literals([
 ]);
 export type PullRequestUnavailableReason = typeof PullRequestUnavailableReason.Type;
 
+const ME_AUTHOR = /^@?me$/i;
+
 /**
  * `author:me` names whoever is signed in to the host being read, GitHub's `@me` spelled either
  * way. A host's own search would answer it, but the page and the server both re-check an author
@@ -965,7 +967,7 @@ export function resolvePullRequestAuthorFilter(
   viewer: string | null | undefined,
 ): string {
   const trimmed = author.trim();
-  if (!/^@?me$/i.test(trimmed)) return trimmed;
+  if (!ME_AUTHOR.test(trimmed)) return trimmed;
   return viewer === null || viewer === undefined || viewer.trim().length === 0 ? trimmed : viewer;
 }
 

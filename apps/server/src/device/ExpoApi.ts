@@ -60,6 +60,8 @@ export class ExpoInvalidCredentialError extends Schema.TaggedError<ExpoInvalidCr
   }
 }
 
+const CREDENTIAL_PATTERN = /^[\x21-\x7e]+$/;
+
 /**
  * Expo credentials are printable ASCII. Anything else (the redacted
  * placeholder, a pasted newline) would fail inside fetch with the header
@@ -70,7 +72,7 @@ const credential = (
   header: ExpoCredential["header"]["name"],
   value: string,
 ) =>
-  /^[\x21-\x7e]+$/.test(value)
+  CREDENTIAL_PATTERN.test(value)
     ? Effect.succeed({
         source,
         header: {
@@ -162,6 +164,8 @@ class ExpoAuth extends GraphQLMiddleware.Service<ExpoAuth>()(
 
 const ExpoGroup = ExpoApiGraphQLGroup.middleware(ExpoAuth);
 
+const BEARER_PREFIX = /^Bearer /;
+
 /**
  * Expo's answer as an `ExpoApiError`, which has no cause: a transport error's
  * holds the request with its credential header, and a decode error's can
@@ -199,7 +203,7 @@ const toExpoApiError = (
   // Expo's own messages are the reason the user acts on, but nothing promises
   // they never echo a request: the credential is cut out, and they are bounded.
   const secret = Redacted.value(credential.header.value);
-  const token = secret.replace(/^Bearer /, "");
+  const token = secret.replace(BEARER_PREFIX, "");
   const scrub = (text: string) =>
     text.replaceAll(secret, "[redacted]").replaceAll(token, "[redacted]").slice(0, 300);
   const failure = (detail: string) =>

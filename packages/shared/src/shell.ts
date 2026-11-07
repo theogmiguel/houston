@@ -12,6 +12,8 @@ import * as Path from "effect/Path";
 import type { ShellEnvironmentPatch } from "@houston-app/contracts";
 import * as HostProcess from "./HostProcess.ts";
 import * as Context from "effect/Context";
+
+const WRAPPING_QUOTES = /^"+|"+$/g;
 const SHELL_ENV_NAME_PATTERN = /^[A-Z0-9_]+$/;
 const WINDOWS_PATH_DELIMITER = ";";
 const POSIX_PATH_DELIMITER = ":";
@@ -50,11 +52,14 @@ export type CommandAvailabilityChecker = (
 
 const WINDOWS_SHELL_META_CHARS = /([()\][%!^"`<>&|;, *?])/g;
 
+const ESCAPED_PATTERN = /(\\*)"/g;
+const TRAILING_BACKSLASHES = /(\\*)$/;
+
 // Escape dynamic arguments for both cmd.exe and the target's CommandLineToArgvW parsing.
 function escapeWindowsShellArg(arg: string): string {
-  let escaped = arg.replace(/(\\*)"/g, '$1$1\\"');
+  let escaped = arg.replace(ESCAPED_PATTERN, '$1$1\\"');
   // Double up trailing backslashes so the closing quote is not escaped away.
-  escaped = escaped.replace(/(\\*)$/, "$1$1");
+  escaped = escaped.replace(TRAILING_BACKSLASHES, "$1$1");
   escaped = `"${escaped}"`;
   return escaped.replace(WINDOWS_SHELL_META_CHARS, "^$1");
 }
@@ -264,6 +269,9 @@ function buildWindowsEnvironmentCaptureCommand(names: ReadonlyArray<string>): st
   ].join("; ");
 }
 
+const LEADING_LINE_BREAK = /^\r?\n/;
+const TRAILING_LINE_BREAK = /\r?\n$/;
+
 function extractEnvironmentValue(output: string, name: string): string | undefined {
   const startMarker = envCaptureStart(name);
   const endMarker = envCaptureEnd(name);
@@ -276,8 +284,8 @@ function extractEnvironmentValue(output: string, name: string): string | undefin
 
   const value = output
     .slice(valueStartIndex, endIndex)
-    .replace(/^\r?\n/, "")
-    .replace(/\r?\n$/, "");
+    .replace(LEADING_LINE_BREAK, "")
+    .replace(TRAILING_LINE_BREAK, "");
 
   return value.length > 0 ? value : undefined;
 }
@@ -395,7 +403,7 @@ export const readEnvironmentFromWindowsShell = Effect.fn("shell.readEnvironmentF
 );
 
 function stripWrappingQuotes(value: string): string {
-  return value.replace(/^"+|"+$/g, "");
+  return value.replace(WRAPPING_QUOTES, "");
 }
 
 function pathDelimiterForPlatform(platform: NodeJS.Platform): string {
@@ -754,6 +762,8 @@ function readFileSyncOrUndefined(filePath: string): string | undefined {
   }
 }
 
+const LINE_BREAK = /\r?\n/;
+
 /** Resolve shims that only launch native executables so direct spawning keeps them in libuv's kill-on-close job. */
 export function npmShimExecutable(
   shimPath: string,
@@ -764,7 +774,7 @@ export function npmShimExecutable(
   if (path.extname(shimPath).toLowerCase() !== ".cmd") return undefined;
   // Match exactly because preserved SET whitespace can select a different file.
   const lines = readFile(shimPath)
-    ?.split(/\r?\n/)
+    ?.split(LINE_BREAK)
     .filter((line) => line.length > 0);
   if (lines?.length !== NPM_EXECUTABLE_SHIM_PREFIX.length + 1) return undefined;
   if (NPM_EXECUTABLE_SHIM_PREFIX.some((expected, index) => lines[index] !== expected)) {

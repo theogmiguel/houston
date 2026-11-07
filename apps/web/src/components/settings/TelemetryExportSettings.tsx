@@ -73,7 +73,9 @@ function runningOverride(
 
 type EndpointCheck = { readonly url: string; readonly result: OtlpEndpointCheckResult | null };
 
-const isHttpUrl = (url: string) => /^https?:\/\/./i.test(url);
+const HTTP_URL_PREFIX = /^https?:\/\/./i;
+
+const isHttpUrl = (url: string) => HTTP_URL_PREFIX.test(url);
 
 const DESTINATIONS: ReadonlyArray<TelemetryDestination> = [
   "off",

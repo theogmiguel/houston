@@ -31,14 +31,17 @@ function encodeGamma(value: number): number {
   return clamped <= 0.0031308 ? clamped * 12.92 : 1.055 * clamped ** (1 / 2.4) - 0.055;
 }
 
+const COLOR_FUNCTION = /^color\(\s*(display-p3|srgb)\s+([^)]+)\)$/i;
+const WHITESPACE_RUN = /\s+/;
+
 function parseColorFunction(value: string): VsCodeRgba | null {
-  const match = /^color\(\s*(display-p3|srgb)\s+([^)]+)\)$/i.exec(value);
+  const match = COLOR_FUNCTION.exec(value);
   if (!match) return null;
   const [space, body] = [match[1]!.toLowerCase(), match[2]!];
   const [channelPart, alphaPart] = body.split("/");
   const channels = channelPart!
     .trim()
-    .split(/\s+/)
+    .split(WHITESPACE_RUN)
     .map((part) => (part.endsWith("%") ? Number.parseFloat(part) / 100 : Number.parseFloat(part)));
   if (channels.length !== 3 || channels.some((channel) => !Number.isFinite(channel))) return null;
   const alphaRaw = alphaPart?.trim();
@@ -67,12 +70,15 @@ function parseColorFunction(value: string): VsCodeRgba | null {
   return { r: srgb[0], g: srgb[1], b: srgb[2], a: Math.max(0, Math.min(1, alpha)) };
 }
 
+const LEADING_HASH = /^#/;
+const HEX_COLOR_DIGITS = /^(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+
 function parseVsCodeColor(value: unknown): VsCodeRgba | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   if (trimmed.startsWith("color(")) return parseColorFunction(trimmed);
-  const hex = trimmed.replace(/^#/, "");
-  if (!/^(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(hex)) return null;
+  const hex = trimmed.replace(LEADING_HASH, "");
+  if (!HEX_COLOR_DIGITS.test(hex)) return null;
   const expand = (part: string) =>
     part.length === 1 ? Number.parseInt(part + part, 16) : Number.parseInt(part, 16);
   if (hex.length <= 4) {
@@ -151,11 +157,15 @@ function resolveAppearance(value: Record<string, unknown>, canvas: VsCodeRgb): T
   return relativeLuminance(canvas) < 0.179 ? "dark" : "light";
 }
 
+const WHITESPACE_CHAR = /\s/;
+const THEME_NAME_SEPARATOR = /[-_.]/;
+const THEME_NAME_SEPARATOR_RUN = /[-_.]+/;
+
 export function humanizeThemeName(raw: string): string {
   const trimmed = raw.trim();
-  if (/\s/.test(trimmed) || !/[-_.]/.test(trimmed)) return trimmed;
+  if (WHITESPACE_CHAR.test(trimmed) || !THEME_NAME_SEPARATOR.test(trimmed)) return trimmed;
   return trimmed
-    .split(/[-_.]+/)
+    .split(THEME_NAME_SEPARATOR_RUN)
     .filter(Boolean)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
@@ -384,6 +394,10 @@ export function parseVsCodeThemeFile(value: unknown): ThemeDefinition {
   });
 }
 
+const APPEARANCE_WORD = /\b(?:light|dark)\b/gi;
+const WHITESPACE_RUNS = /\s+/g;
+const PAIR_VS_CODE_THEMES_PATTERN = /[a-z0-9]/i;
+
 export function pairVsCodeThemes(
   themes: ReadonlyArray<ThemeDefinition>,
   options?: {
@@ -391,17 +405,18 @@ export function pairVsCodeThemes(
   },
 ): ReadonlyArray<ThemeDefinition> {
   const stripAppearance = (label: string) =>
-    label
-      .replace(/\b(?:light|dark)\b/gi, " ")
-      .replace(/\s+/g, " ")
-      .trim();
+    label.replace(APPEARANCE_WORD, " ").replace(WHITESPACE_RUNS, " ").trim();
 
   type Group = { light: ThemeDefinition[]; dark: ThemeDefinition[]; order: number };
   const groups = new Map<string, Group>();
   const passthrough: Array<{ theme: ThemeDefinition; order: number }> = [];
   themes.forEach((theme, order) => {
     const key = stripAppearance(theme.label);
-    if (getThemeModes(theme).length !== 1 || key === theme.label || !/[a-z0-9]/i.test(key)) {
+    if (
+      getThemeModes(theme).length !== 1 ||
+      key === theme.label ||
+      !PAIR_VS_CODE_THEMES_PATTERN.test(key)
+    ) {
       passthrough.push({ theme, order });
       return;
     }
@@ -436,6 +451,8 @@ export function pairVsCodeThemes(
   return [...passthrough, ...paired].sort((a, b) => a.order - b.order).map((entry) => entry.theme);
 }
 
+const FILE_EXTENSION = /\.[^.]+$/;
+
 export function resolveThemeLabelCollisions(
   entries: ReadonlyArray<{ theme: ThemeDefinition; sourceName?: string | undefined }>,
 ): ReadonlyArray<ThemeDefinition> {
@@ -460,7 +477,7 @@ export function resolveThemeLabelCollisions(
   }
   const relabelled = entries.map(({ theme, sourceName }) => {
     if ((counts.get(theme.id) ?? 0) < 2) return theme;
-    const stem = sourceName?.replace(/\.[^.]+$/, "");
+    const stem = sourceName?.replace(FILE_EXTENSION, "");
     const fromFile = stem ? humanizeThemeName(stem) : null;
     const renamed =
       fromFile && fromFile.toLowerCase() !== theme.label.toLowerCase()

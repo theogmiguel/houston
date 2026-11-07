@@ -161,6 +161,8 @@ function withAvatar(
   return avatarUrl === null ? actor : { ...actor, avatarUrl };
 }
 
+const ACTIONS_RUN_ID = /\/actions\/runs\/(\d+)(?:\/|$)/;
+
 function withWorkflowApprovals(
   checks: ReadonlyArray<PullRequestCheck>,
   runs: ReadonlyArray<GitHubWorkflowRunApproval>,
@@ -169,7 +171,7 @@ function withWorkflowApprovals(
   const representedRunIds = new Set<number>();
   for (const check of checks) {
     if (check.status !== "action-required" || check.url === null) continue;
-    const id = check.url.match(/\/actions\/runs\/(\d+)(?:\/|$)/)?.[1];
+    const id = check.url.match(ACTIONS_RUN_ID)?.[1];
     if (id !== undefined) representedRunIds.add(Number(id));
   }
   const approvalChecks = runs
@@ -196,9 +198,11 @@ function withWorkflowApprovals(
   ];
 }
 
+const LOGIN_AVATAR_URL_PATTERN = /^[a-z0-9][a-z0-9-]{0,38}$/iu;
+
 /** App logins have no profile page; guessed avatar URLs 404. */
 export function loginAvatarUrl(login: string, host: string): string | null {
-  return /^[a-z0-9][a-z0-9-]{0,38}$/iu.test(login) ? `https://${host}/${login}.png?size=80` : null;
+  return LOGIN_AVATAR_URL_PATTERN.test(login) ? `https://${host}/${login}.png?size=80` : null;
 }
 
 // Whether search covers a repository changes only when the repository is renamed or moved.
@@ -231,8 +235,9 @@ class SearchCoverage {
   }
 }
 
-const rendersEmpty = (body: string): boolean =>
-  body.replace(/<!--[\s\S]*?-->/g, "").trim().length === 0;
+const HTML_COMMENT = /<!--[\s\S]*?-->/g;
+
+const rendersEmpty = (body: string): boolean => body.replace(HTML_COMMENT, "").trim().length === 0;
 
 export const make = Effect.gen(function* () {
   const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;

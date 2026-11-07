@@ -557,13 +557,15 @@ export type OrchestrationV2GoalCommand =
   | { readonly type: "resume" }
   | { readonly type: "set"; readonly objective: string };
 
+const GOAL_COMMAND = /^\/goal(?:\s+([\s\S]*))?$/u;
+
 /** Reads a `/goal` control message. Messages with attachments are ordinary prompts. */
 export function parseGoalCommand(message: {
   readonly text: string;
   readonly attachments?: ReadonlyArray<unknown> | undefined;
 }): OrchestrationV2GoalCommand | null {
   if ((message.attachments?.length ?? 0) > 0) return null;
-  const match = /^\/goal(?:\s+([\s\S]*))?$/u.exec(message.text.trim());
+  const match = GOAL_COMMAND.exec(message.text.trim());
   if (match === null) return null;
   const argument = (match[1] ?? "").trim();
   switch (argument.toLowerCase()) {

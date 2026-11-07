@@ -353,28 +353,37 @@ export function buildExplicitProviderOptionSelectionsFromDescriptors(
   return normalized && normalized.length > 0 ? normalized : undefined;
 }
 
+const ULTRATHINK_WORD = /\bultrathink\b/i;
+
 export function isClaudeUltrathinkPrompt(text: string | null | undefined): boolean {
-  return typeof text === "string" && /\bultrathink\b/i.test(text);
+  return typeof text === "string" && ULTRATHINK_WORD.test(text);
 }
 
 export function codexModelFamily(slug: string): string {
   return slug.startsWith("openai.gpt-") ? slug.slice("openai.".length) : slug;
 }
 
+const GPT_PREFIX = /^gpt/i;
+const HYPHEN_LETTER = /-([a-z])/g;
+
 export function formatCodexModelName(name: string): string {
-  return name.replace(/^gpt/i, "GPT").replace(/-([a-z])/g, (_, c) => "-" + c.toUpperCase());
+  return name.replace(GPT_PREFIX, "GPT").replace(HYPHEN_LETTER, (_, c) => "-" + c.toUpperCase());
 }
+
+const GPT_VERSIONED_NAME = /^gpt-\d/i;
+const VENDOR_VERSIONED_NAME = /^(claude-(opus|sonnet|haiku|fable)|gemini|grok|composer)-\d/i;
+const CLAUDE_MINOR_VERSION = /^(claude-[a-z]+-\d+)-(\d{1,2})(?=-|\[|$)/i;
 
 export function formatModelSlugName(slug: string): string {
   const separator = slug.lastIndexOf("/") + 1;
   const prefix = slug.slice(0, separator);
   const name = slug.slice(separator);
-  if (/^gpt-\d/i.test(name)) return prefix + formatCodexModelName(name);
-  if (!/^(claude-(opus|sonnet|haiku|fable)|gemini|grok|composer)-\d/i.test(name)) return slug;
+  if (GPT_VERSIONED_NAME.test(name)) return prefix + formatCodexModelName(name);
+  if (!VENDOR_VERSIONED_NAME.test(name)) return slug;
   return (
     prefix +
     name
-      .replace(/^(claude-[a-z]+-\d+)-(\d{1,2})(?=-|\[|$)/i, "$1.$2")
+      .replace(CLAUDE_MINOR_VERSION, "$1.$2")
       .split("-")
       .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
       .join(" ")
@@ -539,6 +548,8 @@ export function resolvePromptInjectedEffort(
   return null;
 }
 
+const SLASH_COMMAND_PREFIX = /^\/[^\s/]+(?:\s|$)/u;
+
 export function applyClaudePromptEffortPrefix(
   text: string,
   effort: string | null | undefined,
@@ -548,7 +559,7 @@ export function applyClaudePromptEffortPrefix(
     return trimmed;
   }
   // Prefixing slash commands prevents Claude invocation; command names allow any token without a second slash.
-  if (effort !== "ultrathink" || /^\/[^\s/]+(?:\s|$)/u.test(trimmed)) {
+  if (effort !== "ultrathink" || SLASH_COMMAND_PREFIX.test(trimmed)) {
     return trimmed;
   }
   if (trimmed.startsWith("Ultrathink:")) {

@@ -25,11 +25,13 @@ function tokens(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.trunc(value) : 0;
 }
 
+const CURSOR_PREFIX = /^cursor-/;
+const MODEL_VARIANT_SUFFIX =
+  /(?:-thinking)?(?:-(?:none|minimal|low|medium|high|xhigh|max))?(?:-fast)?$/;
+
 // Grok's xAI first-party rate entry has no bare alias.
 export function cursorRateModel(model: string): string {
-  const base = model
-    .replace(/^cursor-/, "")
-    .replace(/(?:-thinking)?(?:-(?:none|minimal|low|medium|high|xhigh|max))?(?:-fast)?$/, "");
+  const base = model.replace(CURSOR_PREFIX, "").replace(MODEL_VARIANT_SUFFIX, "");
   return base.startsWith("grok-") ? `xai/${base}` : base;
 }
 

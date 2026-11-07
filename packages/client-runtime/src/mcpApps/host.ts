@@ -147,6 +147,8 @@ const errorMessage = (error: unknown) =>
       ? error.message
       : "Request failed.";
 
+const HTTP_URL_PREFIX = /^https?:\/\//i;
+
 export function makeMcpAppHost(options: McpAppHostOptions): McpAppHost {
   let initialized = false;
   let disposed = false;
@@ -259,7 +261,7 @@ export function makeMcpAppHost(options: McpAppHostOptions): McpAppHost {
       }
       case "ui/open-link": {
         const url = params.url;
-        if (typeof url !== "string" || !/^https?:\/\//i.test(url)) {
+        if (typeof url !== "string" || !HTTP_URL_PREFIX.test(url)) {
           fail(id, -32602, "Only http(s) links can be opened.");
           return;
         }
@@ -463,15 +465,18 @@ export function makeMcpAppHost(options: McpAppHostOptions): McpAppHost {
 
 const MAX_DOWNLOAD_NAME = 200;
 
+const URL_DELIMITER = /[/?#]/;
+const DOWNLOAD_NAME_PATTERN = /[\\/:*?"<>|]/;
+
 function downloadName(uri: unknown, name: unknown): string {
   const raw =
     typeof name === "string" && name.trim() !== ""
       ? name
       : typeof uri === "string"
-        ? (uri.split(/[/?#]/).findLast(Boolean) ?? "download")
+        ? (uri.split(URL_DELIMITER).findLast(Boolean) ?? "download")
         : "download";
   const safe = Array.from(raw, (char) =>
-    /[\\/:*?"<>|]/.test(char) || char.charCodeAt(0) < 32 ? "-" : char,
+    DOWNLOAD_NAME_PATTERN.test(char) || char.charCodeAt(0) < 32 ? "-" : char,
   ).join("");
   return safe.slice(0, MAX_DOWNLOAD_NAME) || "download";
 }

@@ -55,12 +55,14 @@ const setupBaseDir = Effect.fn("browserSetup.baseDir")(function* (explicit: Opti
   return home ? path.join(home, ".houston", "v2") : yield* resolveBaseDir(undefined);
 });
 
+const CANDIDATE_LINE = /Candidate:\s*(\S+)/;
+
 const aptOffers = Effect.fn("browserSetup.aptOffers")(function* (name: string) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const policy = yield* spawner
     .string(ChildProcess.make("apt-cache", ["policy", name], { stdin: "ignore", stderr: "ignore" }))
     .pipe(Effect.orElseSucceed(() => ""));
-  const candidate = /Candidate:\s*(\S+)/.exec(policy)?.[1];
+  const candidate = CANDIDATE_LINE.exec(policy)?.[1];
   return candidate !== undefined && candidate !== "(none)";
 });
 

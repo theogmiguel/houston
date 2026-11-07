@@ -166,6 +166,9 @@ export function splitPullRequestBody(body: string): ReadonlyArray<PullRequestBod
   return splitBodyAt(body, 0);
 }
 
+const TEXT_PATTERN = /^(?:\r?\n)+/u;
+const TRAILING_WHITESPACE = /\s+$/u;
+
 /** `baseOffset` is where `body` starts in the whole body, so a table cell's edits write back. */
 function splitBodyAt(body: string, baseOffset: number): ReadonlyArray<PullRequestBodySegment> {
   const segments: PullRequestBodySegment[] = [];
@@ -177,14 +180,14 @@ function splitBodyAt(body: string, baseOffset: number): ReadonlyArray<PullReques
   // indented code block, so trimming a run would silently turn code into prose.
   const flushMarkdown = () => {
     const joined = markdown.join("\n");
-    const text = joined.replace(/^(?:\r?\n)+/u, "");
+    const text = joined.replace(TEXT_PATTERN, "");
     const sourceOffset = markdownStart + joined.length - text.length;
     markdown.length = 0;
     if (text.trim().length > 0) {
       segments.push({
         id: `markdown:${segments.length}`,
         kind: "markdown",
-        text: text.replace(/\s+$/u, ""),
+        text: text.replace(TRAILING_WHITESPACE, ""),
         sourceOffset,
       });
     }
@@ -287,12 +290,14 @@ export function changeRequestReferenceAutolinker(
     : (text) => find(text, repositoryUrl);
 }
 
+const ROOT_RELATIVE_PATH = /^\/(?![/\\])/u;
+
 /**
  * Forges link uploads root-relative, as GitCafe's `/api/attachments/<id>`. In a change request
  * body that always means the forge's origin, never a path on the machine rendering it.
  */
 export function resolveChangeRequestMediaUrl(url: string, changeRequestUrl: string): string {
-  if (!/^\/(?![/\\])/u.test(url)) return url;
+  if (!ROOT_RELATIVE_PATH.test(url)) return url;
   try {
     return new URL(url, changeRequestUrl).href;
   } catch {

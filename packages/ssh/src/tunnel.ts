@@ -204,8 +204,10 @@ function normalizeSshErrorMessage(stderr: string, fallbackMessage: string): stri
   return cleaned.length > 0 ? cleaned : fallbackMessage;
 }
 
+const TRAILING_NEWLINES = /\n+$/u;
+
 function stripTrailingNewlines(value: string): string {
-  return value.replace(/\n+$/u, "");
+  return value.replace(TRAILING_NEWLINES, "");
 }
 
 function shellSingleQuote(value: string): string {
@@ -789,6 +791,8 @@ export class SshMissingRunnerError extends Schema.TaggedError<SshMissingRunnerEr
   }
 }
 
+const RELEASE_BASE_URL_PATTERN = /\/v$/u;
+
 export function buildRemoteHoustonRunnerScript(input?: RemoteHoustonRunnerOptions): string {
   const nodeScriptPath = input?.nodeScriptPath?.trim() || "";
   const archiveVersion = input?.archiveVersion?.trim() || "";
@@ -799,7 +803,7 @@ export function buildRemoteHoustonRunnerScript(input?: RemoteHoustonRunnerOption
     throw new SshInvalidArchiveVersionError({ archiveVersion });
   }
   const releaseBaseUrl = cliReleaseDownloadBaseUrl("", input?.releaseBaseUrl ?? undefined).replace(
-    /\/v$/u,
+    RELEASE_BASE_URL_PATTERN,
     "",
   );
   return stripTrailingNewlines(
@@ -1060,11 +1064,10 @@ const waitForHttpReady = (input: {
     },
   });
 
+const BRACKETED_HOSTNAME = /^\[(.*)\]$/;
+
 function isLoopbackHostname(hostname: string): boolean {
-  const normalized = hostname
-    .trim()
-    .toLowerCase()
-    .replace(/^\[(.*)\]$/, "$1");
+  const normalized = hostname.trim().toLowerCase().replace(BRACKETED_HOSTNAME, "$1");
   return normalized === "127.0.0.1" || normalized === "::1" || normalized === "localhost";
 }
 

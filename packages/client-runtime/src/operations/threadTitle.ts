@@ -9,8 +9,10 @@ export interface ThreadTitleSeedInput {
   readonly fallbackLabels?: ReadonlyArray<string | null | undefined>;
 }
 
+const WHITESPACE_RUN = /\s+/gu;
+
 function normalizeTitleSeed(value: string): string {
-  return assistantCitationsToPlainText(value).trim().replace(/\s+/gu, " ");
+  return assistantCitationsToPlainText(value).trim().replace(WHITESPACE_RUN, " ");
 }
 
 export function threadTitleTextFromPrompt(value: string): string {

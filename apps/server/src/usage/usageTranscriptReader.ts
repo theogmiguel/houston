@@ -147,6 +147,8 @@ async function guardMatches(
   }
 }
 
+const REGEX_SPECIAL_CHARACTER = /[.*+?^${}()|[\]\\]/g;
+
 // Match markers in one latin1 alternation; one character per byte preserves exact ASCII offsets.
 export function transcriptLineGate(markers: readonly [string, ...string[]]) {
   if (markers.length === 1) {
@@ -154,7 +156,7 @@ export function transcriptLineGate(markers: readonly [string, ...string[]]) {
     return (line: Buffer) => line.includes(marker);
   }
   const pattern = new RegExp(
-    markers.map((marker) => marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"),
+    markers.map((marker) => marker.replace(REGEX_SPECIAL_CHARACTER, "\\$&")).join("|"),
   );
   return (line: Buffer) => pattern.test(line.toString("latin1"));
 }

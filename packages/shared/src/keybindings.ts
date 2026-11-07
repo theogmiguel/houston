@@ -236,6 +236,9 @@ export function parseKeybindingShortcut(value: string): KeybindingShortcut | nul
   };
 }
 
+const WHITESPACE_CHAR = /\s/;
+const IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_.-]*/;
+
 function tokenizeWhenExpression(expression: string): WhenToken[] | null {
   const tokens: WhenToken[] = [];
   let index = 0;
@@ -244,7 +247,7 @@ function tokenizeWhenExpression(expression: string): WhenToken[] | null {
     const current = expression[index];
     if (!current) break;
 
-    if (/\s/.test(current)) {
+    if (WHITESPACE_CHAR.test(current)) {
       index += 1;
       continue;
     }
@@ -274,7 +277,7 @@ function tokenizeWhenExpression(expression: string): WhenToken[] | null {
       continue;
     }
 
-    const identifier = /^[A-Za-z_][A-Za-z0-9_.-]*/.exec(expression.slice(index));
+    const identifier = IDENTIFIER_PATTERN.exec(expression.slice(index));
     if (!identifier) {
       return null;
     }

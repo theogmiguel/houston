@@ -524,9 +524,11 @@ export function groupPullRequestTimelineConversations(
   return rows;
 }
 
+const HTML_COMMENT = /<!--[\s\S]*?-->/gu;
+
 /** Marker-only bodies are empty; otherwise retain text, including fenced HTML comments. */
 export function visibleBody(body: string): string | null {
-  return body.replace(/<!--[\s\S]*?-->/gu, "").trim().length === 0 ? null : body.trim();
+  return body.replace(HTML_COMMENT, "").trim().length === 0 ? null : body.trim();
 }
 
 function commentTimelineEvent(comment: PullRequestComment): PullRequestTimelineEvent {
@@ -666,6 +668,13 @@ export function pagePullRequestConversationItems(
   return { shown, hidden: items.length - shown.length };
 }
 
+const BODY_PATTERN = /\r\n?/gu;
+const HTML_PATTERN = /<!--[\s\S]*?(?:-->|$)/gu;
+const TRAILING_QUOTE_INDENT_ON_OWN_LINE = /(?:^|\n)[ \t>]*$/u;
+const LEADING_BLANK_REST_OF_LINE = /^[ \t]*(?:\n|$)/u;
+const TRAILING_QUOTE_INDENT = /[ \t>]*$/u;
+const LEADING_BLANK_LINE = /^[ \t]*\n/u;
+
 /**
  * A body as it reads, for text sent to the agent under a length bound. A bot's HTML-comment
  * bookkeeping would otherwise use up the bound before the remark got any of it. Comments in code
@@ -673,7 +682,7 @@ export function pagePullRequestConversationItems(
  */
 function readableBody(raw: string): string | null {
   if (visibleBody(raw) === null) return null;
-  const body = raw.replace(/\r\n?/gu, "\n");
+  const body = raw.replace(BODY_PATTERN, "\n");
   const cuts: Array<[number, number]> = [];
   const visit = (node: MdastNodes) => {
     if (node.type === "html" && node.position?.start.offset !== undefined) {
@@ -687,12 +696,14 @@ function readableBody(raw: string): string | null {
   for (const [start, end] of cuts) {
     readable += body.slice(from, start);
     // An HTML block can carry markup around its comment; only the comment itself is hidden.
-    const html = body.slice(start, end).replace(/<!--[\s\S]*?(?:-->|$)/gu, "");
+    const html = body.slice(start, end).replace(HTML_PATTERN, "");
     // A line that was all comment is dropped rather than left as a blank one.
-    const ownLine = /(?:^|\n)[ \t>]*$/u.test(readable) && /^[ \t]*(?:\n|$)/u.test(body.slice(end));
+    const ownLine =
+      TRAILING_QUOTE_INDENT_ON_OWN_LINE.test(readable) &&
+      LEADING_BLANK_REST_OF_LINE.test(body.slice(end));
     if (ownLine && html.trim() === "") {
-      readable = readable.replace(/[ \t>]*$/u, "");
-      from = end + (/^[ \t]*\n/u.exec(body.slice(end))?.[0].length ?? 0);
+      readable = readable.replace(TRAILING_QUOTE_INDENT, "");
+      from = end + (LEADING_BLANK_LINE.exec(body.slice(end))?.[0].length ?? 0);
     } else {
       readable += html;
       from = end;
@@ -840,8 +851,10 @@ function bounded(value: string): string {
     : `${trimmed.slice(0, FINDING_BODY_MAX_LENGTH - 3)}...`;
 }
 
+const WHITESPACE_RUN = /\s+/gu;
+
 function boundedField(value: string): string {
-  return bounded(value.replace(/\s+/gu, " "));
+  return bounded(value.replace(WHITESPACE_RUN, " "));
 }
 
 // Prompt builders are handed a change request's URL, not its detail; a URL no host claims reads
@@ -893,6 +906,8 @@ interface FixFindingsHandoff {
   readonly reviewComments: ReadonlyArray<ReviewCommentContext>;
 }
 
+const PRESENT_PATTERN = /[ \t]+$/gmu;
+
 export function appendHandoff(
   existing: {
     readonly prompt: string;
@@ -903,11 +918,9 @@ export function appendHandoff(
     readonly reviewComments?: ReadonlyArray<ReviewCommentContext>;
   },
 ): { prompt: string; reviewComments: ReviewCommentContext[] } {
-  const present = stripInlineContextReferences(existing.prompt)
-    .replace(/[ \t]+$/gmu, "")
-    .trim();
+  const present = stripInlineContextReferences(existing.prompt).replace(PRESENT_PATTERN, "").trim();
   const added = incoming.prompt.trim();
-  const isRepeat = `\n\n${present}\n\n`.includes(`\n\n${added.replace(/[ \t]+$/gmu, "")}\n\n`);
+  const isRepeat = `\n\n${present}\n\n`.includes(`\n\n${added.replace(PRESENT_PATTERN, "")}\n\n`);
   const kept = existing.prompt.trimEnd();
   const incomingById = new Map(
     (incoming.reviewComments ?? []).map((comment) => [comment.id, comment]),
@@ -1328,8 +1341,10 @@ export function isPullRequestNotFound(failure: unknown): boolean {
 
 const OPERATION_PREFIX = /^Pull request operation \w+ failed:\s*/iu;
 
+const REGEX_SPECIAL_CHARACTER = /[.*+?^${}()|[\]\\]/gu;
+
 const HOST_LABELS = sourceControlClients.definitions
-  .map((definition) => definition.label.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"))
+  .map((definition) => definition.label.replace(REGEX_SPECIAL_CHARACTER, "\\$&"))
   .join("|");
 
 const TOOL_NOISE = [

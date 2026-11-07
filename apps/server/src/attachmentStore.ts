@@ -26,35 +26,44 @@ export const PENDING_ATTACHMENT_THREAD_SEGMENT = "pending";
 const PENDING_ATTACHMENT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const PARTIAL_UPLOAD_MAX_AGE_MS = 60 * 60 * 1000;
 
+const NON_SLUG_RUN = /[^a-z0-9_-]+/gi;
+const HYPHEN_RUN = /-+/g;
+const EDGE_SEPARATORS = /^[-_]+|[-_]+$/g;
+const TRAILING_SEPARATORS = /[-_]+$/g;
+
 export function toSafeThreadAttachmentSegment(threadId: string): string | null {
   const segment = threadId
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9_-]+/gi, "-")
-    .replace(/-+/g, "-")
-    .replace(/^[-_]+|[-_]+$/g, "")
+    .replace(NON_SLUG_RUN, "-")
+    .replace(HYPHEN_RUN, "-")
+    .replace(EDGE_SEPARATORS, "")
     .slice(0, ATTACHMENT_ID_THREAD_SEGMENT_MAX_CHARS)
-    .replace(/[-_]+$/g, "");
+    .replace(TRAILING_SEPARATORS, "");
   if (segment.length === 0) {
     return null;
   }
   return segment === PENDING_ATTACHMENT_THREAD_SEGMENT ? "_pending" : segment;
 }
 
+const ATTACHMENT_FILE_EXTENSION_PATTERN = /^\.[a-z0-9]{1,10}$/;
+
 export function attachmentFileExtension(fileName: string): string {
   const extension = NodePath.extname(fileName).toLowerCase();
   // .part is reserved for pending uploads; the stale-upload sweep would delete stored files.
-  if (extension === ".part" || !/^\.[a-z0-9]{1,10}$/.test(extension)) {
+  if (extension === ".part" || !ATTACHMENT_FILE_EXTENSION_PATTERN.test(extension)) {
     return ".bin";
   }
   return extension;
 }
 
+const LEADING_DOT_SLASH_PATH = /^\./;
+
 function attachmentIdExtensionSuffix(extension: string | undefined): string {
   if (!extension) {
     return "";
   }
-  const normalized = extension.replace(/^\./, "").toLowerCase();
+  const normalized = extension.replace(LEADING_DOT_SLASH_PATH, "").toLowerCase();
   return new RegExp(`^${ATTACHMENT_ID_FILE_EXTENSION_PATTERN}$`).test(normalized)
     ? `-${normalized}`
     : "-bin";

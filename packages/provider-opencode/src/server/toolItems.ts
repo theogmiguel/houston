@@ -76,15 +76,17 @@ function stableJson(value: unknown): string {
   }
 }
 
+const DIRECTORY_LISTING_HEADER = /^<path>[^\r\n]+<\/path>\r?\n<type>(directory|file)<\/type>\r?\n/;
+const ENTRIES_ENVELOPE = /^<entries>\r?\n([\s\S]*?)\r?\n<\/entries>(?=\r?\n|$)/;
+const CONTENT_ENVELOPE = /^<content>(?:\r?\n)?([\s\S]*?)\r?\n<\/content>(?=\r?\n|$)/;
+
 function nativeReadOutput(output: string): string {
-  const header = /^<path>[^\r\n]+<\/path>\r?\n<type>(directory|file)<\/type>\r?\n/.exec(output);
+  const header = DIRECTORY_LISTING_HEADER.exec(output);
   if (header === null) return output;
   const body = output.slice(header[0].length);
   // File lines are numbered; only a closing tag on its own line ends the envelope.
   const envelope =
-    header[1] === "directory"
-      ? /^<entries>\r?\n([\s\S]*?)\r?\n<\/entries>(?=\r?\n|$)/.exec(body)
-      : /^<content>(?:\r?\n)?([\s\S]*?)\r?\n<\/content>(?=\r?\n|$)/.exec(body);
+    header[1] === "directory" ? ENTRIES_ENVELOPE.exec(body) : CONTENT_ENVELOPE.exec(body);
   // OpenCode can append instructions after the envelope; keep that suffix verbatim.
   return envelope === null ? output : envelope[1] + body.slice(envelope[0].length);
 }

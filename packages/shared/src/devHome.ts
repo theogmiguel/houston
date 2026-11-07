@@ -5,10 +5,13 @@ import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 
+const LINE_BREAK = /\r?\n/;
+const PATH_SEPARATOR = /[/\\]/;
+
 // Match worktrees/<name>; bare repos and GIT_COMMON_DIR need not use a directory named .git.
 const pointsAtLinkedWorktree = (gitFileContents: string, path: Path.Path): boolean => {
   const gitdir = gitFileContents
-    .split(/\r?\n/)
+    .split(LINE_BREAK)
     .map((line) => line.trim())
     .find((line) => line.startsWith("gitdir:"))
     ?.slice("gitdir:".length)
@@ -18,7 +21,7 @@ const pointsAtLinkedWorktree = (gitFileContents: string, path: Path.Path): boole
   }
   const segments = path
     .normalize(gitdir.replaceAll("\\", "/"))
-    .split(/[/\\]/)
+    .split(PATH_SEPARATOR)
     .filter((segment) => segment.length > 0);
   return segments.length >= 3 && segments.at(-2) === "worktrees";
 };

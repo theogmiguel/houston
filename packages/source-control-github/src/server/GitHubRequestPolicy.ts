@@ -147,6 +147,9 @@ function retryAtFrom(
   return Number.isFinite(reset) && reset > now ? reset : undefined;
 }
 
+const RATE_LIMIT_EXCEEDED = /rate limit (already )?exceeded/i;
+const RATE_LIMIT_MESSAGE = /rate limit/i;
+
 /** HTTP 200 GraphQL rate limits use RATE_LIMITED or untyped errors with quota headers. */
 export function isRateLimited(input: {
   readonly status: number;
@@ -162,13 +165,12 @@ export function isRateLimited(input: {
         errors.some(
           (error) =>
             error.type === "RATE_LIMITED" ||
-            (typeof error.message === "string" &&
-              /rate limit (already )?exceeded/i.test(error.message)),
+            (typeof error.message === "string" && RATE_LIMIT_EXCEEDED.test(error.message)),
         ))) ||
     (status === 403 &&
       (headers["x-ratelimit-remaining"] === "0" ||
         headers["retry-after"] !== undefined ||
-        /rate limit/i.test(input.body ?? "")))
+        RATE_LIMIT_MESSAGE.test(input.body ?? "")))
   );
 }
 
@@ -236,6 +238,8 @@ interface ChosenCredential extends GitHubHeldCredential {
   readonly fromApp: boolean;
 }
 
+const REFUSED_TO_APP_PATTERN = /not accessible by integration/i;
+
 /**
  * The app reaches only repositories where it is installed. A not-found or "not accessible by
  * integration" answer to its token is worth one more try with the user's own credential.
@@ -249,7 +253,7 @@ function refusedToApp<A>(answer: GitHubAnswer<A>): boolean {
     case "Failed":
       return (
         answer.status === 403 &&
-        (answer.messages ?? []).some((message) => /not accessible by integration/i.test(message))
+        (answer.messages ?? []).some((message) => REFUSED_TO_APP_PATTERN.test(message))
       );
     default:
       return false;

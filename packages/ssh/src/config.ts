@@ -11,12 +11,15 @@ import { SshHostDiscoveryError } from "./errors.ts";
 
 const NO_HOSTS: ReadonlyArray<string> = [] as const;
 
+const KEY_VALUE_LINE = /^\s*([^\s=]+)\s*=?\s*(.*)$/u;
+const WHITESPACE_CHAR = /\s/u;
+
 // Mirrors OpenSSH readconf: the keyword may be followed by one optional "=",
 // then the arguments are split like misc.c argv_split() with quotes, the
 // escapes \\ \" \' and unquoted "\ ", and "#" starting a comment only at
 // the start of a token. Invalid quoting leaves hostname resolution uncertain.
 function parseSshConfigLine(line: string) {
-  const match = /^\s*([^\s=]+)\s*=?\s*(.*)$/u.exec(line);
+  const match = KEY_VALUE_LINE.exec(line);
   if (!match) {
     return null;
   }
@@ -44,7 +47,7 @@ function parseSshConfigLine(line: string) {
     } else if (char === '"' || char === "'") {
       quote = char;
       token ??= "";
-    } else if (/\s/u.test(char)) {
+    } else if (WHITESPACE_CHAR.test(char)) {
       if (token !== null) {
         args.push(token);
         token = null;
@@ -64,8 +67,10 @@ function parseSshConfigLine(line: string) {
   return { directive, args };
 }
 
+const EXPAND_HOME_PATH_PATTERN = /^~(?=$|\/|\\)/u;
+
 function expandHomePath(input: string, homeDir: string): string {
-  return input.replace(/^~(?=$|\/|\\)/u, homeDir);
+  return input.replace(EXPAND_HOME_PATH_PATTERN, homeDir);
 }
 
 const resolveSshConfigIncludePattern = Effect.fnUntraced(function* (
@@ -84,13 +89,18 @@ function hasSshPattern(value: string): boolean {
   return value.includes("*") || value.includes("?") || value.startsWith("!");
 }
 
+const REGEX_SPECIAL_CHARACTER = /[.*+?^${}()|[\]\\]/gu;
+
 function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  return value.replace(REGEX_SPECIAL_CHARACTER, "\\$&");
 }
+
+const ESCAPED_ASTERISK = /\\\*/gu;
+const ESCAPED_QUESTION_MARK = /\\\?/gu;
 
 function globToRegExp(pattern: string): RegExp {
   return new RegExp(
-    `^${escapeRegex(pattern).replace(/\\\*/gu, ".*").replace(/\\\?/gu, ".")}$`,
+    `^${escapeRegex(pattern).replace(ESCAPED_ASTERISK, ".*").replace(ESCAPED_QUESTION_MARK, ".")}$`,
     "u",
   );
 }
@@ -146,6 +156,8 @@ function matchesHostPatterns(alias: string, patterns: ReadonlyArray<string>): bo
   return matched;
 }
 
+const HOSTNAME_PERCENT_TOKEN = /%(?!h)/u;
+
 function resolveConfiguredHostname(alias: string, rules: ReadonlyArray<HostNameRule>) {
   for (const { conditions, hostname } of rules) {
     if (
@@ -155,11 +167,14 @@ function resolveConfiguredHostname(alias: string, rules: ReadonlyArray<HostNameR
     }
     // SSH takes the first value; an uncertain earlier value blocks later fallbacks.
     if (conditions.includes(null) || hostname === null) return null;
-    if (/%(?!h)/u.test(hostname) || hostname.includes("$")) return null;
+    if (HOSTNAME_PERCENT_TOKEN.test(hostname) || hostname.includes("$")) return null;
     return hostname.replaceAll("%h", alias);
   }
   return null;
 }
+
+const LINE_BREAK = /\r?\n/u;
+const SSH_TOKEN_EXPANSION = /%|\$\{|\[/u;
 
 const collectSshConfigAliasesFromFile = Effect.fnUntraced(function* (
   filePath: string,
@@ -185,7 +200,7 @@ const collectSshConfigAliasesFromFile = Effect.fnUntraced(function* (
   const raw = yield* fs.readFileString(resolvedPath);
   let condition: HostCondition = ["*"];
 
-  for (const line of raw.split(/\r?\n/u)) {
+  for (const line of raw.split(LINE_BREAK)) {
     const parsed = parseSshConfigLine(line);
     if (!parsed) continue;
     const { directive, args } = parsed;
@@ -212,8 +227,8 @@ const collectSshConfigAliasesFromFile = Effect.fnUntraced(function* (
           homeDir,
         );
         if (
-          /%|\$\{|\[/u.test(includePattern) ||
-          (includePattern.startsWith("~") && !/^~(?=$|\/|\\)/u.test(includePattern)) ||
+          SSH_TOKEN_EXPANSION.test(includePattern) ||
+          (includePattern.startsWith("~") && !EXPAND_HOME_PATH_PATTERN.test(includePattern)) ||
           hasSshPattern(path.dirname(resolvedPattern))
         ) {
           hostNameRules.push({ conditions, hostname: null });
@@ -235,8 +250,10 @@ const collectSshConfigAliasesFromFile = Effect.fnUntraced(function* (
   }
 });
 
+const BRACKET_MATCH_PATTERN = /^\[([^\]]+)\]:(\d+)$/u;
+
 function normalizeKnownHostsHostname(rawHost: string): string {
-  const bracketMatch = /^\[([^\]]+)\]:(\d+)$/u.exec(rawHost);
+  const bracketMatch = BRACKET_MATCH_PATTERN.exec(rawHost);
   if (bracketMatch?.[1]) {
     return bracketMatch[1];
   }
@@ -250,19 +267,21 @@ function normalizeKnownHostsHostname(rawHost: string): string {
   return firstColonIndex === lastColonIndex ? rawHost.slice(0, lastColonIndex) : rawHost;
 }
 
+const WHITESPACE_RUN = /\s+/u;
+
 export function parseKnownHostsHostnames(raw: string): ReadonlyArray<string> {
   const hostnames = new Set<string>();
 
-  for (const line of raw.split(/\r?\n/u)) {
+  for (const line of raw.split(LINE_BREAK)) {
     const trimmed = line.trim();
     if (trimmed.length === 0 || trimmed.startsWith("#")) {
       continue;
     }
 
     const withoutMarker = trimmed.startsWith("@")
-      ? trimmed.split(/\s+/u).slice(1).join(" ")
+      ? trimmed.split(WHITESPACE_RUN).slice(1).join(" ")
       : trimmed;
-    const [hostField = ""] = withoutMarker.split(/\s+/u);
+    const [hostField = ""] = withoutMarker.split(WHITESPACE_RUN);
     if (hostField.length === 0 || hostField.startsWith("|")) {
       continue;
     }

@@ -46,8 +46,10 @@ export const EVENT_CODE_SHORTCUT_KEYS: Readonly<Record<string, string>> = {
   Slash: "/",
 };
 
+const APPLE_PLATFORM = /mac|iphone|ipad|ipod/i;
+
 export function isMacPlatform(platform: string): boolean {
-  return /mac|iphone|ipad|ipod/i.test(platform);
+  return APPLE_PLATFORM.test(platform);
 }
 
 export function normalizeEventKey(key: string): string {
@@ -56,18 +58,22 @@ export function normalizeEventKey(key: string): string {
   return normalized;
 }
 
+const SINGLE_LOWERCASE_LETTER = /^[a-z]$/;
+
 export function shortcutKeyFromEvent(event: Pick<ShortcutEventLike, "key" | "code">): string {
   const layoutKey = normalizeEventKey(event.key);
-  if (/^[a-z]$/.test(layoutKey)) return layoutKey;
+  if (SINGLE_LOWERCASE_LETTER.test(layoutKey)) return layoutKey;
   const physicalKey = event.code ? EVENT_CODE_SHORTCUT_KEYS[event.code] : undefined;
   return physicalKey ?? layoutKey;
 }
 
+const LETTER_CODE_PATTERN = /^Key([A-Z])$/;
+
 export function resolveEventKeys(event: ShortcutEventLike): Set<string> {
   const layoutKey = normalizeEventKey(event.key);
   const keys = new Set([layoutKey]);
-  const letterCode = event.code?.match(/^Key([A-Z])$/)?.[1];
-  if (letterCode && !/^[a-z]$/.test(layoutKey)) {
+  const letterCode = event.code?.match(LETTER_CODE_PATTERN)?.[1];
+  if (letterCode && !SINGLE_LOWERCASE_LETTER.test(layoutKey)) {
     keys.add(letterCode.toLowerCase());
   }
   keys.add(shortcutKeyFromEvent(event));
@@ -90,6 +96,8 @@ export function matchesKeybindingShortcutModifiers(
   );
 }
 
+const SINGLE_ALPHANUMERIC_KEY = /^[a-z0-9]$/i;
+
 export function matchesKeybindingShortcut(
   event: ShortcutEventLike,
   shortcut: KeybindingShortcut,
@@ -98,7 +106,7 @@ export function matchesKeybindingShortcut(
   if (
     !isMacPlatform(platform) &&
     event.getModifierState?.("AltGraph") &&
-    !/^[a-z0-9]$/i.test(event.key)
+    !SINGLE_ALPHANUMERIC_KEY.test(event.key)
   )
     return false;
   if (!matchesKeybindingShortcutModifiers(event, shortcut, platform)) return false;

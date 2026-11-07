@@ -39,6 +39,8 @@ export function effectiveSpeechLanguage(
 
 const vocabularyKey = (value: string) => value.trim().normalize("NFC").toLocaleLowerCase();
 
+const WHITESPACE_RUN = /\s+/g;
+
 /**
  * Project spellings win over personal ones. Hint terms, such as the project name or the
  * correction cue, come first so the 100-entry wire limit cannot drop them.
@@ -55,7 +57,7 @@ export function resolveSpeechVocabulary(input: {
   );
   // A hint that is already a dictionary entry keeps that entry and its aliases in place.
   const hints = (input.hints ?? []).flatMap((hint) => {
-    const term = hint.replace(/\s+/g, " ").trim();
+    const term = hint.replace(WHITESPACE_RUN, " ").trim();
     return term.length > 0 && term.length <= 50 && !known.has(vocabularyKey(term))
       ? [{ term, aliases: [] }]
       : [];

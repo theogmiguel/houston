@@ -23,8 +23,11 @@ function truncateString(value: string, limit: number): string {
   return `${value.slice(0, Math.max(0, limit - 1))}…`;
 }
 
+const CRLF = /\r\n/g;
+const EDGE_LINE_BREAKS = /^\n+|\n+$/g;
+
 function normalizeText(value: string): string {
-  return value.replace(/\r\n/g, "\n").replace(/^\n+|\n+$/g, "");
+  return value.replace(CRLF, "\n").replace(EDGE_LINE_BREAKS, "");
 }
 
 /** Clamps string fields to keep large outerHTML payloads within localStorage limits. */

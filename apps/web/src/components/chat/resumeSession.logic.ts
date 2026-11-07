@@ -35,8 +35,10 @@ export function resumeSessionTitle(session: HoustonResumeSession): string {
   return firstLine !== undefined && firstLine.length > 0 ? firstLine : "Untitled session";
 }
 
+const TRAILING_SLASHES = /\/+$/;
+
 function normalizedPath(value: string): string {
-  return value.replaceAll("\\", "/").replace(/\/+$/, "");
+  return value.replaceAll("\\", "/").replace(TRAILING_SLASHES, "");
 }
 
 export function resumeSessionLocation(

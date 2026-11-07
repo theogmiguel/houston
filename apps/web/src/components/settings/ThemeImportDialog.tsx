@@ -44,9 +44,11 @@ function describeOversizedThemeFile(bytes: number): string | null {
   return `That file is ${formatByteSize(bytes)}. Theme files are only a few KB, so this one was not read (limit ${formatByteSize(MAX_THEME_FILE_BYTES)}).`;
 }
 
+const HTML_SPECIAL_CHARACTER = /[&<>"']/g;
+
 function escapeJsonHtml(value: string): string {
   return value.replace(
-    /[&<>"']/g,
+    HTML_SPECIAL_CHARACTER,
     (character) =>
       ({
         "&": "&amp;",
@@ -57,6 +59,8 @@ function escapeJsonHtml(value: string): string {
       })[character] ?? character,
   );
 }
+
+const HIGHLIGHT_JSON_PATTERN = /^\s*:/;
 
 function highlightJson(value: string): string {
   const tokenPattern =
@@ -71,7 +75,7 @@ function highlightJson(value: string): string {
 
     let tokenClass = "text-[var(--app-theme-secondary-foreground,var(--color-amber-600))]";
     if (token.startsWith('"')) {
-      tokenClass = /^\s*:/.test(value.slice(index + token.length))
+      tokenClass = HIGHLIGHT_JSON_PATTERN.test(value.slice(index + token.length))
         ? "text-[var(--app-theme-accent,var(--color-blue-600))]"
         : "text-[var(--app-theme-message-action,var(--color-emerald-600))]";
     } else if (token === "true" || token === "false" || token === "null") {
@@ -190,6 +194,8 @@ export function ThemeImportDialog({
     </Dialog>
   );
 }
+
+const PREFERRED_NAME_PATTERN = /\.[^.]+$/;
 
 function ThemeImportBody({
   session,
@@ -362,7 +368,7 @@ function ThemeImportBody({
     const failures: string[] = [];
     const preferredName =
       conflicts.length === 1 && fileName
-        ? humanizeThemeName(fileName.replace(/\.[^.]+$/, ""))
+        ? humanizeThemeName(fileName.replace(PREFERRED_NAME_PATTERN, ""))
         : null;
     for (const theme of conflicts) {
       try {

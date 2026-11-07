@@ -40,8 +40,10 @@ function scoreModelPickerSearchToken(
   });
 }
 
+const WHITESPACE_RUN = /\s+/gu;
+
 function normalizeModelName(name: string): string {
-  return normalizeSearchQuery(name).replace(/\s+/gu, " ");
+  return normalizeSearchQuery(name).replace(WHITESPACE_RUN, " ");
 }
 
 function buildModelPickerSearchText(model: ModelPickerSearchableModel): string {
@@ -52,12 +54,14 @@ function buildModelPickerSearchText(model: ModelPickerSearchableModel): string {
   );
 }
 
+const TOKENS_PATTERN = /\s+/u;
+
 export function scoreModelPickerSearch(
   model: ModelPickerSearchableModel,
   query: string,
 ): number | null {
   const tokens = normalizeSearchQuery(query)
-    .split(/\s+/u)
+    .split(TOKENS_PATTERN)
     .filter((token) => token.length > 0);
 
   if (tokens.length === 0) {

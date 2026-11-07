@@ -664,6 +664,8 @@ export function filterCommandPaletteGroups(input: {
     : [...groups, { value: "threads-messages", label: "In messages", items: messageItems }];
 }
 
+const TRAILING_ELLIPSIS = /(\.\.\.|…)$/u;
+
 /** Every option inside a submenu as one row, e.g. "New thread in houston" or "Change theme: Dracula". */
 export function buildNestedSearchItems(
   items: ReadonlyArray<CommandPaletteActionItem | CommandPaletteSubmenuItem>,
@@ -675,7 +677,7 @@ export function buildNestedSearchItems(
   const foldedQuery = foldSearchQuery(query);
   return items.flatMap((parent) => {
     if (parent.kind !== "submenu" || typeof parent.title !== "string") return [];
-    const stem = parent.title.replace(/(\.\.\.|…)$/u, "");
+    const stem = parent.title.replace(TRAILING_ELLIPSIS, "");
     // A query that only names the submenu ("new thread in") wants the submenu row itself.
     if (foldSearchQuery(stem).startsWith(foldedQuery)) return [];
     const prefix = stem === parent.title ? `${stem}: ` : `${stem.trimEnd()} `;

@@ -48,6 +48,13 @@ import { collectUint8StreamText } from "@houston-app/provider-core/server/collec
 import * as ProviderHost from "@houston-app/provider-core/server/ProviderHost";
 import type * as AcpSessionRuntime from "@houston-app/provider-acp/server/AcpSessionRuntime";
 
+const LEADING_DOT_SLASH = /^\.\//u;
+const WINDOWS_DRIVE_PREFIX = /^[a-zA-Z]:/u;
+const NORMALIZED_PACKAGE_NAME_PATTERN = /[._-]+/gu;
+const NAME_VERSION_LINE = /^(\S+) v(\S+)(?:\s|$)/u;
+const BATCH_SCRIPT_SUFFIX = /\.(?:cmd|bat)$/iu;
+const UNINSTALL_MANAGED_BINARY_PATTERN = /^(?:darwin|linux|windows)-(?:aarch64|x86_64)$/u;
+
 const ACP_REGISTRY_URL = "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json";
 
 const MAX_REGISTRY_BYTES = 1024 * 1024;
@@ -263,11 +270,13 @@ interface ExactPackageSpec {
   readonly version: string;
 }
 
+const LEADING_V = /^v/iu;
+
 function parseNpxPackageSpec(packageSpec: string): ExactPackageSpec {
   const separator = packageSpec.lastIndexOf("@");
   return {
     name: packageSpec.slice(0, separator),
-    version: packageSpec.slice(separator + 1).replace(/^v/iu, ""),
+    version: packageSpec.slice(separator + 1).replace(LEADING_V, ""),
   };
 }
 
@@ -277,13 +286,15 @@ function parseUvxPackageSpec(packageSpec: string): ExactPackageSpec {
   const separatorLength = equalsSeparator >= 0 ? 2 : 1;
   return {
     name: packageSpec.slice(0, separator),
-    version: packageSpec.slice(separator + separatorLength).replace(/^v/iu, ""),
+    version: packageSpec.slice(separator + separatorLength).replace(LEADING_V, ""),
   };
 }
 
 function packageManagerFor(distribution: AcpRegistryDistributionKind): "npm" | "uv" | undefined {
   return distribution === "npx" ? "npm" : distribution === "uvx" ? "uv" : undefined;
 }
+
+const PACKAGE_COMMAND_CANDIDATES_PATTERN = /-acp$/u;
 
 function packageCommandCandidates(
   agent: AcpRegistryAgent,
@@ -292,9 +303,11 @@ function packageCommandCandidates(
   const unscopedPackageName = packageName.split("/").pop() ?? packageName;
   return Array.from(
     new Set(
-      [agent.id, unscopedPackageName, unscopedPackageName.replace(/-acp$/u, "")].filter(
-        isPackageCommandName,
-      ),
+      [
+        agent.id,
+        unscopedPackageName,
+        unscopedPackageName.replace(PACKAGE_COMMAND_CANDIDATES_PATTERN, ""),
+      ].filter(isPackageCommandName),
     ),
   );
 }
@@ -558,12 +571,12 @@ function isAlreadyExists(error: PlatformError.PlatformError): boolean {
 }
 
 function normalizeRegistryCommandPath(command: string): ReadonlyArray<string> | undefined {
-  const normalized = command.trim().replaceAll("\\", "/").replace(/^\.\//u, "");
+  const normalized = command.trim().replaceAll("\\", "/").replace(LEADING_DOT_SLASH, "");
   const segments = normalized.split("/").filter((segment) => segment.length > 0);
   if (
     segments.length === 0 ||
     normalized.startsWith("/") ||
-    /^[a-zA-Z]:/u.test(normalized) ||
+    WINDOWS_DRIVE_PREFIX.test(normalized) ||
     segments.some((segment) => segment === "." || segment === "..")
   ) {
     return undefined;
@@ -571,9 +584,11 @@ function normalizeRegistryCommandPath(command: string): ReadonlyArray<string> | 
   return segments;
 }
 
+const LINE_BREAK = /\r?\n/u;
+
 function validateArchiveEntries(output: string): boolean {
   return output
-    .split(/\r?\n/u)
+    .split(LINE_BREAK)
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0)
     .every((entry) => entry === "./" || normalizeRegistryCommandPath(entry) !== undefined);
@@ -606,6 +621,9 @@ function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
+const WHITESPACE_RUN = /\s+/u;
+const NON_ALPHANUMERIC_RUN = /[^a-z0-9]+/u;
+
 function searchRank(agent: AcpRegistryAgent, query: string): number | undefined {
   const normalized = query.trim().toLowerCase();
   if (normalized.length === 0) return 100;
@@ -614,11 +632,11 @@ function searchRank(agent: AcpRegistryAgent, query: string): number | undefined 
   const name = agent.name.toLowerCase();
   const authors = (agent.authors ?? []).join(" ").toLowerCase();
   const description = agent.description.toLowerCase();
-  const terms = normalized.split(/\s+/u);
+  const terms = normalized.split(WHITESPACE_RUN);
   if (id === normalized || name === normalized) return 0;
   if (id.startsWith(normalized) || name.startsWith(normalized)) return 10;
 
-  const identityTokens = `${id} ${name}`.split(/[^a-z0-9]+/u).filter(Boolean);
+  const identityTokens = `${id} ${name}`.split(NON_ALPHANUMERIC_RUN).filter(Boolean);
   if (terms.every((term) => identityTokens.some((token) => token.startsWith(term)))) return 20;
   if (terms.every((term) => id.includes(term) || name.includes(term))) return 30;
   if (terms.every((term) => authors.includes(term))) return 40;
@@ -1083,7 +1101,7 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
   const parsePackageManagerPath = Effect.fn("AcpRegistryCatalog.parsePackageManagerPath")(
     function* (managerPath: string, output: string) {
       const lines = output
-        .split(/\r?\n/u)
+        .split(LINE_BREAK)
         .map((line) => line.trim())
         .filter((line) => line.length > 0);
       if (lines.length !== 1 || !path.isAbsolute(lines[0]!)) {
@@ -1188,12 +1206,14 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
         timeout: PACKAGE_QUERY_TIMEOUT,
         truncatedOutputReason: "install_failed",
       });
-      const normalizedPackageName = packageIdentity.name.toLowerCase().replace(/[._-]+/gu, "-");
-      const exactVersionInstalled = installedTools.split(/\r?\n/u).some((line) => {
-        const match = /^(\S+) v(\S+)(?:\s|$)/u.exec(line);
+      const normalizedPackageName = packageIdentity.name
+        .toLowerCase()
+        .replace(NORMALIZED_PACKAGE_NAME_PATTERN, "-");
+      const exactVersionInstalled = installedTools.split(LINE_BREAK).some((line) => {
+        const match = NAME_VERSION_LINE.exec(line);
         return (
-          match?.[1]?.toLowerCase().replace(/[._-]+/gu, "-") === normalizedPackageName &&
-          match[2] === packageIdentity.version
+          match?.[1]?.toLowerCase().replace(NORMALIZED_PACKAGE_NAME_PATTERN, "-") ===
+            normalizedPackageName && match[2] === packageIdentity.version
         );
       });
       if (!exactVersionInstalled) return Option.none<AcpRegistryPackageInstallReceipt>();
@@ -1700,7 +1720,7 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
   );
 
   const validateLocalExecutable = (command: string) =>
-    platform === "win32" && /\.(?:cmd|bat)$/iu.test(command)
+    platform === "win32" && BATCH_SCRIPT_SUFFIX.test(command)
       ? Effect.fail(
           new AcpRegistryError({
             reason: "runner_unavailable",
@@ -1972,7 +1992,7 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
               for (const version of yield* fileSystem.readDirectory(agentRoot)) {
                 const versionRoot = path.join(agentRoot, version);
                 for (const entry of yield* fileSystem.readDirectory(versionRoot)) {
-                  if (!/^(?:darwin|linux|windows)-(?:aarch64|x86_64)$/u.test(entry)) continue;
+                  if (!UNINSTALL_MANAGED_BINARY_PATTERN.test(entry)) continue;
                   yield* fileSystem.remove(path.join(versionRoot, entry), {
                     recursive: true,
                     force: true,

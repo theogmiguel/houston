@@ -145,12 +145,16 @@ export function extractTerminalLinks(line: string): TerminalLinkMatch[] {
     .toSorted((a, b) => a.start - b.start);
 }
 
+const TASK_KEY = /^HOU-[1-9][0-9]*$/u;
+
 export function isHoustonTaskKey(value: string): boolean {
-  return /^HOU-[1-9][0-9]*$/u.test(value);
+  return TASK_KEY.test(value);
 }
 
+const HTTP_URL_PREFIX = /^https?:\/\//iu;
+
 export function isTerminalUrl(value: string): boolean {
-  return /^https?:\/\//iu.test(value);
+  return HTTP_URL_PREFIX.test(value);
 }
 
 export function collectWrappedTerminalLinkLine(

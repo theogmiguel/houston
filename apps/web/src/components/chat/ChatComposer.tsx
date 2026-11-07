@@ -555,6 +555,8 @@ export interface ChatComposerProps {
 const NO_PROVIDER_SKILLS: ServerProvider["skills"] = [];
 const NO_PROVIDER_SLASH_COMMANDS: ServerProvider["slashCommands"] = [];
 
+const WHITESPACE_CHAR = /\s/;
+
 export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps) {
   const {
     composerDraftTarget,
@@ -2706,7 +2708,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     const needsLeadingSpace =
       (options?.ensureLeadingBoundary ?? false) &&
       cursor > 0 &&
-      !/\s/.test(prompt[cursor - 1] ?? "");
+      !WHITESPACE_CHAR.test(prompt[cursor - 1] ?? "");
     const rangeEnd = extendReplacementRangeForTrailingSpace(prompt, cursor, text);
     return applyPromptReplacement(
       cursor,
@@ -3083,7 +3085,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         .join(" ")} `;
       const snapshot = readComposerSnapshotStable();
       const cursor = snapshot.expandedCursor;
-      const leadingSpace = cursor > 0 && !/\s/.test(snapshot.value[cursor - 1] ?? "");
+      const leadingSpace = cursor > 0 && !WHITESPACE_CHAR.test(snapshot.value[cursor - 1] ?? "");
       const inserted =
         canAnswer &&
         applyPromptReplacementStable(

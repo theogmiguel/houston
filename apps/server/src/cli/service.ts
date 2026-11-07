@@ -316,6 +316,8 @@ const formatDropIns = (dropIns: ReadonlyArray<ServiceProtection.DropIn>) =>
 const confirm = (yes: boolean, message: string) =>
   yes ? Effect.succeed(true) : Prompt.run(Prompt.Confirm({ message, initial: false }));
 
+const SERVICE_PROTECT_COMMAND_PATTERN = /\.service$/;
+
 const serviceProtectCommand = Command.make("protect", {
   ...projectLocationFlags,
   undo: Flag.Boolean("undo").pipe(
@@ -386,7 +388,9 @@ const serviceProtectCommand = Command.make("protect", {
               "It adds systemd drop-in files and changes nothing else. Undo with `houston service protect --undo`.",
             ].join("\n"),
           );
-          const names = remote.map((unit) => unit.replace(/\.service$/, "")).join(" and ");
+          const names = remote
+            .map((unit) => unit.replace(SERVICE_PROTECT_COMMAND_PATTERN, ""))
+            .join(" and ");
           const protectRemote =
             remote.length > 0 &&
             (yield* confirm(

@@ -65,12 +65,14 @@ export interface SshChildEnvironmentOptions {
 
 const SSH_ASKPASS_DIR_NAME = "houston-ssh-askpass";
 
+const TRAILING_PATH_SEPARATORS = /[\\/]+$/u;
+
 function joinSshAskpassPath(
   directory: string,
   fileName: string,
   platform: NodeJS.Platform,
 ): string {
-  const trimmed = directory.replace(/[\\/]+$/u, "");
+  const trimmed = directory.replace(TRAILING_PATH_SEPARATORS, "");
   return platform === "win32" ? `${trimmed}\\${fileName}` : `${trimmed}/${fileName}`;
 }
 
@@ -235,22 +237,26 @@ export const buildSshChildEnvironment = Effect.fn("ssh/auth.buildSshChildEnviron
   };
 });
 
+const PUBLICKEY_DENIED =
+  /permission denied \((?:publickey|password|keyboard-interactive|hostbased|gssapi-with-mic)[^)]*\)/u;
+const AUTHENTICATION_FAILED = /authentication failed/u;
+const TOO_MANY_FAILURES = /too many authentication failures/u;
+
 export function isSshAuthFailure(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   const normalized = message.toLowerCase();
   return (
-    /permission denied \((?:publickey|password|keyboard-interactive|hostbased|gssapi-with-mic)[^)]*\)/u.test(
-      normalized,
-    ) ||
-    /authentication failed/u.test(normalized) ||
-    /too many authentication failures/u.test(normalized)
+    PUBLICKEY_DENIED.test(normalized) ||
+    AUTHENTICATION_FAILED.test(normalized) ||
+    TOO_MANY_FAILURES.test(normalized)
   );
 }
+
+const SIGNING_FAILURE_MESSAGE =
+  /sign_and_send_pubkey: signing failed(?: for [^\n]* from agent:|: (?:agent refused operation|communication with agent failed))/u;
 
 // A local agent signing failure cannot be remedied by the remote account password.
 export function isSshAgentSigningFailure(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return /sign_and_send_pubkey: signing failed(?: for [^\n]* from agent:|: (?:agent refused operation|communication with agent failed))/u.test(
-    message,
-  );
+  return SIGNING_FAILURE_MESSAGE.test(message);
 }

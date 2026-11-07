@@ -13,8 +13,10 @@ import {
   type SourceControlCliDiscoverySpec,
 } from "@houston-app/source-control-core/server/discovery";
 
+const LINE_BREAK = /\r?\n/;
+
 function parseAzureAuth(input: SourceControlAuthProbeInput) {
-  const account = input.stdout.trim().split(/\r?\n/)[0]?.trim();
+  const account = input.stdout.trim().split(LINE_BREAK)[0]?.trim();
 
   if (input.exitCode !== 0) {
     return providerAuth({

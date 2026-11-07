@@ -42,9 +42,11 @@ const PROJECT_READ_FILE_MAX_BYTES = 1024 * 1024;
 const fileRevision = (stat: NodeFS.Stats): string =>
   `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
 
+const TRAILING_DOTS_AND_SPACES = /[. ]+$/;
+
 // NTFS reaches .git through trailing dots/spaces, stream suffixes and GIT~1; compare uppercased names.
 const isGitMetadataName = (segment: string) => {
-  const name = (segment.split(":")[0] ?? "").replace(/[. ]+$/, "").toUpperCase();
+  const name = (segment.split(":")[0] ?? "").replace(TRAILING_DOTS_AND_SPACES, "").toUpperCase();
   return name === ".GIT" || name === "GIT~1";
 };
 

@@ -23,6 +23,10 @@ function sameMarks(left: readonly RichTextMark[], right: readonly RichTextMark[]
   return left.length === right.length && left.every((mark, index) => mark === right[index]);
 }
 
+const RUN_PATTERN = /^`+/;
+const WHITESPACE_CHAR = /\s/;
+const WORD_CHAR = /\w/;
+
 // Pieces keep source offsets, so callers can map parsed text back onto the
 // characters it came from; parsing only drops delimiters.
 function parseInlineMarkdownPieces(text: string): SourcePiece[] {
@@ -45,7 +49,7 @@ function parseInlineMarkdownPieces(text: string): SourcePiece[] {
       continue;
     }
     if (char === "`") {
-      const run = text.slice(index).match(/^`+/)![0];
+      const run = text.slice(index).match(RUN_PATTERN)![0];
       const close = text.indexOf(run, index + run.length);
       if (
         run.length === 1 &&
@@ -70,8 +74,10 @@ function parseInlineMarkdownPieces(text: string): SourcePiece[] {
     while (text[end] === char) end += 1;
     const before = text[index - 1] ?? "";
     const after = text[end] ?? "";
-    const canClose = before !== "" && !/\s/.test(before) && (char !== "_" || !/\w/.test(after));
-    const canOpen = after !== "" && !/\s/.test(after) && (char !== "_" || !/\w/.test(before));
+    const canClose =
+      before !== "" && !WHITESPACE_CHAR.test(before) && (char !== "_" || !WORD_CHAR.test(after));
+    const canOpen =
+      after !== "" && !WHITESPACE_CHAR.test(after) && (char !== "_" || !WORD_CHAR.test(before));
     while (index < end) {
       const top = stack.at(-1);
       const opensNestedBold =

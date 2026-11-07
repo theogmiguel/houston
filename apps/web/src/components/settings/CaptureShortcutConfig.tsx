@@ -22,6 +22,8 @@ import { useSnapShotShortcutRecorder } from "./useSnapShotShortcutRecorder";
 
 const DEFAULT_SHORTCUT = parseKeybindingShortcut("Ctrl+Shift+2")!;
 
+const SHORTCUT_PATTERN = /super/gi;
+
 export function CaptureShortcutConfig({
   state,
   disabled = false,
@@ -51,7 +53,8 @@ export function CaptureShortcutConfig({
   const shortcutKeys = (keys ?? preview?.shortcut)?.trim();
   const recorder = useSnapShotShortcutRecorder({
     shortcut: shortcutKeys
-      ? (parseKeybindingShortcut(shortcutKeys.replace(/super/gi, "meta")) ?? DEFAULT_SHORTCUT)
+      ? (parseKeybindingShortcut(shortcutKeys.replace(SHORTCUT_PATTERN, "meta")) ??
+        DEFAULT_SHORTCUT)
       : DEFAULT_SHORTCUT,
     disabled: busy,
     allowModifierPairs: false,

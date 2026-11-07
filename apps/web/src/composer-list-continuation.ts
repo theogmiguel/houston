@@ -20,10 +20,15 @@ interface ParsedListMarker {
   contentColumn: number;
 }
 
+const LEADING_INDENT = /^[ \t]*/;
+const ORDERED_PATTERN = /^(\d+)([.)])((?:[ \t]+)|\s*$)/;
+const TASK_PATTERN = /^-(\s)\[[ xX]\]((?:[ \t]+)|\s*$)/;
+const BULLET_LIST_MARKER = /^([-*+])((?:[ \t]+)|\s*$)/;
+
 function parseListMarker(line: string): ParsedListMarker | null {
-  const indent = line.match(/^[ \t]*/)?.[0] ?? "";
+  const indent = line.match(LEADING_INDENT)?.[0] ?? "";
   const rest = line.slice(indent.length);
-  const ordered = rest.match(/^(\d+)([.)])((?:[ \t]+)|\s*$)/);
+  const ordered = rest.match(ORDERED_PATTERN);
   if (ordered && ordered[1] !== undefined && ordered[2] !== undefined) {
     const space = ordered[3] ?? "";
     return {
@@ -39,7 +44,7 @@ function parseListMarker(line: string): ParsedListMarker | null {
     };
   }
   // The checkbox is item content, so a task's content starts after "- ".
-  const task = rest.match(/^-(\s)\[[ xX]\]((?:[ \t]+)|\s*$)/);
+  const task = rest.match(TASK_PATTERN);
   if (task && task[1] !== undefined) {
     return {
       marker: { kind: "task", indent, space: task[2] ?? "" },
@@ -47,7 +52,7 @@ function parseListMarker(line: string): ParsedListMarker | null {
       contentColumn: contentColumn(indent, 1, task[1]),
     };
   }
-  const bullet = rest.match(/^([-*+])((?:[ \t]+)|\s*$)/);
+  const bullet = rest.match(BULLET_LIST_MARKER);
   if (bullet && bullet[1] !== undefined) {
     const space = bullet[2] ?? "";
     return {
@@ -303,6 +308,8 @@ export function listIndentForTab(
   return { start: line.start, end: line.start, replacement: "  ", cursorAfter: start + 2 };
 }
 
+const INDENT_UNIT = /^(?:\t| {1,2})/;
+
 export function listOutdentForTab(
   value: string,
   start: number,
@@ -317,7 +324,7 @@ export function listOutdentForTab(
   const { marker } = parsed;
   const parent = parentMarker(value, line.start, marker, tokens);
   // With no parent above, undo one step of Tab's two-space fallback.
-  const indent = parent?.indent ?? marker.indent.replace(/^(?:\t| {1,2})/, "");
+  const indent = parent?.indent ?? marker.indent.replace(INDENT_UNIT, "");
   const continues =
     parent?.kind === "ordered" &&
     marker.kind === "ordered" &&

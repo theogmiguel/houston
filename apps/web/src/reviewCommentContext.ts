@@ -49,10 +49,12 @@ interface DiffReviewLine {
   readonly content: string;
 }
 
+const BACKTICK_RUN = /`+/g;
+
 export function formatReviewCommentFence(language: string, contents: string): string {
   const longestBacktickRun = Math.max(
     0,
-    ...Array.from(contents.matchAll(/`+/g), (match) => match[0].length),
+    ...Array.from(contents.matchAll(BACKTICK_RUN), (match) => match[0].length),
   );
   const fence = "`".repeat(Math.max(3, longestBacktickRun + 1));
   return [`${fence}${language}`, contents.trimEnd(), fence].join("\n");

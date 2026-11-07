@@ -403,15 +403,18 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
   );
 }
 
+const TRAILING_PATH_SEPARATORS = /[\\/]+$/;
+const PROJECT_SUBDIRECTORY_PATTERN = /^[\\/]/;
+
 /**
  * A project can be rooted below its repository's top folder. The clone lands
  * at the top, so copied files keep the same path below it.
  */
 function projectSubdirectory(repositoryRoot: string | undefined, workspaceRoot: string) {
   if (!repositoryRoot) return "";
-  const prefix = repositoryRoot.replace(/[\\/]+$/, "");
+  const prefix = repositoryRoot.replace(TRAILING_PATH_SEPARATORS, "");
   const rest = workspaceRoot.slice(prefix.length);
-  return workspaceRoot.startsWith(prefix) && /^[\\/]/.test(rest)
+  return workspaceRoot.startsWith(prefix) && PROJECT_SUBDIRECTORY_PATTERN.test(rest)
     ? rest.slice(1).replaceAll("\\", "/")
     : "";
 }

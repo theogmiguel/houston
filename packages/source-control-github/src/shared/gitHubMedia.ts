@@ -21,6 +21,8 @@ const REPOSITORY_FILE_PATTERN = /^\/([^/]+)\/([^/]+)\/(?:raw|blob)\/(.*[^/])$/u;
 /** GitHub rejects 40-hex branch and tag names, and serves no SHA-256 repositories. */
 const COMMIT_SHA_PATTERN = /^[0-9a-f]{40}$/u;
 
+const UNSAFE_FILE_NAME_CHARACTER = /[\p{Cc}\\/]/gu;
+
 function fileName(fetchUrl: string): string {
   const segment = new URL(fetchUrl).pathname.split("/").pop() ?? "";
   let decoded: string;
@@ -29,7 +31,7 @@ function fileName(fetchUrl: string): string {
   } catch {
     decoded = segment;
   }
-  const name = decoded.replace(/[\p{Cc}\\/]/gu, "");
+  const name = decoded.replace(UNSAFE_FILE_NAME_CHARACTER, "");
   return name.length > 0 ? name : "github-media";
 }
 

@@ -173,13 +173,15 @@ const collectStderr = collectStdout;
 
 const decodeTailscaleStatusJson = Schema.decodeEffect(Schema.fromJsonString(TailscaleStatusJson));
 
+const TRAILING_DOT = /\.$/u;
+
 function normalizeMagicDnsName(status: TailscaleStatusJson): string | null {
   const dnsName = status.Self?.DNSName;
   if (typeof dnsName !== "string") {
     return null;
   }
 
-  const normalized = dnsName.trim().replace(/\.$/u, "");
+  const normalized = dnsName.trim().replace(TRAILING_DOT, "");
   return normalized.length > 0 ? normalized : null;
 }
 
@@ -523,6 +525,9 @@ const decodeTailscaleServeStatusJson = Schema.decodeUnknownOption(
   Schema.fromJsonString(Schema.NullOr(TailscaleServeStatusJson)),
 );
 
+const MAPPED_PATTERN = /^::ffff:([\da-f]{1,4}):([\da-f]{1,4})$/u;
+const IPV4_ADDRESS = /^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?!$)|$)){4}$/u;
+
 /**
  * Whether a proxy to `hostname` dials `bindHost`. `0.0.0.0` reaches 127.0.0.1. `[::]` may reach
  * either loopback, since Go dials `::` and then 0.0.0.0 (golang/go#18806), and a name such as
@@ -534,7 +539,7 @@ const reaches = (hostname: string, bindHost: string): "exact" | "either" | undef
   const bracketed = address.includes(":") ? URL.parse(`http://[${address}]`) : null;
   if (bracketed) address = normalizeHostname(bracketed.hostname);
   // An IPv4-mapped address can be written as hex, such as ::ffff:7f00:1 for 127.0.0.1.
-  const mapped = /^::ffff:([\da-f]{1,4}):([\da-f]{1,4})$/u.exec(address);
+  const mapped = MAPPED_PATTERN.exec(address);
   if (mapped !== null) {
     const high = Number.parseInt(mapped[1]!, 16);
     const low = Number.parseInt(mapped[2]!, 16);
@@ -543,31 +548,34 @@ const reaches = (hostname: string, bindHost: string): "exact" | "either" | undef
     address = address.slice("::ffff:".length);
   }
   // Strict, as Go's ParseIP is; anything else, such as `127.1` or `box.1`, goes to the resolver.
-  const literal =
-    address.includes(":") ||
-    /^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?!$)|$)){4}$/u.test(address);
+  const literal = address.includes(":") || IPV4_ADDRESS.test(address);
   if (!literal) return "either";
   if (address === "::")
     return bindHost === "127.0.0.1" || bindHost === "::1" ? "either" : undefined;
   return (address === "0.0.0.0" ? "127.0.0.1" : address) === bindHost ? "exact" : undefined;
 };
 
+const DIGITS_ONLY = /^\d+$/u;
+const PROXY_URL_PREFIX = /^(?:https?:\/\/|unix:)/u;
+
 /** The URL Tailscale's proxy dials for a handler's `Proxy`, expanded as its `expandProxyArg` does. */
 const expandProxy = (proxy: string) =>
-  /^\d+$/u.test(proxy)
+  DIGITS_ONLY.test(proxy)
     ? `http://127.0.0.1:${proxy}`
     : proxy.startsWith("https+insecure://")
       ? `https://${proxy.slice("https+insecure://".length)}`
-      : /^(?:https?:\/\/|unix:)/u.test(proxy)
+      : PROXY_URL_PREFIX.test(proxy)
         ? proxy
         : `http://${proxy}`;
+
+const PROXY_URL = /^(https?|tcp):\/\/(?:[^@/?#]*@)?(\[[^\]]*\]|[^/?#:]*)(?::(\d*))?/iu;
 
 /**
  * The host and port a proxy target dials, read as Go's url.Parse reads it rather than as a WHATWG
  * URL, which rejects `box.1` and rewrites `127.1`; none for a Unix socket.
  */
 const dialedHostPort = (url: string) => {
-  const match = /^(https?|tcp):\/\/(?:[^@/?#]*@)?(\[[^\]]*\]|[^/?#:]*)(?::(\d*))?/iu.exec(url);
+  const match = PROXY_URL.exec(url);
   if (match === null) return undefined;
   const [, scheme = "", host = "", port] = match;
   return { host, port: port || (scheme.toLowerCase() === "https" ? "443" : "80") };

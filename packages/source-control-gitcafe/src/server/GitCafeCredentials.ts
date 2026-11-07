@@ -89,8 +89,10 @@ export function environmentToken(
   return env.CAFE_TOKEN?.trim() || null;
 }
 
+const LINE_BREAK = /\r?\n/u;
+
 function credentialPassword(output: string): string | null {
-  for (const line of output.split(/\r?\n/u)) {
+  for (const line of output.split(LINE_BREAK)) {
     if (line.startsWith("password=")) return line.slice("password=".length).trim() || null;
   }
   return null;

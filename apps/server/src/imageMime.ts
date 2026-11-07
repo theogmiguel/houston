@@ -107,6 +107,8 @@ export function parseBase64DataUrl(
   return { mimeType, base64 };
 }
 
+const EXTENSION_MATCH_PATTERN = /\.([a-z0-9]{1,8})$/i;
+
 export function inferImageExtension(input: { mimeType: string; fileName?: string }): string {
   const key = input.mimeType.toLowerCase();
   const fromMime = Object.hasOwn(IMAGE_EXTENSION_BY_MIME_TYPE, key)
@@ -122,7 +124,7 @@ export function inferImageExtension(input: { mimeType: string; fileName?: string
   }
 
   const fileName = input.fileName?.trim() ?? "";
-  const extensionMatch = /\.([a-z0-9]{1,8})$/i.exec(fileName);
+  const extensionMatch = EXTENSION_MATCH_PATTERN.exec(fileName);
   const fileNameExtension = extensionMatch ? `.${extensionMatch[1]!.toLowerCase()}` : "";
   if (SAFE_IMAGE_FILE_EXTENSIONS.has(fileNameExtension)) {
     return fileNameExtension;

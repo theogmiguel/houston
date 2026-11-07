@@ -384,19 +384,22 @@ export const writeBatchedMessages = Effect.fnUntraced(function* (
   yield* flush;
 });
 
+const PROVIDER_LOG_FILE_SUFFIX = /\.log(?:\.\d+)?$/u;
+const PROVIDER_LOG_LINE_PREFIX = /^\[[^\]\r\n]+\] (?:NTIVE|CANON|ORCH): /u;
+
 async function isProviderLogFile(
   filePath: string,
   fileName: string,
   filePrefix: string,
 ): Promise<boolean> {
-  if (!/\.log(?:\.\d+)?$/u.test(fileName)) return false;
+  if (!PROVIDER_LOG_FILE_SUFFIX.test(fileName)) return false;
   if (fileName.startsWith(filePrefix)) return true;
 
   const descriptor = await NodeFS.promises.open(filePath, "r");
   try {
     const header = Buffer.alloc(256);
     const { bytesRead } = await descriptor.read(header, 0, header.byteLength, 0);
-    return /^\[[^\]\r\n]+\] (?:NTIVE|CANON|ORCH): /u.test(header.toString("utf8", 0, bytesRead));
+    return PROVIDER_LOG_LINE_PREFIX.test(header.toString("utf8", 0, bytesRead));
   } finally {
     await descriptor.close();
   }

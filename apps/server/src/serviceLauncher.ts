@@ -90,6 +90,8 @@ const MANAGED_SERVICE_ENV_NAMES = new Set([
   SERVICE_LAUNCHER_CONTEXT_ENV,
 ]);
 
+const ENVIRONMENT_VARIABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
 export async function readServiceEnvironment(
   baseDir: string,
   inherited: NodeJS.ProcessEnv = process.env,
@@ -104,7 +106,7 @@ export async function readServiceEnvironment(
   }
   for (const [name, value] of Object.entries(NodeUtil.parseEnv(contents))) {
     if (
-      /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) &&
+      ENVIRONMENT_VARIABLE_NAME.test(name) &&
       !MANAGED_SERVICE_ENV_NAMES.has(name.toUpperCase())
     ) {
       environment[name] = value;

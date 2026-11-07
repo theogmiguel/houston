@@ -4841,6 +4841,8 @@ export interface ClaudeAdapterV2Options {
   };
 }
 
+const MODEL_PATTERN = /\[1m\]$/i;
+
 export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
   adapterOptions: ClaudeAdapterV2Options,
 ) {
@@ -5018,7 +5020,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
   ) {
     if (adapterOptions.settings.autoCompactWindow !== "")
       return adapterOptions.settings.autoCompactWindow;
-    const model = compileClaudeModelSelection(modelSelection).apiModelId.replace(/\[1m\]$/i, "");
+    const model = compileClaudeModelSelection(modelSelection).apiModelId.replace(MODEL_PATTERN, "");
     const windowFrom = (settings: unknown) => {
       if (typeof settings !== "object" || settings === null) return undefined;
       const models = Reflect.get(settings, "modelSettings");

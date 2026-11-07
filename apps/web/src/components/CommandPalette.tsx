@@ -407,6 +407,8 @@ function CommandPaletteDialog(props: {
   );
 }
 
+const NON_ALPHANUMERIC_RUN = /[^a-z0-9]+/u;
+
 function OpenCommandPaletteDialog(props: {
   readonly openIntent: CommandPaletteOpenIntent | null;
   readonly setOpen: (open: boolean) => void;
@@ -1595,10 +1597,7 @@ function OpenCommandPaletteDialog(props: {
       "repo",
       "git",
       ...sourceControlClients.definitions.flatMap((definition) =>
-        definition.pickerLabel
-          .toLowerCase()
-          .split(/[^a-z0-9]+/u)
-          .filter(Boolean),
+        definition.pickerLabel.toLowerCase().split(NON_ALPHANUMERIC_RUN).filter(Boolean),
       ),
       "url",
       "environment",
@@ -1644,7 +1643,7 @@ function OpenCommandPaletteDialog(props: {
               definition.changeRequest.plural,
               `${shortLabel}s`,
               shortLabel,
-              ...definition.label.toLowerCase().split(/[^a-z0-9]+/u),
+              ...definition.label.toLowerCase().split(NON_ALPHANUMERIC_RUN),
             ].filter(Boolean);
           }),
         ),

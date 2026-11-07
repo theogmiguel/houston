@@ -78,8 +78,10 @@ interface Lease {
 }
 
 const catalogId = (platform: DevicePlatform, model: string) => `simlock:${platform}:${model}`;
+const SIMLOCK_DEVICE_ID = /^simlock:(ios|android):(.+)$/;
+
 const parseCatalogId = (id: string) => {
-  const match = /^simlock:(ios|android):(.+)$/.exec(id);
+  const match = SIMLOCK_DEVICE_ID.exec(id);
   return match ? { platform: match[1] as DevicePlatform, model: match[2]! } : null;
 };
 const platformVersion = (platform: DevicePlatform, runtime: string | undefined) =>
@@ -94,12 +96,14 @@ const sameOrigin = (left: string, right: string) => {
   }
 };
 
+const TRAILING_SLASHES = /\/+$/;
+
 /**
  * The gateway and token this machine's agent-device uses, from agent-device's own remote-daemon
  * variables, which Simlock tells its clients to set. Null unless they point at a Simlock gateway.
  */
 export const machineSimlockToken = (environment: NodeJS.ProcessEnv) => {
-  const base = environment.AGENT_DEVICE_DAEMON_BASE_URL?.trim().replace(/\/+$/, "");
+  const base = environment.AGENT_DEVICE_DAEMON_BASE_URL?.trim().replace(TRAILING_SLASHES, "");
   const agentToken = environment.AGENT_DEVICE_DAEMON_AUTH_TOKEN?.trim();
   if (!base?.endsWith(AGENT_DEVICE_PATH) || !agentToken) return null;
   const gatewayUrl = base.slice(0, -AGENT_DEVICE_PATH.length);
@@ -143,6 +147,8 @@ const decodeIdentity = Schema.decodeUnknownEffect(
   Schema.Struct({ name: Schema.String, role: Schema.String }),
 );
 
+const TRAILING_SLASH = /\/$/;
+
 /** Who the gateway says a token is, via GET /v1/identity. */
 export const simlockIdentity = Effect.fn("SimlockDeviceHost.identity")(function* (
   gatewayUrl: string,
@@ -151,7 +157,7 @@ export const simlockIdentity = Effect.fn("SimlockDeviceHost.identity")(function*
   const http = yield* HttpClient.HttpClient;
   return yield* http
     .execute(
-      HttpClientRequest.get(`${gatewayUrl.replace(/\/$/, "")}/v1/identity`).pipe(
+      HttpClientRequest.get(`${gatewayUrl.replace(TRAILING_SLASH, "")}/v1/identity`).pipe(
         HttpClientRequest.bearerToken(agentToken),
       ),
     )
@@ -170,6 +176,9 @@ export type AgentDeviceCli = Effect.Effect<
   DeviceHost.DeviceHostError | NodeRuntimeUnavailableError
 >;
 
+const AGENT_ENVIRONMENT_PATTERN =
+  /^AGENT_DEVICE_(DAEMON_BASE_URL|DAEMON_AUTH_TOKEN|CONFIG|STATE_DIR|SESSION)$/;
+
 export const make = Effect.fn("SimlockDeviceHost.make")(function* (
   config: SimlockDeviceHostConfig,
   agentDeviceCli: AgentDeviceCli,
@@ -182,7 +191,7 @@ export const make = Effect.fn("SimlockDeviceHost.make")(function* (
   const services = yield* Effect.context<FileSystem.FileSystem | Path.Path>();
   const environment = yield* HostProcess.Environment;
   const hostId = config.id;
-  const gateway = config.gatewayUrl.replace(/\/$/, "");
+  const gateway = config.gatewayUrl.replace(TRAILING_SLASH, "");
   const agentToken = resolveSimlockToken(config.gatewayUrl, config, environment)?.agentToken ?? "";
   const agentDeviceUrl = `${gateway}/v1/agent-device`;
   const hostDir = path.join(server.stateDir, "device", "simlock", hostId);
@@ -239,10 +248,7 @@ export const make = Effect.fn("SimlockDeviceHost.make")(function* (
       AGENT_DEVICE_NO_UPDATE_NOTIFIER: "1",
       NO_COLOR: "1",
       FORCE_COLOR: "0",
-    }).filter(
-      ([name]) =>
-        !/^AGENT_DEVICE_(DAEMON_BASE_URL|DAEMON_AUTH_TOKEN|CONFIG|STATE_DIR|SESSION)$/.test(name),
-    ),
+    }).filter(([name]) => !AGENT_ENVIRONMENT_PATTERN.test(name)),
   );
 
   /** Runs Houston's own agent-device CLI against the lease's session; its failure message is the reason. */

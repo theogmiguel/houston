@@ -61,6 +61,8 @@ export function cursorUsageResponseToLimits(
     : makeUnavailableUsageLimits({ checkedAt, reason: "unsupported" });
 }
 
+const TRAILING_SLASH = /\/$/;
+
 export const readCursorUsageLimits = Effect.fn("readCursorUsageLimits")(function* (
   settings: Pick<CursorSettings, "apiEndpoint">,
   environment: NodeJS.ProcessEnv = process.env,
@@ -75,7 +77,7 @@ export const readCursorUsageLimits = Effect.fn("readCursorUsageLimits")(function
       settings.apiEndpoint?.trim() ||
       environment.CURSOR_API_ENDPOINT?.trim() ||
       DEFAULT_CURSOR_API_ENDPOINT
-    ).replace(/\/$/, "");
+    ).replace(TRAILING_SLASH, "");
     let token = environment.CURSOR_AUTH_TOKEN?.trim();
     // An explicit API key can name a different account from the stored login.
     if (!token && environment.CURSOR_API_KEY?.trim()) {

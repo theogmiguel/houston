@@ -357,8 +357,10 @@ const fileManagerRevealKindForPlatform = Effect.fn(
   return hasGraphicalLinuxSession(env) ? "files" : undefined;
 });
 
+const LEADING_SLASHES = /^\/+/;
+
 function resolveWslFileManagerPath(target: string, distroName: string): string {
-  const relativePath = target.replace(/^\/+/, "").replaceAll("/", "\\");
+  const relativePath = target.replace(LEADING_SLASHES, "").replaceAll("/", "\\");
   return `\\\\wsl.localhost\\${distroName}${relativePath.length > 0 ? `\\${relativePath}` : ""}`;
 }
 

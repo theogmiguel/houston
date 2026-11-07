@@ -64,6 +64,8 @@ const uploadRepository = (request: SourceControlMediaRequest) => {
   return repository !== undefined && REPOSITORY_PATTERN.test(repository) ? repository : undefined;
 };
 
+const IMAGE_SOURCE_ATTRIBUTE = /<img\b[^>]*\ssrc\s*=\s*(["'])(.*?)\1/giu;
+
 export const make = Effect.gen(function* () {
   const credentials = yield* GitHubCredentials.GitHubCredentials;
   const rest = yield* GitHubRest.GitHubRest;
@@ -126,7 +128,7 @@ export const make = Effect.gen(function* () {
       })
       .pipe(Effect.orElseSucceed(() => null));
     if (rendered === null || rendered.status !== 200 || rendered.truncated) return null;
-    for (const match of rendered.body.matchAll(/<img\b[^>]*\ssrc\s*=\s*(["'])(.*?)\1/giu)) {
+    for (const match of rendered.body.matchAll(IMAGE_SOURCE_ATTRIBUTE)) {
       const signed = URL.parse(match[2]?.replaceAll("&amp;", "&") ?? "");
       if (
         signed?.protocol === "https:" &&

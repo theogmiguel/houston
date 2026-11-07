@@ -22,8 +22,10 @@ function agentDeviceTargetArgs(device: DeviceSummary): ReadonlyArray<string> {
     : ["--platform", "android", "--serial", device.id];
 }
 
+const SHELL_WORD_PATTERN = /^[a-zA-Z0-9_./:-]+$/;
+
 const shellWord = (value: string) =>
-  /^[a-zA-Z0-9_./:-]+$/.test(value) ? value : "'" + value.replaceAll("'", "'\"'\"'") + "'";
+  SHELL_WORD_PATTERN.test(value) ? value : "'" + value.replaceAll("'", "'\"'\"'") + "'";
 
 /** `targetArgs` are the flags the command still needs; a bound launcher needs none. */
 export function agentDeviceQuickStart(

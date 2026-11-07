@@ -128,6 +128,9 @@ function MarkdownCodeBlockTitleContent({
   );
 }
 
+const SHELL_LANGUAGE = /^(?:sh|bash|zsh|fish|shell|powershell|pwsh)$/;
+const INVISIBLE_CHARACTER = /[\p{Cc}\p{Cf}]/u;
+
 export function MarkdownCodeBlock({
   code,
   language,
@@ -170,13 +173,13 @@ export function MarkdownCodeBlock({
   const canRun =
     onRunShellCommand !== undefined &&
     !isStreaming &&
-    /^(?:sh|bash|zsh|fish|shell|powershell|pwsh)$/.test(language) &&
+    SHELL_LANGUAGE.test(language) &&
     code.endsWith("\n") &&
     command.length > 0 &&
     !command.endsWith("\\") &&
     // Control and invisible format characters (bidi overrides, zero-width) can
     // make the rendered command differ from what the terminal would receive.
-    !/[\p{Cc}\p{Cf}]/u.test(code.slice(0, -1));
+    !INVISIBLE_CHARACTER.test(code.slice(0, -1));
 
   const handleCopy = () => copyToClipboard(code);
 

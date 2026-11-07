@@ -141,6 +141,8 @@ function LocalVersionStatusLabel() {
   );
 }
 
+const DIGITS_ONLY = /^\d+$/u;
+
 /** Environments lists the machines this app connects to; access covers who may reach this one. */
 export function ConnectionsSettings({ view }: { readonly view: "environments" | "access" }) {
   const hostBridge = window.hostBridge;
@@ -328,7 +330,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
   const trimmedTailscaleServePortInput = tailscaleServePortInput.trim();
   const parsedTailscaleServePort = Number(trimmedTailscaleServePortInput);
   const isTailscaleServePortValid =
-    /^\d+$/u.test(trimmedTailscaleServePortInput) &&
+    DIGITS_ONLY.test(trimmedTailscaleServePortInput) &&
     Number.isInteger(parsedTailscaleServePort) &&
     parsedTailscaleServePort >= 1 &&
     parsedTailscaleServePort <= 65_535;

@@ -29,6 +29,8 @@ function accountLabel(account: LimitAccount): string {
   );
 }
 
+const RESETS_IN_PREFIX = /^resets in /;
+
 export function UsagePlanLimits({
   selectedEnvironmentIds,
   hiddenProviders,
@@ -146,7 +148,7 @@ export function UsagePlanLimits({
                       {remaining}%
                     </span>
                     <span className="truncate text-xs text-[var(--houston)]">
-                      {resets ? resets.replace(/^resets in /, "Resets in ") : ""}
+                      {resets ? resets.replace(RESETS_IN_PREFIX, "Resets in ") : ""}
                       {resets && pace ? " · " : ""}
                       {pace ? PACE_TEXT[pace] : ""}
                     </span>

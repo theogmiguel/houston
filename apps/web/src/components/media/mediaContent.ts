@@ -6,14 +6,17 @@ export function resolveProtocolRelativeMediaUrl(src: string): string {
   return `${protocol}${src}`;
 }
 
+const PERCENT_ESCAPE_CAPTURE = /(%[0-9a-f]{2})/i;
+const PERCENT_ESCAPE = /^%[0-9a-f]{2}$/i;
+
 // Data URL escapes are raw bytes, not UTF-8, so `%89` must stay one byte.
 function decodePercentBytes(payload: string) {
   const encoder = new TextEncoder();
   return Uint8Array.from(
     payload
-      .split(/(%[0-9a-f]{2})/i)
+      .split(PERCENT_ESCAPE_CAPTURE)
       .flatMap((part) =>
-        /^%[0-9a-f]{2}$/i.test(part)
+        PERCENT_ESCAPE.test(part)
           ? [Number.parseInt(part.slice(1), 16)]
           : [...encoder.encode(part)],
       ),
@@ -40,8 +43,10 @@ function readDataUrlBlob(src: string): Blob {
   }
 }
 
+const DATA_URL_PREFIX = /^data:/i;
+
 async function readMediaBlob(src: string): Promise<Blob> {
-  if (/^data:/i.test(src)) return readDataUrlBlob(src);
+  if (DATA_URL_PREFIX.test(src)) return readDataUrlBlob(src);
   let response: Response;
   try {
     response = await fetch(src);

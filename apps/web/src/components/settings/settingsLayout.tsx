@@ -576,6 +576,8 @@ export function SettingResetButton({
   );
 }
 
+const LEADING_HASH = /^#/;
+
 export function SettingsPageContainer({
   children,
   className,
@@ -593,7 +595,7 @@ export function SettingsPageContainer({
   const highlightTarget = useLocation({
     select: (location) => location.state.settingsTargetHighlight !== false,
   });
-  const targetId = hash.replace(/^#/, "") || null;
+  const targetId = hash.replace(LEADING_HASH, "") || null;
   const clearTargetHash = () => {
     void navigate({
       hash: "",

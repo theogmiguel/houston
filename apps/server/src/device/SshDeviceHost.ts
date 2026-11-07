@@ -88,6 +88,8 @@ const bootstrap = (
     ),
   );
 
+const EXPLAIN_WINDOWS_HOST_PATTERN = /(?:^|\s)Windows_NT(?:\s|$)/u;
+
 // cmd expands only %OS% and PowerShell only $env:OS; POSIX shells expand neither to Windows_NT.
 const explainWindowsHost = Effect.fn("SshDeviceHost.explainWindowsHost")(function* (
   config: SshDeviceHostConfig,
@@ -107,7 +109,7 @@ const explainWindowsHost = Effect.fn("SshDeviceHost.explainWindowsHost")(functio
     remoteCommandArgs: ["echo %OS% $env:OS"],
     timeoutMs: 15_000,
   }).pipe(
-    Effect.map(({ stdout }) => /(?:^|\s)Windows_NT(?:\s|$)/u.test(stdout)),
+    Effect.map(({ stdout }) => EXPLAIN_WINDOWS_HOST_PATTERN.test(stdout)),
     Effect.orElseSucceed(() => false),
   );
   if (!windows) {

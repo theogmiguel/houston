@@ -36,6 +36,9 @@ import * as HeadlessChrome from "./headlessChrome.ts";
 import * as PreviewBrowser from "../preview/PreviewBrowser.ts";
 import * as PreviewBrowserHost from "../preview/PreviewBrowserHost.ts";
 
+const WHITESPACE_CHAR = /\s/;
+const SVG_ROOT_OPENING = /^<svg[ \t\r\n/>]/;
+
 const MIB = 1024 * 1024;
 const MAX_IMAGE_BYTES = 10 * MIB;
 const MAX_PAGE_BYTES = 25 * MIB;
@@ -168,15 +171,19 @@ const findLocalImages = (html: string) =>
     return span ? [{ start: span[0], end: span[1], path: html.slice(span[0], span[1]) }] : [];
   });
 
+const WINDOWS_DRIVE_PREFIX = /^[a-z]:/i;
+
 // Inside a JS string literal a Windows path's backslashes are escaped.
 const filePathFor = (reference: string) =>
-  /^[a-z]:/i.test(reference) ? reference.replaceAll("\\\\", "\\") : reference;
+  WINDOWS_DRIVE_PREFIX.test(reference) ? reference.replaceAll("\\\\", "\\") : reference;
 
 const dataUriPrefix = (path: string) =>
   `data:${IMAGE_MIME_TYPES[path.slice(path.lastIndexOf(".") + 1).toLowerCase()] ?? "application/octet-stream"};base64,`;
 
 const latin1 = (bytes: Uint8Array, start: number, end: number) =>
   String.fromCharCode(...bytes.subarray(start, end));
+
+const AVIF_BRAND = /^ftyp(?:avif|avis|mif1)$/;
 
 // Validate bytes, not filenames, so renamed files or symlinks cannot inline secrets.
 const isImageBytes = (bytes: Uint8Array) => {
@@ -188,7 +195,7 @@ const isImageBytes = (bytes: Uint8Array) => {
     head.startsWith("\0\0\x01\0") ||
     (head.startsWith("BM") && head.slice(6, 10) === "\0\0\0\0") ||
     (head.startsWith("RIFF") && head.slice(8, 12) === "WEBP") ||
-    /^ftyp(?:avif|avis|mif1)$/.test(head.slice(4, 12))
+    AVIF_BRAND.test(head.slice(4, 12))
   ) {
     return true;
   }
@@ -203,12 +210,12 @@ const after = (text: string, token: string, from: number) => {
 const hasSvgRoot = (text: string) => {
   let at = 0;
   while (at !== -1) {
-    while (/\s/.test(text.charAt(at))) at += 1;
+    while (WHITESPACE_CHAR.test(text.charAt(at))) at += 1;
     if (text.startsWith("<?", at)) at = after(text, "?>", at + 2);
     else if (text.startsWith("<!--", at)) at = after(text, "-->", at + 4);
     else if (text.slice(at, at + 9).toLowerCase() === "<!doctype") at = afterDoctype(text, at + 9);
     // XML names are case-sensitive, and only these characters can end one here.
-    else return /^<svg[ \t\r\n/>]/.test(text.slice(at, at + 5));
+    else return SVG_ROOT_OPENING.test(text.slice(at, at + 5));
   }
   return false;
 };

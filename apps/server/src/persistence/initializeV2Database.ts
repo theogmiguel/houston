@@ -24,6 +24,8 @@ const isProcessAlive = (pid: number): boolean => {
   }
 };
 
+const COPY_PATTERN = /^\.v2-import-(?:(\d+)-)?[A-Za-z0-9]{6}$/;
+
 // Legacy names have no PID; newer copies stay while their process is alive.
 const removeAbandonedCopies = Effect.fn("removeAbandonedCopies")(function* (directory: string) {
   const fs = yield* FileSystem.FileSystem;
@@ -35,7 +37,7 @@ const removeAbandonedCopies = Effect.fn("removeAbandonedCopies")(function* (dire
     ),
   );
   for (const entry of entries) {
-    const copy = /^\.v2-import-(?:(\d+)-)?[A-Za-z0-9]{6}$/.exec(entry);
+    const copy = COPY_PATTERN.exec(entry);
     if (copy === null || (copy[1] !== undefined && isProcessAlive(Number(copy[1])))) continue;
     yield* fs.remove(path.join(directory, entry), { recursive: true });
   }

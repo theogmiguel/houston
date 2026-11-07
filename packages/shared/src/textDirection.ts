@@ -29,6 +29,8 @@ function wordDirection(word: string): TextDirection | undefined {
   return RTL_LETTER.test(letter) ? "rtl" : "ltr";
 }
 
+const WHITESPACE_RUN = /\s+/;
+
 /**
  * `dir="auto"` misreads Arabic prose that opens with an English term.
  * Each sentence follows its main language by word count, and the text follows most of its
@@ -38,8 +40,10 @@ function wordDirection(word: string): TextDirection | undefined {
 export function textDirection(text: string): TextDirection | undefined {
   if (!RTL_LETTER.test(text)) return LETTER.test(text) ? "ltr" : undefined;
   return majority(
-    text.split(SENTENCE_END).map((sentence) => majority(sentence.split(/\s+/).map(wordDirection))),
-    () => majority(text.split(/\s+/).map(wordDirection)),
+    text
+      .split(SENTENCE_END)
+      .map((sentence) => majority(sentence.split(WHITESPACE_RUN).map(wordDirection))),
+    () => majority(text.split(WHITESPACE_RUN).map(wordDirection)),
   );
 }
 

@@ -2,9 +2,12 @@ import * as DateTime from "effect/DateTime";
 
 import { LATEST_DATE_MS, type MuseSubscriptionUsage } from "./protocol.ts";
 
+const HTTP_429 = /\b429\b/;
+const QUOTA_MESSAGE = /quota|usage limit/i;
+
 /** Credential proxies may omit error.quota from 429 refusals; inspect text too. */
 export function isMuseUsageLimitFailure(message: string | undefined): boolean {
-  return message !== undefined && /\b429\b/.test(message) && /quota|usage limit/i.test(message);
+  return message !== undefined && HTTP_429.test(message) && QUOTA_MESSAGE.test(message);
 }
 
 const NAMED_RESET =

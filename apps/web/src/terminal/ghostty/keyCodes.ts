@@ -224,6 +224,8 @@ export function ghosttyConsumedMods(
   return [...event.key].length === 1 ? 1 : 0;
 }
 
+const GHOSTTY_UNSHIFTED_CODEPOINT_PATTERN = /^[A-Z]$/u;
+
 export function ghosttyUnshiftedCodepoint(
   event: Pick<KeyboardEvent, "code" | "key" | "shiftKey">,
   layoutMap?: GhosttyKeyboardLayoutMap,
@@ -233,7 +235,7 @@ export function ghosttyUnshiftedCodepoint(
   if (layoutCharacter && [...layoutCharacter].length === 1) {
     return layoutCharacter.codePointAt(0) ?? 0;
   }
-  if (/^[A-Z]$/u.test(event.key)) return event.key.charCodeAt(0) + 32;
+  if (GHOSTTY_UNSHIFTED_CODEPOINT_PATTERN.test(event.key)) return event.key.charCodeAt(0) + 32;
   if (event.shiftKey) {
     const unshiftedCharacter = US_SHIFTED_TO_UNSHIFTED_KEYS.get(event.key);
     if (unshiftedCharacter) return unshiftedCharacter.codePointAt(0) ?? 0;

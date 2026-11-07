@@ -136,6 +136,8 @@ export const optionOnNotFound = <A, R>(
     }),
   );
 
+const LEADING_SLASH = /^\//;
+
 export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -143,7 +145,7 @@ export const make = Effect.gen(function* () {
   const projectFileLoader = yield* HoustonProjectFileLoader.HoustonProjectFileLoader;
 
   const resolveIconHref = (href: string): ReadonlyArray<string> => {
-    const clean = href.replace(/^\//, "");
+    const clean = href.replace(LEADING_SLASH, "");
     return [path.join("public", clean), clean];
   };
 

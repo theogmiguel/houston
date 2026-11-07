@@ -103,7 +103,9 @@ export function threadHoverDetails(input: {
   };
 }
 
+const WHITESPACE_RUN = /\s+/g;
+
 function truncate(text: string, max: number): string {
-  const single = text.replace(/\s+/g, " ").trim();
+  const single = text.replace(WHITESPACE_RUN, " ").trim();
   return single.length <= max ? single : `${single.slice(0, max - 1)}…`;
 }

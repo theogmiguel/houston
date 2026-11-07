@@ -47,8 +47,10 @@ export type ManagedProviderLimits = typeof ManagedProviderLimits.Type;
 export const ManagedUpdatesMode = Schema.Literals(["auto", "off"]);
 export type ManagedUpdatesMode = typeof ManagedUpdatesMode.Type;
 
+const HTTPS_URL_PATTERN = /^https:\/\/[^\s/]+/i;
+
 const HttpsUrl = TrimmedNonEmptyString.check(
-  Schema.makeFilter((value: string) => /^https:\/\/[^\s/]+/i.test(value.trim()), {
+  Schema.makeFilter((value: string) => HTTPS_URL_PATTERN.test(value.trim()), {
     expected: "an https URL",
   }),
 );

@@ -51,6 +51,9 @@ import {
 import { collectInlineContextIds } from "~/lib/composerContextReferences";
 import { composerMathRanges } from "@houston-app/shared/composerInlineTokens";
 
+const LITERAL_BACKTICKS_BEFORE_PATTERN = /(?<!`)`(?!`)/g;
+const ALIGN_LIST_ITEM_WITH_SIBLINGS_PATTERN = /^\d+[.)]$/;
+
 export type SkillMeta = { label: string; description: string | null };
 
 const MARK_NESTING_ORDER: RichTextMark[] = ["strike", "bold", "italic", "code"];
@@ -72,6 +75,9 @@ const TIPTAP_TO_MARK: Record<string, RichTextMark> = {
 type CodePair = { from: number; to: number };
 
 const codePairKey = new PluginKey<CodePair[]>("typedBacktickPairs");
+
+const INLINE_CODE_SPAN = /^([^`\n]+)`(?!`)/;
+const WHOLE_INLINE_CODE = /^`[^`]+`$/;
 
 // Input rules only see text before the caret, so filling an already typed
 // pair needs a separate exit handler. Only typed pairs opt into that handler.
@@ -111,7 +117,7 @@ function codePairCaretPlugin(type: MarkType) {
           "\n",
           "\n",
         );
-        const match = /^([^`\n]+)`(?!`)/.exec(after);
+        const match = INLINE_CODE_SPAN.exec(after);
         if (!match) return false;
         const end = from + match[1]!.length;
         let plain = true;
@@ -140,7 +146,7 @@ function codePairCaretPlugin(type: MarkType) {
       if (
         $start.nodeBefore?.text?.endsWith("`") ||
         $end.nodeAfter?.text?.startsWith("`") ||
-        !/^`[^`]+`$/.test(state.doc.textBetween(pair.from, pair.to))
+        !WHOLE_INLINE_CODE.test(state.doc.textBetween(pair.from, pair.to))
       ) {
         return null;
       }
@@ -158,6 +164,8 @@ function codePairCaretPlugin(type: MarkType) {
   });
 }
 
+const CLOSES_BACKTICK_PAIR_PATTERN = /(^|[^`])`$/;
+
 /**
  * Whether a backtick typed at `$pos` would complete an empty `` pair. The
  * backtick before `$pos` only opens one when earlier backticks are all paired.
@@ -166,7 +174,7 @@ function closesBacktickPair($pos: ResolvedPos): boolean {
   return (
     $pos.parent.isTextblock &&
     !$pos.parent.type.spec.code &&
-    /(^|[^`])`$/.test($pos.nodeBefore?.text ?? "") &&
+    CLOSES_BACKTICK_PAIR_PATTERN.test($pos.nodeBefore?.text ?? "") &&
     literalBackticksBefore($pos) % 2 === 1
   );
 }
@@ -250,7 +258,7 @@ function literalBackticksBefore($pos: ResolvedPos): number {
     if (node.marks.some((mark) => mark.type.spec.code)) return;
 
     const text = node.text!.slice(0, $pos.parentOffset - offset);
-    count += [...text.matchAll(/(?<!`)`(?!`)/g)].length;
+    count += [...text.matchAll(LITERAL_BACKTICKS_BEFORE_PATTERN)].length;
   });
   return count;
 }
@@ -267,6 +275,8 @@ function touchesMarkdownSource(state: EditorState, from: number, to: number): bo
   return [$pos.nodeBefore, $pos.nodeAfter].some((node) => node && type.isInSet(node.marks));
 }
 
+const NON_WHITESPACE = /\S/;
+
 // Code permits nested emphasis, so Tiptap's exclusion check cannot protect literal delimiters.
 function markInputRuleOutsideCode(find: RegExp, type: MarkType) {
   const rule = markInputRule({ find, type });
@@ -281,7 +291,7 @@ function markInputRuleOutsideCode(find: RegExp, type: MarkType) {
       if (touchesMarkdownSource(state, range.from, range.to)) return null;
       if (
         code &&
-        (state.doc.rangeHasMark(range.from + match[0].search(/\S/), textStart, code) ||
+        (state.doc.rangeHasMark(range.from + match[0].search(NON_WHITESPACE), textStart, code) ||
           state.doc.rangeHasMark(textEnd, state.selection.from, code))
       ) {
         return null;
@@ -406,6 +416,8 @@ function unwrapCodeBlockAtStart(editor: Editor): boolean {
   return true;
 }
 
+const CODE_BLOCK_SOURCE_PATTERN = /^[`~]+/;
+
 function codeBlockSource(
   node: ProseMirrorNode,
   followed: boolean,
@@ -425,7 +437,7 @@ function codeBlockSource(
     ...content
       .split("\n")
       .filter((line) => isClosingFence(line, fence))
-      .map((line) => /^[`~]+/.exec(line)![0].length),
+      .map((line) => CODE_BLOCK_SOURCE_PATTERN.exec(line)![0].length),
   );
   if (longest > 0) {
     fence = fence[0]!.repeat(longest + 1);
@@ -547,8 +559,10 @@ interface TaskLinePrefix {
   contentSpace: string;
 }
 
+const TASK_LIST_ITEM = /^([ \t]*)-([ \t]+)\[([ xX])\]([ \t]*)/;
+
 function parseTaskPrefix(head: string): { prefix: TaskLinePrefix; markerLength: number } | null {
-  const match = head.match(/^([ \t]*)-([ \t]+)\[([ xX])\]([ \t]*)/);
+  const match = head.match(TASK_LIST_ITEM);
   if (!match) return null;
   const after = head.slice(match[0].length);
   if (after.length > 0 && !match[4]) return null;
@@ -563,9 +577,11 @@ function parseTaskPrefix(head: string): { prefix: TaskLinePrefix; markerLength: 
   };
 }
 
+const CODE_FENCE_OPENING = /^(`{3,}|~{3,})([^\n]*)$/;
+
 export function parseOpeningFence(line: string): { fence: string; language: string } | null {
   // Unlike `.`, `[^\n]` accepts the stored \r in CRLF lines.
-  const match = /^(`{3,}|~{3,})([^\n]*)$/.exec(line);
+  const match = CODE_FENCE_OPENING.exec(line);
   if (!match) return null;
   const fence = match[1]!;
   const language = match[2]!;
@@ -573,8 +589,10 @@ export function parseOpeningFence(line: string): { fence: string; language: stri
   return { fence, language };
 }
 
+const CODE_FENCE_CLOSING = /^(`{3,}|~{3,})[ \t]*\r?$/;
+
 export function isClosingFence(line: string, fence: string): boolean {
-  const match = /^(`{3,}|~{3,})[ \t]*\r?$/.exec(line);
+  const match = CODE_FENCE_CLOSING.exec(line);
   if (!match) return false;
   const run = match[1]!;
   return run[0] === fence[0] && run.length >= fence.length;
@@ -584,17 +602,20 @@ type ListLinePrefix =
   | ({ kind: "task" } & TaskLinePrefix)
   | { kind: "bullet" | "ordered"; indent: string; marker: string; space: string };
 
+const ORDERED_PATTERN = /^([ \t]*)(\d+[.)])((?:[ \t]+)|$)/;
+const BULLET_LIST_ITEM = /^([ \t]*)([-*+])((?:[ \t]+)|$)/;
+
 function parseListPrefix(line: string): { prefix: ListLinePrefix; markerLength: number } | null {
   const task = parseTaskPrefix(line);
   if (task) return { prefix: { kind: "task", ...task.prefix }, markerLength: task.markerLength };
-  const ordered = /^([ \t]*)(\d+[.)])((?:[ \t]+)|$)/.exec(line);
+  const ordered = ORDERED_PATTERN.exec(line);
   if (ordered) {
     return {
       prefix: { kind: "ordered", indent: ordered[1]!, marker: ordered[2]!, space: ordered[3]! },
       markerLength: ordered[0].length,
     };
   }
-  const bullet = /^([ \t]*)([-*+])((?:[ \t]+)|$)/.exec(line);
+  const bullet = BULLET_LIST_ITEM.exec(line);
   if (bullet) {
     return {
       prefix: { kind: "bullet", indent: bullet[1]!, marker: bullet[2]!, space: bullet[3]! },
@@ -714,6 +735,10 @@ function textJsonForSpan(text: string, marks: RichTextMark[]): Record<string, un
   return json;
 }
 
+const THEMATIC_BREAK_LINE = /^([-*_])(?:[ \t]*\1){2,}[ \t]*\r?$/;
+const HEADING_PATTERN = /^(#{1,6})([ \t]+)([^\n]*)$/;
+const BLOCKQUOTE_LINE = /^(>[ \t]*)([^\n]*)$/;
+
 /** Keeps literalLength leading characters unstyled so path queries reach file search unchanged. */
 export function buildTiptapContent(
   value: string,
@@ -811,11 +836,11 @@ export function buildTiptapContent(
     }
     const opening = blockSyntax ? parseOpeningFence(line) : null;
     if (!opening) {
-      if (blockSyntax && /^([-*_])(?:[ \t]*\1){2,}[ \t]*\r?$/.test(line)) {
+      if (blockSyntax && THEMATIC_BREAK_LINE.test(line)) {
         entries.push({ rule: line });
         continue;
       }
-      const heading = blockSyntax ? /^(#{1,6})([ \t]+)([^\n]*)$/.exec(line) : null;
+      const heading = blockSyntax ? HEADING_PATTERN.exec(line) : null;
       if (heading) {
         entries.push({
           heading: {
@@ -826,7 +851,7 @@ export function buildTiptapContent(
         });
         continue;
       }
-      const quote = blockSyntax ? /^(>[ \t]*)([^\n]*)$/.exec(line) : null;
+      const quote = blockSyntax ? BLOCKQUOTE_LINE.exec(line) : null;
       if (quote) entries.push({ quote: { prefix: quote[1]!, inline: buildInline(quote[2]!) } });
       else entries.push({ line: buildDocLine(line) });
       continue;
@@ -1049,6 +1074,8 @@ function pushBlankLineRun(acc: RichAccumulator, pmPos: number): void {
   acc.md += 1;
 }
 
+const WHITESPACE_ONLY = /^\s+$/;
+
 function appendInlineRuns(
   container: ProseMirrorNode,
   contentStart: number,
@@ -1087,7 +1114,7 @@ function appendInlineRuns(
         } else if (
           child.isText &&
           !child.marks.some((item) => item.type.name === "code") &&
-          /^\s+$/.test(child.text!)
+          WHITESPACE_ONLY.test(child.text!)
         ) {
           if (!hasContent)
             children[index] = child.mark(child.marks.filter((item) => item.type.name !== mark));
@@ -1199,10 +1226,16 @@ function alignListItemWithSiblings(tr: Transaction, itemType: string): void {
     attrs.markerSpace = sibling.attrs.markerSpace;
   } else {
     const marker = typeof sibling.attrs.marker === "string" ? sibling.attrs.marker : "-";
-    attrs.marker = index > 0 && /^\d+[.)]$/.test(marker) ? nextOrderedMarkerText(marker) : marker;
+    attrs.marker =
+      index > 0 && ALIGN_LIST_ITEM_WITH_SIBLINGS_PATTERN.test(marker)
+        ? nextOrderedMarkerText(marker)
+        : marker;
   }
   tr.setNodeMarkup($pos.before(-1), undefined, attrs);
-  if (typeof attrs.marker === "string" && /^\d+[.)]$/.test(attrs.marker)) {
+  if (
+    typeof attrs.marker === "string" &&
+    ALIGN_LIST_ITEM_WITH_SIBLINGS_PATTERN.test(attrs.marker)
+  ) {
     renumberFollowingItems(tr, $pos.before(-2), index, attrs.marker);
   }
 }

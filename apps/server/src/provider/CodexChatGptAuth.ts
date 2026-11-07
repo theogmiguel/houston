@@ -111,6 +111,8 @@ const decodeTokens = Schema.decodeUnknownSync(TokenResponse);
 const decodeDiscoveryEffect = Schema.decodeUnknownEffect(Discovery);
 const decodeOAuthError = Schema.decodeUnknownSync(OAuthError);
 
+const WHITESPACE_RUN = /\s+/;
+
 export const makeCodexChatGptAuth = Effect.fn("makeCodexChatGptAuth")(function* (options: {
   readonly instanceId: ProviderInstanceId;
   readonly discoveryUrl?: string;
@@ -720,7 +722,7 @@ export const makeCodexChatGptAuth = Effect.fn("makeCodexChatGptAuth")(function* 
           "verify",
           "ChatGPT returned an unsupported connection. Sign in again.",
         );
-      const scopes = tokens.scope.split(/\s+/).filter(Boolean);
+      const scopes = tokens.scope.split(WHITESPACE_RUN).filter(Boolean);
       yield* withSessionLock(
         Effect.gen(function* () {
           yield* saveRegistration({
@@ -841,7 +843,7 @@ export const makeCodexChatGptAuth = Effect.fn("makeCodexChatGptAuth")(function* 
       refreshToken: tokens.refresh_token,
       expiresAt: (yield* Clock.currentTimeMillis) + tokens.expires_in * 1000,
       earliestRefreshAt: earliest(tokens.earliest_refresh_at),
-      scopes: tokens.scope.split(/\s+/).filter(Boolean),
+      scopes: tokens.scope.split(WHITESPACE_RUN).filter(Boolean),
     };
     yield* save(record);
     if (!record.scopes.includes(REQUIRED_SCOPE))

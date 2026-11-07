@@ -615,9 +615,11 @@ const bulletToTaskInputRule = new InputRule({
   },
 });
 
+const TASK_LIST_MARKER = /^- \[([ xX])\] $/;
+
 function taskInputRule(type: NodeType): InputRule {
   const rule = wrappingInputRule({
-    find: /^- \[([ xX])\] $/,
+    find: TASK_LIST_MARKER,
     type,
     getAttributes: (match) => ({ checked: match[1]?.toLowerCase() === "x" }),
   });
@@ -648,12 +650,14 @@ const blockquoteInputRule = new InputRule({
   },
 });
 
+const TRAILING_WHITESPACE_CHAR = /\s$/;
+
 /** Require a space after *** or ___ to preserve bold typing. Lists and quotes cannot serialize rules. */
 const horizontalRuleInputRule = new InputRule({
   find: /^(---|\*\*\*|___)\s?$/,
   handler: ({ state, range, match, chain }) => {
     const source = match[0] ?? "---";
-    if (!source.startsWith("---") && !/\s$/.test(source)) return null;
+    if (!source.startsWith("---") && !TRAILING_WHITESPACE_CHAR.test(source)) return null;
     const $from = state.doc.resolve(range.from);
     if ($from.parent.type.name !== "paragraph" || $from.depth !== 1) return null;
     chain()
@@ -788,6 +792,10 @@ const ComposerUndoGroupingExtension = Extension.create<
   },
 });
 
+const BULLET_MARKER_RULE = /^(?<marker>[*+])(?<space>\s)$/;
+const DASH_MARKER_RULE = /^(?<marker>-)(?<space>[ \t]+)(?<carried>[^\s[])$/;
+const ORDERED_MARKER_RULE = /^(?<marker>\d+[.)])(?<space>\s)$/;
+
 // Module scope keeps extension identity stable; Tiptap hooks read config through this.
 function createComposerExtensions(richText: boolean) {
   return [
@@ -874,13 +882,10 @@ function createComposerExtensions(richText: boolean) {
                   addInputRules() {
                     return this.name === "bulletList"
                       ? [
-                          listMarkerInputRule(/^(?<marker>[*+])(?<space>\s)$/, "bulletList"),
-                          listMarkerInputRule(
-                            /^(?<marker>-)(?<space>[ \t]+)(?<carried>[^\s[])$/,
-                            "bulletList",
-                          ),
+                          listMarkerInputRule(BULLET_MARKER_RULE, "bulletList"),
+                          listMarkerInputRule(DASH_MARKER_RULE, "bulletList"),
                         ]
-                      : [listMarkerInputRule(/^(?<marker>\d+[.)])(?<space>\s)$/, "orderedList")];
+                      : [listMarkerInputRule(ORDERED_MARKER_RULE, "orderedList")];
                   },
                 }),
           ),
@@ -897,6 +902,8 @@ function createComposerExtensions(richText: boolean) {
 
 const RICH_TEXT_EXTENSIONS = createComposerExtensions(true);
 const PLAIN_TEXT_EXTENSIONS = createComposerExtensions(false);
+
+const WHITESPACE_CHAR = /\s/;
 
 function ComposerPromptEditorTiptapInner(
   props: ComposerPromptEditorProps & {
@@ -1390,7 +1397,7 @@ function ComposerPromptEditorTiptapInner(
           if (isChip(tokens[0]) && tokens[0]?.start === 0) {
             const map = serializeEditorDoc(view.state.doc);
             const offset = flatToMarkdown(map, pmToFlat(map, view.state.selection.from));
-            if (offset > 0 && !/\s/.test(map.value[offset - 1]!)) text = ` ${text}`;
+            if (offset > 0 && !WHITESPACE_CHAR.test(map.value[offset - 1]!)) text = ` ${text}`;
           }
           const { $from } = view.state.selection;
           const lineBefore = $from.parent.textBetween(0, $from.parentOffset, undefined, "\uFFFC");

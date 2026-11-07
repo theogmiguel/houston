@@ -120,6 +120,8 @@ export function excerptRows(
 
 const ROW_PREFIX = { context: " ", addition: "+", deletion: "-" } as const;
 
+const TRAILING_NEWLINE = /\n$/;
+
 export function rowsToPatch(
   path: string,
   previousPath: string,
@@ -144,13 +146,15 @@ export function rowsToPatch(
     const newStart = newCount === 0 ? Math.max(head.newAt - 1, 0) : head.newAt;
     lines.push(`@@ -${oldStart},${oldCount} +${newStart},${newCount} @@`);
     for (const row of group) {
-      lines.push(`${ROW_PREFIX[row.kind]}${row.text.replace(/\n$/, "")}`);
+      lines.push(`${ROW_PREFIX[row.kind]}${row.text.replace(TRAILING_NEWLINE, "")}`);
       if (!row.text.endsWith("\n")) lines.push("\\ No newline at end of file");
     }
     start = end + 1;
   }
   return `${lines.join("\n")}\n`;
 }
+
+const NEW_LINES_PATTERN = /[^\n]*\n|[^\n]+$/g;
 
 /**
  * The renderer fills the code around a hunk from both files and needs them to agree
@@ -162,7 +166,7 @@ export function excerptExpansionOldContents(
 ): string | null {
   const head = rows[0];
   if (head === undefined || rows.some((row) => row.hunk !== head.hunk)) return null;
-  const newLines = newContents.match(/[^\n]*\n|[^\n]+$/g) ?? [];
+  const newLines = newContents.match(NEW_LINES_PATTERN) ?? [];
   const before = head.newAt - 1;
   const newCount = rows.filter((row) => row.newLine !== null).length;
   const oldBefore = head.oldAt - 1;

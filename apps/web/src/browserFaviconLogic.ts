@@ -132,6 +132,9 @@ export function faviconStorageLocation(
   }
 }
 
+const NON_BASE64_CHARACTER = /[^a-z0-9+/=]/i;
+const BASE64_BODY = /^[a-z0-9+/]*={0,2}$/i;
+
 export function isStorableFaviconDataUrl(value: unknown): value is string {
   if (
     typeof value !== "string" ||
@@ -144,8 +147,8 @@ export function isStorableFaviconDataUrl(value: unknown): value is string {
   return (
     payload.length > 0 &&
     payload.length % 4 !== 1 &&
-    !/[^a-z0-9+/=]/i.test(payload) &&
-    /^[a-z0-9+/]*={0,2}$/i.test(payload)
+    !NON_BASE64_CHARACTER.test(payload) &&
+    BASE64_BODY.test(payload)
   );
 }
 

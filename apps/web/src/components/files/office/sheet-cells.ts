@@ -155,8 +155,10 @@ export function contains(range: CellRange, cell: CellAddr) {
   );
 }
 
+const CELL_REFERENCE = /^\$?([A-Z]{1,3})\$?([1-9]\d*)$/i;
+
 function parseCell(a1: string): CellAddr | undefined {
-  const match = /^\$?([A-Z]{1,3})\$?([1-9]\d*)$/i.exec(a1);
+  const match = CELL_REFERENCE.exec(a1);
 
   if (!match) return undefined;
 
@@ -168,9 +170,11 @@ function parseCell(a1: string): CellAddr | undefined {
   return { row, col };
 }
 
+const COLUMN_INDEX_PATTERN = /^[A-Z]{1,3}$/i;
+
 /** A column's zero-based index from its letters; NaN for anything but one to three letters. */
 function columnIndex(letters: string) {
-  if (!/^[A-Z]{1,3}$/i.test(letters)) return Number.NaN;
+  if (!COLUMN_INDEX_PATTERN.test(letters)) return Number.NaN;
 
   return (
     [...letters.toUpperCase()].reduce(

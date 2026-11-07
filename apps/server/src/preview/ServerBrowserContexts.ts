@@ -37,12 +37,14 @@ const UA_PLATFORMS: Partial<Record<NodeJS.Platform, string>> = {
   win32: "Windows",
 };
 
+const HEADLESS_CHROME_VERSION = /HeadlessChrome\/((\d+)[\d.]*)/;
+
 /** Change user agent and Sec-CH-UA together; sites block mismatches. */
 const chromeIdentity = (
   headlessUserAgent: string,
   host: { readonly platform: NodeJS.Platform; readonly arch: string; readonly release: string },
 ) => {
-  const version = /HeadlessChrome\/((\d+)[\d.]*)/.exec(headlessUserAgent);
+  const version = HEADLESS_CHROME_VERSION.exec(headlessUserAgent);
   const fullVersion = version?.[1];
   const major = version?.[2];
   if (!version || !fullVersion || !major) return null;

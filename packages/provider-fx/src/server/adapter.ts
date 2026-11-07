@@ -98,6 +98,9 @@ const decodeFxSubagentResult = Schema.decodeUnknownOption(
 );
 const decodeJsonString = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.String));
 
+const CLIPPED_PATTERN = /^\{"ok":(true|false),"result":"((?:[^"\\]|\\.)*)/;
+const PARTIAL_UNICODE_ESCAPE = /\\u[0-9a-fA-F]{0,3}$/;
+
 /**
  * fx clips every tool result to 199 bytes, so a long sub-agent reply arrives
  * as cut-off `{"ok":…,"result":"…` JSON. Keeps the readable prefix and marks the cut.
@@ -107,11 +110,11 @@ export function fxSubagentOutcome(
 ): { readonly ok: boolean; readonly result: string | null } | undefined {
   const whole = decodeFxSubagentResult(text);
   if (Option.isSome(whole)) return whole.value;
-  const clipped = /^\{"ok":(true|false),"result":"((?:[^"\\]|\\.)*)/.exec(text);
+  const clipped = CLIPPED_PATTERN.exec(text);
   if (clipped === null) return undefined;
   const fragment = clipped[2] ?? "";
   const prefix = decodeJsonString(`"${fragment}"`).pipe(
-    Option.orElse(() => decodeJsonString(`"${fragment.replace(/\\u[0-9a-fA-F]{0,3}$/, "")}"`)),
+    Option.orElse(() => decodeJsonString(`"${fragment.replace(PARTIAL_UNICODE_ESCAPE, "")}"`)),
   );
   const cut = text[clipped[0].length] !== '"';
   return {

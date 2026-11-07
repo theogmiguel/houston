@@ -1807,6 +1807,9 @@ function normalizePersistedModelSelectionByProvider(
   );
 }
 
+const MIGRATED_PROMPT_PATTERN =
+  /!?\[([^\]\r\n]*)\]\(houston-context:\/\/v1\/([a-z-]+)\/([^/()\r\n]+)\)/g;
+
 function normalizePersistedDraftsByThreadId(
   rawDraftMap: unknown,
   draftThreadsByThreadKey: PersistedComposerDraftStoreState["draftThreadsByThreadKey"],
@@ -1915,7 +1918,7 @@ function normalizePersistedDraftsByThreadId(
       }
     }
     const migratedPrompt = promptCandidate.replace(
-      /!?\[([^\]\r\n]*)\]\(houston-context:\/\/v1\/([a-z-]+)\/([^/()\r\n]+)\)/g,
+      MIGRATED_PROMPT_PATTERN,
       (source, label: string, kind: string, id: string) => {
         const contextId = contextIds.get(`${kind}/${id}`);
         return contextId ? formatInlineContextReference({ kind, contextId, label }) : source;

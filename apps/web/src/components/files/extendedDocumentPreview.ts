@@ -31,12 +31,15 @@ const namespacePrefixes: Record<string, string> = {
   "http://www.idpf.org/2007/opf": "",
   "urn:oasis:names:tc:opendocument:xmlns:container": "",
 };
+const DOCTYPE_DECLARATION = /<!DOCTYPE\s+[^<>[\]]*>/gi;
+const DOCTYPE_OR_ENTITY = /<!\s*(DOCTYPE|ENTITY)/i;
+
 function parseXml(source: string): XmlNode {
   // EPUB XHTML commonly declares an external DTD. Discard it without resolving it.
-  source = source.replaceAll(/<!DOCTYPE\s+[^<>[\]]*>/gi, "");
+  source = source.replaceAll(DOCTYPE_DECLARATION, "");
   if (
     source.length > 8 * 1024 * 1024 ||
-    /<!\s*(DOCTYPE|ENTITY)/i.test(source) ||
+    DOCTYPE_OR_ENTITY.test(source) ||
     XMLValidator.validate(source) !== true
   )
     throw new Error("This document contains invalid or unsupported XML.");
@@ -118,12 +121,15 @@ function text(node: XmlNode): string {
   if (node.name === "text:line-break") return "\n";
   return node.name === "#text" ? decodeEntities(node.text) : node.children.map(text).join("");
 }
+const ABSOLUTE_ARCHIVE_PATH = /^(?:[a-z][a-z\d+.-]*:|\/|\\)/i;
+const QUERY_OR_FRAGMENT = /[?#]/;
+
 function archivePath(base: string, href: string): string | null {
-  if (/^(?:[a-z][a-z\d+.-]*:|\/|\\)/i.test(href)) return null;
+  if (ABSOLUTE_ARCHIVE_PATH.test(href)) return null;
   const parts = base.split("/").slice(0, -1);
   let decoded: string;
   try {
-    decoded = decodeURIComponent(href.split(/[?#]/, 1)[0] ?? "");
+    decoded = decodeURIComponent(href.split(QUERY_OR_FRAGMENT, 1)[0] ?? "");
   } catch {
     return null;
   }
@@ -139,9 +145,11 @@ function imageFits(bytes: Uint8Array) {
   const size = readImageDimensions(bytes.subarray(0, IMAGE_DIMENSIONS_HEADER_BYTES));
   return size !== null && size.width <= 16_777_216 / size.height;
 }
+const BASE64_IMAGE_FITS_PATTERN = /^[a-z\d+/]*={0,2}$/i;
+
 function base64ImageFits(base64: string) {
   return (
-    /^[a-z\d+/]*={0,2}$/i.test(base64) &&
+    BASE64_IMAGE_FITS_PATTERN.test(base64) &&
     base64.length % 4 !== 1 &&
     (!base64.endsWith("=") || base64.length % 4 === 0) &&
     imageFits(
@@ -152,11 +160,11 @@ function base64ImageFits(base64: string) {
     )
   );
 }
+const HTML_IMAGES_FIT_PATTERN = /data:image\/(?:png|jpeg|gif|webp);base64,([a-z\d+/]*={0,2})/gi;
+
 function htmlImagesFit(html: string) {
   // HTML attribute entities can obscure a data URL until the client parses it.
-  for (const match of decodeHTMLAttribute(html).matchAll(
-    /data:image\/(?:png|jpeg|gif|webp);base64,([a-z\d+/]*={0,2})/gi,
-  ))
+  for (const match of decodeHTMLAttribute(html).matchAll(HTML_IMAGES_FIT_PATTERN))
     if (!base64ImageFits(match[1]!)) return false;
   return true;
 }
@@ -221,13 +229,12 @@ const HTML_TAGS = new Set([
   "dt",
   "dd",
 ]);
+const TAG_PATTERN = /^\{[^}]*\}/;
+const EPUB_HTML_PATTERN = /^\d{1,4}$/;
+
 async function epubHtml(node: XmlNode, archive: JSZip, base: string): Promise<string> {
   if (node.name === "#text") return pipe(text(node), escape, boundedMarkup);
-  const tag =
-    node.name
-      .replace(/^\{[^}]*\}/, "")
-      .split(":")
-      .at(-1) ?? "";
+  const tag = node.name.replace(TAG_PATTERN, "").split(":").at(-1) ?? "";
   if (["head", "script", "style", "iframe", "object", "embed", "svg", "math", "form"].includes(tag))
     return "";
   if (tag === "br" || tag === "hr") return boundedMarkup(`<${tag}>`);
@@ -242,7 +249,7 @@ async function epubHtml(node: XmlNode, archive: JSZip, base: string): Promise<st
     tag === "td" || tag === "th"
       ? ["colspan", "rowspan"]
           .map((name) =>
-            /^\d{1,4}$/.test(node.attrs[name] ?? "") ? ` ${name}="${node.attrs[name]}"` : "",
+            EPUB_HTML_PATTERN.test(node.attrs[name] ?? "") ? ` ${name}="${node.attrs[name]}"` : "",
           )
           .join("")
       : "";
@@ -423,6 +430,9 @@ function notebookText(value: unknown, limit = 256_000): string {
   if (result.length > limit) throw new Error("A notebook cell is too large to preview.");
   return result;
 }
+const LANGUAGE_PATTERN = /[^a-z\d+#-]/gi;
+const WHITESPACE_CHAR = /\s/g;
+
 export function openNotebook(bytes: ArrayBuffer): OfficeWorkerResult {
   if (bytes.byteLength > 8 * 1024 * 1024)
     throw new Error("Notebook preview limited to files under 8 MB.");
@@ -430,7 +440,7 @@ export function openNotebook(bytes: ArrayBuffer): OfficeWorkerResult {
   if (notebook.nbformat !== 4 || !Array.isArray(notebook.cells) || notebook.cells.length > 500)
     throw new Error("Preview supports version 4 notebooks with up to 500 cells.");
   const language = String(record(record(notebook.metadata).language_info).name ?? "text")
-    .replaceAll(/[^a-z\d+#-]/gi, "")
+    .replaceAll(LANGUAGE_PATTERN, "")
     .slice(0, 40);
   const cells: NotebookCell[] = notebook.cells.map((value) => {
     const cell = record(value);
@@ -445,7 +455,10 @@ export function openNotebook(bytes: ArrayBuffer): OfficeWorkerResult {
           const data = record(output.data);
           for (const mime of ["image/png", "image/jpeg", "image/gif", "image/webp"]) {
             if (data[mime]) {
-              const base64 = notebookText(data[mime], 4 * 1024 * 1024).replaceAll(/\s/g, "");
+              const base64 = notebookText(data[mime], 4 * 1024 * 1024).replaceAll(
+                WHITESPACE_CHAR,
+                "",
+              );
               if (base64ImageFits(base64))
                 return { kind: "image" as const, text: `data:${mime};base64,${base64}` };
             }
@@ -462,6 +475,9 @@ export function openNotebook(bytes: ArrayBuffer): OfficeWorkerResult {
   });
   return { type: "notebook", language, cells };
 }
+
+const OPEN_RTF_PATTERN = /^[\da-f]{2}$/i;
+const RTF_CONTROL_WORD = /^([a-z]+)(-?\d+)? ?/i;
 
 export function openRtf(bytes: ArrayBuffer): OfficeWorkerResult {
   if (bytes.byteLength > 8 * 1024 * 1024)
@@ -546,7 +562,7 @@ export function openRtf(bytes: ArrayBuffer): OfficeWorkerResult {
       const next = source[i];
       if (next === "'") {
         const hex = source.slice(i + 1, i + 3);
-        if (!/^[\da-f]{2}$/i.test(hex)) throw new Error("Invalid rich text byte escape.");
+        if (!OPEN_RTF_PATTERN.test(hex)) throw new Error("Invalid rich text byte escape.");
         i += 3;
         emitByte(Number.parseInt(hex, 16));
         continue;
@@ -562,7 +578,7 @@ export function openRtf(bytes: ArrayBuffer): OfficeWorkerResult {
         i++;
         continue;
       }
-      const match = /^([a-z]+)(-?\d+)? ?/i.exec(source.slice(i));
+      const match = RTF_CONTROL_WORD.exec(source.slice(i));
       if (!match) {
         if (next === "~") emit("\u00a0");
         i++;

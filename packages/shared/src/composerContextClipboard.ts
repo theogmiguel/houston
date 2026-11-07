@@ -19,6 +19,10 @@ export function encodeComposerContextFragment(
 
 const HTML_WRAPPER_SLACK_CHARS = 4096;
 
+const AMPERSAND = /&/g;
+const LESS_THAN = /</g;
+const GREATER_THAN = />/g;
+
 export function encodeComposerContextClipboardHtml(
   text: string,
   fragment: string,
@@ -26,9 +30,14 @@ export function encodeComposerContextClipboardHtml(
 ): string {
   if (html !== undefined)
     return `<div data-houston-context-fragment="${encodeURIComponent(fragment)}">${html}</div>`;
-  const escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const escaped = text
+    .replace(AMPERSAND, "&amp;")
+    .replace(LESS_THAN, "&lt;")
+    .replace(GREATER_THAN, "&gt;");
   return `<pre data-houston-context-fragment="${encodeURIComponent(fragment)}">${escaped}</pre>`;
 }
+
+const CONTEXT_FRAGMENT_ATTRIBUTE = /data-houston-context-fragment=(?:"([^"]+)"|'([^']+)')/;
 
 export function decodeComposerContextClipboardHtml(
   html: string | null | undefined,
@@ -36,7 +45,7 @@ export function decodeComposerContextClipboardHtml(
   // Percent encoding can expand each UTF-16 code unit to nine characters.
   if (!html || html.length > MAX_FRAGMENT_CHARS * 9 + HTML_WRAPPER_SLACK_CHARS) return null;
   // `encodeURIComponent` leaves `'` as is, so each quote style must end only at its own quote.
-  const match = /data-houston-context-fragment=(?:"([^"]+)"|'([^']+)')/.exec(html);
+  const match = CONTEXT_FRAGMENT_ATTRIBUTE.exec(html);
   const encoded = match?.[1] ?? match?.[2];
   if (!encoded) return null;
   try {

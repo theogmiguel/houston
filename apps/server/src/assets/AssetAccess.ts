@@ -438,6 +438,8 @@ const finalizeAbsoluteMediaFileAsset = Effect.fn("AssetAccess.finalizeAbsoluteMe
   },
 );
 
+const HTML_SUFFIX = /\.html?$/i;
+
 const finalizeWorkspaceFileAsset = Effect.fn("AssetAccess.finalizeWorkspaceFileAsset")(
   function* (input: {
     readonly workspaceRoot: string;
@@ -510,7 +512,7 @@ const finalizeWorkspaceFileAsset = Effect.fn("AssetAccess.finalizeWorkspaceFileA
       ? yield* readImageDimensionsFromHeader(canonicalFile)
       : null;
     return {
-      claims: !/\.html?$/i.test(resolved.relativePath)
+      claims: !HTML_SUFFIX.test(resolved.relativePath)
         ? {
             version: 1 as const,
             kind: "workspace-file-exact" as const,
@@ -878,6 +880,8 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
   };
 });
 
+const PATH_SEPARATOR = /[\\/]/;
+
 export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
   token: string,
   relativePath: string,
@@ -1019,7 +1023,7 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
       ? ({ kind: "file", path: exactWorkspaceFile } satisfies ResolvedAsset)
       : null;
   }
-  const segments = decodedPath.split(/[\\/]/);
+  const segments = decodedPath.split(PATH_SEPARATOR);
   if (
     decodedPath.length === 0 ||
     decodedPath.includes("\0") ||

@@ -193,6 +193,8 @@ function selectRemoteUrl(
   }
 }
 
+const NORMALIZED_CLONE_URL_PATTERN = /^([a-z][a-z0-9+.-]*:\/\/[^/?#]+)\?/i;
+
 /** @public */
 export const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
@@ -347,7 +349,7 @@ export const make = Effect.gen(function* () {
       });
     };
     // Git misreads @ in a pathless URL's query as userinfo and echoes its suffix as the host.
-    const normalizedCloneUrl = cloneUrl.replace(/^([a-z][a-z0-9+.-]*:\/\/[^/?#]+)\?/i, "$1/?");
+    const normalizedCloneUrl = cloneUrl.replace(NORMALIZED_CLONE_URL_PATTERN, "$1/?");
     yield* git
       .execute({
         operation: "SourceControlRepositoryService.cloneRepository",

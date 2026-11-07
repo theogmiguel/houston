@@ -1,5 +1,7 @@
 import { isLoopbackHost } from "./preview.ts";
 
+const AGENTS_HASH_ROUTE = /^#agents:[\w-]+$/u;
+
 export function providerAuthReturnUrl(value: string | undefined): string | undefined {
   if (!value) return undefined;
   try {
@@ -23,7 +25,7 @@ export function providerAuthReturnUrl(value: string | undefined): string | undef
         url.searchParams.delete(key);
       }
     }
-    if (url.pathname !== "/welcome" || !/^#agents:[\w-]+$/u.test(url.hash)) url.hash = "";
+    if (url.pathname !== "/welcome" || !AGENTS_HASH_ROUTE.test(url.hash)) url.hash = "";
     return url.toString();
   } catch {
     return undefined;

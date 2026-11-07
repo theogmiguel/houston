@@ -27,6 +27,9 @@ const isDroidQuestion = Schema.is(
 );
 const isDroidCompanion = Schema.is(Schema.Struct({ type: Schema.Literal("string") }));
 
+const ELICITATION_QUESTION_ID = /^question_[1-9]\d*$/;
+const SELECTED_OPTION_PATTERN = /^\n\nAttached (?:image|file) "(?:\\.|[^"\\\r\n])*": "/;
+
 // Droid pairs each choice with an optional *_other field. The client already
 // offers custom answers, so hide the companion and restore it in the response.
 export const extractDroidElicitationForm: NonNullable<
@@ -36,7 +39,7 @@ export const extractDroidElicitationForm: NonNullable<
   const { properties, required } = request.requestedSchema;
   const questions: Array<OrchestrationV2UserInputQuestion> = [];
   for (const [id, field] of Object.entries(properties)) {
-    if (!/^question_[1-9]\d*$/.test(id)) continue;
+    if (!ELICITATION_QUESTION_ID.test(id)) continue;
     if (!isDroidQuestion(field) || !isDroidCompanion(properties[`${id}_other`])) return undefined;
     const options = field.oneOf
       .filter((option) => option.const !== "other")
@@ -71,9 +74,7 @@ export const extractDroidElicitationForm: NonNullable<
           const selectedOption = question.options.find(
             (option) =>
               option.value === answer.slice(0, attachmentStart) &&
-              /^\n\nAttached (?:image|file) "(?:\\.|[^"\\\r\n])*": "/.test(
-                answer.slice(attachmentStart),
-              ),
+              SELECTED_OPTION_PATTERN.test(answer.slice(attachmentStart)),
           );
           const text = selectedOption
             ? `${selectedOption.label}${answer.slice(attachmentStart)}`

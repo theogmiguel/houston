@@ -110,11 +110,13 @@ const UNTRUSTED_CERTIFICATE_CODES = new Set([
   "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
 ]);
 
+const NODE_ERROR_CODE_PATTERN = /^[A-Z0-9_]{1,64}$/;
+
 // fetch wraps Node error codes in generic TypeErrors.
 const nodeErrorCode = (cause: unknown) => {
   for (let error = cause, depth = 0; error instanceof Error && depth < 3; depth += 1) {
     const code = (error as { readonly code?: unknown }).code;
-    if (typeof code === "string" && /^[A-Z0-9_]{1,64}$/.test(code)) return code;
+    if (typeof code === "string" && NODE_ERROR_CODE_PATTERN.test(code)) return code;
     error = error.cause;
   }
   return undefined;
@@ -168,6 +170,8 @@ const creditRedeemRequestId = Effect.fn("CliproxyApi.creditRedeemRequestId")(fun
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 });
 
+const TRY_PATTERN = /(\/management\.html)?\/?$/i;
+
 export const makeCliproxyApi = Effect.gen(function* () {
   const client = yield* HttpClient.HttpClient;
   const digest = yield* Digest.Digest;
@@ -181,7 +185,7 @@ export const makeCliproxyApi = Effect.gen(function* () {
       try: () => {
         const base = new URL(config.url);
         // Users often paste the hub's web panel URL, which ends in management.html.
-        base.pathname = base.pathname.replace(/(\/management\.html)?\/?$/i, "/");
+        base.pathname = base.pathname.replace(TRY_PATTERN, "/");
         return new URL(`v0/management/${path}`, base).toString();
       },
       catch: () => new UsageLimitSourceError({ detail: "The hub URL is not valid." }),

@@ -634,11 +634,13 @@ const PROVIDER_GOAL_TITLES: Record<OrchestrationV2ProviderGoal["status"], string
   complete: "Goal complete",
 };
 
+const TRAILING_ZERO = /\.0$/;
+
 function formatGoalTokens(tokens: number): string {
   if (tokens < 1_000) return `${tokens}`;
   const thousands = Math.round(tokens / 1_000);
   if (thousands < 1_000) return `${thousands}k`;
-  return `${(tokens / 1_000_000).toFixed(1).replace(/\.0$/, "")}m`;
+  return `${(tokens / 1_000_000).toFixed(1).replace(TRAILING_ZERO, "")}m`;
 }
 
 export function presentProviderGoal(

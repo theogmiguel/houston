@@ -6,7 +6,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import ReactMarkdown from "react-markdown";
 import { describe, expect, it } from "vite-plus/test";
 
-import { splitMarkdownBlocks } from "./markdownStreamBlocks";
+import { CODING_ANSWERS } from "./markdownStreamBlocks.fixture";
+import { headingIdsMayCollide, splitMarkdownBlocks } from "./markdownStreamBlocks";
 
 // Whitespace between top-level blocks collapses in the rendered message.
 const html = (source: string) =>
@@ -57,7 +58,72 @@ describe("splitMarkdownBlocks", () => {
     ":::note\n\ncontent\n\n:::",
     "$$\na\n\nb\n$$",
     "a\r\n\r\nb",
+    "See [the docs][1].\n\n> [1]: https://example.com/docs",
+    "- ![logo][img]\n\n- [img]: https://example.com/a.png",
+    "See [foo\nbar] now.\n\n[foo\nbar]: https://example.com/fb",
+    "Start <b>bold\n\nstill bold</b> end",
+    "Start <!-- a\n\nb --> end",
+    "- a\n\n  ```\n  x\n\ny <em>open\n\nz</em>",
+    '<span id="x">a</span>\n\n## A',
+    "x <https://x.y/?q=`> <b>bold <https://x.y/?r=`>\n\nstill bold",
+    "See https://x.y/?q=` <b>bold ` x\n\nstill bold",
+    "See www.x.y/a-` <b>bold ` x\n\nstill bold",
+    "- a\n\n  ```\n  x\n  \t```\n\n  [r]: https://example.com/r\n\n  ```\n\nSee [r].",
+    "- a\n\n  ```\n  x\n  \t```\n\n  <b>bold\n\n  ```\n\nstill bold",
   ])("keeps text with document-wide syntax whole: %j", (text) => {
     expect(splitMarkdownBlocks(text)).toBeNull();
+  });
+
+  it("splits around inline HTML that is shown as text, and around HTML in a code fence", () => {
+    expect(splitMarkdownBlocks("Start <b>bold\n\nstill bold</b> end", false)).toEqual([
+      "Start <b>bold\n\n",
+      "still bold</b> end",
+    ]);
+    expect(splitMarkdownBlocks("a\n\n```html\nx <b>y\n\nz</b>\n```\n\nb")).toEqual([
+      "a\n\n",
+      "```html\nx <b>y\n\nz</b>\n```\n\n",
+      "b",
+    ]);
+  });
+});
+
+describe("splitMarkdownBlocks on coding answers", () => {
+  const blockCount = (text: string) =>
+    text.split(/\n[ \t]*\n/).filter((block) => block.trim() !== "").length;
+  const answers = CODING_ANSWERS.filter((text) => blockCount(text) >= 4);
+
+  it("splits at least 90 % of answers with four or more blocks, streaming and finished", () => {
+    expect(answers.length).toBeGreaterThanOrEqual(15);
+    const streamed = answers.filter((text) => (splitMarkdownBlocks(text)?.length ?? 0) > 1);
+    const finished = streamed.filter((text) => !headingIdsMayCollide(text));
+    expect(streamed.length / answers.length).toBeGreaterThanOrEqual(0.9);
+    expect(finished.length / answers.length).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it.each(CODING_ANSWERS)("renders each block as the whole answer renders it: %j", (text) => {
+    const blocks = splitMarkdownBlocks(text) ?? [text];
+    expect(blocks.join("")).toBe(text);
+    expect(blocks.map(html).join("")).toBe(html(text));
+  });
+});
+
+describe("headingIdsMayCollide", () => {
+  it.each([
+    ["## Setup\n\ntext\n\n## Setup", true],
+    ["## Setup\n\n## setup!", true],
+    ["## Fix 1\n\n## Fix-1", true],
+    ["## [Link](x)\n\n## Other", true],
+    ["## A &amp; B", true],
+    // An element id needs raw HTML, which keeps the text whole before ids are compared.
+    ['<span id="x">a</span>\n\n## A', false],
+    ["Title\n---\n\n## Other", true],
+    ["> ## Quoted\n\n- ## Listed\n\n## Quoted", true],
+    ["## One\n\n## Two\n\n### Three", false],
+    ["```sh\n# install\n```\n\n```sh\n# install\n```\n\n## Install steps", false],
+    ["## Setup\n\nText\n\n```md\n```js\nx\n```\n\n## Setup", true],
+    ["No headings at all.\n\n---\n\nAfter a break.", false],
+    ["- a\n\n  ```\n  x\n  \t```\n\n  ## Setup\n\n  ```\n\n## Setup", true],
+  ])("%j: %s", (text, collides) => {
+    expect(headingIdsMayCollide(text)).toBe(collides);
   });
 });

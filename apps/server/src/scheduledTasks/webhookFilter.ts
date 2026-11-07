@@ -28,6 +28,8 @@ function matchesScalar(filter: ScheduledTaskWebhookFilter, text: string): boolea
   }
 }
 
+const EMPTY_ARRAY_BRACKETS = /\[\]/;
+
 /**
  * Placeholders render null as missing, so filters treat it the same way. A
  * path with a `[]` wildcard resolves to a list: `equals`, `in` and
@@ -35,7 +37,7 @@ function matchesScalar(filter: ScheduledTaskWebhookFilter, text: string): boolea
  * the value, and `exists` when the list has an element.
  */
 function matchesWebhookFilter(filter: ScheduledTaskWebhookFilter, value: unknown): boolean {
-  if (Array.isArray(value) && /\[\]/.test(filter.path)) {
+  if (Array.isArray(value) && EMPTY_ARRAY_BRACKETS.test(filter.path)) {
     if (filter.op === "exists")
       return value.some((element) => element !== null && element !== undefined);
     const texts = value.map(scalarText).filter((text): text is string => text !== undefined);

@@ -25,6 +25,8 @@ interface ChangedFileRow {
 
 type ChangedFileContextMenuHandler = (filePath: string, event: MouseEvent) => void;
 
+const PATH_SEPARATOR = /[/\\]/;
+
 export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
   runId: RunId;
   /** May be a prefix of the changed files; `totals` covers all of them. */
@@ -48,7 +50,7 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
   } = props;
   const syncTimelineLayout = useSyncLayout();
   const hiddenFileCount = totals.count - files.length;
-  const hasDirectories = files.some((file) => /[/\\]/.test(file.path));
+  const hasDirectories = files.some((file) => PATH_SEPARATOR.test(file.path));
 
   return (
     <div
@@ -267,6 +269,8 @@ const ChangedFilesTree = memo(function ChangedFilesTree(props: {
   return <ChangedFilesRows rows={rows} renderRow={renderRow} virtualized={virtualized} />;
 });
 
+const AUTO_OR_SCROLL = /auto|scroll/;
+
 function ChangedFilesRows({
   rows,
   renderRow,
@@ -293,7 +297,7 @@ function ChangedFilesRows({
     let scrollElement: HTMLElement | null = null;
     for (let parent = container.parentElement; parent; parent = parent.parentElement) {
       ancestors.push(parent);
-      if (/auto|scroll/.test(getComputedStyle(parent).overflowY)) {
+      if (AUTO_OR_SCROLL.test(getComputedStyle(parent).overflowY)) {
         scrollElement = parent;
         break;
       }

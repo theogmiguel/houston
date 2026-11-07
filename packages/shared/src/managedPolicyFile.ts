@@ -49,13 +49,17 @@ const decodeDocumentExit = Schema.decodeUnknownExit(ManagedPolicyDocument, {
   onExcessProperty: "error",
 });
 
+const LINE_BREAK_WITH_PADDING = /\s*\n\s*/g;
+
 /** Decode a policy from JSON text, or from a value a profile already parsed. */
 const decodeDocument = (path: string, raw: unknown) => {
   const decoded = typeof raw === "string" ? decodeDocumentJsonExit(raw) : decodeDocumentExit(raw);
   if (Exit.isSuccess(decoded)) return Effect.succeed(decoded.value);
   const error = Cause.squash(decoded.cause);
   // The schema message names the offending key, e.g. `Expected no excess property at ["limits"]`.
-  const detail = Schema.isSchemaError(error) ? ` (${error.message.replace(/\s*\n\s*/g, " ")})` : "";
+  const detail = Schema.isSchemaError(error)
+    ? ` (${error.message.replace(LINE_BREAK_WITH_PADDING, " ")})`
+    : "";
   return Effect.fail(
     new ManagedPolicyFileError({
       path,
@@ -134,6 +138,8 @@ const ERROR_FILE_NOT_FOUND = 2;
 const ERROR_MORE_DATA = 234;
 const ERROR_UNSUPPORTED_TYPE = 1630;
 
+const TRAILING_NULS = /\0+$/;
+
 /**
  * Each app passes how it loads ffi-rs: a server single-executable resolves packages on disk only
  * through `require`, and the desktop's CommonJS bundle loads them with `import()`.
@@ -201,7 +207,10 @@ export const layerWindowsRegistry = (loadFfi: () => Promise<typeof import("ffi-r
             if (result.code === ERROR_FILE_NOT_FOUND) return undefined;
             if (result.code !== 0) return yield* new WindowsRegistryError({ code: result.code });
             // The size counts the terminating null RegGetValueW adds.
-            return result.data.subarray(0, result.bytes).toString("utf16le").replace(/\0+$/, "");
+            return result.data
+              .subarray(0, result.bytes)
+              .toString("utf16le")
+              .replace(TRAILING_NULS, "");
           },
         ),
       });

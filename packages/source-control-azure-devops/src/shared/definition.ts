@@ -17,6 +17,9 @@ const CHECKOUT_COMMAND = /^az\s+repos\s+pr\s+checkout\s+(.+)$/i;
 const CHANGE_REQUEST_REFERENCE =
   /^https:\/\/(?:dev\.azure\.com\/[^/\s]+\/[^/\s]+|[^/\s]+\.visualstudio\.com\/[^/\s]+)\/_git\/[^/\s]+\/pullrequest\/(\d+)(?:[/?#].*)?$/i;
 
+const AZURE_SSH_REMOTE =
+  /^(ssh\.dev\.azure\.com|vs-ssh\.visualstudio\.com)\/v3\/([^/]+)\/([^/]+)\/([^/]+)$/u;
+
 /**
  * Azure alone addresses one repository under two names that share no part: `ssh.dev.azure.com` and
  * `v3/{org}/{project}/{repo}` over SSH, against `dev.azure.com` and `{org}/{project}/_git/{repo}`
@@ -24,8 +27,7 @@ const CHANGE_REQUEST_REFERENCE =
  * to every comparison made against a pull request URL, which arrives in the web spelling.
  */
 function repositoryKeyFromRemote(key: string): string | null {
-  const match =
-    /^(ssh\.dev\.azure\.com|vs-ssh\.visualstudio\.com)\/v3\/([^/]+)\/([^/]+)\/([^/]+)$/u.exec(key);
+  const match = AZURE_SSH_REMOTE.exec(key);
   if (match === null) return null;
   const [, host, organization, project, repository] = match;
   return host === "ssh.dev.azure.com"
@@ -33,17 +35,16 @@ function repositoryKeyFromRemote(key: string): string | null {
     : `${organization}.visualstudio.com/${project}/_git/${repository}`;
 }
 
+const AZURE_SSH_CANONICAL_KEY =
+  /^(?:ssh\.dev\.azure\.com|vs-ssh\.visualstudio\.com)\/v3\/([^/]+)\/([^/]+)\/([^/]+)$/u;
+const AZURE_VISUALSTUDIO_CANONICAL_KEY =
+  /^([^.]+)\.visualstudio\.com\/(?:defaultcollection\/)?([^/]+)\/_git\/([^/]+)$/u;
+
 /** Every spelling of an Azure DevOps Services repository, on `dev.azure.com`. */
 function canonicalRepositoryKey(key: string): string | null {
   const canonical = key
-    .replace(
-      /^(?:ssh\.dev\.azure\.com|vs-ssh\.visualstudio\.com)\/v3\/([^/]+)\/([^/]+)\/([^/]+)$/u,
-      "dev.azure.com/$1/$2/_git/$3",
-    )
-    .replace(
-      /^([^.]+)\.visualstudio\.com\/(?:defaultcollection\/)?([^/]+)\/_git\/([^/]+)$/u,
-      "dev.azure.com/$1/$2/_git/$3",
-    );
+    .replace(AZURE_SSH_CANONICAL_KEY, "dev.azure.com/$1/$2/_git/$3")
+    .replace(AZURE_VISUALSTUDIO_CANONICAL_KEY, "dev.azure.com/$1/$2/_git/$3");
   return canonical.startsWith("dev.azure.com/") ? canonical : null;
 }
 
@@ -55,8 +56,10 @@ function decodeUrlPathSegment(segment: string): string {
   }
 }
 
+const WHITESPACE_RUN = /\s+/;
+
 function checkoutCommandId(args: string): string | null {
-  const parts = args.trim().split(/\s+/).filter(Boolean);
+  const parts = args.trim().split(WHITESPACE_RUN).filter(Boolean);
   for (const [index, part] of parts.entries()) {
     if (part === "--id" || part === "-i") return parts[index + 1] ?? null;
     if (part.startsWith("--id=")) return part.slice("--id=".length) || null;
