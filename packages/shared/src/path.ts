@@ -43,7 +43,7 @@ function isRootPath(value: string): boolean {
 
 const TRAILING_SLASHES = /\/+$/g;
 const TRAILING_PATH_SEPARATORS = /[\\/]+$/g;
-const TRIM_TRAILING_PATH_SEPARATORS_PATTERN = /^[a-zA-Z]:$/;
+const DRIVE_LETTER_ONLY = /^[a-zA-Z]:$/;
 
 function trimTrailingPathSeparators(value: string): string {
   if (value.length === 0 || isRootPath(value)) {
@@ -55,7 +55,7 @@ function trimTrailingPathSeparators(value: string): string {
   if (trimmed.length === 0) {
     return value;
   }
-  return TRIM_TRAILING_PATH_SEPARATORS_PATTERN.test(trimmed) ? `${trimmed}\\` : trimmed;
+  return DRIVE_LETTER_ONLY.test(trimmed) ? `${trimmed}\\` : trimmed;
 }
 
 export function normalizeProjectPathForDispatch(value: string): string {

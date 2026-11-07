@@ -77,7 +77,7 @@ type CodePair = { from: number; to: number };
 const codePairKey = new PluginKey<CodePair[]>("typedBacktickPairs");
 
 const INLINE_CODE_SPAN = /^([^`\n]+)`(?!`)/;
-const APPEND_TRANSACTION_PATTERN = /^`[^`]+`$/;
+const WHOLE_INLINE_CODE = /^`[^`]+`$/;
 
 // Input rules only see text before the caret, so filling an already typed
 // pair needs a separate exit handler. Only typed pairs opt into that handler.
@@ -146,7 +146,7 @@ function codePairCaretPlugin(type: MarkType) {
       if (
         $start.nodeBefore?.text?.endsWith("`") ||
         $end.nodeAfter?.text?.startsWith("`") ||
-        !APPEND_TRANSACTION_PATTERN.test(state.doc.textBetween(pair.from, pair.to))
+        !WHOLE_INLINE_CODE.test(state.doc.textBetween(pair.from, pair.to))
       ) {
         return null;
       }
@@ -737,7 +737,7 @@ function textJsonForSpan(text: string, marks: RichTextMark[]): Record<string, un
 
 const THEMATIC_BREAK_LINE = /^([-*_])(?:[ \t]*\1){2,}[ \t]*\r?$/;
 const HEADING_PATTERN = /^(#{1,6})([ \t]+)([^\n]*)$/;
-const QUOTE_PATTERN = /^(>[ \t]*)([^\n]*)$/;
+const BLOCKQUOTE_LINE = /^(>[ \t]*)([^\n]*)$/;
 
 /** Keeps literalLength leading characters unstyled so path queries reach file search unchanged. */
 export function buildTiptapContent(
@@ -851,7 +851,7 @@ export function buildTiptapContent(
         });
         continue;
       }
-      const quote = blockSyntax ? QUOTE_PATTERN.exec(line) : null;
+      const quote = blockSyntax ? BLOCKQUOTE_LINE.exec(line) : null;
       if (quote) entries.push({ quote: { prefix: quote[1]!, inline: buildInline(quote[2]!) } });
       else entries.push({ line: buildDocLine(line) });
       continue;
@@ -1074,7 +1074,7 @@ function pushBlankLineRun(acc: RichAccumulator, pmPos: number): void {
   acc.md += 1;
 }
 
-const APPEND_INLINE_RUNS_PATTERN = /^\s+$/;
+const WHITESPACE_ONLY = /^\s+$/;
 
 function appendInlineRuns(
   container: ProseMirrorNode,
@@ -1114,7 +1114,7 @@ function appendInlineRuns(
         } else if (
           child.isText &&
           !child.marks.some((item) => item.type.name === "code") &&
-          APPEND_INLINE_RUNS_PATTERN.test(child.text!)
+          WHITESPACE_ONLY.test(child.text!)
         ) {
           if (!hasContent)
             children[index] = child.mark(child.marks.filter((item) => item.type.name !== mark));

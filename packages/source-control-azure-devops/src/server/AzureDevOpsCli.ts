@@ -356,11 +356,11 @@ function decodeAzureDevOpsJson<S extends Schema.Top>(
   );
 }
 
-const CLASSIFY_AZ_FAILURE_PATTERN = /please run '?az login'?/;
+const AZ_LOGIN_HINT = /please run '?az login'?/;
 
 const classifyAzFailure = (stderr: string): VcsProcessExitFailureKind | null => {
   const normalized = stderr.toLowerCase();
-  if (normalized.includes("az devops login") || CLASSIFY_AZ_FAILURE_PATTERN.test(normalized)) {
+  if (normalized.includes("az devops login") || AZ_LOGIN_HINT.test(normalized)) {
     return "authentication";
   }
   return normalized.includes("pull request") &&

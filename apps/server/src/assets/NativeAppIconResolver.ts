@@ -79,10 +79,10 @@ const plistValue = Effect.fn("NativeAppIconResolver.plistValue")(function* (
   );
 });
 
-const ESCAPE_SPOTLIGHT_STRING_PATTERN = /([\\'*?])/gu;
+const SPOTLIGHT_SPECIAL_CHARACTER = /([\\'*?])/gu;
 
 function escapeSpotlightString(value: string): string {
-  return value.replace(ESCAPE_SPOTLIGHT_STRING_PATTERN, "\\$1");
+  return value.replace(SPOTLIGHT_SPECIAL_CHARACTER, "\\$1");
 }
 
 function containsControlCharacter(value: string): boolean {

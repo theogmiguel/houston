@@ -2,11 +2,11 @@ import { providerAuthReturnUrl } from "@houston-app/shared/providerAuthReturnUrl
 
 export const codexAuthReturnUrl = providerAuthReturnUrl;
 
-const ESCAPE_HTML_PATTERN = /[&<>"']/gu;
+const HTML_SPECIAL_CHARACTER = /[&<>"']/gu;
 
 const escapeHtml = (value: string) =>
   value.replace(
-    ESCAPE_HTML_PATTERN,
+    HTML_SPECIAL_CHARACTER,
     (character) =>
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!,
   );

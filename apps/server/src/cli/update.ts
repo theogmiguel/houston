@@ -42,7 +42,7 @@ import * as CliService from "./service.ts";
 
 const DIGITS_ONLY = /^\d+$/;
 const SERVICE_LAUNCHER_MARKER = /__service-launcher/;
-const VALIDATE_PATTERN = /\bv(\S+)\s*$/;
+const TRAILING_VERSION_TOKEN = /\bv(\S+)\s*$/;
 
 export class CliUpdateError extends Schema.TaggedError<CliUpdateError>()("CliUpdateError", {
   reason: Schema.String,
@@ -478,7 +478,7 @@ export const runUpdate = Effect.fn("cli.update.run")(function* (input: {
               new PinnedRuntimeInstallError({ step: "verifying the downloaded houston", cause }),
           ),
           Effect.flatMap((result) =>
-            result.code === 0 && VALIDATE_PATTERN.exec(result.stdout)?.[1] === targetVersion
+            result.code === 0 && TRAILING_VERSION_TOKEN.exec(result.stdout)?.[1] === targetVersion
               ? Effect.void
               : Effect.fail(
                   new PinnedRuntimeInstallError({

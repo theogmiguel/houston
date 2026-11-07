@@ -1,7 +1,7 @@
 const LEADING_FRONTMATTER =
   /^\uFEFF?---[ \t]*(?:\r\n|\r|\n)(?:[\s\S]*?(?:\r\n|\r|\n))?(?:---|\.\.\.)[ \t]*(?=\r\n|\r|\n|$)/;
 
-const MASK_MARKDOWN_FRONTMATTER_PATTERN = /[^\r\n]/g;
+const NON_LINE_BREAK_CHARACTER = /[^\r\n]/g;
 
 /**
  * Blanks a leading YAML frontmatter block so rendered previews skip it instead
@@ -10,6 +10,6 @@ const MASK_MARKDOWN_FRONTMATTER_PATTERN = /[^\r\n]/g;
  */
 export function maskMarkdownFrontmatter(markdown: string): string {
   return markdown.replace(LEADING_FRONTMATTER, (block) =>
-    block.replace(MASK_MARKDOWN_FRONTMATTER_PATTERN, " "),
+    block.replace(NON_LINE_BREAK_CHARACTER, " "),
   );
 }

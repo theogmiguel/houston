@@ -529,7 +529,7 @@ const CLIPBOARD_SCRIPT = `(() => {
 const SANDBOX_FAILURE_OUTPUT = /sandboxing failed/i;
 const ADOPT_POPUP_PATTERN = /^https?:/i;
 const NAVIGATE_PATTERN = /ERR_[A-Z_]+/;
-const DESCRIBE_CONFIRMATION_TARGET_PATTERN = /aria-ref\s*=/;
+const ARIA_REF_ATTRIBUTE = /aria-ref\s*=/;
 
 const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
@@ -2080,7 +2080,7 @@ const make = Effect.gen(function* () {
       );
     try {
       // Refs resolve against the snapshot's own map; a raw locator call would report them stale.
-      if (selector !== null && !DESCRIBE_CONFIRMATION_TARGET_PATTERN.test(selector)) {
+      if (selector !== null && !ARIA_REF_ATTRIBUTE.test(selector)) {
         const info = await read(tab.page.locator(selector).first());
         return {
           element: { tagName: info.tagName, text: info.text, selector },

@@ -23,7 +23,7 @@ export function parseFetchRemotes(
     .map((match) => ({ name: match[1]!, url: match[2]! }));
 }
 
-const SELECT_GIT_HUB_BASE_REPOSITORY_PATTERN = /^remote\.(.+)\.gh-resolved\s+(\S+)$/u;
+const RESOLVED_REMOTE_CONFIG_LINE = /^remote\.(.+)\.gh-resolved\s+(\S+)$/u;
 
 /** gh priority: marked default, upstream/github/origin, sole remote. Null if ambiguous. */
 export function selectGitHubBaseRepository(input: {
@@ -44,7 +44,7 @@ export function selectGitHubBaseRepository(input: {
   }
   const marks = input.resolved
     .split("\n")
-    .map((line) => SELECT_GIT_HUB_BASE_REPOSITORY_PATTERN.exec(line.trim()))
+    .map((line) => RESOLVED_REMOTE_CONFIG_LINE.exec(line.trim()))
     .filter((match): match is RegExpExecArray => match !== null && repositories.has(match[1]!));
   if (marks.length > 1) return null;
   const [mark] = marks;

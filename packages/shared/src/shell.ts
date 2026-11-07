@@ -53,13 +53,13 @@ export type CommandAvailabilityChecker = (
 const WINDOWS_SHELL_META_CHARS = /([()\][%!^"`<>&|;, *?])/g;
 
 const ESCAPED_PATTERN = /(\\*)"/g;
-const ESCAPE_WINDOWS_SHELL_ARG_PATTERN = /(\\*)$/;
+const TRAILING_BACKSLASHES = /(\\*)$/;
 
 // Escape dynamic arguments for both cmd.exe and the target's CommandLineToArgvW parsing.
 function escapeWindowsShellArg(arg: string): string {
   let escaped = arg.replace(ESCAPED_PATTERN, '$1$1\\"');
   // Double up trailing backslashes so the closing quote is not escaped away.
-  escaped = escaped.replace(ESCAPE_WINDOWS_SHELL_ARG_PATTERN, "$1$1");
+  escaped = escaped.replace(TRAILING_BACKSLASHES, "$1$1");
   escaped = `"${escaped}"`;
   return escaped.replace(WINDOWS_SHELL_META_CHARS, "^$1");
 }

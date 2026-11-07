@@ -548,7 +548,7 @@ export function resolvePromptInjectedEffort(
   return null;
 }
 
-const APPLY_CLAUDE_PROMPT_EFFORT_PREFIX_PATTERN = /^\/[^\s/]+(?:\s|$)/u;
+const SLASH_COMMAND_PREFIX = /^\/[^\s/]+(?:\s|$)/u;
 
 export function applyClaudePromptEffortPrefix(
   text: string,
@@ -559,7 +559,7 @@ export function applyClaudePromptEffortPrefix(
     return trimmed;
   }
   // Prefixing slash commands prevents Claude invocation; command names allow any token without a second slash.
-  if (effort !== "ultrathink" || APPLY_CLAUDE_PROMPT_EFFORT_PREFIX_PATTERN.test(trimmed)) {
+  if (effort !== "ultrathink" || SLASH_COMMAND_PREFIX.test(trimmed)) {
     return trimmed;
   }
   if (trimmed.startsWith("Ultrathink:")) {

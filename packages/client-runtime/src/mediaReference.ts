@@ -60,13 +60,13 @@ export function mediaFileReference(
   };
 }
 
-const MEDIA_URL_REFERENCE_PATTERN = /^(?:https?:\/\/|\/\/)/i;
+const HTTP_OR_PROTOCOL_RELATIVE_URL = /^(?:https?:\/\/|\/\/)/i;
 
 /** Pass the authored source, not a generated URL used by the media player. */
 export function mediaUrlReference(
   url: string,
 ): Extract<MediaReference, { kind: "url" }> | undefined {
-  if (!MEDIA_URL_REFERENCE_PATTERN.test(url)) return undefined;
+  if (!HTTP_OR_PROTOCOL_RELATIVE_URL.test(url)) return undefined;
   try {
     const parsed = new URL(url.startsWith("//") ? `https:${url}` : url);
     return parsed.protocol === "http:" || parsed.protocol === "https:"

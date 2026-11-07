@@ -95,10 +95,10 @@ function serializeCodeBlock(pre: Element): string {
   return serializeCodeBlockToMarkdown(pre.textContent ?? "", resolveCodeBlockLanguage(pre));
 }
 
-const SERIALIZE_TABLE_CELL_PATTERN = /\n+/g;
+const NEWLINE_RUN = /\n+/g;
 
 function serializeTableCell(cell: Element): string {
-  return serializeChildren(cell, true).replace(SERIALIZE_TABLE_CELL_PATTERN, " ").trim();
+  return serializeChildren(cell, true).replace(NEWLINE_RUN, " ").trim();
 }
 
 function tableSeparatorFor(headerCells: Element[]): string {
@@ -130,7 +130,7 @@ function serializeTable(table: Element): string {
   return `${lines.join("\n")}\n\n`;
 }
 
-const SERIALIZE_LIST_ITEM_PATTERN = /\n{3,}/g;
+const BLANK_LINE_RUN = /\n{3,}/g;
 
 function serializeListItem(
   item: Element,
@@ -145,7 +145,7 @@ function serializeListItem(
   const bullet = ordered ? `${index}. ` : "- ";
   const marker = `${bullet}${task}`;
   let content = outsideCodeFences(serializeChildren(item, inTableCell), (prose) =>
-    prose.replace(SERIALIZE_LIST_ITEM_PATTERN, "\n\n"),
+    prose.replace(BLANK_LINE_RUN, "\n\n"),
   ).trim();
   if (!item.querySelector(":scope > p")) {
     content = outsideCodeFences(content, (prose) => prose.replace(/\n{2,}/g, "\n"));
@@ -168,7 +168,7 @@ function serializeList(list: Element, ordered: boolean, inTableCell: boolean): s
 
 function serializeBlockquote(quote: Element, inTableCell: boolean): string {
   const content = outsideCodeFences(serializeChildren(quote, inTableCell), (prose) =>
-    prose.replace(SERIALIZE_LIST_ITEM_PATTERN, "\n\n"),
+    prose.replace(BLANK_LINE_RUN, "\n\n"),
   ).trim();
   if (!content) return "";
   const quoted = content
@@ -347,7 +347,7 @@ const TIDY_MARKDOWN_PATTERN = /[ \t]+(?=\n)/g;
 
 function tidyMarkdown(markdown: string): string {
   return outsideCodeFences(markdown, (prose) =>
-    prose.replace(TIDY_MARKDOWN_PATTERN, "").replace(SERIALIZE_LIST_ITEM_PATTERN, "\n\n"),
+    prose.replace(TIDY_MARKDOWN_PATTERN, "").replace(BLANK_LINE_RUN, "\n\n"),
   ).trim();
 }
 

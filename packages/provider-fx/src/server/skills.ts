@@ -89,10 +89,10 @@ function compareUtf8(left: string, right: string): number {
   return a.length - b.length;
 }
 
-const TRIM_SPACE_TAB_PATTERN = /^[ \t]+|[ \t]+$/g;
+const SURROUNDING_SPACE_OR_TAB = /^[ \t]+|[ \t]+$/g;
 
 /** fx trims only spaces and tabs. */
-const trimSpaceTab = (value: string) => value.replace(TRIM_SPACE_TAB_PATTERN, "");
+const trimSpaceTab = (value: string) => value.replace(SURROUNDING_SPACE_OR_TAB, "");
 
 /** fx's `invalidTextCause`: no ASCII control bytes (invalid UTF-8 shows up as one). */
 const hasControlByte = (value: string) => [...value].some((char) => char < " " || char === "\x7f");

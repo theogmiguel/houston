@@ -111,11 +111,11 @@ export class OpenCodeRuntimeError extends Data.TaggedError(OPENCODE_RUNTIME_ERRO
 
 export type OpenCodeStartupFailureReason = "databaseLocked";
 
-const CLASSIFY_STARTUP_EXIT_PATTERN = /SQLITE_BUSY|database is locked/i;
+const SQLITE_LOCKED_MESSAGE = /SQLITE_BUSY|database is locked/i;
 
 // Classify stderr database locks at exit so callers need not parse diagnostics.
 function classifyStartupExit(stderr: string): OpenCodeStartupFailureReason | undefined {
-  return CLASSIFY_STARTUP_EXIT_PATTERN.test(stderr) ? "databaseLocked" : undefined;
+  return SQLITE_LOCKED_MESSAGE.test(stderr) ? "databaseLocked" : undefined;
 }
 
 export const isOpenCodeRuntimeError = (u: unknown): u is OpenCodeRuntimeError =>

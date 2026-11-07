@@ -1771,7 +1771,7 @@ const decodeServerVersion = decodeJsonResult(
   }),
 );
 
-const MATCH_PATTERN = /^(\d+)\.(\d+)/u;
+const MAJOR_MINOR_VERSION = /^(\d+)\.(\d+)/u;
 
 /**
  * Whether the GraphQL merge request list takes every filter the REST list does: `search` came
@@ -1782,7 +1782,7 @@ export function decodeGraphqlListSupportJson(raw: string): Result.Result<boolean
   if (!Result.isSuccess(decoded)) {
     return Result.fail(decoded.failure);
   }
-  const match = MATCH_PATTERN.exec(decoded.success.data.metadata?.version?.trim() ?? "");
+  const match = MAJOR_MINOR_VERSION.exec(decoded.success.data.metadata?.version?.trim() ?? "");
   if (match === null) return Result.succeed(false);
   const major = Number(match[1]);
   const minor = Number(match[2]);

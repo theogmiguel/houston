@@ -30,7 +30,7 @@ const escapeRegex = (value: string) => value.replace(REGEX_SPECIAL_CHARACTER, "\
 
 const BASE_LANGUAGE_PATTERN = /[-_]/;
 const WHITESPACE_RUN = /\s+/;
-const REMOVE_SPEECH_FILLER_WORDS_PATTERN = /\s{2,}/g;
+const SPACE_RUN = /\s{2,}/g;
 
 /**
  * Without a language, only the language-neutral hesitations in `UNIVERSAL_FILLER_WORDS` apply.
@@ -52,5 +52,5 @@ export function removeSpeechFillerWords(
     "giu",
   );
   const filtered = text.replace(pattern, (_match, cue: string | undefined) => cue ?? "");
-  return filtered.replace(REMOVE_SPEECH_FILLER_WORDS_PATTERN, " ").trim();
+  return filtered.replace(SPACE_RUN, " ").trim();
 }

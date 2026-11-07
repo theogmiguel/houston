@@ -44,11 +44,11 @@ function describeOversizedThemeFile(bytes: number): string | null {
   return `That file is ${formatByteSize(bytes)}. Theme files are only a few KB, so this one was not read (limit ${formatByteSize(MAX_THEME_FILE_BYTES)}).`;
 }
 
-const ESCAPE_JSON_HTML_PATTERN = /[&<>"']/g;
+const HTML_SPECIAL_CHARACTER = /[&<>"']/g;
 
 function escapeJsonHtml(value: string): string {
   return value.replace(
-    ESCAPE_JSON_HTML_PATTERN,
+    HTML_SPECIAL_CHARACTER,
     (character) =>
       ({
         "&": "&amp;",

@@ -40,13 +40,13 @@ export function summarizeSubagentStatuses(
     .join(" · ");
 }
 
-const DISPLAY_TITLE_PATTERN = /^Subagent:\s*/i;
+const SUBAGENT_PREFIX = /^Subagent:\s*/i;
 const SUBAGENT_ROOT_PATH = /^\/root\/(?:[^/]+\/)*([^/]+)\/?$/u;
 const UNDERSCORE_OR_SPACE_RUN = /[_\s]+/gu;
 const WORD_INITIAL = /(^|\s)\S/gu;
 
 export function formatSubagentDisplayTitle(title: string): string {
-  const displayTitle = title.replace(DISPLAY_TITLE_PATTERN, "");
+  const displayTitle = title.replace(SUBAGENT_PREFIX, "");
   const path = SUBAGENT_ROOT_PATH.exec(displayTitle);
   if (path === null) return displayTitle;
 

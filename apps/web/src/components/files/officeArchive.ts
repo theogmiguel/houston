@@ -218,7 +218,7 @@ const INLINE_STRING_TYPE = /\s+t\s*=\s*(?:"[^"]*"|'[^']*')/;
 const TAG_END = />$/;
 const SHEET_METADATA_ELEMENT =
   /(<((?:\w+:)?(?:dimension|mergeCell|col))\b(?:[^"'<>]|"[^"]*"|'[^']*')*>)(?:\s*<\/\2\s*>)?/g;
-const REPLACE_PATTERN = /\/?>/;
+const TAG_CLOSE = /\/?>/;
 const COLUMN_ELEMENT = /<(?:\w+:)?col\b/;
 const OPENING_TAG_NAME = /^<([^\s>]+)/;
 
@@ -407,7 +407,7 @@ function boundedWorksheet(
         const pattern = new RegExp(`\\s${name}\\s*=\\s*(?:"[^"]*"|'[^']*')`);
         tag = pattern.test(tag)
           ? tag.replace(pattern, ` ${name}="${value}"`)
-          : tag.replace(REPLACE_PATTERN, (end) => ` ${name}="${value}"${end}`);
+          : tag.replace(TAG_CLOSE, (end) => ` ${name}="${value}"${end}`);
       };
       if (attributes.ref !== undefined) {
         const bounded = boundRange(attributes.ref);

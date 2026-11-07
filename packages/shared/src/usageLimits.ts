@@ -436,7 +436,7 @@ export interface LimitPool {
   readonly windows: readonly LimitPoolWindow[];
 }
 
-const DISPLAY_LIMIT_WINDOWS_PATTERN = /-(5h|weekly|quota)$/;
+const LIMIT_WINDOW_SUFFIX = /-(5h|weekly|quota)$/;
 
 export function displayLimitWindows(pool: LimitPool) {
   if (pool.driver === "antigravity") {
@@ -444,8 +444,8 @@ export function displayLimitWindows(pool: LimitPool) {
       (left, right) =>
         Number(!left.id.startsWith("gemini-")) - Number(!right.id.startsWith("gemini-")) ||
         left.id
-          .replace(DISPLAY_LIMIT_WINDOWS_PATTERN, "")
-          .localeCompare(right.id.replace(DISPLAY_LIMIT_WINDOWS_PATTERN, "")) ||
+          .replace(LIMIT_WINDOW_SUFFIX, "")
+          .localeCompare(right.id.replace(LIMIT_WINDOW_SUFFIX, "")) ||
         WINDOW_KIND_ORDER[left.kind] - WINDOW_KIND_ORDER[right.kind],
     );
   }

@@ -55,11 +55,11 @@ function escapeSystemdSpecifiers(value: string): string {
   return value.replaceAll("%", "%%");
 }
 
-const QUOTE_SYSTEMD_VALUE_PATTERN = /[\s"'\\]/;
+const SYSTEMD_UNSAFE_CHARACTER = /[\s"'\\]/;
 
 function quoteSystemdValue(value: string): string {
   const escaped = escapeSystemdSpecifiers(value);
-  return QUOTE_SYSTEMD_VALUE_PATTERN.test(escaped)
+  return SYSTEMD_UNSAFE_CHARACTER.test(escaped)
     ? `"${escaped.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`
     : escaped;
 }

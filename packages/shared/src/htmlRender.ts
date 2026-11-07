@@ -395,13 +395,13 @@ function bootstrapMarkup(markup: string): string {
   ].join("");
 }
 
-const SCAN_PATTERN =
+const RAW_TEXT_REGION =
   /<!--[\s\S]*?(?:-->|$)|<(script|style|textarea|title|xmp|iframe|noembed|noframes|noscript)\b[\s\S]*?(?:<\/\1\s*>|$)|<plaintext\b[\s\S]*$/gi;
 const BLANK_NON_MARKUP_PATTERN = /<(\/?)template(?:\s[^>]*)?\/?>/gi;
 
 // Blank inert content without shifting offsets so it cannot receive the bootstrap.
 const blankNonMarkup = (html: string) => {
-  const scan = html.replace(SCAN_PATTERN, (match) => " ".repeat(match.length));
+  const scan = html.replace(RAW_TEXT_REGION, (match) => " ".repeat(match.length));
   const parts: string[] = [];
   let depth = 0;
   let start = 0;

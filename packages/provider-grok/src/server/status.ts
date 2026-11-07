@@ -291,11 +291,11 @@ export function parseGrokModelsCliOutput(output: string): GrokModelsCliOutput {
   return { authenticated, models };
 }
 
-const DISPLAY_NAME_FROM_GROK_MODEL_SLUG_PATTERN = /[-_]/g;
+const SLUG_SEPARATOR = /[-_]/g;
 
 function displayNameFromGrokModelSlug(slug: string): string {
   return slug
-    .split(DISPLAY_NAME_FROM_GROK_MODEL_SLUG_PATTERN)
+    .split(SLUG_SEPARATOR)
     .map((part) => (part.toLowerCase() === "grok" ? "Grok" : part))
     .join(" ");
 }

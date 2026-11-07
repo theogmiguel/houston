@@ -154,7 +154,7 @@ const resolveBrowseTarget = Effect.fn("WorkspaceEntries.resolveBrowseTarget")(fu
 
 const ENDS_WITH_SEPARATOR_PATTERN = /[\\/]$/;
 const LEADING_MENTION_PREFIX = /^[@./]+/;
-const LIST_PATTERN = /^:|[*?[\\]/;
+const PATHSPEC_MAGIC_OR_GLOB = /^:|[*?[\\]/;
 
 /** @public */
 export const make = Effect.gen(function* () {
@@ -424,7 +424,7 @@ export const make = Effect.gen(function* () {
           entries.length > IGNORE_CHECK_CHUNK_SIZE &&
           target.relativePath !== "" &&
           !throughSymlink &&
-          !LIST_PATTERN.test(target.relativePath) &&
+          !PATHSPEC_MAGIC_OR_GLOB.test(target.relativePath) &&
           (yield* checkIgnore([target.relativePath]))?.exitCode === 0
         ) {
           return {

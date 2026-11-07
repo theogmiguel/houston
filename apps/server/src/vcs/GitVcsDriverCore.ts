@@ -553,7 +553,7 @@ const SSH_TRANSPORT_REFUSAL_PATTERN =
   /Permission denied \((?:publickey|password|keyboard-interactive)|Permission denied, please try again|Host key verification failed/i;
 
 const LINE_BREAK = /\r?\n/;
-const CLASSIFY_GIT_FAILURE_PATTERN = /^remote:/;
+const REMOTE_OUTPUT_PREFIX = /^remote:/;
 
 function classifyGitFailure(stderr: string): GitCommandFailureReason | null {
   const diagnostics = stderr
@@ -561,7 +561,7 @@ function classifyGitFailure(stderr: string): GitCommandFailureReason | null {
     .filter(
       (line) =>
         GIT_DIAGNOSTIC_LINE_PATTERN.test(line) ||
-        (!CLASSIFY_GIT_FAILURE_PATTERN.test(line) && SSH_TRANSPORT_REFUSAL_PATTERN.test(line)),
+        (!REMOTE_OUTPUT_PREFIX.test(line) && SSH_TRANSPORT_REFUSAL_PATTERN.test(line)),
     )
     .join("\n");
   if (diagnostics.length === 0) return null;

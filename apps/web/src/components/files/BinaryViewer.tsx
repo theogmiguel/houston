@@ -78,7 +78,7 @@ function ArchiveFile(props: { readonly path: string; readonly bytes: Uint8Array<
 }
 
 const TRAILING_SLASH = /\/$/;
-const BINARY_VIEWER_PATTERN = /(?:[^/]+)?\/$/;
+const TRAILING_DIRECTORY_SEGMENT = /(?:[^/]+)?\/$/;
 
 export default function BinaryViewer(props: {
   readonly src: string;
@@ -205,7 +205,7 @@ export default function BinaryViewer(props: {
               setError(null);
               setEntry(null);
               if (selectedPath) setSelectedPath(null);
-              else setFolder(folder.replace(BINARY_VIEWER_PATTERN, ""));
+              else setFolder(folder.replace(TRAILING_DIRECTORY_SEGMENT, ""));
             }}
           >
             <ChevronLeftIcon className="size-3.5" />

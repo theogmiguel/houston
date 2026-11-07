@@ -1,6 +1,6 @@
 import type { SpeechCustomWords } from "@houston-app/contracts";
 
-const MATCH_KEY_PATTERN = /[\p{L}\p{N}]/u;
+const LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
 const MATCHABLE_SCRIPT_WORD = /^[\p{Script=Latin}\p{Script=Cyrillic}\p{Script=Greek}\p{Nd}]+$/u;
 const LETTERS_PATTERN = /\p{L}/u;
 const POSSESSIVE_PATTERN = /['’]s$/iu;
@@ -20,7 +20,7 @@ export function makeSpeechTextCorrector(
 
   const matchKey = (value: string) =>
     [...value]
-      .filter((character) => MATCH_KEY_PATTERN.test(character))
+      .filter((character) => LETTER_OR_DIGIT.test(character))
       .join("")
       .toLocaleLowerCase();
 

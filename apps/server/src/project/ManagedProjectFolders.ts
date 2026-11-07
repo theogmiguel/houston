@@ -187,11 +187,11 @@ function namedProjectReadme(name: string): string {
   ].join("\n");
 }
 
-const DESCRIBE_COMMIT_FAILURE_PATTERN =
+const MISSING_GIT_IDENTITY_MESSAGE =
   /identity unknown|tell me who you are|no (name|email) was given/i;
 
 function describeCommitFailure(stderr: string): string {
-  if (DESCRIBE_COMMIT_FAILURE_PATTERN.test(stderr)) {
+  if (MISSING_GIT_IDENTITY_MESSAGE.test(stderr)) {
     return "Git has no name or email on this machine. Set user.name and user.email, then commit.";
   }
   const lines = stderr

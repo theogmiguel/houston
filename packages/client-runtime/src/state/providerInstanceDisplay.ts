@@ -32,7 +32,7 @@ export function resolveProviderInstanceDisplayName(
 
 const WORD_SEPARATOR_PUNCTUATION = /[^\P{P}'’]+/gu;
 const WHITESPACE_RUN = /\s+/u;
-const PROVIDER_INSTANCE_INITIALS_PATTERN = /^['’]+|['’]+$/gu;
+const EDGE_APOSTROPHES = /^['’]+|['’]+$/gu;
 
 export function providerInstanceInitials(label: string): string {
   // Punctuation separates words so "Codex (hub)" reads CH, not C(. An apostrophe
@@ -41,7 +41,7 @@ export function providerInstanceInitials(label: string): string {
   const words = label
     .replace(WORD_SEPARATOR_PUNCTUATION, " ")
     .split(WHITESPACE_RUN)
-    .map((word) => word.replace(PROVIDER_INSTANCE_INITIALS_PATTERN, ""))
+    .map((word) => word.replace(EDGE_APOSTROPHES, ""))
     .filter(Boolean);
   if (words.length === 0) return "";
   if (words.length === 1) return Array.from(words[0]!).slice(0, 2).join("").toUpperCase();

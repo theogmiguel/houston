@@ -538,7 +538,7 @@ const renderingOf = async (input: SnapshotInput) => {
   };
 };
 
-const ACCESSIBILITY_TREE_PATTERN = /\[ref=((?:f\d+)?e\d+)\]/g;
+const REF_ANNOTATION = /\[ref=((?:f\d+)?e\d+)\]/g;
 
 const capture = async (
   input: SnapshotInput,
@@ -595,7 +595,7 @@ const capture = async (
   const redacted = withoutTreeDataPayloads(tree);
   const accessibilityTree = (dotted ? maskTree(redacted, dotted) : redacted)
     .slice(0, MAX_VISIBLE_TEXT_LENGTH)
-    .replace(ACCESSIBILITY_TREE_PATTERN, (_match, nativeRef: string) => {
+    .replace(REF_ANNOTATION, (_match, nativeRef: string) => {
       const ref = `houston-${generation}-${nativeRef}`;
       state.refs.set(ref, nativeRef);
       return `[ref=${ref}]`;

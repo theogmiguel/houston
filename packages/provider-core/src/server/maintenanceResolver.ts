@@ -107,13 +107,13 @@ function nonEmptyString(value: unknown): string | null {
 
 const SAFE_WINDOWS_WORD = /^[\w./:\\@=-]+$/;
 const SAFE_POSIX_WORD = /^[\w./:@=-]+$/;
-const QUOTE_SHELL_WORD_PATTERN = /['\u2018\u2019]/g;
+const SHELL_SINGLE_QUOTE_VARIANT = /['\u2018\u2019]/g;
 
 function quoteShellWord(word: string, platform: NodeJS.Platform): string {
   const safeWord = platform === "win32" ? SAFE_WINDOWS_WORD : SAFE_POSIX_WORD;
   if (safeWord.test(word)) return word;
   return platform === "win32"
-    ? `'${word.replace(QUOTE_SHELL_WORD_PATTERN, "$&$&")}'`
+    ? `'${word.replace(SHELL_SINGLE_QUOTE_VARIANT, "$&$&")}'`
     : `'${word.replaceAll("'", "'\\''")}'`;
 }
 

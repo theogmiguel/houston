@@ -28,7 +28,7 @@ function matchesScalar(filter: ScheduledTaskWebhookFilter, text: string): boolea
   }
 }
 
-const MATCHES_WEBHOOK_FILTER_PATTERN = /\[\]/;
+const EMPTY_ARRAY_BRACKETS = /\[\]/;
 
 /**
  * Placeholders render null as missing, so filters treat it the same way. A
@@ -37,7 +37,7 @@ const MATCHES_WEBHOOK_FILTER_PATTERN = /\[\]/;
  * the value, and `exists` when the list has an element.
  */
 function matchesWebhookFilter(filter: ScheduledTaskWebhookFilter, value: unknown): boolean {
-  if (Array.isArray(value) && MATCHES_WEBHOOK_FILTER_PATTERN.test(filter.path)) {
+  if (Array.isArray(value) && EMPTY_ARRAY_BRACKETS.test(filter.path)) {
     if (filter.op === "exists")
       return value.some((element) => element !== null && element !== undefined);
     const texts = value.map(scalarText).filter((text): text is string => text !== undefined);

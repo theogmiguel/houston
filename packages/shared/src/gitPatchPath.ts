@@ -53,7 +53,7 @@ export function quoteGitPatchPath(path: string): string {
   return quoting ? `${QUOTE}${body}${QUOTE}` : path;
 }
 
-const UNESCAPE_BODY_PATTERN = /^[0-7]{3}$/;
+const OCTAL_ESCAPE_BODY = /^[0-7]{3}$/;
 
 // Octal escapes represent bytes; rejoin before UTF-8 decoding.
 function unescapeBody(body: string): string {
@@ -88,7 +88,7 @@ function unescapeBody(body: string): string {
       continue;
     }
     const octal = body.slice(at + 1, at + 4);
-    if (UNESCAPE_BODY_PATTERN.test(octal)) {
+    if (OCTAL_ESCAPE_BODY.test(octal)) {
       flush();
       bytes.push(Number.parseInt(octal, 8));
       at += 4;

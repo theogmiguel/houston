@@ -15,12 +15,12 @@ const LINE_BREAK = /\r?\n/;
 const COMMIT_BODY_INDENT = /^(?: {4}|\t)/;
 const DELIMITER_PATTERN = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 const BLANK_LINE = /^[ \t]*$/;
-const LIST_ITEM_MARKER = /^(?:[-*]\s+)/;
+const DASH_OR_STAR_BULLET = /^(?:[-*]\s+)/;
 const AUTHOR_PATTERN = /^co-authored-by:\s*(.*?)\s*<([^<>]+)>\s*$/i;
 const AGENT_AUTHOR_PATTERN = /^github copilot$|^copilot$/i;
 const FOOTER_PATTERN =
   /\[([^\]]+)\]\(https:\/\/(?:claude\.ai|claude\.com|www\.anthropic\.com|chatgpt\.com|openai\.com|cursor\.com|github\.com|opencode\.ai|x\.ai|antigravity\.google)(?:\/[^\s)]*)?\)/gi;
-const REMOVE_AGENT_CREDITS_PATTERN = /(?:\r?\n[ \t]*)+$/;
+const TRAILING_BLANK_LINES = /(?:\r?\n[ \t]*)+$/;
 
 export function removeAgentCredits(message: string): string {
   let fence: string | undefined;
@@ -44,7 +44,7 @@ export function removeAgentCredits(message: string): string {
       return true;
     }
     if (fence !== undefined) return true;
-    const text = line.trim().replace(LIST_ITEM_MARKER, "");
+    const text = line.trim().replace(DASH_OR_STAR_BULLET, "");
     const author = AUTHOR_PATTERN.exec(text);
     // GitHub's generic noreply address is also used by people; require Copilot's name.
     const email = author?.[2]?.toLowerCase();
@@ -57,5 +57,5 @@ export function removeAgentCredits(message: string): string {
     removed = true;
     return false;
   });
-  return removed ? lines.join(newline).replace(REMOVE_AGENT_CREDITS_PATTERN, "") : message;
+  return removed ? lines.join(newline).replace(TRAILING_BLANK_LINES, "") : message;
 }

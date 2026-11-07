@@ -1,9 +1,8 @@
-const DESCRIBE_PULL_REQUEST_DIFF_ERROR_PATTERN =
-  /\brate limit\b|\brate[-_]limited\b|\btoo many requests\b/i;
+const RATE_LIMIT_MESSAGE = /\brate limit\b|\brate[-_]limited\b|\btoo many requests\b/i;
 
 /** Diff failures currently include transport wrappers, so recognize the reason inside them. */
 export function describePullRequestDiffError(error: string, providerName: string, term: string) {
-  if (DESCRIBE_PULL_REQUEST_DIFF_ERROR_PATTERN.test(error)) {
+  if (RATE_LIMIT_MESSAGE.test(error)) {
     return {
       title: `${providerName} rate limit reached`,
       description: `${providerName} is temporarily limiting requests, so this diff couldn't be loaded. Try again after the limit resets, or view the changes on ${providerName}.`,

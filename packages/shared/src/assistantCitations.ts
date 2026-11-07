@@ -17,11 +17,11 @@ const CITATION_LINK = new RegExp(
 );
 const decodeCitation = Schema.decodeUnknownOption(AssistantCitation);
 
-const ENCODE_PATH_PART_PATTERN = /[!'()*]/g;
+const URI_UNRESERVED_MARK = /[!'()*]/g;
 
 function encodePathPart(value: string): string {
   return encodeURIComponent(value).replace(
-    ENCODE_PATH_PART_PATTERN,
+    URI_UNRESERVED_MARK,
     (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
   );
 }
@@ -176,14 +176,14 @@ export function expandAssistantCitationsForProvider(prompt: string): string {
   return `${text}\n\n<assistant_citations>\n${description}\n${data}\n</assistant_citations>`;
 }
 
-const ESCAPE_MARKDOWN_TEXT_PATTERN = /[\\`*_[\]{}()#+.!|~-]/g;
+const MARKDOWN_SPECIAL_CHARACTER = /[\\`*_[\]{}()#+.!|~-]/g;
 
 function escapeMarkdownText(text: string): string {
   return text
     .replace(AMPERSAND, "&amp;")
     .replace(LESS_THAN, "&lt;")
     .replace(GREATER_THAN, "&gt;")
-    .replace(ESCAPE_MARKDOWN_TEXT_PATTERN, "\\$&");
+    .replace(MARKDOWN_SPECIAL_CHARACTER, "\\$&");
 }
 
 export function renderAssistantCitationsAsText(prompt: string): string {

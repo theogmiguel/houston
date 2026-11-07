@@ -416,7 +416,7 @@ export interface XAiBackgroundTaskLifecycleMutation {
     | { readonly kind: "monitor"; readonly label?: string };
 }
 
-const LABEL_PATTERN = /^\[monitor\]\s*/;
+const MONITOR_LABEL_PREFIX = /^\[monitor\]\s*/;
 
 function xAiBackgroundTaskReport(
   update: XAiTaskLifecycleNotification["update"],
@@ -435,7 +435,7 @@ function xAiBackgroundTaskReport(
     monitorDescription ??
     nonEmptyString(snapshot?.description ?? undefined) ??
     nonEmptyString(update.description ?? undefined) ??
-    displayCommand?.replace(LABEL_PATTERN, "") ??
+    displayCommand?.replace(MONITOR_LABEL_PREFIX, "") ??
     nonEmptyString(snapshot?.command) ??
     nonEmptyString(update.command);
   const named = label === undefined ? {} : { label };

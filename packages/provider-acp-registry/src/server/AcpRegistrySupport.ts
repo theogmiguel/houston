@@ -52,7 +52,7 @@ const LEADING_DOT_SLASH = /^\.\//u;
 const WINDOWS_DRIVE_PREFIX = /^[a-zA-Z]:/u;
 const NORMALIZED_PACKAGE_NAME_PATTERN = /[._-]+/gu;
 const NAME_VERSION_LINE = /^(\S+) v(\S+)(?:\s|$)/u;
-const VALIDATE_LOCAL_EXECUTABLE_PATTERN = /\.(?:cmd|bat)$/iu;
+const BATCH_SCRIPT_SUFFIX = /\.(?:cmd|bat)$/iu;
 const UNINSTALL_MANAGED_BINARY_PATTERN = /^(?:darwin|linux|windows)-(?:aarch64|x86_64)$/u;
 
 const ACP_REGISTRY_URL = "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json";
@@ -1720,7 +1720,7 @@ export const makeAcpRegistryCatalog = Effect.fn("AcpRegistryCatalog.make")(funct
   );
 
   const validateLocalExecutable = (command: string) =>
-    platform === "win32" && VALIDATE_LOCAL_EXECUTABLE_PATTERN.test(command)
+    platform === "win32" && BATCH_SCRIPT_SUFFIX.test(command)
       ? Effect.fail(
           new AcpRegistryError({
             reason: "runner_unavailable",

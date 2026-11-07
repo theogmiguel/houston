@@ -269,7 +269,7 @@ const ChangedFilesTree = memo(function ChangedFilesTree(props: {
   return <ChangedFilesRows rows={rows} renderRow={renderRow} virtualized={virtualized} />;
 });
 
-const CHANGED_FILES_ROWS_PATTERN = /auto|scroll/;
+const AUTO_OR_SCROLL = /auto|scroll/;
 
 function ChangedFilesRows({
   rows,
@@ -297,7 +297,7 @@ function ChangedFilesRows({
     let scrollElement: HTMLElement | null = null;
     for (let parent = container.parentElement; parent; parent = parent.parentElement) {
       ancestors.push(parent);
-      if (CHANGED_FILES_ROWS_PATTERN.test(getComputedStyle(parent).overflowY)) {
+      if (AUTO_OR_SCROLL.test(getComputedStyle(parent).overflowY)) {
         scrollElement = parent;
         break;
       }

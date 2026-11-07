@@ -96,7 +96,7 @@ export function matchesKeybindingShortcutModifiers(
   );
 }
 
-const MATCHES_KEYBINDING_SHORTCUT_PATTERN = /^[a-z0-9]$/i;
+const SINGLE_ALPHANUMERIC_KEY = /^[a-z0-9]$/i;
 
 export function matchesKeybindingShortcut(
   event: ShortcutEventLike,
@@ -106,7 +106,7 @@ export function matchesKeybindingShortcut(
   if (
     !isMacPlatform(platform) &&
     event.getModifierState?.("AltGraph") &&
-    !MATCHES_KEYBINDING_SHORTCUT_PATTERN.test(event.key)
+    !SINGLE_ALPHANUMERIC_KEY.test(event.key)
   )
     return false;
   if (!matchesKeybindingShortcutModifiers(event, shortcut, platform)) return false;

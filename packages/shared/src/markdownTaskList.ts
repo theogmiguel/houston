@@ -1,4 +1,4 @@
-const MATCH_PATTERN = /^(?:\s*(?:[-+*]|\d+[.)])\s+)(\[[ xX]\])/;
+const TASK_LIST_CHECKBOX = /^(?:\s*(?:[-+*]|\d+[.)])\s+)(\[[ xX]\])/;
 
 /** Offset of the `[ ]` marker on the first line of the list item starting at `listItemStart`. */
 export function taskListMarkerOffset(markdown: string, listItemStart: number): number | null {
@@ -7,7 +7,7 @@ export function taskListMarkerOffset(markdown: string, listItemStart: number): n
     listItemStart,
     firstLineEnd === -1 ? markdown.length : firstLineEnd,
   );
-  const match = firstLine.match(MATCH_PATTERN);
+  const match = firstLine.match(TASK_LIST_CHECKBOX);
   if (!match?.[1]) return null;
   return listItemStart + firstLine.indexOf(match[1]);
 }

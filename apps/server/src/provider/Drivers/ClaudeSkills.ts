@@ -495,7 +495,7 @@ export function claudeLaunchArgDirectories(launchArgs?: string): ReadonlyArray<s
   return directories;
 }
 
-const DISCOVER_CLAUDE_SKILLS_PATTERN = /[^a-zA-Z0-9_-]/g;
+const NON_SKILL_NAME_CHARACTER = /[^a-zA-Z0-9_-]/g;
 
 /** First name wins, matching Claude Code's precedence of user skills over project skills. */
 export const discoverClaudeSkills = Effect.fn("discoverClaudeSkills")(function* (
@@ -567,7 +567,7 @@ export const discoverClaudeSkills = Effect.fn("discoverClaudeSkills")(function* 
         const unprefixedName = declaredName?.startsWith(`${root.prefix}:`)
           ? declaredName.slice(root.prefix.length + 1)
           : declaredName;
-        name = `${root.prefix}:${(unprefixedName || entry).replace(DISCOVER_CLAUDE_SKILLS_PATTERN, "-")}`;
+        name = `${root.prefix}:${(unprefixedName || entry).replace(NON_SKILL_NAME_CHARACTER, "-")}`;
         // Advertise only exact native names the shared composer grammar can invoke.
         const [mention] = `$${name}`.matchAll(SKILL_MENTION_PATTERN);
         if (mention?.[2] !== name) continue;
