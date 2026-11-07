@@ -9,6 +9,7 @@ import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Option from "effect/Option";
+import * as TestClock from "effect/testing/TestClock";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
@@ -25,6 +26,7 @@ import {
   mergePathEntries,
   mergePathValues,
   npmShimExecutable,
+  PathDirectoryListingCache,
   preferGitForWindowsBinary,
   readEnvironmentFromLoginShell,
   readEnvironmentFromWindowsShell,
@@ -440,37 +442,167 @@ describe("mergePathValues", () => {
 });
 
 effectIt.layer(NodeServices.layer)("resolveCommandPath", (it) => {
-  const recordProbes = (env: NodeJS.ProcessEnv) =>
+  const recordListings = (env: NodeJS.ProcessEnv) =>
     Effect.gen(function* () {
-      const probed: Array<string> = [];
+      const listed: Array<string> = [];
       const result = yield* resolveCommandPath("definitely-not-installed", { env }).pipe(
         Effect.provideService(HostProcess.Platform, "win32"),
         Effect.provideService(CommandResolutionCache, new Map()),
+        Effect.provideService(PathDirectoryListingCache, new Map()),
         Effect.provide(
           FileSystem.layerNoop({
-            stat: (filePath) =>
-              Effect.sync(() => {
-                probed.push(filePath);
-                return { type: "Directory" } as FileSystem.File.Info;
-              }),
+            stat: () =>
+              Effect.succeed({
+                type: "Directory",
+                // @effect-diagnostics-next-line globalDate:off -- File.Info carries a Date mtime.
+                mtime: Option.some(new Date(0)),
+              } as FileSystem.File.Info),
+            readDirectory: (directory) => Effect.sync(() => (listed.push(directory), [])),
           }),
         ),
       );
 
       expect(result).toBeNull();
-      return probed;
+      return listed;
     });
 
   it.effect("still visits a PATH entry that differs only in case", () =>
     Effect.gen(function* () {
-      const probed = yield* recordProbes({
+      const listed = yield* recordListings({
         PATH: "C:\\bin;C:\\BIN",
         PATHEXT: ".COM;.EXE",
       });
 
       // Windows PATH directories can be case-sensitive; preserve both spellings.
-      expect(probed).toHaveLength(8);
+      expect(listed).toEqual(["C:\\bin", "C:\\BIN"]);
     }),
+  );
+
+  // Counts file-system calls against real temporary PATH directories.
+  const countingFileSystem = (fs: FileSystem.FileSystem) => {
+    const calls = { stat: [] as Array<string>, readDirectory: [] as Array<string> };
+    const fileSystem: FileSystem.FileSystem = {
+      ...fs,
+      stat: (file) => (calls.stat.push(file), fs.stat(file)),
+      readDirectory: (directory, options) => (
+        calls.readDirectory.push(directory),
+        fs.readDirectory(directory, options)
+      ),
+    };
+    return { calls, fileSystem };
+  };
+
+  it.effect(
+    "a Windows miss lists each PATH directory once instead of probing each PATHEXT name",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const directories: Array<string> = [];
+        for (let index = 0; index < 4; index++)
+          directories.push(yield* fs.makeTempDirectoryScoped());
+        const env = { PATH: directories.join(";"), PATHEXT: ".COM;.EXE;.BAT;.CMD;.PS1" };
+        const { calls, fileSystem } = countingFileSystem(fs);
+        const resolve = (command: string) =>
+          resolveCommandPath(command, { env }).pipe(
+            Effect.provideService(FileSystem.FileSystem, fileSystem),
+          );
+
+        expect(yield* resolve("absent")).toBeNull();
+        // One mtime check and one read per directory; probing would stat 10 names in each.
+        expect(calls.readDirectory).toEqual(directories);
+        expect(calls.stat).toEqual(directories);
+
+        calls.stat.length = 0;
+        calls.readDirectory.length = 0;
+        expect(yield* resolve("also-absent")).toBeNull();
+        expect(calls.readDirectory).toEqual([]);
+        expect(calls.stat).toEqual(directories);
+
+        const installed = path.join(directories[2]!, "late.CMD");
+        yield* fs.writeFileString(installed, "");
+        yield* fs.utimes(directories[2]!, 4_102_444_800, 4_102_444_800);
+        expect(yield* resolve("late")).toBe(installed);
+      }).pipe(
+        Effect.provideService(HostProcess.Platform, "win32"),
+        Effect.provideService(CommandResolutionCache, new Map()),
+        Effect.provideService(PathDirectoryListingCache, new Map()),
+      ),
+  );
+
+  it.effect("keeps PATHEXT order and PATH order over listed names", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const first = yield* fs.makeTempDirectoryScoped();
+      const second = yield* fs.makeTempDirectoryScoped();
+      yield* fs.writeFileString(path.join(first, "tool.CMD"), "");
+      yield* fs.writeFileString(path.join(first, "tool.EXE"), "");
+      yield* fs.writeFileString(path.join(second, "tool.COM"), "");
+      yield* fs.writeFileString(path.join(second, "other.BAT"), "");
+      const env = { PATH: `${first};${second}`, PATHEXT: ".COM;.EXE;.BAT;.CMD" };
+
+      expect(yield* resolveCommandPath("tool", { env })).toBe(path.join(first, "tool.EXE"));
+      expect(yield* resolveCommandPath("other", { env })).toBe(path.join(second, "other.BAT"));
+      expect(yield* resolveCommandPath("tool.CMD", { env })).toBe(path.join(first, "tool.CMD"));
+    }).pipe(
+      Effect.provideService(HostProcess.Platform, "win32"),
+      Effect.provideService(CommandResolutionCache, new Map()),
+      Effect.provideService(PathDirectoryListingCache, new Map()),
+    ),
+  );
+
+  it.effect("relists a directory once its listing expires, even with an unchanged mtime", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const directory = yield* fs.makeTempDirectoryScoped();
+      const env = { PATH: directory, PATHEXT: ".EXE" };
+      yield* fs.utimes(directory, 4_102_444_800, 4_102_444_800);
+      expect(yield* resolveCommandPath("same-tick", { env })).toBeNull();
+
+      yield* fs.writeFileString(path.join(directory, "same-tick.EXE"), "");
+      yield* fs.utimes(directory, 4_102_444_800, 4_102_444_800);
+      expect(
+        yield* resolveCommandPath("same-tick", { env }).pipe(
+          Effect.provideService(CommandResolutionCache, new Map()),
+        ),
+      ).toBeNull();
+
+      yield* TestClock.adjust("31 seconds");
+      expect(
+        yield* resolveCommandPath("same-tick", { env }).pipe(
+          Effect.provideService(CommandResolutionCache, new Map()),
+        ),
+      ).toBe(path.join(directory, "same-tick.EXE"));
+    }).pipe(
+      Effect.provideService(HostProcess.Platform, "win32"),
+      Effect.provideService(CommandResolutionCache, new Map()),
+      Effect.provideService(PathDirectoryListingCache, new Map()),
+    ),
+  );
+
+  it.effect("leaves POSIX lookups to one probe per PATH directory", () =>
+    Effect.gen(function* () {
+      const calls = { stat: [] as Array<string>, readDirectory: [] as Array<string> };
+      const result = yield* resolveCommandPath("absent", { env: { PATH: "/opt/a:/opt/b" } }).pipe(
+        Effect.provide(
+          FileSystem.layerNoop({
+            stat: (file) => (calls.stat.push(file), FileSystem.makeNoop({}).stat(file)),
+            readDirectory: (directory) =>
+              Effect.sync(() => (calls.readDirectory.push(directory), [])),
+          }),
+        ),
+      );
+
+      expect(result).toBeNull();
+      expect(calls.readDirectory).toEqual([]);
+      expect(calls.stat).toHaveLength(2);
+    }).pipe(
+      Effect.provideService(HostProcess.Platform, "linux"),
+      Effect.provideService(CommandResolutionCache, new Map()),
+      Effect.provideService(PathDirectoryListingCache, new Map()),
+    ),
   );
 
   it.effect.each(["audit-command", "audit-command.CMD"])(
@@ -491,7 +623,9 @@ effectIt.layer(NodeServices.layer)("resolveCommandPath", (it) => {
           Effect.provideService(FileSystem.FileSystem, {
             ...fs,
             stat: (filePath) =>
-              fs.stat(filePath === executable ? filePath : path.join(cwd, "missing")),
+              fs.stat(
+                filePath === executable || filePath === cwd ? filePath : path.join(cwd, "missing"),
+              ),
           }),
         );
 

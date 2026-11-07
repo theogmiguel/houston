@@ -14,12 +14,15 @@ import * as SqlClient from "effect/sql/SqlClient";
 
 import { resolveHostCliCommand } from "../cli/invocation.ts";
 import * as ServerConfig from "../config.ts";
+import { mergeMessageSearch } from "../orchestration-v2/messageSearchIndex.ts";
 import * as ProjectionMaintenance from "../orchestration-v2/ProjectionMaintenance.ts";
 import { forkParked } from "../serverActivation.ts";
 
 // Bound each reclaim pass to one minute of churn.
 const RECLAIM_PAGES_PER_PASS = 1024;
 const COMPACTION_INTERVAL = Duration.hours(6);
+// About 256 MB of merged search index per pass at most; a pass usually needs a few hundred steps.
+const SEARCH_MERGE_STEPS_PER_PASS = 1024;
 
 export class DatabaseStorage extends Context.Service<
   DatabaseStorage,
@@ -40,10 +43,12 @@ const make = Effect.gen(function* () {
   const statusRef = yield* SubscriptionRef.make<DatabaseStorageStatus | null>(null);
 
   // The notice shows host-shell quoting verbatim; desktop needs its launcher because houston is absent from PATH.
-  const { command: compactCommand } = yield* resolveHostCliCommand("doctor", [
-    "--base-dir",
-    config.baseDir,
-  ]);
+  // Resolved on first publish: the PATH walk takes seconds on Windows and must not delay listening.
+  const resolveCompactCommand = yield* Effect.cached(
+    resolveHostCliCommand("doctor", ["--base-dir", config.baseDir]).pipe(
+      Effect.map(({ command }) => command),
+    ),
+  );
   // doctor --base-dir targets userdata, not implicit dev homes; suppress status to avoid touching the live install.
   const doctorTargetsThisDatabase =
     path.resolve(config.dbPath) ===
@@ -72,7 +77,7 @@ const make = Effect.gen(function* () {
       databaseBytes: (pages[0]?.page_count ?? 0) * pageSize,
       reclaimableBytes: (free[0]?.freelist_count ?? 0) * pageSize,
       incrementalVacuumEnabled: incrementalVacuum,
-      compactCommand,
+      compactCommand: yield* resolveCompactCommand,
     };
     // Every set reaches each open Storage page; most passes change nothing.
     if (!Equal.equals(yield* SubscriptionRef.get(statusRef), next)) {
@@ -108,6 +113,12 @@ const make = Effect.gen(function* () {
       sliceStarted = yield* Clock.monotonicTimeNanos;
     });
     const result = yield* maintenance.pruneEventStore(betweenPages);
+    yield* mergeMessageSearch(sql, {
+      maxSteps: SEARCH_MERGE_STEPS_PER_PASS,
+      betweenSteps: betweenPages,
+    }).pipe(
+      Effect.catch((cause) => Effect.logWarning("Message search index merge failed", { cause })),
+    );
     const completedAt = yield* Clock.currentTimeMillis;
     yield* fs.writeFileString(compactedAtPath, String(completedAt)).pipe(Effect.ignore);
     if (result.deletedEventCount > 0 || result.deletedReceiptCount > 0) {

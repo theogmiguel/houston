@@ -950,6 +950,13 @@ const dispatchTargetThreadId = (command: OrchestrationV2Command) =>
             ? command.sideThreadId
             : command.threadId;
 
+// RpcServer waits for an ack between chunks, so the marker rides in the initial chunk instead of costing a round trip.
+const withCompletionMarker = <A>(
+  items: ReadonlyArray<A>,
+  requested: boolean | undefined,
+): ReadonlyArray<A | { readonly kind: "synchronized" }> =>
+  requested === true ? [...items, { kind: "synchronized" as const }] : items;
+
 export const subscribeOrchestrationV2Thread = Effect.fn("ws.orchestrationV2.subscribeThread")(
   function* (input: {
     readonly threadId: ThreadId;
@@ -1029,11 +1036,6 @@ export const subscribeOrchestrationV2Thread = Effect.fn("ws.orchestrationV2.subs
           ),
         );
 
-    const completionMarker =
-      input.requestCompletionMarker === true
-        ? Stream.make({ kind: "synchronized" as const })
-        : Stream.empty;
-
     const snapshotThenLive = Effect.fn("ws.orchestrationV2.threadSnapshotThenLive")(function* () {
       const useBoundedSnapshot = shouldUseBoundedThreadSnapshot(input);
       const snapshot = yield* (
@@ -1070,11 +1072,9 @@ export const subscribeOrchestrationV2Thread = Effect.fn("ws.orchestrationV2.subs
               projection: dedupeBodies ? dedupeSnapshotBodies(projection) : projection,
             };
           })();
-      return rpcInitialItems([snapshotItem]).pipe(
-        Stream.concat(completionMarker),
-        Stream.concat(eventStreamFrom(snapshotSequence)),
-        withLiveDedupe,
-      );
+      return rpcInitialItems(
+        withCompletionMarker([snapshotItem], input.requestCompletionMarker),
+      ).pipe(Stream.concat(eventStreamFrom(snapshotSequence)), withLiveDedupe);
     });
 
     // Subscribe before reading persisted events to retain concurrent publishes; clients dedupe overlap by sequence.
@@ -1172,8 +1172,7 @@ export const subscribeOrchestrationV2Thread = Effect.fn("ws.orchestrationV2.subs
       if (plan.mode === "snapshot") {
         return yield* snapshotThenLive();
       }
-      return rpcInitialItems(replay).pipe(
-        Stream.concat(completionMarker),
+      return rpcInitialItems(withCompletionMarker(replay, input.requestCompletionMarker)).pipe(
         Stream.concat(eventStreamFrom(highWater)),
         withLiveDedupe,
       );
@@ -1365,40 +1364,27 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
     );
 
     // Subscribe before loading for racing enrichments; initial refresh covers pre-subscription completions and cold HTTP snapshots.
-    const completionMarker =
-      input.requestCompletionMarker === true
-        ? Stream.make({ kind: "synchronized" as const })
-        : Stream.empty;
     const initialSnapshotItems = (loaded: {
       readonly snapshot: OrchestrationV2ShellSnapshot;
       readonly resolvedRepositoryIdentityRoots: ReadonlyArray<string>;
     }) =>
       rpcInitialItems(
-        shellStreamItemsFromInitialSnapshot({
-          snapshot: loaded.snapshot,
-          resolvedRepositoryIdentityRoots: loaded.resolvedRepositoryIdentityRoots,
-        }),
+        withCompletionMarker(
+          shellStreamItemsFromInitialSnapshot({
+            snapshot: loaded.snapshot,
+            resolvedRepositoryIdentityRoots: loaded.resolvedRepositoryIdentityRoots,
+          }),
+          input.requestCompletionMarker,
+        ),
       );
-    const initialEnrichmentItems = (loaded: {
-      readonly snapshot: OrchestrationV2ShellSnapshot;
-      readonly resolvedRepositoryIdentityRoots: ReadonlyArray<string>;
-    }) =>
-      rpcInitialItems(
-        shellStreamItemsFromResumeSnapshot({
-          snapshot: loaded.snapshot,
-          resolvedRepositoryIdentityRoots: loaded.resolvedRepositoryIdentityRoots,
-        }),
-      );
-    // Drain initial frames before merging enrichment with live events so marked refreshes cannot precede the initial frame.
-    const completionThenLive = (afterSequence: number) =>
-      Stream.concat(completionMarker, liveFrom(afterSequence));
 
+    // Drain initial frames before merging enrichment with live events so marked refreshes cannot precede the initial frame.
     const stream = yield* Effect.gen(function* () {
       if (input.afterSequence === undefined) {
         const loaded = yield* loadSnapshot();
         return composeShellStreamWithEnrichment({
           initial: initialSnapshotItems(loaded),
-          tail: completionThenLive(loaded.snapshot.snapshotSequence),
+          tail: liveFrom(loaded.snapshot.snapshotSequence),
           enrichment: enrichmentRefreshes,
         });
       }
@@ -1407,7 +1393,7 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
         const loaded = yield* loadSnapshot();
         return composeShellStreamWithEnrichment({
           initial: initialSnapshotItems(loaded),
-          tail: completionThenLive(loaded.snapshot.snapshotSequence),
+          tail: liveFrom(loaded.snapshot.snapshotSequence),
           enrichment: enrichmentRefreshes,
         });
       });
@@ -1434,10 +1420,21 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
       if (input.afterSequence < (yield* applicationEvents.prunedThroughSequence)) {
         return yield* fromSnapshot;
       }
-      const replay = toShellStream(Stream.fromIterable(replayed));
+      const replay = yield* Stream.runCollect(toShellStream(Stream.fromIterable(replayed)));
       return composeShellStreamWithEnrichment({
-        initial: initialEnrichmentItems(loaded),
-        tail: Stream.concat(Stream.concat(replay, completionMarker), liveFrom(highWater)),
+        initial: rpcInitialItems(
+          withCompletionMarker(
+            [
+              ...shellStreamItemsFromResumeSnapshot({
+                snapshot: loaded.snapshot,
+                resolvedRepositoryIdentityRoots: loaded.resolvedRepositoryIdentityRoots,
+              }),
+              ...replay,
+            ],
+            input.requestCompletionMarker,
+          ),
+        ),
+        tail: liveFrom(highWater),
         enrichment: enrichmentRefreshes,
       });
     }).pipe(
