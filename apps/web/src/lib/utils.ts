@@ -5,8 +5,8 @@ import * as Hex from "effect/encoding/Hex";
 import { extendTailwindMerge } from "tailwind-merge";
 import { DraftId } from "../composerDraftStore";
 
-// The default LRU of 500 class lists is smaller than one thread view's distinct lists, so boot
-// and every thread open re-merged most of them; an entry is a short string.
+// The default LRU holds 500 class lists (up to twice that). A few thousand keep a long thread
+// view's lists across renders and thread opens, at one short string per entry.
 export const TAILWIND_MERGE_CACHE_SIZE = 5000;
 
 // Register extra font sizes and background images so tailwind-merge does not
