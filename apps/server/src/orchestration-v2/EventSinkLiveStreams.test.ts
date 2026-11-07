@@ -276,4 +276,37 @@ describe("EventSink live streams per thread", () => {
       assert.strictEqual(publishedToLanes(), afterClose);
     }).pipe(Effect.provide(layerTest)),
   );
+
+  it.effect("a thread stream keeps receiving live events after another on the thread closes", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { sink, now, a } = yield* twoThreads;
+        // Each stream replays a marker written before it, so receiving it means it is subscribed.
+        const subscribedOnA = (label: string) =>
+          Effect.gen(function* () {
+            const [marker] = yield* sink.write({ events: updates(a, now, label, 1) });
+            const pull = yield* Stream.toPull(
+              sink.stream({ threadId: a.id, afterSequence: marker!.sequence - 1 }),
+            );
+            yield* pull;
+            return pull;
+          });
+        opened.subscriptions.length = 0;
+        const pull = yield* subscribedOnA("staying");
+        assert.lengthOf(opened.subscriptions, 1);
+        const queue = opened.subscriptions[0] as PubSub.Subscription<unknown>;
+        yield* Effect.scoped(subscribedOnA("closing"));
+
+        // Counted at the queue, so a stream cut off from its thread fails here instead of blocking.
+        const queued = yield* PubSub.remaining(queue);
+        const [live] = yield* sink.write({ events: updates(a, now, "live", 1) });
+        assert.strictEqual(yield* PubSub.remaining(queue), queued + 1);
+        const received: Array<number> = [];
+        while (received.length < queued + 1) {
+          received.push(...Array.from(yield* pull, (stored) => stored.sequence));
+        }
+        assert.strictEqual(received.at(-1), live!.sequence);
+      }),
+    ).pipe(Effect.provide(layerTest)),
+  );
 });
