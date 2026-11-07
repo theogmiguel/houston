@@ -54,7 +54,7 @@ import {
   base64UrlDecodeUtf8,
   base64UrlEncode,
   signPayload,
-  timingSafeEqualBase64Url,
+  verifyPayloadSignature,
 } from "../auth/utils.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import { makeIsServerInternalPath } from "../auth/serverInternalPaths.ts";
@@ -875,7 +875,7 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
     claims = { ...claims, expiresAt };
   }
   const encodedPayload = base64UrlEncode(encodeAssetClaims(claims));
-  const token = `${encodedPayload}.${signPayload(encodedPayload, signingSecret)}`;
+  const token = `${encodedPayload}.${yield* signPayload(encodedPayload, signingSecret)}`;
   return {
     relativeUrl: `${ASSET_ROUTE_PREFIX}/${token}/${encodeURIComponent(fileName)}`,
     expiresAt,
@@ -898,7 +898,7 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
     Effect.orElseSucceed(() => null),
   );
   if (!signingSecret) return null;
-  if (!timingSafeEqualBase64Url(signature, signPayload(encodedPayload, signingSecret))) return null;
+  if (!(yield* verifyPayloadSignature(encodedPayload, signature, signingSecret))) return null;
 
   const claims = decodeClaims(encodedPayload);
   if (!claims || claims.expiresAt <= (yield* Clock.currentTimeMillis)) return null;
