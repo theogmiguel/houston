@@ -8,6 +8,7 @@ import {
   ProviderInstanceId,
   ProviderThreadId,
   ProviderTurnId,
+  ResponseStreamingMode,
   RunId,
   ThreadId,
   TurnItemId,
@@ -20,16 +21,20 @@ import * as Schema from "effect/Schema";
 import { makeAssistantStreamingFilter } from "./assistantStreaming.ts";
 import { makeLiveBodyDeduper, projectDomainEventForWire } from "./WireProjection.ts";
 
-// A fixed 400-word answer in seven paragraphs (2,215 characters), streamed one word every 15 ms
-// through the adapter's 50 ms text flush and the default paragraph filter, then encoded as the
-// thread stream sends it to a client that accepts deduped bodies.
+// Composed fixture: a fixed 400-word answer in seven paragraphs (2,215 characters), streamed one
+// word every 15 ms through a 50 ms text flush and each response streaming mode, then encoded as the
+// thread stream sends it to a client that accepts deduped bodies. Only the answer's message and
+// turn-item updates are counted, not the node, run and provider-thread updates of a real turn.
 const ANSWER_WORDS = 400;
 const WORD_INTERVAL_MS = 15;
+// Mirrors ACP_TEXT_FLUSH_INTERVAL in packages/provider-acp/src/server/adapter.ts.
 const ADAPTER_FLUSH_MS = 50;
 
-// Observed: 6 streamed updates plus the final one, 31,075 payload bytes, at most 1,898 envelope bytes
-// per item (all but the text). Whole-text updates grow quadratically, so a finer cadence or a new
-// per-event field fails these ceilings (about 10% above) before it reaches every client.
+// Observed (paragraph mode): 6 streamed updates plus the final one, 31,075 payload bytes, at most
+// 1,898 envelope bytes per item (all but the text). Whole-text updates grow quadratically, so a
+// finer cadence or a new per-event field fails these ceilings (about 10% above); a new mode must
+// meet them or change them on purpose. The ids are fixed, so the envelope ceiling does not guard
+// the length of real ids.
 const TURN_BUDGET = {
   streamedUpdates: 6,
   payloadBytes: 34_000,
@@ -141,61 +146,64 @@ function domainEvent(
 
 const encodeItem = Schema.encodeSync(Schema.toCodecJson(OrchestrationV2ThreadStreamItem));
 
-it("keeps a streamed answer's thread-stream payload and envelopes within budget", () => {
-  const filter = makeAssistantStreamingFilter("paragraph");
-  const dedupe = makeLiveBodyDeduper();
-  const wireItems: Array<{ readonly bytes: number; readonly textBytes: number }> = [];
-  let sequence = 0;
-  let streamedUpdates = 0;
-  const deliver = (events: ReadonlyArray<ProviderAdapter.ProviderAdapterV2Event>, ms: number) => {
-    for (const event of events) {
-      const passed = filter(event, ms);
-      if (passed === null) continue;
-      sequence += 1;
-      const domain = domainEvent(passed, sequence, ms);
-      if (domain.type === "message.updated" && domain.payload.streaming) streamedUpdates += 1;
-      const item = dedupe({ kind: "event", sequence, event: projectDomainEventForWire(domain) });
-      const json = JSON.stringify(encodeItem(item));
-      const text =
-        item.kind === "event" &&
-        (item.event.type === "message.updated" || item.event.type === "turn-item.updated") &&
-        "text" in item.event.payload
-          ? item.event.payload.text
-          : "";
-      wireItems.push({
-        bytes: Buffer.byteLength(json),
-        textBytes: Buffer.byteLength(JSON.stringify(text)) - 2,
-      });
-    }
-  };
+it.each(ResponseStreamingMode.literals)(
+  "keeps a streamed answer's thread-stream payload and envelopes within budget (%s)",
+  (mode) => {
+    const filter = makeAssistantStreamingFilter(mode);
+    const dedupe = makeLiveBodyDeduper();
+    const wireItems: Array<{ readonly bytes: number; readonly textBytes: number }> = [];
+    let sequence = 0;
+    let streamedUpdates = 0;
+    const deliver = (events: ReadonlyArray<ProviderAdapter.ProviderAdapterV2Event>, ms: number) => {
+      for (const event of events) {
+        const passed = filter(event, ms);
+        if (passed === null) continue;
+        sequence += 1;
+        const domain = domainEvent(passed, sequence, ms);
+        if (domain.type === "message.updated" && domain.payload.streaming) streamedUpdates += 1;
+        const item = dedupe({ kind: "event", sequence, event: projectDomainEventForWire(domain) });
+        const json = JSON.stringify(encodeItem(item));
+        const text =
+          item.kind === "event" &&
+          (item.event.type === "message.updated" || item.event.type === "turn-item.updated") &&
+          "text" in item.event.payload
+            ? item.event.payload.text
+            : "";
+        wireItems.push({
+          bytes: Buffer.byteLength(json),
+          textBytes: Buffer.byteLength(JSON.stringify(text)) - 2,
+        });
+      }
+    };
 
-  let text = "";
-  let flushedAt = -Infinity;
-  let pending = false;
-  const chunks = answerChunks();
-  chunks.forEach((chunk, index) => {
-    const ms = (index + 1) * WORD_INTERVAL_MS;
-    text += chunk;
-    pending = true;
-    if (ms - flushedAt >= ADAPTER_FLUSH_MS) {
-      deliver(adapterEvents(text, ms, true), ms);
-      flushedAt = ms;
-      pending = false;
-    }
-  });
-  const endMs = (chunks.length + 1) * WORD_INTERVAL_MS;
-  if (pending) deliver(adapterEvents(text, endMs, true), endMs);
-  deliver(adapterEvents(text, endMs, false), endMs);
+    let text = "";
+    let flushedAt = -Infinity;
+    let pending = false;
+    const chunks = answerChunks();
+    chunks.forEach((chunk, index) => {
+      const ms = (index + 1) * WORD_INTERVAL_MS;
+      text += chunk;
+      pending = true;
+      if (ms - flushedAt >= ADAPTER_FLUSH_MS) {
+        deliver(adapterEvents(text, ms, true), ms);
+        flushedAt = ms;
+        pending = false;
+      }
+    });
+    const endMs = (chunks.length + 1) * WORD_INTERVAL_MS;
+    if (pending) deliver(adapterEvents(text, endMs, true), endMs);
+    deliver(adapterEvents(text, endMs, false), endMs);
 
-  assert.equal(text.length, 2_215);
-  const payloadBytes = wireItems.reduce((total, item) => total + item.bytes, 0);
-  const envelopeBytesPerItem = Math.max(...wireItems.map((item) => item.bytes - item.textBytes));
-  const observed = { streamedUpdates, payloadBytes, envelopeBytesPerItem };
-  for (const metric of Object.keys(TURN_BUDGET) as Array<keyof typeof TURN_BUDGET>) {
-    assert.isAtMost(
-      observed[metric],
-      TURN_BUDGET[metric],
-      `${metric} was ${observed[metric]}, maximum ${TURN_BUDGET[metric]}`,
-    );
-  }
-});
+    assert.equal(text.length, 2_215);
+    const payloadBytes = wireItems.reduce((total, item) => total + item.bytes, 0);
+    const envelopeBytesPerItem = Math.max(...wireItems.map((item) => item.bytes - item.textBytes));
+    const observed = { streamedUpdates, payloadBytes, envelopeBytesPerItem };
+    for (const metric of Object.keys(TURN_BUDGET) as Array<keyof typeof TURN_BUDGET>) {
+      assert.isAtMost(
+        observed[metric],
+        TURN_BUDGET[metric],
+        `${mode}: ${metric} was ${observed[metric]}, maximum ${TURN_BUDGET[metric]}`,
+      );
+    }
+  },
+);
