@@ -6,7 +6,8 @@ import { extendTailwindMerge } from "tailwind-merge";
 import { DraftId } from "../composerDraftStore";
 
 // The default LRU holds 500 class lists (up to twice that). A few thousand keep a long thread
-// view's lists across renders and thread opens, at one short string per entry.
+// view's lists across renders and thread opens. Its two generations keep up to 10,000 entries of
+// list plus merged result: about 1-4 MB of one-byte strings at 50-200 characters per list.
 export const TAILWIND_MERGE_CACHE_SIZE = 5000;
 
 // Register extra font sizes and background images so tailwind-merge does not
