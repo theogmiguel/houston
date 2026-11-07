@@ -8,9 +8,17 @@ import { cn } from "~/lib/utils";
 export const GLYPH_BOX_CLASS = "inline-flex shrink-0 items-center justify-center";
 export const GLYPH_BOX_SPIN_CLASS = "motion-safe:visible-animate-spin";
 
-// A sized box fills its glyph; an unsized one leaves the glyph to the parent's svg rule.
-export function boxHasSize(size: unknown, className: string | undefined): boolean {
-  return size != null || (className?.includes("size-") ?? false);
+// Sizes go on the glyph and the box wraps it, so the box flows as wide as a bare glyph did,
+// including the negative margin a parent's svg rule gives the glyph.
+const SIZE_CLASS = /^(?:\S*:)?!?size-/;
+const WHITESPACE = /\s+/;
+export function splitGlyphSize(
+  className: string | undefined,
+): [box: string | undefined, glyph: string | undefined] {
+  const tokens = className?.split(WHITESPACE).filter(Boolean) ?? [];
+  const glyph = tokens.filter((token) => SIZE_CLASS.test(token));
+  if (glyph.length === 0) return [className, undefined];
+  return [tokens.filter((token) => !SIZE_CLASS.test(token)).join(" "), glyph.join(" ")];
 }
 
 const spinnerSizes = cva("", {
@@ -43,17 +51,20 @@ function Spinner({
 }: React.ComponentPropsWithoutRef<"span"> &
   VariantProps<typeof spinnerSizes> &
   VariantProps<typeof spinnerTones>) {
-  const sized = boxHasSize(size, className);
+  const [boxClassName, glyphSize] = splitGlyphSize(className);
   return (
     <span
       aria-label="Loading"
       data-slot="glyph-box"
       ref={observeVisibleAnimation}
-      className={cn(GLYPH_BOX_CLASS, GLYPH_BOX_SPIN_CLASS, spinnerSizes({ size }), className)}
+      className={cn(GLYPH_BOX_CLASS, GLYPH_BOX_SPIN_CLASS, boxClassName)}
       role="status"
       {...props}
     >
-      <LoaderCircleIcon aria-hidden className={cn(spinnerTones({ tone }), sized && "size-full")} />
+      <LoaderCircleIcon
+        aria-hidden
+        className={cn(spinnerTones({ tone }), spinnerSizes({ size }), glyphSize)}
+      />
     </span>
   );
 }

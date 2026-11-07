@@ -2,7 +2,7 @@ import { type ReactNode } from "react";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
 import { observeVisibleAnimation } from "~/lib/visibleAnimation";
-import { GLYPH_BOX_CLASS, GLYPH_BOX_SPIN_CLASS } from "../ui/spinner";
+import { GLYPH_BOX_CLASS, GLYPH_BOX_SPIN_CLASS, splitGlyphSize } from "../ui/spinner";
 import { type TimestampFormat } from "@houston-app/contracts/settings";
 import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../timestampFormat";
 
@@ -73,6 +73,7 @@ const STREAMING_DOTS = Array.from({ length: STREAMING_DOT_COUNT }, (_, index) =>
  * the paint comes from CSS, not an SVG presentation attribute.
  */
 export function StreamingGlyph({ className }: { className?: string }) {
+  const [boxClassName, glyphSize] = splitGlyphSize(className);
   return (
     <span
       aria-hidden="true"
@@ -82,11 +83,11 @@ export function StreamingGlyph({ className }: { className?: string }) {
       className={cn(
         GLYPH_BOX_CLASS,
         GLYPH_BOX_SPIN_CLASS,
-        "size-3.5 text-(--accent-ink) motion-safe:[animation-duration:1.1s]",
-        className,
+        "text-(--accent-ink) motion-safe:[animation-duration:1.1s]",
+        boxClassName,
       )}
     >
-      <svg viewBox="0 0 14 14" className="size-full">
+      <svg viewBox="0 0 14 14" className={cn("size-3.5", glyphSize)}>
         {STREAMING_DOTS.map((dot, index) => (
           <circle
             key={index}

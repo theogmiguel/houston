@@ -102,6 +102,47 @@ describe("spinning glyphs", () => {
     }
   });
 
+  it("take the flow width a bare glyph took inside a button", async () => {
+    await using screen = await render(
+      <div>
+        <Button>
+          <Spinner data-testid="spinner" size="sm" />
+          Saving
+        </Button>
+        <Button>
+          <RefreshIcon data-testid="refresh" size="sm" refreshing />
+          Refresh
+        </Button>
+        <Button>
+          <RefreshIcon data-testid="class-sized" className="size-[15px]" refreshing />
+          Reload
+        </Button>
+        <Button>
+          <StreamingGlyph />
+          Working
+        </Button>
+      </div>,
+      { router: false },
+    );
+
+    // The button's svg rule pulls a bare glyph 2px in on each side, so it flows 4px narrower.
+    const cases: Array<[string, number]> = [
+      ['[data-testid="spinner"]', 14],
+      ['[data-testid="refresh"]', 14],
+      ['[data-testid="class-sized"]', 15],
+      ["[data-streaming-glyph]", 14],
+    ];
+    for (const [selector, size] of cases) {
+      const box = screen.container.querySelector(selector)!;
+      const glyph = box.querySelector("svg")!;
+      const style = getComputedStyle(box);
+      const flow = rect(box).width + parseFloat(style.marginLeft) + parseFloat(style.marginRight);
+      expect(rect(glyph).width, selector).toBeCloseTo(size, 1);
+      expect(flow, selector).toBeCloseTo(size - 4, 1);
+      expectCentredIn(glyph, box);
+    }
+  });
+
   it("keep the muted tone inside a button", async () => {
     await using screen = await render(
       <Button>

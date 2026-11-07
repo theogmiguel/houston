@@ -3,7 +3,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "~/lib/utils";
 import { observeVisibleAnimation } from "~/lib/visibleAnimation";
-import { boxHasSize, GLYPH_BOX_CLASS, GLYPH_BOX_SPIN_CLASS } from "./spinner";
+import { GLYPH_BOX_CLASS, GLYPH_BOX_SPIN_CLASS, splitGlyphSize } from "./spinner";
 
 // No default size: inside a Button the parent's svg rule sizes the glyph.
 const refreshIconVariants = cva("", {
@@ -29,20 +29,16 @@ export function RefreshIcon({
     // Element, so handlers written for the glyph when it was the animated node still fit.
     onAnimationIteration?: React.AnimationEventHandler<Element> | undefined;
   }) {
+  const [boxClassName, glyphSize] = splitGlyphSize(className);
   return (
     <span
       aria-hidden
       data-slot="glyph-box"
       ref={refreshing ? observeVisibleAnimation : undefined}
-      className={cn(
-        GLYPH_BOX_CLASS,
-        refreshing && GLYPH_BOX_SPIN_CLASS,
-        refreshIconVariants({ size }),
-        className,
-      )}
+      className={cn(GLYPH_BOX_CLASS, refreshing && GLYPH_BOX_SPIN_CLASS, boxClassName)}
       {...props}
     >
-      <RefreshCwIcon aria-hidden className={cn(boxHasSize(size, className) && "size-full")} />
+      <RefreshCwIcon aria-hidden className={cn(refreshIconVariants({ size }), glyphSize)} />
     </span>
   );
 }
