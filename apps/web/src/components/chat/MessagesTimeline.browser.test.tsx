@@ -2701,3 +2701,43 @@ describe("MessagesTimeline running colour", () => {
     expect(getComputedStyle(glyph).color).toBe(running);
   });
 });
+
+describe("MessagesTimeline in-flight command row", () => {
+  it.each([
+    {
+      title: "Run integration tests",
+      command: "Run integration tests",
+      expected: "Running command",
+    },
+    { title: "Ran command", command: "Ran command", expected: "Running command" },
+    { title: "Run tests", command: "pnpm test --run", expected: "Running pnpm" },
+  ])(
+    "states one label for a running command $command titled $title",
+    async ({ title, command, expected }) => {
+      setup();
+      const runId = RunId.make("inflight-run");
+      await using screen = await renderTimeline(
+        [
+          message("Question", { runId }, "inflight-user"),
+          work("inflight-tool", {
+            runId,
+            label: title,
+            command,
+            rawCommand: command,
+            toolTitle: title,
+            tone: "tool",
+            itemType: "command_execution",
+            toolLifecycleStatus: "inProgress",
+          }),
+        ],
+        {
+          isWorking: true,
+          runningRunId: runId,
+          latestRun: { runId, status: "running", startedAt: CREATED_AT, completedAt: null },
+        },
+      );
+      await vi.waitFor(() => expect(screen.text()).toContain(expected));
+      expect(screen.text()).not.toMatch(/Running (Ran|Run)\b/);
+    },
+  );
+});

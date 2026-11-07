@@ -234,6 +234,20 @@ export function workEntryReadOutput(
   return null;
 }
 
+const PLACEHOLDER_COMMANDS: ReadonlySet<string> = new Set(["command", "ran command", "monitor"]);
+
+/**
+ * Providers that report a command call without its command line fill the command with the call's
+ * title. That text is a description, so its first word must not be shown as the program name.
+ */
+function commandIsPlaceholder(entry: WorkLogEntry, command: string): boolean {
+  const text = command.trim().toLowerCase();
+  if (PLACEHOLDER_COMMANDS.has(text)) return true;
+  return [entry.toolTitle, entry.label, entry.projectedItem?.item.title].some(
+    (title) => title?.trim().toLowerCase() === text,
+  );
+}
+
 export function liveWorkEntryLabel(
   entry: WorkLogEntry,
   workspaceRoot: string | undefined,
@@ -263,7 +277,7 @@ export function liveWorkEntryLabel(
             : status === "stopped"
               ? "Stopped"
               : "Ran";
-    return `${verb} ${commandProgramName(command) ?? "command"}`;
+    return `${verb} ${(commandIsPlaceholder(entry, command) ? null : commandProgramName(command)) ?? "command"}`;
   }
   return workEntryDisplayLabel(entry, workspaceRoot);
 }

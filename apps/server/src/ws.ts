@@ -879,6 +879,18 @@ const enrichProjectShells = Effect.fn("ws.orchestrationV2.enrichProjectShells")(
     ),
 );
 
+function isProjectionThreadNotFound(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "cause" in error &&
+    typeof error.cause === "object" &&
+    error.cause !== null &&
+    "_tag" in error.cause &&
+    error.cause._tag === "ProjectionStoreThreadNotFoundError"
+  );
+}
+
 export const subscribeOrchestrationV2Thread = Effect.fn("ws.orchestrationV2.subscribeThread")(
   function* (input: {
     readonly threadId: ThreadId;
@@ -979,6 +991,7 @@ export const subscribeOrchestrationV2Thread = Effect.fn("ws.orchestrationV2.subs
             new OrchestrationV2GetThreadProjectionError({
               threadId: input.threadId,
               message: `Failed to load orchestration V2 thread ${input.threadId}`,
+              ...(isProjectionThreadNotFound(cause) ? { reason: "thread_not_found" as const } : {}),
               cause,
             }),
         ),

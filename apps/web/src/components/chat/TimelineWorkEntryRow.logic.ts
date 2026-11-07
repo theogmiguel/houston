@@ -276,7 +276,10 @@ export function workEntryToolParts(
 ): WorkEntryToolParts {
   const item = entry.structuredPayload;
   const actionKey = toolGroupAction(entry);
-  const action = TOOL_ACTION_LABEL[actionKey] ?? entry.toolTitle?.trim() ?? "Used";
+  const action =
+    actionKey === "command" && entry.toolLifecycleStatus === "inProgress"
+      ? "Running"
+      : (TOOL_ACTION_LABEL[actionKey] ?? entry.toolTitle?.trim() ?? "Used");
   const label = workEntryDisplayLabel(entry, workspaceRoot);
   const stripAction = (value: string) =>
     value

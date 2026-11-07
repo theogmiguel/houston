@@ -1,5 +1,6 @@
 import {
   isOrchestrationV2WorkActive,
+  OrchestrationV2GetThreadProjectionError,
   ORCHESTRATION_V2_WS_METHODS,
   type EnvironmentId as EnvironmentIdType,
   type OrchestrationV2ThreadDetailSnapshot,
@@ -18,6 +19,7 @@ import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
@@ -64,6 +66,18 @@ function formatThreadError(cause: Cause.Cause<unknown>): string {
   return error instanceof Error && error.message.trim().length > 0
     ? error.message
     : "Could not synchronize the thread.";
+}
+
+const isThreadProjectionError = Schema.is(OrchestrationV2GetThreadProjectionError);
+
+// The server's typed answer for an id it has no thread for; a dropped socket or timeout never carries it.
+function isThreadNotFoundFailure(cause: Cause.Cause<unknown>): boolean {
+  return cause.reasons.some(
+    (reason) =>
+      reason._tag === "Fail" &&
+      isThreadProjectionError(reason.error) &&
+      reason.error.reason === "thread_not_found",
+  );
 }
 
 function formatHistoryError(error: unknown): string {
@@ -1046,7 +1060,8 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       }),
       {
         onDefect: () => setStreamError("Could not synchronize the thread."),
-        onExpectedFailure: (cause) => setStreamError(formatThreadError(cause)),
+        onExpectedFailure: (cause) =>
+          isThreadNotFoundFailure(cause) ? setDeleted() : setStreamError(formatThreadError(cause)),
         retryExpectedFailureAfter: "250 millis",
         resubscribe: foregroundResubscriptions,
       },
