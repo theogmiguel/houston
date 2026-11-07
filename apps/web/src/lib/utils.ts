@@ -5,9 +5,15 @@ import * as Hex from "effect/encoding/Hex";
 import { extendTailwindMerge } from "tailwind-merge";
 import { DraftId } from "../composerDraftStore";
 
+// The default LRU holds 500 class lists (up to twice that). A few thousand keep a long thread
+// view's lists across renders and thread opens. Its two generations keep up to 10,000 entries of
+// list plus merged result: about 1-4 MB of one-byte strings at 50-200 characters per list.
+export const TAILWIND_MERGE_CACHE_SIZE = 5000;
+
 // Register extra font sizes and background images so tailwind-merge does not
 // treat text-2xs or bg-composer-seam-below as colors.
 const twMerge = extendTailwindMerge({
+  cacheSize: TAILWIND_MERGE_CACHE_SIZE,
   extend: {
     theme: { text: ["2xs", "3xs", "4xs", "5xs"] },
     classGroups: { "bg-image": [{ bg: ["composer-seam-below", "composer-seam-above"] }] },

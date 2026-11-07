@@ -28,6 +28,19 @@ vi.mock(import("@houston-app/shared/markdownLinks"), async (original) => {
     },
   };
 });
+const linkResolutions = vi.hoisted(() => ({ count: 0 }));
+vi.mock(import("../markdown-links"), async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    resolveMarkdownFileLinkMeta: (
+      ...args: Parameters<typeof actual.resolveMarkdownFileLinkMeta>
+    ) => {
+      linkResolutions.count += 1;
+      return actual.resolveMarkdownFileLinkMeta(...args);
+    },
+  };
+});
 vi.mock(import("mdast-util-from-markdown"), async (original) => {
   const actual = await original();
   return {
@@ -234,6 +247,154 @@ it("reuses the parse of a remounted message that has stable extra plugins", asyn
   await using screen = await render(message);
   await expect.element(screen.getByText("Cached text")).toBeVisible();
   expect(parsed).toHaveBeenCalledTimes(1);
+});
+
+it("classifies a finished message's links once, however often it remounts", async () => {
+  setup();
+  const text = Array.from(
+    { length: 20 },
+    (_, index) =>
+      `Step ${index} edits [file ${index}](src/file${index}.ts) and \`src/code${index}.ts\`.`,
+  ).join("\n\n");
+  {
+    await using first = await renderText(text);
+    expect(first.container.querySelectorAll(".chat-markdown-file-link")).toHaveLength(40);
+  }
+  linkScans.length = 0;
+  linkResolutions.count = 0;
+  await using screen = await renderText(text);
+  expect(screen.container.querySelectorAll(".chat-markdown-file-link")).toHaveLength(40);
+  expect(linkScans).toEqual([]);
+  expect(linkResolutions.count).toBe(0);
+});
+
+// React numbers generated ids per mount, so two mounts differ there alone.
+const GENERATED_ID = /_r_[0-9a-z]+_/g;
+
+describe("ChatMarkdown finished blocks", () => {
+  const blocks = (count: number) =>
+    Array.from(
+      { length: count },
+      (_, index) => `Paragraph ${index} edits [file ${index}](src/file${index}.ts).`,
+    ).join("\n\n");
+
+  it("parses only the last block again when a streamed reply finishes", async () => {
+    setup();
+    const text = `${blocks(20)}\n\nThe last block.`;
+    const message = (isStreaming: boolean) => (
+      <ChatMarkdown cwd="/tmp/project" text={text} isStreaming={isStreaming} />
+    );
+    await using screen = await render(message(true));
+    await expect.element(screen.getByText("The last block.")).toBeVisible();
+    parsedSources.length = 0;
+    await screen.rerender(message(false));
+    await expect.element(screen.getByText("The last block.")).toBeVisible();
+    expect(parsedSources.filter((source) => source.includes("Paragraph"))).toEqual([]);
+    expect(screen.container.querySelectorAll(".chat-markdown-file-link")).toHaveLength(20);
+  });
+
+  it("classifies no block again when a thread's split messages remount", async () => {
+    setup();
+    const messages = Array.from({ length: 6 }, (_, message) =>
+      Array.from(
+        { length: 120 },
+        (_, index) => `Message ${message} block ${index} edits \`src/m${message}/f${index}.ts\`.`,
+      ).join("\n\n"),
+    );
+    const thread = () => (
+      <div>
+        {messages.map((text) => (
+          <ChatMarkdown key={text.slice(0, 9)} cwd="/tmp/project" text={text} isStreaming={false} />
+        ))}
+      </div>
+    );
+    {
+      await using first = await render(thread());
+      await expect.element(first.getByText("Message 5 block 119", { exact: false })).toBeVisible();
+    }
+    linkScans.length = 0;
+    await using screen = await render(thread());
+    await expect.element(screen.getByText("Message 5 block 119", { exact: false })).toBeVisible();
+    expect(linkScans).toHaveLength(0);
+  });
+
+  // An extra remark plugin keeps a message in one tree, which is the reference rendering.
+  const ONE_TREE = [() => undefined];
+  const html = (element: HTMLElement) => element.innerHTML.replace(GENERATED_ID, "_r_");
+  it.each([
+    "# Plan\n\n## Steps\n\n1. first `src/a.ts`\n2. second\n\n- [ ] open task\n- [x] done task\n\n### Notes\n\n> [!NOTE]\n> keep\n\n| a | b |\n| - | - |\n| [x](src/x.ts) | 2 |\n\n```ts\nconst a = 1;\n```\n\nThe end, see https://example.com.",
+    "## Setup\n\nText\n\n## Setup\n\nMore text",
+    "Intro\n\n3. starts at three\n4. four\n\n---\n\n* star list\n\n  continued",
+    // A definition inside a container, or with a label across lines, still defines the document's.
+    "See [the docs][1] for details.\n\n> [1]: https://example.com/docs",
+    "Logo: ![logo][img]\n\n> [img]: https://example.com/a.png",
+    "See [foo\nbar] now.\n\n[foo\nbar]: https://example.com/fb",
+    // Raw inline HTML left open in one paragraph continues into the next.
+    "Start <b>bold\n\nstill bold</b> end",
+    "Start <em>bold\n\nstill bold</em> end",
+    "Start <code>bold\n\nstill bold</code> end",
+    'Read <a href="https://example.com">the guide\n\nand more</a> after.',
+    // A fence line with an info string is content, not a closer, so it hides no heading.
+    "## Setup\n\nText\n\n```md\n```js\nx\n```\n\n## Setup\n\nMore",
+    // Lists, fences, quotes, tables and headings.
+    "- see [a][r]\n\n- [r]: https://example.com/r",
+    "1. one\n\n2. two\n\n3. three\n\nAfter.",
+    "1. one\n2. two\n\nPara\n\n3. three",
+    "Intro\n\n```ts\nconst a = 1;\n\nconst b = 2;",
+    "````md\n```ts\nx\n```\n\n````\n\nafter\n\n## End",
+    "> one\n\n> two\n>\n> more\n\n> three",
+    "| a |\n| - |\n| 1 |\n\n| b |\n| - |\n| 2 |",
+    "- [ ] one\n- [x] two\n\n- [ ] three",
+    "- item\n\n    code or item?\n\nnext",
+    "## snake_case_name\n\ntext\n\n## other_name",
+    "## `fetch` usage\n\ntext\n\n## fetch usage",
+    "## *Setup*\n\ntext\n\n## Setup",
+    "> ## Quoted\n\n- ## Listed",
+    "## Setup\n\n    ## Setup\n\nafter",
+    "## Setup ##\n\ntext\n\n## Setup",
+    "## 🚀 Launch\n\ntext\n\n## Launch",
+    "See <https://example.com> and www.example.com.\n\n~~gone~~\n\nhttps://example.org",
+    "Area is $a^2$.\n\nAnd $b < c$ holds.",
+    "Text\n\n---\n\nMore\n\n***\n\n- - -\n\nEnd",
+    "Before <!-- note --> after\n\nNext",
+    "# Report\n\n1. `src/a.ts`: fixed\n2. `src/b.ts`: added\n\n> [!TIP]\n> run it\n\n```sh\npnpm test\n```\n\n| file | lines |\n| --- | --- |\n| a.ts | 3 |\n\nDone, see https://example.com.",
+    // Code spans and fences that hold HTML-like text.
+    "Use `Promise<T>` here.\n\nAnd `Map<K, V>` there.\n\nDone.",
+    "```ts\ninterface A {\n  [key: string]: number;\n}\n```\n\nUse it.\n\nEnd",
+    "| Type | Use |\n| --- | --- |\n| `Vec<T>` | list |\n\nAfter.",
+    "```ts\nconst re = /<[a-z]+>/g;\n```\n\nMatches tags.\n\nEnd",
+    "```tsx\n<Button onClick={go}>Go</Button>\n```\n\nRenders a button.\n\nEnd",
+    '```html\n<h2 id="setup">Setup</h2>\n```\n\n## Setup\n\ntext\n\n## Usage',
+    "A span `starts\nhere <b>` and\n\nends.",
+    "Cost $a` + <b>$ then `x`\n\nstill</b>",
+    "[link](`x) <b>` y\n\nstill</b>",
+    "| a | b |\n| - | - |\n| `x | <b>` | y |\n\nstill</b>",
+    "a | b\n- | -\n`x | <b>` | y\n\nstill</b>",
+    "\\`not code <b>\\` here\n\nstill</b>",
+    "``` a`b\n<b>x\n\ny</b>\n\nnext",
+    "- item\n\n  ```\n  code\n\n      ```\n\n  still\n\nafter",
+    "See [foo\nbar].\n\n> [foo\n> bar]: https://example.com",
+    "Text[^1]\n\n- [^1]: note",
+    "Text[^1] here\n\nMore\n\nEnd",
+    "Run `cmd | grep <x>` now.\n\nNext\n\nEnd",
+    "Visit <https://example.com/a>.\n\nMail <mailto:a@example.com>.\n\nEnd",
+    "Use ``a ` <b> c`` here.\n\nnext",
+    "`a<b>`\n`c<d>`\n\nnext",
+    "See https://example.com/`a <b>` x\n\nstill</b>",
+    "- `A | B<T>` works\n- `C`\n\nAfter",
+    "1. Edit:\n\n   ```rust\n   fn a() -> Vec<u8> {}\n   ```\n\n2. Run.",
+    "Use `x` then <b>bold\n\nstill</b>",
+    "Use ``a` <b>`` and `c\n\nstill</b>",
+    "~~~md\n```\n<b>x\n```\n~~~\n\nafter",
+    "> | a | b |\n> | - | - |\n> | `x | <b>` | y |\n\nstill</b>",
+    "Use `lines[1:]` and `x[::2]`.\n\n```python\nprint(a[1:])\n```\n\nDone.",
+  ])("renders a finished message as one tree renders it: %j", async (text) => {
+    setup();
+    await using split = await renderText(text);
+    const splitHtml = html(split.container);
+    await using whole = await renderText(text, { extraRemarkPlugins: ONE_TREE });
+    expect(splitHtml).toBe(html(whole.container));
+  });
 });
 
 describe("ChatMarkdown favicon privacy", () => {
