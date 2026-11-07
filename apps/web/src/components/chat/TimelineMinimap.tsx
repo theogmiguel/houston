@@ -34,6 +34,17 @@ function onMouseButtonsReleased(onRelease: () => void): () => void {
   return stop;
 }
 
+const STRIP_CLASS =
+  "pointer-events-none absolute left-0 h-0.5 w-6 origin-left -translate-y-1/2 rounded-full transition-transform duration-150 after:absolute after:inset-0 after:rounded-full after:bg-foreground/55 after:opacity-0 after:transition-opacity after:duration-150 data-[in-view=true]:after:opacity-100";
+// Plain strings by distance from the active strip: a long thread renders hundreds of strips and
+// nothing can conflict, so no strip pays for a class merge.
+const STRIP_CLASS_BY_DISTANCE = [
+  `${STRIP_CLASS} bg-muted-foreground/60 scale-x-100`,
+  `${STRIP_CLASS} bg-muted-foreground/25 scale-x-[0.667]`,
+  `${STRIP_CLASS} bg-muted-foreground/25 scale-x-[0.417]`,
+  `${STRIP_CLASS} bg-muted-foreground/25 scale-x-[0.333]`,
+] as const;
+
 export function TimelineMinimap({
   hasPersistentGutter,
   hitStripWidth,
@@ -216,17 +227,7 @@ export function TimelineMinimap({
                 // transform and opacity.
                 <span
                   aria-hidden="true"
-                  className={cn(
-                    "pointer-events-none absolute left-0 h-0.5 w-6 origin-left -translate-y-1/2 rounded-full transition-transform duration-150 after:absolute after:inset-0 after:rounded-full after:bg-foreground/55 after:opacity-0 after:transition-opacity after:duration-150 data-[in-view=true]:after:opacity-100",
-                    activeDistance === 0 ? "bg-muted-foreground/60" : "bg-muted-foreground/25",
-                    activeDistance === 0
-                      ? "scale-x-100"
-                      : activeDistance === 1
-                        ? "scale-x-[0.667]"
-                        : activeDistance === 2
-                          ? "scale-x-[0.417]"
-                          : "scale-x-[0.333]",
-                  )}
+                  className={STRIP_CLASS_BY_DISTANCE[Math.min(activeDistance ?? 3, 3)]}
                   data-in-view="false"
                   data-minimap-strip
                   key={item.id}
