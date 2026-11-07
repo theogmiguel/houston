@@ -101,22 +101,12 @@ it.effect("drops planner statistics a database already has", () => {
   );
 });
 
-it("maps the database on Linux and macOS and never on Windows, which cannot truncate a mapped file", () => {
-  for (const platform of ["linux", "darwin"] as const) {
-    const pragmas = SqlitePersistence.connectionPragmas(platform);
-    assert.deepEqual(pragmas.writer, ["mmap_size = 1073741824"]);
-    assert.deepEqual(pragmas.readers, ["mmap_size = 1073741824"]);
-  }
-  const windows = SqlitePersistence.connectionPragmas("win32");
-  assert.deepEqual(windows.writer, []);
-  assert.deepEqual(windows.readers, ["cache_size = -32768"]);
-});
-
-it.effect("opens the writer and every reader with the platform's settings", () =>
-  Effect.gen(function* () {
-    const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "houston-sqlite-pragmas-"));
-    const settings = (platform: NodeJS.Platform) =>
-      Effect.gen(function* () {
+it.effect(
+  "opens the writer with the default page cache and every reader with a larger one, mapping nothing",
+  () =>
+    Effect.gen(function* () {
+      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "houston-sqlite-pragmas-"));
+      const settings = Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
         const connection = Effect.all([
           sql<{ readonly mmap_size: number }>`PRAGMA mmap_size`,
@@ -132,26 +122,22 @@ it.effect("opens the writer and every reader with the platform's settings", () =
         return { writer, readers };
       }).pipe(
         Effect.provide(
-          SqlitePersistence.layerFromPath(NodePath.join(tempDir, `${platform}.sqlite`)).pipe(
+          SqlitePersistence.layerFromPath(NodePath.join(tempDir, "pragmas.sqlite")).pipe(
             Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
           ),
         ),
-        Effect.provideService(HostProcess.Platform, platform),
       );
 
-    return yield* Effect.gen(function* () {
-      const linux = yield* settings("linux");
-      assert.deepEqual(linux.writer, [{ mmap_size: 1073741824, cache_size: -2000 }]);
-      for (const reader of linux.readers) {
-        assert.deepEqual(reader, [{ mmap_size: 1073741824, cache_size: -2000 }]);
-      }
-      const windows = yield* settings("win32");
-      assert.deepEqual(windows.writer, [{ mmap_size: 0, cache_size: -2000 }]);
-      for (const reader of windows.readers) {
-        assert.deepEqual(reader, [{ mmap_size: 0, cache_size: -32768 }]);
-      }
-    }).pipe(
-      Effect.ensuring(Effect.sync(() => NodeFS.rmSync(tempDir, { recursive: true, force: true }))),
-    );
-  }),
+      return yield* Effect.gen(function* () {
+        const { writer, readers } = yield* settings;
+        assert.deepEqual(writer, [{ mmap_size: 0, cache_size: -2000 }]);
+        for (const reader of readers) {
+          assert.deepEqual(reader, [{ mmap_size: 0, cache_size: -32768 }]);
+        }
+      }).pipe(
+        Effect.ensuring(
+          Effect.sync(() => NodeFS.rmSync(tempDir, { recursive: true, force: true })),
+        ),
+      );
+    }),
 );

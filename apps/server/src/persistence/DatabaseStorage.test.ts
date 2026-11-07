@@ -166,7 +166,7 @@ it.effect("remembers completion only after the paced pass finishes", () =>
 );
 
 // Windows cannot truncate a file that any connection maps, readers included.
-it.effect("reclaim shrinks the file while every reader is open with this platform's settings", () =>
+it.effect("reclaim shrinks the file while every reader is open", () =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const config = yield* ServerConfig.ServerConfig;
@@ -181,7 +181,7 @@ it.effect("reclaim shrinks the file while every reader is open with this platfor
       });
       yield* sql`CREATE TABLE discarded (value BLOB)`;
       yield* sql`INSERT INTO discarded VALUES (zeroblob(2097152))`;
-      // Readers then read the blob from the database file, not the WAL, and map it where allowed.
+      // Readers then read the blob from the database file, not the WAL; a mapping reader would pin it.
       yield* fileBytes;
       yield* Effect.forEach(
         Array.from({ length: 8 }),
