@@ -51,6 +51,7 @@ export const CLOUD_SPEECH_ERROR_REASONS = [
   "rejected-key",
   "rate-limit",
   "model-unavailable",
+  "response-too-large",
   "unavailable",
 ] as const;
 
@@ -59,6 +60,9 @@ export class CloudSpeechError extends Schema.TaggedError<CloudSpeechError>()(
   {
     provider: CloudSpeechProvider,
     reason: Schema.Literals(CLOUD_SPEECH_ERROR_REASONS),
+    /** For `response-too-large`: the limit that tripped and the bytes the response reached. */
+    limitBytes: Schema.optionalKey(Schema.Number),
+    bytes: Schema.optionalKey(Schema.Number),
   },
   { httpApiStatus: 422 },
 ) {
@@ -77,6 +81,8 @@ export class CloudSpeechError extends Schema.TaggedError<CloudSpeechError>()(
         return `${name} reached a usage limit. Check the account's quota or try again later.`;
       case "model-unavailable":
         return `The chosen model isn't available on ${name}. Choose another model in Settings → Voice.`;
+      case "response-too-large":
+        return `${name} sent a transcription response of ${this.bytes ?? "more than the limit"} bytes; the limit is ${this.limitBytes ?? "unknown"} bytes. The text was discarded.`;
       case "unavailable":
         return `${name} couldn't transcribe this recording. Try again later.`;
     }
