@@ -28,6 +28,19 @@ vi.mock(import("@houston-app/shared/markdownLinks"), async (original) => {
     },
   };
 });
+const linkResolutions = vi.hoisted(() => ({ count: 0 }));
+vi.mock(import("../markdown-links"), async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    resolveMarkdownFileLinkMeta: (
+      ...args: Parameters<typeof actual.resolveMarkdownFileLinkMeta>
+    ) => {
+      linkResolutions.count += 1;
+      return actual.resolveMarkdownFileLinkMeta(...args);
+    },
+  };
+});
 vi.mock(import("mdast-util-from-markdown"), async (original) => {
   const actual = await original();
   return {
@@ -234,6 +247,25 @@ it("reuses the parse of a remounted message that has stable extra plugins", asyn
   await using screen = await render(message);
   await expect.element(screen.getByText("Cached text")).toBeVisible();
   expect(parsed).toHaveBeenCalledTimes(1);
+});
+
+it("classifies a finished message's links once, however often it remounts", async () => {
+  setup();
+  const text = Array.from(
+    { length: 20 },
+    (_, index) =>
+      `Step ${index} edits [file ${index}](src/file${index}.ts) and \`src/code${index}.ts\`.`,
+  ).join("\n\n");
+  {
+    await using first = await renderText(text);
+    expect(first.container.querySelectorAll(".chat-markdown-file-link")).toHaveLength(40);
+  }
+  linkScans.length = 0;
+  linkResolutions.count = 0;
+  await using screen = await renderText(text);
+  expect(screen.container.querySelectorAll(".chat-markdown-file-link")).toHaveLength(40);
+  expect(linkScans).toEqual([]);
+  expect(linkResolutions.count).toBe(0);
 });
 
 describe("ChatMarkdown favicon privacy", () => {

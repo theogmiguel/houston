@@ -484,54 +484,99 @@ function scanFileLinkSources(
   return { hrefs, spans };
 }
 
-// Finished blocks of streaming messages; a few long answers streaming at once fit.
-const FINISHED_BLOCK_SOURCES_LIMIT = 512;
-const finishedBlockSources = new Map<string, FileLinkSources>();
+function lruGet<V>(cache: Map<string, V>, key: string): V | undefined {
+  const cached = cache.get(key);
+  if (cached !== undefined) {
+    cache.delete(key);
+    cache.set(key, cached);
+  }
+  return cached;
+}
 
-function finishedBlockFileLinkSources(
-  block: string,
+function lruSet<V>(cache: Map<string, V>, key: string, value: V, limit: number): V {
+  cache.set(key, value);
+  if (cache.size > limit) cache.delete(cache.keys().next().value!);
+  return value;
+}
+
+// Finished messages and the finished blocks of streaming ones; a thread's mounted rows and a few
+// long answers streaming at once fit. Keyed by the text itself, so an entry holds no copy of it.
+const FINISHED_SOURCES_LIMIT = 512;
+const finishedSources = new Map<
+  string,
+  {
+    readonly cwd: string | undefined;
+    readonly imageBaseDir: string | undefined;
+    readonly sources: FileLinkSources;
+  }
+>();
+
+function finishedFileLinkSources(
+  text: string,
   cwd: string | undefined,
   imageBaseDir: string | undefined,
 ): FileLinkSources {
-  const key = `${cwd}\u0000${imageBaseDir}\u0000${block}`;
-  const cached = finishedBlockSources.get(key);
-  if (cached !== undefined) {
-    finishedBlockSources.delete(key);
-    finishedBlockSources.set(key, cached);
-    return cached;
+  const cached = lruGet(finishedSources, text);
+  if (cached !== undefined && cached.cwd === cwd && cached.imageBaseDir === imageBaseDir) {
+    return cached.sources;
   }
-  const sources = scanFileLinkSources(block, cwd, imageBaseDir);
-  finishedBlockSources.set(key, sources);
-  if (finishedBlockSources.size > FINISHED_BLOCK_SOURCES_LIMIT) {
-    finishedBlockSources.delete(finishedBlockSources.keys().next().value!);
-  }
+  const sources = scanFileLinkSources(text, cwd, imageBaseDir);
+  lruSet(finishedSources, text, { cwd, imageBaseDir, sources }, FINISHED_SOURCES_LIMIT);
   return sources;
 }
 
 /**
  * While streaming renders each block apart, links are found per block too, so a tick scans only
- * the last block and reuses the finished ones.
+ * the last block and reuses the finished ones. A finished message is scanned once per text.
  */
 function fileLinkSourcesKey(
   text: string,
+  isStreaming: boolean,
   streamingBlocks: ReadonlyArray<string> | null,
   cwd: string | undefined,
   imageBaseDir: string | undefined,
 ): string {
   const parts =
     streamingBlocks === null
-      ? [scanFileLinkSources(text, cwd, imageBaseDir)]
+      ? [
+          isStreaming
+            ? scanFileLinkSources(text, cwd, imageBaseDir)
+            : finishedFileLinkSources(text, cwd, imageBaseDir),
+        ]
       : streamingBlocks.map((block, index) =>
           index === streamingBlocks.length - 1
             ? scanFileLinkSources(block, cwd, imageBaseDir)
-            : finishedBlockFileLinkSources(block, cwd, imageBaseDir),
+            : finishedFileLinkSources(block, cwd, imageBaseDir),
         );
   const hrefs = new Set(parts.flatMap((part) => part.hrefs));
   const spans = new Set(parts.flatMap((part) => part.spans));
   return JSON.stringify([[...hrefs], [...spans]]);
 }
 
+type ResolvedFileLinkSources = ReturnType<typeof resolveFileLinkSourcesUncached>;
+
+// Read-only maps shared by every message with the same links; a mounted thread's distinct sets fit.
+const RESOLVED_SOURCES_LIMIT = 256;
+const resolvedSources = new Map<string, ResolvedFileLinkSources>();
+
 function resolveFileLinkSources(
+  key: string,
+  cwd: string | undefined,
+  imageBaseDir: string | undefined,
+): ResolvedFileLinkSources {
+  const cacheKey = `${cwd}\u0000${imageBaseDir}\u0000${key}`;
+  return (
+    lruGet(resolvedSources, cacheKey) ??
+    lruSet(
+      resolvedSources,
+      cacheKey,
+      resolveFileLinkSourcesUncached(key, cwd, imageBaseDir),
+      RESOLVED_SOURCES_LIMIT,
+    )
+  );
+}
+
+function resolveFileLinkSourcesUncached(
   key: string,
   cwd: string | undefined,
   imageBaseDir: string | undefined,
@@ -750,7 +795,7 @@ function useChatMarkdownState({
   // Keyed by the file links found, not the text, so streamed text that adds none keeps the
   // renderer context, and every block reading it, unchanged.
   // A template literal marks the key as a string, so the compiler memoizes the maps on its value.
-  const fileLinksKey = `${fileLinkSourcesKey(text, streamingBlocks, cwd, imageBaseDir)}`;
+  const fileLinksKey = `${fileLinkSourcesKey(text, isStreaming, streamingBlocks, cwd, imageBaseDir)}`;
   const { markdownFileLinkMetaByHref, inlineCodeFileLinkMetaByText, fileLinkParentSuffixByPath } =
     resolveFileLinkSources(fileLinksKey, cwd, imageBaseDir);
   const resolveThreadPullRequest = (
