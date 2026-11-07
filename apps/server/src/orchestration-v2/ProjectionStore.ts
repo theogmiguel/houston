@@ -4623,8 +4623,10 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                         THEN json_array_length(roster.payload_json, '$.pendingBackgroundTasks') > 0
                         ELSE 0 END
                   )
+                  -- Active items by name: unhinted, SQLite reads every item through the timeline index.
                   OR run.run_id IN (
                     SELECT item.run_id FROM orchestration_v2_projection_turn_items AS item
+                      INDEXED BY orchestration_v2_projection_turn_items_active_run_idx
                     WHERE item.thread_id = ${threadId}
                       AND item.type IN ('command_execution', 'dynamic_tool', 'subagent')
                       AND item.status IN ('pending', 'running', 'waiting')
@@ -4661,6 +4663,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                   )
                   OR node.node_id IN (
                     SELECT item.node_id FROM orchestration_v2_projection_turn_items AS item
+                      INDEXED BY orchestration_v2_projection_turn_items_active_run_idx
                     WHERE item.thread_id = ${threadId}
                       AND item.type IN ('command_execution', 'dynamic_tool', 'subagent')
                       AND item.status IN ('pending', 'running', 'waiting')
@@ -4776,6 +4779,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                   OR provider_thread.provider_thread_id IN (
                     SELECT run.provider_thread_id
                     FROM orchestration_v2_projection_turn_items AS item
+                      INDEXED BY orchestration_v2_projection_turn_items_active_run_idx
                     JOIN orchestration_v2_projection_runs AS run ON run.run_id = item.run_id
                     WHERE item.thread_id = ${threadId}
                       AND item.status IN ('pending', 'running', 'waiting')
@@ -6219,6 +6223,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             AND prompt.idle_compaction = 1
         ) AND NOT EXISTS (
           SELECT 1 FROM orchestration_v2_projection_turn_items compaction
+            INDEXED BY orchestration_v2_projection_turn_items_thread_run_idx
           WHERE compaction.thread_id = ${run}.thread_id AND compaction.run_id = ${run}.run_id
             AND compaction.type = 'compaction'
             AND compaction.status = 'failed'
@@ -7187,6 +7192,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             -- Same predicates as the shell's pending item and link reads, for their partial indexes.
             OR EXISTS (
               SELECT 1 FROM orchestration_v2_projection_turn_items item
+                INDEXED BY orchestration_v2_projection_turn_items_shell_pending_idx
               WHERE item.thread_id = shell.thread_id
                 AND item.type IN ('command_execution', 'dynamic_tool', 'subagent')
                 AND item.status NOT IN ('completed', 'interrupted', 'failed', 'cancelled')
