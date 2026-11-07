@@ -516,7 +516,8 @@ type PathDirectoryListings = Map<string, PathDirectoryListing>;
 
 // A Windows miss would otherwise stat every PATH directory × PATHEXT case variant (hundreds of
 // probes per command). Listings are revalidated by directory mtime on every lookup and expire with
-// the resolution cache, so a file added within one mtime tick of a listing is still found.
+// the resolution cache, so a file added without a directory mtime change is found within 30 s.
+// Eviction is least recently used; concurrent lookups of an unlisted directory each read it.
 const PATH_DIRECTORY_LISTING_MAX_ENTRIES = 512;
 
 /** Process-wide PATH directory listings that Windows lookups use outside `withPathDirectoryListings`. */
@@ -542,6 +543,8 @@ const pathDirectoryListing = Effect.fnUntraced(function* (
   const modified = yield* directoryMtime(directory);
   const cached = listings.get(directory);
   if (cached !== undefined && cached.modified === modified && cached.expiresAtNanos > nowNanos) {
+    listings.delete(directory);
+    listings.set(directory, cached);
     return cached;
   }
   const expiresAtNanos = nowNanos + COMMAND_RESOLUTION_CACHE_TTL_NANOS;

@@ -4,11 +4,13 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Result from "effect/Result";
 
 import * as HostProcess from "./HostProcess.ts";
 import { resolveNodeExecutable, resolveSelfInvocation, selfInvocationArgs } from "./nodeRuntime.ts";
+import { PathDirectoryListingCache, resolveCommandPath } from "./shell.ts";
 import { symlinksSupported } from "./testing/symlinks.ts";
 
 describe("Self invocation", () => {
@@ -209,5 +211,37 @@ describe("Node runtime selection", () => {
         Effect.provideService(HostProcess.IsExecutable, true),
         Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       ),
+  );
+
+  it.effect("finds a node added after a cached listing without a directory mtime change", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const directory = yield* fs.makeTempDirectoryScoped();
+      const env = { PATH: directory, PATHEXT: ".EXE" };
+      const listings = new Map();
+      // A miss caches the directory's listing; restoring its mtime keeps that listing valid.
+      expect(
+        yield* resolveCommandPath("node.exe", { env }).pipe(
+          Effect.provideService(PathDirectoryListingCache, listings),
+        ),
+      ).toBeNull();
+      const before = yield* fs.stat(directory);
+      const node = path.join(directory, "node.exe");
+      yield* fs.writeFileString(node, "node fixture");
+      const mtime = Option.getOrThrow(before.mtime);
+      yield* fs.utimes(directory, mtime, mtime);
+      expect(
+        yield* resolveNodeExecutable("Local device support", env).pipe(
+          Effect.provideService(PathDirectoryListingCache, listings),
+        ),
+      ).toBe(node);
+    }).pipe(
+      Effect.scoped,
+      Effect.provideService(HostProcess.Platform, "win32"),
+      Effect.provideService(HostProcess.ExecutablePath, "/packaged/houston"),
+      Effect.provideService(HostProcess.IsExecutable, true),
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+    ),
   );
 });
