@@ -65,6 +65,11 @@ describe("splitMarkdownBlocks", () => {
     "Start <!-- a\n\nb --> end",
     "- a\n\n  ```\n  x\n\ny <em>open\n\nz</em>",
     '<span id="x">a</span>\n\n## A',
+    "x <https://x.y/?q=`> <b>bold <https://x.y/?r=`>\n\nstill bold",
+    "See https://x.y/?q=` <b>bold ` x\n\nstill bold",
+    "See www.x.y/a-` <b>bold ` x\n\nstill bold",
+    "- a\n\n  ```\n  x\n  \t```\n\n  [r]: https://example.com/r\n\n  ```\n\nSee [r].",
+    "- a\n\n  ```\n  x\n  \t```\n\n  <b>bold\n\n  ```\n\nstill bold",
   ])("keeps text with document-wide syntax whole: %j", (text) => {
     expect(splitMarkdownBlocks(text)).toBeNull();
   });
@@ -117,6 +122,7 @@ describe("headingIdsMayCollide", () => {
     ["```sh\n# install\n```\n\n```sh\n# install\n```\n\n## Install steps", false],
     ["## Setup\n\nText\n\n```md\n```js\nx\n```\n\n## Setup", true],
     ["No headings at all.\n\n---\n\nAfter a break.", false],
+    ["- a\n\n  ```\n  x\n  \t```\n\n  ## Setup\n\n  ```\n\n## Setup", true],
   ])("%j: %s", (text, collides) => {
     expect(headingIdsMayCollide(text)).toBe(collides);
   });

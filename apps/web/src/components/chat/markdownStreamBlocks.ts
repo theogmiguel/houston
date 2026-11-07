@@ -10,18 +10,28 @@ const URL_AUTOLINK = /<[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*>/g;
 // Before a span opener, these may belong to math, a link destination or an escape.
 const SPAN_UNSAFE = /\$|\]\(/;
 const OPENER_UNSAFE = /[\w\\/.]$/;
+// An autolink or a bare URL may run through a backtick, which then opens no span.
+const URL_TOKEN = /(?:[A-Za-z][A-Za-z0-9+.-]{1,31}:|www\.)[^\s<>]*$/;
 // A line of only pipes, dashes, colons and container markers may be a table's delimiter row.
 const DELIMITER_ROW = /^[\s>*+\d.):|-]*$/;
 const BACKTICK_RUN = /`+/g;
 // A backtick fence's info string has no backtick.
 const FENCE_PATTERN = /^ {0,3}(`{3,}(?=[^`]*$)|~{3,})/;
-// Indented past three spaces, a fence run closes the fence only inside a container.
-const DEEP_FENCE_RUN = /^[ \t]{4,}(`{3,}|~{3,})[ \t]*$/;
+const FENCE_RUN_LINE = /^([ \t]*)(`{3,}|~{3,})[ \t]*$/;
+const SHALLOW_INDENT = /^ {0,3}$/;
 // After a blank line these still continue the previous block: a list item or indented content.
 const CONTINUATION_PATTERN = /^(?:[ \t]|(?:[-*+]|\d{1,9}[.)])(?:[ \t]|$))/;
 const NON_SPACE = /\S/;
 
 const hasHtml = (text: string) => INLINE_HTML.test(text.replace(URL_AUTOLINK, ""));
+
+// Whether a line closes an open fence; null when only an untracked list item could tell: a run
+// indented by a tab or past three spaces closes it inside an item, not at the top level.
+function closesFence(line: string, fence: string): boolean | null {
+  const run = FENCE_RUN_LINE.exec(line);
+  if (!run || run[2]![0] !== fence[0] || run[2]!.length < fence.length) return false;
+  return SHALLOW_INDENT.test(run[1]!) ? true : null;
+}
 
 const isDelimiterRow = (line: string) =>
   line.includes("|") && line.includes("-") && DELIMITER_ROW.test(line);
@@ -39,7 +49,12 @@ function htmlOutsideCode(line: string, open: boolean): { html: boolean; open: bo
     if (opener.index! < index) continue;
     outside += line.slice(index, opener.index);
     const closer = runs.slice(i + 1).find((run) => run[0].length === opener[0].length);
-    if (!closer || SPAN_UNSAFE.test(outside) || OPENER_UNSAFE.test(outside)) {
+    if (
+      !closer ||
+      SPAN_UNSAFE.test(outside) ||
+      OPENER_UNSAFE.test(outside) ||
+      URL_TOKEN.test(line.slice(index, opener.index))
+    ) {
       return { html, open: true };
     }
     index = closer.index! + closer[0].length;
@@ -71,16 +86,9 @@ export function splitMarkdownBlocks(text: string, rawHtml = true): string[] | nu
         if (DOCUMENT_WIDE_SYNTAX.test(rest) || (rawHtml && INLINE_HTML.test(rest))) return null;
         break;
       }
-      const deep = DEEP_FENCE_RUN.exec(line)?.[1];
-      if (deep && deep[0] === fence[0] && deep.length >= fence.length) return null;
-      if (
-        opener &&
-        opener[0] === fence[0] &&
-        opener.length >= fence.length &&
-        line.trim() === opener
-      ) {
-        fence = null;
-      }
+      const closes = closesFence(line, fence);
+      if (closes === null) return null;
+      if (closes) fence = null;
     } else if (line.trim() === "") {
       afterBlankLine = true;
       labelOpen = false;
@@ -145,14 +153,9 @@ export function headingIdsMayCollide(text: string): boolean {
   for (const line of text.split("\n")) {
     const opener = FENCE_PATTERN.exec(line)?.[1];
     if (fence !== null) {
-      if (
-        opener &&
-        opener[0] === fence[0] &&
-        opener.length >= fence.length &&
-        line.trim() === opener
-      ) {
-        fence = null;
-      }
+      const closes = closesFence(line, fence);
+      if (closes === null) return true;
+      if (closes) fence = null;
       continue;
     }
     if (opener) {
