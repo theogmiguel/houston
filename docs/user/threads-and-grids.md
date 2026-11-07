@@ -26,6 +26,8 @@ Pinned projects lead the list.
 
 Project actions are commands a project can run from a thread, such as a dev server, tests
 or lint. Add them under **Settings ▸ Projects ▸ Actions** or from the thread's action menu.
+An action with **Stop when the thread settles** turned on stops its terminal and child
+processes when the thread settles; an agent's own shell command is never attached to it.
 
 ## Creating a thread
 
