@@ -11,6 +11,8 @@ import {
 } from "@houston-app/client-runtime/voice-input";
 import {
   AuthSettingsWriteScope,
+  CLOUD_SPEECH_LABELS,
+  CloudSpeechProvider,
   DEFAULT_SPEECH_POST_PROCESSING_PROMPT,
   ProviderDriverKind,
   type EnvironmentId,
@@ -24,12 +26,14 @@ import {
 } from "@houston-app/contracts";
 import { createModelSelection } from "@houston-app/shared/model";
 import { resolveSpeechPostProcessingModelSelection } from "@houston-app/shared/serverSettings";
+import { cloudSpeechLanguages } from "@houston-app/shared/speech";
 import { useAtomValue } from "@effect/atom-react";
 import { Atom } from "effect/reactivity";
 import {
   AudioLinesIcon,
   CheckIcon,
   DownloadIcon,
+  KeyRoundIcon,
   LanguagesIcon,
   MicIcon,
   RefreshCwIcon,
@@ -88,6 +92,7 @@ import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { VoiceModelDownloadProgress } from "../ui/voice-model-download-progress";
 import { AdvancedSettings } from "./AdvancedSettings";
+import { CloudVoiceConfiguration } from "./CloudVoiceConfiguration";
 import { MicrophoneTest } from "./MicrophoneTest";
 import { useOptionalSettingsScope, useSettingsScope } from "./SettingsScopeContext";
 import { languageLabel, SpeechLanguageSelect } from "./SpeechLanguageSelect";
@@ -1149,9 +1154,15 @@ export function VoiceSettingsPanel() {
   const settings = useClientSettings();
   const settingsScope = useOptionalSettingsScope();
   const destination = useVoiceTranscriptionDestination();
+  const canManageKey = useEnvironmentScope(destination.environmentId, AuthSettingsWriteScope);
+  const [pendingCloud, setPendingCloud] = useState<{
+    readonly provider: CloudSpeechProvider;
+    readonly environmentId: EnvironmentId;
+  } | null>(null);
   const { environments } = useEnvironments();
   const [microphones, setMicrophones] = useState<BrowserMicrophone[]>([]);
-  const prepared = destination.prepared;
+  const cloudProvider = destination.cloudProvider;
+  const prepared = cloudProvider ? null : destination.prepared;
   const catalog = useVoiceModels(prepared);
 
   const refreshMicrophones = useStableCallback(async () => {
@@ -1184,13 +1195,35 @@ export function VoiceSettingsPanel() {
     ? (microphones.find((device) => device.deviceId === selectedMicrophone)?.label ??
       "Selected microphone (unavailable)")
     : "System default";
-  const destinationValue = destination.environmentId ?? OFF;
+  const choiceValue = (...parts: ReadonlyArray<string>) => JSON.stringify(parts);
+  const cloudChoices = environments
+    .filter(
+      (environment) => environment.serverConfig?.environment.capabilities.cloudVoiceTranscription,
+    )
+    .flatMap((environment) =>
+      CloudSpeechProvider.literals.map((provider) => ({
+        environment,
+        provider,
+        value: choiceValue("cloud", environment.environmentId, provider),
+      })),
+    );
+  const destinationValue = cloudProvider
+    ? choiceValue("cloud", destination.environmentId ?? "", cloudProvider)
+    : destination.environmentId
+      ? choiceValue("environment", destination.environmentId)
+      : OFF;
   const chosenEnvironment = environments.find(
     (environment) => environment.environmentId === destination.environmentId,
   );
   const chosenUnsupported =
+    !cloudProvider &&
     chosenEnvironment?.serverConfig != null &&
     chosenEnvironment.serverConfig.environment.capabilities.voiceTranscription !== true;
+  const pendingEnvironment = environments.find(
+    (environment) => environment.environmentId === pendingCloud?.environmentId,
+  );
+  // OpenRouter always has a model to change, so its owner can manage it without settings access.
+  const canManage = cloudProvider === "openrouter" || canManageKey;
   const model = prepared && modelStatus?.supported ? modelStatus : null;
   const customWords = settings.speechCustomWords;
   const promptMode = settings.speechPostProcessingPrompt.mode;
@@ -1215,41 +1248,92 @@ export function VoiceSettingsPanel() {
       <SettingsSection id="voice-input" title="Input">
         <SettingsRow
           {...searchableSetting("voice-transcription-destination")}
-          title="Send microphone audio to"
-          description="Audio is sent to this environment to be transcribed, then discarded. Off turns voice input off on this device. The choice is saved on this device only."
+          title="Transcribe with"
+          description="Off turns voice input off on this device. Cloud providers receive your recordings through the environment you pick. The choice is saved on this device only."
           control={
-            <Select
-              value={destinationValue}
-              onValueChange={(value) => {
-                if (!value) return;
-                chooseAudioDestination(
-                  value === OFF
-                    ? null
-                    : { kind: "environment", environmentId: value as EnvironmentId },
-                );
-              }}
-            >
-              <SelectTrigger size="sm" aria-label="Send microphone audio to" className="max-w-72">
-                <SelectValue>
-                  {destinationValue === OFF
-                    ? "Off"
-                    : (chosenEnvironment?.label ?? "Chosen environment (unavailable)")}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem value={OFF}>Off</SelectItem>
-                {environments.map((environment) => (
-                  <SelectItem key={environment.environmentId} value={environment.environmentId}>
-                    {environment.label}
-                  </SelectItem>
-                ))}
-                {destination.environmentId && !chosenEnvironment ? (
-                  <SelectItem value={destination.environmentId}>
-                    Chosen environment (unavailable)
-                  </SelectItem>
-                ) : null}
-              </SelectPopup>
-            </Select>
+            <div className="flex min-w-0 items-center justify-end gap-1">
+              <Select
+                value={destinationValue}
+                onValueChange={(value) => {
+                  if (!value) return;
+                  const cloud = cloudChoices.find((choice) => choice.value === value);
+                  setPendingCloud(
+                    cloud
+                      ? {
+                          environmentId: cloud.environment.environmentId,
+                          provider: cloud.provider,
+                        }
+                      : null,
+                  );
+                  if (cloud) return;
+                  if (value === OFF) return chooseAudioDestination(null);
+                  const [kind, environmentId] = JSON.parse(value) as [string, EnvironmentId];
+                  if (kind === "environment")
+                    chooseAudioDestination({ kind: "environment", environmentId });
+                }}
+              >
+                <SelectTrigger size="sm" aria-label="Transcribe with" className="max-w-72">
+                  <SelectValue>
+                    {destinationValue === OFF
+                      ? "Off"
+                      : cloudProvider
+                        ? `${CLOUD_SPEECH_LABELS[cloudProvider]} via ${chosenEnvironment?.label ?? "unavailable environment"}`
+                        : (chosenEnvironment?.label ?? "Chosen environment (unavailable)")}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  <SelectItem value={OFF}>Off</SelectItem>
+                  {environments.map((environment) => (
+                    <SelectItem
+                      key={environment.environmentId}
+                      value={choiceValue("environment", environment.environmentId)}
+                    >
+                      {environment.label}
+                    </SelectItem>
+                  ))}
+                  {cloudChoices.map(({ environment, provider, value }) => (
+                    <SelectItem
+                      key={value}
+                      value={value}
+                      aria-label={`${CLOUD_SPEECH_LABELS[provider]} via ${environment.label}`}
+                    >
+                      {CLOUD_SPEECH_LABELS[provider]} via {environment.label}
+                    </SelectItem>
+                  ))}
+                  {destination.environmentId &&
+                  (!chosenEnvironment ||
+                    (cloudProvider &&
+                      !cloudChoices.some((choice) => choice.value === destinationValue))) ? (
+                    <SelectItem value={destinationValue}>
+                      Chosen environment (unavailable)
+                    </SelectItem>
+                  ) : null}
+                </SelectPopup>
+              </Select>
+              {cloudProvider && chosenEnvironment && canManage ? (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        size="icon-sm"
+                        type="button"
+                        variant="ghost"
+                        aria-label={`Manage ${CLOUD_SPEECH_LABELS[cloudProvider]}`}
+                        onClick={() =>
+                          setPendingCloud({
+                            provider: cloudProvider,
+                            environmentId: chosenEnvironment.environmentId,
+                          })
+                        }
+                      >
+                        <KeyRoundIcon aria-hidden />
+                      </Button>
+                    }
+                  />
+                  <TooltipPopup>Manage {CLOUD_SPEECH_LABELS[cloudProvider]}</TooltipPopup>
+                </Tooltip>
+              ) : null}
+            </div>
           }
         >
           {destination.refusal ? (
@@ -1263,6 +1347,18 @@ export function VoiceSettingsPanel() {
             </Text>
           ) : null}
         </SettingsRow>
+        {pendingCloud && pendingEnvironment ? (
+          <CloudVoiceConfiguration
+            key={JSON.stringify(pendingCloud)}
+            provider={pendingCloud.provider}
+            environment={pendingEnvironment}
+            active={
+              destination.environmentId === pendingCloud.environmentId &&
+              cloudProvider === pendingCloud.provider
+            }
+            close={() => setPendingCloud(null)}
+          />
+        ) : null}
         <SettingsRow
           {...searchableSetting("voice-microphone")}
           title="Microphone"
@@ -1346,11 +1442,13 @@ export function VoiceSettingsPanel() {
           {...searchableSetting("speech-language")}
           title="Language"
           description={
-            model
-              ? `${model.model} ${model.supportsLanguageDetection ? "detects the language automatically" : "uses one fixed language"}.`
-              : "Choose an environment above to see the languages its transcription model supports."
+            cloudProvider
+              ? `${CLOUD_SPEECH_LABELS[cloudProvider]} can detect the language automatically.`
+              : model
+                ? `${model.model} ${model.supportsLanguageDetection ? "detects the language automatically" : "uses one fixed language"}.`
+                : "Choose an environment above to see the languages its transcription model supports."
           }
-          control={<SpeechLanguageSelect model={model} />}
+          control={<SpeechLanguageSelect model={cloudProvider ? cloudSpeechLanguages : model} />}
         />
         {model?.supportsTranslation ? (
           <SettingsRow
@@ -1370,10 +1468,15 @@ export function VoiceSettingsPanel() {
         <SettingsRow
           {...searchableSetting("speech-silence-filtering")}
           title="Silence filtering"
-          description="Skip silence and other non-speech audio before transcription, keeping a short buffer so words aren't cut off."
+          description={
+            cloudProvider && cloudProvider !== "xai"
+              ? `${CLOUD_SPEECH_LABELS[cloudProvider]} receives the whole recording. Only the local engine and Grok Voice Transcribe skip silence.`
+              : "Skip silence and other non-speech audio before transcription, keeping a short buffer so words aren't cut off."
+          }
           control={
             <Switch
               aria-label="Silence filtering"
+              disabled={cloudProvider !== undefined && cloudProvider !== "xai"}
               checked={settings.speechSilenceFiltering}
               onCheckedChange={(checked) =>
                 void updateClientSettings({ speechSilenceFiltering: checked })

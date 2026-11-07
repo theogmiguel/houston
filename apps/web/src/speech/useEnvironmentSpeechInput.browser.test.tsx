@@ -24,6 +24,8 @@ const mocks = vi.hoisted(() => ({
   settings: {} as Record<string, unknown>,
   connected: new Set<string>(),
   voiceCapable: new Set<string>(),
+  cloudCapable: new Set<string>(),
+  platformCloud: [] as Array<{ provider?: string; model?: string }>,
   canDictate: new Set<string>(),
   protocols: new Map<string, number | undefined>(),
   prepared: new Map<string, unknown>(),
@@ -70,6 +72,7 @@ const presentation = (environmentId: string) => ({
     environment: {
       capabilities: {
         voiceTranscription: mocks.voiceCapable.has(environmentId),
+        cloudVoiceTranscription: mocks.cloudCapable.has(environmentId),
         voiceProtocol: mocks.protocols.get(environmentId),
       },
     },
@@ -150,11 +153,17 @@ vi.mock("@houston-app/client-runtime/voice-input", async (importOriginal) => ({
 vi.mock("./browserVoiceInput", () => ({
   createBrowserVoiceInputPlatform: (input: {
     prepared: PreparedConnection;
+    cloudProvider?: string;
+    cloudModel?: string;
     onLevel: (level: number) => void;
     getTranscriptionOptions?: () => SpeechTranscriptionOptions;
   }) => {
     const environmentId = input.prepared.environmentId;
     mocks.platforms.push(environmentId);
+    mocks.platformCloud.push({
+      ...(input.cloudProvider ? { provider: input.cloudProvider } : {}),
+      ...(input.cloudModel ? { model: input.cloudModel } : {}),
+    });
     mocks.onLevel = input.onLevel;
     return {
       recorder: {
@@ -196,6 +205,8 @@ function setup(options: { readonly destination?: string | null } = {}) {
   mocks.connected = new Set(["primary-env", THREAD_ENV, "env-a", "env-b"]);
   mocks.voiceCapable = new Set(["primary-env", THREAD_ENV, "env-a", "env-b"]);
   mocks.canDictate = new Set(mocks.voiceCapable);
+  mocks.cloudCapable = new Set();
+  mocks.platformCloud = [];
   mocks.protocols = new Map([...mocks.voiceCapable].map((id) => [id, 2]));
   mocks.prepared.clear();
   mocks.statusRequests = [];
@@ -748,4 +759,68 @@ it("updates the recording meter without rerendering the draft owner", async () =
   ).toContain("scaleY(0.8)");
   expect(mocks.voice.level.getSnapshot()).toBe(0.8);
   await act(() => mocks.voice.cancel());
+});
+
+function setCloudDestination(
+  environmentId: string,
+  provider: "openai" | "xai" | "openrouter",
+  model?: string,
+) {
+  chooseAudioDestination(
+    provider === "openrouter"
+      ? { kind: "cloud", provider, environmentId: environmentId as EnvironmentId, model: model! }
+      : { kind: "cloud", provider, environmentId: environmentId as EnvironmentId },
+  );
+}
+
+it("records for a cloud provider through the chosen environment without probing its local engine", async () => {
+  setup();
+  mocks.cloudCapable = new Set(["env-a"]);
+  setCloudDestination("env-a", "openrouter", "acme/voice-1");
+  await using _screen = await render(<Probe />);
+  expect(mocks.voice.available).toBe(true);
+  expect(mocks.voice.transcriptionEnvironmentId).toBe("env-a");
+  expect(mocks.voice.transcriptionEnvironmentLabel).toBe("OpenRouter via env-a");
+  await act(() => mocks.voice.start());
+  expect(mocks.voice.state.phase).toBe("recording");
+  await act(() => mocks.voice.stop());
+  expect(mocks.statusRequests).toEqual([]);
+  expect(mocks.platformCloud.at(-1)).toEqual({ provider: "openrouter", model: "acme/voice-1" });
+  expect(mocks.committed).toHaveBeenCalledExactlyOnceWith("dictated", expect.anything());
+});
+
+it("refuses a cloud destination on an environment that cannot forward it, by name, sending no audio", async () => {
+  setup();
+  setCloudDestination("env-a", "openai");
+  await using _screen = await render(<Probe />);
+  expect(mocks.voice.available).toBe(false);
+  expect(mocks.voice.unavailableReason).toBe(
+    "env-a cannot send recordings to OpenAI; update it or choose another destination in Voice settings.",
+  );
+  await act(() => mocks.voice.start());
+  expectNoAudioSent();
+});
+
+it("does not opt a device in because an environment can use the cloud or holds a key", async () => {
+  setup();
+  mocks.cloudCapable = new Set(["env-a", "env-b"]);
+  await using _screen = await render(<Probe />);
+  expect(mocks.voice.needsDestination).toBe(true);
+  expect(mocks.voice.transcriptionEnvironmentId).toBeNull();
+  await act(() => mocks.voice.start());
+  expectNoAudioSent();
+  expect(mocks.platformCloud).toEqual([]);
+});
+
+it("cleans a cloud transcript on a draft environment that has no local engine", async () => {
+  setup();
+  mocks.voiceCapable.delete(THREAD_ENV);
+  mocks.cloudCapable = new Set(["env-a", THREAD_ENV]);
+  chooseTranscriptCleanup(true);
+  setCloudDestination("env-a", "xai");
+  await using _screen = await render(<Probe />);
+  await act(() => mocks.voice.start());
+  await act(() => mocks.voice.stop());
+  expect(mocks.cleanupCalls).toEqual([THREAD_ENV]);
+  expect(mocks.committed).toHaveBeenCalledExactlyOnceWith("Cleaned dictated", expect.anything());
 });

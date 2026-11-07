@@ -261,7 +261,7 @@ it.each([
     await using screen = await render(scoped(), { router: `/#${target}` });
     await vi.waitFor(() => expect(document.activeElement?.id).toBe(prerequisite));
     await expect
-      .element(screen.getByRole("combobox", { name: "Send microphone audio to" }))
+      .element(screen.getByRole("combobox", { name: "Transcribe with" }))
       .toHaveTextContent("Off");
     await expect
       .element(screen.getByRole("switch", { name: "Clean up transcripts with a provider" }))
@@ -276,7 +276,7 @@ it("keeps a missing destination selected without claiming it cannot transcribe",
   chooseAudioDestination({ kind: "environment", environmentId: EnvironmentId.make("missing") });
   await using screen = await render(scoped());
   await expect
-    .element(screen.getByRole("combobox", { name: "Send microphone audio to" }))
+    .element(screen.getByRole("combobox", { name: "Transcribe with" }))
     .toHaveTextContent("Chosen environment (unavailable)");
   await expect.element(screen.getByText(/can't transcribe audio/)).not.toBeInTheDocument();
 });
