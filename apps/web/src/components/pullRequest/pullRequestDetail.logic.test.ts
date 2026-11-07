@@ -624,7 +624,7 @@ describe("fix findings handoff", () => {
   const base = {
     number: 42,
     title: "Add the pull requests page",
-    url: "https://github.com/pingdotgg/houston/pull/42",
+    url: "https://github.com/theogmiguel/houston/pull/42",
     headBranch: "feat/page",
     baseBranch: "main",
     state: "open" as const,
@@ -729,7 +729,7 @@ describe("findings that cannot be attached", () => {
   const base = {
     number: 42,
     title: "Add the pull requests page",
-    url: "https://github.com/pingdotgg/houston/pull/42",
+    url: "https://github.com/theogmiguel/houston/pull/42",
     headBranch: "feat/page",
     baseBranch: "main",
     state: "open" as const,
@@ -795,7 +795,7 @@ describe("one finding handed over on its own", () => {
   const base = {
     number: 42,
     title: "Add the pull requests page",
-    url: "https://github.com/pingdotgg/houston/pull/42",
+    url: "https://github.com/theogmiguel/houston/pull/42",
     headBranch: "feat/page",
     baseBranch: "main",
     state: "open" as const,
@@ -913,7 +913,7 @@ describe("asking about a change rather than working on it", () => {
   const base = {
     number: 42,
     title: "Add the pull requests page",
-    url: "https://github.com/pingdotgg/houston/pull/42",
+    url: "https://github.com/theogmiguel/houston/pull/42",
     headBranch: "feat/page",
     baseBranch: "main",
     state: "open" as const,
@@ -1281,7 +1281,7 @@ describe("a second ask into the same composer", () => {
       buildFixFindingsHandoff({
         number,
         title: "Add the pull requests page",
-        url: `https://github.com/pingdotgg/houston/pull/${number}`,
+        url: `https://github.com/theogmiguel/houston/pull/${number}`,
         state: "open",
         isDraft: false,
         headBranch: `feat/${number}`,
@@ -1347,7 +1347,7 @@ describe("pull request panel context beside a thread", () => {
     host: "github.com",
     repository: "pingdotgg/houston",
     number,
-    url: `https://github.com/pingdotgg/houston/pull/${number}`,
+    url: `https://github.com/theogmiguel/houston/pull/${number}`,
     source: "manual",
     linkedAt: "2026-09-09T00:00:00Z",
     snapshot: null,
@@ -1377,7 +1377,7 @@ describe("pull request panel context beside a thread", () => {
       projectId: "proj-a",
       repository: "pingdotgg/houston",
       number: 10856,
-      url: "https://github.com/pingdotgg/houston/pull/10856",
+      url: "https://github.com/theogmiguel/houston/pull/10856",
     },
   };
 
@@ -1395,7 +1395,7 @@ describe("pull request panel context beside a thread", () => {
         projectId: "proj-a",
         repository: "pingdotgg/houston",
         number: 11105,
-        url: "https://github.com/pingdotgg/houston/pull/11105",
+        url: "https://github.com/theogmiguel/houston/pull/11105",
       },
     };
     expect(pullRequestPanelContext(thread, surface(11101))).toBe("thread");
@@ -1442,7 +1442,7 @@ describe("pull request panel context beside a thread", () => {
       projectId: "proj-a",
       repository: "pingdotgg/houston",
       number: 3,
-      url: "https://github.com/pingdotgg/houston/pull/3",
+      url: "https://github.com/theogmiguel/houston/pull/3",
     };
     expect(
       pullRequestPanelContext({ projectId: "proj-a", linkedPullRequest: legacy }, surface(3)),
@@ -1461,7 +1461,7 @@ describe("pull request panel context beside a thread", () => {
       projectId: ProjectId.make("proj-a"),
       repository: "pingdotgg/houston",
       number,
-      url: `https://github.com/pingdotgg/houston/pull/${number}`,
+      url: `https://github.com/theogmiguel/houston/pull/${number}`,
     });
 
     it("opens a linked pull request the legacy field never named, ahead of the branch PR", () => {
