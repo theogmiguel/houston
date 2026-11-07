@@ -73,6 +73,7 @@ function header(
           parentThreadLink={null}
           pullRequest={options.pullRequest === false ? null : PULL_REQUEST}
           pullRequestCount={1}
+          compactProject={width <= 900}
           onOpenThread={options.onOpenThread ?? (() => {})}
         />
         <div data-testid="toolbar" className="ms-auto flex shrink-0 gap-1">
@@ -173,16 +174,25 @@ it("renders no meta row and puts the pull request badge after the title", async 
   );
 });
 
-it("hides the project name at 800px and keeps it at 1440px", async () => {
+it("collapses the project name to its icon and tooltip at 800px, keeping it at 1440px", async () => {
   {
     await using wide = await render(header("Add a retry-after hint", { width: 1440 }));
     const group = wide.container.querySelector<HTMLElement>("[data-thread-project]")!;
-    expect(getComputedStyle(group).display).not.toBe("none");
+    const name = [...group.querySelectorAll("span")].find(
+      (span) => span.textContent === "atlas-api" && span.children.length === 0,
+    )!;
+    expect(name.getBoundingClientRect().width).toBeGreaterThan(0);
   }
   {
     await using narrow = await render(header("Add a retry-after hint", { width: 800 }));
     const group = narrow.container.querySelector<HTMLElement>("[data-thread-project]")!;
-    expect(getComputedStyle(group).display).toBe("none");
+    // The project stays in the header as its icon; its name is kept for screen readers.
+    expect(getComputedStyle(group).display).not.toBe("none");
+    const name = [...group.querySelectorAll("span")].find(
+      (span) => span.textContent === "atlas-api" && span.children.length === 0,
+    )!;
+    // Visually collapsed to the icon, still present for assistive tech.
+    expect(getComputedStyle(name).position).toBe("absolute");
   }
 });
 

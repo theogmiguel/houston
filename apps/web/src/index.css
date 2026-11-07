@@ -406,6 +406,16 @@ body {
   --color-guest: var(--guest);
   --color-guest-foreground: var(--guest-foreground);
   --color-guest-surface: var(--guest-surface);
+  --color-status-running: var(--status-running);
+  --color-status-running-ink: var(--status-running-ink);
+  --color-status-back: var(--status-back);
+  --color-status-back-ink: var(--status-back-ink);
+  --color-status-waiting: var(--status-waiting);
+  --color-status-waiting-ink: var(--status-waiting-ink);
+  --color-status-input: var(--status-input);
+  --color-status-input-ink: var(--status-input-ink);
+  --color-status-approval: var(--status-approval);
+  --color-status-approval-ink: var(--status-approval-ink);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-ring: var(--ring);
   --color-input: var(--contrast-input);
@@ -1079,6 +1089,19 @@ body {
   --stop-ink: #c0362c;
   --warn-ink: #9a4a06;
   --info-ink: #155e75;
+  /* Thread status hues. Accent violet stays interaction-only, so state never borrows it:
+     running is teal, back is pink, waiting is sky, input is amber and approval is orange.
+     Each `-ink` keeps 4.5:1 on the canvas and the raised card. */
+  --status-running: #0d9488;
+  --status-running-ink: #0f766e;
+  --status-back: #db2777;
+  --status-back-ink: #be185d;
+  --status-waiting: #0284c7;
+  --status-waiting-ink: #0369a1;
+  --status-input: var(--warn);
+  --status-input-ink: var(--warn-ink);
+  --status-approval: #ea580c;
+  --status-approval-ink: #c2410c;
   /* A merged pull request: the one status colour Houston has no other use for. */
   --merged: #7c3aed;
   --merged-ink: #6d28d9;
@@ -1095,6 +1118,9 @@ body {
   --scrim: rgba(0, 0, 0, 0.12);
   --pane: #ffffff;
   --pane-head: #f7f7fa;
+  /* The space between grid pane cards: one tonal step below the canvas, so the
+     white pane cards read as separate surfaces. */
+  --grid-gutter: var(--rail);
   --composer: var(--raised);
   /* The focused grid cell's frame: a neutral grey, never the accent. */
   --focus-frame: rgba(0, 0, 0, 0.38);
@@ -1201,20 +1227,21 @@ body {
 .dark,
 [data-theme="graphite"] {
   color-scheme: dark;
-  /* Houston's Graphite palette: the rail is above the canvas, cards lift
-     above the canvas and menus/popovers take the raised tier. */
+  /* Houston's Graphite palette: three planes from dark to light. Chrome (rail, top bar,
+     grid gutter) sits below the canvas, and cards, the composer and popovers take the
+     raised tier. */
   --rail: #111113;
-  --content: #19191c;
-  --card: #222226;
-  --raised: #222226;
+  --content: #18181b;
+  --card: #1f1f23;
+  --raised: #1f1f23;
   --term: #0c0c0e;
   --code-bg: #1a1a1e;
   --t1: rgba(255, 255, 255, 0.92);
   --t2: rgba(255, 255, 255, 0.66);
   --houston: rgba(255, 255, 255, 0.52);
   --border: rgba(255, 255, 255, 0.09);
-  /* The raised tier's edge, #ffffff14 in the board. */
-  --card-edge: rgba(255, 255, 255, 0.078);
+  /* The raised tier's edge: one hairline above the canvas at 8% white. */
+  --card-edge: rgba(255, 255, 255, 0.08);
   --divider: rgba(255, 255, 255, 0.14);
   --border-hover: rgba(255, 255, 255, 0.16);
   --line-strong: rgba(255, 255, 255, 0.16);
@@ -1235,6 +1262,18 @@ body {
   --stop-ink: #ff6b61;
   --warn-ink: #f5a524;
   --info-ink: #7cb7ff;
+  /* Thread status hues, the same families as the light palette, brightened for the dark
+     canvas and the raised card; each `-ink` keeps 4.5:1 on both. */
+  --status-running: #14b8a6;
+  --status-running-ink: #14b8a6;
+  --status-back: #ec4899;
+  --status-back-ink: #ec4899;
+  --status-waiting: #38bdf8;
+  --status-waiting-ink: #38bdf8;
+  --status-input: var(--warn);
+  --status-input-ink: var(--warn-ink);
+  --status-approval: #fb923c;
+  --status-approval-ink: #fb923c;
   --merged: #a78bfa;
   --merged-ink: #c4b5fd;
   --danger-fill: #d93a30;
@@ -1247,8 +1286,9 @@ body {
   --shadow-2: 0 12px 32px -8px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
   --shadow-seg: 0 1px 2px rgba(0, 0, 0, 0.2), 0 0 0 1px #2a2a31;
   --scrim: rgba(0, 0, 0, 0.28);
-  --pane: #141417;
-  --pane-head: #1a1a1e;
+  /* A grid pane is the canvas; only the rounded card frame lifts above the gutter. */
+  --pane: #18181b;
+  --pane-head: #1f1f23;
   --composer: var(--raised);
   --focus-frame: #6f6f7a;
   --claude: #d97757;
@@ -1287,7 +1327,8 @@ body {
 
   @variant dark {
     --sidebar-row-selected: var(--sel);
-    --card: #222226;
+    /* The card a themed sidebar control paints; it follows the raised tier. */
+    --card: var(--raised);
     --sidebar-control-surface: var(--card);
     /* Row metadata sits a step below read titles. */
     --secondary-label: var(--t2);
@@ -1529,6 +1570,13 @@ html[data-theme-token-probe] *::after {
 
 #theme-inspector-hover[data-placement="below"] [data-theme-inspector-hover-label] {
   top: calc(100% + 0.35rem);
+}
+
+/* The chat's top bar rides the chrome plane with the sidebar, one step under the canvas.
+   A theme file replaces it below with its own toolbar role. */
+[data-chat-header],
+:has(> [data-grid-surface]) > header {
+  background-color: var(--app-chrome-background);
 }
 
 /* Workspace actions use a small, separate chrome hierarchy. Keeping these
@@ -2751,6 +2799,15 @@ code {
   }
 }
 
+/* A short window cannot seat the new-thread group above a centred composer without crowding
+   the top bar, so there the group rests at the foot of the pane with the hero over it. */
+@media (max-height: 44rem) {
+  [data-chat-composer-overlay][data-draft-hero] {
+    align-items: flex-end;
+    padding-bottom: 4rem;
+  }
+}
+
 /* A workspace area with no control of its own takes F6 focus itself; keep that visible. */
 [data-workspace-area]:focus-visible {
   outline: 2px solid var(--ring);
@@ -2813,20 +2870,25 @@ code {
   --grid-morph-duration: 260ms;
   --grid-morph-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   /* The card a cell shows in a crowded grid, read here so a cell's own --pane can't recolour it. */
-  --grid-card-surface: var(--pane);
+  --grid-card-surface: var(--background);
   --grid-cell-surface: var(--background);
   --grid-cell-radius: 0px;
   /* A stable offsetParent for the cell FLIP's layout measurements. */
   position: relative;
+  /* One thread on screen is one surface: the canvas, edge to edge. */
   background-color: var(--background);
   /* The gutter snaps: easing it would relayout every cell's chat on every frame. */
   padding: 0;
 }
 
 [data-grid-surface][data-multi] {
-  --grid-cell-surface: var(--pane);
+  --grid-card-surface: var(--background);
+  --grid-cell-surface: var(--background);
   --grid-cell-radius: var(--r-group);
-  padding: 0 8px 8px;
+  /* The pane cards sit on the darker gutter with a full 8px margin, so no card corner
+     is clipped against the surface's edge. */
+  background-color: var(--grid-gutter);
+  padding: 8px;
 }
 
 /* Cells that can swap keep their own compositing layer, so a move neither creates nor
@@ -2865,7 +2927,7 @@ code {
 }
 
 [data-grid-surface][data-multi] [data-grid-cell][data-focused="true"]::before {
-  border-color: var(--focus-frame);
+  border-color: var(--accent);
 }
 
 /* Maximize and restore: a stand-in card carries the box while every cell's own card snaps

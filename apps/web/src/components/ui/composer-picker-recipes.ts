@@ -16,7 +16,7 @@ export const DOCKED_EFFORT_PANEL_CLASS =
   "flex max-h-40 min-h-22 shrink-0 flex-col overflow-y-auto overscroll-contain border-t border-border";
 
 /** The list's frame inside a docked popup: the popup owns the border and radius. */
-export const MODEL_PICKER_DOCKED_CLASS = "w-full border-0 h-52";
+export const MODEL_PICKER_DOCKED_CLASS = "w-full border-0";
 
 /** Hides a rail row's label from sight but keeps it as the row's accessible name. */
 export const COMPACT_RAIL_LABEL_CLASS = "sr-only";

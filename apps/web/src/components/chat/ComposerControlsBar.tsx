@@ -23,6 +23,7 @@ import {
 import type { EffortDisplay } from "@houston-app/contracts/settings";
 import { cn } from "~/lib/utils";
 import { resolveComposerTraitsInput } from "./composerProviderState";
+import { getTraitsSectionVisibility } from "./TraitsPicker";
 import {
   ComposerEffortPanel,
   ComposerPickerFooter,
@@ -171,6 +172,9 @@ export function ComposerControlsBar(props: {
     planModeEnabled,
   });
   const effort = describeComposerEffort(traitsInput, props.effortDisplay, controlSize);
+  // A model without reasoning levels gets no empty effort band under its list.
+  const effortHasControls =
+    traitsInput !== null && getTraitsSectionVisibility(traitsInput).hasAnyControls;
   const compactPane = paneDensity === "compact";
   const restingBlockDefs =
     compactPane || !showModeBlock
@@ -230,6 +234,7 @@ export function ComposerControlsBar(props: {
       )}
       triggerSuffix={effort.suffix}
       triggerDetail={effort.detail}
+      showEffortPanel={effortHasControls}
       triggerShortcuts={
         pickerOwnsModeShortcut ? "composer.effort composer.mode" : "composer.effort"
       }

@@ -73,12 +73,15 @@ export function GridTopBarControls({
 
   return (
     <PanelLayoutControls
+      // A grid with cells carries its details toggle in each pane header; an empty grid's
+      // draft has no pane, so the strip keeps it.
+      showThreadPanelControl={grid.tree === null}
       terminalAvailable={terminalRef !== null}
       terminalOpen={terminalOpen}
       terminalShortcutLabel={shortcutLabelForCommand(keybindings, "terminal.toggle")}
       threadPanelOpen={gridOwnsDetails ? detailsOpen === true : threadPanelOpen}
       threadPanelPresentation="inline"
-      {...(threadPanelAnchorRef ? { threadPanelAnchorRef } : {})}
+      {...(grid.tree === null && threadPanelAnchorRef ? { threadPanelAnchorRef } : {})}
       threadPanelShortcutLabel={shortcutLabelForCommand(keybindings, "threadPanel.toggle")}
       rightPanelAvailable={focusedRef !== null}
       rightPanelOpen={rightPanelOpen}

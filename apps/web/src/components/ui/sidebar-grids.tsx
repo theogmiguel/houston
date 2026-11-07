@@ -58,7 +58,7 @@ export const SIDEBAR_GRID_COUNT_CLS =
  * 4px gap above the box, so rows scrolling under it never paint in that seam.
  */
 export const SIDEBAR_PROJECT_ROW_CLS =
-  "group/project sticky -top-px z-40 mt-1 flex items-center border-b border-transparent bg-sidebar before:absolute before:inset-x-0 before:-top-1 before:h-1 before:bg-sidebar before:content-[''] first:mt-0 data-stuck:border-sidebar-border";
+  "group/project sticky -top-px z-40 mt-1 flex items-center border-b border-transparent bg-sidebar before:absolute before:inset-x-0 before:-top-1 before:h-1 before:bg-sidebar before:content-[''] after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-2 after:bg-linear-to-b after:from-sidebar after:to-transparent after:opacity-0 after:content-[''] first:mt-0 data-stuck:border-sidebar-border data-stuck:after:opacity-100";
 
 export const SIDEBAR_PROJECT_LABEL_CLS =
   "flex h-8 min-w-0 shrink cursor-pointer items-center gap-1.5 rounded-lg py-0 pr-1 pl-2 text-left text-xs font-semibold text-sidebar-foreground transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
@@ -71,13 +71,26 @@ export const SIDEBAR_PROJECT_SUMMARY_CLS = SIDEBAR_GRID_COUNT_CLS;
 /** The heading's pips: always visible so they stay reachable; the hover actions reserve their own room. */
 export const SIDEBAR_HEADING_PIPS_CLS = "flex shrink-0 items-center gap-1";
 
+/** The opt-in "Needs you" shelf above the projects, its heading and the project's roll-up line. */
+export const SIDEBAR_NEEDS_YOU_SECTION_CLS = "flex flex-col gap-0.5";
+
+export const SIDEBAR_NEEDS_YOU_HEADING_CLS =
+  "flex h-(--h-row) min-w-0 shrink-0 items-center gap-1 rounded-lg pr-1 pl-2 text-xs font-semibold text-secondary-label";
+
+export const SIDEBAR_NEEDS_YOU_HEADING_GLYPH_CLS = "inline-grid size-3 shrink-0 place-items-center";
+
+export const SIDEBAR_PROJECT_NEEDS_YOU_CLS = "px-2 py-1 text-xs text-secondary-label";
+
+/** A row outside a project group names its project first on the second line. */
+export const SIDEBAR_THREAD_PROJECT_CLS = "min-w-0 truncate";
+
 const SIDEBAR_HEADING_PIP_CLS =
   "inline-flex h-4 min-w-4 cursor-pointer items-center justify-center gap-0.5 rounded-full px-1 text-2xs leading-none font-semibold tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
 const ATTENTION_PIP_CLASS = {
   failed: "bg-error-surface text-error-foreground",
-  needs: "bg-warning-surface text-(--warn-ink)",
-  back: "bg-merged/15 text-merged-foreground",
+  needs: "bg-warning-surface text-status-input-ink",
+  back: "bg-status-back/15 text-status-back-ink",
 } as const;
 
 const ATTENTION_PIP_KIND = {
@@ -340,6 +353,7 @@ export interface SidebarGridOptions {
   readonly showBranch: boolean;
   readonly showPullRequest: boolean;
   readonly showSubagents: boolean;
+  readonly showNeedsYou: boolean;
 }
 
 const THREAD_SORT_CHOICES = [
@@ -445,6 +459,16 @@ export function SidebarOptionsMenu({
             onCheckedChange={(checked) => onChange({ showSubagents: checked })}
           >
             Subagents
+          </MenuCheckboxItem>
+        </MenuGroup>
+        <MenuSeparator />
+        <MenuGroup>
+          <MenuGroupLabel>Sections</MenuGroupLabel>
+          <MenuCheckboxItem
+            checked={options.showNeedsYou}
+            onCheckedChange={(checked) => onChange({ showNeedsYou: checked })}
+          >
+            Show Needs you
           </MenuCheckboxItem>
         </MenuGroup>
         <MenuSeparator />

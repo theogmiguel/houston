@@ -115,13 +115,22 @@ describe("CommandPalette list edge", () => {
         const visible = rows.filter((row) => row.getBoundingClientRect().top < listBox.bottom - 1);
         const last = visible.at(-1)?.getBoundingClientRect();
         if (!last) return "no rows";
+        // A section heading never ends the list: "Projects" scrolls under the fade instead.
+        const lastVisibleIsHeading =
+          visible.at(-1)?.querySelector('[data-slot="command-group-label"]') != null;
         return {
           overflowing: scroller.scrollHeight - scroller.clientHeight > 1,
           cutPx: Math.max(0, Math.round(last.bottom - listBox.bottom)),
           listOverflowsDialogPx: Math.max(0, Math.round(listBox.bottom - popupBox.bottom)),
+          lastVisibleIsHeading,
         };
       })
-      .toEqual({ overflowing: true, cutPx: 0, listOverflowsDialogPx: 0 });
+      .toEqual({
+        overflowing: true,
+        cutPx: 0,
+        listOverflowsDialogPx: 0,
+        lastVisibleIsHeading: false,
+      });
   });
 
   async function openPalette(height: number) {

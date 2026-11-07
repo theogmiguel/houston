@@ -17,14 +17,7 @@ import {
   type OrchestrationV2Subagent,
 } from "@houston-app/contracts";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
-import {
-  createRef,
-  Profiler,
-  StrictMode,
-  useState,
-  type ComponentProps,
-  type ReactElement,
-} from "react";
+import { createRef, Profiler, StrictMode, type ComponentProps, type ReactElement } from "react";
 import * as DateTime from "effect/DateTime";
 import { Atom, AtomRegistry } from "effect/reactivity";
 import { RegistryContext } from "@effect/atom-react";
@@ -35,7 +28,7 @@ import "~/index.css";
 
 import { environmentThreadDetails, environmentThreadShells } from "../../state/threads";
 import { act, fakeTimers, render, stubGlobal } from "../../../test/render";
-import { ChangedFilesCard } from "./ChangedFilesTree";
+import { TimelineChangesRow } from "./TimelineChangesRow";
 import { MessagesTimeline } from "./MessagesTimeline";
 import { makeStreamingTimelineFixture } from "../../test-fixtures";
 import {
@@ -1206,7 +1199,9 @@ describe("MessagesTimeline expanded work group", () => {
     expect(headerTimes()).toHaveLength(1);
     await expandGroup(screen);
     const region = screen.container.querySelector<HTMLElement>('[aria-label="Tool calls"]')!;
-    await vi.waitFor(() => expect(region.querySelectorAll("[role=button]").length).toBeGreaterThan(0));
+    await vi.waitFor(() =>
+      expect(region.querySelectorAll("[role=button]").length).toBeGreaterThan(0),
+    );
     expect(region.querySelectorAll('[data-slot="tooltip-trigger"]')).toHaveLength(0);
   });
 
@@ -1240,7 +1235,9 @@ describe("MessagesTimeline expanded work group", () => {
   it("keeps the card when the edit is to another file", async () => {
     setup();
     await using screen = await renderTimeline(groupEntries("atlas-api/README.md"));
-    expect(screen.container.querySelector("[aria-label='Diff for atlas-api/README.md']")).not.toBeNull();
+    expect(
+      screen.container.querySelector("[aria-label='Diff for atlas-api/README.md']"),
+    ).not.toBeNull();
   });
 });
 
@@ -1835,21 +1832,16 @@ it("renders automatic compaction as one live divider that finishes with its reas
 });
 
 function TimelineChangedFilesCard() {
-  const [expanded, setExpanded] = useState(true);
   return (
-    <ChangedFilesCard
-      runId={RunId.make("run-1")}
+    <TimelineChangesRow
       files={["src/a.ts", "src/b.ts", "src/c.ts"].map((path) => ({
         path,
-        kind: "modified",
         additions: 1,
         deletions: 0,
       }))}
       totals={{ count: 3, additions: 3, deletions: 0 }}
-      allDirectoriesExpanded={expanded}
-      resolvedTheme="light"
-      onToggleAllDirectories={() => setExpanded((value) => !value)}
-      onOpenTurnDiff={() => {}}
+      onOpenDiff={() => {}}
+      onOpenFile={() => {}}
     />
   );
 }
@@ -1869,50 +1861,47 @@ function ChangedFilesTimeline() {
   );
 }
 
-describe("ChangedFilesCard", () => {
-  it("scrolls its header with the card instead of holding a copy under the chat header", async () => {
+describe("TimelineChangesRow", () => {
+  it("scrolls its row with the timeline instead of pinning it", async () => {
     await using screen = await render(<ChangedFilesTimeline />);
-    const header = screen.container.querySelector<HTMLElement>("[data-changed-files-header]")!;
-    expect(getComputedStyle(header).position).toBe("static");
+    const row = screen.container.querySelector<HTMLElement>("[data-timeline-changes] > div")!;
+    expect(getComputedStyle(row).position).toBe("static");
   });
 
-  it("rounds its rows with the control radius", async () => {
+  it("rounds its row and its file chips with the control radius", async () => {
     await using screen = await render(<ChangedFilesTimeline />);
-    const row = screen.container.querySelector<HTMLElement>(
-      '[data-changed-file-row="src"] button',
-    )!;
+    const row = screen.container.querySelector<HTMLElement>("[data-timeline-changes] > div")!;
+    const chip = screen.getByRole("button", { name: "Open diff for src/a.ts" }).element();
     expect(getComputedStyle(row).borderTopLeftRadius).toBe("6px");
+    expect(getComputedStyle(chip).borderTopLeftRadius).toBe("6px");
+    expect(getComputedStyle(chip).height).toBe(getComputedStyle(row).height);
   });
 
-  it.each(["folder", "all folders"])(
-    "measures %s collapse and expansion in the same commit",
-    async (toggle) => {
-      await using screen = await render(<ChangedFilesTimeline />);
-      const after = () =>
-        screen.container.querySelector('[data-testid="after"]')!.getBoundingClientRect().top;
-      const cardBottom = () =>
-        screen.container.querySelector("[data-changed-files-state]")!.getBoundingClientRect()
-          .bottom;
-      await vi.waitFor(() => expect(after()).toBe(cardBottom()));
-      const topBefore = after();
-      const button = () =>
-        screen.container.querySelector<HTMLButtonElement>(
-          toggle === "folder"
-            ? '[data-changed-file-row="src"] button'
-            : 'button[aria-label$="all folders"]',
-        )!;
-      await act(() => {
-        flushSync(() => button().click());
-        expect(screen.container.textContent).not.toContain("a.ts");
-        expect(after()).toBe(topBefore - 3 * 28);
-      });
-      await act(() => {
-        flushSync(() => button().click());
-        expect(screen.container.textContent).toContain("a.ts");
-        expect(after()).toBe(topBefore);
-      });
-    },
-  );
+  it("collapses and expands its file chips in one commit", async () => {
+    await using screen = await render(<ChangedFilesTimeline />);
+    const after = () =>
+      screen.container.querySelector('[data-testid="after"]')!.getBoundingClientRect().top;
+    const rowBottom = () =>
+      screen.container.querySelector("[data-timeline-changes]")!.getBoundingClientRect().bottom;
+    await vi.waitFor(() => expect(after()).toBe(rowBottom()));
+    const topBefore = after();
+    const toggle = screen.getByRole("button", { name: "Collapse 3 files" });
+    await act(() => {
+      flushSync(() => toggle.element().dispatchEvent(new MouseEvent("click", { bubbles: true })));
+      expect(screen.container.textContent).not.toContain("src/a.ts");
+      expect(after()).toBeLessThan(topBefore);
+    });
+    await act(() => {
+      flushSync(() =>
+        screen
+          .getByRole("button", { name: "Expand 3 files" })
+          .element()
+          .dispatchEvent(new MouseEvent("click", { bubbles: true })),
+      );
+      expect(screen.container.textContent).toContain("src/a.ts");
+      expect(after()).toBe(topBefore);
+    });
+  });
 });
 
 describe("changed-files card beside the pending-changes row", () => {
@@ -1935,38 +1924,35 @@ describe("changed-files card beside the pending-changes row", () => {
     message("Second done", { role: "assistant", runId: latest }, "final-latest"),
   ];
   const turnDiffSummaries = [diffFor(earlier, "final-earlier"), diffFor(latest, "final-latest")];
-  const cardStates = (root: HTMLElement) =>
-    [...root.querySelectorAll<HTMLElement>("[data-changed-files-state]")].map(
-      (card) => card.dataset.changedFilesState,
-    );
+  const changeRows = (root: HTMLElement) => root.querySelectorAll("[data-timeline-changes]").length;
 
-  it("shows every turn's card with its file list when no pending-changes row covers a run", async () => {
+  it("shows every turn's change row with its file chips when no pending-changes row covers a run", async () => {
     setup();
     await using screen = await renderTimeline(entries, { turnDiffSummaries });
-    expect(cardStates(screen.container)).toEqual(["tree", "tree"]);
+    expect(changeRows(screen.container)).toBe(2);
     expect(screen.container.textContent).toContain("CHANGELOG.md");
   });
 
-  it("hides the covered turn's card entirely and keeps older turns' cards", async () => {
+  it("hides the covered turn's row entirely and keeps older turns' rows", async () => {
     setup();
     await using screen = await renderTimeline(entries, {
       turnDiffSummaries,
       changeBannerRunId: latest,
     });
-    expect(cardStates(screen.container)).toEqual(["tree"]);
+    expect(changeRows(screen.container)).toBe(1);
     expect(screen.container.textContent).not.toContain("Show changed files");
     expect(screen.container.querySelectorAll('button[aria-label="Open diff"]')).toHaveLength(1);
   });
 
-  it("restores the latest turn's card once the pending-changes row goes away", async () => {
+  it("restores the latest turn's row once the pending-changes row goes away", async () => {
     setup();
     const props = { ...baseProps(), timelineEntries: entries, turnDiffSummaries };
     await using screen = await renderElement(
       <MessagesTimeline {...props} changeBannerRunId={latest} />,
     );
-    expect(cardStates(screen.container)).toEqual(["tree"]);
+    expect(changeRows(screen.container)).toBe(1);
     await screen.rerender(<MessagesTimeline {...props} changeBannerRunId={null} />);
-    expect(cardStates(screen.container)).toEqual(["tree", "tree"]);
+    expect(changeRows(screen.container)).toBe(2);
   });
 });
 
@@ -1975,7 +1961,12 @@ describe("answer model line", () => {
     setup();
     const entries: Entry[] = [];
     const runs: NonNullable<TimelineProps["runs"]>[number][] = [];
-    const models = ["claude-haiku-5-5", "claude-haiku-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"];
+    const models = [
+      "claude-haiku-5-5",
+      "claude-haiku-5-5",
+      "claude-sonnet-5-5",
+      "claude-haiku-5-5",
+    ];
     for (const [index, model] of models.entries()) {
       const n = index + 1;
       const runId = RunId.make(`run-${n}`);
@@ -2006,6 +1997,13 @@ describe("answer model line", () => {
     ]);
     // The hover line shares the footer that reveals on hover, so it is hidden at rest.
     expect(getComputedStyle(hoverLineFor(2)!.parentElement!).opacity).toBe("0");
+    // The latest answer keeps its footer visible without a hover.
+    expect(getComputedStyle(hoverLineFor(4)!.parentElement!).opacity).toBe("1");
+    // Keyboard focus on a footer's own control reveals it too.
+    const footer2 = hoverLineFor(2)!.parentElement!;
+    const copy = footer2.querySelector<HTMLButtonElement>('button[aria-label="Copy message"]')!;
+    await act(async () => copy.focus());
+    await expect.poll(() => getComputedStyle(footer2).opacity).toBe("1");
   });
 });
 
@@ -2060,7 +2058,7 @@ describe("turn rhythm", () => {
       return row;
     };
     const attributions = root.querySelectorAll<HTMLElement>("[data-assistant-model-attribution]");
-    const cards = root.querySelectorAll<HTMLElement>("[data-changed-files-state]");
+    const cards = root.querySelectorAll<HTMLElement>("[data-timeline-changes]");
     // The first answer has no previous one to differ from, so only the answers after a change show the model.
     expect(attributions).toHaveLength(2);
     expect(cards).toHaveLength(1);
@@ -2469,7 +2467,8 @@ describe("MessagesTimeline rhythm", () => {
     const ofUser = (n: number) => ids.findIndex((id) => id.includes(`rhythm-user-${n}`));
     const rowEl = (id: string) =>
       screen.container.querySelector<HTMLElement>(`[data-timeline-row-id="${id}"]`)!;
-    const answerText = (id: string) => rowEl(id).querySelector<HTMLElement>("[data-thread-find-text]")!;
+    const answerText = (id: string) =>
+      rowEl(id).querySelector<HTMLElement>("[data-thread-find-text]")!;
     // Whatever precedes a user message leaves the turn gap, measured from the answer text down to
     // the next bubble's row.
     for (const [answerId, n] of [

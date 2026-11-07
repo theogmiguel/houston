@@ -67,10 +67,10 @@ it("toggles the details card for an empty grid's draft, which has no tree leaf y
   expect(visibility("thread-draft")).toEqual({ inlineOpen: false, popoverOpen: false });
 });
 
-it("toggles the focused cell's details card", async () => {
+it("leaves the details toggle to the pane header when the grid has cells", async () => {
   await using _viewport = await viewport(1440);
   useRightPanelStore.setState({ threadPanelVisibilityByThreadKey: {} });
-  await using _screen = await render(
+  await using screen = await render(
     <GridTopBarControls
       grid={grid({
         tree: threadLeaf("thread-a", "p1"),
@@ -80,10 +80,7 @@ it("toggles the focused cell's details card", async () => {
     { router: false },
   );
 
-  const toggle = _screen.getByRole("button", { name: "Toggle thread details panel" });
-  await toggle.click();
-  await expect.element(toggle).toHaveAttribute("aria-pressed", "true");
-  expect(visibility("thread-a")).toEqual({ inlineOpen: true, popoverOpen: true });
+  expect(screen.container.querySelector('[aria-label="Toggle thread details panel"]')).toBeNull();
 });
 
 it("keeps details, grid layout, terminal and right panel in the strip, in that order, while the panel is open", async () => {
@@ -103,7 +100,6 @@ it("keeps details, grid layout, terminal and right panel in the strip, in that o
     .map((button) => button.getAttribute("aria-label"))
     .filter((label) => label !== null);
   expect(labels).toEqual([
-    "Toggle thread details panel",
     "Tidy panes",
     "Choose tidy layout",
     "Toggle terminal drawer",
@@ -114,7 +110,7 @@ it("keeps details, grid layout, terminal and right panel in the strip, in that o
     .toHaveAttribute("aria-pressed", "true");
 });
 
-it("moves details, terminal and the tidy layouts into the More menu at 800px", async () => {
+it("moves the terminal and the tidy layouts into the More menu at 800px", async () => {
   await using _viewport = await viewport(800);
   await using screen = await render(
     <GridTopBarControls
@@ -138,9 +134,10 @@ it("moves details, terminal and the tidy layouts into the More menu at 800px", a
   expect(labels).toEqual(["More layout controls", "Toggle right panel"]);
 
   await screen.getByRole("button", { name: "More layout controls" }).click();
-  for (const name of ["Toggle thread details", "Toggle terminal drawer"]) {
-    await expect.element(page.getByRole("menuitemcheckbox", { name })).toBeVisible();
-  }
+  await expect
+    .element(page.getByRole("menuitemcheckbox", { name: "Toggle terminal drawer" }))
+    .toBeVisible();
+  expect(page.getByRole("menuitemcheckbox", { name: "Toggle thread details" }).query()).toBeNull();
   for (const name of ["Balanced grid", "One row", "One column"]) {
     await expect.element(page.getByRole("menuitem", { name })).toBeVisible();
   }

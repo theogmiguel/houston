@@ -19,10 +19,9 @@
 10 apps/web/src/components/chat/AssistantCitationCommentEditor.tsx
 2 apps/web/src/components/chat/AssistantModelAttributionLine.tsx
 7 apps/web/src/components/chat/ChangedFilesBar.tsx
-37 apps/web/src/components/chat/ChangedFilesTree.tsx
 2 apps/web/src/components/chat/ChatBannerLane.tsx
 3 apps/web/src/components/chat/ChatCanvas.tsx
-21 apps/web/src/components/chat/ChatComposer.tsx
+19 apps/web/src/components/chat/ChatComposer.tsx
 3 apps/web/src/components/chat/ChatGptSharingControl.tsx
 13 apps/web/src/components/chat/ChatMarkdownMedia.tsx
 1 apps/web/src/components/chat/ChatOverlayHosts.tsx
@@ -74,7 +73,7 @@
 61 apps/web/src/components/chat/MessagesTimeline.tsx
 19 apps/web/src/components/chat/ModelListRow.tsx
 29 apps/web/src/components/chat/ModelPickerContent.tsx
-19 apps/web/src/components/chat/ModelPickerSidebar.tsx
+15 apps/web/src/components/chat/ModelPickerSidebar.tsx
 1 apps/web/src/components/chat/OpenInPicker.tsx
 5 apps/web/src/components/chat/PanelLayoutControls.tsx
 2 apps/web/src/components/chat/PierreEntryIcon.tsx
@@ -100,7 +99,7 @@
 27 apps/web/src/components/chat/ThreadDetailsPrRow.tsx
 5 apps/web/src/components/chat/ThreadDetailsSection.tsx
 27 apps/web/src/components/chat/ThreadDetailsUsage.tsx
-6 apps/web/src/components/chat/ThreadErrorBanner.tsx
+5 apps/web/src/components/chat/ThreadErrorBanner.tsx
 9 apps/web/src/components/chat/ThreadFindBar.tsx
 23 apps/web/src/components/chat/ThreadLineageWorkflowRow.tsx
 1 apps/web/src/components/chat/ThreadNow.tsx
@@ -109,7 +108,7 @@
 9 apps/web/src/components/chat/ThreadServersPanel.tsx
 2 apps/web/src/components/chat/ThreadStatusLine.tsx
 16 apps/web/src/components/chat/TimelineAssistantRows.tsx
-25 apps/web/src/components/chat/TimelineFileChangeCard.tsx
+13 apps/web/src/components/chat/TimelineFileChangeCard.tsx
 43 apps/web/src/components/chat/TimelineMinimap.tsx
 17 apps/web/src/components/chat/TimelineOverlays.tsx
 24 apps/web/src/components/chat/TimelinePendingApprovalRow.tsx
@@ -133,7 +132,7 @@
 55 apps/web/src/components/chat/WorktreeSetupCard.tsx
 9 apps/web/src/components/chat/ZoomableImage.tsx
 33 apps/web/src/components/ChatMarkdown.tsx
-12 apps/web/src/components/ChatView.tsx
+11 apps/web/src/components/ChatView.tsx
 8 apps/web/src/components/CommandBlock.tsx
 12 apps/web/src/components/CommandPalette.tsx
 15 apps/web/src/components/CommandPaletteAddProject.tsx
@@ -207,7 +206,7 @@
 5 apps/web/src/components/grid/GridShelves.tsx
 68 apps/web/src/components/grid/GridSidebar.tsx
 4 apps/web/src/components/grid/GridThreadBranch.tsx
-12 apps/web/src/components/grid/GridThreadCell.tsx
+3 apps/web/src/components/grid/GridThreadCell.tsx
 13 apps/web/src/components/HostedEmptyState.tsx
 2 apps/web/src/components/HoustonWordmark.tsx
 4 apps/web/src/components/Icons.tsx

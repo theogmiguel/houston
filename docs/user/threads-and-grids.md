@@ -73,6 +73,12 @@ actions, including **New thread** (the **+** button). A collapsed project or gri
 the thread that is open, and the project heading stays pinned at the top of the list while
 its threads scroll.
 
+**Show Needs you** in the rail's **View options** pins one section above the projects with the
+threads waiting on you from every project: input and approval requests first, then failures and
+threads that came back. Those threads leave their project sections, which instead end with a
+muted **+N in Needs you** line; the heading pips still count them. The setting is off by default
+and the section is hidden when nothing is waiting.
+
 **Filter by project** in the rail header limits the sections, the shelves, search and the
 older Closed threads Houston loads to the projects you pick. Click a project to choose only
 that one, `Shift`-click to add or remove others, and choose it again to clear the filter.

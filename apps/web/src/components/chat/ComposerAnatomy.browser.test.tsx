@@ -70,76 +70,56 @@ function resolveColor(cssValue: string): string {
   return resolved;
 }
 
-/** Rasterises any CSS colour (including color-mix results) to opaque sRGB channels over `over`. */
-function rasterColor(cssValue: string, over: string): [number, number, number] {
-  const canvas = document.createElement("canvas");
-  canvas.width = 1;
-  canvas.height = 1;
-  const context = canvas.getContext("2d")!;
-  context.fillStyle = over;
-  context.fillRect(0, 0, 1, 1);
-  context.fillStyle = cssValue;
-  context.fillRect(0, 0, 1, 1);
-  const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
-  return [r!, g!, b!];
-}
-
-function contrastRatio(a: [number, number, number], b: [number, number, number]): number {
-  const luminance = (rgb: [number, number, number]) => {
-    const [r, g, bl] = rgb.map((channel) => {
-      const c = channel / 255;
-      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-    }) as [number, number, number];
-    return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
-  };
-  const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number];
-  return (light + 0.05) / (dark + 0.05);
-}
-
 it(
-  "puts the context row under one composer card and starts with thread details closed",
+  "keeps one composer anatomy at every width and starts with thread details closed",
   async () => {
+    const previousViewport = { width: window.innerWidth, height: window.innerHeight };
+    await page.viewport(1440, 900);
+    await using _viewport = {
+      [Symbol.asyncDispose]: () => page.viewport(previousViewport.width, previousViewport.height),
+    };
     using _environment = installFakeEnvironment([]);
     await using _app = await bootDraftComposer();
 
-    // The strip mounts once the environment connects and the project resolves.
-    const strip = await vi.waitFor(
+    // The composer resolves once the environment connects and the project mounts.
+    const card = await vi.waitFor(
       () => {
-        const found = document.querySelector<HTMLElement>('[data-slot="composer-context-strip"]');
+        const found = document.querySelector<HTMLElement>("[data-chat-composer-main-surface]");
         expect(found).not.toBeNull();
         return found!;
       },
       { timeout: 10_000 },
     );
-    const card = document.querySelector<HTMLElement>("[data-chat-composer-main-surface]");
-    expect(card).not.toBeNull();
-    // The strip follows the card in the DOM and sits entirely below it, as plain text controls.
-    expect(strip.compareDocumentPosition(card!) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
-    const stripBox = strip.getBoundingClientRect();
-    const cardBox = card!.getBoundingClientRect();
-    expect(stripBox.top).toBeGreaterThanOrEqual(cardBox.bottom);
-    expect(stripBox.left).toBeGreaterThanOrEqual(cardBox.left);
-    expect(stripBox.right).toBeLessThanOrEqual(cardBox.right + 1);
-    const stripStyle = getComputedStyle(strip);
-    expect(stripStyle.borderTopWidth).toBe("0px");
-    expect(stripStyle.backgroundColor).toBe("rgba(0, 0, 0, 0)");
-    expect(stripStyle.fontSize).toBe("12px");
+    const cardBox = card.getBoundingClientRect();
 
-    // Every control in the row is 12px sans in the muted label ink, readable against the canvas.
-    const controls = [...strip.querySelectorAll<HTMLElement>("[data-composer-context-control]")];
-    expect(controls.length).toBeGreaterThan(0);
-    const canvasColor = resolveColor("var(--background)");
-    for (const control of controls) {
-      const style = getComputedStyle(control);
-      expect(style.fontSize, control.textContent ?? "").toBe("12px");
-      expect(style.color).toBe(resolveColor("var(--contrast-secondary-label)"));
-      expect(
-        contrastRatio(rasterColor(style.color, canvasColor), rasterColor(canvasColor, "#fff")),
-      ).toBeGreaterThanOrEqual(4.5);
+    // One anatomy: the workspace, branch and access chips live in the composer's own toolbar,
+    // never in a second band under the card.
+    expect(document.querySelector('[data-slot="composer-context-strip"]')).toBeNull();
+    const footer = await vi.waitFor(
+      () => {
+        const found = document.querySelector<HTMLElement>('[data-chat-composer-footer="true"]');
+        if (found?.querySelector("[data-composer-context-control]") == null) {
+          throw new Error("context controls are not in the composer footer yet");
+        }
+        return found;
+      },
+      { timeout: 10_000 },
+    );
+    expect(footer.getBoundingClientRect().top).toBeLessThan(cardBox.bottom);
+    const contextControls = [
+      ...footer.querySelectorAll<HTMLElement>("[data-composer-context-control]"),
+    ];
+    expect(contextControls.length).toBeGreaterThan(0);
+    for (const control of contextControls) {
+      expect(card.contains(control)).toBe(true);
+      expect(control.getBoundingClientRect().right).toBeLessThanOrEqual(cardBox.right + 1);
     }
-    for (const label of strip.querySelectorAll<HTMLElement>("[data-composer-label] *")) {
-      expect(getComputedStyle(label).fontFamily).not.toContain("JetBrains");
-    }
+
+    // A wide composer spells out the mention syntax in the placeholder.
+    const editorPlaceholder =
+      document.querySelector('[data-testid="composer-editor"]')?.getAttribute("aria-placeholder") ??
+      "";
+    expect(editorPlaceholder).toBe("Ask anything. @ files, $ skills, / commands");
 
     // The text sits well inside the card, and the resting input is a roomy 72px box.
     const editor = document.querySelector<HTMLElement>('[data-testid="composer-editor"]')!;
@@ -156,16 +136,14 @@ it(
     // The details card opens only from its toggle or shortcut.
     expect(document.querySelector('[aria-label="Thread details"]')).toBeNull();
 
-    const footer = document.querySelector<HTMLElement>('[data-chat-composer-footer="true"]');
-    expect(footer).not.toBeNull();
-    expect(cardBox.top).toBeLessThanOrEqual(footer!.getBoundingClientRect().top);
-    const lastButton = () => [...footer!.querySelectorAll<HTMLButtonElement>("button")].at(-1)!;
+    expect(cardBox.top).toBeLessThanOrEqual(footer.getBoundingClientRect().top);
+    const lastButton = () => [...footer.querySelectorAll<HTMLButtonElement>("button")].at(-1)!;
     // The label reads "Environment disconnected" until the connection is up.
     await vi.waitFor(() => expect(lastButton().getAttribute("aria-label")).toBe("Submit message"), {
       timeout: 10_000,
     });
     // Nothing follows the primary action, and only one button submits.
-    expect(footer!.querySelectorAll('button[type="submit"]')).toHaveLength(1);
+    expect(footer.querySelectorAll('button[type="submit"]')).toHaveLength(1);
     expect(lastButton().type).toBe("submit");
 
     // The send button is a 32px circle: a neutral inert control while there is nothing to send.
@@ -188,7 +166,68 @@ it(
     await userEvent.keyboard("{Control>}a{/Control}{Backspace}");
 
     await userEvent.keyboard("{Control>}{Shift>}m{/Shift}{/Control}");
-    await expect.element(page.getByPlaceholder(/^Search .+ models$/)).toBeVisible();
+    await expect.element(page.getByPlaceholder("Search models")).toBeVisible();
+    await userEvent.keyboard("{Escape}");
+
+    // One anatomy at every composer width: the placeholder never wraps away from its row, the
+    // workspace controls collapse into one chip, and nothing leaves the card.
+    const form = document.querySelector<HTMLFormElement>('[data-chat-composer-form="true"]')!;
+    const surface = document.querySelector<HTMLElement>('[data-chat-composer-surface="true"]')!;
+    for (const width of [760, 500, 340]) {
+      form.style.width = `${width}px`;
+      form.style.maxWidth = "none";
+      await vi.waitFor(() =>
+        expect(Math.abs(surface.getBoundingClientRect().width - width)).toBeLessThan(3),
+      );
+
+      const placeholder = () =>
+        document
+          .querySelector('[data-testid="composer-editor"]')
+          ?.getAttribute("aria-placeholder") ?? "";
+      await vi.waitFor(() =>
+        expect(placeholder()).toBe(
+          width >= 520 ? "Ask anything. @ files, $ skills, / commands" : "Ask anything…",
+        ),
+      );
+      // The placeholder stays on one line, so it never pushes the input taller.
+      const placeholderBox = [
+        ...surface.querySelectorAll<HTMLElement>('[data-testid="composer-editor"] span'),
+      ].find((node) => node.textContent === placeholder());
+      if (placeholderBox !== undefined) {
+        expect(placeholderBox.getBoundingClientRect().height).toBeLessThanOrEqual(24);
+      }
+
+      const contextControls = [
+        ...footer.querySelectorAll<HTMLElement>("[data-composer-context-control]"),
+      ];
+      // Below 520 the workspace, branch and access controls fold into one chip.
+      if (width < 520) expect(contextControls.length).toBeLessThanOrEqual(2);
+
+      const surfaceBox = surface.getBoundingClientRect();
+      for (const button of footer.querySelectorAll<HTMLElement>("button")) {
+        expect(button.getBoundingClientRect().right).toBeLessThanOrEqual(surfaceBox.right + 1);
+      }
+      const sendRight = lastButton().getBoundingClientRect();
+      expect(sendRight.right).toBeLessThanOrEqual(surfaceBox.right + 1);
+      expect(sendRight.left).toBeGreaterThanOrEqual(surfaceBox.left);
+
+      if (width < 520) {
+        // The folded workspace chip keeps checkout, branch and access reachable.
+        const chip = footer.querySelector<HTMLElement>('[aria-label^="Workspace:"]')!;
+        expect(chip).not.toBeNull();
+        await userEvent.click(chip);
+        const panel = await vi.waitFor(() => {
+          const found = document.querySelector<HTMLElement>('[data-slot="popover-popup"]');
+          expect(found).not.toBeNull();
+          return found!;
+        });
+        expect(panel.querySelectorAll("[data-composer-context-control]").length).toBeGreaterThan(1);
+        await userEvent.keyboard("{Escape}");
+        await vi.waitFor(() =>
+          expect(document.querySelector('[data-slot="popover-popup"]')).toBeNull(),
+        );
+      }
+    }
   },
   APP_BOOT_TEST_TIMEOUT_MS,
 );

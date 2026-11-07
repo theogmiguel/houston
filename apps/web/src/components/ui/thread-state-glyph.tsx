@@ -30,20 +30,21 @@ export type ThreadState = Extract<
 >;
 
 /**
- * Status ink is the `-ink` token: `--accent` and `--primary` are fills (buttons,
- * focus rings, selection bars) and read too dark when used as text.
+ * Status ink comes from the status tokens, never from the accent: violet marks interaction
+ * (buttons, focus, selection) and state owns a hue of its own. Every `-ink` token keeps
+ * 4.5:1 on the canvas and the raised card in both themes.
  */
 export const THREAD_STATUS_KIND_TEXT_CLASS: Record<ThreadStatusKind, string> = {
-  approval: "text-(--warn-ink)",
-  input: "text-(--warn-ink)",
-  request: "text-(--warn-ink)",
-  needs: "text-(--warn-ink)",
-  limited: "text-(--warn-ink)",
+  approval: "text-status-approval-ink",
+  input: "text-status-input-ink",
+  request: "text-status-input-ink",
+  needs: "text-status-input-ink",
+  limited: "text-status-input-ink",
   failed: "text-error-foreground",
-  waiting: "text-info-foreground",
-  running: "text-(--accent-ink)",
-  goal: "text-(--accent-ink)",
-  back: "text-merged-foreground",
+  waiting: "text-status-waiting-ink",
+  running: "text-status-running-ink",
+  goal: "text-status-running-ink",
+  back: "text-status-back-ink",
   ready: "text-success-foreground",
   idle: "text-secondary-label",
   closed: "text-secondary-label",

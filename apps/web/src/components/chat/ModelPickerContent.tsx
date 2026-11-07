@@ -53,11 +53,7 @@ import {
 } from "~/hooks/useSettings";
 import { announce } from "~/lib/announce";
 import { cn } from "~/lib/utils";
-import {
-  MODEL_PICKER_DOCKED_CLASS,
-  MODEL_PICKER_HINT_CLS,
-  PICKER_PROVIDER_NAME_CLASS,
-} from "../ui/composer-picker-recipes";
+import { MODEL_PICKER_DOCKED_CLASS, MODEL_PICKER_HINT_CLS } from "../ui/composer-picker-recipes";
 import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
 import { TooltipProvider } from "../ui/tooltip";
 import { Button, InlineButton } from "../ui/button";
@@ -167,6 +163,8 @@ function adjacentModelPickerProvider(input: {
 
 const EMPTY_MODEL_JUMP_LABELS = new Map<string, string>();
 const MODEL_LIST_ESTIMATED_ITEM_SIZE = 34;
+/** A model list shows its rows up to this many, then scrolls. */
+const MAX_VISIBLE_MODEL_ROWS = 8;
 
 function ModelListSeparator() {
   return <div className="h-0.5" />;
@@ -254,11 +252,14 @@ function ModelPickerProviderNotices({
 function ModelPickerList({
   listRef,
   itemKeys,
+  rows,
   extraData,
   renderItem,
 }: {
   listRef: RefObject<LegendListRef | null>;
   itemKeys: ReadonlyArray<string>;
+  /** How many rows the list shows before it scrolls; the frame sizes to content. */
+  rows: number;
   extraData: unknown;
   renderItem: (props: { item: string; index: number }) => ReactNode;
 }) {
@@ -300,9 +301,10 @@ function ModelPickerList({
   return (
     <div
       className={cn(
-        "relative min-h-0 overflow-hidden pr-px",
-        itemKeys.length > 0 ? "flex-1" : "h-0",
+        "relative min-h-0 shrink-0 overflow-hidden pr-px",
+        itemKeys.length === 0 && "h-0",
       )}
+      style={itemKeys.length > 0 ? { height: rows * MODEL_LIST_ESTIMATED_ITEM_SIZE } : undefined}
     >
       <ComboboxListVirtualized>
         <LegendList<string>
@@ -834,36 +836,14 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     <TooltipProvider delay={0}>
       <WindowKeyDownListener onKeyDown={onWindowKeyDown} />
       <div
-        // One fixed size whatever the tab, its model count or the search holds, so switching tabs
-        // or typing never moves the rail under the cursor. It fits a four-model tab; longer lists
-        // scroll.
+        // The list sizes to its models, up to eight rows, so a short provider never leaves a
+        // clipped row and a long one scrolls.
         className={cn(
-          "relative flex max-h-(--available-height) max-w-[calc(100vw-2rem)] flex-row overflow-hidden bg-(--raised)",
-          props.docked
-            ? MODEL_PICKER_DOCKED_CLASS
-            : "h-68 w-[26.75rem] rounded-lg border border-border",
+          "relative flex max-h-(--available-height) max-w-[calc(100vw-2rem)] flex-col overflow-hidden bg-(--raised)",
+          props.docked ? MODEL_PICKER_DOCKED_CLASS : "w-[26.75rem] rounded-lg border border-border",
         )}
         data-model-picker-content="true"
       >
-        {showSidebar && (
-          <ModelPickerSidebar
-            selectedInstanceId={selectedInstanceId}
-            onSelectInstance={handleSelectInstance}
-            onFocusSearch={focusSearchInput}
-            instanceEntries={sidebarInstanceEntries}
-            showFavorites
-            compact={props.docked === true}
-            {...(selectableUnavailableInstanceIds ? { selectableUnavailableInstanceIds } : {})}
-            {...(lockedDisabledInstanceIds
-              ? {
-                  disabledInstanceIds: lockedDisabledInstanceIds,
-                  getDisabledInstanceTooltip: (entry: ProviderInstanceEntry) =>
-                    `${entry.displayName} is unavailable in this thread. Start a new thread to switch providers.`,
-                }
-              : {})}
-          />
-        )}
-
         <Combobox<string, boolean>
           inline
           items={allItemKeys}
@@ -911,13 +891,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
               <SearchIcon aria-hidden="true" className="size-3.25 shrink-0" />
               <ComboboxPrimitive.Input
                 ref={searchInputRef}
-                placeholder={
-                  selectedInstanceId === "favorites"
-                    ? "Search favorites"
-                    : entryByInstanceId.get(selectedInstanceId) === undefined
-                      ? "Search models"
-                      : `Search ${entryByInstanceId.get(selectedInstanceId)!.displayName} models`
-                }
+                placeholder="Search models"
                 className="h-5 min-w-0 flex-1 bg-transparent p-0 text-(--t1) text-xs leading-5 outline-none placeholder:text-(--houston)"
                 value={searchQuery}
                 onChange={(e) => {
@@ -930,28 +904,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                     ).preventBaseUIHandler?.();
                     e.stopPropagation();
                     return;
-                  }
-                  if (
-                    showSidebar &&
-                    !e.altKey &&
-                    !e.ctrlKey &&
-                    !e.metaKey &&
-                    ((e.key === "ArrowLeft" && !e.shiftKey && searchQuery.length === 0) ||
-                      (e.key === "Tab" && e.shiftKey))
-                  ) {
-                    const sidebar = e.currentTarget
-                      .closest("[data-model-picker-content]")
-                      ?.querySelector("[data-model-picker-sidebar]");
-                    const button =
-                      sidebar?.querySelector<HTMLButtonElement>(
-                        'button[aria-pressed="true"]:not(:disabled)',
-                      ) ?? sidebar?.querySelector<HTMLButtonElement>("button:not(:disabled)");
-                    if (button) {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      button.focus();
-                      return;
-                    }
                   }
                   if (e.key === "Escape") {
                     e.preventDefault();
@@ -1006,19 +958,34 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                 onMouseDown={(e) => e.stopPropagation()}
                 onTouchStart={(e) => e.stopPropagation()}
               />
-              {props.docked ? (
-                // The rail shows icons only, so the search row names the provider it lists.
-                <span className={PICKER_PROVIDER_NAME_CLASS} data-model-picker-tab-name="true">
-                  {selectedInstanceId === "favorites"
-                    ? "Favorites"
-                    : (entryByInstanceId.get(selectedInstanceId)?.displayName ?? "")}
-                </span>
-              ) : null}
             </div>
+
+            {showSidebar ? (
+              <ModelPickerSidebar
+                selectedInstanceId={selectedInstanceId}
+                onSelectInstance={handleSelectInstance}
+                onFocusSearch={focusSearchInput}
+                instanceEntries={sidebarInstanceEntries}
+                showFavorites
+                compact={props.docked === true}
+                {...(selectableUnavailableInstanceIds ? { selectableUnavailableInstanceIds } : {})}
+                {...(lockedDisabledInstanceIds
+                  ? {
+                      disabledInstanceIds: lockedDisabledInstanceIds,
+                      getDisabledInstanceTooltip: (entry: ProviderInstanceEntry) =>
+                        `${entry.displayName} is unavailable in this thread. Start a new thread to switch providers.`,
+                    }
+                  : {})}
+              />
+            ) : null}
 
             <ModelPickerList
               listRef={modelListRef}
               itemKeys={filteredItemKeys}
+              rows={Math.min(
+                visibleModels.length + (legacySection === null ? 0 : 1),
+                MAX_VISIBLE_MODEL_ROWS,
+              )}
               extraData={modelListExtraData}
               renderItem={({ item: modelKey, index }) => {
                 if (legacySection?.key === modelKey) {

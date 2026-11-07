@@ -232,6 +232,21 @@ describe("project sections", () => {
     expect(screen.container.textContent).not.toContain("Ungrouped");
   });
 
+  it("rolls the project's lifted threads into one Needs you line", async () => {
+    resetTestState();
+    const value = section({
+      ungroupedThreads: [thread("visible", "project-1")],
+      needsYouThreads: [thread("needs", "project-1"), thread("failed", "project-1")],
+    });
+    await using screen = await render(<CollapsibleSections sections={[value]} />);
+
+    const rollup = screen.container.querySelector<HTMLElement>("[data-project-needs-you]")!;
+    expect(rollup.textContent).toBe("+2 in Needs you");
+    // The lifted threads are listed in the Needs you section, never twice here.
+    expect(screen.container.querySelector('[data-sidebar-row="env-1:needs"]')).toBeNull();
+    expect(screen.container.querySelector('[data-sidebar-row="env-1:visible"]')).not.toBeNull();
+  });
+
   it("does not repeat the project name on a grid row", async () => {
     resetTestState();
     await using screen = await render(<CollapsibleSections sections={[projectSections()[0]!]} />);
@@ -479,6 +494,7 @@ describe("project sections", () => {
       showBranch: true,
       showPullRequest: true,
       showSubagents: true,
+      showNeedsYou: false,
     } as const;
     await using screen = await render(
       <TooltipProvider delay={0}>

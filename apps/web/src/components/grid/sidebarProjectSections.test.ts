@@ -257,4 +257,38 @@ describe("buildSidebarProjectSections", () => {
     expect(sections[0]?.grids).toEqual([]);
     expect(sections[0]?.ungroupedThreads).toEqual([]);
   });
+
+  it("lifts Needs you threads out of the project group and keeps them on the section", () => {
+    const sections = buildSidebarProjectSections({
+      groups: [group()],
+      grids: [grid()],
+      threads: [thread("needs", "project-1"), thread("other", "project-1")],
+      threadSort: "grid",
+      gridSort: "created_at",
+      nowIso: now,
+      query: "",
+      activityAt: () => 0,
+      excludedThreadIds: new Set(["needs"]),
+    });
+
+    expect(sections[0]?.ungroupedThreads.map((entry) => entry.id)).toEqual(["other"]);
+    expect(sections[0]?.needsYouThreads?.map((entry) => entry.id)).toEqual(["needs"]);
+  });
+
+  it("keeps Needs you threads where they live while searching", () => {
+    const sections = buildSidebarProjectSections({
+      groups: [group()],
+      grids: [grid()],
+      threads: [thread("needs", "project-1")],
+      threadSort: "grid",
+      gridSort: "created_at",
+      nowIso: now,
+      query: "needs",
+      activityAt: () => 0,
+      excludedThreadIds: new Set(["needs"]),
+    });
+
+    expect(sections[0]?.ungroupedThreads.map((entry) => entry.id)).toEqual(["needs"]);
+    expect(sections[0]?.needsYouThreads).toEqual([]);
+  });
 });

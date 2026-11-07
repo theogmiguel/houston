@@ -80,23 +80,8 @@ function composerCardOf(trigger: HTMLElement | null): HTMLElement | null {
   return trigger?.closest<HTMLElement>('[data-inline-resting-controls="true"]') ?? null;
 }
 
-/**
- * How far below the composer card the context row ends. A docked popup that has no room above
- * the card opens below it and starts past this distance, so it never covers the row.
- */
-function contextStripClearance(card: HTMLElement | null): number {
-  const strip = card
-    ?.closest('[data-chat-composer-form="true"]')
-    ?.querySelector<HTMLElement>('[data-slot="composer-context-strip"]');
-  if (!card || !strip) return 0;
-  return Math.max(0, strip.getBoundingClientRect().bottom - card.getBoundingClientRect().bottom);
-}
-
 /** Space kept between a docked popup and the header it must not cross. */
 const HEADER_CLEARANCE_PX = 8;
-
-// The docked frame is a 208px list over an 88px effort panel; under this much room above it falls below.
-const DOCKED_POPUP_MIN_HEIGHT_PX = 300;
 
 /**
  * Where a docked popup's top edge may start: just under the route header of the column the
@@ -137,6 +122,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   triggerClassName?: string;
   triggerLabel?: string;
   triggerAriaLabel?: string;
+  /** The picker is open beside an effort panel; hide the panel when the model has no levels. */
+  showEffortPanel?: boolean;
   /** Extra menu content below the model list, such as access in a compact pane. */
   menuAccessory?: ReactNode;
   onOpenChange?: (open: boolean) => void;
@@ -167,6 +154,9 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   const docked = props.effortPanel !== undefined;
   const [headerClearance, setHeaderClearance] = useState<number | null>(null);
   const [dockSide, setDockSide] = useState<"top" | "bottom">("bottom");
+  // A picker opened inside a grid cell lives in that cell: it opens toward the roomier side and
+  // never spills past the cell's edges.
+  const [cellBoundary, setCellBoundary] = useState<HTMLElement | null>(null);
   // The route header is a DOM node outside React, measured each time the popup opens (also when a
   // shortcut opens it through `props.open`, which no handler of this component sees).
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- measures the header's rect and the room under the card, which only the DOM knows
@@ -174,13 +164,21 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     if (!docked || !isMenuOpen) return;
     const trigger = triggerRef.current;
     setHeaderClearance(headerClearanceOf(trigger));
+    const cell = trigger?.closest<HTMLElement>("[data-grid-cell]") ?? null;
+    setCellBoundary(cell);
     const card = composerCardOf(trigger);
     if (card === null) {
       setDockSide("bottom");
       return;
     }
-    const roomAbove = card.getBoundingClientRect().top - (headerClearanceOf(trigger) ?? 0);
-    setDockSide(roomAbove >= DOCKED_POPUP_MIN_HEIGHT_PX ? "top" : "bottom");
+    const cardRect = card.getBoundingClientRect();
+    const boundaryRect = cell?.getBoundingClientRect() ?? null;
+    const topLimit = boundaryRect?.top ?? headerClearanceOf(trigger) ?? 0;
+    const bottomLimit = boundaryRect?.bottom ?? window.innerHeight;
+    const roomAbove = cardRect.top - topLimit;
+    const roomBelow = bottomLimit - cardRect.bottom;
+    // More room wins; a tie opens downward, which is where the new-thread page wants it.
+    setDockSide(roomAbove > roomBelow ? "top" : "bottom");
   }, [docked, isMenuOpen]);
 
   const activeEntry =
@@ -439,16 +437,13 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         {...(docked
           ? {
               anchor: () => composerCardOf(triggerRef.current) ?? triggerRef.current,
-              // Above the card, where a composer at the foot of the pane leaves room; below
-              // only when the card sits too high for the whole panel.
+              // The side with more room; a tie opens downward.
               side: dockSide,
+              ...(cellBoundary === null ? {} : { collisionBoundary: cellBoundary }),
               ...(headerClearance === null
-                ? {}
+                ? { collisionPadding: { top: 5, right: 5, bottom: 5, left: 5 } }
                 : { collisionPadding: { top: headerClearance, right: 5, bottom: 5, left: 5 } }),
-              sideOffset: ({ side }: { side: string }) =>
-                side === "bottom"
-                  ? contextStripClearance(composerCardOf(triggerRef.current)) + 4
-                  : 4,
+              sideOffset: 4,
             }
           : {})}
         className="before:hidden"
@@ -458,21 +453,23 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         {props.effortPanel ? (
           <div className={DOCKED_PICKER_FRAME_CLASS}>
             {picker}
-            <div
-              data-model-picker-effort
-              className={DOCKED_EFFORT_PANEL_CLASS}
-              onKeyDown={(event) => {
-                // Up and Left leave the panel for the search field; the panel's own rows handle
-                // the moves that stay inside it.
-                if (event.key !== "ArrowLeft" && event.key !== "ArrowUp") return;
-                if (event.altKey || event.ctrlKey || event.metaKey) return;
-                event.preventDefault();
-                event.stopPropagation();
-                searchInputRef.current?.focus();
-              }}
-            >
-              {props.effortPanel}
-            </div>
+            {props.showEffortPanel === false ? null : (
+              <div
+                data-model-picker-effort
+                className={DOCKED_EFFORT_PANEL_CLASS}
+                onKeyDown={(event) => {
+                  // Up and Left leave the panel for the search field; the panel's own rows handle
+                  // the moves that stay inside it.
+                  if (event.key !== "ArrowLeft" && event.key !== "ArrowUp") return;
+                  if (event.altKey || event.ctrlKey || event.metaKey) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  searchInputRef.current?.focus();
+                }}
+              >
+                {props.effortPanel}
+              </div>
+            )}
             {props.footer}
           </div>
         ) : (

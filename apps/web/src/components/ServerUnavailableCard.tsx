@@ -2,18 +2,16 @@ import { RouteErrorActions } from "./RouteErrorActions";
 import { ErrorLogDisclosure } from "./ui/error-log-disclosure";
 import {
   SERVER_UNAVAILABLE_CANVAS,
-  SERVER_UNAVAILABLE_CARD,
   SERVER_UNAVAILABLE_CONTENT,
   SERVER_UNAVAILABLE_HEADER,
   SERVER_UNAVAILABLE_HEADER_ACTION,
   SERVER_UNAVAILABLE_HEADER_LABEL,
+  SERVER_UNAVAILABLE_MESSAGE,
   SERVER_UNAVAILABLE_SHELL,
   SERVER_UNAVAILABLE_SIDEBAR,
   SERVER_UNAVAILABLE_SIDEBAR_BRAND,
-  SERVER_UNAVAILABLE_SIDEBAR_CONTROL,
-  SERVER_UNAVAILABLE_SIDEBAR_GROUP,
-  SERVER_UNAVAILABLE_SIDEBAR_ROW,
-  SERVER_UNAVAILABLE_SIDEBAR_ROW_SHORT,
+  SERVER_UNAVAILABLE_SIDEBAR_OFFLINE_DOT,
+  SERVER_UNAVAILABLE_SIDEBAR_OFFLINE_ROW,
 } from "./ui/server-unavailable-recipes";
 import { StandalonePageHeader } from "./ui/standalone-page";
 
@@ -27,15 +25,12 @@ export function ServerUnavailableCard({
 }) {
   return (
     <div data-server-unavailable-shell className={SERVER_UNAVAILABLE_SHELL}>
-      {/* An empty, dimmed shell keeps the window's shape while the server is down. */}
-      <div aria-hidden data-server-unavailable-sidebar className={SERVER_UNAVAILABLE_SIDEBAR}>
-        <div className={SERVER_UNAVAILABLE_SIDEBAR_BRAND} />
-        <div className={SERVER_UNAVAILABLE_SIDEBAR_CONTROL} />
-        <div className={SERVER_UNAVAILABLE_SIDEBAR_GROUP}>
-          <div className={SERVER_UNAVAILABLE_SIDEBAR_ROW} />
-          <div className={SERVER_UNAVAILABLE_SIDEBAR_CONTROL} />
-          <div className={SERVER_UNAVAILABLE_SIDEBAR_ROW_SHORT} />
-          <div className={SERVER_UNAVAILABLE_SIDEBAR_CONTROL} />
+      {/* A settled rail keeps the window's shape while the server is down. */}
+      <div data-server-unavailable-sidebar className={SERVER_UNAVAILABLE_SIDEBAR}>
+        <div className={SERVER_UNAVAILABLE_SIDEBAR_BRAND}>Houston</div>
+        <div data-server-unavailable-offline-row className={SERVER_UNAVAILABLE_SIDEBAR_OFFLINE_ROW}>
+          <span aria-hidden className={SERVER_UNAVAILABLE_SIDEBAR_OFFLINE_DOT} />
+          Server offline
         </div>
       </div>
       <div className={SERVER_UNAVAILABLE_CONTENT}>
@@ -44,7 +39,7 @@ export function ServerUnavailableCard({
           <div className={SERVER_UNAVAILABLE_HEADER_ACTION} />
         </div>
         <div data-server-unavailable-canvas className={SERVER_UNAVAILABLE_CANVAS}>
-          <section data-server-unavailable-card className={SERVER_UNAVAILABLE_CARD}>
+          <section data-server-unavailable-card className={SERVER_UNAVAILABLE_MESSAGE}>
             <StandalonePageHeader
               showBrand={false}
               status="danger"

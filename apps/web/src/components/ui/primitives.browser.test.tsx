@@ -109,9 +109,9 @@ describe("Houston primitives", () => {
     };
     const graphite = {
       "--rail": "#111113",
-      "--content": "#19191c",
-      "--card": "#222226",
-      "--raised": "#222226",
+      "--content": "#18181b",
+      "--card": "#1f1f23",
+      "--raised": "#1f1f23",
       "--term": "#0c0c0e",
       "--code-bg": "#1a1a1e",
       "--t1": "rgba(255, 255, 255, 0.92)",
@@ -128,10 +128,10 @@ describe("Houston primitives", () => {
       "--ok": "#30d158",
       "--add-bg": "rgba(48, 209, 88, 0.1)",
       "--del-bg": "rgba(255, 107, 97, 0.1)",
-      "--pane": "#141417",
-      "--pane-head": "#1a1a1e",
+      "--pane": "#18181b",
+      "--pane-head": "#1f1f23",
       // The composer is one card with the thread surface's card fill.
-      "--composer": "#222226",
+      "--composer": "#1f1f23",
     };
     root.classList.remove("dark");
     try {

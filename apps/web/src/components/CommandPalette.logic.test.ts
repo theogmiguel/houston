@@ -188,6 +188,22 @@ describe("buildThreadActionItems", () => {
     expect(runThread).toHaveBeenCalledWith(remote);
   });
 
+  it("leads each thread row with its own status glyph instead of one shared icon", () => {
+    const items = buildThreadActionItems({
+      threads: [
+        makeThread({ id: ThreadId.make("thread-a") }),
+        makeThread({ id: ThreadId.make("thread-b") }),
+      ],
+      projectByKey: new Map(),
+      icon: "shared-chat-icon",
+      renderIcon: (thread) => `status:${thread.id}`,
+      runThread: async () => {},
+    });
+    expect(items.map((item) => item.icon)).toEqual(["status:thread-a", "status:thread-b"]);
+    // The pull request and status live on the second line, not before the title.
+    expect(items.every((item) => item.titleLeadingContent === undefined)).toBe(true);
+  });
+
   it("ranks thread title matches ahead of contextual project-name matches", () => {
     const threadItems = buildThreadActionItems({
       threads: [

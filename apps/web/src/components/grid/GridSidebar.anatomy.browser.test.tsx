@@ -560,9 +560,11 @@ describe("thread row status glyphs", () => {
       expect(box.top + box.height / 2).toBeCloseTo(rowBox.top + rowBox.height / 2, 0);
     }
     expect(new Set(shapes.values()).size).toBe(STATES.length);
-    // Warning kinds share one hue; every other kind has its own.
-    const warning = new Set(["approval", "input", "request"].map((kind) => hues.get(kind)));
-    expect(warning.size).toBe(1);
+    // Input and Request share the amber hue; Approval is the orange one, and every other
+    // kind has its own hue.
+    const inputFamily = new Set(["input", "request"].map((kind) => hues.get(kind)));
+    expect(inputFamily.size).toBe(1);
+    expect(hues.get("approval")).not.toBe(hues.get("input"));
     const distinct = ["approval", "failed", "waiting", "running", "back", "ready", "idle"].map(
       (kind) => hues.get(kind),
     );
@@ -691,7 +693,15 @@ describe("thread row provider marks and tags", () => {
       probe.remove();
       return color;
     };
-    const statusHues = ["--info-foreground", "--success-foreground", "--accent-ink", "--warn-ink"];
+    const statusHues = [
+      "--status-running-ink",
+      "--status-back-ink",
+      "--status-waiting-ink",
+      "--status-input-ink",
+      "--status-approval-ink",
+      "--success-foreground",
+      "--error-foreground",
+    ];
     for (const token of statusHues) expect(getComputedStyle(mark).color).not.toBe(ink(token));
     expect(getComputedStyle(mark).color).toBe(ink("--color-secondary-label"));
     // The monogram has no squiggle prefix: the mark is its two letters only.

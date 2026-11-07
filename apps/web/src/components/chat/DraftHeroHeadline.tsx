@@ -437,16 +437,12 @@ export function DraftHeroHeadline({
   );
 }
 
-/** The project summary the new-thread composer sits under: checkout, attention counts, recent threads. */
+/** The project summary the new-thread composer sits under: attention chips and recent threads. */
 export function DraftHeroProjectContext({
   activeProjectRef,
-  branch,
-  checkoutLabel,
   onOpenThread,
 }: {
   readonly activeProjectRef: ScopedProjectRef | null;
-  readonly branch: string | null;
-  readonly checkoutLabel: string;
   readonly onOpenThread: (threadRef: ScopedThreadRef) => void;
 }) {
   const threads = useVisibleThreadShells();
@@ -456,12 +452,5 @@ export function DraftHeroProjectContext({
       thread.environmentId === activeProjectRef.environmentId &&
       thread.projectId === activeProjectRef.projectId,
   );
-  return (
-    <DraftProjectContext
-      branch={branch}
-      checkoutLabel={checkoutLabel}
-      threads={projectThreads}
-      onOpenThread={onOpenThread}
-    />
-  );
+  return <DraftProjectContext threads={projectThreads} onOpenThread={onOpenThread} />;
 }

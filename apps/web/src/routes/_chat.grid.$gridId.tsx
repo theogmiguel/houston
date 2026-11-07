@@ -534,6 +534,7 @@ function GridRoute() {
                 threadDetailsAnchor={focused ? threadDetailsAnchorRef : null}
                 detailsOpen={gridDetailsOpen && focused}
                 onDetailsOpenChange={focused ? closeGridDetails : undefined}
+                onToggleDetails={toggleThreadDetails}
                 onFocus={() => focusThread(grid.id, node.threadId)}
                 onClose={onClose}
                 onArchiveClose={onArchiveClose}

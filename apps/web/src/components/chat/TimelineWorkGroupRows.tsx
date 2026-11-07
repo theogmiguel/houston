@@ -655,7 +655,11 @@ function WorkGroupHeader(props: {
           <ChevronRightIcon aria-hidden className="size-3.5 shrink-0 text-(--houston)" />
         )
       }
-      label={<span className="block truncate text-body text-(--t2)">{props.label}</span>}
+      label={
+        <span className="block truncate text-body text-(--t2) @max-[560px]/pane:line-clamp-2 @max-[560px]/pane:whitespace-normal">
+          {props.label}
+        </span>
+      }
       meta={
         <TimelineRowTimestamp createdAt={props.createdAt} timestampFormat={props.timestampFormat} />
       }

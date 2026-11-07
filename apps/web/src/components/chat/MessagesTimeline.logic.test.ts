@@ -4547,9 +4547,15 @@ describe("a read followed by that file's edit", () => {
       entry: { id, createdAt: at, label: id, tone: "tool", ...fields },
     }) as TimelineEntry;
   const command = entry("ran", { itemType: "command_execution", command: "ls" });
-  const read = entry("read", { requestKind: "file-read", changedFiles: ["atlas-api/CHANGELOG.md"] });
+  const read = entry("read", {
+    requestKind: "file-read",
+    changedFiles: ["atlas-api/CHANGELOG.md"],
+  });
   const edit = (fileName: string) =>
-    entry("edit", { itemType: "file_change", structuredPayload: { type: "file_change", fileName } });
+    entry("edit", {
+      itemType: "file_change",
+      structuredPayload: { type: "file_change", fileName },
+    });
   const rows = (timelineEntries: ReadonlyArray<TimelineEntry>, expanded: boolean) =>
     deriveMessagesTimelineRows({
       timelineEntries,
@@ -4569,12 +4575,55 @@ describe("a read followed by that file's edit", () => {
     const derived = rows([command, read, edit("/repo/atlas-api/CHANGELOG.md")], true);
     expect(cards(derived)).toHaveLength(0);
     const group = derived.find((row) => row.kind === "work" && row.isExpandedToolGroup);
-    expect(group?.kind === "work" && group.groupedEntries.map((e) => e.id)).toEqual(["ran", "read"]);
+    expect(group?.kind === "work" && group.groupedEntries.map((e) => e.id)).toEqual([
+      "ran",
+      "read",
+    ]);
     expect(group?.kind === "work" && group.groupedEntries[1]?.mergedFileChange?.id).toBe("edit");
   });
 
   it("keeps the card for another file and while the group is collapsed", () => {
     expect(cards(rows([command, read, edit("atlas-api/README.md")], true))).toHaveLength(1);
     expect(cards(rows([command, read, edit("atlas-api/CHANGELOG.md")], false))).toHaveLength(1);
+  });
+});
+
+describe("answer footer visibility", () => {
+  const at = "2026-10-01T06:19:10Z";
+  const message = (id: string, role: "user" | "assistant", runId: RunId): TimelineEntry => ({
+    kind: "message",
+    id,
+    createdAt: at,
+    message: {
+      id: MessageId.make(id),
+      role,
+      text: id,
+      runId,
+      streaming: false,
+      createdAt: at,
+      updatedAt: at,
+    },
+  });
+
+  it("keeps the latest completed answer's footer visible and leaves earlier ones on hover", () => {
+    const first = RunId.make("run-1");
+    const second = RunId.make("run-2");
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        message("question-1", "user", first),
+        message("answer-1", "assistant", first),
+        message("question-2", "user", second),
+        message("answer-2", "assistant", second),
+      ],
+      isWorking: false,
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+    });
+    const answerRows = rows.filter(
+      (row): row is Extract<MessagesTimelineRow, { kind: "message" }> =>
+        row.kind === "message" && row.message.role === "assistant",
+    );
+    expect(answerRows.map((row) => row.message.id)).toEqual(["answer-1", "answer-2"]);
+    expect(answerRows.map((row) => row.assistantMetaAlwaysVisible === true)).toEqual([false, true]);
   });
 });

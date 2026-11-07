@@ -296,6 +296,10 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
     isComplete: boolean;
   } | null;
   isRunning: boolean;
+  /** When the running turn started; the stop button rings and names the elapsed time. */
+  runningStartedAt?: string | null;
+  /** The running thread's status word, such as "Waiting" while it is blocked on the user. */
+  runningStateLabel?: string | null;
   canInterrupt: boolean;
   followUpBehavior: "queue" | "steer";
   canSteer: boolean;
@@ -360,6 +364,8 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
         canOperateThread={props.canOperateThread}
         pendingAction={props.pendingAction}
         isRunning={props.isRunning}
+        runningStartedAt={props.runningStartedAt ?? null}
+        runningStateLabel={props.runningStateLabel ?? null}
         canInterrupt={props.canInterrupt}
         followUpBehavior={props.followUpBehavior}
         canSteer={props.canSteer}

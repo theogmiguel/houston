@@ -160,7 +160,7 @@ it("draws the provider's mark beside the model name", async () => {
   expect(icon!.getBoundingClientRect().width).toBeGreaterThan(0);
 });
 
-it("opens the model menu at one fixed height however few models the provider lists", async () => {
+it("sizes the model menu to its rows instead of a fixed height", async () => {
   const viewport = { width: window.innerWidth, height: window.innerHeight };
   await page.viewport(1280, 800);
   await using _viewport = {
@@ -186,7 +186,11 @@ it("opens the model menu at one fixed height however few models the provider lis
 
   await page.getByRole("button", { name: /Opus 5\.5/ }).click();
   const content = () => document.querySelector<HTMLElement>('[data-model-picker-content="true"]');
-  await expect.poll(() => content()?.getBoundingClientRect().height).toBe(272);
+  // One model: one row of the list plus the search and provider rows, well under eight rows.
+  await expect
+    .poll(() => content()?.getBoundingClientRect().height ?? 0)
+    .toBeLessThan(8 * 34 + 120);
+  await expect.poll(() => content()?.getBoundingClientRect().height ?? 0).toBeGreaterThan(100);
 });
 
 it("docks an effort panel under the list and stays open after a model pick", async () => {
@@ -288,6 +292,33 @@ it("lines the docked popup up with the composer card and titles the effort panel
     .toBe(0);
 });
 
+it("leaves out the effort band when the model has no effort levels", async () => {
+  await using _screen = await render(
+    <TooltipProvider delay={0}>
+      <ProviderModelPicker
+        environmentId={null}
+        activeInstanceId={CLAUDE}
+        model="opus"
+        lockedProvider={null}
+        instanceEntries={entries}
+        keybindings={compileResolvedKeybindingsConfig([])}
+        modelOptionsByInstance={new Map([[CLAUDE, provider.models]])}
+        isComposerOwned
+        showEffortPanel={false}
+        effortPanel={<ComposerEffortPanel traits={null} />}
+        onInstanceModelChange={() => {}}
+      />
+    </TooltipProvider>,
+    { router: false },
+  );
+
+  await page.getByRole("button", { name: /Opus 5\.5/ }).click();
+  await expect
+    .poll(() => document.querySelector("[data-model-picker-content]") !== null)
+    .toBe(true);
+  expect(document.querySelector("[data-model-picker-effort]")).toBeNull();
+});
+
 describe("the docked popup's shape", () => {
   const panelButtons = (
     <div>
@@ -348,12 +379,21 @@ describe("the docked popup's shape", () => {
     expect(rect('[data-slot="popover-positioner"]').height).toBeLessThan(320);
   });
 
-  it("keeps the provider rail to icons and names the listed provider in the search row", async () => {
+  it("puts the providers in one horizontal row under the search field", async () => {
     await using _screen = await openDocked();
 
-    await expect.poll(() => Math.round(rect("[data-model-picker-sidebar]").width)).toBe(40);
-    expect(document.querySelector("[data-model-picker-tab-name]")?.textContent).toBeTruthy();
-    expect(page.getByRole("button", { name: "Favorites" }).element()).toBeTruthy();
+    const sidebar = rect("[data-model-picker-sidebar]");
+    expect(Math.round(sidebar.height)).toBeLessThan(48);
+    expect(Math.round(sidebar.width)).toBeGreaterThan(200);
+    // The segments share one row.
+    const favorites = page.getByRole("button", { name: "Favorites" }).element();
+    const claude = page.getByRole("button", { name: "Claude" }).element();
+    expect(Math.round(favorites.getBoundingClientRect().top)).toBe(
+      Math.round(claude.getBoundingClientRect().top),
+    );
+    // And they sit below the search field.
+    const search = document.querySelector<HTMLInputElement>("[data-model-picker-content] input")!;
+    expect(sidebar.top).toBeGreaterThanOrEqual(search.getBoundingClientRect().bottom);
   });
 
   it("has no footer when the strip holds the permissions", async () => {
@@ -402,9 +442,6 @@ describe("docked popup and the composer context row", () => {
               onInstanceModelChange={() => {}}
             />
           </div>
-          <div data-slot="composer-context-strip" style={{ marginTop: 4, height: 22 }}>
-            Local checkout
-          </div>
         </form>
       </TooltipProvider>,
       { router: false },
@@ -418,11 +455,9 @@ describe("docked popup and the composer context row", () => {
 
   function rects() {
     const card = document.querySelector<HTMLElement>('[data-inline-resting-controls="true"]')!;
-    const strip = document.querySelector<HTMLElement>('[data-slot="composer-context-strip"]')!;
     const popup = document.querySelector<HTMLElement>('[data-slot="popover-positioner"]')!;
     return {
       card: card.getBoundingClientRect(),
-      strip: strip.getBoundingClientRect(),
       popup: popup.getBoundingClientRect(),
     };
   }
@@ -430,7 +465,6 @@ describe("docked popup and the composer context row", () => {
   it("falls back below the card when there is not enough room above", async () => {
     await using _screen = await openDocked(20);
 
-    await expect.poll(() => rects().popup.top >= rects().strip.bottom).toBe(true);
     expect(rects().popup.top).toBeGreaterThanOrEqual(rects().card.bottom);
   });
 
@@ -475,9 +509,6 @@ describe("docked popup and the composer context row", () => {
                   effortPanel={<ComposerEffortPanel traits={null} />}
                   onInstanceModelChange={() => {}}
                 />
-              </div>
-              <div data-slot="composer-context-strip" style={{ marginTop: 4, height: 22 }}>
-                Local checkout
               </div>
             </form>
           </div>
@@ -533,9 +564,6 @@ describe("docked popup and the composer context row", () => {
                 effortPanel={<ComposerEffortPanel traits={null} />}
                 onInstanceModelChange={() => {}}
               />
-            </div>
-            <div data-slot="composer-context-strip" style={{ marginTop: 4, height: 22 }}>
-              Local checkout
             </div>
           </form>
         </div>

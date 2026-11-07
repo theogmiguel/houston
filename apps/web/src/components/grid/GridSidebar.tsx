@@ -133,6 +133,8 @@ import {
   orderSidebarProjectGroups,
   type SidebarProjectSection as SidebarProjectSectionModel,
 } from "./sidebarProjectSections";
+import type { NeedsYouEntry } from "./needsYouSection";
+import { buildNeedsYouEntries } from "./needsYouSection";
 import { preorderThreads } from "../../grid/tree";
 import { useOpenGridDraft } from "../../grid/useOpenGridDraft";
 import { useProject, useQuietThreadShells, useProjects } from "../../state/entities";
@@ -234,12 +236,17 @@ import {
   SIDEBAR_GRID_COUNT_CLS,
   SIDEBAR_GRID_NAME_CLS,
   SIDEBAR_GRID_RENAME_CLS,
+  SIDEBAR_NEEDS_YOU_HEADING_CLS,
+  SIDEBAR_NEEDS_YOU_HEADING_GLYPH_CLS,
+  SIDEBAR_NEEDS_YOU_SECTION_CLS,
   SIDEBAR_PROJECT_ACTION_CLS,
   SIDEBAR_PROJECT_LABEL_CLS,
   SIDEBAR_PROJECT_LABEL_TEXT_CLS,
+  SIDEBAR_PROJECT_NEEDS_YOU_CLS,
   SIDEBAR_PROJECT_ROW_CLS,
   SIDEBAR_PROJECT_SUMMARY_CLS,
   SIDEBAR_SECTION_ACTION_CLS,
+  SIDEBAR_THREAD_PROJECT_CLS,
   SIDEBAR_THREAD_ROW_INDENT_CLS,
   SidebarAttentionPips,
   SidebarOptionsMenu,
@@ -314,12 +321,14 @@ export function GridSidebar() {
   const showBranch = useClientSettings((settings) => settings.sidebarRowShowBranch);
   const showPullRequest = useClientSettings((settings) => settings.sidebarRowShowPullRequest);
   const showSubagents = useClientSettings((settings) => settings.sidebarRowShowSubagents);
+  const showNeedsYou = useClientSettings((settings) => settings.sidebarShowNeedsYou);
   const sidebarOptions: SidebarGridOptions = {
     threadSort,
     gridSort,
     showBranch,
     showPullRequest,
     showSubagents,
+    showNeedsYou,
   };
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const searchShortcutLabel = shortcutLabelForCommand(keybindings, "commandPalette.toggle");
@@ -1018,6 +1027,18 @@ export function GridSidebar() {
       : [{ workspaceKey, title: project.title, grids: workspaceHidden }];
   });
 
+  const needsYouEntries = showNeedsYou
+    ? buildNeedsYouEntries({ threads, nowIso, workspaceKeys })
+    : [];
+  const needsYouThreadIds = new Set(needsYouEntries.map((entry) => entry.thread.id));
+  const openNeedsYouThread = (thread: EnvironmentThreadShell) =>
+    openRailTarget({
+      gridId: null,
+      environmentId: thread.environmentId,
+      projectId: thread.projectId,
+      threadId: thread.id,
+    });
+
   const sections = buildSidebarProjectSections({
     groups: orderedProjectGroups,
     grids,
@@ -1027,6 +1048,7 @@ export function GridSidebar() {
     nowIso,
     query,
     activityAt: (grid) => gridActivityAt(grid, threads, nowIso),
+    ...(showNeedsYou ? { excludedThreadIds: needsYouThreadIds } : {}),
   });
 
   return (
@@ -1136,6 +1158,23 @@ export function GridSidebar() {
                   }}
                   className="flex min-h-full flex-col px-2 pb-10"
                 >
+                  <SidebarNeedsYouSection
+                    entries={needsYouEntries}
+                    providerEntriesByEnvironment={providerEntriesByEnvironment}
+                    nowIso={nowIso}
+                    selection={selection}
+                    runningSubagents={runningSubagentsByThread}
+                    dragging={dragging}
+                    workspaceTitles={workspaceTitles}
+                    onOpenThread={openNeedsYouThread}
+                    onSelectThread={selectThread}
+                    onCloseThread={(thread) => closeThreads([thread])}
+                    onHoldThread={(thread, preset) => holdThreads([thread], preset.snoozedUntil)}
+                    onPickHoldTime={pickHoldTime}
+                    onRenameThread={renameThread}
+                    onSetAutoClose={setAutoClose}
+                    handleNewThread={handleNewThread}
+                  />
                   <SidebarProjectsHeader
                     options={sidebarOptions}
                     onChange={(patch) => void updateClientSettings(sidebarOptionsPatch(patch))}
@@ -1512,6 +1551,101 @@ function revealThreadRow(root: Element | null, threadKey: string): boolean {
   return true;
 }
 
+export function SidebarNeedsYouSection({
+  entries,
+  providerEntriesByEnvironment,
+  nowIso,
+  selection,
+  runningSubagents,
+  dragging,
+  workspaceTitles,
+  onOpenThread,
+  onSelectThread,
+  onCloseThread,
+  onHoldThread,
+  onPickHoldTime,
+  onRenameThread,
+  onSetAutoClose,
+  handleNewThread,
+}: {
+  entries: ReadonlyArray<NeedsYouEntry>;
+  providerEntriesByEnvironment: ReadonlyMap<string, ReadonlyMap<string, SidebarProviderEntry>>;
+  nowIso: string;
+  selection: ThreadSelection;
+  runningSubagents: ReadonlyMap<string, number>;
+  dragging: DraggedThread | null;
+  workspaceTitles: ReadonlyMap<string, string>;
+  onOpenThread: (thread: EnvironmentThreadShell) => void;
+  onSelectThread: (
+    thread: EnvironmentThreadShell,
+    input: { shiftKey: boolean; toggleKey: boolean },
+  ) => void;
+  onCloseThread: (thread: EnvironmentThreadShell) => void;
+  onHoldThread: (
+    thread: EnvironmentThreadShell,
+    preset: Pick<SnoozePreset, "snoozedUntil">,
+  ) => void;
+  onPickHoldTime: () => Promise<Pick<SnoozePreset, "snoozedUntil"> | null>;
+  onRenameThread: (thread: EnvironmentThreadShell, title: string) => void;
+  onSetAutoClose: (thread: EnvironmentThreadShell, enabled: boolean) => void;
+  handleNewThread?: NewThreadHandler | undefined;
+}) {
+  // Nothing needs the user: the section is not a permanent empty shelf on the rail.
+  if (entries.length === 0) return null;
+  return (
+    <section
+      aria-label="Needs you"
+      data-needs-you-section=""
+      className={SIDEBAR_NEEDS_YOU_SECTION_CLS}
+    >
+      <div data-needs-you-heading="" className={SIDEBAR_NEEDS_YOU_HEADING_CLS}>
+        <span aria-hidden className={SIDEBAR_NEEDS_YOU_HEADING_GLYPH_CLS} />
+        <span className="min-w-0 truncate">Needs you</span>
+        <span data-heading-count="" className={SIDEBAR_GRID_COUNT_CLS}>
+          {entries.length}
+        </span>
+      </div>
+      <div className={SIDEBAR_NEEDS_YOU_SECTION_CLS}>
+        {entries.map(({ thread }) => (
+          <ThreadCard
+            key={thread.id}
+            gridId={null}
+            thread={thread}
+            query=""
+            providerEntries={
+              providerEntriesByEnvironment.get(thread.environmentId) ?? EMPTY_PROVIDER_ENTRIES
+            }
+            nowIso={nowIso}
+            focused={false}
+            selected={selection.selectedThreadKeys.has(
+              scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+            )}
+            dragging={dragging?.threadId === thread.id}
+            runningSubagents={runningSubagents.get(subagentParentKey(thread)) ?? 0}
+            workspaceTitle={
+              workspaceTitles.get(workspaceKeyOf(thread.environmentId, thread.projectId)) ??
+              thread.projectId
+            }
+            projectLabel={
+              workspaceTitles.get(workspaceKeyOf(thread.environmentId, thread.projectId)) ?? null
+            }
+            onOpen={() => onOpenThread(thread)}
+            onSelect={(input) => onSelectThread(thread, input)}
+            onClose={() => onCloseThread(thread)}
+            onHold={(preset) => onHoldThread(thread, preset)}
+            onPickHoldTime={onPickHoldTime}
+            onRename={(title) => onRenameThread(thread, title)}
+            onSetAutoClose={(enabled) => onSetAutoClose(thread, enabled)}
+            onDropOnThread={() => {}}
+            onOpenGrid={() => onOpenThread(thread)}
+            handleNewThread={handleNewThread}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function SidebarProjectSection({
   section,
   query,
@@ -1586,7 +1720,9 @@ export function SidebarProjectSection({
     ...section.grids.flatMap((entry) => entry.threads),
     ...section.ungroupedThreads,
   ];
-  const pips = attentionPips(sectionThreads, nowIso);
+  const needsYouThreads = section.needsYouThreads ?? [];
+  // Pips follow every thread the project owns, including the ones the Needs you section lifts.
+  const pips = attentionPips([...sectionThreads, ...needsYouThreads], nowIso);
   const headingRef = useRef<HTMLDivElement | null>(null);
   const stuck = useStuckToTop(headingRef);
   const jumpToThread = (threadKey: string) => {
@@ -1811,6 +1947,11 @@ export function SidebarProjectSection({
                 handleNewThread={handleNewThread}
               />
             ))}
+            {needsYouThreads.length > 0 ? (
+              <p data-project-needs-you="" className={SIDEBAR_PROJECT_NEEDS_YOU_CLS}>
+                +{needsYouThreads.length} in Needs you
+              </p>
+            ) : null}
           </div>
         )}
       </AnimatedHeight>
@@ -2196,6 +2337,7 @@ export function ThreadCard({
   selected,
   dragging,
   workspaceTitle,
+  projectLabel = null,
   timeLabel = null,
   shelf = null,
   runningSubagents = 0,
@@ -2222,6 +2364,8 @@ export function ThreadCard({
   selected: boolean;
   dragging: boolean;
   workspaceTitle: string;
+  /** Names the row's project first on the second line, for rows outside a project group. */
+  projectLabel?: string | null;
   timeLabel?: string | null;
   shelf?: "snoozed" | "settled" | null;
   runningSubagents?: number;
@@ -2624,6 +2768,13 @@ export function ThreadCard({
             className={cn("flex h-4 min-w-0 items-center gap-2", SIDEBAR_THREAD_META_TEXT_CLASS)}
           >
             <RowMeta>
+              {projectLabel !== null ? (
+                <RowMetaItem label={projectLabel}>
+                  <span data-thread-project="" className={SIDEBAR_THREAD_PROJECT_CLS}>
+                    {projectLabel}
+                  </span>
+                </RowMetaItem>
+              ) : null}
               {/* A shelf row's label ("tomorrow at 9:00 AM", "Closed 2h") is too long for the title line. */}
               {shelf !== null && jumpHint === null ? (
                 <RowMetaItem label="Time" keep>
@@ -2776,9 +2927,10 @@ const SIDEBAR_OPTIONS_DEFAULTS = {
   sidebarRowShowBranch: true,
   sidebarRowShowPullRequest: true,
   sidebarRowShowSubagents: true,
+  sidebarShowNeedsYou: false,
 } as const;
 
-function sidebarOptionsPatch(patch: Partial<SidebarGridOptions>) {
+export function sidebarOptionsPatch(patch: Partial<SidebarGridOptions>) {
   return {
     ...(patch.threadSort === undefined ? {} : { sidebarGridThreadSortOrder: patch.threadSort }),
     ...(patch.gridSort === undefined ? {} : { sidebarGridSortOrder: patch.gridSort }),
@@ -2787,6 +2939,7 @@ function sidebarOptionsPatch(patch: Partial<SidebarGridOptions>) {
       ? {}
       : { sidebarRowShowPullRequest: patch.showPullRequest }),
     ...(patch.showSubagents === undefined ? {} : { sidebarRowShowSubagents: patch.showSubagents }),
+    ...(patch.showNeedsYou === undefined ? {} : { sidebarShowNeedsYou: patch.showNeedsYou }),
   };
 }
 

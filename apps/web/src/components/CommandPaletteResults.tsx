@@ -132,8 +132,12 @@ function useWholeRowViewportHeight(listRef: RefObject<LegendListRef | null>) {
       while (rowParent.children.length === 1 && rowParent.firstElementChild?.firstElementChild) {
         rowParent = rowParent.firstElementChild;
       }
+      // The list ends under a whole result row. A section heading is not a row to end on: it
+      // would leave a heading with nothing beneath it, so it scrolls under the fade instead.
       const rowBottoms = Array.from(rowParent.children).flatMap((row) =>
-        row instanceof HTMLElement && row.offsetHeight > 0
+        row instanceof HTMLElement &&
+        row.offsetHeight > 0 &&
+        row.querySelector('[data-slot="command-group-label"]') === null
           ? [(row.getBoundingClientRect().bottom - top) / scale + scroller.scrollTop]
           : [],
       );

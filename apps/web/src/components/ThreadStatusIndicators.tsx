@@ -825,13 +825,16 @@ export function ThreadSearchPullRequestNumber({
   query,
   enabled = true,
   settled = false,
+  always = false,
 }: {
   thread: SidebarThreadSummary;
   query: string;
   enabled?: boolean;
   settled?: boolean;
+  /** Shows the linked pull request even when the query does not name it. */
+  always?: boolean;
 }) {
-  const matched = pullRequestMatchesSearchQuery(thread, query);
+  const matched = always || pullRequestMatchesSearchQuery(thread, query);
   const supportsMultiplePullRequests = useSupportsMultiplePullRequests(thread.environmentId);
   const linked = useLinkedThreadPullRequest(
     thread.environmentId,
@@ -851,10 +854,13 @@ export function ThreadSearchPullRequestNumber({
   // Stored references already carry a number, so the badge shows before PR details load.
   const stored =
     current ??
-    [thread.linkedPullRequest, thread.branchPullRequest].find(
-      (reference) =>
-        reference != null && pullRequestMatchesSearchQuery({ linkedPullRequest: reference }, query),
-    );
+    (always
+      ? (thread.linkedPullRequest ?? thread.branchPullRequest ?? undefined)
+      : [thread.linkedPullRequest, thread.branchPullRequest].find(
+          (reference) =>
+            reference != null &&
+            pullRequestMatchesSearchQuery({ linkedPullRequest: reference }, query),
+        ));
   const presentation = resolveThreadPullRequestBadgePresentation({
     badge,
     number: pr?.number ?? stored?.number,

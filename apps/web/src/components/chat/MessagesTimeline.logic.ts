@@ -616,6 +616,8 @@ type MessagesTimelineRowContent =
       showAssistantMeta: boolean;
       showAssistantCopyButton: boolean;
       assistantCopyStreaming: boolean;
+      /** The thread's latest answer keeps its footer visible instead of revealing it on hover. */
+      assistantMetaAlwaysVisible?: boolean;
       assistantTurnDiffSummary?: TurnDiffSummary | undefined;
       revertTurnCount?: number | undefined;
       /** Another of your messages follows directly, so the two sit closer together. */
@@ -635,6 +637,8 @@ type MessagesTimelineRowContent =
       message: ChatMessage;
       showAssistantCopyButton: boolean;
       assistantCopyStreaming: boolean;
+      /** The thread's latest answer keeps its footer visible instead of revealing it on hover. */
+      alwaysVisible?: boolean;
     }
   | {
       kind: "event";
@@ -700,7 +704,10 @@ export function mergeFileChangeIntoRead(
   if (readPaths.length !== 1 || !sameFilePath(readPaths[0]!, item.fileName)) return null;
   return {
     ...previous,
-    groupedEntries: [...previous.groupedEntries.slice(0, -1), { ...read, mergedFileChange: fileChange }],
+    groupedEntries: [
+      ...previous.groupedEntries.slice(0, -1),
+      { ...read, mergedFileChange: fileChange },
+    ],
   };
 }
 
@@ -2304,9 +2311,28 @@ export function deriveMessagesTimelineRows(input: {
   });
   const startsTurn = (row: MessagesTimelineRow | undefined) =>
     row?.kind === "message" && row.message.role === "user";
-  return decorated.map((row, index) =>
-    !startsTurn(row) && startsTurn(decorated[index + 1]) ? { ...row, leadsToTurn: true } : row,
-  );
+  // The latest completed answer shows its footer without waiting for a hover.
+  let lastAnswerMessageId: string | null = null;
+  for (const row of decorated) {
+    if (row.kind === "assistant-meta") lastAnswerMessageId = row.message.id;
+    else if (row.kind === "message" && row.message.role === "assistant" && row.showAssistantMeta) {
+      lastAnswerMessageId = row.message.id;
+    }
+  }
+  return decorated.map((row, index) => {
+    const leadsToTurn = !startsTurn(row) && startsTurn(decorated[index + 1]);
+    if (row.kind === "message" && row.message.id === lastAnswerMessageId) {
+      return {
+        ...row,
+        assistantMetaAlwaysVisible: true,
+        ...(leadsToTurn ? { leadsToTurn: true } : {}),
+      };
+    }
+    if (row.kind === "assistant-meta" && row.message.id === lastAnswerMessageId) {
+      return { ...row, alwaysVisible: true, ...(leadsToTurn ? { leadsToTurn: true } : {}) };
+    }
+    return leadsToTurn ? { ...row, leadsToTurn: true } : row;
+  });
 }
 
 /**
@@ -2615,7 +2641,8 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
         a.projectedItem === bm.projectedItem &&
         a.message === bm.message &&
         a.showAssistantCopyButton === bm.showAssistantCopyButton &&
-        a.assistantCopyStreaming === bm.assistantCopyStreaming
+        a.assistantCopyStreaming === bm.assistantCopyStreaming &&
+        a.alwaysVisible === bm.alwaysVisible
       );
     }
 
@@ -2716,6 +2743,7 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
         a.showAssistantMeta === bm.showAssistantMeta &&
         a.showAssistantCopyButton === bm.showAssistantCopyButton &&
         a.assistantCopyStreaming === bm.assistantCopyStreaming &&
+        a.assistantMetaAlwaysVisible === bm.assistantMetaAlwaysVisible &&
         a.assistantTurnDiffSummary === bm.assistantTurnDiffSummary &&
         a.revertTurnCount === bm.revertTurnCount &&
         a.groupedWithNext === bm.groupedWithNext &&

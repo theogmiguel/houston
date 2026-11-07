@@ -11,7 +11,7 @@ import { ProposedPlanCard } from "./ProposedPlanCard";
 import { HtmlRenderFrame } from "./HtmlRenderFrame";
 import { McpAppFrame } from "./McpAppFrame";
 import { checkpointFileTotals } from "@houston-app/client-runtime/state/thread-checkpoints";
-import { ChangedFilesCard } from "./ChangedFilesTree";
+import { TimelineChangesRow } from "./TimelineChangesRow";
 import { useFileContextMenuHandler } from "../../fileContextMenu";
 import { useAssistantMessageText, useProject, useThreadShell } from "../../state/entities";
 import { CopyButton } from "../ui/copy-button";
@@ -20,7 +20,6 @@ import { resolveAssistantMessageCopyState } from "./MessagesTimeline.logic";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { Text } from "../ui/text";
 import { cn } from "~/lib/utils";
-import { useUiStateStore } from "~/uiStateStore";
 import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../timestampFormat";
 import { useV2ItemSupport } from "../../state/v2ItemSupport";
 import { serverEnvironment } from "../../state/server";
@@ -93,8 +92,6 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
         {ctx.onOpenTurnDiff ? (
           <AssistantChangedFilesSection
             turnSummary={row.assistantTurnDiffSummary}
-            routeThreadKey={ctx.routeThreadKey}
-            resolvedTheme={ctx.resolvedTheme}
             onOpenTurnDiff={ctx.onOpenTurnDiff}
           />
         ) : null}
@@ -106,6 +103,7 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
             showCopyButton={row.showAssistantCopyButton}
             copyStreaming={row.assistantCopyStreaming}
             modelRunId={row.message.runId ?? null}
+            alwaysVisible={row.assistantMetaAlwaysVisible === true}
           />
         ) : null}
         <SecondOpinionCardForRun runId={row.message.runId} />
@@ -300,7 +298,7 @@ export function AssistantMetaTimelineRow({
         message={row.message}
         showCopyButton={row.showAssistantCopyButton}
         copyStreaming={row.assistantCopyStreaming}
-        alwaysVisible
+        alwaysVisible={row.alwaysVisible === true}
       />
     </div>
   );
@@ -328,7 +326,11 @@ function AssistantMessageMeta({
   const providers = useAtomValue(
     serverEnvironment.providersValueAtom(ctx.activeThreadEnvironmentId),
   );
-  const attribution = resolveAssistantModelAttribution({ runs: ctx.runs, runId: modelRunId, providers });
+  const attribution = resolveAssistantModelAttribution({
+    runs: ctx.runs,
+    runId: modelRunId,
+    providers,
+  });
 
   return (
     <div
@@ -476,13 +478,9 @@ export function McpAppTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "
  *  so toggling re-renders only this component — not the entire list. */
 const AssistantChangedFilesSection = memo(function AssistantChangedFilesSection({
   turnSummary,
-  routeThreadKey,
-  resolvedTheme,
   onOpenTurnDiff,
 }: {
   turnSummary: TurnDiffSummary | undefined;
-  routeThreadKey: string;
-  resolvedTheme: "light" | "dark";
   displayThreadKey?: string;
   onOpenTurnDiff: (runId: RunId, filePath?: string) => void;
 }) {
@@ -497,8 +495,6 @@ const AssistantChangedFilesSection = memo(function AssistantChangedFilesSection(
     <AssistantChangedFilesSectionInner
       turnSummary={turnSummary}
       checkpointFiles={checkpointFiles}
-      routeThreadKey={routeThreadKey}
-      resolvedTheme={resolvedTheme}
       onOpenTurnDiff={onOpenTurnDiff}
     />
   );
@@ -507,24 +503,14 @@ const AssistantChangedFilesSection = memo(function AssistantChangedFilesSection(
 function AssistantChangedFilesSectionInner({
   turnSummary,
   checkpointFiles,
-  routeThreadKey,
-  resolvedTheme,
   onOpenTurnDiff,
 }: {
   turnSummary: TurnDiffSummary;
   checkpointFiles: TurnDiffSummary["files"];
-  routeThreadKey: string;
-  resolvedTheme: "light" | "dark";
   displayThreadKey?: string;
   onOpenTurnDiff: (runId: RunId, filePath?: string) => void;
 }) {
   const ctx = use(TimelineRowCtx);
-  const persistedExpanded = useUiStateStore(
-    (store) => store.threadChangedFilesExpandedById[routeThreadKey]?.[turnSummary.runId],
-  );
-  const setExpanded = useUiStateStore((store) => store.setThreadChangedFilesExpanded);
-  const allDirectoriesExpanded = persistedExpanded ?? false;
-
   const thread = useThreadShell(ctx.threadRef);
   const activeProject = useProject(
     thread && thread.projectId
@@ -532,32 +518,31 @@ function AssistantChangedFilesSectionInner({
       : null,
   );
   const onFileContextMenu = useFileContextMenuHandler(ctx.activeThreadEnvironmentId);
+  const totals = checkpointFileTotals(turnSummary);
 
   return (
-    <ChangedFilesCard
-      runId={turnSummary.runId}
-      files={checkpointFiles}
-      totals={checkpointFileTotals(turnSummary)}
-      allDirectoriesExpanded={allDirectoriesExpanded}
-      resolvedTheme={resolvedTheme}
-      onToggleAllDirectories={() =>
-        setExpanded(routeThreadKey, turnSummary.runId, !allDirectoriesExpanded)
-      }
-      onOpenTurnDiff={onOpenTurnDiff}
-      onFileContextMenu={(filePath, event) =>
-        onFileContextMenu(
-          {
-            environmentId: ctx.activeThreadEnvironmentId,
-            filePath,
-            workspaceRoot: ctx.workspaceRoot,
-            repositoryRoot:
-              thread?.worktreePath == null
-                ? activeProject?.repositoryIdentity?.rootPath
-                : undefined,
-          },
-          event,
-        )
-      }
-    />
+    <div className="mt-3">
+      <TimelineChangesRow
+        files={checkpointFiles}
+        totals={totals}
+        workspaceRoot={ctx.workspaceRoot}
+        onOpenDiff={() => onOpenTurnDiff(turnSummary.runId, checkpointFiles[0]?.path)}
+        onOpenFile={(filePath) => onOpenTurnDiff(turnSummary.runId, filePath)}
+        onFileContextMenu={(filePath, event) =>
+          onFileContextMenu(
+            {
+              environmentId: ctx.activeThreadEnvironmentId,
+              filePath,
+              workspaceRoot: ctx.workspaceRoot,
+              repositoryRoot:
+                thread?.worktreePath == null
+                  ? activeProject?.repositoryIdentity?.rootPath
+                  : undefined,
+            },
+            event,
+          )
+        }
+      />
+    </div>
   );
 }

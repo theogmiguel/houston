@@ -401,8 +401,7 @@ function cssLength({ share, px }: Linear): string {
  * measured slots after mount; this is what they show before that first measurement.
  */
 function cellBoxes(tree: LayoutNode, multi: boolean): Map<string, CSSProperties> {
-  const padX = multi ? GUTTER_PX : 0;
-  const padBottom = multi ? GUTTER_PX : 0;
+  const pad = multi ? GUTTER_PX : 0;
   const boxes = new Map<string, CSSProperties>();
   const visit = (node: LayoutNode, x: Linear, y: Linear, width: Linear, height: Linear) => {
     if (node.kind === "thread") {
@@ -426,7 +425,7 @@ function cellBoxes(tree: LayoutNode, multi: boolean): Map<string, CSSProperties>
       offset = linear(offset.share + size.share, offset.px + size.px + GUTTER_PX);
     });
   };
-  visit(tree, linear(0, padX), linear(0, 0), linear(1, -2 * padX), linear(1, -padBottom));
+  visit(tree, linear(0, pad), linear(0, pad), linear(1, -2 * pad), linear(1, -2 * pad));
   return boxes;
 }
 

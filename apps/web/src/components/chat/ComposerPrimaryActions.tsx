@@ -11,6 +11,8 @@ import {
 import { CornerUpRight, ListPlus } from "lucide";
 import { MorphIcon } from "~/components/MorphIcon";
 import { formatContextWindowTokens } from "~/lib/contextWindow";
+import { formatDuration } from "@houston-app/shared/orchestrationTiming";
+import { tickTextContent } from "~/lib/tickTextContent";
 import { cn, isMacPlatform } from "~/lib/utils";
 import { useShortcutModifierState } from "../../shortcutModifierState";
 import { Button } from "../ui/button";
@@ -18,6 +20,7 @@ import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { composerFloatingLayerProps } from "./composerEventScope";
+import { COMPOSER_STOP_RUNNING_CLS } from "../ui/composer-anatomy-recipes";
 import {
   alternateComposerDispatchAction,
   resolveComposerDispatchMode,
@@ -37,6 +40,10 @@ interface ComposerPrimaryActionsProps {
   canOperateThread: boolean;
   pendingAction: PendingActionState | null;
   isRunning: boolean;
+  /** When the running turn started; the stop button rings and names the elapsed time. */
+  runningStartedAt?: string | null;
+  /** The running thread's status word, such as "Waiting" while it is blocked on the user. */
+  runningStateLabel?: string | null;
   canInterrupt: boolean;
   followUpBehavior?: "queue" | "steer";
   canSteer?: boolean;
@@ -156,6 +163,8 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   canOperateThread,
   pendingAction,
   isRunning,
+  runningStartedAt = null,
+  runningStateLabel = null,
   canInterrupt,
   followUpBehavior = "steer",
   canSteer = true,
@@ -195,28 +204,50 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   const alternateAction = alternateComposerDispatchAction(followUpBehavior);
   const isSendDisabled = !canOperateThread || sendDisabledReason !== null;
 
+  const running = runningStartedAt !== null;
+  const runningWord = runningStateLabel ?? "Running";
+  const runningStartedMs = runningStartedAt === null ? null : Date.parse(runningStartedAt);
   const renderStopGenerationButton = () => (
     <Tooltip key="interrupt">
       <TooltipTrigger
         render={
           <button
             type="button"
+            data-composer-running={running ? "true" : undefined}
             className={cn(
-              "flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full bg-(--accent) text-(--primary-foreground) transition-colors duration-150 hover:bg-(--accent-hover) disabled:pointer-events-none disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:size-3.5",
+              "flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full bg-(--sel) text-(--t1) transition-colors duration-150 hover:bg-(--hover) disabled:pointer-events-none disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:size-3.5",
               boardFocusRing,
+              // The running state lives on this button: a status-coloured ring, no separate label.
+              running && COMPOSER_STOP_RUNNING_CLS,
             )}
             {...pointerFocusProps}
             disabled={!canOperateThread}
             onClick={() => {
               if (canOperateThread) onInterrupt();
             }}
-            aria-label="Stop generation"
+            aria-label={running ? `Stop generation · ${runningWord}` : "Stop generation"}
           />
         }
       >
         <SquareIcon aria-hidden="true" fill="currentColor" stroke="none" />
       </TooltipTrigger>
-      <TooltipPopup>Interrupt</TooltipPopup>
+      <TooltipPopup>
+        <div className="flex items-center gap-1.5">
+          <span>{runningWord}</span>
+          {running ? (
+            <>
+              <span aria-hidden>·</span>
+              <span
+                ref={tickTextContent(
+                  (nowMs) => formatDuration(Math.max(1_000, nowMs - (runningStartedMs ?? nowMs))),
+                  true,
+                )}
+              />
+            </>
+          ) : null}
+        </div>
+        <div>Esc to interrupt</div>
+      </TooltipPopup>
     </Tooltip>
   );
 

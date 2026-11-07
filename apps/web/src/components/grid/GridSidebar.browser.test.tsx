@@ -647,12 +647,8 @@ function tokenColor(token: string): string {
   return color;
 }
 
-function accentColor(): string {
-  return tokenColor("--accent-ink");
-}
-
 describe("ThreadCard status marks", () => {
-  it("draws a running thread's mark as the accent spinner, named Running", async () => {
+  it("draws a running thread's mark as the teal spinner, named Running", async () => {
     await using screen = await render(
       card(
         thread({
@@ -672,7 +668,7 @@ describe("ThreadCard status marks", () => {
     const glyph = mark.querySelector<SVGElement>('svg[data-status-kind="running"]');
     expect(glyph).not.toBeNull();
     expect(getComputedStyle(glyph!).animationName).not.toBe("none");
-    expect(getComputedStyle(mark).color).toBe(accentColor());
+    expect(getComputedStyle(mark).color).toBe(tokenColor("--status-running-ink"));
     expect(mark.hasAttribute("data-thread-status-glyph")).toBe(true);
     expect(mark.textContent).toBe("");
     // The glyph leads the row, left of the title; a plain running thread needs no word.
@@ -758,11 +754,11 @@ describe("ThreadCard status marks", () => {
       },
     };
     const cases = [
-      { label: "Running", value: runningThread, ink: "text-(--accent-ink)", glyph: null },
+      { label: "Running", value: runningThread, ink: "text-status-running-ink", glyph: null },
       {
         label: "Input",
         value: { hasPendingUserInput: true },
-        ink: "text-(--warn-ink)",
+        ink: "text-status-input-ink",
         glyph: null,
       },
       {
@@ -812,7 +808,7 @@ describe("ThreadCard status marks", () => {
     expect(outline).not.toBeNull();
     expect(getComputedStyle(outline!).fill).toBe("none");
     expect(getComputedStyle(outline!).stroke).not.toBe("none");
-    expect(getComputedStyle(outline!).stroke).toBe(tokenColor("--warn-ink"));
+    expect(getComputedStyle(outline!).stroke).toBe(tokenColor("--status-input-ink"));
   });
 });
 

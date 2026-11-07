@@ -1,5 +1,6 @@
 import type { ProviderDriverKind } from "@houston-app/contracts";
 import { FolderGit2Icon, FolderIcon, GitBranchIcon } from "lucide-react";
+import type { ReactNode } from "react";
 import { ProviderInstanceIcon } from "./chat/ProviderInstanceIcon";
 import { cn } from "~/lib/utils";
 
@@ -31,6 +32,8 @@ export function ThreadCommandSubtitle(props: {
   branch: string | null;
   worktreePath: string | null;
   isCurrent: boolean;
+  /** The thread's pull request badge, on the second line beside the checkout. */
+  pullRequest?: ReactNode;
   driverKind?: ProviderDriverKind | null;
   providerDisplayName?: string | null;
   acpRegistryAgentId?: string | undefined;
@@ -46,7 +49,7 @@ export function ThreadCommandSubtitle(props: {
   const projectLabel = props.projectTitle?.trim() || null;
   const branchLabel = props.branch?.trim() || null;
 
-  if (!projectLabel && !branchLabel && !props.isCurrent && !showHarness) {
+  if (!projectLabel && !branchLabel && !props.isCurrent && !showHarness && !props.pullRequest) {
     return null;
   }
 
@@ -79,9 +82,16 @@ export function ThreadCommandSubtitle(props: {
         </>
       ) : null}
 
-      {showHarness && props.driverKind ? (
+      {props.pullRequest ? (
         <>
           {projectLabel || branchLabel ? <CommandPaletteMetaDot /> : null}
+          <span className="inline-flex min-w-0 items-center gap-1">{props.pullRequest}</span>
+        </>
+      ) : null}
+
+      {showHarness && props.driverKind ? (
+        <>
+          {projectLabel || branchLabel || props.pullRequest ? <CommandPaletteMetaDot /> : null}
           <ProviderInstanceIcon
             driverKind={props.driverKind}
             displayName={props.providerDisplayName ?? props.driverKind}
@@ -94,7 +104,9 @@ export function ThreadCommandSubtitle(props: {
 
       {props.isCurrent ? (
         <>
-          {projectLabel || branchLabel || showHarness ? <CommandPaletteMetaDot /> : null}
+          {projectLabel || branchLabel || props.pullRequest || showHarness ? (
+            <CommandPaletteMetaDot />
+          ) : null}
           <span className="shrink-0">Current thread</span>
         </>
       ) : null}

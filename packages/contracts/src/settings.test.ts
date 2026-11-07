@@ -649,3 +649,13 @@ describe("ClientSettingsSchema wordWrap", () => {
     expect(decodeClientSettings({ wordWrap: true }).wordWrap).toBe(true);
   });
 });
+
+describe("ClientSettingsSchema sidebarShowNeedsYou", () => {
+  it("keeps the Needs you section off until the user opts in", () => {
+    expect(decodeClientSettings({}).sidebarShowNeedsYou).toBe(false);
+  });
+
+  it("keeps a saved opt-in", () => {
+    expect(decodeClientSettings({ sidebarShowNeedsYou: true }).sidebarShowNeedsYou).toBe(true);
+  });
+});

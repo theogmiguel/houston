@@ -18,6 +18,7 @@ import {
   ENVIRONMENT_ID,
   PROJECT_ID,
   installFakeEnvironment,
+  threadWithHistory,
   type FakeDriver,
 } from "../../test/fakeEnvironment";
 import { render } from "../../test/render";
@@ -39,6 +40,9 @@ vi.mock(import("~/rpc/requestLatencyState"), async (original) => ({
 
 // Boots the whole app; on a loaded 4-vCPU CI runner that has exceeded the default 15 s budget.
 const APP_BOOT_TEST_TIMEOUT_MS = 45_000;
+
+// Two project threads give the new-thread page its project context tray.
+const PROJECT_THREADS = [threadWithHistory("new-thread-context", 1), threadWithHistory("older", 2)];
 
 const resolveColor = (value: string) => {
   const probe = document.createElement("span");
@@ -76,57 +80,75 @@ async function viewport(width: number): Promise<AsyncDisposable> {
   return { [Symbol.asyncDispose]: () => page.viewport(previous.width, previous.height) };
 }
 
+function composerBoxes() {
+  const overlay = document.querySelector<HTMLElement>("[data-chat-composer-overlay]")!;
+  const pane = overlay.parentElement!.getBoundingClientRect();
+  const card = document
+    .querySelector<HTMLElement>("[data-chat-composer-main-surface]")!
+    .getBoundingClientRect();
+  const header = document.querySelector<HTMLElement>("[data-chat-header]")!.getBoundingClientRect();
+  const stack = document.querySelector<HTMLElement>('[data-chat-composer-stack="true"]')!;
+  return { overlay, pane, card, header, stack };
+}
+
 it.each([1440, 800])(
-  "sits the new-thread composer at the foot of the pane with the hero centred above it at %ipx",
+  "centres the new-thread composer with the hero and project tray in one group at %ipx",
   async (width) => {
-    using _environment = installFakeEnvironment([]);
+    using _environment = installFakeEnvironment(PROJECT_THREADS);
     await using _viewport = await viewport(width);
     await using _app = await openNewThread();
 
-    const overlay = document.querySelector<HTMLElement>("[data-chat-composer-overlay]")!;
-    const pane = overlay.parentElement!.getBoundingClientRect();
-    const card = document
-      .querySelector<HTMLElement>("[data-chat-composer-main-surface]")!
-      .getBoundingClientRect();
+    const { pane, card, stack } = composerBoxes();
     const heading = page.getByRole("heading", { name: /What should we build/ }).element();
     const context = document.querySelector<HTMLElement>("[data-draft-project-context]")!;
-
-    // The composer stack rests on the canvas's bottom edge, as it does in a thread.
-    const stack = document.querySelector<HTMLElement>('[data-chat-composer-stack="true"]')!;
-    expect(Math.abs(stack.getBoundingClientRect().bottom - pane.bottom)).toBeLessThan(2);
-    expect(pane.bottom - card.bottom).toBeLessThan(56);
-    expect(Math.abs(card.left + card.width / 2 - (pane.left + pane.width / 2))).toBeLessThan(2);
-
-    // The hero is centred in the space between the pane's top and the project context.
     const headingBox = heading.getBoundingClientRect();
     const contextBox = context.getBoundingClientRect();
-    const centre = (pane.top + contextBox.top) / 2;
-    expect(Math.abs(headingBox.top + headingBox.height / 2 - centre)).toBeLessThan(24);
 
-    // The upward picker's 300px clears the hero above the card.
-    expect(headingBox.bottom).toBeLessThan(card.top - 304);
+    // The composer card is the page's centrepiece, not a footer.
+    const composerCentre = card.top + card.height / 2;
+    expect(Math.abs(composerCentre - (pane.top + pane.height / 2))).toBeLessThan(
+      pane.height * 0.08,
+    );
+
+    // Hero, tray, composer: one stacked group, the tray 8px over the card.
+    expect(headingBox.bottom).toBeLessThan(contextBox.top);
+    expect(Math.abs(contextBox.bottom + 8 - card.top)).toBeLessThan(2);
+
+    // The tray matches the composer's width and radius exactly.
+    expect(Math.abs(contextBox.width - card.width)).toBeLessThan(1);
+    expect(Math.abs(contextBox.left - card.left)).toBeLessThan(1);
+    expect(getComputedStyle(context).borderTopLeftRadius).toBe(
+      getComputedStyle(document.querySelector<HTMLElement>("[data-chat-composer-main-surface]")!)
+        .borderTopLeftRadius,
+    );
+
+    // The page header names the project even on a narrow window, never just "New thread".
+    const project = document.querySelector<HTMLElement>("[data-thread-project]");
+    expect(project).not.toBeNull();
+    expect(getComputedStyle(project!).display).not.toBe("none");
+    expect(project!.textContent).toContain("render");
+
+    // The composer sits on the pane's centre line, clear of the top bar.
+    expect(Math.abs(card.left + card.width / 2 - (pane.left + pane.width / 2))).toBeLessThan(2);
+    expect(headingBox.top).toBeGreaterThan(84);
+    expect(stack.getBoundingClientRect().bottom).toBeLessThanOrEqual(pane.bottom);
   },
   APP_BOOT_TEST_TIMEOUT_MS,
 );
 
-it.each([1440, 800])(
-  "puts the project context directly above the composer at %ipx",
-  async (width) => {
-    using _environment = installFakeEnvironment([]);
-    await using _viewport = await viewport(width);
+it(
+  "leaves the new-thread composer more room below it than above at 1440x900",
+  async () => {
+    using _environment = installFakeEnvironment(PROJECT_THREADS);
+    await using _viewport = await viewport(1440);
     await using _app = await openNewThread();
 
-    const context = document.querySelector<HTMLElement>("[data-draft-project-context]");
-    expect(context).not.toBeNull();
-    expect(context!.textContent).toContain("Local checkout");
-    const heading = page.getByRole("heading", { name: /What should we build/ }).element();
-    const card = document
-      .querySelector<HTMLElement>("[data-chat-composer-main-surface]")!
-      .getBoundingClientRect();
-    const contextBox = context!.getBoundingClientRect();
-    expect(contextBox.top).toBeGreaterThan(heading.getBoundingClientRect().bottom);
-    expect(contextBox.bottom).toBeLessThanOrEqual(card.top);
-    expect(card.top - contextBox.bottom).toBeLessThan(14);
+    const { card, header, pane } = composerBoxes();
+    const roomAbove = card.top - header.bottom;
+    const roomBelow = pane.bottom - card.bottom;
+    expect(roomBelow).toBeGreaterThan(roomAbove);
+    // The docked model picker needs the full 300px under the card.
+    expect(roomBelow).toBeGreaterThanOrEqual(304);
   },
   APP_BOOT_TEST_TIMEOUT_MS,
 );

@@ -413,13 +413,13 @@ const STANDARD_WEB_THEME_COLORS: Record<ThemeAppearance, Partial<ThemeColors>> =
     terminalBackground: "#fbfbfc",
   },
   dark: {
-    canvas: "#19191c",
+    canvas: "#18181b",
     chrome: "#111113",
     toolbar: "#111113",
-    surface: "#222226",
-    surfaceRaised: "#222226",
-    surfaceOverlay: "#222226",
-    messageSurface: "#2f2f33",
+    surface: "#1f1f23",
+    surfaceRaised: "#1f1f23",
+    surfaceOverlay: "#1f1f23",
+    messageSurface: "#2c2c30",
     terminalBackground: "#0c0c0e",
   },
 };

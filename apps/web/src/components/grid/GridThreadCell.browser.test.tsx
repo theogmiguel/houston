@@ -100,6 +100,12 @@ vi.mock("../ChatMarkdown", () => ({
   default: ({ text }: { text: string }) => <p>{text}</p>,
 }));
 
+vi.mock("./ThreadRowPullRequestBadge", () => ({
+  ThreadRowPullRequestBadge: (props: { pullRequest: { number: number } }) => (
+    <span data-testid="pane-pr">#{props.pullRequest.number}</span>
+  ),
+}));
+
 vi.mock("../sidebar/SidebarThreadRow", () => ({
   SidebarProviderStack: () => null,
 }));
@@ -117,9 +123,21 @@ const shell = {
   modelSelection: { instanceId: "claudeAgent", model: "claude-sonnet" },
   providerInstanceHistory: [],
   runtime: null,
+  pullRequests: [
+    {
+      number: 209,
+      url: "https://github.com/acme/atlas-api/pull/209",
+      linkedAt: "2026-01-01T00:00:00.000Z",
+      snapshot: null,
+    },
+  ],
+  branchPullRequest: null,
+  tags: [],
 };
 
 vi.mock("../../state/entities", () => ({
+  useProject: () => ({ title: "atlas-api", isScratch: false }),
+  useServerConfigs: () => new Map(),
   useQuietThreadShell: () => shell,
   readThreadShell: () => shell,
   readThreadShells: () => [shell],
@@ -277,8 +295,9 @@ function expectPaneHeadSurface(container: HTMLElement) {
   if (strip === null) throw new Error("pane label missing");
   const root = document.documentElement;
   const style = getComputedStyle(strip);
-  expect(style.borderRadius).toBe("7px");
-  expect(style.height).toBe("26px");
+  expect(style.borderRadius).toBe("0px");
+  expect(style.height).toBe("36px");
+  expect(style.borderBottomWidth).toBe("1px");
   root.classList.remove("dark");
   try {
     expect(style.backgroundColor).toBe(paneHeadColor());
@@ -490,7 +509,7 @@ describe("GridThreadCell surfaces", () => {
     const actions = [...label.querySelectorAll("button")].map((button) =>
       button.getAttribute("aria-label"),
     );
-    expect(actions).toEqual(["More cell actions", "Maximize cell", "Close thread"]);
+    expect(actions).toEqual(["Maximize cell", "More cell actions", "Close thread"]);
     expect(label.querySelector('[aria-label="Split cell"]')).toBeNull();
 
     await userEvent.hover(screen.container.querySelector("[data-grid-cell]") as HTMLElement);
@@ -524,7 +543,7 @@ describe("GridThreadCell surfaces", () => {
     expect(menu.textContent).not.toMatch(/Pin thread|Unpin thread/);
   });
 
-  it("grows the label actions to their own width over the whole reveal", async () => {
+  it("fades the header actions in over the hover feedback role", async () => {
     state.draftSession = null;
     await using screen = await renderCell(
       { kind: "thread", threadId: "thread-a", id: "p1" },
@@ -532,24 +551,14 @@ describe("GridThreadCell surfaces", () => {
       { onMaximize: vi.fn() },
     );
 
-    const actions = screen.container
-      .querySelector('[aria-label="More cell actions"]')
-      ?.closest("div") as HTMLElement;
+    const actions = screen.container.querySelector("[data-pane-actions]") as HTMLElement;
+    const style = getComputedStyle(actions);
+    expect(style.opacity).toBe("0");
+    // The reveal is an opacity fade on the feedback role, never a width animation.
+    expect(style.transitionProperty).toContain("opacity");
+    expect(style.transitionProperty).not.toContain("width");
     await userEvent.hover(screen.container.querySelector("[data-grid-cell]") as HTMLElement);
-    await vi.waitFor(() => expect(actions.getAnimations().length).toBeGreaterThan(0));
-    const transitions = actions.getAnimations() as CSSTransition[];
-    for (const transition of transitions) transition.pause();
-    const reveal = transitions[0]!;
-    const duration = Number(reveal.effect?.getTiming().duration);
-    for (const transition of transitions) transition.currentTime = duration / 2;
-    const midWidth = actions.getBoundingClientRect().width;
-    for (const transition of transitions) transition.finish();
-    const finalWidth = actions.getBoundingClientRect().width;
-
-    expect(finalWidth).toBeGreaterThan(0);
-    // Halfway through, the strip is still opening rather than already at full width.
-    expect(midWidth).toBeGreaterThan(0);
-    expect(midWidth).toBeLessThan(finalWidth * 0.95);
+    await vi.waitFor(() => expect(getComputedStyle(actions).opacity).toBe("1"));
   });
 
   it("splits down from the same menu", async () => {
@@ -589,7 +598,7 @@ describe("GridThreadCell maximize", () => {
     expect(onMaximize).toHaveBeenCalledTimes(1);
   });
 
-  it("drops the label when the cell is shown alone and offers the way back", async () => {
+  it("keeps the header when the cell is shown alone and offers the way back", async () => {
     state.draftSession = null;
     const onMaximize = vi.fn();
     await using screen = await renderCell(
@@ -598,7 +607,7 @@ describe("GridThreadCell maximize", () => {
       { maximized: true, onMaximize },
     );
 
-    expect(screen.container.querySelector("[data-pane-label]")).toBeNull();
+    expect(screen.container.querySelector("[data-pane-label]")).not.toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Restore cell" }));
     expect(onMaximize).toHaveBeenCalledTimes(1);
   });
@@ -874,5 +883,104 @@ describe("GridThreadCell shortcut scope", () => {
     const unfocusedView = unfocused.container.querySelector('[data-testid="chat-view"]');
     expect(unfocusedView?.getAttribute("data-shortcuts-at-window")).toBeNull();
     expect(unfocusedView?.getAttribute("data-visit-active")).toBeNull();
+  });
+});
+
+describe("GridThreadCell pane header", () => {
+  it("shows the project, title and pull request at a 570px pane width", async () => {
+    state.draftSession = null;
+    const container = document.createElement("div");
+    container.style.width = "570px";
+    container.style.height = "420px";
+    await using screen = await renderCell(
+      { kind: "thread", threadId: "thread-a", id: "p1" },
+      twoThreadTree(),
+      { container },
+    );
+
+    const header = screen.container.querySelector<HTMLElement>("[data-pane-header]")!;
+    expect(header.textContent).toContain("atlas-api");
+    expect(header.textContent).toContain("Alpha thread");
+    expect(header.querySelector('[data-testid="pane-pr"]')).not.toBeNull();
+    const projectName = [...header.querySelectorAll("span")].find(
+      (span) => span.textContent === "atlas-api" && span.children.length === 0,
+    )!;
+    expect(getComputedStyle(projectName).position).not.toBe("absolute");
+  });
+
+  it("collapses the project to its icon at a 340px pane width", async () => {
+    state.draftSession = null;
+    const container = document.createElement("div");
+    container.style.width = "340px";
+    container.style.height = "420px";
+    await using screen = await renderCell(
+      { kind: "thread", threadId: "thread-a", id: "p1" },
+      twoThreadTree(),
+      { container },
+    );
+
+    const header = screen.container.querySelector<HTMLElement>("[data-pane-header]")!;
+    expect(header.textContent).toContain("Alpha thread");
+    const projectName = [...header.querySelectorAll("span")].find(
+      (span) => span.textContent === "atlas-api" && span.children.length === 0,
+    )!;
+    // Still announced, drawn as the project's icon and tooltip.
+    await vi.waitFor(() => expect(getComputedStyle(projectName).position).toBe("absolute"));
+    expect(header.querySelector('[aria-label="atlas-api"]')).not.toBeNull();
+    // Nothing overflows the pane horizontally.
+    const cell = screen.container.querySelector<HTMLElement>("[data-grid-cell]")!;
+    expect(header.getBoundingClientRect().width).toBeLessThanOrEqual(
+      cell.getBoundingClientRect().width + 1,
+    );
+    expect(header.scrollWidth).toBeLessThanOrEqual(header.clientWidth + 1);
+  });
+
+  it("rings the focused pane and dims an unfocused header", async () => {
+    state.draftSession = null;
+    const surface = document.createElement("div");
+    surface.setAttribute("data-grid-surface", "");
+    surface.setAttribute("data-multi", "");
+    surface.style.width = "570px";
+    surface.style.height = "420px";
+    surface.style.display = "flex";
+    const probe = document.createElement("div");
+    probe.style.borderColor = "var(--accent)";
+    document.body.append(probe);
+    const accent = getComputedStyle(probe).borderTopColor;
+    probe.remove();
+
+    await using focusedScreen = await renderCell(
+      { kind: "thread", threadId: "thread-a", id: "p1" },
+      twoThreadTree(),
+      { container: surface },
+    );
+    const focusedCell = focusedScreen.container.querySelector<HTMLElement>("[data-grid-cell]")!;
+    expect(getComputedStyle(focusedCell, "::before").borderTopColor).toBe(accent);
+
+    await using unfocusedScreen = await renderCell(
+      { kind: "thread", threadId: "thread-a", id: "p1" },
+      twoThreadTree(),
+      { focused: false },
+    );
+    const header = unfocusedScreen.container.querySelector<HTMLElement>("[data-pane-header]")!;
+    expect(getComputedStyle(header).opacity).toBe("0.9");
+  });
+
+  it("reaches the pane actions by keyboard", async () => {
+    state.draftSession = null;
+    const onMaximize = vi.fn();
+    await using screen = await renderCell(
+      { kind: "thread", threadId: "thread-a", id: "p1" },
+      twoThreadTree(),
+      { onMaximize },
+    );
+
+    const maximize = screen.container.querySelector<HTMLElement>(
+      'button[aria-label="Maximize cell"]',
+    )!;
+    maximize.focus();
+    expect(document.activeElement).toBe(maximize);
+    await userEvent.keyboard("{Enter}");
+    expect(onMaximize).toHaveBeenCalledTimes(1);
   });
 });

@@ -10,7 +10,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@houston-app/client-runtime/state/runtime";
-import { ChevronDownIcon, CornerUpLeftIcon } from "lucide-react";
+import { ChevronDownIcon, CornerUpLeftIcon, FolderIcon } from "lucide-react";
 import {
   memo,
   useEffect,
@@ -35,6 +35,9 @@ import {
   THREAD_PARENT_LINK_CLS,
   THREAD_PARENT_TEXT_CLS,
   THREAD_PROJECT_GROUP_CLS,
+  THREAD_PROJECT_ICON_CLS,
+  THREAD_PROJECT_ICON_ONLY_NAME_CLS,
+  THREAD_PROJECT_ROW_CLS,
   THREAD_PROJECT_SEPARATOR_CLS,
   THREAD_PROJECT_TEXT_CLS,
   THREAD_TITLE_BUTTON_CLS,
@@ -45,6 +48,8 @@ import {
 import { ThreadRowPullRequestBadge } from "../grid/ThreadRowPullRequestBadge";
 import type { RowPullRequest } from "~/grid/sidebar";
 import { textDirection } from "~/textDirection";
+import { cn } from "~/lib/utils";
+import { useMediaQuery } from "../../hooks/useMediaQuery";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -59,6 +64,8 @@ interface ChatHeaderProps {
   onOpenThread: (threadId: ThreadId) => void;
   onOpenProjectSettings?: (() => void) | undefined;
   onFindInThread?: ((threadRef: ScopedThreadRef) => void) | undefined;
+  /** The side panel is open, so the header gives its width to the title. */
+  compactProject?: boolean;
 }
 
 function resolveRenameCommit(input: {
@@ -86,7 +93,11 @@ export const ChatHeader = memo(function ChatHeader({
   onOpenThread,
   onOpenProjectSettings,
   onFindInThread,
+  compactProject = false,
 }: ChatHeaderProps) {
+  const narrowHeader = useMediaQuery({ max: 900 });
+  // A narrow window or an open side panel keeps the project as an icon: the title needs the room.
+  const projectIsIcon = compactProject || narrowHeader;
   const activeProjectName = activeProject?.isScratch ? "No project" : activeProject?.title;
   const activeThreadRef = scopeThreadRef(activeThreadEnvironmentId, activeThreadId);
   const canOperateThread = useEnvironmentScope(
@@ -241,8 +252,16 @@ export const ChatHeader = memo(function ChatHeader({
       {activeProjectName ? (
         <span data-thread-project="" className={THREAD_PROJECT_GROUP_CLS}>
           <Tooltip>
-            <TooltipTrigger render={<span className={THREAD_PROJECT_TEXT_CLS} />}>
-              {activeProjectName}
+            <TooltipTrigger render={<span className={THREAD_PROJECT_ROW_CLS} />}>
+              <FolderIcon aria-hidden className={THREAD_PROJECT_ICON_CLS} />
+              <span
+                className={cn(
+                  THREAD_PROJECT_TEXT_CLS,
+                  projectIsIcon && THREAD_PROJECT_ICON_ONLY_NAME_CLS,
+                )}
+              >
+                {activeProjectName}
+              </span>
             </TooltipTrigger>
             <TooltipPopup side="top">{activeProjectName}</TooltipPopup>
           </Tooltip>

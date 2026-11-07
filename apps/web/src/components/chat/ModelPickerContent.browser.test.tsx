@@ -145,7 +145,7 @@ it("draws the multi-model footer, search hint and collapsed legacy section", asy
     { container },
   );
 
-  await expect.element(page.getByPlaceholder("Search Claude models")).toBeVisible();
+  await expect.element(page.getByPlaceholder("Search models")).toBeVisible();
   await expect.element(page.getByText("Shift-click adds a model")).toBeVisible();
   await expect.element(page.getByText("200k · High").first()).toBeVisible();
   await expect.element(page.getByText("2 models selected")).toBeVisible();

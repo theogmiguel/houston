@@ -588,6 +588,7 @@ describe("View options", () => {
     showBranch: true,
     showPullRequest: true,
     showSubagents: true,
+    showNeedsYou: false,
   } as const;
 
   it("offers sorts, row fields and a reset, and reports each pick", async () => {
@@ -608,6 +609,9 @@ describe("View options", () => {
     await expect
       .element(page.getByRole("menuitemcheckbox", { name: "Branch" }))
       .toHaveAttribute("aria-checked", "true");
+    await expect
+      .element(page.getByRole("menuitemcheckbox", { name: "Show Needs you" }))
+      .toHaveAttribute("aria-checked", "false");
     expect(page.getByRole("menuitemcheckbox", { name: "Working shelf" }).elements()).toHaveLength(
       0,
     );
@@ -616,6 +620,8 @@ describe("View options", () => {
     expect(onChange).toHaveBeenCalledWith({ gridSort: "manual" });
     await userEvent.click(page.getByRole("menuitemcheckbox", { name: "Subagents" }));
     expect(onChange).toHaveBeenCalledWith({ showSubagents: false });
+    await userEvent.click(page.getByRole("menuitemcheckbox", { name: "Show Needs you" }));
+    expect(onChange).toHaveBeenCalledWith({ showNeedsYou: true });
     await userEvent.click(page.getByRole("menuitem", { name: "Reset to defaults" }));
     expect(onReset).toHaveBeenCalledTimes(1);
   });

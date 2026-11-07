@@ -44,21 +44,52 @@ describe("ServerUnavailableCard", () => {
     expect(line.getBoundingClientRect().right).toBeLessThanOrEqual(window.innerWidth);
   });
 
-  it("renders the error inside a dimmed app shell with every recovery action reachable", async () => {
+  it("shows a settled offline rail with no loading shimmer", async () => {
+    await page.viewport(1440, 900);
+    await using screen = await render(<ServerUnavailableCard report="report" detail={DETAIL} />);
+
+    const sidebar = screen.container.querySelector<HTMLElement>(
+      "[data-server-unavailable-sidebar]",
+    )!;
+    const offline = sidebar.querySelector<HTMLElement>("[data-server-unavailable-offline-row]")!;
+    expect(offline.textContent).toBe("Server offline");
+    expect(getComputedStyle(offline).opacity).toBe("1");
+    // Nothing on the rail animates while the server is down.
+    expect(sidebar.getAnimations({ subtree: true })).toHaveLength(0);
+    expect(offline.querySelectorAll("[class*='animate-']")).toHaveLength(0);
+  });
+
+  it("puts the message on the flat canvas, on the composer's column, with every action reachable", async () => {
     await page.viewport(1440, 900);
     await using screen = await render(<ServerUnavailableCard report="report" detail={DETAIL} />);
 
     const shell = screen.container.querySelector<HTMLElement>("[data-server-unavailable-shell]")!;
-    const sidebar = shell.querySelector<HTMLElement>("[data-server-unavailable-sidebar]")!;
     const header = shell.querySelector<HTMLElement>("[data-server-unavailable-header]")!;
     const canvas = shell.querySelector<HTMLElement>("[data-server-unavailable-canvas]")!;
     const card = shell.querySelector<HTMLElement>("[data-server-unavailable-card]")!;
-    expect(sidebar).not.toBeNull();
     expect(header).not.toBeNull();
     expect(canvas.contains(card)).toBe(true);
-    // The shell already names the app; the card does not repeat the brand line.
+    // The shell already names the app; the message does not repeat the brand line.
     expect(card.querySelector('[role="img"][aria-label="Houston"]')).toBeNull();
-    expect(Number(getComputedStyle(sidebar).opacity)).toBeLessThan(1);
+
+    // Flat canvas: no card border, radius or lifted fill around the message.
+    expect(getComputedStyle(canvas).borderTopWidth).toBe("0px");
+    expect(getComputedStyle(canvas).borderTopLeftRadius).toBe("0px");
+    const probe = document.createElement("span");
+    probe.style.backgroundColor = "var(--background)";
+    document.body.append(probe);
+    const canvasGround = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    expect(getComputedStyle(canvas).backgroundColor).toBe(canvasGround);
+    expect(getComputedStyle(card).borderTopWidth).toBe("0px");
+
+    // The message lane is the composer column, centred in the canvas.
+    const lane = card.getBoundingClientRect();
+    const canvasBox = canvas.getBoundingClientRect();
+    expect(lane.width).toBeLessThanOrEqual(760);
+    expect(
+      Math.abs(lane.left + lane.width / 2 - (canvasBox.left + canvasBox.width / 2)),
+    ).toBeLessThan(2);
 
     for (const name of ["Try again", "Reload app", "Copy error"]) {
       const button = screen.getByRole("button", { name });

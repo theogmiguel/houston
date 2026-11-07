@@ -524,6 +524,8 @@ export const ClientSettingsSchema = Schema.Struct({
   sidebarRowShowBranch: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   sidebarRowShowPullRequest: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   sidebarRowShowSubagents: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  // Pins the threads that need the user above the projects; off keeps the rail project-first.
+  sidebarShowNeedsYou: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   timestampFormat: TimestampFormat.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_TIMESTAMP_FORMAT)),
   ),
@@ -1952,6 +1954,7 @@ export const ClientSettingsPatch = Schema.Struct({
   sidebarRowShowBranch: Schema.optionalKey(Schema.Boolean),
   sidebarRowShowPullRequest: Schema.optionalKey(Schema.Boolean),
   sidebarRowShowSubagents: Schema.optionalKey(Schema.Boolean),
+  sidebarShowNeedsYou: Schema.optionalKey(Schema.Boolean),
   timestampFormat: Schema.optionalKey(TimestampFormat),
   voiceMicrophone: Schema.optionalKey(Schema.String),
   voiceShortcutMode: Schema.optionalKey(VoiceShortcutMode),

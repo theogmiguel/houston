@@ -54,6 +54,7 @@ function PopoverPopup({
   alignOffset = 0,
   collisionAvoidance,
   collisionPadding,
+  collisionBoundary,
   tooltipStyle = false,
   keepMounted = false,
   anchor,
@@ -68,6 +69,7 @@ function PopoverPopup({
   alignOffset?: PopoverPrimitive.Positioner.Props["alignOffset"];
   collisionAvoidance?: PopoverPrimitive.Positioner.Props["collisionAvoidance"];
   collisionPadding?: PopoverPrimitive.Positioner.Props["collisionPadding"];
+  collisionBoundary?: PopoverPrimitive.Positioner.Props["collisionBoundary"];
   tooltipStyle?: boolean;
   keepMounted?: PopoverPrimitive.Portal.Props["keepMounted"];
   anchor?: PopoverPrimitive.Positioner.Props["anchor"];
@@ -91,6 +93,7 @@ function PopoverPopup({
         alignOffset={alignOffset}
         anchor={anchor}
         collisionAvoidance={collisionAvoidance}
+        collisionBoundary={collisionBoundary}
         collisionPadding={collisionPadding ?? (variant === "panel" ? 0 : undefined)}
         className={cn(
           "h-(--positioner-height) w-(--positioner-width) max-w-(--available-width) transition-transform data-instant:transition-none",

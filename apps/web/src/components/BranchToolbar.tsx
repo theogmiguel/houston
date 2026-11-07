@@ -9,9 +9,11 @@ import { scopeProjectRef, scopeThreadRef } from "@houston-app/client-runtime/env
 import type { EnvironmentId, ProjectId, ThreadId } from "@houston-app/contracts";
 import {
   ArrowUpIcon,
+  ChevronDownIcon,
   FolderGit2Icon,
   FolderGitIcon,
   FolderIcon,
+  GitBranchIcon,
   PlusIcon,
   ScaleIcon,
 } from "lucide-react";
@@ -28,7 +30,7 @@ import { flushSync } from "react-dom";
 
 import { useComposerDraftStore, useComposerThreadDraft, type DraftId } from "../composerDraftStore";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
-import { useProject, useThreadShellsForProjectRefs } from "../state/entities";
+import { useProject, useQuietThreadShell, useThreadShellsForProjectRefs } from "../state/entities";
 import {
   ADD_TO_MACHINE_LABEL_CLASS,
   type EnvMode,
@@ -75,6 +77,14 @@ import { Separator } from "./ui/separator";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { MiddleTruncate } from "./ui/middle-truncate";
 import { ComposerSurface } from "./chat/ComposerSurface";
+import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
+import {
+  CONTEXT_CHIP_BRANCH_CLS,
+  CONTEXT_CHIP_CHEVRON_CLS,
+  CONTEXT_CHIP_ENV_CLS,
+  CONTEXT_CHIP_PANEL_CLS,
+  CONTEXT_CHIP_SEPARATOR_CLS,
+} from "./ui/composer-anatomy-recipes";
 import { useComposerMenuProps } from "./chat/composerEventScope";
 import { cn } from "~/lib/utils";
 import { observeResize } from "~/lib/observeResize";
@@ -86,6 +96,10 @@ export interface BranchToolbarHandle {
 
 interface BranchToolbarProps {
   layout?: "composer" | "panel";
+  /** The strip under the card, or the chips folded into the composer's own toolbar. */
+  variant?: "strip" | "inline";
+  /** The composer measured itself narrow: the workspace controls collapse into one chip. */
+  forceNarrow?: boolean;
   panelSection?: "all" | "workspace" | "branch";
   forceNewWorktree?: boolean;
   ref?: Ref<BranchToolbarHandle>;
@@ -509,6 +523,8 @@ function useLabelsOverflow(): readonly [
 
 export const BranchToolbar = memo(function BranchToolbar({
   layout = "composer",
+  variant = "strip",
+  forceNarrow,
   panelSection = "all",
   forceNewWorktree = false,
   ref,
@@ -536,6 +552,7 @@ export const BranchToolbar = memo(function BranchToolbar({
 }: BranchToolbarProps) {
   const branchSelectorRef = useRef<BranchToolbarBranchSelectorHandle>(null);
   const threadRef = scopeThreadRef(environmentId, threadId);
+  const shell = useQuietThreadShell(threadRef);
   const setDraftThreadContext = useComposerDraftStore((store) => store.setDraftThreadContext);
   const composerUploadDraft = useComposerThreadDraft(draftId ?? threadRef);
   const uploadsByImageId = useAttachmentUploadStore((store) => store.uploadsByImageId);
@@ -664,121 +681,193 @@ export const BranchToolbar = memo(function BranchToolbar({
     );
   }
 
-  return (
-    <ComposerSurface.ContextStrip
-      ref={attachStrip}
-      data-compact={labelsCompact ? "" : undefined}
-      data-narrow={labelsNarrow ? "" : undefined}
-      className="gap-px font-normal"
+  const narrow = forceNarrow ?? labelsNarrow;
+  const branchLabel =
+    activeThreadBranchOverride ??
+    shell?.branch ??
+    previousWorktreeSeed?.branch ??
+    resolveEnvModeLabel(effectiveEnvMode, true);
+
+  const projectChip = !isServerThread ? (
+    <span
+      className="inline-flex min-w-0 max-w-[7rem] shrink-0 items-center gap-1 font-normal"
+      data-composer-context-control
     >
-      {!isServerThread ? (
-        <>
-          <span
-            className="inline-flex min-w-0 max-w-[7rem] shrink-0 items-center gap-1 font-normal"
-            data-composer-context-control
-          >
-            <FolderIcon className="size-3 shrink-0" />
-            <ComposerContextLabel>{activeProject.title}</ComposerContextLabel>
-          </span>
-        </>
-      ) : null}
-      {showGitControls ? (
-        <div className={cn("contents", isServerThread && "@xl/composer-surface:hidden")}>
-          <RunContextSelector
+      <FolderIcon className="size-3 shrink-0" />
+      <ComposerContextLabel>{activeProject.title}</ComposerContextLabel>
+    </span>
+  ) : null;
+  const runContextNode = showGitControls ? (
+    <div className={cn("contents", isServerThread && "@xl/composer-surface:hidden")}>
+      <RunContextSelector
+        forceNewWorktree={forceNewWorktree}
+        autoEnvironmentLabel={autoEnvironmentLabel}
+        onAutoEnvironment={onAutoEnvironment}
+        envLocked={envLocked}
+        envModeLocked={envModeLocked}
+        environmentId={environmentId}
+        availableEnvironments={availableEnvironments}
+        showEnvironmentPicker={showEnvironmentPicker}
+        showEnvironmentIndicator={showEnvironmentIndicator}
+        onEnvironmentChange={onEnvironmentChange}
+        effectiveEnvMode={effectiveEnvMode}
+        activeWorktreePath={activeWorktreePath}
+        onEnvModeChange={onEnvModeChange}
+        previousWorktreeLabel={previousWorktreeLabel}
+        previousWorktreeBranch={previousWorktreeSeed?.branch ?? null}
+        onUsePreviousWorktree={onUsePreviousWorktree}
+        addTargets={addTargets}
+        onAddToMachine={onAddToMachine}
+        narrowLabels={narrow}
+      />
+    </div>
+  ) : null;
+  const environmentNode =
+    isServerThread && (showGitControls || showEnvironmentIndicator) ? (
+      <div
+        className={cn(
+          "min-h-7 min-w-10 items-center gap-1 sm:min-h-6",
+          showGitControls ? "hidden @xl/composer-surface:flex" : "flex",
+          "flex-1",
+        )}
+      >
+        {showEnvironmentIndicator && availableEnvironments && (
+          <>
+            <BranchToolbarEnvironmentSelector
+              autoEnvironmentLabel={autoEnvironmentLabel}
+              onAutoEnvironment={onAutoEnvironment}
+              envLocked={envLocked}
+              environmentId={environmentId}
+              availableEnvironments={availableEnvironments}
+              {...(showEnvironmentPicker ? { onEnvironmentChange } : {})}
+              {...(addTargets.length > 0 ? { onAddToMachine: () => onAddToMachine(null) } : {})}
+            />
+            {showGitControls ? (
+              <Separator
+                orientation="vertical"
+                className="mx-0.5 h-3.5!"
+                data-composer-context-control
+              />
+            ) : null}
+          </>
+        )}
+        {showGitControls ? (
+          <BranchToolbarEnvModeSelector
             forceNewWorktree={forceNewWorktree}
-            autoEnvironmentLabel={autoEnvironmentLabel}
-            onAutoEnvironment={onAutoEnvironment}
-            envLocked={envLocked}
-            envModeLocked={envModeLocked}
-            environmentId={environmentId}
-            availableEnvironments={availableEnvironments}
-            showEnvironmentPicker={showEnvironmentPicker}
-            showEnvironmentIndicator={showEnvironmentIndicator}
-            onEnvironmentChange={onEnvironmentChange}
+            envLocked={envModeLocked}
             effectiveEnvMode={effectiveEnvMode}
             activeWorktreePath={activeWorktreePath}
             onEnvModeChange={onEnvModeChange}
             previousWorktreeLabel={previousWorktreeLabel}
             previousWorktreeBranch={previousWorktreeSeed?.branch ?? null}
             onUsePreviousWorktree={onUsePreviousWorktree}
-            addTargets={addTargets}
-            onAddToMachine={onAddToMachine}
-            narrowLabels={labelsNarrow}
           />
-        </div>
-      ) : null}
-      {isServerThread && (showGitControls || showEnvironmentIndicator) ? (
-        <div
-          className={cn(
-            "min-h-7 min-w-10 items-center gap-1 sm:min-h-6",
-            showGitControls ? "hidden @xl/composer-surface:flex" : "flex",
-            "flex-1",
-          )}
-        >
-          {showEnvironmentIndicator && availableEnvironments && (
-            <>
-              <BranchToolbarEnvironmentSelector
-                autoEnvironmentLabel={autoEnvironmentLabel}
-                onAutoEnvironment={onAutoEnvironment}
-                envLocked={envLocked}
-                environmentId={environmentId}
-                availableEnvironments={availableEnvironments}
-                {...(showEnvironmentPicker ? { onEnvironmentChange } : {})}
-                {...(addTargets.length > 0 ? { onAddToMachine: () => onAddToMachine(null) } : {})}
-              />
-              {showGitControls ? (
-                <Separator
-                  orientation="vertical"
-                  className="mx-0.5 h-3.5!"
-                  data-composer-context-control
-                />
-              ) : null}
-            </>
-          )}
-          {showGitControls ? (
-            <BranchToolbarEnvModeSelector
-              forceNewWorktree={forceNewWorktree}
-              envLocked={envModeLocked}
-              effectiveEnvMode={effectiveEnvMode}
-              activeWorktreePath={activeWorktreePath}
-              onEnvModeChange={onEnvModeChange}
-              previousWorktreeLabel={previousWorktreeLabel}
-              previousWorktreeBranch={previousWorktreeSeed?.branch ?? null}
-              onUsePreviousWorktree={onUsePreviousWorktree}
-            />
-          ) : null}
-        </div>
-      ) : null}
+        ) : null}
+      </div>
+    ) : null;
+  const branchNode = showGitControls ? (
+    <BranchToolbarBranchSelector
+      forceNewWorktree={forceNewWorktree}
+      ref={branchSelectorRef}
+      className="min-w-0 flex-1 justify-end @xl/composer-surface:ml-auto"
+      environmentId={environmentId}
+      threadId={threadId}
+      {...(draftId ? { draftId } : {})}
+      envLocked={envLocked}
+      effectiveEnvModeOverride={effectiveEnvMode}
+      {...(activeThreadBranchOverride !== undefined ? { activeThreadBranchOverride } : {})}
+      {...(onActiveThreadBranchOverrideChange ? { onActiveThreadBranchOverrideChange } : {})}
+      startFromOrigin={startFromOrigin}
+      onStartFromOriginChange={onStartFromOriginChange}
+      {...(onCheckoutPullRequestRequest ? { onCheckoutPullRequestRequest } : {})}
+      {...(onComposerFocusRequest ? { onComposerFocusRequest } : {})}
+    />
+  ) : null;
+  const uploadsNode =
+    runningUploads.length > 0 && aggregateUploadProgress !== null ? (
+      <span
+        data-composer-upload-progress="true"
+        className="ms-auto inline-flex shrink-0 items-center gap-1 px-1.5 text-2xs text-(--houston) tabular-nums whitespace-nowrap"
+      >
+        <ArrowUpIcon className="size-3 shrink-0" aria-hidden="true" />
+        {runningUploads.length} of {attachmentIds.length} ·{" "}
+        {formatAttachmentUploadProgress(aggregateUploadProgress)}
+      </span>
+    ) : null;
 
-      {showGitControls ? (
-        <BranchToolbarBranchSelector
-          forceNewWorktree={forceNewWorktree}
-          ref={branchSelectorRef}
-          className="min-w-0 flex-1 justify-end @xl/composer-surface:ml-auto"
-          environmentId={environmentId}
-          threadId={threadId}
-          {...(draftId ? { draftId } : {})}
-          envLocked={envLocked}
-          effectiveEnvModeOverride={effectiveEnvMode}
-          {...(activeThreadBranchOverride !== undefined ? { activeThreadBranchOverride } : {})}
-          {...(onActiveThreadBranchOverrideChange ? { onActiveThreadBranchOverrideChange } : {})}
-          startFromOrigin={startFromOrigin}
-          onStartFromOriginChange={onStartFromOriginChange}
-          {...(onCheckoutPullRequestRequest ? { onCheckoutPullRequestRequest } : {})}
-          {...(onComposerFocusRequest ? { onComposerFocusRequest } : {})}
-        />
-      ) : null}
-      {runningUploads.length > 0 && aggregateUploadProgress !== null ? (
-        <span
-          data-composer-upload-progress="true"
-          className="ms-auto inline-flex shrink-0 items-center gap-1 px-1.5 text-2xs text-(--houston) tabular-nums whitespace-nowrap"
-        >
-          <ArrowUpIcon className="size-3 shrink-0" aria-hidden="true" />
-          {runningUploads.length} of {attachmentIds.length} ·{" "}
-          {formatAttachmentUploadProgress(aggregateUploadProgress)}
-        </span>
-      ) : null}
+  if (narrow) {
+    // One chip holds the workspace, branch and access controls, so the toolbar keeps its row.
+    return (
+      <>
+        {projectChip}
+        <Popover>
+          <PopoverTrigger
+            render={
+              <ComposerControl
+                size="xs"
+                data-composer-context-control
+                aria-label={`Workspace: ${branchLabel}, ${resolveEnvModeLabel(effectiveEnvMode, true)}`}
+              />
+            }
+          >
+            <GitBranchIcon aria-hidden className={CONTEXT_CHIP_CHEVRON_CLS} />
+            <span data-composer-label className={CONTEXT_CHIP_BRANCH_CLS}>
+              {branchLabel}
+            </span>
+            <span aria-hidden className={CONTEXT_CHIP_SEPARATOR_CLS}>
+              ·
+            </span>
+            <span className={CONTEXT_CHIP_ENV_CLS}>
+              {resolveEnvModeLabel(effectiveEnvMode, true)}
+            </span>
+            <ChevronDownIcon aria-hidden className={CONTEXT_CHIP_CHEVRON_CLS} />
+          </PopoverTrigger>
+          <PopoverPopup side="top" align="start" padding="none" className="before:hidden">
+            <div className={CONTEXT_CHIP_PANEL_CLS}>
+              {runContextNode}
+              {branchNode}
+              {environmentNode}
+              {trailing}
+            </div>
+          </PopoverPopup>
+        </Popover>
+        {uploadsNode}
+      </>
+    );
+  }
+
+  const children = (
+    <>
+      {projectChip}
+      {runContextNode}
+      {environmentNode}
+      {branchNode}
+      {uploadsNode}
       {trailing}
+    </>
+  );
+
+  if (variant === "inline") {
+    return (
+      <div
+        ref={attachStrip}
+        data-compact={labelsCompact ? "" : undefined}
+        data-narrow={narrow ? "" : undefined}
+        className="flex min-w-0 shrink items-center gap-0.5"
+      >
+        {children}
+      </div>
+    );
+  }
+
+  return (
+    <ComposerSurface.ContextStrip
+      ref={attachStrip}
+      data-compact={labelsCompact ? "" : undefined}
+      data-narrow={narrow ? "" : undefined}
+      className="gap-px font-normal"
+    >
+      {children}
     </ComposerSurface.ContextStrip>
   );
 });

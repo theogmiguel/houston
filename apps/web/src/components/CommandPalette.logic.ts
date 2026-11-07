@@ -429,6 +429,8 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
   activeThread?: Pick<Thread, "environmentId" | "id">;
   projectByKey: ReadonlyMap<string, Pick<Project, "title">>;
   icon: ReactNode;
+  /** Overrides `icon` per row, e.g. a thread's own status glyph. */
+  renderIcon?: (thread: TThread) => ReactNode;
   renderLeadingContent?: (thread: TThread) => ReactNode;
   renderTrailingContent?: (thread: TThread) => ReactNode;
   renderDescription?: (thread: TThread, meta: { projectTitle: string | undefined }) => ReactNode;
@@ -485,7 +487,7 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
         timestamp: formatRelativeTimeLabel(
           thread.latestUserMessageAt ?? thread.updatedAt ?? thread.createdAt,
         ),
-        icon: input.icon,
+        icon: input.renderIcon?.(thread) ?? input.icon,
       },
       leadingContent ? { titleLeadingContent: leadingContent } : {},
       trailingContent ? { titleTrailingContent: trailingContent } : {},

@@ -47,10 +47,7 @@ export function WorkLogBlock({
   return (
     <div className={gap}>
       {nested ? (
-        <div
-          data-work-log-nested=""
-          className={NESTED_WORK_RAIL_CLASS}
-        >
+        <div data-work-log-nested="" className={NESTED_WORK_RAIL_CLASS}>
           {children}
         </div>
       ) : (
@@ -91,7 +88,13 @@ function WorkLogLine({ icon, label, meta, trailing, wrapLabel }: RowContent) {
             {icon}
           </span>
         ) : null}
-        <div className={cn("min-w-0", !wrapLabel && "truncate [&_*]:whitespace-nowrap")}>
+        <div
+          className={cn(
+            "min-w-0",
+            !wrapLabel &&
+              "truncate [&_*]:whitespace-nowrap @max-[560px]/pane:overflow-visible @max-[560px]/pane:whitespace-normal @max-[560px]/pane:[&_*]:whitespace-normal",
+          )}
+        >
           {label}
         </div>
         {meta}

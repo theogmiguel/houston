@@ -2,8 +2,13 @@
 export const THREAD_HEADER_ROOT_CLS =
   "@container/thread-header flex min-w-0 flex-1 items-center gap-2";
 export const THREAD_PROJECT_GROUP_CLS =
-  "flex min-w-0 shrink items-center gap-1.5 text-sm text-muted-foreground @max-[48rem]/thread-header:hidden";
+  "flex shrink-0 items-center gap-1.5 text-sm text-muted-foreground";
 export const THREAD_PROJECT_TEXT_CLS = "max-w-40 min-w-0 truncate";
+/** The project mark and its name: the row never takes width from the title. */
+export const THREAD_PROJECT_ROW_CLS = "flex min-w-0 items-center gap-1";
+export const THREAD_PROJECT_ICON_CLS = "size-3.5 shrink-0";
+/** A narrow header keeps the project's name for screen readers only. */
+export const THREAD_PROJECT_ICON_ONLY_NAME_CLS = "sr-only";
 export const THREAD_PROJECT_SEPARATOR_CLS = "shrink-0 text-icon-muted";
 export const THREAD_TITLE_INPUT_CLS =
   "min-w-0 flex-1 rounded-sm bg-transparent text-sm font-medium text-foreground outline-none ring-1 ring-inset ring-ring/50 focus-visible:ring-ring";
@@ -16,11 +21,12 @@ export const THREAD_PARENT_LINK_CLS =
   "inline-flex min-w-0 shrink items-center gap-1 rounded-sm text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
 export const THREAD_PARENT_TEXT_CLS = "max-w-40 min-w-0 truncate";
 
+/** The new-thread summary tray: exactly the composer's width and radius, 8px above it. */
 export const DRAFT_PROJECT_CONTEXT_CLS =
-  "pointer-events-auto w-full max-w-xl rounded-xl border border-border/60 bg-card/40 px-3 py-2 text-callout text-muted-foreground";
-export const DRAFT_PROJECT_CONTEXT_LINK_CLS =
-  "cursor-pointer rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
-export const DRAFT_PROJECT_CONTEXT_BRANCH_CLS = "max-w-52 truncate font-mono";
+  "pointer-events-auto w-full rounded-xl border border-border/60 bg-card/40 px-3 py-2 text-callout text-muted-foreground";
+/** A count chip; the pressed chip counts the list below it down to that family. */
+export const DRAFT_PROJECT_CONTEXT_CHIP_CLS =
+  "inline-flex h-6 min-w-0 shrink-0 cursor-pointer items-center gap-1 rounded-full border border-border/60 px-2 text-callout text-secondary-label transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring aria-pressed:border-transparent aria-pressed:bg-(--accent-muted) aria-pressed:text-foreground";
 export const DRAFT_PROJECT_CONTEXT_LIST_CLS = "mt-2 flex flex-col border-border/60 border-t pt-1.5";
 export const DRAFT_PROJECT_CONTEXT_ROW_CLS =
   "flex h-7 w-full min-w-0 cursor-pointer items-center gap-2 rounded-md px-1 text-left outline-none hover:bg-hover focus-visible:bg-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
