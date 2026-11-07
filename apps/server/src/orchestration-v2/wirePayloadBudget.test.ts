@@ -30,11 +30,9 @@ const WORD_INTERVAL_MS = 15;
 // Mirrors ACP_TEXT_FLUSH_INTERVAL in packages/provider-acp/src/server/adapter.ts.
 const ADAPTER_FLUSH_MS = 50;
 
-// Observed (paragraph mode): 6 streamed updates plus the final one, 31,075 payload bytes, at most
-// 1,898 envelope bytes per item (all but the text). Whole-text updates grow quadratically, so a
-// finer cadence or a new per-event field fails these ceilings (about 10% above); a new mode must
-// meet them or change them on purpose. The ids are fixed, so the envelope ceiling does not guard
-// the length of real ids.
+// Paragraph mode observed 6 updates, 31,075 bytes and 1,898 envelope bytes; ceilings are ~10% above.
+// Updates carry the whole text: a finer cadence or new mode must meet them or change them on purpose.
+// The ids are fixed: the envelope ceiling does not guard the length of real ids.
 const TURN_BUDGET = {
   streamedUpdates: 6,
   payloadBytes: 34_000,
