@@ -11,7 +11,13 @@ import { ensureHoustonReadModels } from "../houston/projectionReadModels.ts";
 import { initializeV2Database } from "./initializeV2Database.ts";
 import * as ServerConfig from "../config.ts";
 
-const WAL_SIZE_LIMIT_BYTES = 32 * 1024 * 1024;
+const WAL_SIZE_LIMIT_BYTES = 128 * 1024 * 1024;
+
+// 4 readers x 32 MiB: about 120 MiB of heap over SQLite's default 2 MB per reader. On Windows it
+// took 19-23% off deep thread-open and boot reads at 10x. No connection maps the file (mmap_size):
+// Windows cannot truncate a mapped file, and elsewhere a mapped-page I/O error ends the server.
+const READER_CACHE_KIB = 32 * 1024;
+const READER_PRAGMAS = [`cache_size = -${READER_CACHE_KIB}`];
 
 const layerSetup = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -60,6 +66,7 @@ export const layerFromPath = Effect.fn("makeSqlitePersistenceLive")(function* (d
     NodeSqliteClient.layer({
       filename: dbPath,
       readerWorker: true,
+      readerPragmas: READER_PRAGMAS,
       // Run checkpoint fsyncs off the event loop so slow disk flushes cannot stall clients.
       checkpointWorker: true,
       spanAttributes: {

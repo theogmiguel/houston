@@ -5,7 +5,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import * as HostProcess from "./HostProcess.ts";
-import { CommandResolutionCache, resolveCommandPath } from "./shell.ts";
+import { CommandResolutionCache, PathDirectoryListingCache, resolveCommandPath } from "./shell.ts";
 
 const NodeRuntimeFeature = Schema.Literals([
   "Local device support",
@@ -65,7 +65,10 @@ export const resolveNodeExecutable = Effect.fn("nodeRuntime.resolveNodeExecutabl
   const env = environment ?? (yield* HostProcess.Environment);
   const resolvedNodePath = yield* resolveCommandPath(platform === "win32" ? "node.exe" : "node", {
     env: platform === "win32" ? { ...env, PATHEXT: ".EXE" } : env,
-  }).pipe(Effect.provideService(CommandResolutionCache, new Map()));
+  }).pipe(
+    Effect.provideService(CommandResolutionCache, new Map()),
+    Effect.provideService(PathDirectoryListingCache, new Map()),
+  );
   if (resolvedNodePath === null) return yield* new NodeRuntimeUnavailableError({ feature });
   const nodePath = path.resolve(resolvedNodePath);
   const resolvedPath = yield* fs

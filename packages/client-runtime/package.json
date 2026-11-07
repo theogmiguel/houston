@@ -503,6 +503,10 @@
       "types": "./src/pullRequestReactions.ts",
       "default": "./src/pullRequestReactions.ts"
     },
+    "./pull-request-reply": {
+      "types": "./src/pullRequestReply.ts",
+      "default": "./src/pullRequestReply.ts"
+    },
     "./pull-request-query": {
       "types": "./src/pullRequestQuery.ts",
       "default": "./src/pullRequestQuery.ts"
@@ -510,6 +514,10 @@
     "./model-traits": {
       "types": "./src/modelTraits.ts",
       "default": "./src/modelTraits.ts"
+    },
+    "./pull-request-reviewers": {
+      "types": "./src/pullRequestReviewers.ts",
+      "default": "./src/pullRequestReviewers.ts"
     },
     "./provider-clients": {
       "types": "./src/providerClients.ts",
@@ -531,6 +539,7 @@
     "@houston-app/provider-muse": "workspace:*",
     "@houston-app/provider-opencode": "workspace:*",
     "@houston-app/provider-pi": "workspace:*",
+    "@houston-app/secret-provider-definitions": "workspace:*",
     "@houston-app/shared": "workspace:*",
     "@houston-app/source-control-core": "workspace:*",
     "@houston-app/source-control-definitions": "workspace:*",

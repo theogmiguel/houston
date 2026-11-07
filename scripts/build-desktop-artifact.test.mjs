@@ -18,6 +18,7 @@ import {
   missingPackagedResources,
   resolveDesktopTargets,
   resolveExtraResources,
+  resolveMacFileExclusions,
   resolveStageDependencies,
 } from "./build-desktop-artifact.ts";
 
@@ -206,4 +207,30 @@ NodeTest.test("staged dependencies keep bundle externals and the matching fff bi
   NodeAssert.equal(dependencies["@ff-labs/fff-bin-linux-x64-gnu"], undefined);
   NodeAssert.equal(dependencies.effect, undefined);
   NodeAssert.equal(dependencies["@houston-app/shared"], undefined);
+});
+
+NodeTest.test("a single-architecture macOS build drops the other Darwin prebuilds", () => {
+  const excludes = (arch, file) =>
+    resolveMacFileExclusions(arch).some((glob) => NodePath.matchesGlob(file, glob.slice(1)));
+  const x64 = [
+    "node_modules/node-pty/prebuilds/darwin-x64/pty.node",
+    "node_modules/objc-js/prebuilds/darwin-x64/node.napi.node",
+  ];
+  const arm64 = [
+    "node_modules/node-pty/prebuilds/darwin-arm64/pty.node",
+    "node_modules/objc-js/prebuilds/darwin-arm64/node.napi.armv8.node",
+  ];
+  for (const file of x64) {
+    NodeAssert.equal(excludes("arm64", file), true, file);
+    NodeAssert.equal(excludes("x64", file), false, file);
+  }
+  for (const file of arm64) {
+    NodeAssert.equal(excludes("x64", file), true, file);
+    NodeAssert.equal(excludes("arm64", file), false, file);
+  }
+  const macConfig = buildConfig("mac", "dmg", "arm64");
+  NodeAssert.ok(
+    macConfig.files.includes("!**/node_modules/**/prebuilds/darwin-x64/**/*"),
+    "the macOS build config carries the exclusion",
+  );
 });

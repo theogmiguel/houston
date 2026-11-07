@@ -38,7 +38,7 @@ import { dedupeRemoteBranchesWithLocalMatches } from "@houston-app/shared/git";
 import * as HostProcess from "@houston-app/shared/HostProcess";
 import { compactTraceAttributes } from "@houston-app/shared/observability";
 import { decodeJsonResult } from "@houston-app/shared/schemaJson";
-import { resolveSpawnCommand } from "@houston-app/shared/shell";
+import { resolveSpawnCommand, runsGitWithoutConsole } from "@houston-app/shared/shell";
 import { parseHoustonProjectFile } from "@houston-app/shared/houstonProjectFile";
 import { resolveProjectFileBackedSetting } from "@houston-app/shared/projectSettings";
 import { gitCommandDuration, gitCommandsTotal, withMetrics } from "../observability/Metrics.ts";
@@ -67,6 +67,7 @@ const branchBaseConfigKey = (branch: string) => `branch.${branch}.houston-merge-
  */
 const legacyBranchBaseConfigKey = (branch: string) => `branch.${branch}.gh-merge-base`;
 const gitProcesses = Semaphore.makeUnsafe(8);
+const backgroundGitProcesses = Semaphore.makeUnsafe(2);
 const WORKTREE_REMOVE_TIMEOUT_MS = Duration.toMillis(Duration.minutes(5));
 const DEFAULT_MAX_OUTPUT_BYTES = 1_000_000;
 const OUTPUT_TRUNCATED_MARKER = "\n\n[truncated]";
@@ -1038,6 +1039,9 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
               cwd: commandInput.cwd,
               env: spawnEnv,
               forceKillAfter: input.forceKillAfterMs,
+              ...(runsGitWithoutConsole(hostPlatform, executable, commandInput.args)
+                ? { detached: true, windowsHide: true }
+                : {}),
             }),
           )
           .pipe(
@@ -1165,7 +1169,12 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       (execution) =>
         input.timeoutMs === null || (input.timeoutMs ?? DEFAULT_TIMEOUT_MS) > DEFAULT_TIMEOUT_MS
           ? execution
-          : gitProcesses.withPermits(1)(execution),
+          : Effect.gen(function* () {
+              const lane = (yield* GitVcsDriver.BackgroundGitWork)
+                ? backgroundGitProcesses
+                : gitProcesses;
+              return yield* lane.withPermits(1)(execution);
+            }),
       Effect.withSpan(input.operation, {
         kind: "client",
         attributes: {
