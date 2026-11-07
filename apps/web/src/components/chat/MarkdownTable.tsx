@@ -31,7 +31,8 @@ function moveInto(parent: Element, node: Element) {
 // ScrollArea measures itself on mount, so only a table observed wider than its lane gets one.
 // The table renders through a portal into a host node that moves between lane and scroll area,
 // so the swap keeps its subtree mounted.
-function TableScroll({ children }: { children: ReactNode }) {  const [host] = useState(() => document.createElement("div"));
+function TableScroll({ children }: { children: ReactNode }) {
+  const [host] = useState(() => document.createElement("div"));
   const laneRef = useRef<HTMLDivElement | null>(null);
   const [overflows, setOverflows] = useState(false);
   const place = (slot: HTMLDivElement | null) => {
