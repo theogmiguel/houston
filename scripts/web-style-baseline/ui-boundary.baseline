@@ -421,7 +421,7 @@
 1 apps/web/src/components/ThreadRouteView.tsx
 10 apps/web/src/components/ThreadSearchMatch.tsx
 31 apps/web/src/components/ThreadStatusIndicators.tsx
-71 apps/web/src/components/ThreadTerminalDrawer.tsx
+65 apps/web/src/components/ThreadTerminalDrawer.tsx
 23 apps/web/src/components/usage/UsageActivity.tsx
 30 apps/web/src/components/usage/UsageLimits.tsx
 120 apps/web/src/components/usage/UsageLimitsPooled.tsx
