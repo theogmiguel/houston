@@ -531,6 +531,7 @@
     "@houston-app/provider-muse": "workspace:*",
     "@houston-app/provider-opencode": "workspace:*",
     "@houston-app/provider-pi": "workspace:*",
+    "@houston-app/secret-provider-definitions": "workspace:*",
     "@houston-app/shared": "workspace:*",
     "@houston-app/source-control-core": "workspace:*",
     "@houston-app/source-control-definitions": "workspace:*",
