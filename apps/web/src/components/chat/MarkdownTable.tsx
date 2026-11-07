@@ -1,5 +1,6 @@
 import { Check, Copy } from "lucide";
 import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import { observeResize } from "~/lib/observeResize";
 
@@ -15,17 +16,39 @@ import { ScrollArea } from "../ui/scroll-area";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { reportMarkdownActionFailure } from "./markdownActionFailure";
 
+/** Moves a node without detaching it where the browser can, so focus inside it survives. */
+function moveInto(parent: Element, node: Element) {
+  const { moveBefore } = parent as Element & {
+    moveBefore?: (node: Node, child: Node | null) => void;
+  };
+  if (moveBefore !== undefined && parent.isConnected && node.isConnected) {
+    moveBefore.call(parent, node, null);
+  } else {
+    parent.appendChild(node);
+  }
+}
+
 /**
  * Base UI's ScrollArea reads four layout sizes per instance as it mounts, and most tables fit
  * their lane. A table gets one only once a resize observation finds it wider than the lane.
+ * The table renders through a portal into one host node that moves into the scroll area, so
+ * the swap keeps the table's subtree mounted. The plain lane stays, hidden, until the move.
  */
 function TableScroll({ children }: { children: ReactNode }) {
+  const [host] = useState(() => document.createElement("div"));
   const laneRef = useRef<HTMLDivElement | null>(null);
   const [overflows, setOverflows] = useState(false);
+  const place = (slot: HTMLDivElement | null) => {
+    if (slot !== null && host.parentNode !== slot) moveInto(slot, host);
+  };
+  const placeInLane = (lane: HTMLDivElement | null) => {
+    laneRef.current = lane;
+    place(lane);
+  };
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- observes the table's and the lane's widths to swap in the scroll area before paint
   useEffect(() => {
     const lane = laneRef.current;
-    const table = lane?.querySelector("table");
+    const table = host.querySelector("table");
     if (overflows || !lane || !table) return;
     const widths = new Map<Element, number>();
     return observeResize([lane, table], (entries) => {
@@ -34,18 +57,20 @@ function TableScroll({ children }: { children: ReactNode }) {
       }
       if ((widths.get(table) ?? 0) > (widths.get(lane) ?? Infinity) + 0.5) setOverflows(true);
     });
-  }, [overflows]);
-  if (overflows) {
-    return (
-      <ScrollArea radius="none" chainVerticalScroll scrollFade className="w-full max-w-full">
-        {children}
-      </ScrollArea>
-    );
-  }
+  }, [host, overflows]);
   return (
-    <div ref={laneRef} className="w-full max-w-full overflow-x-auto">
-      {children}
-    </div>
+    <>
+      {overflows && (
+        <ScrollArea radius="none" chainVerticalScroll scrollFade className="w-full max-w-full">
+          <div ref={place} />
+        </ScrollArea>
+      )}
+      <div
+        ref={placeInLane}
+        className={overflows ? "hidden" : "w-full max-w-full overflow-x-auto"}
+      />
+      {createPortal(children, host)}
+    </>
   );
 }
 

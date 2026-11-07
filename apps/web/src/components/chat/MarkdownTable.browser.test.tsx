@@ -42,4 +42,33 @@ describe("MarkdownTable", () => {
     expect(viewport!.scrollWidth).toBeGreaterThan(viewport!.clientWidth);
     expect(screen.container.querySelectorAll("table")).toHaveLength(21);
   });
+
+  it("keeps the table mounted when it grows past its lane", async () => {
+    await using screen = await render(
+      <div className="chat-markdown" data-testid="lane" style={{ width: "600px" }}>
+        <MarkdownTable>
+          <tbody>
+            <tr>
+              <td>
+                <button type="button">cell</button>
+              </td>
+              <td>{"x".repeat(40)}</td>
+            </tr>
+          </tbody>
+        </MarkdownTable>
+      </div>,
+      { router: false },
+    );
+    const cell = screen.container.querySelector("td")!;
+    const button = cell.querySelector("button")!;
+    expect(viewports(screen.container)).toHaveLength(0);
+    button.focus();
+
+    // A narrowed window: the lane shrinks below the table's width.
+    screen.container.querySelector<HTMLElement>('[data-testid="lane"]')!.style.width = "80px";
+    await expect.poll(() => viewports(screen.container).length).toBe(1);
+    expect(viewports(screen.container)[0]!.contains(cell)).toBe(true);
+    expect(screen.container.querySelector("td")).toBe(cell);
+    expect(document.activeElement).toBe(button);
+  });
 });
