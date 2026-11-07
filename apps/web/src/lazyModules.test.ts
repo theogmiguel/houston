@@ -24,13 +24,26 @@ const LAZY_MODULES: Record<string, ReadonlyArray<string>> = {
 
 const STATIC_IMPORT = /^\s*(?:import|export)\s+(?!type\b)[^;]*?\sfrom\s+["']([^"']+)["']/gm;
 
+// A specifier may name the file's extension; the module keys leave it out.
+const SOURCE_EXTENSION = /\.tsx?$/;
+
 function resolveSpecifier(importer: string, specifier: string): string | null {
-  if (specifier.startsWith("~/")) return specifier.slice(2);
+  if (specifier.startsWith("~/")) return specifier.slice(2).replace(SOURCE_EXTENSION, "");
   if (!specifier.startsWith(".")) return null;
-  return NodePath.posix.normalize(NodePath.posix.join(NodePath.posix.dirname(importer), specifier));
+  return NodePath.posix
+    .normalize(NodePath.posix.join(NodePath.posix.dirname(importer), specifier))
+    .replace(SOURCE_EXTENSION, "");
 }
 
 describe("lazy modules", () => {
+  it.each([
+    ["components/chat/A.tsx", "~/components/ThreadTerminalDrawer.tsx"],
+    ["components/chat/A.tsx", "../ThreadTerminalDrawer.tsx"],
+    ["components/chat/A.tsx", "../ThreadTerminalDrawer"],
+  ])("resolves %s importing %s to the module key", (importer, specifier) => {
+    expect(resolveSpecifier(importer, specifier)).toBe("components/ThreadTerminalDrawer");
+  });
+
   it("reaches each boot-heavy module only through import() or a split route", () => {
     const offenders = sourceFiles.flatMap((file) => {
       const source = NodeFS.readFileSync(NodePath.join(sourceRoot, file), "utf8");
