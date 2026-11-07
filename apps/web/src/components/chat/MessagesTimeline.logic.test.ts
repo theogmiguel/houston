@@ -33,6 +33,7 @@ import {
   type MessagesTimelineRow,
   workEntryDisplayLabel,
   boardWorkSummary,
+  groupBoardLabel,
 } from "./MessagesTimeline.logic";
 
 describe("resolveAssistantMessageCopyState", () => {
@@ -96,6 +97,20 @@ describe("boardWorkSummary", () => {
         }),
       ]),
     ).toBe("ran 1 command · used Houston");
+  });
+
+  it("names the running status once ahead of the counts, never beside a past-tense verb", () => {
+    const entry = (toolLifecycleStatus: string) =>
+      ({
+        id: toolLifecycleStatus,
+        createdAt: "2026-10-30T12:00:00Z",
+        label: "ls",
+        tone: "tool" as const,
+        itemType: "command_execution",
+        toolLifecycleStatus,
+      }) as never;
+    expect(groupBoardLabel([entry("inProgress")])).toBe("Running · ran 1 command");
+    expect(groupBoardLabel([entry("completed")])).toBe("ran 1 command");
   });
 });
 

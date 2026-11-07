@@ -1,6 +1,6 @@
 import { EnvironmentId, ThreadId } from "@houston-app/contracts";
 import { expect, it, vi } from "vite-plus/test";
-import { userEvent } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 
 const persisted = vi.hoisted(() => ({ title: "" }));
 vi.mock(import("../../state/session"), async (importOriginal) => ({
@@ -154,12 +154,14 @@ it.each([
   },
 );
 
-it("shows the full thread title in a tooltip, including a long one", async () => {
+it("shows the full thread title in a tooltip, led by the project it dropped, including a long one", async () => {
   await using screen = await render(header(LONG_TITLE, { width: 800 }));
   const trigger = screen.getByRole("button", { name: `Thread actions for ${LONG_TITLE}` });
   await userEvent.hover(trigger);
   await vi.waitFor(() =>
-    expect(document.querySelector('[data-slot="tooltip-popup"]')?.textContent).toBe(LONG_TITLE),
+    expect(document.querySelector('[data-slot="tooltip-popup"]')?.textContent).toBe(
+      `atlas-api / ${LONG_TITLE}`,
+    ),
   );
 });
 
@@ -174,7 +176,8 @@ it("renders no meta row and puts the pull request badge after the title", async 
   );
 });
 
-it("collapses the project name to its icon and tooltip at 800px, keeping it at 1440px", async () => {
+it("drops the project segment at 800px with no orphan icon or slash, keeping it at 1440px", async () => {
+  await page.viewport(1440, 900);
   {
     await using wide = await render(header("Add a retry-after hint", { width: 1440 }));
     const group = wide.container.querySelector<HTMLElement>("[data-thread-project]")!;
@@ -182,17 +185,20 @@ it("collapses the project name to its icon and tooltip at 800px, keeping it at 1
       (span) => span.textContent === "atlas-api" && span.children.length === 0,
     )!;
     expect(name.getBoundingClientRect().width).toBeGreaterThan(0);
+    expect(group.querySelector("svg")).not.toBeNull();
   }
+  await page.viewport(800, 900);
   {
     await using narrow = await render(header("Add a retry-after hint", { width: 800 }));
     const group = narrow.container.querySelector<HTMLElement>("[data-thread-project]")!;
-    // The project stays in the header as its icon; its name is kept for screen readers.
-    expect(getComputedStyle(group).display).not.toBe("none");
-    const name = [...group.querySelectorAll("span")].find(
-      (span) => span.textContent === "atlas-api" && span.children.length === 0,
-    )!;
-    // Visually collapsed to the icon, still present for assistive tech.
-    expect(getComputedStyle(name).position).toBe("absolute");
+    // Nothing of the project is painted: no folder icon, no separator, no visible name.
+    expect(group.querySelector("svg")).toBeNull();
+    expect(group.textContent).toBe("atlas-api");
+    expect(getComputedStyle(group).position).toBe("absolute");
+    expect(narrow.container.textContent).not.toContain("/");
+    // The project stays reachable: assistive tech reads it and the title tooltip names it.
+    await narrow.getByRole("button", { name: /Thread actions for/ }).hover();
+    await expect.element(narrow.getByText("atlas-api / Add a retry-after hint")).toBeVisible();
   }
 });
 

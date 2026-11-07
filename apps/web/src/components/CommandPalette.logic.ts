@@ -547,6 +547,10 @@ function scorePaletteItem(
  * Equal match classes put commands before threads, so "new" runs "New thread".
  * Server message matches stay in a final group so late results cannot move earlier rows.
  */
+function isActionGroup(group: CommandPaletteGroup): boolean {
+  return group.value === "actions" || group.value === "commands";
+}
+
 export function filterCommandPaletteGroups(input: {
   activeGroups: ReadonlyArray<CommandPaletteGroup>;
   query: string;
@@ -580,14 +584,14 @@ export function filterCommandPaletteGroups(input: {
 
   if (normalizedQuery.length === 0) {
     if (isActionsFilter) {
-      return input.activeGroups.filter((group) => group.value === "actions");
+      return input.activeGroups.filter(isActionGroup);
     }
     return [...input.activeGroups];
   }
 
   let baseGroups = [...input.activeGroups];
   if (isActionsFilter) {
-    baseGroups = baseGroups.filter((group) => group.value === "actions");
+    baseGroups = baseGroups.filter(isActionGroup);
   } else if (!input.isInSubmenu) {
     baseGroups = baseGroups.filter(
       (group) => group.value !== "recent-threads" && group.value !== "projects",
@@ -775,12 +779,28 @@ export function availablePaletteActions<
   return items.filter((item) => !item.disabled);
 }
 
+/** The everyday commands the opening list leads with, in display order. */
+export const ROOT_COMMAND_VALUES: ReadonlyArray<string> = [
+  "action:new-thread",
+  "action:new-thread-without-project",
+  "action:grid-new",
+  "action:settings",
+  "action:change-appearance",
+];
+
 export function buildRootGroups(input: {
   actionItems: ReadonlyArray<CommandPaletteActionItem | CommandPaletteSubmenuItem>;
   projectItems: ReadonlyArray<CommandPaletteActionItem>;
   recentThreadItems: ReadonlyArray<CommandPaletteActionItem>;
 }): CommandPaletteGroup[] {
   const groups: CommandPaletteGroup[] = [];
+  const commandItems = ROOT_COMMAND_VALUES.flatMap((value) =>
+    input.actionItems.filter((item) => item.value === value),
+  );
+  const otherActions = input.actionItems.filter((item) => !commandItems.includes(item));
+  if (commandItems.length > 0) {
+    groups.push({ value: "commands", label: "Commands", items: commandItems });
+  }
   if (input.recentThreadItems.length > 0) {
     groups.push({
       value: "recent-threads",
@@ -791,8 +811,8 @@ export function buildRootGroups(input: {
   if (input.projectItems.length > 0) {
     groups.push({ value: "projects", label: "Projects", items: input.projectItems });
   }
-  if (input.actionItems.length > 0) {
-    groups.push({ value: "actions", label: "Actions", items: input.actionItems });
+  if (otherActions.length > 0) {
+    groups.push({ value: "actions", label: "Actions", items: otherActions });
   }
   return groups;
 }

@@ -50,13 +50,12 @@ export const SIDEBAR_GRID_COUNT_CLS =
   "shrink-0 text-xs font-medium text-secondary-label tabular-nums";
 
 /**
- * A project heading sticks to the top of the rail's scroll area on the rail's own background at
- * full ink, and gains a 1px bottom border only while it is stuck (`data-stuck`). It sticks 1px
- * above the top so the observer that sets `data-stuck` sees it clipped. Its `::before` covers the
- * 4px gap above the box, so rows scrolling under it never paint in that seam.
+ * A project heading sticks to the top of the rail's scroll area on the rail's own background, with
+ * a 1px bottom border only while stuck (`data-stuck`). It sticks 1px above the top so the observer
+ * sees it clipped; solid `::before`/`::after` lips seal the seams so scrolled rows never show through.
  */
 export const SIDEBAR_PROJECT_ROW_CLS =
-  "group/project sticky -top-px z-40 mt-1 flex items-center border-b border-transparent bg-sidebar before:absolute before:inset-x-0 before:-top-1 before:h-1 before:bg-sidebar before:content-[''] after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-2 after:bg-linear-to-b after:from-sidebar after:to-transparent after:opacity-0 after:content-[''] first:mt-0 data-stuck:border-sidebar-border data-stuck:after:opacity-100";
+  "group/project sticky -top-px z-40 mt-1 flex items-center border-b border-transparent bg-sidebar before:absolute before:inset-x-0 before:-top-1 before:h-1 before:bg-sidebar before:content-[''] after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-1 after:bg-sidebar after:opacity-0 after:content-[''] first:mt-0 data-stuck:border-sidebar-border data-stuck:after:opacity-100";
 
 export const SIDEBAR_PROJECT_LABEL_CLS =
   "flex h-8 min-w-0 shrink cursor-pointer items-center gap-1.5 rounded-lg py-0 pr-1 pl-2 text-left text-xs font-semibold text-sidebar-foreground transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";

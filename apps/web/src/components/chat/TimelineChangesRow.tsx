@@ -95,6 +95,9 @@ export function TimelineChangesRow({
   const hiddenCount = Math.max(0, totals.count - files.length);
   const countLabel = `${totals.count.toLocaleString()} file${totals.count === 1 ? "" : "s"}`;
   const hasBody = files.length > 0 || detail !== undefined;
+  // One expanded file carries the counts on its own chip, so the summary does not repeat them.
+  const countsOnFileChip =
+    expanded && totals.count === 1 && files.length === 1 && hasNonZeroStat(files[0]!);
 
   return (
     <div data-timeline-changes="" className="min-w-0">
@@ -109,7 +112,7 @@ export function TimelineChangesRow({
         >
           <PencilIcon aria-hidden className={cn(TIMELINE_CHANGE_ICON_CLS, "text-(--houston)")} />
           <span className="min-w-0 truncate text-(--t1)">{countLabel}</span>
-          {hasNonZeroStat(totals) ? (
+          {hasNonZeroStat(totals) && !countsOnFileChip ? (
             <DiffStatLabel
               additions={totals.additions}
               deletions={totals.deletions}

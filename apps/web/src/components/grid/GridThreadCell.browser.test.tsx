@@ -542,12 +542,12 @@ describe("GridThreadCell surfaces", () => {
     expect(menu.textContent).not.toMatch(/Pin thread|Unpin thread/);
   });
 
-  it("fades the header actions in over the hover feedback role", async () => {
+  it("fades an unfocused pane's header actions in over the hover feedback role", async () => {
     state.draftSession = null;
     await using screen = await renderCell(
       { kind: "thread", threadId: "thread-a", id: "p1" },
       twoThreadTree(),
-      { onMaximize: vi.fn() },
+      { onMaximize: vi.fn(), focused: false },
     );
 
     const actions = screen.container.querySelector("[data-pane-actions]") as HTMLElement;
@@ -915,14 +915,17 @@ describe("GridThreadCell pane header", () => {
     },
   );
 
-  it("rings the focused pane and dims an unfocused header", async () => {
+  it("rings the focused pane inside its box, shows its actions and bolds its title; an unfocused pane has none of them", async () => {
     state.draftSession = null;
-    const surface = document.createElement("div");
-    surface.setAttribute("data-grid-surface", "");
-    surface.setAttribute("data-multi", "");
-    surface.style.width = "570px";
-    surface.style.height = "420px";
-    surface.style.display = "flex";
+    const multiSurface = () => {
+      const surface = document.createElement("div");
+      surface.setAttribute("data-grid-surface", "");
+      surface.setAttribute("data-multi", "");
+      surface.style.width = "570px";
+      surface.style.height = "420px";
+      surface.style.display = "flex";
+      return surface;
+    };
     const probe = document.createElement("div");
     probe.style.borderColor = "var(--accent)";
     document.body.append(probe);
@@ -932,18 +935,39 @@ describe("GridThreadCell pane header", () => {
     await using focusedScreen = await renderCell(
       { kind: "thread", threadId: "thread-a", id: "p1" },
       twoThreadTree(),
-      { container: surface },
+      { container: multiSurface() },
     );
     const focusedCell = focusedScreen.container.querySelector<HTMLElement>("[data-grid-cell]")!;
-    expect(getComputedStyle(focusedCell, "::before").borderTopColor).toBe(accent);
+    const ring = getComputedStyle(focusedCell, "::after");
+    // The ring is an inset shadow on an overlay inside the cell, whose overflow clips anything
+    // drawn on its outer edge; its colour is the accent token and it is fully opaque.
+    expect(ring.boxShadow).toContain(accent);
+    expect(ring.boxShadow).toContain("inset");
+    expect(ring.boxShadow).toContain("1.5px");
+    expect(ring.position).toBe("absolute");
+    expect([ring.top, ring.right, ring.bottom, ring.left]).toEqual(["0px", "0px", "0px", "0px"]);
+    expect(ring.opacity).toBe("1");
+    const focusedHeader = focusedCell.querySelector<HTMLElement>("[data-pane-header]")!;
+    expect(getComputedStyle(focusedHeader).opacity).toBe("1");
+    // Actions show without hover or focus-within, and the title is weight 600.
+    expect(
+      getComputedStyle(focusedHeader.querySelector<HTMLElement>("[data-pane-actions]")!).opacity,
+    ).toBe("1");
+    const focusedTitle = focusedHeader.querySelector<HTMLElement>("span.flex-1.truncate")!;
+    expect(Number(getComputedStyle(focusedTitle).fontWeight)).toBeGreaterThanOrEqual(600);
 
     await using unfocusedScreen = await renderCell(
       { kind: "thread", threadId: "thread-a", id: "p1" },
       twoThreadTree(),
-      { focused: false },
+      { focused: false, container: multiSurface() },
     );
-    const header = unfocusedScreen.container.querySelector<HTMLElement>("[data-pane-header]")!;
+    const unfocusedCell = unfocusedScreen.container.querySelector<HTMLElement>("[data-grid-cell]")!;
+    expect(getComputedStyle(unfocusedCell, "::after").opacity).toBe("0");
+    const header = unfocusedCell.querySelector<HTMLElement>("[data-pane-header]")!;
     expect(getComputedStyle(header).opacity).toBe("0.9");
+    expect(
+      getComputedStyle(header.querySelector<HTMLElement>("[data-pane-actions]")!).opacity,
+    ).toBe("0");
   });
 
   it("reaches the pane actions by keyboard", async () => {

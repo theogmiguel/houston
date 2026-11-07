@@ -1702,11 +1702,14 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
           ) : null}
           {error ? <span className="shrink-0 text-callout text-(--houston)">· {error}</span> : null}
         </button>
-        <TimelineRowTimestamp
-          createdAt={row.createdAt}
-          timestampFormat={ctx.timestampFormat}
-          className="me-2"
-        />
+        {row.expanded ? null : (
+          // Expanded, the work rows below carry the times; the fold's own would repeat the turn's.
+          <TimelineRowTimestamp
+            createdAt={row.createdAt}
+            timestampFormat={ctx.timestampFormat}
+            className="me-2"
+          />
+        )}
       </div>
       {loading ? <WorkHistorySkeleton /> : null}
     </div>

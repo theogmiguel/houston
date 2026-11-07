@@ -7,11 +7,13 @@ import {
   type UncontrolledCodeViewProps,
 } from "@pierre/diffs/react";
 /* oxlint-enable eslint/no-restricted-imports */
+import type { FileDiffMetadata } from "@pierre/diffs";
 import type { Ref } from "react";
 
 import { DIFF_SURFACE_THEME_UNSAFE_CSS } from "~/lib/diffRendering";
 import { relabelDiffSeparators } from "~/lib/diffSeparatorLabels";
 import { DiffWorkerPoolProvider } from "../DiffWorkerPoolProvider";
+import { addOldLineNumbers } from "./unifiedGutterNumbers";
 
 export const DIFF_VIEW_UNSAFE_CSS = `${DIFF_SURFACE_THEME_UNSAFE_CSS}
 /* A 1fr track's automatic minimum grows with the currently mounted lines. In split
@@ -19,6 +21,18 @@ export const DIFF_VIEW_UNSAFE_CSS = `${DIFF_SURFACE_THEME_UNSAFE_CSS}
    repeatedly correct the scroll position. Keep both code columns at the same width. */
 [data-diff-type="split"][data-overflow="wrap"] {
   --diffs-code-grid: var(--diffs-grid-number-column-width) minmax(0, 1fr);
+}
+
+/* Unified rows carry two numbers, old then new (see unifiedGutterNumbers). The old one reads as
+   secondary and keeps its own track so both columns stay aligned across rows. */
+[data-old-line-number] {
+  display: inline-block;
+  min-width: var(--diffs-min-number-column-width, var(--diffs-min-number-column-width-default, 3ch));
+  margin-inline-end: 1ch;
+  position: relative;
+  z-index: 1;
+  text-align: right;
+  opacity: 0.7;
 }
 
 /* Without wrapping, a long line runs past the panel edge. The library paints the horizontal
@@ -295,7 +309,13 @@ export function StyledDiffCodeView<LAnnotation = undefined>({
           ...options,
           onPostRender: ((container: HTMLElement, ...rest: unknown[]) => {
             // rest is (instance, phase, item context); the callback is overloaded per item type.
-            if (rest[1] !== "unmount") relabelDiffSeparators(container);
+            if (rest[1] !== "unmount") {
+              relabelDiffSeparators(container);
+              const fileDiff = (
+                rest[0] as { getInputDiff?: () => FileDiffMetadata | undefined } | undefined
+              )?.getInputDiff?.();
+              if (fileDiff) addOldLineNumbers(container, fileDiff);
+            }
             return (options?.onPostRender as ((...args: unknown[]) => unknown) | undefined)?.(
               container,
               ...rest,

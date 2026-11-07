@@ -9,6 +9,7 @@ import { page, userEvent } from "vite-plus/test/browser";
 import "~/index.css";
 
 import { render } from "../../test/render";
+import { APP_BASE_NAME } from "../branding";
 import { NoProjectsHero, providerStatusLine } from "./NoProjectsHero";
 
 const state = vi.hoisted(() => ({ providers: [] as ServerProvider[] }));
@@ -123,4 +124,13 @@ it("leaves one focal action: logo, title, one line, two buttons, status and one 
   // Add folder, Clone a repository, the status line and the info button; no scratch target here.
   expect(main.querySelectorAll("button")).toHaveLength(4);
   await expect.element(page.getByText(/Each folder becomes a workspace/)).toBeVisible();
+});
+
+it("names the product in the header without the environment label", async () => {
+  state.providers = [provider("claudeAgent")];
+  await using screen = await render(<NoProjectsHero />, { router: "/" });
+
+  const header = screen.container.querySelector("header")!;
+  expect(header.textContent).toBe(APP_BASE_NAME);
+  expect(header.textContent).not.toMatch(/\(.*\)/);
 });

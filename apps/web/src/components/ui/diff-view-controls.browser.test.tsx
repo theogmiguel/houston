@@ -98,6 +98,18 @@ describe("diff view controls", () => {
     expect(onWordWrapChange).toHaveBeenCalledWith(false);
   });
 
+  it("names the refresh in progress on the disabled menu row of a narrow toolbar", async () => {
+    await using screen = await render(
+      toolbar("20rem", { ...props(), refresh: { refreshing: true, onRefresh: () => {} } }),
+      { router: false },
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Diff options" }));
+    const row = page.getByRole("menuitem", { name: "Refreshing diff…" });
+    await expect.element(row).toBeVisible();
+    await expect.element(row).toHaveAttribute("aria-disabled", "true");
+  });
+
   it("folds even the layout toggle below the narrowest breakpoint", async () => {
     await using screen = await render(toolbar("16rem", props()), { router: false });
 

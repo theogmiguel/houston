@@ -455,21 +455,33 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        width: 40px;
-        height: 40px;
+        width: 44px;
+        height: 44px;
+        overflow: hidden;
+        border-radius: 11px;
+        /* The icon is a dark tile; a hairline and soft lift seat it on the light canvas. */
+        box-shadow:
+          0 0 0 1px rgba(0, 0, 0, 0.1),
+          0 2px 6px rgba(0, 0, 0, 0.14);
+      }
+
+      html.dark #boot-shell-card {
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
       }
 
       #boot-shell-logo {
-        width: 40px;
-        height: 40px;
+        width: 44px;
+        height: 44px;
         object-fit: contain;
       }
 
       #boot-shell-copy {
         font:
-          500 13px/18px system-ui,
+          500 13px/18px "Inter Variable",
           -apple-system,
+          BlinkMacSystemFont,
           "Segoe UI",
+          system-ui,
           sans-serif;
         color: inherit;
         opacity: 0.66;

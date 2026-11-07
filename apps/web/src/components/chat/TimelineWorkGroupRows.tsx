@@ -680,7 +680,13 @@ function WorkGroupHeader(props: {
         </span>
       }
       meta={
-        <TimelineRowTimestamp createdAt={props.createdAt} timestampFormat={props.timestampFormat} />
+        // Expanded, the rows below carry their own times; the header keeps one only when folded.
+        props.expanded ? null : (
+          <TimelineRowTimestamp
+            createdAt={props.createdAt}
+            timestampFormat={props.timestampFormat}
+          />
+        )
       }
     />
   );

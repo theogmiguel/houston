@@ -86,7 +86,7 @@ function overlapping(first: HTMLElement, second: HTMLElement): boolean {
 // Runs first: the fake environment serves the thread-shell list once per app runtime, so a
 // branch set on a later test's threads would never reach the shell this chip reads.
 it(
-  "folds checkout, branch and pull request into the compact chip, and moves them to the tray when the pane widens",
+  "folds checkout, branch and pull request into the compact chip, and moves them to the context row when the pane widens",
   async () => {
     const branch = "feature/worktree-chip-12";
     expect(branch).toHaveLength(24);
@@ -136,21 +136,19 @@ it(
       { timeout: 10_000 },
     );
     expect(chip.getAttribute("title")).toBe(`${branch} · Worktree`);
-    expect(cellA().querySelector('[data-composer-context-tray="true"]')).toBeNull();
+    expect(cellA().querySelector('[data-composer-context-row="true"]')).toBeNull();
     const footer = cellA().querySelector<HTMLElement>('[data-chat-composer-footer="true"]')!;
 
-    // The branch keeps room for ten characters and reads in the mono face.
+    // The branch reads in the mono face and the chip is as wide as its content: icon, label and
+    // chevron sit within 6px of each other.
     const label = chip.querySelector<HTMLElement>("[data-composer-label]")!;
     expect(label.textContent).toBe(branch);
     expect(getComputedStyle(label).fontFamily).toMatch(/mono/i);
-    const probe = document.createElement("span");
-    probe.className = "font-mono text-xs";
-    probe.style.cssText = "position:absolute;visibility:hidden;white-space:pre";
-    probe.textContent = "0".repeat(10);
-    document.body.append(probe);
-    const tenCharacters = probe.getBoundingClientRect().width;
-    probe.remove();
-    expect(label.getBoundingClientRect().width).toBeGreaterThanOrEqual(tenCharacters - 1);
+    const parts = [...chip.children].map((child) => child.getBoundingClientRect());
+    expect(parts).toHaveLength(3);
+    for (const [index, part] of parts.slice(1).entries()) {
+      expect(part.left - parts[index]!.right, `chip gap ${index}`).toBeLessThanOrEqual(6);
+    }
 
     // A divider separates the model chip from the workspace group; the PR chip follows the chip.
     const divider = footer.querySelector<HTMLElement>("[data-composer-divider]")!;
@@ -194,13 +192,13 @@ it(
       expect(document.querySelector('[data-slot="popover-popup"]')).toBeNull(),
     );
 
-    // Wide form: the same controls move to the tray above the card.
+    // Wide form: the same controls move to the context row inside the card.
     await page.viewport(1400, 800);
     screen.container.style.width = "1400px";
-    const tray = await vi.waitFor(
+    const row = await vi.waitFor(
       () => {
         expect(cellA().getBoundingClientRect().width).toBeGreaterThanOrEqual(560);
-        const found = cellA().querySelector<HTMLElement>('[data-composer-context-tray="true"]');
+        const found = cellA().querySelector<HTMLElement>('[data-composer-context-row="true"]');
         const surfaceWidth = cellA()
           .querySelector<HTMLElement>('[data-chat-composer-surface="true"]')
           ?.getBoundingClientRect().width;
@@ -215,34 +213,40 @@ it(
     const wideFooter = cellA().querySelector<HTMLElement>('[data-chat-composer-footer="true"]')!;
     expect(wideFooter.querySelector('[aria-label^="Workspace:"]')).toBeNull();
     expect(wideFooter.querySelector("[data-composer-context-control]")).toBeNull();
-    expect(tray.textContent).toContain("Worktree");
-    expect(tray.querySelector('a[aria-label*="622"]')).not.toBeNull();
-    const trayBranch = tray.querySelector<HTMLElement>(".font-mono")!;
-    expect(trayBranch.textContent).toContain("feature/");
-    // Checkout on the left; the pull request, then the branch, on the right.
-    const checkout = tray.querySelector<HTMLElement>("[data-composer-context-control]")!;
-    const trayPr = tray.querySelector<HTMLElement>('a[aria-label*="622"]')!;
+    expect(
+      cellA().querySelector<HTMLElement>('[data-chat-composer-main-surface="true"]')!.contains(row),
+    ).toBe(true);
+    expect(row.textContent).toContain("Worktree");
+    expect(row.querySelector('a[aria-label*="622"]')).not.toBeNull();
+    const rowBranch = row.querySelector<HTMLElement>(".font-mono")!;
+    expect(rowBranch.textContent).toContain("feature/");
+    // Checkout, then the branch, then the pull request, all on the left.
+    const checkout = row.querySelector<HTMLElement>("[data-composer-context-control]")!;
+    const rowPr = row.querySelector<HTMLElement>('a[aria-label*="622"]')!;
     expect(checkout.getBoundingClientRect().right).toBeLessThanOrEqual(
-      trayPr.getBoundingClientRect().left,
+      rowBranch.getBoundingClientRect().left,
     );
-    expect(trayPr.getBoundingClientRect().right).toBeLessThanOrEqual(
-      trayBranch.getBoundingClientRect().left + 1,
+    expect(rowBranch.getBoundingClientRect().right).toBeLessThanOrEqual(
+      rowPr.getBoundingClientRect().left + 1,
     );
-    expect(tray.scrollWidth).toBeLessThanOrEqual(tray.clientWidth + 1);
-    for (const control of tray.querySelectorAll<HTMLElement>("button, a")) {
-      expect(
-        overlapping(control, tray.querySelector<HTMLElement>("[data-composer-context-control]")!) &&
-          control !== checkout,
-      ).toBe(false);
-    }
+    expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth + 1);
+    expect(row.querySelector("[data-changed-files-bar]")).toBeNull();
 
     // Access stays reachable: it lives in the model picker's footer.
     const widePicker = wideFooter.querySelector<HTMLElement>("[data-chat-provider-model-picker]")!;
     await userEvent.click(widePicker);
+    const accessTrigger = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLElement>("[data-composer-permissions-trigger]");
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    await userEvent.click(accessTrigger);
     await vi.waitFor(() =>
-      expect(document.querySelector("[data-composer-permissions-trigger]")).not.toBeNull(),
+      expect(
+        document.querySelectorAll('[data-composer-permissions] [role="menuitemradio"]').length,
+      ).toBeGreaterThan(1),
     );
-    await userEvent.keyboard("{Escape}");
+    await userEvent.keyboard("{Escape}{Escape}");
   },
   APP_BOOT_TEST_TIMEOUT_MS,
 );
@@ -284,16 +288,23 @@ it(
         expect(placeholder.getBoundingClientRect().height).toBeLessThanOrEqual(24);
       }
 
-      // The model chip survives as the provider mark with the full name in its tooltip.
+      // The model chip names the model down to a 340px pane and is the provider mark below that,
+      // with the full name in its tooltip.
       const modelChip = await vi.waitFor(() => {
         const found = footer.querySelector<HTMLElement>("[data-chat-provider-model-picker]");
         expect(found).not.toBeNull();
         return found!;
       });
-      await vi.waitFor(() =>
-        expect(modelChip.dataset.chatProviderModelPickerIconOnly).toBe("true"),
-      );
-      expect(modelChip.getAttribute("title") ?? "").not.toBe("");
+      if (cell.getBoundingClientRect().width < 340) {
+        await vi.waitFor(() =>
+          expect(modelChip.dataset.chatProviderModelPickerIconOnly).toBe("true"),
+        );
+        expect(modelChip.getAttribute("title") ?? "").not.toBe("");
+      } else {
+        expect(modelChip.dataset.chatProviderModelPickerIconOnly).toBeUndefined();
+      }
+      // No lock or other unlabelled glyph shows: access is in the model picker's footer.
+      expect(footer.querySelector('[aria-label^="Permissions:"]')).toBeNull();
       expect(footer.querySelector('[aria-label^="Workspace:"]')).not.toBeNull();
 
       const controls = [...footer.querySelectorAll<HTMLElement>("button")].filter(
@@ -379,10 +390,10 @@ it(
         ).toBeGreaterThanOrEqual(3.5);
       }
     }
-    // The question card hides no toolbar control: the provider stays visible in the model chip.
+    // The question card hides no toolbar control: the model chip keeps naming the model.
     const modelChip = footer.querySelector<HTMLElement>("[data-chat-provider-model-picker]");
     expect(modelChip).not.toBeNull();
-    expect(modelChip!.getAttribute("title") ?? "").not.toBe("");
+    expect(modelChip!.getAttribute("aria-label") ?? "").not.toBe("");
     // The answer field is the first row; the toolbar sits under it.
     const editor = cell.querySelector<HTMLElement>('[data-testid="composer-editor"]')!;
     expect(footer.getBoundingClientRect().top).toBeGreaterThanOrEqual(

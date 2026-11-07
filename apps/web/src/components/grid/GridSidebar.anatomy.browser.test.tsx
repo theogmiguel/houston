@@ -560,12 +560,10 @@ describe("thread row status glyphs", () => {
       expect(box.top + box.height / 2).toBeCloseTo(rowBox.top + rowBox.height / 2, 0);
     }
     expect(new Set(shapes.values()).size).toBe(STATES.length);
-    // Input and Request share the amber hue; Approval is the orange one, and every other
-    // kind has its own hue.
-    const inputFamily = new Set(["input", "request"].map((kind) => hues.get(kind)));
+    // Input, Request and Approval share the amber hue, and every other kind has its own hue.
+    const inputFamily = new Set(["input", "request", "approval"].map((kind) => hues.get(kind)));
     expect(inputFamily.size).toBe(1);
-    expect(hues.get("approval")).not.toBe(hues.get("input"));
-    const distinct = ["approval", "failed", "waiting", "running", "back", "ready", "idle"].map(
+    const distinct = ["input", "failed", "waiting", "running", "back", "ready", "idle"].map(
       (kind) => hues.get(kind),
     );
     expect(new Set(distinct).size).toBe(distinct.length);
@@ -657,7 +655,7 @@ describe("thread row status glyphs", () => {
 });
 
 describe("thread row provider marks and tags", () => {
-  it("draws the brand glyph where one exists and a 14px monogram square otherwise", async () => {
+  it("draws the brand glyph where one exists and a 16px monogram tile otherwise", async () => {
     await page.viewport(1440, 900);
     reset();
     await using glyph = await render(<div style={{ width: 264 }}>{card(thread())}</div>);
@@ -679,9 +677,9 @@ describe("thread row provider marks and tags", () => {
     const mark = rowOf(monogram.container).querySelector<HTMLElement>("[data-provider-mark]")!;
     expect(mark.dataset.providerMarkKind).toBe("monogram");
     expect(mark.textContent).toBe("FA");
-    expect(mark.getBoundingClientRect().width).toBe(14);
-    expect(mark.getBoundingClientRect().height).toBe(14);
-    expect(getComputedStyle(mark).fontSize).toBe("9px");
+    expect(mark.getBoundingClientRect().width).toBe(16);
+    expect(mark.getBoundingClientRect().height).toBe(16);
+    expect(getComputedStyle(mark).fontSize).toBe("11px");
     expect(getComputedStyle(mark).fontWeight).toBe("600");
     expect(mark.getAttribute("aria-label")).toBe("Fable Agent");
     // The monogram is neutral: it shares no hue with the status colours.

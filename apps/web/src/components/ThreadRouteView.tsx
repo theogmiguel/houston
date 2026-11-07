@@ -1,16 +1,17 @@
 import { scopedThreadKey } from "@houston-app/client-runtime/environment";
 import { effectiveSnoozed } from "@houston-app/client-runtime/state/thread-settled";
-import { Navigate, useNavigate } from "@tanstack/react-router";
+import { Navigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import ChatView from "./ChatView";
 import { BackgroundThreadContext } from "./chat/backgroundThread";
 import { isSidebarHiddenThread } from "./Sidebar.logic";
+import { NoActiveThreadState } from "./NoActiveThreadState";
 import { SidebarInset } from "./ui/sidebar";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { ensureThreadInGrid } from "../grid/ensureThreadInGrid";
 import { useSidebarPendingFileDropStore } from "../sidebarPendingFileDropStore";
-import { useEnvironmentThreadRefs, useQuietThreadShell } from "../state/entities";
+import { useQuietThreadShell } from "../state/entities";
 import { useEnvironmentShellStatus } from "../state/shell";
 import { useEnvironmentThread } from "../state/threads";
 import {
@@ -33,7 +34,6 @@ export function ThreadRouteView({
   target: ThreadRouteTarget;
   background?: boolean;
 }) {
-  const navigate = useNavigate();
   const draftId = target.kind === "draft" ? target.draftId : null;
   const draftSession = useComposerDraftStore((store) =>
     draftId === null ? null : store.getDraftSession(draftId),
@@ -44,7 +44,6 @@ export function ThreadRouteView({
   const serverThreadRef = target.kind === "server" ? target.threadRef : null;
   const serverThreadShell = useQuietThreadShell(serverThreadRef);
   const shellStatus = useEnvironmentShellStatus(serverThreadRef?.environmentId ?? null);
-  const environmentThreadRefs = useEnvironmentThreadRefs(serverThreadRef?.environmentId ?? null);
   const bootstrapComplete = isThreadRouteSnapshotAuthoritative(shellStatus);
   // A thread created outside a grid (a deep link, the CLI or the replay host) gets one here.
   const threadNeedsGrid =
@@ -96,9 +95,6 @@ export function ThreadRouteView({
   if (nextHandoffKey !== handoffKey) {
     setHandoffKey(nextHandoffKey);
   }
-  const environmentHasDraftThreads = useComposerDraftStore((store) =>
-    serverThreadRef ? store.hasDraftThreadsInEnvironment(serverThreadRef.environmentId) : false,
-  );
   // Until the shell lists the thread, its own load (HTTP, then the socket)
   // decides whether it exists. Read only then: once listed, ChatView keeps
   // this stream open and its updates need not re-render the route.
@@ -117,9 +113,8 @@ export function ThreadRouteView({
     unlistedThreadDetail,
     draftThreadExists: draftThread !== null,
   });
-  const environmentHasAnyThreads = environmentThreadRefs.length > 0 || environmentHasDraftThreads;
 
-  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- clears pending file drops and navigates the router home once a server thread is confirmed missing
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- clears pending file drops once a server thread is confirmed missing
   useEffect(() => {
     if (target.kind !== "server" || !bootstrapComplete) {
       return;
@@ -127,11 +122,8 @@ export function ThreadRouteView({
     if (renderState === "missing") {
       const { clearPendingFileDropsForThread } = useSidebarPendingFileDropStore.getState();
       clearPendingFileDropsForThread(target.threadRef);
-      if (environmentHasAnyThreads && !background) {
-        void navigate({ to: "/", replace: true });
-      }
     }
-  }, [background, bootstrapComplete, environmentHasAnyThreads, navigate, renderState, target]);
+  }, [bootstrapComplete, renderState, target]);
 
   let view: React.ReactNode = null;
   let redirect: React.ReactNode = null;
@@ -176,6 +168,9 @@ export function ThreadRouteView({
         routeKind="server"
       />
     );
+  } else if (renderState === "missing" && target.kind === "server" && !background) {
+    // Names the state and offers the way out; a silent redirect or a blank page hides both.
+    return <NoActiveThreadState missingThreadId={target.threadRef.threadId} />;
   }
 
   return (

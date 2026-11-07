@@ -263,7 +263,7 @@ export function DiffViewControls({
               <DropdownMenuSeparator />
               {refresh && (
                 <DropdownMenuItem disabled={refresh.refreshing} onClick={refresh.onRefresh}>
-                  Refresh diff
+                  {refresh.refreshing ? "Refreshing diff…" : "Refresh diff"}
                 </DropdownMenuItem>
               )}
               {hasFiles && (

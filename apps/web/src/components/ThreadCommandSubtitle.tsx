@@ -1,9 +1,10 @@
 import type { ProviderDriverKind } from "@houston-app/contracts";
 import { FolderGit2Icon, FolderIcon, GitBranchIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { ProviderInstanceIcon } from "./chat/ProviderInstanceIcon";
 import { cn } from "~/lib/utils";
 
+import { resolveThreadSubtitleSegments } from "./ThreadCommandSubtitle.logic";
 import { MiddleTruncate } from "./ui/middle-truncate";
 
 export type ThreadCommandSubtitleVariant = "workspace-harness" | "workspace" | "branch-harness";
@@ -48,10 +49,15 @@ export function ThreadCommandSubtitle(props: {
 
   const projectLabel = props.projectTitle?.trim() || null;
   const branchLabel = props.branch?.trim() || null;
+  const segments = resolveThreadSubtitleSegments({
+    projectTitle: projectLabel,
+    branch: branchLabel,
+    hasPullRequest: props.pullRequest != null && props.pullRequest !== false,
+    showHarness: Boolean(showHarness && props.driverKind),
+    isCurrent: props.isCurrent,
+  });
 
-  if (!projectLabel && !branchLabel && !props.isCurrent && !showHarness && !props.pullRequest) {
-    return null;
-  }
+  if (segments.length === 0) return null;
 
   return (
     <span
@@ -60,56 +66,39 @@ export function ThreadCommandSubtitle(props: {
         props.className,
       )}
     >
-      {projectLabel ? (
-        <span className="inline-flex min-w-0 items-center gap-1">
-          <span className="min-w-0 truncate">{projectLabel}</span>
-          {props.environmentLabel ? (
-            <>
-              <CommandPaletteMetaDot />
-              <span className="shrink-0">{props.environmentLabel}</span>
-            </>
-          ) : null}
-        </span>
-      ) : null}
-
-      {branchLabel ? (
-        <>
-          {projectLabel ? <CommandPaletteMetaDot /> : null}
-          <span className="inline-flex min-w-0 items-center gap-1">
-            <WorkspaceIcon variant={variant} isWorktree={isWorktree} />
-            <MiddleTruncate value={branchLabel} />
-          </span>
-        </>
-      ) : null}
-
-      {props.pullRequest ? (
-        <>
-          {projectLabel || branchLabel ? <CommandPaletteMetaDot /> : null}
-          <span className="inline-flex min-w-0 items-center gap-1">{props.pullRequest}</span>
-        </>
-      ) : null}
-
-      {showHarness && props.driverKind ? (
-        <>
-          {projectLabel || branchLabel || props.pullRequest ? <CommandPaletteMetaDot /> : null}
-          <ProviderInstanceIcon
-            driverKind={props.driverKind}
-            displayName={props.providerDisplayName ?? props.driverKind}
-            acpRegistryAgentId={props.acpRegistryAgentId}
-            acpRegistryIconUrl={props.acpRegistryIconUrl}
-            iconClassName="size-3 shrink-0 opacity-70"
-          />
-        </>
-      ) : null}
-
-      {props.isCurrent ? (
-        <>
-          {projectLabel || branchLabel || props.pullRequest || showHarness ? (
-            <CommandPaletteMetaDot />
-          ) : null}
-          <span className="shrink-0">Current thread</span>
-        </>
-      ) : null}
+      {segments.map((segment, index) => (
+        <Fragment key={segment}>
+          {index > 0 ? <CommandPaletteMetaDot /> : null}
+          {segment === "project" ? (
+            <span className="inline-flex min-w-0 items-center gap-1">
+              <span className="min-w-0 truncate">{projectLabel}</span>
+              {props.environmentLabel ? (
+                <>
+                  <CommandPaletteMetaDot />
+                  <span className="shrink-0">{props.environmentLabel}</span>
+                </>
+              ) : null}
+            </span>
+          ) : segment === "branch" ? (
+            <span className="inline-flex min-w-0 items-center gap-1">
+              <WorkspaceIcon variant={variant} isWorktree={isWorktree} />
+              <MiddleTruncate value={branchLabel ?? ""} />
+            </span>
+          ) : segment === "pullRequest" ? (
+            <span className="inline-flex min-w-0 items-center gap-1">{props.pullRequest}</span>
+          ) : segment === "harness" && props.driverKind ? (
+            <ProviderInstanceIcon
+              driverKind={props.driverKind}
+              displayName={props.providerDisplayName ?? props.driverKind}
+              acpRegistryAgentId={props.acpRegistryAgentId}
+              acpRegistryIconUrl={props.acpRegistryIconUrl}
+              iconClassName="size-3 shrink-0 opacity-70"
+            />
+          ) : (
+            <span className="shrink-0">Current thread</span>
+          )}
+        </Fragment>
+      ))}
     </span>
   );
 }

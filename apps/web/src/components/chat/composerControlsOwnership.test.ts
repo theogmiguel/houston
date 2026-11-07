@@ -20,11 +20,6 @@ describe("resolveComposerControlsOwnership", () => {
     });
   });
 
-  it("leaves composer.mode to the new-thread strip while it holds Permissions", () => {
-    const result = resolveComposerControlsOwnership({ ...base, stripHoldsPermissions: true });
-    expect(result.pickerOwnsModeShortcut).toBe(false);
-  });
-
   it("shows a labelled chip that owns composer.mode when the mode differs", () => {
     const result = resolveComposerControlsOwnership({ ...base, matchesDefault: false });
     expect(result).toMatchObject({
@@ -70,12 +65,13 @@ describe("resolveComposerControlsOwnership", () => {
     expect(result.pickerOwnsModeShortcut).toBe(true);
   });
 
-  it("shows the non-default chip as an icon in the compacted row", () => {
+  it("never shows a bare icon in the compacted row: the picker answers composer.mode", () => {
     const result = resolveComposerControlsOwnership({
       ...base,
       matchesDefault: false,
       collapsed: true,
     });
-    expect(result.accessDisplay).toBe("icon");
+    expect(result.accessDisplay).toBe("hidden");
+    expect(result.pickerOwnsModeShortcut).toBe(true);
   });
 });

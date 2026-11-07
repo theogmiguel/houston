@@ -1,11 +1,13 @@
 import { Toolbar } from "@base-ui/react/toolbar";
 import { type ProviderInstanceId } from "@houston-app/contracts";
 import type { TimestampFormat } from "@houston-app/contracts/settings";
-import { memo, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { StarIcon } from "lucide-react";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { useClientSettings } from "~/hooks/useSettings";
+import { useStableCallback } from "~/hooks/useStableCallback";
+import { observeResize } from "~/lib/observeResize";
 import { cn } from "~/lib/utils";
 import {
   isProviderInstancePickerReady,
@@ -68,6 +70,34 @@ function unavailableInstanceReason(
   return entry.snapshot.message?.trim() || (entry.status === "error" ? "Unavailable" : "Not ready");
 }
 
+/** The strip's edge fade grows over this many pixels; a tab under it reads as continuing. */
+const TAB_FADE_PX = 20;
+
+/**
+ * Which edges of a horizontally scrolling strip hide content: the strip fades there so a tab is
+ * never cut mid-label without a cue.
+ */
+function useScrollEdges() {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [edges, setEdges] = useState({ start: false, end: false });
+  const measure = useStableCallback(() => {
+    const node = ref.current;
+    if (node === null) return;
+    const start = node.scrollLeft > 1;
+    const end = node.scrollLeft + node.clientWidth < node.scrollWidth - 1;
+    setEdges((current) =>
+      current.start === start && current.end === end ? current : { start, end },
+    );
+  });
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- scroll geometry only exists in the DOM
+  useEffect(() => {
+    measure();
+    const node = ref.current;
+    return node === null ? undefined : observeResize(node, measure);
+  }, [measure]);
+  return { ref, edges, onScroll: measure };
+}
+
 const PICKER_TOOLTIP_SIDE = "bottom" as const;
 const PICKER_TOOLTIP_SIDE_OFFSET = 8;
 
@@ -95,8 +125,38 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
   const showFavorites = props.showFavorites ?? true;
   const [hoveredInstanceId, setHoveredInstanceId] = useState<ProviderInstanceId | null>(null);
 
+  const { ref, edges, onScroll } = useScrollEdges();
+  const { selectedInstanceId } = props;
+  // The selected provider scrolls into view when the strip is narrower than its tabs.
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- scrolls a DOM node; sets no state
+  useEffect(() => {
+    ref.current
+      ?.querySelector<HTMLElement>(
+        `[data-model-picker-provider="${CSS.escape(selectedInstanceId)}"]`,
+      )
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [selectedInstanceId, ref]);
+  const fade = (direction: "right" | "left") =>
+    `linear-gradient(to ${direction}, transparent, #000 ${TAB_FADE_PX}px)`;
+  const maskImage = [edges.start ? fade("right") : null, edges.end ? fade("left") : null]
+    .filter((layer) => layer !== null)
+    .join(", ");
   return (
     <Toolbar.Root
+      ref={ref}
+      onScroll={onScroll}
+      style={
+        maskImage === ""
+          ? undefined
+          : {
+              maskImage,
+              WebkitMaskImage: maskImage,
+              maskComposite: "intersect",
+              WebkitMaskComposite: "source-in",
+            }
+      }
+      data-scroll-fade-start={edges.start ? "true" : undefined}
+      data-scroll-fade-end={edges.end ? "true" : undefined}
       className="flex shrink-0 items-center gap-0.5 overflow-x-auto overscroll-x-contain border-border/70 border-b px-1.5 py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       data-model-picker-sidebar="true"
       aria-label="Providers"

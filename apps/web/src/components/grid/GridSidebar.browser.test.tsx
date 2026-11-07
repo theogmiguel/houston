@@ -492,8 +492,7 @@ describe("ThreadCard layout", () => {
     }
   });
 
-  it("keeps a long title clear of the hover actions in an active row and in a shelf row", async () => {
-    // The actions join the title line at its right edge; the title truncates before them.
+  it("keeps the title's width when the hover actions show, overlaying the right meta column", async () => {
     const longTitle = thread({ title: "T".repeat(200) });
     const rows = [
       { label: "active", options: {}, actionsName: /Thread actions for/ },
@@ -504,15 +503,17 @@ describe("ThreadCard layout", () => {
         <div style={{ width: 295 }}>{card(longTitle, { timeLabel: "6m", ...options })}</div>,
       );
       const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
+      const restingWidth = titleOf(screen).getBoundingClientRect().width;
       await userEvent.hover(row);
       const actions = screen.getByRole("button", { name: actionsName });
       await expect.element(actions).toBeVisible();
       const reveal = actions.element().closest("span")!;
       await vi.waitFor(() => expect(getComputedStyle(reveal).opacity).toBe("1"));
 
-      const actionsBox = reveal.getBoundingClientRect();
-      const titleBox = titleOf(screen).getBoundingClientRect();
-      expect(titleBox.right, label).toBeLessThanOrEqual(actionsBox.left);
+      expect(getComputedStyle(reveal).position, label).toBe("absolute");
+      expect(titleOf(screen).getBoundingClientRect().width, label).toBe(restingWidth);
+      const rowBox = row.getBoundingClientRect();
+      expect(reveal.getBoundingClientRect().right, label).toBeLessThanOrEqual(rowBox.right);
     }
   });
 

@@ -20,20 +20,24 @@ describe("SettingsSidebarNav at a 900px-high window", () => {
     );
   }
 
-  it("scrolls the list above the pinned Back row instead of running under it", async () => {
+  it("keeps every section label fully visible without scrolling", async () => {
     await using screen = await mount();
 
     const footer = screen.container.querySelector<HTMLElement>('[data-sidebar="footer"]')!;
     const viewport = screen.container.querySelector<HTMLElement>(
       '[data-slot="scroll-area-viewport"]',
     )!;
-    // More rows than fit, so the list is a scroller that ends where the footer begins.
-    expect(viewport.scrollHeight).toBeGreaterThan(viewport.clientHeight);
     expect(viewport.getBoundingClientRect().bottom).toBeLessThanOrEqual(
       footer.getBoundingClientRect().top + 1,
     );
-    // Both edges fade, so the rows cut above and below read as scrollable.
-    expect(getComputedStyle(viewport).maskImage).not.toBe("none");
+    const last = [...screen.container.querySelectorAll<HTMLElement>("[data-settings-section]")].at(
+      -1,
+    )!;
+    // The last row ends above the point where the bottom fade would begin.
+    expect(last.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+      viewport.getBoundingClientRect().bottom,
+    );
+    expect(viewport.scrollHeight).toBeLessThanOrEqual(viewport.clientHeight);
   });
 
   it("brings the last row fully above the footer once scrolled to the end", async () => {

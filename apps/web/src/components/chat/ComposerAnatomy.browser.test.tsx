@@ -92,14 +92,15 @@ it(
     );
     const cardBox = card.getBoundingClientRect();
 
-    // Wide form: the checkout, branch and access controls sit in a tray attached above the card,
-    // never in a second band under it and never in the card's own toolbar.
+    // Wide form: the checkout and branch sit in one context row, the first row inside the card's
+    // border, never in a second band under it and never in the card's own toolbar.
     expect(document.querySelector('[data-slot="composer-context-strip"]')).toBeNull();
-    const tray = await vi.waitFor(
+    expect(document.querySelector("[data-composer-context-tray]")).toBeNull();
+    const row = await vi.waitFor(
       () => {
-        const found = document.querySelector<HTMLElement>('[data-composer-context-tray="true"]');
+        const found = document.querySelector<HTMLElement>('[data-composer-context-row="true"]');
         if (found?.querySelector("[data-composer-context-control]") == null) {
-          throw new Error("context controls are not in the composer tray yet");
+          throw new Error("context controls are not in the composer row yet");
         }
         return found;
       },
@@ -108,17 +109,21 @@ it(
     const footer = document.querySelector<HTMLElement>('[data-chat-composer-footer="true"]')!;
     expect(footer.querySelector("[data-composer-context-control]")).toBeNull();
     expect(footer.querySelector('[aria-label^="Workspace:"]')).toBeNull();
-    const trayBox = tray.getBoundingClientRect();
-    const cardWithTray = card.getBoundingClientRect();
-    // Inset from the card on both sides, sitting on top of it.
-    expect(trayBox.left - cardWithTray.left).toBeGreaterThanOrEqual(8);
-    expect(cardWithTray.right - trayBox.right).toBeGreaterThanOrEqual(8);
-    expect(trayBox.top).toBeLessThan(cardWithTray.top);
-    expect(trayBox.bottom).toBeLessThanOrEqual(cardWithTray.top + 12);
-    expect(getComputedStyle(tray).borderBottomWidth).toBe("0px");
-    expect(getComputedStyle(tray).flexWrap).not.toBe("wrap");
-    for (const control of tray.querySelectorAll<HTMLElement>("[data-composer-context-control]")) {
-      expect(control.getBoundingClientRect().right).toBeLessThanOrEqual(trayBox.right + 1);
+    const rowBox = row.getBoundingClientRect();
+    const cardWithRow = card.getBoundingClientRect();
+    // Inside the card's border, flush with its top, spanning its width, closed by a 1px divider.
+    expect(card.contains(row)).toBe(true);
+    expect(rowBox.top - cardWithRow.top).toBeLessThanOrEqual(2);
+    expect(rowBox.left - cardWithRow.left).toBeLessThanOrEqual(2);
+    expect(cardWithRow.right - rowBox.right).toBeLessThanOrEqual(2);
+    expect(getComputedStyle(row).borderBottomWidth).toBe("1px");
+    expect(getComputedStyle(row).backgroundColor).toBe("rgba(0, 0, 0, 0)");
+    expect(getComputedStyle(row).flexWrap).not.toBe("wrap");
+    // Nothing is pending, so the row has no changes summary, and access is not repeated here.
+    expect(row.querySelector("[data-changed-files-bar]")).toBeNull();
+    expect(row.querySelector('[aria-label^="Permissions:"]')).toBeNull();
+    for (const control of row.querySelectorAll<HTMLElement>("[data-composer-context-control]")) {
+      expect(control.getBoundingClientRect().right).toBeLessThanOrEqual(rowBox.right + 1);
     }
     expect(footer.getBoundingClientRect().top).toBeLessThan(cardBox.bottom);
     expect(card.contains(footer)).toBe(true);
@@ -136,9 +141,9 @@ it(
     expect(
       editorBox.left + parseFloat(editorStyle.paddingLeft) - cardBox.left,
     ).toBeGreaterThanOrEqual(16);
-    expect(editorBox.top + parseFloat(editorStyle.paddingTop) - cardBox.top).toBeGreaterThanOrEqual(
-      10,
-    );
+    expect(
+      editorBox.top + parseFloat(editorStyle.paddingTop) - rowBox.bottom,
+    ).toBeGreaterThanOrEqual(10);
     expect(editorBox.height).toBeLessThanOrEqual(40);
 
     // The details card opens only from its toggle or shortcut.
@@ -207,10 +212,18 @@ it(
 
       // The empty composer rests at one input line plus the 40px toolbar, grows while typing and
       // shrinks back when the text is gone.
+      const contextRowHeight =
+        document
+          .querySelector<HTMLElement>('[data-composer-context-row="true"]')
+          ?.getBoundingClientRect().height ?? 0;
       const restingHeight = surface.getBoundingClientRect().height;
-      const inputRowHeight = restingHeight - footer.getBoundingClientRect().height;
+      const inputRowHeight =
+        restingHeight - footer.getBoundingClientRect().height - contextRowHeight;
       expect(inputRowHeight, `resting input row height at ${width}px`).toBeLessThanOrEqual(64);
-      expect(restingHeight, `resting composer height at ${width}px`).toBeLessThanOrEqual(80);
+      expect(
+        restingHeight - contextRowHeight,
+        `resting composer height at ${width}px`,
+      ).toBeLessThanOrEqual(80);
       await userEvent.click(page.getByTestId("composer-editor"));
       await userEvent.keyboard("one{Shift>}{Enter}{/Shift}two{Shift>}{Enter}{/Shift}three");
       await userEvent.keyboard("{Shift>}{Enter}{/Shift}four{Shift>}{Enter}{/Shift}five");
@@ -226,15 +239,15 @@ it(
       const contextControls = [
         ...footer.querySelectorAll<HTMLElement>("[data-composer-context-control]"),
       ];
-      const trayNow = document.querySelector<HTMLElement>('[data-composer-context-tray="true"]');
+      const rowNow = document.querySelector<HTMLElement>('[data-composer-context-row="true"]');
       if (width >= 520) {
-        // Wide form: the tray holds the context; the body has no workspace chip.
-        expect(trayNow).not.toBeNull();
+        // Wide form: the row holds the context; the body has no workspace chip.
+        expect(rowNow).not.toBeNull();
         expect(contextControls).toHaveLength(0);
-        expect(trayNow!.querySelector("[data-composer-context-control]")).not.toBeNull();
+        expect(rowNow!.querySelector("[data-composer-context-control]")).not.toBeNull();
       } else {
-        // Compact form: no tray; one workspace chip folds checkout, branch and access.
-        expect(trayNow).toBeNull();
+        // Compact form: no row; one workspace chip folds checkout and branch.
+        expect(rowNow).toBeNull();
         expect(contextControls.length).toBeLessThanOrEqual(2);
       }
 
@@ -253,14 +266,16 @@ it(
         expect(control.getBoundingClientRect().top).toBeGreaterThanOrEqual(editorBottom - 1);
         expect(control.getBoundingClientRect().top).toBeGreaterThan(editorTop);
       }
-      // The model chip stays at every width; below 380px it is the provider mark only.
+      // The model chip stays at every width: it names the model down to a 340px pane and is the
+      // provider mark only below that.
       const modelChip = footer.querySelector<HTMLElement>("[data-chat-provider-model-picker]");
       expect(modelChip).not.toBeNull();
-      if (width < 380) {
-        await vi.waitFor(() =>
-          expect(modelChip!.dataset.chatProviderModelPickerIconOnly).toBe("true"),
-        );
-        expect(modelChip!.getAttribute("title") ?? "").not.toBe("");
+      if (width >= 340) {
+        expect(modelChip!.dataset.chatProviderModelPickerIconOnly).toBeUndefined();
+        expect(
+          modelChip!.querySelector<HTMLElement>("[data-chat-provider-model-picker-label]")!
+            .textContent,
+        ).not.toBe("");
       }
       // The workspace chip never repeats a segment ("Local · Local").
       const workspaceChip = footer.querySelector<HTMLElement>('[aria-label^="Workspace:"]');
@@ -275,6 +290,14 @@ it(
           .map((part) => part.trim())
           .filter(Boolean);
         expect(new Set(segments).size).toBe(segments.length);
+        // The chip is as wide as its content: no gap between its children beyond 6px.
+        const parts = [...workspaceChip.children].map((child) => child.getBoundingClientRect());
+        for (const [index, part] of parts.slice(1).entries()) {
+          expect(
+            part.left - parts[index]!.right,
+            `chip gap ${index} at ${width}px`,
+          ).toBeLessThanOrEqual(6);
+        }
       }
       // No control overlaps another.
       for (const [index, first] of toolbarControls.entries()) {
@@ -301,7 +324,7 @@ it(
       expect(sendRight.left).toBeGreaterThanOrEqual(surfaceBox.left);
 
       if (width < 520) {
-        // The folded workspace chip keeps checkout, branch and access reachable.
+        // The folded workspace chip keeps checkout and branch reachable.
         const chip = footer.querySelector<HTMLElement>('[aria-label^="Workspace:"]')!;
         expect(chip).not.toBeNull();
         await userEvent.click(chip);
@@ -310,7 +333,7 @@ it(
           expect(found).not.toBeNull();
           return found!;
         });
-        expect(panel.querySelectorAll("[data-composer-context-control]").length).toBeGreaterThan(1);
+        expect(panel.querySelectorAll("[data-composer-context-control]").length).toBeGreaterThan(0);
         await userEvent.keyboard("{Escape}");
         await vi.waitFor(() =>
           expect(document.querySelector('[data-slot="popover-popup"]')).toBeNull(),

@@ -3,9 +3,6 @@ import { ErrorLogDisclosure } from "./ui/error-log-disclosure";
 import {
   SERVER_UNAVAILABLE_CANVAS,
   SERVER_UNAVAILABLE_CONTENT,
-  SERVER_UNAVAILABLE_HEADER,
-  SERVER_UNAVAILABLE_HEADER_ACTION,
-  SERVER_UNAVAILABLE_HEADER_LABEL,
   SERVER_UNAVAILABLE_MESSAGE,
   SERVER_UNAVAILABLE_SHELL,
   SERVER_UNAVAILABLE_SIDEBAR,
@@ -34,10 +31,6 @@ export function ServerUnavailableCard({
         </div>
       </div>
       <div className={SERVER_UNAVAILABLE_CONTENT}>
-        <div aria-hidden data-server-unavailable-header className={SERVER_UNAVAILABLE_HEADER}>
-          <div className={SERVER_UNAVAILABLE_HEADER_LABEL} />
-          <div className={SERVER_UNAVAILABLE_HEADER_ACTION} />
-        </div>
         <div data-server-unavailable-canvas className={SERVER_UNAVAILABLE_CANVAS}>
           <section data-server-unavailable-card className={SERVER_UNAVAILABLE_MESSAGE}>
             <StandalonePageHeader

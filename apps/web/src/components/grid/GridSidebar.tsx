@@ -2293,10 +2293,9 @@ function useThreadBranch(thread: EnvironmentThreadShell): {
   };
 }
 
-// Positioned so the actions paint above the faded time; out of flow until the row is hovered or focused.
-const ROW_ACTIONS_IN_FLOW = "relative";
-const ROW_ACTIONS_OUT_OF_FLOW =
-  "absolute top-0 right-0 group-hover/th:relative group-has-[:focus-visible]/th:relative";
+// The actions always sit out of flow over the row's right meta column, so showing them never
+// narrows the title; their own surface covers the title's tail where they are wider than the age.
+const ROW_ACTIONS_OVERLAY = "absolute top-0 right-0 rounded-(--r-badge) bg-(--sidebar-row-hover)";
 
 export function ThreadCard({
   gridId,
@@ -2615,8 +2614,8 @@ export function ThreadCard({
             )}
             {/*
             The age and the hover actions share one grid cell at the title line's right edge, so ages
-            scan down one column whatever the row carries. Hidden actions leave the flow; shown, they
-            join it and the title truncates before them.
+            scan down one column whatever the row carries. The actions overlay that cell and fade in
+            over the age; the title keeps its width.
           */}
             <span className="relative ml-auto grid h-5 shrink-0 grid-rows-1 items-center justify-items-end">
               <span
@@ -2637,7 +2636,7 @@ export function ThreadCard({
                 className={cn(
                   "col-start-1 row-start-1 flex h-[22px] items-center gap-0.5",
                   MOTION_FEEDBACK_OPACITY,
-                  actionsVisible ? ROW_ACTIONS_IN_FLOW : ROW_ACTIONS_OUT_OF_FLOW,
+                  ROW_ACTIONS_OVERLAY,
                   actionsVisible ? ROW_ACTIONS_VISIBLE : ROW_ACTIONS_REVEAL,
                 )}
                 onMouseEnter={() => setActionsHovered(true)}
@@ -2828,7 +2827,7 @@ export function ThreadCard({
             {/* A fixed slot, so the marks line up under the ages whatever the row carries. */}
             <span
               data-thread-provider-mark=""
-              className="inline-grid size-3.5 shrink-0 place-items-center"
+              className="inline-grid size-4 shrink-0 place-items-center"
             >
               {providerEntry !== undefined ? (
                 <SidebarProviderStack

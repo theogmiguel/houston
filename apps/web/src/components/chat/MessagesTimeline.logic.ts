@@ -1114,6 +1114,16 @@ export function boardWorkSummary(entries: ReadonlyArray<WorkLogEntry>): string |
   return parts.slice(0, 3).join(" · ");
 }
 
+/**
+ * The work line's label: the status word once, then the counts. A group with a call in flight
+ * reads "Running · ran 1 command" rather than stacking the status word on a past-tense verb.
+ */
+export function groupBoardLabel(entries: ReadonlyArray<WorkLogEntry>): string {
+  const summary = boardWorkSummary(entries) ?? "";
+  const running = entries.some((entry) => entry.toolLifecycleStatus === "inProgress");
+  return running && summary.length > 0 ? `Running · ${summary}` : summary;
+}
+
 function deriveTurnFolds(input: {
   timelineEntries: ReadonlyArray<TimelineEntry>;
   terminalAssistantMessageIds: ReadonlySet<string>;
@@ -2130,7 +2140,7 @@ export function deriveMessagesTimelineRows(input: {
                   ? singleEntry.label
                   : summarizeToolGroup(visibleGroupedEntries).summary,
               ...(boardWorkSummary(visibleGroupedEntries)
-                ? { boardSummary: boardWorkSummary(visibleGroupedEntries)! }
+                ? { boardSummary: groupBoardLabel(visibleGroupedEntries) }
                 : {}),
               summaryKind,
               ...(groupToolSurface ? { toolSurface: groupToolSurface } : {}),

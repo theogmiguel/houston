@@ -10,8 +10,8 @@ import { cn } from "~/lib/utils";
 import { ProviderInstanceIcon, providerHasBrandGlyph } from "../chat/ProviderInstanceIcon";
 
 /**
- * The 14px provider mark of a thread row: the brand glyph where the provider has one, otherwise a
- * rounded square carrying a two-letter monogram. The monogram is neutral (muted letters on a
+ * The provider mark of a thread row: the brand glyph where the provider has one, otherwise a 16px
+ * rounded tile carrying an 11px/600 two-letter monogram. The monogram is neutral (muted letters on a
  * muted fill), so it never reads as a status colour; only an accent the provider's owner chose
  * tints it.
  */
@@ -64,7 +64,7 @@ export function ProviderMark({
       data-provider-mark-kind="monogram"
       style={accent === undefined ? undefined : ({ "--provider-tint": accent } as CSSProperties)}
       className={cn(
-        "inline-grid size-3.5 shrink-0 place-items-center rounded-(--r-badge) text-monogram font-semibold tracking-tight",
+        "inline-grid size-4 shrink-0 place-items-center rounded-(--r-badge) text-monogram font-semibold tracking-tight",
         accent === undefined
           ? "bg-(--sel) text-secondary-label"
           : "bg-[color-mix(in_srgb,var(--provider-tint)_22%,transparent)] text-(--provider-tint)",

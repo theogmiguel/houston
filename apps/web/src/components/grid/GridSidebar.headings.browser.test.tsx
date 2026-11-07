@@ -344,8 +344,8 @@ describe("sticky project heading", () => {
     expect(projectHeading.hasAttribute("data-stuck")).toBe(false);
     expect(getComputedStyle(projectHeading).borderBottomColor).toBe("rgba(0, 0, 0, 0)");
     const idleFade = getComputedStyle(projectHeading, "::after");
-    expect(idleFade.backgroundImage).toContain("linear-gradient");
-    expect(idleFade.height).toBe("8px");
+    expect(idleFade.backgroundImage).toBe("none");
+    expect(idleFade.height).toBe("4px");
     expect(idleFade.opacity).toBe("0");
 
     viewport.scrollTop = 200;
@@ -355,8 +355,11 @@ describe("sticky project heading", () => {
     expect(getComputedStyle(projectHeading).borderBottomColor).not.toBe("rgba(0, 0, 0, 0)");
     expect(getComputedStyle(projectHeading).backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
     expect(getComputedStyle(projectHeading).opacity).toBe("1");
-    // The 8px mask under the stuck heading fades the cut row instead of showing a hard seam.
-    expect(getComputedStyle(projectHeading, "::after").opacity).toBe("1");
+    // A solid lip under the stuck heading cuts a row cleanly; nothing translucent ghosts through.
+    const lip = getComputedStyle(projectHeading, "::after");
+    expect(lip.opacity).toBe("1");
+    expect(lip.backgroundImage).toBe("none");
+    expect(lip.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
     expect(Math.round(projectHeading.getBoundingClientRect().top)).toBeLessThanOrEqual(
       Math.round(viewport.getBoundingClientRect().top),
     );

@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 
-import { APP_DISPLAY_NAME } from "../branding";
+import { APP_BASE_NAME } from "../branding";
 import { openAddProjectDialog } from "./AddProjectDialog";
 import { isDesktopHost } from "../env";
 import { useScratchProject } from "../hooks/useScratchProject";
@@ -58,7 +58,8 @@ function summarizeProviders(providers: ReadonlyArray<ServerProvider>) {
   for (const provider of providers) {
     const state = getOnboardingProviderState(provider);
     if (state === "ready") ready.push(providerLabel(provider));
-    else if (state === "install" || (state === "disabled" && !provider.installed)) notInstalled += 1;
+    else if (state === "install" || (state === "disabled" && !provider.installed))
+      notInstalled += 1;
     else if (state === "signIn" || state === "attention") needsAttention += 1;
   }
   return { ready, needsAttention, notInstalled };
@@ -70,9 +71,12 @@ export function providerStatusLine(providers: ReadonlyArray<ServerProvider>): st
   const { ready, needsAttention, notInstalled } = summarizeProviders(providers);
   const parts: string[] = [];
   if (ready.length > 0) {
-    parts.push(ready.length <= 2 ? `${ready.join(" and ")} ready` : `${ready.length} providers ready`);
+    parts.push(
+      ready.length <= 2 ? `${ready.join(" and ")} ready` : `${ready.length} providers ready`,
+    );
   }
-  if (needsAttention > 0) parts.push(`${needsAttention} need${needsAttention === 1 ? "s" : ""} attention`);
+  if (needsAttention > 0)
+    parts.push(`${needsAttention} need${needsAttention === 1 ? "s" : ""} attention`);
   if (notInstalled > 0) parts.push(`${notInstalled} not installed`);
   return parts.length > 0 ? parts.join(" · ") : "Checking providers…";
 }
@@ -113,10 +117,10 @@ export function NoProjectsHero() {
       className="min-h-0 overflow-hidden overscroll-y-none"
     >
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
-        {/* The board's window titlebar names the product above the empty state. */}
+        {/* The titlebar names the product, not its channel: the rail's pill carries that. */}
         <WorkspacePageHeader desktop={isDesktopHost}>
           <span className="text-sm font-medium text-foreground md:text-muted-foreground/60">
-            {APP_DISPLAY_NAME}
+            {APP_BASE_NAME}
           </span>
         </WorkspacePageHeader>
         <Empty size="welcome" className="flex-1">
@@ -152,11 +156,7 @@ export function NoProjectsHero() {
               <Popover>
                 <PopoverTrigger
                   render={
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      aria-label="Where your prompts go"
-                    />
+                    <Button variant="ghost" size="icon-xs" aria-label="Where your prompts go" />
                   }
                 >
                   <InfoIcon className="size-4" />

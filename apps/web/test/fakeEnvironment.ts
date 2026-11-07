@@ -3,6 +3,9 @@
 // stay pending so nothing retries on timers. Everything above the wire is the app's own.
 import {
   AuthStandardClientScopes,
+  CheckpointId,
+  CheckpointRef,
+  CheckpointScopeId,
   EnvironmentId,
   EventId,
   ExecutionEnvironmentDescriptor,
@@ -22,6 +25,7 @@ import {
   WsRpcGroup,
   type VcsStatusStreamEvent,
   type OrchestrationProjectShell,
+  type OrchestrationV2Checkpoint,
   type OrchestrationV2ProjectedTurnItem,
   type OrchestrationV2Run,
   type OrchestrationV2RuntimeRequest,
@@ -204,6 +208,32 @@ export interface FakeThread {
   readonly items: ReadonlyArray<OrchestrationV2TurnItem>;
   /** Runtime requests (pending questions, approvals) the thread projection reports. */
   readonly runtimeRequests?: ReadonlyArray<OrchestrationV2RuntimeRequest>;
+  /** Checkpoints the thread projection reports; the latest ready one is the pending change set. */
+  readonly checkpoints?: ReadonlyArray<OrchestrationV2Checkpoint>;
+}
+
+/** The thread's latest run left these files changed: a ready checkpoint the composer summarises. */
+export function withPendingChanges(
+  thread: FakeThread,
+  files: ReadonlyArray<{ path: string; additions: number; deletions: number }>,
+): FakeThread {
+  const latest = thread.runs.at(-1);
+  if (latest === undefined) throw new Error(`thread ${thread.id} has no run to attach changes to`);
+  const checkpoint: OrchestrationV2Checkpoint = {
+    id: CheckpointId.make(`${thread.id}-checkpoint`),
+    threadId: thread.id,
+    scopeId: CheckpointScopeId.make(`${thread.id}-scope`),
+    runId: latest.id,
+    nodeId: NodeId.make(`${thread.id}-node`),
+    parentCheckpointId: null,
+    ordinalWithinScope: 1,
+    appRunOrdinal: thread.runs.length,
+    ref: CheckpointRef.make(`${thread.id}-ref`),
+    status: "ready",
+    files: files.map((file) => ({ ...file, kind: "modified" })),
+    capturedAt: AT,
+  };
+  return { ...thread, checkpoints: [checkpoint] };
 }
 
 /** A thread of `turns` user prompts, each answered in markdown with a list and inline code. */
@@ -319,7 +349,7 @@ function projectionOf(thread: FakeThread): OrchestrationV2ThreadProjection {
     plans: [],
     turnItems: [...thread.items],
     checkpointScopes: [],
-    checkpoints: [],
+    checkpoints: [...(thread.checkpoints ?? [])],
     contextHandoffs: [],
     contextTransfers: [],
     visibleTurnItems,
@@ -334,6 +364,7 @@ const json = (body: unknown, status = 200) =>
 const threadSubscribers = new Map<string, Queue.Queue<OrchestrationV2ThreadStreamItem>>();
 let terminalMetadataSubscriber: Queue.Queue<TerminalMetadataStreamEvent> | null = null;
 let threads: ReadonlyArray<FakeThread> = [];
+let deletedThreadIds: ReadonlySet<string> = new Set();
 let sequence = 1;
 let vcsStatusSubscriber: Queue.Queue<VcsStatusStreamEvent> | null = null;
 
@@ -374,6 +405,18 @@ const handlers: Record<string, (input: never) => unknown> = {
     ]),
   [ORCHESTRATION_V2_WS_METHODS.subscribeThread]: (input: { readonly threadId: ThreadId }) => {
     const thread = threads.find((candidate) => candidate.id === input.threadId);
+    if (!thread && deletedThreadIds.has(input.threadId)) {
+      // A thread the shell never lists whose detail reports it deleted.
+      const projection = projectionOf(threadWithHistory(input.threadId, 0));
+      return subscribe<OrchestrationV2ThreadStreamItem>([
+        {
+          kind: "snapshot",
+          snapshotSequence: sequence,
+          projection: { ...projection, thread: { ...projection.thread, deletedAt: AT } },
+        },
+        { kind: "synchronized" },
+      ]);
+    }
     if (!thread) return Stream.never;
     return subscribe<OrchestrationV2ThreadStreamItem>(
       [
@@ -448,9 +491,16 @@ const encodedDescriptor = Schema.encodeSync(ExecutionEnvironmentDescriptor)(
   Schema.decodeUnknownSync(ExecutionEnvironmentDescriptor)(descriptor),
 );
 
-/** Serves the environment's HTTP API and these threads until disposed. */
-export function installFakeEnvironment(fixtures: ReadonlyArray<FakeThread>): Disposable {
+/**
+ * Serves the environment's HTTP API and these threads until disposed. `deletedThreadIds` names
+ * threads that are absent from the shell and whose detail reports them deleted.
+ */
+export function installFakeEnvironment(
+  fixtures: ReadonlyArray<FakeThread>,
+  options: { readonly deletedThreadIds?: ReadonlyArray<string> } = {},
+): Disposable {
   threads = fixtures;
+  deletedThreadIds = new Set(options.deletedThreadIds ?? []);
   globalThis.fetch = async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input), window.location.href);
     if (url.origin !== window.location.origin) return realFetch(input, init);
@@ -472,6 +522,7 @@ export function installFakeEnvironment(fixtures: ReadonlyArray<FakeThread>): Dis
     [Symbol.dispose]: () => {
       globalThis.fetch = realFetch;
       threads = [];
+      deletedThreadIds = new Set();
     },
   };
 }

@@ -64,6 +64,19 @@ it.each([800, 700])("opens the thread rail as a drawer from the toggle at %ipx",
   await expect.poll(() => threadsNav()?.getBoundingClientRect().width ?? 0).toBeGreaterThan(200);
 });
 
+it.each([800, 390])("keeps the drawer at most 360px wide at %ipx", async (width) => {
+  const { screen } = await mountApp(width);
+  await using _screen = screen;
+  const toggle = screen.getByRole("button", { name: "Toggle main sidebar" });
+  await expect.element(toggle).toBeVisible();
+  await userEvent.click(toggle);
+  await vi.waitFor(() => expect(threadsNav()).not.toBeNull(), { timeout: 5_000 });
+  const drawer = document.querySelector<HTMLElement>('[data-slot="sidebar"][data-mobile="true"]')!;
+  await expect.poll(() => drawer.getBoundingClientRect().width).toBeLessThanOrEqual(360);
+  await expect.poll(() => threadsNav()!.getBoundingClientRect().width).toBeLessThanOrEqual(360);
+  expect(threadsNav()!.getBoundingClientRect().width).toBeGreaterThan(200);
+});
+
 it("closes the drawer when the page changes", async () => {
   const { screen, router } = await mountApp(800);
   await using _screen = screen;

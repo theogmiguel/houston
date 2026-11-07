@@ -383,7 +383,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                   {...sectionNavigation.containerProps}
                   role="tree"
                   aria-label="Settings sections"
-                  className="flex flex-col gap-4"
+                  className="flex flex-col gap-2.5"
                 >
                   {SETTINGS_NAV_GROUPS.map((group, index) => (
                     <div
@@ -439,7 +439,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
           </div>
         </SidebarGroup>
         {/* Room for the last row to clear the fade where the list meets the pinned Back row. */}
-        <div aria-hidden className="h-4 shrink-0" />
+        <div aria-hidden className="h-2 shrink-0" />
       </ScrollArea>
       <SidebarFooter className="max-md:hidden shrink-0">
         <SidebarMenu>

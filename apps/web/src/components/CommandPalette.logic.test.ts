@@ -1042,14 +1042,26 @@ function actionItem(value: string, disabled = false) {
 }
 
 describe("command palette opening groups", () => {
-  it("lists recent threads, then projects, then actions", () => {
+  it("lists commands, then recent threads, then projects, then actions", () => {
     const groups = buildRootGroups({
-      actionItems: [actionItem("action:one")],
+      actionItems: [actionItem("action:settings"), actionItem("action:one")],
       projectItems: [actionItem("project:one")],
       recentThreadItems: [actionItem("thread:one")],
     });
-    expect(groups.map((group) => group.value)).toEqual(["recent-threads", "projects", "actions"]);
-    expect(groups.map((group) => group.label)).toEqual(["Recent threads", "Projects", "Actions"]);
+    expect(groups.map((group) => group.value)).toEqual([
+      "commands",
+      "recent-threads",
+      "projects",
+      "actions",
+    ]);
+    expect(groups.map((group) => group.label)).toEqual([
+      "Commands",
+      "Recent threads",
+      "Projects",
+      "Actions",
+    ]);
+    expect(groups[0]?.items.map((item) => item.value)).toEqual(["action:settings"]);
+    expect(groups[3]?.items.map((item) => item.value)).toEqual(["action:one"]);
   });
 
   it("keeps five recent threads and leaves unavailable actions out", () => {

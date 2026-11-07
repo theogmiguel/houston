@@ -20,7 +20,6 @@ import {
 import {
   type Ref,
   type MouseEvent as ReactMouseEvent,
-  type ReactNode,
   memo,
   useImperativeHandle,
   useRef,
@@ -31,10 +30,13 @@ import { flushSync } from "react-dom";
 import { useComposerDraftStore, useComposerThreadDraft, type DraftId } from "../composerDraftStore";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { useProject, useQuietThreadShell, useThreadShellsForProjectRefs } from "../state/entities";
+import { useEnvironmentQuery } from "../state/query";
+import { vcsEnvironment } from "../state/vcs";
 import {
   ADD_TO_MACHINE_LABEL_CLASS,
   type EnvMode,
   type EnvironmentOption,
+  resolveBranchToolbarValue,
   resolveContextStripLabelsCompact,
   resolveContextStripLabelsNarrow,
   resolveCurrentWorkspaceLabel,
@@ -125,8 +127,6 @@ interface BranchToolbarProps {
   envLocked: boolean;
   onCheckoutPullRequestRequest?: (reference: string) => void;
   onComposerFocusRequest?: () => void;
-  /** Shown at the end of the composer strip, such as the new thread's permissions. */
-  trailing?: ReactNode;
   availableEnvironments?: readonly EnvironmentOption[];
   onEnvironmentChange?: (environmentId: EnvironmentId) => void;
 }
@@ -552,7 +552,6 @@ export const BranchToolbar = memo(function BranchToolbar({
   onComposerFocusRequest,
   availableEnvironments,
   onEnvironmentChange,
-  trailing,
 }: BranchToolbarProps) {
   const branchSelectorRef = useRef<BranchToolbarBranchSelectorHandle>(null);
   const threadRef = scopeThreadRef(environmentId, threadId);
@@ -633,6 +632,15 @@ export const BranchToolbar = memo(function BranchToolbar({
     activeEnvironment: activeEnvironmentOption,
     canPickEnvironment: hasMultipleEnvironments,
   });
+  // A local checkout has a branch even when the thread records none: the chip reads it from the
+  // checkout's git status, as the branch picker does.
+  const checkoutCwd = activeWorktreePath ?? activeProject?.workspaceRoot ?? null;
+  const checkoutStatus = useEnvironmentQuery(
+    checkoutCwd === null
+      ? null
+      : vcsEnvironment.status({ environmentId, input: { cwd: checkoutCwd } }),
+  );
+  const currentGitBranch = checkoutStatus.data?.refName ?? null;
   const [attachStrip, labelsCompact, labelsNarrow] = useLabelsOverflow();
 
   if (!activeProject) return null;
@@ -688,7 +696,14 @@ export const BranchToolbar = memo(function BranchToolbar({
   const narrow = forceNarrow ?? labelsNarrow;
   const envModeLabel = resolveEnvModeLabel(effectiveEnvMode, true);
   const resolvedBranch =
-    activeThreadBranchOverride ?? shell?.branch ?? previousWorktreeSeed?.branch ?? null;
+    resolveBranchToolbarValue({
+      envMode: effectiveEnvMode,
+      activeWorktreePath,
+      activeThreadBranch: activeThreadBranchOverride ?? shell?.branch ?? null,
+      currentGitBranch,
+    }) ??
+    previousWorktreeSeed?.branch ??
+    null;
   const branchLabel = resolvedBranch ?? envModeLabel;
   // A branch that is only the mode's name ("Local") would repeat it: show one part.
   const chipLabelClass =
@@ -837,7 +852,11 @@ export const BranchToolbar = memo(function BranchToolbar({
           >
             <WorkspaceIcon aria-hidden className={CONTEXT_CHIP_CHEVRON_CLS} />
             <span data-composer-label className={chipLabelClass}>
-              {branchLabel}
+              {resolvedBranch === null ? (
+                branchLabel
+              ) : (
+                <MiddleTruncate value={branchLabel} className="w-full" />
+              )}
             </span>
             <ChevronDownIcon aria-hidden className={CONTEXT_CHIP_CHEVRON_CLS} />
           </PopoverTrigger>
@@ -846,7 +865,6 @@ export const BranchToolbar = memo(function BranchToolbar({
               {runContextNode}
               {showGitControls ? branchSelector("branch", "min-w-0 flex-1 justify-end") : null}
               {environmentNode}
-              {trailing}
             </div>
           </PopoverPopup>
         </Popover>
@@ -865,11 +883,9 @@ export const BranchToolbar = memo(function BranchToolbar({
       >
         {projectChip}
         {runContextNode}
-        <div className="ms-auto flex min-w-0 items-center gap-1">
-          {showGitControls ? branchSelector("all", "min-w-0 justify-end") : null}
-          {uploadsNode}
-          {trailing}
-        </div>
+        {showGitControls ? branchSelector("branch", "min-w-0 shrink") : null}
+        {showGitControls ? branchSelector("pr", "shrink-0") : null}
+        {uploadsNode}
       </div>
     );
   }
@@ -881,7 +897,6 @@ export const BranchToolbar = memo(function BranchToolbar({
       {environmentNode}
       {branchNode}
       {uploadsNode}
-      {trailing}
     </>
   );
 

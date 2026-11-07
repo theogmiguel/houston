@@ -142,12 +142,16 @@ export function useCommandPaletteThreadItems(input: {
             thread.id === activeThread?.id && thread.environmentId === activeThread.environmentId
           }
           pullRequest={
-            <ThreadSearchPullRequestNumber
-              thread={thread}
-              query={threadSearchQuery}
-              always
-              settled={thread.settledOverride === "settled"}
-            />
+            thread.linkedPullRequest != null ||
+            thread.branchPullRequest != null ||
+            (thread.pullRequests?.length ?? 0) > 0 ? (
+              <ThreadSearchPullRequestNumber
+                thread={thread}
+                query={threadSearchQuery}
+                always
+                settled={thread.settledOverride === "settled"}
+              />
+            ) : null
           }
           driverKind={providerEntry?.driverKind ?? null}
           providerDisplayName={

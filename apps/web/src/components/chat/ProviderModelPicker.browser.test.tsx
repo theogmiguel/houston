@@ -396,7 +396,7 @@ describe("the docked popup's shape", () => {
     expect(sidebar.top).toBeGreaterThanOrEqual(search.getBoundingClientRect().bottom);
   });
 
-  it("has no footer when the strip holds the permissions", async () => {
+  it("shows no footer unless the composer supplies one", async () => {
     await using _screen = await openDocked();
 
     expect(document.body.textContent).not.toContain("Full access");
@@ -582,5 +582,122 @@ describe("docked popup and the composer context row", () => {
         return popup.getBoundingClientRect().top - header.getBoundingClientRect().bottom;
       })
       .toBeGreaterThanOrEqual(8);
+  });
+});
+
+describe("new-thread page placement", () => {
+  async function openInHero(paddingTop: number) {
+    await page.viewport(1440, 900);
+    const screen = await render(
+      <TooltipProvider delay={0}>
+        <div data-chat-column="">
+          <div data-draft-hero="" style={{ paddingTop, paddingLeft: 160 }}>
+            <form data-chat-composer-form="true" style={{ width: 760 }}>
+              <div
+                data-inline-resting-controls="true"
+                style={{ padding: "12px 32px" }}
+                className="rounded-xl border border-border"
+              >
+                <ProviderModelPicker
+                  environmentId={null}
+                  activeInstanceId={CLAUDE}
+                  model="opus"
+                  lockedProvider={null}
+                  instanceEntries={entries}
+                  keybindings={compileResolvedKeybindingsConfig([])}
+                  modelOptionsByInstance={new Map([[CLAUDE, provider.models]])}
+                  isComposerOwned
+                  effortPanel={<ComposerEffortPanel traits={null} />}
+                  onInstanceModelChange={() => {}}
+                />
+              </div>
+            </form>
+          </div>
+        </div>
+      </TooltipProvider>,
+      { router: false },
+    );
+    await page.getByRole("button", { name: /Opus 5\.5/ }).click();
+    await expect
+      .poll(() => document.querySelector("[data-model-picker-effort]") !== null)
+      .toBe(true);
+    return screen;
+  }
+
+  it.each([120, 400, 640])(
+    "opens under the trigger with %ipx above the composer, however little room is below",
+    async (paddingTop) => {
+      await using _screen = await openInHero(paddingTop);
+      const trigger = page.getByRole("button", { name: /Opus 5\.5/ }).element();
+      const popup = document.querySelector<HTMLElement>('[data-slot="popover-positioner"]')!;
+      await expect
+        .poll(() => popup.getBoundingClientRect().top)
+        .toBeGreaterThanOrEqual(trigger.getBoundingClientRect().bottom);
+    },
+  );
+});
+
+describe("provider tabs", () => {
+  const crowded: ServerProvider[] = [
+    provider,
+    ...["Fixture Agent", "Review Agent", "Planning Agent", "Release Agent"].map((name, index) => ({
+      ...provider,
+      instanceId: ProviderInstanceId.make(`crowded-${index}`),
+      displayName: name,
+    })),
+  ];
+
+  async function openCrowded() {
+    await page.viewport(1440, 900);
+    const crowdedEntries = deriveProviderInstanceEntries(crowded);
+    const screen = await render(
+      <TooltipProvider delay={0}>
+        <div style={{ paddingTop: 480, paddingLeft: 160 }}>
+          <div data-inline-resting-controls="true" style={{ width: 640, padding: "12px 32px" }}>
+            <ProviderModelPicker
+              environmentId={null}
+              activeInstanceId={CLAUDE}
+              model="opus"
+              lockedProvider={null}
+              instanceEntries={crowdedEntries}
+              keybindings={compileResolvedKeybindingsConfig([])}
+              modelOptionsByInstance={
+                new Map(crowdedEntries.map((entry) => [entry.instanceId, provider.models]))
+              }
+              isComposerOwned
+              effortPanel={<ComposerEffortPanel traits={null} />}
+              onInstanceModelChange={() => {}}
+            />
+          </div>
+        </div>
+      </TooltipProvider>,
+      { router: false },
+    );
+    await page.getByRole("button", { name: /Opus 5\.5/ }).click();
+    await expect
+      .poll(() => document.querySelector("[data-model-picker-sidebar]") !== null)
+      .toBe(true);
+    return screen;
+  }
+
+  it("scrolls when the strip is narrower than its tabs and fades the edge that hides one", async () => {
+    await using _screen = await openCrowded();
+    const strip = document.querySelector<HTMLElement>("[data-model-picker-sidebar]")!;
+
+    expect(strip.scrollWidth).toBeGreaterThan(strip.clientWidth);
+    await expect.poll(() => strip.dataset.scrollFadeEnd).toBe("true");
+    expect(strip.dataset.scrollFadeStart).toBeUndefined();
+    expect(getComputedStyle(strip).maskImage).toContain("linear-gradient");
+
+    strip.scrollLeft = strip.scrollWidth;
+    await expect.poll(() => strip.dataset.scrollFadeStart).toBe("true");
+    expect(strip.dataset.scrollFadeEnd).toBeUndefined();
+  });
+
+  it("keeps every tab reachable by name", async () => {
+    await using _screen = await openCrowded();
+    for (const name of ["Fixture Agent", "Release Agent"]) {
+      await expect.element(page.getByRole("button", { name })).toBeInTheDocument();
+    }
   });
 });

@@ -46,8 +46,8 @@ export function GridPaneHeader(props: {
         <span
           onDoubleClick={props.onDoubleClickTitle}
           className={cn(
-            "min-w-0 flex-1 truncate text-xs leading-4 font-medium",
-            props.focused ? "text-(--t1)" : "text-(--t2)",
+            "min-w-0 flex-1 truncate text-xs leading-4",
+            props.focused ? "font-semibold text-(--t1)" : "font-medium text-(--t2)",
           )}
         >
           {props.title}
@@ -55,7 +55,10 @@ export function GridPaneHeader(props: {
       )}
       <div
         data-pane-actions=""
-        className="absolute inset-y-0 end-1 z-10 flex items-center gap-0.5 bg-(--pane-head) ps-1 opacity-0 transition-opacity duration-(--motion-feedback) ease-standard group-focus-within/pane:opacity-100 group-hover/pane:opacity-100 motion-reduce:transition-none"
+        className={cn(
+          "absolute inset-y-0 end-1 z-10 flex items-center gap-0.5 bg-(--pane-head) ps-1 opacity-0 transition-opacity duration-(--motion-feedback) ease-standard group-focus-within/pane:opacity-100 group-hover/pane:opacity-100 motion-reduce:transition-none",
+          props.focused && "opacity-100",
+        )}
       >
         {props.actions}
       </div>

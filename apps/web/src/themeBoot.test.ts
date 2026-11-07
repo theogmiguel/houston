@@ -380,3 +380,25 @@ describe("index.html boot script", () => {
     expect(dark.isDark).toBe(true);
   });
 });
+
+describe("boot splash styles", () => {
+  const rule = (selector: string) => {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const match = indexHtml.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`));
+    if (!match?.[1]) throw new Error(`index.html has no \`${selector}\` rule`);
+    return match[1];
+  };
+
+  it("sets the splash copy in the app's Inter stack, not the bare system font", () => {
+    const font = rule("#boot-shell-copy");
+    expect(font).toContain('"Inter Variable"');
+    expect(font.indexOf('"Inter Variable"')).toBeLessThan(font.indexOf("system-ui"));
+  });
+
+  it("seats the dark logo tile on the light canvas and restyles the ring for the dark theme", () => {
+    const light = rule("#boot-shell-card");
+    expect(light).toMatch(/border-radius:\s*11px/);
+    expect(light).toContain("box-shadow");
+    expect(rule("html.dark #boot-shell-card")).toContain("rgba(255, 255, 255");
+  });
+});

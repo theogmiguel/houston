@@ -35,7 +35,9 @@ export type ThreadActionMenuId =
   | "split-down"
   | `split:${string}`
   | "swap"
-  | `swap:${string}`;
+  | `swap:${string}`
+  | "more"
+  | `section:${string}`;
 
 export type DraftActionMenuId =
   | "copy"
@@ -147,6 +149,8 @@ export function threadActionRequiresOperate(action: ThreadActionMenuId): boolean
     action === "copy" ||
     action.startsWith("copy-") ||
     action === "swap" ||
+    action === "more" ||
+    action.startsWith("section:") ||
     action.startsWith("swap:") ||
     action === "split-right" ||
     action === "split-down" ||
@@ -190,76 +194,89 @@ function splitTargets(
   ];
 }
 
+type ThreadActionMenuItem = ContextMenuItem<ThreadActionMenuId>;
+
+/** A labelled group; an empty group emits nothing, so no header or separator is left dangling. */
+function menuSection(
+  id: string,
+  label: string | null,
+  entries: ReadonlyArray<ThreadActionMenuItem | null>,
+): ReadonlyArray<ThreadActionMenuItem> {
+  const present = entries.filter((entry): entry is ThreadActionMenuItem => entry !== null);
+  if (present.length === 0) return [];
+  return [
+    ...(label === null
+      ? []
+      : [
+          {
+            id: `section:${id}` as const,
+            label,
+            header: true,
+            separatorBefore: true,
+          },
+        ]),
+    ...present,
+  ];
+}
+
 export function buildThreadActionMenuItems(
   state: ThreadActionMenuState,
 ): ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> {
   const hasThread = state.hasThread !== false;
-  const items: ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> = [
-    ...(state.cell !== undefined && state.cell.split !== null
+  const cell = state.cell;
+  const layout = menuSection("layout", "Layout", [
+    ...(cell !== undefined && cell.split !== null
       ? SPLIT_SIDES.map(({ id, side, label }) => ({
           id,
           label,
-          children: splitTargets(side, state.cell!.split!),
+          children: splitTargets(side, cell.split!),
         }))
       : []),
-    ...(state.cell !== undefined && state.cell.swapTargets.length > 0
+    ...(cell !== undefined && cell.swapTargets.length > 0
       ? [
           {
             id: "swap" as const,
             label: "Move to…",
-            separatorBefore: state.cell.split !== null,
-            children: state.cell.swapTargets.map((thread) => ({
+            children: cell.swapTargets.map((thread) => ({
               id: `swap:${thread.threadId}` as const,
               label: `Swap with ${thread.title}`,
             })),
           },
         ]
       : []),
-    ...(hasThread && state.branch && state.canStartBranchThread === true
-      ? [
-          {
-            id: "new-thread-on-branch" as const,
-            label: `New thread on ${state.branch}`,
-            icon: "message-square-plus",
-          },
-        ]
-      : []),
-    ...(hasThread && state.grid?.canOpenInGrid
-      ? [{ id: "open-in-grid" as const, label: "Open in grid", icon: "layout-grid" }]
-      : []),
-    ...(hasThread && state.grid?.canMoveToGrid
-      ? [
-          {
-            id: "move-to-grid" as const,
-            label: "Move to grid",
-            icon: "layout-grid",
-            children: [
-              ...state.grid.moveTargets.map((target) => ({
-                id: `move-to-grid:${target.gridId}` as const,
-                label: target.name,
-              })),
-              {
-                id: "move-to-grid:new" as const,
-                label: "New grid",
-                separatorBefore: state.grid.moveTargets.length > 0,
-              },
-            ],
-          },
-        ]
-      : []),
-    ...(hasThread && state.supports.settlement
-      ? [
-          state.isSettled
-            ? { id: "unsettle" as const, label: "Reopen thread", icon: "circle-check" }
-            : { id: "settle" as const, label: "Close thread", icon: "circle-check" },
-        ]
-      : []),
-    ...(hasThread && state.supports.snooze
-      ? [
-          state.isSnoozed
-            ? { id: "unsnooze" as const, label: "Bring thread back", icon: "clock" }
+  ]);
+  const thread = hasThread
+    ? menuSection("thread", "Thread", [
+        { id: "rename", label: "Rename thread", icon: "pencil" },
+        { id: "mark-unread", label: "Mark unread", icon: "mail-open" },
+        state.canFind ? { id: "find", label: "Find in thread", icon: "text-search" } : null,
+        {
+          id: "copy",
+          label: "Copy",
+          icon: "copy",
+          children: [
+            { id: "copy-path", label: "Path", icon: "folder" },
+            ...(state.branch
+              ? [{ id: "copy-branch" as const, label: "Branch", icon: "git-branch" }]
+              : []),
+            { id: "copy-thread", label: "Thread", icon: "message-square" },
+            { id: "copy-thread-id", label: "Thread ID", icon: "hash" },
+          ],
+        },
+      ])
+    : [];
+  const status = hasThread
+    ? menuSection("status", "Status", [
+        state.supports.settlement
+          ? state.isSettled
+            ? { id: "unsettle", label: "Reopen thread", icon: "circle-check" }
+            : { id: "settle", label: "Close thread", icon: "circle-check" }
+          : null,
+        state.supports.snooze
+          ? state.isSnoozed
+            ? { id: "unsnooze", label: "Bring thread back", icon: "clock" }
             : {
-                id: "snooze" as const,
+                id: "snooze",
                 label: "Hold",
                 icon: "clock",
                 disabled: !state.canSnoozeNow,
@@ -274,133 +291,164 @@ export function buildThreadActionMenuItems(
                     separatorBefore: state.snoozePresets.length > 0,
                   },
                 ],
-              },
-        ]
-      : []),
-    ...(hasThread
-      ? [{ id: "rename" as const, label: "Rename thread", icon: "pencil", separatorBefore: true }]
-      : []),
-    ...(hasThread && state.supports.titleRegeneration
-      ? [
-          {
-            id: "regenerate-title" as const,
-            label: state.isRegeneratingTitle ? "Regenerating…" : "Regenerate title",
-            icon: "refresh-cw",
-            disabled: state.isRegeneratingTitle,
-          },
-        ]
-      : []),
-    ...(hasThread
-      ? [
-          {
-            id: "tags" as const,
-            label: "Tags",
-            icon: "tag",
-            children: [
-              ...state.tagSuggestions.map((tag) => ({
-                id: `tag-toggle:${tag}` as const,
-                label: tag,
-                checked: state.tags.includes(tag),
-              })),
-              {
-                id: "tag-edit" as const,
-                label: "Edit tags…",
-                separatorBefore: state.tagSuggestions.length > 0,
-              },
-            ],
-          },
-        ]
-      : []),
-    ...(hasThread ? [{ id: "mark-unread" as const, label: "Mark unread", icon: "mail-open" }] : []),
-    ...(hasThread && state.projectFilter
-      ? [
-          {
-            id: "filter-by-project" as const,
-            label: state.projectFilter.isActive
-              ? "Show all projects"
-              : `Filter by ${state.projectFilter.label}`,
-            icon: "folder-tree",
-          },
-        ]
-      : []),
-    ...(hasThread && state.canTurnIntoProject
-      ? [
-          {
-            id: "turn-into-project" as const,
-            label: "Turn into project",
-            icon: "folder-plus",
-            disabled: state.isRunning,
-          },
-        ]
-      : []),
-    ...(hasThread && state.supports.autoSettleOptOut
-      ? [
-          {
-            id: "auto-settle" as const,
-            label: "Auto-close behavior",
-            icon: "timer",
-            children: [
-              {
-                id: "auto-settle:enabled" as const,
-                label: "Enabled",
-                checked: state.autoSettleEnabled,
-              },
-              {
-                id: "auto-settle:disabled" as const,
-                label: "Disabled",
-                checked: !state.autoSettleEnabled,
-              },
-            ],
-          },
-        ]
-      : []),
-    ...(hasThread && state.canFind
-      ? [{ id: "find" as const, label: "Find in thread", icon: "text-search" }]
-      : []),
-    ...(hasThread
-      ? [
-          {
-            id: "copy" as const,
-            label: "Copy",
-            icon: "copy",
-            separatorBefore: true,
-            children: [
-              { id: "copy-path" as const, label: "Path", icon: "folder" },
-              ...(state.branch
-                ? [{ id: "copy-branch" as const, label: "Branch", icon: "git-branch" }]
-                : []),
-              { id: "copy-thread" as const, label: "Thread", icon: "message-square" },
-              { id: "copy-thread-id" as const, label: "Thread ID", icon: "hash" },
-            ],
-          },
-          { id: "project-settings" as const, label: "Project settings", icon: "settings" },
-          {
-            id: "archive" as const,
-            label: "Archive thread",
-            icon: "archive",
-            disabled: state.isRunning,
-            separatorBefore: true,
-          },
-          {
-            id: "delete" as const,
-            label: "Delete",
-            destructive: true,
-            icon: "trash",
-          },
-        ]
-      : []),
-  ];
-  return state.canOperate
-    ? items
-    : items.map((item) =>
-        threadActionRequiresOperate(item.id)
+              }
+          : null,
+      ])
+    : [];
+  const branchAndProject = hasThread
+    ? menuSection("branch-project", "Branch & project", [
+        state.branch && state.canStartBranchThread === true
           ? {
-              ...item,
-              disabled: true,
-              ...(item.children
-                ? { children: item.children.map((child) => ({ ...child, disabled: true })) }
-                : {}),
+              id: "new-thread-on-branch",
+              label: `New thread on ${state.branch}`,
+              icon: "message-square-plus",
             }
-          : item,
-      );
+          : null,
+        { id: "project-settings", label: "Project settings", icon: "settings" },
+        state.canTurnIntoProject
+          ? {
+              id: "turn-into-project",
+              label: "Turn into project",
+              icon: "folder-plus",
+              disabled: state.isRunning,
+            }
+          : null,
+      ])
+    : [];
+  const organise = hasThread
+    ? menuSection("organise", "Organise", [
+        state.grid?.canOpenInGrid
+          ? { id: "open-in-grid", label: "Open in grid", icon: "layout-grid" }
+          : null,
+        state.grid?.canMoveToGrid
+          ? {
+              id: "move-to-grid",
+              label: "Move to grid",
+              icon: "layout-grid",
+              children: [
+                ...state.grid.moveTargets.map((target) => ({
+                  id: `move-to-grid:${target.gridId}` as const,
+                  label: target.name,
+                })),
+                {
+                  id: "move-to-grid:new" as const,
+                  label: "New grid",
+                  separatorBefore: state.grid.moveTargets.length > 0,
+                },
+              ],
+            }
+          : null,
+        {
+          id: "tags",
+          label: "Tags",
+          icon: "tag",
+          children: [
+            ...state.tagSuggestions.map((tag) => ({
+              id: `tag-toggle:${tag}` as const,
+              label: tag,
+              checked: state.tags.includes(tag),
+            })),
+            {
+              id: "tag-edit" as const,
+              label: "Edit tags…",
+              separatorBefore: state.tagSuggestions.length > 0,
+            },
+          ],
+        },
+        state.projectFilter
+          ? {
+              id: "filter-by-project",
+              label: state.projectFilter.isActive
+                ? "Show all projects"
+                : `Filter by ${state.projectFilter.label}`,
+              icon: "folder-tree",
+            }
+          : null,
+      ])
+    : [];
+  const more = hasThread
+    ? menuSection("more", null, [
+        state.supports.titleRegeneration || state.supports.autoSettleOptOut
+          ? {
+              id: "more",
+              label: "More",
+              separatorBefore: true,
+              children: [
+                ...(state.supports.titleRegeneration
+                  ? [
+                      {
+                        id: "regenerate-title" as const,
+                        label: state.isRegeneratingTitle ? "Regenerating…" : "Regenerate title",
+                        icon: "refresh-cw",
+                        disabled: state.isRegeneratingTitle,
+                      },
+                    ]
+                  : []),
+                ...(state.supports.autoSettleOptOut
+                  ? [
+                      {
+                        id: "auto-settle" as const,
+                        label: "Auto-close behavior",
+                        icon: "timer",
+                        children: [
+                          {
+                            id: "auto-settle:enabled" as const,
+                            label: "Enabled",
+                            checked: state.autoSettleEnabled,
+                          },
+                          {
+                            id: "auto-settle:disabled" as const,
+                            label: "Disabled",
+                            checked: !state.autoSettleEnabled,
+                          },
+                        ],
+                      },
+                    ]
+                  : []),
+              ],
+            }
+          : null,
+      ])
+    : [];
+  const danger = hasThread
+    ? [
+        {
+          id: "archive" as const,
+          label: "Archive thread",
+          icon: "archive",
+          disabled: state.isRunning,
+          separatorBefore: true,
+        },
+        { id: "delete" as const, label: "Delete", destructive: true, icon: "trash" },
+      ]
+    : [];
+  const items: ReadonlyArray<ThreadActionMenuItem> = [
+    ...layout,
+    ...thread,
+    ...status,
+    ...branchAndProject,
+    ...organise,
+    ...more,
+    ...danger,
+  ].map((item, index) => (index === 0 ? { ...item, separatorBefore: false } : item));
+  return state.canOperate ? items : items.map(disableOperateActions);
+}
+
+function disableOperateActions(item: ThreadActionMenuItem): ThreadActionMenuItem {
+  if (threadActionRequiresOperate(item.id)) {
+    return {
+      ...item,
+      disabled: true,
+      ...(item.children ? { children: item.children.map(disableAll) } : {}),
+    };
+  }
+  return item.children ? { ...item, children: item.children.map(disableOperateActions) } : item;
+}
+
+function disableAll(item: ThreadActionMenuItem): ThreadActionMenuItem {
+  return {
+    ...item,
+    disabled: true,
+    ...(item.children ? { children: item.children.map(disableAll) } : {}),
+  };
 }

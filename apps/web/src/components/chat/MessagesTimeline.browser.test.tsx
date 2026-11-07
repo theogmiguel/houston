@@ -1153,6 +1153,36 @@ describe("MessagesTimeline work rows ink", () => {
   });
 });
 
+describe("MessagesTimeline fold timestamp", () => {
+  it("keeps the fold's timestamp while folded and drops it once expanded", async () => {
+    setup();
+    const runId = RunId.make("stamp-run");
+    await using screen = await renderTimeline(
+      [
+        work("stamp-tool", {
+          runId,
+          label: "Ran ls",
+          command: "ls -la",
+          tone: "tool",
+          itemType: "command_execution",
+          toolLifecycleStatus: "completed",
+        }),
+        message("Done", { role: "assistant", runId }, "stamp-final"),
+      ],
+      { runs: [] },
+    );
+    const heading = () =>
+      [...screen.container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+        /^Worked for/.test(button.textContent ?? ""),
+      )!;
+    const foldStamps = () =>
+      heading().parentElement!.querySelectorAll('[data-slot="tooltip-trigger"]').length;
+    expect(foldStamps()).toBe(1);
+    await click(heading());
+    expect(foldStamps()).toBe(0);
+  });
+});
+
 describe("MessagesTimeline expanded work group", () => {
   const groupEntries = (editedFile: string): Entry[] => [
     work("group-ran", {
@@ -1881,6 +1911,27 @@ describe("TimelineChangesRow", () => {
     expect(getComputedStyle(row).borderTopLeftRadius).toBe("6px");
     expect(getComputedStyle(chip).borderTopLeftRadius).toBe("6px");
     expect(getComputedStyle(chip).height).toBe(getComputedStyle(row).height);
+  });
+
+  it("shows a single file's counts once: on its chip while expanded, on the summary when collapsed", async () => {
+    await using screen = await render(
+      <TimelineChangesRow
+        files={[{ path: "src/only.ts", additions: 7, deletions: 2 }]}
+        totals={{ count: 1, additions: 7, deletions: 2 }}
+        onOpenDiff={() => {}}
+        onOpenFile={() => {}}
+      />,
+    );
+    const occurrences = () => (screen.container.textContent?.match(/\+7/g) ?? []).length;
+    expect(occurrences()).toBe(1);
+    expect(
+      screen.getByRole("button", { name: "Open diff for src/only.ts" }).element().textContent,
+    ).toContain("+7");
+    await screen.getByRole("button", { name: "Collapse 1 file" }).click();
+    expect(occurrences()).toBe(1);
+    expect(screen.getByRole("button", { name: "Expand 1 file" }).element().textContent).toContain(
+      "+7",
+    );
   });
 
   it("collapses and expands its file chips in one commit", async () => {

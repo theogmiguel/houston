@@ -246,16 +246,14 @@ describe("settings scope sentence", () => {
     expect(path?.textContent).toContain("/repos/alpha");
   });
 
-  it("states that a device-only page ignores the project scope", async () => {
+  it("shows no scope line on a device-only page", async () => {
     setup();
     await using screen = await render(<SettingsScopeSentence />, {
       router: "/settings/appearance",
     });
 
-    expect(screen.container.textContent).toContain("App-wide.");
-    expect(screen.container.textContent).toContain(
-      "These settings apply to the app on this machine, not to a project.",
-    );
+    expect(screen.container.textContent).not.toContain("App-wide.");
+    expect(screen.container.textContent?.trim()).toBe("");
     expect(screen.getByRole("button", { name: /^Project scope:/ }).query()).toBeNull();
   });
 

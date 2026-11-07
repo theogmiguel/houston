@@ -59,15 +59,26 @@ describe("ServerUnavailableCard", () => {
     expect(offline.querySelectorAll("[class*='animate-']")).toHaveLength(0);
   });
 
+  it("leaves no top-bar skeleton and keeps the rail at the thread rail's default width", async () => {
+    await page.viewport(1440, 900);
+    await using screen = await render(<ServerUnavailableCard report="report" detail={DETAIL} />);
+
+    const shell = screen.container.querySelector<HTMLElement>("[data-server-unavailable-shell]")!;
+    expect(shell.querySelector("[data-server-unavailable-header]")).toBeNull();
+    // Nothing above the message is a placeholder bar.
+    const canvas = shell.querySelector<HTMLElement>("[data-server-unavailable-canvas]")!;
+    expect(canvas.getBoundingClientRect().top).toBe(0);
+    const sidebar = shell.querySelector<HTMLElement>("[data-server-unavailable-sidebar]")!;
+    expect(sidebar.getBoundingClientRect().width).toBe(280);
+  });
+
   it("puts the message on the flat canvas, on the composer's column, with every action reachable", async () => {
     await page.viewport(1440, 900);
     await using screen = await render(<ServerUnavailableCard report="report" detail={DETAIL} />);
 
     const shell = screen.container.querySelector<HTMLElement>("[data-server-unavailable-shell]")!;
-    const header = shell.querySelector<HTMLElement>("[data-server-unavailable-header]")!;
     const canvas = shell.querySelector<HTMLElement>("[data-server-unavailable-canvas]")!;
     const card = shell.querySelector<HTMLElement>("[data-server-unavailable-card]")!;
-    expect(header).not.toBeNull();
     expect(canvas.contains(card)).toBe(true);
     // The shell already names the app; the message does not repeat the brand line.
     expect(card.querySelector('[role="img"][aria-label="Houston"]')).toBeNull();

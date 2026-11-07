@@ -67,14 +67,8 @@ export function SettingsScopeSentence() {
   const pathname = useLocation({ select: (location) => location.pathname });
   const { environments } = useEnvironments();
   if (scope === null) return null;
-  if (SETTINGS_DEVICE_ONLY_PATHS.has(pathname)) {
-    return (
-      <p className="text-muted-foreground">
-        <span className="font-semibold text-foreground">App-wide.</span> These settings apply to the
-        app on this machine, not to a project.
-      </p>
-    );
-  }
+  // A device-only page has no project or environment axis, and its heading already names what it covers.
+  if (SETTINGS_DEVICE_ONLY_PATHS.has(pathname)) return null;
   const props: SettingsScopeMenuProps = {
     value: scope.search,
     singleEnvironment: scope.singleEnvironment,

@@ -310,7 +310,7 @@ body {
   --text-2xs--line-height: 0.875rem;
   --text-3xs: 0.625rem;
   --text-3xs--line-height: calc(0.875 / 0.625);
-  --text-monogram: 0.5625rem;
+  --text-monogram: 0.6875rem;
   --text-monogram--line-height: 1;
   --text-4xs: 0.5rem;
   --text-4xs--line-height: 1;
@@ -2934,8 +2934,22 @@ code {
   opacity: 1;
 }
 
-[data-grid-surface][data-multi] [data-grid-cell][data-focused="true"]::before {
-  border-color: var(--accent);
+/* The focused pane's ring is drawn inside the cell: the cell clips its overflow, so a border on
+   the card behind it (which sits outside the cell's box) never showed. */
+[data-grid-surface][data-multi] [data-grid-cell]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+  opacity: 0;
+  transition: opacity var(--motion-feedback) var(--ease-standard);
+}
+
+[data-grid-surface][data-multi] [data-grid-cell][data-focused="true"]::after {
+  opacity: 1;
 }
 
 /* Maximize and restore: a stand-in card carries the box while every cell's own card snaps
@@ -2981,7 +2995,8 @@ code {
 
 /* The reveal's new snapshot is live; let the grid's surface colours land at once inside it. */
 html[data-theme-reveal] [data-grid-surface],
-html[data-theme-reveal] [data-grid-surface] [data-grid-cell]::before {
+html[data-theme-reveal] [data-grid-surface] [data-grid-cell]::before,
+html[data-theme-reveal] [data-grid-surface] [data-grid-cell]::after {
   transition: none;
 }
 
@@ -3045,6 +3060,7 @@ html[data-theme-reveal] [data-grid-surface] [data-grid-cell]::before {
 
 [data-grid-surface],
 [data-grid-surface] [data-grid-cell]::before,
+[data-grid-surface] [data-grid-cell]::after,
 [data-grid-surface] [data-pane-label],
 [data-grid-surface] [data-grid-slot],
 [data-grid-surface] [data-grid-gutter] {

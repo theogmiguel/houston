@@ -74,7 +74,6 @@ import {
   ProviderInteractionMode,
   resolveIdleCompaction,
   RuntimeMode,
-  managedRuntimeModeDenial,
 } from "@houston-app/contracts";
 import {
   deriveProviderSubagentStatus,
@@ -189,9 +188,6 @@ import { threadPullRequestPanelTarget } from "./pullRequest/pullRequestDetail.lo
 import { LinkPullRequestDialogHost } from "./pullRequest/LinkPullRequestDialog";
 import { useDeviceState } from "~/state/device";
 import { BranchToolbar, type BranchToolbarHandle } from "./BranchToolbar";
-import { ComposerContextPermissions } from "./ComposerContextPermissions";
-import { resolveCompatibleRuntimeMode, runtimeModeConfig } from "./chat/runtimeModeConfig";
-import { useManagedPolicy } from "../state/managedPolicy";
 import { makeWorkspaceFileDropHandlers } from "./chat/workspaceFileDrop";
 import { isEditableFocused } from "../lib/editableFocus";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@houston-app/shared/keybindings";
@@ -1410,20 +1406,6 @@ export default function ChatView(props: ChatViewProps) {
   const selectedProvider = selectedProviderEntry?.driverKind ?? requestedDriverKind;
   const activeProviderInstanceId = selectedProviderEntry?.instanceId ?? null;
   const activeProviderStatus = selectedProviderEntry?.snapshot ?? null;
-  // The new-thread strip changes permissions itself, so it lists the modes the composer would.
-  const stripRuntimeModes = resolveCompatibleRuntimeMode(
-    runtimeMode,
-    activeProviderStatus?.supportedRuntimeModes,
-  );
-  const managedPolicy = useManagedPolicy(environmentId);
-  const stripRuntimeModeOptions = stripRuntimeModes.modes.map((mode) => {
-    const disabledReason = managedRuntimeModeDenial(managedPolicy, mode);
-    return {
-      mode,
-      ...runtimeModeConfig[mode],
-      ...(disabledReason === undefined ? {} : { disabledReason }),
-    };
-  });
   const handleOpenClaudeInChromeSettings = () => {
     void navigate({
       to: "/settings/providers",
@@ -3813,7 +3795,6 @@ export default function ChatView(props: ChatViewProps) {
                       composerTasks.steps.some((step) => step.status !== "completed")) ? (
                       <ComposerTaskStatus key={composerTasks.planId} steps={composerTasks.steps} />
                     ) : null}
-                    {changedFilesBar}
                     <ComposerSurface.Shell
                       className={activePendingApproval === null ? undefined : "hidden"}
                     >
@@ -3862,6 +3843,7 @@ export default function ChatView(props: ChatViewProps) {
                               activeThread={activeThread}
                               activeThreadShell={activeThreadShell}
                               threadStatusPill={activeThreadStatusPill}
+                              changedFiles={changedFilesBar}
                               paneDensity={paneDensity}
                               {...(showComposerContextStrip
                                 ? {
@@ -3909,19 +3891,6 @@ export default function ChatView(props: ChatViewProps) {
                                             : undefined
                                         }
                                         availableEnvironments={logicalProjectEnvironments}
-                                        {...(isServerThread
-                                          ? {}
-                                          : {
-                                              trailing: (
-                                                <ComposerContextPermissions
-                                                  runtimeMode={stripRuntimeModes.mode}
-                                                  runtimeModeOptions={stripRuntimeModeOptions}
-                                                  onRuntimeModeChange={
-                                                    handleRuntimeModeChangeStable
-                                                  }
-                                                />
-                                              ),
-                                            })}
                                       />
                                     ),
                                   }
@@ -4036,7 +4005,6 @@ export default function ChatView(props: ChatViewProps) {
                               }
                               threadPullRequests={(activeThreadShell ?? activeThread)?.pullRequests}
                               onComposerOverlayHeightChange={publishComposerOverlayHeightStable}
-                              permissionsShownInStrip={showComposerContextStrip && !isServerThread}
                               promptRef={promptRef}
                               composerImagesRef={composerImagesRef}
                               composerFilesRef={composerFilesRef}
