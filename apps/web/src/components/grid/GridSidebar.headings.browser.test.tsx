@@ -52,6 +52,8 @@ function thread(
     pullRequests: [],
     branchPullRequest: null,
     providerInstanceId: "claude",
+    modelSelection: { instanceId: "claude" },
+    providerInstanceHistory: [],
     snoozedUntil: null,
     settledOverride: null,
     archivedAt: null,
@@ -140,10 +142,12 @@ function sectionProps(
 
 function CollapsibleSections({
   sections,
+  providerEntries,
   onCreateGrid,
   onCreateThread,
 }: {
   sections: ReadonlyArray<SidebarProjectSectionModel>;
+  providerEntries?: SidebarProjectSectionProps["providerEntries"] | undefined;
   onCreateGrid?: (() => void) | undefined;
   onCreateThread?: ((gridId: string) => void) | undefined;
 }) {
@@ -156,6 +160,7 @@ function CollapsibleSections({
           {...sectionProps(value, {
             collapsed: collapsedProjects.collapsed.has(value.projectKey),
             onToggleCollapsed: () => collapsedProjects.toggle(value.projectKey),
+            ...(providerEntries === undefined ? {} : { providerEntries }),
             ...(onCreateGrid === undefined ? {} : { onCreateGrid }),
             ...(onCreateThread === undefined ? {} : { onCreateThread }),
           })}
@@ -222,9 +227,12 @@ describe("project and grid headings", () => {
     const count = button.querySelector<HTMLElement>("[data-heading-count]")!;
     expect(count.textContent).toBe("4");
     expect(getComputedStyle(count).color).not.toBe(getComputedStyle(name).color);
+    // The count follows the name; the pips follow the count.
+    expect(count.getBoundingClientRect().left - name.getBoundingClientRect().right).toBeLessThan(9);
 
     const projectHeading = button.closest<HTMLElement>("[data-project-heading]")!;
     const pips = projectHeading.querySelector<HTMLElement>("[data-attention-pips]")!;
+    expect(pips.getBoundingClientRect().left - count.getBoundingClientRect().right).toBeLessThan(9);
     expect(pips.querySelector("[data-attention-pip='failed']")?.textContent).toBe("2");
     expect(pips.querySelector("[data-attention-pip='needs']")?.textContent).toBe("1");
     expect(screen.getByRole("button", { name: "2 threads failed" }).element()).toBeInTheDocument();
@@ -300,6 +308,10 @@ describe("project and grid headings", () => {
     expect(getComputedStyle(gridName).fontSize).toBe("12px");
     expect(getComputedStyle(gridName).fontWeight).toBe("600");
     expect(gridHeading.querySelector("[data-heading-count]")?.textContent).toBe("2");
+    const gridCount = gridHeading.querySelector<HTMLElement>("[data-heading-count]")!;
+    expect(
+      gridCount.getBoundingClientRect().left - gridName.getBoundingClientRect().right,
+    ).toBeLessThan(9);
     expect(
       gridHeading
         .closest<HTMLElement>("[data-grid-key]")!
@@ -349,40 +361,83 @@ describe("sticky project heading", () => {
     expect(getComputedStyle(projectHeading).borderBottomColor).toBe("rgba(0, 0, 0, 0)");
   });
 
-  it("never rests on a row cut in half by the pinned heading", async () => {
+  it("leaves the scroll where the user left it and covers rows under the pinned heading", async () => {
     resetTestState();
     const sections = [
       section({ ungroupedThreads: manyThreads(10) }),
       section({ projectKey: "env-1:project-2", title: "notes", projectId: "project-2" }),
     ];
-    await using screen = await render(rail(<CollapsibleSections sections={sections} />));
+    await using screen = await render(
+      rail(
+        <CollapsibleSections
+          sections={sections}
+          providerEntries={
+            new Map([
+              [
+                "claude",
+                {
+                  instanceId: "claude",
+                  driverKind: "claudeAgent",
+                  enabled: true,
+                  displayName: "Claude",
+                  models: [],
+                },
+              ],
+            ]) as never
+          }
+        />,
+      ),
+    );
     const viewport = screen.container.querySelector<HTMLElement>(
       "[data-slot=scroll-area-viewport]",
     )!;
     const heading = viewport.querySelector<HTMLElement>("[data-project-heading]")!;
 
-    // Settle on a position where a row starts under the heading's bottom edge.
-    viewport.scrollTop = 130;
-    await expect
-      .poll(() => {
-        const headingBottom = heading.getBoundingClientRect().bottom;
-        return [...viewport.querySelectorAll<HTMLElement>("[data-sidebar-row]")].filter((row) => {
-          if (row.closest("[data-project-heading]") !== null) return false;
-          const box = row.getBoundingClientRect();
-          return box.top < headingBottom - 1 && box.bottom > headingBottom + 1;
-        }).length;
-      })
-      .toBe(0);
-    expect(heading.hasAttribute("data-stuck")).toBe(true);
+    // A row is cut in half under the pinned heading; the rail stays exactly there.
+    viewport.scrollTop = 90;
+    await vi.waitFor(() => expect(heading.hasAttribute("data-stuck")).toBe(true));
+    expect(viewport.scrollTop).toBe(90);
+    await expect.poll(() => viewport.scrollTop).toBe(90);
 
     const headingBox = heading.getBoundingClientRect();
+    const cut = [...viewport.querySelectorAll<HTMLElement>("[data-sidebar-row]")].filter((row) => {
+      if (row.closest("[data-project-heading]") !== null) return false;
+      const box = row.getBoundingClientRect();
+      return box.top < headingBox.bottom - 1 && box.bottom > headingBox.top + 1;
+    });
+    expect(cut.length).toBeGreaterThan(0);
+
     expect(getComputedStyle(heading).backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
     expect(getComputedStyle(heading).position).toBe("sticky");
-    expect(Number(getComputedStyle(heading).zIndex)).toBeGreaterThan(0);
-    const hit = document.elementFromPoint(
-      headingBox.left + headingBox.width / 2,
-      headingBox.top + headingBox.height / 2,
-    );
-    expect(hit !== null && heading.contains(hit)).toBe(true);
+    expect(Number(getComputedStyle(heading).zIndex)).toBeGreaterThan(30);
+
+    // A provider mark on the row cut in half sits behind the heading, never over it.
+    const behind = [
+      ...viewport.querySelectorAll<HTMLElement>("[data-thread-provider-mark]"),
+    ].filter((mark) => {
+      const box = mark.getBoundingClientRect();
+      return box.top < headingBox.bottom && box.bottom > headingBox.top;
+    });
+    expect(behind.length).toBeGreaterThan(0);
+    for (const mark of behind) {
+      const box = mark.getBoundingClientRect();
+      const hit = document.elementFromPoint(
+        box.left + box.width / 2,
+        Math.min(box.bottom - 1, headingBox.bottom - 1),
+      );
+      expect(hit, "the provider mark is covered").not.toBeNull();
+      expect(heading.contains(hit!)).toBe(true);
+    }
+
+    // Nothing else from a row paints inside the heading's own box either.
+    const xs = [headingBox.left + 2, headingBox.left + headingBox.width / 2, headingBox.right - 6];
+    const ys = [headingBox.top + 2, headingBox.top + headingBox.height / 2, headingBox.bottom - 2];
+    for (const x of xs) {
+      for (const y of ys) {
+        const hit = document.elementFromPoint(x, y);
+        expect(hit, `nothing is painted at ${x},${y}`).not.toBeNull();
+        expect(heading.contains(hit!)).toBe(true);
+      }
+    }
   });
 });

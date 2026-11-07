@@ -97,7 +97,7 @@ import {
 } from "./ProjectFilterPicker";
 import { jumpHintLabels } from "../../grid/jumpHints";
 import { useRevealOpenThread } from "../../grid/useRevealOpenThread";
-import { useStickyRowSettle, useStuckToTop } from "../../hooks/useStuckToTop";
+import { useStuckToTop } from "../../hooks/useStuckToTop";
 import { attachSidebarTree } from "../../lib/sidebarTree";
 import { useShortcutModifierState } from "../../shortcutModifierState";
 import { reportFailure } from "./reportFailure";
@@ -1589,7 +1589,6 @@ export function SidebarProjectSection({
   const pips = attentionPips(sectionThreads, nowIso);
   const headingRef = useRef<HTMLDivElement | null>(null);
   const stuck = useStuckToTop(headingRef);
-  useStickyRowSettle(headingRef, stuck);
   const jumpToThread = (threadKey: string) => {
     if (revealThreadRow(headingRef.current, threadKey)) return;
     if (!collapsed) return;
@@ -1660,7 +1659,7 @@ export function SidebarProjectSection({
         </Tooltip>
         <SidebarAttentionPips pips={pips} onJump={jumpToThread} />
         {section.isScratch ? null : (
-          <span className="flex shrink-0 items-center gap-0.5 pr-1">
+          <span className="ms-auto flex shrink-0 items-center gap-0.5 pr-1">
             {handleNewThread === undefined ? null : (
               <Tooltip>
                 <TooltipTrigger
@@ -2072,7 +2071,7 @@ export function GridGroup({
         )}
         <SidebarAttentionPips pips={gridPips} onJump={jumpToGridThread} />
         {renaming ? null : (
-          <span className="flex shrink-0 items-center gap-0.5 pr-1">
+          <span className="ms-auto flex shrink-0 items-center gap-0.5 pr-1">
             <Tooltip>
               <TooltipTrigger
                 render={

@@ -641,10 +641,9 @@ function SidebarInset({ className, ...props }: React.ComponentProps<"main">) {
   return (
     <main
       className={cn(
-        // The work area is a card inset from the window chrome: 8px of rail on every edge,
-        // a 12px radius and one hairline. Routes that fill the pane keep `flex-1`; they do not
-        // bring their own height, which would add the margins to the window instead.
-        "relative m-(--canvas-inset) flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-(--r-canvas) border border-(--card-edge) bg-background",
+        // The work area is flush with the canvas; the rail's own 1px divider is the only seam.
+        // A grid pane is the only surface that draws a card.
+        "relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background",
         className,
       )}
       data-slot="sidebar-inset"

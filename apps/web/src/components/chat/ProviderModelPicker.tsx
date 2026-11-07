@@ -95,7 +95,7 @@ function contextStripClearance(card: HTMLElement | null): number {
 /** Space kept between a docked popup and the header it must not cross. */
 const HEADER_CLEARANCE_PX = 8;
 
-// The docked frame is a 208px list over an 88px effort panel; under this much room it opens above.
+// The docked frame is a 208px list over an 88px effort panel; under this much room above it falls below.
 const DOCKED_POPUP_MIN_HEIGHT_PX = 300;
 
 /**
@@ -179,9 +179,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       setDockSide("bottom");
       return;
     }
-    const stripClearance = contextStripClearance(card);
-    const roomBelow = window.innerHeight - card.getBoundingClientRect().bottom - stripClearance;
-    setDockSide(roomBelow >= DOCKED_POPUP_MIN_HEIGHT_PX ? "bottom" : "top");
+    const roomAbove = card.getBoundingClientRect().top - (headerClearanceOf(trigger) ?? 0);
+    setDockSide(roomAbove >= DOCKED_POPUP_MIN_HEIGHT_PX ? "top" : "bottom");
   }, [docked, isMenuOpen]);
 
   const activeEntry =
@@ -440,8 +439,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         {...(docked
           ? {
               anchor: () => composerCardOf(triggerRef.current) ?? triggerRef.current,
-              // Below the card when the pane leaves room, so the popup never covers the
-              // new-thread hero above it; above when it does not.
+              // Above the card, where a composer at the foot of the pane leaves room; below
+              // only when the card sits too high for the whole panel.
               side: dockSide,
               ...(headerClearance === null
                 ? {}

@@ -35,38 +35,25 @@ import "~/index.css";
 import type { ReactNode } from "react";
 import { render } from "../../../test/render";
 import { TooltipProvider } from "../ui/tooltip";
-import { ChatHeader, type ChatHeaderMeta } from "./ChatHeader";
+import { ChatHeader } from "./ChatHeader";
 
 const LONG_TITLE =
   "Investigate intermittent ECONNRESET errors on the /v1/webhooks/ingest endpoint when payloads exceed 1 MB behind the load balancer";
 
-function fullMeta(overrides: Partial<ChatHeaderMeta> = {}): ChatHeaderMeta {
-  return {
-    branch: "main",
-    checkoutLabel: "Local checkout",
-    status: { label: "Running", state: "running" },
-    pullRequest: {
-      number: 42,
-      url: "https://github.com/acme/atlas-api/pull/42",
-      state: "open",
-      title: "Add retry hints",
-      checksState: null,
-    },
-    pullRequestCount: 1,
-    diffTotals: { insertions: 37, deletions: 3 },
-    providerLabel: "Claude",
-    modelLabel: "Opus 5.5",
-    onOpenChanges: () => {},
-    ...overrides,
-  };
-}
+const PULL_REQUEST = {
+  number: 42,
+  url: "https://github.com/acme/atlas-api/pull/42",
+  state: "open",
+  title: "Add retry hints",
+  checksState: null,
+} as const;
 
 function header(
   title: string,
   options: {
     width?: number;
-    meta?: ChatHeaderMeta | undefined;
     project?: boolean;
+    pullRequest?: boolean;
     onOpenThread?: (threadId: ThreadId) => void;
     children?: ReactNode;
   } = {},
@@ -84,7 +71,8 @@ function header(
             options.project === false ? null : ({ title: "atlas-api", isScratch: false } as never)
           }
           parentThreadLink={null}
-          meta={options.meta}
+          pullRequest={options.pullRequest === false ? null : PULL_REQUEST}
+          pullRequestCount={1}
           onOpenThread={options.onOpenThread ?? (() => {})}
         />
         <div data-testid="toolbar" className="ms-auto flex shrink-0 gap-1">
@@ -132,30 +120,33 @@ it.each(["blur", "Enter"] as const)(
   },
 );
 
-it("sets the project segment in muted ink and the thread title in semibold foreground", async () => {
-  await using screen = await render(header("Add a retry-after hint", { meta: fullMeta() }));
+it("sets the project segment in muted ink and the thread title at 14px medium weight", async () => {
+  await using screen = await render(header("Add a retry-after hint"));
 
   const project = getComputedStyle(screen.getByText("atlas-api").element());
   const title = getComputedStyle(screen.getByRole("heading", { level: 2 }).element());
   expect(project.fontWeight).toBe("400");
-  expect(title.fontWeight).toBe("600");
-  expect(project.color).not.toBe(title.color);
+  expect(title.fontWeight).toBe("500");
+  expect(title.fontSize).toBe("14px");
 });
 
 it.each([
-  [1440, 1],
-  [800, 2],
+  [1440, false],
+  [800, true],
 ])(
-  "shows a %ipx thread title in full, on at most two lines when the header is narrow",
-  async (width, expectedLines) => {
-    await using screen = await render(header(LONG_TITLE, { width, meta: fullMeta() }));
+  "keeps the header on one line with a %ipx thread title that truncates when needed",
+  async (width, truncates) => {
+    await using screen = await render(header(LONG_TITLE, { width }));
 
     const heading = screen.getByRole("heading", { level: 2 }).element() as HTMLElement;
+    const titleStyle = getComputedStyle(heading);
     expect(heading.textContent).toBe(LONG_TITLE);
-    expect(getComputedStyle(heading).webkitLineClamp).toBe("2");
-    const lineHeight = Number.parseFloat(getComputedStyle(heading).lineHeight);
-    const lines = Math.round(heading.getBoundingClientRect().height / lineHeight);
-    expect(lines).toBe(expectedLines);
+    expect(titleStyle.webkitLineClamp).toBe("none");
+    expect(titleStyle.textOverflow).toBe("ellipsis");
+    expect(titleStyle.whiteSpace).toBe("nowrap");
+    if (truncates) expect(heading.scrollWidth).toBeGreaterThan(heading.clientWidth);
+    const lineHeight = Number.parseFloat(titleStyle.lineHeight);
+    expect(heading.getBoundingClientRect().height).toBeLessThan(lineHeight + 4);
     expect(
       screen.getByRole("button", { name: `Thread actions for ${LONG_TITLE}` }).element(),
     ).toBeTruthy();
@@ -163,7 +154,7 @@ it.each([
 );
 
 it("shows the full thread title in a tooltip, including a long one", async () => {
-  await using screen = await render(header(LONG_TITLE, { width: 800, meta: fullMeta() }));
+  await using screen = await render(header(LONG_TITLE, { width: 800 }));
   const trigger = screen.getByRole("button", { name: `Thread actions for ${LONG_TITLE}` });
   await userEvent.hover(trigger);
   await vi.waitFor(() =>
@@ -171,42 +162,31 @@ it("shows the full thread title in a tooltip, including a long one", async () =>
   );
 });
 
-it.each([1440, 800])(
-  "orders the meta row and opens the changes panel from the diff totals in a %ipx header",
-  async (width) => {
-    const onOpenChanges = vi.fn();
-    await using screen = await render(
-      header("Add a retry-after hint", {
-        width,
-        meta: fullMeta({ onOpenChanges }),
-      }),
-    );
+it("renders no meta row and puts the pull request badge after the title", async () => {
+  await using screen = await render(header("Add a retry-after hint"));
 
-    const content = document
-      .querySelector<HTMLElement>("[data-thread-header-meta]")!
-      .textContent?.replaceAll(/\s+/g, " ");
-    expect(content).toMatch(
-      /atlas-api.*main.*Local checkout.*Running.*#42.*\+37.*-3.*Claude.*Opus 5\.5/,
-    );
-
-    await screen.getByRole("button", { name: "Open changes: 37 additions, 3 deletions" }).click();
-    expect(onOpenChanges).toHaveBeenCalledOnce();
-  },
-);
-
-it("keeps project, branch, status, diff and provider in the meta row and clears the toolbar", async () => {
-  await using screen = await render(header(LONG_TITLE, { width: 800, meta: fullMeta() }));
-
-  const meta = document.querySelector<HTMLElement>("[data-thread-header-meta]")!;
+  expect(document.querySelector("[data-thread-header-meta]")).toBeNull();
   const title = screen.getByRole("heading", { level: 2 }).element();
-  const toolbar = screen.getByTestId("toolbar").element();
-  expect(meta.getBoundingClientRect().top).toBeGreaterThan(title.getBoundingClientRect().bottom);
-  expect(toolbar.getBoundingClientRect().left).toBeGreaterThan(
-    title.getBoundingClientRect().right + 16,
+  const badge = screen.getByTestId("header-pr-badge").element();
+  expect(badge.getBoundingClientRect().left).toBeGreaterThanOrEqual(
+    title.getBoundingClientRect().right,
   );
 });
 
-it("keeps the parent thread and its keyboard path reachable from the meta row", async () => {
+it("hides the project name at 800px and keeps it at 1440px", async () => {
+  {
+    await using wide = await render(header("Add a retry-after hint", { width: 1440 }));
+    const group = wide.container.querySelector<HTMLElement>("[data-thread-project]")!;
+    expect(getComputedStyle(group).display).not.toBe("none");
+  }
+  {
+    await using narrow = await render(header("Add a retry-after hint", { width: 800 }));
+    const group = narrow.container.querySelector<HTMLElement>("[data-thread-project]")!;
+    expect(getComputedStyle(group).display).toBe("none");
+  }
+});
+
+it("keeps the parent thread and its keyboard path reachable in the single line", async () => {
   const onOpenThread = vi.fn();
   const parentTitle = "Coordinate the 0.3 ledger migration";
   await using screen = await render(
@@ -219,7 +199,8 @@ it("keeps the parent thread and its keyboard path reachable from the meta row", 
           isServerThread
           activeProject={{ title: "atlas-api", isScratch: false } as never}
           parentThreadLink={{ threadId: ThreadId.make("parent"), title: parentTitle }}
-          meta={fullMeta()}
+          pullRequest={PULL_REQUEST}
+          pullRequestCount={1}
           onOpenThread={onOpenThread}
         />
       </div>

@@ -272,7 +272,7 @@ import {
 import { useEnvironmentShellHasSnapshot } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
 import { resolveThreadStatusPill } from "./Sidebar.logic";
-import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
+import { DraftHeroHeadline, DraftHeroProjectContext } from "./chat/DraftHeroHeadline";
 import { ExpandedImageDialogHost, openExpandedImagePreview } from "./chat/ExpandedImageDialog";
 import {
   BranchRestoreConfirmHost,
@@ -288,7 +288,7 @@ import { ThreadTimeline } from "./chat/ThreadTimeline";
 import { ProviderSubagentBar } from "./chat/ProviderSubagentBar";
 import { getTriggerDisplayModelName } from "./chat/providerIconUtils";
 import { resolveScrollToEndClearance } from "./composerFooterLayout";
-import { ChatHeader, type ChatHeaderMeta } from "./chat/ChatHeader";
+import { ChatHeader } from "./chat/ChatHeader";
 import { useSideChat } from "./chat/useSideChat";
 import { useSecondOpinion } from "./chat/useSecondOpinion";
 import { useRemoteOpenState } from "~/remoteOpen";
@@ -308,7 +308,6 @@ import {
   shouldShowComposerContextStrip,
   shouldShowEnvironmentIndicator,
 } from "./BranchToolbar.logic";
-import { resolveChangesTotals } from "./GitActionsControl.logic";
 import { resolveRowPullRequest } from "../grid/sidebar";
 import {
   getProviderStatusBannerKey,
@@ -3454,38 +3453,11 @@ export default function ChatView(props: ChatViewProps) {
       }}
     />
   ) : null;
-  const headerModelInstanceId =
-    activeRuntime?.providerInstanceId ?? activeThread?.modelSelection.instanceId ?? null;
-  const headerProviderEntry =
-    headerModelInstanceId === null
-      ? null
-      : (providerInstanceEntries.find((entry) => entry.instanceId === headerModelInstanceId) ??
-        null);
-  const headerModel = activeThread?.modelSelection.model ?? null;
-  const headerModelEntry =
-    headerModel === null
-      ? null
-      : (headerProviderEntry?.models.find((model) => model.slug === headerModel) ?? null);
   const headerRowPullRequest =
     activeThreadShell === null ? null : resolveRowPullRequest(activeThreadShell);
-  const headerDiffTotals = resolveChangesTotals(gitStatusQuery.data);
   const headerBranch = activeThreadBranch ?? gitStatusQuery.data?.refName ?? null;
-  const chatHeaderMeta = {
-    branch: headerBranch,
-    checkoutLabel: envMode === "worktree" ? "Worktree" : "Local checkout",
-    status: activeThreadStatusPill,
-    pullRequest: headerRowPullRequest,
-    pullRequestCount: activeThreadShell?.pullRequests.length ?? 0,
-    diffTotals: headerDiffTotals,
-    providerLabel: headerProviderEntry?.displayName ?? null,
-    modelLabel:
-      headerModel === null
-        ? null
-        : headerModelEntry === null
-          ? headerModel
-          : getTriggerDisplayModelName(headerModelEntry, headerProviderEntry?.driverKind),
-    onOpenChanges: isServerThread && isGitRepo ? openChangesFromThreadPanelStable : undefined,
-  } satisfies ChatHeaderMeta;
+  const draftProjectBranch = headerBranch;
+  const draftProjectCheckoutLabel = envMode === "worktree" ? "Worktree" : "Local checkout";
   const panelToggleControlProps = {
     terminalAvailable: activeProject !== null,
     terminalOpen: terminalUiState.terminalOpen,
@@ -3542,7 +3514,7 @@ export default function ChatView(props: ChatViewProps) {
               "relative bg-background",
               isDesktopHost
                 ? cn(
-                    "drag-region flex min-h-12 shrink-0 items-center py-1",
+                    "drag-region flex h-(--workspace-topbar-height) min-h-(--workspace-topbar-height) shrink-0 items-center",
                     rightPanelOpen ? "pl-3 sm:pl-5 pr-0" : "px-3 sm:px-5",
                     !inlineRightPanelOwnsTitleBar &&
                       "custom-chrome:pr-(--workspace-native-controls-inset)",
@@ -3551,7 +3523,7 @@ export default function ChatView(props: ChatViewProps) {
                       "wco:pr-(--workspace-native-controls-inset)",
                   )
                 : cn(
-                    "flex min-h-12 shrink-0 items-center py-1 pl-(--workspace-gutter-start)",
+                    "flex h-(--workspace-topbar-height) min-h-(--workspace-topbar-height) shrink-0 items-center pl-(--workspace-gutter-start)",
                     rightPanelOpen ? "pr-0" : "pr-(--workspace-gutter-end)",
                     !inlineRightPanelOwnsTitleBar &&
                       "custom-chrome:pr-(--workspace-native-controls-inset)",
@@ -3567,7 +3539,8 @@ export default function ChatView(props: ChatViewProps) {
               activeThreadLinkOrigin={activeThreadShell?.linkOrigin?.label ?? null}
               activeProject={activeProject ?? null}
               parentThreadLink={headerParentThreadLink}
-              meta={chatHeaderMeta}
+              pullRequest={headerRowPullRequest}
+              pullRequestCount={activeThreadShell?.pullRequests.length ?? 0}
               onOpenThread={onOpenRelatedThreadStable}
               {...(activeDraftLogicalProjectKey
                 ? { onOpenProjectSettings: handleOpenDraftProjectSettingsStable }
@@ -3761,38 +3734,48 @@ export default function ChatView(props: ChatViewProps) {
               data-draft-hero={isDraftHeroState ? "true" : undefined}
               className={
                 isDraftHeroState
-                  ? // Anchored low so the hero and project context sit above it and the pane
-                    // leaves the docked model picker its 300px under the card.
-                    "pointer-events-none absolute inset-x-0 bottom-0 z-20 flex items-end pb-72 max-sm:pb-16"
+                  ? "pointer-events-none absolute inset-0 z-20 flex flex-col"
                   : "pointer-events-none absolute inset-x-0 bottom-0 z-20 pt-1.5 sm:pt-2"
               }
             >
-              <div ref={draftHeroTransitionGroupRef} className="chat-composer-lane w-full">
+              {isDraftHeroState && !hideDraftHeroHeadline ? (
+                <div className="flex min-h-0 flex-1 items-center justify-center px-4 pb-6">
+                  <div
+                    style={
+                      forceExpandedMobileComposer
+                        ? { viewTransitionName: MOBILE_DRAFT_HEADLINE_VIEW_TRANSITION_NAME }
+                        : undefined
+                    }
+                  >
+                    <DraftHeroHeadline
+                      draftId={draftId}
+                      activeProjectRef={activeProjectRef}
+                      activeProjectTitle={activeProject?.title ?? null}
+                    />
+                  </div>
+                </div>
+              ) : null}
+              <div
+                ref={draftHeroTransitionGroupRef}
+                className={cn("chat-composer-lane w-full", isDraftHeroState && "mt-auto")}
+              >
+                {isDraftHeroState &&
+                !hideDraftHeroHeadline &&
+                activeProjectRef !== null &&
+                !activeProjectIsScratch ? (
+                  <div className="mx-auto w-full max-w-(--chat-content-max-width) pb-2">
+                    <DraftHeroProjectContext
+                      activeProjectRef={activeProjectRef}
+                      branch={draftProjectBranch}
+                      checkoutLabel={draftProjectCheckoutLabel}
+                      onOpenThread={openThread}
+                    />
+                  </div>
+                ) : null}
                 <div
                   data-chat-composer-stack="true"
                   className="group/composer-stack pointer-events-auto relative z-10 mx-auto w-full max-w-(--chat-content-max-width)"
                 >
-                  {isDraftHeroState && !hideDraftHeroHeadline ? (
-                    <div className="absolute inset-x-0 bottom-full">
-                      <div
-                        className="pb-4 group-has-data-[composer-shoulder-tab]/composer-stack:pb-0"
-                        style={
-                          forceExpandedMobileComposer
-                            ? { viewTransitionName: MOBILE_DRAFT_HEADLINE_VIEW_TRANSITION_NAME }
-                            : undefined
-                        }
-                      >
-                        <DraftHeroHeadline
-                          draftId={draftId}
-                          activeProjectRef={activeProjectRef}
-                          activeProjectTitle={activeProject?.title ?? null}
-                          branch={chatHeaderMeta.branch}
-                          checkoutLabel={chatHeaderMeta.checkoutLabel}
-                          onOpenThread={openThread}
-                        />
-                      </div>
-                    </div>
-                  ) : null}
                   <div
                     ref={draftHeroComposerAnchorRef}
                     className="relative z-10"

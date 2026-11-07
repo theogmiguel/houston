@@ -35,7 +35,7 @@ import type { AttentionPip } from "../../grid/attentionPips";
  * only while the heading is hovered or focused, so the name keeps the width otherwise.
  */
 export const SIDEBAR_GRID_HEADING_CLS =
-  "group/grid flex h-8 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-lg py-0 pr-1 pl-4 text-left text-xs transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+  "group/grid flex h-8 min-w-0 shrink cursor-pointer items-center gap-1.5 rounded-lg py-0 pr-1 pl-4 text-left text-xs transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
 export const SIDEBAR_GRID_HEADING_ACTIVE_CLS = "bg-sidebar-row-selected";
 
@@ -43,9 +43,9 @@ export const SIDEBAR_GRID_HEADING_DROP_CLS =
   "bg-(--accent-muted) ring-1 ring-(--accent-ink) ring-inset";
 
 export const SIDEBAR_GRID_NAME_CLS =
-  "min-w-0 flex-1 truncate text-xs font-semibold text-sidebar-foreground";
+  "min-w-0 truncate text-xs font-semibold text-sidebar-foreground";
 
-export const SIDEBAR_GRID_EMPTY_CLS = "ml-auto shrink-0 text-xs text-secondary-label";
+export const SIDEBAR_GRID_EMPTY_CLS = "shrink-0 text-xs text-secondary-label";
 
 /** The muted thread count that follows a heading's name. */
 export const SIDEBAR_GRID_COUNT_CLS =
@@ -54,15 +54,16 @@ export const SIDEBAR_GRID_COUNT_CLS =
 /**
  * A project heading sticks to the top of the rail's scroll area on the rail's own background at
  * full ink, and gains a 1px bottom border only while it is stuck (`data-stuck`). It sticks 1px
- * above the top so the observer that sets `data-stuck` sees it clipped.
+ * above the top so the observer that sets `data-stuck` sees it clipped. Its `::before` covers the
+ * 4px gap above the box, so rows scrolling under it never paint in that seam.
  */
 export const SIDEBAR_PROJECT_ROW_CLS =
-  "group/project sticky -top-px z-10 mt-1 flex items-center border-b border-transparent bg-sidebar first:mt-0 data-stuck:border-sidebar-border";
+  "group/project sticky -top-px z-40 mt-1 flex items-center border-b border-transparent bg-sidebar before:absolute before:inset-x-0 before:-top-1 before:h-1 before:bg-sidebar before:content-[''] first:mt-0 data-stuck:border-sidebar-border";
 
 export const SIDEBAR_PROJECT_LABEL_CLS =
-  "flex h-8 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-lg py-0 pr-1 pl-2 text-left text-xs font-semibold text-sidebar-foreground transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+  "flex h-8 min-w-0 shrink cursor-pointer items-center gap-1.5 rounded-lg py-0 pr-1 pl-2 text-left text-xs font-semibold text-sidebar-foreground transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
-export const SIDEBAR_PROJECT_LABEL_TEXT_CLS = "min-w-0 flex-1 truncate";
+export const SIDEBAR_PROJECT_LABEL_TEXT_CLS = "min-w-0 truncate";
 
 /** The project heading's muted thread count. */
 export const SIDEBAR_PROJECT_SUMMARY_CLS = SIDEBAR_GRID_COUNT_CLS;

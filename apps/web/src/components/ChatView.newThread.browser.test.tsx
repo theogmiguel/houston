@@ -77,7 +77,7 @@ async function viewport(width: number): Promise<AsyncDisposable> {
 }
 
 it.each([1440, 800])(
-  "anchors the new-thread composer in the lower part of the pane, with the hero above it at %ipx",
+  "sits the new-thread composer at the foot of the pane with the hero centred above it at %ipx",
   async (width) => {
     using _environment = installFakeEnvironment([]);
     await using _viewport = await viewport(width);
@@ -89,17 +89,28 @@ it.each([1440, 800])(
       .querySelector<HTMLElement>("[data-chat-composer-main-surface]")!
       .getBoundingClientRect();
     const heading = page.getByRole("heading", { name: /What should we build/ }).element();
+    const context = document.querySelector<HTMLElement>("[data-draft-project-context]")!;
 
-    await expect.poll(() => (card.top - pane.top) / pane.height).toBeGreaterThan(0.44);
-    expect(heading.getBoundingClientRect().bottom).toBeLessThan(card.top);
-    // Room for the docked model picker under the card, clear of the hero above it.
-    expect(pane.bottom - card.bottom).toBeGreaterThan(280);
+    // The composer stack rests on the canvas's bottom edge, as it does in a thread.
+    const stack = document.querySelector<HTMLElement>('[data-chat-composer-stack="true"]')!;
+    expect(Math.abs(stack.getBoundingClientRect().bottom - pane.bottom)).toBeLessThan(2);
+    expect(pane.bottom - card.bottom).toBeLessThan(56);
+    expect(Math.abs(card.left + card.width / 2 - (pane.left + pane.width / 2))).toBeLessThan(2);
+
+    // The hero is centred in the space between the pane's top and the project context.
+    const headingBox = heading.getBoundingClientRect();
+    const contextBox = context.getBoundingClientRect();
+    const centre = (pane.top + contextBox.top) / 2;
+    expect(Math.abs(headingBox.top + headingBox.height / 2 - centre)).toBeLessThan(24);
+
+    // The upward picker's 300px clears the hero above the card.
+    expect(headingBox.bottom).toBeLessThan(card.top - 304);
   },
   APP_BOOT_TEST_TIMEOUT_MS,
 );
 
 it.each([1440, 800])(
-  "keeps the project context block between the new-thread hero and composer at %ipx",
+  "puts the project context directly above the composer at %ipx",
   async (width) => {
     using _environment = installFakeEnvironment([]);
     await using _viewport = await viewport(width);
@@ -112,10 +123,10 @@ it.each([1440, 800])(
     const card = document
       .querySelector<HTMLElement>("[data-chat-composer-main-surface]")!
       .getBoundingClientRect();
-    expect(context!.getBoundingClientRect().top).toBeGreaterThan(
-      heading.getBoundingClientRect().bottom,
-    );
-    expect(context!.getBoundingClientRect().bottom).toBeLessThanOrEqual(card.top);
+    const contextBox = context!.getBoundingClientRect();
+    expect(contextBox.top).toBeGreaterThan(heading.getBoundingClientRect().bottom);
+    expect(contextBox.bottom).toBeLessThanOrEqual(card.top);
+    expect(card.top - contextBox.bottom).toBeLessThan(14);
   },
   APP_BOOT_TEST_TIMEOUT_MS,
 );

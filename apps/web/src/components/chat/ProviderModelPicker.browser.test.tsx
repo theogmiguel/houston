@@ -427,21 +427,21 @@ describe("docked popup and the composer context row", () => {
     };
   }
 
-  it("opens below the card when there is room, clear of the context row", async () => {
+  it("falls back below the card when there is not enough room above", async () => {
     await using _screen = await openDocked(20);
 
     await expect.poll(() => rects().popup.top >= rects().strip.bottom).toBe(true);
     expect(rects().popup.top).toBeGreaterThanOrEqual(rects().card.bottom);
   });
 
-  it("flips above the card when it sits too low for the panel", async () => {
+  it("opens above the card when there is room above", async () => {
     await using _screen = await openDocked(560);
 
     await expect.poll(() => rects().popup.bottom <= rects().card.top).toBe(true);
   });
 
   it.each([1440, 800])(
-    "opens below a mid-canvas composer without covering the draft hero in a %ipx pane",
+    "opens above the composer without covering the draft hero in a %ipx pane",
     async (width) => {
       await page.viewport(width, 900);
       await using _screen = await render(
@@ -456,7 +456,7 @@ describe("docked popup and the composer context row", () => {
             </div>
             <form
               data-chat-composer-form="true"
-              style={{ width: Math.min(760, width - 40), marginLeft: 20, paddingTop: 360 }}
+              style={{ width: Math.min(760, width - 40), marginLeft: 20, paddingTop: 560 }}
             >
               <div
                 data-inline-resting-controls="true"
@@ -495,7 +495,7 @@ describe("docked popup and the composer context row", () => {
             '[data-inline-resting-controls="true"]',
           )!;
           const popup = document.querySelector<HTMLElement>('[data-slot="popover-positioner"]')!;
-          return popup.getBoundingClientRect().top >= card.getBoundingClientRect().bottom;
+          return popup.getBoundingClientRect().bottom <= card.getBoundingClientRect().top;
         })
         .toBe(true);
       const hero = document.querySelector<HTMLElement>('[data-testid="draft-hero"]')!;
@@ -514,7 +514,7 @@ describe("docked popup and the composer context row", () => {
           <header data-chat-header="" style={{ height: 44 }} />
           <form
             data-chat-composer-form="true"
-            style={{ width: 760, marginLeft: 160, paddingTop: 250 }}
+            style={{ width: 760, marginLeft: 160, paddingTop: 480 }}
           >
             <div
               data-inline-resting-controls="true"

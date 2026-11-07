@@ -71,18 +71,12 @@ interface DraftHeroHeadlineProps {
   readonly draftId: DraftId | null;
   readonly activeProjectRef: ScopedProjectRef | null;
   readonly activeProjectTitle: string | null;
-  readonly branch: string | null;
-  readonly checkoutLabel: string;
-  readonly onOpenThread: (threadRef: ScopedThreadRef) => void;
 }
 
 export function DraftHeroHeadline({
   draftId,
   activeProjectRef,
   activeProjectTitle,
-  branch,
-  checkoutLabel,
-  onOpenThread,
 }: DraftHeroHeadlineProps) {
   const projects = useProjects();
   const threads = useVisibleThreadShells();
@@ -171,15 +165,6 @@ export function DraftHeroHeadline({
   const isScratchDraft =
     activeProject !== null &&
     isScratchProject(activeProject, scratchWorkspaceRootFor(activeProject.environmentId));
-  const projectThreads =
-    activeProjectRef === null
-      ? []
-      : threads.filter(
-          (thread) =>
-            thread.environmentId === activeProjectRef.environmentId &&
-            thread.projectId === activeProjectRef.projectId,
-        );
-
   // Pinning from a row keeps rows in place while the picker is open.
   const pickerItems: readonly PickerItem[] = useOrderWhileOpen(
     [
@@ -448,14 +433,35 @@ export function DraftHeroHeadline({
           {isScratchDraft ? projectSelector : orStartWithoutProject}
         </p>
       )}
-      {activeProjectRef !== null && !isScratchDraft ? (
-        <DraftProjectContext
-          branch={branch}
-          checkoutLabel={checkoutLabel}
-          threads={projectThreads}
-          onOpenThread={onOpenThread}
-        />
-      ) : null}
     </div>
+  );
+}
+
+/** The project summary the new-thread composer sits under: checkout, attention counts, recent threads. */
+export function DraftHeroProjectContext({
+  activeProjectRef,
+  branch,
+  checkoutLabel,
+  onOpenThread,
+}: {
+  readonly activeProjectRef: ScopedProjectRef | null;
+  readonly branch: string | null;
+  readonly checkoutLabel: string;
+  readonly onOpenThread: (threadRef: ScopedThreadRef) => void;
+}) {
+  const threads = useVisibleThreadShells();
+  if (activeProjectRef === null) return null;
+  const projectThreads = threads.filter(
+    (thread) =>
+      thread.environmentId === activeProjectRef.environmentId &&
+      thread.projectId === activeProjectRef.projectId,
+  );
+  return (
+    <DraftProjectContext
+      branch={branch}
+      checkoutLabel={checkoutLabel}
+      threads={projectThreads}
+      onOpenThread={onOpenThread}
+    />
   );
 }

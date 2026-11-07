@@ -6,6 +6,7 @@ import { render } from "../../../test/render";
 import {
   Sidebar,
   SidebarContent,
+  SidebarInset,
   SidebarProvider,
   SidebarRail,
   SidebarTrigger,
@@ -40,6 +41,15 @@ function Harness(props: { readonly onResize?: (width: number) => void }) {
   );
 }
 
+const resolveColor = (value: string) => {
+  const probe = document.createElement("span");
+  probe.style.backgroundColor = value;
+  document.body.append(probe);
+  const color = getComputedStyle(probe).backgroundColor;
+  probe.remove();
+  return color;
+};
+
 describe("Sidebar", () => {
   it("hands focus to the outside trigger when it collapses around the focused control", async () => {
     await page.viewport(1280, 800);
@@ -51,6 +61,34 @@ describe("Sidebar", () => {
     await vi.waitFor(() => expect(sidebar.inert).toBe(true));
     const trigger = screen.container.querySelector('[data-slot="sidebar-trigger"]');
     await vi.waitFor(() => expect(document.activeElement).toBe(trigger));
+  });
+
+  it("separates the canvas from the sidebar with one divider, not an inset card", async () => {
+    await page.viewport(1280, 800);
+    await using screen = await render(
+      <SidebarProvider defaultOpen className="h-dvh! min-h-0!">
+        <Sidebar collapsible="offcanvas" data-app-sidebar="">
+          <SidebarContent>Project</SidebarContent>
+        </Sidebar>
+        <SidebarInset>Canvas</SidebarInset>
+      </SidebarProvider>,
+      { router: false /* no routes involved */ },
+    );
+
+    const inset = screen.container.querySelector<HTMLElement>('[data-slot="sidebar-inset"]')!;
+    const insetStyle = getComputedStyle(inset);
+    expect(insetStyle.marginTop).toBe("0px");
+    expect(insetStyle.marginLeft).toBe("0px");
+    expect(insetStyle.borderTopWidth).toBe("0px");
+    expect(insetStyle.borderTopLeftRadius).toBe("0px");
+    expect(insetStyle.backgroundColor).toBe(resolveColor("var(--content)"));
+
+    const container = screen.container.querySelector<HTMLElement>(
+      '[data-slot="sidebar-container"]',
+    )!;
+    const containerStyle = getComputedStyle(container);
+    expect(containerStyle.borderRightWidth).toBe("1px");
+    expect(containerStyle.borderRightColor).toBe(resolveColor("var(--divider)"));
   });
 
   it("fades scrolled content over a whole row at its edges, and not once the list is scrolled clear", async () => {
