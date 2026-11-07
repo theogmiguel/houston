@@ -31,6 +31,8 @@ const exportedLinks = (links: ReadonlyArray<Tracer.SpanLink>): Array<Tracer.Span
 
 // SQLite spans are exported only when slow, failed, or an ancestor of an exported span, so a
 // receiver never shows an exported span whose parent was dropped. The local file keeps them all.
+// Limits: a span forked after its SQLite parent ended can still lose that parent, and with
+// HOUSTON_TRACE_TIMING_ENABLED=false every duration is 0, so only failures and ancestors export.
 class SqliteSpans {
   // Live SQLite spans by span id; a span leaves when it ends.
   private readonly live = new Map<string, ExportSpan>();
