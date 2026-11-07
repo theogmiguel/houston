@@ -13,6 +13,10 @@ const SKIPPED_TABLES = new Set([
   "orchestration_v2_projection_metadata",
   "houston_task_counter",
   "sqlite_sequence",
+  // Trigger-maintained read models (houston/projectionReadModels.ts): cloning the source rows fills them.
+  "houston_thread_shell",
+  "houston_user_messages",
+  "houston_turn_item_counts",
 ]);
 const FILTER_COLUMNS = [
   "thread_id",
