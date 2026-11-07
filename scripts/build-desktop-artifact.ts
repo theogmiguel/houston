@@ -102,6 +102,13 @@ const LINUX_FILE_EXCLUSIONS = [
   "!**/node_modules/node-pty/third_party/conpty/**/*",
 ] as const;
 
+// Native packages (node-pty, objc-js) ship prebuilds for both Darwin architectures; only a
+// universal app needs both. macOS 27 warns when an arm64 app holds x64-only code.
+export function resolveMacFileExclusions(arch: BuildArch): ReadonlyArray<string> {
+  const unusedArch = arch === "arm64" ? "x64" : "arm64";
+  return [`!**/node_modules/**/prebuilds/darwin-${unusedArch}/**/*`];
+}
+
 const WINDOWS_NATIVE_ASAR_UNPACK_GLOB =
   "{**/*.node,**/*.dll,**/*.exe,**/*.so,**/*.so.*,**/*.dylib}";
 
@@ -306,6 +313,7 @@ export function createBuildConfig(input: {
     files: [
       ...EXTERNAL_FILE_PATTERNS,
       ...(input.platform === "linux" ? LINUX_FILE_EXCLUSIONS : []),
+      ...(input.platform === "mac" ? resolveMacFileExclusions(input.arch) : []),
     ],
     extraResources: resolveExtraResources(input.platform, (path) =>
       NodeFS.existsSync(NodePath.join(input.stageAppDir, path)),

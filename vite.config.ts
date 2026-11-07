@@ -88,7 +88,16 @@ const taskCacheConfig = {
 export default defineConfig({
   run: {
     cache: taskCacheConfig,
-    tasks: cachedTestTasks(process.env.HOUSTON_CACHED_TESTS),
+    tasks: {
+      ...cachedTestTasks(process.env.HOUSTON_CACHED_TESTS),
+      // The two knip passes read the same files and write nothing, so they run side by side.
+      // The `knip:check` script runs this task, so `vp run knip:check` and `pnpm run knip:check` both use it.
+      "knip:check:all": {
+        command: 'node -e ""',
+        dependsOn: ["knip:check:files", "knip:check:exports"],
+        cache: false,
+      },
+    },
   },
   resolve: {
     alias: {
@@ -576,6 +585,10 @@ export default defineConfig({
       {
         files: ["apps/web/src/**"],
         rules: { "houston/no-outset-state-indicators": "error" },
+      },
+      {
+        files: ["apps/web/src/**"],
+        rules: { "houston/max-settings-description-length": "error" },
       },
       {
         // Warn while the motion standard rolls out; it becomes an error once every surface names a role.

@@ -1,6 +1,7 @@
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
+import * as Mac from "effect/crypto/Mac";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -178,6 +179,7 @@ export class DesktopServerAttachment extends Context.Service<
 export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const secretStore = yield* DesktopBootstrapSecret.DesktopBootstrapSecret;
+  const mac = yield* Mac.Mac;
   const fileSystem = yield* FileSystem.FileSystem;
   const httpClient = yield* HttpClient.HttpClient;
 
@@ -228,10 +230,10 @@ export const make = Effect.gen(function* () {
     const { read, decision } = attached;
 
     const secret = yield* secretStore.resolve;
-    const bootstrapToken = currentDesktopBootstrapToken(
+    const bootstrapToken = yield* currentDesktopBootstrapToken(
       secret.secret,
       yield* Clock.currentTimeMillis,
-    );
+    ).pipe(Effect.provideService(Mac.Mac, mac));
     const httpBaseUrl = new URL(decision.origin);
     const config: DesktopBackendManager.DesktopBackendStartConfig = {
       executablePath: process.execPath,

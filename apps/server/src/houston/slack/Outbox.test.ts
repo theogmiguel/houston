@@ -11,6 +11,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as SqlClient from "effect/sql/SqlClient";
 
+import * as RecordingTracer from "../../observability/testing/RecordingTracer.ts";
 import { makeMemory } from "../secrets/HoustonSecrets.ts";
 import { createProject } from "../tasks/tasks.testkit.ts";
 import { HoustonSlackOutbox } from "./Outbox.ts";
@@ -241,4 +242,44 @@ describe("the outbox sends nothing with one token of the pair", () => {
       { secrets },
     );
   });
+});
+
+describe("the Slack loops while Slack is off", () => {
+  it.effect("an idle server without Slack reads the Slack tables about once a minute", () => {
+    const recording = RecordingTracer.make();
+    const slackStatements = () =>
+      recording.started.filter(
+        (span) =>
+          span.name === "sqlite" &&
+          String(span.attributes.get("db.query.text")).includes("houston_slack"),
+      ).length;
+    return runSlack(() =>
+      Effect.gen(function* () {
+        yield* advance(1);
+        const before = slackStatements();
+        yield* advance(300);
+        // About five idle ticks of each loop, seven statements a pair (35); every 5 s it was 420.
+        assert.isAtMost(slackStatements() - before, 50);
+      }),
+    ).pipe(Effect.withTracer(recording.tracer));
+  });
+
+  it.effect("enabling Slack delivers what was queued without waiting for a tick", () =>
+    runSlack((fake) =>
+      Effect.gen(function* () {
+        const store = yield* HoustonSlackStore;
+        const projectId = yield* createProject("enable-at-once");
+        const id = yield* insertRequest(projectId);
+        yield* store.react(id, "eyes");
+        yield* advance(1);
+        assert.lengthOf(fake.callsOf("reactions.add"), 0);
+        // From here the test clock stands still, so no timed tick can send it.
+        yield* connectSlack(projectId);
+        yield* until(
+          "the queued reaction",
+          Effect.sync(() => fake.callsOf("reactions.add").length === 1),
+        );
+      }),
+    ),
+  );
 });

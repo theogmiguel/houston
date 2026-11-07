@@ -434,6 +434,8 @@ export interface ChatComposerProps {
   onResumeCommand?: (() => void) | undefined;
   sideChatAvailable?: boolean;
   sideChatDisabledReason?: string | null;
+  /** Arms a fresh session for the next message; absent where `/clear` is unavailable. */
+  onFreshSession?: (() => void) | undefined;
   environmentUnavailable: {
     readonly label: string;
     readonly connection: EnvironmentConnectionPresentation;
@@ -1216,6 +1218,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     planModeUiEnabled,
     sideChatAvailable: props.sideChatAvailable === true,
     sideChatDisabledReason: props.sideChatDisabledReason ?? null,
+    freshSessionAvailable: props.onFreshSession !== undefined,
     compactSlashCommandAvailable,
     activeProjectId: props.activeProjectId,
     selectedProvider,
@@ -2093,6 +2096,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         if (applied) {
           setComposerHighlightedItemId(null);
           onResumeCommand();
+        }
+        return;
+      }
+      if (item.command === "clear") {
+        const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
+          expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
+        });
+        if (applied) {
+          setComposerHighlightedItemId(null);
+          props.onFreshSession?.();
         }
         return;
       }

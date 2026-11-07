@@ -2,7 +2,11 @@ import { assert, describe, it } from "@effect/vitest";
 import * as Duration from "effect/Duration";
 import * as Option from "effect/Option";
 
-import { readinessPollDelay, restartRefusalReason } from "./DesktopBackendManager.ts";
+import {
+  BACKEND_QUIT_STOP_TIMEOUT,
+  readinessPollDelay,
+  restartRefusalReason,
+} from "./DesktopBackendManager.ts";
 
 const readyServer = {
   attached: false,
@@ -59,5 +63,12 @@ describe("readinessPollDelay", () => {
     assert.equal(Duration.toMillis(readinessPollDelay(Duration.seconds(2))), 100);
     assert.equal(Duration.toMillis(readinessPollDelay(Duration.seconds(5))), 250);
     assert.equal(Duration.toMillis(readinessPollDelay(Duration.seconds(170))), 250);
+  });
+});
+
+describe("BACKEND_QUIT_STOP_TIMEOUT", () => {
+  it("leaves room for the force kill after the SIGTERM grace", () => {
+    // The spawner sends SIGTERM and waits a 5 s grace before SIGKILL; quit must outwait both.
+    assert.isAtLeast(Duration.toMillis(BACKEND_QUIT_STOP_TIMEOUT), 6_000);
   });
 });

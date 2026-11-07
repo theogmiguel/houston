@@ -78,8 +78,8 @@ Claude has two switches, both on by default:
 
 Default model, fallback model, default permissions, where new threads start (local checkout
 or new worktree), hold presets, resume and hold behavior at usage limits, auto-close on
-merge and after inactivity, the add-project base directory, text generation model and
-instructions, and response streaming.
+merge and after inactivity, the add-project base directory, host-folder clone layout, text
+generation model and instructions, and response streaming.
 
 ## Browser
 
@@ -89,7 +89,8 @@ browser access, automatic floating preview, and recording options.
 ## Devices
 
 Device sources, whether agents may use devices, and device hub settings. Platform support
-limits are named on the page.
+limits are named on the page. SSH device hosts currently need macOS or Linux; to use devices
+on a Windows machine, run Houston there and connect to its environment.
 
 ## Scheduled tasks
 

@@ -505,7 +505,7 @@ export function ProjectDefaultsSettings({
             settingKeys={["removeAgentCreditsOnMerge"]}
             mixed={mixedAgentCredits}
             {...searchableSetting("remove-agent-credits-on-merge")}
-            description="On GitHub, remove recognized agent credit lines from merge and squash messages, keeping human co-authors. Rebase merges, merge queues, stack merges and existing commits are unchanged. Includes auto-merge."
+            description="On GitHub, remove recognized agent credit lines from merge and squash messages (including auto-merge), keeping human co-authors. Rebase merges, merge queues and stack merges are unchanged."
             resetAction={
               settings.removeAgentCreditsOnMerge ? (
                 <SettingResetButton

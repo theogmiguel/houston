@@ -34,7 +34,12 @@ not download fonts.
 
 **Settings ▸ Chat** controls the composer:
 
-- **Rich text composer** shows formatted Markdown as you type in the thread composer.
+- **Rich text composer** shows formatted Markdown as you type in the thread composer. When
+  the cursor is on styled text, its Markdown shows instead, such as `**bold**`, and the
+  markers edit like any other text: delete them to remove the style, or change `**` to `*`
+  for italic. The style updates when the cursor leaves. Styled text that contains or touches
+  literal Markdown characters, such as a bold `path\` or `2*3`, keeps its styling without
+  showing markers; use the formatting shortcuts or turn the setting off to edit those ranges.
 - **Send shortcut** chooses whether Enter sends, `Ctrl+Enter` inserts a line break, or
   `Ctrl+Enter` always sends.
 - **Show skills in slash menu** adds skills to the `/` menu; `$` always lists them.

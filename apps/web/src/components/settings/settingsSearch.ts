@@ -631,6 +631,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["add project base directory folder browser path home"],
   },
   {
+    id: "host-folder-clone-layout",
+    title: "Clone into host folders",
+    to: "/settings/threads",
+    scope: "environment-defaults",
+    searchTerms: ["clone destination host owner repository root layout"],
+  },
+  {
     id: "unpin-confirmation",
     title: "Unpin confirmation",
     to: "/settings/general",
@@ -808,6 +815,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Context window indicator",
     to: "/settings/labs",
     searchTerms: ["composer meter usage tokens circle"],
+  },
+  {
+    id: "tool-call-visibility",
+    title: "Tool calls in chat",
+    to: "/settings/labs",
+    searchTerms: [
+      "beta hide tool calls commands edits searches work log activity quiet chat zen final answers only",
+    ],
   },
   {
     id: "keybindings",
