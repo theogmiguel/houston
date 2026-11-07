@@ -55,11 +55,12 @@ it.effect("a new database returns freed pages online without losing data", () =>
 );
 
 // Resolving the doctor command walks PATH (seconds on a long Windows PATH); only the storage notice needs it.
+// The test's PATH is one missing directory, so the walk stays short on any machine.
 it.effect("resolves the compact command after activation, not while the server starts", () =>
   Effect.gen(function* () {
     let pathReads = 0;
-    const environment = new Proxy(
-      { ...process.env },
+    const environment = new Proxy<NodeJS.ProcessEnv>(
+      { ...process.env, PATH: `${process.cwd()}/.database-storage-missing-path` },
       {
         get: (target, key) => {
           if (typeof key === "string" && /path/iu.test(key)) pathReads += 1;
