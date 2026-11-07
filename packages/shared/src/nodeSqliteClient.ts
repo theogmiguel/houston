@@ -42,6 +42,10 @@ export interface SqliteClientConfig {
   readonly checkpointWorker?: boolean | undefined;
 }
 
+// run() steps once, which completes DML; a column-less PRAGMA such as incremental_vacuum
+// does one unit of work per step, so it is stepped until done.
+const PRAGMA_STATEMENT = /^\s*PRAGMA\b/iu;
+
 // SqlClient masks transaction acquisition, so readOnly carries the caller's interruption policy.
 const ReadOnly = Context.Reference<typeof Effect.interruptible | undefined>(
   "@houston-app/shared/nodeSqliteClient/ReadOnly",
@@ -892,7 +896,7 @@ const make = Effect.fn("makeWithDatabase")(function* (
         ? yield* startCheckpointWorker(options.filename, db)
         : undefined;
 
-    const statementReaderCache = new WeakMap<NodeSqlite.StatementSync, boolean>();
+    const statementShapeCache = new WeakMap<NodeSqlite.StatementSync, "rows" | "steps" | "once">();
     interface CheckpointClassification {
       backpressure: boolean;
       check: boolean;
@@ -958,13 +962,18 @@ const make = Effect.fn("makeWithDatabase")(function* (
         return constants.SQLITE_OK;
       });
     }
-    const hasRows = (statement: NodeSqlite.StatementSync): boolean => {
-      const cached = statementReaderCache.get(statement);
+    const statementShape = (statement: NodeSqlite.StatementSync) => {
+      const cached = statementShapeCache.get(statement);
       if (cached !== undefined) {
         return cached;
       }
-      const value = statement.columns().length > 0;
-      statementReaderCache.set(statement, value);
+      const value =
+        statement.columns().length > 0
+          ? "rows"
+          : PRAGMA_STATEMENT.test(statement.sourceSQL)
+            ? "steps"
+            : "once";
+      statementShapeCache.set(statement, value);
       return value;
     };
 
@@ -1004,10 +1013,15 @@ const make = Effect.fn("makeWithDatabase")(function* (
           try {
             const value = withClassification(classification, () => {
               statement.setReadBigInts(Boolean(Context.get(fiber.context, Client.SafeIntegers)));
-              if (hasRows(statement)) {
+              const shape = statementShape(statement);
+              if (shape === "rows") {
                 arrays = mode === "values";
                 if (arrays) statement.setReturnArrays(true);
                 return statement.all(...(params as any));
+              }
+              if (shape === "steps" && mode !== "raw") {
+                statement.all(...(params as any));
+                return [];
               }
               const result = statement.run(...(params as any));
               return mode === "raw" ? (result as unknown as ReadonlyArray<unknown>) : [];
