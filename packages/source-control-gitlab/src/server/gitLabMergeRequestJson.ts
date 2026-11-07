@@ -47,6 +47,18 @@ const RawTriggerJobSchema = Schema.Struct({
   downstream_pipeline: Schema.optional(Schema.NullOr(RawPipelineSchema)),
 });
 
+const RawDiffRefs = Schema.Struct({
+  base_sha: Schema.String,
+  head_sha: Schema.String,
+  start_sha: Schema.String,
+});
+
+const RawMergeRequestDiffRefs = Schema.Struct({
+  base_sha: Schema.NullOr(Schema.String),
+  head_sha: Schema.NullOr(Schema.String),
+  start_sha: Schema.NullOr(Schema.String),
+});
+
 const RawMergeRequestSchema = Schema.Struct({
   iid: Schema.Int,
   title: Schema.String,
@@ -79,6 +91,7 @@ const RawMergeRequestSchema = Schema.Struct({
   squash: Schema.optional(Schema.NullOr(Schema.Boolean)),
   /** Only detail reads with include_diverged_commits_count return this expensive count. */
   diverged_commits_count: Schema.optional(Schema.NullOr(Schema.Int)),
+  diff_refs: Schema.optional(Schema.NullOr(RawMergeRequestDiffRefs)),
 });
 
 const RawNoteSchema = Schema.Struct({
@@ -114,6 +127,9 @@ const RawDiscussionNoteSchema = Schema.Struct({
         old_path: Schema.optional(Schema.NullOr(Schema.String)),
         new_line: Schema.optional(Schema.NullOr(Schema.Int)),
         old_line: Schema.optional(Schema.NullOr(Schema.Int)),
+        base_sha: Schema.optional(Schema.NullOr(Schema.String)),
+        start_sha: Schema.optional(Schema.NullOr(Schema.String)),
+        head_sha: Schema.optional(Schema.NullOr(Schema.String)),
       }),
     ),
   ),
@@ -125,15 +141,7 @@ const RawDiscussionSchema = Schema.Struct({
 });
 
 const RawDiffRefsSchema = Schema.Struct({
-  diff_refs: Schema.optional(
-    Schema.NullOr(
-      Schema.Struct({
-        base_sha: Schema.String,
-        head_sha: Schema.String,
-        start_sha: Schema.String,
-      }),
-    ),
-  ),
+  diff_refs: Schema.optional(Schema.NullOr(RawDiffRefs)),
 });
 
 const RawCommitSchema = Schema.Struct({
@@ -213,6 +221,7 @@ export interface GitLabMergeRequestDetail extends GitLabMergeRequestListItem {
   /** Absent means not counted, not up to date. */
   readonly divergedCommits?: number;
   readonly headSha?: string;
+  readonly diffRefs?: GitLabDiffRefs;
   /** On a fork the pipeline often belongs to the source project, not the target. */
   readonly headPipeline?: { readonly id: number; readonly projectId: number };
 }
@@ -335,6 +344,11 @@ function toListItem(
 function toDetail(raw: Schema.Schema.Type<typeof RawMergeRequestSchema>): GitLabMergeRequestDetail {
   const listItem = toListItem(raw);
   const headSha = trimmed(raw.sha);
+  const refs = raw.diff_refs;
+  const diffRefs =
+    refs && refs.base_sha !== null && refs.head_sha !== null && refs.start_sha !== null
+      ? toDiffRefs({ base_sha: refs.base_sha, head_sha: refs.head_sha, start_sha: refs.start_sha })
+      : null;
   const autoMerge =
     raw.merge_when_pipeline_succeeds == null && raw.auto_merge_enabled == null
       ? undefined
@@ -360,6 +374,7 @@ function toDetail(raw: Schema.Schema.Type<typeof RawMergeRequestSchema>): GitLab
       : {}),
     ...(raw.diverged_commits_count == null ? {} : { divergedCommits: raw.diverged_commits_count }),
     ...(headSha === null ? {} : { headSha }),
+    ...(diffRefs === null ? {} : { diffRefs }),
     ...(raw.head_pipeline?.id == null || raw.head_pipeline.project_id == null
       ? {}
       : { headPipeline: { id: raw.head_pipeline.id, projectId: raw.head_pipeline.project_id } }),
@@ -567,9 +582,15 @@ export interface GitLabDiffRefs {
 
 export interface GitLabDiscussions {
   readonly threads: ReadonlyArray<PullRequestReviewThread>;
+  /** GitLab moves a thread onto each new diff that still has its line; this is the last one. */
+  readonly diffRefsByThreadId: ReadonlyMap<string, GitLabDiffRefs>;
   /** First notes of unresolved discussions on the MR itself rather than a diff line. */
   readonly overviewFindingIds: ReadonlyArray<string>;
   readonly rawCount: number;
+}
+
+function toDiffRefs(raw: Schema.Schema.Type<typeof RawDiffRefs>): GitLabDiffRefs {
+  return { baseSha: raw.base_sha, headSha: raw.head_sha, startSha: raw.start_sha };
 }
 
 export function decodeDiscussionsJson(
@@ -580,6 +601,7 @@ export function decodeDiscussionsJson(
     return Result.fail(decoded.failure);
   }
   const threads: PullRequestReviewThread[] = [];
+  const diffRefsByThreadId = new Map<string, GitLabDiffRefs>();
   const overviewFindingIds: string[] = [];
   for (const entry of decoded.success) {
     const discussion = decodeDiscussionEntry(entry);
@@ -606,6 +628,13 @@ export function decodeDiscussionsJson(
       continue;
     }
     if (path === null) continue;
+    if (position.base_sha && position.start_sha && position.head_sha) {
+      diffRefsByThreadId.set(discussion.value.id, {
+        baseSha: position.base_sha,
+        startSha: position.start_sha,
+        headSha: position.head_sha,
+      });
+    }
     threads.push({
       id: discussion.value.id,
       path,
@@ -626,7 +655,12 @@ export function decodeDiscussionsJson(
       })),
     });
   }
-  return Result.succeed({ threads, overviewFindingIds, rawCount: decoded.success.length });
+  return Result.succeed({
+    threads,
+    diffRefsByThreadId,
+    overviewFindingIds,
+    rawCount: decoded.success.length,
+  });
 }
 
 export function decodeDiffRefsJson(
@@ -635,9 +669,7 @@ export function decodeDiffRefsJson(
   const decoded = decodeDiffRefs(raw);
   if (!Result.isSuccess(decoded)) return Result.fail(decoded.failure);
   const refs = decoded.success.diff_refs;
-  return Result.succeed(
-    refs ? { baseSha: refs.base_sha, headSha: refs.head_sha, startSha: refs.start_sha } : null,
-  );
+  return Result.succeed(refs ? toDiffRefs(refs) : null);
 }
 
 export function decodeNotesJson(
