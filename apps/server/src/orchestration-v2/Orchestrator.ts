@@ -723,7 +723,11 @@ function mayStartSubagentFollowup(
   if (command.scheduledTaskId !== undefined || command.restartContinuationOfRunId !== undefined)
     return false;
   if (command.notification !== undefined) return command.notification.source.kind !== "monitor";
-  return command.createdBy === "user" || command.creationSource === "mcp";
+  return (
+    command.createdBy === "user" ||
+    command.creationSource === "mcp" ||
+    command.usageLimitContinuationOfRunId !== undefined
+  );
 }
 
 // Houston: a queued message's delivery, kept on the message until its run starts. A rerouted
@@ -8645,6 +8649,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       parentThreadId === null ||
       (command.notification === undefined &&
         command.createdBy !== "user" &&
+        command.usageLimitContinuationOfRunId === undefined &&
         command.senderThreadId !== parentThreadId)
     )
       return;
