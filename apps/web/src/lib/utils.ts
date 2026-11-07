@@ -5,9 +5,14 @@ import * as Hex from "effect/encoding/Hex";
 import { extendTailwindMerge } from "tailwind-merge";
 import { DraftId } from "../composerDraftStore";
 
+// The default LRU of 500 class lists is smaller than one thread view's distinct lists, so boot
+// and every thread open re-merged most of them; an entry is a short string.
+export const TAILWIND_MERGE_CACHE_SIZE = 5000;
+
 // Register extra font sizes and background images so tailwind-merge does not
 // treat text-2xs or bg-composer-seam-below as colors.
 const twMerge = extendTailwindMerge({
+  cacheSize: TAILWIND_MERGE_CACHE_SIZE,
   extend: {
     theme: { text: ["2xs", "3xs", "4xs", "5xs"] },
     classGroups: { "bg-image": [{ bg: ["composer-seam-below", "composer-seam-above"] }] },
