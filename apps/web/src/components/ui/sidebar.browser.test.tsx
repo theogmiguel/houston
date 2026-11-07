@@ -177,6 +177,78 @@ describe("Sidebar", () => {
       );
     });
 
+    it("caps the drawer at 320px over a scrim even when its content is wider", async () => {
+      await page.viewport(800, 900);
+      await using screen = await render(
+        <SidebarProvider defaultOpen>
+          <Sidebar collapsible="offcanvas" resizable>
+            <div style={{ width: 760, flexShrink: 0 }}>A row with a very long thread title</div>
+          </Sidebar>
+          <SidebarTrigger />
+        </SidebarProvider>,
+        { router: false /* no routes involved */ },
+      );
+      await userEvent.click(
+        screen.container.querySelector<HTMLElement>('[data-slot="sidebar-trigger"]')!,
+      );
+      const drawer = await vi.waitFor(() => {
+        const element = document.querySelector<HTMLElement>(
+          '[data-slot="sidebar"][data-mobile="true"]',
+        );
+        expect(element).not.toBeNull();
+        return element!;
+      });
+      expect(drawer.getBoundingClientRect().width).toBe(320);
+      expect(document.querySelector('[data-slot="sheet-backdrop"]')).not.toBeNull();
+    });
+
+    it.each(["light", "dark"] as const)(
+      "dims the page behind the drawer with a visible scrim in the %s theme",
+      async (theme) => {
+        await page.viewport(800, 900);
+        document.documentElement.classList.toggle("dark", theme === "dark");
+        await using _theme = {
+          [Symbol.asyncDispose]: async () => document.documentElement.classList.remove("dark"),
+        };
+        await using screen = await render(
+          <SidebarProvider defaultOpen>
+            <Sidebar collapsible="offcanvas" resizable>
+              <div>Threads</div>
+            </Sidebar>
+            <SidebarTrigger />
+          </SidebarProvider>,
+          { router: false /* no routes involved */ },
+        );
+        await userEvent.click(
+          screen.container.querySelector<HTMLElement>('[data-slot="sidebar-trigger"]')!,
+        );
+        const backdrop = await vi.waitFor(() => {
+          const element = document.querySelector<HTMLElement>('[data-slot="sheet-backdrop"]');
+          expect(element).not.toBeNull();
+          return element!;
+        });
+        // The backdrop fades in, so wait until it has its full opacity.
+        await vi.waitFor(() => expect(getComputedStyle(backdrop).opacity).toBe("1"));
+        // A film in the canvas colour is invisible on the canvas: the scrim is black, and not faint.
+        // The computed colour may be in oklab, so a canvas converts it to sRGB.
+        const canvas = document.createElement("canvas");
+        canvas.width = 1;
+        canvas.height = 1;
+        const context = canvas.getContext("2d", { willReadFrequently: true })!;
+        context.fillStyle = getComputedStyle(backdrop).backgroundColor;
+        context.fillRect(0, 0, 1, 1);
+        const [red = 255, green = 255, blue = 255, alpha255 = 255] = context.getImageData(
+          0,
+          0,
+          1,
+          1,
+        ).data;
+        const alpha = alpha255 / 255;
+        expect(Math.max(red, green, blue)).toBeLessThanOrEqual(8);
+        expect(alpha).toBeGreaterThanOrEqual(0.3);
+      },
+    );
+
     it("keeps the rail docked from 960px up", async () => {
       await page.viewport(960, 800);
       await using screen = await render(<Harness />, { router: false /* no routes involved */ });

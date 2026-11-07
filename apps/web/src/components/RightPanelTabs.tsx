@@ -77,6 +77,7 @@ import {
   Menu,
   MenuItem,
   MenuPopup,
+  MenuReason,
   MenuShortcut,
   MenuSub,
   MenuSubPopup,
@@ -214,6 +215,17 @@ const SURFACE_UNAVAILABLE_HINTS = {
   sideChat: "Available after the first message.",
 } as const;
 
+const SURFACE_INLINE_REASONS: Record<string, string> = {
+  preview: SURFACE_UNAVAILABLE_HINTS.browser,
+  terminal: "No project open",
+  files: "No project open",
+  diff: "Not a git repository",
+  "pull-request": "No PR for this branch",
+  "pull-requests": "No linked PRs",
+  device: SURFACE_UNAVAILABLE_HINTS.device,
+  "side-chat": "After first message",
+};
+
 type TabContextMenuAction =
   | "rename"
   | "copy-path"
@@ -297,9 +309,11 @@ function DisabledReasonTooltip(props: { reason: string; trigger: ReactElement })
   );
 }
 
-function SurfaceMenuItem(props: {
+export function SurfaceMenuItem(props: {
   available: boolean;
   disabledReason?: string;
+  /** Short trailing text that replaces the shortcut while the row is unavailable. */
+  inlineReason?: string | undefined;
   shortcut: string;
   onClick: () => void;
   children: ReactNode;
@@ -312,7 +326,11 @@ function SurfaceMenuItem(props: {
       aria-keyshortcuts={props.shortcut}
     >
       {props.children}
-      <MenuShortcut>{props.shortcut}</MenuShortcut>
+      {!props.available && props.inlineReason ? (
+        <MenuReason>{props.inlineReason}</MenuReason>
+      ) : (
+        <MenuShortcut>{props.shortcut}</MenuShortcut>
+      )}
     </MenuItem>
   );
   if (props.available || !props.disabledReason) return item;
@@ -1400,6 +1418,11 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                 key={action.label}
                 available={action.available}
                 disabledReason={action.disabledReason}
+                inlineReason={
+                  action.kind === "side-chat" && props.sideChatDisabledReason
+                    ? "Not available here"
+                    : SURFACE_INLINE_REASONS[action.kind]
+                }
                 shortcut={action.shortcut}
                 onClick={action.onClick}
               >

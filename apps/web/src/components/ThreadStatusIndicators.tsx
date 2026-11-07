@@ -1,4 +1,5 @@
 import { pipe } from "effect/Function";
+import { CHIP_LABEL_ICON_ONLY_CLS } from "./ui/composer-anatomy-recipes";
 import {
   scopeProjectRef,
   scopedThreadKey,
@@ -218,8 +219,11 @@ export function ThreadPullRequestBadgeControl({
   status,
   onOpenList,
   onOpenPullRequest,
+  iconOnly = false,
 }: {
   render: ReactElement<{ render?: useRender.RenderProp }>;
+  /** Drops the number to the accessible name and tooltip, which already carry it. */
+  iconOnly?: boolean;
   badge: ThreadPullRequestBadge | null;
   pullRequests: ReadonlyArray<ThreadPullRequestLink>;
   number?: number | undefined;
@@ -241,6 +245,7 @@ export function ThreadPullRequestBadgeControl({
       pullRequests={pullRequests}
       onOpenList={onOpenList}
       onOpenPullRequest={onOpenPullRequest}
+      iconOnly={iconOnly}
     />
   );
 }
@@ -255,8 +260,10 @@ function PullRequestBadge({
   pullRequests,
   onOpenList,
   onOpenPullRequest,
+  iconOnly,
 }: {
   render: ReactElement<{ render?: useRender.RenderProp }>;
+  iconOnly: boolean;
   presentation: NonNullable<ReturnType<typeof resolveThreadPullRequestBadgePresentation>>;
   opensList: boolean;
   url: string | undefined;
@@ -294,7 +301,9 @@ function PullRequestBadge({
           className={cn("contents font-normal text-xs tabular-nums", presentation.toneClassName)}
         >
           <presentation.Icon aria-hidden className="size-3 shrink-0" />
-          <span className="text-secondary-label">{presentation.text}</span>
+          <span className={cn("text-secondary-label", iconOnly && CHIP_LABEL_ICON_ONLY_CLS)}>
+            {presentation.text}
+          </span>
         </span>
       </TooltipTrigger>
       <TooltipPopup

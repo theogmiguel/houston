@@ -13,7 +13,12 @@ import { workEntryDisplayIndicatesToolFailure } from "../../session-logic";
 import ChatMarkdown from "../ChatMarkdown";
 import { ChevronDownIcon, ChevronRightIcon, Minimize2Icon, XIcon } from "lucide-react";
 import { Button } from "../ui/button";
-import { NESTED_WORK_TYPE_CLASS, RUNNING_INK_CLS } from "../ui/work-log-recipes";
+import {
+  NESTED_WORK_TYPE_CLASS,
+  RESTART_NOTE_WORKING_CLS,
+  WORKING_INTERRUPT_HINT_CLS,
+  RUNNING_INK_CLS,
+} from "../ui/work-log-recipes";
 import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
 import {
   liveWorkEntryLabel,
@@ -36,7 +41,12 @@ import {
   type TimelineWorkEntry,
   type TimelineRow,
 } from "./timelineRowContext";
-import { TimelineRowTimestamp, ActivityShimmerOverlay, StreamingGlyph } from "./TimelineRowParts";
+import {
+  TimelineRowTimestamp,
+  ActivityShimmerOverlay,
+  StreamingGlyph,
+  RestartNoteTrigger,
+} from "./TimelineRowParts";
 import {
   failedToolIconClassName,
   toolIconAcceptsTint,
@@ -290,6 +300,8 @@ function ExpandedWorkGroupEntries({
 
 const workEntryKey = (entry: TimelineWorkEntry) => entry.id;
 
+const INTERRUPT_HINT = "Esc to interrupt";
+
 export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "working" }> }) {
   const { isCompacting, isPreparingWorktree, backgroundWorktreeSetup, threadStatusPill } =
     use(TimelineRowActivityCtx);
@@ -317,46 +329,45 @@ export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: 
   ) : (
     "Running"
   );
+  const interruptHintShown = !shimmer && !compacting && !isPreparingWorktree;
   return (
-    <div className="group/timeline-row">
-      <div className="flex min-h-7 min-w-0 items-center gap-2 px-2 text-body text-(--t2) tabular-nums">
-        {needsUser ? (
-          <ThreadStateGlyph state="needs" className={THREAD_STATE_TEXT_CLASS.needs} />
-        ) : (
-          <StreamingGlyph />
-        )}
-        <span
-          ref={shimmer ? observeVisibleAnimation : undefined}
-          className="relative shrink-0 overflow-hidden whitespace-nowrap"
+    <div className="group/timeline-row @container/working">
+      <Tooltip disabled={!interruptHintShown}>
+        <TooltipTrigger
+          render={
+            <div
+              data-working-row=""
+              className="flex min-h-7 min-w-0 items-center gap-2 px-2 text-body text-(--t2) tabular-nums"
+            />
+          }
         >
-          {label}
-          {shimmer ? <ActivityShimmerOverlay>{label}</ActivityShimmerOverlay> : null}
-        </span>
-        {backgroundWorktreeSetup ? (
-          <BackgroundWorktreeSetupChip snapshot={backgroundWorktreeSetup} />
-        ) : null}
-        {row.notice && !shimmer ? (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <span
-                  tabIndex={0}
-                  data-working-notice=""
-                  className="min-w-0 truncate text-(--t2)"
-                />
-              }
-            >
-              · {row.notice.label}
-            </TooltipTrigger>
-            <TooltipPopup>{row.notice.text}</TooltipPopup>
-          </Tooltip>
-        ) : null}
-        {!shimmer && !compacting && !isPreparingWorktree ? (
-          <span className="shrink-0 text-callout text-(--houston)">
-            {row.notice ? <span aria-hidden>· </span> : null}Esc to interrupt
+          {needsUser ? (
+            <ThreadStateGlyph state="needs" className={THREAD_STATE_TEXT_CLASS.needs} />
+          ) : (
+            <StreamingGlyph />
+          )}
+          <span
+            ref={shimmer ? observeVisibleAnimation : undefined}
+            className="relative shrink-0 overflow-hidden whitespace-nowrap"
+          >
+            {label}
+            {shimmer ? <ActivityShimmerOverlay>{label}</ActivityShimmerOverlay> : null}
           </span>
-        ) : null}
-      </div>
+          {backgroundWorktreeSetup ? (
+            <BackgroundWorktreeSetupChip snapshot={backgroundWorktreeSetup} />
+          ) : null}
+          {row.notice && !shimmer ? (
+            <RestartNoteTrigger note={row.notice} className={RESTART_NOTE_WORKING_CLS} />
+          ) : null}
+          {interruptHintShown ? (
+            <span className={WORKING_INTERRUPT_HINT_CLS}>
+              {row.notice ? <span aria-hidden>· </span> : null}
+              {INTERRUPT_HINT}
+            </span>
+          ) : null}
+        </TooltipTrigger>
+        <TooltipPopup side="top">{INTERRUPT_HINT}</TooltipPopup>
+      </Tooltip>
     </div>
   );
 }

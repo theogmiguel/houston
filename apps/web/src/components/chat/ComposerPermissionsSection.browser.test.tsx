@@ -161,8 +161,8 @@ it("lists every mode with its icon, name and one-line description, checking the 
     expect(row.textContent).toContain(config.description);
     // The mode's icon, plus a check mark on the current mode only.
     expect(row.querySelectorAll("svg")).toHaveLength(mode === "full-access" ? 2 : 1);
-    // One line each: the row is no taller than a name line, a description line and its padding.
-    expect(row.getBoundingClientRect().height).toBeLessThanOrEqual(48);
+    // A description wraps to a second line instead of being cut: name, two lines and padding.
+    expect(row.getBoundingClientRect().height).toBeLessThanOrEqual(64);
     expect(row.getAttribute("aria-checked")).toBe(mode === "full-access" ? "true" : "false");
   }
 });

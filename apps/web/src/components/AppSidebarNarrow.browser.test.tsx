@@ -162,3 +162,40 @@ it("draws the closed drawer's toggle like any other header icon button at rest",
   await userEvent.hover(toggle);
   await expect.poll(() => getComputedStyle(element).backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
 });
+
+function alphaOf(color: string) {
+  const match = /^rgba?\(([^)]+)\)$/.exec(color);
+  const parts = match?.[1]?.split(/[,/\s]+/).filter(Boolean) ?? [];
+  return parts.length >= 4 ? Number(parts[3]) : 1;
+}
+
+it.each(["light", "dark"])(
+  "dims the page behind the drawer with a visible backdrop in the %s theme",
+  async (theme) => {
+    document.documentElement.classList.toggle("dark", theme === "dark");
+    try {
+      const { screen } = await mountApp(800);
+      await using _screen = screen;
+      await userEvent.click(screen.getByRole("button", { name: "Toggle main sidebar" }));
+      await vi.waitFor(() => expect(threadsNav()).not.toBeNull(), { timeout: 5_000 });
+      const drawer = document.querySelector<HTMLElement>(
+        '[data-slot="sidebar"][data-mobile="true"]',
+      )!;
+      await expect.poll(() => drawer.getBoundingClientRect().width).toBeGreaterThan(200);
+      const backdrop = document.querySelector<HTMLElement>('[data-slot="sheet-backdrop"]')!;
+      expect(backdrop).not.toBeNull();
+      await expect.poll(() => Number(getComputedStyle(backdrop).opacity)).toBe(1);
+      const x = drawer.getBoundingClientRect().right + 100;
+      const hit = document.elementFromPoint(x, 300);
+      // The transparent sheet viewport sits above the backdrop and receives the pointer.
+      expect([backdrop, backdrop.nextElementSibling]).toContain(hit);
+      const area = backdrop.getBoundingClientRect();
+      expect(area.left).toBeLessThanOrEqual(x);
+      expect(area.right).toBeGreaterThanOrEqual(x);
+      expect(getComputedStyle(backdrop).visibility).toBe("visible");
+      expect(alphaOf(getComputedStyle(backdrop).backgroundColor)).toBeGreaterThanOrEqual(0.3);
+    } finally {
+      document.documentElement.classList.remove("dark");
+    }
+  },
+);

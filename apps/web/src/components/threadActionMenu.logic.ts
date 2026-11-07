@@ -295,26 +295,6 @@ export function buildThreadActionMenuItems(
           : null,
       ])
     : [];
-  const branchAndProject = hasThread
-    ? menuSection("branch-project", "Branch & project", [
-        state.branch && state.canStartBranchThread === true
-          ? {
-              id: "new-thread-on-branch",
-              label: `New thread on ${state.branch}`,
-              icon: "message-square-plus",
-            }
-          : null,
-        { id: "project-settings", label: "Project settings", icon: "settings" },
-        state.canTurnIntoProject
-          ? {
-              id: "turn-into-project",
-              label: "Turn into project",
-              icon: "folder-plus",
-              disabled: state.isRunning,
-            }
-          : null,
-      ])
-    : [];
   const organise = hasThread
     ? menuSection("organise", "Organise", [
         state.grid?.canOpenInGrid
@@ -362,6 +342,22 @@ export function buildThreadActionMenuItems(
                 ? "Show all projects"
                 : `Filter by ${state.projectFilter.label}`,
               icon: "folder-tree",
+            }
+          : null,
+        state.branch && state.canStartBranchThread === true
+          ? {
+              id: "new-thread-on-branch",
+              label: `New thread on ${state.branch}`,
+              icon: "message-square-plus",
+            }
+          : null,
+        { id: "project-settings", label: "Project settings", icon: "settings" },
+        state.canTurnIntoProject
+          ? {
+              id: "turn-into-project",
+              label: "Turn into project",
+              icon: "folder-plus",
+              disabled: state.isRunning,
             }
           : null,
       ])
@@ -426,7 +422,6 @@ export function buildThreadActionMenuItems(
     ...layout,
     ...thread,
     ...status,
-    ...branchAndProject,
     ...organise,
     ...more,
     ...danger,

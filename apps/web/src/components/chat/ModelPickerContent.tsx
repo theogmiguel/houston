@@ -162,9 +162,35 @@ function adjacentModelPickerProvider(input: {
 }
 
 const EMPTY_MODEL_JUMP_LABELS = new Map<string, string>();
-const MODEL_LIST_ESTIMATED_ITEM_SIZE = 34;
-/** A model list shows its rows up to this many, then scrolls. */
-const MAX_VISIBLE_MODEL_ROWS = 8;
+export const MODEL_LIST_ESTIMATED_ITEM_SIZE = 34;
+/** A model row, a Legacy models row and the `h-0.5` gap between rows, as laid out. */
+const MODEL_ROW_PX = 42;
+const LEGACY_ROW_PX = 36;
+const MODEL_LIST_GAP_PX = 2;
+/** The list's top and bottom padding. */
+const MODEL_LIST_PADDING_PX = 16;
+/** A long list stops growing at the height eight estimated rows had before it scrolls. */
+const MODEL_LIST_MAX_HEIGHT_PX = 8 * MODEL_LIST_ESTIMATED_ITEM_SIZE;
+
+/**
+ * The height of a list showing its rows whole: each row, the gaps between them and the padding.
+ * Past the maximum the list scrolls inside it.
+ */
+export function modelListHeight(modelRows: number, legacyRows: number): number {
+  const rows = modelRows + legacyRows;
+  const content =
+    modelRows * MODEL_ROW_PX +
+    legacyRows * LEGACY_ROW_PX +
+    Math.max(0, rows - 1) * MODEL_LIST_GAP_PX +
+    MODEL_LIST_PADDING_PX;
+  return Math.min(content, MODEL_LIST_MAX_HEIGHT_PX);
+}
+
+/** The height one more model row adds to the list. */
+export const MODEL_LIST_ROW_STEP_PX = MODEL_ROW_PX + MODEL_LIST_GAP_PX;
+
+/** The docked list keeps this many rows visible however little room the popup has. */
+export const MODEL_LIST_MIN_VISIBLE_ROWS = 4;
 
 function ModelListSeparator() {
   return <div className="h-0.5" />;
@@ -252,14 +278,14 @@ function ModelPickerProviderNotices({
 function ModelPickerList({
   listRef,
   itemKeys,
-  rows,
+  height,
   extraData,
   renderItem,
 }: {
   listRef: RefObject<LegendListRef | null>;
   itemKeys: ReadonlyArray<string>;
-  /** How many rows the list shows before it scrolls; the frame sizes to content. */
-  rows: number;
+  /** The list's height: its rows shown whole up to a maximum, then it scrolls. */
+  height: number;
   extraData: unknown;
   renderItem: (props: { item: string; index: number }) => ReactNode;
 }) {
@@ -304,7 +330,8 @@ function ModelPickerList({
         "relative min-h-0 shrink-0 overflow-hidden pr-px",
         itemKeys.length === 0 && "h-0",
       )}
-      style={itemKeys.length > 0 ? { height: rows * MODEL_LIST_ESTIMATED_ITEM_SIZE } : undefined}
+      data-model-picker-list="true"
+      style={itemKeys.length > 0 ? { height } : undefined}
     >
       <ComboboxListVirtualized>
         <LegendList<string>
@@ -982,10 +1009,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
             <ModelPickerList
               listRef={modelListRef}
               itemKeys={filteredItemKeys}
-              rows={Math.min(
-                visibleModels.length + (legacySection === null ? 0 : 1),
-                MAX_VISIBLE_MODEL_ROWS,
-              )}
+              height={modelListHeight(visibleModels.length, legacySection === null ? 0 : 1)}
               extraData={modelListExtraData}
               renderItem={({ item: modelKey, index }) => {
                 if (legacySection?.key === modelKey) {

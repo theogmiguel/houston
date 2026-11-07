@@ -65,3 +65,12 @@ describe("PreviewEmptyState with local servers", () => {
     expect(row.getBoundingClientRect().top).toBeGreaterThan(help.getBoundingClientRect().bottom);
   });
 });
+
+describe("PreviewEmptyState server rows", () => {
+  it("marks each detected local server with a live dot", async () => {
+    mocks.servers = [SERVER];
+    await using screen = await renderEmptyState();
+    const dot = screen.container.querySelector('[data-slot="live-dot"]');
+    expect(dot?.getAttribute("aria-label")).toBe("Live");
+  });
+});

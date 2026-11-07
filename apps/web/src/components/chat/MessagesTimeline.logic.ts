@@ -565,8 +565,11 @@ type MessagesTimelineRowContent =
       createdAt: string | null;
       /** A running compaction owns the working row, so its divider appears only once it ends. */
       compacting?: true;
-      /** The system notice that opened the running turn: a short label and the full text. */
-      notice?: { readonly label: string; readonly text: string };
+      /**
+       * The restart notice that opened the running turn: a short label, the full text and every
+       * restart the thread has resumed from. Only the latest restart's turn carries it.
+       */
+      notice?: TimelineRestartNote & { readonly text: string };
     }
   | {
       kind: "thinking";
@@ -598,6 +601,8 @@ type MessagesTimelineRowContent =
       runId: RunId;
       label: string;
       summary?: string;
+      /** Set on the one turn that resumed after the thread's latest restart. */
+      restart?: TimelineRestartNote;
       expanded: boolean;
     }
   | {
@@ -788,6 +793,12 @@ function deriveTerminalAssistantMessageIds(timelineEntries: ReadonlyArray<Timeli
   return new Set(lastAssistantMessageIdByResponseKey.values());
 }
 
+/** The restart a turn resumed from, with every restart the thread went through, oldest first. */
+export interface TimelineRestartNote {
+  readonly label: string;
+  readonly restarts: ReadonlyArray<{ readonly at: string; readonly text: string }>;
+}
+
 interface TurnFold {
   runId: RunId;
   anchorEntryId: string;
@@ -797,6 +808,7 @@ interface TurnFold {
   entryIds: ReadonlySet<string>;
   label: string;
   summary: string | null;
+  restart: TimelineRestartNote | null;
 }
 
 interface SupersededAttemptFold {
@@ -1005,6 +1017,45 @@ function systemNoticeFoldLabel(entry: TimelineEntry): string {
   return summary;
 }
 
+function timelineEntryIsRestartNotice(entry: TimelineEntry): boolean {
+  return (
+    timelineEntryIsSystemNotice(entry) &&
+    entry.kind === "work" &&
+    /resumed|restarted/i.test(entry.entry.label)
+  );
+}
+
+/**
+ * The restart note for one thread: every restart in order, and the id of the notice whose turn
+ * carries the note. Earlier turns resumed too, but repeating the note on each finished turn only
+ * adds noise; the latest one is the turn the thread is in now.
+ */
+function threadRestartNotes(entries: ReadonlyArray<TimelineEntry>): {
+  readonly restarts: TimelineRestartNote["restarts"];
+  readonly carrierNoticeId: string | null;
+} {
+  const notices = entries.filter(timelineEntryIsRestartNotice);
+  return {
+    restarts: notices.map((notice) => ({
+      at: notice.createdAt,
+      text: notice.kind === "work" ? notice.entry.label : "",
+    })),
+    carrierNoticeId: notices.at(-1)?.id ?? null,
+  };
+}
+
+function sameRestartNote(
+  a: TimelineRestartNote | undefined,
+  b: TimelineRestartNote | undefined,
+): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  return (
+    a.label === b.label &&
+    a.restarts.length === b.restarts.length &&
+    a.restarts.every((restart, index) => restart.at === b.restarts[index]?.at)
+  );
+}
+
 function timelineEntryEnd(entry: TimelineEntry): string {
   return entry.kind === "message" ? entry.message.updatedAt : entry.createdAt;
 }
@@ -1147,6 +1198,7 @@ function deriveTurnFolds(input: {
   liveSubagentEntryIds: ReadonlySet<string>;
   completeSupersededReplyEntryIds: ReadonlySet<string>;
 }): ReadonlyMap<string, TurnFold> {
+  const restartNotes = threadRestartNotes(input.timelineEntries);
   const interruptedRunIds = new Set<RunId>();
   const promptIndexByRunId = new Map<RunId, number>();
   for (const [index, entry] of input.timelineEntries.entries()) {
@@ -1348,9 +1400,16 @@ function deriveTurnFolds(input: {
       boardWorkSummary(entries.flatMap((entry) => (entry.kind === "work" ? [entry.entry] : [])));
     const firstSegment = group.entries.slice(0, group.steerSegments[0]?.startIndex);
     const leadNotice = group.leadNotice;
+    const carriesRestart =
+      leadNotice !== null &&
+      timelineEntryIsRestartNotice(leadNotice) &&
+      leadNotice.id === restartNotes.carrierNoticeId;
     const firstSummary = [
       segmentWorkSummary(firstSegment),
-      leadNotice ? systemNoticeFoldLabel(leadNotice) : null,
+      // A restart is a note of its own (see `restart`); other notices stay in the summary.
+      leadNotice && !timelineEntryIsRestartNotice(leadNotice)
+        ? systemNoticeFoldLabel(leadNotice)
+        : null,
     ]
       .filter((part): part is string => !!part)
       .join(" · ");
@@ -1368,6 +1427,10 @@ function deriveTurnFolds(input: {
       ]),
       label,
       summary: firstSummary || null,
+      restart:
+        carriesRestart && leadNotice !== null
+          ? { label: systemNoticeFoldLabel(leadNotice), restarts: restartNotes.restarts }
+          : null,
     });
     for (const [index, { startIndex, steer }] of group.steerSegments.entries()) {
       const entries = group.entries.slice(startIndex, group.steerSegments[index + 1]?.startIndex);
@@ -1386,6 +1449,7 @@ function deriveTurnFolds(input: {
         entryIds: new Set(entries.map((entry) => entry.id)),
         label: segmentMs !== null ? `Continued for ${formatDuration(segmentMs)}` : "Continued",
         summary: segmentWorkSummary(entries),
+        restart: null,
       });
     }
   }
@@ -1865,6 +1929,7 @@ export function deriveMessagesTimelineRows(input: {
             notice: {
               label: systemNoticeFoldLabel(runningLeadNotice),
               text: runningLeadNotice.kind === "work" ? runningLeadNotice.entry.label : "",
+              restarts: threadRestartNotes(timelineEntries).restarts,
             },
           }
         : {}),
@@ -1933,6 +1998,7 @@ export function deriveMessagesTimelineRows(input: {
         runId: turnFold.runId,
         label: turnFold.label,
         ...(turnFold.summary ? { summary: turnFold.summary } : {}),
+        ...(turnFold.restart ? { restart: turnFold.restart } : {}),
         expanded: input.expandedRunIds?.has(turnFold.runId) ?? false,
       });
     }
@@ -2719,7 +2785,10 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
   switch (a.kind) {
     case "working":
       return (
-        a.createdAt === (b as typeof a).createdAt && a.compacting === (b as typeof a).compacting
+        a.createdAt === (b as typeof a).createdAt &&
+        a.compacting === (b as typeof a).compacting &&
+        a.notice?.label === (b as typeof a).notice?.label &&
+        a.notice?.restarts.length === (b as typeof a).notice?.restarts.length
       );
     case "thinking": {
       const bt = b as typeof a;
@@ -2748,6 +2817,9 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
       return (
         a.createdAt === bf.createdAt &&
         a.label === bf.label &&
+        (a.kind !== "turn-fold" ||
+          (a.summary === (bf as typeof a).summary &&
+            sameRestartNote(a.restart, (bf as typeof a).restart))) &&
         a.expanded === bf.expanded &&
         anchors.length === nextAnchors.length &&
         anchors.every((id, index) => id === nextAnchors[index])

@@ -27,6 +27,8 @@ interface Props {
   canGoBack: boolean;
   canGoForward: boolean;
   refreshDisabled: boolean;
+  /** False until a page has loaded: back, forward and reload have nothing to act on before then. */
+  showNavigation?: boolean | undefined;
   inputDisabled?: boolean | undefined;
   /** Owned by the caller so its shortcut handler can focus the address bar directly. */
   urlInputRef: RefObject<HTMLInputElement | null>;
@@ -81,6 +83,7 @@ export function PreviewChromeRow({
   canGoBack,
   canGoForward,
   refreshDisabled,
+  showNavigation = true,
   inputDisabled,
   urlInputRef: inputRef,
   onBack,
@@ -168,66 +171,68 @@ export function PreviewChromeRow({
         className="flex h-10 min-h-10 shrink-0 items-center gap-0.5 border-b border-border bg-[var(--rail)] px-1.5"
         data-surface-subheader
       >
-        <div className="flex items-center" role="group" aria-label="Navigation">
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-7 text-[var(--houston)]"
-                  onClick={canGoBack ? onBack : NOOP}
-                  disabled={!canGoBack}
-                  aria-label="Back"
-                  type="button"
-                />
-              }
-            >
-              <ChevronLeft className="size-[15px]" />
-            </TooltipTrigger>
-            <TooltipPopup>Back</TooltipPopup>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-7 text-[var(--houston)]"
-                  onClick={canGoForward ? onForward : NOOP}
-                  disabled={!canGoForward}
-                  aria-label="Forward"
-                  type="button"
-                />
-              }
-            >
-              <ChevronRight className="size-[15px]" />
-            </TooltipTrigger>
-            <TooltipPopup>Forward</TooltipPopup>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-7 text-[var(--houston)]"
-                  onClick={refreshDisabled ? NOOP : onRefresh}
-                  disabled={refreshDisabled}
-                  aria-label={loading ? "Stop" : "Reload"}
-                  type="button"
-                />
-              }
-            >
-              {loading ? (
-                <RefreshIcon className="size-[15px]" refreshing />
-              ) : (
-                <RotateCw className="size-[15px]" />
-              )}
-            </TooltipTrigger>
-            <TooltipPopup>{loading ? "Loading…" : "Reload"}</TooltipPopup>
-          </Tooltip>
-        </div>
+        {showNavigation ? (
+          <div className="flex items-center" role="group" aria-label="Navigation">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-7 text-[var(--houston)]"
+                    onClick={canGoBack ? onBack : NOOP}
+                    disabled={!canGoBack}
+                    aria-label="Back"
+                    type="button"
+                  />
+                }
+              >
+                <ChevronLeft className="size-[15px]" />
+              </TooltipTrigger>
+              <TooltipPopup>Back</TooltipPopup>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-7 text-[var(--houston)]"
+                    onClick={canGoForward ? onForward : NOOP}
+                    disabled={!canGoForward}
+                    aria-label="Forward"
+                    type="button"
+                  />
+                }
+              >
+                <ChevronRight className="size-[15px]" />
+              </TooltipTrigger>
+              <TooltipPopup>Forward</TooltipPopup>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-7 text-[var(--houston)]"
+                    onClick={refreshDisabled ? NOOP : onRefresh}
+                    disabled={refreshDisabled}
+                    aria-label={loading ? "Stop" : "Reload"}
+                    type="button"
+                  />
+                }
+              >
+                {loading ? (
+                  <RefreshIcon className="size-[15px]" refreshing />
+                ) : (
+                  <RotateCw className="size-[15px]" />
+                )}
+              </TooltipTrigger>
+              <TooltipPopup>{loading ? "Loading…" : "Reload"}</TooltipPopup>
+            </Tooltip>
+          </div>
+        ) : null}
 
         {leadingActions}
 

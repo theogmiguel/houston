@@ -19,10 +19,12 @@ function SheetBackdrop({ className, ...props }: SheetPrimitive.Backdrop.Props) {
   return (
     <SheetPrimitive.Backdrop
       className={cn(
-        "fixed inset-0 z-(--z-sheet) bg-background/60 transition-opacity duration-(--motion-modal-in) ease-standard data-ending-style:duration-(--motion-modal-out) data-ending-style:ease-exit data-ending-style:opacity-0 data-starting-style:opacity-0",
+        "fixed inset-0 z-(--z-sheet) bg-(--sheet-scrim) transition-opacity duration-(--motion-modal-in) ease-standard data-ending-style:duration-(--motion-modal-out) data-ending-style:ease-exit data-ending-style:opacity-0 data-starting-style:opacity-0",
         className,
       )}
       data-slot="sheet-backdrop"
+      // A sheet opened beneath another dialog root is "nested", and Base UI then omits the backdrop.
+      forceRender
       {...props}
     />
   );

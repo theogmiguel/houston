@@ -645,6 +645,40 @@ export function threadWithPendingQuestion(name: string): FakeThread {
   return { ...history, items: [...history.items, item], runtimeRequests: [request] };
 }
 
+/**
+ * A thread with one pending command approval: the runtime request and the item that carries
+ * its prompt, as the provider adapter reports them while a run waits for a decision.
+ */
+export function threadWithPendingApproval(name: string): FakeThread {
+  const history = threadWithHistory(name, 1);
+  const id = ThreadId.make(name);
+  const runId = RunId.make(`${name}-run-0`);
+  const requestId = RuntimeRequestId.make(`${name}-approval`);
+  const item = {
+    ...base(id, runId, `${name}-approval-item`, 10),
+    status: "running" as const,
+    type: "approval_request",
+    requestId,
+    requestKind: "command",
+    prompt: "pnpm install --frozen-lockfile",
+  } satisfies OrchestrationV2TurnItem;
+  const request = {
+    id: requestId,
+    nodeId: NodeId.make(`${name}-node`),
+    providerTurnId: null,
+    nativeRequestRef: null,
+    kind: "command",
+    status: "pending",
+    responseCapability: {
+      type: "live",
+      providerSessionId: ProviderSessionId.make(`${name}-session`),
+    },
+    createdAt: AT,
+    resolvedAt: null,
+  } satisfies OrchestrationV2RuntimeRequest;
+  return { ...history, items: [...history.items, item], runtimeRequests: [request] };
+}
+
 export { userItem };
 
 export async function emitVcsStatus(event: VcsStatusStreamEvent): Promise<void> {

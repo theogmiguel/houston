@@ -172,7 +172,7 @@ export function ComposerPermissionsSection(props: {
 }) {
   const descriptionId = useId();
   return (
-    <div data-composer-permissions className="grid w-72 gap-0.5 px-1 py-1.5">
+    <div data-composer-permissions className="grid w-80 max-w-full gap-0.5 px-1 py-1.5">
       <div className="px-2 pb-1 font-medium text-muted-foreground text-xs">Permissions</div>
       <MenuPrimitive.RadioGroup
         aria-label="Permissions"
@@ -195,19 +195,19 @@ export function ComposerPermissionsSection(props: {
               aria-describedby={`${descriptionId}-${option.mode}`}
               closeOnClick
               title={description}
-              className="grid min-h-9 cursor-pointer grid-cols-[1rem_minmax(0,1fr)_1rem] items-center gap-x-2 rounded-md px-2 py-1 text-left outline-none data-disabled:cursor-not-allowed data-disabled:opacity-40 data-highlighted:bg-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+              className="grid min-h-9 cursor-pointer grid-cols-[1rem_minmax(0,1fr)_1rem] items-start gap-x-2 rounded-md px-2 py-1.5 text-left outline-none data-disabled:cursor-not-allowed data-disabled:opacity-40 data-highlighted:bg-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
             >
-              <OptionIcon aria-hidden="true" className="size-3.5 text-muted-foreground" />
+              <OptionIcon aria-hidden="true" className="mt-0.5 size-3.5 text-muted-foreground" />
               <span className="grid min-w-0">
                 <span className="truncate text-foreground text-sm leading-4">{option.label}</span>
                 <span
                   id={`${descriptionId}-${option.mode}`}
-                  className="truncate text-muted-foreground text-xs leading-4"
+                  className="text-muted-foreground text-xs leading-4"
                 >
                   {description}
                 </span>
               </span>
-              <MenuPrimitive.RadioItemIndicator className="flex size-4 items-center justify-center text-foreground">
+              <MenuPrimitive.RadioItemIndicator className="mt-0.5 flex size-4 items-center justify-center text-foreground">
                 <CheckIcon aria-hidden="true" className="size-3.5" />
               </MenuPrimitive.RadioItemIndicator>
             </MenuPrimitive.RadioItem>

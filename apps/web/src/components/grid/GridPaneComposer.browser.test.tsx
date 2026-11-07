@@ -13,6 +13,7 @@ import { getRouter } from "~/router";
 import {
   ENVIRONMENT_ID,
   installFakeEnvironment,
+  threadWithPendingApproval,
   threadWithPendingQuestion,
   threadWithHistory,
 } from "../../../test/fakeEnvironment";
@@ -63,12 +64,12 @@ const cellsOf = (container: HTMLElement) => [
   ...container.querySelectorAll<HTMLElement>("[data-grid-cell]"),
 ];
 
-async function renderGrid(gridId: string, width = 1000) {
-  await page.viewport(width, 800);
+async function renderGrid(gridId: string, width = 1000, height = 800) {
+  await page.viewport(width, height);
   const router = getRouter(createMemoryHistory({ initialEntries: [`/grid/${gridId}`] }));
   await router.load();
   const container = document.createElement("div");
-  container.style.cssText = `height: 800px; width: ${width}px;`;
+  container.style.cssText = `height: ${height}px; width: ${width}px;`;
   return render(<AppRoot router={router} />, { container, router: false });
 }
 
@@ -140,12 +141,14 @@ it(
     const footer = cellA().querySelector<HTMLElement>('[data-chat-composer-footer="true"]')!;
 
     // The branch reads in the mono face and the chip is as wide as its content: icon, label and
-    // chevron sit within 6px of each other.
+    // chevron sit within 6px of each other. A label that dropped to its icon is out of flow, so
+    // only the visible parts are measured.
     const label = chip.querySelector<HTMLElement>("[data-composer-label]")!;
     expect(label.textContent).toBe(branch);
     expect(getComputedStyle(label).fontFamily).toMatch(/mono/i);
-    const parts = [...chip.children].map((child) => child.getBoundingClientRect());
-    expect(parts).toHaveLength(3);
+    const visibleParts = [...chip.children].filter((child) => !child.classList.contains("sr-only"));
+    const parts = visibleParts.map((child) => child.getBoundingClientRect());
+    expect(parts.length).toBeGreaterThanOrEqual(2);
     for (const [index, part] of parts.slice(1).entries()) {
       expect(part.left - parts[index]!.right, `chip gap ${index}`).toBeLessThanOrEqual(6);
     }
@@ -288,20 +291,20 @@ it(
         expect(placeholder.getBoundingClientRect().height).toBeLessThanOrEqual(24);
       }
 
-      // The model chip names the model down to a 340px pane and is the provider mark below that,
-      // with the full name in its tooltip.
+      // The model chip never shows a clipped name: it is whole, or it dropped to the provider
+      // mark with the full name in its tooltip.
       const modelChip = await vi.waitFor(() => {
         const found = footer.querySelector<HTMLElement>("[data-chat-provider-model-picker]");
         expect(found).not.toBeNull();
         return found!;
       });
-      if (cell.getBoundingClientRect().width < 340) {
-        await vi.waitFor(() =>
-          expect(modelChip.dataset.chatProviderModelPickerIconOnly).toBe("true"),
-        );
+      if (modelChip.dataset.chatProviderModelPickerIconOnly === "true") {
         expect(modelChip.getAttribute("title") ?? "").not.toBe("");
       } else {
-        expect(modelChip.dataset.chatProviderModelPickerIconOnly).toBeUndefined();
+        const modelLabel = modelChip.querySelector<HTMLElement>(
+          "[data-chat-provider-model-picker-label]",
+        )!;
+        expect(modelLabel.scrollWidth).toBeLessThanOrEqual(modelLabel.clientWidth + 1);
       }
       // No lock or other unlabelled glyph shows: access is in the model picker's footer.
       expect(footer.querySelector('[aria-label^="Permissions:"]')).toBeNull();
@@ -399,6 +402,113 @@ it(
     expect(footer.getBoundingClientRect().top).toBeGreaterThanOrEqual(
       editor.getBoundingClientRect().bottom - 1,
     );
+  },
+  APP_BOOT_TEST_TIMEOUT_MS,
+);
+
+const visibleControls = (root: HTMLElement) =>
+  [...root.querySelectorAll<HTMLElement>("button, a[href]")].filter(
+    (control) =>
+      control.getClientRects().length > 0 &&
+      getComputedStyle(control).visibility !== "hidden" &&
+      control.getBoundingClientRect().width > 1,
+  );
+
+/** A grid at a preset's pane size: six threads in 370x420 panes, five in 340x420 small panes. */
+const COMPACT_PANE_CASES = [
+  { name: "grid-6 (370x420)", panes: 6, width: 1440, height: 900, paneWidth: 370 },
+  { name: "grid-5 small (340x420)", panes: 5, width: 1440, height: 900, paneWidth: 340 },
+] as const;
+const PENDING_CARDS = [
+  { card: "question", fixture: threadWithPendingQuestion, action: /submit/i },
+  { card: "approval", fixture: threadWithPendingApproval, action: /approve/i },
+] as const;
+
+it.each(
+  COMPACT_PANE_CASES.flatMap((paneCase) => PENDING_CARDS.map((card) => ({ ...paneCase, ...card }))),
+)(
+  "keeps the $card card's toolbar whole in a $name pane: no overlap, no label stub, no lock",
+  async ({ panes, width, height, paneWidth, fixture, action }) => {
+    const ids = Array.from({ length: panes }, (_, index) => `compact-${index}`);
+    // The pending thread is the last one: in a five-pane grid it sits in a small pane.
+    const pendingId = ids.at(-1)!;
+    using _environment = installFakeEnvironment([
+      ...ids.slice(0, -1).map((id) => threadWithHistory(id, 1)),
+      fixture(pendingId),
+    ]);
+    __setClientSettingsForTests({
+      ...DEFAULT_CLIENT_SETTINGS,
+      onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+    });
+    const gridId = seedGrid(ids);
+    await using screen = await renderGrid(gridId, width, height);
+    await vi.waitFor(() => expect(cellsOf(screen.container)).toHaveLength(panes), {
+      timeout: 10_000,
+    });
+    const cell = cellsOf(screen.container).find(
+      (candidate) => candidate.getAttribute("data-thread-id") === pendingId,
+    )!;
+    // A small pane, within 25px of the preset's size.
+    expect(Math.abs(cell.getBoundingClientRect().width - paneWidth)).toBeLessThanOrEqual(25);
+    const form = await vi.waitFor(() => {
+      const found = cell.querySelector<HTMLElement>('[data-chat-composer-form="true"]');
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    const footer = await vi.waitFor(() => {
+      const found = form.querySelector<HTMLElement>('[data-chat-composer-footer="true"]');
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    // The approval card is a sibling of the composer form, the question card sits inside it.
+    const cardControls = () => [
+      ...new Set([
+        ...visibleControls(form),
+        ...visibleControls(
+          cell.querySelector<HTMLElement>("[data-composer-approval-card]") ?? form,
+        ),
+      ]),
+    ];
+    await vi.waitFor(() =>
+      expect(
+        cardControls().some((control) =>
+          action.test(control.getAttribute("aria-label") ?? control.textContent ?? ""),
+        ),
+      ).toBe(true),
+    );
+
+    const controls = cardControls();
+    const cellBox = cell.getBoundingClientRect();
+    for (const [index, first] of controls.entries()) {
+      const box = first.getBoundingClientRect();
+      expect(box.right, `${first.ariaLabel} right edge`).toBeLessThanOrEqual(cellBox.right + 1);
+      expect(box.left, `${first.ariaLabel} left edge`).toBeGreaterThanOrEqual(cellBox.left - 1);
+      for (const second of controls.slice(index + 1)) {
+        if (first.contains(second) || second.contains(first)) continue;
+        expect(
+          overlapping(first, second),
+          `${first.ariaLabel ?? first.textContent} overlaps ${second.ariaLabel ?? second.textContent}`,
+        ).toBe(false);
+      }
+    }
+
+    // A chip label is whole, with no ellipsis stub of the name, or the chip is its icon.
+    const labels = [
+      ...footer.querySelectorAll<HTMLElement>(
+        "[data-composer-label], [data-chat-provider-model-picker-label]",
+      ),
+    ].filter((label) => !label.classList.contains("sr-only") && label.getClientRects().length > 0);
+    for (const label of labels) {
+      const text = label.textContent ?? "";
+      expect(label.querySelector("[data-overflow]"), `chip label "${text}" is cut`).toBeNull();
+      expect(label.scrollWidth, `chip label "${text}" is cut`).toBeLessThanOrEqual(
+        label.clientWidth + 1,
+      );
+    }
+
+    // No lock: access lives in the model picker's footer.
+    expect(footer.querySelector('[aria-label^="Permissions:"]')).toBeNull();
+    expect(footer.querySelector("svg.lucide-lock, svg.lucide-lock-keyhole")).toBeNull();
   },
   APP_BOOT_TEST_TIMEOUT_MS,
 );

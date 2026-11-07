@@ -81,6 +81,7 @@ import { MiddleTruncate } from "./ui/middle-truncate";
 import { ComposerSurface } from "./chat/ComposerSurface";
 import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
 import {
+  CHIP_LABEL_ICON_ONLY_CLS,
   CONTEXT_CHIP_BRANCH_CLS,
   CONTEXT_CHIP_CHEVRON_CLS,
   CONTEXT_CHIP_BRANCH_MONO_CLS,
@@ -106,6 +107,10 @@ interface BranchToolbarProps {
   variant?: "strip" | "inline" | "tray";
   /** The composer measured itself narrow: the workspace controls collapse into one chip. */
   forceNarrow?: boolean;
+  /** The folded workspace chip shows its icon and chevron only; its label stays in the tooltip. */
+  workspaceIconOnly?: boolean;
+  /** The pull request chip shows its mark only. */
+  prIconOnly?: boolean;
   panelSection?: "all" | "workspace" | "branch";
   forceNewWorktree?: boolean;
   ref?: Ref<BranchToolbarHandle>;
@@ -529,6 +534,8 @@ export const BranchToolbar = memo(function BranchToolbar({
   layout = "composer",
   variant = "strip",
   forceNarrow,
+  workspaceIconOnly = false,
+  prIconOnly = false,
   panelSection = "all",
   forceNewWorktree = false,
   ref,
@@ -788,9 +795,10 @@ export const BranchToolbar = memo(function BranchToolbar({
         ) : null}
       </div>
     ) : null;
-  const branchSelector = (part: "all" | "pr" | "branch", className: string) => (
+  const branchSelector = (part: "all" | "pr" | "branch", className: string, iconOnlyPr = false) => (
     <BranchToolbarBranchSelector
       part={part}
+      prIconOnly={iconOnlyPr}
       forceNewWorktree={forceNewWorktree}
       {...(part === "pr" ? {} : { ref: branchSelectorRef })}
       className={className}
@@ -851,7 +859,10 @@ export const BranchToolbar = memo(function BranchToolbar({
             }
           >
             <WorkspaceIcon aria-hidden className={CONTEXT_CHIP_CHEVRON_CLS} />
-            <span data-composer-label className={chipLabelClass}>
+            <span
+              data-composer-label
+              className={cn(chipLabelClass, workspaceIconOnly && CHIP_LABEL_ICON_ONLY_CLS)}
+            >
               {resolvedBranch === null ? (
                 branchLabel
               ) : (
@@ -868,7 +879,7 @@ export const BranchToolbar = memo(function BranchToolbar({
             </div>
           </PopoverPopup>
         </Popover>
-        {showGitControls ? branchSelector("pr", "ms-0.5 shrink-0") : null}
+        {showGitControls ? branchSelector("pr", "ms-0.5 shrink-0", prIconOnly) : null}
         {uploadsNode}
       </>
     );

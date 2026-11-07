@@ -111,14 +111,13 @@ describe("buildThreadActionMenuItems", () => {
       "section:status",
       "settle",
       "snooze",
-      "section:branch-project",
-      "new-thread-on-branch",
-      "project-settings",
       "section:organise",
       "open-in-grid",
       "move-to-grid",
       "tags",
       "filter-by-project",
+      "new-thread-on-branch",
+      "project-settings",
       "more",
       "archive",
       "delete",
@@ -130,7 +129,6 @@ describe("buildThreadActionMenuItems", () => {
     expect(items.filter((item) => item.header).map((item) => item.label)).toEqual([
       "Thread",
       "Status",
-      "Branch & project",
       "Organise",
     ]);
     expect(

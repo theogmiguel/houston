@@ -5,14 +5,15 @@ import {
   type ServerProvider,
 } from "@houston-app/contracts";
 import { compileResolvedKeybindingsConfig } from "@houston-app/shared/keybindings";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 
 import { render } from "../../../test/render";
 import { deriveProviderInstanceEntries } from "../../providerInstances";
-import { ComposerEffortPanel } from "../ui/composer-model-effort";
+import { ComposerEffortPanel, ComposerPickerFooter } from "../ui/composer-model-effort";
+import { runtimeModeConfig, runtimeModeOptions } from "./runtimeModeConfig";
 import { TooltipProvider } from "../ui/tooltip";
 import { ProviderModelPicker } from "./ProviderModelPicker";
 
@@ -635,6 +636,187 @@ describe("new-thread page placement", () => {
         .toBeGreaterThanOrEqual(trigger.getBoundingClientRect().bottom);
     },
   );
+});
+
+describe("new-thread picker with its footer", () => {
+  const manyModels = provider.models.concat(
+    ["Sonnet 5.5", "Haiku 5.5", "Opus 5", "Sonnet 5", "Haiku 5", "Opus 4.5"].map((name, index) => ({
+      slug: `extra-${index}`,
+      name: `Claude ${name}`,
+      isCustom: false,
+      capabilities: { optionDescriptors: [effort] },
+    })),
+  );
+  const modeOptions = runtimeModeOptions.map((mode) => ({ mode, ...runtimeModeConfig[mode] }));
+
+  async function openInDraftHero() {
+    await page.viewport(1440, 900);
+    const screen = await render(
+      <TooltipProvider delay={0}>
+        <div data-chat-column="" style={{ height: 900 }}>
+          <div data-draft-hero="" style={{ paddingTop: 560, paddingLeft: 160 }}>
+            <form data-chat-composer-form="true" style={{ width: 760 }}>
+              <div
+                data-inline-resting-controls="true"
+                style={{ padding: "12px 32px" }}
+                className="rounded-xl border border-border"
+              >
+                <div data-testid="composer-editor" style={{ height: 40 }} />
+                <ProviderModelPicker
+                  environmentId={null}
+                  activeInstanceId={CLAUDE}
+                  model="opus"
+                  lockedProvider={null}
+                  instanceEntries={entries}
+                  keybindings={compileResolvedKeybindingsConfig([])}
+                  modelOptionsByInstance={new Map([[CLAUDE, manyModels]])}
+                  isComposerOwned
+                  effortPanel={<ComposerEffortPanel traits={null} />}
+                  footer={
+                    <ComposerPickerFooter
+                      runtimeMode="full-access"
+                      runtimeModeOptions={modeOptions}
+                      onRuntimeModeChange={() => {}}
+                    />
+                  }
+                  onInstanceModelChange={() => {}}
+                />
+              </div>
+            </form>
+          </div>
+        </div>
+      </TooltipProvider>,
+      { router: false },
+    );
+    await page.getByRole("button", { name: /Opus 5\.5/ }).click();
+    await expect
+      .poll(() => document.querySelector("[data-model-picker-effort]") !== null)
+      .toBe(true);
+    return screen;
+  }
+
+  it("keeps four model rows visible under a low composer, without reaching its input", async () => {
+    await using _screen = await openInDraftHero();
+    const list = document.querySelector<HTMLElement>("[data-model-picker-list]")!;
+    const frame = document.querySelector<HTMLElement>("[data-docked-picker-frame]")!;
+    const editor = document.querySelector<HTMLElement>('[data-testid="composer-editor"]')!;
+    await expect.poll(() => Math.round(list.getBoundingClientRect().height)).toBeGreaterThan(0);
+    await expect
+      .poll(() => {
+        const listBox = list.getBoundingClientRect();
+        const frameBox = frame.getBoundingClientRect();
+        const visibleRows = [...list.querySelectorAll<HTMLElement>('[role="option"]')].filter(
+          (row) => {
+            const box = row.getBoundingClientRect();
+            return box.height > 0 && box.top >= listBox.top - 1 && box.bottom <= frameBox.bottom;
+          },
+        );
+        return visibleRows.length;
+      })
+      .toBeGreaterThanOrEqual(4);
+    expect(frame.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      editor.getBoundingClientRect().bottom - 1,
+    );
+    expect(frame.getBoundingClientRect().bottom).toBeLessThanOrEqual(window.innerHeight);
+  });
+
+  it("shows a current model and its Legacy models row whole, above the effort panel, under the capture's composer", async () => {
+    // The new-thread page at 1440x900: the composer card ends at y=626, a 36px toolbar under its input.
+    const legacyModels = [
+      provider.models[0]!,
+      ...["Legacy A", "Legacy B"].map((name, index) => ({
+        slug: `legacy-${index}`,
+        name,
+        isCustom: false,
+        isLegacy: true,
+        capabilities: { optionDescriptors: [effort] },
+      })),
+    ];
+    await page.viewport(1440, 900);
+    await using _screen = await render(
+      <TooltipProvider delay={0}>
+        <div data-chat-column="" style={{ height: 900 }}>
+          <div data-draft-hero="" style={{ paddingTop: 534, paddingLeft: 480 }}>
+            <form data-chat-composer-form="true" style={{ width: 760 }}>
+              <div
+                data-inline-resting-controls="true"
+                style={{ padding: "12px 16px", height: 92 }}
+                className="rounded-xl border border-border"
+              >
+                <div data-testid="composer-editor" style={{ height: 40 }} />
+                <ProviderModelPicker
+                  environmentId={null}
+                  activeInstanceId={CLAUDE}
+                  model="opus"
+                  lockedProvider={null}
+                  instanceEntries={entries}
+                  keybindings={compileResolvedKeybindingsConfig([])}
+                  modelOptionsByInstance={new Map([[CLAUDE, legacyModels as never]])}
+                  isComposerOwned
+                  effortPanel={<ComposerEffortPanel traits={null} />}
+                  footer={
+                    <ComposerPickerFooter
+                      runtimeMode="full-access"
+                      runtimeModeOptions={modeOptions}
+                      onRuntimeModeChange={() => {}}
+                    />
+                  }
+                  onInstanceModelChange={() => {}}
+                />
+              </div>
+            </form>
+          </div>
+        </div>
+      </TooltipProvider>,
+      { router: false },
+    );
+    await page.getByRole("button", { name: /Opus 5\.5/ }).click();
+    const legacyRow = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLElement>("[data-model-picker-legacy-section]");
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    const list = document.querySelector<HTMLElement>("[data-model-picker-list]")!;
+    const effortPanel = document.querySelector<HTMLElement>("[data-model-picker-effort]")!;
+    const frame = document.querySelector<HTMLElement>("[data-docked-picker-frame]")!;
+    const editor = document.querySelector<HTMLElement>('[data-testid="composer-editor"]')!;
+    // The popup is still moving into place: compare the boxes at one instant, until they settle.
+    await expect
+      .poll(() => legacyRow.getBoundingClientRect().bottom - list.getBoundingClientRect().bottom)
+      .toBeLessThanOrEqual(1);
+    await expect
+      .poll(
+        () => legacyRow.getBoundingClientRect().bottom - effortPanel.getBoundingClientRect().top,
+      )
+      .toBeLessThanOrEqual(1);
+    expect(frame.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      editor.getBoundingClientRect().bottom - 1,
+    );
+    expect(frame.getBoundingClientRect().bottom).toBeLessThanOrEqual(window.innerHeight);
+    // Nothing in the frame is cut: its content is as tall as the frame.
+    expect(frame.scrollHeight).toBeLessThanOrEqual(frame.clientHeight + 1);
+  });
+
+  it("opens Permissions beside the picker with every description whole", async () => {
+    await using _screen = await openInDraftHero();
+    await page.getByRole("button", { name: /Permissions: Full access/ }).click();
+    const submenu = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLElement>("[data-composer-permissions]");
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    const frame = document.querySelector<HTMLElement>("[data-docked-picker-frame]")!;
+    const search = document.querySelector<HTMLElement>("[data-model-picker-content] input")!;
+    const box = submenu.closest<HTMLElement>('[data-slot="menu-popup"]')!.getBoundingClientRect();
+    const picker = frame.getBoundingClientRect();
+    expect(box.left >= picker.right || box.right <= picker.left).toBe(true);
+    expect(box.width).toBeGreaterThanOrEqual(300);
+    const searchBox = search.getBoundingClientRect();
+    expect(box.left >= searchBox.right || box.right <= searchBox.left).toBe(true);
+    for (const description of submenu.querySelectorAll<HTMLElement>("[id*='-']")) {
+      expect(description.scrollWidth).toBeLessThanOrEqual(description.clientWidth);
+    }
+  });
 });
 
 describe("provider tabs", () => {

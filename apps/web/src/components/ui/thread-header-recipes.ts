@@ -3,13 +3,14 @@ export const THREAD_HEADER_ROOT_CLS =
   "@container/thread-header flex min-w-0 flex-1 items-center gap-2";
 export const THREAD_PROJECT_GROUP_CLS =
   "flex shrink-0 items-center gap-1.5 text-sm text-muted-foreground";
-export const THREAD_PROJECT_TEXT_CLS = "max-w-40 min-w-0 truncate";
+/** 120px cap with an ellipsis; under 600px of header width the name leaves the line for the icon (screen readers keep it). */
+export const THREAD_PROJECT_TEXT_CLS =
+  "max-w-[120px] min-w-0 truncate @max-[600px]/thread-header:sr-only";
 /** The project mark and its name: the row never takes width from the title. */
 export const THREAD_PROJECT_ROW_CLS = "flex min-w-0 items-center gap-1";
 export const THREAD_PROJECT_ICON_CLS = "size-3.5 shrink-0";
-/** A narrow header keeps the project's name for screen readers only. */
-export const THREAD_PROJECT_ICON_ONLY_NAME_CLS = "sr-only";
-export const THREAD_PROJECT_SEPARATOR_CLS = "shrink-0 text-icon-muted";
+export const THREAD_PROJECT_SEPARATOR_CLS =
+  "shrink-0 text-icon-muted @max-[600px]/thread-header:hidden";
 export const THREAD_TITLE_INPUT_CLS =
   "min-w-0 flex-1 rounded-sm bg-transparent text-sm font-medium text-foreground outline-none ring-1 ring-inset ring-ring/50 focus-visible:ring-ring";
 export const THREAD_TITLE_BUTTON_CLS =

@@ -305,6 +305,8 @@ import {
   usePreparingComposerImages,
 } from "./preparingComposerImages";
 import { ComposerControlsBar } from "./ComposerControlsBar";
+import { snapComposerScroll } from "./composerInputScroll";
+import { useCompactChipTier } from "./useCompactChipTier";
 import {
   COMPOSER_INPUT_TOP_FADE_CLS,
   CONTEXT_ROW_CLS,
@@ -416,7 +418,12 @@ export interface ChatComposerProps {
    * tells them when its own width is narrow enough to collapse them.
    */
   contextControls?:
-    | ReactElement<{ forceNarrow?: boolean; variant?: "strip" | "inline" | "tray" }>
+    | ReactElement<{
+        forceNarrow?: boolean;
+        workspaceIconOnly?: boolean;
+        prIconOnly?: boolean;
+        variant?: "strip" | "inline" | "tray";
+      }>
     | undefined;
   /**
    * The pending turn's changed-files summary. A wide composer shows it on the right of its
@@ -1144,9 +1151,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     return observeResize(composerWidthNode, measure);
   }, [composerWidthNode]);
   const composerNarrow = composerWidth > 0 && composerWidth < 520;
-  // The model name shows down to a 340px pane (its composer is ~24px narrower); below that the
-  // provider mark stands in for it.
-  const composerVeryNarrow = composerWidth > 0 && composerWidth < 316;
   // A stable ref callback: a new one every render would detach and reattach the node and loop.
   const attachComposerSurface = useCallback((node: HTMLDivElement | null) => {
     composerSurfaceRef.current = node;
@@ -1363,6 +1367,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     iconOnlyBlockCount: expandedControlsIconOnlyBlockCount,
     modelIconOnly: expandedControlsModelIconOnly,
   } = useRestingComposerControlsLayout(null, true);
+  const [expandedControlsNode, setExpandedControlsNode] = useState<HTMLDivElement | null>(null);
+  const attachExpandedControls = (node: HTMLDivElement | null) => {
+    attachExpandedComposerControls(node);
+    setExpandedControlsNode(node);
+  };
   const pendingPrimaryAction = activePendingProgress
     ? {
         questionIndex: activePendingProgress.questionIndex,
@@ -2578,6 +2587,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // The collapsed mobile web composer keeps a second controls row inside the card.
   const showInlineRestingControls = isComposerCollapsedMobile;
   const composerControlsHidden = showInlineRestingControls && !restingControlsVisible;
+  // The compact toolbar drops chip labels as its width runs out: pull request, branch, model.
+  const compactChipTier = useCompactChipTier(
+    expandedControlsNode,
+    composerNarrow && !showInlineRestingControls,
+    composerWidth,
+  );
   if (composerControlsHidden && isComposerModelPickerOpen) {
     setIsComposerModelPickerOpen(false);
   }
@@ -2641,7 +2656,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       composerControlsHidden={composerControlsHidden}
       restingHiddenBlockCount={restingHiddenBlockCount}
       iconOnlyBlockCount={iconOnlyBlockCount}
-      modelIconOnly={modelIconOnly || composerVeryNarrow}
+      modelIconOnly={modelIconOnly || compactChipTier >= 3}
+      compactForm={composerNarrow}
       showProviderUnavailable={showProviderUnavailable}
       providerSetupInstanceId={providerSetupInstanceId}
       onOpenProviderSetup={onOpenProviderSetup}
@@ -3832,6 +3848,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     setInputScrolled(target.scrollTop > 0);
                   }
                 }}
+                onScrollEndCapture={(event) => {
+                  const target = event.target;
+                  if (target instanceof HTMLElement && target.matches(".composer-tiptap")) {
+                    snapComposerScroll(target);
+                  }
+                }}
               >
                 {inputScrolled ? (
                   <div
@@ -3969,14 +3991,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   className="flex min-w-0 flex-1 flex-nowrap items-center gap-0.5"
                 >
                   <div
-                    ref={attachExpandedComposerControls}
+                    ref={attachExpandedControls}
                     data-chat-composer-controls="footer"
                     data-chat-composer-footer-controls="true"
                     className="relative flex min-w-0 flex-1 items-center gap-0.5"
                   >
                     {composerControls}
                     {contextControls && composerNarrow
-                      ? cloneElement(contextControls, { forceNarrow: true })
+                      ? cloneElement(contextControls, {
+                          forceNarrow: true,
+                          workspaceIconOnly: compactChipTier >= 2,
+                          prIconOnly: compactChipTier >= 1,
+                        })
                       : null}
                     <ComposerStashBadge
                       count={stashQueue.length}

@@ -27,7 +27,8 @@ const SIDEBAR_COOKIE_NAME = "sidebar_state";
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
 const SIDEBAR_WIDTH = "16rem";
 // The drawer keeps a docked rail's proportions and leaves a sliver of the page visible behind it.
-const SIDEBAR_WIDTH_MOBILE = "min(20rem, calc(100vw - var(--spacing(3))))";
+// Inline styles are not compiled by Tailwind, so the gutter is a plain rem value (0.75rem = spacing 3).
+const SIDEBAR_WIDTH_MOBILE = "min(20rem, calc(100vw - 0.75rem))";
 const SIDEBAR_WIDTH_ICON = "3rem";
 const SIDEBAR_RESIZE_DEFAULT_MIN_WIDTH = 16 * 16;
 const SIDEBAR_TITLEBAR_CONTROL_SIZE = "max-sm:[--workspace-titlebar-control-size:--spacing(8)]";

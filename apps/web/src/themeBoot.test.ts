@@ -395,10 +395,22 @@ describe("boot splash styles", () => {
     expect(font.indexOf('"Inter Variable"')).toBeLessThan(font.indexOf("system-ui"));
   });
 
-  it("seats the dark logo tile on the light canvas and restyles the ring for the dark theme", () => {
-    const light = rule("#boot-shell-card");
-    expect(light).toMatch(/border-radius:\s*11px/);
-    expect(light).toContain("box-shadow");
-    expect(rule("html.dark #boot-shell-card")).toContain("rgba(255, 255, 255");
+  it("preloads the bundled Inter file and declares it with font-display: block", () => {
+    const preload = indexHtml.match(/<link\s[^>]*rel="preload"[^>]*>/)?.[0] ?? "";
+    expect(preload).toContain('as="font"');
+    expect(preload).toContain("crossorigin");
+    const file = "@fontsource-variable/inter/files/inter-latin-opsz-normal.woff2";
+    expect(preload).toContain(file);
+    const fontFace = indexHtml.match(/@font-face\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(fontFace).toContain('"Inter Variable"');
+    expect(fontFace).toMatch(/font-display:\s*block/);
+    expect(fontFace).toContain(file);
+  });
+
+  it("shows the transparent logo mark with no tile background or shadow in either theme", () => {
+    expect(indexHtml).toContain('id="boot-shell-logo" src="./src/assets/houston-mark.svg"');
+    const card = rule("#boot-shell-card");
+    expect(card).not.toMatch(/box-shadow|background|border-radius/);
+    expect(indexHtml).not.toContain("html.dark #boot-shell-card");
   });
 });

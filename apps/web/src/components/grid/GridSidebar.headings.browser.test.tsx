@@ -344,8 +344,7 @@ describe("sticky project heading", () => {
     expect(projectHeading.hasAttribute("data-stuck")).toBe(false);
     expect(getComputedStyle(projectHeading).borderBottomColor).toBe("rgba(0, 0, 0, 0)");
     const idleFade = getComputedStyle(projectHeading, "::after");
-    expect(idleFade.backgroundImage).toBe("none");
-    expect(idleFade.height).toBe("4px");
+    expect(idleFade.height).toBe("8px");
     expect(idleFade.opacity).toBe("0");
 
     viewport.scrollTop = 200;
@@ -355,11 +354,13 @@ describe("sticky project heading", () => {
     expect(getComputedStyle(projectHeading).borderBottomColor).not.toBe("rgba(0, 0, 0, 0)");
     expect(getComputedStyle(projectHeading).backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
     expect(getComputedStyle(projectHeading).opacity).toBe("1");
-    // A solid lip under the stuck heading cuts a row cleanly; nothing translucent ghosts through.
+    // An 8px band under the stuck heading, solid at the heading and fading to transparent, so a
+    // half-scrolled row never shows a clipped fragment right under it.
     const lip = getComputedStyle(projectHeading, "::after");
     expect(lip.opacity).toBe("1");
-    expect(lip.backgroundImage).toBe("none");
-    expect(lip.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+    expect(lip.height).toBe("8px");
+    expect(lip.backgroundImage).toContain("linear-gradient");
+    expect(lip.backgroundImage).toContain("rgba(0, 0, 0, 0)");
     expect(Math.round(projectHeading.getBoundingClientRect().top)).toBeLessThanOrEqual(
       Math.round(viewport.getBoundingClientRect().top),
     );
@@ -447,5 +448,36 @@ describe("sticky project heading", () => {
         expect(heading.contains(hit!)).toBe(true);
       }
     }
+  });
+});
+
+describe("row hover actions", () => {
+  it("repaint the row's hover surface and fade the title out under themselves", async () => {
+    resetTestState();
+    const sections = [section({ ungroupedThreads: manyThreads(3) })];
+    await using screen = await render(<CollapsibleSections sections={sections} />);
+    const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
+    const cluster = row.querySelector<HTMLElement>(
+      'button[aria-label="Close thread"]',
+    )!.parentElement!;
+    expect(getComputedStyle(cluster).opacity).toBe("0");
+
+    await userEvent.hover(row);
+    await expect.poll(() => getComputedStyle(cluster).opacity).toBe("1");
+
+    // The row's hover surface is repainted over the rail colour under the cluster.
+    const rowSurface = getComputedStyle(row).backgroundColor;
+    expect(rowSurface).not.toBe("rgba(0, 0, 0, 0)");
+    const clusterStyle = getComputedStyle(cluster);
+    expect(clusterStyle.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+    expect(clusterStyle.backgroundImage).toContain(rowSurface);
+
+    // A 16px fade ends in that surface, left of the cluster, over the end of the title.
+    const fade = getComputedStyle(cluster, "::before");
+    expect(fade.width).toBe("16px");
+    expect(fade.backgroundImage).toContain("linear-gradient");
+    expect(fade.backgroundImage).toContain(rowSurface);
+    const title = row.querySelector<HTMLElement>("[data-card-open]")!.getBoundingClientRect();
+    expect(cluster.getBoundingClientRect().left - 16).toBeLessThan(title.right);
   });
 });

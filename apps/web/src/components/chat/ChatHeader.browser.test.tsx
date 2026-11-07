@@ -1,6 +1,6 @@
 import { EnvironmentId, ThreadId } from "@houston-app/contracts";
 import { expect, it, vi } from "vite-plus/test";
-import { page, userEvent } from "vite-plus/test/browser";
+import { userEvent } from "vite-plus/test/browser";
 
 const persisted = vi.hoisted(() => ({ title: "" }));
 vi.mock(import("../../state/session"), async (importOriginal) => ({
@@ -53,6 +53,7 @@ function header(
   options: {
     width?: number;
     project?: boolean;
+    projectName?: string;
     pullRequest?: boolean;
     onOpenThread?: (threadId: ThreadId) => void;
     children?: ReactNode;
@@ -68,12 +69,13 @@ function header(
           activeThreadTitle={title}
           isServerThread
           activeProject={
-            options.project === false ? null : ({ title: "atlas-api", isScratch: false } as never)
+            options.project === false
+              ? null
+              : ({ title: options.projectName ?? "atlas-api", isScratch: false } as never)
           }
           parentThreadLink={null}
           pullRequest={options.pullRequest === false ? null : PULL_REQUEST}
           pullRequestCount={1}
-          compactProject={width <= 900}
           onOpenThread={options.onOpenThread ?? (() => {})}
         />
         <div data-testid="toolbar" className="ms-auto flex shrink-0 gap-1">
@@ -154,14 +156,12 @@ it.each([
   },
 );
 
-it("shows the full thread title in a tooltip, led by the project it dropped, including a long one", async () => {
+it("shows the full thread title in a tooltip, including a long one", async () => {
   await using screen = await render(header(LONG_TITLE, { width: 800 }));
   const trigger = screen.getByRole("button", { name: `Thread actions for ${LONG_TITLE}` });
   await userEvent.hover(trigger);
   await vi.waitFor(() =>
-    expect(document.querySelector('[data-slot="tooltip-popup"]')?.textContent).toBe(
-      `atlas-api / ${LONG_TITLE}`,
-    ),
+    expect(document.querySelector('[data-slot="tooltip-popup"]')?.textContent).toBe(LONG_TITLE),
   );
 });
 
@@ -176,30 +176,55 @@ it("renders no meta row and puts the pull request badge after the title", async 
   );
 });
 
-it("drops the project segment at 800px with no orphan icon or slash, keeping it at 1440px", async () => {
-  await page.viewport(1440, 900);
-  {
-    await using wide = await render(header("Add a retry-after hint", { width: 1440 }));
-    const group = wide.container.querySelector<HTMLElement>("[data-thread-project]")!;
+it.each([1440, 800])(
+  "keeps the project name, capped at 120px with an ellipsis, in a %ipx header",
+  async (width) => {
+    await using screen = await render(
+      header("Add a retry-after hint", {
+        width,
+        projectName: "atlas-api-with-a-very-long-service-name",
+      }),
+    );
+    const group = screen.container.querySelector<HTMLElement>("[data-thread-project]")!;
     const name = [...group.querySelectorAll("span")].find(
-      (span) => span.textContent === "atlas-api" && span.children.length === 0,
+      (span) =>
+        span.textContent === "atlas-api-with-a-very-long-service-name" &&
+        span.children.length === 0,
     )!;
-    expect(name.getBoundingClientRect().width).toBeGreaterThan(0);
+    const rect = name.getBoundingClientRect();
+    expect(rect.width).toBeGreaterThan(0);
+    expect(rect.width).toBeLessThanOrEqual(120);
+    expect(getComputedStyle(name).textOverflow).toBe("ellipsis");
+    expect(name.scrollWidth).toBeGreaterThan(name.clientWidth);
     expect(group.querySelector("svg")).not.toBeNull();
-  }
-  await page.viewport(800, 900);
-  {
-    await using narrow = await render(header("Add a retry-after hint", { width: 800 }));
-    const group = narrow.container.querySelector<HTMLElement>("[data-thread-project]")!;
-    // Nothing of the project is painted: no folder icon, no separator, no visible name.
-    expect(group.querySelector("svg")).toBeNull();
-    expect(group.textContent).toBe("atlas-api");
-    expect(getComputedStyle(group).position).toBe("absolute");
-    expect(narrow.container.textContent).not.toContain("/");
-    // The project stays reachable: assistive tech reads it and the title tooltip names it.
-    await narrow.getByRole("button", { name: /Thread actions for/ }).hover();
-    await expect.element(narrow.getByText("atlas-api / Add a retry-after hint")).toBeVisible();
-  }
+    expect(group.textContent).toContain("/");
+  },
+);
+
+it("shows only a folder icon under 600px of header width, with the project in the tooltip and the accessible name", async () => {
+  await using screen = await render(header("Add a retry-after hint", { width: 560 }));
+  const group = screen.container.querySelector<HTMLElement>("[data-thread-project]")!;
+  const name = [...group.querySelectorAll("span")].find(
+    (span) => span.textContent === "atlas-api" && span.children.length === 0,
+  )!;
+  // Nothing but the icon is painted: the name is visually hidden and the separator is gone.
+  expect(group.querySelector("svg")).not.toBeNull();
+  expect(name.getBoundingClientRect().width).toBeLessThanOrEqual(1);
+  expect(
+    [...group.querySelectorAll("span")]
+      .filter((span) => span.getBoundingClientRect().width > 1)
+      .map((span) => span.textContent)
+      .join(""),
+  ).not.toContain("/");
+  await screen.getByRole("button", { name: /Thread actions for/ }).hover();
+  await userEvent.hover(group.querySelector("svg")!);
+  await vi.waitFor(() =>
+    expect(
+      [...document.querySelectorAll('[data-slot="tooltip-popup"]')].some(
+        (popup) => popup.textContent === "atlas-api",
+      ),
+    ).toBe(true),
+  );
 });
 
 it("keeps the parent thread and its keyboard path reachable in the single line", async () => {

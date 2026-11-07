@@ -1125,7 +1125,7 @@ function ComposerPromptEditorTiptapInner(
 
   const editorAttributes = {
     class: cn(
-      "composer-tiptap -m-1 block max-h-52 min-h-[calc(1lh+--spacing(2))] overflow-y-auto p-1 whitespace-pre-wrap wrap-break-word bg-transparent leading-relaxed text-foreground focus:outline-none",
+      "composer-tiptap -mt-2 -mx-1 -mb-1 block max-h-[calc(8lh+--spacing(3))] min-h-[calc(1lh+--spacing(3))] overflow-y-auto px-1 pt-2 pb-1 whitespace-pre-wrap wrap-break-word bg-transparent leading-relaxed text-foreground focus:outline-none",
       className,
     ),
     "data-testid": "composer-editor",

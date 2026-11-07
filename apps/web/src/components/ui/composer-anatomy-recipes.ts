@@ -2,11 +2,14 @@
 
 /** The single workspace chip that replaces the checkout, branch and access controls. */
 /**
- * The chip is as wide as its content: icon, 4px, label, 4px, chevron. It yields width to the
- * primary actions down to 48px (icon, a few characters of the branch and the chevron).
+ * The chip is as wide as its content: icon, 4px, label, 4px, chevron. It never shrinks: when the
+ * toolbar is too narrow for the label, the composer drops the label (the chip keeps its icon and
+ * chevron) instead of cutting it down to a stub.
  */
-export const CONTEXT_CHIP_TRIGGER_CLS = "min-w-12 shrink justify-start gap-1!";
+export const CONTEXT_CHIP_TRIGGER_CLS = "shrink-0 justify-start gap-1!";
 export const CONTEXT_CHIP_BRANCH_CLS = "min-w-0 max-w-[28ch] truncate text-xs";
+/** A chip label that dropped to its icon: out of sight, still the chip's accessible name. */
+export const CHIP_LABEL_ICON_ONLY_CLS = "sr-only";
 export const CONTEXT_CHIP_CHEVRON_CLS = "size-3 shrink-0";
 /** The one panel the collapsed chip opens: the three controls stacked. */
 export const CONTEXT_CHIP_PANEL_CLS = "flex w-72 flex-col gap-2 p-2";
@@ -23,9 +26,12 @@ export const CONTEXT_ROW_CLS =
 /** The row's left side: it yields width to the pending-changes actions on its right. */
 export const CONTEXT_ROW_START_CLS = "flex min-w-0 flex-1 items-center gap-1";
 
-/** The scroll fade under the row: the first visible line of a scrolled draft never meets the row's edge. */
+/**
+ * The scroll fade under the row. It covers only the editor's own 8px top padding, so it never
+ * lies over a line of text; `snapComposerScroll` keeps the topmost visible line below it.
+ */
 export const COMPOSER_INPUT_TOP_FADE_CLS =
-  "pointer-events-none absolute inset-x-0 top-0 z-10 h-4 bg-linear-to-b from-(--composer) to-transparent [[data-draft-hero]_&]:from-(--surface-raised)";
+  "pointer-events-none absolute inset-x-0 -top-2 z-10 h-2 bg-linear-to-b from-(--composer) to-transparent [[data-draft-hero]_&]:from-(--surface-raised)";
 
 /** A real branch name reads in the mono face; the checkout label stands in as plain text. */
 export const CONTEXT_CHIP_BRANCH_MONO_CLS = `${CONTEXT_CHIP_BRANCH_CLS} font-mono`;

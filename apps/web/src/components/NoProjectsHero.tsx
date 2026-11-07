@@ -12,7 +12,6 @@ import {
 } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 
-import { APP_BASE_NAME } from "../branding";
 import { openAddProjectDialog } from "./AddProjectDialog";
 import { isDesktopHost } from "../env";
 import { useScratchProject } from "../hooks/useScratchProject";
@@ -117,12 +116,7 @@ export function NoProjectsHero() {
       className="min-h-0 overflow-hidden overscroll-y-none"
     >
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
-        {/* The titlebar names the product, not its channel: the rail's pill carries that. */}
-        <WorkspacePageHeader desktop={isDesktopHost}>
-          <span className="text-sm font-medium text-foreground md:text-muted-foreground/60">
-            {APP_BASE_NAME}
-          </span>
-        </WorkspacePageHeader>
+        <WorkspacePageHeader desktop={isDesktopHost} />
         <Empty size="welcome" className="flex-1">
           <div className="flex w-full max-w-[560px] flex-col items-center gap-3.5 py-12">
             <EmptyMedia className="mb-0">

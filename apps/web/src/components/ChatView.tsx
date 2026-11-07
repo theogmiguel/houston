@@ -3530,7 +3530,6 @@ export default function ChatView(props: ChatViewProps) {
                 ? { onOpenProjectSettings: handleOpenDraftProjectSettingsStable }
                 : {})}
               {...(threadFindEnabled ? { onFindInThread: openThreadFindStable } : {})}
-              compactProject={rightPanelOpen}
             />
             <ChatHeaderPanelControls
               {...panelToggleControlProps}

@@ -338,7 +338,12 @@ describe("ThreadCard", () => {
     await expect.element(trigger).toBeVisible();
     await userEvent.click(trigger);
     await expect.element(page.getByRole("menuitem", { name: /Open in grid/ })).toBeVisible();
-    await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{Enter}");
+    // Choose Rename from the keyboard while the pointer still rests on the row.
+    page
+      .getByRole("menuitem", { name: /Rename/ })
+      .element()
+      .focus();
+    await userEvent.keyboard("{Enter}");
 
     const input = screen.getByRole("textbox");
     await expect.element(input).toBeVisible();
@@ -376,6 +381,10 @@ describe("ThreadCard", () => {
     await expect.element(trigger).toBeVisible();
     await userEvent.click(trigger);
 
+    // Auto-close lives under the "More" submenu.
+    const more = page.getByRole("menuitem", { name: "More" });
+    await expect.element(more).toBeVisible();
+    await userEvent.hover(more);
     const behavior = page.getByRole("menuitem", { name: "Auto-close behavior" });
     await expect.element(behavior).toBeVisible();
     await userEvent.hover(behavior);

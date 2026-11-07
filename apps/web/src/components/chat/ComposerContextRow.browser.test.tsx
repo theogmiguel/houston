@@ -173,33 +173,71 @@ it(
   APP_BOOT_TEST_TIMEOUT_MS,
 );
 
+// Every rendered line box of the editor's text, one rect per wrapped line.
+function textLineRects(editor: HTMLElement): DOMRect[] {
+  const rects: DOMRect[] = [];
+  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    rects.push(...[...range.getClientRects()].filter((rect) => rect.height > 0));
+  }
+  return rects;
+}
+
 it(
-  "keeps the row fixed over a long draft and fades the scrolled text under it",
+  "grows a draft to eight lines, then scrolls with the first visible line whole under the row",
   async () => {
     using _environment = installFakeEnvironment([CHANGED]);
     await using _app = await openThread("row-changed");
     await vi.waitFor(() => expect(contextRow()).not.toBeNull(), { timeout: 10_000 });
 
     await userEvent.click(page.getByTestId("composer-editor"));
-    const lines = Array.from({ length: 14 }, (_, index) => `line ${index + 1}`);
-    await userEvent.keyboard(lines.join("{Shift>}{Enter}{/Shift}"));
-
+    const newline = "{Shift>}{Enter}{/Shift}";
     const editor = document.querySelector<HTMLElement>(".composer-tiptap")!;
+    const lineHeight = Number.parseFloat(getComputedStyle(editor).lineHeight);
+
+    // Eight lines fit without a scrollbar.
+    await userEvent.keyboard(
+      Array.from({ length: 8 }, (_, index) => `line ${index + 1}`).join(newline),
+    );
+    await vi.waitFor(() => expect(textLineRects(editor).length).toBeGreaterThanOrEqual(8));
+    expect(editor.scrollHeight).toBeLessThanOrEqual(editor.clientHeight + 1);
+
+    await userEvent.keyboard(
+      newline + Array.from({ length: 22 }, (_, index) => `line ${index + 9}`).join(newline),
+    );
     await vi.waitFor(() => expect(editor.scrollHeight).toBeGreaterThan(editor.clientHeight));
     const rowBottom = () => contextRow()!.getBoundingClientRect().bottom;
     const rowTop = contextRow()!.getBoundingClientRect().top;
     // The editor sits wholly under the row: its scrolling never moves the row.
     expect(editor.getBoundingClientRect().top).toBeGreaterThanOrEqual(rowBottom());
 
-    editor.scrollTop = 48;
+    editor.scrollTop = 50;
     const fade = await vi.waitFor(() => {
       const found = document.querySelector<HTMLElement>('[data-composer-input-fade="true"]');
       expect(found).not.toBeNull();
       return found!;
     });
     expect(contextRow()!.getBoundingClientRect().top).toBe(rowTop);
-    expect(fade.getBoundingClientRect().height).toBe(16);
+    // The fade is the editor's own top padding, never over a line of text.
+    expect(fade.getBoundingClientRect().height).toBe(8);
     expect(fade.getBoundingClientRect().top).toBeGreaterThanOrEqual(rowBottom() - 1);
+    expect(Number.parseFloat(getComputedStyle(editor).paddingTop)).toBe(8);
+
+    // Scrolling settles on a whole line: the topmost visible line starts below the fade.
+    await expect
+      .poll(() =>
+        Math.abs(editor.scrollTop / lineHeight - Math.round(editor.scrollTop / lineHeight)),
+      )
+      .toBeLessThan(0.05);
+    const fadeBottom = fade.getBoundingClientRect().bottom;
+    const visible = textLineRects(editor).filter(
+      (rect) => rect.bottom > fadeBottom + 1.5 && rect.top < editor.getBoundingClientRect().bottom,
+    );
+    const topmost = Math.min(...visible.map((rect) => rect.top));
+    expect(topmost).toBeGreaterThanOrEqual(fadeBottom - 1);
+    expect(topmost).toBeGreaterThanOrEqual(rowBottom());
 
     editor.scrollTop = 0;
     await vi.waitFor(() =>

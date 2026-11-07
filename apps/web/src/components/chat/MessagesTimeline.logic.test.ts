@@ -3887,7 +3887,8 @@ it("folds a system restart notice into the turn's fold line", () => {
   const collapsed = deriveMessagesTimelineRows(input);
   expect(collapsed.map((row) => row.id)).not.toContain("restart-notice");
   const fold = collapsed.find((row) => row.kind === "turn-fold");
-  expect(fold && "summary" in fold ? fold.summary : null).toContain("resumed after restart");
+  expect(fold && "restart" in fold ? fold.restart?.label : null).toBe("resumed after restart");
+  expect(fold && "summary" in fold ? (fold.summary ?? "") : "").not.toContain("resumed");
   const expanded = deriveMessagesTimelineRows({ ...input, expandedRunIds: new Set([run]) });
   const ids = expanded.map((row) => row.id);
   expect(ids.indexOf(`turn-fold:${run}`)).toBeLessThan(ids.indexOf("restart-notice"));
@@ -3926,7 +3927,92 @@ it("folds a restart notice into the running turn's working row", () => {
   expect(working && "notice" in working ? working.notice : null).toEqual({
     label: "resumed after restart",
     text: "Houston restarted and resumed this turn",
+    restarts: [{ at: time(1), text: "Houston restarted and resumed this turn" }],
   });
+});
+
+it("shows the restart note once, on the latest resumed turn, and every finished turn keeps its Worked line", () => {
+  const time = (second: number) => new Date(Date.UTC(2026, 0, 1, 0, 0, second)).toISOString();
+  const turns = [0, 1, 2].map((turn) => {
+    const run = RunId.make(`resumed-${turn}`);
+    const base = turn * 10;
+    return {
+      run,
+      entries: [
+        {
+          kind: "work" as const,
+          id: `restart-${turn}`,
+          createdAt: time(base + 1),
+          entry: {
+            id: `restart-${turn}`,
+            runId: run,
+            createdAt: time(base + 1),
+            label: "Houston restarted and resumed this turn",
+            tone: "info" as const,
+            itemType: "notification" as const,
+            structuredPayload: { type: "notification", source: { kind: "system" } } as never,
+          },
+        },
+        {
+          kind: "work" as const,
+          id: `read-${turn}`,
+          createdAt: time(base + 2),
+          entry: {
+            id: `read-${turn}`,
+            runId: run,
+            createdAt: time(base + 2),
+            label: "Read file",
+            tone: "tool" as const,
+            itemType: "command_execution" as const,
+          },
+        },
+        {
+          kind: "message" as const,
+          id: `done-${turn}`,
+          createdAt: time(base + 5),
+          message: {
+            id: MessageId.make(`done-${turn}`),
+            role: "assistant" as const,
+            text: "done",
+            runId: run,
+            createdAt: time(base + 5),
+            updatedAt: time(base + 5),
+            streaming: false,
+          },
+        },
+      ],
+    };
+  });
+  const rows = deriveMessagesTimelineRows({
+    timelineEntries: turns.flatMap((turn) => turn.entries),
+    latestRun: {
+      runId: turns[2]!.run,
+      status: "completed" as const,
+      startedAt: time(21),
+      completedAt: time(25),
+    },
+    isWorking: false,
+    activeTurnStartedAt: null,
+    turnDiffSummaries: [],
+    supportsConversationRollback: false,
+  });
+  const folds = rows.flatMap((row) => (row.kind === "turn-fold" ? [row] : []));
+  expect(folds.map((fold) => fold.label)).toEqual([
+    expect.stringMatching(/^Worked/),
+    expect.stringMatching(/^Worked/),
+    expect.stringMatching(/^Worked/),
+  ]);
+  expect(folds.map((fold) => fold.restart?.label)).toEqual([
+    undefined,
+    undefined,
+    "resumed after restart",
+  ]);
+  expect(folds.map((fold) => fold.summary ?? "").join("|")).not.toContain("resumed");
+  expect(folds[2]?.restart?.restarts.map((restart) => restart.at)).toEqual([
+    time(1),
+    time(11),
+    time(21),
+  ]);
 });
 
 it("keeps the working header in place across worktree setup handoff", () => {

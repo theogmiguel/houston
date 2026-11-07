@@ -36,7 +36,6 @@ import {
   THREAD_PARENT_TEXT_CLS,
   THREAD_PROJECT_GROUP_CLS,
   THREAD_PROJECT_ICON_CLS,
-  THREAD_PROJECT_ICON_ONLY_NAME_CLS,
   THREAD_PROJECT_ROW_CLS,
   THREAD_PROJECT_SEPARATOR_CLS,
   THREAD_PROJECT_TEXT_CLS,
@@ -48,7 +47,6 @@ import {
 import { ThreadRowPullRequestBadge } from "../grid/ThreadRowPullRequestBadge";
 import type { RowPullRequest } from "~/grid/sidebar";
 import { textDirection } from "~/textDirection";
-import { useMediaQuery } from "../../hooks/useMediaQuery";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -63,8 +61,6 @@ interface ChatHeaderProps {
   onOpenThread: (threadId: ThreadId) => void;
   onOpenProjectSettings?: (() => void) | undefined;
   onFindInThread?: ((threadRef: ScopedThreadRef) => void) | undefined;
-  /** The side panel is open, so the header gives its width to the title. */
-  compactProject?: boolean;
 }
 
 function resolveRenameCommit(input: {
@@ -92,18 +88,10 @@ export const ChatHeader = memo(function ChatHeader({
   onOpenThread,
   onOpenProjectSettings,
   onFindInThread,
-  compactProject = false,
 }: ChatHeaderProps) {
-  const narrowHeader = useMediaQuery({ max: 900 });
-  // A narrow window or an open side panel keeps the project as an icon: the title needs the room.
-  const projectIsIcon = compactProject || narrowHeader;
   const activeProjectName = activeProject?.isScratch
     ? "No project"
     : activeProject?.title.trim() || undefined;
-  const titleTooltip =
-    activeProjectName && projectIsIcon
-      ? `${activeProjectName} / ${activeThreadTitle}`
-      : activeThreadTitle;
   const activeThreadRef = scopeThreadRef(activeThreadEnvironmentId, activeThreadId);
   const canOperateThread = useEnvironmentScope(
     activeThreadEnvironmentId,
@@ -254,12 +242,7 @@ export const ChatHeader = memo(function ChatHeader({
   };
   return (
     <div className={THREAD_HEADER_ROOT_CLS} onContextMenu={handleHeaderContextMenu}>
-      {activeProjectName && projectIsIcon ? (
-        // Short on room the project leaves the line; the title's tooltip and assistive tech keep it.
-        <span data-thread-project="" className={THREAD_PROJECT_ICON_ONLY_NAME_CLS}>
-          {activeProjectName}
-        </span>
-      ) : activeProjectName ? (
+      {activeProjectName ? (
         <span data-thread-project="" className={THREAD_PROJECT_GROUP_CLS}>
           <Tooltip>
             <TooltipTrigger render={<span className={THREAD_PROJECT_ROW_CLS} />}>
@@ -323,7 +306,7 @@ export const ChatHeader = memo(function ChatHeader({
               className={THREAD_TITLE_CHEVRON_CLS}
             />
           </TooltipTrigger>
-          <TooltipPopup side="top">{titleTooltip}</TooltipPopup>
+          <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>
         </Tooltip>
       ) : (
         <Tooltip>
@@ -338,7 +321,7 @@ export const ChatHeader = memo(function ChatHeader({
           >
             {activeThreadTitle}
           </TooltipTrigger>
-          <TooltipPopup side="top">{titleTooltip}</TooltipPopup>
+          <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>
         </Tooltip>
       )}
       {pullRequest !== null ? (

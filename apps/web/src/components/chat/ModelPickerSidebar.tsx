@@ -71,7 +71,7 @@ function unavailableInstanceReason(
 }
 
 /** The strip's edge fade grows over this many pixels; a tab under it reads as continuing. */
-const TAB_FADE_PX = 20;
+const TAB_FADE_PX = 16;
 
 /**
  * Which edges of a horizontally scrolling strip hide content: the strip fades there so a tab is

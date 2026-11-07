@@ -6,7 +6,7 @@ import {
 } from "@houston-app/client-runtime/model-traits";
 import type { ProviderOptionDescriptor, RuntimeMode } from "@houston-app/contracts";
 import type { EffortDisplay } from "@houston-app/contracts/settings";
-import { ChevronUpIcon } from "lucide-react";
+import { ChevronRightIcon } from "lucide-react";
 import { type KeyboardEvent, type ReactNode, useRef } from "react";
 
 import { cn } from "~/lib/utils";
@@ -147,7 +147,20 @@ const CHIP =
   "flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-md px-2 text-left text-(--t2) text-xs outline-none hover:bg-(--sel) hover:text-(--t1) focus-visible:bg-(--sel) focus-visible:text-(--t1) aria-checked:bg-(--sel) aria-checked:font-medium aria-checked:text-(--t1) disabled:cursor-not-allowed disabled:opacity-64";
 const GROUP_LABEL = "w-14 shrink-0 pt-1.5 text-(--houston) text-2xs";
 
-/** One labelled row of options: the label on the left, the choices wrapping beside it. */
+/**
+ * The choices sit in one row that scrolls sideways, so a model with many levels never grows the
+ * panel; the checked choice is scrolled into view when the row mounts.
+ */
+const OPTION_ROW_CLS =
+  "flex flex-nowrap gap-0.5 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
+
+function scrollCheckedIntoView(row: HTMLElement | null) {
+  const checked = row?.querySelector<HTMLElement>('[aria-checked="true"]');
+  if (!row || !checked) return;
+  row.scrollLeft = checked.offsetLeft + checked.offsetWidth - row.clientWidth;
+}
+
+/** One labelled row of options: the label on the left, the choices in a scrolling row beside it. */
 function OptionGroup(props: { label: string; children: ReactNode; note?: ReactNode }) {
   return (
     <div role="radiogroup" aria-label={props.label} className="flex items-start gap-1">
@@ -156,7 +169,9 @@ function OptionGroup(props: { label: string; children: ReactNode; note?: ReactNo
       </span>
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         {props.note}
-        <div className="flex flex-wrap gap-0.5">{props.children}</div>
+        <div ref={scrollCheckedIntoView} className={OPTION_ROW_CLS}>
+          {props.children}
+        </div>
       </div>
     </div>
   );
@@ -356,10 +371,7 @@ function SpeedGroup(props: { traits: TraitsSelectionInput }) {
 /** The model picker's effort panel: the selected model's levels, speed and other options. */
 export function ComposerEffortPanel(props: { traits: TraitsSelectionInput | null }) {
   return (
-    <div
-      className="flex flex-col gap-1 px-3 py-2"
-      onKeyDown={moveBetweenRows}
-    >
+    <div className="flex flex-col gap-1 px-3 py-2" onKeyDown={moveBetweenRows}>
       {props.traits ? (
         <>
           <EffortLevels traits={props.traits} />
@@ -373,6 +385,11 @@ export function ComposerEffortPanel(props: { traits: TraitsSelectionInput | null
       )}
     </div>
   );
+}
+
+/** The docked picker's frame, which the permissions submenu opens beside. */
+function pickerFrameOf(trigger: HTMLElement | null): HTMLElement | null {
+  return trigger?.closest<HTMLElement>("[data-docked-picker-frame]") ?? null;
 }
 
 /** Permissions change rarely, so the footer names the mode and nests the choice in a menu. */
@@ -404,9 +421,16 @@ function PermissionsMenu(props: {
       >
         <CurrentIcon aria-hidden="true" className="size-3.5" />
         {current.label}
-        <ChevronUpIcon aria-hidden="true" className="size-3" />
+        <ChevronRightIcon aria-hidden="true" className="size-3" />
       </MenuTrigger>
-      <MenuPopup side="top" align="end" {...composerFloatingLayerProps}>
+      {/* Beside the picker (the right, or the left without room), so it never covers the list or the search field. */}
+      <MenuPopup
+        side="right"
+        align="end"
+        sideOffset={6}
+        anchor={() => pickerFrameOf(triggerRef.current) ?? triggerRef.current}
+        {...composerFloatingLayerProps}
+      >
         <ComposerPermissionsSection
           runtimeMode={props.runtimeMode}
           runtimeModeOptions={props.options}

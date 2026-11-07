@@ -111,7 +111,12 @@ import {
   type WorkGroupViewState,
   type TimelineRow,
 } from "./timelineRowContext";
-import { TimelineRowTimestamp, ActivityShimmerOverlay } from "./TimelineRowParts";
+import {
+  TimelineRowTimestamp,
+  ActivityShimmerOverlay,
+  RestartNoteTrigger,
+} from "./TimelineRowParts";
+import { RESTART_NOTE_FOLD_CLS } from "../ui/work-log-recipes";
 import {
   WorkGroupSection,
   WorkingTimelineRow,
@@ -1699,6 +1704,9 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
           <span className="shrink-0">{row.label}</span>
           {row.summary ? (
             <span className="min-w-0 truncate text-callout text-(--houston)">· {row.summary}</span>
+          ) : null}
+          {row.restart ? (
+            <RestartNoteTrigger note={row.restart} className={RESTART_NOTE_FOLD_CLS} />
           ) : null}
           {error ? <span className="shrink-0 text-callout text-(--houston)">· {error}</span> : null}
         </button>

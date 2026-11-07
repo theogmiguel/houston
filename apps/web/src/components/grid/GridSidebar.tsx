@@ -205,7 +205,12 @@ import {
 } from "../ui/sidebar";
 import { EnvironmentId, ProjectId, type ThreadId } from "@houston-app/contracts";
 import { MOTION_FEEDBACK, MOTION_FEEDBACK_OPACITY } from "../ui/motion-recipes";
-import { ROW_SCROLL_MARGIN_CLS, ROW_TITLE_TEXT_CLS } from "../ui/sidebar-rail-recipes";
+import {
+  ROW_SCROLL_MARGIN_CLS,
+  ROW_TITLE_TEXT_CLS,
+  SIDEBAR_ROW_ACTION_BACKDROP_CLS,
+  SIDEBAR_ROW_SURFACE_CLS,
+} from "../ui/sidebar-rail-recipes";
 import { isThreadRoutePathname, parseThreadRoutePathname } from "../../threadRoutes";
 import { shelfReturnAction } from "../../grid/shelfReturn";
 import { olderSettledScopesForProjects } from "../../grid/olderSettledScopes";
@@ -2295,7 +2300,7 @@ function useThreadBranch(thread: EnvironmentThreadShell): {
 
 // The actions always sit out of flow over the row's right meta column, so showing them never
 // narrows the title; their own surface covers the title's tail where they are wider than the age.
-const ROW_ACTIONS_OVERLAY = "absolute top-0 right-0 rounded-(--r-badge) bg-(--sidebar-row-hover)";
+const ROW_ACTIONS_OVERLAY = `absolute top-0 right-0 rounded-(--r-badge) ${SIDEBAR_ROW_ACTION_BACKDROP_CLS}`;
 
 export function ThreadCard({
   gridId,
@@ -2543,13 +2548,14 @@ export function ThreadCard({
               "cursor-pointer",
               dragging && "opacity-50",
               fileDrop.over && "bg-(--accent-muted) ring-1 ring-(--accent-ink) ring-inset",
+              // `--row-bg` is the surface the hover actions repaint under themselves.
               selected
-                ? "bg-(--row-current)"
+                ? SIDEBAR_ROW_SURFACE_CLS.selected
                 : searchHighlight.highlighted
-                  ? "bg-(--sidebar-row-active)"
+                  ? SIDEBAR_ROW_SURFACE_CLS.searchHighlight
                   : active
-                    ? "bg-sidebar-row-selected"
-                    : "hover:bg-(--sidebar-row-hover)",
+                    ? SIDEBAR_ROW_SURFACE_CLS.active
+                    : SIDEBAR_ROW_SURFACE_CLS.rest,
             )}
           />
         }

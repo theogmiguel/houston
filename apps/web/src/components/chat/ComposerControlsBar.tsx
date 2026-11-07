@@ -66,6 +66,8 @@ export function ComposerControlsBar(props: {
   iconOnlyBlockCount: number;
   /** The model label has dropped to its provider icon, ahead of any block moving to the menu. */
   modelIconOnly: boolean;
+  /** The compact toolbar: the model chip never shrinks, it drops its label to the provider mark. */
+  compactForm: boolean;
   showProviderUnavailable: boolean;
   providerSetupInstanceId: ProviderInstanceId | undefined;
   onOpenProviderSetup: ChatComposerProps["onOpenProviderSetup"];
@@ -148,12 +150,7 @@ export function ComposerControlsBar(props: {
     hiddenBlockIds: hiddenRestingBlockIds,
     overflowShowsPermissions,
     pickerOwnsModeShortcut,
-  } = resolveComposerControlsOwnership({
-    matchesDefault: accessMatchesDefault,
-    planModeUiEnabled,
-    collapsed: composerControlsCollapsed,
-    measuredHiddenBlockCount,
-  });
+  } = resolveComposerControlsOwnership({ planModeUiEnabled, measuredHiddenBlockCount });
   const accessLabel = compatibleRuntimeModeOptions.find(
     (option) => option.mode === compatibleRuntimeMode,
   )?.label;
@@ -231,6 +228,7 @@ export function ComposerControlsBar(props: {
       triggerClassName={cn(
         "pe-1",
         composerControlsCollapsed ? "min-w-13 shrink text-xs!" : "min-w-13",
+        props.compactForm && !composerControlsCollapsed && "shrink-0",
       )}
       triggerSuffix={effort.suffix}
       triggerDetail={[effort.detail, accessMatchesDefault ? null : accessLabel]

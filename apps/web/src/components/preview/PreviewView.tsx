@@ -1022,6 +1022,7 @@ export function PreviewView({
         canGoBack={canGoBack && !serverInputDisabled}
         canGoForward={canGoForward && !serverInputDisabled}
         refreshDisabled={refreshDisabled || serverInputDisabled}
+        showNavigation={!showEmptyState}
         inputDisabled={serverInputDisabled}
         urlInputRef={urlInputRef}
         onBack={handleBack}

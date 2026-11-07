@@ -1913,26 +1913,29 @@ describe("TimelineChangesRow", () => {
     expect(getComputedStyle(chip).height).toBe(getComputedStyle(row).height);
   });
 
-  it("shows a single file's counts once: on its chip while expanded, on the summary when collapsed", async () => {
-    await using screen = await render(
-      <TimelineChangesRow
-        files={[{ path: "src/only.ts", additions: 7, deletions: 2 }]}
-        totals={{ count: 1, additions: 7, deletions: 2 }}
-        onOpenDiff={() => {}}
-        onOpenFile={() => {}}
-      />,
-    );
-    const occurrences = () => (screen.container.textContent?.match(/\+7/g) ?? []).length;
-    expect(occurrences()).toBe(1);
-    expect(
-      screen.getByRole("button", { name: "Open diff for src/only.ts" }).element().textContent,
-    ).toContain("+7");
-    await screen.getByRole("button", { name: "Collapse 1 file" }).click();
-    expect(occurrences()).toBe(1);
-    expect(screen.getByRole("button", { name: "Expand 1 file" }).element().textContent).toContain(
-      "+7",
-    );
-  });
+  it.each([
+    { name: "a single file", count: 1, additions: 7, deletions: 2 },
+    { name: "a file without counts", count: 1, additions: 0, deletions: 0 },
+    { name: "several files", count: 3, additions: 12, deletions: 4 },
+  ])(
+    "carries +added −removed on the summary of $name, expanded and collapsed",
+    async ({ count, additions, deletions }) => {
+      await using screen = await render(
+        <TimelineChangesRow
+          files={[{ path: "src/only.ts", additions, deletions }]}
+          totals={{ count, additions, deletions }}
+          onOpenDiff={() => {}}
+          onOpenFile={() => {}}
+        />,
+      );
+      const label = `${count} file${count === 1 ? "" : "s"}`;
+      const summary = (name: string) => screen.getByRole("button", { name }).element();
+      const stat = `${additions} additions, ${deletions} deletions`;
+      expect(summary(`Collapse ${label}`).querySelector(`[aria-label="${stat}"]`)).not.toBeNull();
+      await screen.getByRole("button", { name: `Collapse ${label}` }).click();
+      expect(summary(`Expand ${label}`).querySelector(`[aria-label="${stat}"]`)).not.toBeNull();
+    },
+  );
 
   it("collapses and expands its file chips in one commit", async () => {
     await using screen = await render(<ChangedFilesTimeline />);

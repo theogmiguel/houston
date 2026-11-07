@@ -42,6 +42,7 @@ vi.mock(import("~/rpc/requestLatencyState"), async (original) => ({
 const APP_BOOT_TEST_TIMEOUT_MS = 45_000;
 
 let bootCount = 0;
+let lastDraftId: DraftId | null = null;
 
 async function bootDraftComposer() {
   __setClientSettingsForTests({
@@ -49,6 +50,7 @@ async function bootDraftComposer() {
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
   });
   const draftId = DraftId.make(`draft-anatomy-${++bootCount}`);
+  lastDraftId = draftId;
   useComposerDraftStore
     .getState()
     .setProjectDraftThreadId(scopeProjectRef(ENVIRONMENT_ID, PROJECT_ID), draftId, {
@@ -337,6 +339,113 @@ it(
         await userEvent.keyboard("{Escape}");
         await vi.waitFor(() =>
           expect(document.querySelector('[data-slot="popover-popup"]')).toBeNull(),
+        );
+      }
+    }
+  },
+  APP_BOOT_TEST_TIMEOUT_MS,
+);
+
+// Compact toolbar at grid-6 (370px pane), grid-5 small pane (340px) and narrower: each chip shows
+// its whole label or only its icon, access has no icon in the toolbar, and nothing overlaps.
+it.each([342, 312, 280, 240])(
+  "folds the compact toolbar's chips to whole labels or icons in a %ipx composer",
+  async (width) => {
+    const previousViewport = { width: window.innerWidth, height: window.innerHeight };
+    await page.viewport(1440, 900);
+    await using _viewport = {
+      [Symbol.asyncDispose]: () => page.viewport(previousViewport.width, previousViewport.height),
+    };
+    using _environment = installFakeEnvironment([]);
+    await using _app = await bootDraftComposer();
+    // A mode other than the default is the case that used to draw a bare lock.
+    useComposerDraftStore.getState().setRuntimeMode(lastDraftId!, "approval-required");
+
+    const form = await vi.waitFor(
+      () => {
+        const found = document.querySelector<HTMLFormElement>('[data-chat-composer-form="true"]');
+        expect(found).not.toBeNull();
+        return found!;
+      },
+      { timeout: 10_000 },
+    );
+    form.style.width = `${width}px`;
+    form.style.maxWidth = "none";
+    const surface = document.querySelector<HTMLElement>('[data-chat-composer-surface="true"]')!;
+    await vi.waitFor(() =>
+      expect(Math.abs(surface.getBoundingClientRect().width - width)).toBeLessThan(3),
+    );
+    const footer = document.querySelector<HTMLElement>('[data-chat-composer-footer="true"]')!;
+    const modelChip = await vi.waitFor(() => {
+      const found = footer.querySelector<HTMLElement>("[data-chat-provider-model-picker]");
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    const workspaceChip = await vi.waitFor(() => {
+      const found = footer.querySelector<HTMLElement>('[aria-label^="Workspace:"]');
+      expect(found).not.toBeNull();
+      return found!;
+    });
+
+    // Let the tier settle: nothing overflows the toolbar.
+    const controls = footer.querySelector<HTMLElement>('[data-chat-composer-controls="footer"]')!;
+    await vi.waitFor(() =>
+      expect(controls.scrollWidth).toBeLessThanOrEqual(controls.clientWidth + 1),
+    );
+
+    // No bare lock or access chip in the toolbar; the mode is named in the model chip instead.
+    expect(footer.querySelector('[aria-label^="Permissions:"]')).toBeNull();
+    expect(footer.querySelector(".lucide-lock")).toBeNull();
+    expect(modelChip.getAttribute("aria-label")).toContain("Supervised");
+
+    const isVisibleText = (node: HTMLElement) => {
+      const box = node.getBoundingClientRect();
+      return box.width > 1 && getComputedStyle(node).visibility !== "hidden";
+    };
+    // A label is whole (6+ characters, not cut) or absent; its chip then keeps an accessible name.
+    const modelLabel = modelChip.querySelector<HTMLElement>(
+      "[data-chat-provider-model-picker-label]",
+    )!;
+    if (isVisibleText(modelLabel)) {
+      expect(modelLabel.textContent!.length).toBeGreaterThanOrEqual(6);
+      expect(modelLabel.scrollWidth).toBeLessThanOrEqual(modelLabel.clientWidth + 1);
+    } else {
+      expect(modelChip.getAttribute("title")).toContain(modelLabel.textContent!);
+    }
+    const branchLabel = workspaceChip.querySelector<HTMLElement>("[data-composer-label]")!;
+    if (isVisibleText(branchLabel)) {
+      expect(branchLabel.textContent!.trim().length).toBeGreaterThanOrEqual(5);
+      expect(branchLabel.scrollWidth).toBeLessThanOrEqual(branchLabel.clientWidth + 1);
+    } else {
+      expect(workspaceChip.getAttribute("title")).not.toBeNull();
+    }
+    // The branch label drops before the model label, so a visible branch label means a visible model.
+    if (isVisibleText(branchLabel)) expect(isVisibleText(modelLabel)).toBe(true);
+    if (width >= 342) expect(isVisibleText(modelLabel)).toBe(true);
+    if (width <= 240) {
+      expect(isVisibleText(modelLabel)).toBe(false);
+      expect(isVisibleText(branchLabel)).toBe(false);
+    }
+
+    const surfaceBox = surface.getBoundingClientRect();
+    const buttons = [...footer.querySelectorAll<HTMLElement>("button")].filter(
+      (button) =>
+        button.getClientRects().length > 0 && getComputedStyle(button).visibility !== "hidden",
+    );
+    for (const button of buttons) {
+      expect(button.getBoundingClientRect().right).toBeLessThanOrEqual(surfaceBox.right + 1);
+    }
+    for (const [index, first] of buttons.entries()) {
+      for (const second of buttons.slice(index + 1)) {
+        const a = first.getBoundingClientRect();
+        const b = second.getBoundingClientRect();
+        const overlaps =
+          a.left < b.right - 1 &&
+          b.left < a.right - 1 &&
+          a.top < b.bottom - 1 &&
+          b.top < a.bottom - 1;
+        expect(overlaps, `${first.ariaLabel} overlaps ${second.ariaLabel} at ${width}px`).toBe(
+          false,
         );
       }
     }

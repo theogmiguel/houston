@@ -320,6 +320,17 @@ function MenuShortcut({ className, ...props }: React.ComponentProps<"kbd">) {
   );
 }
 
+/** Trailing muted text that says why a row is unavailable. */
+function MenuReason({ className, ...props }: React.ComponentProps<"span">) {
+  return (
+    <span
+      className={cn("ms-auto min-w-0 max-w-[60%] truncate text-secondary-label text-xs", className)}
+      data-slot="menu-reason"
+      {...props}
+    />
+  );
+}
+
 function MenuSub(props: MenuPrimitive.SubmenuRoot.Props) {
   return <MenuPrimitive.SubmenuRoot data-slot="menu-sub" {...props} />;
 }
@@ -404,6 +415,7 @@ export {
   MenuGroupLabel as DropdownMenuLabel,
   MenuSeparator,
   MenuSeparator as DropdownMenuSeparator,
+  MenuReason,
   MenuShortcut,
   MenuShortcut as DropdownMenuShortcut,
   MenuSub,

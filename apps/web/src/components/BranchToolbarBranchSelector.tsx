@@ -79,6 +79,8 @@ interface BranchToolbarBranchSelectorProps {
   displayMode?: "toolbar" | "panel";
   /** `pr` renders only the pull request badge, `branch` only the branch trigger. */
   part?: "all" | "pr" | "branch";
+  /** The pull request chip shows its mark only; its name and number stay in the tooltip. */
+  prIconOnly?: boolean;
   environmentId: EnvironmentId;
   threadId: ThreadId;
   draftId?: DraftId;
@@ -102,6 +104,7 @@ export function BranchToolbarBranchSelector({
   className,
   displayMode = "toolbar",
   part = "all",
+  prIconOnly = false,
   environmentId,
   threadId,
   draftId,
@@ -688,6 +691,7 @@ export function BranchToolbarBranchSelector({
         {displayMode !== "panel" && part !== "branch" ? (
           <ThreadPullRequestBadgeControl
             render={<ComposerControl size="xs" />}
+            iconOnly={prIconOnly}
             badge={prBadge}
             pullRequests={serverThread?.pullRequests ?? []}
             number={prNumber}

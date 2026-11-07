@@ -1125,6 +1125,8 @@ body {
   /* The pressed segment inside a segmented control. */
   --shadow-seg: 0 1px 2px rgba(0, 0, 0, 0.12), 0 0 0 1px #d7d7dd;
   --scrim: rgba(0, 0, 0, 0.12);
+  /* Dims the page behind a drawer: a neutral black, because a canvas-coloured film is invisible on the canvas. */
+  --sheet-scrim: rgba(0, 0, 0, 0.32);
   --pane: #ffffff;
   --pane-head: #f7f7fa;
   /* The space between grid pane cards: one tonal step below the canvas, so the
@@ -1299,6 +1301,7 @@ body {
   --shadow-2: 0 12px 32px -8px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
   --shadow-seg: 0 1px 2px rgba(0, 0, 0, 0.2), 0 0 0 1px #2a2a31;
   --scrim: rgba(0, 0, 0, 0.28);
+  --sheet-scrim: rgba(0, 0, 0, 0.55);
   /* A grid pane is the canvas; only the rounded card frame lifts above the gutter. */
   --pane: #18181b;
   --pane-head: #1f1f23;
