@@ -1,16 +1,19 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as HostProcess from "@houston-app/shared/HostProcess";
 import { assert, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ServerConfig from "../config.ts";
 import * as ProjectionMaintenance from "../orchestration-v2/ProjectionMaintenance.ts";
+import { ServerActivation } from "../serverActivation.ts";
 import * as DatabaseStorage from "./DatabaseStorage.ts";
 import { runMigrations } from "./Migrations.ts";
 import * as Sqlite from "./Sqlite.ts";
@@ -50,6 +53,39 @@ it.effect("a new database returns freed pages online without losing data", () =>
     assert.equal(yield* freePages, 0);
     assert.deepEqual(yield* sql`SELECT value FROM retained`, [{ value: "keep" }]);
   }).pipe(Effect.provide(storageLayer(testConfig))),
+);
+
+// Resolving the doctor command walks PATH (seconds on a long Windows PATH); only the storage notice needs it.
+// The test's PATH is one missing directory, so the walk stays short on any machine.
+it.effect("resolves the compact command after activation, not while the server starts", () =>
+  Effect.gen(function* () {
+    let pathReads = 0;
+    const environment = new Proxy<NodeJS.ProcessEnv>(
+      { ...process.env, PATH: `${process.cwd()}/.database-storage-missing-path` },
+      {
+        get: (target, key) => {
+          if (typeof key === "string" && /path/iu.test(key)) pathReads += 1;
+          return target[key as string];
+        },
+      },
+    );
+    const activated = yield* Deferred.make<void>();
+    yield* Effect.gen(function* () {
+      const storage = yield* DatabaseStorage.DatabaseStorage;
+      assert.equal(pathReads, 0, `PATH was read ${pathReads} times before activation`);
+      yield* Deferred.succeed(activated, undefined);
+      const status = yield* storage.status.pipe(
+        Stream.filter((value) => value !== null),
+        Stream.runHead,
+      );
+      assert.include(status._tag === "Some" ? status.value?.compactCommand : "", "doctor");
+      assert.isAbove(pathReads, 0);
+    }).pipe(
+      Effect.provide(storageLayer(testConfig)),
+      Effect.provideService(HostProcess.Environment, environment),
+      Effect.provideService(ServerActivation, Deferred.await(activated)),
+    );
+  }),
 );
 
 const compactionLayer = (

@@ -43,10 +43,12 @@ const make = Effect.gen(function* () {
   const statusRef = yield* SubscriptionRef.make<DatabaseStorageStatus | null>(null);
 
   // The notice shows host-shell quoting verbatim; desktop needs its launcher because houston is absent from PATH.
-  const { command: compactCommand } = yield* resolveHostCliCommand("doctor", [
-    "--base-dir",
-    config.baseDir,
-  ]);
+  // Resolved on first publish: the PATH walk takes seconds on Windows and must not delay listening.
+  const resolveCompactCommand = yield* Effect.cached(
+    resolveHostCliCommand("doctor", ["--base-dir", config.baseDir]).pipe(
+      Effect.map(({ command }) => command),
+    ),
+  );
   // doctor --base-dir targets userdata, not implicit dev homes; suppress status to avoid touching the live install.
   const doctorTargetsThisDatabase =
     path.resolve(config.dbPath) ===
@@ -75,7 +77,7 @@ const make = Effect.gen(function* () {
       databaseBytes: (pages[0]?.page_count ?? 0) * pageSize,
       reclaimableBytes: (free[0]?.freelist_count ?? 0) * pageSize,
       incrementalVacuumEnabled: incrementalVacuum,
-      compactCommand,
+      compactCommand: yield* resolveCompactCommand,
     };
     // Every set reaches each open Storage page; most passes change nothing.
     if (!Equal.equals(yield* SubscriptionRef.get(statusRef), next)) {
