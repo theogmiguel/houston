@@ -28,14 +28,18 @@ export function classifySecretProvider(provider: SecretProviderConfig): Classifi
     : { kind: "unsupported" };
 }
 
+const NON_ALPHANUMERIC_RUN = /[^a-z0-9]+/g;
+const EDGE_HYPHENS = /^-|-$/g;
+const TRAILING_HYPHEN = /-$/;
+
 /** Stable and readable in settings.json, so re-adding a provider under the same name restores its variables. */
 function secretProviderIdFromName(name: string): SecretProviderId | null {
   const slug = name
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
+    .replace(NON_ALPHANUMERIC_RUN, "-")
+    .replace(EDGE_HYPHENS, "")
     .slice(0, 64)
-    .replace(/-$/, "");
+    .replace(TRAILING_HYPHEN, "");
   return Option.getOrNull(decodeSecretProviderId(slug));
 }
 

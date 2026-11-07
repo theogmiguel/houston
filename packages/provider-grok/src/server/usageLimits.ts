@@ -39,14 +39,11 @@ const GrokUsageResponse = Schema.Struct({
   ),
 });
 
+const PARSE_PERIOD_BOUNDARY_PATTERN =
+  /^(?:\d{4}|[+-]\d{6})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?|24:00(?::00(?:\.0+)?)?)(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/;
+
 function parsePeriodBoundary(value: string | undefined) {
-  if (
-    !value ||
-    value !== value.trim() ||
-    !/^(?:\d{4}|[+-]\d{6})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?|24:00(?::00(?:\.0+)?)?)(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/.test(
-      value,
-    )
-  ) {
+  if (!value || value !== value.trim() || !PARSE_PERIOD_BOUNDARY_PATTERN.test(value)) {
     return Number.NaN;
   }
   // Date parsing can normalize impossible calendar dates instead of rejecting them.
@@ -60,12 +57,14 @@ function parsePeriodBoundary(value: string | undefined) {
   return Date.parse(value);
 }
 
+const PERIOD_TYPE_PATTERN = /^USAGE_PERIOD_TYPE_/;
+
 export function grokUsageResponseToLimits(
   response: typeof GrokUsageResponse.Type,
   checkedAt: string,
 ) {
   const period = response.config?.currentPeriod;
-  const periodType = period?.type?.replace(/^USAGE_PERIOD_TYPE_/, "");
+  const periodType = period?.type?.replace(PERIOD_TYPE_PATTERN, "");
   const kind = periodType === "WEEKLY" ? "weekly" : periodType === "MONTHLY" ? "monthly" : "other";
   let usedPercent = response.config?.creditUsagePercent;
   if (
@@ -90,6 +89,9 @@ export function grokUsageResponseToLimits(
   };
   return makeUsageLimits({ checkedAt, windows: [window] });
 }
+
+const READ_GROK_CREDENTIAL_PATTERN =
+  /^\s*(?:\[\[?\s*)?["']?(?:auth|grok_com_config|endpoints)["']?\s*[.\]=]/m;
 
 const readGrokCredential = Effect.fn("readGrokCredential")(function* (
   environment: NodeJS.ProcessEnv,
@@ -137,7 +139,7 @@ const readGrokCredential = Effect.fn("readGrokCredential")(function* (
       }),
     );
     // These sections can change the selected account or endpoint. Leave custom deployments to the CLI.
-    if (/^\s*(?:\[\[?\s*)?["']?(?:auth|grok_com_config|endpoints)["']?\s*[.\]=]/m.test(config)) {
+    if (READ_GROK_CREDENTIAL_PATTERN.test(config)) {
       return undefined;
     }
   }

@@ -65,10 +65,12 @@ export function buildThreadRouteParams(ref: ScopedThreadRef): {
   };
 }
 
+const TRAILING_SLASH = /\/$/;
+
 /** Whether a (decoded) location pathname is `ref`'s own thread route, `/$environmentId/$threadId`. */
 export function isThreadRoutePathname(pathname: string, ref: ScopedThreadRef): boolean {
   const { environmentId, threadId } = buildThreadRouteParams(ref);
-  return pathname.replace(/\/$/, "") === `/${environmentId}/${threadId}`;
+  return pathname.replace(TRAILING_SLASH, "") === `/${environmentId}/${threadId}`;
 }
 
 export function buildDraftThreadRouteParams(draftId: DraftId): {

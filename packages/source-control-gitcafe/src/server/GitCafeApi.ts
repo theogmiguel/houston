@@ -71,8 +71,10 @@ const reasonForStatus = (status: number): typeof GitCafeApiFailure.Type =>
         : "failed";
 
 const MAX_PROBLEM_TEXT = 300;
+const WHITESPACE_RUN = /\s+/gu;
+
 const boundedProblemText = (text: string | undefined) => {
-  const line = text?.replace(/\s+/gu, " ").trim();
+  const line = text?.replace(WHITESPACE_RUN, " ").trim();
   if (!line) return undefined;
   return line.length > MAX_PROBLEM_TEXT ? `${line.slice(0, MAX_PROBLEM_TEXT)}…` : line;
 };

@@ -1003,6 +1003,8 @@ export function decodeMergeRequestChangesJson(
   });
 }
 
+const OPTIONAL_TRAILING_NEWLINE = /\n?$/;
+
 function mergeRequestPatch(entries: ReadonlyArray<unknown>): GitLabMergeRequestPatch {
   const sections: string[] = [];
   let truncated = false;
@@ -1033,7 +1035,9 @@ function mergeRequestPatch(entries: ReadonlyArray<unknown>): GitLabMergeRequestP
       `--- ${from}`,
       `+++ ${to}`,
     ].join("\n");
-    sections.push(hunks.length === 0 ? header : `${header}\n${hunks.replace(/\n?$/, "\n")}`);
+    sections.push(
+      hunks.length === 0 ? header : `${header}\n${hunks.replace(OPTIONAL_TRAILING_NEWLINE, "\n")}`,
+    );
   }
   return {
     patch: sections.join("\n"),
@@ -1185,9 +1189,11 @@ function toReactions(
   );
 }
 
+const DIGITS_ONLY = /^\d+$/;
+
 function noteIdOf(gid: string | null | undefined): string | null {
   const id = trimmed(gid)?.split("/").at(-1);
-  return id !== undefined && /^\d+$/.test(id) ? id : null;
+  return id !== undefined && DIGITS_ONLY.test(id) ? id : null;
 }
 
 export interface GitLabAwardEmojiPage {
@@ -1765,6 +1771,8 @@ const decodeServerVersion = decodeJsonResult(
   }),
 );
 
+const MATCH_PATTERN = /^(\d+)\.(\d+)/u;
+
 /**
  * Whether the GraphQL merge request list takes every filter the REST list does: `search` came
  * last, in 17.9. An instance that hides its version keeps REST.
@@ -1774,7 +1782,7 @@ export function decodeGraphqlListSupportJson(raw: string): Result.Result<boolean
   if (!Result.isSuccess(decoded)) {
     return Result.fail(decoded.failure);
   }
-  const match = /^(\d+)\.(\d+)/u.exec(decoded.success.data.metadata?.version?.trim() ?? "");
+  const match = MATCH_PATTERN.exec(decoded.success.data.metadata?.version?.trim() ?? "");
   if (match === null) return Result.succeed(false);
   const major = Number(match[1]);
   const minor = Number(match[2]);

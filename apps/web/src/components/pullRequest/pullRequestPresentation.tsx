@@ -172,11 +172,13 @@ export function PullRequestConflictGlyph({
   );
 }
 
+const IS_WORKFLOW_APPROVAL_CHECK_PATTERN = /\/actions\/runs\/\d+(?:\/|$)/u;
+
 function isWorkflowApprovalCheck(check: Pick<PullRequestCheck, "status" | "url">): boolean {
   return (
     check.status === "action-required" &&
     check.url !== null &&
-    /\/actions\/runs\/\d+(?:\/|$)/u.test(check.url)
+    IS_WORKFLOW_APPROVAL_CHECK_PATTERN.test(check.url)
   );
 }
 

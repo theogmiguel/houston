@@ -5,12 +5,16 @@ import {
   type ServerProvider,
 } from "@houston-app/contracts";
 
+const CAMEL_CASE_BOUNDARY = /([a-z])([A-Z])/g;
+const WORD_SEPARATOR_RUN = /[_-]+/g;
+const WORD_START = /\b\w/g;
+
 function humanizeSlug(slug: string): string {
   return slug
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/[_-]+/g, " ")
+    .replace(CAMEL_CASE_BOUNDARY, "$1 $2")
+    .replace(WORD_SEPARATOR_RUN, " ")
     .trim()
-    .replace(/\b\w/g, (char) => char.toUpperCase());
+    .replace(WORD_START, (char) => char.toUpperCase());
 }
 
 export function resolveProviderInstanceDisplayName(
@@ -26,14 +30,18 @@ export function resolveProviderInstanceDisplayName(
   return trimmedSnapshotName || kindLabel;
 }
 
+const WORD_SEPARATOR_PUNCTUATION = /[^\P{P}'’]+/gu;
+const WHITESPACE_RUN = /\s+/u;
+const PROVIDER_INSTANCE_INITIALS_PATTERN = /^['’]+|['’]+$/gu;
+
 export function providerInstanceInitials(label: string): string {
   // Punctuation separates words so "Codex (hub)" reads CH, not C(. An apostrophe
   // inside a word stays ("Theo's Codex" is TC); a quoting one does not
   // ("Codex 'hub'" is CH).
   const words = label
-    .replace(/[^\P{P}'’]+/gu, " ")
-    .split(/\s+/u)
-    .map((word) => word.replace(/^['’]+|['’]+$/gu, ""))
+    .replace(WORD_SEPARATOR_PUNCTUATION, " ")
+    .split(WHITESPACE_RUN)
+    .map((word) => word.replace(PROVIDER_INSTANCE_INITIALS_PATTERN, ""))
     .filter(Boolean);
   if (words.length === 0) return "";
   if (words.length === 1) return Array.from(words[0]!).slice(0, 2).join("").toUpperCase();
@@ -43,10 +51,12 @@ export function providerInstanceInitials(label: string): string {
     .join("");
 }
 
+const NORMALIZE_PROVIDER_ACCENT_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/u;
+
 export function normalizeProviderAccentColor(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   if (!trimmed) return undefined;
-  return /^#[0-9a-fA-F]{6}$/u.test(trimmed) ? trimmed : undefined;
+  return NORMALIZE_PROVIDER_ACCENT_COLOR_PATTERN.test(trimmed) ? trimmed : undefined;
 }
 
 export function providerAccentForegroundColor(accentColor: string) {

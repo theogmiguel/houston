@@ -41,6 +41,8 @@ interface ParsedEntry {
   body: string;
 }
 
+const HEADER_MATCH_PATTERN = /^- (.+):$/;
+
 function parseEntries(block: string): ParsedEntry[] | null {
   const entries: ParsedEntry[] = [];
   let current: { header: string; bodyLines: string[] } | null = null;
@@ -50,7 +52,7 @@ function parseEntries(block: string): ParsedEntry[] | null {
     current = null;
   };
   for (const line of block.split("\n")) {
-    const headerMatch = /^- (.+):$/.exec(line);
+    const headerMatch = HEADER_MATCH_PATTERN.exec(line);
     if (headerMatch) {
       commit();
       current = { header: headerMatch[1]!, bodyLines: [] };
@@ -64,8 +66,10 @@ function parseEntries(block: string): ParsedEntry[] | null {
   return entries;
 }
 
+const WHITESPACE_RUN = /\s+/g;
+
 function inlineTerminalLabel(record: TerminalContextRecord): string {
-  const slug = record.terminalLabel.trim().toLowerCase().replace(/\s+/g, "-");
+  const slug = record.terminalLabel.trim().toLowerCase().replace(WHITESPACE_RUN, "-");
   const range =
     record.lineStart === record.lineEnd
       ? `${record.lineStart}`
@@ -77,8 +81,11 @@ function legacyId(kind: string, index: number): ComposerContextId {
   return `legacy_${kind}_${index}` as ComposerContextId;
 }
 
+const LINE_RANGE_HEADER = /^(.*?) (?:line (\d+)|lines (\d+)-(\d+))$/;
+const TERMINAL_RECORD_PATTERN = /^\d+ \| ?/;
+
 function terminalRecord(entry: ParsedEntry, index: number): TerminalContextRecord | null {
-  const header = /^(.*?) (?:line (\d+)|lines (\d+)-(\d+))$/.exec(entry.header);
+  const header = LINE_RANGE_HEADER.exec(entry.header);
   if (!header) return null;
   const terminalLabel = header[1]!.trim();
   if (!terminalLabel) return null;
@@ -86,14 +93,14 @@ function terminalRecord(entry: ParsedEntry, index: number): TerminalContextRecor
   const lineEnd = Number(header[2] ?? header[4]);
   const text = entry.body
     .split("\n")
-    .map((line) => line.replace(/^\d+ \| ?/, ""))
+    .map((line) => line.replace(TERMINAL_RECORD_PATTERN, ""))
     .join("\n");
   return {
     version: 1,
     contextId: legacyId("terminal", index),
     kind: "terminal",
     label: entry.header,
-    terminalId: terminalLabel.toLowerCase().replace(/\s+/g, "-"),
+    terminalId: terminalLabel.toLowerCase().replace(WHITESPACE_RUN, "-"),
     terminalLabel,
     lineStart,
     lineEnd,
@@ -101,8 +108,10 @@ function terminalRecord(entry: ParsedEntry, index: number): TerminalContextRecor
   };
 }
 
+const FILE_LINE_COLUMN = /^(.*?)(?::(\d+))?(?::(\d+))?$/;
+
 function parseSource(location: string): ElementContextRecord["source"] {
-  const match = /^(.*?)(?::(\d+))?(?::(\d+))?$/.exec(location);
+  const match = FILE_LINE_COLUMN.exec(location);
   if (!match || !match[1]) return null;
   return {
     functionName: null,
@@ -112,8 +121,13 @@ function parseSource(location: string): ElementContextRecord["source"] {
   };
 }
 
+const TAG_NAME_HEADER = /^<([^>]+)>/;
+const FIELD_PATTERN = /^([a-z]+): (.*)$/;
+const SECTION_START_PATTERN = /^(html|styles):$/;
+const COMPONENT_NAME_PATTERN = /[A-Z]/;
+
 function elementRecord(entry: ParsedEntry, index: number): ElementContextRecord | null {
-  const header = /^<([^>]+)>/.exec(entry.header);
+  const header = TAG_NAME_HEADER.exec(entry.header);
   if (!header) return null;
   const inner = header[1]!;
   const fields: Record<string, string> = {};
@@ -125,12 +139,12 @@ function elementRecord(entry: ParsedEntry, index: number): ElementContextRecord 
       continue;
     }
     section = null;
-    const field = /^([a-z]+): (.*)$/.exec(line);
+    const field = FIELD_PATTERN.exec(line);
     if (field) {
       fields[field[1]!] = field[2]!;
       continue;
     }
-    const sectionStart = /^(html|styles):$/.exec(line);
+    const sectionStart = SECTION_START_PATTERN.exec(line);
     if (sectionStart) {
       section = sectionStart[1]!;
       sections[section] = [];
@@ -146,18 +160,22 @@ function elementRecord(entry: ParsedEntry, index: number): ElementContextRecord 
     tagName: inner.toLowerCase(),
     selector: fields.selector ?? null,
     htmlPreview: (sections.html ?? []).join("\n").trimEnd(),
-    componentName: /[A-Z]/.test(inner) ? inner : null,
+    componentName: COMPONENT_NAME_PATTERN.test(inner) ? inner : null,
     source: fields.source ? parseSource(fields.source) : null,
     styles: (sections.styles ?? []).join("\n").trimEnd(),
   };
 }
 
+const BLOCK_DELIMITER_PATTERN =
+  /^<\/?(?:terminal_context|element_context|preview_annotation|review_comment)\b/;
+const HTTP_URL_PREFIX = /^https?:\/\//i;
+const PREVIEW_RECORD_PATTERN = /<element_context>\n([\s\S]*?)\n<\/element_context>/g;
+
 function previewRecord(body: string, index: number): PreviewAnnotationContextRecord | null {
   const lines = body.split("\n");
   // Preserve multiline comments, including blank lines and markup, until the next field or context block.
   const FIELD_PREFIXES = ["Preview annotation:", "Id: ", "Page: ", "Comment: ", "Targets: "];
-  const BLOCK_DELIMITER =
-    /^<\/?(?:terminal_context|element_context|preview_annotation|review_comment)\b/;
+  const BLOCK_DELIMITER = BLOCK_DELIMITER_PATTERN;
   const isFieldStart = (line: string) =>
     FIELD_PREFIXES.some((candidate) => line.startsWith(candidate)) ||
     line === "Requested visual changes:" ||
@@ -179,9 +197,9 @@ function previewRecord(body: string, index: number): PreviewAnnotationContextRec
     }
   }
   const page = read("Page: ");
-  const pageIsUrl = /^https?:\/\//i.test(page);
+  const pageIsUrl = HTTP_URL_PREFIX.test(page);
   const elements: NonNullable<PreviewAnnotationContextRecord["elements"]>[number][] = [];
-  for (const match of body.matchAll(/<element_context>\n([\s\S]*?)\n<\/element_context>/g)) {
+  for (const match of body.matchAll(PREVIEW_RECORD_PATTERN)) {
     const entries = parseEntries(match[1] ?? "");
     if (entries === null) return null;
     for (const entry of entries) {
@@ -212,13 +230,21 @@ function previewRecord(body: string, index: number): PreviewAnnotationContextRec
   };
 }
 
+const ESCAPED_LESS_THAN = /&lt;/g;
+const ESCAPED_GREATER_THAN = /&gt;/g;
+const ESCAPED_QUOTE = /&quot;/g;
+const ESCAPED_AMPERSAND = /&amp;/g;
+
 function unescapeAttribute(value: string): string {
   return value
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&amp;/g, "&");
+    .replace(ESCAPED_LESS_THAN, "<")
+    .replace(ESCAPED_GREATER_THAN, ">")
+    .replace(ESCAPED_QUOTE, '"')
+    .replace(ESCAPED_AMPERSAND, "&");
 }
+
+const DIGITS_ONLY = /^\d+$/;
+const PATH_SEPARATOR = /[\\/]/;
 
 function reviewRecord(
   rawAttributes: string,
@@ -233,13 +259,18 @@ function reviewRecord(
   const sectionId = attributes.sectionId?.trim();
   const startIndex = attributes.startIndex;
   const endIndex = attributes.endIndex;
-  if (!filePath || !sectionId || !/^\d+$/.test(startIndex ?? "") || !/^\d+$/.test(endIndex ?? "")) {
+  if (
+    !filePath ||
+    !sectionId ||
+    !DIGITS_ONLY.test(startIndex ?? "") ||
+    !DIGITS_ONLY.test(endIndex ?? "")
+  ) {
     return null;
   }
   const fences = Array.from(rawBody.matchAll(REVIEW_FENCE));
   const fence = fences.at(-1);
   const rangeLabel = attributes.rangeLabel?.trim() || "line";
-  const basename = filePath.split(/[\\/]/).at(-1) ?? filePath;
+  const basename = filePath.split(PATH_SEPARATOR).at(-1) ?? filePath;
   return {
     version: 1,
     contextId: legacyId("review-comment", index),
@@ -257,13 +288,15 @@ function reviewRecord(
   };
 }
 
+const TRAILING_NEWLINES = /\n+$/;
+
 function stripTrailing(
   text: string,
   pattern: RegExp,
 ): { text: string; match: RegExpExecArray } | null {
   const match = pattern.exec(text);
   if (!match) return null;
-  return { text: text.slice(0, match.index).replace(/\n+$/, ""), match };
+  return { text: text.slice(0, match.index).replace(TRAILING_NEWLINES, ""), match };
 }
 
 /** Review source can contain literal closing tags inside its dynamically sized code fence. */
@@ -304,6 +337,9 @@ function replaceReviewBlocks(
   parts.push(text.slice(consumed));
   return parts.join("");
 }
+
+const WORD_END_CHARACTER = /(?:\p{L}|\p{N}|\p{M}|[_@.-])$/u;
+const WORD_START_CHARACTER = /^(?:[\p{L}\p{N}\p{M}_-]|[.@]+[\p{L}\p{N}\p{M}_-])/u;
 
 export function upgradeLegacyContextMessage(text: string): UpgradedLegacyContext {
   if (!LEGACY_MARKERS.test(text)) return { text, records: [] };
@@ -405,8 +441,8 @@ export function upgradeLegacyContextMessage(text: string): UpgradedLegacyContext
     // BMP, so `𐐀@build:7` would become a chip.
     while (
       at !== -1 &&
-      (/(?:\p{L}|\p{N}|\p{M}|[_@.-])$/u.test(body.slice(0, at)) ||
-        /^(?:[\p{L}\p{N}\p{M}_-]|[.@]+[\p{L}\p{N}\p{M}_-])/u.test(body.slice(at + label.length)))
+      (WORD_END_CHARACTER.test(body.slice(0, at)) ||
+        WORD_START_CHARACTER.test(body.slice(at + label.length)))
     ) {
       at = body.indexOf(label, at + 1);
     }

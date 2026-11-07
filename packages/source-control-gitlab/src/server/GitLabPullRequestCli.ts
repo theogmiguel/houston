@@ -680,6 +680,8 @@ function involvementParams(input: {
   }
 }
 
+const LISTABLE_PATTERN = /^(?:none|any)$/iu;
+
 /**
  * GitLab's `labels` asks for every label it names, so only groups of one go to it; a group of
  * alternatives is left for the service to narrow. A comma would split a name in two, and `None`
@@ -688,7 +690,7 @@ function involvementParams(input: {
  */
 function listableLabels(filters: PullRequestListFilters) {
   const listable = (names: ReadonlyArray<string>) =>
-    names.filter((name) => !name.includes(",") && !/^(?:none|any)$/iu.test(name.trim()));
+    names.filter((name) => !name.includes(",") && !LISTABLE_PATTERN.test(name.trim()));
   return {
     required: listable(
       (filters.labels ?? []).flatMap((group) => (group.length === 1 ? group : [])),
@@ -805,8 +807,10 @@ function graphqlListQuery(input: {
 /** The list cursor carries GitLab's own position only when it fits the cursor's alphabet. */
 const RESUME_AFTER_PATTERN = /^[\w.:~+-]{1,128}$/u;
 
+const DIFF_CURSOR_PAGE_PATTERN = /^[1-9][0-9]{0,6}$/;
+
 function diffCursorPage(cursor: string): number | null {
-  return /^[1-9][0-9]{0,6}$/.test(cursor) ? Number(cursor) : null;
+  return DIFF_CURSOR_PAGE_PATTERN.test(cursor) ? Number(cursor) : null;
 }
 
 function searchParams(search: string | undefined): ReadonlyArray<readonly [string, string]> {
@@ -822,6 +826,8 @@ function hostSearchParams(search: string | undefined): ReadonlyArray<readonly [s
 
 const REFERENCE_PAGE_SIZE = 20;
 
+const DIGITS_ONLY = /^\d+$/;
+
 /**
  * Recently updated issues and merge requests, by title for text. Issue and MR search cannot match
  * a number, so a numeric query also asks for that iid of each.
@@ -834,7 +840,7 @@ export function referenceSearches(
   readonly params: ReadonlyArray<readonly [string, string]>;
 }> {
   const text = search?.trim() ?? "";
-  const numeric = /^\d+$/.test(text);
+  const numeric = DIGITS_ONLY.test(text);
   const recent: ReadonlyArray<readonly [string, string]> = [
     ["order_by", "updated_at"],
     ["sort", "desc"],
@@ -908,6 +914,8 @@ function actionArgs(
       throw new Error(`GitLab merge request action ${action} is unsupported`);
   }
 }
+
+const OPTIONAL_TRAILING_NEWLINE = /\n?$/;
 
 /** @public */
 export const make = Effect.gen(function* () {
@@ -1121,7 +1129,7 @@ export const make = Effect.gen(function* () {
         const morePages = !legacy && decoded.success.rawCount >= diffPageSize(input.commit);
         return Effect.succeed({
           // Terminate slices so a hunkless header cannot run into the next slice.
-          patch: patch.length === 0 ? patch : patch.replace(/\n?$/, "\n"),
+          patch: patch.length === 0 ? patch : patch.replace(OPTIONAL_TRAILING_NEWLINE, "\n"),
           truncated: decoded.success.truncated,
           nextCursor: morePages ? String(input.page + 1) : null,
         });

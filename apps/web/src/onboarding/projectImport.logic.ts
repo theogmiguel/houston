@@ -121,14 +121,18 @@ export function resolveOnboardingLandingProject<T>(
   return undefined;
 }
 
+const WINDOWS_DRIVE_ROOT = /^[A-Za-z]:[\\/]+$/;
+const UNC_SHARE_ROOT = /^[\\/]{2}[^\\/]+[\\/][^\\/]+[\\/]*$/;
+const TRAILING_PATH_SEPARATORS = /[\\/]+$/;
+
 export function splitOnboardingProjectPath(path: string): {
   readonly name: string;
   readonly parent: string;
 } {
-  if (/^[A-Za-z]:[\\/]+$/.test(path) || /^[\\/]{2}[^\\/]+[\\/][^\\/]+[\\/]*$/.test(path)) {
+  if (WINDOWS_DRIVE_ROOT.test(path) || UNC_SHARE_ROOT.test(path)) {
     return { name: path, parent: "" };
   }
-  const trimmed = path.replace(/[\\/]+$/, "");
+  const trimmed = path.replace(TRAILING_PATH_SEPARATORS, "");
   const separatorIndex = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
   if (trimmed.length === 0) return { name: path, parent: "" };
   if (separatorIndex < 0) return { name: trimmed, parent: "" };

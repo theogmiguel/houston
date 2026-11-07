@@ -151,11 +151,10 @@ function swapBaseUrlProtocol(
   return url.toString();
 }
 
+const BRACKETED_HOSTNAME = /^\[(.*)\]$/;
+
 function normalizeHostname(hostname: string): string {
-  return hostname
-    .trim()
-    .toLowerCase()
-    .replace(/^\[(.*)\]$/, "$1");
+  return hostname.trim().toLowerCase().replace(BRACKETED_HOSTNAME, "$1");
 }
 
 export function isLoopbackHostname(hostname: string): boolean {

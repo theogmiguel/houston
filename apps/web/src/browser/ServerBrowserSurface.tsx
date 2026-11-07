@@ -147,6 +147,8 @@ function offerDownload(download: PreviewStreamDownload) {
   });
 }
 
+const LEADING_ZERO_WIDTH_SPACE = /^\u200b/;
+
 export function ServerBrowserSurface(props: {
   readonly environmentId: EnvironmentId;
   readonly threadId: string;
@@ -811,7 +813,7 @@ export function ServerBrowserSurface(props: {
     else if (inputType === "deleteContentBackward") sendKeyPress(BACKSPACE);
     else if (inputType === "deleteContentForward") sendKeyPress(DELETE);
     else {
-      const text = textarea.value.replace(/^\u200b/, "");
+      const text = textarea.value.replace(LEADING_ZERO_WIDTH_SPACE, "");
       if (text) send({ type: "text", text });
     }
     resetInput(textarea);
@@ -888,7 +890,7 @@ export function ServerBrowserSurface(props: {
           onKeyUp={(event) => handleKey("up", event)}
           onInput={handleInput}
           onCompositionEnd={(event) => {
-            const text = event.data.replace(/^\u200b/, "");
+            const text = event.data.replace(LEADING_ZERO_WIDTH_SPACE, "");
             if (text) send({ type: "text", text });
             resetInput(event.currentTarget);
           }}

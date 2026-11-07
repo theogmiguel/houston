@@ -22,6 +22,8 @@ type EnvironmentApiClient<G extends "voice" | "auth"> = Effect.Success<
   ReturnType<typeof makeEnvironmentHttpApiGroupClient<G>>
 >;
 
+const LOOPBACK_PATTERN = /^127\.\d+\.\d+\.\d+$/;
+
 const request = Effect.fn("clientRuntime.voiceInput.environmentRequest")(function* <
   A,
   E,
@@ -53,7 +55,7 @@ const request = Effect.fn("clientRuntime.voiceInput.environmentRequest")(functio
           const loopback =
             url.hostname === "localhost" ||
             url.hostname === "[::1]" ||
-            /^127\.\d+\.\d+\.\d+$/.test(url.hostname);
+            LOOPBACK_PATTERN.test(url.hostname);
           if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) {
             throw new Error("Voice input requires HTTPS for remote environments.");
           }

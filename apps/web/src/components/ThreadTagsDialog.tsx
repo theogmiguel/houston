@@ -42,6 +42,8 @@ export function ThreadTagsDialogHost() {
 
 const MAX_TAG_LENGTH = 64;
 
+const CONTROL_CHARACTER = /[\p{Cc}]/u;
+
 function parseTags(value: string): ReadonlyArray<string> | string {
   const tags = [
     ...new Set(
@@ -55,7 +57,7 @@ function parseTags(value: string): ReadonlyArray<string> | string {
   if (tooLong !== undefined) {
     return `A tag must be at most ${MAX_TAG_LENGTH} characters; "${tooLong}" is ${tooLong.length}.`;
   }
-  const multiline = tags.find((tag) => /[\p{Cc}]/u.test(tag));
+  const multiline = tags.find((tag) => CONTROL_CHARACTER.test(tag));
   if (multiline !== undefined) {
     return "A tag must be a single line of text.";
   }

@@ -26,12 +26,22 @@ export function cn(...inputs: CxOptions) {
 
 export { isMacPlatform };
 
+const WINDOWS_PLATFORM = /^win(dows)?/i;
+
 export function isWindowsPlatform(platform: string): boolean {
-  return /^win(dows)?/i.test(platform);
+  return WINDOWS_PLATFORM.test(platform);
 }
 
+const COMBINING_MARK = /\p{M}/gu;
+const WHITESPACE_RUNS = /\s+/g;
+
 export function normalizeSearchText(value: string): string {
-  return value.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().replace(/\s+/g, " ").trim();
+  return value
+    .normalize("NFKD")
+    .replace(COMBINING_MARK, "")
+    .toLowerCase()
+    .replace(WHITESPACE_RUNS, " ")
+    .trim();
 }
 
 export function getLocalFileManagerName(platform: string): string {

@@ -70,24 +70,33 @@ const HTML_CONTENT_SECURITY_POLICY =
 
 // Proxies may strip disposition; force document-capable downloads to octet-stream.
 const DOWNLOAD_MIME_TYPE_PATTERN = /^[\w!#$&^.+-]+\/[\w!#$&^.+-]+$/;
+const IS_SAFE_DOWNLOAD_MIME_TYPE_PATTERN = /(?:^text\/html$|\/xml(?:$|-)|\+xml$)/i;
+
 const isSafeDownloadMimeType = (mimeType: string): boolean =>
   DOWNLOAD_MIME_TYPE_PATTERN.test(mimeType) &&
-  !/(?:^text\/html$|\/xml(?:$|-)|\+xml$)/i.test(mimeType.trim().toLowerCase());
+  !IS_SAFE_DOWNLOAD_MIME_TYPE_PATTERN.test(mimeType.trim().toLowerCase());
+const IS_SAFE_INLINE_MEDIA_MIME_TYPE_PATTERN = /^(?:audio|video)\//i;
+
 const isSafeInlineMediaMimeType = (mimeType: string): boolean =>
-  DOWNLOAD_MIME_TYPE_PATTERN.test(mimeType) && /^(?:audio|video)\//i.test(mimeType);
+  DOWNLOAD_MIME_TYPE_PATTERN.test(mimeType) &&
+  IS_SAFE_INLINE_MEDIA_MIME_TYPE_PATTERN.test(mimeType);
 const isSafeInlineDocumentMimeType = (mimeType: string): boolean =>
   mimeType.toLowerCase() === "application/pdf" || mimeType.toLowerCase() === "text/html";
+
+const QUOTED_STRING_UNSAFE_CHARACTER = /[\p{Cc}"\\]/gu;
+const ASCII_FALLBACK_PATTERN = /[^\u0020-\u007e]/g;
+const EXTENDED_NAME_PATTERN = /['()*]/g;
 
 export function downloadContentDisposition(fileName?: string): string {
   if (fileName === undefined) {
     return "attachment";
   }
   // toWellFormed: encodeURIComponent throws URIError on unpaired surrogates.
-  const sanitized = fileName.toWellFormed().replace(/[\p{Cc}"\\]/gu, "_");
-  const asciiFallback = sanitized.replace(/[^\u0020-\u007e]/g, "_");
+  const sanitized = fileName.toWellFormed().replace(QUOTED_STRING_UNSAFE_CHARACTER, "_");
+  const asciiFallback = sanitized.replace(ASCII_FALLBACK_PATTERN, "_");
   const needsExtended = asciiFallback !== sanitized;
   const extendedName = encodeURIComponent(sanitized).replace(
-    /['()*]/g,
+    EXTENDED_NAME_PATTERN,
     (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
   );
   return `attachment; filename="${asciiFallback}"${
@@ -141,8 +150,10 @@ export function assetResponseHeaders(
   };
 }
 
+const BYTE_RANGE_HEADER = /^bytes=(\d*)-(\d*)$/i;
+
 function assetByteRange(header: string, size: bigint) {
-  const match = /^bytes=(\d*)-(\d*)$/i.exec(header.trim());
+  const match = BYTE_RANGE_HEADER.exec(header.trim());
   if (!match || (!match[1] && !match[2])) return null;
   const first = match[1] ? BigInt(match[1]) : null;
   const last = match[2] ? BigInt(match[2]) : null;
@@ -199,7 +210,7 @@ export const assetFileResponse = Effect.fn("assetFileResponse")(function* (
   }
   const mediaFile = asset.file;
   const mediaInfo = mediaFile ? yield* statMediaFile(asset.path, mediaFile) : undefined;
-  const isMedia = /^(?:audio|video)\//i.test(headers["Content-Type"] ?? "");
+  const isMedia = IS_SAFE_INLINE_MEDIA_MIME_TYPE_PATTERN.test(headers["Content-Type"] ?? "");
   if (isMedia) {
     // Without file identity, validators cannot guarantee byte equality; attachments must also expire with their URL.
     headers["Cache-Control"] = "private, no-store";
@@ -277,11 +288,10 @@ export const layerBrowserApiCors = Layer.unwrap(
   }),
 );
 
+const BRACKETED_HOSTNAME = /^\[(.*)\]$/;
+
 function isLoopbackHostname(hostname: string): boolean {
-  const normalizedHostname = hostname
-    .trim()
-    .toLowerCase()
-    .replace(/^\[(.*)\]$/, "$1");
+  const normalizedHostname = hostname.trim().toLowerCase().replace(BRACKETED_HOSTNAME, "$1");
   return LOOPBACK_HOSTNAMES.has(normalizedHostname);
 }
 
@@ -566,6 +576,10 @@ const streamStaticFile = (file: FileSystem.File, size: bigint) =>
     }),
   );
 
+const LEADING_PATH_SEPARATORS = /^[/\\]+/;
+const IMMUTABLE_PATTERN = /^assets\/.+-[\w-]{8}\.[^/]+$/;
+const HANDLE_STATIC_AND_DEV_REQUEST_PATTERN = /^W\//i;
+
 const handleStaticAndDevRequest = Effect.fn("handleStaticAndDevRequest")(
   function* (immutableBuildAssets: ReadonlySet<string>) {
     const request = yield* HttpServerRequest.HttpServerRequest;
@@ -605,9 +619,11 @@ const handleStaticAndDevRequest = Effect.fn("handleStaticAndDevRequest")(
     const path = yield* Path.Path;
     const staticRoot = path.resolve(staticDir);
     const staticRequestPath = url.value.pathname === "/" ? "/index.html" : url.value.pathname;
-    const rawStaticRelativePath = staticRequestPath.replace(/^[/\\]+/, "");
+    const rawStaticRelativePath = staticRequestPath.replace(LEADING_PATH_SEPARATORS, "");
     const hasRawLeadingParentSegment = rawStaticRelativePath.startsWith("..");
-    const staticRelativePath = path.normalize(rawStaticRelativePath).replace(/^[/\\]+/, "");
+    const staticRelativePath = path
+      .normalize(rawStaticRelativePath)
+      .replace(LEADING_PATH_SEPARATORS, "");
     const hasPathTraversalSegment = staticRelativePath.startsWith("..");
     if (
       staticRelativePath.length === 0 ||
@@ -650,9 +666,7 @@ const handleStaticAndDevRequest = Effect.fn("handleStaticAndDevRequest")(
     // A hash-like name is not enough: custom static files can use the same naming pattern.
     const relativePath = path.relative(staticRoot, filePath).replaceAll("\\", "/");
     const immutable =
-      !isHtml &&
-      /^assets\/.+-[\w-]{8}\.[^/]+$/.test(relativePath) &&
-      immutableBuildAssets.has(relativePath);
+      !isHtml && IMMUTABLE_PATTERN.test(relativePath) && immutableBuildAssets.has(relativePath);
     const cacheControl = immutable ? "public, max-age=31536000, immutable" : "no-cache";
     const validators = (info: FileSystem.File.Info) => {
       // Deployments can preserve HTML size and mtime while changing its bundle URLs.
@@ -680,7 +694,8 @@ const handleStaticAndDevRequest = Effect.fn("handleStaticAndDevRequest")(
             const candidate = value.trim();
             return (
               candidate === "*" ||
-              (etag !== undefined && candidate.replace(/^W\//i, "") === etag.slice(2))
+              (etag !== undefined &&
+                candidate.replace(HANDLE_STATIC_AND_DEV_REQUEST_PATTERN, "") === etag.slice(2))
             );
           })
         : ifModifiedSince !== undefined &&

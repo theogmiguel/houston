@@ -47,8 +47,10 @@ export const makeClaudeScopedLimitNames = Ref.make<ClaudeScopedLimitNames>({
   overageIncluded: undefined,
 });
 
+const NON_ALPHANUMERIC_RUN = /[^a-z0-9]+/g;
+
 function scopedWindowId(displayName: string): string {
-  return `seven_day_${displayName.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`;
+  return `seven_day_${displayName.toLowerCase().replace(NON_ALPHANUMERIC_RUN, "_")}`;
 }
 
 function scopedWindow(

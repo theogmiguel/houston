@@ -492,14 +492,18 @@ export class PreviewScreenshotSaveError extends Schema.TaggedError<PreviewScreen
 
 const MAX_SCREENSHOT_SITE_SLUG_LENGTH = 40;
 
+const NON_ALPHANUMERIC_RUN = /[^a-z0-9]+/g;
+const EDGE_HYPHENS = /^-+|-+$/g;
+const TRAILING_HYPHENS = /-+$/g;
+
 const screenshotSiteSlug = (rawUrl: string): string => {
   try {
     const slug = new URL(rawUrl).hostname
       .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
+      .replace(NON_ALPHANUMERIC_RUN, "-")
+      .replace(EDGE_HYPHENS, "")
       .slice(0, MAX_SCREENSHOT_SITE_SLUG_LENGTH)
-      .replace(/-+$/g, "");
+      .replace(TRAILING_HYPHENS, "");
     return slug || "site";
   } catch {
     return "site";

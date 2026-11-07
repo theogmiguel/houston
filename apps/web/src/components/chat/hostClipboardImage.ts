@@ -21,10 +21,13 @@ function readClipboardText(clipboardData: DataTransfer, type: string): string {
   }
 }
 
+const IMG_TAG = /<img\b/i;
+const HTML_TAG = /<[^>]*>/g;
+
 /** An image with no text around it, however the source app wraps it in markup. */
 function htmlIsOnlyAnImage(html: string): boolean {
-  if (!/<img\b/i.test(html)) return false;
-  return html.replace(/<[^>]*>/g, "").trim().length === 0;
+  if (!IMG_TAG.test(html)) return false;
+  return html.replace(HTML_TAG, "").trim().length === 0;
 }
 
 const EXTENSION_BY_MEDIA_TYPE: Readonly<Record<string, string>> = {

@@ -79,9 +79,11 @@ const pullPath = (input: ProviderRepositoryRef & { readonly number: number }) =>
   `${repoPath(input)}/pulls/${input.number}`;
 const issuePath = (input: ProviderRepositoryRef & { readonly number: number }) =>
   `${repoPath(input)}/issues/${input.number}`;
+const REVIEW_COMMENT_ID_PATTERN = /#issuecomment-([1-9]\d*)$/;
+
 // Review IDs differ from the issue-comment IDs used by Forgejo's reactions API.
 const reviewCommentId = (review: typeof ForgejoReview.Type) =>
-  /#issuecomment-([1-9]\d*)$/.exec(review.html_url ?? "")?.[1];
+  REVIEW_COMMENT_ID_PATTERN.exec(review.html_url ?? "")?.[1];
 
 const decodePullRequest = decodeJsonResult(ForgejoPullRequest);
 
@@ -100,6 +102,11 @@ function forgejoActionSummary(stdout: string): ProviderChangeRequestSummary | un
     ...(pr.head.sha.trim() === "" ? {} : { headSha: pr.head.sha }),
   };
 }
+
+const LINKS_PATTERN = /^link:\s*(.*)$/im;
+const NEXT_PATTERN = /rel="?next"?/i;
+const REVIEW_ID_PATTERN = /^review:([1-9]\d*)$/;
+const POSITIVE_INTEGER = /^[1-9]\d*$/;
 
 export const make = Effect.gen(function* () {
   const cli = yield* ForgejoCli.ForgejoCli;
@@ -144,8 +151,8 @@ export const make = Effect.gen(function* () {
     const decoded = decodeJsonResult(schema)(result.stdout);
     if (Result.isFailure(decoded))
       return yield* failure(input.path, "Forgejo returned an invalid response.", decoded.failure);
-    const links = /^link:\s*(.*)$/im.exec(result.stderr)?.[1];
-    return { value: decoded.success, next: links !== undefined && /rel="?next"?/i.test(links) };
+    const links = LINKS_PATTERN.exec(result.stderr)?.[1];
+    return { value: decoded.success, next: links !== undefined && NEXT_PATTERN.test(links) };
   });
   const read = <A>(
     input: ForgejoCli.ForgejoApiInput,
@@ -170,10 +177,10 @@ export const make = Effect.gen(function* () {
     if (Result.isFailure(decoded))
       return yield* failure(input.path, "Forgejo returned an invalid response.", decoded.failure);
     const rows = decoded.success ?? [];
-    const links = /^link:\s*(.*)$/im.exec(result.stderr)?.[1];
+    const links = LINKS_PATTERN.exec(result.stderr)?.[1];
     return {
       rows,
-      more: rows.length > 0 && (links === undefined || /rel="?next"?/i.test(links)),
+      more: rows.length > 0 && (links === undefined || NEXT_PATTERN.test(links)),
     };
   });
   // Forgejo's default page limit is 50.
@@ -749,7 +756,7 @@ export const make = Effect.gen(function* () {
     setReaction: Effect.fn("ForgejoPullRequestProvider.setReaction")(function* (input) {
       let commentId = input.subjectId;
       if (commentId?.startsWith("review:")) {
-        const reviewId = /^review:([1-9]\d*)$/.exec(commentId)?.[1];
+        const reviewId = REVIEW_ID_PATTERN.exec(commentId)?.[1];
         if (!reviewId) return yield* failure("setReaction", "Invalid Forgejo review ID.");
         const review = yield* read(
           { ...input, path: `${pullPath(input)}/reviews/${reviewId}` },
@@ -762,7 +769,7 @@ export const make = Effect.gen(function* () {
             "Forgejo did not return a comment ID for this review.",
           );
       }
-      if (commentId && !/^[1-9]\d*$/.test(commentId))
+      if (commentId && !POSITIVE_INTEGER.test(commentId))
         return yield* failure("setReaction", "Invalid Forgejo comment ID.");
       yield* write({
         ...input,

@@ -52,9 +52,11 @@ function parseJson(text: string): unknown {
   }
 }
 
+const PRETTY_JSON_TEXT_PATTERN = /^[[{]/;
+
 function prettyJsonText(text: string): string {
   const trimmed = text.trim();
-  if (!/^[[{]/.test(trimmed)) return text;
+  if (!PRETTY_JSON_TEXT_PATTERN.test(trimmed)) return text;
   const whole = parseJson(trimmed);
   if (whole !== undefined) return JSON.stringify(whole, null, 2);
   const lines = trimmed.split("\n").filter((line) => line.trim());

@@ -165,8 +165,10 @@ function CommentLocation({
   );
 }
 
+const UNDERSCORE = /_/g;
+
 function reviewStateLabel(state: string): string {
-  const words = state.toLowerCase().replace(/_/g, " ");
+  const words = state.toLowerCase().replace(UNDERSCORE, " ");
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
@@ -252,6 +254,13 @@ function AddToChatButton({ onClick }: { onClick: () => void }) {
   );
 }
 
+const HTML_COMMENT = /<!--[\s\S]*?-->/gu;
+const ALERT_MARKER_LINE = /^\s*>?\s*\[!\w+\]\s*$/gmu;
+const MARKDOWN_LINK = /!?(\[([^\]]+)\])\([^)]*\)/gu;
+const BLOCK_MARKER_PREFIX = /^[\s>#*-]+/gmu;
+const EMPHASIS_CHARACTER = /[*`]/gu;
+const WHITESPACE_RUNS = /\s+/g;
+
 function CollapsedComment({
   comment,
   editing,
@@ -310,12 +319,12 @@ function CollapsedComment({
               onClick={() => statusTriggerRef.current?.focus({ preventScroll: true })}
             >
               {body
-                .replace(/<!--[\s\S]*?-->/gu, "")
-                .replace(/^\s*>?\s*\[!\w+\]\s*$/gmu, "")
-                .replace(/!?(\[([^\]]+)\])\([^)]*\)/gu, "$2")
-                .replace(/^[\s>#*-]+/gmu, "")
-                .replace(/[*`]/gu, "")
-                .replace(/\s+/g, " ")
+                .replace(HTML_COMMENT, "")
+                .replace(ALERT_MARKER_LINE, "")
+                .replace(MARKDOWN_LINK, "$2")
+                .replace(BLOCK_MARKER_PREFIX, "")
+                .replace(EMPHASIS_CHARACTER, "")
+                .replace(WHITESPACE_RUNS, " ")
                 .trim()}
             </CollapsibleTrigger>
           ) : null}

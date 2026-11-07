@@ -9,15 +9,20 @@ import { satisfiesSemverRange } from "@houston-app/shared/semver";
 import * as Schema from "effect/Schema";
 import packageJson from "../../package.json" with { type: "json" };
 
+const STABLE_VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
+
 const StableVersion = TrimmedNonEmptyString.pipe(
-  Schema.check(Schema.makeFilter((value) => /^\d+\.\d+\.\d+$/.test(value))),
+  Schema.check(Schema.makeFilter((value) => STABLE_VERSION_PATTERN.test(value))),
 );
+const WHITESPACE_RUN = /\s+/;
+const VERSION_RANGE_PATTERN = /^(?:\^|>=|>|<=|<|=)?v?\d+(?:\.\d+){0,2}$/;
+
 const VersionRange = TrimmedNonEmptyString.pipe(
   Schema.check(
     Schema.makeFilter((value) =>
       value.split("||").every((group) => {
-        const tokens = group.trim().split(/\s+/);
-        return tokens.every((token) => /^(?:\^|>=|>|<=|<|=)?v?\d+(?:\.\d+){0,2}$/.test(token));
+        const tokens = group.trim().split(WHITESPACE_RUN);
+        return tokens.every((token) => VERSION_RANGE_PATTERN.test(token));
       }),
     ),
   ),
@@ -54,6 +59,11 @@ export const ProviderCompatibilityPolicy = Policy.pipe(
 );
 export type ProviderCompatibilityPolicy = typeof ProviderCompatibilityPolicy.Type;
 
+const LEADING_V = /^v/;
+const DATED_RELEASE_VERSION = /^(\d{4}\.\d{2}\.\d{2})-[a-f0-9]+$/;
+const ACP_SERVER_VERSION = /^agy_acp_server_(\d+\.\d+\.\d+)$/;
+const RELEASE_CANDIDATE_VERSION = /^(\d+\.\d+\.\d+)-R\d+(?:\.\d+)?$/;
+
 export function resolveProviderCompatibility(
   policies: ReadonlyArray<ProviderCompatibilityPolicy> | undefined,
   driver: ProviderDriverKind,
@@ -65,18 +75,18 @@ export function resolveProviderCompatibility(
       entry.driver === driver && satisfiesSemverRange(houstonCodeVersion, entry.houstonCodeRange),
   );
   if (!policy) return undefined;
-  const unprefixed = version?.replace(/^v/, "");
+  const unprefixed = version?.replace(LEADING_V, "");
   // Strip Cursor build hashes, Google ACP release prefixes and Muse revisions; leave semver prereleases unknown.
   const stable =
     driver === "cursor"
-      ? unprefixed?.replace(/^(\d{4}\.\d{2}\.\d{2})-[a-f0-9]+$/, "$1")
+      ? unprefixed?.replace(DATED_RELEASE_VERSION, "$1")
       : driver === "antigravity"
-        ? unprefixed?.replace(/^agy_acp_server_(\d+\.\d+\.\d+)$/, "$1")
+        ? unprefixed?.replace(ACP_SERVER_VERSION, "$1")
         : driver === "muse"
-          ? unprefixed?.replace(/^(\d+\.\d+\.\d+)-R\d+(?:\.\d+)?$/, "$1")
+          ? unprefixed?.replace(RELEASE_CANDIDATE_VERSION, "$1")
           : unprefixed;
   const status =
-    stable && /^\d+\.\d+\.\d+$/.test(stable)
+    stable && STABLE_VERSION_PATTERN.test(stable)
       ? (policy.ranges.find((entry) => satisfiesSemverRange(stable, entry.range))?.status ??
         "unknown")
       : "unknown";

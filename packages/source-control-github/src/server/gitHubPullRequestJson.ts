@@ -1528,6 +1528,8 @@ function toCommitChecks(
 /** How many hunk lines a thread carries with it: its own line and the two above it. */
 const SNIPPET_LINES = 3;
 
+const HUNK_HEADER = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/u;
+
 /**
  * The end of a comment's diff hunk, numbered. GitHub's hunk stops at the line the thread was
  * written on, so its last lines are the code the thread is about.
@@ -1536,7 +1538,7 @@ function reviewThreadSnippet(
   diffHunk: string | null | undefined,
 ): ReadonlyArray<PullRequestReviewThreadSnippetLine> {
   const lines = (diffHunk ?? "").split("\n");
-  const header = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/u.exec(lines[0] ?? "");
+  const header = HUNK_HEADER.exec(lines[0] ?? "");
   if (header === null) return [];
   let oldLine = Number(header[1]);
   let newLine = Number(header[2]);
@@ -1778,10 +1780,13 @@ export function toRepositoryAuthors(
   };
 }
 
+const DIGITS_ONLY = /^\d+$/;
+
 /** The `search` string for {@link toRepositoryReferences}; a numeric query searches recent items. */
 export function referenceSearchQuery(repository: string, query: string | undefined): string {
   const text = query?.trim() ?? "";
-  const titled = text.length === 0 || /^\d+$/.test(text) ? [] : [`in:title ${searchPhrase(text)}`];
+  const titled =
+    text.length === 0 || DIGITS_ONLY.test(text) ? [] : [`in:title ${searchPhrase(text)}`];
   return [`repo:${repository}`, ...titled, "sort:updated-desc"].join(" ");
 }
 
@@ -1897,6 +1902,8 @@ const decodeCommitFiles = decodeJsonResult(
   Schema.Struct({ files: Schema.optional(Schema.NullOr(Schema.Array(Schema.Unknown))) }),
 );
 
+const OPTIONAL_TRAILING_NEWLINE = /\n?$/;
+
 function toFilesPatch(entries: ReadonlyArray<unknown>): GitHubPullRequestFilesPatch {
   const sections: string[] = [];
   const omittedFileStats: PullRequestOmittedFileStat[] = [];
@@ -1933,7 +1940,11 @@ function toFilesPatch(entries: ReadonlyArray<unknown>): GitHubPullRequestFilesPa
       `--- ${status === "added" ? "/dev/null" : quoteGitPatchPath(`a/${oldPath}`)}`,
       `+++ ${status === "removed" ? "/dev/null" : quoteGitPatchPath(`b/${value.filename}`)}`,
     ].join("\n");
-    sections.push(hunks.length === 0 ? `${header}\n` : `${header}\n${hunks.replace(/\n?$/, "\n")}`);
+    sections.push(
+      hunks.length === 0
+        ? `${header}\n`
+        : `${header}\n${hunks.replace(OPTIONAL_TRAILING_NEWLINE, "\n")}`,
+    );
   }
   return {
     patch: sections.join(""),

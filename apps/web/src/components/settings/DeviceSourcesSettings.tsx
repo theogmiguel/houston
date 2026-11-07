@@ -138,6 +138,8 @@ function hostStatus(
 const hostPlatforms = (state: DeviceServiceState | undefined, hostId: string) =>
   state?.hosts.find((host) => host.id === hostId)?.platforms;
 
+const HTTP_URL_PREFIX = /^https?:\/\//;
+
 /**
  * Every device source the selected environments can open, one row each. A source configured on
  * several environments is one row; how it stands on each lives in the row's breakdown.
@@ -520,7 +522,7 @@ export function DeviceSourcesSettings(props: {
         shared: true,
         title: host.label,
         kind: "Simlock",
-        description: `${host.gatewayUrl.replace(/^https?:\/\//, "")} · ${simlockLeaseLimits(host)}`,
+        description: `${host.gatewayUrl.replace(HTTP_URL_PREFIX, "")} · ${simlockLeaseLimits(host)}`,
         environments: active.map((member) => {
           const held = (member.settings?.simlockDeviceHosts ?? []).find(
             (candidate) => candidate.id === host.id,

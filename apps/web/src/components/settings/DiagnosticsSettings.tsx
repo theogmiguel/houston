@@ -47,9 +47,11 @@ function formatCount(value: number): string {
   return NUMBER_FORMAT.format(value);
 }
 
+const TRAILING_ZEROS = /\.0+$/;
+
 function formatDuration(value: number): string {
   if (value < 1_000) return `${Math.round(value)} ms`;
-  return `${(value / 1_000).toFixed(value >= 10_000 ? 1 : 2).replace(/\.0+$/, "")} s`;
+  return `${(value / 1_000).toFixed(value >= 10_000 ? 1 : 2).replace(TRAILING_ZEROS, "")} s`;
 }
 
 function RelativeTimeNoWrap(props: { value: DateTime.Utc }) {
@@ -215,17 +217,23 @@ function TraceIdCell({ traceId }: { traceId: string }) {
   );
 }
 
+const WHITESPACE_RUN = /\s+/;
+const SURROUNDING_QUOTES = /^['"]|['"]$/g;
+const PATH_SEPARATOR = /[\\/]/;
+
 function formatProcessName(command: string): string {
-  const firstToken = command.trim().split(/\s+/)[0];
+  const firstToken = command.trim().split(WHITESPACE_RUN)[0];
   if (!firstToken) return command;
-  const normalized = firstToken.replace(/^['"]|['"]$/g, "");
-  const segments = normalized.split(/[\\/]/).filter(Boolean);
+  const normalized = firstToken.replace(SURROUNDING_QUOTES, "");
+  const segments = normalized.split(PATH_SEPARATOR).filter(Boolean);
   return segments.at(-1) ?? normalized;
 }
 
+const FORMAT_PROCESS_TYPE_PATTERN = /\b(codex|claude|opencode|cursor)\b/i;
+
 function formatProcessType(process: ServerProcessDiagnosticsEntry): string {
   if (process.depth > 0) return "Subprocess";
-  if (/\b(codex|claude|opencode|cursor)\b/i.test(process.command)) return "Agent";
+  if (FORMAT_PROCESS_TYPE_PATTERN.test(process.command)) return "Agent";
   return "Process";
 }
 
@@ -413,10 +421,10 @@ const RESOURCE_HISTORY_WINDOWS = [
 ] as const;
 
 function formatCpuTime(seconds: number): string {
-  if (seconds < 60) return `${seconds.toFixed(seconds >= 10 ? 1 : 2).replace(/\.0+$/, "")}s`;
+  if (seconds < 60) return `${seconds.toFixed(seconds >= 10 ? 1 : 2).replace(TRAILING_ZEROS, "")}s`;
   const minutes = seconds / 60;
-  if (minutes < 60) return `${minutes.toFixed(minutes >= 10 ? 1 : 2).replace(/\.0+$/, "")}m`;
-  return `${(minutes / 60).toFixed(2).replace(/\.0+$/, "")}h`;
+  if (minutes < 60) return `${minutes.toFixed(minutes >= 10 ? 1 : 2).replace(TRAILING_ZEROS, "")}m`;
+  return `${(minutes / 60).toFixed(2).replace(TRAILING_ZEROS, "")}h`;
 }
 
 function formatShortProcessName(command: string): string {

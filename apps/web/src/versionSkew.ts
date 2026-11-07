@@ -41,8 +41,10 @@ function normalizeVersion(version: string | null | undefined): string | null {
   return trimmed && trimmed.length > 0 ? trimmed : null;
 }
 
+const VERSION_CORE_PATTERN = /[-+].*$/;
+
 function versionCore(version: string): string {
-  return version.replace(/[-+].*$/, "");
+  return version.replace(VERSION_CORE_PATTERN, "");
 }
 
 export function resolveVersionMismatch(

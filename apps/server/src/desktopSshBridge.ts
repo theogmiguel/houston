@@ -116,8 +116,13 @@ function serializeError(error: unknown): {
   return { message: `${prefix}${message}`, sshHttpStatus };
 }
 
+const IS_PASSWORD_PROMPT_CANCELLATION_PATTERN = /cancelled|timed out/iu;
+
 function isPasswordPromptCancellation(error: unknown): boolean {
-  return error instanceof SshPasswordPromptError && /cancelled|timed out/iu.test(error.message);
+  return (
+    error instanceof SshPasswordPromptError &&
+    IS_PASSWORD_PROMPT_CANCELLATION_PATTERN.test(error.message)
+  );
 }
 
 interface PendingPrompt {

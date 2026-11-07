@@ -503,6 +503,9 @@ export function TerminalViewport(props: TerminalViewportProps) {
   return <TerminalSessionViewport key={sessionKey} {...props} />;
 }
 
+const CRLF = /\r\n/g;
+const EDGE_LINE_BREAKS = /^\n+|\n+$/g;
+
 function TerminalSessionViewport({
   advancedTypography,
   threadRef,
@@ -783,7 +786,7 @@ function TerminalSessionViewport({
         }
         const selectionText = activeTerminal.getSelection();
         const selectionPosition = activeTerminal.getSelectionPosition();
-        const normalizedText = selectionText.replace(/\r\n/g, "\n").replace(/^\n+|\n+$/g, "");
+        const normalizedText = selectionText.replace(CRLF, "\n").replace(EDGE_LINE_BREAKS, "");
         if (!selectionPosition || normalizedText.length === 0) {
           return null;
         }

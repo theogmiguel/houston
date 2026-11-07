@@ -12,13 +12,15 @@ export interface PiCompactCommand {
   readonly customInstructions?: string;
 }
 
+const PARSE_PI_COMPACT_COMMAND_PATTERN = /^\s/;
+
 export function parsePiCompactCommand(text: string): PiCompactCommand | null {
   const trimmed = text.trim();
   if (trimmed === "/compact") return {};
   if (!trimmed.startsWith("/compact")) return null;
   const rest = trimmed.slice("/compact".length);
   if (rest.length === 0) return {};
-  if (!/^\s/.test(rest)) return null;
+  if (!PARSE_PI_COMPACT_COMMAND_PATTERN.test(rest)) return null;
   const customInstructions = rest.trim();
   return customInstructions.length === 0 ? {} : { customInstructions };
 }

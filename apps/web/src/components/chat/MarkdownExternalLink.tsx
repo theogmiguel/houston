@@ -48,22 +48,28 @@ const MarkdownLinkFavicon = memo(function MarkdownLinkFavicon({ host }: { host: 
   );
 });
 
+const PROTOCOL_PATTERN = /^(?:https?:\/\/)/i;
+
 function leadingExternalLinkTextLength(text: string): number {
-  const protocol = /^(?:https?:\/\/)/i.exec(text)?.[0];
+  const protocol = PROTOCOL_PATTERN.exec(text)?.[0];
   if (protocol) return protocol.length;
   return Math.min(text.length, 1);
 }
 
+const BREAKABLE_EXTERNAL_LINK_TEXT_PATTERN = /\s+|\S+/g;
+
 // Keep short labels such as PR numbers intact in narrow table columns.
 function breakableExternalLinkText(text: string): ReactNode[] {
-  return Array.from(text.matchAll(/\s+|\S+/g), ({ 0: word, index: start }) =>
-    word.length <= 16 ? (
-      word
-    ) : (
-      <span key={start} className="[overflow-wrap:anywhere]">
-        {word}
-      </span>
-    ),
+  return Array.from(
+    text.matchAll(BREAKABLE_EXTERNAL_LINK_TEXT_PATTERN),
+    ({ 0: word, index: start }) =>
+      word.length <= 16 ? (
+        word
+      ) : (
+        <span key={start} className="[overflow-wrap:anywhere]">
+          {word}
+        </span>
+      ),
   );
 }
 

@@ -106,10 +106,12 @@ const MESSAGE_CANDIDATE_LIMIT = 10_000;
 const MESSAGE_SCAN_LIMIT = 20_000;
 const NON_ASCII = /[\u0080-\uffff]/;
 
+const PLAIN_PATTERN = /\p{M}/gu;
+
 /** SQLite's lower() folds ASCII only, so a short word is checked as each spelling it can match. */
 function shortTokenSpellings(token: string): ReadonlyArray<string> {
   const forms = (char: string) => {
-    const plain = char.normalize("NFD").replace(/\p{M}/gu, "");
+    const plain = char.normalize("NFD").replace(PLAIN_PATTERN, "");
     return [char, char.toUpperCase(), plain, plain.toUpperCase()];
   };
   const spellings = Array.from(token).reduce<ReadonlyArray<string>>(

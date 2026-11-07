@@ -21,6 +21,8 @@ interface ToolResult {
   readonly failed: boolean;
 }
 
+const ERROR_SUFFIX = /(?:Error|Failure)$/;
+
 function readResult(value: unknown, depth = 0): ToolResult {
   if (depth > 4) return { failed: false };
   if (typeof value === "string") {
@@ -47,7 +49,7 @@ function readResult(value: unknown, depth = 0): ToolResult {
   const failed =
     record.isError === true ||
     record.is_error === true ||
-    (typeof record._tag === "string" && /(?:Error|Failure)$/.test(record._tag)) ||
+    (typeof record._tag === "string" && ERROR_SUFFIX.test(record._tag)) ||
     record.error != null;
   const content = record.structuredContent ?? record.content;
   if (content !== undefined) {

@@ -220,6 +220,9 @@ function nonRepositoryListRefs(): VcsListRefsResult {
   };
 }
 
+const HAS_REF_NAMED_PATTERN = /[*?[\\]/;
+const HEADS_REF_PREFIX = /^refs\/heads\//;
+
 /** @public */
 export const make = Effect.gen(function* () {
   const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
@@ -357,7 +360,7 @@ export const make = Effect.gen(function* () {
     }),
     hasRefNamed: Effect.fn("GitWorkflowService.hasRefNamed")(function (input) {
       // Pattern characters would widen the ref match.
-      return /[*?[\\]/.test(input.refName)
+      return HAS_REF_NAMED_PATTERN.test(input.refName)
         ? Effect.succeed(false)
         : ensureGitCommand("GitWorkflowService.hasRefNamed", input.cwd).pipe(
             Effect.andThen(
@@ -403,7 +406,7 @@ export const make = Effect.gen(function* () {
         timeoutMs: 5_000,
       });
       if (result.exitCode === 0) {
-        return result.stdout.trim().replace(/^refs\/heads\//, "") || null;
+        return result.stdout.trim().replace(HEADS_REF_PREFIX, "") || null;
       }
       if (result.exitCode === 1) return null;
       return yield* new GitCommandError({

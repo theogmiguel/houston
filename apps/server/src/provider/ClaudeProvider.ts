@@ -81,9 +81,11 @@ const CLAUDE_PRESENTATION = {
   showInteractionModeToggle: true,
   reportsContextWindow: true,
 } as const;
+const TO_TITLE_CASE_WORDS_PATTERN = /[\s_-]+/g;
+
 function toTitleCaseWords(value: string): string {
   const parts: Array<string> = [];
-  for (const part of value.split(/[\s_-]+/g)) {
+  for (const part of value.split(TO_TITLE_CASE_WORDS_PATTERN)) {
     if (part.length > 0) {
       parts.push(part[0]!.toUpperCase() + part.slice(1).toLowerCase());
     }
@@ -92,7 +94,7 @@ function toTitleCaseWords(value: string): string {
 }
 
 function claudeSubscriptionLabel(subscriptionType: string | undefined): string | undefined {
-  const normalized = subscriptionType?.toLowerCase().replace(/[\s_-]+/g, "");
+  const normalized = subscriptionType?.toLowerCase().replace(TO_TITLE_CASE_WORDS_PATTERN, "");
   if (!normalized) return undefined;
 
   switch (normalized) {
@@ -129,7 +131,7 @@ function claudeSubscriptionLabel(subscriptionType: string | undefined): string |
 }
 
 function normalizeClaudeAuthMethod(authMethod: string | undefined): string | undefined {
-  const normalized = authMethod?.toLowerCase().replace(/[\s_-]+/g, "");
+  const normalized = authMethod?.toLowerCase().replace(TO_TITLE_CASE_WORDS_PATTERN, "");
   if (!normalized) return undefined;
   if (
     normalized === "apikey" ||
@@ -144,7 +146,7 @@ function normalizeClaudeAuthMethod(authMethod: string | undefined): string | und
 function formatClaudeSubscriptionAuthLabel(subscriptionType: string): string {
   const subscriptionLabel =
     claudeSubscriptionLabel(subscriptionType) ?? toTitleCaseWords(subscriptionType);
-  const normalized = subscriptionLabel.toLowerCase().replace(/[\s_-]+/g, "");
+  const normalized = subscriptionLabel.toLowerCase().replace(TO_TITLE_CASE_WORDS_PATTERN, "");
 
   if (normalized.startsWith("claude") && normalized.endsWith("subscription")) {
     return subscriptionLabel;

@@ -571,6 +571,8 @@ function isEOFMarker(origin: string | undefined) {
   return origin === "=" || origin === ">" || origin === "<";
 }
 
+const TRAILING_NEWLINE = /\n$/u;
+
 export function toDiff(diff: typeof GitCafeDiff.Type): ProviderDiffSlice {
   const chunks: Array<string> = [];
   const omittedFileStats: Array<{ path: string; additions: number; deletions: number }> = [];
@@ -624,7 +626,7 @@ export function toDiff(diff: typeof GitCafeDiff.Type): ProviderDiffSlice {
           if (isEOFMarker(line.origin)) {
             lines.push("\\ No newline at end of file");
           } else {
-            lines.push(`${line.origin}${line.content.replace(/\n$/u, "")}`);
+            lines.push(`${line.origin}${line.content.replace(TRAILING_NEWLINE, "")}`);
             if (
               ["+", "-", " "].includes(line.origin) &&
               !line.content.endsWith("\n") &&
@@ -666,9 +668,11 @@ function checkStatus(check: (typeof GitCafeChecks.Type.items)[number]): PullRequ
 
 type GitCafeCheck = (typeof GitCafeChecks.Type.items)[number];
 
+const DIGITS_ONLY = /^\d+$/u;
+
 /** A check run's id, which grows with each run. Commit statuses (`status:…`) carry no such order. */
 function runOrder(check: GitCafeCheck): bigint | null {
-  return check.id != null && /^\d+$/u.test(check.id) ? BigInt(check.id) : null;
+  return check.id != null && DIGITS_ONLY.test(check.id) ? BigInt(check.id) : null;
 }
 
 /**

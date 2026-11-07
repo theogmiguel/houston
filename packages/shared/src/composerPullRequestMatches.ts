@@ -74,6 +74,8 @@ export function filterComposerPullRequestMatches<
     .slice(0, input.limit);
 }
 
+const WHITESPACE_RUN = /\s+/u;
+
 /** Puts the thread's linked pull requests that match a text query ahead of the searched ones. */
 export function withLinkedComposerPullRequestsFirst<
   Entry extends ComposerPullRequestMatch,
@@ -90,7 +92,7 @@ export function withLinkedComposerPullRequestsFirst<
   const keyOf = (entry: ComposerPullRequestMatch) =>
     `${entry.repository.trim().toLowerCase()}#${entry.number}`;
   const matchesByKey = new Map(input.matches.map((entry) => [keyOf(entry), entry]));
-  const words = input.query.toLowerCase().split(/\s+/u).filter(Boolean);
+  const words = input.query.toLowerCase().split(WHITESPACE_RUN).filter(Boolean);
   const linked = input.linked.flatMap((entry): Array<Entry | Linked> => {
     const match = matchesByKey.get(keyOf(entry));
     if (match !== undefined) return [match];

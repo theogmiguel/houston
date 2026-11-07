@@ -70,11 +70,13 @@ function readOutput(state: OutputBufferState): string {
   return NodeBuffer.Buffer.from(combined).toString("utf8");
 }
 
+const TERMINAL_EXIT_SIGNAL_PATTERN = /signal: '([^']+)'/u;
+
 function terminalExitSignal(error: unknown): string | null {
   const cause = error instanceof Error ? error.cause : undefined;
   const message =
     cause instanceof Error ? cause.message : error instanceof Error ? error.message : "";
-  return message.match(/signal: '([^']+)'/u)?.[1] ?? null;
+  return message.match(TERMINAL_EXIT_SIGNAL_PATTERN)?.[1] ?? null;
 }
 
 export interface AcpTerminalOutputSnapshot {

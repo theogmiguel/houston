@@ -50,11 +50,12 @@ function describeOne(value: unknown) {
   }
 }
 
+const URL_WITH_AUTHORITY = /\b[a-z][\w+.-]*:\/\/[^\s/?#'"()]+/gi;
+const URL_CREDENTIAL_PARAMETER = /[?#][^\s'"()]*=[^\s'"()]*?((?::\d+){1,2})?(?=[\s'"()]|$)/g;
+
 /** Hosts can name private machines, and pairing tokens live in query strings and hashes. */
 function redact(text: string) {
-  return text
-    .replace(/\b[a-z][\w+.-]*:\/\/[^\s/?#'"()]+/gi, "")
-    .replace(/[?#][^\s'"()]*=[^\s'"()]*?((?::\d+){1,2})?(?=[\s'"()]|$)/g, "$1");
+  return text.replace(URL_WITH_AUTHORITY, "").replace(URL_CREDENTIAL_PARAMETER, "$1");
 }
 
 export interface BootErrorEnvironment {
@@ -101,12 +102,13 @@ function clientPlatform(bridge: HostBridge | undefined) {
   }
 }
 
+const CHANNEL_PATTERN = /-(nightly|preview)\./;
+
 function readEnvironment(bridge: HostBridge | undefined): BootErrorEnvironment {
   const version = import.meta.env.APP_VERSION;
   return {
     version,
-    channel:
-      import.meta.env.VITE_RELEASE_CHANNEL || /-(nightly|preview)\./.exec(version)?.[1] || "stable",
+    channel: import.meta.env.VITE_RELEASE_CHANNEL || CHANNEL_PATTERN.exec(version)?.[1] || "stable",
     surface: bridge ? "desktop" : "web",
     platform: clientPlatform(bridge),
     userAgent: navigator.userAgent,
@@ -151,13 +153,15 @@ function copySelection() {
   }
 }
 
+const FALLBACK_PATTERN = /Mac|iPhone|iPad/;
+
 /** Plain http has no Clipboard API, but the legacy copy command still works on a selection. */
 function copyText(target: HTMLElement, onCopied: () => void, onBlocked: (hint: string) => void) {
   const fallback = () => {
     selectContents(target);
     if (copySelection()) return onCopied();
     onBlocked(
-      /Mac|iPhone|iPad/.test(navigator.platform) ? "Press ⌘C to copy" : "Press Ctrl+C to copy",
+      FALLBACK_PATTERN.test(navigator.platform) ? "Press ⌘C to copy" : "Press Ctrl+C to copy",
     );
   };
   const clipboard = window.isSecureContext ? navigator.clipboard : undefined;

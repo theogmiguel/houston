@@ -54,6 +54,8 @@ const dropIn = (
   ...(shared ? { shared } : {}),
 });
 
+const USER_DOMAIN_SUFFIX = /\/user$/;
+
 /**
  * Memory protection only reaches the server when every ancestor cgroup grants
  * it, and only root can grant it on user.slice and the user manager.
@@ -84,7 +86,7 @@ export function protectionPlan(input: {
     ],
     managerDefaults: {
       unit: "user.conf",
-      path: `${input.userUnitDir.replace(/\/user$/, "")}/user.conf.d/${PROTECT_DROP_IN}`,
+      path: `${input.userUnitDir.replace(USER_DOMAIN_SUFFIX, "")}/user.conf.d/${PROTECT_DROP_IN}`,
       contents: "[Manager]\nDefaultOOMScoreAdjust=200\n",
     },
     user: [
@@ -161,9 +163,11 @@ export class ServiceProtectionError extends Schema.TaggedError<ServiceProtection
   }
 }
 
+const PARSE_UNITS_PATTERN = /\n\s*\n/;
+
 function parseUnits(text: string): Array<Map<string, string>> {
   return text
-    .split(/\n\s*\n/)
+    .split(PARSE_UNITS_PATTERN)
     .map(
       (block) =>
         new Map(

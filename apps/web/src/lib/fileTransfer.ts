@@ -33,6 +33,8 @@ export function isFileTransfer(data: FileTransferData | null | undefined): boole
   return false;
 }
 
+const WINDOWS_DRIVE_PREFIX = /^[A-Za-z]:/;
+
 /**
  * Per RFC 2483 a `#`-prefixed line is a comment, and non-`file:` URIs are dropped because they
  * name nothing on disk. The leading-slash strip handles Windows' `file:///C:/x`.
@@ -56,7 +58,7 @@ export function parseUriList(text: string): string[] {
     } catch {
       continue;
     }
-    if (path.startsWith("/") && /^[A-Za-z]:/.test(path.slice(1))) path = path.slice(1);
+    if (path.startsWith("/") && WINDOWS_DRIVE_PREFIX.test(path.slice(1))) path = path.slice(1);
     if (path) paths.push(path);
   }
   return paths;

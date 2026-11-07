@@ -129,7 +129,9 @@ const UNLOAD_LABELS: Record<SpeechModelUnloadTimeout, string> = {
   min_15: "After 15 minutes",
   hour_1: "After 1 hour",
 };
-const normalizeTerm = (value: string) => value.replace(/\s+/g, " ").trim().normalize("NFC");
+const WHITESPACE_RUN = /\s+/g;
+
+const normalizeTerm = (value: string) => value.replace(WHITESPACE_RUN, " ").trim().normalize("NFC");
 const spellingsOf = (words: SpeechCustomWords) =>
   new Set(
     words.flatMap(({ term, aliases }) =>
@@ -287,6 +289,8 @@ function ModelCard(props: ModelCardProps) {
   );
 }
 
+const NEW_TERMS_PATTERN = /[,\n]/;
+
 function DictionaryEditor(props: {
   readonly label: string;
   readonly words: SpeechCustomWords;
@@ -300,7 +304,7 @@ function DictionaryEditor(props: {
   const spellings = spellingsOf(words);
   const seen = new Set(spellings);
   const newTerms = termDraft
-    .split(/[,\n]/)
+    .split(NEW_TERMS_PATTERN)
     .map(normalizeTerm)
     .filter((term) => {
       const key = term.toLocaleLowerCase();

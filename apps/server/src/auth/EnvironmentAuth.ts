@@ -629,18 +629,22 @@ const mapSessionVerificationErrors = <A, R>(
     ),
   );
 
+const BEARER_PREFIX = /^Bearer /i;
+
 export function parseBearerToken(request: HttpServerRequest.HttpServerRequest): string | null {
   const header = request.headers["authorization"];
-  if (typeof header !== "string" || !/^Bearer /i.test(header)) {
+  if (typeof header !== "string" || !BEARER_PREFIX.test(header)) {
     return null;
   }
   const token = header.slice(AUTHORIZATION_PREFIX.length).trim();
   return token.length > 0 ? token : null;
 }
 
+const PARSE_DPOP_TOKEN_PATTERN = /^DPoP /i;
+
 function parseDpopToken(request: HttpServerRequest.HttpServerRequest): string | null {
   const header = request.headers["authorization"];
-  if (typeof header !== "string" || !/^DPoP /i.test(header)) {
+  if (typeof header !== "string" || !PARSE_DPOP_TOKEN_PATTERN.test(header)) {
     return null;
   }
   const token = header.slice(DPOP_AUTHORIZATION_PREFIX.length).trim();

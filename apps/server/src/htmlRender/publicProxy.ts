@@ -41,9 +41,11 @@ NAT64.addSubnet("64:ff9b::", 96, "ipv6");
 const SIX_TO_FOUR = new NodeNet.BlockList();
 SIX_TO_FOUR.addSubnet("2002::", 16, "ipv6");
 
+const DOTTED_PATTERN = /(\d+)\.(\d+)\.(\d+)\.(\d+)$/;
+
 const ipv6Groups = (address: string) => {
   const bare = address.split("%", 1)[0]!;
-  const dotted = /(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(bare);
+  const dotted = DOTTED_PATTERN.exec(bare);
   const text = dotted
     ? `${bare.slice(0, dotted.index)}${((+dotted[1]! << 8) | +dotted[2]!).toString(16)}:${((+dotted[3]! << 8) | +dotted[4]!).toString(16)}`
     : bare;

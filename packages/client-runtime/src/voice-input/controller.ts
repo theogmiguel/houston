@@ -101,6 +101,16 @@ type TranscriptCommitResult =
 
 const WORD_SPACELESS_LANGUAGES = new Set(["ja", "zh", "yue", "th", "lo", "km", "my"]);
 
+const LANGUAGE_PATTERN = /[-_]/;
+const ASCII_LEFT_EDGE = /[A-Za-z0-9.!?,:;)\]}'"]$/;
+const UNICODE_LEFT_EDGE = /(?:\p{L}|\p{M}|\p{N}|[.!?,:;)\]}'"])$/u;
+const ASCII_RIGHT_EDGE = /^[A-Za-z0-9([{'"]/;
+const UNICODE_RIGHT_EDGE = /^[\p{L}\p{M}\p{N}([{'"]/u;
+const LEADING_LATIN_OR_DIGIT = /^[\p{Script=Latin}\p{N}]/u;
+const LEADING_WHITESPACE = /^\s/;
+const TRAILING_LATIN_OR_DIGIT = /(?:\p{Script=Latin}|\p{N})$/u;
+const TRAILING_WHITESPACE = /\s$/;
+
 export function resolveTranscriptCommit(
   captured: VoiceDraftSnapshot,
   current: VoiceDraftSnapshot | null,
@@ -122,23 +132,23 @@ export function resolveTranscriptCommit(
   }
 
   const isEmptySelection = captured.selection.start === captured.selection.end;
-  const language = locale.split(/[-_]/)[0]!.toLowerCase();
+  const language = locale.split(LANGUAGE_PATTERN)[0]!.toLowerCase();
   let insertion = replacement;
   if (isEmptySelection && !WORD_SPACELESS_LANGUAGES.has(language)) {
     const auto = language === "auto";
     const caret = captured.selection.start;
     const left = captured.text.slice(Math.max(0, caret - 2), caret);
     const right = captured.text.slice(caret, caret + 2);
-    const leftEdge = auto ? /[A-Za-z0-9.!?,:;)\]}'"]$/ : /(?:\p{L}|\p{M}|\p{N}|[.!?,:;)\]}'"])$/u;
-    const rightEdge = auto ? /^[A-Za-z0-9([{'"]/ : /^[\p{L}\p{M}\p{N}([{'"]/u;
+    const leftEdge = auto ? ASCII_LEFT_EDGE : UNICODE_LEFT_EDGE;
+    const rightEdge = auto ? ASCII_RIGHT_EDGE : UNICODE_RIGHT_EDGE;
     const leftNeedsBoundary =
-      (!auto || /^[\p{Script=Latin}\p{N}]/u.test(replacement)) &&
+      (!auto || LEADING_LATIN_OR_DIGIT.test(replacement)) &&
       leftEdge.test(left) &&
-      (!right || /^\s/.test(right));
+      (!right || LEADING_WHITESPACE.test(right));
     const rightNeedsBoundary =
-      (!auto || /(?:\p{Script=Latin}|\p{N})$/u.test(replacement)) &&
+      (!auto || TRAILING_LATIN_OR_DIGIT.test(replacement)) &&
       rightEdge.test(right) &&
-      (!left || /\s$/.test(left));
+      (!left || TRAILING_WHITESPACE.test(left));
     insertion = `${leftNeedsBoundary ? " " : ""}${replacement}${rightNeedsBoundary ? " " : ""}`;
   }
 

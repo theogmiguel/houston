@@ -86,6 +86,8 @@ const probeOpenCodeBinary = Effect.fn("probeOpenCodeBinary")(function* (
   });
 });
 
+const TRAILING_SLASHES = /\/+$/;
+
 // Use fixed status text; underlying errors may expose URLs, credentials, or password headers.
 const probeOpenCodeServer = Effect.fn("probeOpenCodeServer")(function* (
   serverUrl: string,
@@ -105,7 +107,7 @@ const probeOpenCodeServer = Effect.fn("probeOpenCodeServer")(function* (
     : undefined;
   for (const path of ["/api/info", "/global/health"] as const) {
     const url = new URL(baseUrl);
-    url.pathname = `${url.pathname.replace(/\/+$/, "")}${path}`;
+    url.pathname = `${url.pathname.replace(TRAILING_SLASHES, "")}${path}`;
     const request = HttpClientRequest.get(url.href);
     const result = yield* client
       .execute(

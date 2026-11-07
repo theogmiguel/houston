@@ -49,6 +49,8 @@ type ChildProcessTerminationHandle = Pick<
   "exitCode" | "pid"
 >;
 
+const SIGNAL_PATTERN = /^Process interrupted due to receipt of signal: '(SIG[A-Z0-9]+)'$/;
+
 export const makeTerminationError = (
   handle: ChildProcessTerminationHandle,
 ): Effect.Effect<AcpError.AcpError> =>
@@ -59,9 +61,7 @@ export const makeTerminationError = (
         cause.reason.module === "ChildProcess" &&
         cause.reason.method === "exitCode" &&
         cause.reason.cause instanceof Error
-          ? /^Process interrupted due to receipt of signal: '(SIG[A-Z0-9]+)'$/.exec(
-              cause.reason.cause.message,
-            )?.[1]
+          ? SIGNAL_PATTERN.exec(cause.reason.cause.message)?.[1]
           : undefined;
       return signal === undefined
         ? new AcpError.AcpTransportError({

@@ -266,9 +266,12 @@ export class AzureDevOpsCli extends Context.Service<
   }
 >()("@houston-app/source-control-azure-devops/server/AzureDevOpsCli") {}
 
+const LEADING_HASH = /^#/;
+const URL_MATCH_PATTERN = /(?:pullrequest|pull-request|pull|_pulls?)\/(\d+)(?:\D.*)?$/i;
+
 function normalizeChangeRequestId(reference: string): string {
-  const trimmed = reference.trim().replace(/^#/, "");
-  const urlMatch = /(?:pullrequest|pull-request|pull|_pulls?)\/(\d+)(?:\D.*)?$/i.exec(trimmed);
+  const trimmed = reference.trim().replace(LEADING_HASH, "");
+  const urlMatch = URL_MATCH_PATTERN.exec(trimmed);
   return urlMatch?.[1] ?? trimmed;
 }
 
@@ -298,8 +301,10 @@ const RawAzureDevOpsRepositorySchema = Schema.Struct({
   defaultBranch: Schema.optional(Schema.NullOr(Schema.String)),
 });
 
+const HEADS_REF_PREFIX = /^refs\/heads\//;
+
 function normalizeDefaultBranch(value: string | null | undefined): string | null {
-  const trimmed = value?.trim().replace(/^refs\/heads\//, "") ?? "";
+  const trimmed = value?.trim().replace(HEADS_REF_PREFIX, "") ?? "";
   return trimmed.length > 0 ? trimmed : null;
 }
 
@@ -351,9 +356,11 @@ function decodeAzureDevOpsJson<S extends Schema.Top>(
   );
 }
 
+const CLASSIFY_AZ_FAILURE_PATTERN = /please run '?az login'?/;
+
 const classifyAzFailure = (stderr: string): VcsProcessExitFailureKind | null => {
   const normalized = stderr.toLowerCase();
-  if (normalized.includes("az devops login") || /please run '?az login'?/.test(normalized)) {
+  if (normalized.includes("az devops login") || CLASSIFY_AZ_FAILURE_PATTERN.test(normalized)) {
     return "authentication";
   }
   return normalized.includes("pull request") &&

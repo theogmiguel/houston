@@ -189,16 +189,18 @@ export const importFailureReason = (cause: unknown): BrowserImportFailureReason 
   );
 };
 
+const MANAGED_POLICY_REFUSAL =
+  /The managed policy at .* importing browser cookies is not allowed\./u;
+const POLICY_DISALLOWS_IMPORT =
+  /(?:^|: )([^:]*'s policy does not allow importing browser cookies\.)/u;
+
 /**
  * The desktop's refusal when the machine's managed policy forbids cookie import. IPC wraps the
  * message in its own prefixes, so the sentence is matched on the contract's wording.
  */
 export const importPolicyRefusal = (cause: unknown): string | undefined => {
   const message = String((cause as { message?: unknown } | undefined)?.message ?? "");
-  return (
-    /The managed policy at .* importing browser cookies is not allowed\./u.exec(message)?.[0] ??
-    /(?:^|: )([^:]*'s policy does not allow importing browser cookies\.)/u.exec(message)?.[1]
-  );
+  return MANAGED_POLICY_REFUSAL.exec(message)?.[0] ?? POLICY_DISALLOWS_IMPORT.exec(message)?.[1];
 };
 
 async function importBrowserCookiesIntoTarget(

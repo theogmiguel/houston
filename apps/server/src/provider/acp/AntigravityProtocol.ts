@@ -168,12 +168,14 @@ interface ToolPayloadBudget {
   text: number;
 }
 
+const SANITIZE_TOOL_VALUE_PATTERN = /^data:image\//i;
+
 function sanitizeToolValue(value: unknown, budget: ToolPayloadBudget, depth: number): unknown {
   if (depth > 12 || budget.nodes-- <= 0) {
     return undefined;
   }
   if (typeof value === "string") {
-    if (/^data:image\//i.test(value) || budget.text <= 0) {
+    if (SANITIZE_TOOL_VALUE_PATTERN.test(value) || budget.text <= 0) {
       return undefined;
     }
     const text = boundText(value, Math.min(TOOL_TEXT_LIMIT, budget.text));
@@ -329,6 +331,11 @@ export function normalizeAntigravitySessionUpdate(
   };
 }
 
+const FILE_URL_PREFIX = /^file:\/\//i;
+const DRIVE_LETTER_URL_PATH = /^\/[a-z]:\//i;
+const URL_SCHEME_PREFIX = /^[a-z][a-z\d+.-]*:/i;
+const WINDOWS_DRIVE_PATH = /^[a-z]:[\\/]/i;
+
 function localImagePath(imagePath: string | undefined): string | undefined {
   if (!imagePath || imagePath.length > TOOL_TEXT_LIMIT) {
     return undefined;
@@ -337,17 +344,17 @@ function localImagePath(imagePath: string | undefined): string | undefined {
   if (!isWorkspaceImagePreviewPath(path)) {
     return undefined;
   }
-  if (/^file:\/\//i.test(path)) {
+  if (FILE_URL_PREFIX.test(path)) {
     try {
       const url = new URL(path);
       if (url.hostname && url.hostname !== "localhost") return undefined;
       const pathname = decodeURIComponent(url.pathname);
-      return /^\/[a-z]:\//i.test(pathname) ? pathname.slice(1) : pathname;
+      return DRIVE_LETTER_URL_PATH.test(pathname) ? pathname.slice(1) : pathname;
     } catch {
       return undefined;
     }
   }
-  return /^[a-z][a-z\d+.-]*:/i.test(path) && !/^[a-z]:[\\/]/i.test(path) ? undefined : path;
+  return URL_SCHEME_PREFIX.test(path) && !WINDOWS_DRIVE_PATH.test(path) ? undefined : path;
 }
 
 export function normalizeAntigravityToolCall(toolCall: AcpToolCallState): AcpToolCallState {

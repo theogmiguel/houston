@@ -164,6 +164,8 @@ export function runStopNowItem(input: {
   };
 }
 
+const WHITESPACE_RUN = /\s+/gu;
+
 /** Background commands and subagents, for the end of the timeline. */
 export function backgroundWorkNowItem(input: {
   readonly threadId: ThreadId;
@@ -185,7 +187,7 @@ export function backgroundWorkNowItem(input: {
     const subagent = item?.type === "subagent" ? item : undefined;
     return {
       task,
-      activity: subagent?.progress?.replace(/\s+/gu, " ").trim() || null,
+      activity: subagent?.progress?.replace(WHITESPACE_RUN, " ").trim() || null,
       startedAtMs: item?.startedAt ? DateTime.toEpochMillis(item.startedAt) : null,
       updatedAtMs: subagent ? DateTime.toEpochMillis(subagent.updatedAt) : 0,
       childThreadId: task.childThreadId ?? subagent?.childThreadId ?? undefined,

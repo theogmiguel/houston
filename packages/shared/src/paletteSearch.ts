@@ -34,6 +34,8 @@ export interface SearchRange {
 const fieldCache = new Map<string, SearchField>();
 const FIELD_CACHE_LIMIT = 100_000;
 
+const FOLD_CHARACTER_PATTERN = /[‘’]/;
+
 function foldCharacter(character: string): string {
   // A typed straight apostrophe finds a curly one: iOS keyboards type "’".
   return character
@@ -41,8 +43,10 @@ function foldCharacter(character: string): string {
     .replace(COMBINING_MARKS, "")
     .toLowerCase()
     .replace("ς", "σ")
-    .replace(/[‘’]/, "'");
+    .replace(FOLD_CHARACTER_PATTERN, "'");
 }
+
+const FOLD_IN_PLACE_PATTERN = /[\u0080-\uffff]/g;
 
 /**
  * `text` with case and accents folded one UTF-16 unit at a time, so offsets
@@ -51,7 +55,7 @@ function foldCharacter(character: string): string {
  */
 function foldInPlace(text: string): string {
   return text
-    .replace(/[\u0080-\uffff]/g, (character) => {
+    .replace(FOLD_IN_PLACE_PATTERN, (character) => {
       const folded = foldCharacter(character);
       return folded.length === 1 ? folded : character;
     })
@@ -134,10 +138,12 @@ function prepareSearchField(source: string): SearchField {
 // Quotes around a pasted query: "fix sidebar".
 const WRAPPING_QUOTES = /^\s*["'`“”‘’]+|["'`“”‘’]+\s*$/g;
 
+const WHITESPACE_RUN = /\s+/;
+
 /** Folded, whitespace-collapsed query; empty when there is nothing to match. */
 export function foldSearchQuery(query: string): string {
   return foldInPlace(query.replace(WRAPPING_QUOTES, "").normalize("NFC"))
-    .split(/\s+/)
+    .split(WHITESPACE_RUN)
     .filter((token) => token.length > 0)
     .join(" ");
 }
@@ -466,7 +472,7 @@ export function messageSearchTokens(query: string): {
     .replace(CURLY_APOSTROPHES, "'")
     .normalize("NFC")
     .toLowerCase()
-    .split(/\s+/)
+    .split(WHITESPACE_RUN)
     .filter((token) => token.length > 0);
   const searchable = (token: string) => {
     const length = Array.from(token).length;
@@ -479,6 +485,8 @@ export function messageSearchTokens(query: string): {
   };
 }
 
+const REGEX_SPECIAL_CHARACTER = /[.*+?^${}()|[\]\\]/g;
+
 /**
  * Matches the query's words side by side as whole words, as typed, whatever
  * whitespace is between them and ignoring case; null for a single word.
@@ -488,7 +496,7 @@ export function messagePhrase(query: string): RegExp | null {
   return words.length > 1
     ? new RegExp(
         `(?<![\\p{L}\\p{N}])${words
-          .map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+          .map((word) => word.replace(REGEX_SPECIAL_CHARACTER, "\\$&"))
           .join("\\s+")}(?![\\p{L}\\p{N}])`,
         "iu",
       )
@@ -745,6 +753,8 @@ const THREAD_SEARCH_PICK_LIMIT = 3;
 /** Picked queries are stored this long; clients send no more. */
 const THREAD_SEARCH_PICK_MAX_LENGTH = 32;
 
+const PICKED_QUERY_PATTERN = /[\ud800-\udbff]$/;
+
 /**
  * `query` as a pick is stored and compared: folded, then cut to the stored
  * length without splitting an emoji in two. Clients and the server both use
@@ -752,7 +762,7 @@ const THREAD_SEARCH_PICK_MAX_LENGTH = 32;
  */
 export function pickedQuery(query: string): string {
   const cut = foldSearchQuery(query).slice(0, THREAD_SEARCH_PICK_MAX_LENGTH);
-  return (/[\ud800-\udbff]$/.test(cut) ? cut.slice(0, -1) : cut).trim();
+  return (PICKED_QUERY_PATTERN.test(cut) ? cut.slice(0, -1) : cut).trim();
 }
 
 function decay(ageMs: number): number {
@@ -979,14 +989,17 @@ function threadSearchFields(thread: ThreadSearchSubject): ReadonlyArray<Weighted
 
 let lastFieldQuery: { readonly query: string; readonly fieldQuery: string } | undefined;
 
+const PULL_REQUEST_QUERY_PREFIX = /^(?:pr|pull request|pull)\s*(?=#?\d)/;
+const HASH_QUERY_PREFIX = /^#\s*/;
+
 // Strip pull request prefixes and the worktree prefix so queries match the stored fields.
 function threadFieldQuery(normalizedQuery: string): string {
   if (lastFieldQuery?.query !== normalizedQuery) {
     lastFieldQuery = {
       query: normalizedQuery,
       fieldQuery: normalizedQuery
-        .replace(/^(?:pr|pull request|pull)\s*(?=#?\d)/, "")
-        .replace(/^#\s*/, "")
+        .replace(PULL_REQUEST_QUERY_PREFIX, "")
+        .replace(HASH_QUERY_PREFIX, "")
         .replace(WORKTREE_BRANCH_PREFIX_PATTERN, ""),
     };
   }

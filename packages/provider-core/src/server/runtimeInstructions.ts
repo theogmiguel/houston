@@ -20,6 +20,8 @@ export function buildRuntimeInstructions(runtime: {
   return `<runtime_info>In case you're asked: you are running in Houston through the ${harness} harness${modelInfo}${effortInfo}. No need to mention this otherwise. You can embed images, video, and audio in your response using Markdown image syntax with absolute file paths. Link any other file you produce using its absolute path so the user can open it in Houston's files viewer.</runtime_info>\n\n${PULL_REQUEST_LINKING_INSTRUCTIONS}`;
 }
 
+const WHITESPACE_RUN = /\s+/g;
+
 function toSingleLine(value: string): string {
-  return value.replaceAll(/\s+/g, " ").trim();
+  return value.replaceAll(WHITESPACE_RUN, " ").trim();
 }

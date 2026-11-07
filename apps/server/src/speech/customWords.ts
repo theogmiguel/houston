@@ -1,5 +1,16 @@
 import type { SpeechCustomWords } from "@houston-app/contracts";
 
+const MATCH_KEY_PATTERN = /[\p{L}\p{N}]/u;
+const IS_MATCHABLE_KEY_PATTERN = /^[\p{Script=Latin}\p{Script=Cyrillic}\p{Script=Greek}\p{Nd}]+$/u;
+const LETTERS_PATTERN = /\p{L}/u;
+const POSSESSIVE_PATTERN = /['’]s$/iu;
+const INNER_POSSESSIVES_PATTERN = /['’]s(?=\s)/giu;
+const PHONETIC_PATTERN = /^[a-z]+$/i;
+const WORD_TOKEN = /[\p{L}\p{M}\p{N}](?:\S*[\p{L}\p{M}\p{N}])?/gu;
+const WORD_CHARACTERS_ONLY = /^[\p{L}\p{M}\p{N}'’-]+$/u;
+const BLANK_ONLY = /^[\t\p{Zs}]+$/u;
+const REGEX_SPECIAL_CHARACTER = /[.*+?^${}()|[\]\\]/g;
+
 /** Fuzzy-matches preferred terms and rewrites aliases to their preferred spelling. */
 export function makeSpeechTextCorrector(
   words: readonly string[],
@@ -9,14 +20,13 @@ export function makeSpeechTextCorrector(
 
   const matchKey = (value: string) =>
     [...value]
-      .filter((character) => /[\p{L}\p{N}]/u.test(character))
+      .filter((character) => MATCH_KEY_PATTERN.test(character))
       .join("")
       .toLocaleLowerCase();
 
   // Scripts that separate words with spaces. CJK is excluded: one wrong character in a long
   // unspaced run would otherwise rewrite real text.
-  const isMatchableKey = (value: string) =>
-    /^[\p{Script=Latin}\p{Script=Cyrillic}\p{Script=Greek}\p{Nd}]+$/u.test(value);
+  const isMatchableKey = (value: string) => IS_MATCHABLE_KEY_PATTERN.test(value);
 
   const soundex = (value: string) => {
     const upper = value.toUpperCase();
@@ -59,10 +69,10 @@ export function makeSpeechTextCorrector(
   };
 
   const preserveCase = (original: string, replacement: string) => {
-    const letters = [...original].filter((character) => /\p{L}/u.test(character));
+    const letters = [...original].filter((character) => LETTERS_PATTERN.test(character));
     if (letters.length > 0 && letters.every((character) => character === character.toUpperCase()))
       return replacement.toUpperCase();
-    const firstLetter = [...original].find((character) => /\p{L}/u.test(character));
+    const firstLetter = [...original].find((character) => LETTERS_PATTERN.test(character));
     if (firstLetter && firstLetter === firstLetter.toUpperCase()) {
       const [first = "", ...rest] = [...replacement];
       return first.toUpperCase() + rest.join("");
@@ -79,8 +89,8 @@ export function makeSpeechTextCorrector(
       return [...new Set(keys)].filter(isMatchableKey).map((key) => ({ word, key }));
     });
 
-  const possessive = /['’]s$/iu;
-  const innerPossessives = (value: string) => value.match(/['’]s(?=\s)/giu)?.length ?? 0;
+  const possessive = POSSESSIVE_PATTERN;
+  const innerPossessives = (value: string) => value.match(INNER_POSSESSIVES_PATTERN)?.length ?? 0;
   type Match = { readonly word: string; readonly score: number; readonly suffix: string };
   const bestMatch = (phrase: string, keys: readonly CustomWordKey[]) => {
     const key = matchKey(phrase);
@@ -97,7 +107,7 @@ export function makeSpeechTextCorrector(
       const longest = Math.max(candidate.length, custom.key.length);
       if (Math.abs(candidate.length - custom.key.length) > Math.max(longest * 0.25, 2)) continue;
       const distance = editDistance(candidate, custom.key) / longest;
-      const phonetic = /^[a-z]+$/i.test(candidate) && /^[a-z]+$/i.test(custom.key);
+      const phonetic = PHONETIC_PATTERN.test(candidate) && PHONETIC_PATTERN.test(custom.key);
       const score =
         phonetic && soundex(candidate) === soundex(custom.key) ? distance * 0.3 : distance;
       if (score < MATCH_THRESHOLD && (!best || score < best.score))
@@ -109,8 +119,8 @@ export function makeSpeechTextCorrector(
   const apply = (text: string): string => {
     if (keys.length === 0) return text;
     // Leave surrounding punctuation in the source; only horizontal whitespace can join words.
-    const tokens = [...text.matchAll(/[\p{L}\p{M}\p{N}](?:\S*[\p{L}\p{M}\p{N}])?/gu)]
-      .filter(([word]) => /^[\p{L}\p{M}\p{N}'’-]+$/u.test(word))
+    const tokens = [...text.matchAll(WORD_TOKEN)]
+      .filter(([word]) => WORD_CHARACTERS_ONLY.test(word))
       .map((match) => ({
         value: match[0],
         start: match.index,
@@ -126,8 +136,7 @@ export function makeSpeechTextCorrector(
           slice
             .slice(0, -1)
             .some(
-              (token, offset) =>
-                !/^[\t\p{Zs}]+$/u.test(text.slice(token.end, slice[offset + 1]!.start)),
+              (token, offset) => !BLANK_ONLY.test(text.slice(token.end, slice[offset + 1]!.start)),
             )
         )
           continue;
@@ -156,7 +165,7 @@ export function makeSpeechTextCorrector(
   };
 
   const keys = customWordKeys(words);
-  const escapePattern = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const escapePattern = (value: string) => value.replace(REGEX_SPECIAL_CHARACTER, "\\$&");
 
   const spellings = dictionary
     .flatMap(({ term, aliases }) => [term, ...aliases].map((spelling) => ({ spelling, term })))
@@ -186,7 +195,9 @@ export function applySpeechAliases(text: string, words: SpeechCustomWords): stri
   return makeSpeechTextCorrector([], words)(text);
 }
 
-const normalizeWord = (word: string) => word.replace(/\s+/g, " ").trim();
+const WHITESPACE_RUN = /\s+/g;
+
+const normalizeWord = (word: string) => word.replace(WHITESPACE_RUN, " ").trim();
 
 export function normalizeSpeechCustomWords(words: SpeechCustomWords): SpeechCustomWords {
   const seen = new Set<string>();

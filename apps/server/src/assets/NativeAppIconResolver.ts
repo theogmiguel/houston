@@ -79,8 +79,10 @@ const plistValue = Effect.fn("NativeAppIconResolver.plistValue")(function* (
   );
 });
 
+const ESCAPE_SPOTLIGHT_STRING_PATTERN = /([\\'*?])/gu;
+
 function escapeSpotlightString(value: string): string {
-  return value.replace(/([\\'*?])/gu, "\\$1");
+  return value.replace(ESCAPE_SPOTLIGHT_STRING_PATTERN, "\\$1");
 }
 
 function containsControlCharacter(value: string): boolean {
@@ -89,6 +91,8 @@ function containsControlCharacter(value: string): boolean {
     return codePoint <= 31 || codePoint === 127;
   });
 }
+
+const LINE_BREAK = /\r?\n/u;
 
 const resolveApplicationPath = Effect.fn("NativeAppIconResolver.resolveApplicationPath")(function* (
   app: ToolActivityNativeAppReference,
@@ -100,7 +104,7 @@ const resolveApplicationPath = Effect.fn("NativeAppIconResolver.resolveApplicati
       : `kMDItemContentType == 'com.apple.application-bundle' && kMDItemDisplayName == '${escapeSpotlightString(app.displayName)}'`;
   const spotlightOutput = yield* commandOutput("/usr/bin/mdfind", [query]);
   const candidates = spotlightOutput
-    .split(/\r?\n/u)
+    .split(LINE_BREAK)
     .map((value) => value.trim())
     .filter((value) => value.endsWith(".app"));
   const matchingCandidates =

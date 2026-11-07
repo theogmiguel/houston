@@ -34,13 +34,17 @@ function isGitHubHost(hostname: string): boolean {
   return host === "github.com" || host.endsWith(".ghe.com") || host.split(".").includes("github");
 }
 
+const IS_REPOSITORY_PATH_PATTERN = /^[\w.-]+$/u;
+
 function isRepositoryPath(repository: string): boolean {
   const segments = repository.split("/");
   return (
     segments.length === 2 &&
     // GitHub owner and repository names are only these characters, so nothing here can
     // be an encoded dot segment, query or fragment that `new URL` would reinterpret.
-    segments.every((segment) => /^[\w.-]+$/u.test(segment) && segment !== "." && segment !== "..")
+    segments.every(
+      (segment) => IS_REPOSITORY_PATH_PATTERN.test(segment) && segment !== "." && segment !== "..",
+    )
   );
 }
 
@@ -54,6 +58,8 @@ export const APP_SIGN_IN: SourceControlAppSignIn = {
 
 export const settings = makeProviderSettingsSchema(hostCredentialSettingsFields);
 export type GitHubSettings = typeof settings.Type;
+
+const TRAILING_SLASHES = /\/+$/u;
 
 export const definition = defineSourceControl({
   kind: KIND,
@@ -127,7 +133,8 @@ export const definition = defineSourceControl({
       ? null
       : new URL(`/${encodeURIComponent(login)}`, repositoryUrl).toString(),
   referenceAutolinks: gitHubReferenceAutolinks,
-  changeRequestChecksUrl: (changeRequestUrl) => `${changeRequestUrl.replace(/\/+$/u, "")}/checks`,
+  changeRequestChecksUrl: (changeRequestUrl) =>
+    `${changeRequestUrl.replace(TRAILING_SLASHES, "")}/checks`,
   // Before servers reported their actions, GitHub was the only host they acted on from a list.
   changeRequestActionsWhenUnreported: new Set(["close", "merge", "ready", "reopen"] as const),
   // One search reads every repository on the host.

@@ -80,7 +80,11 @@ import { makeExpoApi, resolveExpoCredential } from "./ExpoApi.ts";
 import * as Exit from "effect/Exit";
 import * as LocalDeviceHost from "./LocalDeviceHost.ts";
 
+const TRAILING_SLASH = /\/$/;
+
 export const DEVICE_HUB_ROUTE_PREFIX = "/api/device-hub";
+
+const LINE_BREAK = /\r?\n/u;
 
 const sshProbeFailureMessage = (error: DeviceHost.DeviceHostError): string => {
   const windows = SshDeviceHost.isSshWindowsHostError(error.cause) ? error.cause : null;
@@ -97,7 +101,7 @@ const sshProbeFailureMessage = (error: DeviceHost.DeviceHostError): string => {
   if (
     cause.exitCode === 1 &&
     cause.stderr
-      .split(/\r?\n/u)
+      .split(LINE_BREAK)
       .some((line) => line.trim() === "Node is missing from the non-interactive SSH PATH")
   )
     return "Connected over SSH, but Node is not on this host's PATH for non-interactive SSH commands.";
@@ -250,6 +254,8 @@ export interface AgentDeviceLaunchers {
   /** Ends the agent-device session behind a launcher, which releases its claim on the device. */
   readonly release?: (launcher: string) => Effect.Effect<void>;
 }
+
+const LIBX264_ENCODER_LINE = /^\s*V\S*[ \t]+libx264(?:[ \t]|$)/m;
 
 export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* (
   hosts: ReadonlyMap<DeviceHostId, DeviceHost.DeviceHost["Service"]>,
@@ -788,7 +794,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
               "Android emulator video needs working ffmpeg with the libx264 encoder. Install it on the device host's PATH or set SERVE_EMU_FFMPEG there, then retry opening the emulator. After changing PATH or SERVE_EMU_FFMPEG, turn device support off and on for SSH hosts, or restart the local environment server.",
           });
         }
-        if (!/^\s*V\S*[ \t]+libx264(?:[ \t]|$)/m.test(`${encoders.stdout}\n${encoders.stderr}`)) {
+        if (!LIBX264_ENCODER_LINE.test(`${encoders.stdout}\n${encoders.stderr}`)) {
           return yield* new DevicePlatformUnavailableError({
             hostId: host.id,
             platform: "android",
@@ -1612,7 +1618,7 @@ export const make = Effect.gen(function* () {
       const environment = yield* HostProcess.Environment;
       const gatewayUrl = (
         input.gatewayUrl || SimlockDeviceHost.machineSimlockToken(environment)?.gatewayUrl
-      )?.replace(/\/$/, "");
+      )?.replace(TRAILING_SLASH, "");
       if (!gatewayUrl)
         return yield* new DeviceSimlockIdentityError({
           reason: "This machine's agent-device does not point at a Simlock gateway.",

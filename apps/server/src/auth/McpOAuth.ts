@@ -125,11 +125,16 @@ export const redirectMatches = (registered: string, presented: string): boolean 
   );
 };
 
+const TRAILING_SLASHES = /\/+$/u;
+
 const sameResource = (urls: McpOAuthUrls, presented: string | undefined): boolean => {
   if (presented === undefined) return true;
   try {
     const url = new URL(presented);
-    return url.hash === "" && `${url.origin}${url.pathname.replace(/\/+$/u, "")}` === urls.resource;
+    return (
+      url.hash === "" &&
+      `${url.origin}${url.pathname.replace(TRAILING_SLASHES, "")}` === urls.resource
+    );
   } catch {
     return false;
   }

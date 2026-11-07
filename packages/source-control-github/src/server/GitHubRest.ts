@@ -111,6 +111,8 @@ function classify(input: {
   return { _tag: "Failed", messages: restErrorMessages(body), ...meta };
 }
 
+const LEADING_SLASHES = /^\/+/;
+
 /** @public */
 export const make = Effect.gen(function* () {
   const httpClient = yield* HttpClient.HttpClient;
@@ -181,7 +183,7 @@ export const make = Effect.gen(function* () {
   });
 
   const rest: GitHubRest["Service"]["rest"] = (input) => {
-    const url = `${gitHubApiUrls(input.host).rest}/${input.path.replace(/^\/+/, "")}`;
+    const url = `${gitHubApiUrls(input.host).rest}/${input.path.replace(LEADING_SLASHES, "")}`;
     const base = HttpClientRequest.make(input.method ?? "GET")(url).pipe(
       HttpClientRequest.setHeader("accept", input.accept ?? "application/vnd.github+json"),
     );

@@ -209,17 +209,25 @@ export function mcpAppFromToolItem(item: {
     : undefined;
 }
 
+const MISSING_FILE_OUTPUT =
+  /file not found|no files found|enoent|no such file|commandnotfoundexception|command not found|is not recognized as the name of a cmdlet|a parameter cannot be found that matches parameter name/i;
+const MISSING_PATH_OUTPUT = /cannot find path/i;
+const NONEXISTENT_OUTPUT = /because it does not exist/i;
+const UNRECOGNIZED_COMMAND = /is not recognized/i;
+const UNRECOGNIZED_TERM = /the term '/i;
+const EXITED_WITH_CODE_TAG = /<exited with exit code\s+[1-9]\d*\s*>/i;
+const EXITED_WITH_CODE = /exit(?:ed)? with exit code\s+[1-9]\d*/i;
+const EXIT_CODE_OUTPUT = /exit code\s*[:\s]\s*[1-9]\d*\b/i;
+
 /** Some providers report completion even when command output describes a failure. */
 export function toolOutputIndicatesFailure(text: string): boolean {
   return (
-    /file not found|no files found|enoent|no such file|commandnotfoundexception|command not found|is not recognized as the name of a cmdlet|a parameter cannot be found that matches parameter name/i.test(
-      text,
-    ) ||
-    (/cannot find path/i.test(text) && /because it does not exist/i.test(text)) ||
-    (/is not recognized/i.test(text) && /the term '/i.test(text)) ||
-    /<exited with exit code\s+[1-9]\d*\s*>/i.test(text) ||
-    /exit(?:ed)? with exit code\s+[1-9]\d*/i.test(text) ||
-    /exit code\s*[:\s]\s*[1-9]\d*\b/i.test(text)
+    MISSING_FILE_OUTPUT.test(text) ||
+    (MISSING_PATH_OUTPUT.test(text) && NONEXISTENT_OUTPUT.test(text)) ||
+    (UNRECOGNIZED_COMMAND.test(text) && UNRECOGNIZED_TERM.test(text)) ||
+    EXITED_WITH_CODE_TAG.test(text) ||
+    EXITED_WITH_CODE.test(text) ||
+    EXIT_CODE_OUTPUT.test(text)
   );
 }
 

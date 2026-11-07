@@ -15,12 +15,16 @@ const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({
 });
 const DEFAULT_DRIVER_KIND = ProviderDriverKind.make("codex");
 
+const CAMEL_CASE_BOUNDARY = /([a-z])([A-Z])/g;
+const WORD_SEPARATOR_RUN = /[_-]+/g;
+const WORD_START = /\b\w/g;
+
 export function formatProviderDriverKindLabel(provider: ProviderDriverKind): string {
   return provider
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/[_-]+/g, " ")
+    .replace(CAMEL_CASE_BOUNDARY, "$1 $2")
+    .replace(WORD_SEPARATOR_RUN, " ")
     .trim()
-    .replace(/\b\w/g, (char) => char.toUpperCase());
+    .replace(WORD_START, (char) => char.toUpperCase());
 }
 
 export function getProviderModels(

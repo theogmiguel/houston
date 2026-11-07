@@ -426,6 +426,8 @@ interface PiWake {
   readonly events: Array<PiRpcRecord>;
 }
 
+const TEXT_PATTERN = /\p{Cc}/gu;
+
 export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
   options: PiAdapterV2Options,
 ) {
@@ -672,7 +674,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
             ? NodeUtil.stripVTControlCharacters(
                 rawText.slice(0, MAX_EXTENSION_STATUS_TEXT_LENGTH * 4),
               )
-                .replaceAll(/\p{Cc}/gu, " ")
+                .replaceAll(TEXT_PATTERN, " ")
                 .trim()
                 .slice(0, MAX_EXTENSION_STATUS_TEXT_LENGTH)
             : "";

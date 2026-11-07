@@ -130,9 +130,11 @@ export const spawnAndCollect = Effect.fn("snapshotProbe.spawnAndCollect")(functi
   return result;
 }, Effect.scoped);
 
+const SEMVER_TOKEN = /\bv?(\d+\.\d+\.\d+)\b/;
+
 export function parseGenericCliVersion(output: string): string | null {
   // Consume v before the digits; v2 has no internal word boundary.
-  const match = output.match(/\bv?(\d+\.\d+\.\d+)\b/);
+  const match = output.match(SEMVER_TOKEN);
   return match?.[1] ?? null;
 }
 

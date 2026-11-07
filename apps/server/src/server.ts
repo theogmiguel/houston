@@ -811,6 +811,8 @@ const layerMakeRoutes = Layer.mergeAll(
   Layer.provide(ServerHttp.layerHttpCompression),
 );
 
+const IPV6_BRACKETS = /^\[|\]$/gu;
+
 const layerMakeServer = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
@@ -880,7 +882,7 @@ const layerMakeServer = Layer.unwrap(
               }).pipe(
                 Effect.as({
                   localPort,
-                  localHost: localHost.replace(/^\[|\]$/gu, ""),
+                  localHost: localHost.replace(IPV6_BRACKETS, ""),
                   servePort: config.tailscaleServePort,
                 }),
                 Effect.tap(() =>

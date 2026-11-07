@@ -63,6 +63,8 @@ const decodeCodexSettings = Schema.decodeSync(CodexSettings);
 const DRIVER_KIND = ProviderDriverKind.make("codex");
 const CODEX_STANDALONE_HOME_PATTERN = /^(.*)\/packages\/standalone\//is;
 
+const IS_ROOT_PATTERN = /^[a-z]:$/i;
+
 function codexStandaloneHome(commandPath: string): string | null {
   // Slash replacement preserves indices; Unicode lowercasing can change the path length.
   const match = CODEX_STANDALONE_HOME_PATTERN.exec(commandPath.replaceAll("\\", "/"));
@@ -71,7 +73,7 @@ function codexStandaloneHome(commandPath: string): string | null {
   }
   const home = match[1]!;
   // Keep root separators: `C:` is drive-relative, and an empty home is not `/`.
-  const isRoot = home === "" || /^[a-z]:$/i.test(home);
+  const isRoot = home === "" || IS_ROOT_PATTERN.test(home);
   return commandPath.slice(0, home.length + (isRoot ? 1 : 0));
 }
 

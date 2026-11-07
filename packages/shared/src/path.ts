@@ -1,10 +1,14 @@
+const IS_WINDOWS_DRIVE_PATH_PATTERN = /^[a-zA-Z]:([/\\]|$)/;
+
 export function isWindowsDrivePath(value: string): boolean {
-  return /^[a-zA-Z]:([/\\]|$)/.test(value);
+  return IS_WINDOWS_DRIVE_PATH_PATTERN.test(value);
 }
 
 export function isUncPath(value: string): boolean {
   return value.startsWith("\\\\");
 }
+
+const IS_NETWORK_PATH_PATTERN = /^[\\/]{2}/;
 
 /**
  * Windows treats `/` and `\` alike, so any two leading separators name a UNC
@@ -12,7 +16,7 @@ export function isUncPath(value: string): boolean {
  * user's NTLM credentials, so agent-authored paths must not reach one.
  */
 export function isNetworkPath(value: string): boolean {
-  return /^[\\/]{2}/.test(value);
+  return IS_NETWORK_PATH_PATTERN.test(value);
 }
 
 export function isWindowsAbsolutePath(value: string): boolean {
@@ -30,22 +34,28 @@ export function isExplicitRelativePath(value: string): boolean {
   );
 }
 
+const IS_ROOT_PATH_PATTERN = /^[a-zA-Z]:[/\\]$/;
+
 function isRootPath(value: string): boolean {
   // Bare C: means the current directory on C, not its root; require the drive separator.
-  return value === "/" || value === "\\" || /^[a-zA-Z]:[/\\]$/.test(value);
+  return value === "/" || value === "\\" || IS_ROOT_PATH_PATTERN.test(value);
 }
+
+const TRAILING_SLASHES = /\/+$/g;
+const TRAILING_PATH_SEPARATORS = /[\\/]+$/g;
+const TRIM_TRAILING_PATH_SEPARATORS_PATTERN = /^[a-zA-Z]:$/;
 
 function trimTrailingPathSeparators(value: string): string {
   if (value.length === 0 || isRootPath(value)) {
     return value;
   }
   const trimmed = value.startsWith("/")
-    ? value.replace(/\/+$/g, "")
-    : value.replace(/[\\/]+$/g, "");
+    ? value.replace(TRAILING_SLASHES, "")
+    : value.replace(TRAILING_PATH_SEPARATORS, "");
   if (trimmed.length === 0) {
     return value;
   }
-  return /^[a-zA-Z]:$/.test(trimmed) ? `${trimmed}\\` : trimmed;
+  return TRIM_TRAILING_PATH_SEPARATORS_PATTERN.test(trimmed) ? `${trimmed}\\` : trimmed;
 }
 
 export function normalizeProjectPathForDispatch(value: string): string {
@@ -63,15 +73,20 @@ export function normalizeProjectPathForComparison(value: string): string {
 // Windows refuses these as file names, with or without an extension.
 const WINDOWS_RESERVED_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/;
 
+const COMBINING_MARK = /[̀-ͯ]/g;
+const NON_ALPHANUMERIC_RUN = /[^a-z0-9]+/g;
+const LEADING_HYPHENS = /^-+/;
+const TRAILING_HYPHENS = /-+$/;
+
 export function newProjectFolderName(name: string): string {
   const slug = name
     .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(COMBINING_MARK, "")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+/, "")
+    .replace(NON_ALPHANUMERIC_RUN, "-")
+    .replace(LEADING_HYPHENS, "")
     .slice(0, 64)
-    .replace(/-+$/, "");
+    .replace(TRAILING_HYPHENS, "");
   if (slug.length === 0) return "project";
   return WINDOWS_RESERVED_NAME.test(slug) ? `${slug}-project` : slug;
 }
@@ -83,12 +98,16 @@ export function stripSlashPrefixedWindowsDrive(path: string): string {
   return SLASH_PREFIXED_WINDOWS_DRIVE_PATTERN.test(path) ? path.slice(1) : path;
 }
 
+const TRAILING_SLASH_OR_BACKSLASH_RUN = /[/\\]+$/;
+
 export function fileBasename(path: string): string {
-  const trimmed = path.replace(/[/\\]+$/, "");
+  const trimmed = path.replace(TRAILING_SLASH_OR_BACKSLASH_RUN, "");
   if (trimmed.length === 0) return path;
   const separatorIndex = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
   return separatorIndex >= 0 ? trimmed.slice(separatorIndex + 1) : trimmed;
 }
+
+const NORMALIZED_ROOT_PATTERN = /\/+$/;
 
 export function workspaceRelativeFilePath(
   path: string,
@@ -98,11 +117,11 @@ export function workspaceRelativeFilePath(
   const normalizedPath = stripSlashPrefixedWindowsDrive(path.replaceAll("\\", "/"));
   const normalizedRoot = stripSlashPrefixedWindowsDrive(
     workspaceRoot.replaceAll("\\", "/"),
-  ).replace(/\/+$/, "");
+  ).replace(NORMALIZED_ROOT_PATTERN, "");
   const caseInsensitive = isWindowsAbsolutePath(stripSlashPrefixedWindowsDrive(workspaceRoot));
   const pathForCompare = caseInsensitive ? normalizedPath.toLowerCase() : normalizedPath;
   const rootForCompare = caseInsensitive ? normalizedRoot.toLowerCase() : normalizedRoot;
-  if (pathForCompare.replace(/\/+$/, "") === rootForCompare) return ".";
+  if (pathForCompare.replace(NORMALIZED_ROOT_PATTERN, "") === rootForCompare) return ".";
   if (!pathForCompare.startsWith(`${rootForCompare}/`)) return null;
   const relativePath = normalizedPath.slice(normalizedRoot.length + 1);
   // `/repo/../x` starts with the root but escapes it; the server rejects that as a workspace path.
@@ -128,6 +147,8 @@ export function isHostPath(value: string): boolean {
 const QUOTED_PATH_AT_END = /(?:'((?:[^']|'\\'')+)'|"([^"]+)")\s*$/;
 const SHELL_ESCAPE = /\\([\s'"\\()[\]{}<>|&;$`!*?#~^=])/g;
 
+const AFTER_FOLDER_PATTERN = /[/\\]$/;
+
 /**
  * What a folder box holds after a change. A full path pasted into it replaces the box, even after
  * the text already there, because `~/'/a b'` would create that nested folder.
@@ -146,7 +167,7 @@ export function resolvePastedPath(previous: string, next: string): string {
   }
 
   // Without a trailing separator, `/a` then `/a/b` is a longer path, not one pasted after a folder.
-  const afterFolder = /[/\\]$/.test(previous) && next.startsWith(previous);
+  const afterFolder = AFTER_FOLDER_PATTERN.test(previous) && next.startsWith(previous);
   const path = afterFolder ? next.slice(previous.length) : next;
   if (!isHostPath(path)) return next;
   // `\` separates folders in Windows paths, so it only escapes in `/` and `~/` paths.
@@ -155,7 +176,7 @@ export function resolvePastedPath(previous: string, next: string): string {
 
 export function resolveWorkspaceFilePath(path: string, workspaceRoot: string): string {
   if (isAbsolutePath(path) || path.startsWith("~/") || path.startsWith("~\\")) return path;
-  const base = workspaceRoot.replace(/[/\\]+$/, "");
+  const base = workspaceRoot.replace(TRAILING_SLASH_OR_BACKSLASH_RUN, "");
   return isWindowsAbsolutePath(workspaceRoot)
     ? `${base}\\${path.replaceAll("/", "\\")}`
     : `${base}/${path}`;

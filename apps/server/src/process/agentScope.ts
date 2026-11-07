@@ -95,6 +95,8 @@ export interface ProcessStat {
   readonly startTime: number;
 }
 
+const WHITESPACE_RUN = /\s+/;
+
 /** Parses /proc/<pid>/stat, whose comm field may contain spaces and parentheses. */
 export function parseProcStat(text: string): ProcessStat | undefined {
   const close = text.lastIndexOf(")");
@@ -102,7 +104,7 @@ export function parseProcStat(text: string): ProcessStat | undefined {
   const fields = text
     .slice(close + 2)
     .trim()
-    .split(/\s+/);
+    .split(WHITESPACE_RUN);
   const state = fields[0] ?? "";
   const ppid = Number(fields[1]);
   const session = Number(fields[3]);

@@ -49,11 +49,14 @@ const HubActionResult = Schema.Struct({
 const boundDiagnostics = (text: string) =>
   text.length > 2_000 ? `${text.slice(0, 1_999)}…` : text;
 
+const LINE_BREAK = /\r?\n/;
+const FIRST_FRAME_PATTERN = /^\s+at /;
+
 // The hub's `error` is a util.inspect of Node's exec error; the stack and the
 // inspected fields follow the first frame, so keep the lines before it.
 const errorHead = (error: string) => {
-  const lines = error.split(/\r?\n/);
-  const firstFrame = lines.findIndex((line) => /^\s+at /.test(line));
+  const lines = error.split(LINE_BREAK);
+  const firstFrame = lines.findIndex((line) => FIRST_FRAME_PATTERN.test(line));
   return (firstFrame === -1 ? lines : lines.slice(0, firstFrame))
     .map((line) => line.trim())
     .filter(Boolean)
@@ -62,6 +65,11 @@ const errorHead = (error: string) => {
 
 const vendorPrefix = (platform: DevicePlatform) =>
   platform === "ios" ? "/vendor/serve-sim" : "/vendor/serve-emu";
+
+const SIMULATOR_DEVICE_PLIST_PATH = /\/CoreSimulator\/Devices\/[^/]+\/device\.plist:$/;
+const ENOENT_ERROR_LINE = /(?:^Error:\s*ENOENT:|\bcode:\s*['"]ENOENT['"])/;
+const DISK_SPACE_FAILURE = /insufficient.*(?:disk|space)|not enough.*(?:disk|space)|no space left/i;
+const TIMEOUT_FAILURE = /timed? out|timeout/i;
 
 /** Device operations for a host that runs expo-device-hub at `origin`. */
 export const makeDeviceHubOperations = (options: {
@@ -145,8 +153,8 @@ export const makeDeviceHubOperations = (options: {
         // CoreSimulator can retain deleted devices; their optional usage timestamps are absent.
         !(
           error.message.startsWith("[apple-utils] Failed to read CoreSimulator plist at ") &&
-          /\/CoreSimulator\/Devices\/[^/]+\/device\.plist:$/.test(error.message) &&
-          /(?:^Error:\s*ENOENT:|\bcode:\s*['"]ENOENT['"])/.test(error.error ?? "")
+          SIMULATOR_DEVICE_PLIST_PATH.test(error.message) &&
+          ENOENT_ERROR_LINE.test(error.error ?? "")
         ),
     );
     const details =
@@ -165,7 +173,7 @@ export const makeDeviceHubOperations = (options: {
         );
       }
       for (const name of (avds.code === 0 ? avds.stdout : "")
-        .split(/\r?\n/)
+        .split(LINE_BREAK)
         .map((line) => line.trim())
         .filter(Boolean)) {
         if (!devices.some((device) => device.platform === "android" && device.name === name)) {
@@ -208,11 +216,9 @@ export const makeDeviceHubOperations = (options: {
       return yield* new DeviceBootError({
         hostId,
         deviceId: device.id,
-        reason: /insufficient.*(?:disk|space)|not enough.*(?:disk|space)|no space left/i.test(
-          diagnostics,
-        )
+        reason: DISK_SPACE_FAILURE.test(diagnostics)
           ? "disk_space"
-          : /timed? out|timeout/i.test(diagnostics)
+          : TIMEOUT_FAILURE.test(diagnostics)
             ? "timeout"
             : "launch_failed",
         ...(diagnostics ? { diagnostics: boundDiagnostics(diagnostics) } : {}),

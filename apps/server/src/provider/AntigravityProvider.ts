@@ -128,6 +128,8 @@ function nativeCommands(
   });
 }
 
+const IS_MISSING_INSTALLATION_PATTERN = /not installed|missing|incomplete|does not publish/i;
+
 function isMissingInstallation(error: EffectAcpErrors.AcpError | ProviderSetupError): boolean {
   if (error._tag === "AcpSpawnError") {
     return (
@@ -138,7 +140,7 @@ function isMissingInstallation(error: EffectAcpErrors.AcpError | ProviderSetupEr
   return (
     error._tag === "ProviderSetupError" &&
     error.operation === "resolve" &&
-    /not installed|missing|incomplete|does not publish/i.test(error.detail)
+    IS_MISSING_INSTALLATION_PATTERN.test(error.detail)
   );
 }
 

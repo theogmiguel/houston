@@ -12,8 +12,14 @@ interface OpenDiffFilePrimaryActionInput {
   readonly openInEditor: (targetPath: string) => void;
 }
 
+const WINDOWS_DRIVE_PREFIX = /^[a-zA-Z]:/;
+
 function normalizedRelativePathSegments(filePath: string): ReadonlyArray<string> | null {
-  if (filePath.startsWith("/") || isWindowsAbsolutePath(filePath) || /^[a-zA-Z]:/.test(filePath)) {
+  if (
+    filePath.startsWith("/") ||
+    isWindowsAbsolutePath(filePath) ||
+    WINDOWS_DRIVE_PREFIX.test(filePath)
+  ) {
     return null;
   }
 
@@ -24,6 +30,8 @@ function normalizedRelativePathSegments(filePath: string): ReadonlyArray<string>
   if (segments.length === 0 || segments.includes("..")) return null;
   return segments;
 }
+
+const REPOSITORY_RELATIVE_WORKSPACE_SEGMENTS_PATTERN = /[\\/]+/;
 
 function repositoryRelativeWorkspaceSegments(
   workspaceRoot: string | undefined,
@@ -43,7 +51,7 @@ function repositoryRelativeWorkspaceSegments(
 
   return normalizedWorkspaceRoot
     .slice(repositoryPrefix.length)
-    .split(/[\\/]+/)
+    .split(REPOSITORY_RELATIVE_WORKSPACE_SEGMENTS_PATTERN)
     .filter(Boolean);
 }
 

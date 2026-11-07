@@ -88,6 +88,10 @@ const groupExists = (pgid: number) => {
   }
 };
 
+const WHITESPACE_RUN = /\s+/;
+const TRAILING_NUL = /\0$/;
+const DIGITS_ONLY = /^\d+$/;
+
 export const make = Effect.fn("OpenCodeServerLedger.make")(function* (input: {
   readonly stateDir: string;
   readonly ownerPid?: number;
@@ -105,7 +109,7 @@ export const make = Effect.fn("OpenCodeServerLedger.make")(function* (input: {
     const fields = stat
       .slice(stat.lastIndexOf(")") + 2)
       .trim()
-      .split(/\s+/);
+      .split(WHITESPACE_RUN);
     const pgid = Number(fields[2]);
     const startTime = fields[19];
     if (!Number.isSafeInteger(pgid) || startTime === undefined) return undefined;
@@ -115,7 +119,7 @@ export const make = Effect.fn("OpenCodeServerLedger.make")(function* (input: {
       pid,
       pgid,
       startTime,
-      command: cmdline.replace(/\0$/, "").replaceAll("\0", " "),
+      command: cmdline.replace(TRAILING_NUL, "").replaceAll("\0", " "),
       zombie: fields[0] === "Z",
     } satisfies ObservedProcess;
   });
@@ -153,7 +157,7 @@ export const make = Effect.fn("OpenCodeServerLedger.make")(function* (input: {
       return fs.readDirectory("/proc").pipe(
         Effect.flatMap((names) =>
           Effect.forEach(
-            names.filter((name) => /^\d+$/.test(name)),
+            names.filter((name) => DIGITS_ONLY.test(name)),
             (name) => observeLinux(Number(name), pgid).pipe(Effect.orElseSucceed(() => undefined)),
             { concurrency: 16 },
           ),

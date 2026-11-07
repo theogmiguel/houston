@@ -20,6 +20,8 @@ const readEnvironmentUrl = (environmentId: EnvironmentId): URL => {
   return new URL(connection.httpBaseUrl);
 };
 
+const IPV6_BRACKETS = /^\[|\]$/g;
+
 const resolveEnvironmentPortTarget = (
   environmentId: EnvironmentId,
   target: Extract<BrowserNavigationTarget, { readonly kind: "environment-port" }>,
@@ -34,7 +36,7 @@ const resolveEnvironmentPortTarget = (
   }
   const protocol = target.protocol ?? "http";
   const path = target.path?.startsWith("/") ? target.path : `/${target.path ?? ""}`;
-  const normalizedEnvironmentHost = environmentUrl.hostname.replace(/^\[|\]$/g, "");
+  const normalizedEnvironmentHost = environmentUrl.hostname.replace(IPV6_BRACKETS, "");
   // localhost lets Chromium reach loopback servers bound to either IPv4 or IPv6.
   const resolvedHost = isLocalLoopbackHost(normalizedEnvironmentHost)
     ? "localhost"

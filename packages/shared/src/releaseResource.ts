@@ -2,9 +2,11 @@ import { type CliReleaseChannel, cliReleaseChannelOf } from "./cliRelease.ts";
 
 export type ReleaseChannel = "dev" | CliReleaseChannel;
 
+const RELEASE_CHANNEL_OF_PATTERN = /-pr\.\d+\.\d+$/;
+
 // Desktop PR preview builds are stamped `X.Y.Z-pr.<number>.<run>`; the CLI updater must not see them as preview.
 export const releaseChannelOf = (version: string): ReleaseChannel =>
-  /-pr\.\d+\.\d+$/.test(version) ? "preview" : cliReleaseChannelOf(version);
+  RELEASE_CHANNEL_OF_PATTERN.test(version) ? "preview" : cliReleaseChannelOf(version);
 
 // Effect lets code attributes beat OTEL_RESOURCE_ATTRIBUTES, so the operator value is applied here.
 export const releaseResourceAttributes = (

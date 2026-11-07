@@ -23,25 +23,27 @@ const DESKTOP_KEY_ALIASES: Readonly<Record<string, string>> = {
   minus: "-",
 };
 
+const PRESS_PREFIX = /^Press\s+/i;
+const GTK_PATTERN = /^((?:<[^<>]+>)+)([^<>]+)$/;
+const ANGLE_BRACKET_KEY = /<([^<>]+)>/g;
+const SUPER_KEY_ALIAS = /\b(super|win|primary)\b/gi;
+const SINGLE_CHARACTER_KEY = /^[^\s<>]$/u;
+const NAMED_KEY =
+  /^(?:f(?:[1-9]|1\d|2[0-4])|enter|tab|escape|backspace|delete|insert|home|end|pageup|pagedown|arrow(?:left|right|up|down)|pause|printscreen)$/i;
+
 export function parseDesktopSnapShotShortcut(label: string): KeybindingShortcut | null {
-  const text = label.trim().replace(/^Press\s+/i, "");
+  const text = label.trim().replace(PRESS_PREFIX, "");
   if (!text) return null;
-  const gtk = text.match(/^((?:<[^<>]+>)+)([^<>]+)$/);
-  const input = (gtk ? gtk[1]!.replace(/<([^<>]+)>/g, "$1+") + gtk[2]! : text).replace(
-    /\b(super|win|primary)\b/gi,
+  const gtk = text.match(GTK_PATTERN);
+  const input = (gtk ? gtk[1]!.replace(ANGLE_BRACKET_KEY, "$1+") + gtk[2]! : text).replace(
+    SUPER_KEY_ALIAS,
     (modifier) => (modifier.toLowerCase() === "primary" ? "ctrl" : "meta"),
   );
   if (input !== "+" && input.endsWith("+") && !input.endsWith("++")) return null;
   const shortcut = parseKeybindingShortcut(input);
   if (!shortcut) return null;
   const key = DESKTOP_KEY_ALIASES[shortcut.key] ?? shortcut.key;
-  if (
-    key !== " " &&
-    !/^[^\s<>]$/u.test(key) &&
-    !/^(?:f(?:[1-9]|1\d|2[0-4])|enter|tab|escape|backspace|delete|insert|home|end|pageup|pagedown|arrow(?:left|right|up|down)|pause|printscreen)$/i.test(
-      key,
-    )
-  ) {
+  if (key !== " " && !SINGLE_CHARACTER_KEY.test(key) && !NAMED_KEY.test(key)) {
     return null;
   }
   return { ...shortcut, key };

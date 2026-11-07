@@ -44,12 +44,14 @@ export class DirectEndpoints extends Context.Service<
 const isAdvertisableAddress = (address: string): boolean =>
   NodeNet.isIPv4(address) && !address.startsWith("127.") && isPrivateNetworkAddress(address);
 
+const IS_TAILSCALE_INTERFACE_PATTERN = /^tailscale/i;
+
 // macOS utun names need Tailscale's IPv6 range to identify them; WARP shares its IPv4 range.
 const isTailscaleInterface = (
   name: string,
   entries: ReadonlyArray<NodeOS.NetworkInterfaceInfo>,
 ): boolean =>
-  /^tailscale/i.test(name) ||
+  IS_TAILSCALE_INTERFACE_PATTERN.test(name) ||
   entries.some((entry) => entry.family === "IPv6" && isTailnetHost(entry.address));
 
 // Windows adapter names are mutable; Linux bridges can inherit these MACs.

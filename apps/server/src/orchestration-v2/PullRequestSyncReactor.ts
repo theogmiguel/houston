@@ -87,6 +87,8 @@ const LISTS_CHANGE_REQUESTS =
   /\b(?:gh\s+(?:pr\s+(?:list|status)|search\s+prs|api)|glab\s+(?:mr\s+list|api))\b/u;
 const URL_LINE = /^[ \t]*(https?:\/\/\S+)[ \t]*$/gmu;
 
+const SHELL_SCRIPT_PATTERN = /\\(["\\$`])/gu;
+
 /** The script a shell input runs, unwrapped from Codex's `sh -lc`. */
 function shellScript(input: string): string {
   const [, wrapped] = SHELL_WRAPPER.exec(input) ?? [];
@@ -95,7 +97,7 @@ function shellScript(input: string): string {
     : Array.from(
         wrapped.matchAll(SHELL_WORD_PIECE),
         ([, double, single, escaped, bare]) =>
-          double?.replace(/\\(["\\$`])/gu, "$1") ?? single ?? escaped ?? bare,
+          double?.replace(SHELL_SCRIPT_PATTERN, "$1") ?? single ?? escaped ?? bare,
       ).join("");
 }
 

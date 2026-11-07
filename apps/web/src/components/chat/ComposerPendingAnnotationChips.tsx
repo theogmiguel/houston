@@ -15,8 +15,10 @@ export type PendingPreviewAnnotationChip = {
 
 const QUOTE_PREVIEW_CHARS = 38;
 
+const WHITESPACE_RUN = /\s+/g;
+
 export function citationChipLabel(citation: AssistantCitation): string {
-  const quote = citation.text.replace(/\s+/g, " ").trim();
+  const quote = citation.text.replace(WHITESPACE_RUN, " ").trim();
   const preview =
     quote.length > QUOTE_PREVIEW_CHARS ? `${quote.slice(0, QUOTE_PREVIEW_CHARS)}…` : quote;
   return `“${preview}”${citation.comment ? ` · ${citation.comment}` : ""}`;

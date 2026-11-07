@@ -94,6 +94,10 @@ function windowsEnvironmentValue(environment: NodeJS.ProcessEnv, name: string) {
   return key === undefined ? undefined : environment[key];
 }
 
+const MUSE_LAUNCH_PATTERN = /\.(?:cmd|bat)$/i;
+const WHITESPACE_CHAR = /\s/;
+const CMD_SPECIAL_CHARACTER = /[()&<>@^|]/g;
+
 /** Resolve Windows launchers with PATHEXT and run .cmd/.bat under cmd.exe; SDK spawn has no shell. */
 export const museLaunch = Effect.fn("museLaunch")(function* (
   binaryPath: string,
@@ -103,7 +107,7 @@ export const museLaunch = Effect.fn("museLaunch")(function* (
   const env = environment ?? (yield* HostProcess.Environment);
   const resolveExecutable = yield* SpawnExecutableResolution;
   const resolved = resolveExecutable(binaryPath, "win32", env) ?? binaryPath;
-  if (!/\.(?:cmd|bat)$/i.test(resolved)) return { command: resolved, args: [] };
+  if (!MUSE_LAUNCH_PATTERN.test(resolved)) return { command: resolved, args: [] };
   const systemRoot = windowsEnvironmentValue(env, "SystemRoot");
   return {
     command:
@@ -113,7 +117,9 @@ export const museLaunch = Effect.fn("museLaunch")(function* (
     args: [
       "/d",
       "/c",
-      ...(/\s/.test(resolved) ? ["@", resolved] : [resolved.replace(/[()&<>@^|]/g, "^$&")]),
+      ...(WHITESPACE_CHAR.test(resolved)
+        ? ["@", resolved]
+        : [resolved.replace(CMD_SPECIAL_CHARACTER, "^$&")]),
     ],
   };
 });

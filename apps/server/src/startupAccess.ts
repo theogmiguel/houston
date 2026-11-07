@@ -51,12 +51,14 @@ export const formatHostForUrl = (host: string): string =>
 export const VIRTUAL_INTERFACE =
   /^(docker|br-|veth|virbr|vmnet|vboxnet|vEthernet|podman|cni|flannel|cali|lxcbr|lxdbr|bridge[1-9]\d\d)/;
 
+const IPV4_PATTERN = /^::ffff:/i;
+
 /**
  * Loopback or private-range IPv4 (LAN, tailnet, CGNAT), not link-local, in
  * plain or IPv4-mapped IPv6 form.
  */
 export const isPrivateNetworkAddress = (address: string): boolean => {
-  const ipv4 = address.replace(/^::ffff:/i, "");
+  const ipv4 = address.replace(IPV4_PATTERN, "");
   return NodeNet.isIPv4(ipv4) && !ipv4.startsWith("169.254.") && isPrivateNetworkHost(ipv4);
 };
 

@@ -52,19 +52,25 @@ export function releaseClaimedRoles(
   };
 }
 
+const NON_ALPHANUMERIC_RUN = /[^a-z0-9]+/g;
+const EDGE_HYPHENS = /^-+|-+$/g;
+const NORMALIZE_SCRIPT_ID_PATTERN = /-+$/g;
+
 function normalizeScriptId(value: string): string {
   const cleaned = value
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+    .replace(NON_ALPHANUMERIC_RUN, "-")
+    .replace(EDGE_HYPHENS, "");
   if (cleaned.length === 0) {
     return "script";
   }
   if (cleaned.length <= MAX_SCRIPT_ID_LENGTH) {
     return cleaned;
   }
-  return cleaned.slice(0, MAX_SCRIPT_ID_LENGTH).replace(/-+$/g, "") || "script";
+  return (
+    cleaned.slice(0, MAX_SCRIPT_ID_LENGTH).replace(NORMALIZE_SCRIPT_ID_PATTERN, "") || "script"
+  );
 }
 
 export function commandForProjectScript(scriptId: string): KeybindingCommand | null {

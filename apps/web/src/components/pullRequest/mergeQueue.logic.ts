@@ -325,6 +325,8 @@ export function mergeQueueEntryActions(
   };
 }
 
+const MERGE_QUEUE_COMMAND_ERROR_PATTERN = /[\r\n]/;
+
 export function mergeQueueCommandError(command: string): string | null {
   const trimmed = command.trim();
   const bytes = new TextEncoder().encode(trimmed).length;
@@ -332,7 +334,8 @@ export function mergeQueueCommandError(command: string): string | null {
   if (bytes > limit) {
     return `The verification command is ${bytes} bytes; the limit is ${limit} bytes.`;
   }
-  if (/[\r\n]/.test(command)) return "The verification command must be one line.";
+  if (MERGE_QUEUE_COMMAND_ERROR_PATTERN.test(command))
+    return "The verification command must be one line.";
   return null;
 }
 

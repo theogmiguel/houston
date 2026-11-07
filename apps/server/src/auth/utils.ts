@@ -106,48 +106,66 @@ function normalizeIpAddress(value: string | null | undefined): string | undefine
   return normalized.startsWith("::ffff:") ? normalized.slice("::ffff:".length) : normalized;
 }
 
+const BOT_USER_AGENT = /bot|crawler|spider|slurp|curl|wget/;
+const TABLET_USER_AGENT = /ipad|tablet/;
+const MOBILE_USER_AGENT = /iphone|android.+mobile|mobile/;
+
 function inferDeviceType(userAgent: string | undefined): AuthClientMetadataDeviceType {
   if (!userAgent) {
     return "unknown";
   }
 
   const normalized = userAgent.toLowerCase();
-  if (/bot|crawler|spider|slurp|curl|wget/.test(normalized)) {
+  if (BOT_USER_AGENT.test(normalized)) {
     return "bot";
   }
-  if (/ipad|tablet/.test(normalized)) {
+  if (TABLET_USER_AGENT.test(normalized)) {
     return "tablet";
   }
-  if (/iphone|android.+mobile|mobile/.test(normalized)) {
+  if (MOBILE_USER_AGENT.test(normalized)) {
     return "mobile";
   }
   return "desktop";
 }
+
+const EDGE_USER_AGENT = /edg(?:e|a|ios)?\//;
+const OPERA_USER_AGENT = /opr\/|opios\//;
+const FIREFOX_USER_AGENT = /firefox\/|fxios\//;
+const ELECTRON_USER_AGENT = /electron\//;
+const CHROME_USER_AGENT = /chrome\//;
+const CHROME_IOS_USER_AGENT = /crios\//;
+const SAFARI_USER_AGENT = /safari\//;
 
 function inferBrowser(userAgent: string | undefined): string | undefined {
   if (!userAgent) {
     return undefined;
   }
   const normalized = userAgent.toLowerCase();
-  if (/edg(?:e|a|ios)?\//.test(normalized)) return "Edge";
-  if (/opr\/|opios\//.test(normalized)) return "Opera";
-  if (/firefox\/|fxios\//.test(normalized)) return "Firefox";
-  if (/electron\//.test(normalized)) return "Electron";
-  if (/chrome\//.test(normalized) || /crios\//.test(normalized)) return "Chrome";
-  if (/safari\//.test(normalized) && !/chrome\//.test(normalized)) return "Safari";
+  if (EDGE_USER_AGENT.test(normalized)) return "Edge";
+  if (OPERA_USER_AGENT.test(normalized)) return "Opera";
+  if (FIREFOX_USER_AGENT.test(normalized)) return "Firefox";
+  if (ELECTRON_USER_AGENT.test(normalized)) return "Electron";
+  if (CHROME_USER_AGENT.test(normalized) || CHROME_IOS_USER_AGENT.test(normalized)) return "Chrome";
+  if (SAFARI_USER_AGENT.test(normalized) && !CHROME_USER_AGENT.test(normalized)) return "Safari";
   return undefined;
 }
+
+const IOS_USER_AGENT = /iphone|ipad|ipod/;
+const ANDROID_USER_AGENT = /android/;
+const MACOS_USER_AGENT = /mac os x|macintosh/;
+const WINDOWS_USER_AGENT = /windows nt/;
+const LINUX_USER_AGENT = /linux/;
 
 function inferOs(userAgent: string | undefined): string | undefined {
   if (!userAgent) {
     return undefined;
   }
   const normalized = userAgent.toLowerCase();
-  if (/iphone|ipad|ipod/.test(normalized)) return "iOS";
-  if (/android/.test(normalized)) return "Android";
-  if (/mac os x|macintosh/.test(normalized)) return "macOS";
-  if (/windows nt/.test(normalized)) return "Windows";
-  if (/linux/.test(normalized)) return "Linux";
+  if (IOS_USER_AGENT.test(normalized)) return "iOS";
+  if (ANDROID_USER_AGENT.test(normalized)) return "Android";
+  if (MACOS_USER_AGENT.test(normalized)) return "macOS";
+  if (WINDOWS_USER_AGENT.test(normalized)) return "Windows";
+  if (LINUX_USER_AGENT.test(normalized)) return "Linux";
   return undefined;
 }
 

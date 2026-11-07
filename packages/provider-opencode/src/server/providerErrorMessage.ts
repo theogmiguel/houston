@@ -1,3 +1,6 @@
+const HTML_TITLE = /<title[^>]*>([^<]*)<\/title>/i;
+const WHITESPACE_RUNS = /\s+/g;
+
 /** OpenCode stores `<none>` when it cannot read the provider body. */
 export function readableProviderErrorMessage(
   message?: string,
@@ -6,10 +9,7 @@ export function readableProviderErrorMessage(
 ): string | undefined {
   const text = message?.trim() ?? "";
   if (text && text.toLowerCase() !== "<none>") return text;
-  const title = body
-    ?.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]
-    ?.replace(/\s+/g, " ")
-    .trim();
+  const title = body?.match(HTML_TITLE)?.[1]?.replace(WHITESPACE_RUNS, " ").trim();
   if (title) return typeof status === "number" ? `${title} (HTTP ${status}).` : title;
   if (typeof status === "number") return `The model provider failed the request (HTTP ${status}).`;
   return text

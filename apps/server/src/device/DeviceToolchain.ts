@@ -209,6 +209,8 @@ export const isDeviceHubInstalled = (baseDir: string) =>
 export const isAgentDeviceInstalled = (baseDir: string) =>
   isToolInstalled(baseDir, AGENT_DEVICE_SPEC, (paths) => paths.agentDevice);
 
+const INSPECT_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+(?:-[a-zA-Z0-9.-]+)?$/;
+
 export const deviceToolVersions = Effect.fn("DeviceToolchain.versions")(function* (
   baseDir: string,
   running: { hub?: string; agent?: string } = {},
@@ -224,7 +226,7 @@ export const deviceToolVersions = Effect.fn("DeviceToolchain.versions")(function
       ),
     );
     const versions = yield* Effect.filter(names, (version) =>
-      /^[0-9]+\.[0-9]+\.[0-9]+(?:-[a-zA-Z0-9.-]+)?$/.test(version)
+      INSPECT_PATTERN.test(version)
         ? Effect.gen(function* () {
             const paths = toolPaths(path, baseDir, { ...spec, version });
             const sentinel = yield* fs.readFileString(paths.sentinelPath).pipe(

@@ -127,6 +127,8 @@ import type {
   ProviderListCursor,
 } from "@houston-app/source-control-core/server/PullRequestProvider";
 
+const DIGITS_ONLY = /^\d+$/;
+
 export class GitHubPullRequestReadError extends Schema.TaggedError<GitHubPullRequestReadError>()(
   "GitHubPullRequestReadError",
   {
@@ -759,9 +761,11 @@ function parseRepositorySelector(value: string): {
   return { name: parts.at(-1) ?? "", owner: parts.at(-2) ?? "" };
 }
 
+const DIFF_CURSOR_PAGE_PATTERN = /^[1-9][0-9]{0,6}$/;
+
 /** Bound decimal length to prevent exponential notation in request paths. */
 function diffCursorPage(cursor: string): number | null {
-  return /^[1-9][0-9]{0,6}$/.test(cursor) ? Number(cursor) : null;
+  return DIFF_CURSOR_PAGE_PATTERN.test(cursor) ? Number(cursor) : null;
 }
 
 const REVIEW_QUALIFIERS = {
@@ -2400,7 +2404,7 @@ export const make = Effect.gen(function* () {
     searchRepositoryReferences: Effect.fn("GitHubPullRequestApi.searchRepositoryReferences")(
       function (input) {
         const { owner, name } = parseRepositorySelector(input.repository);
-        const parsed = /^\d+$/.test(input.query ?? "") ? Number(input.query) : 0;
+        const parsed = DIGITS_ONLY.test(input.query ?? "") ? Number(input.query) : 0;
         // GraphQL validates `$number: Int!` even when `@include` skips the lookup.
         const exact = parsed > 0 && parsed <= 2_147_483_647;
         const search = (lookup: boolean) =>

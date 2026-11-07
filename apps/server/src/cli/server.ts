@@ -54,6 +54,9 @@ const runServerCommand = Effect.fn("server.runServerCommand")(function* (
   );
 });
 
+const PATH_SEPARATOR = /[/\\]/;
+const WINDOWS_DRIVE_PREFIX = /^[a-z]:/i;
+
 export const runDefaultServerCommand = Effect.fn("server.runDefaultServerCommand")(function* (
   flags: CliServerFlags,
 ) {
@@ -65,8 +68,8 @@ export const runDefaultServerCommand = Effect.fn("server.runDefaultServerCommand
       cwd === "." ||
       cwd === ".." ||
       cwd === "~" ||
-      /[/\\]/.test(cwd) ||
-      (platform === "win32" && /^[a-z]:/i.test(cwd));
+      PATH_SEPARATOR.test(cwd) ||
+      (platform === "win32" && WINDOWS_DRIVE_PREFIX.test(cwd));
     if (!explicitPath && (!(yield* fs.exists(cwd)) || (yield* fs.stat(cwd)).type !== "Directory")) {
       return yield* new CliError.UserError({
         cause: cwd,

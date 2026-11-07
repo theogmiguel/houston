@@ -488,6 +488,9 @@ function summarizeGitActionResult(
   return { title: "Done" };
 }
 
+const LINE_BREAK = /\r?\n/g;
+const SUBJECT_PATTERN = /[.]+$/g;
+
 function sanitizeCommitMessage(generated: {
   subject: string;
   body: string;
@@ -497,8 +500,8 @@ function sanitizeCommitMessage(generated: {
   body: string;
   branch?: string | undefined;
 } {
-  const rawSubject = generated.subject.trim().split(/\r?\n/g)[0]?.trim() ?? "";
-  const subject = rawSubject.replace(/[.]+$/g, "").trim();
+  const rawSubject = generated.subject.trim().split(LINE_BREAK)[0]?.trim() ?? "";
+  const subject = rawSubject.replace(SUBJECT_PATTERN, "").trim();
   const safeSubject = subject.length > 0 ? subject.slice(0, 72).trimEnd() : "Update project files";
   return {
     subject: safeSubject,
@@ -539,8 +542,10 @@ function formatCommitMessage(subject: string, body: string): string {
   return `${subject}\n\n${trimmedBody}`;
 }
 
+const CRLF = /\r\n/g;
+
 function parseCustomCommitMessage(raw: string): { subject: string; body: string } | null {
-  const normalized = raw.replace(/\r\n/g, "\n").trim();
+  const normalized = raw.replace(CRLF, "\n").trim();
   if (normalized.length === 0) {
     return null;
   }
@@ -608,9 +613,11 @@ function toStatusPr(pr: PullRequestInfo): {
   };
 }
 
+const HASH_NUMBER_PATTERN = /^#(\d+)$/;
+
 function normalizePullRequestReference(reference: string): string {
   const trimmed = reference.trim();
-  const hashNumber = /^#(\d+)$/.exec(trimmed);
+  const hashNumber = HASH_NUMBER_PATTERN.exec(trimmed);
   return hashNumber?.[1] ?? trimmed;
 }
 
@@ -652,6 +659,10 @@ function toPullRequestHeadRemoteInfo(pr: {
       : {}),
   };
 }
+
+const HTTP_URL_PREFIX = /^https?:\/\//iu;
+const HEADS_REF_PREFIX = /^refs\/heads\//;
+const COMMIT_HASH = /^[0-9a-f]{7,64}$/i;
 
 export const make = Effect.gen(function* () {
   const gitCore = yield* GitVcsDriver.GitVcsDriver;
@@ -1521,7 +1532,7 @@ export const make = Effect.gen(function* () {
     let repositoryNameWithOwner = parseRepositoryNameWithOwnerFromRemoteUrl(remoteUrl);
     if (
       remoteUrl !== null &&
-      /^https?:\/\//iu.test(remoteUrl) &&
+      HTTP_URL_PREFIX.test(remoteUrl) &&
       (repositoryNameWithOwner?.split("/").length ?? 0) > 2
     ) {
       const kind = sourceControlDefinitions.recognizeRemote(remoteUrl)?.kind;
@@ -2553,7 +2564,7 @@ export const make = Effect.gen(function* () {
         });
       }
       remoteName = savedRemoteName;
-      const upstreamBranch = savedRemoteRef.replace(/^refs\/heads\//, "");
+      const upstreamBranch = savedRemoteRef.replace(HEADS_REF_PREFIX, "");
       upstreamRef = `${remoteName}/${upstreamBranch}`;
     } else if (!localBranchExists) {
       const trackingRemotes = yield* remember(
@@ -2773,7 +2784,7 @@ export const make = Effect.gen(function* () {
 
   // Some hosts only switch branches on checkout; use the existing lossless refresh to advance them.
   const moveToPullRequestHead = (cwd: string, headSha: string | undefined) =>
-    headSha === undefined || !/^[0-9a-f]{7,64}$/i.test(headSha)
+    headSha === undefined || !COMMIT_HASH.test(headSha)
       ? Effect.succeed(false)
       : gitCore.resolveCommit({ cwd, revision: headSha }).pipe(
           Effect.flatMap(({ commitSha }) =>

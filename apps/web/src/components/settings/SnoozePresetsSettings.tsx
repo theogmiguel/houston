@@ -373,6 +373,8 @@ function SnoozePresetList(props: {
   );
 }
 
+const CLOCK_TIME = /^\d{2}:\d{2}$/;
+
 function SnoozePresetFields(props: {
   preset: SnoozePresetSetting;
   onChange: (preset: SnoozePresetSetting) => void;
@@ -427,7 +429,7 @@ function SnoozePresetFields(props: {
             aria-label="Time"
             value={preset.time}
             onChange={(event) => {
-              if (/^\d{2}:\d{2}$/.test(event.target.value)) {
+              if (CLOCK_TIME.test(event.target.value)) {
                 onChange({ ...preset, time: event.target.value });
               }
             }}

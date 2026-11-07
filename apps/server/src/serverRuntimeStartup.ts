@@ -246,9 +246,11 @@ export const autoPullProjects = Effect.fn("autoPullProjects")(function* (
   );
 });
 
+const PATH_SEPARATOR = /[/\\]/;
+
 const resolveWelcomeBase = Effect.gen(function* () {
   const serverConfig = yield* ServerConfig.ServerConfig;
-  const segments = serverConfig.cwd.split(/[/\\]/).filter(Boolean);
+  const segments = serverConfig.cwd.split(PATH_SEPARATOR).filter(Boolean);
   const projectName = segments[segments.length - 1] ?? "project";
 
   return {

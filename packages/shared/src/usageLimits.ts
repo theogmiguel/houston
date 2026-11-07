@@ -21,6 +21,10 @@ const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
+const EXHAUSTED_USAGE_WINDOW_PATTERN = /^(auto|default|grok|composer)/;
+const FAMILY_PATTERN = /^(gemini|claude|gpt)-/;
+const POOL_PATTERN = /^(gemini|claude|gpt|3p)-/;
+
 export function exhaustedUsageWindow(
   provider: ServerProvider | undefined,
   now: number,
@@ -38,12 +42,12 @@ export function exhaustedUsageWindow(
     case "cursor": {
       const api = exhausted.find((window) => window.id === "apiPercentUsed");
       const auto = exhausted.find((window) => window.id === "autoPercentUsed");
-      return /^(auto|default|grok|composer)/.test(model) ? auto && api : api;
+      return EXHAUSTED_USAGE_WINDOW_PATTERN.test(model) ? auto && api : api;
     }
     case "antigravity": {
-      const family = model.match(/^(gemini|claude|gpt)-/)?.[1];
+      const family = model.match(FAMILY_PATTERN)?.[1];
       return exhausted.find((window) => {
-        const pool = window.id.match(/^(gemini|claude|gpt|3p)-/)?.[1];
+        const pool = window.id.match(POOL_PATTERN)?.[1];
         return (
           pool === undefined ||
           family === undefined ||
@@ -251,6 +255,8 @@ export interface LimitAccount {
   readonly limits: ServerProviderUsageLimits;
 }
 
+const JSON_SUFFIX = /\.json$/i;
+
 export function collectLimitAccounts(presentations: LimitPresentations): readonly LimitAccount[] {
   const accounts = new Map<string, LimitAccount>();
   const creditSources = new Map<string, LimitAccount>();
@@ -353,7 +359,7 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
         merge(resolveKey(account) ?? key, {
           key,
           driver: account.driver,
-          displayName: account.email ? null : account.id.replace(/\.json$/i, ""),
+          displayName: account.email ? null : account.id.replace(JSON_SUFFIX, ""),
           email: account.email,
           plan: account.plan,
           accentColor: undefined,
@@ -430,14 +436,16 @@ export interface LimitPool {
   readonly windows: readonly LimitPoolWindow[];
 }
 
+const DISPLAY_LIMIT_WINDOWS_PATTERN = /-(5h|weekly|quota)$/;
+
 export function displayLimitWindows(pool: LimitPool) {
   if (pool.driver === "antigravity") {
     return [...pool.windows].sort(
       (left, right) =>
         Number(!left.id.startsWith("gemini-")) - Number(!right.id.startsWith("gemini-")) ||
         left.id
-          .replace(/-(5h|weekly|quota)$/, "")
-          .localeCompare(right.id.replace(/-(5h|weekly|quota)$/, "")) ||
+          .replace(DISPLAY_LIMIT_WINDOWS_PATTERN, "")
+          .localeCompare(right.id.replace(DISPLAY_LIMIT_WINDOWS_PATTERN, "")) ||
         WINDOW_KIND_ORDER[left.kind] - WINDOW_KIND_ORDER[right.kind],
     );
   }

@@ -72,9 +72,12 @@ function normalize(value: string | null | undefined): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+const LEADING_HASH = /^#/;
+const PULL_REQUEST_LABEL_COLOR_PATTERN = /^[0-9a-fA-F]{6}$/;
+
 export function pullRequestLabelColor(color: string | null): string | null {
-  const hex = color?.trim().replace(/^#/, "") ?? "";
-  return /^[0-9a-fA-F]{6}$/.test(hex) ? `#${hex}` : null;
+  const hex = color?.trim().replace(LEADING_HASH, "") ?? "";
+  return PULL_REQUEST_LABEL_COLOR_PATTERN.test(hex) ? `#${hex}` : null;
 }
 
 export function collectPullRequestListFacets(
@@ -641,15 +644,19 @@ export function resolveSelectedEnvironmentId<Id extends string>(
   return knownEnvironmentIds.has(namedEnvironmentId) ? namedEnvironmentId : fallbackEnvironmentId;
 }
 
+const LEADING_HASH_UNICODE = /^#/u;
+const DIGITS_ONLY = /^\d+$/u;
+const WHITESPACE_RUN = /\s+/u;
+
 /** Host search also matches bodies and commits absent from visible row fields. */
 export function scorePullRequestMatch(entry: PullRequestListEntry, query: string): number {
   const needle = query.trim().toLowerCase();
   if (needle.length === 0) return 0;
-  const number = needle.replace(/^#/u, "");
-  if (/^\d+$/u.test(number)) return String(entry.number) === number ? 100 : 0;
+  const number = needle.replace(LEADING_HASH_UNICODE, "");
+  if (DIGITS_ONLY.test(number)) return String(entry.number) === number ? 100 : 0;
 
   const title = entry.title.toLowerCase();
-  const terms = needle.split(/\s+/u).filter((term) => term.length > 0);
+  const terms = needle.split(WHITESPACE_RUN).filter((term) => term.length > 0);
   if (title === needle) return 90;
   if (title.includes(needle)) return 80;
   if (terms.length > 1 && terms.every((term) => title.includes(term))) return 70;

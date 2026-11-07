@@ -18,20 +18,22 @@ function xmlParser() {
   return parser;
 }
 
+const OFFICE_XML_DECODER_PATTERN = /^<\?xml\s[^?]*\bencoding\s*=\s*["']([^"']+)["']/i;
+
 function officeXmlDecoder(bytes: Uint8Array) {
   if ((bytes[0] === 0xff && bytes[1] === 0xfe) || (bytes[0] === 0x3c && bytes[1] === 0))
     return new TextDecoder("utf-16le");
   if ((bytes[0] === 0xfe && bytes[1] === 0xff) || (bytes[0] === 0 && bytes[1] === 0x3c))
     return new TextDecoder("utf-16be");
   const declaration = new TextDecoder().decode(bytes.subarray(0, 256));
-  return new TextDecoder(/^<\?xml\s[^?]*\bencoding\s*=\s*["']([^"']+)["']/i.exec(declaration)?.[1]);
+  return new TextDecoder(OFFICE_XML_DECODER_PATTERN.exec(declaration)?.[1]);
 }
+
+const OFFICE_XML_PATTERN = /^(<\?xml\s[^?]*\bencoding\s*=\s*)["'][^"']+["']/i;
 
 function officeXml(bytes: Uint8Array) {
   // Repacked XML is UTF-8, regardless of the source part's encoding.
-  return officeXmlDecoder(bytes)
-    .decode(bytes)
-    .replace(/^(<\?xml\s[^?]*\bencoding\s*=\s*)["'][^"']+["']/i, '$1"UTF-8"');
+  return officeXmlDecoder(bytes).decode(bytes).replace(OFFICE_XML_PATTERN, '$1"UTF-8"');
 }
 
 // Section properties terminate the section they describe, so the kept prefix
@@ -124,6 +126,9 @@ function wordSections() {
   };
 }
 
+const SELF_CLOSING_END = /\/>$/;
+const NON_MARKUP_ANGLE_BRACKET = /<(?![!?/])/g;
+
 // Keep whole body elements so every prefix and render batch is valid Word XML.
 // Individual tables/paragraphs are bounded too: one giant element must not
 // bypass the budget between yields on the main thread.
@@ -148,7 +153,7 @@ function wordDocuments(
   parser.on("opentag", (tag) => {
     names.push(tag.name);
     if (names.length === 2 && tag.local === "body") {
-      prefix = xml.slice(0, parser.position).replace(/\/>$/, ">");
+      prefix = xml.slice(0, parser.position).replace(SELF_CLOSING_END, ">");
       suffix = `</${tag.name}></${names[0]}>`;
       boundary = batchStart = parser.position;
     } else if (prefix && names.length > 2) {
@@ -194,7 +199,7 @@ function wordDocuments(
     const section = sections.find((section) => section.body || section.end >= batch.end);
     const document = prefix + batch.content + (section?.xml ?? "") + suffix;
     length += batch.content.length;
-    markup += batch.content.match(/<(?![!?/])/g)?.length ?? 0;
+    markup += batch.content.match(NON_MARKUP_ANGLE_BRACKET)?.length ?? 0;
     if (length > 3 * 1024 * 1024 || markup > 100_000) {
       truncated = true;
       break;
@@ -204,6 +209,18 @@ function wordDocuments(
   if (documents.length === 0) throw new Error("This Word document has too much section markup.");
   return { documents, truncated };
 }
+
+const CELL_ADDRESS = /^([A-Z]{1,3})([1-9]\d{0,6})$/;
+const ROW_NUMBER = /^\d{1,6}$/;
+const COLUMN_LETTERS = /^[a-zA-Z]+$/;
+const OPENING_PATTERN = /\/?>$/;
+const INLINE_STRING_TYPE = /\s+t\s*=\s*(?:"[^"]*"|'[^']*')/;
+const TAG_END = />$/;
+const SHEET_METADATA_ELEMENT =
+  /(<((?:\w+:)?(?:dimension|mergeCell|col))\b(?:[^"'<>]|"[^"]*"|'[^']*')*>)(?:\s*<\/\2\s*>)?/g;
+const REPLACE_PATTERN = /\/?>/;
+const COLUMN_ELEMENT = /<(?:\w+:)?col\b/;
+const OPENING_TAG_NAME = /^<([^\s>]+)/;
 
 function boundedWorksheet(
   xml: string,
@@ -241,7 +258,7 @@ function boundedWorksheet(
   } | null = null;
   let truncated = false;
   const coordinate = (ref: string) => {
-    const match = /^([A-Z]{1,3})([1-9]\d{0,6})$/.exec(ref);
+    const match = CELL_ADDRESS.exec(ref);
     if (!match) throw new Error("This workbook contains invalid cell coordinates.");
     let col = 0;
     for (const letter of match[1]!) col = col * 26 + letter.charCodeAt(0) - 64;
@@ -285,7 +302,7 @@ function boundedWorksheet(
         throw new Error("This workbook contains invalid row coordinates.");
       rowTag = xml
         .slice(xml.lastIndexOf("<", parser.position - 1), parser.position)
-        .replace(/\/>$/, ">");
+        .replace(SELF_CLOSING_END, ">");
       column = 0;
       cells = rows.get(row) ?? new Map<number, string>();
       if (row > OFFICE_PREVIEW_MAX_ROWS)
@@ -313,13 +330,13 @@ function boundedWorksheet(
         letters = String.fromCharCode(65 + ((value - 1) % 26)) + letters;
       const style = attribute("s");
       const type = attribute("t");
-      if ((style && !/^\d{1,6}$/.test(style)) || (type && !/^[a-zA-Z]+$/.test(type)))
+      if ((style && !ROW_NUMBER.test(style)) || (type && !COLUMN_LETTERS.test(type)))
         throw new Error("This workbook contains invalid cell metadata.");
       cell = {
         start: parser.position,
         opening: xml
           .slice(xml.lastIndexOf("<", parser.position - 1), parser.position)
-          .replace(/\/?>$/, `${ref ? "" : ` r="${letters}${row}"`}>`),
+          .replace(OPENING_PATTERN, `${ref ? "" : ` r="${letters}${row}"`}>`),
         name: tag.name,
         prefix: tag.prefix ? `${tag.prefix}:` : "",
         selfClosing: tag.isSelfClosing,
@@ -350,9 +367,7 @@ function boundedWorksheet(
           s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
         cells.set(
           column,
-          cell.opening
-            .replace(/\s+t\s*=\s*(?:"[^"]*"|'[^']*')/, "")
-            .replace(/>$/, ' t="inlineStr">') +
+          cell.opening.replace(INLINE_STRING_TYPE, "").replace(TAG_END, ' t="inlineStr">') +
             `<${cell.prefix}is><${cell.prefix}t>` +
             escape(kept) +
             `</${cell.prefix}t></${cell.prefix}is></${cell.name}>`,
@@ -385,32 +400,29 @@ function boundedWorksheet(
     return a + ":" + letters + Math.min(OFFICE_PREVIEW_MAX_ROWS, last.line);
   };
   const metadata = (part: string) =>
-    part.replace(
-      /(<((?:\w+:)?(?:dimension|mergeCell|col))\b(?:[^"'<>]|"[^"]*"|'[^']*')*>)(?:\s*<\/\2\s*>)?/g,
-      (tag: string, opening: string) => {
-        const attributes = metadataAttributes.get(opening);
-        if (!attributes) return tag;
-        const replace = (name: string, value: string) => {
-          const pattern = new RegExp(`\\s${name}\\s*=\\s*(?:"[^"]*"|'[^']*')`);
-          tag = pattern.test(tag)
-            ? tag.replace(pattern, ` ${name}="${value}"`)
-            : tag.replace(/\/?>/, (end) => ` ${name}="${value}"${end}`);
-        };
-        if (attributes.ref !== undefined) {
-          const bounded = boundRange(attributes.ref);
-          if (!bounded) return "";
-          replace("ref", bounded);
-        }
-        if (/<(?:\w+:)?col\b/.test(opening)) {
-          const min = Math.max(1, Number(attributes.min ?? 1));
-          const max = Math.min(OFFICE_PREVIEW_MAX_COLUMNS, Number(attributes.max ?? 16384));
-          if (!Number.isInteger(min) || !Number.isInteger(max) || min > max) return "";
-          replace("min", String(min));
-          replace("max", String(max));
-        }
-        return tag;
-      },
-    );
+    part.replace(SHEET_METADATA_ELEMENT, (tag: string, opening: string) => {
+      const attributes = metadataAttributes.get(opening);
+      if (!attributes) return tag;
+      const replace = (name: string, value: string) => {
+        const pattern = new RegExp(`\\s${name}\\s*=\\s*(?:"[^"]*"|'[^']*')`);
+        tag = pattern.test(tag)
+          ? tag.replace(pattern, ` ${name}="${value}"`)
+          : tag.replace(REPLACE_PATTERN, (end) => ` ${name}="${value}"${end}`);
+      };
+      if (attributes.ref !== undefined) {
+        const bounded = boundRange(attributes.ref);
+        if (!bounded) return "";
+        replace("ref", bounded);
+      }
+      if (COLUMN_ELEMENT.test(opening)) {
+        const min = Math.max(1, Number(attributes.min ?? 1));
+        const max = Math.min(OFFICE_PREVIEW_MAX_COLUMNS, Number(attributes.max ?? 16384));
+        if (!Number.isInteger(min) || !Number.isInteger(max) || min > max) return "";
+        replace("min", String(min));
+        replace("max", String(max));
+      }
+      return tag;
+    });
   return {
     xml: emptyData
       ? metadata(xml)
@@ -421,7 +433,7 @@ function boundedWorksheet(
               `${rowTags.get(line) ?? `<row r="${line}">`}${[...values]
                 .sort(([a], [b]) => a - b)
                 .map(([, value]) => value)
-                .join("")}</${/^<([^\s>]+)/.exec(rowTags.get(line) ?? "<row>")![1]}>`,
+                .join("")}</${OPENING_TAG_NAME.exec(rowTags.get(line) ?? "<row>")![1]}>`,
           )
           .join("")}${metadata(xml.slice(dataEnd))}`,
     truncated,
@@ -511,6 +523,14 @@ const WORD_BINARY_PARTS = new Set([
   "signature",
 ]);
 
+const XML_MIME_SUFFIX = /(?:\+xml|\/xml)$/i;
+const BINARY_MIME_PREFIX = /^(?:image|audio|video|font)\//i;
+const BINARY_EXTENSION = /^(?:png|jpe?g|gif|webp|bmp|tiff?|ico|bin|sigs|cer|ttf|otf|odttf|woff2?)$/;
+const LEADING_SLASH = /^\//;
+const EXTERNAL_PATTERN = /^(?:[a-z][a-z\d+.-]*:|\/\/)/i;
+const FOLDER_PATTERN = /_rels\/[^/]+\.rels$/;
+const OWNER_PATTERN = /_rels\/([^/]+)\.rels$/;
+
 function wordPartTypes() {
   const defaults = new Map<string, string>();
   const overrides = new Map<string, string>();
@@ -534,15 +554,13 @@ function wordPartTypes() {
         extension === "rels" ||
         extension === "xml" ||
         xmlParts.has(path) ||
-        /(?:\+xml|\/xml)$/i.test(type)
+        XML_MIME_SUFFIX.test(type)
       )
         return false;
       return (
         [...(roles.get(path) ?? [])].some((role) => WORD_BINARY_PARTS.has(role)) ||
-        /^(?:image|audio|video|font)\//i.test(type) ||
-        /^(?:png|jpe?g|gif|webp|bmp|tiff?|ico|bin|sigs|cer|ttf|otf|odttf|woff2?)$/.test(
-          extension,
-        ) ||
+        BINARY_MIME_PREFIX.test(type) ||
+        BINARY_EXTENSION.test(extension) ||
         type === "application/octet-stream" ||
         type === "application/vnd.openxmlformats-package.digital-signature-origin"
       );
@@ -557,15 +575,14 @@ function wordPartTypes() {
           if (tag.local === "Default")
             defaults.set(attr("Extension").toLowerCase(), attr("ContentType"));
           if (tag.local === "Override")
-            overrides.set(attr("PartName").replace(/^\//, ""), attr("ContentType"));
+            overrides.set(attr("PartName").replace(LEADING_SLASH, ""), attr("ContentType"));
         }
         if (tag.local !== "Relationship" || !path.endsWith(".rels")) return;
         const type = attr("Type");
         const role = type.slice(type.lastIndexOf("/") + 1);
         const external =
-          attr("TargetMode").toLowerCase() === "external" ||
-          /^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(attr("Target"));
-        const folder = path === "_rels/.rels" ? "" : path.replace(/_rels\/[^/]+\.rels$/, "");
+          attr("TargetMode").toLowerCase() === "external" || EXTERNAL_PATTERN.test(attr("Target"));
+        const folder = path === "_rels/.rels" ? "" : path.replace(FOLDER_PATTERN, "");
         // Preserve archive URL resolution, including literal query/fragment
         // characters in ZIP names rather than silently classifying another file.
         const target = new URL(attr("Target"), `https://docx.invalid/${folder}`)
@@ -583,7 +600,7 @@ function wordPartTypes() {
           const types = roles.get(target) ?? new Set<string>();
           types.add(role);
           roles.set(target, types);
-          const owner = path === "_rels/.rels" ? "" : path.replace(/_rels\/([^/]+)\.rels$/, "$1");
+          const owner = path === "_rels/.rels" ? "" : path.replace(OWNER_PATTERN, "$1");
           const refs = relationships.get(owner) ?? new Map<string, string>();
           if (!refs.has(attr("Id"))) refs.set(attr("Id"), target);
           relationships.set(owner, refs);
@@ -762,6 +779,10 @@ function wordXmlCost(xml: string, roles: Set<string> | undefined) {
   return { bytes, markup, pictures };
 }
 
+const NOTE_PATTERN = /^(footnote|endnote|comment)Reference$/;
+const WORD_EXPANSION_PATTERN = /<(?:\w+:)?pageBreakBefore\b/;
+const REL_PATH_PATTERN = /([^/]+)$/;
+
 // Layout can repeat notes at references and headers/footers across pages.
 // Charge those copies, not just the XML that defines them.
 async function wordExpansion(
@@ -823,7 +844,7 @@ async function wordExpansion(
     parser.on("opentag", (tag) => {
       const attr = (name: string) =>
         Object.values(tag.attributes).find((a) => a.local === name)?.value ?? "";
-      const note = /^(footnote|endnote|comment)Reference$/.exec(tag.local)?.[1];
+      const note = NOTE_PATTERN.exec(tag.local)?.[1];
       if (note && noteParts.has(note)) add(`${noteParts.get(note)}#${attr("id")}`);
       if (tag.local === "headerReference" || tag.local === "footerReference") {
         const target = parts.relationships.get(path)?.get(attr("id"));
@@ -878,7 +899,7 @@ async function wordExpansion(
   for (const [path, roles] of parts.roles)
     if (
       roles.has("styles") &&
-      /<(?:\w+:)?pageBreakBefore\b/.test((await archive.file(path)?.async("string")) ?? "")
+      WORD_EXPANSION_PATTERN.test((await archive.file(path)?.async("string")) ?? "")
     )
       stylePageBreaks = true;
   for (const document of documents) {
@@ -912,7 +933,7 @@ async function wordExpansion(
   for (const [owner, refs] of parts.relationships) {
     const ids = new Set([...refs].filter(([, path]) => omitted.has(path)).map(([id]) => id));
     if (ids.size === 0) continue;
-    const relPath = owner ? owner.replace(/([^/]+)$/, "_rels/$1.rels") : "_rels/.rels";
+    const relPath = owner ? owner.replace(REL_PATH_PATTERN, "_rels/$1.rels") : "_rels/.rels";
     let xml = await archive.file(relPath)?.async("string");
     if (!xml) continue;
     const removed: { start: number; end: number }[] = [];
@@ -935,6 +956,8 @@ async function wordExpansion(
   }
   return { costs, truncated, omitted };
 }
+
+const BOUNDED_ARCHIVE_PATTERN = /\.(?:xml|rels)$/i;
 
 // Stream each entry before handing it to an engine. A tiny compressed archive
 // must not turn into an unbounded allocation on the UI thread.
@@ -1071,7 +1094,10 @@ export async function boundedArchive(input: Extract<OfficeWorkerRequest, { type:
         continue;
       }
       if (media) mediaSizes.set(entry.name, Math.ceil((content.length * 4) / 3));
-      archive.file(entry.name, /\.(?:xml|rels)$/i.test(entry.name) ? officeXml(content) : content);
+      archive.file(
+        entry.name,
+        BOUNDED_ARCHIVE_PATTERN.test(entry.name) ? officeXml(content) : content,
+      );
     }
   }
   if (word) {

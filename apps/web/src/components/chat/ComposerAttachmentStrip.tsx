@@ -145,8 +145,10 @@ function AttachmentTileRetryButton(props: {
   );
 }
 
+const EXTENSION_PATTERN = /(\.[^./\\]+)$/;
+
 function filePickerAccept(name: string): string | undefined {
-  const extension = name.match(/(\.[^./\\]+)$/)?.[1];
+  const extension = name.match(EXTENSION_PATTERN)?.[1];
   return extension;
 }
 

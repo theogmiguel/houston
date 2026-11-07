@@ -10,16 +10,20 @@ export interface GitHubRepositoryLocator {
   readonly name: string;
 }
 
+const PARSE_FETCH_REMOTES_PATTERN = /^(\S+)\s+(\S+)\s+\(fetch\)(?:\s+\[[^\]]+\])?$/u;
+
 export function parseFetchRemotes(
   remotes: string,
 ): ReadonlyArray<{ readonly name: string; readonly url: string }> {
   // Partial clones append the promisor filter, e.g. `(fetch) [blob:none]`.
   return remotes
     .split("\n")
-    .map((line) => /^(\S+)\s+(\S+)\s+\(fetch\)(?:\s+\[[^\]]+\])?$/u.exec(line.trim()))
+    .map((line) => PARSE_FETCH_REMOTES_PATTERN.exec(line.trim()))
     .filter((match): match is RegExpExecArray => match !== null)
     .map((match) => ({ name: match[1]!, url: match[2]! }));
 }
+
+const SELECT_GIT_HUB_BASE_REPOSITORY_PATTERN = /^remote\.(.+)\.gh-resolved\s+(\S+)$/u;
 
 /** gh priority: marked default, upstream/github/origin, sole remote. Null if ambiguous. */
 export function selectGitHubBaseRepository(input: {
@@ -40,7 +44,7 @@ export function selectGitHubBaseRepository(input: {
   }
   const marks = input.resolved
     .split("\n")
-    .map((line) => /^remote\.(.+)\.gh-resolved\s+(\S+)$/u.exec(line.trim()))
+    .map((line) => SELECT_GIT_HUB_BASE_REPOSITORY_PATTERN.exec(line.trim()))
     .filter((match): match is RegExpExecArray => match !== null && repositories.has(match[1]!));
   if (marks.length > 1) return null;
   const [mark] = marks;
@@ -103,14 +107,17 @@ export function resolveGitHubRepository(input: {
   return { host, locator: null };
 }
 
+const WITHOUT_GIT_SUFFIX_PATTERN = /\.git\/*$/i;
+const HTTP_URL_PREFIX = /^https?:\/\//i;
+
 export function parseGitHubRepositorySelector(
   selector: string,
   defaultHost: string,
 ): GitHubRepositoryLocator | null {
   // Like gh, a clone URL's `.git` comes off the path, before any trailing slash, query or fragment.
-  const withoutGitSuffix = (path: string) => path.replace(/\.git\/*$/i, "");
+  const withoutGitSuffix = (path: string) => path.replace(WITHOUT_GIT_SUFFIX_PATTERN, "");
   const trimmed = selector.trim();
-  if (/^https?:\/\//i.test(trimmed)) {
+  if (HTTP_URL_PREFIX.test(trimmed)) {
     try {
       const url = new URL(trimmed);
       const [owner, name, ...rest] = withoutGitSuffix(url.pathname).split("/").filter(Boolean);
@@ -129,6 +136,9 @@ export function parseGitHubRepositorySelector(
   return null;
 }
 
+const NUMBERED_PATTERN = /^#?([1-9]\d*)$/;
+const PULL_PATH = /^\/([^/]+)\/([^/]+)\/pull\/([1-9]\d*)(?:\/.*)?$/;
+
 export function parsePullRequestReference(
   reference: string,
 ):
@@ -136,12 +146,12 @@ export function parsePullRequestReference(
   | { readonly kind: "url"; readonly locator: GitHubRepositoryLocator; readonly number: number }
   | { readonly kind: "branch"; readonly headSelector: string } {
   const trimmed = reference.trim();
-  const numbered = /^#?([1-9]\d*)$/.exec(trimmed);
+  const numbered = NUMBERED_PATTERN.exec(trimmed);
   if (numbered) return { kind: "number", number: Number(numbered[1]) };
-  if (/^https?:\/\//i.test(trimmed)) {
+  if (HTTP_URL_PREFIX.test(trimmed)) {
     try {
       const url = new URL(trimmed);
-      const match = /^\/([^/]+)\/([^/]+)\/pull\/([1-9]\d*)(?:\/.*)?$/.exec(url.pathname);
+      const match = PULL_PATH.exec(url.pathname);
       if (match) {
         return {
           kind: "url",

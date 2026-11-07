@@ -160,6 +160,8 @@ function selectProviderContext(
   );
 }
 
+const CONSTRUCTOR_PATTERN = /(?<!\/\/[^/]*)[^/:]+\/[^/:]+\/?$/u;
+
 // Failed probes are not cached, so cwd is irrelevant; equality ignores lookup, unlike Data.Class.
 class UnknownRemoteLookup {
   readonly key: string;
@@ -173,7 +175,7 @@ class UnknownRemoteLookup {
     this.key = [
       context.provider.name,
       context.provider.baseUrl,
-      context.remoteUrl.trim().replace(/(?<!\/\/[^/]*)[^/:]+\/[^/:]+\/?$/u, ""),
+      context.remoteUrl.trim().replace(CONSTRUCTOR_PATTERN, ""),
       context.requestedHost ?? "",
     ].join("\n");
   }

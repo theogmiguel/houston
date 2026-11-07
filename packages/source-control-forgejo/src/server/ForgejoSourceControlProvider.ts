@@ -17,6 +17,9 @@ import {
 } from "@houston-app/source-control-core/server/discovery";
 import { ForgejoPullRequestSchema, toForgejoChangeRequest } from "./forgejoPullRequests.ts";
 
+const PULL_REQUEST_NUMBER = /(?:^#?|\/pulls\/)(\d+)(?:\/[^?#]*)?(?:[?#].*)?$/;
+const COMMIT_HASH = /^[0-9a-f]{7,64}$/i;
+
 const isForgejoCliError = Schema.is(ForgejoCli.ForgejoCliError);
 
 export const discovery = {
@@ -188,12 +191,17 @@ export const makeDiscovery = Effect.gen(function* () {
   } satisfies SourceControlManagedCliDiscoverySpec;
 });
 
+const HTTP_URL_PREFIX = /^https?:\/\//iu;
+
 export function repositoryNameFromRemoteUrl(url: string): string | null {
   const path = SourceControlProvider.repositoryPathFromRemoteUrl(url);
-  return path === null || !/^https?:\/\//iu.test(url.trim())
+  return path === null || !HTTP_URL_PREFIX.test(url.trim())
     ? path
     : path.split("/").slice(-2).join("/");
 }
+
+const TRAILING_SLASHES = /\/+$/;
+const BASE_PATH_PATTERN = /^\/+|\/+$/g;
 
 // Resolve browser URLs from the serving login to handle SSH aliases and mounts.
 const refineRepositoryIdentity: NonNullable<
@@ -220,8 +228,8 @@ const refineRepositoryIdentity: NonNullable<
     },
   });
   if (context?.provider.kind !== "forgejo") return identity;
-  const baseUrl = context.provider.baseUrl.replace(/\/+$/, "");
-  const basePath = new URL(baseUrl).pathname.replace(/^\/+|\/+$/g, "");
+  const baseUrl = context.provider.baseUrl.replace(TRAILING_SLASHES, "");
+  const basePath = new URL(baseUrl).pathname.replace(BASE_PATH_PATTERN, "");
   const path =
     !remote.ssh && basePath && remote.path.startsWith(`${basePath}/`)
       ? remote.path.slice(basePath.length + 1)
@@ -310,7 +318,7 @@ export const make = Effect.gen(function* () {
     >[0],
   ) {
     const repo = yield* cli.resolveRepository(input);
-    const number = /(?:^#?|\/pulls\/)(\d+)(?:\/[^?#]*)?(?:[?#].*)?$/.exec(input.reference)?.[1];
+    const number = PULL_REQUEST_NUMBER.exec(input.reference)?.[1];
     if (!number)
       return yield* new ForgejoCli.ForgejoCliError({
         command: "tea",
@@ -484,7 +492,7 @@ export const make = Effect.gen(function* () {
           });
         if (input.force) {
           // Non-commit server input could become git options.
-          if (!/^[0-9a-f]{7,64}$/i.test(pull.head.sha))
+          if (!COMMIT_HASH.test(pull.head.sha))
             return yield* new ForgejoCli.ForgejoCliError({
               command: repo.command ?? "tea",
               cwd: input.cwd,

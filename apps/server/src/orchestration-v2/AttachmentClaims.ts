@@ -63,6 +63,8 @@ export const releaseClaimedAttachments = Effect.fn("AttachmentClaims.releaseClai
   },
 );
 
+const SVG_SUFFIX = /\.svg$/i;
+
 /** Copies preserve the pending retry source after failed bootstrap; the pending sweep reclaims it. */
 export const claimPendingAttachments = Effect.fn("AttachmentClaims.claimPendingAttachments")(
   function* (input: {
@@ -122,7 +124,7 @@ export const claimPendingAttachments = Effect.fn("AttachmentClaims.claimPendingA
             name:
               attachment.type === "file" &&
               isSvgAttachment(attachment) &&
-              !/\.svg$/i.test(attachment.name)
+              !SVG_SUFFIX.test(attachment.name)
                 ? `${attachment.name}.svg`
                 : attachment.name,
             mimeType: attachment.mimeType.toLowerCase(),

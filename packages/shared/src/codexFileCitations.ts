@@ -13,8 +13,10 @@ function positiveInteger(value: string | null | undefined): number | undefined {
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
+const TRAILING_SLASHES = /\/+$/;
+
 function citationLabel(path: string): string {
-  const normalized = path.replaceAll("\\", "/").replace(/\/+$/, "");
+  const normalized = path.replaceAll("\\", "/").replace(TRAILING_SLASHES, "");
   return normalized.slice(normalized.lastIndexOf("/") + 1) || normalized || "File";
 }
 
@@ -38,8 +40,10 @@ export function resolveCodexFileCitationLink(
   };
 }
 
+const MARKDOWN_LABEL_PATTERN = /[\\[\]*_`<&]/g;
+
 function markdownLabel(value: string): string {
-  return value.replace(/[\\[\]*_`<&]/g, "\\$&");
+  return value.replace(MARKDOWN_LABEL_PATTERN, "\\$&");
 }
 
 function markdownDestination(value: string): string {

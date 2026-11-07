@@ -13,6 +13,9 @@ const CANDIDATE = /[#!@]|\bGL-\d|\[issue:|\b[a-f\d]{7,40}\b/iu;
 const SHORT_SHA_LENGTH = 7;
 const ROUTE = { "#": "issues", "!": "merge_requests" } as const;
 
+const HTTP_PROTOCOL = /^https?:$/u;
+const HEX_LETTER = /[a-f]/iu;
+
 export function gitLabReferenceAutolinks(
   text: string,
   repositoryUrl: string,
@@ -25,7 +28,7 @@ export function gitLabReferenceAutolinks(
     return [];
   }
   const path = url.pathname.split("/").filter(Boolean);
-  if (path.length < 2 || !/^https?:$/u.test(url.protocol)) return [];
+  if (path.length < 2 || !HTTP_PROTOCOL.test(url.protocol)) return [];
   const namespace = path.slice(0, -1).join("/");
   const project = (qualifier: string | undefined) =>
     qualifier?.includes("/") ? qualifier : qualifier ? `${namespace}/${qualifier}` : path.join("/");
@@ -61,7 +64,7 @@ export function gitLabReferenceAutolinks(
       });
     } else if (sha) {
       // A run of digits is a number far more often than a SHA.
-      if (!/[a-f]/iu.test(sha)) continue;
+      if (!HEX_LETTER.test(sha)) continue;
       links.push({
         index: match.index,
         text: matched,

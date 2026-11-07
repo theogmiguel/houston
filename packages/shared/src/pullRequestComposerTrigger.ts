@@ -26,6 +26,8 @@ export type PullRequestCompletionSupport = Pick<
   "mentions" | "referenceSigils"
 >;
 
+const WHITESPACE_CHAR = /\s/;
+
 /**
  * The `@login`, `#123` or `!123` being typed at the caret, when the caret sits at its end and the
  * host completes that sigil.
@@ -37,9 +39,9 @@ export function detectPullRequestComposerTrigger(
 ): PullRequestComposerTrigger | null {
   const end = Math.max(0, Math.min(text.length, cursor));
   const next = text[end];
-  if (next !== undefined && !/\s/.test(next)) return null;
+  if (next !== undefined && !WHITESPACE_CHAR.test(next)) return null;
   let start = end;
-  while (start > 0 && !/\s/.test(text[start - 1] ?? "")) start -= 1;
+  while (start > 0 && !WHITESPACE_CHAR.test(text[start - 1] ?? "")) start -= 1;
   const match = TOKEN.exec(text.slice(start, end));
   if (!match) return null;
   const sigil = match[2];
@@ -53,13 +55,15 @@ export function detectPullRequestComposerTrigger(
     : null;
 }
 
+const FOLLOWED_BY_SPACE_PATTERN = /[ \t]/;
+
 /** Replaces the trigger with `token` and leaves the caret past the space after it. */
 export function insertPullRequestCompletion(
   text: string,
   trigger: PullRequestComposerTrigger,
   token: string,
 ): { text: string; cursor: number } {
-  const followedBySpace = /[ \t]/.test(text[trigger.rangeEnd] ?? "");
+  const followedBySpace = FOLLOWED_BY_SPACE_PATTERN.test(text[trigger.rangeEnd] ?? "");
   if (!followedBySpace) {
     return replaceTextRange(text, trigger.rangeStart, trigger.rangeEnd, `${token} `);
   }

@@ -254,18 +254,24 @@ export interface GrokModelsCliOutput {
   readonly models: ReadonlyArray<ServerProviderModel>;
 }
 
+const LOGGED_IN_MESSAGE = /you are logged in/i;
+const LOGGED_OUT_MESSAGE = /not authenticated|not logged in/i;
+const LINE_BREAK = /\r?\n/;
+const BULLET_ENTRY = /^\s*[*-]\s+(\S+)(.*)$/;
+const DEFAULT_MARKER = /\(default\)/i;
+
 /** Exit status is always 0; only output text indicates login state. */
 export function parseGrokModelsCliOutput(output: string): GrokModelsCliOutput {
-  const authenticated = /you are logged in/i.test(output)
+  const authenticated = LOGGED_IN_MESSAGE.test(output)
     ? true
-    : /not authenticated|not logged in/i.test(output)
+    : LOGGED_OUT_MESSAGE.test(output)
       ? false
       : null;
 
   const seen = new Set<string>();
   const models: ServerProviderModel[] = [];
-  for (const line of output.split(/\r?\n/)) {
-    const bullet = line.match(/^\s*[*-]\s+(\S+)(.*)$/);
+  for (const line of output.split(LINE_BREAK)) {
+    const bullet = line.match(BULLET_ENTRY);
     if (!bullet?.[1]) {
       continue;
     }
@@ -278,16 +284,18 @@ export function parseGrokModelsCliOutput(output: string): GrokModelsCliOutput {
       slug,
       name: displayNameFromGrokModelSlug(slug),
       isCustom: false,
-      ...(/\(default\)/i.test(bullet[2] ?? "") ? { isDefault: true } : {}),
+      ...(DEFAULT_MARKER.test(bullet[2] ?? "") ? { isDefault: true } : {}),
       capabilities: EMPTY_CAPABILITIES,
     });
   }
   return { authenticated, models };
 }
 
+const DISPLAY_NAME_FROM_GROK_MODEL_SLUG_PATTERN = /[-_]/g;
+
 function displayNameFromGrokModelSlug(slug: string): string {
   return slug
-    .split(/[-_]/g)
+    .split(DISPLAY_NAME_FROM_GROK_MODEL_SLUG_PATTERN)
     .map((part) => (part.toLowerCase() === "grok" ? "Grok" : part))
     .join(" ");
 }

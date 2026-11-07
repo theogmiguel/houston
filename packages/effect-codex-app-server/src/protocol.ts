@@ -174,6 +174,8 @@ const toProtocolMessage = (
   ...(fields.error !== undefined ? { error: fields.error } : {}),
 });
 
+const TRAILING_CARRIAGE_RETURN = /\r$/;
+
 export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPatchedProtocol")(
   function* (
     options: CodexAppServerPatchedProtocolOptions,
@@ -453,7 +455,7 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
             }
             remainder.push(fragment);
             if (newline === -1) break;
-            const line = remainder.join("").replace(/\r$/, "");
+            const line = remainder.join("").replace(TRAILING_CARRIAGE_RETURN, "");
             remainder.length = 0;
             remainderBytes = 0;
             yield* handleLine(line);

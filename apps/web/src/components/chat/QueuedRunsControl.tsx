@@ -418,6 +418,8 @@ export function QueuedRunsControl({
 
 type QueuedRunMessage = NonNullable<ThreadQueueProjection["messages"][number]>;
 
+const LINE_BREAK = /\r?\n/;
+
 /** A queued turn wears its sent form's attribution; only the dashed edge and controls differ. */
 function QueuedMessage(props: {
   readonly environmentId: EnvironmentId;
@@ -445,13 +447,13 @@ function QueuedMessage(props: {
       ? {
           icon: CalendarClockIcon,
           label: "Automation",
-          summary: taskTitle ?? props.previewText.split(/\r?\n/, 1)[0] ?? "",
+          summary: taskTitle ?? props.previewText.split(LINE_BREAK, 1)[0] ?? "",
         }
       : attribution === "agent"
         ? {
             icon: MessagesSquareIcon,
             label: senderShell?.title.trim() || "Agent",
-            summary: props.previewText.split(/\r?\n/).find((line) => line.trim()) ?? "",
+            summary: props.previewText.split(LINE_BREAK).find((line) => line.trim()) ?? "",
           }
         : null;
   const bodyVisible = fold === null || expanded;

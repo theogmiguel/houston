@@ -275,6 +275,9 @@ export function acpRegistryProbeResult(
   });
 }
 
+const AUTHENTICATION_FAILED_PATTERN =
+  /\b(?:authenticat(?:e|ed|es|ing|ion)|credentials?|log(?:[\s-]+)?in)\b/iu;
+
 export function acpRegistryProbeFailure(
   error: EffectAcpErrors.AcpError,
   authMethods: ReadonlyArray<AcpRegistryProbeAuthMethod> = [],
@@ -283,7 +286,7 @@ export function acpRegistryProbeFailure(
   const detail = error._tag === "AcpTransportError" && error.detail ? error.detail : error.message;
   const authenticationFailed =
     (error._tag === "AcpRequestError" && error.code === -32000) ||
-    /\b(?:authenticat(?:e|ed|es|ing|ion)|credentials?|log(?:[\s-]+)?in)\b/iu.test(detail);
+    AUTHENTICATION_FAILED_PATTERN.test(detail);
   return new AcpRegistryOperationError({
     reason: authenticationFailed ? "authentication_failed" : "probe_failed",
     message: authenticationFailed

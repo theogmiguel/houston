@@ -26,16 +26,23 @@ function readCpu() {
   return { ...cpu, count: cpus.length };
 }
 
+const PAGE_SIZE_PATTERN = /page size of (\d+) bytes/;
+const PAGES_FREE_LINE = /^Pages free:\s+(\d+)\./m;
+const INACTIVE_PATTERN = /^Pages inactive:\s+(\d+)\./m;
+const SPECULATIVE_PATTERN = /^Pages speculative:\s+(\d+)\./m;
+
 function darwinAvailableMemory(output: string): number | null {
-  const pageSize = /page size of (\d+) bytes/.exec(output)?.[1];
-  const free = /^Pages free:\s+(\d+)\./m.exec(output)?.[1];
-  const inactive = /^Pages inactive:\s+(\d+)\./m.exec(output)?.[1];
-  const speculative = /^Pages speculative:\s+(\d+)\./m.exec(output)?.[1];
+  const pageSize = PAGE_SIZE_PATTERN.exec(output)?.[1];
+  const free = PAGES_FREE_LINE.exec(output)?.[1];
+  const inactive = INACTIVE_PATTERN.exec(output)?.[1];
+  const speculative = SPECULATIVE_PATTERN.exec(output)?.[1];
   if (!pageSize || !free || !inactive || !speculative) return null;
   // vm_stat excludes speculative from free; add it once, without overlapping purgeable pages.
   const available = (Number(free) + Number(inactive) + Number(speculative)) * Number(pageSize);
   return Number.isSafeInteger(available) && Number(pageSize) > 0 ? available : null;
 }
+
+const MEM_AVAILABLE_LINE = /^MemAvailable:\s+(\d+)\s+kB$/m;
 
 const make = Effect.fn("makeHostResources")(function* () {
   const fs = yield* FileSystem.FileSystem;
@@ -59,7 +66,7 @@ const make = Effect.fn("makeHostResources")(function* () {
       const meminfo = yield* fs
         .readFileString("/proc/meminfo")
         .pipe(Effect.orElseSucceed(() => ""));
-      const available = /^MemAvailable:\s+(\d+)\s+kB$/m.exec(meminfo)?.[1];
+      const available = MEM_AVAILABLE_LINE.exec(meminfo)?.[1];
       if (available) availableMemoryBytes = Number(available) * 1024;
     } else if (platform === "darwin") {
       const output = yield* spawner

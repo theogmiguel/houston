@@ -102,6 +102,8 @@ function decodeServiceUpdate(value: unknown): ServiceUpdateRecord | undefined {
   return undefined;
 }
 
+const DIGITS_ONLY = /^\d+$/;
+
 export function compareExactServiceVersions(left: string, right: string): number {
   const parse = (version: string) => {
     const withoutBuild = version.split("+", 1)[0] ?? version;
@@ -130,8 +132,8 @@ export function compareExactServiceVersions(left: string, right: string): number
     const y = b.prerelease[index];
     if (x === undefined || y === undefined) return x === undefined ? -1 : 1;
     if (x === y) continue;
-    const xNumeric = /^\d+$/.test(x);
-    const yNumeric = /^\d+$/.test(y);
+    const xNumeric = DIGITS_ONLY.test(x);
+    const yNumeric = DIGITS_ONLY.test(y);
     if (xNumeric && yNumeric) return BigInt(x) < BigInt(y) ? -1 : 1;
     if (xNumeric !== yNumeric) return xNumeric ? -1 : 1;
     return x < y ? -1 : 1;

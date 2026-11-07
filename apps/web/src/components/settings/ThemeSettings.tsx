@@ -82,9 +82,11 @@ export function themeLibraryCount(
   );
 }
 
+const WHITESPACE_RUN = /\s+/;
+
 function collectionVariantLabels(themes: ReadonlyArray<ThemeDefinition>): ReadonlyArray<string> {
   if (themes.length === 0) return [];
-  const words = themes.map((theme) => theme.label.trim().split(/\s+/));
+  const words = themes.map((theme) => theme.label.trim().split(WHITESPACE_RUN));
   const firstWords = words[0]!;
   const sharedWordCount = firstWords.findIndex((word, index) =>
     words.some((labelWords) => labelWords[index]?.toLocaleLowerCase() !== word.toLocaleLowerCase()),

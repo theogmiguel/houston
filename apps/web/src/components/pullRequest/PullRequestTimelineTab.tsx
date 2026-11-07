@@ -166,9 +166,11 @@ function ActorTimelineMarker({
   );
 }
 
+const FRIENDLY_REVIEW_STATE_PATTERN = /^\w/u;
+
 function friendlyReviewState(value: string): string {
   const words = value.toLowerCase().replaceAll("_", " ").replaceAll("-", " ");
-  return words.replace(/^\w/u, (letter) => letter.toUpperCase());
+  return words.replace(FRIENDLY_REVIEW_STATE_PATTERN, (letter) => letter.toUpperCase());
 }
 
 function ReviewStateBadge({ state }: { state: string }) {

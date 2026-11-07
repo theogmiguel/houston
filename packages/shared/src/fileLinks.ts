@@ -53,30 +53,39 @@ export function formatFilePathPosition(position: FilePathPosition): string {
   return `${position.path}:${position.line}${position.column ? `:${position.column}` : ""}`;
 }
 
+const IS_WINDOWS_PATH_STYLE_PATTERN = /[A-Za-z]:\\/;
+
 function isWindowsPathStyle(value: string): boolean {
-  return isWindowsAbsolutePath(value) || /[A-Za-z]:\\/.test(value);
+  return isWindowsAbsolutePath(value) || IS_WINDOWS_PATH_STYLE_PATTERN.test(value);
 }
 
+const TRAILING_PATH_SEPARATORS = /[\\/]+$/;
+const LEADING_SLASHES = /^\/+/;
+
 export function joinPath(base: string, next: string, separator: "/" | "\\"): string {
-  const cleanBase = base.replace(/[\\/]+$/, "");
+  const cleanBase = base.replace(TRAILING_PATH_SEPARATORS, "");
   if (separator === "\\") {
     return `${cleanBase}\\${next.replaceAll("/", "\\")}`;
   }
-  return `${cleanBase}/${next.replace(/^\/+/, "")}`;
+  return `${cleanBase}/${next.replace(LEADING_SLASHES, "")}`;
 }
 
+const POSIX_USER_PATTERN = /^\/Users\/([^/]+)/;
+const POSIX_HOME_PATTERN = /^\/home\/([^/]+)/;
+const WINDOWS_USER_PATTERN = /^([A-Za-z]:[\\/]Users[\\/][^\\/]+)/i;
+
 function inferHomeFromCwd(cwd: string): string | undefined {
-  const posixUser = cwd.match(/^\/Users\/([^/]+)/);
+  const posixUser = cwd.match(POSIX_USER_PATTERN);
   if (posixUser?.[1]) {
     return `/Users/${posixUser[1]}`;
   }
 
-  const posixHome = cwd.match(/^\/home\/([^/]+)/);
+  const posixHome = cwd.match(POSIX_HOME_PATTERN);
   if (posixHome?.[1]) {
     return `/home/${posixHome[1]}`;
   }
 
-  const windowsUser = cwd.match(/^([A-Za-z]:[\\/]Users[\\/][^\\/]+)/i);
+  const windowsUser = cwd.match(WINDOWS_USER_PATTERN);
   if (windowsUser?.[1]) {
     return windowsUser[1];
   }

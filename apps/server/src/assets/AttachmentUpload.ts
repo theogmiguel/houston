@@ -64,6 +64,8 @@ function decodeClaims(encodedPayload: string): AttachmentUploadClaims | null {
   }
 }
 
+const SVG_SUFFIX = /\.svg$/i;
+
 export const issueAttachmentUploadUrl = Effect.fn("AttachmentUpload.issueUrl")(function* (
   input: AttachmentCreateUploadUrlInput,
 ) {
@@ -86,7 +88,7 @@ export const issueAttachmentUploadUrl = Effect.fn("AttachmentUpload.issueUrl")(f
 
   const attachmentType = input.type ?? "image";
   const name =
-    attachmentType === "file" && isSvgAttachment(input) && !/\.svg$/i.test(input.name)
+    attachmentType === "file" && isSvgAttachment(input) && !SVG_SUFFIX.test(input.name)
       ? `${input.name}.svg`
       : input.name;
   const attachmentId = createPendingAttachmentId(

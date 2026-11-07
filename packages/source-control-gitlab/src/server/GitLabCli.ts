@@ -367,9 +367,11 @@ function stateArgs(state: "open" | "closed" | "merged" | "all"): ReadonlyArray<s
   }
 }
 
+const OWNER_BRANCH_PATTERN = /^[^:]+:(.+)$/;
+
 function normalizeHeadSelector(headSelector: string): string {
   const trimmed = headSelector.trim();
-  const ownerBranch = /^[^:]+:(.+)$/.exec(trimmed);
+  const ownerBranch = OWNER_BRANCH_PATTERN.exec(trimmed);
   return ownerBranch?.[1]?.trim() || trimmed;
 }
 

@@ -96,9 +96,11 @@ export function SidebarBrandWidthProbe({
   );
 }
 
+const OPEN_GRID_ID_PATTERN = /^\/grid\/([^/]+)/;
+
 function SidebarBrand() {
   const pathname = useLocation({ select: (location) => location.pathname });
-  const openGridId = /^\/grid\/([^/]+)/.exec(pathname)?.[1] ?? readLastOpenGridId();
+  const openGridId = OPEN_GRID_ID_PATTERN.exec(pathname)?.[1] ?? readLastOpenGridId();
   const className =
     "relative z-10 ml-[calc(var(--workspace-controls-left)-0.75rem)] flex h-7 w-fit min-w-0 shrink items-center overflow-hidden rounded-(--control-radius) text-foreground outline-none ring-ring focus-visible:ring-2 focus-visible:ring-inset";
   // The wordmark returns to the grid last on screen, not to a fresh draft route.

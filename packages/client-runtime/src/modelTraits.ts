@@ -71,6 +71,8 @@ export function selectableProviderOptionChoices(
   );
 }
 
+const ULTRATHINK_PREFIX = /^Ultrathink:\s*/i;
+
 export function getPromptControlledTraits(
   descriptors: ReadonlyArray<ProviderOptionDescriptor>,
   prompt: string,
@@ -83,7 +85,7 @@ export function getPromptControlledTraits(
     (primarySelectDescriptor?.promptInjectedValues?.length ?? 0) > 0 &&
     isClaudeUltrathinkPrompt(prompt);
   const ultrathinkInBodyText =
-    ultrathinkPromptControlled && isClaudeUltrathinkPrompt(prompt.replace(/^Ultrathink:\s*/i, ""));
+    ultrathinkPromptControlled && isClaudeUltrathinkPrompt(prompt.replace(ULTRATHINK_PREFIX, ""));
   return { primarySelectDescriptor, ultrathinkPromptControlled, ultrathinkInBodyText };
 }
 
@@ -101,7 +103,7 @@ export function getTraitSelectChange(
   return {
     prompt:
       isPrimary && selected.ultrathinkPromptControlled
-        ? prompt.replace(/^Ultrathink:\s*/i, "")
+        ? prompt.replace(ULTRATHINK_PREFIX, "")
         : prompt,
     modelOptions: buildProviderOptionSelectionsFromDescriptors(
       replaceDescriptorCurrentValue(selected.descriptors, descriptor.id, value),

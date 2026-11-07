@@ -7,6 +7,8 @@ export function modelPickerModelKey(instanceId: ProviderInstanceId, slug: string
   return `${MODEL_KEY_PREFIX}${instanceId.length}:${instanceId}${slug}`;
 }
 
+const DIGITS_ONLY = /^\d+$/;
+
 export function parseModelPickerModelKey(
   key: string,
 ): { instanceId: ProviderInstanceId; slug: string } | null {
@@ -20,7 +22,7 @@ export function parseModelPickerModelKey(
   }
 
   const instanceIdLengthText = encoded.slice(0, separatorIndex);
-  if (!/^\d+$/.test(instanceIdLengthText)) {
+  if (!DIGITS_ONLY.test(instanceIdLengthText)) {
     return null;
   }
 
