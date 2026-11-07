@@ -20,6 +20,7 @@ import {
   type PersistentThreadTerminalPanelProps,
 } from "../PersistentThreadTerminals";
 import { pullRequestPanelContext } from "../pullRequest/pullRequestDetail.logic";
+import { LazySurfaceBoundary, lazySurface } from "../LazySurface";
 import { PullRequestDetailGhost } from "../pullRequest/PullRequestGhosts";
 import { PullRequestsUnavailableState } from "../pullRequest/PullRequestsUnavailableState";
 import { ThreadPullRequestsPanel } from "../pullRequest/ThreadPullRequestsPanel";
@@ -32,10 +33,8 @@ const DevicePanel = lazy(() =>
   import("../device/DevicePanel").then((module) => ({ default: module.DevicePanel })),
 );
 const FilePreviewPanel = lazy(() => import("../files/FilePreviewPanel"));
-const PullRequestDetailPanel = lazy(() =>
-  import("../pullRequest/PullRequestDetailPanel").then((module) => ({
-    default: module.PullRequestDetailPanel,
-  })),
+const pullRequestDetailPanel = lazySurface(() =>
+  import("../pullRequest/PullRequestDetailPanel").then((module) => module.PullRequestDetailPanel),
 );
 
 type RightPanelTerminalProps = Omit<
@@ -135,32 +134,35 @@ export function RightPanelSurfaceContent(props: {
         );
       }
       return (
-        <Suspense fallback={<PullRequestDetailGhost />}>
-          <PullRequestDetailPanel
-            getShortcutContext={props.getShortcutContext}
-            shortcutsEnabled={visible && props.activeSurfaceId === surface.id}
-            key={`${scopedThreadKey(threadRef)}:${surface.id}`}
-            environmentId={props.environmentId}
-            onSelectPullRequest={(reference) => {
+        <LazySurfaceBoundary
+          key={`${scopedThreadKey(threadRef)}:${surface.id}`}
+          surface={pullRequestDetailPanel}
+          label="pull request"
+          renderFrame={(content) => content ?? <PullRequestDetailGhost />}
+          props={{
+            getShortcutContext: props.getShortcutContext,
+            shortcutsEnabled: visible && props.activeSurfaceId === surface.id,
+            environmentId: props.environmentId,
+            onSelectPullRequest: (reference) => {
               useRightPanelStore.getState().openPullRequest(threadRef, {
                 projectId: reference.projectId,
                 repository: reference.repository,
                 number: reference.number,
                 ...(reference.host ? { host: reference.host } : {}),
               });
-            }}
-            threadRef={threadRef}
-            reference={{
+            },
+            threadRef,
+            reference: {
               projectId: surface.projectId as ProjectId,
               ...(surface.host ? { host: surface.host } : {}),
               repository: surface.repository,
               number: surface.number,
-            }}
-            initialTab={surface.detailTab ?? "summary"}
-            onTabChange={(tab) => {
+            },
+            initialTab: surface.detailTab ?? "summary",
+            onTabChange: (tab) => {
               useRightPanelStore.getState().setPullRequestDetailTab(threadRef, surface.id, tab);
-            }}
-            context={pullRequestPanelContext(
+            },
+            context: pullRequestPanelContext(
               {
                 projectId: pullRequest.projectId,
                 pullRequests: pullRequest.pullRequests,
@@ -168,11 +170,11 @@ export function RightPanelSurfaceContent(props: {
                 branchPullRequest: pullRequest.branchPullRequest,
               },
               surface,
-            )}
-            composerDraftTarget={props.composerDraftTarget}
-            onBack={pullRequest.onBack}
-          />
-        </Suspense>
+            ),
+            composerDraftTarget: props.composerDraftTarget,
+            onBack: pullRequest.onBack,
+          }}
+        />
       );
     }
     case "pull-requests":
