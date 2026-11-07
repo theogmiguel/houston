@@ -74,6 +74,7 @@ import {
   ProviderInteractionMode,
   resolveIdleCompaction,
   RuntimeMode,
+  managedRuntimeModeDenial,
 } from "@houston-app/contracts";
 import {
   deriveProviderSubagentStatus,
@@ -189,7 +190,8 @@ import { LinkPullRequestDialogHost } from "./pullRequest/LinkPullRequestDialog";
 import { useDeviceState } from "~/state/device";
 import { BranchToolbar, type BranchToolbarHandle } from "./BranchToolbar";
 import { ComposerContextPermissions } from "./ComposerContextPermissions";
-import { resolveCompatibleRuntimeMode } from "./chat/runtimeModeConfig";
+import { resolveCompatibleRuntimeMode, runtimeModeConfig } from "./chat/runtimeModeConfig";
+import { useManagedPolicy } from "../state/managedPolicy";
 import { makeWorkspaceFileDropHandlers } from "./chat/workspaceFileDrop";
 import { isEditableFocused } from "../lib/editableFocus";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@houston-app/shared/keybindings";
@@ -1402,6 +1404,20 @@ export default function ChatView(props: ChatViewProps) {
   const selectedProvider = selectedProviderEntry?.driverKind ?? requestedDriverKind;
   const activeProviderInstanceId = selectedProviderEntry?.instanceId ?? null;
   const activeProviderStatus = selectedProviderEntry?.snapshot ?? null;
+  // The new-thread strip changes permissions itself, so it lists the modes the composer would.
+  const stripRuntimeModes = resolveCompatibleRuntimeMode(
+    runtimeMode,
+    activeProviderStatus?.supportedRuntimeModes,
+  );
+  const managedPolicy = useManagedPolicy(environmentId);
+  const stripRuntimeModeOptions = stripRuntimeModes.modes.map((mode) => {
+    const disabledReason = managedRuntimeModeDenial(managedPolicy, mode);
+    return {
+      mode,
+      ...runtimeModeConfig[mode],
+      ...(disabledReason === undefined ? {} : { disabledReason }),
+    };
+  });
   const handleOpenClaudeInChromeSettings = () => {
     void navigate({
       to: "/settings/providers",
@@ -1959,9 +1975,6 @@ export default function ChatView(props: ChatViewProps) {
     });
   };
   const scheduleComposerFocusStable = useStableCallback(scheduleComposerFocus);
-  const openComposerPermissionsStable = useStableCallback(() =>
-    composerRef.current?.openControl("composer.mode"),
-  );
   const insertArtifactTemplate = (template: CodexArtifactTemplate) => {
     const composer = composerRef.current;
     if (!composer) return;
@@ -4016,13 +4029,9 @@ export default function ChatView(props: ChatViewProps) {
                                 : {
                                     trailing: (
                                       <ComposerContextPermissions
-                                        runtimeMode={
-                                          resolveCompatibleRuntimeMode(
-                                            runtimeMode,
-                                            activeProviderStatus?.supportedRuntimeModes,
-                                          ).mode
-                                        }
-                                        onOpen={openComposerPermissionsStable}
+                                        runtimeMode={stripRuntimeModes.mode}
+                                        runtimeModeOptions={stripRuntimeModeOptions}
+                                        onRuntimeModeChange={handleRuntimeModeChangeStable}
                                       />
                                     ),
                                   })}

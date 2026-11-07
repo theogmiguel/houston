@@ -8,6 +8,22 @@ export function DiscoveryList({ children }: { readonly children: ReactNode }) {
   );
 }
 
+/** The heading and one line of help that open a picker of places to go. */
+export function DiscoveryIntro({
+  title,
+  children,
+}: {
+  readonly title: ReactNode;
+  readonly children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-1 px-1">
+      <h2 className="text-sm font-medium text-foreground">{title}</h2>
+      <p className="text-xs text-muted-foreground">{children}</p>
+    </div>
+  );
+}
+
 export function DiscoveryListRow({
   icon,
   title,

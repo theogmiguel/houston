@@ -1,6 +1,15 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { ServerProvider } from "@houston-app/contracts";
-import { FolderPlusIcon, GitForkIcon, MessageSquareDashedIcon, SettingsIcon } from "lucide-react";
+import {
+  CheckIcon,
+  ChevronRightIcon,
+  CircleAlertIcon,
+  FolderPlusIcon,
+  GitForkIcon,
+  InfoIcon,
+  MessageSquareDashedIcon,
+  SettingsIcon,
+} from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 
 import { APP_DISPLAY_NAME } from "../branding";
@@ -21,21 +30,9 @@ import { primaryServerProvidersAtom } from "../state/server";
 import { Button } from "./ui/button";
 import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from "./ui/empty";
 import { SidebarInset } from "./ui/sidebar";
-import { StatusList, StatusListDisclosure, StatusListRow } from "./ui/status-list";
+import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
 import { HoustonMark } from "./HoustonWordmark";
 import { WorkspacePageHeader } from "./WorkspacePageHeader";
-
-const PROVIDER_ORDER = [
-  "claudeAgent",
-  "codex",
-  "opencode",
-  "antigravity",
-  "cursor",
-  "grok",
-  "pi",
-  "muse",
-  "fx",
-] as const;
 
 const PROVIDER_LABELS: Partial<Record<string, string>> = {
   claudeAgent: "Claude Code",
@@ -53,52 +50,31 @@ function providerLabel(provider: Pick<ServerProvider, "driver" | "displayName">)
   return PROVIDER_LABELS[provider.driver] || provider.displayName || provider.driver;
 }
 
-function providerDetail(provider: ServerProvider | undefined): string {
-  if (provider === undefined) return "Checking…";
-  const state = getOnboardingProviderState(provider);
-  if (state === "install") return "Not installed";
-  if (state === "disabled") return provider.installed ? "Disabled" : "Not installed";
-  if (state === "checking") return "Checking…";
-  if (state === "signIn") {
-    return provider.version ? `${provider.version} · signed out` : "Signed out";
+/** How many providers are ready, need a sign-in or a fix, or are not installed. */
+function summarizeProviders(providers: ReadonlyArray<ServerProvider>) {
+  const ready: string[] = [];
+  let needsAttention = 0;
+  let notInstalled = 0;
+  for (const provider of providers) {
+    const state = getOnboardingProviderState(provider);
+    if (state === "ready") ready.push(providerLabel(provider));
+    else if (state === "install" || (state === "disabled" && !provider.installed)) notInstalled += 1;
+    else if (state === "signIn" || state === "attention") needsAttention += 1;
   }
-  if (state === "attention") return "Needs attention";
-  return provider.version ? `${provider.version} · signed in` : "Signed in";
+  return { ready, needsAttention, notInstalled };
 }
 
-function ProviderRow({
-  provider,
-  divided,
-  onAction,
-}: {
-  readonly provider: ServerProvider;
-  readonly divided: boolean;
-  readonly onAction: () => void;
-}) {
-  const state = getOnboardingProviderState(provider);
-  const actionLabel =
-    state === "signIn" || provider.auth.status === "unauthenticated"
-      ? "Sign in"
-      : !provider.installed
-        ? "How to install"
-        : null;
-  return (
-    <StatusListRow
-      ready={state === "ready"}
-      label={providerLabel(provider)}
-      detail={providerDetail(provider)}
-      divided={divided}
-      {...(actionLabel === null
-        ? {}
-        : {
-            action: {
-              label: actionLabel,
-              emphasis: actionLabel === "How to install" ? ("link" as const) : ("ghost" as const),
-              onClick: onAction,
-            },
-          })}
-    />
-  );
+/** One line that says where providers stand; the settings page it links to has the detail. */
+export function providerStatusLine(providers: ReadonlyArray<ServerProvider>): string {
+  if (providers.length === 0) return "No providers found";
+  const { ready, needsAttention, notInstalled } = summarizeProviders(providers);
+  const parts: string[] = [];
+  if (ready.length > 0) {
+    parts.push(ready.length <= 2 ? `${ready.join(" and ")} ready` : `${ready.length} providers ready`);
+  }
+  if (needsAttention > 0) parts.push(`${needsAttention} need${needsAttention === 1 ? "s" : ""} attention`);
+  if (notInstalled > 0) parts.push(`${notInstalled} not installed`);
+  return parts.length > 0 ? parts.join(" · ") : "Checking providers…";
 }
 
 export function NoProjectsHero() {
@@ -114,14 +90,9 @@ export function NoProjectsHero() {
       ? undefined
       : providersByEnvironment.get(primaryEnvironmentId)) ?? primaryProviders;
   const byDriver = selectOnboardingProvidersByDriver(providers);
-  const visibleProviders = PROVIDER_ORDER.flatMap((driver) => {
-    const provider = byDriver.get(driver);
-    return provider === undefined ? [] : [{ driver, provider }];
-  }).slice(0, 5);
-  const isNotInstalled = ({ provider }: (typeof visibleProviders)[number]) =>
-    providerDetail(provider) === "Not installed";
-  const availableProviders = visibleProviders.filter((entry) => !isNotInstalled(entry));
-  const missingProviders = visibleProviders.filter(isNotInstalled);
+  const knownProviders = [...byDriver.values()];
+  const statusLine = providerStatusLine(knownProviders);
+  const providersOk = summarizeProviders(knownProviders).needsAttention === 0;
   const scratchTargetEnvironmentId = scratchEnvironmentId(primaryEnvironmentId);
   const openProviderSetup = () => {
     void navigate({ to: "/settings/providers" });
@@ -168,33 +139,46 @@ export function NoProjectsHero() {
                 Clone a repository
               </Button>
             </div>
-            {visibleProviders.length > 0 ? (
-              <StatusList className="mt-5 w-full">
-                {availableProviders.map(({ driver, provider }, index) => (
-                  <ProviderRow
-                    key={driver}
-                    provider={provider}
-                    divided={index > 0}
-                    onAction={openProviderSetup}
-                  />
-                ))}
-                {missingProviders.length > 0 ? (
-                  <StatusListDisclosure
-                    summary={`${missingProviders.length} more not installed`}
-                    divided={availableProviders.length > 0}
+            <div className="mt-3 flex items-center gap-1">
+              <Button variant="ghost" size="sm" onClick={openProviderSetup}>
+                {providersOk ? (
+                  <CheckIcon className="size-4" />
+                ) : (
+                  <CircleAlertIcon className="size-4 text-(--warn)" />
+                )}
+                {statusLine}
+                <ChevronRightIcon className="size-3.5 text-(--houston)" />
+              </Button>
+              <Popover>
+                <PopoverTrigger
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label="Where your prompts go"
+                    />
+                  }
+                >
+                  <InfoIcon className="size-4" />
+                </PopoverTrigger>
+                <PopoverPopup side="top" className="w-72">
+                  <p className="text-xs leading-4 text-secondary-label">
+                    The server listens on {serverAddress ?? "this machine"} only. Each agent sends
+                    your prompts and the files it reads to its own provider; Houston sends nothing
+                    else.
+                  </p>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-2 -ms-2"
+                    onClick={() => void navigate({ to: "/welcome", hash: "setup" })}
                   >
-                    {missingProviders.map(({ driver, provider }) => (
-                      <ProviderRow
-                        key={driver}
-                        provider={provider}
-                        divided
-                        onAction={openProviderSetup}
-                      />
-                    ))}
-                  </StatusListDisclosure>
-                ) : null}
-              </StatusList>
-            ) : null}
+                    <SettingsIcon className="size-4" />
+                    Set up Houston
+                  </Button>
+                </PopoverPopup>
+              </Popover>
+            </div>
             {scratchTargetEnvironmentId === null ? null : (
               <Button
                 variant="ghost"
@@ -206,18 +190,6 @@ export function NoProjectsHero() {
                 Start without a project
               </Button>
             )}
-            <p className="mt-2 max-w-[52ch] text-xs leading-4 text-secondary-label">
-              The server listens on {serverAddress ?? "this machine"} only. Each agent sends your
-              prompts and the files it reads to its own provider; Houston sends nothing else.
-            </p>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => void navigate({ to: "/welcome", hash: "setup" })}
-            >
-              <SettingsIcon className="size-4" />
-              Set up Houston
-            </Button>
           </div>
         </Empty>
       </div>

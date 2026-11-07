@@ -103,6 +103,13 @@ import {
 } from "./TimelineUserMessageRow.logic";
 
 // Drawn inside the media so dark screenshots keep an edge on the dark background.
+/**
+ * A bubble stops at 82% of the lane or 36rem, whichever is narrower, so a wide lane keeps a line
+ * length that reads and the bubble's left edge stays in one place; in a phone-width lane it takes
+ * the whole width instead of leaving a gutter that matches nothing.
+ */
+const BUBBLE_MAX_WIDTH_CLASS = "max-w-[min(82%,36rem)] @max-[30rem]:max-w-full";
+
 const MEDIA_EDGE_CLASS_NAME =
   "relative after:pointer-events-none after:absolute after:inset-0 after:z-10 after:rounded-[inherit] after:ring-1 after:ring-inset after:ring-black/9 dark:after:ring-white/12";
 
@@ -311,7 +318,8 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
       {row.message.delivery ? <MessageDeliveryMarker delivery={row.message.delivery} /> : null}
       <div
         className={cn(
-          "min-w-0 max-w-[80%] rounded-2xl bg-message text-message-foreground",
+          "min-w-0 rounded-2xl bg-message text-message-foreground",
+          BUBBLE_MAX_WIDTH_CLASS,
           BUBBLE_CHIP_CLASS_NAME,
           expanded && "w-full",
         )}
@@ -338,7 +346,7 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
       </div>
       <UserMessageProjectedStatus row={row} />
       {expanded ? (
-        <div className="flex w-full max-w-[82%] items-center justify-end pe-1 text-callout text-(--houston) tabular-nums">
+        <div className={cn("flex w-full items-center justify-end pe-1 text-callout text-(--houston) tabular-nums", BUBBLE_MAX_WIDTH_CLASS)}>
           <div className="flex shrink-0 items-center gap-2">
             {scheduledTaskId ? (
               <Link
@@ -850,7 +858,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       ) : null}
       {row.message.delivery ? <MessageDeliveryMarker delivery={row.message.delivery} /> : null}
       {mediaAboveText ? (
-        <div className="flex max-w-[80%] justify-end">
+        <div className={cn("flex justify-end", BUBBLE_MAX_WIDTH_CLASS)}>
           {/* The heading leads the media so screen readers reach it before the images. */}
           <MessageAuthorHeading>You</MessageAuthorHeading>
           {mediaBlock}
@@ -858,7 +866,8 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       ) : null}
       <div
         className={cn(
-          "relative min-w-0 max-w-[82%] rounded-(--r-group) text-prose leading-5 text-(--bubble-ink)",
+          "relative min-w-0 rounded-(--r-group) text-prose leading-5 text-(--bubble-ink)",
+          BUBBLE_MAX_WIDTH_CLASS,
           "bg-(--bubble) shadow-composer",
           mediaAboveText && "rounded-tr-(--r-badge)",
           BUBBLE_CHIP_CLASS_NAME,
@@ -1016,7 +1025,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         ) : null}
       </div>
       <UserMessageProjectedStatus row={row} />
-      <div className="flex w-full max-w-[82%] items-center justify-end pe-1 text-callout text-(--houston) tabular-nums">
+      <div className={cn("flex w-full items-center justify-end pe-1 text-callout text-(--houston) tabular-nums", BUBBLE_MAX_WIDTH_CLASS)}>
         <div className="flex shrink-0 items-center gap-2">
           {folded && senderThreadId ? (
             <InlineButton onClick={() => ctx.onOpenThread(senderThreadId)} tone="muted">

@@ -59,7 +59,8 @@ using a thread shortcut.
 
 ## The sidebar
 
-The sidebar lists **Pull requests**, **Tasks** and **Usage**, then one section per project.
+The sidebar opens with search and one row of icon buttons for **Pull requests**, **Tasks** and
+**Usage** (hover for the name; the open page is highlighted), then one section per project.
 Each section label collapses with **Enter** or **Space** and keeps its state; a search opens
 every section it matches in. The **…** button beside the label, or a right-click, opens the
 project's actions. Under the label are the project's grids, then its threads that no grid shows, marked **not in a
@@ -96,8 +97,8 @@ in this order:
 
 - the status word, always: **Approval**, **Input**, **Request**, **Needs you**, **Failed**,
   **Limited**, **Goal**, **Waiting**, **Running**, **Ready**, **Idle** or **Back** (which has
-  a dismiss control). A running or waiting thread says for how long ("Running for 7m"), and
-  its age shows the same duration;
+  a dismiss control). A running or waiting thread says for how long ("Running for 7m"); its age keeps showing the
+  last activity;
 - an unsent draft, with **Discard**;
 - the linked pull request: its glyph carries the state colour and the number stays neutral;
 - the checkout's uncommitted line counts;
@@ -107,7 +108,8 @@ in this order:
 - running subagents, then tags (as `#tag` text);
 - a regenerating title.
 
-The provider mark closes the line at the right, under the age. When the items do not fit,
+The provider mark closes the line at the right, under the age; a provider without a logo shows its
+initials on a neutral square. When the items do not fit,
 whole items drop from the end behind a **+N** counter; hovering it lists what is hidden.
 Closed rows show how long ago the thread closed.
 

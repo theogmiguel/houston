@@ -430,6 +430,8 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
             )}
           </div>
         </SidebarGroup>
+        {/* Room for the last row to clear the fade where the list meets the pinned Back row. */}
+        <div aria-hidden className="h-4 shrink-0" />
       </SidebarContent>
       <SidebarFooter className="max-md:hidden">
         <SidebarMenu>

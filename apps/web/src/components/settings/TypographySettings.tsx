@@ -548,6 +548,9 @@ function FontFamilySettingsRow({
         autoCapitalize="off"
         autoComplete="off"
         className="min-w-0 flex-1"
+        // An empty field means the default family, which the placeholder names; it stays at full
+        // ink so the field does not read as disabled.
+        placeholderTone="ink"
         maxLength={200}
         onFocus={() => {
           setInputFocused(true);

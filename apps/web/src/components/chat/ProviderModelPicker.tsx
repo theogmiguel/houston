@@ -21,9 +21,8 @@ import { takeOpenTarget, useComposerMenuProps } from "./composerEventScope";
 import { shortcutLabelForCommand } from "../../keybindings";
 import { traitsSplitTriggerClassName, type TraitsSplitPart } from "./modelTraits";
 import {
-  DOCKED_EFFORT_COLUMN_CLASS,
+  DOCKED_EFFORT_PANEL_CLASS,
   DOCKED_PICKER_FRAME_CLASS,
-  DOCKED_PICKER_ROW_CLASS,
   MODEL_TRIGGER_GROUP_CLASS,
 } from "../ui/composer-picker-recipes";
 
@@ -148,10 +147,10 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   /** Composer shortcuts this trigger answers besides the picker's own. */
   triggerShortcuts?: string;
   /**
-   * Docks an effort column beside the list and a footer under both. The popup then stays open
-   * until Escape or an outside press, and picking a model moves focus to its levels.
+   * Docks an effort panel under the list and an optional footer under both. The popup then stays
+   * open until Escape or an outside press, and picking a model moves focus to its levels.
    */
-  effortColumn?: ReactNode;
+  effortPanel?: ReactNode;
   footer?: ReactNode;
 }) {
   const composerFloatingLayerProps = useComposerMenuProps();
@@ -162,7 +161,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   const popupRef = useRef<HTMLDivElement | null>(null);
   const size = props.size ?? "sm";
   const iconOnly = props.iconOnly === true;
-  const docked = props.effortColumn !== undefined;
+  const docked = props.effortPanel !== undefined;
   const [headerClearance, setHeaderClearance] = useState<number | null>(null);
   // The route header is a DOM node outside React, measured each time the popup opens (also when a
   // shortcut opens it through `props.open`, which no handler of this component sees).
@@ -205,13 +204,13 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
 
   /**
    * Focuses the selected reasoning level, else the first level. With `rows: "any"` it falls back
-   * to the column's other options. False when nothing took focus.
+   * to the panel's other options. False when nothing took focus.
    */
   const focusEffort = (rows: "levels" | "any") => {
-    const column = popupRef.current?.querySelector("[data-model-picker-effort]");
+    const panel = popupRef.current?.querySelector("[data-model-picker-effort]");
     const first = (selector: string) =>
-      column?.querySelector<HTMLElement>(`${selector}[aria-checked="true"]:not(:disabled)`) ??
-      column?.querySelector<HTMLElement>(`${selector}:not(:disabled)`);
+      panel?.querySelector<HTMLElement>(`${selector}[aria-checked="true"]:not(:disabled)`) ??
+      panel?.querySelector<HTMLElement>(`${selector}:not(:disabled)`);
     const row =
       first("[data-effort-level]") ?? (rows === "any" ? first("[data-effort-row]") : null);
     row?.focus({ preventScroll: true });
@@ -234,7 +233,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       setIsMenuOpen(false);
       return;
     }
-    // The column renders the new model's levels on commit.
+    // The panel renders the new model's levels on commit.
     window.requestAnimationFrame(() => focusEffort("levels"));
   };
 
@@ -443,24 +442,23 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         padding="none"
         touchBackdrop
       >
-        {props.effortColumn ? (
+        {props.effortPanel ? (
           <div className={DOCKED_PICKER_FRAME_CLASS}>
-            <div className={DOCKED_PICKER_ROW_CLASS}>
-              {picker}
-              <div
-                data-model-picker-effort
-                className={DOCKED_EFFORT_COLUMN_CLASS}
-                onKeyDown={(event) => {
-                  if (event.key !== "ArrowLeft" || event.altKey || event.ctrlKey || event.metaKey) {
-                    return;
-                  }
-                  event.preventDefault();
-                  event.stopPropagation();
-                  searchInputRef.current?.focus();
-                }}
-              >
-                {props.effortColumn}
-              </div>
+            {picker}
+            <div
+              data-model-picker-effort
+              className={DOCKED_EFFORT_PANEL_CLASS}
+              onKeyDown={(event) => {
+                // Up and Left leave the panel for the search field; the panel's own rows handle
+                // the moves that stay inside it.
+                if (event.key !== "ArrowLeft" && event.key !== "ArrowUp") return;
+                if (event.altKey || event.ctrlKey || event.metaKey) return;
+                event.preventDefault();
+                event.stopPropagation();
+                searchInputRef.current?.focus();
+              }}
+            >
+              {props.effortPanel}
             </div>
             {props.footer}
           </div>

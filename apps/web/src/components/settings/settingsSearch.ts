@@ -894,10 +894,11 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "providers",
-    title: "Providers",
+    // The page is already titled Providers, so its first section names what the rows are.
+    title: "Connected agents",
     to: "/settings/providers",
     searchTerms: [
-      "agents cli codex claude cursor grok fx kiro opencode antigravity google sign in sign out install subscription instances authentication api key models configuration binary path config directory codex_home shadow home endpoint arguments environment variables display name accent color custom favorite hidden auto compact native sessions import resume",
+      "providers agents cli codex claude cursor grok fx kiro opencode antigravity google sign in sign out install subscription instances authentication api key models configuration binary path config directory codex_home shadow home endpoint arguments environment variables display name accent color custom favorite hidden auto compact native sessions import resume",
     ],
   },
   {

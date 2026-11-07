@@ -5,10 +5,7 @@ import {
   scopeProjectRef,
   scopeThreadRef,
 } from "@houston-app/client-runtime/environment";
-import {
-  resolveThreadWorkingStartedAt,
-  type EnvironmentThreadShell,
-} from "@houston-app/client-runtime/state/models";
+import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
 import { canSnooze, effectiveSnoozed } from "@houston-app/client-runtime/state/thread-settled";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
@@ -108,7 +105,7 @@ import { SidebarNoProjects } from "./SidebarNoProjects";
 import { ThreadBulkMenuContext, useBulkThreadMenu } from "./useBulkThreadMenu";
 import { ThreadTitleInput } from "./threadTitleInput";
 import { JumpHintBadge, ThreadJumpHintContext, useThreadJumpHint } from "./threadJumpHints";
-import { RunningAge, ThreadStatusGlyph, ThreadStatusWord } from "./threadStatusMark";
+import { ThreadStatusGlyph, ThreadStatusWord } from "./threadStatusMark";
 import {
   ThreadCheckoutMark,
   ThreadDiffItem,
@@ -206,7 +203,7 @@ import {
 import { EnvironmentId, ProjectId, type ThreadId } from "@houston-app/contracts";
 import { MOTION_FEEDBACK, MOTION_FEEDBACK_OPACITY } from "../ui/motion-recipes";
 import { ROW_SCROLL_MARGIN_CLS, ROW_TITLE_TEXT_CLS } from "../ui/sidebar-rail-recipes";
-import { isThreadRoutePathname } from "../../threadRoutes";
+import { isThreadRoutePathname, parseThreadRoutePathname } from "../../threadRoutes";
 import { shelfReturnAction } from "../../grid/shelfReturn";
 import { olderSettledScopesForProjects } from "../../grid/olderSettledScopes";
 import {
@@ -520,11 +517,16 @@ export function GridSidebar() {
       ? null
       : { gridId: openGrid.id, threadId: openGrid.focusedThreadId };
   const openShell = currentFocus === null ? undefined : threadById.get(currentFocus.threadId);
+  // A thread opened on its own route (a link, a reload) has no open grid; its route names it.
+  const routeRef = openShell === undefined ? parseThreadRoutePathname(pathname) : null;
+  const routeShell = routeRef === null ? undefined : threadById.get(routeRef.threadId);
+  const revealShell =
+    openShell ?? (routeShell?.environmentId === routeRef?.environmentId ? routeShell : undefined);
   useRevealOpenThread(
     railRef,
-    openShell === undefined
+    revealShell === undefined
       ? null
-      : scopedThreadKey(scopeThreadRef(openShell.environmentId, openShell.id)),
+      : scopedThreadKey(scopeThreadRef(revealShell.environmentId, revealShell.id)),
   );
 
   const removeFromSelection = (threadsToRemove: ReadonlyArray<EnvironmentThreadShell>) => {
@@ -1702,7 +1704,7 @@ export function SidebarProjectSection({
       <AnimatedHeight>
         {collapsed ? (
           revealed === null ? null : (
-            <div className="flex flex-col gap-px">
+            <div className="flex flex-col gap-0.5">
               <ThreadCard
                 key={revealed.thread.id}
                 gridId={revealed.grid.id}
@@ -1736,7 +1738,7 @@ export function SidebarProjectSection({
             </div>
           )
         ) : (
-          <div className="flex flex-col gap-px">
+          <div className="flex flex-col gap-0.5">
             {section.grids.map(({ grid, threads }) => (
               <GridGroup
                 key={grid.id}
@@ -2093,7 +2095,7 @@ export function GridGroup({
       </div>
       <AnimatedHeight>
         {collapsed && revealedThread === undefined ? null : (
-          <div className="flex flex-col gap-px">
+          <div className="flex flex-col gap-0.5">
             {(revealedThread === undefined ? threads : [revealedThread]).map((thread) => (
               <ThreadCard
                 key={thread.id}
@@ -2266,16 +2268,9 @@ export function ThreadCard({
   const actionsButtonRef = useRef<HTMLButtonElement | null>(null);
   const threadRef = scopeThreadRef(thread.environmentId, thread.id);
   const startRename = () => setRenaming(true);
-  // A running row's age is its running time, the duration its second line states.
-  const runningStartedAt = state === "running" ? resolveThreadWorkingStartedAt(thread) : null;
   const timeNode = (
     <span data-thread-time="" className={cn("tabular-nums", SIDEBAR_THREAD_META_TEXT_CLASS)}>
-      {timeLabel ??
-        (runningStartedAt === null ? (
-          threadTimeLabel(thread, nowMinute)
-        ) : (
-          <RunningAge startedAt={runningStartedAt} />
-        ))}
+      {timeLabel ?? threadTimeLabel(thread, nowMinute)}
     </span>
   );
   const openCardMenu = async (position: { x: number; y: number }) => {
@@ -2416,7 +2411,7 @@ export function ThreadCard({
               onOpen();
             }}
             className={cn(
-              `group/th relative flex h-14.5 w-full items-center gap-2 rounded-lg pr-2 text-left outline-none ${MOTION_FEEDBACK} ${FOCUS_ROW_CLS}`,
+              `group/th relative flex h-13 w-full items-center gap-2 rounded-lg pr-2 text-left outline-none ${MOTION_FEEDBACK} ${FOCUS_ROW_CLS}`,
               SIDEBAR_THREAD_ROW_INDENT_CLS,
               ROW_SCROLL_MARGIN_CLS,
               "cursor-pointer",
@@ -2439,7 +2434,7 @@ export function ThreadCard({
           state={state}
           {...(shelf === "settled" ? { kind: "closed" as const } : {})}
         />
-        <div className="flex min-w-0 flex-1 flex-col gap-0.75">
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <div data-thread-title-line="" className="flex h-5 min-w-0 items-center gap-2">
             {renaming ? (
               <ThreadTitleInput

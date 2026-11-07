@@ -130,7 +130,7 @@
 34 apps/web/src/components/chat/V2ItemInspector.tsx
 42 apps/web/src/components/chat/V2LifecycleRow.tsx
 36 apps/web/src/components/chat/WorkflowOpeningBlock.tsx
-8 apps/web/src/components/chat/WorkLog.tsx
+7 apps/web/src/components/chat/WorkLog.tsx
 55 apps/web/src/components/chat/WorktreeSetupCard.tsx
 9 apps/web/src/components/chat/ZoomableImage.tsx
 33 apps/web/src/components/ChatMarkdown.tsx
@@ -223,7 +223,7 @@
 10 apps/web/src/components/preview/AgentBrowserCursor.tsx
 16 apps/web/src/components/preview/BrowserMockup.tsx
 30 apps/web/src/components/preview/PreviewChromeRow.tsx
-10 apps/web/src/components/preview/PreviewEmptyState.tsx
+8 apps/web/src/components/preview/PreviewEmptyState.tsx
 1 apps/web/src/components/preview/PreviewFaviconIcon.tsx
 4 apps/web/src/components/preview/PreviewMoreMenu.tsx
 3 apps/web/src/components/preview/PreviewPanel.tsx
@@ -402,7 +402,7 @@
 31 apps/web/src/components/sidebar/SidebarListMarkers.tsx
 12 apps/web/src/components/sidebar/SidebarProjectFolderHeader.tsx
 24 apps/web/src/components/sidebar/SidebarProviderUpdatePill.tsx
-32 apps/web/src/components/sidebar/SidebarRailNav.tsx
+30 apps/web/src/components/sidebar/SidebarRailNav.tsx
 3 apps/web/src/components/sidebar/SidebarRowTime.tsx
 16 apps/web/src/components/sidebar/SidebarThreadHeader.tsx
 166 apps/web/src/components/sidebar/SidebarThreadRow.tsx

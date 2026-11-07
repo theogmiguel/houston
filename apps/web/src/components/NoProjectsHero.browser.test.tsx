@@ -9,7 +9,7 @@ import { page, userEvent } from "vite-plus/test/browser";
 import "~/index.css";
 
 import { render } from "../../test/render";
-import { NoProjectsHero } from "./NoProjectsHero";
+import { NoProjectsHero, providerStatusLine } from "./NoProjectsHero";
 
 const state = vi.hoisted(() => ({ providers: [] as ServerProvider[] }));
 
@@ -55,7 +55,7 @@ const missing = (driver: string) =>
     auth: { status: "unknown" },
   });
 
-it("lists installed providers and folds the missing ones behind one disclosure row", async () => {
+it("collapses the providers into one status line that opens provider settings", async () => {
   state.providers = [
     provider("claudeAgent"),
     provider("codex"),
@@ -64,70 +64,63 @@ it("lists installed providers and folds the missing ones behind one disclosure r
   ];
   await using _screen = await render(<NoProjectsHero />, { router: "/" });
 
-  await expect.element(page.getByText("Claude Code", { exact: true })).toBeVisible();
-  await expect.element(page.getByText("Codex", { exact: true })).toBeVisible();
-  expect(page.getByText("1.0.0 · signed in").elements()).toHaveLength(2);
-
-  const disclosure = page.getByText("2 more not installed");
-  await expect.element(disclosure).toBeVisible();
-  await expect.element(page.getByText("OpenCode", { exact: true })).not.toBeVisible();
+  const line = page.getByRole("button", { name: "Claude Code and Codex ready · 2 not installed" });
+  await expect.element(line).toBeVisible();
+  // No per-provider rows: the detail lives on the settings page the line opens.
+  expect(page.getByText("1.0.0 · signed in").elements()).toHaveLength(0);
   expect(page.getByRole("button", { name: "How to install" }).elements()).toHaveLength(0);
-
-  await userEvent.click(disclosure);
-  await expect.element(page.getByText("OpenCode", { exact: true })).toBeVisible();
-  await expect.element(page.getByText("Cursor", { exact: true })).toBeVisible();
-  expect(page.getByText("Not installed").elements()).toHaveLength(2);
-  expect(page.getByRole("button", { name: "How to install" }).elements()).toHaveLength(2);
 });
 
-it("omits the disclosure row when every provider is installed", async () => {
-  state.providers = [provider("claudeAgent"), provider("codex")];
+it("says when a provider needs attention instead of reporting everything ready", async () => {
+  state.providers = [
+    provider("claudeAgent"),
+    provider("codex", { auth: { status: "unauthenticated" } }),
+  ];
   await using _screen = await render(<NoProjectsHero />, { router: "/" });
 
-  await expect.element(page.getByText("Codex", { exact: true })).toBeVisible();
-  expect(page.getByText(/more not installed/).elements()).toHaveLength(0);
+  await expect.element(page.getByText("Claude Code ready · 1 needs attention")).toBeVisible();
 });
 
-it("keeps Add folder the dominant action above the provider card", async () => {
+it("describes the status line for every mix of provider states", () => {
+  expect(providerStatusLine([])).toBe("No providers found");
+  expect(providerStatusLine([provider("claudeAgent"), provider("codex"), provider("grok")])).toBe(
+    "3 providers ready",
+  );
+  expect(providerStatusLine([missing("opencode")])).toBe("1 not installed");
+});
+
+it("keeps Add folder the dominant action above the status line", async () => {
   state.providers = [provider("claudeAgent"), missing("opencode")];
   await using _screen = await render(<NoProjectsHero />, { router: "/" });
 
   const add = page.getByRole("button", { name: "Add folder" }).element();
-  const card = page.getByText("1 more not installed").element().closest("details")!;
-  expect(add.getBoundingClientRect().bottom).toBeLessThan(card.getBoundingClientRect().top);
+  const line = page.getByRole("button", { name: /Claude Code ready/ }).element();
+  expect(add.getBoundingClientRect().bottom).toBeLessThan(line.getBoundingClientRect().top);
   expect(getComputedStyle(add).backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
 });
 
-it("sets the install action apart from the muted 'Not installed' status", async () => {
-  state.providers = [provider("claudeAgent"), missing("opencode")];
-  await using _screen = await render(<NoProjectsHero />, { router: "/" });
-  await userEvent.click(page.getByText("1 more not installed"));
-
-  const status = getComputedStyle(page.getByText("Not installed").element());
-  const action = getComputedStyle(page.getByRole("button", { name: "How to install" }).element());
-  expect(action.color).not.toBe(status.color);
-  await userEvent.hover(page.getByRole("button", { name: "How to install" }));
-  expect(
-    getComputedStyle(page.getByRole("button", { name: "How to install" }).element())
-      .textDecorationLine,
-  ).toBe("underline");
-});
-
-it("sets the disclaimer in 12px sans and Set up Houston as a ghost button", async () => {
+it("puts the network note and setup behind an info button instead of on the page", async () => {
   state.providers = [provider("claudeAgent")];
   await using _screen = await render(<NoProjectsHero />, { router: "/" });
 
-  const disclaimer = page.getByText(/Houston sends nothing/).element();
-  const style = getComputedStyle(disclaimer);
+  expect(page.getByText(/Houston sends nothing/).elements()).toHaveLength(0);
+  expect(page.getByRole("button", { name: "Set up Houston" }).elements()).toHaveLength(0);
+
+  await userEvent.click(page.getByRole("button", { name: "Where your prompts go" }));
+  const note = page.getByText(/Houston sends nothing/);
+  await expect.element(note).toBeVisible();
+  const style = getComputedStyle(note.element());
   expect(style.fontSize).toBe("12px");
   expect(style.fontFamily).not.toContain("JetBrains");
-  expect(disclaimer.querySelector(".font-mono")).toBeNull();
+  await expect.element(page.getByRole("button", { name: "Set up Houston" })).toBeVisible();
+});
 
-  const setup = getComputedStyle(page.getByRole("button", { name: "Set up Houston" }).element());
-  // The ghost recipe: transparent fill, a leading icon and the 22px compact height.
-  expect(setup.backgroundColor).toBe("rgba(0, 0, 0, 0)");
-  expect(setup.height).toBe("22px");
-  expect(
-    page.getByRole("button", { name: "Set up Houston" }).element().querySelector("svg"),
-  ).not.toBeNull();
+it("leaves one focal action: logo, title, one line, two buttons, status and one secondary link", async () => {
+  state.providers = [provider("claudeAgent")];
+  await using _screen = await render(<NoProjectsHero />, { router: "/" });
+
+  const main = document.querySelector<HTMLElement>("main")!;
+  // Add folder, Clone a repository, the status line and the info button; no scratch target here.
+  expect(main.querySelectorAll("button")).toHaveLength(4);
+  await expect.element(page.getByText(/Each folder becomes a workspace/)).toBeVisible();
 });

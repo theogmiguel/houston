@@ -6,7 +6,7 @@ import { resolveDiffThemeName } from "~/lib/diffRendering";
 import { render } from "../../../test/render";
 import { StyledDiffCodeView } from "./StyledDiffCodeView";
 
-const FADE_PX = 48;
+const FADE_PX = 64;
 // The right side panel of the 1440px layout.
 const PANEL_WIDTH = 399;
 const LONG_LINE = `const added = Math.ceil((Math.max(1, 2) * 1000 + Math.random() * 4000) / 100) * 100 + more_and_more_text;`;
@@ -24,6 +24,21 @@ function patchOf(addedLine: string): string {
 `;
 }
 
+const GAPPED_PATCH = `diff --git a/a.ts b/a.ts
+--- a/a.ts
++++ b/a.ts
+@@ -1,3 +1,3 @@
+ const keep = 1;
+-const removed = "old";
++const added = 1;
+ const tail = 2;
+@@ -40,3 +40,3 @@
+ const far = 1;
+-const farRemoved = "old";
++const farAdded = 1;
+ const farTail = 2;
+`;
+
 function descendants(root: ParentNode): Element[] {
   return [...root.querySelectorAll("*")].flatMap((element) => [
     element,
@@ -33,10 +48,10 @@ function descendants(root: ParentNode): Element[] {
 
 let mounted = 0;
 
-async function mount(addedLine: string) {
+async function mount(addedLine: string, patch = patchOf(addedLine)) {
   const id = `fade-${(mounted += 1)}`;
   // The viewer caches rendered files by cache key, so each mount needs its own.
-  const fileDiff = parsePatchFiles(patchOf(addedLine), id)[0]!.files[0]!;
+  const fileDiff = parsePatchFiles(patch, id)[0]!.files[0]!;
   const box = document.createElement("div");
   box.style.cssText = `width:${PANEL_WIDTH}px;height:400px`;
   document.documentElement.classList.add("dark");
@@ -68,7 +83,7 @@ async function mount(addedLine: string) {
       document.documentElement.classList.remove("dark");
     },
   };
-  return { screen: disposable, code, gutter, fade: () => getComputedStyle(gutter, "::after") };
+  return { screen: disposable, box, code, gutter, fade: () => getComputedStyle(gutter, "::after") };
 }
 
 describe("the right-edge fade of non-wrapping diffs", () => {
@@ -78,8 +93,9 @@ describe("the right-edge fade of non-wrapping diffs", () => {
     expect(view.code.scrollWidth).toBeGreaterThan(view.code.clientWidth);
     expect(view.code.clientWidth).toBe(PANEL_WIDTH);
     await expect.poll(() => view.fade().opacity).toBe("1");
-    // A fade plus an edge shadow, so the clipped edge reads as a scroll edge and not as the line's end.
-    expect(view.fade().backgroundImage.match(/linear-gradient/g)).toHaveLength(2);
+    // A fade, an edge shadow and a hard edge rule, so the clipped edge reads as a scroll edge at rest
+    // and not as the line's end.
+    expect(view.fade().backgroundImage.match(/linear-gradient/g)).toHaveLength(3);
     expect(view.fade().position).toBe("absolute");
     expect(view.fade().width).toBe(`${FADE_PX}px`);
     // The gutter is sticky at the left edge of the viewport, so the fade's left offset puts it
@@ -114,5 +130,25 @@ describe("the right-edge fade of non-wrapping diffs", () => {
     await using _screen = view.screen;
     expect(view.code.scrollWidth).toBeLessThanOrEqual(view.code.clientWidth);
     expect(view.fade().opacity).toBe("0");
+  });
+});
+
+describe("the hunk separators of a diff", () => {
+  it("name what they reveal instead of describing the hidden lines", async () => {
+    const view = await mount(SHORT_LINE, GAPPED_PATCH);
+    await using _screen = view.screen;
+    await expect
+      .poll(() =>
+        descendants(view.box)
+          .filter((e) => e.hasAttribute("data-unmodified-lines"))
+          .map((e) => e.textContent),
+      )
+      .toEqual(expect.arrayContaining([expect.stringMatching(/^Show \d+ more lines?$/)]));
+    const texts = descendants(view.box)
+      .filter((e) => e.hasAttribute("data-unmodified-lines"))
+      .map((e) => e.textContent ?? "");
+    for (const text of texts) {
+      expect(text).toMatch(/^(Show \d+ more lines?|Expand context)$/);
+    }
   });
 });

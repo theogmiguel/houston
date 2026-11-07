@@ -10,6 +10,7 @@ import {
 import type { Ref } from "react";
 
 import { DIFF_SURFACE_THEME_UNSAFE_CSS } from "~/lib/diffRendering";
+import { relabelDiffSeparators } from "~/lib/diffSeparatorLabels";
 import { DiffWorkerPoolProvider } from "../DiffWorkerPoolProvider";
 
 export const DIFF_VIEW_UNSAFE_CSS = `${DIFF_SURFACE_THEME_UNSAFE_CSS}
@@ -22,20 +23,25 @@ export const DIFF_VIEW_UNSAFE_CSS = `${DIFF_SURFACE_THEME_UNSAFE_CSS}
 
 /* Without wrapping, a long line runs past the panel edge. The library paints the horizontal
    scrollbar thumb transparent until the pointer is over the file, so nothing says the line
-   continues. Keep a thumb visible at rest, stronger on hover. */
+   continues. Keep a track and a thumb visible at rest, stronger on hover. The scrollbar height is
+   the library's measured gutter and feeds the virtualizer, so only its colours change. */
+[data-overflow="scroll"] [data-code]::-webkit-scrollbar-track {
+  background-color: color-mix(in srgb, var(--code-foreground) 8%, transparent);
+}
+
 [data-overflow="scroll"] [data-code]::-webkit-scrollbar-thumb {
-  background-color: color-mix(in srgb, var(--code-foreground) 28%, transparent) !important;
+  background-color: color-mix(in srgb, var(--code-foreground) 45%, transparent) !important;
 }
 
 [data-overflow="scroll"] [data-code]::-webkit-scrollbar-thumb:hover {
-  background-color: color-mix(in srgb, var(--code-foreground) 48%, transparent) !important;
+  background-color: color-mix(in srgb, var(--code-foreground) 65%, transparent) !important;
 }
 
-/* The scrollbar sits under the file, often out of view, so a clipped line also gets a fade at
-   the right edge of the visible column. The sticky gutter always sits at the left edge of the
-   scroll viewport, so a pseudo-element anchored to it by container width lands on the right
-   edge wherever the file is scrolled. The scroll-state query shows it only while there is more
-   to the right. It is state, not an animation, so it also holds where animations are
+/* The scrollbar sits under the file, often out of view, so every line also gets a fade and an
+   edge shadow at the right edge of the visible column. The sticky gutter always sits at the left
+   edge of the scroll viewport, so a pseudo-element anchored to it by container width lands on the
+   right edge wherever the file is scrolled. The scroll-state query shows it only while there is
+   more to the right. It is state, not an animation, so it also holds where animations are
    finished or disabled. Without scroll-state support the fade is simply absent. */
 [data-overflow="scroll"] [data-code] {
   container-type: inline-size scroll-state;
@@ -46,14 +52,16 @@ export const DIFF_VIEW_UNSAFE_CSS = `${DIFF_SURFACE_THEME_UNSAFE_CSS}
   position: absolute;
   top: 0;
   bottom: 0;
-  /* About six code glyphs: narrower, the fade reads as a clipped glyph rather than a fade. */
-  left: calc(100cqi - 48px);
-  width: 48px;
+  /* About eight code glyphs: narrower, the fade reads as a clipped glyph rather than a fade. */
+  left: calc(100cqi - 64px);
+  width: 64px;
   pointer-events: none;
-  /* The fade alone reads as a line that ends there; an edge shadow on top marks a scroll edge. */
+  /* The fade alone reads as a line that ends there. A hard 2px rule plus a 14px shadow on top
+     mark a scroll edge that is visible at rest, whatever token the line is cut inside. */
   background:
-    linear-gradient(to left, color-mix(in srgb, var(--code-foreground) 34%, transparent), transparent 8px),
-    linear-gradient(to right, transparent, var(--code-background));
+    linear-gradient(to left, color-mix(in srgb, var(--code-foreground) 55%, transparent) 2px, transparent 2px),
+    linear-gradient(to left, color-mix(in srgb, var(--code-foreground) 40%, transparent), transparent 14px),
+    linear-gradient(to right, transparent, var(--code-background) 85%);
   opacity: 0;
 }
 
@@ -285,6 +293,14 @@ export function StyledDiffCodeView<LAnnotation = undefined>({
         }
         options={{
           ...options,
+          onPostRender: ((container: HTMLElement, ...rest: unknown[]) => {
+            // rest is (instance, phase, item context); the callback is overloaded per item type.
+            if (rest[1] !== "unmount") relabelDiffSeparators(container);
+            return (options?.onPostRender as ((...args: unknown[]) => unknown) | undefined)?.(
+              container,
+              ...rest,
+            );
+          }) as unknown as NonNullable<StyledDiffCodeViewOptions<LAnnotation>["onPostRender"]>,
           unsafeCSS: unsafeCSSExtra
             ? `${DIFF_VIEW_UNSAFE_CSS}\n${unsafeCSSExtra}`
             : DIFF_VIEW_UNSAFE_CSS,

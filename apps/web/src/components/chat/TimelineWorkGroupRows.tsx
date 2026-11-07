@@ -13,6 +13,7 @@ import { workEntryDisplayIndicatesToolFailure } from "../../session-logic";
 import ChatMarkdown from "../ChatMarkdown";
 import { ChevronDownIcon, ChevronRightIcon, Minimize2Icon, XIcon } from "lucide-react";
 import { Button } from "../ui/button";
+import { NESTED_WORK_TYPE_CLASS } from "../ui/work-log-recipes";
 import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
 import {
   liveWorkEntryLabel,
@@ -277,6 +278,7 @@ function ExpandedWorkGroupEntries({
           style={{ maxHeight: `calc(min(18rem, 50dvh) + ${expandedContentHeight}px)` }}
           className={cn(
             "ms-3.5 scrollbar-gutter-stable scroll-py-6 overflow-x-hidden border-s border-border ps-2.5 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
+            NESTED_WORK_TYPE_CLASS,
             getVirtualizedScrollFadeClassName(fades),
           )}
         />

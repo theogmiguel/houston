@@ -214,8 +214,24 @@ const FULL_ORDER = [
   "Renaming title",
 ];
 
+/** The locked order of the second line, by the start of each item's label. */
+const ORDER_PREFIXES = [
+  "Status",
+  "Unsent draft",
+  "Pull request",
+  "Uncommitted changes",
+  "Terminal",
+  "Branch",
+  "Worktree",
+  "Runs on another machine",
+  "1 subagent",
+  "2 subagents",
+  "#",
+  "Renaming",
+];
+
 describe("thread row anatomy", () => {
-  it("keeps every row 58px tall whatever it carries, at the docked rail and the drawer", async () => {
+  it("keeps every row 52px tall whatever it carries, with 2px between its lines, at the docked rail and the drawer", async () => {
     for (const rail of RAILS) {
       await page.viewport(rail.viewport, 900);
       reset();
@@ -239,7 +255,12 @@ describe("thread row anatomy", () => {
         (row) => row.getBoundingClientRect().height,
       );
       expect(heights).toHaveLength(rows.length);
-      for (const height of heights) expect(height).toBeCloseTo(58, 0);
+      for (const height of heights) expect(height).toBeCloseTo(52, 0);
+      for (const row of screen.container.querySelectorAll<HTMLElement>("[data-thread-key]")) {
+        const title = row.querySelector("[data-thread-title-line]")!.getBoundingClientRect();
+        const meta = row.querySelector("[data-thread-meta]")!.getBoundingClientRect();
+        expect(meta.top - title.bottom).toBeCloseTo(2, 0);
+      }
     }
   });
 
@@ -307,6 +328,50 @@ describe("thread row anatomy", () => {
     );
     const time = row.querySelector<HTMLElement>("[data-thread-time]")!;
     expect(mark.getBoundingClientRect().right).toBeCloseTo(time.getBoundingClientRect().right, 0);
+  });
+
+  it("keeps the same order on rows that carry only some of the items", async () => {
+    await page.viewport(1440, 900);
+    const subagentsAndTags = thread({
+      id: "thread-coordinate",
+      blockedOnThreadWait: true,
+      tags: ["migration", "q3"],
+      runtime: { status: "running", activeRunId: "r", activityStartedAt: runningSince() },
+    });
+    const pullRequestAndDiff = thread({
+      id: "thread-csv",
+      pullRequests: [
+        {
+          number: 214,
+          url: "https://example.test/pr/214",
+          linkedAt: "2026-01-01T00:00:00.000Z",
+          snapshot: { state: "open", checksState: "failing" },
+        },
+      ],
+    });
+    reset();
+    fixture.totals = { insertions: 128, deletions: 16 };
+    const cases = [
+      { value: subagentsAndTags, subagents: 1, labels: ["Status", "1 subagent running"] },
+      {
+        value: pullRequestAndDiff,
+        subagents: 0,
+        labels: ["Status", "Pull request #214", "Uncommitted changes +128 −16"],
+      },
+    ];
+    for (const { value, subagents, labels } of cases) {
+      await using screen = await render(
+        <div style={{ width: 760 }}>{card(value, { subagents })}</div>,
+      );
+      const row = rowOf(screen.container);
+      const drawn = itemsOf(row).map((item) => item.dataset.metaLabel ?? "");
+      const ranks = drawn.map((label) =>
+        ORDER_PREFIXES.findIndex((prefix) => label.startsWith(prefix)),
+      );
+      expect(ranks).not.toContain(-1);
+      expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
+      for (const label of labels) expect(drawn).toContain(label);
+    }
   });
 
   it("always names the status first, in the second line, calm or not", async () => {
@@ -504,7 +569,37 @@ describe("thread row status glyphs", () => {
     expect(new Set(distinct).size).toBe(distinct.length);
   });
 
-  it("sets a running row's second line and its age to the same start-based duration", async () => {
+  it("draws the Failed glyph's ink as wide as the Ready glyph's, not a small cross in a faint disc", async () => {
+    await page.viewport(1440, 900);
+    reset();
+    /** The width of the stroked geometry, the part of a glyph the eye reads at 14px. */
+    const inkWidth = async (kind: string) => {
+      const state = STATES.find((candidate) => candidate.kind === kind)!;
+      await using screen = await render(
+        <div style={{ width: 264 }}>
+          {card(thread({ id: `thread-${kind}`, ...state.overrides }))}
+        </div>,
+      );
+      const svg = rowOf(screen.container).querySelector<SVGSVGElement>(
+        "[data-thread-status-glyph] svg",
+      )!;
+      let left = Infinity;
+      let right = -Infinity;
+      for (const part of svg.querySelectorAll<SVGGraphicsElement>("[stroke=currentColor]")) {
+        const box = part.getBBox();
+        const half = Number(part.getAttribute("stroke-width")) / 2;
+        left = Math.min(left, box.x - half);
+        right = Math.max(right, box.x + box.width + half);
+      }
+      return right - left;
+    };
+    const ready = await inkWidth("ready");
+    const failed = await inkWidth("failed");
+    expect(failed).toBeGreaterThanOrEqual(ready - 1.5);
+    expect(failed).toBeGreaterThanOrEqual(11);
+  });
+
+  it("states a running row's elapsed time once, on its second line, and keeps the age cell narrow", async () => {
     await page.viewport(1440, 900);
     reset();
     const running = STATES.find((state) => state.kind === "running")!;
@@ -515,7 +610,15 @@ describe("thread row status glyphs", () => {
     await expect
       .poll(() => row.querySelector("[data-thread-status]")?.textContent ?? "")
       .toBe("Running for 7m");
-    expect(row.querySelector("[data-thread-time]")?.textContent).toBe("7m");
+    reset();
+    await using idle = await render(<div style={{ width: 264 }}>{card(thread())}</div>);
+    const age = row.querySelector<HTMLElement>("[data-thread-time]")!;
+    // The age is the last-activity age every other row shows, not a second clock.
+    expect(age.textContent).toBe(
+      rowOf(idle.container).querySelector("[data-thread-time]")?.textContent,
+    );
+    expect(age.textContent).not.toMatch(/for|\d+m \d+/);
+    expect(age.getBoundingClientRect().width).toBeLessThanOrEqual(36);
   });
 
   it("gives the Closed shelf its own glyph and no status word", async () => {
@@ -585,6 +688,18 @@ describe("thread row provider marks and tags", () => {
     expect(getComputedStyle(mark).fontSize).toBe("9px");
     expect(getComputedStyle(mark).fontWeight).toBe("600");
     expect(mark.getAttribute("aria-label")).toBe("Fable Agent");
+    // The monogram is neutral: it shares no hue with the status colours.
+    const ink = (token: string) => {
+      const probe = document.createElement("span");
+      probe.style.color = `var(${token})`;
+      document.body.append(probe);
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      return color;
+    };
+    const statusHues = ["--info-foreground", "--success-foreground", "--accent-ink", "--warn-ink"];
+    for (const token of statusHues) expect(getComputedStyle(mark).color).not.toBe(ink(token));
+    expect(getComputedStyle(mark).color).toBe(ink("--color-secondary-label"));
     // The monogram has no squiggle prefix: the mark is its two letters only.
     expect(mark.querySelector("svg")).toBeNull();
   });

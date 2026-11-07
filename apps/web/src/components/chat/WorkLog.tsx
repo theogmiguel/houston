@@ -7,35 +7,55 @@ import {
   type ReactNode,
 } from "react";
 import { cn } from "../../lib/utils";
+import { NESTED_WORK_RAIL_CLASS } from "../ui/work-log-recipes";
+import { IN_TURN_GAP_CLASS, PACKED_GAP_CLASS, TURN_GAP_CLASS } from "./timelineSpacing";
 
 const GroupedRows = createContext(false);
 
-/** Groups may span virtualized timeline items. Each part owns its trailing space. */
+/**
+ * Groups may span virtualized timeline items. Each part owns its trailing space: the in-turn gap
+ * after a group's last row, the turn gap when a user message follows, and none between the rows
+ * of one group so a nested rail stays unbroken.
+ */
 export function WorkLogBlock({
   layout = "standalone",
   continues = false,
   endsGroup = false,
+  leadsToTurn = false,
+  nested = false,
   children,
 }: {
   layout?: "standalone" | "group-header" | "group-content";
   continues?: boolean | undefined;
   /** The last row of an expanded group: it leaves the same gap a message does. */
   endsGroup?: boolean | undefined;
+  /** A user message follows: the turn gap replaces the in-turn gap. */
+  leadsToTurn?: boolean | undefined;
+  /** A child of an expanded group's header: indented under a thin rail, set smaller and muted. */
+  nested?: boolean | undefined;
   children: ReactNode;
 }) {
+  const gap = leadsToTurn
+    ? TURN_GAP_CLASS
+    : endsGroup
+      ? IN_TURN_GAP_CLASS
+      : continues || layout === "group-header"
+        ? "pb-0"
+        : layout === "group-content"
+          ? PACKED_GAP_CLASS
+          : IN_TURN_GAP_CLASS;
   return (
-    <div
-      className={
-        endsGroup
-          ? "pb-4"
-          : continues || layout === "group-header"
-            ? "pb-0"
-            : layout === "group-content"
-              ? "pb-1"
-              : "pb-2"
-      }
-    >
-      {children}
+    <div className={gap}>
+      {nested ? (
+        <div
+          data-work-log-nested=""
+          className={NESTED_WORK_RAIL_CLASS}
+        >
+          {children}
+        </div>
+      ) : (
+        children
+      )}
     </div>
   );
 }

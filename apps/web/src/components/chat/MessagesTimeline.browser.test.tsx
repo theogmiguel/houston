@@ -1298,7 +1298,7 @@ describe("MessagesTimeline expanded turn with a read of an edited file", () => {
 });
 
 describe("MessagesTimeline expanded tool rows", () => {
-  it("fills the prose column edge to edge, with no border, at 1440x900", async () => {
+  it("runs under the header's rail to the prose column's right edge, with no border, at 1440x900", async () => {
     await using _viewport = await desktopViewport();
     setup();
     const runId = RunId.make("align-run");
@@ -1330,7 +1330,9 @@ describe("MessagesTimeline expanded tool rows", () => {
     expect(prose).toBeDefined();
     const rowBox = row.getBoundingClientRect();
     const proseBox = prose.getBoundingClientRect();
-    expect(rowBox.left).toBeCloseTo(proseBox.left, 0);
+    // A child of the group's header sits under a rail, indented from the prose column and
+    // flush with it on the right.
+    expect(rowBox.left).toBeGreaterThanOrEqual(proseBox.left + 20);
     expect(rowBox.right).toBeCloseTo(proseBox.right, 0);
     expect(getComputedStyle(row).borderTopWidth).toBe("0px");
     expect(getComputedStyle(row).borderLeftWidth).toBe("0px");
@@ -2019,7 +2021,7 @@ describe("turn rhythm", () => {
       completedAt: CREATED_AT,
     }) as const;
 
-  it("puts 24px between turns however a turn ends and smaller fixed steps inside one", async () => {
+  it("puts 32px between turns however a turn ends and smaller fixed steps inside one", async () => {
     setup();
     const entries: Entry[] = [];
     const runs: NonNullable<TimelineProps["runs"]>[number][] = [];
@@ -2071,7 +2073,7 @@ describe("turn rhythm", () => {
       top(rowOf("message", "Question 2")) - bottom(answer(1)),
       top(rowOf("message", "Question 3")) - bottom(cards[0]!),
     ];
-    expect(turnGaps).toEqual([24, 24]);
+    expect(turnGaps).toEqual([32, 32]);
 
     expect(top(attributions[0]!) - bottom(answer(2))).toBe(8);
     expect(top(cards[0]!) - bottom(attributions[0]!)).toBe(12);
@@ -2079,9 +2081,9 @@ describe("turn rhythm", () => {
     const divider = root.querySelector<HTMLElement>('[role="separator"]')!;
     const folds = root.querySelectorAll<HTMLElement>('[data-timeline-row-kind="turn-fold"] button');
     // The divider sits inside the turn: the same small step above and below it.
-    expect([top(divider) - bottom(folds[1]!), top(answer(2)) - bottom(divider)]).toEqual([6, 8]);
+    expect([top(divider) - bottom(folds[1]!), top(answer(2)) - bottom(divider)]).toEqual([12, 14]);
     // "Worked for" row to the body of the answer.
-    expect([1, 3].map((n) => top(answer(n)) - bottom(folds[n - 1]!))).toEqual([8, 8]);
+    expect([1, 3].map((n) => top(answer(n)) - bottom(folds[n - 1]!))).toEqual([14, 14]);
   });
 });
 
@@ -2421,5 +2423,119 @@ describe("MessagesTimeline shell ticks", () => {
 
     await act(() => registry.set(quiet, [review("run-1"), review("run-2")]));
     expect(commits).toBeGreaterThan(0);
+  });
+});
+
+describe("MessagesTimeline rhythm", () => {
+  const rowPadding = (container: HTMLElement, id: string) => {
+    const wrapper = container.querySelector<HTMLElement>(`[data-timeline-row-id="${id}"]`);
+    if (!wrapper) throw new Error(`Missing row ${id}`);
+    // Work-log rows keep the gap on their block, one level down.
+    const block = wrapper.firstElementChild as HTMLElement | null;
+    const padded = getComputedStyle(wrapper).paddingBottom === "0px" && block ? block : wrapper;
+    return Number.parseFloat(getComputedStyle(padded).paddingBottom);
+  };
+
+  it("leaves one 32px gap before every user message and 12px inside a turn at 1440x900", async () => {
+    await using _viewport = await desktopViewport();
+    setup();
+    const run1 = RunId.make("rhythm-run-1");
+    const run2 = RunId.make("rhythm-run-2");
+    await using screen = await renderTimeline(
+      [
+        message("First question", { runId: run1 }, "rhythm-user-1"),
+        message("First answer", { role: "assistant", runId: run1 }, "rhythm-answer-1"),
+        message("Second question", { runId: run2 }, "rhythm-user-2"),
+        work("rhythm-tool", {
+          runId: run2,
+          label: "Ran ls",
+          command: "ls -la",
+          tone: "tool",
+          itemType: "command_execution",
+          toolLifecycleStatus: "completed",
+        }),
+        message("Second answer", { role: "assistant", runId: run2 }, "rhythm-answer-2"),
+        message("Third question", { runId: RunId.make("rhythm-run-3") }, "rhythm-user-3"),
+      ],
+      { runs: [] },
+    );
+    const rows = () =>
+      [...screen.container.querySelectorAll<HTMLElement>("[data-timeline-row-id]")].map(
+        (row) => row.dataset.timelineRowId!,
+      );
+    await vi.waitFor(() => expect(rows().length).toBeGreaterThanOrEqual(5));
+
+    const ids = rows();
+    const ofUser = (n: number) => ids.findIndex((id) => id.includes(`rhythm-user-${n}`));
+    const rowEl = (id: string) =>
+      screen.container.querySelector<HTMLElement>(`[data-timeline-row-id="${id}"]`)!;
+    const answerText = (id: string) => rowEl(id).querySelector<HTMLElement>("[data-thread-find-text]")!;
+    // Whatever precedes a user message leaves the turn gap, measured from the answer text down to
+    // the next bubble's row.
+    for (const [answerId, n] of [
+      ["rhythm-answer-1", 2],
+      ["rhythm-answer-2", 3],
+    ] as const) {
+      const gap =
+        rowEl(ids[ofUser(n)]!).getBoundingClientRect().top -
+        answerText(ids.find((id) => id.includes(answerId))!).getBoundingClientRect().bottom;
+      expect(gap, `gap before user message ${n}`).toBe(32);
+    }
+    // A work row followed by more of the same turn leaves the in-turn gap.
+    const fold = ids.find((id) => id.startsWith("turn-fold:"))!;
+    expect(rowPadding(screen.container, fold)).toBe(12);
+  });
+
+  it("nests the rows of an expanded group under the header's rail in 12px muted type", async () => {
+    await using _viewport = await desktopViewport();
+    setup();
+    const runId = RunId.make("nest-run");
+    await using screen = await renderTimeline(
+      [
+        message("Question", { runId }, "nest-user"),
+        work("nest-tool", {
+          runId,
+          label: "Ran ls",
+          command: "ls -la",
+          tone: "tool",
+          itemType: "command_execution",
+          toolLifecycleStatus: "completed",
+        }),
+        message("Done listing the directory", { role: "assistant", runId }, "nest-final"),
+      ],
+      { runs: [] },
+    );
+    const heading = [...screen.container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => /^Worked for/.test(button.textContent ?? ""),
+    )!;
+    await click(heading);
+    const row = screen.button("ls -la");
+    const nest = row.closest<HTMLElement>("[data-work-log-nested]")!;
+    expect(nest).not.toBeNull();
+    expect(getComputedStyle(nest).borderInlineStartWidth).toBe("1px");
+    expect(row.getBoundingClientRect().left).toBeGreaterThan(heading.getBoundingClientRect().left);
+    const label = [...row.querySelectorAll<HTMLElement>("*")].find(
+      (element) => element.children.length === 0 && element.textContent?.includes("ls -la"),
+    )!;
+    expect(getComputedStyle(label).fontSize).toBe("12px");
+  });
+
+  it("caps a user bubble at 36rem in a wide lane and fills a phone-width lane", async () => {
+    await using _viewport = await desktopViewport();
+    setup();
+    const long = "word ".repeat(300);
+    const bubbleWidth = async (width: number) => {
+      await using screen = await renderTimeline([message(long, {}, `cap-${width}`)], {}, { width });
+      const row = screen.container.querySelector<HTMLElement>("[data-timeline-row-id]")!;
+      const lane = row.getBoundingClientRect().width;
+      const bubble = row.querySelector<HTMLElement>("[class*='bg-(--bubble)']")!;
+      return { lane, bubble: bubble.getBoundingClientRect().width };
+    };
+
+    const wide = await bubbleWidth(1100);
+    expect(wide.bubble).toBeLessThanOrEqual(576 + 1);
+    const phone = await bubbleWidth(400);
+    expect(phone.lane).toBeLessThan(480);
+    expect(phone.bubble).toBeGreaterThanOrEqual(phone.lane - 1);
   });
 });

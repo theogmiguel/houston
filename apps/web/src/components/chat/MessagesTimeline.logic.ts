@@ -512,6 +512,8 @@ export type MessagesTimelineRow = MessagesTimelineRowContent & {
   readonly continuesWorkLog?: boolean;
   /** The last row of an expanded turn fold: it owns the gap before whatever follows the group. */
   readonly endsFoldGroup?: boolean;
+  /** The next row is a user message that opens a turn: this row leaves the turn gap below it. */
+  readonly leadsToTurn?: boolean;
 };
 
 type MessagesTimelineRowContent =
@@ -2279,7 +2281,7 @@ export function deriveMessagesTimelineRows(input: {
     ),
   );
   let previousAnswerRunId: RunId | null = null;
-  return result.map((row, index) => {
+  const decorated = result.map((row, index) => {
     if (row.kind === "message" && row.message.role === "assistant" && row.message.runId) {
       const before = previousAnswerRunId;
       previousAnswerRunId = row.message.runId;
@@ -2300,6 +2302,11 @@ export function deriveMessagesTimelineRows(input: {
     if (!groupedWithNext && !groupedWithPrevious) return row;
     return { ...row, groupedWithNext, groupedWithPrevious, continuesSteer };
   });
+  const startsTurn = (row: MessagesTimelineRow | undefined) =>
+    row?.kind === "message" && row.message.role === "user";
+  return decorated.map((row, index) =>
+    !startsTurn(row) && startsTurn(decorated[index + 1]) ? { ...row, leadsToTurn: true } : row,
+  );
 }
 
 /**
@@ -2580,6 +2587,14 @@ export function computeStableMessagesTimelineRows(
 
 function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean {
   if (a.kind !== b.kind || a.id !== b.id) return false;
+  // Spacing flags come from a row's neighbours, so a new neighbour changes the row's layout.
+  if (
+    a.continuesWorkLog !== b.continuesWorkLog ||
+    a.endsFoldGroup !== b.endsFoldGroup ||
+    a.leadsToTurn !== b.leadsToTurn
+  ) {
+    return false;
+  }
 
   switch (a.kind) {
     case "working":

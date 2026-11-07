@@ -10,25 +10,10 @@ import { cn } from "~/lib/utils";
 import { ProviderInstanceIcon, providerHasBrandGlyph } from "../chat/ProviderInstanceIcon";
 
 /**
- * Tints for a provider without a brand glyph or an accent colour. A provider keeps one tint, picked
- * from its name, so two rows of the same provider never disagree.
- */
-const MONOGRAM_TINTS = [
-  "var(--info-foreground)",
-  "var(--merged-foreground)",
-  "var(--success-foreground)",
-  "var(--accent-ink)",
-] as const;
-
-function tintFor(name: string): string {
-  let hash = 0;
-  for (const char of name) hash = (hash * 31 + (char.codePointAt(0) ?? 0)) >>> 0;
-  return MONOGRAM_TINTS[hash % MONOGRAM_TINTS.length]!;
-}
-
-/**
  * The 14px provider mark of a thread row: the brand glyph where the provider has one, otherwise a
- * rounded square carrying a two-letter monogram on the provider's tint.
+ * rounded square carrying a two-letter monogram. The monogram is neutral (muted letters on a
+ * muted fill), so it never reads as a status colour; only an accent the provider's owner chose
+ * tints it.
  */
 export function ProviderMark({
   driverKind,
@@ -70,17 +55,19 @@ export function ProviderMark({
       </span>
     );
   }
-  const accent =
-    normalizeProviderAccentColor(accentColor) ?? tintFor(`${driverKind}:${displayName}`);
+  const accent = normalizeProviderAccentColor(accentColor);
   return (
     <span
       role="img"
       aria-label={displayName}
       data-provider-mark=""
       data-provider-mark-kind="monogram"
-      style={{ "--provider-tint": accent } as CSSProperties}
+      style={accent === undefined ? undefined : ({ "--provider-tint": accent } as CSSProperties)}
       className={cn(
-        "inline-grid size-3.5 shrink-0 place-items-center rounded-(--r-badge) bg-[color-mix(in_srgb,var(--provider-tint)_22%,transparent)] text-monogram font-semibold tracking-tight text-(--provider-tint)",
+        "inline-grid size-3.5 shrink-0 place-items-center rounded-(--r-badge) text-monogram font-semibold tracking-tight",
+        accent === undefined
+          ? "bg-(--sel) text-secondary-label"
+          : "bg-[color-mix(in_srgb,var(--provider-tint)_22%,transparent)] text-(--provider-tint)",
         className,
       )}
     >

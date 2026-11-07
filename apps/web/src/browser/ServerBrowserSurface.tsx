@@ -154,6 +154,8 @@ export function ServerBrowserSurface(props: {
   readonly visible: boolean;
   readonly followSize?: boolean;
   readonly controlPosition?: "top" | "bottom";
+  /** False while no page is loaded behind the surface: there is nothing to watch or take over. */
+  readonly showControlBar?: boolean;
   readonly onFirstFrame?: () => void;
   readonly onViewport?: (viewport: PreviewStreamViewport) => void;
   readonly onControl?: (control: PreviewStreamControl | null) => void;
@@ -172,6 +174,7 @@ export function ServerBrowserSurface(props: {
     visible,
     followSize = true,
     controlPosition = "top",
+    showControlBar = true,
     onFirstFrame,
     onViewport,
     onControl,
@@ -829,6 +832,8 @@ export function ServerBrowserSurface(props: {
           // disabled; the lighter fade keeps its outline and label readable on the band.
           "visible relative z-20 flex h-8 shrink-0 items-center justify-between gap-2 border-border bg-[var(--rail)] px-3 text-[var(--t1)] [&_button:disabled]:opacity-70",
           controlPosition === "bottom" ? "order-last border-t" : "border-b",
+          // Nothing to watch or take over while no page is loaded behind the surface.
+          !showControlBar && "hidden",
         )}
       >
         <span role="status" className="flex-1 truncate text-xs text-[var(--t1)]">

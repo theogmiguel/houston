@@ -10,10 +10,9 @@ import { observeResize } from "../lib/observeResize";
 const REVEAL_SETTLE_MS = 500;
 
 /**
- * Scrolls the open thread's row into view when the open thread changes, so a thread opened from the
- * palette, history or a link is on the rail, and keeps it in view while the sections above it are
- * still opening. A row under the pointer was just clicked and is already in view; a wheel, touch
- * or key press by the user ends the tracking.
+ * Scrolls the open thread's row into view once it exists, and keeps it there while the sections above
+ * it open. The row may arrive after the thread is known, so a missing row is awaited. A row under the
+ * pointer is already in view; a wheel, touch, key or press by the user ends the tracking.
  */
 export function useRevealOpenThread(
   rail: RefObject<HTMLElement | null>,
@@ -25,22 +24,33 @@ export function useRevealOpenThread(
     if (openThreadKey === null || content === null) return;
     const find = () =>
       content.querySelector<HTMLElement>(`[data-thread-key="${CSS.escape(openThreadKey)}"]`);
-    const first = find();
-    if (first === null || first.matches(":hover")) return;
     const reveal = () => find()?.scrollIntoView({ block: "nearest" });
-    reveal();
-
     const scroller = content.closest<HTMLElement>("[data-slot=scroll-area-viewport]") ?? content;
-    // The rail's content element and its direct children: whichever of them holds the sections
-    // that move, its size changes with them.
-    const stopResize = observeResize([content, ...content.children], reveal);
+
+    let stopResize: (() => void) | null = null;
+    let timer = 0;
+    const arrival = new MutationObserver(() => {
+      if (find() !== null) settle();
+    });
     const stop = () => {
       window.clearTimeout(timer);
-      stopResize();
+      arrival.disconnect();
+      stopResize?.();
       for (const type of USER_SCROLL_EVENTS) scroller.removeEventListener(type, stop);
     };
-    const timer = window.setTimeout(stop, REVEAL_SETTLE_MS);
+    const settle = () => {
+      arrival.disconnect();
+      if (find()?.matches(":hover") !== false) return stop();
+      reveal();
+      // The rail's content element and its direct children: whichever of them holds the sections
+      // that move, its size changes with them.
+      stopResize = observeResize([content, ...content.children], reveal);
+      timer = window.setTimeout(stop, REVEAL_SETTLE_MS);
+    };
+
     for (const type of USER_SCROLL_EVENTS) scroller.addEventListener(type, stop, { passive: true });
+    if (find() === null) arrival.observe(content, { childList: true, subtree: true });
+    else settle();
     return stop;
   }, [rail, openThreadKey]);
 }

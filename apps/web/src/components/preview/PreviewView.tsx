@@ -1143,6 +1143,7 @@ export function PreviewView({
                     : null
                 }
                 visible={visible}
+                showControlBar={!showEmptyState && !isUnreachable}
                 onFirstFrame={() => setServerFrameTabId(runtimeTabId)}
                 onControl={(control) =>
                   setServerControlledTabId(control?.controller === "you" ? runtimeTabId : null)

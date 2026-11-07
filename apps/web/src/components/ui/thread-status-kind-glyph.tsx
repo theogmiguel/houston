@@ -56,7 +56,8 @@ const STATUS_KIND_SHAPE: Record<ThreadStatusKind, ReactNode> = {
   failed: (
     <>
       <circle cx="7" cy="7" r="6" fill="currentColor" opacity=".18" />
-      <path d="M4.8 4.8l4.4 4.4M9.2 4.8l-4.4 4.4" {...STROKE} strokeWidth="1.6" />
+      <circle cx="7" cy="7" r="5.5" {...STROKE} strokeWidth="1.3" />
+      <path d="M4.6 4.6l4.8 4.8M9.4 4.6l-4.8 4.8" {...STROKE} strokeWidth="1.5" />
     </>
   ),
   waiting: (

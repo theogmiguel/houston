@@ -1,11 +1,14 @@
 /**
  * Where the permissions chip shows, whether the mode block overflows, and which control answers
- * the composer.mode shortcut. The model picker's footer always holds Permissions, so the chip
- * only shows while the mode differs from the default. The rule: composer.mode has one target.
+ * the composer.mode shortcut. The model picker's footer holds Permissions unless the new-thread
+ * strip does, so the chip only shows while the mode differs from the default. The rule:
+ * composer.mode has one target.
  */
 export function resolveComposerControlsOwnership(input: {
   /** Permissions hide while the mode is the default, or while the new-thread strip names it. */
   readonly matchesDefault: boolean;
+  /** The new-thread strip holds Permissions and answers composer.mode. */
+  readonly stripHoldsPermissions?: boolean;
   readonly planModeUiEnabled: boolean;
   readonly collapsed: boolean;
   /** How many trailing blocks the width measurement moved into the overflow menu. */
@@ -30,6 +33,9 @@ export function resolveComposerControlsOwnership(input: {
     hiddenBlockIds,
     overflowShowsPermissions,
     /** Without a visible chip or an overflow menu holding it, the model picker answers composer.mode. */
-    pickerOwnsModeShortcut: !overflowShowsPermissions && (accessDisplay === "hidden" || modeHidden),
+    pickerOwnsModeShortcut:
+      input.stripHoldsPermissions !== true &&
+      !overflowShowsPermissions &&
+      (accessDisplay === "hidden" || modeHidden),
   };
 }

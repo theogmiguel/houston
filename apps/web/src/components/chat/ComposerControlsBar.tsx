@@ -24,7 +24,7 @@ import type { EffortDisplay } from "@houston-app/contracts/settings";
 import { cn } from "~/lib/utils";
 import { resolveComposerTraitsInput } from "./composerProviderState";
 import {
-  ComposerEffortColumn,
+  ComposerEffortPanel,
   ComposerPickerFooter,
   describeComposerEffort,
 } from "../ui/composer-model-effort";
@@ -33,7 +33,7 @@ import { resolveComposerControlsOwnership } from "./composerControlsOwnership";
 
 /**
  * The composer footer controls: the model picker (which also holds effort, speed and
- * permissions), the mode block and the overflow menu for blocks that do not fit. Rendered in the
+ * permissions, unless the new-thread strip holds those), the mode block and the overflow menu for blocks that do not fit. Rendered in the
  * expanded footer or the resting controls host.
  */
 export function ComposerControlsBar(props: {
@@ -151,6 +151,7 @@ export function ComposerControlsBar(props: {
     pickerOwnsModeShortcut,
   } = resolveComposerControlsOwnership({
     matchesDefault: accessMatchesDefault || props.permissionsShownInStrip,
+    stripHoldsPermissions: props.permissionsShownInStrip,
     planModeUiEnabled,
     collapsed: composerControlsCollapsed,
     measuredHiddenBlockCount,
@@ -234,25 +235,31 @@ export function ComposerControlsBar(props: {
       }
       {...(traitsInput
         ? {
-            effortColumn: <ComposerEffortColumn traits={traitsInput} />,
-            footer: (
-              <ComposerPickerFooter
-                traits={traitsInput}
-                runtimeMode={compatibleRuntimeMode}
-                runtimeModeOptions={compatibleRuntimeModeOptions}
-                onRuntimeModeChange={handleRuntimeModeChange}
-              />
-            ),
+            effortPanel: <ComposerEffortPanel traits={traitsInput} />,
+            // The new-thread strip already names and changes the permissions.
+            ...(props.permissionsShownInStrip
+              ? {}
+              : {
+                  footer: (
+                    <ComposerPickerFooter
+                      runtimeMode={compatibleRuntimeMode}
+                      runtimeModeOptions={compatibleRuntimeModeOptions}
+                      onRuntimeModeChange={handleRuntimeModeChange}
+                    />
+                  ),
+                }),
           }
-        : {
-            menuAccessory: (
-              <ComposerPermissionsPicker
-                runtimeMode={compatibleRuntimeMode}
-                runtimeModeOptions={compatibleRuntimeModeOptions}
-                onRuntimeModeChange={handleRuntimeModeChange}
-              />
-            ),
-          })}
+        : props.permissionsShownInStrip
+          ? {}
+          : {
+              menuAccessory: (
+                <ComposerPermissionsPicker
+                  runtimeMode={compatibleRuntimeMode}
+                  runtimeModeOptions={compatibleRuntimeModeOptions}
+                  onRuntimeModeChange={handleRuntimeModeChange}
+                />
+              ),
+            })}
       terminalOpen={terminalOpen}
       open={modelPickerOpen}
       instanceIndicatorBackground={

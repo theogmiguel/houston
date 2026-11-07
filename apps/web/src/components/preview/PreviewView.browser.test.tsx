@@ -32,6 +32,7 @@ const mocks = vi.hoisted(() => ({
   showEmptyState: false,
   loading: false,
   nativeServerTab: false,
+  navStatus: "Success" as "Success" | "Idle",
   serverEpoch: null as string | null,
   servers: [] as PreviewableServer[],
   recordingTabIds: new Set<string>(),
@@ -117,7 +118,10 @@ vi.mock(import("~/previewStateStore"), async (original) => ({
             threadId: "thread-1",
             tabId: "tab-1",
             runtime: mocks.nativeServerTab ? "server" : "desktop",
-            navStatus: { _tag: "Success", url: "http://example.com/", title: "Example" },
+            navStatus:
+              mocks.navStatus === "Idle"
+                ? { _tag: "Idle" }
+                : { _tag: "Success", url: "http://example.com/", title: "Example" },
             canGoBack: false,
             canGoForward: false,
             updatedAt: "2026-07-13T00:00:00.000Z",
@@ -146,6 +150,13 @@ vi.mock(import("./usePreviewSession"), async (original) => ({
 }));
 
 vi.mock(import("~/browser/browserViewportActions"), { spy: true });
+// The streamed surface needs a live preview server; the view only decides whether it shows its bar.
+vi.mock(import("~/browser/ServerBrowserSurface"), async (original) => ({
+  ...(await original()),
+  ServerBrowserSurface: ((props: { showControlBar?: boolean }) => (
+    <div data-stub-surface="" data-control-bar={String(props.showControlBar ?? true)} />
+  )) as never,
+}));
 
 import { useComposerDraftStore } from "~/composerDraftStore";
 import { useBrowserPointerStore } from "~/browser/browserPointerStore";
@@ -198,6 +209,7 @@ function setup() {
   mocks.showEmptyState = false;
   mocks.loading = false;
   mocks.nativeServerTab = false;
+  mocks.navStatus = "Success";
   mocks.serverEpoch = null;
   mocks.servers = [];
   mocks.recordingTabIds = new Set();
@@ -211,6 +223,19 @@ function setup() {
 }
 
 describe("PreviewView", () => {
+  it("shows the surface's control bar only once a page is loaded", async () => {
+    setup();
+    mocks.nativeServerTab = true;
+    mocks.navStatus = "Idle";
+    await using screen = await render(<ToastProvider timeout={0}>{view()}</ToastProvider>);
+    const surface = () => screen.container.querySelector<HTMLElement>("[data-stub-surface]")!;
+    await expect.poll(() => surface()?.dataset.controlBar).toBe("false");
+
+    mocks.navStatus = "Success";
+    await screen.rerender(<ToastProvider timeout={0}>{view()}</ToastProvider>);
+    await expect.poll(() => surface()?.dataset.controlBar).toBe("true");
+  });
+
   it.each(["mailto:alice@example.com", "http://"])(
     "reports rejected address %s without navigating or recording it",
     async (address) => {

@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import "~/index.css";
@@ -17,6 +18,8 @@ const fixtures = vi.hoisted(() => ({
     archivedAt: null,
   },
   threads: [] as unknown[],
+  groupsReady: true,
+  listeners: new Set<() => void>(),
   actions: {
     settleThread: vi.fn(),
     unsettleThread: vi.fn(),
@@ -93,19 +96,29 @@ vi.mock(import("../../state/tasks"), async (original) => ({
   useTaskYourTurnCount: () => 0,
 }));
 
+// Subscribed, so a test can deliver the project list after the first render, as a cold load does:
+// the threads are known while the rail has no project section to draw their rows in.
 vi.mock(import("../../hooks/useSidebarProjectGroups"), () => ({
   useSidebarProjectGroups: () =>
-    [
-      {
-        ...fixtures.project,
-        projectKey: "env-1:project-1",
-        displayName: "Houston",
-        memberProjects: [fixtures.project],
-        memberProjectRefs: [],
-        pinned: false,
-        archived: false,
+    useSyncExternalStore(
+      (listener) => {
+        fixtures.listeners.add(listener);
+        return () => fixtures.listeners.delete(listener);
       },
-    ] as never,
+      () => fixtures.groupsReady,
+    )
+      ? ([
+          {
+            ...fixtures.project,
+            projectKey: "env-1:project-1",
+            displayName: "Houston",
+            memberProjects: [fixtures.project],
+            memberProjectRefs: [],
+            pinned: false,
+            archived: false,
+          },
+        ] as never)
+      : ([] as never),
 }));
 
 vi.mock(import("../../hooks/useThreadActions"), async (original) => ({
@@ -154,18 +167,41 @@ function RailHarness() {
 
 const ROW_COUNT = 24;
 
-function seedRows(): Disposable {
-  localStorage.clear();
-  useGridStore.setState({ grids: [], threadOrigins: {} });
-  fixtures.threads = Array.from({ length: ROW_COUNT }, (_, index) =>
+function setGroupsReady(ready: boolean) {
+  fixtures.groupsReady = ready;
+  for (const listener of fixtures.listeners) listener();
+}
+
+function rowThreads() {
+  return Array.from({ length: ROW_COUNT }, (_, index) =>
     shelfThread({
       id: `thread-${index}`,
       title: `Thread ${index}`,
       branch: "feature/long-branch-name",
     }),
   );
+}
+
+function seedRows(): Disposable {
+  localStorage.clear();
+  useGridStore.setState({ grids: [], threadOrigins: {} });
+  fixtures.threads = rowThreads();
+  fixtures.groupsReady = true;
   return { [Symbol.dispose]: () => localStorage.clear() };
 }
+
+/** Threads known, project list not yet delivered: the rail has no rows to draw them in. */
+function seedColdRail(): Disposable {
+  const seeded = seedRows();
+  fixtures.groupsReady = false;
+  return seeded;
+}
+
+const withinView = (row: HTMLElement, viewport: HTMLElement) => {
+  const rect = row.getBoundingClientRect();
+  const view = viewport.getBoundingClientRect();
+  return rect.top >= view.top && rect.bottom <= view.bottom;
+};
 
 describe("GridSidebar rail end", () => {
   it("scrolls far enough that the last row's second line clears the bottom fade", async () => {
@@ -191,5 +227,46 @@ describe("GridSidebar rail end", () => {
     const fadePx = 24;
     expect(meta.getBoundingClientRect().bottom).toBeLessThanOrEqual(view.bottom - fadePx);
     expect(last.getBoundingClientRect().bottom).toBeLessThanOrEqual(view.bottom - fadePx);
+  });
+
+  it("reveals the thread a cold load opened once its row arrives below the fold", async () => {
+    using _rail = seedColdRail();
+    await using screen = await render(<RailHarness />, {
+      router: `/env-1/thread-${ROW_COUNT - 4}`,
+    });
+    const viewport = screen.container.querySelector<HTMLElement>(
+      "[data-slot=scroll-area-viewport]",
+    )!;
+    viewport.style.height = "500px";
+    viewport.style.flex = "none";
+
+    setGroupsReady(true);
+    await vi.waitFor(() =>
+      expect(screen.container.querySelectorAll("[data-thread-key]")).toHaveLength(ROW_COUNT),
+    );
+    const open = screen.container.querySelector<HTMLElement>(
+      `[data-thread-key$=":thread-${ROW_COUNT - 4}"]`,
+    )!;
+    await vi.waitFor(() => expect(viewport.scrollTop).toBeGreaterThan(0));
+    await vi.waitFor(() => expect(withinView(open, viewport)).toBe(true));
+  });
+
+  it("leaves the scroll where the user put it when the row arrives after they scrolled", async () => {
+    using _rail = seedColdRail();
+    await using screen = await render(<RailHarness />, {
+      router: `/env-1/thread-${ROW_COUNT - 4}`,
+    });
+    const viewport = screen.container.querySelector<HTMLElement>(
+      "[data-slot=scroll-area-viewport]",
+    )!;
+    viewport.style.height = "500px";
+    viewport.style.flex = "none";
+
+    viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: 1, bubbles: true }));
+    setGroupsReady(true);
+    await vi.waitFor(() =>
+      expect(screen.container.querySelectorAll("[data-thread-key]")).toHaveLength(ROW_COUNT),
+    );
+    expect(viewport.scrollTop).toBe(0);
   });
 });

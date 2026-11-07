@@ -1,7 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { ChartNoAxesColumnIcon, ListChecksIcon, PlusIcon, SearchIcon } from "lucide-react";
-import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
+import type { ReactNode } from "react";
 
 import { openAddProjectDialog } from "../AddProjectDialog";
 import { openCommandPalette } from "../../commandPaletteBus";
@@ -25,49 +25,63 @@ export function SidebarRailKbd({ children }: { children: ReactNode }) {
   );
 }
 
-export function SidebarRailActionRow({
+/**
+ * One icon button of the rail's shortcut row. The label is the accessible name and the tooltip;
+ * a count rides beside the icon, and the name carries it too.
+ */
+function SidebarRailShortcut({
   icon,
   label,
-  trailing,
-  active = false,
-  disabled = false,
-  tooltip,
+  count = null,
+  countVariant = "text",
+  active,
   onClick,
 }: {
   icon: ReactNode;
   label: string;
-  trailing?: ReactNode;
-  active?: boolean;
-  disabled?: boolean;
-  tooltip?: ReactNode;
-  onClick: (event: ReactMouseEvent<HTMLButtonElement>) => void;
+  count?: number | null;
+  countVariant?: "text" | "badge";
+  active: boolean;
+  onClick: () => void;
 }) {
-  const row = (
-    <button
-      type="button"
-      disabled={disabled}
-      aria-current={active ? "page" : undefined}
-      onClick={onClick}
-      className={cn(
-        "flex h-7 w-full shrink-0 cursor-pointer items-center gap-2 rounded-(--control-radius) px-2 text-left text-sm whitespace-nowrap outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset disabled:pointer-events-none disabled:opacity-50",
-        MOTION_FEEDBACK,
-        active
-          ? "bg-sidebar-row-selected text-sidebar-foreground"
-          : "text-secondary-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
-      )}
-    >
-      <span className="inline-grid size-4 shrink-0 place-items-center text-secondary-label [&>svg]:size-4">
-        {icon}
-      </span>
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-      {trailing}
-    </button>
-  );
-  if (tooltip === undefined) return row;
+  const shown = count !== null && count > 0 ? count : null;
   return (
     <Tooltip>
-      <TooltipTrigger render={row} />
-      <TooltipPopup side="right">{tooltip}</TooltipPopup>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            aria-label={shown === null ? label : `${label}, ${shown}`}
+            aria-current={active ? "page" : undefined}
+            data-rail-shortcut={label}
+            onClick={onClick}
+            className={cn(
+              "flex h-7 min-w-0 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-(--control-radius) text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+              MOTION_FEEDBACK,
+              active
+                ? "bg-sidebar-row-selected text-sidebar-foreground"
+                : "text-secondary-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
+            )}
+          />
+        }
+      >
+        <span
+          aria-hidden
+          className="inline-grid size-4 shrink-0 place-items-center text-secondary-label [&>svg]:size-4"
+        >
+          {icon}
+        </span>
+        {shown === null ? null : countVariant === "badge" ? (
+          <Badge variant="default" size="sm" aria-hidden>
+            {shown}
+          </Badge>
+        ) : (
+          <span aria-hidden className="shrink-0 text-xs text-secondary-label tabular-nums">
+            {shown}
+          </span>
+        )}
+      </TooltipTrigger>
+      <TooltipPopup side="bottom">{label}</TooltipPopup>
     </Tooltip>
   );
 }
@@ -123,8 +137,8 @@ export function SidebarRailSearchButton() {
 }
 
 /**
- * The rail's fixed entries, shared by the thread and grid sidebars: search,
- * pull requests, usage, then a section heading whose title and actions the
+ * The rail's fixed entries, shared by the thread and grid sidebars: search, one row of icon
+ * buttons for pull requests, tasks and usage, then a section heading whose title and actions the
  * caller owns. Ctrl N still starts a thread, but the row is gone.
  */
 export function SidebarRailNav({
@@ -168,40 +182,31 @@ export function SidebarRailNav({
   return (
     <div className="flex flex-col gap-px">
       {search}
-      {pullRequestsSupported ? (
-        <SidebarRailActionRow
-          icon={<PullRequestGlyph.pullRequest />}
-          label="Pull requests"
-          active={pathname === "/pull-requests"}
-          trailing={
-            pullRequestCount !== null && pullRequestCount > 0 ? (
-              <span className="shrink-0 text-xs text-secondary-label tabular-nums">
-                {pullRequestCount}
-              </span>
-            ) : null
-          }
-          onClick={openPullRequests}
+      <div data-rail-shortcuts="" className="flex gap-0.5">
+        {pullRequestsSupported ? (
+          <SidebarRailShortcut
+            icon={<PullRequestGlyph.pullRequest />}
+            label="Pull requests"
+            count={pullRequestCount}
+            active={pathname === "/pull-requests"}
+            onClick={openPullRequests}
+          />
+        ) : null}
+        <SidebarRailShortcut
+          icon={<ListChecksIcon />}
+          label="Tasks"
+          count={taskCount}
+          countVariant="badge"
+          active={pathname === "/tasks"}
+          onClick={openTasks}
         />
-      ) : null}
-      <SidebarRailActionRow
-        icon={<ListChecksIcon />}
-        label="Tasks"
-        active={pathname === "/tasks"}
-        trailing={
-          taskCount !== null && taskCount > 0 ? (
-            <Badge variant="default" size="sm">
-              {taskCount}
-            </Badge>
-          ) : null
-        }
-        onClick={openTasks}
-      />
-      <SidebarRailActionRow
-        icon={<ChartNoAxesColumnIcon />}
-        label="Usage"
-        active={pathname === "/usage"}
-        onClick={openUsage}
-      />
+        <SidebarRailShortcut
+          icon={<ChartNoAxesColumnIcon />}
+          label="Usage"
+          active={pathname === "/usage"}
+          onClick={openUsage}
+        />
+      </div>
       {sectionHeading ? (
         <SidebarRailSectionHeading
           title={sectionTitle}

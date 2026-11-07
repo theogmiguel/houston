@@ -8,6 +8,7 @@ import { makeThreadProjectionFixture } from "./test-fixtures";
 
 import {
   isThreadRoutePathname,
+  parseThreadRoutePathname,
   isThreadRouteSnapshotAuthoritative,
   resolveActiveThreadRouteRef,
   resolveThreadRouteRenderState,
@@ -25,6 +26,18 @@ describe("threadRoutes", () => {
     expect(isThreadRoutePathname("/env-2/thread-1", ref)).toBe(false);
     expect(isThreadRoutePathname("/draft/thread-1", ref)).toBe(false);
     expect(isThreadRoutePathname("/env-1/thread-1/extra", ref)).toBe(false);
+  });
+
+  it("reads the thread a route pathname names, decoded, and nothing from other shapes", () => {
+    expect(parseThreadRoutePathname("/env-1/thread-1")).toEqual(
+      scopeThreadRef("env-1" as never, ThreadId.make("thread-1")),
+    );
+    expect(parseThreadRoutePathname("/env-1/mcp%3Athread-1/")).toEqual(
+      scopeThreadRef("env-1" as never, ThreadId.make("mcp:thread-1")),
+    );
+    expect(parseThreadRoutePathname("/new")).toBeNull();
+    expect(parseThreadRoutePathname("/")).toBeNull();
+    expect(parseThreadRoutePathname("/env-1/thread-1/extra")).toBeNull();
   });
 
   it("matches a thread route whose id is percent-encoded in the pathname", () => {

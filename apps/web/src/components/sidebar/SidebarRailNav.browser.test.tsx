@@ -3,6 +3,7 @@ import { userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import { render } from "../../../test/render";
+import { TooltipProvider } from "../ui/tooltip";
 import { SidebarRailNav } from "./SidebarRailNav";
 
 vi.mock("../../state/environments", () => ({
@@ -25,8 +26,8 @@ describe("SidebarRailNav", () => {
 
     const text = screen.container.textContent ?? "";
     expect(text).not.toContain("New thread");
-    expect(text).toContain("Pull requests");
-    expect(text).toContain("Usage");
+    expect(screen.getByRole("button", { name: "Pull requests" }).element()).toBeVisible();
+    expect(screen.getByRole("button", { name: "Usage" }).element()).toBeVisible();
     expect(text).toContain("Workspaces");
   });
 
@@ -91,5 +92,71 @@ describe("SidebarRailNav", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Add project" }).element());
     expect(openAddProjectDialog).toHaveBeenCalledTimes(1);
+  });
+
+  it("folds pull requests, tasks and usage into one row of icon buttons under search", async () => {
+    for (const width of [264, 304]) {
+      await using screen = await render(
+        <div style={{ width }}>
+          <SidebarRailNav
+            search={<span>Search</span>}
+            pullRequestCount={3}
+            taskCount={2}
+            sectionHeading={false}
+          />
+        </div>,
+      );
+      const names = ["Pull requests, 3", "Tasks, 2", "Usage"];
+      const boxes = names.map((name) =>
+        screen.getByRole("button", { name }).element().getBoundingClientRect(),
+      );
+      // One row: equal tops and heights, side by side inside the rail, each tall enough to hit.
+      for (const box of boxes) {
+        expect(box.top).toBe(boxes[0]!.top);
+        expect(box.height).toBe(28);
+        expect(box.width).toBeGreaterThan(40);
+      }
+      const rail = screen.container.firstElementChild!.getBoundingClientRect();
+      expect(boxes[2]!.right).toBeLessThanOrEqual(rail.right + 0.5);
+      expect(boxes[0]!.left).toBeGreaterThanOrEqual(rail.left - 0.5);
+      // Search plus the shortcut row: about 58px where four rows took 116px.
+      const shortcuts = screen.container.querySelector("[data-rail-shortcuts]")!;
+      expect(shortcuts.getBoundingClientRect().height).toBe(28);
+      expect(rail.height).toBeLessThanOrEqual(64);
+    }
+  });
+
+  it("marks the shortcut of the current page and reaches each one with the keyboard", async () => {
+    await using screen = await render(<SidebarRailNav search={<span>Search</span>} />, {
+      router: "/tasks",
+    });
+    await expect
+      .poll(() =>
+        screen.getByRole("button", { name: "Tasks" }).element().getAttribute("aria-current"),
+      )
+      .toBe("page");
+    expect(
+      screen.getByRole("button", { name: "Usage" }).element().hasAttribute("aria-current"),
+    ).toBe(false);
+
+    await userEvent.tab();
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("Pull requests");
+    await userEvent.tab();
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("Tasks");
+    await userEvent.tab();
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("Usage");
+  });
+
+  it("names an icon-only shortcut in a tooltip on hover", async () => {
+    await using screen = await render(
+      <TooltipProvider delay={0}>
+        <SidebarRailNav search={<span>Search</span>} />
+      </TooltipProvider>,
+    );
+
+    await userEvent.hover(screen.getByRole("button", { name: "Usage" }).element());
+    await vi.waitFor(() =>
+      expect(document.querySelector('[data-slot="tooltip-popup"]')?.textContent).toBe("Usage"),
+    );
   });
 });

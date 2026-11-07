@@ -6,6 +6,7 @@ import { ThreadFindTimelineContext } from "./ThreadFindProvider";
 import { MarkdownFindContext } from "./markdownFindContext";
 import { useChatCanvas } from "./ChatCanvasContext";
 import { WorkLogBlock } from "./WorkLog";
+import { FOOTER_TURN_GAP_CLASS, PACKED_GAP_CLASS, turnOrInTurnGap } from "./timelineSpacing";
 import { TimelinePendingApprovalRow } from "./TimelinePendingApprovalRow";
 import type { WorktreeSetupSnapshot } from "@houston-app/contracts";
 import { deriveTimelineMinimapItems } from "./timelineMinimapItems";
@@ -1455,25 +1456,15 @@ function getItemType(item: MessagesTimelineRow) {
   return `message:${item.message.role}:${lengthBucket}`;
 }
 
-/** The space a row leaves below it; a turn's closing assistant row leaves none, its footer does. */
+/** The space a row leaves below it; a turn's closing assistant row leaves what its footer does not. */
 function rowBottomPadding(row: TimelineRow) {
-  if (row.kind === "turn-fold" || row.kind === "working" || row.kind === "context-compaction") {
-    return "pb-1.5";
+  if (row.kind === "message" && row.groupedWithNext) return PACKED_GAP_CLASS;
+  if (row.kind === "message" && row.message.role === "assistant" && row.showAssistantMeta) {
+    return row.leadsToTurn ? FOOTER_TURN_GAP_CLASS : "pb-0";
   }
-  if (row.kind === "message" && row.groupedWithNext) return "pb-1";
-  if (row.kind === "message" && row.message.role === "assistant") {
-    return row.showAssistantMeta ? "pb-0" : "pb-2";
-  }
-  switch (row.kind) {
-    case "worktree-setup":
-    case "event":
-    case "attempt-fold":
-    case "html-render":
-    case "mcp-app":
-      return "pb-2";
-    default:
-      return "pb-4";
-  }
+  // A user message keeps the hover actions' line under its bubble, so its own gap is that line.
+  if (row.kind === "message" && row.message.role === "user") return "pb-0";
+  return turnOrInTurnGap(row.leadsToTurn);
 }
 
 const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: TimelineRow }) {
@@ -1508,6 +1499,8 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
         <WorkLogBlock
           continues={row.continuesWorkLog}
           endsGroup={row.endsFoldGroup}
+          leadsToTurn={row.leadsToTurn}
+          nested={row.kind === "work" && row.headerCreatedAt !== undefined && !row.isExpandedToolGroup}
           layout={
             isExpandedToolGroup
               ? "group-content"

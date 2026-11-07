@@ -6,13 +6,13 @@ import {
 } from "@houston-app/contracts";
 import { compileResolvedKeybindingsConfig } from "@houston-app/shared/keybindings";
 import { describe, expect, it } from "vite-plus/test";
-import { page } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 
 import { render } from "../../../test/render";
 import { deriveProviderInstanceEntries } from "../../providerInstances";
-import { ComposerEffortColumn } from "../ui/composer-model-effort";
+import { ComposerEffortPanel } from "../ui/composer-model-effort";
 import { TooltipProvider } from "../ui/tooltip";
 import { ProviderModelPicker } from "./ProviderModelPicker";
 
@@ -189,7 +189,7 @@ it("opens the model menu at one fixed height however few models the provider lis
   await expect.poll(() => content()?.getBoundingClientRect().height).toBe(272);
 });
 
-it("docks an effort column beside the list and stays open after a model pick", async () => {
+it("docks an effort panel under the list and stays open after a model pick", async () => {
   const twoModels: ServerProvider = {
     ...provider,
     models: [
@@ -214,7 +214,7 @@ it("docks an effort column beside the list and stays open after a model pick", a
         keybindings={compileResolvedKeybindingsConfig([])}
         modelOptionsByInstance={new Map([[CLAUDE, twoModels.models]])}
         isComposerOwned
-        effortColumn={
+        effortPanel={
           <div>
             <button type="button" data-effort-level={true} aria-checked="true">
               High
@@ -242,7 +242,7 @@ it("docks an effort column beside the list and stays open after a model pick", a
     .toBe(true);
 });
 
-it("lines the docked popup up with the composer card and titles the effort column without the model name", async () => {
+it("lines the docked popup up with the composer card and titles the effort panel without the model name", async () => {
   await page.viewport(1440, 900);
   await using _screen = await render(
     <TooltipProvider delay={0}>
@@ -261,7 +261,7 @@ it("lines the docked popup up with the composer card and titles the effort colum
             keybindings={compileResolvedKeybindingsConfig([])}
             modelOptionsByInstance={new Map([[CLAUDE, provider.models]])}
             isComposerOwned
-            effortColumn={<ComposerEffortColumn traits={null} />}
+            effortPanel={<ComposerEffortPanel traits={null} />}
             onInstanceModelChange={() => {}}
           />
         </div>
@@ -273,10 +273,10 @@ it("lines the docked popup up with the composer card and titles the effort colum
   await page.getByRole("button", { name: /Opus 5\.5/ }).click();
   await expect.poll(() => document.querySelector("[data-model-picker-effort]") !== null).toBe(true);
 
-  const column = document.querySelector<HTMLElement>("[data-model-picker-effort]")!;
-  // The header names the column only: the selected model is already shown in the list beside it.
-  expect(column.textContent).toContain("Effort");
-  expect(column.textContent).not.toContain("Claude Opus 5.5");
+  const panel = document.querySelector<HTMLElement>("[data-model-picker-effort]")!;
+  // The label names the setting only: the selected model is already shown in the list above it.
+  expect(panel.textContent).toContain("Effort");
+  expect(panel.textContent).not.toContain("Claude Opus 5.5");
 
   await expect
     .poll(() => {
@@ -286,6 +286,98 @@ it("lines the docked popup up with the composer card and titles the effort colum
       return Math.round(popup.getBoundingClientRect().left - card.getBoundingClientRect().left);
     })
     .toBe(0);
+});
+
+describe("the docked popup's shape", () => {
+  const panelButtons = (
+    <div>
+      <button type="button" data-effort-row data-effort-level aria-checked="true">
+        Low
+      </button>
+      <button type="button" data-effort-row data-effort-level aria-checked="false">
+        High
+      </button>
+    </div>
+  );
+
+  async function openDocked() {
+    await page.viewport(1440, 900);
+    const screen = await render(
+      <TooltipProvider delay={0}>
+        <div style={{ paddingTop: 480, paddingLeft: 160 }}>
+          <div data-inline-resting-controls="true" style={{ width: 640, padding: "12px 32px" }}>
+            <ProviderModelPicker
+              environmentId={null}
+              activeInstanceId={CLAUDE}
+              model="opus"
+              lockedProvider={null}
+              instanceEntries={entries}
+              keybindings={compileResolvedKeybindingsConfig([])}
+              modelOptionsByInstance={new Map([[CLAUDE, provider.models]])}
+              isComposerOwned
+              effortPanel={panelButtons}
+              onInstanceModelChange={() => {}}
+            />
+          </div>
+        </div>
+      </TooltipProvider>,
+      { router: false },
+    );
+    await page.getByRole("button", { name: /Opus 5\.5/ }).click();
+    await expect
+      .poll(() => document.querySelector("[data-model-picker-effort]") !== null)
+      .toBe(true);
+    return screen;
+  }
+
+  const rect = (selector: string) =>
+    document.querySelector<HTMLElement>(selector)!.getBoundingClientRect();
+
+  it("is one 300px list over the effort panel, not a three-pane popover", async () => {
+    await using _screen = await openDocked();
+
+    const frame = () =>
+      document.querySelector<HTMLElement>('[data-model-picker-content="true"]')!.parentElement!;
+    await expect.poll(() => Math.round(frame().getBoundingClientRect().width)).toBe(300);
+    const list = rect('[data-model-picker-content="true"]');
+    const panel = rect("[data-model-picker-effort]");
+    expect(panel.top).toBeGreaterThanOrEqual(list.bottom - 1);
+    // Both fill the frame inside its 1px border.
+    expect(Math.round(list.width)).toBe(298);
+    expect(Math.round(panel.width)).toBe(298);
+    expect(rect('[data-slot="popover-positioner"]').height).toBeLessThan(320);
+  });
+
+  it("keeps the provider rail to icons and names the listed provider in the search row", async () => {
+    await using _screen = await openDocked();
+
+    await expect.poll(() => Math.round(rect("[data-model-picker-sidebar]").width)).toBe(40);
+    expect(
+      document.querySelector("[data-model-picker-tab-name]")?.textContent,
+    ).toBeTruthy();
+    expect(page.getByRole("button", { name: "Favorites" }).element()).toBeTruthy();
+  });
+
+  it("has no footer when the strip holds the permissions", async () => {
+    await using _screen = await openDocked();
+
+    expect(document.body.textContent).not.toContain("Full access");
+    expect(document.querySelector("[data-composer-permissions-trigger]")).toBeNull();
+  });
+
+  it("returns from the first effort row to the search field with Up or Left", async () => {
+    await using _screen = await openDocked();
+    const search = document.querySelector<HTMLInputElement>("[data-model-picker-content] input")!;
+    const first = document.querySelector<HTMLElement>("[data-effort-row]")!;
+
+    first.focus();
+    await userEvent.keyboard("{ArrowUp}");
+    await expect.poll(() => document.activeElement === search).toBe(true);
+
+    first.focus();
+    await userEvent.keyboard("{ArrowLeft}");
+    await expect.poll(() => document.activeElement === search).toBe(true);
+  });
 });
 
 describe("docked popup and the composer context row", () => {
@@ -308,7 +400,7 @@ describe("docked popup and the composer context row", () => {
               keybindings={compileResolvedKeybindingsConfig([])}
               modelOptionsByInstance={new Map([[CLAUDE, provider.models]])}
               isComposerOwned
-              effortColumn={<ComposerEffortColumn traits={null} />}
+              effortPanel={<ComposerEffortPanel traits={null} />}
               onInstanceModelChange={() => {}}
             />
           </div>
@@ -373,7 +465,7 @@ describe("docked popup and the composer context row", () => {
                 keybindings={compileResolvedKeybindingsConfig([])}
                 modelOptionsByInstance={new Map([[CLAUDE, provider.models]])}
                 isComposerOwned
-                effortColumn={<ComposerEffortColumn traits={null} />}
+                effortPanel={<ComposerEffortPanel traits={null} />}
                 onInstanceModelChange={() => {}}
               />
             </div>

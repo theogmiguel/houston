@@ -71,14 +71,6 @@ function RunningElapsed({ startedAt }: { startedAt: string }) {
 }
 
 /**
- * The age cell of a running row: the same start-based duration its second line states, so the two
- * can never read as different clocks.
- */
-export function RunningAge({ startedAt }: { startedAt: string }) {
-  return <>{useRunningDuration(startedAt)}</>;
-}
-
-/**
  * The row's leading status mark: one 14px shape per status kind, named for assistive tech. Idle
  * is a faint ring, so the column carries a mark on every row and the glyphs line up down the list.
  */
@@ -109,10 +101,9 @@ export function ThreadStatusGlyph({
 }
 
 /**
- * The status word on the row's second line, always shown and first in the line. Attention states
- * (Approval, Input, Request, Needs you, Failed, Limited, Waiting, Goal, Running, Back) name
- * themselves in the hue of their glyph; Ready and Idle stay muted. A running row says how long it
- * has been going ("Running for 7m"), and its age cell states the same start-based duration.
+ * The status word on the row's second line, first in the line. Attention states name themselves in
+ * the hue of their glyph; Ready and Idle stay muted. A running row says how long it has been going
+ * ("Running for 7m"); its age cell keeps the last-activity age, so the elapsed time is stated once.
  */
 export function ThreadStatusWord({
   thread,

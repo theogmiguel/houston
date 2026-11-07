@@ -53,7 +53,10 @@ import {
 } from "~/hooks/useSettings";
 import { announce } from "~/lib/announce";
 import { cn } from "~/lib/utils";
-import { MODEL_PICKER_DOCKED_CLASS } from "../ui/composer-picker-recipes";
+import {
+  MODEL_PICKER_DOCKED_CLASS,
+  PICKER_PROVIDER_NAME_CLASS,
+} from "../ui/composer-picker-recipes";
 import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
 import { TooltipProvider } from "../ui/tooltip";
 import { Button, InlineButton } from "../ui/button";
@@ -360,9 +363,9 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   onInstanceModelChange: (instanceId: ProviderInstanceId, model: string) => void;
   /** The owning popup moves focus here when it opens (its `initialFocus`). */
   searchInputRef: RefObject<HTMLInputElement | null>;
-  /** Sits beside an effort column: fills the shared row, and stacks above it on narrow screens. */
+  /** Sits above an effort panel: fills the shared frame's width. */
   docked?: boolean;
-  /** Right at the end of the search text moves into the popup's effort column. */
+  /** Right at the end of the search text moves into the popup's effort panel. */
   onFocusEffort?: () => void;
 }) {
   const {
@@ -831,11 +834,13 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       <WindowKeyDownListener onKeyDown={onWindowKeyDown} />
       <div
         // One fixed size whatever the tab, its model count or the search holds, so switching tabs
-        // or typing never moves the rail under the cursor. It fits the effort column and a
-        // four-model tab; longer lists scroll.
+        // or typing never moves the rail under the cursor. It fits a four-model tab; longer lists
+        // scroll.
         className={cn(
-          "relative flex h-68 max-h-(--available-height) w-[26.75rem] max-w-[calc(100vw-2rem)] flex-row overflow-hidden bg-(--raised)",
-          props.docked ? MODEL_PICKER_DOCKED_CLASS : "rounded-lg border border-border",
+          "relative flex max-h-(--available-height) max-w-[calc(100vw-2rem)] flex-row overflow-hidden bg-(--raised)",
+          props.docked
+            ? MODEL_PICKER_DOCKED_CLASS
+            : "h-68 w-[26.75rem] rounded-lg border border-border",
         )}
         data-model-picker-content="true"
       >
@@ -846,6 +851,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
             onFocusSearch={focusSearchInput}
             instanceEntries={sidebarInstanceEntries}
             showFavorites
+            compact={props.docked === true}
             {...(selectableUnavailableInstanceIds ? { selectableUnavailableInstanceIds } : {})}
             {...(lockedDisabledInstanceIds
               ? {
@@ -957,7 +963,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                   ) {
                     e.preventDefault();
                     e.stopPropagation();
-                    // The column shows the selected model's effort, so a highlighted model is
+                    // The panel shows the selected model's effort, so a highlighted model is
                     // picked first; the owning popup then moves focus to that model's levels.
                     const highlighted = highlightedModelKeyRef.current
                       ? parseModelPickerModelKey(highlightedModelKeyRef.current)
@@ -993,6 +999,14 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                 onMouseDown={(e) => e.stopPropagation()}
                 onTouchStart={(e) => e.stopPropagation()}
               />
+              {props.docked ? (
+                // The rail shows icons only, so the search row names the provider it lists.
+                <span className={PICKER_PROVIDER_NAME_CLASS} data-model-picker-tab-name="true">
+                  {selectedInstanceId === "favorites"
+                    ? "Favorites"
+                    : (entryByInstanceId.get(selectedInstanceId)?.displayName ?? "")}
+                </span>
+              ) : null}
             </div>
 
             <ModelPickerList

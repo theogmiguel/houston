@@ -395,7 +395,7 @@ describe("ThreadCard layout", () => {
     const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
 
     const height = row.getBoundingClientRect().height;
-    expect(height).toBe(58);
+    expect(height).toBe(52);
     expect(row.querySelector("[data-thread-extras-line]")).toBeNull();
 
     const meta = row.querySelector<HTMLElement>("[data-thread-meta]")!;
@@ -435,7 +435,7 @@ describe("ThreadCard layout", () => {
     await using screen = await render(card(thread({ tags: [], branch: "main" } as never)));
     const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
     const height = row.getBoundingClientRect().height;
-    expect(height).toBe(58);
+    expect(height).toBe(52);
     const meta = row.querySelector<HTMLElement>("[data-thread-meta]")!;
     expect(getComputedStyle(meta).display).toBe("flex");
     const word = meta.querySelector<HTMLElement>("[data-thread-status]")!;
@@ -793,11 +793,11 @@ describe("ThreadCard status marks", () => {
     expect(glyphs.size).toBe(cases.length);
   });
 
-  it("fits two lines in 58px with a 16px meta line holding 14px text", async () => {
+  it("fits two lines in 52px with a 16px meta line holding 14px text", async () => {
     await using screen = await render(card(thread({ tags: [] } as never)));
     const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
     const height = row.getBoundingClientRect().height;
-    expect(height).toBe(58);
+    expect(height).toBe(52);
     const meta = row.querySelector<HTMLElement>("[data-thread-meta]")!;
     expect(getComputedStyle(meta).lineHeight).toBe("14px");
   });
