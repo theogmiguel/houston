@@ -10,6 +10,7 @@ import {
   ThreadId,
 } from "@houston-app/contracts";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -22,11 +23,14 @@ import * as EventSink from "./EventSink.ts";
 import * as EventStore from "./EventStore.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 
-// Records the subscriptions the event sink opens and what the bounded reader takes from each, so
-// a test can count every event that reached a subscriber's queue.
+// Records the subscriptions the event sink opens, the PubSubs they subscribe to, what the bounded
+// reader takes from each, and what is published to each PubSub one event at a time, so a test can
+// count every event that reached a subscriber's queue or a thread's lane.
 const opened = vi.hoisted(() => ({
   subscriptions: [] as Array<unknown>,
+  subscribedTo: new Set<unknown>(),
   taken: new Map<unknown, number>(),
+  published: new Map<unknown, number>(),
 }));
 vi.mock("effect/PubSub", async (importOriginal) => {
   const original = await importOriginal<typeof import("effect/PubSub")>();
@@ -34,9 +38,22 @@ vi.mock("effect/PubSub", async (importOriginal) => {
   return {
     ...original,
     subscribe: <A>(pubsub: PubSub.PubSub<A>) =>
+      original.subscribe(pubsub).pipe(
+        tap((subscription) =>
+          sync(() => {
+            opened.subscriptions.push(subscription);
+            opened.subscribedTo.add(pubsub);
+          }),
+        ),
+      ),
+    publish: <A>(pubsub: PubSub.PubSub<A>, value: A) =>
       original
-        .subscribe(pubsub)
-        .pipe(tap((subscription) => sync(() => opened.subscriptions.push(subscription)))),
+        .publish(pubsub, value)
+        .pipe(
+          tap(() =>
+            sync(() => opened.published.set(pubsub, (opened.published.get(pubsub) ?? 0) + 1)),
+          ),
+        ),
     take: <A>(subscription: PubSub.Subscription<A>) =>
       original
         .take(subscription)
@@ -212,6 +229,51 @@ describe("EventSink live streams per thread", () => {
         );
       yield* readLive("first");
       yield* readLive("second");
+    }).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect("a thread's lane receives no publishes once its last stream has closed", () =>
+    Effect.gen(function* () {
+      const { sink, now, a } = yield* twoThreads;
+      opened.subscribedTo.clear();
+      // Each stream replays a marker written before it, so receiving it means it is subscribed.
+      const subscribedOnA = (label: string) =>
+        Effect.gen(function* () {
+          const [marker] = yield* sink.write({ events: updates(a, now, label, 1) });
+          return sink.stream({ threadId: a.id, afterSequence: marker!.sequence - 1 });
+        });
+      // A normal scope close.
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const pull = yield* Stream.toPull(yield* subscribedOnA("closed"));
+          yield* pull;
+        }),
+      );
+      const closedLanes = Array.from(opened.subscribedTo);
+      assert.lengthOf(closedLanes, 1);
+      const publishedTo = (lanes: ReadonlyArray<unknown>) =>
+        lanes.reduce<number>((total, lane) => total + (opened.published.get(lane) ?? 0), 0);
+      const afterScopeClose = publishedTo(closedLanes);
+      yield* sink.write({ events: updates(a, now, "after-scope-close", 5) });
+      assert.strictEqual(publishedTo(closedLanes), afterScopeClose);
+
+      // An interrupted stream.
+      const started = yield* Deferred.make<void>();
+      const reader = yield* (yield* subscribedOnA("interrupted")).pipe(
+        Stream.runForEach(() => Deferred.succeed(started, undefined)),
+        Effect.forkChild,
+      );
+      yield* Deferred.await(started);
+      const lanes = Array.from(opened.subscribedTo);
+      const publishedToLanes = () => publishedTo(lanes);
+      const beforeInterrupt = publishedToLanes();
+      yield* sink.write({ events: updates(a, now, "while-open", 1) });
+      assert.strictEqual(publishedToLanes(), beforeInterrupt + 1);
+      yield* Fiber.interrupt(reader);
+
+      const afterClose = publishedToLanes();
+      yield* sink.write({ events: updates(a, now, "after-close", 5) });
+      assert.strictEqual(publishedToLanes(), afterClose);
     }).pipe(Effect.provide(layerTest)),
   );
 });
