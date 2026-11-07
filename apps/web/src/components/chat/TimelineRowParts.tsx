@@ -1,6 +1,8 @@
 import { type ReactNode } from "react";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
+import { observeVisibleAnimation } from "~/lib/visibleAnimation";
+import { GLYPH_BOX_CLASS, GLYPH_BOX_SPIN_CLASS } from "../ui/spinner";
 import { type TimestampFormat } from "@houston-app/contracts/settings";
 import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../timestampFormat";
 
@@ -72,25 +74,30 @@ const STREAMING_DOTS = Array.from({ length: STREAMING_DOT_COUNT }, (_, index) =>
  */
 export function StreamingGlyph({ className }: { className?: string }) {
   return (
-    <svg
+    <span
       aria-hidden="true"
+      data-slot="glyph-box"
       data-streaming-glyph=""
-      viewBox="0 0 14 14"
+      ref={observeVisibleAnimation}
       className={cn(
-        "size-3.5 shrink-0 animate-spin text-(--accent-ink) [animation-duration:1.1s] motion-reduce:animate-none",
+        GLYPH_BOX_CLASS,
+        GLYPH_BOX_SPIN_CLASS,
+        "size-3.5 text-(--accent-ink) motion-safe:[animation-duration:1.1s]",
         className,
       )}
     >
-      {STREAMING_DOTS.map((dot, index) => (
-        <circle
-          key={index}
-          data-streaming-dot=""
-          cx={dot.cx}
-          cy={dot.cy}
-          r={STREAMING_DOT_RADIUS}
-          style={{ fill: "currentColor" }}
-        />
-      ))}
-    </svg>
+      <svg viewBox="0 0 14 14" className="size-full">
+        {STREAMING_DOTS.map((dot, index) => (
+          <circle
+            key={index}
+            data-streaming-dot=""
+            cx={dot.cx}
+            cy={dot.cy}
+            r={STREAMING_DOT_RADIUS}
+            style={{ fill: "currentColor" }}
+          />
+        ))}
+      </svg>
+    </span>
   );
 }
