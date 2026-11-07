@@ -25,8 +25,8 @@ import { useEnvironmentScope } from "../state/session";
 import { useKnownTerminalSessions } from "../state/terminalSessions";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { useThreadTerminalActions } from "./terminal/useThreadTerminalActions";
-import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import { resolveTerminalWorktreePath } from "./ChatView.logic";
+import { LazyThreadTerminalDrawer } from "./terminal/LazyThreadTerminalDrawer";
 
 /** Where a drawer or panel opens new terminals when a script run overrides the thread's own. */
 export type PersistentTerminalLaunchContext = {
@@ -250,7 +250,7 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
       )}
     >
       <div className="min-h-0 overflow-clip">
-        <ThreadTerminalDrawer
+        <LazyThreadTerminalDrawer
           threadRef={threadRef}
           threadId={threadId}
           cwd={cwd}
@@ -381,7 +381,7 @@ export const PersistentThreadTerminalPanel = memo(function PersistentThreadTermi
   if (!project || !cwd) return null;
 
   return (
-    <ThreadTerminalDrawer
+    <LazyThreadTerminalDrawer
       mode="panel"
       visible={visible}
       threadRef={threadRef}

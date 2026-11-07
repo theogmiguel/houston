@@ -8,7 +8,7 @@ import "./index.css";
 
 import { startAppServices } from "./appInit";
 import { AppRoot } from "./AppRoot";
-import { clearChunkReloadGuard, reloadOnceForChunkLoadError } from "./lib/chunkReloadGuard";
+import { reloadForChunkLoadError } from "./lib/chunkReloadGuard";
 
 const router = startAppServices();
 
@@ -16,11 +16,9 @@ if (import.meta.env.DEV || import.meta.env.VITE_RELEASE_CHANNEL === "dev") {
   void import("./motion/motionProbe").then(({ installMotionProbe }) => installMotionProbe());
 }
 
-let chunkLoadFailed = false;
 let reloadScheduled = false;
 window.addEventListener("vite:preloadError", (event) => {
-  chunkLoadFailed = true;
-  if (reloadOnceForChunkLoadError()) {
+  if (reloadForChunkLoadError()) {
     reloadScheduled = true;
     event.preventDefault();
   }
@@ -33,7 +31,6 @@ export const startup = router
   .then(() => {
     // Route chunk failures resolve router.load() and surface later through the error boundary.
     if (reloadScheduled) return;
-    if (!chunkLoadFailed) clearChunkReloadGuard();
     ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
       <React.StrictMode>{app}</React.StrictMode>,
     );

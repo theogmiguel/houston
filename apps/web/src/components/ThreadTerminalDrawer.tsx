@@ -45,6 +45,7 @@ import {
 import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
 import { Button, InlineButton } from "~/components/ui/button";
 import { PanelTabCloseButton } from "~/components/ui/panel-tab-close-button";
+import { terminalDrawerFrameClassName } from "~/components/ui/terminal-drawer-placeholder";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { readTextFromClipboard, writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { cn } from "~/lib/utils";
@@ -74,11 +75,7 @@ import {
   terminalDeleteShortcutData,
   terminalNavigationShortcutData,
 } from "../keybindings";
-import {
-  DEFAULT_THREAD_TERMINAL_HEIGHT,
-  MAX_TERMINALS_PER_GROUP,
-  type ThreadTerminalGroup,
-} from "../types";
+import { MAX_TERMINALS_PER_GROUP, type ThreadTerminalGroup } from "../types";
 import { readLocalApi } from "~/localApi";
 import { isKnownTaskKey } from "~/state/tasks";
 import { confirmTerminalClose } from "~/lib/terminalCloseConfirm";
@@ -105,51 +102,14 @@ import {
   resolveTerminalFontSizePreference,
   TYPOGRAPHY_ADVANCED_STORAGE_KEY,
 } from "../appearanceFonts";
-
-const MIN_DRAWER_HEIGHT = 180;
-const MAX_DRAWER_HEIGHT_RATIO = 0.75;
-
-interface DrawerLayout {
-  viewportHeight: number;
-  chatColumnHeight?: number;
-  headerHeight?: number;
-  composerHeight?: number;
-}
-
-function resolveTerminalDrawerMaxHeight(input: DrawerLayout): number {
-  const windowCap = Math.max(
-    MIN_DRAWER_HEIGHT,
-    Math.floor(input.viewportHeight * MAX_DRAWER_HEIGHT_RATIO),
-  );
-  if (input.chatColumnHeight === undefined) return windowCap;
-  // The composer overlays the timeline, so flex layout cannot reserve its
-  // height; without this cap a tall drawer pushes it into the header.
-  return Math.min(
-    windowCap,
-    Math.max(0, input.chatColumnHeight - (input.headerHeight ?? 0) - (input.composerHeight ?? 0)),
-  );
-}
+import {
+  chatColumnOf,
+  clampDrawerHeight,
+  readDrawerLayout,
+  resolveTerminalDrawerMaxHeight,
+} from "./terminal/drawerHeight";
 
 const DRAG_HEIGHT_PROPERTY = "--terminal-drawer-drag-height";
-
-function clampDrawerHeight(height: number, maxHeight: number): number {
-  const safeHeight = Number.isFinite(height) ? height : DEFAULT_THREAD_TERMINAL_HEIGHT;
-  return Math.min(Math.max(Math.round(safeHeight), MIN_DRAWER_HEIGHT), maxHeight);
-}
-
-function chatColumnOf(drawer: HTMLElement | null): HTMLElement | null {
-  return drawer?.closest<HTMLElement>("[data-chat-column]") ?? null;
-}
-
-function readDrawerLayout(column: HTMLElement | null): Omit<DrawerLayout, "composerHeight"> {
-  const viewportHeight = typeof window === "undefined" ? 0 : window.innerHeight;
-  if (!column) return { viewportHeight };
-  return {
-    viewportHeight,
-    chatColumnHeight: column.clientHeight,
-    headerHeight: column.querySelector<HTMLElement>("[data-chat-header]")?.offsetHeight ?? 0,
-  };
-}
 
 function writeSystemMessage(
   terminal: Pick<GhosttyTerminalSurface, "write">,
@@ -1771,10 +1731,7 @@ export default function ThreadTerminalDrawer({
         {...(!isPanel && visible ? terminalArea : {})}
         data-thread-terminal-drawer
         data-terminal-owner={isPanel ? "right-panel" : "drawer"}
-        className={cn(
-          "relative flex min-w-0 flex-col overflow-hidden bg-background",
-          isPanel ? "h-full flex-1" : "z-45 shrink-0 border-t border-border/80",
-        )}
+        className={terminalDrawerFrameClassName(isPanel)}
         style={isPanel ? undefined : { height: `var(${DRAG_HEIGHT_PROPERTY}, ${drawerHeight}px)` }}
       >
         {!isPanel ? (
@@ -1808,10 +1765,7 @@ export default function ThreadTerminalDrawer({
       {...(!isPanel && visible ? terminalArea : {})}
       data-thread-terminal-drawer
       data-terminal-owner={isPanel ? "right-panel" : "drawer"}
-      className={cn(
-        "relative flex min-w-0 flex-col overflow-hidden bg-background",
-        isPanel ? "h-full flex-1" : "z-45 shrink-0 border-t border-border/80",
-      )}
+      className={terminalDrawerFrameClassName(isPanel)}
       style={isPanel ? undefined : { height: `var(${DRAG_HEIGHT_PROPERTY}, ${drawerHeight}px)` }}
     >
       {!isPanel ? (
