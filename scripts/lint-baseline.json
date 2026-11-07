@@ -90,6 +90,7 @@
   "packages/contracts/src/scheduledTask.ts": 1,
   "packages/shared/src/composerContextLegacy.ts": 1,
   "packages/shared/src/composerTrigger.ts": 6,
+  "packages/shared/src/semver.ts": 5,
   "scripts/build-server-archive.mjs": 6,
   "scripts/check-web-style.mjs": 3,
   "scripts/check-web-style.test.mjs": 2,
