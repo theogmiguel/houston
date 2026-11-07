@@ -28,22 +28,19 @@ function moveInto(parent: Element, node: Element) {
   }
 }
 
-/**
- * Base UI's ScrollArea reads four layout sizes per instance as it mounts, and most tables fit
- * their lane. A table gets one only once a resize observation finds it wider than the lane.
- * The table renders through a portal into one host node that moves into the scroll area, so
- * the swap keeps the table's subtree mounted. The plain lane stays, hidden, until the move.
- */
-function TableScroll({ children }: { children: ReactNode }) {
-  const [host] = useState(() => document.createElement("div"));
+// ScrollArea measures itself on mount, so only a table observed wider than its lane gets one.
+// The table renders through a portal into a host node that moves between lane and scroll area,
+// so the swap keeps its subtree mounted.
+function TableScroll({ children }: { children: ReactNode }) {  const [host] = useState(() => document.createElement("div"));
   const laneRef = useRef<HTMLDivElement | null>(null);
   const [overflows, setOverflows] = useState(false);
   const place = (slot: HTMLDivElement | null) => {
     if (slot !== null && host.parentNode !== slot) moveInto(slot, host);
   };
+  // React reattaches both refs on a re-render, in either order; the hidden lane must not win.
   const placeInLane = (lane: HTMLDivElement | null) => {
     laneRef.current = lane;
-    place(lane);
+    if (!overflows) place(lane);
   };
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- observes the table's and the lane's widths to swap in the scroll area before paint
   useEffect(() => {
