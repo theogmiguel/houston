@@ -587,6 +587,10 @@ export default defineConfig({
         rules: { "houston/no-outset-state-indicators": "error" },
       },
       {
+        files: ["apps/web/src/**"],
+        rules: { "houston/max-settings-description-length": "error" },
+      },
+      {
         // Warn while the motion standard rolls out; it becomes an error once every surface names a role.
         files: ["apps/web/src/**"],
         excludeFiles: ["**/*.{test,spec}.{ts,tsx}"],
