@@ -11,7 +11,8 @@ its project, checks and review state.
 
 Open a request to read it in the right panel:
 
-- **Summary** — description, branches, reviewers and merge readiness.
+- **Summary** — description, branches, reviewers and merge readiness. Where you can edit the
+  description, you can also tick its checkboxes here.
 - **Timeline** — comments and review activity.
 - **Files** — the diff; each file carries a **Viewed** toggle. A viewed file that changes
   after a new push reads unviewed and shows **Changed since viewed**.

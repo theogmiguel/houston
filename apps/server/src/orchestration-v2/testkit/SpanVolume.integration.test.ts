@@ -8,6 +8,7 @@ import * as Stream from "effect/Stream";
 import * as Tracer from "effect/Tracer";
 
 import { materializeReplayTranscriptWorkspace } from "@houston-app/provider-testing/replayTranscript";
+import * as ExportTracer from "../../houston/observability/ExportTracer.ts";
 import { ClaudeOrchestratorReplayHarness } from "../Adapters/ClaudeAdapterV2.testkit.ts";
 import { CodexOrchestratorReplayHarness } from "../Adapters/CodexAdapterV2.testkit.ts";
 import * as ProviderAdapterRegistry from "../ProviderAdapterRegistry.ts";
@@ -27,6 +28,7 @@ const CASES = [
     fixture: "subagent",
     driver: "claudeAgent",
     total: 17_249,
+    exported: 8_881,
     ceilings: {
       sqlite: 4731,
       "sql.transaction": 1299,
@@ -54,6 +56,7 @@ const CASES = [
     fixture: "subagent",
     driver: "codex",
     total: 14_152,
+    exported: 7_569,
     ceilings: {
       sqlite: 3064,
       "sql.transaction": 1239,
@@ -77,6 +80,7 @@ const CASES = [
   readonly fixture: string;
   readonly driver: "claudeAgent" | "codex";
   readonly total: number;
+  readonly exported: number;
   readonly ceilings: Readonly<Record<string, number>>;
 }>;
 
@@ -122,12 +126,33 @@ const HARNESS_SPANS = new Set(["runOrchestratorReplayFixture", "awaitDispatch"])
 
 // Counts spans by name, leaving out the scenario's own projection polls, the database setup
 // (migrations and read-model repair run once per database, not per event) and everything under them.
+// Spans pass through the export wrapper, which counts what an OTLP exporter would receive.
 const countingTracer = () => {
   const counts = new Map<string, number>();
   const excluded = new WeakSet<Tracer.AnySpan>();
+  const excludedIds = new Set<string>();
+  const exported = { count: 0, ids: new Set<string>(), parents: new Map<string, string>() };
+  const exportTracer = ExportTracer.make(
+    Tracer.make({
+      span(options) {
+        const span = new Tracer.NativeSpan(options);
+        const end = span.end.bind(span);
+        span.end = (endTime, exit) => {
+          end(endTime, exit);
+          exported.ids.add(span.spanId);
+          if (span.parent._tag === "Some")
+            exported.parents.set(span.spanId, span.parent.value.spanId);
+          if (!excludedIds.has(span.spanId)) exported.count++;
+        };
+        return span;
+      },
+    }),
+  );
+  const created = new Set<string>();
   const tracer = Tracer.make({
     span(options) {
-      const span = new Tracer.NativeSpan(options);
+      const span = exportTracer.span(options);
+      created.add(span.spanId);
       const parent = span.parent._tag === "Some" ? span.parent.value : undefined;
       // Only a call the scenario makes; a parentless one is session work (withoutTurnContext).
       const fromHarness =
@@ -139,13 +164,19 @@ const countingTracer = () => {
         (options.name === "OrchestratorV2.getThreadProjection" && fromHarness)
       ) {
         excluded.add(span);
+        excludedIds.add(span.spanId);
       } else {
         counts.set(options.name, (counts.get(options.name) ?? 0) + 1);
       }
       return span;
     },
   });
-  return { counts, tracer };
+  // Exported spans whose parent this run created but did not export.
+  const orphans = () =>
+    [...exported.parents].filter(
+      ([, parentId]) => created.has(parentId) && !exported.ids.has(parentId),
+    );
+  return { counts, tracer, exported, orphans };
 };
 
 describe("span volume", () => {
@@ -189,6 +220,13 @@ describe("span volume", () => {
             }
           }
           assert.isAtMost(total, Math.ceil(testCase.total * TOTAL_SLACK), "spans per 1,000 events");
+          const exportedPer1k = Math.round((recording.exported.count * 1000) / counter.events);
+          assert.isAtMost(
+            exportedPer1k,
+            Math.ceil(testCase.exported * TOTAL_SLACK),
+            "exported spans per 1,000 events",
+          );
+          assert.deepStrictEqual(recording.orphans(), [], "exported spans whose parent was not");
         }),
       ),
     );

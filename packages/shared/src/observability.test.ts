@@ -16,6 +16,7 @@ import * as References from "effect/References";
 import * as Schema from "effect/Schema";
 import * as Tracer from "effect/Tracer";
 import type { OtlpTracer } from "effect/observability";
+import { vi } from "vite-plus/test";
 
 import {
   causeErrorTag,
@@ -29,6 +30,7 @@ import {
   OtlpHeadersFromString,
   truncateTraceAttributes,
   processServiceInstanceId,
+  redactUrlCredentials,
 } from "./observability.ts";
 
 describe("processServiceInstanceId", () => {
@@ -120,6 +122,69 @@ const layerTest = (tracePath: string) =>
   );
 
 const nodeServicesIt = it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer));
+
+// The redaction pattern before the marker pre-check, kept as the oracle for its equivalence.
+const UNCONDITIONAL_URL_CREDENTIALS = /(^|[?&"\s])(wsTicket|dpop)=[^&#"\\\s]*/g;
+
+const urlCredentialCorpus = (): ReadonlyArray<string> => {
+  const names = [
+    "wsTicket",
+    "dpop",
+    "WSTICKET",
+    "wsticket",
+    "WsTicket",
+    "DPOP",
+    "Dpop",
+    "dPoP",
+    "%77sTicket",
+    "ws%54icket",
+    "%64pop",
+    "\\u0077sTicket",
+    "\\u0064pop",
+    "ws Ticket",
+  ];
+  const separators = ["=", "%3D", "%3d", "\\u003d", "\\u003D", " =", "=="];
+  const prefixes = ["", "?", "&", '"', " ", "\n", "\t", '\\"', "/ws?", "x", "#", ";"];
+  const values = ["secret", "", "a&b", 'a"b', "a\\b", "a#b", "a b"];
+  const corpus: Array<string> = [
+    "/ws?wsTicket=ticket-secret&dpop=proof-secret&clientSurface=web",
+    "http://127.0.0.1:3773/ws?wsTicket=ticket-secret&dpop=proof-secret&clientSurface=web",
+    "RequestParseError (GET /ws?wsTicket=ticket-secret&dpop=proof-secret)",
+    "wsTicket=REDACTED&clientOs=linux&dpop=REDACTED",
+    "no credentials here",
+    "",
+  ];
+  for (const name of names) {
+    for (const separator of separators) {
+      for (const prefix of prefixes) {
+        for (const value of values) {
+          corpus.push(`${prefix}${name}${separator}${value}`);
+        }
+      }
+    }
+  }
+  // Trace records carry these strings inside serialized JSON, sometimes JSON nested in JSON.
+  return corpus.flatMap((text) => [
+    text,
+    JSON.stringify({ attributes: { "url.full": text } }),
+    JSON.stringify(JSON.stringify({ cause: text })),
+  ]);
+};
+
+describe("redactUrlCredentials", () => {
+  it("redacts exactly what the unconditional pattern redacts, in every case and encoding", () => {
+    const corpus = urlCredentialCorpus();
+    let redacted = 0;
+    for (const text of corpus) {
+      const expected = text.replace(UNCONDITIONAL_URL_CREDENTIALS, "$1$2=<redacted>");
+      if (expected !== text) redacted++;
+      assert.strictEqual(redactUrlCredentials(text), expected, JSON.stringify(text));
+    }
+    // The corpus must exercise both outcomes, or the equality above proves nothing.
+    assert.isAbove(redacted, 100);
+    assert.isAbove(corpus.length - redacted, 100);
+  });
+});
 
 describe("truncateTraceAttributes", () => {
   it("clamps oversized strings at any depth without mutating the input", () => {
@@ -371,6 +436,43 @@ describe("observability", () => {
             ["retained"],
           );
           assert.isAtMost(Number(stat.size), maxBytes);
+        }),
+      ),
+    );
+
+    it.effect("scans a trace record for credentials only when it names a credential", () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const tempDir = yield* fileSystem.makeTempDirectoryScoped({
+            prefix: "houston-trace-sink-",
+          });
+          const tracePath = path.join(tempDir, "shared.trace.ndjson");
+          const sink = yield* makeTraceSink({
+            filePath: tracePath,
+            maxBytes: 1024 * 1024,
+            maxFiles: 2,
+            batchWindowMs: 10_000,
+          });
+
+          const replace = vi.spyOn(RegExp.prototype, Symbol.replace);
+          const credentialScans = () =>
+            replace.mock.contexts.filter((pattern) => String(pattern).includes("wsTicket")).length;
+          try {
+            sink.push(makeRecord("plain", "/ws?clientSurface=web&ticket=wsTicket"));
+            assert.strictEqual(credentialScans(), 0);
+            sink.push(makeRecord("credential", "/ws?wsTicket=ticket-secret"));
+            assert.strictEqual(credentialScans(), 1);
+          } finally {
+            replace.mockRestore();
+          }
+          yield* sink.close();
+
+          const written = yield* fileSystem.readFileString(tracePath);
+          assert.notInclude(written, "ticket-secret");
+          assert.include(written, "/ws?wsTicket=<redacted>");
+          assert.include(written, "ticket=wsTicket");
         }),
       ),
     );
