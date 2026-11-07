@@ -4,7 +4,7 @@ import { page } from "vite-plus/test/browser";
 import { render } from "../../test/render";
 import { openCommandPalette } from "../commandPaletteBus";
 import { useCommandPaletteStore } from "../commandPaletteStore";
-import { CommandPalette } from "./CommandPalette";
+import { CommandPalette } from "./CommandPaletteRoot";
 
 function setup() {
   useCommandPaletteStore.setState(useCommandPaletteStore.getInitialState(), true);

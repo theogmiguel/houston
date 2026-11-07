@@ -16,7 +16,7 @@ import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { APP_DISPLAY_NAME, APP_VERSION } from "../branding";
 import { AppSidebarLayout } from "../components/AppSidebarLayout";
-import { CommandPalette } from "../components/CommandPalette";
+import { CommandPalette } from "../components/CommandPaletteRoot";
 import { CustomSnoozeDialogHost } from "../components/CustomSnoozeDialog";
 import { ThreadTagsDialogHost } from "../components/ThreadTagsDialog";
 import { AddProjectDialogHost } from "../components/AddProjectDialog";

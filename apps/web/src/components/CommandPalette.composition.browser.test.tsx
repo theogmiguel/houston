@@ -3,7 +3,7 @@ import { page, userEvent } from "vite-plus/test/browser";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@houston-app/shared/keybindings";
 import { DEFAULT_CLIENT_SETTINGS } from "@houston-app/contracts/settings";
 import { act, render } from "../../test/render";
-import { CommandPalette } from "./CommandPalette";
+import { CommandPalette } from "./CommandPaletteRoot";
 import { openCommandPalette } from "../commandPaletteBus";
 import { primaryServerKeybindingsAtom } from "../state/server";
 
