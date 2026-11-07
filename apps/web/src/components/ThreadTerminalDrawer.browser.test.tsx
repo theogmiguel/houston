@@ -3,6 +3,7 @@ import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@houston-app/cont
 import { expect, it, vi } from "vite-plus/test";
 import { act, fakeTimers, render } from "../../test/render";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
+import { LazyThreadTerminalDrawer } from "./terminal/LazyThreadTerminalDrawer";
 
 const fixture = vi.hoisted(() => ({
   statusByThreadId: new Map<string, "running" | "exited">(),
@@ -126,4 +127,56 @@ it("closes an exited terminal on its own thread after navigating to one reusing 
     vi.runOnlyPendingTimers();
   });
   expect(onCloseTerminal.mock.calls).toEqual([["term-1", original]]);
+});
+
+it("holds an open drawer's height while its code loads", async () => {
+  const { other } = setup();
+  // A column shorter than the stored height, so the drawer's height comes from measuring it.
+  const column = document.createElement("div");
+  column.dataset.chatColumn = "";
+  column.style.height = "300px";
+  document.body.append(column);
+  const placeholderHeights: number[] = [];
+  const observer = new MutationObserver(() => {
+    const placeholder = column.querySelector<HTMLElement>(
+      "[data-thread-terminal-drawer-placeholder]",
+    );
+    if (placeholder) placeholderHeights.push(placeholder.offsetHeight);
+  });
+  observer.observe(column, { childList: true, subtree: true });
+  try {
+    await using screen = await render(
+      <LazyThreadTerminalDrawer
+        threadRef={other}
+        threadId={other.threadId}
+        cwd="/repo"
+        visible
+        height={900}
+        terminalIds={["term-1"]}
+        activeTerminalId="term-1"
+        terminalGroups={[{ id: "group-1", terminalIds: ["term-1"] }]}
+        activeTerminalGroupId="group-1"
+        onSplitTerminal={() => {}}
+        onSplitTerminalVertical={() => {}}
+        onNewTerminal={() => {}}
+        onActiveTerminalChange={() => {}}
+        onCloseTerminal={() => {}}
+        onHeightChange={() => {}}
+        keybindings={[]}
+      />,
+      { container: column },
+    );
+    await expect
+      .poll(() => screen.container.querySelector("aside[data-thread-terminal-drawer]"))
+      .not.toBeNull();
+    const drawer = screen.container.querySelector<HTMLElement>(
+      "aside[data-thread-terminal-drawer]",
+    )!;
+    expect(placeholderHeights[0]).toBe(300);
+    expect(new Set(placeholderHeights)).toEqual(new Set([300]));
+    expect(drawer.offsetHeight).toBe(300);
+  } finally {
+    observer.disconnect();
+    column.remove();
+  }
 });
