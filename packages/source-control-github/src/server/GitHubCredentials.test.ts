@@ -6,7 +6,11 @@ import * as Redacted from "effect/Redacted";
 import { HttpClient } from "effect/http";
 import { ChildProcessSpawner } from "effect/process";
 
-import { DEFAULT_SERVER_SETTINGS, SecretProviderId, SecretProviderKind } from "@houston-app/contracts";
+import {
+  DEFAULT_SERVER_SETTINGS,
+  SecretProviderId,
+  SecretProviderKind,
+} from "@houston-app/contracts";
 import type * as SourceControlHost from "@houston-app/source-control-core/server/SourceControlHost";
 import { applyServerSettingsPatch } from "@houston-app/shared/serverSettings";
 import * as TestSourceControlHost from "@houston-app/source-control-testing/TestSourceControlHost";

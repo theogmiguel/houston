@@ -762,7 +762,10 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
           return yield* Effect.gen(function* () {
             // RPC responses bypass the pump. Reset after all earlier native notifications.
             if (
-              !(yield* Queue.offer(connection.events, { type: "houston.extension_status_reset", reset }))
+              !(yield* Queue.offer(connection.events, {
+                type: "houston.extension_status_reset",
+                reset,
+              }))
             )
               return yield* protocolError("Pi transport closed during status reset");
             yield* Deferred.await(reset.ready);

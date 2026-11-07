@@ -1072,7 +1072,12 @@ it.effect("ranks references by number, keeping the host's recent-first order", (
     const service = yield* makeService({
       projects: [
         project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "theogmiguel/houston" }),
-        project({ id: "p2", title: "tree", workspaceRoot: "/b", repository: "theogmiguel/houston" }),
+        project({
+          id: "p2",
+          title: "tree",
+          workspaceRoot: "/b",
+          repository: "theogmiguel/houston",
+        }),
       ],
       providers: [
         fakePullRequestProvider(SourceControlProviderKind.make("github"), {

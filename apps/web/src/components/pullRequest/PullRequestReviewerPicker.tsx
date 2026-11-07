@@ -68,8 +68,12 @@ export function PullRequestReviewerPicker({
     reportFailure: false,
   });
 
-  const { candidates: listedCandidates, searchPending, searchError, truncation } =
-    reviewerCandidateView({ ...searchInput, search: searchResult });
+  const {
+    candidates: listedCandidates,
+    searchPending,
+    searchError,
+    truncation,
+  } = reviewerCandidateView({ ...searchInput, search: searchResult });
   const candidates = listedCandidates.toSorted((left, right) => {
     // Suggested people first, then who has already been asked, then everyone else with access.
     const rank = (entry: PullRequestReviewerCandidate) =>

@@ -1711,7 +1711,6 @@ it.effect.each([
     ),
 );
 
-
 it.effect("keeps hover previews fresh after edits and turns", () =>
   Effect.scoped(
     Effect.gen(function* () {

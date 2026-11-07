@@ -21,7 +21,9 @@ describe("desktop bootstrap token", () => {
       const token = yield* currentDesktopBootstrapToken(SECRET, issuedAt);
 
       expect(token).toBe(
-        NodeCrypto.createHmac("sha256", SECRET).update("houston-desktop-bootstrap:10").digest("hex"),
+        NodeCrypto.createHmac("sha256", SECRET)
+          .update("houston-desktop-bootstrap:10")
+          .digest("hex"),
       );
       expect(yield* currentDesktopBootstrapToken(SECRET, issuedAt + WINDOW)).not.toBe(token);
       expect(yield* isValidDesktopBootstrapToken(SECRET, token, issuedAt)).toBe(true);

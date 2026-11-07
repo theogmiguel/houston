@@ -377,10 +377,7 @@ import { useGridStore } from "../grid/gridStore";
 import { preorderThreads } from "../grid/tree";
 import { ChatRightPanel } from "./chat/ChatRightPanel";
 import { useDraftEnvironmentRouting } from "./chat/useDraftEnvironmentRouting";
-import {
-  branchMismatchBannerItem,
-  extensionStatusBannerItem,
-} from "./chat/ThreadActivityBanners";
+import { branchMismatchBannerItem, extensionStatusBannerItem } from "./chat/ThreadActivityBanners";
 import { ThreadNow } from "./chat/ThreadNow";
 import { ChangedFilesBar } from "./chat/ChangedFilesBar";
 import { ComposerApprovalCard } from "./chat/ComposerApprovalCard";

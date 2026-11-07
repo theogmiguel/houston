@@ -19,12 +19,7 @@ import {
   makePersistedServerRuntimeState,
   persistServerRuntimeState,
 } from "../serverRuntimeState.ts";
-import {
-  readLatestMessages,
-  threadCommand,
-  type ThreadTools,
-  waitForRun,
-} from "./thread.ts";
+import { readLatestMessages, threadCommand, type ThreadTools, waitForRun } from "./thread.ts";
 
 vi.mock("../auth/EnvironmentAuth.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../auth/EnvironmentAuth.ts")>();

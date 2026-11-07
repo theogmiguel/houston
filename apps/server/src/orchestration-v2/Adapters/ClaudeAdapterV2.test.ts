@@ -8808,8 +8808,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
-        const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "houston-claude-compact-" });
-        const project = yield* fileSystem.makeTempDirectoryScoped({ prefix: "houston-claude-compact-" });
+        const home = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "houston-claude-compact-",
+        });
+        const project = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "houston-claude-compact-",
+        });
         if (userSettings !== undefined) {
           yield* fileSystem.writeFileString(path.join(home, "settings.json"), userSettings);
         }
@@ -8892,7 +8896,9 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       const path = yield* Path.Path;
       const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "houston-claude-home-" });
       const first = yield* fileSystem.makeTempDirectoryScoped({ prefix: "houston-claude-first-" });
-      const second = yield* fileSystem.makeTempDirectoryScoped({ prefix: "houston-claude-second-" });
+      const second = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "houston-claude-second-",
+      });
       for (const [directory, window] of [
         [first, 150_000],
         [second, 180_000],

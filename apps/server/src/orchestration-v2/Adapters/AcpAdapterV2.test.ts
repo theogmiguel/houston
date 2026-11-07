@@ -3833,7 +3833,9 @@ describe("AcpAdapterV2", () => {
       Effect.gen(function* () {
         const harness = yield* makePromptInactivityHarness({
           environment: (runtimeOrdinal) =>
-            runtimeOrdinal === 1 ? { HOUSTON_ACP_EMIT_TRACKED_TOOL_CALL_KIND_THEN_HANG: "execute" } : {},
+            runtimeOrdinal === 1
+              ? { HOUSTON_ACP_EMIT_TRACKED_TOOL_CALL_KIND_THEN_HANG: "execute" }
+              : {},
         });
         yield* harness.startTurn(1);
         yield* harness.runtime.events.pipe(
