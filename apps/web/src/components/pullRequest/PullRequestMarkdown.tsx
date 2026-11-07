@@ -109,7 +109,7 @@ export function PullRequestMarkdown({
         </div>
       );
     }
-      if (segment.kind === "markdown" || segment.media === "image") {
+    if (segment.kind === "markdown" || segment.media === "image") {
       return (
         <ChatMarkdown
           key={segment.id}
@@ -121,6 +121,16 @@ export function PullRequestMarkdown({
           {...(context ? { extraRemarkPlugins: context.remarkPlugins } : {})}
           lineBreaks={lineBreaks ?? context?.lineBreaks ?? false}
           sourceControlMedia
+          sourceControlMediaRepository={repository}
+          onTaskListChange={
+            onTaskListChange && segment.kind === "markdown"
+              ? ({ markerOffset, checked }) =>
+                  onTaskListChange({
+                    markerOffset: segment.sourceOffset + markerOffset,
+                    checked,
+                  })
+              : undefined
+          }
         />
       );
     }
@@ -133,6 +143,7 @@ export function PullRequestMarkdown({
           cwd={cwd}
           url={segment.url}
           fetchUrl={hostMedia.fetchUrl}
+          repository={repository}
         />
       );
     }

@@ -1,5 +1,4 @@
 import * as Cause from "effect/Cause";
-import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
