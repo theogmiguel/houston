@@ -127,7 +127,7 @@ export const rebuildMessageSearch = Effect.fn("MessageSearchIndex.rebuild")(func
   );
 });
 
-// Each merge step writes about this many FTS pages, holding the writer for a few milliseconds.
+// Each merge step writes about this many FTS pages, holding the writer for tens of milliseconds.
 const MESSAGE_SEARCH_MERGE_PAGES = 64;
 
 /**
