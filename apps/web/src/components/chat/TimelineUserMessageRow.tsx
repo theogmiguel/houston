@@ -48,7 +48,7 @@ import {
 import { Link as LinkIconNode } from "lucide";
 import { Badge } from "../ui/badge";
 import { Button, InlineButton } from "../ui/button";
-import { ModelSwitchRow } from "./V2LifecycleRow";
+import { FreshSessionRow, ModelSwitchRow } from "./V2LifecycleRow";
 import { useAssetUrlRefresh, useAssetUrls, useAssetUrlState } from "../../assets/assetUrls";
 import { AttachmentImage } from "../media/AttachmentImage";
 import { MediaVideoPlayer } from "../media/MediaVideoPlayer";
@@ -102,6 +102,9 @@ import {
   userMessageFileLabel,
 } from "./TimelineUserMessageRow.logic";
 
+const EXTENSION_PATTERN = /\.([a-z0-9]{1,8})$/i;
+const LINE_BREAK = /\r?\n/;
+
 // Drawn inside the media so dark screenshots keep an edge on the dark background.
 /**
  * A bubble stops at 82% of the lane or 36rem, whichever is narrower, so a wide lane keeps a line
@@ -126,7 +129,7 @@ function UserFileCard({
   const ctx = use(TimelineRowCtx);
   const pastedText = file.source?._tag === "pasted-text";
   const label = userMessageFileLabel(file);
-  const extension = /\.([a-z0-9]{1,8})$/i.exec(file.name)?.[1]?.toUpperCase() ?? "File";
+  const extension = EXTENSION_PATTERN.exec(file.name)?.[1]?.toUpperCase() ?? "File";
   const identity = (
     <>
       <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-background/60">
@@ -270,6 +273,7 @@ export function UserMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mes
   const modelSwitch = item?.type === "user_message" ? item.modelSwitch : undefined;
   return (
     <>
+      {item?.type === "user_message" && item.freshContext ? <FreshSessionRow /> : null}
       {modelSwitch ? (
         <ModelSwitchRow environmentId={ctx.activeThreadEnvironmentId} modelSwitch={modelSwitch} />
       ) : null}
@@ -301,7 +305,7 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
   const { text, scheduledTaskId } = resolveUserMessagePresentation(row.message);
   const summary =
     useScheduledTaskTitle(ctx.activeThreadEnvironmentId, scheduledTaskId) ??
-    text.trim().split(/\r?\n/, 1)[0] ??
+    text.trim().split(LINE_BREAK, 1)[0] ??
     "";
 
   const revertTurnCount = row.revertTurnCount;
@@ -346,7 +350,12 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
       </div>
       <UserMessageProjectedStatus row={row} />
       {expanded ? (
-        <div className={cn("flex w-full items-center justify-end pe-1 text-callout text-(--houston) tabular-nums", BUBBLE_MAX_WIDTH_CLASS)}>
+        <div
+          className={cn(
+            "flex w-full items-center justify-end pe-1 text-callout text-(--houston) tabular-nums",
+            BUBBLE_MAX_WIDTH_CLASS,
+          )}
+        >
           <div className="flex shrink-0 items-center gap-2">
             {scheduledTaskId ? (
               <Link
@@ -1025,7 +1034,12 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         ) : null}
       </div>
       <UserMessageProjectedStatus row={row} />
-      <div className={cn("flex w-full items-center justify-end pe-1 text-callout text-(--houston) tabular-nums", BUBBLE_MAX_WIDTH_CLASS)}>
+      <div
+        className={cn(
+          "flex w-full items-center justify-end pe-1 text-callout text-(--houston) tabular-nums",
+          BUBBLE_MAX_WIDTH_CLASS,
+        )}
+      >
         <div className="flex shrink-0 items-center gap-2">
           {folded && senderThreadId ? (
             <InlineButton onClick={() => ctx.onOpenThread(senderThreadId)} tone="muted">

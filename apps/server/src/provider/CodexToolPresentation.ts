@@ -32,10 +32,12 @@ function normalizedImageUrl(value: unknown): string | undefined {
   }
 }
 
+const NORMALIZED_APP_ID_PATTERN = /^[A-Za-z0-9._-]+$/u;
+
 function normalizedAppId(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const appId = value.trim();
-  return appId.length > 0 && appId.length <= 512 && /^[A-Za-z0-9._-]+$/u.test(appId)
+  return appId.length > 0 && appId.length <= 512 && NORMALIZED_APP_ID_PATTERN.test(appId)
     ? appId
     : undefined;
 }

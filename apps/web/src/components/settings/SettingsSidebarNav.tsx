@@ -114,6 +114,8 @@ function SettingsSectionIcon({ to }: { to: SettingsPath }) {
   return <Icon className="size-4 shrink-0 text-(--sidebar-icon-color)" />;
 }
 
+const LEADING_HASH = /^#/;
+
 export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   const navArea = workspaceAreaProps("settings-nav", 0, "Settings sections");
   const navigate = useNavigate();
@@ -202,7 +204,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
     setCompactSearchOpen(false);
     const targetId = item.targetId ?? item.id;
     revealSettingsSearchTarget(targetId);
-    if (pathname === item.to && currentHash.replace(/^#/, "") === targetId) {
+    if (pathname === item.to && currentHash.replace(LEADING_HASH, "") === targetId) {
       scrollToSettingsTarget(targetId);
       return;
     }

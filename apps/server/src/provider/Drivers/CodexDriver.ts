@@ -1,6 +1,7 @@
 import { CodexSettings, ProviderDriverKind } from "@houston-app/contracts";
 import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
+import type * as Signature from "effect/crypto/Signature";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -62,6 +63,8 @@ const decodeCodexSettings = Schema.decodeSync(CodexSettings);
 const DRIVER_KIND = ProviderDriverKind.make("codex");
 const CODEX_STANDALONE_HOME_PATTERN = /^(.*)\/packages\/standalone\//is;
 
+const DRIVE_LETTER = /^[a-z]:$/i;
+
 function codexStandaloneHome(commandPath: string): string | null {
   // Slash replacement preserves indices; Unicode lowercasing can change the path length.
   const match = CODEX_STANDALONE_HOME_PATTERN.exec(commandPath.replaceAll("\\", "/"));
@@ -70,7 +73,7 @@ function codexStandaloneHome(commandPath: string): string | null {
   }
   const home = match[1]!;
   // Keep root separators: `C:` is drive-relative, and an empty home is not `/`.
-  const isRoot = home === "" || /^[a-z]:$/i.test(home);
+  const isRoot = home === "" || DRIVE_LETTER.test(home);
   return commandPath.slice(0, home.length + (isRoot ? 1 : 0));
 }
 
@@ -101,6 +104,7 @@ export type CodexDriverEnv =
   | ResetCreditCoordinator.ResetCreditCoordinator
   | Digest.Digest
   | SecureRandom.SecureRandom
+  | Signature.Signature
   | FileSystem.FileSystem
   | HttpClient.HttpClient
   | ProviderLatestVersions.ProviderLatestVersions

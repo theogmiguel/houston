@@ -10,6 +10,8 @@ import { normalizeProviderAccentColor } from "../../providerInstances";
 
 const FALLBACK_ACCENT_COLOR = "#2563eb";
 
+const PROVIDER_CUSTOM_COLOR_PANEL_PATTERN = /^#[\da-f]{6}$/i;
+
 function ProviderCustomColorPanel(props: {
   readonly value: string;
   readonly onPreview: (value: string) => void;
@@ -80,7 +82,7 @@ function ProviderCustomColorPanel(props: {
           onChange={(event) => {
             const nextColor = event.currentTarget.value;
             setHexDraft(nextColor);
-            if (!/^#[\da-f]{6}$/i.test(nextColor)) return;
+            if (!PROVIDER_CUSTOM_COLOR_PANEL_PATTERN.test(nextColor)) return;
             setHsv(hexToHsv(nextColor));
             onCommit(nextColor);
           }}

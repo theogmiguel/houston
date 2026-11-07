@@ -3,7 +3,6 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
-import * as Cache from "effect/Cache";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -13,6 +12,8 @@ import * as Path from "effect/Path";
 import type { ShellEnvironmentPatch } from "@houston-app/contracts";
 import * as HostProcess from "./HostProcess.ts";
 import * as Context from "effect/Context";
+
+const WRAPPING_QUOTES = /^"+|"+$/g;
 const SHELL_ENV_NAME_PATTERN = /^[A-Z0-9_]+$/;
 const WINDOWS_PATH_DELIMITER = ";";
 const POSIX_PATH_DELIMITER = ":";
@@ -51,11 +52,14 @@ export type CommandAvailabilityChecker = (
 
 const WINDOWS_SHELL_META_CHARS = /([()\][%!^"`<>&|;, *?])/g;
 
+const ESCAPED_PATTERN = /(\\*)"/g;
+const TRAILING_BACKSLASHES = /(\\*)$/;
+
 // Escape dynamic arguments for both cmd.exe and the target's CommandLineToArgvW parsing.
 function escapeWindowsShellArg(arg: string): string {
-  let escaped = arg.replace(/(\\*)"/g, '$1$1\\"');
+  let escaped = arg.replace(ESCAPED_PATTERN, '$1$1\\"');
   // Double up trailing backslashes so the closing quote is not escaped away.
-  escaped = escaped.replace(/(\\*)$/, "$1$1");
+  escaped = escaped.replace(TRAILING_BACKSLASHES, "$1$1");
   escaped = `"${escaped}"`;
   return escaped.replace(WINDOWS_SHELL_META_CHARS, "^$1");
 }
@@ -265,6 +269,9 @@ function buildWindowsEnvironmentCaptureCommand(names: ReadonlyArray<string>): st
   ].join("; ");
 }
 
+const LEADING_LINE_BREAK = /^\r?\n/;
+const TRAILING_LINE_BREAK = /\r?\n$/;
+
 function extractEnvironmentValue(output: string, name: string): string | undefined {
   const startMarker = envCaptureStart(name);
   const endMarker = envCaptureEnd(name);
@@ -277,8 +284,8 @@ function extractEnvironmentValue(output: string, name: string): string | undefin
 
   const value = output
     .slice(valueStartIndex, endIndex)
-    .replace(/^\r?\n/, "")
-    .replace(/\r?\n$/, "");
+    .replace(LEADING_LINE_BREAK, "")
+    .replace(TRAILING_LINE_BREAK, "");
 
   return value.length > 0 ? value : undefined;
 }
@@ -396,7 +403,7 @@ export const readEnvironmentFromWindowsShell = Effect.fn("shell.readEnvironmentF
 );
 
 function stripWrappingQuotes(value: string): string {
-  return value.replace(/^"+|"+$/g, "");
+  return value.replace(WRAPPING_QUOTES, "");
 }
 
 function pathDelimiterForPlatform(platform: NodeJS.Platform): string {
@@ -510,7 +517,22 @@ export const CommandResolutionCache = Context.Reference<Map<string, CommandResol
 interface PathDirectoryListing {
   readonly modified: number | null | undefined;
   readonly names: ReadonlySet<string> | undefined;
+  readonly expiresAtNanos: bigint;
 }
+
+type PathDirectoryListings = Map<string, PathDirectoryListing>;
+
+// A Windows miss would otherwise stat every PATH directory × PATHEXT case variant (hundreds of
+// probes per command). Listings are revalidated by directory mtime on every lookup and expire with
+// the resolution cache, so a file added without a directory mtime change is found within 30 s.
+// Eviction is least recently used; concurrent lookups of an unlisted directory each read it.
+const PATH_DIRECTORY_LISTING_MAX_ENTRIES = 512;
+
+/** Process-wide PATH directory listings that Windows lookups use outside `withPathDirectoryListings`. */
+export const PathDirectoryListingCache = Context.Reference<PathDirectoryListings>(
+  "@houston-app/shared/shell/PathDirectoryListingCache",
+  { defaultValue: () => new Map() },
+);
 
 const directoryMtime = (directory: string) =>
   FileSystem.FileSystem.use((fileSystem) => fileSystem.stat(directory)).pipe(
@@ -521,31 +543,44 @@ const directoryMtime = (directory: string) =>
   );
 
 // Timestamp before reading so concurrent additions change the next mtime check; missing listings fall back to direct probes.
-const listPathDirectory = Effect.fnUntraced(function* (
+const pathDirectoryListing = Effect.fnUntraced(function* (
+  listings: PathDirectoryListings,
   directory: string,
+  nowNanos: bigint,
 ): Effect.fn.Return<PathDirectoryListing, never, FileSystem.FileSystem> {
   const modified = yield* directoryMtime(directory);
-  if (modified == null) return { modified, names: modified === null ? new Set() : undefined };
-  const entries = yield* FileSystem.FileSystem.use((fileSystem) =>
-    fileSystem.readDirectory(directory),
-  ).pipe(Effect.orElseSucceed(() => undefined));
-  return { modified, names: entries && new Set(entries.map((entry) => entry.toLowerCase())) };
+  const cached = listings.get(directory);
+  if (cached !== undefined && cached.modified === modified && cached.expiresAtNanos > nowNanos) {
+    listings.delete(directory);
+    listings.set(directory, cached);
+    return cached;
+  }
+  const expiresAtNanos = nowNanos + COMMAND_RESOLUTION_CACHE_TTL_NANOS;
+  let names: ReadonlySet<string> | undefined = modified === null ? new Set() : undefined;
+  if (modified != null) {
+    const entries = yield* FileSystem.FileSystem.use((fileSystem) =>
+      fileSystem.readDirectory(directory),
+    ).pipe(Effect.orElseSucceed(() => undefined));
+    names = entries && new Set(entries.map((entry) => entry.toLowerCase()));
+  }
+  const listing = { modified, names, expiresAtNanos };
+  listings.delete(directory);
+  if (listings.size >= PATH_DIRECTORY_LISTING_MAX_ENTRIES) {
+    const oldestKey = listings.keys().next().value;
+    if (oldestKey !== undefined) listings.delete(oldestKey);
+  }
+  listings.set(directory, listing);
+  return listing;
 });
 
-const PathDirectoryListings = Context.Reference<
-  Cache.Cache<string, PathDirectoryListing, never, FileSystem.FileSystem> | undefined
->("@houston-app/shared/shell/PathDirectoryListings", { defaultValue: () => undefined });
+const ScopedPathDirectoryListings = Context.Reference<PathDirectoryListings | undefined>(
+  "@houston-app/shared/shell/PathDirectoryListings",
+  { defaultValue: () => undefined },
+);
 
-export const withPathDirectoryListings =
-  /* Directory reads are cached inside one shell operation; a span for each lookup adds noise. */
-  Effect.fnUntraced(function* <A, E, R>(effect: Effect.Effect<A, E, R>) {
-    const listings = yield* Cache.make({
-      capacity: 1024,
-      lookup: listPathDirectory,
-      requireServicesAt: "lookup",
-    });
-    return yield* effect.pipe(Effect.provideService(PathDirectoryListings, listings));
-  });
+/** Lists PATH directories (on every platform) through listings private to `effect`. */
+export const withPathDirectoryListings = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  Effect.provideService(effect, ScopedPathDirectoryListings, new Map());
 
 // An injected resolver or locator may answer differently for the same search, so its
 // entries are kept apart from every other resolver's.
@@ -646,13 +681,12 @@ const resolveCommandPathForPlatform = Effect.fn("shell.resolveCommandPathForPlat
     pathEntries.push(pathEntry);
   }
 
-  const listings = yield* PathDirectoryListings;
+  // POSIX probes one candidate per directory, which a listing would not make cheaper.
+  const listings =
+    (yield* ScopedPathDirectoryListings) ??
+    (platform === "win32" ? yield* PathDirectoryListingCache : undefined);
   for (const pathEntry of pathEntries) {
-    let listing = listings && (yield* Cache.get(listings, pathEntry));
-    if (listings && listing?.names && listing.modified !== (yield* directoryMtime(pathEntry))) {
-      yield* Cache.invalidate(listings, pathEntry);
-      listing = yield* Cache.get(listings, pathEntry);
-    }
+    const listing = listings && (yield* pathDirectoryListing(listings, pathEntry, nowNanos));
     for (const candidate of commandCandidates) {
       if (listing?.names && !listing.names.has(candidate.toLowerCase())) continue;
       const candidatePath = path.join(pathEntry, candidate);
@@ -728,6 +762,8 @@ function readFileSyncOrUndefined(filePath: string): string | undefined {
   }
 }
 
+const LINE_BREAK = /\r?\n/;
+
 /** Resolve shims that only launch native executables so direct spawning keeps them in libuv's kill-on-close job. */
 export function npmShimExecutable(
   shimPath: string,
@@ -738,7 +774,7 @@ export function npmShimExecutable(
   if (path.extname(shimPath).toLowerCase() !== ".cmd") return undefined;
   // Match exactly because preserved SET whitespace can select a different file.
   const lines = readFile(shimPath)
-    ?.split(/\r?\n/)
+    ?.split(LINE_BREAK)
     .filter((line) => line.length > 0);
   if (lines?.length !== NPM_EXECUTABLE_SHIM_PREFIX.length + 1) return undefined;
   if (NPM_EXECUTABLE_SHIM_PREFIX.some((expected, index) => lines[index] !== expected)) {
@@ -815,6 +851,46 @@ const resolveMacosGit = Effect.fnUntraced(function* (
 export interface SpawnCommandOptions extends CommandAvailabilityOptions {
   /** Bypass npm cmd-shims; see npmShimExecutable for process-lifetime semantics. */
   readonly bypassNpmShim?: boolean;
+}
+
+// `*` is one argument that is not an option. These forms read refs or config
+// only, so git starts no hook, helper, pager, editor or lazy fetch for them.
+const CONSOLE_FREE_GIT_READS = [
+  "rev-parse --git-path index",
+  "rev-parse --git-common-dir",
+  "rev-parse --show-toplevel",
+  "rev-parse --symbolic-full-name HEAD",
+  "rev-parse --abbrev-ref --symbolic-full-name @{upstream}",
+  "symbolic-ref --quiet HEAD",
+  "symbolic-ref *",
+  "remote",
+  "remote get-url *",
+  "remote get-url -- *",
+  "config --get *",
+].map((form) => form.split(" "));
+
+export function runsGitWithoutConsole(
+  platform: NodeJS.Platform,
+  executable: string,
+  args: ReadonlyArray<string>,
+): boolean {
+  if (platform !== "win32") return false;
+  const { basename, dirname } = NodePath.win32;
+  const bin = dirname(executable);
+  const build = basename(dirname(bin)).toLowerCase();
+  if (basename(executable).toLowerCase() !== "git.exe" || basename(bin).toLowerCase() !== "bin") {
+    return false;
+  }
+  if (!GIT_FOR_WINDOWS_BUILDS.some((candidate) => candidate === build)) return false;
+  const rest =
+    args[0] === "--git-dir" && args[1] !== undefined && !args[1].startsWith("-")
+      ? args.slice(2)
+      : args;
+  return CONSOLE_FREE_GIT_READS.some(
+    (form) =>
+      form.length === rest.length &&
+      form.every((part, i) => part === rest[i] || (part === "*" && !rest[i]!.startsWith("-"))),
+  );
 }
 
 export const resolveSpawnCommand = Effect.fnUntraced(function* (

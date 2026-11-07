@@ -283,6 +283,8 @@ function registerThreadUndoCommands(
   };
 }
 
+const REGISTER_APP_SHELL_COMMANDS_PATTERN = /^\/settings(\/|$)/;
+
 /** Keyboard and menu commands that live as long as the app shell. */
 function registerAppShellCommands(router: AnyRouter, shellElement: Element): () => void {
   // The provider mirrors the visibility it renders onto its wrapper, so the
@@ -296,7 +298,7 @@ function registerAppShellCommands(router: AnyRouter, shellElement: Element): () 
     registerWorkspaceFocusCommands(router),
     registerPullRequestsEscapeCommand(router),
     registerMenuAction("open-settings", () => {
-      if (!/^\/settings(\/|$)/.test(router.state.location.pathname))
+      if (!REGISTER_APP_SHELL_COMMANDS_PATTERN.test(router.state.location.pathname))
         void router.navigate({ to: "/settings" });
     }),
   ];

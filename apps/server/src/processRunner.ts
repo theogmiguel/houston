@@ -261,7 +261,9 @@ function finalizeRunProcess<R>(
   );
 }
 
-const commandName = (command: string) => command.replace(/^.*[\\/]/, "");
+const COMMAND_NAME_PATTERN = /^.*[\\/]/;
+
+const commandName = (command: string) => command.replace(COMMAND_NAME_PATTERN, "");
 
 const runProcessCore = Effect.fn("processRunner.runProcessCore")(function* (
   spawner: ChildProcessSpawner.ChildProcessSpawner["Service"],

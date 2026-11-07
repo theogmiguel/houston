@@ -197,6 +197,9 @@ const deviceHostEnvironment = (
     : environment;
 };
 
+const EMULATED_WORD = /\bemulated\b/;
+const IMAGE_FILE_WORD = /\bimagefile\b/;
+
 const hubEnvironment = Effect.fn("LocalDeviceHost.hubEnvironment")(function* (
   environment: NodeJS.ProcessEnv,
 ) {
@@ -223,7 +226,7 @@ const hubEnvironment = Effect.fn("LocalDeviceHost.hubEnvironment")(function* (
           Effect.map((result) => {
             const help = `${result.stdout}\n${result.stderr}`;
             // The hub wires imagefile cameras unconditionally; older SDK emulators reject that mode.
-            return result.code === 0 && /\bemulated\b/.test(help) && !/\bimagefile\b/.test(help)
+            return result.code === 0 && EMULATED_WORD.test(help) && !IMAGE_FILE_WORD.test(help)
               ? `-camera-${facing} emulated`
               : "";
           }),
@@ -823,9 +826,8 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
       origin: running.hub.origin,
       http: httpClient,
       run,
-      androidAvailable: platformAvailability("android").pipe(
-        Effect.map((availability) => availability.available),
-      ),
+      platformAvailable: (platform) =>
+        platformAvailability(platform).pipe(Effect.map((availability) => availability.available)),
     }),
     nodePath: running.hub.nodePath,
     run,

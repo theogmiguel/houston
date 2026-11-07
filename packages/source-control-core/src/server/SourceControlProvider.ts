@@ -51,13 +51,15 @@ export function userFacingSourceControlDetail(cause: unknown): string | undefine
     : undefined;
 }
 
+const WHITESPACE_RUN = /\s+/gu;
+
 export function transportSafeSourceControlErrorValue(value: string): string {
   let printable = "";
   for (const character of value) {
     const codePoint = character.codePointAt(0);
     printable += codePoint !== undefined && (codePoint < 32 || codePoint === 127) ? " " : character;
   }
-  const normalized = printable.trim().replace(/\s+/gu, " ");
+  const normalized = printable.trim().replace(WHITESPACE_RUN, " ");
 
   let safe = normalized;
   try {
@@ -72,10 +74,12 @@ export function transportSafeSourceControlErrorValue(value: string): string {
   return safe.slice(0, MAX_ERROR_TRANSPORT_VALUE_LENGTH);
 }
 
+const SCHEME_AND_PATH = /^([^:/\s]+):(.+)$/u;
+
 export function parseSourceControlOwnerRef(
   headSelector: string,
 ): SourceControlRefSelector | undefined {
-  const match = /^([^:/\s]+):(.+)$/u.exec(headSelector.trim());
+  const match = SCHEME_AND_PATH.exec(headSelector.trim());
   const owner = match?.[1]?.trim();
   const refName = match?.[2]?.trim();
   return owner && refName ? { owner, refName } : undefined;
@@ -99,16 +103,16 @@ export function sourceControlRefFromInput(input: {
   return input.source ?? parseSourceControlOwnerRef(input.headSelector);
 }
 
+const REMOTE_REPOSITORY_PATH =
+  /^(?:[^@/\s]+@[^:/\s]+:|[^@:/\\\s]{2,}:(?!:)|(?:ssh|https?|git):\/\/[^/]+\/)((?:[^/\s]+\/)+[^/\s]+?)(?:\.git)?\/?$/iu;
+
 export function repositoryPathFromRemoteUrl(url: string | null): string | null {
   const trimmed = url?.trim() ?? "";
   if (trimmed.length === 0) {
     return null;
   }
 
-  const match =
-    /^(?:[^@/\s]+@[^:/\s]+:|[^@:/\\\s]{2,}:(?!:)|(?:ssh|https?|git):\/\/[^/]+\/)((?:[^/\s]+\/)+[^/\s]+?)(?:\.git)?\/?$/iu.exec(
-      trimmed,
-    );
+  const match = REMOTE_REPOSITORY_PATH.exec(trimmed);
   const path = match?.[1]?.trim() ?? "";
   return path.length > 0 ? path : null;
 }

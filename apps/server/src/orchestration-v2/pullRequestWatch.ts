@@ -158,11 +158,11 @@ export function evaluatePullRequestWatch(
   };
 }
 
+const HTML_COMMENT = /<!--[\s\S]*?-->/g;
+const WHITESPACE_RUNS = /\s+/g;
+
 function snippet(body: string): string {
-  const text = body
-    .replaceAll(/<!--[\s\S]*?-->/g, " ")
-    .replaceAll(/\s+/g, " ")
-    .trim();
+  const text = body.replaceAll(HTML_COMMENT, " ").replaceAll(WHITESPACE_RUNS, " ").trim();
   if (text.length <= SNIPPET_LENGTH) return text;
   // Half an emoji serializes to a lone surrogate escape, which provider JSON parsers reject.
   const last = text.charCodeAt(SNIPPET_LENGTH - 4);

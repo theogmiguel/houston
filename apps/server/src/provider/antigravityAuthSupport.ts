@@ -467,13 +467,19 @@ export function buildAntigravityAcpSpawnInput(input: {
   };
 }
 
+const WHITESPACE_CHAR = /\s/;
+const LOOPBACK_AUTHORIZATION_URL = /^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}\/$/;
+
 export const parseAntigravityAuthorizationUrl = Effect.fn("parseAntigravityAuthorizationUrl")(
   function* (
     authorizationUrl: string,
   ): Effect.fn.Return<AntigravityAuthorizationUrl, AcpErrors.AcpError> {
     const invalidUrl = () =>
       authSupportError("Antigravity returned an invalid Google sign-in URL.");
-    if (authorizationUrl.length > maxAuthorizationUrlLength || /\s/.test(authorizationUrl)) {
+    if (
+      authorizationUrl.length > maxAuthorizationUrlLength ||
+      WHITESPACE_CHAR.test(authorizationUrl)
+    ) {
       return yield* invalidUrl();
     }
     const url = yield* decodeUrl(authorizationUrl).pipe(Effect.mapError(invalidUrl));
@@ -492,9 +498,9 @@ export const parseAntigravityAuthorizationUrl = Effect.fn("parseAntigravityAutho
       state === null ||
       state.length === 0 ||
       state.length > 512 ||
-      /\s/.test(state) ||
+      WHITESPACE_CHAR.test(state) ||
       redirectUri === null ||
-      !/^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}\/$/.test(redirectUri)
+      !LOOPBACK_AUTHORIZATION_URL.test(redirectUri)
     ) {
       return yield* invalidUrl();
     }
@@ -503,6 +509,8 @@ export const parseAntigravityAuthorizationUrl = Effect.fn("parseAntigravityAutho
     return { authorizationUrl, redirectUri, state };
   },
 );
+
+const TRAILING_LINE_BREAK = /\r?\n$/;
 
 export function makeAntigravityStdoutTransform(
   input: {
@@ -515,7 +523,7 @@ export function makeAntigravityStdoutTransform(
     line: Uint8Array,
   ) {
     if (!authPrefixBytes.every((byte, index) => line[index] === byte)) return [line];
-    const message = new TextDecoder().decode(line).replace(/\r?\n$/, "");
+    const message = new TextDecoder().decode(line).replace(TRAILING_LINE_BREAK, "");
     const request = yield* parseAntigravityAuthorizationUrl(
       message.slice(ANTIGRAVITY_AUTH_STDOUT_PREFIX.length),
     );

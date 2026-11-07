@@ -114,6 +114,9 @@ export function codexArtifactTemplatePresentationLabel(kind: CodexArtifactTempla
   return CODEX_ARTIFACT_TEMPLATE_LABEL_BY_KIND[kind];
 }
 
+const WHITESPACE_CHAR = /\s/;
+const NEEDS_LEADING_SPACE_PATTERN = /\s$/;
+
 export function appendCodexArtifactTemplateUsePrompt(
   draft: string,
   template: CodexArtifactTemplate,
@@ -124,12 +127,12 @@ export function appendCodexArtifactTemplateUsePrompt(
   const alreadyEndsWithPrompt =
     promptStart >= 0 &&
     trimmedDraft.slice(promptStart) === prompt &&
-    (promptStart === 0 || /\s/.test(trimmedDraft[promptStart - 1] ?? ""));
+    (promptStart === 0 || WHITESPACE_CHAR.test(trimmedDraft[promptStart - 1] ?? ""));
 
   if (alreadyEndsWithPrompt) {
     return draft;
   }
 
-  const needsLeadingSpace = draft.length > 0 && !/\s$/.test(draft);
+  const needsLeadingSpace = draft.length > 0 && !NEEDS_LEADING_SPACE_PATTERN.test(draft);
   return `${draft}${needsLeadingSpace ? " " : ""}${prompt}`;
 }

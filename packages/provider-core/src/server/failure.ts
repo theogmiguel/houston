@@ -149,10 +149,12 @@ function curatedCauseMessages(cause: unknown): {
   return { known: undefined, category: categoryMessage() };
 }
 
+const PROCESS_EXIT_STATUS_PATTERN = /^SIG[A-Z0-9]{1,16}$/u;
+
 // Only the structured status; stderr and the spawner cause can carry provider output.
 function processExitStatus(exited: object): string {
   const { signal, code } = exited as Record<string, unknown>;
-  if (typeof signal === "string" && /^SIG[A-Z0-9]{1,16}$/u.test(signal)) {
+  if (typeof signal === "string" && PROCESS_EXIT_STATUS_PATTERN.test(signal)) {
     return ` after signal ${signal}`;
   }
   return typeof code === "number" && Number.isSafeInteger(code) ? ` with code ${code}` : "";
@@ -177,8 +179,10 @@ function stringField(value: unknown, key: "message" | "code"): string | undefine
   }
 }
 
+const TRAILING_PATTERN = /[),.;!?]+$/u;
+
 function redactUrl(match: string): string {
-  const trailing = /[),.;!?]+$/u.exec(match)?.[0] ?? "";
+  const trailing = TRAILING_PATTERN.exec(match)?.[0] ?? "";
   const candidate = trailing.length === 0 ? match : match.slice(0, -trailing.length);
   try {
     const url = new URL(candidate);
@@ -208,19 +212,21 @@ function replaceUnsafeControlCharacters(value: string): string {
   return sanitized.join("");
 }
 
+const HTTP_URL = /\bhttps?:\/\/[^\s<>"']+/giu;
+const AUTH_SCHEME_CREDENTIAL = /\b(Bearer|Basic)\s+[^\s,;]+/giu;
+const QUOTED_SECRET_FIELD =
+  /(["'][\w-]*(?:access[_-]?token|api[_-]?key|authorization|credential|password|secret|token)["']\s*:\s*["'])[^"']*(["'])/giu;
+const UNQUOTED_SECRET_FIELD =
+  /((?<![\w-])[\w-]*(?:access[_-]?token|api[_-]?key|authorization|credential|password|secret|token)\b\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/giu;
+const SK_API_KEY = /\bsk-[A-Za-z0-9_-]{16,}\b/gu;
+
 function redactProviderFailureText(value: string): string {
   return replaceUnsafeControlCharacters(value)
-    .replace(/\bhttps?:\/\/[^\s<>"']+/giu, redactUrl)
-    .replace(/\b(Bearer|Basic)\s+[^\s,;]+/giu, "$1 [REDACTED]")
-    .replace(
-      /(["'][\w-]*(?:access[_-]?token|api[_-]?key|authorization|credential|password|secret|token)["']\s*:\s*["'])[^"']*(["'])/giu,
-      "$1[REDACTED]$2",
-    )
-    .replace(
-      /((?<![\w-])[\w-]*(?:access[_-]?token|api[_-]?key|authorization|credential|password|secret|token)\b\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/giu,
-      "$1[REDACTED]",
-    )
-    .replace(/\bsk-[A-Za-z0-9_-]{16,}\b/gu, "[REDACTED]")
+    .replace(HTTP_URL, redactUrl)
+    .replace(AUTH_SCHEME_CREDENTIAL, "$1 [REDACTED]")
+    .replace(QUOTED_SECRET_FIELD, "$1[REDACTED]$2")
+    .replace(UNQUOTED_SECRET_FIELD, "$1[REDACTED]")
+    .replace(SK_API_KEY, "[REDACTED]")
     .trim();
 }
 

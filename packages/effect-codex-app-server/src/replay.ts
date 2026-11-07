@@ -13,6 +13,8 @@ import * as Stream from "effect/Stream";
 import * as CodexClient from "./client.ts";
 import * as CodexError from "./errors.ts";
 
+const TRAILING_CARRIAGE_RETURN = /\r$/;
+
 export const CodexAppServerReplayEntry = Schema.Union([
   Schema.Struct({
     type: Schema.Literal("expect_outbound"),
@@ -530,7 +532,10 @@ const makeReplayClientWithState = Effect.fn(
       const combined = current + text;
       const lines = combined.split("\n");
       const nextRemainder = lines.pop() ?? "";
-      return [lines.map((line) => line.replace(/\r$/, "")), nextRemainder] as const;
+      return [
+        lines.map((line) => line.replace(TRAILING_CARRIAGE_RETURN, "")),
+        nextRemainder,
+      ] as const;
     }).pipe(
       Effect.flatMap((lines) => Effect.forEach(lines, processOutboundLine, { discard: true })),
     );

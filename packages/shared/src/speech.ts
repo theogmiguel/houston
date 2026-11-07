@@ -1,4 +1,6 @@
 import {
+  CLOUD_SPEECH_PROVIDER_NAMES,
+  type CloudSpeechProvider,
   SPEECH_MAX_OPTIONS_BYTES,
   type SpeechCustomWords,
   SpeechTranscriptionOptions,
@@ -7,6 +9,22 @@ import * as Schema from "effect/Schema";
 
 const decodeOptions = Schema.decodeUnknownSync(Schema.fromJsonString(SpeechTranscriptionOptions));
 const encodeOptions = Schema.encodeSync(Schema.fromJsonString(SpeechTranscriptionOptions));
+
+/** What a device is told before it opts into sending recordings to `provider` through `environment`. */
+export function cloudSpeechDisclosure(provider: CloudSpeechProvider, environment: string) {
+  return provider === "openrouter"
+    ? `After you stop, ${environment} sends the recording to OpenRouter. OpenRouter chooses who runs your model. Houston requests zero data retention; your OpenRouter account may allow safety retention.`
+    : `After you stop, ${environment} sends your recording and vocabulary hints, including project names, to ${CLOUD_SPEECH_PROVIDER_NAMES[provider]}.`;
+}
+
+/** Explicit language hints every cloud API accepts; other languages are still detected. */
+export const cloudSpeechLanguages = {
+  supportsLanguageDetection: true,
+  languages:
+    "ar bg ca cs da de el en es fa fi fr hi hr hu id it ja ko mk ms nl pl pt ro ru sk sv th tr uk ur vi zh".split(
+      " ",
+    ),
+};
 
 /** Resolve the language the model can produce from the requested language. */
 export function effectiveSpeechLanguage(
@@ -20,6 +38,8 @@ export function effectiveSpeechLanguage(
 }
 
 const vocabularyKey = (value: string) => value.trim().normalize("NFC").toLocaleLowerCase();
+
+const WHITESPACE_RUN = /\s+/g;
 
 /**
  * Project spellings win over personal ones. Hint terms, such as the project name or the
@@ -37,7 +57,7 @@ export function resolveSpeechVocabulary(input: {
   );
   // A hint that is already a dictionary entry keeps that entry and its aliases in place.
   const hints = (input.hints ?? []).flatMap((hint) => {
-    const term = hint.replace(/\s+/g, " ").trim();
+    const term = hint.replace(WHITESPACE_RUN, " ").trim();
     return term.length > 0 && term.length <= 50 && !known.has(vocabularyKey(term))
       ? [{ term, aliases: [] }]
       : [];

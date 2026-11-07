@@ -1,13 +1,23 @@
 import type { EnvironmentId } from "@houston-app/contracts";
 import type { SecretRequestItem } from "@houston-app/client-runtime/secret-request";
+import { Atom } from "effect/reactivity";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 
 import { render } from "../../../test/render";
 import { SecretRequestCard } from "./SecretRequestCard";
 
-vi.mock("../../state/server", () => ({
-  serverEnvironment: { answerSecretRequest: { label: "answer secret request" } },
+vi.mock("../../state/server", () => {
+  const config = Atom.make(null);
+  return {
+    serverEnvironment: {
+      answerSecretRequest: { label: "answer secret request" },
+      configValueAtom: () => config,
+    },
+  };
+});
+vi.mock("../../hooks/useSettings", () => ({
+  useEnvironmentSettings: () => ({}),
 }));
 vi.mock("../../state/use-atom-command", () => ({
   useAtomCommand: () => async () => ({ _tag: "Success", value: undefined }),

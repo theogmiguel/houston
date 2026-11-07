@@ -62,34 +62,45 @@ function clampContextText(value: string, max: number): string {
 
 type ReviewCommentPresentation = ReviewCommentContext | ReviewCommentContextRecord;
 
+const PATH_SEPARATOR = /[\\/]/;
+
 function basename(filePath: string): string {
-  return filePath.split(/[\\/]/).at(-1) ?? filePath;
+  return filePath.split(PATH_SEPARATOR).at(-1) ?? filePath;
 }
+
+const DIFF_RANGE_PATTERN = /^([+-])(\d+)(?: to \1(\d+))?$/u;
+const SECTION_PULL_REQUEST_PATTERN = /^pull-request:(\d+)$/u;
 
 export function reviewCommentContextLabel(comment: ReviewCommentPresentation): string {
   const pullRequestNumber = pullRequestContextNumber(comment);
   if (isPullRequestSummaryContext(comment) && pullRequestNumber !== null) {
     return `#${pullRequestNumber}`;
   }
-  const diffRange = /^([+-])(\d+)(?: to \1(\d+))?$/u.exec(comment.rangeLabel);
+  const diffRange = DIFF_RANGE_PATTERN.exec(comment.rangeLabel);
   const rangeLabel = diffRange
     ? `L${diffRange[2]}${diffRange[3] ? ` to L${diffRange[3]}` : ""}${diffRange[1] === "-" ? " (before)" : ""}`
     : comment.rangeLabel;
-  return `${basename(comment.filePath)} ${rangeLabel}`;
+  const sectionPullRequest = SECTION_PULL_REQUEST_PATTERN.exec(comment.sectionId)?.[1];
+  const prefix = sectionPullRequest === undefined ? "" : `#${sectionPullRequest} `;
+  return `${prefix}${basename(comment.filePath)} ${rangeLabel}`;
 }
+
+const PULL_REQUEST_REFERENCE = /^PR #\d+$/u;
 
 export function isPullRequestSummaryContext(comment: ReviewCommentPresentation): boolean {
   if (comment.pullRequest !== undefined) return true;
   return (
     comment.sectionId.startsWith("pull-request:") &&
     comment.diff.trim().length === 0 &&
-    /^PR #\d+$/u.test(comment.filePath)
+    PULL_REQUEST_REFERENCE.test(comment.filePath)
   );
 }
 
+const LEGACY_NUMBER_PATTERN = /^PR #(\d+)$/u;
+
 function pullRequestContextNumber(comment: ReviewCommentPresentation): number | null {
   if (comment.pullRequest !== undefined) return comment.pullRequest.number;
-  const legacyNumber = /^PR #(\d+)$/u.exec(comment.filePath)?.[1];
+  const legacyNumber = LEGACY_NUMBER_PATTERN.exec(comment.filePath)?.[1];
   return legacyNumber === undefined ? null : Number(legacyNumber);
 }
 
@@ -112,12 +123,17 @@ export function pullRequestContextKindLabel(comment: ReviewCommentPresentation):
   return `${capitalizeTerm(state)} ${term}`;
 }
 
+const WHITESPACE_RUN = /\s+/g;
+
 export function previewAnnotationContextLabel(annotation: PreviewAnnotationPayload): string {
-  const comment = annotation.comment.trim().replace(/\s+/g, " ");
+  const comment = annotation.comment.trim().replace(WHITESPACE_RUN, " ");
   if (comment) {
-    return comment.length > PREVIEW_LABEL_MAX_CHARS
-      ? `${comment.slice(0, PREVIEW_LABEL_MAX_CHARS - 1)}…`
-      : comment;
+    if (comment.length <= PREVIEW_LABEL_MAX_CHARS) return comment;
+    let end = PREVIEW_LABEL_MAX_CHARS - 1;
+    const previous = comment.charCodeAt(end - 1);
+    const next = comment.charCodeAt(end);
+    if (previous >= 0xd800 && previous <= 0xdbff && next >= 0xdc00 && next <= 0xdfff) end -= 1;
+    return `${comment.slice(0, end)}…`;
   }
   return annotation.pageTitle?.trim() || "Preview annotation";
 }
@@ -442,6 +458,8 @@ export function reviewCommentFromRecord(record: ReviewCommentContextRecord): Rev
   };
 }
 
+const ANNOTATION_ENTRY = /^(.+?): ([\s\S]*?) → ([\s\S]*)$/;
+
 export function previewAnnotationFromRecord(
   record: PreviewAnnotationContextRecord,
 ): PreviewAnnotationPayload {
@@ -471,7 +489,7 @@ export function previewAnnotationFromRecord(
     styleChanges:
       record.styleChangeDetails ??
       record.styleChanges.flatMap((change) => {
-        const match = /^(.+?): ([\s\S]*?) → ([\s\S]*)$/.exec(change);
+        const match = ANNOTATION_ENTRY.exec(change);
         if (!match) return [];
         return [
           {

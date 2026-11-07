@@ -9,12 +9,14 @@ interface ReplyState {
   failure: string | undefined;
 }
 
+const CONSUME_LINE_PATTERN = /^\s+at\s/;
+
 function consumeLine(state: ReplyState, line: string) {
   if (state.disqualified) return;
   const text = line.trimEnd();
   if (transportError.test(text) || text === serverError) {
     state.failure = text;
-  } else if (text.trim() !== "" && !(state.failure && /^\s+at\s/.test(text))) {
+  } else if (text.trim() !== "" && !(state.failure && CONSUME_LINE_PATTERN.test(text))) {
     // Classify only whole-item dumps; explanations may quote the same diagnostic.
     state.disqualified = true;
     state.failure = undefined;

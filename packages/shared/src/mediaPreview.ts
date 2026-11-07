@@ -65,29 +65,38 @@ const AUDIO_MIME_TYPE_BY_EXTENSION = new Map([
   [".weba", "audio/webm"],
 ]);
 
+const AUDIO_MIME_TYPE_FROM_EXTENSION_PATTERN = /^\.[a-z0-9-]+$/i;
+
 export function audioMimeTypeFromExtension(extension: string): string | null {
-  if (!/^\.[a-z0-9-]+$/i.test(extension)) return null;
+  if (!AUDIO_MIME_TYPE_FROM_EXTENSION_PATTERN.test(extension)) return null;
   return AUDIO_MIME_TYPE_BY_EXTENSION.get(extension.toLowerCase()) ?? null;
 }
 
+const MEDIA_MIME_TYPE_FROM_EXTENSION_PATTERN = /^\.[a-z0-9]+$/i;
+
 /** Classifies a literal filesystem extension, without URL decoding or suffix removal. */
 export function mediaMimeTypeFromExtension(extension: string): string | null {
-  if (!/^\.[a-z0-9]+$/i.test(extension)) return null;
+  if (!MEDIA_MIME_TYPE_FROM_EXTENSION_PATTERN.test(extension)) return null;
   return (
     IMAGE_MIME_TYPE_BY_EXTENSION.get(extension.toLowerCase()) ??
     videoMimeType({ name: `media${extension}`, mimeType: "" })
   );
 }
 
+const DATA_MIME_TYPE_PATTERN = /^data:((?:image|video|audio)\/[\w.+-]+)[;,]/i;
+const QUERY_OR_FRAGMENT = /[?#]/;
+const MEDIA_MIME_TYPE_PATTERN = /^(?:https?:|file:|\/\/)/i;
+const PATH_SEPARATOR = /[\\/]/;
+
 /** Classifies an authored media path or URL. Filesystem validation uses the literal extension. */
 export function mediaMimeType(path: string): string | null {
   const trimmed = path.trim();
   const source = trimmed.startsWith("<") && trimmed.endsWith(">") ? trimmed.slice(1, -1) : trimmed;
-  const dataMimeType = /^data:((?:image|video|audio)\/[\w.+-]+)[;,]/i.exec(source)?.[1];
+  const dataMimeType = DATA_MIME_TYPE_PATTERN.exec(source)?.[1];
   if (dataMimeType) return dataMimeType.toLowerCase();
 
-  let sourcePath = source.split(/[?#]/, 1)[0] ?? "";
-  if (/^(?:https?:|file:|\/\/)/i.test(source)) {
+  let sourcePath = source.split(QUERY_OR_FRAGMENT, 1)[0] ?? "";
+  if (MEDIA_MIME_TYPE_PATTERN.test(source)) {
     try {
       sourcePath = new URL(source, "https://media.invalid").pathname;
     } catch {
@@ -97,7 +106,7 @@ export function mediaMimeType(path: string): string | null {
   try {
     sourcePath = decodeURIComponent(sourcePath);
   } catch {}
-  const basename = sourcePath.split(/[\\/]/).at(-1) ?? "";
+  const basename = sourcePath.split(PATH_SEPARATOR).at(-1) ?? "";
   const extensionIndex = basename.lastIndexOf(".");
   return extensionIndex < 0
     ? null

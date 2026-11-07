@@ -42,9 +42,11 @@ const flagIn =
   (flag: string) =>
     flags.includes(flag);
 
+const INLINE_FLAG = /^-[a-z]*c[a-z]*$/u;
+
 const SHELL: Interpreter = {
   language: "shellscript",
-  inline: (flag) => /^-[a-z]*c[a-z]*$/u.test(flag),
+  inline: (flag) => INLINE_FLAG.test(flag),
   valueOptions: new Set(["-o", "-O", "--rcfile", "--init-file"]),
   stdin: "without-script-file",
 };
@@ -239,16 +241,25 @@ function forEachCommand(
   }
 }
 
+const BACKSLASH = /\\/u;
+const SURROUNDING_QUOTES = /^["']|["']$/gu;
+const PATH_SEPARATOR = /[\\/]/u;
+const EXE_SUFFIX = /\.exe$/u;
+
 function programName(word: Word): string {
   // Bash reads `C:\Python312\python.exe` unquoted as escapes; Windows meant a path.
-  const path = /\\/u.test(word.text) ? word.text.replace(/^["']|["']$/gu, "") : word.value;
-  return (path.split(/[\\/]/u).at(-1) ?? "").toLowerCase().replace(/\.exe$/u, "");
+  const path = BACKSLASH.test(word.text) ? word.text.replace(SURROUNDING_QUOTES, "") : word.value;
+  return (path.split(PATH_SEPARATOR).at(-1) ?? "").toLowerCase().replace(EXE_SUFFIX, "");
 }
 
+const INTERPRETER_FOR_PATTERN = /^python(?:\d+(?:\.\d+)?)?$|^pypy3?$|^py$/u;
+
 function interpreterFor(name: string): Interpreter | undefined {
-  if (/^python(?:\d+(?:\.\d+)?)?$|^pypy3?$|^py$/u.test(name)) return PYTHON;
+  if (INTERPRETER_FOR_PATTERN.test(name)) return PYTHON;
   return Object.hasOwn(INTERPRETERS, name) ? INTERPRETERS[name] : undefined;
 }
+
+const PROGRAM_INDEX_PATTERN = /^[A-Za-z_]\w*=/u;
 
 function programIndex(words: ReadonlyArray<Word>): number {
   let index = 0;
@@ -263,7 +274,7 @@ function programIndex(words: ReadonlyArray<Word>): number {
       const isOption = !optionsEnded && value.startsWith("-");
       if (isOption && value === "--") optionsEnded = true;
       // `env -- FOO=1 cmd` still takes assignments after the options end.
-      if (isOption || /^[A-Za-z_]\w*=/u.test(value)) {
+      if (isOption || PROGRAM_INDEX_PATTERN.test(value)) {
         index += isOption && valueOptions.has(value) ? 2 : 1;
       } else {
         break;
@@ -328,6 +339,8 @@ interface ScriptArgument {
   readonly inValue: boolean;
 }
 
+const INTERPRETER_ARGS_PATTERN = /=(.*)/su;
+
 function interpreterArgs(
   interpreter: Interpreter,
   args: ReadonlyArray<Word>,
@@ -345,7 +358,9 @@ function interpreterArgs(
       continue;
     }
     if (!optionsEnded && flag.startsWith("-") && flag !== "-") {
-      const [name = flag, value] = flag.startsWith("--") ? flag.split(/=(.*)/su) : [flag];
+      const [name = flag, value] = flag.startsWith("--")
+        ? flag.split(INTERPRETER_ARGS_PATTERN)
+        : [flag];
       if (interpreter.scriptFileOptions?.has(name)) {
         if (!interpreter.repeatable) return { scripts, scriptFromFile: true };
         // SQL shells run `-f` files and `-c` statements alike, in order.

@@ -1,21 +1,32 @@
-import { effectiveSpeechLanguage } from "@houston-app/shared/speech";
+import { cloudSpeechLanguages, effectiveSpeechLanguage } from "@houston-app/shared/speech";
 import {
   getEnvironmentSpeechStatus,
   getEnvironmentSpeechStreamUrl,
   openSpeechStream,
+  requireCloudSpeechKey,
   throwIfVoiceTranscriptionAborted,
+  transcribeCloudPcm,
   transcribeEnvironmentPcm,
   VoiceTranscriptionError,
   type VoiceTranscriptionOptions,
 } from "@houston-app/client-runtime/voice-input";
 import type { PreparedConnection } from "@houston-app/client-runtime/connection";
-import type { SpeechStreamText, SpeechTranscriptionOptions } from "@houston-app/contracts";
+import type {
+  CloudSpeechModelId,
+  CloudSpeechProvider,
+  SpeechStreamText,
+  SpeechTranscriptionOptions,
+} from "@houston-app/contracts";
 
 import { runtime } from "../lib/runtime";
 import { createBrowserPcmCapture } from "./browserPcmCapture";
 
 export function createBrowserVoiceInputPlatform(input: {
   readonly prepared: PreparedConnection;
+  /** Send each finished recording to this provider through `prepared` instead of its local engine. */
+  readonly cloudProvider?: CloudSpeechProvider | undefined;
+  /** The exact OpenRouter model the grant names; that provider sends nothing without it. */
+  readonly cloudModel?: CloudSpeechModelId | undefined;
   /** Re-read at each send: audio never leaves the device once the audio grant has changed. */
   readonly hasAudioConsent: () => boolean;
   readonly getTranscriptionOptions: () => SpeechTranscriptionOptions;
@@ -27,6 +38,57 @@ export function createBrowserVoiceInputPlatform(input: {
 }) {
   return createBrowserPcmCapture(input, async (options) => {
     const recordingOptions = input.getTranscriptionOptions();
+    const transcribeRecording = async (
+      uri: string,
+      { signal: transcriptionSignal }: VoiceTranscriptionOptions,
+    ) => {
+      try {
+        if (!input.hasAudioConsent())
+          throw new VoiceTranscriptionError(
+            "cancelled",
+            "The audio destination changed before this recording was sent.",
+          );
+        const response = await fetch(uri, { signal: transcriptionSignal });
+        const pcm = new Uint8Array(await response.arrayBuffer());
+        const result = await runtime.runPromise(
+          input.cloudProvider
+            ? transcribeCloudPcm(
+                input.prepared,
+                input.cloudProvider,
+                pcm,
+                recordingOptions,
+                input.cloudModel,
+              )
+            : transcribeEnvironmentPcm(input.prepared, pcm, recordingOptions),
+          { signal: transcriptionSignal },
+        );
+        throwIfVoiceTranscriptionAborted(transcriptionSignal);
+        return result.text;
+      } catch (cause) {
+        throwIfVoiceTranscriptionAborted(transcriptionSignal);
+        if (cause instanceof VoiceTranscriptionError) throw cause;
+        throw new VoiceTranscriptionError(
+          "transcription-failed",
+          input.cloudProvider
+            ? "Cloud transcription failed. Check the destination in Settings → Voice."
+            : "Voice transcription on this environment failed.",
+          { cause },
+        );
+      }
+    };
+    if (input.cloudProvider) {
+      if (input.cloudProvider === "openrouter" && !input.cloudModel)
+        throw new VoiceTranscriptionError(
+          "unavailable",
+          "Choose an OpenRouter model in Settings → Voice.",
+        );
+      await runtime.runPromise(requireCloudSpeechKey(input.prepared, input.cloudProvider), options);
+      throwIfVoiceTranscriptionAborted(options.signal);
+      return {
+        locale: effectiveSpeechLanguage(cloudSpeechLanguages, recordingOptions.speechLanguage),
+        transcribe: transcribeRecording,
+      };
+    }
     const status = await runtime.runPromise(getEnvironmentSpeechStatus(input.prepared), options);
     throwIfVoiceTranscriptionAborted(options.signal);
     if (!status.supported) throw new VoiceTranscriptionError("unavailable", status.reason);
@@ -45,34 +107,6 @@ export function createBrowserVoiceInputPlatform(input: {
       recordingOptions.speechTranslateToEnglish
         ? "en"
         : language;
-    const transcribeRecording = async (
-      uri: string,
-      { signal: transcriptionSignal }: VoiceTranscriptionOptions,
-    ) => {
-      try {
-        if (!input.hasAudioConsent())
-          throw new VoiceTranscriptionError(
-            "cancelled",
-            "The audio destination changed before this recording was sent.",
-          );
-        const response = await fetch(uri, { signal: transcriptionSignal });
-        const pcm = new Uint8Array(await response.arrayBuffer());
-        const result = await runtime.runPromise(
-          transcribeEnvironmentPcm(input.prepared, pcm, recordingOptions),
-          { signal: transcriptionSignal },
-        );
-        throwIfVoiceTranscriptionAborted(transcriptionSignal);
-        return result.text;
-      } catch (cause) {
-        throwIfVoiceTranscriptionAborted(transcriptionSignal);
-        if (cause instanceof VoiceTranscriptionError) throw cause;
-        throw new VoiceTranscriptionError(
-          "transcription-failed",
-          "Voice transcription on this environment failed.",
-          { cause },
-        );
-      }
-    };
     if (!status.supportsStreaming && !status.supportsBufferedStreaming) {
       return { locale, transcribe: transcribeRecording };
     }

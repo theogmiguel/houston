@@ -2,23 +2,27 @@
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 
+const SEPARATOR_INDEX_PATTERN = /\n\n|\r\n\r\n/u;
+const SSE_DATA_LINES_PATTERN = /^(?:\r?\n){2}/u;
+const LINE_BREAK = /\r?\n/u;
+
 async function* sseDataLines(response: Response): AsyncGenerator<string> {
   if (response.body === null) return;
   const decoder = new TextDecoder();
   let buffered = "";
   for await (const chunk of response.body) {
     buffered += decoder.decode(chunk as Uint8Array, { stream: true });
-    let separatorIndex = buffered.search(/\n\n|\r\n\r\n/u);
+    let separatorIndex = buffered.search(SEPARATOR_INDEX_PATTERN);
     while (separatorIndex !== -1) {
       const rawEvent = buffered.slice(0, separatorIndex);
-      buffered = buffered.slice(separatorIndex).replace(/^(?:\r?\n){2}/u, "");
+      buffered = buffered.slice(separatorIndex).replace(SSE_DATA_LINES_PATTERN, "");
       const data = rawEvent
-        .split(/\r?\n/u)
+        .split(LINE_BREAK)
         .filter((line) => line.startsWith("data:"))
         .map((line) => line.slice("data:".length).trimStart())
         .join("\n");
       if (data.length > 0) yield data;
-      separatorIndex = buffered.search(/\n\n|\r\n\r\n/u);
+      separatorIndex = buffered.search(SEPARATOR_INDEX_PATTERN);
     }
   }
 }

@@ -19,8 +19,10 @@ export type CodexFeedbackSubmission = CodexFeedbackSubmissionDetails &
     | { readonly status: "failed"; readonly errorMessage: string }
   );
 
+const FEEDBACK_COMMAND = /^\/feedback(?:\s+([\s\S]*))?$/iu;
+
 export function parseCodexFeedbackCommand(text: string): { readonly reason?: string } | null {
-  const match = /^\/feedback(?:\s+([\s\S]*))?$/iu.exec(text.trim());
+  const match = FEEDBACK_COMMAND.exec(text.trim());
   if (!match) {
     return null;
   }

@@ -10,17 +10,36 @@ import { cn } from "~/lib/utils";
 import { modelPickerModelKey } from "./modelPickerKeys";
 import { formatModelPickerTraits, type ModelPickerTraits } from "./modelPickerTraits";
 
+const REGEX_SPECIAL_CHARS = /[.*+?^${}()|[\]\\]/g;
+
 function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return value.replace(REGEX_SPECIAL_CHARS, "\\$&");
 }
 
-function getProviderRowLabel(providerDisplayName: string, subProvider: string | undefined): string {
+// Each row reads this per render; the bound sits far above the number of configured providers.
+const PROVIDER_PREFIX_CACHE_MAX = 64;
+const providerPrefixPatterns = new Map<string, RegExp>();
+
+function providerPrefixPattern(provider: string): RegExp {
+  let pattern = providerPrefixPatterns.get(provider);
+  if (pattern === undefined) {
+    if (providerPrefixPatterns.size >= PROVIDER_PREFIX_CACHE_MAX) providerPrefixPatterns.clear();
+    pattern = new RegExp(`^${escapeRegExp(provider)}\\s+\\S`, "i");
+    providerPrefixPatterns.set(provider, pattern);
+  }
+  return pattern;
+}
+
+export function getProviderRowLabel(
+  providerDisplayName: string,
+  subProvider: string | undefined,
+): string {
   const provider = providerDisplayName.trim();
   const sub = subProvider?.trim();
   if (!sub) {
     return providerDisplayName;
   }
-  if (provider && new RegExp(`^${escapeRegExp(provider)}\\s+\\S`, "i").test(sub)) {
+  if (provider && providerPrefixPattern(provider).test(sub)) {
     return sub;
   }
   return `${providerDisplayName} · ${sub}`;

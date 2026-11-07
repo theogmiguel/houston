@@ -311,6 +311,8 @@ export function ChatMarkdownVideo(props: {
   );
 }
 
+const TRAILING_PATH_SEPARATORS = /[\\/]+$/;
+
 export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props: {
   readonly environmentId: EnvironmentId;
   readonly resource: Extract<
@@ -357,7 +359,7 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
     resource._tag === "media-file"
       ? resource.path
       : resource._tag === "workspace-file" && props.workspaceRoot
-        ? `${props.workspaceRoot.replace(/[\\/]+$/, "")}/${resource.path}`
+        ? `${props.workspaceRoot.replace(TRAILING_PATH_SEPARATORS, "")}/${resource.path}`
         : undefined;
   const reference = path
     ? mediaFileReference(path, props.workspaceRoot)

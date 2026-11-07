@@ -216,6 +216,8 @@ function lastRunSummary(
   return entries.map((entry) => `${entry.label}: ${entry.counts}`).join(" · ");
 }
 
+const PATH_SEPARATOR = /[\\/]/;
+
 function CleanupResults({
   report,
   environmentLabel,
@@ -230,7 +232,7 @@ function CleanupResults({
           entry.kind === "worktree"
             ? ((entry.threadId === null
                 ? entry.path
-                : entry.path?.split(/[\\/]/).findLast(Boolean)) ?? "Worktrees")
+                : entry.path?.split(PATH_SEPARATOR).findLast(Boolean)) ?? "Worktrees")
             : entry.kind === "logs"
               ? "Rotated logs"
               : "Browser artifacts";

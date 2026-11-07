@@ -1,8 +1,12 @@
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
 import { encodeSpeechPcmRequest } from "@houston-app/shared/speech";
-import { SPEECH_STREAM_PATH } from "@houston-app/contracts";
+import { CLOUD_SPEECH_LABELS, CloudSpeechError, SPEECH_STREAM_PATH } from "@houston-app/contracts";
 import type {
+  CloudSpeechModelId,
+  CloudSpeechProvider,
+  SettingsSecretValue,
   SpeechAcceleration,
   SpeechModelUnloadTimeout,
   SpeechPostProcessingOptions,
@@ -16,11 +20,17 @@ import {
   makeEnvironmentHttpApiUrlBuilder,
 } from "../rpc/http.ts";
 import { executeAuthenticatedEnvironmentHttpRequest } from "../state/environmentHttpAuth.ts";
+import { VoiceTranscriptionError } from "./transcription.ts";
 
 const VOICE_REQUEST_TIMEOUT_MS = 30 * 60_000;
+/** The server gives a provider two minutes; ten more seconds let its error reach the client. */
+const CLOUD_TRANSCRIBE_TIMEOUT_MS = 130_000;
+const isCloudSpeechError = Schema.is(CloudSpeechError);
 type EnvironmentApiClient<G extends "voice" | "auth"> = Effect.Success<
   ReturnType<typeof makeEnvironmentHttpApiGroupClient<G>>
 >;
+
+const LOOPBACK_PATTERN = /^127\.\d+\.\d+\.\d+$/;
 
 const request = Effect.fn("clientRuntime.voiceInput.environmentRequest")(function* <
   A,
@@ -30,6 +40,7 @@ const request = Effect.fn("clientRuntime.voiceInput.environmentRequest")(functio
   readonly group: G;
   readonly prepared: PreparedConnection;
   readonly method: "GET" | "POST" | "DELETE";
+  readonly timeoutMs?: number;
   readonly path: (
     urls: ReturnType<typeof makeEnvironmentHttpApiUrlBuilder>[G],
     baseUrl: string,
@@ -44,7 +55,7 @@ const request = Effect.fn("clientRuntime.voiceInput.environmentRequest")(functio
     prepared: input.prepared,
     method: input.method,
     url: input.path,
-    timeoutMs: VOICE_REQUEST_TIMEOUT_MS,
+    timeoutMs: input.timeoutMs ?? VOICE_REQUEST_TIMEOUT_MS,
     requestInit: { redirect: "error" },
     validateUrl: (baseUrl) =>
       Effect.try({
@@ -53,7 +64,7 @@ const request = Effect.fn("clientRuntime.voiceInput.environmentRequest")(functio
           const loopback =
             url.hostname === "localhost" ||
             url.hostname === "[::1]" ||
-            /^127\.\d+\.\d+\.\d+$/.test(url.hostname);
+            LOOPBACK_PATTERN.test(url.hostname);
           if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) {
             throw new Error("Voice input requires HTTPS for remote environments.");
           }
@@ -76,6 +87,102 @@ export const getEnvironmentSpeechStatus = (prepared: PreparedConnection) =>
     path: (urls) => urls.status(),
     run: ({ client, headers }) => client.status({ headers }),
   });
+
+export const getCloudSpeechKeys = (prepared: PreparedConnection) =>
+  request({
+    group: "voice",
+    prepared,
+    method: "GET",
+    path: (urls) => urls.cloudKeys(),
+    run: ({ client, headers }) => client.cloudKeys({ headers }),
+  });
+
+export const getCloudSpeechModels = (prepared: PreparedConnection) =>
+  request({
+    group: "voice",
+    prepared,
+    method: "GET",
+    path: (urls) => urls.cloudModels(),
+    run: ({ client, headers }) => client.cloudModels({ headers }),
+  });
+
+/** Fails before any audio is sent when the environment holds no key for `provider`. */
+export const requireCloudSpeechKey = (
+  prepared: PreparedConnection,
+  provider: CloudSpeechProvider,
+) =>
+  getCloudSpeechKeys(prepared).pipe(
+    Effect.flatMap((keys) =>
+      keys[provider]
+        ? Effect.void
+        : Effect.fail(
+            new VoiceTranscriptionError(
+              "unavailable",
+              new CloudSpeechError({ provider, reason: "missing-key" }).message,
+            ),
+          ),
+    ),
+  );
+
+/** A literal is sent in the body once and is never returned; `null` removes the saved key. */
+export const setCloudSpeechKey = (
+  prepared: PreparedConnection,
+  provider: CloudSpeechProvider,
+  key: SettingsSecretValue | null,
+) =>
+  request({
+    group: "voice",
+    prepared,
+    method: "POST",
+    path: (urls) => urls.setCloudKey({ params: { provider } }),
+    run: ({ client, headers }) =>
+      client.setCloudKey({
+        headers,
+        params: { provider },
+        payload: { key: typeof key === "string" ? Redacted.make(key) : key },
+      }),
+  });
+
+/**
+ * Sends one finished recording to `provider` through `prepared`. OpenRouter needs the exact model
+ * the user chose; without it nothing is sent.
+ */
+export const transcribeCloudPcm = (
+  prepared: PreparedConnection,
+  provider: CloudSpeechProvider,
+  pcm: Uint8Array,
+  options: SpeechTranscriptionOptions,
+  model?: CloudSpeechModelId,
+) => {
+  if (provider === "openrouter" && model === undefined)
+    return Effect.fail(
+      new VoiceTranscriptionError(
+        "unavailable",
+        `Choose a ${CLOUD_SPEECH_LABELS.openrouter} model in Settings → Voice.`,
+      ),
+    );
+  const query = model === undefined ? {} : { model };
+  return request({
+    group: "voice",
+    prepared,
+    method: "POST",
+    timeoutMs: CLOUD_TRANSCRIBE_TIMEOUT_MS,
+    path: (urls) => urls.transcribeCloud({ params: { provider }, query }),
+    run: ({ client, headers }) =>
+      client.transcribeCloud({
+        headers,
+        params: { provider },
+        query,
+        payload: encodeSpeechPcmRequest(pcm, options),
+      }),
+  }).pipe(
+    Effect.mapError((error) =>
+      error._tag === "RemoteEnvironmentAuthFetchError" && isCloudSpeechError(error.cause)
+        ? new VoiceTranscriptionError("transcription-failed", error.cause.message)
+        : error,
+    ),
+  );
+};
 
 export const getEnvironmentSpeechStreamUrl = (prepared: PreparedConnection) => {
   let endpoint = prepared.httpBaseUrl;

@@ -64,9 +64,11 @@ type ProviderOptions = ReadonlyArray<ProviderOptionSelection>;
  */
 export type PromptUltrathink = "none" | "prefix" | "body";
 
+const ULTRATHINK_PREFIX = /^Ultrathink:\s*/i;
+
 export function readPromptUltrathink(prompt: string): PromptUltrathink {
   if (!isClaudeUltrathinkPrompt(prompt)) return "none";
-  return isClaudeUltrathinkPrompt(prompt.replace(/^Ultrathink:\s*/i, "")) ? "body" : "prefix";
+  return isClaudeUltrathinkPrompt(prompt.replace(ULTRATHINK_PREFIX, "")) ? "body" : "prefix";
 }
 
 const SAVED_OPTION_LABELS: Readonly<Record<string, string>> = {
@@ -76,10 +78,15 @@ const SAVED_OPTION_LABELS: Readonly<Record<string, string>> = {
   variant: "Reasoning",
 };
 
+const CAMEL_CASE_BOUNDARY = /([a-z0-9])([A-Z])/g;
+const FIRST_CHARACTER = /^./;
+
 function savedOptionLabel(id: string): string {
   return (
     SAVED_OPTION_LABELS[id] ??
-    id.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/^./, (character) => character.toUpperCase())
+    id
+      .replace(CAMEL_CASE_BOUNDARY, "$1 $2")
+      .replace(FIRST_CHARACTER, (character) => character.toUpperCase())
   );
 }
 
@@ -605,7 +612,7 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
       );
       return;
     }
-    onPromptEdit?.((prompt) => prompt.replace(/^Ultrathink:\s*/i, ""));
+    onPromptEdit?.((prompt) => prompt.replace(ULTRATHINK_PREFIX, ""));
   };
   const otherSelectDescriptors = selectDescriptors.filter(
     (descriptor) =>

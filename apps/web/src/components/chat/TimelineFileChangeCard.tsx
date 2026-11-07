@@ -12,6 +12,8 @@ interface DiffRow {
   readonly text: string;
 }
 
+const HUNK_PATTERN = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
+
 function parseDiff(item: FileChangeItem): DiffRow[] {
   const raw = item.diffStr;
   if (raw?.trim()) {
@@ -19,7 +21,7 @@ function parseDiff(item: FileChangeItem): DiffRow[] {
     let oldLine = 0;
     let newLine = 0;
     for (const line of raw.split("\n")) {
-      const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
+      const hunk = HUNK_PATTERN.exec(line);
       if (hunk) {
         oldLine = Number(hunk[1]);
         newLine = Number(hunk[2]);

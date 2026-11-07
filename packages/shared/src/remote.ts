@@ -74,6 +74,9 @@ export type RemotePairingTargetError = typeof RemotePairingTargetError.Type;
 const hasSupportedRemoteBackendProtocol = (url: URL): boolean =>
   SUPPORTED_REMOTE_BACKEND_PROTOCOLS.has(url.protocol);
 
+const LEADING_SLASHES = /^\/+/;
+const NORMALIZED_INPUT_PATTERN = /^[a-zA-Z][a-zA-Z\d+-]*:\/\//;
+
 const normalizeRemoteBaseUrl = (
   rawValue: string,
   source: RemoteBackendUrlInvalidError["source"],
@@ -83,8 +86,8 @@ const normalizeRemoteBaseUrl = (
     throw new RemoteBackendUrlMissingError();
   }
 
-  const withoutLeadingSlashes = trimmed.replace(/^\/+/, "");
-  const normalizedInput = /^[a-zA-Z][a-zA-Z\d+-]*:\/\//.test(withoutLeadingSlashes)
+  const withoutLeadingSlashes = trimmed.replace(LEADING_SLASHES, "");
+  const normalizedInput = NORMALIZED_INPUT_PATTERN.test(withoutLeadingSlashes)
     ? withoutLeadingSlashes
     : `https://${withoutLeadingSlashes}`;
   let url: URL;
@@ -193,8 +196,8 @@ export const buildPairingAppLink = (pairingUrl: string): string =>
 
 /** Reads the pairing URL from a `houston://pair` link on any app channel scheme. */
 export const readPairingAppLink = (value: string): string | null => {
-  if (!URL.canParse(value)) return null;
-  const url = new URL(value);
+  const url = URL.parse(value);
+  if (!url) return null;
   if (!APP_LINK_PROTOCOL.test(url.protocol) || url.host !== "pair") return null;
   if (url.pathname !== "" && url.pathname !== "/") return null;
   return url.searchParams.get(PAIRING_APP_LINK_PARAM)?.trim() || null;

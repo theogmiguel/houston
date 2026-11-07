@@ -243,6 +243,7 @@ export function ComposerControlsBar(props: {
             effortPanel: <ComposerEffortPanel traits={traitsInput} />,
             footer: (
               <ComposerPickerFooter
+                traits={traitsInput}
                 runtimeMode={compatibleRuntimeMode}
                 runtimeModeOptions={compatibleRuntimeModeOptions}
                 onRuntimeModeChange={handleRuntimeModeChange}

@@ -33,8 +33,10 @@ const TASK_KEY_PATTERN = /(?<![\p{L}\p{M}\p{N}_-])HOU-[1-9][0-9]*(?![\p{L}\p{M}\
 const POWERSHELL_PROMPT_PATH_PATTERN = /^PS ((?:[A-Za-z]:[\\/]|\\\\|\/)[^>\r\n]*)>/u;
 // Bare paths start only at a segment boundary: hover detection runs this on
 // every frame, so separator-free output must not be rescanned at every suffix.
+// For the same reason `]` needs its `[`: trimming a long run of `]` is quadratic.
+// Parentheses count only before a slash, so `src/foo.ts(3,10)` stays a compiler location.
 const FILE_PATH_PATTERN =
-  /(?:~[\\/]|\.{1,2}[\\/]|\/|[A-Za-z]:[\\/]|\\\\)[^\s"'`<>]+|(?<![\p{L}\p{M}\p{N}._-])[\p{L}\p{M}\p{N}._-]+(?:[\\/][\p{L}\p{M}\p{N}._-]+)+(?::\d+){0,2}/gu;
+  /(?:~[\\/]|\.{1,2}[\\/]|\/|[A-Za-z]:[\\/]|\\\\)[^\s"'`<>]+|(?<![\p{L}\p{M}\p{N}._-])[\p{L}\p{M}\p{N}._-]+(?:[\\/](?:[\p{L}\p{M}\p{N}._$+@-]|\[{1,2}[\p{L}\p{M}\p{N}._-]+\]{1,2}|\([\p{L}\p{M}\p{N}._-]+\)(?=[\\/]))+)+(?::\d+){0,2}/gu;
 const QUOTED_FILE_PATH_PATTERN =
   /(["'`])(?<path>(?:~[\\/]|\.{1,2}[\\/]|\/|[A-Za-z]:[\\/]|\\\\|[\p{L}\p{M}\p{N}._ -]+[\\/])[^\r\n]*?|[\p{L}\p{M}\p{N}._ -]+\.[\p{L}\p{M}\p{N}_-]+(?::\d+){0,2})\1(?<position>(?::\d+){0,2})/gu;
 const TRAILING_PUNCTUATION_PATTERN = /[.,;!?]+$/;
@@ -143,12 +145,16 @@ export function extractTerminalLinks(line: string): TerminalLinkMatch[] {
     .toSorted((a, b) => a.start - b.start);
 }
 
+const TASK_KEY = /^HOU-[1-9][0-9]*$/u;
+
 export function isHoustonTaskKey(value: string): boolean {
-  return /^HOU-[1-9][0-9]*$/u.test(value);
+  return TASK_KEY.test(value);
 }
 
+const HTTP_URL_PREFIX = /^https?:\/\//iu;
+
 export function isTerminalUrl(value: string): boolean {
-  return /^https?:\/\//iu.test(value);
+  return HTTP_URL_PREFIX.test(value);
 }
 
 export function collectWrappedTerminalLinkLine(

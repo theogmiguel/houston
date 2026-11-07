@@ -56,6 +56,11 @@ function parseFrontmatterBoolean(value: unknown): boolean | undefined {
   }
 }
 
+const FRONTMATTER_KEY_VALUE_LINE = /^([\w-]+:[ \t]*)([^\r\n]*)/gm;
+const SCALAR_PATTERN = /[ \t]+#/;
+const COLON_FOLLOWED_BY_BLANK = /:[ \t]/;
+const YAML_SPECIAL_START = /^(?:["'[\]{}|>&*!#%@`]|[-?:](?:[ \t]|$))/;
+
 function parseSkillFrontmatter(contents: string): SkillFrontmatter {
   const match = FRONTMATTER_PATTERN.exec(contents);
   if (!match) {
@@ -69,10 +74,10 @@ function parseSkillFrontmatter(contents: string): SkillFrontmatter {
   } catch {
     // Repair Claude's accepted ': ' scalars without disturbing comments or YAML structure.
     const repaired = frontmatter.replace(
-      /^([\w-]+:[ \t]*)([^\r\n]*)/gm,
+      FRONTMATTER_KEY_VALUE_LINE,
       (line, prefix: string, value: string) => {
-        const scalar = value.split(/[ \t]+#/)[0] ?? "";
-        if (!/:[ \t]/.test(scalar) || /^(?:["'[\]{}|>&*!#%@`]|[-?:](?:[ \t]|$))/.test(scalar)) {
+        const scalar = value.split(SCALAR_PATTERN)[0] ?? "";
+        if (!COLON_FOLLOWED_BY_BLANK.test(scalar) || YAML_SPECIAL_START.test(scalar)) {
           return line;
         }
         return `${prefix}${JSON.stringify(scalar)}${value.slice(scalar.length)}`;
@@ -490,6 +495,8 @@ export function claudeLaunchArgDirectories(launchArgs?: string): ReadonlyArray<s
   return directories;
 }
 
+const NON_SKILL_NAME_CHARACTER = /[^a-zA-Z0-9_-]/g;
+
 /** First name wins, matching Claude Code's precedence of user skills over project skills. */
 export const discoverClaudeSkills = Effect.fn("discoverClaudeSkills")(function* (
   config: Pick<ClaudeSettings, "homePath"> & Partial<Pick<ClaudeSettings, "launchArgs">>,
@@ -560,7 +567,7 @@ export const discoverClaudeSkills = Effect.fn("discoverClaudeSkills")(function* 
         const unprefixedName = declaredName?.startsWith(`${root.prefix}:`)
           ? declaredName.slice(root.prefix.length + 1)
           : declaredName;
-        name = `${root.prefix}:${(unprefixedName || entry).replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+        name = `${root.prefix}:${(unprefixedName || entry).replace(NON_SKILL_NAME_CHARACTER, "-")}`;
         // Advertise only exact native names the shared composer grammar can invoke.
         const [mention] = `$${name}`.matchAll(SKILL_MENTION_PATTERN);
         if (mention?.[2] !== name) continue;

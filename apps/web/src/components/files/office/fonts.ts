@@ -46,6 +46,8 @@ function shippedFace(face: BundledFontFace | undefined) {
   return face && (!face.script || shipped(face.script)) ? face : undefined;
 }
 
+const WORD_SEPARATOR_OR_SPACE = /[\s-]+/;
+
 /**
  * The substitute an application picks for a family it lacks. Only a weight variant of an East Asian family, such as
  * Yu Mincho Light, resolves to a face the app does not ship; its name without the weight still tells serif from sans.
@@ -60,11 +62,7 @@ function lastResortFace(
 
   if (shippedFace(face)) return face;
 
-  const base = family
-    .trim()
-    .split(/[\s-]+/)
-    .slice(0, -1)
-    .join(" ");
+  const base = family.trim().split(WORD_SEPARATOR_OR_SPACE).slice(0, -1).join(" ");
 
   return (
     shippedFace(resolveLastResortFace(base, bold, italic, office)) ??

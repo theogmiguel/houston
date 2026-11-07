@@ -42,8 +42,13 @@ export function sessionHasScope(
   return result._tag !== "Failure" && session !== null && sessionGrantsScope(session, scope);
 }
 
+const ENVIRONMENTS_WITH_SCOPE_ATOM_PATTERN = /\n(.*)/s;
+
 const environmentsWithScopeAtom = Atom.family((key: string) => {
-  const [scope, idsKey = ""] = key.split(/\n(.*)/s) as [AuthEnvironmentScope, string?];
+  const [scope, idsKey = ""] = key.split(ENVIRONMENTS_WITH_SCOPE_ATOM_PATTERN) as [
+    AuthEnvironmentScope,
+    string?,
+  ];
   const ids = idsKey === "" ? [] : (idsKey.split("\n") as EnvironmentId[]);
   const statesAtom = environmentSessionStatesAtom(idsKey);
   return Atom.make((get) => {

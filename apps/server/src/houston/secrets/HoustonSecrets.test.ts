@@ -9,6 +9,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as HostProcess from "@houston-app/shared/HostProcess";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
@@ -19,6 +20,7 @@ import {
   HoustonSecrets,
   layer,
   layerMemory,
+  layerWithoutImport,
   makeMemory,
   SecretStoreUnavailable,
 } from "./HoustonSecrets.ts";
@@ -186,5 +188,77 @@ describe("Houston's secrets never reach the OS keychain", () => {
         .map(relative),
       [],
     );
+  });
+});
+
+describe("observability and the runtime use one secret store", () => {
+  // Built as server.ts builds them: observability over layerWithoutImport, the runtime over
+  // layer (plus the keychain import), each given ServerSecretStore.layer.
+  const assemble = (observabilityStore: typeof ServerSecretStore.layer) => {
+    let storesBuilt = 0;
+    // Each ServerSecretStore makes its directory once, when it is built.
+    const layerCountingFileSystem = Layer.effect(
+      FileSystem.FileSystem,
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const { secretsDir } = yield* ServerConfig.ServerConfig;
+        return {
+          ...fileSystem,
+          makeDirectory: (path, options) => {
+            if (path === secretsDir) storesBuilt += 1;
+            return fileSystem.makeDirectory(path, options);
+          },
+        } satisfies FileSystem.FileSystem;
+      }),
+    );
+    const observability = Layer.effectDiscard(
+      Effect.flatMap(HoustonSecrets, (secrets) =>
+        secrets.set("houston-observability-probe", Redacted.make("written by observability")),
+      ),
+    ).pipe(Layer.provide(layerWithoutImport.pipe(Layer.provide(observabilityStore))));
+    const runtime = layer.pipe(Layer.provideMerge(ServerSecretStore.layer));
+    const server = runtime.pipe(
+      Layer.provide(observability),
+      Layer.provide(layerCountingFileSystem),
+      Layer.provideMerge(
+        ServerConfig.layerTest(process.cwd(), { prefix: "houston-secrets-shared-" }),
+      ),
+      Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+    );
+    return { server, built: () => storesBuilt };
+  };
+
+  it.effect(
+    "one ServerSecretStore is built, and the runtime reads what observability wrote",
+    () => {
+      const { server, built } = assemble(ServerSecretStore.layer);
+      return Effect.gen(function* () {
+        const secrets = yield* HoustonSecrets;
+        const read = yield* secrets.get("houston-observability-probe");
+        assert.strictEqual(
+          Option.getOrUndefined(Option.map(read, Redacted.value)),
+          "written by observability",
+        );
+        assert.strictEqual(built(), 1);
+      }).pipe(Effect.provide(server));
+    },
+  );
+
+  it("server.ts gives observability the seam without the import over the shared store", () => {
+    const server = NodeFS.readFileSync(
+      NodePath.resolve(import.meta.dirname, "../../server.ts"),
+      "utf8",
+    );
+    assert.deepStrictEqual(server.match(/HoustonSecrets\.layerWithoutImport[^\n]*/g), [
+      "HoustonSecrets.layerWithoutImport.pipe(Layer.provide(ServerSecretStore.layer))),",
+    ]);
+  });
+
+  it.effect("a second store reference would build a second store", () => {
+    const { server, built } = assemble(Layer.fresh(ServerSecretStore.layer));
+    return Effect.gen(function* () {
+      yield* HoustonSecrets;
+      assert.strictEqual(built(), 2);
+    }).pipe(Effect.provide(server));
   });
 });

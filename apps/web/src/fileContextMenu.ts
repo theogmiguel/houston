@@ -33,6 +33,8 @@ export interface FileContextMenuTarget {
   readonly repositoryRoot?: string | undefined;
 }
 
+const WINDOWS_DRIVE_PREFIX = /^[a-zA-Z]:/;
+
 export function resolveFileContextMenuAbsolutePath(target: FileContextMenuTarget): string | null {
   const workspaceFilePath = resolveDiffPathForWorkspace({
     filePath: target.filePath,
@@ -41,7 +43,7 @@ export function resolveFileContextMenuAbsolutePath(target: FileContextMenuTarget
   });
   if (workspaceFilePath === null) return null;
   if (target.workspaceRoot === undefined) {
-    return workspaceFilePath.startsWith("/") || /^[a-zA-Z]:/.test(workspaceFilePath)
+    return workspaceFilePath.startsWith("/") || WINDOWS_DRIVE_PREFIX.test(workspaceFilePath)
       ? workspaceFilePath
       : null;
   }

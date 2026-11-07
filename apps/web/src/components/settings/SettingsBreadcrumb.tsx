@@ -11,14 +11,16 @@ const SETTINGS_BREADCRUMB_LABELS: Readonly<Record<string, string>> = {
   "/settings/open-source-licenses": "Open source licenses",
 };
 
+const TRAILING_SLASHES = /\/+$/;
+
 function settingsBreadcrumbLabel(pathname: string): string | null {
-  const normalizedPathname = pathname.replace(/\/+$/, "") || "/";
+  const normalizedPathname = pathname.replace(TRAILING_SLASHES, "") || "/";
   return SETTINGS_BREADCRUMB_LABELS[normalizedPathname] ?? null;
 }
 
 /** Pages the sidebar nav lists: from md up the nav already marks the open one. */
 function navShowsLocation(pathname: string): boolean {
-  const normalizedPathname = pathname.replace(/\/+$/, "") || "/";
+  const normalizedPathname = pathname.replace(TRAILING_SLASHES, "") || "/";
   return SETTINGS_NAV_GROUPS.some((group) =>
     group.paths.some((to) => normalizedPathname === to || normalizedPathname.startsWith(`${to}/`)),
   );

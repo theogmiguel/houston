@@ -24,6 +24,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
+import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as NodeCrypto from "node:crypto";
 import * as NodeFSP from "node:fs/promises";
@@ -40,6 +41,10 @@ import {
   resolveAntigravityReleaseAsset,
   type AntigravityReleaseAsset,
 } from "./antigravityRelease.ts";
+
+const FROM_EXTERNAL_PATTERN = /^[a-f0-9]{64}$/u;
+const PATH_CANDIDATES_PATTERN = /^"|"$/gu;
+const IPV6_UNSUPPORTED_MESSAGE = /\b(?:AF_INET6|enforce_kernel_ipv6_support)\b/;
 
 const DRIVER = ProviderDriverKind.make("antigravity");
 const DOWNLOAD_TIMEOUT = "45 minutes";
@@ -261,7 +266,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
     if (
       Option.isSome(realVersions) &&
       path.dirname(directory) === realVersions.value &&
-      /^[a-f0-9]{64}$/u.test(path.basename(directory))
+      FROM_EXTERNAL_PATTERN.test(path.basename(directory))
     ) {
       const installed = yield* completedRelease(path.basename(directory));
       return { ...installed, executablePath, harnessPath, source } satisfies AntigravityExecutable;
@@ -282,7 +287,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
         : processEnvironment.PATH;
     return (pathValue ?? "")
       .split(platform === "win32" ? ";" : ":")
-      .map((directory) => directory.trim().replace(/^"|"$/gu, ""))
+      .map((directory) => directory.trim().replace(PATH_CANDIDATES_PATTERN, ""))
       .filter((directory) => directory.length > 0)
       .map((directory) => path.resolve(directory, binary));
   };
@@ -426,8 +431,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
       Effect.mapError((cause) => {
         if (isInstallationError(cause)) return cause;
         const detail =
-          isAcpProcessExitedError(cause) &&
-          /\b(?:AF_INET6|enforce_kernel_ipv6_support)\b/.test(cause.stderr ?? "")
+          isAcpProcessExitedError(cause) && IPV6_UNSUPPORTED_MESSAGE.test(cause.stderr ?? "")
             ? "Antigravity requires IPv6 socket support. Enable IPv6 in this environment. On WSL, remove ipv6.disable=1 from .wslconfig and run wsl --shutdown."
             : "The downloaded Antigravity runtime could not start in this environment.";
         return installationError("verify", detail, cause);
@@ -644,15 +648,39 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
         }
       }).pipe(Effect.scoped);
       yield* fs.remove(archivePath);
+      const executablePath = path.join(pairDirectory, asset.executable.name);
+      const harnessPath = path.join(pairDirectory, asset.harness.name);
       if (platform !== "win32") {
-        yield* fs.chmod(path.join(pairDirectory, asset.executable.name), 0o755);
-        yield* fs.chmod(path.join(pairDirectory, asset.harness.name), 0o755);
+        yield* fs.chmod(executablePath, 0o755);
+        yield* fs.chmod(harnessPath, 0o755);
+      }
+      if (platform === "darwin" && arch === "x64") {
+        // Google signs the Intel build with the hardened runtime but no JIT entitlement, so
+        // libffi's writable+executable trampolines spin forever. Re-sign ad hoc after the hash check.
+        const exitCode = yield* spawner
+          .spawn(
+            ChildProcess.make(
+              "/usr/bin/codesign",
+              ["--force", "--sign", "-", executablePath, harnessPath],
+              { stdout: "ignore", stderr: "ignore" },
+            ),
+          )
+          .pipe(
+            Effect.flatMap((child) => child.exitCode),
+            Effect.scoped,
+          );
+        if (exitCode !== 0) {
+          return yield* installationError(
+            "extract",
+            "Could not prepare the Antigravity runtime for this Mac. Check that codesign is available.",
+          );
+        }
       }
       yield* report("verifying", "Checking the downloaded runtime.");
       yield* validate(
         {
-          executablePath: path.join(pairDirectory, asset.executable.name),
-          harnessPath: path.join(pairDirectory, asset.harness.name),
+          executablePath,
+          harnessPath,
           source: "managed",
           version: asset.version,
           managedVersionDirectory: pairDirectory,
@@ -662,8 +690,11 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
       const record: InstalledRelease = {
         releaseId: asset.sha256,
         version: asset.version,
-        executable: asset.executable,
-        harness: asset.harness,
+        executable: {
+          name: asset.executable.name,
+          bytes: Number((yield* fs.stat(executablePath)).size),
+        },
+        harness: { name: asset.harness.name, bytes: Number((yield* fs.stat(harnessPath)).size) },
       };
       yield* fs.writeFileString(
         path.join(pairDirectory, RELEASE_RECORD),

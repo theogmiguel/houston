@@ -112,6 +112,8 @@ function isMcpElicitationPersistenceField(
   );
 }
 
+const APP_NAME_PATTERN = /^Allow ChatGPT to use (.+?)\?$/i;
+
 export function describeMcpElicitation(
   payload: EffectCodexSchema.McpServerElicitationRequestParams,
 ): { readonly appName: string; readonly options: ReadonlyArray<ProviderApprovalOption> } {
@@ -124,7 +126,7 @@ export function describeMcpElicitation(
     metadata?.target?.name ??
     metadata?.tool_params?.app_name ??
     metadata?.tool_params?.app ??
-    payload.message.match(/^Allow ChatGPT to use (.+?)\?$/i)?.[1] ??
+    payload.message.match(APP_NAME_PATTERN)?.[1] ??
     metadata?.connector_name ??
     metadata?.connectorName ??
     payload.serverName;
@@ -177,6 +179,9 @@ export function describeMcpElicitation(
   };
 }
 
+const CHOSEN_OPTION_PATTERN =
+  /^(?:once|accept|approve|allow)(?:[_\s-]*(?:once(?:[_\s-]*only)?|this[_\s-]*time))?$/i;
+
 export function toMcpElicitationResponse(
   payload: McpElicitationResponseInput,
   decision: ProviderApprovalDecision,
@@ -203,9 +208,8 @@ export function toMcpElicitationResponse(
     const chosenOption = options.find((option) =>
       persist
         ? mcpElicitationPersistenceDecision(option.value) === decision
-        : /^(?:once|accept|approve|allow)(?:[_\s-]*(?:once(?:[_\s-]*only)?|this[_\s-]*time))?$/i.test(
-            option.value.trim(),
-          ) && mcpElicitationPersistenceDecision(option.value) === null,
+        : CHOSEN_OPTION_PATTERN.test(option.value.trim()) &&
+          mcpElicitationPersistenceDecision(option.value) === null,
     );
     if (chosenOption) {
       content[key] = chosenOption.value;

@@ -59,6 +59,8 @@ const DOWNLOAD_ATTEMPTS = 3;
 const PARTIAL_FILENAME =
   /\.gguf\.[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.part$/i;
 
+const RANGE_PATTERN = /^bytes (\d+)-(\d+)\/(\d+)$/;
+
 const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -147,7 +149,7 @@ const make = Effect.gen(function* () {
         status: response.status,
       });
     if (resumed) {
-      const range = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(response.headers["content-range"] ?? "");
+      const range = RANGE_PATTERN.exec(response.headers["content-range"] ?? "");
       if (
         !range ||
         Number(range[1]) !== offset ||

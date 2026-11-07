@@ -38,7 +38,8 @@ The rich-text composer, the send shortcut, whether skills appear in the `/` menu
 
 ## Voice
 
-Where microphone audio goes (this device only, Off by default), the microphone and its test,
+How speech is transcribed (an environment or a cloud provider with its API key; this device only, Off by
+default), the microphone and its test,
 the dictation shortcut, speech models and their comparison by language, language and
 translation, the personal and project dictionaries, silence filtering, filler-word removal,
 transcript cleanup, acceleration and model unload. See [Dictation](dictation.md).
@@ -78,8 +79,8 @@ Claude has two switches, both on by default:
 
 Default model, fallback model, default permissions, where new threads start (local checkout
 or new worktree), hold presets, resume and hold behavior at usage limits, auto-close on
-merge and after inactivity, the add-project base directory, text generation model and
-instructions, and response streaming.
+merge and after inactivity, the add-project base directory, host-folder clone layout, text
+generation model and instructions, and response streaming.
 
 ## Browser
 
@@ -89,7 +90,8 @@ browser access, automatic floating preview, and recording options.
 ## Devices
 
 Device sources, whether agents may use devices, and device hub settings. Platform support
-limits are named on the page.
+limits are named on the page. SSH device hosts currently need macOS or Linux; to use devices
+on a Windows machine, run Houston there and connect to its environment.
 
 ## Scheduled tasks
 
@@ -139,6 +141,10 @@ their own pages.
 Provider update checks, continuing threads after a restart, background activity, database
 storage, browser artifacts and rotated logs, diagnostics, and **Coming from Houston 1**. See
 [Updating Houston](updating.md#coming-from-houston-1).
+
+Diagnostics includes **OpenTelemetry export**, which sends traces, metrics and logs to an OTLP
+receiver you choose, to Datadog, or to a Datadog Agent on this machine. See
+[Exporting diagnostics yourself](privacy.md#exporting-diagnostics-yourself).
 
 ## Labs
 

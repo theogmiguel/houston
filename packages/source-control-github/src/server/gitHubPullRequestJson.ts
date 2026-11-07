@@ -7,6 +7,7 @@ import { GraphQL } from "effect/graphql";
 import type {
   PullRequestStackMembership,
   PullRequestActor,
+  PullRequestReferenceCandidate,
   PullRequestPreview,
   PullRequestCheck,
   PullRequestCheckStatus,
@@ -39,6 +40,7 @@ import type {
 import { quoteGitPatchPath } from "@houston-app/shared/gitPatchPath";
 import { decodeJsonResult } from "@houston-app/shared/schemaJson";
 import { dedupeChecks } from "@houston-app/source-control-core/server/pullRequestChecks";
+import type { ProviderChangeRequestSummary } from "@houston-app/source-control-core/server/PullRequestProvider";
 
 import type * as GitHubSchema from "../../schema/github.graphql.ts";
 import type {
@@ -51,6 +53,7 @@ import {
   PullRequestRow,
   PullRequestSearch,
 } from "./pullRequestListings.graphql.ts";
+import type { PullRequestActionSummary } from "./pullRequestMutations.graphql.ts";
 import type {
   CheckContext,
   LabelCandidates,
@@ -65,6 +68,8 @@ import type {
   PullRequestSubject,
   RepositoryAuthors,
   RepositoryLabels,
+  RepositoryReferences,
+  ReferenceCandidate,
   ReviewerCandidates,
   ViewerPermissions,
 } from "./pullRequestReads.graphql.ts";
@@ -72,6 +77,8 @@ import type {
   ReactionGroup,
   ReviewDismissals,
   ReviewThreadComments,
+  ReviewThreadPage,
+  ReviewThreadPages,
   ReviewThreads,
   ThreadComment,
 } from "./pullRequestReviews.graphql.ts";
@@ -479,6 +486,29 @@ function toMergeMethod(value: string | null | undefined): PullRequestMergeMethod
     default:
       return undefined;
   }
+}
+
+export function toPullRequestActionSummary(
+  raw: PullRequestActionSummary | null | undefined,
+): ProviderChangeRequestSummary | undefined {
+  if (raw == null) return undefined;
+  const autoMergeMethod = toMergeMethod(raw.autoMergeRequest?.mergeMethod);
+  return {
+    number: raw.number,
+    title: raw.title,
+    url: raw.url,
+    headBranch: raw.headRefName,
+    baseBranch: raw.baseRefName,
+    state: toState(raw),
+    isDraft: raw.isDraft,
+    updatedAt: raw.updatedAt,
+    mergedAt: trimmed(raw.mergedAt),
+    closedAt: trimmed(raw.closedAt),
+    author: toActor(raw.author),
+    headSha: raw.headRefOid,
+    autoMergeEnabled: raw.autoMergeRequest !== null,
+    ...(autoMergeMethod === undefined ? {} : { autoMergeMethod }),
+  };
 }
 
 /** GitHub's reviewDecision ignores reviews outside branch rules, including app approvals. */
@@ -1298,11 +1328,8 @@ type ReviewThreadCommit = NonNullable<
   NonNullable<ReviewThreadsPullRequest["commits"]["nodes"]>[number]
 >["commit"];
 
-export function toReviewThreadPage(result: ReviewThreads.Result): GitHubReviewThreadPage | null {
-  const pullRequest = result.repository?.pullRequest;
-  if (pullRequest == null) return null;
-  const viewer = trimmed(result.viewer.login);
-  const threads = pullRequest.reviewThreads;
+/** A page of threads and the people commenting on them, whichever query carried it. */
+function toReviewThreadEntries(threads: ReviewThreadPage, viewer: string | null) {
   const threadNodes = nodesOf(threads);
   const entries = threadNodes.flatMap((thread): ReadonlyArray<GitHubReviewThreadEntry> => {
     const path = trimmed(thread.path);
@@ -1327,15 +1354,51 @@ export function toReviewThreadPage(result: ReviewThreads.Result): GitHubReviewTh
       },
     ];
   });
+  return {
+    entries,
+    nextCursor: nextCursorOf(threads.pageInfo),
+    authors: threadNodes.flatMap((thread) =>
+      nodesOf(thread.comments).map((comment) => comment.author),
+    ),
+  };
+}
+
+function collectActors(raws: ReadonlyArray<ActorFields | null | undefined>) {
+  const avatarsByLogin = new Map<string, string>();
+  const botLogins = new Set<string>();
+  for (const raw of raws) {
+    const login = trimmed(raw?.login);
+    const avatarUrl = trimmed(raw?.avatarUrl);
+    if (login !== null && avatarUrl !== null) avatarsByLogin.set(login, avatarUrl);
+    if (login !== null && toActor(raw)?.isBot) botLogins.add(login);
+  }
+  return { avatarsByLogin, botLogins };
+}
+
+export function toLaterReviewThreadPage(
+  result: ReviewThreadPages.Result,
+): Pick<GitHubReviewThreadPage, "threads" | "nextCursor" | "avatarsByLogin" | "botLogins"> | null {
+  const threads = result.repository?.pullRequest?.reviewThreads;
+  if (threads === undefined) return null;
+  const { entries, nextCursor, authors } = toReviewThreadEntries(
+    threads,
+    trimmed(result.viewer.login),
+  );
+  return { threads: entries, nextCursor, ...collectActors(authors) };
+}
+
+export function toReviewThreadPage(result: ReviewThreads.Result): GitHubReviewThreadPage | null {
+  const pullRequest = result.repository?.pullRequest;
+  if (pullRequest == null) return null;
+  const viewer = trimmed(result.viewer.login);
+  const page = toReviewThreadEntries(pullRequest.reviewThreads, viewer);
   const requestedReviewers = nodesOf(pullRequest.reviewRequests).map(
     (node): ActorFields | null => node.requestedReviewer,
   );
   const latestReviews = nodesOf(pullRequest.latestReviews);
   const comments = nodesOf(pullRequest.comments);
   const reviews = nodesOf(pullRequest.reviews);
-  const avatarsByLogin = new Map<string, string>();
-  const botLogins = new Set<string>();
-  for (const raw of [
+  const { avatarsByLogin, botLogins } = collectActors([
     pullRequest.author,
     ...comments.map((node) => node.author),
     ...reviews.map((node) => node.author),
@@ -1345,13 +1408,8 @@ export function toReviewThreadPage(result: ReviewThreads.Result): GitHubReviewTh
       (node): ReadonlyArray<ActorFields | null> =>
         "createdAt" in node ? [node.actor, node.requestedReviewer] : [],
     ),
-    ...threadNodes.flatMap((thread) => nodesOf(thread.comments).map((comment) => comment.author)),
-  ]) {
-    const login = trimmed(raw?.login);
-    const avatarUrl = trimmed(raw?.avatarUrl);
-    if (login !== null && avatarUrl !== null) avatarsByLogin.set(login, avatarUrl);
-    if (login !== null && toActor(raw)?.isBot) botLogins.add(login);
-  }
+    ...page.authors,
+  ]);
   const reviewers = new Map<string, PullRequestActor>();
   for (const raw of [...requestedReviewers, ...latestReviews.map((node) => node.author)]) {
     const actor = toActor(raw) ?? toRequestedTeam(raw);
@@ -1383,8 +1441,8 @@ export function toReviewThreadPage(result: ReviewThreads.Result): GitHubReviewTh
     if (reactions.length > 0) reactionsById.set(id, reactions);
   }
   return {
-    threads: entries,
-    nextCursor: nextCursorOf(threads.pageInfo),
+    threads: page.entries,
+    nextCursor: page.nextCursor,
     reactions: toReactions(pullRequest.reactionGroups, viewer),
     reactionsById,
     editedAtById,
@@ -1470,6 +1528,8 @@ function toCommitChecks(
 /** How many hunk lines a thread carries with it: its own line and the two above it. */
 const SNIPPET_LINES = 3;
 
+const HUNK_HEADER = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/u;
+
 /**
  * The end of a comment's diff hunk, numbered. GitHub's hunk stops at the line the thread was
  * written on, so its last lines are the code the thread is about.
@@ -1478,7 +1538,7 @@ function reviewThreadSnippet(
   diffHunk: string | null | undefined,
 ): ReadonlyArray<PullRequestReviewThreadSnippetLine> {
   const lines = (diffHunk ?? "").split("\n");
-  const header = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/u.exec(lines[0] ?? "");
+  const header = HUNK_HEADER.exec(lines[0] ?? "");
   if (header === null) return [];
   let oldLine = Number(header[1]);
   let newLine = Number(header[2]);
@@ -1564,6 +1624,7 @@ export interface GitHubBaseComparison {
 /** assignableUsers avoids push/read:org requirements. Keep requested outsiders/apps removable. */
 export function toReviewerCandidates(
   result: ReviewerCandidates.Result,
+  query?: string,
 ): PullRequestReviewerCandidateList | null {
   const repository = result.repository;
   if (repository == null) return null;
@@ -1621,8 +1682,10 @@ export function toReviewerCandidates(
           : "suggested by GitHub",
     });
   }
+  const hostMatches = new Set<string>();
   for (const node of nodesOf(repository.assignableUsers)) {
     const login = trimmed(node.login);
+    if (login !== null) hostMatches.add(login);
     if (login === null || login === author || candidates.has(`user ${login}`)) continue;
     candidates.set(`user ${login}`, {
       id: login,
@@ -1634,7 +1697,9 @@ export function toReviewerCandidates(
     });
   }
   return {
-    candidates: [...candidates.values()],
+    candidates: [...candidates.values()].filter(
+      (candidate) => !query?.trim() || (candidate.kind === "user" && hostMatches.has(candidate.id)),
+    ),
     truncated: repository.assignableUsers.pageInfo.hasNextPage,
   };
 }
@@ -1715,6 +1780,67 @@ export function toRepositoryAuthors(
   };
 }
 
+const DIGITS_ONLY = /^\d+$/;
+
+/** The `search` string for {@link toRepositoryReferences}; a numeric query searches recent items. */
+export function referenceSearchQuery(repository: string, query: string | undefined): string {
+  const text = query?.trim() ?? "";
+  const titled =
+    text.length === 0 || DIGITS_ONLY.test(text) ? [] : [`in:title ${searchPhrase(text)}`];
+  return [`repo:${repository}`, ...titled, "sort:updated-desc"].join(" ");
+}
+
+/** Quote user text so GitHub cannot interpret it as qualifiers that widen the listing. */
+export function searchPhrase(query: string): string {
+  return `"${query.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
+}
+
+type ReferenceNode =
+  | ReferenceCandidate
+  | NonNullable<NonNullable<RepositoryReferences.Result["search"]["nodes"]>[number]>;
+
+function toReferenceCandidate(node: ReferenceNode): PullRequestReferenceCandidate | null {
+  if (node.__typename === "Issue") {
+    return {
+      reference: `#${node.number}`,
+      kind: "issue",
+      number: node.number,
+      title: node.title,
+      state: node.issueState === "OPEN" ? "open" : "closed",
+    };
+  }
+  if (node.__typename === "PullRequest") {
+    return {
+      reference: `#${node.number}`,
+      kind: "change-request",
+      number: node.number,
+      title: node.title,
+      state:
+        node.pullRequestState === "OPEN"
+          ? "open"
+          : node.pullRequestState === "MERGED"
+            ? "merged"
+            : "closed",
+    };
+  }
+  return null;
+}
+
+export function toRepositoryReferences(result: RepositoryReferences.Result): {
+  readonly items: ReadonlyArray<PullRequestReferenceCandidate>;
+  readonly truncated: boolean;
+} {
+  const exact = result.repository?.issueOrPullRequest;
+  const nodes = [...(exact == null ? [] : [exact]), ...nodesOf(result.search)];
+  return {
+    items: nodes.flatMap((node) => {
+      const candidate = toReferenceCandidate(node);
+      return candidate === null ? [] : [candidate];
+    }),
+    truncated: result.search.pageInfo.hasNextPage,
+  };
+}
+
 export function buildLabelRequest(labels: ReadonlyArray<string>): {
   readonly labels: ReadonlyArray<string>;
 } {
@@ -1776,6 +1902,8 @@ const decodeCommitFiles = decodeJsonResult(
   Schema.Struct({ files: Schema.optional(Schema.NullOr(Schema.Array(Schema.Unknown))) }),
 );
 
+const OPTIONAL_TRAILING_NEWLINE = /\n?$/;
+
 function toFilesPatch(entries: ReadonlyArray<unknown>): GitHubPullRequestFilesPatch {
   const sections: string[] = [];
   const omittedFileStats: PullRequestOmittedFileStat[] = [];
@@ -1812,7 +1940,11 @@ function toFilesPatch(entries: ReadonlyArray<unknown>): GitHubPullRequestFilesPa
       `--- ${status === "added" ? "/dev/null" : quoteGitPatchPath(`a/${oldPath}`)}`,
       `+++ ${status === "removed" ? "/dev/null" : quoteGitPatchPath(`b/${value.filename}`)}`,
     ].join("\n");
-    sections.push(hunks.length === 0 ? `${header}\n` : `${header}\n${hunks.replace(/\n?$/, "\n")}`);
+    sections.push(
+      hunks.length === 0
+        ? `${header}\n`
+        : `${header}\n${hunks.replace(OPTIONAL_TRAILING_NEWLINE, "\n")}`,
+    );
   }
   return {
     patch: sections.join(""),

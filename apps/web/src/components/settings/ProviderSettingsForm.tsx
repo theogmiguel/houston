@@ -46,11 +46,15 @@ export interface ProviderSettingsFieldModel {
   readonly options?: ReadonlyArray<ProviderSettingsFormOption> | undefined;
 }
 
+const CAMEL_CASE_BOUNDARY = /([a-z0-9])([A-Z])/g;
+const WORD_SEPARATOR_RUN = /[-_]+/g;
+const FIRST_CHARACTER = /^./;
+
 function titleizeFieldKey(key: string): string {
   return key
-    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-    .replace(/[-_]+/g, " ")
-    .replace(/^./, (char) => char.toUpperCase());
+    .replace(CAMEL_CASE_BOUNDARY, "$1 $2")
+    .replace(WORD_SEPARATOR_RUN, " ")
+    .replace(FIRST_CHARACTER, (char) => char.toUpperCase());
 }
 
 function readFieldAnnotations(

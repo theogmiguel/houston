@@ -259,9 +259,9 @@ export interface SourceControlDefinition {
   /** Null when the URL is not one of this host's change requests. */
   readonly parseChangeRequestUrl: (url: URL) => ParsedChangeRequestUrl | null;
   /**
-   * The change request URL a bare `#123` autolink might name, for hosts that write every
-   * reference through their issue route. Only a candidate: the caller must read it as a change
-   * request before treating it as one.
+   * The change request URL a `reference` autolink might name, such as a GitHub `#123` written
+   * through the issue route. Only a candidate: the caller must read it as a change request
+   * before treating it as one.
    */
   readonly changeRequestUrlFromReferenceAutolink: (url: URL) => string | null;
   /**
@@ -410,8 +410,10 @@ export function parseChangeRequestPath(url: URL, route: RegExp): ParsedChangeReq
     : null;
 }
 
+const TRAILING_SLASHES = /\/+$/u;
+
 export function changeRequestUrlBelow(webUrl: string, route: string): string {
-  return `${webUrl.replace(/\/+$/u, "")}/${route}`;
+  return `${webUrl.replace(TRAILING_SLASHES, "")}/${route}`;
 }
 
 /** An HTTP remote on `host` names the server's web origin, port included; SSH remotes do not. */
@@ -494,6 +496,8 @@ export function isChangeRequestInProjectRepository(
 
 const SCP_REMOTE = /^[a-zA-Z0-9._-]+@([^:/]+):/;
 
+const TRAILING_PORT = /:\d+$/u;
+
 /** Null when the remote names no host, such as a local path. */
 export function parseGitRemoteHost(remoteUrl: string): GitRemoteHost | null {
   const trimmed = remoteUrl.trim();
@@ -515,7 +519,7 @@ export function parseGitRemoteHost(remoteUrl: string): GitRemoteHost | null {
   try {
     hostname = new URL(`https://${host}`).hostname.toLowerCase();
   } catch {
-    hostname = host.replace(/:\d+$/u, "").toLowerCase();
+    hostname = host.replace(TRAILING_PORT, "").toLowerCase();
   }
   return { remoteUrl: trimmed, host, hostname };
 }

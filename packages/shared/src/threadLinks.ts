@@ -78,12 +78,12 @@ function threadLinkHref(link: ThreadLink): string {
     : `${V2_PREFIX}${link.environmentId}/${link.threadId}`;
 }
 
+const BRACKET_OR_LINE_BREAK = /[[\]\\\r\n]/g;
+const WHITESPACE_RUNS = /\s+/g;
+
 /** Without a label, an autolink: clients show the thread's current title. */
 export function formatThreadLink(ref: ThreadLink, label?: string): string {
-  const cleaned = label
-    ?.replace(/[[\]\\\r\n]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  const cleaned = label?.replace(BRACKET_OR_LINE_BREAK, " ").replace(WHITESPACE_RUNS, " ").trim();
   return cleaned ? `[${cleaned}](${threadLinkHref(ref)})` : `<${threadLinkHref(ref)}>`;
 }
 

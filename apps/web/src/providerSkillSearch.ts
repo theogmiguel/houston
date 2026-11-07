@@ -69,13 +69,15 @@ export function scoreProviderSkill(skill: ServerProviderSkill, query: string): n
   return Math.min(...scores);
 }
 
+const LEADING_CURRENCY = /^\p{Sc}+/u;
+
 export function searchProviderSkills(
   skills: ReadonlyArray<ServerProviderSkill>,
   query: string,
   limit = Number.POSITIVE_INFINITY,
 ): ServerProviderSkill[] {
   const enabledSkills = dedupeProviderSkillsByName(skills.filter(isProviderSkillUserInvocable));
-  const normalizedQuery = normalizeSearchQuery(query, { trimLeadingPattern: /^\p{Sc}+/u });
+  const normalizedQuery = normalizeSearchQuery(query, { trimLeadingPattern: LEADING_CURRENCY });
 
   if (!normalizedQuery) {
     return enabledSkills;

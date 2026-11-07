@@ -99,6 +99,8 @@ function buildTreeEntries(
   return [...result.values()];
 }
 
+const VALID_NAME_PATTERN = /[\u0000-\u001f\u007f]/;
+
 export default function FileBrowserPanel({
   environmentId,
   cwd,
@@ -197,7 +199,7 @@ export default function FileBrowserPanel({
     name !== ".." &&
     !name.includes("/") &&
     !name.includes("\\") &&
-    !/[\u0000-\u001f\u007f]/.test(name);
+    !VALID_NAME_PATTERN.test(name);
 
   const submitEdit = async (value: string) => {
     if (!editing || submittingRef.current) return;

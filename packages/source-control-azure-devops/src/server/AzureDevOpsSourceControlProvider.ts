@@ -13,8 +13,10 @@ import {
   type SourceControlCliDiscoverySpec,
 } from "@houston-app/source-control-core/server/discovery";
 
+const LINE_BREAK = /\r?\n/;
+
 function parseAzureAuth(input: SourceControlAuthProbeInput) {
-  const account = input.stdout.trim().split(/\r?\n/)[0]?.trim();
+  const account = input.stdout.trim().split(LINE_BREAK)[0]?.trim();
 
   if (input.exitCode !== 0) {
     return providerAuth({
@@ -76,6 +78,11 @@ export const make = Effect.gen(function* () {
 
   return SourceControlProvider.SourceControlProvider.of({
     kind: SourceControlProviderKind.make("azure-devops"),
+    // Azure lists fork pull requests by source branch with no owner filter, so read a full page.
+    headBranchProbe: ({ headSelectors }) => ({
+      headSelectors: headSelectors.filter((selector) => !selector.includes(":")),
+      limit: 100,
+    }),
     listChangeRequests: Effect.fn("AzureDevOpsSourceControlProvider.listChangeRequests")(
       function (input) {
         const source = SourceControlProvider.sourceControlRefFromInput(input);

@@ -23,9 +23,12 @@ export function limitSection(value: string, maxChars: number): string {
   return `${truncated}\n\n[truncated]`;
 }
 
+const LINE_BREAK = /\r?\n/g;
+const WITHOUT_TRAILING_PERIOD_PATTERN = /[.]+$/g;
+
 export function sanitizeCommitSubject(raw: string): string {
-  const singleLine = raw.trim().split(/\r?\n/g)[0]?.trim() ?? "";
-  const withoutTrailingPeriod = singleLine.replace(/[.]+$/g, "").trim();
+  const singleLine = raw.trim().split(LINE_BREAK)[0]?.trim() ?? "";
+  const withoutTrailingPeriod = singleLine.replace(WITHOUT_TRAILING_PERIOD_PATTERN, "").trim();
   if (withoutTrailingPeriod.length === 0) {
     return "Update project files";
   }
@@ -45,7 +48,7 @@ export function sanitizeCommitSubject(raw: string): string {
 }
 
 export function sanitizePrTitle(raw: string): string {
-  const singleLine = raw.trim().split(/\r?\n/g)[0]?.trim() ?? "";
+  const singleLine = raw.trim().split(LINE_BREAK)[0]?.trim() ?? "";
   if (singleLine.length > 0) {
     return singleLine;
   }
@@ -54,17 +57,20 @@ export function sanitizePrTitle(raw: string): string {
 
 const MAX_THREAD_TITLE_CHARS = 120;
 
+const SURROUNDING_QUOTES = /^['"`]+|['"`]+$/g;
+const WHITESPACE_RUNS = /\s+/g;
+
 export function sanitizeThreadTitle(raw: string): string {
   // Unwrap a JSON-formatted title before truncation can cut off the closing brace.
   const decoded = decodeJsonThreadTitle(raw);
   const title = Option.isSome(decoded) ? decoded.value.title : raw;
   const normalized = title
     .trim()
-    .split(/\r?\n/g)[0]
+    .split(LINE_BREAK)[0]
     ?.trim()
-    .replace(/^['"`]+|['"`]+$/g, "")
+    .replace(SURROUNDING_QUOTES, "")
     .trim()
-    .replace(/\s+/g, " ");
+    .replace(WHITESPACE_RUNS, " ");
 
   if (!normalized || normalized.trim().length === 0) {
     return "New thread";

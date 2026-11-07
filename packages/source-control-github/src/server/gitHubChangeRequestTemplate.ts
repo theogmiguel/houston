@@ -36,6 +36,8 @@ interface TemplateTreeEntry {
   readonly path: string;
 }
 
+const TREE_ENTRY_OBJECT_ID = /^[0-9a-f]{40,64}$/;
+
 function parseTemplateTreeEntries(output: string): ReadonlyArray<TemplateTreeEntry> {
   const entries: TemplateTreeEntry[] = [];
   for (const record of output.split("\0")) {
@@ -53,7 +55,7 @@ function parseTemplateTreeEntries(output: string): ReadonlyArray<TemplateTreeEnt
       type !== "blob" ||
       (mode !== "100644" && mode !== "100755") ||
       !objectId ||
-      !/^[0-9a-f]{40,64}$/.test(objectId)
+      !TREE_ENTRY_OBJECT_ID.test(objectId)
     ) {
       continue;
     }
@@ -96,6 +98,8 @@ type DirectoryTemplateResult =
   | { readonly _tag: "Ambiguous" }
   | { readonly _tag: "Template"; readonly template: string };
 
+const MARKDOWN_OR_TEXT_SUFFIX = /\.(?:md|txt)$/i;
+
 const readTemplateDirectory = Effect.fn("gitHubChangeRequestTemplate.readTemplateDirectory")(
   function* (input: {
     readonly cwd: string;
@@ -109,7 +113,7 @@ const readTemplateDirectory = Effect.fn("gitHubChangeRequestTemplate.readTemplat
         return false;
       }
       const relativePath = entry.path.slice(prefix.length);
-      return !relativePath.includes("/") && /\.(?:md|txt)$/i.test(relativePath);
+      return !relativePath.includes("/") && MARKDOWN_OR_TEXT_SUFFIX.test(relativePath);
     });
 
     const templates: string[] = [];

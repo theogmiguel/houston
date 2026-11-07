@@ -125,9 +125,11 @@ function openVsxThemeId(extensionId: string, source: string): string {
   return `ovx-theme-${shortHash(`${extensionId}:${source}`)}`;
 }
 
+const OPEN_VSX_COLLECTION_ID_PATTERN = /^[a-z0-9][a-z0-9.:-]{0,127}$/;
+
 function openVsxCollectionId(extensionId: string): string {
   const normalized = `open-vsx:${extensionId.toLowerCase()}`;
-  return /^[a-z0-9][a-z0-9.:-]{0,127}$/.test(normalized)
+  return OPEN_VSX_COLLECTION_ID_PATTERN.test(normalized)
     ? normalized
     : `open-vsx:${shortHash(extensionId)}`;
 }
@@ -349,12 +351,14 @@ function sanitizeThemeObject(value: Record<string, unknown>): Record<string, unk
   };
 }
 
+const WINDOWS_DRIVE_PREFIX = /^[a-zA-Z]:/;
+
 function normalizePackagePath(path: string, relativeTo = "extension/"): string {
   if (
     path.length > MAX_PACKAGE_PATH_LENGTH ||
     path.includes("\0") ||
     path.startsWith("/") ||
-    /^[a-zA-Z]:/.test(path)
+    WINDOWS_DRIVE_PREFIX.test(path)
   ) {
     throw new Error("Theme path is not a safe relative package path.");
   }
@@ -622,6 +626,9 @@ async function fetchPackage(url: string, signal?: AbortSignal): Promise<Uint8Arr
   );
 }
 
+const WHITESPACE_RUN = /\s+/;
+const IMPORT_OPEN_VSX_THEME_EXTENSION_PATTERN = /^[a-f\d]{64}$/i;
+
 export async function importOpenVsxThemeExtension(
   extension: OpenVsxThemeExtension,
   signal?: AbortSignal,
@@ -655,8 +662,8 @@ export async function importOpenVsxThemeExtension(
       ),
     )
     .trim()
-    .split(/\s+/)[0];
-  if (!expectedChecksum || !/^[a-f\d]{64}$/i.test(expectedChecksum)) {
+    .split(WHITESPACE_RUN)[0];
+  if (!expectedChecksum || !IMPORT_OPEN_VSX_THEME_EXTENSION_PATTERN.test(expectedChecksum)) {
     throw new Error("That Open VSX theme has an invalid checksum.");
   }
   signal?.throwIfAborted();

@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
   isTerminalSubagentStatus,
+  workflowMemberModelSelection,
   workflowOpeningHeadline,
   type RuntimeSubagent,
   type WorkflowOpening,
@@ -28,8 +29,10 @@ import { EnvironmentSubagentAvatar } from "./V2LifecycleRow";
 
 const FOLDED_SCRIPT_MASK = "linear-gradient(to bottom, black calc(100% - 1.75rem), transparent)";
 
+const BACKTICK_RUN = /`+/g;
+
 function scriptMarkdown(script: string) {
-  const longestRun = Math.max(2, ...(script.match(/`+/g) ?? []).map((run) => run.length));
+  const longestRun = Math.max(2, ...(script.match(BACKTICK_RUN) ?? []).map((run) => run.length));
   const fence = "`".repeat(longestRun + 1);
   return `${fence}javascript\n${script.trimEnd()}\n${fence}`;
 }
@@ -101,6 +104,9 @@ export function WorkflowOpeningBlock(props: {
   );
 }
 
+const BACKTICK = /`/g;
+const WHITESPACE_RUNS = /\s+/g;
+
 function WorkflowMemberRow(props: {
   readonly member: RuntimeSubagent;
   readonly environmentId: EnvironmentId;
@@ -117,8 +123,8 @@ function WorkflowMemberRow(props: {
       ? (member.error ?? member.result ?? member.progress)
       : member.progress
   )
-    ?.replace(/`/g, "")
-    .replace(/\s+/g, " ")
+    ?.replace(BACKTICK, "")
+    .replace(WHITESPACE_RUNS, " ")
     .trim();
   const className =
     "group/subagent flex w-full min-w-0 items-center gap-2.5 rounded-md px-2 py-1.5 text-left";
@@ -183,6 +189,7 @@ function WorkflowMemberRow(props: {
             model={member.model}
             providerInstanceId={props.providerInstanceId}
             origin="provider_native"
+            modelSelection={workflowMemberModelSelection(member, props.providerInstanceId)}
             provider={props.providers.find(
               (provider) => provider.instanceId === props.providerInstanceId,
             )}

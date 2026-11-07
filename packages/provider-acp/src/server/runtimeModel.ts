@@ -548,11 +548,13 @@ function normalizeCommandValue(value: unknown): string | undefined {
   return parts.length > 0 ? parts.join(" ") : undefined;
 }
 
+const INLINE_CODE_SPAN = /`([^`]+)`/;
+
 function extractCommandFromTitle(title: string | undefined): string | undefined {
   if (!title) {
     return undefined;
   }
-  const match = /`([^`]+)`/.exec(title);
+  const match = INLINE_CODE_SPAN.exec(title);
   return match?.[1]?.trim() || undefined;
 }
 
@@ -1081,6 +1083,10 @@ const HOUSTON_MCP_TITLE_SUFFIX_CALL =
  */
 const HOUSTON_MCP_BARE_TITLE_CALL = /^(?:Running )?(?<tool>[A-Za-z0-9_]+)(?::\s*\{|$)/;
 
+const HOUSTON_SERVER_NAME = /^houston(?:_code)?$/i;
+const ALPHANUMERIC_CHAR = /[A-Za-z0-9]/;
+const QUALIFIED_PATTERN = /^mcp__(.+?)__(.+)$/i;
+
 /** ACP lacks typed MCP calls; recognize provider metadata and terminal fallback commands. */
 export function extractMcpToolCallIdentity(
   toolCall: AcpToolCallState,
@@ -1115,14 +1121,14 @@ export function extractMcpToolCallIdentity(
     : undefined;
   const metaServerId = typeof meta?.serverId === "string" ? meta.serverId.trim() : "";
   const metaToolName = typeof meta?.toolName === "string" ? meta.toolName.trim() : "";
-  if (/^houston(?:_code)?$/i.test(metaServerId) && metaToolName.length > 0) {
+  if (HOUSTON_SERVER_NAME.test(metaServerId) && metaToolName.length > 0) {
     for (const knownTool of HOUSTON_MCP_TOOL_NAMES) {
       const boundary = metaToolName.length - knownTool.length - 1;
       if (
         metaToolName === knownTool ||
         (metaToolName.endsWith(knownTool) &&
           boundary >= 0 &&
-          !/[A-Za-z0-9]/.test(metaToolName.charAt(boundary)))
+          !ALPHANUMERIC_CHAR.test(metaToolName.charAt(boundary)))
       ) {
         return { server: "houston", tool: knownTool };
       }
@@ -1131,8 +1137,8 @@ export function extractMcpToolCallIdentity(
   const gooseExtension =
     typeof gooseToolCall?.extensionName === "string" ? gooseToolCall.extensionName.trim() : "";
   const assertsForeignOrigin =
-    (metaServerId.length > 0 && !/^houston(?:_code)?$/i.test(metaServerId)) ||
-    (gooseExtension.length > 0 && !/^houston(?:_code)?$/i.test(gooseExtension));
+    (metaServerId.length > 0 && !HOUSTON_SERVER_NAME.test(metaServerId)) ||
+    (gooseExtension.length > 0 && !HOUSTON_SERVER_NAME.test(gooseExtension));
   // goose metadata also tags built-ins; retain their command/file projections instead of classifying as MCP.
   if (assertsForeignOrigin) {
     if (metaServerId.length === 0 || metaToolName.length === 0) return undefined;
@@ -1150,8 +1156,8 @@ export function extractMcpToolCallIdentity(
   ].filter((value): value is string => typeof value === "string");
   for (const candidate of candidates) {
     const trimmed = candidate.trim();
-    const qualified = /^mcp__(.+?)__(.+)$/i.exec(trimmed);
-    if (qualified?.[1] && qualified[2] && !/^houston(?:_code)?$/i.test(qualified[1]))
+    const qualified = QUALIFIED_PATTERN.exec(trimmed);
+    if (qualified?.[1] && qualified[2] && !HOUSTON_SERVER_NAME.test(qualified[1]))
       return { server: qualified[1], tool: qualified[2] };
     const match =
       HOUSTON_MCP_TITLE_CALL.exec(trimmed) ??

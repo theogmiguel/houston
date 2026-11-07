@@ -26,6 +26,9 @@ import { FetchHttpClient, HttpClient } from "effect/http";
 
 import * as ProcessRunner from "../processRunner.ts";
 
+const DIGITS_ONLY = /^\d+$/;
+const HELD_PATTERN = /^socket:\[(\d+)\]$/;
+
 export class PortDiscovery extends Context.Service<
   PortDiscovery,
   {
@@ -166,11 +169,9 @@ const localServerKey = (host: string, port: number): string =>
 const urlPort = (url: URL): number =>
   url.port.length > 0 ? Number.parseInt(url.port, 10) : url.protocol === "http:" ? 80 : 443;
 
-const webProbeCacheKey = (raw: string): string => {
-  const url = new URL(raw);
-  url.hash = "";
-  return url.href;
-};
+// The configured URL without its fragment; leaves the caller's URL unchanged.
+const webProbeCacheKey = (url: URL): string =>
+  url.hash.length > 0 ? url.href.slice(0, -url.hash.length) : url.href;
 
 const normalizeConfiguredUrls = (urls: ReadonlyArray<string>): ReadonlyArray<string> => [
   ...new Set(
@@ -199,7 +200,7 @@ const projectWebProbeSnapshot = (
     const serverKey = localServerKey(url.hostname, port);
     if (!firstConfiguredByServer.has(serverKey)) firstConfiguredByServer.set(serverKey, raw);
     if (visibleByServer.has(serverKey)) continue;
-    const configured = snapshot.configured.get(webProbeCacheKey(raw));
+    const configured = snapshot.configured.get(webProbeCacheKey(url));
     if (configured) visibleByServer.set(serverKey, { ...configured, url: raw });
   }
   // An owned listener whose configured check failed still opens at this caller's configured URL.
@@ -272,6 +273,8 @@ const parsePortFromLsofName = (name: string): number | null => {
   return port;
 };
 
+const WHITESPACE_RUN = /\s+/;
+
 const parseWindowsListenerLine = (
   line: string,
 ): {
@@ -299,7 +302,7 @@ const parseWindowsListenerLine = (
   }
 
   // Foreign port `:0` identifies a listening TCP socket regardless of Windows locale.
-  const fields = trimmed.split(/\s+/);
+  const fields = trimmed.split(WHITESPACE_RUN);
   if (fields.length < 4 || fields[0]?.toUpperCase() !== "TCP") return null;
   const localEndpoint = fields[1] ?? "";
   const foreignEndpoint = fields[2] ?? "";
@@ -322,10 +325,14 @@ const parseWindowsListenerLine = (
 const exitedWithError = (result: ProcessRunner.ProcessRunOutput): boolean =>
   result.code !== null && result.code !== 0;
 
+const LINE_BREAK = /\r?\n/g;
+const TASKLIST_CSV_ROW = /^"([^"]*)","(\d+)"/;
+const EXE_SUFFIX = /\.exe$/i;
+
 const parseTasklistProcessName = (raw: string, pid: number): string | null => {
-  for (const line of raw.split(/\r?\n/g)) {
-    const match = /^"([^"]*)","(\d+)"/.exec(line.trim());
-    if (match && Number(match[2]) === pid) return match[1]!.replace(/\.exe$/i, "") || null;
+  for (const line of raw.split(LINE_BREAK)) {
+    const match = TASKLIST_CSV_ROW.exec(line.trim());
+    if (match && Number(match[2]) === pid) return match[1]!.replace(EXE_SUFFIX, "") || null;
   }
   return null;
 };
@@ -335,7 +342,7 @@ const parseWindowsListenerOutput = (
   owners: ReadonlyMap<number, ServerOwner> = new Map(),
 ): ReadonlyArray<DiscoveredLocalServer> => {
   const seen = new Map<number, DiscoveredLocalServer>();
-  for (const line of raw.split(/\r?\n/g)) {
+  for (const line of raw.split(LINE_BREAK)) {
     const parsed = parseWindowsListenerLine(line);
     if (!parsed) continue;
     const { port, pid: normalizedPid, processName } = parsed;
@@ -374,7 +381,7 @@ const parseProcNetTcp = (
 ): ReadonlyArray<{ readonly port: number; readonly inode: string }> => {
   const listeners: Array<{ port: number; inode: string }> = [];
   for (const line of raw.split("\n").slice(1)) {
-    const fields = line.trim().split(/\s+/);
+    const fields = line.trim().split(WHITESPACE_RUN);
     const [address, portHex] = fields[1]?.split(":") ?? [];
     if (fields[3] !== PROC_TCP_LISTEN || !address || !portHex) continue;
     if (!procLocalAddress(address.toUpperCase())) continue;
@@ -418,6 +425,8 @@ const parseProcEnvironThread = (raw: string): ThreadId | null => {
   return value ? ThreadId.make(value) : null;
 };
 
+const LISTENER_PROCESS_LINE = /^\s*(\d+)\s(.*)$/;
+
 /**
  * Reads macOS `ps -E -o pid=,command=`, which appends each process's launch environment to its
  * argv with spaces, so an argument that spells the assignment out also matches.
@@ -425,7 +434,7 @@ const parseProcEnvironThread = (raw: string): ThreadId | null => {
 const parsePsEnvironmentThreads = (raw: string): ReadonlyMap<number, ThreadId | null> => {
   const threads = new Map<number, ThreadId | null>();
   for (const line of raw.split("\n")) {
-    const match = /^\s*(\d+)\s(.*)$/.exec(line);
+    const match = LISTENER_PROCESS_LINE.exec(line);
     if (!match) continue;
     const value = AGENT_THREAD_ASSIGNMENT.exec(match[2]!)?.[1];
     threads.set(Number(match[1]), value ? ThreadId.make(value) : null);
@@ -436,7 +445,7 @@ const parsePsEnvironmentThreads = (raw: string): ReadonlyMap<number, ThreadId | 
 const parseProcessTable = (raw: string): ReadonlyMap<number, ProcessTableRow> => {
   const rows = new Map<number, ProcessTableRow>();
   for (const line of raw.split("\n")) {
-    const [pid, ppid, pgid] = line.trim().split(/\s+/).map(Number);
+    const [pid, ppid, pgid] = line.trim().split(WHITESPACE_RUN).map(Number);
     if (Number.isInteger(pid) && Number.isInteger(ppid) && Number.isInteger(pgid)) {
       rows.set(pid!, { pid: pid!, ppid: ppid!, pgid: pgid! });
     }
@@ -597,7 +606,7 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
     const pids = (yield* fileSystem
       .readDirectory("/proc")
       .pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []))).filter((entry) =>
-      /^\d+$/.test(entry),
+      DIGITS_ONLY.test(entry),
     );
     let budget = PROC_FD_WALK_LIMIT;
     for (const pidText of pids) {
@@ -613,7 +622,7 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
           fileSystem.readLink(`/proc/${pidText}/fd/${fd}`).pipe(Effect.orElseSucceed(() => "")),
         { concurrency: 16 },
       );
-      const held = links.flatMap((link) => /^socket:\[(\d+)\]$/.exec(link)?.[1] ?? []);
+      const held = links.flatMap((link) => HELD_PATTERN.exec(link)?.[1] ?? []);
       const matched = held.filter((inode) => inodes.has(inode) && !owners.has(inode));
       if (matched.length === 0) continue;
       const processName = yield* fileSystem.readFileString(`/proc/${pidText}/comm`).pipe(
@@ -712,7 +721,7 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
       const url = new URL(raw);
       const port = urlPort(url);
       const key = localServerKey(url.hostname, port);
-      const resourceKey = webProbeCacheKey(raw);
+      const resourceKey = webProbeCacheKey(url);
       if (configuredResources.has(resourceKey)) continue;
       configuredResources.add(resourceKey);
       groups.push({
@@ -735,7 +744,8 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
   // Only configured URLs are requested. Owned listeners are listed as plain HTTP without a
   // request: owning a process says nothing about its protocol, and HTTP or TLS bytes break
   // binary ones such as Unity's test runner or Steam's IPC.
-  const probeWebServers = Effect.fn("PortDiscovery.probeWebServers")(function* (
+  // Idle polls omit this span; requested scans and uncached probes retain their own spans.
+  const probeWebServers = Effect.fnUntraced(function* (
     servers: ReadonlyArray<DiscoveredLocalServer>,
     configuredUrls: ReadonlyArray<string>,
   ) {
@@ -832,9 +842,8 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
         platform: hostPlatform,
       }).pipe(Effect.as(null));
 
-  const scanUnlocked = Effect.fn("PortDiscovery.scanUnlocked")(function* (
-    configuredUrls: ReadonlyArray<string>,
-  ) {
+  // Routine polling helpers share operation/probe spans instead of tracing every tick.
+  const scanUnlocked = Effect.fnUntraced(function* (configuredUrls: ReadonlyArray<string>) {
     if (!listenerDiscovery) return yield* probeWebServers([], configuredUrls);
     const state = yield* Ref.get(stateRef);
     const terminalOwners = new Map<number, ServerOwner>();
@@ -920,19 +929,18 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
     return yield* probeWebServers(fromProc ?? [], configuredUrls);
   });
 
-  const scanSnapshot = Effect.fn("PortDiscovery.scanSnapshot")(
-    (configuredUrls: ReadonlyArray<string>) =>
-      scanSemaphore.withPermits(1)(scanUnlocked(configuredUrls)),
-  );
+  const scanSnapshot = (configuredUrls: ReadonlyArray<string>) =>
+    scanSemaphore.withPermits(1)(scanUnlocked(configuredUrls));
 
   const scanOnce: PortDiscovery["Service"]["scan"] = (configuredUrls = []) => {
     const normalized = normalizeConfiguredUrls(configuredUrls);
     return scanSnapshot(normalized).pipe(
       Effect.map((snapshot) => projectWebProbeSnapshot(snapshot, normalized)),
+      Effect.withSpan("PortDiscovery.scan"),
     );
   };
 
-  const pollTick = Effect.fn("PortDiscovery.pollTick")(
+  const pollTick = Effect.fnUntraced(
     function* () {
       const configuredUrls = [
         ...new Set(

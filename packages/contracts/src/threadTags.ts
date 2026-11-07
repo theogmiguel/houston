@@ -3,11 +3,13 @@ import * as Schema from "effect/Schema";
 
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 
+const CONTROL_CHARACTER = /[\p{Cc}]/u;
+
 /** Tags match by exact spelling and case after trimming. */
 export const ThreadTag = TrimmedNonEmptyString.check(
   Schema.isMaxLength(64),
   Schema.makeFilter((value) =>
-    /[\p{Cc}]/u.test(value) ? "A thread tag must be a single line of text." : true,
+    CONTROL_CHARACTER.test(value) ? "A thread tag must be a single line of text." : true,
   ),
 );
 export type ThreadTag = typeof ThreadTag.Type;

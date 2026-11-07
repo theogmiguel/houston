@@ -140,6 +140,8 @@ const decodePathSegment = (segment: string): string | null => {
   }
 };
 
+const HELPER_PATTERN = /^\/vendor\/serve-sim\/helper\/([^/]+)\//;
+
 export const make = Effect.fn("EasDeviceHost.make")(function* (config: EasDeviceHostConfig) {
   const http = yield* HttpClient.HttpClient;
   const fs = yield* FileSystem.FileSystem;
@@ -789,7 +791,7 @@ export const make = Effect.fn("EasDeviceHost.make")(function* (config: EasDevice
         hubPath.startsWith(`${PLATFORMS[candidate].hubPrefix}/`),
       );
       if (!platform) return null;
-      const helper = /^\/vendor\/serve-sim\/helper\/([^/]+)\//.exec(hubPath);
+      const helper = HELPER_PATTERN.exec(hubPath);
       const deviceId = helper ? decodePathSegment(helper[1]!) : search.get("device");
       if (helper && deviceId === null) return null;
       const session =

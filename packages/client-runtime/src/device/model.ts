@@ -15,12 +15,17 @@ export interface DeviceAccessorySource {
 
 export type DeviceAssetSource = DeviceModelSource | DeviceAccessorySource;
 
+const IPHONE_DUO_MODEL = /^iPhone Duo$/i;
+const IPHONE_PRO_MAX_MODEL = /^iPhone 18 Pro Max$/i;
+const IPHONE_PRO_MODEL = /^iPhone 18 Pro$/i;
+const IPAD_PRO_13_MODEL = /^iPad Pro 13-inch \(M5\)$/i;
+
 export function resolveDeviceModelId(platform: DevicePlatform, name: string): DeviceModelId | null {
   if (platform !== "ios") return null;
-  if (/^iPhone Duo$/i.test(name)) return "iphone-duo";
-  if (/^iPhone 18 Pro Max$/i.test(name)) return "iphone-18-pro-max";
-  if (/^iPhone 18 Pro$/i.test(name)) return "iphone-18-pro";
-  if (/^iPad Pro 13-inch \(M5\)$/i.test(name)) return "ipad-pro-13-m5";
+  if (IPHONE_DUO_MODEL.test(name)) return "iphone-duo";
+  if (IPHONE_PRO_MAX_MODEL.test(name)) return "iphone-18-pro-max";
+  if (IPHONE_PRO_MODEL.test(name)) return "iphone-18-pro";
+  if (IPAD_PRO_13_MODEL.test(name)) return "ipad-pro-13-m5";
   return null;
 }
 

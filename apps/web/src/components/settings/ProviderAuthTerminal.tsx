@@ -5,6 +5,8 @@ import { ensureLocalApi } from "../../localApi";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { terminalThemeFromApp } from "../ThreadTerminalDrawer";
 
+const HTTP_URL_PREFIX = /^https?:\/\//i;
+
 export default function ProviderAuthTerminal({
   output,
   outputOffset,
@@ -39,7 +41,7 @@ export default function ProviderAuthTerminal({
       onSelectionChange: () => {},
       beforeKey: (event) => event.key !== "Tab",
       onLinkActivate: (url) => {
-        if (/^https?:\/\//i.test(url))
+        if (HTTP_URL_PREFIX.test(url))
           void ensureLocalApi()
             .shell.openExternal(url)
             .catch(() => setError("Could not open the provider link."));

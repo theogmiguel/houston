@@ -48,11 +48,13 @@ export function pickWorkspaceBasenameMatch(
   return foldedMatches.length === 1 ? (foldedMatches[0]?.path ?? null) : null;
 }
 
+const PATH_SEGMENTS_PATTERN = /[\\/]+/;
+
 // Repository-relative paths can repeat the project's suffix in subfolder projects.
 export function stripRepeatedWorkspacePrefix(relativePath: string, cwd: string): string | null {
   if (isAbsolutePath(relativePath)) return null;
-  const pathSegments = relativePath.split(/[\\/]+/);
-  const cwdSegments = cwd.split(/[\\/]+/).filter(Boolean);
+  const pathSegments = relativePath.split(PATH_SEGMENTS_PATTERN);
+  const cwdSegments = cwd.split(PATH_SEGMENTS_PATTERN).filter(Boolean);
   const fold = isWindowsAbsolutePath(cwd)
     ? (segment: string | undefined) => segment?.toLowerCase()
     : (segment: string | undefined) => segment;

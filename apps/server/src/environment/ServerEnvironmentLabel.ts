@@ -48,8 +48,10 @@ function normalizeLabel(value: string | null | undefined): string | null {
   return trimmed && trimmed.length > 0 ? trimmed : null;
 }
 
+const LINE_BREAK = /\r?\n/g;
+
 function parseMachineInfoValue(raw: string, key: string): string | null {
-  for (const line of raw.split(/\r?\n/g)) {
+  for (const line of raw.split(LINE_BREAK)) {
     const trimmed = line.trim();
     if (trimmed.length === 0 || trimmed.startsWith("#") || !trimmed.startsWith(`${key}=`)) {
       continue;

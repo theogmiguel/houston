@@ -82,6 +82,7 @@ vi.mock("~/hooks/useTheme", () => ({
 vi.mock("~/state/queries", () => ({
   useCheckpointDiff: () => ({ data: null, error: null, isPending: false }),
   useTurnItemDetail: () => ({ data: null, error: null, isPending: false }),
+  useDebouncedValue: <A,>(value: A) => value,
 }));
 vi.mock("~/hooks/useHandleNewThread", () => ({ useNewThreadHandler: () => async () => {} }));
 vi.mock("~/state/use-atom-command", () => ({ useAtomCommand: () => async () => {} }));

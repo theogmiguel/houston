@@ -12,6 +12,8 @@ import { useDeviceControls } from "./useDeviceControls";
 
 const DOWNLOAD_URL_LIFETIME_MS = 60_000;
 
+const NON_FILE_NAME_CHARACTER = /[^a-z0-9-]/gi;
+
 export function DeviceWorkspace(props: {
   environmentId: EnvironmentId;
   device: DeviceSummary;
@@ -51,7 +53,7 @@ export function DeviceWorkspace(props: {
         const url = URL.createObjectURL(image);
         const link = document.createElement("a");
         link.href = url;
-        link.download = `${props.device.name.replace(/[^a-z0-9-]/gi, "-")}-${Date.now()}.png`;
+        link.download = `${props.device.name.replace(NON_FILE_NAME_CHARACTER, "-")}-${Date.now()}.png`;
         document.body.append(link);
         link.click();
         link.remove();

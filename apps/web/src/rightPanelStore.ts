@@ -637,6 +637,9 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
   return { byThreadKey, threadPanelVisibilityByThreadKey };
 }
 
+const WINDOWS_DRIVE_ROOT_SLASHES = /^[A-Za-z]:\/+$/;
+const TRAILING_SLASHES = /\/+$/;
+
 export const useRightPanelStore = create<RightPanelStoreState>()(
   persist(
     (set, get) => ({
@@ -816,9 +819,9 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
               return upsertSurface(current, singletonSurface("files"));
             }
             // Workspace entry paths use '/', including on Windows.
-            const relativePath = /^[A-Za-z]:\/+$/.test(requestedPath)
+            const relativePath = WINDOWS_DRIVE_ROOT_SLASHES.test(requestedPath)
               ? requestedPath
-              : requestedPath.replace(/\/+$/, "") || requestedPath;
+              : requestedPath.replace(TRAILING_SLASHES, "") || requestedPath;
             const withoutStandaloneExplorer = current.surfaces.filter(
               (surface) => surface.kind !== "files",
             );

@@ -372,6 +372,8 @@ function projectedWorkEntryTone(item: OrchestrationV2TurnItem): WorkLogEntry["to
   }
 }
 
+const TRAILING_ZERO = /\.0$/u;
+
 export function providerErrorPresentation(
   item: Extract<OrchestrationV2TurnItem, { readonly type: "error" }>,
 ): { readonly label: string; readonly detail: string } {
@@ -400,7 +402,7 @@ export function providerErrorPresentation(
     item.status === "running" && item.retry.retryDelayMs !== null && item.retry.retryDelayMs > 0
       ? item.retry.retryDelayMs < 1_000
         ? ` Retrying in ${item.retry.retryDelayMs}ms.`
-        : ` Retrying in ${(item.retry.retryDelayMs / 1_000).toFixed(1).replace(/\.0$/u, "")}s.`
+        : ` Retrying in ${(item.retry.retryDelayMs / 1_000).toFixed(1).replace(TRAILING_ZERO, "")}s.`
       : "";
   return {
     label,

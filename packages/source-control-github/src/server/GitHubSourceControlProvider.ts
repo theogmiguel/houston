@@ -1,4 +1,4 @@
-import { settingsSecretLiteral, SourceControlProviderKind } from "@houston-app/contracts";
+import { requireSettingsSecretLiteral, SourceControlProviderKind } from "@houston-app/contracts";
 import * as Data from "effect/Data";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -70,6 +70,11 @@ import {
   PullRequestNode,
   PullRequestsByHead,
 } from "./sourceControlProvider.graphql.ts";
+
+const OWNER_MATCH_PATTERN = /^([^:/\s]+):(.+)$/u;
+const PULL_OR_ISSUE_PATH = /^\/([\w.-]+)\/([\w.-]+)\/(?:pull|issues)\/([1-9]\d*)(?:\/.*)?$/;
+const GIT_SUFFIX = /\.git$/i;
+const LOCATOR_PATTERN = /^[^/\s]+$/;
 
 // Decode rows separately to isolate malformed PRs within shared documents.
 const LenientPullRequestsByHead = GraphQL.query(PullRequestsByHead.name, {
@@ -223,12 +228,12 @@ export const makeDiscovery = Effect.gen(function* () {
     label: discovery.label,
     installHint: discovery.installHint,
     probe: Effect.fn("GitHubSourceControlProvider.discovery")(function* (cwd: string) {
+      const current = yield* sourceControlHost.settings
+        .getWithSecrets(GitHubClient.definition.kind)
+        .pipe(Effect.orElseSucceed(() => undefined));
       const settings = readSourceControlHostSettings(
         GitHubClient.settings,
-        yield* sourceControlHost.settings.getWithSecrets(GitHubClient.definition.kind).pipe(
-          Effect.map((current) => current.sourceControlHosts[GitHubClient.definition.kind]),
-          Effect.orElseSucceed(() => undefined),
-        ),
+        current?.sourceControlHosts[GitHubClient.definition.kind],
       );
       const cli = yield* probeSourceControlProvider({
         cwd,
@@ -237,8 +242,21 @@ export const makeDiscovery = Effect.gen(function* () {
         },
         spec: { ...discovery, parseAuth: (input) => parseGitHubAuth(input, settings) },
       });
-      const token = settings.tokens["github.com"];
-      const savedToken = settingsSecretLiteral(token).trim() !== "";
+      const saved = yield* Effect.result(
+        requireSettingsSecretLiteral(settings.tokens["github.com"], current?.secretProviders ?? {}),
+      );
+      if (Result.isFailure(saved) && settings.hosts["github.com"]?.enabled !== false) {
+        return offerAppSignIn({
+          ...cli,
+          status: "available" as const,
+          auth: providerAuth({
+            status: "unauthenticated",
+            host: "github.com",
+            detail: saved.failure.message,
+          }),
+        });
+      }
+      const savedToken = Result.isSuccess(saved) && saved.success.trim() !== "";
       const signedIn =
         appSignIn.enabled && !savedToken && (settings.signIns["github.com"] ?? "").trim() !== "";
       const variable = environmentTokenVariable(environment);
@@ -340,6 +358,7 @@ function fromGitHubApiError(
       );
     case "GitHubNotSignedInError":
     case "GitHubHostDisabledError":
+    case "SettingsSecretUnresolvedError":
       return failure(error.message, error);
     case "GitHubApiAuthenticationError":
       return failure(
@@ -544,7 +563,7 @@ export const make = Effect.gen(function* () {
   }) {
     const locator = yield* resolveRepository(input);
     const limit = Math.min(Math.max(Math.trunc(input.limit), 1), 100);
-    const ownerMatch = /^([^:/\s]+):(.+)$/u.exec(input.headSelector.trim());
+    const ownerMatch = OWNER_MATCH_PATTERN.exec(input.headSelector.trim());
     const headRefName = ownerMatch?.[2] ?? input.headSelector.trim();
     const result = yield* graphqlRead(
       {
@@ -878,9 +897,7 @@ export const make = Effect.gen(function* () {
     // non-default port in the context's host, and the mark is then ignored.
     createsChangeRequestsIn: Effect.fn("GitHubSourceControlProvider.createsChangeRequestsIn")(
       function* ({ cwd, context, repository }) {
-        const host = URL.canParse(context.provider.baseUrl)
-          ? new URL(context.provider.baseUrl).host
-          : null;
+        const host = URL.parse(context.provider.baseUrl)?.host ?? null;
         const target = repository?.toLowerCase();
         const fromEnvironment = parseGitHubRepositorySelector(
           environment.GH_REPO ?? "",
@@ -890,8 +907,7 @@ export const make = Effect.gen(function* () {
           const { host: targetHost, owner, name } = fromEnvironment;
           return (
             host !== null &&
-            URL.canParse(`https://${targetHost}`) &&
-            new URL(`https://${targetHost}`).host === host &&
+            URL.parse(`https://${targetHost}`)?.host === host &&
             `${owner}/${name}`.toLowerCase() === target
           );
         }
@@ -925,9 +941,7 @@ export const make = Effect.gen(function* () {
     resolveLink: (input) => {
       // Automatic enrichment must not send ambient CLI credentials to a host from message text.
       if (input.url.host !== "github.com") return undefined;
-      const match = /^\/([\w.-]+)\/([\w.-]+)\/(?:pull|issues)\/([1-9]\d*)(?:\/.*)?$/.exec(
-        input.url.pathname,
-      );
+      const match = PULL_OR_ISSUE_PATH.exec(input.url.pathname);
       if (!match) return undefined;
       return readLinkSubject(input, `repos/${match[1]}/${match[2]}/issues/${match[3]}`);
     },
@@ -1004,10 +1018,10 @@ export const make = Effect.gen(function* () {
             Effect.orElseSucceed(() => environment.GH_HOST ?? "github.com"),
           ))
         ).toLowerCase();
-        const bareName = input.repository.trim().replace(/\.git$/i, "");
+        const bareName = input.repository.trim().replace(GIT_SUFFIX, "");
         const locator =
           parseGitHubRepositorySelector(input.repository, fallbackHost) ??
-          (/^[^/\s]+$/.test(bareName)
+          (LOCATOR_PATTERN.test(bareName)
             ? {
                 host: fallbackHost,
                 owner: yield* readViewerLogin(fallbackHost),

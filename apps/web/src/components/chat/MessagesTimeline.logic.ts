@@ -27,6 +27,8 @@ import {
   toolGroupAction,
   toolGroupSummaryKind,
   contextCompactionTokenCounts,
+  liveThoughtLine,
+  workEntryHiddenByToolCallVisibility,
   type ToolGroupSummaryKind,
 } from "@houston-app/client-runtime/work-log/presentation";
 import {
@@ -62,6 +64,7 @@ import {
   type TurnItemId,
 } from "@houston-app/contracts";
 import type { ThreadRunSummary } from "@houston-app/client-runtime/state/shell";
+import type { ToolCallVisibility } from "@houston-app/contracts/settings";
 import { resolveHoustonMcpToolDefinition } from "@houston-app/shared/houstonMcpToolPresentation";
 import { compactDynamicToolOutput } from "@houston-app/shared/toolOutput";
 import {
@@ -77,6 +80,12 @@ import {
   formatSearchToolLabel,
 } from "@houston-app/shared/toolActivity";
 import { isWindowsAbsolutePath } from "@houston-app/shared/path";
+
+const WHITESPACE_RUN = /\s+/g;
+const LINE_BREAK_CHAR = /[\r\n]/;
+const TRAILING_SLASHES = /\/+$/;
+const DOT_SLASH_PREFIX = /^\.\//;
+const LEADING_SLASHES = /^\/+/;
 
 function timelineEntryRunId(entry: TimelineEntry): RunId | null {
   if (entry.kind === "message") {
@@ -98,7 +107,8 @@ function workEntryIsActiveTurnActivity(entry: WorkLogEntry): boolean {
 }
 
 function singleToolCallLabel(entry: WorkLogEntry): string {
-  if (entry.itemType === "reasoning") return entry.detail?.trim().replace(/\s+/g, " ") || "Thought";
+  if (entry.itemType === "reasoning")
+    return entry.detail?.trim().replace(WHITESPACE_RUN, " ") || "Thought";
   const toolPresentation = resolveWorkEntryToolPresentation(entry, "completed");
   if (toolPresentation) return toolPresentation.displayName;
   const item = entry.structuredPayload;
@@ -137,7 +147,7 @@ function workEntryReadPaths(entry: WorkLogEntry, workspaceRoot: string | undefin
 export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string | undefined) {
   if (entry.itemType === "system_notice") return entry.label;
   if (entry.itemType === "reasoning" || entry.tone === "thinking") {
-    const thought = entry.detail?.trim().replace(/\s+/g, " ");
+    const thought = entry.detail?.trim().replace(WHITESPACE_RUN, " ");
     return thought || entry.label;
   }
   const toolPresentation = resolveWorkEntryToolPresentation(entry);
@@ -163,7 +173,7 @@ export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string
   if (title) return title;
   const compactDetail = entry.detail?.trim();
   const detailIsSearchOutput =
-    (action === "code-search" || action === "search") && /[\r\n]/.test(compactDetail ?? "");
+    (action === "code-search" || action === "search") && LINE_BREAK_CHAR.test(compactDetail ?? "");
   if (compactDetail && !providerRetry && action !== "read" && !detailIsSearchOutput) {
     return compactDetail;
   }
@@ -221,8 +231,8 @@ export function workEntryReadOutput(
           if (!workspaceRoot || trimmed.startsWith("/") || isWindowsAbsolutePath(trimmed)) {
             return trimmed;
           }
-          const root = workspaceRoot.replaceAll("\\", "/").replace(/\/+$/, "");
-          const relative = trimmed.replace(/^\.\//, "").replace(/^\/+/, "");
+          const root = workspaceRoot.replaceAll("\\", "/").replace(TRAILING_SLASHES, "");
+          const relative = trimmed.replace(DOT_SLASH_PREFIX, "").replace(LEADING_SLASHES, "");
           return `${root}/${relative}`;
         })
         .filter((path) => path.length > 0),
@@ -256,7 +266,7 @@ export function liveWorkEntryLabel(
   const status = liveActivityToolStatus(entry.toolLifecycleStatus, active);
   if (entry.itemType === "reasoning") {
     return (
-      entry.detail?.trim().replace(/\s+/g, " ") ||
+      entry.detail?.trim().replace(WHITESPACE_RUN, " ") ||
       (status === "inProgress" ? "Thinking" : "Thought")
     );
   }
@@ -696,9 +706,11 @@ export interface StableMessagesTimelineRowsState {
   result: MessagesTimelineRow[];
 }
 
+const LEADING_DOT_SLASH = /^\.\//;
+
 function sameFilePath(a: string, b: string): boolean {
   const normalize = (path: string) =>
-    path.trim().replaceAll("\\", "/").replace(/^\.\//, "").replace(/^\/+/, "");
+    path.trim().replaceAll("\\", "/").replace(LEADING_DOT_SLASH, "").replace(LEADING_SLASHES, "");
   const left = normalize(a);
   const right = normalize(b);
   if (left.length === 0 || right.length === 0) return false;
@@ -1009,11 +1021,15 @@ function timelineEntryIsSystemNotice(entry: TimelineEntry): boolean {
   );
 }
 
+const RESUMED_NOTICE = /resumed/i;
+const RESTARTED_NOTICE = /restarted/i;
+const RESTART_NOTICE = /resumed|restarted/i;
+
 /** The short fold-line form of a system notice's summary. */
 function systemNoticeFoldLabel(entry: TimelineEntry): string {
   const summary = entry.kind === "work" ? entry.entry.label : "";
-  if (/resumed/i.test(summary)) return "resumed after restart";
-  if (/restarted/i.test(summary)) return "restarted";
+  if (RESUMED_NOTICE.test(summary)) return "resumed after restart";
+  if (RESTARTED_NOTICE.test(summary)) return "restarted";
   return summary;
 }
 
@@ -1021,7 +1037,7 @@ function timelineEntryIsRestartNotice(entry: TimelineEntry): boolean {
   return (
     timelineEntryIsSystemNotice(entry) &&
     entry.kind === "work" &&
-    /resumed|restarted/i.test(entry.entry.label)
+    RESTART_NOTICE.test(entry.entry.label)
   );
 }
 
@@ -1600,17 +1616,123 @@ function settleSupersededReasoning(entries: ReadonlyArray<TimelineEntry>) {
   });
 }
 
-function timelineRowEntries(entries: ReadonlyArray<TimelineEntry>) {
-  return withoutSubagentDelegationRows(settleSupersededReasoning(entries));
+function workShownAsFinalAnswerOnly(
+  entry: TimelineEntry,
+  pendingApprovalRequestIds: ReadonlySet<RuntimeRequestId> | undefined,
+): boolean {
+  if (entry.kind === "event") return entry.projectedItem.item.type !== "subagent";
+  if (entry.kind !== "work") return true;
+  const work = entry.entry;
+  const item = work.projectedItem?.item;
+  return (
+    (item?.type === "approval_request" &&
+      pendingApprovalRequestIds?.has(item.requestId) === true) ||
+    work.questionAnswer !== undefined ||
+    timelineEntryIsCompaction(entry) ||
+    timelineEntryStartsResponse(entry) ||
+    work.tone === "error" ||
+    work.sourceActivityKind === "runtime.error" ||
+    (work.itemType === "error" && work.toolLifecycleStatus !== "completed")
+  );
+}
+
+function deriveInFlightSteerAnswerIds(entries: ReadonlyArray<TimelineEntry>): ReadonlySet<string> {
+  const ids = new Set<string>();
+  let awaitingReply = false;
+  let candidate: string | null = null;
+  for (const entry of entries) {
+    if (entry.kind === "work" && entry.entry.itemType === "reasoning") continue;
+    const reply = entry.kind === "message" && entry.message.role === "assistant" ? entry : null;
+    if (candidate !== null && reply !== null) ids.add(candidate);
+    candidate = null;
+    if (timelineEntryIsSteer(entry)) {
+      awaitingReply = true;
+    } else if (entry.kind === "message" && entry.message.role === "user") {
+      awaitingReply = false;
+    } else if (reply !== null && awaitingReply) {
+      candidate = reply.message.id;
+      awaitingReply = false;
+    }
+  }
+  return ids;
+}
+
+export function liveAnswerPreview(entries: ReadonlyArray<TimelineEntry>): string | null {
+  const boundary = lastResponseBoundaryIndex(entries);
+  for (let index = entries.length - 1; index > boundary; index -= 1) {
+    const entry = entries[index]!;
+    const text =
+      entry.kind === "message" && entry.message.role === "assistant"
+        ? entry.message.text
+        : entry.kind === "work" && entry.entry.itemType === "reasoning"
+          ? (entry.entry.detail ?? "")
+          : "";
+    const line = liveThoughtLine(text);
+    if (line !== "") return line;
+  }
+  return null;
+}
+
+function timelineRowEntries(
+  input: Pick<
+    MessagesTimelineRowsInput,
+    | "timelineEntries"
+    | "toolCallVisibility"
+    | "revealedMessageId"
+    | "isWorking"
+    | "latestRun"
+    | "runningRunId"
+    | "pendingApprovalRequestIds"
+  >,
+) {
+  const visibility = input.toolCallVisibility ?? "showAll";
+  const entries = input.timelineEntries;
+  let shown = entries;
+  if (visibility === "zen") {
+    const answering = input.isWorking && input.latestRun?.turnEnded !== true;
+    const answeringRunId = answering
+      ? deriveUnsettledRunId(input.latestRun ?? null, input.runningRunId ?? null)
+      : null;
+    const answeringFrom = answering ? lastResponseBoundaryIndex(entries) + 1 : entries.length;
+    const terminalIds = deriveTerminalAssistantMessageIds(entries);
+    const steerAnswerIds = deriveInFlightSteerAnswerIds(entries);
+    shown = entries.filter((entry, index) => {
+      if (entry.kind !== "message") {
+        return workShownAsFinalAnswerOnly(entry, input.pendingApprovalRequestIds);
+      }
+      const { message } = entry;
+      return (
+        message.role !== "assistant" ||
+        message.id === input.revealedMessageId ||
+        steerAnswerIds.has(message.id) ||
+        (terminalIds.has(message.id) &&
+          index < answeringFrom &&
+          (answeringRunId === null || message.runId !== answeringRunId))
+      );
+    });
+  } else if (visibility !== "showAll") {
+    shown = entries.filter(
+      (entry) =>
+        entry.kind !== "work" || !workEntryHiddenByToolCallVisibility(entry.entry, visibility),
+    );
+  }
+  return withoutSubagentDelegationRows(settleSupersededReasoning(shown));
 }
 
 function deriveTimelineTurnFolds(
   input: Pick<
     MessagesTimelineRowsInput,
-    "timelineEntries" | "latestRun" | "isWorking" | "runlessWorkActive" | "runningRunId"
+    | "timelineEntries"
+    | "latestRun"
+    | "isWorking"
+    | "runlessWorkActive"
+    | "runningRunId"
+    | "toolCallVisibility"
+    | "revealedMessageId"
   >,
 ) {
-  const timelineEntries = timelineRowEntries(input.timelineEntries);
+  if (input.toolCallVisibility === "zen") return new Map<string, TurnFold>();
+  const timelineEntries = timelineRowEntries(input);
   const unsettledRunId = deriveUnsettledRunId(input.latestRun ?? null, input.runningRunId ?? null);
   const failedRunIds = failedTimelineRunIds(timelineEntries, input.latestRun ?? null);
   const activeVisualResponseRunIds = deriveActiveVisualResponseRunIds({
@@ -1646,8 +1768,10 @@ export function deriveMessagesTimelineRows(input: {
   threadStartCheckpointReady?: boolean;
   availableRevertTurnCounts?: ReadonlySet<number> | undefined;
   worktreeSetup?: WorktreeSetupSnapshot | null;
+  toolCallVisibility?: ToolCallVisibility;
+  revealedMessageId?: MessageId | null;
 }): MessagesTimelineRow[] {
-  const timelineEntries = timelineRowEntries(input.timelineEntries);
+  const timelineEntries = timelineRowEntries(input);
   const isPendingApproval = (entry: WorkLogEntry) => {
     const item = entry.projectedItem?.item;
     return (
@@ -1664,7 +1788,7 @@ export function deriveMessagesTimelineRows(input: {
   const unsettledRunId = deriveUnsettledRunId(input.latestRun ?? null, input.runningRunId ?? null);
   const revertTurnCountByUserMessageId = input.supportsConversationRollback
     ? deriveRevertTurnCountByUserMessageId({
-        timelineEntries: timelineEntries,
+        timelineEntries: input.timelineEntries,
         checkpoints: input.turnDiffSummaries,
         threadStartCheckpointReady: input.threadStartCheckpointReady === true,
         unsettledRunId,
@@ -1692,15 +1816,18 @@ export function deriveMessagesTimelineRows(input: {
     isWorking: input.isWorking,
   });
   const runlessWorkActive = input.isWorking && input.runlessWorkActive === true;
-  const foldsByAnchorEntryId = deriveTurnFolds({
-    timelineEntries: timelineEntries,
-    terminalAssistantMessageIds,
-    latestRun: input.latestRun ?? null,
-    unfoldedRunIds: new Set([...activeVisualResponseRunIds, ...failedRunIds]),
-    runlessWorkActive,
-    liveSubagentEntryIds,
-    completeSupersededReplyEntryIds: completeSupersededReplyIds,
-  });
+  const foldsByAnchorEntryId =
+    input.toolCallVisibility === "zen"
+      ? new Map<string, TurnFold>()
+      : deriveTurnFolds({
+          timelineEntries: timelineEntries,
+          terminalAssistantMessageIds,
+          latestRun: input.latestRun ?? null,
+          unfoldedRunIds: new Set([...activeVisualResponseRunIds, ...failedRunIds]),
+          runlessWorkActive,
+          liveSubagentEntryIds,
+          completeSupersededReplyEntryIds: completeSupersededReplyIds,
+        });
   const timelineEntryById = new Map(timelineEntries.map((entry) => [entry.id, entry]));
   const collapsedEntryIds = new Set<string>();
   const collapsedFoldMemberIds = new Set<string>();
@@ -1765,6 +1892,7 @@ export function deriveMessagesTimelineRows(input: {
         entry.entry.sourceActivityKind === "runtime.error" ||
         entry.entry.itemType === "system_notice" ||
         entry.entry.itemType === "notification" ||
+        entry.entry.itemType === "todo_list" ||
         entry.entry.questionAnswer !== undefined ||
         isPendingApproval(entry.entry) ||
         !runIdIsActiveResponse(entry.entry.runId) ||
@@ -1913,8 +2041,14 @@ export function deriveMessagesTimelineRows(input: {
     !foldsByAnchorEntryId.has(runningLeadNotice.id)
       ? runningLeadNotice.id
       : null;
+  const endedRunId = input.latestRun?.turnEnded === true ? input.latestRun.runId : null;
+  const zenAnswerLanded =
+    input.toolCallVisibility === "zen" &&
+    endedRunId !== null &&
+    timelineEntries.findLastIndex((entry) => timelineEntryRunId(entry) === endedRunId) >=
+      activeTurnHeaderIndex;
   const appendWorkingRow = () => {
-    if (compactionOnlyRunFinished) return;
+    if (compactionOnlyRunFinished || zenAnswerLanded) return;
     if (runningCompactionRunId !== null && activeCompactionRunId === null) return;
     nextRows.push({
       kind: "working",
@@ -2633,7 +2767,13 @@ interface MessagesTimelineRowsProjection {
 export function timelineTurnFoldRunIdsByEntryId(
   input: Pick<
     MessagesTimelineRowsInput,
-    "timelineEntries" | "latestRun" | "isWorking" | "runlessWorkActive" | "runningRunId"
+    | "timelineEntries"
+    | "latestRun"
+    | "isWorking"
+    | "runlessWorkActive"
+    | "runningRunId"
+    | "toolCallVisibility"
+    | "revealedMessageId"
   >,
 ): ReadonlyMap<string, RunId> {
   const byEntryId = new Map<string, RunId>();

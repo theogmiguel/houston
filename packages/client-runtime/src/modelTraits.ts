@@ -71,6 +71,8 @@ export function selectableProviderOptionChoices(
   );
 }
 
+const ULTRATHINK_PREFIX = /^Ultrathink:\s*/i;
+
 export function getPromptControlledTraits(
   descriptors: ReadonlyArray<ProviderOptionDescriptor>,
   prompt: string,
@@ -83,7 +85,7 @@ export function getPromptControlledTraits(
     (primarySelectDescriptor?.promptInjectedValues?.length ?? 0) > 0 &&
     isClaudeUltrathinkPrompt(prompt);
   const ultrathinkInBodyText =
-    ultrathinkPromptControlled && isClaudeUltrathinkPrompt(prompt.replace(/^Ultrathink:\s*/i, ""));
+    ultrathinkPromptControlled && isClaudeUltrathinkPrompt(prompt.replace(ULTRATHINK_PREFIX, ""));
   return { primarySelectDescriptor, ultrathinkPromptControlled, ultrathinkInBodyText };
 }
 
@@ -101,7 +103,7 @@ export function getTraitSelectChange(
   return {
     prompt:
       isPrimary && selected.ultrathinkPromptControlled
-        ? prompt.replace(/^Ultrathink:\s*/i, "")
+        ? prompt.replace(ULTRATHINK_PREFIX, "")
         : prompt,
     modelOptions: buildProviderOptionSelectionsFromDescriptors(
       replaceDescriptorCurrentValue(selected.descriptors, descriptor.id, value),
@@ -122,15 +124,24 @@ export function buildTraitsTriggerDisplay(input: {
   speedLabel: string | null;
   /** Labels other than reasoning and speed, such as context window or thinking. */
   otherLabels: ReadonlyArray<string>;
+  ultracode: boolean;
 } {
   let fastModeFallbackLabel: string | null = null;
   let speedLabel: string | null = null;
   let reasoningLabelIndex = -1;
+  let ultracodeLabelIndex = -1;
   const labels: Array<string> = [];
   for (const descriptor of input.descriptors) {
     if (descriptor.id === "fastMode" && descriptor.type === "boolean") {
       speedLabel = descriptor.currentValue === true ? "Fast" : null;
       fastModeFallbackLabel = speedLabel ?? "Normal";
+      continue;
+    }
+    if (descriptor.id === "ultracode" && descriptor.type === "boolean") {
+      if (descriptor.currentValue === true) {
+        ultracodeLabelIndex = labels.length;
+        labels.push(descriptor.label);
+      }
       continue;
     }
     if (
@@ -176,8 +187,9 @@ export function buildTraitsTriggerDisplay(input: {
   }
 
   const otherLabels = labels.filter((_, index) => index !== reasoningLabelIndex);
+  const ultracode = ultracodeLabelIndex >= 0;
   if (labels.length === 0 && fastModeFallbackLabel !== null) {
-    return { label: fastModeFallbackLabel, speedLabel, otherLabels };
+    return { label: fastModeFallbackLabel, speedLabel, otherLabels, ultracode };
   }
   if (speedLabel) {
     if (reasoningLabelIndex >= 0) {
@@ -186,5 +198,5 @@ export function buildTraitsTriggerDisplay(input: {
       labels.push(speedLabel);
     }
   }
-  return { label: labels.join(" · "), speedLabel, otherLabels };
+  return { label: labels.join(" · "), speedLabel, otherLabels, ultracode };
 }

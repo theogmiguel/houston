@@ -87,6 +87,8 @@ export function useHostedPromptLinkLanding(enabled: boolean): ReactNode | null {
   );
 }
 
+const ON_PHONE_PATTERN = /android|iphone|ipad/i;
+
 function HostedPromptLinkLanding({
   appPath,
   canContinue,
@@ -101,7 +103,7 @@ function HostedPromptLinkLanding({
   const summary = summarize(appPath);
   const [remember, setRemember] = useState(false);
   const deepLink = promptLinkDeepLink(appPath);
-  const onPhone = /android|iphone|ipad/i.test(navigator.userAgent);
+  const onPhone = ON_PHONE_PATTERN.test(navigator.userAgent);
   const autoOpenedRef = useRef(false);
 
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- redirects window.location to the app deep link once when the user chose to always open in the app

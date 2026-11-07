@@ -10,6 +10,9 @@ import * as OtlpExporter from "effect/observability/OtlpExporter";
 import * as OtlpLogger from "effect/observability/OtlpLogger";
 
 import * as ServerConfig from "./config.ts";
+import * as ExportLogger from "./houston/observability/ExportLogger.ts";
+import * as ExportRedaction from "./houston/observability/ExportRedaction.ts";
+import * as ObservabilityExport from "./houston/observability/ObservabilityExport.ts";
 
 // HTTP errors logged with --log-ws-events carry the request URL and its connection ticket.
 const redactingCredentials = <Output>(logger: Logger.Logger<unknown, Output>) =>
@@ -53,16 +56,21 @@ export const layer = Effect.gen(function* () {
   const hostName = yield* HostProcess.Hostname;
   const layerMinimumLogLevel = Layer.succeed(References.MinimumLogLevel, config.logLevel);
 
-  const logs = config.otlpLogsExport;
+  const logs = yield* ObservabilityExport.resolve("logs");
   const otlpLogger =
-    config.otlpLogsUrl === undefined
+    logs === undefined
       ? undefined
       : OtlpLogger.make({
-          url: config.otlpLogsUrl,
+          url: logs.url,
           exportInterval: `${logs.exportIntervalMs} millis`,
           headers: logs.headers,
-          resource: ServerConfig.otlpResource(config, hostName),
-        }).pipe(Effect.map(redactingCredentials));
+          resource: ExportRedaction.exportedResource(ServerConfig.otlpResource(config, hostName)),
+        }).pipe(
+          Effect.map(ExportLogger.redacting),
+          logs.destination === "datadog"
+            ? Effect.provide(ObservabilityExport.layerDatadogKeyGate)
+            : (self) => self,
+        );
 
   // Logger.layer replaces the whole set; name every logger here.
   // OTLP includes traced messages as log records, so also using tracerLogger would duplicate in-span exports.
@@ -73,7 +81,9 @@ export const layer = Effect.gen(function* () {
     { mergeWithExisting: false },
   ).pipe(
     Layer.provide(OtlpExporter.layerFlusher),
-    Layer.provide(SharedObservability.layerOtlpSerialization(logs.protocol)),
+    Layer.provide(
+      SharedObservability.layerOtlpSerialization(logs?.protocol ?? config.otlpLogsExport.protocol),
+    ),
   );
 
   return Layer.mergeAll(layerLogger, layerMinimumLogLevel);

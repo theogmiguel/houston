@@ -1,13 +1,15 @@
 import type { SourceControlIcon } from "@houston-app/client-runtime/source-control-clients";
 import { useId, type SVGProps } from "react";
 
+const ID_PREFIX_PATTERN = /[^\w-]/gu;
+
 /** Draws a host's mark from its definition's artwork. */
 export function SourceControlIconArtwork({
   icon,
   ...props
 }: { readonly icon: SourceControlIcon } & SVGProps<SVGSVGElement>) {
   // Gradient ids are document-wide, and one page can show the same mark many times.
-  const idPrefix = useId().replace(/[^\w-]/gu, "");
+  const idPrefix = useId().replace(ID_PREFIX_PATTERN, "");
   const paint = (value: SourceControlIcon["paths"][number]["fill"]) =>
     value === undefined
       ? "none"

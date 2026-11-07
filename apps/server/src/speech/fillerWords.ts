@@ -24,7 +24,13 @@ const LANGUAGE_FILLER_WORDS: Readonly<Record<string, readonly string[]>> = {
   es: ["eh", "em", "mm"],
 };
 
-const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const REGEX_SPECIAL_CHARACTER = /[.*+?^${}()|[\]\\]/g;
+
+const escapeRegex = (value: string) => value.replace(REGEX_SPECIAL_CHARACTER, "\\$&");
+
+const BASE_LANGUAGE_PATTERN = /[-_]/;
+const WHITESPACE_RUN = /\s+/;
+const SPACE_RUN = /\s{2,}/g;
 
 /**
  * Without a language, only the language-neutral hesitations in `UNIVERSAL_FILLER_WORDS` apply.
@@ -35,16 +41,16 @@ export function removeSpeechFillerWords(
   language?: string,
   correctionCue?: string,
 ): string {
-  const baseLanguage = language?.split(/[-_]/, 1)[0]?.toLowerCase();
+  const baseLanguage = language?.split(BASE_LANGUAGE_PATTERN, 1)[0]?.toLowerCase();
   const words = [
     ...UNIVERSAL_FILLER_WORDS,
     ...(baseLanguage ? (LANGUAGE_FILLER_WORDS[baseLanguage] ?? []) : []),
   ];
-  const cuePattern = correctionCue?.trim().split(/\s+/).map(escapeRegex).join("\\s+");
+  const cuePattern = correctionCue?.trim().split(WHITESPACE_RUN).map(escapeRegex).join("\\s+");
   const pattern = new RegExp(
     `(?<![\\p{L}\\p{N}_])(?:(${cuePattern || "(?!)"})(?![\\p{L}\\p{N}_])|(?:${words.map(escapeRegex).join("|")})(?![\\p{L}\\p{N}_])[,.]?)`,
     "giu",
   );
   const filtered = text.replace(pattern, (_match, cue: string | undefined) => cue ?? "");
-  return filtered.replace(/\s{2,}/g, " ").trim();
+  return filtered.replace(SPACE_RUN, " ").trim();
 }

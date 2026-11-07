@@ -12,6 +12,7 @@ import * as Stream from "effect/Stream";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 
 import { isSlackFileUrl } from "./rules.ts";
+import * as OutgoingTraceContext from "../observability/OutgoingTraceContext.ts";
 
 export const SLACK_API_ORIGIN = "https://slack.com/api/";
 const TIMEOUT_SECONDS = 30;
@@ -253,11 +254,11 @@ export const make = Effect.fn("HoustonSlack.makeWebApi")(function* (options: {
 });
 
 export const layer = Layer.effect(SlackWebApi, make({ origin: SLACK_API_ORIGIN })).pipe(
-  Layer.provide(FetchHttpClient.layer),
+  Layer.provide(OutgoingTraceContext.layer(FetchHttpClient.layer)),
 );
 
 /** A client of a loopback fake (`origin` without the path); tests only. */
 export const layerTest = (origin: string) =>
   Layer.effect(SlackWebApi, make({ origin: `${origin}/api/`, allowLoopback: true })).pipe(
-    Layer.provide(FetchHttpClient.layer),
+    Layer.provide(OutgoingTraceContext.layer(FetchHttpClient.layer)),
   );

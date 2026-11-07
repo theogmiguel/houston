@@ -18,6 +18,8 @@ export const GENERIC_MIME_TYPES = new Set([
   "video/vnd.dlna.mpeg-tts",
 ]);
 
+const SVG_SUFFIX = /\.svg$/i;
+
 export function isSvgAttachment(attachment: {
   readonly name: string;
   readonly mimeType: string;
@@ -25,7 +27,7 @@ export function isSvgAttachment(attachment: {
   const mimeType = attachment.mimeType.split(";", 1)[0]?.trim().toLowerCase() ?? "";
   return (
     mimeType === "image/svg+xml" ||
-    ((mimeType === "" || GENERIC_MIME_TYPES.has(mimeType)) && /\.svg$/i.test(attachment.name))
+    ((mimeType === "" || GENERIC_MIME_TYPES.has(mimeType)) && SVG_SUFFIX.test(attachment.name))
   );
 }
 

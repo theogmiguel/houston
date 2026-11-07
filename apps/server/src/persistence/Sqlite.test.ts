@@ -2,16 +2,104 @@
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
+import * as NodeSqlite from "node:sqlite";
+import type * as NodeWorkerThreads from "node:worker_threads";
 
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as HostProcess from "@houston-app/shared/HostProcess";
+import * as NodeSqliteClient from "@houston-app/shared/nodeSqliteClient";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
+import { vi } from "vite-plus/test";
 
 import * as SqlitePersistence from "./Sqlite.ts";
+
+const workers = vi.hoisted((): Array<NodeWorkerThreads.Worker> => []);
+
+vi.mock("node:worker_threads", async (importOriginal) => {
+  const actual = await importOriginal<typeof NodeWorkerThreads>();
+  class RecordedWorker extends actual.Worker {
+    constructor(...args: ConstructorParameters<typeof actual.Worker>) {
+      super(...args);
+      workers.push(this);
+    }
+  }
+  return { ...actual, Worker: RecordedWorker };
+});
+
+it.effect("keeps writes moving past a 48 MiB WAL while a reader retains its snapshot", () => {
+  const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "houston-sqlite-burst-"));
+  const dbPath = NodePath.join(tempDir, "state.sqlite");
+  const persistence = SqlitePersistence.layerFromPath(dbPath).pipe(
+    Layer.provide(NodeServices.layer),
+  );
+
+  return Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const checkpointWorker = workers.at(-1)!;
+    yield* sql`CREATE TABLE burst_probe(id INTEGER PRIMARY KEY, payload BLOB)`;
+    yield* sql`INSERT INTO burst_probe VALUES (1, NULL)`;
+    yield* sql`PRAGMA wal_checkpoint(TRUNCATE)`;
+    const reader = yield* Effect.acquireRelease(
+      Effect.sync(() => new NodeSqlite.DatabaseSync(dbPath, { readOnly: true })),
+      (database) => Effect.sync(() => database.close()),
+    );
+    reader.exec("BEGIN");
+    assert.equal(reader.prepare("SELECT COUNT(*) AS count FROM burst_probe").get()?.count, 1);
+
+    yield* sql.withTransaction(
+      sql`INSERT INTO burst_probe VALUES (2, zeroblob(${48 * 1024 * 1024}))`,
+    );
+    const state = yield* Effect.callback<{
+      readonly log: number;
+      readonly checkpointed: number;
+      readonly blocked: boolean;
+    }>((resume) => {
+      const onMessage = (message: {
+        readonly type?: string;
+        readonly log?: number;
+        readonly checkpointed?: number;
+        readonly blocked?: boolean;
+      }) => {
+        if (
+          message.type === "checkpoint" &&
+          typeof message.log === "number" &&
+          message.log > 10_000 &&
+          typeof message.checkpointed === "number" &&
+          typeof message.blocked === "boolean"
+        ) {
+          checkpointWorker.off("message", onMessage);
+          resume(
+            Effect.succeed({
+              log: message.log,
+              checkpointed: message.checkpointed,
+              blocked: message.blocked,
+            }),
+          );
+        }
+      };
+      checkpointWorker.on("message", onMessage);
+      checkpointWorker.ref();
+      // oxlint-disable-next-line unicorn/require-post-message-target-origin -- Node workers do not accept a target origin.
+      checkpointWorker.postMessage("barrier");
+      return Effect.sync(() => checkpointWorker.off("message", onMessage));
+    });
+    assert.isBelow(state.checkpointed, state.log);
+    assert.isFalse(state.blocked);
+
+    yield* sql.withTransaction(sql`INSERT INTO burst_probe VALUES (3, NULL)`);
+    assert.equal(reader.prepare("SELECT COUNT(*) AS count FROM burst_probe").get()?.count, 1);
+    reader.exec("COMMIT");
+    assert.equal(reader.prepare("SELECT COUNT(*) AS count FROM burst_probe").get()?.count, 3);
+  }).pipe(
+    Effect.scoped,
+    Effect.provide(persistence),
+    Effect.ensuring(Effect.sync(() => NodeFS.rmSync(tempDir, { recursive: true, force: true }))),
+  );
+});
 
 // Linux names an open, already-deleted file "<path> (deleted)" in /proc/self/fd.
 // SQLite names its temp files "etilqs_*" and, without TMPDIR, puts them in
@@ -99,3 +187,44 @@ it.effect("drops planner statistics a database already has", () => {
     Effect.ensuring(Effect.sync(() => NodeFS.rmSync(tempDir, { recursive: true, force: true }))),
   );
 });
+
+it.effect(
+  "opens the writer with the default page cache and every reader with a larger one, mapping nothing",
+  () =>
+    Effect.gen(function* () {
+      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "houston-sqlite-pragmas-"));
+      const settings = Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const connection = Effect.all([
+          sql<{ readonly mmap_size: number }>`PRAGMA mmap_size`,
+          sql<{ readonly cache_size: number }>`PRAGMA cache_size`,
+        ]).pipe(Effect.map(([mmap, cache]) => [{ ...mmap[0], ...cache[0] }]));
+        const writer = yield* connection;
+        // Concurrent reads spread over the whole reader pool.
+        const readers = yield* Effect.forEach(
+          Array.from({ length: 8 }),
+          () => connection.pipe(NodeSqliteClient.readOnly),
+          { concurrency: "unbounded" },
+        );
+        return { writer, readers };
+      }).pipe(
+        Effect.provide(
+          SqlitePersistence.layerFromPath(NodePath.join(tempDir, "pragmas.sqlite")).pipe(
+            Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+          ),
+        ),
+      );
+
+      return yield* Effect.gen(function* () {
+        const { writer, readers } = yield* settings;
+        assert.deepEqual(writer, [{ mmap_size: 0, cache_size: -2000 }]);
+        for (const reader of readers) {
+          assert.deepEqual(reader, [{ mmap_size: 0, cache_size: -32768 }]);
+        }
+      }).pipe(
+        Effect.ensuring(
+          Effect.sync(() => NodeFS.rmSync(tempDir, { recursive: true, force: true })),
+        ),
+      );
+    }),
+);

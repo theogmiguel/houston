@@ -8,6 +8,9 @@ import VirtualTablePreview from "./VirtualTablePreview";
 
 const FIRST_SCREEN_BYTES = 16 * 1024;
 
+const TRAILING_LINE_BREAK = /\r?\n$|\r$/;
+const LINE_BREAK = /\r\n|\n|\r/;
+
 function firstScreen(text: string, delimiter: "," | "\t" | null, complete: boolean) {
   if (!text || text.includes("\0")) return [];
   const rows = delimiter
@@ -17,8 +20,8 @@ function firstScreen(text: string, delimiter: "," | "\t" | null, complete: boole
         maxCellLength: FIRST_SCREEN_BYTES,
       }).rows
     : text
-        .replace(/\r?\n$|\r$/, "")
-        .split(/\r\n|\n|\r/)
+        .replace(TRAILING_LINE_BREAK, "")
+        .split(LINE_BREAK)
         .slice(0, PREVIEW_PAGE_ROWS * 2 + 1)
         .map((line) => [line]);
   // A byte range can end inside a quoted record or a UTF-8 character.

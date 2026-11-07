@@ -41,8 +41,10 @@ interface AcpSchemaIssueDiagnostics {
 const MAX_SUMMARY_ISSUES = 3;
 const MAX_SUMMARY_PATH_SEGMENTS = 8;
 
+const SUMMARY_PATH_SEGMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+
 const summaryPathSegment = (segment: PropertyKey): string =>
-  typeof segment === "number" || /^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(String(segment))
+  typeof segment === "number" || SUMMARY_PATH_SEGMENT_PATTERN.test(String(segment))
     ? String(segment)
     : "*";
 
@@ -231,6 +233,8 @@ export class AcpProtocolParseError extends Schema.TaggedError<AcpProtocolParseEr
   }
 }
 
+const TRAILING_DOT = /\.$/;
+
 export class AcpTransportError extends Schema.TaggedError<AcpTransportError>()(
   "AcpTransportError",
   {
@@ -247,7 +251,7 @@ export class AcpTransportError extends Schema.TaggedError<AcpTransportError>()(
     const operation = this.operation ? ` ${this.operation}` : "";
     const method = this.method ? ` for method ${this.method}` : "";
     // Callers often pass a sentence; strip its period so the message ends with exactly one.
-    const detail = this.detail ? `: ${this.detail.replace(/\.$/, "")}` : "";
+    const detail = this.detail ? `: ${this.detail.replace(TRAILING_DOT, "")}` : "";
     return `ACP transport operation${operation} failed${method}${detail}.`;
   }
 }

@@ -6,6 +6,8 @@ import { isLocalLoopbackHost } from "./hostClassification.ts";
 const TAB_ID_PREFIX = "tab_";
 let nextPreviewTabSequence = 0;
 
+const PDF_SUFFIX = /\.pdf$/i;
+
 export function previewPdfAssetUrl(rawUrl: string, httpBaseUrl: string | null): string | null {
   if (httpBaseUrl === null) return null;
   try {
@@ -14,7 +16,7 @@ export function previewPdfAssetUrl(rawUrl: string, httpBaseUrl: string | null): 
     if (
       (url.protocol !== "http:" && url.protocol !== "https:") ||
       !url.pathname.startsWith("/api/assets/") ||
-      !/\.pdf$/i.test(url.pathname)
+      !PDF_SUFFIX.test(url.pathname)
     ) {
       return null;
     }
@@ -72,8 +74,10 @@ export class PreviewUrlNormalizationError extends Schema.TaggedError<PreviewUrlN
 
 export const isPreviewUrlNormalizationError = Schema.is(PreviewUrlNormalizationError);
 
+const PREVIEW_URL_PROTOCOL_PATTERN = /^([A-Za-z][A-Za-z\d+.-]*):/;
+
 function previewUrlProtocol(rawUrl: string): string | undefined {
-  return /^([A-Za-z][A-Za-z\d+.-]*):/.exec(rawUrl)?.[1]?.toLowerCase().concat(":");
+  return PREVIEW_URL_PROTOCOL_PATTERN.exec(rawUrl)?.[1]?.toLowerCase().concat(":");
 }
 
 const ADDRESS_HOST_PATTERN = /^(?:localhost|\d{1,3}(?:\.\d{1,3}){3}|\[[\da-f:.]+\])$/i;
@@ -145,6 +149,12 @@ export function resolveSearchUrlTemplate(settings: {
   return isValidSearchUrlTemplate(custom) ? custom : BROWSER_SEARCH_URL_TEMPLATES.duckduckgo;
 }
 
+const WHITESPACE_CHAR = /\s/;
+const AUTHORITY_PATTERN = /[/?#]/;
+const USERINFO_PREFIX = /^[^@]*@/;
+const PORT_SUFFIX = /:\d+$/;
+const DOTTED_HOSTNAME = /^[^.]+(?:\.[^.]+)+\.?$/;
+
 export function resolveAddressBarInput(
   rawInput: string,
   searchUrlTemplate: string = BROWSER_SEARCH_URL_TEMPLATES.duckduckgo,
@@ -152,7 +162,7 @@ export function resolveAddressBarInput(
   const trimmed = rawInput.trim();
   if (URL_SCHEME_WITH_AUTHORITY_PATTERN.test(trimmed) || trimmed.length === 0)
     return normalizePreviewUrl(trimmed);
-  if (!/\s/.test(trimmed)) {
+  if (!WHITESPACE_CHAR.test(trimmed)) {
     // Reject explicit schemes before URL normalization can misread mailto as bare-host credentials.
     const protocol = previewUrlProtocol(trimmed);
     if (
@@ -168,10 +178,10 @@ export function resolveAddressBarInput(
       }
       return normalizePreviewUrl(trimmed);
     }
-    const authority = trimmed.split(/[/?#]/, 1)[0] ?? "";
-    const host = authority.replace(/^[^@]*@/, "").replace(/:\d+$/, "");
-    const hasPort = host.length < authority.replace(/^[^@]*@/, "").length;
-    if (hasPort || ADDRESS_HOST_PATTERN.test(host) || /^[^.]+(?:\.[^.]+)+\.?$/.test(host)) {
+    const authority = trimmed.split(AUTHORITY_PATTERN, 1)[0] ?? "";
+    const host = authority.replace(USERINFO_PREFIX, "").replace(PORT_SUFFIX, "");
+    const hasPort = host.length < authority.replace(USERINFO_PREFIX, "").length;
+    if (hasPort || ADDRESS_HOST_PATTERN.test(host) || DOTTED_HOSTNAME.test(host)) {
       try {
         return normalizePreviewUrl(trimmed);
       } catch {}

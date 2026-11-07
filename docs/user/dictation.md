@@ -7,23 +7,59 @@ an agent.
 
 ## Choose where audio goes
 
-Nothing is recorded or sent until you choose an **audio destination**. Open Settings ▸ Voice
-and set **Send microphone audio to** to the environment that should transcribe for you. Audio
-recorded on this device goes to that environment over its authenticated connection, is
-transcribed there by its bundled speech engine, and is discarded. Audio is never sent to a
-provider, to Houston, or to any telemetry service.
+Nothing is recorded or sent until you choose how to transcribe. Open Settings ▸ Voice and set
+**Transcribe with**:
+
+- **An environment**, such as **Work VM**. Audio recorded on this device goes to that environment
+  over its authenticated connection, is transcribed there by its bundled speech engine, and is
+  discarded.
+- **A cloud provider**, listed as **OpenAI via Work VM**, **Grok Voice Transcribe via Work VM** or
+  **OpenRouter via Work VM**. After you stop, that environment sends the finished recording to the
+  provider with your API key and returns the text. Houston has no account with any provider; the
+  key and the usage bill are yours.
+- **Off**, which turns voice input off on this device.
+
+Choosing a provider opens a dialog that says what is sent and asks for the provider's API key.
+**Save and enable** opts in only this device, and only after the key is saved. The key is
+stored in the environment's secret store (or read from a secret provider you configure) and is
+never shown again; anyone with dictation access to that environment can use it. Another device can
+use a saved key, but must make its own choice. A saved key, or a paired device, never opts a device
+in. The menu offers no provider on an environment that cannot forward recordings.
+
+For OpenRouter the dialog also asks for an exact transcription model from OpenRouter's
+zero-data-retention list. OpenRouter chooses who runs it, and your OpenRouter account may allow
+safety retention. Dictation stays off if OpenRouter stops listing the chosen model.
+
+The key button beside the menu opens **Manage**: change the model, replace the key, or remove the
+key, which ends access for everyone using it on that environment. Changing only the model never
+rewrites the key. Replacing a key keeps dictation enabled.
 
 The choice is saved on this device only, so each computer asks once. Set it back to **Off** at
 any time; a recording in progress is discarded. If the chosen environment is offline, dictation
-waits for it and never substitutes another environment. An environment running an older
-version of the voice service is refused by name until it is updated.
+waits for it and never substitutes another environment or provider. If the key is missing or
+unreadable, the model is unlisted, or the provider rejects the key or reaches a usage limit,
+dictation stops with a message that names the provider; no other provider or model is tried. An
+environment running an older version of the voice service is refused by name until it is updated.
 
 ## Network use
 
-While the audio destination is Off, dictation sends nothing. Otherwise:
+While **Transcribe with** is Off, dictation sends nothing. Otherwise:
 
 - Each recording is streamed or uploaded to the chosen environment, with the language, the
   dictionary entries and the project name as hints.
+- With a cloud provider, the environment makes these calls and no others:
+  - `POST https://api.openai.com/v1/audio/transcriptions` for OpenAI, and
+    `POST https://api.x.ai/v1/stt` for Grok Voice Transcribe, once per finished recording. Each
+    carries the key, the recording as 16 kHz mono WAV, the language, and your dictionary terms
+    including the project name as hints.
+  - `POST https://openrouter.ai/api/v1/audio/transcriptions`, once per finished recording, with
+    the key, the chosen model, the recording and the language, and a request for zero data
+    retention. It carries no dictionary terms and no project name.
+  - `GET https://openrouter.ai/api/v1/models?output_modalities=transcription&zdr=true`, with no key
+    and no audio, when the model list opens and before an OpenRouter upload; the answer is cached
+    for ten minutes.
+    A request waits up to two minutes. A response over 1 MiB, or a model list over 4 MiB or 500
+    models, is refused naming its size and the limit. An API key is refused above 2,048 bytes.
 - Each model is downloaded from Hugging Face to the chosen environment the first time you
   download it, at a pinned revision verified by checksum. The silence filter downloads a
   1.2 MB voice activity model the same way.
@@ -74,7 +110,8 @@ tap-toggles or records while held, **Hold** records only while the keys are down
   Project spellings win when they overlap your own. Each recording carries up to 100 entries
   from both; adding past the limit is refused with the current count.
 - **Silence filtering** is on by default and skips non-speech audio on the environment before
-  transcription. It does not reduce what is sent.
+  transcription. It does not reduce what is sent. With OpenAI and OpenRouter it has no effect,
+  because those providers receive the whole recording.
 - **Remove filler words** drops hesitation sounds such as "uh" and "hmm" in any language, plus
   language-specific ones for English, German, French, Portuguese and Spanish. Words that are
   also vocabulary, such as "um" in Portuguese, are kept.
@@ -85,7 +122,7 @@ Transcript cleanup is a separate choice for this device and is off by default. W
 finished transcript and up to 1,024 characters each from before, inside and after your
 selection are sent to the text generation provider configured on the draft's environment,
 which fixes punctuation, numbers and spoken corrections such as "make it 42, sorry, 24".
-Audio is never sent to it. Use the built-in instructions or write your own. Press **Skip**
+Audio is never sent to it, whichever way you transcribe. Use the built-in instructions or write your own. Press **Skip**
 while cleanup runs to insert the raw transcript; if cleanup fails, the raw transcript is
 inserted.
 

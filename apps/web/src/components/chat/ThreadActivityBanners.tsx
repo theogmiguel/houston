@@ -2,6 +2,7 @@ import type {
   EnvironmentId,
   OrchestrationV2PendingBackgroundTask,
   OrchestrationV2ProviderGoal,
+  OrchestrationV2ProviderSession,
   ThreadId,
 } from "@houston-app/contracts";
 import { RUNNING_INK_CLS } from "../ui/work-log-recipes";
@@ -33,6 +34,18 @@ import { Button, InlineButton } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { ComposerBannerStackItem } from "./ComposerBannerStack";
 import type { ThreadNowItem } from "./ThreadNow";
+
+export function extensionStatusBannerItem(
+  statuses: NonNullable<OrchestrationV2ProviderSession["extensionStatuses"]>,
+): ComposerBannerStackItem | null {
+  if (statuses.length === 0) return null;
+  return {
+    id: "pi-extension-status",
+    variant: "default",
+    icon: <span>▸</span>,
+    title: <output>{`Pi · ${statuses.map((status) => status.text).join(" · ")}`}</output>,
+  };
+}
 
 /** Subagents and side chats waiting on the user, unless the parent is itself waiting on them. */
 export function childInputNowItem(input: {
@@ -152,6 +165,8 @@ export function runStopNowItem(input: {
   };
 }
 
+const WHITESPACE_RUN = /\s+/gu;
+
 /** Background commands and subagents, for the end of the timeline. */
 export function backgroundWorkNowItem(input: {
   readonly threadId: ThreadId;
@@ -173,7 +188,7 @@ export function backgroundWorkNowItem(input: {
     const subagent = item?.type === "subagent" ? item : undefined;
     return {
       task,
-      activity: subagent?.progress?.replace(/\s+/gu, " ").trim() || null,
+      activity: subagent?.progress?.replace(WHITESPACE_RUN, " ").trim() || null,
       startedAtMs: item?.startedAt ? DateTime.toEpochMillis(item.startedAt) : null,
       updatedAtMs: subagent ? DateTime.toEpochMillis(subagent.updatedAt) : 0,
       childThreadId: task.childThreadId ?? subagent?.childThreadId ?? undefined,

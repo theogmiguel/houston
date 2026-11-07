@@ -1383,6 +1383,8 @@ function useKeybindingCatalog() {
   };
 }
 
+const LEADING_HASH = /^#/;
+
 export function KeybindingsSettingsPanel() {
   const { environment: primaryEnvironment, connectedEnvironments } = useSettingsScope();
   const canOpenKeybindingsFile = useEnvironmentScope(
@@ -1409,7 +1411,9 @@ export function KeybindingsSettingsPanel() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [savingCommand, setSavingCommand] = useState<KeybindingCommand | null>(null);
   const [isAddingBinding, setIsAddingBinding] = useState(false);
-  const searchTargetId = useLocation({ select: (location) => location.hash.replace(/^#/, "") });
+  const searchTargetId = useLocation({
+    select: (location) => location.hash.replace(LEADING_HASH, ""),
+  });
   const [handledSearchTargetId, setHandledSearchTargetId] = useState(searchTargetId);
 
   if (searchTargetId !== handledSearchTargetId) {

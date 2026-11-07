@@ -84,6 +84,8 @@ export function configureClientTracing(): Promise<void> {
   return pendingConfiguration;
 }
 
+const TRAILING_COLON = /:$/;
+
 async function applyClientTracingConfig(): Promise<void> {
   const otlpTracesUrl = resolvePrimaryEnvironmentHttpUrl("/api/observability/v1/traces");
   const exportIntervalMs = DEFAULT_EXPORT_INTERVAL_MS;
@@ -124,7 +126,7 @@ async function applyClientTracingConfig(): Promise<void> {
     const error = squashAtomCommandFailure(delegateResult);
     const tracesUrl = new URL(otlpTracesUrl);
     console.warn("Failed to configure client tracing exporter", {
-      scheme: tracesUrl.protocol.replace(/:$/, ""),
+      scheme: tracesUrl.protocol.replace(TRAILING_COLON, ""),
       host: tracesUrl.hostname,
       port: tracesUrl.port || undefined,
       exportIntervalMs,

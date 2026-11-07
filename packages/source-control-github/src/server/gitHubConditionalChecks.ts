@@ -50,6 +50,8 @@ type Validator = { etag: string | undefined; next: boolean; body: string };
 
 const UNSUPPORTED_STATUSES = new Set([404, 405, 501]);
 
+const NEXT_PATTERN = /rel="next"/;
+
 export const makeChecksRevalidator = Effect.gen(function* () {
   const api = yield* GitHubRest.GitHubRest;
   const entries = yield* Cache.makeWith(
@@ -131,7 +133,7 @@ export const makeChecksRevalidator = Effect.gen(function* () {
             }
             const validator = {
               etag: response.headers["etag"]?.trim(),
-              next: /rel="next"/.test(response.headers["link"] ?? ""),
+              next: NEXT_PATTERN.test(response.headers["link"] ?? ""),
               body: response.body,
             };
             entry.validators.set(endpoint, validator);

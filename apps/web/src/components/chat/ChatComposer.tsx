@@ -59,7 +59,6 @@ import { isUsageLimitsCommandName } from "@houston-app/shared/usageLimits";
 import {
   memo,
   use,
-  useCallback,
   useEffect,
   useEffectEvent,
   useId,
@@ -457,6 +456,8 @@ export interface ChatComposerProps {
   onResumeCommand?: (() => void) | undefined;
   sideChatAvailable?: boolean;
   sideChatDisabledReason?: string | null;
+  /** Arms a fresh session for the next message; absent where `/clear` is unavailable. */
+  onFreshSession?: (() => void) | undefined;
   environmentUnavailable: {
     readonly label: string;
     readonly connection: EnvironmentConnectionPresentation;
@@ -573,6 +574,8 @@ export interface ChatComposerProps {
 
 const NO_PROVIDER_SKILLS: ServerProvider["skills"] = [];
 const NO_PROVIDER_SLASH_COMMANDS: ServerProvider["slashCommands"] = [];
+
+const WHITESPACE_CHAR = /\s/;
 
 export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps) {
   const {
@@ -1152,10 +1155,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   }, [composerWidthNode]);
   const composerNarrow = composerWidth > 0 && composerWidth < 520;
   // A stable ref callback: a new one every render would detach and reattach the node and loop.
-  const attachComposerSurface = useCallback((node: HTMLDivElement | null) => {
+  const attachComposerSurface = useStableCallback((node: HTMLDivElement | null) => {
     composerSurfaceRef.current = node;
     setComposerWidthNode(node);
-  }, []);
+  });
   const providerInputRejectedRef = useRef(false);
   const composerSelectLockRef = useRef(false);
   const composerMenuOpenRef = useRef(false);
@@ -1256,6 +1259,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     planModeUiEnabled,
     sideChatAvailable: props.sideChatAvailable === true,
     sideChatDisabledReason: props.sideChatDisabledReason ?? null,
+    freshSessionAvailable: props.onFreshSession !== undefined,
     compactSlashCommandAvailable,
     activeProjectId: props.activeProjectId,
     selectedProvider,
@@ -2140,6 +2144,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         }
         return;
       }
+      if (item.command === "clear") {
+        const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
+          expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
+        });
+        if (applied) {
+          setComposerHighlightedItemId(null);
+          props.onFreshSession?.();
+        }
+        return;
+      }
       if (item.command === "side" || item.command === "btw") {
         if (props.sideChatDisabledReason) return;
         const applied = applyPromptReplacement(
@@ -2743,7 +2757,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     const needsLeadingSpace =
       (options?.ensureLeadingBoundary ?? false) &&
       cursor > 0 &&
-      !/\s/.test(prompt[cursor - 1] ?? "");
+      !WHITESPACE_CHAR.test(prompt[cursor - 1] ?? "");
     const rangeEnd = extendReplacementRangeForTrailingSpace(prompt, cursor, text);
     return applyPromptReplacement(
       cursor,
@@ -3120,7 +3134,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         .join(" ")} `;
       const snapshot = readComposerSnapshotStable();
       const cursor = snapshot.expandedCursor;
-      const leadingSpace = cursor > 0 && !/\s/.test(snapshot.value[cursor - 1] ?? "");
+      const leadingSpace = cursor > 0 && !WHITESPACE_CHAR.test(snapshot.value[cursor - 1] ?? "");
       const inserted =
         canAnswer &&
         applyPromptReplacementStable(

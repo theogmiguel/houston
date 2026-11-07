@@ -76,17 +76,19 @@ interface RenderablePatchOptions {
   compactPartialHunkOffsets?: boolean;
 }
 
+const WHITESPACE_CHAR = /\s/g;
+
 function hideWhitespaceChanges(file: FileDiffMetadata): FileDiffMetadata {
   let splitDelta = 0;
   let unifiedDelta = 0;
   const hunks = file.hunks.map((hunk) => {
     const oldContents = file.deletionLines
       .slice(hunk.deletionLineIndex, hunk.deletionLineIndex + hunk.deletionCount)
-      .map((line) => `${line.replace(/\s/g, "")}\n`)
+      .map((line) => `${line.replace(WHITESPACE_CHAR, "")}\n`)
       .join("");
     const newContents = file.additionLines
       .slice(hunk.additionLineIndex, hunk.additionLineIndex + hunk.additionCount)
-      .map((line) => `${line.replace(/\s/g, "")}\n`)
+      .map((line) => `${line.replace(WHITESPACE_CHAR, "")}\n`)
       .join("");
     const filtered = parseDiffFromFile(
       { name: file.name, contents: oldContents },

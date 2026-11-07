@@ -7,13 +7,7 @@ import {
 } from "@houston-app/client-runtime/state/runtime";
 import { safeErrorLogAttributes } from "@houston-app/client-runtime/errors";
 import type { ReviewBranchCommitsResult, ScopedThreadRef, RunId } from "@houston-app/contracts";
-import {
-  ArrowRightIcon,
-  CheckIcon,
-  ChevronDownIcon,
-  MoreHorizontalIcon,
-  XIcon,
-} from "lucide-react";
+import { ArrowRightIcon, CheckIcon, ChevronDownIcon, XIcon } from "lucide-react";
 import { ChevronDown, ChevronRight } from "lucide";
 import * as Schema from "effect/Schema";
 import { type MouseEvent, useEffect, useEffectEvent, useRef, useState } from "react";
@@ -96,8 +90,6 @@ import {
   ComboboxTrigger,
 } from "./ui/combobox";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
@@ -105,7 +97,6 @@ import {
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
 } from "./ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { requestConfirmDialog } from "../confirmDialog";

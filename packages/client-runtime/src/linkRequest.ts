@@ -105,13 +105,13 @@ export function linkableMachines(input: {
   return saved;
 }
 
+const NON_LETTER_OR_DIGIT_RUN = /[^\p{L}\p{N}]+/u;
+
 const words = (text: string) =>
-  ` ${text
-    .toLowerCase()
-    .split(/[^\p{L}\p{N}]+/u)
-    .join(" ")
-    .trim()} `;
+  ` ${text.toLowerCase().split(NON_LETTER_OR_DIGIT_RUN).join(" ").trim()} `;
 const NO_MATCH = 4;
+
+const WANTED_PATTERN = /^(?:my|our|the)\s+/;
 
 /**
  * How well a machine's name matches the agent's hint, which is often the
@@ -120,10 +120,7 @@ const NO_MATCH = 4;
  */
 const hintRank = (label: string, hint: string) => {
   const name = label.trim().toLowerCase();
-  const wanted = hint
-    .trim()
-    .toLowerCase()
-    .replace(/^(?:my|our|the)\s+/, "");
+  const wanted = hint.trim().toLowerCase().replace(WANTED_PATTERN, "");
   if (name === wanted) return 0;
   if (name.startsWith(wanted)) return 1;
   if (name.includes(wanted)) return 2;

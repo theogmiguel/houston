@@ -61,6 +61,10 @@ function normalizedErrorMessage(cause: unknown): string | undefined {
   return normalizeProbeMessage(cause.message);
 }
 
+const HTTP_AUTH_STATUS =
+  /(?:^|\s)(?:status(?:\s+code)?(?:\s*[:=]\s*|\s+)|http(?:\/\d(?:\.\d)?)?\s+)(?:401|403)\b/;
+const UNAUTHORIZED_WORD = /\b(?:unauthorized|forbidden)\b/;
+
 function formatOpenCodeProbeError(input: {
   readonly cause: unknown;
   readonly isExternalServer: boolean;
@@ -76,12 +80,7 @@ function formatOpenCodeProbeError(input: {
 
   if (input.isExternalServer) {
     // Bare auth-code digits can be part of the endpoint's port or path.
-    if (
-      /(?:^|\s)(?:status(?:\s+code)?(?:\s*[:=]\s*|\s+)|http(?:\/\d(?:\.\d)?)?\s+)(?:401|403)\b/.test(
-        lower,
-      ) ||
-      /\b(?:unauthorized|forbidden)\b/.test(lower)
-    ) {
+    if (HTTP_AUTH_STATUS.test(lower) || UNAUTHORIZED_WORD.test(lower)) {
       return {
         installed: true,
         authStatus: "unauthenticated",
@@ -169,9 +168,11 @@ const logDiscoveryFailure = Effect.fnUntraced(function* (input: {
   ).pipe(Effect.annotateLogs(attributes));
 });
 
+const TITLE_CASE_SLUG_PATTERN = /[-_/]+/;
+
 function titleCaseSlug(value: string): string {
   const segments: Array<string> = [];
-  for (const segment of value.split(/[-_/]+/)) {
+  for (const segment of value.split(TITLE_CASE_SLUG_PATTERN)) {
     if (segment.length > 0) {
       segments.push(segment.charAt(0).toUpperCase() + segment.slice(1));
     }

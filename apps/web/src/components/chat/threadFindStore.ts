@@ -166,6 +166,9 @@ export function useThreadFindOpen(thread: ScopedThreadRef | null, enabled: boole
   return enabled && thread !== null && openThreadKey === scopedThreadKey(thread);
 }
 
+const TOGETHER_PATTERN = /[\u2018\u2019]/g;
+const LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
+
 /**
  * The find a message search result opens, at the matched message: the whole
  * query when the snippet holds it as typed ("vp run dev"), else its longest
@@ -178,7 +181,7 @@ export function findForMessageMatch(
 ): PendingThreadFind {
   const start = match.messageId ? { start: { entryId: match.messageId, occurrence: 0 } } : {};
   // Apostrophes are straight in the query; straightening keeps offsets.
-  const together = messagePhrase(query)?.exec(match.snippet.replace(/[\u2018\u2019]/g, "'"));
+  const together = messagePhrase(query)?.exec(match.snippet.replace(TOGETHER_PATTERN, "'"));
   if (together) {
     return {
       query: match.snippet.slice(together.index, together.index + together[0].length),
@@ -193,6 +196,6 @@ export function findForMessageMatch(
   const ranges = findSearchTokenRanges(match.snippet, word);
   // A whole word first, as search ranked it: "Café", not "Cafe" in "Cafeteria".
   const shown =
-    ranges.find((range) => !/[\p{L}\p{N}]/u.test(match.snippet[range.end] ?? "")) ?? ranges[0];
+    ranges.find((range) => !LETTER_OR_DIGIT.test(match.snippet[range.end] ?? "")) ?? ranges[0];
   return { query: shown ? match.snippet.slice(shown.start, shown.end) : word, ...start };
 }

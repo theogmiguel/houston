@@ -10,12 +10,17 @@ function normalizePathSeparators(path: string): string {
   return path.replaceAll("\\", "/");
 }
 
+const TRAILING_PATH_SEPARATORS = /[\\/]+$/;
+
 function trimTrailingPathSeparators(path: string): string {
-  return path.replace(/[\\/]+$/, "");
+  return path.replace(TRAILING_PATH_SEPARATORS, "");
 }
 
+const LEADING_DOT_SLASHES = /^\.\/+/;
+const LEADING_SLASHES = /^\/+/;
+
 function stripRelativePrefixes(path: string): string {
-  return path.replace(/^\.\/+/, "").replace(/^\/+/, "");
+  return path.replace(LEADING_DOT_SLASHES, "").replace(LEADING_SLASHES, "");
 }
 
 export function formatWorkspaceRelativePath(

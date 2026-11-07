@@ -5,6 +5,13 @@ import {
 } from "@houston-app/shared/composerContextReferences";
 import { PLAN_IMPLEMENTATION_PROMPT_PREFIX } from "../../proposedPlan";
 
+const REGEX_SPECIAL_CHARS = /[.*+?^${}()|[\]\\]/g;
+const MATCH_PATTERN = /^(.+?) lines? (\d+(?:-\d+)?)$/;
+const WHITESPACE_RUN = /\s+/g;
+const RECALLABLE_COMPOSER_PROMPT_PATTERN = /^<preview_annotation>\s*$/m;
+const RECALLABLE_COMPOSER_PROMPT_PATTERN_2 = /^(?:Id|Page|Comment|Targets): /m;
+const HEADERS_PATTERN = /^- (.+):$/gm;
+
 const CLAUDE_ULTRATHINK_PREFIX = "Ultrathink:\n";
 const REVIEW_COMMENT_BLOCK_PATTERN = /<review_comment\b[^>]*>[\s\S]*?<\/review_comment>/g;
 const TRAILING_LEGACY_CONTEXT =
@@ -49,15 +56,15 @@ function stripTrailingReviewComments(prompt: string): string {
 }
 
 function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return value.replace(REGEX_SPECIAL_CHARS, "\\$&");
 }
 
 function stripInlineTerminalLabels(prompt: string, headers: ReadonlyArray<string>): string {
   let result = prompt;
   for (const header of headers) {
-    const match = /^(.+?) lines? (\d+(?:-\d+)?)$/.exec(header);
+    const match = MATCH_PATTERN.exec(header);
     if (!match) continue;
-    const label = `@${match[1]!.trim().toLowerCase().replace(/\s+/g, "-")}:${match[2]}`;
+    const label = `@${match[1]!.trim().toLowerCase().replace(WHITESPACE_RUN, "-")}:${match[2]}`;
     const labelPattern = new RegExp(`(?<![\\w@.-])${escapeRegExp(label)}(?![\\d-])`);
     const index = result.search(labelPattern);
     if (index < 0) continue;
@@ -86,11 +93,11 @@ export function recallableComposerPrompt(messageText: string): string {
     if (legacy) {
       if (
         legacy[1] === "preview_annotation" &&
-        /^<preview_annotation>\s*$/m.test(legacy[2]!) &&
-        !/^(?:Id|Page|Comment|Targets): /m.test(legacy[2]!)
+        RECALLABLE_COMPOSER_PROMPT_PATTERN.test(legacy[2]!) &&
+        !RECALLABLE_COMPOSER_PROMPT_PATTERN_2.test(legacy[2]!)
       )
         break;
-      const headers = Array.from(legacy[2]!.matchAll(/^- (.+):$/gm), (match) => match[1]!);
+      const headers = Array.from(legacy[2]!.matchAll(HEADERS_PATTERN), (match) => match[1]!);
       if (legacy[1] !== "preview_annotation" && headers.length === 0) break;
       prompt = prompt.slice(0, legacy.index).trimEnd();
       if (legacy[1] === "terminal_context") prompt = stripInlineTerminalLabels(prompt, headers);

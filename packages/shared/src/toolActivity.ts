@@ -34,12 +34,15 @@ export const COMPUTER_USE_TOOL_SOURCE = {
   kind: "computer",
 } as const;
 
+const SKY_CALL = /\bsky\s*\./u;
+const OAI_SKY_SERVER = /["']@oai\/sky["']/u;
+
 export function dynamicToolSurface(toolName: string | null | undefined, input: unknown) {
   if (toolName === "cua_repl.js") return "computer" as const;
   const code = asRecord(input)?.code;
   return isJavaScriptReplTool(toolName) &&
     typeof code === "string" &&
-    (/\bsky\s*\./u.test(code) || /["']@oai\/sky["']/u.test(code))
+    (SKY_CALL.test(code) || OAI_SKY_SERVER.test(code))
     ? ("computer" as const)
     : undefined;
 }
@@ -89,21 +92,25 @@ function normalizeCommandValue(value: unknown): string | undefined {
   return parts.length > 0 ? parts.join(" ") : undefined;
 }
 
+const EXIT_CODE_SUFFIX = /^(?<output>[\s\S]*?)(?:\s*<exited with exit code \d+>)\s*$/iu;
+
 function stripTrailingExitCode(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   if (!trimmed) {
     return undefined;
   }
-  const match = /^(?<output>[\s\S]*?)(?:\s*<exited with exit code \d+>)\s*$/iu.exec(trimmed);
+  const match = EXIT_CODE_SUFFIX.exec(trimmed);
   const output = match?.groups?.output?.trim() ?? trimmed;
   return output.length > 0 ? output : undefined;
 }
+
+const BACKTICK_MATCH_PATTERN = /`([^`]+)`/u;
 
 function extractCommandFromTitle(title: string | undefined): string | undefined {
   if (!title) {
     return undefined;
   }
-  const backtickMatch = /`([^`]+)`/u.exec(title);
+  const backtickMatch = BACKTICK_MATCH_PATTERN.exec(title);
   return backtickMatch?.[1]?.trim() || undefined;
 }
 
@@ -221,15 +228,15 @@ export function mergeToolActivityData(
   return merged;
 }
 
+const WHITESPACE_RUNS = /\s+/gu;
+const COMPLETION_SUFFIX = /\s+(?:complete|completed|started)\s*$/iu;
+
 function normalizeEquivalentValue(value: string | undefined): string | undefined {
   const trimmed = asTrimmedString(value);
   if (!trimmed) {
     return undefined;
   }
-  return trimmed
-    .replace(/\s+/gu, " ")
-    .replace(/\s+(?:complete|completed|started)\s*$/iu, "")
-    .trim();
+  return trimmed.replace(WHITESPACE_RUNS, " ").replace(COMPLETION_SUFFIX, "").trim();
 }
 
 function isEquivalent(left: string | undefined, right: string | undefined): boolean {
@@ -240,12 +247,15 @@ function isEquivalent(left: string | undefined, right: string | undefined): bool
 
 export type ToolActivityAction = "command" | "read" | "file_change" | "search" | "other";
 
+const TOOL_NAME_SEPARATOR = /__|[./]/u;
+const TOOL_NAME_WORD_SEPARATOR = /[_\s-]/gu;
+
 function toolNameToken(value: string | undefined): string | undefined {
   const trimmed = asTrimmedString(value);
-  if (!trimmed || /__|[./]/u.test(trimmed)) {
+  if (!trimmed || TOOL_NAME_SEPARATOR.test(trimmed)) {
     return undefined;
   }
-  return trimmed.replace(/[_\s-]/gu, "").toLowerCase();
+  return trimmed.replace(TOOL_NAME_WORD_SEPARATOR, "").toLowerCase();
 }
 
 export function classifyToolActivity(input: {
@@ -351,11 +361,13 @@ function searchInputRecord(
   );
 }
 
+const PATH_SEPARATOR = /[\\/]/u;
+
 function searchTargetName(value: string | undefined): string | undefined {
   if (!value) {
     return undefined;
   }
-  return value.split(/[\\/]/u).findLast((part) => part.length > 0 && part !== ".");
+  return value.split(PATH_SEPARATOR).findLast((part) => part.length > 0 && part !== ".");
 }
 
 export function formatSearchToolLabel(

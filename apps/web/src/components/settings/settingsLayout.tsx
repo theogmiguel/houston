@@ -524,7 +524,7 @@ export function SettingsRow({
         className,
       )}
     >
-      <div className="flex flex-col gap-3 @min-[32rem]/settings-row:grid @min-[32rem]/settings-row:grid-cols-[minmax(0,1fr)_minmax(10rem,auto)] @min-[32rem]/settings-row:items-center @min-[32rem]/settings-row:gap-4">
+      <div className="flex flex-col gap-3 @min-[32rem]/settings-row:grid @min-[32rem]/settings-row:grid-cols-[minmax(0,1fr)_auto] @min-[32rem]/settings-row:items-center @min-[32rem]/settings-row:gap-4">
         <div className="min-w-0 flex-1 space-y-px">
           <div className="flex min-h-5 items-center gap-1.5">
             <h3 className="text-[13px] leading-[18px] font-medium text-foreground">{title}</h3>
@@ -545,7 +545,7 @@ export function SettingsRow({
           ) : null}
         </div>
         {renderedControl ? (
-          <div className="flex w-full min-w-0 shrink-0 items-center gap-2 @min-[32rem]/settings-row:w-auto @min-[32rem]/settings-row:justify-end">
+          <div className="flex w-full min-w-0 shrink-0 items-center gap-2 @min-[32rem]/settings-row:w-auto @min-[32rem]/settings-row:justify-end @min-[32rem]/settings-row:[&_[data-slot=select-trigger]]:min-w-40">
             {renderedControl}
           </div>
         ) : null}
@@ -627,6 +627,7 @@ function SettingsPageHeading() {
     </div>
   );
 }
+const LEADING_HASH = /^#/;
 
 export function SettingsPageContainer({
   children,
@@ -645,7 +646,7 @@ export function SettingsPageContainer({
   const highlightTarget = useLocation({
     select: (location) => location.state.settingsTargetHighlight !== false,
   });
-  const targetId = hash.replace(/^#/, "") || null;
+  const targetId = hash.replace(LEADING_HASH, "") || null;
   const clearTargetHash = () => {
     void navigate({
       hash: "",

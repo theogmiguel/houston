@@ -37,6 +37,8 @@ export function pullRequestRoutingConnectionKey(entry: ConnectionCatalogEntry): 
   return keys.every((key) => key !== null) ? JSON.stringify([...keys].sort()) : null;
 }
 
+const TRAILING_SLASHES = /\/+$/;
+
 function routeConnectionKey(
   target: ConnectionCatalogEntry["target"],
   routeProfile: ConnectionCatalogEntry["profile"],
@@ -66,7 +68,7 @@ function routeConnectionKey(
     return JSON.stringify([
       target._tag,
       target.environmentId,
-      ...urls.map((url) => url.href.replace(/\/+$/, "")),
+      ...urls.map((url) => url.href.replace(TRAILING_SLASHES, "")),
     ]);
   } catch {
     return null;

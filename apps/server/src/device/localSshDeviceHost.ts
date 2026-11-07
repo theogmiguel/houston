@@ -18,6 +18,8 @@ export const LocalDeviceHostAddresses = Context.Reference<ReadonlySet<string>>(
   },
 );
 
+const IPV6_BRACKETS = /^\[|\]$/g;
+
 export const isLocalSshDeviceHost = Effect.fn("isLocalSshDeviceHost")(function* (
   host: SshDeviceHostConfig,
 ) {
@@ -41,7 +43,7 @@ export const isLocalSshDeviceHost = Effect.fn("isLocalSshDeviceHost")(function* 
     ["proxycommand", "proxyjump"].some((key) => config.has(key) && config.get(key) !== "none")
   )
     return false;
-  const hostname = config.get("hostname")?.replace(/^\[|\]$/g, "");
+  const hostname = config.get("hostname")?.replace(IPV6_BRACKETS, "");
   if (!hostname) return false;
   const addresses = NodeNet.isIP(hostname)
     ? [hostname]

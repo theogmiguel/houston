@@ -49,6 +49,10 @@ export function museItemStatus(item: MuseItem): OrchestrationV2TurnItemStatus {
   return "failed";
 }
 
+const SHELL_TOOL_NAME = /shell|bash|exec_command/i;
+const WRITE_TOOL_NAME = /write|edit|patch/i;
+const WEB_TOOL_NAME = /web|browse|fetch/i;
+
 export function museToolPresentation(
   item: MuseItem,
   status = museItemStatus(item),
@@ -89,7 +93,7 @@ export function museToolPresentation(
     "";
   const output = detail ? [detail, text].filter(Boolean).join("\n") : text;
 
-  if (item.kind === "userShell" || /shell|bash|exec_command/i.test(item.tool ?? "")) {
+  if (item.kind === "userShell" || SHELL_TOOL_NAME.test(item.tool ?? "")) {
     return {
       ...shared,
       type: "command_execution",
@@ -98,7 +102,7 @@ export function museToolPresentation(
       ...(item.exitCode === undefined ? {} : { exitCode: item.exitCode }),
     };
   }
-  if (item.kind === "toolCall" && /write|edit|patch/i.test(toolName)) {
+  if (item.kind === "toolCall" && WRITE_TOOL_NAME.test(toolName)) {
     const fileName = stringArg("file_path", "path", "filePath")?.trim();
     if (fileName) {
       const oldStr = stringArg("old_string", "old_str", "oldStr", "oldText");
@@ -114,7 +118,7 @@ export function museToolPresentation(
       };
     }
   }
-  if (item.kind === "toolCall" && /web|browse|fetch/i.test(toolName)) {
+  if (item.kind === "toolCall" && WEB_TOOL_NAME.test(toolName)) {
     const query = stringArg("query", "url", "pattern")?.trim();
     const pageUrl = stringArg("url")?.trim();
     const hits =

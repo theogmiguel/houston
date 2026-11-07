@@ -217,6 +217,8 @@ class DesktopShellCertificatesUpdateFailed extends Schema.TaggedError<DesktopShe
   }
 }
 
+const EXTRAS_PATTERN = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g;
+
 export function makeApplyDesktopShellEnvironmentSnapshot(
   environment: NodeJS.ProcessEnv,
   platform: NodeJS.Platform,
@@ -253,8 +255,7 @@ export function makeApplyDesktopShellEnvironmentSnapshot(
         const bundle = file ? yield* fs.readFileString(file) : undefined;
         yield* Effect.try({
           try: () => {
-            const extras =
-              bundle?.match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) ?? [];
+            const extras = bundle?.match(EXTRAS_PATTERN) ?? [];
             if (bundle?.trim() && extras.length === 0) {
               throw new Error("No PEM certificates found.");
             }

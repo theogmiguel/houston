@@ -178,6 +178,9 @@ const proxyHttp = Effect.fn("DeviceHubProxy.proxyHttp")(function* (
   });
 });
 
+const CONTROLS_DEVICE_PATTERN = /\/api\/(stream-(mode|settings)|fold)$/;
+const HTTP_SCHEME_PREFIX = /^http/;
+
 const handler = Effect.gen(function* () {
   const request = yield* HttpServerRequest.HttpServerRequest;
   const url = requestUrl(request);
@@ -199,7 +202,7 @@ const handler = Effect.gen(function* () {
   }
   const controlsDevice =
     (upgrade && hubPath !== "/api/devices/ws") ||
-    (!readOnly && /\/api\/(stream-(mode|settings)|fold)$/.test(hubPath));
+    (!readOnly && CONTROLS_DEVICE_PATTERN.test(hubPath));
   yield* authenticateMediaRequest(
     controlsDevice ? AuthOrchestrationOperateScope : AuthOrchestrationReadScope,
   );
@@ -222,7 +225,7 @@ const handler = Effect.gen(function* () {
   if (upgrade) {
     return yield* proxyWebSocket(
       request,
-      upstreamUrl.replace(/^http/, "ws"),
+      upstreamUrl.replace(HTTP_SCHEME_PREFIX, "ws"),
       routed?.protocols,
       routed?.headers,
     );

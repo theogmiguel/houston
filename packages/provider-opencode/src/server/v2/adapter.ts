@@ -92,6 +92,12 @@ import { turnScopedSelectionTransition } from "@houston-app/provider-core/server
 import { OPENCODE_PROVIDER, openCodePermissionRequestKind } from "../adapter.ts";
 import { openCodeCommandFailed, openCodeToolTurnItem } from "../toolItems.ts";
 
+const NON_ID_CHAR = /[^a-zA-Z0-9_-]/g;
+const SUBAGENT_OUTPUT_PATTERN = /^<subagent\b[^>]*>\n?([\s\S]*?)\n?<\/subagent>$/;
+const CLAUDE_USAGE_LIMIT_PATTERN = /^You've hit your [^\n·]*\blimit\b/;
+const RESET_AT_PATTERN = /\bResets at (\d{4}-\d\d-\d\dT[\d:.]+Z)\.?\s*$/;
+const MATCH_PATTERN = /^\/(\S+)(?:\s+([\s\S]*))?$/;
+
 const OpenCode2ProviderCapabilities = {
   sessions: {
     supportsMultipleProviderThreadsPerSession: true,
@@ -352,7 +358,7 @@ const rule = (action: string, effect: Rule["effect"]): Rule => ({ action, resour
 
 /** OpenCode hides tools for names over 64 chars and rejects names over 100; hash long thread IDs. */
 export const houstonMcpServerName = Effect.fn("houstonMcpServerName")(function* (threadId: string) {
-  const name = `houston-${threadId.replaceAll(/[^a-zA-Z0-9_-]/g, "_")}`;
+  const name = `houston-${threadId.replaceAll(NON_ID_CHAR, "_")}`;
   if (name.length <= 64) return name;
   const crypto = yield* Digest.Digest;
   const digest = yield* crypto
@@ -544,8 +550,7 @@ const reportOutcome = (state: string | undefined) =>
         ? ("cancelled" as const)
         : ("unknown" as const);
 
-const subagentOutput = (text: string) =>
-  /^<subagent\b[^>]*>\n?([\s\S]*?)\n?<\/subagent>$/.exec(text.trim())?.[1] ?? text;
+const subagentOutput = (text: string) => SUBAGENT_OUTPUT_PATTERN.exec(text.trim())?.[1] ?? text;
 
 const isContinuation = (turnInput: ProviderAdapter.ProviderAdapterV2TurnInput) =>
   turnInput.message.createdBy === "agent" && turnInput.message.creationSource === "provider";
@@ -556,8 +561,8 @@ const isWakeTurn = (turn: OrchestrationV2ProviderTurn) =>
 
 // OpenCode's claude-agent reports a spent Claude plan as provider.unknown with Claude's own text.
 const claudeUsageLimit = (message: string | undefined) =>
-  message !== undefined && /^You've hit your [^\n·]*\blimit\b/.test(message)
-    ? { resetAt: /\bResets at (\d{4}-\d\d-\d\dT[\d:.]+Z)\.?\s*$/.exec(message)?.[1] ?? null }
+  message !== undefined && CLAUDE_USAGE_LIMIT_PATTERN.test(message)
+    ? { resetAt: RESET_AT_PATTERN.exec(message)?.[1] ?? null }
     : undefined;
 
 const INTERRUPT_TIMEOUT = "10 seconds";
@@ -656,7 +661,7 @@ const agentFor = (input: ProviderAdapter.ProviderAdapterV2TurnInput) =>
   input.runtimePolicy.interactionMode === "plan" ? "plan" : "build";
 
 const commandOf = (text: string) => {
-  const match = /^\/(\S+)(?:\s+([\s\S]*))?$/.exec(text.trim());
+  const match = MATCH_PATTERN.exec(text.trim());
   return match === null ? undefined : { name: match[1]!, text: match[2] ?? "" };
 };
 

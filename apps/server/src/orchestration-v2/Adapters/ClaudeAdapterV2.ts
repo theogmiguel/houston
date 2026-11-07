@@ -147,6 +147,7 @@ import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
+import * as TraceContext from "../../houston/observability/TraceContext.ts";
 import { snapshotMcpApp } from "../../mcpApps/McpAppSnapshot.ts";
 import { resolveClaudeSdkExecutablePath } from "../../provider/Drivers/ClaudeExecutable.ts";
 import {
@@ -224,6 +225,24 @@ import {
   makeSubagentConversationArtifacts,
   subagentThreadTitle,
 } from "@houston-app/provider-core/server/subagentProjection";
+
+const PARSE_CLAUDE_INTEGER_PATTERN = /[_,\u00A0\u202F ]/g;
+const TRAILING_LINE_BREAK = /\r?\n$/;
+const MATCH_PATTERN = /claude-[a-z]+-(\d+)(?:-(\d{1,2}))?(?!\d)/u;
+const WHITESPACE_RUN = /\s+/g;
+const ESTIMATE_CLAUDE_PDF_PAGES_PATTERN = /^[1-9]\d{0,8}$/;
+const IS_CLAUDE_PROMPT_UUID_PATTERN = /^[^-]+-[^-]+-[^-]+-[^-]+-[^-]+$/;
+const NORMALIZED_CLAUDE_TOOL_NAME_PATTERN = /[\s_-]/g;
+const TOOL_NAMES_PATTERN = /^mcp__claude_ai_/u;
+const GATEWAY_RESET_AT_PATTERN =
+  /^API Error: 503 \[[^\]\r\n]+\] \[429\]: \{"type":"error","error":\{"type":"rate_limit_error",[^\r\n]*\} \(reset after (?:(\d+)h ?)?(?:(\d+)m ?)?(?:(\d+)s)?\)/;
+const RESET_AT_PATTERN = /\(reset after (?:(\d+)h ?)?(?:(\d+)m ?)?(?:(\d+)s)?\)/;
+const MATCH_PATTERN_2 = /^Task #(\S+) created successfully: (.+)$/s;
+const NON_ID_CHAR = /[^a-zA-Z0-9_-]/g;
+const READ_CLAUDE_TASK_LIST_PATTERN = /^\d+\.json$/;
+const GITDIR_LINE = /^gitdir:\s*(.+)$/m;
+const LINE_BREAK_CHAR = /[\r\n]/;
+const CAN_USE_TOOL_EFFECT_PATTERN = /^Dangerous rm(?:dir)?\b/i;
 
 export const CLAUDE_PROVIDER = ProviderDriverKind.make("claudeAgent");
 const CLAUDE_AGENT_SDK_QUERY_PROTOCOL = "claude-agent-sdk.query" as const;
@@ -1667,7 +1686,7 @@ function parseClaudeInteger(text: string): number {
     return Number.isInteger(number) ? number : Number.NaN;
   }
   if (value.length <= 32 && CLAUDE_GROUPED_INTEGER.test(value)) {
-    return Number.parseInt(value.replace(/[_,\u00A0\u202F ]/g, ""), 10);
+    return Number.parseInt(value.replace(PARSE_CLAUDE_INTEGER_PATTERN, ""), 10);
   }
   return Number.parseInt(value, 10);
 }
@@ -1692,6 +1711,7 @@ const subagentDeviceInstructions: HookCallback = () =>
 
 export function makeClaudeQueryOptions(input: {
   readonly modelSelection: ModelSelection;
+  readonly modelCatalog?: ClaudeModelCatalog;
   readonly nativeThreadId: string;
   readonly resume: boolean;
   readonly resumeSessionAt?: string;
@@ -1719,7 +1739,7 @@ export function makeClaudeQueryOptions(input: {
   // Flag settings, because a user's settings.json env beats the process env in Claude Code.
   readonly toolSearchOverride?: "true";
 }): ClaudeAgentSdkQueryOptions {
-  const compiledSelection = compileClaudeModelSelection(input.modelSelection);
+  const compiledSelection = compileClaudeModelSelection(input.modelSelection, input.modelCatalog);
   const {
     // claudeLaunchArgDirectories reads every --add-dir into additionalDirectories.
     "add-dir": _launchArgAddDir,
@@ -1747,7 +1767,7 @@ export function makeClaudeQueryOptions(input: {
   // appendSystemPrompt, so launch-argument text has to travel in that value.
   // The CLI puts file text before inline text and trims one trailing newline.
   const launchAppendSystemPrompt = [
-    input.appendSystemPromptFileText?.replace(/\r?\n$/, ""),
+    input.appendSystemPromptFileText?.replace(TRAILING_LINE_BREAK, ""),
     launchArgAppendSystemPrompt,
   ].filter((text): text is string => typeof text === "string" && text.length > 0);
   const requestThinkingSummaries =
@@ -2026,7 +2046,7 @@ function textFromClaudeContent(content: SDKAssistantMessage["message"]["content"
 
 // Claude 5.1+ emits at most one pre-tool text block as thinking; treat only a second consecutive thinking block as text.
 function claudeWritesUpdatesAsThinking(model: string): boolean {
-  const match = /claude-[a-z]+-(\d+)(?:-(\d{1,2}))?(?!\d)/u.exec(model);
+  const match = MATCH_PATTERN.exec(model);
   if (match === null) return false;
   const major = Number(match[1]);
   return major > 5 || (major === 5 && Number(match[2] ?? 0) >= 1);
@@ -2098,7 +2118,7 @@ function isClaudeGoalAcknowledgement(message: SDKMessage): boolean {
 const providerGoalsEqual = Schema.toEquivalence(Schema.NullOr(OrchestrationV2ProviderGoal));
 
 function normalizeClaudeResultText(text: string): string {
-  return text.replace(/\s+/g, " ").trim();
+  return text.replace(WHITESPACE_RUN, " ").trim();
 }
 
 function assistantTextFromSdkMessage(
@@ -2438,7 +2458,7 @@ const estimateClaudePdfPages = (bytes: Buffer): number | null => {
       if (token === "/Pages") pageTree = true;
     }
     if (previous === "/Count") {
-      if (!/^[1-9]\d{0,8}$/.test(token)) return null;
+      if (!ESTIMATE_CLAUDE_PDF_PAGES_PATTERN.test(token)) return null;
       let next = i;
       while (next < bytes.length) {
         if (bytes[next]! <= 32) next++;
@@ -2682,7 +2702,7 @@ const makeClaudeUserMessageWithAttachments = Effect.fnUntraced(function* (input:
 });
 
 export function isClaudePromptUuid(value: string): value is NonNullable<SDKUserMessage["uuid"]> {
-  return /^[^-]+-[^-]+-[^-]+-[^-]+-[^-]+$/.test(value);
+  return IS_CLAUDE_PROMPT_UUID_PATTERN.test(value);
 }
 
 type ClaudeAssistantContentBlock = SDKAssistantMessage["message"]["content"][number];
@@ -2934,6 +2954,15 @@ const decodeClaudeSubagentCacheSettings = Schema.decodeUnknownEffect(
     ),
   ),
 );
+const decodeClaudeCompactSettings = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(
+    Schema.Struct({
+      autoCompactWindow: Schema.optionalKey(Schema.Unknown),
+      modelSettings: Schema.optionalKey(Schema.Unknown),
+    }),
+  ),
+);
+const decodeClaudeCompactWindow = Schema.decodeUnknownOption(Schema.Int);
 const decodeClaudeEnvSettings = Schema.decodeUnknownEffect(
   fromLenientJson(
     Schema.StructWithRest(
@@ -3001,7 +3030,7 @@ interface ClaudeToolClassification {
 }
 
 function normalizedClaudeToolName(toolName: string): string {
-  return toolName.toLowerCase().replaceAll(/[\s_-]/g, "");
+  return toolName.toLowerCase().replaceAll(NORMALIZED_CLAUDE_TOOL_NAME_PATTERN, "");
 }
 
 const CLAUDE_KNOWN_TOOL_CLASSIFICATIONS: Record<
@@ -3562,7 +3591,7 @@ function claudeToolPresentationsFromAssistantMessage(
   const toolNames = new Map(
     claudeToolUseBlocksFromAssistantMessage(message).map((tool) => [
       tool.id,
-      tool.name.replace(/^mcp__claude_ai_/u, "mcp__"),
+      tool.name.replace(TOOL_NAMES_PATTERN, "mcp__"),
     ]),
   );
   for (const entry of meta) {
@@ -4058,12 +4087,7 @@ function providerFailureFromResult(
     message.is_error &&
     message.terminal_reason === "api_error" &&
     message.api_error_status === 503
-      ? gatewayCooldownResetAt(
-          /^API Error: 503 \[[^\]\r\n]+\] \[429\]: \{"type":"error","error":\{"type":"rate_limit_error",[^\r\n]*\} \(reset after (?:(\d+)h ?)?(?:(\d+)m ?)?(?:(\d+)s)?\)/.exec(
-            message.result,
-          ),
-          completedAt,
-        )
+      ? gatewayCooldownResetAt(GATEWAY_RESET_AT_PATTERN.exec(message.result), completedAt)
       : undefined;
   if (gatewayResetAt !== undefined) {
     return makeProviderFailure({
@@ -4104,10 +4128,7 @@ function providerFailureFromResult(
   // API-key sessions get no rate_limit_info, so a gateway's 429 carries its reset only as text.
   const resetAt =
     apiErrorStatus === 429 && message.result.startsWith("API Error:")
-      ? gatewayCooldownResetAt(
-          /\(reset after (?:(\d+)h ?)?(?:(\d+)m ?)?(?:(\d+)s)?\)/.exec(message.result),
-          completedAt,
-        )
+      ? gatewayCooldownResetAt(RESET_AT_PATTERN.exec(message.result), completedAt)
       : undefined;
   return makeProviderFailure({
     message: listedError ?? structuredError ?? failureHint ?? message.result,
@@ -4274,6 +4295,7 @@ function formatClaudeUsageLimitWait(waitMs: number): string {
 interface ActiveClaudeTurnContext {
   readonly queryPolicy: ClaudeRuntimeQueryPolicy;
   readonly input: ProviderAdapter.ProviderAdapterV2TurnInput;
+  readonly autoCompactWindow: string;
   readonly nativeThreadId: string;
   readonly nativeTurnId: string;
   nativeMessageCursor: string | null;
@@ -4388,6 +4410,8 @@ interface ActiveClaudeSubagent {
 interface ClaudeLiveQueryContext {
   readonly queryPolicy: ClaudeRuntimeQueryPolicy;
   readonly nativeThreadId: string;
+  readonly settingsCwd: string | null;
+  readonly launchArgSettings: ClaudeSdkSettings | undefined;
   readonly query: ClaudeAgentSdkQuerySession;
   readonly queryPolicyKey: string;
   selection: CompiledClaudeModelSelection;
@@ -4734,8 +4758,7 @@ function applyClaudeTaskTool(
 function claudeCreatedTaskFromText(
   result: unknown,
 ): { readonly id: string; readonly subject: string } | undefined {
-  const match =
-    typeof result === "string" ? /^Task #(\S+) created successfully: (.+)$/s.exec(result) : null;
+  const match = typeof result === "string" ? MATCH_PATTERN_2.exec(result) : null;
   return match === null ? undefined : { id: match[1]!, subject: match[2]!.trim() };
 }
 
@@ -4764,10 +4787,10 @@ const readClaudeTaskList = Effect.fnUntraced(
       ? path.resolve(input.cwd ?? ".", configDirOverride)
       : yield* resolveClaudeHomePath({ homePath: "" });
     const listId = input.environment.CLAUDE_CODE_TASK_LIST_ID?.trim() || input.nativeThreadId;
-    const directory = path.join(configDir, "tasks", listId.replace(/[^a-zA-Z0-9_-]/g, "-"));
+    const directory = path.join(configDir, "tasks", listId.replace(NON_ID_CHAR, "-"));
     const tasks = new Map<string, Omit<OrchestrationV2PlanStep, "id">>();
     const names = (yield* fileSystem.readDirectory(directory))
-      .filter((name) => /^\d+\.json$/.test(name))
+      .filter((name) => READ_CLAUDE_TASK_LIST_PATTERN.test(name))
       .toSorted((left, right) => Number.parseInt(left, 10) - Number.parseInt(right, 10));
     for (const name of names) {
       const contents = yield* fileSystem
@@ -4801,6 +4824,7 @@ function claudeProposedPlan(input: unknown): string | null {
 export interface ClaudeAdapterV2Options {
   readonly instanceId: ProviderInstanceId;
   readonly settings: ClaudeSettings;
+  readonly modelCatalog?: Effect.Effect<ClaudeModelCatalog>;
   readonly environment: NodeJS.ProcessEnv;
   readonly attachmentsDir: string;
   readonly fileSystem: FileSystem.FileSystem;
@@ -4817,6 +4841,8 @@ export interface ClaudeAdapterV2Options {
   };
 }
 
+const MODEL_PATTERN = /\[1m\]$/i;
+
 export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
   adapterOptions: ClaudeAdapterV2Options,
 ) {
@@ -4824,15 +4850,20 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const serverSettings = yield* Effect.serviceOption(ServerSettings.ServerSettingsService);
   const { attachmentsDir, fileSystem, path, random, idAllocator, queryRunner } = adapterOptions;
-  const subagentModelCatalog = scopeClaudeModelCatalog(
-    BUNDLED_CLAUDE_MODEL_CATALOG,
-    adapterOptions.settings.customModels,
+  const loadModelCatalog = (
+    adapterOptions.modelCatalog ?? Effect.succeed(BUNDLED_CLAUDE_MODEL_CATALOG)
+  ).pipe(
+    Effect.map((catalog) => scopeClaudeModelCatalog(catalog, adapterOptions.settings.customModels)),
   );
+  // Reloaded at each turn and steer so downloaded manifest updates apply without a release.
+  let modelCatalog = yield* loadModelCatalog;
   // Results report the window Claude Code compacts against; outside the catalog it is the only source.
   const reportedContextWindows = new Map<string, number>();
   const claudeContextWindow = (modelSelection: ModelSelection): number | null =>
-    resolveClaudeCatalogContextWindowTokens(BUNDLED_CLAUDE_MODEL_CATALOG, modelSelection) ??
-    reportedContextWindows.get(compileClaudeModelSelection(modelSelection).apiModelId) ??
+    resolveClaudeCatalogContextWindowTokens(modelCatalog, modelSelection) ??
+    reportedContextWindows.get(
+      compileClaudeModelSelection(modelSelection, modelCatalog).apiModelId,
+    ) ??
     null;
   const continuationRequests = adapterOptions.continuationRequests ?? {
     offer: () => Effect.void,
@@ -4922,7 +4953,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
   const mainCheckoutRoot = (checkout: string) =>
     fileSystem.readFileString(path.join(checkout, ".git")).pipe(
       Effect.flatMap((pointer) => {
-        const gitDir = /^gitdir:\s*(.+)$/m.exec(pointer)?.[1]?.trim();
+        const gitDir = GITDIR_LINE.exec(pointer)?.[1]?.trim();
         if (gitDir === undefined) return Effect.succeed(checkout);
         const worktreeGitDir = path.resolve(checkout, gitDir);
         return fileSystem.readFileString(path.join(worktreeGitDir, "commondir")).pipe(
@@ -4952,15 +4983,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
       if (path.dirname(directory) === directory) return cwd;
     }
   });
-  // Settings env beats the process env, --settings over local over project over user, and a local
-  // file an older Claude Code left in cwd applies under the root one. resolveSettings reads local
-  // from cwd only.
-  const resolveToolSearchOverride = Effect.fn("ClaudeAdapterV2.resolveToolSearchOverride")(
-    function* (cwd: string | null, launchArgSettings: ClaudeSdkSettings | undefined) {
-      const launchValue = launchArgSettings?.env?.ENABLE_TOOL_SEARCH;
-      if (typeof launchValue === "string") return claudeToolSearchOverride(launchValue);
+  const settingsFilesByPrecedence = Effect.fn("ClaudeAdapterV2.settingsFilesByPrecedence")(
+    function* (cwd: string | null) {
       const localDirectory = cwd === null ? null : yield* localSettingsDirectory(cwd);
-      const settingsFiles = [
+      return [
         ...(cwd === null || localDirectory === null
           ? []
           : [
@@ -4970,13 +4996,62 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             ]),
         path.join(homePath, "settings.json"),
       ];
-      for (const settingsFile of settingsFiles) {
+    },
+  );
+  // Settings env beats the process env, --settings over local over project over user, and a local
+  // file an older Claude Code left in cwd applies under the root one. resolveSettings reads local
+  // from cwd only.
+  const resolveToolSearchOverride = Effect.fn("ClaudeAdapterV2.resolveToolSearchOverride")(
+    function* (cwd: string | null, launchArgSettings: ClaudeSdkSettings | undefined) {
+      const launchValue = launchArgSettings?.env?.ENABLE_TOOL_SEARCH;
+      if (typeof launchValue === "string") return claudeToolSearchOverride(launchValue);
+      for (const settingsFile of yield* settingsFilesByPrecedence(cwd)) {
         const value = yield* readToolSearchSetting(settingsFile);
         if (value !== undefined) return claudeToolSearchOverride(value);
       }
       return claudeToolSearchOverride(adapterOptions.environment.ENABLE_TOOL_SEARCH);
     },
   );
+
+  const resolveAutoCompactWindow = Effect.fn("ClaudeAdapterV2.resolveAutoCompactWindow")(function* (
+    cwd: string | null,
+    modelSelection: ModelSelection,
+    launchArgSettings: ClaudeSdkSettings | undefined,
+  ) {
+    if (adapterOptions.settings.autoCompactWindow !== "")
+      return adapterOptions.settings.autoCompactWindow;
+    const model = compileClaudeModelSelection(modelSelection).apiModelId.replace(MODEL_PATTERN, "");
+    const windowFrom = (settings: unknown) => {
+      if (typeof settings !== "object" || settings === null) return undefined;
+      const models = Reflect.get(settings, "modelSettings");
+      const modelSetting =
+        typeof models === "object" && models !== null ? Reflect.get(models, model) : undefined;
+      const modelWindow =
+        typeof modelSetting === "object" && modelSetting !== null
+          ? Reflect.get(modelSetting, "autoCompactWindow")
+          : undefined;
+      const validWindow = (value: unknown) => {
+        const selected = Option.getOrUndefined(decodeClaudeCompactWindow(value));
+        return typeof selected === "number" && selected >= 100_000 && selected <= 1_000_000
+          ? String(selected)
+          : undefined;
+      };
+      return modelWindow === "auto"
+        ? ""
+        : (validWindow(modelWindow) ?? validWindow(Reflect.get(settings, "autoCompactWindow")));
+    };
+    const launchWindow = windowFrom(launchArgSettings);
+    if (launchWindow !== undefined) return launchWindow;
+    for (const settingsFile of yield* settingsFilesByPrecedence(cwd)) {
+      const settings = yield* fileSystem.readFileString(settingsFile).pipe(
+        Effect.flatMap(decodeClaudeCompactSettings),
+        Effect.orElseSucceed(() => undefined),
+      );
+      const value = windowFrom(settings);
+      if (value !== undefined) return value;
+    }
+    return "";
+  });
 
   const userInvocableSkills = (cwd: string | null) =>
     discoverClaudeSkills(
@@ -5372,17 +5447,14 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               ? {
                   usedTokens: usage,
                   maxTokens,
-                  ...claudeAutoCompactThreshold(
-                    adapterOptions.settings.autoCompactWindow,
-                    maxTokens,
-                  ),
+                  ...claudeAutoCompactThreshold(context.autoCompactWindow, maxTokens),
                   updatedAt: DateTime.formatIso(now),
                 }
               : claudeProviderTurnTokenUsage(
                   usage,
                   maxTokens,
                   DateTime.formatIso(now),
-                  adapterOptions.settings.autoCompactWindow,
+                  context.autoCompactWindow,
                   context.streamUsage?.requestedAt,
                 );
           if (typeof usage !== "number") {
@@ -6032,7 +6104,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           const viewedImagePath =
             readPath &&
             readPath.length <= 4096 &&
-            !/[\r\n]/.test(readPath) &&
+            !LINE_BREAK_CHAR.test(readPath) &&
             isWorkspaceImagePreviewPath(readPath)
               ? readPath
               : undefined;
@@ -6763,7 +6835,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             existingSubagent === undefined
               ? (input.effort ??
                 input.owner?.effort ??
-                compileClaudeModelSelection(input.context.input.modelSelection).effort)
+                compileClaudeModelSelection(input.context.input.modelSelection, modelCatalog)
+                  .effort)
               : existingSubagent.effort;
           const model = input.model ?? priorTask?.model ?? null;
           const task = {
@@ -6801,7 +6874,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             ...(existingSubagent === undefined || existingSubagent.task.modelSelection !== undefined
               ? {
                   modelSelection: claudeSubagentModelSelection(
-                    subagentModelCatalog,
+                    modelCatalog,
                     input.context.input.modelSelection.instanceId,
                     model || input.context.input.modelSelection.model,
                     effort,
@@ -7558,7 +7631,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               presentation:
                 presentations.get(toolUse.id) ??
                 mcpToolPresentation({
-                  toolName: toolUse.name.replace(/^mcp__claude_ai_/u, "mcp__"),
+                  toolName: toolUse.name.replace(TOOL_NAMES_PATTERN, "mcp__"),
                 }),
               startedAt: at,
             });
@@ -9439,7 +9512,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             const model =
               snapshotModel.length === 0 || snapshotModel === "<synthetic>"
                 ? undefined
-                : canonicalClaudeSubagentModel(subagentModelCatalog, snapshotModel);
+                : canonicalClaudeSubagentModel(modelCatalog, snapshotModel);
             if (parentToolUseId !== null && model !== undefined) {
               const subagent = yield* resolveSubagentByToolUseId(context, parentToolUseId);
               if (subagent === undefined) {
@@ -9534,6 +9607,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 }).pipe(
                   Effect.provideService(FileSystem.FileSystem, fileSystem),
                   Effect.provideService(Path.Path, path),
+                  // Keeps the trace context of the turn that ran the foreground command.
                   Effect.forkIn(sessionScope),
                 );
                 taskOutputTails.set(tailedCall.nativeItemId, { fiber, stop });
@@ -9745,7 +9819,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             const nativeToolInput = claudeNativeToolInputFromUnknown(toolUse.input);
             if (toolUse.name === "Agent") {
               rememberClaudeSubagentLaunch(
-                subagentModelCatalog,
+                modelCatalog,
                 context,
                 pendingSubagentLaunchesByToolUseId,
                 toolUse.id,
@@ -9771,7 +9845,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               presentation:
                 toolPresentations.get(toolUse.id) ??
                 mcpToolPresentation({
-                  toolName: toolUse.name.replace(/^mcp__claude_ai_/u, "mcp__"),
+                  toolName: toolUse.name.replace(TOOL_NAMES_PATTERN, "mcp__"),
                 }),
             });
             const heldPlan = heldProposedPlansByToolUseId.get(toolUse.id);
@@ -10395,7 +10469,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           const startToolCall = toolName !== "Agent" && options?.startToolCall !== false;
           if (toolName === "Agent") {
             rememberClaudeSubagentLaunch(
-              subagentModelCatalog,
+              modelCatalog,
               context,
               pendingSubagentLaunchesByToolUseId,
               nativeRequestId,
@@ -10550,7 +10624,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             toolName === "Bash" &&
             activePermissionMode === "bypassPermissions" &&
             callbackOptions.matchedAskRule === undefined &&
-            (/^Dangerous rm(?:dir)?\b/i.test(safetyReason) ||
+            (CAN_USE_TOOL_EFFECT_PATTERN.test(safetyReason) ||
               safetyReason === "This shell -c script runs rm and could not be checked" ||
               safetyReason === "A permission rule denies a command in this shell -c script")
           ) {
@@ -10901,7 +10975,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               : { allowedTools: queryPolicy.allowedTools }),
           });
           const queryPolicyKey = claudeEffectiveQueryPolicyKey(queryPolicy, mcpOverrides);
-          const compiledSelection = compileClaudeModelSelection(turnInput.modelSelection);
+          const compiledSelection = compileClaudeModelSelection(
+            turnInput.modelSelection,
+            modelCatalog,
+          );
           const resumeSessionAt = yield* getNativeConversationHeadId(turnInput.providerThread);
           const existing = yield* Ref.get(queryContext);
           // Continuations drain existing output without prompting; retain the live process regardless of selection.
@@ -11017,6 +11094,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           const queryOptions = makeClaudeQueryOptions({
             modelSelection: turnInput.modelSelection,
             claudeInChrome: adapterOptions.settings.claudeInChrome,
+            modelCatalog,
             nativeThreadId,
             resume: shouldResume,
             ...(resumeSessionAt === undefined ? {} : { resumeSessionAt }),
@@ -11098,6 +11176,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           const context: ClaudeLiveQueryContext = {
             queryPolicy,
             nativeThreadId,
+            settingsCwd: turnInput.runtimePolicy.cwd,
+            launchArgSettings,
             query: querySession,
             queryPolicyKey,
             selection: compiledSelection,
@@ -11163,7 +11243,15 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                       resultsReportingNewContextWindow.add(message);
                     }
                   }
-                  return handleSdkMessage({ query: querySession, message });
+                  return Ref.get(activeTurn).pipe(
+                    Effect.flatMap((turn) =>
+                      handleSdkMessage({ query: querySession, message }).pipe(
+                        TraceContext.withinTraceContext(
+                          turn === null ? {} : TraceContext.forTurn(turn.input),
+                        ),
+                      ),
+                    ),
+                  );
                 }),
               ),
             ),
@@ -11196,6 +11284,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               }),
             ),
             Effect.ensuring(Deferred.succeed(closed, undefined)),
+            TraceContext.withoutTurnContext,
             Effect.forkIn(sessionScope),
           );
           return context;
@@ -11203,6 +11292,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
 
         const startTurn = Effect.fn("ClaudeAdapterV2.startTurn")(
           function* (turnInput: ProviderAdapter.ProviderAdapterV2TurnInput) {
+            modelCatalog = yield* loadModelCatalog;
             const startedAt = yield* DateTime.now;
             const nativeThreadId = yield* getNativeThreadId(turnInput.providerThread);
             const nativeTurnId = `turn:${turnInput.attemptId}`;
@@ -11261,7 +11351,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 : yield* makeClaudeUserMessageWithAttachments({
                     text: applyClaudePromptEffortPrefix(
                       turnInput.message.text,
-                      compileClaudeModelSelection(turnInput.modelSelection).promptEffort,
+                      compileClaudeModelSelection(turnInput.modelSelection, modelCatalog)
+                        .promptEffort,
                     ),
                     attachments: turnInput.message.attachments,
                     attachmentsDir,
@@ -11274,8 +11365,14 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     Effect.provideService(Path.Path, path),
                   );
             const querySession = yield* openQuery(turnInput, nativeThreadId);
+            const autoCompactWindow = yield* resolveAutoCompactWindow(
+              querySession.settingsCwd,
+              turnInput.modelSelection,
+              querySession.launchArgSettings,
+            );
             const context: ActiveClaudeTurnContext = {
               input: turnInput,
+              autoCompactWindow,
               queryPolicy: querySession.queryPolicy,
               nativeThreadId,
               nativeTurnId,
@@ -11683,6 +11780,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
 
         const steerTurn = Effect.fn("ClaudeAdapterV2.steerTurn")(
           function* (turnInput: ProviderAdapter.ProviderAdapterV2SteerInput) {
+            modelCatalog = yield* loadModelCatalog;
             // Measured from the request, not from when the moves are forked:
             // building the message and the moves can take clock time a timer
             // started later would not count, and the steer would wait past it.
@@ -11724,7 +11822,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             const userMessage = yield* makeClaudeUserMessageWithAttachments({
               text: applyClaudePromptEffortPrefix(
                 turnInput.message.text,
-                compileClaudeModelSelection(currentTurn.input.modelSelection).promptEffort,
+                compileClaudeModelSelection(currentTurn.input.modelSelection, modelCatalog)
+                  .promptEffort,
               ),
               attachments: turnInput.message.attachments,
               priority: "now",
@@ -11924,9 +12023,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             }
             return false;
           }),
-          hasPendingBackgroundWorkForThread: Effect.fn(
-            "ClaudeAdapterV2.hasPendingBackgroundWorkForThread",
-          )(function* (providerThread, options) {
+          // Untraced: the run's event stream calls this once per provider event.
+          hasPendingBackgroundWorkForThread: Effect.fnUntraced(function* (providerThread, options) {
             const nativeThreadId = providerThread.nativeThreadRef?.nativeId;
             if (nativeThreadId === undefined || nativeThreadId === null) {
               return false;
@@ -12469,7 +12567,7 @@ export type ClaudeAdapterV2DriverEnv =
 export const createClaudeAdapterV2 = Effect.fn("ClaudeAdapterV2Driver.create")(
   function* (
     input: ProviderAdapterDriverCreateInput<ClaudeSettings>,
-    hooks: Pick<ClaudeAdapterV2Options, "scopedLimitNames" | "onUsageLimits"> = {},
+    hooks: Pick<ClaudeAdapterV2Options, "scopedLimitNames" | "onUsageLimits" | "modelCatalog"> = {},
   ) {
     const { instanceId, environment, enabled, config } = input;
     const fileSystem = yield* FileSystem.FileSystem;

@@ -25,7 +25,8 @@ export type ComposerSlashCommand =
   | "side"
   | "btw"
   | "chrome"
-  | "resume";
+  | "resume"
+  | "clear";
 export type ComposerSubmissionIntent = "foreground" | "background" | "alternate";
 
 export interface ComposerTrigger {

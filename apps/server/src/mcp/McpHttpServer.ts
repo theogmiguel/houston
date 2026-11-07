@@ -31,6 +31,7 @@ import * as ThreadCommandExecutor from "../orchestration-v2/ThreadCommandExecuto
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import { advertisedJsonSchema } from "./advertisedJsonSchema.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
+import * as TraceContext from "../houston/observability/TraceContext.ts";
 import * as McpToolAccess from "./McpToolAccess.ts";
 import * as OrchestratorMcpService from "./OrchestratorMcpService.ts";
 import { PreviewControlsToolkit } from "./toolkits/previewControls/tools.ts";
@@ -259,8 +260,9 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
     Effect.map((settings) => settings.linkedEnvironmentsEnabled),
     Effect.orElseSucceed(() => false),
   );
-  return Effect.fn("McpHttpServer.authenticateRequest")(function* (httpEffect) {
-    const request = yield* HttpServerRequest.HttpServerRequest;
+  const authenticateRequest = Effect.fn("McpHttpServer.authenticateRequest")(function* (
+    request: HttpServerRequest.HttpServerRequest,
+  ) {
     const authorization = request.headers.authorization;
     const token = parseBearerToken(request) ?? "";
     const invocation =
@@ -295,12 +297,19 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
       const refusal = yield* houstonTaskSubmitRefusal(request, limited);
       if (refusal !== undefined) return refusal;
     }
+    return { ...limited, linkedEnvironments };
+  });
+  // Untraced: a span here would wrap the tool call; the HTTP server span already covers it.
+  return Effect.fnUntraced(function* (httpEffect) {
+    const admitted = yield* authenticateRequest(yield* HttpServerRequest.HttpServerRequest);
+    if (HttpServerResponse.isHttpServerResponse(admitted)) return admitted;
     return yield* httpEffect.pipe(
-      Effect.provideService(McpInvocationContext.McpInvocationContext, {
-        ...limited,
-        linkedEnvironments,
-      }),
+      Effect.provideService(McpInvocationContext.McpInvocationContext, admitted),
       Effect.map(normalizeMcpHttpResponse),
+      TraceContext.withTraceContext({
+        clientKind: "mcp",
+        ...(admitted.thread === undefined ? {} : { threadId: admitted.thread.threadId }),
+      }),
     );
   }) satisfies McpAuthMiddleware;
 }).pipe(Effect.withSpan("McpHttpServer.makeAuthMiddleware"));
@@ -483,14 +492,18 @@ export class PreviewScreenshotSaveError extends Schema.TaggedError<PreviewScreen
 
 const MAX_SCREENSHOT_SITE_SLUG_LENGTH = 40;
 
+const NON_ALPHANUMERIC_RUN = /[^a-z0-9]+/g;
+const EDGE_HYPHENS = /^-+|-+$/g;
+const TRAILING_HYPHENS = /-+$/g;
+
 const screenshotSiteSlug = (rawUrl: string): string => {
   try {
     const slug = new URL(rawUrl).hostname
       .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
+      .replace(NON_ALPHANUMERIC_RUN, "-")
+      .replace(EDGE_HYPHENS, "")
       .slice(0, MAX_SCREENSHOT_SITE_SLUG_LENGTH)
-      .replace(/-+$/g, "");
+      .replace(TRAILING_HYPHENS, "");
     return slug || "site";
   } catch {
     return "site";
@@ -877,6 +890,36 @@ const registerHtmlPreview = Effect.fn("McpHttpServer.registerHtmlPreview")(funct
   );
 });
 
+/** Each tool call gets a span named for its tool; arguments stay out, as they carry prompts and IDs. */
+const withToolSpans = Effect.fn("McpHttpServer.withToolSpans")(function* <A, E, R>(
+  registration: Effect.Effect<A, E, R>,
+) {
+  const server = yield* McpServer.McpServer;
+  const tracingServer = McpServer.McpServer.of({
+    ...server,
+    addTool: Effect.fn("McpServer.addTool")(function (options) {
+      const name = options.tool.name;
+      return server.addTool({
+        ...options,
+        // Never the current span: Toolkit.handle annotates that one with the raw arguments.
+        handle: (payload) =>
+          Effect.useSpan(
+            `mcp.tool.${name}`,
+            {
+              attributes: {
+                "rpc.system": "mcp",
+                "rpc.method": "tools/call",
+                "mcp.tool.name": name,
+              },
+            },
+            () => options.handle(payload),
+          ),
+      });
+    }),
+  });
+  return yield* registration.pipe(Effect.provideService(McpServer.McpServer, tracingServer));
+});
+
 /** `McpServer.registerToolkit` advertises the full codec schema; agents get the compact one. */
 const withAdvertisedSchemas = Effect.fn("McpHttpServer.withAdvertisedSchemas")(function* <
   Tools extends Record<string, Tool.Any>,
@@ -961,7 +1004,9 @@ export const toolkitRegistration = <Tools extends Record<string, Tool.Any>, EX, 
 ) =>
   Layer.effectDiscard(
     withHoustonTaskSubmitScope(
-      withAdvertisedSchemas(toolkit, McpServer.registerToolkit(decodeAsAdvertised(toolkit))),
+      withToolSpans(
+        withAdvertisedSchemas(toolkit, McpServer.registerToolkit(decodeAsAdvertised(toolkit))),
+      ),
     ),
   ).pipe(
     Layer.provide(
@@ -977,7 +1022,7 @@ const imageToolRegistration = <Tools extends Record<string, Tool.Any>, A, E, R, 
   register: Effect.Effect<A, E, R>,
   handlers: McpToolAccess.HandlersLayer<Tools, EX, RX>,
 ) =>
-  Layer.effectDiscard(withHoustonTaskSubmitScope(register)).pipe(
+  Layer.effectDiscard(withHoustonTaskSubmitScope(withToolSpans(register))).pipe(
     Layer.provide(McpToolAccess.HandlersLayer.layer(handlers)),
   );
 

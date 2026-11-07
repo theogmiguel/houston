@@ -32,6 +32,9 @@ function findMatchIndices(value: string, query: string): number[] | null {
   return null;
 }
 
+const LEADING_MENTION_PREFIX = /^[@./]+/;
+const WHITESPACE_CHAR = /\s/g;
+
 /** Preserve server ranking and query normalization while filtering files and computing highlights. */
 export function getProjectFilePickerMatches(
   entries: ReadonlyArray<ProjectEntry>,
@@ -41,8 +44,8 @@ export function getProjectFilePickerMatches(
   if (limit <= 0) return [];
 
   const query = normalizeSearchQuery(rawQuery, {
-    trimLeadingPattern: /^[@./]+/,
-  }).replaceAll(/\s/g, "");
+    trimLeadingPattern: LEADING_MENTION_PREFIX,
+  }).replaceAll(WHITESPACE_CHAR, "");
   const matches: ProjectFilePickerMatch[] = [];
 
   for (const entry of entries) {

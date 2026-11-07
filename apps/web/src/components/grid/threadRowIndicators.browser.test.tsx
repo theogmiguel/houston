@@ -5,7 +5,7 @@ import "~/index.css";
 import { scopedThreadKey, scopeThreadRef } from "@houston-app/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
 
-import { useComposerDraftStore } from "../../composerDraftStore";
+import { composerTargetKey, useComposerDraftStore } from "../../composerDraftStore";
 import { render } from "../../../test/render";
 import { TooltipProvider } from "../ui/tooltip";
 import { ThreadCard } from "./GridSidebar";
@@ -148,12 +148,15 @@ describe("thread row indicators", () => {
   it("shows the unsent draft pen and discards the draft from it", async () => {
     reset();
     useComposerDraftStore.getState().setPrompt(draftRef, "half-written");
+    // Other test files share this store, so check this thread's draft rather than an empty store.
+    const draftKey = composerTargetKey(draftRef);
+    expect(useComposerDraftStore.getState().draftsByThreadKey[draftKey]).toBeDefined();
     await using screen = await render(card(thread()));
     await userEvent.click(
       screen.getByRole("button", { name: "Discard draft in Indicator thread" }).element(),
     );
     await expect.poll(() => screen.container.querySelector("[data-thread-draft]")).toBeNull();
-    expect(useComposerDraftStore.getState().draftsByThreadKey).toEqual({});
+    expect(useComposerDraftStore.getState().draftsByThreadKey[draftKey]).toBeUndefined();
   });
 
   it("hides the draft pen on the thread that is open", async () => {

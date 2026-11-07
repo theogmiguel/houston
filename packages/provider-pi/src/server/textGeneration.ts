@@ -15,10 +15,12 @@ const PI_TIMEOUT_MS = 180_000;
 
 const isTextGenerationError = Schema.is(TextGenerationError);
 
+const HTTP_ERROR_STATUS = /^([45]\d\d)\b/;
+
 // Pi's `errorMessage` is the provider's raw response text and can echo
 // credentials, so only a leading HTTP status reaches the error detail.
 const piTurnErrorDetail = (errorMessage: string | undefined) => {
-  const status = errorMessage?.match(/^([45]\d\d)\b/)?.[1];
+  const status = errorMessage?.match(HTTP_ERROR_STATUS)?.[1];
   return status === undefined
     ? "Pi could not generate text: the model provider reported an error."
     : `Pi could not generate text: the model provider returned HTTP ${status}.`;

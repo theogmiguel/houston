@@ -54,8 +54,8 @@ const boundedOpaqueValue = (value: string, maximumLength: number): string | unde
   value.length > 0 && value === value.trim() && value.length <= maximumLength ? value : undefined;
 
 export function normalizeAcpRegistryWebUrl(value: string): string | undefined {
-  if (value.length > 2_048 || !URL.canParse(value)) return undefined;
-  const url = new URL(value);
+  const url = value.length > 2_048 ? null : URL.parse(value);
+  if (!url) return undefined;
   return url.protocol === "https:" || url.protocol === "http:" ? url.href : undefined;
 }
 
@@ -275,6 +275,9 @@ export function acpRegistryProbeResult(
   });
 }
 
+const AUTHENTICATION_FAILED_PATTERN =
+  /\b(?:authenticat(?:e|ed|es|ing|ion)|credentials?|log(?:[\s-]+)?in)\b/iu;
+
 export function acpRegistryProbeFailure(
   error: EffectAcpErrors.AcpError,
   authMethods: ReadonlyArray<AcpRegistryProbeAuthMethod> = [],
@@ -283,7 +286,7 @@ export function acpRegistryProbeFailure(
   const detail = error._tag === "AcpTransportError" && error.detail ? error.detail : error.message;
   const authenticationFailed =
     (error._tag === "AcpRequestError" && error.code === -32000) ||
-    /\b(?:authenticat(?:e|ed|es|ing|ion)|credentials?|log(?:[\s-]+)?in)\b/iu.test(detail);
+    AUTHENTICATION_FAILED_PATTERN.test(detail);
   return new AcpRegistryOperationError({
     reason: authenticationFailed ? "authentication_failed" : "probe_failed",
     message: authenticationFailed

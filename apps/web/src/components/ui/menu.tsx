@@ -131,7 +131,7 @@ function MenuItem({
   return (
     <MenuPrimitive.Item
       className={cn(
-        "[&>svg]:-mx-0.5 flex min-h-7 cursor-pointer select-none items-center gap-2 rounded-[var(--r-ctl)] px-2 text-[13px] text-foreground outline-none data-disabled:pointer-events-none data-disabled:cursor-not-allowed data-highlighted:bg-[var(--sel)] data-inset:ps-8 data-[variant=destructive]:text-destructive-foreground data-highlighted:text-hover-foreground data-disabled:opacity-64 [&>svg:not([class*='opacity-'])]:opacity-80 [&>svg:not([class*='size-'])]:size-4 [&>svg:not([class*='text-'])]:text-muted-foreground data-[variant=destructive]:[&>svg:not([class*='text-'])]:text-current [&>svg]:pointer-events-none [&>svg]:shrink-0",
+        "[&>svg]:-mx-0.5 flex min-h-7 cursor-pointer select-none items-center gap-2 rounded-[var(--r-ctl)] px-2 text-[13px] text-foreground outline-none data-disabled:pointer-events-none data-disabled:cursor-not-allowed data-highlighted:bg-[var(--sel)] data-inset:ps-8 data-[variant=destructive]:text-destructive-foreground data-highlighted:text-hover-foreground data-disabled:opacity-64 [&>svg:not([class*='opacity-'])]:opacity-80 [&>svg:not([class*='size-'])]:size-4 [&>svg:not([class*='text-'])]:text-muted-foreground data-[variant=destructive]:[&>svg:not([class*='text-'])]:text-current [&>svg]:pointer-events-none [&>svg]:shrink-0 [&>[data-slot=glyph-box]]:-mx-0.5 [&>[data-slot=glyph-box]]:pointer-events-none [&>[data-slot=glyph-box]:not([class*='opacity-'])]:opacity-80 [&>[data-slot=glyph-box]:not([class*='text-'])]:text-muted-foreground data-[variant=destructive]:[&>[data-slot=glyph-box]:not([class*='text-'])]:text-current [&>[data-slot=glyph-box]>svg:not([class*='size-'])]:size-4",
         variant === "ghost" &&
           buttonVariants({
             variant: "ghost",
@@ -331,6 +331,18 @@ function MenuReason({ className, ...props }: React.ComponentProps<"span">) {
   );
 }
 
+// Trailing value on a menu row, such as the time a snooze preset wakes at.
+// Reads as text at the row's size; MenuShortcut is only for key chords.
+function MenuItemDetail({ className, ...props }: React.ComponentProps<"span">) {
+  return (
+    <span
+      className={cn("ms-auto shrink-0 ps-4 text-secondary-label tabular-nums", className)}
+      data-slot="menu-item-detail"
+      {...props}
+    />
+  );
+}
+
 function MenuSub(props: MenuPrimitive.SubmenuRoot.Props) {
   return <MenuPrimitive.SubmenuRoot data-slot="menu-sub" {...props} />;
 }
@@ -416,6 +428,7 @@ export {
   MenuSeparator,
   MenuSeparator as DropdownMenuSeparator,
   MenuReason,
+  MenuItemDetail,
   MenuShortcut,
   MenuShortcut as DropdownMenuShortcut,
   MenuSub,

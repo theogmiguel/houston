@@ -56,6 +56,7 @@ import {
   settingsFromRow,
   type SourceEvent,
 } from "./SourceStore.ts";
+import * as WideEvents from "../observability/WideEvents.ts";
 
 type Json = Readonly<Record<string, unknown>>;
 const JsonText = Schema.fromJsonString(Schema.Unknown);
@@ -855,19 +856,25 @@ const makeDrain = Effect.gen(function* () {
     lock.withPermits(1)(
       Effect.gen(function* () {
         const now = yield* nowIso;
-        const rows = yield* run(sql<OutboxRow>`
-          SELECT id, project_id, task_id, provider, action, revision, payload_json, attempts
-          FROM houston_task_source_outbox
-          WHERE receipt_json IS NULL AND next_attempt_at <= ${now}
-          ORDER BY id LIMIT ${limit}
-        `);
-        for (const row of rows) {
-          yield* send(row).pipe(
-            Effect.catchCause((cause) =>
-              Effect.logWarning(`Task source write-back row ${row.id} failed.`, cause),
+        const rows = yield* WideEvents.findWork(
+          run(sql<OutboxRow>`
+            SELECT id, project_id, task_id, provider, action, revision, payload_json, attempts
+            FROM houston_task_source_outbox
+            WHERE receipt_json IS NULL AND next_attempt_at <= ${now}
+            ORDER BY id LIMIT ${limit}
+          `),
+        );
+        if (rows.length === 0) return 0;
+        yield* Effect.forEach(
+          rows,
+          (row) =>
+            send(row).pipe(
+              Effect.catchCause((cause) =>
+                Effect.logWarning(`Task source write-back row ${row.id} failed.`, cause),
+              ),
             ),
-          );
-        }
+          { discard: true },
+        ).pipe(WideEvents.jobTick("taskSources.writeBack"));
         return rows.length;
       }),
     );

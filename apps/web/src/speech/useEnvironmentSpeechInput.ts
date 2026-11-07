@@ -12,7 +12,12 @@ import {
   type VoiceInputState,
 } from "@houston-app/client-runtime/voice-input";
 import type { PreparedConnection } from "@houston-app/client-runtime/connection";
-import { AuthOrchestrationOperateScope, VOICE_PROTOCOL_VERSION } from "@houston-app/contracts";
+import {
+  AuthOrchestrationOperateScope,
+  CLOUD_SPEECH_LABELS,
+  CLOUD_SPEECH_PROVIDER_NAMES,
+  VOICE_PROTOCOL_VERSION,
+} from "@houston-app/contracts";
 import type {
   EnvironmentId,
   EnvironmentSpeechModel,
@@ -132,9 +137,10 @@ type HookInput = {
 };
 
 /**
- * Microphone audio leaves this device only for the environment the person chose in
- * Voice settings. Nothing is inferred from the primary or the draft's environment, and
- * the recording is abandoned the moment that choice changes or its connection drops.
+ * Microphone audio leaves this device only for the destination the person chose in Voice
+ * settings: an environment's own engine, or a cloud provider that environment forwards to.
+ * Nothing is inferred from the primary or the draft's environment, and the recording is
+ * abandoned the moment that choice changes or its connection drops.
  */
 export function useVoiceTranscriptionDestination() {
   const hydrated = useClientSettingsHydrated();
@@ -143,12 +149,17 @@ export function useVoiceTranscriptionDestination() {
   const environment = useEnvironment(environmentId);
   const connection = Option.getOrNull(usePreparedConnection(environmentId));
   const canDictate = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
-  const protocolRefusal = environment ? voiceDestinationRefusal(environment) : null;
+  const cloud = grant?.destination.kind === "cloud" ? grant.destination : undefined;
+  const cloudProvider = cloud?.provider;
+  const cloudModel = cloud?.provider === "openrouter" ? cloud.model : undefined;
+  const capabilities = environment?.serverConfig?.environment.capabilities;
+  const protocolRefusal = environment && !cloud ? voiceDestinationRefusal(environment) : null;
   const unsupported =
-    environment?.serverConfig &&
-    environment.serverConfig.environment.capabilities.voiceTranscription !== true
-      ? `${environment.label} cannot transcribe speech on its host; choose another environment in Voice settings.`
-      : null;
+    environment?.serverConfig && cloudProvider && capabilities?.cloudVoiceTranscription !== true
+      ? `${environment.label} cannot send recordings to ${CLOUD_SPEECH_PROVIDER_NAMES[cloudProvider]}; update it or choose another destination in Voice settings.`
+      : environment?.serverConfig && !cloudProvider && capabilities?.voiceTranscription !== true
+        ? `${environment.label} cannot transcribe speech on its host; choose another environment in Voice settings.`
+        : null;
   const refusal =
     protocolRefusal ??
     unsupported ??
@@ -157,13 +168,18 @@ export function useVoiceTranscriptionDestination() {
       : null);
   return {
     environmentId,
+    ...(cloudProvider ? { cloudProvider } : {}),
+    ...(cloudModel ? { cloudModel } : {}),
     grantId: grant?.id ?? null,
-    label: environment?.label ?? null,
+    label:
+      cloudProvider && environment
+        ? `${CLOUD_SPEECH_LABELS[cloudProvider]} via ${environment.label}`
+        : (environment?.label ?? null),
     /** The device has made no choice: nothing is sent until it does. */
     needsDestination: hydrated && grant === null,
-    /** Why the chosen environment cannot be used, naming it; null while it is usable or still loading. */
+    /** Why the chosen destination cannot be used, naming it; null while it is usable or still loading. */
     refusal,
-    // The environment's config must have loaded so its protocol version is known before any audio leaves.
+    // The environment's config must have loaded so its capabilities are known before any audio leaves.
     prepared: environment?.serverConfig && refusal === null ? connection : null,
   };
 }
@@ -208,12 +224,16 @@ export function useEnvironmentSpeechInput(input: HookInput) {
   const destination = useVoiceTranscriptionDestination();
   const prepared = destination.prepared;
   const grantId = destination.grantId;
+  const cloudProvider = destination.cloudProvider;
+  const cloudModel = destination.cloudModel;
   const originatingEnvironment = useEnvironment(input.environmentId);
   const originatingConnection = Option.getOrNull(usePreparedConnection(input.environmentId));
   const canCleanUp = useEnvironmentScope(input.environmentId, AuthOrchestrationOperateScope);
   const cleanupPrepared =
     canCleanUp &&
-    originatingEnvironment?.serverConfig?.environment.capabilities.voiceTranscription === true
+    (originatingEnvironment?.serverConfig?.environment.capabilities.voiceTranscription === true ||
+      originatingEnvironment?.serverConfig?.environment.capabilities.cloudVoiceTranscription ===
+        true)
       ? originatingConnection
       : null;
   const clientSettings = useClientSettings();
@@ -317,6 +337,8 @@ export function useEnvironmentSpeechInput(input: HookInput) {
     };
     const platform = createBrowserVoiceInputPlatform({
       prepared,
+      cloudProvider,
+      cloudModel,
       hasAudioConsent,
       getTranscriptionOptions: (): SpeechTranscriptionOptions => {
         const {
@@ -432,11 +454,11 @@ export function useEnvironmentSpeechInput(input: HookInput) {
       controller.dispose();
       if (controllerRef.current === controller) controllerRef.current = null;
     };
-  }, [level, prepared, grantId]);
+  }, [level, prepared, grantId, cloudProvider, cloudModel]);
 
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- probes the chosen environment's speech status once its connection is available
   useEffect(() => {
-    if (!prepared) return;
+    if (!prepared || cloudProvider) return;
     let disposed = false;
     void probeSpeechStatus(prepared)
       .then((value) => {
@@ -448,8 +470,8 @@ export function useEnvironmentSpeechInput(input: HookInput) {
     return () => {
       disposed = true;
     };
-  }, [prepared]);
-  const currentStatus = status?.prepared === prepared ? status.value : null;
+  }, [prepared, cloudProvider]);
+  const currentStatus = !cloudProvider && status?.prepared === prepared ? status.value : null;
 
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- polls download progress while the setup dialog owns an active model download
   useEffect(() => {
@@ -519,6 +541,12 @@ export function useEnvironmentSpeechInput(input: HookInput) {
       return;
     }
     if (!controller || !prepared) return;
+    if (cloudProvider) {
+      // A cloud provider has no local model to download and no engine state to wait for.
+      level.set(0);
+      await controller.start();
+      return;
+    }
     const stillCurrent = () =>
       request === startRequestRef.current &&
       controllerRef.current === controller &&
@@ -617,7 +645,9 @@ export function useEnvironmentSpeechInput(input: HookInput) {
     typeof AudioWorkletNode !== "undefined";
   const destinationUsable = destination.needsDestination
     ? destinationChoices.some((choice) => choice.refusal === null)
-    : prepared !== null && status?.prepared === prepared && status.value?.supported !== false;
+    : prepared !== null &&
+      (cloudProvider !== undefined ||
+        (status?.prepared === prepared && status.value?.supported !== false));
 
   // The mic press that asked for a destination resumes once that choice's connection is ready.
   const resumeAfterChoiceRef = useRef(false);

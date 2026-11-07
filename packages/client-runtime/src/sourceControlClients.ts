@@ -38,6 +38,9 @@ export function capitalizeTerm(term: string): string {
   return term.charAt(0).toUpperCase() + term.slice(1);
 }
 
+const GIT_SUFFIX = /\.git\/?$/i;
+const OWNER_NAME_SEPARATOR = /[/:]/;
+
 /** The repository a remote names, when its host has an app sign-in that could reach it. */
 export function appSignInTargetForRemote(remoteUrl: string): {
   readonly definition: SourceControlDefinition;
@@ -53,8 +56,8 @@ export function appSignInTargetForRemote(remoteUrl: string): {
   // The parser lowercases; keep the remote's own casing for display when it names the same path.
   const asWritten = remoteUrl
     .trim()
-    .replace(/\.git\/?$/i, "")
-    .split(/[/:]/)
+    .replace(GIT_SUFFIX, "")
+    .split(OWNER_NAME_SEPARATOR)
     .slice(-2)
     .join("/");
   const repository = asWritten.toLowerCase() === parsed.path ? asWritten : parsed.path;

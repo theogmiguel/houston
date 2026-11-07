@@ -48,6 +48,8 @@ export function modelShortName(
   return short === name ? undefined : short;
 }
 
+const WHITESPACE_CHAR = /\s/;
+
 function withoutFamily(name: string, nativeFamilies: ReadonlyArray<string>): string | undefined {
   const prefix = FAMILY_PREFIXES.find((candidate) => name.startsWith(candidate));
   if (!prefix) return undefined;
@@ -56,13 +58,16 @@ function withoutFamily(name: string, nativeFamilies: ReadonlyArray<string>): str
     ? nonVersionWords(rest).length > 0
     : namesModel(rest);
   if (!keep) return undefined;
-  return /\s/.test(rest) ? rest : rest.replaceAll("-", " ");
+  return WHITESPACE_CHAR.test(rest) ? rest : rest.replaceAll("-", " ");
 }
+
+const PARENTHESIZED_TEXT = /\(.*?\)/g;
+const WORD_SEPARATOR_RUN = /[\s-]+/;
 
 function nonVersionWords(text: string): ReadonlyArray<string> {
   return text
-    .replace(/\(.*?\)/g, " ")
-    .split(/[\s-]+/)
+    .replace(PARENTHESIZED_TEXT, " ")
+    .split(WORD_SEPARATOR_RUN)
     .filter((word) => word.length > 0 && !VERSION.test(word));
 }
 

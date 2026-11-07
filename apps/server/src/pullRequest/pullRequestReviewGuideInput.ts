@@ -3,11 +3,11 @@ import type { ReviewGuideGenerationInput } from "@houston-app/provider-core/serv
 
 const SETTLED_REMARK_CHARS = 200;
 
+const HTML_COMMENT = /<!--[\s\S]*?-->/g;
+const WHITESPACE_RUNS = /\s+/g;
+
 function oneLine(text: string): string {
-  const flat = text
-    .replace(/<!--[\s\S]*?-->/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  const flat = text.replace(HTML_COMMENT, "").replace(WHITESPACE_RUNS, " ").trim();
   return flat.length > SETTLED_REMARK_CHARS ? `${flat.slice(0, SETTLED_REMARK_CHARS)}…` : flat;
 }
 

@@ -9,6 +9,8 @@ import {
   RUNNING_GLYPH_CLS,
   RUNNING_INK_CLS,
 } from "../ui/work-log-recipes";
+import { observeVisibleAnimation } from "~/lib/visibleAnimation";
+import { GLYPH_BOX_CLASS, GLYPH_BOX_SPIN_CLASS, splitGlyphSize } from "../ui/spinner";
 import { type TimestampFormat } from "@houston-app/contracts/settings";
 import {
   formatChatTimestampTooltip,
@@ -92,29 +94,35 @@ export function StreamingGlyph({
   /** Set where the ring stands for a thread's status, so the mark names its kind. */
   statusKind?: string | undefined;
 }) {
+  const [boxClassName, glyphSize] = splitGlyphSize(className);
   return (
-    <svg
+    <span
       aria-hidden="true"
+      data-slot="glyph-box"
       data-streaming-glyph=""
       {...(statusKind === undefined ? {} : { "data-status-kind": statusKind })}
-      viewBox="0 0 14 14"
+      ref={observeVisibleAnimation}
       className={cn(
-        "size-3.5 shrink-0 animate-spin [animation-duration:1.1s] motion-reduce:animate-none",
+        GLYPH_BOX_CLASS,
+        GLYPH_BOX_SPIN_CLASS,
+        "motion-safe:[animation-duration:1.1s]",
         statusKind === undefined ? RUNNING_INK_CLS : RUNNING_GLYPH_CLS,
-        className,
+        boxClassName,
       )}
     >
-      {STREAMING_DOTS.map((dot, index) => (
-        <circle
-          key={index}
-          data-streaming-dot=""
-          cx={dot.cx}
-          cy={dot.cy}
-          r={STREAMING_DOT_RADIUS}
-          style={{ fill: "currentColor" }}
-        />
-      ))}
-    </svg>
+      <svg viewBox="0 0 14 14" className={cn("size-3.5", glyphSize)}>
+        {STREAMING_DOTS.map((dot, index) => (
+          <circle
+            key={index}
+            data-streaming-dot=""
+            cx={dot.cx}
+            cy={dot.cy}
+            r={STREAMING_DOT_RADIUS}
+            style={{ fill: "currentColor" }}
+          />
+        ))}
+      </svg>
+    </span>
   );
 }
 

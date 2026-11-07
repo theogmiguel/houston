@@ -394,7 +394,7 @@ function ToastBodyContent({
             </div>
           ) : Icon ? (
             <div
-              className="[&>svg]:h-lh [&>svg]:w-4 [&_svg]:pointer-events-none [&_svg]:shrink-0"
+              className="[&>svg]:h-lh [&>svg]:w-4 [&>[data-slot=glyph-box]>svg]:h-lh [&>[data-slot=glyph-box]>svg]:w-4 [&_svg]:pointer-events-none [&_svg]:shrink-0"
               data-slot="toast-icon"
             >
               <Icon className="in-data-[type=error]:text-destructive in-data-[type=info]:text-info in-data-[type=success]:text-success in-data-[type=warning]:text-warning in-data-[type=loading]:opacity-80" />

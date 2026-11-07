@@ -327,6 +327,11 @@ export interface GitRemoteStatusOptions {
   readonly refreshUpstream?: boolean;
 }
 
+/** Set by background discovery so its Git commands run in their own small lane, not the user's. */
+export const BackgroundGitWork = Context.Reference<boolean>("houston/vcs/BackgroundGitWork", {
+  defaultValue: () => false,
+});
+
 export class GitVcsDriver extends Context.Service<
   GitVcsDriver,
   {
@@ -558,6 +563,8 @@ function chunkPathsForGitCheckIgnore(relativePaths: ReadonlyArray<string>): stri
   return chunks;
 }
 
+const REMOTE_VERBOSE_LINE = /^(\S+)\s+(\S+)\s+\((fetch|push)\)(?:\s+\[[^\]]+\])?$/;
+
 function parseGitRemoteVerboseOutput(
   output: string,
 ): Map<string, { url?: string; pushUrl?: string }> {
@@ -569,7 +576,7 @@ function parseGitRemoteVerboseOutput(
     }
 
     // Partial clones append the promisor filter, e.g. `(fetch) [blob:none]`.
-    const match = /^(\S+)\s+(\S+)\s+\((fetch|push)\)(?:\s+\[[^\]]+\])?$/.exec(trimmed);
+    const match = REMOTE_VERBOSE_LINE.exec(trimmed);
     if (!match) {
       continue;
     }
@@ -627,6 +634,14 @@ const gitCommand = Effect.fn("GitVcsDriver.gitCommand")(
     }),
 );
 
+const TRAILING_LINE_BREAK = /\r?\n$/u;
+const LINE_BREAK = /\r?\n/u;
+const CAPTURE_CHECKPOINT_PATTERN = /--(?:\[no-\])?sparse\b/;
+const STDIN_PATTERN = /^:000000 ([0-7]{6}) 0+ ([0-9a-f]+) A\t/gm;
+const REMOVING_LINE = /^Removing /m;
+const WOULD_REMOVE_LINE = /^Would remove /m;
+const EMPTIED_WORKSPACE_PATTERN = /^warning: failed to remove \.\/: [^\n]+$/;
+
 export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -678,7 +693,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
       },
     ).pipe(Effect.catchIf(isMissingExecutable, () => Effect.succeed(null)));
     if (result === null || result.exitCode !== 0) return null;
-    const lines = result.stdout.replace(/\r?\n$/u, "").split(/\r?\n/u);
+    const lines = result.stdout.replace(TRAILING_LINE_BREAK, "").split(LINE_BREAK);
     if (lines[0]?.trim() !== "true") return null;
     // A newline inside a path breaks the line framing; ask for each path on its own.
     if (lines.length !== 3) {
@@ -1016,7 +1031,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
             args: ["add", "-h"],
             allowNonZeroExit: true,
           });
-          sparseCheckout = /--(?:\[no-\])?sparse\b/.test(`${help.stdout}${help.stderr}`);
+          sparseCheckout = CAPTURE_CHECKPOINT_PATTERN.test(`${help.stdout}${help.stderr}`);
         }
         if (headExists) {
           const reusedIndex = yield* Effect.gen(function* () {
@@ -1208,10 +1223,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
               operation,
               cwd: input.cwd,
               args: [...indexConfig, "-c", "index.sparse=false", "update-index", "--index-info"],
-              stdin: additions.stdout.replace(
-                /^:000000 ([0-7]{6}) 0+ ([0-9a-f]+) A\t/gm,
-                "$1 $2\t",
-              ),
+              stdin: additions.stdout.replace(STDIN_PATTERN, "$1 $2\t"),
               env: commitEnv,
             });
           }
@@ -1414,23 +1426,63 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
             }),
         ),
       );
+      const resetIndex = Effect.gen(function* () {
+        // On Windows clean can remove './' and exit 0.
+        yield* recreateWorkspace;
+        yield* execute({
+          operation,
+          cwd: input.cwd,
+          args: [...longPaths, "reset", "--quiet", "--", "."],
+        });
+      });
       yield* recreateWorkspace;
-      const cleaned = yield* execute({
+      const clean = execute({
         operation,
         cwd: input.cwd,
         args: [...longPaths, "clean", "-fd", "--", "."],
+        env: { LC_ALL: "C" },
         allowNonZeroExit: true,
       });
+      let cleaned = yield* clean;
+      // Removing a new .gitignore exposes the files it hid; clean again until nothing is left.
+      for (
+        let pass = 1;
+        pass < 4 && cleaned.exitCode === 0 && REMOVING_LINE.test(cleaned.stdout);
+        pass++
+      ) {
+        yield* recreateWorkspace;
+        cleaned = yield* clean;
+      }
+      if (cleaned.exitCode === 0 && REMOVING_LINE.test(cleaned.stdout)) {
+        yield* recreateWorkspace;
+        const remaining = yield* execute({
+          operation,
+          cwd: input.cwd,
+          args: [...longPaths, "clean", "-dn", "--", "."],
+          env: { LC_ALL: "C" },
+        });
+        if (WOULD_REMOVE_LINE.test(remaining.stdout)) {
+          yield* resetIndex;
+          return yield* new VcsProcessExitError({
+            operation,
+            command: "git clean",
+            cwd: input.cwd,
+            exitCode: 0,
+            detail: "Could not clean the checkpoint workspace: untracked files remain.",
+          });
+        }
+      }
       if (cleaned.exitCode !== 0) {
         // Git can remove every child, then fail trying to remove './' itself.
         const emptiedWorkspace =
           cleaned.exitCode === 1 &&
-          /^warning: failed to remove \.\/: [^\n]+$/.test(cleaned.stderr.trim()) &&
+          EMPTIED_WORKSPACE_PATTERN.test(cleaned.stderr.trim()) &&
           (yield* fileSystem.readDirectory(input.cwd).pipe(
             Effect.map((entries) => entries.length === 0),
             Effect.orElseSucceed(() => false),
           ));
-        if (!emptiedWorkspace)
+        if (!emptiedWorkspace) {
+          yield* resetIndex;
           return yield* new VcsProcessExitError({
             operation,
             command: "git clean",
@@ -1438,15 +1490,9 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
             exitCode: cleaned.exitCode,
             detail: cleaned.stderr.trim() || "Could not clean the checkpoint workspace.",
           });
+        }
       }
-      // On Windows the same clean can remove './' and exit 0.
-      yield* recreateWorkspace;
-
-      yield* execute({
-        operation,
-        cwd: input.cwd,
-        args: [...longPaths, "reset", "--quiet", "--", "."],
-      });
+      yield* resetIndex;
 
       return true;
     }),

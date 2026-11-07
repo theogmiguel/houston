@@ -77,6 +77,8 @@ export function decodeThirdPartyLicenseManifest(value: unknown): ThirdPartyLicen
   };
 }
 
+const WHITESPACE_RUN = /\s+/;
+
 export function filterThirdPartyLicenseEntries(
   entries: ReadonlyArray<ThirdPartyLicenseEntry>,
   query: string,
@@ -84,7 +86,7 @@ export function filterThirdPartyLicenseEntries(
   const terms = query
     .trim()
     .toLowerCase()
-    .split(/\s+/)
+    .split(WHITESPACE_RUN)
     .filter((term) => term.length > 0);
   if (terms.length === 0) return entries;
   return entries.filter((entry) => {

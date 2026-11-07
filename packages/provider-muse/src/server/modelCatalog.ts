@@ -93,6 +93,8 @@ class MuseCatalogError extends Schema.TaggedError<MuseCatalogError>()("MuseCatal
   detail: Schema.String,
 }) {}
 
+const WORD_INITIAL = /\b[a-z]/g;
+
 export const discoverMuseModels = Effect.fn("discoverMuseModels")(function* (
   settings: MuseSettings,
   environment: NodeJS.ProcessEnv | undefined,
@@ -125,7 +127,7 @@ export const discoverMuseModels = Effect.fn("discoverMuseModels")(function* (
     const label = model.displayLabel.trim() || model.modelId;
     const name =
       label === model.modelId && label.startsWith("muse-")
-        ? label.replaceAll("-", " ").replace(/\b[a-z]/g, (letter) => letter.toUpperCase())
+        ? label.replaceAll("-", " ").replace(WORD_INITIAL, (letter) => letter.toUpperCase())
         : label;
     return [
       {

@@ -104,8 +104,8 @@ function Alert({
             className={cn(
               "flex shrink-0 items-center justify-center",
               controlAlignment === "first-line"
-                ? "h-lh w-4 [&>svg]:size-4"
-                : "size-4 [&>svg]:size-full",
+                ? "h-lh w-4 [&>svg]:size-4 [&>[data-slot=glyph-box]>svg:not([class*='size-'])]:size-4"
+                : "size-4 [&>svg]:size-full [&>[data-slot=glyph-box]]:size-full [&>[data-slot=glyph-box]>svg]:size-full",
             )}
           >
             {icon}

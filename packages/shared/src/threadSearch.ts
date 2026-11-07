@@ -1,10 +1,12 @@
+const LOWERED_PATTERN = /ς/g;
+
 function foldThreadSearchCase(text: string): string {
-  const lowered = text.toLowerCase().replace(/ς/g, "σ");
+  const lowered = text.toLowerCase().replace(LOWERED_PATTERN, "σ");
   if (lowered.length === text.length) return lowered;
 
   let folded = "";
   for (const character of text) {
-    const loweredCharacter = character.toLowerCase().replace(/ς/g, "σ");
+    const loweredCharacter = character.toLowerCase().replace(LOWERED_PATTERN, "σ");
     folded += loweredCharacter.length === character.length ? loweredCharacter : character;
   }
   return folded;

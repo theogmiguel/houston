@@ -9,10 +9,16 @@ import { combineExtensions } from "micromark-util-combine-extensions";
 import type { Construct, Extension, TokenizeContext } from "micromark-util-types";
 import type { Processor } from "unified";
 
+const IS_DELIMITER_ROW_PATTERN = /[|:]/;
+const IN_TEXT_PATTERN = /https?:\/\//i;
+const IN_TEXT_PATTERN_2 = /www\./i;
+const IN_TEXT_PATTERN_3 = /\[[\sxX]\]/;
+const CONTINUES_TABLE_PATTERN = /^(?:lineEnding|linePrefix)$/;
+
 // A table needs a delimiter row: dashes with a `|` or `:`, after any `>` or indent.
 // One character class per pattern: overlapping ones backtrack quadratically on a run of dashes.
 const DELIMITER_LINE = /^[ \t>|:-]+$/gm;
-const isDelimiterRow = (line: string) => line.includes("-") && /[|:]/.test(line);
+const isDelimiterRow = (line: string) => line.includes("-") && IS_DELIMITER_ROW_PATTERN.test(line);
 const NEXT_LINE = /[^\r\n]*(?:\r\n?|\n)([^\r\n]*)/y;
 
 function hasDelimiterRow(text: string) {
@@ -46,12 +52,12 @@ const GATES: ReadonlyArray<Gate> = [
   },
   {
     names: ["protocolAutolink"],
-    inText: (text) => /https?:\/\//i.test(text),
+    inText: (text) => IN_TEXT_PATTERN.test(text),
     at: (_, text, offset) => matchesAt(PROTOCOL, text, offset),
   },
   {
     names: ["wwwAutolink"],
-    inText: (text) => /www\./i.test(text),
+    inText: (text) => IN_TEXT_PATTERN_2.test(text),
     at: (_, text, offset) => matchesAt(WWW, text, offset),
   },
   {
@@ -68,14 +74,14 @@ const GATES: ReadonlyArray<Gate> = [
     names: ["gfmFootnoteCall", "gfmPotentialFootnoteCall", "gfmFootnoteDefinition"],
     inText: (text) => text.includes("[^"),
   },
-  { names: ["tasklistCheck"], inText: (text) => /\[[\sxX]\]/.test(text) },
+  { names: ["tasklistCheck"], inText: (text) => IN_TEXT_PATTERN_3.test(text) },
 ];
 
 // A body row follows the head or another row. Mirrors `start` in micromark-extension-gfm-table's
 // lib/syntax.js: recheck it when that package changes.
 function continuesTable({ events }: TokenizeContext) {
   let index = events.length - 1;
-  while (index > -1 && /^(?:lineEnding|linePrefix)$/.test(events[index]![1].type)) index--;
+  while (index > -1 && CONTINUES_TABLE_PATTERN.test(events[index]![1].type)) index--;
   // The table extension's token types are not in micromark's map unless its types are loaded.
   const tail: string | undefined = events[index]?.[1].type;
   return tail === "tableHead" || tail === "tableRow";

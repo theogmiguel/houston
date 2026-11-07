@@ -246,9 +246,11 @@ export const autoPullProjects = Effect.fn("autoPullProjects")(function* (
   );
 });
 
+const PATH_SEPARATOR = /[/\\]/;
+
 const resolveWelcomeBase = Effect.gen(function* () {
   const serverConfig = yield* ServerConfig.ServerConfig;
-  const segments = serverConfig.cwd.split(/[/\\]/).filter(Boolean);
+  const segments = serverConfig.cwd.split(PATH_SEPARATOR).filter(Boolean);
   const projectName = segments[segments.length - 1] ?? "project";
 
   return {
@@ -459,6 +461,7 @@ const make = Effect.fn("serverRuntimeStartup.make")(function* (options?: Startup
       const reconciliation = yield* providerRuntimeRecovery.reconcile("shutdown");
       yield* Effect.logInfo("V2 orchestration shutdown reconciliation completed", reconciliation);
     }).pipe(
+      Effect.withSpan("server.shutdown"),
       Effect.catchCause((cause) =>
         Effect.logWarning("V2 orchestration shutdown reconciliation failed", {
           cause: Cause.pretty(cause),

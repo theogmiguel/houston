@@ -11,8 +11,10 @@ const decodePullRequestPayload = Schema.decodeUnknownOption(PullRequestDragPaylo
 
 export const encodePullRequestDragPayload = Schema.encodeSync(PullRequestDragPayload);
 
+const TRAILING_SLASHES = /\/+$/;
+
 export function composerMentionFromTreePath(treePath: string): string | null {
-  const relativePath = treePath.replace(/\/+$/, "");
+  const relativePath = treePath.replace(TRAILING_SLASHES, "");
   if (relativePath.length === 0) {
     return null;
   }

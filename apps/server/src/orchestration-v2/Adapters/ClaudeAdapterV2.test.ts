@@ -64,10 +64,12 @@ import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Logger from "effect/Logger";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
+import * as References from "effect/References";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
@@ -79,6 +81,8 @@ import { getModelSelectionStringOptionValue } from "@houston-app/shared/model";
 import { SpawnExecutableResolution } from "@houston-app/shared/shell";
 
 import * as PortScanner from "../../preview/PortScanner.ts";
+import * as TraceContext from "../../houston/observability/TraceContext.ts";
+import * as RecordingTracer from "../../observability/testing/RecordingTracer.ts";
 import { attachmentRelativePath } from "../../attachmentStore.ts";
 import { WorkflowAgentTranscriptReadObserver } from "../workflowAgentTranscript.ts";
 import * as ServerConfig from "../../config.ts";
@@ -93,6 +97,10 @@ import { WorktreeToolkit } from "../../mcp/toolkits/worktree/tools.ts";
 import { ThreadToolkit } from "../../mcp/toolkits/thread/tools.ts";
 import { OrchestratorToolkit } from "../../mcp/toolkits/orchestrator/tools.ts";
 import { ClaudeExecutableFileCheck } from "../../provider/Drivers/ClaudeExecutable.ts";
+import {
+  BUNDLED_CLAUDE_MODEL_CATALOG,
+  type ClaudeModelCatalog,
+} from "../../provider/ClaudeModelCatalog.ts";
 import * as ProviderEventLoggers from "@houston-app/provider-core/server/ProviderEventLoggers";
 import * as ProviderAdapter from "@houston-app/provider-core/server/ProviderAdapter";
 import type * as ProviderContinuationRequests from "@houston-app/provider-core/server/ProviderContinuationRequests";
@@ -125,6 +133,9 @@ beforeEach(() => {
 });
 
 const DEFAULT_CLAUDE_SETTINGS = Schema.decodeSync(ClaudeSettings)({});
+
+const houstonContextOf = (attributes: ReadonlyMap<string, unknown>): Record<string, unknown> =>
+  Object.fromEntries([...attributes].filter(([key]) => key.startsWith("houston.")));
 const AUTO_COMPACT_CLAUDE_SETTINGS = Schema.decodeSync(ClaudeSettings)({
   autoCompactWindow: "300000",
 });
@@ -143,6 +154,26 @@ const CUSTOM_MODEL_CLAUDE_SETTINGS = Schema.decodeSync(ClaudeSettings)({
             options: [
               { id: "gentle", label: "Gentle", isDefault: true },
               { id: "brutal", label: "Brutal" },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+});
+const ULTRACODE_CUSTOM_MODEL_CLAUDE_SETTINGS = Schema.decodeSync(ClaudeSettings)({
+  customModels: [
+    {
+      slug: "claude-custom-tuned",
+      capabilities: {
+        optionDescriptors: [
+          {
+            id: "effort",
+            label: "Reasoning",
+            type: "select",
+            options: [
+              { id: "high", label: "High", isDefault: true },
+              { id: "ultracode", label: "Ultracode" },
             ],
           },
         ],
@@ -2339,7 +2370,7 @@ describe("ClaudeAdapterV2 attachments", () => {
             yield* deliver;
             const retried = offeredMessages.at(-1)!.message.content;
             assert.notInclude(JSON.stringify(retried), '"type":"document"');
-            assert.include(JSON.stringify(retried), documentPath);
+            assert.include(JSON.stringify(retried), JSON.stringify(documentPath).slice(1, -1));
             assert.isBelow(Buffer.byteLength(JSON.stringify(offeredMessages)), 32_000_000);
             return;
           }
@@ -2388,7 +2419,7 @@ describe("ClaudeAdapterV2 attachments", () => {
                 typeof sent === "string" ? [] : sent.filter((block) => block.type === "image"),
                 budget === "partial-images" ? 1 : 0,
               );
-              assert.include(JSON.stringify(sent), imagePath);
+              assert.include(JSON.stringify(sent), JSON.stringify(imagePath).slice(1, -1));
               yield* runtime.steerTurn({
                 threadId,
                 runId: RunId.make("run-claude-attachments"),
@@ -2407,7 +2438,7 @@ describe("ClaudeAdapterV2 attachments", () => {
                   : steered.filter((block) => block.type === "image"),
                 0,
               );
-              assert.include(JSON.stringify(steered), imagePath);
+              assert.include(JSON.stringify(steered), JSON.stringify(imagePath).slice(1, -1));
               assert.isBelow(
                 Buffer.byteLength(
                   JSON.stringify(offeredMessages.map((message) => message.message)),
@@ -2469,7 +2500,7 @@ describe("ClaudeAdapterV2 attachments", () => {
               0,
               budget,
             );
-            assert.include(JSON.stringify(sent), documentPath);
+            assert.include(JSON.stringify(sent), JSON.stringify(documentPath).slice(1, -1));
             return;
           }
           if (!resumed) {
@@ -2682,7 +2713,7 @@ describe("ClaudeAdapterV2 attachments", () => {
             );
             if (scenario === "text-only")
               assert.equal(sent, ultrathink ? "Ultrathink:\nContinue." : "Continue.");
-            else assert.include(JSON.stringify(sent), documentPath);
+            else assert.include(JSON.stringify(sent), JSON.stringify(documentPath).slice(1, -1));
           }
         }).pipe(
           Effect.provide(
@@ -3406,9 +3437,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     readonly subagentLaunchToolUseId?: string;
     readonly nativeSessionId?: string;
     readonly settings?: ClaudeSettings;
+    readonly modelCatalog?: Effect.Effect<ClaudeModelCatalog>;
     readonly freshQueueOnReopen?: boolean;
     readonly forkSession?: ClaudeAdapterV2.ClaudeAgentSdkQueryRunnerShape["forkSession"];
     readonly allocateSessionId?: Effect.Effect<string>;
+    /** Runs in the session's query-stream fiber as each message is read. */
+    readonly onMessage?: (message: SDKMessage) => Effect.Effect<void>;
   }) =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
@@ -3465,6 +3499,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       const adapter = yield* ClaudeAdapterV2.makeClaudeAdapterV2({
         instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
         settings: options?.settings ?? DEFAULT_CLAUDE_SETTINGS,
+        ...(options?.modelCatalog === undefined ? {} : { modelCatalog: options.modelCatalog }),
         environment: options?.environment ?? {},
         attachmentsDir,
         fileSystem,
@@ -3492,6 +3527,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                   ? yield* Queue.unbounded<SDKMessage>()
                   : sdkMessages;
               const messages = Stream.fromQueue(processMessages).pipe(
+                Stream.tap((message) => options?.onMessage?.(message) ?? Effect.void),
                 Stream.flatMap((message) =>
                   Stream.make(message).pipe(
                     Stream.concat(
@@ -4742,8 +4778,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           "false",
         );
 
-        // Claude Code keeps the local file at the repository root, the main checkout's root in a
-        // worktree, and that file beats the user's settings.
+        // POSIX resolves local settings at the repository root; Windows uses cwd.
+        // Local settings beat user settings wherever they are found.
         const repo = yield* fileSystem.makeTempDirectoryScoped({ prefix: "houston-claude-repo-" });
         const worktree = yield* fileSystem.makeTempDirectoryScoped({
           prefix: "houston-claude-wt-",
@@ -4763,11 +4799,23 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             `{"env":{"ENABLE_TOOL_SEARCH":"${value}"}}`,
           );
         const userAuto = '{"env":{"ENABLE_TOOL_SEARCH":"auto"}}';
+        const platform = yield* HostProcess.Platform;
         yield* rootLocal("auto");
-        assert.equal(yield* openedToolSearch("{}", worktree), "true");
+        assert.equal(yield* openedToolSearch("{}", repo), "true");
+        assert.equal(
+          yield* openedToolSearch("{}", worktree),
+          platform === "win32" ? undefined : "true",
+        );
         yield* rootLocal("false");
-        assert.isUndefined(yield* openedToolSearch(userAuto, worktree));
-        assert.isUndefined(yield* openedToolSearch(userAuto, path.join(repo, "packages", "app")));
+        assert.isUndefined(yield* openedToolSearch(userAuto, repo));
+        assert.equal(
+          yield* openedToolSearch(userAuto, worktree),
+          platform === "win32" ? "true" : undefined,
+        );
+        assert.equal(
+          yield* openedToolSearch(userAuto, path.join(repo, "packages", "app")),
+          platform === "win32" ? "true" : undefined,
+        );
 
         // Project settings beat user settings, and the process env applies only when no file sets it.
         const project = yield* fileSystem.makeTempDirectoryScoped({
@@ -6102,7 +6150,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             turn(3, {
               ...normal,
               options: [
-                { id: "effort", value: "ultracode" },
+                { id: "effort", value: "high" },
+                { id: "ultracode", value: true },
                 { id: "fastMode", value: true },
               ],
             }),
@@ -6111,7 +6160,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           yield* harness.runtime.startTurn(turn(4, { ...normal, model: "claude-sonnet-4-6" }));
           yield* settle;
           assert.deepEqual(harness.liveSelectionChanges, [
-            { effortLevel: "xhigh", fastMode: true, ultracode: true },
+            { effortLevel: "high", fastMode: true, ultracode: true },
             { model: "claude-sonnet-4-6" },
             { effortLevel: "high", fastMode: null, ultracode: null },
           ]);
@@ -7055,6 +7104,109 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         ),
       ),
     ),
+  );
+
+  it.effect(
+    "a query opened in one turn stamps each later turn's spans and logs with that turn",
+    () => {
+      const recording = RecordingTracer.make();
+      const logged: Array<Readonly<Record<string, unknown>>> = [];
+      return Effect.gen(function* () {
+        const harness = yield* makeWakeHarnessWithOptions({
+          onMessage: () =>
+            Effect.logInfo("session message").pipe(Effect.withSpan("Test.sessionMessage")),
+        });
+        const now = yield* DateTime.now;
+        const turn = (ordinal: number) => {
+          const input = makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now,
+            attemptId: RunAttemptId.make(`attempt-claude-trace-${ordinal}`),
+            providerTurnOrdinal: ordinal,
+            text: "Continue.",
+            attachments: [],
+          });
+          return harness.runtime.startTurn(input).pipe(
+            TraceContext.withTraceContext({
+              threadId: input.threadId,
+              runId: input.runId,
+              commandId: `command-${ordinal}`,
+            }),
+            Effect.as(input.runId),
+            // The query stream is forked inside the first turn's trace.
+            ordinal === 1 ? Effect.withSpan("Turn1.root") : (self) => self,
+          );
+        };
+        const finish = (ordinal: number) =>
+          harness
+            .offerAndWait(makeResultFrame({ uuid: `trace-result-${ordinal}`, result: "Done." }))
+            .pipe(Effect.andThen(Queue.take(harness.terminalReceipts)));
+
+        const runs: Array<string> = [];
+        for (const ordinal of [1, 2, 3]) {
+          const spansBefore = recording.ended.length;
+          const logsBefore = logged.length;
+          const runId = yield* turn(ordinal);
+          yield* finish(ordinal);
+          runs.push(runId);
+
+          // Each span and log carries this turn's ids, or none: never an earlier turn's.
+          const spans = recording.ended.slice(spansBefore);
+          for (const span of spans) {
+            const context = houstonContextOf(span.attributes);
+            assert.oneOf(context["houston.run.id"], [runId, undefined], span.name);
+            assert.oneOf(
+              context["houston.command.id"],
+              [`command-${ordinal}`, undefined],
+              span.name,
+            );
+            assert.oneOf(context["houston.thread.id"], [harness.threadId, undefined], span.name);
+          }
+          // The turn's own call carries its ids; the query stream's reads belong to no turn.
+          assert.deepStrictEqual(
+            houstonContextOf(recording.named("ClaudeAdapterV2.startTurn").at(-1)!.attributes),
+            {
+              "houston.thread.id": harness.threadId,
+              "houston.run.id": runId,
+              "houston.command.id": `command-${ordinal}`,
+            },
+          );
+          const sessionSpans = spans.filter((span) => span.name === "Test.sessionMessage");
+          assert.isAbove(sessionSpans.length, 0);
+          for (const span of sessionSpans) {
+            assert.deepStrictEqual(houstonContextOf(span.attributes), {});
+          }
+          const logs = logged.slice(logsBefore);
+          assert.isAbove(logs.length, 0);
+          for (const annotations of logs) {
+            assert.oneOf(annotations["houston.run.id"], [runId, undefined]);
+            assert.oneOf(annotations["houston.command.id"], [`command-${ordinal}`, undefined]);
+          }
+        }
+        assert.strictEqual(new Set(runs).size, 3);
+        // The query stream's reads start traces of their own, never inside the opening turn's.
+        const opening = recording.named("Turn1.root")[0]!;
+        const reads = recording.named("Test.sessionMessage");
+        assert.isAbove(reads.length, 0);
+        for (const span of reads) assert.notStrictEqual(span.traceId, opening.traceId);
+      }).pipe(
+        Effect.withTracer(recording.tracer),
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+            Logger.layer([
+              Logger.make((options) => {
+                logged.push(options.fiber.getRef(References.CurrentLogAnnotations));
+              }),
+            ]),
+          ),
+        ),
+      );
+    },
   );
 
   it.effect("keeps a later future-window event-supplied Claude reset over the embedded reset", () =>
@@ -8565,12 +8717,120 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     { autoCompactWindow: "200000", model: "claude-sonnet-4-6", threshold: undefined },
     { autoCompactWindow: "650000", model: "claude-sonnet-4-6", threshold: undefined },
     { autoCompactWindow: "650000", model: "uncatalogued-model", threshold: 617_000 },
+    {
+      autoCompactWindow: "",
+      model: "claude-opus-5-5",
+      userSettings: '{"autoCompactWindow":500000}',
+      threshold: 467_000,
+    },
+    {
+      autoCompactWindow: "300000",
+      model: "claude-opus-5-5",
+      userSettings: '{"autoCompactWindow":500000}',
+      threshold: 267_000,
+    },
+    {
+      autoCompactWindow: "",
+      model: "claude-opus-5-5",
+      userSettings: '{"autoCompactWindow":500000}',
+      projectSettings: '{"autoCompactWindow":400000}',
+      threshold: 367_000,
+    },
+    {
+      autoCompactWindow: "",
+      model: "claude-opus-5-5",
+      userSettings:
+        '{"autoCompactWindow":500000,"modelSettings":{"claude-opus-5-5":{"autoCompactWindow":450000}}}',
+      threshold: 417_000,
+    },
+    {
+      autoCompactWindow: "",
+      model: "claude-opus-5-5",
+      userSettings: '{"autoCompactWindow":500000}',
+      projectSettings: '{"modelSettings":{"claude-opus-5-5":{"autoCompactWindow":"auto"}}}',
+      threshold: undefined,
+    },
+    {
+      autoCompactWindow: "",
+      model: "claude-opus-5-5",
+      userSettings: '{"autoCompactWindow":500000}',
+      launchArgs: `--settings '{"autoCompactWindow":350000}'`,
+      threshold: 317_000,
+    },
+    {
+      autoCompactWindow: "",
+      model: "claude-opus-5-5",
+      userSettings: '{"autoCompactWindow":"invalid"}',
+      threshold: undefined,
+    },
+    {
+      autoCompactWindow: "",
+      model: "claude-opus-5-5",
+      userSettings: '{"autoCompactWindow":500000,}',
+      threshold: undefined,
+    },
+    {
+      autoCompactWindow: "",
+      model: "claude-opus-5-5",
+      userSettings: '{/* invalid */ "autoCompactWindow":500000}',
+      threshold: undefined,
+    },
+    {
+      autoCompactWindow: "",
+      model: "claude-opus-5-5",
+      userSettings: '{"autoCompactWindow":500000,"modelSettings":null}',
+      threshold: 467_000,
+    },
+    {
+      autoCompactWindow: "",
+      model: "claude-opus-5-5",
+      userSettings: '{"autoCompactWindow":500000}',
+      projectSettings: '{"autoCompactWindow":"auto"}',
+      threshold: 467_000,
+    },
+    {
+      autoCompactWindow: "",
+      model: "claude-opus-5-5",
+      userSettings: '{"autoCompactWindow":500000}',
+      projectSettings: '{"autoCompactWindow":50000}',
+      threshold: 467_000,
+    },
+    {
+      autoCompactWindow: "",
+      model: "claude-opus-5-5",
+      userSettings:
+        '{"autoCompactWindow":500000,"modelSettings":{"claude-opus-5-5":{"autoCompactWindow":50000}}}',
+      threshold: 467_000,
+    },
   ])(
     "ignores stale snapshots after compaction and reports threshold $autoCompactWindow for $model",
-    ({ autoCompactWindow, model, threshold }) =>
+    ({ autoCompactWindow, model, threshold, userSettings, projectSettings, launchArgs }) =>
       Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const home = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "houston-claude-compact-",
+        });
+        const project = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "houston-claude-compact-",
+        });
+        if (userSettings !== undefined) {
+          yield* fileSystem.writeFileString(path.join(home, "settings.json"), userSettings);
+        }
+        if (projectSettings !== undefined) {
+          yield* fileSystem.makeDirectory(path.join(project, ".claude"));
+          yield* fileSystem.writeFileString(
+            path.join(project, ".claude", "settings.json"),
+            projectSettings,
+          );
+        }
         const harness = yield* makeWakeHarnessWithOptions({
-          settings: { ...DEFAULT_CLAUDE_SETTINGS, autoCompactWindow },
+          settings: {
+            ...DEFAULT_CLAUDE_SETTINGS,
+            autoCompactWindow,
+            homePath: home,
+            launchArgs: launchArgs ?? "",
+          },
         });
         yield* harness.runtime.startTurn(
           makeClaudeTestTurnInput({
@@ -8581,6 +8841,10 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             text: "Continue.",
             attachments: [],
             modelSelection: { ...CLAUDE_TEST_MODEL_SELECTION, model },
+            runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+              ...CLAUDE_TEST_RUNTIME_POLICY,
+              cwd: project,
+            }),
           }),
         );
         const usage = { ...zeroUsage, input_tokens: 1_000, output_tokens: 75 };
@@ -8624,6 +8888,91 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           ),
         ),
       ),
+  );
+
+  it.effect("reports the settings directory of a reused Claude query", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "houston-claude-home-" });
+      const first = yield* fileSystem.makeTempDirectoryScoped({ prefix: "houston-claude-first-" });
+      const second = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "houston-claude-second-",
+      });
+      for (const [directory, window] of [
+        [first, 150_000],
+        [second, 180_000],
+      ] as const) {
+        yield* fileSystem.makeDirectory(path.join(directory, ".claude"));
+        yield* fileSystem.writeFileString(
+          path.join(directory, ".claude", "settings.json"),
+          JSON.stringify({ autoCompactWindow: window }),
+        );
+      }
+      const harness = yield* makeWakeHarnessWithOptions({
+        settings: { ...DEFAULT_CLAUDE_SETTINGS, homePath: home },
+      });
+      let firstOptions: ReturnType<typeof harness.getOpenedOptions>;
+      for (const [ordinal, cwd] of [
+        [1, first],
+        [2, second],
+      ] as const) {
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now: yield* DateTime.now,
+            attemptId: RunAttemptId.make(`attempt-compact-cwd-${ordinal}`),
+            providerTurnOrdinal: ordinal,
+            text: "Continue.",
+            attachments: [],
+            runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+              ...CLAUDE_TEST_RUNTIME_POLICY,
+              cwd,
+            }),
+          }),
+        );
+        if (ordinal === 1) firstOptions = harness.getOpenedOptions();
+        else assert.strictEqual(harness.getOpenedOptions(), firstOptions);
+        yield* Queue.offer(
+          harness.sdkMessages,
+          usageSnapshotFrame(
+            `msg_cwd_${ordinal}`,
+            `00000000-0000-4000-8000-00000000080${ordinal}`,
+            {
+              ...zeroUsage,
+              input_tokens: 1_000,
+              output_tokens: 10,
+            },
+          ),
+        );
+        yield* Queue.offer(
+          harness.sdkMessages,
+          makeResultFrame({
+            uuid: `00000000-0000-4000-8000-00000000081${ordinal}`,
+            result: "Done.",
+          }),
+        );
+        assert.equal((yield* Queue.take(harness.terminalReceipts)).status, "completed");
+      }
+      assert.deepEqual(
+        harness.events.flatMap((event) =>
+          event.type === "provider_turn.updated" && event.providerTurn.tokenUsage
+            ? [event.providerTurn.tokenUsage.autoCompactThreshold]
+            : [],
+        ),
+        [117_000, 117_000],
+      );
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
   );
 
   it.effect("shows a hook-dropped Claude prompt once and skips info-level lines", () =>
@@ -15415,6 +15764,76 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           );
           const child = harness.events.find((event) => event.type === "app_thread.created");
           assert.equal(child?.appThread.modelSelection?.model, initialModel ?? parentModel);
+        }).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              IdAllocator.layer,
+              McpProviderSessions.layer,
+              NodeServices.layer,
+              NodeCrypto.layer,
+            ),
+          ),
+        ),
+      ),
+  );
+
+  it.effect.each([
+    {
+      source: "custom model",
+      model: "claude-custom-tuned",
+      harness: { settings: ULTRACODE_CUSTOM_MODEL_CLAUDE_SETTINGS },
+    },
+    {
+      source: "downloaded catalog",
+      model: "claude-sonnet-5",
+      harness: {
+        modelCatalog: Effect.succeed({
+          models: BUNDLED_CLAUDE_MODEL_CATALOG.models.map((entry) =>
+            entry.model.slug === "claude-sonnet-5"
+              ? {
+                  ...entry,
+                  model: {
+                    ...entry.model,
+                    capabilities: {
+                      optionDescriptors: [
+                        ...(entry.model.capabilities?.optionDescriptors ?? []),
+                        { id: "ultracode", label: "Ultracode", type: "boolean" as const },
+                      ],
+                    },
+                  },
+                }
+              : entry,
+          ),
+        }),
+      },
+    },
+  ])(
+    "sends Ultracode with any effort on a model from the $source",
+    ({ harness: harnessOptions, model }) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const harness = yield* makeWakeHarnessWithOptions(harnessOptions);
+          yield* harness.runtime.startTurn(
+            makeClaudeTestTurnInput({
+              threadId: harness.threadId,
+              providerThread: harness.providerThread,
+              now: yield* DateTime.now,
+              attemptId: RunAttemptId.make("attempt-custom-ultracode"),
+              text: "Plan the work.",
+              attachments: [],
+              modelSelection: {
+                instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
+                model,
+                options: [
+                  { id: "effort", value: "high" },
+                  { id: "ultracode", value: true },
+                ],
+              },
+            }),
+          );
+          const options = harness.getOpenedOptions()!;
+          assert.equal(options.effort, "high");
+          assert.equal((options.settings as { ultracode?: boolean }).ultracode, true);
         }).pipe(
           Effect.provide(
             Layer.mergeAll(

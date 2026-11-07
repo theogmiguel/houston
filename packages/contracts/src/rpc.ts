@@ -259,6 +259,12 @@ import {
   HoustonSlackStreamEvent,
 } from "./houston/slack.ts";
 import {
+  HoustonDatadogKeyInput,
+  HoustonDatadogKeyStatus,
+  HoustonObservabilityEmptyInput,
+  HoustonObservabilityError,
+} from "./houston/observability.ts";
+import {
   HoustonMergeQueueEmptyResult,
   HoustonMergeQueueEnqueueInput,
   HoustonMergeQueueEntry,
@@ -316,6 +322,7 @@ import {
   PullRequestLinkedThreadsResult,
   PullRequestSummary,
   PullRequestReviewerCandidateList,
+  PullRequestReviewerCandidatesInput,
   PullRequestReviewerRequestInput,
   PullRequestLabelCandidateList,
   PullRequestLabelChangeInput,
@@ -643,6 +650,9 @@ export const WS_METHODS = {
   houstonSlackSubscribe: "houston.slack.subscribe",
   houstonSlackImportV1Status: "houston.slack.importV1.status",
   houstonSlackImportV1Run: "houston.slack.importV1.run",
+  houstonObservabilitySetDatadogKey: "houston.observability.setDatadogKey",
+  houstonObservabilityClearDatadogKey: "houston.observability.clearDatadogKey",
+  houstonObservabilityGetDatadogKeyStatus: "houston.observability.getDatadogKeyStatus",
   houstonMergeQueueGet: "houston.mergeQueue.get",
   houstonMergeQueueSubscribe: "houston.mergeQueue.subscribe",
   houstonMergeQueueSubscribeSummary: "houston.mergeQueue.subscribeSummary",
@@ -840,6 +850,8 @@ export const WsServerRefreshProvidersRpc = Rpc.make(WS_METHODS.serverRefreshProv
     workspaceSnapshotsOnDemand: Schema.optional(Schema.Boolean),
     /** As on `subscribeServerConfig`: add /usage-limits to the replied snapshot. */
     usageLimitsCommand: Schema.optional(Schema.Boolean),
+    /** As on `subscribeServerConfig`: a failed cwd scan replies with the machine catalog as a pending snapshot. */
+    providerCatalogsOnDemand: Schema.optional(Schema.Boolean),
   }),
   success: ServerProviderUpdatedPayload,
   error: Schema.Union([EnvironmentAuthorizationError, ProviderSetupError]),
@@ -1289,7 +1301,8 @@ const WsPullRequestsSetFilesViewedRpc = Rpc.make(WS_METHODS.pullRequestsSetFiles
 
 const WsPullRequestsRunActionRpc = Rpc.make(WS_METHODS.pullRequestsRunAction, {
   payload: PullRequestActionInput,
-  success: Schema.Void,
+  // Undefined unless asked for with replyWithSummary, or when the host's reply lacked it.
+  success: Schema.UndefinedOr(PullRequestSummary),
   error: PullRequestRpcError,
 });
 
@@ -1356,7 +1369,7 @@ const WsPullRequestsSubscribeRefreshesRpc = Rpc.make(WS_METHODS.pullRequestsSubs
 
 // Fetch reviewer candidates only when the menu opens to avoid unused host requests.
 const WsPullRequestsReviewerCandidatesRpc = Rpc.make(WS_METHODS.pullRequestsReviewerCandidates, {
-  payload: PullRequestRef,
+  payload: PullRequestReviewerCandidatesInput,
   success: PullRequestReviewerCandidateList,
   error: PullRequestRpcError,
 });
@@ -2107,6 +2120,38 @@ const WsHoustonSlackImportV1RunRpc = Rpc.make(WS_METHODS.houstonSlackImportV1Run
   error: HoustonSlackRpcError,
 });
 
+const HoustonObservabilityRpcError = Schema.Union([
+  HoustonObservabilityError,
+  EnvironmentAuthorizationError,
+]);
+
+const WsHoustonObservabilitySetDatadogKeyRpc = Rpc.make(
+  WS_METHODS.houstonObservabilitySetDatadogKey,
+  {
+    payload: HoustonDatadogKeyInput,
+    success: HoustonDatadogKeyStatus,
+    error: HoustonObservabilityRpcError,
+  },
+);
+
+const WsHoustonObservabilityClearDatadogKeyRpc = Rpc.make(
+  WS_METHODS.houstonObservabilityClearDatadogKey,
+  {
+    payload: HoustonObservabilityEmptyInput,
+    success: HoustonDatadogKeyStatus,
+    error: HoustonObservabilityRpcError,
+  },
+);
+
+const WsHoustonObservabilityGetDatadogKeyStatusRpc = Rpc.make(
+  WS_METHODS.houstonObservabilityGetDatadogKeyStatus,
+  {
+    payload: HoustonObservabilityEmptyInput,
+    success: HoustonDatadogKeyStatus,
+    error: HoustonObservabilityRpcError,
+  },
+);
+
 const HoustonMergeQueueRpcError = Schema.Union([
   HoustonMergeQueueError,
   EnvironmentAuthorizationError,
@@ -2417,6 +2462,12 @@ const WsOrchestrationV2GetThreadFamilyRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS
   error: Schema.Union([OrchestrationV2GetShellSnapshotError, EnvironmentAuthorizationError]),
 });
 
+const WsOrchestrationV2GetThreadTitlesRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS.getThreadTitles, {
+  payload: OrchestrationV2RpcSchemas.getThreadTitles.input,
+  success: OrchestrationV2RpcSchemas.getThreadTitles.output,
+  error: Schema.Union([OrchestrationV2GetShellSnapshotError, EnvironmentAuthorizationError]),
+});
+
 const WsOrchestrationV2GetWorktreeThreadIdsRpc = Rpc.make(
   ORCHESTRATION_V2_WS_METHODS.getWorktreeThreadIds,
   {
@@ -2517,6 +2568,8 @@ export const WsSubscribeServerConfigRpc = Rpc.make(WS_METHODS.subscribeServerCon
     usageLimitsCommand: Schema.optional(Schema.Boolean),
     /** Omit per-cwd provider snapshots; the client fetches its cwd through `server.refreshProviders`. */
     workspaceSnapshotsOnDemand: Schema.optional(Schema.Boolean),
+    /** With on-demand snapshots, also omit machine slash commands and skills a cwd snapshot replaces. */
+    providerCatalogsOnDemand: Schema.optional(Schema.Boolean),
   }),
   success: ServerConfigStreamEvent,
   error: Schema.Union([KeybindingsConfigError, ServerSettingsError, EnvironmentAuthorizationError]),
@@ -2827,6 +2880,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonSlackSubscribeRpc,
   WsHoustonSlackImportV1StatusRpc,
   WsHoustonSlackImportV1RunRpc,
+  WsHoustonObservabilitySetDatadogKeyRpc,
+  WsHoustonObservabilityClearDatadogKeyRpc,
+  WsHoustonObservabilityGetDatadogKeyStatusRpc,
   WsHoustonMergeQueueGetRpc,
   WsHoustonMergeQueueSubscribeRpc,
   WsHoustonMergeQueueSubscribeSummaryRpc,
@@ -2885,6 +2941,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationV2SearchThreadStreamRpc,
   WsOrchestrationV2GetArchivedShellSnapshotRpc,
   WsOrchestrationV2GetThreadFamilyRpc,
+  WsOrchestrationV2GetThreadTitlesRpc,
   WsOrchestrationV2GetWorktreeThreadIdsRpc,
   WsOrchestrationV2GetOlderSettledThreadsRpc,
   WsOrchestrationV2GetThreadProjectionRpc,

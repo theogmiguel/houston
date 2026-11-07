@@ -22,7 +22,12 @@ export {
 export {
   cancelEnvironmentSpeechModelDownload,
   downloadEnvironmentSpeechModel,
+  getCloudSpeechKeys,
+  getCloudSpeechModels,
   getEnvironmentSpeechModels,
+  requireCloudSpeechKey,
+  setCloudSpeechKey,
+  transcribeCloudPcm,
   getEnvironmentSpeechStatus,
   postProcessEnvironmentTranscript,
   prepareEnvironmentSpeechModel,

@@ -82,6 +82,9 @@ async function loadSpeechModule(url: string): Promise<SpeechModule> {
   return speech;
 }
 
+const UNPACKED_PATTERN = /\.asar([\\/])/g;
+const LIBRARY_PATTERN = /^(lib)?transcribe\.(dll|dylib|so)$/;
+
 /**
  * Koffi opens native libraries outside Electron's ASAR-aware file system, so inside an
  * ASAR archive the library path points at its `.asar.unpacked` copy instead.
@@ -89,12 +92,10 @@ async function loadSpeechModule(url: string): Promise<SpeechModule> {
 function useUnpackedLibrary(speech: SpeechModule): void {
   if (!process.versions.electron || process.env.TRANSCRIBE_LIBRARY || !speech.artifactDir) return;
   const directory = speech.artifactDir();
-  const unpacked = directory.replace(/\.asar([\\/])/g, ".asar.unpacked$1");
+  const unpacked = directory.replace(UNPACKED_PATTERN, ".asar.unpacked$1");
   if (unpacked === directory || !NodeFS.existsSync(unpacked)) return;
   // The unpacked directory holds exactly one engine library for the host it was built for.
-  const library = NodeFS.readdirSync(unpacked).find((name) =>
-    /^(lib)?transcribe\.(dll|dylib|so)$/.test(name),
-  );
+  const library = NodeFS.readdirSync(unpacked).find((name) => LIBRARY_PATTERN.test(name));
   if (!library) return;
   process.env.TRANSCRIBE_LIBRARY = NodePath.join(unpacked, library);
 }
@@ -113,6 +114,8 @@ export function defaultSpeechModuleUrl(): string {
   ).href;
 }
 
+const WHITESPACE_RUN = /\s+/;
+
 // transcribe-cpp slices tentative by position, so a hypothesis that revises the committed
 // words ("And so my" -> "And so, my") repeats letters. Realign on word boundaries instead.
 const tentativeAfter = ({
@@ -125,7 +128,10 @@ const tentativeAfter = ({
   readonly tentative: string;
 }) => {
   if (!committed || full.startsWith(committed)) return tentative;
-  const words = full.trim().split(/\s+/).slice(committed.trim().split(/\s+/).length);
+  const words = full
+    .trim()
+    .split(WHITESPACE_RUN)
+    .slice(committed.trim().split(WHITESPACE_RUN).length);
   return words.length ? " " + words.join(" ") : "";
 };
 

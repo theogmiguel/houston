@@ -17,11 +17,11 @@ const REMOTE_PATTERNS = [
   /^(?:[^@/:]+@)?([^/:]+):(.+)$/u,
 ];
 
+const TRAILING_SLASHES = /\/+$/u;
+const GIT_SUFFIX = /\.git$/u;
+
 export function gitCafeRepositoryPath(path: string): string | null {
-  const repository = path
-    .trim()
-    .replace(/\/+$/u, "")
-    .replace(/\.git$/u, "");
+  const repository = path.trim().replace(TRAILING_SLASHES, "").replace(GIT_SUFFIX, "");
   return REPOSITORY.test(repository) ? repository : null;
 }
 

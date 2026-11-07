@@ -4,7 +4,7 @@
 38 apps/web/src/components/AddProjectToMachineDialog.tsx
 3 apps/web/src/components/AnimatedHeight.tsx
 4 apps/web/src/components/AnimatedWidth.tsx
-7 apps/web/src/components/AppRouteModal.tsx
+8 apps/web/src/components/AppRouteModal.tsx
 2 apps/web/src/components/AppSidebarLayout.tsx
 35 apps/web/src/components/auth/ConnectAgentSurface.tsx
 18 apps/web/src/components/auth/PairingRouteSurface.tsx
@@ -16,7 +16,7 @@
 6 apps/web/src/components/BranchToolbarEnvModeSelector.tsx
 1 apps/web/src/components/chat/AgentElapsed.tsx
 9 apps/web/src/components/chat/AssistantCitationChip.tsx
-10 apps/web/src/components/chat/AssistantCitationCommentEditor.tsx
+11 apps/web/src/components/chat/AssistantCitationCommentEditor.tsx
 2 apps/web/src/components/chat/AssistantModelAttributionLine.tsx
 2 apps/web/src/components/chat/ChangedFilesBar.tsx
 2 apps/web/src/components/chat/ChatBannerLane.tsx
@@ -83,7 +83,7 @@
 3 apps/web/src/components/chat/ProviderStatusBanner.tsx
 9 apps/web/src/components/chat/ProviderSubagentBar.tsx
 29 apps/web/src/components/chat/QueuedRunsControl.tsx
-15 apps/web/src/components/chat/SecretRequestCard.tsx
+14 apps/web/src/components/chat/SecretRequestCard.tsx
 1 apps/web/src/components/chat/ShellCommandBlock.tsx
 6 apps/web/src/components/chat/SideChatPane.tsx
 2 apps/web/src/components/chat/SkillInlineText.tsx
@@ -105,15 +105,15 @@
 1 apps/web/src/components/chat/ThreadNow.tsx
 13 apps/web/src/components/chat/ThreadRelationshipIcon.tsx
 41 apps/web/src/components/chat/ThreadRelationshipsControl.tsx
-9 apps/web/src/components/chat/ThreadServersPanel.tsx
+8 apps/web/src/components/chat/ThreadServersPanel.tsx
 2 apps/web/src/components/chat/ThreadStatusLine.tsx
 16 apps/web/src/components/chat/TimelineAssistantRows.tsx
 13 apps/web/src/components/chat/TimelineFileChangeCard.tsx
-43 apps/web/src/components/chat/TimelineMinimap.tsx
+34 apps/web/src/components/chat/TimelineMinimap.tsx
 17 apps/web/src/components/chat/TimelineOverlays.tsx
 24 apps/web/src/components/chat/TimelinePendingApprovalRow.tsx
 10 apps/web/src/components/chat/TimelinePlanCard.tsx
-19 apps/web/src/components/chat/TimelineRowParts.tsx
+17 apps/web/src/components/chat/TimelineRowParts.tsx
 17 apps/web/src/components/chat/TimelineSystemDivider.tsx
 4 apps/web/src/components/chat/TimelineToolActivityIcon.tsx
 107 apps/web/src/components/chat/TimelineUserMessageRow.tsx
@@ -141,7 +141,7 @@
 5 apps/web/src/components/CommandPaletteThemeItems.tsx
 6 apps/web/src/components/ComposerContextLabel.tsx
 29 apps/web/src/components/composerContextPresentation.tsx
-6 apps/web/src/components/ComposerPromptEditorTiptap.tsx
+5 apps/web/src/components/ComposerPromptEditorTiptap.tsx
 1 apps/web/src/components/ConfirmDialogHost.tsx
 6 apps/web/src/components/ConnectionStatusDot.tsx
 7 apps/web/src/components/ContextChip.tsx
@@ -158,7 +158,7 @@
 2 apps/web/src/components/device/DeviceHostAvailability.tsx
 9 apps/web/src/components/device/DeviceHostUpdates.tsx
 15 apps/web/src/components/device/DeviceLoadingView.tsx
-34 apps/web/src/components/device/DevicePanel.tsx
+39 apps/web/src/components/device/DevicePanel.tsx
 7 apps/web/src/components/device/DevicePhoneViewport.tsx
 34 apps/web/src/components/device/DeviceSetup.tsx
 32 apps/web/src/components/device/DeviceStreamView.tsx
@@ -175,7 +175,7 @@
 6 apps/web/src/components/diffs/StyledDiffCodeView.tsx
 2 apps/web/src/components/DiffWorkerPoolProvider.tsx
 14 apps/web/src/components/files/AttachmentFilePreview.tsx
-8 apps/web/src/components/files/AudioPreview.tsx
+7 apps/web/src/components/files/AudioPreview.tsx
 65 apps/web/src/components/files/BinaryViewer.tsx
 6 apps/web/src/components/files/BrowserDocumentFrame.tsx
 10 apps/web/src/components/files/DocumentPages.tsx
@@ -200,7 +200,7 @@
 10 apps/web/src/components/files/ProjectFileTree.tsx
 1 apps/web/src/components/files/ReadOnlySourcePreview.tsx
 43 apps/web/src/components/files/VirtualTablePreview.tsx
-190 apps/web/src/components/GitActionsControl.tsx
+192 apps/web/src/components/GitActionsControl.tsx
 6 apps/web/src/components/grid/GridHost.tsx
 2 apps/web/src/components/grid/GridLayoutMenu.tsx
 5 apps/web/src/components/grid/GridShelves.tsx
@@ -235,7 +235,7 @@
 2 apps/web/src/components/PreviousWorktreeItemContent.tsx
 1 apps/web/src/components/ProjectEnvironmentBadge.tsx
 2 apps/web/src/components/ProjectPinButton.tsx
-27 apps/web/src/components/projectScriptEditor.tsx
+31 apps/web/src/components/projectScriptEditor.tsx
 10 apps/web/src/components/ProjectScriptsControl.tsx
 10 apps/web/src/components/promptLinks/HostedPromptLinkLanding.tsx
 1 apps/web/src/components/promptLinks/NewThreadLinkView.tsx
@@ -275,8 +275,9 @@
 19 apps/web/src/components/pullRequest/PullRequestListFilters.tsx
 5 apps/web/src/components/pullRequest/PullRequestListGroups.tsx
 11 apps/web/src/components/pullRequest/PullRequestListRow.tsx
-7 apps/web/src/components/pullRequest/PullRequestMarkdown.tsx
+8 apps/web/src/components/pullRequest/PullRequestMarkdown.tsx
 5 apps/web/src/components/pullRequest/PullRequestMarkdownEditor.tsx
+12 apps/web/src/components/pullRequest/PullRequestMarkdownTextarea.tsx
 2 apps/web/src/components/pullRequest/PullRequestMoreReplies.tsx
 22 apps/web/src/components/pullRequest/pullRequestPresentation.tsx
 14 apps/web/src/components/pullRequest/PullRequestReactions.tsx
@@ -325,7 +326,7 @@
 23 apps/web/src/components/settings/CustomModelEditor.tsx
 2 apps/web/src/components/settings/DatabaseStorageNotice.tsx
 26 apps/web/src/components/settings/DeviceHostEditor.tsx
-47 apps/web/src/components/settings/DeviceSourcesSettings.tsx
+52 apps/web/src/components/settings/DeviceSourcesSettings.tsx
 306 apps/web/src/components/settings/DiagnosticsSettings.tsx
 15 apps/web/src/components/settings/EasDeviceHostEditor.tsx
 7 apps/web/src/components/settings/EnvironmentIconPicker.tsx
@@ -360,7 +361,7 @@
 10 apps/web/src/components/settings/RedactedSensitiveText.tsx
 381 apps/web/src/components/settings/ResourceTelemetryDiagnostics.tsx
 17 apps/web/src/components/settings/SavedEnvironmentRows.tsx
-80 apps/web/src/components/settings/ScheduledTasksSettings.tsx
+79 apps/web/src/components/settings/ScheduledTasksSettings.tsx
 6 apps/web/src/components/settings/SecretProviderDialog.tsx
 2 apps/web/src/components/settings/SecretSourceInput.tsx
 8 apps/web/src/components/settings/SecretsSettings.tsx
@@ -384,7 +385,6 @@
 11 apps/web/src/components/settings/SourceControlTokenSettings.tsx
 6 apps/web/src/components/settings/SourceControlWritingSettings.tsx
 20 apps/web/src/components/settings/StorageSettings.tsx
-12 apps/web/src/components/settings/TelemetryExportSettings.tsx
 55 apps/web/src/components/settings/ThemeColorPicker.tsx
 43 apps/web/src/components/settings/ThemeEditorPanel.tsx
 50 apps/web/src/components/settings/ThemeImportDialog.tsx
@@ -420,7 +420,7 @@
 1 apps/web/src/components/ThreadRouteView.tsx
 10 apps/web/src/components/ThreadSearchMatch.tsx
 31 apps/web/src/components/ThreadStatusIndicators.tsx
-71 apps/web/src/components/ThreadTerminalDrawer.tsx
+65 apps/web/src/components/ThreadTerminalDrawer.tsx
 23 apps/web/src/components/usage/UsageActivity.tsx
 30 apps/web/src/components/usage/UsageLimits.tsx
 120 apps/web/src/components/usage/UsageLimitsPooled.tsx
