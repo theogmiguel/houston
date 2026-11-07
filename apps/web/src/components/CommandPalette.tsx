@@ -2984,7 +2984,9 @@ function OpenCommandPaletteDialog(props: {
     <span className="text-muted-foreground text-xs">Searching messages…</span>
   ) : null;
 
-  const viewKey = `${viewStack.length}-${browseGeneration}-${isBrowsing}-${newProjectFlow ? "new-project" : (addProjectCloneFlow?.step ?? "none")}`;
+  // Browsing mode edits the query in place; swapping the view would remount the
+  // input and drop its caret and focus mid-edit.
+  const viewKey = `${viewStack.length}-${browseGeneration}-${newProjectFlow ? "new-project" : (addProjectCloneFlow?.step ?? "none")}`;
 
   return (
     <Swap swapKey={viewKey}>
