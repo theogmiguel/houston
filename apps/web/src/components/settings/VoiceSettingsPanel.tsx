@@ -1149,6 +1149,8 @@ function TranscriptionTest(props: {
   );
 }
 
+const choiceValue = (...parts: ReadonlyArray<string>) => JSON.stringify(parts);
+
 export function VoiceSettingsPanel() {
   const cleanupEnabled = useCleanupGrant() !== null;
   const settings = useClientSettings();
@@ -1195,7 +1197,6 @@ export function VoiceSettingsPanel() {
     ? (microphones.find((device) => device.deviceId === selectedMicrophone)?.label ??
       "Selected microphone (unavailable)")
     : "System default";
-  const choiceValue = (...parts: ReadonlyArray<string>) => JSON.stringify(parts);
   const cloudChoices = environments
     .filter(
       (environment) => environment.serverConfig?.environment.capabilities.cloudVoiceTranscription,
