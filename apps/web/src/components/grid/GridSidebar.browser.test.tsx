@@ -675,7 +675,7 @@ describe("ThreadCard status marks", () => {
     );
 
     const mark = screen.getByRole("img", { name: "Running" }).element();
-    const glyph = mark.querySelector<SVGElement>('svg[data-status-kind="running"]');
+    const glyph = mark.querySelector<HTMLElement>('[data-status-kind="running"]');
     expect(glyph).not.toBeNull();
     expect(getComputedStyle(glyph!).animationName).not.toBe("none");
     expect(getComputedStyle(mark).color).toBe(tokenColor("--status-running"));

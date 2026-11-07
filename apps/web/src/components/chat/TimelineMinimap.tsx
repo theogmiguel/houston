@@ -35,7 +35,7 @@ function onMouseButtonsReleased(onRelease: () => void): () => void {
 }
 
 const STRIP_CLASS =
-  "pointer-events-none absolute left-0 h-0.5 w-6 origin-left -translate-y-1/2 rounded-full transition-transform duration-150 after:absolute after:inset-0 after:rounded-full after:bg-foreground/55 after:opacity-0 after:transition-opacity after:duration-150 data-[in-view=true]:after:opacity-100";
+  "pointer-events-none absolute left-3 h-0.5 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full transition-transform duration-150 after:absolute after:inset-0 after:rounded-full after:bg-foreground/55 after:opacity-0 after:transition-opacity after:duration-150 data-[in-view=true]:after:opacity-100";
 // Plain strings by distance from the active strip: a long thread renders hundreds of strips and
 // nothing can conflict, so no strip pays for a class merge.
 const STRIP_CLASS_BY_DISTANCE = [

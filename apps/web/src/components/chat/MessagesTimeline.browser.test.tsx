@@ -1077,11 +1077,12 @@ describe("MessagesTimeline minimap", () => {
   const minimapOf = (root: HTMLElement) =>
     root.querySelector<HTMLElement>('[data-testid="timeline-minimap"]');
 
-  it("stays hidden until the pointer is over the conversation", async () => {
+  it("stays visible without hover when the side gutter has room for it", async () => {
     setup();
     await using screen = await renderTimeline(turns(8), {}, { width: 1128 });
     await vi.waitFor(() => expect(minimapOf(screen.container)).not.toBeNull());
-    expect(getComputedStyle(minimapOf(screen.container)!).opacity).toBe("0");
+    expect(minimapOf(screen.container)!.dataset.persistentGutter).toBe("true");
+    expect(getComputedStyle(minimapOf(screen.container)!).opacity).toBe("1");
   });
 
   it("is absent below 8 turns, where the scroll bar already orients the reader", async () => {
