@@ -5,19 +5,10 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 import "~/index.css";
 
-// Prepare the real worker before tests; Vite's worker transform adds a large inline source map.
-const { refresh, assetUrlState, pdfOpens, pdfWorkerUrl } = await vi.hoisted(async () => {
-  const { default: source } = await import("pdfjs-dist/build/pdf.worker.min.mjs?raw");
-  return {
-    refresh: vi.fn<() => Promise<string | null>>(),
-    assetUrlState: vi.fn<() => import("~/assets/assetUrls").AssetUrlState>(),
-    pdfOpens: [] as Array<(task: import("pdfjs-dist").PDFDocumentLoadingTask) => void>,
-    pdfWorkerUrl: URL.createObjectURL(new Blob([source], { type: "text/javascript" })),
-  };
-});
-
-vi.mock(import("pdfjs-dist/build/pdf.worker.min.mjs?url"), () => ({
-  default: pdfWorkerUrl,
+const { refresh, assetUrlState, pdfOpens } = vi.hoisted(() => ({
+  refresh: vi.fn<() => Promise<string | null>>(),
+  assetUrlState: vi.fn<() => import("~/assets/assetUrls").AssetUrlState>(),
+  pdfOpens: [] as Array<(task: import("pdfjs-dist").PDFDocumentLoadingTask) => void>,
 }));
 
 vi.mock(import("~/assets/assetUrls"), async (original) => ({
