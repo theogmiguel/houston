@@ -5,7 +5,8 @@ import type * as Schema from "effect/Schema";
 
 /**
  * Replaces each reference in the slots `schema` declares as `SettingsSecretValue` with the secret
- * it names, read in one batch. An unreadable secret comes back as `""`, so it behaves as unset.
+ * it names, read in one batch. A secret that cannot be read, or reads empty, keeps its reference,
+ * which `requireSettingsSecretLiteral` turns into an error for the consumer of that field.
  */
 export const resolveSettingsSecrets = Effect.fn("SettingsSecrets.resolve")(function* <
   Settings extends Readonly<Record<string, unknown>>,
@@ -15,6 +16,9 @@ export const resolveSettingsSecrets = Effect.fn("SettingsSecrets.resolve")(funct
   const values = yield* resolver.read(pending.map(({ reference }) => reference));
   return withSettingsSecrets(
     settings,
-    pending.map((slot, index) => ({ ...slot, value: values[index] ?? "" })),
+    pending.flatMap((slot, index) => {
+      const value = values[index];
+      return value === undefined || value.trim() === "" ? [] : [{ ...slot, value }];
+    }),
   );
 });

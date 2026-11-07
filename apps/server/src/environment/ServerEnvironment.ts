@@ -268,6 +268,8 @@ export const make = Effect.gen(function* () {
       ignoredFileListing: true,
       triage: true,
       oneTimeSchedules: true,
+      freshContext: true,
+      scheduledTaskThreadModes: true,
       npmReleaseLookup: true,
       voiceTranscription: isSpeechPlatformSupported(hostPlatform, hostArchitecture, hostLibc),
       voiceProtocol: VOICE_PROTOCOL_VERSION,

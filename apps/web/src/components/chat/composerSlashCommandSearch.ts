@@ -73,7 +73,7 @@ function orderSlashCommandItemsBySection(items: ReadonlyArray<SlashSearchItem>):
   );
 }
 
-/** Provider commands, `/side` and `/btw` work only at the message start. */
+/** Provider commands, `/side`, `/btw` and `/clear` work only at the message start. */
 export function slashCommandItemsForPromptPosition(
   items: ReadonlyArray<SlashSearchItem>,
   isAtPromptStart: boolean,
@@ -84,7 +84,10 @@ export function slashCommandItemsForPromptPosition(
   return items.filter(
     (item) =>
       item.type === "skill" ||
-      (item.type === "slash-command" && item.command !== "side" && item.command !== "btw"),
+      (item.type === "slash-command" &&
+        item.command !== "side" &&
+        item.command !== "btw" &&
+        item.command !== "clear"),
   );
 }
 
@@ -180,6 +183,7 @@ export function builtInSlashCommandItems(input: {
   readonly sideChatDisabledReason: string | null;
   readonly claudeInChrome: boolean;
   readonly resumeAvailable: boolean;
+  readonly freshSessionAvailable: boolean;
 }): ReadonlyArray<Extract<ComposerCommandItem, { type: "slash-command" }>> {
   return [
     {
@@ -244,6 +248,17 @@ export function builtInSlashCommandItems(input: {
             command: "btw",
             label: "/btw",
             description: input.sideChatDisabledReason ?? "Same as /side",
+          },
+        ] as const)
+      : []),
+    ...(input.freshSessionAvailable
+      ? ([
+          {
+            id: "slash:clear",
+            type: "slash-command",
+            command: "clear",
+            label: "/clear",
+            description: "Start a fresh session; earlier messages stay visible",
           },
         ] as const)
       : []),

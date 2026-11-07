@@ -6,6 +6,7 @@ import {
   extractMarkdownLinkHrefs,
   inlineCodeFilePathCandidate,
 } from "@houston-app/shared/markdownLinks";
+import { taskListMarkerOffset } from "@houston-app/shared/markdownTaskList";
 import { isHostPath, resolveWorkspaceFilePath } from "@houston-app/shared/path";
 import { usePullRequestLinking } from "~/hooks/usePullRequestLinking";
 import {
@@ -221,7 +222,6 @@ import {
 } from "./chat/MarkdownCodeBlock.logic";
 import { reportMarkdownActionFailure } from "./chat/markdownActionFailure";
 
-const TASK_LIST_MARKER = /^(?:\s*(?:[-+*]|\d+[.)])\s+)(\[[ xX]\])/;
 const FILE_SCHEME = /^file:/i;
 const PULL_REQUEST_COPY_PATTERN = /\/commit\/([0-9a-f]{7,40})$/iu;
 const COPY_MARKDOWN_PATTERN = /[\\[\]]/g;
@@ -257,6 +257,8 @@ interface ChatMarkdownProps {
   /** Loads media a source control host keeps behind a credential through the server, which holds
       `cwd`'s; without it a private repository's uploads load unauthenticated and 404. */
   sourceControlMedia?: boolean | undefined;
+  /** The change request's repository, when it can differ from the checkout at `cwd`. */
+  sourceControlMediaRepository?: string | undefined;
   headingLevelOffset?: number | undefined;
 }
 
@@ -330,17 +332,6 @@ function CodexArtifactTemplateCard(props: {
 }
 
 const WINDOWS_DRIVE_PATH_REGEX = /^[A-Za-z]:[\\/]/;
-
-function findTaskListMarkerOffset(markdown: string, listItemStart: number): number | null {
-  const firstLineEnd = markdown.indexOf("\n", listItemStart);
-  const firstLine = markdown.slice(
-    listItemStart,
-    firstLineEnd === -1 ? markdown.length : firstLineEnd,
-  );
-  const match = firstLine.match(TASK_LIST_MARKER);
-  if (!match?.[1]) return null;
-  return listItemStart + firstLine.indexOf(match[1]);
-}
 
 function orderedListGutterStyle(
   itemCount: number,
@@ -615,6 +606,7 @@ function useChatMarkdownState({
   renderContextReference,
   headingLevelOffset = 0,
   sourceControlMedia = false,
+  sourceControlMediaRepository,
   blocks = null,
 }: ChatMarkdownProps & { readonly blocks?: ReadonlyArray<string> | null }) {
   const resolvedTheme = useRenderedAppearance();
@@ -1014,6 +1006,7 @@ function useChatMarkdownState({
     expandMedia,
     fileLinkChip,
     sourceControlMedia,
+    sourceControlMediaRepository,
     renderContextReference,
     headingLevelOffset,
     imageBaseDir,
@@ -1149,7 +1142,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
         <input
           {...props}
           type={type}
-          checked={checked}
+          checked={type === "checkbox" ? checked === true : checked}
           disabled={_disabled}
           readOnly={type === "checkbox"}
         />
@@ -1161,11 +1154,11 @@ const CHAT_MARKDOWN_COMPONENTS = {
         type="checkbox"
         name="markdown-task"
         aria-label="Toggle task"
-        checked={checked}
+        checked={checked === true}
         onChange={(event) => {
           const listItemStart = Number(event.currentTarget.closest("li")?.dataset.listItemOffset);
           if (!Number.isSafeInteger(listItemStart)) return;
-          const markerOffset = findTaskListMarkerOffset(text, listItemStart);
+          const markerOffset = taskListMarkerOffset(text, listItemStart);
           if (markerOffset === null) return;
           onTaskListChange({ markerOffset, checked: event.currentTarget.checked });
         }}
@@ -1489,6 +1482,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
       cwd,
       environmentId,
       sourceControlMedia,
+      sourceControlMediaRepository,
       imageBaseDir,
       threadRef,
       workspaceMutationId,
@@ -1577,7 +1571,12 @@ const CHAT_MARKDOWN_COMPONENTS = {
       return (
         <ChatMarkdownAssetImage
           environmentId={environmentId}
-          resource={{ _tag: SOURCE_CONTROL_MEDIA_ASSET, cwd, url: hostMediaUrl }}
+          resource={{
+            _tag: SOURCE_CONTROL_MEDIA_ASSET,
+            cwd,
+            url: hostMediaUrl,
+            ...(sourceControlMediaRepository ? { repository: sourceControlMediaRepository } : {}),
+          }}
           alt={altText}
           kind={kind}
           copyMarkdown={copyMarkdown}
