@@ -88,6 +88,55 @@ it.effect("resolves the compact command after activation, not while the server s
   }),
 );
 
+it.effect("a reclaim pass shrinks the database file", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const config = yield* ServerConfig.ServerConfig;
+    yield* Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const storage = yield* DatabaseStorage.DatabaseStorage;
+      const fileBytes = Effect.gen(function* () {
+        // SQLite reports busy at once, without waiting, while the checkpoint worker is mid-checkpoint.
+        yield* sql<{ readonly busy: number }>`PRAGMA wal_checkpoint(TRUNCATE)`.pipe(
+          Effect.repeat({ while: (rows) => rows[0]?.busy !== 0, times: 1_000 }),
+        );
+        return Number((yield* fs.stat(config.dbPath)).size);
+      });
+      yield* sql`CREATE TABLE discarded (value BLOB)`;
+      yield* sql`INSERT INTO discarded VALUES (zeroblob(2097152))`;
+      yield* sql`DROP TABLE discarded`;
+      const free = yield* freePages;
+      assert.isAbove(free, 2 * DatabaseStorage.RECLAIM_PAGES_PER_STATEMENT);
+      const pageCount = sql<{ readonly page_count: number }>`PRAGMA page_count`.pipe(
+        Effect.map((rows) => rows[0]?.page_count ?? 0),
+      );
+      const pagesBefore = yield* pageCount;
+      const before = yield* fileBytes;
+
+      yield* storage.reclaim;
+
+      assert.equal(yield* freePages, 0);
+      // Moving pages can also release a pointer-map page.
+      assert.isAtLeast(pagesBefore - (yield* pageCount), free);
+      const pageSize = (yield* sql<{ readonly page_size: number }>`PRAGMA page_size`)[0]!.page_size;
+      assert.isAtLeast(before - (yield* fileBytes), free * pageSize);
+    }).pipe(
+      Effect.provide(
+        DatabaseStorage.layer.pipe(
+          Layer.provide(ProjectionMaintenance.layer),
+          Layer.provideMerge(Sqlite.layerFromPath(config.dbPath)),
+        ),
+      ),
+    );
+  }).pipe(
+    Effect.provide(
+      ServerConfig.layerTest(process.cwd(), { prefix: "database-storage-file-" }).pipe(
+        Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+      ),
+    ),
+  ),
+);
+
 const compactionLayer = (
   pruneEventStore: ProjectionMaintenance.ProjectionMaintenanceV2["Service"]["pruneEventStore"],
 ) =>

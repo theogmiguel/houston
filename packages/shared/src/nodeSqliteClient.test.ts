@@ -105,6 +105,29 @@ layer("NodeSqliteClient", (it) => {
     }),
   );
 
+  it.effect("steps a column-less PRAGMA to completion", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const freePages = Effect.map(
+        sql<{ readonly freelist_count: number }>`PRAGMA freelist_count`,
+        (rows) => rows[0]?.freelist_count ?? 0,
+      );
+      yield* sql`PRAGMA auto_vacuum = INCREMENTAL`;
+      yield* sql`VACUUM`;
+      yield* sql`CREATE TABLE discarded (value BLOB)`;
+      yield* sql`INSERT INTO discarded VALUES (zeroblob(262144))`;
+      yield* sql`DROP TABLE discarded`;
+      const before = yield* freePages;
+      assert.isAbove(before, 16);
+
+      // incremental_vacuum frees one page per step; a single step would leave 15 of these.
+      yield* sql`PRAGMA incremental_vacuum(16)`;
+      assert.equal(yield* freePages, before - 16);
+      yield* sql.unsafe("PRAGMA incremental_vacuum(16)");
+      assert.equal(yield* freePages, before - 32);
+    }),
+  );
+
   it.effect("retries preparing a query after the missing schema becomes available", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
