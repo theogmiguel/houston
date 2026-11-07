@@ -366,7 +366,8 @@ const make = Effect.gen(function* () {
 export const layer = Layer.effect(HoustonSlackStore, make);
 
 const TICK = Duration.seconds(5);
-// Without Slack a tick only finds it off, or Houston-side work its task changes also wake.
+// Without Slack a tick only finds it off, or Houston-side work its task changes also wake; the
+// fallback bounds a missed wake to a minute.
 const IDLE_TICK = Duration.seconds(60);
 
 /**
