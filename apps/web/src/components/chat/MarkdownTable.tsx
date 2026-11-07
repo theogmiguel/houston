@@ -1,5 +1,7 @@
 import { Check, Copy } from "lucide";
-import { useRef, type ComponentProps } from "react";
+import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
+
+import { observeResize } from "~/lib/observeResize";
 
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import {
@@ -12,6 +14,40 @@ import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { ScrollArea } from "../ui/scroll-area";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { reportMarkdownActionFailure } from "./markdownActionFailure";
+
+/**
+ * Base UI's ScrollArea reads four layout sizes per instance as it mounts, and most tables fit
+ * their lane. A table gets one only once a resize observation finds it wider than the lane.
+ */
+function TableScroll({ children }: { children: ReactNode }) {
+  const laneRef = useRef<HTMLDivElement | null>(null);
+  const [overflows, setOverflows] = useState(false);
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- observes the table's and the lane's widths to swap in the scroll area before paint
+  useEffect(() => {
+    const lane = laneRef.current;
+    const table = lane?.querySelector("table");
+    if (overflows || !lane || !table) return;
+    const widths = new Map<Element, number>();
+    return observeResize([lane, table], (entries) => {
+      for (const entry of entries) {
+        widths.set(entry.target, entry.borderBoxSize[0]?.inlineSize ?? entry.contentRect.width);
+      }
+      if ((widths.get(table) ?? 0) > (widths.get(lane) ?? Infinity) + 0.5) setOverflows(true);
+    });
+  }, [overflows]);
+  if (overflows) {
+    return (
+      <ScrollArea radius="none" chainVerticalScroll scrollFade className="w-full max-w-full">
+        {children}
+      </ScrollArea>
+    );
+  }
+  return (
+    <div ref={laneRef} className="w-full max-w-full overflow-x-auto">
+      {children}
+    </div>
+  );
+}
 
 export function MarkdownTable({ children, ...props }: ComponentProps<"table">) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -35,9 +71,9 @@ export function MarkdownTable({ children, ...props }: ComponentProps<"table">) {
 
   return (
     <div ref={containerRef} className="chat-markdown-table-container">
-      <ScrollArea radius="none" chainVerticalScroll scrollFade className="w-full max-w-full">
+      <TableScroll>
         <table {...props}>{children}</table>
-      </ScrollArea>
+      </TableScroll>
       {/* Stays within the row's px-1: the chat lane clips sideways overflow. */}
       <div className="mt-0.5 -mx-1 flex items-center justify-end select-none">
         <Menu>
