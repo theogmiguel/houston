@@ -12,6 +12,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as ServerConfig from "../config.ts";
 import * as ProjectionMaintenance from "../orchestration-v2/ProjectionMaintenance.ts";
 import * as DatabaseStorage from "./DatabaseStorage.ts";
+import { runMigrations } from "./Migrations.ts";
 import * as Sqlite from "./Sqlite.ts";
 
 const freePages = Effect.map(
@@ -111,6 +112,86 @@ it.effect("remembers completion only after the paced pass finishes", () =>
   }).pipe(
     Effect.provide(
       testConfig.pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+    ),
+  ),
+);
+
+it.effect("the compaction pass merges the message search index", () =>
+  Effect.gen(function* () {
+    yield* TestClock.setTime(startupTime);
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const config = yield* ServerConfig.ServerConfig;
+    const timestampPath = path.join(path.dirname(config.dbPath), "compacted-at");
+    const sql = yield* SqlClient.SqlClient;
+    yield* runMigrations();
+    // One transaction per finished message, so each adds an index segment.
+    for (let n = 0; n < 40; n++) {
+      yield* sql`
+        INSERT INTO orchestration_v2_projection_messages (
+          message_id, thread_id, run_id, node_id, role, streaming, created_at, updated_at, payload_json
+        )
+        VALUES (
+          ${`message-${n}`}, 'thread-1', NULL, NULL, 'assistant', 0,
+          '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z', ${JSON.stringify({ text: `needle ${n}` })}
+        )
+      `;
+    }
+    // FTS5 keys each segment page by (segment id << 37) + page; ids from 2^16 hold tombstones.
+    const segments = Effect.map(
+      sql<{ readonly n: number }>`
+        SELECT COUNT(DISTINCT id >> 37) AS n FROM orchestration_v2_message_search_data
+        WHERE id >= (1 << 37) AND (id >> 37) < 65536
+      `,
+      (rows) => rows[0]?.n ?? 0,
+    );
+    const before = yield* segments;
+    assert.isAbove(before, 4);
+
+    const timestampWritten = yield* Deferred.make<void>();
+    yield* Effect.gen(function* () {
+      yield* DatabaseStorage.DatabaseStorage;
+      yield* TestClock.adjust(minute);
+      yield* Deferred.await(timestampWritten);
+    }).pipe(
+      Effect.provide(
+        DatabaseStorage.layer.pipe(
+          Layer.provide(
+            Layer.succeed(ProjectionMaintenance.ProjectionMaintenanceV2, {
+              pruneEventStore: () => Effect.succeed(emptyCompaction),
+            }),
+          ),
+        ),
+      ),
+      Effect.provideService(FileSystem.FileSystem, {
+        ...fs,
+        writeFileString: (file, content, options) =>
+          fs
+            .writeFileString(file, content, options)
+            .pipe(
+              Effect.ensuring(
+                file === timestampPath
+                  ? Deferred.succeed(timestampWritten, undefined)
+                  : Effect.void,
+              ),
+            ),
+      }),
+    );
+
+    assert.isBelow(yield* segments, before);
+    const found = yield* sql`
+      SELECT rowid FROM orchestration_v2_message_search
+      WHERE orchestration_v2_message_search MATCH '"needle"'
+    `;
+    assert.equal(found.length, 40);
+  }).pipe(
+    Effect.provide(
+      Sqlite.layerMemory.pipe(
+        Layer.provideMerge(
+          ServerConfig.layerTest(process.cwd(), { prefix: "database-storage-merge-" }),
+        ),
+        Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+      ),
     ),
   ),
 );
