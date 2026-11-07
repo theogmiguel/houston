@@ -57,8 +57,26 @@ describe("splitMarkdownBlocks", () => {
     ":::note\n\ncontent\n\n:::",
     "$$\na\n\nb\n$$",
     "a\r\n\r\nb",
+    "See [the docs][1].\n\n> [1]: https://example.com/docs",
+    "- ![logo][img]\n\n- [img]: https://example.com/a.png",
+    "See [foo\nbar] now.\n\n[foo\nbar]: https://example.com/fb",
+    "Start <b>bold\n\nstill bold</b> end",
+    "Start <!-- a\n\nb --> end",
+    "- a\n\n  ```\n  x\n\ny <em>open\n\nz</em>",
   ])("keeps text with document-wide syntax whole: %j", (text) => {
     expect(splitMarkdownBlocks(text)).toBeNull();
+  });
+
+  it("splits around inline HTML that is shown as text, and around HTML in a code fence", () => {
+    expect(splitMarkdownBlocks("Start <b>bold\n\nstill bold</b> end", false)).toEqual([
+      "Start <b>bold\n\n",
+      "still bold</b> end",
+    ]);
+    expect(splitMarkdownBlocks("a\n\n```html\nx <b>y\n\nz</b>\n```\n\nb")).toEqual([
+      "a\n\n",
+      "```html\nx <b>y\n\nz</b>\n```\n\n",
+      "b",
+    ]);
   });
 });
 
@@ -74,6 +92,7 @@ describe("headingIdsMayCollide", () => {
     ["> ## Quoted\n\n- ## Listed\n\n## Quoted", true],
     ["## One\n\n## Two\n\n### Three", false],
     ["```sh\n# install\n```\n\n```sh\n# install\n```\n\n## Install steps", false],
+    ["## Setup\n\nText\n\n```md\n```js\nx\n```\n\n## Setup", true],
     ["No headings at all.\n\n---\n\nAfter a break.", false],
   ])("%j: %s", (text, collides) => {
     expect(headingIdsMayCollide(text)).toBe(collides);

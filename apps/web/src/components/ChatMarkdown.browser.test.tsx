@@ -300,6 +300,17 @@ describe("ChatMarkdown finished blocks", () => {
     "# Plan\n\n## Steps\n\n1. first `src/a.ts`\n2. second\n\n- [ ] open task\n- [x] done task\n\n### Notes\n\n> [!NOTE]\n> keep\n\n| a | b |\n| - | - |\n| [x](src/x.ts) | 2 |\n\n```ts\nconst a = 1;\n```\n\nThe end, see https://example.com.",
     "## Setup\n\nText\n\n## Setup\n\nMore text",
     "Intro\n\n3. starts at three\n4. four\n\n---\n\n* star list\n\n  continued",
+    // A definition inside a container, or with a label across lines, still defines the document's.
+    "See [the docs][1] for details.\n\n> [1]: https://example.com/docs",
+    "Logo: ![logo][img]\n\n> [img]: https://example.com/a.png",
+    "See [foo\nbar] now.\n\n[foo\nbar]: https://example.com/fb",
+    // Raw inline HTML left open in one paragraph continues into the next.
+    "Start <b>bold\n\nstill bold</b> end",
+    "Start <em>bold\n\nstill bold</em> end",
+    "Start <code>bold\n\nstill bold</code> end",
+    'Read <a href="https://example.com">the guide\n\nand more</a> after.',
+    // A fence line with an info string is content, not a closer, so it hides no heading.
+    "## Setup\n\nText\n\n```md\n```js\nx\n```\n\n## Setup\n\nMore",
   ])("renders a finished message as one tree renders it: %j", async (text) => {
     setup();
     await using split = await renderText(text);

@@ -1851,7 +1851,7 @@ function ChatMarkdown({
     extraRemarkPlugins.length === 0 &&
     !props.onTaskListChange &&
     (props.isStreaming === true || !headingIdsMayCollide(text))
-      ? splitMarkdownBlocks(text)
+      ? splitMarkdownBlocks(text, parseRawHtml)
       : null;
   const { componentState, handleCopy, markdownRef, localMediaPreview, closeLocalMediaPreview } =
     useChatMarkdownState({ text, inline, blocks: splitBlocks, ...props });
