@@ -19,6 +19,9 @@ import { forkParked } from "../serverActivation.ts";
 
 // Bound each reclaim pass to one minute of churn.
 const RECLAIM_PAGES_PER_PASS = 1024;
+// Each statement commits on its own: 32 pages write a third of the WAL of 32 single-page commits
+// and hold the writer for about 2 ms.
+export const RECLAIM_PAGES_PER_STATEMENT = 32;
 const COMPACTION_INTERVAL = Duration.hours(6);
 
 export class DatabaseStorage extends Context.Service<
@@ -84,11 +87,11 @@ const make = Effect.gen(function* () {
 
   const reclaim = Effect.gen(function* () {
     if (!(yield* readLayout).incrementalVacuum) return;
-    // The driver steps once per statement; incremental_vacuum frees one page per step. Yield between pages.
-    for (let page = 0; page < RECLAIM_PAGES_PER_PASS; page++) {
+    // Yield between statements so other writers interleave.
+    for (let page = 0; page < RECLAIM_PAGES_PER_PASS; page += RECLAIM_PAGES_PER_STATEMENT) {
       const free = yield* sql<{ readonly freelist_count: number }>`PRAGMA freelist_count`;
       if ((free[0]?.freelist_count ?? 0) === 0) break;
-      yield* sql`PRAGMA incremental_vacuum(1)`;
+      yield* sql.unsafe(`PRAGMA incremental_vacuum(${RECLAIM_PAGES_PER_STATEMENT})`);
       yield* Effect.yieldNow;
     }
   }).pipe(

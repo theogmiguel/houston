@@ -51,6 +51,47 @@ it.effect("a new database returns freed pages online without losing data", () =>
   }).pipe(Effect.provide(storageLayer(testConfig))),
 );
 
+it.effect("a reclaim pass shrinks the database file", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const config = yield* ServerConfig.ServerConfig;
+    yield* Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const storage = yield* DatabaseStorage.DatabaseStorage;
+      const fileBytes = Effect.gen(function* () {
+        yield* sql`PRAGMA wal_checkpoint(TRUNCATE)`;
+        return Number((yield* fs.stat(config.dbPath)).size);
+      });
+      yield* sql`CREATE TABLE discarded (value BLOB)`;
+      yield* sql`INSERT INTO discarded VALUES (zeroblob(2097152))`;
+      yield* sql`DROP TABLE discarded`;
+      const free = yield* freePages;
+      assert.isAbove(free, 2 * DatabaseStorage.RECLAIM_PAGES_PER_STATEMENT);
+      const before = yield* fileBytes;
+
+      yield* storage.reclaim;
+
+      assert.equal(yield* freePages, 0);
+      const pageSize = (yield* sql<{ readonly page_size: number }>`PRAGMA page_size`)[0]!.page_size;
+      // Moving pages can also release a pointer-map page.
+      assert.isAtLeast(before - (yield* fileBytes), free * pageSize);
+    }).pipe(
+      Effect.provide(
+        DatabaseStorage.layer.pipe(
+          Layer.provide(ProjectionMaintenance.layer),
+          Layer.provideMerge(Sqlite.layerFromPath(config.dbPath)),
+        ),
+      ),
+    );
+  }).pipe(
+    Effect.provide(
+      ServerConfig.layerTest(process.cwd(), { prefix: "database-storage-file-" }).pipe(
+        Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+      ),
+    ),
+  ),
+);
+
 const compactionLayer = (
   pruneEventStore: ProjectionMaintenance.ProjectionMaintenanceV2["Service"]["pruneEventStore"],
 ) =>
