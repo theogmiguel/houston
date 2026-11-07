@@ -1141,20 +1141,23 @@ describe("MessagesTimeline work rows ink", () => {
       (button) => /^Worked for/.test(button.textContent ?? ""),
     );
     if (heading) await click(heading);
-    const reasoning = [...screen.container.querySelectorAll<HTMLElement>("p span")].find((node) =>
-      node.textContent?.includes("I need to check whether"),
-    );
-    expect(reasoning, screen.text()).toBeDefined();
-    const tool = [...screen.container.querySelectorAll<HTMLElement>("p span")].find(
-      (node) => node.textContent === "Ran",
-    );
-    expect(tool, screen.text()).toBeDefined();
+    // The expanded group renders after the click settles; wait for both rows before measuring.
+    const { reasoning, tool } = await vi.waitFor(() => {
+      const spans = [...screen.container.querySelectorAll<HTMLElement>("p span")];
+      const found = {
+        reasoning: spans.find((node) => node.textContent?.includes("I need to check whether")),
+        tool: spans.find((node) => node.textContent === "Ran"),
+      };
+      expect(found.reasoning, screen.text()).toBeDefined();
+      expect(found.tool, screen.text()).toBeDefined();
+      return found as { reasoning: HTMLElement; tool: HTMLElement };
+    });
     const probe = document.createElement("span");
     probe.style.color = "var(--houston)";
     screen.container.append(probe);
     const muted = getComputedStyle(probe).color;
-    expect(getComputedStyle(reasoning!).color).toBe(muted);
-    expect(getComputedStyle(tool!).color).not.toBe(muted);
+    expect(getComputedStyle(reasoning).color).toBe(muted);
+    expect(getComputedStyle(tool).color).not.toBe(muted);
   });
 });
 

@@ -90,18 +90,10 @@ export const RAIL_SHORTCUT_ICON_REST_CLS = "text-secondary-label";
 export const RAIL_SHORTCUT_COUNT_CLS =
   "absolute -top-1.5 -right-2 min-w-3 rounded-full bg-sidebar-row-active px-0.5 text-center text-3xs leading-none font-semibold text-sidebar-foreground tabular-nums";
 
-/**
- * Hover actions of a thread row: the cluster repaints the row's surface (`--row-bg`, set on the row)
- * over the rail colour so nothing shows through it, and a 16px `::before` fades the title out into
- * it. The row's own tint sits under the fade, so the fade ends in the rail colour plus one tint.
- */
-export const SIDEBAR_ROW_ACTION_BACKDROP_CLS =
-  "bg-sidebar bg-[linear-gradient(var(--row-bg),var(--row-bg))] before:pointer-events-none before:absolute before:inset-y-0 before:right-full before:w-4 before:bg-[linear-gradient(to_right,transparent,var(--row-bg)),linear-gradient(to_right,transparent,var(--color-sidebar))] before:content-['']";
-
-/** A thread row's surface per state; `--row-bg` is what the hover actions repaint (see above). */
+/** A thread row's surface per state. */
 export const SIDEBAR_ROW_SURFACE_CLS = {
-  selected: "bg-(--row-current) [--row-bg:var(--row-current)]",
-  searchHighlight: "bg-(--sidebar-row-active) [--row-bg:var(--sidebar-row-active)]",
-  active: "bg-sidebar-row-selected [--row-bg:var(--sidebar-row-selected)]",
-  rest: "[--row-bg:var(--sidebar-row-hover)] hover:bg-(--sidebar-row-hover)",
+  selected: "bg-(--row-current)",
+  searchHighlight: "bg-(--sidebar-row-active)",
+  active: "bg-sidebar-row-selected",
+  rest: "hover:bg-(--sidebar-row-hover)",
 } as const;

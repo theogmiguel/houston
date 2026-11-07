@@ -58,7 +58,7 @@ it("draws a work row as quiet text: no border, no resting fill, a fill on hover 
   await expect.poll(() => getComputedStyle(row).backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
 });
 
-it("leaves a message-sized gap below the last row of an expanded group", async () => {
+it("leaves the in-turn gap below the last row of an expanded group", async () => {
   await using screen = await render(
     <div>
       <WorkLogBlock layout="group-content" continues>
@@ -73,5 +73,5 @@ it("leaves a message-sized gap below the last row of an expanded group", async (
   const gap = (label: string) =>
     getComputedStyle(screen.getByText(label).element().parentElement!).paddingBottom;
   expect(gap("inside")).toBe("0px");
-  expect(gap("last")).toBe("16px");
+  expect(gap("last")).toBe("12px");
 });

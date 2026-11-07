@@ -208,7 +208,6 @@ import { MOTION_FEEDBACK, MOTION_FEEDBACK_OPACITY } from "../ui/motion-recipes";
 import {
   ROW_SCROLL_MARGIN_CLS,
   ROW_TITLE_TEXT_CLS,
-  SIDEBAR_ROW_ACTION_BACKDROP_CLS,
   SIDEBAR_ROW_SURFACE_CLS,
 } from "../ui/sidebar-rail-recipes";
 import { isThreadRoutePathname, parseThreadRoutePathname } from "../../threadRoutes";
@@ -2298,9 +2297,10 @@ function useThreadBranch(thread: EnvironmentThreadShell): {
   };
 }
 
-// The actions always sit out of flow over the row's right meta column, so showing them never
-// narrows the title; their own surface covers the title's tail where they are wider than the age.
-const ROW_ACTIONS_OVERLAY = `absolute top-0 right-0 rounded-(--r-badge) ${SIDEBAR_ROW_ACTION_BACKDROP_CLS}`;
+// Positioned so the actions paint above the faded time; out of flow until the row is hovered or focused.
+const ROW_ACTIONS_IN_FLOW = "relative";
+const ROW_ACTIONS_OUT_OF_FLOW =
+  "absolute top-0 right-0 group-hover/th:relative group-has-[:focus-visible]/th:relative";
 
 export function ThreadCard({
   gridId,
@@ -2548,7 +2548,6 @@ export function ThreadCard({
               "cursor-pointer",
               dragging && "opacity-50",
               fileDrop.over && "bg-(--accent-muted) ring-1 ring-(--accent-ink) ring-inset",
-              // `--row-bg` is the surface the hover actions repaint under themselves.
               selected
                 ? SIDEBAR_ROW_SURFACE_CLS.selected
                 : searchHighlight.highlighted
@@ -2620,8 +2619,8 @@ export function ThreadCard({
             )}
             {/*
             The age and the hover actions share one grid cell at the title line's right edge, so ages
-            scan down one column whatever the row carries. The actions overlay that cell and fade in
-            over the age; the title keeps its width.
+            scan down one column whatever the row carries. Hidden actions leave the flow, so a resting
+            title runs up to the age; shown, they join it and the title truncates before them.
           */}
             <span className="relative ml-auto grid h-5 shrink-0 grid-rows-1 items-center justify-items-end">
               <span
@@ -2642,7 +2641,7 @@ export function ThreadCard({
                 className={cn(
                   "col-start-1 row-start-1 flex h-[22px] items-center gap-0.5",
                   MOTION_FEEDBACK_OPACITY,
-                  ROW_ACTIONS_OVERLAY,
+                  actionsVisible ? ROW_ACTIONS_IN_FLOW : ROW_ACTIONS_OUT_OF_FLOW,
                   actionsVisible ? ROW_ACTIONS_VISIBLE : ROW_ACTIONS_REVEAL,
                 )}
                 onMouseEnter={() => setActionsHovered(true)}

@@ -450,34 +450,3 @@ describe("sticky project heading", () => {
     }
   });
 });
-
-describe("row hover actions", () => {
-  it("repaint the row's hover surface and fade the title out under themselves", async () => {
-    resetTestState();
-    const sections = [section({ ungroupedThreads: manyThreads(3) })];
-    await using screen = await render(<CollapsibleSections sections={sections} />);
-    const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
-    const cluster = row.querySelector<HTMLElement>(
-      'button[aria-label="Close thread"]',
-    )!.parentElement!;
-    expect(getComputedStyle(cluster).opacity).toBe("0");
-
-    await userEvent.hover(row);
-    await expect.poll(() => getComputedStyle(cluster).opacity).toBe("1");
-
-    // The row's hover surface is repainted over the rail colour under the cluster.
-    const rowSurface = getComputedStyle(row).backgroundColor;
-    expect(rowSurface).not.toBe("rgba(0, 0, 0, 0)");
-    const clusterStyle = getComputedStyle(cluster);
-    expect(clusterStyle.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
-    expect(clusterStyle.backgroundImage).toContain(rowSurface);
-
-    // A 16px fade ends in that surface, left of the cluster, over the end of the title.
-    const fade = getComputedStyle(cluster, "::before");
-    expect(fade.width).toBe("16px");
-    expect(fade.backgroundImage).toContain("linear-gradient");
-    expect(fade.backgroundImage).toContain(rowSurface);
-    const title = row.querySelector<HTMLElement>("[data-card-open]")!.getBoundingClientRect();
-    expect(cluster.getBoundingClientRect().left - 16).toBeLessThan(title.right);
-  });
-});

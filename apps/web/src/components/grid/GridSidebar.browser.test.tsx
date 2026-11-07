@@ -501,31 +501,6 @@ describe("ThreadCard layout", () => {
     }
   });
 
-  it("keeps the title's width when the hover actions show, overlaying the right meta column", async () => {
-    const longTitle = thread({ title: "T".repeat(200) });
-    const rows = [
-      { label: "active", options: {}, actionsName: /Thread actions for/ },
-      { label: "shelf", options: { shelf: "settled" as const }, actionsName: "Reopen thread" },
-    ];
-    for (const { label, options, actionsName } of rows) {
-      await using screen = await render(
-        <div style={{ width: 295 }}>{card(longTitle, { timeLabel: "6m", ...options })}</div>,
-      );
-      const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
-      const restingWidth = titleOf(screen).getBoundingClientRect().width;
-      await userEvent.hover(row);
-      const actions = screen.getByRole("button", { name: actionsName });
-      await expect.element(actions).toBeVisible();
-      const reveal = actions.element().closest("span")!;
-      await vi.waitFor(() => expect(getComputedStyle(reveal).opacity).toBe("1"));
-
-      expect(getComputedStyle(reveal).position, label).toBe("absolute");
-      expect(titleOf(screen).getBoundingClientRect().width, label).toBe(restingWidth);
-      const rowBox = row.getBoundingClientRect();
-      expect(reveal.getBoundingClientRect().right, label).toBeLessThanOrEqual(rowBox.right);
-    }
-  });
-
   it("starts a thread row at the rail's own inset", async () => {
     await using screen = await render(card(thread()));
     const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
