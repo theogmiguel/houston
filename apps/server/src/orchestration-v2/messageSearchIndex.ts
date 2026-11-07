@@ -126,3 +126,44 @@ export const rebuildMessageSearch = Effect.fn("MessageSearchIndex.rebuild")(func
     }),
   );
 });
+
+// Each merge step writes about this many FTS pages, holding the writer for a few milliseconds.
+const MESSAGE_SEARCH_MERGE_PAGES = 64;
+
+/**
+ * Merges the search index's segments in bounded steps, so queries read fewer of them. Only
+ * positive merges: a negative one moves every segment to one level, and a later insert can then
+ * crisis-merge the result in one statement. `betweenSteps` paces the work.
+ */
+export const mergeMessageSearch = Effect.fn("MessageSearchIndex.merge")(function* (
+  sql: SqlClient.SqlClient,
+  options: { readonly maxSteps: number; readonly betweenSteps: Effect.Effect<void> },
+) {
+  const index = yield* sql`
+    SELECT 1 FROM sqlite_master WHERE name = 'orchestration_v2_message_search'
+  `;
+  if (index.length === 0) return 0;
+  // Persistent: positive merges then take any two segments of a level, not four.
+  yield* sql`
+    INSERT INTO orchestration_v2_message_search (orchestration_v2_message_search, rank)
+    VALUES ('usermerge', 2)
+  `;
+  const changes = sql<{ readonly n: number }>`SELECT total_changes() AS n`;
+  // FTS5 reports a merge that found nothing to do as fewer than two changes.
+  const mergeStep = sql.withTransaction(
+    Effect.gen(function* () {
+      const before = (yield* changes)[0]?.n ?? 0;
+      yield* sql`
+        INSERT INTO orchestration_v2_message_search (orchestration_v2_message_search, rank)
+        VALUES ('merge', ${MESSAGE_SEARCH_MERGE_PAGES})
+      `;
+      return ((yield* changes)[0]?.n ?? 0) - before >= 2;
+    }),
+  );
+  let steps = 0;
+  while (steps < options.maxSteps && (yield* mergeStep)) {
+    steps++;
+    yield* options.betweenSteps;
+  }
+  return steps;
+});
