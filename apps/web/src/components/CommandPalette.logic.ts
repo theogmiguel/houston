@@ -35,7 +35,7 @@ import { formatRelativeTimeLabel } from "../timestampFormat";
 import { type Project, type SidebarThreadSummary, type Thread } from "../types";
 import { isSidebarHiddenThread } from "./Sidebar.logic";
 
-export const RECENT_THREAD_LIMIT = 12;
+export const RECENT_THREAD_LIMIT = 5;
 export const ITEM_ICON_CLASS = "size-4 text-icon-muted";
 export const ADDON_ICON_CLASS = "size-4";
 
@@ -587,7 +587,9 @@ export function filterCommandPaletteGroups(input: {
   if (isActionsFilter) {
     baseGroups = baseGroups.filter((group) => group.value === "actions");
   } else if (!input.isInSubmenu) {
-    baseGroups = baseGroups.filter((group) => group.value !== "recent-threads");
+    baseGroups = baseGroups.filter(
+      (group) => group.value !== "recent-threads" && group.value !== "projects",
+    );
   }
 
   const searchableGroups = [...baseGroups];
@@ -764,20 +766,31 @@ export function getCommandPaletteMode(input: {
   return input.isBrowsing ? "root-browse" : "root";
 }
 
+/** An action that is not offered is left out, never dimmed in the list. */
+export function availablePaletteActions<
+  TItem extends CommandPaletteActionItem | CommandPaletteSubmenuItem,
+>(items: ReadonlyArray<TItem>): TItem[] {
+  return items.filter((item) => !item.disabled);
+}
+
 export function buildRootGroups(input: {
   actionItems: ReadonlyArray<CommandPaletteActionItem | CommandPaletteSubmenuItem>;
+  projectItems: ReadonlyArray<CommandPaletteActionItem>;
   recentThreadItems: ReadonlyArray<CommandPaletteActionItem>;
 }): CommandPaletteGroup[] {
   const groups: CommandPaletteGroup[] = [];
-  if (input.actionItems.length > 0) {
-    groups.push({ value: "actions", label: "Actions", items: input.actionItems });
-  }
   if (input.recentThreadItems.length > 0) {
     groups.push({
       value: "recent-threads",
-      label: "Recent Threads",
+      label: "Recent threads",
       items: input.recentThreadItems,
     });
+  }
+  if (input.projectItems.length > 0) {
+    groups.push({ value: "projects", label: "Projects", items: input.projectItems });
+  }
+  if (input.actionItems.length > 0) {
+    groups.push({ value: "actions", label: "Actions", items: input.actionItems });
   }
   return groups;
 }

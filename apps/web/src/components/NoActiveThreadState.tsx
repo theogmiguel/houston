@@ -5,7 +5,7 @@ import { WorkspacePageHeader } from "./WorkspacePageHeader";
 
 export function NoActiveThreadState() {
   return (
-    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
+    <SidebarInset className="min-h-0 overflow-hidden overscroll-y-none">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
         <WorkspacePageHeader desktop={isDesktopHost} className="border-b border-border">
           {isDesktopHost ? (

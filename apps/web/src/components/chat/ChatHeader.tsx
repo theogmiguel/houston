@@ -10,7 +10,13 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@houston-app/client-runtime/state/runtime";
-import { ChevronDownIcon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  ChevronRightIcon,
+  CornerUpLeftIcon,
+  FolderGit2Icon,
+  GitBranchIcon,
+} from "lucide-react";
 import {
   memo,
   useEffect,
@@ -19,7 +25,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
-import { isTrailingDoubleClick } from "../Sidebar.logic";
+import { isTrailingDoubleClick, type ThreadStatusPill } from "../Sidebar.logic";
 import { Badge } from "../ui/badge";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
@@ -30,16 +36,45 @@ import { readLocalApi } from "~/localApi";
 import { threadEnvironment } from "../../state/threads";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
+import { DiffStatLabel, hasNonZeroStat } from "./DiffStatLabel";
+import { SidebarStatusGlyph } from "../sidebar/SidebarStatusGlyph";
+import { threadStateTextClass } from "../ui/thread-state-glyph";
 import {
-  WorkspaceBreadcrumb,
-  WorkspaceBreadcrumbItem,
-  WorkspaceBreadcrumbSeparator,
-  WorkspaceBreadcrumbText,
-} from "../WorkspaceBreadcrumb";
-import { observeResize } from "~/lib/observeResize";
-import { cn } from "~/lib/utils";
+  THREAD_HEADER_ROOT_CLS,
+  THREAD_META_BRANCH_CLS,
+  THREAD_META_CARET_CLS,
+  THREAD_META_DIFF_BUTTON_CLS,
+  THREAD_META_DIVIDER_CLS,
+  THREAD_META_LINK_CLS,
+  THREAD_META_MODEL_CLS,
+  THREAD_META_MODEL_GROUP_CLS,
+  THREAD_META_MODEL_NAME_CLS,
+  THREAD_META_PROJECT_CLS,
+  THREAD_META_ROW_CLS,
+  THREAD_META_STATUS_CLS,
+  THREAD_TITLE_BUTTON_CLS,
+  THREAD_TITLE_CHEVRON_CLS,
+  THREAD_TITLE_GROUP_CLS,
+  THREAD_TITLE_INPUT_CLS,
+  THREAD_TITLE_ROW_CLS,
+  THREAD_TITLE_TEXT_CLS,
+} from "../ui/thread-header-recipes";
+import { ThreadRowPullRequestBadge } from "../grid/ThreadRowPullRequestBadge";
+import type { RowPullRequest } from "~/grid/sidebar";
 import { textDirection } from "~/textDirection";
-import { useClientSettings } from "../../hooks/useSettings";
+
+/** Facts the thread header states beside the title. Absent values stay unrendered. */
+export interface ChatHeaderMeta {
+  readonly branch: string | null;
+  readonly checkoutLabel: string;
+  readonly status: ThreadStatusPill | null;
+  readonly pullRequest: RowPullRequest | null;
+  readonly pullRequestCount: number;
+  readonly diffTotals: { insertions: number; deletions: number } | null;
+  readonly providerLabel: string | null;
+  readonly modelLabel: string | null;
+  readonly onOpenChanges?: (() => void) | undefined;
+}
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -49,6 +84,7 @@ interface ChatHeaderProps {
   isServerThread: boolean;
   activeProject: EnvironmentProject | null;
   parentThreadLink: { threadId: ThreadId; title: string } | null;
+  meta?: ChatHeaderMeta | undefined;
   onOpenThread: (threadId: ThreadId) => void;
   onOpenProjectSettings?: (() => void) | undefined;
   onFindInThread?: ((threadRef: ScopedThreadRef) => void) | undefined;
@@ -74,14 +110,12 @@ export const ChatHeader = memo(function ChatHeader({
   isServerThread,
   activeProject,
   parentThreadLink,
+  meta,
   onOpenThread,
   onOpenProjectSettings,
   onFindInThread,
 }: ChatHeaderProps) {
   const activeProjectName = activeProject?.isScratch ? "No project" : activeProject?.title;
-  const interfaceFont = useClientSettings((settings) => settings.fontFamilySans);
-  const breadcrumbContainerRef = useRef<HTMLDivElement>(null);
-  const [collapseParentTitle, setCollapseParentTitle] = useState(false);
   const activeThreadRef = scopeThreadRef(activeThreadEnvironmentId, activeThreadId);
   const canOperateThread = useEnvironmentScope(
     activeThreadEnvironmentId,
@@ -109,47 +143,6 @@ export const ChatHeader = memo(function ChatHeader({
     renaming.environmentId === activeThreadEnvironmentId
       ? renaming.title
       : null;
-  const isRenamingTitle = renamingTitle !== null;
-  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- measures the breadcrumb list DOM via ResizeObserver, a frame and font loads to collapse the parent title
-  useEffect(() => {
-    const list = breadcrumbContainerRef.current?.querySelector("ol");
-    if (!list || !parentThreadLink) return;
-    const measure = () => {
-      const gap = Number.parseFloat(getComputedStyle(list).columnGap) || 0;
-      const width = Array.from(list.children).reduce(
-        (total, item) => {
-          const label = item.querySelector('[data-slot="workspace-breadcrumb-text"]');
-          const ellipsis = item.querySelector("[data-parent-breadcrumb-ellipsis]");
-          return (
-            total +
-            (item.firstElementChild?.getBoundingClientRect().width ?? 0) +
-            (label && getComputedStyle(label).maxWidth === "none"
-              ? label.scrollWidth - label.clientWidth
-              : 0) -
-            (ellipsis?.getBoundingClientRect().width ?? 0)
-          );
-        },
-        gap * (list.children.length - 1),
-      );
-      setCollapseParentTitle(width > list.clientWidth);
-    };
-    measure();
-    const frame = requestAnimationFrame(measure);
-    document.fonts.addEventListener("loadingdone", measure);
-    const stopObserving = observeResize(list, measure);
-    return () => {
-      cancelAnimationFrame(frame);
-      document.fonts.removeEventListener("loadingdone", measure);
-      stopObserving();
-    };
-  }, [
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Title, font and rename changes resize the breadcrumb text without resizing the list, so it re-measures.
-    activeProjectName,
-    activeThreadTitle,
-    parentThreadLink,
-    interfaceFont,
-    isRenamingTitle,
-  ]);
   const renameCommittedRef = useRef(false);
   const startRename = () => {
     if (
@@ -272,71 +265,15 @@ export const ChatHeader = memo(function ChatHeader({
     }
   };
   return (
-    <div
-      ref={breadcrumbContainerRef}
-      className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3"
-      onContextMenu={handleHeaderContextMenu}
-    >
-      <WorkspaceBreadcrumb
-        ariaLabel="Thread breadcrumb"
-        className="flex-1 overflow-clip [overflow-clip-margin:2px] [&_ol]:gap-1.5 [&_ol]:text-headline"
-      >
-        {activeProject ? (
-          <>
-            <WorkspaceBreadcrumbItem className="shrink font-normal text-secondary-foreground">
-              <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-muted-foreground">
-                <WorkspaceBreadcrumbText className="max-w-40">
-                  {activeProjectName}
-                </WorkspaceBreadcrumbText>
-              </span>
-            </WorkspaceBreadcrumbItem>
-            <WorkspaceBreadcrumbSeparator>
-              <WorkspaceBreadcrumbText>/</WorkspaceBreadcrumbText>
-            </WorkspaceBreadcrumbSeparator>
-          </>
-        ) : null}
-        {parentThreadLink ? (
-          <>
-            <WorkspaceBreadcrumbItem className="font-normal text-secondary-foreground">
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <button
-                      type="button"
-                      aria-label={`Open parent thread: ${parentThreadLink.title}`}
-                      onClick={() => onOpenThread(parentThreadLink.threadId)}
-                      className="inline-flex min-w-0 max-w-full cursor-pointer items-center rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                    />
-                  }
-                >
-                  <WorkspaceBreadcrumbText
-                    aria-hidden
-                    className={collapseParentTitle ? "w-0" : undefined}
-                  >
-                    {parentThreadLink.title}
-                  </WorkspaceBreadcrumbText>
-                  {collapseParentTitle ? (
-                    <span aria-hidden data-parent-breadcrumb-ellipsis>
-                      ...
-                    </span>
-                  ) : null}
-                </TooltipTrigger>
-                <TooltipPopup side="top">{parentThreadLink.title}</TooltipPopup>
-              </Tooltip>
-            </WorkspaceBreadcrumbItem>
-            <WorkspaceBreadcrumbSeparator>
-              <WorkspaceBreadcrumbText>/</WorkspaceBreadcrumbText>
-            </WorkspaceBreadcrumbSeparator>
-          </>
-        ) : null}
-        {/* 48rem keeps a long title cut with an ellipsis well short of the toolbar in a wide header. */}
-        <WorkspaceBreadcrumbItem current className="min-w-10 max-w-3xl flex-1">
+    <div className={THREAD_HEADER_ROOT_CLS} onContextMenu={handleHeaderContextMenu}>
+      <div className={THREAD_TITLE_ROW_CLS}>
+        <div className={THREAD_TITLE_GROUP_CLS}>
           {renamingTitle !== null ? (
             <input
               autoFocus
               dir="auto"
               aria-label="Thread title"
-              className="min-w-0 flex-1 rounded-sm bg-transparent text-headline font-medium text-foreground outline-none ring-1 ring-inset ring-ring/50 focus:ring-ring"
+              className={THREAD_TITLE_INPUT_CLS}
               defaultValue={renamingTitle}
               onBlur={(event) => {
                 if (renameCommittedRef.current) return;
@@ -364,20 +301,21 @@ export const ChatHeader = memo(function ChatHeader({
                     onClick={openMenuFromTitle}
                     onDoubleClick={canOperateThread ? handleTitleDoubleClick : undefined}
                     onBlur={cancelPendingTitleMenu}
-                    className="group/thread-title inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1 rounded-sm text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                    className={THREAD_TITLE_BUTTON_CLS}
                   />
                 }
               >
                 <h2
-                  className="min-w-0 text-headline font-medium"
+                  aria-label={activeThreadTitle}
+                  className={THREAD_TITLE_TEXT_CLS}
                   dir={textDirection(activeThreadTitle)}
                 >
-                  <WorkspaceBreadcrumbText>{activeThreadTitle}</WorkspaceBreadcrumbText>
+                  {activeThreadTitle}
                 </h2>
                 <ChevronDownIcon
                   aria-hidden
                   data-thread-title-chevron
-                  className="size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/thread-title:opacity-100 group-focus-visible/thread-title:opacity-100"
+                  className={THREAD_TITLE_CHEVRON_CLS}
                 />
               </TooltipTrigger>
               <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>
@@ -388,12 +326,12 @@ export const ChatHeader = memo(function ChatHeader({
                 render={
                   <h2
                     aria-label={activeThreadTitle}
-                    className="min-w-0 flex-1"
+                    className={THREAD_TITLE_TEXT_CLS}
                     dir={textDirection(activeThreadTitle)}
                   />
                 }
               >
-                <WorkspaceBreadcrumbText>{activeThreadTitle}</WorkspaceBreadcrumbText>
+                {activeThreadTitle}
               </TooltipTrigger>
               <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>
             </Tooltip>
@@ -408,9 +346,154 @@ export const ChatHeader = memo(function ChatHeader({
               </TooltipPopup>
             </Tooltip>
           ) : null}
-        </WorkspaceBreadcrumbItem>
-      </WorkspaceBreadcrumb>
-      <TaskThreadLink environmentId={activeThreadEnvironmentId} threadId={activeThreadId} />
+        </div>
+        <TaskThreadLink environmentId={activeThreadEnvironmentId} threadId={activeThreadId} />
+      </div>
+      <ThreadHeaderMeta
+        activeProjectName={activeProjectName ?? null}
+        meta={meta}
+        parentThreadLink={parentThreadLink}
+        threadRef={activeThreadRef}
+        onOpenThread={onOpenThread}
+      />
     </div>
   );
 });
+
+function ThreadHeaderMeta({
+  activeProjectName,
+  meta,
+  parentThreadLink,
+  threadRef,
+  onOpenThread,
+}: {
+  readonly activeProjectName: string | null;
+  readonly meta: ChatHeaderMeta | undefined;
+  readonly parentThreadLink: { threadId: ThreadId; title: string } | null;
+  readonly threadRef: ScopedThreadRef;
+  readonly onOpenThread: (threadId: ThreadId) => void;
+}) {
+  if (meta === undefined) return null;
+  const { branch, status, pullRequest, diffTotals, providerLabel, modelLabel } = meta;
+  const showDiff =
+    diffTotals !== null &&
+    hasNonZeroStat({ additions: diffTotals.insertions, deletions: diffTotals.deletions });
+  return (
+    <div data-thread-header-meta="" className={THREAD_META_ROW_CLS}>
+      {activeProjectName ? (
+        <Tooltip>
+          <TooltipTrigger render={<span className={THREAD_META_PROJECT_CLS} />}>
+            {activeProjectName}
+          </TooltipTrigger>
+          <TooltipPopup side="top">{activeProjectName}</TooltipPopup>
+        </Tooltip>
+      ) : null}
+      {activeProjectName && (branch !== null || meta.checkoutLabel.length > 0) ? (
+        <ChevronRightIcon aria-hidden className={THREAD_META_CARET_CLS} />
+      ) : null}
+      {parentThreadLink !== null ? (
+        <>
+          <MetaDivider />
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  aria-label={`Open parent thread: ${parentThreadLink.title}`}
+                  onClick={() => onOpenThread(parentThreadLink.threadId)}
+                  className={THREAD_META_LINK_CLS}
+                />
+              }
+            >
+              <CornerUpLeftIcon aria-hidden className="size-3 shrink-0" />
+              <span className="max-w-40 min-w-0 truncate">{parentThreadLink.title}</span>
+            </TooltipTrigger>
+            <TooltipPopup side="top">{parentThreadLink.title}</TooltipPopup>
+          </Tooltip>
+        </>
+      ) : null}
+      {branch !== null || meta.checkoutLabel.length > 0 ? (
+        <span className={THREAD_META_STATUS_CLS}>
+          {branch === null ? (
+            <FolderGit2Icon aria-hidden className="size-3 shrink-0" />
+          ) : meta.checkoutLabel === "Local checkout" ? (
+            <GitBranchIcon aria-hidden className="size-3 shrink-0" />
+          ) : (
+            <FolderGit2Icon aria-hidden className="size-3 shrink-0" />
+          )}
+          {branch !== null ? (
+            <Tooltip>
+              <TooltipTrigger render={<span className={THREAD_META_BRANCH_CLS} />}>
+                {branch}
+              </TooltipTrigger>
+              <TooltipPopup side="top">{branch}</TooltipPopup>
+            </Tooltip>
+          ) : null}
+          <span className="shrink-0">{meta.checkoutLabel}</span>
+        </span>
+      ) : null}
+      {status !== null ? (
+        <>
+          <MetaDivider />
+          <span className={THREAD_META_STATUS_CLS}>
+            <SidebarStatusGlyph state={status.state} label={status.label} />
+            <span className={threadStateTextClass(status.state)}>{status.label}</span>
+          </span>
+        </>
+      ) : null}
+      {pullRequest !== null ? (
+        <>
+          <MetaDivider />
+          <ThreadRowPullRequestBadge
+            threadRef={threadRef}
+            pullRequest={pullRequest}
+            pullRequestCount={meta.pullRequestCount}
+            onOpenThread={() => {}}
+          />
+        </>
+      ) : null}
+      {showDiff ? (
+        <>
+          <MetaDivider />
+          <button
+            type="button"
+            onClick={meta.onOpenChanges}
+            aria-label={`Open changes: ${diffTotals.insertions} additions, ${diffTotals.deletions} deletions`}
+            className={THREAD_META_DIFF_BUTTON_CLS}
+          >
+            <DiffStatLabel
+              additions={diffTotals.insertions}
+              deletions={diffTotals.deletions}
+              layout="inline"
+            />
+          </button>
+        </>
+      ) : null}
+      {providerLabel !== null || modelLabel !== null ? (
+        <span className={THREAD_META_MODEL_GROUP_CLS}>
+          <MetaDivider />
+          <span className={THREAD_META_MODEL_CLS}>
+            {providerLabel !== null ? <span className="shrink-0">{providerLabel}</span> : null}
+            {providerLabel !== null && modelLabel !== null ? <span aria-hidden>·</span> : null}
+            {modelLabel !== null ? (
+              <Tooltip>
+                <TooltipTrigger render={<span className={THREAD_META_MODEL_NAME_CLS} />}>
+                  {modelLabel}
+                </TooltipTrigger>
+                <TooltipPopup side="top">{modelLabel}</TooltipPopup>
+              </Tooltip>
+            ) : null}
+          </span>
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function MetaDivider() {
+  return (
+    <span aria-hidden className={THREAD_META_DIVIDER_CLS}>
+      ·
+    </span>
+  );
+}

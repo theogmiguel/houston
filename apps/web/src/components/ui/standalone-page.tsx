@@ -19,6 +19,7 @@ export function StandalonePageHeader({
   description,
   status,
   detail,
+  showBrand = true,
 }: {
   readonly context?: ReactNode;
   readonly title: ReactNode;
@@ -30,18 +31,27 @@ export function StandalonePageHeader({
    * each part stays on one line, so the line breaks only at a separator.
    */
   readonly detail?: ReactNode;
+  /** False where the surrounding shell already carries the product mark. */
+  readonly showBrand?: boolean;
 }) {
   return (
     <>
-      <div className="flex items-baseline justify-between gap-3 text-muted-foreground">
-        <span className="flex items-baseline gap-1.5" role="img" aria-label="Houston">
-          <HoustonWordmark className="shrink-0 text-xs text-foreground" aria-hidden />
-        </span>
-        {context ? <span className="text-sm">{context}</span> : null}
-      </div>
+      {showBrand || context ? (
+        <div className="flex items-baseline justify-between gap-3 text-muted-foreground">
+          {showBrand ? (
+            <span className="flex items-baseline gap-1.5" role="img" aria-label="Houston">
+              <HoustonWordmark className="shrink-0 text-xs text-foreground" aria-hidden />
+            </span>
+          ) : (
+            <span />
+          )}
+          {context ? <span className="text-sm">{context}</span> : null}
+        </div>
+      ) : null}
       <h1
         className={cn(
-          "mt-6 text-xl leading-tight font-semibold",
+          "text-xl leading-tight font-semibold",
+          showBrand || context ? "mt-6" : null,
           status !== undefined && "flex items-center gap-2",
         )}
       >

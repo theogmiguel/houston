@@ -110,7 +110,7 @@ export function NoProjectsHero() {
     <SidebarInset
       {...contentArea}
       role="main"
-      className="h-dvh min-h-0 overflow-hidden overscroll-y-none"
+      className="min-h-0 overflow-hidden overscroll-y-none"
     >
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
         {/* The board's window titlebar names the product above the empty state. */}

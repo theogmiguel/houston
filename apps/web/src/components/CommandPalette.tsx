@@ -199,6 +199,7 @@ import {
   ADDON_ICON_CLASS,
   browseInputEndPaddingClass,
   buildBrowseGroups,
+  availablePaletteActions,
   buildRootGroups,
   buildLinkedThreadActionItems,
   buildCommandPaletteRows,
@@ -1853,7 +1854,12 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
-  const rootGroups = buildRootGroups({ actionItems, recentThreadItems });
+  const availableActions = availablePaletteActions(actionItems);
+  const rootGroups = buildRootGroups({
+    actionItems: availableActions,
+    projectItems: projectSearchItems,
+    recentThreadItems,
+  });
   // Every setting goes to the palette's own matcher, so settings get the same
   // word starts and typo tolerance as threads.
   const settingsSearchItems: CommandPaletteActionItem[] = settingsForThisPlatform(
@@ -1901,7 +1907,7 @@ function OpenCommandPaletteDialog(props: {
       ? {
           allOptions: {
             rootGroups,
-            nestedItems: buildNestedSearchItems(actionItems, deferredQuery),
+            nestedItems: buildNestedSearchItems(availableActions, deferredQuery),
           },
         }
       : {}),

@@ -2,11 +2,11 @@ import { useEffect, useState } from "react";
 
 import { useStableCallback } from "~/hooks/useStableCallback";
 import { observeIntersection } from "~/lib/observeIntersection";
-import { DiffFileHeaderSkeleton } from "../DiffPanelShell";
 
 /**
- * Asks for the next batch of files while it is near the viewport. The placeholder headers show
- * only while a batch is loading, so a settled diff leaves nothing below its last file.
+ * Asks for the next batch of files while it is near the viewport. It draws no placeholder
+ * file headers: the panel shows one selected file, so a row of skeleton headers below loaded
+ * content read as a second, broken file. The live region keeps the wait announced.
  */
 export function DiffFileLoadingBoundary({
   load,
@@ -35,12 +35,12 @@ export function DiffFileLoadingBoundary({
   }, [isNear, count, loadLatest]);
 
   return (
-    <div ref={observe} role={loading ? "status" : undefined} aria-label={loading ? "Loading diff…" : undefined}>
-      {Array.from({ length: loading ? Math.min(count, 4) : 0 }, (_, index) => (
-        <div key={index} aria-hidden className="border-b border-border/40">
-          <DiffFileHeaderSkeleton titleWidth="medium" />
-        </div>
-      ))}
+    <div
+      ref={observe}
+      role={loading ? "status" : undefined}
+      aria-label={loading ? "Loading diff…" : undefined}
+    >
+      <span className="sr-only">{loading ? "Loading diff…" : null}</span>
     </div>
   );
 }

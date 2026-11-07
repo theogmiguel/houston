@@ -129,6 +129,7 @@ vi.mock("../../state/entities", () => ({
 
 vi.mock("../../hooks/useThreadActions", () => ({
   canTurnThreadIntoProject: () => false,
+  useAcknowledgeThreadWoke: () => () => {},
   useThreadActions: () => ({
     archiveThread: state.archiveThread,
     threadSnoozePresets: () => [],
@@ -182,7 +183,8 @@ vi.mock("../../composerDraftStore", () => ({
     }),
 }));
 
-vi.mock("../Sidebar.logic", () => ({
+vi.mock("../Sidebar.logic", async (original) => ({
+  ...(await original<typeof import("../Sidebar.logic")>()),
   resolveThreadStatusPill: () => state.pill,
 }));
 

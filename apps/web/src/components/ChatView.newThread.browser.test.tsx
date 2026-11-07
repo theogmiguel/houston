@@ -49,6 +49,8 @@ const resolveColor = (value: string) => {
   return color;
 };
 
+const canvasColor = () => resolveColor("var(--background)");
+
 async function openNewThread() {
   __setClientSettingsForTests({
     ...DEFAULT_CLIENT_SETTINGS,
@@ -68,17 +70,6 @@ async function openNewThread() {
   return app;
 }
 
-/** The headline-to-context-row group's vertical centre, as a share of the pane's height. */
-function groupCentre() {
-  const overlay = document.querySelector<HTMLElement>("[data-chat-composer-overlay]")!;
-  const pane = overlay.parentElement!.getBoundingClientRect();
-  const heading = page.getByRole("heading", { name: /What should we build/ }).element();
-  const stack = overlay.querySelector<HTMLElement>("[data-chat-composer-stack]")!;
-  const top = heading.getBoundingClientRect().top;
-  const bottom = stack.getBoundingClientRect().bottom;
-  return ((top + bottom) / 2 - pane.top) / pane.height;
-}
-
 async function viewport(width: number): Promise<AsyncDisposable> {
   const previous = { width: window.innerWidth, height: window.innerHeight };
   await page.viewport(width, 900);
@@ -86,13 +77,45 @@ async function viewport(width: number): Promise<AsyncDisposable> {
 }
 
 it.each([1440, 800])(
-  "centres the new-thread hero and composer near 42 percent of the pane at %ipx",
+  "anchors the new-thread composer in the lower part of the pane, with the hero above it at %ipx",
   async (width) => {
     using _environment = installFakeEnvironment([]);
     await using _viewport = await viewport(width);
     await using _app = await openNewThread();
-    await expect.poll(groupCentre).toBeGreaterThan(0.4);
-    expect(groupCentre()).toBeLessThan(0.44);
+
+    const overlay = document.querySelector<HTMLElement>("[data-chat-composer-overlay]")!;
+    const pane = overlay.parentElement!.getBoundingClientRect();
+    const card = document
+      .querySelector<HTMLElement>("[data-chat-composer-main-surface]")!
+      .getBoundingClientRect();
+    const heading = page.getByRole("heading", { name: /What should we build/ }).element();
+
+    await expect.poll(() => (card.top - pane.top) / pane.height).toBeGreaterThan(0.44);
+    expect(heading.getBoundingClientRect().bottom).toBeLessThan(card.top);
+    // Room for the docked model picker under the card, clear of the hero above it.
+    expect(pane.bottom - card.bottom).toBeGreaterThan(280);
+  },
+  APP_BOOT_TEST_TIMEOUT_MS,
+);
+
+it.each([1440, 800])(
+  "keeps the project context block between the new-thread hero and composer at %ipx",
+  async (width) => {
+    using _environment = installFakeEnvironment([]);
+    await using _viewport = await viewport(width);
+    await using _app = await openNewThread();
+
+    const context = document.querySelector<HTMLElement>("[data-draft-project-context]");
+    expect(context).not.toBeNull();
+    expect(context!.textContent).toContain("Local checkout");
+    const heading = page.getByRole("heading", { name: /What should we build/ }).element();
+    const card = document
+      .querySelector<HTMLElement>("[data-chat-composer-main-surface]")!
+      .getBoundingClientRect();
+    expect(context!.getBoundingClientRect().top).toBeGreaterThan(
+      heading.getBoundingClientRect().bottom,
+    );
+    expect(context!.getBoundingClientRect().bottom).toBeLessThanOrEqual(card.top);
   },
   APP_BOOT_TEST_TIMEOUT_MS,
 );
@@ -104,9 +127,10 @@ it(
     await using _app = await openNewThread();
     const main = document.querySelector<HTMLElement>("[data-chat-composer-main-surface]")!;
     const style = getComputedStyle(main);
-    const canvas = resolveColor("var(--background)");
+    // The light canvas and the raised tier share white; the edge and the lift separate them.
     expect(style.backgroundColor).toBe(resolveColor("var(--surface-raised)"));
-    expect(style.backgroundColor).not.toBe(canvas);
+    expect(style.borderTopWidth).toBe("1px");
+    expect(style.borderTopColor).not.toBe(canvasColor());
     const probe = document.createElement("div");
     probe.style.boxShadow = "var(--shadow-1)";
     document.body.append(probe);
@@ -119,13 +143,13 @@ it(
 );
 
 it(
-  "paints a faint static accent wash behind the new-thread hero only",
+  "leaves the new-thread canvas flat behind the hero",
   async () => {
     using _environment = installFakeEnvironment([]);
     await using _app = await openNewThread();
     const overlay = document.querySelector<HTMLElement>("[data-chat-composer-overlay]")!;
     const style = getComputedStyle(overlay);
-    expect(style.backgroundImage).toContain("radial-gradient");
+    expect(style.backgroundImage).toBe("none");
     expect(style.animationName).toBe("none");
   },
   APP_BOOT_TEST_TIMEOUT_MS,

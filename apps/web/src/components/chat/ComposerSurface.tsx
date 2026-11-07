@@ -14,7 +14,7 @@ function Shell({
       data-context-row={contextRow || undefined}
       className={cn(
         "@container/composer-surface relative isolate mx-auto w-full max-w-(--chat-content-max-width)",
-        "[--chat-composer-drawer-inset:1.375rem] [--chat-composer-glass-surface:var(--composer)] [--chat-composer-outline:var(--line-strong)]",
+        "[--chat-composer-drawer-inset:1.375rem] [--chat-composer-glass-surface:var(--composer)] [--chat-composer-outline:var(--card-edge)]",
         className,
       )}
       {...props}
@@ -37,7 +37,7 @@ function Main({ className, ...props }: ComponentProps<"div">) {
     <div
       data-chat-composer-main-surface="true"
       className={cn(
-        "relative z-10 w-full overflow-hidden rounded-xl border border-(--line-strong) bg-(--composer)",
+        "relative z-10 w-full overflow-hidden rounded-xl border border-(--card-edge) bg-(--composer)",
         SURFACE_LIFT_CLASS,
         // On the new-thread page the composer is the page's one surface, so it rises a step.
         "[[data-draft-hero]_&]:bg-(--surface-raised) [[data-draft-hero]_&]:shadow-(--shadow-1)",

@@ -16,7 +16,10 @@ import {
 import { useEnvironments } from "../state/environments";
 import { SettingsScopeNotice } from "../components/settings/SettingsScopeNotice";
 import { SETTINGS_DEVICE_ONLY_PATHS } from "../components/settings/SettingsScopeSentence";
-import { SettingsPageContainer } from "../components/settings/settingsLayout";
+import {
+  SettingsPageActionsProvider,
+  SettingsPageContainer,
+} from "../components/settings/settingsLayout";
 import {
   retainSettingsScope,
   validateSettingsRouteSearch,
@@ -127,15 +130,6 @@ function SettingsContentLayout() {
             className="flex h-10 shrink-0 items-center gap-2 ps-3.5 pe-2 custom-chrome:pe-(--workspace-native-controls-inset)"
           >
             <SettingsBreadcrumb pathname={location.pathname} />
-            <div className="ms-auto flex shrink-0 items-center gap-1">
-              {location.pathname === "/settings/about" ||
-              location.pathname === "/settings/open-source-licenses" ||
-              location.pathname === "/settings/archived" ? null : (
-                <RestoreDeviceDefaultsButton
-                  onRestored={() => setRestoreSignal((value) => value + 1)}
-                />
-              )}
-            </div>
           </header>
           <Swap
             swapKey={`${location.pathname}:${contentScopeKey}:${restoreSignal}`}
@@ -143,7 +137,19 @@ function SettingsContentLayout() {
             contentClassName="min-h-0 flex flex-1 flex-col"
           >
             <SettingsScopeBoundary pathname={location.pathname}>
-              <Outlet />
+              <SettingsPageActionsProvider
+                actions={
+                  location.pathname === "/settings/about" ||
+                  location.pathname === "/settings/open-source-licenses" ||
+                  location.pathname === "/settings/archived" ? null : (
+                    <RestoreDeviceDefaultsButton
+                      onRestored={() => setRestoreSignal((value) => value + 1)}
+                    />
+                  )
+                }
+              >
+                <Outlet />
+              </SettingsPageActionsProvider>
             </SettingsScopeBoundary>
           </Swap>
         </div>

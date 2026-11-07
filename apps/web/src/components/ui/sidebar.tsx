@@ -641,8 +641,10 @@ function SidebarInset({ className, ...props }: React.ComponentProps<"main">) {
   return (
     <main
       className={cn(
-        "relative flex min-w-0 w-full flex-1 flex-col bg-background",
-        "dock:peer-data-[variant=inset]:peer-data-[state=collapsed]:ms-2 dock:peer-data-[variant=inset]:m-2 dock:peer-data-[variant=inset]:ms-0 dock:peer-data-[variant=inset]:rounded-[var(--r-group)]",
+        // The work area is a card inset from the window chrome: 8px of rail on every edge,
+        // a 12px radius and one hairline. Routes that fill the pane keep `flex-1`; they do not
+        // bring their own height, which would add the margins to the window instead.
+        "relative m-(--canvas-inset) flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-(--r-canvas) border border-(--card-edge) bg-background",
         className,
       )}
       data-slot="sidebar-inset"

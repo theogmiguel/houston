@@ -12,7 +12,7 @@ import {
 
 import ChatView, { type RightPanelPortalTarget } from "../ChatView";
 import { resolveThreadStatusPill } from "../Sidebar.logic";
-import { SidebarThreadStatusGlyph } from "../sidebar/SidebarStatusGlyph";
+
 import { SidebarProviderStack, type SidebarProviderEntry } from "../sidebar/SidebarThreadRow";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { useThreadActions } from "../../hooks/useThreadActions";
@@ -35,6 +35,7 @@ import { cn } from "../../lib/utils";
 import { TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR } from "../chat/composerFocusRedirect";
 import { useThreadActionMenu } from "../../hooks/useThreadActionMenu";
 import { ThreadOpenProvider } from "./threadOpenContext";
+import { PaneThreadStatusMark } from "./threadStatusMark";
 import { usePaneDensity } from "./usePaneDensity";
 
 export function GridThreadCell({
@@ -383,7 +384,7 @@ export function GridThreadCell({
               ) : null}
             </span>
           ) : null}
-          <SidebarThreadStatusGlyph status={status} label={status?.label} />
+          {shell === null ? null : <PaneThreadStatusMark thread={shell} status={status} />}
           <div className="flex w-0 items-center gap-0.5 overflow-hidden opacity-0 [interpolate-size:allow-keywords] transition-[width,opacity] duration-(--motion-disclosure) ease-standard group-hover/pane:w-auto group-hover/pane:opacity-100 group-focus-within/label:w-auto group-focus-within/label:opacity-100 motion-reduce:transition-none">
             {paneActions(true)}
           </div>

@@ -1,6 +1,10 @@
 import type { DraftId } from "~/composerDraftStore";
 import { composerDraftHasUserContent, useComposerDraftStore } from "~/composerDraftStore";
-import { resolveEnvironmentMachineKind, type ScopedProjectRef } from "@houston-app/contracts";
+import {
+  resolveEnvironmentMachineKind,
+  type ScopedProjectRef,
+  type ScopedThreadRef,
+} from "@houston-app/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@houston-app/client-runtime/environment";
 import { isScratchProject } from "@houston-app/client-runtime/state/projects";
 import { FolderPlusIcon } from "lucide-react";
@@ -50,6 +54,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { InlineButton } from "../ui/button";
 import { DraftProjectName } from "./DraftProjectName";
 import { DraftHeroProjectHeading } from "./DraftHeroProjectHeading";
+import { DraftProjectContext } from "./DraftProjectContext";
 import { TriageDraftHero } from "./TriageDraftHero";
 import { resolveProjectSettings } from "@houston-app/shared/projectSettings";
 import { resolveProjectDefaultProviderModelSelection } from "../../providerInstances";
@@ -66,12 +71,18 @@ interface DraftHeroHeadlineProps {
   readonly draftId: DraftId | null;
   readonly activeProjectRef: ScopedProjectRef | null;
   readonly activeProjectTitle: string | null;
+  readonly branch: string | null;
+  readonly checkoutLabel: string;
+  readonly onOpenThread: (threadRef: ScopedThreadRef) => void;
 }
 
 export function DraftHeroHeadline({
   draftId,
   activeProjectRef,
   activeProjectTitle,
+  branch,
+  checkoutLabel,
+  onOpenThread,
 }: DraftHeroHeadlineProps) {
   const projects = useProjects();
   const threads = useVisibleThreadShells();
@@ -160,6 +171,14 @@ export function DraftHeroHeadline({
   const isScratchDraft =
     activeProject !== null &&
     isScratchProject(activeProject, scratchWorkspaceRootFor(activeProject.environmentId));
+  const projectThreads =
+    activeProjectRef === null
+      ? []
+      : threads.filter(
+          (thread) =>
+            thread.environmentId === activeProjectRef.environmentId &&
+            thread.projectId === activeProjectRef.projectId,
+        );
 
   // Pinning from a row keeps rows in place while the picker is open.
   const pickerItems: readonly PickerItem[] = useOrderWhileOpen(
@@ -429,6 +448,14 @@ export function DraftHeroHeadline({
           {isScratchDraft ? projectSelector : orStartWithoutProject}
         </p>
       )}
+      {activeProjectRef !== null && !isScratchDraft ? (
+        <DraftProjectContext
+          branch={branch}
+          checkoutLabel={checkoutLabel}
+          threads={projectThreads}
+          onOpenThread={onOpenThread}
+        />
+      ) : null}
     </div>
   );
 }

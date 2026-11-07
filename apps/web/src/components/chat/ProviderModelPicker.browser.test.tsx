@@ -352,9 +352,7 @@ describe("the docked popup's shape", () => {
     await using _screen = await openDocked();
 
     await expect.poll(() => Math.round(rect("[data-model-picker-sidebar]").width)).toBe(40);
-    expect(
-      document.querySelector("[data-model-picker-tab-name]")?.textContent,
-    ).toBeTruthy();
+    expect(document.querySelector("[data-model-picker-tab-name]")?.textContent).toBeTruthy();
     expect(page.getByRole("button", { name: "Favorites" }).element()).toBeTruthy();
   });
 
@@ -429,17 +427,84 @@ describe("docked popup and the composer context row", () => {
     };
   }
 
-  it("opens above the card when there is room, clear of the context row", async () => {
+  it("opens below the card when there is room, clear of the context row", async () => {
+    await using _screen = await openDocked(20);
+
+    await expect.poll(() => rects().popup.top >= rects().strip.bottom).toBe(true);
+    expect(rects().popup.top).toBeGreaterThanOrEqual(rects().card.bottom);
+  });
+
+  it("flips above the card when it sits too low for the panel", async () => {
     await using _screen = await openDocked(560);
 
     await expect.poll(() => rects().popup.bottom <= rects().card.top).toBe(true);
   });
 
-  it("opens below the context row when there is no room above", async () => {
-    await using _screen = await openDocked(20);
+  it.each([1440, 800])(
+    "opens below a mid-canvas composer without covering the draft hero in a %ipx pane",
+    async (width) => {
+      await page.viewport(width, 900);
+      await using _screen = await render(
+        <TooltipProvider delay={0}>
+          <div data-chat-column="">
+            <div
+              data-testid="draft-hero"
+              style={{ height: 72, paddingLeft: 160 }}
+              className="text-3xl"
+            >
+              What should we build in atlas-api?
+            </div>
+            <form
+              data-chat-composer-form="true"
+              style={{ width: Math.min(760, width - 40), marginLeft: 20, paddingTop: 360 }}
+            >
+              <div
+                data-inline-resting-controls="true"
+                style={{ padding: "12px 32px" }}
+                className="rounded-xl border border-border"
+              >
+                <ProviderModelPicker
+                  environmentId={null}
+                  activeInstanceId={CLAUDE}
+                  model="opus"
+                  lockedProvider={null}
+                  instanceEntries={entries}
+                  keybindings={compileResolvedKeybindingsConfig([])}
+                  modelOptionsByInstance={new Map([[CLAUDE, provider.models]])}
+                  isComposerOwned
+                  effortPanel={<ComposerEffortPanel traits={null} />}
+                  onInstanceModelChange={() => {}}
+                />
+              </div>
+              <div data-slot="composer-context-strip" style={{ marginTop: 4, height: 22 }}>
+                Local checkout
+              </div>
+            </form>
+          </div>
+        </TooltipProvider>,
+        { router: false },
+      );
+      await page.getByRole("button", { name: /Opus 5\.5/ }).click();
+      await expect
+        .poll(() => document.querySelector("[data-model-picker-effort]") !== null)
+        .toBe(true);
 
-    await expect.poll(() => rects().popup.top >= rects().strip.bottom).toBe(true);
-  });
+      await expect
+        .poll(() => {
+          const card = document.querySelector<HTMLElement>(
+            '[data-inline-resting-controls="true"]',
+          )!;
+          const popup = document.querySelector<HTMLElement>('[data-slot="popover-positioner"]')!;
+          return popup.getBoundingClientRect().top >= card.getBoundingClientRect().bottom;
+        })
+        .toBe(true);
+      const hero = document.querySelector<HTMLElement>('[data-testid="draft-hero"]')!;
+      const popup = document.querySelector<HTMLElement>('[data-slot="popover-positioner"]')!;
+      expect(popup.getBoundingClientRect().top).toBeGreaterThan(
+        hero.getBoundingClientRect().bottom,
+      );
+    },
+  );
 
   it("never extends above the header of its column", async () => {
     await page.viewport(1440, 900);

@@ -23,3 +23,7 @@ export const COMPACT_RAIL_LABEL_CLASS = "sr-only";
 
 /** The provider name beside the search text when the rail shows icons only. */
 export const PICKER_PROVIDER_NAME_CLASS = "max-w-24 shrink-0 truncate text-2xs text-(--houston)";
+
+/** The multi-model hint that sits under the model list. */
+export const MODEL_PICKER_HINT_CLS =
+  "mx-1.5 mb-1.5 shrink-0 border-border/60 border-t px-1 pt-1.5 text-2xs text-(--houston)";

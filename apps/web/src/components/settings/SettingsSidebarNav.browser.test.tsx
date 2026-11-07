@@ -32,6 +32,8 @@ describe("SettingsSidebarNav at a 900px-high window", () => {
     expect(viewport.getBoundingClientRect().bottom).toBeLessThanOrEqual(
       footer.getBoundingClientRect().top + 1,
     );
+    // Both edges fade, so the rows cut above and below read as scrollable.
+    expect(getComputedStyle(viewport).maskImage).not.toBe("none");
   });
 
   it("brings the last row fully above the footer once scrolled to the end", async () => {
@@ -74,9 +76,12 @@ describe("SettingsBreadcrumb beside the nav", () => {
 
   it("stays visible for a page the nav does not list", async () => {
     await page.viewport(1440, 900);
-    await using screen = await render(<SettingsBreadcrumb pathname="/settings/open-source-licenses" />, {
-      router: "/settings/open-source-licenses",
-    });
+    await using screen = await render(
+      <SettingsBreadcrumb pathname="/settings/open-source-licenses" />,
+      {
+        router: "/settings/open-source-licenses",
+      },
+    );
 
     const crumbs = screen.container.querySelector<HTMLElement>("nav")!;
     expect(getComputedStyle(crumbs).display).not.toBe("none");

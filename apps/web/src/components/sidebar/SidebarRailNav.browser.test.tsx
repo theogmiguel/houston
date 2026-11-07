@@ -94,8 +94,8 @@ describe("SidebarRailNav", () => {
     expect(openAddProjectDialog).toHaveBeenCalledTimes(1);
   });
 
-  it("folds pull requests, tasks and usage into one row of icon buttons under search", async () => {
-    for (const width of [264, 304]) {
+  it("folds pull requests, tasks and usage into one labelled row under search", async () => {
+    for (const width of [264, 280]) {
       await using screen = await render(
         <div style={{ width }}>
           <SidebarRailNav
@@ -113,16 +113,24 @@ describe("SidebarRailNav", () => {
       // One row: equal tops and heights, side by side inside the rail, each tall enough to hit.
       for (const box of boxes) {
         expect(box.top).toBe(boxes[0]!.top);
-        expect(box.height).toBe(28);
+        expect(box.height).toBe(44);
         expect(box.width).toBeGreaterThan(40);
       }
       const rail = screen.container.firstElementChild!.getBoundingClientRect();
       expect(boxes[2]!.right).toBeLessThanOrEqual(rail.right + 0.5);
       expect(boxes[0]!.left).toBeGreaterThanOrEqual(rail.left - 0.5);
-      // Search plus the shortcut row: about 58px where four rows took 116px.
+      // Search plus the labelled shortcut row.
       const shortcuts = screen.container.querySelector("[data-rail-shortcuts]")!;
-      expect(shortcuts.getBoundingClientRect().height).toBe(28);
-      expect(rail.height).toBeLessThanOrEqual(64);
+      expect(shortcuts.getBoundingClientRect().height).toBe(44);
+      for (const name of names) {
+        const label = screen
+          .getByRole("button", { name })
+          .element()
+          .querySelector<HTMLElement>("[data-rail-shortcut-label]")!;
+        expect(label.textContent).toBe(name.replace(/, \d+$/, ""));
+        expect(getComputedStyle(label).fontSize).toBe("11px");
+      }
+      expect(rail.height).toBeLessThanOrEqual(82);
     }
   });
 
@@ -147,16 +155,25 @@ describe("SidebarRailNav", () => {
     expect(document.activeElement?.getAttribute("aria-label")).toBe("Usage");
   });
 
-  it("names an icon-only shortcut in a tooltip on hover", async () => {
+  it("names each shortcut in a tooltip, with its keybinding when it has one", async () => {
     await using screen = await render(
       <TooltipProvider delay={0}>
         <SidebarRailNav search={<span>Search</span>} />
       </TooltipProvider>,
     );
 
+    await userEvent.hover(screen.getByRole("button", { name: "Pull requests" }).element());
+    await vi.waitFor(() =>
+      expect(document.querySelector('[data-slot="tooltip-popup"]')?.textContent).toBe(
+        "Pull requests",
+      ),
+    );
+
     await userEvent.hover(screen.getByRole("button", { name: "Usage" }).element());
     await vi.waitFor(() =>
-      expect(document.querySelector('[data-slot="tooltip-popup"]')?.textContent).toBe("Usage"),
+      expect(document.querySelector('[data-slot="tooltip-popup"]')?.textContent).toMatch(
+        /^Usage · /,
+      ),
     );
   });
 });

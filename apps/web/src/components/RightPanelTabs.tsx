@@ -101,7 +101,11 @@ import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 import { PreviewPanelShell, type PreviewPanelMode } from "./preview/PreviewPanelShell";
 import { FaviconImage } from "./preview/PreviewFaviconIcon";
 import { previewBridge } from "./preview/previewBridge";
-import { ThreadStateGlyph, threadStateTextClass, type ThreadState } from "./ui/thread-state-glyph";
+import {
+  ThreadStatusKindGlyph,
+  threadStatusKindTextClass,
+  type ThreadStatusKind,
+} from "./ui/thread-state-glyph";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
@@ -705,15 +709,15 @@ function SurfaceIcon({
 /** What a side chat tab's mark shows and its title's accessible name says. */
 function sideChatTabState(
   shell: EnvironmentThreadShell | null,
-): { label: string; state: ThreadState } | null {
+): { label: string; kind: ThreadStatusKind } | null {
   if (shell === null) return null;
   if (shell.hasPendingApprovals || shell.pendingSubagentRequest === "approval") {
-    return { label: "needs approval", state: "needs" };
+    return { label: "needs approval", kind: "approval" };
   }
   if (shell.hasPendingUserInput || shell.pendingSubagentRequest === "user_input") {
-    return { label: "needs input", state: "needs" };
+    return { label: "needs input", kind: "input" };
   }
-  return threadRuntimeIsActive(shell.runtime) ? { label: "running", state: "running" } : null;
+  return threadRuntimeIsActive(shell.runtime) ? { label: "running", kind: "running" } : null;
 }
 
 // The running mark spins with the thread; attention marks stay static.
@@ -728,10 +732,10 @@ function SideChatTabIcon(props: { environmentId: EnvironmentId | null; threadId:
       <MessageSquareText className="size-3 shrink-0" />
       {state === null ? null : (
         <span
-          className={cn("absolute -top-1 -right-1", threadStateTextClass(state.state))}
+          className={cn("absolute -top-1 -right-1", threadStatusKindTextClass(state.kind))}
           aria-hidden
         >
-          <ThreadStateGlyph state={state.state} className="size-2.5" />
+          <ThreadStatusKindGlyph kind={state.kind} className="size-2.5" />
         </span>
       )}
     </>

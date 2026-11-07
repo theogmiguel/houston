@@ -7,6 +7,7 @@ import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/m
 import { render } from "../../../test/render";
 import { TooltipProvider } from "../ui/tooltip";
 import { ThreadCard } from "./GridSidebar";
+import { PaneThreadStatusMark } from "./threadStatusMark";
 
 const acknowledged = vi.hoisted(() => [] as Array<{ target: unknown; wokeAt: string }>);
 
@@ -102,6 +103,36 @@ function card(
 function statusLine(container: HTMLElement): string {
   return container.querySelector("[data-thread-status]")?.textContent ?? "";
 }
+
+function failedThread(): EnvironmentThreadShell {
+  return thread({
+    latestRun: {
+      id: "run-failed",
+      status: "failed",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      completedAt: "2026-01-01T00:01:00.000Z",
+    },
+    runtime: { status: "failed", lastErrorClass: "provider" },
+  });
+}
+
+describe("thread status glyphs", () => {
+  it("draws the same kind on the rail row and the grid pane label", async () => {
+    const failed = failedThread();
+    await using row = await render(card(failed));
+    await using pane = await render(
+      <PaneThreadStatusMark thread={failed} status={{ state: "failed", label: "Failed" }} />,
+    );
+
+    const rowGlyph = row.container.querySelector<SVGElement>(
+      "[data-thread-status-glyph] [data-status-kind]",
+    )!;
+    const paneGlyph = pane.container.querySelector<SVGElement>("[data-status-kind]")!;
+    expect(rowGlyph.getAttribute("data-status-kind")).toBe("failed");
+    expect(paneGlyph.getAttribute("data-status-kind")).toBe("failed");
+    expect(paneGlyph.innerHTML).toBe(rowGlyph.innerHTML);
+  });
+});
 
 describe("thread status words", () => {
   it("says Approval, Input and Request instead of Needs you", async () => {

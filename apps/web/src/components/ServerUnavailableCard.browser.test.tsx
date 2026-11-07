@@ -44,6 +44,30 @@ describe("ServerUnavailableCard", () => {
     expect(line.getBoundingClientRect().right).toBeLessThanOrEqual(window.innerWidth);
   });
 
+  it("renders the error inside a dimmed app shell with every recovery action reachable", async () => {
+    await page.viewport(1440, 900);
+    await using screen = await render(<ServerUnavailableCard report="report" detail={DETAIL} />);
+
+    const shell = screen.container.querySelector<HTMLElement>("[data-server-unavailable-shell]")!;
+    const sidebar = shell.querySelector<HTMLElement>("[data-server-unavailable-sidebar]")!;
+    const header = shell.querySelector<HTMLElement>("[data-server-unavailable-header]")!;
+    const canvas = shell.querySelector<HTMLElement>("[data-server-unavailable-canvas]")!;
+    const card = shell.querySelector<HTMLElement>("[data-server-unavailable-card]")!;
+    expect(sidebar).not.toBeNull();
+    expect(header).not.toBeNull();
+    expect(canvas.contains(card)).toBe(true);
+    // The shell already names the app; the card does not repeat the brand line.
+    expect(card.querySelector('[role="img"][aria-label="Houston"]')).toBeNull();
+    expect(Number(getComputedStyle(sidebar).opacity)).toBeLessThan(1);
+
+    for (const name of ["Try again", "Reload app", "Copy error"]) {
+      const button = screen.getByRole("button", { name });
+      await expect.element(button).toBeVisible();
+      expect(button.element().hasAttribute("disabled")).toBe(false);
+    }
+    await expect.element(screen.getByText("Show log")).toBeVisible();
+  });
+
   it("offers one primary action, one secondary action and a ghost Copy error", async () => {
     await using screen = await render(<ServerUnavailableCard report="report" detail={DETAIL} />);
 

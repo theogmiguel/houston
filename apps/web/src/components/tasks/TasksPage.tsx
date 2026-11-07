@@ -436,7 +436,7 @@ export function TasksPage() {
   const newTaskDisabled = environmentId === null;
 
   return (
-    <SidebarInset className="h-dvh min-h-0 overflow-hidden">
+    <SidebarInset className="min-h-0 overflow-hidden">
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
           <WorkspacePageHeader desktop={isDesktopHost}>

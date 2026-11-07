@@ -1,5 +1,6 @@
 import type { ComponentProps } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
+import { userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
@@ -155,11 +156,12 @@ describe("heading count and attention pips", () => {
       </TooltipProvider>,
     );
     const label = screen.getByRole("button", { name: /^Houston/ }).element();
+    const headingRow = label.closest<HTMLElement>("[data-project-heading]")!;
     expect(label.querySelector("[data-heading-count]")?.textContent).toBe("3");
     expect(
-      label.querySelector("[data-attention-pip='needs-you']")?.getAttribute("aria-label"),
-    ).toBe("1 thread needs you");
-    expect(label.querySelector("[data-attention-pip='failed']")).toBeNull();
+      headingRow.querySelector("[data-attention-pip='needs']")?.getAttribute("aria-label"),
+    ).toBe("1 thread needs input or approval");
+    expect(headingRow.querySelector("[data-attention-pip='failed']")).toBeNull();
     expect(screen.container.textContent).not.toContain("busy");
   });
 
@@ -189,12 +191,58 @@ describe("heading count and attention pips", () => {
       </TooltipProvider>,
     );
     const label = screen.getByRole("button", { name: /^Houston/ }).element();
-    expect(label.querySelector("[data-attention-pip='failed']")?.getAttribute("aria-label")).toBe(
-      "1 thread failed",
-    );
+    const headingRow = label.closest<HTMLElement>("[data-project-heading]")!;
     expect(
-      label.querySelector("[data-attention-pip='needs-you']")?.getAttribute("aria-label"),
-    ).toBe("2 threads need you");
+      headingRow.querySelector("[data-attention-pip='failed']")?.getAttribute("aria-label"),
+    ).toBe("1 thread failed");
+    expect(
+      headingRow.querySelector("[data-attention-pip='needs']")?.getAttribute("aria-label"),
+    ).toBe("2 threads need input or approval");
+  });
+
+  it("counts a thread that came back with the back glyph and its own label", async () => {
+    const cameBack = thread("came-back", {
+      lastVisitedAt: "2025-12-31T23:58:00.000Z",
+      unsettledAt: "2025-12-31T23:59:00.000Z",
+    });
+    await using screen = await render(
+      <TooltipProvider delay={0}>
+        <SidebarProjectSection
+          {...props(section([{ grid: grid("g1", null), threads: [cameBack] }]))}
+        />
+      </TooltipProvider>,
+    );
+    const pip = screen.container.querySelector<HTMLElement>(
+      "[data-project-heading] [data-attention-pip='back']",
+    )!;
+    expect(pip.getAttribute("aria-label")).toBe("1 thread came back");
+    expect(pip.querySelector('[data-status-kind="back"]')).not.toBeNull();
+  });
+
+  it("jumps from a pip to the first row of its family", async () => {
+    await using screen = await render(
+      <TooltipProvider delay={0}>
+        <SidebarProjectSection
+          {...props(
+            section([
+              {
+                grid: grid("g1", null),
+                threads: [thread("idle"), needsYou(), thread("other")],
+              },
+            ]),
+            { collapsed: false },
+          )}
+        />
+      </TooltipProvider>,
+    );
+    const pip = screen.container.querySelector<HTMLElement>(
+      "[data-project-heading] [data-attention-pip='needs']",
+    )!;
+    expect(pip.getAttribute("aria-label")).toBe("1 thread needs input or approval");
+    await userEvent.click(pip);
+    expect(document.activeElement).toBe(
+      screen.container.querySelector("[data-thread-key$=':asks']"),
+    );
   });
 
   it("shows no pip when no thread is urgent", async () => {
@@ -250,10 +298,11 @@ describe("heading count and attention pips", () => {
       </TooltipProvider>,
     );
     const heading = screen.getByRole("button", { name: /^g1/ }).element();
+    const gridRow = heading.closest<HTMLElement>("[data-grid-key]")!;
     expect(heading.querySelector("[data-heading-count]")?.textContent).toBe("2");
-    expect(
-      heading.querySelector("[data-attention-pip='needs-you']")?.getAttribute("aria-label"),
-    ).toBe("1 thread needs you");
+    expect(gridRow.querySelector("[data-attention-pip='needs']")?.getAttribute("aria-label")).toBe(
+      "1 thread needs input or approval",
+    );
     expect(screen.container.querySelector("[data-thread-key$=':a']")).not.toBeNull();
     expect(screen.container.querySelector("[data-thread-key$=':asks']")).toBeNull();
   });

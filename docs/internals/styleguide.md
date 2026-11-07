@@ -15,11 +15,12 @@ status. The panes are the product.
   (T3 Chat, Grove, Ocean, Ember, Iris) and user-defined themes override the role variables
   under `html[data-theme-id]`.
 - **Neutral grounds in a small ladder.** The rail is one tonal step off the content canvas,
-  cards lift above it, and the terminal is the darkest surface. Borders and dividers separate
-  them; elevation is a ladder, not a stack of cards.
-- **One accent.** `--accent` is a brand fill; `--accent-ink` is the readable version for
-  text, icons and focus. Selection, running state, focus and primary actions are where the
-  brand hue appears.
+  cards lift above it, and the terminal is the darkest surface. The main work area is an inset
+  card: 8px of rail on every edge, a 12px radius and one hairline. Borders and dividers separate
+  the levels; elevation is a ladder, not a stack of cards.
+- **One accent.** The indigo from the app mark (`--accent`) is the brand fill; `--accent-ink`
+  is the readable version for text, icons and focus. Selection, running state, focus, primary
+  actions and the 8% wash on a user turn are where the brand hue appears.
 - **The shell is square.** Grid panes have no radius and no card border. One 1px
   `--divider` separates the sidebar, top bar, grid cells and right panel. A grid of two or
   more threads carries a floating pane label instead of a pane header.
@@ -148,6 +149,7 @@ Body text is 13px / 18px, set on `<body>`. Hierarchy comes from weight and ink b
 | `text-large-title` | 26 / 32        | Destination page titles.                             |
 | `text-title`       | 20 / 26        | Dialog and section titles.                           |
 | `text-headline`    | 13 / 18        | Headings at body size.                               |
+| `text-heading`     | 15 / 20        | A thread header's title.                             |
 | `text-body`        | 13 / 18        | Default body, controls and rows.                     |
 | `text-prose`       | 14 / 20        | Long-form reading: chat markdown, pull-request text. |
 | `text-callout`     | 12 / 16        | Secondary lines and compact captions.                |
@@ -213,13 +215,13 @@ Name the role (`rounded-(--r-ctl)`, `rounded-[var(--r-group)]`) rather than a nu
 
 A surface is a token, not a hand-built recipe. The ladder is:
 
-| Rung     | Token       | For                                    |
-| -------- | ----------- | -------------------------------------- |
-| Chrome   | `--rail`    | Sidebar and window chrome.             |
-| Canvas   | `--content` | The main ground.                       |
-| Card     | `--card`    | Panels and rows lifted off the canvas. |
-| Floating | `--raised`  | Menus, popovers, dialogs and tooltips. |
-| Pane     | `--pane`    | A thread or grid cell.                 |
+| Rung     | Token       | For                                                          |
+| -------- | ----------- | ------------------------------------------------------------ |
+| Chrome   | `--rail`    | Sidebar and the window behind the inset canvas.              |
+| Canvas   | `--content` | The inset main work area, one hairline above the chrome.     |
+| Card     | `--card`    | Panels and rows lifted off the canvas by an edge and a lift.  |
+| Floating | `--raised`  | Menus, popovers, dialogs and tooltips.                        |
+| Pane     | `--pane`    | A thread or grid cell.                                        |
 
 Floating surfaces use one of the shared utilities:
 

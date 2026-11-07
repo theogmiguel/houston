@@ -153,6 +153,8 @@ html[data-theme-reveal] *::after {
   --h-row: 28px;
   --h-pill: 26px;
   --settings-w: 720px;
+  /* The main work area reads as a card inset from the window chrome. */
+  --canvas-inset: 0.5rem;
   --sidebar-content-inset: 0.5rem;
   --sidebar-control-gap: 0.5rem;
   --sidebar-icon-color: color-mix(
@@ -326,6 +328,8 @@ body {
   --text-title--line-height: 1.625rem;
   --text-headline: 0.8125rem;
   --text-headline--line-height: 1.125rem;
+  --text-heading: 0.9375rem;
+  --text-heading--line-height: 1.25rem;
   --text-body: 0.8125rem;
   --text-body--line-height: 1.125rem;
   --text-prose: 0.875rem;
@@ -347,7 +351,7 @@ body {
   --ease-exit: cubic-bezier(0.4, 0, 1, 1);
   /* The composer's elevation: a soft drop pulled in under the surface, shared
      by the composer, its context strip and attached banners. */
-  --shadow-composer: 0 1px 2px rgb(0 0 0 / 5%);
+  --shadow-composer: 0 1px 2px rgb(0 0 0 / 6%), 0 2px 8px -2px rgb(0 0 0 / 6%);
   --shadow-composer-dark: 0 14px 32px -18px rgb(0 0 0 / 75%);
   /* Dark-mode shade where an attached surface meets the composer: 10px of
      shadow fading away from the seam. Inline, so the offsets resolve on the
@@ -1039,18 +1043,19 @@ body {
   /* Houston's Paper palette. The design board's role names are canonical and
      the semantic names copied feature components use alias them, so a value
      can only drift here, next to the value the board prints. */
-  --rail: #ececef;
-  --content: #f5f5f7;
+  --rail: #ececf0;
+  --content: #ffffff;
   --card: #ffffff;
   --raised: #ffffff;
-  --term: #ffffff;
-  --code-bg: #f7f7f9;
+  --term: #fbfbfc;
+  --code-bg: #f7f7fa;
   --t1: #1d1d1f;
   --t2: #424245;
   --houston: #5b5b60;
   --border: rgba(0, 0, 0, 0.09);
-  /* White cards on the light canvas need the next step up from --border to separate. */
-  --card-edge: var(--divider);
+  /* A raised card on the white canvas separates by its 1px edge; the value is the
+     board's #0000001a, one step above --border. */
+  --card-edge: rgba(0, 0, 0, 0.1);
   /* Shell dividers: one step above --border so a 1px seam reads on both panes,
      and below the 16% interactive line so it never reads as a control. */
   --divider: rgba(0, 0, 0, 0.14);
@@ -1060,11 +1065,12 @@ body {
   --hover: rgba(0, 0, 0, 0.045);
   --sel: rgba(0, 0, 0, 0.09);
   --tog-off: rgba(0, 0, 0, 0.22);
-  --accent: #0a63e0;
+  /* Indigo from the app mark; the fill keeps 5.2:1 against white button text. */
+  --accent: #5b58e8;
   --accent-surface: var(--hover);
-  --accent-hover: #0954be;
-  --accent-ink: #0a5cd1;
-  --accent-muted: rgba(10, 99, 224, 0.12);
+  --accent-hover: #4a47d6;
+  --accent-ink: #4b44d8;
+  --accent-muted: rgba(91, 88, 232, 0.12);
   --ok: #1d7a3a;
   --warn: #b45309;
   --stop: #c0362c;
@@ -1088,13 +1094,14 @@ body {
   --shadow-seg: 0 1px 2px rgba(0, 0, 0, 0.12), 0 0 0 1px #d7d7dd;
   --scrim: rgba(0, 0, 0, 0.12);
   --pane: #ffffff;
-  --pane-head: #f7f7f9;
-  --composer: #ffffff;
+  --pane-head: #f7f7fa;
+  --composer: var(--raised);
   /* The focused grid cell's frame: a neutral grey, never the accent. */
   --focus-frame: rgba(0, 0, 0, 0.38);
   /* The user's message bubble and the composer's send button; themes give them the message
      roles. */
-  --bubble: var(--card);
+  /* A user turn is an 8% brand wash over the card, never a second card colour. */
+  --bubble: color-mix(in srgb, var(--accent) 8%, var(--card));
   --bubble-ink: var(--t1);
   --send: var(--t1);
   --send-ink: var(--pane);
@@ -1111,6 +1118,8 @@ body {
   --r-ctl: 6px;
   --r-group: 10px;
   --r-dialog: 14px;
+  /* The inset main canvas: one step softer than a dialog. */
+  --r-canvas: 12px;
   /* The 7px pill the board draws for grid labels and selection buttons. */
   --r-selection: 7px;
   --r-pill: 999px;
@@ -1194,17 +1203,18 @@ body {
   color-scheme: dark;
   /* Houston's Graphite palette: the rail is above the canvas, cards lift
      above the canvas and menus/popovers take the raised tier. */
-  --rail: #1c1c1f;
-  --content: #161618;
-  --card: #202023;
-  --raised: #26262a;
-  --term: #0f0f11;
-  --code-bg: #18181b;
+  --rail: #111113;
+  --content: #19191c;
+  --card: #222226;
+  --raised: #222226;
+  --term: #0c0c0e;
+  --code-bg: #1a1a1e;
   --t1: rgba(255, 255, 255, 0.92);
   --t2: rgba(255, 255, 255, 0.66);
   --houston: rgba(255, 255, 255, 0.52);
   --border: rgba(255, 255, 255, 0.09);
-  --card-edge: var(--border);
+  /* The raised tier's edge, #ffffff14 in the board. */
+  --card-edge: rgba(255, 255, 255, 0.078);
   --divider: rgba(255, 255, 255, 0.14);
   --border-hover: rgba(255, 255, 255, 0.16);
   --line-strong: rgba(255, 255, 255, 0.16);
@@ -1212,10 +1222,11 @@ body {
   --hover: rgba(255, 255, 255, 0.05);
   --sel: rgba(255, 255, 255, 0.09);
   --tog-off: rgba(255, 255, 255, 0.18);
-  --accent: #2f6fe8;
-  --accent-hover: #4f85ec;
-  --accent-ink: #64a0ff;
-  --accent-muted: rgba(47, 111, 232, 0.15);
+  /* Indigo from the app mark; white sits at 5.1:1 on the fill. */
+  --accent: #6d4aff;
+  --accent-hover: #5b3ae6;
+  --accent-ink: #a8a5ff;
+  --accent-muted: rgba(109, 74, 255, 0.16);
   --ok: #30d158;
   --warn: #f5a524;
   --stop: #ff6b61;
@@ -1236,13 +1247,14 @@ body {
   --shadow-2: 0 12px 32px -8px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
   --shadow-seg: 0 1px 2px rgba(0, 0, 0, 0.2), 0 0 0 1px #2a2a31;
   --scrim: rgba(0, 0, 0, 0.28);
-  --pane: #0f0f11;
-  --pane-head: #18181b;
-  --composer: var(--card);
+  --pane: #141417;
+  --pane-head: #1a1a1e;
+  --composer: var(--raised);
   --focus-frame: #6f6f7a;
   --claude: #d97757;
   --codex: rgba(255, 255, 255, 0.92);
   --message-surface: color-mix(in srgb, #ffffff 6%, var(--card));
+  --bubble: color-mix(in srgb, var(--accent) 8%, var(--card));
   --guest-foreground: #f0abfc;
   --sidebar-control-surface: var(--card);
 }
@@ -1275,7 +1287,7 @@ body {
 
   @variant dark {
     --sidebar-row-selected: var(--sel);
-    --card: #202023;
+    --card: #222226;
     --sidebar-control-surface: var(--card);
     /* Row metadata sits a step below read titles. */
     --secondary-label: var(--t2);
@@ -1375,6 +1387,7 @@ html[data-theme-id]:not([data-theme-id=""]) {
   --update: var(--app-theme-update);
   --update-foreground: var(--app-theme-update-foreground);
   --border: var(--app-theme-border);
+  --card-edge: var(--app-theme-border);
   --input: var(--app-theme-input);
   --ring: var(--app-theme-focus);
   --sidebar: var(--app-theme-sidebar);
@@ -2699,20 +2712,6 @@ code {
 }
 
 @layer components {
-  /* A static accent wash behind the new-thread hero; it carries no animation and is dropped
-     wherever the user asks for less transparency or more contrast. */
-  [data-chat-composer-overlay][data-draft-hero] {
-    background: radial-gradient(
-      ellipse 55% 50% at 50% 46%,
-      color-mix(in srgb, var(--accent) 4%, transparent),
-      transparent 70%
-    );
-  }
-  @media (forced-colors: active), (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
-    [data-chat-composer-overlay][data-draft-hero] {
-      background: none;
-    }
-  }
   .chat-composer-lane {
     padding-inline-start: calc(
       env(safe-area-inset-left) + 0.75rem + var(--chat-lane-inset-start, 0px)

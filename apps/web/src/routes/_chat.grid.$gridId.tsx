@@ -251,7 +251,7 @@ function GridRoute() {
 
   if (grid === null) {
     return (
-      <SidebarInset className="h-svh min-h-0 items-center justify-center overflow-hidden md:h-dvh">
+      <SidebarInset className="min-h-0 items-center justify-center overflow-hidden">
         <div className="flex max-w-sm flex-col items-center gap-2 text-center">
           <p className="text-sm font-medium">This grid no longer exists</p>
           <p className="text-xs text-muted-foreground">
@@ -352,7 +352,7 @@ function GridRoute() {
   return (
     <SidebarInset
       data-grid-new-thread-shortcut=""
-      className="h-svh min-h-0 overflow-hidden overscroll-y-none md:h-dvh"
+      className="min-h-0 overflow-hidden overscroll-y-none"
     >
       <div ref={setGridRow} className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <div

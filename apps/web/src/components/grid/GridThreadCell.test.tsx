@@ -55,6 +55,7 @@ vi.mock("../../state/entities", () => ({
 }));
 
 vi.mock("../../hooks/useThreadActions", () => ({
+  useAcknowledgeThreadWoke: () => () => {},
   useThreadActions: () => ({
     archiveThread: vi.fn(),
     threadSnoozePresets: () => [],
@@ -92,7 +93,8 @@ vi.mock("../../grid/gridStore", () => ({
     selector({ setDraftId: state.setDraftId }),
 }));
 
-vi.mock("../Sidebar.logic", () => ({
+vi.mock("../Sidebar.logic", async (original) => ({
+  ...(await original<typeof import("../Sidebar.logic")>()),
   resolveThreadStatusPill: () => state.pill,
 }));
 

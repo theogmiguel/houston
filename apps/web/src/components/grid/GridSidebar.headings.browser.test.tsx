@@ -223,14 +223,17 @@ describe("project and grid headings", () => {
     expect(count.textContent).toBe("4");
     expect(getComputedStyle(count).color).not.toBe(getComputedStyle(name).color);
 
-    const pips = button.querySelector<HTMLElement>("[data-attention-pips]")!;
+    const projectHeading = button.closest<HTMLElement>("[data-project-heading]")!;
+    const pips = projectHeading.querySelector<HTMLElement>("[data-attention-pips]")!;
     expect(pips.querySelector("[data-attention-pip='failed']")?.textContent).toBe("2");
-    expect(pips.querySelector("[data-attention-pip='needs-you']")?.textContent).toBe("1");
-    expect(screen.getByRole("img", { name: "2 threads failed" }).element()).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: "1 thread needs you" }).element()).toBeInTheDocument();
+    expect(pips.querySelector("[data-attention-pip='needs']")?.textContent).toBe("1");
+    expect(screen.getByRole("button", { name: "2 threads failed" }).element()).toBeInTheDocument();
     expect(
-      Math.abs(pips.getBoundingClientRect().right - button.getBoundingClientRect().right),
-    ).toBeLessThanOrEqual(9);
+      screen.getByRole("button", { name: "1 thread needs input or approval" }).element(),
+    ).toBeInTheDocument();
+    expect(pips.getBoundingClientRect().right).toBeLessThanOrEqual(
+      projectHeading.getBoundingClientRect().right,
+    );
   });
 
   it("shows neither a count nor pips on an empty project", async () => {
@@ -240,7 +243,9 @@ describe("project and grid headings", () => {
     );
     const button = heading(screen, "notes");
     expect(button.querySelector("[data-heading-count]")).toBeNull();
-    expect(button.querySelector("[data-attention-pips]")).toBeNull();
+    expect(
+      button.closest<HTMLElement>("[data-project-heading]")!.querySelector("[data-attention-pips]"),
+    ).toBeNull();
   });
 
   it("hides the plus at rest and shows it on hover and on keyboard focus", async () => {
@@ -262,8 +267,10 @@ describe("project and grid headings", () => {
     const button = heading(screen, "Houston");
     await userEvent.hover(button);
     await vi.waitFor(() => expect(getComputedStyle(plus).opacity).toBe("1"));
-    const pips = button.querySelector<HTMLElement>("[data-attention-pips]")!;
-    await vi.waitFor(() => expect(getComputedStyle(pips).opacity).toBe("0"));
+    const pips = button
+      .closest<HTMLElement>("[data-project-heading]")!
+      .querySelector<HTMLElement>("[data-attention-pips]")!;
+    expect(getComputedStyle(pips).opacity).toBe("1");
 
     await userEvent.unhover(button);
     await vi.waitFor(() => expect(getComputedStyle(plus).opacity).toBe("0"));
@@ -293,7 +300,11 @@ describe("project and grid headings", () => {
     expect(getComputedStyle(gridName).fontSize).toBe("12px");
     expect(getComputedStyle(gridName).fontWeight).toBe("600");
     expect(gridHeading.querySelector("[data-heading-count]")?.textContent).toBe("2");
-    expect(gridHeading.querySelector("[data-attention-pip='failed']")?.textContent).toBe("1");
+    expect(
+      gridHeading
+        .closest<HTMLElement>("[data-grid-key]")!
+        .querySelector("[data-attention-pip='failed']")?.textContent,
+    ).toBe("1");
   });
 });
 
@@ -336,5 +347,42 @@ describe("sticky project heading", () => {
     viewport.scrollTop = 0;
     await vi.waitFor(() => expect(projectHeading.hasAttribute("data-stuck")).toBe(false));
     expect(getComputedStyle(projectHeading).borderBottomColor).toBe("rgba(0, 0, 0, 0)");
+  });
+
+  it("never rests on a row cut in half by the pinned heading", async () => {
+    resetTestState();
+    const sections = [
+      section({ ungroupedThreads: manyThreads(10) }),
+      section({ projectKey: "env-1:project-2", title: "notes", projectId: "project-2" }),
+    ];
+    await using screen = await render(rail(<CollapsibleSections sections={sections} />));
+    const viewport = screen.container.querySelector<HTMLElement>(
+      "[data-slot=scroll-area-viewport]",
+    )!;
+    const heading = viewport.querySelector<HTMLElement>("[data-project-heading]")!;
+
+    // Settle on a position where a row starts under the heading's bottom edge.
+    viewport.scrollTop = 130;
+    await expect
+      .poll(() => {
+        const headingBottom = heading.getBoundingClientRect().bottom;
+        return [...viewport.querySelectorAll<HTMLElement>("[data-sidebar-row]")].filter((row) => {
+          if (row.closest("[data-project-heading]") !== null) return false;
+          const box = row.getBoundingClientRect();
+          return box.top < headingBottom - 1 && box.bottom > headingBottom + 1;
+        }).length;
+      })
+      .toBe(0);
+    expect(heading.hasAttribute("data-stuck")).toBe(true);
+
+    const headingBox = heading.getBoundingClientRect();
+    expect(getComputedStyle(heading).backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+    expect(getComputedStyle(heading).position).toBe("sticky");
+    expect(Number(getComputedStyle(heading).zIndex)).toBeGreaterThan(0);
+    const hit = document.elementFromPoint(
+      headingBox.left + headingBox.width / 2,
+      headingBox.top + headingBox.height / 2,
+    );
+    expect(hit !== null && heading.contains(hit)).toBe(true);
   });
 });

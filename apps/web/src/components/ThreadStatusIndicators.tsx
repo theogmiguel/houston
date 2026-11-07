@@ -50,7 +50,8 @@ import {
 
 import type { SidebarThreadSummary } from "../types";
 import { formatWorktreePathForDisplay } from "../worktreeCleanup";
-import { ThreadStateGlyph, threadStateTextClass } from "./ui/thread-state-glyph";
+import { ThreadStatusKindGlyph, threadStatusKindTextClass } from "./ui/thread-state-glyph";
+import { gridThreadStatusKind } from "../grid/statusWord";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import {
   PULL_REQUEST_PRESENTATION,
@@ -607,11 +608,14 @@ export function ThreadWorktreeIndicator({
 
 function ThreadStatusLabel({
   status,
+  thread,
   compact = false,
 }: {
   status: ThreadStatusPill;
+  thread: SidebarThreadSummary;
   compact?: boolean;
 }) {
+  const kind = gridThreadStatusKind(thread, status.state);
   if (compact) {
     return (
       <Tooltip>
@@ -622,12 +626,12 @@ function ThreadStatusLabel({
               aria-label={status.label}
               className={cn(
                 "inline-flex size-3.5 shrink-0 items-center justify-center",
-                threadStateTextClass(status.state),
+                threadStatusKindTextClass(kind),
               )}
             />
           }
         >
-          <ThreadStateGlyph state={status.state} className="size-3" />
+          <ThreadStatusKindGlyph kind={kind} className="size-3.5" />
         </TooltipTrigger>
         <TooltipPopup side="top">{status.label}</TooltipPopup>
       </Tooltip>
@@ -643,12 +647,12 @@ function ThreadStatusLabel({
             aria-label={status.label}
             className={cn(
               "inline-flex items-center gap-1 text-3xs",
-              threadStateTextClass(status.state),
+              threadStatusKindTextClass(kind),
             )}
           />
         }
       >
-        <ThreadStateGlyph state={status.state} className="size-3" />
+        <ThreadStatusKindGlyph kind={kind} className="size-3.5" />
         <span className="hidden md:inline">{status.label}</span>
       </TooltipTrigger>
       <TooltipPopup side="top">{status.label}</TooltipPopup>
@@ -746,7 +750,7 @@ export function ThreadRowLeadingStatus({ thread }: { thread: SidebarThreadSummar
           aria-label={`${changeRequestTerminologyForUrl(pendingLink.url).shortLabel} #${pendingLink.number}, status pending`}
         />
       ) : null}
-      {threadStatus ? <ThreadStatusLabel status={threadStatus} /> : null}
+      {threadStatus ? <ThreadStatusLabel status={threadStatus} thread={thread} /> : null}
     </span>
   );
 }

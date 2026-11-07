@@ -95,6 +95,9 @@ function contextStripClearance(card: HTMLElement | null): number {
 /** Space kept between a docked popup and the header it must not cross. */
 const HEADER_CLEARANCE_PX = 8;
 
+// The docked frame is a 208px list over an 88px effort panel; under this much room it opens above.
+const DOCKED_POPUP_MIN_HEIGHT_PX = 300;
+
 /**
  * Where a docked popup's top edge may start: just under the route header of the column the
  * picker sits in. A grid cell has no header, so it keeps the default collision padding.
@@ -163,12 +166,22 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   const iconOnly = props.iconOnly === true;
   const docked = props.effortPanel !== undefined;
   const [headerClearance, setHeaderClearance] = useState<number | null>(null);
+  const [dockSide, setDockSide] = useState<"top" | "bottom">("bottom");
   // The route header is a DOM node outside React, measured each time the popup opens (also when a
   // shortcut opens it through `props.open`, which no handler of this component sees).
-  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- measures the header's rect, which only the DOM knows
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- measures the header's rect and the room under the card, which only the DOM knows
   useLayoutEffect(() => {
     if (!docked || !isMenuOpen) return;
-    setHeaderClearance(headerClearanceOf(triggerRef.current));
+    const trigger = triggerRef.current;
+    setHeaderClearance(headerClearanceOf(trigger));
+    const card = composerCardOf(trigger);
+    if (card === null) {
+      setDockSide("bottom");
+      return;
+    }
+    const stripClearance = contextStripClearance(card);
+    const roomBelow = window.innerHeight - card.getBoundingClientRect().bottom - stripClearance;
+    setDockSide(roomBelow >= DOCKED_POPUP_MIN_HEIGHT_PX ? "bottom" : "top");
   }, [docked, isMenuOpen]);
 
   const activeEntry =
@@ -427,8 +440,9 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         {...(docked
           ? {
               anchor: () => composerCardOf(triggerRef.current) ?? triggerRef.current,
-              // Above the card when it fits; the flip below clears the context row.
-              side: "top" as const,
+              // Below the card when the pane leaves room, so the popup never covers the
+              // new-thread hero above it; above when it does not.
+              side: dockSide,
               ...(headerClearance === null
                 ? {}
                 : { collisionPadding: { top: headerClearance, right: 5, bottom: 5, left: 5 } }),

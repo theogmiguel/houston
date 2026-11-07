@@ -188,7 +188,7 @@ it(
     await userEvent.keyboard("{Control>}a{/Control}{Backspace}");
 
     await userEvent.keyboard("{Control>}{Shift>}m{/Shift}{/Control}");
-    await expect.element(page.getByPlaceholder("Search models")).toBeVisible();
+    await expect.element(page.getByPlaceholder(/^Search .+ models$/)).toBeVisible();
   },
   APP_BOOT_TEST_TIMEOUT_MS,
 );

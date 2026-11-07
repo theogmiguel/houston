@@ -433,7 +433,7 @@ export function UsagePage() {
   );
 
   return (
-    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
+    <SidebarInset className="min-h-0 overflow-hidden overscroll-y-none">
       <WorkspacePageHeader desktop={isDesktopHost}>
         <WorkspaceBreadcrumb ariaLabel="Usage breadcrumb" className="min-w-0">
           <WorkspaceBreadcrumbItem current>

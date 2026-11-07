@@ -583,15 +583,9 @@ describe("thread row status glyphs", () => {
       const svg = rowOf(screen.container).querySelector<SVGSVGElement>(
         "[data-thread-status-glyph] svg",
       )!;
-      let left = Infinity;
-      let right = -Infinity;
-      for (const part of svg.querySelectorAll<SVGGraphicsElement>("[stroke=currentColor]")) {
-        const box = part.getBBox();
-        const half = Number(part.getAttribute("stroke-width")) / 2;
-        left = Math.min(left, box.x - half);
-        right = Math.max(right, box.x + box.width + half);
-      }
-      return right - left;
+      // The stroke is painted once on the 24-unit viewBox and scales with the glyph.
+      const scale = svg.getBoundingClientRect().width / 24;
+      return (svg.getBBox().width + Number(svg.getAttribute("stroke-width"))) * scale;
     };
     const ready = await inkWidth("ready");
     const failed = await inkWidth("failed");

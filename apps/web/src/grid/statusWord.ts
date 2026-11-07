@@ -3,8 +3,11 @@ import { resolveSettledThreadTimestamp } from "@houston-app/client-runtime/state
 
 import { resolveSidebarThreadStatus, resolveThreadStatusPill } from "../components/Sidebar.logic";
 import { compactSidebarTimeLabel } from "../components/sidebar/SidebarRowTime";
+import type { ThreadStatusKind } from "../components/ui/thread-state-glyph";
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import type { GridThreadState } from "./sidebar";
+
+export type { ThreadStatusKind };
 
 /**
  * The word a thread's status line shows. It says why a thread needs you
@@ -34,22 +37,6 @@ export function gridThreadStatusWord(
       return thread.goal?.status === "active" ? "Goal" : "Running";
   }
 }
-
-/** The shape and hue family a row's status draws: one per word the second line can say. */
-export type ThreadStatusKind =
-  | "approval"
-  | "input"
-  | "request"
-  | "needs"
-  | "failed"
-  | "limited"
-  | "waiting"
-  | "running"
-  | "goal"
-  | "back"
-  | "ready"
-  | "idle"
-  | "closed";
 
 const STATUS_KIND_BY_WORD: Readonly<Record<string, ThreadStatusKind>> = {
   Approval: "approval",

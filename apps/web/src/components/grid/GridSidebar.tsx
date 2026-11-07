@@ -97,7 +97,7 @@ import {
 } from "./ProjectFilterPicker";
 import { jumpHintLabels } from "../../grid/jumpHints";
 import { useRevealOpenThread } from "../../grid/useRevealOpenThread";
-import { useStuckToTop } from "../../hooks/useStuckToTop";
+import { useStickyRowSettle, useStuckToTop } from "../../hooks/useStuckToTop";
 import { attachSidebarTree } from "../../lib/sidebarTree";
 import { useShortcutModifierState } from "../../shortcutModifierState";
 import { reportFailure } from "./reportFailure";
@@ -235,7 +235,6 @@ import {
   SIDEBAR_GRID_NAME_CLS,
   SIDEBAR_GRID_RENAME_CLS,
   SIDEBAR_PROJECT_ACTION_CLS,
-  SIDEBAR_PROJECT_ACTIONS_ROOM_CLS,
   SIDEBAR_PROJECT_LABEL_CLS,
   SIDEBAR_PROJECT_LABEL_TEXT_CLS,
   SIDEBAR_PROJECT_ROW_CLS,
@@ -1503,6 +1502,16 @@ function gridRowId(grid: Pick<GridRecord, "id">) {
 }
 
 /** A project's grids, then the threads no grid shows, under one collapsible label. */
+/** Scrolls the rail to a thread's row and focuses it; false when the row is not rendered. */
+function revealThreadRow(root: Element | null, threadKey: string): boolean {
+  const scope = root?.closest<HTMLElement>("[data-slot=scroll-area-viewport]") ?? document;
+  const row = scope.querySelector<HTMLElement>(`[data-sidebar-row="${CSS.escape(threadKey)}"]`);
+  if (row === null) return false;
+  row.scrollIntoView({ block: "nearest" });
+  row.focus({ preventScroll: true });
+  return true;
+}
+
 export function SidebarProjectSection({
   section,
   query,
@@ -1580,6 +1589,13 @@ export function SidebarProjectSection({
   const pips = attentionPips(sectionThreads, nowIso);
   const headingRef = useRef<HTMLDivElement | null>(null);
   const stuck = useStuckToTop(headingRef);
+  useStickyRowSettle(headingRef, stuck);
+  const jumpToThread = (threadKey: string) => {
+    if (revealThreadRow(headingRef.current, threadKey)) return;
+    if (!collapsed) return;
+    onToggleCollapsed();
+    requestAnimationFrame(() => revealThreadRow(headingRef.current, threadKey));
+  };
   const projectRef = scopeProjectRef(
     EnvironmentId.make(section.environmentId),
     ProjectId.make(section.projectId),
@@ -1618,10 +1634,7 @@ export function SidebarProjectSection({
                   const rect = event.currentTarget.getBoundingClientRect();
                   projectMenu({ x: rect.left, y: rect.bottom + 4 });
                 }}
-                className={cn(
-                  SIDEBAR_PROJECT_LABEL_CLS,
-                  !section.isScratch && SIDEBAR_PROJECT_ACTIONS_ROOM_CLS,
-                )}
+                className={SIDEBAR_PROJECT_LABEL_CLS}
               >
                 <span className={SIDEBAR_GRID_CHEVRON_BOX_CLS} data-project-chevron-box="">
                   <ChevronRightIcon
@@ -1638,7 +1651,6 @@ export function SidebarProjectSection({
                     {sectionThreads.length}
                   </span>
                 )}
-                <SidebarAttentionPips failed={pips.failed} needsYou={pips.needsYou} />
               </button>
             }
           />
@@ -1646,8 +1658,9 @@ export function SidebarProjectSection({
             {section.title}
           </TooltipPopup>
         </Tooltip>
+        <SidebarAttentionPips pips={pips} onJump={jumpToThread} />
         {section.isScratch ? null : (
-          <span className="absolute inset-y-0 right-1 flex items-center gap-0.5">
+          <span className="flex shrink-0 items-center gap-0.5 pr-1">
             {handleNewThread === undefined ? null : (
               <Tooltip>
                 <TooltipTrigger
@@ -1890,6 +1903,12 @@ export function GridGroup({
   const revealedThread =
     collapsed && open ? threads.find((thread) => thread.id === grid.focusedThreadId) : undefined;
   const gridPips = attentionPips(threads, nowIso);
+  const jumpToGridThread = (threadKey: string) => {
+    if (revealThreadRow(headerRef.current, threadKey)) return;
+    if (!collapsed) return;
+    onToggleCollapsed();
+    requestAnimationFrame(() => revealThreadRow(headerRef.current, threadKey));
+  };
   const readyThreads = threads.filter(
     (thread) => resolveGridThreadState(thread, nowIso) === "ready",
   );
@@ -2041,7 +2060,6 @@ export function GridGroup({
                       <span className={SIDEBAR_GRID_COUNT_CLS} data-heading-count="">
                         {threads.length}
                       </span>
-                      <SidebarAttentionPips failed={gridPips.failed} needsYou={gridPips.needsYou} />
                     </>
                   )}
                 </button>
@@ -2052,29 +2070,28 @@ export function GridGroup({
             </TooltipPopup>
           </Tooltip>
         )}
+        <SidebarAttentionPips pips={gridPips} onJump={jumpToGridThread} />
         {renaming ? null : (
-          <>
-            <span className="absolute inset-y-0 right-7 flex items-center">
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <button
-                      type="button"
-                      aria-label={`New thread in ${grid.name}`}
-                      onClick={onCreateThread}
-                      className={SIDEBAR_GRID_ACTION_CLS}
-                    />
-                  }
-                >
-                  <PlusIcon aria-hidden className="size-3.5" />
-                </TooltipTrigger>
-                <TooltipPopup side="top">
-                  {newThreadShortcut === null
-                    ? `New thread in ${grid.name}`
-                    : `New thread in ${grid.name} · ${newThreadShortcut}`}
-                </TooltipPopup>
-              </Tooltip>
-            </span>
+          <span className="flex shrink-0 items-center gap-0.5 pr-1">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    aria-label={`New thread in ${grid.name}`}
+                    onClick={onCreateThread}
+                    className={SIDEBAR_GRID_ACTION_CLS}
+                  />
+                }
+              >
+                <PlusIcon aria-hidden className="size-3.5" />
+              </TooltipTrigger>
+              <TooltipPopup side="top">
+                {newThreadShortcut === null
+                  ? `New thread in ${grid.name}`
+                  : `New thread in ${grid.name} · ${newThreadShortcut}`}
+              </TooltipPopup>
+            </Tooltip>
             <button
               ref={actionsButtonRef}
               type="button"
@@ -2082,15 +2099,11 @@ export function GridGroup({
               aria-haspopup="menu"
               aria-expanded={menuOpen}
               onClick={() => openGridMenuBelow(actionsButtonRef.current)}
-              className={cn(
-                SIDEBAR_GRID_ACTION_CLS,
-                "absolute right-1 top-1/2 -translate-y-1/2",
-                menuOpen && "opacity-100",
-              )}
+              className={cn(SIDEBAR_GRID_ACTION_CLS, menuOpen && "opacity-100")}
             >
               <MoreHorizontalIcon aria-hidden className="size-3.5" />
             </button>
-          </>
+          </span>
         )}
       </div>
       <AnimatedHeight>

@@ -4,6 +4,9 @@ import type { Thread } from "../types";
 import { makeThreadFixture } from "../test-fixtures";
 import {
   COMMAND_PALETTE_LIST_BOTTOM_INSET_PX,
+  RECENT_THREAD_LIMIT,
+  availablePaletteActions,
+  buildRootGroups,
   snapCommandPaletteListHeight,
   newThreadNoProjectIndex,
   buildNestedSearchItems,
@@ -1007,5 +1010,55 @@ describe("snapCommandPaletteListHeight", () => {
     expect(
       snapCommandPaletteListHeight({ rowBottoms, contentHeightPx: 300, availablePx: 30 }),
     ).toBeUndefined();
+  });
+});
+
+function actionItem(value: string, disabled = false) {
+  return {
+    kind: "action" as const,
+    value,
+    searchTerms: [value],
+    title: value,
+    icon: null,
+    run: async () => {},
+    ...(disabled ? { disabled: true } : {}),
+  };
+}
+
+describe("command palette opening groups", () => {
+  it("lists recent threads, then projects, then actions", () => {
+    const groups = buildRootGroups({
+      actionItems: [actionItem("action:one")],
+      projectItems: [actionItem("project:one")],
+      recentThreadItems: [actionItem("thread:one")],
+    });
+    expect(groups.map((group) => group.value)).toEqual(["recent-threads", "projects", "actions"]);
+    expect(groups.map((group) => group.label)).toEqual(["Recent threads", "Projects", "Actions"]);
+  });
+
+  it("keeps five recent threads and leaves unavailable actions out", () => {
+    expect(RECENT_THREAD_LIMIT).toBe(5);
+    const items = availablePaletteActions([
+      actionItem("action:ready"),
+      actionItem("action:unavailable", true),
+    ]);
+    expect(items.map((item) => item.value)).toEqual(["action:ready"]);
+  });
+
+  it("drops the opening-only groups once a query arrives", () => {
+    const rootGroups = buildRootGroups({
+      actionItems: [actionItem("action:one")],
+      projectItems: [actionItem("project:one")],
+      recentThreadItems: [actionItem("thread:one")],
+    });
+    const groups = filterCommandPaletteGroups({
+      activeGroups: rootGroups,
+      query: "one",
+      isInSubmenu: false,
+      projectSearchItems: [],
+      threadSearchItems: [],
+    });
+    expect(groups.map((group) => group.value)).not.toContain("recent-threads");
+    expect(groups.map((group) => group.value)).not.toContain("projects");
   });
 });

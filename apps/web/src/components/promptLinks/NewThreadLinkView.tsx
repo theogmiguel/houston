@@ -434,7 +434,7 @@ function LinkPage({
   readonly children?: ReactNode;
 }) {
   return (
-    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
+    <SidebarInset className="min-h-0 overflow-hidden overscroll-y-none">
       {isNativeDesktopHost() ? <WorkspacePageHeader desktop={isDesktopHost} /> : null}
       <Empty className="flex-1">
         <EmptyHeader className="max-w-md">

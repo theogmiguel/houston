@@ -26,6 +26,8 @@ import {
   MenuTrigger,
 } from "./menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./tooltip";
+import { ThreadStatusKindGlyph } from "./thread-state-glyph";
+import type { AttentionPip } from "../../grid/attentionPips";
 
 /**
  * A heading is one 12px/600 line: chevron, name, muted count, then the attention pips. A grid
@@ -33,7 +35,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "./tooltip";
  * only while the heading is hovered or focused, so the name keeps the width otherwise.
  */
 export const SIDEBAR_GRID_HEADING_CLS =
-  "group/grid flex h-8 w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-lg py-0 pr-2 pl-4 text-left text-xs transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover group-hover/grid:pr-13 group-has-focus-visible/grid:pr-13 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+  "group/grid flex h-8 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-lg py-0 pr-1 pl-4 text-left text-xs transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
 export const SIDEBAR_GRID_HEADING_ACTIVE_CLS = "bg-sidebar-row-selected";
 
@@ -41,7 +43,7 @@ export const SIDEBAR_GRID_HEADING_DROP_CLS =
   "bg-(--accent-muted) ring-1 ring-(--accent-ink) ring-inset";
 
 export const SIDEBAR_GRID_NAME_CLS =
-  "min-w-0 truncate text-xs font-semibold text-sidebar-foreground";
+  "min-w-0 flex-1 truncate text-xs font-semibold text-sidebar-foreground";
 
 export const SIDEBAR_GRID_EMPTY_CLS = "ml-auto shrink-0 text-xs text-secondary-label";
 
@@ -58,23 +60,37 @@ export const SIDEBAR_PROJECT_ROW_CLS =
   "group/project sticky -top-px z-10 mt-1 flex items-center border-b border-transparent bg-sidebar first:mt-0 data-stuck:border-sidebar-border";
 
 export const SIDEBAR_PROJECT_LABEL_CLS =
-  "flex h-8 w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-lg py-0 pr-2 pl-2 text-left text-xs font-semibold text-sidebar-foreground transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+  "flex h-8 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-lg py-0 pr-1 pl-2 text-left text-xs font-semibold text-sidebar-foreground transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
-/** A project label's room for its three hover actions (New thread, New grid, Project actions). */
-export const SIDEBAR_PROJECT_ACTIONS_ROOM_CLS =
-  "group-hover/project:pr-17 group-has-focus-visible/project:pr-17";
-
-export const SIDEBAR_PROJECT_LABEL_TEXT_CLS = "min-w-0 truncate";
+export const SIDEBAR_PROJECT_LABEL_TEXT_CLS = "min-w-0 flex-1 truncate";
 
 /** The project heading's muted thread count. */
 export const SIDEBAR_PROJECT_SUMMARY_CLS = SIDEBAR_GRID_COUNT_CLS;
 
-/** The heading's pips: hidden while the hover actions show in their place. */
-export const SIDEBAR_HEADING_PIPS_CLS =
-  "ml-auto flex shrink-0 items-center gap-1 transition-opacity duration-(--motion-feedback) ease-standard group-hover/project:opacity-0 group-has-focus-visible/project:opacity-0 group-hover/grid:opacity-0 group-has-focus-visible/grid:opacity-0";
+/** The heading's pips: always visible so they stay reachable; the hover actions reserve their own room. */
+export const SIDEBAR_HEADING_PIPS_CLS = "flex shrink-0 items-center gap-1";
 
 const SIDEBAR_HEADING_PIP_CLS =
-  "inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-2xs leading-none font-semibold tabular-nums";
+  "inline-flex h-4 min-w-4 cursor-pointer items-center justify-center gap-0.5 rounded-full px-1 text-2xs leading-none font-semibold tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+
+const ATTENTION_PIP_CLASS = {
+  failed: "bg-error-surface text-error-foreground",
+  needs: "bg-warning-surface text-(--warn-ink)",
+  back: "bg-merged/15 text-merged-foreground",
+} as const;
+
+const ATTENTION_PIP_KIND = {
+  failed: "failed",
+  needs: "needs",
+  back: "back",
+} as const;
+
+const ATTENTION_PIP_LABEL = {
+  failed: (count: number) => (count === 1 ? "1 thread failed" : `${count} threads failed`),
+  needs: (count: number) =>
+    count === 1 ? "1 thread needs input or approval" : `${count} threads need input or approval`,
+  back: (count: number) => (count === 1 ? "1 thread came back" : `${count} threads came back`),
+} as const;
 
 /** The project label's New thread and New grid actions, revealed on hover or keyboard focus, not a click's focus. */
 export const SIDEBAR_PROJECT_ACTION_CLS =
@@ -85,39 +101,45 @@ export const SIDEBAR_PROJECT_EMPTY_ACTION_CLS =
   "flex h-(--h-row) w-full cursor-pointer items-center gap-2 rounded-lg py-0 pr-2 pl-7.5 text-left text-xs text-secondary-label transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
 /**
- * The attention pips of a project or grid heading: a failed count, then a count of threads that
- * wait for the user. Nothing renders when neither has a thread.
+ * The attention pips of a project or grid heading. Each pip carries the glyph and ink of the
+ * status it counts and jumps to that family's first row; nothing renders when no row needs a pip.
  */
 export function SidebarAttentionPips({
-  failed,
-  needsYou,
+  pips,
+  onJump,
 }: {
-  readonly failed: number;
-  readonly needsYou: number;
+  readonly pips: ReadonlyArray<AttentionPip>;
+  readonly onJump: (firstThreadKey: string) => void;
 }) {
-  if (failed === 0 && needsYou === 0) return null;
+  if (pips.length === 0) return null;
   return (
     <span data-attention-pips="" className={SIDEBAR_HEADING_PIPS_CLS}>
-      {failed === 0 ? null : (
-        <span
-          role="img"
-          aria-label={failed === 1 ? "1 thread failed" : `${failed} threads failed`}
-          data-attention-pip="failed"
-          className={cn(SIDEBAR_HEADING_PIP_CLS, "bg-error-surface text-error-foreground")}
-        >
-          <span aria-hidden>{failed}</span>
-        </span>
-      )}
-      {needsYou === 0 ? null : (
-        <span
-          role="img"
-          aria-label={needsYou === 1 ? "1 thread needs you" : `${needsYou} threads need you`}
-          data-attention-pip="needs-you"
-          className={cn(SIDEBAR_HEADING_PIP_CLS, "bg-warning-surface text-warning-foreground")}
-        >
-          <span aria-hidden>{needsYou}</span>
-        </span>
-      )}
+      {pips.map((pip) => {
+        const label = ATTENTION_PIP_LABEL[pip.group](pip.count);
+        return (
+          <Tooltip key={pip.group}>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  aria-label={label}
+                  data-attention-pip={pip.group}
+                  onClick={() => onJump(pip.firstThreadKey)}
+                  className={cn(
+                    SIDEBAR_HEADING_PIP_CLS,
+                    ATTENTION_PIP_CLASS[pip.group],
+                    "transition-opacity duration-(--motion-feedback) ease-standard hover:opacity-80",
+                  )}
+                />
+              }
+            >
+              <ThreadStatusKindGlyph kind={ATTENTION_PIP_KIND[pip.group]} className="size-3" />
+              <span aria-hidden>{pip.count}</span>
+            </TooltipTrigger>
+            <TooltipPopup side="bottom">{label}</TooltipPopup>
+          </Tooltip>
+        );
+      })}
     </span>
   );
 }

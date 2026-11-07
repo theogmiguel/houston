@@ -55,6 +55,7 @@ import { announce } from "~/lib/announce";
 import { cn } from "~/lib/utils";
 import {
   MODEL_PICKER_DOCKED_CLASS,
+  MODEL_PICKER_HINT_CLS,
   PICKER_PROVIDER_NAME_CLASS,
 } from "../ui/composer-picker-recipes";
 import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
@@ -910,7 +911,13 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
               <SearchIcon aria-hidden="true" className="size-3.25 shrink-0" />
               <ComboboxPrimitive.Input
                 ref={searchInputRef}
-                placeholder={onToggleModel ? "Search models · Shift click adds" : "Search models"}
+                placeholder={
+                  selectedInstanceId === "favorites"
+                    ? "Search favorites"
+                    : entryByInstanceId.get(selectedInstanceId) === undefined
+                      ? "Search models"
+                      : `Search ${entryByInstanceId.get(selectedInstanceId)!.displayName} models`
+                }
                 className="h-5 min-w-0 flex-1 bg-transparent p-0 text-(--t1) text-xs leading-5 outline-none placeholder:text-(--houston)"
                 value={searchQuery}
                 onChange={(e) => {
@@ -1080,6 +1087,9 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                 );
               }}
             />
+            {onToggleModel ? (
+              <p className={MODEL_PICKER_HINT_CLS}>Shift-click adds a model</p>
+            ) : null}
             <ModelPickerProviderNotices
               setupEntries={providerSetupEntries}
               updateRequiredNotices={updateRequiredNotices}

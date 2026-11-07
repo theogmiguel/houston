@@ -3,7 +3,12 @@ import { describe, expect, it } from "vite-plus/test";
 import "~/index.css";
 import { render } from "../../../test/render";
 import { SettingsBreadcrumb } from "./SettingsBreadcrumb";
-import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
+import {
+  SettingsPageActionsProvider,
+  SettingsPageContainer,
+  SettingsRow,
+  SettingsSection,
+} from "./settingsLayout";
 import { SETTINGS_SECTION_DESCRIPTIONS, SETTINGS_SECTION_LABELS } from "./settingsSearch";
 
 describe("SettingsPageContainer heading", () => {
@@ -37,6 +42,43 @@ describe("SettingsPageContainer heading", () => {
     await expect
       .element(screen.getByRole("heading", { level: 1, name: "Open source licenses" }))
       .toBeVisible();
+  });
+
+  it("puts the page actions in the title row, to the right of the title", async () => {
+    await using screen = await render(
+      <SettingsPageActionsProvider actions={<button type="button">Restore defaults</button>}>
+        <SettingsPageContainer>
+          <p>content</p>
+        </SettingsPageContainer>
+      </SettingsPageActionsProvider>,
+      { router: "/settings/appearance" },
+    );
+
+    const title = screen.getByRole("heading", { level: 1, name: "Appearance" }).element();
+    const action = screen.getByRole("button", { name: "Restore defaults" }).element();
+    expect(action.getBoundingClientRect().left).toBeGreaterThan(title.getBoundingClientRect().left);
+    // The action shares the title's row instead of floating in the window header.
+    expect(
+      Math.abs(action.getBoundingClientRect().top - title.getBoundingClientRect().top),
+    ).toBeLessThan(12);
+  });
+
+  it("centres the content column in the canvas", async () => {
+    const canvas = document.createElement("div");
+    canvas.style.cssText = "display:flex;flex-direction:column;width:1152px;height:900px";
+    await using screen = await render(
+      <SettingsPageContainer>
+        <p>content</p>
+      </SettingsPageContainer>,
+      { router: "/settings/appearance", container: canvas },
+    );
+    const scroll = screen.container.querySelector<HTMLElement>("[data-settings-page-scroll]")!;
+    const column = scroll.firstElementChild as HTMLElement;
+    const scrollBox = scroll.getBoundingClientRect();
+    const columnBox = column.getBoundingClientRect();
+    const left = columnBox.left - scrollBox.left;
+    const right = scrollBox.right - columnBox.right;
+    expect(Math.abs(left - right)).toBeLessThanOrEqual(2);
   });
 
   it("adds no heading outside a known settings page", async () => {
@@ -162,10 +204,10 @@ describe("settings group card", () => {
         );
         const group = document.querySelector<HTMLElement>('[data-slot="settings-group"]')!;
         const card = getComputedStyle(group);
-        // The light card edge is one step above --border; dark keeps the ordinary hairline.
+        // The raised card edge is its own token in both themes.
         const edge = flatten(card.borderTopColor, card.backgroundColor);
         const expected = flatten(
-          resolveToken("borderTopColor", theme === "light" ? "var(--divider)" : "var(--border)"),
+          resolveToken("borderTopColor", "var(--card-edge)"),
           card.backgroundColor,
         );
         edge.forEach((channel, index) =>

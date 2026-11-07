@@ -288,7 +288,7 @@ import { ThreadTimeline } from "./chat/ThreadTimeline";
 import { ProviderSubagentBar } from "./chat/ProviderSubagentBar";
 import { getTriggerDisplayModelName } from "./chat/providerIconUtils";
 import { resolveScrollToEndClearance } from "./composerFooterLayout";
-import { ChatHeader } from "./chat/ChatHeader";
+import { ChatHeader, type ChatHeaderMeta } from "./chat/ChatHeader";
 import { useSideChat } from "./chat/useSideChat";
 import { useSecondOpinion } from "./chat/useSecondOpinion";
 import { useRemoteOpenState } from "~/remoteOpen";
@@ -308,6 +308,8 @@ import {
   shouldShowComposerContextStrip,
   shouldShowEnvironmentIndicator,
 } from "./BranchToolbar.logic";
+import { resolveChangesTotals } from "./GitActionsControl.logic";
+import { resolveRowPullRequest } from "../grid/sidebar";
 import {
   getProviderStatusBannerKey,
   shouldShowProviderStatusBanner,
@@ -3452,6 +3454,38 @@ export default function ChatView(props: ChatViewProps) {
       }}
     />
   ) : null;
+  const headerModelInstanceId =
+    activeRuntime?.providerInstanceId ?? activeThread?.modelSelection.instanceId ?? null;
+  const headerProviderEntry =
+    headerModelInstanceId === null
+      ? null
+      : (providerInstanceEntries.find((entry) => entry.instanceId === headerModelInstanceId) ??
+        null);
+  const headerModel = activeThread?.modelSelection.model ?? null;
+  const headerModelEntry =
+    headerModel === null
+      ? null
+      : (headerProviderEntry?.models.find((model) => model.slug === headerModel) ?? null);
+  const headerRowPullRequest =
+    activeThreadShell === null ? null : resolveRowPullRequest(activeThreadShell);
+  const headerDiffTotals = resolveChangesTotals(gitStatusQuery.data);
+  const headerBranch = activeThreadBranch ?? gitStatusQuery.data?.refName ?? null;
+  const chatHeaderMeta = {
+    branch: headerBranch,
+    checkoutLabel: envMode === "worktree" ? "Worktree" : "Local checkout",
+    status: activeThreadStatusPill,
+    pullRequest: headerRowPullRequest,
+    pullRequestCount: activeThreadShell?.pullRequests.length ?? 0,
+    diffTotals: headerDiffTotals,
+    providerLabel: headerProviderEntry?.displayName ?? null,
+    modelLabel:
+      headerModel === null
+        ? null
+        : headerModelEntry === null
+          ? headerModel
+          : getTriggerDisplayModelName(headerModelEntry, headerProviderEntry?.driverKind),
+    onOpenChanges: isServerThread && isGitRepo ? openChangesFromThreadPanelStable : undefined,
+  } satisfies ChatHeaderMeta;
   const panelToggleControlProps = {
     terminalAvailable: activeProject !== null,
     terminalOpen: terminalUiState.terminalOpen,
@@ -3508,7 +3542,7 @@ export default function ChatView(props: ChatViewProps) {
               "relative bg-background",
               isDesktopHost
                 ? cn(
-                    "drag-region flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center",
+                    "drag-region flex min-h-12 shrink-0 items-center py-1",
                     rightPanelOpen ? "pl-3 sm:pl-5 pr-0" : "px-3 sm:px-5",
                     !inlineRightPanelOwnsTitleBar &&
                       "custom-chrome:pr-(--workspace-native-controls-inset)",
@@ -3517,7 +3551,7 @@ export default function ChatView(props: ChatViewProps) {
                       "wco:pr-(--workspace-native-controls-inset)",
                   )
                 : cn(
-                    "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center pl-(--workspace-gutter-start)",
+                    "flex min-h-12 shrink-0 items-center py-1 pl-(--workspace-gutter-start)",
                     rightPanelOpen ? "pr-0" : "pr-(--workspace-gutter-end)",
                     !inlineRightPanelOwnsTitleBar &&
                       "custom-chrome:pr-(--workspace-native-controls-inset)",
@@ -3533,6 +3567,7 @@ export default function ChatView(props: ChatViewProps) {
               activeThreadLinkOrigin={activeThreadShell?.linkOrigin?.label ?? null}
               activeProject={activeProject ?? null}
               parentThreadLink={headerParentThreadLink}
+              meta={chatHeaderMeta}
               onOpenThread={onOpenRelatedThreadStable}
               {...(activeDraftLogicalProjectKey
                 ? { onOpenProjectSettings: handleOpenDraftProjectSettingsStable }
@@ -3726,9 +3761,9 @@ export default function ChatView(props: ChatViewProps) {
               data-draft-hero={isDraftHeroState ? "true" : undefined}
               className={
                 isDraftHeroState
-                  ? // 93% tall, so the stack centres a little above the pane's middle and the
-                    // headline above it brings the group's centre to about 42% of the pane.
-                    "pointer-events-none absolute inset-x-0 top-0 z-20 flex h-[93%] items-center"
+                  ? // Anchored low so the hero and project context sit above it and the pane
+                    // leaves the docked model picker its 300px under the card.
+                    "pointer-events-none absolute inset-x-0 bottom-0 z-20 flex items-end pb-72 max-sm:pb-16"
                   : "pointer-events-none absolute inset-x-0 bottom-0 z-20 pt-1.5 sm:pt-2"
               }
             >
@@ -3751,6 +3786,9 @@ export default function ChatView(props: ChatViewProps) {
                           draftId={draftId}
                           activeProjectRef={activeProjectRef}
                           activeProjectTitle={activeProject?.title ?? null}
+                          branch={chatHeaderMeta.branch}
+                          checkoutLabel={chatHeaderMeta.checkoutLabel}
+                          onOpenThread={openThread}
                         />
                       </div>
                     </div>

@@ -9,8 +9,17 @@ import { shortcutLabelForCommand } from "../../keybindings";
 import { cn } from "../../lib/utils";
 import { usePullRequestsSupported } from "../../state/environments";
 import { primaryServerKeybindingsAtom } from "../../state/server";
-import { Badge } from "../ui/badge";
 import { MOTION_FEEDBACK } from "../ui/motion-recipes";
+import {
+  RAIL_SHORTCUT_ACTIVE_CLS,
+  RAIL_SHORTCUT_CLS,
+  RAIL_SHORTCUT_COUNT_CLS,
+  RAIL_SHORTCUT_ICON_ACTIVE_CLS,
+  RAIL_SHORTCUT_ICON_CLS,
+  RAIL_SHORTCUT_ICON_REST_CLS,
+  RAIL_SHORTCUT_LABEL_CLS,
+  RAIL_SHORTCUT_REST_CLS,
+} from "../ui/sidebar-rail-recipes";
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
 import { useSidebar } from "../ui/sidebar";
@@ -26,22 +35,23 @@ export function SidebarRailKbd({ children }: { children: ReactNode }) {
 }
 
 /**
- * One icon button of the rail's shortcut row. The label is the accessible name and the tooltip;
- * a count rides beside the icon, and the name carries it too.
+ * One labelled shortcut of the rail's shortcut row: a 16px icon over an 11px name, the
+ * active route filled and marked with `aria-current`. The name is also the accessible
+ * name and the tooltip, with the shortcut when one opens it.
  */
 function SidebarRailShortcut({
   icon,
   label,
   count = null,
-  countVariant = "text",
   active,
+  shortcut = null,
   onClick,
 }: {
   icon: ReactNode;
   label: string;
   count?: number | null;
-  countVariant?: "text" | "badge";
   active: boolean;
+  shortcut?: string | null;
   onClick: () => void;
 }) {
   const shown = count !== null && count > 0 ? count : null;
@@ -56,32 +66,30 @@ function SidebarRailShortcut({
             data-rail-shortcut={label}
             onClick={onClick}
             className={cn(
-              "flex h-7 min-w-0 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-(--control-radius) text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+              RAIL_SHORTCUT_CLS,
               MOTION_FEEDBACK,
-              active
-                ? "bg-sidebar-row-selected text-sidebar-foreground"
-                : "text-secondary-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
+              active ? RAIL_SHORTCUT_ACTIVE_CLS : RAIL_SHORTCUT_REST_CLS,
             )}
           />
         }
       >
         <span
           aria-hidden
-          className="inline-grid size-4 shrink-0 place-items-center text-secondary-label [&>svg]:size-4"
+          className={cn(
+            RAIL_SHORTCUT_ICON_CLS,
+            active ? RAIL_SHORTCUT_ICON_ACTIVE_CLS : RAIL_SHORTCUT_ICON_REST_CLS,
+          )}
         >
           {icon}
+          {shown === null ? null : <span className={RAIL_SHORTCUT_COUNT_CLS}>{shown}</span>}
         </span>
-        {shown === null ? null : countVariant === "badge" ? (
-          <Badge variant="default" size="sm" aria-hidden>
-            {shown}
-          </Badge>
-        ) : (
-          <span aria-hidden className="shrink-0 text-xs text-secondary-label tabular-nums">
-            {shown}
-          </span>
-        )}
+        <span aria-hidden data-rail-shortcut-label="" className={RAIL_SHORTCUT_LABEL_CLS}>
+          {label}
+        </span>
       </TooltipTrigger>
-      <TooltipPopup side="bottom">{label}</TooltipPopup>
+      <TooltipPopup side="bottom">
+        {shortcut === null ? label : `${label} · ${shortcut}`}
+      </TooltipPopup>
     </Tooltip>
   );
 }
@@ -160,6 +168,8 @@ export function SidebarRailNav({
   taskCount?: number | null;
 }) {
   const navigate = useNavigate();
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const usageShortcut = shortcutLabelForCommand(keybindings, "usage.open");
   const pullRequestsSupported = usePullRequestsSupported();
   const { isMobile, setOpenMobile } = useSidebar();
   const pathname = useLocation({ select: (location) => location.pathname });
@@ -196,13 +206,13 @@ export function SidebarRailNav({
           icon={<ListChecksIcon />}
           label="Tasks"
           count={taskCount}
-          countVariant="badge"
           active={pathname === "/tasks"}
           onClick={openTasks}
         />
         <SidebarRailShortcut
           icon={<ChartNoAxesColumnIcon />}
           label="Usage"
+          shortcut={usageShortcut}
           active={pathname === "/usage"}
           onClick={openUsage}
         />

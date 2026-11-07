@@ -7,21 +7,20 @@ import {
 } from "@houston-app/client-runtime/state/models";
 import { threadWokeAt } from "@houston-app/client-runtime/state/thread-settled";
 
-import {
-  gridThreadStatusKind,
-  gridThreadStatusWord,
-  type ThreadStatusKind,
-} from "../../grid/statusWord";
+import { gridThreadStatusKind, gridThreadStatusWord } from "../../grid/statusWord";
 import type { GridThreadState } from "../../grid/sidebar";
+import type { ThreadStatusPill } from "../Sidebar.logic";
 import { useAcknowledgeThreadWoke } from "../../hooks/useThreadActions";
 import { useNowSecond } from "../../hooks/useNowSecond";
 import { cn } from "../../lib/utils";
+import type { ThreadStatusKind } from "../ui/thread-state-glyph";
 import {
   ThreadStatusKindGlyph,
   threadStatusKindTextClass,
   threadStatusWordClass,
-} from "../ui/thread-status-kind-glyph";
+} from "../ui/thread-state-glyph";
 import { SIDEBAR_THREAD_STATUS_CLASS } from "../ui/thread-tag-recipes";
+import { SidebarThreadStatusGlyph } from "../sidebar/SidebarStatusGlyph";
 
 const BACK_WORD_CLASS = threadStatusWordClass("back");
 
@@ -130,5 +129,26 @@ export function ThreadStatusWord({
         ) : null}
       </span>
     </span>
+  );
+}
+
+/**
+ * The grid pane label's status mark. It draws the same kind as the thread's rail
+ * row, so a state looks the same beside the pane title as it does down the list.
+ */
+export function PaneThreadStatusMark({
+  thread,
+  status,
+}: {
+  thread: EnvironmentThreadShell;
+  status: ThreadStatusPill | null;
+}) {
+  if (status === null) return null;
+  return (
+    <SidebarThreadStatusGlyph
+      status={status}
+      kind={gridThreadStatusKind(thread, status.state)}
+      label={status.label}
+    />
   );
 }
