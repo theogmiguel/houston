@@ -556,6 +556,7 @@ const make = Effect.gen(function* () {
 
   const contexts = new ServerBrowserContexts({
     profilesDir: NodePath.join(config.stateDir, "server-browser", "profiles"),
+    idleBrowserMs: 5 * 60_000,
     executable: () =>
       runPromise(
         previewBrowser.executable.pipe(
