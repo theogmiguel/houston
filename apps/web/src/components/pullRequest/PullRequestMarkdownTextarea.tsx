@@ -144,13 +144,13 @@ function CompletionRow({ completion }: { completion: PullRequestCompletion }) {
 const EMPTY_STATE = {
   mention: {
     label: "Mention a user",
-    pending: "Searching users...",
+    pending: "Searching users…",
     failed: "Couldn't search users on the host",
     none: "No matching users",
   },
   reference: {
     label: "Reference an issue or change request",
-    pending: "Searching...",
+    pending: "Searching…",
     failed: "Couldn't search the host",
     none: "No matching issues or change requests",
   },
@@ -310,7 +310,7 @@ export function PullRequestMarkdownTextarea({
                   aria-selected={index === activeIndex}
                   className={cn(
                     "flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm",
-                    index === activeIndex && "bg-accent text-accent-foreground",
+                    index === activeIndex && "bg-hover text-hover-foreground",
                   )}
                   onMouseMove={() => {
                     if (index !== activeIndex) setHighlight({ query: trigger?.query ?? "", index });
