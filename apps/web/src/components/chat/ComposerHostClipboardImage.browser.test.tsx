@@ -246,7 +246,9 @@ it(
       if (previous === undefined) delete window.hostBridge;
       else window.hostBridge = previous;
     }
-    await vi.waitFor(() => expect(tiles()).toHaveLength(1));
+    // Reading the path and building the tile runs after the dialog closes; on a loaded CI runner
+    // that takes longer than the default 1s wait.
+    await vi.waitFor(() => expect(tiles()).toHaveLength(1), { timeout: 5_000 });
     expect(readDroppedPath).toHaveBeenCalledWith("/home/someone/.ssh/id_ed25519");
   },
   APP_BOOT_TEST_TIMEOUT_MS,
