@@ -135,6 +135,7 @@ function SettingsContentLayout() {
             swapKey={`${location.pathname}:${contentScopeKey}:${restoreSignal}`}
             className="min-h-0 flex flex-1 flex-col"
             contentClassName="min-h-0 flex flex-1 flex-col"
+            innerClassName="min-h-0 flex flex-1 flex-col"
           >
             <SettingsScopeBoundary pathname={location.pathname}>
               <SettingsPageActionsProvider
