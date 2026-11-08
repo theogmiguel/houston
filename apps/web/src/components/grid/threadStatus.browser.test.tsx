@@ -157,7 +157,7 @@ describe("thread status words", () => {
         }),
       ),
     );
-    await expect.poll(() => statusLine(screen.container)).toMatch(/^Waiting for \d+h \d+m$/);
+    await expect.poll(() => statusLine(screen.container)).toMatch(/^Waiting \d+h \d+m$/);
   });
 
   it("shows Goal for a running thread pursuing a goal", async () => {
