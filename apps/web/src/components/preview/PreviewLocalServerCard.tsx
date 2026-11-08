@@ -1,4 +1,5 @@
 import type { ScopedThreadRef } from "@houston-app/contracts";
+import { LiveDot } from "../ui/live-dot";
 import { DiscoveryListRow } from "../ui/discovery-list";
 
 import { PreviewFaviconIcon } from "./PreviewFaviconIcon";
@@ -17,7 +18,12 @@ export function PreviewLocalServerCard({ threadRef, server, onOpen }: Props) {
       onClick={onOpen}
       icon={<PreviewFaviconIcon threadRef={threadRef} url={server.requestedUrl} />}
       title={subtitle}
-      description={`${server.host}:${server.port}`}
+      description={
+        <span className="flex min-w-0 items-center gap-1.5">
+          <LiveDot label="Live" />
+          <span className="truncate">{`${server.host}:${server.port}`}</span>
+        </span>
+      }
     />
   );
 }

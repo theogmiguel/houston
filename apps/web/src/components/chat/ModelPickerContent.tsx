@@ -53,7 +53,7 @@ import {
 } from "~/hooks/useSettings";
 import { announce } from "~/lib/announce";
 import { cn } from "~/lib/utils";
-import { MODEL_PICKER_DOCKED_CLASS } from "../ui/composer-picker-recipes";
+import { MODEL_PICKER_DOCKED_CLASS, MODEL_PICKER_HINT_CLS } from "../ui/composer-picker-recipes";
 import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
 import { TooltipProvider } from "../ui/tooltip";
 import { Button, InlineButton } from "../ui/button";
@@ -162,7 +162,35 @@ function adjacentModelPickerProvider(input: {
 }
 
 const EMPTY_MODEL_JUMP_LABELS = new Map<string, string>();
-const MODEL_LIST_ESTIMATED_ITEM_SIZE = 34;
+export const MODEL_LIST_ESTIMATED_ITEM_SIZE = 34;
+/** A model row, a Legacy models row and the `h-0.5` gap between rows, as laid out. */
+const MODEL_ROW_PX = 42;
+const LEGACY_ROW_PX = 36;
+const MODEL_LIST_GAP_PX = 2;
+/** The list's top and bottom padding. */
+const MODEL_LIST_PADDING_PX = 16;
+/** A long list stops growing at the height eight estimated rows had before it scrolls. */
+const MODEL_LIST_MAX_HEIGHT_PX = 8 * MODEL_LIST_ESTIMATED_ITEM_SIZE;
+
+/**
+ * The height of a list showing its rows whole: each row, the gaps between them and the padding.
+ * Past the maximum the list scrolls inside it.
+ */
+export function modelListHeight(modelRows: number, legacyRows: number): number {
+  const rows = modelRows + legacyRows;
+  const content =
+    modelRows * MODEL_ROW_PX +
+    legacyRows * LEGACY_ROW_PX +
+    Math.max(0, rows - 1) * MODEL_LIST_GAP_PX +
+    MODEL_LIST_PADDING_PX;
+  return Math.min(content, MODEL_LIST_MAX_HEIGHT_PX);
+}
+
+/** The height one more model row adds to the list. */
+export const MODEL_LIST_ROW_STEP_PX = MODEL_ROW_PX + MODEL_LIST_GAP_PX;
+
+/** The docked list keeps this many rows visible however little room the popup has. */
+export const MODEL_LIST_MIN_VISIBLE_ROWS = 4;
 
 function ModelListSeparator() {
   return <div className="h-0.5" />;
@@ -250,11 +278,14 @@ function ModelPickerProviderNotices({
 function ModelPickerList({
   listRef,
   itemKeys,
+  height,
   extraData,
   renderItem,
 }: {
   listRef: RefObject<LegendListRef | null>;
   itemKeys: ReadonlyArray<string>;
+  /** The list's height: its rows shown whole up to a maximum, then it scrolls. */
+  height: number;
   extraData: unknown;
   renderItem: (props: { item: string; index: number }) => ReactNode;
 }) {
@@ -296,9 +327,11 @@ function ModelPickerList({
   return (
     <div
       className={cn(
-        "relative min-h-0 overflow-hidden pr-px",
-        itemKeys.length > 0 ? "flex-1" : "h-0",
+        "relative min-h-0 shrink-0 overflow-hidden pr-px",
+        itemKeys.length === 0 && "h-0",
       )}
+      data-model-picker-list="true"
+      style={itemKeys.length > 0 ? { height } : undefined}
     >
       <ComboboxListVirtualized>
         <LegendList<string>
@@ -360,9 +393,9 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   onInstanceModelChange: (instanceId: ProviderInstanceId, model: string) => void;
   /** The owning popup moves focus here when it opens (its `initialFocus`). */
   searchInputRef: RefObject<HTMLInputElement | null>;
-  /** Sits beside an effort column: fills the shared row, and stacks above it on narrow screens. */
+  /** Sits above an effort panel: fills the shared frame's width. */
   docked?: boolean;
-  /** Right at the end of the search text moves into the popup's effort column. */
+  /** Right at the end of the search text moves into the popup's effort panel. */
   onFocusEffort?: () => void;
 }) {
   const {
@@ -830,32 +863,14 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     <TooltipProvider delay={0}>
       <WindowKeyDownListener onKeyDown={onWindowKeyDown} />
       <div
-        // One fixed size whatever the tab, its model count or the search holds, so switching tabs
-        // or typing never moves the rail under the cursor.
+        // The list sizes to its models, up to eight rows, so a short provider never leaves a
+        // clipped row and a long one scrolls.
         className={cn(
-          "relative flex h-86.5 max-h-(--available-height) w-[26.75rem] max-w-[calc(100vw-2rem)] flex-row overflow-hidden bg-(--raised)",
-          props.docked ? MODEL_PICKER_DOCKED_CLASS : "rounded-lg border border-border",
+          "relative flex max-h-(--available-height) max-w-[calc(100vw-2rem)] flex-col overflow-hidden bg-(--raised)",
+          props.docked ? MODEL_PICKER_DOCKED_CLASS : "w-[26.75rem] rounded-lg border border-border",
         )}
         data-model-picker-content="true"
       >
-        {showSidebar && (
-          <ModelPickerSidebar
-            selectedInstanceId={selectedInstanceId}
-            onSelectInstance={handleSelectInstance}
-            onFocusSearch={focusSearchInput}
-            instanceEntries={sidebarInstanceEntries}
-            showFavorites
-            {...(selectableUnavailableInstanceIds ? { selectableUnavailableInstanceIds } : {})}
-            {...(lockedDisabledInstanceIds
-              ? {
-                  disabledInstanceIds: lockedDisabledInstanceIds,
-                  getDisabledInstanceTooltip: (entry: ProviderInstanceEntry) =>
-                    `${entry.displayName} is unavailable in this thread. Start a new thread to switch providers.`,
-                }
-              : {})}
-          />
-        )}
-
         <Combobox<string, boolean>
           inline
           items={allItemKeys}
@@ -903,7 +918,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
               <SearchIcon aria-hidden="true" className="size-3.25 shrink-0" />
               <ComboboxPrimitive.Input
                 ref={searchInputRef}
-                placeholder={onToggleModel ? "Search models · Shift click adds" : "Search models"}
+                placeholder="Search models"
                 className="h-5 min-w-0 flex-1 bg-transparent p-0 text-(--t1) text-xs leading-5 outline-none placeholder:text-(--houston)"
                 value={searchQuery}
                 onChange={(e) => {
@@ -916,28 +931,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                     ).preventBaseUIHandler?.();
                     e.stopPropagation();
                     return;
-                  }
-                  if (
-                    showSidebar &&
-                    !e.altKey &&
-                    !e.ctrlKey &&
-                    !e.metaKey &&
-                    ((e.key === "ArrowLeft" && !e.shiftKey && searchQuery.length === 0) ||
-                      (e.key === "Tab" && e.shiftKey))
-                  ) {
-                    const sidebar = e.currentTarget
-                      .closest("[data-model-picker-content]")
-                      ?.querySelector("[data-model-picker-sidebar]");
-                    const button =
-                      sidebar?.querySelector<HTMLButtonElement>(
-                        'button[aria-pressed="true"]:not(:disabled)',
-                      ) ?? sidebar?.querySelector<HTMLButtonElement>("button:not(:disabled)");
-                    if (button) {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      button.focus();
-                      return;
-                    }
                   }
                   if (e.key === "Escape") {
                     e.preventDefault();
@@ -956,7 +949,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                   ) {
                     e.preventDefault();
                     e.stopPropagation();
-                    // The column shows the selected model's effort, so a highlighted model is
+                    // The panel shows the selected model's effort, so a highlighted model is
                     // picked first; the owning popup then moves focus to that model's levels.
                     const highlighted = highlightedModelKeyRef.current
                       ? parseModelPickerModelKey(highlightedModelKeyRef.current)
@@ -994,9 +987,29 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
               />
             </div>
 
+            {showSidebar ? (
+              <ModelPickerSidebar
+                selectedInstanceId={selectedInstanceId}
+                onSelectInstance={handleSelectInstance}
+                onFocusSearch={focusSearchInput}
+                instanceEntries={sidebarInstanceEntries}
+                showFavorites
+                compact={props.docked === true}
+                {...(selectableUnavailableInstanceIds ? { selectableUnavailableInstanceIds } : {})}
+                {...(lockedDisabledInstanceIds
+                  ? {
+                      disabledInstanceIds: lockedDisabledInstanceIds,
+                      getDisabledInstanceTooltip: (entry: ProviderInstanceEntry) =>
+                        `${entry.displayName} is unavailable in this thread. Start a new thread to switch providers.`,
+                    }
+                  : {})}
+              />
+            ) : null}
+
             <ModelPickerList
               listRef={modelListRef}
               itemKeys={filteredItemKeys}
+              height={modelListHeight(visibleModels.length, legacySection === null ? 0 : 1)}
               extraData={modelListExtraData}
               renderItem={({ item: modelKey, index }) => {
                 if (legacySection?.key === modelKey) {
@@ -1065,6 +1078,9 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                 );
               }}
             />
+            {onToggleModel ? (
+              <p className={MODEL_PICKER_HINT_CLS}>Shift-click adds a model</p>
+            ) : null}
             <ModelPickerProviderNotices
               setupEntries={providerSetupEntries}
               updateRequiredNotices={updateRequiredNotices}

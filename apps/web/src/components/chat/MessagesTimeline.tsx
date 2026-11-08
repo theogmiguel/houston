@@ -6,6 +6,7 @@ import { ThreadFindTimelineContext } from "./ThreadFindProvider";
 import { MarkdownFindContext } from "./markdownFindContext";
 import { useChatCanvas } from "./ChatCanvasContext";
 import { WorkLogBlock } from "./WorkLog";
+import { FOOTER_TURN_GAP_CLASS, PACKED_GAP_CLASS, turnOrInTurnGap } from "./timelineSpacing";
 import { TimelinePendingApprovalRow } from "./TimelinePendingApprovalRow";
 import type { WorktreeSetupSnapshot } from "@houston-app/contracts";
 import { deriveTimelineMinimapItems } from "./timelineMinimapItems";
@@ -111,7 +112,12 @@ import {
   type WorkGroupViewState,
   type TimelineRow,
 } from "./timelineRowContext";
-import { TimelineRowTimestamp, ActivityShimmerOverlay } from "./TimelineRowParts";
+import {
+  TimelineRowTimestamp,
+  ActivityShimmerOverlay,
+  RestartNoteTrigger,
+} from "./TimelineRowParts";
+import { RESTART_NOTE_FOLD_CLS } from "../ui/work-log-recipes";
 import {
   WorkGroupSection,
   WorkingTimelineRow,
@@ -255,6 +261,8 @@ interface MessagesTimelineProps {
   detailBehindShell?: boolean;
   runningRunId?: RunId | null;
   turnDiffSummaries: ReadonlyArray<TurnDiffSummary>;
+  /** The run whose changes the composer's pending-changes row already shows. */
+  changeBannerRunId?: RunId | null;
   routeThreadKey: string;
   displayThreadKey?: string;
   /** Off where another region already speaks the thread's status, like a subagent's bar. */
@@ -372,6 +380,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   detailBehindShell = false,
   runningRunId = null,
   turnDiffSummaries,
+  changeBannerRunId = null,
   routeThreadKey,
   displayThreadKey,
   announceTurnStatus = true,
@@ -827,6 +836,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
           ...(alwaysRenderKeys.length === 0 ? {} : { keys: alwaysRenderKeys }),
         };
   const [minimapHitStripWidth, setMinimapHitStripWidth] = useState(0);
+  const [minimapViewportWidth, setMinimapViewportWidth] = useState(0);
   const [minimapCurrentIndex, setMinimapCurrentIndex] = useState<number | null>(null);
   const handleAnchorReady = (info: { anchorIndex: number | undefined }) => {
     if (anchorMessageId !== null && info.anchorIndex !== undefined) {
@@ -955,7 +965,10 @@ const ConversationTimeline = memo(function ConversationTimeline({
     }
   };
 
+  // Rows pass under the header only once the list is scrolled; at the top there is nothing to dissolve.
+  const [scrolledFromTop, setScrolledFromTop] = useState(false);
   const handleScroll = () => {
+    setScrolledFromTop((listRef.current?.getScrollableNode()?.scrollTop ?? 0) > 0);
     if (restoringThreadPosition || listRef.current?.getState?.().data !== rows) return;
     const isAtEnd = rememberPosition(liveFollowEnabled && !anchoredEndSpace);
     if (isAtEnd !== undefined && !citationPositioning) {
@@ -983,6 +996,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     setMinimapHasPersistentGutter((current) =>
       current === nextHasPersistentGutter ? current : nextHasPersistentGutter,
     );
+    setMinimapViewportWidth(Math.round(viewportWidth));
     setMinimapHitStripWidth(resolveTimelineMinimapHitStripWidth(viewportWidth, contentWidth));
   };
   // Rows added, removed or rewrapped (chat width) change the content size,
@@ -1056,6 +1070,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     openPullRequest,
     onOpenToolDiff,
     onOpenTurnDiff,
+    changeBannerRunId,
     onOpenThread,
     renderHtmlRender,
     turnItemSource,
@@ -1334,7 +1349,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
         <TimelineRowActivityCtx value={activityState}>
           <TooltipScrollDismissArea
             ref={attachTimelineViewportElement}
-            className="relative h-full min-h-0"
+            className="@container/timeline relative h-full min-h-0"
             data-assistant-citation-viewport="true"
           >
             {onCiteAssistantText && citationThreadRef ? (
@@ -1385,7 +1400,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
               onItemSizeChanged={handleItemSizeChanged}
               className={cn(
                 "messages-timeline-scroll scrollbar-gutter-both h-full min-h-0 overflow-x-hidden overscroll-y-contain [overflow-anchor:none]",
-                topFadeEnabled && "topbar-scroll-fade",
+                topFadeEnabled && scrolledFromTop && "topbar-scroll-fade",
               )}
               ListHeaderComponent={listHeader}
               ListFooterComponent={timelineListFooter}
@@ -1394,6 +1409,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
               items={minimapItems}
               hasPersistentGutter={minimapHasPersistentGutter}
               hitStripWidth={minimapHitStripWidth}
+              viewportWidth={minimapViewportWidth}
               currentIndex={minimapCurrentIndex}
               stripMap={minimapStripMap}
               onWheel={forwardMinimapWheel}
@@ -1460,6 +1476,17 @@ function getItemType(item: MessagesTimelineRow) {
   return `message:${item.message.role}:${lengthBucket}`;
 }
 
+/** The space a row leaves below it; a turn's closing assistant row leaves what its footer does not. */
+function rowBottomPadding(row: TimelineRow) {
+  if (row.kind === "message" && row.groupedWithNext) return PACKED_GAP_CLASS;
+  if (row.kind === "message" && row.message.role === "assistant" && row.showAssistantMeta) {
+    return row.leadsToTurn ? FOOTER_TURN_GAP_CLASS : "pb-0";
+  }
+  // A user message keeps the hover actions' line under its bubble, so its own gap is that line.
+  if (row.kind === "message" && row.message.role === "user") return "pb-0";
+  return turnOrInTurnGap(row.leadsToTurn);
+}
+
 const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: TimelineRow }) {
   const isExpandedToolGroup = row.kind === "work" && row.isExpandedToolGroup;
   const isSubagentGroup = row.kind === "event" && row.projectedItem.item.type === "subagent";
@@ -1475,22 +1502,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
   return (
     <div
       className={cn(
-        isWorkLogRow || isSubagentGroup
-          ? undefined
-          : row.kind === "turn-fold" || row.kind === "working"
-            ? "pb-1.5"
-            : row.kind === "message" && row.groupedWithNext
-              ? "pb-1"
-              : (row.kind === "message" &&
-                    row.message.role === "assistant" &&
-                    !row.showAssistantMeta) ||
-                  row.kind === "worktree-setup" ||
-                  row.kind === "event" ||
-                  row.kind === "attempt-fold" ||
-                  row.kind === "html-render" ||
-                  row.kind === "mcp-app"
-                ? "pb-2"
-                : "pb-4",
+        isWorkLogRow || isSubagentGroup ? undefined : rowBottomPadding(row),
         (row.kind === "message" && row.message.role === "assistant") ||
           row.kind === "assistant-meta"
           ? "group/assistant"
@@ -1506,6 +1518,11 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       {isWorkLogRow ? (
         <WorkLogBlock
           continues={row.continuesWorkLog}
+          endsGroup={row.endsFoldGroup}
+          leadsToTurn={row.leadsToTurn}
+          nested={
+            row.kind === "work" && row.headerCreatedAt !== undefined && !row.isExpandedToolGroup
+          }
           layout={
             isExpandedToolGroup
               ? "group-content"
@@ -1517,6 +1534,10 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
           {row.kind === "work" ? (
             <WorkGroupSection
               anchorKey={row.id}
+              createdAt={row.createdAt}
+              {...(row.headerCreatedAt !== undefined
+                ? { headerCreatedAt: row.headerCreatedAt }
+                : {})}
               groupedEntries={row.groupedEntries}
               isExpandedToolGroup={row.isExpandedToolGroup}
               displayLabel={row.displayLabel}
@@ -1699,13 +1720,19 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
           {row.summary ? (
             <span className="min-w-0 truncate text-callout text-(--houston)">· {row.summary}</span>
           ) : null}
+          {row.restart ? (
+            <RestartNoteTrigger note={row.restart} className={RESTART_NOTE_FOLD_CLS} />
+          ) : null}
           {error ? <span className="shrink-0 text-callout text-(--houston)">· {error}</span> : null}
         </button>
-        <TimelineRowTimestamp
-          createdAt={row.createdAt}
-          timestampFormat={ctx.timestampFormat}
-          className="me-2"
-        />
+        {row.expanded ? null : (
+          // Expanded, the work rows below carry the times; the fold's own would repeat the turn's.
+          <TimelineRowTimestamp
+            createdAt={row.createdAt}
+            timestampFormat={ctx.timestampFormat}
+            className="me-2"
+          />
+        )}
       </div>
       {loading ? <WorkHistorySkeleton /> : null}
     </div>
@@ -1737,7 +1764,7 @@ function AttemptFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "at
           {row.label}
           {error ? ` · ${error}` : ""}
         </span>
-        <span className="text-2xs text-muted-foreground">Cut off by a steer</span>
+        <span className="text-callout text-secondary-label">Cut off by a steer</span>
       </button>
       {loading ? <WorkHistorySkeleton /> : null}
     </div>

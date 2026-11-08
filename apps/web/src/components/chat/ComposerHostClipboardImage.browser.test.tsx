@@ -213,6 +213,11 @@ it(
     using _environment = installFakeEnvironment([]);
     using _uploads = advertiseFileUploads();
     await using _app = await bootDraftComposer();
+    // The upload capability arrives with the environment descriptor after boot; the attach
+    // button shows once the composer knows it can stage files.
+    await vi.waitFor(() =>
+      expect(document.querySelector('button[aria-label="Attach files"]')).not.toBeNull(),
+    );
     const readDroppedPath = vi.fn(() =>
       Promise.resolve({ name: "id_ed25519", directory: false, base64: btoa("key") }),
     );

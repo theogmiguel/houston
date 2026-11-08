@@ -7,13 +7,7 @@ import {
 } from "@houston-app/client-runtime/state/runtime";
 import { safeErrorLogAttributes } from "@houston-app/client-runtime/errors";
 import type { ReviewBranchCommitsResult, ScopedThreadRef, RunId } from "@houston-app/contracts";
-import {
-  ArrowRightIcon,
-  CheckIcon,
-  ChevronDownIcon,
-  MoreHorizontalIcon,
-  XIcon,
-} from "lucide-react";
+import { ArrowRightIcon, CheckIcon, ChevronDownIcon, XIcon } from "lucide-react";
 import { ChevronDown, ChevronRight } from "lucide";
 import * as Schema from "effect/Schema";
 import { type MouseEvent, useEffect, useEffectEvent, useRef, useState } from "react";
@@ -96,8 +90,6 @@ import {
   ComboboxTrigger,
 } from "./ui/combobox";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
@@ -105,7 +97,6 @@ import {
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
 } from "./ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { requestConfirmDialog } from "../confirmDialog";
@@ -768,7 +759,11 @@ export default function DiffPanel({
   };
   const renderLoadingBoundary = () =>
     remainingFileCount > 0 ? (
-      <DiffFileLoadingBoundary load={loadNextFiles} count={remainingFileCount} />
+      <DiffFileLoadingBoundary
+        load={loadNextFiles}
+        count={remainingFileCount}
+        loading={areFilePatchesPending}
+      />
     ) : null;
   const codeViewFiles = shownFileEntries.map(({ fileDiff, fileKey, fileVersion }) => ({
     fileDiff,
@@ -794,7 +789,7 @@ export default function DiffPanel({
       const fallback = file ? getDiffLineStat([file]) : { additions: 0, deletions: 0 };
       return {
         path,
-        status,
+        status: file?.cacheKey?.endsWith(":pending") ? undefined : status,
         additions: stat?.additions ?? fallback.additions,
         deletions: stat?.deletions ?? fallback.deletions,
       };
@@ -1147,9 +1142,12 @@ export default function DiffPanel({
   const headerRow = (
     <>
       <div className="@container/diff-refs flex min-w-0 flex-1 items-center gap-3 [-webkit-app-region:no-drag]">
-        <span className="shrink-0 truncate text-headline font-semibold text-foreground">
-          {selectedScopeLabel}
-        </span>
+        {/* The embedded panel sits under a "Changes" tab, which already names the default scope. */}
+        {mode === "embedded" && selectedScopeLabel === "Changes" ? null : (
+          <span className="shrink-0 truncate text-headline font-semibold text-foreground">
+            {selectedScopeLabel}
+          </span>
+        )}
         {canSelectBranchBase && (
           <div
             className="flex min-w-0 max-w-full items-center gap-2 overflow-hidden text-xs text-muted-foreground"
@@ -1174,7 +1172,7 @@ export default function DiffPanel({
               <TooltipTrigger
                 render={<span aria-hidden className="hidden @max-[20rem]/diff-refs:inline" />}
               >
-                vs
+                Against
               </TooltipTrigger>
               <TooltipPopup side="top">
                 {`${comparisonHeadRef} → ${comparisonBaseRef}`}
@@ -1314,179 +1312,175 @@ export default function DiffPanel({
               ? { refreshing: isRefreshingDiff, onRefresh: refreshDiffFromUserAction }
               : undefined
           }
-        />
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <Button type="button" size="icon-sm" variant="ghost" aria-label="Diff options" />
-            }
-          >
-            <MoreHorizontalIcon className="size-3.5" />
-          </DropdownMenuTrigger>
-          {headerCommitSha !== null ? (
-            selectedCommitUrl ? (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <a
-                      href={selectedCommitUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="shrink-0 font-mono text-xs text-muted-foreground underline underline-offset-4"
-                      onClick={(event) => openCommitUrl(event, selectedCommitUrl)}
-                    />
-                  }
-                >
-                  {headerCommitSha.slice(0, 7)}
-                </TooltipTrigger>
-                <TooltipPopup side="top">{selectedCommitUrl}</TooltipPopup>
-              </Tooltip>
-            ) : (
-              <span className="shrink-0 font-mono text-xs text-muted-foreground">
-                {headerCommitSha.slice(0, 7)}
-              </span>
-            )
-          ) : null}
-          <DropdownMenuContent align="start">
-            <DropdownMenuRadioGroup value={selectedScopeValue} onValueChange={selectScopeValue}>
-              <DropdownMenuRadioItem value="branch" closeOnClick>
-                <span>Changes</span>
-              </DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="unstaged" closeOnClick>
-                <span>Uncommitted</span>
-              </DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="latest" closeOnClick>
-                <span>Latest turn</span>
-              </DropdownMenuRadioItem>
-            </DropdownMenuRadioGroup>
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger>Turn</DropdownMenuSubTrigger>
-              <DropdownMenuSubContent>
-                <DropdownMenuRadioGroup value={selectedTurnValue} onValueChange={selectScopeValue}>
-                  {orderedTurnDiffSummaries.map((summary) => {
-                    const turnCount = summary.checkpointTurnCount;
-                    return (
-                      <DropdownMenuRadioItem
-                        key={summary.runId}
-                        value={`turn:${summary.runId}`}
-                        closeOnClick
-                      >
-                        <span className="flex items-center gap-2">
-                          <span>Turn {turnCount}</span>
-                          <span className="ml-auto text-xs tabular-nums text-muted-foreground">
-                            {formatShortTimestamp(summary.completedAt, settings.timestampFormat)}
-                          </span>
-                        </span>
-                      </DropdownMenuRadioItem>
-                    );
-                  })}
-                </DropdownMenuRadioGroup>
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
-            <DropdownMenuSub
-              onOpenChange={(open) => {
-                setOpenCommitMenu(open ? (branchCommitsQuery.data ?? null) : null);
-                if (!open) return;
-                // The menu keeps the list it opened with; the refreshed one shows next time.
-                branchCommitsQuery.refresh();
-              }}
-            >
-              <DropdownMenuSubTrigger>Commits</DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className="max-h-80 max-w-96">
-                <DropdownMenuRadioGroup
-                  value={selectedCommitValue}
-                  onValueChange={selectScopeValue}
-                >
-                  {branchCommits?.commits.map((commit) => {
-                    const commitUrl = projectCommitUrl(
-                      activeProject?.repositoryIdentity,
-                      commit.sha,
-                    );
-                    return (
-                      <div
-                        key={commit.sha}
-                        className={cn(
-                          "flex items-center rounded-sm hover:bg-hover has-data-highlighted:bg-hover has-focus-visible:bg-hover [&_[data-checked]]:bg-transparent [&_[data-highlighted]]:bg-transparent",
-                          selectedCommitSha === commit.sha && "bg-foreground/[0.08]",
-                        )}
-                      >
-                        <Tooltip>
-                          <TooltipTrigger
-                            render={
-                              <DropdownMenuRadioItem
-                                className="min-w-0 flex-1"
-                                value={`commit:${commit.sha}`}
-                                closeOnClick
-                              />
-                            }
-                          >
-                            <span className="flex items-center gap-3">
-                              <span className="min-w-0 flex-1 truncate">{commit.subject}</span>
-                              <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                                {formatRelativeTimeLabel(commit.committedAt)}
-                              </span>
+          menuExtra={
+            <>
+              <DropdownMenuRadioGroup value={selectedScopeValue} onValueChange={selectScopeValue}>
+                <DropdownMenuRadioItem value="branch" closeOnClick>
+                  <span>Changes</span>
+                </DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="unstaged" closeOnClick>
+                  <span>Uncommitted</span>
+                </DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="latest" closeOnClick>
+                  <span>Latest turn</span>
+                </DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>Turn</DropdownMenuSubTrigger>
+                <DropdownMenuSubContent>
+                  <DropdownMenuRadioGroup
+                    value={selectedTurnValue}
+                    onValueChange={selectScopeValue}
+                  >
+                    {orderedTurnDiffSummaries.map((summary) => {
+                      const turnCount = summary.checkpointTurnCount;
+                      return (
+                        <DropdownMenuRadioItem
+                          key={summary.runId}
+                          value={`turn:${summary.runId}`}
+                          closeOnClick
+                        >
+                          <span className="flex items-center gap-2">
+                            <span>Turn {turnCount}</span>
+                            <span className="ml-auto text-xs tabular-nums text-muted-foreground">
+                              {formatShortTimestamp(summary.completedAt, settings.timestampFormat)}
                             </span>
-                          </TooltipTrigger>
-                          <TooltipPopup side="right" className="max-w-80">
-                            {commit.subject}
-                          </TooltipPopup>
-                        </Tooltip>
-                        {commitUrl ? (
-                          <DropdownMenuItem
-                            className="shrink-0"
-                            render={
-                              <a
-                                href={commitUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                aria-label={`Open commit ${commit.sha.slice(0, 7)}`}
-                              />
-                            }
-                            onClick={(event) => openCommitUrl(event, commitUrl)}
-                          >
-                            <span className="font-mono text-xs text-muted-foreground underline underline-offset-4">
+                          </span>
+                        </DropdownMenuRadioItem>
+                      );
+                    })}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+              <DropdownMenuSub
+                onOpenChange={(open) => {
+                  setOpenCommitMenu(open ? (branchCommitsQuery.data ?? null) : null);
+                  if (!open) return;
+                  // The menu keeps the list it opened with; the refreshed one shows next time.
+                  branchCommitsQuery.refresh();
+                }}
+              >
+                <DropdownMenuSubTrigger>Commits</DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="max-h-80 max-w-96">
+                  <DropdownMenuRadioGroup
+                    value={selectedCommitValue}
+                    onValueChange={selectScopeValue}
+                  >
+                    {branchCommits?.commits.map((commit) => {
+                      const commitUrl = projectCommitUrl(
+                        activeProject?.repositoryIdentity,
+                        commit.sha,
+                      );
+                      return (
+                        <div
+                          key={commit.sha}
+                          className={cn(
+                            "flex items-center rounded-sm hover:bg-hover has-data-highlighted:bg-hover has-focus-visible:bg-hover [&_[data-checked]]:bg-transparent [&_[data-highlighted]]:bg-transparent",
+                            selectedCommitSha === commit.sha && "bg-foreground/[0.08]",
+                          )}
+                        >
+                          <Tooltip>
+                            <TooltipTrigger
+                              render={
+                                <DropdownMenuRadioItem
+                                  className="min-w-0 flex-1"
+                                  value={`commit:${commit.sha}`}
+                                  closeOnClick
+                                />
+                              }
+                            >
+                              <span className="flex items-center gap-3">
+                                <span className="min-w-0 flex-1 truncate">{commit.subject}</span>
+                                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                                  {formatRelativeTimeLabel(commit.committedAt)}
+                                </span>
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipPopup side="right" className="max-w-80">
+                              {commit.subject}
+                            </TooltipPopup>
+                          </Tooltip>
+                          {commitUrl ? (
+                            <DropdownMenuItem
+                              className="shrink-0"
+                              render={
+                                <a
+                                  href={commitUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  aria-label={`Open commit ${commit.sha.slice(0, 7)}`}
+                                />
+                              }
+                              onClick={(event) => openCommitUrl(event, commitUrl)}
+                            >
+                              <span className="font-mono text-xs text-muted-foreground underline underline-offset-4">
+                                {commit.sha.slice(0, 7)}
+                              </span>
+                            </DropdownMenuItem>
+                          ) : (
+                            <span className="shrink-0 px-2 font-mono text-xs text-muted-foreground">
                               {commit.sha.slice(0, 7)}
                             </span>
-                          </DropdownMenuItem>
-                        ) : (
-                          <span className="shrink-0 px-2 font-mono text-xs text-muted-foreground">
-                            {commit.sha.slice(0, 7)}
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </DropdownMenuRadioGroup>
-                {branchCommitsQuery.error ? (
-                  <DropdownMenuItem disabled>{branchCommitsQuery.error}</DropdownMenuItem>
-                ) : !canReadFiles ? (
-                  <DropdownMenuItem disabled>
-                    {fileAccess.isPending
-                      ? "Checking file access..."
-                      : (fileAccess.error ?? "This connection cannot read local diffs.")}
-                  </DropdownMenuItem>
-                ) : branchCommits === null ? (
-                  <DropdownMenuItem disabled>Loading commits...</DropdownMenuItem>
-                ) : branchCommits.commits.length === 0 ? (
-                  <DropdownMenuItem disabled>No commits on this branch.</DropdownMenuItem>
-                ) : branchCommits.truncated ? (
-                  <DropdownMenuItem disabled>
-                    {`Showing latest ${branchCommits.commits.length} commits`}
-                  </DropdownMenuItem>
-                ) : null}
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
-            {isGitSelection ? (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={reviewWithAgent}>Review with agent…</DropdownMenuItem>
-              </>
-            ) : null}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => setFindOpen(true)}>Find in diff</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setFilterOpen(true)}>Filter files…</DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </DropdownMenuRadioGroup>
+                  {branchCommitsQuery.error ? (
+                    <DropdownMenuItem disabled>{branchCommitsQuery.error}</DropdownMenuItem>
+                  ) : !canReadFiles ? (
+                    <DropdownMenuItem disabled>
+                      {fileAccess.isPending
+                        ? "Checking file access..."
+                        : (fileAccess.error ?? "This connection cannot read local diffs.")}
+                    </DropdownMenuItem>
+                  ) : branchCommits === null ? (
+                    <DropdownMenuItem disabled>Loading commits...</DropdownMenuItem>
+                  ) : branchCommits.commits.length === 0 ? (
+                    <DropdownMenuItem disabled>No commits on this branch.</DropdownMenuItem>
+                  ) : branchCommits.truncated ? (
+                    <DropdownMenuItem disabled>
+                      {`Showing latest ${branchCommits.commits.length} commits`}
+                    </DropdownMenuItem>
+                  ) : null}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+              {isGitSelection ? (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={reviewWithAgent}>Review with agent…</DropdownMenuItem>
+                </>
+              ) : null}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setFindOpen(true)}>Find in diff</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setFilterOpen(true)}>Filter files…</DropdownMenuItem>
+            </>
+          }
+        />
+        {headerCommitSha !== null ? (
+          selectedCommitUrl ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <a
+                    href={selectedCommitUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="shrink-0 font-mono text-xs text-muted-foreground underline underline-offset-4"
+                    onClick={(event) => openCommitUrl(event, selectedCommitUrl)}
+                  />
+                }
+              >
+                {headerCommitSha.slice(0, 7)}
+              </TooltipTrigger>
+              <TooltipPopup side="top">{selectedCommitUrl}</TooltipPopup>
+            </Tooltip>
+          ) : (
+            <span className="shrink-0 font-mono text-xs text-muted-foreground">
+              {headerCommitSha.slice(0, 7)}
+            </span>
+          )
+        ) : null}
         {onClose ? (
           <Tooltip>
             <TooltipTrigger

@@ -59,6 +59,7 @@ import * as ScratchThreadPromotion from "./project/ScratchThreadPromotion.ts";
 import * as McpAppRequests from "./mcpApps/McpAppRequests.ts";
 import * as ModelManifest from "./provider/ModelManifest.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
+import * as ProjectionStore from "./orchestration-v2/ProjectionStore.ts";
 import * as OtlpEndpointCheck from "./observability/OtlpEndpointCheck.ts";
 import * as PairingGrantStore from "./auth/PairingGrantStore.ts";
 import * as PeerLinkRequests from "./peer/PeerLinkRequests.ts";
@@ -1423,5 +1424,36 @@ it.effect("thread resume at its own high-water below the pruned boundary skips t
     );
     // A snapshot load dies with "snapshot", so success means the resume replayed nothing.
     assert.isTrue(Exit.isSuccess(exit));
+  }).pipe(Effect.scoped, Effect.provide(ReplayTestLayer)),
+);
+
+it.effect.each([
+  { name: "an unknown thread id", missing: true, reason: "thread_not_found" },
+  { name: "a failed projection read", missing: false, reason: undefined },
+] as const)("thread subscription failure for $name carries reason $reason", ({ missing, reason }) =>
+  Effect.gen(function* () {
+    const threadId = ThreadId.make("thread:never-existed");
+    const exit = yield* subscribeOrchestrationV2Thread({ threadId }).pipe(
+      Effect.provideService(ThreadManagement.ThreadManagementService, {
+        ensureLegacyTranscript: () => Effect.void,
+        getThreadSnapshot: () =>
+          Effect.fail(
+            new Orchestrator.OrchestratorProjectionError({
+              threadId,
+              cause: missing
+                ? new ProjectionStore.ProjectionStoreThreadNotFoundError({ threadId })
+                : new ProjectionStore.ProjectionStoreReadError({ threadId }),
+            }),
+          ),
+        streamStoredEventsFrom: () => Stream.empty,
+      } as unknown as ThreadManagement.ThreadManagementService["Service"]),
+      Effect.exit,
+    );
+    const error = Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit;
+    assert.deepEqual(
+      (error as { _tag?: string; reason?: string })._tag,
+      "OrchestrationV2GetThreadProjectionError",
+    );
+    assert.deepEqual((error as { reason?: string }).reason, reason);
   }).pipe(Effect.scoped, Effect.provide(ReplayTestLayer)),
 );

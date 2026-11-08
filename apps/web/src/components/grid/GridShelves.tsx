@@ -9,6 +9,7 @@ import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { AnimatedHeight } from "../AnimatedHeight";
 import { useThreadDropZone, type ThreadDragSource } from "../../grid/threadDrag";
 import { cn } from "../../lib/utils";
+import { Separator } from "../ui/separator";
 import { MOTION_FEEDBACK_DEFAULT_EASE } from "../ui/motion-recipes";
 import { SidebarShelfHeader } from "../sidebar/SidebarListMarkers";
 import {
@@ -86,11 +87,17 @@ export function GridShelves({
   const closedCount = closed.length + olderShelf.unloadedCount(older?.threads ?? NO_THREADS);
   const visibleClosed = forceExpanded ? listedClosed : listedClosed.slice(0, settledVisibleCount);
   const hiddenClosedCount = forceExpanded ? 0 : Math.max(0, closedCount - visibleClosed.length);
+  // An empty shelf is noise at the foot of the rail. Closed counts the older threads the server
+  // still holds, and stays while a thread is dragged because its row is the drop target.
+  const showHeld = held.length > 0;
+  const showClosed = closedCount > 0 || closedDragActive || closedDropTarget;
+  if (!showHeld && !showClosed) return null;
 
   return (
     <div className="flex flex-col gap-px" data-testid="grid-shelves">
+      <Separator className="mb-1" data-shelves-rule="" />
       <AnimatedHeight>
-        {snoozedOpen ? (
+        {showHeld && snoozedOpen ? (
           <div
             className="flex max-h-56 flex-col gap-px overflow-y-auto pb-1"
             data-testid="grid-snoozed-shelf-list"
@@ -101,16 +108,18 @@ export function GridShelves({
           </div>
         ) : null}
       </AnimatedHeight>
-      <SidebarShelfHeader
-        variant="rail"
-        shelf="snoozed"
-        label="On hold"
-        count={held.length}
-        toggle={{
-          expanded: snoozedOpen,
-          onToggle: () => setSnoozedExpanded((value) => !value),
-        }}
-      />
+      {showHeld ? (
+        <SidebarShelfHeader
+          variant="rail"
+          shelf="snoozed"
+          label="On hold"
+          count={held.length}
+          toggle={{
+            expanded: snoozedOpen,
+            onToggle: () => setSnoozedExpanded((value) => !value),
+          }}
+        />
+      ) : null}
       <div
         ref={closedRef}
         className={cn(
@@ -151,18 +160,20 @@ export function GridShelves({
             </div>
           ) : null}
         </AnimatedHeight>
-        <SidebarShelfHeader
-          variant="rail"
-          shelf="settled"
-          label="Closed"
-          count={closedCount}
-          dragging={closedDragActive}
-          isDropTarget={closedDropTarget}
-          toggle={{
-            expanded: settledOpen,
-            onToggle: () => setSettledExpanded((value) => !value),
-          }}
-        />
+        {showClosed ? (
+          <SidebarShelfHeader
+            variant="rail"
+            shelf="settled"
+            label="Closed"
+            count={closedCount}
+            dragging={closedDragActive}
+            isDropTarget={closedDropTarget}
+            toggle={{
+              expanded: settledOpen,
+              onToggle: () => setSettledExpanded((value) => !value),
+            }}
+          />
+        ) : null}
       </div>
     </div>
   );

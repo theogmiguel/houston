@@ -932,6 +932,17 @@ const enrichProjectShells = Effect.fn("ws.orchestrationV2.enrichProjectShells")(
     ),
 );
 
+function isProjectionThreadNotFound(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "cause" in error &&
+    typeof error.cause === "object" &&
+    error.cause !== null &&
+    "_tag" in error.cause &&
+    error.cause._tag === "ProjectionStoreThreadNotFoundError"
+  );
+}
 // The thread a dispatched command acts on, as its spans name it.
 const dispatchTargetThreadId = (command: OrchestrationV2Command) =>
   command.type === "thread.fork" || command.type === "thread.merge_back"
@@ -1052,6 +1063,7 @@ export const subscribeOrchestrationV2Thread = Effect.fn("ws.orchestrationV2.subs
             new OrchestrationV2GetThreadProjectionError({
               threadId: input.threadId,
               message: `Failed to load orchestration V2 thread ${input.threadId}`,
+              ...(isProjectionThreadNotFound(cause) ? { reason: "thread_not_found" as const } : {}),
               cause,
             }),
         ),

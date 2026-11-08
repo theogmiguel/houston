@@ -1,4 +1,5 @@
 import { pipe } from "effect/Function";
+import { CHIP_LABEL_ICON_ONLY_CLS } from "./ui/composer-anatomy-recipes";
 import {
   scopeProjectRef,
   scopedThreadKey,
@@ -50,7 +51,12 @@ import {
 
 import type { SidebarThreadSummary } from "../types";
 import { formatWorktreePathForDisplay } from "../worktreeCleanup";
-import { ThreadStateGlyph, threadStateTextClass } from "./ui/thread-state-glyph";
+import {
+  ThreadStatusKindGlyph,
+  threadStatusKindGlyphClass,
+  threadStatusKindTextClass,
+} from "./ui/thread-state-glyph";
+import { gridThreadStatusKind } from "../grid/statusWord";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import {
   PULL_REQUEST_PRESENTATION,
@@ -213,8 +219,11 @@ export function ThreadPullRequestBadgeControl({
   status,
   onOpenList,
   onOpenPullRequest,
+  iconOnly = false,
 }: {
   render: ReactElement<{ render?: useRender.RenderProp }>;
+  /** Drops the number to the accessible name and tooltip, which already carry it. */
+  iconOnly?: boolean;
   badge: ThreadPullRequestBadge | null;
   pullRequests: ReadonlyArray<ThreadPullRequestLink>;
   number?: number | undefined;
@@ -236,6 +245,7 @@ export function ThreadPullRequestBadgeControl({
       pullRequests={pullRequests}
       onOpenList={onOpenList}
       onOpenPullRequest={onOpenPullRequest}
+      iconOnly={iconOnly}
     />
   );
 }
@@ -250,8 +260,10 @@ function PullRequestBadge({
   pullRequests,
   onOpenList,
   onOpenPullRequest,
+  iconOnly,
 }: {
   render: ReactElement<{ render?: useRender.RenderProp }>;
+  iconOnly: boolean;
   presentation: NonNullable<ReturnType<typeof resolveThreadPullRequestBadgePresentation>>;
   opensList: boolean;
   url: string | undefined;
@@ -289,7 +301,9 @@ function PullRequestBadge({
           className={cn("contents font-normal text-xs tabular-nums", presentation.toneClassName)}
         >
           <presentation.Icon aria-hidden className="size-3 shrink-0" />
-          <span className="text-secondary-label">{presentation.text}</span>
+          <span className={cn("text-secondary-label", iconOnly && CHIP_LABEL_ICON_ONLY_CLS)}>
+            {presentation.text}
+          </span>
         </span>
       </TooltipTrigger>
       <TooltipPopup
@@ -607,11 +621,14 @@ export function ThreadWorktreeIndicator({
 
 function ThreadStatusLabel({
   status,
+  thread,
   compact = false,
 }: {
   status: ThreadStatusPill;
+  thread: SidebarThreadSummary;
   compact?: boolean;
 }) {
+  const kind = gridThreadStatusKind(thread, status.state);
   if (compact) {
     return (
       <Tooltip>
@@ -622,12 +639,12 @@ function ThreadStatusLabel({
               aria-label={status.label}
               className={cn(
                 "inline-flex size-3.5 shrink-0 items-center justify-center",
-                threadStateTextClass(status.state),
+                threadStatusKindGlyphClass(kind),
               )}
             />
           }
         >
-          <ThreadStateGlyph state={status.state} className="size-3" />
+          <ThreadStatusKindGlyph kind={kind} className="size-3.5" />
         </TooltipTrigger>
         <TooltipPopup side="top">{status.label}</TooltipPopup>
       </Tooltip>
@@ -643,12 +660,14 @@ function ThreadStatusLabel({
             aria-label={status.label}
             className={cn(
               "inline-flex items-center gap-1 text-3xs",
-              threadStateTextClass(status.state),
+              threadStatusKindTextClass(kind),
             )}
           />
         }
       >
-        <ThreadStateGlyph state={status.state} className="size-3" />
+        <span className={cn("inline-flex", threadStatusKindGlyphClass(kind))}>
+          <ThreadStatusKindGlyph kind={kind} className="size-3.5" />
+        </span>
         <span className="hidden md:inline">{status.label}</span>
       </TooltipTrigger>
       <TooltipPopup side="top">{status.label}</TooltipPopup>
@@ -746,7 +765,7 @@ export function ThreadRowLeadingStatus({ thread }: { thread: SidebarThreadSummar
           aria-label={`${changeRequestTerminologyForUrl(pendingLink.url).shortLabel} #${pendingLink.number}, status pending`}
         />
       ) : null}
-      {threadStatus ? <ThreadStatusLabel status={threadStatus} /> : null}
+      {threadStatus ? <ThreadStatusLabel status={threadStatus} thread={thread} /> : null}
     </span>
   );
 }
@@ -821,13 +840,16 @@ export function ThreadSearchPullRequestNumber({
   query,
   enabled = true,
   settled = false,
+  always = false,
 }: {
   thread: SidebarThreadSummary;
   query: string;
   enabled?: boolean;
   settled?: boolean;
+  /** Shows the linked pull request even when the query does not name it. */
+  always?: boolean;
 }) {
-  const matched = pullRequestMatchesSearchQuery(thread, query);
+  const matched = always || pullRequestMatchesSearchQuery(thread, query);
   const supportsMultiplePullRequests = useSupportsMultiplePullRequests(thread.environmentId);
   const linked = useLinkedThreadPullRequest(
     thread.environmentId,
@@ -847,10 +869,13 @@ export function ThreadSearchPullRequestNumber({
   // Stored references already carry a number, so the badge shows before PR details load.
   const stored =
     current ??
-    [thread.linkedPullRequest, thread.branchPullRequest].find(
-      (reference) =>
-        reference != null && pullRequestMatchesSearchQuery({ linkedPullRequest: reference }, query),
-    );
+    (always
+      ? (thread.linkedPullRequest ?? thread.branchPullRequest ?? undefined)
+      : [thread.linkedPullRequest, thread.branchPullRequest].find(
+          (reference) =>
+            reference != null &&
+            pullRequestMatchesSearchQuery({ linkedPullRequest: reference }, query),
+        ));
   const presentation = resolveThreadPullRequestBadgePresentation({
     badge,
     number: pr?.number ?? stored?.number,

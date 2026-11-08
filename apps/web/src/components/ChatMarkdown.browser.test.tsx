@@ -639,6 +639,48 @@ describe("ChatMarkdown inline code selection", () => {
   });
 });
 
+describe("ChatMarkdown inline code wrapping", () => {
+  const column = () => {
+    const element = document.createElement("div");
+    element.style.width = "300px";
+    return element;
+  };
+
+  it("never splits a short inline code chip across lines, wherever it falls in the paragraph", async () => {
+    setup();
+    // Each filler length moves `Retry-After` to a different spot, including the line end where
+    // the hyphen used to offer a break.
+    for (let words = 1; words <= 40; words += 1) {
+      const filler = Array.from({ length: words }, () => "ab").join(" ");
+      const container = column();
+      await using screen = await render(
+        <ChatMarkdown cwd="/tmp/project" text={`${filler} \`Retry-After\` header`} />,
+        { container },
+      );
+      const chip = screen.container.querySelector(".chat-markdown :not(pre) > code")!;
+      expect(chip.textContent).toBe("Retry-After");
+      expect(chip.getClientRects().length, `${words} filler words`).toBe(1);
+    }
+  });
+
+  it("still wraps a very long inline token inside the column", async () => {
+    setup();
+    const token = `${"segment-".repeat(14)}end`;
+    const container = column();
+    await using screen = await render(
+      <ChatMarkdown cwd="/tmp/project" text={`See \`${token}\` now`} />,
+      { container },
+    );
+    const chip = screen.container.querySelector(".chat-markdown :not(pre) > code")!;
+    expect(chip.getClientRects().length).toBeGreaterThan(1);
+    const columnRight = screen.container.getBoundingClientRect().right;
+    // A fragment's padding and border sit outside the break, so allow that much past the edge.
+    for (const rect of chip.getClientRects()) {
+      expect(rect.right).toBeLessThanOrEqual(columnRight + 4);
+    }
+  });
+});
+
 describe("ChatMarkdown Windows file links", () => {
   const environmentId = EnvironmentId.make("env-windows");
   const renderWindows = (text: string, parseRawHtml: boolean) =>

@@ -77,6 +77,7 @@ import {
   Menu,
   MenuItem,
   MenuPopup,
+  MenuReason,
   MenuShortcut,
   MenuSub,
   MenuSubPopup,
@@ -101,7 +102,11 @@ import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 import { PreviewPanelShell, type PreviewPanelMode } from "./preview/PreviewPanelShell";
 import { FaviconImage } from "./preview/PreviewFaviconIcon";
 import { previewBridge } from "./preview/previewBridge";
-import { ThreadStateGlyph, threadStateTextClass, type ThreadState } from "./ui/thread-state-glyph";
+import {
+  ThreadStatusKindGlyph,
+  threadStatusKindGlyphClass,
+  type ThreadStatusKind,
+} from "./ui/thread-state-glyph";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
@@ -210,6 +215,17 @@ const SURFACE_UNAVAILABLE_HINTS = {
   sideChat: "Available after the first message.",
 } as const;
 
+const SURFACE_INLINE_REASONS: Record<string, string> = {
+  preview: SURFACE_UNAVAILABLE_HINTS.browser,
+  terminal: "No project open",
+  files: "No project open",
+  diff: "Not a git repository",
+  "pull-request": "No PR for this branch",
+  "pull-requests": "No linked PRs",
+  device: SURFACE_UNAVAILABLE_HINTS.device,
+  "side-chat": "After first message",
+};
+
 type TabContextMenuAction =
   | "rename"
   | "copy-path"
@@ -293,9 +309,11 @@ function DisabledReasonTooltip(props: { reason: string; trigger: ReactElement })
   );
 }
 
-function SurfaceMenuItem(props: {
+export function SurfaceMenuItem(props: {
   available: boolean;
   disabledReason?: string;
+  /** Short trailing text that replaces the shortcut while the row is unavailable. */
+  inlineReason?: string | undefined;
   shortcut: string;
   onClick: () => void;
   children: ReactNode;
@@ -308,7 +326,11 @@ function SurfaceMenuItem(props: {
       aria-keyshortcuts={props.shortcut}
     >
       {props.children}
-      <MenuShortcut>{props.shortcut}</MenuShortcut>
+      {!props.available && props.inlineReason ? (
+        <MenuReason>{props.inlineReason}</MenuReason>
+      ) : (
+        <MenuShortcut>{props.shortcut}</MenuShortcut>
+      )}
     </MenuItem>
   );
   if (props.available || !props.disabledReason) return item;
@@ -705,15 +727,15 @@ function SurfaceIcon({
 /** What a side chat tab's mark shows and its title's accessible name says. */
 function sideChatTabState(
   shell: EnvironmentThreadShell | null,
-): { label: string; state: ThreadState } | null {
+): { label: string; kind: ThreadStatusKind } | null {
   if (shell === null) return null;
   if (shell.hasPendingApprovals || shell.pendingSubagentRequest === "approval") {
-    return { label: "needs approval", state: "needs" };
+    return { label: "needs approval", kind: "approval" };
   }
   if (shell.hasPendingUserInput || shell.pendingSubagentRequest === "user_input") {
-    return { label: "needs input", state: "needs" };
+    return { label: "needs input", kind: "input" };
   }
-  return threadRuntimeIsActive(shell.runtime) ? { label: "running", state: "running" } : null;
+  return threadRuntimeIsActive(shell.runtime) ? { label: "running", kind: "running" } : null;
 }
 
 // The running mark spins with the thread; attention marks stay static.
@@ -728,10 +750,10 @@ function SideChatTabIcon(props: { environmentId: EnvironmentId | null; threadId:
       <MessageSquareText className="size-3 shrink-0" />
       {state === null ? null : (
         <span
-          className={cn("absolute -top-1 -right-1", threadStateTextClass(state.state))}
+          className={cn("absolute -top-1 -right-1", threadStatusKindGlyphClass(state.kind))}
           aria-hidden
         >
-          <ThreadStateGlyph state={state.state} className="size-2.5" />
+          <ThreadStatusKindGlyph kind={state.kind} className="size-2.5" />
         </span>
       )}
     </>
@@ -1396,6 +1418,11 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                 key={action.label}
                 available={action.available}
                 disabledReason={action.disabledReason}
+                inlineReason={
+                  action.kind === "side-chat" && props.sideChatDisabledReason
+                    ? "Not available here"
+                    : SURFACE_INLINE_REASONS[action.kind]
+                }
                 shortcut={action.shortcut}
                 onClick={action.onClick}
               >
@@ -1529,7 +1556,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     >
       <div
         className={cn(
-          "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1 pl-2",
+          "group/panel-header flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1 pl-2",
           props.mode === "inline" && !props.layoutControls ? "pr-3" : "pr-1",
           ownsDesktopTitleBar && "drag-region",
           ownsDesktopTitleBar &&

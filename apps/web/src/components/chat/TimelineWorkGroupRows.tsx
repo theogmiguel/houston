@@ -13,6 +13,12 @@ import { workEntryDisplayIndicatesToolFailure } from "../../session-logic";
 import ChatMarkdown from "../ChatMarkdown";
 import { ChevronDownIcon, ChevronRightIcon, Minimize2Icon, XIcon } from "lucide-react";
 import { Button } from "../ui/button";
+import {
+  NESTED_WORK_TYPE_CLASS,
+  RESTART_NOTE_WORKING_CLS,
+  WORKING_INTERRUPT_HINT_CLS,
+  RUNNING_INK_CLS,
+} from "../ui/work-log-recipes";
 import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
 import {
   liveWorkEntryLabel,
@@ -22,6 +28,7 @@ import {
   type MessagesTimelineRow,
 } from "./MessagesTimeline.logic";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { Spinner } from "../ui/spinner";
 import { ThreadStateGlyph, THREAD_STATE_TEXT_CLASS } from "../ui/thread-state-glyph";
 import { WorktreeSetupCard } from "./WorktreeSetupCard";
@@ -34,7 +41,12 @@ import {
   type TimelineWorkEntry,
   type TimelineRow,
 } from "./timelineRowContext";
-import { TimelineRowTimestamp, ActivityShimmerOverlay, StreamingGlyph } from "./TimelineRowParts";
+import {
+  TimelineRowTimestamp,
+  ActivityShimmerOverlay,
+  StreamingGlyph,
+  RestartNoteTrigger,
+} from "./TimelineRowParts";
 import {
   failedToolIconClassName,
   toolIconAcceptsTint,
@@ -58,12 +70,18 @@ import { formatWorkingTimerNow, resolveBlockedThreadStatus } from "./TimelineWor
 
 export const WorkGroupSection = memo(function WorkGroupSection({
   anchorKey,
+  createdAt,
+  headerCreatedAt,
   disclosureAnchorKey = anchorKey,
   groupedEntries,
   isExpandedToolGroup,
   displayLabel,
 }: {
   anchorKey: string;
+  /** The group header's time; a row inside the group drops its own time when it is the same. */
+  createdAt: string;
+  /** The time of an expanded fold's header above these rows. */
+  headerCreatedAt?: string;
   disclosureAnchorKey?: string;
   groupedEntries: Extract<MessagesTimelineRow, { kind: "work" }>["groupedEntries"];
   isExpandedToolGroup: boolean;
@@ -90,6 +108,7 @@ export const WorkGroupSection = memo(function WorkGroupSection({
       <ExpandedWorkGroupEntries
         key={`${routeThreadKey}:${anchorKey}`}
         anchorKey={anchorKey}
+        createdAt={createdAt}
         disclosureAnchorKey={disclosureAnchorKey}
         entries={nonEmptyEntries}
         workspaceRoot={workspaceRoot}
@@ -105,6 +124,7 @@ export const WorkGroupSection = memo(function WorkGroupSection({
           workEntry={workEntry}
           workspaceRoot={workspaceRoot}
           displayLabel={displayLabel}
+          headerCreatedAt={headerCreatedAt}
           onToggleEntry={onToggleStandaloneEntry}
         />
       ))}
@@ -125,11 +145,13 @@ const compactWorkEntryHeight = 28;
 
 function ExpandedWorkGroupEntries({
   anchorKey,
+  createdAt,
   disclosureAnchorKey,
   entries,
   workspaceRoot,
 }: {
   anchorKey: string;
+  createdAt: string;
   disclosureAnchorKey: string;
   entries: TimelineWorkEntry[];
   workspaceRoot: string | undefined;
@@ -155,6 +177,7 @@ function ExpandedWorkGroupEntries({
   }
 
   const groupView = {
+    createdAt,
     state: viewState,
     onToggleEntry: (collapsed: boolean) => onToggleWorkEntry(disclosureAnchorKey, collapsed),
   };
@@ -266,6 +289,7 @@ function ExpandedWorkGroupEntries({
           style={{ maxHeight: `calc(min(18rem, 50dvh) + ${expandedContentHeight}px)` }}
           className={cn(
             "ms-3.5 scrollbar-gutter-stable scroll-py-6 overflow-x-hidden border-s border-border ps-2.5 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
+            NESTED_WORK_TYPE_CLASS,
             getVirtualizedScrollFadeClassName(fades),
           )}
         />
@@ -275,6 +299,8 @@ function ExpandedWorkGroupEntries({
 }
 
 const workEntryKey = (entry: TimelineWorkEntry) => entry.id;
+
+const INTERRUPT_HINT = "Esc to interrupt";
 
 export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "working" }> }) {
   const { isCompacting, isPreparingWorktree, backgroundWorktreeSetup, threadStatusPill } =
@@ -290,7 +316,7 @@ export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: 
     <CompactingLabel createdAt={row.createdAt} />
   ) : row.createdAt ? (
     <>
-      <span className={needsUser ? THREAD_STATE_TEXT_CLASS.needs : "text-(--accent-ink)"}>
+      <span className={needsUser ? THREAD_STATE_TEXT_CLASS.needs : RUNNING_INK_CLS}>
         {needsUser?.label ?? "Running"}
       </span>
       <span>
@@ -303,28 +329,45 @@ export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: 
   ) : (
     "Running"
   );
+  const interruptHintShown = !shimmer && !compacting && !isPreparingWorktree;
   return (
-    <div className="group/timeline-row">
-      <div className="flex min-h-7 min-w-0 items-center gap-2 px-2 text-body text-(--t2) tabular-nums">
-        {needsUser ? (
-          <ThreadStateGlyph state="needs" className={THREAD_STATE_TEXT_CLASS.needs} />
-        ) : (
-          <StreamingGlyph />
-        )}
-        <span
-          ref={shimmer ? observeVisibleAnimation : undefined}
-          className="relative shrink-0 overflow-hidden whitespace-nowrap"
+    <div className="group/timeline-row @container/working">
+      <Tooltip disabled={!interruptHintShown}>
+        <TooltipTrigger
+          render={
+            <div
+              data-working-row=""
+              className="flex min-h-7 min-w-0 items-center gap-2 px-2 text-body text-(--t2) tabular-nums"
+            />
+          }
         >
-          {label}
-          {shimmer ? <ActivityShimmerOverlay>{label}</ActivityShimmerOverlay> : null}
-        </span>
-        {backgroundWorktreeSetup ? (
-          <BackgroundWorktreeSetupChip snapshot={backgroundWorktreeSetup} />
-        ) : null}
-        {!shimmer && !compacting && !isPreparingWorktree ? (
-          <span className="text-callout text-(--houston)">Esc to interrupt</span>
-        ) : null}
-      </div>
+          {needsUser ? (
+            <ThreadStateGlyph state="needs" className={THREAD_STATE_TEXT_CLASS.needs} />
+          ) : (
+            <StreamingGlyph />
+          )}
+          <span
+            ref={shimmer ? observeVisibleAnimation : undefined}
+            className="relative shrink-0 overflow-hidden whitespace-nowrap"
+          >
+            {label}
+            {shimmer ? <ActivityShimmerOverlay>{label}</ActivityShimmerOverlay> : null}
+          </span>
+          {backgroundWorktreeSetup ? (
+            <BackgroundWorktreeSetupChip snapshot={backgroundWorktreeSetup} />
+          ) : null}
+          {row.notice && !shimmer ? (
+            <RestartNoteTrigger note={row.notice} className={RESTART_NOTE_WORKING_CLS} />
+          ) : null}
+          {interruptHintShown ? (
+            <span className={WORKING_INTERRUPT_HINT_CLS}>
+              {row.notice ? <span aria-hidden>· </span> : null}
+              {INTERRUPT_HINT}
+            </span>
+          ) : null}
+        </TooltipTrigger>
+        <TooltipPopup side="top">{INTERRUPT_HINT}</TooltipPopup>
+      </Tooltip>
     </div>
   );
 }
@@ -647,9 +690,19 @@ function WorkGroupHeader(props: {
           <ChevronRightIcon aria-hidden className="size-3.5 shrink-0 text-(--houston)" />
         )
       }
-      label={<span className="block truncate text-body text-(--t2)">{props.label}</span>}
-      trailing={
-        <TimelineRowTimestamp createdAt={props.createdAt} timestampFormat={props.timestampFormat} />
+      label={
+        <span className="block truncate text-body text-(--t2) @max-[560px]/pane:line-clamp-2 @max-[560px]/pane:whitespace-normal">
+          {props.label}
+        </span>
+      }
+      meta={
+        // Expanded, the rows below carry their own times; the header keeps one only when folded.
+        props.expanded ? null : (
+          <TimelineRowTimestamp
+            createdAt={props.createdAt}
+            timestampFormat={props.timestampFormat}
+          />
+        )
       }
     />
   );

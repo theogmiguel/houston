@@ -103,6 +103,7 @@ import { ThreadSearchMatchExcerpt } from "../ThreadSearchMatch";
 import { ThreadStateGlyph, threadStateTextClass, type ThreadState } from "../ui/thread-state-glyph";
 import { makeWorkspaceFileDropHandlers } from "../chat/workspaceFileDrop";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
+import { ProviderMark } from "../ui/provider-mark";
 import { getTriggerDisplayModelName } from "../chat/providerIconUtils";
 import { shouldShowInstanceBadge, type ProviderInstanceEntry } from "../../providerInstances";
 import { useThreadRunningTerminalIds } from "../../state/terminalSessions";
@@ -161,6 +162,8 @@ function terminalProcessLabel(count: number): string {
 export function SidebarProviderStack(props: {
   thread: SidebarThreadSummary;
   providerEntryByInstanceId: ReadonlyMap<string, SidebarProviderEntry>;
+  /** Draws only the current provider as the rail's 14px mark, for rows that rest quietly. */
+  quiet?: boolean;
 }) {
   const stack = resolveThreadProviderStack(props.thread);
   const currentInstanceId = stack[stack.length - 1]!;
@@ -170,6 +173,18 @@ export function SidebarProviderStack(props: {
     currentEntry,
     props.providerEntryByInstanceId.values(),
   );
+  if (props.quiet) {
+    return (
+      <ProviderMark
+        driverKind={currentEntry.driverKind}
+        displayName={currentEntry.displayName}
+        accentColor={currentEntry.accentColor}
+        acpRegistryAgentId={currentEntry.acpRegistryAgentId}
+        acpRegistryIconUrl={currentEntry.acpRegistryIconUrl}
+        showBadge={showInstanceBadge}
+      />
+    );
+  }
   const current = (
     <ProviderInstanceIcon
       driverKind={currentEntry.driverKind}
@@ -511,7 +526,7 @@ function topStatusClassName(status: TopStatus): string {
 
 function TopStatusIcon(props: { status: TopStatus; className: string }) {
   if ("state" in props.status) {
-    return <ThreadStateGlyph state={props.status.state} className={props.className} />;
+    return <ThreadStateGlyph state={props.status.state} colored className={props.className} />;
   }
   const Icon = TOP_STATUS_ICONS[props.status.icon];
   return <Icon aria-hidden className={cn("shrink-0", props.className)} />;
@@ -1117,8 +1132,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       {prBadge}
       {diff ? (
         <span className="shrink-0 font-mono">
-          <span className="text-diff-addition-foreground">+{formatDiffCount(diff.insertions)}</span>{" "}
-          <span className="text-diff-deletion-foreground">−{formatDiffCount(diff.deletions)}</span>
+          <span className={diff.insertions > 0 ? "text-diff-addition-foreground" : undefined}>
+            +{formatDiffCount(diff.insertions)}
+          </span>{" "}
+          <span className={diff.deletions > 0 ? "text-diff-deletion-foreground" : undefined}>
+            −{formatDiffCount(diff.deletions)}
+          </span>
         </span>
       ) : null}
       <span

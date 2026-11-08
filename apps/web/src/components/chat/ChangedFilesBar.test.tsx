@@ -19,8 +19,9 @@ describe("ChangedFilesBar", () => {
     expect(html).toContain("3 files changed");
     expect(html).toContain("+7");
     expect(html).toContain("-2");
-    expect(html).toContain("Undo all");
-    expect(html).toContain("Keep all");
+    // Short labels in view, the full action names as accessible names.
+    expect(html).toMatch(/<button[^>]*aria-label="Undo all"[^>]*>Undo<\/button>/);
+    expect(html).toMatch(/<button[^>]*aria-label="Keep all"[^>]*>Keep<\/button>/);
     expect(html).toContain("Review");
   });
 
@@ -33,7 +34,7 @@ describe("ChangedFilesBar", () => {
 
   it("disables the bulk actions when the caller cannot undo or keep", () => {
     const html = renderToStaticMarkup(<ChangedFilesBar summary={summary} onReview={() => {}} />);
-    expect(html).toMatch(/<button[^>]*disabled[^>]*>Undo all<\/button>/);
-    expect(html).toMatch(/<button[^>]*disabled[^>]*>Keep all<\/button>/);
+    expect(html).toMatch(/<button[^>]*aria-label="Undo all"[^>]*disabled[^>]*>Undo<\/button>/);
+    expect(html).toMatch(/<button[^>]*aria-label="Keep all"[^>]*disabled[^>]*>Keep<\/button>/);
   });
 });

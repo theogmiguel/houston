@@ -3923,6 +3923,8 @@ export class OrchestrationV2GetThreadProjectionError extends Schema.TaggedError<
   {
     threadId: ThreadId,
     message: Schema.String,
+    /** Set when the server has no thread with this id, so clients can tell it from a transient failure. */
+    reason: Schema.optional(Schema.Literal("thread_not_found")),
     cause: Schema.optional(Schema.Defect()),
   },
 ) {}

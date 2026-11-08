@@ -15,7 +15,7 @@ export const TAILWIND_MERGE_CACHE_SIZE = 5000;
 const twMerge = extendTailwindMerge({
   cacheSize: TAILWIND_MERGE_CACHE_SIZE,
   extend: {
-    theme: { text: ["2xs", "3xs", "4xs", "5xs"] },
+    theme: { text: ["2xs", "3xs", "monogram", "4xs", "5xs", "heading"] },
     classGroups: { "bg-image": [{ bg: ["composer-seam-below", "composer-seam-above"] }] },
   },
 });

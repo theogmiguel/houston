@@ -36,16 +36,17 @@ describe("buildThreadActionMenuItems", () => {
         isSnoozed: reversed,
       });
       const expected = [
+        "rename",
         reversed ? "unsettle" : "settle",
         reversed ? "unsnooze" : "snooze",
-        "rename",
-        "regenerate-title",
         "tags",
-        "auto-settle",
         "archive",
         "delete",
       ];
       expect(items.filter((item) => item.disabled).map((item) => item.id)).toEqual(expected);
+      expect(
+        items.find((item) => item.id === "more")?.children?.every((child) => child.disabled),
+      ).toBe(true);
       expect(
         items.find((item) => item.id === "snooze")?.children?.every((child) => child.disabled) ??
           true,
@@ -103,25 +104,84 @@ describe("buildThreadActionMenuItems", () => {
       },
     });
     expect(items.map((item) => item.id)).toEqual([
-      "new-thread-on-branch",
-      "open-in-grid",
-      "move-to-grid",
+      "section:thread",
+      "rename",
+      "mark-unread",
+      "copy",
+      "section:status",
       "settle",
       "snooze",
-      "rename",
-      "regenerate-title",
+      "section:organise",
+      "open-in-grid",
+      "move-to-grid",
       "tags",
-      "mark-unread",
       "filter-by-project",
-      "auto-settle",
-      "copy",
+      "new-thread-on-branch",
       "project-settings",
+      "more",
       "archive",
       "delete",
+    ]);
+    expect(items.find((item) => item.id === "more")?.children?.map((item) => item.id)).toEqual([
+      "regenerate-title",
+      "auto-settle",
+    ]);
+    expect(items.filter((item) => item.header).map((item) => item.label)).toEqual([
+      "Thread",
+      "Status",
+      "Organise",
     ]);
     expect(
       items.find((item) => item.id === "move-to-grid")?.children?.map((item) => item.id),
     ).toEqual(["move-to-grid:grid-b", "move-to-grid:new"]);
+  });
+
+  it("keeps every action of the previous menu reachable", () => {
+    const items = buildThreadActionMenuItems({
+      ...baseState,
+      branch: "main",
+      canFind: true,
+      canStartBranchThread: true,
+      canTurnIntoProject: true,
+      projectFilter: { label: "Houston", isActive: false },
+      grid: { canOpenInGrid: true, canMoveToGrid: true, moveTargets: [] },
+    });
+    const ids = (list: ReadonlyArray<{ id: string; children?: ReadonlyArray<never> }>): string[] =>
+      list.flatMap((item) => [item.id, ...ids((item.children ?? []) as never)]);
+    expect(ids(items as never)).toEqual(
+      expect.arrayContaining([
+        "find",
+        "new-thread-on-branch",
+        "open-in-grid",
+        "move-to-grid",
+        "settle",
+        "snooze",
+        "rename",
+        "regenerate-title",
+        "tags",
+        "mark-unread",
+        "filter-by-project",
+        "turn-into-project",
+        "auto-settle",
+        "auto-settle:enabled",
+        "copy",
+        "copy-path",
+        "copy-branch",
+        "copy-thread",
+        "copy-thread-id",
+        "project-settings",
+        "archive",
+        "delete",
+      ]),
+    );
+  });
+
+  it("emits no header for an empty section", () => {
+    const items = buildThreadActionMenuItems({
+      ...baseState,
+      supports: { ...baseState.supports, settlement: false, snooze: false },
+    });
+    expect(items.map((item) => item.id)).not.toContain("section:status");
   });
 
   it("hides grid and thread actions the surface cannot perform", () => {
@@ -134,8 +194,8 @@ describe("buildThreadActionMenuItems", () => {
         swapTargets: [],
       },
     });
-    expect(items.map((item) => item.id)).toEqual(["split-right", "split-down"]);
-    expect(items[0]?.children?.map((item) => item.id)).toEqual(["split:right:none"]);
+    expect(items.map((item) => item.id)).toEqual(["section:layout", "split-right", "split-down"]);
+    expect(items[1]?.children?.map((item) => item.id)).toEqual(["split:right:none"]);
   });
 
   it("offers split and swap only with cell context", () => {
@@ -150,11 +210,16 @@ describe("buildThreadActionMenuItems", () => {
         swapTargets: [{ threadId: "thread-c", title: "Gamma" }],
       },
     });
-    expect(items.map((item) => item.id).slice(0, 3)).toEqual(["split-right", "split-down", "swap"]);
-    expect(items[0]?.children?.map((item) => item.id)).toEqual([
+    expect(items.map((item) => item.id).slice(0, 4)).toEqual([
+      "section:layout",
+      "split-right",
+      "split-down",
+      "swap",
+    ]);
+    expect(items[1]?.children?.map((item) => item.id)).toEqual([
       "split:right:thread-b",
       "split:right:new",
     ]);
-    expect(items[2]?.children?.map((item) => item.id)).toEqual(["swap:thread-c"]);
+    expect(items[3]?.children?.map((item) => item.id)).toEqual(["swap:thread-c"]);
   });
 });

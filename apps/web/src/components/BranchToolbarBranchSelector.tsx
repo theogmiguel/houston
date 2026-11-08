@@ -77,6 +77,10 @@ interface BranchToolbarBranchSelectorProps {
   ref?: Ref<BranchToolbarBranchSelectorHandle>;
   className?: string;
   displayMode?: "toolbar" | "panel";
+  /** `pr` renders only the pull request badge, `branch` only the branch trigger. */
+  part?: "all" | "pr" | "branch";
+  /** The pull request chip shows its mark only; its name and number stay in the tooltip. */
+  prIconOnly?: boolean;
   environmentId: EnvironmentId;
   threadId: ThreadId;
   draftId?: DraftId;
@@ -99,6 +103,8 @@ export function BranchToolbarBranchSelector({
   ref,
   className,
   displayMode = "toolbar",
+  part = "all",
+  prIconOnly = false,
   environmentId,
   threadId,
   draftId,
@@ -682,9 +688,10 @@ export function BranchToolbarBranchSelector({
           className,
         )}
       >
-        {displayMode !== "panel" ? (
+        {displayMode !== "panel" && part !== "branch" ? (
           <ThreadPullRequestBadgeControl
             render={<ComposerControl size="xs" />}
+            iconOnly={prIconOnly}
             badge={prBadge}
             pullRequests={serverThread?.pullRequests ?? []}
             number={prNumber}
@@ -696,43 +703,45 @@ export function BranchToolbarBranchSelector({
             }}
           />
         ) : null}
-        <span
-          className="flex min-w-0"
-          onMouseDownCapture={(event) => {
-            if (event.button !== 0 || event.ctrlKey) {
-              event.stopPropagation();
-            }
-          }}
-          onContextMenu={(event) => handleBranchContextMenu(event, resolvedActiveBranch)}
-        >
-          <ComboboxTrigger
-            render={
-              displayMode === "panel" ? (
-                <ThreadDetailsControl part="select" />
-              ) : (
-                <ComposerControl size="xs" />
-              )
-            }
-            className="min-w-0 flex-1 max-w-full active:scale-100"
-            disabled={isInitialBranchesLoadPending || isBranchActionPending}
+        {part === "pr" ? null : (
+          <span
+            className="flex min-w-0"
+            onMouseDownCapture={(event) => {
+              if (event.button !== 0 || event.ctrlKey) {
+                event.stopPropagation();
+              }
+            }}
+            onContextMenu={(event) => handleBranchContextMenu(event, resolvedActiveBranch)}
           >
-            <GitBranchIcon
-              className={cn(
-                "size-3 shrink-0",
-                displayMode === "panel" && THREAD_DETAILS_PANEL_ICON_CLASS,
-              )}
-            />
-            <ComposerContextLabel displayMode={displayMode}>
-              <span className="font-mono">
-                <MiddleTruncate
-                  value={triggerLabel}
-                  variant={displayMode === "panel" ? "cap-aligned" : "default"}
-                  className="w-full"
-                />
-              </span>
-            </ComposerContextLabel>
-          </ComboboxTrigger>
-        </span>
+            <ComboboxTrigger
+              render={
+                displayMode === "panel" ? (
+                  <ThreadDetailsControl part="select" />
+                ) : (
+                  <ComposerControl size="xs" />
+                )
+              }
+              className="min-w-0 flex-1 max-w-full active:scale-100"
+              disabled={isInitialBranchesLoadPending || isBranchActionPending}
+            >
+              <GitBranchIcon
+                className={cn(
+                  "size-3 shrink-0",
+                  displayMode === "panel" && THREAD_DETAILS_PANEL_ICON_CLASS,
+                )}
+              />
+              <ComposerContextLabel displayMode={displayMode}>
+                <span className="font-mono">
+                  <MiddleTruncate
+                    value={triggerLabel}
+                    variant={displayMode === "panel" ? "cap-aligned" : "default"}
+                    className="w-full"
+                  />
+                </span>
+              </ComposerContextLabel>
+            </ComboboxTrigger>
+          </span>
+        )}
         {displayMode === "panel" && prNumber !== undefined && prUrl !== undefined ? (
           <ThreadDetailsPrRows
             threadRef={threadRef}

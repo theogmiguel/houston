@@ -3,6 +3,11 @@ import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@houston
 import type { Thread } from "../types";
 import { makeThreadFixture } from "../test-fixtures";
 import {
+  COMMAND_PALETTE_LIST_BOTTOM_INSET_PX,
+  RECENT_THREAD_LIMIT,
+  availablePaletteActions,
+  buildRootGroups,
+  snapCommandPaletteListHeight,
   newThreadNoProjectIndex,
   buildNestedSearchItems,
   resolveCommandPaletteProject,
@@ -181,6 +186,22 @@ describe("buildThreadActionItems", () => {
     const remoteItem = items.find((item) => item.description === "Remote project · Current thread");
     await remoteItem?.run();
     expect(runThread).toHaveBeenCalledWith(remote);
+  });
+
+  it("leads each thread row with its own status glyph instead of one shared icon", () => {
+    const items = buildThreadActionItems({
+      threads: [
+        makeThread({ id: ThreadId.make("thread-a") }),
+        makeThread({ id: ThreadId.make("thread-b") }),
+      ],
+      projectByKey: new Map(),
+      icon: "shared-chat-icon",
+      renderIcon: (thread) => `status:${thread.id}`,
+      runThread: async () => {},
+    });
+    expect(items.map((item) => item.icon)).toEqual(["status:thread-a", "status:thread-b"]);
+    // The pull request and status live on the second line, not before the title.
+    expect(items.every((item) => item.titleLeadingContent === undefined)).toBe(true);
   });
 
   it("ranks thread title matches ahead of contextual project-name matches", () => {
@@ -972,5 +993,100 @@ describe("add-project intent", () => {
       { _tag: "OpenAddProject", request: { action: "clone" } },
     );
     expect(state.openIntent).toEqual({ kind: "add-project", request: { action: "clone" } });
+  });
+});
+
+describe("snapCommandPaletteListHeight", () => {
+  const rowBottoms = [32, 64, 112, 144];
+
+  it("ends the list at the last row that fits whole with the bottom inset reserved", () => {
+    expect(
+      snapCommandPaletteListHeight({
+        rowBottoms,
+        contentHeightPx: 300,
+        availablePx: 112 + COMMAND_PALETTE_LIST_BOTTOM_INSET_PX,
+      }),
+    ).toBe(112);
+    expect(
+      snapCommandPaletteListHeight({
+        rowBottoms,
+        contentHeightPx: 300,
+        availablePx: 112 + COMMAND_PALETTE_LIST_BOTTOM_INSET_PX - 1,
+      }),
+    ).toBe(64);
+  });
+
+  it("leaves the list alone when its content already fits", () => {
+    expect(
+      snapCommandPaletteListHeight({ rowBottoms, contentHeightPx: 150, availablePx: 200 }),
+    ).toBeUndefined();
+  });
+
+  it("leaves the list alone when not even the first row fits", () => {
+    expect(
+      snapCommandPaletteListHeight({ rowBottoms, contentHeightPx: 300, availablePx: 30 }),
+    ).toBeUndefined();
+  });
+});
+
+function actionItem(value: string, disabled = false) {
+  return {
+    kind: "action" as const,
+    value,
+    searchTerms: [value],
+    title: value,
+    icon: null,
+    run: async () => {},
+    ...(disabled ? { disabled: true } : {}),
+  };
+}
+
+describe("command palette opening groups", () => {
+  it("lists commands, then recent threads, then projects, then actions", () => {
+    const groups = buildRootGroups({
+      actionItems: [actionItem("action:settings"), actionItem("action:one")],
+      projectItems: [actionItem("project:one")],
+      recentThreadItems: [actionItem("thread:one")],
+    });
+    expect(groups.map((group) => group.value)).toEqual([
+      "commands",
+      "recent-threads",
+      "projects",
+      "actions",
+    ]);
+    expect(groups.map((group) => group.label)).toEqual([
+      "Commands",
+      "Recent threads",
+      "Projects",
+      "Actions",
+    ]);
+    expect(groups[0]?.items.map((item) => item.value)).toEqual(["action:settings"]);
+    expect(groups[3]?.items.map((item) => item.value)).toEqual(["action:one"]);
+  });
+
+  it("keeps five recent threads and leaves unavailable actions out", () => {
+    expect(RECENT_THREAD_LIMIT).toBe(5);
+    const items = availablePaletteActions([
+      actionItem("action:ready"),
+      actionItem("action:unavailable", true),
+    ]);
+    expect(items.map((item) => item.value)).toEqual(["action:ready"]);
+  });
+
+  it("drops the opening-only groups once a query arrives", () => {
+    const rootGroups = buildRootGroups({
+      actionItems: [actionItem("action:one")],
+      projectItems: [actionItem("project:one")],
+      recentThreadItems: [actionItem("thread:one")],
+    });
+    const groups = filterCommandPaletteGroups({
+      activeGroups: rootGroups,
+      query: "one",
+      isInSubmenu: false,
+      projectSearchItems: [],
+      threadSearchItems: [],
+    });
+    expect(groups.map((group) => group.value)).not.toContain("recent-threads");
+    expect(groups.map((group) => group.value)).not.toContain("projects");
   });
 });

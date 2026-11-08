@@ -21,9 +21,15 @@ import {
 import { cn } from "../../lib/utils";
 import { WorkspacePageContainer, type WorkspacePageWidth } from "../WorkspacePageContainer";
 import { Button } from "../ui/button";
+import { PageHeading } from "../ui/page-heading";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { useOptionalSettingsScope } from "./SettingsScopeContext";
 import { SettingsScopeSentence } from "./SettingsScopeSentence";
+import {
+  SETTINGS_SECTION_DESCRIPTIONS,
+  SETTINGS_SECTION_LABELS,
+  type SettingsPath,
+} from "./settingsSearch";
 import {
   isProjectScopedSettingKey,
   listProjectOverrides,
@@ -59,6 +65,19 @@ const SettingsSearchTargetContext = createContext<SettingsSearchTargetContextVal
   highlightTarget: true,
   onTargetHandled: noop,
 });
+
+/** Page-level actions the route places in the title row, beside the heading. */
+const SettingsPageActionsContext = createContext<ReactNode>(null);
+
+export function SettingsPageActionsProvider({
+  actions,
+  children,
+}: {
+  readonly actions: ReactNode;
+  readonly children: ReactNode;
+}) {
+  return <SettingsPageActionsContext value={actions}>{children}</SettingsPageActionsContext>;
+}
 
 function SettingsSearchTargetProvider({
   targetId,
@@ -237,14 +256,14 @@ export function SettingsSection({
       {...sectionProps}
       ref={targetRef}
       tabIndex={sectionProps.id ? -1 : sectionProps.tabIndex}
-      className={cn(!hideTitle && "space-y-1.5", className)}
+      className={cn(!hideTitle && "space-y-2", className)}
     >
       {hideTitle ? (
         <h2 className="sr-only">{title}</h2>
       ) : (
-        <div data-settings-scroll-target className="flex items-center justify-between gap-4 px-1">
+        <div data-settings-scroll-target className="flex items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-1">
-            <h2 className="flex items-center gap-2 text-[11px] leading-[14px] font-semibold text-muted-foreground">
+            <h2 className="flex items-center gap-2 text-prose font-semibold text-foreground/80">
               {icon}
               {title}
             </h2>
@@ -500,8 +519,8 @@ export function SettingsRow({
       tabIndex={rowProps.id ? -1 : rowProps.tabIndex}
       data-slot="settings-row"
       className={cn(
-        "@container/settings-row min-h-12 px-3.5 aria-disabled:opacity-64 aria-disabled:[&_*]:text-muted-foreground hover:bg-hover",
-        children ? "pt-3 pb-1" : "py-2.5",
+        "@container/settings-row min-h-12 px-4 aria-disabled:opacity-64 aria-disabled:[&_*]:text-muted-foreground hover:bg-hover",
+        children ? "pt-3 pb-1" : "py-3",
         className,
       )}
     >
@@ -576,6 +595,38 @@ export function SettingResetButton({
   );
 }
 
+const SETTINGS_DETAIL_PAGE_HEADINGS: Readonly<
+  Record<string, { readonly title: string; readonly description: string }>
+> = {
+  "/settings/open-source-licenses": {
+    title: "Open source licenses",
+    description: "The third-party software this app includes.",
+  },
+};
+
+/** The title and one-line description every settings page opens with. */
+function SettingsPageHeading() {
+  const pathname = useLocation({
+    select: (location) => location.pathname.replace(/\/+$/, "") || "/",
+  });
+  const actions = useContext(SettingsPageActionsContext);
+  const section =
+    (Object.hasOwn(SETTINGS_SECTION_LABELS, pathname)
+      ? {
+          title: SETTINGS_SECTION_LABELS[pathname as SettingsPath],
+          description: SETTINGS_SECTION_DESCRIPTIONS[pathname as SettingsPath],
+        }
+      : undefined) ?? SETTINGS_DETAIL_PAGE_HEADINGS[pathname];
+  if (section === undefined) return null;
+  const heading = <PageHeading title={section.title} description={section.description} />;
+  if (actions === null || actions === undefined) return heading;
+  return (
+    <div className="flex items-start justify-between gap-4">
+      {heading}
+      <div className="flex shrink-0 items-center gap-1 pt-0.5">{actions}</div>
+    </div>
+  );
+}
 const LEADING_HASH = /^#/;
 
 export function SettingsPageContainer({
@@ -623,7 +674,10 @@ export function SettingsPageContainer({
             className,
           )}
         >
-          <SettingsScopeSentence />
+          <div className="flex flex-col gap-3">
+            <SettingsPageHeading />
+            <SettingsScopeSentence />
+          </div>
           {children}
         </WorkspacePageContainer>
       </div>

@@ -11,12 +11,11 @@ import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   AlarmClockOffIcon,
   ChevronRightIcon,
-  ClockIcon,
-  EyeOffIcon,
   FolderIcon,
   FolderOpenIcon,
+  ClockIcon,
+  EyeOffIcon,
   Grid2X2PlusIcon,
-  MessageSquarePlusIcon,
   MoreHorizontalIcon,
   PlusIcon,
   SearchIcon,
@@ -81,9 +80,8 @@ import {
   type AttentionCard,
   type ThreadSelection,
 } from "../../grid/sidebar";
-import { collapsedRollup, revealedOpenThread } from "../../grid/collapsedRollup";
+import { revealedOpenThread } from "../../grid/collapsedRollup";
 import { ThreadRowPullRequestBadge } from "./ThreadRowPullRequestBadge";
-import { SidebarStatusGlyph } from "../sidebar/SidebarStatusGlyph";
 import { closedAgeLabel } from "../../grid/statusWord";
 import {
   activeProjectFilterKeys,
@@ -100,6 +98,7 @@ import {
 } from "./ProjectFilterPicker";
 import { jumpHintLabels } from "../../grid/jumpHints";
 import { useRevealOpenThread } from "../../grid/useRevealOpenThread";
+import { useStuckToTop } from "../../hooks/useStuckToTop";
 import { attachSidebarTree } from "../../lib/sidebarTree";
 import { useShortcutModifierState } from "../../shortcutModifierState";
 import { reportFailure } from "./reportFailure";
@@ -107,8 +106,15 @@ import { SidebarNoProjects } from "./SidebarNoProjects";
 import { ThreadBulkMenuContext, useBulkThreadMenu } from "./useBulkThreadMenu";
 import { ThreadTitleInput } from "./threadTitleInput";
 import { JumpHintBadge, ThreadJumpHintContext, useThreadJumpHint } from "./threadJumpHints";
-import { ThreadStateMark } from "./threadStatusMark";
-import { ThreadCheckoutMark, ThreadRowIndicators } from "./threadRowIndicators";
+import { ThreadStatusGlyph, ThreadStatusWord } from "./threadStatusMark";
+import {
+  ThreadCheckoutMark,
+  ThreadDiffItem,
+  ThreadDraftItem,
+  ThreadRemoteItem,
+  ThreadTerminalItem,
+} from "./threadRowIndicators";
+import { RowMeta, RowMetaItem } from "../ui/sidebar-row-meta";
 import { GridShelves } from "./GridShelves";
 import { readLocalApi } from "../../localApi";
 import { ThreadContextDragGhost } from "../chat/ThreadContextDragGhost";
@@ -128,6 +134,8 @@ import {
   orderSidebarProjectGroups,
   type SidebarProjectSection as SidebarProjectSectionModel,
 } from "./sidebarProjectSections";
+import type { NeedsYouEntry } from "./needsYouSection";
+import { buildNeedsYouEntries } from "./needsYouSection";
 import { preorderThreads } from "../../grid/tree";
 import { useOpenGridDraft } from "../../grid/useOpenGridDraft";
 import { useProject, useQuietThreadShells, useProjects } from "../../state/entities";
@@ -183,7 +191,6 @@ import {
   MenuSubTrigger,
   MenuTrigger,
 } from "../ui/menu";
-import { Separator } from "../ui/separator";
 import {
   FOCUS_ACTION_CLS,
   FOCUS_ROW_CLS,
@@ -193,10 +200,17 @@ import {
   ROW_STATUS_RECEDE,
   SidebarContent,
   SidebarHeader,
+  useSidebar,
   useSidebarVisibility,
 } from "../ui/sidebar";
-import type { EnvironmentId, ThreadId } from "@houston-app/contracts";
+import { EnvironmentId, ProjectId, type ThreadId } from "@houston-app/contracts";
 import { MOTION_FEEDBACK, MOTION_FEEDBACK_OPACITY } from "../ui/motion-recipes";
+import {
+  ROW_SCROLL_MARGIN_CLS,
+  ROW_TITLE_TEXT_CLS,
+  SIDEBAR_ROW_SURFACE_CLS,
+} from "../ui/sidebar-rail-recipes";
+import { isThreadRoutePathname, parseThreadRoutePathname } from "../../threadRoutes";
 import { shelfReturnAction } from "../../grid/shelfReturn";
 import { olderSettledScopesForProjects } from "../../grid/olderSettledScopes";
 import {
@@ -214,7 +228,7 @@ import {
   useSearchHighlight,
   type ContentResult,
 } from "./sidebarSearchResults";
-import { SIDEBAR_THREAD_TAG_CLASS } from "../ui/thread-tag-recipes";
+import { SIDEBAR_THREAD_META_TEXT_CLASS, SIDEBAR_THREAD_TAG_CLASS } from "../ui/thread-tag-recipes";
 import {
   SIDEBAR_GRID_ACTION_CLS,
   SIDEBAR_GRID_CHEVRON_BOX_CLS,
@@ -227,15 +241,18 @@ import {
   SIDEBAR_GRID_COUNT_CLS,
   SIDEBAR_GRID_NAME_CLS,
   SIDEBAR_GRID_RENAME_CLS,
+  SIDEBAR_NEEDS_YOU_HEADING_CLS,
+  SIDEBAR_NEEDS_YOU_HEADING_GLYPH_CLS,
+  SIDEBAR_NEEDS_YOU_SECTION_CLS,
   SIDEBAR_PROJECT_ACTION_CLS,
-  SIDEBAR_PROJECT_EMPTY_ACTION_CLS,
   SIDEBAR_PROJECT_LABEL_CLS,
-  SIDEBAR_PROJECT_ICON_CLS,
   SIDEBAR_PROJECT_LABEL_TEXT_CLS,
+  SIDEBAR_PROJECT_NEEDS_YOU_CLS,
   SIDEBAR_PROJECT_ROW_CLS,
   SIDEBAR_PROJECT_SUMMARY_CLS,
   SIDEBAR_SECTION_ACTION_CLS,
-  SIDEBAR_THREAD_NOT_IN_GRID_CLS,
+  SIDEBAR_THREAD_PROJECT_CLS,
+  SIDEBAR_THREAD_ROW_INDENT_CLS,
   SidebarOptionsMenu,
   SidebarSectionHeaderRow,
   type SidebarGridOptions,
@@ -308,12 +325,14 @@ export function GridSidebar() {
   const showBranch = useClientSettings((settings) => settings.sidebarRowShowBranch);
   const showPullRequest = useClientSettings((settings) => settings.sidebarRowShowPullRequest);
   const showSubagents = useClientSettings((settings) => settings.sidebarRowShowSubagents);
+  const showNeedsYou = useClientSettings((settings) => settings.sidebarShowNeedsYou);
   const sidebarOptions: SidebarGridOptions = {
     threadSort,
     gridSort,
     showBranch,
     showPullRequest,
     showSubagents,
+    showNeedsYou,
   };
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const searchShortcutLabel = shortcutLabelForCommand(keybindings, "commandPalette.toggle");
@@ -322,6 +341,15 @@ export function GridSidebar() {
   const pullRequestCount = useOpenPullRequestCount();
   const taskCount = useTaskYourTurnCount();
   const sidebarVisible = useSidebarVisibility();
+  const { isMobile: sidebarIsDrawer, setOpenMobile: setSidebarDrawerOpen } = useSidebar();
+  // The rail mounts when the drawer opens, so only a change of page closes it, never the mount.
+  const drawerPathnameRef = useRef(pathname);
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- the route is external state; the drawer must follow a navigation made from anywhere (row, shortcut, link)
+  useEffect(() => {
+    if (drawerPathnameRef.current === pathname) return;
+    drawerPathnameRef.current = pathname;
+    if (sidebarIsDrawer) setSidebarDrawerOpen(false);
+  }, [pathname, sidebarIsDrawer, setSidebarDrawerOpen]);
   const nowMinute = useNowMinute();
   const wakeClock = useSnoozeWakeClock(threads);
   const nowIso = new Date(wakeClock).toISOString();
@@ -501,11 +529,16 @@ export function GridSidebar() {
       ? null
       : { gridId: openGrid.id, threadId: openGrid.focusedThreadId };
   const openShell = currentFocus === null ? undefined : threadById.get(currentFocus.threadId);
+  // A thread opened on its own route (a link, a reload) has no open grid; its route names it.
+  const routeRef = openShell === undefined ? parseThreadRoutePathname(pathname) : null;
+  const routeShell = routeRef === null ? undefined : threadById.get(routeRef.threadId);
+  const revealShell =
+    openShell ?? (routeShell?.environmentId === routeRef?.environmentId ? routeShell : undefined);
   useRevealOpenThread(
     railRef,
-    openShell === undefined
+    revealShell === undefined
       ? null
-      : scopedThreadKey(scopeThreadRef(openShell.environmentId, openShell.id)),
+      : scopedThreadKey(scopeThreadRef(revealShell.environmentId, revealShell.id)),
   );
 
   const removeFromSelection = (threadsToRemove: ReadonlyArray<EnvironmentThreadShell>) => {
@@ -998,6 +1031,18 @@ export function GridSidebar() {
       : [{ workspaceKey, title: project.title, grids: workspaceHidden }];
   });
 
+  const needsYouEntries = showNeedsYou
+    ? buildNeedsYouEntries({ threads, nowIso, workspaceKeys })
+    : [];
+  const needsYouThreadIds = new Set(needsYouEntries.map((entry) => entry.thread.id));
+  const openNeedsYouThread = (thread: EnvironmentThreadShell) =>
+    openRailTarget({
+      gridId: null,
+      environmentId: thread.environmentId,
+      projectId: thread.projectId,
+      threadId: thread.id,
+    });
+
   const sections = buildSidebarProjectSections({
     groups: orderedProjectGroups,
     grids,
@@ -1007,6 +1052,7 @@ export function GridSidebar() {
     nowIso,
     query,
     activityAt: (grid) => gridActivityAt(grid, threads, nowIso),
+    ...(showNeedsYou ? { excludedThreadIds: needsYouThreadIds } : {}),
   });
 
   return (
@@ -1114,8 +1160,25 @@ export function GridSidebar() {
                     railRef.current = element;
                     return attachSidebarTree(element);
                   }}
-                  className="flex min-h-full flex-col px-2 pb-2"
+                  className="flex min-h-full flex-col px-2 pb-10"
                 >
+                  <SidebarNeedsYouSection
+                    entries={needsYouEntries}
+                    providerEntriesByEnvironment={providerEntriesByEnvironment}
+                    nowIso={nowIso}
+                    selection={selection}
+                    runningSubagents={runningSubagentsByThread}
+                    dragging={dragging}
+                    workspaceTitles={workspaceTitles}
+                    onOpenThread={openNeedsYouThread}
+                    onSelectThread={selectThread}
+                    onCloseThread={(thread) => closeThreads([thread])}
+                    onHoldThread={(thread, preset) => holdThreads([thread], preset.snoozedUntil)}
+                    onPickHoldTime={pickHoldTime}
+                    onRenameThread={renameThread}
+                    onSetAutoClose={setAutoClose}
+                    handleNewThread={handleNewThread}
+                  />
                   <SidebarProjectsHeader
                     options={sidebarOptions}
                     onChange={(patch) => void updateClientSettings(sidebarOptionsPatch(patch))}
@@ -1213,12 +1276,12 @@ export function GridSidebar() {
                   </div>
                 </div>
               </SidebarContent>
+              {/* Collapses while GridShelves renders nothing (both shelves empty, no drag). */}
               <div
                 ref={attachSidebarTree}
-                className="shrink-0 px-2 pt-1 pb-1"
+                className="shrink-0 px-2 pt-1 pb-1 empty:hidden"
                 data-testid="grid-shelves-pin"
               >
-                <Separator className="mb-1" data-shelves-rule="" />
                 <GridShelves
                   held={heldShown}
                   closed={closedShown}
@@ -1482,6 +1545,101 @@ function gridRowId(grid: Pick<GridRecord, "id">) {
 }
 
 /** A project's grids, then the threads no grid shows, under one collapsible label. */
+export function SidebarNeedsYouSection({
+  entries,
+  providerEntriesByEnvironment,
+  nowIso,
+  selection,
+  runningSubagents,
+  dragging,
+  workspaceTitles,
+  onOpenThread,
+  onSelectThread,
+  onCloseThread,
+  onHoldThread,
+  onPickHoldTime,
+  onRenameThread,
+  onSetAutoClose,
+  handleNewThread,
+}: {
+  entries: ReadonlyArray<NeedsYouEntry>;
+  providerEntriesByEnvironment: ReadonlyMap<string, ReadonlyMap<string, SidebarProviderEntry>>;
+  nowIso: string;
+  selection: ThreadSelection;
+  runningSubagents: ReadonlyMap<string, number>;
+  dragging: DraggedThread | null;
+  workspaceTitles: ReadonlyMap<string, string>;
+  onOpenThread: (thread: EnvironmentThreadShell) => void;
+  onSelectThread: (
+    thread: EnvironmentThreadShell,
+    input: { shiftKey: boolean; toggleKey: boolean },
+  ) => void;
+  onCloseThread: (thread: EnvironmentThreadShell) => void;
+  onHoldThread: (
+    thread: EnvironmentThreadShell,
+    preset: Pick<SnoozePreset, "snoozedUntil">,
+  ) => void;
+  onPickHoldTime: () => Promise<Pick<SnoozePreset, "snoozedUntil"> | null>;
+  onRenameThread: (thread: EnvironmentThreadShell, title: string) => void;
+  onSetAutoClose: (thread: EnvironmentThreadShell, enabled: boolean) => void;
+  handleNewThread?: NewThreadHandler | undefined;
+}) {
+  // Nothing needs the user: the section is not a permanent empty shelf on the rail.
+  if (entries.length === 0) return null;
+  return (
+    <section
+      aria-label="Needs you"
+      data-needs-you-section=""
+      className={SIDEBAR_NEEDS_YOU_SECTION_CLS}
+    >
+      <div data-needs-you-heading="" className={SIDEBAR_NEEDS_YOU_HEADING_CLS}>
+        <span aria-hidden className={SIDEBAR_NEEDS_YOU_HEADING_GLYPH_CLS} />
+        <span className="min-w-0 truncate">Needs you</span>
+        <span data-heading-count="" className={SIDEBAR_GRID_COUNT_CLS}>
+          {entries.length}
+        </span>
+      </div>
+      <div className={SIDEBAR_NEEDS_YOU_SECTION_CLS}>
+        {entries.map(({ thread }) => (
+          <ThreadCard
+            key={thread.id}
+            gridId={null}
+            thread={thread}
+            query=""
+            providerEntries={
+              providerEntriesByEnvironment.get(thread.environmentId) ?? EMPTY_PROVIDER_ENTRIES
+            }
+            nowIso={nowIso}
+            focused={false}
+            selected={selection.selectedThreadKeys.has(
+              scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+            )}
+            dragging={dragging?.threadId === thread.id}
+            runningSubagents={runningSubagents.get(subagentParentKey(thread)) ?? 0}
+            workspaceTitle={
+              workspaceTitles.get(workspaceKeyOf(thread.environmentId, thread.projectId)) ??
+              thread.projectId
+            }
+            projectLabel={
+              workspaceTitles.get(workspaceKeyOf(thread.environmentId, thread.projectId)) ?? null
+            }
+            onOpen={() => onOpenThread(thread)}
+            onSelect={(input) => onSelectThread(thread, input)}
+            onClose={() => onCloseThread(thread)}
+            onHold={(preset) => onHoldThread(thread, preset)}
+            onPickHoldTime={onPickHoldTime}
+            onRename={(title) => onRenameThread(thread, title)}
+            onSetAutoClose={(enabled) => onSetAutoClose(thread, enabled)}
+            onDropOnThread={() => {}}
+            onOpenGrid={() => onOpenThread(thread)}
+            handleNewThread={handleNewThread}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function SidebarProjectSection({
   section,
   query,
@@ -1548,24 +1706,33 @@ export function SidebarProjectSection({
   /** Opens the project's actions at a viewport point; the scratch section has none. */
   onOpenProjectMenu?: ((position: { x: number; y: number }) => void) | undefined;
 }) {
-  const gridCount = section.grids.length;
   // A search shows every match, so it opens a project the user collapsed.
   const collapsed = query.length === 0 && collapsedPreference;
   const projectMenu = section.isScratch ? undefined : onOpenProjectMenu;
   const revealed = collapsed ? revealedOpenThread(section.grids, openGridId) : null;
-  const hiddenThreads = collapsed
-    ? [...section.grids.flatMap((entry) => entry.threads), ...section.ungroupedThreads].filter(
-        (thread) => thread.id !== revealed?.thread.id,
-      )
-    : [];
-  const rollup = collapsedRollup(hiddenThreads);
+  const sectionThreads = [
+    ...section.grids.flatMap((entry) => entry.threads),
+    ...section.ungroupedThreads,
+  ];
+  const needsYouThreads = section.needsYouThreads ?? [];
+  const headingRef = useRef<HTMLDivElement | null>(null);
+  const stuck = useStuckToTop(headingRef);
+  const projectRef = scopeProjectRef(
+    EnvironmentId.make(section.environmentId),
+    ProjectId.make(section.projectId),
+  );
 
   return (
     <div
       className="flex flex-col gap-px"
       data-project-key={section.isScratch ? "no-project" : section.projectKey}
     >
-      <div className={SIDEBAR_PROJECT_ROW_CLS}>
+      <div
+        ref={headingRef}
+        data-project-heading=""
+        data-stuck={stuck ? "" : undefined}
+        className={SIDEBAR_PROJECT_ROW_CLS}
+      >
         <Tooltip>
           <TooltipTrigger
             render={
@@ -1588,20 +1755,21 @@ export function SidebarProjectSection({
                   const rect = event.currentTarget.getBoundingClientRect();
                   projectMenu({ x: rect.left, y: rect.bottom + 4 });
                 }}
-                className={cn(SIDEBAR_PROJECT_LABEL_CLS, projectMenu !== undefined && "pr-14")}
+                className={SIDEBAR_PROJECT_LABEL_CLS}
               >
-                {collapsed ? (
-                  <FolderIcon aria-hidden className={SIDEBAR_PROJECT_ICON_CLS} />
-                ) : (
-                  <FolderOpenIcon aria-hidden className={SIDEBAR_PROJECT_ICON_CLS} />
-                )}
+                <span className={SIDEBAR_GRID_CHEVRON_BOX_CLS} data-project-icon-box="">
+                  {collapsed ? (
+                    <FolderIcon aria-hidden className="size-3" />
+                  ) : (
+                    <FolderOpenIcon aria-hidden className="size-3" />
+                  )}
+                </span>
                 <span className={SIDEBAR_PROJECT_LABEL_TEXT_CLS}>{section.title}</span>
-                {collapsed && rollup.dot !== null ? (
-                  <SidebarStatusGlyph state={rollup.dot.state} label={rollup.dot.label} />
-                ) : null}
-                {collapsed && rollup.count > 0 ? (
-                  <span className={SIDEBAR_PROJECT_SUMMARY_CLS}>{rollup.count}</span>
-                ) : null}
+                {sectionThreads.length === 0 ? null : (
+                  <span className={SIDEBAR_PROJECT_SUMMARY_CLS} data-heading-count="">
+                    {sectionThreads.length}
+                  </span>
+                )}
               </button>
             }
           />
@@ -1610,7 +1778,26 @@ export function SidebarProjectSection({
           </TooltipPopup>
         </Tooltip>
         {section.isScratch ? null : (
-          <span className="absolute inset-y-0 right-1 flex items-center gap-0.5">
+          <span className="ms-auto flex shrink-0 items-center gap-0.5 pr-1">
+            {handleNewThread === undefined ? null : (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      aria-label={`New thread in ${section.title}`}
+                      onClick={() => void handleNewThread(projectRef)}
+                      className={SIDEBAR_PROJECT_ACTION_CLS}
+                    />
+                  }
+                >
+                  <PlusIcon aria-hidden className="size-3.5" />
+                </TooltipTrigger>
+                <TooltipPopup side="bottom" align="end">
+                  {`New thread in ${section.title}`}
+                </TooltipPopup>
+              </Tooltip>
+            )}
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -1648,7 +1835,7 @@ export function SidebarProjectSection({
       <AnimatedHeight>
         {collapsed ? (
           revealed === null ? null : (
-            <div className="flex flex-col gap-px">
+            <div className="flex flex-col gap-0.5">
               <ThreadCard
                 key={revealed.thread.id}
                 gridId={revealed.grid.id}
@@ -1682,7 +1869,7 @@ export function SidebarProjectSection({
             </div>
           )
         ) : (
-          <div className="flex flex-col gap-px">
+          <div className="flex flex-col gap-0.5">
             {section.grids.map(({ grid, threads }) => (
               <GridGroup
                 key={grid.id}
@@ -1715,17 +1902,6 @@ export function SidebarProjectSection({
                 onCreateGrid={onCreateGrid}
               />
             ))}
-            {gridCount === 0 && !section.isScratch ? (
-              <button
-                type="button"
-                aria-label="New grid"
-                onClick={onCreateGrid}
-                className={SIDEBAR_PROJECT_EMPTY_ACTION_CLS}
-              >
-                <Grid2X2PlusIcon aria-hidden className="size-3.5" />
-                <span>New grid</span>
-              </button>
-            ) : null}
             {section.ungroupedThreads.map((thread) => (
               <ThreadCard
                 key={thread.id}
@@ -1741,7 +1917,6 @@ export function SidebarProjectSection({
                 dragging={dragging?.threadId === thread.id}
                 workspaceTitle={section.title}
                 treeParent={projectRowId(section)}
-                notInGrid
                 runningSubagents={runningSubagents.get(subagentParentKey(thread)) ?? 0}
                 onOpen={() => onOpenUngroupedThread(thread)}
                 onSelect={(input) => onSelectThread(thread, input)}
@@ -1755,6 +1930,11 @@ export function SidebarProjectSection({
                 handleNewThread={handleNewThread}
               />
             ))}
+            {needsYouThreads.length > 0 ? (
+              <p data-project-needs-you="" className={SIDEBAR_PROJECT_NEEDS_YOU_CLS}>
+                +{needsYouThreads.length} in Needs you
+              </p>
+            ) : null}
           </div>
         )}
       </AnimatedHeight>
@@ -1845,9 +2025,6 @@ export function GridGroup({
   );
   const revealedThread =
     collapsed && open ? threads.find((thread) => thread.id === grid.focusedThreadId) : undefined;
-  const gridRollup = collapsedRollup(
-    collapsed ? threads.filter((thread) => thread.id !== revealedThread?.id) : [],
-  );
   const readyThreads = threads.filter(
     (thread) => resolveGridThreadState(thread, nowIso) === "ready",
   );
@@ -1994,19 +2171,13 @@ export function GridGroup({
                   </span>
                   {threads.length === 0 ? (
                     <span className={SIDEBAR_GRID_EMPTY_CLS}>empty</span>
-                  ) : collapsed ? (
+                  ) : (
                     <>
-                      {gridRollup.dot === null ? null : (
-                        <SidebarStatusGlyph
-                          state={gridRollup.dot.state}
-                          label={gridRollup.dot.label}
-                        />
-                      )}
-                      {gridRollup.count > 0 ? (
-                        <span className={SIDEBAR_GRID_COUNT_CLS}>{gridRollup.count}</span>
-                      ) : null}
+                      <span className={SIDEBAR_GRID_COUNT_CLS} data-heading-count="">
+                        {threads.length}
+                      </span>
                     </>
-                  ) : null}
+                  )}
                 </button>
               }
             />
@@ -2016,28 +2187,26 @@ export function GridGroup({
           </Tooltip>
         )}
         {renaming ? null : (
-          <>
-            <span className="absolute inset-y-0 right-7 flex items-center">
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <button
-                      type="button"
-                      aria-label={`New thread in ${grid.name}`}
-                      onClick={onCreateThread}
-                      className={SIDEBAR_GRID_ACTION_CLS}
-                    />
-                  }
-                >
-                  <MessageSquarePlusIcon aria-hidden className="size-3.5" />
-                </TooltipTrigger>
-                <TooltipPopup side="top">
-                  {newThreadShortcut === null
-                    ? `New thread in ${grid.name}`
-                    : `New thread in ${grid.name} · ${newThreadShortcut}`}
-                </TooltipPopup>
-              </Tooltip>
-            </span>
+          <span className="ms-auto flex shrink-0 items-center gap-0.5 pr-1">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    aria-label={`New thread in ${grid.name}`}
+                    onClick={onCreateThread}
+                    className={SIDEBAR_GRID_ACTION_CLS}
+                  />
+                }
+              >
+                <PlusIcon aria-hidden className="size-3.5" />
+              </TooltipTrigger>
+              <TooltipPopup side="top">
+                {newThreadShortcut === null
+                  ? `New thread in ${grid.name}`
+                  : `New thread in ${grid.name} · ${newThreadShortcut}`}
+              </TooltipPopup>
+            </Tooltip>
             <button
               ref={actionsButtonRef}
               type="button"
@@ -2045,20 +2214,16 @@ export function GridGroup({
               aria-haspopup="menu"
               aria-expanded={menuOpen}
               onClick={() => openGridMenuBelow(actionsButtonRef.current)}
-              className={cn(
-                SIDEBAR_GRID_ACTION_CLS,
-                "absolute right-1 top-1/2 -translate-y-1/2",
-                menuOpen && "opacity-100",
-              )}
+              className={cn(SIDEBAR_GRID_ACTION_CLS, menuOpen && "opacity-100")}
             >
               <MoreHorizontalIcon aria-hidden className="size-3.5" />
             </button>
-          </>
+          </span>
         )}
       </div>
       <AnimatedHeight>
         {collapsed && revealedThread === undefined ? null : (
-          <div className="flex flex-col gap-px">
+          <div className="flex flex-col gap-0.5">
             {(revealedThread === undefined ? threads : [revealedThread]).map((thread) => (
               <ThreadCard
                 key={thread.id}
@@ -2095,10 +2260,23 @@ export function GridGroup({
 }
 
 /**
- * The branch a thread works on: the one it recorded, or else the branch its
- * checkout (its worktree, or the project's own folder) currently has.
+ * The narrowest a branch name gets before the line drops items instead: the checkout mark plus
+ * the first characters of the name and an ellipsis (about 56px at 12px type).
  */
-function useThreadBranchName(thread: EnvironmentThreadShell): string | null {
+const BRANCH_MIN_WIDTH_PX = 56;
+
+/** Branch names every checkout is assumed to treat as the project's default. */
+const CONVENTIONAL_DEFAULT_BRANCHES: ReadonlySet<string> = new Set(["main", "master"]);
+
+/**
+ * The branch a thread works on: the one it recorded, or else the branch its
+ * checkout (its worktree, or the project's own folder) currently has. `isDefault`
+ * is the checkout's own answer when the branch came from it, else `main` or `master`.
+ */
+function useThreadBranch(thread: EnvironmentThreadShell): {
+  name: string | null;
+  isDefault: boolean;
+} {
   const readsCheckout = thread.branch === null;
   const project = useProject(
     readsCheckout && thread.worktreePath === null
@@ -2111,7 +2289,12 @@ function useThreadBranchName(thread: EnvironmentThreadShell): string | null {
       ? vcsEnvironment.status({ environmentId: thread.environmentId, input: { cwd } })
       : null,
   );
-  return thread.branch ?? status.data?.refName ?? null;
+  const name = thread.branch ?? status.data?.refName ?? null;
+  const conventional = name !== null && CONVENTIONAL_DEFAULT_BRANCHES.has(name);
+  return {
+    name,
+    isDefault: thread.branch === null ? (status.data?.isDefaultRef ?? conventional) : conventional,
+  };
 }
 
 // Positioned so the actions paint above the faded time; out of flow until the row is hovered or focused.
@@ -2129,10 +2312,10 @@ export function ThreadCard({
   selected,
   dragging,
   workspaceTitle,
+  projectLabel = null,
   timeLabel = null,
   shelf = null,
   runningSubagents = 0,
-  notInGrid = false,
   treeParent,
   onOpen,
   onSelect,
@@ -2156,11 +2339,11 @@ export function ThreadCard({
   selected: boolean;
   dragging: boolean;
   workspaceTitle: string;
+  /** Names the row's project first on the second line, for rows outside a project group. */
+  projectLabel?: string | null;
   timeLabel?: string | null;
   shelf?: "snoozed" | "settled" | null;
   runningSubagents?: number;
-  /** A thread no grid shows: its row sits at project level and its meta says so. */
-  notInGrid?: boolean;
   /** The row id of the grid or project this row sits under, for arrow-key navigation. */
   treeParent?: string | undefined;
   onOpen: () => void;
@@ -2185,11 +2368,16 @@ export function ThreadCard({
   const nowMinute = useNowMinute();
   const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
   const showBranch = useClientSettings((settings) => settings.sidebarRowShowBranch);
-  const branchName = useThreadBranchName(thread);
+  const { name: branchName, isDefault: branchIsDefault } = useThreadBranch(thread);
   const showPullRequest = useClientSettings((settings) => settings.sidebarRowShowPullRequest);
   const showSubagents = useClientSettings((settings) => settings.sidebarRowShowSubagents);
   const state = resolveGridThreadState(thread, nowIso);
-  const attention = state === "needs" || state === "ready" || state === "back";
+  // The open thread: the focused cell of the open grid, or the thread's own route.
+  const routeActive = useLocation({
+    select: (location) =>
+      isThreadRoutePathname(location.pathname, scopeThreadRef(thread.environmentId, thread.id)),
+  });
+  const active = focused || routeActive;
   const rowPullRequest = resolveRowPullRequest(thread);
   const providerEntry = providerEntries.get(thread.providerInstanceId);
   const presets = resolveSnoozePresets(
@@ -2211,6 +2399,11 @@ export function ThreadCard({
   const actionsButtonRef = useRef<HTMLButtonElement | null>(null);
   const threadRef = scopeThreadRef(thread.environmentId, thread.id);
   const startRename = () => setRenaming(true);
+  const timeNode = (
+    <span data-thread-time="" className={cn("tabular-nums", SIDEBAR_THREAD_META_TEXT_CLASS)}>
+      {timeLabel ?? threadTimeLabel(thread, nowMinute)}
+    </span>
+  );
   const openCardMenu = async (position: { x: number; y: number }) => {
     setActionsMenuOpen(true);
     await openMenu(position).finally(() => setActionsMenuOpen(false));
@@ -2308,6 +2501,7 @@ export function ThreadCard({
             data-thread-key={threadKey}
             data-sidebar-row={threadKey}
             data-sidebar-parent={treeParent}
+            data-thread-current={active ? "" : undefined}
             aria-busy={regeneratingTitle || undefined}
             onContextMenu={(event) => {
               if (renaming) return;
@@ -2348,252 +2542,307 @@ export function ThreadCard({
               onOpen();
             }}
             className={cn(
-              `group/th relative flex w-full flex-col gap-1 rounded-lg py-2 pr-2.5 text-left outline-none ${MOTION_FEEDBACK} ${FOCUS_ROW_CLS}`,
-              notInGrid ? "pl-2" : "pl-7.5",
+              `group/th relative flex h-13 w-full items-center gap-2 rounded-lg pr-2 text-left outline-none ${MOTION_FEEDBACK} ${FOCUS_ROW_CLS}`,
+              SIDEBAR_THREAD_ROW_INDENT_CLS,
+              ROW_SCROLL_MARGIN_CLS,
               "cursor-pointer",
               dragging && "opacity-50",
               fileDrop.over && "bg-(--accent-muted) ring-1 ring-(--accent-ink) ring-inset",
               selected
-                ? "bg-(--row-current)"
+                ? SIDEBAR_ROW_SURFACE_CLS.selected
                 : searchHighlight.highlighted
-                  ? "bg-(--sidebar-row-active)"
-                  : focused
-                    ? "bg-(--sidebar-row-active)"
-                    : "hover:bg-(--sidebar-row-hover)",
+                  ? SIDEBAR_ROW_SURFACE_CLS.searchHighlight
+                  : active
+                    ? SIDEBAR_ROW_SURFACE_CLS.active
+                    : SIDEBAR_ROW_SURFACE_CLS.rest,
             )}
           />
         }
       >
-        <div className="flex min-h-[22px] min-w-0 items-center gap-2">
-          {renaming ? (
-            <ThreadTitleInput
-              title={thread.title}
-              onCommit={(next) => {
-                setRenaming(false);
-                onRename(next);
-              }}
-              onCancel={() => setRenaming(false)}
-            />
-          ) : (
-            <button
-              type="button"
-              data-card-open=""
-              onClick={(event) => {
-                if (shelf === null && (event.shiftKey || event.metaKey || event.ctrlKey)) {
-                  event.preventDefault();
-                  onSelect({ shiftKey: event.shiftKey, toggleKey: event.metaKey || event.ctrlKey });
-                  return;
-                }
-                // The second click of a double-click renames; it must not open the thread again.
-                if (isTrailingDoubleClick(event.detail)) return;
-                onOpen();
-              }}
-              onDoubleClick={(event) => {
-                event.preventDefault();
-                startRename();
-              }}
-              onKeyDown={(event: ReactKeyboardEvent<HTMLButtonElement>) => {
-                if (event.key === "F2") {
+        {/* The status glyph is the row's first column, centred across both lines. */}
+        <ThreadStatusGlyph
+          thread={thread}
+          state={state}
+          {...(shelf === "settled" ? { kind: "closed" as const } : {})}
+        />
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <div data-thread-title-line="" className="flex h-5 min-w-0 items-center gap-2">
+            {renaming ? (
+              <ThreadTitleInput
+                title={thread.title}
+                onCommit={(next) => {
+                  setRenaming(false);
+                  onRename(next);
+                }}
+                onCancel={() => setRenaming(false)}
+              />
+            ) : (
+              <button
+                type="button"
+                data-card-open=""
+                onClick={(event) => {
+                  if (shelf === null && (event.shiftKey || event.metaKey || event.ctrlKey)) {
+                    event.preventDefault();
+                    onSelect({
+                      shiftKey: event.shiftKey,
+                      toggleKey: event.metaKey || event.ctrlKey,
+                    });
+                    return;
+                  }
+                  // The second click of a double-click renames; it must not open the thread again.
+                  if (isTrailingDoubleClick(event.detail)) return;
+                  onOpen();
+                }}
+                onDoubleClick={(event) => {
                   event.preventDefault();
                   startRename();
-                }
-              }}
-              className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left outline-none"
-            >
-              <span
-                className={cn(
-                  "min-w-0 flex-1 truncate text-headline leading-4.75 text-foreground",
-                  attention ? "font-semibold" : "font-medium",
-                  regeneratingTitle && "opacity-55",
-                )}
-              >
-                <HighlightedText text={thread.title} query={query} />
-              </span>
-            </button>
-          )}
-          {/*
-            The time and the hover actions share one grid cell. Hidden actions leave the flow, so a
-            resting title runs up to the time; shown, they join it and the title truncates before them.
-          */}
-          <span className="relative grid min-h-[22px] shrink-0 items-center justify-items-end">
-            <span
-              className={cn(
-                "col-start-1 row-start-1",
-                ROW_STATUS_RECEDE,
-                MOTION_FEEDBACK_OPACITY,
-                actionsVisible && ROW_STATUS_HIDDEN,
-              )}
-            >
-              {jumpHint === null ? (
-                <span className="text-xs text-secondary-label tabular-nums">
-                  {timeLabel ?? threadTimeLabel(thread, nowMinute)}
-                </span>
-              ) : (
-                <JumpHintBadge label={jumpHint} />
-              )}
-            </span>
-            <span
-              className={cn(
-                "col-start-1 row-start-1 flex h-[22px] items-center gap-0.5",
-                MOTION_FEEDBACK_OPACITY,
-                actionsVisible ? ROW_ACTIONS_IN_FLOW : ROW_ACTIONS_OUT_OF_FLOW,
-                actionsVisible ? ROW_ACTIONS_VISIBLE : ROW_ACTIONS_REVEAL,
-              )}
-              onMouseEnter={() => setActionsHovered(true)}
-              onMouseLeave={() => setActionsHovered(false)}
-            >
-              {shelf !== null ? (
-                <button
-                  type="button"
-                  aria-label={shelf === "snoozed" ? "Wake thread now" : "Reopen thread"}
-                  {...sweepActionProps(shelf === "snoozed" ? "wake" : "reopen")}
-                  onPointerDown={(event) =>
-                    sweep?.(event, shelf === "snoozed" ? "wake" : "reopen", threadKey)
+                }}
+                onKeyDown={(event: ReactKeyboardEvent<HTMLButtonElement>) => {
+                  if (event.key === "F2") {
+                    event.preventDefault();
+                    startRename();
                   }
-                  onClick={shelf === "snoozed" ? onWake : onReopen}
+                }}
+                aria-current={active ? "true" : undefined}
+                className="flex min-w-0 flex-1 cursor-pointer items-center text-left outline-none"
+              >
+                <span
                   className={cn(
-                    "inline-flex h-[22px] cursor-pointer items-center gap-1 rounded-(--r-badge) px-1.5 text-xs text-secondary-foreground data-sweep-hit:bg-(--sel) hover:bg-(--sel) hover:text-foreground",
-                    FOCUS_ACTION_CLS,
+                    "min-w-0 flex-1 truncate",
+                    ROW_TITLE_TEXT_CLS,
+                    regeneratingTitle && "opacity-55",
                   )}
                 >
-                  {shelf === "snoozed" ? (
-                    <>
-                      <AlarmClockOffIcon aria-hidden className="size-3.5" />
-                      Wake
-                    </>
-                  ) : (
-                    <>
-                      <Undo2Icon aria-hidden className="size-3.5" />
-                      Reopen
-                    </>
-                  )}
-                </button>
-              ) : (
-                <>
-                  {canHold ? (
-                    <Menu onOpenChange={setHoldMenuOpen}>
-                      <MenuTrigger
-                        render={
-                          <button
-                            type="button"
-                            aria-label="Hold"
-                            className={cn(
-                              "inline-grid size-[22px] cursor-pointer place-items-center rounded-(--r-badge) text-secondary-foreground hover:bg-(--sel) hover:text-foreground",
-                              FOCUS_ACTION_CLS,
-                            )}
-                          >
-                            <ClockIcon aria-hidden className="size-3.5" />
-                          </button>
-                        }
-                      />
-                      <MenuPopup side="bottom" align="end">
-                        <HoldMenuItems
-                          presets={presets}
-                          onPick={applyPreset}
-                          onPickTime={onPickHoldTime}
-                        />
-                      </MenuPopup>
-                    </Menu>
-                  ) : null}
+                  <HighlightedText text={thread.title} query={query} />
+                </span>
+              </button>
+            )}
+            {/*
+            The age and the hover actions share one grid cell at the title line's right edge, so ages
+            scan down one column whatever the row carries. Hidden actions leave the flow, so a resting
+            title runs up to the age; shown, they join it and the title truncates before them.
+          */}
+            <span className="relative ml-auto grid h-5 shrink-0 grid-rows-1 items-center justify-items-end">
+              <span
+                className={cn(
+                  "col-start-1 row-start-1 flex min-w-7 items-center justify-end",
+                  ROW_STATUS_RECEDE,
+                  MOTION_FEEDBACK_OPACITY,
+                  actionsVisible && ROW_STATUS_HIDDEN,
+                )}
+              >
+                {jumpHint !== null ? (
+                  <JumpHintBadge label={jumpHint} />
+                ) : shelf === null ? (
+                  timeNode
+                ) : null}
+              </span>
+              <span
+                className={cn(
+                  "col-start-1 row-start-1 flex h-[22px] items-center gap-0.5",
+                  MOTION_FEEDBACK_OPACITY,
+                  actionsVisible ? ROW_ACTIONS_IN_FLOW : ROW_ACTIONS_OUT_OF_FLOW,
+                  actionsVisible ? ROW_ACTIONS_VISIBLE : ROW_ACTIONS_REVEAL,
+                )}
+                onMouseEnter={() => setActionsHovered(true)}
+                onMouseLeave={() => setActionsHovered(false)}
+              >
+                {shelf !== null ? (
                   <button
                     type="button"
-                    aria-label="Close thread"
-                    {...sweepActionProps("close")}
-                    onPointerDown={(event) => sweep?.(event, "close", threadKey)}
-                    onClick={close}
+                    aria-label={shelf === "snoozed" ? "Wake thread now" : "Reopen thread"}
+                    {...sweepActionProps(shelf === "snoozed" ? "wake" : "reopen")}
+                    onPointerDown={(event) =>
+                      sweep?.(event, shelf === "snoozed" ? "wake" : "reopen", threadKey)
+                    }
+                    onClick={shelf === "snoozed" ? onWake : onReopen}
                     className={cn(
                       "inline-flex h-[22px] cursor-pointer items-center gap-1 rounded-(--r-badge) px-1.5 text-xs text-secondary-foreground data-sweep-hit:bg-(--sel) hover:bg-(--sel) hover:text-foreground",
                       FOCUS_ACTION_CLS,
                     )}
                   >
-                    <XIcon aria-hidden className="size-3.5" />
-                    Close
-                  </button>
-                  <button
-                    ref={actionsButtonRef}
-                    type="button"
-                    aria-label={`Thread actions for ${thread.title}`}
-                    aria-haspopup="menu"
-                    onClick={openCardMenuFromButton}
-                    className={cn(
-                      "inline-grid size-5.5 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-foreground hover:bg-(--sel) hover:text-foreground",
-                      FOCUS_ACTION_CLS,
+                    {shelf === "snoozed" ? (
+                      <>
+                        <AlarmClockOffIcon aria-hidden className="size-3.5" />
+                        Wake
+                      </>
+                    ) : (
+                      <>
+                        <Undo2Icon aria-hidden className="size-3.5" />
+                        Reopen
+                      </>
                     )}
-                  >
-                    <MoreHorizontalIcon aria-hidden className="size-3.5" />
                   </button>
-                </>
-              )}
-            </span>
-          </span>
-        </div>
-        <div className="flex min-w-0 items-center gap-2 text-caption leading-3.75 text-secondary-label">
-          {showBranch ? (
-            <>
-              <ThreadCheckoutMark thread={thread} />
-              <span className="min-w-0 flex-1 truncate font-mono text-2xs">
-                {branchName ?? "no branch"}
-                {notInGrid ? " · not in a grid" : ""}
+                ) : (
+                  <>
+                    {canHold ? (
+                      <Menu onOpenChange={setHoldMenuOpen}>
+                        <MenuTrigger
+                          render={
+                            <button
+                              type="button"
+                              aria-label="Hold"
+                              className={cn(
+                                "inline-grid size-[22px] cursor-pointer place-items-center rounded-(--r-badge) text-secondary-foreground hover:bg-(--sel) hover:text-foreground",
+                                FOCUS_ACTION_CLS,
+                              )}
+                            >
+                              <ClockIcon aria-hidden className="size-3.5" />
+                            </button>
+                          }
+                        />
+                        <MenuPopup side="bottom" align="end">
+                          <HoldMenuItems
+                            presets={presets}
+                            onPick={applyPreset}
+                            onPickTime={onPickHoldTime}
+                          />
+                        </MenuPopup>
+                      </Menu>
+                    ) : null}
+                    <button
+                      type="button"
+                      aria-label="Close thread"
+                      {...sweepActionProps("close")}
+                      onPointerDown={(event) => sweep?.(event, "close", threadKey)}
+                      onClick={close}
+                      className={cn(
+                        "inline-flex h-[22px] cursor-pointer items-center gap-1 rounded-(--r-badge) px-1.5 text-xs text-secondary-foreground data-sweep-hit:bg-(--sel) hover:bg-(--sel) hover:text-foreground",
+                        FOCUS_ACTION_CLS,
+                      )}
+                    >
+                      <XIcon aria-hidden className="size-3.5" />
+                      Close
+                    </button>
+                    <button
+                      ref={actionsButtonRef}
+                      type="button"
+                      aria-label={`Thread actions for ${thread.title}`}
+                      aria-haspopup="menu"
+                      onClick={openCardMenuFromButton}
+                      className={cn(
+                        "inline-grid size-5.5 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-foreground hover:bg-(--sel) hover:text-foreground",
+                        FOCUS_ACTION_CLS,
+                      )}
+                    >
+                      <MoreHorizontalIcon aria-hidden className="size-3.5" />
+                    </button>
+                  </>
+                )}
               </span>
-            </>
-          ) : notInGrid ? (
-            <span className={SIDEBAR_THREAD_NOT_IN_GRID_CLS}>not in a grid</span>
-          ) : (
-            <span className="flex-1" />
-          )}
-          <ThreadRowIndicators
-            thread={thread}
-            rowRef={rowRef}
-            focused={focused}
-            onActivate={onOpen}
-          />
-          {showSubagents && runningSubagents > 0 ? (
-            <span className="inline-flex min-w-0 items-center gap-1 whitespace-nowrap">
-              <UsersIcon aria-hidden className="size-3 shrink-0" />
-              <span className="truncate">
-                {runningSubagents === 1
-                  ? "1 subagent running"
-                  : `${runningSubagents} subagents running`}
-              </span>
             </span>
-          ) : null}
-          {showPullRequest && rowPullRequest !== null ? (
-            <ThreadRowPullRequestBadge
-              threadRef={threadRef}
-              pullRequest={rowPullRequest}
-              pullRequestCount={thread.pullRequests.length}
-              onOpenThread={onOpen}
-            />
-          ) : null}
-          <span
-            data-thread-provider-mark=""
-            className={cn(
-              "inline-grid size-3.5 shrink-0 place-items-center",
-              ROW_STATUS_RECEDE,
-              MOTION_FEEDBACK_OPACITY,
-              actionsVisible && ROW_STATUS_HIDDEN,
-            )}
+          </div>
+          {/*
+          One muted line in a fixed order: status word, draft, pull request, line totals, terminal,
+          checkout and branch, machine, subagents, tags, title regeneration. Items that do not fit
+          drop from the right, whole, behind a +N counter. The provider mark closes the line under
+          the age.
+        */}
+          <div
+            data-thread-meta=""
+            className={cn("flex h-4 min-w-0 items-center gap-2", SIDEBAR_THREAD_META_TEXT_CLASS)}
           >
-            {providerEntry !== undefined ? (
-              <SidebarProviderStack thread={thread} providerEntryByInstanceId={providerEntries} />
-            ) : null}
-          </span>
-        </div>
-        {/* Every row is three lines tall: the third says what the agent is doing, then its tags. */}
-        <div
-          data-thread-status=""
-          className="flex min-w-0 items-center gap-1.5 text-caption leading-3.75 text-secondary-label"
-        >
-          {state === "idle" ? (
-            <span>Idle</span>
-          ) : (
-            <ThreadStateMark thread={thread} state={state} nowIso={nowIso} />
-          )}
-          {(thread.tags ?? []).map((tag) => (
-            <span key={tag} data-thread-tag="" className={SIDEBAR_THREAD_TAG_CLASS}>
-              {tag}
+            <RowMeta>
+              {projectLabel !== null ? (
+                <RowMetaItem label={projectLabel}>
+                  <span data-thread-project="" className={SIDEBAR_THREAD_PROJECT_CLS}>
+                    {projectLabel}
+                  </span>
+                </RowMetaItem>
+              ) : null}
+              {/* A shelf row's label ("tomorrow at 9:00 AM", "Closed 2h") is too long for the title line. */}
+              {shelf !== null && jumpHint === null ? (
+                <RowMetaItem label="Time" keep>
+                  {timeNode}
+                </RowMetaItem>
+              ) : null}
+              {shelf === "settled" ? null : (
+                <RowMetaItem label="Status" keep>
+                  <ThreadStatusWord thread={thread} state={state} nowIso={nowIso} />
+                </RowMetaItem>
+              )}
+              <ThreadDraftItem thread={thread} focused={focused} />
+              {showPullRequest && rowPullRequest !== null ? (
+                <RowMetaItem label={`Pull request #${rowPullRequest.number}`}>
+                  <ThreadRowPullRequestBadge
+                    threadRef={threadRef}
+                    pullRequest={rowPullRequest}
+                    pullRequestCount={thread.pullRequests.length}
+                    onOpenThread={onOpen}
+                  />
+                </RowMetaItem>
+              ) : null}
+              <ThreadDiffItem
+                thread={thread}
+                rowRef={rowRef}
+                focused={focused}
+                emphasized={active || selected}
+              />
+              <ThreadTerminalItem thread={thread} onActivate={onOpen} />
+              {showBranch && branchName !== null && !branchIsDefault ? (
+                <RowMetaItem label={`Branch ${branchName}`} minWidth={BRANCH_MIN_WIDTH_PX}>
+                  <span data-thread-branch="" className="inline-flex min-w-0 items-center gap-1">
+                    <ThreadCheckoutMark thread={thread} />
+                    <span className="min-w-0 truncate">{branchName}</span>
+                  </span>
+                </RowMetaItem>
+              ) : showBranch && thread.worktreePath?.trim() ? (
+                <RowMetaItem label="Worktree">
+                  <ThreadCheckoutMark thread={thread} />
+                </RowMetaItem>
+              ) : null}
+              <ThreadRemoteItem thread={thread} />
+              {showSubagents && runningSubagents > 0 ? (
+                <RowMetaItem
+                  label={
+                    runningSubagents === 1
+                      ? "1 subagent running"
+                      : `${runningSubagents} subagents running`
+                  }
+                >
+                  <span
+                    role="img"
+                    aria-label={
+                      runningSubagents === 1
+                        ? "1 subagent running"
+                        : `${runningSubagents} subagents running`
+                    }
+                    className="inline-flex shrink-0 items-center gap-1 tabular-nums"
+                  >
+                    <UsersIcon aria-hidden className="size-3.5 shrink-0" />
+                    <span aria-hidden>{runningSubagents}</span>
+                  </span>
+                </RowMetaItem>
+              ) : null}
+              {(thread.tags ?? []).map((tag) => (
+                <RowMetaItem key={tag} label={`#${tag}`}>
+                  <span data-thread-tag="" className={SIDEBAR_THREAD_TAG_CLASS}>
+                    #{tag}
+                  </span>
+                </RowMetaItem>
+              ))}
+              {regeneratingTitle ? (
+                <RowMetaItem label="Renaming title">
+                  <span data-thread-regenerating="" className="shrink-0">
+                    Renaming…
+                  </span>
+                </RowMetaItem>
+              ) : null}
+            </RowMeta>
+            {/* A fixed slot, so the marks line up under the ages whatever the row carries. */}
+            <span
+              data-thread-provider-mark=""
+              className="inline-grid size-4 shrink-0 place-items-center"
+            >
+              {providerEntry !== undefined ? (
+                <SidebarProviderStack
+                  thread={thread}
+                  providerEntryByInstanceId={providerEntries}
+                  quiet
+                />
+              ) : null}
             </span>
-          ))}
+          </div>
         </div>
         {selected ? (
           <span className="sr-only" aria-live="polite">
@@ -2653,9 +2902,10 @@ const SIDEBAR_OPTIONS_DEFAULTS = {
   sidebarRowShowBranch: true,
   sidebarRowShowPullRequest: true,
   sidebarRowShowSubagents: true,
+  sidebarShowNeedsYou: false,
 } as const;
 
-function sidebarOptionsPatch(patch: Partial<SidebarGridOptions>) {
+export function sidebarOptionsPatch(patch: Partial<SidebarGridOptions>) {
   return {
     ...(patch.threadSort === undefined ? {} : { sidebarGridThreadSortOrder: patch.threadSort }),
     ...(patch.gridSort === undefined ? {} : { sidebarGridSortOrder: patch.gridSort }),
@@ -2664,6 +2914,7 @@ function sidebarOptionsPatch(patch: Partial<SidebarGridOptions>) {
       ? {}
       : { sidebarRowShowPullRequest: patch.showPullRequest }),
     ...(patch.showSubagents === undefined ? {} : { sidebarRowShowSubagents: patch.showSubagents }),
+    ...(patch.showNeedsYou === undefined ? {} : { sidebarShowNeedsYou: patch.showNeedsYou }),
   };
 }
 

@@ -410,24 +410,24 @@ function legacyThemeMode(theme: ThemePreference): ThemeAppearance | null {
 // so a theme editor preview and the page agree before a custom theme applies.
 const STANDARD_WEB_THEME_COLORS: Record<ThemeAppearance, Partial<ThemeColors>> = {
   light: {
-    canvas: "#f5f5f7",
-    chrome: "#ececef",
-    toolbar: "#ececef",
+    canvas: "#ffffff",
+    chrome: "#ececf0",
+    toolbar: "#ececf0",
     surface: "#ffffff",
     surfaceRaised: "#ffffff",
     surfaceOverlay: "#ffffff",
     messageSurface: "#f6f6f6",
-    terminalBackground: "#ffffff",
+    terminalBackground: "#fbfbfc",
   },
   dark: {
-    canvas: "#161618",
-    chrome: "#1c1c1f",
-    toolbar: "#1c1c1f",
-    surface: "#202023",
-    surfaceRaised: "#26262a",
-    surfaceOverlay: "#26262a",
-    messageSurface: "#2d2d30",
-    terminalBackground: "#0f0f11",
+    canvas: "#18181b",
+    chrome: "#111113",
+    toolbar: "#111113",
+    surface: "#1f1f23",
+    surfaceRaised: "#1f1f23",
+    surfaceOverlay: "#1f1f23",
+    messageSurface: "#2c2c30",
+    terminalBackground: "#0c0c0e",
   },
 };
 

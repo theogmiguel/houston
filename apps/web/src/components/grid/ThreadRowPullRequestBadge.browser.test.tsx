@@ -121,14 +121,19 @@ describe("pull request badge presentation", () => {
     ["draft", "text-muted-foreground"],
     ["merged", "text-merged-foreground"],
     ["closed", "text-error-foreground"],
-  ] as const)("colours a %s pull request with %s", async (prState, tone) => {
-    setup();
-    await using screen = await render(<Harness value={pullRequest({ state: prState })} />);
-    const element = badge(screen.container);
-    expect(element.classList.contains(tone)).toBe(true);
-    expect(element.querySelector("svg")).not.toBeNull();
-    expect(element.textContent).toBe("#42");
-  });
+  ] as const)(
+    "colours the glyph of a %s pull request with %s and keeps the number neutral",
+    async (prState, tone) => {
+      setup();
+      await using screen = await render(<Harness value={pullRequest({ state: prState })} />);
+      const element = badge(screen.container);
+      const glyph = element.querySelector("svg");
+      expect(glyph?.classList.contains(tone)).toBe(true);
+      expect(element.classList.contains(tone)).toBe(false);
+      expect(element.classList.contains("text-secondary-foreground")).toBe(true);
+      expect(element.textContent).toBe("#42");
+    },
+  );
 
   it("shows no checks glyph when checks passed or are running", async () => {
     setup();

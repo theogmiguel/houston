@@ -115,7 +115,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
       threadRef={{ environmentId: props.environmentId, threadId: props.threadId }}
       anchor={props.anchor}
       handle={props.handle}
-      defaultOpen={props.defaultOpen ?? true}
+      defaultOpen={props.defaultOpen ?? false}
       allowInline={props.allowInline ?? true}
       {...(props.open === undefined ? {} : { open: props.open })}
       {...(props.onOpenChange === undefined ? {} : { onOpenChange: props.onOpenChange })}

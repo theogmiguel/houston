@@ -15,6 +15,7 @@ import {
   movedSettingsPath,
   searchSettings,
   SETTINGS_NAV_GROUPS,
+  SETTINGS_SECTION_LABELS,
   SETTINGS_SEARCH_ITEMS,
   sourceControlHostSearchItems,
   sourceControlHostSettingsSearchId,
@@ -443,5 +444,15 @@ describe("movedSettingsPath", () => {
     expect(movedSettingsPath("/settings/projects", "project-defaults")).toBeNull();
     expect(movedSettingsPath("/settings/connections", "remote-environments")).toBeNull();
     expect(movedSettingsPath("/settings/appearance", "theme")).toBeNull();
+  });
+});
+
+describe("the Providers page", () => {
+  it("does not repeat the page title as its first section label, and still finds it by that word", () => {
+    const section = SETTINGS_SEARCH_ITEMS.find((item) => item.id === "providers")!;
+    expect(section.title).not.toBe(SETTINGS_SECTION_LABELS["/settings/providers"]);
+    expect(searchSettings("providers", SETTINGS_SEARCH_ITEMS).map((item) => item.id)).toContain(
+      "providers",
+    );
   });
 });

@@ -65,15 +65,25 @@ using a thread shortcut.
 
 ## The sidebar
 
-The sidebar lists **Pull requests**, **Tasks** and **Usage**, then one section per project.
+The sidebar opens with search and one row of icon buttons for **Pull requests**, **Tasks** and
+**Usage** (hover for the name; the open page is highlighted), then one section per project.
 Each section label collapses with **Enter** or **Space** and keeps its state; a search opens
 every section it matches in. The **…** button beside the label, or a right-click, opens the
 project's actions. Under the label are the project's grids, then its threads that no grid shows, marked **not in a
 grid**. Grid rows name only the grid. Threads started without a project sit at the foot of
 the list under **No project**. With no projects at all, the rail offers **Add project**.
 
-A collapsed project or grid shows how many threads it hides and a dot for the most urgent
-one, and it still lists the thread that is open.
+Every project and grid heading shows how many threads it holds, and small pips for the
+threads that failed or wait for you. Hovering or focusing a heading swaps the pips for its
+actions, including **New thread** (the **+** button). A collapsed project or grid still lists
+the thread that is open, and the project heading stays pinned at the top of the list while
+its threads scroll.
+
+**Show Needs you** in the rail's **View options** pins one section above the projects with the
+threads waiting on you from every project: input and approval requests first, then failures and
+threads that came back. Those threads leave their project sections, which instead end with a
+muted **+N in Needs you** line; the heading pips still count them. The setting is off by default
+and the section is hidden when nothing is waiting.
 
 **Filter by project** in the rail header limits the sections, the shelves, search and the
 older Closed threads Houston loads to the projects you pick. Click a project to choose only
@@ -92,17 +102,28 @@ message match opens its thread with Find on the matched text. With no match the 
 
 ### Rows
 
-Each thread row shows its state in a word: **Approval**, **Input**, **Request**, **Needs
-you**, **Failed**, **Limited**, **Goal**, **Waiting** (with how long), **Running**, **Ready**
-or **Back**. A **Back** badge has a dismiss control. Closed rows show how long ago the
-thread closed. A row also shows, when they apply:
+Every thread row is two lines tall. The status glyph, a distinct shape and colour for each
+state, sits in a fixed column on the left. The first line holds only the title and the age;
+on hover or focus the age gives way to the row's actions. The second line is muted and shows,
+in this order:
 
-- a running terminal, which opens that terminal;
+- the status word, always: **Approval**, **Input**, **Request**, **Needs you**, **Failed**,
+  **Limited**, **Goal**, **Waiting**, **Running**, **Ready**, **Idle** or **Back** (which has
+  a dismiss control). A running or waiting thread says for how long ("Running for 7m"); its age keeps showing the
+  last activity;
 - an unsent draft, with **Discard**;
+- the linked pull request: its glyph carries the state colour and the number stays neutral;
 - the checkout's uncommitted line counts;
-- whether the thread uses a worktree or the project's local checkout;
-- a machine icon when the thread runs on another machine;
+- a running terminal, which opens that terminal;
+- whether the thread uses a worktree or the project's local checkout, with its branch when
+  that is not the default branch, and a machine icon when the thread runs on another machine;
+- running subagents, then tags (as `#tag` text);
 - a regenerating title.
+
+The provider mark closes the line at the right, under the age; a provider without a logo shows its
+initials on a neutral square. When the items do not fit,
+whole items drop from the end behind a **+N** counter; hovering it lists what is hidden.
+Closed rows show how long ago the thread closed.
 
 Hovering a row opens a card with the project, the machine when there are several, the
 checkout and branch (with a warning when the checkout is on a different branch than the
@@ -200,7 +221,12 @@ stays out of the thread until you choose **Send to thread**.
 Each thread has a terminal drawer for shell commands (`Ctrl+J`). The right panel is a
 separate set of surfaces; see [The right panel](right-panel.md). A thread's **details**
 control (`Ctrl+Shift+B`) shows its environment, branch, pull requests, scripts, local
-servers, context and usage limits.
+servers, context and usage limits. The card starts closed and stays as you leave it.
+
+In a grid, the right panel follows the focused pane: focusing another pane shows that
+thread's panel. The pin in the panel header (**Pin to** the thread's title) keeps the panel
+on its thread while you work in other panes, and the header then names the thread. Unpin it,
+or close the panel, to return to following focus.
 
 A cheap command that needs a real terminal, such as `sudo apt install` or
 `git push --force-with-lease`, can start with `!`: `!sudo apt install foo` opens the

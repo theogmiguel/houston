@@ -34,6 +34,7 @@ function minimap(currentIndex: number | null = null) {
       <TimelineMinimap
         hasPersistentGutter
         hitStripWidth={24}
+        viewportWidth={1200}
         currentIndex={currentIndex}
         items={ITEMS}
         stripMap={new Map()}

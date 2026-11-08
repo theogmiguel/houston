@@ -6,8 +6,8 @@ import {
 } from "@houston-app/client-runtime/model-traits";
 import type { ProviderOptionDescriptor, RuntimeMode } from "@houston-app/contracts";
 import type { EffortDisplay } from "@houston-app/contracts/settings";
-import { CheckIcon, ChevronUpIcon, WorkflowIcon } from "lucide-react";
-import { type KeyboardEvent, type ReactNode, use, useRef } from "react";
+import { ChevronRightIcon, WorkflowIcon } from "lucide-react";
+import { type KeyboardEvent, type ReactNode, useRef } from "react";
 
 import { cn } from "~/lib/utils";
 import { Menu, MenuPopup, MenuTrigger } from "./menu";
@@ -16,7 +16,6 @@ import type { ComposerControlSize } from "../chat/ComposerControl";
 import { ComposerPermissionsSection, type RuntimeModeOption } from "../chat/ComposerFooterControls";
 import { composerFloatingLayerProps, focusCheckedPermission } from "../chat/composerEventScope";
 import { EffortGlyph, FastBolt, resolveEffortGlyph } from "../chat/EffortGlyph";
-import { DockedPickerContext } from "../chat/ProviderModelPicker";
 import {
   getTraitsSectionVisibility,
   type TraitsSelectionInput,
@@ -152,13 +151,43 @@ export function describeComposerEffort(
   };
 }
 
-const COLUMN_ROW =
-  "flex h-7.5 w-full shrink-0 cursor-pointer items-center gap-2 rounded-sm px-2 text-left text-(--t1) text-headline outline-none hover:bg-(--sel) focus-visible:bg-(--sel) disabled:cursor-not-allowed disabled:opacity-64";
-const COLUMN_LABEL = "px-2 pt-1.5 pb-1 font-medium text-(--houston) text-2xs";
+const CHIP =
+  "flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-md px-2 text-left text-(--t2) text-xs outline-none hover:bg-(--sel) hover:text-(--t1) focus-visible:bg-(--sel) focus-visible:text-(--t1) aria-checked:bg-(--sel) aria-checked:font-medium aria-checked:text-(--t1) disabled:cursor-not-allowed disabled:opacity-64";
+const GROUP_LABEL = "w-14 shrink-0 pt-1.5 text-(--houston) text-2xs";
+
+/**
+ * The choices sit in one row that scrolls sideways, so a model with many levels never grows the
+ * panel; the checked choice is scrolled into view when the row mounts.
+ */
+const OPTION_ROW_CLS =
+  "flex flex-nowrap gap-0.5 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
+
+function scrollCheckedIntoView(row: HTMLElement | null) {
+  const checked = row?.querySelector<HTMLElement>('[aria-checked="true"]');
+  if (!row || !checked) return;
+  row.scrollLeft = checked.offsetLeft + checked.offsetWidth - row.clientWidth;
+}
+
+/** One labelled row of options: the label on the left, the choices in a scrolling row beside it. */
+function OptionGroup(props: { label: string; children: ReactNode; note?: ReactNode }) {
+  return (
+    <div role="radiogroup" aria-label={props.label} className="flex items-start gap-1">
+      <span aria-hidden="true" className={GROUP_LABEL}>
+        {props.label}
+      </span>
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        {props.note}
+        <div ref={scrollCheckedIntoView} className={OPTION_ROW_CLS}>
+          {props.children}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function ColumnRow(props: {
   label: string;
-  /** Shown on hover; the column is too narrow to print it under the label. */
+  /** Shown on hover; the chip is too small to print it beside the label. */
   description?: string | undefined;
   selected: boolean;
   isDefault?: boolean | undefined;
@@ -166,6 +195,7 @@ function ColumnRow(props: {
   /** A level of the reasoning control, where focus lands after a model pick. */
   level: boolean;
   onPick: () => void;
+  icon?: ReactNode;
 }) {
   const rowProps = {
     type: "button",
@@ -174,43 +204,47 @@ function ColumnRow(props: {
     disabled: props.disabled,
     "data-effort-row": true,
     "data-effort-level": props.level || undefined,
-    // The reasoning control holds the column's one tab stop; Up and Down move between rows.
+    // The reasoning control holds the panel's one tab stop; the arrow keys move between rows.
     tabIndex: props.selected && props.level ? 0 : -1,
-    className: COLUMN_ROW,
+    className: CHIP,
     onClick: props.onPick,
   } as const;
   const content = (
     <>
-      <span className="min-w-0 flex-1 truncate">{props.label}</span>
-      {props.selected ? (
-        <>
-          {props.isDefault ? <span className="sr-only">Default</span> : null}
-          <CheckIcon aria-hidden="true" className="size-3.25" />
-        </>
-      ) : props.isDefault ? (
-        <span className="text-(--houston) text-2xs">Default</span>
-      ) : null}
+      {props.icon}
+      {props.label}
+      {props.isDefault ? <span className="sr-only">Default</span> : null}
     </>
   );
   if (!props.description) return <button {...rowProps}>{content}</button>;
   return (
     <Tooltip>
       <TooltipTrigger render={<button {...rowProps} />}>{content}</TooltipTrigger>
-      <TooltipPopup side="right" className="max-w-56">
+      <TooltipPopup side="top" className="max-w-56">
         {props.description}
       </TooltipPopup>
     </Tooltip>
   );
 }
 
+/**
+ * Arrow keys move through the rows in reading order. Going back from the first row is left to
+ * the popup, which returns to the search field.
+ */
 function moveBetweenRows(event: KeyboardEvent<HTMLElement>) {
-  if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+  const direction =
+    event.key === "ArrowDown" || event.key === "ArrowRight"
+      ? 1
+      : event.key === "ArrowUp" || event.key === "ArrowLeft"
+        ? -1
+        : 0;
+  if (direction === 0 || event.altKey || event.ctrlKey || event.metaKey) return;
   const rows = Array.from(
     event.currentTarget.querySelectorAll<HTMLButtonElement>("[data-effort-row]:not(:disabled)"),
   );
   const index = rows.findIndex((row) => row === document.activeElement);
-  const next =
-    rows[Math.min(rows.length - 1, Math.max(0, index + (event.key === "ArrowDown" ? 1 : -1)))];
+  if (direction === -1 && index <= 0) return;
+  const next = rows[Math.min(rows.length - 1, index + direction)];
   if (!next) return;
   event.preventDefault();
   event.stopPropagation();
@@ -231,9 +265,9 @@ function EffortLevels(props: { traits: TraitsSelectionInput }) {
         {traits.descriptors.map((descriptor) => {
           const value = traits.currentLabel(descriptor);
           return value ? (
-            <div key={descriptor.id}>
-              <div className={COLUMN_LABEL}>{descriptor.label}</div>
-              <div className="px-2 pb-1.5 text-(--houston) text-xs">{value}</div>
+            <div key={descriptor.id} className="flex items-start gap-1">
+              <span className={GROUP_LABEL}>{descriptor.label}</span>
+              <span className="pt-1.5 text-(--houston) text-xs">{value}</span>
             </div>
           ) : null;
         })}
@@ -246,13 +280,7 @@ function EffortLevels(props: { traits: TraitsSelectionInput }) {
     const { descriptor } = control;
     if (control.kind === "boolean") {
       return (
-        <div
-          key={descriptor.id}
-          role="radiogroup"
-          aria-label={descriptor.label}
-          className="flex flex-col gap-0.5"
-        >
-          {isEffort ? null : <div className={COLUMN_LABEL}>{descriptor.label}</div>}
+        <OptionGroup key={descriptor.id} label={descriptor.label}>
           {([true, false] as const).map((value) => (
             <ColumnRow
               key={String(value)}
@@ -262,23 +290,22 @@ function EffortLevels(props: { traits: TraitsSelectionInput }) {
               onPick={() => traits.changeBoolean(descriptor.id, value)}
             />
           ))}
-        </div>
+        </OptionGroup>
       );
     }
     const locked =
       descriptor.id === traits.primarySelectDescriptor?.id && traits.ultrathinkInBodyText;
     const value = traits.selectValue(control.descriptor);
     return (
-      <div
+      <OptionGroup
         key={descriptor.id}
-        role="radiogroup"
-        aria-label={descriptor.label}
-        className="flex flex-col gap-0.5"
+        label={descriptor.label}
+        note={
+          locked ? (
+            <span className="text-(--houston) text-xs">{ULTRATHINK_IN_BODY_NOTE}</span>
+          ) : undefined
+        }
       >
-        {isEffort ? null : <div className={COLUMN_LABEL}>{descriptor.label}</div>}
-        {locked ? (
-          <div className="px-2 pb-1.5 text-(--houston) text-xs">{ULTRATHINK_IN_BODY_NOTE}</div>
-        ) : null}
         {selectableProviderOptionChoices(control.descriptor).map((option) => (
           <ColumnRow
             key={option.id}
@@ -291,7 +318,7 @@ function EffortLevels(props: { traits: TraitsSelectionInput }) {
             onPick={() => traits.changeSelect(control.descriptor, option.id)}
           />
         ))}
-      </div>
+      </OptionGroup>
     );
   };
   return (
@@ -304,79 +331,12 @@ function EffortLevels(props: { traits: TraitsSelectionInput }) {
 
 function NoEffortRow() {
   return (
-    <div className="flex h-8 items-center px-2 text-(--houston) text-sm">No effort levels</div>
+    <div className="flex h-6 items-center ps-15 text-(--houston) text-xs">No effort levels</div>
   );
 }
 
-/** The model picker's effort column: the selected model's levels and its other options. */
-export function ComposerEffortColumn(props: { traits: TraitsSelectionInput | null }) {
-  const picker = use(DockedPickerContext);
-  const visibility = props.traits ? getTraitsSectionVisibility(props.traits) : null;
-  const effort =
-    props.traits && visibility
-      ? columnControls(
-          props.traits.provider,
-          visibility.selectDescriptors,
-          visibility.booleanDescriptors,
-        ).effort
-      : null;
-  return (
-    <>
-      {/* Matches the search row's box, so one rule runs across the top of the popup. */}
-      <div className="shrink-0 px-3 pt-2.5">
-        <div className="flex h-8 items-center gap-2 border-b border-border pb-1.5 text-sm">
-          <span className="text-(--houston)">{effort?.descriptor.label ?? "Effort"}</span>
-          <span className="ms-auto min-w-0 truncate text-(--houston) text-xs">
-            {picker.modelLabel}
-          </span>
-        </div>
-      </div>
-      {/* pt-2.5 puts the first level on the same line as the first model. */}
-      <div
-        className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto overscroll-contain px-2 pt-2.5 pb-1.5"
-        onKeyDown={moveBetweenRows}
-      >
-        {props.traits ? <EffortLevels traits={props.traits} /> : <NoEffortRow />}
-      </div>
-    </>
-  );
-}
-
-const FOOTER_SEGMENT =
-  "flex h-6 cursor-pointer items-center justify-center gap-1 px-2 text-muted-foreground text-xs outline-none first:rounded-l-md last:rounded-r-md hover:text-foreground data-checked:bg-input/72 data-checked:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
-
-function SpeedSegment(props: {
-  checked: boolean;
-  label: string;
-  description?: string | undefined;
-  onPick: () => void;
-}) {
-  const buttonProps = {
-    type: "button",
-    role: "radio",
-    "aria-checked": props.checked,
-    "data-checked": props.checked || undefined,
-    className: FOOTER_SEGMENT,
-    onClick: props.onPick,
-  } as const;
-  const content = (
-    <>
-      {props.label === "Fast" || props.label === "Ultrafast" ? (
-        <FastBolt ultra={props.label === "Ultrafast"} />
-      ) : null}
-      {props.label}
-    </>
-  );
-  if (!props.description) return <button {...buttonProps}>{content}</button>;
-  return (
-    <Tooltip>
-      <TooltipTrigger render={<button {...buttonProps} />}>{content}</TooltipTrigger>
-      <TooltipPopup side="top">{props.description}</TooltipPopup>
-    </Tooltip>
-  );
-}
-
-function SpeedControl(props: { traits: TraitsSelectionInput }) {
+/** Codex service tiers and Claude's Fast mode, as one more row of the panel. */
+function SpeedGroup(props: { traits: TraitsSelectionInput }) {
   const traits = useTraitsSelection(props.traits);
   const { speedSelect, fastToggle } = splitSpeed(
     props.traits.provider,
@@ -384,35 +344,64 @@ function SpeedControl(props: { traits: TraitsSelectionInput }) {
     traits.booleanDescriptors,
   );
   if (traits.modelIsUnavailable || (!speedSelect && !fastToggle)) return null;
+  const bolt = (label: string) =>
+    label === "Fast" || label === "Ultrafast" ? <FastBolt ultra={label === "Ultrafast"} /> : null;
   return (
-    <div
-      role="radiogroup"
-      aria-label={speedSelect?.label ?? fastToggle?.label}
-      className="flex rounded-lg bg-input/40 p-0.5"
-    >
+    <OptionGroup label={speedSelect?.label ?? fastToggle?.label ?? "Speed"}>
       {speedSelect
         ? selectableProviderOptionChoices(speedSelect).map((option) => (
-            <SpeedSegment
+            <ColumnRow
               key={option.id}
-              checked={option.id === traits.selectValue(speedSelect)}
               label={option.label}
+              icon={bolt(option.label)}
+              selected={option.id === traits.selectValue(speedSelect)}
               description={option.description}
+              level={false}
               onPick={() => traits.changeSelect(speedSelect, option.id)}
             />
           ))
         : fastToggle
           ? ([false, true] as const).map((value) => (
-              <SpeedSegment
+              <ColumnRow
                 key={String(value)}
-                checked={(fastToggle.currentValue === true) === value}
                 label={value ? "Fast" : "Standard"}
+                icon={value ? bolt("Fast") : null}
+                selected={(fastToggle.currentValue === true) === value}
+                level={false}
                 onPick={() => traits.changeBoolean(fastToggle.id, value)}
               />
             ))
           : null}
+    </OptionGroup>
+  );
+}
+
+/** The model picker's effort panel: the selected model's levels, speed and other options. */
+export function ComposerEffortPanel(props: { traits: TraitsSelectionInput | null }) {
+  return (
+    <div className="flex flex-col gap-1 px-3 py-2" onKeyDown={moveBetweenRows}>
+      {props.traits ? (
+        <>
+          <EffortLevels traits={props.traits} />
+          <SpeedGroup traits={props.traits} />
+        </>
+      ) : (
+        <div className="flex items-start gap-1">
+          <span className={GROUP_LABEL}>Effort</span>
+          <span className="pt-1.5 text-(--houston) text-xs">No effort levels</span>
+        </div>
+      )}
     </div>
   );
 }
+
+/** The docked picker's frame, which the permissions submenu opens beside. */
+function pickerFrameOf(trigger: HTMLElement | null): HTMLElement | null {
+  return trigger?.closest<HTMLElement>("[data-docked-picker-frame]") ?? null;
+}
+
+const FOOTER_SEGMENT =
+  "flex h-6 cursor-pointer items-center justify-center gap-1 px-2 text-muted-foreground text-xs outline-none first:rounded-l-md last:rounded-r-md hover:text-foreground data-checked:bg-input/72 data-checked:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
 function UltracodeControl(props: { traits: TraitsSelectionInput }) {
   const traits = useTraitsSelection(props.traits);
@@ -468,9 +457,16 @@ function PermissionsMenu(props: {
       >
         <CurrentIcon aria-hidden="true" className="size-3.5" />
         {current.label}
-        <ChevronUpIcon aria-hidden="true" className="size-3" />
+        <ChevronRightIcon aria-hidden="true" className="size-3" />
       </MenuTrigger>
-      <MenuPopup side="top" align="end" {...composerFloatingLayerProps}>
+      {/* Beside the picker (the right, or the left without room), so it never covers the list or the search field. */}
+      <MenuPopup
+        side="right"
+        align="end"
+        sideOffset={6}
+        anchor={() => pickerFrameOf(triggerRef.current) ?? triggerRef.current}
+        {...composerFloatingLayerProps}
+      >
         <ComposerPermissionsSection
           runtimeMode={props.runtimeMode}
           runtimeModeOptions={props.options}
@@ -481,16 +477,15 @@ function PermissionsMenu(props: {
   );
 }
 
-/** The model picker's footer: speed stays one click away, permissions sit one menu deeper. */
+/** The model picker's footer holds Permissions where no other control on screen does. */
 export function ComposerPickerFooter(props: {
-  traits: TraitsSelectionInput | null;
+  traits?: TraitsSelectionInput | null;
   runtimeMode: RuntimeMode;
   runtimeModeOptions: ReadonlyArray<RuntimeModeOption>;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 border-t border-border bg-(--field) px-3 py-2">
-      {props.traits ? <SpeedControl traits={props.traits} /> : null}
+    <div className="flex flex-wrap items-center gap-2 border-t border-border bg-(--field) px-2 py-1">
       {props.traits ? <UltracodeControl traits={props.traits} /> : null}
       <PermissionsMenu
         runtimeMode={props.runtimeMode}

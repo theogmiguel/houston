@@ -23,3 +23,31 @@ it("keeps the timeline's block gap between paragraphs but not at a message's edg
   expect(getComputedStyle(middle!).marginTop).toBe("12px");
   expect(getComputedStyle(middle!).marginBottom).toBe("12px");
 });
+
+it("sets timeline prose at 14px on a 22px line and keeps inline code inside the line box", async () => {
+  await using screen = await render(
+    <div className="messages-timeline-scroll" style={{ width: 720 }}>
+      <div className="chat-markdown">
+        <p>
+          Plain words <code>node --test test/</code> and more words
+        </p>
+        <p>Plain words only and more words</p>
+      </div>
+    </div>,
+    { router: false },
+  );
+
+  const [withCode, plain] = screen.container.querySelectorAll("p");
+  const style = getComputedStyle(plain!);
+  expect(style.fontSize).toBe("14px");
+  expect(style.lineHeight).toBe("22px");
+  expect(withCode!.getBoundingClientRect().height).toBe(plain!.getBoundingClientRect().height);
+
+  const chip = getComputedStyle(withCode!.querySelector("code")!);
+  expect(chip.fontSize).toBe("12px");
+  expect(chip.lineHeight).toBe("18px");
+  // The chip is a fill and a radius only: six edges per paragraph read as boxes.
+  expect(chip.borderTopWidth).toBe("0px");
+  expect(chip.paddingLeft).toBe("4px");
+  expect(chip.paddingTop).toBe("1px");
+});

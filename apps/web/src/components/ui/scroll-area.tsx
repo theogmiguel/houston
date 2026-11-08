@@ -2,11 +2,16 @@ import { ScrollArea as ScrollAreaPrimitive } from "@base-ui/react/scroll-area";
 
 import { cn } from "~/lib/utils";
 
-function getVirtualizedScrollFadeClassName({ top, bottom }: { top: boolean; bottom: boolean }) {
+function getVirtualizedScrollFadeClassName(
+  { top, bottom }: { top: boolean; bottom: boolean },
+  { tall = false }: { tall?: boolean } = {},
+) {
   if (!top && !bottom) return undefined;
 
   return cn(
-    "virtualized-scroll-fade [--fade-size:1.5rem]",
+    "virtualized-scroll-fade",
+    // A tall fade spans a whole 32px list row, so an edge row never ends on crisp glyphs.
+    tall ? "[--fade-size:2rem]" : "[--fade-size:1.5rem]",
     top &&
       bottom &&
       "[--virtualized-scroll-fade-mask:linear-gradient(to_bottom,transparent,black_var(--fade-size),black_calc(100%-var(--fade-size)),transparent)]",
@@ -23,6 +28,7 @@ function ScrollArea({
   className,
   children,
   scrollFade = false,
+  scrollFadeTop = true,
   scrollFadePadding = true,
   scrollbarGutter = false,
   hideScrollbars = false,
@@ -32,6 +38,8 @@ function ScrollArea({
   ...props
 }: ScrollAreaPrimitive.Root.Props & {
   scrollFade?: boolean;
+  /** Fades the top edge too; false leaves the top crisp, for content that sticks to it. */
+  scrollFadeTop?: boolean;
   scrollFadePadding?: boolean;
   scrollbarGutter?: boolean;
   hideScrollbars?: boolean;
@@ -54,7 +62,10 @@ function ScrollArea({
           "h-full max-h-[inherit] overflow-auto overscroll-contain rounded-[inherit] outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background data-has-overflow-x:overscroll-x-contain",
           chainVerticalScroll && "overscroll-y-auto",
           scrollFade &&
-            "mask-t-from-[calc(100%-min(var(--fade-size),var(--scroll-area-overflow-y-start)))] mask-b-from-[calc(100%-min(var(--fade-size),var(--scroll-area-overflow-y-end)))] mask-l-from-[calc(100%-min(var(--fade-size),var(--scroll-area-overflow-x-start)))] mask-r-from-[calc(100%-min(var(--fade-size),var(--scroll-area-overflow-x-end)))] focus-visible:mask-none [--fade-size:1.5rem]",
+            scrollFadeTop &&
+            "mask-t-from-[calc(100%-min(var(--fade-size),var(--scroll-area-overflow-y-start)))]",
+          scrollFade &&
+            "mask-b-from-[calc(100%-min(var(--fade-size),var(--scroll-area-overflow-y-end)))] mask-l-from-[calc(100%-min(var(--fade-size),var(--scroll-area-overflow-x-start)))] mask-r-from-[calc(100%-min(var(--fade-size),var(--scroll-area-overflow-x-end)))] focus-visible:mask-none [--fade-size:1.5rem]",
           scrollFade && scrollFadePadding && "scroll-p-[var(--fade-size)]",
           scrollFade && !scrollFadePadding && "has-focus-visible:mask-none",
           scrollbarGutter && "scrollbar-gutter-stable",

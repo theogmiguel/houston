@@ -2,14 +2,13 @@
 1 apps/web/src/components/pullRequest/PullRequestChecksTab.tsx
 1 apps/web/src/components/settings/FoldedSettingsSection.tsx
 2 apps/web/src/components/settings/KeybindingsSettings.tsx
-2 apps/web/src/components/settings/settingsLayout.tsx
-3 apps/web/src/components/settings/SettingsScopeSentence.tsx
+1 apps/web/src/components/settings/settingsLayout.tsx
 8 apps/web/src/components/settings/SettingsSidebarNav.tsx
-3 apps/web/src/components/settings/ThemeSettings.tsx
+2 apps/web/src/components/settings/ThemeSettings.tsx
 1 apps/web/src/components/ui/alert.tsx
 2 apps/web/src/components/ui/badge.tsx
 2 apps/web/src/components/ui/button.tsx
-3 apps/web/src/components/ui/empty.tsx
+2 apps/web/src/components/ui/empty.tsx
 1 apps/web/src/components/ui/input-group.tsx
 1 apps/web/src/components/ui/input.tsx
 1 apps/web/src/components/ui/kbd.tsx

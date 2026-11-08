@@ -15,7 +15,6 @@ import {
 import type { EnvironmentId, ThreadId } from "@houston-app/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate } from "@tanstack/react-router";
-import { MessageSquareIcon } from "lucide-react";
 import { useState } from "react";
 
 import {
@@ -34,17 +33,15 @@ import { primaryServerProvidersAtom } from "../state/server";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import { buildThreadRouteParams } from "../threadRoutes";
+import { resolveGridThreadState } from "../grid/sidebar";
 import { resolveGridThreadTarget } from "../grid/gridNavigation";
 import { useGridStore } from "../grid/gridStore";
+import { ThreadStatusGlyph } from "./grid/threadStatusMark";
 import { formatRelativeTimeLabel } from "../timestampFormat";
-import { buildThreadActionItems, ITEM_ICON_CLASS } from "./CommandPalette.logic";
+import { buildThreadActionItems } from "./CommandPalette.logic";
 import { useEnvironmentLookups, useProjectLookups } from "./CommandPaletteLookups";
 import { ThreadCommandSubtitle } from "./ThreadCommandSubtitle";
-import {
-  ThreadRowLeadingStatus,
-  ThreadRowTrailingStatus,
-  ThreadSearchPullRequestNumber,
-} from "./ThreadStatusIndicators";
+import { ThreadRowTrailingStatus, ThreadSearchPullRequestNumber } from "./ThreadStatusIndicators";
 
 function useProviderEntryByEnvironmentAndInstanceId() {
   const { environments } = useEnvironments();
@@ -109,6 +106,7 @@ export function useCommandPaletteThreadItems(input: {
   const visitThread = useAtomCommand(threadEnvironment.visit, { reportFailure: false });
   // Ranking is relative to when the palette opened, so rows do not reorder as time passes.
   const [now] = useState(() => Date.now());
+  const nowIso = new Date(now).toISOString();
 
   const { environments } = useEnvironments();
   const threadItems = buildThreadActionItems({
@@ -121,18 +119,11 @@ export function useCommandPaletteThreadItems(input: {
       : {}),
     ...(activeThread ? { activeThread } : {}),
     projectByKey,
-    icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
-    renderLeadingContent: (thread) => <ThreadRowLeadingStatus thread={thread} />,
-    renderTrailingContent: (thread) => (
-      <>
-        <ThreadSearchPullRequestNumber
-          thread={thread}
-          query={threadSearchQuery}
-          settled={thread.settledOverride === "settled"}
-        />
-        <ThreadRowTrailingStatus thread={thread} />
-      </>
+    icon: null,
+    renderIcon: (thread) => (
+      <ThreadStatusGlyph thread={thread} state={resolveGridThreadState(thread, nowIso)} />
     ),
+    renderTrailingContent: (thread) => <ThreadRowTrailingStatus thread={thread} />,
     renderDescription: (thread, { projectTitle }) => {
       const modelInstanceId =
         thread.runtime?.providerInstanceId ?? thread.modelSelection.instanceId;
@@ -149,6 +140,18 @@ export function useCommandPaletteThreadItems(input: {
           worktreePath={thread.worktreePath}
           isCurrent={
             thread.id === activeThread?.id && thread.environmentId === activeThread.environmentId
+          }
+          pullRequest={
+            thread.linkedPullRequest != null ||
+            thread.branchPullRequest != null ||
+            (thread.pullRequests?.length ?? 0) > 0 ? (
+              <ThreadSearchPullRequestNumber
+                thread={thread}
+                query={threadSearchQuery}
+                always
+                settled={thread.settledOverride === "settled"}
+              />
+            ) : null
           }
           driverKind={providerEntry?.driverKind ?? null}
           providerDisplayName={

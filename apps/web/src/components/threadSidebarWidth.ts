@@ -1,5 +1,8 @@
 export const THREAD_SIDEBAR_WIDTH_STORAGE_KEY = "chat_thread_sidebar_width";
-const THREAD_SIDEBAR_DEFAULT_WIDTH = 340;
+// 280px: a row's title shares its line only with the age slot and still shows about 200px of
+// title, and the second line fits a status word, a pull request and a diff. A width the user
+// dragged to is kept.
+const THREAD_SIDEBAR_DEFAULT_WIDTH = 280;
 const THREAD_SIDEBAR_MIN_WIDTH = 240;
 const THREAD_SIDEBAR_MAX_WIDTH = 440;
 export const THREAD_MAIN_CONTENT_MIN_WIDTH = 40 * 16;

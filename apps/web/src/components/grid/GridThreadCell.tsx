@@ -1,6 +1,6 @@
 import { scopeThreadRef } from "@houston-app/client-runtime/environment";
 import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@houston-app/contracts";
-import { EllipsisIcon, Maximize2Icon, Minimize2Icon, XIcon } from "lucide-react";
+import { EllipsisIcon, Maximize2Icon, Minimize2Icon, SquareMenuIcon, XIcon } from "lucide-react";
 import {
   useEffect,
   useRef,
@@ -12,8 +12,7 @@ import {
 
 import ChatView, { type RightPanelPortalTarget } from "../ChatView";
 import { resolveThreadStatusPill } from "../Sidebar.logic";
-import { SidebarThreadStatusGlyph } from "../sidebar/SidebarStatusGlyph";
-import { SidebarProviderStack, type SidebarProviderEntry } from "../sidebar/SidebarThreadRow";
+
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { type DraftId, useComposerDraftStore } from "../../composerDraftStore";
@@ -27,14 +26,14 @@ import type { ThreadDropRefusal } from "../../grid/projectMove";
 import { type Side, type SplitSide, type ThreadNode, preorderThreads } from "../../grid/tree";
 import { getThreadDragSource } from "../../grid/threadDrag";
 import { Button } from "../ui/button";
-import { GridPaneActions, GridPaneRename, GridPaneRenameInput } from "../ui/grid-pane";
-import { PANE_THREAD_TAG_CLASS, PANE_THREAD_TAG_COUNT_CLASS } from "../ui/thread-tag-recipes";
 import { GridDropIndicator } from "../ui/grid-drop-indicator";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "../../lib/utils";
 import { TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR } from "../chat/composerFocusRedirect";
 import { useThreadActionMenu } from "../../hooks/useThreadActionMenu";
+import { GridPaneHeader } from "../ui/grid-pane-header";
 import { ThreadOpenProvider } from "./threadOpenContext";
+import { PaneThreadStatusMark } from "./threadStatusMark";
 import { usePaneDensity } from "./usePaneDensity";
 
 export function GridThreadCell({
@@ -43,7 +42,6 @@ export function GridThreadCell({
   focused,
   maximized = false,
   availableThreads,
-  providerEntries,
   onFocus,
   onClose,
   onArchiveClose,
@@ -55,6 +53,7 @@ export function GridThreadCell({
   threadDetailsAnchor,
   detailsOpen,
   onDetailsOpenChange,
+  onToggleDetails,
   dragging = false,
   dropIndicator = null,
   dropRefusal = null,
@@ -69,7 +68,6 @@ export function GridThreadCell({
   /** This cell is shown alone; the grid tree keeps every other cell. */
   maximized?: boolean;
   availableThreads: ReadonlyArray<{ threadId: string; title: string }>;
-  providerEntries: ReadonlyMap<string, SidebarProviderEntry>;
   onFocus: () => void;
   onClose: () => void;
   /** Removes the cell without adding it to the reopen stack. */
@@ -85,6 +83,8 @@ export function GridThreadCell({
   /** The grid's one details flag; only the focused cell shows its card. */
   detailsOpen?: boolean;
   onDetailsOpenChange?: ((open: boolean) => void) | undefined;
+  /** Toggles the grid's thread-details card from this pane's header. */
+  onToggleDetails?: (() => void) | undefined;
   /** The cell's label is being dragged to another cell. */
   dragging?: boolean;
   /** Where a thread dropped on this cell would land. */
@@ -154,7 +154,6 @@ export function GridThreadCell({
   const measuredThreadCount = maximized ? 1 : threadCount;
   const { ref, density, width } = usePaneDensity(measuredThreadCount);
   const layout = paneDensityLayout(density, width);
-  const showLabel = draftId !== undefined || (threadCount > 1 && !maximized);
   const closeArchivedCell = onArchiveClose ?? onClose;
   // A grid holds six threads; the sixth cell still offers "New thread", whose
   // handler asks before moving the new thread to its own grid.
@@ -166,6 +165,9 @@ export function GridThreadCell({
   const archived = useArchivedThreadSnapshots([environmentId]);
   const closeCellStable = useStableCallback(closeArchivedCell);
   const moreButtonRef = useRef<HTMLButtonElement | null>(null);
+  // A pointer press outside an open details card closes it before the click lands; the click
+  // must not immediately reopen it.
+  const detailsWasOpenRef = useRef(false);
   const { openMenu } = useThreadActionMenu({
     threadRef,
     thread: shell,
@@ -212,23 +214,39 @@ export function GridThreadCell({
   const discardDraftStable = useStableCallback(discardDraft);
   const paneActions = (includeMaximize: boolean) => (
     <>
-      {showOverflow ? (
+      {onToggleDetails !== undefined ? (
         <Tooltip>
           <TooltipTrigger
             render={
               <Button
-                ref={moreButtonRef}
+                ref={(node) => {
+                  if (threadDetailsAnchor) threadDetailsAnchor.current = node;
+                }}
                 variant="ghost-muted"
                 size="icon-sm"
-                aria-label="More cell actions"
-                aria-haspopup="menu"
-                onClick={openMoreMenu}
+                aria-label="Toggle thread details"
+                aria-pressed={focused && detailsOpen === true}
+                onPointerDown={() => {
+                  detailsWasOpenRef.current = focused && detailsOpen === true;
+                }}
+                onClick={() => {
+                  const stillOpen =
+                    useGridStore.getState().grids.find((entry) => entry.id === grid.id)
+                      ?.detailsOpen === true;
+                  // A popover closed itself on the pointerdown outside it; do not reopen it.
+                  if (detailsWasOpenRef.current && !stillOpen) {
+                    detailsWasOpenRef.current = false;
+                    return;
+                  }
+                  detailsWasOpenRef.current = false;
+                  onToggleDetails();
+                }}
               />
             }
           >
-            <EllipsisIcon />
+            <SquareMenuIcon />
           </TooltipTrigger>
-          <TooltipPopup side="bottom">More cell actions</TooltipPopup>
+          <TooltipPopup side="bottom">Thread details</TooltipPopup>
         </Tooltip>
       ) : null}
       {includeMaximize && onMaximize !== undefined ? (
@@ -246,6 +264,25 @@ export function GridThreadCell({
             {maximized ? <Minimize2Icon /> : <Maximize2Icon />}
           </TooltipTrigger>
           <TooltipPopup side="bottom">{maximized ? "Restore cell" : "Maximize cell"}</TooltipPopup>
+        </Tooltip>
+      ) : null}
+      {showOverflow ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                ref={moreButtonRef}
+                variant="ghost-muted"
+                size="icon-sm"
+                aria-label="More cell actions"
+                aria-haspopup="menu"
+                onClick={openMoreMenu}
+              />
+            }
+          >
+            <EllipsisIcon />
+          </TooltipTrigger>
+          <TooltipPopup side="bottom">More cell actions</TooltipPopup>
         </Tooltip>
       ) : null}
       <Tooltip>
@@ -325,88 +362,31 @@ export function GridThreadCell({
             layout.timelineMaxWidth === null
               ? "100%"
               : `${layout.composerMaxWidth ?? layout.timelineMaxWidth}px`,
-          ...(density === "solo" ? { "--text-prose--line-height": "1.3125rem" } : {}),
-          ...(showLabel ? { "--pane-label-inset": "2.625rem" } : {}),
+          // A pane is narrower than a window: its composer keeps room for the wide form.
+          "--chat-lane-gutter": "1rem",
           ...(dragging ? { opacity: 0.45 } : {}),
         } as CSSProperties
       }
       className={cn(
-        "group/pane relative flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden",
-        density === "solo" && "[&_.chat-content-lane]:max-w-[45rem]",
-        // A composer drawer or notice keeps the stacked card: the compact row would squeeze
-        // the question panel, the notices and the textarea into zero-width flex columns.
-        density === "compact" &&
-          "[&_[data-chat-composer-resting-row]]:hidden [&_[data-chat-composer-surface]:not(:has([data-chat-composer-top-drawer],[data-composer-banner-shelf]))]:flex [&_[data-chat-composer-surface]:not(:has([data-chat-composer-top-drawer],[data-composer-banner-shelf]))]:items-center [&_[data-chat-composer-body]]:min-w-0 [&_[data-chat-composer-body]]:flex-1 [&_[data-chat-composer-body]]:pt-2 [&_[data-chat-composer-body]]:pb-2 [&_[data-chat-composer-footer]]:w-auto [&_[data-chat-composer-footer]]:shrink-0 [&_[data-chat-composer-footer]]:pb-2",
+        "@container/pane group/pane relative flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden",
         density === "glance" &&
           "[&_[data-chat-composer-resting-row]]:hidden [&_[data-changed-files-state=tree]]:hidden [&_[data-changed-files-bar]]:hidden",
       )}
     >
-      {showLabel ? (
-        <div
-          data-pane-label=""
-          onPointerDown={onDragHandlePointerDown}
-          style={onDragHandlePointerDown === undefined ? undefined : { cursor: "grab" }}
-          className="group/label absolute top-2 left-2 z-20 flex h-(--h-pill) max-w-[calc(100%-1rem)] items-center gap-1.5 rounded-(--r-selection) border border-(--divider) bg-(--pane-head) ps-2 pe-1"
-        >
-          <span className="grid size-3.5 shrink-0 place-items-center">
-            {shell !== null ? (
-              <SidebarProviderStack thread={shell} providerEntryByInstanceId={providerEntries} />
-            ) : null}
-          </span>
-          {renaming ? (
-            <GridPaneRenameInput
-              value={renameValue}
-              onChange={setRenameValue}
-              onCommit={commitRename}
-              onCancel={() => setRenaming(false)}
-            />
-          ) : (
-            <span
-              onDoubleClick={canRename ? startRename : undefined}
-              className={cn(
-                "max-w-48 min-w-0 truncate text-xs leading-4 font-medium",
-                focused ? "text-(--t1)" : "text-(--houston)",
-              )}
-            >
-              {title}
-            </span>
-          )}
-          {shell !== null && (shell.tags?.length ?? 0) > 0 ? (
-            <span data-pane-tags="" className="flex shrink-0 items-center gap-1">
-              {(shell.tags ?? []).slice(0, 2).map((tag) => (
-                <span key={tag} className={PANE_THREAD_TAG_CLASS}>
-                  {tag}
-                </span>
-              ))}
-              {(shell.tags?.length ?? 0) > 2 ? (
-                <span className={PANE_THREAD_TAG_COUNT_CLASS}>
-                  +{(shell.tags?.length ?? 0) - 2}
-                </span>
-              ) : null}
-            </span>
-          ) : null}
-          <SidebarThreadStatusGlyph status={status} label={status?.label} />
-          <div className="flex w-0 items-center gap-0.5 overflow-hidden opacity-0 [interpolate-size:allow-keywords] transition-[width,opacity] duration-(--motion-disclosure) ease-standard group-hover/pane:w-auto group-hover/pane:opacity-100 group-focus-within/label:w-auto group-focus-within/label:opacity-100 motion-reduce:transition-none">
-            {paneActions(true)}
-          </div>
-        </div>
-      ) : (
-        <>
-          {renaming ? (
-            <GridPaneRename>
-              <GridPaneRenameInput
-                value={renameValue}
-                onChange={setRenameValue}
-                onCommit={commitRename}
-                onCancel={() => setRenaming(false)}
-              />
-            </GridPaneRename>
-          ) : null}
-          {/* A maximized cell has no label, so its way back sits with the other actions. */}
-          <GridPaneActions>{paneActions(maximized)}</GridPaneActions>
-        </>
-      )}
-      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pt-(--pane-label-inset)">
+      <GridPaneHeader
+        title={title}
+        status={shell === null ? null : <PaneThreadStatusMark thread={shell} status={status} />}
+        focused={focused}
+        renaming={renaming}
+        renameValue={renameValue}
+        onChangeRename={setRenameValue}
+        onCommitRename={commitRename}
+        onCancelRename={() => setRenaming(false)}
+        onDoubleClickTitle={canRename ? startRename : undefined}
+        onDragHandlePointerDown={onDragHandlePointerDown}
+        actions={paneActions(true)}
+      />
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <ThreadOpenProvider open={onOpenThread}>
           {showDraft ? (
             <ChatView

@@ -1,4 +1,5 @@
 import { cn } from "../../lib/utils";
+import { THEME_PREVIEW_FRAME_CLS } from "../ui/theme-preview-recipes";
 import type { ThemeCardPreviewColors } from "./ThemePreviewCircles";
 
 function ThemeWireframePane({
@@ -113,13 +114,7 @@ export function ThemeWireframe({
   panes: ReadonlyArray<{ colors: ThemeCardPreviewColors; clip?: "left" | "right" }>;
 }) {
   return (
-    <span
-      aria-hidden
-      className={cn(
-        "relative block w-full overflow-hidden rounded-lg border border-border/60",
-        className,
-      )}
-    >
+    <span aria-hidden className={cn(THEME_PREVIEW_FRAME_CLS, className)}>
       {panes.map((pane) => (
         <ThemeWireframePane clip={pane.clip} colors={pane.colors} key={pane.clip ?? "pane"} />
       ))}

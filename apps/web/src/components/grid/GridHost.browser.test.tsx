@@ -899,3 +899,56 @@ describe("GridHost stable cells", () => {
     });
   });
 });
+
+describe("GridHost top bar surface", () => {
+  it.each(["light", "dark"] as const)(
+    "paints the top bar with the gutter colour and no divider in the %s theme",
+    async (theme) => {
+      document.documentElement.classList.toggle("dark", theme === "dark");
+      await using screen = await render(
+        <div data-grid-page="" style={{ display: "flex", flexDirection: "column", height: 600 }}>
+          <header
+            data-drag-region="deep"
+            className="border-b border-border"
+            style={{ height: 40 }}
+          />
+          <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
+            <GridHost
+              grid={grid(row("thread-a", "thread-b"))}
+              onTreeChange={() => {}}
+              onFocusThread={() => {}}
+              renderThread={cellMarkup}
+            />
+          </div>
+        </div>,
+        { router: false },
+      );
+      const header = screen.container.querySelector<HTMLElement>("header")!;
+      const surface = screen.container.querySelector<HTMLElement>("[data-grid-surface]")!;
+      expect(getComputedStyle(header).backgroundColor).toBe(
+        getComputedStyle(surface).backgroundColor,
+      );
+      expect(getComputedStyle(header).borderBottomColor).toBe("rgba(0, 0, 0, 0)");
+      document.documentElement.classList.remove("dark");
+    },
+  );
+
+  it("keeps the top bar transparent over the canvas for a single pane", async () => {
+    await using screen = await render(
+      <div data-grid-page="" style={{ display: "flex", flexDirection: "column", height: 600 }}>
+        <header data-drag-region="deep" style={{ height: 40 }} />
+        <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
+          <GridHost
+            grid={grid(row("thread-a"))}
+            onTreeChange={() => {}}
+            onFocusThread={() => {}}
+            renderThread={cellMarkup}
+          />
+        </div>
+      </div>,
+      { router: false },
+    );
+    const header = screen.container.querySelector<HTMLElement>("header")!;
+    expect(getComputedStyle(header).backgroundColor).toBe("rgba(0, 0, 0, 0)");
+  });
+});

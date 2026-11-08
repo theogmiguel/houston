@@ -33,8 +33,8 @@ import { useLocation, useNavigate } from "@tanstack/react-router";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { Kbd } from "../ui/kbd";
+import { ScrollArea } from "../ui/scroll-area";
 import {
-  SidebarContent,
   SidebarFooter,
   SidebarGroup,
   SidebarMenu,
@@ -247,7 +247,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
       {...navArea}
       role="navigation"
       className={cn(
-        "flex w-[264px] shrink-0 flex-col border-e bg-sidebar text-sidebar-foreground max-md:w-14",
+        "flex min-h-0 w-[264px] shrink-0 flex-col overflow-hidden border-e bg-sidebar text-sidebar-foreground max-md:w-14",
         compactSearchOpen &&
           "max-md:absolute max-md:inset-y-0 max-md:start-0 max-md:z-10 max-md:w-full",
       )}
@@ -260,8 +260,16 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
       >
         Settings
       </div>
-      <SidebarContent className="overflow-x-hidden">
-        <SidebarGroup>
+      <ScrollArea
+        hideScrollbars
+        scrollFade
+        scrollFadePadding={false}
+        viewportTabIndex={-1}
+        // The list fades at both edges, so the rows cut by the search above and the pinned
+        // Back row below read as scrollable instead of clipped.
+        className="min-h-0 flex-1 [&>[data-slot=scroll-area-viewport]]:[--fade-size:1.5rem]"
+      >
+        <SidebarGroup className="overflow-x-hidden">
           <div className="flex flex-col gap-2">
             <div
               className={cn(
@@ -377,7 +385,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                   {...sectionNavigation.containerProps}
                   role="tree"
                   aria-label="Settings sections"
-                  className="flex flex-col gap-4"
+                  className="flex flex-col gap-2.5"
                 >
                   {SETTINGS_NAV_GROUPS.map((group, index) => (
                     <div
@@ -432,8 +440,10 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
             )}
           </div>
         </SidebarGroup>
-      </SidebarContent>
-      <SidebarFooter className="max-md:hidden">
+        {/* Room for the last row to clear the fade where the list meets the pinned Back row. */}
+        <div aria-hidden className="h-2 shrink-0" />
+      </ScrollArea>
+      <SidebarFooter className="max-md:hidden shrink-0">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton

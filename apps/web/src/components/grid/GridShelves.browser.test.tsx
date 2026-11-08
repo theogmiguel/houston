@@ -38,6 +38,50 @@ describe("GridShelves", () => {
     expect(screen.container.querySelectorAll('[data-testid="shelf-card"]')).toHaveLength(0);
   });
 
+  it("renders neither shelf row while both are empty", async () => {
+    localStorage.clear();
+    await using screen = await render(
+      <GridShelves held={[]} closed={[]} renderCard={() => null} />,
+      { router: false },
+    );
+
+    expect(screen.container.querySelector('[data-testid="grid-snoozed-shelf-toggle"]')).toBeNull();
+    expect(screen.container.querySelector('[data-testid="grid-settled-shelf-toggle"]')).toBeNull();
+    expect(screen.container.textContent).not.toMatch(/On hold|Closed/);
+  });
+
+  it("renders only the shelf that has threads", async () => {
+    localStorage.clear();
+    await using onlyHeld = await render(
+      <GridShelves held={held} closed={[]} renderCard={() => null} />,
+      { router: false },
+    );
+    await expect.element(onlyHeld.getByRole("button", { name: /On hold/ })).toBeVisible();
+    expect(
+      onlyHeld.container.querySelector('[data-testid="grid-settled-shelf-toggle"]'),
+    ).toBeNull();
+
+    await using onlyClosed = await render(
+      <GridShelves held={[]} closed={closed} renderCard={() => null} />,
+      { router: false },
+    );
+    await expect.element(onlyClosed.getByRole("button", { name: /Closed/ })).toBeVisible();
+    expect(
+      onlyClosed.container.querySelector('[data-testid="grid-snoozed-shelf-toggle"]'),
+    ).toBeNull();
+  });
+
+  it("keeps the empty Closed row while a thread is dragged, as it is the drop target", async () => {
+    localStorage.clear();
+    await using screen = await render(
+      <GridShelves held={[]} closed={[]} renderCard={() => null} closedDragActive />,
+      { router: false },
+    );
+
+    await expect.element(screen.getByRole("button", { name: /Closed/ })).toBeVisible();
+    expect(screen.container.querySelector('[data-testid="grid-snoozed-shelf-toggle"]')).toBeNull();
+  });
+
   it("marks each shelf with its archive icon and opens its list above the row", async () => {
     localStorage.clear();
     await using screen = await render(

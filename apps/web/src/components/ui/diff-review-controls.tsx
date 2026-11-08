@@ -8,7 +8,8 @@ import { Input } from "./input";
 
 export interface DiffFileListEntry {
   readonly path: string;
-  readonly status: string;
+  /** Absent while the file's patch is still loading: the stats alone cannot tell added from modified. */
+  readonly status?: string | undefined;
   readonly additions: number;
   readonly deletions: number;
 }
@@ -81,7 +82,7 @@ export function DiffFileList(props: {
                 <span className="text-diff-deletion">−{entry.deletions}</span>
               </span>
               <span className="w-3 shrink-0 text-center font-mono text-2xs text-muted-foreground">
-                {DIFF_STATUS_LETTERS[entry.status] ?? "M"}
+                {entry.status === undefined ? "" : (DIFF_STATUS_LETTERS[entry.status] ?? "M")}
               </span>
             </button>
             {props.onStageToggle !== undefined && state?.stage != null ? (

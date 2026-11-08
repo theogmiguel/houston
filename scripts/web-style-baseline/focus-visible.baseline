@@ -1,7 +1,6 @@
 1 apps/web/src/components/AppRouteModal.tsx
 1 apps/web/src/components/auth/ConnectAgentSurface.tsx
 1 apps/web/src/components/chat/ChatComposer.tsx
-1 apps/web/src/components/chat/ChatHeader.tsx
 1 apps/web/src/components/chat/ComposerCommandMenu.tsx
 1 apps/web/src/components/chat/ComposerPendingAnnotationChips.tsx
 1 apps/web/src/components/chat/ComposerStashMenu.tsx

@@ -5,25 +5,29 @@ import {
   type ProviderDriverKind,
   type ResolvedKeybindingsConfig,
 } from "@houston-app/contracts";
-import { createContext, memo, useRef, useState, type ReactNode } from "react";
+import { memo, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { BotIcon, ChevronDownIcon } from "lucide-react";
 import { Badge } from "../ui/badge";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
-import { ModelPickerContent, resolveModelPickerSelectedModel } from "./ModelPickerContent";
+import {
+  MODEL_LIST_MIN_VISIBLE_ROWS,
+  MODEL_LIST_ROW_STEP_PX,
+  ModelPickerContent,
+  resolveModelPickerSelectedModel,
+} from "./ModelPickerContent";
 import { ChatGptSharingControl } from "./ChatGptSharingControl";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
-import { ModelEsque, getDisplayModelName, getTriggerDisplayModelName } from "./providerIconUtils";
+import { ModelEsque, getDisplayModelName } from "./providerIconUtils";
 import { type ProviderInstanceEntry } from "../../providerInstances";
 import { ComposerControl, type ComposerControlSize } from "./ComposerControl";
 import { takeOpenTarget, useComposerMenuProps } from "./composerEventScope";
 import { shortcutLabelForCommand } from "../../keybindings";
 import { traitsSplitTriggerClassName, type TraitsSplitPart } from "./modelTraits";
 import {
-  DOCKED_EFFORT_COLUMN_CLASS,
+  DOCKED_EFFORT_PANEL_CLASS,
   DOCKED_PICKER_FRAME_CLASS,
-  DOCKED_PICKER_ROW_CLASS,
   MODEL_TRIGGER_GROUP_CLASS,
 } from "../ui/composer-picker-recipes";
 
@@ -73,8 +77,59 @@ function lockBackgroundScroll(popup: HTMLElement | null) {
   };
 }
 
-/** What a docked effort column needs from its picker: the model it serves. */
-export const DockedPickerContext = createContext<{ modelLabel: string }>({ modelLabel: "" });
+/**
+ * The composer card a docked picker lines up with: its left edge starts where the card's does, so
+ * the context row under the card shows no chip edge beside the popup.
+ */
+function composerCardOf(trigger: HTMLElement | null): HTMLElement | null {
+  return trigger?.closest<HTMLElement>('[data-inline-resting-controls="true"]') ?? null;
+}
+
+/** Space kept between a docked popup and the header it must not cross. */
+const HEADER_CLEARANCE_PX = 8;
+
+/**
+ * Where a docked popup's top edge may start: just under the route header of the column the
+ * picker sits in. A grid cell has no header, so it keeps the default collision padding.
+ */
+function headerClearanceOf(trigger: HTMLElement | null): number | null {
+  const header = trigger
+    ?.closest<HTMLElement>("[data-chat-column]")
+    ?.querySelector<HTMLElement>("[data-chat-header]");
+  if (!header) return null;
+  return Math.ceil(header.getBoundingClientRect().bottom) + HEADER_CLEARANCE_PX;
+}
+
+/**
+ * The docked popup's height with eight model rows, the search field and the effort panel,
+ * measured in the browser; used until the open popup can be measured itself.
+ */
+const DOCKED_PICKER_FULL_HEIGHT_PX = 304;
+
+/** The gap and collision padding the positioner keeps around the popup. */
+const DOCKED_PICKER_EDGE_ROOM_PX = 9;
+
+/** The default distance between the anchor and a docked popup. */
+const DOCKED_PICKER_SIDE_OFFSET_PX = 4;
+
+/**
+ * The popup's height with the model list cut to its minimum rows, measured from the open popup.
+ * Null until the popup has mounted.
+ */
+function minimumDockedPopupHeight(popup: HTMLElement | null): number | null {
+  const frame = popup?.querySelector<HTMLElement>("[data-docked-picker-frame]");
+  const list = frame?.querySelector<HTMLElement>("[data-model-picker-list]");
+  if (!frame || !list) return null;
+  const naturalHeight = [...frame.children].reduce(
+    (sum, child) => sum + (child as HTMLElement).scrollHeight,
+    0,
+  );
+  const hiddenRows = Math.max(
+    0,
+    Math.round(list.offsetHeight / MODEL_LIST_ROW_STEP_PX) - MODEL_LIST_MIN_VISIBLE_ROWS,
+  );
+  return naturalHeight - hiddenRows * MODEL_LIST_ROW_STEP_PX;
+}
 
 export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   environmentId: EnvironmentId | null;
@@ -103,6 +158,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   triggerClassName?: string;
   triggerLabel?: string;
   triggerAriaLabel?: string;
+  /** The picker is open beside an effort panel; hide the panel when the model has no levels. */
+  showEffortPanel?: boolean;
   /** Extra menu content below the model list, such as access in a compact pane. */
   menuAccessory?: ReactNode;
   onOpenChange?: (open: boolean) => void;
@@ -116,10 +173,10 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   /** Composer shortcuts this trigger answers besides the picker's own. */
   triggerShortcuts?: string;
   /**
-   * Docks an effort column beside the list and a footer under both. The popup then stays open
-   * until Escape or an outside press, and picking a model moves focus to its levels.
+   * Docks an effort panel under the list and an optional footer under both. The popup then stays
+   * open until Escape or an outside press, and picking a model moves focus to its levels.
    */
-  effortColumn?: ReactNode;
+  effortPanel?: ReactNode;
   footer?: ReactNode;
 }) {
   const composerFloatingLayerProps = useComposerMenuProps();
@@ -130,7 +187,66 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   const popupRef = useRef<HTMLDivElement | null>(null);
   const size = props.size ?? "sm";
   const iconOnly = props.iconOnly === true;
-  const docked = props.effortColumn !== undefined;
+  const docked = props.effortPanel !== undefined;
+  const [headerClearance, setHeaderClearance] = useState<number | null>(null);
+  const [dockSide, setDockSide] = useState<"top" | "bottom">("bottom");
+  // A picker opened inside a grid cell lives in that cell: it opens toward the roomier side and
+  // never spills past the cell's edges.
+  const [cellBoundary, setCellBoundary] = useState<HTMLElement | null>(null);
+  const [draftHero, setDraftHero] = useState(false);
+  // How far a popup under the new-thread composer moves up over the composer's toolbar so the
+  // model list keeps its minimum rows; it never reaches the input above the toolbar.
+  const [dockLift, setDockLift] = useState(0);
+  // The route header is a DOM node outside React, measured each time the popup opens (also when a
+  // shortcut opens it through `props.open`, which no handler of this component sees).
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- measures the header's rect and the room under the card, which only the DOM knows
+  useLayoutEffect(() => {
+    if (!docked || !isMenuOpen) return;
+    const trigger = triggerRef.current;
+    setHeaderClearance(headerClearanceOf(trigger));
+    const cell = trigger?.closest<HTMLElement>("[data-grid-cell]") ?? null;
+    setCellBoundary(cell);
+    const card = composerCardOf(trigger);
+    if (card === null) {
+      setDockSide("bottom");
+      return;
+    }
+    const cardRect = card.getBoundingClientRect();
+    const boundaryRect = cell?.getBoundingClientRect() ?? null;
+    const topLimit = boundaryRect?.top ?? headerClearanceOf(trigger) ?? 0;
+    const bottomLimit = boundaryRect?.bottom ?? window.innerHeight;
+    const roomAbove = cardRect.top - topLimit;
+    const roomBelow = bottomLimit - cardRect.bottom;
+    const inDraftHero = card.closest("[data-draft-hero]") !== null;
+    setDraftHero(inDraftHero);
+    if (inDraftHero) {
+      const minimum = minimumDockedPopupHeight(popupRef.current);
+      const editorBottom = card
+        .querySelector<HTMLElement>('[data-testid="composer-editor"]')
+        ?.getBoundingClientRect().bottom;
+      const deficit =
+        minimum === null
+          ? 0
+          : minimum + DOCKED_PICKER_EDGE_ROOM_PX + DOCKED_PICKER_SIDE_OFFSET_PX - roomBelow;
+      const reachable = editorBottom === undefined ? 0 : cardRect.bottom - editorBottom;
+      setDockLift(Math.max(0, Math.min(deficit, reachable)));
+    } else {
+      setDockLift(0);
+    }
+    const needed =
+      (popupRef.current?.scrollHeight ?? DOCKED_PICKER_FULL_HEIGHT_PX) + DOCKED_PICKER_EDGE_ROOM_PX;
+    const fitsBelow = roomBelow >= needed;
+    const fitsAbove = roomAbove >= needed;
+    // The new-thread page always opens under the card (the hero sits above it and must stay
+    // visible; the list scrolls inside when the room is short). Elsewhere the side where the
+    // whole popup fits wins; with both or neither, the roomier side does.
+    const opensDownward = inDraftHero
+      ? true
+      : fitsBelow !== fitsAbove
+        ? fitsBelow
+        : roomAbove <= roomBelow;
+    setDockSide(opensDownward ? "bottom" : "top");
+  }, [docked, isMenuOpen]);
 
   const activeEntry =
     props.instanceEntries.find((entry) => entry.instanceId === props.activeInstanceId) ?? null;
@@ -146,10 +262,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     (activeEntry?.driverKind === "opencode" || activeEntry?.driverKind === "antigravity"
       ? undefined
       : selectedInstanceOptions[0]);
-  // The footer shows the catalog's short name, as the board's split control does.
-  const triggerModelName = selectedModel
-    ? getTriggerDisplayModelName(selectedModel, activeEntry?.driverKind)
-    : null;
+  // The trigger names the model exactly as its row in the list does.
+  const triggerModelName = selectedModel ? getDisplayModelName(selectedModel) : null;
   const triggerTitle = triggerModelName
     ? triggerModelName
     : props.model === ANTIGRAVITY_DEFAULT_MODEL
@@ -167,13 +281,13 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
 
   /**
    * Focuses the selected reasoning level, else the first level. With `rows: "any"` it falls back
-   * to the column's other options. False when nothing took focus.
+   * to the panel's other options. False when nothing took focus.
    */
   const focusEffort = (rows: "levels" | "any") => {
-    const column = popupRef.current?.querySelector("[data-model-picker-effort]");
+    const panel = popupRef.current?.querySelector("[data-model-picker-effort]");
     const first = (selector: string) =>
-      column?.querySelector<HTMLElement>(`${selector}[aria-checked="true"]:not(:disabled)`) ??
-      column?.querySelector<HTMLElement>(`${selector}:not(:disabled)`);
+      panel?.querySelector<HTMLElement>(`${selector}[aria-checked="true"]:not(:disabled)`) ??
+      panel?.querySelector<HTMLElement>(`${selector}:not(:disabled)`);
     const row =
       first("[data-effort-level]") ?? (rows === "any" ? first("[data-effort-row]") : null);
     row?.focus({ preventScroll: true });
@@ -196,7 +310,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       setIsMenuOpen(false);
       return;
     }
-    // The column renders the new model's levels on commit.
+    // The panel renders the new model's levels on commit.
     window.requestAnimationFrame(() => focusEffort("levels"));
   };
 
@@ -216,9 +330,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     return {
       ...selection,
       entry,
-      label: model
-        ? `${getTriggerDisplayModelName(model, entry?.driverKind)}${unavailable}`
-        : selection.model,
+      label: model ? `${getDisplayModelName(model)}${unavailable}` : selection.model,
       fullLabel: model ? `${getDisplayModelName(model)}${unavailable}` : selection.model,
     };
   });
@@ -304,6 +416,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
             size={size}
             data-chat-provider-model-picker="true"
             data-chat-provider-model-picker-icon-only={iconOnly ? "true" : undefined}
+            {...(iconOnly ? { title: triggerTooltipContent } : {})}
             data-composer-shortcut={props.triggerShortcuts}
             onClick={(event) => {
               if (!isMenuOpen || !docked) return;
@@ -389,38 +502,45 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         }}
         initialFocus={searchInputRef}
         align="start"
+        {...(docked
+          ? {
+              anchor: () => composerCardOf(triggerRef.current) ?? triggerRef.current,
+              // The side with more room; a tie opens downward.
+              side: dockSide,
+              ...(draftHero ? { collisionAvoidance: { side: "none" as const } } : {}),
+              ...(cellBoundary === null ? {} : { collisionBoundary: cellBoundary }),
+              ...(headerClearance === null
+                ? { collisionPadding: { top: 5, right: 5, bottom: 5, left: 5 } }
+                : { collisionPadding: { top: headerClearance, right: 5, bottom: 5, left: 5 } }),
+              sideOffset: DOCKED_PICKER_SIDE_OFFSET_PX - dockLift,
+            }
+          : {})}
         className="before:hidden"
         padding="none"
         touchBackdrop
       >
-        {props.effortColumn ? (
-          <DockedPickerContext value={{ modelLabel: triggerTitle }}>
-            <div className={DOCKED_PICKER_FRAME_CLASS}>
-              <div className={DOCKED_PICKER_ROW_CLASS}>
-                {picker}
-                <div
-                  data-model-picker-effort
-                  className={DOCKED_EFFORT_COLUMN_CLASS}
-                  onKeyDown={(event) => {
-                    if (
-                      event.key !== "ArrowLeft" ||
-                      event.altKey ||
-                      event.ctrlKey ||
-                      event.metaKey
-                    ) {
-                      return;
-                    }
-                    event.preventDefault();
-                    event.stopPropagation();
-                    searchInputRef.current?.focus();
-                  }}
-                >
-                  {props.effortColumn}
-                </div>
+        {props.effortPanel ? (
+          <div className={DOCKED_PICKER_FRAME_CLASS} data-docked-picker-frame>
+            {picker}
+            {props.showEffortPanel === false ? null : (
+              <div
+                data-model-picker-effort
+                className={DOCKED_EFFORT_PANEL_CLASS}
+                onKeyDown={(event) => {
+                  // Up and Left leave the panel for the search field; the panel's own rows handle
+                  // the moves that stay inside it.
+                  if (event.key !== "ArrowLeft" && event.key !== "ArrowUp") return;
+                  if (event.altKey || event.ctrlKey || event.metaKey) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  searchInputRef.current?.focus();
+                }}
+              >
+                {props.effortPanel}
               </div>
-              {props.footer}
-            </div>
-          </DockedPickerContext>
+            )}
+            {props.footer}
+          </div>
         ) : (
           picker
         )}

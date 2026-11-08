@@ -1,7 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { ChartNoAxesColumnIcon, ListChecksIcon, PlusIcon, SearchIcon } from "lucide-react";
-import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
+import type { ReactNode } from "react";
 
 import { openAddProjectDialog } from "../AddProjectDialog";
 import { openCommandPalette } from "../../commandPaletteBus";
@@ -9,8 +9,16 @@ import { shortcutLabelForCommand } from "../../keybindings";
 import { cn } from "../../lib/utils";
 import { usePullRequestsSupported } from "../../state/environments";
 import { primaryServerKeybindingsAtom } from "../../state/server";
-import { Badge } from "../ui/badge";
 import { MOTION_FEEDBACK } from "../ui/motion-recipes";
+import {
+  RAIL_SHORTCUT_ACTIVE_CLS,
+  RAIL_SHORTCUT_CLS,
+  RAIL_SHORTCUT_COUNT_CLS,
+  RAIL_SHORTCUT_ICON_ACTIVE_CLS,
+  RAIL_SHORTCUT_ICON_CLS,
+  RAIL_SHORTCUT_ICON_REST_CLS,
+  RAIL_SHORTCUT_REST_CLS,
+} from "../ui/sidebar-rail-recipes";
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
 import { useSidebar } from "../ui/sidebar";
@@ -25,49 +33,59 @@ export function SidebarRailKbd({ children }: { children: ReactNode }) {
   );
 }
 
-export function SidebarRailActionRow({
+/**
+ * One icon-only shortcut of the rail's shortcut row, the active route filled and marked with
+ * `aria-current`. The name is the accessible name and the tooltip, with the shortcut when one
+ * opens it.
+ */
+function SidebarRailShortcut({
   icon,
   label,
-  trailing,
-  active = false,
-  disabled = false,
-  tooltip,
+  count = null,
+  active,
+  shortcut = null,
   onClick,
 }: {
   icon: ReactNode;
   label: string;
-  trailing?: ReactNode;
-  active?: boolean;
-  disabled?: boolean;
-  tooltip?: ReactNode;
-  onClick: (event: ReactMouseEvent<HTMLButtonElement>) => void;
+  count?: number | null;
+  active: boolean;
+  shortcut?: string | null;
+  onClick: () => void;
 }) {
-  const row = (
-    <button
-      type="button"
-      disabled={disabled}
-      aria-current={active ? "page" : undefined}
-      onClick={onClick}
-      className={cn(
-        "flex h-7 w-full shrink-0 cursor-pointer items-center gap-2 rounded-(--control-radius) px-2 text-left text-sm whitespace-nowrap outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset disabled:pointer-events-none disabled:opacity-50",
-        MOTION_FEEDBACK,
-        active
-          ? "bg-sidebar-row-selected text-sidebar-foreground"
-          : "text-secondary-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
-      )}
-    >
-      <span className="inline-grid size-[15px] shrink-0 place-items-center text-secondary-label [&>svg]:size-[15px]">
-        {icon}
-      </span>
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-      {trailing}
-    </button>
-  );
-  if (tooltip === undefined) return row;
+  const shown = count !== null && count > 0 ? count : null;
   return (
     <Tooltip>
-      <TooltipTrigger render={row} />
-      <TooltipPopup side="right">{tooltip}</TooltipPopup>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            aria-label={shown === null ? label : `${label}, ${shown}`}
+            aria-current={active ? "page" : undefined}
+            data-rail-shortcut={label}
+            onClick={onClick}
+            className={cn(
+              RAIL_SHORTCUT_CLS,
+              MOTION_FEEDBACK,
+              active ? RAIL_SHORTCUT_ACTIVE_CLS : RAIL_SHORTCUT_REST_CLS,
+            )}
+          />
+        }
+      >
+        <span
+          aria-hidden
+          className={cn(
+            RAIL_SHORTCUT_ICON_CLS,
+            active ? RAIL_SHORTCUT_ICON_ACTIVE_CLS : RAIL_SHORTCUT_ICON_REST_CLS,
+          )}
+        >
+          {icon}
+          {shown === null ? null : <span className={RAIL_SHORTCUT_COUNT_CLS}>{shown}</span>}
+        </span>
+      </TooltipTrigger>
+      <TooltipPopup side="bottom">
+        {shortcut === null ? label : `${label} · ${shortcut}`}
+      </TooltipPopup>
     </Tooltip>
   );
 }
@@ -95,7 +113,7 @@ export function SidebarRailSectionHeading({
             MOTION_FEEDBACK,
           )}
         >
-          <PlusIcon aria-hidden className="size-[15px]" />
+          <PlusIcon aria-hidden className="size-4" />
         </button>
       ) : null}
     </div>
@@ -115,7 +133,7 @@ export function SidebarRailSearchButton() {
         MOTION_FEEDBACK,
       )}
     >
-      <SearchIcon aria-hidden className="size-[15px] shrink-0 text-secondary-label" />
+      <SearchIcon aria-hidden className="size-4 shrink-0 text-secondary-label" />
       <span className="min-w-0 flex-1 truncate">Search</span>
       {shortcut ? <SidebarRailKbd>{shortcut}</SidebarRailKbd> : null}
     </button>
@@ -123,8 +141,8 @@ export function SidebarRailSearchButton() {
 }
 
 /**
- * The rail's fixed entries, shared by the thread and grid sidebars: search,
- * pull requests, usage, then a section heading whose title and actions the
+ * The rail's fixed entries, shared by the thread and grid sidebars: search, one row of icon
+ * buttons for pull requests, tasks and usage, then a section heading whose title and actions the
  * caller owns. Ctrl N still starts a thread, but the row is gone.
  */
 export function SidebarRailNav({
@@ -146,6 +164,8 @@ export function SidebarRailNav({
   taskCount?: number | null;
 }) {
   const navigate = useNavigate();
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const usageShortcut = shortcutLabelForCommand(keybindings, "usage.open");
   const pullRequestsSupported = usePullRequestsSupported();
   const { isMobile, setOpenMobile } = useSidebar();
   const pathname = useLocation({ select: (location) => location.pathname });
@@ -168,40 +188,31 @@ export function SidebarRailNav({
   return (
     <div className="flex flex-col gap-px">
       {search}
-      {pullRequestsSupported ? (
-        <SidebarRailActionRow
-          icon={<PullRequestGlyph.pullRequest />}
-          label="Pull requests"
-          active={pathname === "/pull-requests"}
-          trailing={
-            pullRequestCount !== null && pullRequestCount > 0 ? (
-              <span className="shrink-0 text-xs text-secondary-label tabular-nums">
-                {pullRequestCount}
-              </span>
-            ) : null
-          }
-          onClick={openPullRequests}
+      <div data-rail-shortcuts="" className="flex gap-0.5">
+        {pullRequestsSupported ? (
+          <SidebarRailShortcut
+            icon={<PullRequestGlyph.pullRequest />}
+            label="Pull requests"
+            count={pullRequestCount}
+            active={pathname === "/pull-requests"}
+            onClick={openPullRequests}
+          />
+        ) : null}
+        <SidebarRailShortcut
+          icon={<ListChecksIcon />}
+          label="Tasks"
+          count={taskCount}
+          active={pathname === "/tasks"}
+          onClick={openTasks}
         />
-      ) : null}
-      <SidebarRailActionRow
-        icon={<ListChecksIcon />}
-        label="Tasks"
-        active={pathname === "/tasks"}
-        trailing={
-          taskCount !== null && taskCount > 0 ? (
-            <Badge variant="default" size="sm">
-              {taskCount}
-            </Badge>
-          ) : null
-        }
-        onClick={openTasks}
-      />
-      <SidebarRailActionRow
-        icon={<ChartNoAxesColumnIcon />}
-        label="Usage"
-        active={pathname === "/usage"}
-        onClick={openUsage}
-      />
+        <SidebarRailShortcut
+          icon={<ChartNoAxesColumnIcon />}
+          label="Usage"
+          shortcut={usageShortcut}
+          active={pathname === "/usage"}
+          onClick={openUsage}
+        />
+      </div>
       {sectionHeading ? (
         <SidebarRailSectionHeading
           title={sectionTitle}

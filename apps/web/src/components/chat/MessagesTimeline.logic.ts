@@ -244,6 +244,20 @@ export function workEntryReadOutput(
   return null;
 }
 
+const PLACEHOLDER_COMMANDS: ReadonlySet<string> = new Set(["command", "ran command", "monitor"]);
+
+/**
+ * Providers that report a command call without its command line fill the command with the call's
+ * title. That text is a description, so its first word must not be shown as the program name.
+ */
+function commandIsPlaceholder(entry: WorkLogEntry, command: string): boolean {
+  const text = command.trim().toLowerCase();
+  if (PLACEHOLDER_COMMANDS.has(text)) return true;
+  return [entry.toolTitle, entry.label, entry.projectedItem?.item.title].some(
+    (title) => title?.trim().toLowerCase() === text,
+  );
+}
+
 export function liveWorkEntryLabel(
   entry: WorkLogEntry,
   workspaceRoot: string | undefined,
@@ -273,7 +287,7 @@ export function liveWorkEntryLabel(
             : status === "stopped"
               ? "Stopped"
               : "Ran";
-    return `${verb} ${commandProgramName(command) ?? "command"}`;
+    return `${verb} ${(commandIsPlaceholder(entry, command) ? null : commandProgramName(command)) ?? "command"}`;
   }
   return workEntryDisplayLabel(entry, workspaceRoot);
 }
@@ -292,7 +306,19 @@ export function workEntryIsVisibleInGroup(
   );
 }
 const TIMELINE_MINIMAP_ITEM_SPACING = 8;
-export const TIMELINE_MINIMAP_MIN_ITEMS = 2;
+/** Below this many turns the scroll bar already orients the reader; ticks only add clutter. */
+export const TIMELINE_MINIMAP_MIN_ITEMS = 8;
+/**
+ * Under this scroller width the conversation fills the pane, so the rail would float over text
+ * or the sidebar edge instead of sitting in a gutter.
+ */
+export const TIMELINE_MINIMAP_MIN_VIEWPORT_WIDTH = 1000;
+
+export function resolveTimelineMinimapAvailable(itemCount: number, viewportWidth: number): boolean {
+  return (
+    itemCount >= TIMELINE_MINIMAP_MIN_ITEMS && viewportWidth >= TIMELINE_MINIMAP_MIN_VIEWPORT_WIDTH
+  );
+}
 const TIMELINE_MINIMAP_MAX_HEIGHT_CSS = "calc(100vh - 18rem)";
 const TIMELINE_MINIMAP_PERSISTENT_GUTTER = 48;
 
@@ -508,6 +534,10 @@ const LIVE_ACTIVITY_ROW_ID = "live-activity-row";
 
 export type MessagesTimelineRow = MessagesTimelineRowContent & {
   readonly continuesWorkLog?: boolean;
+  /** The last row of an expanded turn fold: it owns the gap before whatever follows the group. */
+  readonly endsFoldGroup?: boolean;
+  /** The next row is a user message that opens a turn: this row leaves the turn gap below it. */
+  readonly leadsToTurn?: boolean;
 };
 
 type MessagesTimelineRowContent =
@@ -525,6 +555,8 @@ type MessagesTimelineRowContent =
       groupedEntries: WorkLogEntry[];
       isExpandedToolGroup: boolean;
       displayLabel?: string;
+      /** The time on the expanded fold's header above this row; the row drops its own when equal. */
+      headerCreatedAt?: string;
     }
   | {
       kind: "work-live";
@@ -543,6 +575,11 @@ type MessagesTimelineRowContent =
       createdAt: string | null;
       /** A running compaction owns the working row, so its divider appears only once it ends. */
       compacting?: true;
+      /**
+       * The restart notice that opened the running turn: a short label, the full text and every
+       * restart the thread has resumed from. Only the latest restart's turn carries it.
+       */
+      notice?: TimelineRestartNote & { readonly text: string };
     }
   | {
       kind: "thinking";
@@ -574,6 +611,8 @@ type MessagesTimelineRowContent =
       runId: RunId;
       label: string;
       summary?: string;
+      /** Set on the one turn that resumed after the thread's latest restart. */
+      restart?: TimelineRestartNote;
       expanded: boolean;
     }
   | {
@@ -608,6 +647,8 @@ type MessagesTimelineRowContent =
       showAssistantMeta: boolean;
       showAssistantCopyButton: boolean;
       assistantCopyStreaming: boolean;
+      /** The thread's latest answer keeps its footer visible instead of revealing it on hover. */
+      assistantMetaAlwaysVisible?: boolean;
       assistantTurnDiffSummary?: TurnDiffSummary | undefined;
       revertTurnCount?: number | undefined;
       /** Another of your messages follows directly, so the two sit closer together. */
@@ -616,6 +657,8 @@ type MessagesTimelineRowContent =
       groupedWithPrevious?: boolean;
       /** Set when the message above is a steer too, so the label shows once. */
       continuesSteer?: boolean;
+      /** The run behind the answer above, so a model line shows only when the model changed. */
+      previousAnswerRunId?: RunId | null;
     }
   | {
       kind: "assistant-meta";
@@ -625,6 +668,8 @@ type MessagesTimelineRowContent =
       message: ChatMessage;
       showAssistantCopyButton: boolean;
       assistantCopyStreaming: boolean;
+      /** The thread's latest answer keeps its footer visible instead of revealing it on hover. */
+      alwaysVisible?: boolean;
     }
   | {
       kind: "event";
@@ -659,6 +704,44 @@ type MessagesTimelineRowContent =
 export interface StableMessagesTimelineRowsState {
   byId: Map<string, MessagesTimelineRow>;
   result: MessagesTimelineRow[];
+}
+
+const LEADING_DOT_SLASH = /^\.\//;
+
+function sameFilePath(a: string, b: string): boolean {
+  const normalize = (path: string) =>
+    path.trim().replaceAll("\\", "/").replace(LEADING_DOT_SLASH, "").replace(LEADING_SLASHES, "");
+  const left = normalize(a);
+  const right = normalize(b);
+  if (left.length === 0 || right.length === 0) return false;
+  return left === right || left.endsWith(`/${right}`) || right.endsWith(`/${left}`);
+}
+
+/**
+ * A visible read of a file (the last row of an expanded group, or a lone read row) directly
+ * followed by that file's edit card: the read row takes the edit as its open-diff action and the
+ * card is not drawn. Returns the replacement for the read's row, or null when the card stands on
+ * its own.
+ */
+export function mergeFileChangeIntoRead(
+  previous: MessagesTimelineRow | undefined,
+  fileChange: WorkLogEntry,
+): Extract<MessagesTimelineRow, { kind: "work" }> | null {
+  if (previous?.kind !== "work") return null;
+  if (!previous.isExpandedToolGroup && previous.groupedEntries.length !== 1) return null;
+  const item = fileChange.structuredPayload;
+  if (item?.type !== "file_change") return null;
+  const read = previous.groupedEntries.at(-1);
+  if (read === undefined || toolGroupAction(read) !== "read") return null;
+  const readPaths = workEntryReadRawPaths(read);
+  if (readPaths.length !== 1 || !sameFilePath(readPaths[0]!, item.fileName)) return null;
+  return {
+    ...previous,
+    groupedEntries: [
+      ...previous.groupedEntries.slice(0, -1),
+      { ...read, mergedFileChange: fileChange },
+    ],
+  };
 }
 
 function workGroupId(timelineEntryId: string): string {
@@ -722,6 +805,12 @@ function deriveTerminalAssistantMessageIds(timelineEntries: ReadonlyArray<Timeli
   return new Set(lastAssistantMessageIdByResponseKey.values());
 }
 
+/** The restart a turn resumed from, with every restart the thread went through, oldest first. */
+export interface TimelineRestartNote {
+  readonly label: string;
+  readonly restarts: ReadonlyArray<{ readonly at: string; readonly text: string }>;
+}
+
 interface TurnFold {
   runId: RunId;
   anchorEntryId: string;
@@ -731,6 +820,7 @@ interface TurnFold {
   entryIds: ReadonlySet<string>;
   label: string;
   summary: string | null;
+  restart: TimelineRestartNote | null;
 }
 
 interface SupersededAttemptFold {
@@ -923,6 +1013,65 @@ function timelineEntryStartsResponse(entry: TimelineEntry): boolean {
   );
 }
 
+function timelineEntryIsSystemNotice(entry: TimelineEntry): boolean {
+  return (
+    entry.kind === "work" &&
+    entry.entry.structuredPayload?.type === "notification" &&
+    entry.entry.structuredPayload.source.kind === "system"
+  );
+}
+
+const RESUMED_NOTICE = /resumed/i;
+const RESTARTED_NOTICE = /restarted/i;
+const RESTART_NOTICE = /resumed|restarted/i;
+
+/** The short fold-line form of a system notice's summary. */
+function systemNoticeFoldLabel(entry: TimelineEntry): string {
+  const summary = entry.kind === "work" ? entry.entry.label : "";
+  if (RESUMED_NOTICE.test(summary)) return "resumed after restart";
+  if (RESTARTED_NOTICE.test(summary)) return "restarted";
+  return summary;
+}
+
+function timelineEntryIsRestartNotice(entry: TimelineEntry): boolean {
+  return (
+    timelineEntryIsSystemNotice(entry) &&
+    entry.kind === "work" &&
+    RESTART_NOTICE.test(entry.entry.label)
+  );
+}
+
+/**
+ * The restart note for one thread: every restart in order, and the id of the notice whose turn
+ * carries the note. Earlier turns resumed too, but repeating the note on each finished turn only
+ * adds noise; the latest one is the turn the thread is in now.
+ */
+function threadRestartNotes(entries: ReadonlyArray<TimelineEntry>): {
+  readonly restarts: TimelineRestartNote["restarts"];
+  readonly carrierNoticeId: string | null;
+} {
+  const notices = entries.filter(timelineEntryIsRestartNotice);
+  return {
+    restarts: notices.map((notice) => ({
+      at: notice.createdAt,
+      text: notice.kind === "work" ? notice.entry.label : "",
+    })),
+    carrierNoticeId: notices.at(-1)?.id ?? null,
+  };
+}
+
+function sameRestartNote(
+  a: TimelineRestartNote | undefined,
+  b: TimelineRestartNote | undefined,
+): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  return (
+    a.label === b.label &&
+    a.restarts.length === b.restarts.length &&
+    a.restarts.every((restart, index) => restart.at === b.restarts[index]?.at)
+  );
+}
+
 function timelineEntryEnd(entry: TimelineEntry): string {
   return entry.kind === "message" ? entry.message.updatedAt : entry.createdAt;
 }
@@ -1033,12 +1182,27 @@ export function boardWorkSummary(entries: ReadonlyArray<WorkLogEntry>): string |
   if (command) parts.push(`ran ${command} ${command === 1 ? "command" : "commands"}`);
   const codeSearch = (counts.get("code-search") ?? 0) + (counts.get("search") ?? 0);
   if (codeSearch) parts.push(`searched ${codeSearch} ${codeSearch === 1 ? "time" : "times"}`);
+  // A call into a named integration reads as "used Houston" on the fold line.
+  const sourceNames = [
+    ...new Set(target.flatMap((entry) => (entry.toolSource ? [entry.toolSource.name] : []))),
+  ];
+  if (sourceNames.length > 0) parts.push(`used ${sourceNames.slice(0, 2).join(", ")}`);
   if (parts.length === 0) {
     return toolEntries.length === 0 && target.length === 1
       ? "thought"
       : summarizeToolGroup(target).summary.toLowerCase();
   }
   return parts.slice(0, 3).join(" · ");
+}
+
+/**
+ * The work line's label: the status word once, then the counts. A group with a call in flight
+ * reads "Running · ran 1 command" rather than stacking the status word on a past-tense verb.
+ */
+export function groupBoardLabel(entries: ReadonlyArray<WorkLogEntry>): string {
+  const summary = boardWorkSummary(entries) ?? "";
+  const running = entries.some((entry) => entry.toolLifecycleStatus === "inProgress");
+  return running && summary.length > 0 ? `Running · ${summary}` : summary;
 }
 
 function deriveTurnFolds(input: {
@@ -1050,6 +1214,7 @@ function deriveTurnFolds(input: {
   liveSubagentEntryIds: ReadonlySet<string>;
   completeSupersededReplyEntryIds: ReadonlySet<string>;
 }): ReadonlyMap<string, TurnFold> {
+  const restartNotes = threadRestartNotes(input.timelineEntries);
   const interruptedRunIds = new Set<RunId>();
   const promptIndexByRunId = new Map<RunId, number>();
   for (const [index, entry] of input.timelineEntries.entries()) {
@@ -1074,6 +1239,8 @@ function deriveTurnFolds(input: {
     // Entry timestamps omit startup and can collapse steered turns to an instant.
     startBoundary: string | null;
     anchorEntryId: string;
+    /** A system notice (such as a restart) that opened the turn; the fold absorbs it. */
+    leadNotice: TimelineEntry | null;
     /**
      * Each steer after the turn has produced output starts a new segment at
      * this index into `entries`, so the steer sits between the work it split.
@@ -1086,12 +1253,20 @@ function deriveTurnFolds(input: {
   // Key runless responses per prompt to prevent V2 runs unfolding imported turns.
   let runlessKey: RunId | null = null;
   let responseKey: RunId | null = null;
-  let pendingBoundary: { createdAt: string; anchorEntryId: string } | null = null;
+  let pendingBoundary: {
+    createdAt: string;
+    anchorEntryId: string;
+    leadNotice: TimelineEntry | null;
+  } | null = null;
   for (const [index, entry] of input.timelineEntries.entries()) {
     if (timelineEntryStartsResponse(entry)) {
       const nextEntry = input.timelineEntries[index + 1];
       pendingBoundary = nextEntry
-        ? { createdAt: entry.createdAt, anchorEntryId: nextEntry.id }
+        ? {
+            createdAt: entry.createdAt,
+            anchorEntryId: nextEntry.id,
+            leadNotice: timelineEntryIsSystemNotice(entry) ? entry : null,
+          }
         : null;
       const boundaryRunId = responseBoundaryRunId(entry);
       runlessKey = boundaryRunId == null ? RunId.make(`runless:${entry.id}`) : null;
@@ -1130,6 +1305,7 @@ function deriveTurnFolds(input: {
         hasStreamingMessage: false,
         startBoundary: pendingBoundary?.createdAt ?? null,
         anchorEntryId: pendingBoundary?.anchorEntryId ?? entry.id,
+        leadNotice: pendingBoundary?.leadNotice ?? null,
         steerSegments: [],
       };
       pendingBoundary = null;
@@ -1239,14 +1415,38 @@ function deriveTurnFolds(input: {
     const segmentWorkSummary = (entries: ReadonlyArray<TimelineEntry>) =>
       boardWorkSummary(entries.flatMap((entry) => (entry.kind === "work" ? [entry.entry] : [])));
     const firstSegment = group.entries.slice(0, group.steerSegments[0]?.startIndex);
-    foldsByAnchorEntryId.set(group.anchorEntryId, {
+    const leadNotice = group.leadNotice;
+    const carriesRestart =
+      leadNotice !== null &&
+      timelineEntryIsRestartNotice(leadNotice) &&
+      leadNotice.id === restartNotes.carrierNoticeId;
+    const firstSummary = [
+      segmentWorkSummary(firstSegment),
+      // A restart is a note of its own (see `restart`); other notices stay in the summary.
+      leadNotice && !timelineEntryIsRestartNotice(leadNotice)
+        ? systemNoticeFoldLabel(leadNotice)
+        : null,
+    ]
+      .filter((part): part is string => !!part)
+      .join(" · ");
+    foldsByAnchorEntryId.set(leadNotice?.id ?? group.anchorEntryId, {
       runId,
-      anchorEntryId: group.anchorEntryId,
+      anchorEntryId: leadNotice?.id ?? group.anchorEntryId,
       createdAt: group.startBoundary ?? firstEntry.createdAt,
-      hiddenEntryIds: segmentHiddenIds(firstSegment),
-      entryIds: new Set(firstSegment.map((entry) => entry.id)),
+      hiddenEntryIds: new Set([
+        ...(leadNotice ? [leadNotice.id] : []),
+        ...segmentHiddenIds(firstSegment),
+      ]),
+      entryIds: new Set([
+        ...(leadNotice ? [leadNotice.id] : []),
+        ...firstSegment.map((entry) => entry.id),
+      ]),
       label,
-      summary: segmentWorkSummary(firstSegment),
+      summary: firstSummary || null,
+      restart:
+        carriesRestart && leadNotice !== null
+          ? { label: systemNoticeFoldLabel(leadNotice), restarts: restartNotes.restarts }
+          : null,
     });
     for (const [index, { startIndex, steer }] of group.steerSegments.entries()) {
       const entries = group.entries.slice(startIndex, group.steerSegments[index + 1]?.startIndex);
@@ -1265,6 +1465,7 @@ function deriveTurnFolds(input: {
         entryIds: new Set(entries.map((entry) => entry.id)),
         label: segmentMs !== null ? `Continued for ${formatDuration(segmentMs)}` : "Continued",
         summary: segmentWorkSummary(entries),
+        restart: null,
       });
     }
   }
@@ -1641,10 +1842,18 @@ export function deriveMessagesTimelineRows(input: {
     }
   }
   const expandedFoldEntryIds = new Set<string>();
+  const expandedFoldHeaderTime = new Map<string, string>();
   for (const fold of foldsByAnchorEntryId.values()) {
     if (!input.expandedRunIds?.has(fold.runId)) continue;
-    for (const entryId of fold.entryIds) expandedFoldEntryIds.add(entryId);
+    for (const entryId of fold.entryIds) {
+      expandedFoldEntryIds.add(entryId);
+      expandedFoldHeaderTime.set(entryId, fold.createdAt);
+    }
   }
+  const headerTimeOf = (entryId: string) => {
+    const headerCreatedAt = expandedFoldHeaderTime.get(entryId);
+    return headerCreatedAt === undefined ? {} : { headerCreatedAt };
+  };
   const collapsedSupersededEntryIds = new Set<string>();
   for (const fold of supersededFoldsByAnchorEntryId.values()) {
     if (!input.expandedAttemptIds?.has(fold.attemptId)) {
@@ -1821,6 +2030,17 @@ export function deriveMessagesTimelineRows(input: {
   const activeCompactionRunId = compactsOnReturn
     ? runningCompactionRunId
     : (resumeCompactionEntry?.entry.runId ?? null);
+  // A system notice that opened the running turn shows on the working row, not as its own row.
+  const runningLeadNotice =
+    input.isWorking && activeTurnHeaderIndex > 0
+      ? timelineEntries[activeTurnHeaderIndex - 1]
+      : undefined;
+  const runningLeadNoticeId =
+    runningLeadNotice !== undefined &&
+    timelineEntryIsSystemNotice(runningLeadNotice) &&
+    !foldsByAnchorEntryId.has(runningLeadNotice.id)
+      ? runningLeadNotice.id
+      : null;
   const endedRunId = input.latestRun?.turnEnded === true ? input.latestRun.runId : null;
   const zenAnswerLanded =
     input.toolCallVisibility === "zen" &&
@@ -1838,6 +2058,15 @@ export function deriveMessagesTimelineRows(input: {
         input.activeTurnStartedAt ??
         null,
       ...(activeCompactionRunId !== null ? { compacting: true as const } : {}),
+      ...(runningLeadNotice !== undefined && runningLeadNoticeId !== null
+        ? {
+            notice: {
+              label: systemNoticeFoldLabel(runningLeadNotice),
+              text: runningLeadNotice.kind === "work" ? runningLeadNotice.entry.label : "",
+              restarts: threadRestartNotes(timelineEntries).restarts,
+            },
+          }
+        : {}),
     });
   };
   let hasActivityRow = false;
@@ -1857,11 +2086,13 @@ export function deriveMessagesTimelineRows(input: {
     );
   };
 
+  const entryRowStarts: Array<{ readonly entryId: string; readonly start: number }> = [];
   for (let index = 0; index < timelineEntries.length; index += 1) {
     const timelineEntry = timelineEntries[index];
     if (!timelineEntry) {
       continue;
     }
+    entryRowStarts.push({ entryId: timelineEntry.id, start: nextRows.length });
 
     if (input.isWorking && index === activeTurnHeaderIndex) {
       appendWorkingRow();
@@ -1901,11 +2132,16 @@ export function deriveMessagesTimelineRows(input: {
         runId: turnFold.runId,
         label: turnFold.label,
         ...(turnFold.summary ? { summary: turnFold.summary } : {}),
+        ...(turnFold.restart ? { restart: turnFold.restart } : {}),
         expanded: input.expandedRunIds?.has(turnFold.runId) ?? false,
       });
     }
 
     if (collapsedEntryIds.has(timelineEntry.id)) {
+      continue;
+    }
+
+    if (timelineEntry.id === runningLeadNoticeId) {
       continue;
     }
 
@@ -1987,12 +2223,21 @@ export function deriveMessagesTimelineRows(input: {
         timelineEntry.entry.itemType === "file_change" ||
         timelineEntry.entry.questionAnswer !== undefined
       ) {
+        const merged =
+          timelineEntry.entry.itemType === "file_change"
+            ? mergeFileChangeIntoRead(nextRows.at(-1), timelineEntry.entry)
+            : null;
+        if (merged !== null) {
+          nextRows[nextRows.length - 1] = merged;
+          continue;
+        }
         nextRows.push({
           kind: "work",
           id: timelineEntry.id,
           createdAt: timelineEntry.createdAt,
           groupedEntries: [timelineEntry.entry],
           isExpandedToolGroup: false,
+          ...headerTimeOf(timelineEntry.id),
         });
         continue;
       }
@@ -2063,6 +2308,7 @@ export function deriveMessagesTimelineRows(input: {
             createdAt: timelineEntry.createdAt,
             groupedEntries: visibleGroupedEntries,
             isExpandedToolGroup: false,
+            ...headerTimeOf(timelineEntry.id),
             displayLabel:
               toolGroupAction(singleEntry) === "edit"
                 ? summarizeToolGroup(visibleGroupedEntries).summary
@@ -2108,7 +2354,7 @@ export function deriveMessagesTimelineRows(input: {
                   ? singleEntry.label
                   : summarizeToolGroup(visibleGroupedEntries).summary,
               ...(boardWorkSummary(visibleGroupedEntries)
-                ? { boardSummary: boardWorkSummary(visibleGroupedEntries)! }
+                ? { boardSummary: groupBoardLabel(visibleGroupedEntries) }
                 : {}),
               summaryKind,
               ...(groupToolSurface ? { toolSurface: groupToolSurface } : {}),
@@ -2329,9 +2575,22 @@ export function deriveMessagesTimelineRows(input: {
   }
 
   const result = attachTrailingToolGroupsToAssistant(
-    attachCreatedThreadSummaries(nextRows, timelineEntries, collapsedFoldMemberIds),
+    attachCreatedThreadSummaries(
+      closeExpandedFolds(nextRows, entryRowStarts, foldsByAnchorEntryId, input.expandedRunIds),
+      timelineEntries,
+      collapsedFoldMemberIds,
+    ),
   );
-  return result.map((row, index) => {
+  let previousAnswerRunId: RunId | null = null;
+  const decorated = result.map((row, index) => {
+    if (row.kind === "message" && row.message.role === "assistant" && row.message.runId) {
+      const before = previousAnswerRunId;
+      previousAnswerRunId = row.message.runId;
+      if (before !== null && before !== row.message.runId) {
+        return { ...row, previousAnswerRunId: before };
+      }
+      return row;
+    }
     if (timelineRowIsWorkLog(row) && timelineRowIsWorkLog(result[index + 1])) {
       return { ...row, continuesWorkLog: true };
     }
@@ -2344,6 +2603,78 @@ export function deriveMessagesTimelineRows(input: {
     if (!groupedWithNext && !groupedWithPrevious) return row;
     return { ...row, groupedWithNext, groupedWithPrevious, continuesSteer };
   });
+  const startsTurn = (row: MessagesTimelineRow | undefined) =>
+    row?.kind === "message" && row.message.role === "user";
+  // The latest completed answer shows its footer without waiting for a hover.
+  let lastAnswerMessageId: string | null = null;
+  for (const row of decorated) {
+    if (row.kind === "assistant-meta") lastAnswerMessageId = row.message.id;
+    else if (row.kind === "message" && row.message.role === "assistant" && row.showAssistantMeta) {
+      lastAnswerMessageId = row.message.id;
+    }
+  }
+  return decorated.map((row, index) => {
+    const leadsToTurn = !startsTurn(row) && startsTurn(decorated[index + 1]);
+    if (row.kind === "message" && row.message.id === lastAnswerMessageId) {
+      return {
+        ...row,
+        assistantMetaAlwaysVisible: true,
+        ...(leadsToTurn ? { leadsToTurn: true } : {}),
+      };
+    }
+    if (row.kind === "assistant-meta" && row.message.id === lastAnswerMessageId) {
+      return { ...row, alwaysVisible: true, ...(leadsToTurn ? { leadsToTurn: true } : {}) };
+    }
+    return leadsToTurn ? { ...row, leadsToTurn: true } : row;
+  });
+}
+
+/**
+ * An expanded fold shows its tool rows as one group. A compaction divider that happened midway
+ * belongs to the thread, not to the group, so it moves below the group's last row, and that row
+ * is marked so the group keeps a gap before the next card.
+ */
+function closeExpandedFolds(
+  rows: ReadonlyArray<MessagesTimelineRow>,
+  entryRowStarts: ReadonlyArray<{ readonly entryId: string; readonly start: number }>,
+  folds: ReadonlyMap<string, TurnFold>,
+  expandedRunIds: ReadonlySet<RunId> | undefined,
+): MessagesTimelineRow[] {
+  const ownerOfRow = (rowIndex: number): string | null => {
+    let owner: string | null = null;
+    for (const { entryId, start } of entryRowStarts) {
+      if (start > rowIndex) break;
+      owner = entryId;
+    }
+    return owner;
+  };
+  let owned = rows.map((row, index) => ({ row, owner: ownerOfRow(index) }));
+  for (const fold of folds.values()) {
+    if (!expandedRunIds?.has(fold.runId)) continue;
+    const rowsOf = (entryIds: ReadonlySet<string>) =>
+      owned.flatMap(({ row, owner }, index) =>
+        owner !== null && entryIds.has(owner) && row.kind !== "turn-fold" ? [index] : [],
+      );
+    // Only the entries the fold hides form the group; the terminal reply and cards stay outside.
+    const lastGroupRow = rowsOf(fold.hiddenEntryIds)
+      .filter((index) => owned[index]!.row.kind !== "context-compaction")
+      .at(-1);
+    if (lastGroupRow === undefined) continue;
+    const dividers = rowsOf(fold.entryIds).filter(
+      (index) => index < lastGroupRow && owned[index]!.row.kind === "context-compaction",
+    );
+    const dividerSet = new Set(dividers);
+    const next: typeof owned = [];
+    for (const [index, entry] of owned.entries()) {
+      if (dividerSet.has(index)) continue;
+      next.push(
+        index === lastGroupRow ? { ...entry, row: { ...entry.row, endsFoldGroup: true } } : entry,
+      );
+      if (index === lastGroupRow) next.push(...dividers.map((divider) => owned[divider]!));
+    }
+    owned = next;
+  }
+  return owned.map(({ row }) => row);
 }
 
 function timelineRowIsOwnUserMessage(
@@ -2582,11 +2913,22 @@ export function computeStableMessagesTimelineRows(
 
 function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean {
   if (a.kind !== b.kind || a.id !== b.id) return false;
+  // Spacing flags come from a row's neighbours, so a new neighbour changes the row's layout.
+  if (
+    a.continuesWorkLog !== b.continuesWorkLog ||
+    a.endsFoldGroup !== b.endsFoldGroup ||
+    a.leadsToTurn !== b.leadsToTurn
+  ) {
+    return false;
+  }
 
   switch (a.kind) {
     case "working":
       return (
-        a.createdAt === (b as typeof a).createdAt && a.compacting === (b as typeof a).compacting
+        a.createdAt === (b as typeof a).createdAt &&
+        a.compacting === (b as typeof a).compacting &&
+        a.notice?.label === (b as typeof a).notice?.label &&
+        a.notice?.restarts.length === (b as typeof a).notice?.restarts.length
       );
     case "thinking": {
       const bt = b as typeof a;
@@ -2602,7 +2944,8 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
         a.projectedItem === bm.projectedItem &&
         a.message === bm.message &&
         a.showAssistantCopyButton === bm.showAssistantCopyButton &&
-        a.assistantCopyStreaming === bm.assistantCopyStreaming
+        a.assistantCopyStreaming === bm.assistantCopyStreaming &&
+        a.alwaysVisible === bm.alwaysVisible
       );
     }
 
@@ -2614,6 +2957,9 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
       return (
         a.createdAt === bf.createdAt &&
         a.label === bf.label &&
+        (a.kind !== "turn-fold" ||
+          (a.summary === (bf as typeof a).summary &&
+            sameRestartNote(a.restart, (bf as typeof a).restart))) &&
         a.expanded === bf.expanded &&
         anchors.length === nextAnchors.length &&
         anchors.every((id, index) => id === nextAnchors[index])
@@ -2662,6 +3008,7 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
       return (
         a.isExpandedToolGroup === bw.isExpandedToolGroup &&
         a.displayLabel === bw.displayLabel &&
+        a.headerCreatedAt === bw.headerCreatedAt &&
         Equal.equals(a.groupedEntries, bw.groupedEntries)
       );
     }
@@ -2702,11 +3049,13 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
         a.showAssistantMeta === bm.showAssistantMeta &&
         a.showAssistantCopyButton === bm.showAssistantCopyButton &&
         a.assistantCopyStreaming === bm.assistantCopyStreaming &&
+        a.assistantMetaAlwaysVisible === bm.assistantMetaAlwaysVisible &&
         a.assistantTurnDiffSummary === bm.assistantTurnDiffSummary &&
         a.revertTurnCount === bm.revertTurnCount &&
         a.groupedWithNext === bm.groupedWithNext &&
         a.groupedWithPrevious === bm.groupedWithPrevious &&
-        a.continuesSteer === bm.continuesSteer
+        a.continuesSteer === bm.continuesSteer &&
+        a.previousAnswerRunId === bm.previousAnswerRunId
       );
     }
   }

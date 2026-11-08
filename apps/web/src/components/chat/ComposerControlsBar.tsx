@@ -23,8 +23,9 @@ import {
 import type { EffortDisplay } from "@houston-app/contracts/settings";
 import { cn } from "~/lib/utils";
 import { resolveComposerTraitsInput } from "./composerProviderState";
+import { getTraitsSectionVisibility } from "./TraitsPicker";
 import {
-  ComposerEffortColumn,
+  ComposerEffortPanel,
   ComposerPickerFooter,
   describeComposerEffort,
 } from "../ui/composer-model-effort";
@@ -33,7 +34,7 @@ import { resolveComposerControlsOwnership } from "./composerControlsOwnership";
 
 /**
  * The composer footer controls: the model picker (which also holds effort, speed and
- * permissions), the mode block and the overflow menu for blocks that do not fit. Rendered in the
+ * permissions, unless the new-thread strip holds those), the mode block and the overflow menu for blocks that do not fit. Rendered in the
  * expanded footer or the resting controls host.
  */
 export function ComposerControlsBar(props: {
@@ -52,8 +53,6 @@ export function ComposerControlsBar(props: {
   planModeEnabled: boolean;
   planModeUiEnabled: boolean;
   effortDisplay: EffortDisplay;
-  /** The strip under a new thread names the permissions, so the row does not repeat them. */
-  permissionsShownInStrip: boolean;
   interactionMode: ProviderInteractionMode;
   compatibleRuntimeMode: RuntimeMode;
   defaultRuntimeMode: RuntimeMode | undefined;
@@ -67,6 +66,8 @@ export function ComposerControlsBar(props: {
   iconOnlyBlockCount: number;
   /** The model label has dropped to its provider icon, ahead of any block moving to the menu. */
   modelIconOnly: boolean;
+  /** The compact toolbar: the model chip never shrinks, it drops its label to the provider mark. */
+  compactForm: boolean;
   showProviderUnavailable: boolean;
   providerSetupInstanceId: ProviderInstanceId | undefined;
   onOpenProviderSetup: ChatComposerProps["onOpenProviderSetup"];
@@ -149,12 +150,10 @@ export function ComposerControlsBar(props: {
     hiddenBlockIds: hiddenRestingBlockIds,
     overflowShowsPermissions,
     pickerOwnsModeShortcut,
-  } = resolveComposerControlsOwnership({
-    matchesDefault: accessMatchesDefault || props.permissionsShownInStrip,
-    planModeUiEnabled,
-    collapsed: composerControlsCollapsed,
-    measuredHiddenBlockCount,
-  });
+  } = resolveComposerControlsOwnership({ planModeUiEnabled, measuredHiddenBlockCount });
+  const accessLabel = compatibleRuntimeModeOptions.find(
+    (option) => option.mode === compatibleRuntimeMode,
+  )?.label;
   const controlSize = composerControlsCollapsed ? "xs" : "sm";
   const traitsInput = resolveComposerTraitsInput({
     provider: selectedProvider,
@@ -170,6 +169,9 @@ export function ComposerControlsBar(props: {
     planModeEnabled,
   });
   const effort = describeComposerEffort(traitsInput, props.effortDisplay, controlSize);
+  // A model without reasoning levels gets no empty effort band under its list.
+  const effortHasControls =
+    traitsInput !== null && getTraitsSectionVisibility(traitsInput).hasAnyControls;
   const compactPane = paneDensity === "compact";
   const restingBlockDefs =
     compactPane || !showModeBlock
@@ -226,15 +228,19 @@ export function ComposerControlsBar(props: {
       triggerClassName={cn(
         "pe-1",
         composerControlsCollapsed ? "min-w-13 shrink text-xs!" : "min-w-13",
+        props.compactForm && !composerControlsCollapsed && "shrink-0",
       )}
       triggerSuffix={effort.suffix}
-      triggerDetail={effort.detail}
+      triggerDetail={[effort.detail, accessMatchesDefault ? null : accessLabel]
+        .filter(Boolean)
+        .join(" · ")}
+      showEffortPanel={effortHasControls}
       triggerShortcuts={
         pickerOwnsModeShortcut ? "composer.effort composer.mode" : "composer.effort"
       }
       {...(traitsInput
         ? {
-            effortColumn: <ComposerEffortColumn traits={traitsInput} />,
+            effortPanel: <ComposerEffortPanel traits={traitsInput} />,
             footer: (
               <ComposerPickerFooter
                 traits={traitsInput}

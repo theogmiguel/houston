@@ -116,7 +116,7 @@ function DraftStartError({ onRetry }: { readonly onRetry: () => void }) {
     <SidebarInset
       {...contentArea}
       role="main"
-      className="h-dvh min-h-0 overflow-hidden overscroll-y-none"
+      className="min-h-0 overflow-hidden overscroll-y-none"
     >
       {isNativeDesktopHost() ? <WorkspacePageHeader desktop={isDesktopHost} /> : null}
       <Empty className="flex-1">

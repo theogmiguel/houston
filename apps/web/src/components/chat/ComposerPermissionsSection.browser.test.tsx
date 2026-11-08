@@ -43,7 +43,7 @@ function OverflowMenu() {
   );
 }
 
-it("reaches Permissions from the mode items with arrow keys, previews, and picks with Enter", async () => {
+it("reaches Permissions from the mode items with arrow keys, names each mode, and picks with Enter", async () => {
   await using screen = await render(<OverflowMenu />, { router: false }); // no routes involved
   const trigger = screen.getByRole("button", { name: "More" });
   await userEvent.tab();
@@ -58,14 +58,11 @@ it("reaches Permissions from the mode items with arrow keys, previews, and picks
     .element(supervised)
     .toHaveAccessibleDescription("Ask before commands and file changes.");
 
-  await userEvent.keyboard("{ArrowRight}");
+  await userEvent.keyboard("{ArrowDown}");
   await expect
     .element(page.getByRole("menuitemradio", { name: "Auto-accept edits" }))
     .toHaveFocus();
-  await userEvent.keyboard("{ArrowLeft}{ArrowLeft}");
-  await expect.element(page.getByRole("menuitemradio", { name: "Supervised" })).toHaveFocus();
-
-  await userEvent.keyboard("{ArrowUp}");
+  await userEvent.keyboard("{ArrowUp}{ArrowUp}");
   await expect.element(page.getByRole("menuitemradio", { name: "Plan" })).toHaveFocus();
 
   await userEvent.keyboard("{ArrowDown}{ArrowDown}{Enter}");
@@ -148,4 +145,24 @@ it("returns focus to the editor when picking the default hides the chip", async 
   await userEvent.click(page.getByRole("menuitemradio", { name: "Full access" }));
   await vi.waitFor(() => expect(handle.focusAtEnd).toHaveBeenCalled());
   await expect.element(screen.getByRole("button", { name: "Model" })).not.toHaveFocus();
+});
+
+it("lists every mode with its icon, name and one-line description, checking the current one", async () => {
+  await using _screen = await render(<OverflowMenu />, { router: false }); // no routes involved
+  await userEvent.click(page.getByRole("button", { name: "More" }));
+  const rows = [...document.querySelectorAll<HTMLElement>('[role="menuitemradio"]')].filter((row) =>
+    row.closest("[data-composer-permissions]"),
+  );
+  expect(rows).toHaveLength(runtimeModeOptions.length);
+  for (const [index, row] of rows.entries()) {
+    const mode = runtimeModeOptions[index]!;
+    const config = runtimeModeConfig[mode];
+    expect(row.textContent).toContain(config.label);
+    expect(row.textContent).toContain(config.description);
+    // The mode's icon, plus a check mark on the current mode only.
+    expect(row.querySelectorAll("svg")).toHaveLength(mode === "full-access" ? 2 : 1);
+    // A description wraps to a second line instead of being cut: name, two lines and padding.
+    expect(row.getBoundingClientRect().height).toBeLessThanOrEqual(64);
+    expect(row.getAttribute("aria-checked")).toBe(mode === "full-access" ? "true" : "false");
+  }
 });

@@ -47,7 +47,8 @@ export function describePullRequest(pullRequest: RowPullRequest): {
 }
 
 /**
- * The pull request badge on a thread row. A plain click shows the pull request in the right
+ * The pull request badge on a thread row. The glyph carries the state (its shape and hue) and the
+ * number stays neutral text. A plain click shows the pull request in the right
  * panel (the list when the thread has several); Ctrl/Cmd+click and middle-click open it in
  * the browser.
  */
@@ -100,16 +101,11 @@ export function ThreadRowPullRequestBadge({
             onMouseDown={(event) => {
               if (event.button === 1) event.preventDefault();
             }}
-            className={cn(
-              ROW_BADGE_BUTTON_CLS,
-              tone.toneClassName,
-              MOTION_FEEDBACK,
-              FOCUS_ACTION_CLS,
-            )}
+            className={cn(ROW_BADGE_BUTTON_CLS, MOTION_FEEDBACK, FOCUS_ACTION_CLS)}
           />
         }
       >
-        <tone.Icon aria-hidden className="size-3 shrink-0" />
+        <tone.Icon aria-hidden className={cn("size-3 shrink-0", tone.toneClassName)} />
         <span>#{pullRequest.number}</span>
         {checks === null ? null : (
           <checks.Icon aria-hidden className={cn("size-3 shrink-0", checks.toneClassName)} />

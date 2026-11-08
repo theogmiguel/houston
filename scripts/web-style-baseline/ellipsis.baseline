@@ -2,7 +2,6 @@
 1 apps/web/src/components/BranchPicker.tsx
 2 apps/web/src/components/BranchToolbarBranchSelector.tsx
 1 apps/web/src/components/chat/AssistantCitationCommentEditor.tsx
-1 apps/web/src/components/chat/ChatHeader.tsx
 3 apps/web/src/components/chat/ComposerCommandMenu.tsx
 1 apps/web/src/components/chat/DraftHeroHeadline.tsx
 1 apps/web/src/components/chat/ProposedPlanCard.tsx

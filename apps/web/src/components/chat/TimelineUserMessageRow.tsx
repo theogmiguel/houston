@@ -14,7 +14,16 @@ import { useQuietThreadShell } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { replaceComposerContextReferences } from "@houston-app/shared/composerContextReferences";
-import { memo, use, useState, type ReactNode } from "react";
+import { observeResize } from "~/lib/observeResize";
+import {
+  memo,
+  use,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import {
   createMessageAttachmentPreviewProjector,
   selectMessageImageResources,
@@ -27,12 +36,12 @@ import {
 } from "../../types";
 import ChatMarkdown from "../ChatMarkdown";
 import {
+  BotIcon,
   CalendarClockIcon,
   ChevronDownIcon,
   DownloadIcon,
   EyeIcon,
   type LucideIcon,
-  MessagesSquareIcon,
   Redo2Icon,
   PencilIcon,
 } from "lucide-react";
@@ -97,6 +106,13 @@ const EXTENSION_PATTERN = /\.([a-z0-9]{1,8})$/i;
 const LINE_BREAK = /\r?\n/;
 
 // Drawn inside the media so dark screenshots keep an edge on the dark background.
+/**
+ * A bubble stops at 82% of the lane or 36rem, whichever is narrower, so a wide lane keeps a line
+ * length that reads and the bubble's left edge stays in one place; in a phone-width lane it takes
+ * the whole width instead of leaving a gutter that matches nothing.
+ */
+const BUBBLE_MAX_WIDTH_CLASS = "max-w-[min(82%,36rem)] @max-[30rem]:max-w-full";
+
 const MEDIA_EDGE_CLASS_NAME =
   "relative after:pointer-events-none after:absolute after:inset-0 after:z-10 after:rounded-[inherit] after:ring-1 after:ring-inset after:ring-black/9 dark:after:ring-white/12";
 
@@ -306,7 +322,8 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
       {row.message.delivery ? <MessageDeliveryMarker delivery={row.message.delivery} /> : null}
       <div
         className={cn(
-          "min-w-0 max-w-[80%] rounded-2xl bg-message text-message-foreground",
+          "min-w-0 rounded-2xl bg-message text-message-foreground",
+          BUBBLE_MAX_WIDTH_CLASS,
           BUBBLE_CHIP_CLASS_NAME,
           expanded && "w-full",
         )}
@@ -333,7 +350,12 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
       </div>
       <UserMessageProjectedStatus row={row} />
       {expanded ? (
-        <div className="flex w-full max-w-[82%] items-center justify-end pe-1 text-callout text-(--houston) tabular-nums">
+        <div
+          className={cn(
+            "flex w-full items-center justify-end pe-1 text-callout text-(--houston) tabular-nums",
+            BUBBLE_MAX_WIDTH_CLASS,
+          )}
+        >
           <div className="flex shrink-0 items-center gap-2">
             {scheduledTaskId ? (
               <Link
@@ -410,6 +432,11 @@ export function FoldedMessageHeader(props: {
   );
 }
 
+/**
+ * The collapsed line of a message from another agent: the sender leads in the muted ink, then the
+ * summary. The chevron appears only when expanding reveals more than the line already shows; its
+ * space stays reserved so the bubble keeps one width.
+ */
 function UserMessageProjectedStatus({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const status = row.projectedItem?.item.status;
   if (
@@ -458,10 +485,9 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
     (attachment) => !isImageAttachment(attachment) && !isFileAttachment(attachment),
   );
   const userMessage = resolveUserMessagePresentation(row.message);
-  // Messages from other agents fold to one line so the user's own messages stay easy to find.
+  // A prompt another agent sent keeps its own source label and folds to a few lines, so the
+  // user's own messages stay easy to find.
   const folded = userMessage.attribution === "agent";
-  const [expanded, setExpanded] = useState(false);
-  const revealFoldRef = findRevealRef(() => setExpanded(true));
   const senderShell = useQuietThreadShell(
     folded && senderThreadId
       ? { environmentId: ctx.activeThreadEnvironmentId, threadId: senderThreadId }
@@ -550,11 +576,6 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
     (reference) => reference.label,
   );
   const promptLink = promptLinkFor(plainText);
-  const foldSummary =
-    plainText
-      .split(LINE_BREAK)
-      .find((line) => line.trim().length > 0)
-      ?.trim() ?? "";
   const mediaCopyRecords = mediaOnly
     ? resolvedContext.records.flatMap((record) => {
         const known = asKnownContextRecord(record);
@@ -833,7 +854,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
     >
       {userMessage.attribution === "houston" ? (
         <p
-          className="me-1 text-2xs text-muted-foreground/70"
+          className="me-1 text-callout text-secondary-label"
           data-user-message-attribution="houston"
         >
           Sent by Houston
@@ -846,7 +867,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       ) : null}
       {row.message.delivery ? <MessageDeliveryMarker delivery={row.message.delivery} /> : null}
       {mediaAboveText ? (
-        <div className="flex max-w-[80%] justify-end">
+        <div className={cn("flex justify-end", BUBBLE_MAX_WIDTH_CLASS)}>
           {/* The heading leads the media so screen readers reach it before the images. */}
           <MessageAuthorHeading>You</MessageAuthorHeading>
           {mediaBlock}
@@ -854,156 +875,153 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       ) : null}
       <div
         className={cn(
-          "relative min-w-0 max-w-[82%] rounded-(--r-group) border border-border bg-(--bubble) text-prose leading-5 text-(--bubble-ink)",
+          "relative min-w-0 rounded-(--r-group) text-prose leading-5 text-(--bubble-ink)",
+          BUBBLE_MAX_WIDTH_CLASS,
+          "bg-(--bubble) shadow-composer",
           mediaAboveText && "rounded-tr-(--r-badge)",
           BUBBLE_CHIP_CLASS_NAME,
-          !folded && !mediaOnly && !fileCardsOnly && !audioOnly && "px-3.5 py-2.5",
-          folded && expanded && "w-full",
+          !mediaOnly && !fileCardsOnly && !audioOnly && "px-3.5 py-2.5",
+          folded && "ps-9",
         )}
       >
+        {folded ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <span
+                  role="img"
+                  aria-label={senderShell ? `From ${senderLabel}` : "Sent by an agent"}
+                  data-user-message-source="agent"
+                  className="absolute start-3.5 top-3.25 text-(--houston)"
+                />
+              }
+            >
+              <BotIcon aria-hidden="true" className="size-3.5" />
+            </TooltipTrigger>
+            <TooltipPopup side="top">
+              {senderShell ? `From ${senderLabel}` : "Sent by an agent"}
+            </TooltipPopup>
+          </Tooltip>
+        ) : null}
         {/* Outside the fold so a collapsed message still has a heading to navigate to. */}
         {mediaAboveText ? null : (
           <MessageAuthorHeading>{folded ? senderLabel : "You"}</MessageAuthorHeading>
         )}
-        {folded ? (
-          <FoldedMessageHeader
-            icon={MessagesSquareIcon}
-            label={senderLabel}
-            summary={foldSummary}
-            expanded={expanded}
-            onToggle={() => setExpanded((value) => !value)}
-          />
-        ) : null}
-        {/* Find reads the DOM, so a folded message stays mounted but hidden while find is open. */}
-        {!folded || expanded || ctx.findActive ? (
-          <div
-            ref={folded ? revealFoldRef : undefined}
-            hidden={folded && !expanded}
-            dir={markdownProseDirection(resolvedContext.text)}
-            className={cn(
-              folded && "px-3 pb-3",
-              folded && !ctx.findActive && "max-h-96 overflow-auto",
-            )}
-          >
-            {!mediaAboveText && mediaBlock}
-            {userAudio.length > 0 ? (
-              <div className={cn("flex max-w-full flex-col gap-1", !audioOnly && "mb-2")}>
-                {userAudio.map((file) => (
-                  <InlineAudioPreview
-                    key={file.id}
-                    name={file.name}
-                    variant={audioOnly ? "bubble" : "chip"}
-                    environmentId={ctx.activeThreadEnvironmentId}
-                    resource={{
-                      _tag: "attachment",
-                      attachmentId: file.id,
-                      fileName: file.name,
-                      mimeType: file.mimeType,
-                      disposition: "inline",
-                    }}
-                    onOpen={() => ctx.onFileOpen(file)}
-                  />
-                ))}
-              </div>
-            ) : null}
-            {fileCardsOnly ? (
-              <div className="flex flex-col items-end gap-1" onCopyCapture={onBodyCopyCapture}>
-                {otherUserFiles.map((file) => (
-                  <UserFileCard
-                    key={file.id}
-                    file={file}
-                    copyMarkdown={
-                      attachmentReferences.find((reference) => reference.attachmentId === file.id)
-                        ?.source
-                    }
-                  />
-                ))}
-              </div>
-            ) : null}
-            {!fileCardsOnly && (unchippedFiles.length > 0 || unknownAttachments.length > 0) ? (
-              <div className="mb-2 flex flex-col gap-1">
-                {unchippedFiles.map((file) => {
-                  const pastedText = file.source?._tag === "pasted-text";
-                  const label = userMessageFileLabel(file);
-                  const fileIdentity = (
-                    <>
-                      <PierreEntryIcon
-                        pathValue={file.name}
-                        kind="file"
-                        theme={ctx.resolvedTheme}
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate">{label}</span>
-                        {file.downloadable === false || pastedText ? (
-                          <span className="block text-xs text-muted-foreground tabular-nums">
-                            {file.downloadable === false ? "Sending…" : formatBytes(file.sizeBytes)}
-                          </span>
-                        ) : null}
-                      </span>
-                    </>
-                  );
-                  if (file.downloadable !== false) {
-                    return (
-                      <div key={file.id} className="flex min-w-0 items-center gap-1">
-                        <button
-                          type="button"
-                          aria-label={`Preview ${label}`}
-                          onClick={() => ctx.onFileOpen(file)}
-                          className="focus-visible:ring-ring/70 flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md py-1 text-left text-sm hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:outline-none"
-                        >
-                          {fileIdentity}
-                          <EyeIcon className="size-4 shrink-0" />
-                        </button>
-                        <Tooltip>
-                          <TooltipTrigger
-                            render={
-                              <Button
-                                size="icon-xs"
-                                variant="ghost-muted"
-                                aria-label={`Download ${label}`}
-                                onClick={() => ctx.onFileDownload(file)}
-                              />
-                            }
-                          >
-                            <DownloadIcon />
-                          </TooltipTrigger>
-                          <TooltipPopup side="top">Download {label}</TooltipPopup>
-                        </Tooltip>
-                      </div>
-                    );
+        <div dir={markdownProseDirection(resolvedContext.text)}>
+          {!mediaAboveText && mediaBlock}
+          {userAudio.length > 0 ? (
+            <div className={cn("flex max-w-full flex-col gap-1", !audioOnly && "mb-2")}>
+              {userAudio.map((file) => (
+                <InlineAudioPreview
+                  key={file.id}
+                  name={file.name}
+                  variant={audioOnly ? "bubble" : "chip"}
+                  environmentId={ctx.activeThreadEnvironmentId}
+                  resource={{
+                    _tag: "attachment",
+                    attachmentId: file.id,
+                    fileName: file.name,
+                    mimeType: file.mimeType,
+                    disposition: "inline",
+                  }}
+                  onOpen={() => ctx.onFileOpen(file)}
+                />
+              ))}
+            </div>
+          ) : null}
+          {fileCardsOnly ? (
+            <div className="flex flex-col items-end gap-1" onCopyCapture={onBodyCopyCapture}>
+              {otherUserFiles.map((file) => (
+                <UserFileCard
+                  key={file.id}
+                  file={file}
+                  copyMarkdown={
+                    attachmentReferences.find((reference) => reference.attachmentId === file.id)
+                      ?.source
                   }
-
+                />
+              ))}
+            </div>
+          ) : null}
+          {!fileCardsOnly && (unchippedFiles.length > 0 || unknownAttachments.length > 0) ? (
+            <div className="mb-2 flex flex-col gap-1">
+              {unchippedFiles.map((file) => {
+                const pastedText = file.source?._tag === "pasted-text";
+                const label = userMessageFileLabel(file);
+                const fileIdentity = (
+                  <>
+                    <PierreEntryIcon pathValue={file.name} kind="file" theme={ctx.resolvedTheme} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">{label}</span>
+                      {file.downloadable === false || pastedText ? (
+                        <span className="block text-xs text-muted-foreground tabular-nums">
+                          {file.downloadable === false ? "Sending…" : formatBytes(file.sizeBytes)}
+                        </span>
+                      ) : null}
+                    </span>
+                  </>
+                );
+                if (file.downloadable !== false) {
                   return (
-                    <div key={file.id} className="flex min-w-0 items-center gap-2 py-1 text-sm">
-                      {fileIdentity}
+                    <div key={file.id} className="flex min-w-0 items-center gap-1">
+                      <button
+                        type="button"
+                        aria-label={`Preview ${label}`}
+                        onClick={() => ctx.onFileOpen(file)}
+                        className="focus-visible:ring-ring/70 flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md py-1 text-left text-sm hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:outline-none"
+                      >
+                        {fileIdentity}
+                        <EyeIcon className="size-4 shrink-0" />
+                      </button>
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <Button
+                              size="icon-xs"
+                              variant="ghost-muted"
+                              aria-label={`Download ${label}`}
+                              onClick={() => ctx.onFileDownload(file)}
+                            />
+                          }
+                        >
+                          <DownloadIcon />
+                        </TooltipTrigger>
+                        <TooltipPopup side="top">Download {label}</TooltipPopup>
+                      </Tooltip>
                     </div>
                   );
-                })}
-                {unknownAttachments.map((attachment) => (
-                  <div key={attachment.id} className="flex min-w-0 items-center gap-2 py-1 text-sm">
-                    <PierreEntryIcon
-                      pathValue={attachment.name}
-                      kind="file"
-                      theme={ctx.resolvedTheme}
-                    />
-                    <span className="min-w-0 flex-1 truncate">{attachment.name}</span>
+                }
+
+                return (
+                  <div key={file.id} className="flex min-w-0 items-center gap-2 py-1 text-sm">
+                    {fileIdentity}
                   </div>
-                ))}
-              </div>
-            ) : null}
-            {fileCardsOnly || audioOnly ? null : (
-              <div onCopyCapture={onBodyCopyCapture}>
-                <CollapsibleUserMessageBody
-                  text={resolvedContext.text}
-                  renderContextReference={renderContextReference}
-                  skills={ctx.skills}
-                  markdownCwd={ctx.markdownCwd}
-                  collapsible={!folded}
-                />
-              </div>
-            )}
-          </div>
-        ) : null}
+                );
+              })}
+              {unknownAttachments.map((attachment) => (
+                <div key={attachment.id} className="flex min-w-0 items-center gap-2 py-1 text-sm">
+                  <PierreEntryIcon
+                    pathValue={attachment.name}
+                    kind="file"
+                    theme={ctx.resolvedTheme}
+                  />
+                  <span className="min-w-0 flex-1 truncate">{attachment.name}</span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {fileCardsOnly || audioOnly ? null : (
+            <div onCopyCapture={onBodyCopyCapture}>
+              <CollapsibleUserMessageBody
+                text={resolvedContext.text}
+                renderContextReference={renderContextReference}
+                skills={ctx.skills}
+                markdownCwd={ctx.markdownCwd}
+                {...(folded ? { clampLines: AGENT_PROMPT_CLAMP_LINES } : {})}
+              />
+            </div>
+          )}
+        </div>
         {floatActions ? (
           <div
             className={cn(
@@ -1016,54 +1034,65 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         ) : null}
       </div>
       <UserMessageProjectedStatus row={row} />
-      {!folded || expanded ? (
-        <div className="flex w-full max-w-[82%] items-center justify-end pe-1 text-callout text-(--houston) tabular-nums">
-          <div className="flex shrink-0 items-center gap-2">
-            {folded && senderThreadId ? (
-              <InlineButton onClick={() => ctx.onOpenThread(senderThreadId)} tone="muted">
-                Open thread
-              </InlineButton>
-            ) : null}
-            <Tooltip>
-              <TooltipTrigger render={<p className="text-(--houston) text-callout tabular-nums" />}>
-                {formatDayAwareTimestamp(row.message.createdAt, ctx.timestampFormat)}
-              </TooltipTrigger>
-              <TooltipPopup>
-                {formatChatTimestampTooltip(row.message.createdAt, ctx.timestampFormat)}
-              </TooltipPopup>
-            </Tooltip>
-            <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100">
-              {typeof revertTurnCount === "number" && (
-                <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
-              )}
-              {copyText && (
-                <CopyButton
-                  label="Copy message"
-                  size="xs"
-                  value={contextClipboardFragment ? copyText : plainText}
-                  variant="ghost-muted"
-                  {...(contextClipboardFragment
-                    ? {
-                        extraFlavors: {
-                          [COMPOSER_CONTEXT_CLIPBOARD_MIME]: contextClipboardFragment,
-                        },
-                      }
-                    : {})}
+      <div
+        className={cn(
+          "flex w-full items-center justify-end pe-1 text-callout text-(--houston) tabular-nums",
+          BUBBLE_MAX_WIDTH_CLASS,
+        )}
+      >
+        <div className="flex shrink-0 items-center gap-2">
+          {folded && senderThreadId ? (
+            <InlineButton onClick={() => ctx.onOpenThread(senderThreadId)} tone="muted">
+              Open thread
+            </InlineButton>
+          ) : null}
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <p
+                  data-user-message-timestamp=""
+                  data-reveal-on-hover={folded ? "" : undefined}
+                  className="text-(--houston) text-callout tabular-nums"
                 />
-              )}
-              {promptLink !== null && (
-                <CopyButton
-                  icon={LinkIconNode}
-                  label="Copy prompt link"
-                  size="xs"
-                  value={promptLink}
-                  variant="ghost-muted"
-                />
-              )}
-            </div>
+              }
+            >
+              {formatDayAwareTimestamp(row.message.createdAt, ctx.timestampFormat)}
+            </TooltipTrigger>
+            <TooltipPopup>
+              {formatChatTimestampTooltip(row.message.createdAt, ctx.timestampFormat)}
+            </TooltipPopup>
+          </Tooltip>
+          <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100">
+            {typeof revertTurnCount === "number" && (
+              <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
+            )}
+            {copyText && (
+              <CopyButton
+                label="Copy message"
+                size="xs"
+                value={contextClipboardFragment ? copyText : plainText}
+                variant="ghost-muted"
+                {...(contextClipboardFragment
+                  ? {
+                      extraFlavors: {
+                        [COMPOSER_CONTEXT_CLIPBOARD_MIME]: contextClipboardFragment,
+                      },
+                    }
+                  : {})}
+              />
+            )}
+            {promptLink !== null && (
+              <CopyButton
+                icon={LinkIconNode}
+                label="Copy prompt link"
+                size="xs"
+                value={promptLink}
+                variant="ghost-muted"
+              />
+            )}
           </div>
         </div>
-      ) : null}
+      </div>
     </div>
   );
 }
@@ -1154,42 +1183,121 @@ const COLLAPSED_USER_MESSAGE_FADE_HEIGHT_REM = 1.75;
 
 const COLLAPSED_USER_MESSAGE_FADE_MASK = `linear-gradient(to bottom, black calc(100% - ${COLLAPSED_USER_MESSAGE_FADE_HEIGHT_REM}rem), transparent)`;
 
+/** Lines of an agent-sent prompt shown before it folds; the clamp cuts between lines, never through one. */
+const AGENT_PROMPT_CLAMP_LINES = 4;
+
+/**
+ * Whether the text needs more lines than its clamp allows. A line-clamped box reports its clamped
+ * height as its scroll height, so the clamp is lifted for the measurement and restored before paint.
+ */
+function overflowsLineClamp(body: HTMLElement): boolean {
+  const clampedHeight = body.getBoundingClientRect().height;
+  const { display, webkitLineClamp } = body.style;
+  body.style.display = "block";
+  body.style.webkitLineClamp = "none";
+  const naturalHeight = body.scrollHeight;
+  body.style.display = display;
+  body.style.webkitLineClamp = webkitLineClamp;
+  return naturalHeight > clampedHeight + 1;
+}
+
 const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(props: {
   text: string;
   renderContextReference: (reference: ChatMarkdownContextReference) => ReactNode;
   skills: ReadonlyArray<ServerProviderSkill>;
   markdownCwd: string | undefined;
   collapsible?: boolean;
+  /** Fold to this many lines instead of the long-message threshold; a click opens the rest. */
+  clampLines?: number;
 }) {
   const [expanded, setExpanded] = useState(false);
   const revealForFind = () => setExpanded(true);
   const revealRef = findRevealRef(revealForFind);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const [overflowsClamp, setOverflowsClamp] = useState(false);
   const hasVisibleBody = props.text.trim().length > 0;
+  const clamped = props.clampLines !== undefined;
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- mirrors whether the text runs past its clamp, which only the DOM knows
+  useLayoutEffect(() => {
+    const body = bodyRef.current;
+    if (!clamped || expanded || body === null) return;
+    return observeResize(body, () => setOverflowsClamp(overflowsLineClamp(body)));
+  }, [clamped, expanded]);
   const canCollapse =
-    props.collapsible !== false && hasVisibleBody && shouldCollapseUserMessage(props.text);
+    props.collapsible !== false &&
+    hasVisibleBody &&
+    (clamped ? overflowsClamp || expanded : shouldCollapseUserMessage(props.text));
   const isCollapsed = canCollapse && !expanded;
   const showCollapseControl = canCollapse;
 
+  const clampStyle: CSSProperties | undefined =
+    clamped && !expanded
+      ? {
+          ...(isCollapsed ? { cursor: "pointer" } : {}),
+          display: "-webkit-box",
+          WebkitBoxOrient: "vertical",
+          WebkitLineClamp: props.clampLines ?? AGENT_PROMPT_CLAMP_LINES,
+        }
+      : undefined;
+  const toggle = (
+    <Button
+      type="button"
+      size="xs"
+      variant="ghost-muted"
+      aria-expanded={expanded}
+      data-scroll-anchor-ignore
+      onClick={() => setExpanded((value) => !value)}
+      className={clamped && !expanded ? "-me-1.5" : "-ml-1"}
+    >
+      {expanded ? "Show less" : "Show full message"}
+    </Button>
+  );
+
   return (
-    <div>
+    <div className={cn(clamped && !expanded && "relative")}>
       {hasVisibleBody ? (
         <div
-          ref={revealRef}
-          className={cn("relative", isCollapsed && "max-h-44 overflow-hidden")}
+          ref={(node) => {
+            bodyRef.current = node;
+            return revealRef(node);
+          }}
+          className={cn(
+            "relative",
+            isCollapsed && !clamped && "max-h-44 overflow-hidden",
+            clamped && !expanded && "overflow-hidden",
+          )}
+          style={{
+            ...clampStyle,
+            ...(isCollapsed && !clamped
+              ? {
+                  WebkitMaskImage: COLLAPSED_USER_MESSAGE_FADE_MASK,
+                  maskImage: COLLAPSED_USER_MESSAGE_FADE_MASK,
+                }
+              : {}),
+          }}
+          // Focus or find can scroll a clipped box; a folded prompt always opens on its first line.
+          onScroll={
+            clamped && !expanded
+              ? (event) => {
+                  event.currentTarget.scrollTop = 0;
+                }
+              : undefined
+          }
+          onClick={
+            isCollapsed && clamped
+              ? (event) => {
+                  // A link or control inside the text keeps its own click.
+                  if (event.target instanceof Element && event.target.closest("a, button")) return;
+                  setExpanded(true);
+                }
+              : undefined
+          }
           data-user-message-body="true"
           data-thread-find-text="true"
           data-thread-find-fold={isCollapsed ? "" : undefined}
           data-user-message-collapsed={isCollapsed ? "true" : "false"}
           data-user-message-collapsible={canCollapse ? "true" : "false"}
-          data-user-message-fade={isCollapsed ? "true" : "false"}
-          style={
-            isCollapsed
-              ? {
-                  WebkitMaskImage: COLLAPSED_USER_MESSAGE_FADE_MASK,
-                  maskImage: COLLAPSED_USER_MESSAGE_FADE_MASK,
-                }
-              : undefined
-          }
+          data-user-message-fade={isCollapsed && !clamped ? "true" : "false"}
         >
           <UserMessageBody
             text={props.text}
@@ -1199,21 +1307,18 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
           />
         </div>
       ) : null}
-      {showCollapseControl ? (
+      {showCollapseControl && clamped && !expanded ? (
+        // Sits on the last visible line, after the truncated text; the gradient hides the glyphs under it.
+        <div
+          className="absolute end-0 bottom-0 ps-6"
+          style={{ backgroundImage: "linear-gradient(to left, var(--bubble) 75%, transparent)" }}
+          data-user-message-footer="true"
+        >
+          {toggle}
+        </div>
+      ) : showCollapseControl ? (
         <div className="mt-1.5 flex items-center justify-end gap-2" data-user-message-footer="true">
-          {showCollapseControl ? (
-            <Button
-              type="button"
-              size="xs"
-              variant="ghost-muted"
-              aria-expanded={expanded}
-              data-scroll-anchor-ignore
-              onClick={() => setExpanded((value) => !value)}
-              className="-ml-1"
-            >
-              {expanded ? "Show less" : "Show full message"}
-            </Button>
-          ) : null}
+          {toggle}
         </div>
       ) : null}
     </div>

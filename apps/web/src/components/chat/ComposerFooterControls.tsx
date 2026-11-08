@@ -5,8 +5,8 @@ import type {
   RuntimeMode,
 } from "@houston-app/contracts";
 import { createModelSelection } from "@houston-app/shared/model";
-import { BotIcon, PencilRulerIcon } from "lucide-react";
-import { type ComponentProps, memo, useId, useRef, useState } from "react";
+import { BotIcon, CheckIcon, PencilRulerIcon } from "lucide-react";
+import { type ComponentProps, memo, useId, useRef } from "react";
 
 import { cn } from "~/lib/utils";
 
@@ -160,49 +160,31 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
 });
 
 /**
- * Permission modes as one horizontal toggle, with the shown mode named below.
- * Each segment is a real menu radio item, so arrow keys reach it from the rest of the menu
- * and a pick closes the menu. Lives inside a Menu: the permissions chip, the model picker,
- * or the overflow menu.
+ * Permission modes as a labelled list: icon, name and a one-line description per mode, with a
+ * check on the current one. Each row is a real menu radio item, so arrow keys reach it from the
+ * rest of the menu and a pick closes the menu. Lives inside a Menu: the permissions chip, the
+ * model picker, or the overflow menu.
  */
 export function ComposerPermissionsSection(props: {
   runtimeMode: RuntimeMode;
   runtimeModeOptions: ReadonlyArray<RuntimeModeOption>;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
-  // Hover or keyboard focus previews a mode's name and description before a pick.
-  const [previewMode, setPreviewMode] = useState<RuntimeMode | null>(null);
-  const shownMode = previewMode ?? props.runtimeMode;
-  const shown =
-    props.runtimeModeOptions.find((option) => option.mode === shownMode) ??
-    supervisedRuntimeModeOption;
   const descriptionId = useId();
   return (
-    <div data-composer-permissions className="grid w-72 gap-1.5 px-2 py-1.5">
-      <div className="font-medium text-muted-foreground text-xs">Permissions</div>
+    <div data-composer-permissions className="grid w-80 max-w-full gap-0.5 px-1 py-1.5">
+      <div className="px-2 pb-1 font-medium text-muted-foreground text-xs">Permissions</div>
       <MenuPrimitive.RadioGroup
         aria-label="Permissions"
         value={props.runtimeMode}
         onValueChange={(value: RuntimeMode) => {
           if (value !== props.runtimeMode) props.onRuntimeModeChange(value);
         }}
-        className="flex rounded-lg bg-input/40 p-0.5"
-        // Menus navigate with Up/Down only; the row reads horizontally, so Left/Right move too.
-        onKeyDown={(event) => {
-          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-          const items = Array.from(
-            event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitemradio"]'),
-          );
-          const index = items.findIndex((item) => item === document.activeElement);
-          const next = items[index + (event.key === "ArrowRight" ? 1 : -1)];
-          if (index < 0 || !next) return;
-          event.preventDefault();
-          event.stopPropagation();
-          next.focus();
-        }}
+        className="grid gap-0.5"
       >
         {props.runtimeModeOptions.map((option) => {
           const OptionIcon = option.icon;
+          const description = option.disabledReason ?? option.description;
           return (
             <MenuPrimitive.RadioItem
               key={option.mode}
@@ -212,35 +194,26 @@ export function ComposerPermissionsSection(props: {
               aria-label={option.label}
               aria-describedby={`${descriptionId}-${option.mode}`}
               closeOnClick
-              onPointerEnter={() => setPreviewMode(option.mode)}
-              onPointerLeave={() => setPreviewMode(null)}
-              onFocus={() => setPreviewMode(option.mode)}
-              onBlur={() => setPreviewMode(null)}
-              className="flex h-6 flex-1 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none data-disabled:cursor-not-allowed data-disabled:opacity-40 data-checked:bg-input/72 data-checked:text-foreground data-highlighted:text-foreground not-data-checked:data-highlighted:bg-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+              title={description}
+              className="grid min-h-9 cursor-pointer grid-cols-[1rem_minmax(0,1fr)_1rem] items-start gap-x-2 rounded-md px-2 py-1.5 text-left outline-none data-disabled:cursor-not-allowed data-disabled:opacity-40 data-highlighted:bg-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
             >
-              <OptionIcon aria-hidden="true" className="size-3.5" />
+              <OptionIcon aria-hidden="true" className="mt-0.5 size-3.5 text-muted-foreground" />
+              <span className="grid min-w-0">
+                <span className="truncate text-foreground text-sm leading-4">{option.label}</span>
+                <span
+                  id={`${descriptionId}-${option.mode}`}
+                  className="text-muted-foreground text-xs leading-4"
+                >
+                  {description}
+                </span>
+              </span>
+              <MenuPrimitive.RadioItemIndicator className="mt-0.5 flex size-4 items-center justify-center text-foreground">
+                <CheckIcon aria-hidden="true" className="size-3.5" />
+              </MenuPrimitive.RadioItemIndicator>
             </MenuPrimitive.RadioItem>
           );
         })}
       </MenuPrimitive.RadioGroup>
-      {/* Static per-mode descriptions for screen readers; the preview below is visual only. */}
-      {props.runtimeModeOptions.map((option) => (
-        <span key={option.mode} id={`${descriptionId}-${option.mode}`} className="sr-only">
-          {option.disabledReason ?? option.description}
-        </span>
-      ))}
-      <div className="px-2 pt-0.5 pb-1.5 text-xs leading-4" aria-hidden="true">
-        <span
-          className={
-            shownMode === props.runtimeMode
-              ? "font-medium text-foreground"
-              : "text-muted-foreground"
-          }
-        >
-          {shown.label}.
-        </span>{" "}
-        <span className="text-muted-foreground">{shown.disabledReason ?? shown.description}</span>
-      </div>
     </div>
   );
 }
@@ -296,6 +269,10 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
     isComplete: boolean;
   } | null;
   isRunning: boolean;
+  /** When the running turn started; the stop button rings and names the elapsed time. */
+  runningStartedAt?: string | null;
+  /** The running thread's status word, such as "Waiting" while it is blocked on the user. */
+  runningStateLabel?: string | null;
   canInterrupt: boolean;
   followUpBehavior: "queue" | "steer";
   canSteer: boolean;
@@ -360,6 +337,8 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
         canOperateThread={props.canOperateThread}
         pendingAction={props.pendingAction}
         isRunning={props.isRunning}
+        runningStartedAt={props.runningStartedAt ?? null}
+        runningStateLabel={props.runningStateLabel ?? null}
         canInterrupt={props.canInterrupt}
         followUpBehavior={props.followUpBehavior}
         canSteer={props.canSteer}

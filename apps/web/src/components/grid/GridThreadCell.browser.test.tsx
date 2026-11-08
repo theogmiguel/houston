@@ -100,8 +100,14 @@ vi.mock("../ChatMarkdown", () => ({
   default: ({ text }: { text: string }) => <p>{text}</p>,
 }));
 
+vi.mock("./ThreadRowPullRequestBadge", () => ({
+  ThreadRowPullRequestBadge: (props: { pullRequest: { number: number } }) => (
+    <span data-testid="pane-pr">#{props.pullRequest.number}</span>
+  ),
+}));
+
 vi.mock("../sidebar/SidebarThreadRow", () => ({
-  SidebarProviderStack: () => null,
+  SidebarProviderStack: () => <span data-testid="pane-provider-mark" className="size-3.5" />,
 }));
 
 const shell = {
@@ -117,9 +123,21 @@ const shell = {
   modelSelection: { instanceId: "claudeAgent", model: "claude-sonnet" },
   providerInstanceHistory: [],
   runtime: null,
+  pullRequests: [
+    {
+      number: 209,
+      url: "https://github.com/acme/atlas-api/pull/209",
+      linkedAt: "2026-01-01T00:00:00.000Z",
+      snapshot: null,
+    },
+  ],
+  branchPullRequest: null,
+  tags: [],
 };
 
 vi.mock("../../state/entities", () => ({
+  useProject: () => ({ title: "atlas-api", isScratch: false }),
+  useServerConfigs: () => new Map(),
   useQuietThreadShell: () => shell,
   readThreadShell: () => shell,
   readThreadShells: () => [shell],
@@ -129,6 +147,7 @@ vi.mock("../../state/entities", () => ({
 
 vi.mock("../../hooks/useThreadActions", () => ({
   canTurnThreadIntoProject: () => false,
+  useAcknowledgeThreadWoke: () => () => {},
   useThreadActions: () => ({
     archiveThread: state.archiveThread,
     threadSnoozePresets: () => [],
@@ -182,7 +201,8 @@ vi.mock("../../composerDraftStore", () => ({
     }),
 }));
 
-vi.mock("../Sidebar.logic", () => ({
+vi.mock("../Sidebar.logic", async (original) => ({
+  ...(await original<typeof import("../Sidebar.logic")>()),
   resolveThreadStatusPill: () => state.pill,
 }));
 
@@ -229,7 +249,6 @@ async function renderCell(
       focused={options?.focused ?? true}
       maximized={options?.maximized ?? false}
       availableThreads={options?.availableThreads ?? []}
-      providerEntries={new Map()}
       onFocus={() => {}}
       onClose={options?.onClose ?? (() => {})}
       onArchiveClose={options?.onArchiveClose}
@@ -275,8 +294,9 @@ function expectPaneHeadSurface(container: HTMLElement) {
   if (strip === null) throw new Error("pane label missing");
   const root = document.documentElement;
   const style = getComputedStyle(strip);
-  expect(style.borderRadius).toBe("7px");
-  expect(style.height).toBe("26px");
+  expect(style.borderRadius).toBe("0px");
+  expect(style.height).toBe("36px");
+  expect(style.borderBottomWidth).toBe("1px");
   root.classList.remove("dark");
   try {
     expect(style.backgroundColor).toBe(paneHeadColor());
@@ -488,7 +508,7 @@ describe("GridThreadCell surfaces", () => {
     const actions = [...label.querySelectorAll("button")].map((button) =>
       button.getAttribute("aria-label"),
     );
-    expect(actions).toEqual(["More cell actions", "Maximize cell", "Close thread"]);
+    expect(actions).toEqual(["Maximize cell", "More cell actions", "Close thread"]);
     expect(label.querySelector('[aria-label="Split cell"]')).toBeNull();
 
     await userEvent.hover(screen.container.querySelector("[data-grid-cell]") as HTMLElement);
@@ -501,20 +521,20 @@ describe("GridThreadCell surfaces", () => {
     expect(entries).toEqual([
       "Split right",
       "Split down",
-      "---",
       "Move to…",
-      "Move to grid",
+      "---",
+      "Rename thread",
+      "Mark unread",
+      "Copy",
+      "---",
       "Close thread",
       "Hold",
       "---",
-      "Rename thread",
-      "Regenerate title",
+      "Move to grid",
       "Tags",
-      "Mark unread",
-      "Auto-close behavior",
-      "---",
-      "Copy",
       "Project settings",
+      "---",
+      "More",
       "---",
       "Archive thread",
       "Delete",
@@ -522,32 +542,22 @@ describe("GridThreadCell surfaces", () => {
     expect(menu.textContent).not.toMatch(/Pin thread|Unpin thread/);
   });
 
-  it("grows the label actions to their own width over the whole reveal", async () => {
+  it("fades an unfocused pane's header actions in over the hover feedback role", async () => {
     state.draftSession = null;
     await using screen = await renderCell(
       { kind: "thread", threadId: "thread-a", id: "p1" },
       twoThreadTree(),
-      { onMaximize: vi.fn() },
+      { onMaximize: vi.fn(), focused: false },
     );
 
-    const actions = screen.container
-      .querySelector('[aria-label="More cell actions"]')
-      ?.closest("div") as HTMLElement;
+    const actions = screen.container.querySelector("[data-pane-actions]") as HTMLElement;
+    const style = getComputedStyle(actions);
+    expect(style.opacity).toBe("0");
+    // The reveal is an opacity fade on the feedback role, never a width animation.
+    expect(style.transitionProperty).toContain("opacity");
+    expect(style.transitionProperty).not.toContain("width");
     await userEvent.hover(screen.container.querySelector("[data-grid-cell]") as HTMLElement);
-    await vi.waitFor(() => expect(actions.getAnimations().length).toBeGreaterThan(0));
-    const transitions = actions.getAnimations() as CSSTransition[];
-    for (const transition of transitions) transition.pause();
-    const reveal = transitions[0]!;
-    const duration = Number(reveal.effect?.getTiming().duration);
-    for (const transition of transitions) transition.currentTime = duration / 2;
-    const midWidth = actions.getBoundingClientRect().width;
-    for (const transition of transitions) transition.finish();
-    const finalWidth = actions.getBoundingClientRect().width;
-
-    expect(finalWidth).toBeGreaterThan(0);
-    // Halfway through, the strip is still opening rather than already at full width.
-    expect(midWidth).toBeGreaterThan(0);
-    expect(midWidth).toBeLessThan(finalWidth * 0.95);
+    await vi.waitFor(() => expect(getComputedStyle(actions).opacity).toBe("1"));
   });
 
   it("splits down from the same menu", async () => {
@@ -587,7 +597,7 @@ describe("GridThreadCell maximize", () => {
     expect(onMaximize).toHaveBeenCalledTimes(1);
   });
 
-  it("drops the label when the cell is shown alone and offers the way back", async () => {
+  it("keeps the header when the cell is shown alone and offers the way back", async () => {
     state.draftSession = null;
     const onMaximize = vi.fn();
     await using screen = await renderCell(
@@ -596,7 +606,7 @@ describe("GridThreadCell maximize", () => {
       { maximized: true, onMaximize },
     );
 
-    expect(screen.container.querySelector("[data-pane-label]")).toBeNull();
+    expect(screen.container.querySelector("[data-pane-label]")).not.toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Restore cell" }));
     expect(onMaximize).toHaveBeenCalledTimes(1);
   });
@@ -872,5 +882,109 @@ describe("GridThreadCell shortcut scope", () => {
     const unfocusedView = unfocused.container.querySelector('[data-testid="chat-view"]');
     expect(unfocusedView?.getAttribute("data-shortcuts-at-window")).toBeNull();
     expect(unfocusedView?.getAttribute("data-visit-active")).toBeNull();
+  });
+});
+
+describe("GridThreadCell pane header", () => {
+  it.each([570, 340])(
+    "shows only status and title in the header at a %ipx pane width",
+    async (paneWidth) => {
+      state.draftSession = null;
+      state.pill = { state: "failed", label: "Failed" } as typeof state.pill;
+      const container = document.createElement("div");
+      container.style.width = `${paneWidth}px`;
+      container.style.height = "420px";
+      await using screen = await renderCell(
+        { kind: "thread", threadId: "thread-a", id: "p1" },
+        twoThreadTree(),
+        { container },
+      );
+
+      const header = screen.container.querySelector<HTMLElement>("[data-pane-header]")!;
+      expect(header.textContent).toContain("Alpha thread");
+      expect(header.textContent).not.toContain("atlas-api");
+      expect(header.querySelector("[data-thread-project]")).toBeNull();
+      expect(header.querySelector('[data-testid="pane-pr"]')).toBeNull();
+      expect(header.querySelector("[data-pane-tags]")).toBeNull();
+      // No coloured bar on the pane's top edge, whatever the thread's status.
+      const style = getComputedStyle(header);
+      expect(style.borderTopWidth).toBe("0px");
+      expect(header.querySelector('[data-testid="pane-provider-mark"]')).toBeNull();
+      expect(header.querySelector("[data-pane-provider]")).toBeNull();
+      expect(header.scrollWidth).toBeLessThanOrEqual(header.clientWidth + 1);
+    },
+  );
+
+  it("rings the focused pane inside its box, shows its actions and bolds its title; an unfocused pane has none of them", async () => {
+    state.draftSession = null;
+    const multiSurface = () => {
+      const surface = document.createElement("div");
+      surface.setAttribute("data-grid-surface", "");
+      surface.setAttribute("data-multi", "");
+      surface.style.width = "570px";
+      surface.style.height = "420px";
+      surface.style.display = "flex";
+      return surface;
+    };
+    const probe = document.createElement("div");
+    probe.style.borderColor = "var(--accent)";
+    document.body.append(probe);
+    const accent = getComputedStyle(probe).borderTopColor;
+    probe.remove();
+
+    await using focusedScreen = await renderCell(
+      { kind: "thread", threadId: "thread-a", id: "p1" },
+      twoThreadTree(),
+      { container: multiSurface() },
+    );
+    const focusedCell = focusedScreen.container.querySelector<HTMLElement>("[data-grid-cell]")!;
+    const ring = getComputedStyle(focusedCell, "::after");
+    // The ring is an inset shadow on an overlay inside the cell, whose overflow clips anything
+    // drawn on its outer edge; its colour is the accent token and it is fully opaque.
+    expect(ring.boxShadow).toContain(accent);
+    expect(ring.boxShadow).toContain("inset");
+    expect(ring.boxShadow).toContain("1.5px");
+    expect(ring.position).toBe("absolute");
+    expect([ring.top, ring.right, ring.bottom, ring.left]).toEqual(["0px", "0px", "0px", "0px"]);
+    expect(ring.opacity).toBe("1");
+    const focusedHeader = focusedCell.querySelector<HTMLElement>("[data-pane-header]")!;
+    expect(getComputedStyle(focusedHeader).opacity).toBe("1");
+    // Actions show without hover or focus-within, and the title is weight 600.
+    expect(
+      getComputedStyle(focusedHeader.querySelector<HTMLElement>("[data-pane-actions]")!).opacity,
+    ).toBe("1");
+    const focusedTitle = focusedHeader.querySelector<HTMLElement>("span.flex-1.truncate")!;
+    expect(Number(getComputedStyle(focusedTitle).fontWeight)).toBeGreaterThanOrEqual(600);
+
+    await using unfocusedScreen = await renderCell(
+      { kind: "thread", threadId: "thread-a", id: "p1" },
+      twoThreadTree(),
+      { focused: false, container: multiSurface() },
+    );
+    const unfocusedCell = unfocusedScreen.container.querySelector<HTMLElement>("[data-grid-cell]")!;
+    expect(getComputedStyle(unfocusedCell, "::after").opacity).toBe("0");
+    const header = unfocusedCell.querySelector<HTMLElement>("[data-pane-header]")!;
+    expect(getComputedStyle(header).opacity).toBe("0.9");
+    expect(
+      getComputedStyle(header.querySelector<HTMLElement>("[data-pane-actions]")!).opacity,
+    ).toBe("0");
+  });
+
+  it("reaches the pane actions by keyboard", async () => {
+    state.draftSession = null;
+    const onMaximize = vi.fn();
+    await using screen = await renderCell(
+      { kind: "thread", threadId: "thread-a", id: "p1" },
+      twoThreadTree(),
+      { onMaximize },
+    );
+
+    const maximize = screen.container.querySelector<HTMLElement>(
+      'button[aria-label="Maximize cell"]',
+    )!;
+    maximize.focus();
+    expect(document.activeElement).toBe(maximize);
+    await userEvent.keyboard("{Enter}");
+    expect(onMaximize).toHaveBeenCalledTimes(1);
   });
 });

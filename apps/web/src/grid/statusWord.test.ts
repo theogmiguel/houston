@@ -1,7 +1,7 @@
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
 import { describe, expect, it } from "vite-plus/test";
 
-import { closedAgeLabel, gridThreadStatusWord } from "./statusWord";
+import { closedAgeLabel, gridThreadStatusKind, gridThreadStatusWord } from "./statusWord";
 
 function shell(overrides: Record<string, unknown> = {}): EnvironmentThreadShell {
   return {
@@ -59,6 +59,43 @@ describe("gridThreadStatusWord", () => {
     expect(gridThreadStatusWord(shell(), "ready")).toBe("Ready");
     expect(gridThreadStatusWord(shell(), "back")).toBe("Back");
     expect(gridThreadStatusWord(shell(), "idle")).toBeNull();
+  });
+});
+
+describe("gridThreadStatusKind", () => {
+  it("gives every word the second line can say its own kind", () => {
+    const running = { status: "running" };
+    const kinds = [
+      gridThreadStatusKind(shell({ hasPendingApprovals: true }), "needs"),
+      gridThreadStatusKind(shell({ hasPendingUserInput: true }), "needs"),
+      gridThreadStatusKind(shell({ pendingSubagentRequest: "approval" }), "needs"),
+      gridThreadStatusKind(shell(), "needs"),
+      gridThreadStatusKind(shell({ runtime: { status: "failed", lastErrorClass: "x" } }), "failed"),
+      gridThreadStatusKind(
+        shell({ runtime: { status: "failed", lastErrorClass: "usage_limit" } }),
+        "failed",
+      ),
+      gridThreadStatusKind(shell({ runtime: running, blockedOnThreadWait: true }), "running"),
+      gridThreadStatusKind(shell({ runtime: running }), "running"),
+      gridThreadStatusKind(shell({ runtime: running, goal: { status: "active" } }), "running"),
+      gridThreadStatusKind(shell(), "back"),
+      gridThreadStatusKind(shell(), "ready"),
+      gridThreadStatusKind(shell(), "idle"),
+    ];
+    expect(kinds).toEqual([
+      "approval",
+      "input",
+      "request",
+      "needs",
+      "failed",
+      "limited",
+      "waiting",
+      "running",
+      "goal",
+      "back",
+      "ready",
+      "idle",
+    ]);
   });
 });
 

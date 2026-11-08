@@ -209,6 +209,7 @@ describe("GridSidebar shelf rows", () => {
     await using screen = await render(<RailHarness />);
 
     await userEvent.click(shelfRow(screen.container, HELD_ID), { button: "right" });
+    await userEvent.hover(page.getByRole("menuitem", { name: "More" }).element());
     await userEvent.hover(page.getByRole("menuitem", { name: "Auto-close behavior" }).element());
     await userEvent.click(page.getByRole("menuitemradio", { name: "Disabled" }).element());
 

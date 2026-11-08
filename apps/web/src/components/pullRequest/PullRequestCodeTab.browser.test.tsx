@@ -38,7 +38,17 @@ const { diffAtom, pagedDiffAtom } = await vi.hoisted(async () => {
       truncated: true,
       nextCursor: "page-2",
     },
-    "page-2": { patch: filePatch("late.ts"), truncated: false, nextCursor: null },
+    // Files sort after `late.ts`, so a reveal of it can reach the top of the view: a file that is
+    // last can only scroll as far as the content allows, and unloaded files are estimated short
+    // while lines scroll sideways.
+    "page-2": {
+      patch: [
+        filePatch("late.ts"),
+        ...Array.from({ length: 12 }, (_, index) => filePatch(`zz-${index}.ts`)),
+      ].join(""),
+      truncated: false,
+      nextCursor: null,
+    },
   };
   return {
     // An environment query whose refetch returns equal content hands back the previous value

@@ -153,6 +153,8 @@ html[data-theme-reveal] *::after {
   --h-row: 28px;
   --h-pill: 26px;
   --settings-w: 720px;
+  /* The main work area reads as a card inset from the window chrome. */
+  --canvas-inset: 0.5rem;
   --sidebar-content-inset: 0.5rem;
   --sidebar-control-gap: 0.5rem;
   --sidebar-icon-color: color-mix(
@@ -183,7 +185,8 @@ html[data-theme-reveal] *::after {
   --workspace-titlebar-control-size: 1.75rem;
   --workspace-titlebar-control-gap: 0.75rem;
   --workspace-titlebar-scroll-fade-height: 1.5rem;
-  /* The composer board draws its lane at 760px; the timeline overrides to 720px. */
+  /* One lane width for the composer and the timeline, so the changed-files card, the messages
+     and the composer share their left and right edges. */
   --chat-content-max-width: 47.5rem;
   --thread-details-panel-width: 17.5rem;
   /* The prompt on phones: iOS zooms into any input under 16px on focus. */
@@ -242,6 +245,8 @@ html[data-theme-reveal] *::after {
     Consolas, "Liberation Mono", monospace;
   /* Display face for empty states and first run; never chrome or tables. */
   --font-serif: "Source Serif 4", Georgia, serif;
+  /* Below this width the thread rail becomes a drawer (components/ui/sidebar.tsx mirrors it). */
+  --breakpoint-dock: 60rem;
 }
 
 /* Motion roles. Components name a role (`duration-(--motion-overlay-in) ease-standard`),
@@ -305,6 +310,8 @@ body {
   --text-2xs--line-height: 0.875rem;
   --text-3xs: 0.625rem;
   --text-3xs--line-height: calc(0.875 / 0.625);
+  --text-monogram: 0.6875rem;
+  --text-monogram--line-height: 1;
   --text-4xs: 0.5rem;
   --text-4xs--line-height: 1;
   --text-5xs: 0.4375rem;
@@ -321,10 +328,12 @@ body {
   --text-title--line-height: 1.625rem;
   --text-headline: 0.8125rem;
   --text-headline--line-height: 1.125rem;
+  --text-heading: 0.9375rem;
+  --text-heading--line-height: 1.25rem;
   --text-body: 0.8125rem;
   --text-body--line-height: 1.125rem;
   --text-prose: 0.875rem;
-  --text-prose--line-height: 1.25rem;
+  --text-prose--line-height: 1.375rem;
   --text-callout: 0.75rem;
   --text-callout--line-height: 1rem;
   --text-caption: 0.6875rem;
@@ -342,7 +351,7 @@ body {
   --ease-exit: cubic-bezier(0.4, 0, 1, 1);
   /* The composer's elevation: a soft drop pulled in under the surface, shared
      by the composer, its context strip and attached banners. */
-  --shadow-composer: 0 1px 2px rgb(0 0 0 / 5%);
+  --shadow-composer: 0 1px 2px rgb(0 0 0 / 6%), 0 2px 8px -2px rgb(0 0 0 / 6%);
   --shadow-composer-dark: 0 14px 32px -18px rgb(0 0 0 / 75%);
   /* Dark-mode shade where an attached surface meets the composer: 10px of
      shadow fading away from the seam. Inline, so the offsets resolve on the
@@ -397,6 +406,20 @@ body {
   --color-guest: var(--guest);
   --color-guest-foreground: var(--guest-foreground);
   --color-guest-surface: var(--guest-surface);
+  --color-status-running: var(--status-running);
+  --color-status-running-ink: var(--status-running-ink);
+  --color-status-back: var(--status-back);
+  --color-status-back-ink: var(--status-back-ink);
+  --color-status-waiting: var(--status-waiting);
+  --color-status-waiting-ink: var(--status-waiting-ink);
+  --color-status-input: var(--status-input);
+  --color-status-input-ink: var(--status-input-ink);
+  --color-status-approval: var(--status-approval);
+  --color-status-approval-ink: var(--status-approval-ink);
+  --color-status-failed: var(--status-failed);
+  --color-status-failed-ink: var(--status-failed-ink);
+  --color-status-ready: var(--status-ready);
+  --color-status-ready-ink: var(--status-ready-ink);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-ring: var(--ring);
   --color-input: var(--contrast-input);
@@ -1034,16 +1057,19 @@ body {
   /* Houston's Paper palette. The design board's role names are canonical and
      the semantic names copied feature components use alias them, so a value
      can only drift here, next to the value the board prints. */
-  --rail: #ececef;
-  --content: #f5f5f7;
+  --rail: #ececf0;
+  --content: #ffffff;
   --card: #ffffff;
   --raised: #ffffff;
-  --term: #ffffff;
-  --code-bg: #f7f7f9;
+  --term: #fbfbfc;
+  --code-bg: #f7f7fa;
   --t1: #1d1d1f;
   --t2: #424245;
   --houston: #5b5b60;
   --border: rgba(0, 0, 0, 0.09);
+  /* A raised card on the white canvas separates by its 1px edge; the value is the
+     board's #0000001a, one step above --border. */
+  --card-edge: rgba(0, 0, 0, 0.1);
   /* Shell dividers: one step above --border so a 1px seam reads on both panes,
      and below the 16% interactive line so it never reads as a control. */
   --divider: rgba(0, 0, 0, 0.14);
@@ -1053,11 +1079,12 @@ body {
   --hover: rgba(0, 0, 0, 0.045);
   --sel: rgba(0, 0, 0, 0.09);
   --tog-off: rgba(0, 0, 0, 0.22);
-  --accent: #0a63e0;
+  /* Indigo from the app mark; the fill keeps 5.2:1 against white button text. */
+  --accent: #5b58e8;
   --accent-surface: var(--hover);
-  --accent-hover: #0954be;
-  --accent-ink: #0a5cd1;
-  --accent-muted: rgba(10, 99, 224, 0.12);
+  --accent-hover: #4a47d6;
+  --accent-ink: #4b44d8;
+  --accent-muted: rgba(91, 88, 232, 0.12);
   --ok: #1d7a3a;
   --warn: #b45309;
   --stop: #c0362c;
@@ -1066,6 +1093,24 @@ body {
   --stop-ink: #c0362c;
   --warn-ink: #9a4a06;
   --info-ink: #155e75;
+  /* Thread status hues. Accent violet stays interaction-only, so state never borrows it:
+     running is blue, back is teal, waiting is slate, input and approval share amber. The
+     glyph takes the bright step and the status word the dark `-ink` step of one hue; each
+     `-ink` keeps 4.5:1 on the canvas and the sidebar chrome, each glyph 3:1 on the canvas. */
+  --status-running: #3b82f6;
+  --status-running-ink: #1d4ed8;
+  --status-back: #0d9488;
+  --status-back-ink: #0f766e;
+  --status-waiting: #7a8aa0;
+  --status-waiting-ink: #475569;
+  --status-input: #d97706;
+  --status-input-ink: #92400e;
+  --status-approval: var(--status-input);
+  --status-approval-ink: var(--status-input-ink);
+  --status-failed: #ef4444;
+  --status-failed-ink: #b91c1c;
+  --status-ready: #16a34a;
+  --status-ready-ink: #166534;
   /* A merged pull request: the one status colour Houston has no other use for. */
   --merged: #7c3aed;
   --merged-ink: #6d28d9;
@@ -1080,14 +1125,20 @@ body {
   /* The pressed segment inside a segmented control. */
   --shadow-seg: 0 1px 2px rgba(0, 0, 0, 0.12), 0 0 0 1px #d7d7dd;
   --scrim: rgba(0, 0, 0, 0.12);
+  /* Dims the page behind a drawer: a neutral black, because a canvas-coloured film is invisible on the canvas. */
+  --sheet-scrim: rgba(0, 0, 0, 0.32);
   --pane: #ffffff;
-  --pane-head: #f7f7f9;
-  --composer: #ffffff;
+  --pane-head: #f7f7fa;
+  /* The space between grid pane cards: one tonal step below the canvas, so the
+     white pane cards read as separate surfaces. */
+  --grid-gutter: var(--rail);
+  --composer: var(--raised);
   /* The focused grid cell's frame: a neutral grey, never the accent. */
   --focus-frame: rgba(0, 0, 0, 0.38);
   /* The user's message bubble and the composer's send button; themes give them the message
      roles. */
-  --bubble: var(--card);
+  /* A user turn is an 8% brand wash over the card, never a second card colour. */
+  --bubble: color-mix(in srgb, var(--accent) 8%, var(--card));
   --bubble-ink: var(--t1);
   --send: var(--t1);
   --send-ink: var(--pane);
@@ -1104,6 +1155,8 @@ body {
   --r-ctl: 6px;
   --r-group: 10px;
   --r-dialog: 14px;
+  /* The inset main canvas: one step softer than a dialog. */
+  --r-canvas: 12px;
   /* The 7px pill the board draws for grid labels and selection buttons. */
   --r-selection: 7px;
   --r-pill: 999px;
@@ -1170,7 +1223,9 @@ body {
   --sidebar-control-surface: var(--content);
   --sidebar-row-hover: var(--hover);
   --sidebar-row-active: var(--sel);
-  --sidebar-row-selected: var(--sel);
+  /* The open row carries a faint brand wash in the light palette, where the neutral overlay
+     is near-identical to the rail; the dark palette keeps the neutral overlay. */
+  --sidebar-row-selected: color-mix(in srgb, var(--accent) 8%, transparent);
   --sidebar-border: var(--border);
   --code-background: var(--code-bg);
   --code-foreground: var(--t1);
@@ -1183,18 +1238,21 @@ body {
 .dark,
 [data-theme="graphite"] {
   color-scheme: dark;
-  /* Houston's Graphite palette: the rail is above the canvas, cards lift
-     above the canvas and menus/popovers take the raised tier. */
-  --rail: #1c1c1f;
-  --content: #161618;
-  --card: #202023;
-  --raised: #26262a;
-  --term: #0f0f11;
-  --code-bg: #18181b;
+  /* Houston's Graphite palette: three planes from dark to light. Chrome (rail, top bar,
+     grid gutter) sits below the canvas, and cards, the composer and popovers take the
+     raised tier. */
+  --rail: #111113;
+  --content: #18181b;
+  --card: #1f1f23;
+  --raised: #1f1f23;
+  --term: #0c0c0e;
+  --code-bg: #1a1a1e;
   --t1: rgba(255, 255, 255, 0.92);
   --t2: rgba(255, 255, 255, 0.66);
   --houston: rgba(255, 255, 255, 0.52);
   --border: rgba(255, 255, 255, 0.09);
+  /* The raised tier's edge: one hairline above the canvas at 8% white. */
+  --card-edge: rgba(255, 255, 255, 0.08);
   --divider: rgba(255, 255, 255, 0.14);
   --border-hover: rgba(255, 255, 255, 0.16);
   --line-strong: rgba(255, 255, 255, 0.16);
@@ -1202,10 +1260,11 @@ body {
   --hover: rgba(255, 255, 255, 0.05);
   --sel: rgba(255, 255, 255, 0.09);
   --tog-off: rgba(255, 255, 255, 0.18);
-  --accent: #2f6fe8;
-  --accent-hover: #4f85ec;
-  --accent-ink: #64a0ff;
-  --accent-muted: rgba(47, 111, 232, 0.15);
+  /* Indigo from the app mark; white sits at 5.1:1 on the fill. */
+  --accent: #6d4aff;
+  --accent-hover: #5b3ae6;
+  --accent-ink: #a8a5ff;
+  --accent-muted: rgba(109, 74, 255, 0.16);
   --ok: #30d158;
   --warn: #f5a524;
   --stop: #ff6b61;
@@ -1214,6 +1273,22 @@ body {
   --stop-ink: #ff6b61;
   --warn-ink: #f5a524;
   --info-ink: #7cb7ff;
+  /* Thread status hues, the same families as the light palette, brightened for the dark
+     canvas and the raised card; glyph and `-ink` share one value and keep 4.5:1 on both. */
+  --status-running: #64a0ff;
+  --status-running-ink: #64a0ff;
+  --status-back: #2dd4bf;
+  --status-back-ink: #2dd4bf;
+  --status-waiting: #94a3b8;
+  --status-waiting-ink: #94a3b8;
+  --status-input: var(--warn);
+  --status-input-ink: var(--warn-ink);
+  --status-approval: var(--status-input);
+  --status-approval-ink: var(--status-input-ink);
+  --status-failed: var(--stop);
+  --status-failed-ink: var(--stop-ink);
+  --status-ready: var(--ok);
+  --status-ready-ink: var(--ok-ink);
   --merged: #a78bfa;
   --merged-ink: #c4b5fd;
   --danger-fill: #d93a30;
@@ -1226,13 +1301,16 @@ body {
   --shadow-2: 0 12px 32px -8px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
   --shadow-seg: 0 1px 2px rgba(0, 0, 0, 0.2), 0 0 0 1px #2a2a31;
   --scrim: rgba(0, 0, 0, 0.28);
-  --pane: #0f0f11;
-  --pane-head: #18181b;
-  --composer: #18181b;
+  --sheet-scrim: rgba(0, 0, 0, 0.55);
+  /* A grid pane is the canvas; only the rounded card frame lifts above the gutter. */
+  --pane: #18181b;
+  --pane-head: #1f1f23;
+  --composer: var(--raised);
   --focus-frame: #6f6f7a;
   --claude: #d97757;
   --codex: rgba(255, 255, 255, 0.92);
   --message-surface: color-mix(in srgb, #ffffff 6%, var(--card));
+  --bubble: color-mix(in srgb, var(--accent) 8%, var(--card));
   --guest-foreground: #f0abfc;
   --sidebar-control-surface: var(--card);
 }
@@ -1260,11 +1338,13 @@ body {
   --sidebar-control-surface: var(--content);
   --sidebar-row-hover: var(--hover);
   --sidebar-row-active: var(--sel);
-  --sidebar-row-selected: var(--sel);
+  --sidebar-row-selected: color-mix(in srgb, var(--accent) 8%, transparent);
   --sidebar-border: var(--border);
 
   @variant dark {
-    --card: #202023;
+    --sidebar-row-selected: var(--sel);
+    /* The card a themed sidebar control paints; it follows the raised tier. */
+    --card: var(--raised);
     --sidebar-control-surface: var(--card);
     /* Row metadata sits a step below read titles. */
     --secondary-label: var(--t2);
@@ -1364,6 +1444,7 @@ html[data-theme-id]:not([data-theme-id=""]) {
   --update: var(--app-theme-update);
   --update-foreground: var(--app-theme-update-foreground);
   --border: var(--app-theme-border);
+  --card-edge: var(--app-theme-border);
   --input: var(--app-theme-input);
   --ring: var(--app-theme-focus);
   --sidebar: var(--app-theme-sidebar);
@@ -1676,6 +1757,11 @@ html[data-theme-id="t3-chat"] [data-app-sidebar] {
   --contrast-border: color-mix(
     in srgb,
     color-mix(in srgb, var(--border) var(--appearance-contrast-base), transparent),
+    var(--foreground) var(--appearance-contrast-border-boost)
+  );
+  --contrast-card-border: color-mix(
+    in srgb,
+    color-mix(in srgb, var(--card-edge) var(--appearance-contrast-base), transparent),
     var(--foreground) var(--appearance-contrast-border-boost)
   );
   --contrast-foreground: color-mix(
@@ -2200,6 +2286,53 @@ code {
   font-size: 0.85em;
 }
 
+/* The age on a sidebar thread row's title line: a muted 12px tabular column. */
+[data-thread-time] {
+  color: var(--color-secondary-label);
+  font-size: var(--text-xs);
+  line-height: var(--text-xs--line-height);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A time that shows only while its message row is hovered or holds focus (always on touch). */
+[data-reveal-on-hover] {
+  opacity: 0;
+  transition: opacity var(--motion-feedback) var(--ease-standard);
+}
+
+:where(.group):is(:hover, :focus-within) [data-reveal-on-hover] {
+  opacity: 1;
+}
+
+@media (pointer: coarse) {
+  [data-reveal-on-hover] {
+    opacity: 1;
+  }
+}
+
+/* The one-row changed-files summary: muted 12px text with the file name at full ink. */
+[data-changed-files-state="compact"] {
+  color: var(--color-secondary-label);
+  font-size: var(--text-xs);
+  line-height: var(--text-xs--line-height);
+}
+
+[data-changed-files-state="compact"] [data-changed-files-name] {
+  color: var(--color-foreground);
+}
+
+/* A zero in a diff stat is not a change: it stays muted instead of taking the addition or
+   deletion colour. */
+[data-zero]:is(.text-diff-addition-foreground, .text-diff-deletion-foreground) {
+  color: var(--color-muted-foreground);
+}
+
+/* Set for spans short enough to never overflow the column (see ChatMarkdown): a hyphen or
+   space inside one is not a place to break. */
+.chat-markdown :not(pre) > code[data-short-inline-code] {
+  white-space: nowrap;
+}
+
 .chat-markdown strong {
   font-weight: 600;
 }
@@ -2344,15 +2477,13 @@ code {
 }
 
 /* Chat width setting. Comfortable keeps the default --chat-content-max-width, which sizes the
-   composer and ChatCanvas's width probe, and the timeline's own narrower lane. */
+   composer, the timeline lane and ChatCanvas's width probe. */
 :root[data-chat-width="wide"] {
   --chat-content-max-width: 72rem;
-  --chat-timeline-max-width: 72rem;
 }
 
 :root[data-chat-width="full"] {
   --chat-content-max-width: 100%;
-  --chat-timeline-max-width: 100%;
 }
 
 :root[data-diff-color-scheme="blue-orange"] {
@@ -2666,16 +2797,21 @@ code {
   @media (min-width: 640px) {
     .chat-composer-lane {
       padding-inline-start: calc(
-        env(safe-area-inset-left) + 3rem + var(--chat-lane-inset-start, 0px)
+        env(safe-area-inset-left) + var(--chat-lane-gutter, 3rem) +
+          var(--chat-lane-inset-start, 0px)
       );
-      padding-inline-end: calc(env(safe-area-inset-right) + 3rem + var(--chat-lane-inset-end, 0px));
+      padding-inline-end: calc(
+        env(safe-area-inset-right) + var(--chat-lane-gutter, 3rem) + var(--chat-lane-inset-end, 0px)
+      );
     }
     [data-chat-canvas] .messages-timeline-scroll {
       padding-inline-start: calc(
-        3rem + var(--chat-lane-inset-start, 0px) - var(--chat-timeline-gutter, 0px)
+        var(--chat-lane-gutter, 3rem) + var(--chat-lane-inset-start, 0px) -
+          var(--chat-timeline-gutter, 0px)
       );
       padding-inline-end: calc(
-        3rem + var(--chat-lane-inset-end, 0px) - var(--chat-timeline-gutter, 0px)
+        var(--chat-lane-gutter, 3rem) + var(--chat-lane-inset-end, 0px) -
+          var(--chat-timeline-gutter, 0px)
       );
     }
   }
@@ -2687,17 +2823,18 @@ code {
   outline-offset: -2px;
 }
 
-/* The Timeline board draws the message column at 720px, narrower than the
-   composer lane, so the timeline scopes the shared lane width. */
 .messages-timeline-scroll {
-  --chat-content-max-width: var(--chat-timeline-max-width, 45rem);
+  /* A fade, shown only while the list is scrolled, so a row passing under the header dissolves
+     instead of being cut. It is tall enough that a card's divider line under the header is
+     already faint. The list's header spacer is as tall, so rows rest below it. */
+  --workspace-titlebar-scroll-fade-height: 3rem;
 }
 
-/* The timeline prose measure and rhythm: 14/20 in a 720px lane, with one
-   block gap. Values come from the Timeline board's assistant section. */
+/* The timeline prose measure and rhythm: 14/22 in the shared lane (leading 1.57, the range the
+   reference chat apps use), with one block gap. */
 .messages-timeline-scroll .chat-markdown {
   font-size: var(--text-prose);
-  line-height: 1.25rem;
+  line-height: var(--text-prose--line-height);
 }
 
 .messages-timeline-scroll .chat-markdown p,
@@ -2718,17 +2855,19 @@ code {
   margin-bottom: 0;
 }
 
-/* Inline code is the board's chip: 12px mono on the field fill with its own
-   hairline, not a tinted text run. */
+/* Inline code is the board's chip: 12px mono on the field fill, with no edge so a
+   paragraph of them reads as prose, not as a field of boxes. */
 .messages-timeline-scroll .chat-markdown :not(pre) > code {
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--r-badge);
   background: var(--field);
-  padding: 1px 5px;
+  padding: 1px 4px;
   color: var(--t1);
   font-family: var(--font-mono);
   font-size: var(--text-mono);
-  line-height: inherit;
+  /* The chip's own line height (18px) is shorter than the 22px prose line, so it never
+     stretches a line that holds one, yet its text keeps normal leading. */
+  line-height: var(--text-mono--line-height);
 }
 
 /* Grid surface. One thread on screen reads as one surface with the top strip: no card, the
@@ -2740,20 +2879,31 @@ code {
   --grid-morph-duration: 260ms;
   --grid-morph-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   /* The card a cell shows in a crowded grid, read here so a cell's own --pane can't recolour it. */
-  --grid-card-surface: var(--pane);
+  --grid-card-surface: var(--background);
   --grid-cell-surface: var(--background);
   --grid-cell-radius: 0px;
   /* A stable offsetParent for the cell FLIP's layout measurements. */
   position: relative;
+  /* One thread on screen is one surface: the canvas, edge to edge. */
   background-color: var(--background);
   /* The gutter snaps: easing it would relayout every cell's chat on every frame. */
   padding: 0;
 }
 
 [data-grid-surface][data-multi] {
-  --grid-cell-surface: var(--pane);
+  --grid-card-surface: var(--background);
+  --grid-cell-surface: var(--background);
   --grid-cell-radius: var(--r-group);
-  padding: 0 8px 8px;
+  /* The pane cards sit on the darker gutter with a full 8px margin, so no card corner
+     is clipped against the surface's edge. */
+  background-color: var(--grid-gutter);
+  padding: 8px;
+}
+
+/* With several panes the top bar and the gutter are one surface, with no divider between. */
+[data-grid-page]:has([data-grid-surface][data-multi]) > [data-drag-region] {
+  background-color: var(--grid-gutter);
+  border-bottom-color: transparent;
 }
 
 /* Cells that can swap keep their own compositing layer, so a move neither creates nor
@@ -2791,8 +2941,22 @@ code {
   opacity: 1;
 }
 
-[data-grid-surface][data-multi] [data-grid-cell][data-focused="true"]::before {
-  border-color: var(--focus-frame);
+/* The focused pane's ring is drawn inside the cell: the cell clips its overflow, so a border on
+   the card behind it (which sits outside the cell's box) never showed. */
+[data-grid-surface][data-multi] [data-grid-cell]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+  opacity: 0;
+  transition: opacity var(--motion-feedback) var(--ease-standard);
+}
+
+[data-grid-surface][data-multi] [data-grid-cell][data-focused="true"]::after {
+  opacity: 1;
 }
 
 /* Maximize and restore: a stand-in card carries the box while every cell's own card snaps
@@ -2838,7 +3002,8 @@ code {
 
 /* The reveal's new snapshot is live; let the grid's surface colours land at once inside it. */
 html[data-theme-reveal] [data-grid-surface],
-html[data-theme-reveal] [data-grid-surface] [data-grid-cell]::before {
+html[data-theme-reveal] [data-grid-surface] [data-grid-cell]::before,
+html[data-theme-reveal] [data-grid-surface] [data-grid-cell]::after {
   transition: none;
 }
 
@@ -2902,6 +3067,7 @@ html[data-theme-reveal] [data-grid-surface] [data-grid-cell]::before {
 
 [data-grid-surface],
 [data-grid-surface] [data-grid-cell]::before,
+[data-grid-surface] [data-grid-cell]::after,
 [data-grid-surface] [data-pane-label],
 [data-grid-surface] [data-grid-slot],
 [data-grid-surface] [data-grid-gutter] {

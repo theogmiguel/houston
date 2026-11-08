@@ -1,6 +1,10 @@
 import type { DraftId } from "~/composerDraftStore";
 import { composerDraftHasUserContent, useComposerDraftStore } from "~/composerDraftStore";
-import { resolveEnvironmentMachineKind, type ScopedProjectRef } from "@houston-app/contracts";
+import {
+  resolveEnvironmentMachineKind,
+  type ScopedProjectRef,
+  type ScopedThreadRef,
+} from "@houston-app/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@houston-app/client-runtime/environment";
 import { isScratchProject } from "@houston-app/client-runtime/state/projects";
 import { FolderPlusIcon } from "lucide-react";
@@ -50,6 +54,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { InlineButton } from "../ui/button";
 import { DraftProjectName } from "./DraftProjectName";
 import { DraftHeroProjectHeading } from "./DraftHeroProjectHeading";
+import { DraftProjectContext } from "./DraftProjectContext";
 import { TriageDraftHero } from "./TriageDraftHero";
 import { resolveProjectSettings } from "@houston-app/shared/projectSettings";
 import { resolveProjectDefaultProviderModelSelection } from "../../providerInstances";
@@ -160,7 +165,6 @@ export function DraftHeroHeadline({
   const isScratchDraft =
     activeProject !== null &&
     isScratchProject(activeProject, scratchWorkspaceRootFor(activeProject.environmentId));
-
   // Pinning from a row keeps rows in place while the picker is open.
   const pickerItems: readonly PickerItem[] = useOrderWhileOpen(
     [
@@ -412,11 +416,9 @@ export function DraftHeroHeadline({
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col items-center">
       {hasResolvedProject && !isScratchDraft ? (
-        <DraftHeroProjectHeading projectName={activeProjectDisplayName ?? "Choose a project"}>
-          {projectSelector}
-        </DraftHeroProjectHeading>
+        <DraftHeroProjectHeading>{projectSelector}</DraftHeroProjectHeading>
       ) : (
-        <h1 className="w-full text-center font-normal text-2xl text-foreground tracking-tight sm:text-3xl">
+        <h1 className="w-full text-center font-medium text-2xl text-foreground tracking-tight sm:text-3xl">
           {isScratchDraft ? (
             <>What should we work on?</>
           ) : canChooseProject ? (
@@ -433,4 +435,22 @@ export function DraftHeroHeadline({
       )}
     </div>
   );
+}
+
+/** The project summary the new-thread composer sits under: attention chips and recent threads. */
+export function DraftHeroProjectContext({
+  activeProjectRef,
+  onOpenThread,
+}: {
+  readonly activeProjectRef: ScopedProjectRef | null;
+  readonly onOpenThread: (threadRef: ScopedThreadRef) => void;
+}) {
+  const threads = useVisibleThreadShells();
+  if (activeProjectRef === null) return null;
+  const projectThreads = threads.filter(
+    (thread) =>
+      thread.environmentId === activeProjectRef.environmentId &&
+      thread.projectId === activeProjectRef.projectId,
+  );
+  return <DraftProjectContext threads={projectThreads} onOpenThread={onOpenThread} />;
 }

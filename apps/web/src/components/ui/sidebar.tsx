@@ -26,7 +26,9 @@ import { announceSidebarVisibility } from "~/lib/accessibilityAnnouncements";
 const SIDEBAR_COOKIE_NAME = "sidebar_state";
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
 const SIDEBAR_WIDTH = "16rem";
-const SIDEBAR_WIDTH_MOBILE = "calc(100vw - var(--spacing(3)))";
+// The drawer keeps a docked rail's proportions and leaves a sliver of the page visible behind it.
+// Inline styles are not compiled by Tailwind, so the gutter is a plain rem value (0.75rem = spacing 3).
+const SIDEBAR_WIDTH_MOBILE = "min(20rem, calc(100vw - 0.75rem))";
 const SIDEBAR_WIDTH_ICON = "3rem";
 const SIDEBAR_RESIZE_DEFAULT_MIN_WIDTH = 16 * 16;
 const SIDEBAR_TITLEBAR_CONTROL_SIZE = "max-sm:[--workspace-titlebar-control-size:--spacing(8)]";
@@ -41,7 +43,7 @@ export const FOCUS_ACTION_CLS =
 
 /** A clickable badge inside a rail row: padded for a comfortable target, aligned with its text. */
 export const ROW_BADGE_BUTTON_CLS =
-  "-mx-1 inline-flex shrink-0 cursor-pointer items-center gap-0.75 rounded-(--r-badge) px-1 tabular-nums hover:bg-(--sel)";
+  "-mx-1 inline-flex shrink-0 cursor-pointer items-center gap-0.75 rounded-(--r-badge) px-1 tabular-nums text-secondary-foreground hover:bg-(--sel)";
 
 /** A thread card's actions stay hidden until the card or its title has focus. */
 export const ROW_ACTIONS_REVEAL =
@@ -126,8 +128,9 @@ function useSidebarVisibility() {
   return isMobile ? openMobile : open;
 }
 
-// The `max-md` breakpoint, also read when a shortcut fires.
-const SIDEBAR_MOBILE_QUERY = "(max-width: 767px)";
+// The `max-dock` breakpoint (`--breakpoint-dock` in index.css), also read when a shortcut fires.
+// Below it the rail is a drawer: a docked 240px+ rail leaves too little room for a thread.
+export const SIDEBAR_MOBILE_QUERY = "(width < 60rem)";
 
 function isMobileViewport(): boolean {
   return typeof window !== "undefined" && window.matchMedia(SIDEBAR_MOBILE_QUERY).matches;
@@ -223,6 +226,13 @@ function SidebarProvider({
   const setMobileSheetElement = (element: HTMLDivElement | null) => {
     setMobileSheetMounted(element !== null);
   };
+
+  // The drawer is transient: a window widened past the breakpoint docks the rail by the user's
+  // own `open` preference, and narrowing again starts with the drawer closed.
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- the drawer state lives in an external store that must follow the viewport crossing the breakpoint
+  React.useEffect(() => {
+    if (!isMobile) store.setOpenMobile(false);
+  }, [isMobile, store]);
 
   const state = resolveSidebarState({ isMobile, open, openMobile });
 
@@ -370,7 +380,7 @@ function Sidebar({
   return (
     <SidebarInstanceContext value={instanceContextValue}>
       <div
-        className="group peer hidden text-sidebar-foreground md:block"
+        className="group peer hidden text-sidebar-foreground dock:block"
         data-collapsible={state === "collapsed" ? collapsible : ""}
         data-collapsible-mode={collapsible}
         inert={offcanvasCollapsed}
@@ -392,7 +402,7 @@ function Sidebar({
         />
         <div
           className={cn(
-            "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) md:flex",
+            "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) dock:flex",
             side === "left"
               ? "left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]"
               : "right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]",
@@ -632,8 +642,9 @@ function SidebarInset({ className, ...props }: React.ComponentProps<"main">) {
   return (
     <main
       className={cn(
-        "relative flex min-w-0 w-full flex-1 flex-col bg-background",
-        "md:peer-data-[variant=inset]:peer-data-[state=collapsed]:ms-2 md:peer-data-[variant=inset]:m-2 md:peer-data-[variant=inset]:ms-0 md:peer-data-[variant=inset]:rounded-[var(--r-group)]",
+        // The work area is flush with the canvas; the rail's own 1px divider is the only seam.
+        // A grid pane is the only surface that draws a card.
+        "relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background",
         className,
       )}
       data-slot="sidebar-inset"
@@ -653,11 +664,19 @@ function SidebarHeader({ className, ...props }: React.ComponentProps<"div">) {
   );
 }
 
-function SidebarFooter({ className, ...props }: React.ComponentProps<"div">) {
+function SidebarFooter({
+  className,
+  separated = false,
+  ...props
+}: React.ComponentProps<"div"> & {
+  /** Draws a 1px top edge, so a scrolling list above never runs into the footer. */
+  separated?: boolean;
+}) {
   return (
     <div
       className={cn(
         "flex flex-col gap-2 px-[var(--sidebar-content-inset)] pt-1 pb-[var(--sidebar-content-inset)]",
+        separated && "border-t border-sidebar-border pt-1.5",
         className,
       )}
       data-sidebar="footer"
@@ -677,14 +696,16 @@ function SidebarContent({
   return (
     <>
       {fixedHeader ? <div className="w-full shrink-0">{fixedHeader}</div> : null}
+      {/* A 24px fade over the bottom edge: the row cut by the footer dissolves, and the fade leaves at the end of the list. The top stays crisp: a project heading sticks there at full ink. */}
       <ScrollArea
         hideScrollbars
         scrollFade
+        scrollFadeTop={false}
         scrollFadePadding={false}
         // Rows provide keyboard access; exclude the viewport from tab order to flatten VoiceOver's WebKit
         // interaction boundary.
         viewportTabIndex={-1}
-        className="h-auto min-h-0 flex-1 [&>[data-slot=scroll-area-viewport]]:[--fade-size:0.75rem]"
+        className="h-auto min-h-0 flex-1 [&>[data-slot=scroll-area-viewport]]:[--fade-size:1.5rem]"
       >
         <div
           className={cn(

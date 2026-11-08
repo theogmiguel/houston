@@ -3,8 +3,11 @@ import { resolveSettledThreadTimestamp } from "@houston-app/client-runtime/state
 
 import { resolveSidebarThreadStatus, resolveThreadStatusPill } from "../components/Sidebar.logic";
 import { compactSidebarTimeLabel } from "../components/sidebar/SidebarRowTime";
+import type { ThreadStatusKind } from "../components/ui/thread-state-glyph";
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import type { GridThreadState } from "./sidebar";
+
+export type { ThreadStatusKind };
 
 /**
  * The word a thread's status line shows. It says why a thread needs you
@@ -33,6 +36,29 @@ export function gridThreadStatusWord(
       if (resolveThreadStatusPill({ thread })?.label === "Waiting") return "Waiting";
       return thread.goal?.status === "active" ? "Goal" : "Running";
   }
+}
+
+const STATUS_KIND_BY_WORD: Readonly<Record<string, ThreadStatusKind>> = {
+  Approval: "approval",
+  Input: "input",
+  Request: "request",
+  "Needs you": "needs",
+  Failed: "failed",
+  Limited: "limited",
+  Waiting: "waiting",
+  Running: "running",
+  Goal: "goal",
+  Back: "back",
+  Ready: "ready",
+};
+
+/** The status kind of a thread: the glyph and the word of its row both follow it. */
+export function gridThreadStatusKind(
+  thread: EnvironmentThreadShell,
+  state: GridThreadState,
+): ThreadStatusKind {
+  const word = gridThreadStatusWord(thread, state);
+  return word === null ? "idle" : (STATUS_KIND_BY_WORD[word] ?? "idle");
 }
 
 /** When a Closed row was closed, in the rail's compact age: "Closed 2h". */

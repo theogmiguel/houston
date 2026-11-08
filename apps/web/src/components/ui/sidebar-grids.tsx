@@ -27,9 +27,13 @@ import {
 } from "./menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./tooltip";
 
-/** A grid heading reads as one quiet line: name, then workspace, then empty. */
+/**
+ * A heading is one 12px/600 line: chevron, name, muted count. A grid heading is a
+ * project heading one step in. The actions reserve their room only while the heading is hovered
+ * or focused, so the name keeps the width otherwise.
+ */
 export const SIDEBAR_GRID_HEADING_CLS =
-  "group/grid flex h-(--h-row) w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg py-0 pr-13 pl-2 text-left text-xs transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+  "group/grid flex h-8 min-w-0 shrink cursor-pointer items-center gap-1.5 rounded-lg py-0 pr-1 pl-4 text-left text-xs transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
 export const SIDEBAR_GRID_HEADING_ACTIVE_CLS = "bg-sidebar-row-selected";
 
@@ -39,23 +43,42 @@ export const SIDEBAR_GRID_HEADING_DROP_CLS =
 export const SIDEBAR_GRID_NAME_CLS =
   "min-w-0 truncate text-xs font-semibold text-sidebar-foreground";
 
-export const SIDEBAR_GRID_EMPTY_CLS = "ml-auto shrink-0 text-xs text-secondary-label";
+export const SIDEBAR_GRID_EMPTY_CLS = "shrink-0 text-xs text-secondary-label";
 
-export const SIDEBAR_GRID_COUNT_CLS = "ml-auto shrink-0 text-xs text-secondary-label tabular-nums";
+/** The muted thread count that follows a heading's name. */
+export const SIDEBAR_GRID_COUNT_CLS =
+  "shrink-0 text-xs font-medium text-secondary-label tabular-nums";
 
-/** A project reads as a list item, like the rail's navigation rows, above its grids. */
-export const SIDEBAR_PROJECT_ROW_CLS = "group/project relative mt-1 flex items-center first:mt-0";
+/**
+ * A project heading sticks to the top of the rail's scroll area on the rail's own background, with
+ * a 1px bottom border only while stuck (`data-stuck`). It sticks 1px above the top so the observer
+ * sees it clipped; a solid `::before` lip seals the top seam, and while stuck an 8px `::after` band (solid for 4px, then fading out) keeps a half-scrolled row from showing a clipped fragment under the heading.
+ */
+export const SIDEBAR_PROJECT_ROW_CLS =
+  "group/project sticky -top-px z-40 mt-1 flex items-center border-b border-transparent bg-sidebar before:absolute before:inset-x-0 before:-top-1 before:h-1 before:bg-sidebar before:content-[''] after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-2 after:bg-[linear-gradient(to_bottom,var(--color-sidebar)_50%,transparent)] after:opacity-0 after:content-[''] first:mt-0 data-stuck:border-sidebar-border data-stuck:after:opacity-100";
 
 export const SIDEBAR_PROJECT_LABEL_CLS =
-  "flex h-(--h-row) w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg py-0 pr-8 pl-2 text-left text-sm text-secondary-foreground transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+  "flex h-8 min-w-0 shrink cursor-pointer items-center gap-1.5 rounded-lg py-0 pr-1 pl-2 text-left text-xs font-semibold text-sidebar-foreground transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
-export const SIDEBAR_PROJECT_ICON_CLS = "size-[15px] shrink-0 text-secondary-label";
+export const SIDEBAR_PROJECT_LABEL_TEXT_CLS = "min-w-0 truncate";
 
-export const SIDEBAR_PROJECT_LABEL_TEXT_CLS = "min-w-0 flex-1 truncate";
+/** The project heading's muted thread count. */
+export const SIDEBAR_PROJECT_SUMMARY_CLS = SIDEBAR_GRID_COUNT_CLS;
 
-export const SIDEBAR_PROJECT_SUMMARY_CLS = "shrink-0 text-2xs text-secondary-label";
+/** The opt-in "Needs you" shelf above the projects, its heading and the project's roll-up line. */
+export const SIDEBAR_NEEDS_YOU_SECTION_CLS = "flex flex-col gap-0.5";
 
-/** The project label's New grid action, revealed on hover or keyboard focus, not a click's focus. */
+export const SIDEBAR_NEEDS_YOU_HEADING_CLS =
+  "flex h-(--h-row) min-w-0 shrink-0 items-center gap-1 rounded-lg pr-1 pl-2 text-xs font-semibold text-secondary-label";
+
+export const SIDEBAR_NEEDS_YOU_HEADING_GLYPH_CLS = "inline-grid size-3 shrink-0 place-items-center";
+
+export const SIDEBAR_PROJECT_NEEDS_YOU_CLS = "px-2 py-1 text-xs text-secondary-label";
+
+/** A row outside a project group names its project first on the second line. */
+export const SIDEBAR_THREAD_PROJECT_CLS = "min-w-0 truncate";
+
+/** The project label's New thread and New grid actions, revealed on hover or keyboard focus, not a click's focus. */
 export const SIDEBAR_PROJECT_ACTION_CLS =
   "inline-grid size-5 shrink-0 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-label opacity-0 transition-opacity duration-(--motion-feedback) ease-standard hover:bg-(--sel) hover:text-foreground group-hover/project:opacity-100 group-has-focus-visible/project:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
@@ -67,8 +90,12 @@ export const SIDEBAR_PROJECT_EMPTY_ACTION_CLS =
 export const SIDEBAR_HEADER_ACTIONS_CLS =
   "relative z-10 flex shrink-0 items-center gap-0.5 [-webkit-app-region:no-drag]";
 
-/** A thread row that no grid shows, sitting directly under the project's grids. */
-export const SIDEBAR_THREAD_NOT_IN_GRID_CLS = "shrink-0 truncate text-2xs text-secondary-label";
+/**
+ * Every thread row, in a grid or directly under its project, starts at the rail's own inset: its
+ * status glyph sits under the project heading's chevron, so a 264px sidebar leaves the title the
+ * rest of the width.
+ */
+export const SIDEBAR_THREAD_ROW_INDENT_CLS = "pl-2";
 
 /** A fixed 12px box in both states; the chevron rotates inside instead of swapping icons. */
 export const SIDEBAR_GRID_CHEVRON_BOX_CLS =
@@ -89,7 +116,7 @@ export const SIDEBAR_SECTION_ACTION_CLS =
   "-my-1.5 inline-grid size-6 shrink-0 cursor-pointer place-items-center rounded-(--r-ctl) text-secondary-label transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
 const SIDEBAR_SECTION_HEADER_ROW_CLS =
-  "group/section flex h-(--h-row) shrink-0 items-center gap-1 rounded-lg pr-1 pl-2 text-xs font-semibold uppercase tracking-wide text-secondary-label";
+  "group/section flex h-(--h-row) shrink-0 items-center gap-1 rounded-lg pr-1 pl-2 text-xs font-semibold text-secondary-label";
 
 const SIDEBAR_SECTION_HEADER_ACTIONS_CLS =
   "ml-auto flex items-center gap-0.5 opacity-0 transition-opacity duration-(--motion-feedback) ease-standard group-hover/section:opacity-100 group-focus-within/section:opacity-100";
@@ -254,6 +281,7 @@ export interface SidebarGridOptions {
   readonly showBranch: boolean;
   readonly showPullRequest: boolean;
   readonly showSubagents: boolean;
+  readonly showNeedsYou: boolean;
 }
 
 const THREAD_SORT_CHOICES = [
@@ -359,6 +387,16 @@ export function SidebarOptionsMenu({
             onCheckedChange={(checked) => onChange({ showSubagents: checked })}
           >
             Subagents
+          </MenuCheckboxItem>
+        </MenuGroup>
+        <MenuSeparator />
+        <MenuGroup>
+          <MenuGroupLabel>Sections</MenuGroupLabel>
+          <MenuCheckboxItem
+            checked={options.showNeedsYou}
+            onCheckedChange={(checked) => onChange({ showNeedsYou: checked })}
+          >
+            Show Needs you
           </MenuCheckboxItem>
         </MenuGroup>
         <MenuSeparator />

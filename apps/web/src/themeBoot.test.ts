@@ -380,3 +380,37 @@ describe("index.html boot script", () => {
     expect(dark.isDark).toBe(true);
   });
 });
+
+describe("boot splash styles", () => {
+  const rule = (selector: string) => {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const match = indexHtml.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`));
+    if (!match?.[1]) throw new Error(`index.html has no \`${selector}\` rule`);
+    return match[1];
+  };
+
+  it("sets the splash copy in the app's Inter stack, not the bare system font", () => {
+    const font = rule("#boot-shell-copy");
+    expect(font).toContain('"Inter Variable"');
+    expect(font.indexOf('"Inter Variable"')).toBeLessThan(font.indexOf("system-ui"));
+  });
+
+  it("preloads the bundled Inter file and declares it with font-display: block", () => {
+    const preload = indexHtml.match(/<link\s[^>]*rel="preload"[^>]*>/)?.[0] ?? "";
+    expect(preload).toContain('as="font"');
+    expect(preload).toContain("crossorigin");
+    const file = "@fontsource-variable/inter/files/inter-latin-opsz-normal.woff2";
+    expect(preload).toContain(file);
+    const fontFace = indexHtml.match(/@font-face\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(fontFace).toContain('"Inter Variable"');
+    expect(fontFace).toMatch(/font-display:\s*block/);
+    expect(fontFace).toContain(file);
+  });
+
+  it("shows the transparent logo mark with no tile background or shadow in either theme", () => {
+    expect(indexHtml).toContain('id="boot-shell-logo" src="./src/assets/houston-mark.svg"');
+    const card = rule("#boot-shell-card");
+    expect(card).not.toMatch(/box-shadow|background|border-radius/);
+    expect(indexHtml).not.toContain("html.dark #boot-shell-card");
+  });
+});

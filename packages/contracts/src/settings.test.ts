@@ -687,3 +687,23 @@ describe("ClientSettings composer context strip", () => {
     ).toBe(false);
   });
 });
+
+describe("ClientSettingsSchema wordWrap", () => {
+  it("defaults to no wrapping so code keeps its indentation", () => {
+    expect(decodeClientSettings({}).wordWrap).toBe(false);
+  });
+
+  it("keeps a saved choice to wrap", () => {
+    expect(decodeClientSettings({ wordWrap: true }).wordWrap).toBe(true);
+  });
+});
+
+describe("ClientSettingsSchema sidebarShowNeedsYou", () => {
+  it("keeps the Needs you section off until the user opts in", () => {
+    expect(decodeClientSettings({}).sidebarShowNeedsYou).toBe(false);
+  });
+
+  it("keeps a saved opt-in", () => {
+    expect(decodeClientSettings({ sidebarShowNeedsYou: true }).sidebarShowNeedsYou).toBe(true);
+  });
+});
