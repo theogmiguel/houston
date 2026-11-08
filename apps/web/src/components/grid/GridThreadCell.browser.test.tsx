@@ -970,6 +970,48 @@ describe("GridThreadCell pane header", () => {
     ).toBe("0");
   });
 
+  it("starts the conversation at the top of a pane shown alone, under its hidden header", async () => {
+    state.draftSession = null;
+    const surface = (multi: boolean) => {
+      const element = document.createElement("div");
+      element.setAttribute("data-grid-surface", "");
+      if (multi) element.setAttribute("data-multi", "");
+      element.style.width = "900px";
+      element.style.height = "600px";
+      element.style.display = "flex";
+      return element;
+    };
+    const contentOffset = (container: HTMLElement) => {
+      const cell = container.querySelector<HTMLElement>("[data-grid-cell]")!;
+      const header = cell.querySelector<HTMLElement>("[data-pane-header]")!;
+      const content = header.nextElementSibling as HTMLElement;
+      return {
+        offset:
+          content.getBoundingClientRect().top - cell.getBoundingClientRect().top - cell.clientTop,
+        header,
+      };
+    };
+
+    await using solo = await renderCell(
+      { kind: "thread", threadId: "thread-a", id: "p1" },
+      twoThreadTree(),
+      { container: surface(false) },
+    );
+    const alone = contentOffset(solo.container);
+    // The title lives in the top bar, so the hidden header takes no room and no pointer.
+    expect(alone.offset).toBe(0);
+    expect(getComputedStyle(alone.header).opacity).toBe("0");
+    expect(getComputedStyle(alone.header).pointerEvents).toBe("none");
+
+    await using shared = await renderCell(
+      { kind: "thread", threadId: "thread-a", id: "p1" },
+      twoThreadTree(),
+      { container: surface(true) },
+    );
+    const beside = contentOffset(shared.container);
+    expect(beside.offset).toBeGreaterThanOrEqual(beside.header.getBoundingClientRect().height);
+  });
+
   it("reaches the pane actions by keyboard", async () => {
     state.draftSession = null;
     const onMaximize = vi.fn();
