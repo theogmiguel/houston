@@ -927,9 +927,9 @@ describe("GridThreadCell pane header", () => {
       return surface;
     };
     const probe = document.createElement("div");
-    probe.style.borderColor = "var(--accent)";
+    probe.style.borderColor = "var(--pane-focus-ring)";
     document.body.append(probe);
-    const accent = getComputedStyle(probe).borderTopColor;
+    const ringColour = getComputedStyle(probe).borderTopColor;
     probe.remove();
 
     await using focusedScreen = await renderCell(
@@ -940,10 +940,10 @@ describe("GridThreadCell pane header", () => {
     const focusedCell = focusedScreen.container.querySelector<HTMLElement>("[data-grid-cell]")!;
     const ring = getComputedStyle(focusedCell, "::after");
     // The ring is an inset shadow on an overlay inside the cell, whose overflow clips anything
-    // drawn on its outer edge; its colour is the accent token and it is fully opaque.
-    expect(ring.boxShadow).toContain(accent);
+    // drawn on its outer edge; its colour is the neutral pane-focus token and it is fully opaque.
+    expect(ring.boxShadow).toContain(ringColour);
     expect(ring.boxShadow).toContain("inset");
-    expect(ring.boxShadow).toContain("1.5px");
+    expect(ring.boxShadow).toContain("1px");
     expect(ring.position).toBe("absolute");
     expect([ring.top, ring.right, ring.bottom, ring.left]).toEqual(["0px", "0px", "0px", "0px"]);
     expect(ring.opacity).toBe("1");
