@@ -52,6 +52,62 @@ describe("workspace area focus", () => {
     expect(document.activeElement).toBe(panel.button);
   });
 
+  it("marks an area F6 focused for its ring and clears the mark when it loses focus", () => {
+    using fixture = setup();
+    const sidebar = fixture.area("sidebar", 0);
+    const conversation = fixture.area("conversation", 1);
+    sidebar.button.focus();
+    fixture.controller.move(1);
+    expect(conversation.element.dataset.workspaceFocusRing).toBe("");
+    sidebar.button.focus();
+    expect(conversation.element.dataset.workspaceFocusRing).toBeUndefined();
+  });
+
+  it("does not mark an area that took focus from a click", () => {
+    using fixture = setup();
+    const conversation = fixture.area("conversation", 1);
+    conversation.element.focus();
+    expect(conversation.element.dataset.workspaceFocusRing).toBeUndefined();
+  });
+
+  it("moves Escape in a composer editor to its own pane's conversation", () => {
+    using fixture = setup();
+    const pane = (name: string) => {
+      const cell = fixture.append(`<section data-grid-cell="${name}"></section>`);
+      const conversation = fixture.area("conversation", 1, cell);
+      const composer = fixture.area("composer", 2, cell);
+      const editor = document.createElement("div");
+      editor.contentEditable = "true";
+      composer.element.append(editor);
+      return { conversation, editor };
+    };
+    pane("left");
+    const right = pane("right");
+    right.editor.focus();
+    // The editor itself prevents the default of every Escape.
+    right.editor.addEventListener("keydown", (event) => event.preventDefault());
+    right.editor.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
+    expect(document.activeElement).toBe(right.conversation.element);
+    expect(right.conversation.element.dataset.workspaceFocusRing).toBeUndefined();
+  });
+
+  it("leaves the composer focused when a composer menu or Stop consumed Escape", () => {
+    using fixture = setup();
+    fixture.area("conversation", 1);
+    const composer = fixture.area("composer", 2);
+    const editor = document.createElement("div");
+    editor.contentEditable = "true";
+    composer.element.append(editor);
+    editor.addEventListener("keydown", (event) => event.stopPropagation());
+    editor.focus();
+    editor.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
+    expect(document.activeElement).toBe(editor);
+  });
+
   it("skips hidden, inert, and maximized-away areas", () => {
     using fixture = setup();
     const sidebar = fixture.area("sidebar", 0);
