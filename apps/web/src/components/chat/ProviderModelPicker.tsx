@@ -11,12 +11,7 @@ import { Badge } from "../ui/badge";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
-import {
-  MODEL_LIST_MIN_VISIBLE_ROWS,
-  MODEL_LIST_ROW_STEP_PX,
-  ModelPickerContent,
-  resolveModelPickerSelectedModel,
-} from "./ModelPickerContent";
+import { ModelPickerContent, resolveModelPickerSelectedModel } from "./ModelPickerContent";
 import { ChatGptSharingControl } from "./ChatGptSharingControl";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { ModelEsque, getDisplayModelName } from "./providerIconUtils";
@@ -109,27 +104,11 @@ const DOCKED_PICKER_FULL_HEIGHT_PX = 304;
 /** The gap and collision padding the positioner keeps around the popup. */
 const DOCKED_PICKER_EDGE_ROOM_PX = 9;
 
-/** The default distance between the anchor and a docked popup. */
-const DOCKED_PICKER_SIDE_OFFSET_PX = 4;
-
 /**
- * The popup's height with the model list cut to its minimum rows, measured from the open popup.
- * Null until the popup has mounted.
+ * How much of the model list the new-thread page lets the popup give up to stay under the
+ * composer; the list scrolls inside for the clipped rows. Past this the popup opens above.
  */
-function minimumDockedPopupHeight(popup: HTMLElement | null): number | null {
-  const frame = popup?.querySelector<HTMLElement>("[data-docked-picker-frame]");
-  const list = frame?.querySelector<HTMLElement>("[data-model-picker-list]");
-  if (!frame || !list) return null;
-  const naturalHeight = [...frame.children].reduce(
-    (sum, child) => sum + (child as HTMLElement).scrollHeight,
-    0,
-  );
-  const hiddenRows = Math.max(
-    0,
-    Math.round(list.offsetHeight / MODEL_LIST_ROW_STEP_PX) - MODEL_LIST_MIN_VISIBLE_ROWS,
-  );
-  return naturalHeight - hiddenRows * MODEL_LIST_ROW_STEP_PX;
-}
+const DRAFT_HERO_MAX_LIST_SHRINK_PX = 48;
 
 export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   environmentId: EnvironmentId | null;
@@ -193,10 +172,6 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   // A picker opened inside a grid cell lives in that cell: it opens toward the roomier side and
   // never spills past the cell's edges.
   const [cellBoundary, setCellBoundary] = useState<HTMLElement | null>(null);
-  const [draftHero, setDraftHero] = useState(false);
-  // How far a popup under the new-thread composer moves up over the composer's toolbar so the
-  // model list keeps its minimum rows; it never reaches the input above the toolbar.
-  const [dockLift, setDockLift] = useState(0);
   // The route header is a DOM node outside React, measured each time the popup opens (also when a
   // shortcut opens it through `props.open`, which no handler of this component sees).
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- measures the header's rect and the room under the card, which only the DOM knows
@@ -218,33 +193,19 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     const roomAbove = cardRect.top - topLimit;
     const roomBelow = bottomLimit - cardRect.bottom;
     const inDraftHero = card.closest("[data-draft-hero]") !== null;
-    setDraftHero(inDraftHero);
-    if (inDraftHero) {
-      const minimum = minimumDockedPopupHeight(popupRef.current);
-      const editorBottom = card
-        .querySelector<HTMLElement>('[data-testid="composer-editor"]')
-        ?.getBoundingClientRect().bottom;
-      const deficit =
-        minimum === null
-          ? 0
-          : minimum + DOCKED_PICKER_EDGE_ROOM_PX + DOCKED_PICKER_SIDE_OFFSET_PX - roomBelow;
-      const reachable = editorBottom === undefined ? 0 : cardRect.bottom - editorBottom;
-      setDockLift(Math.max(0, Math.min(deficit, reachable)));
-    } else {
-      setDockLift(0);
-    }
     const needed =
       (popupRef.current?.scrollHeight ?? DOCKED_PICKER_FULL_HEIGHT_PX) + DOCKED_PICKER_EDGE_ROOM_PX;
     const fitsBelow = roomBelow >= needed;
     const fitsAbove = roomAbove >= needed;
-    // The new-thread page always opens under the card (the hero sits above it and must stay
-    // visible; the list scrolls inside when the room is short). Elsewhere the side where the
-    // whole popup fits wins; with both or neither, the roomier side does.
-    const opensDownward = inDraftHero
-      ? true
-      : fitsBelow !== fitsAbove
-        ? fitsBelow
-        : roomAbove <= roomBelow;
+    // The new-thread page keeps the popup under the card unless that would clip more than a few
+    // rows. Elsewhere the side where the whole popup fits wins; with both or neither, the roomier
+    // side does, and the popup's own height cap applies.
+    const opensDownward =
+      inDraftHero && needed - roomBelow <= DRAFT_HERO_MAX_LIST_SHRINK_PX
+        ? true
+        : fitsBelow !== fitsAbove
+          ? fitsBelow
+          : roomAbove <= roomBelow;
     setDockSide(opensDownward ? "bottom" : "top");
   }, [docked, isMenuOpen]);
 
@@ -507,12 +468,11 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
               anchor: () => composerCardOf(triggerRef.current) ?? triggerRef.current,
               // The side with more room; a tie opens downward.
               side: dockSide,
-              ...(draftHero ? { collisionAvoidance: { side: "none" as const } } : {}),
               ...(cellBoundary === null ? {} : { collisionBoundary: cellBoundary }),
               ...(headerClearance === null
                 ? { collisionPadding: { top: 5, right: 5, bottom: 5, left: 5 } }
                 : { collisionPadding: { top: headerClearance, right: 5, bottom: 5, left: 5 } }),
-              sideOffset: DOCKED_PICKER_SIDE_OFFSET_PX - dockLift,
+              sideOffset: 4,
             }
           : {})}
         className="before:hidden"
@@ -520,7 +480,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         touchBackdrop
       >
         {props.effortPanel ? (
-          <div className={DOCKED_PICKER_FRAME_CLASS} data-docked-picker-frame>
+          <div className={DOCKED_PICKER_FRAME_CLASS}>
             {picker}
             {props.showEffortPanel === false ? null : (
               <div

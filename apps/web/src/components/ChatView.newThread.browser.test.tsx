@@ -92,7 +92,7 @@ function composerBoxes() {
 }
 
 it.each([1440, 800])(
-  "centres the new-thread composer with the hero and project card in one group at %ipx",
+  "centres the new-thread composer with the hero and project tray in one group at %ipx",
   async (width) => {
     using _environment = installFakeEnvironment(PROJECT_THREADS);
     await using _viewport = await viewport(width);
@@ -108,22 +108,15 @@ it.each([1440, 800])(
     const groupCentre = (headingBox.top + card.bottom) / 2;
     expect(Math.abs(groupCentre - (pane.top + pane.height / 2))).toBeLessThanOrEqual(24);
 
-    // Hero, project card, composer: one stacked group. The project card sits just over the
-    // composer, whose first row inside its border holds the checkout, PR and branch.
+    // Hero, project card, composer: one stacked group. The project card sits 8px over the
+    // composer's context tray (checkout, PR, branch), which is attached to the composer.
     expect(headingBox.bottom).toBeLessThan(contextBox.top);
-    const contextRow = document.querySelector<HTMLElement>("[data-composer-context-row]")!;
-    const rowBox = contextRow.getBoundingClientRect();
-    expect(document.querySelector("[data-composer-context-tray]")).toBeNull();
-    expect(document.querySelector("[data-chat-composer-main-surface]")!.contains(contextRow)).toBe(
-      true,
-    );
-    expect(rowBox.top - card.top).toBeLessThanOrEqual(2);
-    expect(card.top - contextBox.bottom).toBeGreaterThanOrEqual(0);
-    expect(card.top - contextBox.bottom).toBeLessThanOrEqual(16);
-    // Access lives in the model picker footer, not in the row.
-    expect(contextRow.querySelector('[aria-label^="Permissions:"]')).toBeNull();
+    const contextTray = document.querySelector<HTMLElement>("[data-composer-context-tray]")!;
+    const trayBox = contextTray.getBoundingClientRect();
+    expect(Math.abs(contextBox.bottom + 8 - trayBox.top)).toBeLessThan(2);
+    expect(trayBox.bottom).toBeGreaterThanOrEqual(card.top);
 
-    // The project card matches the composer's width and radius exactly.
+    // The tray matches the composer's width and radius exactly.
     expect(Math.abs(contextBox.width - card.width)).toBeLessThan(1);
     expect(Math.abs(contextBox.left - card.left)).toBeLessThan(1);
     expect(getComputedStyle(context).borderTopLeftRadius).toBe(
@@ -176,10 +169,7 @@ it(
     await using _viewport = await viewport(1440);
     await using _app = await openNewThread();
 
-    const trigger = document.querySelector<HTMLElement>(
-      '[data-chat-provider-model-picker="true"]',
-    )!;
-    trigger.click();
+    document.querySelector<HTMLElement>('[data-chat-provider-model-picker="true"]')!.click();
     const popup = await vi.waitFor(() => {
       const found = document.querySelector<HTMLElement>('[data-slot="popover-positioner"]');
       expect(found).not.toBeNull();
@@ -187,10 +177,6 @@ it(
     });
     const { card, pane } = composerBoxes();
     await expect.poll(() => popup.getBoundingClientRect().top).toBeGreaterThanOrEqual(card.bottom);
-    // Below the trigger itself, so the hero above stays uncovered.
-    expect(popup.getBoundingClientRect().top).toBeGreaterThanOrEqual(
-      trigger.getBoundingClientRect().bottom,
-    );
     expect(popup.getBoundingClientRect().bottom).toBeLessThanOrEqual(pane.bottom + 1);
     expect(popup.getBoundingClientRect().bottom).toBeLessThanOrEqual(window.innerHeight);
   },

@@ -16,9 +16,12 @@ import {
   ENVIRONMENT_ID,
   PROJECT_ID,
   installFakeEnvironment,
+  threadWithHistory,
   type FakeDriver,
 } from "../../../test/fakeEnvironment";
 import { render } from "../../../test/render";
+import { TooltipProvider } from "../ui/tooltip";
+import { ComposerAttachButton } from "./ComposerAttachmentStrip";
 
 // The socket is the only fake layer; see test/appScenarios.renders.tsx.
 vi.mock(
@@ -42,7 +45,6 @@ vi.mock(import("~/rpc/requestLatencyState"), async (original) => ({
 const APP_BOOT_TEST_TIMEOUT_MS = 45_000;
 
 let bootCount = 0;
-let lastDraftId: DraftId | null = null;
 
 async function bootDraftComposer() {
   __setClientSettingsForTests({
@@ -50,13 +52,26 @@ async function bootDraftComposer() {
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
   });
   const draftId = DraftId.make(`draft-anatomy-${++bootCount}`);
-  lastDraftId = draftId;
   useComposerDraftStore
     .getState()
     .setProjectDraftThreadId(scopeProjectRef(ENVIRONMENT_ID, PROJECT_ID), draftId, {
       threadId: ThreadId.make(`thread-anatomy-${bootCount}`),
     });
   const router = getRouter(createMemoryHistory({ initialEntries: [`/draft/${draftId}`] }));
+  await router.load();
+  const app = await render(<AppRoot router={router} />, { router: false });
+  await expect.element(page.getByTestId("composer-editor")).toBeVisible();
+  return app;
+}
+
+async function bootThreadComposer() {
+  __setClientSettingsForTests({
+    ...DEFAULT_CLIENT_SETTINGS,
+    onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+  });
+  const router = getRouter(
+    createMemoryHistory({ initialEntries: [`/${ENVIRONMENT_ID}/anatomy-caret`] }),
+  );
   await router.load();
   const app = await render(<AppRoot router={router} />, { router: false });
   await expect.element(page.getByTestId("composer-editor")).toBeVisible();
@@ -94,15 +109,14 @@ it(
     );
     const cardBox = card.getBoundingClientRect();
 
-    // Wide form: the checkout and branch sit in one context row, the first row inside the card's
-    // border, never in a second band under it and never in the card's own toolbar.
+    // Wide form: the checkout, branch and access controls sit in a tray attached above the card,
+    // never in a second band under it and never in the card's own toolbar.
     expect(document.querySelector('[data-slot="composer-context-strip"]')).toBeNull();
-    expect(document.querySelector("[data-composer-context-tray]")).toBeNull();
-    const row = await vi.waitFor(
+    const tray = await vi.waitFor(
       () => {
-        const found = document.querySelector<HTMLElement>('[data-composer-context-row="true"]');
+        const found = document.querySelector<HTMLElement>('[data-composer-context-tray="true"]');
         if (found?.querySelector("[data-composer-context-control]") == null) {
-          throw new Error("context controls are not in the composer row yet");
+          throw new Error("context controls are not in the composer tray yet");
         }
         return found;
       },
@@ -111,21 +125,17 @@ it(
     const footer = document.querySelector<HTMLElement>('[data-chat-composer-footer="true"]')!;
     expect(footer.querySelector("[data-composer-context-control]")).toBeNull();
     expect(footer.querySelector('[aria-label^="Workspace:"]')).toBeNull();
-    const rowBox = row.getBoundingClientRect();
-    const cardWithRow = card.getBoundingClientRect();
-    // Inside the card's border, flush with its top, spanning its width, closed by a 1px divider.
-    expect(card.contains(row)).toBe(true);
-    expect(rowBox.top - cardWithRow.top).toBeLessThanOrEqual(2);
-    expect(rowBox.left - cardWithRow.left).toBeLessThanOrEqual(2);
-    expect(cardWithRow.right - rowBox.right).toBeLessThanOrEqual(2);
-    expect(getComputedStyle(row).borderBottomWidth).toBe("1px");
-    expect(getComputedStyle(row).backgroundColor).toBe("rgba(0, 0, 0, 0)");
-    expect(getComputedStyle(row).flexWrap).not.toBe("wrap");
-    // Nothing is pending, so the row has no changes summary, and access is not repeated here.
-    expect(row.querySelector("[data-changed-files-bar]")).toBeNull();
-    expect(row.querySelector('[aria-label^="Permissions:"]')).toBeNull();
-    for (const control of row.querySelectorAll<HTMLElement>("[data-composer-context-control]")) {
-      expect(control.getBoundingClientRect().right).toBeLessThanOrEqual(rowBox.right + 1);
+    const trayBox = tray.getBoundingClientRect();
+    const cardWithTray = card.getBoundingClientRect();
+    // Inset from the card on both sides, sitting on top of it.
+    expect(trayBox.left - cardWithTray.left).toBeGreaterThanOrEqual(8);
+    expect(cardWithTray.right - trayBox.right).toBeGreaterThanOrEqual(8);
+    expect(trayBox.top).toBeLessThan(cardWithTray.top);
+    expect(trayBox.bottom).toBeLessThanOrEqual(cardWithTray.top + 12);
+    expect(getComputedStyle(tray).borderBottomWidth).toBe("0px");
+    expect(getComputedStyle(tray).flexWrap).not.toBe("wrap");
+    for (const control of tray.querySelectorAll<HTMLElement>("[data-composer-context-control]")) {
+      expect(control.getBoundingClientRect().right).toBeLessThanOrEqual(trayBox.right + 1);
     }
     expect(footer.getBoundingClientRect().top).toBeLessThan(cardBox.bottom);
     expect(card.contains(footer)).toBe(true);
@@ -143,9 +153,9 @@ it(
     expect(
       editorBox.left + parseFloat(editorStyle.paddingLeft) - cardBox.left,
     ).toBeGreaterThanOrEqual(16);
-    expect(
-      editorBox.top + parseFloat(editorStyle.paddingTop) - rowBox.bottom,
-    ).toBeGreaterThanOrEqual(10);
+    expect(editorBox.top + parseFloat(editorStyle.paddingTop) - cardBox.top).toBeGreaterThanOrEqual(
+      10,
+    );
     expect(editorBox.height).toBeLessThanOrEqual(40);
 
     // The details card opens only from its toggle or shortcut.
@@ -214,18 +224,10 @@ it(
 
       // The empty composer rests at one input line plus the 40px toolbar, grows while typing and
       // shrinks back when the text is gone.
-      const contextRowHeight =
-        document
-          .querySelector<HTMLElement>('[data-composer-context-row="true"]')
-          ?.getBoundingClientRect().height ?? 0;
       const restingHeight = surface.getBoundingClientRect().height;
-      const inputRowHeight =
-        restingHeight - footer.getBoundingClientRect().height - contextRowHeight;
+      const inputRowHeight = restingHeight - footer.getBoundingClientRect().height;
       expect(inputRowHeight, `resting input row height at ${width}px`).toBeLessThanOrEqual(64);
-      expect(
-        restingHeight - contextRowHeight,
-        `resting composer height at ${width}px`,
-      ).toBeLessThanOrEqual(80);
+      expect(restingHeight, `resting composer height at ${width}px`).toBeLessThanOrEqual(80);
       await userEvent.click(page.getByTestId("composer-editor"));
       await userEvent.keyboard("one{Shift>}{Enter}{/Shift}two{Shift>}{Enter}{/Shift}three");
       await userEvent.keyboard("{Shift>}{Enter}{/Shift}four{Shift>}{Enter}{/Shift}five");
@@ -241,15 +243,15 @@ it(
       const contextControls = [
         ...footer.querySelectorAll<HTMLElement>("[data-composer-context-control]"),
       ];
-      const rowNow = document.querySelector<HTMLElement>('[data-composer-context-row="true"]');
+      const trayNow = document.querySelector<HTMLElement>('[data-composer-context-tray="true"]');
       if (width >= 520) {
-        // Wide form: the row holds the context; the body has no workspace chip.
-        expect(rowNow).not.toBeNull();
+        // Wide form: the tray holds the context; the body has no workspace chip.
+        expect(trayNow).not.toBeNull();
         expect(contextControls).toHaveLength(0);
-        expect(rowNow!.querySelector("[data-composer-context-control]")).not.toBeNull();
+        expect(trayNow!.querySelector("[data-composer-context-control]")).not.toBeNull();
       } else {
-        // Compact form: no row; one workspace chip folds checkout and branch.
-        expect(rowNow).toBeNull();
+        // Compact form: no tray; one workspace chip folds checkout, branch and access.
+        expect(trayNow).toBeNull();
         expect(contextControls.length).toBeLessThanOrEqual(2);
       }
 
@@ -292,14 +294,6 @@ it(
           .map((part) => part.trim())
           .filter(Boolean);
         expect(new Set(segments).size).toBe(segments.length);
-        // The chip is as wide as its content: no gap between its children beyond 6px.
-        const parts = [...workspaceChip.children].map((child) => child.getBoundingClientRect());
-        for (const [index, part] of parts.slice(1).entries()) {
-          expect(
-            part.left - parts[index]!.right,
-            `chip gap ${index} at ${width}px`,
-          ).toBeLessThanOrEqual(6);
-        }
       }
       // No control overlaps another.
       for (const [index, first] of toolbarControls.entries()) {
@@ -326,7 +320,7 @@ it(
       expect(sendRight.left).toBeGreaterThanOrEqual(surfaceBox.left);
 
       if (width < 520) {
-        // The folded workspace chip keeps checkout and branch reachable.
+        // The folded workspace chip keeps checkout, branch and access reachable.
         const chip = footer.querySelector<HTMLElement>('[aria-label^="Workspace:"]')!;
         expect(chip).not.toBeNull();
         await userEvent.click(chip);
@@ -335,7 +329,7 @@ it(
           expect(found).not.toBeNull();
           return found!;
         });
-        expect(panel.querySelectorAll("[data-composer-context-control]").length).toBeGreaterThan(0);
+        expect(panel.querySelectorAll("[data-composer-context-control]").length).toBeGreaterThan(1);
         await userEvent.keyboard("{Escape}");
         await vi.waitFor(() =>
           expect(document.querySelector('[data-slot="popover-popup"]')).toBeNull(),
@@ -346,8 +340,92 @@ it(
   APP_BOOT_TEST_TIMEOUT_MS,
 );
 
+it.each(["draft", "thread"] as const)(
+  "keeps the caret line and the last line fully visible above the controls row while a long draft with headings grows in a %s composer",
+  async (scene) => {
+    const previousViewport = { width: window.innerWidth, height: window.innerHeight };
+    await page.viewport(1440, 900);
+    await using _viewport = {
+      [Symbol.asyncDispose]: () => page.viewport(previousViewport.width, previousViewport.height),
+    };
+    using _environment = installFakeEnvironment(
+      scene === "thread" ? [threadWithHistory("anatomy-caret", 2)] : [],
+    );
+    await using _app = scene === "thread" ? await bootThreadComposer() : await bootDraftComposer();
+
+    // The editor and footer are read live: the composer may remount while the app settles.
+    const editorNode = () =>
+      document.querySelector<HTMLElement>('[data-testid="composer-editor"]')!;
+    const footerNode = () =>
+      document.querySelector<HTMLElement>('[data-chat-composer-footer="true"]')!;
+    await vi.waitFor(
+      async () => {
+        await userEvent.click(page.getByTestId("composer-editor"));
+        expect(editorNode().contains(document.activeElement)).toBe(true);
+      },
+      { timeout: 10_000 },
+    );
+    // Headings are taller than a body line, so the draft's height is not a whole number of lines.
+    const lines = Array.from({ length: 14 }, (_, index) => `line ${index + 1}`);
+    const SB = "{Shift>}{Enter}{/Shift}";
+    await userEvent.keyboard(
+      [
+        ...lines.slice(0, 6),
+        "## First heading",
+        ...lines.slice(6, 12),
+        "## Second heading",
+        ...lines.slice(12, 14),
+      ].join(SB),
+    );
+
+    // The draft outgrew the editor, so it scrolls.
+    await vi.waitFor(() => expect(editorNode().textContent).toContain("line 14"));
+    await vi.waitFor(() =>
+      expect(editorNode().scrollHeight).toBeGreaterThan(editorNode().clientHeight + 1),
+    );
+
+    const caretLine = () => {
+      const selection = window.getSelection();
+      const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+      const rects = range ? [...range.getClientRects()] : [];
+      const rect = rects.at(-1) ?? range?.getBoundingClientRect();
+      if (rect && rect.height > 0) return rect;
+      return editorNode().lastElementChild!.getBoundingClientRect();
+    };
+    const expectCaretInsideVisibleArea = () => {
+      const caret = caretLine();
+      const editorBox = editorNode().getBoundingClientRect();
+      const footerBox = footerNode().getBoundingClientRect();
+      expect(caret.bottom, "caret line sits above the editor's bottom edge").toBeLessThanOrEqual(
+        editorBox.bottom + 0.5,
+      );
+      expect(caret.top, "caret line sits below the editor's top edge").toBeGreaterThanOrEqual(
+        editorBox.top - 0.5,
+      );
+      expect(caret.bottom, "caret line sits above the controls row").toBeLessThanOrEqual(
+        footerBox.top + 0.5,
+      );
+    };
+
+    // Typing at the end: the caret line is the last line, whole.
+    await vi.waitFor(expectCaretInsideVisibleArea);
+    editorNode().scrollTop = editorNode().scrollHeight;
+    await vi.waitFor(expectCaretInsideVisibleArea);
+
+    // The last line is whole: its box ends above the controls row and inside the editor.
+    const lastLine = editorNode().lastElementChild!.getBoundingClientRect();
+    expect(lastLine.bottom).toBeLessThanOrEqual(footerNode().getBoundingClientRect().top + 0.5);
+    expect(lastLine.bottom).toBeLessThanOrEqual(editorNode().getBoundingClientRect().bottom + 0.5);
+
+    // Typing more lines keeps following the caret.
+    await userEvent.keyboard("{Shift>}{Enter}{/Shift}one more{Shift>}{Enter}{/Shift}and another");
+    await vi.waitFor(expectCaretInsideVisibleArea);
+  },
+  APP_BOOT_TEST_TIMEOUT_MS,
+);
+
 // Compact toolbar at grid-6 (370px pane), grid-5 small pane (340px) and narrower: each chip shows
-// its whole label or only its icon, access has no icon in the toolbar, and nothing overlaps.
+// its whole label or only its icon, and nothing overlaps.
 it.each([342, 312, 280, 240])(
   "folds the compact toolbar's chips to whole labels or icons in a %ipx composer",
   async (width) => {
@@ -358,8 +436,6 @@ it.each([342, 312, 280, 240])(
     };
     using _environment = installFakeEnvironment([]);
     await using _app = await bootDraftComposer();
-    // A mode other than the default is the case that used to draw a bare lock.
-    useComposerDraftStore.getState().setRuntimeMode(lastDraftId!, "approval-required");
 
     const form = await vi.waitFor(
       () => {
@@ -392,11 +468,6 @@ it.each([342, 312, 280, 240])(
     await vi.waitFor(() =>
       expect(controls.scrollWidth).toBeLessThanOrEqual(controls.clientWidth + 1),
     );
-
-    // No bare lock or access chip in the toolbar; the mode is named in the model chip instead.
-    expect(footer.querySelector('[aria-label^="Permissions:"]')).toBeNull();
-    expect(footer.querySelector(".lucide-lock")).toBeNull();
-    expect(modelChip.getAttribute("aria-label")).toContain("Supervised");
 
     const isVisibleText = (node: HTMLElement) => {
       const box = node.getBoundingClientRect();
@@ -452,3 +523,15 @@ it.each([342, 312, 280, 240])(
   },
   APP_BOOT_TEST_TIMEOUT_MS,
 );
+
+it("labels the attach button 'Attach files' and draws it as a paperclip", async () => {
+  await using _screen = await render(
+    <TooltipProvider delay={0}>
+      <ComposerAttachButton addComposerAttachments={async () => true} focusComposer={() => {}} />
+    </TooltipProvider>,
+    { router: false },
+  );
+  const button = page.getByRole("button", { name: "Attach files" }).element();
+  expect(button.querySelector("svg.lucide-paperclip")).not.toBeNull();
+  expect(button.querySelector("svg.lucide-plus")).toBeNull();
+});

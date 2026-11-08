@@ -6,7 +6,7 @@ import {
 } from "@houston-app/client-runtime/model-traits";
 import type { ProviderOptionDescriptor, RuntimeMode } from "@houston-app/contracts";
 import type { EffortDisplay } from "@houston-app/contracts/settings";
-import { ChevronRightIcon, WorkflowIcon } from "lucide-react";
+import { ChevronUpIcon, WorkflowIcon } from "lucide-react";
 import { type KeyboardEvent, type ReactNode, useRef } from "react";
 
 import { cn } from "~/lib/utils";
@@ -155,20 +155,7 @@ const CHIP =
   "flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-md px-2 text-left text-(--t2) text-xs outline-none hover:bg-(--sel) hover:text-(--t1) focus-visible:bg-(--sel) focus-visible:text-(--t1) aria-checked:bg-(--sel) aria-checked:font-medium aria-checked:text-(--t1) disabled:cursor-not-allowed disabled:opacity-64";
 const GROUP_LABEL = "w-14 shrink-0 pt-1.5 text-(--houston) text-2xs";
 
-/**
- * The choices sit in one row that scrolls sideways, so a model with many levels never grows the
- * panel; the checked choice is scrolled into view when the row mounts.
- */
-const OPTION_ROW_CLS =
-  "flex flex-nowrap gap-0.5 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
-
-function scrollCheckedIntoView(row: HTMLElement | null) {
-  const checked = row?.querySelector<HTMLElement>('[aria-checked="true"]');
-  if (!row || !checked) return;
-  row.scrollLeft = checked.offsetLeft + checked.offsetWidth - row.clientWidth;
-}
-
-/** One labelled row of options: the label on the left, the choices in a scrolling row beside it. */
+/** One labelled row of options: the label on the left, the choices wrapping beside it. */
 function OptionGroup(props: { label: string; children: ReactNode; note?: ReactNode }) {
   return (
     <div role="radiogroup" aria-label={props.label} className="flex items-start gap-1">
@@ -177,9 +164,7 @@ function OptionGroup(props: { label: string; children: ReactNode; note?: ReactNo
       </span>
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         {props.note}
-        <div ref={scrollCheckedIntoView} className={OPTION_ROW_CLS}>
-          {props.children}
-        </div>
+        <div className="flex flex-wrap gap-0.5">{props.children}</div>
       </div>
     </div>
   );
@@ -395,11 +380,6 @@ export function ComposerEffortPanel(props: { traits: TraitsSelectionInput | null
   );
 }
 
-/** The docked picker's frame, which the permissions submenu opens beside. */
-function pickerFrameOf(trigger: HTMLElement | null): HTMLElement | null {
-  return trigger?.closest<HTMLElement>("[data-docked-picker-frame]") ?? null;
-}
-
 const FOOTER_SEGMENT =
   "flex h-6 cursor-pointer items-center justify-center gap-1 px-2 text-muted-foreground text-xs outline-none first:rounded-l-md last:rounded-r-md hover:text-foreground data-checked:bg-input/72 data-checked:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
@@ -457,16 +437,9 @@ function PermissionsMenu(props: {
       >
         <CurrentIcon aria-hidden="true" className="size-3.5" />
         {current.label}
-        <ChevronRightIcon aria-hidden="true" className="size-3" />
+        <ChevronUpIcon aria-hidden="true" className="size-3" />
       </MenuTrigger>
-      {/* Beside the picker (the right, or the left without room), so it never covers the list or the search field. */}
-      <MenuPopup
-        side="right"
-        align="end"
-        sideOffset={6}
-        anchor={() => pickerFrameOf(triggerRef.current) ?? triggerRef.current}
-        {...composerFloatingLayerProps}
-      >
+      <MenuPopup side="top" align="end" {...composerFloatingLayerProps}>
         <ComposerPermissionsSection
           runtimeMode={props.runtimeMode}
           runtimeModeOptions={props.options}
@@ -477,21 +450,29 @@ function PermissionsMenu(props: {
   );
 }
 
-/** The model picker's footer holds Permissions where no other control on screen does. */
+/**
+ * The model picker's footer holds Ultracode and, where no other control on screen does,
+ * Permissions. With neither it renders nothing.
+ */
 export function ComposerPickerFooter(props: {
   traits?: TraitsSelectionInput | null;
-  runtimeMode: RuntimeMode;
-  runtimeModeOptions: ReadonlyArray<RuntimeModeOption>;
-  onRuntimeModeChange: (mode: RuntimeMode) => void;
+  permissions?: {
+    runtimeMode: RuntimeMode;
+    runtimeModeOptions: ReadonlyArray<RuntimeModeOption>;
+    onRuntimeModeChange: (mode: RuntimeMode) => void;
+  };
 }) {
+  const { permissions } = props;
   return (
-    <div className="flex flex-wrap items-center gap-2 border-t border-border bg-(--field) px-2 py-1">
+    <div className="flex flex-wrap items-center gap-2 border-t border-border bg-(--field) px-2 py-1 empty:hidden">
       {props.traits ? <UltracodeControl traits={props.traits} /> : null}
-      <PermissionsMenu
-        runtimeMode={props.runtimeMode}
-        options={props.runtimeModeOptions}
-        onChange={props.onRuntimeModeChange}
-      />
+      {permissions ? (
+        <PermissionsMenu
+          runtimeMode={permissions.runtimeMode}
+          options={permissions.runtimeModeOptions}
+          onChange={permissions.onRuntimeModeChange}
+        />
+      ) : null}
     </div>
   );
 }
