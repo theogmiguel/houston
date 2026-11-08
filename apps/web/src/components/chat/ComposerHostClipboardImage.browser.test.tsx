@@ -213,6 +213,11 @@ it(
     using _environment = installFakeEnvironment([]);
     using _uploads = advertiseFileUploads();
     await using _app = await bootDraftComposer();
+    // The upload capability arrives with the environment descriptor after boot; the attach
+    // button shows once the composer knows it can stage files.
+    await vi.waitFor(() =>
+      expect(document.querySelector('button[aria-label="Attach files"]')).not.toBeNull(),
+    );
     const readDroppedPath = vi.fn(() =>
       Promise.resolve({ name: "id_ed25519", directory: false, base64: btoa("key") }),
     );
@@ -246,9 +251,7 @@ it(
       if (previous === undefined) delete window.hostBridge;
       else window.hostBridge = previous;
     }
-    // Reading the path and building the tile runs after the dialog closes; on a loaded CI runner
-    // that takes longer than the default 1s wait.
-    await vi.waitFor(() => expect(tiles()).toHaveLength(1), { timeout: 5_000 });
+    await vi.waitFor(() => expect(tiles()).toHaveLength(1));
     expect(readDroppedPath).toHaveBeenCalledWith("/home/someone/.ssh/id_ed25519");
   },
   APP_BOOT_TEST_TIMEOUT_MS,
