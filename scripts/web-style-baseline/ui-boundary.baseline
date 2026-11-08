@@ -116,7 +116,7 @@
 17 apps/web/src/components/chat/TimelineRowParts.tsx
 17 apps/web/src/components/chat/TimelineSystemDivider.tsx
 4 apps/web/src/components/chat/TimelineToolActivityIcon.tsx
-107 apps/web/src/components/chat/TimelineUserMessageRow.tsx
+106 apps/web/src/components/chat/TimelineUserMessageRow.tsx
 6 apps/web/src/components/chat/TimelineV2EventRow.tsx
 45 apps/web/src/components/chat/TimelineWorkEntryRow.tsx
 24 apps/web/src/components/chat/TimelineWorkGroupRows.tsx

@@ -34,6 +34,7 @@ import { Button, InlineButton } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { ComposerBannerStackItem } from "./ComposerBannerStack";
 import type { ThreadNowItem } from "./ThreadNow";
+import { THREAD_NOW_DETAIL_ACTIVITY_CLS } from "../ui/thread-now-recipes";
 
 export function extensionStatusBannerItem(
   statuses: NonNullable<OrchestrationV2ProviderSession["extensionStatuses"]>,
@@ -223,7 +224,7 @@ export function backgroundWorkNowItem(input: {
             <span key={row.task.taskId} className={cn(isCommand(row) && "font-mono")}>
               {row.task.label}
               {row.activity ? (
-                <span className="font-sans text-muted-foreground"> · {row.activity}</span>
+                <span className={THREAD_NOW_DETAIL_ACTIVITY_CLS}> · {row.activity}</span>
               ) : null}
             </span>
           )),
