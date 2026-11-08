@@ -73,7 +73,6 @@
 61 apps/web/src/components/chat/MessagesTimeline.tsx
 19 apps/web/src/components/chat/ModelListRow.tsx
 29 apps/web/src/components/chat/ModelPickerContent.tsx
-15 apps/web/src/components/chat/ModelPickerSidebar.tsx
 1 apps/web/src/components/chat/OpenInPicker.tsx
 5 apps/web/src/components/chat/PanelLayoutControls.tsx
 2 apps/web/src/components/chat/PierreEntryIcon.tsx

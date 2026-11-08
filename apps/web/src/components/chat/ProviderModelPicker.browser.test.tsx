@@ -187,11 +187,11 @@ it("sizes the model menu to its rows instead of a fixed height", async () => {
 
   await page.getByRole("button", { name: /Opus 5\.5/ }).click();
   const content = () => document.querySelector<HTMLElement>('[data-model-picker-content="true"]');
-  // One model: one row of the list plus the search and provider rows, well under eight rows.
+  // One model: the search field and one row beside the provider column, well under eight rows.
   await expect
     .poll(() => content()?.getBoundingClientRect().height ?? 0)
     .toBeLessThan(8 * 34 + 120);
-  await expect.poll(() => content()?.getBoundingClientRect().height ?? 0).toBeGreaterThan(100);
+  await expect.poll(() => content()?.getBoundingClientRect().height ?? 0).toBeGreaterThan(60);
 });
 
 it("docks an effort panel under the list and stays open after a model pick", async () => {
@@ -365,36 +365,18 @@ describe("the docked popup's shape", () => {
   const rect = (selector: string) =>
     document.querySelector<HTMLElement>(selector)!.getBoundingClientRect();
 
-  it("is one 300px list over the effort panel, not a three-pane popover", async () => {
+  it("is one 428px frame with the list over the effort panel", async () => {
     await using _screen = await openDocked();
 
     const frame = () =>
       document.querySelector<HTMLElement>('[data-model-picker-content="true"]')!.parentElement!;
-    await expect.poll(() => Math.round(frame().getBoundingClientRect().width)).toBe(300);
+    await expect.poll(() => Math.round(frame().getBoundingClientRect().width)).toBe(428);
     const list = rect('[data-model-picker-content="true"]');
     const panel = rect("[data-model-picker-effort]");
     expect(panel.top).toBeGreaterThanOrEqual(list.bottom - 1);
     // Both fill the frame inside its 1px border.
-    expect(Math.round(list.width)).toBe(298);
-    expect(Math.round(panel.width)).toBe(298);
-    expect(rect('[data-slot="popover-positioner"]').height).toBeLessThan(320);
-  });
-
-  it("puts the providers in one horizontal row under the search field", async () => {
-    await using _screen = await openDocked();
-
-    const sidebar = rect("[data-model-picker-sidebar]");
-    expect(Math.round(sidebar.height)).toBeLessThan(48);
-    expect(Math.round(sidebar.width)).toBeGreaterThan(200);
-    // The segments share one row.
-    const favorites = page.getByRole("button", { name: "Favorites" }).element();
-    const claude = page.getByRole("button", { name: "Claude" }).element();
-    expect(Math.round(favorites.getBoundingClientRect().top)).toBe(
-      Math.round(claude.getBoundingClientRect().top),
-    );
-    // And they sit below the search field.
-    const search = document.querySelector<HTMLInputElement>("[data-model-picker-content] input")!;
-    expect(sidebar.top).toBeGreaterThanOrEqual(search.getBoundingClientRect().bottom);
+    expect(Math.round(list.width)).toBe(426);
+    expect(Math.round(panel.width)).toBe(426);
   });
 
   it("has no footer when the strip holds the permissions", async () => {
@@ -537,6 +519,84 @@ describe("docked popup and the composer context row", () => {
       );
     },
   );
+
+  it("opens under the card on the new-thread page even when the list must scroll", async () => {
+    await page.viewport(1440, 900);
+    await using _screen = await render(
+      <TooltipProvider delay={0}>
+        <div data-chat-column="" data-draft-hero="">
+          <form
+            data-chat-composer-form="true"
+            style={{ width: 760, marginLeft: 20, paddingTop: 620 }}
+          >
+            <div data-inline-resting-controls="true" className="rounded-xl border border-border">
+              <ProviderModelPicker
+                environmentId={null}
+                activeInstanceId={CLAUDE}
+                model="opus"
+                lockedProvider={null}
+                instanceEntries={entries}
+                keybindings={compileResolvedKeybindingsConfig([])}
+                modelOptionsByInstance={new Map([[CLAUDE, provider.models]])}
+                isComposerOwned
+                effortPanel={<ComposerEffortPanel traits={null} />}
+                onInstanceModelChange={() => {}}
+              />
+            </div>
+          </form>
+        </div>
+      </TooltipProvider>,
+      { router: false },
+    );
+    await page.getByRole("button", { name: /Opus 5\.5/ }).click();
+    await expect
+      .poll(() => {
+        const card = document.querySelector<HTMLElement>('[data-inline-resting-controls="true"]')!;
+        const popup = document.querySelector<HTMLElement>('[data-slot="popover-positioner"]');
+        return (
+          popup !== null && popup.getBoundingClientRect().top >= card.getBoundingClientRect().bottom
+        );
+      })
+      .toBe(true);
+  });
+
+  it("puts the providers in a column beside the models", async () => {
+    await page.viewport(1440, 900);
+    await using _screen = await render(
+      <TooltipProvider delay={0}>
+        <form
+          data-chat-composer-form="true"
+          style={{ width: 760, marginLeft: 20, paddingTop: 500 }}
+        >
+          <div data-inline-resting-controls="true" className="rounded-xl border border-border">
+            <ProviderModelPicker
+              environmentId={null}
+              activeInstanceId={CLAUDE}
+              model="opus"
+              lockedProvider={null}
+              instanceEntries={entries}
+              keybindings={compileResolvedKeybindingsConfig([])}
+              modelOptionsByInstance={new Map([[CLAUDE, provider.models]])}
+              isComposerOwned
+              effortPanel={<ComposerEffortPanel traits={null} />}
+              onInstanceModelChange={() => {}}
+            />
+          </div>
+        </form>
+      </TooltipProvider>,
+      { router: false },
+    );
+    await page.getByRole("button", { name: /Opus 5\.5/ }).click();
+    await expect
+      .poll(() => document.querySelector("[data-model-picker-content]") !== null)
+      .toBe(true);
+    const content = document.querySelector<HTMLElement>("[data-model-picker-content]")!;
+    const search = content.querySelector<HTMLElement>("input")!;
+    const sidebar = content.querySelector<HTMLElement>("[data-model-picker-sidebar]")!;
+    expect(sidebar.getBoundingClientRect().right).toBeLessThanOrEqual(
+      search.getBoundingClientRect().left,
+    );
+  });
 
   it("never extends above the header of its column", async () => {
     await page.viewport(1440, 900);

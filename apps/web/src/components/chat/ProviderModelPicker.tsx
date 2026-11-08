@@ -104,12 +104,6 @@ const DOCKED_PICKER_FULL_HEIGHT_PX = 304;
 /** The gap and collision padding the positioner keeps around the popup. */
 const DOCKED_PICKER_EDGE_ROOM_PX = 9;
 
-/**
- * How much of the model list the new-thread page lets the popup give up to stay under the
- * composer; the list scrolls inside for the clipped rows. Past this the popup opens above.
- */
-const DRAFT_HERO_MAX_LIST_SHRINK_PX = 48;
-
 export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   environmentId: EnvironmentId | null;
   activeInstanceId: ProviderInstanceId;
@@ -169,6 +163,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   const docked = props.effortPanel !== undefined;
   const [headerClearance, setHeaderClearance] = useState<number | null>(null);
   const [dockSide, setDockSide] = useState<"top" | "bottom">("bottom");
+  // The new-thread page pins the popup under the card; the positioner must not flip it.
+  const [dockPinned, setDockPinned] = useState(false);
   // A picker opened inside a grid cell lives in that cell: it opens toward the roomier side and
   // never spills past the cell's edges.
   const [cellBoundary, setCellBoundary] = useState<HTMLElement | null>(null);
@@ -193,19 +189,18 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     const roomAbove = cardRect.top - topLimit;
     const roomBelow = bottomLimit - cardRect.bottom;
     const inDraftHero = card.closest("[data-draft-hero]") !== null;
+    setDockPinned(inDraftHero);
     const needed =
       (popupRef.current?.scrollHeight ?? DOCKED_PICKER_FULL_HEIGHT_PX) + DOCKED_PICKER_EDGE_ROOM_PX;
     const fitsBelow = roomBelow >= needed;
     const fitsAbove = roomAbove >= needed;
-    // The new-thread page keeps the popup under the card unless that would clip more than a few
-    // rows. Elsewhere the side where the whole popup fits wins; with both or neither, the roomier
-    // side does, and the popup's own height cap applies.
-    const opensDownward =
-      inDraftHero && needed - roomBelow <= DRAFT_HERO_MAX_LIST_SHRINK_PX
-        ? true
-        : fitsBelow !== fitsAbove
-          ? fitsBelow
-          : roomAbove <= roomBelow;
+    // The new-thread page always opens under the card; the list scrolls inside the height cap.
+    // Elsewhere the side where the whole popup fits wins; with both or neither, the roomier one.
+    const opensDownward = inDraftHero
+      ? true
+      : fitsBelow !== fitsAbove
+        ? fitsBelow
+        : roomAbove <= roomBelow;
     setDockSide(opensDownward ? "bottom" : "top");
   }, [docked, isMenuOpen]);
 
@@ -468,6 +463,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
               anchor: () => composerCardOf(triggerRef.current) ?? triggerRef.current,
               // The side with more room; a tie opens downward.
               side: dockSide,
+              ...(dockPinned ? { collisionAvoidance: { side: "none" } as const } : {}),
               ...(cellBoundary === null ? {} : { collisionBoundary: cellBoundary }),
               ...(headerClearance === null
                 ? { collisionPadding: { top: 5, right: 5, bottom: 5, left: 5 } }

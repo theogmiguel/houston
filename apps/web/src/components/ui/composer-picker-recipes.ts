@@ -6,7 +6,7 @@ export const MODEL_TRIGGER_GROUP_CLASS = "group/model-trigger";
  * the same two-part stack, so it only narrows.
  */
 export const DOCKED_PICKER_FRAME_CLASS =
-  "flex max-h-(--available-height) w-75 max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-lg border border-border bg-(--raised)";
+  "flex max-h-(--available-height) w-[26.75rem] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-lg border border-border bg-(--raised)";
 
 /**
  * The effort panel under the model list, with the rule that separates them. Its height has a
