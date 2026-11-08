@@ -133,11 +133,11 @@ describe("CommandPalette list edge", () => {
       });
   });
 
-  async function openPalette(height: number) {
+  async function openPalette(height: number, query?: string) {
     useCommandPaletteStore.setState(useCommandPaletteStore.getInitialState(), true);
     await page.viewport(1440, height);
     const screen = await render(<CommandPalette>{null}</CommandPalette>);
-    openCommandPalette({});
+    openCommandPalette(query === undefined ? {} : { query });
     await expect
       .element(page.getByPlaceholder("Search commands, projects, and threads..."))
       .toBeVisible();
@@ -158,10 +158,12 @@ describe("CommandPalette list edge", () => {
   }
 
   it("leaves the last row undimmed when the whole list fits", async () => {
-    await using _screen = await openPalette(1600);
+    // The default action list is taller than the 420px dialog at any window height; a query
+    // narrows it to a list that fits.
+    await using _screen = await openPalette(1600, "settings");
     await expect.poll(() => scroller() !== undefined).toBe(true);
     const list = scroller()!;
-    expect(list.scrollHeight - list.clientHeight).toBeLessThanOrEqual(1);
+    await expect.poll(() => list.scrollHeight - list.clientHeight).toBeLessThanOrEqual(1);
     expect(getComputedStyle(list).maskImage).toBe("none");
     expect(gapToFooter()).toBeGreaterThanOrEqual(8);
   });
