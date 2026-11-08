@@ -7,6 +7,9 @@
 /** 12px between work rows, the answer and its cards within a turn. */
 export const IN_TURN_GAP_CLASS = "pb-3";
 
+/** The in-turn gap, for a row that opens a block below a row that leaves less (a footer line). */
+export const IN_TURN_GAP_ABOVE_CLASS = "pt-3";
+
 /** 32px between the end of one turn and the next user message. */
 export const TURN_GAP_CLASS = "pb-8";
 
