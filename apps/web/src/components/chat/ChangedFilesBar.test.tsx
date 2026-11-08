@@ -16,11 +16,42 @@ describe("ChangedFilesBar", () => {
     const html = renderToStaticMarkup(
       <ChangedFilesBar summary={summary} onReview={() => {}} onUndo={() => {}} onKeep={() => {}} />,
     );
-    expect(html).toContain("3 files changed");
+    expect(html).toContain("3 files");
     expect(html).toContain("+7");
     expect(html).toContain("-2");
     expect(html).toContain("Undo all");
     expect(html).toContain("Keep all");
+    expect(html).toContain("Review");
+  });
+
+  it("keeps Review usable while the bulk actions are blocked", () => {
+    const html = renderToStaticMarkup(
+      <ChangedFilesBar
+        summary={summary}
+        onReview={() => {}}
+        onUndo={() => {}}
+        onKeep={() => {}}
+        disabled
+      />,
+    );
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>Undo all<\/button>/);
+    expect(html).not.toMatch(/\sdisabled=""[^>]*>Review<\/button>/);
+  });
+
+  it("drops the word and the deletions when compact, moving the bulk actions to a menu", () => {
+    const html = renderToStaticMarkup(
+      <ChangedFilesBar
+        summary={summary}
+        onReview={() => {}}
+        onUndo={() => {}}
+        onKeep={() => {}}
+        compact
+      />,
+    );
+    expect(html).not.toContain(">3 files<");
+    expect(html).toContain(">3<");
+    expect(html).not.toContain("Undo all");
+    expect(html).toContain("More change actions");
     expect(html).toContain("Review");
   });
 

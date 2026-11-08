@@ -1,8 +1,10 @@
-import { expect, it } from "vite-plus/test";
+import { expect, it, vi } from "vite-plus/test";
 
 import "~/index.css";
 import { render } from "../../../test/render";
-import { ChangedFilesBar } from "./ChangedFilesBar";
+import { useState } from "react";
+
+import { ChangedFilesBar, ChangedFilesList } from "./ChangedFilesBar";
 
 const summary = {
   files: [{ path: "src/a.ts", kind: "modified", additions: 4, deletions: 1 }],
@@ -26,4 +28,32 @@ it("fills only Review; Undo all and Keep all stay transparent", async () => {
   expect(button("Review").getBoundingClientRect().height).toBe(
     button("Undo all").getBoundingClientRect().height,
   );
+});
+
+function Expandable() {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div>
+      {expanded ? <ChangedFilesList summary={summary} onReview={() => {}} /> : null}
+      <ChangedFilesBar
+        summary={summary}
+        onReview={() => {}}
+        expanded={expanded}
+        onExpandedChange={setExpanded}
+      />
+    </div>
+  );
+}
+
+it("the count toggles the file list, one row per file with its own totals", async () => {
+  const host = document.createElement("div");
+  await using _screen = await render(<Expandable />, { container: host });
+  expect(host.querySelector("[data-changed-files-list]")).toBeNull();
+  const toggle = host.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
+  toggle.click();
+  await vi.waitFor(() => expect(host.querySelector("[data-changed-files-list]")).not.toBeNull());
+  const rows = host.querySelectorAll("[data-changed-files-list] li");
+  expect(rows).toHaveLength(1);
+  expect(rows[0]!.textContent).toContain("a.ts");
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
 });

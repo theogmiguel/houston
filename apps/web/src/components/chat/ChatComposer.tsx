@@ -305,7 +305,12 @@ import {
 } from "./preparingComposerImages";
 import { ComposerControlsBar } from "./ComposerControlsBar";
 import { useCompactChipTier } from "./useCompactChipTier";
-import { CONTEXT_TRAY_CLS } from "../ui/composer-anatomy-recipes";
+import {
+  CONTEXT_TRAY_CLS,
+  CONTEXT_TRAY_CONTEXT_CLS,
+  CONTEXT_TRAY_ROW_CLS,
+} from "../ui/composer-anatomy-recipes";
+import { ChangedFilesBar, ChangedFilesList, type ChangedFilesBarProps } from "./ChangedFilesBar";
 import { composerCommandKeyHandler } from "./composerCommandKey";
 
 function consumePasteAsTextShortcut(deadline: { current: number }): boolean {
@@ -411,6 +416,11 @@ export interface ChatComposerProps {
    * The workspace, branch and access chips, rendered in the composer toolbar. The composer
    * tells them when its own width is narrow enough to collapse them.
    */
+  /** The turn's pending changes, shown on the right of the tab above the composer. */
+  changedFiles?: Pick<
+    ChangedFilesBarProps,
+    "summary" | "onReview" | "onUndo" | "onKeep" | "disabled"
+  > | null;
   contextControls?:
     | ReactElement<{
         forceNarrow?: boolean;
@@ -591,6 +601,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     forceExpandedOnMobile,
     paneDensity,
     contextControls,
+    changedFiles = null,
     activeTurnStartedAt,
     projectSelectionRequired,
     phase,
@@ -1144,6 +1155,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     return observeResize(composerWidthNode, measure);
   }, [composerWidthNode]);
   const composerNarrow = composerWidth > 0 && composerWidth < 520;
+  const [changesExpanded, setChangesExpanded] = useState(false);
   // A stable ref callback: a new one every render would detach and reattach the node and loop.
   const attachComposerSurface = useStableCallback((node: HTMLDivElement | null) => {
     composerSurfaceRef.current = node;
@@ -3628,9 +3640,26 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       {...threadContextDropTargetProps()}
     >
       <div className="relative">
-        {contextControls && !composerNarrow ? (
+        {(contextControls && !composerNarrow) || changedFiles !== null ? (
           <div data-composer-context-tray="true" className={CONTEXT_TRAY_CLS}>
-            {cloneElement(contextControls, { forceNarrow: false, variant: "tray" })}
+            {changedFiles !== null && changesExpanded ? (
+              <ChangedFilesList summary={changedFiles.summary} onReview={changedFiles.onReview} />
+            ) : null}
+            <div className={CONTEXT_TRAY_ROW_CLS}>
+              {contextControls && !composerNarrow ? (
+                <div className={CONTEXT_TRAY_CONTEXT_CLS}>
+                  {cloneElement(contextControls, { forceNarrow: false, variant: "tray" })}
+                </div>
+              ) : null}
+              {changedFiles === null ? null : (
+                <ChangedFilesBar
+                  {...changedFiles}
+                  compact={composerNarrow}
+                  expanded={changesExpanded}
+                  onExpandedChange={setChangesExpanded}
+                />
+              )}
+            </div>
           </div>
         ) : null}
         <ComposerSurface.Main

@@ -385,7 +385,6 @@ import { ChatRightPanel } from "./chat/ChatRightPanel";
 import { useDraftEnvironmentRouting } from "./chat/useDraftEnvironmentRouting";
 import { branchMismatchBannerItem, extensionStatusBannerItem } from "./chat/ThreadActivityBanners";
 import { ThreadNow } from "./chat/ThreadNow";
-import { ChangedFilesBar } from "./chat/ChangedFilesBar";
 import { ComposerApprovalCard } from "./chat/ComposerApprovalCard";
 import { checkpointFileTotals } from "@houston-app/client-runtime/state/thread-checkpoints";
 import type { PaneDensity } from "../grid/density";
@@ -3051,23 +3050,22 @@ export default function ChatView(props: ChatViewProps) {
     latestTurnDiff === null ||
     latestTurnDiff.status !== "ready" ||
     dismissedChangeRuns.has(latestTurnDiff.runId) ||
-    checkpointFileTotals(latestTurnDiff).count === 0 ? null : (
-      <ChangedFilesBar
-        summary={latestTurnDiff}
-        onReview={() => onOpenTurnDiffStable(latestTurnDiff.runId)}
-        onUndo={
-          latestTurnUserMessage === null
-            ? undefined
-            : () =>
-                onRevertTimelineTurnStable(
-                  latestTurnDiff.checkpointTurnCount,
-                  latestTurnUserMessage.id,
-                )
-        }
-        onKeep={() => setDismissedChangeRuns((runs) => new Set(runs).add(latestTurnDiff.runId))}
-        disabled={isRevertingCheckpoint || phase === "running"}
-      />
-    );
+    checkpointFileTotals(latestTurnDiff).count === 0
+      ? null
+      : {
+          summary: latestTurnDiff,
+          onReview: () => onOpenTurnDiffStable(latestTurnDiff.runId),
+          onUndo:
+            latestTurnUserMessage === null
+              ? undefined
+              : () =>
+                  onRevertTimelineTurnStable(
+                    latestTurnDiff.checkpointTurnCount,
+                    latestTurnUserMessage.id,
+                  ),
+          onKeep: () => setDismissedChangeRuns((runs) => new Set(runs).add(latestTurnDiff.runId)),
+          disabled: isRevertingCheckpoint || phase === "running",
+        };
   // The run the composer's pending-changes row already summarises; its turn card folds to a header.
   const changeBannerRunId = changedFilesBar === null ? null : (latestTurnDiff?.runId ?? null);
   const timelinePendingApprovals =
@@ -3846,7 +3844,6 @@ export default function ChatView(props: ChatViewProps) {
                       composerTasks.steps.some((step) => step.status !== "completed")) ? (
                       <ComposerTaskStatus key={composerTasks.planId} steps={composerTasks.steps} />
                     ) : null}
-                    {changedFilesBar}
                     <ComposerSurface.Shell
                       className={activePendingApproval === null ? undefined : "hidden"}
                     >
@@ -3896,6 +3893,7 @@ export default function ChatView(props: ChatViewProps) {
                               activeThreadShell={activeThreadShell}
                               threadStatusPill={activeThreadStatusPill}
                               paneDensity={paneDensity}
+                              changedFiles={changedFilesBar}
                               {...(showComposerContextStrip
                                 ? {
                                     contextControls: (

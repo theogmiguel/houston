@@ -899,11 +899,9 @@ export const BranchToolbar = memo(function BranchToolbar({
       >
         {projectChip}
         {runContextNode}
-        <div className="ms-auto flex min-w-0 items-center gap-1">
-          {showGitControls ? branchSelector("all", "min-w-0 justify-end") : null}
-          {uploadsNode}
-          {trailing}
-        </div>
+        {showGitControls ? branchSelector("all", "min-w-0") : null}
+        {uploadsNode}
+        {trailing}
       </div>
     );
   }
