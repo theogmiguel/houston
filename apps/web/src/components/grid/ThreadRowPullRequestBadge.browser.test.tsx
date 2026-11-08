@@ -131,7 +131,7 @@ describe("pull request badge presentation", () => {
       expect(glyph?.classList.contains(tone)).toBe(true);
       expect(element.classList.contains(tone)).toBe(false);
       expect(element.classList.contains("text-secondary-foreground")).toBe(true);
-      expect(element.textContent).toBe("#42");
+      expect(element.textContent).toBe("42");
     },
   );
 

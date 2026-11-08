@@ -698,7 +698,7 @@ describe("View options", () => {
       {
         await using shown = await render(group(grid(), [thread({ pullRequests: [merged] })]));
         const badge = shown.container.querySelector("[data-thread-pull-request]");
-        expect(badge?.textContent).toBe("#88");
+        expect(badge?.textContent).toBe("88");
         expect(badge?.querySelector("svg")?.classList.contains("text-merged-foreground")).toBe(
           true,
         );

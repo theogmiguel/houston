@@ -63,10 +63,10 @@ function useRunningDuration(startedAt: string): string | null {
   return Number.isNaN(startedMs) ? null : formatWorkingDurationLabel(nowMs - startedMs);
 }
 
-/** The duration the second line states for a running row: " for 7m". */
+/** How long a running row has been going, after its word: " 7m". */
 function RunningElapsed({ startedAt }: { startedAt: string }) {
   const duration = useRunningDuration(startedAt);
-  return duration === null ? null : <> for {duration}</>;
+  return duration === null ? null : <> {duration}</>;
 }
 
 /**
@@ -100,9 +100,17 @@ export function ThreadStatusGlyph({
 }
 
 /**
- * The status word on the row's second line, first in the line. Attention states name themselves in
- * the hue of their glyph; Ready and Idle stay muted. A running row says how long it has been going
- * ("Running for 7m"); its age cell keeps the last-activity age, so the elapsed time is stated once.
+ * Whether the title line states a status in the age's slot. An idle row shows its age; a Back row
+ * also keeps its age, because its dismissible word sits on the second line, clear of the hover
+ * actions that share the title line's slot.
+ */
+export function threadHasStatus(thread: EnvironmentThreadShell, state: GridThreadState): boolean {
+  return state !== "back" && gridThreadStatusWord(thread, state) !== null;
+}
+
+/**
+ * The status at the title line's end, in the age's place: glyph, word and, for a running row, how
+ * long it has been going ("Running 7m"). Attention states take the hue of their glyph.
  */
 export function ThreadStatusWord({
   thread,
@@ -113,15 +121,24 @@ export function ThreadStatusWord({
   state: GridThreadState;
   nowIso: string;
 }) {
-  if (state === "back") return <BackWord thread={thread} nowIso={nowIso} />;
+  const kind = gridThreadStatusKind(thread, state);
+  const glyph = <ThreadStatusGlyph thread={thread} state={state} kind={kind} />;
+  if (state === "back") {
+    return (
+      <span className={SIDEBAR_THREAD_STATUS_CLASS}>
+        {glyph}
+        <BackWord thread={thread} nowIso={nowIso} />
+      </span>
+    );
+  }
   const startedAt = resolveThreadWorkingStartedAt(thread);
   const word = gridThreadStatusWord(thread, state) ?? "Idle";
-  const kind = gridThreadStatusKind(thread, state);
   return (
     <span
       data-thread-status=""
       className={cn(SIDEBAR_THREAD_STATUS_CLASS, threadStatusWordClass(kind))}
     >
+      {glyph}
       <span>
         {word}
         {state === "running" && startedAt !== null ? (

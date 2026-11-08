@@ -201,12 +201,10 @@ const labelsOf = (row: HTMLElement, hidden: boolean) =>
 
 /** Item labels in the order the second line draws them, with every item present. */
 const FULL_ORDER = [
-  "Status",
+  "Branch feature/streaming-import-with-a-long-name",
   "Unsent draft",
-  "Pull request #214",
   "Uncommitted changes +128 −16",
   "Terminal running",
-  "Branch feature/streaming-import-with-a-long-name",
   "Runs on another machine",
   "2 subagents running",
   "#perf",
@@ -216,13 +214,11 @@ const FULL_ORDER = [
 
 /** The locked order of the second line, by the start of each item's label. */
 const ORDER_PREFIXES = [
-  "Status",
-  "Unsent draft",
-  "Pull request",
-  "Uncommitted changes",
-  "Terminal",
   "Branch",
   "Worktree",
+  "Unsent draft",
+  "Uncommitted changes",
+  "Terminal",
   "Runs on another machine",
   "1 subagent",
   "2 subagents",
@@ -323,8 +319,13 @@ describe("thread row anatomy", () => {
 
     const mark = row.querySelector<HTMLElement>("[data-thread-provider-mark]")!;
     const items = row.querySelector<HTMLElement>("[data-thread-meta-items]")!;
-    expect(mark.getBoundingClientRect().left).toBeGreaterThanOrEqual(
+    const pullRequest = row.querySelector<HTMLElement>("[data-thread-pr-slot]")!;
+    expect(pullRequest.nextElementSibling).toBe(mark);
+    expect(pullRequest.getBoundingClientRect().left).toBeGreaterThanOrEqual(
       items.getBoundingClientRect().right + 8 - 0.5,
+    );
+    expect(mark.getBoundingClientRect().left).toBeGreaterThanOrEqual(
+      pullRequest.getBoundingClientRect().right - 0.5,
     );
     const time = row.querySelector<HTMLElement>("[data-thread-time]")!;
     expect(mark.getBoundingClientRect().right).toBeCloseTo(time.getBoundingClientRect().right, 0);
@@ -352,14 +353,20 @@ describe("thread row anatomy", () => {
     reset();
     fixture.totals = { insertions: 128, deletions: 16 };
     const cases = [
-      { value: subagentsAndTags, subagents: 1, labels: ["Status", "1 subagent running"] },
+      {
+        value: subagentsAndTags,
+        subagents: 1,
+        labels: ["Branch main", "1 subagent running"],
+        pullRequest: false,
+      },
       {
         value: pullRequestAndDiff,
         subagents: 0,
-        labels: ["Status", "Pull request #214", "Uncommitted changes +128 −16"],
+        labels: ["Branch main", "Uncommitted changes +128 −16"],
+        pullRequest: true,
       },
     ];
-    for (const { value, subagents, labels } of cases) {
+    for (const { value, subagents, labels, pullRequest } of cases) {
       await using screen = await render(
         <div style={{ width: 760 }}>{card(value, { subagents })}</div>,
       );
@@ -371,16 +378,21 @@ describe("thread row anatomy", () => {
       expect(ranks).not.toContain(-1);
       expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
       for (const label of labels) expect(drawn).toContain(label);
+      expect(row.querySelector("[data-thread-pr-slot]") !== null).toBe(pullRequest);
     }
   });
 
-  it("always names the status first, in the second line, calm or not", async () => {
+  it("states no status for a calm row: only its age on the title line, and no Idle word", async () => {
     await page.viewport(1440, 900);
     reset();
     await using calm = await render(<div style={{ width: 264 }}>{card(thread())}</div>);
-    const word = rowOf(calm.container).querySelector<HTMLElement>("[data-thread-status]")!;
-    expect(word.textContent).toBe("Idle");
-    expect(itemsOf(rowOf(calm.container))[0]?.dataset.metaLabel).toBe("Status");
+    const row = rowOf(calm.container);
+    expect(row.querySelector("[data-thread-status]")).toBeNull();
+    expect(row.querySelector("[data-thread-status-glyph]")).toBeNull();
+    expect(row.querySelector("[data-thread-title-line] [data-thread-time]")).not.toBeNull();
+    expect(row.textContent).not.toContain("Idle");
+    expect(itemsOf(row).map((item) => item.dataset.metaLabel)).not.toContain("Status");
+    expect(itemsOf(row)[0]?.dataset.metaLabel).toBe("Branch main");
   });
 
   it("drops whole items from the right behind a +N counter that names them", async () => {
@@ -398,7 +410,7 @@ describe("thread row anatomy", () => {
       expect(hidden.length).toBeGreaterThan(0);
       // Dropping is from the right: what stays is a prefix of the fixed order.
       expect([...shown, ...hidden]).toEqual(FULL_ORDER);
-      expect(shown[0]).toBe("Status");
+      expect(shown[0]).toBe(FULL_ORDER[0]);
 
       const overflow = row.querySelector<HTMLElement>("[data-thread-meta-overflow]")!;
       expect(overflow.textContent).toBe(`+${hidden.length}`);
@@ -532,7 +544,7 @@ describe("thread row status glyphs", () => {
     { kind: "idle", word: "Idle", overrides: {} },
   ];
 
-  it("draws a distinct shape for each state and names the state in the second line", async () => {
+  it("draws a distinct shape for each state and names the state at the title line's end", async () => {
     await page.viewport(1440, 900);
     reset();
     const shapes = new Map<string, string>();
@@ -544,7 +556,15 @@ describe("thread row status glyphs", () => {
         </div>,
       );
       const row = rowOf(screen.container);
-      const glyph = row.querySelector<HTMLElement>("[data-thread-status-glyph]")!;
+      if (state.kind === "idle") {
+        // An idle row has nothing to state: no glyph and no word, only the age.
+        expect(row.querySelector("[data-thread-status-glyph]")).toBeNull();
+        expect(row.querySelector("[data-thread-status]")).toBeNull();
+        continue;
+      }
+      // Back keeps its dismissible word on the second line, clear of the hover actions.
+      const line = state.kind === "back" ? "[data-thread-meta]" : "[data-thread-title-line]";
+      const glyph = row.querySelector<HTMLElement>(`${line} [data-thread-status-glyph]`)!;
       expect(glyph.dataset.statusKind, state.word).toBe(state.kind);
       expect(glyph.getAttribute("aria-label")).toBe(state.word);
       expect(glyph.getBoundingClientRect().width).toBe(14);
@@ -554,17 +574,21 @@ describe("thread row status glyphs", () => {
       );
       shapes.set(state.kind, glyph.querySelector("svg")!.innerHTML);
       hues.set(state.kind, getComputedStyle(glyph).color);
-      // The glyph is centred across both lines.
+      // The glyph is centred on the title line and sits before its word.
       const box = glyph.getBoundingClientRect();
-      const rowBox = row.getBoundingClientRect();
-      expect(box.top + box.height / 2).toBeCloseTo(rowBox.top + rowBox.height / 2, 0);
+      const lineBox = row.querySelector(line)!.getBoundingClientRect();
+      expect(box.top + box.height / 2).toBeCloseTo(lineBox.top + lineBox.height / 2, 0);
+      expect(glyph.nextElementSibling?.textContent ?? glyph.nextSibling?.textContent).toMatch(
+        new RegExp(`^${state.word}`),
+      );
     }
-    expect(new Set(shapes.values()).size).toBe(STATES.length);
+    const stated = STATES.filter((state) => state.kind !== "idle");
+    expect(new Set(shapes.values()).size).toBe(stated.length);
     // Input, Request and Approval share the amber hue, and every other kind has its own hue.
     const inputFamily = new Set(["input", "request", "approval"].map((kind) => hues.get(kind)));
     expect(inputFamily.size).toBe(1);
-    const distinct = ["input", "failed", "waiting", "running", "back", "ready", "idle"].map(
-      (kind) => hues.get(kind),
+    const distinct = ["input", "failed", "waiting", "running", "back", "ready"].map((kind) =>
+      hues.get(kind),
     );
     expect(new Set(distinct).size).toBe(distinct.length);
   });
@@ -593,7 +617,7 @@ describe("thread row status glyphs", () => {
     expect(failed).toBeGreaterThanOrEqual(11);
   });
 
-  it("states a running row's elapsed time once, on its second line, and keeps the age cell narrow", async () => {
+  it("states a running row's elapsed time once, after its word, in the age's place", async () => {
     await page.viewport(1440, 900);
     reset();
     const running = STATES.find((state) => state.kind === "running")!;
@@ -603,19 +627,13 @@ describe("thread row status glyphs", () => {
     const row = rowOf(screen.container);
     await expect
       .poll(() => row.querySelector("[data-thread-status]")?.textContent ?? "")
-      .toBe("Running for 7m");
-    reset();
-    await using idle = await render(<div style={{ width: 264 }}>{card(thread())}</div>);
-    const age = row.querySelector<HTMLElement>("[data-thread-time]")!;
-    // The age is the last-activity age every other row shows, not a second clock.
-    expect(age.textContent).toBe(
-      rowOf(idle.container).querySelector("[data-thread-time]")?.textContent,
-    );
-    expect(age.textContent).not.toMatch(/for|\d+m \d+/);
-    expect(age.getBoundingClientRect().width).toBeLessThanOrEqual(36);
+      .toBe("Running 7m");
+    // The elapsed time replaces the age: there is no second clock on the row.
+    expect(row.querySelector("[data-thread-time]")).toBeNull();
+    expect(row.querySelector("[data-thread-meta] [data-thread-status]")).toBeNull();
   });
 
-  it("gives the Closed shelf its own glyph and no status word", async () => {
+  it("gives the Closed shelf neither a glyph nor a status word", async () => {
     await page.viewport(1440, 900);
     reset();
     await using screen = await render(
@@ -646,9 +664,7 @@ describe("thread row status glyphs", () => {
       </TooltipProvider>,
     );
     const row = rowOf(screen.container);
-    expect(row.querySelector("[data-thread-status-glyph]")?.getAttribute("data-status-kind")).toBe(
-      "closed",
-    );
+    expect(row.querySelector("[data-thread-status-glyph]")).toBeNull();
     expect(row.querySelector("[data-thread-status]")).toBeNull();
     expect(screen.getByText("Closed 2h").element()).toBeVisible();
   });
@@ -753,7 +769,7 @@ describe("thread row provider marks and tags", () => {
       getComputedStyle(row.querySelector("[data-thread-meta]")!).color,
     );
     const badge = row.querySelector<HTMLElement>("[data-thread-pull-request]")!;
-    expect(badge.textContent).toBe("#209");
+    expect(badge.textContent).toBe("209");
     expect(getComputedStyle(badge).color).not.toBe(
       getComputedStyle(badge.querySelector("svg")!).color,
     );

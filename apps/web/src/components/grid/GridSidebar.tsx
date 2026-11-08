@@ -106,7 +106,7 @@ import { SidebarNoProjects } from "./SidebarNoProjects";
 import { ThreadBulkMenuContext, useBulkThreadMenu } from "./useBulkThreadMenu";
 import { ThreadTitleInput } from "./threadTitleInput";
 import { JumpHintBadge, ThreadJumpHintContext, useThreadJumpHint } from "./threadJumpHints";
-import { ThreadStatusGlyph, ThreadStatusWord } from "./threadStatusMark";
+import { threadHasStatus, ThreadStatusWord } from "./threadStatusMark";
 import {
   ThreadCheckoutMark,
   ThreadDiffItem,
@@ -2369,7 +2369,7 @@ export function ThreadCard({
   const nowMinute = useNowMinute();
   const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
   const showBranch = useClientSettings((settings) => settings.sidebarRowShowBranch);
-  const { name: branchName, isDefault: branchIsDefault } = useThreadBranch(thread);
+  const { name: branchName } = useThreadBranch(thread);
   const showPullRequest = useClientSettings((settings) => settings.sidebarRowShowPullRequest);
   const showSubagents = useClientSettings((settings) => settings.sidebarRowShowSubagents);
   const state = resolveGridThreadState(thread, nowIso);
@@ -2560,12 +2560,6 @@ export function ThreadCard({
           />
         }
       >
-        {/* The status glyph is the row's first column, centred across both lines. */}
-        <ThreadStatusGlyph
-          thread={thread}
-          state={state}
-          {...(shelf === "settled" ? { kind: "closed" as const } : {})}
-        />
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <div data-thread-title-line="" className="flex h-5 min-w-0 items-center gap-2">
             {renaming ? (
@@ -2634,9 +2628,11 @@ export function ThreadCard({
               >
                 {jumpHint !== null ? (
                   <JumpHintBadge label={jumpHint} />
-                ) : shelf === null ? (
+                ) : shelf !== null ? null : threadHasStatus(thread, state) ? (
+                  <ThreadStatusWord thread={thread} state={state} nowIso={nowIso} />
+                ) : (
                   timeNode
-                ) : null}
+                )}
               </span>
               <span
                 className={cn(
@@ -2734,10 +2730,9 @@ export function ThreadCard({
             </span>
           </div>
           {/*
-          One muted line in a fixed order: status word, draft, pull request, line totals, terminal,
-          checkout and branch, machine, subagents, tags, title regeneration. Items that do not fit
-          drop from the right, whole, behind a +N counter. The provider mark closes the line under
-          the age.
+          One muted line in a fixed order: checkout and branch, draft, line totals, terminal, machine,
+          subagents, tags, title regeneration. Items that do not fit drop from the right, whole,
+          behind a +N counter. The pull request and the provider mark close the line.
         */}
           <div
             data-thread-meta=""
@@ -2757,30 +2752,12 @@ export function ThreadCard({
                   {timeNode}
                 </RowMetaItem>
               ) : null}
-              {shelf === "settled" ? null : (
+              {state === "back" && shelf === null ? (
                 <RowMetaItem label="Status" keep>
                   <ThreadStatusWord thread={thread} state={state} nowIso={nowIso} />
                 </RowMetaItem>
-              )}
-              <ThreadDraftItem thread={thread} focused={focused} />
-              {showPullRequest && rowPullRequest !== null ? (
-                <RowMetaItem label={`Pull request #${rowPullRequest.number}`}>
-                  <ThreadRowPullRequestBadge
-                    threadRef={threadRef}
-                    pullRequest={rowPullRequest}
-                    pullRequestCount={thread.pullRequests.length}
-                    onOpenThread={onOpen}
-                  />
-                </RowMetaItem>
               ) : null}
-              <ThreadDiffItem
-                thread={thread}
-                rowRef={rowRef}
-                focused={focused}
-                emphasized={active || selected}
-              />
-              <ThreadTerminalItem thread={thread} onActivate={onOpen} />
-              {showBranch && branchName !== null && !branchIsDefault ? (
+              {showBranch && branchName !== null ? (
                 <RowMetaItem label={`Branch ${branchName}`} minWidth={BRANCH_MIN_WIDTH_PX}>
                   <span data-thread-branch="" className="inline-flex min-w-0 items-center gap-1">
                     <ThreadCheckoutMark thread={thread} />
@@ -2792,6 +2769,14 @@ export function ThreadCard({
                   <ThreadCheckoutMark thread={thread} />
                 </RowMetaItem>
               ) : null}
+              <ThreadDraftItem thread={thread} focused={focused} />
+              <ThreadDiffItem
+                thread={thread}
+                rowRef={rowRef}
+                focused={focused}
+                emphasized={active || selected}
+              />
+              <ThreadTerminalItem thread={thread} onActivate={onOpen} />
               <ThreadRemoteItem thread={thread} />
               {showSubagents && runningSubagents > 0 ? (
                 <RowMetaItem
@@ -2830,6 +2815,16 @@ export function ThreadCard({
                 </RowMetaItem>
               ) : null}
             </RowMeta>
+            {showPullRequest && rowPullRequest !== null ? (
+              <span data-thread-pr-slot="" className="inline-flex shrink-0">
+                <ThreadRowPullRequestBadge
+                  threadRef={threadRef}
+                  pullRequest={rowPullRequest}
+                  pullRequestCount={thread.pullRequests.length}
+                  onOpenThread={onOpen}
+                />
+              </span>
+            ) : null}
             {/* A fixed slot, so the marks line up under the ages whatever the row carries. */}
             <span
               data-thread-provider-mark=""

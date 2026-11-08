@@ -402,7 +402,6 @@ describe("ThreadCard worst-case row at the narrowest sidebar", () => {
       expect(title.width).toBeGreaterThanOrEqual(line.getBoundingClientRect().width * 0.6);
       expect(title.left).toBeGreaterThanOrEqual(line.getBoundingClientRect().left);
       if (time !== null) expect(title.right).toBeLessThanOrEqual(time.getBoundingClientRect().left);
-      expect(row.querySelector("[data-thread-title-line] [data-thread-status]")).toBeNull();
     }
   });
 
@@ -411,9 +410,8 @@ describe("ThreadCard worst-case row at the narrowest sidebar", () => {
     await using _screen = screen;
     for (const row of rows) {
       const rowBox = row.getBoundingClientRect();
-      const badge = row.querySelector<HTMLElement>('[data-meta-label^="Pull request"]')!;
+      const badge = row.querySelector<HTMLElement>("[data-thread-pr-slot]")!;
       const mark = row.querySelector<HTMLElement>("[data-thread-provider-mark]")!;
-      expect(badge.hasAttribute("data-meta-hidden")).toBe(false);
       expect(mark.querySelector("svg, img")).not.toBeNull();
       for (const box of [badge, mark].map((element) => element.getBoundingClientRect())) {
         expect(box.left).toBeGreaterThanOrEqual(rowBox.left);
@@ -441,5 +439,62 @@ describe("ThreadCard worst-case row at the narrowest sidebar", () => {
     }
     // Either both branches read in full, or each is recoverable from its tooltip.
     expect(visible.every((text) => text !== "") ? new Set(visible).size : 2).toBe(2);
+  });
+});
+
+describe("ThreadCard status slot and branch line", () => {
+  const withModel = (overrides: Record<string, unknown> = {}) =>
+    thread({
+      providerInstanceHistory: [],
+      modelSelection: { instanceId: "claude", model: "claude-opus-5-5" },
+      ...overrides,
+    });
+
+  async function renderOne(value: EnvironmentThreadShell) {
+    __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS });
+    return render(
+      <div style={{ width: 240 }}>
+        {card(value, { timeLabel: "3d", providerEntries: PROVIDERS })}
+      </div>,
+    );
+  }
+
+  it("states an attention status with its glyph at the title line's end, in place of the age", async () => {
+    await using screen = await renderOne(worstCaseRow("v2-ui-feedback-composer"));
+    const row = rowOf(screen.container);
+    const line = row.querySelector<HTMLElement>("[data-thread-title-line]")!;
+    const status = line.querySelector<HTMLElement>("[data-thread-status]")!;
+    expect(status.textContent).toBe("Input");
+    expect(status.querySelector("[data-thread-status-glyph]")).not.toBeNull();
+    expect(row.querySelector("[data-thread-time]")).toBeNull();
+    // No leading glyph column: the title starts at the row's content edge.
+    expect(row.querySelectorAll("[data-thread-status-glyph]")).toHaveLength(1);
+    expect(row.querySelector("[data-thread-meta] [data-thread-status]")).toBeNull();
+  });
+
+  it("shows only the age for an idle row", async () => {
+    await using screen = await renderOne(withModel());
+    const row = rowOf(screen.container);
+    expect(row.querySelector("[data-thread-status]")).toBeNull();
+    expect(row.querySelector("[data-thread-title-line] [data-thread-time]")!.textContent).toBe(
+      "3d",
+    );
+    expect(row.querySelector("[data-thread-status-glyph]")).toBeNull();
+  });
+
+  it("leads the second line with the branch, the default one included", async () => {
+    await using screen = await renderOne(withModel({ branch: "main" }));
+    const meta = rowOf(screen.container).querySelector<HTMLElement>("[data-thread-meta]")!;
+    const first = meta.querySelector<HTMLElement>("[data-meta-label]")!;
+    expect(first.getAttribute("data-meta-label")).toBe("Branch main");
+  });
+
+  it("puts the pull request beside the provider mark as its glyph and bare number", async () => {
+    await using screen = await renderOne(worstCaseRow("v2-ui-feedback-composer"));
+    const row = rowOf(screen.container);
+    const badge = row.querySelector<HTMLElement>("[data-thread-pr-slot]")!;
+    expect(badge.textContent).toBe("4812");
+    const mark = row.querySelector<HTMLElement>("[data-thread-provider-mark]")!;
+    expect(badge.nextElementSibling).toBe(mark);
   });
 });

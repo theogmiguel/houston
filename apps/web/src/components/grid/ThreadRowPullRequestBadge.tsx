@@ -106,7 +106,7 @@ export function ThreadRowPullRequestBadge({
         }
       >
         <tone.Icon aria-hidden className={cn("size-3 shrink-0", tone.toneClassName)} />
-        <span>#{pullRequest.number}</span>
+        <span>{pullRequest.number}</span>
         {checks === null ? null : (
           <checks.Icon aria-hidden className={cn("size-3 shrink-0", checks.toneClassName)} />
         )}

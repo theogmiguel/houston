@@ -11,7 +11,7 @@ export const PANE_THREAD_TAG_COUNT_CLASS = "text-2xs text-(--houston)";
 
 /** The status word on a sidebar thread card's meta line. */
 export const SIDEBAR_THREAD_STATUS_CLASS =
-  "inline-flex shrink-0 items-center gap-1 text-xs leading-3.5 whitespace-nowrap tabular-nums";
+  "inline-flex shrink-0 items-center gap-1 font-medium text-xs leading-3.5 whitespace-nowrap tabular-nums";
 
 /** The ink and size of a sidebar thread card's secondary text: meta line, badges and marks. */
 export const SIDEBAR_THREAD_META_TEXT_CLASS = "text-xs leading-3.5 text-secondary-label";
