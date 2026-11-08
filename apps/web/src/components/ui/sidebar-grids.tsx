@@ -33,7 +33,11 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "./tooltip";
  * or focused, so the name keeps the width otherwise.
  */
 export const SIDEBAR_GRID_HEADING_CLS =
-  "group/grid flex h-8 min-w-0 shrink cursor-pointer items-center gap-1.5 rounded-lg py-0 pr-1 pl-4 text-left text-xs transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+  "flex h-8 min-w-0 shrink cursor-pointer items-center gap-1.5 rounded-lg py-0 pr-1 pl-4 text-left text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+
+/** The grid heading's row: the toggle and its actions share one hover, selection and drop fill. */
+export const SIDEBAR_GRID_HEADING_ROW_CLS =
+  "group/grid relative flex items-center rounded-lg transition-colors duration-(--motion-feedback) ease-standard hover:bg-sidebar-row-hover";
 
 export const SIDEBAR_GRID_HEADING_ACTIVE_CLS = "bg-sidebar-row-selected";
 

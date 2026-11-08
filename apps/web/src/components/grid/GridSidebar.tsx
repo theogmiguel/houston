@@ -236,6 +236,7 @@ import {
   SIDEBAR_GRID_HEADING_ACTIVE_CLS,
   SIDEBAR_GRID_HEADING_CLS,
   SIDEBAR_GRID_HEADING_DROP_CLS,
+  SIDEBAR_GRID_HEADING_ROW_CLS,
   SIDEBAR_GRID_COUNT_CLS,
   SIDEBAR_GRID_NAME_CLS,
   SIDEBAR_GRID_RENAME_CLS,
@@ -2100,7 +2101,19 @@ export function GridGroup({
     <div className="mt-1 flex flex-col gap-px" data-grid-key={grid.id}>
       <div
         ref={headerRef}
-        className="group/grid relative flex items-center"
+        data-grid-heading-row=""
+        className={cn(
+          SIDEBAR_GRID_HEADING_ROW_CLS,
+          // One selection fill at a time: the focused thread row carries it while visible. An
+          // empty grid has nothing to select, so its heading stays untinted.
+          !renaming &&
+            open &&
+            threads.length > 0 &&
+            revealedThread === undefined &&
+            (collapsed || !threads.some((thread) => thread.id === grid.focusedThreadId)) &&
+            SIDEBAR_GRID_HEADING_ACTIVE_CLS,
+          !renaming && isDropTarget && SIDEBAR_GRID_HEADING_DROP_CLS,
+        )}
         onContextMenu={(event) => {
           if (renaming) return;
           event.preventDefault();
@@ -2143,16 +2156,7 @@ export function GridGroup({
                     }
                   }}
                   aria-expanded={!collapsed}
-                  className={cn(
-                    SIDEBAR_GRID_HEADING_CLS,
-                    // One selection fill at a time: the focused thread row carries it while visible.
-                    open &&
-                      revealedThread === undefined &&
-                      (collapsed ||
-                        !threads.some((thread) => thread.id === grid.focusedThreadId)) &&
-                      SIDEBAR_GRID_HEADING_ACTIVE_CLS,
-                    isDropTarget && SIDEBAR_GRID_HEADING_DROP_CLS,
-                  )}
+                  className={SIDEBAR_GRID_HEADING_CLS}
                 >
                   <span className={SIDEBAR_GRID_CHEVRON_BOX_CLS} data-grid-chevron-box="">
                     <ChevronRightIcon

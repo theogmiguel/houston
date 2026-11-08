@@ -134,6 +134,15 @@ function headingFor(screen: Screen, gridId: string): HTMLButtonElement {
   return heading;
 }
 
+/** The heading row: the toggle and its actions, which share one hover and selection fill. */
+function headingRowFor(screen: Screen, gridId: string): HTMLElement {
+  const row = headingFor(screen, gridId).closest("[data-grid-heading-row]");
+  if (!(row instanceof HTMLElement)) {
+    throw new Error(`The grid ${gridId} has no heading row.`);
+  }
+  return row;
+}
+
 function headingGeometry(heading: HTMLButtonElement) {
   const chevron = heading.querySelector("svg");
   const chevronBox = heading.querySelector("[data-grid-chevron-box]");
@@ -321,10 +330,29 @@ describe("grid sidebar", () => {
       </>,
     );
 
-    const open = screen.getByRole("button", { name: /^v2 rebuild 2$/ }).element();
-    const closed = screen.getByRole("button", { name: /^Review 2$/ }).element();
-    expect(open.className).toContain("bg-sidebar-row-selected");
-    expect(closed.className).not.toContain("bg-sidebar-row-selected");
+    expect(headingRowFor(screen, "grid-a").className).toContain("bg-sidebar-row-selected");
+    expect(headingRowFor(screen, "grid-b").className).not.toContain("bg-sidebar-row-selected");
+  });
+
+  it("leaves an open empty grid's heading untinted", async () => {
+    await using screen = await render(
+      group(grid({ id: "grid-e", name: "UI/UX design" }), [], { open: true }),
+    );
+
+    expect(headingRowFor(screen, "grid-e").className).not.toContain("bg-sidebar-row-selected");
+  });
+
+  it("fills the whole heading row, actions included, while it is hovered", async () => {
+    await using screen = await render(group(grid({ id: "grid-h2", name: "UI/UX design" }), []));
+    const row = headingRowFor(screen, "grid-h2");
+    const idle = getComputedStyle(row).backgroundColor;
+
+    await userEvent.hover(
+      page.getByRole("button", { name: "New thread in UI/UX design" }).element(),
+    );
+
+    await expect.poll(() => getComputedStyle(row).backgroundColor).not.toBe(idle);
+    expect(headingFor(screen, "grid-h2").className).not.toContain("hover:bg-");
   });
 
   it("leaves the open grid's heading untinted while its focused thread row shows the selection", async () => {
@@ -335,8 +363,7 @@ describe("grid sidebar", () => {
       }),
     );
 
-    const heading = screen.getByRole("button", { name: /^v2 rebuild 2$/ }).element();
-    expect(heading.className).not.toContain("bg-sidebar-row-selected");
+    expect(headingRowFor(screen, "grid-a").className).not.toContain("bg-sidebar-row-selected");
   });
 
   it("hands the open grid's selection fill to its revealed thread row while collapsed", async () => {
@@ -348,8 +375,7 @@ describe("grid sidebar", () => {
       }),
     );
 
-    const heading = screen.getByRole("button", { name: /^v2 rebuild 2$/ }).element();
-    expect(heading.className).not.toContain("bg-sidebar-row-selected");
+    expect(headingRowFor(screen, "grid-a").className).not.toContain("bg-sidebar-row-selected");
     expect(screen.container.querySelector("[data-thread-key$=':thread-a']")).not.toBeNull();
     expect(screen.container.querySelector("[data-thread-key$=':thread-b']")).toBeNull();
   });
@@ -363,8 +389,7 @@ describe("grid sidebar", () => {
       }),
     );
 
-    const heading = screen.getByRole("button", { name: /^v2 rebuild 2$/ }).element();
-    expect(heading.className).toContain("bg-sidebar-row-selected");
+    expect(headingRowFor(screen, "grid-a").className).toContain("bg-sidebar-row-selected");
   });
 
   it("keeps the chevron and text still across collapse and thread counts", async () => {
