@@ -877,7 +877,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         className={cn(
           "relative min-w-0 rounded-(--r-group) text-prose leading-5 text-(--bubble-ink)",
           BUBBLE_MAX_WIDTH_CLASS,
-          "bg-(--bubble) shadow-composer",
+          "border border-border bg-(--bubble)",
           mediaAboveText && "rounded-tr-(--r-badge)",
           BUBBLE_CHIP_CLASS_NAME,
           !mediaOnly && !fileCardsOnly && !audioOnly && "px-3.5 py-2.5",

@@ -1137,8 +1137,7 @@ body {
   --focus-frame: rgba(0, 0, 0, 0.38);
   /* The user's message bubble and the composer's send button; themes give them the message
      roles. */
-  /* A user turn is an 8% brand wash over the card, never a second card colour. */
-  --bubble: color-mix(in srgb, var(--accent) 8%, var(--card));
+  --bubble: var(--card);
   --bubble-ink: var(--t1);
   --send: var(--t1);
   --send-ink: var(--pane);
@@ -1310,7 +1309,7 @@ body {
   --claude: #d97757;
   --codex: rgba(255, 255, 255, 0.92);
   --message-surface: color-mix(in srgb, #ffffff 6%, var(--card));
-  --bubble: color-mix(in srgb, var(--accent) 8%, var(--card));
+  --bubble: var(--card);
   --guest-foreground: #f0abfc;
   --sidebar-control-surface: var(--card);
 }

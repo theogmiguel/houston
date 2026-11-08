@@ -122,13 +122,10 @@ describe("surface levels", () => {
     },
   );
 
-  it.each([false, true])(
-    "tints a user turn with the accent instead of reusing the card fill (dark=%s)",
-    (dark) => {
-      using _theme = themed(dark);
-      const bubble = painted("--bubble");
-      const card = painted("--card");
-      expect(bubble).not.toEqual(card);
-    },
-  );
+  it.each([false, true])("fills a user turn with the card colour (dark=%s)", (dark) => {
+    using _theme = themed(dark);
+    const bubble = painted("--bubble");
+    const card = painted("--card");
+    expect(bubble).toEqual(card);
+  });
 });

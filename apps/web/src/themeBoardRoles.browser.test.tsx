@@ -78,8 +78,8 @@ describe("theme reach", () => {
     expect(paint("--content")).toBe(THEME_COLORS["--app-theme-toolbar"]);
   });
 
-  it("draws Houston's bubble as a brand wash over its card and its send button from its own ink", () => {
-    expect(paint("--bubble")).not.toBe(paint("--card"));
+  it("draws Houston's bubble as its card colour and its send button from its own ink", () => {
+    expect(paint("--bubble")).toBe(paint("--card"));
     expect(paint("--send")).toBe(paint("--t1"));
     expect(paint("--control-fill")).toBe(paint("--field"));
     expect(paint("--row-current")).toBe(paint("--accent-muted"));
