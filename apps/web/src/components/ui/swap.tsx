@@ -11,6 +11,8 @@ export interface SwapProps {
   readonly className?: string;
   /** Layout classes repeated on each content layer, so both fill the container alike. */
   readonly contentClassName?: string;
+  /** Layout classes for the animated wrapper inside each layer, for content that must fill it. */
+  readonly innerClassName?: string;
   readonly children: ReactNode;
 }
 
@@ -35,7 +37,13 @@ const EXIT_CLASS =
  * previous one, pulled out of flow, fades out. Only transform and opacity animate, so
  * the container never transitions a layout property.
  */
-export function Swap({ swapKey, className, contentClassName, children }: SwapProps) {
+export function Swap({
+  swapKey,
+  className,
+  contentClassName,
+  innerClassName,
+  children,
+}: SwapProps) {
   const reducedMotion = useReducedMotion();
   const [state, setState] = useState<SwapState>(() => ({
     active: 0,
@@ -89,7 +97,10 @@ export function Swap({ swapKey, className, contentClassName, children }: SwapPro
           isExiting && "pointer-events-none absolute inset-x-0 top-0",
         )}
       >
-        <div key={active ? swapKey : layer?.key} className={active ? ENTER_CLASS : EXIT_CLASS}>
+        <div
+          key={active ? swapKey : layer?.key}
+          className={cn(active ? ENTER_CLASS : EXIT_CLASS, innerClassName)}
+        >
           {active ? children : layer?.node}
         </div>
       </div>

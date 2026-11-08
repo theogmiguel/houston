@@ -891,6 +891,17 @@ describe("MessagesTimeline agent messages", () => {
     expect(screen.container.querySelectorAll("[data-user-message-source]")).toHaveLength(1);
   });
 
+  it("draws a user bubble as a bordered card fill without a lifted shadow", async () => {
+    setup();
+    await using screen = await renderTimeline([
+      message(AGENT_MESSAGE, { createdBy: "agent", senderThreadId: SENDER_THREAD_ID }),
+    ]);
+    const style = getComputedStyle(bubbleOf(screen.container));
+    expect(style.borderTopWidth).toBe("1px");
+    expect(style.borderTopStyle).toBe("solid");
+    expect(style.boxShadow).toBe("none");
+  });
+
   it("keeps the timestamp hidden until the row is hovered or focused", async () => {
     setup();
     await using screen = await renderTimeline([
@@ -914,7 +925,6 @@ describe("MessagesTimeline agent messages", () => {
       "14px",
       "10px",
     ]);
-    expect(style.boxShadow).not.toBe("none");
     expect(screen.text()).toContain("The migration drops the index before backfilling it.");
     expect(screen.buttons("Show full message")).toHaveLength(0);
   });
