@@ -67,13 +67,36 @@ it("toggles the details card for an empty grid's draft, which has no tree leaf y
   expect(visibility("thread-draft")).toEqual({ inlineOpen: false, popoverOpen: false });
 });
 
-it("leaves the details toggle to the pane header when the grid has cells", async () => {
+it("keeps the details toggle in the strip for a single thread, which shows no pane header", async () => {
   await using _viewport = await viewport(1440);
   useRightPanelStore.setState({ threadPanelVisibilityByThreadKey: {} });
   await using screen = await render(
     <GridTopBarControls
       grid={grid({
         tree: threadLeaf("thread-a", "p1"),
+        focusedThreadId: "thread-a",
+      })}
+    />,
+    { router: false },
+  );
+
+  const toggle = screen.getByRole("button", { name: "Toggle thread details panel" });
+  await toggle.click();
+  await expect.element(toggle).toHaveAttribute("aria-pressed", "true");
+  expect(visibility("thread-a")).toEqual({ inlineOpen: true, popoverOpen: true });
+});
+
+it("leaves the details toggle to the pane headers when the grid has two or more panes", async () => {
+  await using _viewport = await viewport(1440);
+  await using screen = await render(
+    <GridTopBarControls
+      grid={grid({
+        tree: {
+          kind: "split",
+          dir: "row",
+          children: [threadLeaf("thread-a", "p1"), threadLeaf("thread-b", "p2")],
+          weights: [1, 1],
+        },
         focusedThreadId: "thread-a",
       })}
     />,
@@ -100,6 +123,7 @@ it("keeps details, grid layout, terminal and right panel in the strip, in that o
     .map((button) => button.getAttribute("aria-label"))
     .filter((label) => label !== null);
   expect(labels).toEqual([
+    "Toggle thread details panel",
     "Tidy panes",
     "Choose tidy layout",
     "Toggle terminal drawer",

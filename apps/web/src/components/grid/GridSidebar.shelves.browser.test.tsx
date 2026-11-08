@@ -86,15 +86,6 @@ vi.mock(import("../sidebar/SidebarUpdatePill"), async (original) => ({
   SidebarUpdateArchitectureWarning: () => <></>,
 }));
 
-vi.mock(import("../pullRequest/useOpenPullRequestCount"), () => ({
-  useOpenPullRequestCount: () => 0,
-}));
-
-vi.mock(import("../../state/tasks"), async (original) => ({
-  ...(await original()),
-  useTaskYourTurnCount: () => 0,
-}));
-
 vi.mock(import("../../hooks/useSidebarProjectGroups"), () => ({
   useSidebarProjectGroups: () =>
     [
