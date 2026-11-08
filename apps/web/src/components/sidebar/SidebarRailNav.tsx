@@ -13,7 +13,6 @@ import { MOTION_FEEDBACK } from "../ui/motion-recipes";
 import {
   RAIL_SHORTCUT_ACTIVE_CLS,
   RAIL_SHORTCUT_CLS,
-  RAIL_SHORTCUT_COUNT_CLS,
   RAIL_SHORTCUT_ICON_ACTIVE_CLS,
   RAIL_SHORTCUT_ICON_CLS,
   RAIL_SHORTCUT_ICON_REST_CLS,
@@ -41,26 +40,23 @@ export function SidebarRailKbd({ children }: { children: ReactNode }) {
 function SidebarRailShortcut({
   icon,
   label,
-  count = null,
   active,
   shortcut = null,
   onClick,
 }: {
   icon: ReactNode;
   label: string;
-  count?: number | null;
   active: boolean;
   shortcut?: string | null;
   onClick: () => void;
 }) {
-  const shown = count !== null && count > 0 ? count : null;
   return (
     <Tooltip>
       <TooltipTrigger
         render={
           <button
             type="button"
-            aria-label={shown === null ? label : `${label}, ${shown}`}
+            aria-label={label}
             aria-current={active ? "page" : undefined}
             data-rail-shortcut={label}
             onClick={onClick}
@@ -80,7 +76,6 @@ function SidebarRailShortcut({
           )}
         >
           {icon}
-          {shown === null ? null : <span className={RAIL_SHORTCUT_COUNT_CLS}>{shown}</span>}
         </span>
       </TooltipTrigger>
       <TooltipPopup side="bottom">
@@ -151,8 +146,6 @@ export function SidebarRailNav({
   sectionActions,
   sectionAddProject = true,
   sectionHeading = true,
-  pullRequestCount = null,
-  taskCount = null,
 }: {
   search: ReactNode;
   sectionTitle?: string;
@@ -160,8 +153,6 @@ export function SidebarRailNav({
   sectionAddProject?: boolean;
   /** A rail that draws its own project sections drops the shared heading row. */
   sectionHeading?: boolean;
-  pullRequestCount?: number | null;
-  taskCount?: number | null;
 }) {
   const navigate = useNavigate();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -193,7 +184,6 @@ export function SidebarRailNav({
           <SidebarRailShortcut
             icon={<PullRequestGlyph.pullRequest />}
             label="Pull requests"
-            count={pullRequestCount}
             active={pathname === "/pull-requests"}
             onClick={openPullRequests}
           />
@@ -201,7 +191,6 @@ export function SidebarRailNav({
         <SidebarRailShortcut
           icon={<ListChecksIcon />}
           label="Tasks"
-          count={taskCount}
           active={pathname === "/tasks"}
           onClick={openTasks}
         />

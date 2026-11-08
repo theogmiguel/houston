@@ -4,7 +4,7 @@ import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@houston-app/cont
 import type { RefObject } from "react";
 
 import { toggleGridTerminal } from "../../grid/gridTerminal";
-import { findThread } from "../../grid/tree";
+import { findThread, preorderThreads } from "../../grid/tree";
 import type { GridRecord } from "../../grid/gridStore";
 import { shortcutLabelForCommand } from "../../keybindings";
 import { useRightPanelStore } from "../../rightPanelStore";
@@ -76,18 +76,19 @@ export function GridTopBarControls({
     return threadPanelPresentation === "popover" ? visibility.popoverOpen : visibility.inlineOpen;
   });
   const gridOwnsDetails = onToggleDetails !== undefined;
+  // A grid of two or more panes carries the details toggle in each pane header. An empty grid's
+  // draft and a single thread's flat canvas show no pane header, so the strip keeps it.
+  const stripOwnsDetails = preorderThreads(grid.tree).length < 2;
 
   return (
     <PanelLayoutControls
-      // A grid with cells carries its details toggle in each pane header; an empty grid's
-      // draft has no pane, so the strip keeps it.
-      showThreadPanelControl={grid.tree === null}
+      showThreadPanelControl={stripOwnsDetails}
       terminalAvailable={terminalRef !== null}
       terminalOpen={terminalOpen}
       terminalShortcutLabel={shortcutLabelForCommand(keybindings, "terminal.toggle")}
       threadPanelOpen={gridOwnsDetails ? detailsOpen === true : threadPanelOpen}
       threadPanelPresentation="inline"
-      {...(grid.tree === null && threadPanelAnchorRef ? { threadPanelAnchorRef } : {})}
+      {...(stripOwnsDetails && threadPanelAnchorRef ? { threadPanelAnchorRef } : {})}
       threadPanelShortcutLabel={shortcutLabelForCommand(keybindings, "threadPanel.toggle")}
       rightPanelAvailable={panelRef !== null}
       rightPanelOpen={rightPanelOpen}

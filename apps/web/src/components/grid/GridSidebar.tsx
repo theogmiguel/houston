@@ -168,8 +168,6 @@ import { AnimatedHeight } from "../AnimatedHeight";
 import { isAppModalPage } from "../sidebar/mainAppLocation";
 import { SidebarChromeFooter, SidebarChromeHeader } from "../sidebar/SidebarChrome";
 import { SidebarRailKbd, SidebarRailNav } from "../sidebar/SidebarRailNav";
-import { useOpenPullRequestCount } from "../pullRequest/useOpenPullRequestCount";
-import { useTaskYourTurnCount } from "../../state/tasks";
 import { SidebarProviderStack, type SidebarProviderEntry } from "../sidebar/SidebarThreadRow";
 import {
   EMPTY_PROVIDER_ENTRIES,
@@ -338,8 +336,6 @@ export function GridSidebar() {
   const searchShortcutLabel = shortcutLabelForCommand(keybindings, "commandPalette.toggle");
   const navigate = useNavigate();
   const pathname = useLocation({ select: (location) => location.pathname });
-  const pullRequestCount = useOpenPullRequestCount();
-  const taskCount = useTaskYourTurnCount();
   const sidebarVisible = useSidebarVisibility();
   const { isMobile: sidebarIsDrawer, setOpenMobile: setSidebarDrawerOpen } = useSidebar();
   // The rail mounts when the drawer opens, so only a change of page closes it, never the mount.
@@ -1071,8 +1067,6 @@ export function GridSidebar() {
               <SidebarChromeHeader isDesktopHost={isDesktopHost} />
               <SidebarHeader>
                 <SidebarRailNav
-                  pullRequestCount={pullRequestCount}
-                  taskCount={taskCount}
                   sectionHeading={false}
                   search={
                     <label className="flex h-7 w-full shrink-0 items-center gap-2 rounded-(--control-radius) px-2 text-sm text-secondary-foreground hover:bg-sidebar-row-hover focus-within:ring-2 focus-within:ring-ring focus-within:ring-inset">

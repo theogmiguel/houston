@@ -88,19 +88,13 @@ export function usePrimaryTaskEnvironmentId(): EnvironmentId | null {
   return useAtomValue(primaryEnvironmentIdAtom);
 }
 
-/** The global backlog, which the rail count and the terminal's task keys read. */
+/** The global backlog, which the terminal's task keys read. */
 export function useAllTasks(): ReadonlyArray<HoustonTaskSummary> {
   return useTasks(usePrimaryTaskEnvironmentId(), ALL_TASKS_SCOPE).tasks;
 }
 
 export function useAllTasksSnapshot(): TasksSnapshot {
   return useTasks(usePrimaryTaskEnvironmentId(), ALL_TASKS_SCOPE);
-}
-
-/** The rail's Your-turn count; null until the backlog snapshot arrives. */
-export function useTaskYourTurnCount(): number | null {
-  const snapshot = useAllTasksSnapshot();
-  return snapshot.loaded ? snapshot.counts.yourTurn : null;
 }
 
 /** Whether the loaded global backlog knows a task key; the terminal only links known keys. */
