@@ -162,35 +162,9 @@ function adjacentModelPickerProvider(input: {
 }
 
 const EMPTY_MODEL_JUMP_LABELS = new Map<string, string>();
-export const MODEL_LIST_ESTIMATED_ITEM_SIZE = 34;
-/** A model row, a Legacy models row and the `h-0.5` gap between rows, as laid out. */
-const MODEL_ROW_PX = 42;
-const LEGACY_ROW_PX = 36;
-const MODEL_LIST_GAP_PX = 2;
-/** The list's top and bottom padding. */
-const MODEL_LIST_PADDING_PX = 16;
-/** A long list stops growing at the height eight estimated rows had before it scrolls. */
-const MODEL_LIST_MAX_HEIGHT_PX = 8 * MODEL_LIST_ESTIMATED_ITEM_SIZE;
-
-/**
- * The height of a list showing its rows whole: each row, the gaps between them and the padding.
- * Past the maximum the list scrolls inside it.
- */
-export function modelListHeight(modelRows: number, legacyRows: number): number {
-  const rows = modelRows + legacyRows;
-  const content =
-    modelRows * MODEL_ROW_PX +
-    legacyRows * LEGACY_ROW_PX +
-    Math.max(0, rows - 1) * MODEL_LIST_GAP_PX +
-    MODEL_LIST_PADDING_PX;
-  return Math.min(content, MODEL_LIST_MAX_HEIGHT_PX);
-}
-
-/** The height one more model row adds to the list. */
-export const MODEL_LIST_ROW_STEP_PX = MODEL_ROW_PX + MODEL_LIST_GAP_PX;
-
-/** The docked list keeps this many rows visible however little room the popup has. */
-export const MODEL_LIST_MIN_VISIBLE_ROWS = 4;
+const MODEL_LIST_ESTIMATED_ITEM_SIZE = 34;
+/** A model list shows its rows up to this many, then scrolls. */
+const MAX_VISIBLE_MODEL_ROWS = 8;
 
 function ModelListSeparator() {
   return <div className="h-0.5" />;
@@ -278,14 +252,14 @@ function ModelPickerProviderNotices({
 function ModelPickerList({
   listRef,
   itemKeys,
-  height,
+  rows,
   extraData,
   renderItem,
 }: {
   listRef: RefObject<LegendListRef | null>;
   itemKeys: ReadonlyArray<string>;
-  /** The list's height: its rows shown whole up to a maximum, then it scrolls. */
-  height: number;
+  /** How many rows the list shows before it scrolls; the frame sizes to content. */
+  rows: number;
   extraData: unknown;
   renderItem: (props: { item: string; index: number }) => ReactNode;
 }) {
@@ -330,8 +304,7 @@ function ModelPickerList({
         "relative min-h-0 shrink-0 overflow-hidden pr-px",
         itemKeys.length === 0 && "h-0",
       )}
-      data-model-picker-list="true"
-      style={itemKeys.length > 0 ? { height } : undefined}
+      style={itemKeys.length > 0 ? { height: rows * MODEL_LIST_ESTIMATED_ITEM_SIZE } : undefined}
     >
       <ComboboxListVirtualized>
         <LegendList<string>
@@ -913,80 +886,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
             }
           }}
         >
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            <div className="mx-1.5 mt-1.5 mb-1 flex h-7 shrink-0 items-center gap-1.75 rounded-md bg-(--field) px-2 text-(--houston)">
-              <SearchIcon aria-hidden="true" className="size-3.25 shrink-0" />
-              <ComboboxPrimitive.Input
-                ref={searchInputRef}
-                placeholder="Search models"
-                className="h-5 min-w-0 flex-1 bg-transparent p-0 text-(--t1) text-xs leading-5 outline-none placeholder:text-(--houston)"
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                }}
-                onKeyDown={(e) => {
-                  if (e.nativeEvent.isComposing || e.keyCode === 229) {
-                    (
-                      e as typeof e & { preventBaseUIHandler?: () => void }
-                    ).preventBaseUIHandler?.();
-                    e.stopPropagation();
-                    return;
-                  }
-                  if (e.key === "Escape") {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    onRequestClose?.();
-                    return;
-                  }
-                  if (
-                    props.onFocusEffort &&
-                    e.key === "ArrowRight" &&
-                    !e.altKey &&
-                    !e.ctrlKey &&
-                    !e.metaKey &&
-                    !e.shiftKey &&
-                    e.currentTarget.selectionStart === searchQuery.length
-                  ) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    // The panel shows the selected model's effort, so a highlighted model is
-                    // picked first; the owning popup then moves focus to that model's levels.
-                    const highlighted = highlightedModelKeyRef.current
-                      ? parseModelPickerModelKey(highlightedModelKeyRef.current)
-                      : null;
-                    const pickedNew =
-                      highlighted !== null &&
-                      highlightedModelKeyRef.current !== activeModelKey &&
-                      handleModelSelect(highlighted.slug, highlighted.instanceId) !== null;
-                    if (!pickedNew) props.onFocusEffort();
-                    return;
-                  }
-                  if (e.key === "Enter" && highlightedModelKeyRef.current) {
-                    (
-                      e as typeof e & { preventBaseUIHandler?: () => void }
-                    ).preventBaseUIHandler?.();
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const legacyInstanceId = parseModelPickerLegacySectionKey(
-                      highlightedModelKeyRef.current,
-                    );
-                    if (legacyInstanceId) {
-                      toggleLegacySection(legacyInstanceId);
-                      return;
-                    }
-                    const model = parseModelPickerModelKey(highlightedModelKeyRef.current);
-                    if (model) {
-                      handleModelSelect(model.slug, model.instanceId, e.shiftKey);
-                    }
-                    return;
-                  }
-                  e.stopPropagation();
-                }}
-                onMouseDown={(e) => e.stopPropagation()}
-                onTouchStart={(e) => e.stopPropagation()}
-              />
-            </div>
-
+          <div className="flex min-h-0 flex-1 flex-row">
             {showSidebar ? (
               <ModelPickerSidebar
                 selectedInstanceId={selectedInstanceId}
@@ -994,7 +894,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                 onFocusSearch={focusSearchInput}
                 instanceEntries={sidebarInstanceEntries}
                 showFavorites
-                compact={props.docked === true}
+
                 {...(selectableUnavailableInstanceIds ? { selectableUnavailableInstanceIds } : {})}
                 {...(lockedDisabledInstanceIds
                   ? {
@@ -1005,113 +905,190 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                   : {})}
               />
             ) : null}
-
-            <ModelPickerList
-              listRef={modelListRef}
-              itemKeys={filteredItemKeys}
-              height={modelListHeight(visibleModels.length, legacySection === null ? 0 : 1)}
-              extraData={modelListExtraData}
-              renderItem={({ item: modelKey, index }) => {
-                if (legacySection?.key === modelKey) {
-                  return (
-                    <ComboboxItem
-                      hideIndicator
-                      index={index}
-                      value={modelKey}
-                      aria-expanded={legacySection.isExpanded}
-                      className="group w-full cursor-pointer"
-                      data-model-picker-legacy-section="true"
-                    >
-                      <div className="flex h-7 min-w-0 flex-1 items-center gap-1.5 px-2 text-(--houston) text-xs">
-                        <ChevronDownIcon
-                          aria-hidden="true"
-                          className={cn(
-                            "size-3.25 shrink-0 transition-transform",
-                            legacySection.isExpanded && "rotate-180",
-                          )}
-                        />
-                        <span className="truncate">
-                          Legacy models · {legacySection.legacyModels.length}
-                        </span>
-                      </div>
-                    </ComboboxItem>
-                  );
-                }
-                const model = filteredModelByKey.get(modelKey);
-                if (!model) {
-                  return null;
-                }
-                const disabledReason =
-                  getModelDisabledReason?.(model.instanceId, model.slug) ?? null;
-                return (
-                  <ModelListRow
-                    key={modelKey}
-                    index={index}
-                    slug={model.slug}
-                    name={model.name}
-                    subProvider={model.subProvider}
-                    instanceId={model.instanceId}
-                    driverKind={model.driverKind}
-                    providerDisplayName={model.instanceDisplayName}
-                    providerAccentColor={model.instanceAccentColor}
-                    acpRegistryAgentId={model.acpRegistryAgentId}
-                    acpRegistryIconUrl={model.acpRegistryIconUrl}
-                    traits={resolveModelPickerTraits(model.capabilities)}
-                    isFavorite={favoritesSet.has(providerModelKey(model.instanceId, model.slug))}
-                    isSelected={
-                      selectedModelKeys !== undefined
-                        ? selectedModelKeySet.has(modelKey)
-                        : modelKey === activeModelKey
-                    }
-                    showProvider={
-                      rowsMixProviders ||
-                      model.instanceId !== selectedInstanceId ||
-                      Boolean(model.subProvider)
-                    }
-                    multiple={onToggleModel !== undefined}
-                    showNewBadge={model.badge === "new"}
-                    unavailable={model.isUnavailable === true}
-                    jumpLabel={modelJumpLabelByKey.get(modelKey) ?? null}
-                    disabledReason={disabledReason}
-                    onToggleFavorite={toggleFavorite}
-                  />
-                );
-              }}
-            />
-            {onToggleModel ? (
-              <p className={MODEL_PICKER_HINT_CLS}>Shift-click adds a model</p>
-            ) : null}
-            <ModelPickerProviderNotices
-              setupEntries={providerSetupEntries}
-              updateRequiredNotices={updateRequiredNotices}
-              emptyLabel={
-                selectedInstanceId === "favorites" && !isSearching
-                  ? "No favorites yet"
-                  : "No models found"
-              }
-              onRequestClose={onRequestClose}
-              onOpenProviderSetup={onOpenProviderSetup}
-            />
-            {onToggleModel && selectedModelKeySet.size > 1 ? (
-              <div
-                data-model-picker-selection-footer="true"
-                className="mx-1.5 mb-1.5 flex items-center gap-2 border-t border-border px-1 pt-1.5 pb-0.5 text-(--houston) text-xs"
-              >
-                <span className="flex-1" data-model-picker-selection-count="true">
-                  {selectedModelKeySet.size} models selected
-                </span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    onRequestClose?.();
-                    onSendSelectedModels?.();
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div className="mx-1.5 mt-1.5 mb-1 flex h-7 shrink-0 items-center gap-1.75 rounded-md bg-(--field) px-2 text-(--houston)">
+                <SearchIcon aria-hidden="true" className="size-3.25 shrink-0" />
+                <ComboboxPrimitive.Input
+                  ref={searchInputRef}
+                  placeholder="Search models"
+                  className="h-5 min-w-0 flex-1 bg-transparent p-0 text-(--t1) text-xs leading-5 outline-none placeholder:text-(--houston)"
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
                   }}
-                >
-                  Send to {selectedModelKeySet.size}
-                </Button>
+                  onKeyDown={(e) => {
+                    if (e.nativeEvent.isComposing || e.keyCode === 229) {
+                      (
+                        e as typeof e & { preventBaseUIHandler?: () => void }
+                      ).preventBaseUIHandler?.();
+                      e.stopPropagation();
+                      return;
+                    }
+                    if (e.key === "Escape") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onRequestClose?.();
+                      return;
+                    }
+                    if (
+                      props.onFocusEffort &&
+                      e.key === "ArrowRight" &&
+                      !e.altKey &&
+                      !e.ctrlKey &&
+                      !e.metaKey &&
+                      !e.shiftKey &&
+                      e.currentTarget.selectionStart === searchQuery.length
+                    ) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      // The panel shows the selected model's effort, so a highlighted model is
+                      // picked first; the owning popup then moves focus to that model's levels.
+                      const highlighted = highlightedModelKeyRef.current
+                        ? parseModelPickerModelKey(highlightedModelKeyRef.current)
+                        : null;
+                      const pickedNew =
+                        highlighted !== null &&
+                        highlightedModelKeyRef.current !== activeModelKey &&
+                        handleModelSelect(highlighted.slug, highlighted.instanceId) !== null;
+                      if (!pickedNew) props.onFocusEffort();
+                      return;
+                    }
+                    if (e.key === "Enter" && highlightedModelKeyRef.current) {
+                      (
+                        e as typeof e & { preventBaseUIHandler?: () => void }
+                      ).preventBaseUIHandler?.();
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const legacyInstanceId = parseModelPickerLegacySectionKey(
+                        highlightedModelKeyRef.current,
+                      );
+                      if (legacyInstanceId) {
+                        toggleLegacySection(legacyInstanceId);
+                        return;
+                      }
+                      const model = parseModelPickerModelKey(highlightedModelKeyRef.current);
+                      if (model) {
+                        handleModelSelect(model.slug, model.instanceId, e.shiftKey);
+                      }
+                      return;
+                    }
+                    e.stopPropagation();
+                  }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onTouchStart={(e) => e.stopPropagation()}
+                />
               </div>
-            ) : null}
+
+              <ModelPickerList
+                listRef={modelListRef}
+                itemKeys={filteredItemKeys}
+                rows={Math.min(
+                  visibleModels.length + (legacySection === null ? 0 : 1),
+                  MAX_VISIBLE_MODEL_ROWS,
+                )}
+                extraData={modelListExtraData}
+                renderItem={({ item: modelKey, index }) => {
+                  if (legacySection?.key === modelKey) {
+                    return (
+                      <ComboboxItem
+                        hideIndicator
+                        index={index}
+                        value={modelKey}
+                        aria-expanded={legacySection.isExpanded}
+                        className="group w-full cursor-pointer"
+                        data-model-picker-legacy-section="true"
+                      >
+                        <div className="flex h-7 min-w-0 flex-1 items-center gap-1.5 px-2 text-(--houston) text-xs">
+                          <ChevronDownIcon
+                            aria-hidden="true"
+                            className={cn(
+                              "size-3.25 shrink-0 transition-transform",
+                              legacySection.isExpanded && "rotate-180",
+                            )}
+                          />
+                          <span className="truncate">
+                            Legacy models · {legacySection.legacyModels.length}
+                          </span>
+                        </div>
+                      </ComboboxItem>
+                    );
+                  }
+                  const model = filteredModelByKey.get(modelKey);
+                  if (!model) {
+                    return null;
+                  }
+                  const disabledReason =
+                    getModelDisabledReason?.(model.instanceId, model.slug) ?? null;
+                  return (
+                    <ModelListRow
+                      key={modelKey}
+                      index={index}
+                      slug={model.slug}
+                      name={model.name}
+                      subProvider={model.subProvider}
+                      instanceId={model.instanceId}
+                      driverKind={model.driverKind}
+                      providerDisplayName={model.instanceDisplayName}
+                      providerAccentColor={model.instanceAccentColor}
+                      acpRegistryAgentId={model.acpRegistryAgentId}
+                      acpRegistryIconUrl={model.acpRegistryIconUrl}
+                      traits={resolveModelPickerTraits(model.capabilities)}
+                      isFavorite={favoritesSet.has(providerModelKey(model.instanceId, model.slug))}
+                      isSelected={
+                        selectedModelKeys !== undefined
+                          ? selectedModelKeySet.has(modelKey)
+                          : modelKey === activeModelKey
+                      }
+                      showProvider={
+                        rowsMixProviders ||
+                        model.instanceId !== selectedInstanceId ||
+                        Boolean(model.subProvider)
+                      }
+                      multiple={onToggleModel !== undefined}
+                      showNewBadge={model.badge === "new"}
+                      unavailable={model.isUnavailable === true}
+                      jumpLabel={modelJumpLabelByKey.get(modelKey) ?? null}
+                      disabledReason={disabledReason}
+                      onToggleFavorite={toggleFavorite}
+                    />
+                  );
+                }}
+              />
+              {onToggleModel ? (
+                <p className={MODEL_PICKER_HINT_CLS}>Shift-click adds a model</p>
+              ) : null}
+              <ModelPickerProviderNotices
+                setupEntries={providerSetupEntries}
+                updateRequiredNotices={updateRequiredNotices}
+                emptyLabel={
+                  selectedInstanceId === "favorites" && !isSearching
+                    ? "No favorites yet"
+                    : "No models found"
+                }
+                onRequestClose={onRequestClose}
+                onOpenProviderSetup={onOpenProviderSetup}
+              />
+              {onToggleModel && selectedModelKeySet.size > 1 ? (
+                <div
+                  data-model-picker-selection-footer="true"
+                  className="mx-1.5 mb-1.5 flex items-center gap-2 border-t border-border px-1 pt-1.5 pb-0.5 text-(--houston) text-xs"
+                >
+                  <span className="flex-1" data-model-picker-selection-count="true">
+                    {selectedModelKeySet.size} models selected
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      onRequestClose?.();
+                      onSendSelectedModels?.();
+                    }}
+                  >
+                    Send to {selectedModelKeySet.size}
+                  </Button>
+                </div>
+              ) : null}
+            </div>
           </div>
         </Combobox>
       </div>

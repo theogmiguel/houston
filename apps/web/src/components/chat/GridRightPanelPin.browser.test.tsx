@@ -8,7 +8,7 @@ import { GridRightPanelPin } from "./GridRightPanelPin";
 const appRegion = (element: Element) =>
   getComputedStyle(element).getPropertyValue("-webkit-app-region");
 
-it("keeps the pin and the owner title out of the header's window drag region", async () => {
+it("keeps the pin out of the header's window drag region", async () => {
   await using screen = await render(
     <TooltipProvider delay={0}>
       <div data-drag-region="deep" className="drag-region flex h-9 items-center">
@@ -27,7 +27,7 @@ it("keeps the pin and the owner title out of the header's window drag region", a
   const header = screen.container.querySelector("[data-drag-region]")!;
   expect(appRegion(header)).toBe("drag");
   const pin = screen.container.querySelector("[data-grid-right-panel-pin] button")!;
-  const owner = screen.container.querySelector("[data-grid-right-panel-owner]")!;
   expect(appRegion(pin), "pin button").toBe("no-drag");
-  expect(appRegion(owner), "owner title").toBe("no-drag");
+  expect(screen.container.querySelector("[data-grid-right-panel-owner]")).toBeNull();
+  expect(screen.container.querySelector("[data-grid-right-panel-pin]")!.textContent).toBe("");
 });

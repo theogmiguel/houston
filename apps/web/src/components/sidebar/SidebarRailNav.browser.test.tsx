@@ -51,23 +51,13 @@ describe("SidebarRailNav", () => {
     expect(style.transitionTimingFunction).toBe("cubic-bezier(0.2, 0, 0, 1)");
   });
 
-  it("shows the open pull request count, and hides it when empty or unknown", async () => {
-    {
-      await using screen = await render(
-        <SidebarRailNav search={<span>Search</span>} pullRequestCount={3} />,
-      );
-      expect(screen.getByRole("button", { name: /Pull requests/ }).element().textContent).toContain(
-        "3",
-      );
-    }
+  it("shows no count on the pull request, task or usage buttons", async () => {
+    await using screen = await render(<SidebarRailNav search={<span>Search</span>} />);
 
-    for (const count of [null, 0]) {
-      await using screen = await render(
-        <SidebarRailNav search={<span>Search</span>} pullRequestCount={count} />,
-      );
-      expect(
-        screen.getByRole("button", { name: /Pull requests/ }).element().textContent,
-      ).not.toMatch(/\d/);
+    for (const name of ["Pull requests", "Tasks", "Usage"]) {
+      const button = screen.getByRole("button", { name }).element();
+      expect(button.textContent).not.toMatch(/\d/);
+      expect(button.getAttribute("aria-label")).toBe(name);
     }
   });
 
@@ -98,15 +88,10 @@ describe("SidebarRailNav", () => {
     for (const width of [264, 280]) {
       await using screen = await render(
         <div style={{ width }}>
-          <SidebarRailNav
-            search={<span>Search</span>}
-            pullRequestCount={3}
-            taskCount={2}
-            sectionHeading={false}
-          />
+          <SidebarRailNav search={<span>Search</span>} sectionHeading={false} />
         </div>,
       );
-      const names = ["Pull requests, 3", "Tasks, 2", "Usage"];
+      const names = ["Pull requests", "Tasks", "Usage"];
       const boxes = names.map((name) =>
         screen.getByRole("button", { name }).element().getBoundingClientRect(),
       );

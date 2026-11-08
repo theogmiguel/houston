@@ -86,10 +86,6 @@ export const RAIL_SHORTCUT_ICON_CLS =
 export const RAIL_SHORTCUT_ICON_ACTIVE_CLS = "text-sidebar-foreground";
 export const RAIL_SHORTCUT_ICON_REST_CLS = "text-secondary-label";
 
-/** The count rides the icon's top-right corner rather than widening the button. */
-export const RAIL_SHORTCUT_COUNT_CLS =
-  "absolute -top-1.5 -right-2 min-w-3 rounded-full bg-sidebar-row-active px-0.5 text-center text-3xs leading-none font-semibold text-sidebar-foreground tabular-nums";
-
 /** A thread row's surface per state. */
 export const SIDEBAR_ROW_SURFACE_CLS = {
   selected: "bg-(--row-current)",

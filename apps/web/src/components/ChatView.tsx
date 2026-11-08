@@ -76,6 +76,7 @@ import {
   ProviderInteractionMode,
   resolveIdleCompaction,
   RuntimeMode,
+  managedRuntimeModeDenial,
 } from "@houston-app/contracts";
 import {
   deriveProviderExtensionStatuses,
@@ -192,6 +193,9 @@ import { threadPullRequestPanelTarget } from "./pullRequest/pullRequestDetail.lo
 import { LinkPullRequestDialogHost } from "./pullRequest/LinkPullRequestDialog";
 import { useDeviceState } from "~/state/device";
 import { BranchToolbar, type BranchToolbarHandle } from "./BranchToolbar";
+import { ComposerContextPermissions } from "./ComposerContextPermissions";
+import { resolveCompatibleRuntimeMode, runtimeModeConfig } from "./chat/runtimeModeConfig";
+import { useManagedPolicy } from "../state/managedPolicy";
 import { makeWorkspaceFileDropHandlers } from "./chat/workspaceFileDrop";
 import { isEditableFocused } from "../lib/editableFocus";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@houston-app/shared/keybindings";
@@ -381,7 +385,6 @@ import { ChatRightPanel } from "./chat/ChatRightPanel";
 import { useDraftEnvironmentRouting } from "./chat/useDraftEnvironmentRouting";
 import { branchMismatchBannerItem, extensionStatusBannerItem } from "./chat/ThreadActivityBanners";
 import { ThreadNow } from "./chat/ThreadNow";
-import { ChangedFilesBar } from "./chat/ChangedFilesBar";
 import { ComposerApprovalCard } from "./chat/ComposerApprovalCard";
 import { checkpointFileTotals } from "@houston-app/client-runtime/state/thread-checkpoints";
 import type { PaneDensity } from "../grid/density";
@@ -1418,6 +1421,20 @@ export default function ChatView(props: ChatViewProps) {
   const selectedProvider = selectedProviderEntry?.driverKind ?? requestedDriverKind;
   const activeProviderInstanceId = selectedProviderEntry?.instanceId ?? null;
   const activeProviderStatus = selectedProviderEntry?.snapshot ?? null;
+  // The new-thread strip changes permissions itself, so it lists the modes the composer would.
+  const stripRuntimeModes = resolveCompatibleRuntimeMode(
+    runtimeMode,
+    activeProviderStatus?.supportedRuntimeModes,
+  );
+  const managedPolicy = useManagedPolicy(environmentId);
+  const stripRuntimeModeOptions = stripRuntimeModes.modes.map((mode) => {
+    const disabledReason = managedRuntimeModeDenial(managedPolicy, mode);
+    return {
+      mode,
+      ...runtimeModeConfig[mode],
+      ...(disabledReason === undefined ? {} : { disabledReason }),
+    };
+  });
   const handleOpenClaudeInChromeSettings = () => {
     void navigate({
       to: "/settings/providers",
@@ -3033,23 +3050,22 @@ export default function ChatView(props: ChatViewProps) {
     latestTurnDiff === null ||
     latestTurnDiff.status !== "ready" ||
     dismissedChangeRuns.has(latestTurnDiff.runId) ||
-    checkpointFileTotals(latestTurnDiff).count === 0 ? null : (
-      <ChangedFilesBar
-        summary={latestTurnDiff}
-        onReview={() => onOpenTurnDiffStable(latestTurnDiff.runId)}
-        onUndo={
-          latestTurnUserMessage === null
-            ? undefined
-            : () =>
-                onRevertTimelineTurnStable(
-                  latestTurnDiff.checkpointTurnCount,
-                  latestTurnUserMessage.id,
-                )
-        }
-        onKeep={() => setDismissedChangeRuns((runs) => new Set(runs).add(latestTurnDiff.runId))}
-        disabled={isRevertingCheckpoint || phase === "running"}
-      />
-    );
+    checkpointFileTotals(latestTurnDiff).count === 0
+      ? null
+      : {
+          summary: latestTurnDiff,
+          onReview: () => onOpenTurnDiffStable(latestTurnDiff.runId),
+          onUndo:
+            latestTurnUserMessage === null
+              ? undefined
+              : () =>
+                  onRevertTimelineTurnStable(
+                    latestTurnDiff.checkpointTurnCount,
+                    latestTurnUserMessage.id,
+                  ),
+          onKeep: () => setDismissedChangeRuns((runs) => new Set(runs).add(latestTurnDiff.runId)),
+          disabled: isRevertingCheckpoint || phase === "running",
+        };
   // The run the composer's pending-changes row already summarises; its turn card folds to a header.
   const changeBannerRunId = changedFilesBar === null ? null : (latestTurnDiff?.runId ?? null);
   const timelinePendingApprovals =
@@ -3876,8 +3892,8 @@ export default function ChatView(props: ChatViewProps) {
                               activeThread={activeThread}
                               activeThreadShell={activeThreadShell}
                               threadStatusPill={activeThreadStatusPill}
-                              changedFiles={changedFilesBar}
                               paneDensity={paneDensity}
+                              changedFiles={changedFilesBar}
                               {...(showComposerContextStrip
                                 ? {
                                     contextControls: (
@@ -3924,6 +3940,19 @@ export default function ChatView(props: ChatViewProps) {
                                             : undefined
                                         }
                                         availableEnvironments={logicalProjectEnvironments}
+                                        {...(isServerThread
+                                          ? {}
+                                          : {
+                                              trailing: (
+                                                <ComposerContextPermissions
+                                                  runtimeMode={stripRuntimeModes.mode}
+                                                  runtimeModeOptions={stripRuntimeModeOptions}
+                                                  onRuntimeModeChange={
+                                                    handleRuntimeModeChangeStable
+                                                  }
+                                                />
+                                              ),
+                                            })}
                                       />
                                     ),
                                   }
@@ -4041,6 +4070,7 @@ export default function ChatView(props: ChatViewProps) {
                               }
                               threadPullRequests={(activeThreadShell ?? activeThread)?.pullRequests}
                               onComposerOverlayHeightChange={publishComposerOverlayHeightStable}
+                              permissionsShownInStrip={showComposerContextStrip && !isServerThread}
                               promptRef={promptRef}
                               composerImagesRef={composerImagesRef}
                               composerFilesRef={composerFilesRef}

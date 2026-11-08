@@ -53,6 +53,8 @@ export function ComposerControlsBar(props: {
   planModeEnabled: boolean;
   planModeUiEnabled: boolean;
   effortDisplay: EffortDisplay;
+  /** The strip under a new thread names the permissions, so the row does not repeat them. */
+  permissionsShownInStrip: boolean;
   interactionMode: ProviderInteractionMode;
   compatibleRuntimeMode: RuntimeMode;
   defaultRuntimeMode: RuntimeMode | undefined;
@@ -150,10 +152,13 @@ export function ComposerControlsBar(props: {
     hiddenBlockIds: hiddenRestingBlockIds,
     overflowShowsPermissions,
     pickerOwnsModeShortcut,
-  } = resolveComposerControlsOwnership({ planModeUiEnabled, measuredHiddenBlockCount });
-  const accessLabel = compatibleRuntimeModeOptions.find(
-    (option) => option.mode === compatibleRuntimeMode,
-  )?.label;
+  } = resolveComposerControlsOwnership({
+    matchesDefault: accessMatchesDefault || props.permissionsShownInStrip,
+    stripHoldsPermissions: props.permissionsShownInStrip,
+    planModeUiEnabled,
+    collapsed: composerControlsCollapsed,
+    measuredHiddenBlockCount,
+  });
   const controlSize = composerControlsCollapsed ? "xs" : "sm";
   const traitsInput = resolveComposerTraitsInput({
     provider: selectedProvider,
@@ -231,9 +236,7 @@ export function ComposerControlsBar(props: {
         props.compactForm && !composerControlsCollapsed && "shrink-0",
       )}
       triggerSuffix={effort.suffix}
-      triggerDetail={[effort.detail, accessMatchesDefault ? null : accessLabel]
-        .filter(Boolean)
-        .join(" · ")}
+      triggerDetail={effort.detail}
       showEffortPanel={effortHasControls}
       triggerShortcuts={
         pickerOwnsModeShortcut ? "composer.effort composer.mode" : "composer.effort"
@@ -241,24 +244,33 @@ export function ComposerControlsBar(props: {
       {...(traitsInput
         ? {
             effortPanel: <ComposerEffortPanel traits={traitsInput} />,
+            // The new-thread strip already names and changes the permissions.
             footer: (
               <ComposerPickerFooter
                 traits={traitsInput}
-                runtimeMode={compatibleRuntimeMode}
-                runtimeModeOptions={compatibleRuntimeModeOptions}
-                onRuntimeModeChange={handleRuntimeModeChange}
+                {...(props.permissionsShownInStrip
+                  ? {}
+                  : {
+                      permissions: {
+                        runtimeMode: compatibleRuntimeMode,
+                        runtimeModeOptions: compatibleRuntimeModeOptions,
+                        onRuntimeModeChange: handleRuntimeModeChange,
+                      },
+                    })}
               />
             ),
           }
-        : {
-            menuAccessory: (
-              <ComposerPermissionsPicker
-                runtimeMode={compatibleRuntimeMode}
-                runtimeModeOptions={compatibleRuntimeModeOptions}
-                onRuntimeModeChange={handleRuntimeModeChange}
-              />
-            ),
-          })}
+        : props.permissionsShownInStrip
+          ? {}
+          : {
+              menuAccessory: (
+                <ComposerPermissionsPicker
+                  runtimeMode={compatibleRuntimeMode}
+                  runtimeModeOptions={compatibleRuntimeModeOptions}
+                  onRuntimeModeChange={handleRuntimeModeChange}
+                />
+              ),
+            })}
       terminalOpen={terminalOpen}
       open={modelPickerOpen}
       instanceIndicatorBackground={

@@ -1,24 +1,41 @@
 /**
- * Access has no chip in the toolbar in any form: the model picker's footer holds Permissions and
- * the model trigger's tooltip names a non-default mode. The mode block remains for the Plan
- * toggle only, and the model picker always answers composer.mode.
+ * Where the permissions chip shows, whether the mode block overflows, and which control answers
+ * the composer.mode shortcut. The model picker's footer holds Permissions unless the new-thread
+ * strip does, so the chip only shows while the mode differs from the default. The rule:
+ * composer.mode has one target.
  */
 export function resolveComposerControlsOwnership(input: {
+  /** Permissions hide while the mode is the default, or while the new-thread strip names it. */
+  readonly matchesDefault: boolean;
+  /** The new-thread strip holds Permissions and answers composer.mode. */
+  readonly stripHoldsPermissions?: boolean;
   readonly planModeUiEnabled: boolean;
+  readonly collapsed: boolean;
   /** How many trailing blocks the width measurement moved into the overflow menu. */
   readonly measuredHiddenBlockCount: number;
 }) {
-  const showModeBlock = input.planModeUiEnabled;
+  const accessDisplay = input.matchesDefault
+    ? ("hidden" as const)
+    : input.collapsed
+      ? ("icon" as const)
+      : ("label" as const);
+  const showModeBlock = accessDisplay !== "hidden" || input.planModeUiEnabled;
   const modeHidden = showModeBlock && input.measuredHiddenBlockCount > 0;
   const hiddenBlockIds = modeHidden ? (["mode"] as const) : ([] as const);
+  // An overflowed chip needs a home for Permissions only when the Plan toggle is not there to fill
+  // the overflow menu; otherwise Permissions stay in the model picker.
+  const overflowShowsPermissions =
+    modeHidden && accessDisplay !== "hidden" && !input.planModeUiEnabled;
   return {
-    accessDisplay: "hidden" as const,
+    accessDisplay,
     showModeBlock,
     hiddenBlockCount: hiddenBlockIds.length,
     hiddenBlockIds,
-    /** The overflow menu holds the Plan toggle only; Permissions stay in the model picker. */
-    overflowShowsPermissions: false,
-    /** The model picker always answers composer.mode. */
-    pickerOwnsModeShortcut: true,
+    overflowShowsPermissions,
+    /** Without a visible chip or an overflow menu holding it, the model picker answers composer.mode. */
+    pickerOwnsModeShortcut:
+      input.stripHoldsPermissions !== true &&
+      !overflowShowsPermissions &&
+      (accessDisplay === "hidden" || modeHidden),
   };
 }

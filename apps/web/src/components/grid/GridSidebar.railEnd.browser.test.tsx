@@ -87,15 +87,6 @@ vi.mock(import("../sidebar/SidebarUpdatePill"), async (original) => ({
   SidebarUpdateArchitectureWarning: () => <></>,
 }));
 
-vi.mock(import("../pullRequest/useOpenPullRequestCount"), () => ({
-  useOpenPullRequestCount: () => 0,
-}));
-
-vi.mock(import("../../state/tasks"), async (original) => ({
-  ...(await original()),
-  useTaskYourTurnCount: () => 0,
-}));
-
 // Subscribed, so a test can deliver the project list after the first render, as a cold load does:
 // the threads are known while the rail has no project section to draw their rows in.
 vi.mock(import("../../hooks/useSidebarProjectGroups"), () => ({

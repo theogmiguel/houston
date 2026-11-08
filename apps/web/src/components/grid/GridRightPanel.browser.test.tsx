@@ -242,9 +242,6 @@ it("follows the focused pane's panel by default and keeps a pinned panel on its 
     ).not.toBeNull();
   });
   expect(panelOwnerKey(screen.container)).toContain("thread-grid-a");
-  expect(screen.container.querySelector("[data-grid-right-panel-owner]")?.textContent).toBe(
-    THREADS[0]!.title,
-  );
 
   // Default: focusing the other pane swaps the panel to that pane's thread, which is closed.
   useGridStore.getState().focusThread(gridId, "thread-grid-b");
@@ -274,7 +271,7 @@ it("follows the focused pane's panel by default and keeps a pinned panel on its 
     expect(useGridStore.getState().grids[0]!.panelPinnedThreadId).toBe("thread-grid-a");
     expect(pin.getAttribute("aria-pressed")).toBe("true");
   });
-  expect(screen.container.querySelector("[data-grid-right-panel-owner]")?.textContent).toBe(
+  expect(screen.container.querySelector("[data-grid-right-panel-host]")?.textContent).not.toContain(
     THREADS[0]!.title,
   );
 
@@ -332,7 +329,7 @@ it("paints the grid top bar and the pane gutter as one chrome surface", async ()
   expect(probe("--grid-gutter")).not.toBe(probe("--content"));
 });
 
-it("shows the owner's title unpinned, reveals the pin on hover or focus, and keeps it visible when pinned", async () => {
+it("reveals the pin on hover or focus, and keeps it visible when pinned", async () => {
   const { gridId, screen } = await mountSeededGrid();
   await using _screen = screen;
   const focusedIndex = () =>
@@ -342,16 +339,16 @@ it("shows the owner's title unpinned, reveals the pin on hover or focus, and kee
   useGridStore.getState().focusThread(gridId, "thread-grid-a");
   await vi.waitFor(() => expect(focusedIndex()).toBe(0));
   screen.container.querySelector<HTMLButtonElement>('[aria-label="Toggle right panel"]')!.click();
-  const owner = () =>
-    screen.container.querySelector<HTMLElement>("[data-grid-right-panel-owner]")?.textContent;
-  await vi.waitFor(() => expect(owner()).toBe(THREADS[0]!.title));
-  expect(
-    getComputedStyle(screen.container.querySelector("[data-grid-right-panel-owner]")!).textOverflow,
-  ).toBe("ellipsis");
-
-  const reveal = screen.container.querySelector<HTMLElement>("[data-grid-right-panel-pin-reveal]")!;
-  const pin = reveal.querySelector<HTMLButtonElement>("button")!;
+  const reveal = await vi.waitFor(() => {
+    const found = screen.container.querySelector<HTMLElement>("[data-grid-right-panel-pin-reveal]");
+    expect(found).not.toBeNull();
+    return found!;
+  });
   const header = screen.container.querySelector<HTMLElement>("[data-right-panel-tabbar]")!;
+  const pinGroup = screen.container.querySelector<HTMLElement>("[data-grid-right-panel-pin]")!;
+  expect(pinGroup.textContent).toBe("");
+  expect(header.textContent).not.toContain(THREADS[0]!.title);
+  const pin = reveal.querySelector<HTMLButtonElement>("button")!;
   expect(getComputedStyle(reveal).opacity).toBe("0");
   expect(getComputedStyle(reveal).display).not.toBe("none");
   await userEvent.hover(header);
@@ -363,11 +360,10 @@ it("shows the owner's title unpinned, reveals the pin on hover or focus, and kee
   pin.blur();
   await vi.waitFor(() => expect(getComputedStyle(reveal).opacity).toBe("0"));
 
-  // Unpinned, the title follows focus to a pane whose panel is open.
   useGridStore.getState().focusThread(gridId, "thread-grid-b");
   await vi.waitFor(() => expect(focusedIndex()).toBe(1));
   screen.container.querySelector<HTMLButtonElement>('[aria-label="Toggle right panel"]')!.click();
-  await vi.waitFor(() => expect(owner()).toBe(THREADS[1]!.title));
+  await vi.waitFor(() => expect(header.textContent).not.toContain(THREADS[1]!.title));
 
   useGridStore.getState().setPanelPinnedThread(gridId, "thread-grid-b");
   await vi.waitFor(() => {

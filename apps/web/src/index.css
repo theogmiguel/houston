@@ -1070,6 +1070,7 @@ body {
   /* A raised card on the white canvas separates by its 1px edge; the value is the
      board's #0000001a, one step above --border. */
   --card-edge: rgba(0, 0, 0, 0.1);
+  --pane-focus-ring: #4a4a55;
   /* Shell dividers: one step above --border so a 1px seam reads on both panes,
      and below the 16% interactive line so it never reads as a control. */
   --divider: rgba(0, 0, 0, 0.14);
@@ -1137,8 +1138,7 @@ body {
   --focus-frame: rgba(0, 0, 0, 0.38);
   /* The user's message bubble and the composer's send button; themes give them the message
      roles. */
-  /* A user turn is an 8% brand wash over the card, never a second card colour. */
-  --bubble: color-mix(in srgb, var(--accent) 8%, var(--card));
+  --bubble: var(--card);
   --bubble-ink: var(--t1);
   --send: var(--t1);
   --send-ink: var(--pane);
@@ -1253,6 +1253,7 @@ body {
   --border: rgba(255, 255, 255, 0.09);
   /* The raised tier's edge: one hairline above the canvas at 8% white. */
   --card-edge: rgba(255, 255, 255, 0.08);
+  --pane-focus-ring: #6f6f7a;
   --divider: rgba(255, 255, 255, 0.14);
   --border-hover: rgba(255, 255, 255, 0.16);
   --line-strong: rgba(255, 255, 255, 0.16);
@@ -1310,7 +1311,7 @@ body {
   --claude: #d97757;
   --codex: rgba(255, 255, 255, 0.92);
   --message-surface: color-mix(in srgb, #ffffff 6%, var(--card));
-  --bubble: color-mix(in srgb, var(--accent) 8%, var(--card));
+  --bubble: var(--card);
   --guest-foreground: #f0abfc;
   --sidebar-control-surface: var(--card);
 }
@@ -1445,6 +1446,7 @@ html[data-theme-id]:not([data-theme-id=""]) {
   --update-foreground: var(--app-theme-update-foreground);
   --border: var(--app-theme-border);
   --card-edge: var(--app-theme-border);
+  --pane-focus-ring: var(--app-theme-focus);
   --input: var(--app-theme-input);
   --ring: var(--app-theme-focus);
   --sidebar: var(--app-theme-sidebar);
@@ -2950,7 +2952,7 @@ code {
   z-index: 30;
   pointer-events: none;
   border-radius: inherit;
-  box-shadow: inset 0 0 0 1.5px var(--accent);
+  box-shadow: inset 0 0 0 1px var(--pane-focus-ring);
   opacity: 0;
   transition: opacity var(--motion-feedback) var(--ease-standard);
 }

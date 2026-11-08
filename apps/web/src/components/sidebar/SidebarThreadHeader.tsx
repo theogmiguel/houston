@@ -9,7 +9,6 @@ import {
 import { cn } from "~/lib/utils";
 import { SidebarMenuButton } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { useTaskYourTurnCount } from "../../state/tasks";
 import { SidebarRailKbd, SidebarRailNav } from "./SidebarRailNav";
 
 export interface SidebarThreadHeaderProps {
@@ -41,14 +40,12 @@ export function SidebarThreadHeader({
   activeSearchResultIndex,
   onClearSearch,
 }: SidebarThreadHeaderProps) {
-  const taskCount = useTaskYourTurnCount();
   const resultsVisible = isSearching && searchResultCount > 0;
   // Shrinking results can remove the active option; never leave aria-activedescendant pointing at it.
   const activeResultExists = resultsVisible && activeSearchResultIndex < searchResultCount;
 
   return (
     <SidebarRailNav
-      taskCount={taskCount}
       search={
         <div
           ref={searchFieldRef}

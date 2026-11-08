@@ -8,6 +8,7 @@ import { beginThreadDragAt, endThreadDrag, useThreadDropTarget } from "../../gri
 import { __setClientSettingsForTests } from "../../hooks/useSettings";
 import { act, render } from "../../../test/render";
 import { TooltipProvider } from "../ui/tooltip";
+import type { SidebarProviderEntry } from "../sidebar/SidebarThreadRow";
 import { ThreadCard } from "./GridSidebar";
 
 vi.mock(import("@effect/atom-react"), async (original) => ({
@@ -73,6 +74,7 @@ interface CardOverrides {
   onWake?: () => void;
   onReopen?: () => void;
   onDropOnThread?: (source: unknown) => void;
+  providerEntries?: ReadonlyMap<string, SidebarProviderEntry>;
 }
 
 function card(value: EnvironmentThreadShell, overrides: CardOverrides = {}) {
@@ -82,7 +84,7 @@ function card(value: EnvironmentThreadShell, overrides: CardOverrides = {}) {
         gridId={overrides.gridId === undefined ? "grid-a" : overrides.gridId}
         thread={value}
         query=""
-        providerEntries={new Map()}
+        providerEntries={overrides.providerEntries ?? new Map()}
         nowIso="2026-01-01T00:00:00.000Z"
         focused={false}
         selected={false}
@@ -335,5 +337,109 @@ describe("ThreadCard lines at the narrowest sidebar", () => {
 
     expect(label.getBoundingClientRect().right).toBeLessThanOrEqual(rowBox.right);
     expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth);
+  });
+});
+
+const PROVIDERS = new Map([
+  [
+    "claude",
+    {
+      instanceId: "claude",
+      driverKind: "claudeAgent",
+      enabled: true,
+      displayName: "Claude",
+      models: [],
+    },
+  ],
+]) as unknown as ReadonlyMap<string, SidebarProviderEntry>;
+
+function worstCaseRow(branch: string) {
+  return thread({
+    title: LONG_TITLE,
+    branch,
+    hasPendingUserInput: true,
+    providerInstanceHistory: [],
+    modelSelection: { instanceId: "claude", model: "claude-opus-5-5" },
+    pullRequests: [
+      { number: 4812, url: "https://example.test/pr/4812", snapshot: { state: "open" } },
+    ] as never,
+  });
+}
+
+const SIBLING_BRANCHES = ["v2-ui-feedback-composer", "v2-ui-feedback-chrome"] as const;
+
+async function renderWorstCaseRows() {
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS });
+  const screen = await render(
+    <div style={{ width: 240 }}>
+      {SIBLING_BRANCHES.map((branch, index) => (
+        <div key={branch}>
+          {card({ ...worstCaseRow(branch), id: `thread-${index}` } as never, {
+            timeLabel: "3d",
+            providerEntries: PROVIDERS,
+          })}
+        </div>
+      ))}
+    </div>,
+  );
+  return {
+    screen,
+    rows: [...screen.container.querySelectorAll<HTMLElement>("[data-thread-key]")],
+  };
+}
+
+describe("ThreadCard worst-case row at the narrowest sidebar", () => {
+  it("keeps the title wide and never pushes it off by the status or the age", async () => {
+    const { screen, rows } = await renderWorstCaseRows();
+    await using _screen = screen;
+    for (const row of rows) {
+      const line = row.querySelector<HTMLElement>("[data-thread-title-line]")!;
+      const title = titleOf(row).getBoundingClientRect();
+      const time = row.querySelector<HTMLElement>(
+        "[data-thread-title-line] > :not([data-card-open])",
+      );
+      expect(row.querySelector("[data-thread-status]")!.textContent).toBe("Input");
+      expect(title.width).toBeGreaterThanOrEqual(line.getBoundingClientRect().width * 0.6);
+      expect(title.left).toBeGreaterThanOrEqual(line.getBoundingClientRect().left);
+      if (time !== null) expect(title.right).toBeLessThanOrEqual(time.getBoundingClientRect().left);
+      expect(row.querySelector("[data-thread-title-line] [data-thread-status]")).toBeNull();
+    }
+  });
+
+  it("keeps the pull request badge and the provider mark fully inside the row", async () => {
+    const { screen, rows } = await renderWorstCaseRows();
+    await using _screen = screen;
+    for (const row of rows) {
+      const rowBox = row.getBoundingClientRect();
+      const badge = row.querySelector<HTMLElement>('[data-meta-label^="Pull request"]')!;
+      const mark = row.querySelector<HTMLElement>("[data-thread-provider-mark]")!;
+      expect(badge.hasAttribute("data-meta-hidden")).toBe(false);
+      expect(mark.querySelector("svg, img")).not.toBeNull();
+      for (const box of [badge, mark].map((element) => element.getBoundingClientRect())) {
+        expect(box.left).toBeGreaterThanOrEqual(rowBox.left);
+        expect(box.right).toBeLessThanOrEqual(rowBox.right);
+        expect(box.top).toBeGreaterThanOrEqual(rowBox.top);
+        expect(box.bottom).toBeLessThanOrEqual(rowBox.bottom);
+      }
+      expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth);
+    }
+  });
+
+  it("tells sibling branches apart: a clipped branch is spelled out in full by the row's tooltip", async () => {
+    const { screen, rows } = await renderWorstCaseRows();
+    await using _screen = screen;
+    const visible: string[] = [];
+    for (const [index, row] of rows.entries()) {
+      const branch = row.querySelector<HTMLElement>("[data-thread-branch] .truncate")!;
+      expect(branch.textContent).toBe(SIBLING_BRANCHES[index]);
+      const clipped = branch.scrollWidth > branch.clientWidth;
+      visible.push(clipped ? "" : (branch.textContent ?? ""));
+      if (!clipped) continue;
+      await userEvent.hover(row);
+      await expect.element(page.getByText(SIBLING_BRANCHES[index]!, { exact: true })).toBeVisible();
+      await userEvent.unhover(row);
+    }
+    // Either both branches read in full, or each is recoverable from its tooltip.
+    expect(visible.every((text) => text !== "") ? new Set(visible).size : 2).toBe(2);
   });
 });

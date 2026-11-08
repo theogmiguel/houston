@@ -41,6 +41,8 @@ function Main({ className, ...props }: ComponentProps<"div">) {
         SURFACE_LIFT_CLASS,
         // On the new-thread page the composer is the page's one surface, so it rises a step.
         "[[data-draft-hero]_&]:bg-(--surface-raised) [[data-draft-hero]_&]:shadow-(--shadow-1)",
+        // Focus lifts the hairline one step instead of drawing a ring.
+        "focus-within:border-(--line-strong)",
         className,
       )}
       {...props}

@@ -73,7 +73,6 @@
 61 apps/web/src/components/chat/MessagesTimeline.tsx
 19 apps/web/src/components/chat/ModelListRow.tsx
 29 apps/web/src/components/chat/ModelPickerContent.tsx
-15 apps/web/src/components/chat/ModelPickerSidebar.tsx
 1 apps/web/src/components/chat/OpenInPicker.tsx
 5 apps/web/src/components/chat/PanelLayoutControls.tsx
 2 apps/web/src/components/chat/PierreEntryIcon.tsx
@@ -116,7 +115,7 @@
 17 apps/web/src/components/chat/TimelineRowParts.tsx
 17 apps/web/src/components/chat/TimelineSystemDivider.tsx
 4 apps/web/src/components/chat/TimelineToolActivityIcon.tsx
-107 apps/web/src/components/chat/TimelineUserMessageRow.tsx
+106 apps/web/src/components/chat/TimelineUserMessageRow.tsx
 6 apps/web/src/components/chat/TimelineV2EventRow.tsx
 45 apps/web/src/components/chat/TimelineWorkEntryRow.tsx
 24 apps/web/src/components/chat/TimelineWorkGroupRows.tsx

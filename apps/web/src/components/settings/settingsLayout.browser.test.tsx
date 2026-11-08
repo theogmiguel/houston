@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
 
+import { userEvent } from "vite-plus/test/browser";
+
 import "~/index.css";
+import { Swap } from "../ui/swap";
 import { render } from "../../../test/render";
 import { SettingsBreadcrumb } from "./SettingsBreadcrumb";
 import {
@@ -227,5 +230,32 @@ describe("settings group card", () => {
     } finally {
       document.documentElement.classList.remove("dark");
     }
+  });
+});
+
+describe("settings page scrolling", () => {
+  it("scrolls a long page with the mouse wheel inside the route's swap layout", async () => {
+    const canvas = document.createElement("div");
+    canvas.style.cssText = "display:flex;flex-direction:column;width:1920px;height:1050px";
+    await using screen = await render(
+      <Swap
+        swapKey="/settings/voice"
+        className="min-h-0 flex flex-1 flex-col"
+        contentClassName="min-h-0 flex flex-1 flex-col"
+        innerClassName="min-h-0 flex flex-1 flex-col"
+      >
+        <SettingsPageContainer>
+          {Array.from({ length: 60 }, (_, index) => (
+            <p key={index} className="h-16">{`row ${index}`}</p>
+          ))}
+        </SettingsPageContainer>
+      </Swap>,
+      { router: "/settings/voice", container: canvas },
+    );
+    const scroll = screen.container.querySelector<HTMLElement>("[data-settings-page-scroll]")!;
+    expect(scroll.scrollHeight).toBeGreaterThan(scroll.clientHeight);
+    expect(scroll.clientHeight).toBeLessThanOrEqual(1050);
+    await userEvent.wheel(scroll, { delta: { y: 300 } });
+    await expect.poll(() => scroll.scrollTop).toBeGreaterThan(0);
   });
 });

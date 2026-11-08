@@ -101,6 +101,7 @@ import {
   resolvePreviewAnnotationImage,
   userMessageFileLabel,
 } from "./TimelineUserMessageRow.logic";
+import { USER_BUBBLE_SURFACE_CLASS } from "../ui/surface-recipes";
 
 const EXTENSION_PATTERN = /\.([a-z0-9]{1,8})$/i;
 const LINE_BREAK = /\r?\n/;
@@ -877,7 +878,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         className={cn(
           "relative min-w-0 rounded-(--r-group) text-prose leading-5 text-(--bubble-ink)",
           BUBBLE_MAX_WIDTH_CLASS,
-          "bg-(--bubble) shadow-composer",
+          USER_BUBBLE_SURFACE_CLASS,
           mediaAboveText && "rounded-tr-(--r-badge)",
           BUBBLE_CHIP_CLASS_NAME,
           !mediaOnly && !fileCardsOnly && !audioOnly && "px-3.5 py-2.5",

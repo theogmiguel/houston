@@ -34,6 +34,7 @@ import { Button, InlineButton } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { ComposerBannerStackItem } from "./ComposerBannerStack";
 import type { ThreadNowItem } from "./ThreadNow";
+import { THREAD_NOW_DETAIL_ACTIVITY_CLS } from "../ui/thread-now-recipes";
 
 export function extensionStatusBannerItem(
   statuses: NonNullable<OrchestrationV2ProviderSession["extensionStatuses"]>,
@@ -190,14 +191,10 @@ export function backgroundWorkNowItem(input: {
       task,
       activity: subagent?.progress?.replace(WHITESPACE_RUN, " ").trim() || null,
       startedAtMs: item?.startedAt ? DateTime.toEpochMillis(item.startedAt) : null,
-      updatedAtMs: subagent ? DateTime.toEpochMillis(subagent.updatedAt) : 0,
       childThreadId: task.childThreadId ?? subagent?.childThreadId ?? undefined,
     };
   });
   const [only] = rows.length === 1 ? rows : [];
-  const newest = rows
-    .filter((row) => row.activity)
-    .toSorted((left, right) => right.updatedAtMs - left.updatedAtMs)[0];
   const isCommand = (row: (typeof rows)[number]) => row.task.kind !== "subagent";
   const verb = presentation.waiting ? "Waiting on" : "Running";
   const onlyThreadId = only?.childThreadId;
@@ -219,15 +216,21 @@ export function backgroundWorkNowItem(input: {
     ) : (
       presentation.title
     ),
-    description: only ? (
-      only.activity
-    ) : newest ? (
-      `${newest.task.label}: ${newest.activity}`
-    ) : rows.every(isCommand) ? (
-      <span className="font-mono">{rows.map((row) => row.task.label).join(", ")}</span>
-    ) : (
-      rows.map((row) => row.task.label).join(", ")
-    ),
+    description: only ? only.activity : undefined,
+    ...(only
+      ? {}
+      : {
+          details: rows.map((row) => (
+            <span key={row.task.taskId} className={cn(isCommand(row) && "font-mono")}>
+              {row.task.label}
+              {row.activity ? (
+                <span className={THREAD_NOW_DETAIL_ACTIVITY_CLS}> · {row.activity}</span>
+              ) : null}
+            </span>
+          )),
+          detailsLabel: `Show details: ${presentation.title}`,
+        }),
+    spaced: true,
     actions: (
       <>
         {startedAtMs === null ? null : (

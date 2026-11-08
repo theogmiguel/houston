@@ -6,15 +6,14 @@ export const MODEL_TRIGGER_GROUP_CLASS = "group/model-trigger";
  * the same two-part stack, so it only narrows.
  */
 export const DOCKED_PICKER_FRAME_CLASS =
-  "flex max-h-(--available-height) w-75 max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-lg border border-border bg-(--raised)";
+  "flex max-h-(--available-height) w-[26.75rem] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-lg border border-border bg-(--raised)";
 
 /**
  * The effort panel under the model list, with the rule that separates them. Its height has a
- * floor so a model with fewer options does not move the list when the selection changes; one
- * scrolling row of levels fits it.
+ * floor so a model with fewer options does not move the list when the selection changes.
  */
 export const DOCKED_EFFORT_PANEL_CLASS =
-  "flex max-h-40 min-h-14 shrink-0 flex-col overflow-y-auto overscroll-contain border-t border-border";
+  "flex max-h-40 min-h-22 shrink-0 flex-col overflow-y-auto overscroll-contain border-t border-border";
 
 /** The list's frame inside a docked popup: the popup owns the border and radius. */
 export const MODEL_PICKER_DOCKED_CLASS = "w-full border-0";

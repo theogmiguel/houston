@@ -113,31 +113,13 @@ describe("GridLayoutMenu", () => {
     await expect.element(page.getByText("Open a second pane to tidy the grid")).toBeVisible();
   });
 
-  it("draws the main and menu buttons as one split button of equal height", async () => {
+  it("draws the main and menu buttons without an outlined frame or separator", async () => {
     await using screen = await mount(grid(threads(["thread-a", "thread-b"])));
 
     const group = screen.getByRole("group").element();
-    const main = screen.getByRole("button", { name: "Tidy panes" }).element();
-    const menu = screen.getByRole("button", { name: "Choose tidy layout" }).element();
-    const separator = group.querySelector<HTMLElement>('[data-slot="separator"]')!;
-
-    const groupBox = group.getBoundingClientRect();
-    expect(groupBox.height).toBe(28);
-    expect(main.getBoundingClientRect().height).toBe(28);
-    expect(menu.getBoundingClientRect().height).toBe(28);
-    expect(getComputedStyle(group).borderTopLeftRadius).toBe("6px");
-    // The outline is an overlay with the same radius, so it takes no layout space.
-    const outline = getComputedStyle(group, "::after");
-    expect(outline.borderTopWidth).toBe("1px");
-    expect(outline.borderTopLeftRadius).toBe("6px");
-    expect(getComputedStyle(group).borderTopWidth).toBe("0px");
-    // The container owns the outer corners: the joined edges stay square.
-    expect(getComputedStyle(main).borderTopLeftRadius).toBe("6px");
-    expect(getComputedStyle(main).borderTopRightRadius).toBe("0px");
-    expect(getComputedStyle(menu).borderTopLeftRadius).toBe("0px");
-    expect(getComputedStyle(menu).borderTopRightRadius).toBe("6px");
-    expect(separator.getBoundingClientRect().width).toBe(1);
-    expect(separator.getBoundingClientRect().height).toBe(28);
+    expect(group.querySelector('[data-slot="separator"]')).toBeNull();
+    expect(group.hasAttribute("data-variant")).toBe(false);
+    expect(getComputedStyle(group, "::after").content).toBe("none");
   });
 
   it("shares its top edge and height with a sibling icon button in the header row", async () => {

@@ -87,7 +87,7 @@ function overlapping(first: HTMLElement, second: HTMLElement): boolean {
 // Runs first: the fake environment serves the thread-shell list once per app runtime, so a
 // branch set on a later test's threads would never reach the shell this chip reads.
 it(
-  "folds checkout, branch and pull request into the compact chip, and moves them to the context row when the pane widens",
+  "folds checkout, branch and pull request into the compact chip, and moves them to the tray when the pane widens",
   async () => {
     const branch = "feature/worktree-chip-12";
     expect(branch).toHaveLength(24);
@@ -137,7 +137,7 @@ it(
       { timeout: 10_000 },
     );
     expect(chip.getAttribute("title")).toBe(`${branch} · Worktree`);
-    expect(cellA().querySelector('[data-composer-context-row="true"]')).toBeNull();
+    expect(cellA().querySelector('[data-composer-context-tray="true"]')).toBeNull();
     const footer = cellA().querySelector<HTMLElement>('[data-chat-composer-footer="true"]')!;
 
     // The branch reads in the mono face and the chip is as wide as its content: icon, label and
@@ -195,13 +195,13 @@ it(
       expect(document.querySelector('[data-slot="popover-popup"]')).toBeNull(),
     );
 
-    // Wide form: the same controls move to the context row inside the card.
+    // Wide form: the same controls move to the tray above the card.
     await page.viewport(1400, 800);
     screen.container.style.width = "1400px";
-    const row = await vi.waitFor(
+    const tray = await vi.waitFor(
       () => {
         expect(cellA().getBoundingClientRect().width).toBeGreaterThanOrEqual(560);
-        const found = cellA().querySelector<HTMLElement>('[data-composer-context-row="true"]');
+        const found = cellA().querySelector<HTMLElement>('[data-composer-context-tray="true"]');
         const surfaceWidth = cellA()
           .querySelector<HTMLElement>('[data-chat-composer-surface="true"]')
           ?.getBoundingClientRect().width;
@@ -216,40 +216,34 @@ it(
     const wideFooter = cellA().querySelector<HTMLElement>('[data-chat-composer-footer="true"]')!;
     expect(wideFooter.querySelector('[aria-label^="Workspace:"]')).toBeNull();
     expect(wideFooter.querySelector("[data-composer-context-control]")).toBeNull();
-    expect(
-      cellA().querySelector<HTMLElement>('[data-chat-composer-main-surface="true"]')!.contains(row),
-    ).toBe(true);
-    expect(row.textContent).toContain("Worktree");
-    expect(row.querySelector('a[aria-label*="622"]')).not.toBeNull();
-    const rowBranch = row.querySelector<HTMLElement>(".font-mono")!;
-    expect(rowBranch.textContent).toContain("feature/");
-    // Checkout, then the branch, then the pull request, all on the left.
-    const checkout = row.querySelector<HTMLElement>("[data-composer-context-control]")!;
-    const rowPr = row.querySelector<HTMLElement>('a[aria-label*="622"]')!;
+    expect(tray.textContent).toContain("Worktree");
+    expect(tray.querySelector('a[aria-label*="622"]')).not.toBeNull();
+    const trayBranch = tray.querySelector<HTMLElement>(".font-mono")!;
+    expect(trayBranch.textContent).toContain("feature/");
+    // Checkout on the left; the pull request, then the branch, on the right.
+    const checkout = tray.querySelector<HTMLElement>("[data-composer-context-control]")!;
+    const trayPr = tray.querySelector<HTMLElement>('a[aria-label*="622"]')!;
     expect(checkout.getBoundingClientRect().right).toBeLessThanOrEqual(
-      rowBranch.getBoundingClientRect().left,
+      trayPr.getBoundingClientRect().left,
     );
-    expect(rowBranch.getBoundingClientRect().right).toBeLessThanOrEqual(
-      rowPr.getBoundingClientRect().left + 1,
+    expect(trayPr.getBoundingClientRect().right).toBeLessThanOrEqual(
+      trayBranch.getBoundingClientRect().left + 1,
     );
-    expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth + 1);
-    expect(row.querySelector("[data-changed-files-bar]")).toBeNull();
+    expect(tray.scrollWidth).toBeLessThanOrEqual(tray.clientWidth + 1);
+    for (const control of tray.querySelectorAll<HTMLElement>("button, a")) {
+      expect(
+        overlapping(control, tray.querySelector<HTMLElement>("[data-composer-context-control]")!) &&
+          control !== checkout,
+      ).toBe(false);
+    }
 
     // Access stays reachable: it lives in the model picker's footer.
     const widePicker = wideFooter.querySelector<HTMLElement>("[data-chat-provider-model-picker]")!;
     await userEvent.click(widePicker);
-    const accessTrigger = await vi.waitFor(() => {
-      const found = document.querySelector<HTMLElement>("[data-composer-permissions-trigger]");
-      expect(found).not.toBeNull();
-      return found!;
-    });
-    await userEvent.click(accessTrigger);
     await vi.waitFor(() =>
-      expect(
-        document.querySelectorAll('[data-composer-permissions] [role="menuitemradio"]').length,
-      ).toBeGreaterThan(1),
+      expect(document.querySelector("[data-composer-permissions-trigger]")).not.toBeNull(),
     );
-    await userEvent.keyboard("{Escape}{Escape}");
+    await userEvent.keyboard("{Escape}");
   },
   APP_BOOT_TEST_TIMEOUT_MS,
 );

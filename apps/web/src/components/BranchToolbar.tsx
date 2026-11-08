@@ -20,6 +20,7 @@ import {
 import {
   type Ref,
   type MouseEvent as ReactMouseEvent,
+  type ReactNode,
   memo,
   useImperativeHandle,
   useRef,
@@ -132,6 +133,8 @@ interface BranchToolbarProps {
   envLocked: boolean;
   onCheckoutPullRequestRequest?: (reference: string) => void;
   onComposerFocusRequest?: () => void;
+  /** Shown at the end of the composer strip, such as the new thread's permissions. */
+  trailing?: ReactNode;
   availableEnvironments?: readonly EnvironmentOption[];
   onEnvironmentChange?: (environmentId: EnvironmentId) => void;
 }
@@ -559,6 +562,7 @@ export const BranchToolbar = memo(function BranchToolbar({
   onComposerFocusRequest,
   availableEnvironments,
   onEnvironmentChange,
+  trailing,
 }: BranchToolbarProps) {
   const branchSelectorRef = useRef<BranchToolbarBranchSelectorHandle>(null);
   const threadRef = scopeThreadRef(environmentId, threadId);
@@ -876,6 +880,7 @@ export const BranchToolbar = memo(function BranchToolbar({
               {runContextNode}
               {showGitControls ? branchSelector("branch", "min-w-0 flex-1 justify-end") : null}
               {environmentNode}
+              {trailing}
             </div>
           </PopoverPopup>
         </Popover>
@@ -894,9 +899,9 @@ export const BranchToolbar = memo(function BranchToolbar({
       >
         {projectChip}
         {runContextNode}
-        {showGitControls ? branchSelector("branch", "min-w-0 shrink") : null}
-        {showGitControls ? branchSelector("pr", "shrink-0") : null}
+        {showGitControls ? branchSelector("all", "min-w-0") : null}
         {uploadsNode}
+        {trailing}
       </div>
     );
   }
@@ -908,6 +913,7 @@ export const BranchToolbar = memo(function BranchToolbar({
       {environmentNode}
       {branchNode}
       {uploadsNode}
+      {trailing}
     </>
   );
 

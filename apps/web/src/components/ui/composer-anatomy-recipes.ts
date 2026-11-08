@@ -2,9 +2,9 @@
 
 /** The single workspace chip that replaces the checkout, branch and access controls. */
 /**
- * The chip is as wide as its content: icon, 4px, label, 4px, chevron. It never shrinks: when the
- * toolbar is too narrow for the label, the composer drops the label (the chip keeps its icon and
- * chevron) instead of cutting it down to a stub.
+ * The chip is as wide as its content: icon, 4px, label, 4px, chevron. It never shrinks: when a
+ * compact toolbar is too narrow for the label, the composer drops the label (the chip keeps its
+ * icon and chevron) instead of cutting it down to a stub.
  */
 export const CONTEXT_CHIP_TRIGGER_CLS = "shrink-0 justify-start gap-1!";
 export const CONTEXT_CHIP_BRANCH_CLS = "min-w-0 max-w-[28ch] truncate text-xs";
@@ -15,33 +15,36 @@ export const CONTEXT_CHIP_CHEVRON_CLS = "size-3 shrink-0";
 export const CONTEXT_CHIP_PANEL_CLS = "flex w-72 flex-col gap-2 p-2";
 
 /**
- * The first row inside a wide composer's border: checkout, branch and pull request on the left,
- * the pending-changes summary and its actions on the right. It shares the card's background and
- * is closed by a 1px divider; it never wraps.
+ * The tray attached to the top of a wide composer: inset from the card's edges, top corners
+ * rounded, no bottom edge (the card covers it), one muted line that never wraps.
  */
-export const CONTEXT_ROW_CLS =
-  "flex min-h-8 min-w-0 items-center gap-2 border-b border-(--divider) px-2 py-1 text-(--contrast-secondary-label) text-2xs leading-none whitespace-nowrap " +
+export const CONTEXT_TRAY_CLS =
+  "relative z-0 -mb-2 mx-2.5 flex min-w-0 flex-col overflow-hidden rounded-t-lg border border-b-0 border-(--card-edge) bg-(--app-chrome-background) px-1.5 pt-0.5 pb-2.5 text-(--contrast-secondary-label) text-2xs leading-none whitespace-nowrap " +
   "[&_[data-composer-context-control]]:h-5.5! [&_[data-composer-context-control]]:rounded-md! [&_[data-composer-context-control]]:border-0! [&_[data-composer-context-control]]:px-1.5! [&_[data-composer-context-control]]:font-normal [&_[data-composer-context-control]]:text-2xs! [&_[data-composer-context-control]]:text-secondary-label!";
-
-/** The row's left side: it yields width to the pending-changes actions on its right. */
-export const CONTEXT_ROW_START_CLS = "flex min-w-0 flex-1 items-center gap-1";
-
-/**
- * The scroll fade under the row. It covers only the editor's own 8px top padding, so it never
- * lies over a line of text; `snapComposerScroll` keeps the topmost visible line below it.
- */
-export const COMPOSER_INPUT_TOP_FADE_CLS =
-  "pointer-events-none absolute inset-x-0 -top-2 z-10 h-2 bg-linear-to-b from-(--composer) to-transparent [[data-draft-hero]_&]:from-(--surface-raised)";
 
 /** A real branch name reads in the mono face; the checkout label stands in as plain text. */
 export const CONTEXT_CHIP_BRANCH_MONO_CLS = `${CONTEXT_CHIP_BRANCH_CLS} font-mono`;
 /** A server thread's checkout control moves to the strip's environment block on wide strips. */
 export const CONTEXT_RUN_HIDDEN_WIDE_CLS = "@xl/composer-surface:hidden";
 
-/** The pending-changes summary: its right-aligned form in the context row and its banner form. */
-export const CHANGED_FILES_ROW_CLS = "flex shrink-0 items-center gap-2";
-export const CHANGED_FILES_BANNER_CLS =
-  "mb-1 flex h-9 min-w-0 items-center gap-2 rounded-xl border border-(--line-strong) bg-(--composer) px-2.5";
-/** The expander: chevron and the file count open the review. */
+/** One line of the tab: the context on the left, the changes pushed to the right. */
+export const CONTEXT_TRAY_ROW_CLS = "flex h-6 min-w-0 items-center gap-1";
+/** The context half shrinks first; its labels truncate before the changes do. */
+export const CONTEXT_TRAY_CONTEXT_CLS = "flex min-w-0 flex-1 items-center gap-1";
+
+/** The changes half of the composer tab: never shrinks, sits at the row's end. */
+export const CHANGED_FILES_BAR_CLS = "ms-auto flex shrink-0 items-center gap-1 text-xs";
+/** The expander: chevron, file count and totals. */
 export const CHANGED_FILES_TOGGLE_CLS =
-  "flex min-w-0 items-center gap-1.5 rounded-sm text-foreground text-xs outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
+  "flex h-5.5 items-center gap-1.5 rounded-md px-1.5 text-foreground outline-none hover:bg-(--hover) aria-expanded:bg-(--hover) focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
+export const CHANGED_FILES_CHEVRON_CLS = "size-3 shrink-0 text-muted-foreground";
+export const CHANGED_FILES_SEPARATOR_CLS = "mx-0.5 h-3 w-px shrink-0 bg-border";
+/** The expanded file list above the row; past six files it scrolls. */
+export const CHANGED_FILES_LIST_CLS =
+  "-mx-1.5 mb-0.5 flex max-h-40 flex-col overflow-y-auto border-b border-border px-1 py-1 text-xs";
+export const CHANGED_FILES_ROW_CLS =
+  "flex h-6.5 w-full min-w-0 items-center gap-1.5 rounded-md px-1.5 text-left outline-none hover:bg-(--hover) focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
+export const CHANGED_FILES_ROW_ICON_CLS = "size-3 shrink-0 text-muted-foreground";
+export const CHANGED_FILES_ROW_DIR_CLS = "min-w-0 truncate text-muted-foreground";
+export const CHANGED_FILES_ROW_NAME_CLS = "shrink-0 text-foreground";
+export const CHANGED_FILES_ROW_STAT_CLS = "ms-auto shrink-0 ps-2";
