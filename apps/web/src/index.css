@@ -3019,9 +3019,15 @@ html[data-theme-reveal] [data-grid-surface] [data-grid-cell]::after {
     translate var(--grid-morph-duration) var(--grid-morph-ease);
 }
 
+/* A pane shown alone has its title in the top bar. Its hidden header leaves the flow, so the
+   conversation and the details card start at the pane's top, as they do outside a grid. */
 [data-grid-surface]:not([data-multi]) [data-pane-label] {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
   opacity: 0;
   translate: 0 -4px;
+  pointer-events: none;
 }
 
 /* A cell that joins the grid grows from nothing and fades in; one that leaves does the reverse.
