@@ -260,10 +260,13 @@ import { stackedThreadToast, toastManager } from "../ui/toast";
 
 type DraggedThread = ThreadDragSource;
 
+const AGO_SUFFIX_RE = / ago$/;
+const GRID_ROUTE_RE = /^\/grid\/([^/]+)/;
+
 function threadTimeLabel(thread: EnvironmentThreadShell, nowMinute: string): string {
   const timestamp = thread.latestUserMessageAt ?? thread.updatedAt;
   return formatRelativeTimeLabel(timestamp, Date.parse(`${nowMinute}:00.000Z`)).replace(
-    / ago$/,
+    AGO_SUFFIX_RE,
     "",
   );
 }
@@ -349,7 +352,7 @@ export function GridSidebar() {
   const nowMinute = useNowMinute();
   const wakeClock = useSnoozeWakeClock(threads);
   const nowIso = new Date(wakeClock).toISOString();
-  const openGridId = /^\/grid\/([^/]+)/.exec(pathname)?.[1] ?? null;
+  const openGridId = GRID_ROUTE_RE.exec(pathname)?.[1] ?? null;
   const openGrid =
     openGridId === null ? null : (grids.find((grid) => grid.id === openGridId) ?? null);
 
