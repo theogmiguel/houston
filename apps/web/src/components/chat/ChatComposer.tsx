@@ -304,13 +304,8 @@ import {
   usePreparingComposerImages,
 } from "./preparingComposerImages";
 import { ComposerControlsBar } from "./ComposerControlsBar";
-import { snapComposerScroll } from "./composerInputScroll";
 import { useCompactChipTier } from "./useCompactChipTier";
-import {
-  COMPOSER_INPUT_TOP_FADE_CLS,
-  CONTEXT_ROW_CLS,
-  CONTEXT_ROW_START_CLS,
-} from "../ui/composer-anatomy-recipes";
+import { CONTEXT_TRAY_CLS } from "../ui/composer-anatomy-recipes";
 import { composerCommandKeyHandler } from "./composerCommandKey";
 
 function consumePasteAsTextShortcut(deadline: { current: number }): boolean {
@@ -424,11 +419,6 @@ export interface ChatComposerProps {
         variant?: "strip" | "inline" | "tray";
       }>
     | undefined;
-  /**
-   * The pending turn's changed-files summary. A wide composer shows it on the right of its
-   * context row; a narrow one keeps it as a banner above the card.
-   */
-  changedFiles?: ReactElement<{ variant?: "row" | "bar" }> | null | undefined;
   /** When the active turn started; the running status in the composer footer. */
   activeTurnStartedAt?: string | null | undefined;
   projectSelectionRequired: boolean;
@@ -517,6 +507,8 @@ export interface ChatComposerProps {
   pullRequestRepository: string | null;
   threadPullRequests: ReadonlyArray<ThreadPullRequestLink> | undefined;
   onComposerOverlayHeightChange: (height: number) => void;
+  /** The new-thread strip names the permissions, so the controls row hides its chip. */
+  permissionsShownInStrip: boolean;
 
   promptRef: React.RefObject<string>;
   composerImagesRef: React.RefObject<ComposerImageAttachment[]>;
@@ -599,7 +591,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     forceExpandedOnMobile,
     paneDensity,
     contextControls,
-    changedFiles,
     activeTurnStartedAt,
     projectSelectionRequired,
     phase,
@@ -1144,7 +1135,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerSurfaceRef = useRef<HTMLDivElement>(null);
   // The composer's own width picks its placeholder and control tiers; a pane is not the window.
   const [composerWidth, setComposerWidth] = useState(0);
-  const [inputScrolled, setInputScrolled] = useState(false);
   const [composerWidthNode, setComposerWidthNode] = useState<HTMLDivElement | null>(null);
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- tracks the composer surface's width to switch placeholder length and control tiers
   useLayoutEffect(() => {
@@ -2667,6 +2657,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       composerControlsCollapsed={composerControlsCollapsed}
       paneDensity={paneDensity}
       effortDisplay={settings.effortDisplay}
+      permissionsShownInStrip={props.permissionsShownInStrip}
       composerControlsHidden={composerControlsHidden}
       restingHiddenBlockCount={restingHiddenBlockCount}
       iconOnlyBlockCount={iconOnlyBlockCount}
@@ -3637,7 +3628,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       {...threadContextDropTargetProps()}
     >
       <div className="relative">
-        {changedFiles && composerNarrow ? cloneElement(changedFiles, { variant: "bar" }) : null}
+        {contextControls && !composerNarrow ? (
+          <div data-composer-context-tray="true" className={CONTEXT_TRAY_CLS}>
+            {cloneElement(contextControls, { forceNarrow: false, variant: "tray" })}
+          </div>
+        ) : null}
         <ComposerSurface.Main
           ref={composerMainSurfaceRef}
           data-inline-resting-controls="true"
@@ -3656,16 +3651,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               composerProviderState.composerSurfaceClassName,
             )}
           >
-            {(contextControls || changedFiles) && !composerNarrow ? (
-              <div data-composer-context-row="true" className={CONTEXT_ROW_CLS}>
-                <div className={CONTEXT_ROW_START_CLS}>
-                  {contextControls
-                    ? cloneElement(contextControls, { forceNarrow: false, variant: "tray" })
-                    : null}
-                </div>
-                {changedFiles ? cloneElement(changedFiles, { variant: "row" }) : null}
-              </div>
-            ) : null}
             <VoiceInputSetup
               environmentId={speechInput.transcriptionEnvironmentId}
               open={speechInput.setup.open}
@@ -3854,28 +3839,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 onRemovePreviewAnnotation={removePendingPreviewAnnotation}
               />
 
-              <div
-                className="relative"
-                onScrollCapture={(event) => {
-                  const target = event.target;
-                  if (target instanceof HTMLElement && target.matches(".composer-tiptap")) {
-                    setInputScrolled(target.scrollTop > 0);
-                  }
-                }}
-                onScrollEndCapture={(event) => {
-                  const target = event.target;
-                  if (target instanceof HTMLElement && target.matches(".composer-tiptap")) {
-                    snapComposerScroll(target);
-                  }
-                }}
-              >
-                {inputScrolled ? (
-                  <div
-                    aria-hidden
-                    data-composer-input-fade="true"
-                    className={COMPOSER_INPUT_TOP_FADE_CLS}
-                  />
-                ) : null}
+              <div className="relative">
                 {previewFile ? (
                   <ComposerFilePreviewDialog
                     file={previewFile}

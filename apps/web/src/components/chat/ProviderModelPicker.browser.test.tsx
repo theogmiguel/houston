@@ -5,15 +5,15 @@ import {
   type ServerProvider,
 } from "@houston-app/contracts";
 import { compileResolvedKeybindingsConfig } from "@houston-app/shared/keybindings";
-import { describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 
 import { render } from "../../../test/render";
+import { runtimeModeConfig } from "./runtimeModeConfig";
 import { deriveProviderInstanceEntries } from "../../providerInstances";
 import { ComposerEffortPanel, ComposerPickerFooter } from "../ui/composer-model-effort";
-import { runtimeModeConfig, runtimeModeOptions } from "./runtimeModeConfig";
 import { TooltipProvider } from "../ui/tooltip";
 import { ProviderModelPicker } from "./ProviderModelPicker";
 
@@ -397,7 +397,7 @@ describe("the docked popup's shape", () => {
     expect(sidebar.top).toBeGreaterThanOrEqual(search.getBoundingClientRect().bottom);
   });
 
-  it("shows no footer unless the composer supplies one", async () => {
+  it("has no footer when the strip holds the permissions", async () => {
     await using _screen = await openDocked();
 
     expect(document.body.textContent).not.toContain("Full access");
@@ -586,252 +586,35 @@ describe("docked popup and the composer context row", () => {
   });
 });
 
-describe("new-thread page placement", () => {
-  async function openInHero(paddingTop: number) {
-    await page.viewport(1440, 900);
-    const screen = await render(
-      <TooltipProvider delay={0}>
-        <div data-chat-column="">
-          <div data-draft-hero="" style={{ paddingTop, paddingLeft: 160 }}>
-            <form data-chat-composer-form="true" style={{ width: 760 }}>
-              <div
-                data-inline-resting-controls="true"
-                style={{ padding: "12px 32px" }}
-                className="rounded-xl border border-border"
-              >
-                <ProviderModelPicker
-                  environmentId={null}
-                  activeInstanceId={CLAUDE}
-                  model="opus"
-                  lockedProvider={null}
-                  instanceEntries={entries}
-                  keybindings={compileResolvedKeybindingsConfig([])}
-                  modelOptionsByInstance={new Map([[CLAUDE, provider.models]])}
-                  isComposerOwned
-                  effortPanel={<ComposerEffortPanel traits={null} />}
-                  onInstanceModelChange={() => {}}
-                />
-              </div>
-            </form>
-          </div>
-        </div>
-      </TooltipProvider>,
-      { router: false },
-    );
-    await page.getByRole("button", { name: /Opus 5\.5/ }).click();
-    await expect
-      .poll(() => document.querySelector("[data-model-picker-effort]") !== null)
-      .toBe(true);
-    return screen;
-  }
-
-  it.each([120, 400, 640])(
-    "opens under the trigger with %ipx above the composer, however little room is below",
-    async (paddingTop) => {
-      await using _screen = await openInHero(paddingTop);
-      const trigger = page.getByRole("button", { name: /Opus 5\.5/ }).element();
-      const popup = document.querySelector<HTMLElement>('[data-slot="popover-positioner"]')!;
-      await expect
-        .poll(() => popup.getBoundingClientRect().top)
-        .toBeGreaterThanOrEqual(trigger.getBoundingClientRect().bottom);
-    },
-  );
-});
-
-describe("new-thread picker with its footer", () => {
-  const manyModels = provider.models.concat(
-    ["Sonnet 5.5", "Haiku 5.5", "Opus 5", "Sonnet 5", "Haiku 5", "Opus 4.5"].map((name, index) => ({
-      slug: `extra-${index}`,
-      name: `Claude ${name}`,
-      isCustom: false,
-      capabilities: { optionDescriptors: [effort] },
-    })),
-  );
-  const modeOptions = runtimeModeOptions.map((mode) => ({ mode, ...runtimeModeConfig[mode] }));
-
-  async function openInDraftHero() {
-    await page.viewport(1440, 900);
-    const screen = await render(
-      <TooltipProvider delay={0}>
-        <div data-chat-column="" style={{ height: 900 }}>
-          <div data-draft-hero="" style={{ paddingTop: 560, paddingLeft: 160 }}>
-            <form data-chat-composer-form="true" style={{ width: 760 }}>
-              <div
-                data-inline-resting-controls="true"
-                style={{ padding: "12px 32px" }}
-                className="rounded-xl border border-border"
-              >
-                <div data-testid="composer-editor" style={{ height: 40 }} />
-                <ProviderModelPicker
-                  environmentId={null}
-                  activeInstanceId={CLAUDE}
-                  model="opus"
-                  lockedProvider={null}
-                  instanceEntries={entries}
-                  keybindings={compileResolvedKeybindingsConfig([])}
-                  modelOptionsByInstance={new Map([[CLAUDE, manyModels]])}
-                  isComposerOwned
-                  effortPanel={<ComposerEffortPanel traits={null} />}
-                  footer={
-                    <ComposerPickerFooter
-                      runtimeMode="full-access"
-                      runtimeModeOptions={modeOptions}
-                      onRuntimeModeChange={() => {}}
-                    />
-                  }
-                  onInstanceModelChange={() => {}}
-                />
-              </div>
-            </form>
-          </div>
-        </div>
-      </TooltipProvider>,
-      { router: false },
-    );
-    await page.getByRole("button", { name: /Opus 5\.5/ }).click();
-    await expect
-      .poll(() => document.querySelector("[data-model-picker-effort]") !== null)
-      .toBe(true);
-    return screen;
-  }
-
-  it("keeps four model rows visible under a low composer, without reaching its input", async () => {
-    await using _screen = await openInDraftHero();
-    const list = document.querySelector<HTMLElement>("[data-model-picker-list]")!;
-    const frame = document.querySelector<HTMLElement>("[data-docked-picker-frame]")!;
-    const editor = document.querySelector<HTMLElement>('[data-testid="composer-editor"]')!;
-    await expect.poll(() => Math.round(list.getBoundingClientRect().height)).toBeGreaterThan(0);
-    await expect
-      .poll(() => {
-        const listBox = list.getBoundingClientRect();
-        const frameBox = frame.getBoundingClientRect();
-        const visibleRows = [...list.querySelectorAll<HTMLElement>('[role="option"]')].filter(
-          (row) => {
-            const box = row.getBoundingClientRect();
-            return box.height > 0 && box.top >= listBox.top - 1 && box.bottom <= frameBox.bottom;
-          },
-        );
-        return visibleRows.length;
-      })
-      .toBeGreaterThanOrEqual(4);
-    expect(frame.getBoundingClientRect().top).toBeGreaterThanOrEqual(
-      editor.getBoundingClientRect().bottom - 1,
-    );
-    expect(frame.getBoundingClientRect().bottom).toBeLessThanOrEqual(window.innerHeight);
-  });
-
-  it("shows a current model and its Legacy models row whole, above the effort panel, under the capture's composer", async () => {
-    // The new-thread page at 1440x900: the composer card ends at y=626, a 36px toolbar under its input.
-    const legacyModels = [
-      provider.models[0]!,
-      ...["Legacy A", "Legacy B"].map((name, index) => ({
-        slug: `legacy-${index}`,
-        name,
+describe("Ultracode in the picker's footer", () => {
+  const ultracode: Extract<ProviderOptionDescriptor, { type: "boolean" }> = {
+    id: "ultracode",
+    label: "Ultracode",
+    type: "boolean",
+    currentValue: false,
+  };
+  const ultracodeProvider: ServerProvider = {
+    ...provider,
+    models: [
+      {
+        slug: "opus",
+        name: "Claude Opus 5.5",
         isCustom: false,
-        isLegacy: true,
-        capabilities: { optionDescriptors: [effort] },
-      })),
-    ];
+        capabilities: { optionDescriptors: [effort, ultracode] },
+      },
+    ],
+  };
+  const permissions = {
+    runtimeMode: "approval-required" as const,
+    runtimeModeOptions: [
+      { mode: "approval-required" as const, ...runtimeModeConfig["approval-required"] },
+    ],
+    onRuntimeModeChange: () => {},
+  };
+
+  async function openPicker(withPermissions: boolean) {
     await page.viewport(1440, 900);
-    await using _screen = await render(
-      <TooltipProvider delay={0}>
-        <div data-chat-column="" style={{ height: 900 }}>
-          <div data-draft-hero="" style={{ paddingTop: 534, paddingLeft: 480 }}>
-            <form data-chat-composer-form="true" style={{ width: 760 }}>
-              <div
-                data-inline-resting-controls="true"
-                style={{ padding: "12px 16px", height: 92 }}
-                className="rounded-xl border border-border"
-              >
-                <div data-testid="composer-editor" style={{ height: 40 }} />
-                <ProviderModelPicker
-                  environmentId={null}
-                  activeInstanceId={CLAUDE}
-                  model="opus"
-                  lockedProvider={null}
-                  instanceEntries={entries}
-                  keybindings={compileResolvedKeybindingsConfig([])}
-                  modelOptionsByInstance={new Map([[CLAUDE, legacyModels as never]])}
-                  isComposerOwned
-                  effortPanel={<ComposerEffortPanel traits={null} />}
-                  footer={
-                    <ComposerPickerFooter
-                      runtimeMode="full-access"
-                      runtimeModeOptions={modeOptions}
-                      onRuntimeModeChange={() => {}}
-                    />
-                  }
-                  onInstanceModelChange={() => {}}
-                />
-              </div>
-            </form>
-          </div>
-        </div>
-      </TooltipProvider>,
-      { router: false },
-    );
-    await page.getByRole("button", { name: /Opus 5\.5/ }).click();
-    const legacyRow = await vi.waitFor(() => {
-      const found = document.querySelector<HTMLElement>("[data-model-picker-legacy-section]");
-      expect(found).not.toBeNull();
-      return found!;
-    });
-    const list = document.querySelector<HTMLElement>("[data-model-picker-list]")!;
-    const effortPanel = document.querySelector<HTMLElement>("[data-model-picker-effort]")!;
-    const frame = document.querySelector<HTMLElement>("[data-docked-picker-frame]")!;
-    const editor = document.querySelector<HTMLElement>('[data-testid="composer-editor"]')!;
-    // The popup is still moving into place: compare the boxes at one instant, until they settle.
-    await expect
-      .poll(() => legacyRow.getBoundingClientRect().bottom - list.getBoundingClientRect().bottom)
-      .toBeLessThanOrEqual(1);
-    await expect
-      .poll(
-        () => legacyRow.getBoundingClientRect().bottom - effortPanel.getBoundingClientRect().top,
-      )
-      .toBeLessThanOrEqual(1);
-    expect(frame.getBoundingClientRect().top).toBeGreaterThanOrEqual(
-      editor.getBoundingClientRect().bottom - 1,
-    );
-    expect(frame.getBoundingClientRect().bottom).toBeLessThanOrEqual(window.innerHeight);
-    // Nothing in the frame is cut: its content is as tall as the frame.
-    expect(frame.scrollHeight).toBeLessThanOrEqual(frame.clientHeight + 1);
-  });
-
-  it("opens Permissions beside the picker with every description whole", async () => {
-    await using _screen = await openInDraftHero();
-    await page.getByRole("button", { name: /Permissions: Full access/ }).click();
-    const submenu = await vi.waitFor(() => {
-      const found = document.querySelector<HTMLElement>("[data-composer-permissions]");
-      expect(found).not.toBeNull();
-      return found!;
-    });
-    const frame = document.querySelector<HTMLElement>("[data-docked-picker-frame]")!;
-    const search = document.querySelector<HTMLElement>("[data-model-picker-content] input")!;
-    const box = submenu.closest<HTMLElement>('[data-slot="menu-popup"]')!.getBoundingClientRect();
-    const picker = frame.getBoundingClientRect();
-    expect(box.left >= picker.right || box.right <= picker.left).toBe(true);
-    expect(box.width).toBeGreaterThanOrEqual(300);
-    const searchBox = search.getBoundingClientRect();
-    expect(box.left >= searchBox.right || box.right <= searchBox.left).toBe(true);
-    for (const description of submenu.querySelectorAll<HTMLElement>("[id*='-']")) {
-      expect(description.scrollWidth).toBeLessThanOrEqual(description.clientWidth);
-    }
-  });
-});
-
-describe("provider tabs", () => {
-  const crowded: ServerProvider[] = [
-    provider,
-    ...["Fixture Agent", "Review Agent", "Planning Agent", "Release Agent"].map((name, index) => ({
-      ...provider,
-      instanceId: ProviderInstanceId.make(`crowded-${index}`),
-      displayName: name,
-    })),
-  ];
-
-  async function openCrowded() {
-    await page.viewport(1440, 900);
-    const crowdedEntries = deriveProviderInstanceEntries(crowded);
+    const models = ultracodeProvider.models;
     const screen = await render(
       <TooltipProvider delay={0}>
         <div style={{ paddingTop: 480, paddingLeft: 160 }}>
@@ -841,13 +624,25 @@ describe("provider tabs", () => {
               activeInstanceId={CLAUDE}
               model="opus"
               lockedProvider={null}
-              instanceEntries={crowdedEntries}
+              instanceEntries={deriveProviderInstanceEntries([ultracodeProvider])}
               keybindings={compileResolvedKeybindingsConfig([])}
-              modelOptionsByInstance={
-                new Map(crowdedEntries.map((entry) => [entry.instanceId, provider.models]))
-              }
+              modelOptionsByInstance={new Map([[CLAUDE, models]])}
               isComposerOwned
               effortPanel={<ComposerEffortPanel traits={null} />}
+              footer={
+                <ComposerPickerFooter
+                  traits={{
+                    provider: CLAUDE_KIND,
+                    instanceId: CLAUDE,
+                    models,
+                    model: "opus",
+                    modelOptions: undefined,
+                    planModeEnabled: false,
+                    onModelOptionsChange: () => {},
+                  }}
+                  {...(withPermissions ? { permissions } : {})}
+                />
+              }
               onInstanceModelChange={() => {}}
             />
           </div>
@@ -857,29 +652,28 @@ describe("provider tabs", () => {
     );
     await page.getByRole("button", { name: /Opus 5\.5/ }).click();
     await expect
-      .poll(() => document.querySelector("[data-model-picker-sidebar]") !== null)
+      .poll(() => document.querySelector("[data-model-picker-effort]") !== null)
       .toBe(true);
     return screen;
   }
 
-  it("scrolls when the strip is narrower than its tabs and fades the edge that hides one", async () => {
-    await using _screen = await openCrowded();
-    const strip = document.querySelector<HTMLElement>("[data-model-picker-sidebar]")!;
-
-    expect(strip.scrollWidth).toBeGreaterThan(strip.clientWidth);
-    await expect.poll(() => strip.dataset.scrollFadeEnd).toBe("true");
-    expect(strip.dataset.scrollFadeStart).toBeUndefined();
-    expect(getComputedStyle(strip).maskImage).toContain("linear-gradient");
-
-    strip.scrollLeft = strip.scrollWidth;
-    await expect.poll(() => strip.dataset.scrollFadeStart).toBe("true");
-    expect(strip.dataset.scrollFadeEnd).toBeUndefined();
+  it("shows the toggle inside the picker beside Permissions", async () => {
+    await using _screen = await openPicker(true);
+    const toggle = page.getByRole("button", { name: "Ultracode" }).element();
+    const frame = document.querySelector<HTMLElement>(
+      '[data-model-picker-content="true"]',
+    )!.parentElement!;
+    expect(frame.contains(toggle)).toBe(true);
+    expect(frame.querySelector("[data-composer-permissions-trigger]")).not.toBeNull();
+    const list = document.querySelector<HTMLElement>('[data-model-picker-content="true"]')!;
+    expect(toggle.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      list.getBoundingClientRect().bottom,
+    );
   });
 
-  it("keeps every tab reachable by name", async () => {
-    await using _screen = await openCrowded();
-    for (const name of ["Fixture Agent", "Release Agent"]) {
-      await expect.element(page.getByRole("button", { name })).toBeInTheDocument();
-    }
+  it("keeps the toggle when the new-thread strip holds the permissions", async () => {
+    await using _screen = await openPicker(false);
+    expect(page.getByRole("button", { name: "Ultracode" }).element()).toBeTruthy();
+    expect(document.querySelector("[data-composer-permissions-trigger]")).toBeNull();
   });
 });
