@@ -237,7 +237,13 @@ export function createWorkspaceFocusController(doc: Document) {
           : areas.length - 1
         : (current + direction + areas.length) % areas.length;
     const area = areas[index]!;
-    return focusArea(area);
+    // Only an F6 move draws the area's ring. Chromium also turns a clicked area
+    // :focus-visible on the next key press, and that focus must stay unmarked.
+    area.dataset.workspaceFocusRing = "";
+    area.addEventListener("blur", () => delete area.dataset.workspaceFocusRing, { once: true });
+    const moved = focusArea(area);
+    if (doc.activeElement !== area) delete area.dataset.workspaceFocusRing;
+    return moved;
   };
 
   // Focus that drops to the body because its element was hidden, made inert, or removed
@@ -305,6 +311,28 @@ export function createWorkspaceFocusController(doc: Document) {
   doc.addEventListener("pointerdown", onUserInput, true);
   doc.addEventListener("keydown", onUserInput, true);
 
+  // Escape that reaches the document from a composer editor leaves it for its own pane's
+  // conversation, so the single-key shortcuts that skip editable focus work again. The editor
+  // always calls preventDefault on Escape; a composer menu, stopping a turn and discarding a
+  // draft pane stop its propagation instead, so those never get here.
+  const releaseComposer = (event: KeyboardEvent) => {
+    if (event.key !== "Escape" || event.isComposing) return;
+    const editor = event.target;
+    if (
+      !(editor instanceof HTMLElement) ||
+      !editor.isContentEditable ||
+      !editor.closest('[data-workspace-area="composer"]')
+    )
+      return;
+    for (let scope = editor.parentElement; scope; scope = scope.parentElement) {
+      const conversation = scope.querySelector<HTMLElement>('[data-workspace-area="conversation"]');
+      if (!conversation) continue;
+      if (isWorkspaceElementVisible(conversation)) conversation.focus({ preventScroll: true });
+      return;
+    }
+  };
+  doc.addEventListener("keydown", releaseComposer);
+
   return {
     move: (direction: 1 | -1, fromArea?: string, closingPalette = false) => {
       cancelRequest();
@@ -318,6 +346,7 @@ export function createWorkspaceFocusController(doc: Document) {
       doc.removeEventListener("focusout", recover);
       doc.removeEventListener("pointerdown", onUserInput, true);
       doc.removeEventListener("keydown", onUserInput, true);
+      doc.removeEventListener("keydown", releaseComposer);
     },
   };
 }

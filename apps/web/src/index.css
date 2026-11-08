@@ -2819,8 +2819,12 @@ code {
   }
 }
 
-/* A workspace area with no control of its own takes F6 focus itself; keep that visible. */
+/* A workspace area with no control of its own takes F6 focus itself; keep that visible. A
+   clicked area turns :focus-visible on the next key press and stays unmarked. */
 [data-workspace-area]:focus-visible {
+  outline: none;
+}
+[data-workspace-area][data-workspace-focus-ring]:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: -2px;
 }
