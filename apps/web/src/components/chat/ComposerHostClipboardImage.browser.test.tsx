@@ -214,9 +214,11 @@ it(
     using _uploads = advertiseFileUploads();
     await using _app = await bootDraftComposer();
     // The upload capability arrives with the environment descriptor after boot; the attach
-    // button shows once the composer knows it can stage files.
-    await vi.waitFor(() =>
-      expect(document.querySelector('button[aria-label="Attach files"]')).not.toBeNull(),
+    // button shows once the composer knows it can stage files. The descriptor round trip takes
+    // over a second on a loaded CI runner, past waitFor's 1s default.
+    await vi.waitFor(
+      () => expect(document.querySelector('button[aria-label="Attach files"]')).not.toBeNull(),
+      { timeout: 5000 },
     );
     const readDroppedPath = vi.fn(() =>
       Promise.resolve({ name: "id_ed25519", directory: false, base64: btoa("key") }),
