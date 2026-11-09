@@ -2,6 +2,7 @@ import type {
   EnvironmentId,
   ProviderDriverKind,
   ProviderInstanceId,
+  ProviderInteractionMode,
   ResolvedKeybindingsConfig,
   RuntimeMode,
 } from "@houston-app/contracts";
@@ -11,6 +12,7 @@ import { memo, useRef } from "react";
 
 import { ComposerControl } from "../components/chat/ComposerControl";
 import {
+  ComposerFooterModeControls,
   ComposerPermissionsPicker,
   type RuntimeModeOption,
 } from "../components/chat/ComposerFooterControls";
@@ -51,6 +53,9 @@ export const ModelSheet = memo(function ModelSheet(props: {
   effortDisplay: EffortDisplay;
   runtimeMode: RuntimeMode;
   runtimeModeOptions: ReadonlyArray<RuntimeModeOption>;
+  planModeUiEnabled: boolean;
+  interactionMode: ProviderInteractionMode;
+  onToggleInteractionMode: () => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onProviderModelSelect: (instanceId: ProviderInstanceId, model: string) => void;
@@ -133,6 +138,23 @@ export const ModelSheet = memo(function ModelSheet(props: {
             {showEffortPanel ? (
               <div data-model-picker-effort className={DOCKED_EFFORT_PANEL_CLASS}>
                 <ComposerEffortPanel traits={props.traits} />
+              </div>
+            ) : null}
+            {props.planModeUiEnabled ? (
+              <div
+                data-phone-plan-mode="true"
+                className="flex items-center justify-between gap-2 px-2 py-1.5"
+              >
+                <span>Plan mode</span>
+                <ComposerFooterModeControls
+                  showInteractionModeToggle
+                  interactionMode={props.interactionMode}
+                  runtimeMode={props.runtimeMode}
+                  runtimeModeOptions={props.runtimeModeOptions}
+                  accessDisplay="hidden"
+                  onToggleInteractionMode={props.onToggleInteractionMode}
+                  onRuntimeModeChange={props.onRuntimeModeChange}
+                />
               </div>
             ) : null}
             <ComposerPermissionsPicker

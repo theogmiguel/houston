@@ -12,6 +12,7 @@ import {
   MessageId,
   NodeId,
   ProviderSessionId,
+  ProviderThreadId,
   RuntimeRequestId,
   ORCHESTRATION_PROTOCOL_VERSION,
   ORCHESTRATION_V2_WS_METHODS,
@@ -37,8 +38,14 @@ import {
   type OrchestrationV2ThreadShell,
   type OrchestrationV2ThreadStreamItem,
   type OrchestrationV2TurnItem,
+  type GitRunStackedActionInput,
+  type ReviewDiffPreviewInput,
+  type ReviewDiffPreviewResult,
   type TerminalMetadataStreamEvent,
   type ThreadPullRequestLink,
+  type ThreadTokenUsageSnapshot,
+  type VcsStatusLocalResult,
+  type VcsStatusRemoteResult,
 } from "@houston-app/contracts";
 import type {
   ConnectionAttemptError,
@@ -221,6 +228,8 @@ export interface FakeThread {
   readonly checkpoints?: ReadonlyArray<OrchestrationV2Checkpoint>;
   /** Reports a running provider session whose turns support native steering. */
   readonly supportsActiveSteering?: boolean;
+  /** The active provider thread's context window usage, for the composer and details meters. */
+  readonly contextUsage?: ThreadTokenUsageSnapshot;
 }
 
 /** The thread's latest run left these files changed: a ready checkpoint the composer summarises. */
@@ -410,6 +419,9 @@ function shellOf(thread: FakeThread): OrchestrationV2ThreadShell {
 
 function projectionOf(thread: FakeThread): OrchestrationV2ThreadProjection {
   const shell = shellOf(thread);
+  const providerThreadId = thread.contextUsage
+    ? ProviderThreadId.make(`${thread.id}-provider-thread`)
+    : null;
   const visibleTurnItems: OrchestrationV2ProjectedTurnItem[] = thread.items.map(
     (item, position) => ({
       position,
@@ -430,7 +442,7 @@ function projectionOf(thread: FakeThread): OrchestrationV2ThreadProjection {
       interactionMode: shell.interactionMode,
       branch: shell.branch,
       worktreePath: shell.worktreePath,
-      activeProviderThreadId: null,
+      activeProviderThreadId: providerThreadId,
       lineage: shell.lineage,
       forkedFrom: null,
       createdBy: "user",
@@ -463,7 +475,31 @@ function projectionOf(thread: FakeThread): OrchestrationV2ThreadProjection {
           },
         ]
       : [],
-    providerThreads: [],
+    providerThreads:
+      providerThreadId === null
+        ? []
+        : [
+            {
+              id: providerThreadId,
+              driver: ProviderDriverKind.make("codex"),
+              providerInstanceId: CODEX,
+              providerSessionId: null,
+              appThreadId: thread.id,
+              ownerNodeId: null,
+              nativeThreadRef: null,
+              nativeConversationHeadRef: null,
+              status: "active",
+              firstRunOrdinal: 1,
+              lastRunOrdinal: thread.runs.length,
+              handoffIds: [],
+              forkedFrom: null,
+              contextUsage: thread.contextUsage ?? null,
+              nativeMetadata: null,
+              goal: null,
+              createdAt: AT,
+              updatedAt: AT,
+            },
+          ],
     providerTurns: [],
     runtimeRequests: [...(thread.runtimeRequests ?? [])],
     messages: [],
@@ -481,6 +517,44 @@ function projectionOf(thread: FakeThread): OrchestrationV2ThreadProjection {
 /** Commands the renderer dispatched; the fake records them without answering. */
 export const dispatchedCommands: OrchestrationV2Command[] = [];
 
+/** Source control actions the renderer started; the fake records them without answering. */
+export const gitActionRequests: GitRunStackedActionInput[] = [];
+
+// A small workspace the Files surface can browse; paths are relative to the project root.
+const FAKE_PROJECT_FILES: ReadonlyMap<string, string> = new Map([
+  [
+    "README.md",
+    "# Render workspace\n\nThe phone Files surface reads this file without writing it.\n",
+  ],
+  ["src/App.tsx", 'import { phone } from "./lib/phone";\n\nexport const app = phone();\n'],
+  ["src/lib/phone.ts", 'export const phone = () => "phone";\n'],
+]);
+const FAKE_PROJECT_ENTRIES = [
+  { path: "README.md", kind: "file" as const },
+  { path: "src", kind: "directory" as const },
+  { path: "src/App.tsx", kind: "file" as const },
+  { path: "src/lib", kind: "directory" as const },
+  { path: "src/lib/phone.ts", kind: "file" as const },
+];
+
+function parentDirectoryOf(path: string): string {
+  const separator = path.lastIndexOf("/");
+  return separator < 0 ? "" : path.slice(0, separator);
+}
+
+const FAKE_DIFF_PREVIEW = [
+  "diff --git a/src/App.tsx b/src/App.tsx",
+  "--- a/src/App.tsx",
+  "+++ b/src/App.tsx",
+  "@@ -1,3 +1,3 @@",
+  ' import { phone } from "./lib/phone";',
+  // A unified-diff context line for the blank source line is one space.
+  " ",
+  "-export const app = false;",
+  "+export const app = phone();",
+  "",
+].join("\n");
+
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
@@ -491,6 +565,11 @@ let threads: ReadonlyArray<FakeThread> = [];
 let deletedThreadIds: ReadonlySet<string> = new Set();
 let sequence = 1;
 let vcsStatusSubscriber: Queue.Queue<VcsStatusStreamEvent> | null = null;
+let vcsStatusFixture: {
+  readonly local: VcsStatusLocalResult;
+  readonly remote: VcsStatusRemoteResult | null;
+} | null = null;
+let workspaceFilesFixture = false;
 
 const subscribe = <A>(first: ReadonlyArray<A>, register?: (queue: Queue.Queue<A>) => () => void) =>
   Stream.unwrap(
@@ -565,12 +644,95 @@ const handlers: Record<string, (input: never) => unknown> = {
     );
   },
   [WS_METHODS.subscribeVcsStatus]: () =>
-    subscribe<VcsStatusStreamEvent>([], (queue) => {
-      vcsStatusSubscriber = queue;
-      return () => {
-        if (vcsStatusSubscriber === queue) vcsStatusSubscriber = null;
-      };
-    }),
+    subscribe<VcsStatusStreamEvent>(
+      vcsStatusFixture === null
+        ? []
+        : [
+            {
+              _tag: "snapshot",
+              local: vcsStatusFixture.local,
+              remote: vcsStatusFixture.remote,
+            },
+          ],
+      (queue) => {
+        vcsStatusSubscriber = queue;
+        return () => {
+          if (vcsStatusSubscriber === queue) vcsStatusSubscriber = null;
+        };
+      },
+    ),
+  [WS_METHODS.projectsListEntries]: (input: never) => {
+    if (!workspaceFilesFixture) return Effect.never;
+    const { directoryPath = "" } = input as { directoryPath?: string };
+    return Effect.succeed({
+      entries: FAKE_PROJECT_ENTRIES.filter(
+        (entry) => parentDirectoryOf(entry.path) === directoryPath,
+      ),
+      truncated: false,
+    });
+  },
+  [WS_METHODS.projectsReadFile]: (input: never) => {
+    if (!workspaceFilesFixture) return Effect.never;
+    const { relativePath } = input as { relativePath: string };
+    const contents = FAKE_PROJECT_FILES.get(relativePath);
+    if (contents === undefined) {
+      return Effect.succeed({
+        relativePath,
+        contents: "",
+        byteLength: 0,
+        truncated: false,
+        revision: "missing",
+        exists: false,
+      });
+    }
+    return Effect.succeed({
+      relativePath,
+      contents,
+      byteLength: new TextEncoder().encode(contents).byteLength,
+      truncated: false,
+      revision: "revision-1",
+      exists: true,
+    });
+  },
+  [WS_METHODS.reviewGetDiffPreview]: (input: never) => {
+    if (!workspaceFilesFixture) return Effect.never;
+    const { cwd } = input as ReviewDiffPreviewInput;
+    const preview: ReviewDiffPreviewResult = {
+      cwd,
+      generatedAt: AT,
+      sources: [
+        {
+          id: "phone-changes",
+          kind: "branch-range",
+          title: "Changes",
+          baseRef: "main",
+          headRef: "feature/phone",
+          diff: FAKE_DIFF_PREVIEW,
+          diffHash: "phone-diff-1",
+          truncated: false,
+          files: [{ path: "src/App.tsx", previousPath: null, additions: 1, deletions: 1 }],
+        },
+      ],
+    };
+    return Effect.succeed(preview);
+  },
+  [WS_METHODS.gitRunStackedAction]: (input: never) => {
+    if (workspaceFilesFixture) gitActionRequests.push(input as GitRunStackedActionInput);
+    return Stream.never;
+  },
+  // The Git menu refreshes status before it opens; leaving it pending blocks later VCS commands.
+  [WS_METHODS.vcsRefreshStatus]: () =>
+    vcsStatusFixture === null
+      ? Effect.never
+      : Effect.succeed({
+          ...vcsStatusFixture.local,
+          ...(vcsStatusFixture.remote ?? {
+            hasUpstream: false,
+            aheadCount: 0,
+            behindCount: 0,
+            pr: null,
+          }),
+        }),
   [WS_METHODS.subscribeServerConfig]: () =>
     subscribe([{ version: 1 as const, type: "snapshot" as const, config: serverConfig }]),
 };
@@ -632,12 +794,22 @@ export function installFakeEnvironment(
     readonly deletedThreadIds?: ReadonlyArray<string>;
     readonly projectTitle?: string;
     readonly providerModels?: ServerProvider["models"];
+    /** Serves a small workspace through the Files, diff and git RPCs. */
+    readonly workspaceFiles?: boolean;
+    /** The checkout status every VCS subscription reports until disposed. */
+    readonly vcsStatus?: {
+      readonly local: VcsStatusLocalResult;
+      readonly remote: VcsStatusRemoteResult | null;
+    };
   } = {},
 ): Disposable {
   threads = fixtures;
   dispatchedCommands.length = 0;
+  gitActionRequests.length = 0;
   deletedThreadIds = new Set(options.deletedThreadIds ?? []);
   projectTitle = options.projectTitle ?? project.title;
+  vcsStatusFixture = options.vcsStatus ?? null;
+  workspaceFilesFixture = options.workspaceFiles === true;
   const models = options.providerModels ?? defaultProviderModels;
   mutableProvider.models = [...models];
   globalThis.fetch = async (input, init) => {
@@ -663,6 +835,9 @@ export function installFakeEnvironment(
       threads = [];
       deletedThreadIds = new Set();
       projectTitle = project.title;
+      vcsStatusFixture = null;
+      workspaceFilesFixture = false;
+      gitActionRequests.length = 0;
       mutableProvider.models = [...defaultProviderModels];
     },
   };

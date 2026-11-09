@@ -88,12 +88,17 @@ installFakeEnvironment(
 );
 advertiseFileUploads();
 
-async function openThread(width: number, threadId: string) {
+async function openThread(
+  width: number,
+  threadId: string,
+  settings: Partial<typeof DEFAULT_CLIENT_SETTINGS> = {},
+) {
   // The grid store outlives one test's app; a leftover grid would mount extra hidden composers.
   useGridStore.setState({ grids: [], threadOrigins: {} });
   __setClientSettingsForTests({
     ...DEFAULT_CLIENT_SETTINGS,
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+    ...settings,
   });
   await page.viewport(width, 844);
   const router = getRouter(createMemoryHistory({ initialEntries: ["/"] }));
@@ -187,6 +192,23 @@ it("picks model, effort and permissions from the phone sheet", async () => {
   await userEvent.click(page.getByRole("button", { name: "Close" }));
   await vi.waitFor(() => expect(document.querySelector("[data-phone-model-sheet]")).toBeNull());
   expect(modelTrigger()?.getAttribute("aria-label")).toBe("GPT-5.5, High");
+});
+
+it("toggles plan mode from the phone model sheet", async () => {
+  const { screen } = await openThread(390, "phone-composer", { planModeEnabled: true });
+  await using _screen = screen;
+  await expandComposer();
+
+  await userEvent.click(modelTrigger()!);
+  const planToggle = () =>
+    document.querySelector<HTMLButtonElement>("[data-phone-plan-mode] button");
+  await vi.waitFor(() => expect(planToggle()).not.toBeNull());
+  expect(planToggle()?.getAttribute("aria-pressed")).toBe("false");
+  await userEvent.click(planToggle()!);
+  await vi.waitFor(() => expect(planToggle()?.getAttribute("aria-pressed")).toBe("true"));
+  expect(planToggle()?.getAttribute("aria-label")).toContain("return to normal build mode");
+  // The sheet stays open, like the desktop docked picker after a mode pick.
+  await expect.element(page.getByRole("dialog")).toBeVisible();
 });
 
 it("attaches a file, mentions a file and lists commands from the add sheet", async () => {

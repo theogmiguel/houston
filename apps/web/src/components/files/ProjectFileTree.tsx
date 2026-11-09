@@ -6,6 +6,7 @@ import { PierreEntryIcon } from "~/components/chat/PierreEntryIcon";
 import { Input } from "~/components/ui/input";
 import { useTheme } from "~/hooks/useTheme";
 import { cn } from "~/lib/utils";
+import { useIsPhone } from "~/mobile/usePhone";
 
 import {
   GIT_STATUS_LABEL,
@@ -132,6 +133,8 @@ export function ProjectFileTree({
   onEditCancel,
 }: ProjectFileTreeProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
+  // The phone has no drag and drop: a row still opens on tap, but never starts a mention drag.
+  const dragEnabled = !useIsPhone();
   const { resolvedTheme } = useTheme();
   const selectedVisible = rows.some((row) => row.entry.path === selectedPath);
   const firstFile = rows.find((row) => row.entry.kind === "file")?.entry.path ?? null;
@@ -294,11 +297,11 @@ export function ProjectFileTree({
                 aria-level={depth + 1}
                 data-item-path={entry.path}
                 tabIndex={tabbable ? 0 : -1}
-                draggable
+                draggable={dragEnabled}
                 onClick={() => activate(entry)}
                 onContextMenu={(event) => onEntryContextMenu(entry, event)}
-                onDragStart={(event) => onEntryDragStart(entry, event)}
-                onDragEnd={onEntryDragEnd}
+                onDragStart={dragEnabled ? (event) => onEntryDragStart(entry, event) : undefined}
+                onDragEnd={dragEnabled ? onEntryDragEnd : undefined}
                 className={cn(
                   "mx-1.5 flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border-0 bg-transparent pr-2 text-left text-xs outline-none",
                   "text-[var(--t1)] hover:bg-[var(--hover)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--accent-ink)]",

@@ -103,7 +103,8 @@ function GridRoute() {
     panelThreadKey === null ? null : (state.byThreadKey[panelThreadKey] ?? null),
   );
   const focusedRightPanelOpen = focusedRightPanel?.isOpen === true;
-  const focusedRightPanelMaximized = focusedRightPanelOpen && focusedRightPanel?.maximized === true;
+  const focusedRightPanelMaximized =
+    !isPhone && focusedRightPanelOpen && focusedRightPanel?.maximized === true;
   const panelBesideGrid =
     focusedRightPanelOpen && (!prefersSheetPanel || focusedRightPanelMaximized);
   const gridDetailsOpen = grid?.detailsOpen === true;

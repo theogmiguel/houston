@@ -60,6 +60,7 @@ function SheetPopup({
   className,
   children,
   showCloseButton = true,
+  showBackdrop = true,
   keepMounted = false,
   transitionDurationMs,
   side = "right",
@@ -68,6 +69,8 @@ function SheetPopup({
   ...props
 }: SheetPrimitive.Popup.Props & {
   showCloseButton?: boolean;
+  /** A non-modal sheet that leaves the page behind it visible and interactive omits the scrim. */
+  showBackdrop?: boolean;
   keepMounted?: boolean;
   transitionDurationMs?: number;
   side?: "right" | "left" | "top" | "bottom";
@@ -81,15 +84,21 @@ function SheetPopup({
 
   return (
     <SheetPortal keepMounted={keepMounted}>
-      <SheetBackdrop
-        className={
-          instant
-            ? "transition-none! data-ending-style:opacity-100! data-starting-style:opacity-100!"
-            : undefined
-        }
-        style={transitionStyle}
-      />
-      <SheetViewport side={side} variant={variant}>
+      {showBackdrop ? (
+        <SheetBackdrop
+          className={
+            instant
+              ? "transition-none! data-ending-style:opacity-100! data-starting-style:opacity-100!"
+              : undefined
+          }
+          style={transitionStyle}
+        />
+      ) : null}
+      <SheetViewport
+        side={side}
+        variant={variant}
+        className={cn(!showBackdrop && "pointer-events-none")}
+      >
         <SheetPrimitive.Popup
           className={cn(
             "relative flex max-h-full min-h-0 w-full min-w-0 flex-col bg-popover text-popover-foreground shadow-[var(--shadow-2)] transition-[opacity,translate] duration-(--motion-modal-in) ease-standard data-ending-style:duration-(--motion-modal-out) data-ending-style:ease-exit before:pointer-events-none before:absolute before:inset-0 before:shadow-[0_1px_--theme(--color-black/4%)] data-ending-style:opacity-0 data-starting-style:opacity-0 max-sm:before:hidden dark:before:shadow-[0_-1px_--theme(--color-white/6%)]",
@@ -103,6 +112,9 @@ function SheetPopup({
               "col-start-2 w-[calc(100%-(--spacing(12)))] max-w-md border-s data-ending-style:translate-x-8 data-starting-style:translate-x-8",
             variant === "inset" &&
               "before:hidden sm:rounded-[var(--r-dialog)] sm:border sm:**:data-[slot=sheet-footer]:rounded-b-[calc(var(--r-dialog)-1px)]",
+            // Without a scrim the sheet is non-modal: its popup still takes pointers while the
+            // positioning viewport lets them through to the page behind it.
+            !showBackdrop && "pointer-events-auto",
             instant &&
               "transition-none! data-ending-style:translate-x-0! data-starting-style:translate-x-0! data-ending-style:translate-y-0! data-starting-style:translate-y-0! data-ending-style:opacity-100! data-starting-style:opacity-100!",
             className,

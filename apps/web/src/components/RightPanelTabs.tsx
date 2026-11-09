@@ -123,6 +123,10 @@ export interface RightPanelTabsProps {
   defaultWidth?: number;
   inlineSize?: PreviewPanelInlineSize;
   layoutControls?: ReactNode;
+  /** A control before the tab strip, such as the phone's Back button. */
+  leadingControl?: ReactNode;
+  /** The phone sheet hides desktop-only surfaces and their launcher entries. */
+  phone?: boolean;
   surfaces: readonly RightPanelSurface[];
   environmentId: EnvironmentId | null;
   activeSurfaceId: string | null;
@@ -358,6 +362,8 @@ function RightPanelEmptyState(props: {
   deviceAvailable: boolean;
   sideChatAvailable: boolean;
   sideChatDisabledReason: string | null;
+  /** The phone has no browser or terminal surface, so neither entry appears. */
+  phone?: boolean;
 }) {
   const [highlight, setHighlight] = useState(-1);
 
@@ -433,10 +439,13 @@ function RightPanelEmptyState(props: {
         ]
       : []),
   ] as const;
+  const shownActions = props.phone
+    ? actions.filter((action) => action.label !== "Browser" && action.label !== "Terminal")
+    : actions;
 
-  type SurfaceAction = (typeof actions)[number];
+  type SurfaceAction = (typeof shownActions)[number];
 
-  const availableActions = actions.filter((action) => action.available);
+  const availableActions = shownActions.filter((action) => action.available);
   const highlightIndex =
     availableActions.length === 0 ? -1 : Math.min(highlight, availableActions.length - 1);
 
@@ -510,7 +519,7 @@ function RightPanelEmptyState(props: {
       <div className="w-full max-w-xs py-6">
         <h3 className="mb-3 text-center font-medium text-foreground text-sm">Open a surface</h3>
         <div className="flex flex-col gap-0.5">
-          {actions.map((action) =>
+          {shownActions.map((action) =>
             action.available ? (
               <div
                 key={action.label}
@@ -1200,9 +1209,12 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
         ]
       : []),
   ] as const;
+  const shownAddSurfaceActions = props.phone
+    ? addSurfaceActions.filter((action) => action.kind !== "preview" && action.kind !== "terminal")
+    : addSurfaceActions;
 
   const handleAddSurfaceMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    const action = surfaceShortcutActionForKey(addSurfaceActions, event.nativeEvent);
+    const action = surfaceShortcutActionForKey(shownAddSurfaceActions, event.nativeEvent);
     if (!action) return;
     event.preventDefault();
     event.stopPropagation();
@@ -1377,7 +1389,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           sideOffset={6}
           onKeyDownCapture={handleAddSurfaceMenuKeyDown}
         >
-          {addSurfaceActions.map((action) => {
+          {shownAddSurfaceActions.map((action) => {
             const Icon = action.icon;
             if (action.label === "Browser" && action.available) {
               return (
@@ -1566,6 +1578,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
         data-right-panel-tabbar
         data-drag-region={ownsDesktopTitleBar ? "deep" : undefined}
       >
+        {props.leadingControl}
         {tabStripContent}
         {props.layoutControls}
         {ownsDesktopTitleBar && !props.layoutControls ? (
@@ -1600,6 +1613,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             deviceAvailable={props.deviceAvailable}
             sideChatAvailable={props.sideChatAvailable === true}
             sideChatDisabledReason={props.sideChatDisabledReason ?? null}
+            phone={props.phone === true}
           />
         ) : (
           props.children

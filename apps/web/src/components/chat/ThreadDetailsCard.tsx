@@ -12,6 +12,7 @@ import { scopedThreadKey } from "@houston-app/client-runtime/environment";
 import { ScrollArea } from "../ui/scroll-area";
 import { cn } from "../../lib/utils";
 import { Popover, PopoverPopup, PopoverCreateHandle } from "../ui/popover";
+import { DetailsSheet } from "../../mobile/DetailsSheet";
 import { selectThreadPanelOpen, useRightPanelStore } from "../../rightPanelStore";
 import { useChatCanvas } from "./ChatCanvasContext";
 import {
@@ -42,6 +43,7 @@ export function ThreadDetailsCard({
   open,
   onOpenChange,
   animateFollow = false,
+  sheet = false,
   onContextMenu,
   children,
 }: {
@@ -59,6 +61,8 @@ export function ThreadDetailsCard({
   onOpenChange?: (open: boolean) => void;
   /** A grid focus move slides the inline card in from the cell that lost focus. */
   animateFollow?: boolean;
+  /** The phone presents the card in a bottom sheet instead of a popover. */
+  sheet?: boolean;
   onContextMenu?: MouseEventHandler<HTMLDivElement>;
   children: (density: "full" | "compact" | "essential") => ReactNode;
 }) {
@@ -90,7 +94,7 @@ export function ThreadDetailsCard({
   const contentHeights =
     measurements.key === measurementKey ? measurements.heights : { full: 0, compact: 0 };
   const height = placement?.height ?? Math.max(0, (canvas?.container.height ?? 0) - 52);
-  const density = resolveThreadDetailsCardDensity(height, contentHeights);
+  const density = sheet ? "full" : resolveThreadDetailsCardDensity(height, contentHeights);
   const measureDetailsCard = canvas?.measureDetailsCard;
   const cardWidth = preferredPlacement?.width;
   // The mode derives from canvas measurements, the preview frame and the
@@ -205,7 +209,8 @@ export function ThreadDetailsCard({
     <div
       className={cn(
         "isolate contain-paint grid max-h-full grid-rows-[minmax(0,1fr)] overflow-hidden rounded-xl bg-[var(--surface-raised)] shadow-[var(--shadow-1)]",
-        mode === "popover" &&
+        !sheet &&
+          mode === "popover" &&
           "max-h-[min(calc(100dvh-6.5rem),calc(var(--available-height,100dvh)-1rem))]",
       )}
       style={placement ? { maxHeight: height } : undefined}
@@ -219,6 +224,20 @@ export function ThreadDetailsCard({
       </ScrollArea>
     </div>
   );
+  const sheetOpenChange = (nextOpen: boolean) => {
+    if (controlled) {
+      onOpenChange?.(nextOpen);
+      return;
+    }
+    useRightPanelStore.getState().setThreadPanelOpen(threadRef, "popover", nextOpen);
+  };
+  if (sheet) {
+    return (
+      <DetailsSheet open={popoverOpen} onOpenChange={sheetOpenChange}>
+        {card}
+      </DetailsSheet>
+    );
+  }
   return (
     <>
       <span ref={setFallbackAnchorElement} aria-hidden className="hidden" />

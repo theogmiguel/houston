@@ -2547,6 +2547,17 @@ export default function ChatView(props: ChatViewProps) {
     onDiffPanelOpen,
     closeRightPanelSurface,
   });
+  const closePhoneDetails = useStableCallback(() => {
+    onDetailsOpenChange?.(false);
+  });
+  const openFilesFromPhoneDetails = useStableCallback(() => {
+    closePhoneDetails();
+    addFilesSurfaceStable();
+  });
+  const openChangesFromPhoneDetails = useStableCallback(() => {
+    closePhoneDetails();
+    openChangesFromThreadPanelStable();
+  });
   const pullRequestSurfaceAvailable = supportsPullRequests && pullRequestPanelTarget !== null;
   const {
     acknowledgeActiveThreadWoke,
@@ -4215,8 +4226,13 @@ export default function ChatView(props: ChatViewProps) {
                   ? { onCheckoutPullRequestRequest: openPullRequestDialogStable }
                   : {})}
                 onComposerFocusRequest={scheduleComposerFocusStable}
+                {...(phoneShell ? { sheet: true, onOpenFiles: openFilesFromPhoneDetails } : {})}
                 {...(isServerThread && isGitRepo
-                  ? { onOpenChanges: openChangesFromThreadPanelStable }
+                  ? {
+                      onOpenChanges: phoneShell
+                        ? openChangesFromPhoneDetails
+                        : openChangesFromThreadPanelStable,
+                    }
                   : {})}
                 onRunProjectScript={runProjectScriptStable}
                 onAddProjectScript={saveProjectScriptStable}
