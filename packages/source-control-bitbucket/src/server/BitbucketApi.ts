@@ -122,6 +122,11 @@ export class BitbucketResponseError extends Schema.TaggedError<BitbucketResponse
     status: Schema.Int,
     responseBodyLength: NonNegativeInt,
     retryAt: Schema.optional(Schema.Number),
+    /**
+     * The request carried no credential. Bitbucket answers 404 for a private repository it hides
+     * from anonymous callers, so such a 404 means "add credentials", not "no such pull request".
+     */
+    anonymous: Schema.optional(Schema.Boolean),
   },
 ) {
   get detail(): string {
@@ -630,6 +635,7 @@ function originOf(value: string): string | null {
 const responseError = Effect.fn("BitbucketApi.responseError")(function* (
   operation: BitbucketApiOperation,
   response: HttpClientResponse.HttpClientResponse,
+  anonymous: boolean,
 ): Effect.fn.Return<never, BitbucketApiError> {
   const now = yield* Clock.currentTimeMillis;
   const retryAt = SourceControlRateLimit.retryAtFromHeader(response.headers["retry-after"], now);
@@ -652,6 +658,7 @@ const responseError = Effect.fn("BitbucketApi.responseError")(function* (
     status: response.status,
     responseBodyLength: collected.text.length,
     retryAt,
+    ...(anonymous ? { anonymous } : {}),
   });
 });
 
@@ -706,13 +713,15 @@ export const make = Effect.gen(function* () {
 
   const withAuth = (request: HttpClientRequest.HttpClientRequest) =>
     currentCredential.pipe(
-      Effect.map((credential) =>
-        credential === null
-          ? request
-          : credential.kind === "access-token"
-            ? request.pipe(HttpClientRequest.bearerToken(credential.accessToken))
-            : request.pipe(HttpClientRequest.basicAuth(credential.email, credential.apiToken)),
-      ),
+      Effect.map((credential) => ({
+        request:
+          credential === null
+            ? request
+            : credential.kind === "access-token"
+              ? request.pipe(HttpClientRequest.bearerToken(credential.accessToken))
+              : request.pipe(HttpClientRequest.basicAuth(credential.email, credential.apiToken)),
+        anonymous: credential === null,
+      })),
     );
 
   /**
@@ -746,6 +755,7 @@ export const make = Effect.gen(function* () {
     operation: BitbucketApiOperation,
     schema: S,
     response: HttpClientResponse.HttpClientResponse,
+    anonymous: boolean,
   ): Effect.Effect<S["Type"], BitbucketApiError, S["DecodingServices"]> =>
     HttpClientResponse.matchStatus({
       "2xx": (success) =>
@@ -759,7 +769,7 @@ export const make = Effect.gen(function* () {
               }),
           ),
         ),
-      orElse: (failed) => responseError(operation, failed),
+      orElse: (failed) => responseError(operation, failed, anonymous),
     })(response);
 
   const executeJson = <S extends Schema.Top>(
@@ -771,11 +781,13 @@ export const make = Effect.gen(function* () {
       request.method,
       withAuth(request.pipe(HttpClientRequest.acceptJson)).pipe(
         Effect.flatMap((authed) =>
-          httpClient
-            .execute(authed)
-            .pipe(Effect.mapError((cause) => new BitbucketRequestError({ operation, cause }))),
+          httpClient.execute(authed.request).pipe(
+            Effect.mapError((cause) => new BitbucketRequestError({ operation, cause })),
+            Effect.flatMap((response) =>
+              decodeResponse(operation, schema, response, authed.anonymous),
+            ),
+          ),
         ),
-        Effect.flatMap((response) => decodeResponse(operation, schema, response)),
         Effect.timeout(BITBUCKET_API_REQUEST_TIMEOUT),
         Effect.catchTags({
           TimeoutError: (cause) => Effect.fail(new BitbucketRequestError({ operation, cause })),
@@ -950,7 +962,10 @@ export const make = Effect.gen(function* () {
     readonly url: string;
     readonly body?: string;
     readonly redirects: number;
-  }): Effect.Effect<HttpClientResponse.HttpClientResponse, BitbucketApiError> => {
+  }): Effect.Effect<
+    { readonly response: HttpClientResponse.HttpClientResponse; readonly anonymous: boolean },
+    BitbucketApiError
+  > => {
     const url = trustedUrl(input.url);
     if (url === null) {
       return Effect.fail(
@@ -971,17 +986,16 @@ export const make = Effect.gen(function* () {
         ? base
         : base.pipe(HttpClientRequest.bodyText(input.body, "application/json"));
     return withAuth(withBody).pipe(
-      Effect.flatMap((request) =>
-        httpClient
-          .execute(request)
-          .pipe(
-            Effect.mapError(
-              (cause): BitbucketApiError =>
-                new BitbucketRequestError({ operation: "request", cause }),
-            ),
+      Effect.flatMap((authed) =>
+        httpClient.execute(authed.request).pipe(
+          Effect.mapError(
+            (cause): BitbucketApiError =>
+              new BitbucketRequestError({ operation: "request", cause }),
           ),
+          Effect.map((response) => ({ response, anonymous: authed.anonymous })),
+        ),
       ),
-      Effect.flatMap((response) => {
+      Effect.flatMap(({ response, anonymous }) => {
         const location = response.headers.location;
         if (
           response.status >= 300 &&
@@ -995,7 +1009,7 @@ export const make = Effect.gen(function* () {
             redirects: input.redirects + 1,
           });
         }
-        return Effect.succeed(response);
+        return Effect.succeed({ response, anonymous });
       }),
     );
   };
@@ -1004,7 +1018,7 @@ export const make = Effect.gen(function* () {
     throttled(
       input.method,
       send({ ...input, redirects: 0 }).pipe(
-        Effect.flatMap((response) =>
+        Effect.flatMap(({ response, anonymous }) =>
           HttpClientResponse.matchStatus({
             // Read through the body stream rather than `text`, so an oversized diff is stopped as
             // it arrives instead of being materialized whole and then cut.
@@ -1026,7 +1040,7 @@ export const make = Effect.gen(function* () {
                   truncated: collected.truncated,
                 })),
               ),
-            orElse: (failed) => responseError("request", failed),
+            orElse: (failed) => responseError("request", failed, anonymous),
           })(response),
         ),
         // This also caps redirect hops: no request can finish headers then stall its body forever.

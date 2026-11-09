@@ -57,9 +57,18 @@ const providerFailureReason = (cause: Cause.Cause<PullRequestService.PullRequest
   Option.match(Cause.findErrorOption(cause), {
     onNone: () => null,
     onSome: (error) =>
-      error._tag === "PullRequestOperationError" && isProviderError(error.cause)
+      isProviderError(error.cause)
         ? error.cause.reason
-        : null,
+        : error._tag === "PullRequestUnavailableError"
+          ? ("missing-tool" as const)
+          : null,
+  });
+
+/** What the host needs before it can be read, when no retry can succeed without the user. */
+const unusableHostRequirement = (cause: Cause.Cause<PullRequestService.PullRequestError>) =>
+  Option.match(Cause.findErrorOption(cause), {
+    onNone: () => null,
+    onSome: (error) => (error._tag === "PullRequestUnavailableError" ? error.message : null),
   });
 
 const logFailure =
@@ -308,6 +317,20 @@ export const make = Effect.gen(function* () {
       Effect.tap(() => ended(target, "unreadable")),
     );
 
+  const stopUnusable = (requirement: string) => (target: WatchTarget) =>
+    record(target, null, {
+      text: `Houston stopped watching pull request #${target.link.number} (${target.link.url}) because the host cannot be read until this is fixed: ${requirement} Check the pull request yourself, and call watch_pull_request to watch it again once it is.`,
+      notification: {
+        source: { kind: "monitor" },
+        outcome: "failed",
+        summary: `#${target.link.number}: stopped watching, the host needs credentials`,
+      },
+    }).pipe(
+      Effect.tap(() => woke(target)),
+      Effect.catch(() => record(target, null)),
+      Effect.tap(() => ended(target, "unreadable")),
+    );
+
   const readRemarks = Effect.fn("PullRequestWatchReactor.readRemarks")(
     function* (
       key: string,
@@ -497,6 +520,13 @@ export const make = Effect.gen(function* () {
       lastReads.delete(group.key);
       const reason = providerFailureReason(read.cause);
       if (reason === "rate-limited") return;
+      // Missing or rejected credentials do not recover by retrying; say so on the first read.
+      const requirement = unusableHostRequirement(read.cause);
+      if (requirement !== null) {
+        readFailures.delete(group.key);
+        yield* eachTarget(group, stopUnusable(requirement));
+        return yield* Effect.failCause(read.cause);
+      }
       // Transport and host failures can outlast the failure limit; keep the watch for recovery.
       if (reason === "failed") {
         readFailures.delete(group.key);

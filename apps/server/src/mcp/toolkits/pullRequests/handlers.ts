@@ -9,12 +9,14 @@ import {
 import { canonicalizeGitCafePullRequestUrl } from "@houston-app/source-control-definitions/registry";
 import * as Cause from "effect/Cause";
 import * as SecureRandom from "effect/crypto/SecureRandom";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
 import * as PullRequestReviewGuideService from "../../../pullRequest/PullRequestReviewGuideService.ts";
+import * as PullRequestService from "../../../pullRequest/PullRequestService.ts";
 import { pullRequestSyncKey } from "../../../pullRequest/pullRequestSyncKey.ts";
 import { sourceControlDefinitions } from "../../../sourceControl/sourceControlDefinitions.ts";
 import {
@@ -46,8 +48,47 @@ import {
   PullRequestProjectNotFoundError,
   PullRequestsToolkit,
   type ThreadPullRequestEntry,
+  type PullRequestTracking,
   CHILD_PULL_REQUEST_REPORT_NEXT,
 } from "./tools.ts";
+
+/** The agent waits on the tool call; a host slower than this is reported as unverified instead. */
+const TRACKING_READ_TIMEOUT = Duration.seconds(10);
+
+interface TrackingResult {
+  readonly tracking: PullRequestTracking;
+  readonly next?: string;
+}
+
+function trackingOf(error: PullRequestService.PullRequestError): TrackingResult {
+  if (error._tag === "PullRequestUnavailableError") {
+    return {
+      tracking: "unauthenticated",
+      next: `Houston cannot read this pull request from its host, so its state, checks and wakes will not arrive: ${error.message} Tell the user, and check the pull request yourself until then.`,
+    };
+  }
+  if (error.reason === "not-found") {
+    return {
+      tracking: "not-found",
+      next: "The host reports no such pull request. Check the URL or number.",
+    };
+  }
+  const cause = error.cause;
+  if (
+    typeof cause === "object" &&
+    cause !== null &&
+    "reason" in cause &&
+    cause.reason === "rate-limited"
+  ) {
+    return { tracking: "rate-limited" };
+  }
+  return { tracking: "unverified" };
+}
+
+function joinNext(...parts: ReadonlyArray<string | undefined>): { readonly next?: string } {
+  const present = parts.filter((part) => part !== undefined);
+  return present.length === 0 ? {} : { next: present.join(" ") };
+}
 
 interface ResolvedTarget {
   readonly host: string;
@@ -198,6 +239,33 @@ function projectForPullRequest(
 const make = Effect.gen(function* () {
   const engine = yield* Orchestrator.OrchestratorV2;
   const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
+  const pullRequests = yield* PullRequestService.PullRequestService;
+
+  /** One host read, so a link or watch that will never update says so instead of succeeding. */
+  const track = (thread: OrchestrationV2ThreadShell, target: ResolvedTarget) =>
+    pullRequests
+      .detail({
+        projectId: thread.projectId,
+        host: target.host,
+        repository: target.repository,
+        number: target.number,
+        allowStale: true,
+      })
+      .pipe(
+        Effect.as<TrackingResult>({ tracking: "ok" }),
+        Effect.timeoutOrElse({
+          duration: TRACKING_READ_TIMEOUT,
+          orElse: () => Effect.succeed<TrackingResult>({ tracking: "unverified" }),
+        }),
+        Effect.catch((error) => Effect.succeed(trackingOf(error))),
+        Effect.catchCauseIf(
+          (cause) => !Cause.hasInterruptsOnly(cause),
+          (cause) =>
+            Effect.logWarning("pull request tracking read failed", { cause }).pipe(
+              Effect.as<TrackingResult>({ tracking: "unverified" }),
+            ),
+        ),
+      );
 
   const projects = yield* ProjectService.ProjectService;
   const random = yield* SecureRandom.SecureRandom;
@@ -291,6 +359,7 @@ const make = Effect.gen(function* () {
       })
       .pipe(Effect.catchCause(dispatchFailure(PullRequestWatchFailedError)));
     const after = yield* requireThread(PullRequestWatchFailedError, thread.id);
+    const tracked = watching ? yield* track(thread, target) : undefined;
     return {
       host: target.host,
       repository: target.repository,
@@ -298,6 +367,7 @@ const make = Effect.gen(function* () {
       url: target.url,
       watching: watchedLink(after)?.watch !== undefined,
       wasWatching: before?.watch !== undefined,
+      ...(tracked === undefined ? {} : { tracking: tracked.tracking, ...joinNext(tracked.next) }),
     };
   });
 
@@ -362,17 +432,24 @@ const make = Effect.gen(function* () {
     link_pull_request: writesThread((input) =>
       Effect.gen(function* () {
         const thread = yield* requireThread(PullRequestLinkFailedError, input.threadId);
-        const next =
+        const childNext =
           thread.lineage.relationshipToParent === "subagent"
-            ? { next: CHILD_PULL_REQUEST_REPORT_NEXT }
-            : {};
+            ? CHILD_PULL_REQUEST_REPORT_NEXT
+            : undefined;
         const project = yield* projectOf(thread, PullRequestLinkFailedError);
         const target = yield* resolveTarget(input, project);
         const existing = threadPullRequestsOf(thread).find((link) =>
           threadPullRequestKeysEqual(link, target),
         );
-        if (existing && existing.source !== "stack-dismissed")
-          return { ...target, alreadyLinked: true, ...next };
+        if (existing && existing.source !== "stack-dismissed") {
+          const tracked = yield* track(thread, target);
+          return {
+            ...target,
+            alreadyLinked: true,
+            tracking: tracked.tracking,
+            ...joinNext(tracked.next, childNext),
+          };
+        }
         const alreadyLinked = yield* engine
           .dispatch({
             type: "thread.pull-request.link",
@@ -389,7 +466,13 @@ const make = Effect.gen(function* () {
 
             Effect.catchCause(dispatchFailure(PullRequestLinkFailedError)),
           );
-        return { ...target, alreadyLinked, ...next };
+        const tracked = yield* track(thread, target);
+        return {
+          ...target,
+          alreadyLinked,
+          tracking: tracked.tracking,
+          ...joinNext(tracked.next, childNext),
+        };
       }),
     ),
     link_pull_requests: writesThread((input) =>
