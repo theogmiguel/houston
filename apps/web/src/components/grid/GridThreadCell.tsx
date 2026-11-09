@@ -22,6 +22,7 @@ import { paneDensityLayout } from "../../grid/density";
 import { subscribeGridCellRename } from "../../grid/gridCellCommands";
 import { gridTerminalThreadRef } from "../../grid/gridTerminal";
 import { MAX_GRID_THREADS, type GridRecord, useGridStore } from "../../grid/gridStore";
+import type { ThreadOpenIntent } from "../../grid/gridThreadOpen";
 import type { ThreadDropRefusal } from "../../grid/projectMove";
 import { type Side, type SplitSide, type ThreadNode, preorderThreads } from "../../grid/tree";
 import { getThreadDragSource } from "../../grid/threadDrag";
@@ -75,7 +76,7 @@ export function GridThreadCell({
   onMaximize?: (() => void) | undefined;
   onSplit: (side: SplitSide, threadId: string) => void;
   onNewThread?: ((side: SplitSide) => void) | undefined;
-  onOpenThread: (ref: ScopedThreadRef) => void;
+  onOpenThread: (ref: ScopedThreadRef, intent?: ThreadOpenIntent) => void;
   /** The focused cell mounts its thread's right panel beside the grid. */
   rightPanelPortal?: RightPanelPortalTarget | null;
   /** The focused cell anchors its popover details card under the top bar control. */

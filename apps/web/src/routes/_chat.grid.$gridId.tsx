@@ -6,6 +6,7 @@ import { LayoutGridIcon } from "lucide-react";
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { GridEmptyDraft } from "../components/grid/GridEmptyDraft";
+import { ThreadOpenProvider } from "../components/grid/threadOpenContext";
 import { GridHost } from "../components/grid/GridHost";
 import { GridRightPanelPin } from "../components/chat/GridRightPanelPin";
 import { GridThreadBranch } from "../components/grid/GridThreadBranch";
@@ -32,7 +33,7 @@ import { useGridShortcuts } from "../grid/useGridShortcuts";
 import { rememberLastOpenGridId } from "../grid/lastGrid";
 import { useGridMaximizeStore } from "../grid/gridMaximizeStore";
 import { ungroupedWorkspaceThreads } from "../grid/rail";
-import { resolveGridThreadOpen } from "../grid/gridThreadOpen";
+import { resolveGridThreadOpen, type ThreadOpenIntent } from "../grid/gridThreadOpen";
 import { containsThread, preorderThreads } from "../grid/tree";
 import { cn } from "../lib/utils";
 import { useMediaQuery } from "../hooks/useMediaQuery";
@@ -316,7 +317,12 @@ function GridRoute() {
       ? soloThread
       : (workspaceThreads.find((thread) => thread.id === effectiveMaximized) ?? null);
 
-  const openThread = (environmentId: string, threadId: string, fromThreadId: string | null) => {
+  const openThread = (
+    environmentId: string,
+    threadId: string,
+    fromThreadId: string | null,
+    intent: ThreadOpenIntent = "peek",
+  ) => {
     const placement = resolveGridThreadOpen({
       tree: grid.tree,
       gridEnvironmentId: grid.environmentId,
@@ -324,8 +330,17 @@ function GridRoute() {
       threadId,
       fromThreadId,
       inWorkspace: workspaceThreads.some((thread) => thread.id === threadId),
+      intent,
+      hasRoom: soloLeaves.length < MAX_GRID_THREADS,
     });
     if (placement.kind === "navigate") {
+      if (intent === "join" && environmentId === grid.environmentId) {
+        toastManager.add({
+          type: "info",
+          title: `“${grid.name}” is full`,
+          description: `A grid holds at most ${MAX_GRID_THREADS} threads and it already shows ${soloLeaves.length}, so the thread opened on its own page.`,
+        });
+      }
       void navigate({
         to: "/$environmentId/$threadId",
         params: buildThreadRouteParams(
@@ -581,16 +596,22 @@ function GridRoute() {
                   void navigate({ to: "/grid/$gridId", params: { gridId: targetGridId } });
                 }}
                 onNewThread={(side) => createThread(side, node.threadId)}
-                onOpenThread={(ref) => openThread(ref.environmentId, ref.threadId, node.threadId)}
+                onOpenThread={(ref, intent) =>
+                  openThread(ref.environmentId, ref.threadId, node.threadId, intent)
+                }
               />
             )}
             renderEmpty={() => (
-              <GridEmptyDraft
+              <ThreadOpenProvider
                 key={grid.id}
-                grid={grid}
-                threadDetailsAnchor={threadDetailsAnchorRef}
-                onDraftChange={(draft) => setEmptyDraftThreadId(draft?.threadId ?? null)}
-              />
+                open={(ref, intent) => openThread(ref.environmentId, ref.threadId, null, intent)}
+              >
+                <GridEmptyDraft
+                  grid={grid}
+                  threadDetailsAnchor={threadDetailsAnchorRef}
+                  onDraftChange={(draft) => setEmptyDraftThreadId(draft?.threadId ?? null)}
+                />
+              </ThreadOpenProvider>
             )}
           />
           {gridTerminalRef === null ? null : (

@@ -6,6 +6,7 @@ import { page, userEvent } from "vite-plus/test/browser";
 import "~/index.css";
 import { render } from "../../../test/render";
 import { ThreadOpenProvider } from "../grid/threadOpenContext";
+import type { ThreadOpenIntent } from "../../grid/gridThreadOpen";
 import { ResumeSessionDialog } from "./resume-session-dialog";
 
 const environmentId = EnvironmentId.make("environment");
@@ -67,7 +68,7 @@ vi.mock(import("~/state/use-atom-command"), async (original) => ({
     command === "open-session" ? state.openSession : vi.fn()) as never,
 }));
 
-function renderDialog(openThread: (ref: ScopedThreadRef) => void) {
+function renderDialog(openThread: (ref: ScopedThreadRef, intent?: ThreadOpenIntent) => void) {
   return render(
     <ThreadOpenProvider open={openThread}>
       <ResumeSessionDialog
@@ -91,7 +92,11 @@ describe("ResumeSessionDialog", () => {
 
     await userEvent.click(page.getByText("Fix the login"));
 
-    expect(openThread).toHaveBeenCalledWith(expect.objectContaining({ environmentId, threadId }));
+    // `join` gives the thread its own grid cell instead of replacing the cell that resumed it.
+    expect(openThread).toHaveBeenCalledWith(
+      expect.objectContaining({ environmentId, threadId }),
+      "join",
+    );
     expect(state.openSession).not.toHaveBeenCalled();
   });
 
@@ -109,6 +114,10 @@ describe("ResumeSessionDialog", () => {
       environmentId,
       input: { projectId, session: state.sessions[0]?.session },
     });
-    expect(openThread).toHaveBeenCalledWith(expect.objectContaining({ environmentId, threadId }));
+    // `join` gives the thread its own grid cell instead of replacing the cell that resumed it.
+    expect(openThread).toHaveBeenCalledWith(
+      expect.objectContaining({ environmentId, threadId }),
+      "join",
+    );
   });
 });
