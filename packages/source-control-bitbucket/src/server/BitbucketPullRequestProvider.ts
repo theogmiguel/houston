@@ -63,6 +63,10 @@ export function bitbucketViewerPermissions(input: {
 export function bitbucketProviderFailure(
   error: BitbucketPullRequestApi.BitbucketPullRequestApiError,
 ): PullRequestProviderFailure {
+  // Without credentials a private repository answers 404, which is a setup gap, not a missing PR.
+  if (error._tag === "BitbucketResponseError" && error.status === 404 && error.anonymous === true) {
+    return { reason: "missing-tool" };
+  }
   if (
     (error._tag === "BitbucketResponseError" && error.status === 401) ||
     error._tag === "SettingsSecretUnresolvedError"
