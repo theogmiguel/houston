@@ -10,6 +10,8 @@ const base = {
   environmentId: "env",
   fromThreadId: null,
   inWorkspace: true,
+  intent: "peek",
+  hasRoom: true,
 } as const;
 
 describe("resolveGridThreadOpen", () => {
@@ -49,6 +51,49 @@ describe("resolveGridThreadOpen", () => {
         threadId: "x",
         environmentId: "elsewhere",
         fromThreadId: "parent",
+      }),
+    ).toEqual({ kind: "navigate" });
+  });
+
+  it("adds a resumed thread beside the cell that resumed it instead of replacing that cell", () => {
+    expect(
+      resolveGridThreadOpen({
+        ...base,
+        threadId: "resumed",
+        fromThreadId: "parent",
+        intent: "join",
+      }),
+    ).toEqual({ kind: "add" });
+  });
+
+  it("adds a resumed thread to an empty grid before its shell reaches the workspace list", () => {
+    expect(
+      resolveGridThreadOpen({
+        ...base,
+        tree: null,
+        threadId: "resumed",
+        inWorkspace: false,
+        intent: "join",
+      }),
+    ).toEqual({ kind: "add" });
+  });
+
+  it("opens a resumed thread on its own page when the grid is full or in another environment", () => {
+    expect(
+      resolveGridThreadOpen({
+        ...base,
+        threadId: "resumed",
+        fromThreadId: "parent",
+        intent: "join",
+        hasRoom: false,
+      }),
+    ).toEqual({ kind: "navigate" });
+    expect(
+      resolveGridThreadOpen({
+        ...base,
+        threadId: "resumed",
+        environmentId: "elsewhere",
+        intent: "join",
       }),
     ).toEqual({ kind: "navigate" });
   });

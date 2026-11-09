@@ -2,25 +2,20 @@ import type { ScopedThreadRef } from "@houston-app/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { createContext, useContext, type ReactNode } from "react";
 
+import type { ThreadOpenIntent } from "../../grid/gridThreadOpen";
 import { buildThreadRouteParams } from "../../threadRoutes";
 
-/**
- * How a thread view asks the app to open another thread. A single-thread route
- * navigates; a grid cell focuses (or adds) the thread inside its own grid.
- */
-const ThreadOpenContext = createContext<((ref: ScopedThreadRef) => void) | null>(null);
+type ThreadOpen = (ref: ScopedThreadRef, intent?: ThreadOpenIntent) => void;
 
-export function ThreadOpenProvider({
-  open,
-  children,
-}: {
-  open: (ref: ScopedThreadRef) => void;
-  children: ReactNode;
-}) {
+// How a thread view opens another thread: a single-thread route navigates; a grid cell or
+// empty grid places it inside its own grid by intent (`peek` when omitted).
+const ThreadOpenContext = createContext<ThreadOpen | null>(null);
+
+export function ThreadOpenProvider({ open, children }: { open: ThreadOpen; children: ReactNode }) {
   return <ThreadOpenContext value={open}>{children}</ThreadOpenContext>;
 }
 
-export function useThreadOpen(): (ref: ScopedThreadRef) => void {
+export function useThreadOpen(): ThreadOpen {
   const navigate = useNavigate();
   const provided = useContext(ThreadOpenContext);
   if (provided !== null) return provided;
