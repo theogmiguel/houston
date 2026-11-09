@@ -442,6 +442,8 @@ type ChatViewProps =
       onDetailsOpenChange?: (open: boolean) => void;
       /** The grid's terminal dock takes this cell's terminal toggle and chords. */
       gridTerminalRef?: ScopedThreadRef | null;
+      /** The phone thread page already reserves the bottom safe area around the cell. */
+      phoneShell?: boolean;
       routeKind: "server";
       draftId?: never;
     }
@@ -471,6 +473,8 @@ type ChatViewProps =
       onDetailsOpenChange?: (open: boolean) => void;
       /** The grid's terminal dock takes this cell's terminal toggle and chords. */
       gridTerminalRef?: ScopedThreadRef | null;
+      /** The phone thread page already reserves the bottom safe area around the cell. */
+      phoneShell?: boolean;
       routeKind: "draft";
       draftId: DraftId;
     };
@@ -497,6 +501,7 @@ export default function ChatView(props: ChatViewProps) {
     reserveTitleBarControlInset = !embeddedOption,
     forceExpandedMobileComposer = false,
     paneDensity,
+    phoneShell = false,
   } = props;
   const centerDraftComposer = props.centerDraftComposer === true;
   const hideDraftHeroHeadline = props.hideDraftHeroHeadline === true;
@@ -4126,7 +4131,11 @@ export default function ChatView(props: ChatViewProps) {
                     </ComposerSurface.Shell>
                     <div
                       aria-hidden
-                      className="h-[calc(env(safe-area-inset-bottom)+1rem)] sm:h-[calc(env(safe-area-inset-bottom)+1.25rem)]"
+                      className={cn(
+                        phoneShell
+                          ? "h-4"
+                          : "h-[calc(env(safe-area-inset-bottom)+1rem)] sm:h-[calc(env(safe-area-inset-bottom)+1.25rem)]",
+                      )}
                     />
                   </div>
                 </div>

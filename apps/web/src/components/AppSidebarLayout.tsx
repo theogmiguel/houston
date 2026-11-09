@@ -8,7 +8,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { useLocation, useRouter, type AnyRouter } from "@tanstack/react-router";
+import { useLocation, useMatches, useRouter, type AnyRouter } from "@tanstack/react-router";
 
 import { moveWorkspaceFocus, workspaceAreaProps } from "../lib/workspaceFocus";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
@@ -57,6 +57,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { registerCommands, registerMenuAction } from "../shortcuts/dispatcher";
 import { resolveThreadRouteRef } from "../threadRoutes";
+import { useIsPhone } from "../mobile/usePhone";
 
 const MACOS_TRAFFIC_LIGHTS_LEFT_INSET = "var(--desktop-window-controls-inset, 90px)";
 
@@ -313,6 +314,20 @@ function SidebarControl() {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { toggleSidebar, isMobile, mobileSheetMounted } = useSidebar();
   const isSidebarVisible = useSidebarVisibility();
+  const isPhone = useIsPhone();
+  // On a phone the rail is the home page, and a thread's own bar carries the way back.
+  // A drawer there would mount a second rail or repeat the bar's back control.
+  const phonePageOwnsNavigation = useMatches({
+    select: (matches) => {
+      const routeId = matches.at(-1)?.routeId;
+      return (
+        routeId === "/_chat/" ||
+        routeId === "/_chat/grid/$gridId" ||
+        routeId === "/_chat/draft/$draftId" ||
+        routeId === "/_chat/$environmentId/$threadId"
+      );
+    },
+  });
   const shortcutLabel = shortcutLabelForCommand(keybindings, "sidebar.toggle", {
     context: { usagePageOpen },
   });
@@ -327,6 +342,9 @@ function SidebarControl() {
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- window keydown listener that toggles the sidebar on its shortcut
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      // The phone home is the rail and a phone thread has its own way back; a drawer would
+      // mount a second rail or repeat the bar's back control.
+      if (isPhone && phonePageOwnsNavigation) return;
       // Tab moves focus on purpose, so the toggle's tooltip may open again.
       if (event.key === "Tab") focusRestoredRef.current = false;
       if (event.defaultPrevented) return;
@@ -358,13 +376,13 @@ function SidebarControl() {
 
     window.addEventListener("keydown", onKeyDown, true);
     const unsubscribe = window.hostBridge?.onMenuAction((action) => {
-      if (action === "sidebar.toggle") toggleSidebar();
+      if (action === "sidebar.toggle" && !(isPhone && phonePageOwnsNavigation)) toggleSidebar();
     });
     return () => {
       window.removeEventListener("keydown", onKeyDown, true);
       unsubscribe?.();
     };
-  }, [keybindings, toggleSidebar, usagePageOpen]);
+  }, [isPhone, keybindings, phonePageOwnsNavigation, toggleSidebar, usagePageOpen]);
 
   // The control lives as long as the shell, so it carries the shell's commands. Created
   // once so re-renders never re-register them.
@@ -385,29 +403,31 @@ function SidebarControl() {
       )}
       data-sidebar-control=""
     >
-      <Tooltip
-        onOpenChange={(open, details) => {
-          if (open && details.reason === "trigger-focus" && focusRestoredRef.current) {
-            details.cancel();
-          }
-        }}
-      >
-        <TooltipTrigger
-          render={
-            <SidebarTrigger
-              variant="ghost"
-              className="pointer-events-auto"
-              aria-label="Toggle main sidebar"
-              onBlur={() => {
-                focusRestoredRef.current = false;
-              }}
-            />
-          }
-        />
-        <TooltipPopup side="bottom">
-          Toggle main sidebar{shortcutLabel ? ` (${shortcutLabel})` : ""}
-        </TooltipPopup>
-      </Tooltip>
+      {isPhone && phonePageOwnsNavigation ? null : (
+        <Tooltip
+          onOpenChange={(open, details) => {
+            if (open && details.reason === "trigger-focus" && focusRestoredRef.current) {
+              details.cancel();
+            }
+          }}
+        >
+          <TooltipTrigger
+            render={
+              <SidebarTrigger
+                variant="ghost"
+                className="pointer-events-auto"
+                aria-label="Toggle main sidebar"
+                onBlur={() => {
+                  focusRestoredRef.current = false;
+                }}
+              />
+            }
+          />
+          <TooltipPopup side="bottom">
+            Toggle main sidebar{shortcutLabel ? ` (${shortcutLabel})` : ""}
+          </TooltipPopup>
+        </Tooltip>
+      )}
     </div>
   );
 }

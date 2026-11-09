@@ -22,6 +22,17 @@ export const THREAD_PARENT_LINK_CLS =
   "inline-flex min-w-0 shrink items-center gap-1 rounded-sm text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
 export const THREAD_PARENT_TEXT_CLS = "max-w-40 min-w-0 truncate";
 
+/** The phone's thread bar: one control row over the pane, divided from the chat below. */
+export const PHONE_THREAD_BAR_CLS =
+  "flex h-(--h-top) shrink-0 items-center gap-1 border-b border-b-(--divider) bg-background px-2";
+/** The phone bar's breadcrumb: the project and the title share one line, each truncating. */
+export const PHONE_THREAD_BAR_BREADCRUMB_CLS =
+  "flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden";
+export const PHONE_THREAD_BAR_PROJECT_CLS = "min-w-0 truncate text-sm text-muted-foreground";
+export const PHONE_THREAD_BAR_SEPARATOR_CLS = "shrink-0 text-sm text-icon-muted";
+export const PHONE_THREAD_BAR_TITLE_CLS =
+  "min-w-0 flex-1 truncate text-sm font-medium text-foreground";
+
 /** The new-thread summary tray: exactly the composer's width and radius, 8px above it. */
 export const DRAFT_PROJECT_CONTEXT_CLS =
   "pointer-events-auto w-full rounded-xl border border-border/60 bg-card/40 px-3 py-2 text-callout text-muted-foreground";

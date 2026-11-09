@@ -122,6 +122,7 @@ const project: OrchestrationProjectShell = {
   createdAt: "2026-03-17T19:12:28.000Z",
   updatedAt: "2026-03-17T19:12:28.000Z",
 };
+let projectTitle = project.title;
 
 const base = (threadId: ThreadId, runId: RunId, id: string, ordinal: number) => ({
   id: TurnItemId.make(id),
@@ -396,7 +397,7 @@ const handlers: Record<string, (input: never) => unknown> = {
         snapshot: {
           schemaVersion: 1,
           snapshotSequence: sequence,
-          projects: [project],
+          projects: [{ ...project, title: projectTitle }],
           threads: threads.map(shellOf),
           archivedThreads: [],
         },
@@ -497,10 +498,14 @@ const encodedDescriptor = Schema.encodeSync(ExecutionEnvironmentDescriptor)(
  */
 export function installFakeEnvironment(
   fixtures: ReadonlyArray<FakeThread>,
-  options: { readonly deletedThreadIds?: ReadonlyArray<string> } = {},
+  options: {
+    readonly deletedThreadIds?: ReadonlyArray<string>;
+    readonly projectTitle?: string;
+  } = {},
 ): Disposable {
   threads = fixtures;
   deletedThreadIds = new Set(options.deletedThreadIds ?? []);
+  projectTitle = options.projectTitle ?? project.title;
   globalThis.fetch = async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input), window.location.href);
     if (url.origin !== window.location.origin) return realFetch(input, init);
@@ -523,6 +528,7 @@ export function installFakeEnvironment(
       globalThis.fetch = realFetch;
       threads = [];
       deletedThreadIds = new Set();
+      projectTitle = project.title;
     },
   };
 }
