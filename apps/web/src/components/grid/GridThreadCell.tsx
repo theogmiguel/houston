@@ -64,6 +64,7 @@ export function GridThreadCell({
   onSwapWith,
   onOpenGrid,
   onBack,
+  onDetailsRef,
   phone = false,
 }: {
   node: ThreadNode;
@@ -104,6 +105,8 @@ export function GridThreadCell({
   onOpenGrid?: ((gridId: string) => void) | undefined;
   /** The phone's back control: returns to the rail's home page. */
   onBack?: (() => void) | undefined;
+  /** The phone bar's details control; the grid route owns the anchor ref. */
+  onDetailsRef?: ((node: HTMLButtonElement | null) => void) | undefined;
   /** The grid route is a phone thread shell: the pane header becomes the phone bar. */
   phone?: boolean;
 }) {
@@ -403,10 +406,7 @@ export function GridThreadCell({
           onCancelRename={() => setRenaming(false)}
           detailsOpen={focused && detailsOpen === true}
           {...(onToggleDetails === undefined ? {} : { onToggleDetails })}
-          onDetailsRef={(node) => {
-            // oxlint-disable-next-line react/immutability -- the grid route owns this anchor ref and fills it from the bar's details button
-            if (threadDetailsAnchor) threadDetailsAnchor.current = node;
-          }}
+          {...(onDetailsRef === undefined ? {} : { onDetailsRef })}
           menuButtonRef={moreButtonRef}
           onOpenMenu={openMoreMenu}
           onBack={onBack ?? (() => {})}

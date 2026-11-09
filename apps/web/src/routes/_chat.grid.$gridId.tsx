@@ -615,6 +615,9 @@ function GridRoute() {
                   openThread(ref.environmentId, ref.threadId, node.threadId, intent)
                 }
                 onBack={() => void navigate({ to: "/" })}
+                onDetailsRef={(node) => {
+                  threadDetailsAnchorRef.current = node;
+                }}
                 phone={phoneThreadPage}
               />
             )}
