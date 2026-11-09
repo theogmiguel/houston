@@ -31,6 +31,27 @@ this machine's credentials.
 
 Changing network access restarts the server. Existing tunnels keep working.
 
+## Use Houston from a phone
+
+A paired phone browser uses the same server as the desktop app. Turn on **Network access**
+and **Pair a device** under **Settings ▸ Connections ▸ Sharing & access**, then open the
+pairing link in the phone's browser, or open the server's address and paste the pairing code.
+The address must be reachable from the phone. A Tailscale HTTPS address (the tailnet's
+MagicDNS name) is the recommended route: it provides the secure context that some browser
+features require. A plain HTTP address on the local network works for pairing and chat, but
+voice dictation, the install prompt and clipboard copy stay unavailable there because those
+browser APIs require a secure context.
+
+Install Houston to the home screen from the browser's menu; the page carries a web app
+manifest and icons. With a secure context the installed copy opens without the browser's
+address bar. A phone browser does not receive push notifications.
+
+Below a 40rem viewport the phone layout covers threads, the composer (model, effort,
+permissions, attachments, `@` file references and slash commands), approvals and questions,
+the thread's Details, Files (read-only), Changes (commit and push), Pull requests, Usage and
+Settings. A phone cannot use the terminal, the browser panel, tasks, file editing or drag and
+drop.
+
 ## Task sources
 
 **Settings ▸ Connections ▸ Task sources** configures where tasks come from:
