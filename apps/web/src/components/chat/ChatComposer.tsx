@@ -231,7 +231,14 @@ import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
 import { resolveComposerMenuActiveItemId } from "./composerMenuHighlight";
 import { buildPullRequestReferenceContext } from "../pullRequest/pullRequestDetail.logic";
-import { getComposerPromptInjectionState, getComposerReasoningStep } from "./composerProviderState";
+import {
+  getComposerPromptInjectionState,
+  getComposerReasoningStep,
+  resolveComposerTraitsInput,
+} from "./composerProviderState";
+import { AddSheet } from "../../mobile/AddSheet";
+import { ModelSheet } from "../../mobile/ModelSheet";
+import { useIsPhone } from "../../mobile/usePhone";
 import { readPromptUltrathink } from "./TraitsPicker";
 import {
   providerSupportsManualCompaction,
@@ -1122,6 +1129,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const [isComposerPrimaryActionsCompact, setIsComposerPrimaryActionsCompact] = useState(false);
   const [isComposerModelPickerOpen, setIsComposerModelPickerOpen] = useState(false);
   const isMobileViewport = useMediaQuery("max-sm");
+  const isPhone = useIsPhone();
   const isSoftwareKeyboardOpen = useSoftwareKeyboardOpen();
   const [isComposerFocused, setIsComposerFocused] = useState(false);
   const [composerSubmissionError, setComposerSubmissionError] = useState<string | null>(null);
@@ -1355,6 +1363,21 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   };
   const editPromptFromTraitsStable = useStableCallback(editPromptFromTraits);
   const promptUltrathink = readPromptUltrathink(prompt);
+  const phoneTraitsInput = isPhone
+    ? resolveComposerTraitsInput({
+        provider: selectedProvider,
+        instanceId: selectedInstanceId,
+        ...(routeKind === "server" ? { threadRef: routeThreadRef } : {}),
+        ...(routeKind === "draft" && draftId ? { draftId } : {}),
+        model: selectedModel,
+        models: selectedProviderModels,
+        modelOptions: composerModelOptions?.[selectedInstanceId],
+        reportedModelSelection,
+        promptUltrathink,
+        onPromptEdit: editPromptFromTraitsStable,
+        planModeEnabled: settings.planModeEnabled,
+      })
+    : null;
 
   const [inlineRestingControlsHost, setInlineRestingControlsHost] = useState<HTMLDivElement | null>(
     null,
@@ -2646,7 +2669,29 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     : composerControlsCollapsed
       ? false
       : expandedControlsModelIconOnly;
-  const composerControls = (
+  const composerControls = isPhone ? (
+    <ModelSheet
+      environmentId={environmentId}
+      activeInstanceId={selectedInstanceId}
+      model={selectedModelForPickerWithCustomFallback}
+      instanceEntries={providerInstanceEntries}
+      modelOptionsByInstance={modelOptionsByInstance}
+      lockedProvider={lockedProvider}
+      lockedContinuationGroupKey={lockedContinuationGroupKey}
+      keybindings={keybindings}
+      terminalOpen={terminalOpen}
+      traits={phoneTraitsInput}
+      effortDisplay={settings.effortDisplay}
+      runtimeMode={compatibleRuntimeMode}
+      runtimeModeOptions={compatibleRuntimeModeOptions}
+      open={isComposerModelPickerOpen}
+      onOpenChange={setIsComposerModelPickerOpen}
+      onProviderModelSelect={onProviderModelSelect}
+      onOpenProviderSetup={onOpenProviderSetup}
+      getModelDisabledReason={getModelDisabledReason}
+      onRuntimeModeChange={handleRuntimeModeChange}
+    />
+  ) : (
     <ComposerControlsBar
       environmentId={environmentId}
       routeKind={routeKind}
@@ -3582,10 +3627,24 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         onRemove={onRemoveEditingQueuedAttachment}
       />
     ) : null;
-  const composerAttachButton = showComposerAttachAction ? (
-    <ComposerAttachButton
+  const composerAttachButton =
+    !isPhone && showComposerAttachAction ? (
+      <ComposerAttachButton
+        addComposerAttachments={addComposerAttachments}
+        focusComposer={focusComposer}
+      />
+    ) : null;
+  const phoneAddSheet = isPhone ? (
+    <AddSheet
+      canAttach={showComposerAttachAction}
       addComposerAttachments={addComposerAttachments}
       focusComposer={focusComposer}
+      onMention={() => {
+        insertComposerTextStable("@", "end", { ensureLeadingBoundary: true });
+      }}
+      onCommands={() => {
+        insertComposerTextStable("/", "end", { ensureLeadingBoundary: true });
+      }}
     />
   ) : null;
   return (
@@ -3990,6 +4049,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   showMobilePendingAnswerActions && "hidden sm:flex",
                 )}
               >
+                {phoneAddSheet ? <div className="me-0.5">{phoneAddSheet}</div> : null}
                 {composerAttachButton ? <div className="me-0.5">{composerAttachButton}</div> : null}
                 <div
                   data-chat-composer-actions="right"

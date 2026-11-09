@@ -16,9 +16,11 @@ import {
   ORCHESTRATION_PROTOCOL_VERSION,
   ORCHESTRATION_V2_WS_METHODS,
   ProjectId,
+  ProviderDriverKind,
   ProviderInstanceId,
   RunId,
   ServerConfig,
+  type ServerProvider,
   ThreadId,
   TurnItemId,
   WS_METHODS,
@@ -26,6 +28,7 @@ import {
   type VcsStatusStreamEvent,
   type OrchestrationProjectShell,
   type OrchestrationV2Checkpoint,
+  type OrchestrationV2Command,
   type OrchestrationV2ProjectedTurnItem,
   type OrchestrationV2Run,
   type OrchestrationV2RuntimeRequest,
@@ -111,6 +114,11 @@ const serverConfig: ServerConfig = {
   }),
   keybindings: DEFAULT_RESOLVED_KEYBINDINGS,
 };
+
+const mutableProvider = (
+  serverConfig.providers as unknown as Array<{ models: ServerProvider["models"] }>
+)[0]!;
+const defaultProviderModels = [...mutableProvider.models];
 
 const project: OrchestrationProjectShell = {
   id: PROJECT_ID,
@@ -211,6 +219,8 @@ export interface FakeThread {
   readonly runtimeRequests?: ReadonlyArray<OrchestrationV2RuntimeRequest>;
   /** Checkpoints the thread projection reports; the latest ready one is the pending change set. */
   readonly checkpoints?: ReadonlyArray<OrchestrationV2Checkpoint>;
+  /** Reports a running provider session whose turns support native steering. */
+  readonly supportsActiveSteering?: boolean;
 }
 
 /** The thread's latest run left these files changed: a ready checkpoint the composer summarises. */
@@ -258,6 +268,101 @@ export function threadWithHistory(name: string, turns: number): FakeThread {
     );
   }
   return { id, title: `Thread ${name}`, runs, items };
+}
+
+/** Every capability the projection reads, with native steering enabled. */
+function fakeProviderCapabilities() {
+  return {
+    sessions: {
+      supportsMultipleProviderThreadsPerSession: false,
+      supportsModelSwitchInSession: true,
+      supportsProviderSwitchingViaHandoff: false,
+      supportsRuntimeModeSwitchInSession: true,
+      pendingRequestsSurviveRestart: true,
+    },
+    threads: {
+      canCreateEmptyThread: true,
+      canReadThreadSnapshot: true,
+      canRollbackThread: false,
+      canForkThread: false,
+      canForkFromTurn: false,
+      canForkFromSubagentThread: false,
+      exposesNativeThreadId: true,
+    },
+    turns: {
+      exposesNativeTurnId: true,
+      emitsTurnStarted: true,
+      emitsTurnCompleted: true,
+      supportsInterrupt: true,
+      supportsActiveSteering: true,
+      supportsSteeringByInterruptRestart: true,
+      supportsQueuedMessages: true,
+      terminalStatusQuality: "strong" as const,
+    },
+    streaming: {
+      streamsAssistantText: true,
+      streamsReasoning: false,
+      streamsToolOutput: true,
+      streamsPlanText: false,
+      emitsMessageCompleted: true,
+    },
+    tools: {
+      exposesToolItemIds: true,
+      emitsToolStarted: true,
+      emitsToolCompleted: true,
+      emitsToolOutput: true,
+      supportsMcpTools: false,
+      supportsDynamicToolCallbacks: false,
+    },
+    approvals: {
+      supportsCommandApproval: true,
+      supportsFileReadApproval: false,
+      supportsFileChangeApproval: false,
+      supportsApplyPatchApproval: false,
+      approvalsHaveNativeRequestIds: false,
+      approvalCallbacksAreLiveOnly: true,
+      approvalsCanOriginateFromSubagents: false,
+    },
+    planning: {
+      emitsPlanUpdated: false,
+      emitsTodoList: false,
+      emitsProposedPlan: false,
+      supportsStructuredQuestions: true,
+      planDeltasHaveItemIds: false,
+    },
+    subagents: {
+      supportsSubagents: false,
+      exposesSubagentThreadIds: false,
+      emitsSubagentLifecycle: false,
+      canWaitForSubagents: false,
+      canCloseSubagents: false,
+      canForkSubagentThread: false,
+    },
+    context: {
+      acceptsSystemContext: false,
+      acceptsDeveloperContext: false,
+      acceptsSyntheticUserContext: false,
+      canGenerateSummaries: false,
+      canConsumeHandoffSummaries: false,
+      supportsDeltaHandoff: false,
+      supportsFullThreadHandoff: false,
+      maxRecommendedHandoffChars: null,
+    },
+    checkpointing: {
+      appCanCheckpointFilesystem: false,
+      supportsNestedCheckpointScopes: false,
+      providerCanRollbackConversation: false,
+      providerRollbackReturnsSnapshot: false,
+      providerCanReadConversationSnapshot: false,
+    },
+    identity: {
+      nativeThreadIds: "strong" as const,
+      nativeTurnIds: "strong" as const,
+      nativeItemIds: "strong" as const,
+      nativeRequestIds: "weak" as const,
+    },
+    runtimePolicy: { enforcement: "client-boundary" as const },
+  };
 }
 
 function shellOf(thread: FakeThread): OrchestrationV2ThreadShell {
@@ -342,7 +447,22 @@ function projectionOf(thread: FakeThread): OrchestrationV2ThreadProjection {
     attempts: [],
     nodes: [],
     subagents: [],
-    providerSessions: [],
+    providerSessions: thread.supportsActiveSteering
+      ? [
+          {
+            id: ProviderSessionId.make(`${thread.id}-provider-session`),
+            driver: ProviderDriverKind.make("codex"),
+            providerInstanceId: CODEX,
+            status: "running",
+            cwd: "/workspace/render",
+            model: MODEL.model,
+            capabilities: fakeProviderCapabilities(),
+            createdAt: AT,
+            updatedAt: AT,
+            lastError: null,
+          },
+        ]
+      : [],
     providerThreads: [],
     providerTurns: [],
     runtimeRequests: [...(thread.runtimeRequests ?? [])],
@@ -357,6 +477,9 @@ function projectionOf(thread: FakeThread): OrchestrationV2ThreadProjection {
     updatedAt: AT,
   };
 }
+
+/** Commands the renderer dispatched; the fake records them without answering. */
+export const dispatchedCommands: OrchestrationV2Command[] = [];
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -383,6 +506,13 @@ const subscribe = <A>(first: ReadonlyArray<A>, register?: (queue: Queue.Queue<A>
   );
 
 const handlers: Record<string, (input: never) => unknown> = {
+  // Recorded for assertions; still unanswered, like every state-changing call.
+  [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (input: never) => {
+    const command = input as OrchestrationV2Command;
+    dispatchedCommands.push(command);
+    // A visit is a no-op side effect; answering it lets the thread's command queue drain.
+    return command.type === "thread.visit" ? Effect.succeed({ sequence: 0 }) : Effect.never;
+  },
   [WS_METHODS.subscribeTerminalMetadata]: () =>
     subscribe<TerminalMetadataStreamEvent>([{ type: "snapshot", terminals: [] }], (queue) => {
       terminalMetadataSubscriber = queue;
@@ -501,11 +631,15 @@ export function installFakeEnvironment(
   options: {
     readonly deletedThreadIds?: ReadonlyArray<string>;
     readonly projectTitle?: string;
+    readonly providerModels?: ServerProvider["models"];
   } = {},
 ): Disposable {
   threads = fixtures;
+  dispatchedCommands.length = 0;
   deletedThreadIds = new Set(options.deletedThreadIds ?? []);
   projectTitle = options.projectTitle ?? project.title;
+  const models = options.providerModels ?? defaultProviderModels;
+  mutableProvider.models = [...models];
   globalThis.fetch = async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input), window.location.href);
     if (url.origin !== window.location.origin) return realFetch(input, init);
@@ -529,6 +663,7 @@ export function installFakeEnvironment(
       threads = [];
       deletedThreadIds = new Set();
       projectTitle = project.title;
+      mutableProvider.models = [...defaultProviderModels];
     },
   };
 }
