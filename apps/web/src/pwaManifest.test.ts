@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off - reads the shipped manifest and icons on disk.
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";

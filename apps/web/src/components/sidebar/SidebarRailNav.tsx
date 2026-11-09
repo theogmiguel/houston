@@ -146,6 +146,7 @@ export function SidebarRailNav({
   sectionActions,
   sectionAddProject = true,
   sectionHeading = true,
+  hideTasks = false,
 }: {
   search: ReactNode;
   sectionTitle?: string;
@@ -153,6 +154,8 @@ export function SidebarRailNav({
   sectionAddProject?: boolean;
   /** A rail that draws its own project sections drops the shared heading row. */
   sectionHeading?: boolean;
+  /** The phone's home keeps Pull requests and Usage, without the Tasks destination. */
+  hideTasks?: boolean;
 }) {
   const navigate = useNavigate();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -188,12 +191,14 @@ export function SidebarRailNav({
             onClick={openPullRequests}
           />
         ) : null}
-        <SidebarRailShortcut
-          icon={<ListChecksIcon />}
-          label="Tasks"
-          active={pathname === "/tasks"}
-          onClick={openTasks}
-        />
+        {hideTasks ? null : (
+          <SidebarRailShortcut
+            icon={<ListChecksIcon />}
+            label="Tasks"
+            active={pathname === "/tasks"}
+            onClick={openTasks}
+          />
+        )}
         <SidebarRailShortcut
           icon={<ChartNoAxesColumnIcon />}
           label="Usage"

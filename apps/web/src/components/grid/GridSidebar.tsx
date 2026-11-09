@@ -117,6 +117,7 @@ import {
 import { RowMeta, RowMetaItem } from "../ui/sidebar-row-meta";
 import { GridShelves } from "./GridShelves";
 import { readLocalApi } from "../../localApi";
+import { useIsPhone } from "../../mobile/usePhone";
 import { ThreadContextDragGhost } from "../chat/ThreadContextDragGhost";
 import { RowActionSweepContext, type RowActionSweep } from "./rowActionSweepContext";
 import { beginRowActionSweep, sweepActionProps } from "../../grid/rowActionSweep";
@@ -297,7 +298,15 @@ function HighlightedText({ text, query }: { text: string; query: string }) {
   return <>{parts}</>;
 }
 
-export function GridSidebar() {
+export function GridSidebar({
+  hideTasks = false,
+  isPage = false,
+}: {
+  /** The phone's home drops the rail's Tasks destination. */
+  hideTasks?: boolean;
+  /** The rail stands alone as a page, without the controls of the docked column. */
+  isPage?: boolean;
+} = {}) {
   const allProjects = useProjects();
   const threads = useQuietThreadShells();
   // Reading the same project groups as the rest of the app makes the rail obey
@@ -327,7 +336,10 @@ export function GridSidebar() {
   const showBranch = useClientSettings((settings) => settings.sidebarRowShowBranch);
   const showPullRequest = useClientSettings((settings) => settings.sidebarRowShowPullRequest);
   const showSubagents = useClientSettings((settings) => settings.sidebarRowShowSubagents);
-  const showNeedsYou = useClientSettings((settings) => settings.sidebarShowNeedsYou);
+  const isPhone = useIsPhone();
+  const showNeedsYouChoice = useClientSettings((settings) => settings.sidebarShowNeedsYou);
+  // Unset follows the device: the phone home shows Needs you, the desktop rail does not.
+  const showNeedsYou = showNeedsYouChoice ?? isPhone;
   const sidebarOptions: SidebarGridOptions = {
     threadSort,
     gridSort,
@@ -1068,10 +1080,11 @@ export function GridSidebar() {
               }
             >
               <ThreadContextDragGhost />
-              <SidebarChromeHeader isDesktopHost={isDesktopHost} />
+              <SidebarChromeHeader isDesktopHost={isDesktopHost} showHideControl={!isPage} />
               <SidebarHeader>
                 <SidebarRailNav
                   sectionHeading={false}
+                  hideTasks={hideTasks}
                   search={
                     <label className="flex h-7 w-full shrink-0 items-center gap-2 rounded-(--control-radius) px-2 text-sm text-secondary-foreground hover:bg-sidebar-row-hover focus-within:ring-2 focus-within:ring-ring focus-within:ring-inset">
                       <SearchIcon
@@ -1180,7 +1193,12 @@ export function GridSidebar() {
                   <SidebarProjectsHeader
                     options={sidebarOptions}
                     onChange={(patch) => void updateClientSettings(sidebarOptionsPatch(patch))}
-                    onReset={() => void updateClientSettings(SIDEBAR_OPTIONS_DEFAULTS)}
+                    onReset={() =>
+                      void updateClientSettings({
+                        ...SIDEBAR_OPTIONS_DEFAULTS,
+                        sidebarShowNeedsYou: isPhone,
+                      })
+                    }
                     hiddenGridGroups={hiddenGridGroups}
                     projectFilter={
                       openProjectGroups.length > 1 ? (

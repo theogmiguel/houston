@@ -45,8 +45,11 @@ async function mountApp(width: number) {
   return { screen, router };
 }
 
+// A phone's home page is the rail too, so its nav is not the sidebar under test.
 const threadsNav = () =>
-  document.querySelector<HTMLElement>('[role="navigation"][aria-label="Threads"]');
+  [...document.querySelectorAll<HTMLElement>('[role="navigation"][aria-label="Threads"]')].find(
+    (nav) => nav.closest("[data-phone-home]") === null,
+  ) ?? null;
 
 // The rail mounts only while the drawer is open, so anything in it that closes the drawer on
 // mount (rather than on a navigation) makes the drawer unopenable. Unit harnesses with a bare

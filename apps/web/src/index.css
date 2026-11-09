@@ -247,6 +247,8 @@ html[data-theme-reveal] *::after {
   --font-serif: "Source Serif 4", Georgia, serif;
   /* Below this width the thread rail becomes a drawer (components/ui/sidebar.tsx mirrors it). */
   --breakpoint-dock: 60rem;
+  /* Below this width a browser is a phone: the rail is its home page (mobile/usePhone.ts mirrors it). */
+  --breakpoint-phone: 40rem;
 }
 
 /* Motion roles. Components name a role (`duration-(--motion-overlay-in) ease-standard`),

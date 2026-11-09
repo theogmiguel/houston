@@ -83,7 +83,8 @@ its threads scroll.
 threads waiting on you from every project: input and approval requests first, then failures and
 threads that came back. Those threads leave their project sections, which instead end with a
 muted **+N in Needs you** line; the heading pips still count them. The setting is off by default
-and the section is hidden when nothing is waiting.
+on desktop and on by default in a phone-width browser; a saved choice wins on either. The
+section is hidden when nothing is waiting.
 
 **Filter by project** in the rail header limits the sections, the shelves, search and the
 older Closed threads Houston loads to the projects you pick. Click a project to choose only
