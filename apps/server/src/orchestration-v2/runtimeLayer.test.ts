@@ -26,6 +26,7 @@ import {
   type PullRequestDetail,
   type PullRequestComment,
   PullRequestOperationError,
+  PullRequestUnavailableError,
   ProviderDriverKind,
   ProviderInstanceId,
   ProviderSessionId,
@@ -3350,6 +3351,85 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           watching: false,
         });
         yield* worker.drain();
+      }),
+  );
+
+  it.effect.each(["missing-tool", "unauthenticated"] as const)(
+    "stops watching at once, naming what the host needs, when its credentials are unusable: %s",
+    (failure) =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const threadId = ThreadId.make(`runtime-pull-request-watch-credentials-${failure}`);
+        const projectId = ProjectId.make(`pr-watch-credentials-project-${failure}`);
+        const requirement =
+          "Bitbucket needs API credentials on the server. Add them in Settings → Source Control.";
+        yield* seedProject({
+          projectId,
+          title: "Watch without credentials",
+          workspaceRoot: "/workspace/watch-credentials",
+          defaultModelSelection: null,
+          createdAt: "2026-10-01T00:00:00.000Z",
+        });
+        yield* orchestrator.dispatch({
+          type: "thread.create",
+          createdBy: "user",
+          creationSource: "web",
+          commandId: CommandId.make(`pr-watch-credentials-create-${failure}`),
+          threadId,
+          projectId,
+          title: "Watch without credentials",
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+        });
+        yield* orchestrator.dispatch({
+          type: "thread.pull-request.watch",
+          commandId: CommandId.make(`pr-watch-credentials-start-${failure}`),
+          threadId,
+          host: "bitbucket.org",
+          repository: "acme/private",
+          number: 8,
+          watching: true,
+          link: { url: "https://bitbucket.org/acme/private/pull-requests/8", source: "agent" },
+        });
+        const unusable = new PullRequestUnavailableError({
+          reason: failure === "missing-tool" ? "cli-missing" : "cli-unauthenticated",
+          provider: SourceControlProviderKind.make("bitbucket"),
+          requirement,
+          cause: new PullRequestProviderError({
+            provider: SourceControlProviderKind.make("bitbucket"),
+            operation: "detail",
+            reason: failure,
+            detail: "Bitbucket returned HTTP 404.",
+          }),
+        });
+        const reactor = yield* PullRequestWatchReactor.make.pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              NodeServices.layer,
+              NodeCrypto.layer,
+              Layer.mock(PullRequestService.PullRequestService)({
+                watchFingerprint: () => Effect.fail(unusable),
+                detail: () => Effect.fail(unusable),
+                activity: () => Effect.fail(unusable),
+              }),
+            ),
+          ),
+        );
+        const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+        yield* reactor.sweep.pipe(Effect.ignore, Effect.andThen(worker.drain()));
+
+        const thread = yield* orchestrator.getThreadShell(threadId);
+        assert.isUndefined(thread?.pullRequests?.[0]?.watch);
+        const { messages } = yield* orchestrator.getThreadRecords(threadId, ["messages"]);
+        const wakes = messages.filter((message) => message.notification !== undefined);
+        assert.deepEqual(
+          wakes.map((message) => message.notification?.summary),
+          ["#8: stopped watching, the host needs credentials"],
+        );
+        assert.include(wakes[0]?.text ?? "", requirement);
       }),
   );
 
