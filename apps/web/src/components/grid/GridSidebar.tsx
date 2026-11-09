@@ -1080,91 +1080,98 @@ export function GridSidebar({
               }
             >
               <ThreadContextDragGhost />
-              <SidebarChromeHeader isDesktopHost={isDesktopHost} showHideControl={!isPage} />
-              <SidebarHeader>
-                <SidebarRailNav
-                  sectionHeading={false}
-                  hideTasks={hideTasks}
-                  search={
-                    <label className="flex h-7 w-full shrink-0 items-center gap-2 rounded-(--control-radius) px-2 text-sm text-secondary-foreground hover:bg-sidebar-row-hover focus-within:ring-2 focus-within:ring-ring focus-within:ring-inset">
-                      <SearchIcon
-                        aria-hidden
-                        className="size-[15px] shrink-0 text-secondary-label"
-                      />
-                      <input
-                        value={search}
-                        onChange={(event) => {
-                          setSearch(event.target.value);
-                          setSearchIndex(0);
-                        }}
-                        onKeyDown={(event) => {
-                          if ((event.key === "ArrowDown" || event.key === "ArrowUp") && searching) {
-                            event.preventDefault();
-                            setSearchIndex(
-                              moveSearchHighlight(
-                                clampSearchHighlight(searchIndex, searchResultOrder.length),
-                                searchResultOrder.length,
-                                event.key === "ArrowDown" ? 1 : -1,
-                              ),
-                            );
-                            return;
-                          }
-                          if (event.key === "Escape") {
-                            event.stopPropagation();
-                            setSearch("");
-                          }
-                          if (event.key === "Enter") {
-                            if (openHighlightedSearchResult()) return;
-                            const matchedGrid = sections
-                              .flatMap((section) => section.grids.map((entry) => entry.grid))
-                              .find((grid) =>
-                                grid.name.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
+              {isPage ? null : <SidebarChromeHeader isDesktopHost={isDesktopHost} />}
+              {isPage ? null : (
+                <SidebarHeader>
+                  <SidebarRailNav
+                    sectionHeading={false}
+                    hideTasks={hideTasks}
+                    search={
+                      <label className="flex h-7 w-full shrink-0 items-center gap-2 rounded-(--control-radius) px-2 text-sm text-secondary-foreground hover:bg-sidebar-row-hover focus-within:ring-2 focus-within:ring-ring focus-within:ring-inset">
+                        <SearchIcon
+                          aria-hidden
+                          className="size-[15px] shrink-0 text-secondary-label"
+                        />
+                        <input
+                          value={search}
+                          onChange={(event) => {
+                            setSearch(event.target.value);
+                            setSearchIndex(0);
+                          }}
+                          onKeyDown={(event) => {
+                            if (
+                              (event.key === "ArrowDown" || event.key === "ArrowUp") &&
+                              searching
+                            ) {
+                              event.preventDefault();
+                              setSearchIndex(
+                                moveSearchHighlight(
+                                  clampSearchHighlight(searchIndex, searchResultOrder.length),
+                                  searchResultOrder.length,
+                                  event.key === "ArrowDown" ? 1 : -1,
+                                ),
                               );
-                            if (matchedGrid !== undefined) {
-                              const candidate = railTargets.find(
-                                (target) => target.gridId === matchedGrid.id,
-                              );
-                              if (candidate !== undefined) openRailTarget(candidate);
-                              else
-                                void navigate({
-                                  to: "/grid/$gridId",
-                                  params: { gridId: matchedGrid.id },
-                                });
                               return;
                             }
-                            const matchedProject = projects.find((project) =>
-                              project.title.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
-                            );
-                            const workspaceTarget =
-                              matchedProject === undefined
-                                ? undefined
-                                : railTargets.find(
-                                    (target) =>
-                                      target.environmentId === matchedProject.environmentId,
-                                  );
-                            if (workspaceTarget !== undefined) openRailTarget(workspaceTarget);
-                          }
-                        }}
-                        placeholder="Search"
-                        aria-label="Search workspaces, grids and threads"
-                        className="min-w-0 flex-1 bg-transparent text-inherit outline-none placeholder:text-secondary-label"
-                      />
-                      {query.length > 0 ? (
-                        <button
-                          type="button"
-                          aria-label="Clear search"
-                          onClick={() => setSearch("")}
-                          className="inline-grid size-5 shrink-0 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-label hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
-                        >
-                          <XIcon aria-hidden className="size-3" />
-                        </button>
-                      ) : searchShortcutLabel ? (
-                        <SidebarRailKbd>{searchShortcutLabel}</SidebarRailKbd>
-                      ) : null}
-                    </label>
-                  }
-                />
-              </SidebarHeader>
+                            if (event.key === "Escape") {
+                              event.stopPropagation();
+                              setSearch("");
+                            }
+                            if (event.key === "Enter") {
+                              if (openHighlightedSearchResult()) return;
+                              const matchedGrid = sections
+                                .flatMap((section) => section.grids.map((entry) => entry.grid))
+                                .find((grid) =>
+                                  grid.name.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
+                                );
+                              if (matchedGrid !== undefined) {
+                                const candidate = railTargets.find(
+                                  (target) => target.gridId === matchedGrid.id,
+                                );
+                                if (candidate !== undefined) openRailTarget(candidate);
+                                else
+                                  void navigate({
+                                    to: "/grid/$gridId",
+                                    params: { gridId: matchedGrid.id },
+                                  });
+                                return;
+                              }
+                              const matchedProject = projects.find((project) =>
+                                project.title
+                                  .toLocaleLowerCase()
+                                  .includes(query.toLocaleLowerCase()),
+                              );
+                              const workspaceTarget =
+                                matchedProject === undefined
+                                  ? undefined
+                                  : railTargets.find(
+                                      (target) =>
+                                        target.environmentId === matchedProject.environmentId,
+                                    );
+                              if (workspaceTarget !== undefined) openRailTarget(workspaceTarget);
+                            }
+                          }}
+                          placeholder="Search"
+                          aria-label="Search workspaces, grids and threads"
+                          className="min-w-0 flex-1 bg-transparent text-inherit outline-none placeholder:text-secondary-label"
+                        />
+                        {query.length > 0 ? (
+                          <button
+                            type="button"
+                            aria-label="Clear search"
+                            onClick={() => setSearch("")}
+                            className="inline-grid size-5 shrink-0 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-label hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                          >
+                            <XIcon aria-hidden className="size-3" />
+                          </button>
+                        ) : searchShortcutLabel ? (
+                          <SidebarRailKbd>{searchShortcutLabel}</SidebarRailKbd>
+                        ) : null}
+                      </label>
+                    }
+                  />
+                </SidebarHeader>
+              )}
               <SidebarContent>
                 <div
                   ref={(element) => {
@@ -1422,7 +1429,7 @@ export function GridSidebar({
                   </div>
                 </div>
               ) : null}
-              <SidebarChromeFooter />
+              {isPage ? null : <SidebarChromeFooter />}
               {dragging !== null ? (
                 <span aria-hidden className="sr-only">
                   Dragging thread

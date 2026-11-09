@@ -4,6 +4,7 @@ import { useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 import { cn } from "../lib/utils";
 import { useNativeTitlebarHeight } from "../lib/windowControlsOverlay";
+import { PhoneTabBar, usePhoneTab } from "../mobile/PhoneTabBar";
 import { useCloseAppModal } from "./sidebar/mainAppLocation";
 import { Button } from "./ui/button";
 import { DialogBackdrop } from "./ui/dialog";
@@ -25,6 +26,9 @@ export function AppRouteModal({
   children: ReactNode;
 }) {
   const closeAppModal = useCloseAppModal();
+  // A phone's full-window page keeps the shell's tab bar, inside the surface that owns the page.
+  const phoneTab = usePhoneTab();
+  const phoneTabBarShown = fullscreen && phoneTab !== null;
   const [open, setOpen] = useState(true);
   // Text selection that ends on the backdrop is not a dismissal.
   const backdropPressRef = useRef(false);
@@ -84,7 +88,8 @@ export function AppRouteModal({
             data-slot="dialog-popup"
             data-app-modal=""
             className={cn(
-              "relative flex size-full min-h-0 min-w-0 flex-col overflow-hidden bg-background max-sm:pt-(--app-modal-top-inset) max-sm:pb-safe text-foreground outline-none transition-[opacity,scale] duration-150 ease-out motion-reduce:transition-none [-webkit-app-region:no-drag] data-ending-style:scale-[0.985] data-ending-style:opacity-0 data-starting-style:scale-[0.985] data-starting-style:opacity-0",
+              "relative flex size-full min-h-0 min-w-0 flex-col overflow-hidden bg-background max-sm:pt-(--app-modal-top-inset) text-foreground outline-none transition-[opacity,scale] duration-150 ease-out motion-reduce:transition-none [-webkit-app-region:no-drag] data-ending-style:scale-[0.985] data-ending-style:opacity-0 data-starting-style:scale-[0.985] data-starting-style:opacity-0",
+              !phoneTabBarShown && "max-sm:pb-safe",
               !fullscreen &&
                 "sm:max-h-[60rem] sm:max-w-[80rem] sm:rounded-2xl sm:border sm:shadow-2xl/40",
             )}
@@ -95,6 +100,7 @@ export function AppRouteModal({
               className="absolute inset-x-0 top-0 hidden h-(--app-modal-titlebar-height) [-webkit-app-region:drag] max-sm:block"
             />
             {children}
+            {phoneTabBarShown ? <PhoneTabBar /> : null}
           </DialogPrimitive.Popup>
         </DialogPrimitive.Viewport>
       </DialogPrimitive.Portal>

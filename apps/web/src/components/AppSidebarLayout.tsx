@@ -57,6 +57,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { registerCommands, registerMenuAction } from "../shortcuts/dispatcher";
 import { resolveThreadRouteRef } from "../threadRoutes";
+import { PhoneShell } from "../mobile/PhoneTabBar";
 import { useIsPhone } from "../mobile/usePhone";
 
 const MACOS_TRAFFIC_LIGHTS_LEFT_INSET = "var(--desktop-window-controls-inset, 90px)";
@@ -487,7 +488,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
         <GridSidebar />
         <SidebarRail onDoubleClick={resetSidebarWidth} />
       </Sidebar>
-      {children}
+      <PhoneShell>{children}</PhoneShell>
       <ThreadDragOverlay />
       <BackgroundThreadAnnouncer />
       <SidebarControl />

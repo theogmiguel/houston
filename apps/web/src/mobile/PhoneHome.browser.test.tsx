@@ -48,9 +48,6 @@ async function mountApp(width: number) {
 
 const phoneHome = () => document.querySelector<HTMLElement>("[data-phone-home]");
 
-const shortcut = (label: string) =>
-  phoneHome()?.querySelector<HTMLElement>(`[data-rail-shortcut="${label}"]`) ?? null;
-
 const threadRow = () =>
   phoneHome()?.querySelector<HTMLElement>('[data-sidebar-row="environment-render:thread-phone"]') ??
   null;
@@ -63,14 +60,15 @@ it("opens on the rail as the home page at 390px", async () => {
   await vi.waitFor(() => expect(threadRow()).not.toBeNull(), { timeout: 5_000 });
   await expect.poll(() => phoneHome()!.getBoundingClientRect().width).toBe(390);
 
-  // The rail is the page, not a drawer: its search, shortcut row and thread rows are on screen.
+  // The rail is the page, not a drawer: its thread rows are on screen under the phone's own
+  // top bar, and the rail's search and shortcut row move to the top and bottom bars.
+  expect(threadRow()).not.toBeNull();
+  expect(document.querySelector("[data-phone-tab-bar]")).not.toBeNull();
   expect(
     phoneHome()!.querySelector('input[aria-label="Search workspaces, grids and threads"]'),
-  ).not.toBeNull();
-  expect(phoneHome()!.querySelector("[data-rail-shortcuts]")).not.toBeNull();
-  expect(shortcut("Pull requests")).not.toBeNull();
-  expect(shortcut("Usage")).not.toBeNull();
-  expect(shortcut("Tasks")).toBeNull();
+  ).toBeNull();
+  expect(phoneHome()!.querySelector("[data-rail-shortcuts]")).toBeNull();
+  expect(phoneHome()!.querySelector('[data-rail-shortcut="Tasks"]')).toBeNull();
   expect(document.querySelector('[data-slot="sidebar"][data-mobile="true"]')).toBeNull();
 });
 
