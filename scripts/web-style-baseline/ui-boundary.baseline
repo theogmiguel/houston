@@ -116,7 +116,6 @@
 17 apps/web/src/components/chat/TimelineSystemDivider.tsx
 4 apps/web/src/components/chat/TimelineToolActivityIcon.tsx
 106 apps/web/src/components/chat/TimelineUserMessageRow.tsx
-6 apps/web/src/components/chat/TimelineV2EventRow.tsx
 45 apps/web/src/components/chat/TimelineWorkEntryRow.tsx
 24 apps/web/src/components/chat/TimelineWorkGroupRows.tsx
 40 apps/web/src/components/chat/TraitsPicker.tsx
@@ -125,7 +124,7 @@
 4 apps/web/src/components/chat/useAutoBalanceUpdateBanner.tsx
 66 apps/web/src/components/chat/UserMessageContextChips.tsx
 34 apps/web/src/components/chat/V2ItemInspector.tsx
-42 apps/web/src/components/chat/V2LifecycleRow.tsx
+39 apps/web/src/components/chat/V2LifecycleRow.tsx
 36 apps/web/src/components/chat/WorkflowOpeningBlock.tsx
 7 apps/web/src/components/chat/WorkLog.tsx
 55 apps/web/src/components/chat/WorktreeSetupCard.tsx
