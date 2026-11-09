@@ -58,7 +58,13 @@ export function useRetainedContextPayloads(draftTargetKey: string): RetainedCont
   return retained;
 }
 
+/**
+ * A file shows as a tile and gets an inline reference only when it replaced a range of the
+ * prompt, so a file leaves the draft only when the previous prompt referenced it and the next
+ * one does not: deleting its reference removes it, editing around a tile-only file does not.
+ */
 export function reconcileAttachmentContextReferences(input: {
+  previousContextIds: ReadonlySet<string>;
   referencedContextIds: ReadonlySet<string>;
   files: ReadonlyArray<ComposerFileAttachment>;
   images: ReadonlyArray<ComposerImageAttachment>;
@@ -77,6 +83,7 @@ export function reconcileAttachmentContextReferences(input: {
   for (const file of input.files) {
     const contextId = fileContextReference(file).contextId;
     if (input.referencedContextIds.has(contextId)) continue;
+    if (!input.previousContextIds.has(contextId)) continue;
     input.retained.files.set(contextId, file);
     filesToRemove.push(file.id);
   }
