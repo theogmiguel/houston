@@ -107,6 +107,7 @@ import {
   type PullRequestSurface,
 } from "~/rightPanelStore";
 import { useSidebarProjectGroups } from "~/hooks/useSidebarProjectGroups";
+import { useIsPhone } from "~/mobile/usePhone";
 import {
   pullRequestEnvironment,
   usePullRequestList,
@@ -148,6 +149,7 @@ const EMPTY_PREVIEW_DESKTOP_STATE = {};
 const EMPTY_TERMINAL_LABELS = new Map<string, string>();
 const EMPTY_PENDING_SURFACES = new Set<string>();
 export function PullRequestsPage() {
+  const isPhone = useIsPhone();
   const search = useSearch({ from: "/_chat/pull-requests" });
   const sort = search.sort ?? "ready";
   const statsPolicy: PullRequestStatsPolicy =
@@ -1050,7 +1052,8 @@ export function PullRequestsPage() {
   );
   const rightPanelAvailable = selectedPullRequestSurface !== null;
   const [maximized, setMaximized] = useState(false);
-  const rightPanelMaximized = rightPanelState.isOpen && maximized;
+  // The phone has no room for a split: an open pull request takes the page.
+  const rightPanelMaximized = rightPanelState.isOpen && (maximized || isPhone);
   if (!rightPanelState.isOpen && maximized) setMaximized(false);
   const toggleRightPanelMaximized = () => {
     if (rightPanelState.isOpen) setMaximized((value) => !value);
@@ -1095,11 +1098,15 @@ export function PullRequestsPage() {
           },
     );
 
+  const closeRightPanel = () => {
+    if (rightPanelRef === null) return;
+    useRightPanelStore.getState().close(rightPanelRef);
+    updateSearch(clearedSelection);
+  };
   const toggleRightPanel = () => {
     if (rightPanelRef === null) return;
     if (rightPanelState.isOpen) {
-      useRightPanelStore.getState().close(rightPanelRef);
-      updateSearch(clearedSelection);
+      closeRightPanel();
       return;
     }
     if (selectedPullRequestSurface === null) return;
@@ -1613,6 +1620,7 @@ export function PullRequestsPage() {
               <PullRequestDetailPanel
                 getShortcutContext={getShortcutContext}
                 shortcutsEnabled={activePullRequestSurface?.id === renderedPullRequestSurface.id}
+                {...(isPhone ? { onBack: closeRightPanel } : {})}
                 environmentId={panelEnvironmentId}
                 onGuideShown={onGuideShown}
                 onSelectPullRequest={(reference) => {

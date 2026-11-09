@@ -76,14 +76,20 @@ export function PullRequestRowLines({
 }) {
   return (
     <span className="min-w-0 flex-1">
-      <span className="flex min-w-0 items-center gap-1.5">
+      <span className="flex min-w-0 items-center gap-1.5 max-phone:grid max-phone:grid-cols-[auto_minmax(0,1fr)] max-phone:gap-x-1.5 max-phone:gap-y-1">
         {number}
-        <span className="min-w-0 truncate text-sm">{title}</span>
+        <span className="min-w-0 truncate text-sm max-phone:whitespace-normal max-phone:break-words">
+          {title}
+        </span>
         {signals ? (
-          <span className="flex shrink-0 items-center gap-1 text-2xs">{signals}</span>
+          <span className="flex shrink-0 items-center gap-1 text-2xs max-phone:col-span-2 max-phone:flex-wrap">
+            {signals}
+          </span>
         ) : null}
         {status ? (
-          <span className="ml-auto flex shrink-0 items-center gap-1.5 text-2xs">{status}</span>
+          <span className="ml-auto flex shrink-0 items-center gap-1.5 text-2xs max-phone:col-span-2">
+            {status}
+          </span>
         ) : null}
       </span>
       <span

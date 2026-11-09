@@ -90,6 +90,9 @@ import { UsageProviderChart } from "./UsageProviderChart";
 import { UsageModelDialog } from "./UsageModelDialog";
 import { UsageShareBar } from "./UsageShareBar";
 import { UsageModelRow } from "./UsageModelRow";
+import { UsageModelCards } from "~/mobile/UsageModelCards";
+import { USAGE_MODEL_EMPTY_CLS } from "../ui/usage-model-recipes";
+import { useIsPhone } from "~/mobile/usePhone";
 import { ProviderMark } from "./UsageProviderMark";
 import {
   costTypeBoardSegments,
@@ -593,6 +596,7 @@ function UsageOverview({
   readonly now: number;
 }) {
   const [breakdown, setBreakdown] = useState<"model" | "time">("model");
+  const isPhone = useIsPhone();
   const shownHourly = shownWindow.resolution === "hour";
   const loading = usageLoading(showingKept, selectedEnvironments, refreshingUsage, hiddenProviders);
   // Copy the primitive; JSX reads of loading.partial would merge all derivations into one compiler cache
@@ -647,7 +651,7 @@ function UsageOverview({
           {message}
         </p>
       ))}
-      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <section className="grid grid-cols-1 gap-3 phone:grid-cols-2 lg:grid-cols-4">
         <Metric
           loading={loadingPartial}
           label="API-equivalent cost"
@@ -774,35 +778,48 @@ function UsageOverview({
 
         <div className="overflow-hidden rounded-[10px] border border-border bg-card">
           {breakdown === "model" ? (
-            <table className="w-full text-[13px]">
-              <thead>
-                <tr className="h-8 text-right text-xs text-[var(--houston)]">
-                  <th className="px-4 text-left font-medium">Model</th>
-                  <th className="w-20 px-4 font-medium">Tokens</th>
-                  <th className="w-[100px] px-4 font-medium">Cost</th>
-                  <th className="w-40 px-4 font-medium">Share</th>
-                </tr>
-              </thead>
-              <tbody>
-                {breakdownModels.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="py-6 text-center text-muted-foreground">
-                      No activity in this window.
-                    </td>
+            isPhone ? (
+              breakdownModels.length === 0 ? (
+                <p className={USAGE_MODEL_EMPTY_CLS}>No activity in this window.</p>
+              ) : (
+                <UsageModelCards
+                  models={breakdownModels}
+                  metric={metric === "tokens" ? "tokens" : "cost"}
+                  loadingProviders={loadingProviders}
+                  onSelectModel={onSelectModel}
+                />
+              )
+            ) : (
+              <table className="w-full text-[13px]">
+                <thead>
+                  <tr className="h-8 text-right text-xs text-[var(--houston)]">
+                    <th className="px-4 text-left font-medium">Model</th>
+                    <th className="w-20 px-4 font-medium">Tokens</th>
+                    <th className="w-[100px] px-4 font-medium">Cost</th>
+                    <th className="w-40 px-4 font-medium">Share</th>
                   </tr>
-                ) : (
-                  breakdownModels.map((model) => (
-                    <UsageModelRow
-                      key={`${model.provider}:${model.model}`}
-                      loading={loadingProviders.has(model.provider)}
-                      metric={metric === "tokens" ? "tokens" : "cost"}
-                      model={model}
-                      onSelectModel={onSelectModel}
-                    />
-                  ))
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {breakdownModels.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="py-6 text-center text-muted-foreground">
+                        No activity in this window.
+                      </td>
+                    </tr>
+                  ) : (
+                    breakdownModels.map((model) => (
+                      <UsageModelRow
+                        key={`${model.provider}:${model.model}`}
+                        loading={loadingProviders.has(model.provider)}
+                        metric={metric === "tokens" ? "tokens" : "cost"}
+                        model={model}
+                        onSelectModel={onSelectModel}
+                      />
+                    ))
+                  )}
+                </tbody>
+              </table>
+            )
           ) : (
             <div
               className="overflow-x-auto outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"

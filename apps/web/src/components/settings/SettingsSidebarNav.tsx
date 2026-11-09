@@ -116,7 +116,17 @@ function SettingsSectionIcon({ to }: { to: SettingsPath }) {
 
 const LEADING_HASH = /^#/;
 
-export function SettingsSidebarNav({ pathname }: { pathname: string }) {
+export function SettingsSidebarNav({
+  pathname,
+  phonePage = false,
+  onNavigate,
+}: {
+  pathname: string;
+  /** A phone shows the section list as its own page, so it takes the width and names every row. */
+  phonePage?: boolean;
+  /** Called after a section or search result is chosen, so the page can reveal the content. */
+  onNavigate?: () => void;
+}) {
   const navArea = workspaceAreaProps("settings-nav", 0, "Settings sections");
   const navigate = useNavigate();
   const closeAppModal = useCloseAppModal();
@@ -193,6 +203,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
       replace: true,
       hashScrollIntoView: false,
     });
+    onNavigate?.();
   };
 
   const clearSearch = () => {
@@ -202,6 +213,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   const handleSearchResultClick = (item: SettingsSearchItem) => {
     clearSearch();
     setCompactSearchOpen(false);
+    onNavigate?.();
     const targetId = item.targetId ?? item.id;
     revealSettingsSearchTarget(targetId);
     if (pathname === item.to && currentHash.replace(LEADING_HASH, "") === targetId) {
@@ -247,15 +259,20 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
       {...navArea}
       role="navigation"
       className={cn(
-        "flex min-h-0 w-[264px] shrink-0 flex-col overflow-hidden border-e bg-sidebar text-sidebar-foreground max-md:w-14",
-        compactSearchOpen &&
-          "max-md:absolute max-md:inset-y-0 max-md:start-0 max-md:z-10 max-md:w-full",
+        "flex min-h-0 shrink-0 flex-col overflow-hidden bg-sidebar text-sidebar-foreground",
+        phonePage
+          ? "w-full"
+          : cn(
+              "w-[264px] border-e max-md:w-14",
+              compactSearchOpen &&
+                "max-md:absolute max-md:inset-y-0 max-md:start-0 max-md:z-10 max-md:w-full",
+            ),
       )}
     >
       <div
         className={cn(
           "flex h-9 shrink-0 items-center px-3.5 text-[13px] font-semibold text-sidebar-foreground mt-2",
-          !compactSearchOpen && "max-md:hidden",
+          !compactSearchOpen && !phonePage && "max-md:hidden",
         )}
       >
         Settings
@@ -274,7 +291,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
             <div
               className={cn(
                 "flex h-7 items-center gap-2 rounded-md px-2 text-[13px] font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
-                !compactSearchOpen && "max-md:hidden",
+                !compactSearchOpen && !phonePage && "max-md:hidden",
               )}
             >
               <SearchIcon className="size-4 shrink-0 text-sidebar-muted-foreground/80" />
@@ -369,7 +386,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
               </SidebarMenu>
             ) : (
               <div className="flex flex-col gap-4">
-                {compactSearchOpen ? null : (
+                {compactSearchOpen || phonePage ? null : (
                   <SidebarMenu className="md:hidden">
                     <SidebarMenuItem>
                       <SidebarMenuButton
@@ -400,7 +417,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                           aria-hidden="true"
                           className={cn(
                             "px-2 text-[11px] leading-[14px] font-semibold text-sidebar-muted-foreground",
-                            !compactSearchOpen && "max-md:hidden",
+                            !compactSearchOpen && !phonePage && "max-md:hidden",
                           )}
                         >
                           {group.heading}
@@ -419,12 +436,18 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                                 aria-selected={isActive}
                                 aria-current={isActive ? "page" : undefined}
                                 isActive={isActive}
-                                className="h-7 gap-2 px-2 text-[13px] font-medium text-sidebar-muted-foreground"
+                                className={cn(
+                                  "h-7 gap-2 px-2 text-[13px] font-medium text-sidebar-muted-foreground",
+                                  phonePage && "h-11",
+                                )}
                                 onClick={() => handleSectionClick(to)}
                               >
                                 <Icon />
                                 <span
-                                  className={cn("truncate", !compactSearchOpen && "max-md:sr-only")}
+                                  className={cn(
+                                    "truncate",
+                                    !compactSearchOpen && !phonePage && "max-md:sr-only",
+                                  )}
                                 >
                                   {SETTINGS_SECTION_LABELS[to]}
                                 </span>
@@ -443,12 +466,15 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
         {/* Room for the last row to clear the fade where the list meets the pinned Back row. */}
         <div aria-hidden className="h-2 shrink-0" />
       </ScrollArea>
-      <SidebarFooter className="max-md:hidden shrink-0">
+      <SidebarFooter className={cn("shrink-0", !phonePage && "max-md:hidden")}>
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
               size="sm"
-              className="h-7 gap-2 px-2 text-[13px] font-medium text-sidebar-muted-foreground"
+              className={cn(
+                "h-7 gap-2 px-2 text-[13px] font-medium text-sidebar-muted-foreground",
+                phonePage && "h-11",
+              )}
               onClick={() => void closeAppModal()}
             >
               <ChevronLeftIcon />

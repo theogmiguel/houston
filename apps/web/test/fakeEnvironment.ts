@@ -24,6 +24,7 @@ import {
   type ServerProvider,
   ThreadId,
   TurnItemId,
+  USAGE_CONTRACT_VERSION,
   WS_METHODS,
   WsRpcGroup,
   type VcsStatusStreamEvent,
@@ -39,11 +40,17 @@ import {
   type OrchestrationV2ThreadStreamItem,
   type OrchestrationV2TurnItem,
   type GitRunStackedActionInput,
+  type PullRequestListEntry,
+  type PullRequestListResult,
   type ReviewDiffPreviewInput,
   type ReviewDiffPreviewResult,
   type TerminalMetadataStreamEvent,
   type ThreadPullRequestLink,
   type ThreadTokenUsageSnapshot,
+  type UsageBucket,
+  type UsageSource,
+  type UsageSummary,
+  type UsageSummaryInput,
   type VcsStatusLocalResult,
   type VcsStatusRemoteResult,
 } from "@houston-app/contracts";
@@ -570,6 +577,14 @@ let vcsStatusFixture: {
   readonly remote: VcsStatusRemoteResult | null;
 } | null = null;
 let workspaceFilesFixture = false;
+let pullRequestListFixture: {
+  readonly entries: ReadonlyArray<PullRequestListEntry>;
+  readonly viewers?: Readonly<Record<string, string>>;
+} | null = null;
+let usageFixture: {
+  readonly buckets: ReadonlyArray<UsageBucket>;
+  readonly sources?: ReadonlyArray<UsageSource>;
+} | null = null;
 
 const subscribe = <A>(first: ReadonlyArray<A>, register?: (queue: Queue.Queue<A>) => () => void) =>
   Stream.unwrap(
@@ -661,6 +676,53 @@ const handlers: Record<string, (input: never) => unknown> = {
         };
       },
     ),
+  [WS_METHODS.pullRequestsList]: (input: never) => {
+    if (pullRequestListFixture === null) return Effect.never;
+    const { state } = input as { state: "all" | "open" | "closed" | "merged" };
+    const entries = pullRequestListFixture.entries.filter(
+      (entry) => state === "all" || entry.state === state,
+    );
+    return Effect.succeed({
+      viewers: pullRequestListFixture.viewers ?? {},
+      providers: [],
+      entries,
+      errors: [],
+      truncated: false,
+      nextCursors: {},
+    } satisfies PullRequestListResult);
+  },
+  [WS_METHODS.serverGetUsageSummary]: (input: never) => {
+    if (usageFixture === null) return Effect.never;
+    const window = input as UsageSummaryInput;
+    const providers = [...new Set(usageFixture.buckets.map((bucket) => bucket.provider))];
+    return Effect.succeed({
+      contractVersion: USAGE_CONTRACT_VERSION,
+      readAt: "2026-03-17T19:12:28.000Z",
+      timeZone: window.timeZone,
+      sinceDay: window.sinceDay,
+      untilDay: window.untilDay,
+      buckets: usageFixture.buckets,
+      sources:
+        usageFixture.sources ??
+        providers.map((provider) => ({
+          fingerprint: {
+            hostId: "fake-host",
+            provider,
+            resolvedHomePath: `/workspace/.${provider}`,
+            volumeId: "fake-volume",
+          },
+          status: "ok" as const,
+          scannedFiles: 1,
+          skippedFiles: 0,
+          malformedRecords: 0,
+          distinctSessions: 1,
+          message: null,
+        })),
+      pricing: { status: "unavailable", source: "test", fetchedAt: null, knownModels: 0 },
+      scanDurationMs: 0,
+      ...(window.modelFilter === undefined ? {} : { modelFilter: window.modelFilter }),
+    } satisfies UsageSummary);
+  },
   [WS_METHODS.projectsListEntries]: (input: never) => {
     if (!workspaceFilesFixture) return Effect.never;
     const { directoryPath = "" } = input as { directoryPath?: string };
@@ -801,6 +863,17 @@ export function installFakeEnvironment(
       readonly local: VcsStatusLocalResult;
       readonly remote: VcsStatusRemoteResult | null;
     };
+    /** Composed rows the pull request list answers with; every state reads the same rows. */
+    readonly pullRequests?: {
+      readonly entries: ReadonlyArray<PullRequestListEntry>;
+      /** Host to viewer login, so the authored involvement filter keeps the rows. */
+      readonly viewers?: Readonly<Record<string, string>>;
+    };
+    /** A composed usage summary: the fake echoes the asked window around these buckets. */
+    readonly usage?: {
+      readonly buckets: ReadonlyArray<UsageBucket>;
+      readonly sources?: ReadonlyArray<UsageSource>;
+    };
   } = {},
 ): Disposable {
   threads = fixtures;
@@ -810,6 +883,8 @@ export function installFakeEnvironment(
   projectTitle = options.projectTitle ?? project.title;
   vcsStatusFixture = options.vcsStatus ?? null;
   workspaceFilesFixture = options.workspaceFiles === true;
+  pullRequestListFixture = options.pullRequests ?? null;
+  usageFixture = options.usage ?? null;
   const models = options.providerModels ?? defaultProviderModels;
   mutableProvider.models = [...models];
   globalThis.fetch = async (input, init) => {
@@ -837,6 +912,8 @@ export function installFakeEnvironment(
       projectTitle = project.title;
       vcsStatusFixture = null;
       workspaceFilesFixture = false;
+      pullRequestListFixture = null;
+      usageFixture = null;
       gitActionRequests.length = 0;
       mutableProvider.models = [...defaultProviderModels];
     },

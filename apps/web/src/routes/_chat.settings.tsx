@@ -1,12 +1,13 @@
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { Outlet, createFileRoute, redirect, useLocation } from "@tanstack/react-router";
 import { useState, type ReactNode } from "react";
-import { RotateCcwIcon } from "lucide-react";
+import { ArrowLeftIcon, RotateCcwIcon } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Swap } from "../components/ui/swap";
 import { useSettingsRestore } from "../components/settings/SettingsPanels";
 
 import { AppRouteModal } from "../components/AppRouteModal";
+import { useIsPhone } from "../mobile/usePhone";
 import { SettingsBreadcrumb } from "../components/settings/SettingsBreadcrumb";
 import { SettingsSidebarNav } from "../components/settings/SettingsSidebarNav";
 import {
@@ -113,6 +114,9 @@ function SettingsScopeBoundary({ pathname, children }: { pathname: string; child
 function SettingsContentLayout() {
   const contentArea = workspaceAreaProps("settings", 1, "Settings content");
   const location = useLocation();
+  const isPhone = useIsPhone();
+  // The phone shows the section list as a page of its own; the content keeps a Back control.
+  const [phoneSectionsOpen, setPhoneSectionsOpen] = useState(false);
   const { search, environment } = useSettingsScope();
   const contentScopeKey =
     location.pathname === "/settings/diagnostics" || location.pathname === "/settings/providers"
@@ -120,40 +124,69 @@ function SettingsContentLayout() {
       : JSON.stringify(search);
   const [restoreSignal, setRestoreSignal] = useState(0);
 
+  const content = (
+    <div {...contentArea} className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <header
+        data-drag-region="deep"
+        className="flex h-10 shrink-0 items-center gap-2 ps-3.5 pe-2 custom-chrome:pe-(--workspace-native-controls-inset)"
+      >
+        {isPhone ? (
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Back to settings sections"
+            className="-ms-1.5 shrink-0"
+            onClick={() => setPhoneSectionsOpen(true)}
+          >
+            <ArrowLeftIcon className="size-4" />
+          </Button>
+        ) : null}
+        <SettingsBreadcrumb pathname={location.pathname} />
+      </header>
+      <Swap
+        swapKey={`${location.pathname}:${contentScopeKey}:${restoreSignal}`}
+        className="min-h-0 flex flex-1 flex-col"
+        contentClassName="min-h-0 flex flex-1 flex-col"
+        innerClassName="min-h-0 flex flex-1 flex-col"
+      >
+        <SettingsScopeBoundary pathname={location.pathname}>
+          <SettingsPageActionsProvider
+            actions={
+              location.pathname === "/settings/about" ||
+              location.pathname === "/settings/open-source-licenses" ||
+              location.pathname === "/settings/archived" ? null : (
+                <RestoreDeviceDefaultsButton
+                  onRestored={() => setRestoreSignal((value) => value + 1)}
+                />
+              )
+            }
+          >
+            <Outlet />
+          </SettingsPageActionsProvider>
+        </SettingsScopeBoundary>
+      </Swap>
+    </div>
+  );
+
   return (
     <AppRouteModal label="Settings" fullscreen>
       <div className="relative flex min-h-0 flex-1">
-        <SettingsSidebarNav pathname={location.pathname} />
-        <div {...contentArea} className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <header
-            data-drag-region="deep"
-            className="flex h-10 shrink-0 items-center gap-2 ps-3.5 pe-2 custom-chrome:pe-(--workspace-native-controls-inset)"
-          >
-            <SettingsBreadcrumb pathname={location.pathname} />
-          </header>
-          <Swap
-            swapKey={`${location.pathname}:${contentScopeKey}:${restoreSignal}`}
-            className="min-h-0 flex flex-1 flex-col"
-            contentClassName="min-h-0 flex flex-1 flex-col"
-            innerClassName="min-h-0 flex flex-1 flex-col"
-          >
-            <SettingsScopeBoundary pathname={location.pathname}>
-              <SettingsPageActionsProvider
-                actions={
-                  location.pathname === "/settings/about" ||
-                  location.pathname === "/settings/open-source-licenses" ||
-                  location.pathname === "/settings/archived" ? null : (
-                    <RestoreDeviceDefaultsButton
-                      onRestored={() => setRestoreSignal((value) => value + 1)}
-                    />
-                  )
-                }
-              >
-                <Outlet />
-              </SettingsPageActionsProvider>
-            </SettingsScopeBoundary>
-          </Swap>
-        </div>
+        {isPhone ? (
+          phoneSectionsOpen ? (
+            <SettingsSidebarNav
+              pathname={location.pathname}
+              phonePage
+              onNavigate={() => setPhoneSectionsOpen(false)}
+            />
+          ) : (
+            content
+          )
+        ) : (
+          <>
+            <SettingsSidebarNav pathname={location.pathname} />
+            {content}
+          </>
+        )}
       </div>
     </AppRouteModal>
   );

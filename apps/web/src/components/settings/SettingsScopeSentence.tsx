@@ -48,7 +48,7 @@ export const SETTINGS_DEVICE_ONLY_PATHS: ReadonlySet<string> = new Set([
 ]);
 
 const SCOPE_TRIGGER_CLS =
-  "h-auto min-h-0 min-w-0 max-w-72 justify-start gap-1 px-1 py-0 font-medium text-foreground text-[length:var(--text-body)] hover:bg-hover";
+  "h-auto min-h-0 min-w-0 max-w-72 shrink justify-start gap-1 px-1 py-0 font-medium text-foreground text-[length:var(--text-body)] hover:bg-hover";
 const SCOPE_TRIGGER_ICON_CLS = "size-3.5 shrink-0 text-muted-foreground";
 const SCOPE_SECONDARY_CLS = "text-xs text-muted-foreground";
 const SCOPE_PATH_CLS = `${SCOPE_SECONDARY_CLS} font-mono`;

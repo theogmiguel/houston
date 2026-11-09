@@ -1249,13 +1249,13 @@ function KeybindingTableRow(props: KeybindingRowProps) {
   return (
     <tr
       id={anchorId}
-      className="border-t border-border/70 outline-none first:border-t-0 hover:bg-hover focus-visible:bg-hover"
+      className="border-t border-border/70 outline-none first:border-t-0 hover:bg-hover focus-visible:bg-hover max-phone:grid max-phone:grid-cols-[minmax(0,1fr)_auto] max-phone:gap-x-2 max-phone:px-3.5 max-phone:py-2"
     >
-      <td className="px-3.5 py-2 align-middle">
+      <td className="px-3.5 py-2 align-middle max-phone:col-start-1 max-phone:row-start-1 max-phone:px-0 max-phone:py-0">
         <KeybindingRowTitle row={row} />
       </td>
-      <td className="px-3.5 py-2 text-right align-middle">
-        <div className="flex flex-wrap items-center justify-end gap-1.5">
+      <td className="px-3.5 py-2 text-right align-middle max-phone:col-start-1 max-phone:row-start-2 max-phone:px-0 max-phone:py-0">
+        <div className="flex flex-wrap items-center justify-end gap-1.5 max-phone:justify-start">
           <KeybindingConflictWarning labels={editor.conflictLabels} />
           <KeybindingKeyControl
             row={row}
@@ -1265,7 +1265,7 @@ function KeybindingTableRow(props: KeybindingRowProps) {
           />
         </div>
       </td>
-      <td className="w-10 py-2 pe-2 text-right align-middle">
+      <td className="w-10 py-2 pe-2 text-right align-middle max-phone:col-start-2 max-phone:row-start-1 max-phone:w-auto max-phone:pe-0 max-phone:py-0">
         <KeybindingRowMenu
           row={row}
           editor={editor}
@@ -1295,15 +1295,15 @@ function KeybindingsGroups(props: KeybindingsGroupsProps) {
   const rows = groups.flatMap((group) => group.rows);
   return (
     <div className="overflow-hidden rounded-[var(--r-group)] border border-border bg-card">
-      <table className="w-full border-collapse text-[13px]">
-        <thead>
+      <table className="w-full border-collapse text-[13px] max-phone:block">
+        <thead className="max-phone:hidden">
           <tr className="h-8 text-[11px] font-semibold text-muted-foreground">
             <th className="px-3.5 text-left font-semibold">Command</th>
             <th className="px-3.5 text-right font-semibold">Shortcut</th>
             <th className="w-10 pe-2" aria-hidden="true" />
           </tr>
         </thead>
-        <tbody>
+        <tbody className="max-phone:block">
           {rows.map((row) => (
             <KeybindingTableRow
               key={row.id}
