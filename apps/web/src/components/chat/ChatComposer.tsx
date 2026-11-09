@@ -1752,6 +1752,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       return;
     }
     onTypingGuardDraftChange();
+    const previousContextIds = new Set(collectInlineContextIds(promptRef.current));
     promptRef.current = nextPrompt;
     setPrompt(nextPrompt);
     if (promptHistoryPositionRef.current?.position.recalled !== nextPrompt) {
@@ -1840,6 +1841,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
 
     const attachmentChanges = reconcileAttachmentContextReferences({
+      previousContextIds,
       referencedContextIds: referenced,
       files: composerFiles,
       images: composerImages,

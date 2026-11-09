@@ -1,8 +1,12 @@
 import type { PreviewAnnotationPayload } from "@houston-app/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import type { ComposerImageAttachment } from "../../composerDraftStore";
-import { buildMessageContext, previewAnnotationContextId } from "../../lib/composerContextRecords";
+import type { ComposerFileAttachment, ComposerImageAttachment } from "../../composerDraftStore";
+import {
+  buildMessageContext,
+  fileContextReference,
+  previewAnnotationContextId,
+} from "../../lib/composerContextRecords";
 import {
   reconcileAttachmentContextReferences,
   type RetainedAttachmentContextPayloads,
@@ -36,14 +40,61 @@ const annotation = {
   createdAt: "2026-01-01T00:00:00.000Z",
 } satisfies PreviewAnnotationPayload;
 
+const notes = {
+  type: "file",
+  id: "file-1",
+  name: "notes.md",
+  mimeType: "text/markdown",
+  sizeBytes: 5,
+  file: new File(["notes"], "notes.md", { type: "text/markdown" }),
+} satisfies ComposerFileAttachment;
+const notesContextId = fileContextReference(notes).contextId;
+
 function retention(): RetainedAttachmentContextPayloads {
   return { files: new Map(), previewAnnotations: new Map() };
 }
 
 describe("reconcileAttachmentContextReferences", () => {
+  it("keeps a dropped file that never had an inline reference when the prompt changes", () => {
+    const changes = reconcileAttachmentContextReferences({
+      previousContextIds: new Set(),
+      referencedContextIds: new Set(),
+      files: [notes],
+      images: [],
+      previewAnnotations: [],
+      retained: retention(),
+    });
+    expect(changes.filesToRemove).toEqual([]);
+    expect(changes.filesToRestore).toEqual([]);
+  });
+
+  it("removes a file whose inline reference was deleted and restores it after undo", () => {
+    const retained = retention();
+    const removed = reconcileAttachmentContextReferences({
+      previousContextIds: new Set([notesContextId]),
+      referencedContextIds: new Set(),
+      files: [notes],
+      images: [],
+      previewAnnotations: [],
+      retained,
+    });
+    expect(removed.filesToRemove).toEqual(["file-1"]);
+
+    const restored = reconcileAttachmentContextReferences({
+      previousContextIds: new Set(),
+      referencedContextIds: new Set([notesContextId]),
+      files: [],
+      images: [],
+      previewAnnotations: [],
+      retained,
+    });
+    expect(restored.filesToRestore).toEqual([notes]);
+  });
+
   it("restores an annotation and its screenshot attachment after undo", () => {
     const retained = retention();
     const removed = reconcileAttachmentContextReferences({
+      previousContextIds: new Set([previewAnnotationContextId(annotation.id)]),
       referencedContextIds: new Set(),
       files: [],
       images: [image],
@@ -53,6 +104,7 @@ describe("reconcileAttachmentContextReferences", () => {
     expect(removed.annotationIdsToRemove).toEqual(["annotation-1"]);
 
     const restored = reconcileAttachmentContextReferences({
+      previousContextIds: new Set(),
       referencedContextIds: new Set([previewAnnotationContextId(annotation.id)]),
       files: [],
       images: [],
