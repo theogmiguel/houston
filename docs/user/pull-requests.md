@@ -97,6 +97,11 @@ on GitHub; Houston never pushes to the base to undo a merge.
 When the queue merged or parked requests on its own, one notice at the top says how many,
 with **Acknowledge** to dismiss it.
 
+A pull request Houston cannot read from its host shows no state. A private Bitbucket
+repository without API credentials in **Settings ▸ Source control** is one example. An agent
+that links or watches such a request is told so, and a watch on it stops at once with a notice
+that names what the host needs.
+
 ## What leaves the machine
 
 Reads, merges, reviews and reverts use your Git credentials and the repository's host
