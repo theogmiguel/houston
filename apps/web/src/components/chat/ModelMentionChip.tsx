@@ -4,6 +4,7 @@ import * as Option from "effect/Option";
 import { Atom } from "effect/reactivity";
 
 import { brandProviderInstanceEntries, deriveProviderInstanceEntries } from "~/providerInstances";
+import { Text } from "~/components/ui/text";
 import { serverEnvironment } from "~/state/server";
 import { contextChipAccentWithHueOf } from "~/themePalette";
 import { ContextChipPopover } from "../contextChipParts";
@@ -115,10 +116,16 @@ export function ModelMentionChip(props: {
       accessibleLabel={`Model ${presentation.label}`}
       copyMarkdown={props.source}
     >
-      <div className="space-y-1 p-2 text-sm">
-        <p className="font-medium">{presentation.label}</p>
-        <p className="text-muted-foreground">{presentation.providerLabel}</p>
-        <p className="font-mono text-xs text-muted-foreground">{props.source}</p>
+      <div className="space-y-1 p-2">
+        <Text as="p" weight="medium">
+          {presentation.label}
+        </Text>
+        <Text as="p" tone="muted">
+          {presentation.providerLabel}
+        </Text>
+        <Text as="p" variant="caption" tone="muted" mono>
+          {props.source}
+        </Text>
       </div>
     </ContextChipPopover>
   );
