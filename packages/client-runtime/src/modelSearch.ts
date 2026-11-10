@@ -1,6 +1,6 @@
 import { normalizeSearchQuery, scoreQueryMatch } from "@houston-app/shared/searchRanking";
 
-type ModelPickerSearchableModel = {
+export type ModelPickerSearchableModel = {
   driverKind: string;
   providerDisplayName: string;
   name: string;
@@ -122,7 +122,7 @@ export function rankModelPickerSearch<T>(
     }
   });
   return ranked
-    .toSorted(
+    .sort(
       (a, b) =>
         a.score - b.score || Number(b.isFavorite) - Number(a.isFavorite) || a.order - b.order,
     )
