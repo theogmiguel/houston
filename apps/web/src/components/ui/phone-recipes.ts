@@ -42,3 +42,26 @@ export const PHONE_PAGE_BAR_TITLE_CLS =
   "min-w-0 flex-1 truncate text-base font-medium text-foreground";
 /** The back control in a phone page bar: a 44px box whose 16px glyph sits on the 16px gutter. */
 export const PHONE_PAGE_BAR_BACK_CLS = "-ms-3.5 size-11 shrink-0";
+
+/** A short muted note on a phone page: empty lines, scope notices, hints. */
+export const PHONE_NOTE_CLS = "text-sm text-muted-foreground";
+/** The smaller muted note under a phone empty state. */
+export const PHONE_NOTE_XS_CLS = "text-xs text-muted-foreground";
+/** The separator glyph in a thread message's meta row, shown only on a phone. */
+export const PHONE_META_SEPARATOR_CLS = "hidden text-muted-foreground max-phone:inline";
+/** The rail's inline New thread action under a project with no threads. */
+export const PHONE_ROW_ACTION_CLS =
+  "flex h-11 w-full cursor-pointer items-center gap-2 px-2 text-left text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
+export const PHONE_ROW_ACTION_ICON_CLS = "size-4 text-icon-muted";
+/** The settings index's phone page bar sits on the sidebar surface. */
+export const PHONE_PAGE_BAR_SIDEBAR_CLS = `${PHONE_PAGE_BAR_CLS} bg-sidebar`;
+/** A settings index row on a phone: full-bleed, 44px. */
+export const PHONE_NAV_ROW_CLS = "h-11 rounded-none px-4";
+/** A phone empty state card (usage with no data). */
+export const PHONE_EMPTY_CARD_CLS =
+  "rounded-(--r-group) border border-border bg-card px-4 py-6 text-center text-sm text-balance text-muted-foreground";
+/** A phone full-page empty state: centred stack, title, body. */
+export const PHONE_EMPTY_STACK_CLS =
+  "flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-4 text-center";
+export const PHONE_EMPTY_TITLE_CLS = "text-sm font-medium text-balance";
+export const PHONE_EMPTY_BODY_CLS = "text-xs text-balance text-muted-foreground";

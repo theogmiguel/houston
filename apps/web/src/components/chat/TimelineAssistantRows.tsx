@@ -39,6 +39,7 @@ import {
 import { MessagesSquareIcon } from "lucide-react";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { SecondOpinionReviewCard } from "./SecondOpinionReviewCard";
+import { PHONE_META_SEPARATOR_CLS } from "~/components/ui/phone-recipes";
 
 /**
  * The hover footer closes a turn. Its 6px lead, 24px buttons less the 8px they hang below it,
@@ -368,7 +369,7 @@ function AssistantMessageMeta({
         </Text>
       ) : null}
       {attribution !== null && !message.streaming ? (
-        <span aria-hidden className="hidden text-muted-foreground max-phone:inline">
+        <span aria-hidden className={PHONE_META_SEPARATOR_CLS}>
           ·
         </span>
       ) : null}

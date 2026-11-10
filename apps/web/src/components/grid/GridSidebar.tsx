@@ -259,6 +259,7 @@ import {
 } from "../ui/sidebar-grids";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { stackedThreadToast, toastManager } from "../ui/toast";
+import { PHONE_NOTE_CLS, PHONE_ROW_ACTION_CLS, PHONE_ROW_ACTION_ICON_CLS } from "~/components/ui/phone-recipes";
 
 type DraggedThread = ThreadDragSource;
 
@@ -1965,13 +1966,13 @@ export function SidebarProjectSection({
             query.length === 0 &&
             handleNewThread !== undefined ? (
               <div data-project-empty="" className="phone:hidden">
-                <p className="px-2 py-2 text-sm text-muted-foreground">No threads yet</p>
+                <p className={`px-2 py-2 ${PHONE_NOTE_CLS}`}>No threads yet</p>
                 <button
                   type="button"
                   onClick={() => void handleNewThread(projectRef)}
-                  className="flex h-11 w-full cursor-pointer items-center gap-2 px-2 text-left text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                  className={PHONE_ROW_ACTION_CLS}
                 >
-                  <PlusIcon aria-hidden className="size-4 text-icon-muted" />
+                  <PlusIcon aria-hidden className={PHONE_ROW_ACTION_ICON_CLS} />
                   New thread
                 </button>
               </div>

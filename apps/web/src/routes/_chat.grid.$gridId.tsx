@@ -57,6 +57,7 @@ import { isSidebarHiddenThread } from "../components/Sidebar.logic";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { buildThreadRouteParams } from "../threadRoutes";
+import { PHONE_EMPTY_BODY_CLS, PHONE_EMPTY_STACK_CLS, PHONE_EMPTY_TITLE_CLS } from "~/components/ui/phone-recipes";
 
 export const Route = createFileRoute("/_chat/grid/$gridId")({
   component: GridRoute,
@@ -279,9 +280,9 @@ function GridRoute() {
       return (
         <SidebarInset className="min-h-0 overflow-hidden" data-phone-missing-grid="">
           <PhonePageBar title="Grid" />
-          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-4 text-center">
-            <p className="text-sm font-medium text-balance">This grid no longer exists</p>
-            <p className="text-xs text-balance text-muted-foreground">
+          <div className={PHONE_EMPTY_STACK_CLS}>
+            <p className={PHONE_EMPTY_TITLE_CLS}>This grid no longer exists</p>
+            <p className={PHONE_EMPTY_BODY_CLS}>
               It was deleted on this machine, or its workspace is no longer open.
             </p>
             <Button variant="outline" className="mt-2 h-11 px-4" render={<Link to="/" />}>

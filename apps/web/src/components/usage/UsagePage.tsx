@@ -118,6 +118,7 @@ import {
   saveUsagePagePreferences,
   type UsagePagePreferences,
 } from "./usagePagePreferences";
+import { PHONE_EMPTY_CARD_CLS, PHONE_NOTE_CLS } from "~/components/ui/phone-recipes";
 
 function isUsageMetric(value: string | null | undefined): value is UsageMetric {
   return METRIC_OPTIONS.some((option) => option.value === value);
@@ -669,13 +670,13 @@ function UsageOverview({
     return (
       <div className="flex flex-col gap-6">
         {sourceMessages.map((message) => (
-          <p key={message} className="text-sm text-muted-foreground">
+          <p key={message} className={PHONE_NOTE_CLS}>
             {message}
           </p>
         ))}
         <p
           data-usage-empty=""
-          className="rounded-(--r-group) border border-border bg-card px-4 py-6 text-center text-sm text-balance text-muted-foreground"
+          className={PHONE_EMPTY_CARD_CLS}
         >
           No usage in this window. Sessions you run will show up here.
         </p>

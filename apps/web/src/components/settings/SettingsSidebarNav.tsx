@@ -33,7 +33,7 @@ import { useLocation, useNavigate } from "@tanstack/react-router";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { Kbd } from "../ui/kbd";
-import { PHONE_PAGE_BAR_CLS, PHONE_PAGE_BAR_TITLE_CLS } from "../ui/phone-recipes";
+import { PHONE_NAV_ROW_CLS, PHONE_PAGE_BAR_CLS, PHONE_PAGE_BAR_SIDEBAR_CLS, PHONE_PAGE_BAR_TITLE_CLS } from "../ui/phone-recipes";
 import { ScrollArea } from "../ui/scroll-area";
 import {
   SidebarFooter,
@@ -271,7 +271,7 @@ export function SettingsSidebarNav({
       )}
     >
       {phonePage ? (
-        <div className={cn(PHONE_PAGE_BAR_CLS, "bg-sidebar")}>
+        <div className={PHONE_PAGE_BAR_SIDEBAR_CLS}>
           <span className={PHONE_PAGE_BAR_TITLE_CLS}>Settings</span>
         </div>
       ) : (
@@ -298,7 +298,7 @@ export function SettingsSidebarNav({
             <div
               className={cn(
                 "flex h-7 items-center gap-2 rounded-md px-2 text-[13px] font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
-                phonePage && "h-11 rounded-none px-4",
+                phonePage && PHONE_NAV_ROW_CLS,
                 !compactSearchOpen && !phonePage && "max-md:hidden",
               )}
             >

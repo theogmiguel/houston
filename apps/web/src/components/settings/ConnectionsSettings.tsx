@@ -124,6 +124,7 @@ import {
 import { ITEM_ROW_CLASSNAME } from "./itemRows";
 import { SavedBackendListRow } from "./SavedEnvironmentRows";
 import { AddEnvironmentDialog } from "./AddEnvironmentDialog";
+import { PHONE_NOTE_XS_CLS } from "~/components/ui/phone-recipes";
 
 const DEFAULT_TAILSCALE_SERVE_PORT = 443;
 const EMPTY_ADVERTISED_ENDPOINTS: ReadonlyArray<AdvertisedEndpoint> = [];
@@ -1411,7 +1412,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
         {isPhone ? (
           <div className="flex flex-col gap-3 p-4">
             {listedEnvironments.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No environments are connected yet.</p>
+              <p className={PHONE_NOTE_XS_CLS}>No environments are connected yet.</p>
             ) : null}
             {addEnvironmentDialog}
           </div>
