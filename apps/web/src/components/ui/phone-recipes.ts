@@ -40,3 +40,5 @@ export const PHONE_PAGE_BAR_CLS =
   "flex h-(--h-top) shrink-0 items-center gap-2 border-b border-b-(--divider) bg-background px-4";
 export const PHONE_PAGE_BAR_TITLE_CLS =
   "min-w-0 flex-1 truncate text-base font-medium text-foreground";
+/** The back control in a phone page bar: a 44px box whose 16px glyph sits on the 16px gutter. */
+export const PHONE_PAGE_BAR_BACK_CLS = "-ms-3.5 size-11 shrink-0";

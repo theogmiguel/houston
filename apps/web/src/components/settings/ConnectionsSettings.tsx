@@ -34,6 +34,7 @@ import { hostBridgeErrorMessage } from "../desktop/hostBridgeError";
 import { LocalEnvironmentSetting } from "./LocalEnvironmentSetting";
 import { searchableSetting } from "./settingsSearch";
 import { EnvironmentIconChangeControl } from "./EnvironmentIconPicker";
+import { useIsPhone } from "../../mobile/usePhone";
 import { LinkedEnvironmentsSettings } from "./LinkedEnvironmentsSettings";
 import { usePeerLinkHosts } from "~/state/peerLinks";
 import { LoadBalancingSettings } from "./LoadBalancingSettings";
@@ -146,6 +147,7 @@ const DIGITS_ONLY = /^\d+$/u;
 /** Environments lists the machines this app connects to; access covers who may reach this one. */
 export function ConnectionsSettings({ view }: { readonly view: "environments" | "access" }) {
   const hostBridge = window.hostBridge;
+  const isPhone = useIsPhone();
   const { environments } = useEnvironments();
   const primaryEnvironment = usePrimaryEnvironment();
   const peerLinkHosts = usePeerLinkHosts();
@@ -1005,7 +1007,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
             ) : null}
             {renderWslDetailRows()}
             {primaryEnvironment ? (
-              <details className="group px-3 sm:px-4">
+              <details className="group px-4">
                 <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-md text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
                   Permissions
                   <ChevronRightIcon
@@ -1364,6 +1366,18 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
     </>
   );
 
+  const addEnvironmentDialog = (
+    <AddEnvironmentDialog
+      open={addBackendDialogOpen}
+      routeTarget={routeTarget}
+      error={savedBackendError}
+      savedEnvironments={savedEnvironments}
+      onOpenChange={handleAddBackendDialogOpenChange}
+      onErrorChange={setSavedBackendError}
+      phone={isPhone}
+    />
+  );
+
   if (showsAccess) return <SettingsPageContainer>{primarySettings}</SettingsPageContainer>;
 
   return (
@@ -1394,17 +1408,16 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
             }}
           />
         ))}
+        {isPhone ? (
+          <div className="flex flex-col gap-3 p-4">
+            {listedEnvironments.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No environments are connected yet.</p>
+            ) : null}
+            {addEnvironmentDialog}
+          </div>
+        ) : null}
       </SettingsSection>
-      <div className="flex justify-center px-1">
-        <AddEnvironmentDialog
-          open={addBackendDialogOpen}
-          routeTarget={routeTarget}
-          error={savedBackendError}
-          savedEnvironments={savedEnvironments}
-          onOpenChange={handleAddBackendDialogOpenChange}
-          onErrorChange={setSavedBackendError}
-        />
-      </div>
+      {isPhone ? null : <div className="flex justify-center px-1">{addEnvironmentDialog}</div>}
       {peerLinkHosts.map((environment, index) => (
         <LinkedEnvironmentsSettings
           key={environment.environmentId}

@@ -33,6 +33,7 @@ import { useLocation, useNavigate } from "@tanstack/react-router";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { Kbd } from "../ui/kbd";
+import { PHONE_PAGE_BAR_CLS, PHONE_PAGE_BAR_TITLE_CLS } from "../ui/phone-recipes";
 import { ScrollArea } from "../ui/scroll-area";
 import {
   SidebarFooter,
@@ -269,14 +270,20 @@ export function SettingsSidebarNav({
             ),
       )}
     >
-      <div
-        className={cn(
-          "flex h-9 shrink-0 items-center px-3.5 text-[13px] font-semibold text-sidebar-foreground mt-2",
-          !compactSearchOpen && !phonePage && "max-md:hidden",
-        )}
-      >
-        Settings
-      </div>
+      {phonePage ? (
+        <div className={cn(PHONE_PAGE_BAR_CLS, "bg-sidebar")}>
+          <span className={PHONE_PAGE_BAR_TITLE_CLS}>Settings</span>
+        </div>
+      ) : (
+        <div
+          className={cn(
+            "flex h-9 shrink-0 items-center px-3.5 text-[13px] font-semibold text-sidebar-foreground mt-2",
+            !compactSearchOpen && "max-md:hidden",
+          )}
+        >
+          Settings
+        </div>
+      )}
       <ScrollArea
         hideScrollbars
         scrollFade
@@ -286,11 +293,12 @@ export function SettingsSidebarNav({
         // Back row below read as scrollable instead of clipped.
         className="min-h-0 flex-1 [&>[data-slot=scroll-area-viewport]]:[--fade-size:1.5rem]"
       >
-        <SidebarGroup className="overflow-x-hidden">
+        <SidebarGroup className={cn("overflow-x-hidden", phonePage && "px-0")}>
           <div className="flex flex-col gap-2">
             <div
               className={cn(
                 "flex h-7 items-center gap-2 rounded-md px-2 text-[13px] font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
+                phonePage && "h-11 rounded-none px-4",
                 !compactSearchOpen && !phonePage && "max-md:hidden",
               )}
             >
@@ -336,7 +344,7 @@ export function SettingsSidebarNav({
                 >
                   <XIcon className="size-3" />
                 </Button>
-              ) : (
+              ) : phonePage ? null : (
                 <Kbd className="h-4 min-w-4 rounded px-1 text-[11px]">/</Kbd>
               )}
             </div>
@@ -417,6 +425,7 @@ export function SettingsSidebarNav({
                           aria-hidden="true"
                           className={cn(
                             "px-2 text-[11px] leading-[14px] font-semibold text-sidebar-muted-foreground",
+                            phonePage && "px-4",
                             !compactSearchOpen && !phonePage && "max-md:hidden",
                           )}
                         >
@@ -426,7 +435,9 @@ export function SettingsSidebarNav({
                       <SidebarMenu role="presentation" className="gap-px">
                         {group.paths.map((to) => {
                           const Icon = SETTINGS_SECTION_ICONS[to];
-                          const isActive = activePath === to || activePath.startsWith(`${to}/`);
+                          // The phone index is a list of destinations: none is open there.
+                          const isActive =
+                            !phonePage && (activePath === to || activePath.startsWith(`${to}/`));
                           return (
                             <SidebarMenuItem key={to} role="presentation">
                               <SidebarMenuButton
@@ -438,7 +449,7 @@ export function SettingsSidebarNav({
                                 isActive={isActive}
                                 className={cn(
                                   "h-7 gap-2 px-2 text-[13px] font-medium text-sidebar-muted-foreground",
-                                  phonePage && "h-11",
+                                  phonePage && "h-11 px-4",
                                 )}
                                 onClick={() => handleSectionClick(to)}
                               >
@@ -466,24 +477,23 @@ export function SettingsSidebarNav({
         {/* Room for the last row to clear the fade where the list meets the pinned Back row. */}
         <div aria-hidden className="h-2 shrink-0" />
       </ScrollArea>
-      <SidebarFooter className={cn("shrink-0", !phonePage && "max-md:hidden")}>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              size="sm"
-              className={cn(
-                "h-7 gap-2 px-2 text-[13px] font-medium text-sidebar-muted-foreground",
-                phonePage && "h-11",
-              )}
-              onClick={() => void closeAppModal()}
-            >
-              <ChevronLeftIcon />
-              <span>Back</span>
-              <Kbd className="ms-auto h-4 min-w-4 rounded px-1 text-[11px]">Esc</Kbd>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarFooter>
+      {phonePage ? null : (
+        <SidebarFooter className="shrink-0 max-md:hidden">
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                size="sm"
+                className="h-7 gap-2 px-2 text-[13px] font-medium text-sidebar-muted-foreground"
+                onClick={() => void closeAppModal()}
+              >
+                <ChevronLeftIcon />
+                <span>Back</span>
+                <Kbd className="ms-auto h-4 min-w-4 rounded px-1 text-[11px]">Esc</Kbd>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarFooter>
+      )}
     </nav>
   );
 }

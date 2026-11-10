@@ -8,6 +8,7 @@ import { useSettingsRestore } from "../components/settings/SettingsPanels";
 
 import { AppRouteModal } from "../components/AppRouteModal";
 import { useIsPhone } from "../mobile/usePhone";
+import { PHONE_PAGE_BAR_BACK_CLS, PHONE_PAGE_BAR_CLS } from "../components/ui/phone-recipes";
 import { SettingsBreadcrumb } from "../components/settings/SettingsBreadcrumb";
 import { SettingsSidebarNav } from "../components/settings/SettingsSidebarNav";
 import {
@@ -128,14 +129,18 @@ function SettingsContentLayout() {
     <div {...contentArea} className="flex min-h-0 min-w-0 flex-1 flex-col">
       <header
         data-drag-region="deep"
-        className="flex h-10 shrink-0 items-center gap-2 ps-3.5 pe-2 custom-chrome:pe-(--workspace-native-controls-inset)"
+        className={
+          isPhone
+            ? PHONE_PAGE_BAR_CLS
+            : "flex h-10 shrink-0 items-center gap-2 ps-3.5 pe-2 custom-chrome:pe-(--workspace-native-controls-inset)"
+        }
       >
         {isPhone ? (
           <Button
-            size="icon-sm"
+            size="icon"
             variant="ghost"
             aria-label="Back to settings sections"
-            className="-ms-1.5 shrink-0"
+            className={PHONE_PAGE_BAR_BACK_CLS}
             onClick={() => setPhoneSectionsOpen(true)}
           >
             <ArrowLeftIcon className="size-4" />

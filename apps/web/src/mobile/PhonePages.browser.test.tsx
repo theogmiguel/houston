@@ -554,6 +554,68 @@ const SETTINGS_SECTIONS = [
   "archived",
 ] as const;
 
+const GUTTER = 16;
+
+/** The settings page bar: the 44px bar with a bottom border and a 44px back control on the 16px gutter. */
+function expectSettingsBar(label: string, viewport: number) {
+  const back = document.querySelector<HTMLElement>('[aria-label="Back to settings sections"]');
+  expect(back, `${label}: back control`).not.toBeNull();
+  const bar = back?.closest("header") ?? null;
+  expect(bar, `${label}: bar`).not.toBeNull();
+  const barRect = bar?.getBoundingClientRect();
+  expect(barRect?.height, `${label}: bar height`).toBe(44);
+  expect(
+    parseFloat(getComputedStyle(bar as HTMLElement).borderBottomWidth),
+    `${label}: border`,
+  ).toBeGreaterThan(0);
+  const rect = back?.getBoundingClientRect();
+  expect(rect?.width ?? 0, `${label}: back width`).toBeGreaterThanOrEqual(44);
+  expect(rect?.height ?? 0, `${label}: back height`).toBeGreaterThanOrEqual(44);
+  // The 16px glyph is centred in the hit area, so its edge lands on the gutter.
+  expect(Math.round((rect?.left ?? 0) + ((rect?.width ?? 0) - GUTTER) / 2), label).toBe(GUTTER);
+  expect(viewport).toBeGreaterThan(0);
+}
+
+/** Cards, headings and notes share the 16px gutter; dividers inside a card are inset at both ends. */
+function expectSettingsGutters(label: string, viewport: number) {
+  const heading = document.querySelector<HTMLElement>("[data-settings-page-scroll] h1");
+  expect(Math.round(heading?.getBoundingClientRect().left ?? -1), `${label}: heading`).toBe(GUTTER);
+  const cards = document.querySelectorAll<HTMLElement>(
+    '[data-settings-page-scroll] [data-slot="settings-group"]',
+  );
+  for (const card of cards) {
+    const rect = card.getBoundingClientRect();
+    if (rect.width === 0) continue;
+    const nested = card.parentElement?.closest('[data-slot="settings-group"]') !== null;
+    if (nested) continue;
+    expect(Math.round(rect.left), `${label}: card left`).toBe(GUTTER);
+    expect(Math.round(viewport - rect.right), `${label}: card right`).toBe(GUTTER);
+    for (const row of Array.from(card.children).slice(1)) {
+      const before = getComputedStyle(row, "::before");
+      if (before.content === "none" || before.position !== "absolute") continue;
+      expect({ left: before.left, right: before.right }, `${label}: divider inset`).toEqual({
+        left: `${GUTTER}px`,
+        right: `${GUTTER}px`,
+      });
+    }
+  }
+  for (const note of document.querySelectorAll<HTMLElement>(
+    '[data-settings-page-scroll] [role="status"]',
+  )) {
+    if (note.closest('[data-slot="settings-group"]') !== null) continue;
+    expect(Math.round(note.getBoundingClientRect().left), `${label}: note`).toBe(GUTTER);
+  }
+  for (const trigger of document.querySelectorAll<HTMLElement>(
+    '[aria-label^="Project scope"], [aria-label^="Environment scope"]',
+  )) {
+    const icon = trigger.querySelector("svg");
+    const text = trigger.querySelector("span");
+    if (icon === null || text === null) continue;
+    const gap = text.getBoundingClientRect().left - icon.getBoundingClientRect().right;
+    expect(gap, `${label}: scope icon gap`).toBeGreaterThanOrEqual(4);
+  }
+}
+
 async function auditSettingsPages({ width, height }: { width: number; height: number }) {
   for (const section of SETTINGS_SECTIONS) {
     const { screen } = await mountApp(`/settings/${section}`, width, height);
@@ -561,6 +623,8 @@ async function auditSettingsPages({ width, height }: { width: number; height: nu
     await waitForSelector("[data-settings-page-scroll]");
     await waitForText(SETTINGS_SECTION_LABELS[`/settings/${section}`]);
     expectPhoneLayout(`settings/${section}`);
+    expectSettingsBar(`settings/${section}`, width);
+    expectSettingsGutters(`settings/${section}`, width);
     await screen.unmount();
   }
 }
@@ -575,6 +639,116 @@ it("keeps settings pages on a 320px phone screen", async () => {
   await auditSettingsPages({ width: 320, height: 640 });
 });
 
+async function openSettings(section: string, width: number, height: number) {
+  const { screen } = await mountApp(`/settings/${section}`, width, height);
+  await waitForSelector("[data-settings-page-scroll]");
+  await waitForText(
+    SETTINGS_SECTION_LABELS[`/settings/${section}` as keyof typeof SETTINGS_SECTION_LABELS],
+  );
+  return screen;
+}
+
+const rectOf = (element: Element | null | undefined) => element?.getBoundingClientRect();
+const fontSizeOf = (element: Element) => parseFloat(getComputedStyle(element).fontSize);
+
+it("keeps controls and values aligned on settings pages", async () => {
+  using _environment = installEnvironment();
+  for (const { width, height } of PHONE_VIEWPORTS) {
+    {
+      await using screen = await openSettings("connections", width, height);
+      const add = page.getByRole("button", { name: "Add environment" }).element();
+      expect(
+        add.closest('[data-slot="settings-group"]'),
+        "Add environment sits in a card",
+      ).not.toBeNull();
+      expect(rectOf(add)?.height ?? 0).toBeGreaterThanOrEqual(44);
+      const restart = page.getByRole("button", { name: "Restart" }).element();
+      expect(getComputedStyle(restart).borderTopWidth, "Restart is a bordered button").not.toBe(
+        "0px",
+      );
+      void screen;
+    }
+    {
+      await using _screen = await openSettings("labs", width, height);
+      const intro = [...document.querySelectorAll("p")].find((node) =>
+        node.textContent?.startsWith("Optional features"),
+      );
+      const description = document.querySelector("h1 + p");
+      expect(fontSizeOf(intro as Element)).toBe(fontSizeOf(description as Element));
+    }
+    {
+      await using _screen = await openSettings("appearance", width, height);
+      const values = [
+        ...document.querySelectorAll<HTMLElement>('span[aria-hidden="true"].tabular-nums'),
+      ];
+      expect(values.length).toBeGreaterThanOrEqual(2);
+      expect(new Set(values.map((value) => Math.round(rectOf(value)?.width ?? 0))).size).toBe(1);
+      for (const value of values) expect(value.textContent).toMatch(/%$/);
+    }
+    {
+      await using _screen = await openSettings("voice", width, height);
+      await waitForText("Microphone");
+      const triggers = [
+        ...document.querySelectorAll<HTMLElement>('[data-slot="select-trigger"]'),
+      ].filter((trigger) => trigger.closest('[data-slot="settings-row"]') !== null);
+      expect(triggers.length).toBeGreaterThanOrEqual(2);
+      // The microphone select shares its line with the refresh button, so it ends before the rest.
+      const rights = new Set(
+        triggers
+          .filter((trigger) => trigger.getAttribute("aria-label") !== "Microphone")
+          .map((trigger) => Math.round(rectOf(trigger)?.right ?? 0)),
+      );
+      const lefts = new Set(triggers.map((trigger) => Math.round(rectOf(trigger)?.left ?? 0)));
+      expect({ lefts: lefts.size, rights: rights.size }).toEqual({ lefts: 1, rights: 1 });
+      expect(Math.round(width - ([...rights][0] ?? 0))).toBe(GUTTER * 2 + 1);
+    }
+    {
+      await using _screen = await openSettings("threads", width, height);
+      const sizes = new Set(
+        [
+          ...document.querySelectorAll<HTMLElement>(
+            '[data-slot="settings-row"] button, [data-slot="settings-row"] [data-slot="select-trigger"]',
+          ),
+        ]
+          .filter((control) => (control.textContent ?? "").trim() !== "")
+          .map((control) => fontSizeOf(control)),
+      );
+      expect([...sizes].filter((size) => size > 14)).toEqual([]);
+    }
+    {
+      await using _screen = await openSettings("task-sources", width, height);
+      await waitForSelector("#task-sources-import");
+      // The import card is one card, not a card inside a card.
+      const inner = document.querySelectorAll<HTMLElement>(
+        '#task-sources-import [data-slot="settings-group"] [data-slot="settings-group"]',
+      );
+      for (const group of inner) expect(getComputedStyle(group).borderTopWidth).toBe("0px");
+    }
+    {
+      await using _screen = await openSettings("keybindings", width, height);
+      const row = document.querySelector<HTMLElement>("tbody tr");
+      const title = row?.querySelector("td:first-child *");
+      const chip = row?.querySelector('button[aria-label^="Edit shortcut"] > *');
+      expect(Math.round(rectOf(chip)?.left ?? -1)).toBe(Math.round(rectOf(title)?.left ?? -2));
+    }
+    {
+      await using _screen = await openSettings("devices", width, height);
+      await waitForText("Local simulators");
+      const description = [...document.querySelectorAll("p")].find((node) =>
+        node.textContent?.startsWith("Simulators and emulators installed"),
+      );
+      expect(description, "Local simulators description").toBeDefined();
+      expect((description as HTMLElement).scrollWidth).toBeLessThanOrEqual(
+        (description as HTMLElement).clientWidth,
+      );
+      const title = description?.previousElementSibling?.querySelector("p");
+      expect(Math.round(rectOf(description)?.left ?? -1)).toBe(
+        Math.round(rectOf(title)?.left ?? -2),
+      );
+    }
+  }
+});
+
 it("lists settings sections as a page and returns to the chosen one", async () => {
   using _environment = installEnvironment();
   for (const { width, height } of PHONE_VIEWPORTS) {
@@ -584,7 +758,22 @@ it("lists settings sections as a page and returns to the chosen one", async () =
 
     await userEvent.click(page.getByRole("button", { name: "Back to settings sections" }));
     await waitForSelector('[aria-label="Settings sections"]');
-    await expect.element(page.getByRole("button", { name: /^Back/ })).toBeVisible();
+    // The tab bar leaves settings; the list has no Back row, no key hints and no open page.
+    expect(page.getByRole("button", { name: /^Back$/ }).elements()).toHaveLength(0);
+    const nav = document.querySelector<HTMLElement>('[role="tree"]')?.closest("nav") ?? null;
+    expect(nav?.querySelector("kbd")).toBeNull();
+    expect(document.querySelector('[role="treeitem"][aria-selected="true"]')).toBeNull();
+    const bar = nav?.firstElementChild as HTMLElement | null;
+    expect(bar?.getBoundingClientRect().height).toBe(44);
+    const row = page.getByRole("treeitem", { name: "General" }).element();
+    expect(Math.round(row.getBoundingClientRect().left)).toBe(0);
+    const rowIcon = row.querySelector("svg");
+    expect(Math.round(rowIcon?.getBoundingClientRect().left ?? -1)).toBe(GUTTER);
+    const searchIcon = document
+      .querySelector<HTMLElement>('input[type="search"]')
+      ?.closest("div.flex")
+      ?.querySelector("svg");
+    expect(Math.round(searchIcon?.getBoundingClientRect().left ?? -1)).toBe(GUTTER);
     expectPhoneLayout("settings sections");
     expect(
       page.getByRole("treeitem", { name: "Appearance" }).element().getBoundingClientRect().height,

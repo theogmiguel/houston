@@ -1249,7 +1249,7 @@ function KeybindingTableRow(props: KeybindingRowProps) {
   return (
     <tr
       id={anchorId}
-      className="border-t border-border/70 outline-none first:border-t-0 hover:bg-hover focus-visible:bg-hover max-phone:grid max-phone:grid-cols-[minmax(0,1fr)_auto] max-phone:gap-x-2 max-phone:px-3.5 max-phone:py-2"
+      className="border-t border-border/70 outline-none first:border-t-0 hover:bg-hover focus-visible:bg-hover max-phone:grid max-phone:grid-cols-[minmax(0,1fr)_auto] max-phone:gap-x-2 max-phone:px-4 max-phone:py-2"
     >
       <td className="px-3.5 py-2 align-middle max-phone:col-start-1 max-phone:row-start-1 max-phone:px-0 max-phone:py-0">
         <KeybindingRowTitle row={row} />
@@ -1261,7 +1261,7 @@ function KeybindingTableRow(props: KeybindingRowProps) {
             row={row}
             editor={editor}
             isSaving={isSaving}
-            pillClassName="-mr-1.5"
+            pillClassName="-mr-1.5 max-phone:mr-0 max-phone:-ms-1.75"
           />
         </div>
       </td>
@@ -1585,7 +1585,7 @@ export function KeybindingsSettingsPanel() {
               savingCommand={savingCommand}
               {...rowActions}
             />
-            <p className="px-1 text-xs leading-4 text-muted-foreground">
+            <p className="px-1 max-phone:px-0 text-xs leading-4 text-muted-foreground">
               Shortcuts are stored in keybindings.json on the server. Edits there appear here
               without a restart.
             </p>

@@ -4,6 +4,7 @@ import { ChevronRightIcon, LayersIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { cn } from "../../lib/utils";
+import { useIsPhone } from "../../mobile/usePhone";
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
 import { useEnvironments, type EnvironmentPresentation } from "../../state/environments";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
@@ -44,6 +45,7 @@ export function SettingsScopeNotice({
   const navigate = useNavigate({ from: "/settings" });
   const pathname = useLocation({ select: (location) => location.pathname });
   const { environments } = useEnvironments();
+  const isPhone = useIsPhone();
   const environmentIcon = (environment: EnvironmentPresentation | undefined) =>
     environment ? (
       <EnvironmentMachineIcon
@@ -159,19 +161,23 @@ export function SettingsScopeNotice({
       </button>
     ));
   };
+  // A phone's inline notice sits in the section's card, not as bare text over an empty rule.
+  const noteInCard = inline && isPhone && choiceGroups.every((group) => !group?.displayName);
   const notice =
     target === "project" && targetId === undefined ? (
       <div className="space-y-3">
         <SettingsSection title="Projects">{renderChoices(null)}</SettingsSection>
-        <p role="status" className="px-1 text-xs leading-4 text-muted-foreground">
+        <p role="status" className="px-1 text-xs leading-4 text-muted-foreground max-phone:px-0">
           {children}
         </p>
       </div>
     ) : (
       <div className="space-y-3">
-        <p role="status" className="px-1 text-sm text-muted-foreground">
-          {children}
-        </p>
+        {noteInCard ? null : (
+          <p role="status" className="px-1 text-sm text-muted-foreground max-phone:px-0">
+            {children}
+          </p>
+        )}
         <div className="space-y-4">
           {choiceGroups.map((group) =>
             group?.displayName ? (
@@ -180,6 +186,11 @@ export function SettingsScopeNotice({
               </SettingsSection>
             ) : (
               <SettingsGroup key={group?.projectKey ?? target}>
+                {noteInCard ? (
+                  <p role="status" className="px-4 py-3 text-sm text-muted-foreground">
+                    {children}
+                  </p>
+                ) : null}
                 {renderChoices(group)}
               </SettingsGroup>
             ),

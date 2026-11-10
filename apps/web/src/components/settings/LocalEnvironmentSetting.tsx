@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ServerIcon } from "lucide-react";
 
+import { useIsPhone } from "../../mobile/usePhone";
 import { usePrimaryEnvironment } from "../../state/environments";
 import { Button } from "../ui/button";
 import { hostBridgeErrorMessage } from "../desktop/hostBridgeError";
@@ -10,6 +11,7 @@ import { SettingsRow } from "./settingsLayout";
 // The desktop host owns the local server; this row restarts it, and the
 // environment switch stays hidden because the host has no persisted toggle.
 export function LocalEnvironmentSetting() {
+  const isPhone = useIsPhone();
   const [isRestarting, setIsRestarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const primaryEnvironment = usePrimaryEnvironment();
@@ -47,7 +49,8 @@ export function LocalEnvironmentSetting() {
       control={
         <Button
           size="sm"
-          variant="ghost"
+          variant={isPhone ? "outline" : "ghost"}
+          className={isPhone ? "h-11 w-full" : undefined}
           disabled={isRestarting || !restartServer}
           onClick={() => void restart()}
         >

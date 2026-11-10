@@ -1096,7 +1096,7 @@ export function ProviderInstanceCard({
                 <span
                   tabIndex={statusDiagnostic ? 0 : undefined}
                   aria-live="polite"
-                  className="pointer-events-auto line-clamp-2 [overflow-wrap:anywhere]"
+                  className="pointer-events-auto line-clamp-2 max-phone:line-clamp-3 [overflow-wrap:anywhere]"
                 >
                   {updateProgress ? (
                     `Updating · ${updateProgress}`
