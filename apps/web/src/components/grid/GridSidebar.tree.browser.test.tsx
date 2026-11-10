@@ -310,6 +310,30 @@ describe("sidebar tree: guides and alignment", () => {
     expect(Math.abs(rect(cards).left + 0.5 - chevronCentre)).toBeLessThanOrEqual(1);
   });
 
+  it("draws the guides in the border tone even when a theme's sidebar border is as dark as the rail", async () => {
+    await page.viewport(1440, 900);
+    const root = document.documentElement;
+    root.style.setProperty("--sidebar-border", "rgb(15, 15, 17)");
+    try {
+      const value = section([
+        { grid: grid("g1", "a"), threads: [thread("a")] },
+        { grid: grid("g2", "b"), threads: [thread("b")] },
+      ]);
+      await using screen = await render(tree(value, { openGridId: "g1" }));
+      const probe = document.createElement("div");
+      probe.className = "border border-border";
+      screen.container.append(probe);
+      const border = getComputedStyle(probe).borderTopColor;
+      const projectGuide = screen.container.querySelector<HTMLElement>("[data-project-guide]")!;
+      expect(getComputedStyle(projectGuide).borderLeftColor, "project guide").toBe(border);
+      expect(getComputedStyle(cardsOf(screen.container, "g2")!).borderLeftColor, "grid guide").toBe(
+        border,
+      );
+    } finally {
+      root.style.removeProperty("--sidebar-border");
+    }
+  });
+
   it("tones the on-screen grid's guide stronger than the others, with no colour transition", async () => {
     await page.viewport(1440, 900);
     const value = section([
