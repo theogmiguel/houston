@@ -70,7 +70,7 @@
 2 apps/web/src/components/chat/MarkdownTable.tsx
 21 apps/web/src/components/chat/McpAppFrame.tsx
 8 apps/web/src/components/chat/MermaidDiagram.tsx
-61 apps/web/src/components/chat/MessagesTimeline.tsx
+60 apps/web/src/components/chat/MessagesTimeline.tsx
 19 apps/web/src/components/chat/ModelListRow.tsx
 29 apps/web/src/components/chat/ModelPickerContent.tsx
 1 apps/web/src/components/chat/OpenInPicker.tsx

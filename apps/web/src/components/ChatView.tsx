@@ -288,6 +288,7 @@ import {
 import type { AssistantCitationRequest } from "./chat/AssistantCitationSource";
 import { useCitedHistory } from "./chat/citationProcedure";
 import type { MessagesTimelineHistoryControls } from "./chat/MessagesTimeline";
+import { SubagentParentHeader } from "./chat/SubagentParentHeader";
 import { ThreadTimeline } from "./chat/ThreadTimeline";
 import { ProviderSubagentBar } from "./chat/ProviderSubagentBar";
 import { getTriggerDisplayModelName } from "./chat/providerIconUtils";
@@ -1026,6 +1027,13 @@ export default function ChatView(props: ChatViewProps) {
           }),
     };
   })();
+  // A subagent's or delegated thread's strip is pinned above the timeline; a side chat's link
+  // is a divider inside it.
+  const parentStrip: {
+    readonly title: string;
+    readonly environmentLabel?: string;
+    readonly open?: () => void;
+  } | null = sideChatParentRef === null ? parentThreadLink : null;
   // The header's breadcrumb opens a parent in this environment only.
   const headerParentThreadLink =
     parentSubagentThreadRef === null
@@ -3647,6 +3655,13 @@ export default function ChatView(props: ChatViewProps) {
               onOpenProviderSetup={openProviderSetupStable}
             />
             <div {...conversationArea} className="relative flex min-h-0 flex-1 flex-col bg-pane">
+              {parentStrip === null ? null : (
+                <SubagentParentHeader
+                  title={parentStrip.title}
+                  environmentLabel={parentStrip.environmentLabel}
+                  onOpen={parentStrip.open}
+                />
+              )}
               <ThreadErrorCardProvider value={timelineThreadError}>
                 <ThreadTimeline
                   pendingApprovals={timelinePendingApprovals}
