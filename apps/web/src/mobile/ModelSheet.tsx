@@ -158,6 +158,7 @@ export const ModelSheet = memo(function ModelSheet(props: {
                 <span>Plan mode</span>
                 <ComposerFooterModeControls
                   showInteractionModeToggle
+                  alwaysShowInteractionModeToggle
                   interactionMode={props.interactionMode}
                   runtimeMode={props.runtimeMode}
                   runtimeModeOptions={props.runtimeModeOptions}

@@ -28,30 +28,75 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./tooltip";
 
 /**
- * A heading is one 12px/600 line: chevron, name, muted count. A grid heading is a
- * project heading one step in. The actions reserve their room only while the heading is hovered
- * or focused, so the name keeps the width otherwise.
+ * The project row is the tree's only bold row; a grid row is a 24px regular, muted line, one step
+ * in. A button fills its row, so the row's whole width toggles it; the actions overlay the right
+ * edge and the count (when collapsed) sits there until they appear.
  */
 export const SIDEBAR_GRID_HEADING_CLS =
-  "flex h-8 min-w-0 shrink cursor-pointer items-center gap-1.5 rounded-lg py-0 pr-1 pl-4 text-left text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+  "flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1 rounded-lg py-0 pr-2 pl-0.75 text-left text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
 /** The grid heading's row: the toggle and its actions share one hover, selection and drop fill. */
 export const SIDEBAR_GRID_HEADING_ROW_CLS =
-  "group/grid relative flex items-center rounded-lg transition-colors duration-(--motion-feedback) ease-standard hover:bg-sidebar-row-hover";
+  "group/grid relative -ml-0.75 flex h-6 items-center rounded-lg transition-colors duration-(--motion-feedback) ease-standard hover:bg-sidebar-row-hover";
 
 export const SIDEBAR_GRID_HEADING_ACTIVE_CLS = "bg-sidebar-row-selected";
 
 export const SIDEBAR_GRID_HEADING_DROP_CLS =
   "bg-(--accent-muted) ring-1 ring-(--accent-ink) ring-inset";
 
-export const SIDEBAR_GRID_NAME_CLS =
-  "min-w-0 truncate text-xs font-semibold text-sidebar-foreground";
+export const SIDEBAR_GRID_NAME_CLS = "min-w-0 truncate text-xs font-normal text-secondary-label";
 
-export const SIDEBAR_GRID_EMPTY_CLS = "shrink-0 text-xs text-secondary-label";
+/** The name of the grid on screen takes primary ink, collapsed or not. */
+export const SIDEBAR_GRID_NAME_ON_SCREEN_CLS = "text-sidebar-foreground";
+
+export const SIDEBAR_GRID_EMPTY_CLS = "text-xs text-secondary-label";
 
 /** The muted thread count that follows a heading's name. */
 export const SIDEBAR_GRID_COUNT_CLS =
   "shrink-0 text-xs font-medium text-secondary-label tabular-nums";
+
+/**
+ * The right-aligned slot of a collapsed row: its dot and count (or a grid's "empty" label). It
+ * fades out, never leaves the layout, while the row's actions fade in over it.
+ */
+export const SIDEBAR_ROW_TRAILING_CLS =
+  "ms-auto flex shrink-0 items-center transition-opacity duration-(--motion-feedback) ease-standard group-hover/project:opacity-0 group-has-focus-visible/project:opacity-0 group-hover/grid:opacity-0 group-has-focus-visible/grid:opacity-0";
+
+/** Six pixels of amber before a count: something inside waits on the user. */
+export const SIDEBAR_NEEDS_YOU_DOT_CLS = "mr-1.5 size-1.5 shrink-0 rounded-full bg-warning";
+
+/** A row's actions overlay its right edge, 3px in, instead of taking row width. */
+export const SIDEBAR_ROW_ACTIONS_CLS =
+  "absolute inset-y-0 right-0.75 flex shrink-0 items-center gap-0.5";
+
+/** A project's rows hang from a 1px guide under the centre of its folder glyph. */
+export const SIDEBAR_PROJECT_GUIDE_CLS = "ml-3.25 border-l border-sidebar-border pl-1";
+
+/**
+ * A grid's cards hang from a 1px guide under the centre of its chevron; the grid on screen draws
+ * it in the secondary text tone. The 4px of padding below, with the next row's 2px, make 6px.
+ */
+export const SIDEBAR_GRID_GUIDE_CLS =
+  "ml-1.5 flex flex-col gap-0.5 border-l border-sidebar-border pb-1 pl-0.75";
+
+export const SIDEBAR_GRID_GUIDE_ON_SCREEN_CLS = "border-secondary-label";
+
+/** A grid's card guide, in the stronger tone while the grid is on screen. */
+export function sidebarGridGuideCls(onScreen: boolean): string {
+  return cn(SIDEBAR_GRID_GUIDE_CLS, onScreen && SIDEBAR_GRID_GUIDE_ON_SCREEN_CLS);
+}
+
+/** A grid's name, in primary ink while the grid is on screen. */
+export function sidebarGridNameCls(onScreen: boolean): string {
+  return cn(SIDEBAR_GRID_NAME_CLS, onScreen && SIDEBAR_GRID_NAME_ON_SCREEN_CLS);
+}
+
+/** A project's expanded content: the guide below, then the needs-you line and empty state. */
+export const SIDEBAR_PROJECT_CONTENT_CLS = "flex flex-col";
+
+/** Ungrouped threads sit on the project guide 6px below the grids (2px after a grid's own 4px). */
+export const SIDEBAR_UNGROUPED_THREADS_CLS =
+  "mt-1.5 flex flex-col gap-0.5 [[data-grid-key]:has([data-grid-guide])+&]:mt-0.5";
 
 /**
  * A project heading sticks to the top of the rail's scroll area on the rail's own background, with
@@ -59,10 +104,10 @@ export const SIDEBAR_GRID_COUNT_CLS =
  * sees it clipped; a solid `::before` lip seals the top seam, and while stuck an 8px `::after` band (solid for 4px, then fading out) keeps a half-scrolled row from showing a clipped fragment under the heading.
  */
 export const SIDEBAR_PROJECT_ROW_CLS =
-  "group/project sticky -top-px z-40 mt-1 flex items-center border-b border-transparent bg-sidebar before:absolute before:inset-x-0 before:-top-1 before:h-1 before:bg-sidebar before:content-[''] after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-2 after:bg-[linear-gradient(to_bottom,var(--color-sidebar)_50%,transparent)] after:opacity-0 after:content-[''] first:mt-0 data-stuck:border-sidebar-border data-stuck:after:opacity-100";
+  "group/project sticky -top-px z-40 flex h-7 items-center border-b border-transparent bg-sidebar before:absolute before:inset-x-0 before:-top-1 before:h-1 before:bg-sidebar before:content-[''] after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-2 after:bg-[linear-gradient(to_bottom,var(--color-sidebar)_50%,transparent)] after:opacity-0 after:content-[''] data-stuck:border-sidebar-border data-stuck:after:opacity-100";
 
 /**
- * A project section. It is positioned so a reorder drop line can sit on its top or
+ * A project section: 12px above it, 2px for the first one under the header. It is positioned so a reorder drop line can sit on its top or
  * bottom edge: `dropSide` names the edge a dragged project will land against.
  */
 export function sidebarProjectSectionCls(state: {
@@ -70,7 +115,7 @@ export function sidebarProjectSectionCls(state: {
   dropSide: "before" | "after" | null;
 }): string {
   return cn(
-    "relative flex flex-col gap-px",
+    "relative mt-3 flex flex-col gap-px first:mt-0.5",
     state.dragged && "opacity-50",
     state.dropSide === "before" &&
       "before:absolute before:inset-x-0 before:top-0 before:z-10 before:h-0.5 before:bg-(--accent-ink)",
@@ -80,7 +125,14 @@ export function sidebarProjectSectionCls(state: {
 }
 
 export const SIDEBAR_PROJECT_LABEL_CLS =
-  "flex h-8 min-w-0 shrink cursor-pointer items-center gap-1.5 rounded-lg py-0 pr-1 pl-2 text-left text-xs font-semibold text-sidebar-foreground transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+  "flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-lg py-0 pr-2 pl-1.5 text-left text-xs font-semibold text-sidebar-foreground transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+
+/** A project with no grids and no threads is regular weight and muted. */
+export const SIDEBAR_PROJECT_LABEL_EMPTY_CLS = "font-normal text-secondary-label";
+
+/** The project row's 16px glyph box; the project guide runs under its centre. */
+export const SIDEBAR_PROJECT_ICON_BOX_CLS =
+  "inline-grid size-4 shrink-0 place-items-center text-secondary-label";
 
 export const SIDEBAR_PROJECT_LABEL_TEXT_CLS = "min-w-0 truncate";
 
@@ -119,9 +171,9 @@ export const SIDEBAR_HEADER_ACTIONS_CLS =
  */
 export const SIDEBAR_THREAD_ROW_INDENT_CLS = "pl-2";
 
-/** A fixed 12px box in both states; the chevron rotates inside instead of swapping icons. */
+/** A fixed 14px box in both states; the chevron rotates inside instead of swapping icons. */
 export const SIDEBAR_GRID_CHEVRON_BOX_CLS =
-  "inline-grid size-3 shrink-0 place-items-center text-secondary-label";
+  "inline-grid size-3.5 shrink-0 place-items-center text-secondary-label";
 
 export const SIDEBAR_GRID_CHEVRON_CLS =
   "size-3 transition-transform duration-(--motion-disclosure) ease-standard";
@@ -132,7 +184,7 @@ export const SIDEBAR_GRID_ACTION_CLS =
   "inline-grid size-5 shrink-0 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-label opacity-0 transition-opacity duration-(--motion-feedback) ease-standard hover:bg-(--sel) hover:text-foreground group-hover/grid:opacity-100 group-has-focus-visible/grid:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
 export const SIDEBAR_GRID_RENAME_CLS =
-  "h-7 min-w-0 flex-1 rounded-(--r-ctl) border border-input bg-background px-2 text-xs font-semibold text-foreground outline-none focus:border-ring focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+  "h-6 min-w-0 flex-1 rounded-(--r-ctl) border border-input bg-background px-1.5 text-xs font-normal text-foreground outline-none focus:border-ring focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
 export const SIDEBAR_SECTION_ACTION_CLS =
   "-my-1.5 inline-grid size-6 shrink-0 cursor-pointer place-items-center rounded-(--r-ctl) text-secondary-label transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";

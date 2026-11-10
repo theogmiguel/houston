@@ -7,7 +7,7 @@ import {
 import { compileResolvedKeybindingsConfig } from "@houston-app/shared/keybindings";
 import { createRef } from "react";
 import { expect, it, vi } from "vite-plus/test";
-import { page } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 
@@ -216,11 +216,76 @@ it("states the reasoning effort only on the selected model row", async () => {
     { container },
   );
 
-  const selected = page.getByRole("option", { name: /Claude Opus 5\.5/ });
-  const other = page.getByRole("option", { name: /Claude Sonnet 5\.5/ });
+  const selected = page.getByRole("option", { name: /Opus 5\.5/ });
+  const other = page.getByRole("option", { name: /Sonnet 5\.5/ });
   await expect.element(selected).toBeVisible();
   await expect.element(other).toBeVisible();
   expect(selected.element().textContent).toContain("200k · High");
   expect(other.element().textContent).toContain("200k");
   expect(other.element().textContent).not.toContain("High");
+});
+
+const JUMP_KEYBINDINGS = compileResolvedKeybindingsConfig([
+  { key: "mod+1", command: "modelPicker.jump.1" },
+]);
+
+function pickerContent(input: { model?: string; keybindings?: boolean } = {}) {
+  const container = document.createElement("div");
+  container.style.width = "520px";
+  container.style.height = "520px";
+  return render(
+    <TooltipProvider delay={0}>
+      <ModelPickerContent
+        environmentId={null}
+        activeInstanceId={CLAUDE}
+        model={input.model ?? "opus"}
+        lockedProvider={null}
+        instanceEntries={entries}
+        modelOptionsByInstance={modelOptionsByInstance}
+        {...(input.keybindings ? { keybindings: JUMP_KEYBINDINGS } : {})}
+        terminalOpen={false}
+        onInstanceModelChange={() => {}}
+        searchInputRef={createRef<HTMLInputElement>()}
+      />
+    </TooltipProvider>,
+    { container },
+  );
+}
+
+const rowNames = () =>
+  Array.from(document.querySelectorAll('[role="option"]'), (row) =>
+    row.querySelector("span.truncate")?.textContent?.trim(),
+  );
+
+it("drops the provider prefix from model names inside a provider's tab", async () => {
+  await using _screen = await pickerContent();
+  await expect.element(page.getByRole("option", { name: /Opus 5\.5/ })).toBeVisible();
+  expect(rowNames()).toEqual(expect.arrayContaining(["Opus 5.5", "Sonnet 5.5"]));
+  expect(rowNames()).not.toContain("Claude Opus 5.5");
+});
+
+it("keeps the full model name in search results", async () => {
+  await using _screen = await pickerContent();
+  await userEvent.type(page.getByPlaceholder(/search/i).element() as HTMLElement, "opus");
+  await expect.element(page.getByRole("option", { name: /Claude Opus 5\.5/ })).toBeVisible();
+});
+
+it("keeps the full model name under Favorites", async () => {
+  await using _screen = await pickerContent();
+  await page.getByRole("button", { name: "Favorites" }).click();
+  expect(rowNames()).not.toContain("Opus 5.5");
+});
+
+it("keeps the jump hints out of sight until the modifier is held", async () => {
+  await using _screen = await pickerContent({ keybindings: true });
+  const hint = () => document.querySelector<HTMLElement>('[role="option"] kbd')!;
+  await expect.element(page.getByRole("option", { name: /Opus 5\.5/ })).toBeVisible();
+  const before = document.querySelector<HTMLElement>('[role="option"]')!.getBoundingClientRect();
+  expect(getComputedStyle(hint()).visibility).toBe("hidden");
+  await userEvent.keyboard("{Control>}");
+  await expect.poll(() => getComputedStyle(hint()).visibility).toBe("visible");
+  const during = document.querySelector<HTMLElement>('[role="option"]')!.getBoundingClientRect();
+  expect(during.height).toBe(before.height);
+  await userEvent.keyboard("{/Control}");
+  await expect.poll(() => getComputedStyle(hint()).visibility).toBe("hidden");
 });

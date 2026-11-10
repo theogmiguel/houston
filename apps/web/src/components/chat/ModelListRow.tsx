@@ -1,4 +1,8 @@
-import { type ProviderDriverKind, type ProviderInstanceId } from "@houston-app/contracts";
+import {
+  PROVIDER_DISPLAY_NAMES,
+  type ProviderDriverKind,
+  type ProviderInstanceId,
+} from "@houston-app/contracts";
 import { memo } from "react";
 import { CheckIcon, StarIcon } from "lucide-react";
 import { getDisplayModelName } from "./providerIconUtils";
@@ -45,6 +49,23 @@ export function getProviderRowLabel(
   return `${providerDisplayName} · ${sub}`;
 }
 
+/**
+ * Inside one provider's tab the rail already names the provider, so "Claude Opus 5.5" reads
+ * "Opus 5.5". The instance's own name ("Claude Personal") and the driver's name ("Claude") are
+ * both tried, since a renamed instance still lists its driver's models.
+ */
+export function stripProviderPrefix(
+  name: string,
+  providerNames: ReadonlyArray<string | undefined>,
+): string {
+  for (const candidate of providerNames) {
+    const provider = candidate?.trim();
+    if (!provider || !providerPrefixPattern(provider).test(name)) continue;
+    return name.slice(provider.length).trimStart();
+  }
+  return name;
+}
+
 export const ModelListRow = memo(function ModelListRow(props: {
   index: number;
   slug: string;
@@ -66,6 +87,8 @@ export const ModelListRow = memo(function ModelListRow(props: {
   showNewBadge?: boolean;
   unavailable?: boolean;
   jumpLabel?: string | null;
+  /** The jump modifier is held; the hint keeps its space either way so rows do not shift. */
+  jumpHintVisible?: boolean;
   disabledReason?: string | null;
   onToggleFavorite: (instanceId: ProviderInstanceId, slug: string) => void;
 }) {
@@ -81,6 +104,13 @@ export const ModelListRow = memo(function ModelListRow(props: {
   const providerLabel = props.showProvider
     ? getProviderRowLabel(props.providerDisplayName, props.subProvider)
     : null;
+  const displayName = getDisplayModelName(model);
+  const rowName = props.showProvider
+    ? displayName
+    : stripProviderPrefix(displayName, [
+        props.providerDisplayName,
+        PROVIDER_DISPLAY_NAMES[props.driverKind],
+      ]);
   const meta = [traitsLabel, providerLabel].filter((label) => label !== null).join(" · ");
 
   const favoriteButton = (
@@ -166,10 +196,10 @@ export const ModelListRow = memo(function ModelListRow(props: {
             // Names the row in full on hover only when it is cut off.
             onPointerEnter={(event) => {
               const name = event.currentTarget;
-              name.title = name.scrollWidth > name.clientWidth ? getDisplayModelName(model) : "";
+              name.title = name.scrollWidth > name.clientWidth ? displayName : "";
             }}
           >
-            {getDisplayModelName(model)}
+            {rowName}
           </span>
           {props.showNewBadge ? (
             <span
@@ -185,7 +215,11 @@ export const ModelListRow = memo(function ModelListRow(props: {
             </Badge>
           ) : null}
         </div>
-        {props.jumpLabel ? <Kbd className="col-start-2 row-start-1">{props.jumpLabel}</Kbd> : null}
+        {props.jumpLabel ? (
+          <Kbd concealed={!props.jumpHintVisible} className="col-start-2 row-start-1">
+            {props.jumpLabel}
+          </Kbd>
+        ) : null}
         <div className="col-start-3 row-start-1 flex items-center justify-end">{trailing}</div>
         {meta ? (
           <div className="col-span-2 col-start-1 row-start-2 min-w-0 truncate text-(--houston) text-2xs">

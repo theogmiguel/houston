@@ -63,3 +63,31 @@ it("disables steering where the provider cannot steer, keeping interrupt availab
   await userEvent.click(page.getByRole("menuitem", { name: "Interrupt and send" }));
   expect(onSubmitWithMode).toHaveBeenCalledExactlyOnceWith("restart");
 });
+
+it("writes the verb in the send segment while a turn runs", async () => {
+  await using _screen = await renderSendMenu({
+    followUpBehavior: "steer",
+    onSubmitWithMode: vi.fn(),
+  });
+  const send = page.getByRole("button", { name: "Steer message" });
+  await expect.element(send).toBeVisible();
+  expect(send.element().textContent).toBe("Steer");
+  await expect.element(page.getByRole("button", { name: "Send options" })).toBeVisible();
+});
+
+it("writes Queue when the follow-up behaviour queues", async () => {
+  await using _screen = await renderSendMenu({
+    followUpBehavior: "queue",
+    onSubmitWithMode: vi.fn(),
+  });
+  const send = page.getByRole("button", { name: "Queue message" });
+  await expect.element(send).toBeVisible();
+  expect(send.element().textContent).toBe("Queue");
+});
+
+it("writes Queue when the provider cannot steer", async () => {
+  await using _screen = await renderSendMenu({ canSteer: false, onSubmitWithMode: vi.fn() });
+  const send = page.getByRole("button", { name: "Queue message" });
+  await expect.element(send).toBeVisible();
+  expect(send.element().textContent).toBe("Queue");
+});

@@ -283,8 +283,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       return;
     }
     popupRef.current
-      ?.querySelector<HTMLButtonElement>("[data-composer-permissions-trigger]")
-      ?.click();
+      ?.querySelector<HTMLElement>("[data-composer-permissions] [aria-checked='true']")
+      ?.focus({ preventScroll: true });
   };
 
   const handleInstanceModelChange = (instanceId: ProviderInstanceId, model: string) => {

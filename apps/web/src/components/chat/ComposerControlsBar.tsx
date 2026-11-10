@@ -156,6 +156,7 @@ export function ComposerControlsBar(props: {
     matchesDefault: accessMatchesDefault || props.permissionsShownInStrip,
     stripHoldsPermissions: props.permissionsShownInStrip,
     planModeUiEnabled,
+    planModeActive: interactionMode === "plan",
     collapsed: composerControlsCollapsed,
     measuredHiddenBlockCount,
   });

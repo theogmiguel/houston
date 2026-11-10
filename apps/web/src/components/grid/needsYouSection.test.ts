@@ -2,7 +2,7 @@ import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/m
 import { ThreadId } from "@houston-app/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { buildNeedsYouEntries } from "./needsYouSection";
+import { buildNeedsYouEntries, isNeedsYouThread } from "./needsYouSection";
 
 function thread(id: string, overrides: Record<string, unknown> = {}): EnvironmentThreadShell {
   return {
@@ -87,5 +87,25 @@ describe("buildNeedsYouEntries", () => {
       ],
     });
     expect(entries).toEqual([]);
+  });
+});
+
+describe("isNeedsYouThread", () => {
+  it("is true for a thread that waits on the user and false for one that does not", () => {
+    expect(isNeedsYouThread(thread("input", { hasPendingUserInput: true }), now)).toBe(true);
+    expect(isNeedsYouThread(thread("ready"), now)).toBe(false);
+  });
+
+  it("agrees with the section on archived, closed, deleted and snoozed threads", () => {
+    const waiting = { hasPendingUserInput: true };
+    expect(
+      isNeedsYouThread(thread("a", { ...waiting, archivedAt: "2026-01-02T00:00:00.000Z" }), now),
+    ).toBe(false);
+    expect(isNeedsYouThread(thread("c", { ...waiting, settledOverride: "settled" }), now)).toBe(
+      false,
+    );
+    expect(
+      isNeedsYouThread(thread("d", { ...waiting, deletedAt: "2026-01-02T00:00:00.000Z" }), now),
+    ).toBe(false);
   });
 });

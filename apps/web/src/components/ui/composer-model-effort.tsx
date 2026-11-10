@@ -6,16 +6,26 @@ import {
 } from "@houston-app/client-runtime/model-traits";
 import type { ProviderOptionDescriptor, RuntimeMode } from "@houston-app/contracts";
 import type { EffortDisplay } from "@houston-app/contracts/settings";
-import { ChevronUpIcon, WorkflowIcon } from "lucide-react";
-import { createContext, type KeyboardEvent, type ReactNode, useContext, useRef } from "react";
+import { WorkflowIcon } from "lucide-react";
+import {
+  createContext,
+  type KeyboardEvent,
+  type ReactNode,
+  useContext,
+  useId,
+  useState,
+} from "react";
 
 import { cn } from "~/lib/utils";
 import { PHONE_SHEET_SECTION_LABEL_CLS } from "./phone-recipes";
-import { Menu, MenuPopup, MenuTrigger } from "./menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./tooltip";
 import type { ComposerControlSize } from "../chat/ComposerControl";
-import { ComposerPermissionsSection, type RuntimeModeOption } from "../chat/ComposerFooterControls";
-import { composerFloatingLayerProps, focusCheckedPermission } from "../chat/composerEventScope";
+import {
+  moveBetweenPermissionSegments,
+  supervisedRuntimeModeOption,
+  type RuntimeModeOption,
+} from "../chat/ComposerFooterControls";
+import { PERMISSION_SEGMENT_CLS } from "./composer-picker-recipes";
 import { EffortGlyph, FastBolt, resolveEffortGlyph } from "../chat/EffortGlyph";
 import {
   getTraitsSectionVisibility,
@@ -430,45 +440,72 @@ function UltracodeControl(props: { traits: TraitsSelectionInput }) {
   );
 }
 
-/** Permissions change rarely, so the footer names the mode and nests the choice in a menu. */
-function PermissionsMenu(props: {
+/**
+ * The permission modes as icon-only segments for a popover outside a Menu root, with the shown
+ * mode named beside them: the checked mode, or the one under the pointer or focus. A pick
+ * applies at once and leaves the popover open.
+ */
+function PermissionsSegments(props: {
   runtimeMode: RuntimeMode;
-  options: ReadonlyArray<RuntimeModeOption>;
-  onChange: (mode: RuntimeMode) => void;
+  runtimeModeOptions: ReadonlyArray<RuntimeModeOption>;
+  onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const current = props.options.find((option) => option.mode === props.runtimeMode);
-  if (!current) return null;
-  const CurrentIcon = current.icon;
+  const [previewMode, setPreviewMode] = useState<RuntimeMode | null>(null);
+  const descriptionId = useId();
+  const shown =
+    props.runtimeModeOptions.find((option) => option.mode === (previewMode ?? props.runtimeMode)) ??
+    supervisedRuntimeModeOption;
   return (
-    <Menu
-      onOpenChangeComplete={(open) => {
-        if (open) focusCheckedPermission(triggerRef.current);
-      }}
-    >
-      <MenuTrigger
-        render={
-          <button
-            ref={triggerRef}
-            type="button"
-            data-composer-permissions-trigger
-            aria-label={`Permissions: ${current.label}`}
-            className="ms-auto flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2 text-(--houston) text-xs outline-none hover:bg-(--sel) hover:text-(--t1) focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset data-popup-open:bg-(--sel) data-popup-open:text-(--t1)"
-          />
-        }
+    <div data-composer-permissions className="ms-auto flex items-center gap-2">
+      <span aria-hidden="true" data-composer-permissions-label className="text-(--houston) text-xs">
+        {shown.label}
+      </span>
+      <div
+        role="radiogroup"
+        aria-label="Permissions"
+        className="flex rounded-lg bg-input/40 p-0.5"
+        onKeyDown={moveBetweenPermissionSegments('[role="radio"]')}
       >
-        <CurrentIcon aria-hidden="true" className="size-3.5" />
-        {current.label}
-        <ChevronUpIcon aria-hidden="true" className="size-3" />
-      </MenuTrigger>
-      <MenuPopup side="top" align="end" {...composerFloatingLayerProps}>
-        <ComposerPermissionsSection
-          runtimeMode={props.runtimeMode}
-          runtimeModeOptions={props.options}
-          onRuntimeModeChange={props.onChange}
-        />
-      </MenuPopup>
-    </Menu>
+        {props.runtimeModeOptions.map((option) => {
+          const OptionIcon = option.icon;
+          const checked = option.mode === props.runtimeMode;
+          const disabled = option.disabledReason !== undefined;
+          return (
+            <button
+              key={option.mode}
+              type="button"
+              role="radio"
+              aria-checked={checked}
+              aria-disabled={disabled || undefined}
+              aria-label={option.label}
+              aria-describedby={`${descriptionId}-${option.mode}`}
+              data-checked={checked || undefined}
+              data-disabled={disabled || undefined}
+              // Only the checked segment is a tab stop; Left and Right reach the others.
+              tabIndex={checked ? 0 : -1}
+              onClick={() => {
+                if (!disabled && !checked) props.onRuntimeModeChange(option.mode);
+              }}
+              onPointerEnter={() => setPreviewMode(option.mode)}
+              onPointerLeave={() => setPreviewMode(null)}
+              onFocus={() => setPreviewMode(option.mode)}
+              onBlur={() => setPreviewMode(null)}
+              className={cn(
+                PERMISSION_SEGMENT_CLS,
+                "w-7 not-data-checked:hover:bg-hover not-data-checked:hover:text-foreground",
+              )}
+            >
+              <OptionIcon aria-hidden="true" className="size-3.5" />
+            </button>
+          );
+        })}
+      </div>
+      {props.runtimeModeOptions.map((option) => (
+        <span key={option.mode} id={`${descriptionId}-${option.mode}`} className="sr-only">
+          {option.disabledReason ?? option.description}
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -489,10 +526,10 @@ export function ComposerPickerFooter(props: {
     <div className="flex flex-wrap items-center gap-2 border-t border-border bg-(--field) px-2 py-1 empty:hidden">
       {props.traits ? <UltracodeControl traits={props.traits} /> : null}
       {permissions ? (
-        <PermissionsMenu
+        <PermissionsSegments
           runtimeMode={permissions.runtimeMode}
-          options={permissions.runtimeModeOptions}
-          onChange={permissions.onRuntimeModeChange}
+          runtimeModeOptions={permissions.runtimeModeOptions}
+          onRuntimeModeChange={permissions.onRuntimeModeChange}
         />
       ) : null}
     </div>

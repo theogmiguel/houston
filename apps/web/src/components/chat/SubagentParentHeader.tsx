@@ -10,7 +10,7 @@ export function SubagentParentHeader(props: {
   return (
     <div
       data-subagent-parent-header
-      className="flex h-[34px] min-w-0 items-center gap-2 border-b border-border bg-(--pane-head) ps-3 pe-1.5 text-xs text-(--t2)"
+      className="flex h-[34px] min-w-0 shrink-0 items-center gap-2 border-b border-border bg-(--pane-head) ps-3 pe-1.5 text-xs text-(--t2)"
     >
       <UsersIcon aria-hidden className="size-3.25 shrink-0 text-(--houston)" />
       <span className="min-w-0 truncate">

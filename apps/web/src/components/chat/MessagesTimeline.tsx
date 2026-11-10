@@ -99,7 +99,6 @@ import { cn } from "~/lib/utils";
 import { type TimestampFormat } from "@houston-app/contracts/settings";
 import { type HandoffTimelineRun } from "./V2LifecycleRow";
 import type { ThreadStatusPill } from "../Sidebar.logic";
-import { SubagentParentHeader } from "./SubagentParentHeader";
 import { TimelineSystemDivider } from "./TimelineSystemDivider";
 
 import { forwardWheelToTimeline } from "./timelineMinimapWheel";
@@ -1129,46 +1128,35 @@ const ConversationTimeline = memo(function ConversationTimeline({
     />
   );
   const listTopSpacer = topFadeEnabled ? TIMELINE_LIST_FADE_HEADER : TIMELINE_LIST_HEADER;
+  // A side chat's link is a divider in the list; a subagent's strip is pinned above the list by
+  // the view that owns the timeline, so the list keeps its ordinary top inset.
+  const sideChatLink = parentThreadLink?.sideChat === true ? parentThreadLink : null;
   const listHeaderLeadingContent =
-    parentThreadLink === null ? (
+    sideChatLink === null ? (
       listTopSpacer
     ) : (
       <div className="messages-timeline-row-frame">
-        <div
-          className={
-            parentThreadLink.sideChat ? "chat-content-lane pt-1 sm:pt-2" : "chat-content-lane"
-          }
-        >
-          {parentThreadLink.sideChat ? (
-            <TimelineSystemDivider
-              label="Context from"
-              detail={
-                parentThreadLink.environmentLabel === undefined
-                  ? parentThreadLink.title
-                  : `${parentThreadLink.title} on ${parentThreadLink.environmentLabel}`
-              }
-              icon={MessagesSquareIcon}
-              {...(parentThreadLink.open === undefined
-                ? {}
-                : { actionLabel: "Open parent thread", onAction: parentThreadLink.open })}
-            />
-          ) : (
-            <SubagentParentHeader
-              title={parentThreadLink.title}
-              environmentLabel={parentThreadLink.environmentLabel}
-              onOpen={parentThreadLink.open}
-            />
-          )}
+        <div className="chat-content-lane pt-1 sm:pt-2">
+          <TimelineSystemDivider
+            label="Context from"
+            detail={
+              sideChatLink.environmentLabel === undefined
+                ? sideChatLink.title
+                : `${sideChatLink.title} on ${sideChatLink.environmentLabel}`
+            }
+            icon={MessagesSquareIcon}
+            {...(sideChatLink.open === undefined
+              ? {}
+              : { actionLabel: "Open parent thread", onAction: sideChatLink.open })}
+          />
         </div>
       </div>
     );
   const listHeader = (
     <>
-      {parentThreadLink === null ? listHeaderLeadingContent : null}
-      {/* The subagent banner keeps the timeline's top inset, as the first message would. */}
-      {parentThreadLink !== null && !parentThreadLink.sideChat ? listTopSpacer : null}
+      {sideChatLink === null ? listHeaderLeadingContent : null}
       {historyControls ? <TimelineHistoryControl {...historyControls} /> : null}
-      {parentThreadLink !== null ? listHeaderLeadingContent : null}
+      {sideChatLink !== null ? listHeaderLeadingContent : null}
     </>
   );
 

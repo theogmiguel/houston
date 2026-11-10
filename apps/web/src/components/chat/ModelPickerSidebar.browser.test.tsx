@@ -72,3 +72,28 @@ it("gives only the unavailable provider a reason line", async () => {
   const ready = screen.container.querySelector('[data-model-picker-provider="claude"]');
   expect(ready?.textContent).toBe("Claude");
 });
+
+it("wraps a long instance name to two lines instead of truncating it", async () => {
+  const personal = provider({
+    instanceId: ProviderInstanceId.make("claude-personal"),
+    displayName: "Claude Personal",
+  });
+  await using screen = await render(
+    <TooltipProvider delay={0}>
+      <div style={{ width: 120 }}>
+        <ModelPickerSidebar
+          selectedInstanceId={ProviderInstanceId.make("claude-personal")}
+          onSelectInstance={() => {}}
+          onFocusSearch={() => {}}
+          instanceEntries={deriveProviderInstanceEntries([personal])}
+          showFavorites={false}
+        />
+      </div>
+    </TooltipProvider>,
+  );
+  const name = screen.container.querySelector<HTMLElement>("[data-model-picker-provider-name]")!;
+  const lineHeight = Number.parseFloat(getComputedStyle(name).lineHeight);
+  expect(name.textContent).toBe("Claude Personal");
+  expect(name.scrollHeight).toBeLessThanOrEqual(name.clientHeight);
+  expect(name.getBoundingClientRect().height).toBeGreaterThan(lineHeight * 1.5);
+});

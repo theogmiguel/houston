@@ -149,3 +149,39 @@ it("returns focus to the editor when picking the default hides the chip", async 
   await vi.waitFor(() => expect(handle.focusAtEnd).toHaveBeenCalled());
   await expect.element(screen.getByRole("button", { name: "Model" })).not.toHaveFocus();
 });
+
+function ModeToggle(props: { interactionMode: "default" | "plan"; onToggle: () => void }) {
+  return (
+    <ComposerFooterModeControls
+      showInteractionModeToggle
+      interactionMode={props.interactionMode}
+      runtimeMode="full-access"
+      runtimeModeOptions={options}
+      accessDisplay="hidden"
+      onToggleInteractionMode={props.onToggle}
+      onRuntimeModeChange={() => {}}
+    />
+  );
+}
+
+it("renders no Build toggle while the interaction mode is the default", async () => {
+  await using screen = await render(<ModeToggle interactionMode="default" onToggle={() => {}} />, {
+    router: false,
+  });
+  await expect.element(screen.getByRole("button", { name: /plan mode/i })).not.toBeInTheDocument();
+  await expect.element(screen.getByText("Build")).not.toBeInTheDocument();
+});
+
+it("shows the pressed Plan chip in plan mode and returns to the default on click", async () => {
+  const onToggle = vi.fn();
+  await using screen = await render(<ModeToggle interactionMode="plan" onToggle={onToggle} />, {
+    router: false,
+  });
+  const chip = screen.getByRole("button", {
+    name: "Plan mode. Click to return to normal build mode",
+  });
+  await expect.element(chip).toHaveAttribute("aria-pressed", "true");
+  await expect.element(chip).toHaveTextContent("Plan");
+  await userEvent.click(chip);
+  expect(onToggle).toHaveBeenCalledOnce();
+});

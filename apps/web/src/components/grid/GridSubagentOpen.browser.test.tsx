@@ -97,12 +97,42 @@ it(
   APP_BOOT_TEST_TIMEOUT_MS,
 );
 
+const LONG_HISTORY_TURNS = 40;
+
+/** The strip stays under the header while the timeline is scrolled to its bottom. */
+async function expectStripPinnedAtBottom() {
+  await vi.waitFor(() =>
+    expect(document.querySelector("[data-subagent-parent-header]")).not.toBeNull(),
+  );
+  const strip = document.querySelector<HTMLElement>("[data-subagent-parent-header]")!;
+  const scroller = document.querySelector<HTMLElement>(".messages-timeline-scroll")!;
+  expect(scroller).not.toBeNull();
+  // It is not a child of what scrolls, so no scroll position can carry it away.
+  expect(scroller.contains(strip)).toBe(false);
+  expect(strip.getBoundingClientRect().height).toBe(34);
+
+  await vi.waitFor(() => expect(scroller.scrollHeight).toBeGreaterThan(scroller.clientHeight * 2));
+  scroller.scrollTop = scroller.scrollHeight;
+  await vi.waitFor(() => expect(scroller.scrollTop).toBeGreaterThan(scroller.clientHeight));
+  const box = strip.getBoundingClientRect();
+  const view = scroller.getBoundingClientRect();
+  expect(box.bottom).toBeLessThanOrEqual(view.top + 0.5);
+  expect(box.top).toBeGreaterThanOrEqual(0);
+  expect(document.elementFromPoint(box.left + 24, box.top + box.height / 2)).not.toBeNull();
+  expect(strip.contains(document.elementFromPoint(box.left + 24, box.top + box.height / 2))).toBe(
+    true,
+  );
+}
+
 it(
-  "keeps the timeline's top inset above a subagent's parent banner",
+  "keeps a subagent's parent strip under the pane header at the bottom of a long timeline",
   async () => {
     using _environment = installFakeEnvironment([
       threadWithHistory("subagent-parent", 1),
-      { ...threadWithHistory("subagent-child", 1), subagentOf: ThreadId.make("subagent-parent") },
+      {
+        ...threadWithHistory("subagent-child", LONG_HISTORY_TURNS),
+        subagentOf: ThreadId.make("subagent-parent"),
+      },
     ]);
     __setClientSettingsForTests({
       ...DEFAULT_CLIENT_SETTINGS,
@@ -110,15 +140,36 @@ it(
     });
     const gridId = seedGrid(["subagent-child"]);
     await using _screen = await renderGrid(gridId);
+    await expectStripPinnedAtBottom();
+  },
+  APP_BOOT_TEST_TIMEOUT_MS,
+);
 
-    await vi.waitFor(() =>
-      expect(document.querySelector("[data-subagent-parent-header]")).not.toBeNull(),
+it(
+  "keeps a subagent's parent strip under the header in the single-thread view",
+  async () => {
+    using _environment = installFakeEnvironment([
+      threadWithHistory("subagent-parent", 1),
+      {
+        ...threadWithHistory("subagent-child", LONG_HISTORY_TURNS),
+        subagentOf: ThreadId.make("subagent-parent"),
+      },
+    ]);
+    __setClientSettingsForTests({
+      ...DEFAULT_CLIENT_SETTINGS,
+      onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+    });
+    await page.viewport(1200, 800);
+    const router = getRouter(
+      createMemoryHistory({ initialEntries: [`/${ENVIRONMENT_ID}/subagent-child`] }),
     );
-    const banner = document.querySelector("[data-subagent-parent-header]")!;
-    const scroller = banner.closest(".messages-timeline-scroll")!;
-    expect(scroller).not.toBeNull();
-    const inset = banner.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
-    expect(inset).toBeGreaterThanOrEqual(12);
+    await router.load();
+    const container = document.createElement("div");
+    container.style.cssText = "height: 800px; width: 1200px;";
+    await using _screen = await render(<AppRoot router={router} />, { container, router: false });
+    await expectStripPinnedAtBottom();
+    await page.getByRole("button", { name: "Open parent" }).first().click();
+    await vi.waitFor(() => expect(router.state.location.pathname).toContain("subagent-parent"));
   },
   APP_BOOT_TEST_TIMEOUT_MS,
 );

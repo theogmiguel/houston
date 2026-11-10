@@ -15,7 +15,6 @@ import { formatDuration } from "@houston-app/shared/orchestrationTiming";
 import { tickTextContent } from "~/lib/tickTextContent";
 import { cn, isMacPlatform } from "~/lib/utils";
 import { useShortcutModifierState } from "../../shortcutModifierState";
-import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -94,6 +93,13 @@ const boardFocusRing =
 const messageActionPillClassName = cn(
   "inline-flex h-7 shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-(--send) px-3 font-medium text-(--send-ink) text-xs transition-colors hover:bg-(--send)/90 disabled:pointer-events-none disabled:opacity-64 max-phone:rounded-(--r-ctl) max-phone:disabled:bg-(--sel) max-phone:disabled:text-muted-foreground max-phone:disabled:opacity-100",
   boardFocusRing,
+);
+
+/** The two halves of a split pill: a label segment and a chevron segment that opens its menu. */
+const splitPillLabelClassName = cn(messageActionPillClassName, "rounded-r-none pr-3 pl-3.5");
+const splitPillChevronClassName = cn(
+  messageActionPillClassName,
+  "rounded-l-none border-(--send-ink)/25 border-l bg-(--send) px-2",
 );
 
 const messageActionGhostPillClassName = cn(
@@ -322,7 +328,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       <div data-chat-composer-implement-actions="true" className="flex items-center justify-end">
         <button
           type="submit"
-          className={cn(messageActionPillClassName, "rounded-r-none pr-3 pl-3.5")}
+          className={splitPillLabelClassName}
           {...pointerFocusProps}
           disabled={isSendBusy || isSendDisabled || isEnvironmentUnavailable}
         >
@@ -333,10 +339,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
             render={
               <button
                 type="button"
-                className={cn(
-                  messageActionPillClassName,
-                  "rounded-l-none border-(--send-ink)/25 border-l bg-(--send) px-2",
-                )}
+                className={splitPillChevronClassName}
                 aria-label="Implementation actions"
                 onMouseDown={
                   preserveComposerFocusOnPointerDown ? (event) => event.preventDefault() : undefined
@@ -409,7 +412,21 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     isEnvironmentUnavailable ||
     (!hasSendableContent && !showResume);
 
-  const sendButton = (
+  const showDispatchMenu =
+    isRunning && hasSendableContent && !isEditingQueuedMessage && onSubmitWithMode !== undefined;
+
+  const sendButton = showDispatchMenu ? (
+    <button
+      type="submit"
+      className={splitPillLabelClassName}
+      {...pointerFocusProps}
+      onClick={onSubmitMessage}
+      disabled={isSendButtonDisabled}
+      aria-label={submitStatus ?? submitLabel}
+    >
+      {isQueuing ? "Queue" : "Steer"}
+    </button>
+  ) : (
     <button
       type={showResume ? "button" : "submit"}
       className={cn(
@@ -451,19 +468,16 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     </Tooltip>
   );
 
-  const showDispatchMenu =
-    isRunning && hasSendableContent && !isEditingQueuedMessage && onSubmitWithMode !== undefined;
   if (showDispatchMenu) {
     return (
-      <div className="flex items-center gap-0.5" data-chat-composer-send-menu="true">
+      <div className="flex items-center" data-chat-composer-send-menu="true">
         {submit}
         <Menu>
           <MenuTrigger
             render={
-              <Button
+              <button
                 type="button"
-                size="icon-xs"
-                variant="ghost-muted"
+                className={splitPillChevronClassName}
                 aria-label="Send options"
                 onMouseDown={
                   preserveComposerFocusOnPointerDown ? (event) => event.preventDefault() : undefined

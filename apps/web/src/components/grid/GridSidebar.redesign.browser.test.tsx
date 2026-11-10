@@ -58,6 +58,12 @@ function thread(overrides: Record<string, unknown> = {}): EnvironmentThreadShell
     autoSettleDisabledAt: null,
     lastVisitedAt: null,
     unsettledAt: null,
+    lineage: {
+      relationshipToParent: null,
+      parentThreadId: null,
+      rootThreadId: "thread-a",
+      sideChat: false,
+    },
     ...overrides,
   } as unknown as EnvironmentThreadShell;
 }
@@ -197,7 +203,7 @@ describe("grid sidebar", () => {
       </>,
     );
 
-    expect(screen.getByRole("button", { name: /^v2 rebuild 2$/ }).element()).toBeVisible();
+    expect(screen.getByRole("button", { name: /^v2 rebuild$/ }).element()).toBeVisible();
     expect(screen.getByRole("button", { name: /^Grid 2 empty$/ }).element()).toBeVisible();
     expect(screen.container.textContent).not.toContain("notes");
     expect(screen.container.textContent).not.toContain("Workspaces");
@@ -212,7 +218,7 @@ describe("grid sidebar", () => {
       }),
     );
 
-    expect(screen.getByRole("button", { name: /^Landing copy 1$/ }).element()).toBeVisible();
+    expect(screen.getByRole("button", { name: /^Landing copy$/ }).element()).toBeVisible();
     expect(screen.container.textContent).not.toContain("houston-site");
     const row = screen.container.querySelector("[data-thread-key]") as HTMLElement;
     expect(getComputedStyle(row).paddingLeft).toBe("8px");

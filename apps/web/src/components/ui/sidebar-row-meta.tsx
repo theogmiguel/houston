@@ -19,19 +19,21 @@ const ROW_META_COUNTER_PX = 30;
 /**
  * One whole item of a row's second line. The line drops items from the right when they do not fit;
  * `label` names a dropped item in the counter's tooltip and accessible name, `minWidth` is the
- * narrowest the item can be (a branch name ellipsizes to it), and `keep` exempts the item from
- * dropping.
+ * narrowest the item can be (a branch name ellipsizes to it), `keep` exempts the item from
+ * dropping, and `dropsFirst` makes it the first to go, ahead of the items to its left.
  */
 export function RowMetaItem({
   label,
   minWidth,
   keep = false,
+  dropsFirst = false,
   className,
   children,
 }: {
   label: string;
   minWidth?: number;
   keep?: boolean;
+  dropsFirst?: boolean;
   className?: string;
   children: ReactNode;
 }) {
@@ -41,6 +43,7 @@ export function RowMetaItem({
       data-meta-label={label}
       data-meta-min-width={minWidth}
       data-meta-keep={keep ? "" : undefined}
+      data-meta-drops-first={dropsFirst ? "" : undefined}
       style={
         minWidth === undefined ? undefined : ({ "--meta-min-w": `${minWidth}px` } as CSSProperties)
       }
@@ -66,22 +69,24 @@ interface FitResult {
  * marked `keep` stays. When something drops, the counter's width is reserved.
  */
 export function fitMetaItems(
-  items: ReadonlyArray<{ width: number; keep: boolean; label: string }>,
+  items: ReadonlyArray<{ width: number; keep: boolean; label: string; dropsFirst?: boolean }>,
   available: number,
 ): FitResult {
-  const widthOf = (count: number): number =>
-    items.slice(0, count).reduce((sum, item) => sum + item.width, 0) +
-    ROW_META_GAP_PX * Math.max(0, count - 1);
-  if (widthOf(items.length) <= available) {
+  const widthOf = (indexes: ReadonlyArray<number>): number =>
+    indexes.reduce((sum, index) => sum + (items[index]?.width ?? 0), 0) +
+    ROW_META_GAP_PX * Math.max(0, indexes.length - 1);
+  const all = items.map((_, index) => index);
+  if (widthOf(all) <= available) {
     return { hidden: items.map(() => false), labels: [] };
   }
   const limit = available - ROW_META_COUNTER_PX;
-  let count = items.length;
-  while (count > 0 && widthOf(count) > limit) count -= 1;
-  // An item that must stay is never dropped, whatever the width.
+  // Items marked to go first leave before the line starts dropping from the right.
+  const shown = all.filter((index) => !items[index]?.dropsFirst || items[index]?.keep);
   const lastKept = items.reduce((last, item, index) => (item.keep ? index : last), -1);
-  count = Math.max(count, lastKept + 1);
-  const hidden = items.map((_, index) => index >= count);
+  // An item that must stay is never dropped, whatever the width.
+  while (shown.length > 0 && widthOf(shown) > limit && shown.at(-1)! > lastKept) shown.pop();
+  const keptIndexes = new Set(shown);
+  const hidden = items.map((_, index) => !keptIndexes.has(index));
   return {
     hidden,
     labels: items.filter((_, index) => hidden[index]).map((item) => item.label),
@@ -112,6 +117,7 @@ export function RowMeta({ children }: { children: ReactNode }) {
               ? element.offsetWidth
               : Number(element.dataset.metaMinWidth),
           keep: element.dataset.metaKeep !== undefined,
+          dropsFirst: element.dataset.metaDropsFirst !== undefined,
           label: element.dataset.metaLabel ?? "",
         })),
         line.clientWidth,

@@ -93,7 +93,6 @@ import {
   deriveComposerSendState,
   getAntigravitySendBlockReason,
   resolveComposerInteractionMode,
-  threadShellHasStarted,
 } from "../ChatView.logic";
 import {
   dataTransferHasComposerMention,
@@ -220,6 +219,7 @@ import {
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
 import {
   ComposerSpeechMicButton,
+  ComposerSpeechPreview,
   ComposerSpeechTray,
   ComposerSpeechUnavailableMic,
 } from "./ComposerSpeechButton";
@@ -244,7 +244,6 @@ import { readPromptUltrathink } from "./TraitsPicker";
 import {
   providerSupportsManualCompaction,
   resolveContextWindowModelDisplayName,
-  shouldReserveContextWindowMeter,
 } from "./ContextWindowMeter.logic";
 import {
   buildAttachmentVideoPreview,
@@ -1101,14 +1100,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeThreadModelSelection,
     modelOptionsByInstance,
   );
-  const reserveContextWindowMeter = shouldReserveContextWindowMeter({
-    meterEnabled: settings.contextWindowMeterEnabled,
-    detailLoading: props.threadSyncPhase === "loading",
-    threadStarted: threadShellHasStarted(props.activeThreadShell),
-    providerReportsContextWindow: selectedProviderStatus
-      ? selectedProviderStatus.reportsContextWindow === true
-      : null,
-  });
 
   const [composerCursor, setComposerCursor] = useState(() => {
     const value = isLiteralPendingAnswer ? (activePendingProgress?.customAnswer ?? prompt) : prompt;
@@ -2080,9 +2071,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       state={speechInput.state}
       shortcutLabel={dictationShortcutLabel}
       disabled={dictationDisabled}
+      inline
       onStart={() => void speechInput.start()}
       onStop={() => void speechInput.stop()}
       onCancel={() => void speechInput.cancel()}
+      onSkipPostProcessing={() => speechInput.skipPostProcessing()}
     />
   ) : speechInput.unavailableReason ? (
     <ComposerSpeechUnavailableMic reason={speechInput.unavailableReason} />
@@ -3812,14 +3805,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               onCancelDownload={() => void speechInput.setup.cancelDownload()}
               onStartRecording={() => void speechInput.setup.startRecording()}
             />
-            <ComposerSpeechTray
-              state={speechInput.state}
-              progress={speechInput.progress}
-              level={speechInput.level}
-              preview={speechInput.preview}
-              onCancel={() => void speechInput.cancel()}
-              onSkipPostProcessing={() => speechInput.skipPostProcessing()}
-            />
+            {/* Recording and transcribing read on the mic button; the tray keeps the rest. */}
+            {speechInput.state.phase === "preparing" || speechInput.state.phase === "error" ? (
+              <ComposerSpeechTray
+                state={speechInput.state}
+                progress={speechInput.progress}
+                level={speechInput.level}
+                preview={null}
+                onCancel={() => void speechInput.cancel()}
+                onSkipPostProcessing={() => speechInput.skipPostProcessing()}
+              />
+            ) : null}
             <ComposerBannerStack items={shelfItems} />
             {showComposerTopDrawer ? (
               <ComposerBanner.Root
@@ -4065,6 +4061,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     }
                   />
                 </ComposerContextActionsContext>
+                <ComposerSpeechPreview preview={speechInput.preview} />
                 {showMobilePendingAnswerActions ? (
                   <div
                     data-chat-composer-mobile-pending-actions="true"
@@ -4164,7 +4161,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     activeContextWindow={
                       settings.contextWindowMeterEnabled ? activeContextWindow : null
                     }
-                    reserveContextWindowMeter={reserveContextWindowMeter}
                     activeThreadModelDisplayName={activeThreadModelDisplayName}
                     pendingAction={pendingPrimaryAction}
                     isRunning={phase === "running"}

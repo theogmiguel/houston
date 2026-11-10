@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
+import { observeVisibleAnimation } from "~/lib/visibleAnimation";
 import { Text } from "./text";
 import { useReducedMotion } from "../../hooks/useReducedMotion";
 
@@ -44,8 +45,35 @@ export function VoiceWaveform(props: { level: number }) {
   );
 }
 
-/** The waveform, a live dot and the recording clock. */
-export function RecordingStatus(props: { level: number }) {
+/** Rest heights when motion is reduced, mixed so the bars still read as a level meter. */
+const VOICE_BAR_REST_SCALES = [0.45, 0.9, 0.6, 0.75] as const;
+const VOICE_BAR_DELAYS_MS = [0, 220, 110, 330] as const;
+
+/** Four bars that scale on the compositor in place of the mic glyph while recording. */
+export function DictationBars() {
+  return (
+    <span
+      ref={observeVisibleAnimation}
+      aria-hidden
+      data-voice-bars
+      className="flex h-3.5 items-center gap-0.5"
+    >
+      {VOICE_BAR_REST_SCALES.map((scale, index) => (
+        <span
+          key={scale}
+          className="voice-bar h-full w-0.5 origin-center rounded-full bg-current"
+          style={{
+            transform: `scaleY(${scale})`,
+            animationDelay: `${VOICE_BAR_DELAYS_MS[index]}ms`,
+          }}
+        />
+      ))}
+    </span>
+  );
+}
+
+/** The recording clock, counting from when it mounts. */
+export function RecordingClock(props: { className?: string }) {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- Run the elapsed recording clock only while the recording status is mounted.
@@ -60,12 +88,26 @@ export function RecordingStatus(props: { level: number }) {
 
   const minutes = Math.floor(elapsedSeconds / 60);
   return (
+    <Text
+      as="span"
+      variant="caption"
+      tone="muted"
+      tabular
+      className={props.className ?? "shrink-0"}
+      data-recording-clock
+    >
+      {minutes}:{String(elapsedSeconds % 60).padStart(2, "0")}
+    </Text>
+  );
+}
+
+/** The waveform, a live dot and the recording clock. */
+export function RecordingStatus(props: { level: number }) {
+  return (
     <>
       <VoiceWaveform level={props.level} />
       <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-primary" />
-      <Text as="span" variant="caption" tone="muted" tabular className="shrink-0">
-        {minutes}:{String(elapsedSeconds % 60).padStart(2, "0")}
-      </Text>
+      <RecordingClock />
     </>
   );
 }

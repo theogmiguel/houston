@@ -81,16 +81,20 @@ sections without the rail's header and footer, a top bar with search and new thr
 bottom tab bar for **Threads**, **Pull requests**, **Usage** and **Settings**. A thread opens
 alone with a back control that returns to the list.
 
-Every project and grid heading shows how many threads it holds, and small pips for the
-threads that failed or wait for you. Hovering or focusing a heading swaps the pips for its
-actions, including **New thread** (the **+** button). A collapsed project or grid still lists
-the thread that is open, and the project heading stays pinned at the top of the list while
-its threads scroll.
+Each project hangs its grids from a thin guide line, and each grid hangs its threads from
+another. The project is the only bold row; a project with no grids or threads is muted. The grid
+on screen is drawn in the primary text colour with a stronger guide. A collapsed project or grid
+shows how many threads it holds on its right, with an amber dot when any of them waits for you
+or failed; an open one shows nothing there. Hovering or focusing a row shows its actions,
+including **New thread** (the **+** button), in place of the count. A collapsed project or grid
+still lists the thread that is open, and the project heading stays pinned at the top of the list
+while its threads scroll. On a narrow sidebar a thread's branch name shortens first, and the
+running sub-agent count is the first item to drop from the line.
 
 **Show Needs you** in the rail's **View options** pins one section above the projects with the
 threads waiting on you from every project: input and approval requests first, then failures and
 threads that came back. Those threads leave their project sections, which instead end with a
-muted **+N in Needs you** line; the heading pips still count them. The setting is off by default
+muted **+N in Needs you** line; the amber dot on a collapsed heading still counts them. The setting is off by default
 on desktop and on by default in a phone-width browser; a saved choice wins on either. The
 section is hidden when nothing is waiting.
 
@@ -218,7 +222,8 @@ Typing `@` also lists the models of your enabled providers. Choosing one inserts
 that names that model for the agent, for example to have a subagent use it. The chip is sent as
 the text `model:<provider>/<model>`. The `@` list and the chips are in the web and desktop apps.
 
-While a turn is running, the send menu offers **Queue message**, **Steer message** and
+While a turn is running, the send button reads **Steer** or **Queue** and its chevron opens
+the send menu, which offers **Queue message**, **Steer message** and
 **Interrupt and send**. Steering is disabled for providers that cannot accept it. Queued
 and steered messages show their delivery state, and a dropped message names the reason.
 **Follow-up behavior** in **Settings ▸ Chat** sets what a plain send does while a turn
@@ -226,8 +231,9 @@ runs.
 
 `Ctrl+S` stashes the current prompt. The stash menu restores or deletes a stashed prompt.
 
-**Plan mode** is optional and off by default (**Settings ▸ Labs**). It asks the agent to
-propose a plan before acting; the proposed plan card can implement it in a new thread.
+**Plan mode** is optional and off by default (**Settings ▸ Labs**). Enter it with `/plan` or
+`Shift+Tab`; a **Plan** chip then shows in the composer and returns to the default mode when
+clicked. It asks the agent to propose a plan before acting; the proposed plan card can implement it in a new thread.
 **Side chat** opens a read-only aside beside the thread: it can read the conversation and
 the project, but cannot edit files, run commands or interrupt the run. **Second opinion** on
 an assistant reply asks another provider or model; its card
@@ -262,7 +268,8 @@ their work is merged or closed, depending on those settings.
 
 An agent can delegate work to other threads through the server's orchestration tools. The
 parent thread shows its children in the timeline and in the thread relationships card;
-**Open parent thread** returns from a child. A child's question or approval request appears
+**Open parent thread** returns from a child; a subagent's **Open parent** strip stays pinned under
+the thread header however far the timeline is scrolled. A child's question or approval request appears
 in the parent's pending approvals and needs your answer there. Agents reach threads,
 tasks and pulls through the server's MCP toolkits, not through the terminal.
 
