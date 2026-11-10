@@ -30,4 +30,15 @@ describe("CommandPalette open intents", () => {
     await expect.element(input).toHaveFocus();
     await expect.element(input).toHaveValue("acme");
   });
+
+  it("finds the entry for connecting another app when searching for mcp", async () => {
+    setup();
+    await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
+
+    openCommandPalette({ query: "mcp" });
+
+    await expect
+      .element(page.getByText("Use Houston in another app (MCP)", { exact: true }))
+      .toBeInTheDocument();
+  });
 });
