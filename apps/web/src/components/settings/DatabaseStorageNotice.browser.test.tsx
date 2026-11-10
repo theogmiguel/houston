@@ -3,7 +3,7 @@ import { RegistryProvider } from "@effect/atom-react";
 import { EnvironmentId } from "@houston-app/contracts";
 import * as Cause from "effect/Cause";
 import { type ReactNode } from "react";
-import { beforeEach, expect, it, vi } from "vite-plus/test";
+import { expect, it, vi } from "vite-plus/test";
 
 const state = vi.hoisted(() => ({
   reclaim: vi.fn(),
@@ -73,14 +73,15 @@ const reclaimButton = (container: HTMLElement) =>
     /Reclaim/.test(button.textContent ?? ""),
   );
 
-beforeEach(() => {
+const reset = () => {
   state.reclaim.mockReset();
   state.allowed = true;
   state.offers = [{ environmentId, status: { reclaimableBytes: 200 * 1024 ** 2 } }];
   vi.mocked(toastManager.add).mockClear();
-});
+};
 
 it("offers a one-click reclaim with the size it would return", async () => {
+  reset();
   await using screen = await render(panel());
 
   await expect.element(screen.getByText("200 MB on This machine")).toBeInTheDocument();
@@ -88,6 +89,7 @@ it("offers a one-click reclaim with the size it would return", async () => {
 });
 
 it("offers nothing for a server that cannot reclaim or when nothing is worth returning", async () => {
+  reset();
   {
     await using screen = await render(
       panel([{ environmentId, label: "Old server", serverConfig: null } as never]),
@@ -100,6 +102,7 @@ it("offers nothing for a server that cannot reclaim or when nothing is worth ret
 });
 
 it("disables the button without the settings grant", async () => {
+  reset();
   state.allowed = false;
   await using screen = await render(panel());
 
@@ -107,6 +110,7 @@ it("disables the button without the settings grant", async () => {
 });
 
 it("reports a refusal with the server's own message", async () => {
+  reset();
   const message = "Reclaiming needs 128 MiB of free disk space; 10 MiB is free.";
   state.reclaim.mockResolvedValue({ _tag: "Failure", cause: Cause.fail({ message }) });
   await using screen = await render(panel());
@@ -126,6 +130,7 @@ it("reports a refusal with the server's own message", async () => {
 });
 
 it("says what is left when one request hit its time limit", async () => {
+  reset();
   state.reclaim.mockResolvedValue({
     _tag: "Success",
     value: {

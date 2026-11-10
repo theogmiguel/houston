@@ -7,6 +7,8 @@ import {
 import { isLoopbackHost } from "@houston-app/shared/preview";
 
 /** A command-line agent that connects to Houston's MCP server over HTTP with OAuth. */
+const TRAILING_SLASHES = /\/+$/;
+
 export interface McpClientApp {
   readonly id: string;
   readonly name: string;
@@ -47,7 +49,7 @@ export function environmentMcpUrl(httpBaseUrl: string): string {
   } catch {
     throw new Error(`Expected the environment's http(s) address, got "${httpBaseUrl}".`);
   }
-  base.pathname = `${base.pathname.replace(/\/+$/, "")}/mcp`;
+  base.pathname = `${base.pathname.replace(TRAILING_SLASHES, "")}/mcp`;
   base.search = "";
   base.hash = "";
   return base.toString();
@@ -71,7 +73,7 @@ export function mcpAccessDenial(
   policy: ManagedPolicySummary | undefined,
 ): string | undefined {
   if (!mcpClientScopes(access).every((scope) => session.has(scope))) {
-    return `Your session here cannot approve the "${access.replace(/-/g, " ")}" level.`;
+    return `Your session here cannot approve the "${access.replaceAll("-", " ")}" level.`;
   }
   return access === "read-only" ? undefined : managedRuntimeModeDenial(policy, access);
 }

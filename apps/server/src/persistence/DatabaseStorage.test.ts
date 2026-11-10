@@ -427,10 +427,10 @@ it.effect("a one-click reclaim refuses a database that cannot shrink online", ()
         ),
         Layer.provideMerge(testConfig),
         Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+        // Resolving the doctor command reads PATH and the file system, as the server's own context does.
+        Layer.provideMerge(NodeServices.layer),
       ),
     ),
-    // Resolving the doctor command reads PATH and the file system, as the server's own context does.
-    Effect.provide(NodeServices.layer),
   ),
 );
 

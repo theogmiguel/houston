@@ -22,6 +22,7 @@ import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { Dialog } from "../ui/dialog";
 import { RadioGroup } from "../ui/radio-group";
+import { Text } from "../ui/text";
 import { WizardFooter, WizardHeader, WizardPanel, WizardPopup, WizardSteps } from "../ui/wizard";
 import {
   MCP_CLIENT_APPS,
@@ -60,7 +61,9 @@ function UseInAnotherAppDialog() {
           <>
             <WizardHeader title={TITLE} />
             <WizardPanel>
-              <p className="text-sm text-muted-foreground">Connect to an environment first.</p>
+              <Text as="p" tone="muted">
+                Connect to an environment first.
+              </Text>
             </WizardPanel>
           </>
         ) : (
@@ -107,13 +110,13 @@ function Wizard({ environmentId }: { readonly environmentId: EnvironmentId }) {
       </WizardHeader>
       <WizardPanel>
         {approvalCodes === false ? (
-          <p className="text-sm text-muted-foreground">
+          <Text as="p" tone="muted">
             This environment is too old to create sign-in codes. Update it, then try again.
-          </p>
+          </Text>
         ) : mcpUrl === null ? (
-          <p className="text-sm text-muted-foreground">
+          <Text as="p" tone="muted">
             This environment is not connected, so it has no address to give an app.
-          </p>
+          </Text>
         ) : step === 0 ? (
           <RadioGroup
             aria-label="App"
@@ -156,10 +159,10 @@ function Wizard({ environmentId }: { readonly environmentId: EnvironmentId }) {
                 />
               ))}
             </RadioGroup>
-            <p className="text-xs text-muted-foreground">
+            <Text as="p" variant="caption" tone="muted">
               Beyond read only, it can start, message and stop threads, and none of them can run
               with more than the mode you pick.
-            </p>
+            </Text>
           </div>
         ) : access === null ? null : (
           <ConnectStep
@@ -240,38 +243,48 @@ function ConnectStep({
   return (
     <div className="space-y-4">
       <div className="space-y-2">
-        <span className="text-sm font-medium">Address</span>
+        <Text weight="medium">Address</Text>
         <CommandBlock command={mcpUrl} />
-        {urlNote === null ? null : <p className="text-xs text-muted-foreground">{urlNote}</p>}
+        {urlNote === null ? null : (
+          <Text as="p" variant="caption" tone="muted">
+            {urlNote}
+          </Text>
+        )}
       </div>
       {commands.length === 0 ? null : (
         <div className="space-y-2">
-          <span className="text-sm font-medium">Run where the agent runs</span>
+          <Text weight="medium">Run where the agent runs</Text>
           {commands.map((command) => (
             <CommandBlock key={command} command={command} />
           ))}
-          {note === undefined ? null : <p className="text-xs text-muted-foreground">{note}</p>}
+          {note === undefined ? null : (
+            <Text as="p" variant="caption" tone="muted">
+              {note}
+            </Text>
+          )}
         </div>
       )}
       {steps.length === 0 ? null : (
-        <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+        <ol className="flex flex-col gap-1">
           {steps.map((step) => (
-            <li key={step}>{step}</li>
+            <Text as="li" tone="muted" key={step}>
+              {step}
+            </Text>
           ))}
-        </ul>
+        </ol>
       )}
       <div className="space-y-2">
-        <span className="text-sm font-medium">Sign-in code</span>
-        <p className="text-xs text-muted-foreground">
+        <Text weight="medium">Sign-in code</Text>
+        <Text as="p" variant="caption" tone="muted">
           When the app opens the sign-in page, paste this code there. It works once and approves
           only the level you chose.
-        </p>
+        </Text>
         {code.status === "ready" ? (
           <div className="space-y-1">
             <CommandBlock command={code.code} />
-            <p className="text-xs text-muted-foreground">
+            <Text as="p" variant="caption" tone="muted">
               Expires in {code.minutes} {code.minutes === 1 ? "minute" : "minutes"}.
-            </p>
+            </Text>
           </div>
         ) : (
           <Button
