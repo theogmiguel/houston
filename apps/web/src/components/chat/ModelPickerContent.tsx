@@ -163,6 +163,8 @@ function adjacentModelPickerProvider(input: {
 
 const EMPTY_MODEL_JUMP_LABELS = new Map<string, string>();
 const MODEL_LIST_ESTIMATED_ITEM_SIZE = 34;
+/** A phone row is a 44px tap target, so the list sizes to it. */
+const PHONE_MODEL_LIST_ITEM_SIZE = 44;
 /** A model list shows its rows up to this many, then scrolls. */
 const MAX_VISIBLE_MODEL_ROWS = 8;
 
@@ -255,7 +257,9 @@ function ModelPickerList({
   rows,
   extraData,
   renderItem,
+  phone = false,
 }: {
+  phone?: boolean;
   listRef: RefObject<LegendListRef | null>;
   itemKeys: ReadonlyArray<string>;
   /** How many rows the list shows before it scrolls; the frame sizes to content. */
@@ -276,6 +280,7 @@ function ModelPickerList({
   };
 
   // Disabled-reason closures rebuild identical key arrays; compare contents.
+  const itemSize = phone ? PHONE_MODEL_LIST_ITEM_SIZE : MODEL_LIST_ESTIMATED_ITEM_SIZE;
   const itemListKey = JSON.stringify(itemKeys);
   const [fadesResetFor, setFadesResetFor] = useState(itemListKey);
   if (fadesResetFor !== itemListKey) {
@@ -301,27 +306,29 @@ function ModelPickerList({
   return (
     <div
       className={cn(
-        "relative min-h-0 shrink-0 overflow-hidden pr-px",
+        "relative min-h-0 shrink-0 overflow-hidden",
+        !phone && "pr-px",
         itemKeys.length === 0 && "h-0",
       )}
-      style={itemKeys.length > 0 ? { height: rows * MODEL_LIST_ESTIMATED_ITEM_SIZE } : undefined}
+      style={itemKeys.length > 0 ? { height: rows * itemSize + (phone ? 8 : 0) } : undefined}
     >
-      <ComboboxListVirtualized>
+      <ComboboxListVirtualized flush={phone}>
         <LegendList<string>
           ref={listRef}
           data={itemKeys}
           extraData={extraData}
           keyExtractor={(modelKey) => modelKey}
           renderItem={renderItem}
-          estimatedItemSize={MODEL_LIST_ESTIMATED_ITEM_SIZE}
+          estimatedItemSize={itemSize}
           drawDistance={480}
           recycleItems
-          contentContainerClassName="px-1.5"
+          contentContainerClassName={phone ? "px-0" : "px-1.5"}
           ItemSeparatorComponent={ModelListSeparator}
           onLayout={updateScrollFades}
           onScroll={updateScrollFades}
           className={cn(
-            "scrollbar-gutter-stable h-full overflow-x-hidden overscroll-y-contain py-1.5 [&::-webkit-scrollbar-track]:my-2",
+            "h-full overflow-x-hidden overscroll-y-contain [&::-webkit-scrollbar-track]:my-2",
+            phone ? "py-1" : "scrollbar-gutter-stable py-1.5",
             getVirtualizedScrollFadeClassName({
               top: showTopScrollFade,
               bottom: showBottomScrollFade,
@@ -368,6 +375,8 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   searchInputRef: RefObject<HTMLInputElement | null>;
   /** Sits above an effort panel: fills the shared frame's width. */
   docked?: boolean;
+  /** One column for a phone sheet: providers in a row above the list, 44px rows, a 16px gutter. */
+  phone?: boolean;
   /** Right at the end of the search text moves into the popup's effort panel. */
   onFocusEffort?: () => void;
 }) {
@@ -839,7 +848,8 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         // The list sizes to its models, up to eight rows, so a short provider never leaves a
         // clipped row and a long one scrolls.
         className={cn(
-          "relative flex max-h-(--available-height) max-w-[calc(100vw-2rem)] flex-col overflow-hidden bg-(--raised)",
+          "relative flex max-h-(--available-height) flex-col overflow-hidden bg-(--raised)",
+          !props.phone && "max-w-[calc(100vw-2rem)]",
           props.docked ? MODEL_PICKER_DOCKED_CLASS : "w-[26.75rem] rounded-lg border border-border",
         )}
         data-model-picker-content="true"
@@ -886,7 +896,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
             }
           }}
         >
-          <div className="flex min-h-0 flex-1 flex-row">
+          <div className={cn("flex min-h-0 flex-1", props.phone ? "flex-col" : "flex-row")}>
             {showSidebar ? (
               <ModelPickerSidebar
                 selectedInstanceId={selectedInstanceId}
@@ -894,6 +904,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                 onFocusSearch={focusSearchInput}
                 instanceEntries={sidebarInstanceEntries}
                 showFavorites
+                phone={props.phone === true}
 
                 {...(selectableUnavailableInstanceIds ? { selectableUnavailableInstanceIds } : {})}
                 {...(lockedDisabledInstanceIds
@@ -906,12 +917,20 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
               />
             ) : null}
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-              <div className="mx-1.5 mt-1.5 mb-1 flex h-7 shrink-0 items-center gap-1.75 rounded-md bg-(--field) px-2 text-(--houston)">
+              <div
+                className={cn(
+                  "flex shrink-0 items-center gap-1.75 rounded-md bg-(--field) text-(--houston)",
+                  props.phone ? "mx-4 mt-2 mb-1 h-11 px-3" : "mx-1.5 mt-1.5 mb-1 h-7 px-2",
+                )}
+              >
                 <SearchIcon aria-hidden="true" className="size-3.25 shrink-0" />
                 <ComboboxPrimitive.Input
                   ref={searchInputRef}
                   placeholder="Search models"
-                  className="h-5 min-w-0 flex-1 bg-transparent p-0 text-(--t1) text-xs leading-5 outline-none placeholder:text-(--houston)"
+                  className={cn(
+                    "min-w-0 flex-1 bg-transparent p-0 text-(--t1) text-xs outline-none placeholder:text-(--houston)",
+                    props.phone ? "h-full" : "h-5 leading-5",
+                  )}
                   value={searchQuery}
                   onChange={(e) => {
                     setSearchQuery(e.target.value);
@@ -980,6 +999,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
               </div>
 
               <ModelPickerList
+                phone={props.phone === true}
                 listRef={modelListRef}
                 itemKeys={filteredItemKeys}
                 rows={Math.min(
@@ -995,10 +1015,16 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                         index={index}
                         value={modelKey}
                         aria-expanded={legacySection.isExpanded}
+                        density={props.phone ? "phone" : "default"}
                         className="group w-full cursor-pointer"
                         data-model-picker-legacy-section="true"
                       >
-                        <div className="flex h-7 min-w-0 flex-1 items-center gap-1.5 px-2 text-(--houston) text-xs">
+                        <div
+                          className={cn(
+                            "flex min-w-0 flex-1 items-center gap-1.5 text-(--houston) text-xs",
+                            props.phone ? "h-11" : "h-7 px-2",
+                          )}
+                        >
                           <ChevronDownIcon
                             aria-hidden="true"
                             className={cn(
@@ -1045,6 +1071,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                         Boolean(model.subProvider)
                       }
                       multiple={onToggleModel !== undefined}
+                      phone={props.phone === true}
                       showNewBadge={model.badge === "new"}
                       unavailable={model.isUnavailable === true}
                       jumpLabel={modelJumpLabelByKey.get(modelKey) ?? null}

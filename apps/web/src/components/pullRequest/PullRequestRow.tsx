@@ -36,7 +36,7 @@ const LABEL_SLOTS = [
 function PullRequestRowLabels({ labels }: { labels: EnvironmentPullRequestEntry["labels"] }) {
   if (labels.length === 0) return null;
   return (
-    <span className="flex min-w-0 items-center gap-1">
+    <span className="flex min-w-0 items-center gap-1 max-[22rem]:hidden">
       {LABEL_SLOTS.map((slot, index) => {
         const label = labels[index];
         if (!label) return null;
@@ -63,7 +63,7 @@ function PullRequestRowLabels({ labels }: { labels: EnvironmentPullRequestEntry[
   );
 }
 
-const PAGE_ROW_CLASS = "px-2.5 py-2";
+const PAGE_ROW_CLASS = "px-2.5 py-2 max-phone:min-h-11 max-phone:rounded-none max-phone:px-0";
 
 // These providers put checks on the row; the others need the request opened.
 const CHECK_STATE_KNOWN_PROVIDERS = new Set(["github", "gitcafe", "gitlab"]);
@@ -119,7 +119,11 @@ function PullRequestRowImpl({
       data-pull-request-key={statsKey}
       className={cn(
         "mx-1.5 flex items-center rounded-lg [content-visibility:auto] [contain-intrinsic-block-size:52.5px]",
-        selected ? "bg-hover" : "hover:bg-hover/60",
+        // A phone's row spans the page's gutter-to-gutter width and keeps no fill at rest.
+        "max-phone:mx-0 max-phone:rounded-none max-phone:active:bg-hover/60",
+        selected
+          ? "bg-hover max-phone:bg-transparent"
+          : "hover:bg-hover/60 max-phone:hover:bg-transparent",
       )}
     >
       <button
@@ -252,10 +256,12 @@ function PullRequestRowImpl({
               ) : null}
               <PullRequestRowAuthor
                 actor={entry.author}
-                className="min-w-3.5 max-w-40"
-                labelClassName="sr-only @xs/pr-row-meta:not-sr-only @xs/pr-row-meta:truncate"
+                className="min-w-3.5 max-w-40 max-phone:max-w-none"
+                labelClassName="sr-only @xs/pr-row-meta:not-sr-only @xs/pr-row-meta:truncate max-phone:not-sr-only max-phone:truncate"
               />
-              {showProjectTitle ? <span className="truncate">{entry.repository}</span> : null}
+              {showProjectTitle ? (
+                <span className="truncate max-phone:hidden">{entry.repository}</span>
+              ) : null}
               {environmentLabel ? (
                 <span className="min-w-0 max-w-32 truncate">{environmentLabel}</span>
               ) : null}

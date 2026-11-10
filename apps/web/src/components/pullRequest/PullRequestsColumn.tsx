@@ -17,6 +17,7 @@ import { WorkspacePageHeader } from "../WorkspacePageHeader";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { MERGE_QUEUE_COUNT_BADGE, MERGE_QUEUE_COUNT_BADGE_PARKED } from "../ui/merge-queue-recipes";
 import { workspaceAreaProps } from "../../lib/workspaceFocus";
+import { PhonePageBar } from "../../mobile/PhonePageBar";
 import { PullRequestCompactFilterMenu } from "./PullRequestCompactFilterMenu";
 import type { PullRequestFilterOption } from "./PullRequestListFilters";
 import { INVOLVEMENT_TABS, STATE_TABS } from "./pullRequestListOptions";
@@ -96,7 +97,10 @@ export function PullRequestsColumn({
   listBody,
   queueBody,
   scrollRef,
+  phone = false,
 }: {
+  /** A phone swaps the desktop top bar for its own bar and stacks the controls at 44px. */
+  phone?: boolean;
   refreshing: boolean;
   onRefresh: () => void;
   searchValue: string;
@@ -129,10 +133,10 @@ export function PullRequestsColumn({
   useEffect(() => {
     const marker = markerRef.current;
     if (!marker) return;
-    return observeIntersection(marker, (entry) => setCondensed(!entry.isIntersecting), {
+    return observeIntersection(marker, (entry) => setCondensed(!phone && !entry.isIntersecting), {
       root: scrollRef.current,
     });
-  }, [scrollRef]);
+  }, [phone, scrollRef]);
   // Typing into the topbar search narrows the list, and a short enough list un-scrolls the
   // page — which dissolves the condensed topbar and unmounts the very input being typed in.
   const topbarSearchFocusedRef = useRef(false);
@@ -168,6 +172,29 @@ export function PullRequestsColumn({
     input.setSelectionRange(input.value.length, input.value.length);
   }, [condensed]);
 
+  const viewToggle = (
+    <ToggleGroup
+      aria-label="Pull request view"
+      variant="segmented"
+      className="max-phone:w-full max-phone:*:h-11 max-phone:*:flex-1"
+      value={[view]}
+      onValueChange={(next) => {
+        const value = next[0];
+        if (value === "requests" || value === "queue") onView(value);
+      }}
+    >
+      <Toggle value="requests">Requests</Toggle>
+      <Toggle value="queue">
+        Merge queue
+        {queueCount === null ? null : (
+          <span className={queueParked ? MERGE_QUEUE_COUNT_BADGE_PARKED : MERGE_QUEUE_COUNT_BADGE}>
+            {queueCount}
+          </span>
+        )}
+      </Toggle>
+    </ToggleGroup>
+  );
+
   return (
     <div
       {...contentArea}
@@ -178,104 +205,99 @@ export function PullRequestsColumn({
         maximizedAway ? "w-0 flex-none" : "flex-1",
       )}
     >
-      <WorkspacePageHeader
-        desktop={isDesktopHost}
-        reserveNativeControls={!rightPanelOpen}
-        className="relative bg-background"
-      >
-        {titlebarControls}
-        {condensed ? (
-          <WorkspaceBreadcrumb ariaLabel="Pull request scope" className="overflow-hidden">
-            <WorkspaceBreadcrumbItem current className={cn(searchExpanded && "sr-only")}>
-              <h1 className="truncate">Pull requests</h1>
-            </WorkspaceBreadcrumbItem>
-            {searchExpanded ? null : <WorkspaceBreadcrumbSeparator />}
+      {phone ? (
+        <>
+          <PhonePageBar title="Pull requests">
             {view === "requests" ? (
-              <WorkspaceBreadcrumbItem className="shrink gap-1.5">
-                <PullRequestCompactFilterMenu
-                  label="Filter by state"
-                  value={state}
-                  options={STATE_TABS}
-                  onChange={onState}
-                  className="shrink-0"
-                />
-                <PullRequestCompactFilterMenu
-                  label="Filter by involvement"
-                  value={involvement}
-                  options={INVOLVEMENT_TABS}
-                  onChange={onInvolvement}
-                />
-                {hostMenuOptions.length > 2 ? (
-                  <PullRequestCompactFilterMenu
-                    label="Filter by host"
-                    value={host ?? ""}
-                    options={hostMenuOptions}
-                    onChange={(next) => onHost(next === "" ? undefined : next)}
-                  />
-                ) : null}
-              </WorkspaceBreadcrumbItem>
+              <PullRequestRefreshControl phoneBar refreshing={refreshing} onRefresh={onRefresh} />
             ) : null}
-          </WorkspaceBreadcrumb>
-        ) : (
-          <WorkspaceBreadcrumb ariaLabel="Pull requests breadcrumb">
-            <WorkspaceBreadcrumbItem current>
-              <h1 className="truncate">Pull requests</h1>
-            </WorkspaceBreadcrumbItem>
-          </WorkspaceBreadcrumb>
-        )}
-        <ToggleGroup
-          aria-label="Pull request view"
-          variant="segmented"
-          value={[view]}
-          onValueChange={(next) => {
-            const value = next[0];
-            if (value === "requests" || value === "queue") onView(value);
-          }}
+          </PhonePageBar>
+          <div className="shrink-0 px-4 pt-3">{viewToggle}</div>
+        </>
+      ) : (
+        <WorkspacePageHeader
+          desktop={isDesktopHost}
+          reserveNativeControls={!rightPanelOpen}
+          className="relative bg-background"
         >
-          <Toggle value="requests">Requests</Toggle>
-          <Toggle value="queue">
-            Merge queue
-            {queueCount === null ? null : (
-              <span
-                className={queueParked ? MERGE_QUEUE_COUNT_BADGE_PARKED : MERGE_QUEUE_COUNT_BADGE}
-              >
-                {queueCount}
-              </span>
-            )}
-          </Toggle>
-        </ToggleGroup>
-        <div className="min-w-0 flex-1" />
-        {condensed && view === "requests" ? (
-          <div ref={topbarSearchRef} className="flex shrink items-center gap-1.5">
-            <ExpandableSearch
-              searchInput={searchInput}
-              searchValue={searchValue}
-              open={searchOpen}
-              onOpenChange={setSearchOpen}
-              onFocusWithin={(focused) => {
-                topbarSearchFocusedRef.current = focused;
-              }}
-            />
-            <PullRequestRefreshControl compact refreshing={refreshing} onRefresh={onRefresh} />
-          </div>
-        ) : null}
-        {rightPanelControl}
-      </WorkspacePageHeader>
+          {titlebarControls}
+          {condensed ? (
+            <WorkspaceBreadcrumb ariaLabel="Pull request scope" className="overflow-hidden">
+              <WorkspaceBreadcrumbItem current className={cn(searchExpanded && "sr-only")}>
+                <h1 className="truncate">Pull requests</h1>
+              </WorkspaceBreadcrumbItem>
+              {searchExpanded ? null : <WorkspaceBreadcrumbSeparator />}
+              {view === "requests" ? (
+                <WorkspaceBreadcrumbItem className="shrink gap-1.5">
+                  <PullRequestCompactFilterMenu
+                    label="Filter by state"
+                    value={state}
+                    options={STATE_TABS}
+                    onChange={onState}
+                    className="shrink-0"
+                  />
+                  <PullRequestCompactFilterMenu
+                    label="Filter by involvement"
+                    value={involvement}
+                    options={INVOLVEMENT_TABS}
+                    onChange={onInvolvement}
+                  />
+                  {hostMenuOptions.length > 2 ? (
+                    <PullRequestCompactFilterMenu
+                      label="Filter by host"
+                      value={host ?? ""}
+                      options={hostMenuOptions}
+                      onChange={(next) => onHost(next === "" ? undefined : next)}
+                    />
+                  ) : null}
+                </WorkspaceBreadcrumbItem>
+              ) : null}
+            </WorkspaceBreadcrumb>
+          ) : (
+            <WorkspaceBreadcrumb ariaLabel="Pull requests breadcrumb">
+              <WorkspaceBreadcrumbItem current>
+                <h1 className="truncate">Pull requests</h1>
+              </WorkspaceBreadcrumbItem>
+            </WorkspaceBreadcrumb>
+          )}
+          {phone ? null : viewToggle}
+          <div className="min-w-0 flex-1" />
+          {condensed && view === "requests" ? (
+            <div ref={topbarSearchRef} className="flex shrink items-center gap-1.5">
+              <ExpandableSearch
+                searchInput={searchInput}
+                searchValue={searchValue}
+                open={searchOpen}
+                onOpenChange={setSearchOpen}
+                onFocusWithin={(focused) => {
+                  topbarSearchFocusedRef.current = focused;
+                }}
+              />
+              <PullRequestRefreshControl compact refreshing={refreshing} onRefresh={onRefresh} />
+            </div>
+          ) : null}
+          {rightPanelControl}
+        </WorkspacePageHeader>
+      )}
 
       <div
         ref={scrollRef}
-        className="topbar-scroll-fade scrollbar-gutter-both min-h-0 flex-1 overflow-y-auto"
+        className="topbar-scroll-fade scrollbar-gutter-both min-h-0 flex-1 overflow-y-auto max-phone:[scrollbar-gutter:auto]"
       >
-        <WorkspacePageContainer width="expanded" className="min-h-full gap-4">
+        <WorkspacePageContainer
+          width="expanded"
+          className="min-h-full gap-4 max-phone:px-4 max-phone:pt-3"
+        >
           {view === "queue" ? (
             queueBody
           ) : (
             <>
               <div className="flex flex-col gap-3">
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 max-phone:flex-nowrap max-phone:[&_[data-slot=toggle-group]>*]:px-1 max-phone:[&_[data-slot=toggle-group]>*]:leading-4 max-phone:[&_[data-slot=toggle-group]>*]:whitespace-normal max-phone:[&_[data-slot=toggle-group]>*]:text-balance">
                   <ToggleGroup
                     aria-label="Pull request involvement"
                     variant="segmented"
+                    className="max-phone:w-full max-phone:*:h-11 max-phone:*:flex-1"
                     value={[involvement]}
                     onValueChange={(next) => {
                       const value = next[0];
@@ -288,12 +310,15 @@ export function PullRequestsColumn({
                       </Toggle>
                     ))}
                   </ToggleGroup>
-                  <div className="min-w-0 flex-1" />
-                  {!condensed ? (
+                  <div className="min-w-0 flex-1 max-phone:hidden" />
+                  {!condensed && !phone ? (
                     <PullRequestRefreshControl refreshing={refreshing} onRefresh={onRefresh} />
                   ) : null}
                 </div>
-                <div ref={inFlowSearchRef} className="flex flex-wrap items-center gap-2">
+                <div
+                  ref={inFlowSearchRef}
+                  className="flex flex-wrap items-center gap-2 max-phone:gap-y-3"
+                >
                   <div className="min-w-0 basis-full @lg/pr-list:basis-0 @lg/pr-list:flex-1">
                     {searchInput}
                   </div>
@@ -324,17 +349,21 @@ export function PullRequestsColumn({
 
 function PullRequestRefreshControl({
   compact = false,
+  phoneBar = false,
   refreshing,
   onRefresh,
 }: {
   compact?: boolean;
+  /** The phone bar's trailing icon: 44px, its glyph on the 16px gutter. */
+  phoneBar?: boolean;
   refreshing: boolean;
   onRefresh: () => void;
 }) {
   return (
     <Button
-      size={compact ? "icon-sm" : "icon"}
-      variant={compact ? "ghost" : "outline"}
+      size={compact || phoneBar ? "icon-sm" : "icon"}
+      variant={compact || phoneBar ? "ghost" : "outline"}
+      className={phoneBar ? "-mr-3.5 size-11" : undefined}
       aria-label="Refresh pull requests"
       onClick={onRefresh}
       disabled={refreshing}

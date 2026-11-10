@@ -274,6 +274,37 @@ drop shadow or a card border.
   (`max-w-4xl`), `wide` is 1040px, and `expanded` is 1152px (`max-w-6xl`). There is no
   `--page-w` token; `page-width` rejects a per-page pixel width.
 
+### Phone
+
+A browser narrower than 40rem (`--breakpoint-phone` in `index.css`) is a phone; tablets keep
+the docked layout. `apps/web/src/mobile/usePhone.ts` mirrors the token as
+`PHONE_QUERY = "(width < 40rem)"` and exposes `useIsPhone`; the `phone:` and `max-phone:`
+Tailwind variants gate CSS at the same width. A phone replaces the desktop chrome with its own
+home page, thread bar and bottom tab bar.
+
+- **`apps/web/src/mobile/` adapts, never forks.** It reuses `GridSidebar`, `ChatView`,
+  `ChatComposer`, `RightPanelTabs`, `ThreadDetailsCard` and the composer's pickers. It owns
+  only what has no desktop counterpart: the phone shell and tab bar, the thread bar, and the
+  bottom sheets for model, attachments, details and files or changes.
+- **Phone behaviour is gated.** Gate it with `useIsPhone()`, a phone prop or the
+  `max-phone:`/`phone:` variants, so the layout at 40rem and wider is unchanged. A component
+  that a desktop test mounts directly takes an explicit prop (such as `phone`, `sheet` or
+  `isPage`) instead of reading the query.
+- **Hit areas are 44px.** Touch primitives expand through `pointer-coarse`; phone-only rows,
+  tabs and bar controls use `h-11` (44px). A smaller visible box is acceptable only when its
+  hit target reaches the same floor.
+- **Sheets share one recipe.** A phone bottom sheet is `SheetPopup variant="phone"` with
+  `PhoneSheetHeader` (a 44px bar, title at the 16px inset, a 44px close centred on it), the
+  scrim, rounded top corners and the bottom inset on the popup. Rows inside are 44px, full
+  width, with content on the 16px gutter; `phone-page` is the same popup as a full-window page.
+- **Pages carry the phone bar.** A top-level page (pull requests, usage) replaces the desktop top
+  bar with `PhonePageBar`: 44px, a bottom border, the 16px gutter, the full title and no sidebar or
+  panel toggles. The tab bar is the navigation, so the layout hides the floating sidebar toggle there.
+  Segmented controls on a phone use 44px segments inside the same gutter.
+- **Safe areas are applied once.** `#root` owns the top inset. A phone page applies `pb-safe`
+  around its content, the tab bar or a sheet owns the bottom inset in its own surface, and a
+  composer inside the page drops its own safe-area term so the inset is not counted twice.
+
 ### Stacking
 
 The app's layer order, as the primitives use it:

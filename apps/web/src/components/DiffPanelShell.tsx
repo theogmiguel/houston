@@ -16,7 +16,8 @@ function getDiffPanelHeaderRowClassName(mode: DiffPanelMode) {
     shouldUseDragRegion
       ? "drag-region h-[var(--workspace-topbar-height)] border-b border-border wco:pr-(--workspace-native-controls-inset) custom-chrome:pr-(--workspace-native-controls-inset)"
       : mode === "embedded"
-        ? "flex h-(--h-pane-head) min-h-(--h-pane-head) shrink-0 items-center gap-2 border-b border-border bg-[var(--pane-head)] px-2"
+        ? // On a phone the bar is 44px on the 16px gutter and every control inside has a 44px hit area.
+          "flex h-(--h-pane-head) min-h-(--h-pane-head) shrink-0 items-center gap-2 border-b border-border bg-[var(--pane-head)] px-2 max-phone:h-11 max-phone:min-h-11 max-phone:bg-background max-phone:px-4 max-phone:[&_button]:min-h-11 max-phone:[&_button]:min-w-11"
         : "flex h-10 min-h-10 shrink-0 items-center border-b border-border/60 bg-background in-data-[preview-panel-mode=inline]:mb-3 in-data-[preview-panel-mode=inline]:h-7 in-data-[preview-panel-mode=inline]:min-h-7 in-data-[preview-panel-mode=inline]:border-b-transparent",
   );
 }

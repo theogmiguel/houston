@@ -370,7 +370,7 @@
 6 apps/web/src/components/settings/SettingsGroup.tsx
 26 apps/web/src/components/settings/settingsLayout.tsx
 15 apps/web/src/components/settings/SettingsPanels.tsx
-15 apps/web/src/components/settings/SettingsScopeNotice.tsx
+13 apps/web/src/components/settings/SettingsScopeNotice.tsx
 9 apps/web/src/components/settings/SettingsScopeSentence.tsx
 33 apps/web/src/components/settings/SettingsSidebarNav.tsx
 16 apps/web/src/components/settings/SimlockDeviceHostEditor.tsx

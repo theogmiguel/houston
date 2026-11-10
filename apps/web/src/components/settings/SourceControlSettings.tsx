@@ -360,7 +360,7 @@ function SourceControlSectionSkeleton({
                   <Skeleton className="size-4.5" />
                   <Skeleton
                     shape="pill"
-                    className="pointer-events-none absolute -left-0.5 -top-0.5 size-2"
+                    className="pointer-events-none absolute -left-0.5 -top-0.5 size-2 max-phone:hidden"
                     aria-hidden
                   />
                 </span>

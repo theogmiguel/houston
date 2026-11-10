@@ -132,7 +132,7 @@ export function DiffViewControls({
           </Tooltip>
         )}
       </div>
-      <div className="hidden @2xs/diff-toolbar:flex">
+      <div className="hidden @2xs/diff-toolbar:phone:flex">
         <Tooltip>
           <TooltipTrigger
             render={

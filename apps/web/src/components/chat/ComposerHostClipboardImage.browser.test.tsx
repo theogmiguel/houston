@@ -210,6 +210,13 @@ it(
 it(
   "a paste that only names paths reads nothing until the user confirms the attachment",
   async () => {
+    // The attach control this test waits for is desktop composer chrome; a phone offers
+    // attachments from its add sheet instead, so pin a desktop viewport before booting.
+    const previousViewport = { width: window.innerWidth, height: window.innerHeight };
+    await page.viewport(1440, 900);
+    await using _viewport = {
+      [Symbol.asyncDispose]: () => page.viewport(previousViewport.width, previousViewport.height),
+    };
     using _environment = installFakeEnvironment([]);
     using _uploads = advertiseFileUploads();
     await using _app = await bootDraftComposer();

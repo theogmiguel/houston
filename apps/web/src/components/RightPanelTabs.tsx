@@ -87,6 +87,7 @@ import {
 import { useBrowserDefaults } from "~/browser/browserDefaults";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { PanelTabCloseButton } from "~/components/ui/panel-tab-close-button";
+import { PHONE_PAGE_BAR_TITLE_CLS, PHONE_PANEL_BAR_CLS } from "~/components/ui/phone-recipes";
 import { faviconUrlForOrigin } from "@houston-app/shared/favicon";
 import { useTheme } from "~/hooks/useTheme";
 import { useDeviceState } from "~/state/device";
@@ -123,6 +124,12 @@ export interface RightPanelTabsProps {
   defaultWidth?: number;
   inlineSize?: PreviewPanelInlineSize;
   layoutControls?: ReactNode;
+  /** A control before the tab strip, such as the phone's Back button. */
+  leadingControl?: ReactNode;
+  /** The phone sheet hides desktop-only surfaces and their launcher entries. */
+  phone?: boolean;
+  /** The surface supplies its own header (a phone page), so the tab strip is not drawn. */
+  hideTabBar?: boolean;
   surfaces: readonly RightPanelSurface[];
   environmentId: EnvironmentId | null;
   activeSurfaceId: string | null;
@@ -358,6 +365,8 @@ function RightPanelEmptyState(props: {
   deviceAvailable: boolean;
   sideChatAvailable: boolean;
   sideChatDisabledReason: string | null;
+  /** The phone has no browser or terminal surface, so neither entry appears. */
+  phone?: boolean;
 }) {
   const [highlight, setHighlight] = useState(-1);
 
@@ -433,10 +442,13 @@ function RightPanelEmptyState(props: {
         ]
       : []),
   ] as const;
+  const shownActions = props.phone
+    ? actions.filter((action) => action.label !== "Browser" && action.label !== "Terminal")
+    : actions;
 
-  type SurfaceAction = (typeof actions)[number];
+  type SurfaceAction = (typeof shownActions)[number];
 
-  const availableActions = actions.filter((action) => action.available);
+  const availableActions = shownActions.filter((action) => action.available);
   const highlightIndex =
     availableActions.length === 0 ? -1 : Math.min(highlight, availableActions.length - 1);
 
@@ -510,7 +522,7 @@ function RightPanelEmptyState(props: {
       <div className="w-full max-w-xs py-6">
         <h3 className="mb-3 text-center font-medium text-foreground text-sm">Open a surface</h3>
         <div className="flex flex-col gap-0.5">
-          {actions.map((action) =>
+          {shownActions.map((action) =>
             action.available ? (
               <div
                 key={action.label}
@@ -908,6 +920,8 @@ function RightPanelTab(
     previewUrl: string | null;
     previewCapturedUrl: string | null;
     theme: "light" | "dark";
+    /** The phone's tab is a 36px chip with a 44px hit area. */
+    phone?: boolean;
     environmentId: EnvironmentId | null;
     pullRequestStatusSeed: PullRequestTabStatusSeed | undefined;
     renaming: boolean;
@@ -1042,6 +1056,8 @@ function RightPanelTab(
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cn(
         "cursor-pointer group/tab flex h-7 max-w-36 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium",
+        props.phone &&
+          "relative h-9 max-w-48 px-3 after:absolute after:inset-x-0 after:-inset-y-1 after:content-['']",
         props.ownsDesktopTitleBar && "[-webkit-app-region:no-drag]",
         props.active
           ? "bg-selected text-foreground"
@@ -1200,9 +1216,12 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
         ]
       : []),
   ] as const;
+  const shownAddSurfaceActions = props.phone
+    ? addSurfaceActions.filter((action) => action.kind !== "preview" && action.kind !== "terminal")
+    : addSurfaceActions;
 
   const handleAddSurfaceMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    const action = surfaceShortcutActionForKey(addSurfaceActions, event.nativeEvent);
+    const action = surfaceShortcutActionForKey(shownAddSurfaceActions, event.nativeEvent);
     if (!action) return;
     event.preventDefault();
     event.stopPropagation();
@@ -1363,7 +1382,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           render={
             <Button
               aria-label="Add panel surface"
-              className="shrink-0"
+              className={cn("shrink-0", props.phone && "size-11")}
               size="icon-xs"
               variant="ghost-muted"
             />
@@ -1377,7 +1396,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           sideOffset={6}
           onKeyDownCapture={handleAddSurfaceMenuKeyDown}
         >
-          {addSurfaceActions.map((action) => {
+          {shownAddSurfaceActions.map((action) => {
             const Icon = action.icon;
             if (action.label === "Browser" && action.available) {
               return (
@@ -1435,7 +1454,19 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       </Menu>
     ) : null;
 
-  const tabStripContent = (
+  // A phone shows one surface at a time, so its bar is the back control and the surface's title.
+  const phoneSurface = focusedSurface ?? props.surfaces[0];
+  const phoneTitleContent = (
+    <span data-right-panel-phone-title className={PHONE_PAGE_BAR_TITLE_CLS}>
+      {phoneSurface
+        ? surfaceTitle(phoneSurface, props.previewSessions, props.terminalLabelsById)
+        : ""}
+    </span>
+  );
+
+  const tabStripContent = props.phone ? (
+    phoneTitleContent
+  ) : (
     <>
       {addSurfaceMenu}
       <ScrollArea
@@ -1473,6 +1504,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                     previewUrl={favicon.url}
                     previewCapturedUrl={favicon.capturedUrl}
                     theme={resolvedTheme}
+                    phone={props.phone === true}
                     environmentId={props.environmentId}
                     pullRequestStatusSeed={props.pullRequestStatusSeeds?.[surface.id]}
                     renaming={renamingDevice === surface.id}
@@ -1554,30 +1586,35 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       {...(props.defaultWidth !== undefined ? { defaultWidth: props.defaultWidth } : {})}
       {...(props.inlineSize ? { inlineSize: props.inlineSize } : {})}
     >
-      <div
-        className={cn(
-          "group/panel-header flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1 pl-2",
-          props.mode === "inline" && !props.layoutControls ? "pr-3" : "pr-1",
-          ownsDesktopTitleBar && "drag-region",
-          ownsDesktopTitleBar &&
-            "wco:pr-(--workspace-native-controls-inset) custom-chrome:pr-(--workspace-native-controls-inset)",
-          props.mode === "inline" && props.maximized && COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
-        )}
-        data-right-panel-tabbar
-        data-drag-region={ownsDesktopTitleBar ? "deep" : undefined}
-      >
-        {tabStripContent}
-        {props.layoutControls}
-        {ownsDesktopTitleBar && !props.layoutControls ? (
-          <span aria-hidden className="hidden w-24 shrink-0 wco:block" />
-        ) : null}
-        {ownsDesktopTitleBar ? (
-          <span
-            aria-hidden
-            className="pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] h-[var(--workspace-topbar-height)] w-28 [-webkit-app-region:no-drag]"
-          />
-        ) : null}
-      </div>
+      {props.hideTabBar ? null : (
+        <div
+          className={cn(
+            "group/panel-header flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1 pl-2",
+            props.mode === "inline" && !props.layoutControls ? "pr-3" : "pr-1",
+            // The phone's bar matches the thread bar: 44px, a divider below, the back control on the gutter.
+            props.phone && PHONE_PANEL_BAR_CLS,
+            ownsDesktopTitleBar && "drag-region",
+            ownsDesktopTitleBar &&
+              "wco:pr-(--workspace-native-controls-inset) custom-chrome:pr-(--workspace-native-controls-inset)",
+            props.mode === "inline" && props.maximized && COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
+          )}
+          data-right-panel-tabbar
+          data-drag-region={ownsDesktopTitleBar ? "deep" : undefined}
+        >
+          {props.leadingControl}
+          {tabStripContent}
+          {props.layoutControls}
+          {ownsDesktopTitleBar && !props.layoutControls ? (
+            <span aria-hidden className="hidden w-24 shrink-0 wco:block" />
+          ) : null}
+          {ownsDesktopTitleBar ? (
+            <span
+              aria-hidden
+              className="pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] h-[var(--workspace-topbar-height)] w-28 [-webkit-app-region:no-drag]"
+            />
+          ) : null}
+        </div>
+      )}
       <div className="flex min-h-0 flex-1 flex-col" data-right-panel-surface-content>
         {props.activeSurfaceId === null ? (
           <RightPanelEmptyState
@@ -1600,6 +1637,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             deviceAvailable={props.deviceAvailable}
             sideChatAvailable={props.sideChatAvailable === true}
             sideChatDisabledReason={props.sideChatDisabledReason ?? null}
+            phone={props.phone === true}
           />
         ) : (
           props.children

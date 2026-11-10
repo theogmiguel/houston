@@ -1029,7 +1029,7 @@ function ManagedCodexSetup({
         }
       />
       {authenticated ? (
-        <div className="flex justify-end px-3 py-1 sm:px-4">
+        <div className="flex justify-end px-4 py-1">
           <ChatGptUsageButton />
         </div>
       ) : null}

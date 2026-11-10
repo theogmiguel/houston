@@ -7,6 +7,7 @@ import type { ReactNode } from "react";
 
 import { cn } from "~/lib/utils";
 import { RelativeTime } from "~/components/RelativeTime";
+import { useIsPhone } from "~/mobile/usePhone";
 
 import { MiddleTruncate } from "../ui/middle-truncate";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -74,30 +75,43 @@ export function PullRequestRowLines({
   metaClassName?: string;
   updatedAt?: string | null | undefined;
 }) {
+  const phone = useIsPhone();
+  const updated = updatedAt ? (
+    <span className="ml-auto shrink-0 whitespace-nowrap tabular-nums">
+      <RelativeTime timestamp={updatedAt} />
+    </span>
+  ) : null;
   return (
     <span className="min-w-0 flex-1">
-      <span className="flex min-w-0 items-center gap-1.5">
-        {number}
-        <span className="min-w-0 truncate text-sm">{title}</span>
+      {/* A phone sets the number inline before the title, so it sits on the first line of every
+          row, and moves the stat onto the meta line. */}
+      <span className="flex min-w-0 items-center gap-1.5 max-phone:flex-wrap max-phone:gap-y-1">
+        <span className="flex min-w-0 items-center gap-1.5 max-phone:block max-phone:basis-full">
+          {number}
+          <span className="min-w-0 truncate text-sm max-phone:ml-1.5 max-phone:inline max-phone:whitespace-normal max-phone:break-words">
+            {title}
+          </span>
+        </span>
         {signals ? (
-          <span className="flex shrink-0 items-center gap-1 text-2xs">{signals}</span>
+          <span className="flex shrink-0 items-center gap-1 text-2xs max-phone:flex-wrap">
+            {signals}
+          </span>
         ) : null}
-        {status ? (
+        {status && !phone ? (
           <span className="ml-auto flex shrink-0 items-center gap-1.5 text-2xs">{status}</span>
         ) : null}
       </span>
       <span
         className={cn(
-          "flex min-w-0 items-center gap-1.5 overflow-hidden text-2xs text-muted-foreground",
+          "flex min-w-0 items-center gap-1.5 overflow-hidden text-2xs text-muted-foreground max-phone:min-h-5",
           metaClassName,
         )}
       >
         {meta}
-        {updatedAt ? (
-          <span className="ml-auto shrink-0 whitespace-nowrap tabular-nums">
-            <RelativeTime timestamp={updatedAt} />
-          </span>
+        {phone && status ? (
+          <span className="flex shrink-0 items-center gap-1.5">{status}</span>
         ) : null}
+        {updated}
       </span>
     </span>
   );

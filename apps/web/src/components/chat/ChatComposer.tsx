@@ -232,7 +232,14 @@ import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
 import { resolveComposerMenuActiveItemId } from "./composerMenuHighlight";
 import { buildPullRequestReferenceContext } from "../pullRequest/pullRequestDetail.logic";
-import { getComposerPromptInjectionState, getComposerReasoningStep } from "./composerProviderState";
+import {
+  getComposerPromptInjectionState,
+  getComposerReasoningStep,
+  resolveComposerTraitsInput,
+} from "./composerProviderState";
+import { AddSheet } from "../../mobile/AddSheet";
+import { ModelSheet } from "../../mobile/ModelSheet";
+import { useIsPhone } from "../../mobile/usePhone";
 import { readPromptUltrathink } from "./TraitsPicker";
 import {
   providerSupportsManualCompaction,
@@ -1130,6 +1137,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const [isComposerPrimaryActionsCompact, setIsComposerPrimaryActionsCompact] = useState(false);
   const [isComposerModelPickerOpen, setIsComposerModelPickerOpen] = useState(false);
   const isMobileViewport = useMediaQuery("max-sm");
+  const isPhone = useIsPhone();
   const isSoftwareKeyboardOpen = useSoftwareKeyboardOpen();
   const [isComposerFocused, setIsComposerFocused] = useState(false);
   const [composerSubmissionError, setComposerSubmissionError] = useState<string | null>(null);
@@ -1364,6 +1372,21 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   };
   const editPromptFromTraitsStable = useStableCallback(editPromptFromTraits);
   const promptUltrathink = readPromptUltrathink(prompt);
+  const phoneTraitsInput = isPhone
+    ? resolveComposerTraitsInput({
+        provider: selectedProvider,
+        instanceId: selectedInstanceId,
+        ...(routeKind === "server" ? { threadRef: routeThreadRef } : {}),
+        ...(routeKind === "draft" && draftId ? { draftId } : {}),
+        model: selectedModel,
+        models: selectedProviderModels,
+        modelOptions: composerModelOptions?.[selectedInstanceId],
+        reportedModelSelection,
+        promptUltrathink,
+        onPromptEdit: editPromptFromTraitsStable,
+        planModeEnabled: settings.planModeEnabled,
+      })
+    : null;
 
   const [inlineRestingControlsHost, setInlineRestingControlsHost] = useState<HTMLDivElement | null>(
     null,
@@ -2696,7 +2719,32 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     : composerControlsCollapsed
       ? false
       : expandedControlsModelIconOnly;
-  const composerControls = (
+  const composerControls = isPhone ? (
+    <ModelSheet
+      environmentId={environmentId}
+      activeInstanceId={selectedInstanceId}
+      model={selectedModelForPickerWithCustomFallback}
+      instanceEntries={providerInstanceEntries}
+      modelOptionsByInstance={modelOptionsByInstance}
+      lockedProvider={lockedProvider}
+      lockedContinuationGroupKey={lockedContinuationGroupKey}
+      keybindings={keybindings}
+      terminalOpen={terminalOpen}
+      traits={phoneTraitsInput}
+      effortDisplay={settings.effortDisplay}
+      runtimeMode={compatibleRuntimeMode}
+      runtimeModeOptions={compatibleRuntimeModeOptions}
+      planModeUiEnabled={planModeUiEnabled}
+      interactionMode={interactionMode}
+      onToggleInteractionMode={toggleInteractionMode}
+      open={isComposerModelPickerOpen}
+      onOpenChange={setIsComposerModelPickerOpen}
+      onProviderModelSelect={onProviderModelSelect}
+      onOpenProviderSetup={onOpenProviderSetup}
+      getModelDisabledReason={getModelDisabledReason}
+      onRuntimeModeChange={handleRuntimeModeChange}
+    />
+  ) : (
     <ComposerControlsBar
       environmentId={environmentId}
       routeKind={routeKind}
@@ -3632,12 +3680,28 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         onRemove={onRemoveEditingQueuedAttachment}
       />
     ) : null;
-  const composerAttachButton = showComposerAttachAction ? (
-    <ComposerAttachButton
+  const composerAttachButton =
+    !isPhone && showComposerAttachAction ? (
+      <ComposerAttachButton
+        addComposerAttachments={addComposerAttachments}
+        focusComposer={focusComposer}
+      />
+    ) : null;
+  const phoneAddSheet = isPhone ? (
+    <AddSheet
+      canAttach={showComposerAttachAction}
       addComposerAttachments={addComposerAttachments}
       focusComposer={focusComposer}
+      onMention={() => {
+        insertComposerTextStable("@", "end", { ensureLeadingBoundary: true });
+      }}
+      onCommands={() => {
+        insertComposerTextStable("/", "end", { ensureLeadingBoundary: true });
+      }}
     />
   ) : null;
+  // A glance pane hides the changes bar, so on a phone its tray would stand empty above the card.
+  const showChangedFilesTray = changedFiles !== null && !(isPhone && paneDensity === "glance");
   return (
     <form
       ref={composerFormRef}
@@ -3692,9 +3756,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       {...threadContextDropTargetProps()}
     >
       <div className="relative">
-        {(contextControls && !composerNarrow) || changedFiles !== null ? (
+        {(contextControls && !composerNarrow) || showChangedFilesTray ? (
           <div data-composer-context-tray="true" className={CONTEXT_TRAY_CLS}>
-            {changedFiles !== null && changesExpanded ? (
+            {showChangedFilesTray && changedFiles !== null && changesExpanded ? (
               <ChangedFilesList summary={changedFiles.summary} onReview={changedFiles.onReview} />
             ) : null}
             <div className={CONTEXT_TRAY_ROW_CLS}>
@@ -3703,7 +3767,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   {cloneElement(contextControls, { forceNarrow: false, variant: "tray" })}
                 </div>
               ) : null}
-              {changedFiles === null ? null : (
+              {!showChangedFilesTray || changedFiles === null ? null : (
                 <ChangedFilesBar
                   {...changedFiles}
                   compact={composerNarrow}
@@ -3789,7 +3853,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               </ComposerBanner.Root>
             ) : null}
             {showCollapsedMobilePromptRow ? (
-              <div className="flex items-center justify-between gap-2 px-3 py-2">
+              <div className="flex items-center justify-between gap-2 px-3 py-2 max-phone:pr-2 max-phone:pl-4">
                 <button
                   type="button"
                   data-chat-composer-transition-prompt="true"
@@ -3851,7 +3915,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 };
               }}
               data-chat-composer-body="true"
-              className={cn("relative px-4 pt-2.5 pb-1", isComposerCollapsedMobile && "hidden")}
+              className={cn(
+                "relative px-4 pt-2.5 pb-1",
+                isComposerCollapsedMobile && "hidden",
+                showMobilePendingAnswerActions && "max-sm:pb-4",
+              )}
             >
               {isStashMenuOpen && !composerMenuOpen && (
                 <ComposerCommandMenuLayer anchor={composerMenuAnchor}>
@@ -4042,11 +4110,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               <div
                 data-chat-composer-footer="true"
                 className={cn(
-                  "flex min-w-0 flex-nowrap items-center gap-0.5 overflow-visible px-1.5 pt-0.5 pb-1.5",
+                  "flex min-w-0 flex-nowrap items-center gap-0.5 overflow-visible px-1.5 pt-0.5 pb-1.5 max-phone:px-2 max-phone:pb-2",
+                  isPhone && "gap-2",
                   pendingUserInputs.length > 0 && "pt-1.5",
                   showMobilePendingAnswerActions && "hidden sm:flex",
                 )}
               >
+                {phoneAddSheet ? (
+                  <div className={isPhone ? "" : "me-0.5"}>{phoneAddSheet}</div>
+                ) : null}
                 {composerAttachButton ? <div className="me-0.5">{composerAttachButton}</div> : null}
                 <div
                   data-chat-composer-actions="right"
@@ -4054,13 +4126,19 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   data-chat-composer-primary-actions-compact={
                     isComposerPrimaryActionsCompact ? "true" : "false"
                   }
-                  className="flex min-w-0 flex-1 flex-nowrap items-center gap-0.5"
+                  className={cn(
+                    "flex min-w-0 flex-1 flex-nowrap items-center gap-0.5",
+                    isPhone && "gap-2",
+                  )}
                 >
                   <div
                     ref={attachExpandedControls}
                     data-chat-composer-controls="footer"
                     data-chat-composer-footer-controls="true"
-                    className="relative flex min-w-0 flex-1 items-center gap-0.5"
+                    className={cn(
+                      "relative flex min-w-0 flex-1 items-center gap-0.5",
+                      isPhone && "gap-2",
+                    )}
                   >
                     {composerControls}
                     {contextControls && composerNarrow

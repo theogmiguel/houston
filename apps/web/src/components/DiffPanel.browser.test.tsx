@@ -19,8 +19,14 @@ import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
-import { act, render } from "../../test/render";
+import { act, render as renderScreen } from "../../test/render";
 import { makeThreadFixture } from "~/test-fixtures";
+
+// The default browser viewport is phone-sized; these cases cover the desktop panel.
+async function render(...args: Parameters<typeof renderScreen>) {
+  await page.viewport(1280, 800);
+  return renderScreen(...args);
+}
 
 type ResultAtom<A> = Atom.Atom<AsyncResult.AsyncResult<A, Error>>;
 

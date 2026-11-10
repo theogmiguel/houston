@@ -547,8 +547,9 @@ export const ClientSettingsSchema = Schema.Struct({
   sidebarRowShowBranch: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   sidebarRowShowPullRequest: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   sidebarRowShowSubagents: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
-  // Pins the threads that need the user above the projects; off keeps the rail project-first.
-  sidebarShowNeedsYou: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  // Pins the threads that need the user above the projects. Unset follows the device: the
+  // phone home opts in, the desktop rail stays project-first.
+  sidebarShowNeedsYou: Schema.optionalKey(Schema.Boolean),
   timestampFormat: TimestampFormat.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_TIMESTAMP_FORMAT)),
   ),

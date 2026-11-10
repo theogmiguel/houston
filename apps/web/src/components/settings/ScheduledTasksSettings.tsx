@@ -435,7 +435,7 @@ export function ScheduledTasksSettings(target: {
         title="Scheduled tasks"
         variant="plain"
         footer={
-          <p className="px-1 text-xs leading-4 text-muted-foreground">
+          <p className="px-1 max-phone:px-0 text-xs leading-4 text-muted-foreground">
             Scheduled tasks run on the server, so they keep their schedule while the window is
             closed. A task that needs you waits like any other thread.
           </p>
@@ -444,6 +444,7 @@ export function ScheduledTasksSettings(target: {
           <Button
             size="xs"
             variant="ghost-muted"
+            inset="end"
             disabled={!creationEnvironment}
             onClick={() =>
               creationEnvironment &&

@@ -5,7 +5,7 @@ import { formatDiffCount } from "@houston-app/client-runtime/diff-count";
 import { cn } from "~/lib/utils";
 
 const ROW_CLASS =
-  "grid min-h-7 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-md px-2 py-0.5 text-left text-body font-normal text-foreground outline-none transition-[background-color] hover:bg-[var(--hover)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-popup-open:bg-[var(--hover)] disabled:pointer-events-none disabled:opacity-64";
+  "grid min-h-7 max-phone:min-h-11 max-phone:px-4 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-md px-2 py-0.5 text-left text-body font-normal text-foreground outline-none transition-[background-color] hover:bg-[var(--hover)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-popup-open:bg-[var(--hover)] disabled:pointer-events-none disabled:opacity-64";
 
 /** The label and its inline value share one left edge; the right slot holds chevrons, status or chips. */
 export function ThreadDetailsRowContent({

@@ -23,17 +23,20 @@ import {
   useVisibleThreadShells,
 } from "../state/entities";
 import { useEnvironments } from "../state/environments";
+import { PhoneHome } from "../mobile/PhoneHome";
+import { useIsPhone } from "../mobile/usePhone";
 
 function ChatIndexRouteView() {
   const { authGateState } = Route.useRouteContext();
   const { environments, isReady } = useEnvironments();
+  const isPhone = useIsPhone();
 
   if (authGateState.status === "hosted-static") {
     if (!isReady) return null;
     if (environments.length === 0) return <HostedEmptyState />;
   }
 
-  return <IndexDraftLanding />;
+  return isPhone ? <PhoneHome /> : <IndexDraftLanding />;
 }
 
 function IndexDraftLanding() {

@@ -7,9 +7,10 @@ import {
 import type { ProviderOptionDescriptor, RuntimeMode } from "@houston-app/contracts";
 import type { EffortDisplay } from "@houston-app/contracts/settings";
 import { ChevronUpIcon, WorkflowIcon } from "lucide-react";
-import { type KeyboardEvent, type ReactNode, useRef } from "react";
+import { createContext, type KeyboardEvent, type ReactNode, useContext, useRef } from "react";
 
 import { cn } from "~/lib/utils";
+import { PHONE_SHEET_SECTION_LABEL_CLS } from "./phone-recipes";
 import { Menu, MenuPopup, MenuTrigger } from "./menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./tooltip";
 import type { ComposerControlSize } from "../chat/ComposerControl";
@@ -154,12 +155,24 @@ export function describeComposerEffort(
 const CHIP =
   "flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-md px-2 text-left text-(--t2) text-xs outline-none hover:bg-(--sel) hover:text-(--t1) focus-visible:bg-(--sel) focus-visible:text-(--t1) aria-checked:bg-(--sel) aria-checked:font-medium aria-checked:text-(--t1) disabled:cursor-not-allowed disabled:opacity-64";
 const GROUP_LABEL = "w-14 shrink-0 pt-1.5 text-(--houston) text-2xs";
+const PHONE_CHIP = "h-11 px-3 text-sm";
+
+/** The phone sheet sizes every effort chip to a 44px tap target. */
+const EffortPhoneContext = createContext(false);
 
 /** One labelled row of options: the label on the left, the choices wrapping beside it. */
 function OptionGroup(props: { label: string; children: ReactNode; note?: ReactNode }) {
+  const phone = useContext(EffortPhoneContext);
   return (
-    <div role="radiogroup" aria-label={props.label} className="flex items-start gap-1">
-      <span aria-hidden="true" className={GROUP_LABEL}>
+    <div
+      role="radiogroup"
+      aria-label={props.label}
+      className={cn("flex gap-1", phone ? "flex-col" : "items-start")}
+    >
+      <span
+        aria-hidden="true"
+        className={phone ? cn(PHONE_SHEET_SECTION_LABEL_CLS, "pt-1") : GROUP_LABEL}
+      >
         {props.label}
       </span>
       <div className="flex min-w-0 flex-1 flex-col gap-1">
@@ -182,6 +195,7 @@ function ColumnRow(props: {
   onPick: () => void;
   icon?: ReactNode;
 }) {
+  const phone = useContext(EffortPhoneContext);
   const rowProps = {
     type: "button",
     role: "radio",
@@ -191,7 +205,7 @@ function ColumnRow(props: {
     "data-effort-level": props.level || undefined,
     // The reasoning control holds the panel's one tab stop; the arrow keys move between rows.
     tabIndex: props.selected && props.level ? 0 : -1,
-    className: CHIP,
+    className: phone ? cn(CHIP, PHONE_CHIP) : CHIP,
     onClick: props.onPick,
   } as const;
   const content = (
@@ -362,21 +376,29 @@ function SpeedGroup(props: { traits: TraitsSelectionInput }) {
 }
 
 /** The model picker's effort panel: the selected model's levels, speed and other options. */
-export function ComposerEffortPanel(props: { traits: TraitsSelectionInput | null }) {
+export function ComposerEffortPanel(props: {
+  traits: TraitsSelectionInput | null;
+  phone?: boolean;
+}) {
   return (
-    <div className="flex flex-col gap-1 px-3 py-2" onKeyDown={moveBetweenRows}>
-      {props.traits ? (
-        <>
-          <EffortLevels traits={props.traits} />
-          <SpeedGroup traits={props.traits} />
-        </>
-      ) : (
-        <div className="flex items-start gap-1">
-          <span className={GROUP_LABEL}>Effort</span>
-          <span className="pt-1.5 text-(--houston) text-xs">No effort levels</span>
-        </div>
-      )}
-    </div>
+    <EffortPhoneContext value={props.phone === true}>
+      <div
+        className={cn("flex flex-col gap-1", props.phone ? "px-4 py-2" : "px-3 py-2")}
+        onKeyDown={moveBetweenRows}
+      >
+        {props.traits ? (
+          <>
+            <EffortLevels traits={props.traits} />
+            <SpeedGroup traits={props.traits} />
+          </>
+        ) : (
+          <div className="flex items-start gap-1">
+            <span className={GROUP_LABEL}>Effort</span>
+            <span className="pt-1.5 text-(--houston) text-xs">No effort levels</span>
+          </div>
+        )}
+      </div>
+    </EffortPhoneContext>
   );
 }
 

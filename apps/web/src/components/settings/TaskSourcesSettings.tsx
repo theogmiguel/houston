@@ -498,13 +498,35 @@ function SlackConfigured({
   );
 }
 
+/** A phone's loading state: card rows shaped like the settings rows they stand for. */
+function TaskSourcesSkeletonRows({ count }: { readonly count: number }) {
+  return (
+    <SettingsGroup className="phone:hidden" aria-hidden>
+      {Array.from({ length: count }, (_, index) => (
+        <div key={index} className="flex items-center justify-between gap-3 px-4 py-3">
+          <div className="min-w-0 flex-1 space-y-2">
+            <Skeleton shape="pill" className="h-4 w-28" />
+            <Skeleton shape="pill" className="h-3 w-full max-w-xs" />
+          </div>
+          <Skeleton className="size-7 shrink-0" />
+        </div>
+      ))}
+    </SettingsGroup>
+  );
+}
+
 function SlackSettings({ environmentId }: { environmentId: EnvironmentId }) {
   const infoResult = useAtomValue(slackEnvironment.info({ environmentId, input: {} }));
   const projects = useAtomValue(environmentProjects.projectsAtom)
     .filter((project) => project.environmentId === environmentId)
     .map((project) => ({ id: project.id as string, title: project.title }));
   if (AsyncResult.isInitial(infoResult) && !AsyncResult.isSuccess(infoResult)) {
-    return <Skeleton className="h-40 w-full" />;
+    return (
+      <>
+        <Skeleton className="h-40 w-full max-phone:hidden" />
+        <TaskSourcesSkeletonRows count={2} />
+      </>
+    );
   }
   if (AsyncResult.isFailure(infoResult)) {
     return (
@@ -1046,7 +1068,10 @@ function ProjectSourcesContent({
       variant="plain"
     >
       {AsyncResult.isInitial(settingsResult) ? (
-        <Skeleton className="h-52 w-full" />
+        <>
+          <Skeleton className="h-52 w-full max-phone:hidden" />
+          <TaskSourcesSkeletonRows count={3} />
+        </>
       ) : AsyncResult.isFailure(settingsResult) ? (
         <Alert variant="error">
           <AlertDescription>
@@ -1160,7 +1185,7 @@ function ImportSection({ environmentId }: { environmentId: EnvironmentId }) {
 
   return (
     <SettingsSection id="task-sources-import" title="Houston 1 data">
-      <SettingsGroup>
+      <SettingsGroup className="max-phone:rounded-none max-phone:border-0 max-phone:bg-transparent">
         {rows.map((row) => (
           <SettingsRow
             key={row.kind}

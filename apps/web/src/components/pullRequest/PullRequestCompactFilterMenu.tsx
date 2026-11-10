@@ -40,7 +40,11 @@ export function PullRequestCompactFilterMenu<Value extends string>({
         title={iconOnly ? `${label}: ${current.label}` : undefined}
         render={
           outlined ? (
-            <Button variant="outline" size={iconOnly ? "icon" : "default"} />
+            <Button
+              variant="outline"
+              size={iconOnly ? "icon" : "default"}
+              className={iconOnly ? "max-phone:size-11" : "max-phone:h-11"}
+            />
           ) : (
             <Button variant="ghost-muted" size="sm" />
           )

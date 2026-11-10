@@ -1018,7 +1018,7 @@ export function EnvironmentProviderSettings({
         }
         headerAction={
           // The ghost button's padding would inset its label, so pull the text to the card edge.
-          <div className="-me-2 flex min-w-0 items-center gap-2">
+          <div className="-me-2 flex min-w-0 items-center gap-2 max-phone:me-0">
             <ProviderUpdatesAction />
             <Tooltip>
               <TooltipTrigger
@@ -1026,6 +1026,7 @@ export function EnvironmentProviderSettings({
                   <Button
                     size="xs"
                     variant="ghost-muted"
+                    inset="end-icon"
                     disabled={isRefreshingProviders || !canRefreshProviders}
                     aria-busy={isRefreshingProviders}
                     onClick={() => void refreshProviders()}

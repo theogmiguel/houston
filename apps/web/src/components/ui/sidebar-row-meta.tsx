@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 import { observeResize } from "../../lib/observeResize";
 import { cn } from "../../lib/utils";
@@ -41,10 +41,13 @@ export function RowMetaItem({
       data-meta-label={label}
       data-meta-min-width={minWidth}
       data-meta-keep={keep ? "" : undefined}
-      style={minWidth === undefined ? undefined : { minWidth }}
+      style={
+        minWidth === undefined ? undefined : ({ "--meta-min-w": `${minWidth}px` } as CSSProperties)
+      }
       className={cn(
         "inline-flex items-center",
-        minWidth === undefined ? "shrink-0" : "min-w-0 shrink",
+        // A phone sizes the item to its text, so the item after it starts a fixed gap away.
+        minWidth === undefined ? "shrink-0" : "min-w-(--meta-min-w) shrink max-phone:min-w-0",
         className,
       )}
     >

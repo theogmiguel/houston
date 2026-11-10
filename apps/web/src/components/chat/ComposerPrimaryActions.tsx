@@ -92,12 +92,12 @@ const boardFocusRing =
   "outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background";
 
 const messageActionPillClassName = cn(
-  "inline-flex h-7 shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-(--send) px-3 font-medium text-(--send-ink) text-xs transition-colors hover:bg-(--send)/90 disabled:pointer-events-none disabled:opacity-64",
+  "inline-flex h-7 shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-(--send) px-3 font-medium text-(--send-ink) text-xs transition-colors hover:bg-(--send)/90 disabled:pointer-events-none disabled:opacity-64 max-phone:rounded-(--r-ctl) max-phone:disabled:bg-(--sel) max-phone:disabled:text-muted-foreground max-phone:disabled:opacity-100",
   boardFocusRing,
 );
 
 const messageActionGhostPillClassName = cn(
-  "inline-flex h-7 shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-full border border-(--line-strong) bg-transparent px-3 font-medium text-(--t2) text-xs transition-colors hover:bg-(--hover) disabled:pointer-events-none disabled:opacity-64",
+  "inline-flex h-7 shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-full border border-(--line-strong) bg-transparent px-3 font-medium text-(--t2) text-xs transition-colors hover:bg-(--hover) disabled:pointer-events-none disabled:opacity-64 max-phone:rounded-(--r-ctl)",
   boardFocusRing,
 );
 
@@ -256,7 +256,10 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           compact ? (
             <button
               type="button"
-              className={cn(messageActionGhostPillClassName, "w-7 px-0")}
+              className={cn(
+                messageActionGhostPillClassName,
+                "w-7 px-0 max-phone:h-11 max-phone:w-11",
+              )}
               {...pointerFocusProps}
               onClick={onPreviousPendingQuestion}
               disabled={pendingAction.isResponding}
@@ -267,7 +270,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           ) : (
             <button
               type="button"
-              className={messageActionGhostPillClassName}
+              className={cn(messageActionGhostPillClassName, "max-phone:h-11 max-phone:px-4")}
               {...pointerFocusProps}
               onClick={onPreviousPendingQuestion}
               disabled={pendingAction.isResponding}
@@ -278,7 +281,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         ) : null}
         <button
           type="submit"
-          className={messageActionPillClassName}
+          className={cn(messageActionPillClassName, "max-phone:h-11 max-phone:px-4")}
           {...pointerFocusProps}
           disabled={
             !canOperateThread ||
