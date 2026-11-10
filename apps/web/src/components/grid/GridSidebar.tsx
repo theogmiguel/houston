@@ -132,12 +132,18 @@ import {
 } from "./sidebarCollapse";
 import {
   buildSidebarProjectSections,
+  moveProjectGroup,
   orderSidebarProjectGroups,
   type SidebarProjectSection as SidebarProjectSectionModel,
 } from "./sidebarProjectSections";
 import type { NeedsYouEntry } from "./needsYouSection";
 import { buildNeedsYouEntries, isNeedsYouThread } from "./needsYouSection";
 import { preorderThreads } from "../../grid/tree";
+import {
+  PROJECT_REORDER_ATTRIBUTE,
+  useProjectReorderDrag,
+  type ProjectReorderDrag,
+} from "./projectReorderDrag";
 import { useOpenGridDraft } from "../../grid/useOpenGridDraft";
 import { useProject, useQuietThreadShells, useProjects } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
@@ -239,7 +245,6 @@ import {
   SIDEBAR_PROJECT_GUIDE_CLS,
   SIDEBAR_PROJECT_ICON_BOX_CLS,
   SIDEBAR_PROJECT_LABEL_EMPTY_CLS,
-  SIDEBAR_PROJECT_SECTION_CLS,
   SIDEBAR_ROW_ACTIONS_CLS,
   SIDEBAR_ROW_TRAILING_CLS,
   SIDEBAR_UNGROUPED_THREADS_CLS,
@@ -264,6 +269,7 @@ import {
   SIDEBAR_THREAD_PROJECT_CLS,
   SIDEBAR_THREAD_ROW_INDENT_CLS,
   SidebarOptionsMenu,
+  sidebarProjectSectionCls,
   SidebarSectionHeaderRow,
   type SidebarGridOptions,
 } from "../ui/sidebar-grids";
@@ -1082,6 +1088,19 @@ export function GridSidebar({
     ...(showNeedsYou ? { excludedThreadIds: needsYouThreadIds } : {}),
   });
 
+  const reorder = useProjectReorderDrag((draggedKey, targetKey, side) => {
+    const moved = moveProjectGroup({
+      groups: openProjectGroups,
+      draggedKey,
+      targetKey,
+      side,
+    });
+    if (moved === null) return;
+    const store = useUiStateStore.getState();
+    // Archived projects are not on the rail; they keep their place after the visible ones.
+    store.setProjectOrder([...moved, ...store.projectOrder.filter((key) => !moved.includes(key))]);
+  });
+
   return (
     <ProjectFilterContext.Provider value={threadProjectFilter}>
       <SidebarSearchHighlightContext.Provider value={highlightedSearchKey}>
@@ -1256,6 +1275,7 @@ export function GridSidebar({
                         runningSubagents={runningSubagentsByThread}
                         dragging={dragging}
                         dropTarget={dropTarget}
+                        projectReorder={{ drag: reorder.drag, begin: reorder.begin }}
                         onOpenThread={openThread}
                         onSelectThread={selectThread}
                         onCloseThread={(thread) => closeThreads([thread])}
@@ -1692,6 +1712,7 @@ export function SidebarProjectSection({
   runningSubagents,
   dragging,
   dropTarget,
+  projectReorder,
   onOpenThread,
   onSelectThread,
   onCloseThread,
@@ -1721,6 +1742,13 @@ export function SidebarProjectSection({
   runningSubagents: ReadonlyMap<string, number>;
   dragging: DraggedThread | null;
   dropTarget: string | null;
+  /** Lets the user drag the project to a new place in the rail; absent, the section is fixed. */
+  projectReorder?:
+    | {
+        drag: ProjectReorderDrag | null;
+        begin: (event: ReactPointerEvent<HTMLElement>, projectKey: string) => void;
+      }
+    | undefined;
   onOpenThread: (gridId: string, threadId: string) => void;
   onSelectThread: (
     thread: EnvironmentThreadShell,
@@ -1760,17 +1788,28 @@ export function SidebarProjectSection({
     EnvironmentId.make(section.environmentId),
     ProjectId.make(section.projectId),
   );
+  const reorderable = projectReorder !== undefined && !section.isScratch;
+  const reorderDrag = projectReorder?.drag ?? null;
+  const dropSide =
+    reorderDrag !== null && reorderDrag.targetKey === section.projectKey ? reorderDrag.side : null;
 
   return (
     <div
-      className={SIDEBAR_PROJECT_SECTION_CLS}
+      className={sidebarProjectSectionCls({
+        dragged: reorderDrag?.draggedKey === section.projectKey,
+        dropSide,
+      })}
       data-project-key={section.isScratch ? "no-project" : section.projectKey}
+      {...(reorderable ? { [PROJECT_REORDER_ATTRIBUTE]: "" } : {})}
     >
       <div
         ref={headingRef}
         data-project-heading=""
         data-stuck={stuck ? "" : undefined}
         className={SIDEBAR_PROJECT_ROW_CLS}
+        {...(reorderable
+          ? { onPointerDown: (event) => projectReorder.begin(event, section.projectKey) }
+          : {})}
       >
         <Tooltip>
           <TooltipTrigger

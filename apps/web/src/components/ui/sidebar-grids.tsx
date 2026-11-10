@@ -94,9 +94,6 @@ export function sidebarGridNameCls(onScreen: boolean): string {
 /** A project's expanded content: the guide below, then the needs-you line and empty state. */
 export const SIDEBAR_PROJECT_CONTENT_CLS = "flex flex-col";
 
-/** A project's section: 12px above it, 2px for the first one under the header. */
-export const SIDEBAR_PROJECT_SECTION_CLS = "mt-3 flex flex-col gap-px first:mt-0.5";
-
 /** Ungrouped threads sit on the project guide 6px below the grids (2px after a grid's own 4px). */
 export const SIDEBAR_UNGROUPED_THREADS_CLS =
   "mt-1.5 flex flex-col gap-0.5 [[data-grid-key]:has([data-grid-guide])+&]:mt-0.5";
@@ -108,6 +105,24 @@ export const SIDEBAR_UNGROUPED_THREADS_CLS =
  */
 export const SIDEBAR_PROJECT_ROW_CLS =
   "group/project sticky -top-px z-40 flex h-7 items-center border-b border-transparent bg-sidebar before:absolute before:inset-x-0 before:-top-1 before:h-1 before:bg-sidebar before:content-[''] after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-2 after:bg-[linear-gradient(to_bottom,var(--color-sidebar)_50%,transparent)] after:opacity-0 after:content-[''] data-stuck:border-sidebar-border data-stuck:after:opacity-100";
+
+/**
+ * A project section: 12px above it, 2px for the first one under the header. It is positioned so a reorder drop line can sit on its top or
+ * bottom edge: `dropSide` names the edge a dragged project will land against.
+ */
+export function sidebarProjectSectionCls(state: {
+  dragged: boolean;
+  dropSide: "before" | "after" | null;
+}): string {
+  return cn(
+    "relative mt-3 flex flex-col gap-px first:mt-0.5",
+    state.dragged && "opacity-50",
+    state.dropSide === "before" &&
+      "before:absolute before:inset-x-0 before:top-0 before:z-10 before:h-0.5 before:bg-(--accent-ink)",
+    state.dropSide === "after" &&
+      "after:absolute after:inset-x-0 after:bottom-0 after:z-10 after:h-0.5 after:bg-(--accent-ink)",
+  );
+}
 
 export const SIDEBAR_PROJECT_LABEL_CLS =
   "flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-lg py-0 pr-2 pl-1.5 text-left text-xs font-semibold text-sidebar-foreground transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";

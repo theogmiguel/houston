@@ -1,4 +1,5 @@
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
+import { getProjectOrderKey } from "@houston-app/client-runtime/state/project-grouping";
 import { sortThreads } from "@houston-app/client-runtime/state/thread-sort";
 import type {
   SidebarGridSortOrder,
@@ -56,6 +57,34 @@ export function orderSidebarProjectGroups(
     ...projects.filter((group) => !group.pinned),
     ...scratch,
   ];
+}
+
+/**
+ * The stored project order after dragging one rail project next to another, or
+ * null when the drop changes nothing. `groups` is the rail's displayed order.
+ * The scratch group has no place in the order, and a project stays within its
+ * pinned or unpinned run because pinned projects always lead the rail.
+ */
+export function moveProjectGroup(input: {
+  readonly groups: ReadonlyArray<SidebarProjectSnapshot>;
+  readonly draggedKey: string;
+  readonly targetKey: string;
+  readonly side: "before" | "after";
+}): string[] | null {
+  const { groups, draggedKey, targetKey, side } = input;
+  if (draggedKey === targetKey) return null;
+  const dragged = groups.find((group) => group.projectKey === draggedKey);
+  const target = groups.find((group) => group.projectKey === targetKey);
+  if (dragged === undefined || target === undefined) return null;
+  if (dragged.isScratch === true || target.isScratch === true) return null;
+  if (dragged.pinned !== target.pinned) return null;
+
+  const rest = groups.filter((group) => group.projectKey !== draggedKey);
+  const targetIndex = rest.findIndex((group) => group.projectKey === targetKey);
+  const next = [...rest];
+  next.splice(side === "before" ? targetIndex : targetIndex + 1, 0, dragged);
+  if (next.every((group, index) => group === groups[index])) return null;
+  return next.flatMap((group) => group.memberProjects.map((member) => getProjectOrderKey(member)));
 }
 
 function sortSectionThreads(
