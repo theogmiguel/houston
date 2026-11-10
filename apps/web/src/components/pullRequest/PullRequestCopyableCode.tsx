@@ -43,7 +43,7 @@ export function PullRequestCopyableCode({
       >
         <code
           className={cn(
-            "col-start-1 row-start-1 min-w-0 truncate transition-opacity duration-150 motion-reduce:transition-none",
+            "col-start-1 row-start-1 min-w-0 truncate max-phone:break-all max-phone:whitespace-normal transition-opacity duration-150 motion-reduce:transition-none",
             copied ? "opacity-0" : "opacity-100",
           )}
         >

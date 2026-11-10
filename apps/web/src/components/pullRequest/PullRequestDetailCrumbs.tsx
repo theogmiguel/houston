@@ -39,10 +39,10 @@ function BackButton({ onBack, focusable }: { onBack: () => void; focusable: bool
             variant="ghost-muted"
             {...(focusable ? {} : { tabIndex: -1 })}
             onClick={onBack}
-            className="-ml-1.5"
+            className="-ml-1.5 max-phone:-ml-3.5 max-phone:size-11"
             aria-label="Back to this thread's pull requests"
           >
-            <ArrowLeftIcon aria-hidden className="size-3.5" />
+            <ArrowLeftIcon aria-hidden className="size-3.5 max-phone:size-4" />
           </Button>
         }
       />
@@ -111,7 +111,7 @@ export function PullRequestDetailCrumbs({
 }) {
   const ready = detail !== null && toneClassName !== null;
   return (
-    <div className="pl-9 grid h-7 min-w-0 items-center overflow-hidden">
+    <div className="pl-9 grid h-7 min-w-0 items-center overflow-hidden max-phone:h-11 max-phone:border-b max-phone:border-border/60 max-phone:pl-4">
       <div
         aria-hidden={condensed}
         inert={condensed}

@@ -34,3 +34,9 @@ export const PHONE_PLAN_ROW_CLS = "min-h-11 border-t border-border px-4 text-sm"
 /** The full-height Changes and Files bar: the thread bar's height and divider, back on the 16px gutter. */
 export const PHONE_PANEL_BAR_CLS =
   "h-11 min-h-11 border-b border-b-(--divider) bg-background pr-2 pl-0.5";
+
+/** A phone page's 44px top bar: bottom border, the 16px gutter, no panel toggles. */
+export const PHONE_PAGE_BAR_CLS =
+  "flex h-(--h-top) shrink-0 items-center gap-2 border-b border-b-(--divider) bg-background px-4";
+export const PHONE_PAGE_BAR_TITLE_CLS =
+  "min-w-0 flex-1 truncate text-base font-medium text-foreground";

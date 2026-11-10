@@ -1958,6 +1958,24 @@ export function SidebarProjectSection({
                 +{needsYouThreads.length} in Needs you
               </p>
             ) : null}
+            {sectionThreads.length === 0 &&
+            section.grids.length === 0 &&
+            needsYouThreads.length === 0 &&
+            !section.isScratch &&
+            query.length === 0 &&
+            handleNewThread !== undefined ? (
+              <div data-project-empty="" className="phone:hidden">
+                <p className="px-2 py-2 text-sm text-muted-foreground">No threads yet</p>
+                <button
+                  type="button"
+                  onClick={() => void handleNewThread(projectRef)}
+                  className="flex h-11 w-full cursor-pointer items-center gap-2 px-2 text-left text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                >
+                  <PlusIcon aria-hidden className="size-4 text-icon-muted" />
+                  New thread
+                </button>
+              </div>
+            ) : null}
           </div>
         )}
       </AnimatedHeight>

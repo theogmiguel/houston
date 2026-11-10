@@ -128,6 +128,8 @@ export interface RightPanelTabsProps {
   leadingControl?: ReactNode;
   /** The phone sheet hides desktop-only surfaces and their launcher entries. */
   phone?: boolean;
+  /** The surface supplies its own header (a phone page), so the tab strip is not drawn. */
+  hideTabBar?: boolean;
   surfaces: readonly RightPanelSurface[];
   environmentId: EnvironmentId | null;
   activeSurfaceId: string | null;
@@ -1572,33 +1574,35 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       {...(props.defaultWidth !== undefined ? { defaultWidth: props.defaultWidth } : {})}
       {...(props.inlineSize ? { inlineSize: props.inlineSize } : {})}
     >
-      <div
-        className={cn(
-          "group/panel-header flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1 pl-2",
-          props.mode === "inline" && !props.layoutControls ? "pr-3" : "pr-1",
-          // The phone's bar matches the thread bar: 44px, a divider below, the back control on the gutter.
-          props.phone && PHONE_PANEL_BAR_CLS,
-          ownsDesktopTitleBar && "drag-region",
-          ownsDesktopTitleBar &&
-            "wco:pr-(--workspace-native-controls-inset) custom-chrome:pr-(--workspace-native-controls-inset)",
-          props.mode === "inline" && props.maximized && COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
-        )}
-        data-right-panel-tabbar
-        data-drag-region={ownsDesktopTitleBar ? "deep" : undefined}
-      >
-        {props.leadingControl}
-        {tabStripContent}
-        {props.layoutControls}
-        {ownsDesktopTitleBar && !props.layoutControls ? (
-          <span aria-hidden className="hidden w-24 shrink-0 wco:block" />
-        ) : null}
-        {ownsDesktopTitleBar ? (
-          <span
-            aria-hidden
-            className="pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] h-[var(--workspace-topbar-height)] w-28 [-webkit-app-region:no-drag]"
-          />
-        ) : null}
-      </div>
+      {props.hideTabBar ? null : (
+        <div
+          className={cn(
+            "group/panel-header flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1 pl-2",
+            props.mode === "inline" && !props.layoutControls ? "pr-3" : "pr-1",
+            // The phone's bar matches the thread bar: 44px, a divider below, the back control on the gutter.
+            props.phone && PHONE_PANEL_BAR_CLS,
+            ownsDesktopTitleBar && "drag-region",
+            ownsDesktopTitleBar &&
+              "wco:pr-(--workspace-native-controls-inset) custom-chrome:pr-(--workspace-native-controls-inset)",
+            props.mode === "inline" && props.maximized && COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
+          )}
+          data-right-panel-tabbar
+          data-drag-region={ownsDesktopTitleBar ? "deep" : undefined}
+        >
+          {props.leadingControl}
+          {tabStripContent}
+          {props.layoutControls}
+          {ownsDesktopTitleBar && !props.layoutControls ? (
+            <span aria-hidden className="hidden w-24 shrink-0 wco:block" />
+          ) : null}
+          {ownsDesktopTitleBar ? (
+            <span
+              aria-hidden
+              className="pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] h-[var(--workspace-topbar-height)] w-28 [-webkit-app-region:no-drag]"
+            />
+          ) : null}
+        </div>
+      )}
       <div className="flex min-h-0 flex-1 flex-col" data-right-panel-surface-content>
         {props.activeSurfaceId === null ? (
           <RightPanelEmptyState

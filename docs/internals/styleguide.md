@@ -297,6 +297,10 @@ home page, thread bar and bottom tab bar.
   `PhoneSheetHeader` (a 44px bar, title at the 16px inset, a 44px close centred on it), the
   scrim, rounded top corners and the bottom inset on the popup. Rows inside are 44px, full
   width, with content on the 16px gutter; `phone-page` is the same popup as a full-window page.
+- **Pages carry the phone bar.** A top-level page (pull requests, usage) replaces the desktop top
+  bar with `PhonePageBar`: 44px, a bottom border, the 16px gutter, the full title and no sidebar or
+  panel toggles. The tab bar is the navigation, so the layout hides the floating sidebar toggle there.
+  Segmented controls on a phone use 44px segments inside the same gutter.
 - **Safe areas are applied once.** `#root` owns the top inset. A phone page applies `pb-safe`
   around its content, the tab bar or a sheet owns the bottom inset in its own surface, and a
   composer inside the page drops its own safe-area term so the inset is not counted twice.

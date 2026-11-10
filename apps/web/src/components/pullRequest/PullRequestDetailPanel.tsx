@@ -1348,7 +1348,7 @@ export function PullRequestDetailPanel({
   }
 
   return (
-    <div className="relative flex h-full min-h-0 w-full flex-col bg-background">
+    <div className="relative flex h-full min-h-0 w-full flex-col bg-background max-phone:flex-1">
       {threadPickerOpen && detail ? (
         <PullRequestThreadLinks
           key={`${environmentId}:${detail.url}`}
@@ -1362,7 +1362,7 @@ export function PullRequestDetailPanel({
       ) : null}
       <div
         className={cn(
-          "@container/pr-header grid min-w-0 shrink-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2",
+          "@container/pr-header grid min-w-0 shrink-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 max-phone:gap-x-0",
           detail && "border-b border-border/60",
           !detail && !onClose && "hidden",
         )}
@@ -1375,7 +1375,7 @@ export function PullRequestDetailPanel({
           openOnHostText={openOnHostText}
           onBack={onBack}
         />
-        <div className="mr-4 flex h-7 shrink-0 select-none items-center justify-end gap-1">
+        <div className="mr-4 flex h-7 shrink-0 select-none items-center justify-end gap-1 max-phone:mr-0 max-phone:h-11 max-phone:border-b max-phone:border-border/60 max-phone:pr-4">
           {detail ? (
             <TooltipProvider delay={150} closeDelay={150} timeout={400}>
               {context === "page" ? (
@@ -1506,7 +1506,7 @@ export function PullRequestDetailPanel({
             inert={!condensed}
           >
             {detail ? (
-              <div className="col-span-2 min-w-0 px-9 pb-2 pt-1">
+              <div className="col-span-2 min-w-0 px-9 pb-2 pt-1 max-phone:px-4">
                 <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
                   <span className="flex min-w-0 shrink items-center gap-1.5 overflow-hidden text-xs text-muted-foreground">
                     <PullRequestActorLabel
@@ -1615,7 +1615,7 @@ export function PullRequestDetailPanel({
                       target={`${terminology.singular} checkout command`}
                       copyLabel="Copy checkout command"
                       copiedLabel="Checkout command copied"
-                      className="ml-auto font-mono"
+                      className="ml-auto font-mono max-phone:ml-0"
                       tooltipSide="bottom"
                       onError={reportCheckoutCommandError}
                     />
@@ -1673,7 +1673,11 @@ export function PullRequestDetailPanel({
                 />
               ) : (
                 <PullRequestChecksStatusLine
-                  className="text-muted-foreground"
+                  className={cn(
+                    "text-muted-foreground",
+                    // With no state and no summary the line is a bare dot.
+                    checksState === null && !checksSummary && "max-phone:hidden",
+                  )}
                   aria-label={checksSummary ? `Checks: ${checksSummary}` : "Checks"}
                   icon={
                     checksState !== null ? (

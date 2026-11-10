@@ -9,7 +9,11 @@ import "~/index.css";
 import { AppRoot } from "~/AppRoot";
 import { __setClientSettingsForTests } from "~/hooks/useSettings";
 import { getRouter } from "~/router";
-import { installFakeEnvironment, threadWithHistory } from "../../test/fakeEnvironment";
+import {
+  installFakeEnvironment,
+  threadWithHistory,
+  withPendingChanges,
+} from "../../test/fakeEnvironment";
 import { render } from "../../test/render";
 
 // The socket is the only fake layer: the client runtime hands every connection the in-process session.
@@ -29,7 +33,38 @@ vi.mock(import("~/rpc/requestLatencyState"), async (original) => ({
   trackRpcRequestSent: () => {},
 }));
 
-installFakeEnvironment([threadWithHistory("thread-phone", 2)]);
+const changedFiles = [{ path: "src/App.tsx", additions: 3, deletions: 1 }];
+installFakeEnvironment(
+  [
+    withPendingChanges(threadWithHistory("thread-phone", 2), changedFiles),
+    withPendingChanges(
+      {
+        ...threadWithHistory("thread-long-branch", 2),
+        branch: "feature/a-much-longer-branch-name",
+      },
+      changedFiles,
+    ),
+  ],
+  {
+    // The rail reads each row's diff totals from the project's working tree.
+    vcsStatus: {
+      local: {
+        isRepo: true,
+        hasPrimaryRemote: true,
+        isDefaultRef: false,
+        refName: "feature/phone",
+        hasWorkingTreeChanges: true,
+        workingTree: {
+          files: [{ path: "src/App.tsx", insertions: 3, deletions: 1 }],
+          insertions: 3,
+          deletions: 1,
+        },
+        branchChanges: { baseRef: "main", insertions: 3, deletions: 1 },
+      },
+      remote: null,
+    },
+  },
+);
 
 async function mountApp(width: number) {
   // A returning user: the first-run gate would otherwise wait on onboarding evidence.
@@ -100,6 +135,47 @@ it("navigates to a thread tapped on the phone home", async () => {
   await vi.waitFor(() => expect(router.state.location.pathname).toMatch(/^\/grid\//), {
     timeout: 5_000,
   });
+});
+
+it("starts every row's diff stat at the same gap after its branch name", async () => {
+  for (const width of [390, 320]) {
+    const { screen } = await mountApp(width);
+    await using _screen = screen;
+    await vi.waitFor(() => expect(threadRow()).not.toBeNull(), { timeout: 5_000 });
+    await vi.waitFor(
+      () =>
+        expect(
+          phoneHome()!.querySelectorAll("[data-thread-branch]").length,
+          "rows with a branch",
+        ).toBeGreaterThanOrEqual(2),
+      { timeout: 5_000 },
+    );
+
+    await vi.waitFor(
+      () =>
+        expect(phoneHome()!.querySelectorAll("[data-thread-diff]").length).toBeGreaterThanOrEqual(
+          2,
+        ),
+      { timeout: 5_000 },
+    );
+    const gaps = [...phoneHome()!.querySelectorAll<HTMLElement>("[data-thread-branch]")].flatMap(
+      (branch) => {
+        const line = branch.closest<HTMLElement>("[data-thread-meta-items]");
+        const stat = line
+          ?.querySelector("[data-thread-diff]")
+          ?.closest<HTMLElement>("[data-meta-item]");
+        if (stat === null || stat === undefined || stat.getAttribute("aria-hidden") === "true") {
+          return [];
+        }
+        // Measured from the branch text, not from the box the row reserves for it.
+        const text = branch.querySelector<HTMLElement>("span.truncate")!;
+        return [Math.round(stat.getBoundingClientRect().left - text.getBoundingClientRect().right)];
+      },
+    );
+    expect(gaps.length, `rows whose stat is shown at ${width}px`).toBeGreaterThanOrEqual(2);
+    expect(new Set(gaps).size, `gap after the branch name: ${gaps.join(", ")}`).toBe(1);
+    await screen.unmount();
+  }
 });
 
 it("keeps the desktop layout at 1024px", async () => {

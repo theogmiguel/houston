@@ -14,6 +14,7 @@ export function PullRequestDetailHeaderBody({
   base,
   head,
   files,
+  filesPending = false,
   diffStat,
 }: {
   title: ReactNode;
@@ -23,20 +24,22 @@ export function PullRequestDetailHeaderBody({
   base: ReactNode;
   head: ReactNode;
   files: ReactNode;
+  /** The file count is still unknown; a phone omits the count and its icon until it is. */
+  filesPending?: boolean;
   diffStat: ReactNode;
 }) {
   return (
-    <div className="col-span-2 mt-1 min-w-0 px-9 pb-4">
+    <div className="col-span-2 mt-1 min-w-0 px-9 pb-4 max-phone:px-4">
       {title}
-      <div className="mt-2 flex min-h-5 min-w-0 items-center gap-2 text-xs text-muted-foreground">
-        <PullRequestMetaLine className="min-w-0 whitespace-nowrap">
+      <div className="mt-2 flex min-h-5 min-w-0 items-center gap-2 text-xs text-muted-foreground max-phone:flex-col max-phone:items-start max-phone:gap-1">
+        <PullRequestMetaLine className="min-w-0 whitespace-nowrap max-phone:flex-wrap max-phone:whitespace-normal">
           {author}
           {updated}
         </PullRequestMetaLine>
         {checkout}
       </div>
-      <div className="mt-4 flex min-h-5 min-w-0 items-center gap-2 text-xs text-muted-foreground">
-        <span className="flex min-w-0 flex-1 items-center gap-1.5 font-mono text-xs text-muted-foreground/70">
+      <div className="mt-4 flex min-h-5 min-w-0 items-center gap-2 text-xs text-muted-foreground max-phone:flex-col max-phone:items-start">
+        <span className="flex min-w-0 flex-1 items-center gap-1.5 font-mono text-xs text-muted-foreground/70 max-phone:w-full max-phone:flex-none max-phone:flex-wrap">
           {base}
           <ArrowLeftIcon
             aria-label="receives changes from"
@@ -44,8 +47,13 @@ export function PullRequestDetailHeaderBody({
           />
           {head}
         </span>
-        <span className="ml-auto inline-flex shrink-0 items-baseline justify-end gap-2">
-          <span className="inline-flex min-w-16 items-baseline justify-end gap-1.5 tabular-nums">
+        <span className="ml-auto inline-flex shrink-0 items-baseline justify-end gap-2 max-phone:ml-0">
+          <span
+            className={cn(
+              "inline-flex min-w-16 items-baseline justify-end gap-1.5 tabular-nums",
+              filesPending && "max-phone:hidden",
+            )}
+          >
             <FileDiffIcon aria-hidden className="size-3.5 self-center" />
             {files}
           </span>
@@ -79,12 +87,12 @@ export function PullRequestDetailTabBar<Tab extends string>({
 }) {
   return (
     <nav
-      className="col-span-2 flex min-w-0 flex-wrap items-center gap-2 border-b border-border/60 px-9 pt-1 pb-2"
+      className="col-span-2 flex min-w-0 flex-wrap items-center gap-2 border-b border-border/60 px-9 pt-1 pb-2 max-phone:px-4"
       aria-label="Pull request tabs"
       inert={inert}
     >
       <ToggleGroup
-        className="shrink-0"
+        className="shrink-0 max-phone:*:h-11"
         size="segmented"
         variant="segmented"
         value={[value]}

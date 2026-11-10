@@ -91,6 +91,7 @@ import { UsageModelDialog } from "./UsageModelDialog";
 import { UsageShareBar } from "./UsageShareBar";
 import { UsageModelRow } from "./UsageModelRow";
 import { UsageModelCards } from "~/mobile/UsageModelCards";
+import { PhonePageBar } from "~/mobile/PhonePageBar";
 import { USAGE_MODEL_EMPTY_CLS } from "../ui/usage-model-recipes";
 import { useIsPhone } from "~/mobile/usePhone";
 import { ProviderMark } from "./UsageProviderMark";
@@ -186,6 +187,7 @@ function UsageModelDialogHost({
 }
 
 export function UsagePage() {
+  const isPhone = useIsPhone();
   const [preferences, setPreferences] = useState(readUsagePagePreferences);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const hour12 = usePrimarySettings((settings) => resolveHour12(settings.timestampFormat));
@@ -375,8 +377,21 @@ export function UsagePage() {
     shownHourly && shownWindow.sinceTime !== undefined && shownWindow.untilTime !== undefined
       ? `${formatDateTimeShort(shownWindow.sinceTime, shownWindow.timeZone, hour12)} to ${formatDateTimeShort(shownWindow.untilTime, shownWindow.timeZone, hour12)}`
       : `${formatDayShort(shownWindow.sinceDay)} to ${formatDayShort(shownWindow.untilDay)}`;
+  const refreshButton = (
+    <Button
+      onClick={refreshWindow}
+      aria-label={showingLimits ? "Refresh limits" : "Refresh usage"}
+      aria-busy={isRefreshing}
+      disabled={isRefreshing || (!showingLimits && !canReadDiagnostics)}
+      size="icon-sm"
+      variant="ghost"
+      className="max-phone:-mr-3.5 max-phone:size-11"
+    >
+      <RefreshIcon size="sm" refreshing={isRefreshing} />
+    </Button>
+  );
   const usageActions = (
-    <div className="flex min-w-0 flex-wrap items-center gap-2">
+    <div className="flex min-w-0 flex-wrap items-center gap-2 max-phone:gap-x-4">
       <UsageEnvironmentFilter
         environments={environments}
         selectedEnvironments={selectedEnvironments}
@@ -393,10 +408,11 @@ export function UsagePage() {
         hiddenProviders={hiddenProviders}
         onChange={(next) => updatePreferences({ hiddenProviders: next })}
       />
-      <div className="ml-auto flex min-w-0 flex-wrap items-center gap-2">
+      <div className="ml-auto flex min-w-0 flex-wrap items-center gap-2 max-phone:contents">
         {showingLimits ? null : (
           <ToggleGroup
             aria-label="Usage period"
+            className="max-phone:order-2 max-phone:w-full max-phone:*:h-11 max-phone:*:flex-1"
             variant="segmented"
             value={[String(windowDays)]}
             onValueChange={(next) => {
@@ -413,6 +429,7 @@ export function UsagePage() {
         )}
         <ToggleGroup
           aria-label="Usage metric"
+          className="max-phone:order-3 max-phone:w-full max-phone:*:h-11 max-phone:*:flex-1"
           variant="segmented"
           value={[metric]}
           onValueChange={(next) => {
@@ -426,35 +443,30 @@ export function UsagePage() {
             </Toggle>
           ))}
         </ToggleGroup>
-        <Button
-          onClick={refreshWindow}
-          aria-label={showingLimits ? "Refresh limits" : "Refresh usage"}
-          aria-busy={isRefreshing}
-          disabled={isRefreshing || (!showingLimits && !canReadDiagnostics)}
-          size="icon-sm"
-          variant="ghost"
-        >
-          <RefreshIcon size="sm" refreshing={isRefreshing} />
-        </Button>
+        {isPhone ? null : refreshButton}
       </div>
     </div>
   );
 
   return (
     <SidebarInset className="min-h-0 overflow-hidden overscroll-y-none">
-      <WorkspacePageHeader desktop={isDesktopHost}>
-        <WorkspaceBreadcrumb ariaLabel="Usage breadcrumb" className="min-w-0">
-          <WorkspaceBreadcrumbItem current>
-            <h1 className="truncate">Usage</h1>
-          </WorkspaceBreadcrumbItem>
-        </WorkspaceBreadcrumb>
-      </WorkspacePageHeader>
+      {isPhone ? (
+        <PhonePageBar title="Usage">{refreshButton}</PhonePageBar>
+      ) : (
+        <WorkspacePageHeader desktop={isDesktopHost}>
+          <WorkspaceBreadcrumb ariaLabel="Usage breadcrumb" className="min-w-0">
+            <WorkspaceBreadcrumbItem current>
+              <h1 className="truncate">Usage</h1>
+            </WorkspaceBreadcrumbItem>
+          </WorkspaceBreadcrumb>
+        </WorkspacePageHeader>
+      )}
 
-      <div className="topbar-scroll-fade scrollbar-gutter-both min-h-0 flex-1 overflow-y-auto">
-        <WorkspacePageContainer width="wide" className="gap-7">
+      <div className="topbar-scroll-fade scrollbar-gutter-both min-h-0 flex-1 overflow-y-auto max-phone:[scrollbar-gutter:auto]">
+        <WorkspacePageContainer width="wide" className="gap-7 max-phone:gap-4 max-phone:px-4">
           <div className="flex flex-wrap items-start gap-4">
             <div className="min-w-0 flex-1">
-              <h1 className="text-large-title font-bold">Usage</h1>
+              {isPhone ? null : <h1 className="text-large-title font-bold">Usage</h1>}
               {showingLimits ? null : (
                 <>
                   <p className="mt-1 max-w-[62ch] text-sm leading-5 text-secondary-foreground">
@@ -644,6 +656,40 @@ function UsageOverview({
       .map((provider) => ({ kind: "usage" as const, provider })),
   ];
 
+  // A phone has no room for a board of zeroes, so an empty window says so in one line.
+  const noUsage =
+    isPhone &&
+    !loadingPartial &&
+    merged.sessions === 0 &&
+    merged.totalTokens === 0 &&
+    merged.costUsd === 0 &&
+    merged.models.length === 0;
+
+  if (noUsage) {
+    return (
+      <div className="flex flex-col gap-6">
+        {sourceMessages.map((message) => (
+          <p key={message} className="text-sm text-muted-foreground">
+            {message}
+          </p>
+        ))}
+        <p
+          data-usage-empty=""
+          className="rounded-[10px] border border-border bg-card px-4 py-6 text-center text-sm text-balance text-muted-foreground"
+        >
+          No usage in this window. Sessions you run will show up here.
+        </p>
+        <UsagePlanLimits
+          selectedEnvironmentIds={
+            new Set(selectedEnvironments.map((environment) => environment.environmentId))
+          }
+          hiddenProviders={hiddenProviders}
+          now={now}
+        />
+      </div>
+    );
+  }
+
   return (
     <div aria-busy={loadingPartial} className="flex flex-col gap-6">
       {sourceMessages.map((message) => (
@@ -756,6 +802,7 @@ function UsageOverview({
           <h2 className="text-[13px] leading-[18px] font-semibold text-[var(--t1)]">Breakdown</h2>
           <ToggleGroup
             aria-label="Usage breakdown"
+            className="max-phone:*:h-11"
             variant="segmented"
             value={[breakdown]}
             onValueChange={(next) => {
@@ -1355,7 +1402,10 @@ function UsageEnvironmentFilter({
 
   return (
     <Menu>
-      <MenuTrigger render={<InlineButton />} className="group/usage-environment min-w-0 max-w-full">
+      <MenuTrigger
+        render={<InlineButton />}
+        className="group/usage-environment min-w-0 max-w-full max-phone:inline-flex max-phone:min-h-11 max-phone:items-center"
+      >
         <WorkspaceBreadcrumbText>{label}</WorkspaceBreadcrumbText>
         <span className="flex size-3.5 shrink-0 items-center justify-center text-muted-foreground">
           {showUsageStatus && hasIssue ? (
@@ -1475,7 +1525,10 @@ function UsageProviderFilter({
 
   return (
     <Menu>
-      <MenuTrigger render={<InlineButton />} className="group/usage-provider min-w-0 max-w-full">
+      <MenuTrigger
+        render={<InlineButton />}
+        className="group/usage-provider min-w-0 max-w-full max-phone:inline-flex max-phone:min-h-11 max-phone:items-center"
+      >
         <span className="min-w-0 truncate">{label}</span>
         <ChevronDownIcon
           className="size-3.5 shrink-0 text-muted-foreground opacity-60 transition-opacity group-hover/usage-provider:opacity-100 group-focus-visible/usage-provider:opacity-100 group-data-popup-open/usage-provider:opacity-100"

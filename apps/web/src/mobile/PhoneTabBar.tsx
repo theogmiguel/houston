@@ -45,10 +45,14 @@ export function usePhoneTab(): PhoneTab | null {
   return isPhone ? phoneTabForPathname(pathname) : null;
 }
 
-/** The phone's bottom navigation: one tab per top-level page, the current one in brand ink. */
-export function PhoneTabBar() {
+/**
+ * The phone's bottom navigation: one tab per top-level page, the current one in brand ink. A page
+ * outside the four destinations (a missing grid) names the tab it belongs to with `active`.
+ */
+export function PhoneTabBar({ active }: { active?: PhoneTab }) {
   const navigate = useNavigate();
-  const activeTab = usePhoneTab();
+  const routeTab = usePhoneTab();
+  const activeTab = active ?? routeTab;
   if (activeTab === null) return null;
   const openTab = (tab: PhoneTab) => {
     if (tab === "threads") void navigate({ to: "/" });

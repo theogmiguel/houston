@@ -193,11 +193,69 @@ function expectPhoneLayout(label: string) {
   ).toEqual({ label, overflow: 0, outside: [] });
 }
 
+const rectOf = (element: Element) => element.getBoundingClientRect();
+const centerY = (element: Element) => rectOf(element).top + rectOf(element).height / 2;
+const leafWithText = (root: ParentNode, text: string) =>
+  [...root.querySelectorAll<HTMLElement>("span, h1, code, button")].find(
+    (element) => element.children.length === 0 && element.textContent?.trim() === text,
+  ) ?? null;
+/** The element's text is shown whole: no ellipsis clips it and nothing overflows its box. */
+const expectNotTruncated = (element: HTMLElement, label: string) =>
+  expect(element.scrollWidth, `${label} is clipped`).toBeLessThanOrEqual(element.clientWidth + 1);
+/** A phone control reaches 44px tall. */
+const expectTapHeight = (element: Element, label: string) =>
+  expect(rectOf(element).height, `${label} height`).toBeGreaterThanOrEqual(43.5);
+const expectGutter = (element: Element, label: string, viewport: number) => {
+  expect(Math.round(rectOf(element).left), `${label} left gutter`).toBe(16);
+  expect(Math.round(viewport - rectOf(element).right), `${label} right gutter`).toBe(16);
+};
+
 const waitForText = (text: string) =>
   vi.waitFor(() => expect(document.body.textContent).toContain(text), { timeout: 10_000 });
 
 const waitForSelector = (selector: string) =>
   vi.waitFor(() => expect(document.querySelector(selector)).not.toBeNull(), { timeout: 10_000 });
+
+// The client keeps the shell it last read, so the test that needs a project without threads runs
+// before any test that installs threads.
+it("offers a new thread under a project that has none", async () => {
+  using _environment = installFakeEnvironment([], {});
+  for (const { width, height } of PHONE_VIEWPORTS) {
+    const { screen } = await mountApp("/", width, height);
+    await using _screen = screen;
+    await waitForSelector("[data-project-empty]");
+    const empty = document.querySelector<HTMLElement>("[data-project-empty]")!;
+    expect(empty.textContent).toContain("No threads yet");
+    expect(Math.round(rectOf(empty.querySelector("p")!).left + 8), "empty line gutter").toBe(16);
+    const action = empty.querySelector<HTMLElement>("button")!;
+    expect(action.textContent).toContain("New thread");
+    expectTapHeight(action, "New thread");
+    expectPhoneLayout(`empty project at ${width}px`);
+    await screen.unmount();
+  }
+});
+
+// The client keeps what it read for each usage window, so this test reads a window (90 days) that
+// no test with buckets reads.
+it("shows one short line instead of zeroed cards when usage is empty", async () => {
+  using _environment = installFakeEnvironment([threadWithHistory("thread-phone", 2)], {
+    usage: { buckets: [] },
+  });
+  for (const { width, height } of PHONE_VIEWPORTS) {
+    localStorage.setItem(
+      "houston:usage-page-preferences:v1",
+      JSON.stringify({ metric: "cost", windowDays: 90 }),
+    );
+    const { screen } = await mountApp("/usage", width, height);
+    await using _screen = screen;
+    await waitForSelector("[data-usage-empty]");
+    expect(document.body.textContent).not.toContain("API-equivalent cost");
+    expect(document.body.textContent).not.toContain("0 sessions");
+    expectPhoneLayout(`empty usage at ${width}px`);
+    await screen.unmount();
+  }
+  localStorage.removeItem("houston:usage-page-preferences:v1");
+});
 
 it("keeps pull requests and their detail on a phone screen", async () => {
   using _environment = installEnvironment();
@@ -257,6 +315,215 @@ it("keeps usage on a phone screen", async () => {
     const week = makeWindow(7, undefined, "day");
     await waitForText(`${formatDayShort(week.sinceDay)} to ${formatDayShort(week.untilDay)}`);
     expectPhoneLayout("usage after a range change");
+    await screen.unmount();
+  }
+});
+
+it("gives the pull requests list the phone bar, a 16px gutter and 44px controls", async () => {
+  using _environment = installEnvironment();
+  for (const { width, height } of PHONE_VIEWPORTS) {
+    const { screen } = await mountApp("/pull-requests", width, height);
+    await using _screen = screen;
+    await waitForSelector("[data-pull-request-key]");
+
+    const bar = document.querySelector<HTMLElement>("[data-phone-page-bar]");
+    expect(bar, `phone bar at ${width}px`).not.toBeNull();
+    expect(rectOf(bar!).height).toBe(44);
+    expect(rectOf(bar!).top).toBeGreaterThanOrEqual(0);
+    expect(getComputedStyle(bar!).borderBottomWidth).toBe("1px");
+    const title = bar!.querySelector<HTMLElement>("h1")!;
+    expect(title.textContent).toBe("Pull requests");
+    expectNotTruncated(title, "pull requests title");
+    expect(Math.round(rectOf(title).left)).toBe(16);
+    // The bar carries no panel toggles; the tab bar is the navigation.
+    expect(screen.getByRole("button", { name: "Toggle main sidebar" }).elements()).toHaveLength(0);
+    expect(document.querySelector("[data-workspace-titlebar-controls]")).toBeNull();
+
+    const involvement = document.querySelector<HTMLElement>(
+      '[aria-label="Pull request involvement"]',
+    )!;
+    const refresh = screen.getByRole("button", { name: "Refresh pull requests" }).element();
+    const search = document.querySelector<HTMLElement>('input[aria-label="Search pull requests"]')!;
+    expectGutter(search.closest('[data-slot="input-group"]') ?? search, "search", width);
+    expect(Math.round(rectOf(involvement).left), "segment left gutter").toBe(16);
+    expect(Math.round(width - rectOf(refresh).right), "refresh right gutter").toBe(16);
+    for (const toggle of involvement.querySelectorAll("button")) expectTapHeight(toggle, "segment");
+    expectTapHeight(refresh, "refresh");
+    expectTapHeight(search, "search");
+    // The refresh button shares the segment's row.
+    expect(Math.abs(centerY(refresh) - centerY(involvement))).toBeLessThan(4);
+    for (const name of [/^Sort pull requests/, /^Filters/, /^Filter by provider/]) {
+      expectTapHeight(screen.getByRole("button", { name }).element(), String(name));
+    }
+    for (const toggle of document.querySelectorAll('[aria-label="Pull request view"] button')) {
+      expectTapHeight(toggle, "view segment");
+    }
+    expectPhoneLayout(`pull requests list at ${width}px`);
+    await screen.unmount();
+  }
+});
+
+it("lays pull request rows out the same way, with no persistent fill", async () => {
+  using _environment = installEnvironment();
+  for (const { width, height } of PHONE_VIEWPORTS) {
+    const { screen } = await mountApp("/pull-requests", width, height);
+    await using _screen = screen;
+    await waitForSelector("[data-pull-request-key]");
+    // Opening and closing a request leaves it selected, which must not fill its row.
+    await userEvent.click(screen.getByRole("button", { name: /A stacked pull request/ }));
+    await waitForSelector('[data-preview-panel-maximized="true"]');
+    await userEvent.click(
+      screen.getByRole("button", { name: "Back to this thread's pull requests" }),
+    );
+    await vi.waitFor(
+      () => expect(document.querySelector('[data-preview-panel-maximized="true"]')).toBeNull(),
+      { timeout: 5_000 },
+    );
+
+    const rows = [...document.querySelectorAll<HTMLElement>("[data-pull-request-key]")];
+    expect(rows.length).toBeGreaterThanOrEqual(2);
+    const numberTops: number[] = [];
+    const numberLefts: number[] = [];
+    for (const row of rows) {
+      expect(getComputedStyle(row).backgroundColor, "row fill").toBe("rgba(0, 0, 0, 0)");
+      expectGutter(row, "row", width);
+      expectTapHeight(row, "row");
+      const number =
+        [...row.querySelectorAll<HTMLElement>("span")].find(
+          (element) => element.children.length === 0 && /^#\d+$/.test(element.textContent ?? ""),
+        ) ?? null;
+      expect(number, "row number").not.toBeNull();
+      numberTops.push(rectOf(number!).top - rectOf(row).top);
+      numberLefts.push(rectOf(number!).left);
+      const author = leafWithText(row, "theogmiguel");
+      expect(author, "row author").not.toBeNull();
+      expectNotTruncated(author!, "row author");
+      const stat = leafWithText(row, "+12");
+      expect(stat, "row diff stat").not.toBeNull();
+      // The stat shares the meta line with the author instead of floating on its own line.
+      expect(Math.abs(centerY(stat!) - centerY(author!))).toBeLessThan(4);
+      // The repository chip yields its room to the author on a phone.
+      const repository = leafWithText(row, "theogmiguel/houston");
+      expect(repository === null || rectOf(repository).width === 0, "repository chip hidden").toBe(
+        true,
+      );
+    }
+    const spread = (values: number[]) => Math.max(...values) - Math.min(...values);
+    expect(
+      spread(numberTops),
+      `number offsets ${numberTops.join(", ")} at ${width}px`,
+    ).toBeLessThan(1.5);
+    expect(spread(numberLefts), `number x ${numberLefts.join(", ")} at ${width}px`).toBeLessThan(
+      1.5,
+    );
+    await screen.unmount();
+  }
+});
+
+it("shows a pull request on the phone bar with wrapped text and one gutter", async () => {
+  using _environment = installEnvironment();
+  for (const { width, height } of PHONE_VIEWPORTS) {
+    const { screen } = await mountApp("/pull-requests", width, height);
+    await using _screen = screen;
+    await waitForSelector("[data-pull-request-key]");
+    await userEvent.click(screen.getByRole("button", { name: /A pull request title long enough/ }));
+    await waitForSelector('[data-preview-panel-maximized="true"]');
+
+    // No desktop tab strip: the page has its own back control instead.
+    expect(document.querySelector("[data-right-panel-tabbar]")).toBeNull();
+    const back = screen
+      .getByRole("button", { name: "Back to this thread's pull requests" })
+      .element();
+    expectTapHeight(back, "back");
+    expectTapHeight(
+      document.querySelector('nav[aria-label="Pull request tabs"] button')!,
+      "detail tab",
+    );
+    const heading = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLElement>('[data-preview-panel-maximized="true"] h1');
+      if (found === null) throw new Error("no title");
+      return found;
+    });
+    expect(heading.scrollHeight).toBeGreaterThan(24);
+    expectNotTruncated(heading, "title");
+    expect(Math.round(rectOf(heading).left), "title gutter").toBe(16);
+    expect(Math.round(rectOf(back).left) + 14, "back glyph gutter").toBe(16);
+    const tabs = document.querySelector<HTMLElement>('nav[aria-label="Pull request tabs"]')!;
+    expect(Math.round(rectOf(tabs.firstElementChild!).left), "tab gutter").toBe(16);
+    const checkout = document.querySelector<HTMLElement>(
+      '[aria-label="Copy checkout command"] code',
+    );
+    if (checkout !== null) expectNotTruncated(checkout, "checkout command");
+    // The panel runs down to the tab bar instead of stopping short.
+    const panel = document.querySelector<HTMLElement>('[data-preview-panel-maximized="true"]')!;
+    const tabBar = document.querySelector<HTMLElement>("[data-phone-tab-bar]")!;
+    expect(Math.round(rectOf(panel).bottom)).toBe(Math.round(rectOf(tabBar).top));
+    const content = document.querySelector<HTMLElement>(
+      '[data-right-panel-surface-content] [data-slot="swap-layer"][data-state="active"] > div > *',
+    )!;
+    // Compared by height: the panel's entrance animation offsets its top by a few pixels.
+    expect(Math.round(rectOf(content).height), "detail fills the panel").toBe(
+      Math.round(rectOf(panel).height),
+    );
+    expectPhoneLayout(`pull request detail at ${width}px`);
+    // The open request outlives the mount, so close it for the next viewport.
+    await userEvent.click(back);
+    await vi.waitFor(
+      () => expect(document.querySelector('[data-preview-panel-maximized="true"]')).toBeNull(),
+      { timeout: 5_000 },
+    );
+    await screen.unmount();
+  }
+});
+
+it("titles usage once, inside the gutter, with 44px controls", async () => {
+  using _environment = installEnvironment();
+  for (const { width, height } of PHONE_VIEWPORTS) {
+    localStorage.removeItem("houston:usage-page-preferences:v1");
+    const { screen } = await mountApp("/usage", width, height);
+    await using _screen = screen;
+    await waitForText("API-equivalent cost");
+
+    const headings = [...document.querySelectorAll("h1")].filter(
+      (heading) => heading.textContent === "Usage",
+    );
+    expect(headings, "one Usage title").toHaveLength(1);
+    expect(headings[0]!.closest("[data-phone-page-bar]")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Toggle main sidebar" }).elements()).toHaveLength(0);
+
+    const period = document.querySelector<HTMLElement>('[aria-label="Usage period"]')!;
+    const metric = document.querySelector<HTMLElement>('[aria-label="Usage metric"]')!;
+    for (const group of [period, metric]) {
+      expect(Math.round(rectOf(group).left), "segment left gutter").toBe(16);
+      expect(Math.round(width - rectOf(group).right), "segment right gutter").toBe(16);
+      for (const toggle of group.querySelectorAll("button")) expectTapHeight(toggle, "segment");
+    }
+    const card = document.querySelector<HTMLElement>("section")!;
+    expectGutter(card, "usage card", width);
+    expectTapHeight(screen.getByRole("button", { name: "Refresh usage" }).element(), "refresh");
+    expectPhoneLayout(`usage at ${width}px`);
+    await screen.unmount();
+  }
+});
+
+it("renders a missing grid inside the phone shell", async () => {
+  using _environment = installEnvironment();
+  for (const { width, height } of PHONE_VIEWPORTS) {
+    const { screen } = await mountApp("/grid/missing-grid", width, height);
+    await using _screen = screen;
+    await waitForSelector("[data-phone-missing-grid]");
+    expect(document.querySelector("[data-phone-page-bar]")).not.toBeNull();
+    expect(document.querySelector("[data-phone-tab-bar]")).not.toBeNull();
+    const message = screen.getByText("This grid no longer exists").element();
+    const detail = screen.getByText(/It was deleted on this machine/).element();
+    for (const text of [message, detail]) {
+      expect(getComputedStyle(text).textWrap, "balanced text").toMatch(/balance/);
+      expect(rectOf(text).left, "text gutter").toBeGreaterThanOrEqual(16);
+      expect(width - rectOf(text).right, "text gutter").toBeGreaterThanOrEqual(16);
+    }
+    const back = screen.getByRole("link", { name: "Back to threads" }).element();
+    expectTapHeight(back, "Back to threads");
+    expectPhoneLayout(`missing grid at ${width}px`);
     await screen.unmount();
   }
 });

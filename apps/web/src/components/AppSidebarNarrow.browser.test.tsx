@@ -70,8 +70,8 @@ it.each([800, 700])("opens the thread rail as a drawer from the toggle at %ipx",
 it.each([800, 390])("keeps the drawer at most 360px wide at %ipx", async (width) => {
   const { screen, router } = await mountApp(width);
   await using _screen = screen;
-  // A phone's home is the rail itself; a utility page keeps the drawer's toggle.
-  if (width < 640) await router.navigate({ to: "/usage" });
+  // A phone's home is the rail itself; a utility page outside the tab bar (Tasks) keeps the drawer's toggle.
+  if (width < 640) await router.navigate({ to: "/tasks" });
   const toggle = screen.getByRole("button", { name: "Toggle main sidebar" });
   await expect.element(toggle).toBeVisible();
   await userEvent.click(toggle);

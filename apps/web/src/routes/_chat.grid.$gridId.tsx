@@ -37,6 +37,8 @@ import { resolveGridThreadOpen, type ThreadOpenIntent } from "../grid/gridThread
 import { containsThread, preorderThreads } from "../grid/tree";
 import { cn } from "../lib/utils";
 import { useMediaQuery } from "../hooks/useMediaQuery";
+import { PhonePageBar } from "../mobile/PhonePageBar";
+import { PhoneTabBar } from "../mobile/PhoneTabBar";
 import { useIsPhone } from "../mobile/usePhone";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { useStableCallback } from "../hooks/useStableCallback";
@@ -273,6 +275,23 @@ function GridRoute() {
   });
 
   if (grid === null) {
+    if (isPhone) {
+      return (
+        <SidebarInset className="min-h-0 overflow-hidden" data-phone-missing-grid="">
+          <PhonePageBar title="Grid" />
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-4 text-center">
+            <p className="text-sm font-medium text-balance">This grid no longer exists</p>
+            <p className="text-xs text-balance text-muted-foreground">
+              It was deleted on this machine, or its workspace is no longer open.
+            </p>
+            <Button variant="outline" className="mt-2 h-11 px-4" render={<Link to="/" />}>
+              Back to threads
+            </Button>
+          </div>
+          <PhoneTabBar active="threads" />
+        </SidebarInset>
+      );
+    }
     return (
       <SidebarInset className="min-h-0 items-center justify-center overflow-hidden">
         <div className="flex max-w-sm flex-col items-center gap-2 text-center">

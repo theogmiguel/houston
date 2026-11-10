@@ -316,13 +316,16 @@ function SidebarControl() {
   const { toggleSidebar, isMobile, mobileSheetMounted } = useSidebar();
   const isSidebarVisible = useSidebarVisibility();
   const isPhone = useIsPhone();
-  // On a phone the rail is the home page, and a thread's own bar carries the way back.
+  // On a phone the rail is the home page, the tab bar reaches the top-level pages, and a thread's
+  // own bar carries the way back.
   // A drawer there would mount a second rail or repeat the bar's back control.
   const phonePageOwnsNavigation = useMatches({
     select: (matches) => {
       const routeId = matches.at(-1)?.routeId;
       return (
         routeId === "/_chat/" ||
+        routeId === "/_chat/pull-requests" ||
+        routeId === "/_chat/usage" ||
         routeId === "/_chat/grid/$gridId" ||
         routeId === "/_chat/draft/$draftId" ||
         routeId === "/_chat/$environmentId/$threadId"

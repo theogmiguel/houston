@@ -1458,6 +1458,7 @@ export function PullRequestsPage() {
     maximizedAway: rightPanelMaximized,
     listBody,
     scrollRef,
+    phone: isPhone,
   };
 
   const activateSurface = (surface: PullRequestSurface) => {
@@ -1558,7 +1559,7 @@ export function PullRequestsPage() {
   return (
     <SidebarInset className="min-h-0 overflow-hidden overscroll-y-none">
       <div className="relative flex min-h-0 flex-1">
-        {pullRequestsSupported && rightPanelPresent ? openPanelControls : null}
+        {pullRequestsSupported && rightPanelPresent && !isPhone ? openPanelControls : null}
         <PullRequestsColumn {...columnProps} />
 
         {rightPanelPresent && renderedPullRequestSurface && panelEnvironmentId !== null ? (
@@ -1566,6 +1567,7 @@ export function PullRequestsPage() {
             mode="inline"
             open={rightPanelState.isOpen}
             maximized={rightPanelMaximized}
+            hideTabBar={isPhone}
             keybindings={keybindings}
             getShortcutContext={getShortcutContext}
             widthStorageKey="houston:pull-request-panel-width"
@@ -1616,6 +1618,7 @@ export function PullRequestsPage() {
               swapKey={renderedPullRequestSurface.id}
               className="flex min-h-0 flex-1 flex-col"
               contentClassName="flex min-h-0 flex-1 flex-col"
+              innerClassName="max-phone:flex max-phone:min-h-0 max-phone:flex-1 max-phone:flex-col"
             >
               <PullRequestDetailPanel
                 getShortcutContext={getShortcutContext}

@@ -130,22 +130,22 @@ export function PullRequestDetailGhost({
       role="status"
       aria-label={`Loading ${terminology.singular}`}
       className={cn(
-        "flex h-full min-h-0 flex-col overflow-hidden bg-background",
+        "flex h-full min-h-0 flex-col overflow-hidden bg-background max-phone:flex-1",
         !seed && "motion-safe:animate-skeleton",
       )}
     >
-      <div className="@container/pr-header grid min-w-0 shrink-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 border-b border-border/60">
-        <div className="pl-4 grid h-7 min-w-0 items-center overflow-hidden">
+      <div className="@container/pr-header grid min-w-0 shrink-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 border-b border-border/60 max-phone:gap-x-0">
+        <div className="pl-4 grid h-7 min-w-0 items-center overflow-hidden max-phone:h-11 max-phone:border-b max-phone:border-border/60">
           <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground sm:text-xs">
             {onBack ? (
               <Button
                 size="icon-micro"
                 variant="ghost-muted"
-                className="-ml-1.5"
+                className="-ml-1.5 max-phone:-ml-3.5 max-phone:size-11"
                 onClick={onBack}
                 aria-label="Back to this thread's pull requests"
               >
-                <ArrowLeftIcon aria-hidden className="size-3.5" />
+                <ArrowLeftIcon aria-hidden className="size-3.5 max-phone:size-4" />
               </Button>
             ) : null}
             {seed ? (
@@ -167,7 +167,7 @@ export function PullRequestDetailGhost({
             )}
           </div>
         </div>
-        <div className="mr-4 flex h-7 shrink-0 items-center justify-end gap-1">
+        <div className="mr-4 flex h-7 shrink-0 items-center justify-end gap-1 max-phone:mr-0 max-phone:h-11 max-phone:border-b max-phone:border-border/60 max-phone:pr-4">
           {actions ?? <GhostBar className="h-6 w-16 rounded-md" />}
           <Button
             size="icon-xs"
@@ -195,7 +195,9 @@ export function PullRequestDetailGhost({
               title={
                 <PullRequestDetailTitleRow>
                   {seed ? (
-                    <h1 className="truncate text-base font-semibold leading-snug">{seed.title}</h1>
+                    <h1 className="truncate text-base font-semibold leading-snug max-phone:break-words max-phone:whitespace-normal">
+                      {seed.title}
+                    </h1>
                   ) : (
                     <GhostBar className="h-5 w-4/5 max-w-md" />
                   )}
@@ -228,7 +230,7 @@ export function PullRequestDetailGhost({
                     target={`${terminology.singular} checkout command`}
                     copyLabel="Copy checkout command"
                     copiedLabel="Checkout command copied"
-                    className="ml-auto font-mono"
+                    className="ml-auto font-mono max-phone:ml-0"
                     tooltipSide="bottom"
                     {...(onCheckoutError ? { onError: onCheckoutError } : {})}
                   />
@@ -266,6 +268,7 @@ export function PullRequestDetailGhost({
                   `${changedFiles.toLocaleString()} ${changedFiles === 1 ? "file" : "files"}`
                 )
               }
+              filesPending={changedFiles === null}
               diffStat={
                 seed ? (
                   <PullRequestDiffStat
@@ -290,6 +293,7 @@ export function PullRequestDetailGhost({
             />
           ) : (
             <PullRequestChecksStatusLine
+              className="max-phone:hidden"
               icon={<GhostBar className="my-px size-3.5 rounded-full" />}
               label={<GhostBar className="w-28" />}
             />
