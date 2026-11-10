@@ -12,6 +12,8 @@ export const MODEL_PICKER_SIDEBAR_ROW_CLS =
 export const MODEL_PICKER_SIDEBAR_ROW_DISABLED_CLS =
   "cursor-not-allowed text-(--houston) hover:bg-transparent";
 export const MODEL_PICKER_SIDEBAR_NAME_CLS = "flex min-w-0 flex-1 flex-col leading-tight";
+/** A long provider name wraps to two lines instead of truncating. */
+export const MODEL_PICKER_SIDEBAR_NAME_TEXT_CLS = "line-clamp-2 break-words";
 export const MODEL_PICKER_SIDEBAR_REASON_CLS = "truncate text-(--houston) text-2xs";
 
 /** A phone sheet lays the provider column out as one scrolling row above the model list. */

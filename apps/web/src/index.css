@@ -723,6 +723,25 @@ body {
   will-change: var(--visible-animation-will-change, auto);
 }
 
+@keyframes voice-bar {
+  0%,
+  100% {
+    transform: scaleY(0.3);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+/* The dictation bars loop while the mic button is visible; reduced motion keeps their rest heights. */
+@utility voice-bar {
+  @variant motion-safe {
+    animation: voice-bar 0.9s ease-in-out infinite;
+    animation-play-state: var(--visible-animation-state, paused);
+    will-change: var(--visible-animation-will-change, auto);
+  }
+}
+
 @keyframes live-activity-focus {
   from {
     transform: translateX(0);

@@ -284,6 +284,25 @@ export function threadTraversalDirectionFromCommand(
   return null;
 }
 
+function shouldShowJumpHintsForModifiers(
+  commands: ReadonlyArray<KeybindingCommand>,
+  modifiers: ShortcutModifierStateLike,
+  keybindings: ResolvedKeybindingsConfig,
+  options?: ShortcutMatchOptions,
+): boolean {
+  const platform = resolvePlatform(options);
+
+  for (const command of commands) {
+    const shortcut = findEffectiveShortcutForCommand(keybindings, command, options);
+    if (!shortcut) continue;
+    if (matchesKeybindingShortcutModifiers(modifiers, shortcut, platform)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export function shouldShowThreadJumpHintsForModifiers(
   modifiers: ShortcutModifierStateLike,
   keybindings: ResolvedKeybindingsConfig,
@@ -293,18 +312,26 @@ export function shouldShowThreadJumpHintsForModifiers(
   if (resolveContext(options).terminalFocus) {
     return false;
   }
+  return shouldShowJumpHintsForModifiers(
+    THREAD_JUMP_KEYBINDING_COMMANDS,
+    modifiers,
+    keybindings,
+    options,
+  );
+}
 
-  const platform = resolvePlatform(options);
-
-  for (const command of THREAD_JUMP_KEYBINDING_COMMANDS) {
-    const shortcut = findEffectiveShortcutForCommand(keybindings, command, options);
-    if (!shortcut) continue;
-    if (matchesKeybindingShortcutModifiers(modifiers, shortcut, platform)) {
-      return true;
-    }
-  }
-
-  return false;
+/** The model picker's Mod+1..9 hints show while the jump modifier is held. */
+export function shouldShowModelPickerJumpHintsForModifiers(
+  modifiers: ShortcutModifierStateLike,
+  keybindings: ResolvedKeybindingsConfig,
+  options?: ShortcutMatchOptions,
+): boolean {
+  return shouldShowJumpHintsForModifiers(
+    MODEL_PICKER_JUMP_KEYBINDING_COMMANDS,
+    modifiers,
+    keybindings,
+    options,
+  );
 }
 
 export function modelPickerJumpCommandForIndex(

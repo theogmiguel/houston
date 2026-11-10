@@ -5,6 +5,7 @@ import { resolveComposerControlsOwnership } from "./composerControlsOwnership";
 const base = {
   matchesDefault: true,
   planModeUiEnabled: false,
+  planModeActive: false,
   collapsed: false,
   measuredHiddenBlockCount: 0,
 };
@@ -45,10 +46,18 @@ describe("resolveComposerControlsOwnership", () => {
     expect(result.pickerOwnsModeShortcut).toBe(false);
   });
 
-  it("keeps the Plan toggle block at the default and leaves Permissions with the picker", () => {
+  it("shows no mode block at rest when Plan is available but off", () => {
+    const result = resolveComposerControlsOwnership({ ...base, planModeUiEnabled: true });
+    expect(result.showModeBlock).toBe(false);
+    expect(result.hiddenBlockIds).toEqual([]);
+    expect(result.pickerOwnsModeShortcut).toBe(true);
+  });
+
+  it("keeps the Plan chip block while plan mode is on and leaves Permissions with the picker", () => {
     const result = resolveComposerControlsOwnership({
       ...base,
       planModeUiEnabled: true,
+      planModeActive: true,
       measuredHiddenBlockCount: 1,
     });
     expect(result.showModeBlock).toBe(true);
@@ -62,6 +71,7 @@ describe("resolveComposerControlsOwnership", () => {
       ...base,
       matchesDefault: false,
       planModeUiEnabled: true,
+      planModeActive: true,
       measuredHiddenBlockCount: 1,
     });
     expect(result.hiddenBlockIds).toEqual(["mode"]);

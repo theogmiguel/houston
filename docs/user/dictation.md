@@ -84,7 +84,7 @@ page names it and dictation uses the default model.
 ## Dictate
 
 Click the microphone in the composer or editor, or press `Ctrl+Alt+V` (`Cmd+Option+V` on
-macOS). Press again, or the check mark, to finish; `Esc` discards the recording and leaves the
+macOS). Press again to finish; `Esc` discards the recording and leaves the
 draft unchanged. Recordings last up to five minutes. Text is inserted at the cursor or replaces
 the selection you had when recording started; the editor is read-only while dictation runs.
 

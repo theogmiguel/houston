@@ -9,7 +9,8 @@ import {
   hasAvailableCompactionProvider,
   hasDismissedResumeCompaction,
   resolveContextWindowModelDisplayName,
-  shouldReserveContextWindowMeter,
+  CONTEXT_METER_MIN_USED_PERCENT,
+  shouldShowContextWindowMeter,
 } from "./ContextWindowMeter.logic";
 
 function claudeProvider(input: {
@@ -140,24 +141,19 @@ describe("hasDismissedResumeCompaction", () => {
   });
 });
 
-describe("shouldReserveContextWindowMeter", () => {
-  const loadingStartedThread = {
-    meterEnabled: true,
-    detailLoading: true,
-    threadStarted: true,
-    providerReportsContextWindow: true,
-  };
-
-  it("holds the meter's slot while a started thread's detail loads", () => {
-    expect(shouldReserveContextWindowMeter(loadingStartedThread)).toBe(true);
+describe("shouldShowContextWindowMeter", () => {
+  it("hides the meter below the threshold", () => {
+    expect(shouldShowContextWindowMeter(CONTEXT_METER_MIN_USED_PERCENT - 0.1)).toBe(false);
+    expect(shouldShowContextWindowMeter(0)).toBe(false);
   });
 
-  it("reserves while the thread's provider is not in the catalog yet", () => {
-    expect(
-      shouldReserveContextWindowMeter({
-        ...loadingStartedThread,
-        providerReportsContextWindow: null,
-      }),
-    ).toBe(true);
+  it("shows the meter from the threshold", () => {
+    expect(shouldShowContextWindowMeter(CONTEXT_METER_MIN_USED_PERCENT)).toBe(true);
+    expect(shouldShowContextWindowMeter(100)).toBe(true);
+  });
+
+  it("hides the meter when the used share is unknown", () => {
+    expect(shouldShowContextWindowMeter(null)).toBe(false);
+    expect(shouldShowContextWindowMeter(Number.NaN)).toBe(false);
   });
 });

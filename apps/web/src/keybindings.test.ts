@@ -19,6 +19,7 @@ import {
   isTerminalSplitShortcut,
   resolveChatShortcutCommand,
   resolveShortcutCommand,
+  shouldShowModelPickerJumpHintsForModifiers,
   shouldShowThreadJumpHintsForModifiers,
   shortcutLabelForCommand,
   terminalNavigationShortcutData,
@@ -359,6 +360,36 @@ describe("shortcutLabelForCommand", () => {
         context: { terminalFocus: true },
       }),
       "Ctrl+D",
+    );
+  });
+});
+
+describe("model picker jump hints", () => {
+  const options = {
+    platform: "Linux x86_64",
+    context: { terminalFocus: false, terminalOpen: false, modelPickerOpen: true, isDesktop: true },
+  };
+
+  it("shows only while the jump modifier is held", () => {
+    assert.isFalse(
+      shouldShowModelPickerJumpHintsForModifiers(event({}), DEFAULT_RESOLVED_KEYBINDINGS, options),
+    );
+    assert.isTrue(
+      shouldShowModelPickerJumpHintsForModifiers(
+        event({ ctrlKey: true }),
+        DEFAULT_RESOLVED_KEYBINDINGS,
+        options,
+      ),
+    );
+  });
+
+  it("stays hidden for a modifier the jump bindings do not use", () => {
+    assert.isFalse(
+      shouldShowModelPickerJumpHintsForModifiers(
+        event({ altKey: true }),
+        DEFAULT_RESOLVED_KEYBINDINGS,
+        options,
+      ),
     );
   });
 });

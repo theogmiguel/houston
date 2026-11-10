@@ -6,7 +6,7 @@ import type {
 } from "@houston-app/contracts";
 import { createModelSelection } from "@houston-app/shared/model";
 import { BotIcon, CheckIcon, PencilRulerIcon } from "lucide-react";
-import { type ComponentProps, memo, useId, useRef, useState } from "react";
+import { type ComponentProps, type KeyboardEvent, memo, useId, useRef, useState } from "react";
 
 import { cn } from "~/lib/utils";
 
@@ -19,11 +19,12 @@ import {
   PHONE_SHEET_ROW_ICON_CLS,
   PHONE_SHEET_SECTION_LABEL_CLS,
 } from "../ui/phone-recipes";
+import { PERMISSION_SEGMENT_CLS } from "../ui/composer-picker-recipes";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ComposerControl, ComposerControlIcon } from "./ComposerControl";
 import { focusRequestedPermission, useComposerMenuProps } from "./composerEventScope";
 import { ComposerCompactBeforeSendChip, ComposerPrimaryActions } from "./ComposerPrimaryActions";
-import { ContextWindowMeter, ContextWindowMeterPlaceholder } from "./ContextWindowMeter";
+import { ContextWindowMeter } from "./ContextWindowMeter";
 import { resolveModelPickerSelectedModel } from "./ModelPickerContent";
 import { ProviderModelPicker } from "./ProviderModelPicker";
 import { runtimeModeConfig } from "./runtimeModeConfig";
@@ -33,12 +34,14 @@ export type RuntimeModeOption = {
   mode: RuntimeMode;
   disabledReason?: string;
 } & (typeof runtimeModeConfig)[RuntimeMode];
-const supervisedRuntimeModeOption: RuntimeModeOption = {
+export const supervisedRuntimeModeOption: RuntimeModeOption = {
   mode: "approval-required" as const,
   ...runtimeModeConfig["approval-required"],
 };
 export const ComposerFooterModeControls = memo(function ComposerFooterModeControls(props: {
   showInteractionModeToggle: boolean;
+  /** Keep the toggle in the default mode too (the phone sheet, where it is the only way in). */
+  alwaysShowInteractionModeToggle?: boolean;
   interactionMode: ProviderInteractionMode;
   runtimeMode: RuntimeMode;
   runtimeModeOptions: ReadonlyArray<RuntimeModeOption>;
@@ -61,49 +64,51 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
     props.runtimeModeOptions.find((option) => option.mode === props.runtimeMode) ??
     supervisedRuntimeModeOption;
   const RuntimeModeIcon = runtimeModeOption.icon;
-  const interactionModeTooltip =
-    props.interactionMode === "plan"
-      ? "Plan mode. Click to return to normal build mode"
-      : "Default mode. Click to enter plan mode";
-
-  const interactionModeToggle = props.showInteractionModeToggle ? (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <ComposerControl
-            size={size}
-            className={cn("shrink-0 whitespace-nowrap", boardControlClassName)}
-            aria-pressed={props.interactionMode === "plan"}
-            type="button"
-            onClick={props.onToggleInteractionMode}
-            aria-label={interactionModeTooltip}
-          />
-        }
-      >
-        {props.interactionMode === "plan" ? (
-          <ComposerControlIcon
-            icon={PencilRulerIcon}
-            size={size}
-            className="text-current opacity-100"
-          />
-        ) : (
-          <ComposerControlIcon
-            icon={BotIcon}
-            size={size}
-            opticalSize={size === "xs" ? "default" : "large"}
-          />
-        )}
-        {/* The compacted row (xs) keeps this icon-only, like the other controls there. */}
-        <span
-          data-composer-control-label
-          className={size === "xs" ? "sr-only" : "sr-only sm:not-sr-only"}
+  const planActive = props.interactionMode === "plan";
+  // The composer's toggle shows only while plan mode is on; /plan and Shift+Tab enter it from
+  // the default. The phone sheet keeps it in both modes.
+  const interactionModeTooltip = planActive
+    ? "Plan mode. Click to return to normal build mode"
+    : "Default mode. Click to enter plan mode";
+  const interactionModeToggle =
+    props.showInteractionModeToggle && (planActive || props.alwaysShowInteractionModeToggle) ? (
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <ComposerControl
+              size={size}
+              className={cn("shrink-0 whitespace-nowrap", boardControlClassName)}
+              aria-pressed={planActive}
+              type="button"
+              onClick={props.onToggleInteractionMode}
+              aria-label={interactionModeTooltip}
+            />
+          }
         >
-          {props.interactionMode === "plan" ? "Plan" : "Build"}
-        </span>
-      </TooltipTrigger>
-      <TooltipPopup side="top">{interactionModeTooltip}</TooltipPopup>
-    </Tooltip>
-  ) : null;
+          {planActive ? (
+            <ComposerControlIcon
+              icon={PencilRulerIcon}
+              size={size}
+              className="text-current opacity-100"
+            />
+          ) : (
+            <ComposerControlIcon
+              icon={BotIcon}
+              size={size}
+              opticalSize={size === "xs" ? "default" : "large"}
+            />
+          )}
+          {/* The compacted row (xs) keeps this icon-only, like the other controls there. */}
+          <span
+            data-composer-control-label
+            className={size === "xs" ? "sr-only" : "sr-only sm:not-sr-only"}
+          >
+            {planActive ? "Plan" : "Build"}
+          </span>
+        </TooltipTrigger>
+        <TooltipPopup side="top">{interactionModeTooltip}</TooltipPopup>
+      </Tooltip>
+    ) : null;
 
   // The chip opens the same Permissions toggle used in the model picker and the overflow menu.
   const permissionsTooltip = `Permissions: ${runtimeModeOption.label}. ${runtimeModeOption.description}`;
@@ -165,6 +170,20 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
   );
 });
 
+/** Left and Right move focus between a horizontal row's segments; a pick stays Enter or Space. */
+export function moveBetweenPermissionSegments(segmentSelector: string) {
+  return (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    const items = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(segmentSelector));
+    const index = items.findIndex((item) => item === document.activeElement);
+    const next = items[index + (event.key === "ArrowRight" ? 1 : -1)];
+    if (index < 0 || !next) return;
+    event.preventDefault();
+    event.stopPropagation();
+    next.focus();
+  };
+}
+
 /**
  * Permission modes as one horizontal toggle, with the shown mode named below.
  * Each segment is a real menu radio item, so arrow keys reach it from the rest of the menu
@@ -194,18 +213,7 @@ export function ComposerPermissionsSection(props: {
         }}
         className="flex rounded-lg bg-input/40 p-0.5"
         // Menus navigate with Up/Down only; the row reads horizontally, so Left/Right move too.
-        onKeyDown={(event) => {
-          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-          const items = Array.from(
-            event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitemradio"]'),
-          );
-          const index = items.findIndex((item) => item === document.activeElement);
-          const next = items[index + (event.key === "ArrowRight" ? 1 : -1)];
-          if (index < 0 || !next) return;
-          event.preventDefault();
-          event.stopPropagation();
-          next.focus();
-        }}
+        onKeyDown={moveBetweenPermissionSegments('[role="menuitemradio"]')}
       >
         {props.runtimeModeOptions.map((option) => {
           const OptionIcon = option.icon;
@@ -222,7 +230,10 @@ export function ComposerPermissionsSection(props: {
               onPointerLeave={() => setPreviewMode(null)}
               onFocus={() => setPreviewMode(option.mode)}
               onBlur={() => setPreviewMode(null)}
-              className="flex h-6 flex-1 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none data-disabled:cursor-not-allowed data-disabled:opacity-40 data-checked:bg-input/72 data-checked:text-foreground data-highlighted:text-foreground not-data-checked:data-highlighted:bg-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+              className={cn(
+                PERMISSION_SEGMENT_CLS,
+                "flex-1 data-highlighted:text-foreground not-data-checked:data-highlighted:bg-hover",
+              )}
             >
               <OptionIcon aria-hidden="true" className="size-3.5" />
             </MenuPrimitive.RadioItem>
@@ -314,7 +325,6 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
   compact: boolean;
   canOperateThread: boolean;
   activeContextWindow: ContextWindowSnapshot | null;
-  reserveContextWindowMeter: boolean;
   activeThreadModelDisplayName: string | null;
   isPreparingWorktree: boolean;
   pendingAction: {
@@ -385,8 +395,6 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
           compactDisabled={props.compactDisabled}
           compactDisabledReason={props.compactDisabledReason}
         />
-      ) : props.reserveContextWindowMeter ? (
-        <ContextWindowMeterPlaceholder />
       ) : null}
       <ComposerPrimaryActions
         compact={props.compact}

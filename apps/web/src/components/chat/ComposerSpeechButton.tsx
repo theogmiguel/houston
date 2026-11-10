@@ -9,7 +9,7 @@ import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
 import { Text } from "../ui/text";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { RecordingStatus } from "../ui/voice-waveform";
+import { DictationBars, RecordingClock, RecordingStatus } from "../ui/voice-waveform";
 
 type SpeechPresentation = {
   status: string | null;
@@ -130,14 +130,20 @@ export function ComposerSpeechUnavailableMic(props: { reason: string }) {
   );
 }
 
-/** The dictation mic beside the composer's send button. */
+/**
+ * The dictation mic beside the composer's send button. `inline` carries the whole recording
+ * status on the button itself (bars, clock, "Transcribing", Skip cleanup) for hosts that show
+ * no tray while dictating.
+ */
 export function ComposerSpeechMicButton(props: {
   state: VoiceInputState;
   shortcutLabel?: string | null;
   disabled?: boolean;
+  inline?: boolean;
   onStart(): void;
   onStop(): void;
   onCancel(): void;
+  onSkipPostProcessing?(): void;
 }) {
   const navigate = useNavigate();
   const { phase } = props.state;
@@ -155,14 +161,14 @@ export function ComposerSpeechMicButton(props: {
           : "Start voice input";
   const showShortcut = (phase === "idle" || phase === "error" || isRecording) && !openSettings;
 
-  return (
+  const button = (
     <Tooltip>
       <TooltipTrigger
         render={
           <Button
             type="button"
             size="icon-sm"
-            variant="ghost"
+            variant={props.inline && isRecording ? "secondary" : "ghost"}
             aria-label={label}
             aria-pressed={isRecording}
             data-listening={isRecording || undefined}
@@ -182,7 +188,13 @@ export function ComposerSpeechMicButton(props: {
             }}
             className="shrink-0"
           >
-            {isBusy ? <Spinner size="sm" /> : <MicIcon />}
+            {isBusy ? (
+              <Spinner size="sm" />
+            ) : props.inline && isRecording ? (
+              <DictationBars />
+            ) : (
+              <MicIcon />
+            )}
           </Button>
         }
       />
@@ -191,6 +203,51 @@ export function ComposerSpeechMicButton(props: {
         {showShortcut && props.shortcutLabel ? ` (${props.shortcutLabel})` : ""}
       </TooltipPopup>
     </Tooltip>
+  );
+  if (!props.inline) return button;
+  const status = resolveSpeechPresentation(props.state, null).status;
+  return (
+    <div className="flex items-center gap-1.5">
+      {isRecording ? <RecordingClock /> : null}
+      {phase === "post-processing" && props.onSkipPostProcessing ? (
+        <Button
+          type="button"
+          size="xs"
+          variant="ghost"
+          onPointerDown={(event) => event.preventDefault()}
+          onClick={props.onSkipPostProcessing}
+        >
+          Skip cleanup
+        </Button>
+      ) : null}
+      {phase === "transcribing" || phase === "post-processing" ? (
+        <Text as="span" variant="caption" tone="muted" aria-hidden className="shrink-0">
+          {status}
+        </Text>
+      ) : null}
+      {button}
+    </div>
+  );
+}
+
+/** The live transcription inside the prompt field, after the draft, in the muted ink. */
+export function ComposerSpeechPreview(props: {
+  preview: { committed: string; tentative: string } | null;
+}) {
+  if (!props.preview) return null;
+  return (
+    <div
+      aria-label="Live transcription"
+      data-chat-composer-speech-preview="true"
+      className="max-h-32 overflow-y-auto"
+      role="status"
+      aria-live="polite"
+    >
+      <Text as="p" tone="muted" preserve breakWords>
+        {props.preview.committed}
+        {props.preview.tentative}
+      </Text>
+    </div>
   );
 }
 

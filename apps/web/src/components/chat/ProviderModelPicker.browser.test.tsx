@@ -4,6 +4,7 @@ import {
   type ProviderOptionDescriptor,
   type ServerProvider,
 } from "@houston-app/contracts";
+import type { RuntimeMode } from "@houston-app/contracts";
 import { compileResolvedKeybindingsConfig } from "@houston-app/shared/keybindings";
 import { describe, expect, it } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
@@ -11,7 +12,7 @@ import { page, userEvent } from "vite-plus/test/browser";
 import "~/index.css";
 
 import { render } from "../../../test/render";
-import { runtimeModeConfig } from "./runtimeModeConfig";
+import { runtimeModeConfig, runtimeModeOptions } from "./runtimeModeConfig";
 import { deriveProviderInstanceEntries } from "../../providerInstances";
 import { ComposerEffortPanel, ComposerPickerFooter } from "../ui/composer-model-effort";
 import { TooltipProvider } from "../ui/tooltip";
@@ -109,7 +110,7 @@ it("caps the composer's model trigger so a long model name truncates", async () 
   expect(trigger.element().getBoundingClientRect().width).toBeLessThanOrEqual(224);
 });
 
-it("names the model in the trigger exactly as its row in the list does", async () => {
+it("names the model in full in the trigger and without the provider prefix in its tab", async () => {
   await using _screen = await render(
     <TooltipProvider delay={0}>
       <ProviderModelPicker
@@ -133,7 +134,10 @@ it("names the model in the trigger exactly as its row in the list does", async (
   expect(label?.textContent).toBe("Claude Opus 5.5");
 
   await trigger.click();
-  await expect.element(page.getByRole("option", { name: /Claude Opus 5\.5/ })).toBeVisible();
+  await expect.element(page.getByRole("option", { name: /Opus 5\.5/ })).toBeVisible();
+  expect(document.querySelector('[role="option"] span.truncate')?.textContent?.trim()).toBe(
+    "Opus 5.5",
+  );
 });
 
 it("draws the provider's mark beside the model name", async () => {
@@ -237,7 +241,7 @@ it("docks an effort panel under the list and stays open after a model pick", asy
   await page.getByRole("button", { name: /Opus 5\.5/ }).click();
   await expect.poll(() => document.querySelector("[data-model-picker-effort]") !== null).toBe(true);
 
-  await page.getByRole("option", { name: /Claude Sonnet 5\.5/ }).click();
+  await page.getByRole("option", { name: /Sonnet 5\.5/ }).click();
 
   await expect.poll(() => changes.length).toBe(1);
   expect(changes[0]?.model).toBe("sonnet");
@@ -664,12 +668,17 @@ describe("Ultracode in the picker's footer", () => {
       },
     ],
   };
+  const permissionChanges: RuntimeMode[] = [];
   const permissions = {
     runtimeMode: "approval-required" as const,
-    runtimeModeOptions: [
-      { mode: "approval-required" as const, ...runtimeModeConfig["approval-required"] },
-    ],
-    onRuntimeModeChange: () => {},
+    runtimeModeOptions: runtimeModeOptions.map((mode) => ({
+      mode,
+      ...runtimeModeConfig[mode],
+      ...(mode === "full-access" ? { disabledReason: "Full access is off here." } : {}),
+    })),
+    onRuntimeModeChange: (mode: RuntimeMode) => {
+      permissionChanges.push(mode);
+    },
   };
 
   async function openPicker(withPermissions: boolean) {
@@ -724,7 +733,8 @@ describe("Ultracode in the picker's footer", () => {
       '[data-model-picker-content="true"]',
     )!.parentElement!;
     expect(frame.contains(toggle)).toBe(true);
-    expect(frame.querySelector("[data-composer-permissions-trigger]")).not.toBeNull();
+    expect(frame.querySelector("[data-composer-permissions-trigger]")).toBeNull();
+    expect(frame.querySelector('[role="radiogroup"][aria-label="Permissions"]')).not.toBeNull();
     const list = document.querySelector<HTMLElement>('[data-model-picker-content="true"]')!;
     expect(toggle.getBoundingClientRect().top).toBeGreaterThanOrEqual(
       list.getBoundingClientRect().bottom,
@@ -734,6 +744,84 @@ describe("Ultracode in the picker's footer", () => {
   it("keeps the toggle when the new-thread strip holds the permissions", async () => {
     await using _screen = await openPicker(false);
     expect(page.getByRole("button", { name: "Ultracode" }).element()).toBeTruthy();
-    expect(document.querySelector("[data-composer-permissions-trigger]")).toBeNull();
+    expect(document.querySelector("[data-composer-permissions]")).toBeNull();
   });
+
+  it("names the current mode in muted text beside four icon-only segments", async () => {
+    await using _screen = await openPicker(true);
+    const group = page.getByRole("radiogroup", { name: "Permissions" });
+    await expect.element(group).toBeVisible();
+    const radios = Array.from(group.element().querySelectorAll<HTMLElement>('[role="radio"]'));
+    expect(radios.map((radio) => radio.getAttribute("aria-label"))).toEqual(
+      runtimeModeOptions.map((mode) => runtimeModeConfig[mode].label),
+    );
+    for (const radio of radios) expect(radio.textContent).toBe("");
+    const label = document.querySelector<HTMLElement>("[data-composer-permissions-label]")!;
+    expect(label.textContent).toBe(runtimeModeConfig["approval-required"].label);
+    expect(label.getBoundingClientRect().right).toBeLessThanOrEqual(
+      group.element().getBoundingClientRect().left,
+    );
+    expect(radios.filter((radio) => radio.getAttribute("aria-checked") === "true")).toHaveLength(1);
+  });
+
+  it("previews a mode's name on hover and focus", async () => {
+    await using _screen = await openPicker(true);
+    const label = () =>
+      document.querySelector<HTMLElement>("[data-composer-permissions-label]")!.textContent;
+    await userEvent.hover(page.getByRole("radio", { name: "Auto-accept edits" }));
+    await expect.poll(label).toBe("Auto-accept edits");
+    await userEvent.unhover(page.getByRole("radio", { name: "Auto-accept edits" }));
+    await expect.poll(label).toBe(runtimeModeConfig["approval-required"].label);
+  });
+
+  it("applies a pick with one click and keeps the popup open", async () => {
+    permissionChanges.length = 0;
+    await using _screen = await openPicker(true);
+    await userEvent.click(page.getByRole("radio", { name: "Auto-accept edits" }));
+    expect(permissionChanges).toEqual(["auto-accept-edits"]);
+    expect(document.querySelector("[data-model-picker-content]")).not.toBeNull();
+  });
+
+  it("moves focus with Left and Right and refuses a disabled mode", async () => {
+    permissionChanges.length = 0;
+    await using _screen = await openPicker(true);
+    const checked = page.getByRole("radio", { name: runtimeModeConfig["approval-required"].label });
+    checked.element().focus();
+    await userEvent.keyboard("{ArrowRight}");
+    await expect
+      .element(page.getByRole("radio", { name: runtimeModeConfig["auto-accept-edits"].label }))
+      .toHaveFocus();
+    await userEvent.keyboard("{ArrowLeft}");
+    await expect.element(checked).toHaveFocus();
+    const disabled = page.getByRole("radio", { name: runtimeModeConfig["full-access"].label });
+    expect(disabled.element().getAttribute("aria-disabled")).toBe("true");
+    // A DOM click: the locator refuses to act on an aria-disabled control.
+    (disabled.element() as HTMLElement).click();
+    expect(permissionChanges).toEqual([]);
+  });
+});
+
+it("sizes the options band to its rows", async () => {
+  await using _screen = await render(
+    <TooltipProvider delay={0}>
+      <ProviderModelPicker
+        environmentId={null}
+        activeInstanceId={CLAUDE}
+        model="opus"
+        lockedProvider={null}
+        instanceEntries={entries}
+        keybindings={compileResolvedKeybindingsConfig([])}
+        modelOptionsByInstance={new Map([[CLAUDE, provider.models]])}
+        isComposerOwned
+        effortPanel={<div style={{ height: 36 }}>One row</div>}
+        onInstanceModelChange={() => {}}
+      />
+    </TooltipProvider>,
+    { router: false },
+  );
+  await page.getByRole("button", { name: /Opus 5\.5/ }).click();
+  await expect.poll(() => document.querySelector("[data-model-picker-effort]") !== null).toBe(true);
+  const panel = document.querySelector<HTMLElement>("[data-model-picker-effort]")!;
+  // The rows plus the rule above them; the old 88px floor would leave an empty band.
+  expect(panel.getBoundingClientRect().height).toBeLessThanOrEqual(38);
 });

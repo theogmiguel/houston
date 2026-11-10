@@ -18,6 +18,7 @@ import {
   MODEL_PICKER_SIDEBAR_ROW_CLS,
   MODEL_PICKER_SIDEBAR_ROW_DISABLED_CLS,
   MODEL_PICKER_SIDEBAR_NAME_CLS,
+  MODEL_PICKER_SIDEBAR_NAME_TEXT_CLS,
   MODEL_PICKER_SIDEBAR_REASON_CLS,
 } from "../ui/model-picker-sidebar-recipes";
 import {
@@ -194,7 +195,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                   props.phone
                     ? MODEL_PICKER_SIDEBAR_PHONE_ROW_CLS
                     : reason === null
-                      ? "h-7"
+                      ? "min-h-7 py-1"
                       : "items-start py-1",
                   isDisabled && MODEL_PICKER_SIDEBAR_ROW_DISABLED_CLS,
                 )}
@@ -233,7 +234,12 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                   {...(entry.accentColor ? { badgeClassName: "h-3 min-w-3 px-0.5 text-5xs" } : {})}
                 />
                 <span className={MODEL_PICKER_SIDEBAR_NAME_CLS}>
-                  <span className="truncate">{entry.displayName}</span>
+                  <span
+                    className={MODEL_PICKER_SIDEBAR_NAME_TEXT_CLS}
+                    data-model-picker-provider-name="true"
+                  >
+                    {entry.displayName}
+                  </span>
                   {reason !== null ? (
                     <small
                       className={MODEL_PICKER_SIDEBAR_REASON_CLS}

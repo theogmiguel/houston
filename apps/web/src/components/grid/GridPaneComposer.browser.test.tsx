@@ -241,7 +241,9 @@ it(
     const widePicker = wideFooter.querySelector<HTMLElement>("[data-chat-provider-model-picker]")!;
     await userEvent.click(widePicker);
     await vi.waitFor(() =>
-      expect(document.querySelector("[data-composer-permissions-trigger]")).not.toBeNull(),
+      expect(
+        document.querySelector('[data-composer-permissions] [role="radiogroup"]'),
+      ).not.toBeNull(),
     );
     await userEvent.keyboard("{Escape}");
   },

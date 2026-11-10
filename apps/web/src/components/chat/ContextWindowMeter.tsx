@@ -4,6 +4,7 @@ import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import {
   formatContextWindowCompactionMessage,
   formatContextWindowCost,
+  shouldShowContextWindowMeter,
 } from "./ContextWindowMeter.logic";
 import { Minimize2Icon } from "lucide-react";
 import { composerFloatingLayerProps } from "./composerEventScope";
@@ -30,15 +31,18 @@ export function ContextWindowMeter(props: {
   const { usage, modelDisplayName, onCompact, compactDisabled, compactDisabledReason } = props;
   const usedPercentage = formatPercentage(usage.usedPercentage);
   const normalizedPercentage = Math.max(0, Math.min(100, usage.usedPercentage ?? 0));
-  const radius = 9.75;
-  const circumference = 2 * Math.PI * radius;
-  const dashOffset = circumference * (1 - normalizedPercentage / 100);
+  // A 16px pie: a stroke as wide as the radius, dashed to the used share, starting at 12 o'clock.
+  const pieRadius = 4;
+  const pieCircumference = 2 * Math.PI * pieRadius;
+  const pieDashOffset = pieCircumference * (1 - normalizedPercentage / 100);
   const totalProcessedTokens = usage.totalProcessedTokens ?? null;
   const showTotalProcessed = totalProcessedTokens !== null && totalProcessedTokens > 0;
   const isOverloaded = normalizedPercentage > 90;
   const usageColor = isOverloaded
     ? "var(--color-error)"
     : "color-mix(in oklab, var(--color-muted-foreground) 72%, transparent)";
+
+  if (!shouldShowContextWindowMeter(usage.usedPercentage)) return null;
 
   return (
     <Popover>
@@ -48,42 +52,33 @@ export function ContextWindowMeter(props: {
         closeDelay={onCompact ? 150 : 0}
         render={
           <Button
-            size="icon-sm"
+            size="xs"
             variant="ghost-muted"
-            className="size-7"
             aria-label={
               usage.maxTokens !== null && usedPercentage
                 ? `Context window ${usedPercentage} used`
                 : `Context window ${formatContextWindowTokens(usage.usedTokens)} tokens used`
             }
           >
-            <span className="relative flex size-5 items-center justify-center">
+            <span className="flex items-center gap-1 text-(--warn-ink)">
               <svg
-                viewBox="0 0 24 24"
-                className="-rotate-90 absolute inset-0 size-full transform-gpu mx-0!"
+                viewBox="0 0 16 16"
+                className="-rotate-90 size-4 shrink-0 transform-gpu mx-0!"
                 aria-hidden="true"
               >
+                <circle cx="8" cy="8" r="7" fill="currentColor" fillOpacity="0.24" />
                 <circle
-                  cx="12"
-                  cy="12"
-                  r={radius}
+                  cx="8"
+                  cy="8"
+                  r={pieRadius}
                   fill="none"
-                  className="stroke-muted-foreground/24"
-                  strokeWidth="3"
-                />
-                <circle
-                  cx="12"
-                  cy="12"
-                  r={radius}
-                  fill="none"
-                  stroke={usageColor}
-                  strokeWidth="3"
-                  strokeLinecap="round"
-                  strokeDasharray={circumference}
-                  strokeDashoffset={dashOffset}
-                  className="transition-[stroke-dashoffset,stroke] duration-500 ease-out motion-reduce:transition-none"
+                  stroke="currentColor"
+                  strokeWidth="8"
+                  strokeDasharray={pieCircumference}
+                  strokeDashoffset={pieDashOffset}
                 />
               </svg>
+              {usedPercentage ? <span className="tabular-nums">{usedPercentage}</span> : null}
             </span>
           </Button>
         }
@@ -125,8 +120,11 @@ export function ContextWindowMeter(props: {
               aria-label="Context window usage"
             >
               <div
-                className="h-full rounded-full transition-[width,background-color] duration-500 ease-out motion-reduce:transition-none"
-                style={{ width: `${normalizedPercentage}%`, backgroundColor: usageColor }}
+                className="h-full origin-left rounded-full transition-[transform,background-color] duration-(--motion-value) ease-standard"
+                style={{
+                  transform: `scaleX(${normalizedPercentage / 100})`,
+                  backgroundColor: usageColor,
+                }}
               />
             </div>
           ) : null}
@@ -174,8 +172,4 @@ export function ContextWindowMeter(props: {
       </PopoverPopup>
     </Popover>
   );
-}
-
-export function ContextWindowMeterPlaceholder() {
-  return <span aria-hidden="true" className="size-7 shrink-0" />;
 }

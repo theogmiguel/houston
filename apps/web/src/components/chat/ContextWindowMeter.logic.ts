@@ -115,17 +115,17 @@ export function formatContextWindowCompactionMessage(
     : "Context compacts automatically when needed.";
 }
 
-export function shouldReserveContextWindowMeter(input: {
-  readonly meterEnabled: boolean;
-  readonly detailLoading: boolean;
-  readonly threadStarted: boolean;
-  readonly providerReportsContextWindow: boolean | null;
-}): boolean {
+/**
+ * The footer meter shows from this share of the window used. Below it the meter is noise: the
+ * window is far from full and auto-compaction or a manual /compact is not yet a consideration.
+ */
+export const CONTEXT_METER_MIN_USED_PERCENT = 80;
+
+export function shouldShowContextWindowMeter(usedPercentage: number | null): boolean {
   return (
-    input.meterEnabled &&
-    input.detailLoading &&
-    input.threadStarted &&
-    input.providerReportsContextWindow !== false
+    usedPercentage !== null &&
+    Number.isFinite(usedPercentage) &&
+    usedPercentage >= CONTEXT_METER_MIN_USED_PERCENT
   );
 }
 

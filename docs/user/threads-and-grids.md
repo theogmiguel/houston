@@ -218,7 +218,8 @@ Typing `@` also lists the models of your enabled providers. Choosing one inserts
 that names that model for the agent, for example to have a subagent use it. The chip is sent as
 the text `model:<provider>/<model>`. The `@` list and the chips are in the web and desktop apps.
 
-While a turn is running, the send menu offers **Queue message**, **Steer message** and
+While a turn is running, the send button reads **Steer** or **Queue** and its chevron opens
+the send menu, which offers **Queue message**, **Steer message** and
 **Interrupt and send**. Steering is disabled for providers that cannot accept it. Queued
 and steered messages show their delivery state, and a dropped message names the reason.
 **Follow-up behavior** in **Settings ▸ Chat** sets what a plain send does while a turn
@@ -226,8 +227,9 @@ runs.
 
 `Ctrl+S` stashes the current prompt. The stash menu restores or deletes a stashed prompt.
 
-**Plan mode** is optional and off by default (**Settings ▸ Labs**). It asks the agent to
-propose a plan before acting; the proposed plan card can implement it in a new thread.
+**Plan mode** is optional and off by default (**Settings ▸ Labs**). Enter it with `/plan` or
+`Shift+Tab`; a **Plan** chip then shows in the composer and returns to the default mode when
+clicked. It asks the agent to propose a plan before acting; the proposed plan card can implement it in a new thread.
 **Side chat** opens a read-only aside beside the thread: it can read the conversation and
 the project, but cannot edit files, run commands or interrupt the run. **Second opinion** on
 an assistant reply asks another provider or model; its card

@@ -40,8 +40,10 @@ import { ModelEsque } from "./providerIconUtils";
 import { isCommandPaletteOpen } from "../../commandPaletteBus";
 import { registerModelPickerContent } from "../../modelPickerVisibility";
 import { primaryServerKeybindingsAtom } from "../../state/server";
+import { useShortcutModifierState } from "../../shortcutModifierState";
 import {
   modelPickerJumpCommandForIndex,
+  shouldShowModelPickerJumpHintsForModifiers,
   modelPickerJumpIndexFromCommand,
   resolveShortcutCommand,
   shortcutLabelForCommand,
@@ -778,9 +780,15 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     keybindings,
     props.terminalOpen,
   );
+  const jumpModifiers = useShortcutModifierState();
+  const jumpHintsVisible = shouldShowModelPickerJumpHintsForModifiers(jumpModifiers, keybindings, {
+    platform: navigator.platform,
+    context: { terminalFocus: false, terminalOpen: props.terminalOpen, modelPickerOpen: true },
+  });
   const modelListExtraData = {
     favoritesSet,
     modelJumpLabelByKey,
+    jumpHintsVisible,
     activeModelKey,
     selectedModelKeySet,
   };
@@ -1075,6 +1083,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                       showNewBadge={model.badge === "new"}
                       unavailable={model.isUnavailable === true}
                       jumpLabel={modelJumpLabelByKey.get(modelKey) ?? null}
+                      jumpHintVisible={jumpHintsVisible}
                       disabledReason={disabledReason}
                       onToggleFavorite={toggleFavorite}
                     />
