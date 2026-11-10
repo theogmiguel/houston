@@ -675,7 +675,7 @@ function UsageOverview({
         ))}
         <p
           data-usage-empty=""
-          className="rounded-[10px] border border-border bg-card px-4 py-6 text-center text-sm text-balance text-muted-foreground"
+          className="rounded-(--r-group) border border-border bg-card px-4 py-6 text-center text-sm text-balance text-muted-foreground"
         >
           No usage in this window. Sessions you run will show up here.
         </p>

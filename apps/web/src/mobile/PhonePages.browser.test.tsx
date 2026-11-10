@@ -648,7 +648,7 @@ async function openSettings(section: string, width: number, height: number) {
   return screen;
 }
 
-const rectOf = (element: Element | null | undefined) => element?.getBoundingClientRect();
+const maybeRectOf = (element: Element | null | undefined) => element?.getBoundingClientRect();
 const fontSizeOf = (element: Element) => parseFloat(getComputedStyle(element).fontSize);
 
 it("keeps controls and values aligned on settings pages", async () => {
@@ -661,7 +661,7 @@ it("keeps controls and values aligned on settings pages", async () => {
         add.closest('[data-slot="settings-group"]'),
         "Add environment sits in a card",
       ).not.toBeNull();
-      expect(rectOf(add)?.height ?? 0).toBeGreaterThanOrEqual(44);
+      expect(maybeRectOf(add)?.height ?? 0).toBeGreaterThanOrEqual(44);
       const restart = page.getByRole("button", { name: "Restart" }).element();
       expect(getComputedStyle(restart).borderTopWidth, "Restart is a bordered button").not.toBe(
         "0px",
@@ -682,7 +682,7 @@ it("keeps controls and values aligned on settings pages", async () => {
         ...document.querySelectorAll<HTMLElement>('span[aria-hidden="true"].tabular-nums'),
       ];
       expect(values.length).toBeGreaterThanOrEqual(2);
-      expect(new Set(values.map((value) => Math.round(rectOf(value)?.width ?? 0))).size).toBe(1);
+      expect(new Set(values.map((value) => Math.round(maybeRectOf(value)?.width ?? 0))).size).toBe(1);
       for (const value of values) expect(value.textContent).toMatch(/%$/);
     }
     {
@@ -696,9 +696,9 @@ it("keeps controls and values aligned on settings pages", async () => {
       const rights = new Set(
         triggers
           .filter((trigger) => trigger.getAttribute("aria-label") !== "Microphone")
-          .map((trigger) => Math.round(rectOf(trigger)?.right ?? 0)),
+          .map((trigger) => Math.round(maybeRectOf(trigger)?.right ?? 0)),
       );
-      const lefts = new Set(triggers.map((trigger) => Math.round(rectOf(trigger)?.left ?? 0)));
+      const lefts = new Set(triggers.map((trigger) => Math.round(maybeRectOf(trigger)?.left ?? 0)));
       expect({ lefts: lefts.size, rights: rights.size }).toEqual({ lefts: 1, rights: 1 });
       expect(Math.round(width - ([...rights][0] ?? 0))).toBe(GUTTER * 2 + 1);
     }
@@ -729,7 +729,7 @@ it("keeps controls and values aligned on settings pages", async () => {
       const row = document.querySelector<HTMLElement>("tbody tr");
       const title = row?.querySelector("td:first-child *");
       const chip = row?.querySelector('button[aria-label^="Edit shortcut"] > *');
-      expect(Math.round(rectOf(chip)?.left ?? -1)).toBe(Math.round(rectOf(title)?.left ?? -2));
+      expect(Math.round(maybeRectOf(chip)?.left ?? -1)).toBe(Math.round(maybeRectOf(title)?.left ?? -2));
     }
     {
       await using _screen = await openSettings("devices", width, height);
@@ -742,8 +742,8 @@ it("keeps controls and values aligned on settings pages", async () => {
         (description as HTMLElement).clientWidth,
       );
       const title = description?.previousElementSibling?.querySelector("p");
-      expect(Math.round(rectOf(description)?.left ?? -1)).toBe(
-        Math.round(rectOf(title)?.left ?? -2),
+      expect(Math.round(maybeRectOf(description)?.left ?? -1)).toBe(
+        Math.round(maybeRectOf(title)?.left ?? -2),
       );
     }
   }
