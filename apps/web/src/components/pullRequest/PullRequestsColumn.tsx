@@ -293,11 +293,11 @@ export function PullRequestsColumn({
           ) : (
             <>
               <div className="flex flex-col gap-3">
-                <div className="flex flex-wrap items-center gap-2 max-phone:flex-nowrap">
+                <div className="flex flex-wrap items-center gap-2 max-phone:flex-nowrap max-phone:[&_[data-slot=toggle-group]>*]:px-1 max-phone:[&_[data-slot=toggle-group]>*]:leading-4 max-phone:[&_[data-slot=toggle-group]>*]:whitespace-normal max-phone:[&_[data-slot=toggle-group]>*]:text-balance">
                   <ToggleGroup
                     aria-label="Pull request involvement"
                     variant="segmented"
-                    className="max-phone:w-full max-phone:*:h-11 max-phone:*:flex-1 max-phone:*:px-1 max-phone:*:leading-4 max-phone:*:whitespace-normal max-phone:*:text-balance"
+                    className="max-phone:w-full max-phone:*:h-11 max-phone:*:flex-1"
                     value={[involvement]}
                     onValueChange={(next) => {
                       const value = next[0];
@@ -315,7 +315,10 @@ export function PullRequestsColumn({
                     <PullRequestRefreshControl refreshing={refreshing} onRefresh={onRefresh} />
                   ) : null}
                 </div>
-                <div ref={inFlowSearchRef} className="flex flex-wrap items-center gap-2 max-phone:gap-y-3">
+                <div
+                  ref={inFlowSearchRef}
+                  className="flex flex-wrap items-center gap-2 max-phone:gap-y-3"
+                >
                   <div className="min-w-0 basis-full @lg/pr-list:basis-0 @lg/pr-list:flex-1">
                     {searchInput}
                   </div>

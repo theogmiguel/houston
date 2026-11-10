@@ -167,12 +167,12 @@ export function PullRequestDetailGhost({
             )}
           </div>
         </div>
-        <div className="mr-4 flex h-7 shrink-0 items-center justify-end gap-1 max-phone:mr-0 max-phone:h-11 max-phone:border-b max-phone:border-border/60 max-phone:pr-0.5">
+        <div className="mr-4 flex h-7 shrink-0 items-center justify-end gap-1 max-phone:mr-0 max-phone:h-11 max-phone:border-b max-phone:border-border/60 max-phone:pr-0.5 max-phone:[&_button:disabled]:text-muted-foreground max-phone:[&_button:disabled]:opacity-100">
           {actions ?? <GhostBar className="h-6 w-16 rounded-md" />}
           <Button
             size="icon-xs"
             variant="ghost"
-            className="max-phone:size-11 max-phone:text-muted-foreground max-phone:disabled:opacity-100"
+            className="max-phone:size-11"
             disabled
             aria-label={`${capitalizeTerm(terminology.singular)} actions loading`}
           >
