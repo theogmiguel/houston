@@ -8544,7 +8544,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
                 nativeThreadId,
                 nativeTurnId: "goal-turn-1",
                 prompt: objective,
-                sentPrompt: `Start working toward this goal: ${objective}`,
+                sentPrompt: `This thread's goal is already set. Do not call create_goal. Start working on it now: ${objective}`,
               }).slice(5),
               5,
             ),
