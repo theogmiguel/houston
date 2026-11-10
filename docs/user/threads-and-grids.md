@@ -43,6 +43,9 @@ thread.
 
 The default model, fallback model and default permissions for new threads are set in
 **Settings ▸ Threads**. The model picker is also bound to `Ctrl+Shift+M`.
+Opening the model picker checks for newly released models and for the CLI update that supports
+them, at most every five minutes. The check is skipped when provider update checks are turned
+off in **Settings**.
 
 ## Grids
 
@@ -206,6 +209,14 @@ can be exempted from inactivity closing. New activity brings a closed thread bac
 The composer sends a message to the thread's provider. It accepts pasted images and files,
 `@` file references, slash commands and provider skills. **Rich text composer**, the send
 shortcut and skill visibility are in **Settings ▸ Chat**.
+
+A message can be sent while its attachments are still uploading: it appears as sending and the
+turn starts when the uploads finish. Answering a question or redirecting a pending approval
+waits for the uploads first. A failed upload blocks the send until it is retried or removed.
+
+Typing `@` also lists the models of your enabled providers. Choosing one inserts a model chip
+that names that model for the agent, for example to have a subagent use it. The chip is sent as
+the text `model:<provider>/<model>`. The `@` list and the chips are in the web and desktop apps.
 
 While a turn is running, the send menu offers **Queue message**, **Steer message** and
 **Interrupt and send**. Steering is disabled for providers that cannot accept it. Queued

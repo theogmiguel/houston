@@ -284,6 +284,7 @@ it.effect("a remote policy refresh preserves a newer health result on the regist
         current: Ref.get(manifest),
         refresh,
         forceRefresh: refresh,
+        refreshOnDemand: refresh,
         refreshInBackground: Effect.void,
       }),
       Layer.succeed(ProviderInstanceRegistry.ProviderInstanceRegistry, {

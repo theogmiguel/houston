@@ -151,6 +151,14 @@ receiver you choose, to Datadog, or to a Datadog Agent on this machine. See
 Linked environments (beta), Simlock device hosts (alpha), and optional composer features that
 are off by default: plan mode and the context window indicator.
 
+**Suggest next prompt** shows a predicted next message in the empty composer after a Claude or
+Codex turn completes. Press `Tab` to fill it in, then edit or send it, or press `Escape` to
+dismiss it. Each suggestion is one extra request that reuses the turn's prompt cache, so it uses
+a little of your plan's usage. Claude skips suggestions on the first turn of a thread and near
+usage limits. Codex needs version 0.165 or later. Threads started by another agent never
+request suggestions. Codex follows a change to the setting at once; open Claude threads follow
+it after they restart. Suggestions appear on devices with a mouse or trackpad.
+
 ## About
 
 Version, update check, install, release notes and open source licenses. See

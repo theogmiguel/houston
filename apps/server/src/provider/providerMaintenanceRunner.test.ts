@@ -198,6 +198,7 @@ function makeRegistry(
       refresh: () => Ref.get(providersRef),
       refreshInstance: () => Ref.get(providersRef),
       reloadSecretsAndRefresh: () => Ref.get(providersRef),
+      refreshModelCatalog: Effect.void,
       refreshAfterUpdate: () => {
         const version = options?.installedVersionAfterUpdate;
         if (version === undefined) {
@@ -248,6 +249,7 @@ const makeTestRunner = (
               current: Effect.succeed(manifest),
               refresh: Effect.succeed(manifest),
               forceRefresh: Effect.succeed(manifest),
+              refreshOnDemand: Effect.succeed(manifest),
               refreshInBackground: Effect.void,
             }),
             latestVersions,
@@ -269,6 +271,7 @@ function layerFailingLatestLookupAfterFirst() {
         return yield* lookup;
       }),
     invalidate: () => Effect.void,
+    invalidateAll: Effect.void,
   });
 }
 
