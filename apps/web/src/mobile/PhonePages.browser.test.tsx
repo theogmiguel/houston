@@ -682,7 +682,9 @@ it("keeps controls and values aligned on settings pages", async () => {
         ...document.querySelectorAll<HTMLElement>('span[aria-hidden="true"].tabular-nums'),
       ];
       expect(values.length).toBeGreaterThanOrEqual(2);
-      expect(new Set(values.map((value) => Math.round(maybeRectOf(value)?.width ?? 0))).size).toBe(1);
+      expect(new Set(values.map((value) => Math.round(maybeRectOf(value)?.width ?? 0))).size).toBe(
+        1,
+      );
       for (const value of values) expect(value.textContent).toMatch(/%$/);
     }
     {
@@ -729,7 +731,9 @@ it("keeps controls and values aligned on settings pages", async () => {
       const row = document.querySelector<HTMLElement>("tbody tr");
       const title = row?.querySelector("td:first-child *");
       const chip = row?.querySelector('button[aria-label^="Edit shortcut"] > *');
-      expect(Math.round(maybeRectOf(chip)?.left ?? -1)).toBe(Math.round(maybeRectOf(title)?.left ?? -2));
+      expect(Math.round(maybeRectOf(chip)?.left ?? -1)).toBe(
+        Math.round(maybeRectOf(title)?.left ?? -2),
+      );
     }
     {
       await using _screen = await openSettings("devices", width, height);

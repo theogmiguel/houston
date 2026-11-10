@@ -98,12 +98,7 @@ export const ComposerApprovalCard = memo(function ComposerApprovalCard({
           ) : null}
         </div>
       )}
-      <div
-        className={cn(
-          "flex items-center gap-1.5",
-          phone ? "gap-2" : "flex-wrap justify-end",
-        )}
-      >
+      <div className={cn("flex items-center gap-1.5", phone ? "gap-2" : "flex-wrap justify-end")}>
         <ComposerPendingApprovalActions
           requestId={approval.requestId}
           disabled={!canOperateThread}

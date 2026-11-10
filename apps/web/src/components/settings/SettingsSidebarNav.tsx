@@ -33,7 +33,12 @@ import { useLocation, useNavigate } from "@tanstack/react-router";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { Kbd } from "../ui/kbd";
-import { PHONE_NAV_ROW_CLS, PHONE_PAGE_BAR_CLS, PHONE_PAGE_BAR_SIDEBAR_CLS, PHONE_PAGE_BAR_TITLE_CLS } from "../ui/phone-recipes";
+import {
+  PHONE_NAV_ROW_CLS,
+  PHONE_PAGE_BAR_CLS,
+  PHONE_PAGE_BAR_SIDEBAR_CLS,
+  PHONE_PAGE_BAR_TITLE_CLS,
+} from "../ui/phone-recipes";
 import { ScrollArea } from "../ui/scroll-area";
 import {
   SidebarFooter,

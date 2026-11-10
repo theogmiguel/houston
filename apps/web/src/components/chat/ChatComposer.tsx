@@ -4055,7 +4055,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   showMobilePendingAnswerActions && "hidden sm:flex",
                 )}
               >
-                {phoneAddSheet ? <div className={isPhone ? "" : "me-0.5"}>{phoneAddSheet}</div> : null}
+                {phoneAddSheet ? (
+                  <div className={isPhone ? "" : "me-0.5"}>{phoneAddSheet}</div>
+                ) : null}
                 {composerAttachButton ? <div className="me-0.5">{composerAttachButton}</div> : null}
                 <div
                   data-chat-composer-actions="right"

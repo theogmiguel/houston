@@ -259,7 +259,11 @@ import {
 } from "../ui/sidebar-grids";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { stackedThreadToast, toastManager } from "../ui/toast";
-import { PHONE_NOTE_CLS, PHONE_ROW_ACTION_CLS, PHONE_ROW_ACTION_ICON_CLS } from "~/components/ui/phone-recipes";
+import {
+  PHONE_NOTE_CLS,
+  PHONE_ROW_ACTION_CLS,
+  PHONE_ROW_ACTION_ICON_CLS,
+} from "~/components/ui/phone-recipes";
 
 type DraggedThread = ThreadDragSource;
 

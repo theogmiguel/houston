@@ -157,8 +157,7 @@ it("lets the title take the width the breadcrumb used to hold", async () => {
   const back = screen.getByRole("button", { name: "Back to threads" }).element();
   const menu = screen.getByRole("button", { name: `Thread actions for ${LONG_TITLE}` }).element();
   const details = screen.getByRole("button", { name: "Thread details" }).element();
-  const free =
-    details.getBoundingClientRect().left - back.getBoundingClientRect().right;
+  const free = details.getBoundingClientRect().left - back.getBoundingClientRect().right;
   // The title fills what the three controls and the status glyph leave.
   expect(title.getBoundingClientRect().width).toBeGreaterThan(free - 40);
   expect(menu.getBoundingClientRect().right).toBeLessThanOrEqual(390);

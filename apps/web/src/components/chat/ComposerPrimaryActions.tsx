@@ -256,7 +256,10 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           compact ? (
             <button
               type="button"
-              className={cn(messageActionGhostPillClassName, "w-7 px-0 max-phone:h-11 max-phone:w-11")}
+              className={cn(
+                messageActionGhostPillClassName,
+                "w-7 px-0 max-phone:h-11 max-phone:w-11",
+              )}
               {...pointerFocusProps}
               onClick={onPreviousPendingQuestion}
               disabled={pendingAction.isResponding}

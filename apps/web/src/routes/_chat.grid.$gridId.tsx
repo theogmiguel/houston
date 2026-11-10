@@ -57,7 +57,11 @@ import { isSidebarHiddenThread } from "../components/Sidebar.logic";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { buildThreadRouteParams } from "../threadRoutes";
-import { PHONE_EMPTY_BODY_CLS, PHONE_EMPTY_STACK_CLS, PHONE_EMPTY_TITLE_CLS } from "~/components/ui/phone-recipes";
+import {
+  PHONE_EMPTY_BODY_CLS,
+  PHONE_EMPTY_STACK_CLS,
+  PHONE_EMPTY_TITLE_CLS,
+} from "~/components/ui/phone-recipes";
 
 export const Route = createFileRoute("/_chat/grid/$gridId")({
   component: GridRoute,

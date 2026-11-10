@@ -674,10 +674,7 @@ function UsageOverview({
             {message}
           </p>
         ))}
-        <p
-          data-usage-empty=""
-          className={PHONE_EMPTY_CARD_CLS}
-        >
+        <p data-usage-empty="" className={PHONE_EMPTY_CARD_CLS}>
           No usage in this window. Sessions you run will show up here.
         </p>
         <UsagePlanLimits

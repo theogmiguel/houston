@@ -558,7 +558,9 @@ for (const width of [390, 320]) {
     expect(bubble).not.toBeNull();
     expect(rect(bubble!).right).toBeCloseTo(right, 0);
 
-    const stamp = document.querySelector<HTMLElement>("[data-timeline-root] span.text-xs.tabular-nums");
+    const stamp = document.querySelector<HTMLElement>(
+      "[data-timeline-root] span.text-xs.tabular-nums",
+    );
     if (stamp !== null && stamp.getClientRects().length > 0) {
       expect(rect(stamp).right).toBeLessThanOrEqual(right + 0.5);
     }
