@@ -18,6 +18,7 @@ import { CommandPalette } from "../components/CommandPalette";
 import { CustomSnoozeDialogHost } from "../components/CustomSnoozeDialog";
 import { ThreadTagsDialogHost } from "../components/ThreadTagsDialog";
 import { AddProjectDialogHost } from "../components/AddProjectDialog";
+import { UseInAnotherAppDialogHost } from "../components/mcp/UseInAnotherAppDialogHost";
 import { AddProjectToMachineDialogHost } from "../components/AddProjectToMachineDialog";
 import { ConfirmDialogHost } from "../components/ConfirmDialogHost";
 import { DevReplayHost } from "../components/DevReplayHost";
@@ -165,6 +166,7 @@ function RootRouteBranch() {
         <CustomSnoozeDialogHost />
         <ThreadTagsDialogHost />
         <AddProjectDialogHost />
+        <UseInAnotherAppDialogHost />
         <CommandPalette>
           <AppSidebarLayout>
             <Outlet />
@@ -190,6 +192,7 @@ function RootRouteBranch() {
     <>
       <ChatGptWelcomeCoordinator />
       <AddProjectDialogHost />
+      <UseInAnotherAppDialogHost />
       <FirstRunGate
         enabled={primaryEnvironmentAuthenticated}
         hostedStatic={authGateState.status === "hosted-static"}

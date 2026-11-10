@@ -4,6 +4,7 @@ import * as HostProcess from "@houston-app/shared/HostProcess";
 import * as NodeSqliteClient from "@houston-app/shared/nodeSqliteClient";
 import { assert, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -333,5 +334,138 @@ it.effect("reclaim shrinks the file while every reader is open", () =>
         Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       ),
     ),
+  ),
+);
+
+const dropMegabytes = (megabytes: number) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* sql`CREATE TABLE IF NOT EXISTS retained (value TEXT)`;
+    yield* sql`INSERT INTO retained VALUES ('keep')`;
+    yield* sql`CREATE TABLE discarded (value BLOB)`;
+    yield* sql`INSERT INTO discarded VALUES (zeroblob(${megabytes * 1024 * 1024}))`;
+    yield* sql`DROP TABLE discarded`;
+  });
+
+const reclaimNow = Effect.flatMap(DatabaseStorage.DatabaseStorage, (storage) => storage.reclaimNow);
+
+it.effect("a one-click reclaim returns every freed page and reports what it returned", () =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* dropMegabytes(4);
+    const free = yield* freePages;
+    assert.isAbove(free, 2 * DatabaseStorage.RECLAIM_PAGES_PER_STATEMENT);
+    const pageSize = (yield* sql<{ readonly page_size: number }>`PRAGMA page_size`)[0]!.page_size;
+
+    const result = yield* reclaimNow;
+
+    assert.equal(yield* freePages, 0);
+    assert.isAtLeast(result.reclaimedBytes, free * pageSize);
+    assert.equal(result.remainingBytes, 0);
+    assert.deepEqual(yield* sql`SELECT value FROM retained`, [{ value: "keep" }]);
+  }).pipe(Effect.provide(storageLayer(testConfig))),
+);
+
+it.effect("a one-click reclaim lets writes from running agents through", () =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* dropMegabytes(4);
+    yield* sql`CREATE TABLE agent_events (n INTEGER)`;
+    const writes = Effect.forEach(
+      Array.from({ length: 50 }, (_, n) => n),
+      (n) => sql`INSERT INTO agent_events VALUES (${n})`.pipe(Effect.andThen(Effect.yieldNow)),
+      { discard: true },
+    );
+
+    yield* Effect.all([reclaimNow, writes], { concurrency: "unbounded" });
+
+    assert.equal(
+      (yield* sql<{ readonly count: number }>`SELECT COUNT(*) AS count FROM agent_events`)[0]!
+        .count,
+      50,
+    );
+    assert.equal(yield* freePages, 0);
+  }).pipe(Effect.provide(storageLayer(testConfig))),
+);
+
+it.effect("a one-click reclaim stops at its time limit and says what is left", () =>
+  Effect.gen(function* () {
+    yield* dropMegabytes(4);
+    const free = yield* freePages;
+
+    const result = yield* reclaimNow;
+
+    assert.equal(result.timeLimitSeconds, 0);
+    assert.equal(result.reclaimedBytes, 0);
+    assert.isAbove(result.remainingBytes, 0);
+    assert.equal(yield* freePages, free);
+  }).pipe(
+    Effect.provide(storageLayer(testConfig)),
+    Effect.provideService(DatabaseStorage.ReclaimTimeLimit, Duration.zero),
+  ),
+);
+
+it.effect("a one-click reclaim refuses a database that cannot shrink online", () =>
+  Effect.gen(function* () {
+    const refused = yield* reclaimNow.pipe(Effect.flip);
+    assert.equal(refused._tag, "HoustonDatabaseReclaimError");
+    assert.equal(refused.kind, "needs-offline-repair");
+    assert.include(refused.message, "doctor");
+    assert.include(refused.message, "stopped");
+  }).pipe(
+    Effect.provide(
+      DatabaseStorage.layer.pipe(
+        Layer.provide(ProjectionMaintenance.layer),
+        Layer.provide(
+          Layer.effectDiscard(
+            Effect.gen(function* () {
+              const sql = yield* SqlClient.SqlClient;
+              yield* sql.unsafe(`PRAGMA auto_vacuum = NONE`);
+              yield* sql`VACUUM`;
+            }),
+          ).pipe(Layer.provideMerge(Sqlite.layerMemory)),
+        ),
+        Layer.provideMerge(testConfig),
+        Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+        // Resolving the doctor command reads PATH and the file system, as the server's own context does.
+        Layer.provideMerge(NodeServices.layer),
+      ),
+    ),
+  ),
+);
+
+it.effect("a one-click reclaim refuses a database outside this channel's directory", () =>
+  Effect.gen(function* () {
+    const config = yield* ServerConfig.ServerConfig;
+    const elsewhere = "/home/someone/.houston/houston.db";
+    const refused = yield* reclaimNow.pipe(
+      Effect.provide(
+        storageLayer(Layer.succeed(ServerConfig.ServerConfig, { ...config, dbPath: elsewhere })),
+      ),
+      Effect.flip,
+    );
+    if (refused._tag !== "HoustonDatabaseReclaimError") return assert.fail(refused._tag);
+    assert.equal(refused.kind, "not-channel-database");
+    assert.include(refused.message, elsewhere);
+    assert.include(refused.message, config.baseDir);
+  }).pipe(Effect.provide(testConfig.pipe(Layer.provideMerge(NodeServices.layer)))),
+);
+
+it.effect("a one-click reclaim refuses when the disk cannot hold the write-ahead log", () =>
+  Effect.gen(function* () {
+    yield* dropMegabytes(4);
+    const free = yield* freePages;
+    const huge = 2 ** 60;
+
+    const refused = yield* reclaimNow.pipe(Effect.flip);
+
+    assert.equal(refused.kind, "insufficient-disk");
+    assert.equal(refused.neededBytes, huge);
+    assert.isBelow(refused.freeBytes ?? Infinity, huge);
+    assert.include(refused.message, "free disk space");
+    assert.equal(yield* freePages, free, "a refused reclaim must not change the database");
+  }).pipe(
+    Effect.provide(storageLayer(testConfig)),
+    Effect.provideService(DatabaseStorage.ReclaimHeadroomBytes, 2 ** 60),
   ),
 );
