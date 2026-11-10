@@ -201,6 +201,10 @@ The composer sends a message to the thread's provider. It accepts pasted images 
 `@` file references, slash commands and provider skills. **Rich text composer**, the send
 shortcut and skill visibility are in **Settings ▸ Chat**.
 
+A message can be sent while its attachments are still uploading: it appears as sending and the
+turn starts when the uploads finish. Answering a question or redirecting a pending approval
+waits for the uploads first. A failed upload blocks the send until it is retried or removed.
+
 While a turn is running, the send menu offers **Queue message**, **Steer message** and
 **Interrupt and send**. Steering is disabled for providers that cannot accept it. Queued
 and steered messages show their delivery state, and a dropped message names the reason.
