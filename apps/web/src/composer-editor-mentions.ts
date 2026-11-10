@@ -86,7 +86,7 @@ function forEachMentionMatch(
 // Like `$skill`, a typed reference waits for whitespace so `gpt-6` cannot chip while typing `gpt-6.1`.
 function collectModelTokens(text: string, inlineTokens: ReadonlyArray<ComposerInlineToken>) {
   const mentions = collectComposerModelMentions(text).filter((mention) =>
-    /\s/.test(text[mention.end] ?? ""),
+    WHITESPACE_CHAR.test(text[mention.end] ?? ""),
   );
   if (mentions.length === 0) return [];
   const taken = [...inlineTokens, ...composerMathRanges(text)];
