@@ -142,6 +142,13 @@ Provider update checks, continuing threads after a restart, background activity,
 storage, browser artifacts and rotated logs, diagnostics, and **Coming from Houston 1**. See
 [Updating Houston](updating.md#coming-from-houston-1).
 
+**Database** (Settings → Maintenance → Storage) appears when a database holds at least 64 MiB of
+space freed by history cleanup. **Reclaim now** returns it to disk while Houston and its agent
+runs keep working, for up to two minutes per click; click again if space is left. It needs free
+disk space next to the database for the write-ahead log and refuses, naming the amount needed
+and what is free, when there is not enough. A database created before automatic shrinking can
+only be shrunk while Houston is stopped; the page then shows the `houston doctor` command to run.
+
 Diagnostics includes **OpenTelemetry export**, which sends traces, metrics and logs to an OTLP
 receiver you choose, to Datadog, or to a Datadog Agent on this machine. See
 [Exporting diagnostics yourself](privacy.md#exporting-diagnostics-yourself).

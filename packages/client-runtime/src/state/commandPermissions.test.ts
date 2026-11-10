@@ -122,6 +122,26 @@ describe("command permissions", () => {
     ),
   );
 
+  it.effect("requires the destination settings grant to reclaim database space", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const registry = yield* setup;
+        const reclaim = createCommandPermissions(runtime, WS_METHODS.houstonDatabaseReclaim);
+        registry.set(sessions(env), AsyncResult.success(grant(true)));
+        expect(registry.get(reclaim.permissionAtom(env))).toBe(false);
+        registry.set(
+          sessions(env),
+          AsyncResult.success({
+            ...grant(true),
+            scopes: [AuthSettingsWriteScope],
+            permissions: [AuthSettingsWriteScope],
+          }),
+        );
+        expect(registry.get(reclaim.permissionAtom(env))).toBe(true);
+      }),
+    ),
+  );
+
   it.effect("requires the destination settings grant to check OTLP endpoints", () =>
     Effect.scoped(
       Effect.gen(function* () {

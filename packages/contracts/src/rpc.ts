@@ -178,6 +178,10 @@ import {
   ReviewDiffPreviewResult,
 } from "./review.ts";
 import {
+  HoustonDatabaseReclaimError,
+  HoustonDatabaseReclaimResult,
+} from "./houston/databaseReclaim.ts";
+import {
   HoustonReviewAnchorLinesInput,
   HoustonReviewAnchorMapResult,
   HoustonReviewAnchorRangeError,
@@ -622,6 +626,7 @@ export const WS_METHODS = {
   houstonTasksDomainSave: "houston.tasks.domain.save",
   houstonTasksSettingsGet: "houston.tasks.settings.get",
   houstonTasksSettingsSet: "houston.tasks.settings.set",
+  houstonDatabaseReclaim: "houston.database.reclaim",
   houstonTasksImportV1Status: "houston.tasks.importV1.status",
   houstonTasksImportV1Run: "houston.tasks.importV1.run",
   houstonTasksStart: "houston.tasks.start",
@@ -985,6 +990,12 @@ const WsServerGetStorageCleanupReportRpc = Rpc.make(WS_METHODS.serverGetStorageC
   success: Schema.NullOr(StorageCleanupReport),
   stream: true,
   error: EnvironmentAuthorizationError,
+});
+
+const WsHoustonDatabaseReclaimRpc = Rpc.make(WS_METHODS.houstonDatabaseReclaim, {
+  payload: Schema.Struct({}),
+  success: HoustonDatabaseReclaimResult,
+  error: Schema.Union([HoustonDatabaseReclaimError, EnvironmentAuthorizationError]),
 });
 
 const WsServerGetDatabaseStorageRpc = Rpc.make(WS_METHODS.serverGetDatabaseStorage, {
@@ -2852,6 +2863,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonTasksDomainSaveRpc,
   WsHoustonTasksSettingsGetRpc,
   WsHoustonTasksSettingsSetRpc,
+  WsHoustonDatabaseReclaimRpc,
   WsHoustonTasksImportV1StatusRpc,
   WsHoustonTasksImportV1RunRpc,
   WsHoustonTasksStartRpc,
