@@ -2,7 +2,8 @@ import { AtSignIcon, PaperclipIcon, PlusIcon, SlashIcon } from "lucide-react";
 import { memo, useRef, useState } from "react";
 
 import { Button } from "../components/ui/button";
-import { Sheet, SheetHeader, SheetPopup, SheetTitle } from "../components/ui/sheet";
+import { PhoneSheetHeader } from "../components/ui/phone-sheet-header";
+import { Sheet, SheetPopup } from "../components/ui/sheet";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 
 /** The phone composer's "+" sheet: it routes each row to the desktop attach, mention and command paths. */
@@ -67,16 +68,21 @@ export const AddSheet = memo(function AddSheet(props: {
           action?.();
         }}
       >
-        <SheetPopup side="bottom" data-phone-add-sheet="true">
-          <SheetHeader>
-            <SheetTitle>Add to message</SheetTitle>
-          </SheetHeader>
-          <div className="flex flex-col gap-1 px-4 pb-4">
+        <SheetPopup
+          side="bottom"
+          variant="phone"
+          showCloseButton={false}
+          // The sheet opens on touch: no row takes the keyboard highlight or initial focus.
+          initialFocus={false}
+          data-phone-add-sheet="true"
+        >
+          <PhoneSheetHeader title="Add to message" />
+          <div className="flex flex-col pb-2">
             {props.canAttach ? (
               <Button
                 type="button"
                 variant="ghost"
-                className="w-full justify-start"
+                size="sheet-row"
                 onClick={() => inputRef.current?.click()}
               >
                 <PaperclipIcon aria-hidden="true" />
@@ -86,7 +92,7 @@ export const AddSheet = memo(function AddSheet(props: {
             <Button
               type="button"
               variant="ghost"
-              className="w-full justify-start"
+              size="sheet-row"
               onClick={() => closeThen(props.onMention)}
             >
               <AtSignIcon aria-hidden="true" />
@@ -95,7 +101,7 @@ export const AddSheet = memo(function AddSheet(props: {
             <Button
               type="button"
               variant="ghost"
-              className="w-full justify-start"
+              size="sheet-row"
               onClick={() => closeThen(props.onCommands)}
             >
               <SlashIcon aria-hidden="true" />

@@ -35,6 +35,9 @@ const buttonVariants = cva(
         "sm-multiline":
           "min-h-[22px] gap-1.5 px-2 py-1 whitespace-normal [&_svg:not([class*='size-'])]:size-3.5",
         xs: "h-6 gap-1 px-2 text-xs [&_svg:not([class*='size-'])]:size-3.5",
+        // A full-width 44px action row in a phone sheet; the icon sits on the 16px inset.
+        "sheet-row":
+          "h-11 w-full justify-start gap-3 rounded-none border-0 px-4 text-sm font-normal [&_svg]:mx-0",
       },
       variant: {
         default:

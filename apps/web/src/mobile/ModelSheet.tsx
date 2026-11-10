@@ -30,8 +30,9 @@ import {
   ComposerEffortPanel,
   describeComposerEffort,
 } from "../components/ui/composer-model-effort";
-import { DOCKED_EFFORT_PANEL_CLASS } from "../components/ui/composer-picker-recipes";
-import { Sheet, SheetHeader, SheetPopup, SheetTitle } from "../components/ui/sheet";
+import { PHONE_PLAN_ROW_CLS, PHONE_SHEET_SECTION_CLS } from "../components/ui/phone-recipes";
+import { PhoneSheetHeader } from "../components/ui/phone-sheet-header";
+import { Sheet, SheetPopup } from "../components/ui/sheet";
 import type { AppModelOption } from "../modelSelection";
 import type { ProviderInstanceEntry } from "../providerInstances";
 
@@ -113,13 +114,17 @@ export const ModelSheet = memo(function ModelSheet(props: {
         </span>
       </ComposerControl>
       <Sheet open={props.open} onOpenChange={props.onOpenChange}>
-        <SheetPopup side="bottom" data-phone-model-sheet="true">
-          <SheetHeader>
-            <SheetTitle>Model, effort and permissions</SheetTitle>
-          </SheetHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto pb-safe">
+        <SheetPopup
+          side="bottom"
+          variant="phone"
+          showCloseButton={false}
+          data-phone-model-sheet="true"
+        >
+          <PhoneSheetHeader title="Model and permissions" />
+          <div className="min-h-0 flex-1 overflow-y-auto">
             <ModelPickerContent
               docked
+              phone
               searchInputRef={searchInputRef}
               environmentId={props.environmentId}
               activeInstanceId={props.activeInstanceId}
@@ -136,14 +141,14 @@ export const ModelSheet = memo(function ModelSheet(props: {
               onInstanceModelChange={props.onProviderModelSelect}
             />
             {showEffortPanel ? (
-              <div data-model-picker-effort className={DOCKED_EFFORT_PANEL_CLASS}>
-                <ComposerEffortPanel traits={props.traits} />
+              <div data-model-picker-effort className={PHONE_SHEET_SECTION_CLS}>
+                <ComposerEffortPanel traits={props.traits} phone />
               </div>
             ) : null}
             {props.planModeUiEnabled ? (
               <div
                 data-phone-plan-mode="true"
-                className="flex items-center justify-between gap-2 px-2 py-1.5"
+                className={`flex items-center justify-between gap-2 ${PHONE_PLAN_ROW_CLS}`}
               >
                 <span>Plan mode</span>
                 <ComposerFooterModeControls
@@ -158,6 +163,7 @@ export const ModelSheet = memo(function ModelSheet(props: {
               </div>
             ) : null}
             <ComposerPermissionsPicker
+              phone
               runtimeMode={props.runtimeMode}
               runtimeModeOptions={props.runtimeModeOptions}
               onRuntimeModeChange={props.onRuntimeModeChange}

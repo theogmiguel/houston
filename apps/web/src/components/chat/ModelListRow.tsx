@@ -61,6 +61,8 @@ export const ModelListRow = memo(function ModelListRow(props: {
   isSelected: boolean;
   showProvider: boolean;
   multiple?: boolean;
+  /** A phone row is full width with a 44px floor and the sheet's 16px gutter. */
+  phone?: boolean;
   showNewBadge?: boolean;
   unavailable?: boolean;
   jumpLabel?: string | null;
@@ -150,6 +152,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
       index={props.index}
       value={modelPickerModelKey(props.instanceId, props.slug)}
       disabled={Boolean(props.disabledReason)}
+      density={props.phone ? "phone" : "default"}
       className={cn(
         "group relative w-full !min-w-0 max-w-full cursor-pointer",
         props.disabledReason &&

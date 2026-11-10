@@ -13,3 +13,9 @@ export const MODEL_PICKER_SIDEBAR_ROW_DISABLED_CLS =
   "cursor-not-allowed text-(--houston) hover:bg-transparent";
 export const MODEL_PICKER_SIDEBAR_NAME_CLS = "flex min-w-0 flex-1 flex-col leading-tight";
 export const MODEL_PICKER_SIDEBAR_REASON_CLS = "truncate text-(--houston) text-2xs";
+
+/** A phone sheet lays the provider column out as one scrolling row above the model list. */
+export const MODEL_PICKER_SIDEBAR_PHONE_CLS =
+  "w-full shrink-0 overflow-hidden border-b border-border bg-(--pane-head)";
+export const MODEL_PICKER_SIDEBAR_PHONE_TRACK_CLS = "relative flex gap-1 px-4 py-1";
+export const MODEL_PICKER_SIDEBAR_PHONE_ROW_CLS = "h-11 w-auto shrink-0 px-3 text-sm";

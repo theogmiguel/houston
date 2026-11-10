@@ -14,6 +14,7 @@ function Sheet<Payload>(props: SheetPrimitive.Root.Props<Payload>) {
 }
 
 const SheetPortal = SheetPrimitive.Portal;
+const SheetClose = SheetPrimitive.Close;
 
 function SheetBackdrop({ className, ...props }: SheetPrimitive.Backdrop.Props) {
   return (
@@ -37,7 +38,7 @@ function SheetViewport({
   ...props
 }: SheetPrimitive.Viewport.Props & {
   side?: "right" | "left" | "top" | "bottom";
-  variant?: "default" | "inset";
+  variant?: "default" | "inset" | "phone" | "phone-page";
 }) {
   return (
     <SheetPrimitive.Viewport
@@ -74,7 +75,8 @@ function SheetPopup({
   keepMounted?: boolean;
   transitionDurationMs?: number;
   side?: "right" | "left" | "top" | "bottom";
-  variant?: "default" | "inset";
+  /** `phone` is the bottom sheet of the phone layout; `phone-page` fills the window as a page. */
+  variant?: "default" | "inset" | "phone" | "phone-page";
 }) {
   const transitionStyle =
     transitionDurationMs === undefined
@@ -110,6 +112,10 @@ function SheetPopup({
               "data-ending-style:-translate-x-8 data-starting-style:-translate-x-8 w-[calc(100%-(--spacing(12)))] max-w-md border-e",
             side === "right" &&
               "col-start-2 w-[calc(100%-(--spacing(12)))] max-w-md border-s data-ending-style:translate-x-8 data-starting-style:translate-x-8",
+            // Rounded top corners, and a bottom inset of the safe area (at least 8px) on the
+            // popup itself so no content row counts it twice.
+            variant === "phone" && "rounded-t-2xl pb-[max(0.5rem,env(safe-area-inset-bottom))]",
+            variant === "phone-page" && "h-full! w-full! max-w-none! rounded-none border-s-0",
             variant === "inset" &&
               "before:hidden sm:rounded-[var(--r-dialog)] sm:border sm:**:data-[slot=sheet-footer]:rounded-b-[calc(var(--r-dialog)-1px)]",
             // Without a scrim the sheet is non-modal: its popup still takes pointers while the
@@ -176,6 +182,7 @@ function SheetDescription({ className, ...props }: SheetPrimitive.Description.Pr
 export {
   Sheet,
   SheetPortal,
+  SheetClose,
   SheetBackdrop,
   SheetBackdrop as SheetOverlay,
   SheetPopup,

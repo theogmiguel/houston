@@ -21,6 +21,7 @@ import {
   threadWithPendingQuestion,
 } from "../../test/fakeEnvironment";
 import { render } from "../../test/render";
+import { expectFullWidthRows, expectSheetRecipe } from "./phoneGeometry";
 
 // The socket is the only fake layer: the client runtime hands every connection the in-process session.
 vi.mock("../../../../packages/client-runtime/src/connection/driver.ts", async (importOriginal) => {
@@ -154,6 +155,86 @@ const editor = () => {
   return found!;
 };
 
+it.each([390, 320])("lays the phone model sheet out as one 16px column at %ipx", async (width) => {
+  const { screen } = await openThread(width, "phone-composer");
+  await using _screen = screen;
+  await expandComposer();
+  await userEvent.click(modelTrigger()!);
+  const sheet = await vi.waitFor(() => {
+    const found = document.querySelector<HTMLElement>("[data-phone-model-sheet]");
+    expect(found).not.toBeNull();
+    return found!;
+  });
+  await expect.element(page.getByRole("option", { name: /GPT-5\.5/ })).toBeVisible();
+  expectSheetRecipe(sheet, width);
+  expect(sheet.scrollWidth).toBeLessThanOrEqual(sheet.clientWidth + 1);
+
+  const options = [...sheet.querySelectorAll<HTMLElement>('[role="option"]')];
+  expectFullWidthRows(sheet, options, width);
+  for (const option of options) {
+    const label = option.querySelector<HTMLElement>("span")!;
+    expect(label.getBoundingClientRect().left - sheet.getBoundingClientRect().left).toBeCloseTo(
+      16,
+      0,
+    );
+  }
+  const radios = [
+    ...sheet.querySelectorAll<HTMLElement>('[data-composer-permissions] [role="radio"]'),
+  ];
+  expectFullWidthRows(sheet, radios, width);
+  expect(radios.at(-1)!.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+    sheet.getBoundingClientRect().bottom - 8 + 0.5,
+  );
+
+  // The effort panel and the permissions list follow each other without a blank band.
+  const effort = sheet.querySelector<HTMLElement>("[data-model-picker-effort]")!;
+  const permissions = sheet.querySelector<HTMLElement>("[data-composer-permissions]")!;
+  expect(
+    permissions.getBoundingClientRect().top - effort.getBoundingClientRect().bottom,
+  ).toBeLessThanOrEqual(1);
+  for (const chip of effort.querySelectorAll<HTMLElement>('[role="radio"]')) {
+    expect(chip.getBoundingClientRect().height).toBeGreaterThanOrEqual(43.5);
+    expect(chip.getBoundingClientRect().right).toBeLessThanOrEqual(width - 16 + 0.5);
+  }
+  // The provider rail is a row above the list, not a second column.
+  const rail = sheet.querySelector<HTMLElement>("[data-model-picker-sidebar]")!;
+  expect(rail.getBoundingClientRect().width).toBeCloseTo(width, 0);
+  expect(rail.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+    options[0]!.getBoundingClientRect().top + 0.5,
+  );
+});
+
+it.each([390, 320])(
+  "lays the phone add sheet out with 44px rows and no preselected row at %ipx",
+  async (width) => {
+    const { screen } = await openThread(width, "phone-add");
+    await using _screen = screen;
+    await expandComposer();
+    await userEvent.click(addTrigger()!);
+    const sheet = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLElement>("[data-phone-add-sheet]");
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    await expect.element(page.getByRole("button", { name: "Commands" })).toBeVisible();
+    expectSheetRecipe(sheet, width);
+    const rows = [...sheet.querySelectorAll<HTMLElement>("button")].filter(
+      (button) => button.getAttribute("aria-label") !== "Close",
+    );
+    expect(rows).toHaveLength(3);
+    expectFullWidthRows(sheet, rows, width);
+    for (const row of rows) {
+      const icon = row.querySelector<SVGElement>("svg")!;
+      expect(icon.getBoundingClientRect().left - sheet.getBoundingClientRect().left).toBeCloseTo(
+        16,
+        0,
+      );
+      expect(document.activeElement, "no row takes initial focus").not.toBe(row);
+      expect(row.hasAttribute("data-highlighted")).toBe(false);
+    }
+  },
+);
+
 it("picks model, effort and permissions from the phone sheet", async () => {
   const { screen } = await openThread(390, "phone-composer");
   await using _screen = screen;
@@ -162,9 +243,7 @@ it("picks model, effort and permissions from the phone sheet", async () => {
   expect(modelTrigger()?.getAttribute("aria-label")).toBe("GPT-5.4, Medium");
   await userEvent.click(modelTrigger()!);
   await expect.element(page.getByRole("dialog")).toBeVisible();
-  await expect
-    .element(page.getByRole("heading", { name: "Model, effort and permissions" }))
-    .toBeVisible();
+  await expect.element(page.getByRole("heading", { name: "Model and permissions" })).toBeVisible();
 
   // The model list is the desktop picker: a pick applies at once and keeps the sheet open.
   await userEvent.click(page.getByRole("option", { name: /GPT-5\.5/ }));

@@ -23,3 +23,14 @@ export function phoneTabClass(active: boolean): string {
 export function phoneTabLabelClass(active: boolean): string {
   return `${PHONE_TAB_LABEL_CLS} ${active ? PHONE_TAB_LABEL_ACTIVE_CLS : PHONE_TAB_LABEL_REST_CLS}`;
 }
+
+/** A phone sheet's section divider: a rule above the block, full width. */
+export const PHONE_SHEET_SECTION_CLS = "border-t border-border";
+/** A permission radio in the phone sheet. */
+export const PHONE_PERMISSION_ROW_CLS = "min-h-11 rounded-none px-4";
+/** The plan-mode row in the phone sheet. */
+export const PHONE_PLAN_ROW_CLS = "min-h-11 border-t border-border px-4 text-sm";
+
+/** The full-height Changes and Files bar: the thread bar's height and divider, back on the 16px gutter. */
+export const PHONE_PANEL_BAR_CLS =
+  "h-11 min-h-11 border-b border-b-(--divider) bg-background pr-2 pl-0.5";
