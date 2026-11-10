@@ -289,3 +289,40 @@ it("keeps the jump hints out of sight until the modifier is held", async () => {
   await userEvent.keyboard("{/Control}");
   await expect.poll(() => getComputedStyle(hint()).visibility).toBe("hidden");
 });
+
+it("keeps the model list one height whatever the open provider offers", async () => {
+  const container = document.createElement("div");
+  container.style.width = "520px";
+  container.style.height = "520px";
+  const searchInputRef = createRef<HTMLInputElement>();
+
+  await using _screen = await render(
+    <TooltipProvider delay={0}>
+      <ModelPickerContent
+        environmentId={null}
+        activeInstanceId={CLAUDE}
+        model="opus"
+        lockedProvider={null}
+        instanceEntries={entries}
+        modelOptionsByInstance={modelOptionsByInstance}
+        terminalOpen={false}
+        onInstanceModelChange={() => {}}
+        searchInputRef={searchInputRef}
+      />
+    </TooltipProvider>,
+    { container },
+  );
+
+  const listHeight = () =>
+    container.querySelector<HTMLElement>("[data-model-picker-list]")!.getBoundingClientRect()
+      .height;
+  await expect.element(page.getByRole("option", { name: /Opus 5\.5/ })).toBeVisible();
+  const claudeHeight = listHeight();
+
+  await page.getByRole("button", { name: "Codex" }).click();
+  await expect.element(page.getByRole("option", { name: /GPT-5\.6 Luna/ })).toBeVisible();
+  expect(listHeight(), "one-model provider list height").toBe(claudeHeight);
+
+  await userEvent.type(page.getByPlaceholder("Search models").element(), "zzz-no-match");
+  expect(listHeight(), "no-match search list height").toBe(claudeHeight);
+});

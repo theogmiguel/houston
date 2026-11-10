@@ -167,7 +167,10 @@ const EMPTY_MODEL_JUMP_LABELS = new Map<string, string>();
 const MODEL_LIST_ESTIMATED_ITEM_SIZE = 34;
 /** A phone row is a 44px tap target, so the list sizes to it. */
 const PHONE_MODEL_LIST_ITEM_SIZE = 44;
-/** A model list shows its rows up to this many, then scrolls. */
+/**
+ * A model list shows its rows up to this many, then scrolls. The desktop popup always reserves
+ * this many, so switching provider or searching never resizes it under the pointer.
+ */
 const MAX_VISIBLE_MODEL_ROWS = 8;
 
 function ModelListSeparator() {
@@ -307,12 +310,19 @@ function ModelPickerList({
 
   return (
     <div
+      data-model-picker-list=""
       className={cn(
         "relative min-h-0 shrink-0 overflow-hidden",
         !phone && "pr-px",
-        itemKeys.length === 0 && "h-0",
+        phone && itemKeys.length === 0 && "h-0",
       )}
-      style={itemKeys.length > 0 ? { height: rows * itemSize + (phone ? 8 : 0) } : undefined}
+      style={
+        phone
+          ? itemKeys.length > 0
+            ? { height: rows * itemSize + 8 }
+            : undefined
+          : { height: MAX_VISIBLE_MODEL_ROWS * itemSize }
+      }
     >
       <ComboboxListVirtualized flush={phone}>
         <LegendList<string>
