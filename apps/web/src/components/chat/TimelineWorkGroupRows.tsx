@@ -337,7 +337,7 @@ export function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: 
           render={
             <div
               data-working-row=""
-              className="flex min-h-7 min-w-0 items-center gap-2 px-2 text-body text-(--t2) tabular-nums"
+              className="flex min-h-7 min-w-0 items-center gap-2 px-2 text-body text-(--t2) tabular-nums max-phone:px-0"
             />
           }
         >

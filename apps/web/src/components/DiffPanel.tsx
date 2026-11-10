@@ -76,6 +76,7 @@ import {
 import { DiffNotice } from "./ui/diff-notice";
 import { DiffReviewTray } from "./ui/diff-review-tray";
 import { DiffViewControls } from "./ui/diff-view-controls";
+import { PHONE_FILE_STAT_CLS } from "./ui/phone-recipes";
 import { diffFileTreeEntries } from "./diffs/diffFileTree.logic";
 import { CopyButton } from "./ui/copy-button";
 import { Button } from "./ui/button";
@@ -227,6 +228,23 @@ function DiffFileHeaderSuffix({
         <DiffFileStatus error={error} truncated={truncated} retry={() => onRetry(filePath)} />
       ) : null}
     </>
+  );
+}
+
+/** The selected file's line counts in the phone's file header, which replaces a one-file list. */
+function PhoneFileHeaderStat({
+  stat,
+}: {
+  stat: { readonly additions: number; readonly deletions: number } | null;
+}) {
+  if (stat === null) return null;
+  return (
+    <DiffStatLabel
+      additions={stat.additions}
+      deletions={stat.deletions}
+      className={PHONE_FILE_STAT_CLS}
+      layout="inline"
+    />
   );
 }
 
@@ -1048,6 +1066,23 @@ export default function DiffPanel({
     }
   }, [collapseScopeKey, selectedFilePath, selectedFileRevealRequestId, revealDiffFile]);
 
+  // A phone hides a one-file list, so nothing taps the file to load it: load it once it is listed.
+  const soleFilePath =
+    isPhone && !fileTreeOpen && filteredFileListEntries.length === 1
+      ? (filteredFileListEntries[0]?.path ?? null)
+      : null;
+  const soleFileRevealRef = useRef<string | null>(null);
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- loads and reveals the only changed file on a phone, retrying as the diff DOM loads
+  useEffect(() => {
+    if (soleFilePath === null) {
+      soleFileRevealRef.current = null;
+      return;
+    }
+    const key = JSON.stringify([collapseScopeKey, soleFilePath]);
+    if (soleFileRevealRef.current === key) return;
+    if (revealDiffFile(soleFilePath)) soleFileRevealRef.current = key;
+  }, [collapseScopeKey, soleFilePath, revealDiffFile]);
+
   const openDiffFile = (filePath: string) => {
     openDiffFilePrimaryAction({
       threadRef: threadRef,
@@ -1290,7 +1325,7 @@ export default function DiffPanel({
           <DiffStatLabel
             additions={diffLineStat.additions}
             deletions={diffLineStat.deletions}
-            className="mr-1 text-2xs"
+            className="mr-1 text-2xs max-phone:text-body"
             layout="inline"
           />
         ) : null}
@@ -1658,35 +1693,38 @@ export default function DiffPanel({
                     }}
                   />
                 ) : null}
-                <div className="max-h-[45%] shrink-0 overflow-y-auto border-b border-border bg-[var(--app-chrome-background)]">
-                  {fileTreeOpen ? (
-                    <DiffFileTree
-                      ariaLabel={`${reviewSectionTitle} files`}
-                      entries={filteredFileTreeEntries}
-                      selectedPath={highlightedDiffPath}
-                      revealRequestId={selectedFileRevealRequestId}
-                      onSelectFile={(path) => {
-                        setActiveDiffPath({ key: diffSelectionKey, path });
-                        revealDiffFile(path);
-                      }}
-                    />
-                  ) : (
-                    <DiffFileList
-                      entries={filteredFileListEntries}
-                      selectedPath={highlightedDiffPath}
-                      onSelectFile={(path) => {
-                        setActiveDiffPath({ key: diffSelectionKey, path });
-                        revealDiffFile(path);
-                      }}
-                      {...(isWorkingTreeSelection
-                        ? { fileState: fileListState, onStageToggle: toggleStageForPath }
-                        : {})}
-                    />
-                  )}
-                </div>
+                {/* One file needs no list on a phone: its header below carries the path, counts and copy. */}
+                {isPhone && filteredFileListEntries.length <= 1 && !fileTreeOpen ? null : (
+                  <div className="max-h-[45%] shrink-0 overflow-y-auto border-b border-border bg-[var(--app-chrome-background)]">
+                    {fileTreeOpen ? (
+                      <DiffFileTree
+                        ariaLabel={`${reviewSectionTitle} files`}
+                        entries={filteredFileTreeEntries}
+                        selectedPath={highlightedDiffPath}
+                        revealRequestId={selectedFileRevealRequestId}
+                        onSelectFile={(path) => {
+                          setActiveDiffPath({ key: diffSelectionKey, path });
+                          revealDiffFile(path);
+                        }}
+                      />
+                    ) : (
+                      <DiffFileList
+                        entries={filteredFileListEntries}
+                        selectedPath={highlightedDiffPath}
+                        onSelectFile={(path) => {
+                          setActiveDiffPath({ key: diffSelectionKey, path });
+                          revealDiffFile(path);
+                        }}
+                        {...(isWorkingTreeSelection
+                          ? { fileState: fileListState, onStageToggle: toggleStageForPath }
+                          : {})}
+                      />
+                    )}
+                  </div>
+                )}
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                   <div
-                    className="flex h-(--h-pane-head) min-h-(--h-pane-head) shrink-0 items-center gap-1 border-b border-border bg-[var(--pane-head)] ps-1.5 pe-2 max-phone:px-4"
+                    className="flex h-(--h-pane-head) min-h-(--h-pane-head) shrink-0 items-center gap-1 border-b border-border bg-[var(--pane-head)] ps-1.5 pe-2 max-phone:h-11 max-phone:min-h-11 max-phone:px-4 max-phone:[&_button]:min-h-11 max-phone:[&_button]:min-w-11"
                     onClickCapture={(event) => {
                       const composedPath = event.nativeEvent.composedPath?.() ?? [];
                       for (const node of composedPath) {
@@ -1723,7 +1761,7 @@ export default function DiffPanel({
                       );
                     }}
                   >
-                    {selectedCodeViewFile ? (
+                    {selectedCodeViewFile && !isPhone ? (
                       <DiffFileCollapseToggle
                         filePath={selectedCodeViewFile.filePath}
                         fileKey={selectedCodeViewFile.fileKey}
@@ -1734,13 +1772,22 @@ export default function DiffPanel({
                     <button
                       type="button"
                       data-title={selectedCodeViewFile?.filePath}
-                      className="min-w-0 flex-1 cursor-pointer truncate text-left font-mono text-xs text-secondary-foreground hover:text-foreground"
+                      className="min-w-0 flex-1 cursor-pointer truncate text-left font-mono text-xs text-secondary-foreground hover:text-foreground max-phone:min-w-0 max-phone:text-body"
                       onClick={() => {
                         if (selectedCodeViewFile) openDiffFile(selectedCodeViewFile.filePath);
                       }}
                     >
                       {selectedCodeViewFile?.filePath ?? ""}
                     </button>
+                    {isPhone && selectedCodeViewFile !== undefined ? (
+                      <PhoneFileHeaderStat
+                        stat={
+                          filteredFileListEntries.find(
+                            (entry) => entry.path === selectedCodeViewFile.filePath,
+                          ) ?? null
+                        }
+                      />
+                    ) : null}
                     {isWorkingTreeSelection &&
                     selectedCodeViewFile !== undefined &&
                     workingTreeByPath.has(selectedCodeViewFile.filePath) ? (
@@ -1776,7 +1823,7 @@ export default function DiffPanel({
                       />
                     ) : null}
                   </div>
-                  <div className="min-h-0 min-w-0 flex-1 max-phone:px-2">
+                  <div className="min-h-0 min-w-0 flex-1 max-phone:px-4">
                     <AnnotatableCodeView
                       key={collapseScopeKey ?? reviewSectionId}
                       environmentId={activeThread?.environmentId}

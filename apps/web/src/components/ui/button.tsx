@@ -41,7 +41,7 @@ const buttonVariants = cva(
         touch: "h-11 px-4 text-sm",
         // A full-width 44px action row in a phone sheet; the icon sits on the 16px inset.
         "sheet-row":
-          "h-11 w-full justify-start gap-3 rounded-none border-0 px-4 text-sm font-normal [&_svg]:mx-0",
+          "h-11 w-full justify-start gap-2 rounded-none border-0 px-4 text-sm font-normal [&_svg]:mx-0",
       },
       // Cancels a ghost button's side padding on a phone so its label sits on the content inset
       // (xs and sm sizes pad 8px plus a 1px border; an icon-only 44px button insets its glyph 15px).

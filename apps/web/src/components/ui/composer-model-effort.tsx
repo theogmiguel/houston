@@ -10,6 +10,7 @@ import { ChevronUpIcon, WorkflowIcon } from "lucide-react";
 import { createContext, type KeyboardEvent, type ReactNode, useContext, useRef } from "react";
 
 import { cn } from "~/lib/utils";
+import { PHONE_SHEET_SECTION_LABEL_CLS } from "./phone-recipes";
 import { Menu, MenuPopup, MenuTrigger } from "./menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./tooltip";
 import type { ComposerControlSize } from "../chat/ComposerControl";
@@ -155,7 +156,6 @@ const CHIP =
   "flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-md px-2 text-left text-(--t2) text-xs outline-none hover:bg-(--sel) hover:text-(--t1) focus-visible:bg-(--sel) focus-visible:text-(--t1) aria-checked:bg-(--sel) aria-checked:font-medium aria-checked:text-(--t1) disabled:cursor-not-allowed disabled:opacity-64";
 const GROUP_LABEL = "w-14 shrink-0 pt-1.5 text-(--houston) text-2xs";
 const PHONE_CHIP = "h-11 px-3 text-sm";
-const PHONE_GROUP_LABEL = "w-16 pt-3.5 text-xs";
 
 /** The phone sheet sizes every effort chip to a 44px tap target. */
 const EffortPhoneContext = createContext(false);
@@ -164,8 +164,15 @@ const EffortPhoneContext = createContext(false);
 function OptionGroup(props: { label: string; children: ReactNode; note?: ReactNode }) {
   const phone = useContext(EffortPhoneContext);
   return (
-    <div role="radiogroup" aria-label={props.label} className="flex items-start gap-1">
-      <span aria-hidden="true" className={cn(GROUP_LABEL, phone && PHONE_GROUP_LABEL)}>
+    <div
+      role="radiogroup"
+      aria-label={props.label}
+      className={cn("flex gap-1", phone ? "flex-col" : "items-start")}
+    >
+      <span
+        aria-hidden="true"
+        className={phone ? cn(PHONE_SHEET_SECTION_LABEL_CLS, "pt-1") : GROUP_LABEL}
+      >
         {props.label}
       </span>
       <div className="flex min-w-0 flex-1 flex-col gap-1">

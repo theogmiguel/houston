@@ -22,7 +22,7 @@ import {
   withPendingChanges,
 } from "../../test/fakeEnvironment";
 import { render } from "../../test/render";
-import { expectFullWidthRows, expectSheetRecipe } from "./phoneGeometry";
+import { expectFullWidthRows, expectSheetRecipe, textLeft } from "./phoneGeometry";
 
 // The socket is the only fake layer: the client runtime hands every connection the in-process session.
 vi.mock("../../../../packages/client-runtime/src/connection/driver.ts", async (importOriginal) => {
@@ -86,6 +86,7 @@ installFakeEnvironment(
     threadWithPendingApproval("phone-approve"),
     threadWithPendingApproval("phone-decline"),
     threadWithPendingQuestion("phone-question"),
+    threadWithPendingQuestion("phone-question-dark"),
     runningThread("phone-queue"),
     runningThread("phone-steer"),
   ],
@@ -512,7 +513,7 @@ it.each([390, 320])(
       .sort((a, b) => a.left - b.left);
     expect(controls.length).toBeGreaterThanOrEqual(4);
     const gaps = controls.slice(1).map((box, index) => box.left - controls[index]!.right);
-    for (const gap of gaps) expect(gap).toBeGreaterThanOrEqual(6);
+    for (const gap of gaps) expect(gap).toBeGreaterThanOrEqual(8);
   },
 );
 
@@ -614,5 +615,268 @@ it.each([390, 320])(
     expect(
       [...document.querySelectorAll("kbd")].filter((node) => node.getClientRects().length > 0),
     ).toHaveLength(0);
+  },
+);
+
+const colorOf = (cssValue: string, property: "color" | "backgroundColor") => {
+  const probe = document.createElement("span");
+  probe.style[property] = cssValue;
+  document.body.append(probe);
+  const resolved = getComputedStyle(probe)[property];
+  probe.remove();
+  return resolved;
+};
+
+it.each([390, 320])(
+  "aligns the question card's header, answers and submit on its padding at %ipx",
+  async (width) => {
+    const { screen } = await openThread(width, "phone-question");
+    await using _screen = screen;
+    const toggle = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLElement>("[data-pending-user-input-toggle]");
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    const form = document.querySelector<HTMLElement>('[data-chat-composer-form="true"]')!;
+    const headerText = toggle.querySelector<HTMLElement>(
+      '[data-slot="composer-banner-content"] > span',
+    )!;
+    const radio = document.querySelector<HTMLElement>("button[aria-pressed] > span")!;
+    expect(rect(headerText).left).toBeCloseTo(rect(radio).left, 0);
+    expect(rect(radio).left - rect(form).left).toBeGreaterThanOrEqual(GUTTER);
+
+    const submit = document.querySelector<HTMLElement>(
+      '[data-chat-composer-mobile-pending-actions] button[type="submit"]',
+    )!;
+    // The submit sits one padding from the card's right and bottom borders.
+    const rightGap = rect(form).right - rect(submit).right;
+    const bottomGap = rect(form).bottom - rect(submit).bottom;
+    expect(bottomGap).toBeGreaterThanOrEqual(GUTTER - 1);
+    expect(bottomGap).toBeCloseTo(rightGap, 0);
+    // It shares the approval buttons' rounded-rectangle radius, not a pill.
+    expect(parseFloat(getComputedStyle(submit).borderTopLeftRadius)).toBeLessThan(
+      rect(submit).height / 2 - 1,
+    );
+  },
+);
+
+it("styles the disabled submit with a surface that reads in the dark theme", async () => {
+  document.documentElement.classList.add("dark");
+  try {
+    const { screen } = await openThread(390, "phone-question-dark");
+    await using _screen = screen;
+    const submit = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLButtonElement>(
+        '[data-chat-composer-mobile-pending-actions] button[type="submit"]',
+      );
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    expect(submit.disabled).toBe(true);
+    const style = getComputedStyle(submit);
+    expect(style.backgroundColor).not.toBe(colorOf("var(--send)", "backgroundColor"));
+    expect(style.opacity).toBe("1");
+  } finally {
+    document.documentElement.classList.remove("dark");
+  }
+});
+
+it.each([390, 320])("lets the approval title wrap instead of truncating at %ipx", async (width) => {
+  const { screen } = await openThread(width, "phone-approve");
+  await using _screen = screen;
+  const card = await vi.waitFor(() => {
+    const found = document.querySelector<HTMLElement>("[data-composer-approval-card]");
+    expect(found).not.toBeNull();
+    return found!;
+  });
+  const title = [...card.querySelectorAll<HTMLElement>("span")].find((node) =>
+    node.textContent?.startsWith("The agent wants"),
+  )!;
+  expect(title.textContent).toBe("The agent wants to run a command");
+  expect(title.scrollWidth).toBeLessThanOrEqual(title.clientWidth + 1);
+  expect(getComputedStyle(title).textOverflow).not.toBe("ellipsis");
+  expect(rect(title).height).toBeLessThan(44);
+});
+
+it.each([390, 320])(
+  "gives the composer's footer one inner padding and one placeholder inset at %ipx",
+  async (width) => {
+    const { screen } = await openThread(width, "phone-composer");
+    await using _screen = screen;
+    const collapsedPrompt = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLElement>(
+        '[data-chat-composer-transition-prompt="true"]',
+      );
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    const collapsedLeft = rect(collapsedPrompt).left;
+    await expandComposer();
+
+    const form = document.querySelector<HTMLElement>('[data-chat-composer-form="true"]')!;
+    const send = [
+      ...document.querySelectorAll<HTMLElement>('[data-chat-composer-actions="right"] button'),
+    ]
+      .filter((button) => button.getClientRects().length > 0)
+      .at(-1)!;
+    const add = addTrigger()!;
+    const inset = rect(add).left - rect(form).left;
+    expect(rect(form).right - rect(send).right).toBeCloseTo(inset, 0);
+    expect(rect(form).bottom - rect(send).bottom).toBeCloseTo(inset, 0);
+    expect(inset).toBeGreaterThanOrEqual(8 - 0.5);
+
+    // The placeholder starts at the same x collapsed and expanded.
+    const pm = editor();
+    const paragraph = pm.querySelector<HTMLElement>("p") ?? pm;
+    const expandedLeft =
+      rect(paragraph).left +
+      parseFloat(getComputedStyle(paragraph).paddingLeft) +
+      parseFloat(getComputedStyle(paragraph).borderLeftWidth);
+    expect(expandedLeft).toBeCloseTo(collapsedLeft, 0);
+  },
+);
+
+it.each([390, 320])(
+  "sizes the model chip like the other toolbar controls and gives pickers one chevron treatment at %ipx",
+  async (width) => {
+    const { screen } = await openThread(width, "phone-changes");
+    await using _screen = screen;
+    await expandComposer();
+    const footer = document.querySelector<HTMLElement>('[data-chat-composer-footer="true"]')!;
+    const others = [...footer.querySelectorAll<HTMLElement>("[data-composer-context-control]")];
+    expect(others.length).toBeGreaterThan(0);
+    for (const control of others) {
+      expect(getComputedStyle(modelTrigger()!).fontSize).toBe(getComputedStyle(control).fontSize);
+    }
+    // The context pickers are icon buttons: none draws a chevron another lacks.
+    const pickers = [...footer.querySelectorAll<HTMLElement>("button")].filter(
+      (button) =>
+        button.getClientRects().length > 0 &&
+        button !== modelTrigger() &&
+        button !== addTrigger() &&
+        !button.closest('[data-chat-composer-actions="right"] > :last-child'),
+    );
+    expect(pickers.length).toBeGreaterThan(0);
+    for (const picker of pickers) {
+      const chevron = picker.querySelector(".lucide-chevron-down");
+      expect(
+        chevron === null || chevron.getClientRects().length === 0,
+        picker.getAttribute("aria-label") ?? "",
+      ).toBe(true);
+    }
+    const lastGap = (() => {
+      const boxes = [...footer.querySelectorAll<HTMLElement>("button")]
+        .filter((button) => button.getClientRects().length > 0)
+        .map((button) => rect(button))
+        .sort((a, b) => a.left - b.left);
+      return boxes.at(-1)!.left - boxes.at(-2)!.right;
+    })();
+    expect(lastGap).toBeGreaterThanOrEqual(8);
+  },
+);
+
+it("puts the running status row on the message gutter", async () => {
+  const { screen } = await openThread(390, "phone-queue");
+  await using _screen = screen;
+  const row = await vi.waitFor(() => {
+    const found = document.querySelector<HTMLElement>("[data-working-row]");
+    expect(found).not.toBeNull();
+    return found!;
+  });
+  const glyph = row.querySelector<HTMLElement>("svg, [role=status], span")!;
+  const prose = await vi.waitFor(() => {
+    const found = [...document.querySelectorAll<HTMLElement>("[data-timeline-root] p")].find(
+      (node) => node.textContent === "Answer 0 for phone-queue.",
+    );
+    expect(found).toBeDefined();
+    return found!;
+  });
+  expect(rect(row).left).toBeCloseTo(rect(prose).left, 0);
+  expect(rect(glyph).left).toBeCloseTo(rect(prose).left, 0);
+});
+
+it.each([390, 320])(
+  "gives every phone sheet row one icon, gap and label column with a check on the selected row at %ipx",
+  async (width) => {
+    const { screen } = await openThread(width, "phone-composer");
+    await using _screen = screen;
+    await expandComposer();
+
+    await userEvent.click(addTrigger()!);
+    const addSheet = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLElement>("[data-phone-add-sheet]");
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    await expect.element(page.getByRole("button", { name: "Commands" })).toBeVisible();
+    const labelOffset = (sheet: HTMLElement, row: HTMLElement, text: string) =>
+      textLeft(row, text) - rect(sheet).left;
+    const addRow = [...addSheet.querySelectorAll<HTMLElement>("button")].find((button) =>
+      button.textContent?.includes("Mention a file"),
+    )!;
+    expect(rect(addRow.querySelector("svg")!).width).toBeCloseTo(16, 0);
+    expect(labelOffset(addSheet, addRow, "Mention a file")).toBeCloseTo(40, 0);
+    await userEvent.click(page.getByRole("button", { name: "Close" }));
+    await vi.waitFor(() => expect(document.querySelector("[data-phone-add-sheet]")).toBeNull());
+
+    await userEvent.click(modelTrigger()!);
+    const sheet = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLElement>("[data-phone-model-sheet]");
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    await expect.element(page.getByRole("radio", { name: "Full access" })).toBeVisible();
+    const radios = [
+      ...sheet.querySelectorAll<HTMLElement>('[data-composer-permissions] [role="radio"]'),
+    ];
+    for (const radio of radios) {
+      expect(rect(radio.querySelector("svg")!).width, radio.textContent ?? "").toBeCloseTo(16, 0);
+      expect(labelOffset(sheet, radio, radio.textContent!.trim())).toBeCloseTo(40, 0);
+    }
+    // One selection treatment: a check and the same fill on the selected option and radio.
+    const checkedRadio = radios.find((radio) => radio.getAttribute("aria-checked") === "true")!;
+    const selectedOption = sheet.querySelector<HTMLElement>(
+      '[role="option"][aria-selected="true"]',
+    )!;
+    expect(checkedRadio.querySelector(".lucide-check")).not.toBeNull();
+    expect(selectedOption.querySelector(".lucide-check")).not.toBeNull();
+    const selectedFill = (() => {
+      const probe = document.createElement("div");
+      probe.className = "bg-foreground/[0.06]";
+      document.body.append(probe);
+      const resolved = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return resolved;
+    })();
+    expect(getComputedStyle(checkedRadio).backgroundColor).toBe(selectedFill);
+    // A highlighted option takes the hover fill on top; an idle one shows the selected fill.
+    if (!selectedOption.hasAttribute("data-highlighted")) {
+      expect(getComputedStyle(selectedOption).backgroundColor).toBe(selectedFill);
+    }
+    for (const radio of radios.filter((node) => node !== checkedRadio)) {
+      expect(radio.querySelector(".lucide-check")).toBeNull();
+    }
+    // The checks end on the 16px gutter.
+    expect(rect(checkedRadio.querySelector(".lucide-check")!).right).toBeCloseTo(
+      rect(selectedOption.querySelector(".lucide-check")!).right,
+      0,
+    );
+
+    // "Effort" and "Permissions" share one section-label style and inset.
+    const effort = [...sheet.querySelectorAll<HTMLElement>("[data-model-picker-effort] span")].find(
+      (node) => node.textContent === "Effort",
+    )!;
+    const permissions = [
+      ...sheet.querySelectorAll<HTMLElement>("[data-composer-permissions] div"),
+    ].find((node) => node.textContent === "Permissions")!;
+    for (const property of ["fontSize", "fontWeight", "color"] as const) {
+      expect(getComputedStyle(effort)[property], property).toBe(
+        getComputedStyle(permissions)[property],
+      );
+    }
+    expect(textLeft(effort, "Effort")).toBeCloseTo(textLeft(permissions, "Permissions"), 0);
+    expect(rect(effort).bottom).toBeLessThanOrEqual(
+      rect(sheet.querySelector('[data-model-picker-effort] [role="radio"]')!).top + 0.5,
+    );
   },
 );

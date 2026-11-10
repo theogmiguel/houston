@@ -53,7 +53,7 @@ export function DiffFileList(props: {
   readonly onStageToggle?: (path: string) => void;
 }) {
   return (
-    <div className="flex flex-col gap-px px-1.5 py-1.5 max-phone:px-0">
+    <div className="flex flex-col gap-px px-1.5 py-1.5 max-phone:p-0">
       {props.entries.map((entry) => {
         const selected = entry.path === props.selectedPath;
         const state = props.fileState?.(entry.path);
@@ -61,7 +61,7 @@ export function DiffFileList(props: {
           <div
             key={entry.path}
             className={cn(
-              "flex h-7 w-full min-w-0 shrink-0 items-center gap-2 rounded-md px-2 text-xs max-phone:h-11 max-phone:rounded-none max-phone:px-4 max-phone:text-sm",
+              "flex h-7 w-full min-w-0 shrink-0 items-center gap-2 rounded-md px-2 text-xs max-phone:h-11 max-phone:rounded-none max-phone:px-4 max-phone:text-body",
               selected ? "bg-selected text-foreground" : "text-secondary-foreground hover:bg-hover",
             )}
           >

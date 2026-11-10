@@ -55,9 +55,16 @@ export const ComposerApprovalCard = memo(function ComposerApprovalCard({
     { decision: "accept" as const, label: "Approve" },
   ];
   const titleLine = (
-    <div className="flex min-w-0 items-center gap-2">
-      <TriangleAlertIcon aria-hidden className="size-3.5 shrink-0 text-warning" />
-      <span className="truncate text-sm font-medium text-foreground">{title}</span>
+    <div className={cn("flex min-w-0 gap-2", phone ? "items-start" : "items-center")}>
+      <TriangleAlertIcon
+        aria-hidden
+        className={cn("size-3.5 shrink-0 text-warning", phone && "mt-1")}
+      />
+      <span
+        className={cn("min-w-0 text-sm font-medium text-foreground", phone ? "flex-1" : "truncate")}
+      >
+        {title}
+      </span>
       {count > 1 ? (
         <span className="shrink-0 text-2xs tabular-nums text-muted-foreground">
           {index + 1} of {count}

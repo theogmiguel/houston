@@ -30,7 +30,11 @@ import {
   ComposerEffortPanel,
   describeComposerEffort,
 } from "../components/ui/composer-model-effort";
-import { PHONE_PLAN_ROW_CLS, PHONE_SHEET_SECTION_CLS } from "../components/ui/phone-recipes";
+import {
+  PHONE_MODEL_CHIP_CLS,
+  PHONE_PLAN_ROW_CLS,
+  PHONE_SHEET_SECTION_CLS,
+} from "../components/ui/phone-recipes";
 import { PhoneSheetHeader } from "../components/ui/phone-sheet-header";
 import { Sheet, SheetPopup } from "../components/ui/sheet";
 import type { AppModelOption } from "../modelSelection";
@@ -87,7 +91,7 @@ export const ModelSheet = memo(function ModelSheet(props: {
         data-composer-shortcut="composer.effort composer.mode"
         data-phone-model-sheet-trigger="true"
         onClick={() => props.onOpenChange(true)}
-        className="max-w-full min-w-0"
+        className={PHONE_MODEL_CHIP_CLS}
       >
         <span className="flex min-w-0 items-center gap-1.5">
           <span className="inline-flex shrink-0 items-center">

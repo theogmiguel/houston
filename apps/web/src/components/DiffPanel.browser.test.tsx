@@ -15,11 +15,16 @@ import {
 } from "@houston-app/contracts";
 import * as DateTime from "effect/DateTime";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
-import { expect, it, vi } from "vite-plus/test";
+import { beforeEach, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import { act, render } from "../../test/render";
+
+// The default browser viewport is phone-sized; these cases cover the desktop panel.
+beforeEach(async () => {
+  await page.viewport(1280, 800);
+});
 import { makeThreadFixture } from "~/test-fixtures";
 
 type ResultAtom<A> = Atom.Atom<AsyncResult.AsyncResult<A, Error>>;

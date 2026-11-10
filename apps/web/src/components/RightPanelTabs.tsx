@@ -87,7 +87,7 @@ import {
 import { useBrowserDefaults } from "~/browser/browserDefaults";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { PanelTabCloseButton } from "~/components/ui/panel-tab-close-button";
-import { PHONE_PANEL_BAR_CLS } from "~/components/ui/phone-recipes";
+import { PHONE_PAGE_BAR_TITLE_CLS, PHONE_PANEL_BAR_CLS } from "~/components/ui/phone-recipes";
 import { faviconUrlForOrigin } from "@houston-app/shared/favicon";
 import { useTheme } from "~/hooks/useTheme";
 import { useDeviceState } from "~/state/device";
@@ -1454,7 +1454,19 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       </Menu>
     ) : null;
 
-  const tabStripContent = (
+  // A phone shows one surface at a time, so its bar is the back control and the surface's title.
+  const phoneSurface = focusedSurface ?? props.surfaces[0];
+  const phoneTitleContent = (
+    <span data-right-panel-phone-title className={PHONE_PAGE_BAR_TITLE_CLS}>
+      {phoneSurface
+        ? surfaceTitle(phoneSurface, props.previewSessions, props.terminalLabelsById)
+        : ""}
+    </span>
+  );
+
+  const tabStripContent = props.phone ? (
+    phoneTitleContent
+  ) : (
     <>
       {addSurfaceMenu}
       <ScrollArea

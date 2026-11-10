@@ -5,7 +5,7 @@ import type {
   RuntimeMode,
 } from "@houston-app/contracts";
 import { createModelSelection } from "@houston-app/shared/model";
-import { BotIcon, PencilRulerIcon } from "lucide-react";
+import { BotIcon, CheckIcon, PencilRulerIcon } from "lucide-react";
 import { type ComponentProps, memo, useId, useRef, useState } from "react";
 
 import { cn } from "~/lib/utils";
@@ -13,7 +13,12 @@ import { cn } from "~/lib/utils";
 import type { ContextWindowSnapshot } from "../../lib/contextWindow";
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { Menu, MenuPopup, MenuTrigger } from "../ui/menu";
-import { PHONE_PERMISSION_ROW_CLS } from "../ui/phone-recipes";
+import {
+  PHONE_PERMISSION_ROW_CLS,
+  PHONE_SHEET_ROW_CHECK_CLS,
+  PHONE_SHEET_ROW_ICON_CLS,
+  PHONE_SHEET_SECTION_LABEL_CLS,
+} from "../ui/phone-recipes";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ComposerControl, ComposerControlIcon } from "./ComposerControl";
 import { focusRequestedPermission, useComposerMenuProps } from "./composerEventScope";
@@ -261,7 +266,12 @@ export function ComposerPermissionsPicker(props: {
       data-composer-permissions
       className={cn("grid gap-1.5", props.phone ? "w-full py-2" : "w-72 px-2 py-1.5")}
     >
-      <div className={cn("font-medium text-muted-foreground text-xs", props.phone && "px-4 pt-1")}>
+      <div
+        className={cn(
+          props.phone ? PHONE_SHEET_SECTION_LABEL_CLS : "font-medium text-muted-foreground text-xs",
+          props.phone && "px-4 pt-1",
+        )}
+      >
         Permissions
       </div>
       <div role="radiogroup" aria-label="Permissions" className="grid gap-0.5">
@@ -278,12 +288,20 @@ export function ComposerPermissionsPicker(props: {
                 if (!checked) props.onRuntimeModeChange(option.mode);
               }}
               className={cn(
-                "flex w-full cursor-pointer items-center gap-2 text-left text-muted-foreground outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset aria-checked:bg-input/72 aria-checked:text-foreground",
-                props.phone ? PHONE_PERMISSION_ROW_CLS : "min-h-8 rounded-md px-2",
+                "flex w-full cursor-pointer items-center gap-2 text-left text-muted-foreground outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+                props.phone
+                  ? PHONE_PERMISSION_ROW_CLS
+                  : "min-h-8 rounded-md px-2 aria-checked:bg-input/72 aria-checked:text-foreground",
               )}
             >
-              <OptionIcon aria-hidden="true" className="size-3.5 shrink-0" />
+              <OptionIcon
+                aria-hidden="true"
+                className={props.phone ? PHONE_SHEET_ROW_ICON_CLS : "size-3.5 shrink-0"}
+              />
               <span className="min-w-0 flex-1 truncate text-sm">{option.label}</span>
+              {props.phone && checked ? (
+                <CheckIcon aria-hidden="true" className={PHONE_SHEET_ROW_CHECK_CLS} />
+              ) : null}
             </button>
           );
         })}

@@ -207,7 +207,7 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
         data-pending-user-input-toggle={isCollapsed ? "collapsed" : "expanded"}
         className="px-4 pt-1.5"
       >
-        <ComposerBanner.Content>
+        <ComposerBanner.Content className="group-not-has-[>[data-slot=composer-banner-icon]]/banner-row:max-phone:ps-0!">
           <span
             className={cn("min-w-0 truncate text-muted-foreground", isCollapsed && "max-w-1/2")}
             dir={textDirection(activeQuestion.header)}

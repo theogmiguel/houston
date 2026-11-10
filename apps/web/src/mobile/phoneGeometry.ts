@@ -43,3 +43,16 @@ export function expectFullWidthRows(
     expect(rect.right, name).toBeLessThanOrEqual(width + 0.5);
   }
 }
+
+/** The left edge of the first text node in `root` that contains `text`. */
+export function textLeft(root: HTMLElement, text: string): number {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (node.textContent?.includes(text)) {
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      return range.getBoundingClientRect().left;
+    }
+  }
+  throw new Error(`no text "${text}" in ${root.tagName.toLowerCase()}`);
+}

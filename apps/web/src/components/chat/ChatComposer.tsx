@@ -3853,7 +3853,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               </ComposerBanner.Root>
             ) : null}
             {showCollapsedMobilePromptRow ? (
-              <div className="flex items-center justify-between gap-2 px-3 py-2">
+              <div className="flex items-center justify-between gap-2 px-3 py-2 max-phone:pr-2 max-phone:pl-4">
                 <button
                   type="button"
                   data-chat-composer-transition-prompt="true"
@@ -3915,7 +3915,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 };
               }}
               data-chat-composer-body="true"
-              className={cn("relative px-4 pt-2.5 pb-1", isComposerCollapsedMobile && "hidden")}
+              className={cn(
+                "relative px-4 pt-2.5 pb-1",
+                isComposerCollapsedMobile && "hidden",
+                showMobilePendingAnswerActions && "max-sm:pb-4",
+              )}
             >
               {isStashMenuOpen && !composerMenuOpen && (
                 <ComposerCommandMenuLayer anchor={composerMenuAnchor}>
@@ -4106,7 +4110,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               <div
                 data-chat-composer-footer="true"
                 className={cn(
-                  "flex min-w-0 flex-nowrap items-center gap-0.5 overflow-visible px-1.5 pt-0.5 pb-1.5",
+                  "flex min-w-0 flex-nowrap items-center gap-0.5 overflow-visible px-1.5 pt-0.5 pb-1.5 max-phone:px-2 max-phone:pb-2",
                   isPhone && "gap-2",
                   pendingUserInputs.length > 0 && "pt-1.5",
                   showMobilePendingAnswerActions && "hidden sm:flex",

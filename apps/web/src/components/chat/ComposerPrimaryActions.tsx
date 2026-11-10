@@ -92,12 +92,12 @@ const boardFocusRing =
   "outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background";
 
 const messageActionPillClassName = cn(
-  "inline-flex h-7 shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-(--send) px-3 font-medium text-(--send-ink) text-xs transition-colors hover:bg-(--send)/90 disabled:pointer-events-none disabled:opacity-64",
+  "inline-flex h-7 shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-(--send) px-3 font-medium text-(--send-ink) text-xs transition-colors hover:bg-(--send)/90 disabled:pointer-events-none disabled:opacity-64 max-phone:rounded-(--r-ctl) max-phone:disabled:bg-(--sel) max-phone:disabled:text-muted-foreground max-phone:disabled:opacity-100",
   boardFocusRing,
 );
 
 const messageActionGhostPillClassName = cn(
-  "inline-flex h-7 shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-full border border-(--line-strong) bg-transparent px-3 font-medium text-(--t2) text-xs transition-colors hover:bg-(--hover) disabled:pointer-events-none disabled:opacity-64",
+  "inline-flex h-7 shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-full border border-(--line-strong) bg-transparent px-3 font-medium text-(--t2) text-xs transition-colors hover:bg-(--hover) disabled:pointer-events-none disabled:opacity-64 max-phone:rounded-(--r-ctl)",
   boardFocusRing,
 );
 

@@ -26,8 +26,19 @@ export function phoneTabLabelClass(active: boolean): string {
 
 /** A phone sheet's section divider: a rule above the block, full width. */
 export const PHONE_SHEET_SECTION_CLS = "border-t border-border";
-/** A permission radio in the phone sheet. */
-export const PHONE_PERMISSION_ROW_CLS = "min-h-11 rounded-none px-4";
+/** A permission radio in the phone sheet: the sheet row's gap, with the selected option's fill. */
+export const PHONE_PERMISSION_ROW_CLS =
+  "min-h-11 rounded-none px-4 aria-checked:bg-foreground/[0.06] aria-checked:text-foreground";
+/** The icon beside a phone sheet row's label: 16px, so every sheet's label starts at x40. */
+export const PHONE_SHEET_ROW_ICON_CLS = "size-4 shrink-0";
+/** The model chip in the phone composer: the toolbar's text size, yielding width to its siblings. */
+export const PHONE_MODEL_CHIP_CLS = "max-w-full min-w-0 text-sm";
+/** The selected file's line counts in the phone's Changes file header. */
+export const PHONE_FILE_STAT_CLS = "shrink-0 text-body";
+/** The check that marks the selected row of a phone sheet list, on the 16px right gutter. */
+export const PHONE_SHEET_ROW_CHECK_CLS = "ms-auto size-3.5 shrink-0 text-foreground";
+/** A section label in a phone sheet ("Effort", "Permissions"): one style, set on the gutter by its container. */
+export const PHONE_SHEET_SECTION_LABEL_CLS = "font-medium text-xs text-muted-foreground";
 /** The plan-mode row in the phone sheet. */
 export const PHONE_PLAN_ROW_CLS = "min-h-11 border-t border-border px-4 text-sm";
 

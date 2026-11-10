@@ -22,7 +22,7 @@ import {
   withPendingChanges,
 } from "../../test/fakeEnvironment";
 import { render } from "../../test/render";
-import { expectFullWidthRows, expectSheetRecipe } from "./phoneGeometry";
+import { expectFullWidthRows, expectSheetRecipe, textLeft } from "./phoneGeometry";
 
 // The socket is the only fake layer: the client runtime hands every connection the in-process session.
 vi.mock("../../../../packages/client-runtime/src/connection/driver.ts", async (importOriginal) => {
@@ -225,7 +225,7 @@ it("commits from the phone details sheet and records the action", async () => {
   });
 });
 
-it("opens Changes, selects a changed file and shows its diff", async () => {
+it("opens Changes and shows the only changed file's diff", async () => {
   const { screen } = await openThread(390);
   await using _screen = screen;
   await openDetails();
@@ -238,17 +238,8 @@ it("opens Changes, selects a changed file and shows its diff", async () => {
   );
   await expect.element(page.getByRole("button", { name: "Back to thread" })).toBeVisible();
 
-  const changedFile = await vi.waitFor(
-    () => {
-      const found = [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
-        button.textContent?.includes("App.tsx"),
-      );
-      expect(found).not.toBeUndefined();
-      return found!;
-    },
-    { timeout: 10_000 },
-  );
-  await userEvent.click(changedFile);
+  // A single changed file loads without a tap: its header is the only row.
+  await expect.element(page.getByRole("button", { name: "src/App.tsx" })).toBeVisible();
   await vi.waitFor(() => expect(allText(document.body)).toContain("export const app = phone();"), {
     timeout: 10_000,
   });
@@ -391,23 +382,31 @@ it.each([390, 320])(
       "the back control is the only close action",
     ).toBeNull();
 
+    // One file is one header: path, counts and copy on the gutter, with no list above it.
     const changedFile = await vi.waitFor(
       () => {
-        const found = [...panel.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
-          button.textContent?.includes("App.tsx"),
-        );
-        expect(found).not.toBeUndefined();
+        const found = panel.querySelector<HTMLButtonElement>("button[data-title]");
+        expect(found).not.toBeNull();
+        expect(found!.textContent).toBe("src/App.tsx");
         return found!;
       },
       { timeout: 10_000 },
     );
-    const fileRow = changedFile.parentElement!;
-    expect(fileRow.getBoundingClientRect().height).toBeGreaterThanOrEqual(43.5);
-    expect(changedFile.querySelector("svg")!.getBoundingClientRect().left).toBeCloseTo(16, 0);
-    const status = [...changedFile.querySelectorAll<HTMLElement>("span")].find(
-      (span) => span.textContent === "M",
-    )!;
-    expect(width - status.getBoundingClientRect().right).toBeGreaterThanOrEqual(16 - 0.5);
+    const fileHeader = changedFile.parentElement!;
+    expect(fileHeader.getBoundingClientRect().height).toBeGreaterThanOrEqual(43.5);
+    expect(changedFile.getBoundingClientRect().left).toBeCloseTo(16, 0);
+    expect(fileHeader.querySelector('[aria-label="Collapse src/App.tsx"]')).toBeNull();
+    const headerStat = fileHeader.querySelector<HTMLElement>('[role="group"]')!;
+    expect(headerStat.textContent).toContain("+1");
+    const copy = fileHeader.querySelector<HTMLElement>('[aria-label="Copy file path"]')!;
+    expect(width - copy.getBoundingClientRect().right).toBeCloseTo(16, 0);
+    expect(panel.querySelectorAll("button[data-title]")).toHaveLength(1);
+    expect(
+      [...panel.querySelectorAll<HTMLElement>("button")].filter(
+        (button) => button.textContent?.trim() === "App.tsx",
+      ),
+      "no second row names the file",
+    ).toHaveLength(0);
 
     const toolbar = panel.querySelector<HTMLElement>("[data-surface-subheader]")!;
     const toolbarControls = [...toolbar.querySelectorAll<HTMLElement>("button")].filter(
@@ -430,7 +429,6 @@ it.each([390, 320])(
       expect(button.getBoundingClientRect().height).toBeGreaterThanOrEqual(43.5);
     }
 
-    await userEvent.click(changedFile);
     await vi.waitFor(
       () => expect(allText(document.body)).toContain("export const app = phone();"),
       {
@@ -440,8 +438,12 @@ it.each([390, 320])(
     const viewer = panel.querySelector<HTMLElement>("diffs-container");
     expect(viewer, "diff viewer").not.toBeNull();
     const viewerRect = viewer!.getBoundingClientRect();
-    expect(viewerRect.left).toBeGreaterThanOrEqual(8 - 0.5);
-    expect(width - viewerRect.right).toBeGreaterThanOrEqual(8 - 0.5);
+    // The hunk and its expand row sit on the same 16px gutter as the header.
+    expect(viewerRect.left).toBeCloseTo(16, 0);
+    expect(width - viewerRect.right).toBeGreaterThanOrEqual(16 - 0.5);
+    const surface = panel.querySelector<HTMLElement>(".diff-render-surface")!;
+    expect(surface.getBoundingClientRect().left).toBeCloseTo(16, 0);
+    expect(width - surface.getBoundingClientRect().right).toBeCloseTo(16, 0);
     expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
 
     // No reserved header band between the file bar and the first line, and the expand row shares
@@ -586,3 +588,139 @@ it("keeps the desktop details card and right panel at 1024px", async () => {
     .element(screen.getByRole("button", { name: "Back to thread" }))
     .not.toBeInTheDocument();
 });
+
+it.each([390, 320])(
+  "shows a back button and a plain title in the Changes bar, without desktop tab chrome at %ipx",
+  async (width) => {
+    const { screen } = await openThread(width);
+    await using _screen = screen;
+    await openDetails();
+    await userEvent.click(detailsRowButton("Changes")!);
+    const panel = await vi.waitFor(
+      () => {
+        const found = document.querySelector<HTMLElement>('[data-preview-panel-mode="sheet"]');
+        expect(found).not.toBeNull();
+        return found!;
+      },
+      { timeout: 5_000 },
+    );
+    const bar = panel.querySelector<HTMLElement>("[data-right-panel-tabbar]")!;
+    expect(bar.querySelector('[aria-label="Add panel surface"]')).toBeNull();
+    expect(bar.querySelector('[role="tablist"], [role="tab"]')).toBeNull();
+    const title = bar.querySelector<HTMLElement>("[data-right-panel-phone-title]")!;
+    expect(title.textContent).toBe("Changes");
+    expect(getComputedStyle(title).backgroundColor).toBe("rgba(0, 0, 0, 0)");
+    const back = page.getByRole("button", { name: "Back to thread" }).element();
+    expect(back.getBoundingClientRect().right).toBeLessThanOrEqual(
+      title.getBoundingClientRect().left + 0.5,
+    );
+    // The toolbar has no split-view toggle on a phone.
+    await vi.waitFor(() => expect(panel.querySelector("[data-surface-subheader]")).not.toBeNull(), {
+      timeout: 10_000,
+    });
+    const split = [...panel.querySelectorAll<HTMLElement>("button")].filter(
+      (button) =>
+        button.getClientRects().length > 0 &&
+        /diff view/i.test(button.getAttribute("aria-label") ?? ""),
+    );
+    expect(split).toHaveLength(0);
+  },
+);
+
+it.each([390, 320])(
+  "gives the Changes file header, counts and toolbar one text size and no band above at %ipx",
+  async (width) => {
+    const { screen } = await openThread(width);
+    await using _screen = screen;
+    await openDetails();
+    await userEvent.click(detailsRowButton("Changes")!);
+    const panel = await vi.waitFor(
+      () => {
+        const found = document.querySelector<HTMLElement>('[data-preview-panel-mode="sheet"]');
+        expect(found).not.toBeNull();
+        return found!;
+      },
+      { timeout: 5_000 },
+    );
+    const toolbar = await vi.waitFor(
+      () => {
+        const found = panel.querySelector<HTMLElement>("[data-surface-subheader]");
+        expect(found).not.toBeNull();
+        return found!;
+      },
+      { timeout: 10_000 },
+    );
+    const path = await vi.waitFor(
+      () => {
+        const found = panel.querySelector<HTMLElement>("button[data-title]");
+        expect(found).not.toBeNull();
+        return found!;
+      },
+      { timeout: 10_000 },
+    );
+    const header = path.parentElement!;
+    // The file header starts right under the toolbar's border: no lighter band between them.
+    expect(header.getBoundingClientRect().top).toBeCloseTo(
+      toolbar.getBoundingClientRect().bottom,
+      0,
+    );
+    const toolbarStat = toolbar.querySelector<HTMLElement>('[role="group"]')!;
+    const headerStat = header.querySelector<HTMLElement>('[role="group"]')!;
+    expect(getComputedStyle(toolbarStat).fontSize).toBe(getComputedStyle(headerStat).fontSize);
+    expect(getComputedStyle(path).fontSize).toBe(getComputedStyle(headerStat).fontSize);
+    expect(path.scrollWidth).toBeLessThanOrEqual(path.clientWidth + 1);
+  },
+);
+
+it.each([390, 320])(
+  "ends every trailing control of the details sheet on the 16px right gutter at %ipx",
+  async (width) => {
+    const { screen } = await openThread(width);
+    await using _screen = screen;
+    await openDetails();
+    const sheet = detailsSheet()!;
+    await vi.waitFor(() => expect(allText(sheet)).toContain("#42"), { timeout: 5_000 });
+    const sheetRect = sheet.getBoundingClientRect();
+    type Item = { box: DOMRect; icon: boolean; text: string };
+    const items: Item[] = [
+      ...sheet.querySelectorAll<HTMLElement>(
+        "[data-thread-details-card] svg, [data-thread-details-card] span",
+      ),
+    ]
+      .filter((node) => {
+        const box = node.getBoundingClientRect();
+        if (box.width === 0 || box.height === 0) return false;
+        if (node instanceof SVGElement) return node.tagName.toLowerCase() === "svg";
+        return node.children.length === 0 && (node.textContent ?? "").trim() !== "";
+      })
+      .map((node) => ({
+        box: node.getBoundingClientRect(),
+        icon: node instanceof SVGElement,
+        text: (node.textContent ?? "").trim(),
+      }));
+    // Group by row: items on one row share a vertical centre.
+    const centre = (box: DOMRect) => box.top + box.height / 2;
+    items.sort((a, b) => centre(a.box) - centre(b.box));
+    const lines: Item[][] = [];
+    for (const item of items) {
+      const line = lines.at(-1);
+      if (line && Math.abs(centre(line[0]!.box) - centre(item.box)) < 12) line.push(item);
+      else lines.push([item]);
+    }
+    let trailing = 0;
+    for (const line of lines) {
+      line.sort((a, b) => a.box.left - b.box.left);
+      const last = line.at(-1)!;
+      // A trailing control is a chevron or icon after the label, or the counts or percentage.
+      const isTrailing = (last.icon && line.length > 1) || /^[+\-−]\d|%$/.test(last.text);
+      if (!isTrailing) continue;
+      trailing += 1;
+      expect(sheetRect.right - last.box.right, last.text || "icon").toBeCloseTo(16, 0);
+    }
+    expect(trailing).toBeGreaterThanOrEqual(4);
+
+    // Every row's label starts after the same 16px icon and 8px gap.
+    const changes = detailsRowButton("Changes")!;
+    expect(textLeft(changes, "Changes") - sheetRect.left).toBeCloseTo(40, 0);
+  },
+);
