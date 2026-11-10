@@ -8,7 +8,7 @@ import { useSettingsRestore } from "../components/settings/SettingsPanels";
 
 import { AppRouteModal } from "../components/AppRouteModal";
 import { useIsPhone } from "../mobile/usePhone";
-import { PHONE_PAGE_BAR_BACK_CLS, PHONE_PAGE_BAR_CLS } from "../components/ui/phone-recipes";
+import { PHONE_PAGE_BAR_CLS } from "../components/ui/phone-recipes";
 import { SettingsBreadcrumb } from "../components/settings/SettingsBreadcrumb";
 import { SettingsSidebarNav } from "../components/settings/SettingsSidebarNav";
 import {
@@ -137,10 +137,10 @@ function SettingsContentLayout() {
       >
         {isPhone ? (
           <Button
-            size="icon"
+            size="icon-phone-back"
             variant="ghost"
             aria-label="Back to settings sections"
-            className={PHONE_PAGE_BAR_BACK_CLS}
+
             onClick={() => setPhoneSectionsOpen(true)}
           >
             <ArrowLeftIcon className="size-4" />

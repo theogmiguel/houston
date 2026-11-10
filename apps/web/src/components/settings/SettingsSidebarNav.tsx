@@ -35,7 +35,6 @@ import { Button } from "../ui/button";
 import { Kbd } from "../ui/kbd";
 import {
   PHONE_NAV_ROW_CLS,
-  PHONE_PAGE_BAR_CLS,
   PHONE_PAGE_BAR_SIDEBAR_CLS,
   PHONE_PAGE_BAR_TITLE_CLS,
 } from "../ui/phone-recipes";
@@ -298,8 +297,8 @@ export function SettingsSidebarNav({
         // Back row below read as scrollable instead of clipped.
         className="min-h-0 flex-1 [&>[data-slot=scroll-area-viewport]]:[--fade-size:1.5rem]"
       >
-        <SidebarGroup className={cn("overflow-x-hidden", phonePage && "px-0")}>
-          <div className="flex flex-col gap-2">
+        <SidebarGroup className="overflow-x-hidden">
+          <div className={cn("flex flex-col gap-2", phonePage && "-mx-2")}>
             <div
               className={cn(
                 "flex h-7 items-center gap-2 rounded-md px-2 text-[13px] font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
@@ -452,9 +451,10 @@ export function SettingsSidebarNav({
                                 aria-selected={isActive}
                                 aria-current={isActive ? "page" : undefined}
                                 isActive={isActive}
+                                size={phonePage ? "phone" : undefined}
                                 className={cn(
-                                  "h-7 gap-2 px-2 text-[13px] font-medium text-sidebar-muted-foreground",
-                                  phonePage && "h-11 px-4",
+                                  "gap-2 text-[13px] font-medium text-sidebar-muted-foreground",
+                                  !phonePage && "h-7 px-2",
                                 )}
                                 onClick={() => handleSectionClick(to)}
                               >

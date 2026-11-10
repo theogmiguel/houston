@@ -494,8 +494,9 @@ function rect(element: Element) {
   return element.getBoundingClientRect();
 }
 
-for (const width of [390, 320]) {
-  it(`keeps the model name whole and spaces the toolbar evenly at ${width}px`, async () => {
+it.each([390, 320])(
+  "keeps the model name whole and spaces the toolbar evenly at %ipx",
+  async (width) => {
     const { screen } = await openThread(width, "phone-composer");
     await using _screen = screen;
     await expandComposer();
@@ -512,20 +513,23 @@ for (const width of [390, 320]) {
     expect(controls.length).toBeGreaterThanOrEqual(4);
     const gaps = controls.slice(1).map((box, index) => box.left - controls[index]!.right);
     for (const gap of gaps) expect(gap).toBeGreaterThanOrEqual(6);
-  });
+  },
+);
 
-  it(`renders no empty tray above the composer at ${width}px`, async () => {
-    const { screen } = await openThread(width, "phone-changes");
-    await using _screen = screen;
-    await vi.waitFor(() =>
-      expect(document.querySelector('[data-chat-composer-form="true"]')).not.toBeNull(),
-    );
-    expect(document.querySelector("[data-composer-context-tray]")).toBeNull();
-    await expandComposer();
-    expect(document.querySelector("[data-composer-context-tray]")).toBeNull();
-  });
+it.each([390, 320])("renders no empty tray above the composer at %ipx", async (width) => {
+  const { screen } = await openThread(width, "phone-changes");
+  await using _screen = screen;
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-chat-composer-form="true"]')).not.toBeNull(),
+  );
+  expect(document.querySelector("[data-composer-context-tray]")).toBeNull();
+  await expandComposer();
+  expect(document.querySelector("[data-composer-context-tray]")).toBeNull();
+});
 
-  it(`puts the timeline, composer and cards on one 16px gutter at ${width}px`, async () => {
+it.each([390, 320])(
+  "puts the timeline, composer and cards on one 16px gutter at %ipx",
+  async (width) => {
     const { screen } = await openThread(width, "phone-composer");
     await using _screen = screen;
     const left = EDGE + GUTTER;
@@ -566,31 +570,34 @@ for (const width of [390, 320]) {
     }
     const meta = document.querySelector<HTMLElement>("[data-assistant-meta-footer]");
     if (meta !== null) expect(rect(meta).left).toBeGreaterThanOrEqual(left - GUTTER / 2);
-  });
+  },
+);
 
-  it(`shows the approval command and 44px decisions at ${width}px`, async () => {
-    const { screen } = await openThread(width, "phone-approve");
-    await using _screen = screen;
-    const card = await vi.waitFor(() => {
-      const found = document.querySelector<HTMLElement>("[data-composer-approval-card]");
-      expect(found).not.toBeNull();
-      return found!;
-    });
-    const detail = card.querySelector<HTMLElement>('[aria-label="Approval detail"]')!;
-    expect(detail.textContent?.trim()).not.toBe("");
-    expect(detail.scrollWidth).toBeLessThanOrEqual(detail.clientWidth);
-    const buttons = [...card.querySelectorAll<HTMLElement>("button")].map((b) => rect(b));
-    expect(buttons.length).toBeGreaterThanOrEqual(2);
-    for (const box of buttons) expect(box.height).toBeGreaterThanOrEqual(44);
-    const cardBox = rect(card);
-    expect(buttons[0]!.left - cardBox.left).toBeCloseTo(cardBox.right - buttons.at(-1)!.right, 0);
-    for (const [index, box] of buttons.slice(1).entries()) {
-      expect(box.left - buttons[index]!.right).toBeGreaterThanOrEqual(6);
-    }
-    expect(card.scrollWidth).toBeLessThanOrEqual(card.clientWidth);
+it.each([390, 320])("shows the approval command and 44px decisions at %ipx", async (width) => {
+  const { screen } = await openThread(width, "phone-approve");
+  await using _screen = screen;
+  const card = await vi.waitFor(() => {
+    const found = document.querySelector<HTMLElement>("[data-composer-approval-card]");
+    expect(found).not.toBeNull();
+    return found!;
   });
+  const detail = card.querySelector<HTMLElement>('[aria-label="Approval detail"]')!;
+  expect(detail.textContent?.trim()).not.toBe("");
+  expect(detail.scrollWidth).toBeLessThanOrEqual(detail.clientWidth);
+  const buttons = [...card.querySelectorAll<HTMLElement>("button")].map((b) => rect(b));
+  expect(buttons.length).toBeGreaterThanOrEqual(2);
+  for (const box of buttons) expect(box.height).toBeGreaterThanOrEqual(44);
+  const cardBox = rect(card);
+  expect(buttons[0]!.left - cardBox.left).toBeCloseTo(cardBox.right - buttons.at(-1)!.right, 0);
+  for (const [index, box] of buttons.slice(1).entries()) {
+    expect(box.left - buttons[index]!.right).toBeGreaterThanOrEqual(6);
+  }
+  expect(card.scrollWidth).toBeLessThanOrEqual(card.clientWidth);
+});
 
-  it(`gives the question card a 44px submit and no key hints at ${width}px`, async () => {
+it.each([390, 320])(
+  "gives the question card a 44px submit and no key hints at %ipx",
+  async (width) => {
     const { screen } = await openThread(width, "phone-question");
     await using _screen = screen;
     await vi.waitFor(() =>
@@ -607,5 +614,5 @@ for (const width of [390, 320]) {
     expect(
       [...document.querySelectorAll("kbd")].filter((node) => node.getClientRects().length > 0),
     ).toHaveLength(0);
-  });
-}
+  },
+);

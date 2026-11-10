@@ -289,11 +289,11 @@ export function PullRequestsColumn({
           ) : (
             <>
               <div className="flex flex-col gap-3">
-                <div className="flex flex-wrap items-center gap-2 max-phone:flex-nowrap">
+                <div className="flex flex-wrap items-center gap-2 max-phone:flex-nowrap max-phone:[&_[data-slot=toggle-group]>*]:px-1">
                   <ToggleGroup
                     aria-label="Pull request involvement"
                     variant="segmented"
-                    className="max-phone:w-full max-phone:*:h-11 max-phone:*:flex-auto max-phone:*:px-1"
+                    className="max-phone:w-full max-phone:*:h-11 max-phone:*:flex-auto"
                     value={[involvement]}
                     onValueChange={(next) => {
                       const value = next[0];

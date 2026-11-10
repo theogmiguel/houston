@@ -18,6 +18,7 @@ const buttonVariants = cva(
           "h-(--h-ctl) gap-1 rounded-[var(--r-ctl)] px-2 text-xs [&_svg:not([class*='size-'])]:size-3.5",
         default: "h-(--h-ctl) px-3",
         icon: "size-7",
+        "icon-phone-back": "-ms-3.5 size-11 shrink-0",
         "icon-micro": "size-5 rounded-[var(--r-badge)] p-0 [&_svg:not([class*='size-'])]:size-3",
         "icon-tiny": "size-4 p-0 [&_svg:not([class*='size-'])]:size-3",
         "icon-sm": "size-[22px] rounded-[var(--r-ctl)] [&_svg:not([class*='size-'])]:size-3.5",
