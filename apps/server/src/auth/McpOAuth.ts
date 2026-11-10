@@ -15,6 +15,7 @@ import {
   AuthOrchestrationReadScope,
   MCP_PEER_LINK_SOFTWARE_ID,
   mcpClientScopes,
+  parseMcpApprovalCode,
   type RuntimeMode,
 } from "@houston-app/contracts";
 import { encodeOAuthScope } from "@houston-app/shared/oauthScope";
@@ -450,8 +451,15 @@ const make = Effect.gen(function* () {
 
   const approve: McpOAuth["Service"]["approve"] = Effect.fn("McpOAuth.approve")(function* (input) {
     const { decision } = input;
+    let access = decision.access;
     if (decision._tag === "pairing-code") {
-      yield* environmentAuth.consumeMcpApprovalCode(decision.code, decision.access).pipe(
+      // An approval code is for one app's sign-in, never for linking another environment.
+      if (input.authorization.client.peerLink && parseMcpApprovalCode(decision.code)) {
+        return yield* new McpOAuthPageError({
+          description: "Linking needs a plain pairing code, not an app approval code.",
+        });
+      }
+      access = yield* environmentAuth.consumeMcpApprovalCode(decision.code, decision.access).pipe(
         Effect.catchIf(EnvironmentAuth.isServerAuthInternalError, (cause) =>
           Effect.logError("MCP approval code check failed.", { cause }).pipe(
             Effect.andThen(
@@ -476,10 +484,10 @@ const make = Effect.gen(function* () {
         });
       }
     }
-    const code = yield* mintCode(input.authorization, decision.access);
+    const code = yield* mintCode(input.authorization, access);
     yield* Effect.logInfo("Approved an MCP client sign-in.", {
       client: input.authorization.client.name,
-      access: decision.access,
+      access,
       method: decision._tag,
     });
     return redirectWith(input.authorization.redirectUri, {

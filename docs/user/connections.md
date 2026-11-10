@@ -31,6 +31,32 @@ this machine's credentials.
 
 Changing network access restarts the server. Existing tunnels keep working.
 
+## Use Houston in another app
+
+Agents that Houston did not start, such as Claude Code or Codex in a terminal, can read
+projects and threads and start, message and stop threads through Houston's MCP server. Open
+the command palette (`Ctrl+K`, `Cmd+K` on macOS), search for **mcp**, and choose **Use Houston
+in another app (MCP)**:
+
+1. **App** — pick the agent, or **Something else…** for any app that supports remote MCP
+   servers with OAuth. Apps that need their own client ID cannot connect.
+2. **Access** — choose what it may do. **Read only** reads projects and threads;
+   **Supervised** through **Full access** also start, message and stop threads, and none of
+   them can run with more than the mode you pick. A level your session or your organization's
+   policy does not allow is shown with the reason.
+3. **Connect** — copy the address and the commands, run them where the agent runs, then choose
+   **Get code** and paste the code on the sign-in page the agent opens.
+
+A code works once, for 5 minutes, and approves only the level you chose. It cannot pair a
+device or link an environment. Approved agents appear under **Authorized clients**, where you
+can revoke them; a sign-in lasts 30 days.
+
+The address is this environment's own address followed by `/mcp`. Agents sign in only over
+`https` or `localhost`, so an agent on another machine needs an `https` address such as
+[Tailscale HTTPS](#sharing-and-access). Apps hosted on the internet cannot reach an address
+that is only on your machine or tailnet. Nothing in the wizard contacts a service outside this
+machine.
+
 ## Task sources
 
 **Settings ▸ Connections ▸ Task sources** configures where tasks come from:

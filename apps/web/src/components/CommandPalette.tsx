@@ -59,6 +59,7 @@ import {
   ChevronRightIcon,
   CornerLeftUpIcon,
   FileSearchIcon,
+  WaypointsIcon,
   FolderGit2Icon,
   FolderIcon,
   PauseIcon,
@@ -273,6 +274,7 @@ import { stackedThreadToast, toastManager } from "./ui/toast";
 import { suggestAppAccessForRemote } from "./sourceControlAppAccessToast";
 import { ComposerHandleContext, useComposerHandleContext } from "../composerHandleContext";
 import type { ChatComposerHandle } from "./chat/ChatComposer";
+import { openUseInAnotherApp } from "./mcp/UseInAnotherAppDialog";
 import { pickableProjectGroups } from "@houston-app/client-runtime/state/project-grouping";
 import { buildSidebarProjectPickerEntries } from "../sidebarProjectGrouping";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
@@ -1543,6 +1545,17 @@ function OpenCommandPaletteDialog(props: {
       },
     });
   }
+
+  actionItems.push({
+    kind: "action",
+    value: "action:use-in-another-app",
+    searchTerms: ["mcp", "connect", "agent", "claude code", "codex", "outside", "external", "app"],
+    title: "Use Houston in another app (MCP)",
+    icon: <WaypointsIcon className={ITEM_ICON_CLASS} />,
+    run: async () => {
+      openUseInAnotherApp();
+    },
+  });
 
   actionItems.push({
     kind: "action",
