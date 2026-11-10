@@ -274,7 +274,7 @@ import { stackedThreadToast, toastManager } from "./ui/toast";
 import { suggestAppAccessForRemote } from "./sourceControlAppAccessToast";
 import { ComposerHandleContext, useComposerHandleContext } from "../composerHandleContext";
 import type { ChatComposerHandle } from "./chat/ChatComposer";
-import { openUseInAnotherApp } from "./mcp/UseInAnotherAppDialog";
+import { openUseInAnotherApp } from "./mcp/useInAnotherAppRequest";
 import { pickableProjectGroups } from "@houston-app/client-runtime/state/project-grouping";
 import { buildSidebarProjectPickerEntries } from "../sidebarProjectGrouping";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";

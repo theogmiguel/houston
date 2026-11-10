@@ -41,7 +41,8 @@ vi.mock(import("../../state/peerPairingCode"), () => ({
   mintPairingCodeOn: vi.fn(),
 }));
 
-import { UseInAnotherAppDialogHost, openUseInAnotherApp } from "./UseInAnotherAppDialog";
+import { UseInAnotherAppDialogHost } from "./UseInAnotherAppDialogHost";
+import { openUseInAnotherApp } from "./useInAnotherAppRequest";
 
 const reset = () => {
   state.baseUrl = "http://127.0.0.1:3773";

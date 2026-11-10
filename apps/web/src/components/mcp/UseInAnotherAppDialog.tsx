@@ -5,7 +5,6 @@ import {
 } from "@houston-app/contracts";
 import { TerminalIcon, WaypointsIcon } from "lucide-react";
 import { useState } from "react";
-import { create } from "zustand";
 
 import { useServerConfigs } from "../../state/entities";
 import {
@@ -31,31 +30,17 @@ import {
   mcpAccessDenial,
   mcpUrlNote,
 } from "./mcpClients";
-
-const useRequest = create<{ readonly open: boolean }>(() => ({ open: false }));
-
-/** Opens the wizard for this device's primary environment. */
-export function openUseInAnotherApp(): void {
-  useRequest.setState({ open: true });
-}
-
-const close = () => useRequest.setState({ open: false });
-
-/** Hosted once at the root, so the command palette can open it from anywhere. */
-export function UseInAnotherAppDialogHost() {
-  const open = useRequest((state) => state.open);
-  return open ? <UseInAnotherAppDialog /> : null;
-}
+import { closeUseInAnotherApp } from "./useInAnotherAppRequest";
 
 const TITLE = "Use Houston in another app (MCP)";
 const STEPS = ["App", "Access", "Connect"] as const;
 type Step = 0 | 1 | 2;
 type Choice = (typeof MCP_CLIENT_APPS)[number]["id"] | "other";
 
-function UseInAnotherAppDialog() {
+export function UseInAnotherAppDialog() {
   const environmentId = usePrimaryEnvironmentId();
   return (
-    <Dialog open onOpenChange={(open) => (open ? undefined : close())}>
+    <Dialog open onOpenChange={(open) => (open ? undefined : closeUseInAnotherApp())}>
       <WizardPopup>
         {environmentId === null ? (
           <>

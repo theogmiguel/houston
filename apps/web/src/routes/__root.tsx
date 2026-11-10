@@ -18,7 +18,7 @@ import { CommandPalette } from "../components/CommandPalette";
 import { CustomSnoozeDialogHost } from "../components/CustomSnoozeDialog";
 import { ThreadTagsDialogHost } from "../components/ThreadTagsDialog";
 import { AddProjectDialogHost } from "../components/AddProjectDialog";
-import { UseInAnotherAppDialogHost } from "../components/mcp/UseInAnotherAppDialog";
+import { UseInAnotherAppDialogHost } from "../components/mcp/UseInAnotherAppDialogHost";
 import { AddProjectToMachineDialogHost } from "../components/AddProjectToMachineDialog";
 import { ConfirmDialogHost } from "../components/ConfirmDialogHost";
 import { DevReplayHost } from "../components/DevReplayHost";
