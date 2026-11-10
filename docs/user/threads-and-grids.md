@@ -205,6 +205,10 @@ A message can be sent while its attachments are still uploading: it appears as s
 turn starts when the uploads finish. Answering a question or redirecting a pending approval
 waits for the uploads first. A failed upload blocks the send until it is retried or removed.
 
+Typing `@` also lists the models of your enabled providers. Choosing one inserts a model chip
+that names that model for the agent, for example to have a subagent use it. The chip is sent as
+the text `model:<provider>/<model>`. The `@` list and the chips are in the web and desktop apps.
+
 While a turn is running, the send menu offers **Queue message**, **Steer message** and
 **Interrupt and send**. Steering is disabled for providers that cannot accept it. Queued
 and steered messages show their delivery state, and a dropped message names the reason.
