@@ -3,10 +3,16 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
-import { render } from "../../../test/render";
+import { render as renderScreen } from "../../../test/render";
 
 import { DiffViewControls } from "./diff-view-controls";
 import { DropdownMenuItem } from "./menu";
+
+// The default browser viewport is phone-sized; the cases below cover the desktop toolbar.
+async function render(...args: Parameters<typeof renderScreen>) {
+  await page.viewport(1280, 800);
+  return renderScreen(...args);
+}
 
 function toolbar(width: string, props: ComponentProps<typeof DiffViewControls>) {
   return (
@@ -138,5 +144,12 @@ describe("diff view controls", () => {
     await userEvent.click(narrow.getByRole("button", { name: "Diff options" }));
     await expect.element(page.getByRole("menuitemcheckbox", { name: "Wrap lines" })).toBeVisible();
     await expect.element(page.getByRole("menuitem", { name: "Find in diff" })).toBeVisible();
+  });
+
+  it("leaves the split layout toggle out on a phone, where side-by-side columns cannot fit", async () => {
+    await page.viewport(390, 844);
+    await using screen = await renderScreen(toolbar("40rem", props()), { router: false });
+
+    expect(screen.getByRole("button", { name: "Split diff view" }).elements()).toHaveLength(0);
   });
 });
