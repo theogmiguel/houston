@@ -76,6 +76,11 @@ project's actions. Under the label are the project's grids, then its threads tha
 grid**. Grid rows name only the grid. Threads started without a project sit at the foot of
 the list under **No project**. With no projects at all, the rail offers **Add project**.
 
+In a phone-width browser the sidebar is the home page: the same project, grid and thread
+sections without the rail's header and footer, a top bar with search and new thread, and a
+bottom tab bar for **Threads**, **Pull requests**, **Usage** and **Settings**. A thread opens
+alone with a back control that returns to the list.
+
 Every project and grid heading shows how many threads it holds, and small pips for the
 threads that failed or wait for you. Hovering or focusing a heading swaps the pips for its
 actions, including **New thread** (the **+** button). A collapsed project or grid still lists
@@ -86,7 +91,8 @@ its threads scroll.
 threads waiting on you from every project: input and approval requests first, then failures and
 threads that came back. Those threads leave their project sections, which instead end with a
 muted **+N in Needs you** line; the heading pips still count them. The setting is off by default
-and the section is hidden when nothing is waiting.
+on desktop and on by default in a phone-width browser; a saved choice wins on either. The
+section is hidden when nothing is waiting.
 
 **Filter by project** in the rail header limits the sections, the shelves, search and the
 older Closed threads Houston loads to the projects you pick. Click a project to choose only

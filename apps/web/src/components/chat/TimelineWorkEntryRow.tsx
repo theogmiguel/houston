@@ -231,7 +231,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
       activity.latestRunId === null ||
       failureItem.runId === activity.latestRunId;
     return (
-      <div className="px-1 py-0.5">
+      <div className="px-1 py-0.5 max-phone:px-0">
         <TimelinePlanCard
           steps={failureItem.steps}
           active={activity.isWorking && planRunIsLatest}
@@ -251,7 +251,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
             })
         : undefined;
     return (
-      <div className="px-1 py-0.5">
+      <div className="px-1 py-0.5 max-phone:px-0">
         <TimelineFileChangeCard
           item={failureItem}
           workspaceRoot={workspaceRoot}
@@ -280,7 +280,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
         role="alert"
         data-v2-item-type="error"
         data-v2-item-visibility={workEntry.projectedItem?.visibility}
-        className="mx-1 flex items-start gap-2.5 rounded-(--r-group) border border-border bg-card px-3 py-2.5"
+        className="mx-1 max-phone:mx-0 flex items-start gap-2.5 rounded-(--r-group) border border-border bg-card px-3 py-2.5"
       >
         <CircleAlertIcon
           aria-hidden

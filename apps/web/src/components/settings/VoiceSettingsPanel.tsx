@@ -1256,7 +1256,7 @@ export function VoiceSettingsPanel() {
           title="Transcribe with"
           description="Off turns voice input off on this device. Cloud providers receive your recordings through the environment you pick. The choice is saved on this device only."
           control={
-            <div className="flex min-w-0 items-center justify-end gap-1">
+            <div className="flex min-w-0 items-center justify-end gap-1 max-phone:w-full">
               <Select
                 value={destinationValue}
                 onValueChange={(value) => {
@@ -1369,11 +1369,14 @@ export function VoiceSettingsPanel() {
           title="Microphone"
           description="System default follows your operating system. The test records ten seconds and plays them back here. It stays on this device and is never transcribed."
           control={
-            <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
-              <SettingsSearchTarget {...searchableSetting("microphone-test")}>
+            <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5 max-phone:w-full max-phone:flex-col-reverse max-phone:items-stretch">
+              <SettingsSearchTarget
+                {...searchableSetting("microphone-test")}
+                className="max-phone:flex max-phone:justify-start"
+              >
                 <MicrophoneTest key={selectedMicrophone} microphoneId={selectedMicrophone} />
               </SettingsSearchTarget>
-              <div className="flex min-w-0 items-center gap-1.5">
+              <div className="flex min-w-0 items-center gap-1.5 max-phone:w-full">
                 <Select
                   value={selectedMicrophone ? `device:${selectedMicrophone}` : SYSTEM_DEFAULT}
                   onValueChange={(value) => {

@@ -36,8 +36,11 @@ import { readLastOpenGridId } from "../../grid/lastGrid";
  */
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   isDesktopHost,
+  showHideControl = true,
 }: {
   isDesktopHost: boolean;
+  /** The phone's home is the rail itself, so it has nothing to hide. */
+  showHideControl?: boolean;
 }) {
   const stageLabel = useEnvironmentStageLabel();
   const environmentIdentificationMode = useEnvironmentIdentificationMode();
@@ -64,10 +67,12 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
           </div>
         ) : null}
       </div>
-      <SidebarTrigger
-        aria-label="Hide sidebar"
-        className="relative z-10 size-7! shrink-0 [-webkit-app-region:no-drag]"
-      />
+      {showHideControl ? (
+        <SidebarTrigger
+          aria-label="Hide sidebar"
+          className="relative z-10 size-7! shrink-0 [-webkit-app-region:no-drag]"
+        />
+      ) : null}
     </div>
   );
 });

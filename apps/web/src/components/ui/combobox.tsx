@@ -217,7 +217,7 @@ function ComboboxItem({
   selectedFill = true,
   ...props
 }: ComboboxPrimitive.Item.Props & {
-  density?: "default" | "compact" | "two-line";
+  density?: "default" | "compact" | "two-line" | "phone";
   hideIndicator?: boolean;
   /** Off for rows that mark selection themselves, so a fill only means hover or highlight. */
   selectedFill?: boolean;
@@ -228,6 +228,8 @@ function ComboboxItem({
         "flex min-h-8 in-data-[side=none]:min-w-[calc(var(--anchor-width)+1.25rem)] cursor-pointer items-center rounded-[var(--r-ctl)] px-2 py-1 text-base outline-none not-data-disabled:hover:bg-foreground/[0.09] data-disabled:pointer-events-none data-disabled:cursor-not-allowed data-selected:text-foreground data-highlighted:bg-foreground/[0.09] data-highlighted:text-hover-foreground [&[data-highlighted][data-selected]]:bg-foreground/[0.09] [&[data-highlighted][data-selected]]:text-hover-foreground data-disabled:opacity-64 sm:min-h-7 sm:text-sm [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
         density === "compact" && "h-7.5 min-h-0 py-0 sm:min-h-0",
         density === "two-line" && "min-h-11 py-1.5 sm:min-h-11",
+        // A phone sheet row: a 44px target, edge to edge, content on the 16px gutter.
+        density === "phone" && "min-h-11 rounded-none px-4 sm:min-h-11",
         selectedFill && "data-selected:bg-foreground/[0.06]",
         className,
       )}
@@ -270,10 +272,17 @@ function ComboboxList({ className, ...props }: ComboboxPrimitive.List.Props) {
 }
 
 /** Omits ScrollArea when an external virtualizer owns scrolling. */
-function ComboboxListVirtualized({ className, ...props }: ComboboxPrimitive.List.Props) {
+function ComboboxListVirtualized({
+  className,
+  flush = false,
+  ...props
+}: ComboboxPrimitive.List.Props & {
+  /** The rows own their edge inset (the phone sheet), so the list adds none. */
+  flush?: boolean;
+}) {
   return (
     <ComboboxPrimitive.List
-      className={cn("size-full min-w-0 not-empty:px-1 not-empty:py-1", className)}
+      className={cn("size-full min-w-0", !flush && "not-empty:px-1 not-empty:py-1", className)}
       data-slot="combobox-list"
       {...props}
     />

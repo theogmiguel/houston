@@ -60,6 +60,7 @@ import { MediaActions, type MediaActionSource } from "~/components/media/MediaAc
 import { MorphIcon } from "~/components/MorphIcon";
 import { useRemoteOpenState } from "~/remoteOpen";
 import { useClientSettings } from "~/hooks/useSettings";
+import { useIsPhone } from "~/mobile/usePhone";
 import { useTheme } from "~/hooks/useTheme";
 import { getLocalStorageItem, setLocalStorageItem, useLocalStorage } from "~/hooks/useLocalStorage";
 import { resolveDiffThemeName } from "~/lib/diffRendering";
@@ -1108,6 +1109,9 @@ export default function FilePreviewPanel({
   const fileAccess = useFilesystemReadAccess(environmentId);
   const { canReadFiles } = fileAccess;
   const canWriteFiles = useEnvironmentScope(environmentId, AuthFilesystemWriteScope);
+  // The phone never edits files: viewing stays read-only even when the connection can write.
+  const isPhone = useIsPhone();
+  const readOnly = isPhone || !canWriteFiles;
   const file = useProjectFileQuery(
     environmentId,
     cwd,
@@ -1591,7 +1595,7 @@ export default function FilePreviewPanel({
                 threadRef={threadRef}
                 contents={file.data.contents}
                 workspaceMutationId={workspaceMutationId}
-                readOnly={file.data.truncated || isHostFile || !canWriteFiles}
+                readOnly={file.data.truncated || isHostFile || readOnly}
                 onPendingChange={onPendingChange}
               />
             ) : tableDelimiter && renderTable ? (
@@ -1601,7 +1605,7 @@ export default function FilePreviewPanel({
                 text={file.data.contents}
                 delimiter={tableDelimiter}
               />
-            ) : file.data.truncated || isHostFile || !canWriteFiles ? (
+            ) : file.data.truncated || isHostFile || readOnly ? (
               <SourceFilePreview
                 name={relativePath}
                 text={file.data.contents}

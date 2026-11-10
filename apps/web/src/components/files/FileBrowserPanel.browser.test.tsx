@@ -147,6 +147,8 @@ describe("FileBrowserPanel", () => {
   });
 
   it("dragging a file row carries a composer mention without opening it, and dragend releases it", async () => {
+    // A desktop viewport: the phone tree disables drag and drop.
+    await page.viewport(1024, 800);
     const onOpenFile = vi.fn();
     await using _screen = await render(
       <FileBrowserPanel

@@ -21,6 +21,7 @@ import {
 import { cn } from "../../lib/utils";
 import { WorkspacePageContainer, type WorkspacePageWidth } from "../WorkspacePageContainer";
 import { Button } from "../ui/button";
+import { PHONE_SETTINGS_TAP_TARGETS_CLS } from "../ui/phone-recipes";
 import { PageHeading } from "../ui/page-heading";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { useOptionalSettingsScope } from "./SettingsScopeContext";
@@ -204,7 +205,7 @@ export function SettingsSearchTarget({
 
 // Settings pickers reuse composer controls but match the bordered selects beside them.
 export const SETTINGS_PICKER_TRIGGER_CLASSNAME =
-  "min-w-0 max-w-none shrink-0 border-input bg-background font-normal text-foreground shadow-xs/5 hover:bg-hover/50 dark:bg-input/32 [&_svg[data-composer-control-chevron]]:opacity-70";
+  "min-w-0 max-w-none shrink-0 border-input bg-background font-normal text-foreground max-phone:text-headline shadow-xs/5 hover:bg-hover/50 dark:bg-input/32 [&_svg[data-composer-control-chevron]]:opacity-70";
 
 export function PolicyTooltip({
   children,
@@ -291,11 +292,13 @@ export function SettingsUnavailableGroup({
 
   return (
     <div className="border-border/60 bg-muted/20 py-1.5">
-      <div className="flex items-start gap-2 px-3 py-2 text-xs leading-relaxed text-muted-foreground sm:px-4">
+      <div className="flex items-start gap-2 px-4 py-2 text-xs leading-relaxed text-muted-foreground">
         <InfoIcon className="mt-0.5 size-3.5 shrink-0 text-warning" />
         <p>{message}</p>
       </div>
-      <div className="[&_h3]:opacity-64 [&_p]:opacity-64">{children}</div>
+      <div className="[&_h3]:opacity-64 [&_p]:opacity-64 max-phone:[&>*+*]:relative max-phone:[&>*+*]:before:pointer-events-none max-phone:[&>*+*]:before:absolute max-phone:[&>*+*]:before:top-0 max-phone:[&>*+*]:before:left-4 max-phone:[&>*+*]:before:right-4 max-phone:[&>*+*]:before:h-px max-phone:[&>*+*]:before:bg-border max-phone:[&>*+*]:before:content-['']">
+        {children}
+      </div>
     </div>
   );
 }
@@ -545,7 +548,7 @@ export function SettingsRow({
           ) : null}
         </div>
         {renderedControl ? (
-          <div className="flex w-full min-w-0 shrink-0 items-center gap-2 @min-[32rem]/settings-row:w-auto @min-[32rem]/settings-row:justify-end @min-[32rem]/settings-row:[&_[data-slot=select-trigger]]:min-w-40">
+          <div className="flex w-full min-w-0 shrink-0 items-center gap-2 @min-[32rem]/settings-row:w-auto @min-[32rem]/settings-row:justify-end @min-[32rem]/settings-row:[&_[data-slot=select-trigger]]:min-w-40 max-phone:[&>*]:min-w-0 max-phone:[&_[data-slot=select-trigger]]:w-full max-phone:[&_[data-slot=select-trigger]]:max-w-none max-phone:[&_[data-slot=select-trigger]]:flex-1">
             {renderedControl}
           </div>
         ) : null}
@@ -664,13 +667,17 @@ export function SettingsPageContainer({
       onTargetHandled={clearTargetHash}
     >
       <div
-        className="topbar-scroll-fade scrollbar-gutter-both flex-1 overflow-y-auto"
+        className={cn(
+          "topbar-scroll-fade scrollbar-gutter-both flex-1 overflow-y-auto max-phone:[scrollbar-gutter:auto]",
+          PHONE_SETTINGS_TAP_TARGETS_CLS,
+        )}
         data-settings-page-scroll
       >
         <WorkspacePageContainer
           width={width}
           className={cn(
-            width === "readable" && "max-w-(--settings-w) gap-7 px-6 pt-8 pb-16 sm:px-8",
+            width === "readable" &&
+              "max-w-(--settings-w) gap-7 px-6 pt-8 pb-16 sm:px-8 max-phone:px-4 max-phone:pt-6",
             className,
           )}
         >

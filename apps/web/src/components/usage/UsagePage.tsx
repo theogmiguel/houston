@@ -48,11 +48,11 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import {
   enumerateDays,
   enumerateHourStarts,
-  formatCount,
   formatDateTimeShort,
   formatDayShort,
   formatHourShort,
   formatPercent,
+  formatSessions,
   formatTokens,
   formatUsageContractMismatch,
   formatUsd,
@@ -90,6 +90,10 @@ import { UsageProviderChart } from "./UsageProviderChart";
 import { UsageModelDialog } from "./UsageModelDialog";
 import { UsageShareBar } from "./UsageShareBar";
 import { UsageModelRow } from "./UsageModelRow";
+import { UsageModelCards } from "~/mobile/UsageModelCards";
+import { PhonePageBar } from "~/mobile/PhonePageBar";
+import { USAGE_MODEL_EMPTY_CLS } from "../ui/usage-model-recipes";
+import { useIsPhone } from "~/mobile/usePhone";
 import { ProviderMark } from "./UsageProviderMark";
 import {
   costTypeBoardSegments,
@@ -114,6 +118,8 @@ import {
   saveUsagePagePreferences,
   type UsagePagePreferences,
 } from "./usagePagePreferences";
+import { PHONE_NOTE_CLS } from "~/components/ui/phone-recipes";
+import { PhoneEmptyState } from "~/mobile/PhoneEmptyState";
 
 function isUsageMetric(value: string | null | undefined): value is UsageMetric {
   return METRIC_OPTIONS.some((option) => option.value === value);
@@ -183,6 +189,7 @@ function UsageModelDialogHost({
 }
 
 export function UsagePage() {
+  const isPhone = useIsPhone();
   const [preferences, setPreferences] = useState(readUsagePagePreferences);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const hour12 = usePrimarySettings((settings) => resolveHour12(settings.timestampFormat));
@@ -372,8 +379,21 @@ export function UsagePage() {
     shownHourly && shownWindow.sinceTime !== undefined && shownWindow.untilTime !== undefined
       ? `${formatDateTimeShort(shownWindow.sinceTime, shownWindow.timeZone, hour12)} to ${formatDateTimeShort(shownWindow.untilTime, shownWindow.timeZone, hour12)}`
       : `${formatDayShort(shownWindow.sinceDay)} to ${formatDayShort(shownWindow.untilDay)}`;
+  const refreshButton = (
+    <Button
+      onClick={refreshWindow}
+      aria-label={showingLimits ? "Refresh limits" : "Refresh usage"}
+      aria-busy={isRefreshing}
+      disabled={isRefreshing || (!showingLimits && !canReadDiagnostics)}
+      size="icon-sm"
+      variant="ghost"
+      className="max-phone:-mr-3.5 max-phone:size-11"
+    >
+      <RefreshIcon size="sm" refreshing={isRefreshing} />
+    </Button>
+  );
   const usageActions = (
-    <div className="flex min-w-0 flex-wrap items-center gap-2">
+    <div className="flex min-w-0 flex-wrap items-center gap-2 max-phone:gap-x-4">
       <UsageEnvironmentFilter
         environments={environments}
         selectedEnvironments={selectedEnvironments}
@@ -390,10 +410,11 @@ export function UsagePage() {
         hiddenProviders={hiddenProviders}
         onChange={(next) => updatePreferences({ hiddenProviders: next })}
       />
-      <div className="ml-auto flex min-w-0 flex-wrap items-center gap-2">
+      <div className="ml-auto flex min-w-0 flex-wrap items-center gap-2 max-phone:contents">
         {showingLimits ? null : (
           <ToggleGroup
             aria-label="Usage period"
+            className="max-phone:order-2 max-phone:w-full max-phone:*:h-11 max-phone:*:flex-1"
             variant="segmented"
             value={[String(windowDays)]}
             onValueChange={(next) => {
@@ -410,6 +431,7 @@ export function UsagePage() {
         )}
         <ToggleGroup
           aria-label="Usage metric"
+          className="max-phone:order-3 max-phone:w-full max-phone:*:h-11 max-phone:*:flex-1"
           variant="segmented"
           value={[metric]}
           onValueChange={(next) => {
@@ -423,35 +445,30 @@ export function UsagePage() {
             </Toggle>
           ))}
         </ToggleGroup>
-        <Button
-          onClick={refreshWindow}
-          aria-label={showingLimits ? "Refresh limits" : "Refresh usage"}
-          aria-busy={isRefreshing}
-          disabled={isRefreshing || (!showingLimits && !canReadDiagnostics)}
-          size="icon-sm"
-          variant="ghost"
-        >
-          <RefreshIcon size="sm" refreshing={isRefreshing} />
-        </Button>
+        {isPhone ? null : refreshButton}
       </div>
     </div>
   );
 
   return (
     <SidebarInset className="min-h-0 overflow-hidden overscroll-y-none">
-      <WorkspacePageHeader desktop={isDesktopHost}>
-        <WorkspaceBreadcrumb ariaLabel="Usage breadcrumb" className="min-w-0">
-          <WorkspaceBreadcrumbItem current>
-            <h1 className="truncate">Usage</h1>
-          </WorkspaceBreadcrumbItem>
-        </WorkspaceBreadcrumb>
-      </WorkspacePageHeader>
+      {isPhone ? (
+        <PhonePageBar title="Usage">{refreshButton}</PhonePageBar>
+      ) : (
+        <WorkspacePageHeader desktop={isDesktopHost}>
+          <WorkspaceBreadcrumb ariaLabel="Usage breadcrumb" className="min-w-0">
+            <WorkspaceBreadcrumbItem current>
+              <h1 className="truncate">Usage</h1>
+            </WorkspaceBreadcrumbItem>
+          </WorkspaceBreadcrumb>
+        </WorkspacePageHeader>
+      )}
 
-      <div className="topbar-scroll-fade scrollbar-gutter-both min-h-0 flex-1 overflow-y-auto">
-        <WorkspacePageContainer width="wide" className="gap-7">
+      <div className="topbar-scroll-fade scrollbar-gutter-both min-h-0 flex-1 overflow-y-auto max-phone:[scrollbar-gutter:auto]">
+        <WorkspacePageContainer width="wide" className="gap-7 max-phone:gap-4 max-phone:px-4">
           <div className="flex flex-wrap items-start gap-4">
             <div className="min-w-0 flex-1">
-              <h1 className="text-large-title font-bold">Usage</h1>
+              {isPhone ? null : <h1 className="text-large-title font-bold">Usage</h1>}
               {showingLimits ? null : (
                 <>
                   <p className="mt-1 max-w-[62ch] text-sm leading-5 text-secondary-foreground">
@@ -593,6 +610,7 @@ function UsageOverview({
   readonly now: number;
 }) {
   const [breakdown, setBreakdown] = useState<"model" | "time">("model");
+  const isPhone = useIsPhone();
   const shownHourly = shownWindow.resolution === "hour";
   const loading = usageLoading(showingKept, selectedEnvironments, refreshingUsage, hiddenProviders);
   // Copy the primitive; JSX reads of loading.partial would merge all derivations into one compiler cache
@@ -640,6 +658,37 @@ function UsageOverview({
       .map((provider) => ({ kind: "usage" as const, provider })),
   ];
 
+  // A phone has no room for a board of zeroes, so an empty window says so in one line.
+  const noUsage =
+    isPhone &&
+    !loadingPartial &&
+    merged.sessions === 0 &&
+    merged.totalTokens === 0 &&
+    merged.costUsd === 0 &&
+    merged.models.length === 0;
+
+  if (noUsage) {
+    return (
+      <div className="flex flex-col gap-6">
+        {sourceMessages.map((message) => (
+          <p key={message} className={PHONE_NOTE_CLS}>
+            {message}
+          </p>
+        ))}
+        <PhoneEmptyState data-usage-empty="" title="No usage in this window" className="py-12">
+          Sessions you run will show up here.
+        </PhoneEmptyState>
+        <UsagePlanLimits
+          selectedEnvironmentIds={
+            new Set(selectedEnvironments.map((environment) => environment.environmentId))
+          }
+          hiddenProviders={hiddenProviders}
+          now={now}
+        />
+      </div>
+    );
+  }
+
   return (
     <div aria-busy={loadingPartial} className="flex flex-col gap-6">
       {sourceMessages.map((message) => (
@@ -647,12 +696,12 @@ function UsageOverview({
           {message}
         </p>
       ))}
-      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <section className="grid grid-cols-1 gap-3 phone:grid-cols-2 lg:grid-cols-4">
         <Metric
           loading={loadingPartial}
           label="API-equivalent cost"
           value={formatUsd(merged.costUsd)}
-          detail={`${formatCount(merged.sessions)} sessions · ${formatUsd(averageCostPerDay)} a day`}
+          detail={`${formatSessions(merged.sessions)} · ${formatUsd(averageCostPerDay)} a day`}
         />
         <Metric
           loading={loadingPartial}
@@ -674,7 +723,7 @@ function UsageOverview({
         />
       </section>
 
-      <section className="flex min-w-0 flex-col gap-4 rounded-[10px] border border-border bg-card p-5">
+      <section className="flex min-w-0 flex-col gap-4 rounded-[10px] border border-border bg-card p-5 max-phone:p-4">
         <div className="flex flex-wrap items-center gap-3">
           <h2 className="text-[13px] leading-[18px] font-semibold text-[var(--t1)]">
             {metric === "tokens" ? "Tokens per" : "Cost per"} {shownHourly ? "hour" : "day"}
@@ -720,7 +769,7 @@ function UsageOverview({
           onCursorEnabled={onCursorEnabled}
         />
         {metric === "tokens" ? (
-          <section className="flex min-w-0 flex-col gap-3 rounded-[10px] border border-border bg-card p-5">
+          <section className="flex min-w-0 flex-col gap-3 rounded-[10px] border border-border bg-card p-5 max-phone:p-4">
             <UsageShareBar
               label="Tokens by type"
               segments={tokenTypeSegments(merged)}
@@ -752,6 +801,7 @@ function UsageOverview({
           <h2 className="text-[13px] leading-[18px] font-semibold text-[var(--t1)]">Breakdown</h2>
           <ToggleGroup
             aria-label="Usage breakdown"
+            className="max-phone:*:h-11"
             variant="segmented"
             value={[breakdown]}
             onValueChange={(next) => {
@@ -774,35 +824,48 @@ function UsageOverview({
 
         <div className="overflow-hidden rounded-[10px] border border-border bg-card">
           {breakdown === "model" ? (
-            <table className="w-full text-[13px]">
-              <thead>
-                <tr className="h-8 text-right text-xs text-[var(--houston)]">
-                  <th className="px-4 text-left font-medium">Model</th>
-                  <th className="w-20 px-4 font-medium">Tokens</th>
-                  <th className="w-[100px] px-4 font-medium">Cost</th>
-                  <th className="w-40 px-4 font-medium">Share</th>
-                </tr>
-              </thead>
-              <tbody>
-                {breakdownModels.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="py-6 text-center text-muted-foreground">
-                      No activity in this window.
-                    </td>
+            isPhone ? (
+              breakdownModels.length === 0 ? (
+                <p className={USAGE_MODEL_EMPTY_CLS}>No activity in this window.</p>
+              ) : (
+                <UsageModelCards
+                  models={breakdownModels}
+                  metric={metric === "tokens" ? "tokens" : "cost"}
+                  loadingProviders={loadingProviders}
+                  onSelectModel={onSelectModel}
+                />
+              )
+            ) : (
+              <table className="w-full text-[13px]">
+                <thead>
+                  <tr className="h-8 text-right text-xs text-[var(--houston)]">
+                    <th className="px-4 text-left font-medium">Model</th>
+                    <th className="w-20 px-4 font-medium">Tokens</th>
+                    <th className="w-[100px] px-4 font-medium">Cost</th>
+                    <th className="w-40 px-4 font-medium">Share</th>
                   </tr>
-                ) : (
-                  breakdownModels.map((model) => (
-                    <UsageModelRow
-                      key={`${model.provider}:${model.model}`}
-                      loading={loadingProviders.has(model.provider)}
-                      metric={metric === "tokens" ? "tokens" : "cost"}
-                      model={model}
-                      onSelectModel={onSelectModel}
-                    />
-                  ))
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {breakdownModels.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="py-6 text-center text-muted-foreground">
+                        No activity in this window.
+                      </td>
+                    </tr>
+                  ) : (
+                    breakdownModels.map((model) => (
+                      <UsageModelRow
+                        key={`${model.provider}:${model.model}`}
+                        loading={loadingProviders.has(model.provider)}
+                        metric={metric === "tokens" ? "tokens" : "cost"}
+                        model={model}
+                        onSelectModel={onSelectModel}
+                      />
+                    ))
+                  )}
+                </tbody>
+              </table>
+            )
           ) : (
             <div
               className="overflow-x-auto outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
@@ -958,7 +1021,7 @@ function ByAgentCard({
                 >
                   {awaitingData
                     ? ""
-                    : `${formatCount(providerSessions)} sessions · ${formatTokens(totals?.totalTokens ?? 0)} tokens`}
+                    : `${formatSessions(providerSessions)} · ${formatTokens(totals?.totalTokens ?? 0)} tokens`}
                 </span>
               </span>
               <span className="flex shrink-0 flex-col items-end">
@@ -1020,7 +1083,7 @@ function WhereCostGoesCard({ merged }: { readonly merged: MergedUsage }) {
   const speedUpgrade = merged.speedCost.fast + merged.speedCost.ultrafast;
   const cacheSavings = merged.costQuality.cacheSavingsUsd;
   return (
-    <section className="grid gap-3 rounded-[10px] border border-border bg-card p-5">
+    <section className="grid gap-3 rounded-[10px] border border-border bg-card p-5 max-phone:p-4">
       <h2 className="text-[13px] leading-[18px] font-semibold text-[var(--t1)]">
         Where the cost goes
       </h2>
@@ -1095,7 +1158,7 @@ function UsageSourceFootnote({
       Read from{" "}
       {[...sources.values()]
         .sort((left, right) => left.path.localeCompare(right.path))
-        .map((source) => `${source.path} (${formatCount(source.sessions)} sessions)`)
+        .map((source) => `${source.path} (${formatSessions(source.sessions)})`)
         .join(" and ")}
       . Costs are estimates at API list prices; a subscription is billed differently.
     </p>
@@ -1246,7 +1309,7 @@ function Metric({
   readonly loading: boolean;
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-1 rounded-lg border border-border bg-card px-5 py-4">
+    <div className="flex min-w-0 flex-col gap-1 rounded-lg border border-border bg-card px-5 py-4 max-phone:px-4">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
       <span
         className={cn("text-stat font-semibold text-foreground tabular-nums", figureClass(loading))}
@@ -1338,7 +1401,10 @@ function UsageEnvironmentFilter({
 
   return (
     <Menu>
-      <MenuTrigger render={<InlineButton />} className="group/usage-environment min-w-0 max-w-full">
+      <MenuTrigger
+        render={<InlineButton />}
+        className="group/usage-environment min-w-0 max-w-full max-phone:inline-flex max-phone:min-h-11 max-phone:items-center"
+      >
         <WorkspaceBreadcrumbText>{label}</WorkspaceBreadcrumbText>
         <span className="flex size-3.5 shrink-0 items-center justify-center text-muted-foreground">
           {showUsageStatus && hasIssue ? (
@@ -1458,7 +1524,10 @@ function UsageProviderFilter({
 
   return (
     <Menu>
-      <MenuTrigger render={<InlineButton />} className="group/usage-provider min-w-0 max-w-full">
+      <MenuTrigger
+        render={<InlineButton />}
+        className="group/usage-provider min-w-0 max-w-full max-phone:inline-flex max-phone:min-h-11 max-phone:items-center"
+      >
         <span className="min-w-0 truncate">{label}</span>
         <ChevronDownIcon
           className="size-3.5 shrink-0 text-muted-foreground opacity-60 transition-opacity group-hover/usage-provider:opacity-100 group-focus-visible/usage-provider:opacity-100 group-data-popup-open/usage-provider:opacity-100"

@@ -12,20 +12,25 @@ import {
   MessageId,
   NodeId,
   ProviderSessionId,
+  ProviderThreadId,
   RuntimeRequestId,
   ORCHESTRATION_PROTOCOL_VERSION,
   ORCHESTRATION_V2_WS_METHODS,
   ProjectId,
+  ProviderDriverKind,
   ProviderInstanceId,
   RunId,
   ServerConfig,
+  type ServerProvider,
   ThreadId,
   TurnItemId,
+  USAGE_CONTRACT_VERSION,
   WS_METHODS,
   WsRpcGroup,
   type VcsStatusStreamEvent,
   type OrchestrationProjectShell,
   type OrchestrationV2Checkpoint,
+  type OrchestrationV2Command,
   type OrchestrationV2ProjectedTurnItem,
   type OrchestrationV2Run,
   type OrchestrationV2RuntimeRequest,
@@ -34,8 +39,20 @@ import {
   type OrchestrationV2ThreadShell,
   type OrchestrationV2ThreadStreamItem,
   type OrchestrationV2TurnItem,
+  type GitRunStackedActionInput,
+  type PullRequestListEntry,
+  type PullRequestListResult,
+  type ReviewDiffPreviewInput,
+  type ReviewDiffPreviewResult,
   type TerminalMetadataStreamEvent,
   type ThreadPullRequestLink,
+  type ThreadTokenUsageSnapshot,
+  type UsageBucket,
+  type UsageSource,
+  type UsageSummary,
+  type UsageSummaryInput,
+  type VcsStatusLocalResult,
+  type VcsStatusRemoteResult,
 } from "@houston-app/contracts";
 import type {
   ConnectionAttemptError,
@@ -112,6 +129,11 @@ const serverConfig: ServerConfig = {
   keybindings: DEFAULT_RESOLVED_KEYBINDINGS,
 };
 
+const mutableProvider = (
+  serverConfig.providers as unknown as Array<{ models: ServerProvider["models"] }>
+)[0]!;
+const defaultProviderModels = [...mutableProvider.models];
+
 const project: OrchestrationProjectShell = {
   id: PROJECT_ID,
   title: "render",
@@ -122,6 +144,7 @@ const project: OrchestrationProjectShell = {
   createdAt: "2026-03-17T19:12:28.000Z",
   updatedAt: "2026-03-17T19:12:28.000Z",
 };
+let projectTitle = project.title;
 
 const base = (threadId: ThreadId, runId: RunId, id: string, ordinal: number) => ({
   id: TurnItemId.make(id),
@@ -210,6 +233,10 @@ export interface FakeThread {
   readonly runtimeRequests?: ReadonlyArray<OrchestrationV2RuntimeRequest>;
   /** Checkpoints the thread projection reports; the latest ready one is the pending change set. */
   readonly checkpoints?: ReadonlyArray<OrchestrationV2Checkpoint>;
+  /** Reports a running provider session whose turns support native steering. */
+  readonly supportsActiveSteering?: boolean;
+  /** The active provider thread's context window usage, for the composer and details meters. */
+  readonly contextUsage?: ThreadTokenUsageSnapshot;
 }
 
 /** The thread's latest run left these files changed: a ready checkpoint the composer summarises. */
@@ -259,6 +286,101 @@ export function threadWithHistory(name: string, turns: number): FakeThread {
   return { id, title: `Thread ${name}`, runs, items };
 }
 
+/** Every capability the projection reads, with native steering enabled. */
+function fakeProviderCapabilities() {
+  return {
+    sessions: {
+      supportsMultipleProviderThreadsPerSession: false,
+      supportsModelSwitchInSession: true,
+      supportsProviderSwitchingViaHandoff: false,
+      supportsRuntimeModeSwitchInSession: true,
+      pendingRequestsSurviveRestart: true,
+    },
+    threads: {
+      canCreateEmptyThread: true,
+      canReadThreadSnapshot: true,
+      canRollbackThread: false,
+      canForkThread: false,
+      canForkFromTurn: false,
+      canForkFromSubagentThread: false,
+      exposesNativeThreadId: true,
+    },
+    turns: {
+      exposesNativeTurnId: true,
+      emitsTurnStarted: true,
+      emitsTurnCompleted: true,
+      supportsInterrupt: true,
+      supportsActiveSteering: true,
+      supportsSteeringByInterruptRestart: true,
+      supportsQueuedMessages: true,
+      terminalStatusQuality: "strong" as const,
+    },
+    streaming: {
+      streamsAssistantText: true,
+      streamsReasoning: false,
+      streamsToolOutput: true,
+      streamsPlanText: false,
+      emitsMessageCompleted: true,
+    },
+    tools: {
+      exposesToolItemIds: true,
+      emitsToolStarted: true,
+      emitsToolCompleted: true,
+      emitsToolOutput: true,
+      supportsMcpTools: false,
+      supportsDynamicToolCallbacks: false,
+    },
+    approvals: {
+      supportsCommandApproval: true,
+      supportsFileReadApproval: false,
+      supportsFileChangeApproval: false,
+      supportsApplyPatchApproval: false,
+      approvalsHaveNativeRequestIds: false,
+      approvalCallbacksAreLiveOnly: true,
+      approvalsCanOriginateFromSubagents: false,
+    },
+    planning: {
+      emitsPlanUpdated: false,
+      emitsTodoList: false,
+      emitsProposedPlan: false,
+      supportsStructuredQuestions: true,
+      planDeltasHaveItemIds: false,
+    },
+    subagents: {
+      supportsSubagents: false,
+      exposesSubagentThreadIds: false,
+      emitsSubagentLifecycle: false,
+      canWaitForSubagents: false,
+      canCloseSubagents: false,
+      canForkSubagentThread: false,
+    },
+    context: {
+      acceptsSystemContext: false,
+      acceptsDeveloperContext: false,
+      acceptsSyntheticUserContext: false,
+      canGenerateSummaries: false,
+      canConsumeHandoffSummaries: false,
+      supportsDeltaHandoff: false,
+      supportsFullThreadHandoff: false,
+      maxRecommendedHandoffChars: null,
+    },
+    checkpointing: {
+      appCanCheckpointFilesystem: false,
+      supportsNestedCheckpointScopes: false,
+      providerCanRollbackConversation: false,
+      providerRollbackReturnsSnapshot: false,
+      providerCanReadConversationSnapshot: false,
+    },
+    identity: {
+      nativeThreadIds: "strong" as const,
+      nativeTurnIds: "strong" as const,
+      nativeItemIds: "strong" as const,
+      nativeRequestIds: "weak" as const,
+    },
+    runtimePolicy: { enforcement: "client-boundary" as const },
+  };
+}
+
 function shellOf(thread: FakeThread): OrchestrationV2ThreadShell {
   const latest = thread.runs.at(-1);
   return {
@@ -304,6 +426,9 @@ function shellOf(thread: FakeThread): OrchestrationV2ThreadShell {
 
 function projectionOf(thread: FakeThread): OrchestrationV2ThreadProjection {
   const shell = shellOf(thread);
+  const providerThreadId = thread.contextUsage
+    ? ProviderThreadId.make(`${thread.id}-provider-thread`)
+    : null;
   const visibleTurnItems: OrchestrationV2ProjectedTurnItem[] = thread.items.map(
     (item, position) => ({
       position,
@@ -324,7 +449,7 @@ function projectionOf(thread: FakeThread): OrchestrationV2ThreadProjection {
       interactionMode: shell.interactionMode,
       branch: shell.branch,
       worktreePath: shell.worktreePath,
-      activeProviderThreadId: null,
+      activeProviderThreadId: providerThreadId,
       lineage: shell.lineage,
       forkedFrom: null,
       createdBy: "user",
@@ -341,8 +466,47 @@ function projectionOf(thread: FakeThread): OrchestrationV2ThreadProjection {
     attempts: [],
     nodes: [],
     subagents: [],
-    providerSessions: [],
-    providerThreads: [],
+    providerSessions: thread.supportsActiveSteering
+      ? [
+          {
+            id: ProviderSessionId.make(`${thread.id}-provider-session`),
+            driver: ProviderDriverKind.make("codex"),
+            providerInstanceId: CODEX,
+            status: "running",
+            cwd: "/workspace/render",
+            model: MODEL.model,
+            capabilities: fakeProviderCapabilities(),
+            createdAt: AT,
+            updatedAt: AT,
+            lastError: null,
+          },
+        ]
+      : [],
+    providerThreads:
+      providerThreadId === null
+        ? []
+        : [
+            {
+              id: providerThreadId,
+              driver: ProviderDriverKind.make("codex"),
+              providerInstanceId: CODEX,
+              providerSessionId: null,
+              appThreadId: thread.id,
+              ownerNodeId: null,
+              nativeThreadRef: null,
+              nativeConversationHeadRef: null,
+              status: "active",
+              firstRunOrdinal: 1,
+              lastRunOrdinal: thread.runs.length,
+              handoffIds: [],
+              forkedFrom: null,
+              contextUsage: thread.contextUsage ?? null,
+              nativeMetadata: null,
+              goal: null,
+              createdAt: AT,
+              updatedAt: AT,
+            },
+          ],
     providerTurns: [],
     runtimeRequests: [...(thread.runtimeRequests ?? [])],
     messages: [],
@@ -357,6 +521,47 @@ function projectionOf(thread: FakeThread): OrchestrationV2ThreadProjection {
   };
 }
 
+/** Commands the renderer dispatched; the fake records them without answering. */
+export const dispatchedCommands: OrchestrationV2Command[] = [];
+
+/** Source control actions the renderer started; the fake records them without answering. */
+export const gitActionRequests: GitRunStackedActionInput[] = [];
+
+// A small workspace the Files surface can browse; paths are relative to the project root.
+const FAKE_PROJECT_FILES: ReadonlyMap<string, string> = new Map([
+  [
+    "README.md",
+    "# Render workspace\n\nThe phone Files surface reads this file without writing it.\n",
+  ],
+  ["src/App.tsx", 'import { phone } from "./lib/phone";\n\nexport const app = phone();\n'],
+  ["src/lib/phone.ts", 'export const phone = () => "phone";\n'],
+]);
+const FAKE_PROJECT_ENTRIES = [
+  { path: "README.md", kind: "file" as const },
+  { path: "src", kind: "directory" as const },
+  { path: "src/App.tsx", kind: "file" as const },
+  { path: "src/lib", kind: "directory" as const },
+  { path: "src/lib/phone.ts", kind: "file" as const },
+];
+
+function parentDirectoryOf(path: string): string {
+  const separator = path.lastIndexOf("/");
+  return separator < 0 ? "" : path.slice(0, separator);
+}
+
+const FAKE_DIFF_PREVIEW = [
+  "diff --git a/src/App.tsx b/src/App.tsx",
+  "--- a/src/App.tsx",
+  "+++ b/src/App.tsx",
+  "@@ -1,3 +1,3 @@",
+  ' import { phone } from "./lib/phone";',
+  // A unified-diff context line for the blank source line is one space.
+  " ",
+  "-export const app = false;",
+  "+export const app = phone();",
+  "",
+].join("\n");
+
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
@@ -367,6 +572,19 @@ let threads: ReadonlyArray<FakeThread> = [];
 let deletedThreadIds: ReadonlySet<string> = new Set();
 let sequence = 1;
 let vcsStatusSubscriber: Queue.Queue<VcsStatusStreamEvent> | null = null;
+let vcsStatusFixture: {
+  readonly local: VcsStatusLocalResult;
+  readonly remote: VcsStatusRemoteResult | null;
+} | null = null;
+let workspaceFilesFixture = false;
+let pullRequestListFixture: {
+  readonly entries: ReadonlyArray<PullRequestListEntry>;
+  readonly viewers?: Readonly<Record<string, string>>;
+} | null = null;
+let usageFixture: {
+  readonly buckets: ReadonlyArray<UsageBucket>;
+  readonly sources?: ReadonlyArray<UsageSource>;
+} | null = null;
 
 const subscribe = <A>(first: ReadonlyArray<A>, register?: (queue: Queue.Queue<A>) => () => void) =>
   Stream.unwrap(
@@ -382,6 +600,13 @@ const subscribe = <A>(first: ReadonlyArray<A>, register?: (queue: Queue.Queue<A>
   );
 
 const handlers: Record<string, (input: never) => unknown> = {
+  // Recorded for assertions; still unanswered, like every state-changing call.
+  [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (input: never) => {
+    const command = input as OrchestrationV2Command;
+    dispatchedCommands.push(command);
+    // A visit is a no-op side effect; answering it lets the thread's command queue drain.
+    return command.type === "thread.visit" ? Effect.succeed({ sequence: 0 }) : Effect.never;
+  },
   [WS_METHODS.subscribeTerminalMetadata]: () =>
     subscribe<TerminalMetadataStreamEvent>([{ type: "snapshot", terminals: [] }], (queue) => {
       terminalMetadataSubscriber = queue;
@@ -396,7 +621,7 @@ const handlers: Record<string, (input: never) => unknown> = {
         snapshot: {
           schemaVersion: 1,
           snapshotSequence: sequence,
-          projects: [project],
+          projects: [{ ...project, title: projectTitle }],
           threads: threads.map(shellOf),
           archivedThreads: [],
         },
@@ -434,12 +659,142 @@ const handlers: Record<string, (input: never) => unknown> = {
     );
   },
   [WS_METHODS.subscribeVcsStatus]: () =>
-    subscribe<VcsStatusStreamEvent>([], (queue) => {
-      vcsStatusSubscriber = queue;
-      return () => {
-        if (vcsStatusSubscriber === queue) vcsStatusSubscriber = null;
-      };
-    }),
+    subscribe<VcsStatusStreamEvent>(
+      vcsStatusFixture === null
+        ? []
+        : [
+            {
+              _tag: "snapshot",
+              local: vcsStatusFixture.local,
+              remote: vcsStatusFixture.remote,
+            },
+          ],
+      (queue) => {
+        vcsStatusSubscriber = queue;
+        return () => {
+          if (vcsStatusSubscriber === queue) vcsStatusSubscriber = null;
+        };
+      },
+    ),
+  [WS_METHODS.pullRequestsList]: (input: never) => {
+    if (pullRequestListFixture === null) return Effect.never;
+    const { state } = input as { state: "all" | "open" | "closed" | "merged" };
+    const entries = pullRequestListFixture.entries.filter(
+      (entry) => state === "all" || entry.state === state,
+    );
+    return Effect.succeed({
+      viewers: pullRequestListFixture.viewers ?? {},
+      providers: [],
+      entries,
+      errors: [],
+      truncated: false,
+      nextCursors: {},
+    } satisfies PullRequestListResult);
+  },
+  [WS_METHODS.serverGetUsageSummary]: (input: never) => {
+    if (usageFixture === null) return Effect.never;
+    const window = input as UsageSummaryInput;
+    const providers = [...new Set(usageFixture.buckets.map((bucket) => bucket.provider))];
+    return Effect.succeed({
+      contractVersion: USAGE_CONTRACT_VERSION,
+      readAt: "2026-03-17T19:12:28.000Z",
+      timeZone: window.timeZone,
+      sinceDay: window.sinceDay,
+      untilDay: window.untilDay,
+      buckets: usageFixture.buckets,
+      sources:
+        usageFixture.sources ??
+        providers.map((provider) => ({
+          fingerprint: {
+            hostId: "fake-host",
+            provider,
+            resolvedHomePath: `/workspace/.${provider}`,
+            volumeId: "fake-volume",
+          },
+          status: "ok" as const,
+          scannedFiles: 1,
+          skippedFiles: 0,
+          malformedRecords: 0,
+          distinctSessions: 1,
+          message: null,
+        })),
+      pricing: { status: "unavailable", source: "test", fetchedAt: null, knownModels: 0 },
+      scanDurationMs: 0,
+      ...(window.modelFilter === undefined ? {} : { modelFilter: window.modelFilter }),
+    } satisfies UsageSummary);
+  },
+  [WS_METHODS.projectsListEntries]: (input: never) => {
+    if (!workspaceFilesFixture) return Effect.never;
+    const { directoryPath = "" } = input as { directoryPath?: string };
+    return Effect.succeed({
+      entries: FAKE_PROJECT_ENTRIES.filter(
+        (entry) => parentDirectoryOf(entry.path) === directoryPath,
+      ),
+      truncated: false,
+    });
+  },
+  [WS_METHODS.projectsReadFile]: (input: never) => {
+    if (!workspaceFilesFixture) return Effect.never;
+    const { relativePath } = input as { relativePath: string };
+    const contents = FAKE_PROJECT_FILES.get(relativePath);
+    if (contents === undefined) {
+      return Effect.succeed({
+        relativePath,
+        contents: "",
+        byteLength: 0,
+        truncated: false,
+        revision: "missing",
+        exists: false,
+      });
+    }
+    return Effect.succeed({
+      relativePath,
+      contents,
+      byteLength: new TextEncoder().encode(contents).byteLength,
+      truncated: false,
+      revision: "revision-1",
+      exists: true,
+    });
+  },
+  [WS_METHODS.reviewGetDiffPreview]: (input: never) => {
+    if (!workspaceFilesFixture) return Effect.never;
+    const { cwd } = input as ReviewDiffPreviewInput;
+    const preview: ReviewDiffPreviewResult = {
+      cwd,
+      generatedAt: AT,
+      sources: [
+        {
+          id: "phone-changes",
+          kind: "branch-range",
+          title: "Changes",
+          baseRef: "main",
+          headRef: "feature/phone",
+          diff: FAKE_DIFF_PREVIEW,
+          diffHash: "phone-diff-1",
+          truncated: false,
+          files: [{ path: "src/App.tsx", previousPath: null, additions: 1, deletions: 1 }],
+        },
+      ],
+    };
+    return Effect.succeed(preview);
+  },
+  [WS_METHODS.gitRunStackedAction]: (input: never) => {
+    if (workspaceFilesFixture) gitActionRequests.push(input as GitRunStackedActionInput);
+    return Stream.never;
+  },
+  // The Git menu refreshes status before it opens; leaving it pending blocks later VCS commands.
+  [WS_METHODS.vcsRefreshStatus]: () =>
+    vcsStatusFixture === null
+      ? Effect.never
+      : Effect.succeed({
+          ...vcsStatusFixture.local,
+          ...(vcsStatusFixture.remote ?? {
+            hasUpstream: false,
+            aheadCount: 0,
+            behindCount: 0,
+            pr: null,
+          }),
+        }),
   [WS_METHODS.subscribeServerConfig]: () =>
     subscribe([{ version: 1 as const, type: "snapshot" as const, config: serverConfig }]),
 };
@@ -497,10 +852,41 @@ const encodedDescriptor = Schema.encodeSync(ExecutionEnvironmentDescriptor)(
  */
 export function installFakeEnvironment(
   fixtures: ReadonlyArray<FakeThread>,
-  options: { readonly deletedThreadIds?: ReadonlyArray<string> } = {},
+  options: {
+    readonly deletedThreadIds?: ReadonlyArray<string>;
+    readonly projectTitle?: string;
+    readonly providerModels?: ServerProvider["models"];
+    /** Serves a small workspace through the Files, diff and git RPCs. */
+    readonly workspaceFiles?: boolean;
+    /** The checkout status every VCS subscription reports until disposed. */
+    readonly vcsStatus?: {
+      readonly local: VcsStatusLocalResult;
+      readonly remote: VcsStatusRemoteResult | null;
+    };
+    /** Composed rows the pull request list answers with; every state reads the same rows. */
+    readonly pullRequests?: {
+      readonly entries: ReadonlyArray<PullRequestListEntry>;
+      /** Host to viewer login, so the authored involvement filter keeps the rows. */
+      readonly viewers?: Readonly<Record<string, string>>;
+    };
+    /** A composed usage summary: the fake echoes the asked window around these buckets. */
+    readonly usage?: {
+      readonly buckets: ReadonlyArray<UsageBucket>;
+      readonly sources?: ReadonlyArray<UsageSource>;
+    };
+  } = {},
 ): Disposable {
   threads = fixtures;
+  dispatchedCommands.length = 0;
+  gitActionRequests.length = 0;
   deletedThreadIds = new Set(options.deletedThreadIds ?? []);
+  projectTitle = options.projectTitle ?? project.title;
+  vcsStatusFixture = options.vcsStatus ?? null;
+  workspaceFilesFixture = options.workspaceFiles === true;
+  pullRequestListFixture = options.pullRequests ?? null;
+  usageFixture = options.usage ?? null;
+  const models = options.providerModels ?? defaultProviderModels;
+  mutableProvider.models = [...models];
   globalThis.fetch = async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input), window.location.href);
     if (url.origin !== window.location.origin) return realFetch(input, init);
@@ -523,6 +909,13 @@ export function installFakeEnvironment(
       globalThis.fetch = realFetch;
       threads = [];
       deletedThreadIds = new Set();
+      projectTitle = project.title;
+      vcsStatusFixture = null;
+      workspaceFilesFixture = false;
+      pullRequestListFixture = null;
+      usageFixture = null;
+      gitActionRequests.length = 0;
+      mutableProvider.models = [...defaultProviderModels];
     },
   };
 }

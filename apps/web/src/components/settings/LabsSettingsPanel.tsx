@@ -13,7 +13,7 @@ import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings"
 export function LabsSettingsPanel() {
   return (
     <SettingsPageContainer>
-      <p className="px-1 text-sm text-muted-foreground">
+      <p className="px-1 text-sm text-muted-foreground max-phone:px-0 max-phone:text-body">
         Optional features, each off unless you turn it on. Some are experiments that may change or
         disappear.
       </p>

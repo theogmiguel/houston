@@ -873,7 +873,10 @@ export const BranchToolbar = memo(function BranchToolbar({
                 <MiddleTruncate value={branchLabel} className="w-full" />
               )}
             </span>
-            <ChevronDownIcon aria-hidden className={CONTEXT_CHIP_CHEVRON_CLS} />
+            <ChevronDownIcon
+              aria-hidden
+              className={cn(CONTEXT_CHIP_CHEVRON_CLS, "max-phone:hidden")}
+            />
           </PopoverTrigger>
           <PopoverPopup side="top" align="start" padding="none" className="before:hidden">
             <div className={CONTEXT_CHIP_PANEL_CLS}>

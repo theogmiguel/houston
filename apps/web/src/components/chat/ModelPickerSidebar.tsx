@@ -9,6 +9,9 @@ import { useClientSettings } from "~/hooks/useSettings";
 import { cn } from "~/lib/utils";
 import {
   MODEL_PICKER_SIDEBAR_CLS,
+  MODEL_PICKER_SIDEBAR_PHONE_CLS,
+  MODEL_PICKER_SIDEBAR_PHONE_ROW_CLS,
+  MODEL_PICKER_SIDEBAR_PHONE_TRACK_CLS,
   MODEL_PICKER_SIDEBAR_SCROLL_CLS,
   MODEL_PICKER_SIDEBAR_FAVORITES_CLS,
   MODEL_PICKER_SIDEBAR_LABEL_CLS,
@@ -90,6 +93,8 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
   disabledInstanceIds?: ReadonlySet<ProviderInstanceId>;
   selectableUnavailableInstanceIds?: ReadonlySet<ProviderInstanceId>;
   getDisabledInstanceTooltip?: (entry: ProviderInstanceEntry) => string;
+  /** Lays the providers out as one scrolling row with 44px chips (the phone sheet). */
+  phone?: boolean;
 }) {
   const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
   const handleSelect = (instanceId: ProviderInstanceId | "favorites") => {
@@ -100,10 +105,10 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
 
   return (
     <Toolbar.Root
-      className={MODEL_PICKER_SIDEBAR_CLS}
+      className={props.phone ? MODEL_PICKER_SIDEBAR_PHONE_CLS : MODEL_PICKER_SIDEBAR_CLS}
       data-model-picker-sidebar="true"
       aria-label="Providers"
-      orientation="vertical"
+      orientation={props.phone ? "horizontal" : "vertical"}
       onKeyDown={(event) => {
         if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
         if (event.key === "ArrowRight") {
@@ -113,16 +118,33 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
         }
       }}
     >
-      <div className={MODEL_PICKER_SIDEBAR_SCROLL_CLS}>
-        <div className="relative flex min-h-full flex-col gap-px p-1.5">
+      <div
+        className={cn(
+          MODEL_PICKER_SIDEBAR_SCROLL_CLS,
+          props.phone && "overflow-x-auto overflow-y-hidden",
+        )}
+      >
+        <div
+          className={
+            props.phone
+              ? MODEL_PICKER_SIDEBAR_PHONE_TRACK_CLS
+              : "relative flex min-h-full flex-col gap-px p-1.5"
+          }
+        >
           {showFavorites ? (
             <>
-              <div className="relative w-full" data-model-picker-provider="favorites">
+              <div
+                className={cn("relative", props.phone ? "shrink-0" : "w-full")}
+                data-model-picker-provider="favorites"
+              >
                 <Tooltip>
                   <TooltipTrigger
                     render={
                       <Toolbar.Button
-                        className={MODEL_PICKER_SIDEBAR_FAVORITES_CLS}
+                        className={cn(
+                          MODEL_PICKER_SIDEBAR_FAVORITES_CLS,
+                          props.phone && MODEL_PICKER_SIDEBAR_PHONE_ROW_CLS,
+                        )}
                         onClick={() => handleSelect("favorites")}
                         type="button"
                         aria-label="Favorites"
@@ -169,7 +191,11 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
               <Toolbar.Button
                 className={cn(
                   MODEL_PICKER_SIDEBAR_ROW_CLS,
-                  reason === null ? "h-7" : "items-start py-1",
+                  props.phone
+                    ? MODEL_PICKER_SIDEBAR_PHONE_ROW_CLS
+                    : reason === null
+                      ? "h-7"
+                      : "items-start py-1",
                   isDisabled && MODEL_PICKER_SIDEBAR_ROW_DISABLED_CLS,
                 )}
                 data-provider-accent-color={entry.accentColor}
@@ -229,7 +255,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
             return (
               <div
                 key={entry.instanceId}
-                className="relative w-full"
+                className={cn("relative", props.phone ? "shrink-0" : "w-full")}
                 data-model-picker-provider={entry.instanceId}
               >
                 <Tooltip>

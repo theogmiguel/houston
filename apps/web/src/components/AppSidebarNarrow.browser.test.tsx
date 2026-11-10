@@ -45,8 +45,11 @@ async function mountApp(width: number) {
   return { screen, router };
 }
 
+// A phone's home page is the rail too, so its nav is not the sidebar under test.
 const threadsNav = () =>
-  document.querySelector<HTMLElement>('[role="navigation"][aria-label="Threads"]');
+  [...document.querySelectorAll<HTMLElement>('[role="navigation"][aria-label="Threads"]')].find(
+    (nav) => nav.closest("[data-phone-home]") === null,
+  ) ?? null;
 
 // The rail mounts only while the drawer is open, so anything in it that closes the drawer on
 // mount (rather than on a navigation) makes the drawer unopenable. Unit harnesses with a bare
@@ -65,8 +68,10 @@ it.each([800, 700])("opens the thread rail as a drawer from the toggle at %ipx",
 });
 
 it.each([800, 390])("keeps the drawer at most 360px wide at %ipx", async (width) => {
-  const { screen } = await mountApp(width);
+  const { screen, router } = await mountApp(width);
   await using _screen = screen;
+  // A phone's home is the rail itself; a utility page outside the tab bar (Tasks) keeps the drawer's toggle.
+  if (width < 640) await router.navigate({ to: "/tasks" });
   const toggle = screen.getByRole("button", { name: "Toggle main sidebar" });
   await expect.element(toggle).toBeVisible();
   await userEvent.click(toggle);

@@ -699,11 +699,15 @@ describe("ClientSettingsSchema wordWrap", () => {
 });
 
 describe("ClientSettingsSchema sidebarShowNeedsYou", () => {
-  it("keeps the Needs you section off until the user opts in", () => {
-    expect(decodeClientSettings({}).sidebarShowNeedsYou).toBe(false);
+  it("leaves the section unset until the user chooses, so the device decides", () => {
+    expect(decodeClientSettings({}).sidebarShowNeedsYou).toBeUndefined();
   });
 
   it("keeps a saved opt-in", () => {
     expect(decodeClientSettings({ sidebarShowNeedsYou: true }).sidebarShowNeedsYou).toBe(true);
+  });
+
+  it("keeps a saved opt-out", () => {
+    expect(decodeClientSettings({ sidebarShowNeedsYou: false }).sidebarShowNeedsYou).toBe(false);
   });
 });
