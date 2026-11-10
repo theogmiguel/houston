@@ -80,7 +80,7 @@ catalog:
   tailwindcss: 4.3.3
   tldts: 7.4.2
   typescript: npm:@tsc-rs/typescript@0.8.0
-  undici: 8.11.2
+  undici: 8.12.4
   vite: npm:@voidzero-dev/vite-plus-core@1.4.0
   vite-plus: 1.4.0
   ws: 8.22.0
