@@ -226,7 +226,8 @@ function expectEmptyState(root: HTMLElement, label: string, viewport: number) {
     expect(viewport - rect.right, `${label} right gutter`).toBeGreaterThanOrEqual(16);
   }
   const stack = title!.parentElement!;
-  for (const action of stack.querySelectorAll("button, a")) expectTapHeight(action, `${label} action`);
+  for (const action of stack.querySelectorAll("button, a"))
+    expectTapHeight(action, `${label} action`);
   expect(stack.querySelector(":scope > svg"), `${label} has no illustration`).toBeNull();
 }
 
@@ -525,7 +526,10 @@ it("shows a pull request on the phone bar with wrapped text and one gutter", asy
         .filter((button) => rectOf(button).top < 44)
         .map((button) => rectOf(button).bottom),
     );
-    expect(Math.round(rectOf(heading).top - barBottom), "title sits under the bar").toBeGreaterThanOrEqual(12);
+    expect(
+      Math.round(rectOf(heading).top - barBottom),
+      "title sits under the bar",
+    ).toBeGreaterThanOrEqual(12);
     // The bar's controls are bare 44px icon buttons; the last glyph ends on the right gutter.
     const barButtons = [
       ...document.querySelectorAll<HTMLElement>('[data-preview-panel-maximized="true"] button'),
@@ -535,7 +539,9 @@ it("shows a pull request on the phone bar with wrapped text and one gutter", asy
     );
     for (const button of barButtons) {
       expectTapHeight(button, `bar control ${button.getAttribute("aria-label")}`);
-      expect(getComputedStyle(button).borderTopColor, "bar control border").toBe("rgba(0, 0, 0, 0)");
+      expect(getComputedStyle(button).borderTopColor, "bar control border").toBe(
+        "rgba(0, 0, 0, 0)",
+      );
     }
     const lastGlyph = barButtons[barButtons.length - 1]!.querySelector("svg")!;
     expect(Math.round(width - rectOf(lastGlyph).right), "bar's last glyph gutter").toBe(16);
@@ -544,10 +550,7 @@ it("shows a pull request on the phone bar with wrapped text and one gutter", asy
     expect(Math.round(rectOf(back).left) + 14, "back glyph gutter").toBe(16);
     const tabs = document.querySelector<HTMLElement>('nav[aria-label="Pull request tabs"]')!;
     expect(Math.round(rectOf(tabs.firstElementChild!).left), "tab gutter").toBe(16);
-    expect(
-      Math.round(width - rectOf(tabs.firstElementChild!).right),
-      "tab right gutter",
-    ).toBe(16);
+    expect(Math.round(width - rectOf(tabs.firstElementChild!).right), "tab right gutter").toBe(16);
     const tabWidths = [...tabs.querySelectorAll("button")].map((tab) => rectOf(tab).width);
     expect(Math.max(...tabWidths) - Math.min(...tabWidths), "equal tabs").toBeLessThan(1);
     const checkout = document.querySelector<HTMLElement>(
