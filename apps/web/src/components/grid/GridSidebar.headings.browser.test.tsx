@@ -214,7 +214,7 @@ function heading(screen: { container: HTMLElement }, title: string): HTMLElement
 }
 
 describe("project and grid headings", () => {
-  it("sets the project name at 12px/600 with a folder icon, a muted count and no pips", async () => {
+  it("sets the project name at 12px/600 with a folder icon and no count while it is expanded", async () => {
     resetTestState();
     await using screen = await render(<CollapsibleSections sections={[projectWithGrid()]} />);
 
@@ -225,15 +225,11 @@ describe("project and grid headings", () => {
     expect(button.querySelector("[data-project-icon-box] svg.lucide-folder-open")).not.toBeNull();
     expect(button.querySelector("[data-project-chevron-box]")).toBeNull();
 
-    const count = button.querySelector<HTMLElement>("[data-heading-count]")!;
-    expect(count.textContent).toBe("4");
-    expect(getComputedStyle(count).color).not.toBe(getComputedStyle(name).color);
-    // The count follows the name.
-    expect(count.getBoundingClientRect().left - name.getBoundingClientRect().right).toBeLessThan(9);
+    expect(button.querySelector("[data-heading-count]")).toBeNull();
 
     const projectHeading = button.closest<HTMLElement>("[data-project-heading]")!;
     expect(projectHeading.querySelector("[data-attention-pips], [data-attention-pip]")).toBeNull();
-    expect(projectHeading.textContent).toBe("Houston4");
+    expect(projectHeading.textContent).toBe("Houston");
   });
 
   it("swaps the folder icon with the expanded state and keeps the toggle semantics", async () => {
@@ -304,15 +300,12 @@ describe("project and grid headings", () => {
     const gridChevron = gridHeading
       .querySelector("[data-grid-chevron-box]")!
       .getBoundingClientRect();
-    expect(gridChevron.left - projectChevron.left).toBe(8);
+    // The grid chevron sits under the project guide, one step right of the folder glyph.
+    expect(gridChevron.left - projectChevron.left).toBe(12);
     const gridName = gridHeading.querySelector<HTMLElement>("span.truncate")!;
     expect(getComputedStyle(gridName).fontSize).toBe("12px");
-    expect(getComputedStyle(gridName).fontWeight).toBe("600");
-    expect(gridHeading.querySelector("[data-heading-count]")?.textContent).toBe("2");
-    const gridCount = gridHeading.querySelector<HTMLElement>("[data-heading-count]")!;
-    expect(
-      gridCount.getBoundingClientRect().left - gridName.getBoundingClientRect().right,
-    ).toBeLessThan(9);
+    expect(getComputedStyle(gridName).fontWeight).toBe("400");
+    expect(gridHeading.querySelector("[data-heading-count]")).toBeNull();
     expect(
       gridHeading.closest<HTMLElement>("[data-grid-key]")!.querySelector("[data-attention-pip]"),
     ).toBeNull();
@@ -403,10 +396,10 @@ describe("sticky project heading", () => {
     const heading = viewport.querySelector<HTMLElement>("[data-project-heading]")!;
 
     // A row is cut in half under the pinned heading; the rail stays exactly there.
-    viewport.scrollTop = 90;
+    viewport.scrollTop = 40;
     await vi.waitFor(() => expect(heading.hasAttribute("data-stuck")).toBe(true));
-    expect(viewport.scrollTop).toBe(90);
-    await expect.poll(() => viewport.scrollTop).toBe(90);
+    expect(viewport.scrollTop).toBe(40);
+    await expect.poll(() => viewport.scrollTop).toBe(40);
 
     const headingBox = heading.getBoundingClientRect();
     const cut = [...viewport.querySelectorAll<HTMLElement>("[data-sidebar-row]")].filter((row) => {

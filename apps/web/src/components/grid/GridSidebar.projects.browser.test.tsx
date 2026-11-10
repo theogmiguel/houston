@@ -219,10 +219,10 @@ describe("project sections", () => {
     resetTestState();
     await using screen = await render(<CollapsibleSections sections={projectSections()} />);
 
-    expect(screen.getByRole("button", { name: /^Houston 2$/ }).element()).toBeVisible();
+    expect(screen.getByRole("button", { name: /^Houston$/ }).element()).toBeVisible();
     expect(screen.getByRole("button", { name: /^notes$/ }).element()).toBeVisible();
-    expect(screen.getByRole("button", { name: /^No project 1$/ }).element()).toBeVisible();
-    expect(screen.getByRole("button", { name: /^Grid 1 1$/ }).element()).toBeVisible();
+    expect(screen.getByRole("button", { name: /^No project$/ }).element()).toBeVisible();
+    expect(screen.getByRole("button", { name: /^Grid 1$/ }).element()).toBeVisible();
     expect(screen.getByRole("button", { name: /^Grid 2 empty$/ }).element()).toBeVisible();
     expect(screen.getByRole("button", { name: "New grid in notes" }).element()).toBeVisible();
     // An empty project has no "New grid" row of its own: the header action is the one way in.
@@ -251,7 +251,7 @@ describe("project sections", () => {
     resetTestState();
     await using screen = await render(<CollapsibleSections sections={[projectSections()[0]!]} />);
 
-    const heading = screen.getByRole("button", { name: /^Grid 1 1$/ }).element();
+    const heading = screen.getByRole("button", { name: /^Grid 1$/ }).element();
     expect(heading.textContent).not.toContain("Houston");
   });
 
@@ -259,7 +259,7 @@ describe("project sections", () => {
     resetTestState();
     const sections = projectSections();
     await using first = await render(<CollapsibleSections sections={sections} />);
-    await userEvent.click(first.getByRole("button", { name: /^Houston 2$/ }).element());
+    await userEvent.click(first.getByRole("button", { name: /^Houston$/ }).element());
     const label = first.getByRole("button", { name: /^Houston 2$/ }).element();
     expect(label.getAttribute("aria-expanded")).toBe("false");
     expect(first.container.textContent).not.toContain("Grid 1");
@@ -330,11 +330,11 @@ describe("project sections", () => {
       </TooltipProvider>,
     );
 
-    expect(screen.getByRole("button", { name: /^Houston 2$/ }).element()).toBeVisible();
+    expect(screen.getByRole("button", { name: /^Houston$/ }).element()).toBeVisible();
     expect(screen.container.textContent).toContain("Grid 1");
     expect(
       screen
-        .getByRole("button", { name: /^Houston 2$/ })
+        .getByRole("button", { name: /^Houston$/ })
         .element()
         .getAttribute("aria-expanded"),
     ).toBe("true");
@@ -428,7 +428,7 @@ describe("project sections", () => {
     const scratch = projectSections()[2]!;
     await using screen = await render(<CollapsibleSections sections={[scratch]} />);
 
-    expect(screen.getByRole("button", { name: /^No project 1$/ }).element()).toBeVisible();
+    expect(screen.getByRole("button", { name: /^No project$/ }).element()).toBeVisible();
     expect(page.getByRole("button", { name: /^New grid in No project$/ }).elements()).toHaveLength(
       0,
     );
@@ -469,7 +469,7 @@ describe("project sections", () => {
         <SidebarProjectSection {...sectionProps(projectSections()[2]!, { onOpenProjectMenu })} />
       </TooltipProvider>,
     );
-    const label = screen.getByRole("button", { name: /^No project 1$/ }).element();
+    const label = screen.getByRole("button", { name: /^No project$/ }).element();
     label.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
     expect(onOpenProjectMenu).not.toHaveBeenCalled();
   });

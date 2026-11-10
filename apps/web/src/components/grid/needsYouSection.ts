@@ -38,6 +38,21 @@ function needsYouGroupOf(thread: EnvironmentThreadShell, nowIso: string): NeedsY
   }
 }
 
+function isExcludedFromNeedsYou(thread: EnvironmentThreadShell, nowIso: string): boolean {
+  return (
+    thread.archivedAt !== null ||
+    thread.deletedAt !== null ||
+    thread.settledOverride === "settled" ||
+    isSidebarHiddenThread(thread) ||
+    effectiveSnoozed(thread, { now: nowIso })
+  );
+}
+
+/** Whether one thread belongs in the "Needs you" section, ignoring which project it is in. */
+export function isNeedsYouThread(thread: EnvironmentThreadShell, nowIso: string): boolean {
+  return !isExcludedFromNeedsYou(thread, nowIso) && needsYouGroupOf(thread, nowIso) !== null;
+}
+
 /**
  * The threads on the rail that wait on the user, across every open project: Input, Approval,
  * Failed and Back, in that order, newest activity first within a family. Closed, held, archived
@@ -50,11 +65,8 @@ export function buildNeedsYouEntries(input: {
 }): NeedsYouEntry[] {
   const byGroup = new Map<NeedsYouGroup, NeedsYouEntry[]>();
   for (const thread of input.threads) {
-    if (thread.archivedAt !== null || thread.deletedAt !== null) continue;
-    if (thread.settledOverride === "settled") continue;
-    if (isSidebarHiddenThread(thread)) continue;
     if (!input.workspaceKeys.has(workspaceKeyOf(thread.environmentId, thread.projectId))) continue;
-    if (effectiveSnoozed(thread, { now: input.nowIso })) continue;
+    if (isExcludedFromNeedsYou(thread, input.nowIso)) continue;
     const group = needsYouGroupOf(thread, input.nowIso);
     if (group === null) continue;
     const entries = byGroup.get(group) ?? [];

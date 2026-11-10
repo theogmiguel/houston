@@ -2,7 +2,12 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { fitMetaItems } from "./sidebar-row-meta";
 
-const item = (label: string, width: number, keep = false) => ({ label, width, keep });
+const item = (label: string, width: number, keep = false, dropsFirst = false) => ({
+  label,
+  width,
+  keep,
+  dropsFirst,
+});
 
 describe("fitMetaItems", () => {
   it("shows every item, with no counter, when they all fit with their gaps", () => {
@@ -39,5 +44,18 @@ describe("fitMetaItems", () => {
 
   it("shows nothing and counts nothing for an empty line", () => {
     expect(fitMetaItems([], 100)).toEqual({ hidden: [], labels: [] });
+  });
+
+  it("drops an item marked to go first before any item to its left, then the rest from the right", () => {
+    const items = [item("branch", 56), item("people", 24, false, true), item("tag", 40)];
+    // All three need 136px: dropping only "people" leaves 56 + 8 + 40 = 104px, plus the counter.
+    expect(fitMetaItems(items, 136).hidden).toEqual([false, false, false]);
+    const fit = fitMetaItems(items, 134);
+    expect(fit.hidden).toEqual([false, true, false]);
+    expect(fit.labels).toEqual(["people"]);
+    // Still too narrow once "people" is gone: the remaining items drop from the right.
+    const narrow = fitMetaItems(items, 90);
+    expect(narrow.hidden).toEqual([false, true, true]);
+    expect(narrow.labels).toEqual(["people", "tag"]);
   });
 });

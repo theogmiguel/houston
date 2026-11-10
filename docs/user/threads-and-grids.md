@@ -81,16 +81,20 @@ sections without the rail's header and footer, a top bar with search and new thr
 bottom tab bar for **Threads**, **Pull requests**, **Usage** and **Settings**. A thread opens
 alone with a back control that returns to the list.
 
-Every project and grid heading shows how many threads it holds, and small pips for the
-threads that failed or wait for you. Hovering or focusing a heading swaps the pips for its
-actions, including **New thread** (the **+** button). A collapsed project or grid still lists
-the thread that is open, and the project heading stays pinned at the top of the list while
-its threads scroll.
+Each project hangs its grids from a thin guide line, and each grid hangs its threads from
+another. The project is the only bold row; a project with no grids or threads is muted. The grid
+on screen is drawn in the primary text colour with a stronger guide. A collapsed project or grid
+shows how many threads it holds on its right, with an amber dot when any of them waits for you
+or failed; an open one shows nothing there. Hovering or focusing a row shows its actions,
+including **New thread** (the **+** button), in place of the count. A collapsed project or grid
+still lists the thread that is open, and the project heading stays pinned at the top of the list
+while its threads scroll. On a narrow sidebar a thread's branch name shortens first, and the
+running sub-agent count is the first item to drop from the line.
 
 **Show Needs you** in the rail's **View options** pins one section above the projects with the
 threads waiting on you from every project: input and approval requests first, then failures and
 threads that came back. Those threads leave their project sections, which instead end with a
-muted **+N in Needs you** line; the heading pips still count them. The setting is off by default
+muted **+N in Needs you** line; the amber dot on a collapsed heading still counts them. The setting is off by default
 on desktop and on by default in a phone-width browser; a saved choice wins on either. The
 section is hidden when nothing is waiting.
 

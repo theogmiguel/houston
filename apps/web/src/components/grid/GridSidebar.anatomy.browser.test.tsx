@@ -408,8 +408,12 @@ describe("thread row anatomy", () => {
       const hidden = labelsOf(row, true);
       const shown = labelsOf(row, false);
       expect(hidden.length).toBeGreaterThan(0);
-      // Dropping is from the right: what stays is a prefix of the fixed order.
-      expect([...shown, ...hidden]).toEqual(FULL_ORDER);
+      // The sub-agent count goes first, then items go from the right: what stays is a prefix of
+      // the fixed order, less the sub-agent count.
+      expect(hidden).toContain("2 subagents running");
+      expect(shown).not.toContain("2 subagents running");
+      const withoutPeople = FULL_ORDER.filter((label) => label !== "2 subagents running");
+      expect(shown).toEqual(withoutPeople.slice(0, shown.length));
       expect(shown[0]).toBe(FULL_ORDER[0]);
 
       const overflow = row.querySelector<HTMLElement>("[data-thread-meta-overflow]")!;

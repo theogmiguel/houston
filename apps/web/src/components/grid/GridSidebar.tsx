@@ -136,7 +136,7 @@ import {
   type SidebarProjectSection as SidebarProjectSectionModel,
 } from "./sidebarProjectSections";
 import type { NeedsYouEntry } from "./needsYouSection";
-import { buildNeedsYouEntries } from "./needsYouSection";
+import { buildNeedsYouEntries, isNeedsYouThread } from "./needsYouSection";
 import { preorderThreads } from "../../grid/tree";
 import { useOpenGridDraft } from "../../grid/useOpenGridDraft";
 import { useProject, useQuietThreadShells, useProjects } from "../../state/entities";
@@ -234,12 +234,22 @@ import {
   SIDEBAR_GRID_CHEVRON_CLS,
   SIDEBAR_GRID_CHEVRON_EXPANDED_CLS,
   SIDEBAR_GRID_EMPTY_CLS,
+  SIDEBAR_NEEDS_YOU_DOT_CLS,
+  SIDEBAR_PROJECT_CONTENT_CLS,
+  SIDEBAR_PROJECT_GUIDE_CLS,
+  SIDEBAR_PROJECT_ICON_BOX_CLS,
+  SIDEBAR_PROJECT_LABEL_EMPTY_CLS,
+  SIDEBAR_PROJECT_SECTION_CLS,
+  SIDEBAR_ROW_ACTIONS_CLS,
+  SIDEBAR_ROW_TRAILING_CLS,
+  SIDEBAR_UNGROUPED_THREADS_CLS,
   SIDEBAR_GRID_HEADING_ACTIVE_CLS,
   SIDEBAR_GRID_HEADING_CLS,
   SIDEBAR_GRID_HEADING_DROP_CLS,
   SIDEBAR_GRID_HEADING_ROW_CLS,
   SIDEBAR_GRID_COUNT_CLS,
-  SIDEBAR_GRID_NAME_CLS,
+  sidebarGridGuideCls,
+  sidebarGridNameCls,
   SIDEBAR_GRID_RENAME_CLS,
   SIDEBAR_NEEDS_YOU_HEADING_CLS,
   SIDEBAR_NEEDS_YOU_HEADING_GLYPH_CLS,
@@ -1743,6 +1753,7 @@ export function SidebarProjectSection({
     ...section.ungroupedThreads,
   ];
   const needsYouThreads = section.needsYouThreads ?? [];
+  const waitingOnYou = sectionThreads.some((thread) => isNeedsYouThread(thread, nowIso));
   const headingRef = useRef<HTMLDivElement | null>(null);
   const stuck = useStuckToTop(headingRef);
   const projectRef = scopeProjectRef(
@@ -1752,7 +1763,7 @@ export function SidebarProjectSection({
 
   return (
     <div
-      className="flex flex-col gap-px"
+      className={SIDEBAR_PROJECT_SECTION_CLS}
       data-project-key={section.isScratch ? "no-project" : section.projectKey}
     >
       <div
@@ -1783,9 +1794,14 @@ export function SidebarProjectSection({
                   const rect = event.currentTarget.getBoundingClientRect();
                   projectMenu({ x: rect.left, y: rect.bottom + 4 });
                 }}
-                className={SIDEBAR_PROJECT_LABEL_CLS}
+                className={cn(
+                  SIDEBAR_PROJECT_LABEL_CLS,
+                  sectionThreads.length === 0 &&
+                    section.grids.length === 0 &&
+                    SIDEBAR_PROJECT_LABEL_EMPTY_CLS,
+                )}
               >
-                <span className={SIDEBAR_GRID_CHEVRON_BOX_CLS} data-project-icon-box="">
+                <span className={SIDEBAR_PROJECT_ICON_BOX_CLS} data-project-icon-box="">
                   {collapsed ? (
                     <FolderIcon aria-hidden className="size-3" />
                   ) : (
@@ -1793,11 +1809,20 @@ export function SidebarProjectSection({
                   )}
                 </span>
                 <span className={SIDEBAR_PROJECT_LABEL_TEXT_CLS}>{section.title}</span>
-                {sectionThreads.length === 0 ? null : (
-                  <span className={SIDEBAR_PROJECT_SUMMARY_CLS} data-heading-count="">
-                    {sectionThreads.length}
+                {collapsed && sectionThreads.length > 0 ? (
+                  <span className={SIDEBAR_ROW_TRAILING_CLS} data-heading-trailing="">
+                    {waitingOnYou ? (
+                      <span
+                        aria-hidden
+                        className={SIDEBAR_NEEDS_YOU_DOT_CLS}
+                        data-needs-you-dot=""
+                      />
+                    ) : null}
+                    <span className={SIDEBAR_PROJECT_SUMMARY_CLS} data-heading-count="">
+                      {sectionThreads.length}
+                    </span>
                   </span>
-                )}
+                ) : null}
               </button>
             }
           />
@@ -1806,7 +1831,7 @@ export function SidebarProjectSection({
           </TooltipPopup>
         </Tooltip>
         {section.isScratch ? null : (
-          <span className="ms-auto flex shrink-0 items-center gap-0.5 pr-1">
+          <span className={SIDEBAR_ROW_ACTIONS_CLS}>
             {handleNewThread === undefined ? null : (
               <Tooltip>
                 <TooltipTrigger
@@ -1863,101 +1888,111 @@ export function SidebarProjectSection({
       <AnimatedHeight>
         {collapsed ? (
           revealed === null ? null : (
-            <div className="flex flex-col gap-0.5">
-              <ThreadCard
-                key={revealed.thread.id}
-                gridId={revealed.grid.id}
-                thread={revealed.thread}
-                query={query}
-                providerEntries={providerEntries}
-                nowIso={nowIso}
-                focused
-                selected={selection.selectedThreadKeys.has(
-                  scopedThreadKey(
-                    scopeThreadRef(revealed.thread.environmentId, revealed.thread.id),
-                  ),
-                )}
-                dragging={dragging?.threadId === revealed.thread.id}
-                runningSubagents={runningSubagents.get(subagentParentKey(revealed.thread)) ?? 0}
-                workspaceTitle={section.title}
-                treeParent={gridRowId(revealed.grid)}
-                onOpen={() => onOpenThread(revealed.grid.id, revealed.thread.id)}
-                onSelect={(input) => onSelectThread(revealed.thread, input)}
-                onClose={() => onCloseThread(revealed.thread)}
-                onHold={(preset) => onHoldThread(revealed.thread, preset)}
-                onPickHoldTime={onPickHoldTime}
-                onRename={(title) => onRenameThread(revealed.thread, title)}
-                onSetAutoClose={(enabled) => onSetAutoClose(revealed.thread, enabled)}
-                onDropOnThread={(source) =>
-                  onDropOnThread(source, revealed.grid.id, revealed.thread.id)
-                }
-                onOpenGrid={(targetGridId) => onOpenThread(targetGridId, revealed.thread.id)}
-                handleNewThread={handleNewThread}
-              />
+            <div className={SIDEBAR_PROJECT_GUIDE_CLS} data-project-guide="">
+              <div className={sidebarGridGuideCls(true)} data-grid-guide="">
+                <ThreadCard
+                  key={revealed.thread.id}
+                  gridId={revealed.grid.id}
+                  thread={revealed.thread}
+                  query={query}
+                  providerEntries={providerEntries}
+                  nowIso={nowIso}
+                  focused
+                  selected={selection.selectedThreadKeys.has(
+                    scopedThreadKey(
+                      scopeThreadRef(revealed.thread.environmentId, revealed.thread.id),
+                    ),
+                  )}
+                  dragging={dragging?.threadId === revealed.thread.id}
+                  runningSubagents={runningSubagents.get(subagentParentKey(revealed.thread)) ?? 0}
+                  workspaceTitle={section.title}
+                  treeParent={gridRowId(revealed.grid)}
+                  onOpen={() => onOpenThread(revealed.grid.id, revealed.thread.id)}
+                  onSelect={(input) => onSelectThread(revealed.thread, input)}
+                  onClose={() => onCloseThread(revealed.thread)}
+                  onHold={(preset) => onHoldThread(revealed.thread, preset)}
+                  onPickHoldTime={onPickHoldTime}
+                  onRename={(title) => onRenameThread(revealed.thread, title)}
+                  onSetAutoClose={(enabled) => onSetAutoClose(revealed.thread, enabled)}
+                  onDropOnThread={(source) =>
+                    onDropOnThread(source, revealed.grid.id, revealed.thread.id)
+                  }
+                  onOpenGrid={(targetGridId) => onOpenThread(targetGridId, revealed.thread.id)}
+                  handleNewThread={handleNewThread}
+                />
+              </div>
             </div>
           )
         ) : (
-          <div className="flex flex-col gap-0.5">
-            {section.grids.map(({ grid, threads }) => (
-              <GridGroup
-                key={grid.id}
-                grid={grid}
-                workspaceTitle={section.title}
-                threads={threads}
-                query={query}
-                open={openGridId === grid.id}
-                collapsed={query.length === 0 && collapsedGridIds.has(grid.id)}
-                onToggleCollapsed={() => onToggleGridCollapsed(grid.id)}
-                providerEntries={providerEntries}
-                nowIso={nowIso}
-                selection={selection}
-                runningSubagents={runningSubagents}
-                dragging={dragging}
-                dropTarget={dropTarget}
-                hiddenGrids={section.hiddenGrids}
-                onOpenThread={onOpenThread}
-                onSelectThread={onSelectThread}
-                onCloseThread={onCloseThread}
-                onHoldThread={onHoldThread}
-                onPickHoldTime={onPickHoldTime}
-                onDropOnGrid={onDropOnGrid}
-                onDropOnThread={onDropOnThread}
-                onCreateThread={() => onCreateThread(grid.id)}
-                onRenameThread={onRenameThread}
-                onSetAutoClose={onSetAutoClose}
-                handleNewThread={handleNewThread}
-                onShowGrid={onShowGrid}
-                onCreateGrid={onCreateGrid}
-              />
-            ))}
-            {section.ungroupedThreads.map((thread) => (
-              <ThreadCard
-                key={thread.id}
-                gridId={null}
-                thread={thread}
-                query={query}
-                providerEntries={providerEntries}
-                nowIso={nowIso}
-                focused={false}
-                selected={selection.selectedThreadKeys.has(
-                  scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+          <div className={SIDEBAR_PROJECT_CONTENT_CLS}>
+            {section.grids.length + section.ungroupedThreads.length === 0 ? null : (
+              <div className={SIDEBAR_PROJECT_GUIDE_CLS} data-project-guide="">
+                {section.grids.map(({ grid, threads }) => (
+                  <GridGroup
+                    key={grid.id}
+                    grid={grid}
+                    workspaceTitle={section.title}
+                    threads={threads}
+                    query={query}
+                    open={openGridId === grid.id}
+                    collapsed={query.length === 0 && collapsedGridIds.has(grid.id)}
+                    onToggleCollapsed={() => onToggleGridCollapsed(grid.id)}
+                    providerEntries={providerEntries}
+                    nowIso={nowIso}
+                    selection={selection}
+                    runningSubagents={runningSubagents}
+                    dragging={dragging}
+                    dropTarget={dropTarget}
+                    hiddenGrids={section.hiddenGrids}
+                    onOpenThread={onOpenThread}
+                    onSelectThread={onSelectThread}
+                    onCloseThread={onCloseThread}
+                    onHoldThread={onHoldThread}
+                    onPickHoldTime={onPickHoldTime}
+                    onDropOnGrid={onDropOnGrid}
+                    onDropOnThread={onDropOnThread}
+                    onCreateThread={() => onCreateThread(grid.id)}
+                    onRenameThread={onRenameThread}
+                    onSetAutoClose={onSetAutoClose}
+                    handleNewThread={handleNewThread}
+                    onShowGrid={onShowGrid}
+                    onCreateGrid={onCreateGrid}
+                  />
+                ))}
+                {section.ungroupedThreads.length === 0 ? null : (
+                  <div className={SIDEBAR_UNGROUPED_THREADS_CLS}>
+                    {section.ungroupedThreads.map((thread) => (
+                      <ThreadCard
+                        key={thread.id}
+                        gridId={null}
+                        thread={thread}
+                        query={query}
+                        providerEntries={providerEntries}
+                        nowIso={nowIso}
+                        focused={false}
+                        selected={selection.selectedThreadKeys.has(
+                          scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+                        )}
+                        dragging={dragging?.threadId === thread.id}
+                        workspaceTitle={section.title}
+                        treeParent={projectRowId(section)}
+                        runningSubagents={runningSubagents.get(subagentParentKey(thread)) ?? 0}
+                        onOpen={() => onOpenUngroupedThread(thread)}
+                        onSelect={(input) => onSelectThread(thread, input)}
+                        onClose={() => onCloseThread(thread)}
+                        onHold={(preset) => onHoldThread(thread, preset)}
+                        onPickHoldTime={onPickHoldTime}
+                        onRename={(title) => onRenameThread(thread, title)}
+                        onSetAutoClose={(enabled) => onSetAutoClose(thread, enabled)}
+                        onDropOnThread={() => {}}
+                        onOpenGrid={() => onOpenUngroupedThread(thread)}
+                        handleNewThread={handleNewThread}
+                      />
+                    ))}
+                  </div>
                 )}
-                dragging={dragging?.threadId === thread.id}
-                workspaceTitle={section.title}
-                treeParent={projectRowId(section)}
-                runningSubagents={runningSubagents.get(subagentParentKey(thread)) ?? 0}
-                onOpen={() => onOpenUngroupedThread(thread)}
-                onSelect={(input) => onSelectThread(thread, input)}
-                onClose={() => onCloseThread(thread)}
-                onHold={(preset) => onHoldThread(thread, preset)}
-                onPickHoldTime={onPickHoldTime}
-                onRename={(title) => onRenameThread(thread, title)}
-                onSetAutoClose={(enabled) => onSetAutoClose(thread, enabled)}
-                onDropOnThread={() => {}}
-                onOpenGrid={() => onOpenUngroupedThread(thread)}
-                handleNewThread={handleNewThread}
-              />
-            ))}
+              </div>
+            )}
             {needsYouThreads.length > 0 ? (
               <p data-project-needs-you="" className={SIDEBAR_PROJECT_NEEDS_YOU_CLS}>
                 +{needsYouThreads.length} in Needs you
@@ -2071,6 +2106,7 @@ export function GridGroup({
   );
   const revealedThread =
     collapsed && open ? threads.find((thread) => thread.id === grid.focusedThreadId) : undefined;
+  const shownThreads = revealedThread === undefined ? (collapsed ? [] : threads) : [revealedThread];
   const readyThreads = threads.filter(
     (thread) => resolveGridThreadState(thread, nowIso) === "ready",
   );
@@ -2146,7 +2182,7 @@ export function GridGroup({
   };
 
   return (
-    <div className="mt-1 flex flex-col gap-px" data-grid-key={grid.id}>
+    <div className="mt-0.5 flex flex-col" data-grid-key={grid.id}>
       <div
         ref={headerRef}
         data-grid-heading-row=""
@@ -2215,18 +2251,27 @@ export function GridGroup({
                       )}
                     />
                   </span>
-                  <span className={SIDEBAR_GRID_NAME_CLS}>
+                  <span data-grid-name="" className={sidebarGridNameCls(open)}>
                     <HighlightedText text={grid.name} query={query} />
                   </span>
                   {threads.length === 0 ? (
-                    <span className={SIDEBAR_GRID_EMPTY_CLS}>empty</span>
-                  ) : (
-                    <>
+                    <span className={SIDEBAR_ROW_TRAILING_CLS} data-heading-trailing="">
+                      <span className={SIDEBAR_GRID_EMPTY_CLS}>empty</span>
+                    </span>
+                  ) : collapsed ? (
+                    <span className={SIDEBAR_ROW_TRAILING_CLS} data-heading-trailing="">
+                      {threads.some((thread) => isNeedsYouThread(thread, nowIso)) ? (
+                        <span
+                          aria-hidden
+                          className={SIDEBAR_NEEDS_YOU_DOT_CLS}
+                          data-needs-you-dot=""
+                        />
+                      ) : null}
                       <span className={SIDEBAR_GRID_COUNT_CLS} data-heading-count="">
                         {threads.length}
                       </span>
-                    </>
-                  )}
+                    </span>
+                  ) : null}
                 </button>
               }
             />
@@ -2236,7 +2281,7 @@ export function GridGroup({
           </Tooltip>
         )}
         {renaming ? null : (
-          <span className="ms-auto flex shrink-0 items-center gap-0.5 pr-1">
+          <span className={SIDEBAR_ROW_ACTIONS_CLS}>
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -2271,9 +2316,9 @@ export function GridGroup({
         )}
       </div>
       <AnimatedHeight>
-        {collapsed && revealedThread === undefined ? null : (
-          <div className="flex flex-col gap-0.5">
-            {(revealedThread === undefined ? threads : [revealedThread]).map((thread) => (
+        {shownThreads.length === 0 ? null : (
+          <div data-grid-guide="" className={sidebarGridGuideCls(open)}>
+            {shownThreads.map((thread) => (
               <ThreadCard
                 key={thread.id}
                 gridId={grid.id}
@@ -2828,6 +2873,7 @@ export function ThreadCard({
               <ThreadRemoteItem thread={thread} />
               {showSubagents && runningSubagents > 0 ? (
                 <RowMetaItem
+                  dropsFirst
                   label={
                     runningSubagents === 1
                       ? "1 subagent running"

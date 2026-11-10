@@ -141,7 +141,7 @@ const needsYou = () => thread("asks", { hasPendingUserInput: true });
 const running = () => thread("busy", { runtime: { status: "running" } as never });
 
 describe("heading count", () => {
-  it("shows the thread count and no pip on a collapsed project whose threads need the user", async () => {
+  it("shows the thread count and an amber dot on a collapsed project whose threads need the user", async () => {
     await using screen = await render(
       <TooltipProvider delay={0}>
         <SidebarProjectSection
@@ -156,12 +156,13 @@ describe("heading count", () => {
     );
     const label = screen.getByRole("button", { name: /^Houston/ }).element();
     expect(label.querySelector("[data-heading-count]")?.textContent).toBe("3");
+    expect(label.querySelector("[data-needs-you-dot]")).not.toBeNull();
     expect(screen.container.querySelector("[data-attention-pips]")).toBeNull();
     expect(screen.container.querySelector("[data-attention-pip]")).toBeNull();
     expect(screen.container.textContent).not.toContain("busy");
   });
 
-  it("shows no pip on an expanded project with a failed thread and threads that need the user", async () => {
+  it("shows no count, dot or pip on an expanded project with a failed thread and threads that need the user", async () => {
     const failed = thread("broke", {
       latestRun: {
         id: "run-broke",
@@ -187,7 +188,8 @@ describe("heading count", () => {
       </TooltipProvider>,
     );
     const label = screen.getByRole("button", { name: /^Houston/ }).element();
-    expect(label.querySelector("[data-heading-count]")?.textContent).toBe("3");
+    expect(label.querySelector("[data-heading-count]")).toBeNull();
+    expect(label.querySelector("[data-needs-you-dot]")).toBeNull();
     expect(screen.container.querySelector("[data-attention-pip]")).toBeNull();
     expect(screen.container.querySelector("[data-attention-pips]")).toBeNull();
   });
