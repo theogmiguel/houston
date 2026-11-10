@@ -3283,6 +3283,16 @@
     {
       "origin": "npm",
       "name": "commander",
+      "version": "15.1.0",
+      "license": "MIT",
+      "repository": "https://github.com/tj/commander.js",
+      "textIds": [
+        "4cc9c2af4eb0056c"
+      ]
+    },
+    {
+      "origin": "npm",
+      "name": "commander",
       "version": "8.3.0",
       "license": "MIT",
       "repository": "https://github.com/tj/commander.js",
@@ -3443,7 +3453,7 @@
     {
       "origin": "npm",
       "name": "dompurify",
-      "version": "3.4.16",
+      "version": "3.4.17",
       "license": "(MPL-2.0 OR Apache-2.0)",
       "repository": "git://github.com/cure53/DOMPurify",
       "textIds": [
@@ -3484,7 +3494,7 @@
     {
       "origin": "npm",
       "name": "electron",
-      "version": "44.10.0",
+      "version": "44.10.1",
       "license": "MIT",
       "repository": "https://github.com/electron/electron",
       "textIds": [
@@ -4104,6 +4114,16 @@
       "origin": "npm",
       "name": "katex",
       "version": "0.16.47",
+      "license": "MIT",
+      "repository": "https://github.com/KaTeX/KaTeX",
+      "textIds": [
+        "d3c8c167dfa0a8a7"
+      ]
+    },
+    {
+      "origin": "npm",
+      "name": "katex",
+      "version": "0.18.10",
       "license": "MIT",
       "repository": "https://github.com/KaTeX/KaTeX",
       "textIds": [
@@ -5756,7 +5776,7 @@
     {
       "origin": "npm",
       "name": "stream-json",
-      "version": "3.6.0",
+      "version": "3.7.0",
       "license": "BSD-3-Clause",
       "repository": "https://github.com/uhop/stream-json",
       "textIds": [
@@ -5985,7 +6005,7 @@
     {
       "origin": "npm",
       "name": "undici",
-      "version": "8.11.2",
+      "version": "8.12.4",
       "license": "MIT",
       "repository": "https://github.com/nodejs/undici",
       "textIds": [
