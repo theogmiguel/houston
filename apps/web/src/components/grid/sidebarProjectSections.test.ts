@@ -4,7 +4,11 @@ import { describe, expect, it } from "vite-plus/test";
 
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
 import type { GridRecord } from "../../grid/gridStore";
-import { buildSidebarProjectSections, orderSidebarProjectGroups } from "./sidebarProjectSections";
+import {
+  buildSidebarProjectSections,
+  moveProjectGroup,
+  orderSidebarProjectGroups,
+} from "./sidebarProjectSections";
 
 function thread(id: string, projectId: string, overrides: Partial<EnvironmentThreadShell> = {}) {
   return {
@@ -290,5 +294,135 @@ describe("buildSidebarProjectSections", () => {
 
     expect(sections[0]?.ungroupedThreads.map((entry) => entry.id)).toEqual(["needs"]);
     expect(sections[0]?.needsYouThreads).toEqual([]);
+  });
+});
+
+function named(name: string, overrides: Record<string, unknown> = {}): SidebarProjectSnapshot {
+  const base = group();
+  const root = `/work/${name}`;
+  return group({
+    id: name,
+    title: name,
+    workspaceRoot: root,
+    projectKey: `env-1:${root}`,
+    displayName: name,
+    memberProjects: [
+      {
+        ...base.memberProjects[0]!,
+        id: name,
+        title: name,
+        workspaceRoot: root,
+        physicalProjectKey: `env-1:${root}`,
+      },
+    ],
+    memberProjectRefs: [{ environmentId: "env-1", projectId: name }],
+    ...overrides,
+  });
+}
+
+describe("moveProjectGroup", () => {
+  const a = named("a");
+  const b = named("b");
+  const c = named("c");
+  const order = (keys: ReadonlyArray<string> | null) =>
+    keys?.map((key) => key.replace("env-1:/work/", ""));
+
+  it("moves a project before a later target and returns every project's order key", () => {
+    expect(
+      order(
+        moveProjectGroup({
+          groups: [a, b, c],
+          draggedKey: a.projectKey,
+          targetKey: c.projectKey,
+          side: "before",
+        }),
+      ),
+    ).toEqual(["b", "a", "c"]);
+  });
+
+  it("moves a project after the last target", () => {
+    expect(
+      order(
+        moveProjectGroup({
+          groups: [a, b, c],
+          draggedKey: a.projectKey,
+          targetKey: c.projectKey,
+          side: "after",
+        }),
+      ),
+    ).toEqual(["b", "c", "a"]);
+  });
+
+  it("moves a project up before an earlier target", () => {
+    expect(
+      order(
+        moveProjectGroup({
+          groups: [a, b, c],
+          draggedKey: c.projectKey,
+          targetKey: a.projectKey,
+          side: "before",
+        }),
+      ),
+    ).toEqual(["c", "a", "b"]);
+  });
+
+  it("keeps every member of a grouped project together", () => {
+    const merged = named("merged");
+    const second = named("second").memberProjects[0]!;
+    const grouped = {
+      ...merged,
+      memberProjects: [...merged.memberProjects, second],
+    } as SidebarProjectSnapshot;
+    expect(
+      order(
+        moveProjectGroup({
+          groups: [a, grouped, c],
+          draggedKey: grouped.projectKey,
+          targetKey: a.projectKey,
+          side: "before",
+        }),
+      ),
+    ).toEqual(["merged", "second", "a", "c"]);
+  });
+
+  it("returns null when the drop would not change the order", () => {
+    for (const [targetKey, side] of [
+      [c.projectKey, "before"],
+      [a.projectKey, "after"],
+      [b.projectKey, "after"],
+    ] as const) {
+      expect(
+        moveProjectGroup({ groups: [a, b, c], draggedKey: b.projectKey, targetKey, side }),
+      ).toBeNull();
+    }
+  });
+
+  it("refuses the scratch group and a drop across the pinned boundary", () => {
+    const pinned = named("pinned", { pinnedAt: "2026-01-01T00:00:00.000Z" });
+    const scratch = scratchGroup();
+    expect(
+      moveProjectGroup({
+        groups: [pinned, a, scratch],
+        draggedKey: a.projectKey,
+        targetKey: pinned.projectKey,
+        side: "before",
+      }),
+    ).toBeNull();
+    expect(
+      moveProjectGroup({
+        groups: [pinned, a, scratch],
+        draggedKey: a.projectKey,
+        targetKey: scratch.projectKey,
+        side: "before",
+      }),
+    ).toBeNull();
+    expect(
+      moveProjectGroup({
+        groups: [pinned, a, scratch],
+        draggedKey: scratch.projectKey,
+        targetKey: a.projectKey,
+        side: "before",
+      }),
+    ).toBeNull();
   });
 });

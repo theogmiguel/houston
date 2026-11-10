@@ -62,7 +62,7 @@ import { useRemoteOpenState } from "~/remoteOpen";
 import { useClientSettings } from "~/hooks/useSettings";
 import { useIsPhone } from "~/mobile/usePhone";
 import { useTheme } from "~/hooks/useTheme";
-import { getLocalStorageItem, setLocalStorageItem, useLocalStorage } from "~/hooks/useLocalStorage";
+import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { resolveDiffThemeName } from "~/lib/diffRendering";
 import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
 import { cn } from "~/lib/utils";
@@ -169,7 +169,6 @@ const MermaidFilePreview = lazy(() =>
   import("./MermaidFilePreview").then((module) => ({ default: module.MermaidFilePreview })),
 );
 
-const FILE_EXPLORER_STORAGE_KEY = "houston.fileExplorerOpen";
 const RENDER_MARKDOWN_STORAGE_KEY = "houston.renderMarkdown";
 const RENDER_BROWSER_FILE_STORAGE_KEY = "houston.renderBrowserFile";
 const RENDER_TABLE_STORAGE_KEY = "houston.renderTable";
@@ -1041,15 +1040,6 @@ function renderedToggleLabel(
   return rendered ? "Show HTML source" : "Show rendered page";
 }
 
-function initialExplorerOpen(): boolean {
-  try {
-    return getLocalStorageItem(FILE_EXPLORER_STORAGE_KEY, Schema.Boolean) ?? true;
-  } catch (error) {
-    console.error(error);
-    return true;
-  }
-}
-
 const MERMAID_SUFFIX = /\.(mmd|mermaid)$/i;
 const PATH_SEPARATOR = /[\\/]/;
 
@@ -1140,7 +1130,7 @@ export default function FilePreviewPanel({
     serverConfig?.shellRevealInFileManager === true;
   // Everything preview-related keys off previewPath; a folder has no preview.
   const previewPath = isFolder ? null : relativePath;
-  const [explorerOpen, setExplorerOpen] = useState(initialExplorerOpen);
+  const [explorerOpen, setExplorerOpen] = useState(false);
   const showExplorer = shouldShowFileExplorer({
     relativePath: previewPath,
     explorerOpen,
@@ -1272,15 +1262,7 @@ export default function FilePreviewPanel({
   }, [breadcrumbPath, breadcrumbTrail]);
 
   const toggleExplorer = () => {
-    setExplorerOpen((current) => {
-      const next = !current;
-      try {
-        setLocalStorageItem(FILE_EXPLORER_STORAGE_KEY, next, Schema.Boolean);
-      } catch (error) {
-        console.error(error);
-      }
-      return next;
-    });
+    setExplorerOpen((current) => !current);
   };
 
   const handleOpenInBrowser = () => {
