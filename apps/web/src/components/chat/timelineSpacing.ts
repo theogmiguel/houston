@@ -20,7 +20,7 @@ export const PACKED_GAP_CLASS = "pb-1";
  * An answer that closes a turn carries its footer line, which already leaves 24px below the text
  * (6px above, 24px tall, 8px pulled back, 2px row padding); this tops it up to the turn gap.
  */
-export const FOOTER_TURN_GAP_CLASS = "pb-2 max-phone:pb-4";
+export const FOOTER_TURN_GAP_CLASS = "pb-2";
 
 export function turnOrInTurnGap(leadsToTurn: boolean | undefined): string {
   return leadsToTurn ? TURN_GAP_CLASS : IN_TURN_GAP_CLASS;

@@ -385,6 +385,9 @@ it("lays pull request rows out the same way, with no persistent fill", async () 
     const numberTops: number[] = [];
     const numberLefts: number[] = [];
     for (const row of rows) {
+      // Rows below the fold skip their contents until scrolled to, so bring each one into view.
+      row.scrollIntoView({ block: "nearest" });
+      await vi.waitFor(() => expect(rectOf(row).bottom).toBeLessThanOrEqual(window.innerHeight));
       expect(getComputedStyle(row).backgroundColor, "row fill").toBe("rgba(0, 0, 0, 0)");
       expectGutter(row, "row", width);
       expectTapHeight(row, "row");

@@ -1,5 +1,6 @@
 import { parsePatchFiles } from "@pierre/diffs/utils/parsePatchFiles";
 import { describe, expect, it } from "vite-plus/test";
+import { page } from "vite-plus/test/browser";
 
 import "~/index.css";
 import { resolveDiffThemeName } from "~/lib/diffRendering";
@@ -49,6 +50,9 @@ function descendants(root: ParentNode): Element[] {
 let mounted = 0;
 
 async function mount(addedLine: string, patch = patchOf(addedLine)) {
+  // The phone layout draws a lighter scroll shadow; these checks are for the desktop fade.
+  const previousViewport = { width: window.innerWidth, height: window.innerHeight };
+  await page.viewport(1280, 900);
   const id = `fade-${(mounted += 1)}`;
   // The viewer caches rendered files by cache key, so each mount needs its own.
   const fileDiff = parsePatchFiles(patch, id)[0]!.files[0]!;
@@ -81,6 +85,7 @@ async function mount(addedLine: string, patch = patchOf(addedLine)) {
     async [Symbol.asyncDispose]() {
       await screen[Symbol.asyncDispose]();
       document.documentElement.classList.remove("dark");
+      await page.viewport(previousViewport.width, previousViewport.height);
     },
   };
   return { screen: disposable, box, code, gutter, fade: () => getComputedStyle(gutter, "::after") };

@@ -46,7 +46,7 @@ import { PHONE_META_SEPARATOR_CLS } from "~/components/ui/phone-recipes";
  * and the 2px row padding add up to the 24px between turns (`pb-0` on the row in
  * `MessagesTimeline`), so the gap does not depend on whether the footer is showing.
  */
-const ASSISTANT_TURN_FOOTER_CLASS_NAME = "mt-1.5 -mb-2 h-6 max-phone:mb-0 max-phone:-ms-2";
+const ASSISTANT_TURN_FOOTER_CLASS_NAME = "mt-1.5 -mb-2 h-6 max-phone:-ms-2";
 
 export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
