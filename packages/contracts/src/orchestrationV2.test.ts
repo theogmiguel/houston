@@ -4,6 +4,7 @@ import * as Schema from "effect/Schema";
 
 import { NodeId, RunAttemptId, TrimmedNonEmptyString } from "./index.ts";
 import {
+  isDelegatedAppThread,
   latestProviderTurnForAttempt,
   OrchestrationV2ProviderCapabilities,
   OrchestrationV2ProviderThread,
@@ -637,5 +638,26 @@ describe("latestProviderTurnForAttempt", () => {
     ];
     expect(latestProviderTurnForAttempt(turns, RunAttemptId.make("goal-attempt"))?.id).toBe("last");
     expect(latestProviderTurnForAttempt(turns, null)).toBeUndefined();
+  });
+});
+
+describe("isDelegatedAppThread", () => {
+  const root = { relationshipToParent: null, parentThreadId: null, rootThreadId: null } as never;
+  it("is false for a root thread, including MCP-launched ones that store a null delegatedFrom", () => {
+    expect(isDelegatedAppThread({ lineage: root })).toBe(false);
+    expect(isDelegatedAppThread({ lineage: root, delegatedFrom: null as never })).toBe(false);
+  });
+  it("is true for a local subagent and for a task delegated from a linked environment", () => {
+    expect(
+      isDelegatedAppThread({
+        lineage: { ...(root as object), relationshipToParent: "subagent" } as never,
+      }),
+    ).toBe(true);
+    expect(
+      isDelegatedAppThread({
+        lineage: root,
+        delegatedFrom: { environmentId: "e", threadId: "t", title: "Parent" } as never,
+      }),
+    ).toBe(true);
   });
 });
