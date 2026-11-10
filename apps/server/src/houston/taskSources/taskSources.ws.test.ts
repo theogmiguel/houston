@@ -99,6 +99,7 @@ import * as ServerBrowser from "../../preview/ServerBrowser.ts";
 import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
 import * as ServerLifecycleEvents from "../../serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "../../serverRuntimeStartup.ts";
+import * as AssetSigner from "../../assets/AssetSigner.ts";
 import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
 import * as ServerSelfUpdate from "../../cloud/selfUpdate.ts";
 import * as SessionStore from "../../auth/SessionStore.ts";
@@ -131,7 +132,7 @@ import * as HoustonTaskRuns from "../tasks/TaskRuns.ts";
 import * as HoustonMergeQueueService from "../mergeQueue/Service.ts";
 import * as HoustonTaskService from "../tasks/TaskService.ts";
 import { createProject } from "../tasks/tasks.testkit.ts";
-import { makeMemory } from "../secrets/HoustonKeychain.ts";
+import { makeMemory } from "../secrets/HoustonSecrets.ts";
 import { HoustonTaskSourceOutboxDrain } from "./Outbox.ts";
 import {
   githubIssue,
@@ -262,6 +263,7 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(ProviderLatestVersions.ProviderLatestVersions)({}),
   Keybindings.layer,
   ServerSecretStore.layer,
+  AssetSigner.layer.pipe(Layer.provide(ServerSecretStore.layer)),
 );
 
 const ALL_SCOPES: ReadonlyArray<AuthEnvironmentScope> = [
@@ -511,7 +513,7 @@ describe("the token reaches no file, log, trace or reply", () => {
             databaseFile,
             baseDir: dir,
             notionOrigin: notion.origin,
-            keychain: makeMemory(),
+            secrets: makeMemory(),
           }),
         ),
       );
@@ -617,7 +619,7 @@ describe("the token reaches no file, log, trace or reply", () => {
             databaseFile,
             baseDir: dir,
             notionOrigin: notion.origin,
-            keychain: makeMemory(),
+            secrets: makeMemory(),
           }),
         ),
       );
@@ -1002,7 +1004,7 @@ describe("sources survive a restart", () => {
       const options: SourcesTestOptions = {
         databaseFile: NodePath.join(dir, "state.sqlite"),
         baseDir: dir,
-        keychain: makeMemory(),
+        secrets: makeMemory(),
         github,
       };
       const read = Effect.gen(function* () {

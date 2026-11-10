@@ -1,3 +1,4 @@
+import { useThreadErrorCardShows } from "./ThreadErrorBanner";
 import { TimelinePendingApprovalRow } from "./TimelinePendingApprovalRow";
 import { WorkLogDetails, WorkLogRow } from "./WorkLog";
 import {
@@ -33,8 +34,16 @@ import {
 } from "../../session-logic";
 import ChatMarkdown from "../ChatMarkdown";
 import { ChatMarkdownAssetImage } from "./ChatMarkdownMedia";
-import { CheckIcon, ChevronRightIcon, CircleAlertIcon, XIcon, RotateCcwIcon } from "lucide-react";
+import {
+  CheckIcon,
+  ChevronRightIcon,
+  CircleAlertIcon,
+  ExternalLinkIcon,
+  XIcon,
+  RotateCcwIcon,
+} from "lucide-react";
 import { Button, InlineButton } from "../ui/button";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { useAssetUrls } from "../../assets/assetUrls";
 import { useThreadShell } from "../../state/entities";
 import {
@@ -45,7 +54,7 @@ import {
   workEntryReadOutput,
 } from "./MessagesTimeline.logic";
 import { cn } from "~/lib/utils";
-import { formatUpcomingTimestamp } from "../../timestampFormat";
+import { formatDayAwareTimestamp, formatUpcomingTimestamp } from "../../timestampFormat";
 import { FetchedToolOutput, V2ItemInspector } from "./V2ItemInspector";
 import { SubagentNotificationLink } from "./V2LifecycleRow";
 import {
@@ -150,6 +159,8 @@ type WorkEntryRowProps = {
   workEntry: TimelineWorkEntry;
   workspaceRoot: string | undefined;
   displayLabel?: string | undefined;
+  /** The time on the header above a row that is not inside a work group. */
+  headerCreatedAt?: string | undefined;
   onToggleEntry?: ((collapsed: boolean) => void) | undefined;
 };
 
@@ -176,7 +187,7 @@ export const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: WorkEn
 });
 
 function WorkEntryLogRow(props: WorkEntryRowProps) {
-  const { workEntry, workspaceRoot, displayLabel } = props;
+  const { workEntry, workspaceRoot, displayLabel, headerCreatedAt } = props;
   const ctx = use(TimelineRowCtx);
   const { threadRef, onImageExpand, timestampFormat } = ctx;
   const { retryableWorkspacePreparationRunIds, onRetryWorkspacePreparation } = ctx;
@@ -205,6 +216,9 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
     setExpanded(next);
   };
   const failureItem = workEntry.projectedItem?.item;
+  const cardShowsFailure = useThreadErrorCardShows(
+    failureItem?.type === "error" ? failureItem.failure.message : "",
+  );
   const activity = use(TimelineRowActivityCtx);
   const pendingApproval =
     failureItem?.type === "approval_request"
@@ -217,7 +231,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
       activity.latestRunId === null ||
       failureItem.runId === activity.latestRunId;
     return (
-      <div className="px-1 py-0.5">
+      <div className="px-1 py-0.5 max-phone:px-0">
         <TimelinePlanCard
           steps={failureItem.steps}
           active={activity.isWorking && planRunIsLatest}
@@ -237,7 +251,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
             })
         : undefined;
     return (
-      <div className="px-1 py-0.5">
+      <div className="px-1 py-0.5 max-phone:px-0">
         <TimelineFileChangeCard
           item={failureItem}
           workspaceRoot={workspaceRoot}
@@ -247,6 +261,8 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
     );
   }
   if (failureItem?.type === "error" && failureItem.status === "failed") {
+    // The composer-slot card carries this failure; the timeline repeats it only once dismissed.
+    if (cardShowsFailure) return null;
     const warning = failureItem.failure.class === "usage_limit";
     const resetAt = failureItem.failure.resetAt;
     const resetTime = resetAt ? formatUpcomingTimestamp(resetAt, timestampFormat) : null;
@@ -264,7 +280,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
         role="alert"
         data-v2-item-type="error"
         data-v2-item-visibility={workEntry.projectedItem?.visibility}
-        className="mx-1 flex items-start gap-2.5 rounded-(--r-group) border border-border bg-card px-3 py-2.5"
+        className="mx-1 max-phone:mx-0 flex items-start gap-2.5 rounded-(--r-group) border border-border bg-card px-3 py-2.5"
       >
         <CircleAlertIcon
           aria-hidden
@@ -392,6 +408,24 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
             );
   const toolParts =
     isReasoning || workEntry.questionAnswer ? null : workEntryToolParts(workEntry, workspaceRoot);
+  // A row inside a group shows its time only when it differs from the group header's.
+  const headerTime = groupView?.createdAt ?? headerCreatedAt;
+  const repeatsGroupTime =
+    headerTime !== undefined &&
+    formatDayAwareTimestamp(workEntry.createdAt, timestampFormat) ===
+      formatDayAwareTimestamp(headerTime, timestampFormat);
+  const mergedFileChange = workEntry.mergedFileChange;
+  const mergedTarget = mergedFileChange?.projectedItem;
+  const mergedItem = mergedTarget?.item;
+  const onOpenMergedDiff =
+    ctx.onOpenToolDiff && mergedTarget && mergedItem?.type === "file_change"
+      ? () =>
+          ctx.onOpenToolDiff?.({
+            threadId: mergedTarget.sourceThreadId,
+            itemId: mergedTarget.sourceItemId,
+            revision: turnItemDetailRevision(mergedItem),
+          })
+      : undefined;
   const iconWrapperClass = cn(
     "flex size-3.5 items-center justify-center",
     showWarningIndicator
@@ -408,9 +442,12 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
     ? "font-medium text-warning"
     : showDestructiveRowStyle
       ? "font-medium text-destructive"
-      : workLogEntryIsToolLike(workEntry)
-        ? "text-secondary-label"
-        : "text-foreground/80";
+      : isReasoning
+        ? // Thinking steps sit below the tool calls they surround, so the calls lead the group.
+          "text-(--houston)"
+        : workLogEntryIsToolLike(workEntry)
+          ? "text-secondary-label"
+          : "text-foreground/80";
   const threadLabel = isReasoning ? null : threadReadLabel(previewText, threadTarget);
   const accessiblePreview = [threadLabel?.text ?? previewText, answerPreview]
     .filter(Boolean)
@@ -454,11 +491,9 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
         </span>
       }
       label={
-        <div className="min-w-0 flex-1 overflow-hidden">
-          <p className="flex min-w-0 w-full items-baseline gap-2 text-body ">
-            <span
-              className={cn(answerPreview ? "min-w-0" : "min-w-0 flex-1", "truncate", headingClass)}
-            >
+        <div className="min-w-0 overflow-hidden">
+          <p className="flex min-w-0 items-baseline gap-2 text-body ">
+            <span className={cn("min-w-0 truncate", headingClass)}>
               {isReasoning && !expanded ? (
                 <ChatMarkdown
                   inline
@@ -505,8 +540,35 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
           </p>
         </div>
       }
+      meta={
+        repeatsGroupTime ? null : (
+          <TimelineRowTimestamp createdAt={workEntry.createdAt} timestampFormat={timestampFormat} />
+        )
+      }
       trailing={
         <>
+          {mergedFileChange ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    size="icon-micro"
+                    variant="ghost-muted"
+                    aria-label="Open diff"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onOpenMergedDiff?.();
+                    }}
+                    onKeyDown={stopRowToggle}
+                  />
+                }
+              >
+                <ExternalLinkIcon aria-hidden />
+              </TooltipTrigger>
+              <TooltipPopup side="top">Open diff</TooltipPopup>
+            </Tooltip>
+          ) : null}
           {toolParts?.additions !== undefined || toolParts?.deletions !== undefined ? (
             <span className="shrink-0 text-callout text-(--houston) tabular-nums">
               {toolParts.additions ? (
@@ -570,7 +632,6 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
           toolParts?.exitCode === undefined ? (
             <XIcon aria-hidden className={cn("size-3 shrink-0", failedToolIconClassName)} />
           ) : null}
-          <TimelineRowTimestamp createdAt={workEntry.createdAt} timestampFormat={timestampFormat} />
           <span
             className={cn(
               "flex size-4 shrink-0 items-center justify-center",

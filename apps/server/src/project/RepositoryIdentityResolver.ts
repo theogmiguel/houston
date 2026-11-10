@@ -37,16 +37,23 @@ export class RepositoryIdentityResolver extends Context.Service<
   }
 >()("@houston-app/cli/project/RepositoryIdentityResolver") {}
 
+const FILE_URL_PREFIX = /^file:/i;
+const URL_SCHEME_PREFIX = /^[a-z][a-z0-9+.-]*:\/\//i;
+const WINDOWS_DRIVE_PATH = /^[a-z]:[\\/]/i;
+const PATH_SEPARATOR = /[\\/]/;
+
 // Local paths such as GitButler's gb-local=. would give unrelated repos the same identity.
 function isLocalRemoteUrl(url: string): boolean {
-  if (/^file:/i.test(url)) return true;
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(url)) return false;
-  if (/^[a-z]:[\\/]/i.test(url)) return true;
+  if (FILE_URL_PREFIX.test(url)) return true;
+  if (URL_SCHEME_PREFIX.test(url)) return false;
+  if (WINDOWS_DRIVE_PATH.test(url)) return true;
   // Git treats `host:path` as scp-style only when the colon precedes any slash.
   const colonIndex = url.indexOf(":");
-  const slashIndex = url.search(/[\\/]/);
+  const slashIndex = url.search(PATH_SEPARATOR);
   return colonIndex === -1 || (slashIndex !== -1 && slashIndex < colonIndex);
 }
+
+const REMOTE_VERBOSE_LINE = /^(\S+)\s+(\S+)\s+\((fetch|push)\)(?:\s+\[[^\]]+\])?$/;
 
 function parseRemoteFetchUrls(stdout: string): Map<string, string> {
   const remotes = new Map<string, string>();
@@ -54,7 +61,7 @@ function parseRemoteFetchUrls(stdout: string): Map<string, string> {
     const trimmed = line.trim();
     if (trimmed.length === 0) continue;
     // Partial clones append the promisor filter, e.g. `(fetch) [blob:none]`.
-    const match = /^(\S+)\s+(\S+)\s+\((fetch|push)\)(?:\s+\[[^\]]+\])?$/.exec(trimmed);
+    const match = REMOTE_VERBOSE_LINE.exec(trimmed);
     if (!match) continue;
     const [, remoteName = "", remoteUrl = "", direction = ""] = match;
     if (

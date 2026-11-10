@@ -16,6 +16,7 @@ import { Lock as LockGlyph, LockOpen } from "lucide";
 import * as Arr from "effect/Array";
 import * as Result from "effect/Result";
 import { Fragment, useState, type ReactElement, type ReactNode } from "react";
+import { useClientSettings } from "../../hooks/useSettings";
 import {
   isProviderDriverKind,
   resolveProviderInstanceEnabled,
@@ -725,13 +726,14 @@ export function ProviderInstanceCard({
   secretSources = NO_SECRET_SOURCES,
   projectOverride,
 }: ProviderInstanceCardProps) {
+  const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
   const enabled = projectOverride?.effectiveEnabled ?? resolveProviderInstanceEnabled(instance);
   const effectiveProvider = liveProvider && { ...liveProvider, enabled };
   const compatibility = enabled ? liveProvider?.compatibilityAdvisory : undefined;
   const statusKey = enabled ? getProviderStatusKey(effectiveProvider) : "disabled";
   const statusStyle = PROVIDER_STATUS_STYLES[statusKey];
   const summary = enabled
-    ? getProviderSummary(effectiveProvider)
+    ? getProviderSummary(effectiveProvider, timestampFormat)
     : { headline: "Disabled", detail: null };
   const authEmail = liveProvider?.auth.email?.trim();
   const isAuthenticated = enabled && liveProvider?.auth.status === "authenticated";
@@ -1058,7 +1060,7 @@ export function ProviderInstanceCard({
       <div
         data-slot="settings-row"
         className={cn(
-          "group flex min-h-18 items-center gap-3 px-3 py-3 transition-colors sm:px-4",
+          "group flex min-h-18 items-center gap-3 px-4 py-3 transition-colors",
           selected ? "bg-foreground/[0.06]" : "hover:bg-muted/25",
         )}
       >
@@ -1086,7 +1088,7 @@ export function ProviderInstanceCard({
               ) : null}
               {versionAdvisoryNode}
             </span>
-            <span className="mt-0.5 flex items-start gap-1.5 text-xs leading-normal text-muted-foreground/80">
+            <span className="mt-0.5 flex items-start gap-1.5 text-xs leading-normal text-muted-foreground">
               {statusDotNode && !updateProgress ? (
                 <span className="flex h-[1.45em] shrink-0 items-center">{statusDotNode}</span>
               ) : null}
@@ -1094,7 +1096,7 @@ export function ProviderInstanceCard({
                 <span
                   tabIndex={statusDiagnostic ? 0 : undefined}
                   aria-live="polite"
-                  className="pointer-events-auto line-clamp-2 [overflow-wrap:anywhere]"
+                  className="pointer-events-auto line-clamp-2 max-phone:line-clamp-3 [overflow-wrap:anywhere]"
                 >
                   {updateProgress ? (
                     `Updating · ${updateProgress}`

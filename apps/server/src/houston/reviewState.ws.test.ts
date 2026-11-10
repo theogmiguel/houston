@@ -92,6 +92,7 @@ import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ServerLifecycleEvents from "../serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "../serverRuntimeStartup.ts";
+import * as AssetSigner from "../assets/AssetSigner.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerSelfUpdate from "../cloud/selfUpdate.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -278,6 +279,7 @@ const layerReview = (input: {
           Layer.provide(Layer.merge(ServerSecretStore.layer, ManagedPolicy.layerTest())),
         ),
         ServerSecretStore.layer,
+        AssetSigner.layer.pipe(Layer.provide(ServerSecretStore.layer)),
       ),
     ),
     Layer.provideMerge(

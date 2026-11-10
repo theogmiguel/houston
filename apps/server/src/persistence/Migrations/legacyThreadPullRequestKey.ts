@@ -12,16 +12,15 @@ interface FrozenLink {
   readonly authority?: string;
 }
 
+const AZURE_SSH_REPOSITORY_KEY =
+  /^(?:ssh\.dev\.azure\.com|vs-ssh\.visualstudio\.com)\/v3\/([^/]+)\/([^/]+)\/([^/]+)$/u;
+const AZURE_VISUALSTUDIO_REPOSITORY_KEY =
+  /^([^.]+)\.visualstudio\.com\/(?:defaultcollection\/)?([^/]+)\/_git\/([^/]+)$/u;
+
 function canonicalRepositoryKey(key: string): string {
   return key
-    .replace(
-      /^(?:ssh\.dev\.azure\.com|vs-ssh\.visualstudio\.com)\/v3\/([^/]+)\/([^/]+)\/([^/]+)$/u,
-      "dev.azure.com/$1/$2/_git/$3",
-    )
-    .replace(
-      /^([^.]+)\.visualstudio\.com\/(?:defaultcollection\/)?([^/]+)\/_git\/([^/]+)$/u,
-      "dev.azure.com/$1/$2/_git/$3",
-    );
+    .replace(AZURE_SSH_REPOSITORY_KEY, "dev.azure.com/$1/$2/_git/$3")
+    .replace(AZURE_VISUALSTUDIO_REPOSITORY_KEY, "dev.azure.com/$1/$2/_git/$3");
 }
 
 function isHostOf(hostname: string, apex: string, label: string): boolean {
@@ -36,6 +35,13 @@ function claim(host: string, match: RegExpExecArray | null): FrozenLink | null {
     : null;
 }
 
+const PULL_OR_PULLS_PATH = /^\/([^/]+\/[^/]+)\/pulls?\/(\d+)(?:\/|$)/u;
+const PULL_PATH = /^\/([^/]+\/[^/]+)\/pull\/(\d+)(?:\/|$)/u;
+const FORGEJO_PATTERN = /^\/([^/]+(?:\/[^/]+)+)\/pulls\/(\d+)(?:\/|$)/u;
+const GITLAB_PATTERN = /^\/([^/]+(?:\/[^/]+)+)\/-\/merge_requests\/(\d+)(?:\/|$)/u;
+const PULL_REQUESTS_PATH = /^\/([^/]+\/[^/]+)\/pull-requests\/(\d+)(?:\/|$)/u;
+const AZURE_PATTERN = /^\/((?:[^/]+\/)*_git\/[^/]+)\/pullrequest\/(\d+)(?:\/|$)/u;
+
 function parseChangeRequestUrl(targetUrl: string): FrozenLink | null {
   let url: URL;
   try {
@@ -47,26 +53,26 @@ function parseChangeRequestUrl(targetUrl: string): FrozenLink | null {
   const host = url.hostname.toLowerCase();
 
   if (host === "git.cafe" || host === "staging.git.cafe") {
-    const match = /^\/([^/]+\/[^/]+)\/pulls?\/(\d+)(?:\/|$)/u.exec(url.pathname);
+    const match = PULL_OR_PULLS_PATH.exec(url.pathname);
     if (match) return claim(host, match);
   } else {
     if (isHostOf(host, "github.com", "github")) {
-      const match = /^\/([^/]+\/[^/]+)\/pull\/(\d+)(?:\/|$)/u.exec(url.pathname);
+      const match = PULL_PATH.exec(url.pathname);
       if (match) return claim(host, match);
     }
-    const forgejo = /^\/([^/]+(?:\/[^/]+)+)\/pulls\/(\d+)(?:\/|$)/u.exec(url.pathname);
+    const forgejo = FORGEJO_PATTERN.exec(url.pathname);
     if (forgejo) {
       const link = claim(host, forgejo);
       return link === null ? null : { ...link, authority: url.host.toLowerCase() };
     }
-    const gitlab = /^\/([^/]+(?:\/[^/]+)+)\/-\/merge_requests\/(\d+)(?:\/|$)/u.exec(url.pathname);
+    const gitlab = GITLAB_PATTERN.exec(url.pathname);
     if (gitlab) return claim(host, gitlab);
     if (isHostOf(host, "bitbucket.org", "bitbucket")) {
-      const match = /^\/([^/]+\/[^/]+)\/pull-requests\/(\d+)(?:\/|$)/u.exec(url.pathname);
+      const match = PULL_REQUESTS_PATH.exec(url.pathname);
       if (match) return claim(host, match);
     }
   }
-  const azure = /^\/((?:[^/]+\/)*_git\/[^/]+)\/pullrequest\/(\d+)(?:\/|$)/u.exec(url.pathname);
+  const azure = AZURE_PATTERN.exec(url.pathname);
   const link = claim(host, azure);
   return link === null || url.port === "" ? link : { ...link, authority: url.host.toLowerCase() };
 }

@@ -42,6 +42,7 @@ vi.mock("../ChatView", () => ({
 }));
 
 vi.mock("../../state/entities", () => ({
+  useProject: () => null,
   useQuietThreadShell: () => ({
     id: "thread-a",
     title: "Alpha thread",
@@ -51,10 +52,13 @@ vi.mock("../../state/entities", () => ({
     modelSelection: { instanceId: "claudeAgent", model: "claude-sonnet" },
     providerInstanceHistory: [],
     runtime: null,
+    pullRequests: [],
+    branchPullRequest: null,
   }),
 }));
 
 vi.mock("../../hooks/useThreadActions", () => ({
+  useAcknowledgeThreadWoke: () => () => {},
   useThreadActions: () => ({
     archiveThread: vi.fn(),
     threadSnoozePresets: () => [],
@@ -92,7 +96,8 @@ vi.mock("../../grid/gridStore", () => ({
     selector({ setDraftId: state.setDraftId }),
 }));
 
-vi.mock("../Sidebar.logic", () => ({
+vi.mock("../Sidebar.logic", async (original) => ({
+  ...(await original<typeof import("../Sidebar.logic")>()),
   resolveThreadStatusPill: () => state.pill,
 }));
 
@@ -118,7 +123,6 @@ function render(node: ThreadNode) {
       grid={grid()}
       focused
       availableThreads={[]}
-      providerEntries={new Map()}
       onFocus={() => {}}
       onClose={() => {}}
       onSplit={() => {}}
@@ -128,11 +132,12 @@ function render(node: ThreadNode) {
 }
 
 describe("GridThreadCell", () => {
-  it("renders the thread view for its own thread inside an embedded cell", () => {
+  it("renders a pane header and the thread view inside an embedded cell", () => {
     state.draftSession = null;
     const html = render({ kind: "thread", threadId: "thread-a", id: "p1" });
-    expect(html).not.toContain("data-pane-label");
-    expect(html).not.toContain("<header");
+    expect(html).toContain("data-pane-header");
+    expect(html).toContain("data-pane-label");
+    expect(html).toContain("Alpha thread");
     expect(html).toContain('data-testid="chat-view"');
     expect(html).toContain('data-thread-id="thread-a"');
     expect(html).toContain('data-environment-id="env-1"');
@@ -141,7 +146,7 @@ describe("GridThreadCell", () => {
     expect(html).toContain('data-focused="true"');
   });
 
-  it("draws the floating label only when the grid holds more than one thread", () => {
+  it("draws the pane header with its actions whatever the grid holds", () => {
     state.draftSession = null;
     const html = renderToStaticMarkup(
       <GridThreadCell
@@ -157,7 +162,6 @@ describe("GridThreadCell", () => {
         }}
         focused
         availableThreads={[]}
-        providerEntries={new Map()}
         onFocus={() => {}}
         onClose={() => {}}
         onSplit={() => {}}

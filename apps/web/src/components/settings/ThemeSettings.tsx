@@ -40,6 +40,7 @@ import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
+import { PHONE_SECTION_HEADING_CLS } from "../ui/phone-recipes";
 import { ThemeImportDialog } from "./ThemeImportDialog";
 import { searchableSetting } from "./settingsSearch";
 import { useThemeEditorStore } from "./themeEditorStore";
@@ -82,9 +83,11 @@ export function themeLibraryCount(
   );
 }
 
+const WHITESPACE_RUN = /\s+/;
+
 function collectionVariantLabels(themes: ReadonlyArray<ThemeDefinition>): ReadonlyArray<string> {
   if (themes.length === 0) return [];
-  const words = themes.map((theme) => theme.label.trim().split(/\s+/));
+  const words = themes.map((theme) => theme.label.trim().split(WHITESPACE_RUN));
   const firstWords = words[0]!;
   const sharedWordCount = firstWords.findIndex((word, index) =>
     words.some((labelWords) => labelWords[index]?.toLocaleLowerCase() !== word.toLocaleLowerCase()),
@@ -859,7 +862,9 @@ export function ThemeLibrary({
     <div className="space-y-3">
       {view !== "library" ? (
         <>
-          <h3 className="flex items-center px-1 text-[11px] leading-[14px] font-semibold text-muted-foreground">
+          <h3
+            className={`flex items-center text-2xs leading-3.5 font-semibold text-muted-foreground ${PHONE_SECTION_HEADING_CLS}`}
+          >
             {searchableSetting("color-scheme").title}
           </h3>
           {renderModeTiles()}

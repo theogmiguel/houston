@@ -143,12 +143,18 @@ export function mcpAppToolResourceUri(meta: unknown): string | undefined {
     : undefined;
 }
 
-export const claudeMcpToolNamePart = (name: string) => name.replace(/[^a-zA-Z0-9_-]/g, "_");
+const CLAUDE_MCP_TOOL_NAME_PART_PATTERN = /[^a-zA-Z0-9_-]/g;
+
+export const claudeMcpToolNamePart = (name: string) =>
+  name.replace(CLAUDE_MCP_TOOL_NAME_PART_PATTERN, "_");
+
+const UNDERSCORE_RUN = /_+/g;
+const EDGE_UNDERSCORES = /^_|_$/g;
 
 /** Claude Code's `mcp__<server>__` prefix; it also collapses and trims `_` in `claude.ai ` connector names. */
 export function claudeMcpToolPrefix(server: string): string {
   const part = claudeMcpToolNamePart(server);
-  return `mcp__${server.startsWith("claude.ai ") ? part.replace(/_+/g, "_").replace(/^_|_$/g, "") : part}__`;
+  return `mcp__${server.startsWith("claude.ai ") ? part.replace(UNDERSCORE_RUN, "_").replace(EDGE_UNDERSCORES, "") : part}__`;
 }
 
 /** Claude Code names MCP tools `mcp__<server>__<tool>`, replacing characters outside `[a-zA-Z0-9_-]`. */
@@ -182,8 +188,14 @@ export function mcpAppContentSecurityPolicy(csp: McpAppCsp | undefined): string 
   ].join("; ");
 }
 
+const AMPERSAND = /&/g;
+const DOUBLE_QUOTE = /"/g;
+const LESS_THAN = /</g;
+
 const escapeAttribute = (value: string) =>
-  value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+  value.replace(AMPERSAND, "&amp;").replace(DOUBLE_QUOTE, "&quot;").replace(LESS_THAN, "&lt;");
+
+const DOCTYPE_PATTERN = /^\uFEFF?\s*<!doctype[^>]*>/i;
 
 /** The route's sandbox header keeps origins opaque; the document CSP can only tighten it. */
 export function injectMcpAppCsp(html: string, csp: McpAppCsp | undefined): string {
@@ -191,11 +203,14 @@ export function injectMcpAppCsp(html: string, csp: McpAppCsp | undefined): strin
     mcpAppContentSecurityPolicy(csp),
   )}">`;
   // Insert after the doctype to preserve standards mode; the parser moves it into the head.
-  const doctype = /^\uFEFF?\s*<!doctype[^>]*>/i.exec(html);
+  const doctype = DOCTYPE_PATTERN.exec(html);
   return doctype
     ? `${doctype[0]}${meta}${html.slice(doctype[0].length)}`
     : `<!doctype html>${meta}${html}`;
 }
+
+const DOCTYPE_AND_CSP_PREFIX =
+  /^\uFEFF?\s*<!doctype[^>]*>\s*(?:<meta\s+http-equiv="Content-Security-Policy"[^>]*>)?/i;
 
 /** Opaque origins require authenticating bridge messages by parent window. */
 export function injectMcpAppThemeBootstrap(html: string): string {
@@ -216,23 +231,20 @@ export function injectMcpAppThemeBootstrap(html: string): string {
   });
 })();
 </script>`;
-  const prefix =
-    /^\uFEFF?\s*<!doctype[^>]*>\s*(?:<meta\s+http-equiv="Content-Security-Policy"[^>]*>)?/i.exec(
-      html,
-    );
+  const prefix = DOCTYPE_AND_CSP_PREFIX.exec(html);
   return prefix
     ? `${prefix[0]}${script}${html.slice(prefix[0].length)}`
     : `<!doctype html>${script}${html}`;
 }
 
+const OPTIONAL_DOCTYPE_AND_CSP_PREFIX =
+  /^(?:\uFEFF?\s*<!doctype[^>]*>\s*)?(?:<meta http-equiv="Content-Security-Policy" content="[^"]*">)?/i;
+
 /** Opaque documents throw on cookie reads; analytics startup often expects an empty string instead. */
 export function injectMcpAppCookieBootstrap(html: string): string {
   const bootstrap = `<script>(function(){try{void document.cookie;}catch(error){if(error&&error.name==="SecurityError"){Object.defineProperty(document,"cookie",{configurable:true,get:function(){return "";},set:function(){}});}}})();</script>`;
   // Preserve captured CSP ahead of executable code, including this bootstrap.
-  const prefix =
-    /^(?:\uFEFF?\s*<!doctype[^>]*>\s*)?(?:<meta http-equiv="Content-Security-Policy" content="[^"]*">)?/i.exec(
-      html,
-    )![0];
+  const prefix = OPTIONAL_DOCTYPE_AND_CSP_PREFIX.exec(html)![0];
   return `${prefix}${bootstrap}${html.slice(prefix.length)}`;
 }
 
@@ -250,7 +262,9 @@ export function clampMcpAppHeight(height: number): number {
   return Math.round(Math.min(MCP_APP_MAX_HEIGHT, Math.max(MCP_APP_MIN_HEIGHT, height)));
 }
 
+const NON_NAME_CHARACTER_RUN = /[^\w.-]+/g;
+
 export function mcpAppFileName(reference: McpAppReference): string {
-  const name = reference.tool.replace(/[^\w.-]+/g, "-").slice(0, 80) || "app";
+  const name = reference.tool.replace(NON_NAME_CHARACTER_RUN, "-").slice(0, 80) || "app";
   return `${name}.html`;
 }

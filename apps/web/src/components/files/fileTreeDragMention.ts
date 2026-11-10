@@ -32,6 +32,8 @@ const itemPathOf = (node: unknown): string | null => {
   return typeof element.getAttribute === "function" ? element.getAttribute("data-item-path") : null;
 };
 
+const TRAILING_SLASHES = /\/+$/;
+
 export function createFileTreeDragMentionController(
   host: FileTreeDragMentionHost,
 ): FileTreeDragMentionController {
@@ -60,7 +62,7 @@ export function createFileTreeDragMentionController(
       const dragged = selection.includes(itemPath) ? selection : [itemPath];
       const mentions = dragged
         .map((path) => {
-          const treePath = path.replace(/\/+$/, "");
+          const treePath = path.replace(TRAILING_SLASHES, "");
           return composerMentionFromTreePath(
             treePath && host.mentionPath ? host.mentionPath(treePath) : path,
           );

@@ -11,6 +11,7 @@ import {
   shouldRecommendDatabaseCompaction,
   WS_METHODS,
 } from "@houston-app/contracts";
+import { shouldOfferDatabaseReclaim } from "@houston-app/contracts/houston/databaseReclaim";
 import * as Cause from "effect/Cause";
 import * as Duration from "effect/Duration";
 import * as Equal from "effect/Equal";
@@ -365,6 +366,7 @@ export interface ServerConfigSubscriptionOptions {
   readonly environmentThemes?: boolean;
   readonly usageLimitSources?: boolean;
   readonly usageLimitsCommand?: boolean;
+  readonly providerCatalogsOnDemand?: boolean;
 }
 
 // Configs are JSON-shaped. Missing and undefined object fields persist identically.
@@ -486,6 +488,7 @@ export const makeEnvironmentServerConfigState = Effect.fn("EnvironmentServerConf
       ...(subscription.environmentThemes === true ? { environmentThemes: true } : {}),
       ...(subscription.usageLimitSources === true ? { usageLimitSources: true } : {}),
       ...(subscription.usageLimitsCommand === true ? { usageLimitsCommand: true } : {}),
+      ...(subscription.providerCatalogsOnDemand === true ? { providerCatalogsOnDemand: true } : {}),
     }).pipe(
       Stream.runForEach((event) =>
         Effect.gen(function* () {
@@ -755,6 +758,7 @@ export function createServerEnvironmentAtoms<R, E>(
     readonly environmentThemes?: boolean;
     readonly usageLimitSources?: boolean;
     readonly usageLimitsCommand?: boolean;
+    readonly providerCatalogsOnDemand?: boolean;
   },
 ) {
   const configScheduler = createAtomCommandScheduler();
@@ -770,6 +774,7 @@ export function createServerEnvironmentAtoms<R, E>(
           ...(options.environmentThemes === true ? { environmentThemes: true } : {}),
           ...(options.usageLimitSources === true ? { usageLimitSources: true } : {}),
           ...(options.usageLimitsCommand === true ? { usageLimitsCommand: true } : {}),
+          ...(options.providerCatalogsOnDemand === true ? { providerCatalogsOnDemand: true } : {}),
         }),
       )
       .pipe(
@@ -1189,6 +1194,24 @@ export function createServerEnvironmentAtoms<R, E>(
       ),
     );
   });
+  const databaseReclaimOffers = Atom.family((environmentIdsKey: string) => {
+    const sources = (JSON.parse(environmentIdsKey) as EnvironmentId[]).map((environmentId) => ({
+      environmentId,
+      atom: databaseStorage({ environmentId, input: {} }),
+    }));
+    return Atom.make((get) =>
+      sources
+        .flatMap(({ environmentId, atom }) => {
+          const result = get(atom);
+          return result._tag === "Success" &&
+            result.value !== null &&
+            shouldOfferDatabaseReclaim(result.value)
+            ? [{ environmentId, status: result.value }]
+            : [];
+        })
+        .sort((left, right) => right.status.reclaimableBytes - left.status.reclaimableBytes),
+    ).pipe(Atom.withLabel(`environment-data:server:database-reclaim-offers:${environmentIdsKey}`));
+  });
   const welcome = (target: {
     readonly environmentId: EnvironmentId;
     readonly input: EnvironmentRpcInput<typeof WS_METHODS.subscribeServerLifecycle>;
@@ -1214,6 +1237,12 @@ export function createServerEnvironmentAtoms<R, E>(
     }),
     databaseStorage,
     databaseCompactionRecommendations,
+    databaseReclaimOffers,
+    reclaimDatabaseSpace: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:reclaim-database-space",
+      tag: WS_METHODS.houstonDatabaseReclaim,
+      concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
+    }),
     storageCleanupReport: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:server:storage-cleanup-report",
       tag: WS_METHODS.serverGetStorageCleanupReport,
@@ -1362,6 +1391,8 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:resource-telemetry-history",
       tag: WS_METHODS.serverGetResourceTelemetryHistory,
       staleTimeMs: 5_000,
+      refreshIntervalMs: 5_000,
+      idleTtlMs: 0,
     }),
     searchAcpRegistry: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:server:acp-registry:search",
@@ -1401,6 +1432,7 @@ export function createServerEnvironmentAtoms<R, E>(
           ...input,
           workspaceSnapshotsOnDemand: true,
           ...(options.usageLimitsCommand === true ? { usageLimitsCommand: true } : {}),
+          ...(options.providerCatalogsOnDemand === true ? { providerCatalogsOnDemand: true } : {}),
         }),
       onSuccess: ({ environmentId, input }, registry, result) =>
         Effect.sync(() => {
@@ -1426,6 +1458,7 @@ export function createServerEnvironmentAtoms<R, E>(
             input.cwd ?? null,
             input.fresh ?? false,
             input.refreshModels ?? false,
+            input.modelCatalogOnly ?? false,
           ]),
       },
     }),

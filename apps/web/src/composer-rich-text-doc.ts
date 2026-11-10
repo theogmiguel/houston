@@ -42,11 +42,28 @@ import { ReplaceStep } from "@tiptap/pm/transform";
 
 import { splitPromptIntoComposerSegments } from "~/composer-editor-mentions";
 import { nextOrderedMarkerText } from "~/composer-list-continuation";
-import { parseInlineMarkdown, RICH_TEXT_DELIMITERS, type RichTextMark } from "~/composer-rich-text";
+import {
+  MARKDOWN_SOURCE_MARK,
+  parseInlineMarkdown,
+  RICH_TEXT_DELIMITERS,
+  type RichTextMark,
+} from "~/composer-rich-text";
 import { collectInlineContextIds } from "~/lib/composerContextReferences";
 import { composerMathRanges } from "@houston-app/shared/composerInlineTokens";
 
+const LITERAL_BACKTICKS_BEFORE_PATTERN = /(?<!`)`(?!`)/g;
+const ALIGN_LIST_ITEM_WITH_SIBLINGS_PATTERN = /^\d+[.)]$/;
+
 export type SkillMeta = { label: string; description: string | null };
+
+export type IsKnownModel = (instanceId: string, model: string) => boolean;
+
+interface ChipResolver {
+  skill: (name: string) => SkillMeta | null;
+  model: IsKnownModel;
+}
+
+const NO_MODELS: IsKnownModel = () => false;
 
 const MARK_NESTING_ORDER: RichTextMark[] = ["strike", "bold", "italic", "code"];
 
@@ -67,6 +84,9 @@ const TIPTAP_TO_MARK: Record<string, RichTextMark> = {
 type CodePair = { from: number; to: number };
 
 const codePairKey = new PluginKey<CodePair[]>("typedBacktickPairs");
+
+const INLINE_CODE_SPAN = /^([^`\n]+)`(?!`)/;
+const WHOLE_INLINE_CODE = /^`[^`]+`$/;
 
 // Input rules only see text before the caret, so filling an already typed
 // pair needs a separate exit handler. Only typed pairs opt into that handler.
@@ -90,6 +110,7 @@ function codePairCaretPlugin(type: MarkType) {
         if (view.composing || from !== to || text !== "`") return false;
         const $from = view.state.doc.resolve(from);
         if (!$from.parent.isTextblock || $from.parent.type.spec.code) return false;
+        if (touchesMarkdownSource(view.state, from, to)) return false;
         const before = $from.nodeBefore?.text ?? "";
         if (closesBacktickPair($from)) {
           view.dispatch(insert().setMeta(codePairKey, { from: from - 1, to: from + 1 }));
@@ -105,7 +126,7 @@ function codePairCaretPlugin(type: MarkType) {
           "\n",
           "\n",
         );
-        const match = /^([^`\n]+)`(?!`)/.exec(after);
+        const match = INLINE_CODE_SPAN.exec(after);
         if (!match) return false;
         const end = from + match[1]!.length;
         let plain = true;
@@ -134,7 +155,7 @@ function codePairCaretPlugin(type: MarkType) {
       if (
         $start.nodeBefore?.text?.endsWith("`") ||
         $end.nodeAfter?.text?.startsWith("`") ||
-        !/^`[^`]+`$/.test(state.doc.textBetween(pair.from, pair.to))
+        !WHOLE_INLINE_CODE.test(state.doc.textBetween(pair.from, pair.to))
       ) {
         return null;
       }
@@ -152,6 +173,8 @@ function codePairCaretPlugin(type: MarkType) {
   });
 }
 
+const CLOSES_BACKTICK_PAIR_PATTERN = /(^|[^`])`$/;
+
 /**
  * Whether a backtick typed at `$pos` would complete an empty `` pair. The
  * backtick before `$pos` only opens one when earlier backticks are all paired.
@@ -160,7 +183,7 @@ function closesBacktickPair($pos: ResolvedPos): boolean {
   return (
     $pos.parent.isTextblock &&
     !$pos.parent.type.spec.code &&
-    /(^|[^`])`$/.test($pos.nodeBefore?.text ?? "") &&
+    CLOSES_BACKTICK_PAIR_PATTERN.test($pos.nodeBefore?.text ?? "") &&
     literalBackticksBefore($pos) % 2 === 1
   );
 }
@@ -218,7 +241,10 @@ export const ComposerCodeExtension = Code.extend({
           find: rule.find,
           undoable: rule.undoable,
           handler: (props) => {
-            if (literalBackticksBefore(props.state.doc.resolve(props.range.from)) % 2 === 1) {
+            if (
+              literalBackticksBefore(props.state.doc.resolve(props.range.from)) % 2 === 1 ||
+              touchesMarkdownSource(props.state, props.range.from, props.range.to)
+            ) {
               return null;
             }
 
@@ -241,10 +267,24 @@ function literalBackticksBefore($pos: ResolvedPos): number {
     if (node.marks.some((mark) => mark.type.spec.code)) return;
 
     const text = node.text!.slice(0, $pos.parentOffset - offset);
-    count += [...text.matchAll(/(?<!`)`(?!`)/g)].length;
+    count += [...text.matchAll(LITERAL_BACKTICKS_BEFORE_PATTERN)].length;
   });
   return count;
 }
+
+/**
+ * Whether `from`-`to`, or the caret at `from`, is in shown Markdown source.
+ * Typed delimiters there stay text until the caret leaves and the source is parsed.
+ */
+function touchesMarkdownSource(state: EditorState, from: number, to: number): boolean {
+  const type = state.schema.marks[MARKDOWN_SOURCE_MARK];
+  if (!type) return false;
+  if (from < to) return state.doc.rangeHasMark(from, to, type);
+  const $pos = state.doc.resolve(from);
+  return [$pos.nodeBefore, $pos.nodeAfter].some((node) => node && type.isInSet(node.marks));
+}
+
+const NON_WHITESPACE = /\S/;
 
 // Code permits nested emphasis, so Tiptap's exclusion check cannot protect literal delimiters.
 function markInputRuleOutsideCode(find: RegExp, type: MarkType) {
@@ -257,9 +297,10 @@ function markInputRuleOutsideCode(find: RegExp, type: MarkType) {
       const content = match[match.length - 1] ?? "";
       const textStart = range.from + match[0].indexOf(content);
       const textEnd = textStart + content.length;
+      if (touchesMarkdownSource(state, range.from, range.to)) return null;
       if (
         code &&
-        (state.doc.rangeHasMark(range.from + match[0].search(/\S/), textStart, code) ||
+        (state.doc.rangeHasMark(range.from + match[0].search(NON_WHITESPACE), textStart, code) ||
           state.doc.rangeHasMark(textEnd, state.selection.from, code))
       ) {
         return null;
@@ -384,6 +425,8 @@ function unwrapCodeBlockAtStart(editor: Editor): boolean {
   return true;
 }
 
+const CODE_BLOCK_SOURCE_PATTERN = /^[`~]+/;
+
 function codeBlockSource(
   node: ProseMirrorNode,
   followed: boolean,
@@ -403,7 +446,7 @@ function codeBlockSource(
     ...content
       .split("\n")
       .filter((line) => isClosingFence(line, fence))
-      .map((line) => /^[`~]+/.exec(line)![0].length),
+      .map((line) => CODE_BLOCK_SOURCE_PATTERN.exec(line)![0].length),
   );
   if (longest > 0) {
     fence = fence[0]!.repeat(longest + 1);
@@ -525,8 +568,10 @@ interface TaskLinePrefix {
   contentSpace: string;
 }
 
+const TASK_LIST_ITEM = /^([ \t]*)-([ \t]+)\[([ xX])\]([ \t]*)/;
+
 function parseTaskPrefix(head: string): { prefix: TaskLinePrefix; markerLength: number } | null {
-  const match = head.match(/^([ \t]*)-([ \t]+)\[([ xX])\]([ \t]*)/);
+  const match = head.match(TASK_LIST_ITEM);
   if (!match) return null;
   const after = head.slice(match[0].length);
   if (after.length > 0 && !match[4]) return null;
@@ -541,9 +586,11 @@ function parseTaskPrefix(head: string): { prefix: TaskLinePrefix; markerLength: 
   };
 }
 
+const CODE_FENCE_OPENING = /^(`{3,}|~{3,})([^\n]*)$/;
+
 export function parseOpeningFence(line: string): { fence: string; language: string } | null {
   // Unlike `.`, `[^\n]` accepts the stored \r in CRLF lines.
-  const match = /^(`{3,}|~{3,})([^\n]*)$/.exec(line);
+  const match = CODE_FENCE_OPENING.exec(line);
   if (!match) return null;
   const fence = match[1]!;
   const language = match[2]!;
@@ -551,8 +598,10 @@ export function parseOpeningFence(line: string): { fence: string; language: stri
   return { fence, language };
 }
 
+const CODE_FENCE_CLOSING = /^(`{3,}|~{3,})[ \t]*\r?$/;
+
 export function isClosingFence(line: string, fence: string): boolean {
-  const match = /^(`{3,}|~{3,})[ \t]*\r?$/.exec(line);
+  const match = CODE_FENCE_CLOSING.exec(line);
   if (!match) return false;
   const run = match[1]!;
   return run[0] === fence[0] && run.length >= fence.length;
@@ -562,17 +611,20 @@ type ListLinePrefix =
   | ({ kind: "task" } & TaskLinePrefix)
   | { kind: "bullet" | "ordered"; indent: string; marker: string; space: string };
 
+const ORDERED_PATTERN = /^([ \t]*)(\d+[.)])((?:[ \t]+)|$)/;
+const BULLET_LIST_ITEM = /^([ \t]*)([-*+])((?:[ \t]+)|$)/;
+
 function parseListPrefix(line: string): { prefix: ListLinePrefix; markerLength: number } | null {
   const task = parseTaskPrefix(line);
   if (task) return { prefix: { kind: "task", ...task.prefix }, markerLength: task.markerLength };
-  const ordered = /^([ \t]*)(\d+[.)])((?:[ \t]+)|$)/.exec(line);
+  const ordered = ORDERED_PATTERN.exec(line);
   if (ordered) {
     return {
       prefix: { kind: "ordered", indent: ordered[1]!, marker: ordered[2]!, space: ordered[3]! },
       markerLength: ordered[0].length,
     };
   }
-  const bullet = /^([ \t]*)([-*+])((?:[ \t]+)|$)/.exec(line);
+  const bullet = BULLET_LIST_ITEM.exec(line);
   if (bullet) {
     return {
       prefix: { kind: "bullet", indent: bullet[1]!, marker: bullet[2]!, space: bullet[3]! },
@@ -589,17 +641,18 @@ function listKey(prefix: ListLinePrefix): string {
 }
 
 type InlineJson = Record<string, unknown>;
+type AtomJson = { type: string; attrs: Record<string, unknown> };
 
 interface DocLine {
   list: ListLinePrefix | null;
   inline: InlineJson[];
 }
 
-/** Null for a `$name` that is not one of the provider's skills: it stays editable text. */
+/** Null for a `$name` or `model:` reference the resolver does not know: it stays editable text. */
 function atomJsonForSegment(
   segment: Exclude<ReturnType<typeof splitPromptIntoComposerSegments>[number], { type: "text" }>,
-  skillLabelFor: (name: string) => SkillMeta | null,
-): InlineJson | null {
+  chips: ChipResolver,
+): AtomJson | null {
   if (segment.type === "mention") {
     return {
       type: "composer-mention",
@@ -607,7 +660,7 @@ function atomJsonForSegment(
     };
   }
   if (segment.type === "skill") {
-    const meta = skillLabelFor(segment.name);
+    const meta = chips.skill(segment.name);
     if (!meta) return null;
     return {
       type: "composer-skill",
@@ -616,6 +669,13 @@ function atomJsonForSegment(
         skillLabel: meta.label,
         skillDescription: meta.description,
       },
+    };
+  }
+  if (segment.type === "model") {
+    if (!chips.model(segment.instanceId, segment.model)) return null;
+    return {
+      type: "composer-model",
+      attrs: { instanceId: segment.instanceId, model: segment.model, source: segment.source },
     };
   }
   if (segment.type === "citation") {
@@ -692,12 +752,23 @@ function textJsonForSpan(text: string, marks: RichTextMark[]): Record<string, un
   return json;
 }
 
+const THEMATIC_BREAK_LINE = /^([-*_])(?:[ \t]*\1){2,}[ \t]*\r?$/;
+const HEADING_PATTERN = /^(#{1,6})([ \t]+)([^\n]*)$/;
+const BLOCKQUOTE_LINE = /^(>[ \t]*)([^\n]*)$/;
+
 /** Keeps literalLength leading characters unstyled so path queries reach file search unchanged. */
 export function buildTiptapContent(
   value: string,
   skillLabelFor: (name: string) => SkillMeta | null,
-  options?: { styling?: boolean; blocks?: boolean; literalText?: boolean; literalLength?: number },
+  options?: {
+    styling?: boolean;
+    blocks?: boolean;
+    literalText?: boolean;
+    literalLength?: number;
+    isKnownModel?: IsKnownModel;
+  },
 ): Record<string, unknown>[] {
+  const chips = { skill: skillLabelFor, model: options?.isKnownModel ?? NO_MODELS };
   if (options?.literalText) {
     return value.split("\n").map((line) => ({
       type: "paragraph",
@@ -734,7 +805,7 @@ export function buildTiptapContent(
       return splitPromptIntoComposerSegments(chunk.text)
         .map((segment) => {
           if (segment.type === "text") return segment.text;
-          const atom = atomJsonForSegment(segment, skillLabelFor);
+          const atom = atomJsonForSegment(segment, chips);
           if (!atom) return segment.source;
           atoms.push(atom);
           atomSources.push(segment.source);
@@ -789,11 +860,11 @@ export function buildTiptapContent(
     }
     const opening = blockSyntax ? parseOpeningFence(line) : null;
     if (!opening) {
-      if (blockSyntax && /^([-*_])(?:[ \t]*\1){2,}[ \t]*\r?$/.test(line)) {
+      if (blockSyntax && THEMATIC_BREAK_LINE.test(line)) {
         entries.push({ rule: line });
         continue;
       }
-      const heading = blockSyntax ? /^(#{1,6})([ \t]+)([^\n]*)$/.exec(line) : null;
+      const heading = blockSyntax ? HEADING_PATTERN.exec(line) : null;
       if (heading) {
         entries.push({
           heading: {
@@ -804,7 +875,7 @@ export function buildTiptapContent(
         });
         continue;
       }
-      const quote = blockSyntax ? /^(>[ \t]*)([^\n]*)$/.exec(line) : null;
+      const quote = blockSyntax ? BLOCKQUOTE_LINE.exec(line) : null;
       if (quote) entries.push({ quote: { prefix: quote[1]!, inline: buildInline(quote[2]!) } });
       else entries.push({ line: buildDocLine(line) });
       continue;
@@ -934,7 +1005,7 @@ export function buildTiptapContent(
 export function buildDocJson(
   value: string,
   skillLabelFor: (name: string) => SkillMeta | null,
-  options?: { styling?: boolean; literalText?: boolean },
+  options?: { styling?: boolean; literalText?: boolean; isKnownModel?: IsKnownModel },
 ) {
   const content = buildTiptapContent(value, skillLabelFor, options);
   if (content.at(-1)?.type === "horizontalRule") content.push({ type: "paragraph" });
@@ -967,6 +1038,7 @@ function readAtomSource(node: ProseMirrorNode): string {
   const attrs = node.attrs as Record<string, unknown>;
   switch (node.type.name) {
     case "composer-mention":
+    case "composer-model":
     case "composer-citation":
     case "composer-context-reference":
       return typeof attrs.source === "string" ? attrs.source : "";
@@ -1027,6 +1099,8 @@ function pushBlankLineRun(acc: RichAccumulator, pmPos: number): void {
   acc.md += 1;
 }
 
+const WHITESPACE_ONLY = /^\s+$/;
+
 function appendInlineRuns(
   container: ProseMirrorNode,
   contentStart: number,
@@ -1065,7 +1139,7 @@ function appendInlineRuns(
         } else if (
           child.isText &&
           !child.marks.some((item) => item.type.name === "code") &&
-          /^\s+$/.test(child.text!)
+          WHITESPACE_ONLY.test(child.text!)
         ) {
           if (!hasContent)
             children[index] = child.mark(child.marks.filter((item) => item.type.name !== mark));
@@ -1177,10 +1251,16 @@ function alignListItemWithSiblings(tr: Transaction, itemType: string): void {
     attrs.markerSpace = sibling.attrs.markerSpace;
   } else {
     const marker = typeof sibling.attrs.marker === "string" ? sibling.attrs.marker : "-";
-    attrs.marker = index > 0 && /^\d+[.)]$/.test(marker) ? nextOrderedMarkerText(marker) : marker;
+    attrs.marker =
+      index > 0 && ALIGN_LIST_ITEM_WITH_SIBLINGS_PATTERN.test(marker)
+        ? nextOrderedMarkerText(marker)
+        : marker;
   }
   tr.setNodeMarkup($pos.before(-1), undefined, attrs);
-  if (typeof attrs.marker === "string" && /^\d+[.)]$/.test(attrs.marker)) {
+  if (
+    typeof attrs.marker === "string" &&
+    ALIGN_LIST_ITEM_WITH_SIBLINGS_PATTERN.test(attrs.marker)
+  ) {
     renumberFollowingItems(tr, $pos.before(-2), index, attrs.marker);
   }
 }
@@ -1206,7 +1286,8 @@ function renumberFollowingItems(
   });
 }
 
-export function splitOrLiftListItem(editor: Editor): boolean {
+/** `prepare` runs first in the same transaction, which the split then reads. */
+export function splitOrLiftListItem(editor: Editor, prepare: Command): boolean {
   const $from = editor.state.selection.$from;
   const itemType = listItemTypeAt($from);
   if (!itemType) return false;
@@ -1221,7 +1302,7 @@ export function splitOrLiftListItem(editor: Editor): boolean {
     if (moved) alignListItemWithSiblings(tr, itemType);
     return moved;
   };
-  return editor.can().command(move) && editor.chain().command(move).run();
+  return editor.can().command(move) && editor.chain().command(prepare).command(move).run();
 }
 
 export function convertBulletItemToTask(
@@ -1516,6 +1597,15 @@ export interface SkillChipReplacement {
   node: ProseMirrorNode;
 }
 
+function isStaleChip(node: ProseMirrorNode, chips: ChipResolver): boolean {
+  const { skillName, instanceId, model } = node.attrs as Record<string, unknown>;
+  if (node.type.name === "composer-skill") {
+    return typeof skillName === "string" && skillName !== "" && !chips.skill(skillName);
+  }
+  if (node.type.name === "composer-model") return !chips.model(String(instanceId), String(model));
+  return false;
+}
+
 /**
  * Use the same Markdown token boundaries as draft restoration. Apply edits
  * last-first so positions stay valid and unrelated citation nodes keep their keys.
@@ -1523,30 +1613,28 @@ export interface SkillChipReplacement {
 export function skillChipReplacements(
   doc: ProseMirrorNode,
   skillLabelFor: (name: string) => SkillMeta | null,
+  isKnownModel: IsKnownModel = NO_MODELS,
 ): SkillChipReplacement[] {
+  const chips = { skill: skillLabelFor, model: isKnownModel };
   const schema = doc.type.schema;
-  const skillType = schema.nodes["composer-skill"];
-  if (!skillType) return [];
   const replacements: SkillChipReplacement[] = [];
   doc.descendants((node, pos) => {
-    if (node.type !== skillType) return;
-    const name = typeof node.attrs.skillName === "string" ? node.attrs.skillName : "";
-    if (name && !skillLabelFor(name)) {
-      replacements.push({
-        from: pos,
-        to: pos + node.nodeSize,
-        node: schema.text(readAtomSource(node), node.marks),
-      });
-    }
+    if (!isStaleChip(node, chips)) return;
+    replacements.push({
+      from: pos,
+      to: pos + node.nodeSize,
+      node: schema.text(readAtomSource(node), node.marks),
+    });
   });
   const map = serializeEditorDoc(doc);
   let end = 0;
   for (const segment of splitPromptIntoComposerSegments(map.value)) {
     const start = end;
     end += segment.type === "text" ? segment.text.length : segment.source.length;
-    if (segment.type !== "skill") continue;
-    const meta = skillLabelFor(segment.name);
-    if (!meta) continue;
+    if (segment.type !== "skill" && segment.type !== "model") continue;
+    const atom = atomJsonForSegment(segment, chips);
+    const type = atom && schema.nodes[atom.type];
+    if (!atom || !type) continue;
     // Only text needs converting; an existing chip is a token run.
     const run = map.runs.find(
       (candidate) =>
@@ -1560,11 +1648,7 @@ export function skillChipReplacements(
     replacements.push({
       from,
       to: from + segment.source.length,
-      node: skillType.create(
-        { skillName: segment.name, skillLabel: meta.label, skillDescription: meta.description },
-        null,
-        doc.nodeAt(from)?.marks,
-      ),
+      node: type.create(atom.attrs, null, doc.nodeAt(from)?.marks),
     });
   }
   return replacements.sort((left, right) => right.from - left.from);
@@ -1639,15 +1723,20 @@ export function pmToFlat(map: RichDocMap, pmPos: number): number {
 
 // Styled boundaries need two caret stops at one position, one for each side's marks.
 
+// Shown Markdown source has real characters at its edges, so it needs no extra stop.
+function styleMarks(marks: readonly Mark[]): readonly Mark[] {
+  return marks.filter((mark) => mark.type.name !== MARKDOWN_SOURCE_MARK);
+}
+
 function styledEdge(state: EditorState) {
   const { selection } = state;
   if (!selection.empty) return null;
   const { $from } = selection;
   if (!$from.parent.inlineContent) return null;
-  const before = $from.nodeBefore?.marks ?? Mark.none;
-  const after = $from.nodeAfter?.marks ?? Mark.none;
+  const before = styleMarks($from.nodeBefore?.marks ?? Mark.none);
+  const after = styleMarks($from.nodeAfter?.marks ?? Mark.none);
   if (Mark.sameSet(before, after)) return null;
-  return { before, after, current: state.storedMarks ?? $from.marks() };
+  return { before, after, current: styleMarks(state.storedMarks ?? $from.marks()) };
 }
 
 export function caretTakesMarksBefore(state: EditorState): boolean {

@@ -99,6 +99,8 @@ function buildTreeEntries(
   return [...result.values()];
 }
 
+const VALID_NAME_PATTERN = /[\u0000-\u001f\u007f]/;
+
 export default function FileBrowserPanel({
   environmentId,
   cwd,
@@ -197,7 +199,7 @@ export default function FileBrowserPanel({
     name !== ".." &&
     !name.includes("/") &&
     !name.includes("\\") &&
-    !/[\u0000-\u001f\u007f]/.test(name);
+    !VALID_NAME_PATTERN.test(name);
 
   const submitEdit = async (value: string) => {
     if (!editing || submittingRef.current) return;
@@ -489,8 +491,11 @@ export default function FileBrowserPanel({
       data-file-browser-panel={`${environmentId}:${cwd}`}
       onDragEnd={() => dragMention.handleDragEnd(() => {})}
     >
-      <div className="flex shrink-0 items-center gap-1 px-2 pb-1.5 pt-2" data-surface-subheader>
-        <div className="flex h-7 min-w-0 flex-1 items-center gap-2 rounded-md bg-[var(--field)] px-2 text-[var(--houston)]">
+      <div
+        className="flex shrink-0 items-center gap-1 px-2 pb-1.5 pt-2 max-phone:px-4 max-phone:pb-2 max-phone:[&_button]:min-h-11 max-phone:[&_button]:min-w-11"
+        data-surface-subheader
+      >
+        <div className="flex h-7 min-w-0 flex-1 items-center gap-2 rounded-md bg-[var(--field)] px-2 text-[var(--houston)] max-phone:h-11 max-phone:px-3">
           <Search className="size-[13px] shrink-0" aria-hidden />
           <input
             type="search"
@@ -543,23 +548,23 @@ export default function FileBrowserPanel({
         <button
           type="button"
           onClick={handleRefresh}
-          className="px-3 py-2 text-left text-xs leading-relaxed text-destructive"
+          className="px-3 py-2 text-left text-xs leading-relaxed text-destructive max-phone:px-4"
         >
           {error ?? pathSearch.error} Click to retry.
         </button>
       ) : null}
       {query.trim() && pathSearch.truncated && !pathSearch.isPending ? (
-        <div className="px-3 py-1 text-xs text-muted-foreground">
+        <div className="px-3 py-1 text-xs text-muted-foreground max-phone:px-4">
           More matches available. Refine your search.
         </div>
       ) : null}
       {loading && !hasNoSearchMatches ? (
-        <div role="status" className="px-3 py-1 text-xs text-muted-foreground">
+        <div role="status" className="px-3 py-1 text-xs text-muted-foreground max-phone:px-4">
           Loading files…
         </div>
       ) : null}
       {hasNoSearchMatches ? (
-        <div role="status" className="px-3 py-4 text-xs text-muted-foreground">
+        <div role="status" className="px-3 py-4 text-xs text-muted-foreground max-phone:px-4">
           No matching files.
         </div>
       ) : (

@@ -25,6 +25,8 @@ export interface SidebarProjectSection {
   readonly grids: ReadonlyArray<SidebarProjectSectionGrid>;
   readonly hiddenGrids: ReadonlyArray<GridRecord>;
   readonly ungroupedThreads: ReadonlyArray<EnvironmentThreadShell>;
+  /** Threads the "Needs you" section already lists; their pips still count them. */
+  readonly needsYouThreads?: ReadonlyArray<EnvironmentThreadShell>;
 }
 
 export interface SidebarProjectSectionsInput {
@@ -36,6 +38,8 @@ export interface SidebarProjectSectionsInput {
   readonly nowIso: string;
   readonly query: string;
   readonly activityAt: (grid: GridRecord) => number;
+  /** Threads lifted into the "Needs you" section, so their project groups do not repeat them. */
+  readonly excludedThreadIds?: ReadonlySet<string> | undefined;
 }
 
 /**
@@ -102,6 +106,9 @@ export function buildSidebarProjectSections(
   input: SidebarProjectSectionsInput,
 ): SidebarProjectSection[] {
   const query = normalizeQuery(input.query);
+  // The "Needs you" section only lifts rows out of the project groups while the rail is not
+  // searching; a search still finds every thread where it lives.
+  const excluded = query.length === 0 ? input.excludedThreadIds : undefined;
   return input.groups.flatMap((group): SidebarProjectSection[] => {
     const members = group.memberProjects.filter((member) => member.archivedAt == null);
     if (members.length === 0) return [];
@@ -110,6 +117,15 @@ export function buildSidebarProjectSections(
         (member) => member.environmentId === group.environmentId && member.id === group.id,
       ) ?? members[0]!;
     const titleMatches = query.length > 0 && group.displayName.toLocaleLowerCase().includes(query);
+    const needsYouThreads: EnvironmentThreadShell[] = [];
+    const liftNeedsYouThread = (thread: EnvironmentThreadShell): boolean =>
+      excluded?.has(thread.id) === true;
+    const lift = (threads: ReadonlyArray<EnvironmentThreadShell>) => {
+      if (excluded === undefined) return threads;
+      const lifted = threads.filter(liftNeedsYouThread);
+      needsYouThreads.push(...lifted);
+      return threads.filter((thread) => !liftNeedsYouThread(thread));
+    };
 
     const orderedGrids = members
       .flatMap((member) =>
@@ -130,7 +146,7 @@ export function buildSidebarProjectSections(
         visibleGridThreads(grid, input.threads, input.nowIso),
         input.threadSort,
       );
-      const threads =
+      const matchedThreads =
         query.length === 0 || titleMatches || gridMatches
           ? gridThreads
           : gridThreads.filter((thread) =>
@@ -143,28 +159,31 @@ export function buildSidebarProjectSections(
                 query,
               ),
             );
+      const threads = lift(matchedThreads);
       if (query.length > 0 && !titleMatches && !gridMatches && threads.length === 0) return [];
       return [{ grid, threads }];
     });
 
-    const ungroupedThreads = sortSectionThreads(
-      members.flatMap((member) =>
-        ungroupedWorkspaceThreads({
-          project: member,
-          grids: input.grids,
-          threads: input.threads,
-          now: input.nowIso,
-        }),
-      ),
-      input.threadSort,
-    ).filter(
-      (thread) =>
-        query.length === 0 ||
-        titleMatches ||
-        threadMatchesGridSearch(
-          { title: thread.title, branch: thread.branch, pullRequests: thread.pullRequests },
-          query,
+    const ungroupedThreads = lift(
+      sortSectionThreads(
+        members.flatMap((member) =>
+          ungroupedWorkspaceThreads({
+            project: member,
+            grids: input.grids,
+            threads: input.threads,
+            now: input.nowIso,
+          }),
         ),
+        input.threadSort,
+      ).filter(
+        (thread) =>
+          query.length === 0 ||
+          titleMatches ||
+          threadMatchesGridSearch(
+            { title: thread.title, branch: thread.branch, pullRequests: thread.pullRequests },
+            query,
+          ),
+      ),
     );
 
     if (query.length > 0 && !titleMatches && grids.length === 0 && ungroupedThreads.length === 0) {
@@ -174,7 +193,8 @@ export function buildSidebarProjectSections(
       group.isScratch &&
       query.length === 0 &&
       grids.length === 0 &&
-      ungroupedThreads.length === 0
+      ungroupedThreads.length === 0 &&
+      needsYouThreads.length === 0
     ) {
       return [];
     }
@@ -189,6 +209,7 @@ export function buildSidebarProjectSections(
         grids,
         hiddenGrids,
         ungroupedThreads,
+        needsYouThreads,
       },
     ];
   });

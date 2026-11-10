@@ -1067,10 +1067,13 @@ export default function GitActionsControl({
   const isRepo = gitStatus?.isRepo ?? true;
   const hasPrimaryRemote = gitStatus?.hasPrimaryRemote ?? false;
   const gitStatusForActions = gitStatus;
-  const changesTotals = resolveChangesTotals(gitStatusForActions) ?? {
-    insertions: 0,
-    deletions: 0,
-  };
+  const resolvedChangesTotals = resolveChangesTotals(gitStatusForActions);
+  const changesTotals = resolvedChangesTotals ?? { insertions: 0, deletions: 0 };
+  const changesBaseLabel = resolvedChangesTotals
+    ? resolvedChangesTotals.baseRef === null
+      ? "Uncommitted"
+      : `vs ${resolvedChangesTotals.baseRef}`
+    : null;
 
   const allFiles = gitStatusForActions?.workingTree.files ?? [];
   // Changed-file paths are repository-relative, so they must resolve against
@@ -1749,6 +1752,18 @@ export default function GitActionsControl({
           <ThreadDetailsRowContent
             icon={<FileDiffIcon aria-hidden />}
             label="Changes"
+            value={
+              changesBaseLabel ? (
+                <Tooltip>
+                  <TooltipTrigger render={<span className="pointer-events-auto" />}>
+                    {changesBaseLabel}
+                  </TooltipTrigger>
+                  <TooltipPopup side="top" className="max-w-96 break-words">
+                    {changesBaseLabel}
+                  </TooltipPopup>
+                </Tooltip>
+              ) : null
+            }
             right={
               <ThreadDetailsRowDiffCount
                 insertions={changesTotals?.insertions ?? 0}

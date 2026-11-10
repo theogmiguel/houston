@@ -1,6 +1,7 @@
 import { SourceControlProviderKind } from "@houston-app/contracts";
 import { PullRequestProviderError } from "@houston-app/source-control-core/server/PullRequestProvider";
 import { limitRecoveryCommand } from "./UsageLimitRecoveryWorker.ts";
+import { createOrchestrationV2TurnItemVisibility } from "@houston-app/shared/orchestrationV2Timeline";
 import * as McpProviderSessions from "@houston-app/provider-core/server/McpProviderSessions";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
@@ -26,6 +27,7 @@ import {
   type PullRequestDetail,
   type PullRequestComment,
   PullRequestOperationError,
+  PullRequestUnavailableError,
   ProviderDriverKind,
   ProviderInstanceId,
   ProviderSessionId,
@@ -429,6 +431,8 @@ it.layer(layerProjectDeletionTest)("project deletion during thread commands", (i
         }
         const save = (name: string, target: ThreadId | null, webhook = false) =>
           tasks.upsert({
+            // As schedule_task sends it, so clearing the thread unbinds the task.
+            threadMode: target === null ? "new_thread" : "continue",
             id: ScheduledTaskId.make(`automation:${deletion}:${name}`),
             title: name,
             prompt: "Check orchestration progress",
@@ -3351,6 +3355,85 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       }),
   );
 
+  it.effect.each(["missing-tool", "unauthenticated"] as const)(
+    "stops watching at once, naming what the host needs, when its credentials are unusable: %s",
+    (failure) =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const threadId = ThreadId.make(`runtime-pull-request-watch-credentials-${failure}`);
+        const projectId = ProjectId.make(`pr-watch-credentials-project-${failure}`);
+        const requirement =
+          "Bitbucket needs API credentials on the server. Add them in Settings → Source Control.";
+        yield* seedProject({
+          projectId,
+          title: "Watch without credentials",
+          workspaceRoot: "/workspace/watch-credentials",
+          defaultModelSelection: null,
+          createdAt: "2026-10-01T00:00:00.000Z",
+        });
+        yield* orchestrator.dispatch({
+          type: "thread.create",
+          createdBy: "user",
+          creationSource: "web",
+          commandId: CommandId.make(`pr-watch-credentials-create-${failure}`),
+          threadId,
+          projectId,
+          title: "Watch without credentials",
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+        });
+        yield* orchestrator.dispatch({
+          type: "thread.pull-request.watch",
+          commandId: CommandId.make(`pr-watch-credentials-start-${failure}`),
+          threadId,
+          host: "bitbucket.org",
+          repository: "acme/private",
+          number: 8,
+          watching: true,
+          link: { url: "https://bitbucket.org/acme/private/pull-requests/8", source: "agent" },
+        });
+        const unusable = new PullRequestUnavailableError({
+          reason: failure === "missing-tool" ? "cli-missing" : "cli-unauthenticated",
+          provider: SourceControlProviderKind.make("bitbucket"),
+          requirement,
+          cause: new PullRequestProviderError({
+            provider: SourceControlProviderKind.make("bitbucket"),
+            operation: "detail",
+            reason: failure,
+            detail: "Bitbucket returned HTTP 404.",
+          }),
+        });
+        const reactor = yield* PullRequestWatchReactor.make.pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              NodeServices.layer,
+              NodeCrypto.layer,
+              Layer.mock(PullRequestService.PullRequestService)({
+                watchFingerprint: () => Effect.fail(unusable),
+                detail: () => Effect.fail(unusable),
+                activity: () => Effect.fail(unusable),
+              }),
+            ),
+          ),
+        );
+        const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+        yield* reactor.sweep.pipe(Effect.ignore, Effect.andThen(worker.drain()));
+
+        const thread = yield* orchestrator.getThreadShell(threadId);
+        assert.isUndefined(thread?.pullRequests?.[0]?.watch);
+        const { messages } = yield* orchestrator.getThreadRecords(threadId, ["messages"]);
+        const wakes = messages.filter((message) => message.notification !== undefined);
+        assert.deepEqual(
+          wakes.map((message) => message.notification?.summary),
+          ["#8: stopped watching, the host needs credentials"],
+        );
+        assert.include(wakes[0]?.text ?? "", requirement);
+      }),
+  );
+
   it.effect("wakes once for a state it reported, across a restart and a new watch", () =>
     Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -4280,6 +4363,83 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
     }),
   );
 
+  it.effect("reads each watched PR as soon as its own fingerprint lands", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const projectId = ProjectId.make("pr-watch-pipeline-project");
+      yield* seedProject({
+        projectId,
+        title: "Watch pipeline",
+        workspaceRoot: "/workspace/watch-pipeline",
+        defaultModelSelection: null,
+        createdAt: "2026-10-01T00:00:00.000Z",
+      });
+      for (const number of [21, 22]) {
+        const threadId = ThreadId.make(`runtime-pull-request-watch-pipeline-${number}`);
+        yield* orchestrator.dispatch({
+          type: "thread.create",
+          createdBy: "user",
+          creationSource: "web",
+          commandId: CommandId.make(`pr-watch-pipeline-create-${number}`),
+          threadId,
+          projectId,
+          title: "Watch pipeline",
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+        });
+        yield* orchestrator.dispatch({
+          type: "thread.pull-request.watch",
+          commandId: CommandId.make(`pr-watch-pipeline-start-${number}`),
+          threadId,
+          host: "github.com",
+          repository: "theogmiguel/houston",
+          number,
+          watching: true,
+          link: { url: `https://github.com/theogmiguel/houston/pull/${number}`, source: "agent" },
+        });
+      }
+      const at = "2026-10-02T12:00:00.000Z";
+      const texts = (number: number) =>
+        orchestrator
+          .getThreadRecords(ThreadId.make(`runtime-pull-request-watch-pipeline-${number}`), [
+            "messages",
+          ])
+          .pipe(Effect.map(({ messages }) => messages.map((message) => message.text).join("\n")));
+      // #21's host answers only after #22 has been read, so waiting on every fingerprint first
+      // never finishes.
+      const read22 = yield* Deferred.make<void>();
+      const host = Layer.mergeAll(
+        NodeServices.layer,
+        NodeCrypto.layer,
+        Layer.mock(PullRequestService.PullRequestService)({
+          watchFingerprint: (input) =>
+            input.number === 21
+              ? Deferred.await(read22).pipe(Effect.as(null))
+              : Effect.succeed(null),
+          detail: (input) =>
+            (input.number === 22 ? Deferred.succeed(read22, undefined) : Effect.void).pipe(
+              Effect.as(watchedPullRequestDetail({ projectId, number: input.number, at })),
+            ),
+          activity: () =>
+            Effect.succeed({
+              comments: [],
+              commentCount: 0,
+              commentsTruncated: false,
+              reviewThreads: [],
+              commits: [],
+            }),
+        }),
+      );
+      const reactor = yield* PullRequestWatchReactor.make.pipe(Effect.provide(host));
+      yield* reactor.sweep;
+      assert.include(yield* texts(21), "#21");
+      assert.include(yield* texts(22), "#22");
+    }),
+  );
+
   it.effect("persists rejected command receipts across retries", () =>
     Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -4728,11 +4888,29 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           });
         });
       yield* holdQueueAfterRestart("settle-automatic-restart");
+      const beforeSettle = yield* orchestrator.getThreadProjection(threadId);
+      const oldestRun = beforeSettle.runs.reduce((oldest, run) =>
+        run.ordinal < oldest.ordinal ? run : oldest,
+      );
+      const latestRun = beforeSettle.runs.reduce((latest, run) =>
+        run.ordinal > latest.ordinal ? run : latest,
+      );
+      const staleSettle = yield* orchestrator
+        .dispatch({
+          type: "thread.settle",
+          commandId: CommandId.make("settle-automatic-stale"),
+          threadId,
+          expectedLatestRunId: oldestRun.id,
+        })
+        .pipe(Effect.flip);
+      assert.equal(staleSettle._tag, "OrchestratorDispatchError");
+      assert.isNull((yield* orchestrator.getThreadProjection(threadId)).thread.settledAt);
 
       yield* orchestrator.dispatch({
         type: "thread.settle",
         commandId: CommandId.make("settle-automatic-settle"),
         threadId,
+        expectedLatestRunId: latestRun.id,
       });
       const settled = yield* orchestrator.getThreadProjection(threadId);
       assert.isNotNull(settled.thread.settledAt);
@@ -7987,6 +8165,8 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
 
   it.effect.each([
     "resume",
+    "resume-started",
+    "resume-untagged",
     "queued-resume",
     "rearm",
     "snooze-race",
@@ -8465,10 +8645,97 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
         yield* orchestrator.dispatch(resume);
       }
       const after = yield* orchestrator.getThreadProjection(threadId);
+      if (
+        scenario === "resume" ||
+        scenario === "resume-started" ||
+        scenario === "resume-untagged"
+      ) {
+        assert.deepInclude(after.messages.at(-1), {
+          text: "Continue where you left off.",
+          createdBy: "agent",
+          creationSource: "server",
+        });
+        const continuation = after.runs.at(-1)!;
+        assert.equal(continuation.status, "starting");
+        if (scenario === "resume-started") {
+          const startedAt = yield* DateTime.now;
+          yield* events.write({
+            events: [
+              {
+                id: EventId.make("recovery:continuation-started:resume-started"),
+                type: "run.updated",
+                threadId,
+                runId: continuation.id,
+                occurredAt: startedAt,
+                payload: { ...continuation, status: "running", startedAt },
+              },
+            ],
+          });
+        }
+        if (scenario === "resume-untagged") {
+          // A server older than the run tag stored the resume run without it.
+          const { usageLimitContinuationOfRunId: _, ...untagged } = continuation;
+          yield* events.write({
+            events: [
+              {
+                id: EventId.make("recovery:continuation-untagged"),
+                type: "run.updated",
+                threadId,
+                runId: continuation.id,
+                occurredAt: yield* DateTime.now,
+                payload: untagged,
+              },
+            ],
+          });
+        }
+        yield* (yield* ProviderRuntimeRecoveryService.ProviderRuntimeRecoveryService).reconcile(
+          "startup",
+        );
+        const restartedShell = (yield* orchestrator.getShellSnapshot()).threads.find(
+          (thread) => thread.id === threadId,
+        )!;
+        const retry = limitRecoveryCommand(
+          restartedShell,
+          true,
+          DateTime.toEpochMillis(yield* DateTime.now),
+        );
+        if (scenario === "resume-started") assert.isNull(retry);
+        else assert(retry?.type === "message.dispatch");
+        if (scenario === "resume") {
+          assert.notEqual(retry!.commandId, resume!.commandId);
+        } else {
+          assert.equal(
+            restartedShell.limitRecovery?.requestId,
+            after.thread.limitRecovery?.requestId,
+          );
+        }
+        if (retry !== null) {
+          yield* orchestrator.dispatch(retry);
+          yield* orchestrator.dispatch(retry);
+        }
+        const resumed = yield* orchestrator.getThreadProjection(threadId);
+        const visible = createOrchestrationV2TurnItemVisibility({
+          runs: resumed.runs,
+          attempts: resumed.attempts,
+          items: resumed.turnItems,
+        });
+        assert.deepEqual(
+          resumed.turnItems.flatMap((item) =>
+            item.type === "user_message" && visible(item) ? [item.runId] : [],
+          ),
+          [run.id, resumed.runs.at(-1)!.id],
+        );
+        assert.deepEqual(
+          resumed.runs.map((row) => row.status),
+          scenario === "resume" ? ["failed", "cancelled", "starting"] : ["failed", "cancelled"],
+        );
+      }
       assert.lengthOf(
         after.runs,
         before.runs.length +
           (scenario === "resume" ||
+          scenario === "resume-started" ||
+          scenario === "resume-untagged" ||
           stopBeforeArm ||
           scenario === "queued-resume" ||
           scenario === "independent-patches" ||
@@ -8480,6 +8747,8 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
         after.messages,
         before.messages.length +
           (scenario === "resume" ||
+          scenario === "resume-started" ||
+          scenario === "resume-untagged" ||
           stopBeforeArm ||
           scenario === "queued-resume" ||
           scenario === "independent-patches" ||

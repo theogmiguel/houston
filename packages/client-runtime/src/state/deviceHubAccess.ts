@@ -18,13 +18,15 @@ export { type DeviceHubAccess, withDeviceHubQuery } from "../device/hubAccess.ts
 
 const TICKET_TIMEOUT_MS = 8_000;
 
+const WS_BASE_PATTERN = /^http/;
+
 export const resolveDeviceHubAccess = Effect.fn("clientRuntime.state.resolveDeviceHubAccess")(
   function* (input: {
     readonly prepared: PreparedConnection;
     readonly hubBasePath: string;
   }): Effect.fn.Return<DeviceHubAccess, RemoteEnvironmentRequestError, HttpClient.HttpClient> {
     const httpBase = environmentEndpointUrl(input.prepared.httpBaseUrl, input.hubBasePath);
-    const wsBase = httpBase.replace(/^http/, "ws");
+    const wsBase = httpBase.replace(WS_BASE_PATTERN, "ws");
     if (input.prepared.httpAuthorization === null) {
       return { httpBase, wsBase, query: {}, credentials: true };
     }

@@ -2,6 +2,8 @@ import { EnvironmentId, ProjectId } from "@houston-app/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
+import "~/index.css";
+
 import type {
   SidebarProjectGroupMember,
   SidebarProjectSnapshot,
@@ -140,6 +142,21 @@ describe("settings scope sentence", () => {
     expect(projectTrigger().element().querySelector("svg")).not.toBeNull();
   });
 
+  it("keeps the sentence at body size, regular weight, with the chosen values medium", async () => {
+    setup();
+    await using screen = await render(<SettingsScopeSentence />, { router: "/settings/providers" });
+
+    const sentence = screen.getByText("Applying settings for").element().closest("p")!;
+    const sentenceStyle = getComputedStyle(sentence);
+    expect(sentenceStyle.fontSize).toBe("13px");
+    expect(sentenceStyle.fontWeight).toBe("400");
+    for (const trigger of [projectTrigger(), environmentTrigger()]) {
+      const style = getComputedStyle(trigger.element());
+      expect(style.fontSize).toBe("13px");
+      expect(style.fontWeight).toBe("500");
+    }
+  });
+
   it("keeps the project selection and its menu primitive rows", async () => {
     const scope = setup();
     await using _screen = await render(<SettingsScopeSentence />, {
@@ -229,16 +246,14 @@ describe("settings scope sentence", () => {
     expect(path?.textContent).toContain("/repos/alpha");
   });
 
-  it("states that a device-only page ignores the project scope", async () => {
+  it("shows no scope line on a device-only page", async () => {
     setup();
     await using screen = await render(<SettingsScopeSentence />, {
       router: "/settings/appearance",
     });
 
-    expect(screen.container.textContent).toContain("App-wide.");
-    expect(screen.container.textContent).toContain(
-      "These settings apply to the app on this machine, not to a project.",
-    );
+    expect(screen.container.textContent).not.toContain("App-wide.");
+    expect(screen.container.textContent?.trim()).toBe("");
     expect(screen.getByRole("button", { name: /^Project scope:/ }).query()).toBeNull();
   });
 

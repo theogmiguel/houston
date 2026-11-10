@@ -16,6 +16,8 @@ interface ComposerPendingApprovalActionsProps {
   isResponding: boolean;
   canRespond: boolean;
   disabled?: boolean;
+  /** Full-height, equal-width decisions for a touch screen. */
+  phone?: boolean;
   options?: ReadonlyArray<ProviderApprovalOption> | undefined;
   onRespondToApproval: (
     requestId: RuntimeRequestId,
@@ -36,6 +38,7 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
   isResponding,
   canRespond,
   disabled = false,
+  phone = false,
   options = DEFAULT_APPROVAL_OPTIONS,
   onRespondToApproval,
 }: ComposerPendingApprovalActionsProps) {
@@ -61,7 +64,15 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
         const content = (
           <>
             {option.warning ? <TriangleAlertIcon className="size-3 shrink-0" /> : null}
-            <span className={presentation === "inline" ? "whitespace-normal" : "max-w-40 truncate"}>
+            <span
+              className={
+                presentation === "inline"
+                  ? "whitespace-normal"
+                  : phone
+                    ? "truncate"
+                    : "max-w-40 truncate"
+              }
+            >
               {option.label}
             </span>
           </>
@@ -81,6 +92,7 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
               {...buttonProps}
               size="xs"
               variant={option.decision === "accept" ? "default" : "outline"}
+              {...(phone ? { className: "h-11 min-w-0 flex-1 text-sm" } : {})}
             >
               {content}
             </Button>
@@ -102,7 +114,12 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
               presentation === "inline" ? (
                 <InlineButton tone="muted" aria-label="More approval options" />
               ) : (
-                <Button size="icon-xs" variant="outline" aria-label="More approval options" />
+                <Button
+                  size="icon-xs"
+                  variant="outline"
+                  aria-label="More approval options"
+                  {...(phone ? { className: "size-11 shrink-0" } : {})}
+                />
               )
             }
           >

@@ -98,10 +98,12 @@ function parseSkillFrontmatter(contents: string, fileName: string) {
   }
 }
 
+const SKILL_PATH_SORT_KEY_PATTERN = /[!'()*?#]/g;
+
 /** The native loader orders child paths with Go's URL.EscapedPath encoding. */
 function skillPathSortKey(entry: string) {
   return encodeURI(entry).replace(
-    /[!'()*?#]/g,
+    SKILL_PATH_SORT_KEY_PATTERN,
     (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
   );
 }

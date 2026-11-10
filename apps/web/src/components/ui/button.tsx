@@ -18,21 +18,40 @@ const buttonVariants = cva(
           "h-(--h-ctl) gap-1 rounded-[var(--r-ctl)] px-2 text-xs [&_svg:not([class*='size-'])]:size-3.5",
         default: "h-(--h-ctl) px-3",
         icon: "size-7",
-        "icon-micro": "size-5 rounded-[var(--r-badge)] p-0 [&_svg:not([class*='size-'])]:size-3",
-        "icon-tiny": "size-4 p-0 [&_svg:not([class*='size-'])]:size-3",
+        "icon-phone-back": "-ms-3.5 size-11 shrink-0",
+        "icon-micro":
+          "touch-exempt size-5 rounded-[var(--r-badge)] p-0 [&_svg:not([class*='size-'])]:size-3",
+        "icon-tiny": "touch-exempt size-4 p-0 [&_svg:not([class*='size-'])]:size-3",
         "icon-sm": "size-[22px] rounded-[var(--r-ctl)] [&_svg:not([class*='size-'])]:size-3.5",
+        "icon-sm-pill": "size-(--h-ctl) rounded-full p-0 [&_svg:not([class*='size-'])]:size-3.5",
         "icon-xs":
           "size-7 sm:size-6 not-in-data-[slot=input-group]:[&_svg:not([class*='size-'])]:size-4 sm:not-in-data-[slot=input-group]:[&_svg:not([class*='size-'])]:size-3.5",
         micro:
           "h-5 gap-1 rounded-[var(--r-badge)] px-1.5 text-[11px] [&_svg:not([class*='size-'])]:size-3",
         multiline: "min-h-9 px-3 py-1.5 whitespace-normal sm:min-h-8",
         sm: "h-[22px] gap-1.5 px-2 text-xs [&_svg:not([class*='size-'])]:size-3.5",
+        "sm-pill":
+          "h-(--h-pill) gap-1.5 rounded-full px-2.5 text-xs [&_svg:not([class*='size-'])]:size-3.5",
         selection:
           "h-(--h-pill) gap-1.5 rounded-[7px] px-2.5 text-xs [&_svg:not([class*='size-'])]:size-3.5",
         "sm-multiline":
           "min-h-[22px] gap-1.5 px-2 py-1 whitespace-normal [&_svg:not([class*='size-'])]:size-3.5",
         xs: "h-6 gap-1 px-2 text-xs [&_svg:not([class*='size-'])]:size-3.5",
+        // A 44px action under a phone empty state.
+        touch: "h-11 px-4 text-sm",
+        // A full-width 44px action row in a phone sheet; the icon sits on the 16px inset.
+        "sheet-row":
+          "h-11 w-full justify-start gap-2 rounded-none border-0 px-4 text-sm font-normal [&_svg]:mx-0",
       },
+      // Cancels a ghost button's side padding on a phone so its label sits on the content inset
+      // (xs and sm sizes pad 8px plus a 1px border; an icon-only 44px button insets its glyph 15px).
+      inset: {
+        start: "max-phone:-ms-[9px]",
+        end: "max-phone:-me-[9px]",
+        "end-icon": "max-phone:-me-[15px]",
+      },
+      // An inline affordance set inside text keeps its size instead of growing to a phone tap target.
+      touch: { exempt: "touch-exempt" },
       variant: {
         default:
           "border-transparent bg-primary text-primary-foreground [:hover,[data-pressed]]:bg-[var(--primary-hover)]",
@@ -75,15 +94,17 @@ type ButtonSize = NonNullable<VariantProps<typeof buttonVariants>["size"]>;
 interface ButtonProps extends useRender.ComponentProps<"button"> {
   variant?: ButtonVariant;
   size?: ButtonSize;
+  inset?: "start" | "end" | "end-icon";
+  touch?: "exempt";
 }
 
-function Button({ className, variant, size, render, ...props }: ButtonProps) {
+function Button({ className, variant, size, inset, touch, render, ...props }: ButtonProps) {
   const typeValue: React.ButtonHTMLAttributes<HTMLButtonElement>["type"] = render
     ? undefined
     : "button";
 
   const defaultProps = {
-    className: cn(buttonVariants({ className, size, variant })),
+    className: cn(buttonVariants({ className, inset, size, touch, variant })),
     "data-slot": "button",
     type: typeValue,
   };
@@ -102,6 +123,9 @@ const inlineButtonVariants = cva(
   {
     defaultVariants: { tone: "default" },
     variants: {
+      touchTarget: {
+        padded: "pointer-coarse:min-h-11 pointer-coarse:px-1.5",
+      },
       tone: {
         default: "text-foreground",
         muted: "text-muted-foreground hover:text-foreground",
@@ -116,11 +140,12 @@ const inlineButtonVariants = cva(
 export function InlineButton({
   className,
   tone,
+  touchTarget,
   render,
   ...props
 }: useRender.ComponentProps<"button"> & VariantProps<typeof inlineButtonVariants>) {
   const defaultProps = {
-    className: cn(inlineButtonVariants({ tone }), className),
+    className: cn(inlineButtonVariants({ tone, touchTarget }), className),
     "data-slot": "inline-button",
     type: render ? undefined : ("button" as const),
   };

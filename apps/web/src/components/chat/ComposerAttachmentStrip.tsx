@@ -6,7 +6,7 @@ import type {
   SnapShotSource,
 } from "@houston-app/contracts";
 import { formatAttachmentSize } from "@houston-app/client-runtime/state/attachments";
-import { CircleAlertIcon, PlayIcon, PlusIcon, XIcon } from "lucide-react";
+import { CircleAlertIcon, PaperclipIcon, PlayIcon, XIcon } from "lucide-react";
 import { type ComponentProps, useLayoutEffect, useRef } from "react";
 
 import {
@@ -145,8 +145,10 @@ function AttachmentTileRetryButton(props: {
   );
 }
 
+const EXTENSION_PATTERN = /(\.[^./\\]+)$/;
+
 function filePickerAccept(name: string): string | undefined {
-  const extension = name.match(/(\.[^./\\]+)$/)?.[1];
+  const extension = name.match(EXTENSION_PATTERN)?.[1];
   return extension;
 }
 
@@ -899,7 +901,7 @@ export function ComposerAttachButton({
             />
           }
         >
-          <PlusIcon />
+          <PaperclipIcon />
         </TooltipTrigger>
         <TooltipPopup>Attach files</TooltipPopup>
       </Tooltip>

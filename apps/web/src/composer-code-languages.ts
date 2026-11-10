@@ -62,13 +62,17 @@ const LANGUAGE_ALIASES: Record<string, string> = {
   yml: "yaml",
 };
 
+const WHITESPACE_RUN = /\s+/;
+
 export function languageOfInfoString(info: string): string {
-  return info.trim().split(/\s+/, 1)[0] ?? "";
+  return info.trim().split(WHITESPACE_RUN, 1)[0] ?? "";
 }
+
+const LEADING_WHITESPACE = /^\s*/;
 
 /** Plain text clears the language unless trailing metadata would be parsed as one. */
 export function withInfoStringLanguage(info: string, language: string): string {
-  const leading = /^\s*/.exec(info)![0];
+  const leading = LEADING_WHITESPACE.exec(info)![0];
   const rest = info.slice(leading.length + languageOfInfoString(info).length);
   if (language) return `${leading}${language}${rest}`;
   return rest.trim() ? `${leading}text${rest}` : "";

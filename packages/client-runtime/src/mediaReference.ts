@@ -10,11 +10,14 @@ export type MediaReference =
     }
   | { readonly kind: "url"; readonly url: string };
 
+const ABSOLUTE_MEDIA_PREFIX = /^(?:[a-z]:\/|\/\/[^/]+\/[^/]+(?:\/|$))/i;
+const TRAILING_SLASH = /\/$/;
+
 function absolutePathParts(path: string) {
   const windows = isWindowsAbsolutePath(path) || path.startsWith("//");
   const normalized = windows ? path.replaceAll("\\", "/") : path;
   const prefix = windows
-    ? /^(?:[a-z]:\/|\/\/[^/]+\/[^/]+(?:\/|$))/i.exec(normalized)?.[0]
+    ? ABSOLUTE_MEDIA_PREFIX.exec(normalized)?.[0]
     : normalized.startsWith("/")
       ? "/"
       : undefined;
@@ -26,7 +29,7 @@ function absolutePathParts(path: string) {
     if (segment === "..") segments.pop();
     else segments.push(segment);
   }
-  const root = prefix.replace(/\/$/, "");
+  const root = prefix.replace(TRAILING_SLASH, "");
   return { root: windows ? root.toLowerCase() : root, segments, windows };
 }
 
@@ -57,11 +60,13 @@ export function mediaFileReference(
   };
 }
 
+const HTTP_OR_PROTOCOL_RELATIVE_URL = /^(?:https?:\/\/|\/\/)/i;
+
 /** Pass the authored source, not a generated URL used by the media player. */
 export function mediaUrlReference(
   url: string,
 ): Extract<MediaReference, { kind: "url" }> | undefined {
-  if (!/^(?:https?:\/\/|\/\/)/i.test(url)) return undefined;
+  if (!HTTP_OR_PROTOCOL_RELATIVE_URL.test(url)) return undefined;
   try {
     const parsed = new URL(url.startsWith("//") ? `https:${url}` : url);
     return parsed.protocol === "http:" || parsed.protocol === "https:"
@@ -72,11 +77,13 @@ export function mediaUrlReference(
   }
 }
 
+const PATH_SEPARATOR = /[\\/]/;
+
 /** Local paths are already decoded; URL filename escapes are decoded exactly once. */
 export function mediaReferenceFileName(reference: MediaReference): string | undefined {
   if (reference.kind === "file") {
     const windows = isWindowsAbsolutePath(reference.path) || reference.path.startsWith("//");
-    return reference.path.split(windows ? /[\\/]/ : "/").at(-1) || undefined;
+    return reference.path.split(windows ? PATH_SEPARATOR : "/").at(-1) || undefined;
   }
 
   let basename: string | undefined;

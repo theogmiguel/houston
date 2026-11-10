@@ -126,6 +126,39 @@ describe("composerSubmissionIntentForKey", () => {
     ).toBe(expected);
   });
 
+  it.each([
+    ["enter", "one line", false, "foreground"],
+    ["enter", "one line", true, "foreground"],
+    ["mod-enter", "one line", false, null],
+    ["mod-enter", "one line", true, "foreground"],
+    ["mod-enter-multiline", "two\nlines", true, "foreground"],
+  ] as const)(
+    "sends normally on a draft thread with %s and the default keys (%j, ctrl %s)",
+    (sendShortcut, prompt, ctrlKey, expected) => {
+      expect(
+        composerSubmissionIntentForKey({
+          ...input,
+          isDraftThread: true,
+          event: { ...enter, ctrlKey },
+          sendShortcut,
+          prompt,
+        }),
+      ).toBe(expected);
+    },
+  );
+
+  it("starts a draft thread in the background with Ctrl+Alt+Enter", () => {
+    expect(
+      composerSubmissionIntentForKey({
+        ...input,
+        isDraftThread: true,
+        event: { ...enter, ctrlKey: true, altKey: true },
+        sendShortcut: "mod-enter",
+        prompt: "one line",
+      }),
+    ).toBe("background");
+  });
+
   it("honors the send preference with an existing install's saved alternate binding", () => {
     const keybindings = mergeWithDefaultKeybindings(
       compileResolvedKeybindingsConfig([
@@ -224,6 +257,13 @@ describe("composerSubmissionIntentForKey", () => {
       ).toBe("alternate");
       expect(
         composerSubmissionIntentForKey({ ...keyboardOpen, isDraftThread: true, event: modEnter }),
+      ).toBe("foreground");
+      expect(
+        composerSubmissionIntentForKey({
+          ...keyboardOpen,
+          isDraftThread: true,
+          event: { ...modEnter, altKey: true },
+        }),
       ).toBe("background");
     },
   );
@@ -567,7 +607,7 @@ describe("parseSideChatCommand", () => {
     expect(parseSideChatCommand("/sidebar")).toBeNull();
     expect(parseSideChatCommand("/btwx")).toBeNull();
     expect(parseSideChatCommand("ask /side later")).toBeNull();
-    const items = (["side", "btw", "plan"] as const).map((command) => ({
+    const items = (["side", "btw", "clear", "plan"] as const).map((command) => ({
       id: `slash:${command}`,
       type: "slash-command" as const,
       command,

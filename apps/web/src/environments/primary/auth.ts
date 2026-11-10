@@ -197,7 +197,8 @@ export async function fetchSessionState(): Promise<AuthSessionState> {
   });
 }
 
-function readHttpApiStatus(error: unknown): number | null {
+/** The HTTP status a request failure carries, or null when no response came back. */
+export function readHttpApiStatus(error: unknown): number | null {
   if (isEnvironmentHttpCommonError(error)) {
     return readEnvironmentHttpErrorStatus(error);
   }
@@ -486,9 +487,11 @@ export async function revokeOtherServerClientSessions(): Promise<number> {
   }
 }
 
+const TRAILING_SLASHES = /\/+$/;
+
 export async function resolveInitialServerAuthGateState(): Promise<ServerAuthGateState> {
   // Preserve explicit grant replacement across the auth-gate reload triggered by token removal.
-  if (window.location.pathname.replace(/\/+$/, "") !== "/pair") {
+  if (window.location.pathname.replace(TRAILING_SLASHES, "") !== "/pair") {
     explicitPairingRequested = false;
   } else if (peekPairingTokenFromUrl()) {
     explicitPairingRequested = true;

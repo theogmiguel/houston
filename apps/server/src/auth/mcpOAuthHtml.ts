@@ -1,6 +1,8 @@
+const HTML_SPECIAL_CHARACTER = /[&<>"']/gu;
+
 const escapeHtml = (value: string) =>
   value.replace(
-    /[&<>"']/gu,
+    HTML_SPECIAL_CHARACTER,
     (character) =>
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!,
   );

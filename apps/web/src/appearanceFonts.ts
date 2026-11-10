@@ -37,11 +37,14 @@ export function resolveTerminalFontSizePreference(input: {
   return input.code;
 }
 
+const QUOTED_FONT_NAME = /^(['"]).*\1$/;
+const SIMPLE_FONT_IDENTIFIER = /^[a-zA-Z][a-zA-Z0-9-]*$/;
+
 function quoteFontFamilyName(name: string): string {
   const bare = name.trim();
   if (bare.length === 0) return "";
-  if (/^(['"]).*\1$/.test(bare)) return bare;
-  if (/^[a-zA-Z][a-zA-Z0-9-]*$/.test(bare)) return bare;
+  if (QUOTED_FONT_NAME.test(bare)) return bare;
+  if (SIMPLE_FONT_IDENTIFIER.test(bare)) return bare;
   return `"${bare.replaceAll('"', "")}"`;
 }
 
@@ -138,11 +141,13 @@ function probeWidth(fontList: string): number | null {
   return fontProbeContext.measureText(FONT_PROBE_TEXT).width;
 }
 
+const GENERIC_FONT_FAMILY = /^(system-ui|sans-serif|serif|monospace|ui-monospace)$/i;
+
 /** Probes canvas metrics because document.fonts.check() accepts uninstalled families. */
 export function isFontFamilyAvailable(family: string): boolean {
   const families = cssFontFamilies(family);
   if (families === null) return false;
-  if (/^(system-ui|sans-serif|serif|monospace|ui-monospace)$/i.test(families)) return true;
+  if (GENERIC_FONT_FAMILY.test(families)) return true;
   try {
     for (const generic of ["monospace", "serif", "sans-serif"]) {
       const baseline = probeWidth(generic);
@@ -241,6 +246,8 @@ function widthsMatch(left: number, right: number): boolean {
   return Math.abs(left - right) < 0.01;
 }
 
+const APPLE_PLATFORM = /mac|iphone|ipad|ipod/i;
+
 function resolveGenericFamilyLabel(generic: string): string | null {
   const lower = generic.toLowerCase();
   if (lower === "serif") return null;
@@ -255,7 +262,7 @@ function resolveGenericFamilyLabel(generic: string): string | null {
     }
   }
   // Unnameable Apple faces need -apple-system metrics to distinguish the UI face from SF Mono.
-  if (/mac|iphone|ipad|ipod/i.test(navigator.platform)) {
+  if (APPLE_PLATFORM.test(navigator.platform)) {
     const systemWidth = measureDomProbeWidth("-apple-system");
     if (systemWidth !== null && widthsMatch(genericWidth, systemWidth)) return "SF Pro";
     return monoLike ? "SF Mono" : "SF Pro";
@@ -271,17 +278,17 @@ const PRODUCT_FONT_LABELS: Readonly<Record<string, string>> = {
   "JetBrains Mono": "JetBrains Mono",
 };
 
+const FAMILY_PATTERN = /^(['"])(.*)\1$/;
+const SYSTEM_FONT_FAMILY =
+  /^(system-ui|sans-serif|serif|monospace|ui-monospace|-apple-system|BlinkMacSystemFont)$/i;
+
 export function resolveDefaultFamilyLabel(stack: string): string | null {
   for (const raw of stack.split(",")) {
-    const family = raw.trim().replace(/^(['"])(.*)\1$/, "$2");
+    const family = raw.trim().replace(FAMILY_PATTERN, "$2");
     if (family.length === 0) continue;
     const productLabel = PRODUCT_FONT_LABELS[family];
     if (productLabel !== undefined) return productLabel;
-    if (
-      /^(system-ui|sans-serif|serif|monospace|ui-monospace|-apple-system|BlinkMacSystemFont)$/i.test(
-        family,
-      )
-    ) {
+    if (SYSTEM_FONT_FAMILY.test(family)) {
       const resolved = resolveGenericFamilyLabel(family);
       if (resolved !== null) return resolved;
       continue;

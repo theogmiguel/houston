@@ -3,7 +3,7 @@ import { Globe, History, RadioTower } from "lucide-react";
 
 import type { BrowserHistoryEntry } from "~/browserHistoryStore";
 import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from "~/components/ui/empty";
-import { DiscoveryList } from "../ui/discovery-list";
+import { DiscoveryIntro, DiscoveryList } from "../ui/discovery-list";
 
 import { PreviewLocalServerCard } from "./PreviewLocalServerCard";
 import { PreviewRecentUrlCard } from "./PreviewRecentUrlCard";
@@ -48,8 +48,11 @@ export function PreviewEmptyState({
   }
 
   return (
-    <div className="scrollbar-gutter-both flex h-full min-h-0 overflow-y-auto px-5 py-8">
+    <div className="scrollbar-gutter-both flex h-full min-h-0 overflow-y-auto px-5 pt-10 pb-8">
       <div className="mx-auto flex w-full max-w-xl flex-col gap-6">
+        <DiscoveryIntro title="Open a page">
+          Pick a recent page or a local server this thread started, or type a URL above.
+        </DiscoveryIntro>
         {recents.length > 0 ? (
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -85,9 +88,6 @@ export function PreviewEmptyState({
                 />
               ))}
             </DiscoveryList>
-            <p className="px-1 text-xs text-muted-foreground">
-              Select a live local server to open it in this browser tab.
-            </p>
           </div>
         ) : null}
       </div>

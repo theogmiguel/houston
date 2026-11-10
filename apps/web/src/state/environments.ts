@@ -105,7 +105,3 @@ export function useEnvironmentMachines() {
 export function useConnectedEnvironmentIds() {
   return useAtomValue(environmentSummaries.connectedEnvironmentIdsAtom);
 }
-
-export function useEnvironmentConnectionSummaries() {
-  return useAtomValue(environmentSummaries.environmentsAtom);
-}

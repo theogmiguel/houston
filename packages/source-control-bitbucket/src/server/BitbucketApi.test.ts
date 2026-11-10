@@ -1,4 +1,4 @@
-import { SourceControlProviderKind } from "@houston-app/contracts";
+import { SecretProviderId, SourceControlProviderKind } from "@houston-app/contracts";
 import { assert, it, vi } from "@effect/vitest";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -673,6 +673,24 @@ it.effect("prefers credentials saved in settings over the environment, without a
     });
     yield* bitbucket.probeAuth;
     assert.strictEqual(lastAuthorization(), basic("user@example.com", "token"));
+
+    // A reference left in place by getWithSecrets is one its secret provider could not read.
+    const requests = execute.mock.calls.length;
+    yield* settings.update({
+      sourceControlHosts: {
+        bitbucket: {
+          accessToken: { provider: SecretProviderId.make("vault"), reference: "bb#token" },
+        },
+      },
+    });
+    const auth = yield* bitbucket.probeAuth;
+    assert.strictEqual(auth.status, "unauthenticated");
+    assert.include(Option.getOrThrow(auth.detail), '"vault"');
+    const error = yield* Effect.flip(
+      bitbucket.listPullRequests({ cwd: "/repo", headSelector: "feature", state: "open" }),
+    );
+    assert.strictEqual(error._tag, "SettingsSecretUnresolvedError");
+    assert.strictEqual(execute.mock.calls.length, requests);
   }).pipe(Effect.provide(layer));
 });
 
@@ -720,6 +738,35 @@ it.effect("reports saved credentials as configured when Bitbucket cannot confirm
       host: Option.some("bitbucket.org"),
       detail: Option.some("An access token is configured."),
     });
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("marks a failed response to a request sent without credentials as anonymous", () => {
+  const { execute, layer } = makeLayer({
+    response: () => Response.json({ type: "error" }, { status: 404 }),
+    env: { HOUSTON_BITBUCKET_API_BASE_URL: "https://api.test.local/2.0" },
+  });
+
+  return Effect.gen(function* () {
+    const bitbucket = yield* BitbucketApi.BitbucketApi;
+    const settings = yield* TestSourceControlHost.TestSourceControlHostSettings;
+    const read = bitbucket
+      .request({ method: "GET", url: "/repositories/acme/private/pullrequests/7" })
+      .pipe(Effect.flip);
+
+    const anonymous = yield* read;
+    assert.strictEqual(execute.mock.calls.at(-1)?.[0].headers.authorization, undefined);
+    assert.instanceOf(anonymous, BitbucketApi.BitbucketResponseError);
+    assert.strictEqual(anonymous.status, 404);
+    assert.strictEqual(anonymous.anonymous, true);
+
+    yield* settings.update({
+      sourceControlHosts: { bitbucket: { accessToken: "saved-access-token" } },
+    });
+    const authenticated = yield* read;
+    assert.instanceOf(authenticated, BitbucketApi.BitbucketResponseError);
+    assert.strictEqual(authenticated.status, 404);
+    assert.strictEqual(authenticated.anonymous, undefined);
   }).pipe(Effect.provide(layer));
 });
 

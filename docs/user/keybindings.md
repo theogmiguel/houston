@@ -38,6 +38,7 @@ Keybindings are stored by the server, so they apply to the environment you are e
 | `Ctrl+Shift+[` / `Ctrl+Shift+]` | Previous / next thread                                                  |
 | `Ctrl+1` … `Ctrl+9`             | Jump to a thread                                                        |
 | `Ctrl+Shift+Enter`              | Steer the first queued message; in a grid, maximize or restore the cell |
+| `Ctrl+Alt+Enter`                | Send in the background                                                  |
 | `Esc`                           | Stop the current turn                                                   |
 | `Ctrl+S`                        | Stash the composer prompt                                               |
 | `Ctrl+Shift+M`                  | Model picker                                                            |
@@ -74,8 +75,13 @@ In a diff, `Ctrl+F` opens find, `Enter` and `Shift+Enter` move between matches, 
 toggles case matching. In Changes, `/` focuses the file filter and `J`/`K` move between
 matches.
 
-In the sidebar, `F2` renames the selected thread or grid. Drag to reorder pinned and active
-threads; the rail follows the same order.
+In the sidebar, `F2` renames the focused thread or grid. `Up`, `Down`, `Home` and `End`
+move between rows, `Left` and `Right` collapse or expand a section or move to its parent or
+first child, and `Enter` or `Space` opens the focused row. While the search field has focus,
+`Down` and `Up` move the highlighted result and `Enter` opens it. Holding the jump modifier
+labels the first nine rows with their `Ctrl+1` … `Ctrl+9` shortcut. Drag a thread onto
+another thread in its grid to reorder it, onto a grid heading to move it to that grid, or onto
+**Closed** to close it.
 
 ## Usage
 

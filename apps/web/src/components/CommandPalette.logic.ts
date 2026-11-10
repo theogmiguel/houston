@@ -35,7 +35,7 @@ import { formatRelativeTimeLabel } from "../timestampFormat";
 import { type Project, type SidebarThreadSummary, type Thread } from "../types";
 import { isSidebarHiddenThread } from "./Sidebar.logic";
 
-export const RECENT_THREAD_LIMIT = 12;
+export const RECENT_THREAD_LIMIT = 5;
 export const ITEM_ICON_CLASS = "size-4 text-icon-muted";
 export const ADDON_ICON_CLASS = "size-4";
 
@@ -429,6 +429,8 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
   activeThread?: Pick<Thread, "environmentId" | "id">;
   projectByKey: ReadonlyMap<string, Pick<Project, "title">>;
   icon: ReactNode;
+  /** Overrides `icon` per row, e.g. a thread's own status glyph. */
+  renderIcon?: (thread: TThread) => ReactNode;
   renderLeadingContent?: (thread: TThread) => ReactNode;
   renderTrailingContent?: (thread: TThread) => ReactNode;
   renderDescription?: (thread: TThread, meta: { projectTitle: string | undefined }) => ReactNode;
@@ -485,7 +487,7 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
         timestamp: formatRelativeTimeLabel(
           thread.latestUserMessageAt ?? thread.updatedAt ?? thread.createdAt,
         ),
-        icon: input.icon,
+        icon: input.renderIcon?.(thread) ?? input.icon,
       },
       leadingContent ? { titleLeadingContent: leadingContent } : {},
       trailingContent ? { titleTrailingContent: trailingContent } : {},
@@ -545,6 +547,10 @@ function scorePaletteItem(
  * Equal match classes put commands before threads, so "new" runs "New thread".
  * Server message matches stay in a final group so late results cannot move earlier rows.
  */
+function isActionGroup(group: CommandPaletteGroup): boolean {
+  return group.value === "actions" || group.value === "commands";
+}
+
 export function filterCommandPaletteGroups(input: {
   activeGroups: ReadonlyArray<CommandPaletteGroup>;
   query: string;
@@ -578,16 +584,18 @@ export function filterCommandPaletteGroups(input: {
 
   if (normalizedQuery.length === 0) {
     if (isActionsFilter) {
-      return input.activeGroups.filter((group) => group.value === "actions");
+      return input.activeGroups.filter(isActionGroup);
     }
     return [...input.activeGroups];
   }
 
   let baseGroups = [...input.activeGroups];
   if (isActionsFilter) {
-    baseGroups = baseGroups.filter((group) => group.value === "actions");
+    baseGroups = baseGroups.filter(isActionGroup);
   } else if (!input.isInSubmenu) {
-    baseGroups = baseGroups.filter((group) => group.value !== "recent-threads");
+    baseGroups = baseGroups.filter(
+      (group) => group.value !== "recent-threads" && group.value !== "projects",
+    );
   }
 
   const searchableGroups = [...baseGroups];
@@ -664,6 +672,8 @@ export function filterCommandPaletteGroups(input: {
     : [...groups, { value: "threads-messages", label: "In messages", items: messageItems }];
 }
 
+const TRAILING_ELLIPSIS = /(\.\.\.|…)$/u;
+
 /** Every option inside a submenu as one row, e.g. "New thread in houston" or "Change theme: Dracula". */
 export function buildNestedSearchItems(
   items: ReadonlyArray<CommandPaletteActionItem | CommandPaletteSubmenuItem>,
@@ -675,7 +685,7 @@ export function buildNestedSearchItems(
   const foldedQuery = foldSearchQuery(query);
   return items.flatMap((parent) => {
     if (parent.kind !== "submenu" || typeof parent.title !== "string") return [];
-    const stem = parent.title.replace(/(\.\.\.|…)$/u, "");
+    const stem = parent.title.replace(TRAILING_ELLIPSIS, "");
     // A query that only names the submenu ("new thread in") wants the submenu row itself.
     if (foldSearchQuery(stem).startsWith(foldedQuery)) return [];
     const prefix = stem === parent.title ? `${stem}: ` : `${stem.trimEnd()} `;
@@ -764,20 +774,47 @@ export function getCommandPaletteMode(input: {
   return input.isBrowsing ? "root-browse" : "root";
 }
 
+/** An action that is not offered is left out, never dimmed in the list. */
+export function availablePaletteActions<
+  TItem extends CommandPaletteActionItem | CommandPaletteSubmenuItem,
+>(items: ReadonlyArray<TItem>): TItem[] {
+  return items.filter((item) => !item.disabled);
+}
+
+/** The everyday commands the opening list leads with, in display order. */
+export const ROOT_COMMAND_VALUES: ReadonlyArray<string> = [
+  "action:new-thread",
+  "action:new-thread-without-project",
+  "action:grid-new",
+  "action:settings",
+  "action:change-appearance",
+];
+
 export function buildRootGroups(input: {
   actionItems: ReadonlyArray<CommandPaletteActionItem | CommandPaletteSubmenuItem>;
+  projectItems: ReadonlyArray<CommandPaletteActionItem>;
   recentThreadItems: ReadonlyArray<CommandPaletteActionItem>;
 }): CommandPaletteGroup[] {
   const groups: CommandPaletteGroup[] = [];
-  if (input.actionItems.length > 0) {
-    groups.push({ value: "actions", label: "Actions", items: input.actionItems });
+  const commandItems = ROOT_COMMAND_VALUES.flatMap((value) =>
+    input.actionItems.filter((item) => item.value === value),
+  );
+  const otherActions = input.actionItems.filter((item) => !commandItems.includes(item));
+  if (commandItems.length > 0) {
+    groups.push({ value: "commands", label: "Commands", items: commandItems });
   }
   if (input.recentThreadItems.length > 0) {
     groups.push({
       value: "recent-threads",
-      label: "Recent Threads",
+      label: "Recent threads",
       items: input.recentThreadItems,
     });
+  }
+  if (input.projectItems.length > 0) {
+    groups.push({ value: "projects", label: "Projects", items: input.projectItems });
+  }
+  if (otherActions.length > 0) {
+    groups.push({ value: "actions", label: "Actions", items: otherActions });
   }
   return groups;
 }
@@ -907,4 +944,27 @@ export function newThreadNoProjectIndex(
   }
   const pinnedCount = projects.filter((entry) => entry.pinned).length;
   return Math.min(pinnedCount + 1, projects.length);
+}
+
+/** Margin kept under a snapped list so its last row does not touch the panel edge; matches the list's top padding. */
+export const COMMAND_PALETTE_LIST_BOTTOM_INSET_PX = 8;
+
+/**
+ * The list viewport height that ends at the bottom of the last row that fits whole in
+ * `availablePx` once the bottom inset is reserved, or
+ * `undefined` when every row fits already or none does. `rowBottoms` are the rows' bottom edges
+ * in list-content pixels, top padding included.
+ */
+export function snapCommandPaletteListHeight(input: {
+  readonly rowBottoms: ReadonlyArray<number>;
+  readonly contentHeightPx: number;
+  readonly availablePx: number;
+}): number | undefined {
+  if (input.contentHeightPx <= input.availablePx) return undefined;
+  const limit = input.availablePx - COMMAND_PALETTE_LIST_BOTTOM_INSET_PX;
+  let snapped: number | undefined;
+  for (const bottom of input.rowBottoms) {
+    if (bottom <= limit && (snapped === undefined || bottom > snapped)) snapped = bottom;
+  }
+  return snapped;
 }

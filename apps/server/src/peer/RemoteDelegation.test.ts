@@ -892,7 +892,10 @@ it.effect("a task delegated to the box wakes the laptop's parent when it ends th
             const query = span.attributes.get("db.query.text");
             if (
               typeof query === "string" &&
-              /SELECT[\s\S]*FROM orchestration_v2_projection_messages/i.test(query)
+              // Houston: shell rows read user messages from their read model (houston/projectionReadModels.ts).
+              /SELECT[\s\S]*FROM (?:orchestration_v2_projection_messages|houston_user_messages)/i.test(
+                query,
+              )
             ) {
               messageReads.push(query);
             }
@@ -1025,7 +1028,7 @@ it.effect.each(["no active parent run", "a newer run owned by another provider"]
         });
         expect(acknowledged.subagents[0]?.completionDelivery).toEqual({
           state: "acknowledged",
-          observedByRunId: null,
+          observedByRunId: parentRunId,
         });
       }),
     ).pipe(Effect.provide(NodeHttpServer.layerTest)),

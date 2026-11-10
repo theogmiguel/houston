@@ -66,7 +66,7 @@ export function ResumeSessionDialog(props: {
     const plan = planResumeSelection(session);
     if (plan.action === "open") {
       props.onOpenChange(false);
-      openThread(scopeThreadRef(environmentId, plan.threadId));
+      openThread(scopeThreadRef(environmentId, plan.threadId), "join");
       return;
     }
     if (plan.action === "confirm") {
@@ -93,7 +93,7 @@ export function ResumeSessionDialog(props: {
       return;
     }
     props.onOpenChange(false);
-    openThread(scopeThreadRef(environmentId, result.value.threadId));
+    openThread(scopeThreadRef(environmentId, result.value.threadId), "join");
   };
 
   return (

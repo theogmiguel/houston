@@ -15,9 +15,11 @@ export function folderDropTarget(input: {
   return "local";
 }
 
+const TRAILING_PATH_SEPARATORS = /[\\/]+$/;
+
 /** A URI-list entry's last segment, used to pair it with the folder File of the same name. */
 function pathBasename(path: string): string {
-  const trimmed = path.replace(/[\\/]+$/, "");
+  const trimmed = path.replace(TRAILING_PATH_SEPARATORS, "");
   return trimmed.slice(Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\")) + 1);
 }
 

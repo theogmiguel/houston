@@ -15,6 +15,7 @@ import {
   movedSettingsPath,
   searchSettings,
   SETTINGS_NAV_GROUPS,
+  SETTINGS_SECTION_LABELS,
   SETTINGS_SEARCH_ITEMS,
   sourceControlHostSearchItems,
   sourceControlHostSettingsSearchId,
@@ -76,7 +77,10 @@ describe("searchSettings", () => {
   it("matches normalized title substrings", () => {
     expect(searchSettings("  WORD   WRAP  ", ITEMS).map((item) => item.id)).toEqual(["word-wrap"]);
     expect(searchSettings("glass").map((item) => item.id)).toEqual(["setting-glass-opacity"]);
-    expect(searchSettings("panel animations").map((item) => item.id)).toEqual(["panel-animations"]);
+    expect(searchSettings("animations").map((item) => item.id)).toEqual([
+      "animations",
+      "snap-shot-animations",
+    ]);
     expect(searchSettings("thè\u{1ab0}mes")[0]?.id).toBe("theme");
     const localeLowerCase = vi.spyOn(String.prototype, "toLocaleLowerCase").mockReturnValue("gıt");
     try {
@@ -206,20 +210,50 @@ describe("searchSettings", () => {
   });
 
   it("keeps voice settings on the voice page", () => {
-    expect(SETTINGS_SEARCH_ITEMS.find((item) => item.id === "local-voice-input")?.to).toBe(
-      "/settings/voice",
-    );
-    expect(SETTINGS_SEARCH_ITEMS.find((item) => item.id === "microphone")?.to).toBe(
-      "/settings/voice",
-    );
     for (const id of [
+      "voice-transcription-destination",
+      "voice-microphone",
+      "microphone-test",
+      "speech-language",
+      "speech-models",
+      "transcription-test",
+      "speech-silence-filtering",
+      "speech-dictionary",
+      "speech-project-dictionary",
       "speech-post-processing",
       "speech-post-processing-model",
       "speech-correction-word",
-      "speech-post-processing-prompt",
-    ]) {
-      expect(SETTINGS_SEARCH_ITEMS.find((item) => item.id === id)?.to).toBe("/settings/voice");
+      "speech-hardware",
+    ] as const) {
+      expect(SETTINGS_SEARCH_ITEMS.find((item) => item.id === id)?.to, id).toBe("/settings/voice");
     }
+  });
+
+  it("lists no voice item for the retired anchors", () => {
+    const ids: readonly string[] = SETTINGS_SEARCH_ITEMS.map((item) => item.id);
+    for (const retired of [
+      "transcription-environment",
+      "local-voice-input",
+      "microphone",
+      "dictionary",
+      "speech-acceleration",
+      "speech-model-unload",
+      "speech-post-processing-prompt",
+    ])
+      expect(ids, retired).not.toContain(retired);
+  });
+
+  it("scopes the project dictionary to projects and the cleanup model to environments", () => {
+    const project = getSettingsSearchTargetScope("speech-project-dictionary")!;
+    expect(project.scope).toBe("project-defaults");
+    expect(isSettingsSearchScopeAvailable(project.scope, "project")).toBe(true);
+    expect(getSettingsSearchTargetScope("speech-post-processing-model")!.scope).toBe("environment");
+  });
+
+  it("finds the voice rows by what a person would type", () => {
+    expect(searchSettings("send microphone audio")[0]?.id).toBe("voice-transcription-destination");
+    expect(searchSettings("project dictionary")[0]?.id).toBe("speech-project-dictionary");
+    expect(searchSettings("test microphone")[0]?.id).toBe("microphone-test");
   });
 });
 
@@ -248,9 +282,40 @@ describe("settings search targets", () => {
     const streaming = getSettingsSearchTargetScope("response-streaming")!;
     expect(streaming.scope).toBe("project-defaults");
     expect(isSettingsSearchScopeAvailable(streaming.scope, "project")).toBe(true);
-    for (const id of ["legacy-plan-mode", "legacy-context-window-indicator"]) {
+    for (const id of ["plan-mode", "context-window-indicator"]) {
       expect(getSettingsSearchTargetScope(id)!.scope).toBeNull();
     }
+  });
+});
+
+describe("settings search items match their rows", () => {
+  it("keeps the agent device switch available in project scopes", () => {
+    const device = getSettingsSearchTargetScope("agent-device-access")!;
+    expect(isSettingsSearchScopeAvailable(device.scope, "project")).toBe(true);
+  });
+
+  it("lists no item for the removed local simulators row or the project icon controls", () => {
+    expect(searchSettings("local simulators").map((item) => item.title)).not.toContain(
+      "Local simulators",
+    );
+    expect(searchSettings("emoji").map((item) => item.id)).not.toContain("project-overview");
+  });
+
+  it("names the voice cleanup rows by their visible titles", () => {
+    const titles = ["speech-correction-word", "speech-post-processing-model"].map(
+      (id) => SETTINGS_SEARCH_ITEMS.find((item) => item.id === id)?.title,
+    );
+    expect(titles).toEqual(["Correction cue", "Cleanup model"]);
+  });
+
+  it("finds the capture sound row by its style choices", () => {
+    expect(searchSettings("whoosh")[0]?.id).toBe("snap-shot-sound");
+  });
+
+  it("limits the quit shortcut to the desktop host", () => {
+    expect(SETTINGS_SEARCH_ITEMS.find((item) => item.id === "quit-shortcut")?.desktopOnly).toBe(
+      true,
+    );
   });
 });
 
@@ -373,9 +438,21 @@ describe("movedSettingsPath", () => {
   });
 
   it("leaves current pages alone", () => {
+    expect(movedSettingsPath("/settings/voice", "local-voice-input")).toBeNull();
+    expect(movedSettingsPath("/settings/voice", "transcription-environment")).toBeNull();
     expect(movedSettingsPath("/settings/general", "time-format")).toBeNull();
     expect(movedSettingsPath("/settings/projects", "project-defaults")).toBeNull();
     expect(movedSettingsPath("/settings/connections", "remote-environments")).toBeNull();
     expect(movedSettingsPath("/settings/appearance", "theme")).toBeNull();
+  });
+});
+
+describe("the Providers page", () => {
+  it("does not repeat the page title as its first section label, and still finds it by that word", () => {
+    const section = SETTINGS_SEARCH_ITEMS.find((item) => item.id === "providers")!;
+    expect(section.title).not.toBe(SETTINGS_SECTION_LABELS["/settings/providers"]);
+    expect(searchSettings("providers", SETTINGS_SEARCH_ITEMS).map((item) => item.id)).toContain(
+      "providers",
+    );
   });
 });

@@ -4,7 +4,7 @@ import {
   CHATGPT_WORKSPACE_ADMIN_REQUEST,
   CHATGPT_WORKSPACE_USAGE_LIMIT_CODE,
 } from "@houston-app/shared/usageLimits";
-import { memo } from "react";
+import { createContext, memo, useContext } from "react";
 import { writeTextToClipboard } from "../../hooks/useCopyToClipboard";
 import { Alert, AlertAction, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
@@ -57,6 +57,21 @@ export function shouldShowThreadErrorBanner(
   return getThreadErrorBannerKey(threadKey, error) !== null && !isDismissed;
 }
 
+/** The error the composer-slot card is showing now; null once it is dismissed or absent. */
+const ThreadErrorCardContext = createContext<string | null>(null);
+export const ThreadErrorCardProvider = ThreadErrorCardContext.Provider;
+
+/** Whether the composer-slot card already shows this failure, so the timeline need not. */
+export function useThreadErrorCardShows(failureMessage: string): boolean {
+  const cardError = useContext(ThreadErrorCardContext);
+  if (cardError === null) return false;
+  const shown = cardError.trim();
+  const message = failureMessage.trim();
+  return (
+    shown.length > 0 && message.length > 0 && (shown.includes(message) || message.includes(shown))
+  );
+}
+
 const sessionDismissedThreadErrorBannerKeys = new Set<string>();
 
 export function dismissThreadErrorBannerForSession(bannerKey: string | null): void {
@@ -72,6 +87,7 @@ export function isThreadErrorBannerDismissedForSession(bannerKey: string | null)
 export const ThreadErrorBanner = memo(function ThreadErrorBanner({
   error,
   onDismiss,
+  onRetry,
   errorClass,
   errorCode,
 }: {
@@ -79,13 +95,23 @@ export const ThreadErrorBanner = memo(function ThreadErrorBanner({
   errorClass?: OrchestrationV2ProviderFailureClass | null;
   errorCode?: string | null;
   onDismiss?: () => void;
+  onRetry?: (() => void) | undefined;
 }) {
   if (!error) return null;
   const workspaceLimit = errorCode === CHATGPT_WORKSPACE_USAGE_LIMIT_CODE;
   const chatGptLimit = workspaceLimit || errorCode === CHATGPT_USAGE_LIMIT_CODE;
   const variant = errorClass === "usage_limit" || chatGptLimit ? "stateWarning" : "stateError";
+  const copyError = () => {
+    void writeTextToClipboard(error, "error message").then(
+      () => toastManager.add({ type: "success", title: "Error copied" }),
+      () => toastManager.add({ type: "error", title: "Could not copy the error" }),
+    );
+  };
   return (
-    <div className="pointer-events-auto mx-auto w-fit max-w-[min(48rem,calc(100%-2rem))] pt-3">
+    <div
+      data-composer-failure-card=""
+      className="pointer-events-auto mx-auto w-full min-w-0 max-w-(--chat-content-max-width)"
+    >
       <Alert variant={variant} controlAlignment="first-line" data-variant={variant}>
         {chatGptLimit ? (
           <OpenAI className="size-4 text-foreground!" aria-hidden="true" />
@@ -108,26 +134,36 @@ export const ThreadErrorBanner = memo(function ThreadErrorBanner({
             <ExpandableText
               text={error}
               collapsedText={getThreadErrorBannerMessage(error)}
+              collapsedClassName="line-clamp-2"
               className="text-sm font-semibold text-foreground"
             />
           )}
         </AlertDescription>
-        {(chatGptLimit || onDismiss) && (
-          <AlertAction>
-            {workspaceLimit ? (
-              <Button variant="default" size="sm" onClick={copyAdminRequest}>
-                Copy request for admin
+        <AlertAction>
+          {workspaceLimit ? (
+            <Button variant="default" size="sm" onClick={copyAdminRequest}>
+              Copy request for admin
+            </Button>
+          ) : chatGptLimit ? (
+            <ChatGptUsageButton variant="default" size="sm" />
+          ) : (
+            <>
+              {onRetry ? (
+                <Button variant="ghost" size="xs" onClick={onRetry}>
+                  Retry
+                </Button>
+              ) : null}
+              <Button variant="ghost" size="xs" onClick={copyError}>
+                Copy
               </Button>
-            ) : chatGptLimit ? (
-              <ChatGptUsageButton variant="default" size="sm" />
-            ) : null}
-            {onDismiss ? (
-              <Button variant="ghost" size="icon-xs" aria-label="Dismiss error" onClick={onDismiss}>
-                <XIcon />
-              </Button>
-            ) : null}
-          </AlertAction>
-        )}
+            </>
+          )}
+          {onDismiss ? (
+            <Button variant="ghost" size="icon-xs" aria-label="Dismiss error" onClick={onDismiss}>
+              <XIcon />
+            </Button>
+          ) : null}
+        </AlertAction>
       </Alert>
     </div>
   );

@@ -73,6 +73,11 @@ export interface GridRecord {
   pendingDraft?: { draftId: string; threadId: string } | null;
   /** The grid's one thread-details flag; the focused cell shows its card while set. */
   detailsOpen?: boolean;
+  /**
+   * The thread whose right panel the grid keeps showing whichever cell is focused; absent while
+   * the panel follows focus. It always names a thread in the tree.
+   */
+  panelPinnedThreadId?: string;
   /** Pinned grids sort above their workspace's other grids. */
   pinnedAt: string | null;
   /** Hidden grids keep their threads but drop out of the workspace tree. */
@@ -114,6 +119,8 @@ export interface GridStoreState {
     pending: { draftId: string; threadId: string } | null,
   ) => void;
   setGridDetailsOpen: (gridId: string, open: boolean) => void;
+  /** Pins the grid's right panel to `threadId`, or returns it to follow-focus with `null`. */
+  setPanelPinnedThread: (gridId: string, threadId: string | null) => void;
   setDraftId: (gridId: string, threadId: string, draftId: string | null) => void;
   reconcileGridThreads: (gridId: string, threadIds: string[]) => void;
   pinGrid: (gridId: string, now?: string) => void;
@@ -264,7 +271,17 @@ function withTree(grid: GridRecord, tree: LayoutNode | null): GridRecord {
     grid.focusedThreadId !== null && tree !== null && containsThreadId(tree, grid.focusedThreadId)
       ? grid.focusedThreadId
       : defaultFocus(tree);
-  return { ...grid, tree, focusedThreadId };
+  const { panelPinnedThreadId, ...rest } = grid;
+  const keepsPin =
+    panelPinnedThreadId !== undefined &&
+    tree !== null &&
+    containsThreadId(tree, panelPinnedThreadId);
+  return {
+    ...rest,
+    tree,
+    focusedThreadId,
+    ...(keepsPin ? { panelPinnedThreadId } : {}),
+  };
 }
 
 function containsThreadId(tree: LayoutNode | null, threadId: string): boolean {
@@ -340,6 +357,10 @@ function parseGrid(value: unknown): GridRecord | null {
         : defaultFocus(tree),
     ...(pendingDraft === null ? {} : { pendingDraft }),
     ...(raw.detailsOpen === true ? { detailsOpen: true as const } : {}),
+    ...(typeof raw.panelPinnedThreadId === "string" &&
+    containsThreadId(tree, raw.panelPinnedThreadId)
+      ? { panelPinnedThreadId: raw.panelPinnedThreadId }
+      : {}),
     pinnedAt: typeof raw.pinnedAt === "string" ? raw.pinnedAt : null,
     hidden: raw.hidden === true,
     createdAt: typeof raw.createdAt === "string" ? raw.createdAt : new Date(0).toISOString(),
@@ -696,6 +717,20 @@ export const useGridStore = create<GridStoreState>()(
             if (open) return { ...grid, detailsOpen: true };
             const { detailsOpen: _closed, ...rest } = grid;
             return rest;
+          }),
+        })),
+      setPanelPinnedThread: (gridId, threadId) =>
+        set((state) => ({
+          grids: updateGrid(state.grids, gridId, (grid) => {
+            if (threadId === null) {
+              if (grid.panelPinnedThreadId === undefined) return grid;
+              const { panelPinnedThreadId: _unpinned, ...rest } = grid;
+              return rest;
+            }
+            if (!containsThreadId(grid.tree, threadId) || grid.panelPinnedThreadId === threadId) {
+              return grid;
+            }
+            return { ...grid, panelPinnedThreadId: threadId };
           }),
         })),
       setDraftId: (gridId, threadId, draftId) =>

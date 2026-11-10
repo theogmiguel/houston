@@ -9,9 +9,11 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import {
   NonNegativeInt,
-  settingsSecretLiteral,
+  requireSettingsSecretLiteral,
+  SettingsSecretUnresolvedError,
   SourceControlProviderKind,
   TrimmedNonEmptyString,
+  type ServerSettings,
   type SourceControlProviderAuth,
   type SourceControlProviderInfo,
   type SourceControlRepositoryCloneUrls,
@@ -120,6 +122,11 @@ export class BitbucketResponseError extends Schema.TaggedError<BitbucketResponse
     status: Schema.Int,
     responseBodyLength: NonNegativeInt,
     retryAt: Schema.optional(Schema.Number),
+    /**
+     * The request carried no credential. Bitbucket answers 404 for a private repository it hides
+     * from anonymous callers, so such a 404 means "add credentials", not "no such pull request".
+     */
+    anonymous: Schema.optional(Schema.Boolean),
   },
 ) {
   get detail(): string {
@@ -277,6 +284,7 @@ export const BitbucketApiError = Schema.Union([
   BitbucketPullRequestBodyReadError,
   BitbucketCheckoutError,
   SourceControlRateLimit.SourceControlRateLimitPausedError,
+  SettingsSecretUnresolvedError,
 ]);
 export type BitbucketApiError = typeof BitbucketApiError.Type;
 const isBitbucketApiError = Schema.is(BitbucketApiError);
@@ -397,11 +405,12 @@ function nonEmpty(value: string | undefined): Option.Option<string> {
   return trimmed === undefined || trimmed.length === 0 ? Option.none() : Option.some(trimmed);
 }
 
+const LEADING_HASH = /^#/;
+const URL_MATCH_PATTERN = /(?:pull-requests|pullrequests|pull-request|pull|pr)\/(\d+)(?:\D.*)?$/i;
+
 function normalizeChangeRequestId(reference: string): string {
-  const trimmed = reference.trim().replace(/^#/, "");
-  const urlMatch = /(?:pull-requests|pullrequests|pull-request|pull|pr)\/(\d+)(?:\D.*)?$/i.exec(
-    trimmed,
-  );
+  const trimmed = reference.trim().replace(LEADING_HASH, "");
+  const urlMatch = URL_MATCH_PATTERN.exec(trimmed);
   return urlMatch?.[1] ?? trimmed;
 }
 
@@ -436,8 +445,10 @@ function bitbucketStateFilter(states: ReadonlyArray<string>): string {
     : `(${states.map((state) => `state = "${state}"`).join(" OR ")})`;
 }
 
+const GIT_SUFFIX = /\.git$/u;
+
 function parseBitbucketRepositorySlug(value: string): BitbucketRepositoryLocator | null {
-  const normalized = value.trim().replace(/\.git$/u, "");
+  const normalized = value.trim().replace(GIT_SUFFIX, "");
   const parts = normalized.split("/").filter((part) => part.length > 0);
   if (parts.length < 2) return null;
   const workspace = parts.at(-2);
@@ -458,9 +469,11 @@ function requireRepositoryLocator(
       );
 }
 
+const SCP_MATCH_PATTERN = /^[a-zA-Z0-9._-]+@[^:/]+:(.+)$/;
+
 function parseBitbucketRemoteUrl(remoteUrl: string): BitbucketRepositoryLocator | null {
   const trimmed = remoteUrl.trim();
-  const scpMatch = /^[a-zA-Z0-9._-]+@[^:/]+:(.+)$/.exec(trimmed);
+  const scpMatch = SCP_MATCH_PATTERN.exec(trimmed);
   if (scpMatch?.[1]) {
     return parseBitbucketRepositorySlug(scpMatch[1]);
   }
@@ -563,23 +576,24 @@ function credentialFrom(input: {
   return null;
 }
 
-function resolveCredential(
+const resolveCredential = Effect.fn("BitbucketApi.resolveCredential")(function* (
   settings: BitbucketClient.BitbucketSettings,
+  secretProviders: ServerSettings["secretProviders"],
   env: Config.Success<typeof BitbucketApiEnvConfig>,
-): BitbucketCredential | null {
+) {
+  const accessToken = yield* requireSettingsSecretLiteral(settings.accessToken, secretProviders);
+  const apiToken = HEADER_SAFE.test(accessToken)
+    ? ""
+    : yield* requireSettingsSecretLiteral(settings.apiToken, secretProviders);
   return (
-    credentialFrom({
-      accessToken: settingsSecretLiteral(settings.accessToken),
-      email: settings.email,
-      apiToken: settingsSecretLiteral(settings.apiToken),
-    }) ??
+    credentialFrom({ accessToken, email: settings.email, apiToken }) ??
     credentialFrom({
       accessToken: Option.getOrElse(env.accessToken, () => ""),
       email: Option.getOrElse(env.email, () => ""),
       apiToken: Option.getOrElse(env.apiToken, () => ""),
     })
   );
-}
+});
 
 function authFromCredential(credential: BitbucketCredential | null): SourceControlProviderAuth {
   if (credential?.kind === "access-token") {
@@ -621,6 +635,7 @@ function originOf(value: string): string | null {
 const responseError = Effect.fn("BitbucketApi.responseError")(function* (
   operation: BitbucketApiOperation,
   response: HttpClientResponse.HttpClientResponse,
+  anonymous: boolean,
 ): Effect.fn.Return<never, BitbucketApiError> {
   const now = yield* Clock.currentTimeMillis;
   const retryAt = SourceControlRateLimit.retryAtFromHeader(response.headers["retry-after"], now);
@@ -643,8 +658,12 @@ const responseError = Effect.fn("BitbucketApi.responseError")(function* (
     status: response.status,
     responseBodyLength: collected.text.length,
     retryAt,
+    ...(anonymous ? { anonymous } : {}),
   });
 });
+
+const TRAILING_SLASHES = /\/+$/u;
+const HTTP_URL_PREFIX = /^https?:\/\//u;
 
 /** @public */
 export const make = Effect.gen(function* () {
@@ -666,39 +685,43 @@ export const make = Effect.gen(function* () {
   const servesProvider = (provider: SourceControlProviderInfo | null) =>
     provider?.kind === "bitbucket" && servesHost(URL.parse(provider.baseUrl)?.hostname ?? "");
 
-  const apiUrl = (path: string) => `${config.baseUrl.replace(/\/+$/u, "")}${path}`;
+  const apiUrl = (path: string) => `${config.baseUrl.replace(TRAILING_SLASHES, "")}${path}`;
 
   const currentCredential = host.settings.getWithSecrets(BitbucketClient.definition.kind).pipe(
-    Effect.map((settings) =>
-      resolveCredential(
-        readSourceControlHostSettings(
-          BitbucketClient.settings,
-          settings.sourceControlHosts[BitbucketClient.definition.kind],
-        ),
-        config,
+    Effect.map((settings) => ({
+      bitbucket: readSourceControlHostSettings(
+        BitbucketClient.settings,
+        settings.sourceControlHosts[BitbucketClient.definition.kind],
       ),
-    ),
+      secretProviders: settings.secretProviders,
+    })),
     Effect.catch((error) =>
       // No cause: a settings decode error can quote a hand-edited token.
       Effect.logWarning("failed to read Bitbucket credentials from settings", {
         operation: error.operation,
       }).pipe(
-        Effect.as(
-          resolveCredential(readSourceControlHostSettings(BitbucketClient.settings, {}), config),
-        ),
+        Effect.as({
+          bitbucket: readSourceControlHostSettings(BitbucketClient.settings, {}),
+          secretProviders: {},
+        }),
       ),
+    ),
+    Effect.flatMap(({ bitbucket, secretProviders }) =>
+      resolveCredential(bitbucket, secretProviders, config),
     ),
   );
 
   const withAuth = (request: HttpClientRequest.HttpClientRequest) =>
     currentCredential.pipe(
-      Effect.map((credential) =>
-        credential === null
-          ? request
-          : credential.kind === "access-token"
-            ? request.pipe(HttpClientRequest.bearerToken(credential.accessToken))
-            : request.pipe(HttpClientRequest.basicAuth(credential.email, credential.apiToken)),
-      ),
+      Effect.map((credential) => ({
+        request:
+          credential === null
+            ? request
+            : credential.kind === "access-token"
+              ? request.pipe(HttpClientRequest.bearerToken(credential.accessToken))
+              : request.pipe(HttpClientRequest.basicAuth(credential.email, credential.apiToken)),
+        anonymous: credential === null,
+      })),
     );
 
   /**
@@ -732,6 +755,7 @@ export const make = Effect.gen(function* () {
     operation: BitbucketApiOperation,
     schema: S,
     response: HttpClientResponse.HttpClientResponse,
+    anonymous: boolean,
   ): Effect.Effect<S["Type"], BitbucketApiError, S["DecodingServices"]> =>
     HttpClientResponse.matchStatus({
       "2xx": (success) =>
@@ -745,7 +769,7 @@ export const make = Effect.gen(function* () {
               }),
           ),
         ),
-      orElse: (failed) => responseError(operation, failed),
+      orElse: (failed) => responseError(operation, failed, anonymous),
     })(response);
 
   const executeJson = <S extends Schema.Top>(
@@ -756,15 +780,14 @@ export const make = Effect.gen(function* () {
     throttled(
       request.method,
       withAuth(request.pipe(HttpClientRequest.acceptJson)).pipe(
-        Effect.flatMap(httpClient.execute),
-        Effect.mapError(
-          (cause) =>
-            new BitbucketRequestError({
-              operation,
-              cause,
-            }),
+        Effect.flatMap((authed) =>
+          httpClient.execute(authed.request).pipe(
+            Effect.mapError((cause) => new BitbucketRequestError({ operation, cause })),
+            Effect.flatMap((response) =>
+              decodeResponse(operation, schema, response, authed.anonymous),
+            ),
+          ),
         ),
-        Effect.flatMap((response) => decodeResponse(operation, schema, response)),
         Effect.timeout(BITBUCKET_API_REQUEST_TIMEOUT),
         Effect.catchTags({
           TimeoutError: (cause) => Effect.fail(new BitbucketRequestError({ operation, cause })),
@@ -928,7 +951,7 @@ export const make = Effect.gen(function* () {
   const apiOrigin = originOf(config.baseUrl);
 
   const trustedUrl = (value: string): string | null => {
-    if (!/^https?:\/\//u.test(value)) return apiUrl(value);
+    if (!HTTP_URL_PREFIX.test(value)) return apiUrl(value);
     const origin = originOf(value);
     return origin !== null && origin === apiOrigin ? value : null;
   };
@@ -939,7 +962,10 @@ export const make = Effect.gen(function* () {
     readonly url: string;
     readonly body?: string;
     readonly redirects: number;
-  }): Effect.Effect<HttpClientResponse.HttpClientResponse, BitbucketApiError> => {
+  }): Effect.Effect<
+    { readonly response: HttpClientResponse.HttpClientResponse; readonly anonymous: boolean },
+    BitbucketApiError
+  > => {
     const url = trustedUrl(input.url);
     if (url === null) {
       return Effect.fail(
@@ -960,11 +986,16 @@ export const make = Effect.gen(function* () {
         ? base
         : base.pipe(HttpClientRequest.bodyText(input.body, "application/json"));
     return withAuth(withBody).pipe(
-      Effect.flatMap(httpClient.execute),
-      Effect.mapError(
-        (cause): BitbucketApiError => new BitbucketRequestError({ operation: "request", cause }),
+      Effect.flatMap((authed) =>
+        httpClient.execute(authed.request).pipe(
+          Effect.mapError(
+            (cause): BitbucketApiError =>
+              new BitbucketRequestError({ operation: "request", cause }),
+          ),
+          Effect.map((response) => ({ response, anonymous: authed.anonymous })),
+        ),
       ),
-      Effect.flatMap((response) => {
+      Effect.flatMap(({ response, anonymous }) => {
         const location = response.headers.location;
         if (
           response.status >= 300 &&
@@ -978,7 +1009,7 @@ export const make = Effect.gen(function* () {
             redirects: input.redirects + 1,
           });
         }
-        return Effect.succeed(response);
+        return Effect.succeed({ response, anonymous });
       }),
     );
   };
@@ -987,7 +1018,7 @@ export const make = Effect.gen(function* () {
     throttled(
       input.method,
       send({ ...input, redirects: 0 }).pipe(
-        Effect.flatMap((response) =>
+        Effect.flatMap(({ response, anonymous }) =>
           HttpClientResponse.matchStatus({
             // Read through the body stream rather than `text`, so an oversized diff is stopped as
             // it arrives instead of being materialized whole and then cut.
@@ -1009,7 +1040,7 @@ export const make = Effect.gen(function* () {
                   truncated: collected.truncated,
                 })),
               ),
-            orElse: (failed) => responseError("request", failed),
+            orElse: (failed) => responseError("request", failed, anonymous),
           })(response),
         ),
         // This also caps redirect hops: no request can finish headers then stall its body forever.
@@ -1042,6 +1073,15 @@ export const make = Effect.gen(function* () {
               Effect.catch(() => currentCredential.pipe(Effect.map(authFromCredential))),
             ),
       ),
+      Effect.catchTags({
+        SettingsSecretUnresolvedError: (error) =>
+          Effect.succeed<SourceControlProviderAuth>({
+            status: "unauthenticated",
+            account: Option.none(),
+            host: Option.some("bitbucket.org"),
+            detail: Option.some(error.message),
+          }),
+      }),
     ),
     listPullRequests: Effect.fn("BitbucketApi.listPullRequests")(function (input) {
       return resolveRepository(input).pipe(

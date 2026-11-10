@@ -1579,6 +1579,111 @@ it.layer(
         }),
     );
 
+    it.effect(
+      "an opened model picker probes only after a changed manifest, and rechecks CLI versions",
+      () =>
+        Effect.gen(function* () {
+          const driver = ProviderDriverKind.make("codex");
+          const instanceId = ProviderInstanceId.make("codex");
+          const provider = {
+            instanceId,
+            driver,
+            status: "ready",
+            enabled: true,
+            installed: true,
+            auth: { status: "authenticated" },
+            checkedAt: "2026-06-10T00:00:00.000Z",
+            version: "1.0.0",
+            models: [],
+            slashCommands: [],
+            skills: [],
+          } as const satisfies ServerProvider;
+          const probes = yield* Ref.make(0);
+          const manifest = yield* Ref.make(ModelManifest.BUNDLED_MODEL_MANIFEST);
+          const instance: ProviderInstance = {
+            instanceId,
+            driverKind: driver,
+            continuationIdentity: { driverKind: driver, continuationKey: "codex:instance:codex" },
+            displayName: undefined,
+            enabled: true,
+            snapshot: {
+              resolveMaintenance: () =>
+                Effect.succeed(
+                  makeManualOnlyProviderMaintenanceCapabilities({
+                    provider: driver,
+                    packageName: null,
+                  }),
+                ),
+              getSnapshot: Effect.succeed(provider),
+              refresh: Ref.update(probes, (count) => count + 1).pipe(Effect.as(provider)),
+              streamChanges: Stream.empty,
+              applyUsageLimits: () => Effect.void,
+            },
+            snapshotForCwd: () => Effect.succeed(provider),
+            orchestrationAdapter: {} as ProviderInstance["orchestrationAdapter"],
+            textGeneration: {} as ProviderInstance["textGeneration"],
+          };
+          const layerInstanceRegistry = Layer.succeed(
+            ProviderInstanceRegistry.ProviderInstanceRegistry,
+            {
+              getInstance: (requestedId) =>
+                Effect.succeed(requestedId === instanceId ? instance : undefined),
+              listInstances: Effect.succeed([instance]),
+              listUnavailable: Effect.succeed([]),
+              streamChanges: Stream.empty,
+              subscribeChanges: Effect.flatMap(PubSub.unbounded<void>(), PubSub.subscribe),
+            },
+          );
+          const layerModelManifest = Layer.succeed(ModelManifest.ModelManifest, {
+            current: Ref.get(manifest),
+            refresh: Ref.get(manifest),
+            forceRefresh: Ref.get(manifest),
+            refreshOnDemand: Ref.get(manifest),
+            refreshInBackground: Effect.void,
+          });
+          const scope = yield* Scope.make();
+          yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
+          const runtimeServices = yield* Layer.build(
+            ProviderRegistry.layer.pipe(
+              Layer.provide(layerUnusedMutator),
+              Layer.provideMerge(layerInstanceRegistry),
+              Layer.provideMerge(layerModelManifest),
+              Layer.provideMerge(
+                ServerConfig.layerTest(process.cwd(), {
+                  prefix: "houston-provider-registry-model-catalog-",
+                }),
+              ),
+              Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+            ),
+          ).pipe(Scope.provide(scope));
+
+          yield* Effect.gen(function* () {
+            const registry = yield* ProviderRegistry.ProviderRegistry;
+            const readCachedVersion = (latest: string) =>
+              ProviderLatestVersions.ProviderLatestVersions.use((latestVersions) =>
+                latestVersions.cached("codex-package", Effect.succeed(latest)),
+              );
+            assert.strictEqual(yield* readCachedVersion("2.0.0"), "2.0.0");
+
+            // An unchanged manifest neither probes providers nor rechecks CLI versions.
+            const probesBefore = yield* Ref.get(probes);
+            yield* registry.refreshModelCatalog;
+            assert.strictEqual(yield* Ref.get(probes), probesBefore);
+            assert.strictEqual(yield* readCachedVersion("3.0.0"), "2.0.0");
+
+            // A changed manifest probes once, however many pickers open, and rechecks versions.
+            yield* Ref.set(manifest, {
+              ...ModelManifest.BUNDLED_MODEL_MANIFEST,
+              updatedAt: "2999-01-01T00:00:00Z",
+            });
+            yield* registry.refreshModelCatalog;
+            yield* registry.refreshModelCatalog;
+            assert.strictEqual(yield* Ref.get(probes), probesBefore + 1);
+            assert.strictEqual(yield* readCachedVersion("3.0.0"), "3.0.0");
+          }).pipe(Effect.provide(runtimeServices));
+        }),
+    );
+
     it.effect("publishes workspace skills while machine health is in error", () =>
       Effect.gen(function* () {
         const driver = ProviderDriverKind.make("codex");
@@ -3127,6 +3232,52 @@ it.layer(
         );
         assert.strictEqual(status.status, "ready");
         assert.strictEqual(status.auth.status, "authenticated");
+      }).pipe(
+        Effect.provide(
+          layerMockSpawner((args) => {
+            const joined = args.join(" ");
+            if (joined === "--version") return { stdout: "1.0.0\n", stderr: "", code: 0 };
+            throw new Error(`Unexpected args: ${joined}`);
+          }),
+        ),
+      ),
+    );
+
+    it.effect("advertises Ultracode as a toggle on custom models", () =>
+      Effect.gen(function* () {
+        const status = yield* checkClaudeProviderStatus(
+          {
+            ...defaultClaudeSettings,
+            customModels: [
+              {
+                slug: "claude-custom-tuned",
+                capabilities: {
+                  optionDescriptors: [
+                    {
+                      id: "effort",
+                      label: "Reasoning",
+                      type: "select",
+                      options: [
+                        { id: "high", label: "High", isDefault: true },
+                        { id: "ultracode", label: "Ultracode" },
+                      ],
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+          claudeCapabilities(),
+        );
+        const custom = status.models.find((model) => model.slug === "claude-custom-tuned");
+        assert.deepStrictEqual(
+          custom?.capabilities?.optionDescriptors?.map((descriptor) =>
+            descriptor.type === "select"
+              ? `${descriptor.id}:${descriptor.options.map((option) => option.id).join("|")}`
+              : `${descriptor.id}:${descriptor.type}`,
+          ),
+          ["effort:high|xhigh", "ultracode:boolean"],
+        );
       }).pipe(
         Effect.provide(
           layerMockSpawner((args) => {

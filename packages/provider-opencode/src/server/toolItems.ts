@@ -50,6 +50,14 @@ function recordString(input: unknown, ...keys: ReadonlyArray<string>): string | 
   return undefined;
 }
 
+function recordText(input: Record<string, unknown>, ...keys: ReadonlyArray<string>) {
+  for (const key of keys) {
+    const value = input[key];
+    if (typeof value === "string") return value;
+  }
+  return undefined;
+}
+
 function recordNumber(input: unknown, ...keys: ReadonlyArray<string>): number | undefined {
   if (typeof input !== "object" || input === null) return undefined;
   for (const key of keys) {
@@ -68,15 +76,17 @@ function stableJson(value: unknown): string {
   }
 }
 
+const DIRECTORY_LISTING_HEADER = /^<path>[^\r\n]+<\/path>\r?\n<type>(directory|file)<\/type>\r?\n/;
+const ENTRIES_ENVELOPE = /^<entries>\r?\n([\s\S]*?)\r?\n<\/entries>(?=\r?\n|$)/;
+const CONTENT_ENVELOPE = /^<content>(?:\r?\n)?([\s\S]*?)\r?\n<\/content>(?=\r?\n|$)/;
+
 function nativeReadOutput(output: string): string {
-  const header = /^<path>[^\r\n]+<\/path>\r?\n<type>(directory|file)<\/type>\r?\n/.exec(output);
+  const header = DIRECTORY_LISTING_HEADER.exec(output);
   if (header === null) return output;
   const body = output.slice(header[0].length);
   // File lines are numbered; only a closing tag on its own line ends the envelope.
   const envelope =
-    header[1] === "directory"
-      ? /^<entries>\r?\n([\s\S]*?)\r?\n<\/entries>(?=\r?\n|$)/.exec(body)
-      : /^<content>(?:\r?\n)?([\s\S]*?)\r?\n<\/content>(?=\r?\n|$)/.exec(body);
+    header[1] === "directory" ? ENTRIES_ENVELOPE.exec(body) : CONTENT_ENVELOPE.exec(body);
   // OpenCode can append instructions after the envelope; keep that suffix verbatim.
   return envelope === null ? output : envelope[1] + body.slice(envelope[0].length);
 }
@@ -113,8 +123,8 @@ export function openCodeToolTurnItem(
       };
     }
     case "file_change": {
-      const oldStr = recordString(input, "oldString", "oldText");
-      const newStr = recordString(input, "newString", "content", "newText");
+      const oldStr = recordText(input, "oldString", "oldText");
+      const newStr = recordText(input, "newString", "content", "newText");
       const diffStr =
         recordString(tool.completedMetadata, "diff", "patch") ??
         (base.status === "failed" && output?.trim() ? output : undefined);

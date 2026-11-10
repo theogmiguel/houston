@@ -6,6 +6,8 @@ export interface GitLabAuthStatusHost {
   readonly account: string | null;
 }
 
+const LINE_BREAK = /\r?\n/;
+
 export function parseGitLabAuthStatusHosts(text: string): ReadonlyArray<GitLabAuthStatusHost> {
   const hosts: GitLabAuthStatusHost[] = [];
   let currentHost: string | null = null;
@@ -20,7 +22,7 @@ export function parseGitLabAuthStatusHosts(text: string): ReadonlyArray<GitLabAu
     currentLines = [];
   };
 
-  for (const rawLine of text.split(/\r?\n/)) {
+  for (const rawLine of text.split(LINE_BREAK)) {
     const line = rawLine.trim();
     if (line.length === 0) continue;
 

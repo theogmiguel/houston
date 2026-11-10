@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import type { UsageSource } from "@houston-app/contracts";
 
-import { formatHourShort, makeWindow, usageSourceMessages } from "./usageFormat.ts";
+import { formatHourShort, formatSessions, makeWindow, usageSourceMessages } from "./usageFormat.ts";
 
 function malformedSource(count: number, overrides: Partial<UsageSource> = {}): UsageSource {
   return {
@@ -175,5 +175,14 @@ describe("hourly usage formatting", () => {
     } finally {
       resolvedOptions.mockRestore();
     }
+  });
+});
+
+describe("session counts", () => {
+  it("uses the singular for exactly one session", () => {
+    expect(formatSessions(1)).toBe("1 session");
+    expect(formatSessions(0)).toBe("0 sessions");
+    expect(formatSessions(2)).toBe("2 sessions");
+    expect(formatSessions(1_234)).toBe("1,234 sessions");
   });
 });

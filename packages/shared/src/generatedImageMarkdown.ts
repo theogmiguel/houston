@@ -5,6 +5,16 @@ import { markdownDestinationHostPath } from "./markdownLinks.ts";
 import { chatMarkdownImageSources } from "./markdownPipeline.ts";
 import { isUncPath, isWindowsDrivePath, normalizeProjectPathForComparison } from "./path.ts";
 
+const ESCAPED_PATTERN = /[%?#&\\\r\n]/g;
+const ESCAPED_PATTERN_2 = /[<>]/g;
+const TAG_PATTERN = /^ {0,3}<(script|pre|style|textarea)(?=[\s>]|$)/i;
+const UNCLOSED_BLOCK_END_PATTERN = /<\/(?:script|pre|style|textarea)>/i;
+const UNCLOSED_BLOCK_END_PATTERN_2 = /^ {0,3}<!--/;
+const FENCE_PATTERN = /^ {0,3}(`{3,}|~{3,})/;
+const ANY_LINE_BREAK = /\r\n|\r|\n/;
+const CLOSING_PATTERN = /^ {0,3}(`{3,}|~{3,})[\t ]*$/;
+const RESULT_PATTERN = /[\r\n]$/;
+
 const parser = unified().use(remarkParse);
 
 function imageEmbed(path: string): string {
@@ -17,7 +27,9 @@ function imageEmbed(path: string): string {
       : path;
   // Clients split `?`/`#`, decode `%` and `&` entities, and read POSIX backslashes as escapes;
   // line breaks end an angle destination.
-  const escaped = destination.replace(/[%?#&\\\r\n]/g, encodeURIComponent).replace(/[<>]/g, "\\$&");
+  const escaped = destination
+    .replace(ESCAPED_PATTERN, encodeURIComponent)
+    .replace(ESCAPED_PATTERN_2, "\\$&");
   return `![](<${escaped}>)`;
 }
 
@@ -27,17 +39,17 @@ function unclosedBlockEnd(text: string): string | undefined {
   const last = parser.parse(text).children.at(-1);
   const source = text.slice(last?.position?.start.offset, last?.position?.end.offset);
   if (last?.type === "html") {
-    const tag = /^ {0,3}<(script|pre|style|textarea)(?=[\s>]|$)/i.exec(source)?.[1];
+    const tag = TAG_PATTERN.exec(source)?.[1];
     if (tag !== undefined) {
-      return /<\/(?:script|pre|style|textarea)>/i.test(source) ? undefined : `</${tag}>`;
+      return UNCLOSED_BLOCK_END_PATTERN.test(source) ? undefined : `</${tag}>`;
     }
-    return /^ {0,3}<!--/.test(source) && !source.includes("-->") ? "-->" : undefined;
+    return UNCLOSED_BLOCK_END_PATTERN_2.test(source) && !source.includes("-->") ? "-->" : undefined;
   }
   if (last?.type !== "code") return undefined;
-  const fence = /^ {0,3}(`{3,}|~{3,})/.exec(source)?.[1];
+  const fence = FENCE_PATTERN.exec(source)?.[1];
   if (fence === undefined) return undefined;
-  const lines = source.split(/\r\n|\r|\n/);
-  const closing = /^ {0,3}(`{3,}|~{3,})[\t ]*$/.exec(lines.at(-1) ?? "")?.[1];
+  const lines = source.split(ANY_LINE_BREAK);
+  const closing = CLOSING_PATTERN.exec(lines.at(-1) ?? "")?.[1];
   const closed =
     lines.length > 1 &&
     closing !== undefined &&
@@ -61,7 +73,7 @@ export function appendGeneratedImageEmbeds(text: string, savedPaths: Iterable<st
   }
   if (missing.size === 0) return text;
   const end = unclosedBlockEnd(text);
-  let result = end === undefined ? text : `${text}${/[\r\n]$/.test(text) ? "" : "\n"}${end}`;
+  let result = end === undefined ? text : `${text}${RESULT_PATTERN.test(text) ? "" : "\n"}${end}`;
   for (const path of missing.values()) {
     result += `${result.length > 0 ? "\n\n" : ""}${imageEmbed(path)}`;
   }

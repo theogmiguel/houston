@@ -16,6 +16,7 @@ import {
   AlertDialogTitle,
 } from "../ui/alert-dialog";
 import { Button } from "../ui/button";
+import { Text } from "../ui/text";
 import { SecretProviderDialog } from "./SecretProviderDialog";
 import { classifySecretProvider } from "./SecretProviderDialog.logic";
 import {
@@ -26,6 +27,7 @@ import { useSettingsScope } from "./SettingsScopeContext";
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
 import { searchableSetting } from "./settingsSearch";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
+import { PHONE_CARD_TEXT_CLS } from "../ui/phone-recipes";
 
 const SECRET_PROVIDER_KINDS: Readonly<
   Record<string, { readonly name: string; readonly icon: Icon }>
@@ -38,11 +40,14 @@ export function SecretsSettingsPanel() {
   const connected = environment?.connection.phase === "connected";
   return (
     <SettingsPageContainer>
+      <Text as="p" tone="muted" className="mx-1 max-phone:mx-0">
+        Source control and task source tokens are set in Source control and Task sources.
+      </Text>
       {connected &&
       environment.serverConfig !== null &&
       environment.serverConfig.secretProviderSettings !== true ? (
         <SettingsSection {...searchableSetting("secret-providers")}>
-          <p className="px-4 py-3 text-sm text-muted-foreground">
+          <p className={`px-4 py-3 text-sm text-muted-foreground ${PHONE_CARD_TEXT_CLS}`}>
             Update Houston on {environment.label} to manage its secret providers.
           </p>
         </SettingsSection>
@@ -54,7 +59,7 @@ export function SecretsSettingsPanel() {
         />
       ) : (
         <SettingsSection {...searchableSetting("secret-providers")}>
-          <p className="px-4 py-3 text-sm text-muted-foreground">
+          <p className={`px-4 py-3 text-sm text-muted-foreground ${PHONE_CARD_TEXT_CLS}`}>
             Connect an environment to manage the secret providers its provider variables read from.
           </p>
         </SettingsSection>

@@ -75,6 +75,8 @@ export function missingTailscaleEndpointDescription(
     : "Start Tailscale to set up HTTPS access through MagicDNS.";
 }
 
+const TRAILING_SLASH = /\/$/u;
+
 export function resolveTailscaleServeBaseUrl(
   endpoint: Pick<AdvertisedEndpoint, "httpBaseUrl"> | null,
   port: number,
@@ -85,7 +87,7 @@ export function resolveTailscaleServeBaseUrl(
   try {
     const url = new URL(endpoint.httpBaseUrl);
     url.port = String(port);
-    return url.toString().replace(/\/$/u, "");
+    return url.toString().replace(TRAILING_SLASH, "");
   } catch {
     return endpoint.httpBaseUrl;
   }
@@ -179,6 +181,9 @@ export function formatAccessTimestamp(value: string): string {
   return accessTimestampFormatter.format(parsed);
 }
 
+const BRACKETED_HOST_MATCH_PATTERN = /^\[([^\]]+)\](?::(\d+))?$/u;
+const DIGITS_ONLY = /^\d+$/u;
+
 export function parseManualDesktopSshTarget(input: {
   readonly host: string;
   readonly username: string;
@@ -202,7 +207,7 @@ export function parseManualDesktopSshTarget(input: {
     }
   }
 
-  const bracketedHostMatch = /^\[([^\]]+)\](?::(\d+))?$/u.exec(hostname);
+  const bracketedHostMatch = BRACKETED_HOST_MATCH_PATTERN.exec(hostname);
   if (bracketedHostMatch) {
     hostname = bracketedHostMatch[1]!.trim();
     if (bracketedHostMatch[2]) {
@@ -210,7 +215,7 @@ export function parseManualDesktopSshTarget(input: {
     }
   } else {
     const colonSegments = hostname.split(":");
-    if (colonSegments.length === 2 && /^\d+$/u.test(colonSegments[1] ?? "")) {
+    if (colonSegments.length === 2 && DIGITS_ONLY.test(colonSegments[1] ?? "")) {
       hostname = colonSegments[0]!.trim();
       port = Number.parseInt(colonSegments[1]!, 10);
     }
@@ -237,6 +242,8 @@ export function parseManualDesktopSshTarget(input: {
   };
 }
 
+const URL_LIKE_INPUT_PATTERN = /^[a-zA-Z][a-zA-Z\d+.-]*:\/\//u;
+
 export function parsePairingUrlFields(
   input: string,
 ): { readonly host: string; readonly pairingCode: string } | null {
@@ -245,7 +252,7 @@ export function parsePairingUrlFields(
 
   try {
     const urlLikeInput =
-      /^[a-zA-Z][a-zA-Z\d+.-]*:\/\//u.test(trimmed) || trimmed.startsWith("//")
+      URL_LIKE_INPUT_PATTERN.test(trimmed) || trimmed.startsWith("//")
         ? trimmed
         : `https://${trimmed}`;
     const url = new URL(urlLikeInput, window.location.origin);
@@ -289,14 +296,18 @@ export function parseRemotePairingFields(input: {
   return { host, pairingCode };
 }
 
+const WITHOUT_IPC_PREFIX_PATTERN =
+  /^Error invoking remote method 'desktop:ensure-ssh-environment':\s*/u;
+const WITHOUT_TAGGED_ERROR_PREFIX_PATTERN = /^Ssh[A-Za-z]+Error:\s*/u;
+
 export function formatDesktopSshConnectionError(error: unknown): string {
   const fallback = "Failed to connect SSH host.";
   const rawMessage = error instanceof Error ? error.message : fallback;
-  const withoutIpcPrefix = rawMessage.replace(
-    /^Error invoking remote method 'desktop:ensure-ssh-environment':\s*/u,
+  const withoutIpcPrefix = rawMessage.replace(WITHOUT_IPC_PREFIX_PATTERN, "");
+  const withoutTaggedErrorPrefix = withoutIpcPrefix.replace(
+    WITHOUT_TAGGED_ERROR_PREFIX_PATTERN,
     "",
   );
-  const withoutTaggedErrorPrefix = withoutIpcPrefix.replace(/^Ssh[A-Za-z]+Error:\s*/u, "");
   return withoutTaggedErrorPrefix.trim() || fallback;
 }
 
@@ -380,6 +391,8 @@ export function isTailscaleHttpsEndpoint(endpoint: AdvertisedEndpoint): boolean 
   return endpoint.id.startsWith("tailscale-magicdns:");
 }
 
+const ENDPOINT_DEFAULT_PREFERENCE_KEY_PATTERN = /:$/u;
+
 export function endpointDefaultPreferenceKey(endpoint: AdvertisedEndpoint): string {
   if (endpoint.id.startsWith("desktop-loopback:")) {
     return "desktop-core:loopback:http";
@@ -396,7 +409,10 @@ export function endpointDefaultPreferenceKey(endpoint: AdvertisedEndpoint): stri
 
   let scheme = "unknown";
   try {
-    scheme = new URL(endpoint.httpBaseUrl).protocol.replace(/:$/u, "");
+    scheme = new URL(endpoint.httpBaseUrl).protocol.replace(
+      ENDPOINT_DEFAULT_PREFERENCE_KEY_PATTERN,
+      "",
+    );
   } catch {}
 
   return `${endpoint.provider.id}:${endpoint.reachability}:${scheme}:${endpoint.label}`;

@@ -266,9 +266,12 @@ export class AzureDevOpsCli extends Context.Service<
   }
 >()("@houston-app/source-control-azure-devops/server/AzureDevOpsCli") {}
 
+const LEADING_HASH = /^#/;
+const URL_MATCH_PATTERN = /(?:pullrequest|pull-request|pull|_pulls?)\/(\d+)(?:\D.*)?$/i;
+
 function normalizeChangeRequestId(reference: string): string {
-  const trimmed = reference.trim().replace(/^#/, "");
-  const urlMatch = /(?:pullrequest|pull-request|pull|_pulls?)\/(\d+)(?:\D.*)?$/i.exec(trimmed);
+  const trimmed = reference.trim().replace(LEADING_HASH, "");
+  const urlMatch = URL_MATCH_PATTERN.exec(trimmed);
   return urlMatch?.[1] ?? trimmed;
 }
 
@@ -298,8 +301,10 @@ const RawAzureDevOpsRepositorySchema = Schema.Struct({
   defaultBranch: Schema.optional(Schema.NullOr(Schema.String)),
 });
 
+const HEADS_REF_PREFIX = /^refs\/heads\//;
+
 function normalizeDefaultBranch(value: string | null | undefined): string | null {
-  const trimmed = value?.trim().replace(/^refs\/heads\//, "") ?? "";
+  const trimmed = value?.trim().replace(HEADS_REF_PREFIX, "") ?? "";
   return trimmed.length > 0 ? trimmed : null;
 }
 
@@ -351,9 +356,11 @@ function decodeAzureDevOpsJson<S extends Schema.Top>(
   );
 }
 
+const AZ_LOGIN_HINT = /please run '?az login'?/;
+
 const classifyAzFailure = (stderr: string): VcsProcessExitFailureKind | null => {
   const normalized = stderr.toLowerCase();
-  if (normalized.includes("az devops login") || /please run '?az login'?/.test(normalized)) {
+  if (normalized.includes("az devops login") || AZ_LOGIN_HINT.test(normalized)) {
     return "authentication";
   }
   return normalized.includes("pull request") &&
@@ -401,6 +408,11 @@ export const make = Effect.gen(function* () {
   return AzureDevOpsCli.of({
     execute,
     listPullRequests: Effect.fn("AzureDevOpsCli.listPullRequests")(function (input) {
+      const branch = SourceControlProvider.sourceBranch(input);
+      // az checks literal ref prefixes before constructing the request URL.
+      const refPrefix =
+        ["refs/heads/", "refs/pull/", "refs/tags/"].find((prefix) => branch.startsWith(prefix)) ??
+        "";
       return executeJson({
         cwd: input.cwd,
         args: [
@@ -410,7 +422,8 @@ export const make = Effect.gen(function* () {
           "--detect",
           "true",
           "--source-branch",
-          SourceControlProvider.sourceBranch(input),
+          // az puts this in the query string unescaped; a `#` would cut the request.
+          refPrefix + encodeURIComponent(branch.slice(refPrefix.length)),
           "--status",
           toAzureStatus(input.state),
           "--top",

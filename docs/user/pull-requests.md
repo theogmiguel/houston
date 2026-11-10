@@ -11,7 +11,8 @@ its project, checks and review state.
 
 Open a request to read it in the right panel:
 
-- **Summary** — description, branches, reviewers and merge readiness.
+- **Summary** — description, branches, reviewers and merge readiness. Where you can edit the
+  description, you can also tick its checkboxes here.
 - **Timeline** — comments and review activity.
 - **Files** — the diff; each file carries a **Viewed** toggle. A viewed file that changes
   after a new push reads unviewed and shows **Changed since viewed**.
@@ -95,6 +96,11 @@ on GitHub; Houston never pushes to the base to undo a merge.
 
 When the queue merged or parked requests on its own, one notice at the top says how many,
 with **Acknowledge** to dismiss it.
+
+A pull request Houston cannot read from its host shows no state. A private Bitbucket
+repository without API credentials in **Settings ▸ Source control** is one example. An agent
+that links or watches such a request is told so, and a watch on it stops at once with a notice
+that names what the host needs.
 
 ## What leaves the machine
 

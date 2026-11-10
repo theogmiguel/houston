@@ -10,17 +10,36 @@ import { cn } from "~/lib/utils";
 import { modelPickerModelKey } from "./modelPickerKeys";
 import { formatModelPickerTraits, type ModelPickerTraits } from "./modelPickerTraits";
 
+const REGEX_SPECIAL_CHARS = /[.*+?^${}()|[\]\\]/g;
+
 function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return value.replace(REGEX_SPECIAL_CHARS, "\\$&");
 }
 
-function getProviderRowLabel(providerDisplayName: string, subProvider: string | undefined): string {
+// Each row reads this per render; the bound sits far above the number of configured providers.
+const PROVIDER_PREFIX_CACHE_MAX = 64;
+const providerPrefixPatterns = new Map<string, RegExp>();
+
+function providerPrefixPattern(provider: string): RegExp {
+  let pattern = providerPrefixPatterns.get(provider);
+  if (pattern === undefined) {
+    if (providerPrefixPatterns.size >= PROVIDER_PREFIX_CACHE_MAX) providerPrefixPatterns.clear();
+    pattern = new RegExp(`^${escapeRegExp(provider)}\\s+\\S`, "i");
+    providerPrefixPatterns.set(provider, pattern);
+  }
+  return pattern;
+}
+
+export function getProviderRowLabel(
+  providerDisplayName: string,
+  subProvider: string | undefined,
+): string {
   const provider = providerDisplayName.trim();
   const sub = subProvider?.trim();
   if (!sub) {
     return providerDisplayName;
   }
-  if (provider && new RegExp(`^${escapeRegExp(provider)}\\s+\\S`, "i").test(sub)) {
+  if (provider && providerPrefixPattern(provider).test(sub)) {
     return sub;
   }
   return `${providerDisplayName} · ${sub}`;
@@ -42,6 +61,8 @@ export const ModelListRow = memo(function ModelListRow(props: {
   isSelected: boolean;
   showProvider: boolean;
   multiple?: boolean;
+  /** A phone row is full width with a 44px floor and the sheet's 16px gutter. */
+  phone?: boolean;
   showNewBadge?: boolean;
   unavailable?: boolean;
   jumpLabel?: string | null;
@@ -53,7 +74,10 @@ export const ModelListRow = memo(function ModelListRow(props: {
     name: props.name,
     subProvider: props.subProvider,
   };
-  const traitsLabel = props.traits ? formatModelPickerTraits(props.traits) : null;
+  // Every row of a provider repeats the same effort, so only the selected row states it.
+  const traitsLabel = props.traits
+    ? formatModelPickerTraits(props.isSelected ? props.traits : { ...props.traits, effort: null })
+    : null;
   const providerLabel = props.showProvider
     ? getProviderRowLabel(props.providerDisplayName, props.subProvider)
     : null;
@@ -128,6 +152,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
       index={props.index}
       value={modelPickerModelKey(props.instanceId, props.slug)}
       disabled={Boolean(props.disabledReason)}
+      density={props.phone ? "phone" : "default"}
       className={cn(
         "group relative w-full !min-w-0 max-w-full cursor-pointer",
         props.disabledReason &&

@@ -1,8 +1,10 @@
+import { collectComposerModelMentions } from "@houston-app/client-runtime/composer-model-mentions";
 import type { AssistantCitation } from "@houston-app/contracts";
 import { collectAssistantCitations } from "@houston-app/shared/assistantCitations";
 import { collectComposerContextReferences } from "@houston-app/shared/composerContextReferences";
 import {
   collectComposerInlineTokens,
+  composerMathRanges,
   type ComposerInlineToken,
 } from "@houston-app/shared/composerInlineTokens";
 
@@ -19,6 +21,12 @@ export type ComposerPromptSegment =
   | {
       type: "skill";
       name: string;
+      source: string;
+    }
+  | {
+      type: "model";
+      instanceId: string;
+      model: string;
       source: string;
     }
   | {
@@ -75,8 +83,27 @@ function forEachMentionMatch(
   });
 }
 
+// Like `$skill`, a typed reference waits for whitespace so `gpt-6` cannot chip while typing `gpt-6.1`.
+function collectModelTokens(text: string, inlineTokens: ReadonlyArray<ComposerInlineToken>) {
+  const mentions = collectComposerModelMentions(text).filter((mention) =>
+    WHITESPACE_CHAR.test(text[mention.end] ?? ""),
+  );
+  if (mentions.length === 0) return [];
+  const taken = [...inlineTokens, ...composerMathRanges(text)];
+  return mentions
+    .filter(
+      (mention) => !taken.some((range) => mention.start < range.end && mention.end > range.start),
+    )
+    .map((mention) => ({ ...mention, type: "model" as const }));
+}
+
 export function collectComposerPromptInlineTokens(text: string) {
-  const tokens = collectComposerInlineTokens(text);
+  const inlineTokens = collectComposerInlineTokens(text);
+  const models = collectModelTokens(text, inlineTokens);
+  const tokens =
+    models.length === 0
+      ? inlineTokens
+      : [...inlineTokens, ...models].sort((left, right) => left.start - right.start);
   const citations = collectAssistantCitations(text);
   const references = collectComposerContextReferences(text);
   if (citations.length === 0 && references.length === 0) return tokens;
@@ -127,6 +154,13 @@ function splitPromptTextIntoComposerSegments(text: string): ComposerPromptSegmen
         path: match.value,
         source: match.source,
       });
+    } else if (match.type === "model") {
+      segments.push({
+        type: "model",
+        instanceId: match.instanceId,
+        model: match.model,
+        source: match.source,
+      });
     } else {
       segments.push({ type: "skill", name: match.value, source: match.source });
     }
@@ -140,6 +174,8 @@ function splitPromptTextIntoComposerSegments(text: string): ComposerPromptSegmen
 
   return segments;
 }
+
+const WHITESPACE_CHAR = /\s/;
 
 export function selectionTouchesMentionBoundary(
   prompt: string,
@@ -158,7 +194,7 @@ export function selectionTouchesMentionBoundary(
 
     if (
       beforeMentionIndex >= 0 &&
-      /\s/.test(prompt[beforeMentionIndex] ?? "") &&
+      WHITESPACE_CHAR.test(prompt[beforeMentionIndex] ?? "") &&
       rangeIncludesIndex(start, end, beforeMentionIndex)
     ) {
       return true;
@@ -166,7 +202,7 @@ export function selectionTouchesMentionBoundary(
 
     if (
       afterMentionIndex < prompt.length &&
-      /\s/.test(prompt[afterMentionIndex] ?? "") &&
+      WHITESPACE_CHAR.test(prompt[afterMentionIndex] ?? "") &&
       rangeIncludesIndex(start, end, afterMentionIndex)
     ) {
       return true;

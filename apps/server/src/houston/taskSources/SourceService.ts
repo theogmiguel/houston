@@ -1,5 +1,5 @@
 // The houston.taskSources.* operations: settings checked by rules.ts (and, for Notion, against
-// the live schema), the Notion token kept in the OS keychain only, links, sync and subscription.
+// the live schema), the Notion token kept in the secret store only, links, sync and subscription.
 import type { ProjectId } from "@houston-app/contracts";
 import {
   HOUSTON_TASK_SOURCE_LIMITS,
@@ -29,17 +29,17 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as Stream from "effect/Stream";
 
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
-import { HoustonKeychain } from "../secrets/HoustonKeychain.ts";
+import { HoustonSecrets } from "../secrets/HoustonSecrets.ts";
 import { HoustonTaskStore, nowIso } from "../tasks/TaskStore.ts";
 import { NotionClient, fetchSchemas } from "./NotionClient.ts";
 import { HoustonTaskSourcePoller } from "./Poller.ts";
 import {
-  TOKEN_ACCOUNT,
   checkGithubSettings,
   checkNotionSchema,
   checkNotionSettings,
   refuse,
   storedSettings,
+  trackerSecretName,
 } from "./rules.ts";
 import { HoustonTaskSourceStore, encodeSettings } from "./SourceStore.ts";
 import { HoustonTaskSourceSync } from "./Sync.ts";
@@ -87,7 +87,7 @@ const make = Effect.gen(function* () {
   const projects = yield* ProjectStore.ProjectStoreV2;
   const store = yield* HoustonTaskSourceStore;
   const tasks = yield* HoustonTaskStore;
-  const keychain = yield* HoustonKeychain;
+  const secrets = yield* HoustonSecrets;
   const notion = yield* NotionClient;
   const poller = yield* HoustonTaskSourcePoller;
   const sync = yield* HoustonTaskSourceSync;
@@ -119,11 +119,9 @@ const make = Effect.gen(function* () {
         : checkNotionSettings(operation, settings),
     );
     if (input.provider === "notion" && settings.enabled) {
-      const read = yield* Effect.result(
-        keychain.get(store.tokenService(input.projectId, "notion"), TOKEN_ACCOUNT),
-      );
+      const read = yield* Effect.result(secrets.get(trackerSecretName(input.projectId, "notion")));
       if (read._tag === "Failure") {
-        return yield* refuse("keychain_unavailable", operation, read.failure.message);
+        return yield* refuse("secret_store_unavailable", operation, read.failure.message);
       }
       if (Option.isNone(read.success)) {
         return yield* refuse(
@@ -193,17 +191,19 @@ const make = Effect.gen(function* () {
         { limit: HOUSTON_TASK_SOURCE_LIMITS.tokenBytes, actual: size },
       );
     }
-    // The record commits only if the keychain write succeeds, so every entry set is on record.
+    // The record commits only if the secret store write succeeds, so every entry set is on record.
     yield* store.write(
       Effect.gen(function* () {
         yield* sql`
           INSERT INTO houston_task_source_credentials (project_id, provider)
           VALUES (${input.projectId}, 'notion') ON CONFLICT DO NOTHING
         `.pipe(Effect.orDie);
-        yield* keychain
-          .set(store.tokenService(input.projectId, "notion"), TOKEN_ACCOUNT, Redacted.make(token))
+        yield* secrets
+          .set(trackerSecretName(input.projectId, "notion"), Redacted.make(token))
           .pipe(
-            Effect.mapError((error) => refuse("keychain_unavailable", operation, error.message)),
+            Effect.mapError((error) =>
+              refuse("secret_store_unavailable", operation, error.message),
+            ),
           );
         return { result: undefined, touched: [], events: [] };
       }),
@@ -219,9 +219,11 @@ const make = Effect.gen(function* () {
     if (input.provider === "github_issues") {
       return yield* refuse("unsupported", operation, GITHUB_CREDENTIAL);
     }
-    yield* keychain
-      .remove(store.tokenService(input.projectId, "notion"), TOKEN_ACCOUNT)
-      .pipe(Effect.mapError((error) => refuse("keychain_unavailable", operation, error.message)));
+    yield* secrets
+      .remove(trackerSecretName(input.projectId, "notion"))
+      .pipe(
+        Effect.mapError((error) => refuse("secret_store_unavailable", operation, error.message)),
+      );
     yield* store.forgetCredential(input.projectId, "notion");
     return { hasCredential: false };
   });

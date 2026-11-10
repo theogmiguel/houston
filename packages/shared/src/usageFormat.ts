@@ -64,6 +64,12 @@ export function formatCount(value: number): string {
   return INTEGER.format(Math.round(value));
 }
 
+/** A session count with its noun: "1 session", "2 sessions". */
+export function formatSessions(value: number): string {
+  const rounded = Math.round(value);
+  return `${INTEGER.format(rounded)} ${rounded === 1 ? "session" : "sessions"}`;
+}
+
 export function formatTokens(value: number): string {
   const abs = Math.abs(value);
   if (abs >= 1e12) return `${trim(value / 1e12)}T`;
@@ -73,10 +79,12 @@ export function formatTokens(value: number): string {
   return INTEGER.format(Math.round(value));
 }
 
+const TRAILING_ZEROS = /\.0+$/;
+
 function trim(value: number): string {
   const abs = Math.abs(value);
   const digits = abs >= 100 ? 0 : abs >= 10 ? 1 : 2;
-  return value.toFixed(digits).replace(/\.0+$/, "");
+  return value.toFixed(digits).replace(TRAILING_ZEROS, "");
 }
 
 export function formatPercent(share: number, digits = 1): string {

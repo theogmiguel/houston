@@ -25,6 +25,11 @@ import {
 } from "@houston-app/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as P from "effect/Predicate";
+import {
+  DATADOG_SITES,
+  type HoustonObservabilityPreset,
+} from "@houston-app/contracts/houston/observability";
 import { deepMerge } from "./Struct.ts";
 import { fromLenientJson } from "./schemaJson.ts";
 import { createModelSelection, readCustomModelEntries } from "./model.ts";
@@ -150,7 +155,10 @@ export function resolveSpeechPostProcessingModelSelection(
       provider.supportsTextGeneration !== false
     );
   };
-  let selection: ModelSelection | null = settings.speechPostProcessingModelSelection;
+  // Null follows the text-generation model; either way a selection that cannot run falls
+  // through to the per-driver defaults.
+  let selection: ModelSelection | null =
+    settings.speechPostProcessingModelSelection ?? settings.textGenerationModelSelection;
   if (!canUse(selection)) {
     selection = null;
     for (const [driver, defaults] of Object.entries(DEFAULT_SPEECH_POST_PROCESSING_MODELS)) {
@@ -220,6 +228,10 @@ export interface PersistedServerObservabilitySettings {
   readonly otlpTracesUrl: string | undefined;
   readonly otlpMetricsUrl: string | undefined;
   readonly otlpLogsUrl: string | undefined;
+  /** Houston: the export destination preset, when settings name a valid one. */
+  readonly preset?: HoustonObservabilityPreset;
+  /** Houston: why a preset in settings was ignored. */
+  readonly presetWarning?: string;
 }
 
 function normalizePersistedServerSettingString(
@@ -234,13 +246,35 @@ function extractPersistedServerObservabilitySettings(input: {
     readonly otlpTracesUrl?: string;
     readonly otlpMetricsUrl?: string;
     readonly otlpLogsUrl?: string;
+    readonly preset?: HoustonObservabilityPreset | null;
   };
 }): PersistedServerObservabilitySettings {
+  const preset = input.observability?.preset;
   return {
     otlpTracesUrl: normalizePersistedServerSettingString(input.observability?.otlpTracesUrl),
     otlpMetricsUrl: normalizePersistedServerSettingString(input.observability?.otlpMetricsUrl),
     otlpLogsUrl: normalizePersistedServerSettingString(input.observability?.otlpLogsUrl),
+    ...(preset === undefined || preset === null ? {} : { preset }),
   };
+}
+
+const decodeRawSettings = Schema.decodeUnknownOption(fromLenientJson(Schema.Unknown));
+
+// Houston: a preset the lenient settings decoder dropped, explained by name for the startup log.
+function describeIgnoredPreset(raw: string): string | undefined {
+  const parsed = Option.getOrUndefined(decodeRawSettings(raw));
+  const preset =
+    P.isObject(parsed) && P.isObject(parsed["observability"])
+      ? parsed["observability"]["preset"]
+      : undefined;
+  if (preset === undefined || preset === null) return undefined;
+  if (P.isObject(preset) && preset["_tag"] === "Datadog") {
+    const site = preset["site"];
+    if (!(DATADOG_SITES as ReadonlyArray<unknown>).includes(site)) {
+      return `The Datadog site ${JSON.stringify(site)} in settings is not supported, so nothing is exported to Datadog; supported sites: ${DATADOG_SITES.join(", ")}.`;
+    }
+  }
+  return "The observability preset in settings is not a Datadog or Datadog Agent destination this build reads, so it is ignored.";
 }
 
 export function parsePersistedServerObservabilitySettings(
@@ -248,7 +282,9 @@ export function parsePersistedServerObservabilitySettings(
 ): PersistedServerObservabilitySettings {
   const decoded = decodeServerSettingsJson(raw);
   if (Option.isSome(decoded)) {
-    return extractPersistedServerObservabilitySettings(decoded.value);
+    const settings = extractPersistedServerObservabilitySettings(decoded.value);
+    const presetWarning = settings.preset === undefined ? describeIgnoredPreset(raw) : undefined;
+    return presetWarning === undefined ? settings : { ...settings, presetWarning };
   }
   return { otlpTracesUrl: undefined, otlpMetricsUrl: undefined, otlpLogsUrl: undefined };
 }
@@ -422,7 +458,6 @@ export function applyServerSettingsPatch(
 ): ServerSettings {
   const patch = translateLegacyProjectOverridePatch(current, rawPatch);
   const selectionPatch = patch.textGenerationModelSelection;
-  const speechSelectionPatch = patch.speechPostProcessingModelSelection;
   const {
     migrateModelPreferences,
     setModelFavorites,
@@ -534,7 +569,13 @@ export function applyServerSettingsPatch(
       },
     };
   }
-  const next = deepMerge(current, patchForMerge);
+  const merged = deepMerge(current, patchForMerge);
+  // Houston: a preset is replaced whole, so switching destinations keeps no field of the old one.
+  const presetPatch = patchForMerge.observability?.preset;
+  const next =
+    presetPatch === undefined
+      ? merged
+      : { ...merged, observability: { ...merged.observability, preset: presetPatch } };
   const nextWithReplacementsBase = {
     ...next,
     favorites,
@@ -659,6 +700,9 @@ export function applyServerSettingsPatch(
     ...(patch.reviewGuideModelSelection !== undefined
       ? { reviewGuideModelSelection: patch.reviewGuideModelSelection }
       : {}),
+    ...(patch.speechPostProcessingModelSelection !== undefined
+      ? { speechPostProcessingModelSelection: patch.speechPostProcessingModelSelection }
+      : {}),
     ...(automaticGitFetchInterval !== undefined ? { automaticGitFetchInterval } : {}),
     ...(providerHealthRefreshInterval !== undefined ? { providerHealthRefreshInterval } : {}),
   };
@@ -671,26 +715,6 @@ export function applyServerSettingsPatch(
   const nextWithReplacements = {
     ...withIdleCompaction(nextWithReplacementsBase, patchedIdleCompaction(current, patch)),
     ...deriveLegacyProjectOverrides(nextWithReplacementsBase),
-    ...(speechSelectionPatch
-      ? {
-          speechPostProcessingModelSelection: createModelSelection(
-            speechSelectionPatch.instanceId ??
-              current.speechPostProcessingModelSelection.instanceId,
-            speechSelectionPatch.model ?? current.speechPostProcessingModelSelection.model,
-            shouldReplaceTextGenerationModelSelection(speechSelectionPatch)
-              ? speechSelectionPatch.options
-              : mergeModelSelectionOptionsById({
-                  current: current.speechPostProcessingModelSelection.options,
-                  patch: speechSelectionPatch.options,
-                }),
-          ),
-        }
-      : {}),
-    speechPostProcessingPrompt:
-      nextWithReplacementsBase.speechPostProcessingPrompt.mode === "custom" &&
-      !nextWithReplacementsBase.speechPostProcessingPrompt.customInstructions.trim()
-        ? { mode: "default" as const, customInstructions: "" }
-        : nextWithReplacementsBase.speechPostProcessingPrompt,
     backgroundActivity: normalizedBackgroundActivity,
     automaticGitFetchInterval: resolvedBackgroundActivity.automaticGitFetchInterval,
     providerHealthRefreshInterval: resolvedBackgroundActivity.providerHealthRefreshInterval,

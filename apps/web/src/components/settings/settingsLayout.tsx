@@ -21,9 +21,16 @@ import {
 import { cn } from "../../lib/utils";
 import { WorkspacePageContainer, type WorkspacePageWidth } from "../WorkspacePageContainer";
 import { Button } from "../ui/button";
+import { PHONE_SETTINGS_TAP_TARGETS_CLS } from "../ui/phone-recipes";
+import { PageHeading } from "../ui/page-heading";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { useOptionalSettingsScope } from "./SettingsScopeContext";
 import { SettingsScopeSentence } from "./SettingsScopeSentence";
+import {
+  SETTINGS_SECTION_DESCRIPTIONS,
+  SETTINGS_SECTION_LABELS,
+  type SettingsPath,
+} from "./settingsSearch";
 import {
   isProjectScopedSettingKey,
   listProjectOverrides,
@@ -59,6 +66,19 @@ const SettingsSearchTargetContext = createContext<SettingsSearchTargetContextVal
   highlightTarget: true,
   onTargetHandled: noop,
 });
+
+/** Page-level actions the route places in the title row, beside the heading. */
+const SettingsPageActionsContext = createContext<ReactNode>(null);
+
+export function SettingsPageActionsProvider({
+  actions,
+  children,
+}: {
+  readonly actions: ReactNode;
+  readonly children: ReactNode;
+}) {
+  return <SettingsPageActionsContext value={actions}>{children}</SettingsPageActionsContext>;
+}
 
 function SettingsSearchTargetProvider({
   targetId,
@@ -185,7 +205,7 @@ export function SettingsSearchTarget({
 
 // Settings pickers reuse composer controls but match the bordered selects beside them.
 export const SETTINGS_PICKER_TRIGGER_CLASSNAME =
-  "min-w-0 max-w-none shrink-0 border-input bg-background font-normal text-foreground shadow-xs/5 hover:bg-hover/50 dark:bg-input/32 [&_svg[data-composer-control-chevron]]:opacity-70";
+  "min-w-0 max-w-none shrink-0 border-input bg-background font-normal text-foreground max-phone:text-headline shadow-xs/5 hover:bg-hover/50 dark:bg-input/32 [&_svg[data-composer-control-chevron]]:opacity-70";
 
 export function PolicyTooltip({
   children,
@@ -237,14 +257,14 @@ export function SettingsSection({
       {...sectionProps}
       ref={targetRef}
       tabIndex={sectionProps.id ? -1 : sectionProps.tabIndex}
-      className={cn(!hideTitle && "space-y-1.5", className)}
+      className={cn(!hideTitle && "space-y-2", className)}
     >
       {hideTitle ? (
         <h2 className="sr-only">{title}</h2>
       ) : (
-        <div data-settings-scroll-target className="flex items-center justify-between gap-4 px-1">
+        <div data-settings-scroll-target className="flex items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-1">
-            <h2 className="flex items-center gap-2 text-[11px] leading-[14px] font-semibold text-muted-foreground">
+            <h2 className="flex items-center gap-2 text-prose font-semibold text-foreground/80">
               {icon}
               {title}
             </h2>
@@ -272,11 +292,13 @@ export function SettingsUnavailableGroup({
 
   return (
     <div className="border-border/60 bg-muted/20 py-1.5">
-      <div className="flex items-start gap-2 px-3 py-2 text-xs leading-relaxed text-muted-foreground sm:px-4">
+      <div className="flex items-start gap-2 px-4 py-2 text-xs leading-relaxed text-muted-foreground">
         <InfoIcon className="mt-0.5 size-3.5 shrink-0 text-warning" />
         <p>{message}</p>
       </div>
-      <div className="[&_h3]:opacity-64 [&_p]:opacity-64">{children}</div>
+      <div className="[&_h3]:opacity-64 [&_p]:opacity-64 max-phone:[&>*+*]:relative max-phone:[&>*+*]:before:pointer-events-none max-phone:[&>*+*]:before:absolute max-phone:[&>*+*]:before:top-0 max-phone:[&>*+*]:before:left-4 max-phone:[&>*+*]:before:right-4 max-phone:[&>*+*]:before:h-px max-phone:[&>*+*]:before:bg-border max-phone:[&>*+*]:before:content-['']">
+        {children}
+      </div>
     </div>
   );
 }
@@ -500,12 +522,12 @@ export function SettingsRow({
       tabIndex={rowProps.id ? -1 : rowProps.tabIndex}
       data-slot="settings-row"
       className={cn(
-        "@container/settings-row min-h-12 px-3.5 aria-disabled:opacity-64 aria-disabled:[&_*]:text-muted-foreground hover:bg-hover",
-        children ? "pt-3 pb-1" : "py-2.5",
+        "@container/settings-row min-h-12 px-4 aria-disabled:opacity-64 aria-disabled:[&_*]:text-muted-foreground hover:bg-hover",
+        children ? "pt-3 pb-1" : "py-3",
         className,
       )}
     >
-      <div className="flex flex-col gap-3 @min-[32rem]/settings-row:grid @min-[32rem]/settings-row:grid-cols-[minmax(0,1fr)_minmax(10rem,auto)] @min-[32rem]/settings-row:items-center @min-[32rem]/settings-row:gap-4">
+      <div className="flex flex-col gap-3 @min-[32rem]/settings-row:grid @min-[32rem]/settings-row:grid-cols-[minmax(0,1fr)_auto] @min-[32rem]/settings-row:items-center @min-[32rem]/settings-row:gap-4">
         <div className="min-w-0 flex-1 space-y-px">
           <div className="flex min-h-5 items-center gap-1.5">
             <h3 className="text-[13px] leading-[18px] font-medium text-foreground">{title}</h3>
@@ -526,7 +548,7 @@ export function SettingsRow({
           ) : null}
         </div>
         {renderedControl ? (
-          <div className="flex w-full min-w-0 shrink-0 items-center gap-2 @min-[32rem]/settings-row:w-auto @min-[32rem]/settings-row:justify-end">
+          <div className="flex w-full min-w-0 shrink-0 items-center gap-2 @min-[32rem]/settings-row:w-auto @min-[32rem]/settings-row:justify-end @min-[32rem]/settings-row:[&_[data-slot=select-trigger]]:min-w-40 max-phone:[&>*]:min-w-0 max-phone:[&_[data-slot=select-trigger]]:w-full max-phone:[&_[data-slot=select-trigger]]:max-w-none max-phone:[&_[data-slot=select-trigger]]:flex-1">
             {renderedControl}
           </div>
         ) : null}
@@ -576,21 +598,58 @@ export function SettingResetButton({
   );
 }
 
+const SETTINGS_DETAIL_PAGE_HEADINGS: Readonly<
+  Record<string, { readonly title: string; readonly description: string }>
+> = {
+  "/settings/open-source-licenses": {
+    title: "Open source licenses",
+    description: "The third-party software this app includes.",
+  },
+};
+
+/** The title and one-line description every settings page opens with. */
+function SettingsPageHeading() {
+  const pathname = useLocation({
+    select: (location) => location.pathname.replace(/\/+$/, "") || "/",
+  });
+  const actions = useContext(SettingsPageActionsContext);
+  const section =
+    (Object.hasOwn(SETTINGS_SECTION_LABELS, pathname)
+      ? {
+          title: SETTINGS_SECTION_LABELS[pathname as SettingsPath],
+          description: SETTINGS_SECTION_DESCRIPTIONS[pathname as SettingsPath],
+        }
+      : undefined) ?? SETTINGS_DETAIL_PAGE_HEADINGS[pathname];
+  if (section === undefined) return null;
+  const heading = <PageHeading title={section.title} description={section.description} />;
+  if (actions === null || actions === undefined) return heading;
+  return (
+    <div className="flex items-start justify-between gap-4">
+      {heading}
+      <div className="flex shrink-0 items-center gap-1 pt-0.5">{actions}</div>
+    </div>
+  );
+}
+const LEADING_HASH = /^#/;
+
 export function SettingsPageContainer({
   children,
   className,
   width = "readable",
+  searchTargetFallbacks,
 }: {
   children: ReactNode;
   className?: string;
   width?: WorkspacePageWidth;
+  /** Anchor to focus instead when a hash names a row that is not mounted, or an id that moved. */
+  searchTargetFallbacks?: Readonly<Record<string, string | undefined>>;
 }) {
   const navigate = useNavigate();
   const hash = useLocation({ select: (location) => location.hash });
   const highlightTarget = useLocation({
     select: (location) => location.state.settingsTargetHighlight !== false,
   });
-  const targetId = hash.replace(/^#/, "") || null;
+  const targetId = hash.replace(LEADING_HASH, "") || null;
   const clearTargetHash = () => {
     void navigate({
       hash: "",
@@ -603,22 +662,29 @@ export function SettingsPageContainer({
 
   return (
     <SettingsSearchTargetProvider
-      targetId={targetId}
+      targetId={targetId === null ? null : (searchTargetFallbacks?.[targetId] ?? targetId)}
       highlightTarget={highlightTarget}
       onTargetHandled={clearTargetHash}
     >
       <div
-        className="topbar-scroll-fade scrollbar-gutter-both flex-1 overflow-y-auto"
+        className={cn(
+          "topbar-scroll-fade scrollbar-gutter-both flex-1 overflow-y-auto max-phone:[scrollbar-gutter:auto]",
+          PHONE_SETTINGS_TAP_TARGETS_CLS,
+        )}
         data-settings-page-scroll
       >
         <WorkspacePageContainer
           width={width}
           className={cn(
-            width === "readable" && "max-w-(--settings-w) gap-7 px-6 pt-8 pb-16 sm:px-8",
+            width === "readable" &&
+              "max-w-(--settings-w) gap-7 px-6 pt-8 pb-16 sm:px-8 max-phone:px-4 max-phone:pt-6",
             className,
           )}
         >
-          <SettingsScopeSentence />
+          <div className="flex flex-col gap-3">
+            <SettingsPageHeading />
+            <SettingsScopeSentence />
+          </div>
           {children}
         </WorkspacePageContainer>
       </div>

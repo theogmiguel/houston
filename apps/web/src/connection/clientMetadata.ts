@@ -24,48 +24,69 @@ function clientOsFromElectronPlatform(platform: string | undefined): ClientOs {
   }
 }
 
+const MACINTOSH_USER_AGENT = /macintosh/i;
+const MAC_USER_AGENT = /mac/i;
+
 function isIpadosDesktopUserAgent(identity: BrowserIdentity): boolean {
   return (
-    /macintosh/i.test(identity.userAgent) &&
-    /mac/i.test(identity.platform) &&
+    MACINTOSH_USER_AGENT.test(identity.userAgent) &&
+    MAC_USER_AGENT.test(identity.platform) &&
     identity.maxTouchPoints > 1
   );
 }
 
+const IOS_USER_AGENT = /iphone|ipad|ipod/i;
+const ANDROID_USER_AGENT = /android/i;
+const CHROME_OS_USER_AGENT = /cros/i;
+const WINDOWS_USER_AGENT = /windows/i;
+const MACOS_USER_AGENT = /macintosh|mac os x/i;
+const LINUX_USER_AGENT = /linux|x11/i;
+
 function browserClientOs(identity: BrowserIdentity): ClientOs {
   const userAgent = identity.userAgent;
   if (userAgent.trim() === "") return "unknown";
-  if (/iphone|ipad|ipod/i.test(userAgent) || isIpadosDesktopUserAgent(identity)) return "iOS";
-  if (/android/i.test(userAgent)) return "Android";
-  if (/cros/i.test(userAgent)) return "ChromeOS";
-  if (/windows/i.test(userAgent)) return "Windows";
-  if (/macintosh|mac os x/i.test(userAgent)) return "macOS";
-  if (/linux|x11/i.test(userAgent)) return "Linux";
+  if (IOS_USER_AGENT.test(userAgent) || isIpadosDesktopUserAgent(identity)) return "iOS";
+  if (ANDROID_USER_AGENT.test(userAgent)) return "Android";
+  if (CHROME_OS_USER_AGENT.test(userAgent)) return "ChromeOS";
+  if (WINDOWS_USER_AGENT.test(userAgent)) return "Windows";
+  if (MACOS_USER_AGENT.test(userAgent)) return "macOS";
+  if (LINUX_USER_AGENT.test(userAgent)) return "Linux";
   return "other";
 }
 
+const EDGE_USER_AGENT = /edg(?:e|a|ios)?\//i;
+const OPERA_USER_AGENT = /opr\/|opios\//i;
+const SAMSUNG_BROWSER_USER_AGENT = /samsungbrowser\//i;
+const FIREFOX_USER_AGENT = /firefox\/|fxios\//i;
+const CHROME_USER_AGENT = /chrome\/|crios\//i;
+const SAFARI_USER_AGENT = /safari\//i;
+
 function browserFamily(userAgent: string): string {
   if (userAgent.trim() === "") return "unknown";
-  if (/edg(?:e|a|ios)?\//i.test(userAgent)) return "Edge";
-  if (/opr\/|opios\//i.test(userAgent)) return "Opera";
-  if (/samsungbrowser\//i.test(userAgent)) return "Samsung Internet";
-  if (/firefox\/|fxios\//i.test(userAgent)) return "Firefox";
-  if (/chrome\/|crios\//i.test(userAgent)) return "Chrome";
-  if (/safari\//i.test(userAgent)) return "Safari";
+  if (EDGE_USER_AGENT.test(userAgent)) return "Edge";
+  if (OPERA_USER_AGENT.test(userAgent)) return "Opera";
+  if (SAMSUNG_BROWSER_USER_AGENT.test(userAgent)) return "Samsung Internet";
+  if (FIREFOX_USER_AGENT.test(userAgent)) return "Firefox";
+  if (CHROME_USER_AGENT.test(userAgent)) return "Chrome";
+  if (SAFARI_USER_AGENT.test(userAgent)) return "Safari";
   return "other";
 }
+
+const TABLET_USER_AGENT = /ipad|tablet|kindle|silk/i;
+const MOBILE_WORD = /mobile/i;
+const PHONE_USER_AGENT = /iphone|ipod|android.+mobile|mobile/i;
 
 function browserDeviceType(identity: BrowserIdentity): AuthClientMetadataDeviceType {
   const userAgent = identity.userAgent;
   if (userAgent.trim() === "") return "unknown";
   if (
-    /ipad|tablet|kindle|silk/i.test(userAgent) ||
-    (/android/i.test(userAgent) && !/mobile/i.test(userAgent)) ||
+    TABLET_USER_AGENT.test(userAgent) ||
+    (ANDROID_USER_AGENT.test(userAgent) && !MOBILE_WORD.test(userAgent)) ||
     isIpadosDesktopUserAgent(identity)
   ) {
     return "tablet";
   }
-  if (/iphone|ipod|android.+mobile|mobile/i.test(userAgent)) return "mobile";
+  if (PHONE_USER_AGENT.test(userAgent)) return "mobile";
   return "desktop";
 }
 

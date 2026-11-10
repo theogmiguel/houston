@@ -174,6 +174,8 @@ export const remoteSchemeForEditor = (id: EditorId): string | undefined => {
   return editor === undefined ? undefined : remoteSchemeOf(editor);
 };
 
+const ZED_PATH_PATTERN = /^[Cc]:[\\/]/;
+
 export const buildRemoteOpenUrl = (input: {
   readonly editor: EditorId;
   readonly host: string;
@@ -204,7 +206,7 @@ export const buildRemoteOpenUrl = (input: {
   const encodedHost = encodeURIComponent(input.host);
   if (input.editor === "zed") {
     // Zed roots paths on the system drive, so omit the Windows drive prefix.
-    const zedPath = /^[Cc]:[\\/]/.test(input.absolutePath) ? rootedPath.slice(3) : rootedPath;
+    const zedPath = ZED_PATH_PATTERN.test(input.absolutePath) ? rootedPath.slice(3) : rootedPath;
     const encodedZedPath = zedPath.split("/").map(encodeURIComponent).join("/");
     // Zed reads this segment as ssh URL userinfo, so the `@` stays literal.
     const zedDestination =

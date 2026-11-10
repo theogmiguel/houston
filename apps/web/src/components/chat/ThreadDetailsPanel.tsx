@@ -17,6 +17,7 @@ import ProjectScriptsControl, {
   type ProjectScriptActionResult,
 } from "../ProjectScriptsControl";
 import { memo, useState, type ComponentProps } from "react";
+import { FolderTree } from "lucide-react";
 import { ThreadDetailsCard } from "./ThreadDetailsCard";
 import { OpenInPicker } from "./OpenInPicker";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
@@ -27,14 +28,21 @@ import { ThreadDetailsUsage, type ThreadDetailsUsageInput } from "./ThreadDetail
 import { ThreadDetailsItemsMenuItems } from "./ThreadDetailsItemsMenu";
 import { resolveThreadDetailsVisibility, THREAD_DETAILS_ITEMS } from "./threadDetailsItems";
 import { useClientSettings } from "../../hooks/useSettings";
-import { ThreadDetailsRowButton } from "../ui/thread-details-row";
+import { ThreadDetailsRowButton, ThreadDetailsRowContent } from "../ui/thread-details-row";
 import { Menu, MenuPopup } from "../ui/menu";
 
 const GitActionsControl = memo(BaseGitActionsControl);
 
 interface ThreadDetailsPanelProps extends Pick<
   ComponentProps<typeof ThreadDetailsCard>,
-  "anchor" | "handle" | "defaultOpen" | "allowInline" | "open" | "onOpenChange" | "animateFollow"
+  | "anchor"
+  | "handle"
+  | "defaultOpen"
+  | "allowInline"
+  | "open"
+  | "onOpenChange"
+  | "animateFollow"
+  | "sheet"
 > {
   forceNewWorktree?: boolean;
   environmentId: EnvironmentId;
@@ -66,6 +74,8 @@ interface ThreadDetailsPanelProps extends Pick<
   onCheckoutPullRequestRequest?: (reference: string) => void;
   onComposerFocusRequest: () => void;
   onOpenChanges?: () => void;
+  /** The phone's Files entry: opens the Files surface and leaves the details sheet. */
+  onOpenFiles?: () => void;
   onRunProjectScript: (script: ProjectScript) => void;
   onAddProjectScript: (input: NewProjectScriptInput) => Promise<ProjectScriptActionResult>;
   onUpdateProjectScript: (
@@ -115,11 +125,12 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
       threadRef={{ environmentId: props.environmentId, threadId: props.threadId }}
       anchor={props.anchor}
       handle={props.handle}
-      defaultOpen={props.defaultOpen ?? true}
+      defaultOpen={props.defaultOpen ?? false}
       allowInline={props.allowInline ?? true}
       {...(props.open === undefined ? {} : { open: props.open })}
       {...(props.onOpenChange === undefined ? {} : { onOpenChange: props.onOpenChange })}
       animateFollow={props.animateFollow ?? false}
+      sheet={props.sheet ?? false}
       contentKey={THREAD_DETAILS_ITEMS.filter((item) => visible[item.id])
         .map((item) => item.id)
         .join(",")}
@@ -252,7 +263,15 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                 />
               ) : null}
 
-              {visible.usage ? <ThreadDetailsUsage {...props.usage} /> : null}
+              {visible.usage || (props.sheet === true && props.open === true) ? (
+                <ThreadDetailsUsage {...props.usage} />
+              ) : null}
+
+              {props.onOpenFiles === undefined ? null : (
+                <ThreadDetailsRowButton onClick={props.onOpenFiles}>
+                  <ThreadDetailsRowContent icon={<FolderTree aria-hidden />} label="Files" />
+                </ThreadDetailsRowButton>
+              )}
 
               {/* Shown only when no section above has content, so an emptied card can be refilled. */}
               <div className="px-1.5 pb-1 group-has-[>section>:last-child:not(:empty)]/details-items:hidden">

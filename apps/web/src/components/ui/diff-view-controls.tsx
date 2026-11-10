@@ -7,6 +7,7 @@ import {
   TextWrapIcon,
 } from "lucide-react";
 import { ChevronsDownUp, ChevronsUpDown } from "lucide";
+import { type ReactNode, useRef, useState } from "react";
 
 import { MorphIcon } from "~/components/MorphIcon";
 
@@ -48,6 +49,7 @@ export function DiffViewControls({
   testFileCount = 0,
   hideTestFiles = false,
   onHideTestFilesChange,
+  menuExtra,
 }: {
   diffLayout: "stacked" | "split";
   onDiffLayoutChange: (diffLayout: "stacked" | "split") => void;
@@ -65,7 +67,20 @@ export function DiffViewControls({
   testFileCount?: number;
   hideTestFiles?: boolean;
   onHideTestFilesChange?: (hidden: boolean) => void;
+  /**
+   * Entries the host adds to the one overflow menu, below the view controls that fold in when the
+   * toolbar is narrow. Without them the menu exists only while the toolbar is narrow.
+   */
+  menuExtra?: ReactNode;
 }) {
+  // The menu is portaled out of the toolbar, so its container query cannot apply. A sentinel
+  // inside the toolbar reports which side of the fold-in width the toolbar is on when it opens.
+  const wideSentinelRef = useRef<HTMLSpanElement>(null);
+  const [narrow, setNarrow] = useState(false);
+  const measureNarrow = () => {
+    const sentinel = wideSentinelRef.current;
+    if (sentinel !== null) setNarrow(getComputedStyle(sentinel).display === "none");
+  };
   const setDiffLayout = (value: unknown) => {
     if (value === "stacked" || value === "split") onDiffLayoutChange(value);
   };
@@ -117,7 +132,7 @@ export function DiffViewControls({
           </Tooltip>
         )}
       </div>
-      <div className="hidden @2xs/diff-toolbar:flex">
+      <div className="hidden @2xs/diff-toolbar:phone:flex">
         <Tooltip>
           <TooltipTrigger
             render={
@@ -220,60 +235,76 @@ export function DiffViewControls({
           </Tooltip>
         )}
       </div>
-      <div className="flex @md/diff-toolbar:hidden">
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={<Button size="icon-sm" variant="ghost" aria-label="More diff actions" />}
-          >
-            <EllipsisIcon className="size-3.5" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuRadioGroup value={diffLayout} onValueChange={setDiffLayout}>
-              <DropdownMenuRadioItem value="stacked">Stacked view</DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="split">Split view</DropdownMenuRadioItem>
-            </DropdownMenuRadioGroup>
-            <DropdownMenuSeparator />
-            {refresh && (
-              <DropdownMenuItem disabled={refresh.refreshing} onClick={refresh.onRefresh}>
-                Refresh diff
-              </DropdownMenuItem>
-            )}
-            {hasFiles && (
-              <DropdownMenuItem onClick={onToggleAllFiles}>
-                {allFilesCollapsed ? "Expand all files" : "Collapse all files"}
-              </DropdownMenuItem>
-            )}
-            <DropdownMenuCheckboxItem
-              checked={wordWrap}
-              onCheckedChange={(checked) => onWordWrapChange(Boolean(checked))}
-            >
-              Wrap lines
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
-              checked={ignoreWhitespace}
-              onCheckedChange={(checked) => onIgnoreWhitespaceChange(Boolean(checked))}
-            >
-              Hide whitespace changes
-            </DropdownMenuCheckboxItem>
-            {testFileCount > 0 && onHideTestFilesChange && (
+      <span
+        ref={wideSentinelRef}
+        aria-hidden
+        className="pointer-events-none hidden size-0 @md/diff-toolbar:block"
+      />
+      <DropdownMenu onOpenChange={(open) => open && measureNarrow()}>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Diff options"
+              className={menuExtra ? undefined : "@md/diff-toolbar:hidden"}
+            />
+          }
+        >
+          <EllipsisIcon className="size-3.5" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          {narrow ? (
+            <>
+              <DropdownMenuRadioGroup value={diffLayout} onValueChange={setDiffLayout}>
+                <DropdownMenuRadioItem value="stacked">Stacked view</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="split">Split view</DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+              <DropdownMenuSeparator />
+              {refresh && (
+                <DropdownMenuItem disabled={refresh.refreshing} onClick={refresh.onRefresh}>
+                  {refresh.refreshing ? "Refreshing diff…" : "Refresh diff"}
+                </DropdownMenuItem>
+              )}
+              {hasFiles && (
+                <DropdownMenuItem onClick={onToggleAllFiles}>
+                  {allFilesCollapsed ? "Expand all files" : "Collapse all files"}
+                </DropdownMenuItem>
+              )}
               <DropdownMenuCheckboxItem
-                checked={hideTestFiles}
-                onCheckedChange={(checked) => onHideTestFilesChange(Boolean(checked))}
+                checked={wordWrap}
+                onCheckedChange={(checked) => onWordWrapChange(Boolean(checked))}
               >
-                Hide test files
+                Wrap lines
               </DropdownMenuCheckboxItem>
-            )}
-            {hasFiles && (
               <DropdownMenuCheckboxItem
-                checked={fileTreeOpen}
-                onCheckedChange={(checked) => onFileTreeOpenChange(Boolean(checked))}
+                checked={ignoreWhitespace}
+                onCheckedChange={(checked) => onIgnoreWhitespaceChange(Boolean(checked))}
               >
-                File tree
+                Hide whitespace changes
               </DropdownMenuCheckboxItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+              {testFileCount > 0 && onHideTestFilesChange && (
+                <DropdownMenuCheckboxItem
+                  checked={hideTestFiles}
+                  onCheckedChange={(checked) => onHideTestFilesChange(Boolean(checked))}
+                >
+                  Hide test files
+                </DropdownMenuCheckboxItem>
+              )}
+              {hasFiles && (
+                <DropdownMenuCheckboxItem
+                  checked={fileTreeOpen}
+                  onCheckedChange={(checked) => onFileTreeOpenChange(Boolean(checked))}
+                >
+                  File tree
+                </DropdownMenuCheckboxItem>
+              )}
+              {menuExtra ? <DropdownMenuSeparator /> : null}
+            </>
+          ) : null}
+          {menuExtra}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </>
   );
 }

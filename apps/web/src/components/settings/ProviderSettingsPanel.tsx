@@ -234,7 +234,7 @@ function ProviderSettingsPlaceholder({
   return (
     <SettingsSection {...searchableSetting("providers")} variant="plain">
       {deviceTabs ? (
-        <div className="flex min-h-11 min-w-0 items-center px-3 sm:px-4">{deviceTabs}</div>
+        <div className="flex min-h-11 min-w-0 items-center px-3.5">{deviceTabs}</div>
       ) : null}
       <SettingsGroup
         divided={false}
@@ -1018,7 +1018,7 @@ export function EnvironmentProviderSettings({
         }
         headerAction={
           // The ghost button's padding would inset its label, so pull the text to the card edge.
-          <div className="-me-2 flex min-w-0 items-center gap-2">
+          <div className="-me-2 flex min-w-0 items-center gap-2 max-phone:me-0">
             <ProviderUpdatesAction />
             <Tooltip>
               <TooltipTrigger
@@ -1026,6 +1026,7 @@ export function EnvironmentProviderSettings({
                   <Button
                     size="xs"
                     variant="ghost-muted"
+                    inset="end-icon"
                     disabled={isRefreshingProviders || !canRefreshProviders}
                     aria-busy={isRefreshingProviders}
                     onClick={() => void refreshProviders()}
@@ -1048,7 +1049,7 @@ export function EnvironmentProviderSettings({
         }
       >
         {deviceTabs ? (
-          <div className="flex min-h-11 min-w-0 items-center gap-2 px-3 sm:px-4">{deviceTabs}</div>
+          <div className="flex min-h-11 min-w-0 items-center gap-2 px-3.5">{deviceTabs}</div>
         ) : null}
         {readOnly ? (
           <SettingsGroup divided={false} className="overflow-hidden">
@@ -1084,7 +1085,7 @@ export function EnvironmentProviderSettings({
                 {canAddProvider ? (
                   <button
                     type="button"
-                    className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-left text-sm text-muted-foreground transition-colors outline-none hover:bg-muted/25 hover:text-foreground focus-visible:bg-muted/25 focus-visible:text-foreground sm:px-4"
+                    className="flex w-full cursor-pointer items-center gap-3 px-3.5 py-2.5 text-left text-sm text-muted-foreground transition-colors outline-none hover:bg-muted/25 hover:text-foreground focus-visible:bg-muted/25 focus-visible:text-foreground"
                     onClick={() => setIsAddInstanceDialogOpen(true)}
                   >
                     <PlusIcon className="size-4 shrink-0" />

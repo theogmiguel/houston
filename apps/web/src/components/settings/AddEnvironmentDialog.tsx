@@ -69,7 +69,10 @@ export function AddEnvironmentDialog({
   savedEnvironments,
   onOpenChange,
   onErrorChange,
+  phone = false,
 }: {
+  /** A phone shows the trigger as a full-width bordered button inside its card. */
+  readonly phone?: boolean;
   readonly open: boolean;
   readonly routeTarget: EnvironmentPresentation | null;
   readonly error: string | null;
@@ -556,10 +559,17 @@ export function AddEnvironmentDialog({
           render={
             <DialogTrigger
               render={
-                <Button size="xs" variant="ghost-muted" aria-label="Add environment">
-                  <PlusIcon className="size-3" />
-                  <span>Add environment</span>
-                </Button>
+                phone ? (
+                  <Button variant="outline" className="h-11 w-full" aria-label="Add environment">
+                    <PlusIcon className="size-3.5" />
+                    <span>Add environment</span>
+                  </Button>
+                ) : (
+                  <Button size="xs" variant="ghost-muted" aria-label="Add environment">
+                    <PlusIcon className="size-3" />
+                    <span>Add environment</span>
+                  </Button>
+                )
               }
             />
           }

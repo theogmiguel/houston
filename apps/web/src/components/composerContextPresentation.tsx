@@ -10,7 +10,7 @@ import { formatAttachmentSize } from "@houston-app/client-runtime/state/attachme
 import { videoMimeType } from "@houston-app/shared/video";
 import { MessageCircleIcon, MousePointerClickIcon } from "lucide-react";
 import { createContext, type MouseEvent, type ReactElement, type ReactNode, use } from "react";
-import type { EnvironmentId } from "@houston-app/contracts";
+import type { EnvironmentId, ProjectId } from "@houston-app/contracts";
 
 import type { ComposerFileAttachment, ComposerImageAttachment } from "~/composerDraftStore";
 import { composerFileNeedsReattach } from "~/composerDraftStore";
@@ -71,6 +71,8 @@ export type ComposerDraftContextRecord =
 export interface ComposerContextActions {
   environmentId: EnvironmentId | null;
   cwd?: string | undefined;
+  /** The draft's project; dictation in an editor under the composer takes its vocabulary. */
+  projectId?: ProjectId | undefined;
   expandImage: (imageId: string) => void;
   expandVideo: (fileId: string) => void;
   openFile: (fileId: string) => void;

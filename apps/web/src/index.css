@@ -7,6 +7,25 @@
 @custom-variant wco (&:is(.wco, .wco *));
 /* Custom frameless window chrome: Houston draws the title bar and its window controls. */
 @custom-variant custom-chrome (&:is(.custom-chrome, .custom-chrome *));
+/* Reduced motion is the system preference or the Appearance "Animations" switch, which
+   sets data-motion="off" on the root. Every motion gate goes through these two variants.
+   The switch matches by ancestor so the variants also apply to pseudo-elements; they
+   never match the root element itself. */
+@custom-variant motion-reduce {
+  @media (prefers-reduced-motion: reduce) {
+    @slot;
+  }
+  :where([data-motion="off"]) & {
+    @slot;
+  }
+}
+@custom-variant motion-safe {
+  @media (prefers-reduced-motion: no-preference) {
+    :where(:root:not([data-motion="off"])) & {
+      @slot;
+    }
+  }
+}
 
 /* Secondary hovering pointers reveal sidebar actions on touch-primary devices. */
 @custom-variant any-hover {
@@ -134,6 +153,8 @@ html[data-theme-reveal] *::after {
   --h-row: 28px;
   --h-pill: 26px;
   --settings-w: 720px;
+  /* The main work area reads as a card inset from the window chrome. */
+  --canvas-inset: 0.5rem;
   --sidebar-content-inset: 0.5rem;
   --sidebar-control-gap: 0.5rem;
   --sidebar-icon-color: color-mix(
@@ -164,7 +185,8 @@ html[data-theme-reveal] *::after {
   --workspace-titlebar-control-size: 1.75rem;
   --workspace-titlebar-control-gap: 0.75rem;
   --workspace-titlebar-scroll-fade-height: 1.5rem;
-  /* The composer board draws its lane at 760px; the timeline overrides to 720px. */
+  /* One lane width for the composer and the timeline, so the changed-files card, the messages
+     and the composer share their left and right edges. */
   --chat-content-max-width: 47.5rem;
   --thread-details-panel-width: 17.5rem;
   /* The prompt on phones: iOS zooms into any input under 16px on focus. */
@@ -223,6 +245,10 @@ html[data-theme-reveal] *::after {
     Consolas, "Liberation Mono", monospace;
   /* Display face for empty states and first run; never chrome or tables. */
   --font-serif: "Source Serif 4", Georgia, serif;
+  /* Below this width the thread rail becomes a drawer (components/ui/sidebar.tsx mirrors it). */
+  --breakpoint-dock: 60rem;
+  /* Below this width a browser is a phone: the rail is its home page (mobile/usePhone.ts mirrors it). */
+  --breakpoint-phone: 40rem;
 }
 
 /* Motion roles. Components name a role (`duration-(--motion-overlay-in) ease-standard`),
@@ -255,8 +281,9 @@ html[data-theme-reveal] *::after {
   --motion-content-delay: 60ms;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  :root {
+/* On body rather than :root: the switch's variant matches descendants of the root. */
+body {
+  @variant motion-reduce {
     --motion-overlay-in: 0ms;
     --motion-overlay-out: 0ms;
     --motion-modal-in: 0ms;
@@ -285,6 +312,8 @@ html[data-theme-reveal] *::after {
   --text-2xs--line-height: 0.875rem;
   --text-3xs: 0.625rem;
   --text-3xs--line-height: calc(0.875 / 0.625);
+  --text-monogram: 0.6875rem;
+  --text-monogram--line-height: 1;
   --text-4xs: 0.5rem;
   --text-4xs--line-height: 1;
   --text-5xs: 0.4375rem;
@@ -301,10 +330,12 @@ html[data-theme-reveal] *::after {
   --text-title--line-height: 1.625rem;
   --text-headline: 0.8125rem;
   --text-headline--line-height: 1.125rem;
+  --text-heading: 0.9375rem;
+  --text-heading--line-height: 1.25rem;
   --text-body: 0.8125rem;
   --text-body--line-height: 1.125rem;
   --text-prose: 0.875rem;
-  --text-prose--line-height: 1.25rem;
+  --text-prose--line-height: 1.375rem;
   --text-callout: 0.75rem;
   --text-callout--line-height: 1rem;
   --text-caption: 0.6875rem;
@@ -322,7 +353,7 @@ html[data-theme-reveal] *::after {
   --ease-exit: cubic-bezier(0.4, 0, 1, 1);
   /* The composer's elevation: a soft drop pulled in under the surface, shared
      by the composer, its context strip and attached banners. */
-  --shadow-composer: 0 1px 2px rgb(0 0 0 / 5%);
+  --shadow-composer: 0 1px 2px rgb(0 0 0 / 6%), 0 2px 8px -2px rgb(0 0 0 / 6%);
   --shadow-composer-dark: 0 14px 32px -18px rgb(0 0 0 / 75%);
   /* Dark-mode shade where an attached surface meets the composer: 10px of
      shadow fading away from the seam. Inline, so the offsets resolve on the
@@ -377,6 +408,20 @@ html[data-theme-reveal] *::after {
   --color-guest: var(--guest);
   --color-guest-foreground: var(--guest-foreground);
   --color-guest-surface: var(--guest-surface);
+  --color-status-running: var(--status-running);
+  --color-status-running-ink: var(--status-running-ink);
+  --color-status-back: var(--status-back);
+  --color-status-back-ink: var(--status-back-ink);
+  --color-status-waiting: var(--status-waiting);
+  --color-status-waiting-ink: var(--status-waiting-ink);
+  --color-status-input: var(--status-input);
+  --color-status-input-ink: var(--status-input-ink);
+  --color-status-approval: var(--status-approval);
+  --color-status-approval-ink: var(--status-approval-ink);
+  --color-status-failed: var(--status-failed);
+  --color-status-failed-ink: var(--status-failed-ink);
+  --color-status-ready: var(--status-ready);
+  --color-status-ready-ink: var(--status-ready-ink);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-ring: var(--ring);
   --color-input: var(--contrast-input);
@@ -489,6 +534,11 @@ html[data-theme-reveal] *::after {
       scale: 2;
     }
   }
+}
+
+/* Marks a control that keeps its size on a phone settings page instead of growing to a 44px tap target. */
+@utility touch-exempt {
+  --touch-exempt: 1;
 }
 
 @utility surface-glass {
@@ -636,31 +686,6 @@ html[data-theme-reveal] *::after {
     var(--app-scrollbar-width) 100%;
 }
 
-/* Stage-channel art needs a mask and pseudo-element gradient, so keep the
-   behavior composable without tying it to the global components layer. */
-@utility sidebar-stage-backdrop {
-  --stage-fade: var(--sidebar-stage-fade, var(--app-chrome-background));
-  mask-image: linear-gradient(to bottom, black 0%, black 55%, transparent 92%);
-  -webkit-mask-image: linear-gradient(to bottom, black 0%, black 55%, transparent 92%);
-
-  &::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(
-      to bottom,
-      transparent 0%,
-      transparent 28%,
-      color-mix(in srgb, var(--stage-fade) 10%, transparent) 40%,
-      color-mix(in srgb, var(--stage-fade) 30%, transparent) 52%,
-      color-mix(in srgb, var(--stage-fade) 58%, transparent) 64%,
-      color-mix(in srgb, var(--stage-fade) 82%, transparent) 75%,
-      color-mix(in srgb, var(--stage-fade) 96%, transparent) 85%,
-      var(--stage-fade) 93%
-    );
-  }
-}
-
 @keyframes live-tool-shine {
   from {
     background-position:
@@ -675,18 +700,20 @@ html[data-theme-reveal] *::after {
 }
 
 @utility live-tool-shine {
-  @media (prefers-reduced-motion: no-preference) and (forced-colors: none) {
-    color: transparent;
-    background-image:
-      linear-gradient(to right, transparent, var(--contrast-foreground), transparent),
-      linear-gradient(var(--contrast-secondary-label), var(--contrast-secondary-label));
-    background-size:
-      4.5rem 100%,
-      100% 100%;
-    background-repeat: no-repeat;
-    background-clip: text;
-    animation: live-tool-shine 2.2s steps(30) infinite;
-    animation-play-state: var(--visible-animation-state, paused);
+  @variant motion-safe {
+    @media (forced-colors: none) {
+      color: transparent;
+      background-image:
+        linear-gradient(to right, transparent, var(--contrast-foreground), transparent),
+        linear-gradient(var(--contrast-secondary-label), var(--contrast-secondary-label));
+      background-size:
+        4.5rem 100%,
+        100% 100%;
+      background-repeat: no-repeat;
+      background-clip: text;
+      animation: live-tool-shine 2.2s steps(30) infinite;
+      animation-play-state: var(--visible-animation-state, paused);
+    }
   }
 }
 
@@ -748,7 +775,13 @@ html[data-theme-reveal] *::after {
   animation-play-state: var(--visible-animation-state, paused);
   will-change: var(--visible-animation-will-change, auto);
 
-  @media (prefers-reduced-motion: reduce), (forced-colors: active) {
+  @variant motion-reduce {
+    animation: none;
+    opacity: 0;
+    will-change: auto;
+  }
+
+  @media (forced-colors: active) {
     animation: none;
     opacity: 0;
     will-change: auto;
@@ -761,7 +794,12 @@ html[data-theme-reveal] *::after {
   animation-play-state: var(--visible-animation-state, paused);
   will-change: var(--visible-animation-will-change, auto);
 
-  @media (prefers-reduced-motion: reduce), (forced-colors: active) {
+  @variant motion-reduce {
+    animation: none;
+    will-change: auto;
+  }
+
+  @media (forced-colors: active) {
     animation: none;
     will-change: auto;
   }
@@ -791,41 +829,6 @@ html[data-theme-reveal] *::after {
     color: var(--foreground);
     background-color: var(--accent-muted);
   }
-  :root {
-    /* Keep the original Houston artwork palettes as the defaults. Built-in
-       themes override them with their own pigments in the components layer. */
-    --stage-art-top: oklch(0.782169 0.123386 240.226);
-    --stage-art-mid: oklch(0.616111 0.195824 259.735);
-    --stage-art-bottom: oklch(0.441553 0.232394 265.474);
-    --stage-art-highlight: oklch(0.951597 0.037289 215.482);
-    --stage-art-secondary: oklch(0.794668 0.12136 235.46);
-    --stage-art-tertiary: oklch(0.678991 0.170261 275.365);
-    --stage-art-line: oklch(0.959666 0.029238 218.179);
-    --stage-art-celeste-highlight: oklch(0.968763 0.045822 196.42);
-    --stage-art-celeste-secondary: oklch(0.827395 0.126071 211.26);
-    --stage-art-violet-highlight: oklch(0.895381 0.053248 286.447);
-    --stage-art-grid-line: oklch(0.966822 0.01757 239.99);
-    --stage-night-base-top: oklch(0.283792 0.117327 297.201);
-    --stage-night-base-mid: oklch(0.227147 0.086086 277.99);
-    --stage-night-base-bottom: oklch(0.200528 0.055699 261.216);
-    --stage-night-top: var(--stage-night-base-top);
-    --stage-night-mid: var(--stage-night-base-mid);
-    --stage-night-bottom: var(--stage-night-base-bottom);
-    --stage-night-highlight: oklch(0.707246 0.157418 252.091);
-    --stage-night-secondary: oklch(0.600473 0.182225 277.296);
-    --stage-night-tertiary: oklch(0.62583 0.210886 305.994);
-    --stage-night-line: oklch(0.938794 0.029114 273.103);
-    --stage-night-glow-highlight: oklch(0.553749 0.176543 271.958);
-    --stage-night-glow-secondary: oklch(0.345571 0.117466 273.568);
-    --stage-night-sparkle: oklch(0.880867 0.057747 269.011);
-
-    @variant dark {
-      --stage-art-top: oklch(0.581473 0.149124 256.9);
-      --stage-art-mid: oklch(0.456509 0.159377 261.945);
-      --stage-art-bottom: oklch(0.291327 0.136578 267.649);
-    }
-  }
-
   * {
     @apply border-border outline-ring/50;
   }
@@ -863,176 +866,6 @@ html[data-theme-reveal] *::after {
 
   [data-slot="animated-height"] [data-slot="collapsible-panel"][data-closed] {
     display: none;
-  }
-
-  /* Each maintainer palette gives the same line art its own material: rose
-     vellum, forest drafting paper, marine cyanotype, copper, and violet ink.
-     These colors stay deliberately deep at the top edge so the white stage
-     wordmark and controls retain contrast in both appearance modes. */
-  html[data-theme-id="t3-chat"] {
-    --stage-art-top: oklch(0.760675 0.141361 348.019);
-    --stage-art-mid: oklch(0.588093 0.188832 353.138);
-    --stage-art-bottom: oklch(0.383959 0.135096 348.656);
-    --stage-art-highlight: oklch(0.949689 0.034241 339.171);
-    --stage-art-secondary: oklch(0.763402 0.163836 352.525);
-    --stage-art-tertiary: oklch(0.70819 0.180285 311.949);
-    --stage-art-line: oklch(0.952158 0.034194 336.179);
-
-    @variant dark {
-      --stage-art-top: oklch(0.540689 0.143665 347.587);
-      --stage-art-mid: oklch(0.396586 0.126592 347.6);
-      --stage-art-bottom: oklch(0.249959 0.079694 340.523);
-      --stage-art-highlight: oklch(0.921297 0.051708 343.229);
-      --stage-art-secondary: oklch(0.667398 0.165674 352.549);
-      --stage-art-tertiary: oklch(0.609315 0.163722 306.315);
-      --stage-art-line: oklch(0.945349 0.036045 341.433);
-    }
-  }
-
-  html[data-theme-id="grove"] {
-    --stage-art-top: oklch(0.751465 0.112731 157.313);
-    --stage-art-mid: oklch(0.567105 0.11099 158.859);
-    --stage-art-bottom: oklch(0.367918 0.067635 160.558);
-    --stage-art-highlight: oklch(0.976387 0.034353 161.456);
-    --stage-art-secondary: oklch(0.80968 0.117071 158.817);
-    --stage-art-tertiary: oklch(0.784102 0.108047 88.516);
-    --stage-art-line: oklch(0.981098 0.027812 158.718);
-    --stage-night-top: oklch(0.45805 0.079616 160.092);
-    --stage-night-mid: oklch(0.368483 0.065631 162.719);
-    --stage-night-bottom: oklch(0.264797 0.044397 168.088);
-    --stage-night-highlight: oklch(0.912563 0.055173 158.974);
-    --stage-night-secondary: oklch(0.665652 0.109731 156.599);
-    --stage-night-tertiary: oklch(0.698651 0.103024 89.828);
-    --stage-night-line: oklch(0.945336 0.041923 157.222);
-
-    @variant dark {
-      --stage-art-top: oklch(0.58719 0.09869 157.426);
-      --stage-art-mid: oklch(0.454979 0.079031 159.756);
-      --stage-art-bottom: oklch(0.297856 0.050355 161.167);
-      --stage-art-highlight: oklch(0.952407 0.053872 158.44);
-      --stage-art-secondary: oklch(0.732591 0.120606 155.853);
-      --stage-art-tertiary: oklch(0.716282 0.116547 80.563);
-      --stage-art-line: oklch(0.961577 0.035285 157.03);
-      --stage-night-top: oklch(0.398632 0.065534 158.601);
-      --stage-night-mid: oklch(0.290561 0.049694 160.456);
-      --stage-night-bottom: oklch(0.210147 0.03173 169.818);
-      --stage-night-highlight: oklch(0.866303 0.057526 156.796);
-      --stage-night-secondary: oklch(0.586553 0.093722 157.365);
-      --stage-night-tertiary: oklch(0.6364 0.101769 82.985);
-      --stage-night-line: oklch(0.913292 0.035718 156.976);
-    }
-  }
-
-  html[data-theme-id="ocean"] {
-    --stage-art-top: oklch(0.792993 0.088072 220.421);
-    --stage-art-mid: oklch(0.590296 0.116841 243.184);
-    --stage-art-bottom: oklch(0.409123 0.093718 247.98);
-    --stage-art-highlight: oklch(0.971217 0.023008 213.615);
-    --stage-art-secondary: oklch(0.788391 0.090856 215.684);
-    --stage-art-tertiary: oklch(0.76441 0.099607 187.893);
-    --stage-art-line: oklch(0.976025 0.019647 212.543);
-
-    @variant dark {
-      --stage-art-top: oklch(0.59663 0.089167 233.427);
-      --stage-art-mid: oklch(0.461094 0.084904 243.478);
-      --stage-art-bottom: oklch(0.294818 0.05947 250.526);
-      --stage-art-highlight: oklch(0.952907 0.032224 221.27);
-      --stage-art-secondary: oklch(0.732079 0.09296 224.414);
-      --stage-art-tertiary: oklch(0.720885 0.095495 190.903);
-      --stage-art-line: oklch(0.961039 0.027355 219.756);
-    }
-  }
-
-  html[data-theme-id="ember"] {
-    --stage-art-top: oklch(0.782439 0.118806 52.569);
-    --stage-art-mid: oklch(0.62863 0.15922 39.401);
-    --stage-art-bottom: oklch(0.404251 0.117664 30.424);
-    --stage-art-highlight: oklch(0.962469 0.02774 70.95);
-    --stage-art-secondary: oklch(0.815735 0.11904 53.659);
-    --stage-art-tertiary: oklch(0.69361 0.159346 24.787);
-    --stage-art-line: oklch(0.970313 0.02052 67.583);
-    --stage-night-top: oklch(0.470236 0.102322 39.355);
-    --stage-night-mid: oklch(0.345367 0.080697 33.217);
-    --stage-night-bottom: oklch(0.227386 0.056077 27.437);
-    --stage-night-highlight: oklch(0.903891 0.059281 56.181);
-    --stage-night-secondary: oklch(0.641705 0.126508 44.376);
-    --stage-night-tertiary: oklch(0.538694 0.129931 25.865);
-    --stage-night-line: oklch(0.926348 0.046029 58.73);
-
-    @variant dark {
-      --stage-art-top: oklch(0.597533 0.120694 43.455);
-      --stage-art-mid: oklch(0.437763 0.101287 34.86);
-      --stage-art-bottom: oklch(0.264269 0.055858 26.548);
-      --stage-art-highlight: oklch(0.929214 0.042638 55.801);
-      --stage-art-secondary: oklch(0.705592 0.137369 43.176);
-      --stage-art-tertiary: oklch(0.629583 0.158322 24.088);
-      --stage-art-line: oklch(0.945058 0.033906 58.824);
-      --stage-night-top: oklch(0.392352 0.081287 36.444);
-      --stage-night-mid: oklch(0.271305 0.056352 31.135);
-      --stage-night-bottom: oklch(0.182126 0.028154 27.774);
-      --stage-night-highlight: oklch(0.851007 0.061294 53.805);
-      --stage-night-secondary: oklch(0.560789 0.10645 42.953);
-      --stage-night-tertiary: oklch(0.476228 0.106656 24.165);
-      --stage-night-line: oklch(0.884931 0.046607 56.556);
-    }
-  }
-
-  html[data-theme-id="iris"] {
-    --stage-art-top: oklch(0.738305 0.113454 298.926);
-    --stage-art-mid: oklch(0.551826 0.159189 294.531);
-    --stage-art-bottom: oklch(0.37147 0.133317 289.999);
-    --stage-art-highlight: oklch(0.949472 0.029204 303.081);
-    --stage-art-secondary: oklch(0.745085 0.125892 298.647);
-    --stage-art-tertiary: oklch(0.73066 0.167815 340.964);
-    --stage-art-line: oklch(0.960278 0.024064 306.969);
-
-    @variant dark {
-      --stage-art-top: oklch(0.57297 0.145973 295.185);
-      --stage-art-mid: oklch(0.419499 0.13752 292.131);
-      --stage-art-bottom: oklch(0.274235 0.095798 286.608);
-      --stage-art-highlight: oklch(0.916698 0.047206 300.224);
-      --stage-art-secondary: oklch(0.670994 0.13095 296.689);
-      --stage-art-tertiary: oklch(0.679357 0.165376 340.439);
-      --stage-art-line: oklch(0.940582 0.032921 299.076);
-    }
-  }
-
-  :is(html[data-theme-id="t3-chat"], html[data-theme-id="ocean"], html[data-theme-id="iris"]) {
-    --stage-night-top: color-mix(in oklch, var(--stage-art-top) 38%, var(--stage-night-base-top));
-    --stage-night-mid: color-mix(in oklch, var(--stage-art-mid) 38%, var(--stage-night-base-mid));
-    --stage-night-bottom: color-mix(
-      in oklch,
-      var(--stage-art-bottom) 38%,
-      var(--stage-night-base-bottom)
-    );
-    --stage-night-highlight: var(--stage-art-highlight);
-    --stage-night-secondary: color-mix(
-      in oklch,
-      var(--stage-art-secondary) 55%,
-      var(--stage-night-mid)
-    );
-    --stage-night-tertiary: color-mix(
-      in oklch,
-      var(--stage-art-tertiary) 60%,
-      var(--stage-night-top)
-    );
-    --stage-night-line: color-mix(in oklch, var(--stage-art-line) 82%, oklch(1 0 0));
-  }
-
-  :is(
-    html[data-theme-id="t3-chat"],
-    html[data-theme-id="grove"],
-    html[data-theme-id="ocean"],
-    html[data-theme-id="ember"],
-    html[data-theme-id="iris"]
-  ) {
-    --stage-art-celeste-highlight: var(--stage-art-highlight);
-    --stage-art-celeste-secondary: var(--stage-art-secondary);
-    --stage-art-violet-highlight: var(--stage-art-highlight);
-    --stage-art-grid-line: var(--stage-art-line);
-    --stage-night-glow-highlight: var(--stage-night-highlight);
-    --stage-night-glow-secondary: var(--stage-night-secondary);
-    --stage-night-sparkle: var(--stage-night-line);
   }
 
   @keyframes settings-search-target-pulse {
@@ -1231,16 +1064,20 @@ html[data-theme-reveal] *::after {
   /* Houston's Paper palette. The design board's role names are canonical and
      the semantic names copied feature components use alias them, so a value
      can only drift here, next to the value the board prints. */
-  --rail: #ececef;
-  --content: #f5f5f7;
+  --rail: #ececf0;
+  --content: #ffffff;
   --card: #ffffff;
   --raised: #ffffff;
-  --term: #ffffff;
-  --code-bg: #f7f7f9;
+  --term: #fbfbfc;
+  --code-bg: #f7f7fa;
   --t1: #1d1d1f;
   --t2: #424245;
   --houston: #5b5b60;
   --border: rgba(0, 0, 0, 0.09);
+  /* A raised card on the white canvas separates by its 1px edge; the value is the
+     board's #0000001a, one step above --border. */
+  --card-edge: rgba(0, 0, 0, 0.1);
+  --pane-focus-ring: #4a4a55;
   /* Shell dividers: one step above --border so a 1px seam reads on both panes,
      and below the 16% interactive line so it never reads as a control. */
   --divider: rgba(0, 0, 0, 0.14);
@@ -1250,11 +1087,12 @@ html[data-theme-reveal] *::after {
   --hover: rgba(0, 0, 0, 0.045);
   --sel: rgba(0, 0, 0, 0.09);
   --tog-off: rgba(0, 0, 0, 0.22);
-  --accent: #0a63e0;
+  /* Indigo from the app mark; the fill keeps 5.2:1 against white button text. */
+  --accent: #5b58e8;
   --accent-surface: var(--hover);
-  --accent-hover: #0954be;
-  --accent-ink: #0a5cd1;
-  --accent-muted: rgba(10, 99, 224, 0.12);
+  --accent-hover: #4a47d6;
+  --accent-ink: #4b44d8;
+  --accent-muted: rgba(91, 88, 232, 0.12);
   --ok: #1d7a3a;
   --warn: #b45309;
   --stop: #c0362c;
@@ -1263,6 +1101,24 @@ html[data-theme-reveal] *::after {
   --stop-ink: #c0362c;
   --warn-ink: #9a4a06;
   --info-ink: #155e75;
+  /* Thread status hues. Accent violet stays interaction-only, so state never borrows it:
+     running is blue, back is teal, waiting is slate, input and approval share amber. The
+     glyph takes the bright step and the status word the dark `-ink` step of one hue; each
+     `-ink` keeps 4.5:1 on the canvas and the sidebar chrome, each glyph 3:1 on the canvas. */
+  --status-running: #3b82f6;
+  --status-running-ink: #1d4ed8;
+  --status-back: #0d9488;
+  --status-back-ink: #0f766e;
+  --status-waiting: #7a8aa0;
+  --status-waiting-ink: #475569;
+  --status-input: #d97706;
+  --status-input-ink: #92400e;
+  --status-approval: var(--status-input);
+  --status-approval-ink: var(--status-input-ink);
+  --status-failed: #ef4444;
+  --status-failed-ink: #b91c1c;
+  --status-ready: #16a34a;
+  --status-ready-ink: #166534;
   /* A merged pull request: the one status colour Houston has no other use for. */
   --merged: #7c3aed;
   --merged-ink: #6d28d9;
@@ -1277,9 +1133,14 @@ html[data-theme-reveal] *::after {
   /* The pressed segment inside a segmented control. */
   --shadow-seg: 0 1px 2px rgba(0, 0, 0, 0.12), 0 0 0 1px #d7d7dd;
   --scrim: rgba(0, 0, 0, 0.12);
+  /* Dims the page behind a drawer: a neutral black, because a canvas-coloured film is invisible on the canvas. */
+  --sheet-scrim: rgba(0, 0, 0, 0.32);
   --pane: #ffffff;
-  --pane-head: #f7f7f9;
-  --composer: #ffffff;
+  --pane-head: #f7f7fa;
+  /* The space between grid pane cards: one tonal step below the canvas, so the
+     white pane cards read as separate surfaces. */
+  --grid-gutter: var(--rail);
+  --composer: var(--raised);
   /* The focused grid cell's frame: a neutral grey, never the accent. */
   --focus-frame: rgba(0, 0, 0, 0.38);
   /* The user's message bubble and the composer's send button; themes give them the message
@@ -1301,6 +1162,8 @@ html[data-theme-reveal] *::after {
   --r-ctl: 6px;
   --r-group: 10px;
   --r-dialog: 14px;
+  /* The inset main canvas: one step softer than a dialog. */
+  --r-canvas: 12px;
   /* The 7px pill the board draws for grid labels and selection buttons. */
   --r-selection: 7px;
   --r-pill: 999px;
@@ -1367,9 +1230,10 @@ html[data-theme-reveal] *::after {
   --sidebar-control-surface: var(--content);
   --sidebar-row-hover: var(--hover);
   --sidebar-row-active: var(--sel);
-  --sidebar-row-selected: var(--sel);
+  /* The open row carries a faint brand wash in the light palette, where the neutral overlay
+     is near-identical to the rail; the dark palette keeps the neutral overlay. */
+  --sidebar-row-selected: color-mix(in srgb, var(--accent) 8%, transparent);
   --sidebar-border: var(--border);
-  --sidebar-stage-fade: var(--sidebar);
   --code-background: var(--code-bg);
   --code-foreground: var(--t1);
   --terminal-background: var(--term);
@@ -1381,18 +1245,22 @@ html[data-theme-reveal] *::after {
 .dark,
 [data-theme="graphite"] {
   color-scheme: dark;
-  /* Houston's Graphite palette: the rail is above the canvas, cards lift
-     above the canvas and menus/popovers take the raised tier. */
-  --rail: #1c1c1f;
-  --content: #161618;
-  --card: #202023;
-  --raised: #26262a;
-  --term: #0f0f11;
-  --code-bg: #18181b;
+  /* Houston's Graphite palette: three planes from dark to light. Chrome (rail, top bar,
+     grid gutter) sits below the canvas, and cards, the composer and popovers take the
+     raised tier. */
+  --rail: #111113;
+  --content: #18181b;
+  --card: #1f1f23;
+  --raised: #1f1f23;
+  --term: #0c0c0e;
+  --code-bg: #1a1a1e;
   --t1: rgba(255, 255, 255, 0.92);
   --t2: rgba(255, 255, 255, 0.66);
   --houston: rgba(255, 255, 255, 0.52);
   --border: rgba(255, 255, 255, 0.09);
+  /* The raised tier's edge: one hairline above the canvas at 8% white. */
+  --card-edge: rgba(255, 255, 255, 0.08);
+  --pane-focus-ring: #6f6f7a;
   --divider: rgba(255, 255, 255, 0.14);
   --border-hover: rgba(255, 255, 255, 0.16);
   --line-strong: rgba(255, 255, 255, 0.16);
@@ -1400,10 +1268,11 @@ html[data-theme-reveal] *::after {
   --hover: rgba(255, 255, 255, 0.05);
   --sel: rgba(255, 255, 255, 0.09);
   --tog-off: rgba(255, 255, 255, 0.18);
-  --accent: #2f6fe8;
-  --accent-hover: #4f85ec;
-  --accent-ink: #64a0ff;
-  --accent-muted: rgba(47, 111, 232, 0.15);
+  /* Indigo from the app mark; white sits at 5.1:1 on the fill. */
+  --accent: #6d4aff;
+  --accent-hover: #5b3ae6;
+  --accent-ink: #a8a5ff;
+  --accent-muted: rgba(109, 74, 255, 0.16);
   --ok: #30d158;
   --warn: #f5a524;
   --stop: #ff6b61;
@@ -1412,6 +1281,22 @@ html[data-theme-reveal] *::after {
   --stop-ink: #ff6b61;
   --warn-ink: #f5a524;
   --info-ink: #7cb7ff;
+  /* Thread status hues, the same families as the light palette, brightened for the dark
+     canvas and the raised card; glyph and `-ink` share one value and keep 4.5:1 on both. */
+  --status-running: #64a0ff;
+  --status-running-ink: #64a0ff;
+  --status-back: #2dd4bf;
+  --status-back-ink: #2dd4bf;
+  --status-waiting: #94a3b8;
+  --status-waiting-ink: #94a3b8;
+  --status-input: var(--warn);
+  --status-input-ink: var(--warn-ink);
+  --status-approval: var(--status-input);
+  --status-approval-ink: var(--status-input-ink);
+  --status-failed: var(--stop);
+  --status-failed-ink: var(--stop-ink);
+  --status-ready: var(--ok);
+  --status-ready-ink: var(--ok-ink);
   --merged: #a78bfa;
   --merged-ink: #c4b5fd;
   --danger-fill: #d93a30;
@@ -1424,13 +1309,16 @@ html[data-theme-reveal] *::after {
   --shadow-2: 0 12px 32px -8px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
   --shadow-seg: 0 1px 2px rgba(0, 0, 0, 0.2), 0 0 0 1px #2a2a31;
   --scrim: rgba(0, 0, 0, 0.28);
-  --pane: #0f0f11;
-  --pane-head: #18181b;
-  --composer: #18181b;
+  --sheet-scrim: rgba(0, 0, 0, 0.55);
+  /* A grid pane is the canvas; only the rounded card frame lifts above the gutter. */
+  --pane: #18181b;
+  --pane-head: #1f1f23;
+  --composer: var(--raised);
   --focus-frame: #6f6f7a;
   --claude: #d97757;
   --codex: rgba(255, 255, 255, 0.92);
   --message-surface: color-mix(in srgb, #ffffff 6%, var(--card));
+  --bubble: var(--card);
   --guest-foreground: #f0abfc;
   --sidebar-control-surface: var(--card);
 }
@@ -1458,12 +1346,13 @@ html[data-theme-reveal] *::after {
   --sidebar-control-surface: var(--content);
   --sidebar-row-hover: var(--hover);
   --sidebar-row-active: var(--sel);
-  --sidebar-row-selected: var(--sel);
+  --sidebar-row-selected: color-mix(in srgb, var(--accent) 8%, transparent);
   --sidebar-border: var(--border);
-  --sidebar-stage-fade: var(--sidebar);
 
   @variant dark {
-    --card: #202023;
+    --sidebar-row-selected: var(--sel);
+    /* The card a themed sidebar control paints; it follows the raised tier. */
+    --card: var(--raised);
     --sidebar-control-surface: var(--card);
     /* Row metadata sits a step below read titles. */
     --secondary-label: var(--t2);
@@ -1563,6 +1452,8 @@ html[data-theme-id]:not([data-theme-id=""]) {
   --update: var(--app-theme-update);
   --update-foreground: var(--app-theme-update-foreground);
   --border: var(--app-theme-border);
+  --card-edge: var(--app-theme-border);
+  --pane-focus-ring: var(--app-theme-focus);
   --input: var(--app-theme-input);
   --ring: var(--app-theme-focus);
   --sidebar: var(--app-theme-sidebar);
@@ -1573,7 +1464,6 @@ html[data-theme-id]:not([data-theme-id=""]) {
   --sidebar-row-active: var(--app-theme-sidebar-row-active);
   --sidebar-row-selected: var(--app-theme-sidebar-row-selected);
   --sidebar-border: var(--app-theme-sidebar-border);
-  --sidebar-stage-fade: var(--app-theme-sidebar);
   --code-background: var(--app-theme-code-background);
   --code-foreground: var(--app-theme-code-foreground);
   --terminal-background: var(--app-theme-terminal-background);
@@ -1827,7 +1717,6 @@ html[data-theme-id] [data-app-sidebar] {
   --sidebar-row-active: var(--app-theme-sidebar-row-active);
   --sidebar-row-selected: var(--app-theme-sidebar-row-selected);
   --sidebar-border: var(--app-theme-sidebar-border);
-  --sidebar-stage-fade: var(--app-theme-sidebar);
   border-color: color-mix(in srgb, var(--contrast-sidebar-foreground) 10%, transparent);
 
   @variant dark {
@@ -1877,6 +1766,11 @@ html[data-theme-id="t3-chat"] [data-app-sidebar] {
   --contrast-border: color-mix(
     in srgb,
     color-mix(in srgb, var(--border) var(--appearance-contrast-base), transparent),
+    var(--foreground) var(--appearance-contrast-border-boost)
+  );
+  --contrast-card-border: color-mix(
+    in srgb,
+    color-mix(in srgb, var(--card-edge) var(--appearance-contrast-base), transparent),
     var(--foreground) var(--appearance-contrast-border-boost)
   );
   --contrast-foreground: color-mix(
@@ -2401,6 +2295,53 @@ code {
   font-size: 0.85em;
 }
 
+/* The age on a sidebar thread row's title line: a muted 12px tabular column. */
+[data-thread-time] {
+  color: var(--color-secondary-label);
+  font-size: var(--text-xs);
+  line-height: var(--text-xs--line-height);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A time that shows only while its message row is hovered or holds focus (always on touch). */
+[data-reveal-on-hover] {
+  opacity: 0;
+  transition: opacity var(--motion-feedback) var(--ease-standard);
+}
+
+:where(.group):is(:hover, :focus-within) [data-reveal-on-hover] {
+  opacity: 1;
+}
+
+@media (pointer: coarse) {
+  [data-reveal-on-hover] {
+    opacity: 1;
+  }
+}
+
+/* The one-row changed-files summary: muted 12px text with the file name at full ink. */
+[data-changed-files-state="compact"] {
+  color: var(--color-secondary-label);
+  font-size: var(--text-xs);
+  line-height: var(--text-xs--line-height);
+}
+
+[data-changed-files-state="compact"] [data-changed-files-name] {
+  color: var(--color-foreground);
+}
+
+/* A zero in a diff stat is not a change: it stays muted instead of taking the addition or
+   deletion colour. */
+[data-zero]:is(.text-diff-addition-foreground, .text-diff-deletion-foreground) {
+  color: var(--color-muted-foreground);
+}
+
+/* Set for spans short enough to never overflow the column (see ChatMarkdown): a hyphen or
+   space inside one is not a place to break. */
+.chat-markdown :not(pre) > code[data-short-inline-code] {
+  white-space: nowrap;
+}
+
 .chat-markdown strong {
   font-weight: 600;
 }
@@ -2470,10 +2411,10 @@ code {
    when an element is first inserted, and the rule is gated on data-streaming,
    so opening a finished thread never replays the fade. Opacity only, one
    shot, no layout change. */
-@media (prefers-reduced-motion: no-preference) {
-  .chat-markdown[data-streaming] > *,
-  .chat-markdown[data-streaming] .chat-markdown-shiki,
-  .chat-markdown[data-streaming] .chat-markdown-mermaid {
+.chat-markdown[data-streaming] > *,
+.chat-markdown[data-streaming] .chat-markdown-shiki,
+.chat-markdown[data-streaming] .chat-markdown-mermaid {
+  @variant motion-safe {
     transition: opacity 600ms ease-out;
 
     @starting-style {
@@ -2544,8 +2485,8 @@ code {
   --diff-deletion-background: var(--del-bg);
 }
 
-/* Chat width setting. Comfortable keeps the default --chat-content-max-width,
-   which sizes the timeline lane, the composer, and ChatCanvas's width probe. */
+/* Chat width setting. Comfortable keeps the default --chat-content-max-width, which sizes the
+   composer, the timeline lane and ChatCanvas's width probe. */
 :root[data-chat-width="wide"] {
   --chat-content-max-width: 72rem;
 }
@@ -2662,14 +2603,16 @@ code {
   animation: preview-loading-progress 5.3s cubic-bezier(0.1, 0.5, 0.2, 1) forwards;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .preview-loading-progress,
-  .preview-loading-progress[data-loading="true"] {
+.preview-loading-progress,
+.preview-loading-progress[data-loading="true"] {
+  @variant motion-reduce {
     transition: none;
     animation: none;
   }
+}
 
-  .preview-loading-progress[data-loading="true"] {
+.preview-loading-progress[data-loading="true"] {
+  @variant motion-reduce {
     transform: scaleX(0.9);
   }
 }
@@ -2713,14 +2656,18 @@ code {
   padding: 0.05em 0.25em;
 }
 
+/* Markdown delimiters shown, as editable text, around styled text with the caret in it. */
 .composer-rich-marker {
   color: var(--muted-foreground);
   opacity: 0.75;
   font-weight: 400;
   font-style: normal;
   text-decoration: none;
-  user-select: none;
-  pointer-events: none;
+}
+
+/* Delimiters of source restored by undo or redo, once the caret leaves it. */
+.composer-rich-marker-hidden {
+  display: none;
 }
 
 /* Composer chips follow the board's removable chip: a 20px selected-surface
@@ -2837,18 +2784,16 @@ code {
 @layer components {
   .chat-composer-lane {
     padding-inline-start: calc(
-      env(safe-area-inset-left) + 0.75rem + var(--chat-lane-inset-start, 0px)
+      env(safe-area-inset-left) + 1rem + var(--chat-lane-inset-start, 0px)
     );
-    padding-inline-end: calc(
-      env(safe-area-inset-right) + 0.75rem + var(--chat-lane-inset-end, 0px)
-    );
+    padding-inline-end: calc(env(safe-area-inset-right) + 1rem + var(--chat-lane-inset-end, 0px));
   }
   [data-chat-canvas] .messages-timeline-scroll {
     padding-inline-start: calc(
-      0.75rem + var(--chat-lane-inset-start, 0px) - var(--chat-timeline-gutter, 0px)
+      1rem + var(--chat-lane-inset-start, 0px) - var(--chat-timeline-gutter, 0px)
     );
     padding-inline-end: calc(
-      0.75rem + var(--chat-lane-inset-end, 0px) - var(--chat-timeline-gutter, 0px)
+      1rem + var(--chat-lane-inset-end, 0px) - var(--chat-timeline-gutter, 0px)
     );
   }
   .chat-scroll-to-bottom,
@@ -2859,38 +2804,48 @@ code {
   @media (min-width: 640px) {
     .chat-composer-lane {
       padding-inline-start: calc(
-        env(safe-area-inset-left) + 3rem + var(--chat-lane-inset-start, 0px)
+        env(safe-area-inset-left) + var(--chat-lane-gutter, 3rem) +
+          var(--chat-lane-inset-start, 0px)
       );
-      padding-inline-end: calc(env(safe-area-inset-right) + 3rem + var(--chat-lane-inset-end, 0px));
+      padding-inline-end: calc(
+        env(safe-area-inset-right) + var(--chat-lane-gutter, 3rem) + var(--chat-lane-inset-end, 0px)
+      );
     }
     [data-chat-canvas] .messages-timeline-scroll {
       padding-inline-start: calc(
-        3rem + var(--chat-lane-inset-start, 0px) - var(--chat-timeline-gutter, 0px)
+        var(--chat-lane-gutter, 3rem) + var(--chat-lane-inset-start, 0px) -
+          var(--chat-timeline-gutter, 0px)
       );
       padding-inline-end: calc(
-        3rem + var(--chat-lane-inset-end, 0px) - var(--chat-timeline-gutter, 0px)
+        var(--chat-lane-gutter, 3rem) + var(--chat-lane-inset-end, 0px) -
+          var(--chat-timeline-gutter, 0px)
       );
     }
   }
 }
 
-/* A workspace area with no control of its own takes F6 focus itself; keep that visible. */
+/* A workspace area with no control of its own takes F6 focus itself; keep that visible. A
+   clicked area turns :focus-visible on the next key press and stays unmarked. */
 [data-workspace-area]:focus-visible {
+  outline: none;
+}
+[data-workspace-area][data-workspace-focus-ring]:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: -2px;
 }
 
-/* The Timeline board draws the message column at 720px, narrower than the
-   composer lane, so the timeline scopes the shared lane width. */
 .messages-timeline-scroll {
-  --chat-content-max-width: 45rem;
+  /* A fade, shown only while the list is scrolled, so a row passing under the header dissolves
+     instead of being cut. It is tall enough that a card's divider line under the header is
+     already faint. The list's header spacer is as tall, so rows rest below it. */
+  --workspace-titlebar-scroll-fade-height: 3rem;
 }
 
-/* The timeline prose measure and rhythm: 14/20 in a 720px lane, with one
-   block gap. Values come from the Timeline board's assistant section. */
+/* The timeline prose measure and rhythm: 14/22 in the shared lane (leading 1.57, the range the
+   reference chat apps use), with one block gap. */
 .messages-timeline-scroll .chat-markdown {
   font-size: var(--text-prose);
-  line-height: 1.25rem;
+  line-height: var(--text-prose--line-height);
 }
 
 .messages-timeline-scroll .chat-markdown p,
@@ -2911,17 +2866,19 @@ code {
   margin-bottom: 0;
 }
 
-/* Inline code is the board's chip: 12px mono on the field fill with its own
-   hairline, not a tinted text run. */
+/* Inline code is the board's chip: 12px mono on the field fill, with no edge so a
+   paragraph of them reads as prose, not as a field of boxes. */
 .messages-timeline-scroll .chat-markdown :not(pre) > code {
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--r-badge);
   background: var(--field);
-  padding: 1px 5px;
+  padding: 1px 4px;
   color: var(--t1);
   font-family: var(--font-mono);
   font-size: var(--text-mono);
-  line-height: inherit;
+  /* The chip's own line height (18px) is shorter than the 22px prose line, so it never
+     stretches a line that holds one, yet its text keeps normal leading. */
+  line-height: var(--text-mono--line-height);
 }
 
 /* Grid surface. One thread on screen reads as one surface with the top strip: no card, the
@@ -2933,20 +2890,31 @@ code {
   --grid-morph-duration: 260ms;
   --grid-morph-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   /* The card a cell shows in a crowded grid, read here so a cell's own --pane can't recolour it. */
-  --grid-card-surface: var(--pane);
+  --grid-card-surface: var(--background);
   --grid-cell-surface: var(--background);
   --grid-cell-radius: 0px;
   /* A stable offsetParent for the cell FLIP's layout measurements. */
   position: relative;
+  /* One thread on screen is one surface: the canvas, edge to edge. */
   background-color: var(--background);
   /* The gutter snaps: easing it would relayout every cell's chat on every frame. */
   padding: 0;
 }
 
 [data-grid-surface][data-multi] {
-  --grid-cell-surface: var(--pane);
+  --grid-card-surface: var(--background);
+  --grid-cell-surface: var(--background);
   --grid-cell-radius: var(--r-group);
-  padding: 0 8px 8px;
+  /* The pane cards sit on the darker gutter with a full 8px margin, so no card corner
+     is clipped against the surface's edge. */
+  background-color: var(--grid-gutter);
+  padding: 8px;
+}
+
+/* With several panes the top bar and the gutter are one surface, with no divider between. */
+[data-grid-page]:has([data-grid-surface][data-multi]) > [data-drag-region] {
+  background-color: var(--grid-gutter);
+  border-bottom-color: transparent;
 }
 
 /* Cells that can swap keep their own compositing layer, so a move neither creates nor
@@ -2984,8 +2952,22 @@ code {
   opacity: 1;
 }
 
-[data-grid-surface][data-multi] [data-grid-cell][data-focused="true"]::before {
-  border-color: var(--focus-frame);
+/* The focused pane's ring is drawn inside the cell: the cell clips its overflow, so a border on
+   the card behind it (which sits outside the cell's box) never showed. */
+[data-grid-surface][data-multi] [data-grid-cell]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px var(--pane-focus-ring);
+  opacity: 0;
+  transition: opacity var(--motion-feedback) var(--ease-standard);
+}
+
+[data-grid-surface][data-multi] [data-grid-cell][data-focused="true"]::after {
+  opacity: 1;
 }
 
 /* Maximize and restore: a stand-in card carries the box while every cell's own card snaps
@@ -3031,7 +3013,8 @@ code {
 
 /* The reveal's new snapshot is live; let the grid's surface colours land at once inside it. */
 html[data-theme-reveal] [data-grid-surface],
-html[data-theme-reveal] [data-grid-surface] [data-grid-cell]::before {
+html[data-theme-reveal] [data-grid-surface] [data-grid-cell]::before,
+html[data-theme-reveal] [data-grid-surface] [data-grid-cell]::after {
   transition: none;
 }
 
@@ -3041,9 +3024,15 @@ html[data-theme-reveal] [data-grid-surface] [data-grid-cell]::before {
     translate var(--grid-morph-duration) var(--grid-morph-ease);
 }
 
+/* A pane shown alone has its title in the top bar. Its hidden header leaves the flow, so the
+   conversation and the details card start at the pane's top, as they do outside a grid. */
 [data-grid-surface]:not([data-multi]) [data-pane-label] {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
   opacity: 0;
   translate: 0 -4px;
+  pointer-events: none;
 }
 
 /* A cell that joins the grid grows from nothing and fades in; one that leaves does the reverse.
@@ -3093,12 +3082,13 @@ html[data-theme-reveal] [data-grid-surface] [data-grid-cell]::before {
   transition: flex-basis var(--grid-morph-duration) var(--grid-morph-ease);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  [data-grid-surface],
-  [data-grid-surface] [data-grid-cell]::before,
-  [data-grid-surface] [data-pane-label],
-  [data-grid-surface] [data-grid-slot],
-  [data-grid-surface] [data-grid-gutter] {
+[data-grid-surface],
+[data-grid-surface] [data-grid-cell]::before,
+[data-grid-surface] [data-grid-cell]::after,
+[data-grid-surface] [data-pane-label],
+[data-grid-surface] [data-grid-slot],
+[data-grid-surface] [data-grid-gutter] {
+  @variant motion-reduce {
     transition: none !important;
   }
 }

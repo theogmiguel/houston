@@ -6,6 +6,7 @@ import {
   ModelSelection,
   OrchestrationV2DomainEvent,
   OrchestrationV2ProviderSession,
+  type OrchestrationV2PromptSuggestion,
   type OrchestrationV2ProviderThread,
   OrchestrationV2RuntimeRequest,
   ProviderInstanceId,
@@ -32,6 +33,7 @@ import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import { normalizeModelMetricLabel } from "../observability/Attributes.ts";
 import {
@@ -41,6 +43,7 @@ import {
   withMetrics,
 } from "../observability/Metrics.ts";
 import { ProviderWorkspaceMissingError } from "../provider/Errors.ts";
+import * as TraceContext from "../houston/observability/TraceContext.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as McpProviderSessions from "@houston-app/provider-core/server/McpProviderSessions";
 import * as ServerSettings from "../serverSettings.ts";
@@ -65,6 +68,8 @@ const busyTurnPrefix = (providerThreadId: ProviderThreadId) => `${providerThread
 const busyTurnKey = (providerThreadId: ProviderThreadId, runOrdinal: number) =>
   `${busyTurnPrefix(providerThreadId)}${runOrdinal}`;
 const UNLOAD_THREAD_TIMEOUT_MS = 10 * 1000;
+/** Suggestions outlive their sessions, so keep only the most recently updated threads. */
+const MAX_PROMPT_SUGGESTIONS = 256;
 const WORKING_RUN_STATUSES: ReadonlySet<string> = new Set([
   "preparing",
   "starting",
@@ -209,6 +214,10 @@ export interface ProviderSessionManagerV2Shape {
     readonly providerSessionId: ProviderSessionId;
     readonly threadId: ThreadId;
   }) => Effect.Effect<ReadonlyArray<ThreadId>>;
+  /** The thread's latest predicted next prompt, then each replacement. */
+  readonly subscribePromptSuggestion: (
+    threadId: ThreadId,
+  ) => Stream.Stream<OrchestrationV2PromptSuggestion>;
 }
 
 export class ProviderSessionManagerV2 extends Context.Service<
@@ -234,6 +243,8 @@ interface LiveSessionEntry {
   readonly idleFiber: Fiber.Fiber<void, never> | null;
   readonly pinnedSinceMs: number | null;
   readonly idleThreadUnloads: ReadonlyMap<ThreadId, IdleThreadUnload>;
+  /** Each attached thread's trace context as of its latest open; shared by every copy of the entry. */
+  readonly traceContextByThread: Map<ThreadId, TraceContext.TraceContext>;
 }
 
 interface IdleThreadUnload {
@@ -291,6 +302,37 @@ function sessionScopedRuntimeRequestThreadId(
   }
 }
 
+/** The app thread an event belongs to, when the event names one. */
+function providerEventThreadId(
+  event: ProviderAdapter.ProviderAdapterV2Event,
+): ThreadId | undefined {
+  switch (event.type) {
+    case "app_thread.created":
+      return event.appThread.id;
+    case "provider_thread.updated":
+      return event.providerThread.appThreadId ?? undefined;
+    case "node.updated":
+      return event.node.threadId;
+    case "subagent.updated":
+      return event.subagent.threadId;
+    case "message.updated":
+      return event.message.threadId;
+    case "turn_item.updated":
+      return event.turnItem.threadId;
+    case "plan.updated":
+      return event.plan.threadId;
+    case "provider_turn.updated":
+    case "command_output.delta":
+    case "runtime_request.updated":
+    case "message.delivery":
+      return event.threadId;
+    case "provider_session.updated":
+    case "background_work.updated":
+    case "turn.terminal":
+      return undefined;
+  }
+}
+
 function providerThreadRuntimeKey(
   providerThread: Parameters<
     ProviderAdapter.ProviderAdapterV2SessionRuntime["resumeThread"]
@@ -315,6 +357,8 @@ function providerThreadLoadKey(input: {
     runtimePolicy: input.runtimePolicy ?? null,
   });
 }
+
+const BEARER_PREFIX = /^Bearer\s+/;
 
 export const layerWithOptions = (
   options: ProviderSessionManagerV2LayerOptions = {},
@@ -344,11 +388,22 @@ export const layerWithOptions = (
       const projectService = yield* Effect.serviceOption(ProjectService.ProjectService);
       const eventSink = yield* EventSink.EventSinkV2;
       const commandOutput = yield* CommandOutputHub.CommandOutputHub;
+      const promptSuggestionStore = yield* SubscriptionRef.make<
+        ReadonlyMap<ThreadId, NonNullable<OrchestrationV2PromptSuggestion>>
+      >(new Map());
       const idAllocator = yield* IdAllocator.IdAllocatorV2;
       const providerEventIngestor = yield* ProviderEventIngestor.ProviderEventIngestorV2;
       const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
       const houstonReadOnlyThreads = yield* HoustonReadOnlyThreads;
       const agentScope = yield* AgentScope;
+      // Labs flag, read live: Codex per turn (its shared session outlives a toggle), Claude per query.
+      // Unreadable settings keep it off.
+      const promptSuggestionsEnabled = Option.isNone(serverSettings)
+        ? Effect.succeed(false)
+        : serverSettings.value.getSettings.pipe(
+            Effect.map((settings) => settings.promptSuggestionsEnabled),
+            Effect.orElseSucceed(() => false),
+          );
       const agentAccessSettings = Effect.fn("ProviderSessionManagerV2.agentAccessSettings")(
         function* (threadId: ThreadId) {
           if (Option.isNone(serverSettings)) return { browser: true, device: false };
@@ -476,7 +531,7 @@ export const layerWithOptions = (
                 if (existing !== undefined) {
                   // Reserve before async validation so release cannot revoke between validation and reservation.
                   reserveMcpCredential(threadId, existing.providerSessionId);
-                  const rawToken = existing.authorizationHeader.replace(/^Bearer\s+/, "");
+                  const rawToken = existing.authorizationHeader.replace(BEARER_PREFIX, "");
                   // Interrupted resolution must release the reservation before the caller learns of it.
                   const resolved = yield* mcpSessionRegistry
                     .resolve(rawToken)
@@ -634,6 +689,9 @@ export const layerWithOptions = (
         const payload: OrchestrationV2ProviderSession = {
           ...input.entry.runtime.providerSession,
           status: releaseStatusFor(input.reason),
+          ...(input.entry.runtime.providerSession.extensionStatuses === undefined
+            ? {}
+            : { extensionStatuses: [] }),
           updatedAt: now,
           lastError:
             input.reason === "runtime_error" ? (input.detail ?? "Provider runtime failed.") : null,
@@ -665,8 +723,8 @@ export const layerWithOptions = (
         for (const threadId of input.entry.attachedThreadIds) {
           const projection = yield* projectionStore.getThreadRecords(
             threadId,
-            ["runtimeRequests", "nodes", "turnItems"],
-            { turnItemTypes: ["approval_request", "user_input_request"] },
+            ["runtimeRequests"],
+            { runtimeRequestStatuses: ["pending"] },
           );
           const releasedRequests = projection.runtimeRequests.filter(
             (request) =>
@@ -678,6 +736,16 @@ export const layerWithOptions = (
               !(input.reason === "server_shutdown" && request.kind === "user_input"),
           );
 
+          if (releasedRequests.length === 0) continue;
+          const records = yield* projectionStore.getThreadRecords(
+            threadId,
+            ["nodes", "turnItems"],
+            {
+              nodeIds: releasedRequests.map((request) => request.nodeId),
+              turnItemRequestIds: releasedRequests.map((request) => request.id),
+              turnItemTypes: ["approval_request", "user_input_request"],
+            },
+          );
           for (const request of releasedRequests) {
             events.push({
               id: yield* idAllocator.allocate.event({
@@ -700,7 +768,7 @@ export const layerWithOptions = (
               },
             });
 
-            const requestNode = projection.nodes.find((node) => node.id === request.nodeId);
+            const requestNode = records.nodes.find((node) => node.id === request.nodeId);
             if (requestNode !== undefined) {
               events.push({
                 id: yield* idAllocator.allocate.event({
@@ -721,7 +789,7 @@ export const layerWithOptions = (
               });
             }
 
-            const turnItem = projection.turnItems.find(
+            const turnItem = records.turnItems.find(
               (item) =>
                 (item.type === "approval_request" || item.type === "user_input_request") &&
                 item.requestId === request.id,
@@ -1215,8 +1283,8 @@ export const layerWithOptions = (
 
       // Provider activity restarts the pin budget, so background work that keeps
       // reporting progress (a long Claude workflow) is never cut off; only work
-      // that went silent for maxIdlePinMs is released. This runs for every
-      // provider event, so keep it untraced.
+      // that went silent for maxIdlePinMs is released. Progress events can be
+      // frequent, so keep this untraced.
       const scheduleIdleReleaseInternal = Effect.fnUntraced(function* (
         providerSessionId: ProviderSessionId,
         options?: { readonly providerActivity?: boolean },
@@ -1232,6 +1300,7 @@ export const layerWithOptions = (
         const generation = entry.idleGeneration + 1;
         const idleFiber = yield* Effect.sleep(Duration.millis(idleTimeoutMs)).pipe(
           Effect.andThen(releaseIfStillIdle({ providerSessionId, generation })),
+          TraceContext.withoutTurnContext,
           Effect.forkIn(layerScope),
         );
         yield* Ref.update(sessions, (latest) => {
@@ -1301,6 +1370,8 @@ export const layerWithOptions = (
           attachedThreadIds.delete(input.threadId);
           const loadedProviderThreadKeyByThread = new Map(entry.loadedProviderThreadKeyByThread);
           loadedProviderThreadKeyByThread.delete(input.threadId);
+          // In place: the event pump reads this map through the entry it started with.
+          entry.traceContextByThread.delete(input.threadId);
           const updated = new Map(current);
           updated.set(key, {
             ...entry,
@@ -1562,6 +1633,7 @@ export const layerWithOptions = (
           const generation = pending.generation + 1;
           const fiber = yield* Effect.sleep(Duration.millis(idleTimeoutMs)).pipe(
             Effect.andThen(unloadIdleThread({ providerSessionId, threadId, generation })),
+            TraceContext.withoutTurnContext,
             Effect.forkIn(layerScope),
           );
           const previous = yield* updateIdleThreadUnload(providerSessionId, threadId, (current) =>
@@ -1703,6 +1775,22 @@ export const layerWithOptions = (
         },
       );
 
+      // A thread can switch models between turns on one session; its events name the current one.
+      const refreshThreadModel = (
+        providerSessionId: ProviderSessionId,
+        threadId: ThreadId,
+        model: string | undefined,
+      ) =>
+        Ref.get(sessions).pipe(
+          Effect.map((current) => {
+            const entry = current.get(sessionKey(providerSessionId));
+            const context = entry?.traceContextByThread.get(threadId);
+            const family = TraceContext.modelFamily(model);
+            if (entry === undefined || context === undefined || family === undefined) return;
+            entry.traceContextByThread.set(threadId, { ...context, model: family });
+          }),
+        );
+
       const decorateRuntime = (
         runtime: ProviderAdapter.ProviderAdapterV2SessionRuntime,
         eventSubscribers: Ref.Ref<
@@ -1723,6 +1811,10 @@ export const layerWithOptions = (
           });
         return {
           ...runtime,
+          // Pi replaces its session snapshot as metadata changes.
+          get providerSession() {
+            return runtime.providerSession;
+          },
           subscribeEvents,
           events: Stream.unwrap(
             subscribeEvents.pipe(Effect.map((subscription) => subscription.events)),
@@ -1737,6 +1829,9 @@ export const layerWithOptions = (
               }),
             ).pipe(
               Effect.andThen(runtime.ensureThread(input)),
+              Effect.tap(() =>
+                refreshThreadModel(providerSessionId, input.threadId, input.modelSelection.model),
+              ),
               Effect.tap((providerThread) =>
                 markProviderThreadLoaded({
                   providerSessionId,
@@ -1781,6 +1876,9 @@ export const layerWithOptions = (
               ),
               Effect.flatMap((loaded) =>
                 loaded ? Effect.succeed(input.providerThread) : runtime.resumeThread(input),
+              ),
+              Effect.tap(() =>
+                refreshThreadModel(providerSessionId, threadId, input.modelSelection?.model),
               ),
               Effect.tap((providerThread) =>
                 markProviderThreadLoaded({
@@ -1953,14 +2051,51 @@ export const layerWithOptions = (
           ),
       );
 
+      // The pump serves every thread of the session; each event gets its own thread's context.
+      const withEventTraceContext = <A, E, R>(
+        entry: LiveSessionEntry,
+        event: ProviderAdapter.ProviderAdapterV2Event,
+        pump: Effect.Effect<A, E, R>,
+      ) =>
+        Ref.get(sessions).pipe(
+          Effect.flatMap((current) => {
+            const latest = current.get(sessionKey(entry.runtime.providerSessionId));
+            const attached =
+              latest?.runtime === entry.runtime
+                ? latest.attachedThreadIds
+                : entry.attachedThreadIds;
+            const threadId =
+              providerEventThreadId(event) ??
+              (attached.size === 1 ? attached.values().next().value : undefined);
+            const context =
+              threadId === undefined
+                ? {}
+                : (entry.traceContextByThread.get(threadId) ?? { threadId });
+            return pump.pipe(TraceContext.withinTraceContext(context));
+          }),
+        );
+
       const startEventPump = (entry: LiveSessionEntry) => {
         let stoppedByProvider = false;
-        return entry.runtime.events.pipe(
-          Stream.runForEach((event) => {
+        let lastSessionStatus = entry.runtime.providerSession.status;
+        const pumpEvent = (event: ProviderAdapter.ProviderAdapterV2Event) =>
+          Effect.suspend(() => {
             if (shutdownSignal.received) return Effect.void;
             // Live output bypasses persistence and subscribers so floods cannot delay domain events.
             if (event.type === "command_output.delta") {
               return commandOutput.append(event);
+            }
+            if (event.type === "prompt_suggestion.updated") {
+              return SubscriptionRef.update(promptSuggestionStore, (current) => {
+                const next = new Map(current);
+                next.delete(event.threadId);
+                next.set(event.threadId, { runId: event.runId, text: event.text });
+                for (const threadId of next.keys()) {
+                  if (next.size <= MAX_PROMPT_SUGGESTIONS) break;
+                  next.delete(threadId);
+                }
+                return next;
+              });
             }
             const releaseLiveOutput =
               event.type === "turn_item.updated" &&
@@ -1971,11 +2106,13 @@ export const layerWithOptions = (
                     itemId: event.turnItem.id,
                   })
                 : Effect.void;
-            if (
+            // Metadata can change while idle without extending the runtime's lifetime.
+            const metadataOnly =
               event.type === "provider_session.updated" &&
-              event.providerSession.status === "stopped"
-            ) {
-              stoppedByProvider = true;
+              event.providerSession.status === lastSessionStatus;
+            if (event.type === "provider_session.updated") {
+              lastSessionStatus = event.providerSession.status;
+              if (lastSessionStatus === "stopped") stoppedByProvider = true;
             }
             return observeActivity(
               entry.runtime.providerSessionId,
@@ -1985,7 +2122,9 @@ export const layerWithOptions = (
                     event.providerThreadId,
                     event.runOrdinal,
                   )
-                : touchActivity(entry.runtime.providerSessionId, { providerActivity: true }),
+                : metadataOnly
+                  ? Effect.void
+                  : touchActivity(entry.runtime.providerSessionId, { providerActivity: true }),
             ).pipe(
               Effect.andThen(
                 event.type === "provider_session.updated"
@@ -2049,7 +2188,11 @@ export const layerWithOptions = (
                 }),
               ),
             );
-          }),
+          });
+        return entry.runtime.events.pipe(
+          // No span per event: the fiber has no parent (withoutTurnContext), so the work an event
+          // does starts traces of its own, and an event that only passes through costs none.
+          Stream.runForEach((event) => withEventTraceContext(entry, event, pumpEvent(event))),
           Effect.exit,
           Effect.flatMap((exit) =>
             Effect.gen(function* () {
@@ -2097,6 +2240,7 @@ export const layerWithOptions = (
               }).pipe(logReleaseFailure(entry.runtime.providerSessionId));
             }),
           ),
+          TraceContext.withoutTurnContext,
           Effect.forkIn(layerScope),
         );
       };
@@ -2121,7 +2265,7 @@ export const layerWithOptions = (
             ),
           { concurrency: "unbounded", discard: true },
         );
-      });
+      }).pipe(Effect.withSpan("ProviderSessionManager.shutdown"));
       yield* Effect.addFinalizer(() =>
         shutdown.pipe(
           Effect.ensuring(closeScopeWithin(sessionScopes, { reason: "server_shutdown" })),
@@ -2159,6 +2303,10 @@ export const layerWithOptions = (
                   });
                 }
                 if (!attached) yield* agentScope.clear(input.threadId);
+                existing.traceContextByThread.set(
+                  input.threadId,
+                  yield* TraceContext.currentThreadContext,
+                );
                 yield* ensureThreadAttached({
                   providerSessionId: input.providerSessionId,
                   threadId: input.threadId,
@@ -2198,6 +2346,7 @@ export const layerWithOptions = (
                   providerSessionId: input.providerSessionId,
                   modelSelection: input.modelSelection,
                   runtimePolicy: input.runtimePolicy,
+                  promptSuggestions: promptSuggestionsEnabled,
                   ...(input.resumeFromSession === undefined
                     ? {}
                     : { resumeFromSession: input.resumeFromSession }),
@@ -2213,6 +2362,8 @@ export const layerWithOptions = (
                 })
                 .pipe(
                   Effect.provideService(Scope.Scope, sessionScope),
+                  // The session's fibers serve every later turn, not the one opening it.
+                  TraceContext.withoutTurnContext,
                   // Bound scope close after cleanup; a wedged finalizer must not hold the open lock or interrupter.
                   Effect.onError(() =>
                     dropReservation.pipe(
@@ -2266,6 +2417,9 @@ export const layerWithOptions = (
                 idleFiber: null,
                 pinnedSinceMs: null,
                 idleThreadUnloads: new Map(),
+                traceContextByThread: new Map([
+                  [input.threadId, yield* TraceContext.currentThreadContext],
+                ]),
               };
               yield* Ref.update(sessions, (current) => {
                 const updated = new Map(current);
@@ -2470,6 +2624,8 @@ export const layerWithOptions = (
                 entry.loadedProviderThreadKeyByThread,
               );
               loadedProviderThreadKeyByThread.delete(input.threadId);
+              // In place: the event pump reads this map through the entry it started with.
+              entry.traceContextByThread.delete(input.threadId);
               const mcpCredentialIdByThread =
                 input.revokeMcpCredential === true
                   ? (() => {
@@ -2570,6 +2726,21 @@ export const layerWithOptions = (
               ),
             ),
         ),
+        // Stored suggestions can outlive a deleted thread, so check the thread before serving one.
+        subscribePromptSuggestion: (threadId) =>
+          SubscriptionRef.changes(promptSuggestionStore).pipe(
+            Stream.map((suggestions) => suggestions.get(threadId) ?? null),
+            Stream.changes,
+            Stream.mapEffect((suggestion) =>
+              suggestion === null
+                ? Effect.succeed(null)
+                : projectionStore.getThread(threadId).pipe(
+                    Effect.map((thread) => (thread.deletedAt === null ? suggestion : null)),
+                    Effect.orElseSucceed(() => null),
+                  ),
+            ),
+            Stream.changes,
+          ),
       } satisfies ProviderSessionManagerV2Shape);
     }),
   );

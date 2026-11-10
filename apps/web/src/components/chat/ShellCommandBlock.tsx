@@ -16,9 +16,11 @@ function loadEmbeddedScripts() {
   return embeddedScriptsModule;
 }
 
+const PLAIN_WORDS_PATTERN = /(\s+)/u;
+
 // Match highlighted layout to prevent reflow when the grammar arrives.
 function PlainWords({ code }: { code: string }) {
-  return code.split(/(\s+)/u).map((part, index) =>
+  return code.split(PLAIN_WORDS_PATTERN).map((part, index) =>
     index % 2 === 1 || part === "" ? (
       part
     ) : (

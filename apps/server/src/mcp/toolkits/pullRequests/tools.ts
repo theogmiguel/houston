@@ -104,15 +104,6 @@ export class PullRequestThreadRequiredError extends Schema.TaggedError<PullReque
   }
 }
 
-export class PullRequestThreadNotFoundError extends Schema.TaggedError<PullRequestThreadNotFoundError>()(
-  "PullRequestThreadNotFoundError",
-  { threadId: Schema.String },
-) {
-  override get message(): string {
-    return `Thread ${this.threadId} was not found.`;
-  }
-}
-
 export class PullRequestLinkFailedError extends Schema.TaggedError<PullRequestLinkFailedError>()(
   "PullRequestLinkFailedError",
   { cause: Schema.Defect() },
@@ -193,7 +184,6 @@ export const PullRequestToolError = Schema.Union([
   PullRequestHostRequiredError,
   PullRequestUrlUnavailableError,
   PullRequestThreadRequiredError,
-  PullRequestThreadNotFoundError,
   PullRequestLinkFailedError,
   PullRequestUnlinkFailedError,
   PullRequestListFailedError,
@@ -216,9 +206,23 @@ const PullRequestIdentity = {
 export const CHILD_PULL_REQUEST_REPORT_NEXT =
   "End your reply with: PR <full URL>, head <SHA>, checks and reviews <state>.";
 
+/**
+ * Whether Houston could read the pull request from its host when it was linked or watched.
+ * Anything but `ok` means its state, checks and wakes may not arrive; `next` says what to do.
+ */
+export const PullRequestTracking = Schema.Literals([
+  "ok",
+  "unauthenticated",
+  "not-found",
+  "rate-limited",
+  "unverified",
+]);
+export type PullRequestTracking = typeof PullRequestTracking.Type;
+
 export const LinkPullRequestResult = Schema.Struct({
   ...PullRequestIdentity,
   alreadyLinked: Schema.Boolean,
+  tracking: PullRequestTracking,
   next: Schema.optional(Schema.String),
 });
 export type LinkPullRequestResult = typeof LinkPullRequestResult.Type;
@@ -266,6 +270,8 @@ export const WatchPullRequestResult = Schema.Struct({
   ...PullRequestIdentity,
   watching: Schema.Boolean,
   wasWatching: Schema.Boolean,
+  tracking: Schema.optional(PullRequestTracking),
+  next: Schema.optional(Schema.String),
 });
 export type WatchPullRequestResult = typeof WatchPullRequestResult.Type;
 
@@ -303,7 +309,7 @@ export type ListThreadPullRequestsResult = typeof ListThreadPullRequestsResult.T
 
 const LinkPullRequestTool = Tool.make("link_pull_request", {
   description:
-    "Link a PR to this thread. Houston shows its status and settles the thread on merge. For several PRs, use `link_pull_requests`.",
+    "Link a PR to this thread. Houston shows its status and settles the thread on merge. For several PRs, use `link_pull_requests`. If `tracking` is not `ok`, follow `next`.",
   parameters: PullRequestTargetInput,
   success: LinkPullRequestResult,
   failure: PullRequestToolError,
@@ -384,7 +390,7 @@ const ListThreadPullRequestsTool = Tool.make("list_thread_pull_requests", {
 
 const WatchPullRequestTool = Tool.make("watch_pull_request", {
   description:
-    "Watch an open PR for this thread, linking it first if needed. Houston wakes you on failed checks, passed required checks, new comments or reviews, or conflicts. Handle old comments first. Only later ones wake you. After this call, end your turn. The watch stays on after each wake, so do not call this again on a wake. A wake is not a merge decision. Check readiness yourself.",
+    "Watch an open PR for this thread, linking it first if needed. Houston wakes you on failed checks, passed required checks, new comments or reviews, or conflicts. Handle old comments first. Only later ones wake you. After this call, end your turn. The watch stays on after each wake, so do not call this again on a wake. A wake is not a merge decision. Check readiness yourself. If `tracking` is not `ok`, follow `next`.",
   parameters: PullRequestTargetInput,
   success: WatchPullRequestResult,
   failure: PullRequestToolError,

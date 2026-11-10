@@ -34,6 +34,8 @@ import * as AgentScopeLive from "./process/agentScope.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as NodePtyAdapter from "./terminal/NodePtyAdapter.ts";
 import * as PullRequestHttp from "./pullRequest/http.ts";
+import * as SpeechModelStore from "./speech/SpeechModelStore.ts";
+import * as CloudSpeech from "./speech/CloudSpeech.ts";
 import * as SpeechService from "./speech/SpeechService.ts";
 import { speechHttpApiLayer } from "./speech/http.ts";
 import { speechStreamRouteLayer } from "./speech/stream.ts";
@@ -93,6 +95,7 @@ import * as ServerSettings from "./serverSettings.ts";
 import * as ManagedLimits from "./policy/managedLimits.ts";
 import * as ManagedPolicy from "./policy/ManagedPolicy.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
+import * as AssetSigner from "./assets/AssetSigner.ts";
 import * as NativeAppIconResolver from "./assets/NativeAppIconResolver.ts";
 import * as AntigravityInstallation from "./provider/AntigravityInstallation.ts";
 import * as CodexInstallation from "./provider/CodexInstallation.ts";
@@ -123,7 +126,9 @@ import * as HoustonTaskRuns from "./houston/tasks/TaskRuns.ts";
 import * as HoustonTaskService from "./houston/tasks/TaskService.ts";
 import * as HoustonTaskStore from "./houston/tasks/TaskStore.ts";
 import * as HoustonTaskV1Import from "./houston/tasks/V1Import.ts";
-import * as HoustonKeychain from "./houston/secrets/HoustonKeychain.ts";
+import * as HoustonSecrets from "./houston/secrets/HoustonSecrets.ts";
+import * as LegacyKeychain from "./houston/secrets/LegacyKeychain.ts";
+import * as SecretStoreImport from "./houston/secrets/SecretStoreImport.ts";
 import * as HoustonTaskSourceNotion from "./houston/taskSources/NotionClient.ts";
 import * as HoustonTaskSourceOutbox from "./houston/taskSources/Outbox.ts";
 import * as HoustonTaskSourceStore from "./houston/taskSources/SourceStore.ts";
@@ -199,6 +204,7 @@ import {
   readTailscaleStatus,
 } from "@houston-app/tailscale";
 import * as ServerActivation from "./serverActivation.ts";
+import * as OutgoingTraceContext from "./houston/observability/OutgoingTraceContext.ts";
 
 // Escaped MCP handoff provenance can exceed find-my-way's 100-character segment default.
 const HTTP_ROUTER_CONFIG = {
@@ -209,7 +215,13 @@ const HTTP_ROUTER_CONFIG = {
 const HTTP_PREEMPTIVE_SHUTDOWN_GRACE_MS = 0;
 const layerResourceAttribution = ResourceAttribution.layer;
 const layerApplicationObservability = EventLoopMonitor.layer.pipe(
-  Layer.provideMerge(Observability.layer),
+  // Houston: a Datadog preset reads its API key from the secret store when export starts. The
+  // runtime's layerHoustonSecrets needs the database for its keychain import, which is built later.
+  Layer.provideMerge(
+    Observability.layer.pipe(
+      Layer.provide(HoustonSecrets.layerWithoutImport.pipe(Layer.provide(ServerSecretStore.layer))),
+    ),
+  ),
   Layer.provideMerge(layerResourceAttribution),
 );
 
@@ -561,6 +573,16 @@ export const layerHoustonTaskPersistence = Layer.empty.pipe(
   Layer.provideMerge(HoustonTaskSourceOutbox.layer),
 );
 
+// Tokens earlier builds kept in the OS keychain are copied in before any consumer reads one.
+const layerHoustonSecrets = HoustonSecrets.layer.pipe(
+  Layer.tap((context) =>
+    SecretStoreImport.importKeychainSecrets.pipe(
+      Effect.provide(context),
+      Effect.provide(LegacyKeychain.layerLive),
+    ),
+  ),
+);
+
 const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   layerThreadSettlementWorker,
   layerIdleCompactionWorker,
@@ -632,7 +654,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
         HoustonTaskV1Import.layer.pipe(Layer.provideMerge(RuntimeLayer.layerProjectService)),
       ),
     ),
-    // The task source poller reads GitHub through its own client and the token from the OS keychain.
+    // The task source poller reads GitHub through its own client and the token from the secret store.
     Layer.provideMerge(
       layerTaskSources(
         Layer.mergeAll(GitHubRest.layerWithDependencies, HoustonTaskSourceNotion.layer),
@@ -652,7 +674,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
     // Below the orchestration runtime so its ProjectService sees the store on project deletion.
     Layer.provideMerge(Layer.mergeAll(HoustonTaskSourceStore.layer, HoustonMergeQueueStore.layer)),
     Layer.provideMerge(HoustonSlackStore.layer),
-    Layer.provideMerge(HoustonKeychain.layerLive),
+    Layer.provideMerge(layerHoustonSecrets),
     Layer.provideMerge(layerHoustonTaskPersistence),
     Layer.provideMerge(layerPersistence),
     Layer.provideMerge(
@@ -702,6 +724,7 @@ const layerRuntimeCoreDependencies = layerRuntimeCoreDependenciesBase.pipe(
   Layer.provideMerge(CodexManagedTokenBroker.layer),
   Layer.provideMerge(layerServerEnvironment),
   Layer.provideMerge(layerAuth),
+  Layer.provideMerge(AssetSigner.layer),
   Layer.provideMerge(ServerSecretStore.layer),
 );
 
@@ -767,7 +790,8 @@ const layerMakeRoutes = Layer.mergeAll(
   Layer.provide(PeerLinkRequests.layer),
   // Share the service so HTTP/WS clients single-flight reads and invalidate each other's cached patches.
   Layer.provide(layerPullRequestService),
-  Layer.provide(SpeechService.layer),
+  Layer.provide(SpeechService.layer.pipe(Layer.provide(SpeechModelStore.layer))),
+  Layer.provide(CloudSpeech.layer.pipe(Layer.provide(FetchHttpClient.layer))),
   // The same activity instance RunExecutionService reports to, by layer memoization.
   Layer.provide(
     ServerBrowser.layer.pipe(
@@ -788,6 +812,8 @@ const layerMakeRoutes = Layer.mergeAll(
   Layer.provide(ServerHttp.layerBrowserApiCors),
   Layer.provide(ServerHttp.layerHttpCompression),
 );
+
+const IPV6_BRACKETS = /^\[|\]$/gu;
 
 const layerMakeServer = Layer.unwrap(
   Effect.gen(function* () {
@@ -858,7 +884,7 @@ const layerMakeServer = Layer.unwrap(
               }).pipe(
                 Effect.as({
                   localPort,
-                  localHost: localHost.replace(/^\[|\]$/gu, ""),
+                  localHost: localHost.replace(IPV6_BRACKETS, ""),
                   servePort: config.tailscaleServePort,
                 }),
                 Effect.tap(() =>
@@ -966,7 +992,7 @@ const layerMakeServer = Layer.unwrap(
       Layer.provide(layerActivation),
       Layer.provideMerge(layerHttpServer),
       Layer.provide(layerApplicationObservability),
-      Layer.provideMerge(FetchHttpClient.layer),
+      Layer.provideMerge(OutgoingTraceContext.layer(FetchHttpClient.layer)),
       Layer.provide(VcsProcess.layer),
       Layer.provideMerge(AgentScopeLive.layer),
       Layer.provideMerge(layerPlatformServices),

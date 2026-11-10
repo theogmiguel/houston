@@ -33,6 +33,20 @@ Houston keeps its data under the channel directory's `v2` child: `~/.houston/v2`
 release channel on Linux, `%USERPROFILE%\.houston\v2` on Windows. A development build uses
 its own channel and does not touch release state.
 
+### Linux
+
+AppImage and `.deb` downloads are available for x86_64 and ARM64. Check your architecture
+with `uname -m`: for `x86_64`, choose a file ending in `x86_64.AppImage` or `amd64.deb`; for
+`aarch64`, choose `arm64.AppImage` or `arm64.deb`.
+
+To launch an AppImage, open a terminal in its download folder and run the commands below,
+replacing the filename with the exact one you downloaded:
+
+```bash
+chmod +x ./Houston-<version>-x86_64.AppImage
+./Houston-<version>-x86_64.AppImage
+```
+
 ## Providers
 
 Add and configure providers in **Settings ▸ Providers**. Houston can run threads with:
@@ -70,7 +84,7 @@ Code and Codex on the selected computers).
 
 The server listens on this machine only unless network access is turned on in
 **Settings ▸ Connections ▸ Sharing & access**. Each agent sends your prompts and the files it
-reads to its own provider; Houston has no telemetry service.
+reads to its own provider. See [Privacy and diagnostics](privacy.md).
 
 ## Platform differences
 

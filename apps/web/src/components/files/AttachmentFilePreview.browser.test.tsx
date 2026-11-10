@@ -2621,7 +2621,7 @@ it("clamps workspace PDF scroll when pages shrink or disappear", async () => {
   await expect.element(screen.getByText("1 / 3 pages", { exact: true })).toBeVisible();
 });
 
-it("unwraps one text attachment without turning off the word wrap setting", async () => {
+it("wraps one text attachment without turning on the word wrap setting", async () => {
   const file = new Blob(["a long line"], { type: "text/plain" });
   await using screen = await render(
     <AttachmentFilePreview
@@ -2631,10 +2631,10 @@ it("unwraps one text attachment without turning off the word wrap setting", asyn
       file={file}
     />,
   );
-  await screen.getByRole("button", { name: "Disable word wrap" }).click();
-  await expect.element(screen.getByRole("button", { name: "Enable word wrap" })).toBeVisible();
-  expect(getClientSettings().wordWrap).toBe(true);
-  expect(screen.container.querySelector("pre")?.dataset.wordWrap).toBe("false");
+  await screen.getByRole("button", { name: "Enable word wrap" }).click();
+  await expect.element(screen.getByRole("button", { name: "Disable word wrap" })).toBeVisible();
+  expect(getClientSettings().wordWrap).toBe(false);
+  expect(screen.container.querySelector("pre")?.dataset.wordWrap).toBe("true");
 });
 
 it("mounts a bounded set of saved notebook outputs as the reader scrolls", async () => {

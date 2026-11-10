@@ -4,6 +4,8 @@ import type { ReactNode } from "react";
 import { threadSyncLabel, type ThreadSyncPhase } from "../../threadSync";
 import { cn } from "~/lib/utils";
 import { NoticeText } from "./ComposerBannerStack";
+import { IN_TURN_GAP_ABOVE_CLASS } from "./timelineSpacing";
+import { ThreadNowDetails } from "../ui/thread-now-details";
 
 /** A line of thread state for the end of the timeline. */
 export interface ThreadNowItem {
@@ -11,6 +13,11 @@ export interface ThreadNowItem {
   readonly icon: ReactNode;
   readonly title: ReactNode;
   readonly description?: ReactNode;
+  /** One entry per line, shown behind a details button that is always present. */
+  readonly details?: ReadonlyArray<ReactNode>;
+  readonly detailsLabel?: string;
+  /** Leaves the in-turn gap above the line, for a line that follows the answer's footer. */
+  readonly spaced?: boolean;
   readonly actions?: ReactNode;
 }
 
@@ -18,7 +25,7 @@ export interface ThreadNowItem {
 const lineClassName = cn(
   "mx-auto flex w-full min-w-0 max-w-(--chat-content-max-width) items-center gap-1.5 px-1 pb-2 text-xs text-muted-foreground [&_svg]:size-3.5 [&_svg]:shrink-0",
   // A details button must not make its line taller than the others.
-  "[&_[data-slot=popover-trigger]]:-my-1.5",
+  "[&_[data-slot=popover-trigger]]:-my-1.5 [&_[data-slot=popover-trigger]]:self-center",
   // Inline actions keep their text size but get a finger-sized hit area on touch.
   "pointer-coarse:[&_[data-slot=inline-button]]:relative pointer-coarse:[&_[data-slot=inline-button]]:after:absolute pointer-coarse:[&_[data-slot=inline-button]]:after:-inset-x-1.5 pointer-coarse:[&_[data-slot=inline-button]]:after:-inset-y-3.5",
   "transition-opacity duration-150 ease-out starting:opacity-0 motion-reduce:transition-none",
@@ -36,32 +43,41 @@ function ThreadNowLine({
   return (
     <div
       role={announce ? "alert" : undefined}
-      className={lineClassName}
+      className={cn(lineClassName, "items-baseline", item.spaced && IN_TURN_GAP_ABOVE_CLASS)}
       data-thread-now-line="true"
     >
-      <span aria-hidden className="flex size-3.5 shrink-0 items-center justify-center">
+      <span aria-hidden className="flex size-3.5 shrink-0 self-center items-center justify-center">
         {item.icon}
       </span>
-      {/* Title and detail read as one line that gives way before the actions, so Stop stays
-          reachable; when it is cut, its details button shows all of it. */}
-      <NoticeText
-        detailsLabel={
-          typeof item.title === "string" ? `Show details: ${item.title}` : "Show details"
-        }
-        className="min-w-0 truncate"
-      >
-        {item.title}
-        {item.description ? (
-          <>
-            {" "}
-            <span className="ms-0.5 text-muted-foreground/60 light:text-muted-foreground/80">
-              {item.description}
-            </span>
-          </>
-        ) : null}
-      </NoticeText>
+      {item.details ? (
+        <>
+          <span data-thread-now-title="true" className="min-w-0 truncate">
+            {item.title}
+          </span>
+          <ThreadNowDetails label={item.detailsLabel ?? "Show details"} entries={item.details} />
+        </>
+      ) : (
+        /* Title and detail read as one line that gives way before the actions, so Stop stays
+           reachable; when it is cut, its details button shows all of it. */
+        <NoticeText
+          detailsLabel={
+            typeof item.title === "string" ? `Show details: ${item.title}` : "Show details"
+          }
+          className="min-w-0 truncate"
+        >
+          <span data-thread-now-title="true">{item.title}</span>
+          {item.description ? (
+            <>
+              {" "}
+              <span className="ms-0.5 text-muted-foreground/60 light:text-muted-foreground/80">
+                {item.description}
+              </span>
+            </>
+          ) : null}
+        </NoticeText>
+      )}
       {item.actions ? (
-        <span className="ms-1.5 flex shrink-0 items-center gap-2.5">{item.actions}</span>
+        <span className="ms-1.5 flex shrink-0 items-baseline gap-2.5">{item.actions}</span>
       ) : null}
     </div>
   );

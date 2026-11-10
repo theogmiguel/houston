@@ -3,14 +3,20 @@ import { scopeThreadRef } from "@houston-app/client-runtime/environment";
 import { useAtomValue } from "@effect/atom-react";
 import { environmentThreadDetails } from "../../state/threads";
 import { memo, use, useState } from "react";
-import { ChevronDownIcon } from "lucide-react";
-import { cn } from "~/lib/utils";
-import { Collapsible, CollapsibleTrigger, CollapsiblePanel } from "../ui/collapsible";
-import { V2LifecycleRow } from "./V2LifecycleRow";
+import * as DateTime from "effect/DateTime";
+import { Collapsible, CollapsiblePanel } from "../ui/collapsible";
+import {
+  AgentAvatarStack,
+  AgentGroupCard,
+  AgentGroupRows,
+  AgentGroupTrigger,
+} from "../ui/agent-group-card";
+import { AgentElapsed } from "./AgentElapsed";
+import { EnvironmentSubagentAvatar, V2LifecycleRow } from "./V2LifecycleRow";
 import { LinkRequestCard } from "./LinkRequestCard";
 import { SecretRequestCard } from "./SecretRequestCard";
 import { TimelineRowCtx, type TimelineRow } from "./timelineRowContext";
-import { subagentGroupSummaryText } from "./TimelineV2EventRow.logic";
+import { subagentGroupSummary, subagentGroupTiming } from "./TimelineV2EventRow.logic";
 
 export function V2EventTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "event" }> }) {
   const ctx = use(TimelineRowCtx);
@@ -68,16 +74,16 @@ const V2SubagentGroup = memo(function V2SubagentGroup({
   );
   const agents = members.map((item) => {
     const live = liveAgents?.find((agent) => agent.id === item.subagentId);
+    const startedAt = live?.startedAt ?? item.startedAt;
+    const completedAt = live?.completedAt ?? item.completedAt;
     return {
       item,
       status: live?.status ?? item.status,
-      startedAt: live?.startedAt ?? item.startedAt,
-      completedAt: live?.completedAt ?? item.completedAt,
+      startedAt: startedAt ? DateTime.formatIso(startedAt) : null,
+      completedAt: completedAt ? DateTime.formatIso(completedAt) : null,
     };
   });
-  const summary = subagentGroupSummaryText(agents.map(({ status }) => status));
-  const fullSummary =
-    summary.running === null ? summary.label : `${summary.label} · ${summary.running}`;
+  const summary = subagentGroupSummary(agents.map(({ status }) => status));
   const toggleExpanded = (open: boolean) => {
     ctx.onToggleWorkEntry(row.id, expanded);
     if (open) ctx.workGroupViewState.expandedEntries.add(groupId);
@@ -87,38 +93,45 @@ const V2SubagentGroup = memo(function V2SubagentGroup({
   return (
     <WorkLogBlock continues={row.continuesWorkLog}>
       <Collapsible open={expanded} onOpenChange={toggleExpanded} data-subagent-group>
-        <CollapsibleTrigger
-          aria-label={fullSummary}
-          className="group/subagent-group flex min-h-6 w-full min-w-0 items-center gap-2 text-left text-headline text-(--t2) transition-colors hover:text-(--t1)"
-        >
-          <ChevronDownIcon
-            aria-hidden
-            className={cn(
-              "size-3.25 shrink-0 text-(--houston) transition-transform",
-              !expanded && "-rotate-90",
-            )}
+        <AgentGroupCard>
+          <AgentGroupTrigger
+            open={expanded}
+            title={summary.title}
+            status={summary.status}
+            tone={summary.tone}
+            elapsed={<AgentElapsed agent={subagentGroupTiming(agents)} />}
+            avatars={
+              <AgentAvatarStack>
+                {agents.map(({ item }) => (
+                  <EnvironmentSubagentAvatar
+                    key={item.id}
+                    environmentId={ctx.activeThreadEnvironmentId}
+                    providerInstanceId={item.providerInstanceId}
+                    driver={item.driver}
+                    remote={item.remoteChild}
+                  />
+                ))}
+              </AgentAvatarStack>
+            }
           />
-          <span className="shrink-0">{summary.label}</span>
-          {summary.running === null ? null : (
-            <span className="min-w-0 truncate text-(--houston)">· {summary.running}</span>
-          )}
-        </CollapsibleTrigger>
-        {/* Virtualized rows must settle before disclosure scroll anchoring resumes. */}
-        <CollapsiblePanel animate={false}>
-          {expanded ? (
-            <div className="-mt-1 ms-[22px] mb-1 grid gap-0.5 border-l border-border ps-2.5">
-              {members.map((item) => (
-                <V2LifecycleRow
-                  environmentId={ctx.activeThreadEnvironmentId}
-                  key={item.id}
-                  item={item}
-                  runs={ctx.runs}
-                  onOpenThread={ctx.onOpenThread}
-                />
-              ))}
-            </div>
-          ) : null}
-        </CollapsiblePanel>
+          {/* Virtualized rows must settle before disclosure scroll anchoring resumes. */}
+          <CollapsiblePanel animate={false}>
+            {expanded ? (
+              <AgentGroupRows>
+                {members.map((item) => (
+                  <V2LifecycleRow
+                    environmentId={ctx.activeThreadEnvironmentId}
+                    key={item.id}
+                    item={item}
+                    runs={ctx.runs}
+                    onOpenThread={ctx.onOpenThread}
+                    subagentLayout="card"
+                  />
+                ))}
+              </AgentGroupRows>
+            ) : null}
+          </CollapsiblePanel>
+        </AgentGroupCard>
       </Collapsible>
     </WorkLogBlock>
   );

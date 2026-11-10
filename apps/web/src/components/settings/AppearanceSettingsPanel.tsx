@@ -6,19 +6,12 @@ import {
   DEFAULT_UNIFIED_SETTINGS,
   type ChatWidth,
   type EffortDisplay,
-  type EnvironmentIdentificationMode,
   MAX_APPEARANCE_CONTRAST,
   MAX_GLASS_OPACITY,
-  MAX_PANEL_ANIMATION_DURATION_MS,
   MIN_APPEARANCE_CONTRAST,
   MIN_GLASS_OPACITY,
-  MIN_PANEL_ANIMATION_DURATION_MS,
 } from "@houston-app/contracts/settings";
-import {
-  resolveSidebarStageBackdropVariant,
-  type SidebarStageBackdropVariant,
-  useEnvironmentStageLabel,
-} from "../SidebarStageBackdrop";
+import { formatAppearanceContrast } from "../../appearanceContrast";
 import { useCustomThemes } from "../../hooks/useCustomThemes";
 import { useTheme } from "../../hooks/useTheme";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
@@ -48,42 +41,6 @@ import { AdvancedSettings } from "./AdvancedSettings";
 import { TypographySection, WordWrapRow } from "./TypographySettings";
 import { ThreadDetailsItemsRow } from "./ThreadDetailsItemsRow";
 
-const ENVIRONMENT_IDENTIFICATION_LABELS: Record<EnvironmentIdentificationMode, string> = {
-  artwork: "Artwork",
-  "nightly-artwork": "Nightly artwork",
-  "dev-artwork": "Dev artwork",
-  pill: "Version pill",
-  none: "None",
-};
-
-// The default "artwork" follows the running channel, so it is labeled as that channel's art,
-// or as "None" on Latest. The other channel's art is offered as a fixed choice.
-function environmentIdentificationOptions(
-  stageVariant: SidebarStageBackdropVariant | null,
-): ReadonlyArray<readonly [EnvironmentIdentificationMode, string]> {
-  if (stageVariant === "dev") {
-    return [
-      ["artwork", "Dev artwork"],
-      ["nightly-artwork", "Nightly artwork"],
-      ["pill", "Version pill"],
-      ["none", "None"],
-    ];
-  }
-  if (stageVariant === "nightly") {
-    return [
-      ["artwork", "Nightly artwork"],
-      ["dev-artwork", "Dev artwork"],
-      ["pill", "Version pill"],
-      ["none", "None"],
-    ];
-  }
-  return [
-    ["artwork", "None"],
-    ["nightly-artwork", "Nightly artwork"],
-    ["dev-artwork", "Dev artwork"],
-  ];
-}
-
 const CHAT_WIDTH_LABELS: Record<ChatWidth, string> = {
   comfortable: "Comfortable",
   wide: "Wide",
@@ -94,9 +51,6 @@ const EFFORT_DISPLAY_LABELS: Record<EffortDisplay, string> = {
   label: "Word",
   bars: "Bars",
 };
-
-// The board shows animations as a single switch; 150ms keeps the default motion short.
-const PANEL_ANIMATIONS_ON_MS = 150;
 
 export function AppearanceSettingsPanel() {
   const {
@@ -116,14 +70,6 @@ export function AppearanceSettingsPanel() {
   const [isCustomThemesOpen, setIsCustomThemesOpen] = useState(false);
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
-  const environmentStageLabel = useEnvironmentStageLabel();
-  const environmentStageVariant = resolveSidebarStageBackdropVariant(environmentStageLabel);
-  const environmentIdentificationOptionList =
-    environmentIdentificationOptions(environmentStageVariant);
-  const environmentIdentificationLabel =
-    environmentIdentificationOptionList.find(
-      ([value]) => value === settings.environmentIdentificationMode,
-    )?.[1] ?? ENVIRONMENT_IDENTIFICATION_LABELS[settings.environmentIdentificationMode];
   const glassOpacityRatio =
     (settings.glassOpacity - MIN_GLASS_OPACITY) / (MAX_GLASS_OPACITY - MIN_GLASS_OPACITY);
   const glassOpacitySliderStyle = {
@@ -137,33 +83,24 @@ export function AppearanceSettingsPanel() {
     "--settings-slider-progress": `${appearanceContrastRatio * 100}%`,
     "--settings-slider-fill-offset": `${0.5 - appearanceContrastRatio}rem`,
   } as CSSProperties;
-  const panelAnimationDurationRatio =
-    (settings.panelAnimationDurationMs - MIN_PANEL_ANIMATION_DURATION_MS) /
-    (MAX_PANEL_ANIMATION_DURATION_MS - MIN_PANEL_ANIMATION_DURATION_MS);
-  const panelAnimationDurationSliderStyle = {
-    "--settings-slider-progress": `${panelAnimationDurationRatio * 100}%`,
-    "--settings-slider-fill-offset": `${0.5 - panelAnimationDurationRatio}rem`,
-  } as CSSProperties;
 
   return (
     <SettingsPageContainer>
       <SettingsSection id="appearance" title="Colors & themes" variant="plain" hideTitle>
-        <div id={searchableSetting("theme").id}>
-          <ThemeLibrary
-            appearanceMode={appearanceMode}
-            customThemes={customThemes}
-            initialAppearance={resolvedTheme}
-            refreshTheme={refreshTheme}
-            isImportOpen={isImportThemeOpen}
-            setAppearanceMode={setAppearanceMode}
-            setTheme={setTheme}
-            setThemeHalf={setThemeHalf}
-            theme={theme}
-            themeHalves={themeHalves}
-            onImportOpenChange={setIsImportThemeOpen}
-            view="tiles"
-          />
-        </div>
+        <ThemeLibrary
+          appearanceMode={appearanceMode}
+          customThemes={customThemes}
+          initialAppearance={resolvedTheme}
+          refreshTheme={refreshTheme}
+          isImportOpen={isImportThemeOpen}
+          setAppearanceMode={setAppearanceMode}
+          setTheme={setTheme}
+          setThemeHalf={setThemeHalf}
+          theme={theme}
+          themeHalves={themeHalves}
+          onImportOpenChange={setIsImportThemeOpen}
+          view="tiles"
+        />
       </SettingsSection>
 
       <SettingsSection id="appearance-interface" title="Theme">
@@ -186,9 +123,9 @@ export function AppearanceSettingsPanel() {
             <div className="flex w-full items-center gap-3 sm:w-52">
               <span
                 aria-hidden="true"
-                className="min-w-6 text-right font-mono text-xs tabular-nums text-muted-foreground"
+                className="min-w-9 text-right max-phone:w-10 max-phone:min-w-10 font-sans text-xs tabular-nums text-muted-foreground"
               >
-                {settings.appearanceContrast - 100}
+                {formatAppearanceContrast(settings.appearanceContrast)}
               </span>
               <input
                 aria-label="Contrast"
@@ -216,27 +153,22 @@ export function AppearanceSettingsPanel() {
         />
 
         <SettingsRow
-          {...searchableSetting("panel-animations")}
-          description="Animate panels and menus as they open and close."
+          {...searchableSetting("animations")}
+          description="Animate menus, dialogs, lists and grid changes. Your system's reduce-motion setting also turns them off."
           control={
             <Switch
-              checked={settings.panelAnimationDurationMs > 0}
-              onCheckedChange={(checked) =>
-                updateSettings({
-                  panelAnimationDurationMs: checked ? PANEL_ANIMATIONS_ON_MS : 0,
-                })
-              }
-              aria-label="Panel animations"
+              checked={settings.animationsEnabled}
+              onCheckedChange={(animationsEnabled) => updateSettings({ animationsEnabled })}
+              aria-label="Animations"
             />
           }
           resetAction={
-            settings.panelAnimationDurationMs !==
-            DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs ? (
+            settings.animationsEnabled !== DEFAULT_UNIFIED_SETTINGS.animationsEnabled ? (
               <SettingResetButton
-                label="panel animations"
+                label="animations"
                 onClick={() =>
                   updateSettings({
-                    panelAnimationDurationMs: DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs,
+                    animationsEnabled: DEFAULT_UNIFIED_SETTINGS.animationsEnabled,
                   })
                 }
               />
@@ -246,13 +178,9 @@ export function AppearanceSettingsPanel() {
 
         <SettingsRow
           {...searchableSetting("environment-identification")}
-          description={
-            environmentStageVariant
-              ? "Choose how the Dev environment is identified."
-              : "Show Dev artwork in the sidebar header."
-          }
+          description="Show a Dev or Nightly pill beside the name in the sidebar header. Release builds show none."
           resetAction={
-            settings.environmentIdentificationMode !== DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE ? (
+            settings.environmentIdentificationMode === "none" ? (
               <SettingResetButton
                 label="environment identification"
                 onClick={() =>
@@ -267,11 +195,7 @@ export function AppearanceSettingsPanel() {
             <Switch
               checked={settings.environmentIdentificationMode !== "none"}
               onCheckedChange={(checked) =>
-                updateSettings({
-                  environmentIdentificationMode: checked
-                    ? DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE
-                    : "none",
-                })
+                updateSettings({ environmentIdentificationMode: checked ? "pill" : "none" })
               }
               aria-label="Environment identification"
             />
@@ -279,7 +203,7 @@ export function AppearanceSettingsPanel() {
         />
         <SettingsRow
           {...searchableSetting("setting-glass-opacity")}
-          description="Higher values make menus, dialogs, and the composer more solid."
+          description="Higher values make composer banners and translucent controls more solid."
           resetAction={
             settings.glassOpacity !== DEFAULT_UNIFIED_SETTINGS.glassOpacity ? (
               <SettingResetButton
@@ -294,9 +218,10 @@ export function AppearanceSettingsPanel() {
             <div className="flex w-full items-center gap-3 sm:w-52">
               <span
                 aria-hidden="true"
-                className="min-w-8 text-right font-mono text-xs tabular-nums text-muted-foreground"
+                className="min-w-8 text-right max-phone:w-10 max-phone:min-w-10 font-sans text-xs tabular-nums text-muted-foreground"
               >
                 {settings.glassOpacity}
+                <span className="phone:hidden">%</span>
               </span>
               <input
                 aria-label="Glass opacity"
@@ -362,42 +287,6 @@ export function AppearanceSettingsPanel() {
               themeHalves={themeHalves}
               onImportOpenChange={setIsImportThemeOpen}
               view="library"
-            />
-            <SettingsRow
-              {...searchableSetting("panel-animations")}
-              title="Panel animation duration"
-              description="How long panels take to open and close."
-              control={
-                <div className="flex items-center gap-3">
-                  <output
-                    className="min-w-16 text-right font-mono text-xs tabular-nums text-muted-foreground"
-                    htmlFor="panel-animation-duration"
-                  >
-                    {settings.panelAnimationDurationMs} ms
-                  </output>
-                  <input
-                    aria-label="Panel animation duration"
-                    className="settings-slider w-40"
-                    id="panel-animation-duration"
-                    max={MAX_PANEL_ANIMATION_DURATION_MS}
-                    min={MIN_PANEL_ANIMATION_DURATION_MS}
-                    onChange={(event) => {
-                      const panelAnimationDurationMs = Number(event.currentTarget.value);
-                      if (
-                        Number.isInteger(panelAnimationDurationMs) &&
-                        panelAnimationDurationMs >= MIN_PANEL_ANIMATION_DURATION_MS &&
-                        panelAnimationDurationMs <= MAX_PANEL_ANIMATION_DURATION_MS
-                      ) {
-                        updateSettings({ panelAnimationDurationMs });
-                      }
-                    }}
-                    step={25}
-                    style={panelAnimationDurationSliderStyle}
-                    type="range"
-                    value={settings.panelAnimationDurationMs}
-                  />
-                </div>
-              }
             />
           </DialogPanel>
           <DialogFooter>

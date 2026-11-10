@@ -3,9 +3,16 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
-import { render } from "../../../test/render";
+import { render as renderScreen } from "../../../test/render";
 
 import { DiffViewControls } from "./diff-view-controls";
+import { DropdownMenuItem } from "./menu";
+
+// The default browser viewport is phone-sized; the cases below cover the desktop toolbar.
+async function render(...args: Parameters<typeof renderScreen>) {
+  await page.viewport(1280, 800);
+  return renderScreen(...args);
+}
 
 function toolbar(width: string, props: ComponentProps<typeof DiffViewControls>) {
   return (
@@ -56,7 +63,7 @@ describe("diff view controls", () => {
       { router: false },
     );
 
-    expect(screen.getByRole("button", { name: "More diff actions" }).elements()).toHaveLength(0);
+    expect(screen.getByRole("button", { name: "Diff options" }).elements()).toHaveLength(0);
     await userEvent.click(screen.getByRole("button", { name: "Split diff view" }));
     expect(onDiffLayoutChange).toHaveBeenCalledWith("split");
     await userEvent.click(screen.getByRole("button", { name: "Disable diff line wrapping" }));
@@ -78,14 +85,14 @@ describe("diff view controls", () => {
       router: false,
     });
 
-    await expect.element(screen.getByRole("button", { name: "More diff actions" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "Diff options" })).toBeVisible();
     // The layout toggle survives the narrowest width the panel still allows.
     await expect.element(screen.getByRole("button", { name: "Split diff view" })).toBeVisible();
     expect(
       screen.getByRole("button", { name: "Disable diff line wrapping" }).elements(),
     ).toHaveLength(0);
 
-    await userEvent.click(screen.getByRole("button", { name: "More diff actions" }));
+    await userEvent.click(screen.getByRole("button", { name: "Diff options" }));
     await expect
       .element(page.getByRole("menuitemradio", { name: "Stacked view" }))
       .toHaveAttribute("aria-checked", "true");
@@ -97,10 +104,52 @@ describe("diff view controls", () => {
     expect(onWordWrapChange).toHaveBeenCalledWith(false);
   });
 
+  it("names the refresh in progress on the disabled menu row of a narrow toolbar", async () => {
+    await using screen = await render(
+      toolbar("20rem", { ...props(), refresh: { refreshing: true, onRefresh: () => {} } }),
+      { router: false },
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Diff options" }));
+    const row = page.getByRole("menuitem", { name: "Refreshing diff…" });
+    await expect.element(row).toBeVisible();
+    await expect.element(row).toHaveAttribute("aria-disabled", "true");
+  });
+
   it("folds even the layout toggle below the narrowest breakpoint", async () => {
     await using screen = await render(toolbar("16rem", props()), { router: false });
 
-    await expect.element(screen.getByRole("button", { name: "More diff actions" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "Diff options" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Split diff view" }).elements()).toHaveLength(0);
+  });
+
+  it("hosts the panel's own entries in the one overflow menu instead of a second one", async () => {
+    const menuExtra = <DropdownMenuItem>Find in diff</DropdownMenuItem>;
+    await using wide = await render(toolbar("40rem", { ...props(), menuExtra }), { router: false });
+
+    expect(wide.getByRole("button", { name: "Diff options" }).elements()).toHaveLength(1);
+    await userEvent.click(wide.getByRole("button", { name: "Diff options" }));
+    await expect.element(page.getByRole("menuitem", { name: "Find in diff" })).toBeVisible();
+    // Wide toolbars keep the view controls inline, so the menu holds only the host's entries.
+    expect(page.getByRole("menuitemcheckbox", { name: "Wrap lines" }).elements()).toHaveLength(0);
+  });
+
+  it("adds the folded view controls above the host's entries in a narrow toolbar", async () => {
+    const menuExtra = <DropdownMenuItem>Find in diff</DropdownMenuItem>;
+    await using narrow = await render(toolbar("20rem", { ...props(), menuExtra }), {
+      router: false,
+    });
+
+    expect(narrow.getByRole("button", { name: "Diff options" }).elements()).toHaveLength(1);
+    await userEvent.click(narrow.getByRole("button", { name: "Diff options" }));
+    await expect.element(page.getByRole("menuitemcheckbox", { name: "Wrap lines" })).toBeVisible();
+    await expect.element(page.getByRole("menuitem", { name: "Find in diff" })).toBeVisible();
+  });
+
+  it("leaves the split layout toggle out on a phone, where side-by-side columns cannot fit", async () => {
+    await page.viewport(390, 844);
+    await using screen = await renderScreen(toolbar("40rem", props()), { router: false });
+
     expect(screen.getByRole("button", { name: "Split diff view" }).elements()).toHaveLength(0);
   });
 });

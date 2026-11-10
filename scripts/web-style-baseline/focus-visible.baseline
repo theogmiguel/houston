@@ -1,7 +1,6 @@
 1 apps/web/src/components/AppRouteModal.tsx
 1 apps/web/src/components/auth/ConnectAgentSurface.tsx
 1 apps/web/src/components/chat/ChatComposer.tsx
-1 apps/web/src/components/chat/ChatHeader.tsx
 1 apps/web/src/components/chat/ComposerCommandMenu.tsx
 1 apps/web/src/components/chat/ComposerPendingAnnotationChips.tsx
 1 apps/web/src/components/chat/ComposerStashMenu.tsx
@@ -14,7 +13,7 @@
 1 apps/web/src/components/files/FileBrowserPanel.tsx
 1 apps/web/src/components/files/ProjectFileTree.tsx
 3 apps/web/src/components/GitActionsControl.tsx
-3 apps/web/src/components/grid/GridSidebar.tsx
+2 apps/web/src/components/grid/GridSidebar.tsx
 1 apps/web/src/components/preview/PreviewChromeRow.tsx
 2 apps/web/src/components/RightPanelTabs.tsx
 2 apps/web/src/components/settings/FoldedSettingsSection.tsx

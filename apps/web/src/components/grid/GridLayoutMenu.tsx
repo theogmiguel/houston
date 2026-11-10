@@ -40,7 +40,44 @@ const TIDY_OPTIONS: ReadonlyArray<{
 
 const DISABLED_REASON = "Open a second pane to tidy the grid";
 
-/** The top-bar Tidy control: a click rebuilds the grid as balanced; the menu picks another shape. */
+function useGridTidy(grid: GridRecord | null, onArrange: (() => void) | undefined) {
+  const tidyGrid = useGridStore((store) => store.tidyGrid);
+  const count = grid === null || grid.tree === null ? 0 : preorderThreads(grid.tree).length;
+  const canTidy = grid !== null && count > 1;
+  const tidy = (shape: TidyShape) => {
+    if (grid === null || !canTidy) return;
+    onArrange?.();
+    tidyGrid(grid.id, shape);
+  };
+  return { canTidy, tidy };
+}
+
+/** One menu item per tidy shape; shared by the split button's menu and the narrow More menu. */
+export function GridLayoutMenuItems({
+  grid,
+  onArrange,
+}: {
+  grid: GridRecord | null;
+  onArrange?: (() => void) | undefined;
+}) {
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const { canTidy, tidy } = useGridTidy(grid, onArrange);
+  return TIDY_OPTIONS.map((option) => {
+    const shortcut = shortcutLabelForCommand(keybindings, option.command);
+    return (
+      <MenuItem key={option.shape} disabled={!canTidy} onClick={() => tidy(option.shape)}>
+        {option.icon}
+        {option.label}
+        {shortcut === null ? null : <MenuShortcut>{shortcut}</MenuShortcut>}
+      </MenuItem>
+    );
+  });
+}
+
+/**
+ * The top-bar Tidy control: a click rebuilds the grid as balanced; the menu picks another shape.
+ * The two buttons sit together without a frame.
+ */
 export function GridLayoutMenu({
   grid,
   onArrange,
@@ -49,16 +86,7 @@ export function GridLayoutMenu({
   /** Runs after the grid is rearranged, e.g. to leave a maximized pane. */
   onArrange?: () => void;
 }) {
-  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
-  const tidyGrid = useGridStore((store) => store.tidyGrid);
-  const count = grid === null || grid.tree === null ? 0 : preorderThreads(grid.tree).length;
-  const canTidy = grid !== null && count > 1;
-
-  const tidy = (shape: TidyShape) => {
-    if (grid === null || !canTidy) return;
-    onArrange?.();
-    tidyGrid(grid.id, shape);
-  };
+  const { canTidy, tidy } = useGridTidy(grid, onArrange);
 
   return (
     <Group className="[-webkit-app-region:no-drag]">
@@ -94,16 +122,7 @@ export function GridLayoutMenu({
           <ChevronDownIcon className="size-3 text-secondary-label" />
         </MenuTrigger>
         <MenuPopup side="bottom" align="end">
-          {TIDY_OPTIONS.map((option) => {
-            const shortcut = shortcutLabelForCommand(keybindings, option.command);
-            return (
-              <MenuItem key={option.shape} onClick={() => tidy(option.shape)}>
-                {option.icon}
-                {option.label}
-                {shortcut === null ? null : <MenuShortcut>{shortcut}</MenuShortcut>}
-              </MenuItem>
-            );
-          })}
+          <GridLayoutMenuItems grid={grid} onArrange={onArrange} />
         </MenuPopup>
       </Menu>
     </Group>

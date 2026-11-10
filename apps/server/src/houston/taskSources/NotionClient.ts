@@ -37,6 +37,9 @@ import {
   type RemoteRecord,
   type StoredSettings,
 } from "./rules.ts";
+import * as OutgoingTraceContext from "../observability/OutgoingTraceContext.ts";
+
+const TRAILING_SLASHES = /\/+$/;
 
 export const NOTION_ORIGIN = "https://api.notion.com";
 type NotionMethod = "GET" | "POST" | "PATCH";
@@ -72,7 +75,7 @@ export const make = Effect.fn("HoustonTaskSources.makeNotionClient")(function* (
 }) {
   const http = yield* HttpClient.HttpClient;
   const refused = checkOrigin(options.origin, options.allowLoopback === true);
-  const base = options.origin.replace(/\/+$/, "");
+  const base = options.origin.replace(TRAILING_SLASHES, "");
 
   const once = Effect.fnUntraced(function* (
     token: Redacted.Redacted<string>,
@@ -159,13 +162,13 @@ export const make = Effect.fn("HoustonTaskSources.makeNotionClient")(function* (
 });
 
 export const layer = Layer.effect(NotionClient, make({ origin: NOTION_ORIGIN })).pipe(
-  Layer.provide(FetchHttpClient.layer),
+  Layer.provide(OutgoingTraceContext.layer(FetchHttpClient.layer)),
 );
 
 /** A client of a loopback fake; tests only. */
 export const layerTest = (origin: string) =>
   Layer.effect(NotionClient, make({ origin, allowLoopback: true })).pipe(
-    Layer.provide(FetchHttpClient.layer),
+    Layer.provide(OutgoingTraceContext.layer(FetchHttpClient.layer)),
   );
 
 // Reads.

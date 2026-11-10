@@ -1,4 +1,5 @@
 import type {
+  ModelSelection,
   OrchestrationV2TurnItemStatus,
   OrchestrationV2ThreadShell,
   OrchestrationProjectShell,
@@ -39,17 +40,25 @@ export function summarizeSubagentStatuses(
     .join(" · ");
 }
 
+const SUBAGENT_PREFIX = /^Subagent:\s*/i;
+const SUBAGENT_ROOT_PATH = /^\/root\/(?:[^/]+\/)*([^/]+)\/?$/u;
+const UNDERSCORE_OR_SPACE_RUN = /[_\s]+/gu;
+const WORD_INITIAL = /(^|\s)\S/gu;
+
 export function formatSubagentDisplayTitle(title: string): string {
-  const displayTitle = title.replace(/^Subagent:\s*/i, "");
-  const path = /^\/root\/(?:[^/]+\/)*([^/]+)\/?$/u.exec(displayTitle);
+  const displayTitle = title.replace(SUBAGENT_PREFIX, "");
+  const path = SUBAGENT_ROOT_PATH.exec(displayTitle);
   if (path === null) return displayTitle;
 
-  const name = path[1]!.replace(/[_\s]+/gu, " ").trim();
-  return name.replace(/(^|\s)\S/gu, (letter) => letter.toUpperCase()) || displayTitle;
+  const name = path[1]!.replace(UNDERSCORE_OR_SPACE_RUN, " ").trim();
+  return name.replace(WORD_INITIAL, (letter) => letter.toUpperCase()) || displayTitle;
 }
+
+const REGEX_SPECIAL_CHARACTER = /[.*+?^${}()|[\]\\]/g;
 
 export function resolveSubagentMetadata(input: {
   readonly model: string | null;
+  readonly modelSelection?: Pick<ModelSelection, "model"> | undefined;
   readonly provider?: Pick<ServerProvider, "driver" | "models"> | null | undefined;
   readonly parentThread?:
     | Pick<OrchestrationV2ThreadShell, "projectId" | "worktreePath">
@@ -65,7 +74,7 @@ export function resolveSubagentMetadata(input: {
     | null
     | undefined;
 }) {
-  const model = input.model?.trim();
+  const model = input.model?.trim() || input.modelSelection?.model.trim();
   const slug = input.provider
     ? resolveSelectableModel(input.provider.driver, model, input.provider.models)
     : model;
@@ -80,7 +89,7 @@ export function resolveSubagentMetadata(input: {
     ? reportedLabel
         .replace(
           new RegExp(
-            `^${qualifier.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:\\s*[.:/-]\\s*|\\s+)`,
+            `^${qualifier.replace(REGEX_SPECIAL_CHARACTER, "\\$&")}(?:\\s*[.:/-]\\s*|\\s+)`,
             "iu",
           ),
           "",
@@ -108,8 +117,10 @@ export function resolveSubagentMetadata(input: {
         ]
       : []),
   ];
-  return { modelLabel, workspace };
+  return { modelLabel, modelSlug: slug ?? model ?? null, workspace };
 }
+
+const WHITESPACE_RUN = /\s+/gu;
 
 export function subagentDetailPreview(input: {
   readonly status: OrchestrationV2TurnItemStatus;
@@ -120,7 +131,7 @@ export function subagentDetailPreview(input: {
   const preferred = terminal ? input.result : input.progress;
   const fallback = terminal ? input.progress : input.result;
   const detail = preferred?.trimStart() || fallback?.trimStart() || "";
-  if (detail.length <= 280) return detail.trimEnd().replace(/\s+/gu, " ") || null;
+  if (detail.length <= 280) return detail.trimEnd().replace(WHITESPACE_RUN, " ") || null;
   const whitespace = /\s+/uy;
   let compact = "";
   for (let index = 0; index < detail.length; index += 1) {
@@ -132,7 +143,15 @@ export function subagentDetailPreview(input: {
       if (compact.length > 0) compact += " ";
     }
     compact += detail[index];
-    if (compact.length > 280) return `${compact.slice(0, 280).trimEnd()}…`;
+    if (compact.length > 280) {
+      let end = 280;
+      const previous = compact.charCodeAt(end - 1);
+      const next = compact.charCodeAt(end);
+      if (previous >= 0xd800 && previous <= 0xdbff && next >= 0xdc00 && next <= 0xdfff) {
+        end -= 1;
+      }
+      return `${compact.slice(0, end).trimEnd()}…`;
+    }
   }
   return compact || null;
 }

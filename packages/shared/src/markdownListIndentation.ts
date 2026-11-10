@@ -27,6 +27,8 @@ interface RecoveredMarkdown {
 
 const INLINE_PARSE_PREFIX = "houston-markdown-inline-prefix:";
 
+const LEADING_TAB_OR_SPACE = /^[\t ]/;
+
 function isSameLineOverIndentedCode(
   node: MarkdownAstNode,
   parent: MarkdownAstNode | undefined,
@@ -36,7 +38,7 @@ function isSameLineOverIndentedCode(
     node.type !== "code" ||
     parent?.type !== "listItem" ||
     typeof node.value !== "string" ||
-    !/^[\t ]/.test(node.value)
+    !LEADING_TAB_OR_SPACE.test(node.value)
   ) {
     return false;
   }

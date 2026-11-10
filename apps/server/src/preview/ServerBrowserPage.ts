@@ -40,6 +40,10 @@ export class ServerBrowserOperationError extends Error {
   }
 }
 
+const SELECTOR_ERROR_MESSAGE =
+  /while parsing selector|Unknown engine|Unexpected token|strict mode violation/i;
+const NOT_EDITABLE_MESSAGE = /not an <input>|not editable|not an editable/i;
+
 export const toOperationError = (
   cause: unknown,
   timeoutMs?: number,
@@ -60,12 +64,10 @@ export const toOperationError = (
       timeoutMs === undefined ? undefined : { timeoutMs },
     );
   }
-  if (
-    /while parsing selector|Unknown engine|Unexpected token|strict mode violation/i.test(message)
-  ) {
+  if (SELECTOR_ERROR_MESSAGE.test(message)) {
     return new ServerBrowserOperationError("PreviewAutomationInvalidSelectorError", firstLine);
   }
-  if (/not an <input>|not editable|not an editable/i.test(message)) {
+  if (NOT_EDITABLE_MESSAGE.test(message)) {
     return new ServerBrowserOperationError("PreviewAutomationTargetNotEditableError", firstLine);
   }
   return new ServerBrowserOperationError("PreviewAutomationExecutionError", firstLine);
@@ -99,18 +101,19 @@ const refsFor = (page: Page) => {
   return state;
 };
 
+const ENGINES_PATTERN = /\\.|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`/g;
+const TARGET_LOCATOR_PATTERN = /(?:^|>>)\s*\*?aria-ref\s*=/;
+const REF_PATTERN = /^\s*aria-ref\s*=\s*(\S+)\s*$/;
+
 const targetLocator = (
   page: Page,
   input: { readonly locator?: string | undefined; readonly selector?: string | undefined },
 ): Locator | null => {
   const selector = input.locator ?? input.selector;
   if (selector === undefined) return null;
-  const engines = selector.replace(
-    /\\.|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`/g,
-    " ",
-  );
-  if (/(?:^|>>)\s*\*?aria-ref\s*=/.test(engines)) {
-    const ref = /^\s*aria-ref\s*=\s*(\S+)\s*$/.exec(selector)?.[1];
+  const engines = selector.replace(ENGINES_PATTERN, " ");
+  if (TARGET_LOCATOR_PATTERN.test(engines)) {
+    const ref = REF_PATTERN.exec(selector)?.[1];
     const nativeRef = ref === undefined ? undefined : pageRefs.get(page)?.refs.get(ref);
     if (nativeRef === undefined) {
       throw new ServerBrowserOperationError(
@@ -157,6 +160,13 @@ const SNAPSHOT_SCRIPT = `(() => {
 
 const MASKED_VALUE = "••••••••";
 
+const LEADING_QUOTE = /^["']/;
+const ESCAPE_SEQUENCE = /\\(x[\da-f]{2}|u[\da-f]{4}|.)/gi;
+const TAB_OR_LINE_BREAK = /[\t\n\r]/g;
+const LEADING_CONTROL_OR_SPACE = /^[\u0000-\u0020]+/;
+const PARSED_PATTERN = /^data:([^,;]*)/i;
+const MEDIA_TYPE_PATTERN = /^[\w.+-]{1,64}\/[\w.+-]{1,64}$/;
+
 /**
  * A `data:` URL carries its content, which can be a whole file, and URLs and diagnostics
  * reach tool results and provider logs. Keeps only the media type: the payload can hold any
@@ -167,20 +177,22 @@ export const withoutDataPayload = (url: string) => {
   // newlines anywhere. A snapshot's YAML value may be quoted and escaped; an escape that isn't a
   // tab or newline still decodes to something that can't start a scheme.
   const value = url
-    .replace(/^["']/, "")
-    .replace(/\\(x[\da-f]{2}|u[\da-f]{4}|.)/gi, (_escape, code: string) =>
+    .replace(LEADING_QUOTE, "")
+    .replace(ESCAPE_SEQUENCE, (_escape, code: string) =>
       code.length > 1
         ? String.fromCharCode(Number.parseInt(code.slice(1), 16))
         : ({ t: "\t", n: "\n", r: "\r", '"': '"', "\\": "\\" }[code] ?? "\u0001"),
     )
-    .replace(/[\t\n\r]/g, "")
-    .replace(/^[\u0000-\u0020]+/, "");
-  const parsed = /^data:([^,;]*)/i.exec(value);
+    .replace(TAB_OR_LINE_BREAK, "")
+    .replace(LEADING_CONTROL_OR_SPACE, "");
+  const parsed = PARSED_PATTERN.exec(value);
   if (!parsed) return url;
   const type = parsed[1]!.trim();
-  const mediaType = /^[\w.+-]{1,64}\/[\w.+-]{1,64}$/.test(type) ? type : "";
+  const mediaType = MEDIA_TYPE_PATTERN.test(type) ? type : "";
   return `data:${mediaType},…`;
 };
+
+const CONSOLE_TEXT_PATTERN = /(?<![a-z\d])data:[^,;]*[,;][\s\S]*/i;
 
 /**
  * Chromium's own console messages, which carry no arguments, quote `data:` URLs whole, as in a
@@ -191,14 +203,16 @@ export const withoutDataPayload = (url: string) => {
 export const consoleText = (message: ConsoleMessage) =>
   message.args().length > 0
     ? message.text()
-    : message.text().replace(/(?<![a-z\d])data:[^,;]*[,;][\s\S]*/i, withoutDataPayload);
+    : message.text().replace(CONSOLE_TEXT_PATTERN, withoutDataPayload);
+
+const URL_LINE = /^(\s*- \/url: )(.*)$/s;
 
 // Split on LF alone: a value keeps any U+2028 that a multiline regex would treat as a line end.
 const withoutTreeDataPayloads = (tree: string) =>
   tree
     .split("\n")
     .map((line) => {
-      const url = /^(\s*- \/url: )(.*)$/s.exec(line);
+      const url = URL_LINE.exec(line);
       return url ? url[1] + withoutDataPayload(url[2]!) : line;
     })
     .join("\n");
@@ -352,13 +366,16 @@ const openReaders = async (page: Page, cdp: CDPSession) => {
   };
 };
 
+const QUOTED_STRING_UNSAFE_CHARACTER = /[\\"\p{Cc}]/gu;
+const REGEX_SPECIAL_CHARACTER = /[.*+?^${}()|[\]\\]/g;
+
 /** Short values need word boundaries to avoid masking unrelated text. */
 const dottedPattern = (values: ReadonlyArray<string>) => {
   const sources = values
     .flatMap((value) => {
       const json = JSON.stringify(value).slice(1, -1);
       // Playwright writes control characters like JSON does, with \xNN for the unnamed ones.
-      const quoted = value.replace(/[\\"\p{Cc}]/gu, (char) =>
+      const quoted = value.replace(QUOTED_STRING_UNSAFE_CHARACTER, (char) =>
         '\\"\b\f\n\r\t'.includes(char)
           ? JSON.stringify(char).slice(1, -1)
           : `\\x${char.charCodeAt(0).toString(16).padStart(2, "0")}`,
@@ -369,7 +386,7 @@ const dottedPattern = (values: ReadonlyArray<string>) => {
     // Longest first, so a form inside another never leaves the rest showing.
     .toSorted((a, b) => b.form.length - a.form.length)
     .map(({ form, word }) => {
-      const literal = form.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const literal = form.replace(REGEX_SPECIAL_CHARACTER, "\\$&");
       return word ? `(?<![\\p{L}\\p{N}_])${literal}(?![\\p{L}\\p{N}_])` : literal;
     });
   if (sources.length === 0) return undefined;
@@ -521,6 +538,8 @@ const renderingOf = async (input: SnapshotInput) => {
   };
 };
 
+const REF_ANNOTATION = /\[ref=((?:f\d+)?e\d+)\]/g;
+
 const capture = async (
   input: SnapshotInput,
   deadline: number,
@@ -576,7 +595,7 @@ const capture = async (
   const redacted = withoutTreeDataPayloads(tree);
   const accessibilityTree = (dotted ? maskTree(redacted, dotted) : redacted)
     .slice(0, MAX_VISIBLE_TEXT_LENGTH)
-    .replace(/\[ref=((?:f\d+)?e\d+)\]/g, (_match, nativeRef: string) => {
+    .replace(REF_ANNOTATION, (_match, nativeRef: string) => {
       const ref = `houston-${generation}-${nativeRef}`;
       state.refs.set(ref, nativeRef);
       return `[ref=${ref}]`;
@@ -894,9 +913,11 @@ const NET_ERROR_CODES: Readonly<Record<string, number>> = {
   ERR_EMPTY_RESPONSE: -324,
 };
 
+const NETWORK_ERROR_CODE = /ERR_[A-Z\d_]+/;
+
 export const parseNetError = (errorText: string) => {
   // Names can hold digits, as in ERR_HTTP2_PROTOCOL_ERROR.
-  const description = /ERR_[A-Z\d_]+/.exec(errorText)?.[0] ?? errorText;
+  const description = NETWORK_ERROR_CODE.exec(errorText)?.[0] ?? errorText;
   return { description, code: NET_ERROR_CODES[description] ?? -2 };
 };
 

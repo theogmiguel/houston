@@ -97,6 +97,7 @@ import * as ServerBrowser from "../../preview/ServerBrowser.ts";
 import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
 import * as ServerLifecycleEvents from "../../serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "../../serverRuntimeStartup.ts";
+import * as AssetSigner from "../../assets/AssetSigner.ts";
 import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
 import * as ServerSelfUpdate from "../../cloud/selfUpdate.ts";
 import * as SessionStore from "../../auth/SessionStore.ts";
@@ -124,7 +125,7 @@ import { layerJsonWithoutEcho } from "../rpcSerialization.ts";
 import * as HoustonResumeSessions from "../resumeSessions.ts";
 import * as HoustonReviewState from "../reviewState.ts";
 import * as HoustonMergeQueueService from "../mergeQueue/Service.ts";
-import { makeMemory } from "../secrets/HoustonKeychain.ts";
+import { makeMemory } from "../secrets/HoustonSecrets.ts";
 import * as HoustonTaskSourceService from "../taskSources/SourceService.ts";
 import * as HoustonTaskSourceV1Import from "../taskSources/V1Import.ts";
 import { createProject } from "../tasks/tasks.testkit.ts";
@@ -264,6 +265,7 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(ProviderLatestVersions.ProviderLatestVersions)({}),
   Keybindings.layer,
   ServerSecretStore.layer,
+  AssetSigner.layer.pipe(Layer.provide(ServerSecretStore.layer)),
 );
 
 const ALL_SCOPES: ReadonlyArray<AuthEnvironmentScope> = [
@@ -544,7 +546,7 @@ describe("slack tokens reach no file, log, trace or reply", () => {
             databaseFile,
             baseDir: dir,
             slackOrigin: fake.origin,
-            keychain: makeMemory(),
+            secrets: makeMemory(),
           }),
         ),
       );
@@ -654,7 +656,7 @@ describe("subscribe sends the snapshot then each change", () => {
 
 describe("each slack method requires its declared scope", () => {
   it.effect("each slack method requires its declared scope", () => {
-    const keychain = makeMemory();
+    const secrets = makeMemory();
     return withServer(
       () =>
         Effect.gen(function* () {
@@ -664,7 +666,7 @@ describe("each slack method requires its declared scope", () => {
             sql`SELECT * FROM houston_slack_settings`,
             sql`SELECT * FROM houston_slack_channels`,
             sql`SELECT * FROM houston_slack_requests`,
-          ]).pipe(Effect.map((rows) => `${JSON.stringify(rows)} ${keychain.entries.size}`));
+          ]).pipe(Effect.map((rows) => `${JSON.stringify(rows)} ${secrets.entries.size}`));
           const methods: ReadonlyArray<{
             readonly method: string;
             readonly scope: AuthEnvironmentScope;
@@ -733,14 +735,14 @@ describe("each slack method requires its declared scope", () => {
             if (entry.method === WS_METHODS.houstonSlackSubscribe) yield* only.interrupt(id);
           }
         }),
-      { keychain },
+      { secrets },
     );
   });
 });
 
-describe("unknown projects and an unreachable keychain are refused by name", () => {
-  it.effect("unknown projects and an unreachable keychain are refused by name", () => {
-    const keychain = makeMemory();
+describe("unknown projects and an unreachable secret store are refused by name", () => {
+  it.effect("unknown projects and an unreachable secret store are refused by name", () => {
+    const secrets = makeMemory();
     return withServer(
       () =>
         Effect.gen(function* () {
@@ -761,15 +763,15 @@ describe("unknown projects and an unreachable keychain are refused by name", () 
             channels: [{ channelId: "C1", projectId }],
           });
           yield* client.call(WS_METHODS.houstonSlackConnect, TOKENS);
-          keychain.failWith = "the keychain is locked";
+          secrets.failWith = "the secrets directory is not writable";
           const refused = failureOf(yield* client.call(WS_METHODS.houstonSlackDisconnect, {}));
-          assert.strictEqual(refused?.kind, "keychain_unavailable");
-          assert.include(refused?.message ?? "", "the keychain is locked");
-          keychain.failWith = null;
+          assert.strictEqual(refused?.kind, "secret_store_unavailable");
+          assert.include(refused?.message ?? "", "the secrets directory is not writable");
+          secrets.failWith = null;
           const info = (yield* client.call(WS_METHODS.houstonSlackGet, {})) as HoustonSlackInfo;
           assert.isTrue(info.enabled);
         }),
-      { keychain },
+      { secrets },
     );
   });
 });
@@ -783,7 +785,7 @@ describe("slack state survives a restart", () => {
       const options: SlackTestOptions = {
         databaseFile: NodePath.join(dir, "state.sqlite"),
         baseDir: dir,
-        keychain: makeMemory(),
+        secrets: makeMemory(),
         slackOrigin: fake.origin,
       };
       const read = Effect.gen(function* () {

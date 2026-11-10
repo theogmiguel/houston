@@ -1,8 +1,10 @@
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { XIcon } from "lucide-react";
-import { useRef, useState, type ReactNode } from "react";
+import { useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 import { cn } from "../lib/utils";
+import { useNativeTitlebarHeight } from "../lib/windowControlsOverlay";
+import { PhoneTabBar, usePhoneTab } from "../mobile/PhoneTabBar";
 import { useCloseAppModal } from "./sidebar/mainAppLocation";
 import { Button } from "./ui/button";
 import { DialogBackdrop } from "./ui/dialog";
@@ -24,12 +26,19 @@ export function AppRouteModal({
   children: ReactNode;
 }) {
   const closeAppModal = useCloseAppModal();
+  // A phone's full-window page keeps the shell's tab bar, inside the surface that owns the page.
+  const phoneTab = usePhoneTab();
+  const phoneTabBarShown = fullscreen && phoneTab !== null;
   const [open, setOpen] = useState(true);
   // Text selection that ends on the backdrop is not a dismissal.
   const backdropPressRef = useRef(false);
   // Focus the surface, not its first control: no stray focus ring, no phone keyboard.
   // On close, leave focus alone; returning it to the opener paints a focus ring.
   const popupRef = useRef<HTMLDivElement>(null);
+  // Clear the native window controls (macOS traffic lights, the Windows and Linux caption
+  // buttons). Below sm the modal fills the window and leaves that strip empty; up to lg its
+  // 1.5rem inset is shorter than the strip.
+  const nativeTitlebarHeight = useNativeTitlebarHeight();
 
   return (
     <DialogPrimitive.Root
@@ -51,10 +60,17 @@ export function AppRouteModal({
       <DialogPrimitive.Portal>
         {fullscreen ? null : <DialogBackdrop />}
         <DialogPrimitive.Viewport
+          style={
+            {
+              "--app-modal-titlebar-height": `${nativeTitlebarHeight}px`,
+              "--app-modal-top-inset": `max(env(safe-area-inset-top), ${nativeTitlebarHeight}px)`,
+              "--app-modal-sm-top": `max(1.5rem, ${nativeTitlebarHeight}px)`,
+            } as CSSProperties
+          }
           className={
             fullscreen
               ? "fixed inset-0 z-50 flex"
-              : "fixed inset-0 z-50 flex items-center justify-center sm:p-6 lg:p-10"
+              : "fixed inset-0 z-50 flex items-center justify-center sm:p-6 sm:pt-(--app-modal-sm-top) lg:p-10"
           }
           onPointerDown={(event) => {
             backdropPressRef.current = event.target === event.currentTarget;
@@ -72,12 +88,19 @@ export function AppRouteModal({
             data-slot="dialog-popup"
             data-app-modal=""
             className={cn(
-              "relative flex size-full min-h-0 min-w-0 flex-col overflow-hidden bg-background max-sm:pt-safe max-sm:pb-safe text-foreground outline-none transition-[opacity,scale] duration-150 ease-out motion-reduce:transition-none [-webkit-app-region:no-drag] data-ending-style:scale-[0.985] data-ending-style:opacity-0 data-starting-style:scale-[0.985] data-starting-style:opacity-0",
+              "relative flex size-full min-h-0 min-w-0 flex-col overflow-hidden bg-background max-sm:pt-(--app-modal-top-inset) text-foreground outline-none transition-[opacity,scale] duration-150 ease-out motion-reduce:transition-none [-webkit-app-region:no-drag] data-ending-style:scale-[0.985] data-ending-style:opacity-0 data-starting-style:scale-[0.985] data-starting-style:opacity-0",
+              !phoneTabBarShown && "max-sm:pb-safe",
               !fullscreen &&
                 "sm:max-h-[60rem] sm:max-w-[80rem] sm:rounded-2xl sm:border sm:shadow-2xl/40",
             )}
           >
+            {/* The emptied strip still moves the window, as the titlebar it replaces does. */}
+            <div
+              aria-hidden
+              className="absolute inset-x-0 top-0 hidden h-(--app-modal-titlebar-height) [-webkit-app-region:drag] max-sm:block"
+            />
             {children}
+            {phoneTabBarShown ? <PhoneTabBar /> : null}
           </DialogPrimitive.Popup>
         </DialogPrimitive.Viewport>
       </DialogPrimitive.Portal>

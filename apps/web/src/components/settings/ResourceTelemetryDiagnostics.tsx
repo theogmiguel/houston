@@ -72,18 +72,20 @@ function formatRate(value: number): string {
   return `${formatBytes(value)}/s`;
 }
 
+const TRAILING_ZEROS = /\.0+$/;
+
 function formatCpuTime(valueMs: number): string {
   const seconds = valueMs / 1_000;
-  if (seconds < 60) return `${seconds.toFixed(seconds >= 10 ? 1 : 2).replace(/\.0+$/, "")}s`;
+  if (seconds < 60) return `${seconds.toFixed(seconds >= 10 ? 1 : 2).replace(TRAILING_ZEROS, "")}s`;
   const minutes = seconds / 60;
-  if (minutes < 60) return `${minutes.toFixed(minutes >= 10 ? 1 : 2).replace(/\.0+$/, "")}m`;
-  return `${(minutes / 60).toFixed(2).replace(/\.0+$/, "")}h`;
+  if (minutes < 60) return `${minutes.toFixed(minutes >= 10 ? 1 : 2).replace(TRAILING_ZEROS, "")}m`;
+  return `${(minutes / 60).toFixed(2).replace(TRAILING_ZEROS, "")}h`;
 }
 
 function formatDurationMicros(value: number): string {
   if (value < 1_000) return `${Math.round(value)} µs`;
-  if (value < 1_000_000) return `${(value / 1_000).toFixed(2).replace(/\.0+$/, "")} ms`;
-  return `${(value / 1_000_000).toFixed(2).replace(/\.0+$/, "")} s`;
+  if (value < 1_000_000) return `${(value / 1_000).toFixed(2).replace(TRAILING_ZEROS, "")} ms`;
+  return `${(value / 1_000_000).toFixed(2).replace(TRAILING_ZEROS, "")} s`;
 }
 
 function formatSampleInterval(valueMs: number): string {
@@ -94,11 +96,15 @@ function formatSampleInterval(valueMs: number): string {
   }`;
 }
 
+const WHITESPACE_RUN = /\s+/;
+const SURROUNDING_QUOTES = /^['"]|['"]$/g;
+const PATH_SEPARATOR = /[\\/]/;
+
 function formatProcessName(process: Pick<ResourceTelemetryProcess, "command" | "name">): string {
   if (process.name.trim()) return process.name;
-  const firstToken = process.command.trim().split(/\s+/)[0] ?? process.command;
-  const normalized = firstToken.replace(/^['"]|['"]$/g, "");
-  return normalized.split(/[\\/]/).findLast((segment) => segment.length > 0) ?? normalized;
+  const firstToken = process.command.trim().split(WHITESPACE_RUN)[0] ?? process.command;
+  const normalized = firstToken.replace(SURROUNDING_QUOTES, "");
+  return normalized.split(PATH_SEPARATOR).findLast((segment) => segment.length > 0) ?? normalized;
 }
 
 function categoryLabel(category: ResourceTelemetryProcessCategory): string {
@@ -788,7 +794,7 @@ function AttributionTable({ entries }: { entries: ReadonlyArray<ResourceAttribut
               </td>
               <td className="px-3 py-2 text-right font-mono tabular-nums">{entry.count}</td>
               <td className="px-3 py-2 text-right font-mono tabular-nums text-muted-foreground sm:pr-5">
-                {(entry.durationMs / 1_000).toFixed(2).replace(/\.0+$/, "")}s
+                {(entry.durationMs / 1_000).toFixed(2).replace(TRAILING_ZEROS, "")}s
               </td>
             </tr>
           ))}

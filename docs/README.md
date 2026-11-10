@@ -21,6 +21,7 @@ For an installed build, use the documentation at its version tag from the
 - [Settings](user/settings.md) — every settings page and what it controls
 - [Environments and task sources](user/connections.md) — machines, access, Slack, GitHub
   issues, Notion and secrets
+- [Secrets](user/secrets.md) — secret providers, references and agent secret requests
 - [Changes](user/changes.md) — the Git surface, branches, worktrees and stashes
 - [Pull requests](user/pull-requests.md) — requests, review, checks and the merge queue
 - [Usage](user/usage.md) — token, cost and limit figures, and what they do not cover
@@ -29,6 +30,8 @@ For an installed build, use the documentation at its version tag from the
 - [Appearance](user/appearance.md) — themes, typography, chat and diff settings
 - [Notifications](user/notifications.md) — thread and in-app notices
 - [Updating Houston](user/updating.md) — the update check, and the one-time Houston 1 import
+- [Privacy and diagnostics](user/privacy.md) — what leaves the machine, usage and crash data,
+  and exporting diagnostics
 
 ## Working on Houston
 

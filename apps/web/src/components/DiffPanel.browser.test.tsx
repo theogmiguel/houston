@@ -19,8 +19,14 @@ import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
-import { act, render } from "../../test/render";
+import { act, render as renderScreen } from "../../test/render";
 import { makeThreadFixture } from "~/test-fixtures";
+
+// The default browser viewport is phone-sized; these cases cover the desktop panel.
+async function render(...args: Parameters<typeof renderScreen>) {
+  await page.viewport(1280, 800);
+  return renderScreen(...args);
+}
 
 type ResultAtom<A> = Atom.Atom<AsyncResult.AsyncResult<A, Error>>;
 
@@ -82,6 +88,7 @@ vi.mock("~/hooks/useTheme", () => ({
 vi.mock("~/state/queries", () => ({
   useCheckpointDiff: () => ({ data: null, error: null, isPending: false }),
   useTurnItemDetail: () => ({ data: null, error: null, isPending: false }),
+  useDebouncedValue: <A,>(value: A) => value,
 }));
 vi.mock("~/hooks/useHandleNewThread", () => ({ useNewThreadHandler: () => async () => {} }));
 vi.mock("~/state/use-atom-command", () => ({ useAtomCommand: () => async () => {} }));
@@ -95,12 +102,15 @@ vi.mock("./diffs/AnnotatableCodeView", async () => {
     AnnotatableCodeView: ({
       composerDraftTarget,
       onCommentAdded,
+      options,
     }: {
       composerDraftTarget: ScopedThreadRef | DraftId;
       onCommentAdded?: (commentId: string) => void;
+      options?: { overflow?: string };
     }) => (
       <button
         type="button"
+        data-code-overflow={options?.overflow}
         onClick={() => {
           useComposerDraftStore.getState().addReviewComment(composerDraftTarget, {
             id: "diff-comment-1",
@@ -121,6 +131,7 @@ vi.mock("./diffs/AnnotatableCodeView", async () => {
     ),
   };
 });
+vi.mock("./diffs/DiffCommentAnnotation", () => ({ DiffCommentAnnotation: () => null }));
 vi.mock("./diffs/DiffFileTree", () => ({ DiffFileTree: () => null }));
 vi.mock("./DiffFilePathCopyButton", () => ({ DiffFilePathCopyButton: () => null }));
 
@@ -280,7 +291,7 @@ const samplePatch = [
 function panel(
   registry: ReturnType<typeof AtomRegistry.make>,
   threadRef: ScopedThreadRef,
-  mode?: "sheet",
+  mode?: "sheet" | "embedded",
 ) {
   return (
     <RegistryContext.Provider value={registry}>
@@ -302,20 +313,83 @@ it("keeps the view controls in the header and folds them into a menu when narrow
     container: wide,
   });
   await expect
-    .element(wideScreen.getByRole("button", { name: "Disable diff line wrapping" }))
+    .element(wideScreen.getByRole("button", { name: "Enable diff line wrapping" }))
     .toBeVisible();
+  // Wrapping is off by default and the header carries one overflow menu, not two.
+  expect(wideScreen.getByRole("button", { name: "Diff options" }).elements()).toHaveLength(1);
 
   const narrow = document.createElement("div");
   narrow.style.width = "320px";
   await using narrowScreen = await render(panel(context.registry, context.threadRef, "sheet"), {
     container: narrow,
   });
-  await expect
-    .element(narrowScreen.getByRole("button", { name: "More diff actions" }))
-    .toBeVisible();
+  await expect.element(narrowScreen.getByRole("button", { name: "Diff options" })).toBeVisible();
   expect(
-    narrowScreen.getByRole("button", { name: "Disable diff line wrapping" }).elements(),
+    narrowScreen.getByRole("button", { name: "Enable diff line wrapping" }).elements(),
   ).toHaveLength(0);
+  expect(narrowScreen.getByRole("button", { name: "Diff options" }).elements()).toHaveLength(1);
+});
+
+it("keeps code unwrapped in the embedded side panel so the overflow fade can show", async () => {
+  using context = setup(null, samplePatch);
+  useDiffPanelStore.getState().selectBranchBaseRef(context.threadRef, "main");
+  const sidePanel = document.createElement("div");
+  sidePanel.style.width = "400px";
+  await using side = await render(panel(context.registry, context.threadRef, "embedded"), {
+    container: sidePanel,
+  });
+  await expect
+    .element(side.getByRole("button", { name: "Add diff comment" }))
+    .toHaveAttribute("data-code-overflow", "scroll");
+});
+
+it("names Changes once: the embedded panel leaves the heading to its tab, a sheet keeps it", async () => {
+  using context = setup(null, samplePatch);
+  useDiffPanelStore.getState().selectBranchBaseRef(context.threadRef, "main");
+  const heading = (root: HTMLElement) =>
+    [...root.querySelectorAll("span")].filter(
+      (span) => span.textContent === "Changes" && span.className.includes("text-headline"),
+    );
+  const embeddedRoot = document.createElement("div");
+  embeddedRoot.style.width = "400px";
+  await using embedded = await render(panel(context.registry, context.threadRef, "embedded"), {
+    container: embeddedRoot,
+  });
+  await expect
+    .element(embedded.getByRole("button", { name: "Add diff comment" }))
+    .toBeInTheDocument();
+  expect(heading(embeddedRoot)).toHaveLength(0);
+
+  const sheetRoot = document.createElement("div");
+  sheetRoot.style.width = "700px";
+  await using sheet = await render(panel(context.registry, context.threadRef, "sheet"), {
+    container: sheetRoot,
+  });
+  await expect.element(sheet.getByRole("button", { name: "Add diff comment" })).toBeInTheDocument();
+  expect(heading(sheetRoot)).toHaveLength(1);
+});
+
+it("labels the comparison target so the 400px header reads on its own", async () => {
+  using context = setup(null, samplePatch);
+  useDiffPanelStore.getState().selectBranchBaseRef(context.threadRef, "main");
+  const root = document.createElement("div");
+  root.style.width = "400px";
+  await using screen = await render(panel(context.registry, context.threadRef, "embedded"), {
+    container: root,
+  });
+  await expect
+    .element(screen.getByRole("button", { name: "Add diff comment" }))
+    .toBeInTheDocument();
+  const label = [...root.querySelectorAll<HTMLElement>("span[aria-hidden]")].find(
+    (span) => span.textContent === "Against",
+  );
+  expect(label).toBeDefined();
+  expect(getComputedStyle(label!).display).not.toBe("none");
+  expect(root.textContent).not.toMatch(/\bvs\b/);
+  const trigger = root.querySelector<HTMLElement>('[aria-label^="Change comparison target"]')!;
+  expect(label!.getBoundingClientRect().right).toBeLessThanOrEqual(
+    trigger.getBoundingClientRect().left,
+  );
 });
 
 it("offers undo for the comments it added to the composer", async () => {

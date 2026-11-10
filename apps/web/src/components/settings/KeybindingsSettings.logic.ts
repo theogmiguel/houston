@@ -376,7 +376,7 @@ export function commandLabel(command: KeybindingCommand): string {
   if (command === "composer.sendAndNewThread") return "Composer: Send and Start New Thread";
   if (command === "thread.steerQueuedMessage") return "Queue: Send First Queued Message";
   if (command === "thread.editQueuedMessage") return "Queue: Edit Last Queued Message";
-  if (command === "thread.copyReference") return "Pull Request: Copy Link or Thread";
+  if (command === "thread.copyReference") return "Thread: Copy PR Link or Thread";
   if (command === "thread.settle") return "Thread: Close";
   if (command === "thread.pin") return "Thread: Pin thread";
   const usageMetric = METRIC_OPTIONS.find((option) => option.command === command);
@@ -399,9 +399,12 @@ export function commandLabel(command: KeybindingCommand): string {
   return raw.split(".").map(titleCaseCommandSegment).join(": ");
 }
 
+const CAMEL_CASE_BOUNDARY = /([a-z0-9])([A-Z])/g;
+const WORD_SEPARATOR_RUN = /[-_\s]+/;
+
 function titleCaseCommandSegment(segment: string): string {
   const words: Array<string> = [];
-  for (const part of segment.replace(/([a-z0-9])([A-Z])/g, "$1 $2").split(/[-_\s]+/)) {
+  for (const part of segment.replace(CAMEL_CASE_BOUNDARY, "$1 $2").split(WORD_SEPARATOR_RUN)) {
     if (part.length > 0) {
       words.push(part.slice(0, 1).toUpperCase() + part.slice(1));
     }
@@ -420,6 +423,8 @@ function recordedLayoutShortcutKey(
   const unshiftedKey = event.shiftKey ? US_SHIFTED_TO_UNSHIFTED_KEYS.get(layoutKey) : undefined;
   return unshiftedKey === physicalKey ? physicalKey : layoutKey;
 }
+
+const FUNCTION_KEY = /^f\d{1,2}$/;
 
 function normalizeShortcutKeyToken(key: string): string | null {
   const normalized = key.toLowerCase();
@@ -440,7 +445,7 @@ function normalizeShortcutKeyToken(key: string): string | null {
   if (normalized === "arrowleft") return "arrowleft";
   if (normalized === "arrowright") return "arrowright";
   if (normalized.length === 1) return normalized;
-  if (/^f\d{1,2}$/.test(normalized)) return normalized;
+  if (FUNCTION_KEY.test(normalized)) return normalized;
   if (normalized === "enter" || normalized === "tab" || normalized === "backspace") {
     return normalized;
   }

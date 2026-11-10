@@ -96,7 +96,7 @@ function EmptyTitle({
     <div
       className={cn(
         variant === "display"
-          ? "font-serif text-[34px] leading-10 font-medium tracking-[-0.01em]"
+          ? "text-3xl font-normal tracking-tight text-foreground"
           : "font-semibold text-xl",
         className,
       )}

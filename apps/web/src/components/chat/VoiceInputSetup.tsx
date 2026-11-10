@@ -1,7 +1,8 @@
-import type {
-  EnvironmentId,
-  EnvironmentSpeechModel,
-  EnvironmentSpeechStatus,
+import {
+  AuthSettingsWriteScope,
+  type EnvironmentId,
+  type EnvironmentSpeechModel,
+  type EnvironmentSpeechStatus,
 } from "@houston-app/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { RefreshCwIcon } from "lucide-react";
@@ -9,6 +10,8 @@ import { useEffect, useRef, useState } from "react";
 
 import { useClientSettings, updateClientSettings } from "../../hooks/useSettings";
 import { useEnvironment } from "../../state/environments";
+import { useEnvironmentScope } from "../../state/session";
+import { useVoiceDestinationChoices } from "../../speech/useEnvironmentSpeechInput";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Dialog } from "../ui/dialog";
@@ -26,6 +29,9 @@ export function VoiceInputSetup(props: {
   downloading: boolean;
   cancelled: boolean;
   error: string | null;
+  /** The device has no audio destination yet: ask where microphone audio goes before anything else. */
+  choosingDestination?: boolean;
+  onChooseDestination?(environmentId: EnvironmentId): void;
   onOpenChange(open: boolean): void;
   onDownload(): void;
   onCancelDownload(): void;
@@ -34,6 +40,9 @@ export function VoiceInputSetup(props: {
   const navigate = useNavigate();
   const popupRef = useRef<HTMLDivElement>(null);
   const environment = useEnvironment(props.environmentId);
+  const canManage = useEnvironmentScope(props.environmentId, AuthSettingsWriteScope);
+  const destinations = useVoiceDestinationChoices();
+  const choosing = props.choosingDestination === true;
   const selectedMicrophone = useClientSettings((settings) => settings.voiceMicrophone);
   const [microphones, setMicrophones] = useState<MediaDeviceInfo[]>([]);
   const [loadingMicrophones, setLoadingMicrophones] = useState(false);
@@ -72,6 +81,50 @@ export function VoiceInputSetup(props: {
     void navigate({ to: "/settings/voice", hash });
   };
 
+  if (choosing) {
+    return (
+      <Dialog open={props.open} onOpenChange={props.onOpenChange}>
+        <WizardPopup ref={popupRef} initialFocus={popupRef}>
+          <WizardHeader
+            title="Send microphone audio to"
+            description="Dictation records on this device and sends the audio to the environment you choose, which transcribes it. Nothing is sent until you choose. You can change or turn this off in Voice settings."
+          />
+          <WizardPanel>
+            <section className="space-y-2">
+              {destinations.length === 0 ? (
+                <Text as="p" tone="muted">
+                  No connected environment offers transcription.
+                </Text>
+              ) : null}
+              {destinations.map((choice) => (
+                <div key={choice.environmentId} className="space-y-1">
+                  <Button
+                    variant="secondary"
+                    className="w-full justify-start"
+                    disabled={choice.refusal !== null}
+                    onClick={() => props.onChooseDestination?.(choice.environmentId)}
+                  >
+                    {choice.label}
+                  </Button>
+                  {choice.refusal ? (
+                    <Text as="p" variant="caption" tone="muted">
+                      {choice.refusal}
+                    </Text>
+                  ) : null}
+                </div>
+              ))}
+            </section>
+          </WizardPanel>
+          <WizardFooter>
+            <Button variant="secondary" onClick={() => props.onOpenChange(false)}>
+              Not now
+            </Button>
+          </WizardFooter>
+        </WizardPopup>
+      </Dialog>
+    );
+  }
+
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
       {/* Focus the dialog itself: the mic keeps the composer focused, so a button focused on open
@@ -102,6 +155,17 @@ export function VoiceInputSetup(props: {
                   {environment?.label ?? "your transcription environment"}. Microphone audio is sent
                   there for transcription. You can choose another environment in Voice settings.
                 </Text>
+                <Text as="p" tone="muted" className="mt-2">
+                  Silero (1.2 MB), used for silence filtering and pause detection, downloads
+                  alongside the speech model. An installed copy is reused.
+                </Text>
+                {!canManage ? (
+                  <Text as="p" tone="muted" className="mt-2" role="status">
+                    Your session cannot download models on{" "}
+                    {environment?.label ?? "this environment"}. Ask an environment admin to download
+                    one in Voice settings.
+                  </Text>
+                ) : null}
                 {props.downloading && status ? (
                   <div className="mt-4">
                     <VoiceModelDownloadProgress model={model} size={status.size} />
@@ -205,7 +269,7 @@ export function VoiceInputSetup(props: {
                 </Button>
               ) : null}
               {!props.downloading ? (
-                <Button disabled={!status} onClick={props.onDownload}>
+                <Button disabled={!status || !canManage} onClick={props.onDownload}>
                   {props.error ? "Retry download" : "Download model"}
                 </Button>
               ) : null}

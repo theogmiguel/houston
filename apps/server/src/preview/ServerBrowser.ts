@@ -526,6 +526,11 @@ const CLIPBOARD_SCRIPT = `(() => {
   };
 })();`;
 
+const SANDBOX_FAILURE_OUTPUT = /sandboxing failed/i;
+const ADOPT_POPUP_PATTERN = /^https?:/i;
+const NAVIGATE_PATTERN = /ERR_[A-Z_]+/;
+const ARIA_REF_ATTRIBUTE = /aria-ref\s*=/;
+
 const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const host = { platform: yield* HostProcess.Platform, arch: yield* HostProcess.Architecture };
@@ -556,6 +561,7 @@ const make = Effect.gen(function* () {
 
   const contexts = new ServerBrowserContexts({
     profilesDir: NodePath.join(config.stateDir, "server-browser", "profiles"),
+    idleBrowserMs: 5 * 60_000,
     executable: () =>
       runPromise(
         previewBrowser.executable.pipe(
@@ -595,7 +601,7 @@ const make = Effect.gen(function* () {
         PreviewBrowserHost.diagnoseLaunchFailure({
           executable,
           setupCommand,
-          output: /sandboxing failed/i.test(String(cause))
+          output: SANDBOX_FAILURE_OUTPUT.test(String(cause))
             ? PreviewBrowserHost.NO_SANDBOX_SIGNATURE
             : "",
         }),
@@ -1409,7 +1415,7 @@ const make = Effect.gen(function* () {
     await runPromise(
       openTab({
         threadId: opener.threadId,
-        ...(/^https?:/i.test(url) ? { url } : {}),
+        ...(ADOPT_POPUP_PATTERN.test(url) ? { url } : {}),
         runtime: "server",
         ...(opener.profileId === undefined ? {} : { profileId: opener.profileId }),
         ...(opener.control.agentId === null
@@ -1469,15 +1475,15 @@ const make = Effect.gen(function* () {
     });
   });
 
-  const atTabLimit = (agentSessionId: string) => {
-    const opening = [...pendingTabs.entries()].filter(([key]) => !tabs.has(key));
-    return (
-      tabs.size + opening.length >= SERVER_TAB_LIMIT ||
-      [...tabs.values()].filter((tab) => tab.control.agentId === agentSessionId).length +
-        opening.filter(([, pending]) => pending.agentId === agentSessionId).length >=
-        AGENT_TAB_LIMIT
-    );
-  };
+  const openingReservations = () =>
+    [...pendingTabs.entries()].filter(([key]) => !tabs.has(key)).map(([, pending]) => pending);
+  const serverAtTabLimit = () => tabs.size + openingReservations().length >= SERVER_TAB_LIMIT;
+  const agentAtTabLimit = (agentSessionId: string) =>
+    [...tabs.values()].filter((tab) => tab.control.agentId === agentSessionId).length +
+      openingReservations().filter((pending) => pending.agentId === agentSessionId).length >=
+    AGENT_TAB_LIMIT;
+  const atTabLimit = (agentSessionId: string) =>
+    serverAtTabLimit() || agentAtTabLimit(agentSessionId);
 
   const assertTabCapacity = (agentSessionId: string) => {
     if (atTabLimit(agentSessionId))
@@ -1487,16 +1493,40 @@ const make = Effect.gen(function* () {
       );
   };
 
+  // The desktop draws its tabs in its own webview, so they never get a streamed viewer.
+  const isVisible = (tab: ServerTab) =>
+    tab.viewers.size > 0 || (tab.desktop !== null && desktopChannel.isShown(tab));
+
+  const idleAgentTabs = () => {
+    const cutoff = Date.now() - AGENT_TAB_IDLE_MS;
+    return [...tabs.values()].filter(
+      (tab) => tab.control.agentId !== null && !isVisible(tab) && tab.usedAt < cutoff,
+    );
+  };
+
+  // The desktop app renders every server tab, so idle desktop agent tabs would otherwise
+  // hold the server's budget forever. Hidden ones give up their slots, longest idle first,
+  // only when an agent needs one and has room for it.
+  const freeIdleAgentSlot = (agentSessionId: string) => {
+    if (!serverAtTabLimit() || agentAtTabLimit(agentSessionId)) return;
+    const longestIdle = idleAgentTabs().sort((left, right) => left.usedAt - right.usedAt)[0];
+    if (longestIdle) dropTab(longestIdle, true);
+  };
+
   // A Playwright launch must settle before its capacity can be released.
   const openTab = Effect.fn("ServerBrowser.openTab")(function* (
     input: Parameters<typeof manager.open>[0],
+    options: { readonly reclaimIdleSlot?: boolean } = {},
   ) {
     let key: string = NodeCrypto.randomUUID();
     const reservation = { agentId: input.automationOwner ?? null };
     return yield* Effect.acquireUseRelease(
       Effect.try({
         try: () => {
-          if (input.automationOwner !== undefined) assertTabCapacity(input.automationOwner);
+          if (input.automationOwner !== undefined) {
+            if (options.reclaimIdleSlot) freeIdleAgentSlot(input.automationOwner);
+            assertTabCapacity(input.automationOwner);
+          }
           pendingTabs.set(key, reservation);
         },
         catch: ServerBrowserPage.toOperationError,
@@ -1536,16 +1566,7 @@ const make = Effect.gen(function* () {
   // Desktop browsing bypasses streamed viewers and server input tracking,
   // so these idle signals only apply to headless tabs.
   const closeIdleAgentTabs = () => {
-    const cutoff = Date.now() - AGENT_TAB_IDLE_MS;
-    for (const tab of tabs.values()) {
-      if (
-        tab.control.agentId !== null &&
-        tab.desktop === null &&
-        tab.viewers.size === 0 &&
-        tab.usedAt < cutoff
-      )
-        dropTab(tab, true);
-    }
+    for (const tab of idleAgentTabs()) if (tab.desktop === null) dropTab(tab, true);
   };
 
   const latestThreadTab = (threadId: string, agentSessionId?: string) => {
@@ -1745,7 +1766,7 @@ const make = Effect.gen(function* () {
           `${url} is a file this browser cannot show, so it was downloaded instead. preview_status lists it under downloads.`,
         );
       }
-      if (/ERR_[A-Z_]+/.test(message)) {
+      if (NAVIGATE_PATTERN.test(message)) {
         throw new ServerBrowserPage.ServerBrowserOperationError(
           "PreviewAutomationExecutionError",
           `Navigation to ${url} failed: ${ServerBrowserPage.parseNetError(message).description}`,
@@ -2059,7 +2080,7 @@ const make = Effect.gen(function* () {
       );
     try {
       // Refs resolve against the snapshot's own map; a raw locator call would report them stale.
-      if (selector !== null && !/aria-ref\s*=/.test(selector)) {
+      if (selector !== null && !ARIA_REF_ATTRIBUTE.test(selector)) {
         const info = await read(tab.page.locator(selector).first());
         return {
           element: { tagName: info.tagName, text: info.text, selector },
@@ -2210,14 +2231,17 @@ const make = Effect.gen(function* () {
         const tab =
           existing ??
           (await runPromise(
-            openTab({
-              threadId: request.threadId,
-              ...(url ? { url } : {}),
-              ...(profileId === undefined ? {} : { profileId }),
-              runtime: "server",
-              reveal: false,
-              automationOwner: request.agentSessionId,
-            }),
+            openTab(
+              {
+                threadId: request.threadId,
+                ...(url ? { url } : {}),
+                ...(profileId === undefined ? {} : { profileId }),
+                runtime: "server",
+                reveal: false,
+                automationOwner: request.agentSessionId,
+              },
+              { reclaimIdleSlot: true },
+            ),
           ));
         if (existing?.dialog)
           throw new BrowserControlInterrupted(

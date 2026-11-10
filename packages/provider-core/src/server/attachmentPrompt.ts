@@ -36,8 +36,10 @@ type SnapShotPromptAccessibility =
       readonly root: SnapShotPromptAccessibilityNode;
     };
 
+const WHITESPACE_RUN = /\s+/g;
+
 function normalizedAccessibilityLabel(value: string): string {
-  return value.trim().replaceAll(/\s+/g, " ").toLowerCase();
+  return value.trim().replaceAll(WHITESPACE_RUN, " ").toLowerCase();
 }
 
 function isRedundantWindowButtonDescription(node: SnapShotAccessibilityNode): boolean {

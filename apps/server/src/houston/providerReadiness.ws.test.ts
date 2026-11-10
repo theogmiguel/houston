@@ -106,6 +106,7 @@ import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ServerLifecycleEvents from "../serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "../serverRuntimeStartup.ts";
+import * as AssetSigner from "../assets/AssetSigner.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerSelfUpdate from "../cloud/selfUpdate.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -382,6 +383,7 @@ const readinessIn = (providers: ReadonlyArray<ServerProvider>, provider: ServerP
 // Build the production RPC layer; unrelated capabilities fail if these tests call them.
 const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(DocumentText.DocumentText)({}),
+  Layer.mock(AssetSigner.AssetSigner)({}),
   Layer.mock(ServerSecretStore.ServerSecretStore)({}),
   Layer.mock(WorkspacePaths.WorkspacePaths)({}),
   Layer.mock(TraceDiagnostics.TraceDiagnostics)({}),

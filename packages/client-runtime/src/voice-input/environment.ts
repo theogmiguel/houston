@@ -1,11 +1,16 @@
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
-import { encodeSpeechProjectNameHeader, SPEECH_STREAM_PATH } from "@houston-app/contracts";
+import * as Schema from "effect/Schema";
+import { encodeSpeechPcmRequest } from "@houston-app/shared/speech";
+import { CLOUD_SPEECH_LABELS, CloudSpeechError, SPEECH_STREAM_PATH } from "@houston-app/contracts";
 import type {
+  CloudSpeechModelId,
+  CloudSpeechProvider,
+  SettingsSecretValue,
   SpeechAcceleration,
-  SpeechCustomWords,
-  SpeechLanguage,
   SpeechModelUnloadTimeout,
+  SpeechPostProcessingOptions,
+  SpeechTranscriptionOptions,
 } from "@houston-app/contracts";
 import { RemoteEnvironmentAuthFetchError } from "../rpc/http.ts";
 
@@ -15,11 +20,17 @@ import {
   makeEnvironmentHttpApiUrlBuilder,
 } from "../rpc/http.ts";
 import { executeAuthenticatedEnvironmentHttpRequest } from "../state/environmentHttpAuth.ts";
+import { VoiceTranscriptionError } from "./transcription.ts";
 
 const VOICE_REQUEST_TIMEOUT_MS = 30 * 60_000;
+/** The server gives a provider two minutes; ten more seconds let its error reach the client. */
+const CLOUD_TRANSCRIBE_TIMEOUT_MS = 130_000;
+const isCloudSpeechError = Schema.is(CloudSpeechError);
 type EnvironmentApiClient<G extends "voice" | "auth"> = Effect.Success<
   ReturnType<typeof makeEnvironmentHttpApiGroupClient<G>>
 >;
+
+const LOOPBACK_PATTERN = /^127\.\d+\.\d+\.\d+$/;
 
 const request = Effect.fn("clientRuntime.voiceInput.environmentRequest")(function* <
   A,
@@ -29,6 +40,7 @@ const request = Effect.fn("clientRuntime.voiceInput.environmentRequest")(functio
   readonly group: G;
   readonly prepared: PreparedConnection;
   readonly method: "GET" | "POST" | "DELETE";
+  readonly timeoutMs?: number;
   readonly path: (
     urls: ReturnType<typeof makeEnvironmentHttpApiUrlBuilder>[G],
     baseUrl: string,
@@ -43,7 +55,7 @@ const request = Effect.fn("clientRuntime.voiceInput.environmentRequest")(functio
     prepared: input.prepared,
     method: input.method,
     url: input.path,
-    timeoutMs: VOICE_REQUEST_TIMEOUT_MS,
+    timeoutMs: input.timeoutMs ?? VOICE_REQUEST_TIMEOUT_MS,
     requestInit: { redirect: "error" },
     validateUrl: (baseUrl) =>
       Effect.try({
@@ -52,7 +64,7 @@ const request = Effect.fn("clientRuntime.voiceInput.environmentRequest")(functio
           const loopback =
             url.hostname === "localhost" ||
             url.hostname === "[::1]" ||
-            /^127\.\d+\.\d+\.\d+$/.test(url.hostname);
+            LOOPBACK_PATTERN.test(url.hostname);
           if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) {
             throw new Error("Voice input requires HTTPS for remote environments.");
           }
@@ -76,10 +88,103 @@ export const getEnvironmentSpeechStatus = (prepared: PreparedConnection) =>
     run: ({ client, headers }) => client.status({ headers }),
   });
 
-export const getEnvironmentSpeechStreamUrl = (
+export const getCloudSpeechKeys = (prepared: PreparedConnection) =>
+  request({
+    group: "voice",
+    prepared,
+    method: "GET",
+    path: (urls) => urls.cloudKeys(),
+    run: ({ client, headers }) => client.cloudKeys({ headers }),
+  });
+
+export const getCloudSpeechModels = (prepared: PreparedConnection) =>
+  request({
+    group: "voice",
+    prepared,
+    method: "GET",
+    path: (urls) => urls.cloudModels(),
+    run: ({ client, headers }) => client.cloudModels({ headers }),
+  });
+
+/** Fails before any audio is sent when the environment holds no key for `provider`. */
+export const requireCloudSpeechKey = (
   prepared: PreparedConnection,
-  projectName?: string,
+  provider: CloudSpeechProvider,
+) =>
+  getCloudSpeechKeys(prepared).pipe(
+    Effect.flatMap((keys) =>
+      keys[provider]
+        ? Effect.void
+        : Effect.fail(
+            new VoiceTranscriptionError(
+              "unavailable",
+              new CloudSpeechError({ provider, reason: "missing-key" }).message,
+            ),
+          ),
+    ),
+  );
+
+/** A literal is sent in the body once and is never returned; `null` removes the saved key. */
+export const setCloudSpeechKey = (
+  prepared: PreparedConnection,
+  provider: CloudSpeechProvider,
+  key: SettingsSecretValue | null,
+) =>
+  request({
+    group: "voice",
+    prepared,
+    method: "POST",
+    path: (urls) => urls.setCloudKey({ params: { provider } }),
+    run: ({ client, headers }) =>
+      client.setCloudKey({
+        headers,
+        params: { provider },
+        payload: { key: typeof key === "string" ? Redacted.make(key) : key },
+      }),
+  });
+
+/**
+ * Sends one finished recording to `provider` through `prepared`. OpenRouter needs the exact model
+ * the user chose; without it nothing is sent.
+ */
+export const transcribeCloudPcm = (
+  prepared: PreparedConnection,
+  provider: CloudSpeechProvider,
+  pcm: Uint8Array,
+  options: SpeechTranscriptionOptions,
+  model?: CloudSpeechModelId,
 ) => {
+  if (provider === "openrouter" && model === undefined)
+    return Effect.fail(
+      new VoiceTranscriptionError(
+        "unavailable",
+        `Choose a ${CLOUD_SPEECH_LABELS.openrouter} model in Settings → Voice.`,
+      ),
+    );
+  const query = model === undefined ? {} : { model };
+  return request({
+    group: "voice",
+    prepared,
+    method: "POST",
+    timeoutMs: CLOUD_TRANSCRIBE_TIMEOUT_MS,
+    path: (urls) => urls.transcribeCloud({ params: { provider }, query }),
+    run: ({ client, headers }) =>
+      client.transcribeCloud({
+        headers,
+        params: { provider },
+        query,
+        payload: encodeSpeechPcmRequest(pcm, options),
+      }),
+  }).pipe(
+    Effect.mapError((error) =>
+      error._tag === "RemoteEnvironmentAuthFetchError" && isCloudSpeechError(error.cause)
+        ? new VoiceTranscriptionError("transcription-failed", error.cause.message)
+        : error,
+    ),
+  );
+};
+
+export const getEnvironmentSpeechStreamUrl = (prepared: PreparedConnection) => {
   let endpoint = prepared.httpBaseUrl;
   return request({
     group: "auth",
@@ -95,20 +200,24 @@ export const getEnvironmentSpeechStreamUrl = (
       const url = new URL(SPEECH_STREAM_PATH, endpoint);
       url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
       url.searchParams.set("wsTicket", Redacted.value(ticket));
-      if (projectName) url.searchParams.set("projectName", projectName);
       return url.toString();
     }),
   );
 };
 
-export const getEnvironmentSpeechModels = (prepared: PreparedConnection) =>
-  request({
+export const getEnvironmentSpeechModels = (
+  prepared: PreparedConnection,
+  includeBenchmarks = false,
+) => {
+  const query = includeBenchmarks ? { benchmarks: "1" as const } : {};
+  return request({
     group: "voice",
     prepared,
     method: "GET",
-    path: (urls) => urls.models(),
-    run: ({ client, headers }) => client.models({ headers }),
+    path: (urls) => urls.models({ query }),
+    run: ({ client, headers }) => client.models({ headers, query }),
   });
+};
 
 export const prepareEnvironmentSpeechModel = (prepared: PreparedConnection) =>
   request({
@@ -152,7 +261,7 @@ export const cancelEnvironmentSpeechModelDownload = (
 export const transcribeEnvironmentPcm = (
   prepared: PreparedConnection,
   pcm: Uint8Array,
-  projectName?: string,
+  options: SpeechTranscriptionOptions,
 ) =>
   request({
     group: "voice",
@@ -160,17 +269,10 @@ export const transcribeEnvironmentPcm = (
     method: "POST",
     path: (urls) => urls.transcribe(),
     run: ({ client, headers }) =>
-      client.transcribe({
-        headers: {
-          ...headers,
-          ...(projectName
-            ? { "x-houston-project-name": encodeSpeechProjectNameHeader(projectName) }
-            : {}),
-        },
-        payload: pcm,
-      }),
+      client.transcribe({ headers, payload: encodeSpeechPcmRequest(pcm, options) }),
   });
 
+/** Sends the transcript and draft context to a text-generation provider on `prepared`. */
 export const postProcessEnvironmentTranscript = (
   prepared: PreparedConnection,
   transcript: string,
@@ -178,37 +280,15 @@ export const postProcessEnvironmentTranscript = (
     readonly text: string;
     readonly selection: { readonly start: number; readonly end: number };
   },
+  options: SpeechPostProcessingOptions,
 ) =>
   request({
     group: "voice",
     prepared,
     method: "POST",
     path: (urls) => urls.postProcess(),
-    run: ({ client, headers }) => client.postProcess({ headers, payload: { transcript, draft } }),
-  });
-
-export const updateEnvironmentSpeechCustomWords = (
-  prepared: PreparedConnection,
-  words: SpeechCustomWords,
-) =>
-  request({
-    group: "voice",
-    prepared,
-    method: "POST",
-    path: (urls) => urls.updateCustomWords(),
-    run: ({ client, headers }) => client.updateCustomWords({ headers, payload: { words } }),
-  });
-
-export const updateEnvironmentSpeechFillerWordRemoval = (
-  prepared: PreparedConnection,
-  enabled: boolean,
-) =>
-  request({
-    group: "voice",
-    prepared,
-    method: "POST",
-    path: (urls) => urls.updateFillerWordRemoval(),
-    run: ({ client, headers }) => client.updateFillerWordRemoval({ headers, payload: { enabled } }),
+    run: ({ client, headers }) =>
+      client.postProcess({ headers, payload: { transcript, draft, options } }),
   });
 
 export const updateEnvironmentSpeechAcceleration = (
@@ -234,30 +314,6 @@ export const updateEnvironmentSpeechModelUnloadTimeout = (
     path: (urls) => urls.updateModelUnloadTimeout(),
     run: ({ client, headers }) =>
       client.updateModelUnloadTimeout({ headers, payload: { timeout } }),
-  });
-
-export const updateEnvironmentSpeechLanguage = (
-  prepared: PreparedConnection,
-  language: SpeechLanguage,
-) =>
-  request({
-    group: "voice",
-    prepared,
-    method: "POST",
-    path: (urls) => urls.updateLanguage(),
-    run: ({ client, headers }) => client.updateLanguage({ headers, payload: { language } }),
-  });
-
-export const updateEnvironmentSpeechTranslation = (
-  prepared: PreparedConnection,
-  enabled: boolean,
-) =>
-  request({
-    group: "voice",
-    prepared,
-    method: "POST",
-    path: (urls) => urls.updateTranslation(),
-    run: ({ client, headers }) => client.updateTranslation({ headers, payload: { enabled } }),
   });
 
 export const removeEnvironmentSpeechModel = (prepared: PreparedConnection, modelId: string) =>

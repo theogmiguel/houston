@@ -21,6 +21,7 @@ import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as VcsProcess from "../../vcs/VcsProcess.ts";
 import { managedWorktreesDirectories } from "../../worktreesDirectory.ts";
+import { confinedGitEnv } from "../confinedGit.ts";
 import { HoustonBuildSlot } from "./BuildSlot.ts";
 import {
   line,
@@ -33,6 +34,9 @@ import {
 } from "./rules.ts";
 import { HoustonMergeQueueStore } from "./Store.ts";
 
+const LINE_BREAK = /\r?\n/;
+const WORKTREE_BRANCH_LINE = /^branch refs\/heads\/(.+)$/;
+
 /** Local git work; fetches and pushes cross the network and get longer. */
 export const GIT_LOCAL_TIMEOUT_MS = 120_000;
 export const GIT_NETWORK_TIMEOUT_MS = 600_000;
@@ -43,31 +47,15 @@ export interface GitResult {
   readonly stderr: string;
 }
 
-// Command-scope config for every queue git process and the git it starts. Automatic gc and
-// maintenance leave a child holding the output pipe and, on Windows, the scratch worktree.
+// Automatic gc and maintenance leave a child holding the output pipe and, on Windows, the
+// scratch worktree. The user's config stops at the scratch worktree through `confinedGitEnv`.
 const QUEUE_GIT_CONFIG: ReadonlyArray<readonly [string, string]> = [
   ["gc.auto", "0"],
   ["maintenance.auto", "false"],
-  // The user's config stops at the scratch worktree: no other branch, hook, tag or submodule.
-  ["rebase.updateRefs", "false"],
-  ["core.hooksPath", "/dev/null"],
-  ["commit.gpgSign", "false"],
-  ["rerere.enabled", "false"],
-  ["submodule.recurse", "false"],
-  ["fetch.recurseSubmodules", "false"],
-  ["push.followTags", "false"],
-  ["push.recurseSubmodules", "no"],
-  ["push.gpgSign", "false"],
-  ["core.fsmonitor", "false"],
 ];
 
-const queueGitEnv = (): NodeJS.ProcessEnv => {
-  const env: NodeJS.ProcessEnv = { ...process.env, GIT_TERMINAL_PROMPT: "0" };
-  for (const [key, value] of QUEUE_GIT_CONFIG) {
-    Object.assign(env, VcsProcess.gitConfigEnv(env, key, value, process.platform));
-  }
-  return env;
-};
+const queueGitEnv = (): NodeJS.ProcessEnv =>
+  confinedGitEnv({ ...process.env, GIT_TERMINAL_PROMPT: "0" }, process.platform, QUEUE_GIT_CONFIG);
 
 /** Runs git in `cwd`; a git that could not run fails with its error's text. */
 export const git = (
@@ -223,7 +211,7 @@ const make = Effect.gen(function* () {
     const remotes = yield* withVcs(gitOk(project.workspaceRoot, ["remote"])).pipe(
       Effect.mapError(() => unsupported(`${project.workspaceRoot} is not a git repository`)),
     );
-    const names = remotes.split(/\r?\n/).filter((name) => name.length > 0);
+    const names = remotes.split(LINE_BREAK).filter((name) => name.length > 0);
     const remote = names.includes("origin") ? "origin" : names[0];
     if (remote === undefined) return yield* unsupported(`${project.title} has no git remote`);
     // The configured URL, before any insteadOf rewrite, names the host.
@@ -314,9 +302,9 @@ const make = Effect.gen(function* () {
     ).pipe(Effect.orElseSucceed(() => ""));
     const worktrees = new Map<string, string>();
     let current: string | null = null;
-    for (const entry of listed.split(/\r?\n/)) {
+    for (const entry of listed.split(LINE_BREAK)) {
       if (entry.startsWith("worktree ")) current = entry.slice("worktree ".length);
-      const branch = /^branch refs\/heads\/(.+)$/.exec(entry)?.[1];
+      const branch = WORKTREE_BRANCH_LINE.exec(entry)?.[1];
       if (
         branch !== undefined &&
         current !== null &&

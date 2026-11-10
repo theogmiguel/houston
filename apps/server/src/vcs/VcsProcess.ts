@@ -94,6 +94,8 @@ const gitMetricOperations = new Set([
   "GitVcsDriver.resolveGitCommonDir",
 ]);
 
+const GIT_CONFIG_ENV_PATTERN = /^[ \t\r\n\v\f]*(?:\+?\d+|-0+)/;
+
 /**
  * Append after inherited entries without changing argv or the user's config.
  * Windows env keys ignore case: read the last spelling of the count so command overrides win,
@@ -115,7 +117,7 @@ export const gitConfigEnv = (
     inherited !== undefined &&
     inherited !== "" &&
     // Match Git's strtoul count syntax, including whitespace, signs and non-negative -0.
-    /^[ \t\r\n\v\f]*(?:\+?\d+|-0+)/.exec(inherited)?.[0] !== inherited
+    GIT_CONFIG_ENV_PATTERN.exec(inherited)?.[0] !== inherited
   ) {
     return {};
   }
@@ -186,10 +188,13 @@ const classifyNonZeroExit = (
   return commandKind ?? "command-failed";
 };
 
+const GIT_LOCK_FILE_EXISTS = /unable to create [^\n]*\.lock['"]?: file exists/i;
+const GIT_FILE_VANISHED =
+  /(?:unable to stat|lstat\(|error: open\()[^\n]+: no such file or directory/i;
+
 // Classify before discarding stderr; keep paths and process output out of errors.
 const isTransientGitExit = (stderr: string) =>
-  /unable to create [^\n]*\.lock['"]?: file exists/i.test(stderr) ||
-  /(?:unable to stat|lstat\(|error: open\()[^\n]+: no such file or directory/i.test(stderr);
+  GIT_LOCK_FILE_EXISTS.test(stderr) || GIT_FILE_VANISHED.test(stderr);
 
 // On macOS, Git's fsync uses F_FULLFSYNC; writeout-only still uses fsync(2).
 // Network mounts can reject F_FULLFSYNC. Ref writes omit errno, so retry their
@@ -198,9 +203,14 @@ const isTransientGitExit = (stderr: string) =>
 const FULL_FSYNC_ARG = "core.fsyncMethod=fsync";
 const BATCH_FSYNC_ARG = "core.fsyncMethod=batch";
 const WRITEOUT_ONLY_FSYNC_ARG = "core.fsyncMethod=writeout-only";
+const FSYNC_UNSUPPORTED = /fsync error on [^\r\n]+: operation not supported\r?$/im;
+const REF_LOCK_WRITE_FAILURE = /cannot update ref [^\r\n]+: couldn't write '[^\r\n]+\.lock'\r?$/im;
+
 const canRetryFullFsync = (stderr: string) =>
-  /fsync error on [^\r\n]+: operation not supported\r?$/im.test(stderr) ||
-  /cannot update ref [^\r\n]+: couldn't write '[^\r\n]+\.lock'\r?$/im.test(stderr);
+  FSYNC_UNSUPPORTED.test(stderr) || REF_LOCK_WRITE_FAILURE.test(stderr);
+
+const RUN_UNBOUNDED_PATTERN =
+  /^fatal: unable to create ['"][^\r\n]*[/\\]index\.lock['"]: file exists\.?$/im;
 
 export const make = Effect.gen(function* () {
   const processRunner = yield* ProcessRunner.ProcessRunner;
@@ -344,12 +354,7 @@ export const make = Effect.gen(function* () {
           ...(input.notFoundDetail === undefined ? {} : { notFoundDetail: input.notFoundDetail }),
         },
       );
-      if (
-        input.command === "git" &&
-        /^fatal: unable to create ['"][^\r\n]*[/\\]index\.lock['"]: file exists\.?$/im.test(
-          result.stderr,
-        )
-      ) {
+      if (input.command === "git" && RUN_UNBOUNDED_PATTERN.test(result.stderr)) {
         return yield* new VcsProcessExitError({
           ...error,
           detail: GIT_INDEX_LOCKED_DETAIL,

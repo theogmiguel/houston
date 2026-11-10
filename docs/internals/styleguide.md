@@ -15,11 +15,12 @@ status. The panes are the product.
   (T3 Chat, Grove, Ocean, Ember, Iris) and user-defined themes override the role variables
   under `html[data-theme-id]`.
 - **Neutral grounds in a small ladder.** The rail is one tonal step off the content canvas,
-  cards lift above it, and the terminal is the darkest surface. Borders and dividers separate
-  them; elevation is a ladder, not a stack of cards.
-- **One accent.** `--accent` is a brand fill; `--accent-ink` is the readable version for
-  text, icons and focus. Selection, running state, focus and primary actions are where the
-  brand hue appears.
+  cards lift above it, and the terminal is the darkest surface. The main work area runs flush to
+  the chrome and the rail's own 1px divider is the only seam. Borders and dividers separate the
+  levels; elevation is a ladder, not a stack of cards.
+- **One accent.** The indigo from the app mark (`--accent`) is the brand fill; `--accent-ink`
+  is the readable version for text, icons and focus. Selection, running state, focus, primary
+  actions and the 8% wash on a user turn are where the brand hue appears.
 - **The shell is square.** Grid panes have no radius and no card border. One 1px
   `--divider` separates the sidebar, top bar, grid cells and right panel. A grid of two or
   more threads carries a floating pane label instead of a pane header.
@@ -86,12 +87,13 @@ should sit quieter than their label.
 
 ### Borders and dividers
 
-| Token            | Use it for                                                                         |
-| ---------------- | ---------------------------------------------------------------------------------- |
-| `--border`       | Ordinary hairlines: inputs, cards, control edges.                                  |
-| `--divider`      | One-pixel seams between shell surfaces: sidebar, top bar, grid cells, right panel. |
-| `--border-hover` | The hover state of an ordinary hairline.                                           |
-| `--line-strong`  | The interactive edge of a field or a selected control.                             |
+| Token            | Use it for                                                                                                                                                |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--border`       | Ordinary hairlines: inputs, cards, control edges.                                                                                                         |
+| `--divider`      | One-pixel seams between shell surfaces: sidebar, top bar, grid cells, right panel.                                                                        |
+| `--card-edge`    | Edges of raised content cards (settings groups, changed files, plans); one step firmer than `--border` in light. Use it through `--contrast-card-border`. |
+| `--border-hover` | The hover state of an ordinary hairline.                                                                                                                  |
+| `--line-strong`  | The interactive edge of a field or a selected control.                                                                                                    |
 
 ### Accent
 
@@ -132,11 +134,11 @@ neutral hover surface, not white text for a brand plate.
 
 ## Typography
 
-| Family         | Token          | Use                                                                                            |
-| -------------- | -------------- | ---------------------------------------------------------------------------------------------- |
-| Inter Variable | `--font-sans`  | All interface and body text. Bundled through `@fontsource-variable/inter`.                     |
-| JetBrains Mono | `--font-mono`  | Paths, IDs, branches, code, terminal-adjacent values. System fallback when the face is absent. |
-| Source Serif 4 | `--font-serif` | Display moments only: welcome screens and empty states. System serif fallback.                 |
+| Family         | Token          | Use                                                                                                 |
+| -------------- | -------------- | --------------------------------------------------------------------------------------------------- |
+| Inter Variable | `--font-sans`  | All interface and body text. Bundled through `@fontsource-variable/inter`.                          |
+| JetBrains Mono | `--font-mono`  | Paths, IDs, branches, code, terminal-adjacent values. System fallback when the face is absent.      |
+| Source Serif 4 | `--font-serif` | The first-run recovery title only. System serif fallback. Welcome and empty-state titles use Inter. |
 
 Body text is 13px / 18px, set on `<body>`. Hierarchy comes from weight and ink before size.
 
@@ -147,6 +149,7 @@ Body text is 13px / 18px, set on `<body>`. Hierarchy comes from weight and ink b
 | `text-large-title` | 26 / 32        | Destination page titles.                             |
 | `text-title`       | 20 / 26        | Dialog and section titles.                           |
 | `text-headline`    | 13 / 18        | Headings at body size.                               |
+| `text-heading`     | 15 / 20        | Emphasised headings above body size.                 |
 | `text-body`        | 13 / 18        | Default body, controls and rows.                     |
 | `text-prose`       | 14 / 20        | Long-form reading: chat markdown, pull-request text. |
 | `text-callout`     | 12 / 16        | Secondary lines and compact captions.                |
@@ -212,13 +215,13 @@ Name the role (`rounded-(--r-ctl)`, `rounded-[var(--r-group)]`) rather than a nu
 
 A surface is a token, not a hand-built recipe. The ladder is:
 
-| Rung     | Token       | For                                    |
-| -------- | ----------- | -------------------------------------- |
-| Chrome   | `--rail`    | Sidebar and window chrome.             |
-| Canvas   | `--content` | The main ground.                       |
-| Card     | `--card`    | Panels and rows lifted off the canvas. |
-| Floating | `--raised`  | Menus, popovers, dialogs and tooltips. |
-| Pane     | `--pane`    | A thread or grid cell.                 |
+| Rung     | Token       | For                                                          |
+| -------- | ----------- | ------------------------------------------------------------ |
+| Chrome   | `--rail`    | Sidebar and the window chrome.                               |
+| Canvas   | `--content` | The main work area, flush and divided from the rail.         |
+| Card     | `--card`    | Panels and rows lifted off the canvas by an edge and a lift. |
+| Floating | `--raised`  | Menus, popovers, dialogs and tooltips.                       |
+| Pane     | `--pane`    | A thread or grid cell.                                       |
 
 Floating surfaces use one of the shared utilities:
 
@@ -265,10 +268,42 @@ drop shadow or a card border.
 - **Bottom terminal.** The `ThreadTerminalDrawer` is a bottom sheet over the thread and is
   dismissed without closing the agent session.
 - **Settings.** `/settings/<section>` is a full-window route with its own left navigation
-  and a 720px (`--settings-w`) content column. The page header is the 40px top bar.
+  and a 720px (`--settings-w`) content column. The page header is the 40px top bar; each page
+  opens with its title and a one-line description from `SettingsPageContainer`, then the scope line.
 - **Content pages.** `WorkspacePageContainer` owns the column: `readable` is 896px
   (`max-w-4xl`), `wide` is 1040px, and `expanded` is 1152px (`max-w-6xl`). There is no
   `--page-w` token; `page-width` rejects a per-page pixel width.
+
+### Phone
+
+A browser narrower than 40rem (`--breakpoint-phone` in `index.css`) is a phone; tablets keep
+the docked layout. `apps/web/src/mobile/usePhone.ts` mirrors the token as
+`PHONE_QUERY = "(width < 40rem)"` and exposes `useIsPhone`; the `phone:` and `max-phone:`
+Tailwind variants gate CSS at the same width. A phone replaces the desktop chrome with its own
+home page, thread bar and bottom tab bar.
+
+- **`apps/web/src/mobile/` adapts, never forks.** It reuses `GridSidebar`, `ChatView`,
+  `ChatComposer`, `RightPanelTabs`, `ThreadDetailsCard` and the composer's pickers. It owns
+  only what has no desktop counterpart: the phone shell and tab bar, the thread bar, and the
+  bottom sheets for model, attachments, details and files or changes.
+- **Phone behaviour is gated.** Gate it with `useIsPhone()`, a phone prop or the
+  `max-phone:`/`phone:` variants, so the layout at 40rem and wider is unchanged. A component
+  that a desktop test mounts directly takes an explicit prop (such as `phone`, `sheet` or
+  `isPage`) instead of reading the query.
+- **Hit areas are 44px.** Touch primitives expand through `pointer-coarse`; phone-only rows,
+  tabs and bar controls use `h-11` (44px). A smaller visible box is acceptable only when its
+  hit target reaches the same floor.
+- **Sheets share one recipe.** A phone bottom sheet is `SheetPopup variant="phone"` with
+  `PhoneSheetHeader` (a 44px bar, title at the 16px inset, a 44px close centred on it), the
+  scrim, rounded top corners and the bottom inset on the popup. Rows inside are 44px, full
+  width, with content on the 16px gutter; `phone-page` is the same popup as a full-window page.
+- **Pages carry the phone bar.** A top-level page (pull requests, usage) replaces the desktop top
+  bar with `PhonePageBar`: 44px, a bottom border, the 16px gutter, the full title and no sidebar or
+  panel toggles. The tab bar is the navigation, so the layout hides the floating sidebar toggle there.
+  Segmented controls on a phone use 44px segments inside the same gutter.
+- **Safe areas are applied once.** `#root` owns the top inset. A phone page applies `pb-safe`
+  around its content, the tab bar or a sheet owns the bottom inset in its own surface, and a
+  composer inside the page drops its own safe-area term so the inset is not counted twice.
 
 ### Stacking
 
@@ -355,8 +390,10 @@ its current value and the requested operation in the error.
 
 ### Thread composer
 
-The composer is the primary surface. The context strip sits above the card, the controls
-inside keep their own focus rings, and the footer ends in one primary action whose icon
+The composer is the primary surface: one card holding the input and its toolbar. The context
+row (project, environment, branch, permissions) sits below the card as borderless muted text,
+and the changed-files bar attaches to the card's top edge. The controls inside keep their own
+focus rings, and the footer ends in one primary action whose icon
 names what Enter does. The timeline is 14/20 prose in a 720px lane with a 0.75rem block gap.
 
 ### Pull requests and usage
@@ -411,9 +448,12 @@ above rather than the Tailwind palette.
 - Animate transform and opacity. The status pulse and skeleton step their opacity so the
   compositor draws discrete frames instead of one update per vsync.
 - `Spinner` runs through `visible-animate-spin`, which pauses while hidden.
-- Reduced motion: `motion-reduce` variants and the `prefers-reduced-motion` blocks in
-  `index.css` stop transitions and animations. Loading and status indicators keep their
-  settled, visible state.
+- Reduced motion is the system preference or the Appearance **Animations** switch, which sets
+  `data-motion="off"` on the root. CSS gates motion with the `motion-safe`/`motion-reduce`
+  variants that `index.css` redefines for both; script reads `prefersReducedMotion` or
+  `useReducedMotion`. A registry test rejects any other `prefers-reduced-motion` read; a
+  shadow-root sheet pairs its media query with `:host-context([data-motion="off"])`. Loading
+  and status indicators keep their settled, visible state.
 - A theme switch uses a View Transition reveal from the clicked control
   (`data-theme-reveal`); without a click, without View Transition support, or under reduced
   motion it is instant.

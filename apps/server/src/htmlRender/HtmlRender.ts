@@ -1,6 +1,7 @@
 import type { ThreadId } from "@houston-app/contracts";
 import * as McpProviderSessions from "@houston-app/provider-core/server/McpProviderSessions";
 import * as HostProcess from "@houston-app/shared/HostProcess";
+import { isNetworkPath } from "@houston-app/shared/path";
 import {
   clampHtmlRenderHeight,
   HTML_RENDER_COLUMN_WIDTH,
@@ -22,24 +23,50 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import type * as Path from "effect/Path";
+import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
+import { openMediaFile } from "../assets/MediaFile.ts";
 import { resolveAttachmentRelativePath } from "../attachmentPaths.ts";
 import { createAttachmentId } from "../attachmentStore.ts";
+import { makeIsServerInternalPath } from "../auth/serverInternalPaths.ts";
 import { resolveRootCliCommand } from "../cli/invocation.ts";
 import * as ServerConfig from "../config.ts";
 import * as HeadlessChrome from "./headlessChrome.ts";
 import * as PreviewBrowser from "../preview/PreviewBrowser.ts";
 import * as PreviewBrowserHost from "../preview/PreviewBrowserHost.ts";
 
+const WHITESPACE_CHAR = /\s/;
+const SVG_ROOT_OPENING = /^<svg[ \t\r\n/>]/;
+
 const MIB = 1024 * 1024;
 const MAX_IMAGE_BYTES = 10 * MIB;
 const MAX_PAGE_BYTES = 25 * MIB;
+const HTML_FILE_EXTENSION = /\.html?$/i;
+// Judge the bytes, as the image check does: a renamed .env or key does not start like a page.
+const HTML_DOCUMENT_START = /^\s*<(?:!doctype\s+html|html)[\s>]/i;
 const formatMib = (bytes: number) => `${(bytes / MIB).toFixed(1)} MiB`;
+
+export class HtmlRenderFileError extends Schema.TaggedError<HtmlRenderFileError>()(
+  "HtmlRenderFileError",
+  { path: Schema.String, cause: Schema.optional(Schema.Defect()) },
+) {
+  override get message(): string {
+    return `${this.path} is not a readable HTML document. Pass an absolute path to a regular .html file that starts with <!doctype html> or <html>, or pass html instead.`;
+  }
+}
+
+export class HtmlRenderFileTooLargeError extends Schema.TaggedError<HtmlRenderFileTooLargeError>()(
+  "HtmlRenderFileTooLargeError",
+  { path: Schema.String, sizeBytes: Schema.Number },
+) {
+  override get message(): string {
+    return `${this.path} is ${formatMib(this.sizeBytes)} (${this.sizeBytes} bytes); a page must be at most ${formatMib(MAX_PAGE_BYTES)} (${MAX_PAGE_BYTES} bytes).`;
+  }
+}
 
 export class HtmlRenderImagesNotFoundError extends Schema.TaggedError<HtmlRenderImagesNotFoundError>()(
   "HtmlRenderImagesNotFoundError",
@@ -108,6 +135,8 @@ export type HtmlRenderPrepareError =
   | HtmlRenderPageTooLargeError
   | HtmlRenderViewportHeightError;
 
+export type HtmlRenderSource = { readonly html: string } | { readonly path: string };
+
 export interface HtmlPreview {
   readonly png: string;
   readonly width: number;
@@ -121,18 +150,28 @@ export class HtmlRender extends Context.Service<
   HtmlRender,
   {
     readonly prepare: (html: string) => Effect.Effect<string, HtmlRenderPrepareError>;
-    readonly publish: (input: {
-      readonly threadId: ThreadId;
-      readonly html: string;
-      readonly title: string;
-      readonly height: number;
-    }) => Effect.Effect<HtmlRenderReference, HtmlRenderPrepareError | HtmlRenderStoreError>;
-    readonly preview: (input: {
-      readonly html: string;
-      readonly width?: number | undefined;
-      readonly appearance?: ThemeAppearance | undefined;
-    }) => Effect.Effect<
+    readonly publish: (
+      input: HtmlRenderSource & {
+        readonly threadId: ThreadId;
+        readonly title: string;
+        readonly height: number;
+      },
+    ) => Effect.Effect<
+      HtmlRenderReference,
+      | HtmlRenderFileError
+      | HtmlRenderFileTooLargeError
+      | HtmlRenderPrepareError
+      | HtmlRenderStoreError
+    >;
+    readonly preview: (
+      input: HtmlRenderSource & {
+        readonly width?: number | undefined;
+        readonly appearance?: ThemeAppearance | undefined;
+      },
+    ) => Effect.Effect<
       HtmlPreview,
+      | HtmlRenderFileError
+      | HtmlRenderFileTooLargeError
       | Exclude<HtmlRenderPrepareError, HtmlRenderImagesNotFoundError>
       | PreviewBrowser.PreviewBrowserInstallError
       | PreviewBrowser.PreviewBrowserInstallingError
@@ -168,15 +207,19 @@ const findLocalImages = (html: string) =>
     return span ? [{ start: span[0], end: span[1], path: html.slice(span[0], span[1]) }] : [];
   });
 
+const WINDOWS_DRIVE_PREFIX = /^[a-z]:/i;
+
 // Inside a JS string literal a Windows path's backslashes are escaped.
 const filePathFor = (reference: string) =>
-  /^[a-z]:/i.test(reference) ? reference.replaceAll("\\\\", "\\") : reference;
+  WINDOWS_DRIVE_PREFIX.test(reference) ? reference.replaceAll("\\\\", "\\") : reference;
 
 const dataUriPrefix = (path: string) =>
   `data:${IMAGE_MIME_TYPES[path.slice(path.lastIndexOf(".") + 1).toLowerCase()] ?? "application/octet-stream"};base64,`;
 
 const latin1 = (bytes: Uint8Array, start: number, end: number) =>
   String.fromCharCode(...bytes.subarray(start, end));
+
+const AVIF_BRAND = /^ftyp(?:avif|avis|mif1)$/;
 
 // Validate bytes, not filenames, so renamed files or symlinks cannot inline secrets.
 const isImageBytes = (bytes: Uint8Array) => {
@@ -188,7 +231,7 @@ const isImageBytes = (bytes: Uint8Array) => {
     head.startsWith("\0\0\x01\0") ||
     (head.startsWith("BM") && head.slice(6, 10) === "\0\0\0\0") ||
     (head.startsWith("RIFF") && head.slice(8, 12) === "WEBP") ||
-    /^ftyp(?:avif|avis|mif1)$/.test(head.slice(4, 12))
+    AVIF_BRAND.test(head.slice(4, 12))
   ) {
     return true;
   }
@@ -203,12 +246,12 @@ const after = (text: string, token: string, from: number) => {
 const hasSvgRoot = (text: string) => {
   let at = 0;
   while (at !== -1) {
-    while (/\s/.test(text.charAt(at))) at += 1;
+    while (WHITESPACE_CHAR.test(text.charAt(at))) at += 1;
     if (text.startsWith("<?", at)) at = after(text, "?>", at + 2);
     else if (text.startsWith("<!--", at)) at = after(text, "-->", at + 4);
     else if (text.slice(at, at + 9).toLowerCase() === "<!doctype") at = afterDoctype(text, at + 9);
     // XML names are case-sensitive, and only these characters can end one here.
-    else return /^<svg[ \t\r\n/>]/.test(text.slice(at, at + 5));
+    else return SVG_ROOT_OPENING.test(text.slice(at, at + 5));
   }
   return false;
 };
@@ -331,7 +374,9 @@ const MEASURE_FRAGMENT = htmlRenderThemeFragment(
 
 const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
   const config = yield* ServerConfig.ServerConfig;
+  const isServerInternalPath = yield* makeIsServerInternalPath;
   const previewBrowser = yield* PreviewBrowser.PreviewBrowser;
   const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
   const services = yield* Effect.context<
@@ -396,6 +441,52 @@ const make = Effect.gen(function* () {
     ),
   );
 
+  const readPageFile = Effect.fn("HtmlRender.readPageFile")(function* (filePath: string) {
+    const unreadable = new HtmlRenderFileError({ path: filePath });
+    if (!path.isAbsolute(filePath) || isNetworkPath(filePath)) return yield* unreadable;
+    // Check the resolved file, so a symlink named .html cannot reach another file.
+    const realPath = yield* fileSystem
+      .realPath(filePath)
+      .pipe(Effect.mapError((cause) => new HtmlRenderFileError({ path: filePath, cause })));
+    if (!HTML_FILE_EXTENSION.test(realPath) || (yield* isServerInternalPath(realPath))) {
+      return yield* unreadable;
+    }
+    // Open without following links and recheck the file, so a link or FIFO swapped in is refused.
+    const html = yield* Effect.scoped(
+      Effect.gen(function* () {
+        const file = yield* openMediaFile(realPath).pipe(
+          Effect.mapError((cause) => new HtmlRenderFileError({ path: filePath, cause })),
+        );
+        // The caller may be sandboxed: a second hard link could give any file an .html name.
+        if (file === null || file.info.nlink !== 1n) return yield* unreadable;
+        if (file.info.size > BigInt(MAX_PAGE_BYTES)) {
+          return yield* new HtmlRenderFileTooLargeError({
+            path: filePath,
+            sizeBytes: Number(file.info.size),
+          });
+        }
+        // One read may return fewer bytes, so fill up to the checked size; growth past it is ignored.
+        return yield* Effect.tryPromise({
+          try: async () => {
+            const buffer = Buffer.alloc(Number(file.info.size));
+            let filled = 0;
+            while (filled < buffer.length) {
+              const { bytesRead } = await file.handle.read(buffer, filled, buffer.length - filled);
+              if (bytesRead === 0) break;
+              filled += bytesRead;
+            }
+            return buffer.toString("utf8", 0, filled);
+          },
+          catch: (cause) => new HtmlRenderFileError({ path: filePath, cause }),
+        });
+      }),
+    );
+    return HTML_DOCUMENT_START.test(html) ? html : yield* unreadable;
+  });
+
+  const readSource = (input: HtmlRenderSource) =>
+    "path" in input ? readPageFile(input.path) : Effect.succeed(input.html);
+
   // The bootstrap goes in first so its head scan never runs over inlined image data.
   const inline = (html: string) =>
     inlineLocalImages(injectHtmlRenderBootstrap(html)).pipe(Effect.provideContext(services));
@@ -409,13 +500,15 @@ const make = Effect.gen(function* () {
     return inlined.html;
   });
 
-  const publish = Effect.fn("HtmlRender.publish")(function* (input: {
-    readonly threadId: ThreadId;
-    readonly html: string;
-    readonly title: string;
-    readonly height: number;
-  }) {
-    const html = yield* prepare(input.html);
+  const publish = Effect.fn("HtmlRender.publish")(function* (
+    input: HtmlRenderSource & {
+      readonly threadId: ThreadId;
+      readonly title: string;
+      readonly height: number;
+    },
+  ) {
+    const source = yield* readSource(input);
+    const html = yield* prepare(source);
     // The `-html` id suffix makes the asset route serve it as a sandboxed text/html document.
     const attachmentId = createAttachmentId(input.threadId, "html");
     const filePath =
@@ -443,7 +536,16 @@ const make = Effect.gen(function* () {
           ...(heights === undefined ? {} : { heights }),
         };
         return mcpSessions
-          .recordHtmlRender(input.threadId, input, reference)
+          .recordHtmlRender(
+            input.threadId,
+            {
+              html: source,
+              path: "path" in input ? input.path : undefined,
+              title: input.title,
+              height: input.height,
+            },
+            reference,
+          )
           .pipe(Effect.as(reference));
       }),
       // An interrupted publish must leave neither an attachment nor a recoverable reference.
@@ -459,18 +561,20 @@ const make = Effect.gen(function* () {
     );
   });
 
-  const preview = Effect.fn("HtmlRender.preview")(function* (input: {
-    readonly html: string;
-    readonly width?: number | undefined;
-    readonly appearance?: ThemeAppearance | undefined;
-  }) {
+  const preview = Effect.fn("HtmlRender.preview")(function* (
+    input: HtmlRenderSource & {
+      readonly width?: number | undefined;
+      readonly appearance?: ThemeAppearance | undefined;
+    },
+  ) {
     const width = Math.min(
       MAX_PREVIEW_WIDTH,
       Math.max(MIN_PREVIEW_WIDTH, Math.round(input.width ?? HTML_RENDER_COLUMN_WIDTH)),
     );
     const appearance = input.appearance ?? "dark";
-    yield* rejectViewportHeight(input.html);
-    const inlined = yield* inline(input.html);
+    const source = yield* readSource(input);
+    yield* rejectViewportHeight(source);
+    const inlined = yield* inline(source);
     const executable = yield* previewBrowser.executable;
     const theme = htmlRenderTheme(
       appearance === "light" ? HOUSTON_LIGHT_THEME_COLORS : HOUSTON_DARK_THEME_COLORS,

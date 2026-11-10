@@ -27,6 +27,7 @@ import { resolveServiceLauncherMode } from "../cloud/serviceLauncherClient.ts";
 import * as ServerConfig from "../config.ts";
 import { expandHomePath, resolveBaseDir } from "../os-jank.ts";
 import { isProcessAlive, readPersistedServerRuntimeState } from "../serverRuntimeState.ts";
+import * as ObservabilityExport from "../houston/observability/ObservabilityExport.ts";
 
 const modeFlag = Flag.Literals("mode", ServerConfig.RuntimeMode.literals).pipe(
   Flag.withDescription("Runtime mode. `desktop` keeps loopback defaults unless overridden."),
@@ -440,7 +441,15 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
   );
   const logLevel = Option.getOrElse(cliLogLevel, () => env.logLevel);
 
-  const otel = yield* OtelEnvironment.load;
+  const loadedOtel = yield* OtelEnvironment.load;
+  // Houston: an ignored settings preset is explained in the startup warnings.
+  const otel =
+    persistedObservabilitySettings.presetWarning === undefined
+      ? loadedOtel
+      : {
+          ...loadedOtel,
+          warnings: [...loadedOtel.warnings, persistedObservabilitySettings.presetWarning],
+        };
 
   const signalExport: SignalExport = {
     protocol: env.otlpProtocol,
@@ -453,7 +462,9 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
     { url: env.otlpTracesUrl, export: signalExport },
     {
       bootstrapUrl: bootstrap?.otlpTracesUrl,
-      settingsUrl: persistedObservabilitySettings.otlpTracesUrl,
+      settingsUrl:
+        ObservabilityExport.presetUrl(persistedObservabilitySettings.preset, "traces") ??
+        persistedObservabilitySettings.otlpTracesUrl,
     },
   );
   const metrics = OtelEnvironment.resolveSignalEndpoint(
@@ -462,7 +473,9 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
     { url: env.otlpMetricsUrl, export: signalExport },
     {
       bootstrapUrl: bootstrap?.otlpMetricsUrl,
-      settingsUrl: persistedObservabilitySettings.otlpMetricsUrl,
+      settingsUrl:
+        ObservabilityExport.presetUrl(persistedObservabilitySettings.preset, "metrics") ??
+        persistedObservabilitySettings.otlpMetricsUrl,
     },
   );
   const logs = OtelEnvironment.resolveSignalEndpoint(
@@ -471,7 +484,9 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
     { url: env.otlpLogsUrl, export: signalExport },
     {
       bootstrapUrl: bootstrap?.otlpLogsUrl,
-      settingsUrl: persistedObservabilitySettings.otlpLogsUrl,
+      settingsUrl:
+        ObservabilityExport.presetUrl(persistedObservabilitySettings.preset, "logs") ??
+        persistedObservabilitySettings.otlpLogsUrl,
     },
   );
 
@@ -494,6 +509,9 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
     ...(metrics?.variable !== undefined ? { otlpMetricsVariable: metrics.variable } : {}),
     ...(logs !== undefined ? { otlpLogsSource: logs.source } : {}),
     ...(logs?.variable !== undefined ? { otlpLogsVariable: logs.variable } : {}),
+    ...(persistedObservabilitySettings.preset === undefined
+      ? {}
+      : { otlpPreset: persistedObservabilitySettings.preset }),
     otelEnvironment: otel,
     mode,
     port,

@@ -1,4 +1,3 @@
-import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as ManagedRuntime from "effect/ManagedRuntime";
@@ -10,34 +9,13 @@ import * as PrimaryEnvironmentHttpClient from "../environments/primary/httpClien
 import * as PrimaryEnvironmentHttpLayer from "../environments/primary/httpLayer";
 
 import * as ClientTracer from "../observability/clientTracer";
+import { layerDigest } from "./digestLayer";
 
 const layerHttpClient = layerRemoteHttpClient((input, init) => globalThis.fetch(input, init));
 
 const layerSecureRandom = Layer.succeed(
   SecureRandom.SecureRandom,
   SecureRandom.make((size) => crypto.getRandomValues(new Uint8Array(size))),
-);
-
-const digestEffect = Effect.fn("Digest.Digest.digest")(
-  (algorithm: Digest.Algorithm, data: Uint8Array) =>
-    Effect.promise(async () => {
-      const bytes = new Uint8Array(data.byteLength);
-      bytes.set(data);
-      return new Uint8Array(await crypto.subtle.digest(algorithm.name, bytes));
-    }),
-);
-
-const layerDigest = Layer.succeed(
-  Digest.Digest,
-  Digest.Digest.of({
-    digest: digestEffect,
-    digestHex: Effect.fn("Digest.Digest.digestHex")(
-      (algorithm: Digest.Algorithm, data: Uint8Array) =>
-        Effect.flatMap(digestEffect(algorithm, data), (bytes) =>
-          Effect.succeed(Buffer.from(bytes).toString("hex")),
-        ),
-    ),
-  }),
 );
 
 type RuntimeLayerSource =

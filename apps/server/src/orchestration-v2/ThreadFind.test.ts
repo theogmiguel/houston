@@ -19,6 +19,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Stream from "effect/Stream";
+import * as Tracer from "effect/Tracer";
 
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
@@ -457,6 +458,82 @@ describe("V2 thread find", () => {
       assert.equal(first.totalMatches, 2);
       assert.equal(first.match?.entryId, "message:8");
       assert.equal(last.match?.entryId, "message:510");
+    }).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect("a search after a write decodes only the items that changed", () =>
+    Effect.gen(function* () {
+      const projection = yield* setup;
+      const decoded: Array<unknown> = [];
+      const tracer = Tracer.make({
+        span(options) {
+          const span = new Tracer.NativeSpan(options);
+          const end = span.end.bind(span);
+          span.end = (endTime, exit) => {
+            end(endTime, exit);
+            if (span.name === "ThreadFind.finish")
+              decoded.push(span.attributes.get("thread_find.decoded_items"));
+          };
+          return span;
+        },
+      });
+      const items = Array.from({ length: 40 }, (_, i) =>
+        item(`message:${i}`, i + 1, i % 2 === 0 ? "needle" : "other"),
+      );
+      yield* putItems(items);
+      const search = (input: { readonly index?: number } = {}) =>
+        projection
+          .searchThread({ threadId, query: "needle", ...input })
+          .pipe(Effect.withTracer(tracer));
+      assert.equal((yield* search()).totalMatches, 20);
+      const changed = items[1]!;
+      if (changed.type !== "assistant_message")
+        throw new Error(`expected an assistant message, got ${changed.type}`);
+      yield* putItems([{ ...changed, text: "needle needle" }], "changed");
+      const after = yield* search({ index: 2 });
+      assert.equal(after.totalMatches, 22);
+      assert.equal(after.match?.entryId, "message:1");
+      assert.deepEqual(decoded, [40, 1]);
+    }).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect("a warm search after writes returns what a fresh store returns", () =>
+    Effect.gen(function* () {
+      const warm = yield* setup;
+      const items = Array.from({ length: 12 }, (_, i) =>
+        item(`message:${i}`, (i + 1) * 10, i % 3 === 0 ? "needle" : "other"),
+      );
+      yield* putItems(items);
+      const searches = [
+        { threadId, query: "needle" },
+        { threadId, query: "needle", index: 3 },
+        { threadId, query: "needle", start: { entryId: "message:6", occurrence: 0 }, offset: 1 },
+        { threadId, query: "other", index: 2 },
+      ];
+      const results = (projection: ProjectionStore.ProjectionStoreV2Shape) =>
+        Effect.forEach(searches, (input) => projection.searchThread(input));
+      const assertWarmMatchesFresh = Effect.gen(function* () {
+        const fresh = yield* ProjectionStore.ProjectionStoreV2.pipe(
+          Effect.provide(Layer.fresh(ProjectionStore.layer)),
+        );
+        assert.deepEqual(yield* results(warm), yield* results(fresh));
+      });
+      yield* results(warm);
+      const changed = items[1]!;
+      if (changed.type !== "assistant_message")
+        throw new Error(`expected an assistant message, got ${changed.type}`);
+      yield* putItems([{ ...changed, text: "needle other needle" }], "text");
+      yield* assertWarmMatchesFresh;
+      yield* putItems(
+        [
+          { ...items[0]!, ordinal: 115 },
+          { ...items[9]!, ordinal: 5 },
+        ],
+        "reorder",
+      );
+      yield* assertWarmMatchesFresh;
+      yield* putItems([item("inserted", 65, "needle needle")], "insert");
+      yield* assertWarmMatchesFresh;
     }).pipe(Effect.provide(layerTest)),
   );
 

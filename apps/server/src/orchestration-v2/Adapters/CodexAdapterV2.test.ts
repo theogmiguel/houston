@@ -47,9 +47,11 @@ import { toolOutputImages } from "@houston-app/shared/toolOutput";
 import { resolveAttachmentPathById } from "../../attachmentStore.ts";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Logger from "effect/Logger";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
+import * as References from "effect/References";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as Sink from "effect/Sink";
@@ -71,6 +73,8 @@ import * as ProviderAdapter from "@houston-app/provider-core/server/ProviderAdap
 import type * as ProviderContinuationRequests from "@houston-app/provider-core/server/ProviderContinuationRequests";
 import * as ModelManifest from "../../provider/ModelManifest.ts";
 import { resolveProviderCompatibility } from "../../provider/providerCompatibility.ts";
+import * as TraceContext from "../../houston/observability/TraceContext.ts";
+import * as RecordingTracer from "../../observability/testing/RecordingTracer.ts";
 import * as CodexAdapterV2 from "./CodexAdapterV2.ts";
 import { withCodexReplayChildMetadata } from "./CodexAdapterV2.testkit.ts";
 import * as CodexAdapterV2Testkit from "./CodexAdapterV2.testkit.ts";
@@ -1177,6 +1181,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     readChildMetadata?: Parameters<typeof withCodexReplayChildMetadata>[2],
     beforeEmitInbound?: CodexReplay.CodexAppServerReplayDriver["beforeEmitInbound"],
     onUsageLimits?: CodexAdapterV2.CodexAdapterV2Options["onUsageLimits"],
+    promptSuggestions: Effect.Effect<boolean> = Effect.succeed(false),
   ) =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
@@ -1252,6 +1257,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         providerSessionId: ProviderSessionId.make(`provider-session-${transcript.scenario}`),
         modelSelection: CODEX_TEST_MODEL_SELECTION,
         runtimePolicy: CODEX_TEST_RUNTIME_POLICY,
+        promptSuggestions,
       });
       const providerThread = yield* runtime.ensureThread({
         threadId,
@@ -1416,6 +1422,115 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       ),
   );
 
+  it.effect(
+    "a session opened in one turn stamps each later turn's spans and logs with that turn",
+    () => {
+      const recording = RecordingTracer.make();
+      const logged: Array<Readonly<Record<string, unknown>>> = [];
+      return Effect.gen(function* () {
+        const nativeThreadId = "trace-thread";
+        const preamble = (ordinal: number) =>
+          codexReplayPreamble({ nativeThreadId, nativeTurnId: `trace-${ordinal}`, prompt: "work" });
+        const completed = (id: string): CodexReplay.CodexAppServerReplayEntry => ({
+          type: "emit_inbound",
+          label: `${id} completed`,
+          frame: {
+            method: "turn/completed",
+            params: {
+              threadId: nativeThreadId,
+              turn: makeCodexReplayTurn({ id, status: "completed" }),
+            },
+          },
+        });
+        const contextOf = (ordinal: number) => ({
+          runId: `run-trace-${ordinal}`,
+          commandId: `command-trace-${ordinal}`,
+        });
+        // The session manager opens the session inside the first turn's context.
+        const harness = yield* makeCodexReplayHarness(
+          makeCodexReplayTranscript({
+            scenario: "trace-context",
+            entries: [
+              ...preamble(1),
+              completed("trace-1"),
+              ...preamble(2)
+                .slice(5, 7)
+                .map((entry) => withReplayRequestId(entry, 4)),
+              completed("trace-2"),
+              ...preamble(3)
+                .slice(5, 7)
+                .map((entry) => withReplayRequestId(entry, 5)),
+              completed("trace-3"),
+            ],
+          }),
+        ).pipe(TraceContext.withTraceContext(contextOf(1)));
+        const input = makeCodexTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make("trace-1"),
+          text: "work",
+        });
+
+        for (const ordinal of [1, 2, 3]) {
+          const context = contextOf(ordinal);
+          const spansBefore = recording.ended.length;
+          const logsBefore = logged.length;
+          yield* harness.runtime
+            .startTurn({
+              ...input,
+              runId: RunId.make(context.runId),
+              attemptId: RunAttemptId.make(`trace-${ordinal}`),
+              rootNodeId: NodeId.make(`trace-${ordinal}`),
+              runOrdinal: ordinal,
+              providerTurnOrdinal: ordinal,
+            })
+            .pipe(TraceContext.withTraceContext(context));
+          yield* harness.awaitTerminal(ordinal);
+
+          // Each span and log carries this turn's ids, or none: never an earlier turn's.
+          const spans = recording.ended.slice(spansBefore);
+          for (const span of spans) {
+            assert.oneOf(
+              span.attributes.get("houston.run.id"),
+              [context.runId, undefined],
+              span.name,
+            );
+            assert.oneOf(
+              span.attributes.get("houston.command.id"),
+              [context.commandId, undefined],
+              span.name,
+            );
+          }
+          assert.isTrue(
+            spans.some((span) => span.attributes.get("houston.run.id") === context.runId),
+            `a span of turn ${ordinal} carries its run`,
+          );
+          for (const annotations of logged.slice(logsBefore)) {
+            assert.oneOf(annotations["houston.run.id"], [context.runId, undefined]);
+            assert.oneOf(annotations["houston.command.id"], [context.commandId, undefined]);
+          }
+        }
+      }).pipe(
+        Effect.scoped,
+        Effect.withTracer(recording.tracer),
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+            Logger.layer([
+              Logger.make((options) => {
+                logged.push(options.fiber.getRef(References.CurrentLogAnnotations));
+              }),
+            ]),
+          ),
+        ),
+      );
+    },
+  );
+
   it.effect.each(["supported", "unsupported", "invalid"] as const)(
     "delivers native history with %s app-server protocol",
     (response) =>
@@ -1566,6 +1681,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           config: {
             "tools.update_plan.enabled": true,
             mcp_optional_startup_grace_ms: 10_000,
+            "features.concurrent_reasoning_summaries": true,
             "shell_environment_policy.set.HOUSTON_THREAD_ID": `thread-${scenario}`,
             "mcp_servers.houston": {
               url: "http://127.0.0.1:43123/mcp",
@@ -1754,6 +1870,211 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       assert.equal(harness.terminalEvents()[0]?.status, "interrupted");
       assert.lengthOf(harness.terminalEvents(), 1);
       assert.isFalse(yield* harness.hasPendingBackgroundWork);
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+
+  it.effect.each(["subagent", "remote", "toggled-off"] as const)(
+    "never samples a suggestion for a %s thread",
+    (delegation) =>
+      Effect.gen(function* () {
+        const nativeThreadId = `suggest-${delegation}-thread`;
+        const prompt = "Continue the task.";
+        const first = codexReplayPreamble({
+          nativeThreadId,
+          nativeTurnId: `${delegation}-turn-1`,
+          prompt,
+        });
+        const second = codexReplayPreamble({
+          nativeThreadId,
+          nativeTurnId: `${delegation}-turn-2`,
+          prompt,
+        });
+        const completed = (nativeTurnId: string): CodexReplay.CodexAppServerReplayEntry => ({
+          type: "emit_inbound",
+          label: `${nativeTurnId} completed`,
+          frame: {
+            method: "turn/completed",
+            params: {
+              threadId: nativeThreadId,
+              turn: makeCodexReplayTurn({ id: nativeTurnId, status: "completed" }),
+            },
+          },
+        });
+        // The second turn is a barrier: a stray sample from the first turn is sent before it ends.
+        const requests: Array<string> = [];
+        const enabled = yield* Ref.make(true);
+        const harness = yield* makeCodexReplayHarness(
+          makeCodexReplayTranscript({
+            scenario: `prompt-suggestion-${delegation}`,
+            entries: [
+              ...first,
+              completed(`${delegation}-turn-1`),
+              ...second.slice(5, 7).map((entry) => withReplayRequestId(entry, 4)),
+              completed(`${delegation}-turn-2`),
+            ],
+          }),
+          undefined,
+          (method) => Effect.sync(() => requests.push(method)),
+          undefined,
+          undefined,
+          undefined,
+          Ref.get(enabled),
+        );
+        // The flag is read per turn: turning it off after the session opened stops sampling.
+        if (delegation === "toggled-off") yield* Ref.set(enabled, false);
+        const base = makeCodexTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make(`${delegation}-attempt-1`),
+          text: prompt,
+        });
+        const parentThreadId = ThreadId.make("thread-codex-suggestion-parent");
+        const turn = {
+          ...base,
+          appThread:
+            delegation === "toggled-off"
+              ? base.appThread
+              : delegation === "subagent"
+                ? {
+                    ...base.appThread,
+                    lineage: {
+                      parentThreadId,
+                      relationshipToParent: "subagent" as const,
+                      rootThreadId: parentThreadId,
+                    },
+                  }
+                : {
+                    ...base.appThread,
+                    delegatedFrom: {
+                      environmentId: EnvironmentId.make("environment-codex-suggestion-parent"),
+                      threadId: parentThreadId,
+                      title: "Parent",
+                    },
+                  },
+        };
+        yield* harness.runtime.startTurn(turn);
+        yield* harness.awaitTerminal(1);
+        yield* harness.runtime.startTurn({
+          ...turn,
+          runId: RunId.make(`${delegation}-run-2`),
+          attemptId: RunAttemptId.make(`${delegation}-attempt-2`),
+          rootNodeId: NodeId.make(`${delegation}-root-2`),
+          runOrdinal: 2,
+          providerTurnOrdinal: 2,
+        });
+        yield* harness.awaitTerminal(2);
+        assert.deepEqual(
+          harness.terminalEvents().map((event) => event.status),
+          ["completed", "completed"],
+        );
+        assert.notInclude(requests, "thread/sample");
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
+        ),
+      ),
+  );
+
+  it.effect("samples a next-prompt suggestion after a completed root turn", () =>
+    Effect.gen(function* () {
+      const nativeThreadId = "suggest-thread";
+      const nativeTurnId = "suggest-turn";
+      const prompt = "Add a subtract function.";
+      const transcript = makeCodexReplayTranscript({
+        scenario: "prompt-suggestion",
+        entries: [
+          ...codexReplayPreamble({ nativeThreadId, nativeTurnId, prompt }),
+          {
+            type: "emit_inbound",
+            label: "turn/completed",
+            frame: {
+              method: "turn/completed",
+              params: {
+                threadId: nativeThreadId,
+                turn: makeCodexReplayTurn({ id: nativeTurnId, status: "completed" }),
+              },
+            },
+          },
+          {
+            type: "expect_outbound",
+            label: "thread/sample",
+            frame: {
+              id: 4,
+              method: "thread/sample",
+              params: {
+                threadId: nativeThreadId,
+                expectedTurnId: nativeTurnId,
+                prompt: CodexAdapterV2.CODEX_PROMPT_SUGGESTION_PROMPT,
+                effort: "low",
+              },
+            },
+          },
+          {
+            type: "emit_inbound",
+            label: "thread/sample",
+            frame: {
+              id: 4,
+              result: {
+                sourceTurnId: nativeTurnId,
+                responseId: "resp-suggest",
+                text: "  add tests for subtract\n",
+                inputTokens: 11448,
+                cachedInputTokens: 11264,
+                outputTokens: 16,
+              },
+            },
+          },
+        ],
+      });
+      const harness = yield* makeCodexReplayHarness(
+        transcript,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        Effect.succeed(true),
+      );
+      const turnInput = makeCodexTestTurnInput({
+        threadId: harness.threadId,
+        providerThread: harness.providerThread,
+        now: yield* DateTime.now,
+        attemptId: RunAttemptId.make("suggest-attempt"),
+        text: prompt,
+      });
+      yield* harness.runtime.startTurn(turnInput);
+      yield* harness.until(() =>
+        harness.events.some((event) => event.type === "prompt_suggestion.updated"),
+      );
+      assert.deepEqual(
+        harness.events.filter((event) => event.type === "prompt_suggestion.updated"),
+        [
+          {
+            type: "prompt_suggestion.updated",
+            driver: CodexAdapterV2.CODEX_DRIVER_KIND,
+            threadId: harness.threadId,
+            runId: turnInput.runId,
+            text: "add tests for subtract",
+          },
+        ],
+      );
     }).pipe(
       Effect.scoped,
       Effect.provide(
@@ -8431,7 +8752,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
                 nativeThreadId,
                 nativeTurnId: "goal-turn-1",
                 prompt: objective,
-                sentPrompt: `Start working toward this goal: ${objective}`,
+                sentPrompt: `This thread's goal is already set. Do not call create_goal. Start working on it now: ${objective}`,
               }).slice(5),
               5,
             ),

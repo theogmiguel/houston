@@ -8,12 +8,14 @@ import {
 import { Minimize2Icon } from "lucide-react";
 import { composerFloatingLayerProps } from "./composerEventScope";
 
+const TRAILING_ZERO = /\.0$/;
+
 function formatPercentage(value: number | null): string | null {
   if (value === null || !Number.isFinite(value)) {
     return null;
   }
   if (value < 10) {
-    return `${value.toFixed(1).replace(/\.0$/, "")}%`;
+    return `${value.toFixed(1).replace(TRAILING_ZERO, "")}%`;
   }
   return `${Math.round(value)}%`;
 }

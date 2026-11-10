@@ -1,15 +1,11 @@
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import {
-  Camera,
   ChevronLeft,
   ChevronRight,
-  ExternalLink,
   Maximize2,
   Minimize2,
-  PictureInPicture2,
   RotateCw,
   SquareMousePointer,
-  TabletSmartphone,
 } from "lucide-react";
 import {
   type FormEvent,
@@ -31,6 +27,8 @@ interface Props {
   canGoBack: boolean;
   canGoForward: boolean;
   refreshDisabled: boolean;
+  /** False until a page has loaded: back, forward and reload have nothing to act on before then. */
+  showNavigation?: boolean | undefined;
   inputDisabled?: boolean | undefined;
   /** Owned by the caller so its shortcut handler can focus the address bar directly. */
   urlInputRef: RefObject<HTMLInputElement | null>;
@@ -53,8 +51,19 @@ interface Props {
   pickDisabledReason?: string | undefined;
   onToggleFullScreen?: (() => void) | undefined;
   fullScreen?: boolean | undefined;
-  trailingActions?: ReactNode;
+  /**
+   * Renders the overflow menu. It receives the toolbar actions that have no button of their own
+   * so the menu can list them first, keeping every action reachable in a narrow panel.
+   */
+  renderMenu?: ((actions: readonly ToolbarOverflowAction[]) => ReactNode) | undefined;
   leadingActions?: ReactNode;
+}
+
+export interface ToolbarOverflowAction {
+  readonly id: string;
+  readonly label: string;
+  readonly onSelect: () => void;
+  readonly disabled?: boolean | undefined;
 }
 
 const NOOP = () => {};
@@ -74,6 +83,7 @@ export function PreviewChromeRow({
   canGoBack,
   canGoForward,
   refreshDisabled,
+  showNavigation = true,
   inputDisabled,
   urlInputRef: inputRef,
   onBack,
@@ -95,7 +105,7 @@ export function PreviewChromeRow({
   pickDisabledReason,
   onToggleFullScreen,
   fullScreen,
-  trailingActions,
+  renderMenu,
   leadingActions,
 }: Props) {
   const [draft, setDraft] = useState(url);
@@ -103,6 +113,48 @@ export function PreviewChromeRow({
   const parts = addressParts(url);
   const security = previewAddressSecurity(url);
   const showParts = !inputFocused && parts !== null;
+
+  // Only annotate and full screen keep a button: the address field needs the width, and a
+  // recording keeps a stop button while it runs so it cannot be forgotten.
+  const overflowActions: ToolbarOverflowAction[] = [];
+  if (onOpenInBrowser) {
+    overflowActions.push({
+      id: "open-external",
+      label: "Open in system browser",
+      onSelect: onOpenInBrowser,
+    });
+  }
+  if (onDeviceSize) {
+    overflowActions.push({
+      id: "device-toolbar",
+      label: deviceSizeActive ? "Hide device toolbar" : "Show device toolbar",
+      onSelect: onDeviceSize,
+    });
+  }
+  if (onCapture && !recording) {
+    overflowActions.push(
+      {
+        id: "capture-screenshot",
+        label: "Capture screenshot",
+        onSelect: () => onCapture(false),
+        disabled: captureDisabled,
+      },
+      {
+        id: "record-screen",
+        label: "Record screen",
+        onSelect: () => onCapture(true),
+        disabled: captureDisabled,
+      },
+    );
+  }
+  if (onPictureInPicture) {
+    overflowActions.push({
+      id: "float-preview",
+      label: pictureInPicture ? "Close floating preview" : "Float preview over chat",
+      onSelect: onPictureInPicture,
+      disabled: pictureInPictureDisabled,
+    });
+  }
 
   const submit = (event?: FormEvent | KeyboardEvent) => {
     event?.preventDefault();
@@ -119,80 +171,88 @@ export function PreviewChromeRow({
         className="flex h-10 min-h-10 shrink-0 items-center gap-0.5 border-b border-border bg-[var(--rail)] px-1.5"
         data-surface-subheader
       >
-        <div className="flex items-center" role="group" aria-label="Navigation">
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-7 text-[var(--houston)]"
-                  onClick={canGoBack ? onBack : NOOP}
-                  disabled={!canGoBack}
-                  aria-label="Back"
-                  type="button"
-                />
-              }
-            >
-              <ChevronLeft className="size-[15px]" />
-            </TooltipTrigger>
-            <TooltipPopup>Back</TooltipPopup>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-7 text-[var(--houston)]"
-                  onClick={canGoForward ? onForward : NOOP}
-                  disabled={!canGoForward}
-                  aria-label="Forward"
-                  type="button"
-                />
-              }
-            >
-              <ChevronRight className="size-[15px]" />
-            </TooltipTrigger>
-            <TooltipPopup>Forward</TooltipPopup>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-7 text-[var(--houston)]"
-                  onClick={refreshDisabled ? NOOP : onRefresh}
-                  disabled={refreshDisabled}
-                  aria-label={loading ? "Stop" : "Reload"}
-                  type="button"
-                />
-              }
-            >
-              {loading ? (
-                <RefreshIcon className="size-[15px]" refreshing />
-              ) : (
-                <RotateCw className="size-[15px]" />
-              )}
-            </TooltipTrigger>
-            <TooltipPopup>{loading ? "Loading…" : "Reload"}</TooltipPopup>
-          </Tooltip>
-        </div>
+        {showNavigation ? (
+          <div className="flex items-center" role="group" aria-label="Navigation">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-7 text-[var(--houston)]"
+                    onClick={canGoBack ? onBack : NOOP}
+                    disabled={!canGoBack}
+                    aria-label="Back"
+                    type="button"
+                  />
+                }
+              >
+                <ChevronLeft className="size-[15px]" />
+              </TooltipTrigger>
+              <TooltipPopup>Back</TooltipPopup>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-7 text-[var(--houston)]"
+                    onClick={canGoForward ? onForward : NOOP}
+                    disabled={!canGoForward}
+                    aria-label="Forward"
+                    type="button"
+                  />
+                }
+              >
+                <ChevronRight className="size-[15px]" />
+              </TooltipTrigger>
+              <TooltipPopup>Forward</TooltipPopup>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-7 text-[var(--houston)]"
+                    onClick={refreshDisabled ? NOOP : onRefresh}
+                    disabled={refreshDisabled}
+                    aria-label={loading ? "Stop" : "Reload"}
+                    type="button"
+                  />
+                }
+              >
+                {loading ? (
+                  <RefreshIcon className="size-[15px]" refreshing />
+                ) : (
+                  <RotateCw className="size-[15px]" />
+                )}
+              </TooltipTrigger>
+              <TooltipPopup>{loading ? "Loading…" : "Reload"}</TooltipPopup>
+            </Tooltip>
+          </div>
+        ) : null}
 
         {leadingActions}
 
-        <div className="relative mx-1 flex h-7 min-w-0 flex-1 items-center rounded-md bg-[var(--field)] px-2.5 font-mono text-xs">
+        <div className="relative mx-1 flex h-7 min-w-0 flex-1 items-center rounded-(--r-ctl) bg-[var(--field)] px-2.5 font-mono text-xs">
           {showParts ? (
-            <span aria-hidden className="pointer-events-none flex min-w-0 items-center truncate">
+            <span
+              aria-hidden
+              className="pointer-events-none flex min-w-0 flex-1 items-center overflow-hidden"
+            >
               {security ? (
                 <PreviewAddressLabel
                   label={previewAddressSecurityLabel(security)}
                   tone={security === "not-secure" ? "warning" : "neutral"}
                 />
               ) : null}
-              <span className="shrink-0 text-[var(--houston)]">{parts.host}</span>
-              <span className="truncate text-[var(--t1)]">{parts.path}</span>
+              {/* The path gives way first, then the host, each ending in an ellipsis. */}
+              <span className="max-w-full shrink-0 truncate text-[var(--houston)]">
+                {parts.host}
+              </span>
+              <span className="min-w-0 truncate text-[var(--t1)]">{parts.path}</span>
             </span>
           ) : null}
           <input
@@ -220,51 +280,12 @@ export function PreviewChromeRow({
             disabled={inputDisabled}
             data-preview-url-input
             className={cn(
-              "absolute inset-0 h-full w-full rounded-md bg-transparent px-2.5 font-mono text-xs text-[var(--t1)] outline-none placeholder:text-[var(--houston)]",
+              "absolute inset-0 h-full w-full rounded-(--r-ctl) bg-transparent px-2.5 font-mono text-xs text-[var(--t1)] outline-none placeholder:text-[var(--houston)]",
               showParts && "text-transparent caret-transparent selection:bg-transparent",
             )}
           />
         </div>
 
-        {onOpenInBrowser ? (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-7 text-[var(--houston)]"
-                  onClick={onOpenInBrowser}
-                  aria-label="Open in system browser"
-                  type="button"
-                />
-              }
-            >
-              <ExternalLink className="size-[15px]" />
-            </TooltipTrigger>
-            <TooltipPopup>Open in system browser</TooltipPopup>
-          </Tooltip>
-        ) : null}
-        {onDeviceSize ? (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant={deviceSizeActive ? "secondary" : "ghost"}
-                  size="icon"
-                  className="size-7 text-[var(--houston)]"
-                  onClick={onDeviceSize}
-                  aria-label="Device size"
-                  aria-pressed={deviceSizeActive ? "true" : "false"}
-                  type="button"
-                />
-              }
-            >
-              <TabletSmartphone className="size-[15px]" />
-            </TooltipTrigger>
-            <TooltipPopup>{deviceSizeActive ? "Fit the panel" : "Device size"}</TooltipPopup>
-          </Tooltip>
-        ) : null}
         {onToggleFullScreen ? (
           <Tooltip>
             <TooltipTrigger
@@ -316,57 +337,26 @@ export function PreviewChromeRow({
             </TooltipPopup>
           </Tooltip>
         ) : null}
-        {onCapture ? (
+        {onCapture && recording ? (
           <Tooltip>
             <TooltipTrigger
               render={
                 <Button
-                  variant={recording ? "secondary" : "ghost"}
+                  variant="secondary"
                   size="icon"
                   className="relative size-7 text-[var(--houston)]"
-                  onClick={(event) => onCapture(event.shiftKey)}
-                  aria-label={recording ? "Stop recording" : "Capture screenshot"}
+                  onClick={() => onCapture(false)}
+                  aria-label="Stop recording"
                   type="button"
-                  disabled={captureDisabled}
                 />
               }
             >
-              <Camera className="size-[15px]" />
-              {recording ? (
-                <span className="absolute right-1 top-1 size-1.5 animate-status-pulse rounded-full bg-destructive motion-safe:animate-status-pulse" />
-              ) : null}
+              <span className="size-2 animate-status-pulse rounded-full bg-destructive motion-safe:animate-status-pulse" />
             </TooltipTrigger>
-            <TooltipPopup>
-              {recording ? "Stop recording" : "Screenshot · Shift-click to record"}
-            </TooltipPopup>
+            <TooltipPopup>Stop recording</TooltipPopup>
           </Tooltip>
         ) : null}
-        {onPictureInPicture ? (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant={pictureInPicture ? "secondary" : "ghost"}
-                  size="icon"
-                  className="size-7 text-[var(--houston)]"
-                  onClick={onPictureInPicture}
-                  aria-label={
-                    pictureInPicture ? "Close floating preview" : "Float preview over chat"
-                  }
-                  aria-pressed={pictureInPicture ? "true" : "false"}
-                  type="button"
-                  disabled={pictureInPictureDisabled}
-                />
-              }
-            >
-              <PictureInPicture2 className="size-[15px]" />
-            </TooltipTrigger>
-            <TooltipPopup>
-              {pictureInPicture ? "Close floating preview" : "Float preview over chat"}
-            </TooltipPopup>
-          </Tooltip>
-        ) : null}
-        {trailingActions}
+        {renderMenu?.(overflowActions)}
       </form>
       <div
         aria-hidden

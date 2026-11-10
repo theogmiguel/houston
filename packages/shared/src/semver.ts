@@ -26,8 +26,10 @@ export function normalizeSemverVersion(version: string): string {
   return prerelease ? `${segments.join(".")}-${prerelease}` : segments.join(".");
 }
 
+const LEADING_V = /^v/;
+
 export function parseSemver(value: string): ParsedSemver | null {
-  const normalized = normalizeSemverVersion(value).replace(/^v/, "");
+  const normalized = normalizeSemverVersion(value).replace(LEADING_V, "");
   const [main = "", ...prereleaseParts] = normalized.split("-");
   const prerelease = prereleaseParts.join("-");
   const segments = main.split(".");

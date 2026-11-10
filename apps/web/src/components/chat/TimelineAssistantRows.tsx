@@ -11,15 +11,15 @@ import { ProposedPlanCard } from "./ProposedPlanCard";
 import { HtmlRenderFrame } from "./HtmlRenderFrame";
 import { McpAppFrame } from "./McpAppFrame";
 import { checkpointFileTotals } from "@houston-app/client-runtime/state/thread-checkpoints";
-import { ChangedFilesCard } from "./ChangedFilesTree";
+import { TimelineChangesRow } from "./TimelineChangesRow";
 import { useFileContextMenuHandler } from "../../fileContextMenu";
 import { useAssistantMessageText, useProject, useThreadShell } from "../../state/entities";
 import { CopyButton } from "../ui/copy-button";
 import { AssistantCitationSource } from "./AssistantCitationSource";
 import { resolveAssistantMessageCopyState } from "./MessagesTimeline.logic";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { Text } from "../ui/text";
 import { cn } from "~/lib/utils";
-import { useUiStateStore } from "~/uiStateStore";
 import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../timestampFormat";
 import { useV2ItemSupport } from "../../state/v2ItemSupport";
 import { serverEnvironment } from "../../state/server";
@@ -39,6 +39,14 @@ import {
 import { MessagesSquareIcon } from "lucide-react";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { SecondOpinionReviewCard } from "./SecondOpinionReviewCard";
+import { PHONE_META_SEPARATOR_CLS } from "~/components/ui/phone-recipes";
+
+/**
+ * The hover footer closes a turn. Its 6px lead, 24px buttons less the 8px they hang below it,
+ * and the 2px row padding add up to the 24px between turns (`pb-0` on the row in
+ * `MessagesTimeline`), so the gap does not depend on whether the footer is showing.
+ */
+const ASSISTANT_TURN_FOOTER_CLASS_NAME = "mt-1.5 -mb-2 h-6 max-phone:-ms-2";
 
 export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
@@ -52,7 +60,7 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
 
   return (
     <>
-      <div className="relative min-w-0 px-1 py-0.5">
+      <div className="relative min-w-0 px-1 py-0.5 max-phone:px-0">
         <MessageAuthorHeading>Houston</MessageAuthorHeading>
         <div data-thread-find-text="true">
           <AssistantCitationSource
@@ -76,22 +84,27 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
             />
           </AssistantCitationSource>
         </div>
-        {row.message.runId ? <AssistantModelAttributionRow runId={row.message.runId} /> : null}
+        {row.showAssistantMeta && row.message.runId ? (
+          <AssistantModelAttributionRow
+            runId={row.message.runId}
+            previousRunId={row.previousAnswerRunId ?? null}
+          />
+        ) : null}
         {ctx.onOpenTurnDiff ? (
           <AssistantChangedFilesSection
             turnSummary={row.assistantTurnDiffSummary}
-            routeThreadKey={ctx.routeThreadKey}
-            resolvedTheme={ctx.resolvedTheme}
             onOpenTurnDiff={ctx.onOpenTurnDiff}
           />
         ) : null}
         {row.showAssistantMeta ? (
           <AssistantMessageMeta
-            className="mt-1.5"
+            className={ASSISTANT_TURN_FOOTER_CLASS_NAME}
             projectedItem={row.projectedItem}
             message={row.message}
             showCopyButton={row.showAssistantCopyButton}
             copyStreaming={row.assistantCopyStreaming}
+            modelRunId={row.message.runId ?? null}
+            alwaysVisible={row.assistantMetaAlwaysVisible === true}
           />
         ) : null}
         <SecondOpinionCardForRun runId={row.message.runId} />
@@ -106,7 +119,11 @@ function SecondOpinionCardForRun({ runId }: { readonly runId: RunId | null | und
   const review =
     runId === null || runId === undefined ? undefined : ctx.secondOpinion?.reviews.get(runId);
   if (review === undefined) return null;
-  return <SecondOpinionReviewCard threadRef={review} />;
+  return (
+    <div className="pb-8">
+      <SecondOpinionReviewCard threadRef={review} />
+    </div>
+  );
 }
 
 /** Asks another provider for a read-only review of this turn. */
@@ -190,18 +207,36 @@ function AssistantSecondOpinionButton({
 
 /**
  * Subscribes to the answer's run: attribution needs the model it ran on, which imported or
- * run-less messages do not carry.
+ * run-less messages do not carry. It is visible only when the model differs from the previous
+ * answer's; every answer names its model on hover or focus, beside the timestamp.
  */
-function AssistantModelAttributionRow({ runId }: { runId: RunId | null | undefined }) {
+function AssistantModelAttributionRow({
+  runId,
+  previousRunId,
+}: {
+  runId: RunId | null | undefined;
+  previousRunId: RunId | null;
+}) {
   const ctx = use(TimelineRowCtx);
   const providers = useAtomValue(
     serverEnvironment.providersValueAtom(ctx.activeThreadEnvironmentId),
   );
-  return (
-    <AssistantModelAttributionLine
-      attribution={resolveAssistantModelAttribution({ runs: ctx.runs, runId, providers })}
-    />
-  );
+  if (previousRunId === null) return null;
+  const attribution = resolveAssistantModelAttribution({ runs: ctx.runs, runId, providers });
+  const previous = resolveAssistantModelAttribution({
+    runs: ctx.runs,
+    runId: previousRunId,
+    providers,
+  });
+  if (
+    attribution !== null &&
+    previous !== null &&
+    previous.providerDisplayName === attribution.providerDisplayName &&
+    previous.modelLabel === attribution.modelLabel
+  ) {
+    return null;
+  }
+  return <AssistantModelAttributionLine attribution={attribution} />;
 }
 
 function AssistantForkButton({
@@ -257,14 +292,14 @@ export function AssistantMetaTimelineRow({
   row: Extract<TimelineRow, { kind: "assistant-meta" }>;
 }) {
   return (
-    <div className="px-1">
+    <div className="px-1 max-phone:px-0">
       <AssistantMessageMeta
         className="mt-0.5"
         projectedItem={row.projectedItem}
         message={row.message}
         showCopyButton={row.showAssistantCopyButton}
         copyStreaming={row.assistantCopyStreaming}
-        alwaysVisible
+        alwaysVisible={row.alwaysVisible === true}
       />
     </div>
   );
@@ -277,6 +312,7 @@ function AssistantMessageMeta({
   showCopyButton,
   copyStreaming,
   alwaysVisible = false,
+  modelRunId = null,
 }: {
   className?: string;
   projectedItem?: Extract<TimelineRow, { kind: "message" }>["projectedItem"];
@@ -284,15 +320,28 @@ function AssistantMessageMeta({
   showCopyButton: boolean;
   copyStreaming: boolean;
   alwaysVisible?: boolean;
+  /** The run whose model the hover line names; the line is absent when it is unknown. */
+  modelRunId?: RunId | null;
 }) {
   const ctx = use(TimelineRowCtx);
+  const providers = useAtomValue(
+    serverEnvironment.providersValueAtom(ctx.activeThreadEnvironmentId),
+  );
+  const attribution = resolveAssistantModelAttribution({
+    runs: ctx.runs,
+    runId: modelRunId,
+    providers,
+  });
 
   return (
     <div
+      data-assistant-meta-footer=""
       className={cn(
         "flex items-center gap-2 text-xs tabular-nums transition-opacity duration-200",
+        // The latest answer's footer stays visible in a wide single thread; a grid pane (whatever
+        // its width) and a narrow timeline keep it to hover and focus.
         alwaysVisible
-          ? "opacity-100"
+          ? "opacity-0 @min-[560px]/timeline:not-in-data-[grid-cell]:opacity-100 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover/assistant:opacity-100"
           : "opacity-0 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover/assistant:opacity-100",
         className,
       )}
@@ -312,6 +361,16 @@ function AssistantMessageMeta({
       ) : null}
       {projectedItem?.item.type === "assistant_message" ? (
         <AssistantSecondOpinionButton projectedItem={projectedItem} />
+      ) : null}
+      {attribution !== null && !message.streaming ? (
+        <Text as="span" variant="callout" tone="muted" data-assistant-model-hover="true">
+          {attribution.providerDisplayName} · {attribution.modelLabel}
+        </Text>
+      ) : null}
+      {attribution !== null && !message.streaming ? (
+        <span aria-hidden className={PHONE_META_SEPARATOR_CLS}>
+          ·
+        </span>
       ) : null}
       {!message.streaming && (
         <Tooltip>
@@ -364,7 +423,7 @@ export function ProposedPlanTimelineRow({
   const ctx = use(TimelineRowCtx);
 
   return (
-    <div className="min-w-0 px-1 py-0.5">
+    <div className="min-w-0 px-1 py-0.5 max-phone:px-0">
       <ProposedPlanCard
         planMarkdown={row.proposedPlan.planMarkdown}
         environmentId={ctx.activeThreadEnvironmentId}
@@ -387,10 +446,10 @@ export function HtmlRenderTimelineRow({
   const onFullscreenChange = (fullscreen: boolean) => onAppFullscreenChange(row.id, fullscreen);
 
   if (ctx.renderHtmlRender) {
-    return <div className="min-w-0 px-1">{ctx.renderHtmlRender(row)}</div>;
+    return <div className="min-w-0 px-1 max-phone:px-0">{ctx.renderHtmlRender(row)}</div>;
   }
   return (
-    <div className="min-w-0 px-1">
+    <div className="min-w-0 px-1 max-phone:px-0">
       <HtmlRenderFrame
         key={row.htmlRender.attachmentId}
         environmentId={ctx.activeThreadEnvironmentId}
@@ -407,7 +466,7 @@ export function McpAppTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "
   const { awaitingUser } = use(TimelineRowActivityCtx);
 
   return (
-    <div className="min-w-0 px-1">
+    <div className="min-w-0 px-1 max-phone:px-0">
       <McpAppFrame
         key={row.mcpApp.attachmentId}
         environmentId={ctx.activeThreadEnvironmentId}
@@ -428,26 +487,23 @@ export function McpAppTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "
  *  so toggling re-renders only this component — not the entire list. */
 const AssistantChangedFilesSection = memo(function AssistantChangedFilesSection({
   turnSummary,
-  routeThreadKey,
-  resolvedTheme,
   onOpenTurnDiff,
 }: {
   turnSummary: TurnDiffSummary | undefined;
-  routeThreadKey: string;
-  resolvedTheme: "light" | "dark";
   displayThreadKey?: string;
   onOpenTurnDiff: (runId: RunId, filePath?: string) => void;
 }) {
+  const ctx = use(TimelineRowCtx);
   if (!turnSummary) return null;
   const checkpointFiles = turnSummary.files;
   if (checkpointFiles.length === 0) return null;
+  // The composer's pending-changes row already summarises this run; one summary per turn.
+  if (ctx.changeBannerRunId === turnSummary.runId) return null;
 
   return (
     <AssistantChangedFilesSectionInner
       turnSummary={turnSummary}
       checkpointFiles={checkpointFiles}
-      routeThreadKey={routeThreadKey}
-      resolvedTheme={resolvedTheme}
       onOpenTurnDiff={onOpenTurnDiff}
     />
   );
@@ -456,24 +512,14 @@ const AssistantChangedFilesSection = memo(function AssistantChangedFilesSection(
 function AssistantChangedFilesSectionInner({
   turnSummary,
   checkpointFiles,
-  routeThreadKey,
-  resolvedTheme,
   onOpenTurnDiff,
 }: {
   turnSummary: TurnDiffSummary;
   checkpointFiles: TurnDiffSummary["files"];
-  routeThreadKey: string;
-  resolvedTheme: "light" | "dark";
   displayThreadKey?: string;
   onOpenTurnDiff: (runId: RunId, filePath?: string) => void;
 }) {
   const ctx = use(TimelineRowCtx);
-  const persistedExpanded = useUiStateStore(
-    (store) => store.threadChangedFilesExpandedById[routeThreadKey]?.[turnSummary.runId],
-  );
-  const setExpanded = useUiStateStore((store) => store.setThreadChangedFilesExpanded);
-  const allDirectoriesExpanded = persistedExpanded ?? false;
-
   const thread = useThreadShell(ctx.threadRef);
   const activeProject = useProject(
     thread && thread.projectId
@@ -481,32 +527,31 @@ function AssistantChangedFilesSectionInner({
       : null,
   );
   const onFileContextMenu = useFileContextMenuHandler(ctx.activeThreadEnvironmentId);
+  const totals = checkpointFileTotals(turnSummary);
 
   return (
-    <ChangedFilesCard
-      runId={turnSummary.runId}
-      files={checkpointFiles}
-      totals={checkpointFileTotals(turnSummary)}
-      allDirectoriesExpanded={allDirectoriesExpanded}
-      resolvedTheme={resolvedTheme}
-      onToggleAllDirectories={() =>
-        setExpanded(routeThreadKey, turnSummary.runId, !allDirectoriesExpanded)
-      }
-      onOpenTurnDiff={onOpenTurnDiff}
-      onFileContextMenu={(filePath, event) =>
-        onFileContextMenu(
-          {
-            environmentId: ctx.activeThreadEnvironmentId,
-            filePath,
-            workspaceRoot: ctx.workspaceRoot,
-            repositoryRoot:
-              thread?.worktreePath == null
-                ? activeProject?.repositoryIdentity?.rootPath
-                : undefined,
-          },
-          event,
-        )
-      }
-    />
+    <div className="mt-3">
+      <TimelineChangesRow
+        files={checkpointFiles}
+        totals={totals}
+        workspaceRoot={ctx.workspaceRoot}
+        onOpenDiff={() => onOpenTurnDiff(turnSummary.runId, checkpointFiles[0]?.path)}
+        onOpenFile={(filePath) => onOpenTurnDiff(turnSummary.runId, filePath)}
+        onFileContextMenu={(filePath, event) =>
+          onFileContextMenu(
+            {
+              environmentId: ctx.activeThreadEnvironmentId,
+              filePath,
+              workspaceRoot: ctx.workspaceRoot,
+              repositoryRoot:
+                thread?.worktreePath == null
+                  ? activeProject?.repositoryIdentity?.rootPath
+                  : undefined,
+            },
+            event,
+          )
+        }
+      />
+    </div>
   );
 }

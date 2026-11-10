@@ -28,6 +28,7 @@ import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Spinner } from "../ui/spinner";
 import { toastManager } from "../ui/toast";
+import { incompleteListings } from "../device/DeviceSetup";
 import { DeviceHostEditor } from "./DeviceHostEditor";
 import { updateDeviceHosts, groupDeviceHosts } from "./deviceHostsSettings.logic";
 import { EasDeviceHostEditor } from "./EasDeviceHostEditor";
@@ -118,10 +119,12 @@ function hostStatus(
   if (!state) return { tone: "pending", label: "Loading" };
   const status = state.hostStatuses[hostId];
   switch (status?.status) {
-    case "ready":
-      return status.androidDiscoveryIncomplete
-        ? { tone: "warning", label: "Android list may be incomplete", detail: status.detail }
-        : undefined;
+    case "ready": {
+      const incomplete = incompleteListings(status);
+      if (incomplete.length === 0) return undefined;
+      const list = incomplete.length > 1 ? "Device" : incomplete[0] === "ios" ? "iOS" : "Android";
+      return { tone: "warning", label: `${list} list may be incomplete`, detail: status.detail };
+    }
     case "installing":
     case "starting":
       return { tone: "pending", label: "Starting", detail: status.detail };
@@ -134,6 +137,8 @@ function hostStatus(
 
 const hostPlatforms = (state: DeviceServiceState | undefined, hostId: string) =>
   state?.hosts.find((host) => host.id === hostId)?.platforms;
+
+const HTTP_URL_PREFIX = /^https?:\/\//;
 
 /**
  * Every device source the selected environments can open, one row each. A source configured on
@@ -517,7 +522,7 @@ export function DeviceSourcesSettings(props: {
         shared: true,
         title: host.label,
         kind: "Simlock",
-        description: `${host.gatewayUrl.replace(/^https?:\/\//, "")} · ${simlockLeaseLimits(host)}`,
+        description: `${host.gatewayUrl.replace(HTTP_URL_PREFIX, "")} · ${simlockLeaseLimits(host)}`,
         environments: active.map((member) => {
           const held = (member.settings?.simlockDeviceHosts ?? []).find(
             (candidate) => candidate.id === host.id,
@@ -771,17 +776,17 @@ function DeviceSourceRow(props: { row: SourceRow }) {
   const problems = issues.filter((environment) => environment.status.tone !== "pending");
   const pending = issues.find((environment) => environment.status.tone === "pending");
   return (
-    <div className="flex items-center gap-3 border-t border-border/60 px-3 py-3 first:border-t-0 sm:px-4">
+    <div className="flex items-center gap-3 border-t border-border/60 px-4 py-3 first:border-t-0">
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-1.5">
-          <p className="truncate text-sm font-medium">{row.title}</p>
+          <p className="truncate text-sm font-medium max-phone:text-body">{row.title}</p>
           {row.kind ? (
             <span className="shrink-0 rounded border border-border px-1 text-3xs uppercase tracking-wide text-muted-foreground">
               {row.kind}
             </span>
           ) : null}
         </div>
-        <p className="truncate text-xs text-muted-foreground">{row.description}</p>
+        <p className="text-xs text-muted-foreground sm:truncate">{row.description}</p>
         {problems.map((environment) => (
           <p
             key={environment.environmentId}
@@ -793,10 +798,20 @@ function DeviceSourceRow(props: { row: SourceRow }) {
           >
             <span className="min-w-0 break-words">
               {several ? `${environment.label}: ` : ""}
-              {!several && environment.status.detail
+              {environment.status.tone === "error" && !several && environment.status.detail
                 ? environment.status.detail
                 : environment.status.label}
             </span>
+            {environment.status.tone === "warning" && environment.status.detail ? (
+              <Popover>
+                <PopoverTrigger render={<InlineButton />}>Details</PopoverTrigger>
+                <PopoverPopup side="bottom" align="start" width="lg" padding="compact">
+                  <p className="whitespace-pre-wrap break-words font-mono text-xs text-muted-foreground">
+                    {environment.status.detail}
+                  </p>
+                </PopoverPopup>
+              </Popover>
+            ) : null}
             {environment.status.action ? (
               <InlineButton onClick={environment.status.action.run}>
                 {environment.status.action.label}

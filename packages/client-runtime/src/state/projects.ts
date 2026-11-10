@@ -9,8 +9,10 @@ import {
 
 export { normalizeProjectPathForComparison };
 
+const WINDOWS_PLATFORM = /^win(dows)?/i;
+
 export const isWindowsPlatform = (platform: string): boolean => {
-  return /^win(dows)?/i.test(platform);
+  return WINDOWS_PLATFORM.test(platform);
 };
 
 function getAbsolutePathKind(value: string): "unix" | "windows" | null {
@@ -30,14 +32,22 @@ function preferredPathSeparator(value: string): "/" | "\\" {
   return value.includes("\\") ? "\\" : "/";
 }
 
+const TRAILING_FORWARD_SLASH = /\/$/;
+const TRAILING_PATH_SEPARATOR = /[\\/]$/;
+
 export function hasTrailingPathSeparator(value: string): boolean {
-  return (getAbsolutePathKind(value) === "unix" ? /\/$/ : /[\\/]$/).test(value);
+  return (
+    getAbsolutePathKind(value) === "unix" ? TRAILING_FORWARD_SLASH : TRAILING_PATH_SEPARATOR
+  ).test(value);
 }
 
 export { isExplicitRelativePath as isExplicitRelativeProjectPath };
 
+const FORWARD_SLASH_RUN = /\/+/;
+const PATH_SEPARATOR_RUN = /[\\/]+/;
+
 function splitPathSegments(value: string, separator: "/" | "\\"): string[] {
-  return value.split(separator === "/" ? /\/+/ : /[\\/]+/).filter(Boolean);
+  return value.split(separator === "/" ? FORWARD_SLASH_RUN : PATH_SEPARATOR_RUN).filter(Boolean);
 }
 
 function getLastPathSeparatorIndex(value: string): number {
@@ -106,7 +116,7 @@ export function resolveProjectPathForDispatch(value: string, cwd?: string | null
   }
 
   const nextSegments = [...absoluteBase.segments];
-  for (const segment of trimmedValue.split(/[\\/]+/)) {
+  for (const segment of trimmedValue.split(PATH_SEPARATOR_RUN)) {
     if (segment.length === 0 || segment === ".") continue;
     if (segment === "..") {
       nextSegments.pop();
@@ -144,13 +154,15 @@ export function isScratchProject(
   );
 }
 
+const PATH_SEPARATOR = /[/\\]/;
+
 export function inferProjectTitleFromPath(value: string): string {
   const normalized = normalizeProjectPathForDispatch(value);
   const absolutePath = splitAbsolutePath(normalized);
   if (absolutePath) {
     return absolutePath.segments.findLast(Boolean) ?? normalized;
   }
-  const segments = normalized.split(/[/\\]/);
+  const segments = normalized.split(PATH_SEPARATOR);
   return segments.findLast(Boolean) ?? normalized;
 }
 
@@ -180,6 +192,8 @@ export function ensureBrowseDirectoryPath(currentPath: string): string {
   return `${trimmed}${preferredPathSeparator(trimmed)}`;
 }
 
+const WINDOWS_DRIVE_PREFIX = /^[a-zA-Z]:/;
+
 export function getBrowseParentPath(currentPath: string): string | null {
   const trimmed = normalizeProjectPathForDispatch(currentPath);
   const absolutePath = splitAbsolutePath(trimmed);
@@ -193,7 +207,7 @@ export function getBrowseParentPath(currentPath: string): string | null {
   const separator = preferredPathSeparator(currentPath);
   const lastSeparatorIndex = getLastPathSeparatorIndex(trimmed);
   if (lastSeparatorIndex < 0) return null;
-  if (lastSeparatorIndex === 2 && /^[a-zA-Z]:/.test(trimmed)) {
+  if (lastSeparatorIndex === 2 && WINDOWS_DRIVE_PREFIX.test(trimmed)) {
     return `${trimmed.slice(0, 2)}${separator}`;
   }
   return trimmed.slice(0, lastSeparatorIndex + 1);

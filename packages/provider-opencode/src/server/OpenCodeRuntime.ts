@@ -111,9 +111,11 @@ export class OpenCodeRuntimeError extends Data.TaggedError(OPENCODE_RUNTIME_ERRO
 
 export type OpenCodeStartupFailureReason = "databaseLocked";
 
+const SQLITE_LOCKED_MESSAGE = /SQLITE_BUSY|database is locked/i;
+
 // Classify stderr database locks at exit so callers need not parse diagnostics.
 function classifyStartupExit(stderr: string): OpenCodeStartupFailureReason | undefined {
-  return /SQLITE_BUSY|database is locked/i.test(stderr) ? "databaseLocked" : undefined;
+  return SQLITE_LOCKED_MESSAGE.test(stderr) ? "databaseLocked" : undefined;
 }
 
 export const isOpenCodeRuntimeError = (u: unknown): u is OpenCodeRuntimeError =>
@@ -277,9 +279,11 @@ export class OpenCodeRuntime extends Context.Service<
   }
 >()("@houston-app/provider-opencode/server/OpenCodeRuntime") {}
 
+const LISTENING_URL = /server listening on\s+(https?:\/\/[^\s]+)/i;
+
 function parseServerUrlFromOutput(output: string): string | null {
   for (const line of output.split("\n")) {
-    const match = line.match(/server listening on\s+(https?:\/\/[^\s]+)/i);
+    const match = line.match(LISTENING_URL);
     if (match?.[1]) return match[1];
   }
   return null;
@@ -304,14 +308,13 @@ export function parseOpenCodeModelSlug(
   };
 }
 
+const NON_HEADER_CHARACTER = /[^a-z0-9_-]+/g;
+
 export function openCodeQuestionId(
   index: number,
   question: QuestionRequest["questions"][number],
 ): string {
-  const header = question.header
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, "-");
+  const header = question.header.trim().toLowerCase().replace(NON_HEADER_CHARACTER, "-");
   return header.length > 0 ? `question-${index}-${header}` : `question-${index}`;
 }
 

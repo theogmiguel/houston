@@ -58,6 +58,7 @@ import {
   type RuntimeMode,
   type ScheduledTask,
   type ScheduledTaskUpsertInput,
+  scheduledTaskThreadMode,
   type ServerProvider,
   type ServerProviderModel,
   ThreadId,
@@ -65,8 +66,12 @@ import {
   resolveProjectProviderInstanceEnabled,
   SECRET_REQUEST_UNSAVED_NOTE,
 } from "@houston-app/contracts";
-import { getProviderOptionCurrentValue } from "@houston-app/shared/model";
+import {
+  getProviderOptionCurrentValue,
+  withLegacyUltracodeEffort,
+} from "@houston-app/shared/model";
 import { runRanAfter } from "@houston-app/shared/orchestrationV2ThreadError";
+import { resolveProjectSettings } from "@houston-app/shared/projectSettings";
 import { formatThreadLink } from "@houston-app/shared/threadLinks";
 import {
   normalizeThreadPullRequestKey,
@@ -266,6 +271,7 @@ function scheduledTaskSummary(task: ScheduledTask, mayRun: boolean): Orchestrato
     enabled: task.enabled,
     projectId: task.projectId,
     boundThreadId: task.threadId,
+    freshSession: scheduledTaskThreadMode(task) === "fresh_session",
     schedule: task.schedule,
     nextRunAt: task.nextRunAt,
     lastRunStatus: task.lastRunStatus,
@@ -287,6 +293,9 @@ function scheduledTaskSummary(task: ScheduledTask, mayRun: boolean): Orchestrato
 const FULL_CATALOG_DRIVERS: ReadonlySet<string> = new Set(["codex", "claudeAgent", "muse", "grok"]);
 const LISTED_MODEL_LIMIT = 8;
 
+const WHITESPACE_RUN = /\s+/;
+const NON_LETTER_OR_DIGIT_RUN = /[^\p{L}\p{N}]+/u;
+
 /**
  * Lists visible models, keeping pinned models and limiting large catalogs by default.
  * Whole provider words select the provider; partial words filter models when any match.
@@ -307,8 +316,8 @@ function listCapabilityModels(input: {
   const providerText = `${instanceId} ${driver} ${displayName ?? ""}`.toLowerCase();
   // Whole ids like "codex-work" and their parts both name the provider.
   const providerWords = new Set([
-    ...providerText.split(/\s+/),
-    ...providerText.split(/[^\p{L}\p{N}]+/u),
+    ...providerText.split(WHITESPACE_RUN),
+    ...providerText.split(NON_LETTER_OR_DIGIT_RUN),
   ]);
   const modelText = (model: ServerProviderModel) =>
     `${model.slug} ${model.name} ${model.subProvider ?? ""}`.toLowerCase();
@@ -1426,7 +1435,7 @@ const make = Effect.gen(function* () {
 
     const descriptors = provider.models.find((candidate) => candidate.slug === model)?.capabilities
       ?.optionDescriptors;
-    const requestedOptions = input.target?.options;
+    const requestedOptions = withLegacyUltracodeEffort(descriptors, input.target?.options);
     if (requestedOptions !== undefined) {
       const invalid = invalidOptionSelections(requestedOptions, descriptors);
       if (invalid.length > 0) {
@@ -1440,7 +1449,10 @@ const make = Effect.gen(function* () {
     const inheritsOptions =
       instanceId === inheritedSelection.instanceId && model === inheritedSelection.model;
     let options = inheritsOptions
-      ? knownOptions(inheritedSelection.options, descriptors)
+      ? knownOptions(
+          withLegacyUltracodeEffort(descriptors, inheritedSelection.options),
+          descriptors,
+        )
       : undefined;
     if (requestedOptions !== undefined) {
       const selections = new Map(
@@ -1642,7 +1654,11 @@ const make = Effect.gen(function* () {
       task.completionDelivery?.state !== "acknowledged" &&
       task.completionDelivery?.state !== "disposed"
     ) {
-      const observingRun = ThreadManagementService.latestActiveRun(parentProjection);
+      const observingRun = ThreadManagementService.latestActiveRun({
+        runs: parentProjection.runs.filter(
+          (run) => run.providerInstanceId === scope.thread.providerInstanceId,
+        ),
+      });
       const acknowledgementRequestKey = yield* requestKey(undefined);
       yield* threadManagement
         .dispatch({
@@ -1654,10 +1670,7 @@ const make = Effect.gen(function* () {
           }),
           parentThreadId: scope.thread.threadId,
           taskId,
-          observedByRunId:
-            observingRun?.providerInstanceId === scope.thread.providerInstanceId
-              ? observingRun.id
-              : null,
+          observedByRunId: observingRun?.id ?? null,
         })
         .pipe(
           Effect.mapError((error) =>
@@ -1737,7 +1750,11 @@ const make = Effect.gen(function* () {
             ),
           ),
         );
-      const observingRun = ThreadManagementService.latestActiveRun(parentProjection);
+      const observingRun = ThreadManagementService.latestActiveRun({
+        runs: parentProjection.runs.filter(
+          (run) => run.providerInstanceId === scope.thread.providerInstanceId,
+        ),
+      });
       yield* threadManagement
         .dispatch({
           type: "delegated_task.completion-delivery.acknowledge",
@@ -1748,10 +1765,7 @@ const make = Effect.gen(function* () {
           }),
           parentThreadId: scope.thread.threadId,
           taskId: task.id,
-          observedByRunId:
-            observingRun?.providerInstanceId === scope.thread.providerInstanceId
-              ? observingRun.id
-              : null,
+          observedByRunId: observingRun?.id ?? null,
         })
         .pipe(
           Effect.mapError((error) =>
@@ -1883,10 +1897,14 @@ const make = Effect.gen(function* () {
   )(function* (boundToThread: boolean, projectId: ProjectId) {
     if (boundToThread) return { type: "root" as const };
     const { workspaceRoot } = yield* requireProject(projectId);
+    const settings = yield* serverSettings.getSettings.pipe(
+      Effect.mapError(() => failure("orchestration_error", "Unable to read server settings.")),
+    );
     return {
       type: "worktree" as const,
       baseRef: yield* resolveScheduledTaskBaseRef(workspaceRoot),
-      startFromOrigin: true,
+      startFromOrigin: resolveProjectSettings(settings, projectId).settings
+        .newWorktreesStartFromOrigin,
     };
   });
 
@@ -2001,6 +2019,11 @@ const make = Effect.gen(function* () {
         schedule: input.schedule,
         projectId,
         threadId: bindToCurrentThread && parent !== undefined ? parent.thread.id : null,
+        threadMode: input.freshSession
+          ? "fresh_session"
+          : bindToCurrentThread
+            ? "continue"
+            : "new_thread",
         workspaceStrategy: yield* scheduledTaskWorkspaceStrategy(bindToCurrentThread, projectId),
         modelSelection,
         runtimeMode: limits.runtimeMode,
@@ -2063,6 +2086,18 @@ const make = Effect.gen(function* () {
               : "bindToCurrentThread binds to this thread, which belongs to a different project.",
           );
         }
+        // A save keeps a bound thread unless the task goes back to new threads, so this pair
+        // would leave runs in the old thread.
+        if (
+          input.bindToCurrentThread === false &&
+          input.freshSession === true &&
+          existing.threadId !== null
+        ) {
+          return yield* failure(
+            "invalid_request",
+            "To move this task to a new thread with fresh sessions, first unbind it with bindToCurrentThread: false, then set freshSession: true in a second call.",
+          );
+        }
         const threadId =
           input.bindToCurrentThread === undefined
             ? existing.threadId
@@ -2082,6 +2117,18 @@ const make = Effect.gen(function* () {
           schedule: input.schedule ?? existing.schedule,
           projectId: existing.projectId,
           threadId,
+          threadMode:
+            input.freshSession === undefined && input.bindToCurrentThread === undefined
+              ? scheduledTaskThreadMode(existing)
+              : (input.freshSession ??
+                  (input.bindToCurrentThread !== false &&
+                    scheduledTaskThreadMode(existing) === "fresh_session"))
+                ? "fresh_session"
+                : threadId === null &&
+                    (input.bindToCurrentThread === false ||
+                      scheduledTaskThreadMode(existing) === "new_thread")
+                  ? "new_thread"
+                  : "continue",
           workspaceStrategy,
           modelSelection: existing.modelSelection,
           runtimeMode: existing.runtimeMode,
@@ -2273,7 +2320,7 @@ const make = Effect.gen(function* () {
         Effect.mapError(() => failure("orchestration_error", "Unable to read server settings.")),
       );
       const inherited = parent?.thread.modelSelection;
-      const searchTerms = input.search?.toLowerCase().split(/\s+/).filter(Boolean) ?? [];
+      const searchTerms = input.search?.toLowerCase().split(WHITESPACE_RUN).filter(Boolean) ?? [];
       return {
         parentThreadId: parent?.thread.id ?? null,
         inheritedProviderInstanceId: inherited?.instanceId ?? null,
@@ -3139,6 +3186,7 @@ const make = Effect.gen(function* () {
           text: input.message,
           attachments: [],
           mode,
+          ...(input.freshContext ? { freshContext: true } : {}),
           createdBy: "agent",
           creationSource: "mcp",
         })

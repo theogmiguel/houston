@@ -102,22 +102,22 @@ const MODEL_IDS: Record<number, string> = {
   1047: "gemini-3-flash-preview",
 };
 
+const RATE_MODEL_PATTERN = /-(?:low|medium|high)$/;
+
 // ACP slugs append the thinking level, which shares the base model's price.
 function withRateModel(record: UsageRecord): UsageRecord {
-  const rateModel = record.model.replace(/-(?:low|medium|high)$/, "");
+  const rateModel = record.model.replace(RATE_MODEL_PATTERN, "");
   return rateModel === record.model ? record : { ...record, rateModel };
 }
 
+const TRAILING_PARENTHETICAL = /\s*\([^)]*\)\s*$/;
+const MODEL_NAME_PATTERN = /^claude-(4(?:\.\d+)?)-(sonnet|opus|haiku)/;
+
 function modelName(name: string, id: number): string {
   if (name) {
-    const normalized = name
-      .toLowerCase()
-      .replace(/\s*\([^)]*\)\s*$/, "")
-      .replaceAll(" ", "-");
+    const normalized = name.toLowerCase().replace(TRAILING_PARENTHETICAL, "").replaceAll(" ", "-");
     if (normalized.startsWith("claude-")) {
-      return normalized
-        .replace(/^claude-(4(?:\.\d+)?)-(sonnet|opus|haiku)/, "claude-$2-$1")
-        .replaceAll(".", "-");
+      return normalized.replace(MODEL_NAME_PATTERN, "claude-$2-$1").replaceAll(".", "-");
     }
     return normalized;
   }

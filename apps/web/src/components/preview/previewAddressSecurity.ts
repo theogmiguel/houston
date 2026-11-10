@@ -2,8 +2,10 @@ export type PreviewAddressSecurity = "secure" | "local" | "not-secure";
 
 const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"]);
 
+const IPV6_BRACKETS = /^\[|\]$/g;
+
 function isLoopbackHostname(hostname: string): boolean {
-  const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  const normalized = hostname.toLowerCase().replace(IPV6_BRACKETS, "");
   return LOOPBACK_HOSTNAMES.has(normalized) || normalized.endsWith(".localhost");
 }
 

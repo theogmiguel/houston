@@ -14,6 +14,8 @@ interface ThreadFindRange {
   readonly range: Range;
 }
 
+const LINE_BREAK = /\r?\n/g;
+
 export function collectThreadFindRanges(container: HTMLElement, query: string): ThreadFindRange[] {
   if (query.length === 0) return [];
 
@@ -60,7 +62,7 @@ export function collectThreadFindRanges(container: HTMLElement, query: string): 
       if (node.nodeType === 3) {
         const value = node.nodeValue ?? "";
         const start = text.length;
-        text += inPre ? value : value.replace(/\r?\n/g, " ");
+        text += inPre ? value : value.replace(LINE_BREAK, " ");
         nodes.push({ node, start, end: text.length });
       }
       for (const child of node.childNodes) visit(child, inPre || tag === "pre");

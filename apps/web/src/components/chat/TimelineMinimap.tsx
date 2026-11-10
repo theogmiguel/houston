@@ -8,7 +8,7 @@ import {
   resolveTimelineMinimapInteractiveWidth,
   resolveTimelineMinimapNavigationInteractive,
   resolveTimelineMinimapTopPercent,
-  TIMELINE_MINIMAP_MIN_ITEMS,
+  resolveTimelineMinimapAvailable,
 } from "./MessagesTimeline.logic";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
@@ -34,9 +34,21 @@ function onMouseButtonsReleased(onRelease: () => void): () => void {
   return stop;
 }
 
+const STRIP_CLASS =
+  "pointer-events-none absolute left-3 h-0.5 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full transition-transform duration-150 after:absolute after:inset-0 after:rounded-full after:bg-foreground/55 after:opacity-0 after:transition-opacity after:duration-150 data-[in-view=true]:after:opacity-100";
+// Plain strings by distance from the active strip: a long thread renders hundreds of strips and
+// nothing can conflict, so no strip pays for a class merge.
+const STRIP_CLASS_BY_DISTANCE = [
+  `${STRIP_CLASS} bg-muted-foreground/60 scale-x-100`,
+  `${STRIP_CLASS} bg-muted-foreground/25 scale-x-[0.667]`,
+  `${STRIP_CLASS} bg-muted-foreground/25 scale-x-[0.417]`,
+  `${STRIP_CLASS} bg-muted-foreground/25 scale-x-[0.333]`,
+] as const;
+
 export function TimelineMinimap({
   hasPersistentGutter,
   hitStripWidth,
+  viewportWidth,
   currentIndex,
   items,
   stripMap,
@@ -45,6 +57,8 @@ export function TimelineMinimap({
 }: {
   hasPersistentGutter: boolean;
   hitStripWidth: number;
+  /** The conversation scroller's width; the rail is hidden when it is narrow. */
+  viewportWidth: number;
   currentIndex: number | null;
   items: ReadonlyArray<TimelineMinimapItem>;
   stripMap: Map<string, HTMLSpanElement>;
@@ -108,17 +122,19 @@ export function TimelineMinimap({
     });
   };
 
-  if (items.length < TIMELINE_MINIMAP_MIN_ITEMS) {
+  if (!resolveTimelineMinimapAvailable(items.length, viewportWidth)) {
     return null;
   }
 
   return (
     <div
       className={cn(
-        "group/minimap pointer-events-none absolute inset-y-0 left-0 z-40 hidden w-18 [@media(pointer:fine)]:block",
+        "group/minimap pointer-events-none absolute inset-y-0 left-0 z-40 w-18",
+        // Without a persistent gutter the rail appears while the pointer is over the conversation
+        // or focus is inside it, so an idle thread shows no floating dashes beside the sidebar edge.
         hasPersistentGutter
           ? "opacity-100"
-          : "opacity-0 transition-opacity duration-150 hover:opacity-100 focus-within:opacity-100",
+          : "hidden opacity-0 transition-opacity duration-(--motion-feedback) [[data-assistant-citation-viewport]:hover_&]:opacity-100 hover:opacity-100 focus-within:opacity-100 [@media(pointer:fine)]:block",
       )}
       data-testid="timeline-minimap"
       data-persistent-gutter={hasPersistentGutter ? "true" : "false"}
@@ -204,29 +220,17 @@ export function TimelineMinimap({
             }}
             type="button"
           >
-            <div className="absolute top-0 left-3 h-full w-px bg-border/15" />
+            <div className="absolute top-0 left-3 h-full w-px bg-border" data-minimap-track />
             {items.map((item, index) => {
               const top = `${resolveTimelineMinimapTopPercent(index, items.length)}%`;
               const activeDistance =
                 resolvedActiveIndex === null ? null : Math.abs(index - resolvedActiveIndex);
               return (
-                // Compositor-friendly on purpose: in-view state and the hover
-                // fisheye animate constantly (every scroll tick and streaming
-                // update flips a band of strips), so the strip animates only
-                // transform and opacity.
+                // Ticks sit centred on the track so the rail reads as one ruler. Only transform and
+                // opacity animate: scroll and streaming flip a band of strips every frame.
                 <span
                   aria-hidden="true"
-                  className={cn(
-                    "pointer-events-none absolute left-0 h-0.5 w-6 origin-left -translate-y-1/2 rounded-full transition-transform duration-150 after:absolute after:inset-0 after:rounded-full after:bg-foreground/55 after:opacity-0 after:transition-opacity after:duration-150 data-[in-view=true]:after:opacity-100",
-                    activeDistance === 0 ? "bg-muted-foreground/60" : "bg-muted-foreground/25",
-                    activeDistance === 0
-                      ? "scale-x-100"
-                      : activeDistance === 1
-                        ? "scale-x-[0.667]"
-                        : activeDistance === 2
-                          ? "scale-x-[0.417]"
-                          : "scale-x-[0.333]",
-                  )}
+                  className={STRIP_CLASS_BY_DISTANCE[Math.min(activeDistance ?? 3, 3)]}
                   data-in-view="false"
                   data-minimap-strip
                   key={item.id}
@@ -251,7 +255,7 @@ export function TimelineMinimap({
                   transform: `translateY(${activeTooltipTranslate})`,
                 }}
               >
-                <span className="dropdown-glass block rounded-xl p-3 text-left text-popover-foreground shadow-xl shadow-black/25">
+                <span className="dropdown-glass block rounded-(--r-group) p-3 text-left text-popover-foreground">
                   <span className="block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium leading-5">
                     {activeItem.userText ?? "User message"}
                   </span>

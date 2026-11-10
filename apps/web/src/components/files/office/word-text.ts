@@ -136,9 +136,12 @@ function regionText(
   });
 }
 
+const TRAILING_WHITESPACE = /\s$/u;
+const LEADING_WHITESPACE = /^\s/u;
+
 /** Neighbours on a line with a gap between them and no space on either side of it read as separate words. */
 function separated(previous: Piece, next: Piece) {
-  if (/\s$/u.test(previous.text) || /^\s/u.test(next.text)) return false;
+  if (TRAILING_WHITESPACE.test(previous.text) || LEADING_WHITESPACE.test(next.text)) return false;
 
   // A number's painted width runs up to its text, over the tab between them.
   if (previous.marker) return true;

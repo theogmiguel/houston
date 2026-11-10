@@ -113,13 +113,15 @@ function metadataFromHeader(
   return metadata;
 }
 
+const LINE_BREAK = /\r?\n/u;
+
 export function decodeProviderReplayNdjson(
   input: string,
   fallbackMetadata?: ProviderReplayTranscriptMetadata,
 ): Effect.Effect<ProviderReplayTranscript, ProviderReplayNdjsonParseError> {
   return Effect.gen(function* () {
     const lines = input
-      .split(/\r?\n/u)
+      .split(LINE_BREAK)
       .map((line, index) => ({ line: line.trim(), lineNumber: index + 1 }))
       .filter(({ line }) => line.length > 0);
 

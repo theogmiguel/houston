@@ -107,6 +107,8 @@ function visibleSnapshot(snapshot: AuthSnapshot, ownerSessionId: string): Provid
   };
 }
 
+const SAFE_AUTH_FAILURE_PATTERN = /access_denied|denied access|cancelled/i;
+
 function safeAuthFailure(cause: Cause.Cause<unknown>, usesBrowser: boolean): string {
   const error = Cause.findErrorOption(cause);
   if (Option.isSome(error)) {
@@ -117,7 +119,7 @@ function safeAuthFailure(cause: Cause.Cause<unknown>, usesBrowser: boolean): str
       if (error.value.errorMessage.includes("SUBSCRIPTION_REQUIRED")) {
         return "Google requires an eligible Antigravity subscription for this account.";
       }
-      if (/access_denied|denied access|cancelled/i.test(error.value.errorMessage)) {
+      if (SAFE_AUTH_FAILURE_PATTERN.test(error.value.errorMessage)) {
         return "Google sign-in was not approved. Start sign-in again.";
       }
       if (error.value.method === "session/new" && error.value.code === -32603) {

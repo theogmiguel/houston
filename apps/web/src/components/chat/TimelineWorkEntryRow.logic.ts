@@ -10,6 +10,10 @@ import { workEntryDisplayLabel } from "./MessagesTimeline.logic";
 import { type TimelineWorkEntry, type TimelineRow } from "./timelineRowContext";
 import { type WorkEntryIconName } from "./TimelineToolActivityIcon";
 
+const WHITESPACE_RUN = /\s+/g;
+const STRIP_ACTION_PATTERN =
+  /^(?:Read|Read file|Read \d+ files?|Searched|Editing|Edited|Changed|Ran)\s+/i;
+
 export function toolGroupSummaryIconName(
   kind: Extract<TimelineRow, { kind: "work-toggle" }>["summaryKind"],
 ): WorkEntryIconName {
@@ -197,15 +201,21 @@ export function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconNa
 export function remarkThoughtPreview(fallback: string) {
   return (tree: Root) => {
     const children: RootContent[] = [];
+    // Text accumulates in a run and collapses once at the next formula or the end, so a long
+    // preview costs one whitespace pass rather than one per appended fragment.
+    let run: string[] = [];
     const append = (value: string) => {
-      const last = children.at(-1);
-      const text = value.replace(/\s+/g, " ");
-      if (last?.type === "text") last.value = (last.value + text).replace(/\s+/g, " ");
-      else children.push({ type: "text", value: text });
+      run.push(value);
+    };
+    const flush = () => {
+      if (run.length === 0) return;
+      children.push({ type: "text", value: run.join("").replace(WHITESPACE_RUN, " ") });
+      run = [];
     };
     const visit = (node: Root | RootContent) => {
       if (node.type === "html" || node.type === "definition") return;
       if (node.type === "math" || node.type === "inlineMath") {
+        flush();
         children.push({
           type: "inlineMath",
           value: node.value,
@@ -230,6 +240,7 @@ export function remarkThoughtPreview(fallback: string) {
       } else if (node.type === "break") append(" ");
     };
     visit(tree);
+    flush();
     const first = children[0];
     const last = children.at(-1);
     if (first?.type === "text") first.value = first.value.trimStart();
@@ -276,12 +287,12 @@ export function workEntryToolParts(
 ): WorkEntryToolParts {
   const item = entry.structuredPayload;
   const actionKey = toolGroupAction(entry);
-  const action = TOOL_ACTION_LABEL[actionKey] ?? entry.toolTitle?.trim() ?? "Used";
+  const action =
+    actionKey === "command" && entry.toolLifecycleStatus === "inProgress"
+      ? "Running"
+      : (TOOL_ACTION_LABEL[actionKey] ?? entry.toolTitle?.trim() ?? "Used");
   const label = workEntryDisplayLabel(entry, workspaceRoot);
-  const stripAction = (value: string) =>
-    value
-      .replace(/^(?:Read|Read file|Read \d+ files?|Searched|Editing|Edited|Changed|Ran)\s+/i, "")
-      .trim();
+  const stripAction = (value: string) => value.replace(STRIP_ACTION_PATTERN, "").trim();
 
   let value = "";
   if (actionKey === "command") {

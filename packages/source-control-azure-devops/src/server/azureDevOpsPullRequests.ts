@@ -111,6 +111,8 @@ function azureDevOpsOrganizationBaseFromRestApiUrl(
   }
 }
 
+const TRAILING_SLASHES = /\/+$/;
+
 export function azureDevOpsPullRequestWebUrl(input: {
   readonly pullRequestId: number;
   readonly webLink?: string | null | undefined;
@@ -126,7 +128,7 @@ export function azureDevOpsPullRequestWebUrl(input: {
 
   const repositoryWebUrl = trimOptionalString(input.repositoryWebUrl);
   if (repositoryWebUrl) {
-    return `${repositoryWebUrl.replace(/\/+$/, "")}/pullrequest/${input.pullRequestId}`;
+    return `${repositoryWebUrl.replace(TRAILING_SLASHES, "")}/pullrequest/${input.pullRequestId}`;
   }
 
   const organizationBase = azureDevOpsOrganizationBaseFromRestApiUrl(input.restApiUrl);

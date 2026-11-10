@@ -28,10 +28,14 @@ conflicts with the task, explain the conflict and obtain maintainer direction.
   `<channel dir>/v2/userdata/server-runtime.json`.
 - **Local state** (`<channel dir>/v2`): one user, one machine, one SQLite database per channel.
   Upstream's tables follow upstream's migrations; Houston's tables live on the Houston migration
-  track (`houston_sql_migrations`), whose ids never enter upstream's migrator. Houston has no
-  telemetry service: analytics and every OTLP export are off by construction, and no setting or
-  environment variable turns them on. Local-first does not mean offline: a network-backed feature
-  states what it transmits and when. Updates require an explicit user action.
+  track (`houston_sql_migrations`), whose ids never enter upstream's migrator. Telemetry is
+  allowed to improve Houston: anonymous usage data and crash and diagnostic data (OpenTelemetry
+  traces, metrics and logs). It never includes source code, prompts, agent responses, file
+  contents, credentials or paths, can be turned off, and `docs/user/privacy.md` lists what is sent,
+  to whom and how to turn it off before it ships. Local-first does not mean offline: a
+  network-backed feature can be turned off, sends nothing while off, and sends no credential or
+  user content to a destination the user did not configure. Updates require an explicit user
+  action.
 - **v1 state** (`~/.houston`): v2 never deletes, moves or opens v1's state read-write. A one-time
   import reads v1's `houston.db` read-only. The host's one v1 cleanup reads the channel
   directory and edits only the agent CLI configs v1 changed.
@@ -47,9 +51,11 @@ conflicts with the task, explain the conflict and obtain maintainer direction.
 - **External configuration** (managed-marker): changes to an agent CLI's configuration are
   reversible managed-marker blocks. `~/.claude.json` is never rewritten; it changes only through
   `claude mcp`.
-- **Secrets** (keychain): tokens live in the OS keychain, scoped by channel directory, project and
-  provider, never in the database, logs, traces, errors, RPC replies or stream events. A token is
-  bounded in size and refused by name above the bound.
+- **Secrets** (secret store): tokens live in the server's secret store (`ServerSecretStore`),
+  one 0600 file per secret in a 0700 directory under the channel's state, scoped by channel
+  directory, project and provider, never in the database, logs, traces, errors, RPC replies or
+  stream events. A token is bounded in size and refused by name above the bound. The OS keychain
+  is read only once, by the import of earlier builds' tokens, and never written or deleted.
 - **Untrusted input**: text from outside (GitHub, Notion, Slack, imported files) is bounded,
   attributed and kept from acting as instructions before it reaches a prompt; text Houston sends
   out is escaped so it cannot mention, link or close anything it did not mean to.
@@ -95,8 +101,8 @@ Use the [glossary](docs/internals/glossary.md) consistently:
    explicit instruction. Tests use temporary directories and never the real home.
 3. **One server per channel.** Preserve upstream's server ownership lock; a second server for the
    same base directory exits instead of sharing its database.
-4. **Never touch the host keyring.** Server tests use the in-memory keychain layer; only
-   `server.ts` provides the live one. Do not run `gnome-keyring-daemon` (least of all
+4. **Never touch the host keyring.** Server tests use the in-memory secret store and keychain
+   layers; only `server.ts` provides the live ones. Do not run `gnome-keyring-daemon` (least of all
    `--unlock`) on the host: it re-encrypts the user's real login keyring and locks them out.
    Host tests that need a Secret Service run through `scripts/with-test-keyring.sh`.
 5. **Never touch the user's repositories by accident.** Server git commands that act for the
@@ -117,8 +123,10 @@ Before completing a change, identify which of these checks apply:
   value. Errors for limits name the limit, actual value and requested operation.
 - **Platforms:** Linux and Windows are supported release platforms. A platform-specific behaviour
   has an equivalent elsewhere or a named limitation.
-- **Network:** a feature that sends anything off the machine lists each call, its cadence and its
-  limits, and sends nothing while disabled.
+- **Network:** a feature that sends anything off the machine can be disabled and sends nothing
+  while disabled, never sends credentials or user content to a destination the user did not
+  configure, and has user-facing text that is true about what it sends (it need not enumerate
+  every call).
 - **Documentation:** describe user-visible behaviour in the PR title used for release
   notes. Update the relevant `docs/user/` page when usage changes.
 
@@ -134,8 +142,8 @@ The [development runbook](docs/operations/development.md) contains exact command
   `--reporter=verbose` that a proof ran.
 - Tests come before code, and a bug fix has a regression test that fails before the fix. Fixtures
   represent states the system can produce; composed fixtures are labelled as composed.
-- Server code that reaches a provider, GitHub, Notion, Slack or the keychain is tested against
-  replay fixtures, local fakes and the in-memory keychain, never the real service.
+- Server code that reaches a provider, GitHub, Notion, Slack or the secret store is tested against
+  replay fixtures, local fakes and the in-memory secret store, never the real service.
 - For desktop-host changes, run the package's typecheck and tests, then `cargo fmt`,
   `cargo clippy --all-targets -- -D warnings` and `cargo test` in each native crate under
   `apps/desktop/native` and `native`. On Linux, run heavy builds under `scripts/oom-shield.sh`,
@@ -230,4 +238,7 @@ The renderer ships in an Electron webview, so motion must stay on the compositor
   (`motion/maximizeMotion.ts`), both on the `registry.ts` spring. Measure grid changes with
   the frame probe (`source: "frame-probe"` in
   `~/.houston-dev/v2/userdata/logs/app-debug.ndjson`).
-- Reduced motion turns every role to 0ms in CSS and `resolveMotion` returns `off` in script.
+- Reduced motion (the system preference or the Appearance **Animations** switch) turns every
+  role to 0ms in CSS and `resolveMotion` returns `off` in script. Gate motion only through the
+  `motion-safe`/`motion-reduce` variants or `prefersReducedMotion`/`useReducedMotion`, never a
+  direct `prefers-reduced-motion` query.

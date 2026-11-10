@@ -30,6 +30,18 @@ const PROVIDER_TEXT_COLOR_BY_PROVIDER: Partial<Record<ProviderDriverKind, string
   [ProviderDriverKind.make("antigravity")]: "text-[#5b87bf]",
 };
 
+const BUNDLED_LOGO_COLOR_BY_PROVIDER: Partial<Record<ProviderDriverKind, string>> = {
+  [ProviderDriverKind.make("claudeAgent")]: "#d97757",
+  [ProviderDriverKind.make("antigravity")]: "#5b87bf",
+};
+
+/** The logo's own color, or null for logos that swap between black and white per theme. */
+export function providerLogoColor(driverKind: ProviderDriverKind): string | null {
+  const fill = providerClients.get(driverKind)?.icon?.fill;
+  if (fill) return fill.light === fill.dark ? fill.light : null;
+  return BUNDLED_LOGO_COLOR_BY_PROVIDER[driverKind] ?? null;
+}
+
 export function providerTextColor(driverKind: ProviderDriverKind): {
   readonly className?: string;
   readonly style?: CSSProperties;
@@ -54,6 +66,27 @@ export function resolveProviderInstanceAcpRegistryIconUrl(input: {
   return (
     resolveOfficialAcpRegistryIconUrl(input.iconUrl ?? null) ??
     officialAcpRegistryIconUrlForAgentId(input.agentId?.trim() || null)
+  );
+}
+
+/** Whether a provider has a brand glyph of its own; otherwise a mark falls back to initials. */
+export function providerHasBrandGlyph(input: {
+  readonly driverKind: ProviderDriverKind;
+  readonly acpRegistryAgentId?: string | undefined;
+  readonly acpRegistryIconUrl?: string | undefined;
+}): boolean {
+  if (input.driverKind === "acpRegistry") {
+    return (
+      resolveProviderInstanceAcpRegistryIconUrl({
+        driverKind: input.driverKind,
+        agentId: input.acpRegistryAgentId,
+        iconUrl: input.acpRegistryIconUrl,
+      }) !== null
+    );
+  }
+  return (
+    providerClients.get(input.driverKind)?.icon !== undefined ||
+    PROVIDER_ICON_BY_PROVIDER[input.driverKind] !== undefined
   );
 }
 

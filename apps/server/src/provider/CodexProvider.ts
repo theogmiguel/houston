@@ -525,6 +525,8 @@ export const withCodexAppServerClient = Effect.fn("withCodexAppServerClient")(fu
   return { client, initialize };
 });
 
+const VERSION_MATCH_PATTERN = /\/([^\s]+)/;
+
 const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(function* (input: {
   readonly binaryPath: string;
   readonly homePath?: string;
@@ -536,7 +538,7 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
   const spawnedAtMs = DateTime.toEpochMillis(yield* DateTime.now);
   const { client, initialize } = yield* withCodexAppServerClient(input);
 
-  const versionMatch = initialize.userAgent.match(/\/([^\s]+)/);
+  const versionMatch = initialize.userAgent.match(VERSION_MATCH_PATTERN);
   const version = versionMatch ? versionMatch[1] : undefined;
 
   const accountResponse = yield* client.request("account/read", {});

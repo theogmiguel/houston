@@ -26,13 +26,16 @@ import * as ReviewService from "../review/ReviewService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ReviewFilesViewed from "./reviewFilesViewed.ts";
 
+const LINE_BREAK = /\r?\n/;
+const LEADING_NEWLINES = /^\n+/;
+
 /** A mark is viewed exactly while the path's content is the content it was marked on. */
 export const judgeMark = (markedBlob: string, currentBlob: string): HoustonReviewFileViewedState =>
   markedBlob === currentBlob ? "viewed" : "dismissed";
 
 const splitLines = (content: string): Array<string> => {
   if (content.length === 0) return [];
-  const lines = content.split(/\r?\n/);
+  const lines = content.split(LINE_BREAK);
   if (lines.at(-1) === "") lines.pop();
   return lines;
 };
@@ -323,7 +326,7 @@ export const make = Effect.gen(function* () {
     return new Set(
       `${net.stdout}\0${each.stdout}`
         .split("\0")
-        .map((file) => file.replace(/^\n+/, ""))
+        .map((file) => file.replace(LEADING_NEWLINES, ""))
         .filter((file) => file.length > 0),
     );
   });

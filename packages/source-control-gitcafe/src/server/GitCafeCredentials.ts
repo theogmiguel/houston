@@ -1,4 +1,7 @@
-import { settingsSecretLiteral } from "@houston-app/contracts";
+import {
+  requireSettingsSecretLiteral,
+  type SettingsSecretUnresolvedError,
+} from "@houston-app/contracts";
 import { normalizeHost } from "@houston-app/source-control-core/server/pullRequestUtils";
 import * as Cache from "effect/Cache";
 import * as Context from "effect/Context";
@@ -55,7 +58,8 @@ export class GitCafeCliFailedError extends Schema.TaggedError<GitCafeCliFailedEr
 export type GitCafeCredentialUnavailableError =
   | GitCafeCliMissingError
   | GitCafeNotSignedInError
-  | GitCafeCliFailedError;
+  | GitCafeCliFailedError
+  | SettingsSecretUnresolvedError;
 
 export class GitCafeCredentials extends Context.Service<
   GitCafeCredentials,
@@ -64,7 +68,9 @@ export class GitCafeCredentials extends Context.Service<
       host: string,
     ) => Effect.Effect<GitCafeCredential, GitCafeCredentialUnavailableError>;
     readonly invalidate: (host: string) => Effect.Effect<void>;
-    readonly cliEnv: (host: string) => Effect.Effect<Readonly<Record<string, string>>>;
+    readonly cliEnv: (
+      host: string,
+    ) => Effect.Effect<Readonly<Record<string, string>>, SettingsSecretUnresolvedError>;
   }
 >()("@houston-app/source-control-gitcafe/server/GitCafeCredentials") {}
 
@@ -83,8 +89,10 @@ export function environmentToken(
   return env.CAFE_TOKEN?.trim() || null;
 }
 
+const LINE_BREAK = /\r?\n/u;
+
 function credentialPassword(output: string): string | null {
-  for (const line of output.split(/\r?\n/u)) {
+  for (const line of output.split(LINE_BREAK)) {
     if (line.startsWith("password=")) return line.slice("password=".length).trim() || null;
   }
   return null;
@@ -130,16 +138,18 @@ export const make = Effect.gen(function* () {
     normalizeHost(host) !== DEFAULT_HOST
       ? Effect.succeed(null)
       : sourceControlHost.settings.getWithSecrets(GitCafeClient.definition.kind).pipe(
-          Effect.map(
-            (settings) =>
-              settingsSecretLiteral(
-                readSourceControlHostSettings(
-                  GitCafeClient.settings,
-                  settings.sourceControlHosts[GitCafeClient.definition.kind],
-                ).token,
-              ) || null,
+          Effect.map((settings) => ({
+            token: readSourceControlHostSettings(
+              GitCafeClient.settings,
+              settings.sourceControlHosts[GitCafeClient.definition.kind],
+            ).token,
+            secretProviders: settings.secretProviders,
+          })),
+          Effect.orElseSucceed(() => ({ token: undefined, secretProviders: {} })),
+          Effect.flatMap(({ token, secretProviders }) =>
+            requireSettingsSecretLiteral(token, secretProviders),
           ),
-          Effect.orElseSucceed(() => null),
+          Effect.map((token) => token || null),
         );
 
   const lookup = Effect.fn("GitCafeCredentials.lookup")(function* (

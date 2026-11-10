@@ -15,42 +15,49 @@ if (
   })
 ) {
   const command = process.argv[2];
-  // Guard sockets before either dispatch path can load outbound-capable modules.
-  const { ignoreMacosTypeOfServiceEinval } = await import("./outboundHttp.ts");
-  ignoreMacosTypeOfServiceEinval();
-  if (command === "__document-text") {
-    const { extractDocumentText } = await import("./provider/documentTextWorker.ts");
-    try {
-      process.stdout.write(await extractDocumentText(process.argv[3]!, process.argv[4]!));
-    } catch (error) {
-      if (error instanceof Error && "code" in error && /^E[A-Z0-9]+$/.test(String(error.code))) {
-        throw error;
-      }
-      // Exit 2 identifies document rejections; OS and process failures remain retryable.
-      process.exitCode = 2;
-    }
-  } else if (command === "__managed-chatgpt-token") {
-    const { runManagedChatGptTokenCli } = await import("./cli/managedChatGptToken.ts");
-    await runManagedChatGptTokenCli(process.argv.slice(3));
-  } else if (command === "acp-mcp-bridge" || command === "acp-mcp-call") {
-    const { runAcpMcpCliFastPath } = await import("./mcp/AcpMcpStdioBridge.ts");
-    await runAcpMcpCliFastPath(command, process.argv.slice(3));
-  } else if (command === "__ssh-bridge") {
-    const { runDesktopSshBridge } = await import("./desktopSshBridge.ts");
-    await runDesktopSshBridge();
-  } else if (command === "__speech-worker") {
-    const { runSpeechWorker } = await import("./speech/nativeWorker.ts");
-    await runSpeechWorker();
+  // The launcher owns shutdown until its child exits, so it bypasses the Effect CLI runtime.
+  // The service unit passes no arguments; flags and help go through the full CLI.
+  if (command === "__service-launcher" && process.argv.length === 3) {
+    const { runServiceLauncherCli } = await import("./cli/serviceLauncher.ts");
+    await runServiceLauncherCli();
   } else {
-    enableCliCompileCache();
-    // Windows desktop launches without stdin; attach before reading, except on fast paths using pipes.
-    const { attachConsoleStdin } = await import("./cli/consoleStdin.ts");
-    attachConsoleStdin();
-    const importStart = performance.now();
-    const { runCli } = await import("./binCli.ts");
-    if (process.env.HOUSTON_STARTUP_PROFILE_DIR) {
-      performance.measure("server.import.binCli", { start: importStart });
+    // Guard sockets before either dispatch path can load outbound-capable modules.
+    const { ignoreMacosTypeOfServiceEinval } = await import("./outboundHttp.ts");
+    ignoreMacosTypeOfServiceEinval();
+    if (command === "__document-text") {
+      const { extractDocumentText } = await import("./provider/documentTextWorker.ts");
+      try {
+        process.stdout.write(await extractDocumentText(process.argv[3]!, process.argv[4]!));
+      } catch (error) {
+        if (error instanceof Error && "code" in error && /^E[A-Z0-9]+$/.test(String(error.code))) {
+          throw error;
+        }
+        // Exit 2 identifies document rejections; OS and process failures remain retryable.
+        process.exitCode = 2;
+      }
+    } else if (command === "__managed-chatgpt-token") {
+      const { runManagedChatGptTokenCli } = await import("./cli/managedChatGptToken.ts");
+      await runManagedChatGptTokenCli(process.argv.slice(3));
+    } else if (command === "acp-mcp-bridge" || command === "acp-mcp-call") {
+      const { runAcpMcpCliFastPath } = await import("./mcp/AcpMcpStdioBridge.ts");
+      await runAcpMcpCliFastPath(command, process.argv.slice(3));
+    } else if (command === "__ssh-bridge") {
+      const { runDesktopSshBridge } = await import("./desktopSshBridge.ts");
+      await runDesktopSshBridge();
+    } else if (command === "__speech-worker") {
+      const { runSpeechWorker } = await import("./speech/nativeWorker.ts");
+      await runSpeechWorker();
+    } else {
+      enableCliCompileCache();
+      // Windows desktop launches without stdin; attach before reading, except on fast paths using pipes.
+      const { attachConsoleStdin } = await import("./cli/consoleStdin.ts");
+      attachConsoleStdin();
+      const importStart = performance.now();
+      const { runCli } = await import("./binCli.ts");
+      if (process.env.HOUSTON_STARTUP_PROFILE_DIR) {
+        performance.measure("server.import.binCli", { start: importStart });
+      }
+      runCli();
     }
-    runCli();
   }
 }

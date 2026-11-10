@@ -15,7 +15,7 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as SqlClient from "effect/sql/SqlClient";
 
-import { HoustonKeychain } from "../secrets/HoustonKeychain.ts";
+import { HoustonSecrets } from "../secrets/HoustonSecrets.ts";
 import { HoustonTaskTransitions, nowIso, type TaskTransition } from "../tasks/TaskStore.ts";
 import { GitHubRequestTimeout, describeGitHubError } from "./GitHubSource.ts";
 import { NotionClient, writeNotion } from "./NotionClient.ts";
@@ -25,7 +25,6 @@ import {
   OUTBOX_BATCH,
   POLL_INTERVAL_SECONDS,
   SUPERSEDED,
-  TOKEN_ACCOUNT,
   TOKEN_MISSING,
   TOKEN_UNAVAILABLE,
   WRITE_LIMITS,
@@ -42,6 +41,7 @@ import {
   retryDelayMillis,
   statusComment,
   syncStateOf,
+  trackerSecretName,
   writebackActions,
   type OutboxEntry,
   type StoredSettings,
@@ -56,6 +56,7 @@ import {
   settingsFromRow,
   type SourceEvent,
 } from "./SourceStore.ts";
+import * as WideEvents from "../observability/WideEvents.ts";
 
 type Json = Readonly<Record<string, unknown>>;
 const JsonText = Schema.fromJsonString(Schema.Unknown);
@@ -390,7 +391,7 @@ export class HoustonTaskSourceOutboxDrain extends Context.Service<
 const makeDrain = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const store = yield* HoustonTaskSourceStore;
-  const keychain = yield* HoustonKeychain;
+  const secrets = yield* HoustonSecrets;
   const github = yield* GitHubRest.GitHubRest;
   const notion = yield* NotionClient;
   const reads = makeReads(sql);
@@ -831,9 +832,7 @@ const makeDrain = Effect.gen(function* () {
       if (written._tag === "Failure") return yield* failed(row, target, written.failure);
       receipt = written.success;
     } else {
-      const read = yield* Effect.result(
-        keychain.get(store.tokenService(row.project_id, "notion"), TOKEN_ACCOUNT),
-      );
+      const read = yield* Effect.result(secrets.get(trackerSecretName(row.project_id, "notion")));
       if (read._tag === "Failure") return yield* failed(row, target, TOKEN_UNAVAILABLE);
       if (Option.isNone(read.success)) return yield* failed(row, target, TOKEN_MISSING);
       const written = yield* Effect.result(
@@ -857,19 +856,25 @@ const makeDrain = Effect.gen(function* () {
     lock.withPermits(1)(
       Effect.gen(function* () {
         const now = yield* nowIso;
-        const rows = yield* run(sql<OutboxRow>`
-          SELECT id, project_id, task_id, provider, action, revision, payload_json, attempts
-          FROM houston_task_source_outbox
-          WHERE receipt_json IS NULL AND next_attempt_at <= ${now}
-          ORDER BY id LIMIT ${limit}
-        `);
-        for (const row of rows) {
-          yield* send(row).pipe(
-            Effect.catchCause((cause) =>
-              Effect.logWarning(`Task source write-back row ${row.id} failed.`, cause),
+        const rows = yield* WideEvents.findWork(
+          run(sql<OutboxRow>`
+            SELECT id, project_id, task_id, provider, action, revision, payload_json, attempts
+            FROM houston_task_source_outbox
+            WHERE receipt_json IS NULL AND next_attempt_at <= ${now}
+            ORDER BY id LIMIT ${limit}
+          `),
+        );
+        if (rows.length === 0) return 0;
+        yield* Effect.forEach(
+          rows,
+          (row) =>
+            send(row).pipe(
+              Effect.catchCause((cause) =>
+                Effect.logWarning(`Task source write-back row ${row.id} failed.`, cause),
+              ),
             ),
-          );
-        }
+          { discard: true },
+        ).pipe(WideEvents.jobTick("taskSources.writeBack"));
         return rows.length;
       }),
     );

@@ -1,29 +1,30 @@
 import { useEffect, useRef, useState, type ComponentType, type KeyboardEvent } from "react";
 import {
+  ActivityIcon,
   ArchiveIcon,
-  ChevronLeftIcon,
-  FlaskConicalIcon,
   BotIcon,
-  createLucideIcon,
   CalendarClockIcon,
-  FileDiffIcon,
-  FolderTreeIcon,
+  ChevronLeftIcon,
+  createLucideIcon,
+  FlaskConicalIcon,
+  FolderGit2Icon,
+  FolderIcon,
   GitBranchIcon,
+  GitCompareArrowsIcon,
   GlobeIcon,
   InfoIcon,
-  MessageSquareTextIcon,
-  MessagesSquareIcon,
-  PanelsTopLeftIcon,
   KeyboardIcon,
   KeyRoundIcon,
+  ListChecksIcon,
+  MessageSquareTextIcon,
+  MessagesSquareIcon,
   MicIcon,
   PaletteIcon,
-  PlugIcon,
   SearchIcon,
   ServerIcon,
   Settings2Icon,
   ShieldCheckIcon,
-  SmartphoneIcon,
+  TabletSmartphoneIcon,
   WrenchIcon,
   XIcon,
 } from "lucide-react";
@@ -33,7 +34,12 @@ import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { Kbd } from "../ui/kbd";
 import {
-  SidebarContent,
+  PHONE_NAV_ROW_CLS,
+  PHONE_PAGE_BAR_SIDEBAR_CLS,
+  PHONE_PAGE_BAR_TITLE_CLS,
+} from "../ui/phone-recipes";
+import { ScrollArea } from "../ui/scroll-area";
+import {
   SidebarFooter,
   SidebarGroup,
   SidebarMenu,
@@ -72,23 +78,23 @@ const SETTINGS_SECTION_ICONS: Readonly<
   Record<SettingsPath, ComponentType<{ className?: string }>>
 > = {
   "/settings/general": Settings2Icon,
-  "/settings/diagnostics": WrenchIcon,
+  "/settings/diagnostics": ActivityIcon,
   "/settings/voice": MicIcon,
   "/settings/appearance": PaletteIcon,
   "/settings/chat": MessageSquareTextIcon,
-  "/settings/diffs": FileDiffIcon,
-  "/settings/projects": PanelsTopLeftIcon,
+  "/settings/diffs": GitCompareArrowsIcon,
+  "/settings/projects": FolderIcon,
   "/settings/keybindings": KeyboardIcon,
   "/settings/snap-shot": SnapShotIcon,
   "/settings/providers": BotIcon,
   "/settings/threads": MessagesSquareIcon,
   "/settings/browser": GlobeIcon,
-  "/settings/devices": SmartphoneIcon,
+  "/settings/devices": TabletSmartphoneIcon,
   "/settings/scheduled-tasks": CalendarClockIcon,
   "/settings/source-control": GitBranchIcon,
-  "/settings/worktrees": FolderTreeIcon,
+  "/settings/worktrees": FolderGit2Icon,
   "/settings/connections": ServerIcon,
-  "/settings/task-sources": PlugIcon,
+  "/settings/task-sources": ListChecksIcon,
   "/settings/access": ShieldCheckIcon,
   "/settings/secrets": KeyRoundIcon,
   "/settings/maintenance": WrenchIcon,
@@ -113,7 +119,19 @@ function SettingsSectionIcon({ to }: { to: SettingsPath }) {
   return <Icon className="size-4 shrink-0 text-(--sidebar-icon-color)" />;
 }
 
-export function SettingsSidebarNav({ pathname }: { pathname: string }) {
+const LEADING_HASH = /^#/;
+
+export function SettingsSidebarNav({
+  pathname,
+  phonePage = false,
+  onNavigate,
+}: {
+  pathname: string;
+  /** A phone shows the section list as its own page, so it takes the width and names every row. */
+  phonePage?: boolean;
+  /** Called after a section or search result is chosen, so the page can reveal the content. */
+  onNavigate?: () => void;
+}) {
   const navArea = workspaceAreaProps("settings-nav", 0, "Settings sections");
   const navigate = useNavigate();
   const closeAppModal = useCloseAppModal();
@@ -190,6 +208,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
       replace: true,
       hashScrollIntoView: false,
     });
+    onNavigate?.();
   };
 
   const clearSearch = () => {
@@ -199,9 +218,10 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   const handleSearchResultClick = (item: SettingsSearchItem) => {
     clearSearch();
     setCompactSearchOpen(false);
+    onNavigate?.();
     const targetId = item.targetId ?? item.id;
     revealSettingsSearchTarget(targetId);
-    if (pathname === item.to && currentHash.replace(/^#/, "") === targetId) {
+    if (pathname === item.to && currentHash.replace(LEADING_HASH, "") === targetId) {
       scrollToSettingsTarget(targetId);
       return;
     }
@@ -244,26 +264,46 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
       {...navArea}
       role="navigation"
       className={cn(
-        "flex w-[264px] shrink-0 flex-col border-e bg-sidebar text-sidebar-foreground max-md:w-14",
-        compactSearchOpen &&
-          "max-md:absolute max-md:inset-y-0 max-md:start-0 max-md:z-10 max-md:w-full",
+        "flex min-h-0 shrink-0 flex-col overflow-hidden bg-sidebar text-sidebar-foreground",
+        phonePage
+          ? "w-full"
+          : cn(
+              "w-[264px] border-e max-md:w-14",
+              compactSearchOpen &&
+                "max-md:absolute max-md:inset-y-0 max-md:start-0 max-md:z-10 max-md:w-full",
+            ),
       )}
     >
-      <div
-        className={cn(
-          "flex h-9 shrink-0 items-center px-3.5 text-[13px] font-semibold text-sidebar-foreground mt-2",
-          !compactSearchOpen && "max-md:hidden",
-        )}
+      {phonePage ? (
+        <div className={PHONE_PAGE_BAR_SIDEBAR_CLS}>
+          <span className={PHONE_PAGE_BAR_TITLE_CLS}>Settings</span>
+        </div>
+      ) : (
+        <div
+          className={cn(
+            "flex h-9 shrink-0 items-center px-3.5 text-[13px] font-semibold text-sidebar-foreground mt-2",
+            !compactSearchOpen && "max-md:hidden",
+          )}
+        >
+          Settings
+        </div>
+      )}
+      <ScrollArea
+        hideScrollbars
+        scrollFade
+        scrollFadePadding={false}
+        viewportTabIndex={-1}
+        // The list fades at both edges, so the rows cut by the search above and the pinned
+        // Back row below read as scrollable instead of clipped.
+        className="min-h-0 flex-1 [&>[data-slot=scroll-area-viewport]]:[--fade-size:1.5rem]"
       >
-        Settings
-      </div>
-      <SidebarContent className="overflow-x-hidden">
-        <SidebarGroup>
-          <div className="flex flex-col gap-2">
+        <SidebarGroup className="overflow-x-hidden">
+          <div className={cn("flex flex-col gap-2", phonePage && "-mx-2")}>
             <div
               className={cn(
                 "flex h-7 items-center gap-2 rounded-md px-2 text-[13px] font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
-                !compactSearchOpen && "max-md:hidden",
+                phonePage && PHONE_NAV_ROW_CLS,
+                !compactSearchOpen && !phonePage && "max-md:hidden",
               )}
             >
               <SearchIcon className="size-4 shrink-0 text-sidebar-muted-foreground/80" />
@@ -308,7 +348,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                 >
                   <XIcon className="size-3" />
                 </Button>
-              ) : (
+              ) : phonePage ? null : (
                 <Kbd className="h-4 min-w-4 rounded px-1 text-[11px]">/</Kbd>
               )}
             </div>
@@ -358,7 +398,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
               </SidebarMenu>
             ) : (
               <div className="flex flex-col gap-4">
-                {compactSearchOpen ? null : (
+                {compactSearchOpen || phonePage ? null : (
                   <SidebarMenu className="md:hidden">
                     <SidebarMenuItem>
                       <SidebarMenuButton
@@ -374,7 +414,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                   {...sectionNavigation.containerProps}
                   role="tree"
                   aria-label="Settings sections"
-                  className="flex flex-col gap-4"
+                  className="flex flex-col gap-2.5"
                 >
                   {SETTINGS_NAV_GROUPS.map((group, index) => (
                     <div
@@ -389,7 +429,8 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                           aria-hidden="true"
                           className={cn(
                             "px-2 text-[11px] leading-[14px] font-semibold text-sidebar-muted-foreground",
-                            !compactSearchOpen && "max-md:hidden",
+                            phonePage && "px-4",
+                            !compactSearchOpen && !phonePage && "max-md:hidden",
                           )}
                         >
                           {group.heading}
@@ -398,7 +439,9 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                       <SidebarMenu role="presentation" className="gap-px">
                         {group.paths.map((to) => {
                           const Icon = SETTINGS_SECTION_ICONS[to];
-                          const isActive = activePath === to || activePath.startsWith(`${to}/`);
+                          // The phone index is a list of destinations: none is open there.
+                          const isActive =
+                            !phonePage && (activePath === to || activePath.startsWith(`${to}/`));
                           return (
                             <SidebarMenuItem key={to} role="presentation">
                               <SidebarMenuButton
@@ -408,12 +451,19 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                                 aria-selected={isActive}
                                 aria-current={isActive ? "page" : undefined}
                                 isActive={isActive}
-                                className="h-7 gap-2 px-2 text-[13px] font-medium text-sidebar-muted-foreground"
+                                size={phonePage ? "phone" : undefined}
+                                className={cn(
+                                  "gap-2 text-[13px] font-medium text-sidebar-muted-foreground",
+                                  !phonePage && "h-7 px-2",
+                                )}
                                 onClick={() => handleSectionClick(to)}
                               >
                                 <Icon />
                                 <span
-                                  className={cn("truncate", !compactSearchOpen && "max-md:sr-only")}
+                                  className={cn(
+                                    "truncate",
+                                    !compactSearchOpen && !phonePage && "max-md:sr-only",
+                                  )}
                                 >
                                   {SETTINGS_SECTION_LABELS[to]}
                                 </span>
@@ -429,22 +479,26 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
             )}
           </div>
         </SidebarGroup>
-      </SidebarContent>
-      <SidebarFooter className="max-md:hidden">
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              size="sm"
-              className="h-7 gap-2 px-2 text-[13px] font-medium text-sidebar-muted-foreground"
-              onClick={() => void closeAppModal()}
-            >
-              <ChevronLeftIcon />
-              <span>Back</span>
-              <Kbd className="ms-auto h-4 min-w-4 rounded px-1 text-[11px]">Esc</Kbd>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarFooter>
+        {/* Room for the last row to clear the fade where the list meets the pinned Back row. */}
+        <div aria-hidden className="h-2 shrink-0" />
+      </ScrollArea>
+      {phonePage ? null : (
+        <SidebarFooter className="shrink-0 max-md:hidden">
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                size="sm"
+                className="h-7 gap-2 px-2 text-[13px] font-medium text-sidebar-muted-foreground"
+                onClick={() => void closeAppModal()}
+              >
+                <ChevronLeftIcon />
+                <span>Back</span>
+                <Kbd className="ms-auto h-4 min-w-4 rounded px-1 text-[11px]">Esc</Kbd>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarFooter>
+      )}
     </nav>
   );
 }

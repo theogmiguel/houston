@@ -42,8 +42,10 @@ export function readConnectAuthorizeRequest(url: URL): ConnectAuthorizeRequest |
   return { state, challenge, loopbackPort };
 }
 
+const PORT_DIGITS = /^\d{1,5}$/;
+
 function parseLoopbackPort(value: string): number | null {
-  if (!/^\d{1,5}$/.test(value)) {
+  if (!PORT_DIGITS.test(value)) {
     return null;
   }
   const port = Number(value);

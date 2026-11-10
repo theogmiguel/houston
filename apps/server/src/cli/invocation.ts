@@ -63,14 +63,17 @@ export const resolveEntryPath = Effect.gen(function* () {
   return (yield* HostProcess.Arguments)[1] ?? "";
 });
 
+const GLOBAL_INSTALL_PATH =
+  /^(.*)\/lib\/node_modules\/houston-app\/(?:dist\/bin\.mjs|bin\/houston\.mjs)$/;
+const HOMEBREW_CELLAR_SEGMENT = /\/(?:Cellar|Caskroom)\//i;
+const MISE_INSTALL_SEGMENT = /\/mise\/installs\/(?!node\/)[^/]+\//;
+
 export const resolveServerInstallation = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const platform = yield* HostProcess.Platform;
   const entry = yield* fs.realPath(yield* resolveEntryPath);
-  const match = /^(.*)\/lib\/node_modules\/houston-app\/(?:dist\/bin\.mjs|bin\/houston\.mjs)$/.exec(
-    entry,
-  );
+  const match = GLOBAL_INSTALL_PATH.exec(entry);
   if (!match) {
     const runner = detectCliRunner(entry);
     return runner === null
@@ -81,8 +84,8 @@ export const resolveServerInstallation = Effect.gen(function* () {
   const prefix = match[1] || "/";
   if (
     prefix.includes("/node_modules/") ||
-    /\/(?:Cellar|Caskroom)\//i.test(prefix) ||
-    /\/mise\/installs\/(?!node\/)[^/]+\//.test(prefix)
+    HOMEBREW_CELLAR_SEGMENT.test(prefix) ||
+    MISE_INSTALL_SEGMENT.test(prefix)
   )
     return null;
 
@@ -97,9 +100,11 @@ export const resolveServerInstallation = Effect.gen(function* () {
   return { kind: "npm-global", prefix } satisfies ServerInstallation;
 }).pipe(Effect.orElseSucceed(() => null));
 
+const CHANNEL_PATTERN = /^[^-+]+-(nightly|preview)\./;
+
 /** The original package spec is unavailable at startup; infer its channel from the version. */
 function suggestedPackageSpec(version: string): string {
-  const channel = /^[^-+]+-(nightly|preview)\./.exec(version)?.[1];
+  const channel = CHANNEL_PATTERN.exec(version)?.[1];
   return channel === undefined ? SERVER_PACKAGE_NAME : `${SERVER_PACKAGE_NAME}@${channel}`;
 }
 
@@ -120,15 +125,16 @@ export const resolveCliCommand = (subcommand: string) =>
     formatCliCommand({ subcommand, entryPath, version: packageJson.version }),
   );
 
+const SHELL_WORD_PATTERN = /^[\w@%+=:,./-]+$/;
+
 const shellWord = (value: string) =>
-  /^[\w@%+=:,./-]+$/.test(value) ? value : `'${value.replaceAll("'", `'"'"'`)}'`;
+  SHELL_WORD_PATTERN.test(value) ? value : `'${value.replaceAll("'", `'"'"'`)}'`;
+
+const POWERSHELL_WORD_PATTERN = /["\u201C\u201D\u201E]/g;
 
 /** PowerShell also treats typographic quotes as delimiters; escape them and suppress expansion. */
 const powershellWord = (value: string) =>
-  `"${value
-    .replaceAll("`", "``")
-    .replaceAll("$", "`$")
-    .replace(/["\u201C\u201D\u201E]/g, "$&$&")}"`;
+  `"${value.replaceAll("`", "``").replaceAll("$", "`$").replace(POWERSHELL_WORD_PATTERN, "$&$&")}"`;
 
 const hostShellWord = (platform: NodeJS.Platform, value: string) =>
   platform === "win32" ? powershellWord(value) : shellWord(value);

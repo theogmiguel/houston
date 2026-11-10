@@ -1,6 +1,7 @@
 import { EnvironmentId, ThreadId, type ProjectReadFileResult } from "@houston-app/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { describe, expect, it, vi } from "vite-plus/test";
+import { page } from "vite-plus/test/browser";
 import { act, fakeTimers, render } from "../../../test/render";
 
 const state = vi.hoisted(() => ({
@@ -128,6 +129,8 @@ function markdownPreview(truncated: boolean) {
 
 describe("rendered Markdown task saves", () => {
   it("keeps a truncated read read-only without queuing a replacement", async () => {
+    // A desktop viewport: the phone treats every file as read-only.
+    await page.viewport(1024, 800);
     using _settings = setup();
     await using screen = await render(markdownPreview(true));
     using _timers = fakeTimers();
@@ -143,6 +146,8 @@ describe("rendered Markdown task saves", () => {
   });
 
   it("still toggles and saves tasks from a complete read", async () => {
+    // A desktop viewport: the phone treats every file as read-only.
+    await page.viewport(1024, 800);
     using _settings = setup();
     await using screen = await render(markdownPreview(false));
     using _timers = fakeTimers();

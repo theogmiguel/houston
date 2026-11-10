@@ -41,6 +41,9 @@ async function read(start: number, end: number) {
   }
   return new TextDecoder("utf-8", { fatal: true }).decode(await new Blob(parts).arrayBuffer());
 }
+const TRAILING_LINE_BREAK = /\r?\n$|\r$/;
+const LINE_BREAK = /\r\n|\n|\r/;
+
 async function page(index: number) {
   const start = index * PREVIEW_PAGE_ROWS;
   const end = Math.min(entries - 1, start + PREVIEW_PAGE_ROWS);
@@ -53,8 +56,8 @@ async function page(index: number) {
         maxCellLength: 1024 * 1024,
       }).rows
     : text
-        .replace(/\r?\n$|\r$/, "")
-        .split(/\r\n|\n|\r/)
+        .replace(TRAILING_LINE_BREAK, "")
+        .split(LINE_BREAK)
         .map((line) => [line]);
   reply({ type: "page", index, rows });
 }

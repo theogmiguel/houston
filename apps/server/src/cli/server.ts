@@ -8,7 +8,6 @@ import * as CliError from "effect/cli/CliError";
 
 import * as ServerConfig from "../config.ts";
 import { HostedLaunch, isHostedLaunch, withHostedBaseDir } from "../houston/baseDir.ts";
-import { withoutTelemetry } from "../houston/noTelemetry.ts";
 import { awaitLauncherLoss } from "../launcherWatch.ts";
 import { runServer } from "../server.ts";
 import { type CliServerFlags, resolveServerConfig, sharedServerCommandFlags } from "./config.ts";
@@ -31,10 +30,8 @@ const runServerCommand = Effect.fn("server.runServerCommand")(function* (
   },
 ) {
   const logLevel = yield* GlobalFlag.LogLevel;
-  const config = withoutTelemetry(
-    yield* withHostedBaseDir(flags, (hostedFlags) =>
-      resolveServerConfig(hostedFlags, logLevel, options),
-    ),
+  const config = yield* withHostedBaseDir(flags, (hostedFlags) =>
+    resolveServerConfig(hostedFlags, logLevel, options),
   );
   const run = runServer.pipe(
     Effect.provideService(ServerConfig.ServerConfig, config),
@@ -57,6 +54,9 @@ const runServerCommand = Effect.fn("server.runServerCommand")(function* (
   );
 });
 
+const PATH_SEPARATOR = /[/\\]/;
+const WINDOWS_DRIVE_PREFIX = /^[a-z]:/i;
+
 export const runDefaultServerCommand = Effect.fn("server.runDefaultServerCommand")(function* (
   flags: CliServerFlags,
 ) {
@@ -68,8 +68,8 @@ export const runDefaultServerCommand = Effect.fn("server.runDefaultServerCommand
       cwd === "." ||
       cwd === ".." ||
       cwd === "~" ||
-      /[/\\]/.test(cwd) ||
-      (platform === "win32" && /^[a-z]:/i.test(cwd));
+      PATH_SEPARATOR.test(cwd) ||
+      (platform === "win32" && WINDOWS_DRIVE_PREFIX.test(cwd));
     if (!explicitPath && (!(yield* fs.exists(cwd)) || (yield* fs.stat(cwd)).type !== "Directory")) {
       return yield* new CliError.UserError({
         cause: cwd,

@@ -3,6 +3,7 @@ import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 
 import { ThreadId, TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
+import { SecretLiteral } from "./settingsSecretValue.ts";
 
 export const DevicePlatform = Schema.Literals(["ios", "android"]);
 export type DevicePlatform = typeof DevicePlatform.Type;
@@ -44,7 +45,7 @@ export const EasDeviceHostConfig = Schema.Struct({
    * EXPO_TOKEN, then the `eas login` session. This is `secretSetting` from
    * settings.ts, which imports this module.
    */
-  accessToken: TrimmedString.pipe(
+  accessToken: SecretLiteral.pipe(
     Schema.withDecodingDefaultKey(Effect.succeed("")),
     Schema.annotateKey({ settingsSecret: true }),
   ),
@@ -79,7 +80,7 @@ export const SimlockDeviceHostConfig = Schema.Struct({
   /** The gateway's origin, such as https://gateway.example.ts.net:4700. */
   gatewayUrl: TrimmedNonEmptyString.check(Schema.isPattern(/^https?:\/\/[^\s/]+\/?$/)),
   /** Leases, drives, watches, and takes input on its own leases. Kept in the secret store. */
-  agentToken: TrimmedString.pipe(
+  agentToken: SecretLiteral.pipe(
     Schema.withDecodingDefaultKey(Effect.succeed("")),
     Schema.annotateKey({ settingsSecret: true }),
   ),
@@ -116,7 +117,7 @@ export const SimlockDeviceHostConfigs = Schema.Array(SimlockDeviceHostConfig).ch
 export const DeviceEasAccountInput = Schema.Struct({
   /** A saved EAS host whose stored token is checked when no new token is given. */
   hostId: Schema.optional(DeviceHostId),
-  accessToken: Schema.optional(TrimmedString),
+  accessToken: Schema.optional(SecretLiteral),
 });
 export type DeviceEasAccountInput = typeof DeviceEasAccountInput.Type;
 
@@ -132,7 +133,7 @@ export const DeviceSimlockIdentityInput = Schema.Struct({
   gatewayUrl: Schema.optional(TrimmedString),
   /** A saved Simlock host whose stored token is checked when no new token is given. */
   hostId: Schema.optional(DeviceHostId),
-  agentToken: Schema.optional(TrimmedString),
+  agentToken: Schema.optional(SecretLiteral),
 });
 export type DeviceSimlockIdentityInput = typeof DeviceSimlockIdentityInput.Type;
 
@@ -252,6 +253,7 @@ export const DeviceHostStatuses = Schema.Record(
     status: DeviceHostStatus,
     detail: Schema.optional(Schema.String),
     androidDiscoveryIncomplete: Schema.optional(Schema.Boolean),
+    incompletePlatforms: Schema.optional(Schema.Array(DevicePlatform)),
   }),
 );
 

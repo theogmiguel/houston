@@ -88,7 +88,16 @@ const taskCacheConfig = {
 export default defineConfig({
   run: {
     cache: taskCacheConfig,
-    tasks: cachedTestTasks(process.env.HOUSTON_CACHED_TESTS),
+    tasks: {
+      ...cachedTestTasks(process.env.HOUSTON_CACHED_TESTS),
+      // The two knip passes read the same files and write nothing, so they run side by side.
+      // The `knip:check` script runs this task, so `vp run knip:check` and `pnpm run knip:check` both use it.
+      "knip:check:all": {
+        command: 'node -e ""',
+        dependsOn: ["knip:check:files", "knip:check:exports"],
+        cache: false,
+      },
+    },
   },
   resolve: {
     alias: {
@@ -312,6 +321,84 @@ export default defineConfig({
         rules: { "houston/prefer-effect-fn": "off" },
       },
       {
+        // Server code: exported and service-member functions that return an Effect, Stream or
+        // Promise open a span at their definition.
+        files: [
+          "apps/server/src/**",
+          "packages/*/src/server/**",
+          "packages/{effect-acp,effect-codex-app-server,ssh,tailscale,provider-core,secret-provider-core,shared}/src/**",
+        ],
+        rules: { "houston/require-traced-definition": "error" },
+      },
+      {
+        files: [
+          "**/*.{test,spec,testkit}.{ts,tsx}",
+          "**/{test,tests,testkit,testing,testUtils,fixtures,integration,_generated}/**",
+          "packages/provider-testing/**",
+        ],
+        rules: { "houston/require-traced-definition": "off" },
+      },
+      {
+        // Directories not yet traced at every definition. The PR that converts a directory
+        // removes its entry; the list is empty when the rollout ends.
+        files: [
+          "apps/server/src/*.ts",
+          "apps/server/src/assets/**",
+          "apps/server/src/auth/**",
+          "apps/server/src/cli/**",
+          "apps/server/src/cloud/**",
+          "apps/server/src/device/**",
+          "apps/server/src/diagnostics/**",
+          "apps/server/src/git/**",
+          "apps/server/src/houston/*.ts",
+          "apps/server/src/houston/mergeQueue/**",
+          "apps/server/src/houston/secrets/**",
+          "apps/server/src/houston/slack/**",
+          "apps/server/src/houston/taskSources/**",
+          "apps/server/src/houston/tasks/**",
+          "apps/server/src/mcp/**",
+          "apps/server/src/observability/**",
+          "apps/server/src/orchestration-v2/**",
+          "apps/server/src/peer/**",
+          "apps/server/src/persistence/**",
+          "apps/server/src/preview/**",
+          "apps/server/src/process/**",
+          "apps/server/src/project/**",
+          "apps/server/src/provider/**",
+          "apps/server/src/pullRequest/**",
+          "apps/server/src/resourceTelemetry/**",
+          "apps/server/src/scheduledTasks/**",
+          "apps/server/src/scheduling/**",
+          "apps/server/src/sourceControl/**",
+          "apps/server/src/speech/**",
+          "apps/server/src/terminal/**",
+          "apps/server/src/usage/**",
+          "apps/server/src/vcs/**",
+          "apps/server/src/workspace/**",
+          "packages/effect-acp/src/**",
+          "packages/effect-codex-app-server/src/**",
+          "packages/provider-acp-registry/src/**",
+          "packages/provider-acp/src/**",
+          "packages/provider-core/src/**",
+          "packages/provider-cursor/src/**",
+          "packages/provider-fx/src/**",
+          "packages/provider-grok/src/**",
+          "packages/provider-muse/src/**",
+          "packages/provider-opencode/src/**",
+          "packages/provider-pi/src/**",
+          "packages/secret-provider-core/src/**",
+          "packages/shared/src/**",
+          "packages/source-control-bitbucket/src/**",
+          "packages/source-control-core/src/**",
+          "packages/source-control-gitcafe/src/**",
+          "packages/source-control-github/src/**",
+          "packages/source-control-gitlab/src/**",
+          "packages/ssh/src/**",
+          "packages/tailscale/src/**",
+        ],
+        rules: { "houston/require-traced-definition": "off" },
+      },
+      {
         files: ["apps/web/**/*.test.{ts,tsx}"],
         rules: { "houston/require-disposable-render": "error" },
       },
@@ -322,6 +409,15 @@ export default defineConfig({
       {
         files: ["apps/**/src/**", "packages/**/src/**"],
         rules: { "houston/no-dom-test-environment": "error" },
+      },
+      {
+        // The host is outside this rule; existing sites are counted in scripts/lint-baseline.json.
+        files: ["apps/server/src/**", "apps/web/src/**", "packages/*/src/**"],
+        excludeFiles: [
+          "**/*.{test,spec,testkit,fixture}.{ts,tsx}",
+          "**/{test,tests,testkit,testing,fixtures}/**",
+        ],
+        rules: { "houston/no-function-scoped-regex": "error" },
       },
       {
         files: ["packages/client-runtime/src/state/**", "apps/{web,mobile,desktop}/src/**"],
@@ -489,6 +585,10 @@ export default defineConfig({
       {
         files: ["apps/web/src/**"],
         rules: { "houston/no-outset-state-indicators": "error" },
+      },
+      {
+        files: ["apps/web/src/**"],
+        rules: { "houston/max-settings-description-length": "error" },
       },
       {
         // Warn while the motion standard rolls out; it becomes an error once every surface names a role.

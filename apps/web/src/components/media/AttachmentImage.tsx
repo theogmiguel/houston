@@ -6,11 +6,14 @@ type AttachmentImageProps = ComponentProps<"img"> & { name: string; mimeType?: s
 // Keep import expressions outside hooks until React Compiler supports them.
 const loadImageDecoder = () => import("../files/decodeImagePreview");
 
+const TIFF_SUFFIX = /\.tiff?$/i;
+const TIFF_MIME_TYPE = /^image\/tiff$/i;
+
 export function AttachmentImage({ name, mimeType, ...props }: AttachmentImageProps) {
   const fallback =
     isHeicImageFile({ name, type: mimeType ?? "" }) ||
-    /\.tiff?$/i.test(name) ||
-    /^image\/tiff$/i.test(mimeType ?? "");
+    TIFF_SUFFIX.test(name) ||
+    TIFF_MIME_TYPE.test(mimeType ?? "");
   return fallback ? (
     <DecodedImage key={props.src} {...props} name={name} mimeType={mimeType} />
   ) : (
@@ -19,6 +22,9 @@ export function AttachmentImage({ name, mimeType, ...props }: AttachmentImagePro
 }
 
 type DecodeAttempt = { readonly controller: AbortController; objectUrl?: string };
+
+const HEIC_SUFFIX = /\.hei[cf]$/i;
+const HEIC_MIME_TYPE = /^image\/hei[cf]$/i;
 
 function DecodedImage({ name, mimeType, src, onError, ...props }: AttachmentImageProps) {
   const [previewUrl, setPreviewUrl] = useState<string>();
@@ -36,7 +42,7 @@ function DecodedImage({ name, mimeType, src, onError, ...props }: AttachmentImag
         if (signal.aborted) return;
         const blob = await decodeImagePreview(
           src,
-          /\.hei[cf]$/i.test(name) || /^image\/hei[cf]$/i.test(mimeType ?? ""),
+          HEIC_SUFFIX.test(name) || HEIC_MIME_TYPE.test(mimeType ?? ""),
           signal,
         );
         if (signal.aborted) return;

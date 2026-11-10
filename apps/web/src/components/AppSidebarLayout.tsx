@@ -2,12 +2,13 @@ import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
 import {
   useEffect,
+  useRef,
   useState,
   useSyncExternalStore,
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { useLocation, useRouter, type AnyRouter } from "@tanstack/react-router";
+import { useLocation, useMatches, useRouter, type AnyRouter } from "@tanstack/react-router";
 
 import { moveWorkspaceFocus, workspaceAreaProps } from "../lib/workspaceFocus";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
@@ -31,18 +32,11 @@ import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { cn, isMacPlatform } from "../lib/utils";
 import { primaryServerKeybindingsAtom } from "../state/server";
-import { useEnvironmentIdentificationMode } from "../hooks/useSettings";
-import {
-  PanelAnimationSuppressionProvider,
-  usePanelAnimationSettings,
-  usePanelNavigationSuppression,
-} from "../panelAnimations";
 import { BackgroundThreadAnnouncer } from "./BackgroundThreadAnnouncer";
 import { GridSidebar } from "./grid/GridSidebar";
 import { ThreadDragOverlay } from "./ui/thread-drag-overlay";
 import { SidebarBrandWidthProbe } from "./sidebar/SidebarChrome";
 import { isAppModalPage } from "./sidebar/mainAppLocation";
-import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
 import {
   clampThreadSidebarWidth,
   resolveInitialThreadSidebarWidth,
@@ -63,6 +57,8 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { registerCommands, registerMenuAction } from "../shortcuts/dispatcher";
 import { resolveThreadRouteRef } from "../threadRoutes";
+import { PhoneShell } from "../mobile/PhoneTabBar";
+import { useIsPhone } from "../mobile/usePhone";
 
 const MACOS_TRAFFIC_LIGHTS_LEFT_INSET = "var(--desktop-window-controls-inset, 90px)";
 
@@ -289,6 +285,8 @@ function registerThreadUndoCommands(
   };
 }
 
+const REGISTER_APP_SHELL_COMMANDS_PATTERN = /^\/settings(\/|$)/;
+
 /** Keyboard and menu commands that live as long as the app shell. */
 function registerAppShellCommands(router: AnyRouter, shellElement: Element): () => void {
   // The provider mirrors the visibility it renders onto its wrapper, so the
@@ -302,7 +300,7 @@ function registerAppShellCommands(router: AnyRouter, shellElement: Element): () 
     registerWorkspaceFocusCommands(router),
     registerPullRequestsEscapeCommand(router),
     registerMenuAction("open-settings", () => {
-      if (!/^\/settings(\/|$)/.test(router.state.location.pathname))
+      if (!REGISTER_APP_SHELL_COMMANDS_PATTERN.test(router.state.location.pathname))
         void router.navigate({ to: "/settings" });
     }),
   ];
@@ -317,15 +315,42 @@ function SidebarControl() {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { toggleSidebar, isMobile, mobileSheetMounted } = useSidebar();
   const isSidebarVisible = useSidebarVisibility();
-  const environmentIdentificationMode = useEnvironmentIdentificationMode();
-  const stageBackdropVariant = useSidebarStageBackdropVariant(environmentIdentificationMode);
+  const isPhone = useIsPhone();
+  // On a phone the rail is the home page, the tab bar reaches the top-level pages, and a thread's
+  // own bar carries the way back.
+  // A drawer there would mount a second rail or repeat the bar's back control.
+  const phonePageOwnsNavigation = useMatches({
+    select: (matches) => {
+      const routeId = matches.at(-1)?.routeId;
+      return (
+        routeId === "/_chat/" ||
+        routeId === "/_chat/pull-requests" ||
+        routeId === "/_chat/usage" ||
+        routeId === "/_chat/grid/$gridId" ||
+        routeId === "/_chat/draft/$draftId" ||
+        routeId === "/_chat/$environmentId/$threadId"
+      );
+    },
+  });
   const shortcutLabel = shortcutLabelForCommand(keybindings, "sidebar.toggle", {
     context: { usagePageOpen },
   });
+  // Closing the narrow drawer returns focus to the toggle without the user moving it there; the
+  // tooltip it would open covers the breadcrumb and stays until focus leaves.
+  const focusRestoredRef = useRef(false);
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- marks the focus the drawer's close hands back to the toggle
+  useEffect(() => {
+    if (isMobile && !isSidebarVisible) focusRestoredRef.current = true;
+  }, [isMobile, isSidebarVisible]);
 
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- window keydown listener that toggles the sidebar on its shortcut
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      // The phone home is the rail and a phone thread has its own way back; a drawer would
+      // mount a second rail or repeat the bar's back control.
+      if (isPhone && phonePageOwnsNavigation) return;
+      // Tab moves focus on purpose, so the toggle's tooltip may open again.
+      if (event.key === "Tab") focusRestoredRef.current = false;
       if (event.defaultPrevented) return;
       if (
         event.target instanceof HTMLElement &&
@@ -355,13 +380,13 @@ function SidebarControl() {
 
     window.addEventListener("keydown", onKeyDown, true);
     const unsubscribe = window.hostBridge?.onMenuAction((action) => {
-      if (action === "sidebar.toggle") toggleSidebar();
+      if (action === "sidebar.toggle" && !(isPhone && phonePageOwnsNavigation)) toggleSidebar();
     });
     return () => {
       window.removeEventListener("keydown", onKeyDown, true);
       unsubscribe?.();
     };
-  }, [keybindings, toggleSidebar, usagePageOpen]);
+  }, [isPhone, keybindings, phonePageOwnsNavigation, toggleSidebar, usagePageOpen]);
 
   // The control lives as long as the shell, so it carries the shell's commands. Created
   // once so re-renders never re-register them.
@@ -377,39 +402,42 @@ function SidebarControl() {
         "pointer-events-none fixed left-[var(--workspace-controls-left)] top-[var(--workspace-controls-top)] z-50 ml-px flex h-[var(--workspace-topbar-height)] items-center",
         // The open rail owns the hide control in its brand row; the titlebar
         // toggle returns once the rail is collapsed.
-        isSidebarVisible && "md:hidden",
+        isSidebarVisible && "dock:hidden",
         isMobile && mobileSheetMounted && "hidden",
       )}
       data-sidebar-control=""
     >
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <SidebarTrigger
-              variant={isSidebarVisible && stageBackdropVariant ? "media-navigation" : "ghost"}
-              className={cn(
-                "pointer-events-auto",
-                isSidebarVisible && stageBackdropVariant && "relative top-auto translate-y-0",
-              )}
-              aria-label="Toggle main sidebar"
-            />
-          }
-        />
-        <TooltipPopup side="bottom">
-          Toggle main sidebar{shortcutLabel ? ` (${shortcutLabel})` : ""}
-        </TooltipPopup>
-      </Tooltip>
+      {isPhone && phonePageOwnsNavigation ? null : (
+        <Tooltip
+          onOpenChange={(open, details) => {
+            if (open && details.reason === "trigger-focus" && focusRestoredRef.current) {
+              details.cancel();
+            }
+          }}
+        >
+          <TooltipTrigger
+            render={
+              <SidebarTrigger
+                variant="ghost"
+                className="pointer-events-auto"
+                aria-label="Toggle main sidebar"
+                onBlur={() => {
+                  focusRestoredRef.current = false;
+                }}
+              />
+            }
+          />
+          <TooltipPopup side="bottom">
+            Toggle main sidebar{shortcutLabel ? ` (${shortcutLabel})` : ""}
+          </TooltipPopup>
+        </Tooltip>
+      )}
     </div>
   );
 }
 
 export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const sidebarArea = workspaceAreaProps("sidebar", 0, "Threads");
-  const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
-    usePanelAnimationSettings();
-  const pathname = useLocation({ select: (location) => location.pathname });
-  const panelAnimationsSuppressed = usePanelNavigationSuppression(pathname);
-  const routePanelAnimationsActive = panelAnimationsActive && !panelAnimationsSuppressed;
   const isMacosDesktop = isDesktopHost && isMacPlatform(navigator.platform);
   const [sidebarWidth, setSidebarWidth] = useState(readInitialThreadSidebarWidth);
   // A clamped drag may not change width, so viewport changes need a separate subscription.
@@ -436,45 +464,37 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   ) as CSSProperties;
   const sidebarProviderStyle = {
     "--sidebar-width": `${clampThreadSidebarWidth(sidebarWidth, sidebarMinimumWidth, sidebarMaximumWidth)}px`,
-    "--panel-animation-duration": `${panelAnimationDurationMs}ms`,
     ...windowControlsInsetStyle,
   } as CSSProperties;
 
   return (
-    <PanelAnimationSuppressionProvider value={panelAnimationsSuppressed}>
-      <SidebarProvider
-        className="h-dvh! min-h-0!"
-        data-panel-animations={routePanelAnimationsActive ? "true" : "false"}
-        defaultOpen
-        style={sidebarProviderStyle}
+    <SidebarProvider className="h-dvh! min-h-0!" defaultOpen style={sidebarProviderStyle}>
+      <SidebarBrandWidthProbe onWidthChange={setBrandWidth} />
+      <Sidebar
+        side="left"
+        collapsible="offcanvas"
+        data-app-sidebar=""
+        {...sidebarArea}
+        role="navigation"
+        aria-label="Threads"
+        resizable={{
+          maxWidth: sidebarMaximumWidth,
+          minWidth: sidebarMinimumWidth,
+          shouldAcceptWidth: ({ currentWidth, nextWidth, wrapper }) =>
+            nextWidth <= currentWidth ||
+            wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
+          storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
+          onResize: setSidebarWidth,
+        }}
+        style={windowControlsInsetStyle}
       >
-        <SidebarBrandWidthProbe onWidthChange={setBrandWidth} />
-        <Sidebar
-          side="left"
-          collapsible="offcanvas"
-          data-app-sidebar=""
-          {...sidebarArea}
-          role="navigation"
-          aria-label="Threads"
-          resizable={{
-            maxWidth: sidebarMaximumWidth,
-            minWidth: sidebarMinimumWidth,
-            shouldAcceptWidth: ({ currentWidth, nextWidth, wrapper }) =>
-              nextWidth <= currentWidth ||
-              wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
-            storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
-            onResize: setSidebarWidth,
-          }}
-          style={windowControlsInsetStyle}
-        >
-          <GridSidebar />
-          <SidebarRail onDoubleClick={resetSidebarWidth} />
-        </Sidebar>
-        {children}
-        <ThreadDragOverlay />
-        <BackgroundThreadAnnouncer />
-        <SidebarControl />
-      </SidebarProvider>
-    </PanelAnimationSuppressionProvider>
+        <GridSidebar />
+        <SidebarRail onDoubleClick={resetSidebarWidth} />
+      </Sidebar>
+      <PhoneShell>{children}</PhoneShell>
+      <ThreadDragOverlay />
+      <BackgroundThreadAnnouncer />
+      <SidebarControl />
+    </SidebarProvider>
   );
 }

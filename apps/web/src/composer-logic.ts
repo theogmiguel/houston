@@ -25,7 +25,8 @@ export type ComposerSlashCommand =
   | "side"
   | "btw"
   | "chrome"
-  | "resume";
+  | "resume"
+  | "clear";
 export type ComposerSubmissionIntent = "foreground" | "background" | "alternate";
 
 export interface ComposerTrigger {
@@ -145,7 +146,7 @@ export function expandCollapsedComposerCursor(
       expandedCursor += expandedLength;
       continue;
     }
-    if (segment.type === "skill") {
+    if (segment.type === "skill" || segment.type === "model") {
       const expandedLength = segment.source.length;
       if (remaining <= 1) {
         return expandedCursor + (remaining === 0 ? 0 : expandedLength);
@@ -231,7 +232,7 @@ export function collapseExpandedComposerCursor(
       collapsedCursor += 1;
       continue;
     }
-    if (segment.type === "skill") {
+    if (segment.type === "skill" || segment.type === "model") {
       const expandedLength = segment.source.length;
       if (remaining === 0) {
         return collapsedCursor;

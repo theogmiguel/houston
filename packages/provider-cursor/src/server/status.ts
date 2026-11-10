@@ -77,9 +77,11 @@ function getCursorFallbackModels(
   return providerModelsFromSettings([], cursorSettings.customModels, EMPTY_CAPABILITIES);
 }
 
+const TITLE_WORD_SEPARATOR = /[\s_-]+/g;
+
 function toTitleCaseWords(value: string): string {
   const parts: Array<string> = [];
-  for (const part of value.split(/[\s_-]+/g)) {
+  for (const part of value.split(TITLE_WORD_SEPARATOR)) {
     if (part.length > 0) {
       parts.push(part.charAt(0).toUpperCase() + part.slice(1).toLowerCase());
     }

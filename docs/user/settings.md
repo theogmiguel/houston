@@ -18,14 +18,14 @@ Search Settings by feature or setting name. `Esc` clears an active search.
 - **Sidebar** — group matching repositories across environments, and order projects.
 - **Notifications** — thread notifications with a style (notifications, sound, both or
   off), and in-app notifications.
-- **Confirmations** — ask before unpinning, archiving or deleting a thread, and whether the
-  quit shortcut quits directly or waits for a second press.
+- **Confirmations** — ask before unpinning, archiving or deleting a thread, and, in the
+  desktop app, whether the quit shortcut quits directly or waits for a second press.
 - **Background** — **Keep in tray**, shown when the desktop has a working tray.
 - **Display** — timestamp format.
 
 ## Appearance
 
-Colors and themes, light/dark/system mode, contrast, glass opacity, panel animations,
+Colors and themes, light/dark/system mode, contrast, glass opacity, animations,
 environment identification, chat width, effort display, math rendering and composer
 context. **Typography** sets interface, prompt, code and terminal fonts, their sizes, word
 wrap and separate fonts. Custom themes can be created, duplicated, edited, exported and
@@ -38,14 +38,17 @@ The rich-text composer, the send shortcut, whether skills appear in the `/` menu
 
 ## Voice
 
-The transcription environment and microphone, speech models and their downloads, language and
-translation, acceleration, model unload, the dictionary, filler-word removal and transcript
-cleanup. See [Dictation](dictation.md).
+How speech is transcribed (an environment or a cloud provider with its API key; this device only, Off by
+default), the microphone and its test,
+the dictation shortcut, speech models and their comparison by language, language and
+translation, the personal and project dictionaries, silence filtering, filler-word removal,
+transcript cleanup, acceleration and model unload. See [Dictation](dictation.md).
 
 ## Diffs & pull requests
 
 Diff layout, whitespace, default file expansion and colors. **Open pull requests and
-changes panels proactively** opens the matching panel when an agent finishes.
+changes panels proactively** opens the matching panel when an agent finishes, except in grid
+cells and narrow windows.
 
 ## Keybindings
 
@@ -76,8 +79,8 @@ Claude has two switches, both on by default:
 
 Default model, fallback model, default permissions, where new threads start (local checkout
 or new worktree), hold presets, resume and hold behavior at usage limits, auto-close on
-merge and after inactivity, the add-project base directory, text generation model and
-instructions, and response streaming.
+merge and after inactivity, the add-project base directory, host-folder clone layout, text
+generation model and instructions, and response streaming.
 
 ## Browser
 
@@ -87,7 +90,8 @@ browser access, automatic floating preview, and recording options.
 ## Devices
 
 Device sources, whether agents may use devices, and device hub settings. Platform support
-limits are named on the page.
+limits are named on the page. SSH device hosts currently need macOS or Linux; to use devices
+on a Windows machine, run Houston there and connect to its environment.
 
 ## Scheduled tasks
 
@@ -106,7 +110,8 @@ and pull request text, review guides (beta), automatic pull and the default merg
 
 ## Worktrees
 
-Worktree location, whether new worktrees start from the remote, submodule handling, branch
+Worktree location (an absolute folder; empty uses Houston's data folder), whether new
+worktrees start from the remote, submodule handling, branch
 naming, and cleanup of worktrees created by Houston.
 
 ## Environments
@@ -128,7 +133,8 @@ and can be revoked.
 ## Secrets
 
 Secret providers, currently 1Password, used as the source of a provider credential. A
-stored credential is never shown again.
+stored credential is never shown again. Source control and task source tokens are set on
+their own pages.
 
 ## Maintenance
 
@@ -136,10 +142,29 @@ Provider update checks, continuing threads after a restart, background activity,
 storage, browser artifacts and rotated logs, diagnostics, and **Coming from Houston 1**. See
 [Updating Houston](updating.md#coming-from-houston-1).
 
+**Database** (Settings → Maintenance → Storage) appears when a database holds at least 64 MiB of
+space freed by history cleanup. **Reclaim now** returns it to disk while Houston and its agent
+runs keep working, for up to two minutes per click; click again if space is left. It needs free
+disk space next to the database for the write-ahead log and refuses, naming the amount needed
+and what is free, when there is not enough. A database created before automatic shrinking can
+only be shrunk while Houston is stopped; the page then shows the `houston doctor` command to run.
+
+Diagnostics includes **OpenTelemetry export**, which sends traces, metrics and logs to an OTLP
+receiver you choose, to Datadog, or to a Datadog Agent on this machine. See
+[Exporting diagnostics yourself](privacy.md#exporting-diagnostics-yourself).
+
 ## Labs
 
-Linked environments (beta), Simlock device hosts (alpha), and legacy toggles that are kept
-for existing installations: legacy plan mode and the legacy context window indicator.
+Linked environments (beta), Simlock device hosts (alpha), and optional composer features that
+are off by default: plan mode and the context window indicator.
+
+**Suggest next prompt** shows a predicted next message in the empty composer after a Claude or
+Codex turn completes. Press `Tab` to fill it in, then edit or send it, or press `Escape` to
+dismiss it. Each suggestion is one extra request that reuses the turn's prompt cache, so it uses
+a little of your plan's usage. Claude skips suggestions on the first turn of a thread and near
+usage limits. Codex needs version 0.165 or later. Threads started by another agent never
+request suggestions. Codex follows a change to the setting at once; open Claude threads follow
+it after they restart. Suggestions appear on devices with a mouse or trackpad.
 
 ## About
 

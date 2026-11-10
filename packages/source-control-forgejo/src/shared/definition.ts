@@ -54,6 +54,9 @@ function changeRequestHost(identity: ChangeRequestHostIdentity): string {
   return projectChangeRequestHost(identity, KIND);
 }
 
+const HTTP_SCHEME_ONLY = /^https?:/iu;
+const SURROUNDING_SLASHES = /^\/+|\/+$/g;
+
 export const definition = defineSourceControl({
   kind: KIND,
   label: "Forgejo",
@@ -109,7 +112,7 @@ export const definition = defineSourceControl({
       ? {
           kind: KIND,
           name: "Forgejo",
-          baseUrl: /^https?:/iu.test(remoteUrl) ? new URL(remoteUrl).origin : `https://${host}`,
+          baseUrl: HTTP_SCHEME_ONLY.test(remoteUrl) ? new URL(remoteUrl).origin : `https://${host}`,
         }
       : null,
   changeRequestHost,
@@ -120,18 +123,14 @@ export const definition = defineSourceControl({
       return isChangeRequestInProjectRepository(changeRequestHost(identity), identity, link);
     return (
       web.host.toLowerCase() === (link.authority ?? link.host).toLowerCase() &&
-      web.pathname.replace(/^\/+|\/+$/g, "").toLowerCase() === link.repository.toLowerCase()
+      web.pathname.replace(SURROUNDING_SLASHES, "").toLowerCase() === link.repository.toLowerCase()
     );
   },
   // A server mounted below a path serves only repositories under that mount.
   canReadChangeRequestOnHost: (identity, link) => {
     const web = resolvedWebUrl(identity);
     if (!web) return isChangeRequestOnProjectHost(changeRequestHost(identity), identity, link);
-    const mount = web.pathname
-      .replace(/^\/+|\/+$/g, "")
-      .split("/")
-      .slice(0, -2)
-      .join("/");
+    const mount = web.pathname.replace(SURROUNDING_SLASHES, "").split("/").slice(0, -2).join("/");
     return (
       web.host.toLowerCase() === (link.authority ?? link.host).toLowerCase() &&
       (!mount || link.repository.toLowerCase().startsWith(`${mount.toLowerCase()}/`))

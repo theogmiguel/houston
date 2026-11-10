@@ -8,9 +8,7 @@ import {
   type ErrorComponentProps,
   useLocation,
   useNavigate,
-  useRouter,
 } from "@tanstack/react-router";
-import { Check, Copy } from "lucide";
 import * as Schema from "effect/Schema";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
@@ -20,6 +18,7 @@ import { CommandPalette } from "../components/CommandPalette";
 import { CustomSnoozeDialogHost } from "../components/CustomSnoozeDialog";
 import { ThreadTagsDialogHost } from "../components/ThreadTagsDialog";
 import { AddProjectDialogHost } from "../components/AddProjectDialog";
+import { UseInAnotherAppDialogHost } from "../components/mcp/UseInAnotherAppDialogHost";
 import { AddProjectToMachineDialogHost } from "../components/AddProjectToMachineDialog";
 import { ConfirmDialogHost } from "../components/ConfirmDialogHost";
 import { DevReplayHost } from "../components/DevReplayHost";
@@ -33,13 +32,12 @@ import { ReopenClosedViewShortcut } from "../components/ReopenClosedViewShortcut
 import { ProjectCloneToastCoordinator } from "../components/ProjectCloneToastCoordinator";
 import { ChatGptWelcomeCoordinator } from "../components/settings/ChatGptWelcomeCoordinator";
 import { ThemeEditorHost } from "../components/settings/ThemeEditorHost";
-import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
+import { RouteErrorActions } from "../components/RouteErrorActions";
+import { ServerUnavailableCard } from "../components/ServerUnavailableCard";
 import { Button } from "../components/ui/button";
-import { MorphIcon } from "~/components/MorphIcon";
 import { StandalonePage, StandalonePageHeader } from "../components/ui/standalone-page";
 import { AnchoredToastProvider, ToastProvider } from "../components/ui/toast";
 import { isDesktopHost } from "../env";
-import { cn } from "../lib/utils";
 import { useClientSettings } from "../hooks/useSettings";
 import {
   deriveLogicalProjectKeyFromSettings,
@@ -48,8 +46,15 @@ import {
 } from "@houston-app/client-runtime/state/project-grouping";
 import { useUiStateStore } from "../uiStateStore";
 import { configureClientTracing } from "../observability/clientTracing";
-import { resolveInitialServerAuthGateState } from "../environments/primary";
+import {
+  readPrimaryEnvironmentTarget,
+  resolveInitialServerAuthGateState,
+} from "../environments/primary";
 import { PrimaryEnvironmentRequestError } from "../environments/primary/auth";
+import {
+  serverUnavailableDetail,
+  serverUnavailableOutcome,
+} from "../components/serverUnavailableDetail";
 import { hasHostedPairingRequest, isHostedStaticApp } from "../hostedPairing";
 import { useHostedPromptLinkLanding } from "../components/promptLinks/HostedPromptLinkLanding";
 import { isLocalEnvironmentDisabled } from "../localEnvironment";
@@ -161,6 +166,7 @@ function RootRouteBranch() {
         <CustomSnoozeDialogHost />
         <ThreadTagsDialogHost />
         <AddProjectDialogHost />
+        <UseInAnotherAppDialogHost />
         <CommandPalette>
           <AppSidebarLayout>
             <Outlet />
@@ -186,6 +192,7 @@ function RootRouteBranch() {
     <>
       <ChatGptWelcomeCoordinator />
       <AddProjectDialogHost />
+      <UseInAnotherAppDialogHost />
       <FirstRunGate
         enabled={primaryEnvironmentAuthenticated}
         hostedStatic={authGateState.status === "hosted-static"}
@@ -223,40 +230,28 @@ function RootRouteErrorView({ error }: ErrorComponentProps) {
 }
 
 function ServerUnavailableView({ error }: { error: PrimaryEnvironmentRequestError }) {
-  const router = useRouter();
   const pathname = useLocation({ select: (location) => location.pathname });
-  const report = errorReport(error, pathname);
+  // The card's headline is a sentence; the error tag and operation live in the log and the copy.
+  const report = `${serverUnavailableOutcome(error)}\n\n${errorReport(error, pathname)}`;
   return (
-    <StandalonePage>
-      <StandalonePageHeader
-        title="Houston's server isn't running"
-        description="Your threads are saved. Start the server to see them."
-      />
-
-      <div className="mt-5 flex flex-wrap gap-2">
-        <Button size="sm" onClick={() => void router.invalidate()}>
-          Try again
-        </Button>
-        <Button size="sm" variant="outline" onClick={() => window.location.reload()}>
-          Reload app
-        </Button>
-        <CopyErrorButton report={report} />
-      </div>
-
-      <details className="mt-5 overflow-hidden rounded-lg border border-border/70 bg-background/55">
-        <summary className="cursor-pointer px-3 py-1.5 text-xs font-medium text-muted-foreground">
-          Show log
-        </summary>
-        <pre className="max-h-64 overflow-auto border-t border-border/70 bg-background/80 px-3 py-2 text-xs whitespace-pre-wrap text-foreground/85">
-          {report}
-        </pre>
-      </details>
-    </StandalonePage>
+    <ServerUnavailableCard
+      report={report}
+      detail={serverUnavailableDetail(error, primaryTargetHost())}
+    />
   );
 }
 
+/** The host the client tried, or null when the target itself cannot be resolved. */
+function primaryTargetHost(): string | null {
+  try {
+    const target = readPrimaryEnvironmentTarget();
+    return target === null ? null : new URL(target.target.httpBaseUrl).host;
+  } catch {
+    return null;
+  }
+}
+
 function GenericRouteErrorView({ error }: Pick<ErrorComponentProps, "error">) {
-  const router = useRouter();
   const message = errorMessage(error);
   // Router pathname rather than window.location: desktop uses hash history, where the window path is always "/".
   const pathname = useLocation({ select: (location) => location.pathname });
@@ -266,15 +261,7 @@ function GenericRouteErrorView({ error }: Pick<ErrorComponentProps, "error">) {
     <StandalonePage>
       <StandalonePageHeader title="Something went wrong." description={message} />
 
-      <div className="mt-5 flex flex-wrap gap-2">
-        <Button size="sm" onClick={() => void router.invalidate()}>
-          Try again
-        </Button>
-        <Button size="sm" variant="outline" onClick={() => window.location.reload()}>
-          Reload app
-        </Button>
-        <CopyErrorButton report={report} />
-      </div>
+      <RouteErrorActions report={report} />
 
       <div className="mt-5 overflow-hidden rounded-lg border border-border/70 bg-background/55">
         <p className="px-3 py-1.5 text-xs font-medium text-muted-foreground">Error report</p>
@@ -283,17 +270,6 @@ function GenericRouteErrorView({ error }: Pick<ErrorComponentProps, "error">) {
         </pre>
       </div>
     </StandalonePage>
-  );
-}
-
-function CopyErrorButton({ report }: { report: string }) {
-  const { copyToClipboard, isCopied } = useCopyToClipboard({ target: "error-report" });
-
-  return (
-    <Button size="sm" variant="outline" onClick={() => copyToClipboard(report)}>
-      <MorphIcon className={cn(isCopied && "text-success")} icon={isCopied ? Check : Copy} />
-      {isCopied ? "Copied" : "Copy error"}
-    </Button>
   );
 }
 

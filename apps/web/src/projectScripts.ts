@@ -14,6 +14,7 @@ export interface ProjectScriptInput {
   readonly runOnWorktreeCreate: ProjectScript["runOnWorktreeCreate"];
   readonly waitForSetup: boolean;
   readonly runOnSettle: boolean;
+  readonly stopOnSettle?: boolean;
   readonly previewUrl: Exclude<ProjectScript["previewUrl"], undefined> | null;
   readonly autoOpenPreview: boolean;
 }
@@ -27,6 +28,7 @@ export function buildProjectScript(id: string, input: ProjectScriptInput): Proje
     runOnWorktreeCreate: input.runOnWorktreeCreate,
     ...(input.runOnWorktreeCreate && input.waitForSetup ? { async: false } : {}),
     ...(input.runOnSettle ? { runOnSettle: true } : {}),
+    ...(input.stopOnSettle ? { stopOnSettle: true } : {}),
     ...(input.previewUrl === null
       ? {}
       : {
@@ -50,19 +52,23 @@ export function releaseClaimedRoles(
   };
 }
 
+const NON_ALPHANUMERIC_RUN = /[^a-z0-9]+/g;
+const EDGE_HYPHENS = /^-+|-+$/g;
+const TRAILING_HYPHENS = /-+$/g;
+
 function normalizeScriptId(value: string): string {
   const cleaned = value
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+    .replace(NON_ALPHANUMERIC_RUN, "-")
+    .replace(EDGE_HYPHENS, "");
   if (cleaned.length === 0) {
     return "script";
   }
   if (cleaned.length <= MAX_SCRIPT_ID_LENGTH) {
     return cleaned;
   }
-  return cleaned.slice(0, MAX_SCRIPT_ID_LENGTH).replace(/-+$/g, "") || "script";
+  return cleaned.slice(0, MAX_SCRIPT_ID_LENGTH).replace(TRAILING_HYPHENS, "") || "script";
 }
 
 export function commandForProjectScript(scriptId: string): KeybindingCommand | null {

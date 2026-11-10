@@ -7,10 +7,17 @@ import * as NodeSqliteClient from "@houston-app/shared/nodeSqliteClient";
 
 import { runMigrations } from "./Migrations.ts";
 import { runHoustonMigrations } from "../houston/migrations.ts";
+import { ensureHoustonReadModels } from "../houston/projectionReadModels.ts";
 import { initializeV2Database } from "./initializeV2Database.ts";
 import * as ServerConfig from "../config.ts";
 
-const WAL_SIZE_LIMIT_BYTES = 32 * 1024 * 1024;
+export const WAL_SIZE_LIMIT_BYTES = 128 * 1024 * 1024;
+
+// 4 readers x 32 MiB: about 120 MiB of heap over SQLite's default 2 MB per reader. On Windows it
+// took 19-23% off deep thread-open and boot reads at 10x. No connection maps the file (mmap_size):
+// Windows cannot truncate a mapped file, and elsewhere a mapped-page I/O error ends the server.
+const READER_CACHE_KIB = 32 * 1024;
+const READER_PRAGMAS = [`cache_size = -${READER_CACHE_KIB}`];
 
 const layerSetup = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -18,6 +25,8 @@ const layerSetup = Layer.effectDiscard(
     // CLI and server write from separate processes; wait rather than fail with SQLITE_BUSY.
     yield* sql`PRAGMA busy_timeout = 5000;`;
     yield* sql`PRAGMA foreign_keys = ON;`;
+    // Houston: a REPLACE then fires delete triggers, which keep houston/projectionReadModels.ts exact.
+    yield* sql`PRAGMA recursive_triggers = ON;`;
     // Existing databases need doctor's offline VACUUM to add pointer maps for this mode.
     const tables = yield* sql<{
       readonly count: number;
@@ -36,6 +45,7 @@ const layerSetup = Layer.effectDiscard(
     yield* sql.unsafe(`PRAGMA journal_size_limit = ${WAL_SIZE_LIMIT_BYTES};`);
     yield* runMigrations();
     yield* runHoustonMigrations();
+    yield* ensureHoustonReadModels();
     // Collecting stats scans every page, and stale small-table stats cause scans after growth; use indexes by default.
     // Connections cache stats; reload after deleting them.
     const statTables = yield* sql`SELECT 1 FROM sqlite_schema WHERE name = 'sqlite_stat1'`;
@@ -56,6 +66,7 @@ export const layerFromPath = Effect.fn("makeSqlitePersistenceLive")(function* (d
     NodeSqliteClient.layer({
       filename: dbPath,
       readerWorker: true,
+      readerPragmas: READER_PRAGMAS,
       // Run checkpoint fsyncs off the event loop so slow disk flushes cannot stall clients.
       checkpointWorker: true,
       spanAttributes: {

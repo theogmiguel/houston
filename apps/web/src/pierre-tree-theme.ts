@@ -16,6 +16,8 @@ export const PIERRE_TREE_UNSAFE_CSS = `
   @media (prefers-reduced-motion: no-preference) {
     svg[data-icon-name='houston-tree-icon-loading'] { animation: houston-tree-spin 1s linear infinite; }
   }
+  /* The Appearance "Animations" switch; this sheet lives in a shadow root. */
+  :host-context([data-motion='off']) svg[data-icon-name='houston-tree-icon-loading'] { animation: none; }
   @keyframes houston-tree-spin { to { transform: rotate(360deg); } }
 `;
 

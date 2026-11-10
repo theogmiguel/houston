@@ -52,6 +52,7 @@ function trayStatus(thread: EnvironmentThreadShell): {
     case "failed":
     case "limited":
       return { status: "error", needsInput: false };
+    case "preparing":
     case "working":
       return { status: "running", needsInput: false };
     case "waiting":

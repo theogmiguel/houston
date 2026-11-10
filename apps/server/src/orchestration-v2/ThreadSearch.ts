@@ -2,7 +2,6 @@ import {
   IsoDateTime,
   MessageId,
   OrchestrationThreadSearchSource,
-  OrchestrationV2AppThreadJson,
   OrchestrationV2ThreadOpens,
   ThreadLinkedPullRequest,
   ThreadPullRequestLink,
@@ -36,6 +35,10 @@ import { threadSearchPullRequests } from "@houston-app/shared/threadPullRequests
 import { indexedMessageCondition, nonPlaceholderMessageCondition } from "./messageSearchIndex.ts";
 import { loadOlderSettledThreadsPage } from "./ShellStream.ts";
 
+const WHITESPACE = /\s/;
+const SHOWN_PATTERN = /\*\*|`+/g;
+const WHITESPACE_RUN = /\s+/g;
+
 // When the user last wrote in the thread aliased `threads`, as the clients
 // rank recency; agent notices in the user role do not count.
 const latestUserMessageAt = (sql: SqlClient.SqlClient) => sql`(
@@ -67,6 +70,8 @@ const SearchRequest = Schema.Struct({
   match: Schema.NullOr(Schema.String),
   /** Tokens every hit must contain, checked on the text. */
   substrings: TokenList,
+  /** For each short word outside ASCII, the spellings a hit must contain one of. */
+  shortSpellings: Schema.fromJsonString(Schema.Array(Schema.Array(Schema.String))),
   projectId: Schema.NullOr(ProjectId),
   /** Threads the caller already lists, left out before the hit limit. */
   excludedThreadIds: TokenList,
@@ -99,6 +104,22 @@ const MESSAGE_HIT_LIMIT = 2000;
 const MESSAGE_CANDIDATE_LIMIT = 10_000;
 // Without the index, how many of the newest messages a search scans.
 const MESSAGE_SCAN_LIMIT = 20_000;
+const NON_ASCII = /[\u0080-\uffff]/;
+
+const PLAIN_PATTERN = /\p{M}/gu;
+
+/** SQLite's lower() folds ASCII only, so a short word is checked as each spelling it can match. */
+function shortTokenSpellings(token: string): ReadonlyArray<string> {
+  const forms = (char: string) => {
+    const plain = char.normalize("NFD").replace(PLAIN_PATTERN, "");
+    return [char, char.toUpperCase(), plain, plain.toUpperCase()];
+  };
+  const spellings = Array.from(token).reduce<ReadonlyArray<string>>(
+    (prefixes, char) => prefixes.flatMap((prefix) => forms(char).map((form) => prefix + form)),
+    [""],
+  );
+  return [...new Set(spellings)];
+}
 
 /**
  * The SQL inputs for a message search, or null when the query has no token
@@ -114,9 +135,11 @@ function buildMessageSearch(
   if (long.length === 0) return null;
   // Two-character CJK words are too short for trigrams.
   const indexed = hasIndex && long.every((token) => Array.from(token).length >= 3);
+  const narrowing = short.filter((token) => !NON_ASCII.test(token));
   return {
     match: indexed ? long.map((token) => `"${token.replaceAll('"', '""')}"`).join(" ") : null,
-    substrings: indexed ? short : [...long, ...short],
+    substrings: indexed ? narrowing : [...long, ...narrowing],
+    shortSpellings: short.filter((token) => NON_ASCII.test(token)).map(shortTokenSpellings),
   };
 }
 
@@ -136,7 +159,7 @@ const isLowSurrogate = (code: number) => code >= 0xdc00 && code <= 0xdfff;
  */
 export function buildSearchSnippet(text: string, matchStart: number): string {
   let start = Math.max(0, matchStart - SNIPPET_LEAD);
-  const wordStart = text.slice(start, matchStart).search(/\s/);
+  const wordStart = text.slice(start, matchStart).search(WHITESPACE);
   if (start > 0 && wordStart !== -1) start += wordStart + 1;
   // Cut between characters, not inside an emoji's surrogate pair.
   if (isLowSurrogate(text.charCodeAt(start))) start++;
@@ -145,8 +168,8 @@ export function buildSearchSnippet(text: string, matchStart: number): string {
   // Emphasis and code marks do not show in a thread either.
   const shown = text
     .slice(start, rawEnd)
-    .replace(/\*\*|`+/g, "")
-    .replace(/\s+/g, " ")
+    .replace(SHOWN_PATTERN, "")
+    .replace(WHITESPACE_RUN, " ")
     .trim();
   let end = Math.min(shown.length, SNIPPET_LENGTH - 2);
   if (isLowSurrogate(shown.charCodeAt(end))) end--;
@@ -160,7 +183,7 @@ export function buildSearchSnippet(text: string, matchStart: number): string {
 // The scan folds ASCII case only, so accent variants and non-ASCII case variants may not match.
 export const messageHitsQuery = (
   sql: SqlClient.SqlClient,
-  { match, substrings, projectId, excludedThreadIds }: typeof SearchRequest.Encoded,
+  { match, substrings, shortSpellings, projectId, excludedThreadIds }: typeof SearchRequest.Encoded,
 ) => sql`
     WITH eligible AS MATERIALIZED (
       SELECT threads.thread_id, threads.project_id
@@ -225,17 +248,62 @@ export const messageHitsQuery = (
         SELECT 1 FROM json_each(${substrings}) AS token
         WHERE instr(lower(json_extract(messages.payload_json, '$.text')), token.value) = 0
       )
+      AND NOT EXISTS (
+        SELECT 1 FROM json_each(${shortSpellings}) AS token
+        WHERE NOT EXISTS (
+          SELECT 1 FROM json_each(token.value) AS spelling
+          WHERE instr(json_extract(messages.payload_json, '$.text'), spelling.value) > 0
+        )
+      )
     -- The index's own rowid, so FTS5 returns hits newest first and stops at
     -- the limit; ordering by the messages table's rowid sorts every hit.
     ORDER BY "messageRowid" DESC
     LIMIT ${MESSAGE_HIT_LIMIT}
   `;
 
+// Only the fields the palette scorer reads: decoding every active thread's payload cost more
+// than the scoring.
 const TitleCandidateRow = Schema.Struct({
-  thread: Schema.fromJsonString(OrchestrationV2AppThreadJson),
+  id: ThreadId,
+  projectId: ProjectId,
+  title: Schema.String,
+  branch: Schema.NullOr(Schema.String),
+  pullRequests: Schema.NullOr(Schema.fromJsonString(Schema.Array(ThreadPullRequestLink))),
+  linkedPullRequest: Schema.NullOr(Schema.fromJsonString(ThreadLinkedPullRequest)),
+  branchPullRequest: Schema.NullOr(Schema.fromJsonString(ThreadLinkedPullRequest)),
+  opens: Schema.NullOr(Schema.String),
+  createdAt: IsoDateTime,
   projectTitle: Schema.String,
   latestUserMessageAt: Schema.NullOr(IsoDateTime),
 });
+
+export const titleCandidatesQuery = (
+  sql: SqlClient.SqlClient,
+  { projectId }: { readonly projectId: string | null },
+) => sql`
+  SELECT
+    threads.thread_id AS id,
+    threads.project_id AS "projectId",
+    json_extract(threads.payload_json, '$.title') AS title,
+    json_extract(threads.payload_json, '$.branch') AS branch,
+    json_extract(threads.payload_json, '$.pullRequests') AS "pullRequests",
+    json_extract(threads.payload_json, '$.linkedPullRequest') AS "linkedPullRequest",
+    json_extract(threads.payload_json, '$.branchPullRequest') AS "branchPullRequest",
+    json_extract(threads.payload_json, '$.opens') AS opens,
+    json_extract(threads.payload_json, '$.createdAt') AS "createdAt",
+    projects.title AS "projectTitle",
+    ${latestUserMessageAt(sql)} AS "latestUserMessageAt"
+  FROM orchestration_v2_projection_threads AS threads
+  INNER JOIN projection_projects AS projects
+    ON projects.project_id = threads.project_id
+  WHERE threads.deleted_at IS NULL
+    AND threads.archived_at IS NULL
+    AND projects.deleted_at IS NULL
+    AND json_extract(threads.payload_json, '$.lineage.relationshipToParent')
+      IS NOT 'subagent'
+    AND json_extract(threads.payload_json, '$.lineage.sideChat') IS NOT 1
+    AND (${projectId} IS NULL OR threads.project_id = ${projectId})
+`;
 
 export interface ThreadSearchHit {
   readonly threadId: ThreadId;
@@ -320,22 +388,7 @@ export const make = Effect.gen(function* () {
   const titleCandidates = SqlSchema.findAll({
     Request: Schema.Struct({ projectId: Schema.NullOr(ProjectId) }),
     Result: TitleCandidateRow,
-    execute: ({ projectId }) => sql`
-      SELECT
-        threads.payload_json AS thread,
-        projects.title AS "projectTitle",
-        ${latestUserMessageAt(sql)} AS "latestUserMessageAt"
-      FROM orchestration_v2_projection_threads AS threads
-      INNER JOIN projection_projects AS projects
-        ON projects.project_id = threads.project_id
-      WHERE threads.deleted_at IS NULL
-        AND threads.archived_at IS NULL
-        AND projects.deleted_at IS NULL
-        AND json_extract(threads.payload_json, '$.lineage.relationshipToParent')
-          IS NOT 'subagent'
-        AND json_extract(threads.payload_json, '$.lineage.sideChat') IS NOT 1
-        AND (${projectId} IS NULL OR threads.project_id = ${projectId})
-    `,
+    execute: (request) => titleCandidatesQuery(sql, request),
   });
 
   const olderSettledTitleCandidates = SqlSchema.findAll({
@@ -524,33 +577,35 @@ export const make = Effect.gen(function* () {
     const candidates = yield* read(titleCandidates({ projectId: input.projectId ?? null }));
     const subjectById = new Map(
       candidates.map((row): [ThreadId, ThreadSearchSubject] => [
-        row.thread.id,
+        row.id,
         {
-          id: row.thread.id,
-          title: row.thread.title,
-          branch: row.thread.branch,
+          id: row.id,
+          title: row.title,
+          branch: row.branch,
           projectTitle: row.projectTitle,
-          pullRequests: threadSearchPullRequests(row.thread),
+          pullRequests: threadSearchPullRequests({
+            pullRequests: row.pullRequests ?? undefined,
+            linkedPullRequest: row.linkedPullRequest,
+            branchPullRequest: row.branchPullRequest,
+          }),
           // Like the clients: what the user last wrote, else when the thread began.
-          activityAt: Date.parse(
-            row.latestUserMessageAt ?? DateTime.formatIso(row.thread.createdAt),
-          ),
-          opens: row.thread.opens ?? null,
+          activityAt: Date.parse(row.latestUserMessageAt ?? row.createdAt),
+          opens: Option.getOrNull(decodeThreadOpens(row.opens)),
         },
       ]),
     );
     const titleHits: ThreadSearchHit[] = rankSearchItems(candidates, (row, options) =>
       // An agent's search has no use for the user's palette picks.
-      scoreThreadSearch(normalizedQuery, subjectById.get(row.thread.id)!, now, {
+      scoreThreadSearch(normalizedQuery, subjectById.get(row.id)!, now, {
         ...options,
         picks: false,
       }),
     )
       .slice(0, limit)
       .map(({ item }) => ({
-        threadId: item.thread.id,
-        projectId: item.thread.projectId,
-        title: item.thread.title,
+        threadId: item.id,
+        projectId: item.projectId,
+        title: item.title,
         source: "title",
       }));
     const shown = new Set(titleHits.map((hit) => hit.threadId));

@@ -83,6 +83,8 @@ export interface TimelineRowSharedState {
   onOpenToolDiff: ((target: ToolCallDiffTarget) => void) | undefined;
   /** Unset where there is no diff to open, so the timeline shows no "Open diff" button. */
   onOpenTurnDiff: ((runId: RunId, filePath?: string) => void) | undefined;
+  /** The run the composer's pending-changes row covers; its changed-files card folds to a header. */
+  changeBannerRunId: RunId | null;
   /** Draws a published HTML visual. Unset, the row loads it from the environment. */
   renderHtmlRender: ((row: Extract<TimelineRow, { kind: "html-render" }>) => ReactNode) | undefined;
   /** Unset, expanded rows read detail and command output from the environment. */
@@ -119,6 +121,7 @@ export interface TimelineRowActivityState {
   isPreparingWorktree: boolean;
   latestRunId: RunId | null;
   backgroundWorktreeSetup: WorktreeSetupSnapshot | null;
+  liveAnswerPreview: string | null;
 }
 
 export const TimelineRowCtx = createContext<TimelineRowSharedState>(null!);
@@ -131,6 +134,8 @@ export interface WorkGroupViewState {
 }
 
 export const WorkGroupViewCtx = createContext<{
+  /** The group header's time. */
+  createdAt: string;
   state: WorkGroupViewState;
   onToggleEntry: (collapsed: boolean) => void;
 } | null>(null);

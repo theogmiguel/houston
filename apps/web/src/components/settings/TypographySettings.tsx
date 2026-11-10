@@ -13,6 +13,7 @@ import {
 } from "@houston-app/contracts/settings";
 import * as Schema from "effect/Schema";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
+import { isMacPlatform } from "../../lib/utils";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 import { Input } from "../ui/input";
 import {
@@ -431,7 +432,7 @@ export function TypographySection() {
     <SettingsSection id="typography" title="Typography">
       {showAdvanced ? <FontSettingsGroup /> : <SimpleFontRows />}
       <SeparateFontsRow checked={showAdvanced} onCheckedChange={setAdvanced} />
-      <FontSmoothingRow />
+      {isMacPlatform(navigator.platform) ? <FontSmoothingRow /> : null}
       {!showAdvanced ? (
         <>
           <InterfaceFontSizeRow />
@@ -547,6 +548,9 @@ function FontFamilySettingsRow({
         autoCapitalize="off"
         autoComplete="off"
         className="min-w-0 flex-1"
+        // An empty field means the default family, which the placeholder names; it stays at full
+        // ink so the field does not read as disabled.
+        placeholderTone="ink"
         maxLength={200}
         onFocus={() => {
           setInputFocused(true);
@@ -614,8 +618,8 @@ function FontFamilySettingsRow({
     </Select>
   );
   const control = sizeInline ? (
-    <div className="flex w-full items-center gap-2 sm:w-auto">
-      <div className="min-w-0 flex-1 sm:w-44 sm:flex-none">{familyControl}</div>
+    <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto @min-[32rem]/settings-row:flex-nowrap">
+      <div className="min-w-36 flex-1 sm:w-44 sm:flex-none">{familyControl}</div>
       {sizeControl}
     </div>
   ) : (

@@ -1,9 +1,10 @@
 import type { TerminalSummary } from "@houston-app/contracts";
 
+const TERMINAL_NUMBER_PATTERN =
+  /^term(?:inal)?-(\d+)(?:-[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12})?$/i;
+
 function terminalNumber(terminalId: string): string | undefined {
-  return /^term(?:inal)?-(\d+)(?:-[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12})?$/i.exec(
-    terminalId,
-  )?.[1];
+  return TERMINAL_NUMBER_PATTERN.exec(terminalId)?.[1];
 }
 
 export function getTerminalLabel(terminalId: string): string {

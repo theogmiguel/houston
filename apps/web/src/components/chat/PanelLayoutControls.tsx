@@ -1,10 +1,21 @@
-import { PanelBottomIcon, PanelRightIcon, SquareMenuIcon } from "lucide-react";
+import { MoreHorizontalIcon, PanelBottomIcon, PanelRightIcon, SquareMenuIcon } from "lucide-react";
 import { Maximize2, Minimize2 } from "lucide";
 import { MorphIcon } from "~/components/MorphIcon";
 import { memo, type ReactNode, type RefObject } from "react";
 
+import { useMediaQuery } from "../../hooks/useMediaQuery";
 import type { ThreadPanelPresentation } from "../../rightPanelLayout";
+import { Button } from "../ui/button";
+import {
+  Menu,
+  MenuCheckboxItem,
+  MenuPopup,
+  MenuSeparator,
+  MenuShortcut,
+  MenuTrigger,
+} from "../ui/menu";
 import { PopoverCreateHandle, PopoverPanelAnchor, PopoverTrigger } from "../ui/popover";
+import { SIDEBAR_MOBILE_QUERY } from "../ui/sidebar";
 import { Toggle } from "../ui/toggle";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
@@ -26,6 +37,8 @@ export interface PanelLayoutControlsProps {
   rightPanelShortcutLabel: string | null;
   rightPanelUnavailableLabel?: string;
   gridLayoutControl?: ReactNode;
+  /** The grid layout actions as menu items, shown in the More menu where the drawer breakpoint applies. */
+  gridLayoutMenuItems?: ReactNode;
   onToggleTerminal: () => void;
   onToggleThreadPanel: () => void;
   onToggleRightPanel: () => void;
@@ -48,10 +61,19 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
   rightPanelShortcutLabel,
   rightPanelUnavailableLabel = "Right panel is unavailable",
   gridLayoutControl,
+  gridLayoutMenuItems,
   onToggleTerminal,
   onToggleThreadPanel,
   onToggleRightPanel,
 }: PanelLayoutControlsProps) {
+  // Below the sidebar's drawer breakpoint the header has room for one panel toggle: the layout
+  // controls fold into a More menu. A popover-presented details card keeps its toggle in the
+  // header because that toggle is the card's anchor.
+  const narrow = useMediaQuery(SIDEBAR_MOBILE_QUERY);
+  const detailsInMenu = narrow && showThreadPanelControl && threadPanelPresentation !== "popover";
+  const terminalInMenu = narrow && showTerminalControl;
+  const gridInMenu = narrow && gridLayoutMenuItems !== undefined;
+  const hasMoreMenu = detailsInMenu || terminalInMenu || gridInMenu;
   const threadPanelToggle = (
     <Toggle
       className="relative shrink-0 [-webkit-app-region:no-drag]"
@@ -89,9 +111,54 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
       data-panel-layout-controls
     >
       <div className="flex items-center gap-1">
-        {showThreadPanelControl ? threadPanelControl : null}
-        {gridLayoutControl ? <div className="flex items-center">{gridLayoutControl}</div> : null}
-        {showTerminalControl ? (
+        {hasMoreMenu ? (
+          <Menu>
+            <Tooltip>
+              <TooltipTrigger render={<span className="flex shrink-0" />}>
+                <MenuTrigger
+                  render={<Button variant="ghost" size="icon" aria-label="More layout controls" />}
+                >
+                  <MoreHorizontalIcon className="size-4" />
+                </MenuTrigger>
+              </TooltipTrigger>
+              <TooltipPopup side="bottom">More layout controls</TooltipPopup>
+            </Tooltip>
+            <MenuPopup side="bottom" align="end">
+              {detailsInMenu ? (
+                <MenuCheckboxItem
+                  checked={threadPanelOpen}
+                  onCheckedChange={() => onToggleThreadPanel()}
+                >
+                  <SquareMenuIcon />
+                  Toggle thread details
+                  {threadPanelShortcutLabel ? (
+                    <MenuShortcut>{threadPanelShortcutLabel}</MenuShortcut>
+                  ) : null}
+                </MenuCheckboxItem>
+              ) : null}
+              {terminalInMenu ? (
+                <MenuCheckboxItem
+                  checked={terminalOpen}
+                  disabled={!terminalAvailable}
+                  onCheckedChange={() => onToggleTerminal()}
+                >
+                  <PanelBottomIcon />
+                  Toggle terminal drawer
+                  {terminalShortcutLabel ? (
+                    <MenuShortcut>{terminalShortcutLabel}</MenuShortcut>
+                  ) : null}
+                </MenuCheckboxItem>
+              ) : null}
+              {gridInMenu && (detailsInMenu || terminalInMenu) ? <MenuSeparator /> : null}
+              {gridInMenu ? gridLayoutMenuItems : null}
+            </MenuPopup>
+          </Menu>
+        ) : null}
+        {showThreadPanelControl && !detailsInMenu ? threadPanelControl : null}
+        {gridLayoutControl && !gridInMenu ? (
+          <div className="flex items-center">{gridLayoutControl}</div>
+        ) : null}
+        {showTerminalControl && !terminalInMenu ? (
           <Tooltip>
             <TooltipTrigger render={<span className="flex shrink-0" />}>
               <Toggle

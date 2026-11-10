@@ -51,11 +51,13 @@ export function hasCustomWindowChrome(): boolean {
   }
 }
 
+const LEADING_HASH = /^#/;
+
 /** The quick composer is its own always-on-top window; it gets no window chrome. */
 export function isQuickComposerWindow(): boolean {
   return (
     typeof window !== "undefined" &&
-    window.location.hash.replace(/^#/, "").startsWith("/quick-composer")
+    window.location.hash.replace(LEADING_HASH, "").startsWith("/quick-composer")
   );
 }
 

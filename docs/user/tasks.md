@@ -83,7 +83,7 @@ sources can also be opened from the **Sources** view.
 
 - **Slack** turns a bot mention in a mapped channel into a pending task. The configured
   owner starts it with Slack's white-check reaction; another member's reaction does not
-  approve it. Tokens live in the OS keychain.
+  approve it. Tokens live in the server's secret store.
 - **GitHub issues** reads matching issues with your `gh` sign-in and can write delivery
   status and links back.
 - **Notion** reads a configured tasks data source and writes status, pull request links and
@@ -113,3 +113,5 @@ or your own decision.
 A scheduled task survives closing the window because the server owns it. **New task** sets
 the prompt, schedule, project, provider and model; each row can be enabled, run now or
 deleted, and shows its next run and webhook deliveries.
+A task not bound to a thread runs in a new worktree, which follows **Settings ▸ Worktrees ▸
+Start from remote** (or the project's override).

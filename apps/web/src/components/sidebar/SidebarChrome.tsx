@@ -10,7 +10,7 @@ import { HoustonWordmark } from "../HoustonWordmark";
 import {
   resolveEnvironmentIdentificationPillLabel,
   useEnvironmentStageLabel,
-} from "../SidebarStageBackdrop";
+} from "../../environmentIdentification";
 import { Badge } from "../ui/badge";
 import {
   SidebarFooter,
@@ -36,8 +36,11 @@ import { readLastOpenGridId } from "../../grid/lastGrid";
  */
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   isDesktopHost,
+  showHideControl = true,
 }: {
   isDesktopHost: boolean;
+  /** The phone's home is the rail itself, so it has nothing to hide. */
+  showHideControl?: boolean;
 }) {
   const stageLabel = useEnvironmentStageLabel();
   const environmentIdentificationMode = useEnvironmentIdentificationMode();
@@ -64,10 +67,12 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
           </div>
         ) : null}
       </div>
-      <SidebarTrigger
-        aria-label="Hide sidebar"
-        className="relative z-10 size-7! shrink-0 [-webkit-app-region:no-drag]"
-      />
+      {showHideControl ? (
+        <SidebarTrigger
+          aria-label="Hide sidebar"
+          className="relative z-10 size-7! shrink-0 [-webkit-app-region:no-drag]"
+        />
+      ) : null}
     </div>
   );
 });
@@ -96,9 +101,11 @@ export function SidebarBrandWidthProbe({
   );
 }
 
+const OPEN_GRID_ID_PATTERN = /^\/grid\/([^/]+)/;
+
 function SidebarBrand() {
   const pathname = useLocation({ select: (location) => location.pathname });
-  const openGridId = /^\/grid\/([^/]+)/.exec(pathname)?.[1] ?? readLastOpenGridId();
+  const openGridId = OPEN_GRID_ID_PATTERN.exec(pathname)?.[1] ?? readLastOpenGridId();
   const className =
     "relative z-10 ml-[calc(var(--workspace-controls-left)-0.75rem)] flex h-7 w-fit min-w-0 shrink items-center overflow-hidden rounded-(--control-radius) text-foreground outline-none ring-ring focus-visible:ring-2 focus-visible:ring-inset";
   // The wordmark returns to the grid last on screen, not to a fresh draft route.
@@ -216,7 +223,7 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
 
 export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
   return (
-    <SidebarFooter className="mt-auto">
+    <SidebarFooter className="mt-auto" separated>
       <SidebarUpdatePill />
       <SidebarProviderUpdatePill />
       <SidebarUpdateArchitectureWarning />

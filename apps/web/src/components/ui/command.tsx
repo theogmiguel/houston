@@ -3,6 +3,7 @@ import { SearchIcon } from "lucide-react";
 import { useRef } from "react";
 import type * as React from "react";
 import { cn } from "~/lib/utils";
+import { useNativeTitlebarHeight } from "~/lib/windowControlsOverlay";
 import {
   Autocomplete,
   AutocompleteCollection,
@@ -28,7 +29,12 @@ function CommandDialogTrigger(props: CommandDialogPrimitive.Trigger.Props) {
 function CommandDialogBackdrop({ className, ...props }: CommandDialogPrimitive.Backdrop.Props) {
   return (
     <CommandDialogPrimitive.Backdrop
-      className={cn(DIALOG_BACKDROP_CLASS, className)}
+      // The palette floats over a busy workspace, so it dims more than an ordinary dialog.
+      className={cn(
+        DIALOG_BACKDROP_CLASS,
+        "[--dialog-scrim:color-mix(in_srgb,#000_60%,transparent)]",
+        className,
+      )}
       data-slot="command-dialog-backdrop"
       {...props}
     />
@@ -36,13 +42,19 @@ function CommandDialogBackdrop({ className, ...props }: CommandDialogPrimitive.B
 }
 
 function CommandDialogViewport({ className, ...props }: CommandDialogPrimitive.Viewport.Props) {
+  // Short desktop windows would put the search field under the native window controls.
+  const nativeTitlebarHeight = useNativeTitlebarHeight();
+  const titlebarStyle = {
+    "--command-titlebar-height": `${nativeTitlebarHeight}px`,
+  } as React.CSSProperties;
   return (
     <CommandDialogPrimitive.Viewport
       className={cn(
-        "pointer-events-none fixed inset-0 z-50 flex flex-col items-center px-4 py-[max(--spacing(4),4vh)] sm:py-[10vh]",
+        "pointer-events-none fixed inset-0 z-50 flex flex-col items-center px-4 pt-[max(--spacing(4),4vh,calc(var(--command-titlebar-height)+--spacing(2)))] pb-[max(--spacing(4),4vh)] sm:pt-[max(10vh,calc(var(--command-titlebar-height)+--spacing(2)))] sm:pb-[10vh]",
         className,
       )}
       data-slot="command-dialog-viewport"
+      style={titlebarStyle}
       {...props}
     />
   );
@@ -67,7 +79,7 @@ function CommandDialogPopup({
           ref={popupRef}
           className={cn(
             DIALOG_POPUP_CLASS,
-            "pointer-events-auto max-h-105 max-w-[640px] text-foreground",
+            "pointer-events-auto max-h-105 max-w-[640px] rounded-(--r-group) text-foreground",
             className,
           )}
           data-slot="command-dialog-popup"
@@ -198,7 +210,7 @@ function CommandItem({
         "py-1.5 data-selected:bg-foreground/[0.06] data-highlighted:bg-foreground/[0.09] data-highlighted:text-foreground [&[data-highlighted][data-selected]]:bg-foreground/[0.09] [&[data-highlighted][data-selected]]:text-foreground",
         active !== undefined &&
           "cursor-pointer hover:bg-transparent hover:text-inherit data-highlighted:bg-transparent data-highlighted:text-inherit data-selected:bg-transparent data-selected:text-inherit [&[data-highlighted][data-selected]]:bg-transparent [&[data-highlighted][data-selected]]:text-inherit",
-        active && "bg-hover! text-hover-foreground!",
+        active && "bg-[var(--sel)]! text-hover-foreground!",
         className,
       )}
       data-active={active || undefined}

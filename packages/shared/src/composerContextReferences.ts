@@ -33,12 +33,12 @@ function fnv1a64(value: string): string {
   return `${forward.toString(16).padStart(8, "0")}${reverse.toString(16).padStart(8, "0")}`;
 }
 
+const NON_SLUG_RUN = /[^a-z0-9_-]+/gi;
+const EDGE_HYPHENS = /^-+|-+$/g;
+
 export function toComposerContextId(producerId: string): ComposerContextId {
   if (CONTEXT_ID_PATTERN.test(producerId)) return producerId as ComposerContextId;
-  const slug = producerId
-    .replace(/[^a-z0-9_-]+/gi, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 48);
+  const slug = producerId.replace(NON_SLUG_RUN, "-").replace(EDGE_HYPHENS, "").slice(0, 48);
   return `${slug || "ctx"}-${fnv1a64(producerId)}` as ComposerContextId;
 }
 
@@ -66,10 +66,13 @@ export function parseComposerContextHref(
   return { kind, contextId: contextId as ComposerContextId };
 }
 
+const BRACKET_OR_LINE_BREAK = /[[\]\\\r\n]/g;
+const WHITESPACE_RUNS = /\s+/g;
+
 export function sanitizeComposerContextLabel(label: string, kind: ComposerContextKind): string {
   const cleaned = label
-    .replace(/[[\]\\\r\n]/g, " ")
-    .replace(/\s+/g, " ")
+    .replace(BRACKET_OR_LINE_BREAK, " ")
+    .replace(WHITESPACE_RUNS, " ")
     .trim()
     .slice(0, COMPOSER_CONTEXT_LABEL_MAX_CHARS);
   return cleaned.length > 0 ? cleaned : kind;
@@ -132,9 +135,11 @@ export function collectComposerContextReferences(
 export const ATTACHMENT_ONLY_BOOTSTRAP_PROMPT =
   "[User attached one or more files without additional text. Respond using the conversation context and the attached files.]";
 
+const ULTRATHINK_PREFIX = /^Ultrathink:\s*/i;
+
 /** Claude's ultrathink effort sends the prompt as `Ultrathink:\n<prompt>`. */
 export function isAttachmentOnlyBootstrapPrompt(text: string): boolean {
-  return text.replace(/^Ultrathink:\s*/i, "") === ATTACHMENT_ONLY_BOOTSTRAP_PROMPT;
+  return text.replace(ULTRATHINK_PREFIX, "") === ATTACHMENT_ONLY_BOOTSTRAP_PROMPT;
 }
 
 export function stripAttachmentOnlyBootstrapPrompt(text: string): string {
@@ -143,6 +148,8 @@ export function stripAttachmentOnlyBootstrapPrompt(text: string): string {
     : text;
 }
 
+const RESTORE_ATTACHMENT_ONLY_BOOTSTRAP_PROMPT_PATTERN = /^Ultrathink:\s*$/i;
+
 export function restoreAttachmentOnlyBootstrapPrompt(
   text: string,
   hasAttachments: boolean,
@@ -150,7 +157,7 @@ export function restoreAttachmentOnlyBootstrapPrompt(
   if (!hasAttachments) return text;
   const trimmed = text.trim();
   if (trimmed.length === 0) return ATTACHMENT_ONLY_BOOTSTRAP_PROMPT;
-  return /^Ultrathink:\s*$/i.test(trimmed)
+  return RESTORE_ATTACHMENT_ONLY_BOOTSTRAP_PROMPT_PATTERN.test(trimmed)
     ? `Ultrathink:\n${ATTACHMENT_ONLY_BOOTSTRAP_PROMPT}`
     : text;
 }
@@ -180,20 +187,21 @@ export function replaceComposerContextReferences(
 const CONTEXT_ENVELOPE_TAG = "houston_context";
 const CONTEXT_ENTRY_TAG = "context";
 
+const SPACED_PATTERN = /-/g;
+
 function kindDisplayName(kind: ComposerContextKind): string {
-  const spaced = kind.replace(/-/g, " ");
+  const spaced = kind.replace(SPACED_PATTERN, " ");
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
+
+const LABEL_BREAK_CHARACTER = /[\r\n;\]]/g;
 
 function formatComposerContextProviderMarker(
   kind: ComposerContextKind,
   label: string,
   contextId: ComposerContextId,
 ): string {
-  const cleanLabel = label
-    .replace(/[\r\n;\]]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  const cleanLabel = label.replace(LABEL_BREAK_CHARACTER, " ").replace(WHITESPACE_RUNS, " ").trim();
   return `[${kindDisplayName(kind)}: ${escapeComposerContextPayloadText(cleanLabel)}; ref=${contextId}]`;
 }
 
@@ -205,12 +213,17 @@ function escapeComposerContextPayloadText(text: string): string {
   );
 }
 
+const AMPERSAND = /&/g;
+const DOUBLE_QUOTE = /"/g;
+const LESS_THAN = /</g;
+const GREATER_THAN = />/g;
+
 function escapeAttribute(value: string): string {
   return value
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+    .replace(AMPERSAND, "&amp;")
+    .replace(DOUBLE_QUOTE, "&quot;")
+    .replace(LESS_THAN, "&lt;")
+    .replace(GREATER_THAN, "&gt;");
 }
 
 function indent(text: string): string {

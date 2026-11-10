@@ -50,6 +50,8 @@ function normalizePreviewOpenInput(input: PreviewAutomationOpenInput): PreviewAu
   };
 }
 
+const HTTP_URL_PREFIX = /^https?:\/\//i;
+
 const invoke = Effect.fn("PreviewToolkit.invoke")(function* <A>(
   operation: PreviewAutomationOperation,
   input: unknown,
@@ -90,7 +92,7 @@ const invoke = Effect.fn("PreviewToolkit.invoke")(function* <A>(
     .pipe(Effect.orElseSucceed(() => null));
   return {
     result,
-    ...(page?.url && /^https?:\/\//i.test(page.url) && page.url.length <= 4096
+    ...(page?.url && HTTP_URL_PREFIX.test(page.url) && page.url.length <= 4096
       ? { toolIcon: { _tag: "website" as const, pageUrl: page.url } }
       : {}),
   };

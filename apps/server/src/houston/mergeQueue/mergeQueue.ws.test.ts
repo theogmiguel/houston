@@ -89,6 +89,7 @@ import * as ServerBrowser from "../../preview/ServerBrowser.ts";
 import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
 import * as ServerLifecycleEvents from "../../serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "../../serverRuntimeStartup.ts";
+import * as AssetSigner from "../../assets/AssetSigner.ts";
 import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
 import * as ServerSelfUpdate from "../../cloud/selfUpdate.ts";
 import * as SessionStore from "../../auth/SessionStore.ts";
@@ -253,6 +254,7 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(ProviderLatestVersions.ProviderLatestVersions)({}),
   Keybindings.layer,
   ServerSecretStore.layer,
+  AssetSigner.layer.pipe(Layer.provide(ServerSecretStore.layer)),
 );
 
 const ALL_SCOPES: ReadonlyArray<AuthEnvironmentScope> = [

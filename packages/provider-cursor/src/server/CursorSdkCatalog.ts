@@ -104,13 +104,15 @@ const decodeApiError = Schema.decodeUnknownOption(ApiError);
 const decodeApiErrorEnvelope = Schema.decodeUnknownOption(ApiErrorEnvelope);
 const isCatalogError = Schema.is(CursorSdkCatalogError);
 
+const TRAILING_SLASH = /\/$/;
+
 // Catalog discovery uses public HTTP routes so signed-in startup does not initialize the agent runtime.
 const makeLiveProbes = Effect.gen(function* () {
   const client = yield* HttpClient.HttpClient;
   const baseUrl = (yield* Config.String("CURSOR_BACKEND_URL").pipe(
     Config.withDefault("https://api.cursor.com"),
     Effect.orDie,
-  )).replace(/\/$/, "");
+  )).replace(TRAILING_SLASH, "");
   const request = Effect.fn("CursorSdkCatalog.request")(function* (apiKey: string, path: string) {
     const response = yield* client
       .execute(

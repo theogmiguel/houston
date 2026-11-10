@@ -220,6 +220,7 @@ it.effect(
           listOlderSettledThreads: () => Effect.die("unused listOlderSettledThreads"),
           readShellSnapshot: () => Effect.die("unused readShellSnapshot"),
           getThreadShell: () => Effect.die("unused getThreadShell"),
+          getThreadTitles: () => Effect.die("unused getThreadTitles"),
           getThread: () => Ref.get(projection).pipe(Effect.map((state) => state.thread)),
           getSettlementCandidates: () => Effect.die("unused getSettlementCandidates"),
           getThreadsWithPullRequests: () => Effect.die("unused getThreadsWithPullRequests"),
@@ -291,6 +292,7 @@ it.effect(
           detach: () => Effect.void,
           otherWorkingThreads: () => Effect.succeed([]),
           releaseUnlessBusy: () => Effect.succeed(true),
+          subscribePromptSuggestion: () => Stream.empty,
         }),
       );
       const layerControl = ProviderTurnControlService.layer.pipe(

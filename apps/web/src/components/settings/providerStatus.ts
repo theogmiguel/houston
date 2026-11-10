@@ -4,6 +4,9 @@ import type {
   ServerProviderCompatibilityAdvisory,
 } from "@houston-app/contracts";
 import type { ProviderReadiness } from "@houston-app/contracts/houston/providerReadiness";
+import type { TimestampFormat } from "@houston-app/contracts/settings";
+
+import { formatUpcomingTimestamp } from "../../timestampFormat";
 
 export const PROVIDER_STATUS_STYLES = {
   disabled: {
@@ -46,7 +49,11 @@ const RESET_WINDOW_HOUR_MS = 3_600_000;
 const RESET_WINDOW_DAY_MS = 86_400_000;
 
 /** How long until a usage window resets, in words a settings row can carry. */
-export function formatReadinessReset(resetsAt: string, nowMs: number = Date.now()): string | null {
+export function formatReadinessReset(
+  resetsAt: string,
+  timestampFormat: TimestampFormat,
+  nowMs: number = Date.now(),
+): string | null {
   const resetMs = Date.parse(resetsAt);
   if (!Number.isFinite(resetMs)) return null;
   const remainingMs = resetMs - nowMs;
@@ -59,13 +66,7 @@ export function formatReadinessReset(resetsAt: string, nowMs: number = Date.now(
     const minutes = Math.floor((remainingMs % RESET_WINDOW_HOUR_MS) / RESET_WINDOW_MINUTE_MS);
     return minutes === 0 ? `Resets in ${hours} h.` : `Resets in ${hours} h ${minutes} min.`;
   }
-  return `Resets ${new Date(resetMs).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  })} at ${new Date(resetMs).toLocaleTimeString(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-  })}.`;
+  return `Resets ${formatUpcomingTimestamp(resetsAt, timestampFormat, nowMs)}.`;
 }
 
 function providerReadinessStateKey(readiness: ProviderReadiness): ProviderStatusKey {
@@ -86,7 +87,10 @@ function providerReadinessStateKey(readiness: ProviderReadiness): ProviderStatus
 }
 
 /** One action that resolves a provider readiness state, or null when nothing is left to do. */
-export function getProviderReadinessAction(readiness: ProviderReadiness): string | null {
+export function getProviderReadinessAction(
+  readiness: ProviderReadiness,
+  timestampFormat: TimestampFormat,
+): string | null {
   switch (readiness.state) {
     case "notInstalled":
       return readiness.reason === "missing"
@@ -101,19 +105,23 @@ export function getProviderReadinessAction(readiness: ProviderReadiness): string
     case "outOfUsage":
       return readiness.resetsAt === null
         ? "Add usage or use another provider."
-        : (formatReadinessReset(readiness.resetsAt) ?? "Wait for the usage window to reset.");
+        : (formatReadinessReset(readiness.resetsAt, timestampFormat) ??
+            "Wait for the usage window to reset.");
     case "ready":
       return null;
   }
 }
 
-function getReadinessSummary(readiness: ProviderReadiness): {
+function getReadinessSummary(
+  readiness: ProviderReadiness,
+  timestampFormat: TimestampFormat,
+): {
   readonly headline: string;
   readonly detail: string;
   readonly action: string | null;
 } | null {
   if (readiness.state === "ready") return null;
-  const action = getProviderReadinessAction(readiness);
+  const action = getProviderReadinessAction(readiness, timestampFormat);
   const detail = action === null ? readiness.message : `${readiness.message} ${action}`;
   switch (readiness.state) {
     case "notInstalled":
@@ -142,7 +150,10 @@ export function getProviderStatusKey(provider: ServerProvider | undefined): Prov
   return provider?.status ?? "warning";
 }
 
-export function getProviderSummary(provider: ServerProvider | undefined) {
+export function getProviderSummary(
+  provider: ServerProvider | undefined,
+  timestampFormat: TimestampFormat,
+) {
   if (!provider) {
     return {
       headline: "Checking provider status",
@@ -151,7 +162,9 @@ export function getProviderSummary(provider: ServerProvider | undefined) {
   }
   // Readiness folds a refused turn and a usage window into the same one state the server
   // publishes; it wins over the probe fields those states would otherwise contradict.
-  const readinessSummary = provider.readiness ? getReadinessSummary(provider.readiness) : null;
+  const readinessSummary = provider.readiness
+    ? getReadinessSummary(provider.readiness, timestampFormat)
+    : null;
   if (readinessSummary) return readinessSummary;
   if (!provider.enabled || provider.status === "disabled") {
     return {
@@ -205,14 +218,17 @@ export function getProviderSummary(provider: ServerProvider | undefined) {
   };
 }
 
+const ANTIGRAVITY_PATTERN = /^agy_acp_server_(\d{4})(\d{2})(\d{2})_\d+(?:_(\w+))?$/;
+const LEADING_DIGIT = /^\d/;
+
 export function getProviderVersionLabel(version: string | null | undefined) {
   if (!version) return null;
-  const antigravity = /^agy_acp_server_(\d{4})(\d{2})(\d{2})_\d+(?:_(\w+))?$/.exec(version);
+  const antigravity = ANTIGRAVITY_PATTERN.exec(version);
   if (antigravity) {
     const [, year, month, day, candidate] = antigravity;
     return `${year}-${month}-${day}${candidate ? ` ${candidate}` : ""}`;
   }
-  return /^\d/.test(version) ? `v${version}` : version;
+  return LEADING_DIGIT.test(version) ? `v${version}` : version;
 }
 
 const COMPATIBILITY_TITLES = {

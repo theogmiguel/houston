@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off - serves the loopback Notion fake.
-// Task sources over one database with the real project service, the memory keychain, upstream's
+// Task sources over one database with the real project service, the memory secret store, upstream's
 // GitHub client answered by an in-process fake of api.github.com, and a loopback Notion fake.
 import * as NodeHttp from "node:http";
 
@@ -22,7 +22,7 @@ import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import * as ProjectEnrichmentService from "../../project/ProjectEnrichmentService.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import { HostedLaunch } from "../baseDir.ts";
-import { layerMemory, makeMemory, type MemoryKeychain } from "../secrets/HoustonKeychain.ts";
+import { layerMemory, makeMemory, type MemorySecrets } from "../secrets/HoustonSecrets.ts";
 import * as HoustonTaskService from "../tasks/TaskService.ts";
 import * as HoustonTaskStore from "../tasks/TaskStore.ts";
 import * as HoustonTaskV1Import from "../tasks/V1Import.ts";
@@ -214,7 +214,7 @@ export interface SourcesTestOptions {
   readonly databaseFile?: string;
   readonly baseDir?: string;
   readonly hosted?: boolean;
-  readonly keychain?: MemoryKeychain;
+  readonly secrets?: MemorySecrets;
   readonly github?: GithubFake;
   /** The loopback Notion fake's origin; requests fail to connect when absent. */
   readonly notionOrigin?: string;
@@ -233,7 +233,7 @@ export const layerSources = (options: SourcesTestOptions = {}) =>
     Layer.provideMerge(ProjectStore.layer),
     // Below the project service, so a project deletion reaches it, as in server.ts.
     Layer.provideMerge(HoustonTaskSourceStore.layer),
-    Layer.provideMerge(layerMemory(options.keychain ?? makeMemory())),
+    Layer.provideMerge(layerMemory(options.secrets ?? makeMemory())),
     Layer.provideMerge(HoustonTaskStore.layer),
     // Below the Tasks store, which hands it every write's transitions, as in server.ts.
     Layer.provideMerge(HoustonTaskSourceOutbox.layer),

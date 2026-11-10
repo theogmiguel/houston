@@ -264,24 +264,23 @@ describe("serverSettings helpers", () => {
     expect(resolveSpeechPostProcessingModelSelection(settings, undefined, () => false)).toBeNull();
   });
 
-  it("keeps the built-in voice prompt selected until custom instructions are nonempty", () => {
-    const blank = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
-      speechPostProcessingPrompt: { mode: "custom", customInstructions: "   " },
-    });
-    expect(blank.speechPostProcessingPrompt).toEqual({ mode: "default", customInstructions: "" });
-
-    const custom = applyServerSettingsPatch(blank, {
-      speechPostProcessingPrompt: { mode: "custom", customInstructions: "Keep product names." },
-    });
-    expect(custom.speechPostProcessingPrompt).toEqual({
-      mode: "custom",
-      customInstructions: "Keep product names.",
-    });
-    expect(
-      applyServerSettingsPatch(custom, {
-        speechPostProcessingPrompt: { customInstructions: "" },
-      }).speechPostProcessingPrompt,
-    ).toEqual({ mode: "default", customInstructions: "" });
+  it("follows the text-generation model until a cleanup model is pinned, and clears the pin with null", () => {
+    const base = {
+      ...DEFAULT_SERVER_SETTINGS,
+      providerInstances: {
+        codex: { driver: ProviderDriverKind.make("codex"), enabled: true, config: {} },
+        voice: { driver: ProviderDriverKind.make("opencode"), enabled: true, config: {} },
+      },
+    };
+    expect(base.speechPostProcessingModelSelection).toBeNull();
+    expect(resolveSpeechPostProcessingModelSelection(base)).toEqual(
+      base.textGenerationModelSelection,
+    );
+    const cleanup = createModelSelection(ProviderInstanceId.make("voice"), "custom-model");
+    const pinned = applyServerSettingsPatch(base, { speechPostProcessingModelSelection: cleanup });
+    expect(resolveSpeechPostProcessingModelSelection(pinned)).toEqual(cleanup);
+    const cleared = applyServerSettingsPatch(pinned, { speechPostProcessingModelSelection: null });
+    expect(cleared.speechPostProcessingModelSelection).toBeNull();
   });
 
   it("changes a cleanup rule without replacing the machine's other rules", () => {

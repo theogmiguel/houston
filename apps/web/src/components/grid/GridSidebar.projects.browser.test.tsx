@@ -36,6 +36,12 @@ vi.mock(import("@effect/atom-react"), async (original) => ({
   useAtomValue: (() => []) as never,
 }));
 
+vi.mock(import("../../state/environments"), async (original) => ({
+  ...(await original()),
+  usePrimaryEnvironmentId: (() => "env-1") as never,
+  useEnvironmentMachines: (() => new Map()) as never,
+}));
+
 vi.mock(import("../../state/session"), async (original) => ({
   ...(await original()),
   readEnvironmentScope: () => true,
@@ -213,22 +219,39 @@ describe("project sections", () => {
     resetTestState();
     await using screen = await render(<CollapsibleSections sections={projectSections()} />);
 
-    expect(screen.getByRole("button", { name: /^Houston$/ }).element()).toBeVisible();
+    expect(screen.getByRole("button", { name: /^Houston 2$/ }).element()).toBeVisible();
     expect(screen.getByRole("button", { name: /^notes$/ }).element()).toBeVisible();
-    expect(screen.getByRole("button", { name: /^No project$/ }).element()).toBeVisible();
-    expect(screen.getByRole("button", { name: /^Grid 1$/ }).element()).toBeVisible();
+    expect(screen.getByRole("button", { name: /^No project 1$/ }).element()).toBeVisible();
+    expect(screen.getByRole("button", { name: /^Grid 1 1$/ }).element()).toBeVisible();
     expect(screen.getByRole("button", { name: /^Grid 2 empty$/ }).element()).toBeVisible();
     expect(screen.getByRole("button", { name: "New grid in notes" }).element()).toBeVisible();
-    expect(screen.getByRole("button", { name: "New grid" }).element()).toBeVisible();
-    expect(screen.container.textContent).toContain("not in a grid");
+    // An empty project has no "New grid" row of its own: the header action is the one way in.
+    expect(screen.container.querySelectorAll('button[aria-label="New grid"]')).toHaveLength(0);
+    expect(screen.container.textContent).not.toContain("New grid");
+    expect(screen.container.textContent).not.toContain("not in a grid");
     expect(screen.container.textContent).not.toContain("Ungrouped");
+  });
+
+  it("rolls the project's lifted threads into one Needs you line", async () => {
+    resetTestState();
+    const value = section({
+      ungroupedThreads: [thread("visible", "project-1")],
+      needsYouThreads: [thread("needs", "project-1"), thread("failed", "project-1")],
+    });
+    await using screen = await render(<CollapsibleSections sections={[value]} />);
+
+    const rollup = screen.container.querySelector<HTMLElement>("[data-project-needs-you]")!;
+    expect(rollup.textContent).toBe("+2 in Needs you");
+    // The lifted threads are listed in the Needs you section, never twice here.
+    expect(screen.container.querySelector('[data-sidebar-row="env-1:needs"]')).toBeNull();
+    expect(screen.container.querySelector('[data-sidebar-row="env-1:visible"]')).not.toBeNull();
   });
 
   it("does not repeat the project name on a grid row", async () => {
     resetTestState();
     await using screen = await render(<CollapsibleSections sections={[projectSections()[0]!]} />);
 
-    const heading = screen.getByRole("button", { name: /^Grid 1$/ }).element();
+    const heading = screen.getByRole("button", { name: /^Grid 1 1$/ }).element();
     expect(heading.textContent).not.toContain("Houston");
   });
 
@@ -236,14 +259,14 @@ describe("project sections", () => {
     resetTestState();
     const sections = projectSections();
     await using first = await render(<CollapsibleSections sections={sections} />);
-    await userEvent.click(first.getByRole("button", { name: /^Houston$/ }).element());
-    const label = first.getByRole("button", { name: /^Houston 2 grids$/ }).element();
+    await userEvent.click(first.getByRole("button", { name: /^Houston 2$/ }).element());
+    const label = first.getByRole("button", { name: /^Houston 2$/ }).element();
     expect(label.getAttribute("aria-expanded")).toBe("false");
     expect(first.container.textContent).not.toContain("Grid 1");
     await first[Symbol.asyncDispose]();
 
     await using second = await render(<CollapsibleSections sections={sections} />);
-    const restored = second.getByRole("button", { name: /^Houston 2 grids$/ }).element();
+    const restored = second.getByRole("button", { name: /^Houston 2$/ }).element();
     expect(restored.getAttribute("aria-expanded")).toBe("false");
     expect(second.container.textContent).not.toContain("Grid 1");
   });
@@ -297,6 +320,87 @@ describe("project sections", () => {
     await expect.poll(opacity).toBe(1);
   });
 
+  it("expands a collapsed project while a search is active so its matches show", async () => {
+    resetTestState();
+    await using screen = await render(
+      <TooltipProvider delay={0}>
+        <SidebarProjectSection
+          {...sectionProps(projectSections()[0]!, { collapsed: true, query: "thread-a" })}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByRole("button", { name: /^Houston 2$/ }).element()).toBeVisible();
+    expect(screen.container.textContent).toContain("Grid 1");
+    expect(
+      screen
+        .getByRole("button", { name: /^Houston 2$/ })
+        .element()
+        .getAttribute("aria-expanded"),
+    ).toBe("true");
+  });
+
+  it("keeps a collapsed project collapsed without a search", async () => {
+    resetTestState();
+    await using screen = await render(
+      <TooltipProvider delay={0}>
+        <SidebarProjectSection {...sectionProps(projectSections()[0]!, { collapsed: true })} />
+      </TooltipProvider>,
+    );
+
+    expect(screen.container.textContent).not.toContain("Grid 1");
+  });
+
+  it("opens the project menu from an actions button beside New grid", async () => {
+    resetTestState();
+    const onOpenProjectMenu = vi.fn();
+    await using screen = await render(
+      <TooltipProvider delay={0}>
+        <SidebarProjectSection {...sectionProps(projectSections()[1]!, { onOpenProjectMenu })} />
+      </TooltipProvider>,
+    );
+
+    const more = screen.getByRole("button", { name: "Project actions for notes" }).element();
+    const rect = more.getBoundingClientRect();
+    await userEvent.click(more);
+
+    expect(more.getAttribute("aria-haspopup")).toBe("menu");
+    expect(onOpenProjectMenu).toHaveBeenCalledExactlyOnceWith({ x: rect.left, y: rect.bottom + 4 });
+  });
+
+  it("keeps a long project name clear of both project buttons", async () => {
+    resetTestState();
+    const container = document.createElement("div");
+    container.style.width = "220px";
+    await using screen = await render(
+      <TooltipProvider delay={0}>
+        <SidebarProjectSection
+          {...sectionProps(
+            section({ title: "a project with a very long name that must truncate" }),
+            { onOpenProjectMenu: () => {} },
+          )}
+        />
+      </TooltipProvider>,
+      { container },
+    );
+
+    const label = screen
+      .getByRole("button", { name: /^a project with a very long name/ })
+      .element();
+    const text = label.querySelector("span")!;
+    const add = screen.getByRole("button", { name: /^New grid in / }).element();
+    const more = screen.getByRole("button", { name: /^Project actions for / }).element();
+    const boundary = container.getBoundingClientRect().right + 1;
+
+    expect(text.getBoundingClientRect().right).toBeLessThanOrEqual(
+      Math.min(add.getBoundingClientRect().left, more.getBoundingClientRect().left),
+    );
+    expect(more.getBoundingClientRect().right).toBeLessThanOrEqual(boundary);
+    expect(add.getBoundingClientRect().right).toBeLessThanOrEqual(
+      more.getBoundingClientRect().left,
+    );
+  });
+
   it("creates a grid from the project label's action", async () => {
     resetTestState();
     const onCreateGrid = vi.fn();
@@ -324,7 +428,7 @@ describe("project sections", () => {
     const scratch = projectSections()[2]!;
     await using screen = await render(<CollapsibleSections sections={[scratch]} />);
 
-    expect(screen.getByRole("button", { name: /^No project$/ }).element()).toBeVisible();
+    expect(screen.getByRole("button", { name: /^No project 1$/ }).element()).toBeVisible();
     expect(page.getByRole("button", { name: /^New grid in No project$/ }).elements()).toHaveLength(
       0,
     );
@@ -365,7 +469,7 @@ describe("project sections", () => {
         <SidebarProjectSection {...sectionProps(projectSections()[2]!, { onOpenProjectMenu })} />
       </TooltipProvider>,
     );
-    const label = screen.getByRole("button", { name: /^No project$/ }).element();
+    const label = screen.getByRole("button", { name: /^No project 1$/ }).element();
     label.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
     expect(onOpenProjectMenu).not.toHaveBeenCalled();
   });
@@ -390,6 +494,7 @@ describe("project sections", () => {
       showBranch: true,
       showPullRequest: true,
       showSubagents: true,
+      showNeedsYou: false,
     } as const;
     await using screen = await render(
       <TooltipProvider delay={0}>
@@ -398,6 +503,9 @@ describe("project sections", () => {
     );
 
     expect(screen.container.textContent).toContain("Projects");
+    const label = getComputedStyle(screen.getByText("Projects").element());
+    expect(label.textTransform).toBe("none");
+    expect(label.letterSpacing).toBe("normal");
     const add = screen.getByRole("button", { name: "Add project" }).element();
     const viewOptions = screen.getByRole("button", { name: "View options" }).element();
     const actions = add.parentElement as HTMLElement;

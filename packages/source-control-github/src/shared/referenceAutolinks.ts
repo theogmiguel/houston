@@ -7,6 +7,9 @@ const REFERENCE =
 const CANDIDATE = /[#@]|\b[a-f\d]{7,40}\b/iu;
 const SHORT_SHA_LENGTH = 7;
 
+const HTTP_SCHEME_ONLY = /^https?:$/u;
+const HEX_LETTER = /[a-f]/iu;
+
 export function gitHubReferenceAutolinks(
   text: string,
   repositoryUrl: string,
@@ -19,7 +22,7 @@ export function gitHubReferenceAutolinks(
     return [];
   }
   const [owner, repo] = url.pathname.split("/").filter(Boolean);
-  if (!owner || !repo || !/^https?:$/u.test(url.protocol)) return [];
+  if (!owner || !repo || !HTTP_SCHEME_ONLY.test(url.protocol)) return [];
   const repository = (qualifier: string | undefined) =>
     qualifier?.includes("/") ? qualifier : qualifier ? `${qualifier}/${repo}` : `${owner}/${repo}`;
   const links: ReferenceAutolink[] = [];
@@ -35,7 +38,7 @@ export function gitHubReferenceAutolinks(
       });
     } else if (sha) {
       // A run of digits is a number far more often than a SHA.
-      if (!/[a-f]/iu.test(sha)) continue;
+      if (!HEX_LETTER.test(sha)) continue;
       links.push({
         index: match.index,
         text: matched,

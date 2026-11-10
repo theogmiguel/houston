@@ -9,8 +9,20 @@ import {
 
 import { redactSecrets } from "../mergeQueue/redact.ts";
 import { cutAbsolutePaths } from "../redact.ts";
-import { keychainService } from "../secrets/HoustonKeychain.ts";
 import { slackText } from "./text.ts";
+
+const HORIZONTAL_SPACE_RUN = /[ \t ]+/g;
+const BLANK_LINE_RUN = /\n{3,}/g;
+const FORMAT_CHARS = /\p{Cf}/gu;
+const DASH_CHARS = /[\p{Pd}−]/gu;
+const RIGHT_ANGLE_MARKS = /[›〉⟩❯]/gu;
+const RIGHT_DOUBLE_ANGLE_MARKS = /[≫»]/gu;
+const LEFT_ANGLE_MARKS = /[‹〈⟨❮]/gu;
+const LEFT_DOUBLE_ANGLE_MARKS = /[≪«]/gu;
+const FENCE_OPENING = /<{3,}\s*(HOUSTON-)/gi;
+const FENCE_CLOSING = /(HOUSTON-[A-Z0-9_-]*)\s*>{3,}/gi;
+const TRAILING_PATH_SEPARATORS = /[\\/]+$/;
+const REPEATED_HORIZONTAL_SPACE = /[ \t]{2,}/g;
 
 export const APP_TOKEN_ACCOUNT = "app-token";
 export const BOT_TOKEN_ACCOUNT = "bot-token";
@@ -22,9 +34,9 @@ export const ADJUST_ACCEPT_ACTION = "houston_slack_adjust_accept";
 export const ADJUST_IGNORE_ACTION = "houston_slack_adjust_ignore";
 export const CHECK_MARK = "white_check_mark";
 
-/** One OS keychain service per server base dir, so channels never share the tokens. */
-export const slackKeychainService = (baseDir: string): string =>
-  keychainService({ baseDir, purpose: "slack", projectId: "server", provider: "connection" });
+/** A Slack token in the secret store; the directory is per channel, so the name has no channel part. */
+export const slackSecretName = (account: typeof APP_TOKEN_ACCOUNT | typeof BOT_TOKEN_ACCOUNT) =>
+  `houston-slack-connection-${account}`;
 
 export const refuse = (
   kind: HoustonSlackError["kind"],
@@ -252,9 +264,9 @@ export const requestText = (raw: string, botUserId: string): string => {
   return raw
     .replace(mention, " ")
     .split("\n")
-    .map((line) => line.replace(/[ \t ]+/g, " ").trim())
+    .map((line) => line.replace(HORIZONTAL_SPACE_RUN, " ").trim())
     .join("\n")
-    .replace(/\n{3,}/g, "\n\n")
+    .replace(BLANK_LINE_RUN, "\n\n")
     .trim()
     .replaceAll("&lt;", "<")
     .replaceAll("&gt;", ">")
@@ -419,14 +431,14 @@ export const SLACK_REQUEST_CLOSE = "HOUSTON-SLACK-REQUEST>>>";
 export const defangFences = (value: string): string =>
   value
     .normalize("NFKC")
-    .replace(/\p{Cf}/gu, "")
-    .replace(/[\p{Pd}−]/gu, "-")
-    .replace(/[›〉⟩❯]/gu, ">")
-    .replace(/[≫»]/gu, ">>")
-    .replace(/[‹〈⟨❮]/gu, "<")
-    .replace(/[≪«]/gu, "<<")
-    .replace(/<{3,}\s*(HOUSTON-)/gi, "<<$1")
-    .replace(/(HOUSTON-[A-Z0-9_-]*)\s*>{3,}/gi, "$1>>");
+    .replace(FORMAT_CHARS, "")
+    .replace(DASH_CHARS, "-")
+    .replace(RIGHT_ANGLE_MARKS, ">")
+    .replace(RIGHT_DOUBLE_ANGLE_MARKS, ">>")
+    .replace(LEFT_ANGLE_MARKS, "<")
+    .replace(LEFT_DOUBLE_ANGLE_MARKS, "<<")
+    .replace(FENCE_OPENING, "<<$1")
+    .replace(FENCE_CLOSING, "$1>>");
 
 /** The requester's words as a brief carries them: attributed, fenced and defanged. */
 export const fenceSlackRequest = (input: {
@@ -524,7 +536,7 @@ export const agentText = (
   context: { readonly root: string | null; readonly hide: ReadonlyArray<string> },
 ): string => {
   let text = value;
-  const root = context.root?.replace(/[\\/]+$/, "");
+  const root = context.root?.replace(TRAILING_PATH_SEPARATORS, "");
   if (root !== undefined && root.length > 0) {
     text = text.replaceAll(`${root}/`, "").replaceAll(`${root}\\`, "").replaceAll(root, ".");
   }
@@ -534,7 +546,7 @@ export const agentText = (
   return outboundText(
     text
       .split("\n")
-      .map((line) => line.replace(/[ \t]{2,}/g, " ").trim())
+      .map((line) => line.replace(REPEATED_HORIZONTAL_SPACE, " ").trim())
       .join("\n"),
   );
 };

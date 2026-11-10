@@ -104,8 +104,10 @@ export class ContextHandoffServiceV2 extends Context.Service<
   ContextHandoffServiceV2Shape
 >()("@houston-app/cli/orchestration-v2/ContextHandoffService/ContextHandoffServiceV2") {}
 
+const WHITESPACE_RUN = /\s+/g;
+
 function compactText(text: string, maxLength = 240): string {
-  const compacted = text.replace(/\s+/g, " ").trim();
+  const compacted = text.replace(WHITESPACE_RUN, " ").trim();
   if (compacted.length <= maxLength) {
     return compacted;
   }
@@ -282,6 +284,8 @@ export function makeSideChatContext(input: {
 export const isSideChatContextHandoff = (handoff: OrchestrationV2ContextHandoff): boolean =>
   handoff.strategy === "manual_context" && handoff.transferId != null;
 
+const WHITESPACE_CHAR = /\s/;
+
 function makeLegacyImportSummary(items: ReadonlyArray<OrchestrationV2TurnItem>): string {
   const sections = items.flatMap((item) => {
     switch (item.type) {
@@ -315,10 +319,10 @@ function makeLegacyImportSummary(items: ReadonlyArray<OrchestrationV2TurnItem>):
     let bodyStart = Math.max(0, initialStart);
     if (
       bodyStart > 0 &&
-      !/\s/.test(section.body[bodyStart - 1] ?? "") &&
-      !/\s/.test(section.body[bodyStart] ?? "")
+      !WHITESPACE_CHAR.test(section.body[bodyStart - 1] ?? "") &&
+      !WHITESPACE_CHAR.test(section.body[bodyStart] ?? "")
     ) {
-      const nextWhitespace = section.body.slice(bodyStart).search(/\s/);
+      const nextWhitespace = section.body.slice(bodyStart).search(WHITESPACE_CHAR);
       if (nextWhitespace !== -1) {
         bodyStart += nextWhitespace;
       }

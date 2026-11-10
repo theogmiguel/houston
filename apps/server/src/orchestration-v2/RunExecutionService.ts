@@ -520,7 +520,8 @@ export function routeProviderEvent(
     case "background_work.updated":
       return [state.ownedProviderTurns.has(event.providerTurnId), state];
     case "command_output.delta":
-      // The session manager hands live output to the command output hub; runs never see it.
+    case "prompt_suggestion.updated":
+      // The session manager serves these to clients directly; runs never see them.
       return [false, state];
     case "turn.terminal":
       return event.providerTurnId === state.rootProviderTurnId
@@ -598,6 +599,8 @@ export class RunExecutionServiceV2 extends Context.Service<
   RunExecutionServiceV2,
   RunExecutionServiceV2Shape
 >()("@houston-app/cli/orchestration-v2/RunExecutionService/RunExecutionServiceV2") {}
+
+const NON_KEY_CHARACTER = /[^\w.-]/g;
 
 export const layer: Layer.Layer<
   RunExecutionServiceV2,
@@ -1660,7 +1663,7 @@ export const layer: Layer.Layer<
           // The item id alone is unique and needs no escaping; server and
           // tool names are free text that would break the tag Codex wraps
           // the context in.
-          key: `mcp_app_${entry.itemId.replace(/[^\w.-]/g, "_")}`,
+          key: `mcp_app_${entry.itemId.replace(NON_KEY_CHARACTER, "_")}`,
           text: entry.text,
         }));
         const turnInput = {

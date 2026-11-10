@@ -6,6 +6,9 @@ import { ColorHueSlider, ColorSaturationValuePlane } from "../ui/color-picker";
 import { Input } from "../ui/input";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+const UPPERCASE_LETTER = /([A-Z])/g;
+const FIRST_CHARACTER = /^./;
+
 export function getThemeRoleLabel(role: ThemeColorRole): string {
   const labels: Partial<Record<ThemeColorRole, string>> = {
     canvas: "Background",
@@ -25,7 +28,9 @@ export function getThemeRoleLabel(role: ThemeColorRole): string {
   };
   const label = labels[role];
   if (label) return label;
-  return role.replace(/([A-Z])/g, " $1").replace(/^./, (character) => character.toUpperCase());
+  return role
+    .replace(UPPERCASE_LETTER, " $1")
+    .replace(FIRST_CHARACTER, (character) => character.toUpperCase());
 }
 
 function themePickerAlphaSuffix(value: string): string {
@@ -43,15 +48,16 @@ function themeHexToRgb(hex: string) {
   return [numeric >> 16, (numeric >> 8) & 255, numeric & 255] as const;
 }
 
+const RGB_FUNCTION_OPENING = /^rgb\(\s*/i;
+const CLOSING_PARENTHESIS = /\s*\)$/;
+const CHANNELS_PATTERN = /[,\s]+/;
+
 function themeRgbToHex(value: string): string | null {
   const normalized = value
     .trim()
-    .replace(/^rgb\(\s*/i, "")
-    .replace(/\s*\)$/, "");
-  const channels = normalized
-    .split(/[,\s]+/)
-    .filter(Boolean)
-    .map(Number);
+    .replace(RGB_FUNCTION_OPENING, "")
+    .replace(CLOSING_PARENTHESIS, "");
+  const channels = normalized.split(CHANNELS_PATTERN).filter(Boolean).map(Number);
   if (
     channels.length !== 3 ||
     channels.some((channel) => !Number.isInteger(channel) || channel < 0 || channel > 255)
@@ -97,6 +103,8 @@ function createFrameCommitter() {
 
 type FrameCommitter = ReturnType<typeof createFrameCommitter>;
 
+const HANDLE_HEX_CHANGE_PATTERN = /^#[0-9a-f]{6}$/i;
+
 function ThemeColorPickerPanel({
   label,
   value,
@@ -140,7 +148,7 @@ function ThemeColorPickerPanel({
 
   const handleHexChange = (nextValue: string) => {
     setHexDraft(nextValue);
-    if (!/^#[0-9a-f]{6}$/i.test(nextValue)) return;
+    if (!HANDLE_HEX_CHANGE_PATTERN.test(nextValue)) return;
     const nextHsv = hexToHsv(nextValue);
     setHsv(nextHsv);
     setRgbDraft(themeRgbValue(nextValue));

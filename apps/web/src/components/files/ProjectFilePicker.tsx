@@ -68,6 +68,8 @@ function EmptyProjectFilePicker() {
   );
 }
 
+const NON_WHITESPACE = /\S/;
+
 function OpenProjectFilePicker(props: ProjectFilePickerProps & { target: ActiveProjectTarget }) {
   const { target } = props;
   const [query, setQuery] = useState("");
@@ -81,7 +83,7 @@ function OpenProjectFilePicker(props: ProjectFilePickerProps & { target: ActiveP
   const { resolvedTheme } = useTheme();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const matches = getProjectFilePickerMatches(result.entries, result.matchedQuery);
-  const hasMatchedQuery = /\S/.test(result.matchedQuery);
+  const hasMatchedQuery = NON_WHITESPACE.test(result.matchedQuery);
   const items: CommandPaletteActionItem[] = matches.map((match) => ({
     kind: "action",
     value: `file:${match.path}`,

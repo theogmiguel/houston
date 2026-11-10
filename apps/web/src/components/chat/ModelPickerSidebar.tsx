@@ -1,10 +1,25 @@
 import { Toolbar } from "@base-ui/react/toolbar";
+import type { TimestampFormat } from "@houston-app/contracts/settings";
 import { type ProviderInstanceId } from "@houston-app/contracts";
 import { memo, useState } from "react";
 import { StarIcon } from "lucide-react";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { useClientSettings } from "~/hooks/useSettings";
 import { cn } from "~/lib/utils";
+import {
+  MODEL_PICKER_SIDEBAR_CLS,
+  MODEL_PICKER_SIDEBAR_PHONE_CLS,
+  MODEL_PICKER_SIDEBAR_PHONE_ROW_CLS,
+  MODEL_PICKER_SIDEBAR_PHONE_TRACK_CLS,
+  MODEL_PICKER_SIDEBAR_SCROLL_CLS,
+  MODEL_PICKER_SIDEBAR_FAVORITES_CLS,
+  MODEL_PICKER_SIDEBAR_LABEL_CLS,
+  MODEL_PICKER_SIDEBAR_ROW_CLS,
+  MODEL_PICKER_SIDEBAR_ROW_DISABLED_CLS,
+  MODEL_PICKER_SIDEBAR_NAME_CLS,
+  MODEL_PICKER_SIDEBAR_REASON_CLS,
+} from "../ui/model-picker-sidebar-recipes";
 import {
   isProviderInstancePickerReady,
   providerInstanceReadinessReason,
@@ -14,22 +29,28 @@ import {
 import { formatReadinessReset } from "../settings/providerStatus";
 
 /** A usage window's reset time, appended to the shared readiness label when it has one. */
-function readinessReason(entry: ProviderInstanceEntry): string | null {
+function readinessReason(
+  entry: ProviderInstanceEntry,
+  timestampFormat: TimestampFormat,
+): string | null {
   const reason = providerInstanceReadinessReason(entry);
   const readiness = entry.snapshot.readiness;
   if (reason === null || readiness?.state !== "outOfUsage" || readiness.resetsAt === null) {
     return reason;
   }
-  return `${reason} · ${formatReadinessReset(readiness.resetsAt)}`;
+  return `${reason} · ${formatReadinessReset(readiness.resetsAt, timestampFormat)}`;
 }
 
-function describeUnavailableInstance(entry: ProviderInstanceEntry): string {
+function describeUnavailableInstance(
+  entry: ProviderInstanceEntry,
+  timestampFormat: TimestampFormat,
+): string {
   const label = entry.displayName;
   // An unavailable instance (a driver this build lacks or the policy leaves out) says why instead.
   if ((!entry.enabled && entry.isAvailable) || entry.status === "disabled") {
     return `${label}: Disabled in settings.`;
   }
-  const readiness = readinessReason(entry);
+  const readiness = readinessReason(entry, timestampFormat);
   if (readiness !== null) {
     return `${label}: ${readiness}.`;
   }
@@ -43,11 +64,14 @@ function describeUnavailableInstance(entry: ProviderInstanceEntry): string {
 }
 
 /** The short reason the row shows beneath an unavailable provider's name. */
-function unavailableInstanceReason(entry: ProviderInstanceEntry): string | null {
+function unavailableInstanceReason(
+  entry: ProviderInstanceEntry,
+  timestampFormat: TimestampFormat,
+): string | null {
   if (!entry.enabled || entry.status === "disabled") {
     return "Disabled";
   }
-  const readiness = readinessReason(entry);
+  const readiness = readinessReason(entry, timestampFormat);
   if (readiness !== null) {
     return readiness;
   }
@@ -69,7 +93,10 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
   disabledInstanceIds?: ReadonlySet<ProviderInstanceId>;
   selectableUnavailableInstanceIds?: ReadonlySet<ProviderInstanceId>;
   getDisabledInstanceTooltip?: (entry: ProviderInstanceEntry) => string;
+  /** Lays the providers out as one scrolling row with 44px chips (the phone sheet). */
+  phone?: boolean;
 }) {
+  const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
   const handleSelect = (instanceId: ProviderInstanceId | "favorites") => {
     props.onSelectInstance(instanceId);
   };
@@ -78,10 +105,10 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
 
   return (
     <Toolbar.Root
-      className="w-[128px] shrink-0 overflow-hidden border-r border-border bg-(--pane-head)"
+      className={props.phone ? MODEL_PICKER_SIDEBAR_PHONE_CLS : MODEL_PICKER_SIDEBAR_CLS}
       data-model-picker-sidebar="true"
       aria-label="Providers"
-      orientation="vertical"
+      orientation={props.phone ? "horizontal" : "vertical"}
       onKeyDown={(event) => {
         if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
         if (event.key === "ArrowRight") {
@@ -91,23 +118,40 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
         }
       }}
     >
-      <div className="h-full overflow-y-auto overscroll-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <div className="relative flex min-h-full flex-col gap-px p-1.5">
+      <div
+        className={cn(
+          MODEL_PICKER_SIDEBAR_SCROLL_CLS,
+          props.phone && "overflow-x-auto overflow-y-hidden",
+        )}
+      >
+        <div
+          className={
+            props.phone
+              ? MODEL_PICKER_SIDEBAR_PHONE_TRACK_CLS
+              : "relative flex min-h-full flex-col gap-px p-1.5"
+          }
+        >
           {showFavorites ? (
             <>
-              <div className="relative w-full" data-model-picker-provider="favorites">
+              <div
+                className={cn("relative", props.phone ? "shrink-0" : "w-full")}
+                data-model-picker-provider="favorites"
+              >
                 <Tooltip>
                   <TooltipTrigger
                     render={
                       <Toolbar.Button
-                        className="relative isolate flex h-7 w-full cursor-pointer items-center gap-1.75 rounded-md px-2 text-left text-xs text-(--t2) transition-colors hover:bg-(--hover) hover:text-(--t1) focus-visible:bg-(--hover) focus-visible:text-(--t1) focus-visible:outline-none aria-pressed:bg-(--sel) aria-pressed:text-(--t1)"
+                        className={cn(
+                          MODEL_PICKER_SIDEBAR_FAVORITES_CLS,
+                          props.phone && MODEL_PICKER_SIDEBAR_PHONE_ROW_CLS,
+                        )}
                         onClick={() => handleSelect("favorites")}
                         type="button"
                         aria-label="Favorites"
                         aria-pressed={props.selectedInstanceId === "favorites"}
                       >
                         <StarIcon className="size-3.5 shrink-0" aria-hidden />
-                        <span className="min-w-0 flex-1 truncate leading-tight">Favorites</span>
+                        <span className={MODEL_PICKER_SIDEBAR_LABEL_CLS}>Favorites</span>
                       </Toolbar.Button>
                     }
                   />
@@ -134,11 +178,11 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
             const isHovered = hoveredInstanceId === entry.instanceId;
             const showInstanceBadge = shouldShowInstanceBadge(entry, props.instanceEntries);
             const reason =
-              unavailableInstanceReason(entry) ??
+              unavailableInstanceReason(entry, timestampFormat) ??
               (isContextDisabled ? "Unavailable in this thread" : null);
 
             const tooltip = isUnavailable
-              ? describeUnavailableInstance(entry)
+              ? describeUnavailableInstance(entry, timestampFormat)
               : isContextDisabled
                 ? (props.getDisabledInstanceTooltip?.(entry) ?? entry.displayName)
                 : entry.displayName;
@@ -146,9 +190,13 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
             const button = (
               <Toolbar.Button
                 className={cn(
-                  "relative isolate flex w-full cursor-pointer items-center gap-1.75 rounded-md px-2 text-left text-xs text-(--t2) transition-colors hover:bg-(--hover) hover:text-(--t1) focus-visible:bg-(--hover) focus-visible:text-(--t1) focus-visible:outline-none aria-pressed:bg-(--sel) aria-pressed:text-(--t1)",
-                  reason === null ? "h-7" : "items-start py-1",
-                  isDisabled && "cursor-not-allowed text-(--houston) hover:bg-transparent",
+                  MODEL_PICKER_SIDEBAR_ROW_CLS,
+                  props.phone
+                    ? MODEL_PICKER_SIDEBAR_PHONE_ROW_CLS
+                    : reason === null
+                      ? "h-7"
+                      : "items-start py-1",
+                  isDisabled && MODEL_PICKER_SIDEBAR_ROW_DISABLED_CLS,
                 )}
                 data-provider-accent-color={entry.accentColor}
                 onClick={() => !isDisabled && handleSelect(entry.instanceId)}
@@ -184,11 +232,11 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                   }
                   {...(entry.accentColor ? { badgeClassName: "h-3 min-w-3 px-0.5 text-5xs" } : {})}
                 />
-                <span className="flex min-w-0 flex-1 flex-col leading-tight">
+                <span className={MODEL_PICKER_SIDEBAR_NAME_CLS}>
                   <span className="truncate">{entry.displayName}</span>
                   {reason !== null ? (
                     <small
-                      className="truncate text-(--houston) text-2xs"
+                      className={MODEL_PICKER_SIDEBAR_REASON_CLS}
                       data-model-picker-provider-reason="true"
                     >
                       {reason}
@@ -207,7 +255,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
             return (
               <div
                 key={entry.instanceId}
-                className="relative w-full"
+                className={cn("relative", props.phone ? "shrink-0" : "w-full")}
                 data-model-picker-provider={entry.instanceId}
               >
                 <Tooltip>

@@ -1,7 +1,8 @@
 import type { OrchestrationV2TurnItem } from "@houston-app/contracts";
-import { ExternalLinkIcon, FileIcon } from "lucide-react";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
 import { cn } from "~/lib/utils";
+import { TIMELINE_CHANGE_DIFF_CLS } from "../ui/timeline-changes-recipes";
+import { TimelineChangesRow } from "./TimelineChangesRow";
 
 type FileChangeItem = Extract<OrchestrationV2TurnItem, { type: "file_change" }>;
 
@@ -11,6 +12,8 @@ interface DiffRow {
   readonly text: string;
 }
 
+const HUNK_PATTERN = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
+
 function parseDiff(item: FileChangeItem): DiffRow[] {
   const raw = item.diffStr;
   if (raw?.trim()) {
@@ -18,7 +21,7 @@ function parseDiff(item: FileChangeItem): DiffRow[] {
     let oldLine = 0;
     let newLine = 0;
     for (const line of raw.split("\n")) {
-      const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
+      const hunk = HUNK_PATTERN.exec(line);
       if (hunk) {
         oldLine = Number(hunk[1]);
         newLine = Number(hunk[2]);
@@ -65,7 +68,7 @@ function parseDiff(item: FileChangeItem): DiffRow[] {
   return [];
 }
 
-/** One file's change, drawn as the Timeline board's inline diff card. */
+/** One file's change, drawn as the timeline's shared change row with its inline diff. */
 export function TimelineFileChangeCard({
   item,
   workspaceRoot,
@@ -78,63 +81,49 @@ export function TimelineFileChangeCard({
   const rows = parseDiff(item);
   const additions = item.additions ?? rows.filter((row) => row.kind === "add").length;
   const deletions = item.deletions ?? rows.filter((row) => row.kind === "del").length;
+  const path = formatWorkspaceRelativePath(item.fileName, workspaceRoot);
   return (
-    <section
-      aria-label={`Diff for ${item.fileName}`}
-      className="overflow-hidden rounded-(--r-group) border border-border bg-card"
-    >
-      <div className="flex h-9 items-center gap-2 border-b border-border pe-1.5 ps-3">
-        <FileIcon aria-hidden className="size-3.5 shrink-0 text-(--houston)" />
-        <span className="min-w-0 flex-1 truncate font-mono text-mono text-(--t1)">
-          {formatWorkspaceRelativePath(item.fileName, workspaceRoot)}
-        </span>
-        <span className="shrink-0 text-callout text-(--houston) tabular-nums">
-          {additions > 0 ? <span className="text-(--ok-ink)">+{additions}</span> : null}
-          {additions > 0 && deletions > 0 ? " " : null}
-          {deletions > 0 ? <span className="text-(--stop-ink)">−{deletions}</span> : null}
-        </span>
-        {onOpenDiff ? (
-          <button
-            type="button"
-            aria-label="Open diff"
-            onClick={onOpenDiff}
-            className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-(--r-ctl) text-(--houston) transition-colors hover:bg-(--hover) hover:text-(--t1) focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
-          >
-            <ExternalLinkIcon aria-hidden className="size-3.5" />
-          </button>
-        ) : null}
-      </div>
-      {rows.length > 0 ? (
-        <div className="max-h-96 overflow-auto bg-(--code-bg) py-1.5 font-mono text-mono leading-5">
-          {rows.map((row) => (
-            <div
-              key={`${row.kind}:${row.number ?? row.text}`}
-              className={cn(
-                "grid grid-cols-[36px_14px_minmax(0,1fr)]",
-                row.kind === "add" && "bg-(--add-bg)",
-                row.kind === "del" && "bg-(--del-bg)",
-                row.kind === "hunk" && "text-(--houston)",
-              )}
-            >
-              <span className="select-none pe-2 text-right text-(--houston) tabular-nums">
-                {row.number ?? ""}
-              </span>
-              <span
-                aria-hidden
-                className={cn(
-                  row.kind === "add" && "text-(--ok-ink)",
-                  row.kind === "del" && "text-(--stop-ink)",
-                  row.kind === "context" && "text-(--houston)",
-                  row.kind === "hunk" && "text-(--houston)",
-                )}
-              >
-                {row.kind === "add" ? "+" : row.kind === "del" ? "−" : ""}
-              </span>
-              <span className="whitespace-pre-wrap wrap-anywhere">{row.text}</span>
+    <section aria-label={`Diff for ${path}`}>
+      <TimelineChangesRow
+        files={[{ path: item.fileName, additions, deletions }]}
+        totals={{ count: 1, additions, deletions }}
+        workspaceRoot={workspaceRoot}
+        {...(onOpenDiff === undefined ? {} : { onOpenDiff })}
+        onOpenFile={() => onOpenDiff?.()}
+        detail={
+          rows.length > 0 ? (
+            <div className={TIMELINE_CHANGE_DIFF_CLS}>
+              {rows.map((row) => (
+                <div
+                  key={`${row.kind}:${row.number ?? row.text}`}
+                  className={cn(
+                    "grid grid-cols-[36px_14px_minmax(0,1fr)]",
+                    row.kind === "add" && "bg-(--add-bg)",
+                    row.kind === "del" && "bg-(--del-bg)",
+                    row.kind === "hunk" && "text-(--houston)",
+                  )}
+                >
+                  <span className="select-none pe-2 text-right text-(--houston) tabular-nums">
+                    {row.number ?? ""}
+                  </span>
+                  <span
+                    aria-hidden
+                    className={cn(
+                      row.kind === "add" && "text-(--ok-ink)",
+                      row.kind === "del" && "text-(--stop-ink)",
+                      row.kind === "context" && "text-(--houston)",
+                      row.kind === "hunk" && "text-(--houston)",
+                    )}
+                  >
+                    {row.kind === "add" ? "+" : row.kind === "del" ? "−" : ""}
+                  </span>
+                  <span className="whitespace-pre-wrap wrap-anywhere">{row.text}</span>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      ) : null}
+          ) : undefined
+        }
+      />
     </section>
   );
 }

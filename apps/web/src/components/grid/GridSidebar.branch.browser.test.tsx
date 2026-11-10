@@ -4,11 +4,20 @@ import "~/index.css";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
 import { render } from "../../../test/render";
 import { TooltipProvider } from "../ui/tooltip";
+import { scopedThreadKey, scopeThreadRef } from "@houston-app/client-runtime/environment";
+import { endThreadDrag, getThreadDragSource } from "../../grid/threadDrag";
 import { ThreadCard } from "./GridSidebar";
+import { SidebarSearchHighlightContext } from "./sidebarSearchResults";
 
 vi.mock(import("@effect/atom-react"), async (original) => ({
   ...(await original()),
   useAtomValue: (() => []) as never,
+}));
+
+vi.mock(import("../../state/environments"), async (original) => ({
+  ...(await original()),
+  usePrimaryEnvironmentId: (() => "env-1") as never,
+  useEnvironmentMachines: (() => new Map()) as never,
 }));
 
 vi.mock(import("../../state/session"), async (original) => ({
@@ -42,7 +51,8 @@ vi.mock(import("../../state/vcs"), async (original) => {
 vi.mock(import("../../state/query"), async (original) => ({
   ...(await original()),
   useEnvironmentQuery: ((atom: { cwd: string } | null) => ({
-    data: atom === null ? null : { refName: atom.cwd === "/repo" ? "main" : "feature/x" },
+    data:
+      atom === null ? null : { refName: atom.cwd === "/repo" ? "houston/current" : "feature/x" },
   })) as never,
 }));
 
@@ -102,7 +112,7 @@ describe("ThreadCard branch", () => {
   it("shows the project checkout's current branch for a thread without its own branch", async () => {
     await using screen = await render(card(thread()));
 
-    await expect.element(screen.getByText("main", { exact: true })).toBeInTheDocument();
+    await expect.element(screen.getByText("houston/current", { exact: true })).toBeInTheDocument();
     expect(screen.container.textContent).not.toContain("no branch");
   });
 
@@ -113,11 +123,84 @@ describe("ThreadCard branch", () => {
     expect(statusCwds).toContain("/worktrees/x");
   });
 
-  it("keeps the thread's recorded branch without asking the checkout", async () => {
-    statusCwds.length = 0;
+  it("keeps the thread's recorded branch over the checkout's current one", async () => {
     await using screen = await render(card(thread({ branch: "houston/recorded" })));
 
     await expect.element(screen.getByText("houston/recorded", { exact: true })).toBeInTheDocument();
-    expect(statusCwds).toEqual([]);
+    expect(screen.container.textContent).not.toContain("houston/current");
+  });
+});
+
+describe("ThreadCard search highlight", () => {
+  it("marks the row that Enter would open and no other", async () => {
+    const key = scopedThreadKey(scopeThreadRef("env-1" as never, "thread-a" as never));
+    await using highlighted = await render(
+      <SidebarSearchHighlightContext.Provider value={key}>
+        {card(thread())}
+      </SidebarSearchHighlightContext.Provider>,
+    );
+    expect(highlighted.container.querySelector("[data-search-highlighted]")).not.toBeNull();
+    await highlighted[Symbol.asyncDispose]();
+
+    await using other = await render(
+      <SidebarSearchHighlightContext.Provider value="env-1:other">
+        {card(thread())}
+      </SidebarSearchHighlightContext.Provider>,
+    );
+    expect(other.container.querySelector("[data-search-highlighted]")).toBeNull();
+  });
+});
+
+describe("ThreadCard shelf row drag", () => {
+  it("starts a drag from a Closed row that carries the thread, so it can return to the rail", async () => {
+    await using screen = await render(
+      <TooltipProvider delay={0}>
+        <ThreadCard
+          gridId={null}
+          thread={thread({ settledOverride: "settled" })}
+          query=""
+          providerEntries={new Map()}
+          nowIso="2026-01-01T00:00:00.000Z"
+          focused={false}
+          selected={false}
+          dragging={false}
+          workspaceTitle="Houston"
+          shelf="settled"
+          onOpen={() => {}}
+          onSelect={() => {}}
+          onClose={() => {}}
+          onHold={() => {}}
+          onPickHoldTime={async () => null}
+          onRename={() => {}}
+          onSetAutoClose={() => {}}
+          onDropOnThread={() => {}}
+        />
+      </TooltipProvider>,
+    );
+    const handle = screen.container.querySelector<HTMLElement>("[data-card-open]")!;
+    const rect = handle.getBoundingClientRect();
+    const at = (type: string, dx: number) =>
+      (type === "pointerdown" ? handle : window).dispatchEvent(
+        new PointerEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          pointerId: 3,
+          button: 0,
+          pointerType: "mouse",
+          clientX: rect.left + 4 + dx,
+          clientY: rect.top + 4,
+        }),
+      );
+    at("pointerdown", 0);
+    at("pointermove", 30);
+    try {
+      expect(getThreadDragSource()).toMatchObject({
+        gridId: null,
+        threadId: "thread-a",
+        title: "Local checkout thread",
+      });
+    } finally {
+      endThreadDrag();
+    }
   });
 });

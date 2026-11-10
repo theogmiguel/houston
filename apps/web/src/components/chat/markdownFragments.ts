@@ -2,6 +2,10 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 
 import { hastPlainTextDeep } from "./markdownHast.logic";
 
+const GITHUB_HEADING_SLUG_PATTERN = /[^\p{L}\p{M}\p{N}\p{Pc} -]/gu;
+const GITHUB_HEADING_SLUG_PATTERN_2 = / /g;
+const VISIT_PATTERN = /^h[1-6]$/;
+
 const SANITIZED_FRAGMENT_PREFIX = "user-content-";
 
 function decodeMarkdownFragmentId(href: string): string {
@@ -72,8 +76,8 @@ function githubHeadingSlug(text: string): string {
   return text
     .trim()
     .toLowerCase()
-    .replace(/[^\p{L}\p{M}\p{N}\p{Pc} -]/gu, "")
-    .replace(/ /g, "-");
+    .replace(GITHUB_HEADING_SLUG_PATTERN, "")
+    .replace(GITHUB_HEADING_SLUG_PATTERN_2, "-");
 }
 
 /**
@@ -91,7 +95,7 @@ export function rehypeHeadingIds() {
     collect(tree);
     const nextSuffix = new Map<string, number>();
     const visit = (node: HeadingHastNode) => {
-      if (node.type === "element" && node.tagName && /^h[1-6]$/.test(node.tagName)) {
+      if (node.type === "element" && node.tagName && VISIT_PATTERN.test(node.tagName)) {
         const slug = githubHeadingSlug(hastPlainTextDeep(node));
         if (node.properties?.id === undefined && slug) {
           let count = nextSuffix.get(slug) ?? 0;

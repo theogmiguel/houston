@@ -105,6 +105,8 @@ interface TextTree {
   readonly children?: ReadonlyArray<TextTree>;
 }
 
+const LINE_BREAK = /\r?\n/g;
+
 function markdownThreadFindText(
   markdown: string,
   userMessage = false,
@@ -190,7 +192,7 @@ function markdownThreadFindText(
         }
         value = rendered + value.slice(cursor);
       }
-      text += inPre ? value : value.replace(/\r?\n/g, " ");
+      text += inPre ? value : value.replace(LINE_BREAK, " ");
     }
     const renderSkills =
       node.tagName === "code" || node.tagName === "a"

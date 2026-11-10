@@ -185,7 +185,7 @@ function SlackTokenFields({
       </label>
       <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 pt-1">
         <Text variant="caption" tone="muted">
-          Both tokens go to the OS keychain.
+          Both tokens are stored as secrets on the server.
         </Text>
         <Button size="sm" disabled={!canConnect || busy} onClick={() => void submit()}>
           Connect
@@ -291,7 +291,7 @@ function SlackConfigured({
 
   const runDisconnect = async () => {
     const confirmed = await requestConfirmDialog(
-      "Disconnect Slack? Houston stops reading its mapped channels and removes both tokens from the OS keychain.",
+      "Disconnect Slack? Houston stops reading its mapped channels and removes both tokens.",
     );
     if (confirmed !== true) return;
     setBusy("disconnect");
@@ -341,7 +341,7 @@ function SlackConfigured({
         />
         <SettingsRow
           title="Tokens"
-          description="App token and bot token stored in the OS keychain."
+          description="App token and bot token, stored as secrets on the server."
           control={
             <Button size="sm" variant="outline" onClick={() => setReplacing((value) => !value)}>
               {replacing ? "Cancel" : "Replace…"}
@@ -498,13 +498,35 @@ function SlackConfigured({
   );
 }
 
+/** A phone's loading state: card rows shaped like the settings rows they stand for. */
+function TaskSourcesSkeletonRows({ count }: { readonly count: number }) {
+  return (
+    <SettingsGroup className="phone:hidden" aria-hidden>
+      {Array.from({ length: count }, (_, index) => (
+        <div key={index} className="flex items-center justify-between gap-3 px-4 py-3">
+          <div className="min-w-0 flex-1 space-y-2">
+            <Skeleton shape="pill" className="h-4 w-28" />
+            <Skeleton shape="pill" className="h-3 w-full max-w-xs" />
+          </div>
+          <Skeleton className="size-7 shrink-0" />
+        </div>
+      ))}
+    </SettingsGroup>
+  );
+}
+
 function SlackSettings({ environmentId }: { environmentId: EnvironmentId }) {
   const infoResult = useAtomValue(slackEnvironment.info({ environmentId, input: {} }));
   const projects = useAtomValue(environmentProjects.projectsAtom)
     .filter((project) => project.environmentId === environmentId)
     .map((project) => ({ id: project.id as string, title: project.title }));
   if (AsyncResult.isInitial(infoResult) && !AsyncResult.isSuccess(infoResult)) {
-    return <Skeleton className="h-40 w-full" />;
+    return (
+      <>
+        <Skeleton className="h-40 w-full max-phone:hidden" />
+        <TaskSourcesSkeletonRows count={2} />
+      </>
+    );
   }
   if (AsyncResult.isFailure(infoResult)) {
     return (
@@ -727,7 +749,7 @@ function ProviderCard({
             />
             <SettingsRow
               title="Label"
-              description="Only issues with this label become tasks."
+              description="Issues with this label become tasks."
               control={
                 <Input
                   font="mono"
@@ -741,6 +763,7 @@ function ProviderCard({
             />
             <SettingsRow
               title="Assigned user"
+              description="Issues assigned to this user become tasks, with or without the label."
               control={
                 <Input
                   font="mono"
@@ -759,11 +782,11 @@ function ProviderCard({
           <>
             <SettingsRow
               title="Integration token"
-              description="Stored in the OS keychain. A saved token is never shown again."
+              description="Stored as a secret on the server. A saved token is never shown again."
               control={
                 settings.hasCredential ? (
                   <div className="flex items-center gap-2">
-                    <Badge variant="success">In keychain</Badge>
+                    <Badge variant="success">Saved</Badge>
                     <Button
                       size="xs"
                       variant="outline"
@@ -806,7 +829,7 @@ function ProviderCard({
             {settings.hasCredential && replacingToken ? (
               <SettingsRow
                 title="New token"
-                description="Replaces the token in the OS keychain."
+                description="Replaces the saved token."
                 control={
                   <div className="flex items-center gap-1.5">
                     <Input
@@ -1045,7 +1068,10 @@ function ProjectSourcesContent({
       variant="plain"
     >
       {AsyncResult.isInitial(settingsResult) ? (
-        <Skeleton className="h-52 w-full" />
+        <>
+          <Skeleton className="h-52 w-full max-phone:hidden" />
+          <TaskSourcesSkeletonRows count={3} />
+        </>
       ) : AsyncResult.isFailure(settingsResult) ? (
         <Alert variant="error">
           <AlertDescription>
@@ -1159,7 +1185,7 @@ function ImportSection({ environmentId }: { environmentId: EnvironmentId }) {
 
   return (
     <SettingsSection id="task-sources-import" title="Houston 1 data">
-      <SettingsGroup>
+      <SettingsGroup className="max-phone:rounded-none max-phone:border-0 max-phone:bg-transparent">
         {rows.map((row) => (
           <SettingsRow
             key={row.kind}

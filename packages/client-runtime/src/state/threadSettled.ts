@@ -337,6 +337,9 @@ export type CustomSnoozeInput =
       readonly unit: "minutes" | "hours" | "days";
     };
 
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const CLOCK_TIME = /^\d{2}:\d{2}$/;
+
 export function resolveCustomSnooze(input: CustomSnoozeInput, now: Date): string | null {
   let wake: Date;
   if (input.mode === "duration") {
@@ -345,7 +348,7 @@ export function resolveCustomSnooze(input: CustomSnoozeInput, now: Date): string
     const unitMs = { minutes: 60_000, hours: HOUR_MS, days: 24 * HOUR_MS }[input.unit];
     wake = new Date(now.getTime() + amount * unitMs);
   } else {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date) || !/^\d{2}:\d{2}$/.test(input.time)) return null;
+    if (!ISO_DATE.test(input.date) || !CLOCK_TIME.test(input.time)) return null;
     wake = new Date(`${input.date}T${input.time}:00`);
     // Reject rolled-over dates and nonexistent local times during DST changes.
     if (localSnoozeDate(wake) !== input.date || localSnoozeTime(wake) !== input.time) return null;

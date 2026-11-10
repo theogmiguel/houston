@@ -190,10 +190,27 @@ describe("ServerLoggerLive", () => {
         ),
       );
 
+      // An exported failure keeps only its error type; the request line never leaves.
       const body = requests.map((request) => request.body).join("\n");
-      assert.include(body, "wsTicket=<redacted>&dpop=<redacted>");
+      assert.include(body, "exception.type");
+      assert.notInclude(body, "wsTicket");
       assert.notInclude(body, "ticket-secret");
       assert.notInclude(body, "proof-secret");
+    }),
+  );
+
+  it.effect("exports no text of an error interpolated into a log message", () =>
+    Effect.gen(function* () {
+      const { requests } = yield* logInSpanThrough(
+        { otlpLogsUrl: "https://collector.example.com/v1/logs" },
+        Effect.logError(`x failed: ${new Error("git: /rel/secret-branch")}`),
+      );
+
+      const body = requests.map((request) => request.body).join("\n");
+      assert.isNotEmpty(requests);
+      assert.notInclude(body, "secret-branch");
+      assert.notInclude(body, "x failed");
+      assert.notInclude(body, "host.name");
     }),
   );
 
@@ -255,8 +272,10 @@ describe("ServerLoggerLive", () => {
           announce,
         );
 
+        // Exported log records carry no message text at all.
         const body = requests.map((request) => request.body).join("\n");
-        assert.include(body, "Authentication required");
+        assert.isNotEmpty(requests);
+        assert.notInclude(body, "Authentication required");
         assert.notInclude(body, pairingToken);
         const printed = (yield* TestConsole.logLines).map((line) =>
           Array.isArray(line) ? line.join(" ") : String(line),

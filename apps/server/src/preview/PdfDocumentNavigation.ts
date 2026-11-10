@@ -4,9 +4,11 @@ import type { CDPSession } from "playwright-core";
 const escapeHtml = (value: string) =>
   value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
 
+const PDF_SUFFIX = /\.pdf$/i;
+
 export const isPdfAssetUrl = (url: string) => {
   const { pathname } = new URL(url);
-  return pathname.startsWith("/api/assets/") && /\.pdf$/i.test(pathname);
+  return pathname.startsWith("/api/assets/") && PDF_SUFFIX.test(pathname);
 };
 
 export async function installPdfDocumentNavigation(cdp: CDPSession) {

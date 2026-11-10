@@ -5,10 +5,11 @@ import type {
   ThreadId,
 } from "@houston-app/contracts";
 import * as DateTime from "effect/DateTime";
-import type * as Duration from "effect/Duration";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Metric from "effect/Metric";
 
+import * as WideEvents from "../houston/observability/WideEvents.ts";
 import { normalizeModelMetricLabel } from "../observability/Attributes.ts";
 import {
   metricAttributes,
@@ -33,6 +34,7 @@ export interface RunOutcome {
   readonly attributes: ReturnType<typeof metricAttributes>;
   readonly queueWait: Duration.Duration | undefined;
   readonly duration: Duration.Duration | undefined;
+  readonly event: WideEvents.RunEvent | undefined;
 }
 
 /**
@@ -62,11 +64,13 @@ export const makeRunOutcomeRecorder = <E>(
         delegated = yield* isSubagentThread(run.threadId).pipe(Effect.orElseSucceed(() => false));
         delegatedThreads.set(run.threadId, delegated);
       }
+      const startedAt = run.startedAt ?? run.requestedAt;
+      const modelFamily = normalizeModelMetricLabel(run.modelSelection.model);
       outcomes.push({
         runId: run.id,
         attributes: metricAttributes({
           provider: run.providerInstanceId,
-          modelFamily: normalizeModelMetricLabel(run.modelSelection.model),
+          modelFamily,
           outcome: run.status,
           delegated,
         }),
@@ -76,6 +80,25 @@ export const makeRunOutcomeRecorder = <E>(
           run.startedAt === null || run.completedAt === null
             ? undefined
             : DateTime.distance(run.startedAt, run.completedAt),
+        event:
+          run.completedAt === null
+            ? undefined
+            : {
+                runId: run.id,
+                context: {
+                  threadId: run.threadId,
+                  delegated,
+                  ...(modelFamily === undefined ? {} : { model: modelFamily }),
+                },
+                status: run.status,
+                startedAt,
+                completedAt: run.completedAt,
+                queueWaitMs:
+                  run.startedAt === null
+                    ? undefined
+                    : Duration.toMillis(DateTime.distance(run.requestedAt, run.startedAt)),
+                durationMs: Duration.toMillis(DateTime.distance(startedAt, run.completedAt)),
+              },
       });
     }
     return outcomes;
@@ -100,6 +123,7 @@ export const makeRunOutcomeRecorder = <E>(
           outcome.duration,
         );
       }
+      if (outcome.event !== undefined) yield* WideEvents.emitRun(outcome.event);
     }
   }, Effect.uninterruptible);
   return { prepare, record };

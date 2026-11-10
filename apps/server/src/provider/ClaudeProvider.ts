@@ -2,6 +2,7 @@ import {
   type ClaudeSettings,
   type ModelCapabilities,
   type ServerProvider,
+  type ServerProviderModel,
   type ServerProviderSlashCommand,
   type ServerProviderResetCredits,
 } from "@houston-app/contracts";
@@ -55,20 +56,36 @@ import {
   formatClaudeVersionUpgradeMessage,
   resolveClaudeModelsForVersion,
   resolveClaudeUpdateRequiredModels,
+  withUltracodeToggle,
 } from "./ClaudeModelCatalog.ts";
 
 const DEFAULT_CLAUDE_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [],
 });
 
+function claudeProviderModels(
+  builtInModels: ReadonlyArray<ServerProviderModel>,
+  customModels: ClaudeSettings["customModels"],
+): ReadonlyArray<ServerProviderModel> {
+  return providerModelsFromSettings(
+    builtInModels,
+    customModels,
+    DEFAULT_CLAUDE_MODEL_CAPABILITIES,
+  ).map((model) =>
+    model.isCustom ? { ...model, capabilities: withUltracodeToggle(model.capabilities) } : model,
+  );
+}
+
 const CLAUDE_PRESENTATION = {
   displayName: "Claude",
   showInteractionModeToggle: true,
   reportsContextWindow: true,
 } as const;
+const TITLE_WORD_SEPARATOR = /[\s_-]+/g;
+
 function toTitleCaseWords(value: string): string {
   const parts: Array<string> = [];
-  for (const part of value.split(/[\s_-]+/g)) {
+  for (const part of value.split(TITLE_WORD_SEPARATOR)) {
     if (part.length > 0) {
       parts.push(part[0]!.toUpperCase() + part.slice(1).toLowerCase());
     }
@@ -77,7 +94,7 @@ function toTitleCaseWords(value: string): string {
 }
 
 function claudeSubscriptionLabel(subscriptionType: string | undefined): string | undefined {
-  const normalized = subscriptionType?.toLowerCase().replace(/[\s_-]+/g, "");
+  const normalized = subscriptionType?.toLowerCase().replace(TITLE_WORD_SEPARATOR, "");
   if (!normalized) return undefined;
 
   switch (normalized) {
@@ -114,7 +131,7 @@ function claudeSubscriptionLabel(subscriptionType: string | undefined): string |
 }
 
 function normalizeClaudeAuthMethod(authMethod: string | undefined): string | undefined {
-  const normalized = authMethod?.toLowerCase().replace(/[\s_-]+/g, "");
+  const normalized = authMethod?.toLowerCase().replace(TITLE_WORD_SEPARATOR, "");
   if (!normalized) return undefined;
   if (
     normalized === "apikey" ||
@@ -129,7 +146,7 @@ function normalizeClaudeAuthMethod(authMethod: string | undefined): string | und
 function formatClaudeSubscriptionAuthLabel(subscriptionType: string): string {
   const subscriptionLabel =
     claudeSubscriptionLabel(subscriptionType) ?? toTitleCaseWords(subscriptionType);
-  const normalized = subscriptionLabel.toLowerCase().replace(/[\s_-]+/g, "");
+  const normalized = subscriptionLabel.toLowerCase().replace(TITLE_WORD_SEPARATOR, "");
 
   if (normalized.startsWith("claude") && normalized.endsWith("subscription")) {
     return subscriptionLabel;
@@ -477,10 +494,9 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   const resolvedEnvironment =
     environment ?? (yield* mergeClaudeProcessEnvironment(undefined, process.env));
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
-  const allModels = providerModelsFromSettings(
+  const allModels = claudeProviderModels(
     modelCatalog.models.map((entry) => entry.model),
     claudeSettings.customModels,
-    DEFAULT_CLAUDE_MODEL_CAPABILITIES,
   );
 
   if (!claudeSettings.enabled) {
@@ -568,10 +584,9 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     });
   }
 
-  const models = providerModelsFromSettings(
+  const models = claudeProviderModels(
     resolveClaudeModelsForVersion(modelCatalog, parsedVersion),
     claudeSettings.customModels,
-    DEFAULT_CLAUDE_MODEL_CAPABILITIES,
   );
   const updateRequiredModels = resolveClaudeUpdateRequiredModels(modelCatalog, parsedVersion);
   const versionUpgradeMessage = formatClaudeVersionUpgradeMessage(modelCatalog, parsedVersion);
@@ -698,10 +713,9 @@ export const makePendingClaudeProvider = Effect.fn("ClaudeProvider.makePendingCl
     modelCatalog: ClaudeModelCatalog = BUNDLED_CLAUDE_MODEL_CATALOG,
   ): Effect.fn.Return<ServerProviderDraft> {
     const checkedAt = yield* nowIso;
-    const models = providerModelsFromSettings(
+    const models = claudeProviderModels(
       modelCatalog.models.map((entry) => entry.model),
       claudeSettings.customModels,
-      DEFAULT_CLAUDE_MODEL_CAPABILITIES,
     );
 
     if (!claudeSettings.enabled) {

@@ -38,12 +38,13 @@ import { dedupeRemoteBranchesWithLocalMatches } from "@houston-app/shared/git";
 import * as HostProcess from "@houston-app/shared/HostProcess";
 import { compactTraceAttributes } from "@houston-app/shared/observability";
 import { decodeJsonResult } from "@houston-app/shared/schemaJson";
-import { resolveSpawnCommand } from "@houston-app/shared/shell";
+import { resolveSpawnCommand, runsGitWithoutConsole } from "@houston-app/shared/shell";
 import { parseHoustonProjectFile } from "@houston-app/shared/houstonProjectFile";
 import { resolveProjectFileBackedSetting } from "@houston-app/shared/projectSettings";
 import { gitCommandDuration, gitCommandsTotal, withMetrics } from "../observability/Metrics.ts";
 import * as GitVcsDriver from "./GitVcsDriver.ts";
 import { removeEmptyDirectory } from "./removeEmptyDirectory.ts";
+import { confinedGitEnv } from "../houston/confinedGit.ts";
 import { gitSpawnEnv, gitConfigEnv } from "./VcsProcess.ts";
 import { carryOverWorktreeInclude } from "./worktreeInclude.ts";
 import { removeLinkedWorktree } from "./worktreeRemoval.ts";
@@ -66,6 +67,7 @@ const branchBaseConfigKey = (branch: string) => `branch.${branch}.houston-merge-
  */
 const legacyBranchBaseConfigKey = (branch: string) => `branch.${branch}.gh-merge-base`;
 const gitProcesses = Semaphore.makeUnsafe(8);
+const backgroundGitProcesses = Semaphore.makeUnsafe(2);
 const WORKTREE_REMOVE_TIMEOUT_MS = Duration.toMillis(Duration.minutes(5));
 const DEFAULT_MAX_OUTPUT_BYTES = 1_000_000;
 const OUTPUT_TRUNCATED_MARKER = "\n\n[truncated]";
@@ -135,11 +137,14 @@ const LONG_LIVED_BASE_BRANCH_NAMES = new Set([
   "production",
   "prod",
 ]);
+const VERSION_BRANCH_NAME = /^v\d+(?:\.\d+)*$/;
+const RELEASE_BRANCH_PREFIX = /^(?:release|releases|hotfix|support)\//;
+
 const isLongLivedBaseBranchName = (name: string, defaultBranch: string | null): boolean =>
   name === defaultBranch ||
   LONG_LIVED_BASE_BRANCH_NAMES.has(name) ||
-  /^v\d+(?:\.\d+)*$/.test(name) ||
-  /^(?:release|releases|hotfix|support)\//.test(name);
+  VERSION_BRANCH_NAME.test(name) ||
+  RELEASE_BRANCH_PREFIX.test(name);
 const GIT_LIST_BRANCHES_DEFAULT_LIMIT = 100;
 const NON_REPOSITORY_STATUS_DETAILS = Object.freeze<GitVcsDriver.GitStatusDetails>({
   isRepo: false,
@@ -219,8 +224,10 @@ interface ExecuteGitOptions {
   writesSharedConfig?: boolean | undefined;
 }
 
+const BINARY_NUMSTAT_LINE = /^\+(\d+)\s+-(\d+)$/;
+
 function parseBranchAb(value: string): { ahead: number; behind: number } {
-  const match = value.match(/^\+(\d+)\s+-(\d+)$/);
+  const match = value.match(BINARY_NUMSTAT_LINE);
   if (!match) return { ahead: 0, behind: 0 };
   return {
     ahead: Number(match[1] ?? "0"),
@@ -228,12 +235,14 @@ function parseBranchAb(value: string): { ahead: number; behind: number } {
   };
 }
 
+const NUMSTAT_LINE = /^(\d+|-)\t(\d+|-)\t([\s\S]*)$/;
+
 function parseReviewNumstat(stdout: string): ReviewDiffFileStat[] {
   const fields = stdout.split("\0");
   const files: ReviewDiffFileStat[] = [];
   for (let index = 0; index < fields.length; index++) {
     const field = fields[index]!;
-    const match = /^(\d+|-)\t(\d+|-)\t([\s\S]*)$/.exec(field);
+    const match = NUMSTAT_LINE.exec(field);
     if (!match) continue;
     const previousPath = match[3] === "" ? fields[++index]! : null;
     const path = previousPath !== null ? fields[++index]! : match[3]!;
@@ -376,13 +385,15 @@ const refuseOptionLikeRefName = (operation: string, cwd: string, refName: string
       )
     : Effect.void;
 
+const UNSAFE_BRANCH_CHARACTERS = /[^A-Za-z0-9._-]+/g;
+const EDGE_HYPHENS = /^-+|-+$/g;
+
 function sanitizeRemoteName(value: string): string {
-  const sanitized = value
-    .trim()
-    .replace(/[^A-Za-z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+  const sanitized = value.trim().replace(UNSAFE_BRANCH_CHARACTERS, "-").replace(EDGE_HYPHENS, "");
   return sanitized.length > 0 ? sanitized : "fork";
 }
+
+const REMOTE_VERBOSE_LINE = /^(\S+)\s+(\S+)\s+\((fetch|push)\)(?:\s+\[[^\]]+\])?$/;
 
 function parseRemoteFetchUrls(stdout: string): Map<string, string> {
   const remotes = new Map<string, string>();
@@ -390,7 +401,7 @@ function parseRemoteFetchUrls(stdout: string): Map<string, string> {
     const trimmed = line.trim();
     if (trimmed.length === 0) continue;
     // Partial clones append the promisor filter, e.g. `(fetch) [blob:none]`.
-    const match = /^(\S+)\s+(\S+)\s+\((fetch|push)\)(?:\s+\[[^\]]+\])?$/.exec(trimmed);
+    const match = REMOTE_VERBOSE_LINE.exec(trimmed);
     if (!match) continue;
     const [, remoteName = "", remoteUrl = "", direction = ""] = match;
     if (direction !== "fetch" || remoteName.length === 0 || remoteUrl.length === 0) {
@@ -541,13 +552,16 @@ const GIT_DIAGNOSTIC_LINE_PATTERN = /^(?:fatal|error):|^!\s|^\s+!\s/;
 const SSH_TRANSPORT_REFUSAL_PATTERN =
   /Permission denied \((?:publickey|password|keyboard-interactive)|Permission denied, please try again|Host key verification failed/i;
 
+const LINE_BREAK = /\r?\n/;
+const REMOTE_OUTPUT_PREFIX = /^remote:/;
+
 function classifyGitFailure(stderr: string): GitCommandFailureReason | null {
   const diagnostics = stderr
-    .split(/\r?\n/)
+    .split(LINE_BREAK)
     .filter(
       (line) =>
         GIT_DIAGNOSTIC_LINE_PATTERN.test(line) ||
-        (!/^remote:/.test(line) && SSH_TRANSPORT_REFUSAL_PATTERN.test(line)),
+        (!REMOTE_OUTPUT_PREFIX.test(line) && SSH_TRANSPORT_REFUSAL_PATTERN.test(line)),
     )
     .join("\n");
   if (diagnostics.length === 0) return null;
@@ -624,34 +638,23 @@ function isMissingWorktreeStderr(stderr: string): boolean {
   );
 }
 
+const FETCH_AUTHENTICATION_FAILURE =
+  /^(?:fatal: (?:Authentication failed|could not read (?:Username|Password))\b|\S+: Permission denied \(publickey)/i;
+const FETCH_NETWORK_FAILURE =
+  /^(?:(?:fatal: |ssh: )?Could not resolve host(?:name)?\b|fatal: unable to access .+: (?:Could not resolve host|Failed to connect)\b|ssh: connect to host \S+ port \d+: (?:Connection timed out|Connection refused|Network is unreachable)\b)/i;
+const FETCH_REPOSITORY_NOT_FOUND =
+  /^(?:remote: Repository not found\.?$|fatal: repository .+ not found$|fatal: .+ does not appear to be a git repository$)/i;
+
 // Fetch stderr can carry credentials; persist only fixed diagnoses or generic failures.
 function fetchFailureDetail(stderr: string): string | undefined {
-  const lines = stderr.split(/\r?\n/).map((line) => line.trim());
-  if (
-    lines.some((line) =>
-      /^(?:fatal: (?:Authentication failed|could not read (?:Username|Password))\b|\S+: Permission denied \(publickey)/i.test(
-        line,
-      ),
-    )
-  ) {
+  const lines = stderr.split(LINE_BREAK).map((line) => line.trim());
+  if (lines.some((line) => FETCH_AUTHENTICATION_FAILURE.test(line))) {
     return "Git could not authenticate with the remote. Check Git credentials or SSH access on the server, then retry.";
   }
-  if (
-    lines.some((line) =>
-      /^(?:(?:fatal: |ssh: )?Could not resolve host(?:name)?\b|fatal: unable to access .+: (?:Could not resolve host|Failed to connect)\b|ssh: connect to host \S+ port \d+: (?:Connection timed out|Connection refused|Network is unreachable)\b)/i.test(
-        line,
-      ),
-    )
-  ) {
+  if (lines.some((line) => FETCH_NETWORK_FAILURE.test(line))) {
     return "Git could not reach the remote. Check the server's network connection and remote host, then retry.";
   }
-  if (
-    lines.some((line) =>
-      /^(?:remote: Repository not found\.?$|fatal: repository .+ not found$|fatal: .+ does not appear to be a git repository$)/i.test(
-        line,
-      ),
-    )
-  ) {
+  if (lines.some((line) => FETCH_REPOSITORY_NOT_FOUND.test(line))) {
     return "Git could not access the remote repository. Check the remote URL and repository permissions on the server.";
   }
   if (isRefLockFailure(stderr)) {
@@ -660,15 +663,12 @@ function fetchFailureDetail(stderr: string): string | undefined {
   return undefined;
 }
 
+const REF_LOCK_FAILURE =
+  /^(?:(?:error|fatal): cannot lock ref\b|fatal: Unable to create ['"].+\.lock['"]:|error: fetching ref \S+ failed: (?:incorrect old value provided|reference already exists)$)/i;
+
 // Git 2.53+ reports ref races as fetching-ref failures; older versions say cannot lock ref.
 function isRefLockFailure(stderr: string): boolean {
-  return stderr
-    .split(/\r?\n/)
-    .some((line) =>
-      /^(?:(?:error|fatal): cannot lock ref\b|fatal: Unable to create ['"].+\.lock['"]:|error: fetching ref \S+ failed: (?:incorrect old value provided|reference already exists)$)/i.test(
-        line.trim(),
-      ),
-    );
+  return stderr.split(LINE_BREAK).some((line) => REF_LOCK_FAILURE.test(line.trim()));
 }
 
 interface Trace2Monitor {
@@ -707,6 +707,8 @@ function trace2ChildKey(record: Record<string, unknown>): string | null {
 
 const Trace2Record = Schema.Record(Schema.String, Schema.Unknown);
 const decodeTrace2Record = decodeJsonResult(Trace2Record);
+
+const TRAILING_CARRIAGE_RETURN = /\r$/;
 
 const createTrace2Monitor = Effect.fnUntraced(function* (
   input: Pick<GitVcsDriver.ExecuteGitInput, "operation" | "cwd" | "args">,
@@ -815,7 +817,7 @@ const createTrace2Monitor = Effect.fnUntraced(function* (
             const nextRemainder = lines.pop() ?? "";
 
             return [
-              lines.map((line) => line.replace(/\r$/, "")),
+              lines.map((line) => line.replace(TRAILING_CARRIAGE_RETURN, "")),
               {
                 processedChars: contents.length,
                 remainder: nextRemainder,
@@ -984,6 +986,18 @@ export const windowsLongPathConfigEnv = (
 ): NodeJS.ProcessEnv =>
   platform === "win32" ? gitConfigEnv(env, "core.longpaths", "true", platform) : {};
 
+const REMOTE_OR_HEAD_REF_PREFIX = /^refs\/(?:remotes|heads)\//;
+const REGEX_SPECIAL_CHARACTER = /[.*+?^${}()|[\]\\]/g;
+const SHORT_REF_PATTERN = /^refs\/remotes\//;
+const WHITESPACE_RUN = /\s+/;
+const GITDIR_LINE = /^gitdir:\s*(.+)$/m;
+const PATH_SEPARATOR = /[\\/]/;
+const COMMIT_HASH = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
+const DEFAULT_BRANCH_PATTERN = /^refs\/remotes\/origin\//;
+const DIRECTORY_NAME_PATTERN = /\//g;
+const STASH_REFERENCE = /^stash@\{\d+\}$/;
+const CREATED_PATTERN = /no local changes to save/i;
+
 export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -1037,6 +1051,9 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
               cwd: commandInput.cwd,
               env: spawnEnv,
               forceKillAfter: input.forceKillAfterMs,
+              ...(runsGitWithoutConsole(hostPlatform, executable, commandInput.args)
+                ? { detached: true, windowsHide: true }
+                : {}),
             }),
           )
           .pipe(
@@ -1164,7 +1181,12 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       (execution) =>
         input.timeoutMs === null || (input.timeoutMs ?? DEFAULT_TIMEOUT_MS) > DEFAULT_TIMEOUT_MS
           ? execution
-          : gitProcesses.withPermits(1)(execution),
+          : Effect.gen(function* () {
+              const lane = (yield* GitVcsDriver.BackgroundGitWork)
+                ? backgroundGitProcesses
+                : gitProcesses;
+              return yield* lane.withPermits(1)(execution);
+            }),
       Effect.withSpan(input.operation, {
         kind: "client",
         attributes: {
@@ -1296,38 +1318,38 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     cwd: string,
     requestedBranch: string,
   ) {
-    // A branch at a parent path (such as `houston`) blocks every ref nested under it, so no suffix
-    // would help; flatten to a sibling the way temporary worktree branches already do.
+    // Exceeding the limit fails the command, so the set is never built from a partial list.
+    const { stdout } = yield* executeGit(
+      "GitVcsDriver.resolveAvailableBranchName",
+      cwd,
+      ["for-each-ref", "--format=%(refname:strip=2)", "refs/heads/"],
+      { maxOutputBytes: 16 * 1024 * 1024 },
+    );
+    // Reserve case variants too: loose refs can live on case-insensitive filesystems.
+    const branches = new Set(
+      stdout
+        .split("\n")
+        .filter(Boolean)
+        .map((name) => name.toLowerCase()),
+    );
+    // A branch nested under a name (`houston-fix/child`) blocks it as surely as one with the name.
+    const blockedNames = new Set(branches);
+    for (const branch of branches) {
+      const branchSegments = branch.split("/");
+      for (let index = 1; index < branchSegments.length; index += 1) {
+        blockedNames.add(branchSegments.slice(0, index).join("/"));
+      }
+    }
+    // An ancestor ref blocks every suffix beneath it, so flatten to a sibling.
     const segments = requestedBranch.split("/");
-    let blockedByParent = false;
-    for (let index = 1; index < segments.length && !blockedByParent; index += 1) {
-      blockedByParent = yield* branchExists(cwd, segments.slice(0, index).join("/"));
-    }
+    const blockedByParent = segments.some(
+      (_, index) => index > 0 && branches.has(segments.slice(0, index).join("/").toLowerCase()),
+    );
     const desiredBranch = blockedByParent ? segments.join("-") : requestedBranch;
-    // A branch nested under the name (`houston-fix/child`) blocks it as surely as one with the name.
-    const isBranchNameTaken = (name: string) =>
-      Effect.zipWith(
-        branchExists(cwd, name),
-        runGitStdout(
-          "GitVcsDriver.branchExists",
-          cwd,
-          ["for-each-ref", "--count=1", "--format=%(refname)", `refs/heads/${name}/`],
-          true,
-        ),
-        (exists, nested) => exists || nested.trim().length > 0,
-      );
-
-    const isDesiredTaken = yield* isBranchNameTaken(desiredBranch);
-    if (!isDesiredTaken) {
-      return desiredBranch;
-    }
-
+    if (!blockedNames.has(desiredBranch.toLowerCase())) return desiredBranch;
     for (let suffix = 1; suffix <= 100; suffix += 1) {
       const candidate = `${desiredBranch}-${suffix}`;
-      const isCandidateTaken = yield* isBranchNameTaken(candidate);
-      if (!isCandidateTaken) {
-        return candidate;
-      }
+      if (!blockedNames.has(candidate.toLowerCase())) return candidate;
     }
 
     return yield* new GitCommandError({
@@ -1347,7 +1369,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       cwd,
       ["rev-parse", "--symbolic-full-name", "@{upstream}"],
       true,
-    ).pipe(Effect.map((stdout) => stdout.trim().replace(/^refs\/(?:remotes|heads)\//, "")));
+    ).pipe(Effect.map((stdout) => stdout.trim().replace(REMOTE_OR_HEAD_REF_PREFIX, "")));
 
     if (upstreamRef.length === 0 || upstreamRef === "@{upstream}") {
       return null;
@@ -1908,7 +1930,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     cwd: string,
     refName: string,
   ) {
-    const escaped = refName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const escaped = refName.replace(REGEX_SPECIAL_CHARACTER, "\\$&");
     const result = yield* executeGit(
       "GitVcsDriver.readBranchBaseConfig",
       cwd,
@@ -2018,7 +2040,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     if (recordedRef?.startsWith("refs/heads/") || recordedRef?.startsWith("refs/remotes/")) {
       const recordedBase = yield* resolveComparisonBaseRef(cwd, recordedRef);
       if (recordedBase !== null) {
-        const shortRef = recordedRef.replace(/^refs\/remotes\//, "");
+        const shortRef = recordedRef.replace(SHORT_REF_PATTERN, "");
         return toResolvedBase(
           (yield* branchExists(cwd, shortRef)) ? recordedRef : shortRef,
           recordedBase.comparisonRef,
@@ -2281,7 +2303,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         { allowNonZeroExit: true },
       );
       if (divergence.exitCode === 0) {
-        const [aheadRaw, behindRaw] = divergence.stdout.trim().split(/\s+/);
+        const [aheadRaw, behindRaw] = divergence.stdout.trim().split(WHITESPACE_RUN);
         const parsedAhead = Number.parseInt(aheadRaw ?? "0", 10);
         const parsedBehind = Number.parseInt(behindRaw ?? "0", 10);
         aheadCount = Number.isFinite(parsedAhead) ? Math.max(0, parsedAhead) : 0;
@@ -2332,7 +2354,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       const contents = yield* fileSystem
         .readFileString(dotGit)
         .pipe(Effect.orElseSucceed(() => ""));
-      const target = /^gitdir:\s*(.+)$/m.exec(contents)?.[1]?.trim();
+      const target = GITDIR_LINE.exec(contents)?.[1]?.trim();
       if (target !== undefined && target.length > 0) {
         gitDir = path.isAbsolute(target) ? target : path.resolve(cwd, target);
       }
@@ -2926,7 +2948,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       // An untracked directory arrives with a trailing separator.
       const normalized = file.endsWith("/") ? file.slice(0, -1) : file;
       const leavesRoot = normalized
-        .split(/[\\/]/)
+        .split(PATH_SEPARATOR)
         .some((segment) => segment.length === 0 || segment === "." || segment === "..");
       return normalized.length === 0 || path.isAbsolute(file) || leavesRoot
         ? Effect.fail(
@@ -2988,7 +3010,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   });
 
   const isGitMetadataPath = (filePath: string) =>
-    filePath.split(/[\\/]/).some((segment) => segment.toLowerCase() === ".git");
+    filePath.split(PATH_SEPARATOR).some((segment) => segment.toLowerCase() === ".git");
 
   const assertReportedUntracked = (
     operation: string,
@@ -3159,7 +3181,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     });
     const summary =
       `${result.stderr}\n${result.stdout}`
-        .split(/\r?\n/)
+        .split(LINE_BREAK)
         .map((line) => line.trim())
         .find((line) => line.length > 0) ?? "Fetched";
     return { remoteName, summary: summary.slice(0, 500) };
@@ -3449,6 +3471,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       timeoutMs: 30_000,
       appendTruncationMarker: true,
       allowNonZeroExit: true,
+      // The pull advances this branch only: no user hook, fsmonitor command or submodule recursion.
+      env: confinedGitEnv(process.env, hostPlatform),
     };
     let args = ["pull", "--ff-only"];
     let result = yield* executeGitWithStableDiagnostics(
@@ -3855,7 +3879,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     cwd: string,
     sha: string,
   ) {
-    if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(sha)) {
+    if (!COMMIT_HASH.test(sha)) {
       return yield* reviewCommitError(cwd, "Selected commit is invalid or no longer available.");
     }
     const present = yield* executeGit(
@@ -3959,12 +3983,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       const sha = fields[index];
       const subject = fields[index + 1];
       const committedAt = fields[index + 2];
-      if (
-        !sha ||
-        subject === undefined ||
-        !committedAt ||
-        !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(sha)
-      ) {
+      if (!sha || subject === undefined || !committedAt || !COMMIT_HASH.test(sha)) {
         return yield* reviewCommitError(cwd, "Could not read branch commit metadata.");
       }
       commits.push({ sha, subject: subject.slice(0, REVIEW_BRANCH_SUBJECT_LIMIT), committedAt });
@@ -4535,7 +4554,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     }
     const defaultBranch =
       defaultRefResult.exitCode === 0
-        ? defaultRefResult.stdout.trim().replace(/^refs\/remotes\/origin\//, "")
+        ? defaultRefResult.stdout.trim().replace(DEFAULT_BRANCH_PATTERN, "")
         : null;
     const parsedWorktreeEntries =
       worktreeListResult.exitCode === 0
@@ -4811,14 +4830,15 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           detail: `The worktree location "${options?.worktreesDirectory}" must be an absolute folder on this machine, not a drive root. Change it in Settings → Worktrees.`,
         });
       }
-      let directoryName = targetBranch.replace(/\//g, "-");
-      // Leave room for files beneath the worktree on Windows, regardless of branch length.
-      if (directoryName.length > 40) {
-        const hash = yield* digest.digest(Digest.sha256, new TextEncoder().encode(targetBranch));
-        // Avoid splitting a surrogate pair, which Git would list back as a different path.
-        const prefix = directoryName.slice(0, 23).replace(/[\uD800-\uDBFF]$/, "");
-        directoryName = `${prefix}-${Hex.encode(hash).slice(0, 16)}`;
+      const identity = `${yield* readGitCommonDir(input.cwd)}\0${targetBranch}`;
+      const hash = yield* digest.digest(Digest.sha256, new TextEncoder().encode(identity));
+      // UTF-8 bytes bound UTF-16 length too, leaving room for files on Windows.
+      let prefix = "";
+      for (const character of targetBranch.replace(DIRECTORY_NAME_PATTERN, "-")) {
+        if (Buffer.byteLength(prefix + character) > 23) break;
+        prefix += character;
       }
+      const directoryName = `${prefix}-${Hex.encode(hash).slice(0, 16)}`;
       worktreePath = path.join(parentDir, repoName, directoryName);
     }
     const newRefName = input.newRefName;
@@ -5177,7 +5197,9 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     const result = yield* runFetch(scopedArgs);
     if (result.exitCode === 0) return true;
     if (
-      result.stderr.split(/\r?\n/).includes(`fatal: couldn't find remote ref refs/heads/${branch}`)
+      result.stderr
+        .split(LINE_BREAK)
+        .includes(`fatal: couldn't find remote ref refs/heads/${branch}`)
     ) {
       return false;
     }
@@ -5646,7 +5668,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       }),
     );
 
-  const STASH_REF_PATTERN = /^stash@\{\d+\}$/;
+  const STASH_REF_PATTERN = STASH_REFERENCE;
   const assertStashRef = (operation: string, cwd: string, ref: string) =>
     STASH_REF_PATTERN.test(ref)
       ? Effect.void
@@ -5667,7 +5689,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     ]).pipe(
       Effect.map((stdout) => ({
         stashes: stdout
-          .split(/\r?\n/)
+          .split(LINE_BREAK)
           .filter((line) => line.length > 0)
           .flatMap((line) => {
             const [ref, message, seconds] = line.split("\x1f");
@@ -5696,7 +5718,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         ["stash", "push", ...(trimmed.length > 0 ? ["-m", trimmed] : [])],
         { fallbackErrorDetail: "git stash push failed" },
       );
-      const created = !/no local changes to save/i.test(`${result.stdout}\n${result.stderr}`);
+      const created = !CREATED_PATTERN.test(`${result.stdout}\n${result.stderr}`);
       return { created };
     },
   );

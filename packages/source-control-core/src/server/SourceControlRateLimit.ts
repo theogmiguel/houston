@@ -83,10 +83,12 @@ function fallbackCooldownMs(attempt: number): number {
   );
 }
 
+const DIGITS_ONLY = /^\d+$/u;
+
 export function retryAtFromHeader(value: string | undefined, now: number): number | undefined {
   if (value === undefined) return undefined;
   const normalized = value.trim();
-  if (/^\d+$/u.test(normalized)) {
+  if (DIGITS_ONLY.test(normalized)) {
     const seconds = Number(normalized);
     const retryAt = now + seconds * 1_000;
     return Number.isSafeInteger(retryAt) ? retryAt : undefined;

@@ -44,4 +44,31 @@ describe("CommandPaletteContent", () => {
 
     await expect.element(page.getByPlaceholder("Search projects")).toHaveFocus();
   });
+
+  it("paints the highlighted row with the selection token, instantly", async () => {
+    await using screen = await render(
+      <CommandDialog open>
+        <CommandDialogPopup aria-label="Command palette">
+          <CommandPaletteContent items={["Project A"]} inputProps={{ placeholder: "Search" }}>
+            <CommandList>
+              {(item: string) => (
+                <CommandItem value={item} active>
+                  {item}
+                </CommandItem>
+              )}
+            </CommandList>
+          </CommandPaletteContent>
+        </CommandDialogPopup>
+      </CommandDialog>,
+    );
+    const row = screen.getByText("Project A").element().closest<HTMLElement>("[data-active]")!;
+    const probe = document.createElement("span");
+    probe.style.backgroundColor = "var(--sel)";
+    document.body.append(probe);
+    const selection = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+
+    expect(getComputedStyle(row).backgroundColor).toBe(selection);
+    expect(getComputedStyle(row).transitionDuration).toBe("0s");
+  });
 });

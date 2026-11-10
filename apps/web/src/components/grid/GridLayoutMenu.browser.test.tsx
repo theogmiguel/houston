@@ -17,6 +17,7 @@ vi.mock(import("~/state/server"), async () => {
 import { type GridRecord, useGridStore } from "../../grid/gridStore";
 import { type LayoutNode, preorderLeaves, threadLeaf } from "../../grid/tree";
 import { render } from "../../../test/render";
+import { Button } from "../ui/button";
 import { TooltipProvider } from "../ui/tooltip";
 import { GridLayoutMenu } from "./GridLayoutMenu";
 
@@ -110,5 +111,40 @@ describe("GridLayoutMenu", () => {
     expect(screen.getByRole("button", { name: "Tidy panes" }).element().ariaDisabled).toBe("true");
     await userEvent.hover(screen.getByRole("button", { name: "Tidy panes" }));
     await expect.element(page.getByText("Open a second pane to tidy the grid")).toBeVisible();
+  });
+
+  it("draws the main and menu buttons without an outlined frame or separator", async () => {
+    await using screen = await mount(grid(threads(["thread-a", "thread-b"])));
+
+    const group = screen.getByRole("group").element();
+    expect(group.querySelector('[data-slot="separator"]')).toBeNull();
+    expect(group.hasAttribute("data-variant")).toBe(false);
+    expect(getComputedStyle(group, "::after").content).toBe("none");
+  });
+
+  it("shares its top edge and height with a sibling icon button in the header row", async () => {
+    seed(grid(threads(["thread-a", "thread-b"])));
+    await using screen = await render(
+      <TooltipProvider delay={0}>
+        <div className="flex h-10 items-center gap-1">
+          <Button variant="ghost" size="icon" aria-label="Sibling" />
+          <GridLayoutMenu grid={grid(threads(["thread-a", "thread-b"]))} />
+        </div>
+      </TooltipProvider>,
+    );
+
+    const sibling = screen
+      .getByRole("button", { name: "Sibling" })
+      .element()
+      .getBoundingClientRect();
+    const main = screen
+      .getByRole("button", { name: "Tidy panes" })
+      .element()
+      .getBoundingClientRect();
+    const group = screen.getByRole("group").element().getBoundingClientRect();
+    expect(group.top).toBe(sibling.top);
+    expect(main.top).toBe(sibling.top);
+    expect(main.height).toBe(sibling.height);
+    expect(group.height).toBe(sibling.height);
   });
 });

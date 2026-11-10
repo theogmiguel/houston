@@ -1,3 +1,5 @@
+import { isClearComposerCommand } from "@houston-app/shared/composerTrigger";
+import { armFreshSession, disarmFreshSession, readFreshSessionArm } from "./freshSessionArms";
 import {
   mergeDirectPreviewAnnotation,
   resolveBackgroundDraftWorkspaceOptions,
@@ -205,9 +207,9 @@ interface ComposerSendInput {
   readonly isSendBusy: boolean;
   readonly sendQueuesBehindSetup: boolean;
   readonly isDraftHeroState: boolean;
-  readonly panelAnimationsActive: boolean;
-  readonly panelAnimationDurationMs: number;
   readonly keepFullHistory: boolean;
+  /** `/clear` can arm a fresh session on this thread. */
+  readonly freshSessionAvailable: boolean;
   readonly resumeCompactionTokens: number | null;
   readonly showPlanFollowUpPrompt: boolean;
   readonly usageLimitsKey: string | null;
@@ -303,9 +305,8 @@ export function useComposerSend(input: ComposerSendInput) {
     isSendBusy,
     sendQueuesBehindSetup,
     isDraftHeroState,
-    panelAnimationsActive,
-    panelAnimationDurationMs,
     keepFullHistory,
+    freshSessionAvailable,
     resumeCompactionTokens,
     showPlanFollowUpPrompt,
     usageLimitsKey,
@@ -744,8 +745,26 @@ export function useComposerSend(input: ComposerSendInput) {
 
       return;
     }
+    const composerHoldsOnlyText =
+      composerImages.length === 0 &&
+      composerFiles.length === 0 &&
+      sendableComposerTerminalContexts.length === 0 &&
+      composerPreviewAnnotations.length === 0 &&
+      composerReviewComments.length === 0 &&
+      composerThreadContexts.length === 0 &&
+      composerEnvironmentContexts.length === 0;
+    if (freshSessionAvailable && composerHoldsOnlyText && isClearComposerCommand(trimmed)) {
+      armFreshSession(routeThreadKey);
+      promptRef.current = "";
+      clearComposerDraftContent(composerDraftTarget);
+      composerRef.current?.resetCursorState();
+      return;
+    }
+    // Read once: an arm made while this send is in flight belongs to the next message.
+    const freshArm = freshSessionAvailable ? readFreshSessionArm(routeThreadKey) : undefined;
     if (
       !directAnnotation &&
+      freshArm === undefined &&
       sendInteractionModeEnabled &&
       showPlanFollowUpPrompt &&
       activeProposedPlan &&
@@ -826,14 +845,7 @@ export function useComposerSend(input: ComposerSendInput) {
       return;
     }
     const standaloneSlashCommand =
-      sendInteractionModeEnabled &&
-      composerImages.length === 0 &&
-      composerFiles.length === 0 &&
-      sendableComposerTerminalContexts.length === 0 &&
-      composerPreviewAnnotations.length === 0 &&
-      composerReviewComments.length === 0 &&
-      composerThreadContexts.length === 0 &&
-      composerEnvironmentContexts.length === 0
+      sendInteractionModeEnabled && composerHoldsOnlyText
         ? parseStandaloneComposerSlashCommand(trimmed)
         : null;
     if (standaloneSlashCommand && multipleModelSelections === null) {
@@ -909,6 +921,7 @@ export function useComposerSend(input: ComposerSendInput) {
       keepFullHistory,
       phase,
       dispatchMode,
+      freshContext: freshArm !== undefined,
     });
     if (missingWorktreeBaseBranch) {
       setThreadError(threadIdForSend, "Select a base branch before sending in New worktree mode.");
@@ -988,7 +1001,8 @@ export function useComposerSend(input: ComposerSendInput) {
       composerFilesSnapshot.length > 0
         ? attachmentCapabilitiesBeforeUpload.supportsAttachmentUploads
         : (readEnvironmentPresentation(environmentId)?.serverConfig ?? null) !== null;
-    if (turnUsesAttachmentUploads && composerAttachmentsSnapshot.length > 0) {
+    // Uploads finish after the message shows as sending; the turn starts once they land.
+    if (turnUsesAttachmentUploads) {
       for (const attachment of composerAttachmentsSnapshot) {
         const upload =
           readAttachmentUpload(attachment.id)?.status === "failed"
@@ -999,18 +1013,6 @@ export function useComposerSend(input: ComposerSendInput) {
           image: attachment,
           draftTarget: composerDraftTarget,
         });
-      }
-      await awaitAttachmentUploads(composerAttachmentsSnapshot.map((attachment) => attachment.id));
-      const attachmentCapabilitiesAfterUpload = readLiveAttachmentCapabilities();
-      if (attachmentCapabilitiesAfterUpload.fileBlockReason !== null) {
-        sendInFlightRef.current = false;
-        setThreadError(threadIdForSend, attachmentCapabilitiesAfterUpload.fileBlockReason);
-        return;
-      }
-      if (getUploadedAttachments({ environmentId, images: composerAttachmentsSnapshot }) === null) {
-        sendInFlightRef.current = false;
-        setThreadError(threadIdForSend, "Retry or remove failed uploads before sending.");
-        return;
       }
     }
 
@@ -1031,10 +1033,7 @@ export function useComposerSend(input: ComposerSendInput) {
           });
           resolveDockStarted?.();
         },
-        {
-          active: panelAnimationsActive,
-          durationMs: panelAnimationDurationMs,
-        },
+        { active: false, durationMs: 0 },
       );
       void dockTransition.catch(() => resolveDockStarted?.());
       await dockStarted;
@@ -1055,6 +1054,27 @@ export function useComposerSend(input: ComposerSendInput) {
         currentThreadKey === activeThreadKey ? null : currentThreadKey,
       );
       return;
+    }
+    // Declining is irreversible, so a redirect waits for its uploads instead of failing after.
+    if (
+      turnUsesAttachmentUploads &&
+      composerAttachmentsSnapshot.length > 0 &&
+      (sendCtx?.shownPendingApprovalIds.length ?? 0) > 0
+    ) {
+      await awaitAttachmentUploads(composerAttachmentsSnapshot.map((attachment) => attachment.id));
+      const uploadBlockReason =
+        readLiveAttachmentCapabilities().fileBlockReason ??
+        (getUploadedAttachments({ environmentId, images: composerAttachmentsSnapshot }) === null
+          ? "Retry or remove failed uploads before sending."
+          : null);
+      if (uploadBlockReason !== null) {
+        sendInFlightRef.current = false;
+        setThreadError(threadIdForSend, uploadBlockReason);
+        setDockedDraftHeroThreadKey((currentThreadKey) =>
+          currentThreadKey === activeThreadKey ? null : currentThreadKey,
+        );
+        return;
+      }
     }
     // A message sent while approvals are pending redirects the agent. They are declined only
     // here, after everything above has accepted the send, so local commands and rejected
@@ -1392,6 +1412,7 @@ export function useComposerSend(input: ComposerSendInput) {
           runtimeMode,
           interactionMode: sendInteractionMode,
           dispatchMode: turnDispatchMode,
+          ...(freshArm === undefined ? {} : { freshContext: true }),
           ...(bootstrap ? { bootstrap } : {}),
           createdAt: messageCreatedAt,
         },
@@ -1425,6 +1446,7 @@ export function useComposerSend(input: ComposerSendInput) {
       } else {
         turnStartSucceeded = true;
         setKeepFullHistory(routeThreadKey, false);
+        if (freshArm !== undefined) disarmFreshSession(routeThreadKey, freshArm);
         clearUsageLimitsFor(routeThreadKey);
         if (turnUsesAttachmentUploads) {
           releaseDraftAttachments(composerAttachmentsSnapshot);

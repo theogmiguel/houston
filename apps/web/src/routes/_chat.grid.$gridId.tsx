@@ -6,15 +6,13 @@ import { LayoutGridIcon } from "lucide-react";
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { GridEmptyDraft } from "../components/grid/GridEmptyDraft";
+import { ThreadOpenProvider } from "../components/grid/threadOpenContext";
 import { GridHost } from "../components/grid/GridHost";
+import { GridRightPanelPin } from "../components/chat/GridRightPanelPin";
 import { GridThreadBranch } from "../components/grid/GridThreadBranch";
 import { GridThreadCell } from "../components/grid/GridThreadCell";
 import { GridTerminalDock } from "../components/grid/GridTerminalDock";
 import { clearInlineDetailsHandoff } from "../components/chat/inlineDetailsFollow";
-import {
-  EMPTY_PROVIDER_ENTRIES,
-  sidebarProviderEntriesAtom,
-} from "../components/sidebar/sidebarProviderEntries";
 import { GridTopBarControls } from "../components/grid/GridTopBarControls";
 import { Button } from "../components/ui/button";
 import { SidebarInset } from "../components/ui/sidebar";
@@ -35,10 +33,14 @@ import { useGridShortcuts } from "../grid/useGridShortcuts";
 import { rememberLastOpenGridId } from "../grid/lastGrid";
 import { useGridMaximizeStore } from "../grid/gridMaximizeStore";
 import { ungroupedWorkspaceThreads } from "../grid/rail";
-import { resolveGridThreadOpen } from "../grid/gridThreadOpen";
+import { resolveGridThreadOpen, type ThreadOpenIntent } from "../grid/gridThreadOpen";
 import { containsThread, preorderThreads } from "../grid/tree";
 import { cn } from "../lib/utils";
 import { useMediaQuery } from "../hooks/useMediaQuery";
+import { PhoneEmptyState } from "../mobile/PhoneEmptyState";
+import { PhonePageBar } from "../mobile/PhonePageBar";
+import { PhoneTabBar } from "../mobile/PhoneTabBar";
+import { useIsPhone } from "../mobile/usePhone";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { useStableCallback } from "../hooks/useStableCallback";
 import { useThreadActions } from "../hooks/useThreadActions";
@@ -76,9 +78,9 @@ function GridRoute() {
   const reorderGridThreads = useGridStore((store) => store.reorderGridThreads);
   const moveThreadToCell = useGridStore((store) => store.moveThreadToCell);
   const openDraft = useOpenGridDraft();
-  const providerEntriesByEnvironment = useAtomValue(sidebarProviderEntriesAtom);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const prefersSheetPanel = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
+  const isPhone = useIsPhone();
   const [gridRow, setGridRow] = useState<HTMLDivElement | null>(null);
   const [rightPanelHost, setRightPanelHost] = useState<HTMLDivElement | null>(null);
   const [emptyDraftThreadId, setEmptyDraftThreadId] = useState<string | null>(null);
@@ -91,19 +93,32 @@ function GridRoute() {
     storeMaximizedThreadId(gridId, threadId);
   const focusedThreadId = grid?.focusedThreadId ?? null;
   const previousFocusedThreadIdRef = useRef<string | null>(focusedThreadId);
-  const focusedRef =
-    grid === null || focusedThreadId === null
+  // The panel follows the focused cell unless the grid pins it to one thread.
+  const pinnedPanelThreadId = grid?.panelPinnedThreadId ?? null;
+  const panelThreadId = pinnedPanelThreadId ?? focusedThreadId;
+  const setPanelPinnedThread = useGridStore((store) => store.setPanelPinnedThread);
+  const panelRef =
+    grid === null || panelThreadId === null
       ? null
-      : scopeThreadRef(grid.environmentId as EnvironmentId, focusedThreadId as ThreadId);
-  const focusedThreadKey = focusedRef === null ? null : scopedThreadKey(focusedRef);
+      : scopeThreadRef(grid.environmentId as EnvironmentId, panelThreadId as ThreadId);
+  const panelThreadKey = panelRef === null ? null : scopedThreadKey(panelRef);
   const focusedRightPanel = useRightPanelStore((state) =>
-    focusedThreadKey === null ? null : (state.byThreadKey[focusedThreadKey] ?? null),
+    panelThreadKey === null ? null : (state.byThreadKey[panelThreadKey] ?? null),
   );
   const focusedRightPanelOpen = focusedRightPanel?.isOpen === true;
-  const focusedRightPanelMaximized = focusedRightPanelOpen && focusedRightPanel?.maximized === true;
+  const focusedRightPanelMaximized =
+    !isPhone && focusedRightPanelOpen && focusedRightPanel?.maximized === true;
   const panelBesideGrid =
     focusedRightPanelOpen && (!prefersSheetPanel || focusedRightPanelMaximized);
   const gridDetailsOpen = grid?.detailsOpen === true;
+
+  // A pin outlives only the panel it keeps: closing the panel, by any control, unpins it.
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- unpins the grid when the pinned thread's panel closes
+  useEffect(() => {
+    if (pinnedPanelThreadId !== null && !focusedRightPanelOpen) {
+      setPanelPinnedThread(gridId, null);
+    }
+  }, [focusedRightPanelOpen, gridId, pinnedPanelThreadId, setPanelPinnedThread]);
 
   const toggleThreadDetails = useStableCallback(() => {
     const current = useGridStore.getState().grids.find((entry) => entry.id === gridId);
@@ -161,10 +176,11 @@ function GridRoute() {
         toggleThreadDetails();
         return;
       }
-      if (current.focusedThreadId === null) return;
+      const shortcutThreadId = current.panelPinnedThreadId ?? current.focusedThreadId;
+      if (shortcutThreadId === null) return;
       const ref = scopeThreadRef(
         current.environmentId as EnvironmentId,
-        current.focusedThreadId as ThreadId,
+        shortcutThreadId as ThreadId,
       );
       const store = useRightPanelStore.getState();
       const threadPanel = store.byThreadKey[scopedThreadKey(ref)];
@@ -175,6 +191,7 @@ function GridRoute() {
       if (command === "rightPanel.toggle" && threadPanel?.isOpen === true) {
         store.setMaximized(ref, false);
         store.close(ref);
+        useGridStore.getState().setPanelPinnedThread(gridId, null);
         return;
       }
       if (command === "rightPanel.toggle") {
@@ -230,15 +247,24 @@ function GridRoute() {
     containsThread(grid.tree, maximizedThreadId)
       ? maximizedThreadId
       : null;
+  // A phone shows the focused thread alone; the rest of the grid stays in the tree.
+  const phoneThreadId =
+    isPhone && grid !== null && grid.tree !== null
+      ? (grid.focusedThreadId ?? preorderThreads(grid.tree)[0]?.threadId ?? null)
+      : null;
+  const shownMaximizedThreadId = effectiveMaximized ?? phoneThreadId;
+  const phoneThreadPage = isPhone && phoneThreadId !== null;
 
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- a grid change or a removed cell must not leave another cell maximized
   useEffect(() => {
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- the setter is recreated each render; a grid change is the only trigger
     setMaximizedThreadId(null);
   }, [gridId]);
 
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- clears a maximize whose cell left the tree
   useEffect(() => {
     if (maximizedThreadId !== null && effectiveMaximized === null) setMaximizedThreadId(null);
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- the setter is recreated each render; the maximize store drives this reset
   }, [effectiveMaximized, maximizedThreadId]);
 
   useGridShortcuts({
@@ -250,8 +276,26 @@ function GridRoute() {
   });
 
   if (grid === null) {
+    if (isPhone) {
+      return (
+        <SidebarInset className="min-h-0 overflow-hidden" data-phone-missing-grid="">
+          <PhonePageBar title="Grid" />
+          <PhoneEmptyState
+            title="This grid no longer exists"
+            action={
+              <Button size="touch" variant="outline" render={<Link to="/" />}>
+                Back to threads
+              </Button>
+            }
+          >
+            It was deleted on this machine, or its workspace is no longer open.
+          </PhoneEmptyState>
+          <PhoneTabBar active="threads" />
+        </SidebarInset>
+      );
+    }
     return (
-      <SidebarInset className="h-svh min-h-0 items-center justify-center overflow-hidden md:h-dvh">
+      <SidebarInset className="min-h-0 items-center justify-center overflow-hidden">
         <div className="flex max-w-sm flex-col items-center gap-2 text-center">
           <p className="text-sm font-medium">This grid no longer exists</p>
           <p className="text-xs text-muted-foreground">
@@ -268,7 +312,7 @@ function GridRoute() {
   // A grid's terminal belongs to the grid while it shows its cells; a maximized
   // cell keeps the thread's own drawer.
   const gridTerminalRef =
-    effectiveMaximized === null
+    shownMaximizedThreadId === null
       ? gridTerminalThreadRef(grid.environmentId as EnvironmentId, grid.id)
       : null;
   const projectTitles = new Map(
@@ -279,8 +323,6 @@ function GridRoute() {
   const visibleThreadIds = new Set(
     (grid.tree === null ? [] : preorderThreads(grid.tree)).map((leaf) => leaf.threadId),
   );
-  const providerEntries =
-    providerEntriesByEnvironment.get(grid.environmentId) ?? EMPTY_PROVIDER_ENTRIES;
   // A split picker never offers a thread another grid already shows, nor a
   // closed, held, archived or subagent thread: one thread, one ChatView.
   const availableThreads = ungroupedWorkspaceThreads({
@@ -304,11 +346,16 @@ function GridRoute() {
       ? (workspaceThreads.find((thread) => thread.id === soloLeaves[0]!.threadId) ?? null)
       : null;
   const displayedSoloThread =
-    effectiveMaximized === null
+    shownMaximizedThreadId === null
       ? soloThread
-      : (workspaceThreads.find((thread) => thread.id === effectiveMaximized) ?? null);
+      : (workspaceThreads.find((thread) => thread.id === shownMaximizedThreadId) ?? null);
 
-  const openThread = (environmentId: string, threadId: string, fromThreadId: string | null) => {
+  const openThread = (
+    environmentId: string,
+    threadId: string,
+    fromThreadId: string | null,
+    intent: ThreadOpenIntent = "peek",
+  ) => {
     const placement = resolveGridThreadOpen({
       tree: grid.tree,
       gridEnvironmentId: grid.environmentId,
@@ -316,8 +363,17 @@ function GridRoute() {
       threadId,
       fromThreadId,
       inWorkspace: workspaceThreads.some((thread) => thread.id === threadId),
+      intent,
+      hasRoom: soloLeaves.length < MAX_GRID_THREADS,
     });
     if (placement.kind === "navigate") {
+      if (intent === "join" && environmentId === grid.environmentId) {
+        toastManager.add({
+          type: "info",
+          title: `“${grid.name}” is full`,
+          description: `A grid holds at most ${MAX_GRID_THREADS} threads and it already shows ${soloLeaves.length}, so the thread opened on its own page.`,
+        });
+      }
       void navigate({
         to: "/$environmentId/$threadId",
         params: buildThreadRouteParams(
@@ -352,79 +408,86 @@ function GridRoute() {
   return (
     <SidebarInset
       data-grid-new-thread-shortcut=""
-      className="h-svh min-h-0 overflow-hidden overscroll-y-none md:h-dvh"
+      className="min-h-0 overflow-hidden overscroll-y-none"
     >
       <div ref={setGridRow} className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <div
+          data-grid-page=""
           className={cn(
             "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden",
+            phoneThreadPage && "pb-safe",
             focusedRightPanelMaximized && "hidden",
           )}
         >
-          <WorkspacePageHeader
-            desktop={isDesktopHost}
-            reserveNativeControls={!panelBesideGrid && isNativeDesktopHost()}
-            besidePanel={panelBesideGrid}
-          >
-            <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-              <span className="shrink-0">Houston</span>
-              <span aria-hidden>/</span>
-              {/* The last crumb is the current place: the grid, or the one thread on screen. */}
-              {[
-                { id: grid.id, label: grid.name },
-                ...(displayedSoloThread === null
-                  ? []
-                  : [{ id: displayedSoloThread.id, label: displayedSoloThread.title }]),
-              ].map((crumb, index, crumbs) => (
-                <Fragment key={crumb.id}>
-                  {index > 0 ? <span aria-hidden>/</span> : null}
-                  <span
-                    className={cn(
-                      "truncate",
-                      index === crumbs.length - 1 && "font-medium text-foreground",
-                    )}
-                  >
-                    {crumb.label}
-                  </span>
-                </Fragment>
-              ))}
-              {displayedSoloThread === null ? null : (
-                <>
-                  {displayedSoloThread.branch ? (
-                    <GridThreadBranch
-                      branch={displayedSoloThread.branch}
-                      worktreePath={displayedSoloThread.worktreePath}
-                    />
-                  ) : null}
-                </>
+          {phoneThreadPage ? null : (
+            <WorkspacePageHeader
+              desktop={isDesktopHost}
+              reserveNativeControls={!panelBesideGrid && isNativeDesktopHost()}
+              besidePanel={panelBesideGrid}
+            >
+              <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                <span className="shrink-0" data-grid-crumb-project="">
+                  {projectTitleOf(grid)}
+                </span>
+                <span aria-hidden>/</span>
+                {/* The last crumb is the current place: the grid, or the one thread on screen. */}
+                {[
+                  { id: grid.id, label: grid.name },
+                  ...(displayedSoloThread === null
+                    ? []
+                    : [{ id: displayedSoloThread.id, label: displayedSoloThread.title }]),
+                ].map((crumb, index, crumbs) => (
+                  <Fragment key={crumb.id}>
+                    {index > 0 ? <span aria-hidden>/</span> : null}
+                    <span
+                      className={cn(
+                        "truncate",
+                        index === crumbs.length - 1 && "font-medium text-foreground",
+                      )}
+                    >
+                      {crumb.label}
+                    </span>
+                  </Fragment>
+                ))}
+                {displayedSoloThread === null ? null : (
+                  <>
+                    {displayedSoloThread.branch ? (
+                      <GridThreadBranch
+                        branch={displayedSoloThread.branch}
+                        worktreePath={displayedSoloThread.worktreePath}
+                      />
+                    ) : null}
+                  </>
+                )}
+              </span>
+              {effectiveMaximized === null ? null : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => setMaximizedThreadId(null)}
+                >
+                  <LayoutGridIcon />
+                  Back to grid · {Math.max(0, threadCount - 1)}
+                </Button>
               )}
-            </span>
-            {effectiveMaximized === null ? null : (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="shrink-0"
-                onClick={() => setMaximizedThreadId(null)}
-              >
-                <LayoutGridIcon />
-                Back to grid · {Math.max(0, threadCount - 1)}
-              </Button>
-            )}
-            <span className="flex-1" />
-            <GridTopBarControls
-              grid={grid}
-              gridTerminalRef={gridTerminalRef}
-              emptyDraftThreadId={emptyDraftThreadId}
-              threadPanelAnchorRef={threadDetailsAnchorRef}
-              onArrange={() => setMaximizedThreadId(null)}
-              {...(grid.tree === null
-                ? {}
-                : { detailsOpen: gridDetailsOpen, onToggleDetails: toggleThreadDetails })}
-            />
-          </WorkspacePageHeader>
+              <span className="flex-1" />
+              <GridTopBarControls
+                grid={grid}
+                gridTerminalRef={gridTerminalRef}
+                emptyDraftThreadId={emptyDraftThreadId}
+                rightPanelThreadId={panelThreadId}
+                threadPanelAnchorRef={threadDetailsAnchorRef}
+                onArrange={() => setMaximizedThreadId(null)}
+                {...(grid.tree === null
+                  ? {}
+                  : { detailsOpen: gridDetailsOpen, onToggleDetails: toggleThreadDetails })}
+              />
+            </WorkspacePageHeader>
+          )}
           <GridHost
             grid={grid}
-            maximizedThreadId={effectiveMaximized}
+            maximizedThreadId={shownMaximizedThreadId}
             onTreeChange={(tree) => setTree(grid.id, tree)}
             onFocusThread={(threadId) => focusThread(grid.id, threadId)}
             onCloseThread={(threadId) => {
@@ -525,15 +588,30 @@ function GridRoute() {
                 focused={focused}
                 maximized={maximized}
                 availableThreads={availableThreads}
-                providerEntries={providerEntries}
                 rightPanelPortal={
-                  focused && rightPanelHost !== null
-                    ? { host: rightPanelHost, container: gridRow }
+                  node.threadId === panelThreadId && rightPanelHost !== null
+                    ? {
+                        host: rightPanelHost,
+                        container: gridRow,
+                        headerControls: (
+                          <GridRightPanelPin
+                            threadTitle={
+                              workspaceThreads.find((thread) => thread.id === node.threadId)
+                                ?.title ?? "Untitled thread"
+                            }
+                            pinned={pinnedPanelThreadId === node.threadId}
+                            onPinnedChange={(pinned) =>
+                              setPanelPinnedThread(grid.id, pinned ? node.threadId : null)
+                            }
+                          />
+                        ),
+                      }
                     : null
                 }
                 threadDetailsAnchor={focused ? threadDetailsAnchorRef : null}
                 detailsOpen={gridDetailsOpen && focused}
                 onDetailsOpenChange={focused ? closeGridDetails : undefined}
+                onToggleDetails={toggleThreadDetails}
                 onFocus={() => focusThread(grid.id, node.threadId)}
                 onClose={onClose}
                 onArchiveClose={onArchiveClose}
@@ -554,16 +632,27 @@ function GridRoute() {
                   void navigate({ to: "/grid/$gridId", params: { gridId: targetGridId } });
                 }}
                 onNewThread={(side) => createThread(side, node.threadId)}
-                onOpenThread={(ref) => openThread(ref.environmentId, ref.threadId, node.threadId)}
+                onOpenThread={(ref, intent) =>
+                  openThread(ref.environmentId, ref.threadId, node.threadId, intent)
+                }
+                onBack={() => void navigate({ to: "/" })}
+                onDetailsRef={(node) => {
+                  threadDetailsAnchorRef.current = node;
+                }}
+                phone={phoneThreadPage}
               />
             )}
             renderEmpty={() => (
-              <GridEmptyDraft
+              <ThreadOpenProvider
                 key={grid.id}
-                grid={grid}
-                threadDetailsAnchor={threadDetailsAnchorRef}
-                onDraftChange={(draft) => setEmptyDraftThreadId(draft?.threadId ?? null)}
-              />
+                open={(ref, intent) => openThread(ref.environmentId, ref.threadId, null, intent)}
+              >
+                <GridEmptyDraft
+                  grid={grid}
+                  threadDetailsAnchor={threadDetailsAnchorRef}
+                  onDraftChange={(draft) => setEmptyDraftThreadId(draft?.threadId ?? null)}
+                />
+              </ThreadOpenProvider>
             )}
           />
           {gridTerminalRef === null ? null : (

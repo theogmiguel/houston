@@ -1,246 +1,155 @@
+import { cloudSpeechLanguages, effectiveSpeechLanguage } from "@houston-app/shared/speech";
 import {
   getEnvironmentSpeechStatus,
   getEnvironmentSpeechStreamUrl,
   openSpeechStream,
-  prepareEnvironmentSpeechModel,
+  requireCloudSpeechKey,
   throwIfVoiceTranscriptionAborted,
+  transcribeCloudPcm,
   transcribeEnvironmentPcm,
   VoiceTranscriptionError,
-  type VoiceRecorder,
   type VoiceTranscriptionOptions,
-  type VoiceTranscriber,
 } from "@houston-app/client-runtime/voice-input";
 import type { PreparedConnection } from "@houston-app/client-runtime/connection";
-import type { SpeechStreamText } from "@houston-app/contracts";
+import type {
+  CloudSpeechModelId,
+  CloudSpeechProvider,
+  SpeechStreamText,
+  SpeechTranscriptionOptions,
+} from "@houston-app/contracts";
 
 import { runtime } from "../lib/runtime";
-import workletUrl from "./pcmWorklet.ts?worker&url";
+import { createBrowserPcmCapture } from "./browserPcmCapture";
 
 export function createBrowserVoiceInputPlatform(input: {
   readonly prepared: PreparedConnection;
-  readonly getProjectName?: () => string | undefined;
+  /** Send each finished recording to this provider through `prepared` instead of its local engine. */
+  readonly cloudProvider?: CloudSpeechProvider | undefined;
+  /** The exact OpenRouter model the grant names; that provider sends nothing without it. */
+  readonly cloudModel?: CloudSpeechModelId | undefined;
+  /** Re-read at each send: audio never leaves the device once the audio grant has changed. */
+  readonly hasAudioConsent: () => boolean;
+  readonly getTranscriptionOptions: () => SpeechTranscriptionOptions;
   readonly getMicrophoneId: () => string;
   readonly onLevel: (level: number) => void;
   readonly onDurationLimit: () => void;
   readonly onText: (text: SpeechStreamText) => void;
   readonly onError: (message: string) => void;
-}): {
-  readonly recorder: VoiceRecorder;
-  readonly transcriber: VoiceTranscriber;
-  readonly releaseRecording: () => void;
-  readonly cancelRecording: () => void;
-  readonly deleteRecording: (uri: string) => void;
-} {
-  let stream: MediaStream | undefined;
-  let recordingUri: string | null = null;
-  let chunks: Float32Array<ArrayBuffer>[] = [];
-  let audioContext: AudioContext | undefined;
-  let worklet: AudioWorkletNode | undefined;
-  let durationTimer: ReturnType<typeof setTimeout> | undefined;
-  let signal: AbortSignal | undefined;
-  let live: Awaited<ReturnType<typeof openSpeechStream>> | undefined;
-  let streaming = false;
-  let stopped:
-    | { readonly resolve: () => void; readonly reject: (error: Error) => void }
-    | undefined;
-
-  const cleanupCapture = (preserveQueuedAudio = false) => {
-    if (!preserveQueuedAudio) chunks = [];
-    if (durationTimer) clearTimeout(durationTimer);
-    durationTimer = undefined;
-    worklet?.disconnect();
-    worklet?.port.close();
-    worklet = undefined;
-    stream?.getTracks().forEach((track) => track.stop());
-    stream = undefined;
-    void audioContext?.close();
-    audioContext = undefined;
-    stopped?.resolve();
-    stopped = undefined;
-    input.onLevel(0);
-  };
-
-  const recorder: VoiceRecorder = {
-    get uri() {
-      return recordingUri;
-    },
-    prepareToRecordAsync: async () => {
-      const captureSignal = signal;
-      if (!captureSignal) throw new Error("Voice transcription is not prepared.");
-      captureSignal.throwIfAborted();
-      if (recordingUri) URL.revokeObjectURL(recordingUri);
-      recordingUri = null;
-      chunks = [];
-      const microphoneId = input.getMicrophoneId();
-      const captured = await navigator.mediaDevices.getUserMedia({
-        audio: microphoneId ? { deviceId: { exact: microphoneId } } : true,
-      });
-      if (captureSignal.aborted) {
-        captured.getTracks().forEach((track) => track.stop());
-        captureSignal.throwIfAborted();
-      }
-      stream = captured;
+}) {
+  return createBrowserPcmCapture(input, async (options) => {
+    const recordingOptions = input.getTranscriptionOptions();
+    const transcribeRecording = async (
+      uri: string,
+      { signal: transcriptionSignal }: VoiceTranscriptionOptions,
+    ) => {
       try {
-        const context = new AudioContext();
-        audioContext = context;
-        await context.audioWorklet.addModule(workletUrl);
-        captureSignal.throwIfAborted();
-        const node = new AudioWorkletNode(context, "houston-pcm-capture", { channelCount: 1 });
-        worklet = node;
-        node.port.onmessage = ({
-          data,
-        }: MessageEvent<Float32Array<ArrayBuffer> | number | "stopped" | "limit">) => {
-          if (captureSignal.aborted) return;
-          if (data === "stopped") {
-            stopped?.resolve();
-            return;
-          }
-          if (data === "limit") {
-            input.onDurationLimit();
-            return;
-          }
-          if (typeof data === "number") {
-            input.onLevel(data);
-            return;
-          }
-          if (live) live.feed(data);
-          else chunks.push(data);
-        };
-        node.onprocessorerror = () => {
-          stopped?.reject(new Error("Microphone processing failed."));
-          input.onError("Microphone processing failed.");
-        };
-        for (const track of captured.getTracks())
-          track.addEventListener("ended", () => input.onError("The microphone disconnected."), {
-            once: true,
-          });
-        context.createMediaStreamSource(captured).connect(node);
-        // The processor emits silence, keeping the graph active without microphone playback.
-        node.connect(context.destination);
-        await context.resume();
-        captureSignal.throwIfAborted();
-      } catch (error) {
-        cleanupCapture();
-        throw error;
-      }
-    },
-    record: ({ forDuration }) => {
-      worklet?.port.postMessage("start");
-      durationTimer = setTimeout(input.onDurationLimit, forDuration * 1_000);
-    },
-    stop: async () => {
-      if (!worklet) return;
-      if (signal?.aborted) {
-        cleanupCapture();
-        return;
-      }
-      const pending = new Promise<void>((resolve, reject) => {
-        stopped = { resolve, reject };
-      });
-      const timeout = setTimeout(
-        () => stopped?.reject(new Error("Microphone capture did not stop.")),
-        5_000,
-      );
-      worklet.port.postMessage("stop");
-      try {
-        await pending;
-        if (!live && chunks.length) {
-          const blob = new Blob(chunks, { type: "application/octet-stream" });
-          recordingUri = URL.createObjectURL(blob);
-        }
-      } finally {
-        clearTimeout(timeout);
-        cleanupCapture(streaming && !signal?.aborted);
-      }
-    },
-  };
-
-  const transcribeRecording = async (
-    uri: string,
-    { signal: transcriptionSignal }: VoiceTranscriptionOptions,
-  ) => {
-    try {
-      const response = await fetch(uri, { signal: transcriptionSignal });
-      const pcm = new Uint8Array(await response.arrayBuffer());
-      const result = await runtime.runPromise(
-        transcribeEnvironmentPcm(input.prepared, pcm, input.getProjectName?.()),
-        {
-          signal: transcriptionSignal,
-        },
-      );
-      throwIfVoiceTranscriptionAborted(transcriptionSignal);
-      return result.text;
-    } catch (cause) {
-      throwIfVoiceTranscriptionAborted(transcriptionSignal);
-      throw new VoiceTranscriptionError(
-        "transcription-failed",
-        "Voice transcription on this environment failed.",
-        { cause },
-      );
-    }
-  };
-
-  return {
-    recorder,
-    releaseRecording: () => cleanupCapture(streaming && !signal?.aborted),
-    cancelRecording: cleanupCapture,
-    deleteRecording: (uri) => {
-      URL.revokeObjectURL(uri);
-      if (recordingUri === uri) recordingUri = null;
-    },
-    transcriber: {
-      prepare: async (options) => {
-        signal = options.signal;
-        live = undefined;
-        const status = await runtime.runPromise(
-          getEnvironmentSpeechStatus(input.prepared),
-          options,
-        );
-        throwIfVoiceTranscriptionAborted(options.signal);
-        if (!status.supported) throw new VoiceTranscriptionError("unavailable", status.reason);
-        streaming = status.supportsStreaming;
-        if (status.supportsStreaming) {
-          const url = await runtime.runPromise(
-            getEnvironmentSpeechStreamUrl(input.prepared, input.getProjectName?.()),
-            options,
+        if (!input.hasAudioConsent())
+          throw new VoiceTranscriptionError(
+            "cancelled",
+            "The audio destination changed before this recording was sent.",
           );
-          const session = openSpeechStream({
-            url,
-            signal: options.signal,
-            onText: input.onText,
-            onError: (error) => input.onError(error.message),
-          }).then((prepared) => {
-            live = prepared;
-            for (const chunk of chunks) prepared.feed(chunk);
-            chunks = [];
-            return prepared;
-          });
-          void session.catch((error: unknown) => {
-            if (!options.signal.aborted)
-              input.onError(
-                error instanceof Error ? error.message : "Could not prepare voice input.",
-              );
-          });
-          return {
-            locale: "en",
-            transcribe: transcribeRecording,
-            streaming: { finish: async () => (await session).finish() },
-          };
-        }
-        const preparedModel = runtime.runPromise(
-          prepareEnvironmentSpeechModel(input.prepared),
-          options,
+        const response = await fetch(uri, { signal: transcriptionSignal });
+        const pcm = new Uint8Array(await response.arrayBuffer());
+        const result = await runtime.runPromise(
+          input.cloudProvider
+            ? transcribeCloudPcm(
+                input.prepared,
+                input.cloudProvider,
+                pcm,
+                recordingOptions,
+                input.cloudModel,
+              )
+            : transcribeEnvironmentPcm(input.prepared, pcm, recordingOptions),
+          { signal: transcriptionSignal },
         );
-        // A failed warmup should still allow the normal transcription path to retry.
-        void preparedModel.catch(() => undefined);
-        return {
-          locale: "en",
-          transcribe: async (uri, transcriptionOptions) => {
-            await preparedModel.catch(() => undefined);
-            return transcribeRecording(uri, transcriptionOptions);
+        throwIfVoiceTranscriptionAborted(transcriptionSignal);
+        return result.text;
+      } catch (cause) {
+        throwIfVoiceTranscriptionAborted(transcriptionSignal);
+        if (cause instanceof VoiceTranscriptionError) throw cause;
+        throw new VoiceTranscriptionError(
+          "transcription-failed",
+          input.cloudProvider
+            ? "Cloud transcription failed. Check the destination in Settings → Voice."
+            : "Voice transcription on this environment failed.",
+          { cause },
+        );
+      }
+    };
+    if (input.cloudProvider) {
+      if (input.cloudProvider === "openrouter" && !input.cloudModel)
+        throw new VoiceTranscriptionError(
+          "unavailable",
+          "Choose an OpenRouter model in Settings → Voice.",
+        );
+      await runtime.runPromise(requireCloudSpeechKey(input.prepared, input.cloudProvider), options);
+      throwIfVoiceTranscriptionAborted(options.signal);
+      return {
+        locale: effectiveSpeechLanguage(cloudSpeechLanguages, recordingOptions.speechLanguage),
+        transcribe: transcribeRecording,
+      };
+    }
+    const status = await runtime.runPromise(getEnvironmentSpeechStatus(input.prepared), options);
+    throwIfVoiceTranscriptionAborted(options.signal);
+    if (!status.supported) throw new VoiceTranscriptionError("unavailable", status.reason);
+    const language = status.languages
+      ? effectiveSpeechLanguage(
+          {
+            languages: status.languages,
+            supportsLanguageDetection: status.supportsLanguageDetection ?? false,
           },
-        };
+          recordingOptions.speechLanguage,
+        )
+      : "auto";
+    const locale =
+      !status.supportsStreaming &&
+      status.supportsTranslation &&
+      recordingOptions.speechTranslateToEnglish
+        ? "en"
+        : language;
+    if (!status.supportsStreaming && !status.supportsBufferedStreaming) {
+      return { locale, transcribe: transcribeRecording };
+    }
+    const url = await runtime.runPromise(getEnvironmentSpeechStreamUrl(input.prepared), options);
+    // The socket opens asynchronously; audio captured meanwhile waits here and is
+    // dropped, never sent, when the recording is cancelled or consent has changed.
+    let pending: Float32Array[] | null = [];
+    let live: Awaited<ReturnType<typeof openSpeechStream>> | undefined;
+    const session = openSpeechStream({
+      url,
+      options: recordingOptions,
+      signal: options.signal,
+      onText: input.onText,
+      onError: (error) => input.onError(error.message),
+    }).then((opened) => {
+      const queued = pending ?? [];
+      pending = null;
+      if (options.signal.aborted) return opened;
+      live = opened;
+      for (const chunk of queued) opened.feed(chunk);
+      return opened;
+    });
+    void session.catch((error: unknown) => {
+      if (!options.signal.aborted)
+        input.onError(error instanceof Error ? error.message : "Could not prepare voice input.");
+    });
+    return {
+      locale,
+      transcribe: transcribeRecording,
+      streaming: {
+        feed: (pcm: Float32Array) => {
+          if (!input.hasAudioConsent()) {
+            input.onError("The audio destination changed. Please record again.");
+            return;
+          }
+          if (live) live.feed(pcm);
+          else pending?.push(pcm);
+        },
+        finish: async (finishOptions: VoiceTranscriptionOptions) => {
+          throwIfVoiceTranscriptionAborted(finishOptions.signal);
+          return (await session).finish();
+        },
       },
-    },
-  };
+    };
+  });
 }

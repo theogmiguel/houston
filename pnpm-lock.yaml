@@ -188,9 +188,6 @@ catalogs:
     electron-webauthn:
       specifier: 1.3.1
       version: 1.3.1
-    jose:
-      specifier: 6.2.2
-      version: 6.2.2
     mdast-util-directive:
       specifier: 3.1.0
       version: 3.1.0
@@ -237,8 +234,8 @@ catalogs:
       specifier: npm:@tsc-rs/typescript@0.8.0
       version: 0.8.0
     undici:
-      specifier: 8.11.2
-      version: 8.11.2
+      specifier: 8.12.4
+      version: 8.12.4
     unified:
       specifier: 11.0.5
       version: 11.0.5
@@ -327,7 +324,7 @@ overrides:
   lightningcss: 1.33.0
   tailwindcss: 4.3.3
   '@types/ws@^8': 8.18.2
-  undici@^8: 8.11.2
+  undici@^8: 8.12.4
   ws@^8: 8.22.0
   vite: npm:@voidzero-dev/vite-plus-core@1.4.0
   vite-plus: 1.4.0
@@ -355,8 +352,8 @@ importers:
   .:
     devDependencies:
       '@coderabbitai/config':
-        specifier: 1.1.0
-        version: 1.1.0
+        specifier: 1.2.0
+        version: 1.2.0
       '@shadcn/lint':
         specifier: 0.1.5
         version: 0.1.5
@@ -406,8 +403,8 @@ importers:
         specifier: 4.1.2
         version: 4.1.2
       electron:
-        specifier: 44.10.0
-        version: 44.10.0(supports-color@7.2.0)
+        specifier: 44.10.1
+        version: 44.10.1(supports-color@7.2.0)
       electron-store:
         specifier: ^8.2.0
         version: 8.2.0
@@ -544,9 +541,6 @@ importers:
       ffi-rs:
         specifier: 1.3.2
         version: 1.3.2
-      jose:
-        specifier: 'catalog:'
-        version: 6.2.2
       node-pty:
         specifier: 1.2.0-beta.15
         version: 1.2.0-beta.15(patch_hash=f1e680afec85f650699ea756f91f469844ec4c976f4f168492a45c6b3f67d651)
@@ -563,14 +557,14 @@ importers:
         specifier: ^4.2.5
         version: 4.2.5
       stream-json:
-        specifier: 3.6.0
-        version: 3.6.0
+        specifier: 3.7.0
+        version: 3.7.0
       transcribe-cpp:
-        specifier: 0.2.3
-        version: 0.2.3
+        specifier: 0.4.1
+        version: 0.4.1
       undici:
         specifier: 'catalog:'
-        version: 8.11.2
+        version: 8.12.4
       yaml:
         specifier: ^2.9.0
         version: 2.9.0
@@ -587,6 +581,9 @@ importers:
       '@effect/vitest':
         specifier: 4.1.2
         version: 4.1.2(patch_hash=299510b71c36537a832a67e9d160a5f112a5f326a29e95c41cb45fc8234e47c7)(@astrojs/compiler-rs@0.5.1)(@tsc-rs/typescript@0.8.0)(@types/node@24.12.4)(@vitest/browser-playwright@5.0.5)(@vitest/ui@5.0.5)(@volar/typescript@2.4.28(@tsc-rs/typescript@0.8.0))(bufferutil@4.1.0)(effect@4.1.2)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.0(@noble/hashes@1.8.0))(playwright@1.60.0)(terser@5.48.0)(unrun@0.2.39)(utf-8-validate@6.0.6)(yaml@2.9.0)
+      '@handy-computer/models':
+        specifier: 0.2.3
+        version: 0.2.3
       '@houston-app/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -771,8 +768,8 @@ importers:
         specifier: ^4.0.2
         version: 4.0.2
       dompurify:
-        specifier: ^3.4.16
-        version: 3.4.16
+        specifier: ^3.4.17
+        version: 3.4.17
       effect:
         specifier: 4.1.2
         version: 4.1.2
@@ -794,9 +791,6 @@ importers:
       html-url-attributes:
         specifier: ^3.0.1
         version: 3.0.1
-      jose:
-        specifier: 'catalog:'
-        version: 6.2.2
       jsonc-parser:
         specifier: 3.3.1
         version: 3.3.1
@@ -804,8 +798,8 @@ importers:
         specifier: 3.10.1
         version: 3.10.1
       katex:
-        specifier: ^0.16.47
-        version: 0.16.47
+        specifier: ^0.18.2
+        version: 0.18.10
       lucide:
         specifier: ^0.564.0
         version: 0.564.0
@@ -991,6 +985,9 @@ importers:
       '@houston-app/provider-pi':
         specifier: workspace:*
         version: link:../provider-pi
+      '@houston-app/secret-provider-definitions':
+        specifier: workspace:*
+        version: link:../secret-provider-definitions
       '@houston-app/shared':
         specifier: workspace:*
         version: link:../shared
@@ -1183,7 +1180,7 @@ importers:
     dependencies:
       '@cursor/sdk':
         specifier: 1.2.0
-        version: 1.2.0(zod@4.6.5)
+        version: 1.2.0(zod@4.6.7)
       '@houston-app/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -2430,8 +2427,8 @@ packages:
   '@bufbuild/protobuf@1.10.0':
     resolution: {integrity: sha512-QDdVFLoN93Zjg36NoQPZfsVH9tZew7wKDKyV5qRdj8ntT4wQCOradQjRaTdwMhWUYsgKsvCINKKm87FdEk96Ag==}
 
-  '@coderabbitai/config@1.1.0':
-    resolution: {integrity: sha512-NvQKaoOD7fWb7lMKhid57ABVlIBSczw/S+ePk5YvoPuWdrDkyY+PWdqVtq3TRq7VY8f3SNRlMFjmAtXVab66pw==}
+  '@coderabbitai/config@1.2.0':
+    resolution: {integrity: sha512-o9CzGIJcXj8JZtJ167xFZ0CQgxXzaWHiO7aP5m4STKTFXHU3l6/RMxjJRmz87ufncu2KMBLY1hOraAnCeXDBHQ==}
 
   '@connectrpc/connect-web@1.7.0':
     resolution: {integrity: sha512-qyP0YOnUPRWwCc/VfsoydMJvkb7EyUPr2q9sHgBuJzbADjiqck1gKH5V5ZPzPhTLBvmz5UvG+wiZ5sMRQHU1MQ==}
@@ -2981,6 +2978,10 @@ packages:
 
   '@fontsource-variable/jetbrains-mono@5.3.0':
     resolution: {integrity: sha512-F32xpS2NsGYoQi2ADSkKTgpJj7ozajsGgDJ8woTnqjmIB+dxDIqImjl4pXZVEExu8UFZ2ndhmX18EBS/hdz3Lw==}
+
+  '@handy-computer/models@0.2.3':
+    resolution: {integrity: sha512-EcyPojMY8hG5adDZGR/2h/m9jniqAnSND00gmiAErRLB1BQqMD9jrJaqsfoYF/UfPC8ocKZFUNSkTegoYqjF5w==}
+    engines: {node: '>=20.10'}
 
   '@hono/node-server@1.19.17':
     resolution: {integrity: sha512-dSneS5qhiauZWGDCeK4o695Xd9nUNjviSZCMQrj10eetr8Uln1ucn6bbphOM6UynAMMtNIzZNSpL9vnASJwrPQ==}
@@ -5019,30 +5020,30 @@ packages:
   '@tiptap/starter-kit@3.31.3':
     resolution: {integrity: sha512-WKof9RewdmGHvWJ1wn0/HVNG2mV+HOgVRyJkKekuM9fgr6BZAAH/xZsWE1eon+94JnQ+KtK2ThydXQM/qc6b2A==}
 
-  '@transcribe-cpp/darwin-arm64-metal@0.2.3':
-    resolution: {integrity: sha512-Ha1fvOHhCpPzCE40o1/Ub0M9QMIy0Ec9IXhCQrqsKW8XqOuSExnnTD1wUWljHC6FlB/hQjBlP0PTE/bFyue0iQ==}
+  '@transcribe-cpp/darwin-arm64-metal@0.4.1':
+    resolution: {integrity: sha512-Sg8obJiDeBxSWQvFcHxlVJoY5X+BzMFMNH+5LU5oVfj8iHJ0dj0uVlBUrNIN6D2xCBksoLVOEMCbasqUXv/DLw==}
     cpu: [arm64]
     os: [darwin]
 
-  '@transcribe-cpp/darwin-x64-cpu@0.2.3':
-    resolution: {integrity: sha512-ObdPJo53DtmfrVsx9y1P5BGPD1EYqpmkEBreIW1PKL3JRMabfZVSaW1CtRCLd6RI/zZlnr9MSlBHrEqoTiTf3g==}
+  '@transcribe-cpp/darwin-x64-cpu@0.4.1':
+    resolution: {integrity: sha512-lRP/Mr8msBMUHXkLPtGZoVhNXgxdTV3tzEmpLki0VeBP3LraPC73m9PjfhzoYNEwXEnpqdLwNaTnuCHOwJRugw==}
     cpu: [x64]
     os: [darwin]
 
-  '@transcribe-cpp/linux-arm64-cpu-vulkan@0.2.3':
-    resolution: {integrity: sha512-grwFOA02qD28Y/vaP+gvrY9vue3WX6xJaNEJSaObbHHxF0+5IpC8gQxL31tKnn4S2rZxQ6oMpmgrkxEKvsdx6w==}
+  '@transcribe-cpp/linux-arm64-cpu-vulkan@0.4.1':
+    resolution: {integrity: sha512-b010Fhfnqe4jGJLMhvx6LucvysxK638qY2eww1oaaErzkAKutdN0uRx84vsfXVxVr3lKlzdL5vq6Zv/QfAArTA==}
     cpu: [arm64]
     os: [linux]
     libc: [glibc]
 
-  '@transcribe-cpp/linux-x64-cpu-vulkan@0.2.3':
-    resolution: {integrity: sha512-zCI5x6uqTdPLV9SBC7PCXtukroOB7OJfhimrJbsEijhyD0ECqnSKZIqw6WZTuGuEIZbgUeZLLGb9cW7yteeM+A==}
+  '@transcribe-cpp/linux-x64-cpu-vulkan@0.4.1':
+    resolution: {integrity: sha512-AuiE8PSFbDndLJDpt8lilZIyg2syQSRBmZQWklx0rd9vF1M/Wfn4StKUXTGC4rouQOTJPy3ViioGLpyYr6unaw==}
     cpu: [x64]
     os: [linux]
     libc: [glibc]
 
-  '@transcribe-cpp/win32-x64-cpu-vulkan@0.2.3':
-    resolution: {integrity: sha512-j/DnABYXf/7kAQXIpV1psBGD4MNhHGr3HT5iTnNHK3eqQOF95MbLTC3uVZ3r37w55HojulWePLkk31y29zKsQA==}
+  '@transcribe-cpp/win32-x64-cpu-vulkan@0.4.1':
+    resolution: {integrity: sha512-0W8yQ6SgmPKgVaLHVGkj5gr2uzMS9mAVHMCJKZCFdhvQxeQlUbrvN/8ooyYD7S5qmLsLNEHt0ecMMVgsoWUu9A==}
     cpu: [x64]
     os: [win32]
 
@@ -5939,6 +5940,10 @@ packages:
     resolution: {integrity: sha512-H+y0Jo/T1RZ9qPP4Eh1pkcQcLRglraJaSLoyOtHxu6AapkjWVCy2Sit1QQ4x3Dng8qDlSsZEet7g5Pq06MvTgw==}
     engines: {node: '>=20'}
 
+  commander@15.1.0:
+    resolution: {integrity: sha512-cgnQ88TRrWcC7pVq46RzJVRMktu3W2RcbnoidnfBsl1bmDCBwJS/udcIZpKoCrbAYYaCqsz1yZCVIgbIaU3ddQ==}
+    engines: {node: '>=22.12.0'}
+
   commander@2.20.3:
     resolution: {integrity: sha512-GpVkmM8vF2vQUkj2LvZmD35JxeJOLCwJ9cUkugyk2nuhbv3+mJvpLYYt+0+USMxE+oj+ey/lJEnhZw75x/OMcQ==}
 
@@ -6157,8 +6162,8 @@ packages:
     resolution: {integrity: sha512-cgwlv/1iFQiFnU96XXgROh8xTeetsnJiDsTc7TYCLFd9+/WNkIqPTxiM/8pSd8VIrhXGTf1Ny1q1hquVqDJB5w==}
     engines: {node: '>= 4'}
 
-  dompurify@3.4.16:
-    resolution: {integrity: sha512-sqo+pNp3qRhCIpbgRi1y8Tgk27Bo2Ry7w0dC1NBeNTdZChWjz9Xb/KOoZbRP/R6pQZ80Qw8YhXw13hWWBbMRnQ==}
+  dompurify@3.4.17:
+    resolution: {integrity: sha512-B/pSlYVHQ58kqISD/yDjuJ1yfzI34m1gF4lAod2bwSRhiN4K5Cl3H8Af7hqB2PmTL911tdEudnnXn5FnhRoz0w==}
 
   domutils@3.2.2:
     resolution: {integrity: sha512-6kZKyUajlDuqlHKVX1w7gyslj9MPIXzIFiz/rGu35uC1wMi+kMhQwGhl4lt9unC9Vb9INnY9Z3/ZA3+FhASLaw==}
@@ -6225,8 +6230,8 @@ packages:
     resolution: {integrity: sha512-bO3y10YikuUwUuDUQRM4KfwNkKhnpVO7IPdbsrejwN9/AABJzzTQ4GeHwyzNSrVO+tEH3/Np255a3sVZpZDjvg==}
     engines: {node: '>=8.0.0'}
 
-  electron@44.10.0:
-    resolution: {integrity: sha512-ss4pCfrQKV4TWkuVYtWB4HmeysPZgB96cSYNKYZv1UVCRP4vQMGNW5oopFbvx6Bbfce1XtP5pm5RDuKehp0svQ==}
+  electron@44.10.1:
+    resolution: {integrity: sha512-CTqxvx02P+xCR/xUxAWBexQEJ42g9Rzy1/0N+ofGAtI/atgSYZKQnTX9/juwzftocWbZtoF2ftEGMGJujJDeBw==}
     engines: {node: '>= 22.12.0'}
     hasBin: true
 
@@ -6881,6 +6886,10 @@ packages:
 
   katex@0.16.47:
     resolution: {integrity: sha512-Eeo8Ys1doU1z+x8AZsPpQu+p/QcZBI5PeOo7QGQdy2x2m0MU/hYagBbGOmXwr5KVbEfVuWv9LpnQWeehogurjg==}
+    hasBin: true
+
+  katex@0.18.10:
+    resolution: {integrity: sha512-/B6p9eY9DX7aHBfpkHdpirDTZ5QH9xTwL9y837PWuzuv41O5jFdqNQwVQEQsimY0/iVNkwBY4+4hMfhQ7d4Dbw==}
     hasBin: true
 
   keyv@4.5.4:
@@ -8293,8 +8302,8 @@ packages:
   stream-combiner@0.0.4:
     resolution: {integrity: sha512-rT00SPnTVyRsaSz5zgSPma/aHSOic5U1prhYdRy5HS2kTZviFpmDgzilbtsJsxiroqACmayynDN/9VzIbX5DOw==}
 
-  stream-json@3.6.0:
-    resolution: {integrity: sha512-NiJdqxKyau579z/E8vfqcjWfSDWxW/AT99javFXdPXF147Z5za85LRXSHEmSX9TKOakB7gaIccfD0fOIctb7KQ==}
+  stream-json@3.7.0:
+    resolution: {integrity: sha512-rCSBdcBP/bPk6T8QFcxAj1MSzAuc5i49cYW6IE7sYObNEPccBJIUiL6fU9c9BWt40aJK0siVynLX7lWaW8alXw==}
 
   string-width@4.2.3:
     resolution: {integrity: sha512-wKyQRQpjJ0sIp62ErSZdGsjMJWsap5oRNihHhu6G7JVO/9jIB6UyevL+tXuOqrng8j/cxKTWyWUwvSTriiZz/g==}
@@ -8452,8 +8461,8 @@ packages:
     resolution: {integrity: sha512-bLVMLPtstlZ4iMQHpFHTR7GAGj2jxi8Dg0s2h2MafAE4uSWF98FC/3MomU51iQAMf8/qDUbKWf5GxuvvVcXEhw==}
     engines: {node: '>=20'}
 
-  transcribe-cpp@0.2.3:
-    resolution: {integrity: sha512-7SLtSAsZs82VwhoNHILCPwz+suMjYn8trTI7+1oAHQR9YwgkZuO48qB/fHvF7pEXR3URdpNupt8hkGTZnVhUXA==}
+  transcribe-cpp@0.4.1:
+    resolution: {integrity: sha512-6+cemagaGsOC8X3XWPCn7Ek+jjwyH2/NdTyBcEH7FtFjC3Ciyih2Xx6/GSRirZolxmxENtbvfwu1WV5RzutgCw==}
     engines: {node: '>=22'}
 
   trim-lines@3.0.1:
@@ -8511,8 +8520,8 @@ packages:
     resolution: {integrity: sha512-03KrMbjIFDWQR5RNPrSw3bd1r12JpyFQl9/yxjUbJtqkjmllqC5lFjZh6ujeuJCKr8EOQvRW872Oy/az+nLYxg==}
     engines: {node: '>=20.18.1'}
 
-  undici@8.11.2:
-    resolution: {integrity: sha512-u4UB2/IrKdU6lFxumHmmo1a3fCQO5tzQllRorfoRS63txhrB7xTpSn1PftwC4qEHkOaqP95fCWW4lJzwErwzhQ==}
+  undici@8.12.4:
+    resolution: {integrity: sha512-8Mx+uNKKER2bA4AdtedkqRbwUCIJFr2nJckXRe5yrDqzePqwLP7VNcctN8/XdmDSbF7mS+jJKIszlL+vbam1VA==}
     engines: {node: '>=22.19.0'}
 
   unicode-canonical-property-names-ecmascript@2.0.1:
@@ -8853,11 +8862,11 @@ packages:
     peerDependencies:
       zod: ^3.25.28 || ^4
 
-  zod@4.5.4:
-    resolution: {integrity: sha512-sC95tT5iHHH9gtpj6A81kh+NEaRAUFN+qlUPDUbRfOMvNf5QCBqsb3WgvnpVtK5Y+4UfA6KqufotuTvMGiTlsA==}
-
   zod@4.6.5:
     resolution: {integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==}
+
+  zod@4.6.7:
+    resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
 
   zustand@5.0.14:
     resolution: {integrity: sha512-/8tAspM5LMPr28b3fwLYrtdj77ECpfZviaP75CMTnwO8ISyaE4GDIG/9rDDYq/cH9D2Xw2A2RXglLInmVBQB/g==}
@@ -9444,9 +9453,9 @@ snapshots:
 
   '@bufbuild/protobuf@1.10.0': {}
 
-  '@coderabbitai/config@1.1.0':
+  '@coderabbitai/config@1.2.0':
     dependencies:
-      zod: 4.5.4
+      zod: 4.6.7
 
   '@connectrpc/connect-web@1.7.0(@bufbuild/protobuf@1.10.0)(@connectrpc/connect@1.7.0(@bufbuild/protobuf@1.10.0))':
     dependencies:
@@ -9543,6 +9552,20 @@ snapshots:
       '@cursor/sdk-linux-x64': 1.2.0
       '@cursor/sdk-win32-x64': 1.2.0
 
+  '@cursor/sdk@1.2.0(zod@4.6.7)':
+    dependencies:
+      '@bufbuild/protobuf': 1.10.0
+      '@connectrpc/connect': 1.7.0(@bufbuild/protobuf@1.10.0)
+      '@connectrpc/connect-web': 1.7.0(@bufbuild/protobuf@1.10.0)(@connectrpc/connect@1.7.0(@bufbuild/protobuf@1.10.0))
+      '@statsig/js-client': 3.31.0
+      zod: 4.6.7
+    optionalDependencies:
+      '@cursor/sdk-darwin-arm64': 1.2.0
+      '@cursor/sdk-darwin-x64': 1.2.0
+      '@cursor/sdk-linux-arm64': 1.2.0
+      '@cursor/sdk-linux-x64': 1.2.0
+      '@cursor/sdk-win32-x64': 1.2.0
+
   '@date-fns/tz@1.5.0': {}
 
   '@daypicker/react@10.0.1(@types/react@19.3.0)(react@19.3.0)':
@@ -9619,7 +9642,7 @@ snapshots:
       '@effect/platform-node-shared': 4.1.2(bufferutil@4.1.0)(effect@4.1.2)(utf-8-validate@6.0.6)
       effect: 4.1.2
       redis: 6.2.1
-      undici: 8.11.2
+      undici: 8.12.4
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
@@ -9984,6 +10007,8 @@ snapshots:
   '@fontsource-variable/inter@5.3.0': {}
 
   '@fontsource-variable/jetbrains-mono@5.3.0': {}
+
+  '@handy-computer/models@0.2.3': {}
 
   '@hono/node-server@1.19.17(hono@4.13.7)':
     dependencies:
@@ -11546,19 +11571,19 @@ snapshots:
       '@tiptap/extensions': 3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3)
       '@tiptap/pm': 3.31.3
 
-  '@transcribe-cpp/darwin-arm64-metal@0.2.3':
+  '@transcribe-cpp/darwin-arm64-metal@0.4.1':
     optional: true
 
-  '@transcribe-cpp/darwin-x64-cpu@0.2.3':
+  '@transcribe-cpp/darwin-x64-cpu@0.4.1':
     optional: true
 
-  '@transcribe-cpp/linux-arm64-cpu-vulkan@0.2.3':
+  '@transcribe-cpp/linux-arm64-cpu-vulkan@0.4.1':
     optional: true
 
-  '@transcribe-cpp/linux-x64-cpu-vulkan@0.2.3':
+  '@transcribe-cpp/linux-x64-cpu-vulkan@0.4.1':
     optional: true
 
-  '@transcribe-cpp/win32-x64-cpu-vulkan@0.2.3':
+  '@transcribe-cpp/win32-x64-cpu-vulkan@0.4.1':
     optional: true
 
   '@tsc-rs/darwin-arm64@0.8.0':
@@ -12489,6 +12514,8 @@ snapshots:
 
   commander@14.0.3: {}
 
+  commander@15.1.0: {}
+
   commander@2.20.3:
     optional: true
 
@@ -12735,7 +12762,7 @@ snapshots:
       domelementtype: 2.3.0
     optional: true
 
-  dompurify@3.4.16:
+  dompurify@3.4.17:
     optionalDependencies:
       '@types/trusted-types': 2.0.7
 
@@ -12854,7 +12881,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  electron@44.10.0(supports-color@7.2.0):
+  electron@44.10.1(supports-color@7.2.0):
     dependencies:
       '@electron-internal/extract-zip': 1.0.8
       '@electron/get': 5.1.0(supports-color@7.2.0)
@@ -13613,7 +13640,7 @@ snapshots:
       parse5: 8.0.1
       saxes: 6.0.0
       tough-cookie: 6.0.2
-      undici: 8.11.2
+      undici: 8.12.4
       w3c-xmlserializer: 5.0.0
       webidl-conversions: 8.0.1
       whatwg-mimetype: 5.0.0
@@ -13665,6 +13692,10 @@ snapshots:
   katex@0.16.47:
     dependencies:
       commander: 8.3.0
+
+  katex@0.18.10:
+    dependencies:
+      commander: 15.1.0
 
   keyv@4.5.4:
     dependencies:
@@ -15849,7 +15880,7 @@ snapshots:
     dependencies:
       duplexer: 0.1.2
 
-  stream-json@3.6.0:
+  stream-json@3.7.0:
     dependencies:
       stream-chain: 4.2.5
 
@@ -16025,15 +16056,15 @@ snapshots:
       punycode: 2.3.1
     optional: true
 
-  transcribe-cpp@0.2.3:
+  transcribe-cpp@0.4.1:
     dependencies:
       koffi: 3.3.6
     optionalDependencies:
-      '@transcribe-cpp/darwin-arm64-metal': 0.2.3
-      '@transcribe-cpp/darwin-x64-cpu': 0.2.3
-      '@transcribe-cpp/linux-arm64-cpu-vulkan': 0.2.3
-      '@transcribe-cpp/linux-x64-cpu-vulkan': 0.2.3
-      '@transcribe-cpp/win32-x64-cpu-vulkan': 0.2.3
+      '@transcribe-cpp/darwin-arm64-metal': 0.4.1
+      '@transcribe-cpp/darwin-x64-cpu': 0.4.1
+      '@transcribe-cpp/linux-arm64-cpu-vulkan': 0.4.1
+      '@transcribe-cpp/linux-x64-cpu-vulkan': 0.4.1
+      '@transcribe-cpp/win32-x64-cpu-vulkan': 0.4.1
 
   trim-lines@3.0.1: {}
 
@@ -16074,7 +16105,7 @@ snapshots:
   undici@7.30.1:
     optional: true
 
-  undici@8.11.2: {}
+  undici@8.12.4: {}
 
   unicode-canonical-property-names-ecmascript@2.0.1:
     optional: true
@@ -16467,9 +16498,9 @@ snapshots:
     dependencies:
       zod: 4.6.5
 
-  zod@4.5.4: {}
-
   zod@4.6.5: {}
+
+  zod@4.6.7: {}
 
   zustand@5.0.14(@types/react@19.3.0)(react@19.3.0)(use-sync-external-store@1.7.0(react@19.3.0)):
     optionalDependencies:

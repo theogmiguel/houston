@@ -216,6 +216,19 @@ describe("bitbucketProviderFailure", () => {
     expect(bitbucketProviderFailure(responseError(403)).reason).toBe("failed");
   });
 
+  it("reads a 404 to a request sent without credentials as missing credentials", () => {
+    const notFound = (anonymous?: boolean) =>
+      new BitbucketApi.BitbucketResponseError({
+        operation: "request",
+        status: 404,
+        responseBodyLength: 0,
+        ...(anonymous === undefined ? {} : { anonymous }),
+      });
+
+    expect(bitbucketProviderFailure(notFound(true)).reason).toBe("missing-tool");
+    expect(bitbucketProviderFailure(notFound()).reason).toBe("not-found");
+  });
+
   it("reports a request held back by the host-wide pause as rate limited until it ends", () => {
     const paused = new SourceControlRateLimit.SourceControlRateLimitPausedError({
       provider: SourceControlProviderKind.make("bitbucket"),

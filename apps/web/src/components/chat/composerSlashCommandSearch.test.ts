@@ -60,13 +60,18 @@ function skillItem(name: string, description: string): Extract<SlashItem, { type
 }
 
 describe("builtInSlashCommandItems", () => {
-  const commands = (claudeInChrome: boolean, resumeAvailable = true) =>
+  const commands = (
+    claudeInChrome: boolean,
+    resumeAvailable = true,
+    freshSessionAvailable = false,
+  ) =>
     builtInSlashCommandItems({
       planModeUiEnabled: true,
       sideChatAvailable: true,
       sideChatDisabledReason: null,
       claudeInChrome,
       resumeAvailable,
+      freshSessionAvailable,
     }).map((item) => item.command);
 
   it("offers /chrome when the Claude provider can use it", () => {
@@ -81,6 +86,19 @@ describe("builtInSlashCommandItems", () => {
     expect(commands(true, false)).toEqual(["model", "chrome", "plan", "default", "side", "btw"]);
   });
 
+  it("offers /clear when the server supports a fresh session", () => {
+    expect(commands(true, true, true)).toEqual([
+      "model",
+      "resume",
+      "chrome",
+      "plan",
+      "default",
+      "side",
+      "btw",
+      "clear",
+    ]);
+  });
+
   it("explains what /resume does", () => {
     const item = builtInSlashCommandItems({
       planModeUiEnabled: false,
@@ -88,6 +106,7 @@ describe("builtInSlashCommandItems", () => {
       sideChatDisabledReason: null,
       claudeInChrome: false,
       resumeAvailable: true,
+      freshSessionAvailable: false,
     }).find((command) => command.command === "resume");
     expect(item?.label).toBe("/resume");
     expect(item?.description).toBe("Open an earlier Claude Code or Codex session");
@@ -100,6 +119,7 @@ describe("builtInSlashCommandItems", () => {
       sideChatDisabledReason: null,
       claudeInChrome: true,
       resumeAvailable: false,
+      freshSessionAvailable: false,
     }).find((command) => command.command === "chrome");
     expect(item?.label).toBe("/chrome");
     expect(item?.description).toBe("Use Chrome in this thread; opens the Claude provider setting");

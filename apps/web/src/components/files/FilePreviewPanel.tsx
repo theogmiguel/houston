@@ -7,6 +7,7 @@ import {
   AuthPreviewOperateScope,
   type EditorId,
   type EnvironmentId,
+  type ProjectId,
   type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
 } from "@houston-app/contracts";
@@ -59,6 +60,7 @@ import { MediaActions, type MediaActionSource } from "~/components/media/MediaAc
 import { MorphIcon } from "~/components/MorphIcon";
 import { useRemoteOpenState } from "~/remoteOpen";
 import { useClientSettings } from "~/hooks/useSettings";
+import { useIsPhone } from "~/mobile/usePhone";
 import { useTheme } from "~/hooks/useTheme";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { resolveDiffThemeName } from "~/lib/diffRendering";
@@ -116,10 +118,10 @@ import {
   filePreviewReadErrorMessage,
   isMarkdownPreviewFile,
   resolveFilePreviewPath,
-  setMarkdownTaskChecked,
   shouldShowFileExplorer,
   workspaceAssetResource,
 } from "./filePreviewMode";
+import { setMarkdownTaskChecked } from "@houston-app/shared/markdownTaskList";
 import {
   changeFileSaveSession,
   overwriteFileSaveSession,
@@ -142,6 +144,7 @@ const NO_FILE_REVISION_ATOM = Atom.make(null);
 
 interface FilePreviewPanelProps {
   environmentId: EnvironmentId;
+  projectId?: ProjectId | undefined;
   cwd: string;
   projectName: string;
   relativePath: string | null;
@@ -659,6 +662,7 @@ function useEditableAfterHighlight(file: FileContents) {
 
 interface EditableFileSurfaceProps {
   environmentId: EnvironmentId;
+  projectId?: ProjectId | undefined;
   cwd: string;
   relativePath: string;
   composerDraftTarget: ScopedThreadRef | DraftId;
@@ -679,6 +683,7 @@ interface FileSelectionOverride {
 
 function EditableFileSurface({
   environmentId,
+  projectId,
   cwd,
   relativePath,
   composerDraftTarget,
@@ -946,6 +951,14 @@ function EditableFileSurface({
                 {annotation.metadata.entries.map((entry) => (
                   <DiffCommentAnnotation
                     key={entry.id}
+                    environmentId={environmentId}
+                    projectId={projectId}
+                    ownerKey={JSON.stringify([
+                      environmentId,
+                      composerDraftTarget,
+                      relativePath,
+                      entry.id,
+                    ])}
                     kind={entry.kind}
                     rangeLabel={formatFileCommentRange(entry.startLine, entry.endLine)}
                     text={entry.text}
@@ -1027,8 +1040,12 @@ function renderedToggleLabel(
   return rendered ? "Show HTML source" : "Show rendered page";
 }
 
+const MERMAID_SUFFIX = /\.(mmd|mermaid)$/i;
+const PATH_SEPARATOR = /[\\/]/;
+
 export default function FilePreviewPanel({
   environmentId,
+  projectId,
   cwd,
   projectName,
   relativePath: requestedPath,
@@ -1082,6 +1099,9 @@ export default function FilePreviewPanel({
   const fileAccess = useFilesystemReadAccess(environmentId);
   const { canReadFiles } = fileAccess;
   const canWriteFiles = useEnvironmentScope(environmentId, AuthFilesystemWriteScope);
+  // The phone never edits files: viewing stays read-only even when the connection can write.
+  const isPhone = useIsPhone();
+  const readOnly = isPhone || !canWriteFiles;
   const file = useProjectFileQuery(
     environmentId,
     cwd,
@@ -1137,7 +1157,7 @@ export default function FilePreviewPanel({
   );
   const breadcrumbRef = useRef<HTMLDivElement>(null);
   const isMarkdown = previewPath ? isMarkdownPreviewFile(previewPath) : false;
-  const isMermaid = previewPath !== null && /\.(mmd|mermaid)$/i.test(previewPath);
+  const isMermaid = previewPath !== null && MERMAID_SUFFIX.test(previewPath);
   const [renderMermaidPreferred, setRenderMermaidPreferred] = useLocalStorage(
     "houston.renderMermaid",
     true,
@@ -1494,7 +1514,7 @@ export default function FilePreviewPanel({
             (isDocument || file.readError?.failure === "binary_file") ? (
             <AttachmentFilePreview
               key={`${environmentId}:${absolutePath}:${workspaceMutationId}:${fileRefreshRevision}`}
-              name={relativePath.split(/[\\/]/).at(-1) || relativePath}
+              name={relativePath.split(PATH_SEPARATOR).at(-1) || relativePath}
               mimeType="application/octet-stream"
               sizeBytes={0}
               asset={{
@@ -1557,7 +1577,7 @@ export default function FilePreviewPanel({
                 threadRef={threadRef}
                 contents={file.data.contents}
                 workspaceMutationId={workspaceMutationId}
-                readOnly={file.data.truncated || isHostFile || !canWriteFiles}
+                readOnly={file.data.truncated || isHostFile || readOnly}
                 onPendingChange={onPendingChange}
               />
             ) : tableDelimiter && renderTable ? (
@@ -1567,7 +1587,7 @@ export default function FilePreviewPanel({
                 text={file.data.contents}
                 delimiter={tableDelimiter}
               />
-            ) : file.data.truncated || isHostFile || !canWriteFiles ? (
+            ) : file.data.truncated || isHostFile || readOnly ? (
               <SourceFilePreview
                 name={relativePath}
                 text={file.data.contents}
@@ -1580,6 +1600,7 @@ export default function FilePreviewPanel({
                 <EditableFileSurface
                   key={`${relativePath}:${resolvedTheme}`}
                   environmentId={environmentId}
+                  projectId={projectId}
                   cwd={cwd}
                   relativePath={relativePath}
                   composerDraftTarget={composerDraftTarget}
@@ -1689,7 +1710,7 @@ export function WorkspaceLargeTextPreview(props: {
               setTimeout(() => URL.revokeObjectURL(downloadUrl), 30_000);
               const anchor = document.createElement("a");
               anchor.href = downloadUrl;
-              anchor.download = props.name.split(/[\\/]/).at(-1) || props.name;
+              anchor.download = props.name.split(PATH_SEPARATOR).at(-1) || props.name;
               anchor.click();
             })()
               .catch(showError)

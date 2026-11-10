@@ -2,9 +2,11 @@ import {
   ASSISTANT_CITATION_MAX_COMMENT_LENGTH,
   type AssistantCitation,
 } from "@houston-app/contracts";
-import { useState, type Ref } from "react";
+import { use, useRef, useState, type RefObject } from "react";
+import { TextFieldSpeechControls, useTextFieldSpeech } from "~/speech/useTextFieldSpeech";
 import { textDirection } from "~/textDirection";
 
+import { ComposerContextActionsContext } from "../composerContextPresentation";
 import { Button } from "../ui/button";
 
 export function AssistantCitationCommentEditor({
@@ -16,24 +18,45 @@ export function AssistantCitationCommentEditor({
   onDraftChange,
 }: {
   citation: AssistantCitation;
-  inputRef?: Ref<HTMLTextAreaElement>;
+  inputRef?: RefObject<HTMLTextAreaElement | null>;
   onSubmit: (comment: string) => boolean;
   onSubmitAndSend?: (comment: string) => boolean;
   onCancel: () => void;
   onDraftChange?: (comment: string) => void;
 }) {
   const [comment, setComment] = useState(citation.comment ?? "");
+  const localInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const textareaRef = inputRef ?? localInputRef;
+  const { environmentId, projectId } = use(ComposerContextActionsContext);
+  const updateComment = (text: string) => {
+    setComment(text);
+    onDraftChange?.(text);
+  };
+  const speech = useTextFieldSpeech({
+    environmentId: environmentId ?? citation.environmentId,
+    projectId,
+    ownerKey: JSON.stringify([
+      "citation",
+      environmentId,
+      citation.threadId,
+      citation.messageId,
+      citation.start,
+      citation.end,
+    ]),
+    text: comment,
+    textareaRef,
+    onTextChange: updateComment,
+  });
   const commentTooLong = comment.length > ASSISTANT_CITATION_MAX_COMMENT_LENGTH;
   const submit = () => {
-    if (!commentTooLong) onSubmit(comment);
+    speech.submitAfterDictation((text) => {
+      if (text.length <= ASSISTANT_CITATION_MAX_COMMENT_LENGTH) onSubmit(text);
+    });
   };
   const submitAndSend = () => {
-    if (commentTooLong) return;
-    if (onSubmitAndSend) {
-      onSubmitAndSend(comment);
-    } else {
-      onSubmit(comment);
-    }
+    speech.submitAfterDictation((text) => {
+      if (text.length <= ASSISTANT_CITATION_MAX_COMMENT_LENGTH) (onSubmitAndSend ?? onSubmit)(text);
+    });
   };
 
   return (
@@ -44,8 +67,11 @@ export function AssistantCitationCommentEditor({
         event.stopPropagation();
         if (event.nativeEvent.isComposing || event.keyCode === 229) return;
         if (event.key === "Escape") {
+          // The setup dialog's own Escape bubbles through its portal; it must not close the editor too.
+          if (speech.setup.open) return;
           event.preventDefault();
-          onCancel();
+          if (speech.state.phase !== "idle") speech.cancel();
+          else onCancel();
         }
       }}
     >
@@ -53,7 +79,8 @@ export function AssistantCitationCommentEditor({
         “{citation.text}”
       </p>
       <textarea
-        ref={inputRef}
+        ref={textareaRef}
+        readOnly={speech.freezesEditor}
         aria-label="Comment on selected text"
         aria-description="Enter to save the citation comment; Command/Ctrl+Enter to save and send; Shift+Enter for a new line."
         aria-invalid={commentTooLong || undefined}
@@ -62,10 +89,7 @@ export function AssistantCitationCommentEditor({
         dir={textDirection(comment)}
         className="field-sizing-content block max-h-40 min-h-9 w-full resize-none rounded-(--r-ctl) bg-(--field) px-2.25 py-1.75 text-headline outline-none placeholder:text-(--houston) focus-visible:ring-1 focus-visible:ring-(--accent-ink) focus-visible:ring-inset"
         value={comment}
-        onChange={(event) => {
-          setComment(event.currentTarget.value);
-          onDraftChange?.(event.currentTarget.value);
-        }}
+        onChange={(event) => updateComment(event.currentTarget.value)}
         onKeyDown={(event) => {
           if (
             event.key === "Enter" &&
@@ -88,7 +112,16 @@ export function AssistantCitationCommentEditor({
           characters.
         </p>
       ) : null}
-      <div className="flex items-center justify-end gap-2">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <div
+          className={
+            speech.state.phase === "idle"
+              ? "contents"
+              : "flex basis-full flex-wrap gap-2 *:min-w-0 *:grow"
+          }
+        >
+          <TextFieldSpeechControls speech={speech} />
+        </div>
         <Button
           variant="ghost"
           size="xs"
@@ -100,7 +133,7 @@ export function AssistantCitationCommentEditor({
         <Button
           variant="primary"
           size="xs"
-          disabled={commentTooLong}
+          disabled={speech.preparing || (commentTooLong && !speech.blocksSubmission)}
           onPointerDown={(event) => event.preventDefault()}
           onClick={submit}
         >

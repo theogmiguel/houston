@@ -19,6 +19,12 @@ vi.mock(import("@effect/atom-react"), async (original) => ({
   useAtomValue: (() => []) as never,
 }));
 
+vi.mock(import("../../state/environments"), async (original) => ({
+  ...(await original()),
+  usePrimaryEnvironmentId: (() => "env-1") as never,
+  useEnvironmentMachines: (() => new Map()) as never,
+}));
+
 vi.mock(import("../../state/session"), async (original) => ({
   ...(await original()),
   readEnvironmentScope: () => true,
@@ -28,6 +34,7 @@ vi.mock(import("../../state/entities"), async (original) => ({
   ...(await original()),
   readEnvironmentServerConfigLoaded: () => true,
   readEnvironmentSupportsAutoSettleOptOut: () => true,
+  useServerConfigs: () => new Map(),
 }));
 
 function thread(overrides: Record<string, unknown> = {}): EnvironmentThreadShell {
@@ -58,7 +65,7 @@ function thread(overrides: Record<string, unknown> = {}): EnvironmentThreadShell
 function grid(overrides: Partial<GridRecord> = {}): GridRecord {
   return {
     id: "grid-a",
-    name: "v2 port",
+    name: "v2 rebuild",
     environmentId: "env-1",
     projectId: "project-1",
     workspaceKey: "env-1:project-1",
@@ -127,6 +134,15 @@ function headingFor(screen: Screen, gridId: string): HTMLButtonElement {
   return heading;
 }
 
+/** The heading row: the toggle and its actions, which share one hover and selection fill. */
+function headingRowFor(screen: Screen, gridId: string): HTMLElement {
+  const row = headingFor(screen, gridId).closest("[data-grid-heading-row]");
+  if (!(row instanceof HTMLElement)) {
+    throw new Error(`The grid ${gridId} has no heading row.`);
+  }
+  return row;
+}
+
 function headingGeometry(heading: HTMLButtonElement) {
   const chevron = heading.querySelector("svg");
   const chevronBox = heading.querySelector("[data-grid-chevron-box]");
@@ -166,7 +182,7 @@ function CollapsibleGroup({
 
 describe("grid sidebar", () => {
   it("lists a grid without repeating its project name", async () => {
-    const first = grid({ id: "grid-a", name: "v2 port" });
+    const first = grid({ id: "grid-a", name: "v2 rebuild" });
     const second = grid({
       id: "grid-b",
       name: "Grid 2",
@@ -181,7 +197,7 @@ describe("grid sidebar", () => {
       </>,
     );
 
-    expect(screen.getByRole("button", { name: /^v2 port$/ }).element()).toBeVisible();
+    expect(screen.getByRole("button", { name: /^v2 rebuild 2$/ }).element()).toBeVisible();
     expect(screen.getByRole("button", { name: /^Grid 2 empty$/ }).element()).toBeVisible();
     expect(screen.container.textContent).not.toContain("notes");
     expect(screen.container.textContent).not.toContain("Workspaces");
@@ -196,10 +212,10 @@ describe("grid sidebar", () => {
       }),
     );
 
-    expect(screen.getByRole("button", { name: /^Landing copy$/ }).element()).toBeVisible();
+    expect(screen.getByRole("button", { name: /^Landing copy 1$/ }).element()).toBeVisible();
     expect(screen.container.textContent).not.toContain("houston-site");
     const row = screen.container.querySelector("[data-thread-key]") as HTMLElement;
-    expect(row.className).toContain("pl-7.5");
+    expect(getComputedStyle(row).paddingLeft).toBe("8px");
 
     await userEvent.click(screen.getByText("Split drawer state from the thread store").element());
     expect(onOpenThread).toHaveBeenCalledWith("grid-c", "thread-c");
@@ -220,6 +236,63 @@ describe("grid sidebar", () => {
     await userEvent.fill(input.element(), "Review");
     await userEvent.keyboard("{Enter}");
     expect(useGridStore.getState().grids[0]?.name).toBe("Review");
+  });
+
+  it("opens the grid menu on right-click and runs its actions", async () => {
+    const value = grid({ id: "grid-m", name: "Grid 1" });
+    useGridStore.setState({ grids: [value] });
+    await using screen = await render(group(value, [thread({ id: "thread-m" })]));
+
+    await userEvent.click(headingFor(screen, "grid-m"), { button: "right" });
+    await userEvent.click(page.getByRole("menuitem", { name: "Pin grid" }).element());
+    await expect.poll(() => useGridStore.getState().grids[0]?.pinnedAt).not.toBeNull();
+
+    await userEvent.click(headingFor(screen, "grid-m"), { button: "right" });
+    await userEvent.click(page.getByRole("menuitem", { name: "Rename grid" }).element());
+    const input = screen.getByRole("textbox");
+    await expect.element(input).toHaveFocus();
+    await userEvent.fill(input.element(), "Renamed");
+    await userEvent.keyboard("{Enter}");
+    expect(useGridStore.getState().grids[0]?.name).toBe("Renamed");
+  });
+
+  it("keeps a long thread title clear of the row's hover actions", async () => {
+    const value = grid({ id: "grid-l", name: "Grid 1" });
+    const title = "App de desenvolvimento para testes com um nome bem comprido";
+    await using screen = await render(
+      <div style={{ width: 300 }}>{group(value, [thread({ id: "thread-l", title })])}</div>,
+    );
+
+    const row = screen.container.querySelector("[data-thread-key]") as HTMLElement;
+    await userEvent.hover(row);
+    const titleText = row.querySelector("[data-card-open] > span") as HTMLElement;
+    const close = screen.getByRole("button", { name: "Close thread" }).element();
+    const actions = close.parentElement as HTMLElement;
+    await expect.poll(() => getComputedStyle(actions).opacity).toBe("1");
+    // The actions take the meta line's right corner; the title line below never runs under them.
+    const titleBox = titleText.getBoundingClientRect();
+    const actionsBox = actions.getBoundingClientRect();
+    expect(titleBox.top >= actionsBox.bottom || titleBox.right <= actionsBox.left).toBe(true);
+  });
+
+  it("hides the heading actions again once a clicked heading loses the pointer, and shows them on keyboard focus", async () => {
+    const value = grid({ id: "grid-h", name: "Grid 1" });
+    await using screen = await render(group(value, [thread({ id: "thread-h" })]));
+    const heading = headingFor(screen, "grid-h");
+    const add = screen.getByRole("button", { name: "New thread in Grid 1" }).element();
+    const more = screen.getByRole("button", { name: "Grid actions for Grid 1" }).element();
+    const opacity = (element: Element) => Number(getComputedStyle(element).opacity);
+
+    await userEvent.click(heading);
+    await userEvent.unhover(heading);
+    await expect.poll(() => opacity(add)).toBe(0);
+    expect(opacity(more)).toBe(0);
+
+    await userEvent.keyboard("{Tab}");
+    await userEvent.keyboard("{Shift>}{Tab}{/Shift}");
+    expect(document.activeElement).toBe(heading);
+    await expect.poll(() => opacity(add)).toBe(1);
+    expect(opacity(more)).toBe(1);
   });
 
   it("renames a grid with F2 on its heading", async () => {
@@ -252,40 +325,71 @@ describe("grid sidebar", () => {
     const threads = [thread({ id: "thread-a" }), thread({ id: "thread-b", title: "Second" })];
     await using screen = await render(
       <>
-        {group(grid({ id: "grid-a", name: "v2 port" }), threads, { open: true })}
+        {group(grid({ id: "grid-a", name: "v2 rebuild" }), threads, { open: true })}
         {group(grid({ id: "grid-b", name: "Review" }), threads, { open: false })}
       </>,
     );
 
-    const open = screen.getByRole("button", { name: /^v2 port$/ }).element();
-    const closed = screen.getByRole("button", { name: /^Review$/ }).element();
-    expect(open.className).toContain("bg-sidebar-row-selected");
-    expect(closed.className).not.toContain("bg-sidebar-row-selected");
+    expect(headingRowFor(screen, "grid-a").className).toContain("bg-sidebar-row-selected");
+    expect(headingRowFor(screen, "grid-b").className).not.toContain("bg-sidebar-row-selected");
+  });
+
+  it("leaves an open empty grid's heading untinted", async () => {
+    await using screen = await render(
+      group(grid({ id: "grid-e", name: "UI/UX design" }), [], { open: true }),
+    );
+
+    expect(headingRowFor(screen, "grid-e").className).not.toContain("bg-sidebar-row-selected");
+  });
+
+  it("fills the whole heading row, actions included, while it is hovered", async () => {
+    await using screen = await render(group(grid({ id: "grid-h2", name: "UI/UX design" }), []));
+    const row = headingRowFor(screen, "grid-h2");
+    const idle = getComputedStyle(row).backgroundColor;
+
+    await userEvent.hover(
+      page.getByRole("button", { name: "New thread in UI/UX design" }).element(),
+    );
+
+    await expect.poll(() => getComputedStyle(row).backgroundColor).not.toBe(idle);
+    expect(headingFor(screen, "grid-h2").className).not.toContain("hover:bg-");
   });
 
   it("leaves the open grid's heading untinted while its focused thread row shows the selection", async () => {
     const threads = [thread({ id: "thread-a" }), thread({ id: "thread-b", title: "Second" })];
     await using screen = await render(
-      group(grid({ id: "grid-a", name: "v2 port", focusedThreadId: "thread-a" }), threads, {
+      group(grid({ id: "grid-a", name: "v2 rebuild", focusedThreadId: "thread-a" }), threads, {
         open: true,
       }),
     );
 
-    const heading = screen.getByRole("button", { name: /^v2 port$/ }).element();
-    expect(heading.className).not.toContain("bg-sidebar-row-selected");
+    expect(headingRowFor(screen, "grid-a").className).not.toContain("bg-sidebar-row-selected");
   });
 
-  it("tints the open grid's heading when collapsing hides its focused thread", async () => {
+  it("hands the open grid's selection fill to its revealed thread row while collapsed", async () => {
     const threads = [thread({ id: "thread-a" }), thread({ id: "thread-b", title: "Second" })];
     await using screen = await render(
-      group(grid({ id: "grid-a", name: "v2 port", focusedThreadId: "thread-a" }), threads, {
+      group(grid({ id: "grid-a", name: "v2 rebuild", focusedThreadId: "thread-a" }), threads, {
         open: true,
         collapsed: true,
       }),
     );
 
-    const heading = screen.getByRole("button", { name: /^v2 port 2$/ }).element();
-    expect(heading.className).toContain("bg-sidebar-row-selected");
+    expect(headingRowFor(screen, "grid-a").className).not.toContain("bg-sidebar-row-selected");
+    expect(screen.container.querySelector("[data-thread-key$=':thread-a']")).not.toBeNull();
+    expect(screen.container.querySelector("[data-thread-key$=':thread-b']")).toBeNull();
+  });
+
+  it("tints the open grid's heading when collapsing hides every row", async () => {
+    const threads = [thread({ id: "thread-a" }), thread({ id: "thread-b", title: "Second" })];
+    await using screen = await render(
+      group(grid({ id: "grid-a", name: "v2 rebuild", focusedThreadId: null }), threads, {
+        open: true,
+        collapsed: true,
+      }),
+    );
+
+    expect(headingRowFor(screen, "grid-a").className).toContain("bg-sidebar-row-selected");
   });
 
   it("keeps the chevron and text still across collapse and thread counts", async () => {
@@ -299,7 +403,7 @@ describe("grid sidebar", () => {
         {counts.map((count) => (
           <CollapsibleGroup
             key={count}
-            value={grid({ id: `grid-${count}`, name: "v2 port" })}
+            value={grid({ id: `grid-${count}`, name: "v2 rebuild" })}
             threads={makeThreads(count)}
           />
         ))}
@@ -509,6 +613,7 @@ describe("View options", () => {
     showBranch: true,
     showPullRequest: true,
     showSubagents: true,
+    showNeedsYou: false,
   } as const;
 
   it("offers sorts, row fields and a reset, and reports each pick", async () => {
@@ -529,6 +634,9 @@ describe("View options", () => {
     await expect
       .element(page.getByRole("menuitemcheckbox", { name: "Branch" }))
       .toHaveAttribute("aria-checked", "true");
+    await expect
+      .element(page.getByRole("menuitemcheckbox", { name: "Show Needs you" }))
+      .toHaveAttribute("aria-checked", "false");
     expect(page.getByRole("menuitemcheckbox", { name: "Working shelf" }).elements()).toHaveLength(
       0,
     );
@@ -537,6 +645,8 @@ describe("View options", () => {
     expect(onChange).toHaveBeenCalledWith({ gridSort: "manual" });
     await userEvent.click(page.getByRole("menuitemcheckbox", { name: "Subagents" }));
     expect(onChange).toHaveBeenCalledWith({ showSubagents: false });
+    await userEvent.click(page.getByRole("menuitemcheckbox", { name: "Show Needs you" }));
+    expect(onChange).toHaveBeenCalledWith({ showNeedsYou: true });
     await userEvent.click(page.getByRole("menuitem", { name: "Reset to defaults" }));
     expect(onReset).toHaveBeenCalledTimes(1);
   });
@@ -559,12 +669,49 @@ describe("View options", () => {
     __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
     try {
       {
-        await using shown = await render(group(grid(), [thread()]), { router: false });
+        await using shown = await render(group(grid(), [thread()]), { router: "/" });
         expect(shown.container.textContent).toContain("houston/split-drawer-state");
       }
       __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, sidebarRowShowBranch: false });
-      await using hidden = await render(group(grid(), [thread()]), { router: false });
+      await using hidden = await render(group(grid(), [thread()]), { router: "/" });
       expect(hidden.container.textContent).not.toContain("houston/split-drawer-state");
+    } finally {
+      __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
+    }
+  });
+
+  it("badges a merged pull request on the row and drops the badge when Rows show hides it", async () => {
+    const merged = {
+      number: 88,
+      url: "https://github.com/acme/app/pull/88",
+      linkedAt: "2026-01-01T00:00:00.000Z",
+      snapshot: {
+        state: "merged",
+        isDraft: false,
+        title: "Ship it",
+        updatedAt: "2026-01-02T00:00:00.000Z",
+        checksState: "failing",
+      },
+    };
+    __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
+    try {
+      {
+        await using shown = await render(group(grid(), [thread({ pullRequests: [merged] })]));
+        const badge = shown.container.querySelector("[data-thread-pull-request]");
+        expect(badge?.textContent).toBe("88");
+        expect(badge?.querySelector("svg")?.classList.contains("text-merged-foreground")).toBe(
+          true,
+        );
+        expect(badge?.querySelector("span")?.classList.contains("text-merged-foreground")).toBe(
+          false,
+        );
+      }
+      __setClientSettingsForTests({
+        ...DEFAULT_CLIENT_SETTINGS,
+        sidebarRowShowPullRequest: false,
+      });
+      await using hidden = await render(group(grid(), [thread({ pullRequests: [merged] })]));
+      expect(hidden.container.querySelector("[data-thread-pull-request]")).toBeNull();
     } finally {
       __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
     }

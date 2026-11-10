@@ -53,8 +53,8 @@ function namedElementDuringReveal(): Disposable & { readonly element: HTMLElemen
 
 describe("theme reach", () => {
   it("keeps Houston's own board colors when no theme is applied", () => {
-    expect(paint("--rail")).toBe("rgb(236, 236, 239)");
-    expect(paint("--content")).toBe("rgb(245, 245, 247)");
+    expect(paint("--rail")).toBe("rgb(236, 236, 240)");
+    expect(paint("--content")).toBe("rgb(255, 255, 255)");
   });
 
   it("paints each board role with the theme role upstream shows on that surface", () => {
@@ -78,7 +78,7 @@ describe("theme reach", () => {
     expect(paint("--content")).toBe(THEME_COLORS["--app-theme-toolbar"]);
   });
 
-  it("draws Houston's bubble and send button from its own card and ink without a theme", () => {
+  it("draws Houston's bubble as its card colour and its send button from its own ink", () => {
     expect(paint("--bubble")).toBe(paint("--card"));
     expect(paint("--send")).toBe(paint("--t1"));
     expect(paint("--control-fill")).toBe(paint("--field"));

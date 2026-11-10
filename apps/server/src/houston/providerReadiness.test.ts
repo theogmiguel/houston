@@ -142,6 +142,7 @@ const makeFakeRegistry = Effect.fn("makeFakeRegistry")(function* (
     refreshInstance: () => current,
     reloadSecretsAndRefresh: () => current,
     refreshAfterUpdate: () => current,
+    refreshModelCatalog: Effect.void,
     refreshWorkspaceSnapshot: () => current,
     getProviderMaintenanceCapabilitiesForInstance: () => Effect.die("unused in this test"),
     setProviderMaintenanceActionState: () => current,

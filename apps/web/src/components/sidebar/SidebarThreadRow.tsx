@@ -103,12 +103,13 @@ import { ThreadSearchMatchExcerpt } from "../ThreadSearchMatch";
 import { ThreadStateGlyph, threadStateTextClass, type ThreadState } from "../ui/thread-state-glyph";
 import { makeWorkspaceFileDropHandlers } from "../chat/workspaceFileDrop";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
+import { ProviderMark } from "../ui/provider-mark";
 import { getTriggerDisplayModelName } from "../chat/providerIconUtils";
 import { shouldShowInstanceBadge, type ProviderInstanceEntry } from "../../providerInstances";
 import { useThreadRunningTerminalIds } from "../../state/terminalSessions";
 import { InlineButton } from "../ui/button";
 import { Kbd } from "../ui/kbd";
-import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuShortcut, MenuTrigger } from "../ui/menu";
+import { Menu, MenuItem, MenuItemDetail, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
 import { MOTION_FEEDBACK_OPACITY } from "../ui/motion-recipes";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { MiddleTruncate } from "../ui/middle-truncate";
@@ -161,6 +162,8 @@ function terminalProcessLabel(count: number): string {
 export function SidebarProviderStack(props: {
   thread: SidebarThreadSummary;
   providerEntryByInstanceId: ReadonlyMap<string, SidebarProviderEntry>;
+  /** Draws only the current provider as the rail's 14px mark, for rows that rest quietly. */
+  quiet?: boolean;
 }) {
   const stack = resolveThreadProviderStack(props.thread);
   const currentInstanceId = stack[stack.length - 1]!;
@@ -170,6 +173,18 @@ export function SidebarProviderStack(props: {
     currentEntry,
     props.providerEntryByInstanceId.values(),
   );
+  if (props.quiet) {
+    return (
+      <ProviderMark
+        driverKind={currentEntry.driverKind}
+        displayName={currentEntry.displayName}
+        accentColor={currentEntry.accentColor}
+        acpRegistryAgentId={currentEntry.acpRegistryAgentId}
+        acpRegistryIconUrl={currentEntry.acpRegistryIconUrl}
+        showBadge={showInstanceBadge}
+      />
+    );
+  }
   const current = (
     <ProviderInstanceIcon
       driverKind={currentEntry.driverKind}
@@ -387,7 +402,7 @@ function SnoozeMenuButton(props: {
             }}
           >
             {preset.label}
-            <MenuShortcut>{preset.whenLabel}</MenuShortcut>
+            <MenuItemDetail>{preset.whenLabel}</MenuItemDetail>
           </MenuItem>
         ))}
         {presets.length > 0 ? <MenuSeparator /> : null}
@@ -511,7 +526,7 @@ function topStatusClassName(status: TopStatus): string {
 
 function TopStatusIcon(props: { status: TopStatus; className: string }) {
   if ("state" in props.status) {
-    return <ThreadStateGlyph state={props.status.state} className={props.className} />;
+    return <ThreadStateGlyph state={props.status.state} colored className={props.className} />;
   }
   const Icon = TOP_STATUS_ICONS[props.status.icon];
   return <Icon aria-hidden className={cn("shrink-0", props.className)} />;
@@ -707,8 +722,16 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     isSelected,
   });
   const topStatus: TopStatus | null =
-    status === "working"
-      ? { label: thread.goal?.status === "active" ? "Goal" : "Running", state: "running" }
+    status === "preparing" || status === "working"
+      ? {
+          label:
+            status === "preparing"
+              ? "Setting up"
+              : thread.goal?.status === "active"
+                ? "Goal"
+                : "Running",
+          state: "running",
+        }
       : status === "waiting"
         ? { label: "Waiting", icon: "waiting", className: "text-secondary-foreground" }
         : status === "approval"
@@ -904,7 +927,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             ? "text-sidebar-muted-foreground/75 hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
             : "bg-transparent text-sidebar-foreground hover:bg-sidebar-row-hover",
     shouldRecede &&
-      status === "working" &&
+      (status === "preparing" || status === "working") &&
       `opacity-70 ${MOTION_FEEDBACK_OPACITY} hover:opacity-100 focus-within:opacity-100 motion-reduce:transition-none`,
     isFileDragOver && "ring-1 ring-inset ring-primary/70",
     isFileDragOver && !props.isActive && !isSelected && "bg-sidebar-row-hover",
@@ -1109,8 +1132,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       {prBadge}
       {diff ? (
         <span className="shrink-0 font-mono">
-          <span className="text-diff-addition-foreground">+{formatDiffCount(diff.insertions)}</span>{" "}
-          <span className="text-diff-deletion-foreground">−{formatDiffCount(diff.deletions)}</span>
+          <span className={diff.insertions > 0 ? "text-diff-addition-foreground" : undefined}>
+            +{formatDiffCount(diff.insertions)}
+          </span>{" "}
+          <span className={diff.deletions > 0 ? "text-diff-deletion-foreground" : undefined}>
+            −{formatDiffCount(diff.deletions)}
+          </span>
         </span>
       ) : null}
       <span
@@ -1422,7 +1449,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                             BackgroundThreadAnnouncer and the open thread's
                             timeline speak status changes instead. */}
                           {topStatus.label}
-                          {status === "working" ? (
+                          {status === "preparing" || status === "working" ? (
                             <span aria-hidden>
                               <WorkingDuration startedAt={resolveWorkingStartedAt(thread)} />
                             </span>

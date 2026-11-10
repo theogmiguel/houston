@@ -32,6 +32,9 @@ import {
 import { appAtomRegistry, subscribeAtomChanges } from "./rpc/atomRegistry";
 import { primaryServerEnvironmentThemesAtom } from "./state/server";
 
+const ALPHA_PATTERN = /\/\s*none\s*\)$/i;
+const TRAILING_ZEROS = /(?:\.0+|(?:(\.[0-9]*?)0+))$/;
+
 export { EMBER_THEME, GROVE_THEME, IRIS_THEME, OCEAN_THEME, BASE_CHAT_THEME, THEME_COLOR_ROLES };
 export type { ThemeAppearance, ThemeColorRole, ThemeColors, ThemeDefinition, ThemeVariants };
 
@@ -88,10 +91,6 @@ export function getThemePreviewAppearance(): ThemeAppearance | null {
   return themePreviewAppearance;
 }
 
-export function getThemePreviewSidebarArtwork(): boolean | null {
-  return themePreviewAppearance === null ? null : false;
-}
-
 export function subscribeToThemePreview(listener: () => void): () => void {
   themePreviewListeners.add(listener);
   return () => themePreviewListeners.delete(listener);
@@ -115,18 +114,22 @@ export function isThemeColor(value: unknown): value is string {
   return typeof value === "string" && toCanonicalThemeColor(value) !== null;
 }
 
+const THEME_ID = /^[a-z0-9](?:[a-z0-9-]{0,47})$/;
+
 function isThemeId(value: unknown): value is string {
-  return typeof value === "string" && /^[a-z0-9](?:[a-z0-9-]{0,47})$/.test(value);
+  return typeof value === "string" && THEME_ID.test(value);
 }
 
 function isThemeLabel(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0 && value.trim().length <= 48;
 }
 
+const THEME_COLLECTION_ID = /^[a-z0-9][a-z0-9.:-]{0,127}$/i;
+
 function parseThemeCollection(value: unknown): ThemeCollection | undefined {
   return isRecord(value) &&
     typeof value.id === "string" &&
-    /^[a-z0-9][a-z0-9.:-]{0,127}$/i.test(value.id) &&
+    THEME_COLLECTION_ID.test(value.id) &&
     isThemeLabel(value.label)
     ? { id: value.id, label: value.label.trim() }
     : undefined;
@@ -407,24 +410,24 @@ function legacyThemeMode(theme: ThemePreference): ThemeAppearance | null {
 // so a theme editor preview and the page agree before a custom theme applies.
 const STANDARD_WEB_THEME_COLORS: Record<ThemeAppearance, Partial<ThemeColors>> = {
   light: {
-    canvas: "#f5f5f7",
-    chrome: "#ececef",
-    toolbar: "#ececef",
+    canvas: "#ffffff",
+    chrome: "#ececf0",
+    toolbar: "#ececf0",
     surface: "#ffffff",
     surfaceRaised: "#ffffff",
     surfaceOverlay: "#ffffff",
     messageSurface: "#f6f6f6",
-    terminalBackground: "#ffffff",
+    terminalBackground: "#fbfbfc",
   },
   dark: {
-    canvas: "#161618",
-    chrome: "#1c1c1f",
-    toolbar: "#1c1c1f",
-    surface: "#202023",
-    surfaceRaised: "#26262a",
-    surfaceOverlay: "#26262a",
-    messageSurface: "#2d2d30",
-    terminalBackground: "#0f0f11",
+    canvas: "#18181b",
+    chrome: "#111113",
+    toolbar: "#111113",
+    surface: "#1f1f23",
+    surfaceRaised: "#1f1f23",
+    surfaceOverlay: "#1f1f23",
+    messageSurface: "#2c2c30",
+    terminalBackground: "#0c0c0e",
   },
 };
 
@@ -470,7 +473,7 @@ function parseThemeColor(value: unknown): ParsedThemeColor | null {
   const chroma = color.c ?? 0;
   const hue = color.h ?? 0;
   // Missing CSS components are zero; Culori omits none alpha, so distinguish it from absent alpha.
-  const alpha = /\/\s*none\s*\)$/i.test(input) ? 0 : (color.alpha ?? 1);
+  const alpha = ALPHA_PATTERN.test(input) ? 0 : (color.alpha ?? 1);
   if (![lightness, chroma, hue, alpha].every(Number.isFinite)) return null;
   return {
     color: {
@@ -484,7 +487,7 @@ function parseThemeColor(value: unknown): ParsedThemeColor | null {
 
 function formatThemeColorNumber(value: number, precision: number): string {
   const rounded = Math.abs(value) < 10 ** -precision / 2 ? 0 : value;
-  return rounded.toFixed(precision).replace(/(?:\.0+|(?:(\.[0-9]*?)0+))$/, "$1");
+  return rounded.toFixed(precision).replace(TRAILING_ZEROS, "$1");
 }
 
 function formatOklchThemeColor(color: ThemeOklch, alpha = 1): string {
@@ -700,6 +703,17 @@ export function readableThemeColorOn(color: string, surface: string, minContrast
   // Return the 8-bit color the solver measured: the unrounded OKLCH can round
   // to a neighbor just under the target once it is stored and read back.
   return themeRgbToHexColor(themeOklchToRgb(solved));
+}
+
+/** A chip kind's per-theme contrast-solved lightness with `color`'s hue and chroma. */
+export function contextChipAccentWithHueOf(
+  kind: ContextChipAccentKind,
+  color: string,
+): string | null {
+  const parsed = parseThemeColor(color);
+  if (!parsed) return null;
+  const { C, h } = parsed.color;
+  return `oklch(from var(${contextChipColorVariable(kind)}) l ${formatThemeColorNumber(C, 4)} ${formatThemeColorNumber(h, 2)})`;
 }
 
 const CONTEXT_CHIP_CONTRAST = 5;
@@ -1224,14 +1238,6 @@ export function getThemeDefinition(theme: ThemePreference): ThemeDefinition | nu
   );
 }
 
-export function themeAllowsSidebarArtwork(theme: ThemePreference): boolean {
-  const themeId = themeIdFromPreference(theme);
-  return (
-    BUILT_IN_THEME_DEFINITIONS.find((definition) => definition.id === themeId)?.sidebarArtwork ===
-    true
-  );
-}
-
 /** Every selection path must check single-appearance themes to keep mix and appearance tiles in sync. */
 export function singleAppearanceOf(theme: ThemeDefinition): ThemeAppearance | null {
   const modes = getThemeModes(theme);
@@ -1258,11 +1264,14 @@ export function getThemePreferenceMode(theme: ThemePreference): ThemeAppearance 
   return getThemeDefinition(theme)?.appearance ?? null;
 }
 
+const NON_ALPHANUMERIC_RUN = /[^a-z0-9]+/g;
+const EDGE_HYPHENS = /^-+|-+$/g;
+
 export function themeIdFromName(name: string): string {
   const label = name.trim().toLowerCase();
   const normalized = label
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
+    .replace(NON_ALPHANUMERIC_RUN, "-")
+    .replace(EDGE_HYPHENS, "")
     .slice(0, 48);
   if (normalized || !label) return normalized || "custom-theme";
 

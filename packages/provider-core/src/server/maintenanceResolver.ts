@@ -34,6 +34,9 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { collectUint8StreamText } from "./collectStreamText.ts";
 import * as ProviderLatestVersions from "./ProviderLatestVersions.ts";
 
+const MISE_EXEC_INVOCATION = /\bmise\s+(?:x|exec)\b/;
+const EXE_SUFFIX = /\.exe$/;
+
 const LATEST_VERSION_TIMEOUT_MS = 4_000;
 const PROBE_TIMEOUT_MS = 10_000;
 const PROBE_MAX_BYTES = 256 * 1_024;
@@ -102,11 +105,15 @@ function nonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
+const SAFE_WINDOWS_WORD = /^[\w./:\\@=-]+$/;
+const SAFE_POSIX_WORD = /^[\w./:@=-]+$/;
+const SHELL_SINGLE_QUOTE_VARIANT = /['\u2018\u2019]/g;
+
 function quoteShellWord(word: string, platform: NodeJS.Platform): string {
-  const safeWord = platform === "win32" ? /^[\w./:\\@=-]+$/ : /^[\w./:@=-]+$/;
+  const safeWord = platform === "win32" ? SAFE_WINDOWS_WORD : SAFE_POSIX_WORD;
   if (safeWord.test(word)) return word;
   return platform === "win32"
-    ? `'${word.replace(/['\u2018\u2019]/g, "$&$&")}'`
+    ? `'${word.replace(SHELL_SINGLE_QUOTE_VARIANT, "$&$&")}'`
     : `'${word.replaceAll("'", "'\\''")}'`;
 }
 
@@ -153,20 +160,19 @@ export function makeProviderMaintenanceCapabilities(input: {
   };
 }
 
+const SEMVER = /^\d+\.\d+\.\d+$/;
+const GLOBAL_PACKAGE_MANAGER_SOURCE =
+  /^(?:npm-global:|bun-global$|pnpm-global$|vite-plus-global$|yarn-global$|volta$)/;
+
 export function makeTargetedProviderUpdateAction(
   capabilities: ProviderMaintenanceCapabilities,
   version: string,
 ): ProviderMaintenanceCommandAction | null {
-  if (!/^\d+\.\d+\.\d+$/.test(version)) return null;
+  if (!SEMVER.test(version)) return null;
   const update = capabilities.update;
   const packageName = capabilities.packageName;
   if (!update || !packageName) return null;
-  if (
-    !/^(?:npm-global:|bun-global$|pnpm-global$|vite-plus-global$|yarn-global$|volta$)/.test(
-      update.lockKey,
-    )
-  )
-    return null;
+  if (!GLOBAL_PACKAGE_MANAGER_SOURCE.test(update.lockKey)) return null;
   const packageIndex = update.args.findIndex(
     (arg) => arg === `${packageName}@latest` || arg === packageName,
   );
@@ -222,24 +228,29 @@ export function normalizeCommandPath(commandPath: string): string {
   return commandPath.replaceAll("\\", "/").toLowerCase();
 }
 
+const VITE_PLUS_BIN_PATH =
+  /\/(?:\.vite-plus|\.local\/share\/vite-plus|appdata\/local\/vite-plus)\/bin\//;
+
 /**
  * Vite+ shims live in `<VP_HOME>/bin`: `~/.vite-plus` by default,
  * `~/.local/share/vite-plus` with the XDG layout, and `%LOCALAPPDATA%\vite-plus`
  * on Windows.
  */
 function isVitePlusGlobalCommandPath(commandPath: string): boolean {
-  return /\/(?:\.vite-plus|\.local\/share\/vite-plus|appdata\/local\/vite-plus)\/bin\//.test(
-    normalizeCommandPath(commandPath),
-  );
+  return VITE_PLUS_BIN_PATH.test(normalizeCommandPath(commandPath));
 }
 
 function isBunGlobalCommandPath(commandPath: string): boolean {
   return normalizeCommandPath(commandPath).includes("/.bun/bin/");
 }
 
+const YARN_GLOBAL_MODULES_PATH = /\/yarn\/(?:data\/)?global\/node_modules\//;
+
 function isYarnGlobalCommandPath(commandPath: string): boolean {
-  return /\/yarn\/(?:data\/)?global\/node_modules\//.test(normalizeCommandPath(commandPath));
+  return YARN_GLOBAL_MODULES_PATH.test(normalizeCommandPath(commandPath));
 }
+
+const MISE_EXECUTABLE_SUFFIX = /\/mise(?:\.exe)?$/;
 
 /**
  * Version-manager installs are pinned in its config, so updating them means editing that.
@@ -251,7 +262,7 @@ function isMiseCommandPath(commandPath: string): boolean {
     normalized.includes("/mise/installs/") ||
     normalized.includes("/mise/shims/") ||
     normalized.includes("/mise/command-wrappers/") ||
-    /\/mise(?:\.exe)?$/.test(normalized)
+    MISE_EXECUTABLE_SUFFIX.test(normalized)
   );
 }
 
@@ -267,21 +278,25 @@ const CHOCOLATEY_CLAUDE_PACKAGE_ID = "claude-code";
 // Chocolatey's executable shim is not a symlink, so realpath cannot prove its owner.
 const chocolateyClaudeCommandPath = /\/chocolatey\/(?:bin|lib\/claude-code\/tools)\/claude\.exe$/;
 
+const TRAILING_PATH_SEPARATORS = /[\\/]+$/;
+
 function isChocolateyClaudeCommandPath(commandPath: string, env: NodeJS.ProcessEnv): boolean {
   const normalized = normalizeCommandPath(commandPath);
   if (chocolateyClaudeCommandPath.test(normalized)) return true;
   const root = nonEmptyString(env.ChocolateyInstall);
   if (!root) return false;
-  const prefix = normalizeCommandPath(root.replace(/[\\/]+$/, ""));
+  const prefix = normalizeCommandPath(root.replace(TRAILING_PATH_SEPARATORS, ""));
   return (
     normalized === `${prefix}/bin/claude.exe` ||
     normalized === `${prefix}/lib/claude-code/tools/claude.exe`
   );
 }
 
+const LINE_BREAK = /\r?\n/;
+
 /** `choco search --exact --limit-output` prints `<id>|<version>` for a match and nothing otherwise. */
 export function parseChocolateyLatestVersion(output: string, packageId: string): string | null {
-  for (const line of output.split(/\r?\n/)) {
+  for (const line of output.split(LINE_BREAK)) {
     const [id, version] = line.trim().split("|", 2);
     if (id?.toLowerCase() === packageId.toLowerCase()) return nonEmptyString(version);
   }
@@ -299,6 +314,8 @@ function isPnpmGlobalCommandPath(commandPath: string): boolean {
   );
 }
 
+const MISE_TOOL_PATTERN = /\/mise\/installs\/([^/]+)\/[^/]+$/;
+
 export function npmGlobalPrefixFromCommandPath(
   realCommandPath: string,
   packageName: string,
@@ -311,7 +328,7 @@ export function npmGlobalPrefixFromCommandPath(
     return null;
   }
   // Mise tool layouts resemble npm globals; only globals under its Node install belong to npm.
-  const miseTool = /\/mise\/installs\/([^/]+)\/[^/]+$/.exec(normalized.slice(0, packageIndex))?.[1];
+  const miseTool = MISE_TOOL_PATTERN.exec(normalized.slice(0, packageIndex))?.[1];
   if (miseTool && miseTool !== "node") {
     return null;
   }
@@ -722,7 +739,7 @@ const isMiseWrapperScript = Effect.fn("isMiseWrapperScript")(function* (
   const script = yield* fileSystem
     .readFileString(context.realCommandPath)
     .pipe(Effect.orElseSucceed(() => ""));
-  return script.startsWith("#!") && /\bmise\s+(?:x|exec)\b/.test(script);
+  return script.startsWith("#!") && MISE_EXEC_INVOCATION.test(script);
 });
 
 // Volta bin links only identify its shim; the package image proves ownership.
@@ -732,7 +749,7 @@ const isVoltaPackageInstall = Effect.fn("isVoltaPackageInstall")(function* (
 ) {
   const path = yield* Path.Path;
   if (
-    path.basename(normalizeCommandPath(context.realCommandPath)).replace(/\.exe$/, "") !==
+    path.basename(normalizeCommandPath(context.realCommandPath)).replace(EXE_SUFFIX, "") !==
     "volta-shim"
   ) {
     return false;

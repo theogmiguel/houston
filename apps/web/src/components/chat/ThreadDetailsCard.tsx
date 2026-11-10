@@ -12,6 +12,7 @@ import { scopedThreadKey } from "@houston-app/client-runtime/environment";
 import { ScrollArea } from "../ui/scroll-area";
 import { cn } from "../../lib/utils";
 import { Popover, PopoverPopup, PopoverCreateHandle } from "../ui/popover";
+import { DetailsSheet } from "../../mobile/DetailsSheet";
 import { selectThreadPanelOpen, useRightPanelStore } from "../../rightPanelStore";
 import { useChatCanvas } from "./ChatCanvasContext";
 import {
@@ -21,6 +22,7 @@ import {
 import { observeResize } from "../../lib/observeResize";
 import { requestWorkspaceFocus } from "../../lib/workspaceFocus";
 import { readInlineDetailsHandoff, recordInlineDetailsHandoff } from "./inlineDetailsFollow";
+import { prefersReducedMotion } from "../../hooks/useReducedMotion";
 
 // The grid cannot paint a card across its cell borders, so a focus move becomes a short
 // slide and fade from the previous cell's side instead of a full cross-cell flight.
@@ -31,20 +33,17 @@ const FOLLOW_DURATION_MS = 200;
 const cappedOffset = (delta: number, max: number) =>
   Math.sign(delta) * Math.min(Math.abs(delta), max);
 
-const prefersReducedMotion = () =>
-  typeof window.matchMedia === "function" &&
-  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
 export function ThreadDetailsCard({
   threadRef,
   anchor,
   handle,
   contentKey,
-  defaultOpen = true,
+  defaultOpen = false,
   allowInline = true,
   open,
   onOpenChange,
   animateFollow = false,
+  sheet = false,
   onContextMenu,
   children,
 }: {
@@ -53,7 +52,7 @@ export function ThreadDetailsCard({
   handle: ReturnType<typeof PopoverCreateHandle>;
   /** Changes when the set of rendered items changes, so cached heights are measured again. */
   contentKey: string;
-  /** Route threads open by default; a grid cell stays closed until its top bar toggles it. */
+  /** Closed until the header toggle or its shortcut opens it; a stored choice wins. */
   defaultOpen?: boolean;
   /** Compact and glance grid panes have no room for an inline card, so they only pop over. */
   allowInline?: boolean;
@@ -62,6 +61,8 @@ export function ThreadDetailsCard({
   onOpenChange?: (open: boolean) => void;
   /** A grid focus move slides the inline card in from the cell that lost focus. */
   animateFollow?: boolean;
+  /** The phone presents the card in a bottom sheet instead of a popover. */
+  sheet?: boolean;
   onContextMenu?: MouseEventHandler<HTMLDivElement>;
   children: (density: "full" | "compact" | "essential") => ReactNode;
 }) {
@@ -93,7 +94,7 @@ export function ThreadDetailsCard({
   const contentHeights =
     measurements.key === measurementKey ? measurements.heights : { full: 0, compact: 0 };
   const height = placement?.height ?? Math.max(0, (canvas?.container.height ?? 0) - 52);
-  const density = resolveThreadDetailsCardDensity(height, contentHeights);
+  const density = sheet ? "full" : resolveThreadDetailsCardDensity(height, contentHeights);
   const measureDetailsCard = canvas?.measureDetailsCard;
   const cardWidth = preferredPlacement?.width;
   // The mode derives from canvas measurements, the preview frame and the
@@ -191,24 +192,29 @@ export function ThreadDetailsCard({
     environmentId,
     threadId,
   ]);
-  const popoverAnchor =
-    anchor.current ??
-    (fallbackAnchorElement
-      ? {
-          getBoundingClientRect: () => {
-            const cell = fallbackAnchorElement.closest<HTMLElement>(
-              "[data-grid-cell], [data-grid-empty-draft]",
-            );
-            const rect = (cell ?? fallbackAnchorElement).getBoundingClientRect();
-            return new DOMRect(rect.left, rect.top + 34, rect.width, 0);
-          },
-        }
-      : undefined);
+  // A grid cell anchors to the cell, not the shared header button: the panel width is capped
+  // by the anchor width, so a button-sized anchor collapses the card to its border.
+  const gridCell = fallbackAnchorElement?.closest<HTMLElement>(
+    "[data-grid-cell], [data-grid-empty-draft]",
+  );
+  const fallbackRectSource = gridCell ?? fallbackAnchorElement;
+  const fallbackAnchor = fallbackRectSource
+    ? {
+        getBoundingClientRect: () => {
+          const rect = fallbackRectSource.getBoundingClientRect();
+          return new DOMRect(rect.left, rect.top + 34, rect.width, 0);
+        },
+      }
+    : undefined;
+  const popoverAnchor = gridCell ? fallbackAnchor : (anchor.current ?? fallbackAnchor);
   const card = (
     <div
       className={cn(
-        "isolate contain-paint grid max-h-full grid-rows-[minmax(0,1fr)] overflow-hidden rounded-xl bg-[var(--surface-raised)] shadow-[var(--shadow-1)]",
-        mode === "popover" &&
+        "isolate contain-paint grid max-h-full grid-rows-[minmax(0,1fr)] overflow-hidden",
+        // The sheet is the container; the card inside it adds no surface of its own.
+        !sheet && "rounded-xl bg-[var(--surface-raised)] shadow-[var(--shadow-1)]",
+        !sheet &&
+          mode === "popover" &&
           "max-h-[min(calc(100dvh-6.5rem),calc(var(--available-height,100dvh)-1rem))]",
       )}
       style={placement ? { maxHeight: height } : undefined}
@@ -216,12 +222,26 @@ export function ThreadDetailsCard({
       data-thread-details-card
     >
       <ScrollArea scrollFade className="min-h-0">
-        <div ref={setContentElement} className="py-1">
+        <div ref={setContentElement} className={sheet ? "pb-2" : "py-1"}>
           {children(density)}
         </div>
       </ScrollArea>
     </div>
   );
+  const sheetOpenChange = (nextOpen: boolean) => {
+    if (controlled) {
+      onOpenChange?.(nextOpen);
+      return;
+    }
+    useRightPanelStore.getState().setThreadPanelOpen(threadRef, "popover", nextOpen);
+  };
+  if (sheet) {
+    return (
+      <DetailsSheet open={popoverOpen} onOpenChange={sheetOpenChange}>
+        {card}
+      </DetailsSheet>
+    );
+  }
   return (
     <>
       <span ref={setFallbackAnchorElement} aria-hidden className="hidden" />

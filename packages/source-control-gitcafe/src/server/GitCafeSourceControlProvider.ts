@@ -27,6 +27,8 @@ import * as GitCafeApi from "./GitCafeApi.ts";
 import * as GitCafeCredentials from "./GitCafeCredentials.ts";
 import * as GitCafeHosts from "./gitCafeHosts.ts";
 
+const PULL_REQUEST_NUMBER = /^#?([1-9]\d*)$/u;
+
 const AUTH_HOST = "git.cafe";
 const ADMISSION_TIMEOUT = "30 seconds";
 const ADMISSION_POLL_INTERVAL = "500 millis";
@@ -57,8 +59,10 @@ const decodeFailure = Schema.decodeUnknownResult(
     }),
   ),
 );
+const LINE_BREAK = /\r?\n/u;
+
 const cliFailure = (output: string) =>
-  [output.trim(), ...output.split(/\r?\n/u).toReversed()]
+  [output.trim(), ...output.split(LINE_BREAK).toReversed()]
     .map((line) => decodeFailure(line.trim()))
     .find(Result.isSuccess)?.success.error;
 
@@ -109,12 +113,32 @@ export const makeDiscovery = Effect.gen(function* () {
     installHint: cliDiscovery.installHint,
     probe: (cwd: string) =>
       credentials.cliEnv(AUTH_HOST).pipe(
+        Effect.result,
         Effect.flatMap((env) =>
           probeSourceControlProvider({
             cwd,
             spec: cliDiscovery,
-            process: { run: (input) => process.run({ ...input, env: { ...input.env, ...env } }) },
-          }),
+            process: {
+              run: (input) =>
+                process.run({
+                  ...input,
+                  env: { ...input.env, ...(Result.isSuccess(env) ? env.success : {}) },
+                }),
+            },
+          }).pipe(
+            Effect.map((item) =>
+              Result.isSuccess(env)
+                ? item
+                : {
+                    ...item,
+                    auth: providerAuth({
+                      status: "unauthenticated",
+                      host: AUTH_HOST,
+                      detail: env.failure.message,
+                    }),
+                  },
+            ),
+          ),
         ),
       ),
     refineUnknownRemote: () => Effect.succeed(null),
@@ -252,7 +276,7 @@ export const make = Effect.gen(function* () {
       ? urlHost
         ? String(match.number)
         : undefined
-      : /^#?([1-9]\d*)$/u.exec(input.reference.trim())?.[1];
+      : PULL_REQUEST_NUMBER.exec(input.reference.trim())?.[1];
     if (number === undefined)
       return yield* error(
         "getChangeRequest",

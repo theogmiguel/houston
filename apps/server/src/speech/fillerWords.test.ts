@@ -14,11 +14,43 @@ describe("removeSpeechFillerWords", () => {
     );
   });
 
+  it("keeps laughter in English", () => {
+    expect(removeSpeechFillerWords("ha ha, that was funny", "en")).toBe("ha ha, that was funny");
+    expect(removeSpeechFillerWords("um, ah, eh ok", "en")).toBe("ok");
+  });
+
+  it.each([
+    ["ahn, eu acho que sim", "pt", "eu acho que sim"],
+    ["hã, tipo assim, né", "pt-BR", "tipo assim, né"],
+    ["ãh eu vi um carro é bom", "pt", "eu vi um carro é bom"],
+    ["hum eu vi um carro", "pt", "eu vi um carro"],
+    ["eh, bueno, este es tipo así", "es", "bueno, este es tipo así"],
+    ["em vamos a ver mm sí", "es-MX", "vamos a ver sí"],
+  ])("removes %j for %s", (text, language, expected) => {
+    expect(removeSpeechFillerWords(text, language)).toBe(expected);
+  });
+
+  it("never strips real words in Portuguese or Spanish", () => {
+    for (const language of ["pt", "es"]) {
+      const real = "é tipo bueno este um uma pues o sea então né ah ha";
+      expect(removeSpeechFillerWords(real, language)).toBe(real);
+    }
+  });
+
+  it("applies only the language-neutral hesitations when the language is unknown", () => {
+    expect(removeSpeechFillerWords("uh um ah hmm eu vi um carro")).toBe("um ah eu vi um carro");
+    expect(removeSpeechFillerWords("ahn hã eh em mm", undefined)).toBe("ahn hã eh em mm");
+  });
+
   it("does not remove fillers inside words", () => {
     expect(removeSpeechFillerWords("humming thumbnail")).toBe("humming thumbnail");
   });
 
-  it("preserves a configured correction cue", () => {
+  it("preserves a configured correction cue, including one made of several words", () => {
     expect(removeSpeechFillerWords("Orange, um, yellow", "en", "um")).toBe("Orange, um, yellow");
+    expect(removeSpeechFillerWords("uh make it 42 I mean   24", "en", "I mean")).toBe(
+      "make it 42 I mean 24",
+    );
+    expect(removeSpeechFillerWords("um sorry. um", "en", "sorry")).toBe("sorry.");
   });
 });

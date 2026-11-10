@@ -397,10 +397,12 @@ const decodeChangePage = decodeJsonResult(RawChangePageSchema);
 const decodeChangeEntry = Schema.decodeUnknownExit(RawChangeEntrySchema);
 const decodeItemContent = decodeJsonResult(RawItemContentSchema);
 
+const LEADING_SLASHES = /^\/+/;
+
 /** Preserve whitespace to match patch paths and viewed marks. */
 function toRepositoryPath(value: string | null | undefined): string | null {
   if (value === undefined || value === null) return null;
-  const path = value.replace(/^\/+/, "");
+  const path = value.replace(LEADING_SLASHES, "");
   return path.length === 0 ? null : path;
 }
 

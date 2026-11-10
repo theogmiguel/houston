@@ -1,20 +1,18 @@
 // Sends what the intake owes Slack: at most 10 rows per 5-second tick in id order, each once per
-// dedupe key, with the bot token read from the OS keychain per tick. Nothing while disabled.
+// dedupe key, with the bot token read from the secret store per tick. Nothing while disabled, when
+// it ticks once a minute or on a Slack store event.
 import { HOUSTON_SLACK_LIMITS } from "@houston-app/contracts/houston/slack";
 import * as Context from "effect/Context";
-import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import type * as Redacted from "effect/Redacted";
-import * as Schedule from "effect/Schedule";
 import * as Semaphore from "effect/Semaphore";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import { nowIso } from "../tasks/TaskStore.ts";
-import { HoustonSlackStore } from "./Store.ts";
+import { forkTicks, HoustonSlackStore } from "./Store.ts";
 import { SlackApiError, SlackWebApi, type SlackAnswer } from "./WebApi.ts";
 
-const TICK = Duration.seconds(5);
 const BLOCKS_REFUSED = new Set(["invalid_blocks", "invalid_blocks_format"]);
 
 export class HoustonSlackOutbox extends Context.Service<
@@ -161,12 +159,13 @@ const make = Effect.gen(function* () {
     }
   });
 
+  // Answers whether Slack is enabled.
   const tickOnce = Effect.gen(function* () {
     const settings = yield* store.settings;
-    if (settings?.enabled !== 1) return;
+    if (settings?.enabled !== 1) return false;
     // One token without the other is an error, so the outbox sends only with both.
     const tokens = yield* store.readTokens;
-    if (tokens.kind !== "ok") return;
+    if (tokens.kind !== "ok") return true;
     const token = tokens.botToken;
     // An edit waits until the message it edits is posted.
     const rows = yield* run(sql<OutboxRow>`
@@ -182,7 +181,7 @@ const make = Effect.gen(function* () {
     const dmChannels = new Map<string, string>();
     for (const row of rows) {
       // A disconnect during the batch stops the rest of it.
-      if ((yield* store.settings)?.enabled !== 1) return;
+      if ((yield* store.settings)?.enabled !== 1) return false;
       const result = yield* Effect.result(send(token, row, dmChannels));
       const now = yield* nowIso;
       if (result._tag === "Success") {
@@ -205,15 +204,21 @@ const make = Effect.gen(function* () {
         yield* store.setStatus({ error });
       }
     }
+    return true;
   });
 
-  const tick = lock
+  // A failed tick keeps the enabled pace.
+  const pacedTick = lock
     .withPermits(1)(tickOnce)
-    .pipe(Effect.catchCause((cause) => Effect.logWarning("Slack outbox tick failed.", cause)));
+    .pipe(
+      Effect.catchCause((cause) =>
+        Effect.logWarning("Slack outbox tick failed.", cause).pipe(Effect.as(true)),
+      ),
+    );
 
-  yield* tick.pipe(Effect.repeat(Schedule.spaced(TICK)), Effect.forkScoped);
+  yield* forkTicks(pacedTick);
 
-  return HoustonSlackOutbox.of({ tick });
+  return HoustonSlackOutbox.of({ tick: Effect.asVoid(pacedTick) });
 });
 
 export const layer = Layer.effect(HoustonSlackOutbox, make);

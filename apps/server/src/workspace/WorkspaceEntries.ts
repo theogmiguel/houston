@@ -64,6 +64,10 @@ export class WorkspaceEntriesReadDirectoryError extends Schema.TaggedError<Works
     cause: Schema.Defect(),
   },
 ) {
+  get pathMissing(): boolean {
+    return (this.cause as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
+  }
+
   override get message(): string {
     const cwd = this.cwd ? ` from '${this.cwd}'` : "";
     return `Failed to read workspace directory '${this.parentPath}' while browsing '${this.partialPath}'${cwd}.`;
@@ -148,6 +152,10 @@ const resolveBrowseTarget = Effect.fn("WorkspaceEntries.resolveBrowseTarget")(fu
   );
 });
 
+const ENDS_WITH_SEPARATOR_PATTERN = /[\\/]$/;
+const LEADING_MENTION_PREFIX = /^[@./]+/;
+const PATHSPEC_MAGIC_OR_GLOB = /^:|[*?[\\]/;
+
 /** @public */
 export const make = Effect.gen(function* () {
   const path = yield* Path.Path;
@@ -204,7 +212,8 @@ export const make = Effect.gen(function* () {
   const browse: WorkspaceEntries["Service"]["browse"] = Effect.fn("WorkspaceEntries.browse")(
     function* (input) {
       const resolvedInputPath = yield* resolveBrowseTarget(input, path);
-      const endsWithSeparator = /[\\/]$/.test(input.partialPath) || input.partialPath === "~";
+      const endsWithSeparator =
+        ENDS_WITH_SEPARATOR_PATTERN.test(input.partialPath) || input.partialPath === "~";
       const parentPath = endsWithSeparator ? resolvedInputPath : path.dirname(resolvedInputPath);
       const prefix = endsWithSeparator ? "" : path.basename(resolvedInputPath);
 
@@ -254,7 +263,7 @@ export const make = Effect.gen(function* () {
     function* (input) {
       const normalizedCwd = yield* normalizeWorkspaceRoot(input.cwd);
       const normalizedQuery = normalizeSearchQuery(input.query, {
-        trimLeadingPattern: /^[@./]+/,
+        trimLeadingPattern: LEADING_MENTION_PREFIX,
       });
       return yield* Effect.gen(function* () {
         const searchIndex = yield* WorkspaceSearchIndex.WorkspaceSearchIndex;
@@ -415,7 +424,7 @@ export const make = Effect.gen(function* () {
           entries.length > IGNORE_CHECK_CHUNK_SIZE &&
           target.relativePath !== "" &&
           !throughSymlink &&
-          !/^:|[*?[\\]/.test(target.relativePath) &&
+          !PATHSPEC_MAGIC_OR_GLOB.test(target.relativePath) &&
           (yield* checkIgnore([target.relativePath]))?.exitCode === 0
         ) {
           return {

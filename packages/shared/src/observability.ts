@@ -121,12 +121,11 @@ export interface OtlpTraceRecord extends BaseTraceRecord {
 
 export type TraceRecord = EffectTraceRecord | OtlpTraceRecord;
 
+const TAG_NAME = /^[A-Za-z][A-Za-z0-9._:/-]*$/;
+
 function isStructuralTag(value: unknown): value is string {
   return (
-    typeof value === "string" &&
-    value.length > 0 &&
-    value.length <= 128 &&
-    /^[A-Za-z][A-Za-z0-9._:/-]*$/.test(value)
+    typeof value === "string" && value.length > 0 && value.length <= 128 && TAG_NAME.test(value)
   );
 }
 
@@ -402,10 +401,20 @@ function spanToTraceRecord(span: SerializableSpan): EffectTraceRecord {
 }
 
 // WebSocket tickets and their DPoP proofs ride in URL queries and stay valid after the request.
-const URL_CREDENTIAL_PARAMS = /(^|[?&"\s])(wsTicket|dpop)=[^&#"\\\s]*/g;
+const URL_CREDENTIAL_PARAM_NAMES = ["wsTicket", "dpop"] as const;
+const URL_CREDENTIAL_PARAMS = new RegExp(
+  String.raw`(^|[?&"\s])(${URL_CREDENTIAL_PARAM_NAMES.join("|")})=[^&#"\\\s]*`,
+  "g",
+);
+// The pattern is case-sensitive and every match contains `<name>=` verbatim, so text without one
+// of these markers cannot match. Nearly no span carries one, and `includes` costs far less than
+// scanning every serialized trace record with the pattern.
+const URL_CREDENTIAL_MARKERS = URL_CREDENTIAL_PARAM_NAMES.map((name) => `${name}=`);
 
-const redactUrlCredentials = (text: string) =>
-  text.replace(URL_CREDENTIAL_PARAMS, "$1$2=<redacted>");
+export const redactUrlCredentials = (text: string) =>
+  URL_CREDENTIAL_MARKERS.some((marker) => text.includes(marker))
+    ? text.replace(URL_CREDENTIAL_PARAMS, "$1$2=<redacted>")
+    : text;
 
 export const makeTraceSink = Effect.fn("makeTraceSink")(function* (options: TraceSinkOptions) {
   const sink = yield* makeAsyncRotatingFileSink({

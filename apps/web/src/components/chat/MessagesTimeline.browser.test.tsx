@@ -1,6 +1,6 @@
 import { flushSync } from "react-dom";
 import { AudioPreview } from "../files/AudioPreview";
-import { page } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 import {
   ComposerContextId,
   EnvironmentId,
@@ -17,14 +17,7 @@ import {
   type OrchestrationV2Subagent,
 } from "@houston-app/contracts";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
-import {
-  createRef,
-  Profiler,
-  StrictMode,
-  useState,
-  type ComponentProps,
-  type ReactElement,
-} from "react";
+import { createRef, Profiler, StrictMode, type ComponentProps, type ReactElement } from "react";
 import * as DateTime from "effect/DateTime";
 import { Atom, AtomRegistry } from "effect/reactivity";
 import { RegistryContext } from "@effect/atom-react";
@@ -35,7 +28,7 @@ import "~/index.css";
 
 import { environmentThreadDetails, environmentThreadShells } from "../../state/threads";
 import { act, fakeTimers, render, stubGlobal } from "../../../test/render";
-import { ChangedFilesCard } from "./ChangedFilesTree";
+import { TimelineChangesRow } from "./TimelineChangesRow";
 import { MessagesTimeline } from "./MessagesTimeline";
 import { makeStreamingTimelineFixture } from "../../test-fixtures";
 import {
@@ -46,6 +39,7 @@ import { remarkThoughtPreview } from "./TimelineWorkEntryRow.logic";
 import { parseMarkdownWithMath } from "@houston-app/shared/markdownMath";
 import { collectThreadFindRanges } from "./threadFindHighlights";
 import { toastManager } from "../ui/toast";
+import { ThreadErrorCardProvider } from "./ThreadErrorBanner";
 import type { CitedHistory } from "./citationProcedure";
 import type { TimelineNavigation } from "./timelineViewport";
 import { rememberTimelinePosition } from "./timelineScrollAnchoring";
@@ -182,9 +176,17 @@ function v2Item(type: string, fields: Record<string, unknown>) {
   } as never;
 }
 
-async function renderElement(element: ReactElement, options: { router?: false } = {}) {
+async function renderElement(
+  element: ReactElement,
+  {
+    width = 900,
+    grid = false,
+    ...options
+  }: { router?: false; width?: number; grid?: boolean } = {},
+) {
   const container = document.createElement("div");
-  container.style.cssText = "height: 1200px; width: 900px; display: flex; flex-direction: column;";
+  if (grid) container.setAttribute("data-grid-cell", "");
+  container.style.cssText = `height: 1200px; width: ${width}px; display: flex; flex-direction: column;`;
   const screen = await render(element, { container, ...options });
   const buttons = (name: string | RegExp) =>
     [...container.querySelectorAll<HTMLElement>("button, [role=button]")].filter((button) => {
@@ -202,10 +204,22 @@ async function renderElement(element: ReactElement, options: { router?: false } 
   });
 }
 
-function renderTimeline(entries: ReadonlyArray<Entry>, props: Partial<TimelineProps> = {}) {
+function renderTimeline(
+  entries: ReadonlyArray<Entry>,
+  props: Partial<TimelineProps> = {},
+  options: { width?: number; grid?: boolean } = {},
+) {
   return renderElement(
     <MessagesTimeline {...baseProps()} timelineEntries={entries as Entry[]} {...props} />,
+    options,
   );
+}
+
+/** A capture viewport (1440x900 by default) for one test, restoring the previous size on dispose. */
+async function desktopViewport(width = 1440, height = 900): Promise<AsyncDisposable> {
+  const previous = { width: window.innerWidth, height: window.innerHeight };
+  await page.viewport(width, height);
+  return { [Symbol.asyncDispose]: () => page.viewport(previous.width, previous.height) };
 }
 
 async function click(element: HTMLElement) {
@@ -224,7 +238,9 @@ describe("MessagesTimeline work rows", () => {
     const props = baseProps();
     const runId = RunId.make("completed-run");
     const container = document.createElement("div");
-    container.style.cssText = "height: 600px; width: 900px; display: flex; flex-direction: column;";
+    // Keep the heading on screen so Playwright does not scroll it before clicking.
+    container.style.cssText =
+      "height: min(600px, 100vh); width: 900px; display: flex; flex-direction: column;";
     await using screen = await render(
       <MessagesTimeline
         {...props}
@@ -241,9 +257,11 @@ describe("MessagesTimeline work rows", () => {
     const heading = screen.getByRole("button", { name: /^Worked for/ });
     await expect.element(heading).toBeVisible();
     const viewport = props.listRef.current!.getScrollableNode()!;
-    await vi.waitFor(() =>
-      expect(viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop).toBeLessThan(2),
-    );
+    // Legend keeps rows transparent and unclickable until its initial scroll settles.
+    await vi.waitFor(() => {
+      expect(viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop).toBeLessThan(2);
+      expect(heading.element().checkVisibility({ opacityProperty: true })).toBe(true);
+    });
     expect(viewport.scrollTop).toBeGreaterThan(0);
     const top = heading.element().getBoundingClientRect().top;
     const height = viewport.scrollHeight;
@@ -335,6 +353,93 @@ describe("MessagesTimeline work rows", () => {
       }
     },
   );
+});
+
+describe("MessagesTimeline top fade", () => {
+  it("dissolves the rows at the top edge of the 800px capture frame once scrolled", async () => {
+    await using _viewport = await desktopViewport(800, 900);
+    const props = baseProps();
+    const container = document.createElement("div");
+    container.style.cssText = "height: 600px; width: 780px; display: flex; flex-direction: column;";
+    await using _screen = await render(
+      <MessagesTimeline
+        {...props}
+        topFadeEnabled
+        timelineEntries={Array.from({ length: 30 }, (_, index) =>
+          message(`Context ${index}\n\n`.repeat(8), { role: "assistant" }, `narrow-${index}`),
+        )}
+      />,
+      { container },
+    );
+    const viewport = props.listRef.current!.getScrollableNode()!;
+    await act(() => {
+      viewport.scrollTop = 400;
+      viewport.dispatchEvent(new Event("scroll"));
+    });
+    await vi.waitFor(() => expect(getComputedStyle(viewport).maskImage).not.toBe("none"));
+    const style = getComputedStyle(viewport);
+    expect(style.maskImage).toContain("linear-gradient");
+    expect(style.maskSize.split(",")[0]).toBe("100% 49px");
+  });
+
+  it("fades rows under the header when a long thread opens already scrolled to its end", async () => {
+    await using _viewport = await desktopViewport();
+    const props = baseProps();
+    const container = document.createElement("div");
+    container.style.cssText = "height: 600px; width: 900px; display: flex; flex-direction: column;";
+    await using _screen = await render(
+      <MessagesTimeline
+        {...props}
+        topFadeEnabled
+        timelineEntries={Array.from({ length: 30 }, (_, index) =>
+          message(`Context ${index}\n\n`.repeat(8), { role: "assistant" }, `open-${index}`),
+        )}
+      />,
+      { container },
+    );
+    const viewport = props.listRef.current!.getScrollableNode()!;
+    // No scroll event is dispatched: the list settles at its end by itself.
+    await vi.waitFor(() => expect(viewport.scrollTop).toBeGreaterThan(0));
+    await vi.waitFor(() => expect(getComputedStyle(viewport).maskImage).not.toBe("none"));
+    expect(getComputedStyle(viewport).maskImage).toContain("linear-gradient");
+    expect(getComputedStyle(viewport).maskSize.split(",")[0]).toBe("100% 49px");
+  });
+
+  it("fades rows under the header only while the list is scrolled", async () => {
+    await using _viewport = await desktopViewport();
+    const props = baseProps();
+    const container = document.createElement("div");
+    container.style.cssText = "height: 600px; width: 900px; display: flex; flex-direction: column;";
+    await using _screen = await render(
+      <MessagesTimeline
+        {...props}
+        topFadeEnabled
+        timelineEntries={Array.from({ length: 30 }, (_, index) =>
+          message(`Context ${index}\n\n`.repeat(8), { role: "assistant" }, `fade-${index}`),
+        )}
+      />,
+      { container },
+    );
+    const viewport = props.listRef.current!.getScrollableNode()!;
+    await act(() => {
+      viewport.scrollTop = 0;
+      viewport.dispatchEvent(new Event("scroll"));
+    });
+    await vi.waitFor(() => expect(getComputedStyle(viewport).maskImage).toBe("none"));
+
+    await act(() => {
+      viewport.scrollTop = 400;
+      viewport.dispatchEvent(new Event("scroll"));
+    });
+    await vi.waitFor(() => expect(getComputedStyle(viewport).maskImage).not.toBe("none"));
+    expect(getComputedStyle(viewport).transitionProperty).not.toContain("mask");
+
+    await act(() => {
+      viewport.scrollTop = 0;
+      viewport.dispatchEvent(new Event("scroll"));
+    });
+    await vi.waitFor(() => expect(getComputedStyle(viewport).maskImage).toBe("none"));
+  });
 });
 
 describe("MessagesTimeline messages", () => {
@@ -765,34 +870,188 @@ const SENDER_THREAD_ID = ThreadId.make("thread-sender");
 const AGENT_MESSAGE = "Review finished\n\nThe migration drops the index before backfilling it.";
 
 describe("MessagesTimeline agent messages", () => {
-  it("folds a message from another agent into a one-line preview", async () => {
+  const LONG_AGENT_MESSAGE = `${"Checked the next file.\n\n".repeat(8)}The migration drops the index.`;
+  const bubbleOf = (container: HTMLElement) =>
+    container.querySelector<HTMLElement>("[data-user-message-attribution] > div")!;
+
+  it("marks a prompt another agent sent with an icon inside its bubble, not a line above it", async () => {
+    setup();
+    await using screen = await renderTimeline([
+      message(AGENT_MESSAGE, { createdBy: "agent", senderThreadId: SENDER_THREAD_ID }),
+    ]);
+    const marker = screen.container.querySelector<HTMLElement>("[data-user-message-source]")!;
+    expect(marker.getAttribute("aria-label")).toBe("Sent by an agent");
+    expect(marker.textContent).toBe("");
+    const bubble = bubbleOf(screen.container);
+    const box = bubble.getBoundingClientRect();
+    const iconBox = marker.getBoundingClientRect();
+    expect(bubble.contains(marker)).toBe(true);
+    expect(iconBox.left - box.left).toBeLessThan(20);
+    expect(iconBox.top - box.top).toBeLessThan(16);
+    expect(screen.container.querySelectorAll("[data-user-message-source]")).toHaveLength(1);
+  });
+
+  it("draws a user bubble as a bordered card fill without a lifted shadow", async () => {
+    setup();
+    await using screen = await renderTimeline([
+      message(AGENT_MESSAGE, { createdBy: "agent", senderThreadId: SENDER_THREAD_ID }),
+    ]);
+    const style = getComputedStyle(bubbleOf(screen.container));
+    expect(style.borderTopWidth).toBe("1px");
+    expect(style.borderTopStyle).toBe("solid");
+    expect(style.boxShadow).toBe("none");
+  });
+
+  it("keeps the timestamp hidden until the row is hovered or focused", async () => {
+    setup();
+    await using screen = await renderTimeline([
+      message(AGENT_MESSAGE, { createdBy: "agent", senderThreadId: SENDER_THREAD_ID }),
+    ]);
+    const stamp = screen.container.querySelector<HTMLElement>("[data-user-message-timestamp]")!;
+    expect(getComputedStyle(stamp).opacity).toBe("0");
+    await userEvent.hover(bubbleOf(screen.container));
+    await vi.waitFor(() => expect(getComputedStyle(stamp).opacity).toBe("1"));
+  });
+
+  it("shows a short agent prompt in full, as a bubble with the user bubble's padding", async () => {
+    setup();
+    await using screen = await renderTimeline([
+      message(AGENT_MESSAGE, { createdBy: "agent", senderThreadId: SENDER_THREAD_ID }),
+    ]);
+    const bubble = bubbleOf(screen.container);
+    const style = getComputedStyle(bubble);
+    expect([style.paddingTop, style.paddingRight, style.paddingBottom]).toEqual([
+      "10px",
+      "14px",
+      "10px",
+    ]);
+    expect(screen.text()).toContain("The migration drops the index before backfilling it.");
+    expect(screen.buttons("Show full message")).toHaveLength(0);
+  });
+
+  it("folds a long agent prompt on whole lines and opens it from a click on the text or its inline button", async () => {
+    setup();
+    await using screen = await renderTimeline([
+      message(LONG_AGENT_MESSAGE, { createdBy: "agent", senderThreadId: SENDER_THREAD_ID }),
+    ]);
+    const body = () => screen.container.querySelector<HTMLElement>("[data-user-message-body]")!;
+    await vi.waitFor(() => expect(body().dataset.userMessageCollapsed).toBe("true"));
+    // Four whole lines (one per paragraph here) end the box; nothing is masked or cut.
+    const box = body().getBoundingClientRect();
+    const paragraphs = [...body().querySelectorAll("p")];
+    const shown = paragraphs.filter((p) => p.getBoundingClientRect().bottom <= box.bottom + 1);
+    expect(shown).toHaveLength(4);
+    expect(Math.abs(shown[3]!.getBoundingClientRect().bottom - box.bottom)).toBeLessThanOrEqual(1);
+    expect(getComputedStyle(body()).maskImage).toBe("none");
+    // The control sits on the last line, inside the body's box.
+    const control = screen.button("Show full message").getBoundingClientRect();
+    expect(control.bottom).toBeLessThanOrEqual(body().getBoundingClientRect().bottom + 1);
+
+    await click(body());
+    await vi.waitFor(() => expect(body().dataset.userMessageCollapsed).toBe("false"));
+    expect(body().getBoundingClientRect().height).toBeGreaterThan(80);
+    expect(screen.text()).toContain("The migration drops the index.");
+
+    await click(screen.button("Show less"));
+    await vi.waitFor(() => expect(body().dataset.userMessageCollapsed).toBe("true"));
+    await click(screen.button("Show full message"));
+    await vi.waitFor(() => expect(body().dataset.userMessageCollapsed).toBe("false"));
+  });
+
+  it("opens a folded agent prompt on its first line even when something scrolls its last line into view", async () => {
+    setup();
+    await using screen = await renderTimeline([
+      message(LONG_AGENT_MESSAGE, { createdBy: "agent", senderThreadId: SENDER_THREAD_ID }),
+    ]);
+    const body = () => screen.container.querySelector<HTMLElement>("[data-user-message-body]")!;
+    await vi.waitFor(() => expect(body().dataset.userMessageCollapsed).toBe("true"));
+    const paragraphs = body().querySelectorAll("p");
+    paragraphs[paragraphs.length - 1]!.scrollIntoView({ block: "end" });
+    body().scrollTop = 200;
+    await vi.waitFor(() => expect(body().scrollTop).toBe(0));
+    expect(paragraphs[0]!.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      body().getBoundingClientRect().top - 1,
+    );
+  });
+
+  it("offers the full-message control only while the prompt overflows, and re-measures on resize", async () => {
+    setup();
+    const restore = { width: window.innerWidth, height: window.innerHeight };
+    await using _viewport = {
+      [Symbol.asyncDispose]: () => page.viewport(restore.width, restore.height),
+    };
+    await page.viewport(1000, 900);
+    const container = document.createElement("div");
+    container.style.cssText = "width: 100vw; display: flex; flex-direction: column;";
+    const text = "word ".repeat(50).trim();
+    await using screen = await render(
+      <MessagesTimeline
+        {...baseProps()}
+        timelineEntries={[message(text, { createdBy: "agent", senderThreadId: SENDER_THREAD_ID })]}
+      />,
+      { container },
+    );
+    const body = () => screen.container.querySelector<HTMLElement>("[data-user-message-body]")!;
+    const fullMessageButtons = () =>
+      [...screen.container.querySelectorAll("button")].filter(
+        (button) => button.textContent === "Show full message",
+      );
+    await vi.waitFor(() => expect(body()).not.toBeNull());
+    await vi.waitFor(() => expect(body().dataset.userMessageCollapsed).toBe("false"));
+    expect(fullMessageButtons()).toHaveLength(0);
+    await page.viewport(420, 900);
+    await vi.waitFor(() => expect(fullMessageButtons()).toHaveLength(1));
+    await page.viewport(1000, 900);
+    await vi.waitFor(() => expect(fullMessageButtons()).toHaveLength(0));
+  });
+
+  it("opens the sending agent's thread from the row's actions", async () => {
     setup();
     const onOpenThread = vi.fn();
     await using screen = await renderTimeline(
       [message(AGENT_MESSAGE, { createdBy: "agent", senderThreadId: SENDER_THREAD_ID })],
       { onOpenThread },
     );
-    const row = screen.button(/^Agent/);
-    expect(row.textContent).toContain("Review finished");
-    expect(row.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.text()).not.toContain("drops the index");
-    expect(screen.buttons("Open thread")).toHaveLength(0);
-
-    await click(row);
-    expect(screen.text()).toContain("The migration drops the index before backfilling it.");
     await click(screen.button("Open thread"));
     expect(onOpenThread).toHaveBeenCalledWith(SENDER_THREAD_ID);
-
-    await click(screen.button(/^Agent/));
-    expect(screen.text()).not.toContain("drops the index");
   });
+
+  it.each([1440, 800])(
+    "sizes a short agent message to its text, right-aligned, at a %ipx viewport",
+    async (width) => {
+      setup();
+      const restore = { width: window.innerWidth, height: window.innerHeight };
+      await page.viewport(width, 900);
+      await using _viewport = {
+        [Symbol.asyncDispose]: () => page.viewport(restore.width, restore.height),
+      };
+      const container = document.createElement("div");
+      container.style.cssText = "width: 100vw; display: flex; flex-direction: column;";
+      await using screen = await render(
+        <MessagesTimeline
+          {...baseProps()}
+          timelineEntries={[
+            message("Done", { createdBy: "agent", senderThreadId: SENDER_THREAD_ID }),
+          ]}
+        />,
+        { container },
+      );
+      await vi.waitFor(() => expect(bubbleOf(screen.container)).not.toBeNull());
+      const bubble = bubbleOf(screen.container);
+      const lane = bubble.parentElement!.getBoundingClientRect();
+      const box = bubble.getBoundingClientRect();
+      expect(box.width).toBeLessThan(lane.width / 3);
+      expect(lane.right - box.right).toBeLessThan(16);
+      expect(bubble.querySelectorAll("button")).toHaveLength(0);
+    },
+  );
 
   it("leaves messages sent by Houston as full bubbles", async () => {
     setup();
     await using screen = await renderTimeline([
       message(AGENT_MESSAGE, { createdBy: "agent", creationSource: "server" }),
     ]);
-    expect(screen.buttons(/^Agent/)).toHaveLength(0);
+    expect(screen.container.querySelector("[data-user-message-source]")).toBeNull();
     expect(screen.text()).toContain("drops the index");
   });
 
@@ -807,15 +1066,393 @@ describe("MessagesTimeline agent messages", () => {
         activeFindMatch: { entryId: "entry-message-1", runId: null, occurrence: 0 },
       },
     );
+    const body = () => screen.container.querySelector<HTMLElement>("[data-user-message-body]")!;
+    // The fold opens once find reaches a match below its folded lines.
+    await vi.waitFor(() => {
+      const { range } = collectThreadFindRanges(screen.container, "drops the index")[0]!;
+      expect(range.getBoundingClientRect().height).toBeGreaterThan(0);
+      expect(range.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+        body().getBoundingClientRect().bottom,
+      );
+    });
+    expect(body().dataset.userMessageCollapsed).toBe("false");
+  });
+});
+
+describe("MessagesTimeline minimap", () => {
+  const turns = (count: number) =>
+    Array.from({ length: count }, (_, index) =>
+      message(`Question ${index + 1}`, {}, `message-${index + 1}`),
+    );
+  const minimapOf = (root: HTMLElement) =>
+    root.querySelector<HTMLElement>('[data-testid="timeline-minimap"]');
+
+  it("stays visible without hover when the side gutter has room for it", async () => {
+    setup();
+    await using screen = await renderTimeline(turns(8), {}, { width: 1128 });
+    await vi.waitFor(() => expect(minimapOf(screen.container)).not.toBeNull());
+    expect(minimapOf(screen.container)!.dataset.persistentGutter).toBe("true");
+    expect(getComputedStyle(minimapOf(screen.container)!).opacity).toBe("1");
+  });
+
+  it("is absent below 8 turns, where the scroll bar already orients the reader", async () => {
+    setup();
+    await using screen = await renderTimeline(turns(7), {}, { width: 1128 });
     await vi.waitFor(() =>
-      expect(screen.button(/^Agent/).getAttribute("aria-expanded")).toBe("true"),
+      expect(screen.container.querySelector("[data-timeline-root]")).not.toBeNull(),
     );
-    const { range } = collectThreadFindRanges(screen.container, "drops the index")[0]!;
-    const body = screen.container.querySelector("[data-user-message-body]")!;
-    expect(range.getBoundingClientRect().height).toBeGreaterThan(0);
-    expect(range.getBoundingClientRect().bottom).toBeLessThanOrEqual(
-      body.getBoundingClientRect().bottom,
+    expect(minimapOf(screen.container)).toBeNull();
+  });
+
+  it("is absent when the conversation is narrower than 1000px (800px), however long", async () => {
+    setup();
+    await using screen = await renderTimeline(turns(12), {}, { width: 800 });
+    await vi.waitFor(() =>
+      expect(screen.container.querySelector("[data-timeline-root]")).not.toBeNull(),
     );
+    expect(minimapOf(screen.container)).toBeNull();
+  });
+
+  it("appears at 1440px once the thread has 8 turns", async () => {
+    setup();
+    await using screen = await renderTimeline(turns(12), {}, { width: 1128 });
+    await vi.waitFor(() => expect(minimapOf(screen.container)).not.toBeNull());
+  });
+});
+
+describe("MessagesTimeline work rows ink", () => {
+  it("renders a reasoning row in the muted ink, below a tool row's label", async () => {
+    setup();
+    const runId = RunId.make("ink-run");
+    await using screen = await renderTimeline(
+      [
+        message("Question", { runId }, "ink-user"),
+        work("ink-thought", {
+          runId,
+          label: "Thinking",
+          detail: "I need to check whether the changelog exists before reading it.",
+          tone: "thinking",
+          itemType: "reasoning",
+          toolLifecycleStatus: "completed",
+        }),
+        work("ink-tool", {
+          runId,
+          label: "Ran ls",
+          command: "ls -la",
+          tone: "tool",
+          itemType: "command_execution",
+          toolLifecycleStatus: "completed",
+        }),
+        message("Done", { role: "assistant", runId }, "ink-final"),
+      ],
+      { runs: [] },
+    );
+    const heading = [...screen.container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => /^Worked for/.test(button.textContent ?? ""),
+    );
+    if (heading) await click(heading);
+    // The expanded group renders after the click settles; wait for both rows before measuring.
+    const { reasoning, tool } = await vi.waitFor(() => {
+      const spans = [...screen.container.querySelectorAll<HTMLElement>("p span")];
+      const found = {
+        reasoning: spans.find((node) => node.textContent?.includes("I need to check whether")),
+        tool: spans.find((node) => node.textContent === "Ran"),
+      };
+      expect(found.reasoning, screen.text()).toBeDefined();
+      expect(found.tool, screen.text()).toBeDefined();
+      return found as { reasoning: HTMLElement; tool: HTMLElement };
+    });
+    const probe = document.createElement("span");
+    probe.style.color = "var(--houston)";
+    screen.container.append(probe);
+    const muted = getComputedStyle(probe).color;
+    expect(getComputedStyle(reasoning).color).toBe(muted);
+    expect(getComputedStyle(tool).color).not.toBe(muted);
+  });
+});
+
+describe("MessagesTimeline fold timestamp", () => {
+  it("keeps the fold's timestamp while folded and drops it once expanded", async () => {
+    setup();
+    const runId = RunId.make("stamp-run");
+    await using screen = await renderTimeline(
+      [
+        work("stamp-tool", {
+          runId,
+          label: "Ran ls",
+          command: "ls -la",
+          tone: "tool",
+          itemType: "command_execution",
+          toolLifecycleStatus: "completed",
+        }),
+        message("Done", { role: "assistant", runId }, "stamp-final"),
+      ],
+      { runs: [] },
+    );
+    const heading = () =>
+      [...screen.container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+        /^Worked for/.test(button.textContent ?? ""),
+      )!;
+    const foldStamps = () =>
+      heading().parentElement!.querySelectorAll('[data-slot="tooltip-trigger"]').length;
+    expect(foldStamps()).toBe(1);
+    await click(heading());
+    expect(foldStamps()).toBe(0);
+  });
+});
+
+describe("MessagesTimeline expanded work group", () => {
+  const groupEntries = (editedFile: string): Entry[] => [
+    work("group-ran", {
+      label: "Ran ls",
+      command: "ls -la",
+      tone: "tool",
+      itemType: "command_execution",
+      toolLifecycleStatus: "completed",
+    }),
+    work("group-read", {
+      label: "Read atlas-api/CHANGELOG.md",
+      requestKind: "file-read",
+      changedFiles: ["atlas-api/CHANGELOG.md"],
+      tone: "tool",
+      toolLifecycleStatus: "completed",
+    }),
+    work("group-edit", {
+      label: "Edited",
+      tone: "tool",
+      itemType: "file_change",
+      toolLifecycleStatus: "completed",
+      structuredPayload: {
+        type: "file_change",
+        fileName: editedFile,
+        additions: 5,
+        deletions: 0,
+      },
+      projectedItem: v2Item("file_change", {
+        id: "group-edit",
+        fileName: editedFile,
+        status: "running",
+      }),
+    }),
+  ];
+  const expandGroup = async (screen: Awaited<ReturnType<typeof renderTimeline>>) => {
+    const toggle = screen.container.querySelector<HTMLElement>("button[aria-expanded=false]")!;
+    await click(toggle);
+    await vi.waitFor(() =>
+      expect(screen.container.querySelector('[role="region"][aria-label="Tool calls"]')).not.toBe(
+        null,
+      ),
+    );
+  };
+
+  it("drops a row's time when it repeats the group header's time", async () => {
+    setup();
+    await using screen = await renderTimeline(groupEntries("atlas-api/README.md"));
+    const headerTimes = () =>
+      screen.container.querySelectorAll('button[aria-expanded] [data-slot="tooltip-trigger"]');
+    expect(headerTimes()).toHaveLength(1);
+    await expandGroup(screen);
+    const region = screen.container.querySelector<HTMLElement>('[aria-label="Tool calls"]')!;
+    await vi.waitFor(() =>
+      expect(region.querySelectorAll("[role=button]").length).toBeGreaterThan(0),
+    );
+    expect(region.querySelectorAll('[data-slot="tooltip-trigger"]')).toHaveLength(0);
+  });
+
+  it("opens the diff from the read row instead of drawing a card for the same file", async () => {
+    setup();
+    const onOpenToolDiff = vi.fn();
+    await using screen = await renderTimeline(groupEntries("atlas-api/CHANGELOG.md"), {
+      onOpenToolDiff,
+    });
+    // While the group is collapsed its read row is out of sight, so the card still stands.
+    expect(screen.container.querySelector("[aria-label^='Diff for']")).not.toBeNull();
+    await expandGroup(screen);
+    await vi.waitFor(() =>
+      expect(screen.container.querySelector("[aria-label^='Diff for']")).toBeNull(),
+    );
+    const open = await vi.waitFor(() => {
+      const button = screen.container.querySelector<HTMLElement>(
+        '[aria-label="Tool calls"] button[aria-label="Open diff"]',
+      );
+      expect(button).not.toBeNull();
+      return button!;
+    });
+    await click(open);
+    expect(onOpenToolDiff).toHaveBeenCalledWith({
+      threadId: "thread-1",
+      itemId: "group-edit",
+      revision: "live",
+    });
+  });
+
+  it("keeps the card when the edit is to another file", async () => {
+    setup();
+    await using screen = await renderTimeline(groupEntries("atlas-api/README.md"));
+    expect(
+      screen.container.querySelector("[aria-label='Diff for atlas-api/README.md']"),
+    ).not.toBeNull();
+  });
+});
+
+describe("MessagesTimeline expanded turn with a read of an edited file", () => {
+  it("shows one time and no second card for the file at 1440x900", async () => {
+    await using _viewport = await desktopViewport();
+    setup();
+    const runId = RunId.make("s2b-run");
+    const onOpenToolDiff = vi.fn();
+    await using screen = await renderTimeline(
+      [
+        message("Add a changelog entry", { runId }, "s2b-user"),
+        work("s2b-read", {
+          runId,
+          label: "Read atlas-api/CHANGELOG.md",
+          requestKind: "file-read",
+          changedFiles: ["atlas-api/CHANGELOG.md"],
+          tone: "tool",
+          toolLifecycleStatus: "completed",
+        }),
+        work("s2b-edit", {
+          runId,
+          label: "Edited",
+          tone: "tool",
+          itemType: "file_change",
+          toolLifecycleStatus: "completed",
+          structuredPayload: {
+            type: "file_change",
+            fileName: "atlas-api/CHANGELOG.md",
+            additions: 5,
+            deletions: 0,
+          },
+          projectedItem: v2Item("file_change", {
+            id: "s2b-edit",
+            fileName: "atlas-api/CHANGELOG.md",
+            status: "running",
+          }),
+        }),
+        message("Added the entry", { role: "assistant", runId }, "s2b-final"),
+      ],
+      { runs: [], onOpenToolDiff },
+    );
+    const heading = [...screen.container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => /^Worked for/.test(button.textContent ?? ""),
+    )!;
+    await click(heading);
+    await vi.waitFor(() => expect(heading.getAttribute("aria-expanded")).toBe("true"));
+    await vi.waitFor(() => expect(screen.container.textContent).toContain("CHANGELOG.md"));
+    expect(screen.container.querySelector("[aria-label^='Diff for']")).toBeNull();
+    const readRow = screen.container.querySelector<HTMLElement>("[data-timeline-row-kind='work']")!;
+    expect(readRow.querySelectorAll('span[data-slot="tooltip-trigger"]')).toHaveLength(0);
+    await click(readRow.querySelector<HTMLElement>('button[aria-label="Open diff"]')!);
+    expect(onOpenToolDiff).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("MessagesTimeline expanded tool rows", () => {
+  it("runs under the header's rail to the prose column's right edge, with no border, at 1440x900", async () => {
+    await using _viewport = await desktopViewport();
+    setup();
+    const runId = RunId.make("align-run");
+    await using screen = await renderTimeline(
+      [
+        message("Question", { runId }, "align-user"),
+        work("align-tool", {
+          runId,
+          label: "Ran ls",
+          command: "ls -la",
+          tone: "tool",
+          itemType: "command_execution",
+          toolLifecycleStatus: "completed",
+        }),
+        message("Done listing the directory", { role: "assistant", runId }, "align-final"),
+      ],
+      { runs: [] },
+    );
+    const heading = [...screen.container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => /^Worked for/.test(button.textContent ?? ""),
+    );
+    if (heading) await click(heading);
+    const row = screen.button("ls -la");
+    await click(row);
+    await vi.waitFor(() => expect(row.getAttribute("aria-expanded")).toBe("true"));
+    const prose = [...screen.container.querySelectorAll<HTMLElement>("p")].find(
+      (node) => node.textContent === "Done listing the directory",
+    )!;
+    expect(prose).toBeDefined();
+    const rowBox = row.getBoundingClientRect();
+    const proseBox = prose.getBoundingClientRect();
+    // A child of the group's header sits under a rail, indented from the prose column and
+    // flush with it on the right.
+    expect(rowBox.left).toBeGreaterThanOrEqual(proseBox.left + 20);
+    expect(rowBox.right).toBeCloseTo(proseBox.right, 0);
+    expect(getComputedStyle(row).borderTopWidth).toBe("0px");
+    expect(getComputedStyle(row).borderLeftWidth).toBe("0px");
+    expect(getComputedStyle(row).backgroundColor).toBe("rgba(0, 0, 0, 0)");
+  });
+
+  it("shows a tool row's timestamp right after its label on hover, in the muted ink", async () => {
+    await using _viewport = await desktopViewport();
+    setup();
+    const runId = RunId.make("meta-run");
+    await using screen = await renderTimeline(
+      [
+        message("Question", { runId }, "meta-user"),
+        work("meta-tool", {
+          runId,
+          // A later minute than the fold header's, so the row keeps its own time.
+          createdAt: "2026-03-17T19:20:28.000Z",
+          label: "Ran ls",
+          command: "ls -la",
+          tone: "tool",
+          itemType: "command_execution",
+          toolLifecycleStatus: "completed",
+        }),
+        message("Done listing the directory", { role: "assistant", runId }, "meta-final"),
+      ],
+      { runs: [] },
+    );
+    const heading = [...screen.container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => /^Worked for/.test(button.textContent ?? ""),
+    );
+    if (heading) await click(heading);
+    const row = screen.button("ls -la");
+    await userEvent.hover(row);
+    const timestamp = row.querySelector<HTMLElement>('[data-slot="tooltip-trigger"]')!;
+    await vi.waitFor(() => expect(getComputedStyle(timestamp).opacity).toBe("1"));
+    const label = row.querySelector<HTMLElement>("p")!;
+    const gap = timestamp.getBoundingClientRect().left - label.getBoundingClientRect().right;
+    expect(gap).toBeGreaterThanOrEqual(0);
+    expect(gap).toBeLessThanOrEqual(12);
+    expect(
+      row.getBoundingClientRect().right - timestamp.getBoundingClientRect().right,
+    ).toBeGreaterThan(24);
+  });
+});
+
+describe("MessagesTimeline minimap rail", () => {
+  it("centres every tick on a visible track so the rail reads as one control", async () => {
+    setup();
+    await using screen = await renderTimeline(
+      Array.from({ length: 8 }, (_, index) =>
+        message(`Question ${index + 1}`, {}, `message-${index + 1}`),
+      ),
+      {},
+      { width: 1128 },
+    );
+    await vi.waitFor(() =>
+      expect(screen.container.querySelector("[data-minimap-track]")).not.toBeNull(),
+    );
+    const track = screen.container.querySelector<HTMLElement>("[data-minimap-track]")!;
+    expect(track, "the rail draws its track").not.toBeNull();
+    expect(getComputedStyle(track).backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+    const trackBox = track.getBoundingClientRect();
+    const trackCenter = trackBox.left + trackBox.width / 2;
+    const strips = screen.container.querySelectorAll<HTMLElement>("[data-minimap-strip]");
+    expect(strips.length).toBeGreaterThanOrEqual(2);
+    for (const strip of strips) {
+      const box = strip.getBoundingClientRect();
+      expect(Math.abs(box.left + box.width / 2 - trackCenter)).toBeLessThanOrEqual(1);
+    }
   });
 });
 
@@ -1156,21 +1793,91 @@ describe("MessagesTimeline thread find", () => {
 });
 
 describe("compact reasoning math", () => {
-  it("keeps formulas while flattening compact reasoning previews", () => {
-    const tree = parseMarkdownWithMath("## Reasoning\n\nUse **norm** $|x|$ and \\[x^2\\]");
+  it.each([
+    [
+      "## Reasoning\n\nUse **norm** $|x|$ and \\[x^2\\]",
+      [
+        ["text", "Reasoning Use norm "],
+        ["inlineMath", "|x|"],
+        ["text", " and "],
+        ["inlineMath", "x^2"],
+      ],
+    ],
+    [
+      "  Lead   **bold**\n\n   *em*  `code`  \n\n- one\n-   two\n\n> quote\n> more\n\ntrail   ",
+      [["text", "Lead bold em code one two quote more trail"]],
+    ],
+    [
+      "$a$ starts, ends with $b$",
+      [
+        ["inlineMath", "a"],
+        ["text", " starts, ends with "],
+        ["inlineMath", "b"],
+      ],
+    ],
+    [
+      "before   $x$\n\n$$\ny\n$$\n\n   after",
+      [
+        ["text", "before "],
+        ["inlineMath", "x"],
+        ["text", " "],
+        ["inlineMath", "y"],
+        ["text", " after"],
+      ],
+    ],
+    [
+      "a *b*$c$**d** e",
+      [
+        ["text", "a b"],
+        ["inlineMath", "c"],
+        ["text", "d e"],
+      ],
+    ],
+    [
+      "$a$![](x.png)$b$",
+      [
+        ["inlineMath", "a"],
+        ["text", ""],
+        ["inlineMath", "b"],
+      ],
+    ],
+    [
+      "| a | b |\n| - | - |\n| $x$ | y  z |",
+      [
+        ["text", "a b "],
+        ["inlineMath", "x"],
+        ["text", " y z"],
+      ],
+    ],
+    [
+      'See [a  link](https://example.com "t") ![alt   text](img.png) <b>bold</b> <!-- c -->\n\n[ref]: https://example.com\n\n:::note\nbody\n:::',
+      [["text", "See a link alt text bold :::note body :::"]],
+    ],
+    [
+      "line one\r\nline two\r\n\r\nnext  nbsp　wide 😀𝑥 end",
+      [["text", "line one line two next nbsp wide 😀𝑥 end"]],
+    ],
+    ["\\$5 and \\$6, \\*not em\\*", [["text", "$5 and $6, *not em*"]]],
+    ["hard  \nbreak\\\nagain", [["text", "hard break again"]]],
+    ["<div>only html</div>", [["text", "Reasoning"]]],
+  ])("keeps formulas while flattening compact reasoning previews: %j", (source, expected) => {
+    const tree = parseMarkdownWithMath(source);
     remarkThoughtPreview("Reasoning")(tree);
-    expect(tree.children.map((node) => node.type)).toEqual([
-      "text",
-      "inlineMath",
-      "text",
-      "inlineMath",
-    ]);
-    expect(tree.children.map((node) => ("value" in node ? node.value : null))).toEqual([
-      "Reasoning Use norm ",
-      "|x|",
-      " and ",
-      "x^2",
-    ]);
+    expect(tree.children.map((node) => [node.type, "value" in node ? node.value : null])).toEqual(
+      expected,
+    );
+  });
+
+  it("collapses whitespace once per text run, not once per fragment", () => {
+    // Each fragment used to re-collapse the whole accumulated text, so cost grew with its square.
+    const fragments = 2_000;
+    const tree = parseMarkdownWithMath(
+      Array.from({ length: fragments }, () => "word *w*").join(" "),
+    );
+    using replace = vi.spyOn(String.prototype, "replace");
+    remarkThoughtPreview("Reasoning")(tree);
+    expect(tree.children).toHaveLength(1);
+    expect(replace.mock.calls.length).toBeLessThan(10);
   });
 });
 
@@ -1249,21 +1956,16 @@ it("renders automatic compaction as one live divider that finishes with its reas
 });
 
 function TimelineChangedFilesCard() {
-  const [expanded, setExpanded] = useState(true);
   return (
-    <ChangedFilesCard
-      runId={RunId.make("run-1")}
+    <TimelineChangesRow
       files={["src/a.ts", "src/b.ts", "src/c.ts"].map((path) => ({
         path,
-        kind: "modified",
         additions: 1,
         deletions: 0,
       }))}
       totals={{ count: 3, additions: 3, deletions: 0 }}
-      allDirectoriesExpanded={expanded}
-      resolvedTheme="light"
-      onToggleAllDirectories={() => setExpanded((value) => !value)}
-      onOpenTurnDiff={() => {}}
+      onOpenDiff={() => {}}
+      onOpenFile={() => {}}
     />
   );
 }
@@ -1283,36 +1985,252 @@ function ChangedFilesTimeline() {
   );
 }
 
-describe("ChangedFilesCard", () => {
-  it.each(["folder", "all folders"])(
-    "measures %s collapse and expansion in the same commit",
-    async (toggle) => {
-      await using screen = await render(<ChangedFilesTimeline />);
-      const after = () =>
-        screen.container.querySelector('[data-testid="after"]')!.getBoundingClientRect().top;
-      const cardBottom = () =>
-        screen.container.querySelector("[data-changed-files-state]")!.getBoundingClientRect()
-          .bottom;
-      await vi.waitFor(() => expect(after()).toBe(cardBottom()));
-      const topBefore = after();
-      const button = () =>
-        screen.container.querySelector<HTMLButtonElement>(
-          toggle === "folder"
-            ? '[data-changed-file-row="src"] button'
-            : 'button[aria-label$="all folders"]',
-        )!;
-      await act(() => {
-        flushSync(() => button().click());
-        expect(screen.container.textContent).not.toContain("a.ts");
-        expect(after()).toBe(topBefore - 3 * 28);
-      });
-      await act(() => {
-        flushSync(() => button().click());
-        expect(screen.container.textContent).toContain("a.ts");
-        expect(after()).toBe(topBefore);
-      });
+describe("TimelineChangesRow", () => {
+  it("scrolls its row with the timeline instead of pinning it", async () => {
+    await using screen = await render(<ChangedFilesTimeline />);
+    const row = screen.container.querySelector<HTMLElement>("[data-timeline-changes] > div")!;
+    expect(getComputedStyle(row).position).toBe("static");
+  });
+
+  it("rounds its row and its file chips with the control radius", async () => {
+    await using screen = await render(<ChangedFilesTimeline />);
+    const row = screen.container.querySelector<HTMLElement>("[data-timeline-changes] > div")!;
+    const chip = screen.getByRole("button", { name: "Open diff for src/a.ts" }).element();
+    expect(getComputedStyle(row).borderTopLeftRadius).toBe("6px");
+    expect(getComputedStyle(chip).borderTopLeftRadius).toBe("6px");
+    expect(getComputedStyle(chip).height).toBe(getComputedStyle(row).height);
+  });
+
+  it.each([
+    { name: "a single file", count: 1, additions: 7, deletions: 2 },
+    { name: "a file without counts", count: 1, additions: 0, deletions: 0 },
+    { name: "several files", count: 3, additions: 12, deletions: 4 },
+  ])(
+    "carries +added −removed on the summary of $name, expanded and collapsed",
+    async ({ count, additions, deletions }) => {
+      await using screen = await render(
+        <TimelineChangesRow
+          files={[{ path: "src/only.ts", additions, deletions }]}
+          totals={{ count, additions, deletions }}
+          onOpenDiff={() => {}}
+          onOpenFile={() => {}}
+        />,
+      );
+      const label = `${count} file${count === 1 ? "" : "s"}`;
+      const summary = (name: string) => screen.getByRole("button", { name }).element();
+      const stat = `${additions} additions, ${deletions} deletions`;
+      expect(summary(`Collapse ${label}`).querySelector(`[aria-label="${stat}"]`)).not.toBeNull();
+      await screen.getByRole("button", { name: `Collapse ${label}` }).click();
+      expect(summary(`Expand ${label}`).querySelector(`[aria-label="${stat}"]`)).not.toBeNull();
     },
   );
+
+  it("collapses and expands its file chips in one commit", async () => {
+    await using screen = await render(<ChangedFilesTimeline />);
+    const after = () =>
+      screen.container.querySelector('[data-testid="after"]')!.getBoundingClientRect().top;
+    const rowBottom = () =>
+      screen.container.querySelector("[data-timeline-changes]")!.getBoundingClientRect().bottom;
+    await vi.waitFor(() => expect(after()).toBe(rowBottom()));
+    const topBefore = after();
+    const toggle = screen.getByRole("button", { name: "Collapse 3 files" });
+    await act(() => {
+      flushSync(() => toggle.element().dispatchEvent(new MouseEvent("click", { bubbles: true })));
+      expect(screen.container.textContent).not.toContain("src/a.ts");
+      expect(after()).toBeLessThan(topBefore);
+    });
+    await act(() => {
+      flushSync(() =>
+        screen
+          .getByRole("button", { name: "Expand 3 files" })
+          .element()
+          .dispatchEvent(new MouseEvent("click", { bubbles: true })),
+      );
+      expect(screen.container.textContent).toContain("src/a.ts");
+      expect(after()).toBe(topBefore);
+    });
+  });
+});
+
+describe("changed-files card beside the pending-changes row", () => {
+  const diffFor = (runId: RunId, assistantId: string) =>
+    ({
+      runId,
+      checkpointTurnCount: 1,
+      checkpointRef: `checkpoint-${runId}` as never,
+      status: "ready",
+      files: [{ path: "CHANGELOG.md", kind: "modified", additions: 5, deletions: 0 }],
+      assistantMessageId: MessageId.make(assistantId),
+      completedAt: CREATED_AT,
+    }) as const;
+  const earlier = RunId.make("run-earlier");
+  const latest = RunId.make("run-latest");
+  const entries: Entry[] = [
+    message("First", { role: "user", runId: earlier }, "user-earlier"),
+    message("First done", { role: "assistant", runId: earlier }, "final-earlier"),
+    message("Second", { role: "user", runId: latest }, "user-latest"),
+    message("Second done", { role: "assistant", runId: latest }, "final-latest"),
+  ];
+  const turnDiffSummaries = [diffFor(earlier, "final-earlier"), diffFor(latest, "final-latest")];
+  const changeRows = (root: HTMLElement) => root.querySelectorAll("[data-timeline-changes]").length;
+
+  it("shows every turn's change row with its file chips when no pending-changes row covers a run", async () => {
+    setup();
+    await using screen = await renderTimeline(entries, { turnDiffSummaries });
+    expect(changeRows(screen.container)).toBe(2);
+    expect(screen.container.textContent).toContain("CHANGELOG.md");
+  });
+
+  it("hides the covered turn's row entirely and keeps older turns' rows", async () => {
+    setup();
+    await using screen = await renderTimeline(entries, {
+      turnDiffSummaries,
+      changeBannerRunId: latest,
+    });
+    expect(changeRows(screen.container)).toBe(1);
+    expect(screen.container.textContent).not.toContain("Show changed files");
+    expect(screen.container.querySelectorAll('button[aria-label="Open diff"]')).toHaveLength(1);
+  });
+
+  it("restores the latest turn's row once the pending-changes row goes away", async () => {
+    setup();
+    const props = { ...baseProps(), timelineEntries: entries, turnDiffSummaries };
+    await using screen = await renderElement(
+      <MessagesTimeline {...props} changeBannerRunId={latest} />,
+    );
+    expect(changeRows(screen.container)).toBe(1);
+    await screen.rerender(<MessagesTimeline {...props} changeBannerRunId={null} />);
+    expect(changeRows(screen.container)).toBe(2);
+  });
+});
+
+describe("answer model line", () => {
+  it("shows the model only where it changes, and names it on hover for every answer", async () => {
+    setup();
+    const entries: Entry[] = [];
+    const runs: NonNullable<TimelineProps["runs"]>[number][] = [];
+    const models = [
+      "claude-haiku-5-5",
+      "claude-haiku-5-5",
+      "claude-sonnet-5-5",
+      "claude-haiku-5-5",
+    ];
+    for (const [index, model] of models.entries()) {
+      const n = index + 1;
+      const runId = RunId.make(`run-${n}`);
+      const instanceId = ProviderInstanceId.make("claude");
+      runs.push({
+        id: runId,
+        providerInstanceId: instanceId,
+        modelSelection: { instanceId, model },
+      } as never);
+      entries.push(message(`Question ${n}`, { role: "user", runId }, `user-${n}`));
+      entries.push(message(`Answer ${n}`, { role: "assistant", runId }, `final-${n}`));
+    }
+    await using screen = await renderTimeline(entries, { runs });
+    const lineFor = (n: number) =>
+      [...screen.container.querySelectorAll<HTMLElement>('[data-timeline-row-kind="message"]')]
+        .find((row) => row.textContent?.includes(`Answer ${n}`))
+        ?.querySelector("[data-assistant-model-attribution]") ?? null;
+    expect([1, 2, 3, 4].map((n) => lineFor(n) !== null)).toEqual([false, false, true, true]);
+    const hoverLineFor = (n: number) =>
+      [...screen.container.querySelectorAll<HTMLElement>('[data-timeline-row-kind="message"]')]
+        .find((row) => row.textContent?.includes(`Answer ${n}`))
+        ?.querySelector<HTMLElement>("[data-assistant-model-hover]") ?? null;
+    expect([1, 2, 3, 4].map((n) => hoverLineFor(n)?.textContent)).toEqual([
+      "claude · claude-haiku-5-5",
+      "claude · claude-haiku-5-5",
+      "claude · claude-sonnet-5-5",
+      "claude · claude-haiku-5-5",
+    ]);
+    // The hover line shares the footer that reveals on hover, so it is hidden at rest.
+    expect(getComputedStyle(hoverLineFor(2)!.parentElement!).opacity).toBe("0");
+    // The latest answer keeps its footer visible without a hover.
+    expect(getComputedStyle(hoverLineFor(4)!.parentElement!).opacity).toBe("1");
+    // Keyboard focus on a footer's own control reveals it too.
+    const footer2 = hoverLineFor(2)!.parentElement!;
+    const copy = footer2.querySelector<HTMLButtonElement>('button[aria-label="Copy message"]')!;
+    await act(async () => copy.focus());
+    await expect.poll(() => getComputedStyle(footer2).opacity).toBe("1");
+  });
+});
+
+describe("turn rhythm", () => {
+  const diffSummary = (runId: RunId, assistantId: string) =>
+    ({
+      runId,
+      checkpointTurnCount: 1,
+      checkpointRef: `checkpoint-${runId}` as never,
+      status: "ready",
+      files: [{ path: "CHANGELOG.md", kind: "modified", additions: 5, deletions: 0 }],
+      assistantMessageId: MessageId.make(assistantId),
+      completedAt: CREATED_AT,
+    }) as const;
+
+  it("puts 32px between turns however a turn ends and smaller fixed steps inside one", async () => {
+    setup();
+    const entries: Entry[] = [];
+    const runs: NonNullable<TimelineProps["runs"]>[number][] = [];
+    const diffs: ReturnType<typeof diffSummary>[] = [];
+    for (const n of [1, 2, 3]) {
+      const runId = RunId.make(`run-${n}`);
+      const instanceId = ProviderInstanceId.make("claude");
+      // The model alternates so every answer names it (an unchanged model is named once).
+      runs.push({
+        id: runId,
+        providerInstanceId: instanceId,
+        modelSelection: { instanceId, model: n === 2 ? "claude-sonnet-5-5" : "claude-haiku-5-5" },
+      } as never);
+      entries.push(message(`Question ${n}`, { role: "user", runId }, `user-${n}`));
+      entries.push(message(`Progress ${n}`, { role: "assistant", runId }, `progress-${n}`));
+      if (n === 2) {
+        entries.push(
+          work("compact-2", {
+            runId,
+            label: "Context compacted",
+            tone: "info",
+            sourceActivityKind: "context-compaction",
+          }),
+        );
+      }
+      entries.push(message(`Answer ${n}`, { role: "assistant", runId }, `final-${n}`));
+      if (n === 2) diffs.push(diffSummary(runId, `final-${n}`));
+    }
+    await using screen = await renderTimeline(entries, { runs, turnDiffSummaries: diffs });
+    const root = screen.container;
+    const rowOf = (kind: string, text: string) => {
+      const row = [
+        ...root.querySelectorAll<HTMLElement>(`[data-timeline-row-kind="${kind}"]`),
+      ].find((candidate) => candidate.textContent?.includes(text));
+      if (!row) throw new Error(`Missing ${kind} row containing ${JSON.stringify(text)}`);
+      return row;
+    };
+    const attributions = root.querySelectorAll<HTMLElement>("[data-assistant-model-attribution]");
+    const cards = root.querySelectorAll<HTMLElement>("[data-timeline-changes]");
+    // The first answer has no previous one to differ from, so only the answers after a change show the model.
+    expect(attributions).toHaveLength(2);
+    expect(cards).toHaveLength(1);
+    const top = (element: Element) => element.getBoundingClientRect().top;
+    const bottom = (element: Element) => element.getBoundingClientRect().bottom;
+    // A user bubble starts at its row's top edge.
+    const answer = (n: number) =>
+      rowOf("message", `Answer ${n}`).querySelector<HTMLElement>("[data-thread-find-text]")!;
+    const turnGaps = [
+      top(rowOf("message", "Question 2")) - bottom(answer(1)),
+      top(rowOf("message", "Question 3")) - bottom(cards[0]!),
+    ];
+    expect(turnGaps).toEqual([32, 32]);
+
+    expect(top(attributions[0]!) - bottom(answer(2))).toBe(8);
+    expect(top(cards[0]!) - bottom(attributions[0]!)).toBe(12);
+
+    const divider = root.querySelector<HTMLElement>('[role="separator"]')!;
+    const folds = root.querySelectorAll<HTMLElement>('[data-timeline-row-kind="turn-fold"] button');
+    // The divider sits inside the turn: the same small step above and below it.
+    expect([top(divider) - bottom(folds[1]!), top(answer(2)) - bottom(divider)]).toEqual([12, 14]);
+    // "Worked for" row to the body of the answer.
+    expect([1, 3].map((n) => top(answer(n)) - bottom(folds[n - 1]!))).toEqual([14, 14]);
+  });
 });
 
 it("keeps concurrent approvals actionable outside collapsed work and restores settled rows", async () => {
@@ -1652,4 +2570,265 @@ describe("MessagesTimeline shell ticks", () => {
     await act(() => registry.set(quiet, [review("run-1"), review("run-2")]));
     expect(commits).toBeGreaterThan(0);
   });
+});
+
+describe("MessagesTimeline rhythm", () => {
+  const rowPadding = (container: HTMLElement, id: string) => {
+    const wrapper = container.querySelector<HTMLElement>(`[data-timeline-row-id="${id}"]`);
+    if (!wrapper) throw new Error(`Missing row ${id}`);
+    // Work-log rows keep the gap on their block, one level down.
+    const block = wrapper.firstElementChild as HTMLElement | null;
+    const padded = getComputedStyle(wrapper).paddingBottom === "0px" && block ? block : wrapper;
+    return Number.parseFloat(getComputedStyle(padded).paddingBottom);
+  };
+
+  it("leaves one 32px gap before every user message and 12px inside a turn at 1440x900", async () => {
+    await using _viewport = await desktopViewport();
+    setup();
+    const run1 = RunId.make("rhythm-run-1");
+    const run2 = RunId.make("rhythm-run-2");
+    await using screen = await renderTimeline(
+      [
+        message("First question", { runId: run1 }, "rhythm-user-1"),
+        message("First answer", { role: "assistant", runId: run1 }, "rhythm-answer-1"),
+        message("Second question", { runId: run2 }, "rhythm-user-2"),
+        work("rhythm-tool", {
+          runId: run2,
+          label: "Ran ls",
+          command: "ls -la",
+          tone: "tool",
+          itemType: "command_execution",
+          toolLifecycleStatus: "completed",
+        }),
+        message("Second answer", { role: "assistant", runId: run2 }, "rhythm-answer-2"),
+        message("Third question", { runId: RunId.make("rhythm-run-3") }, "rhythm-user-3"),
+      ],
+      { runs: [] },
+    );
+    const rows = () =>
+      [...screen.container.querySelectorAll<HTMLElement>("[data-timeline-row-id]")].map(
+        (row) => row.dataset.timelineRowId!,
+      );
+    await vi.waitFor(() => expect(rows().length).toBeGreaterThanOrEqual(5));
+
+    const ids = rows();
+    const ofUser = (n: number) => ids.findIndex((id) => id.includes(`rhythm-user-${n}`));
+    const rowEl = (id: string) =>
+      screen.container.querySelector<HTMLElement>(`[data-timeline-row-id="${id}"]`)!;
+    const answerText = (id: string) =>
+      rowEl(id).querySelector<HTMLElement>("[data-thread-find-text]")!;
+    // Whatever precedes a user message leaves the turn gap, measured from the answer text down to
+    // the next bubble's row.
+    for (const [answerId, n] of [
+      ["rhythm-answer-1", 2],
+      ["rhythm-answer-2", 3],
+    ] as const) {
+      const gap =
+        rowEl(ids[ofUser(n)]!).getBoundingClientRect().top -
+        answerText(ids.find((id) => id.includes(answerId))!).getBoundingClientRect().bottom;
+      expect(gap, `gap before user message ${n}`).toBe(32);
+    }
+    // A work row followed by more of the same turn leaves the in-turn gap.
+    const fold = ids.find((id) => id.startsWith("turn-fold:"))!;
+    expect(rowPadding(screen.container, fold)).toBe(12);
+  });
+
+  it("nests the rows of an expanded group under the header's rail in 12px muted type", async () => {
+    await using _viewport = await desktopViewport();
+    setup();
+    const runId = RunId.make("nest-run");
+    await using screen = await renderTimeline(
+      [
+        message("Question", { runId }, "nest-user"),
+        work("nest-tool", {
+          runId,
+          label: "Ran ls",
+          command: "ls -la",
+          tone: "tool",
+          itemType: "command_execution",
+          toolLifecycleStatus: "completed",
+        }),
+        message("Done listing the directory", { role: "assistant", runId }, "nest-final"),
+      ],
+      { runs: [] },
+    );
+    const heading = [...screen.container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => /^Worked for/.test(button.textContent ?? ""),
+    )!;
+    await click(heading);
+    const row = screen.button("ls -la");
+    const nest = row.closest<HTMLElement>("[data-work-log-nested]")!;
+    expect(nest).not.toBeNull();
+    expect(getComputedStyle(nest).borderInlineStartWidth).toBe("1px");
+    expect(row.getBoundingClientRect().left).toBeGreaterThan(heading.getBoundingClientRect().left);
+    const label = [...row.querySelectorAll<HTMLElement>("*")].find(
+      (element) => element.children.length === 0 && element.textContent?.includes("ls -la"),
+    )!;
+    expect(getComputedStyle(label).fontSize).toBe("12px");
+  });
+
+  it("caps a user bubble at 36rem in a wide lane and fills a phone-width lane", async () => {
+    await using _viewport = await desktopViewport();
+    setup();
+    const long = "word ".repeat(300);
+    const bubbleWidth = async (width: number) => {
+      await using screen = await renderTimeline([message(long, {}, `cap-${width}`)], {}, { width });
+      const row = screen.container.querySelector<HTMLElement>("[data-timeline-row-id]")!;
+      const lane = row.getBoundingClientRect().width;
+      const bubble = row.querySelector<HTMLElement>("[class*='bg-(--bubble)']")!;
+      return { lane, bubble: bubble.getBoundingClientRect().width };
+    };
+
+    const wide = await bubbleWidth(1100);
+    expect(wide.bubble).toBeLessThanOrEqual(576 + 1);
+    const phone = await bubbleWidth(400);
+    expect(phone.lane).toBeLessThan(480);
+    expect(phone.bubble).toBeGreaterThanOrEqual(phone.lane - 1);
+  });
+});
+
+describe("MessagesTimeline compact density", () => {
+  it.each([
+    { width: 340, grid: false, compact: true },
+    { width: 570, grid: true, compact: true },
+    { width: 570, grid: false, compact: false },
+    { width: 900, grid: false, compact: false },
+  ])(
+    "hides the latest answer's footer until hover at $width px (grid pane: $grid)",
+    async ({ width, grid, compact }) => {
+      setup();
+      const runId = RunId.make(`compact-run-${width}-${grid}`);
+      await using screen = await renderTimeline(
+        [
+          message("Question", { runId }, "compact-user"),
+          message(
+            "Running the integration suite against the staging snapshot.",
+            {
+              role: "assistant",
+              runId,
+            },
+            "compact-answer",
+          ),
+        ],
+        {
+          latestRun: { runId, status: "completed", startedAt: CREATED_AT, completedAt: CREATED_AT },
+        },
+        { width, grid },
+      );
+      const root = screen.container;
+      const footer = await vi.waitFor(() => {
+        const found = root.querySelector<HTMLElement>("[data-assistant-meta-footer]");
+        expect(found).not.toBeNull();
+        return found!;
+      });
+      expect(Number(getComputedStyle(footer).opacity)).toBe(compact ? 0 : 1);
+      // Focus reveals it, so the actions stay reachable by keyboard.
+      footer.querySelector<HTMLElement>("button")?.focus();
+      await vi.waitFor(() => expect(Number(getComputedStyle(footer).opacity)).toBe(1));
+      expect(root.scrollWidth).toBeLessThanOrEqual(root.clientWidth + 1);
+    },
+  );
+});
+
+describe("MessagesTimeline failure card", () => {
+  const failureEntry = (message: string): Entry =>
+    work("failed-run", {
+      label: "Provider error",
+      tone: "error",
+      itemType: "error",
+      projectedItem: v2Item("error", {
+        id: "failed-run",
+        status: "failed",
+        failure: { class: "provider", message, code: null, retryable: false },
+      }),
+    });
+  const BUILD_CACHE_ERROR = "Build cache at 127.0.0.1:9 refused the connection (ECONNREFUSED)";
+
+  it("shows the failure inline only while the composer-slot card is not showing it", async () => {
+    setup();
+    const timeline = (cardError: string | null) => (
+      <ThreadErrorCardProvider value={cardError}>
+        <MessagesTimeline {...baseProps()} timelineEntries={[failureEntry(BUILD_CACHE_ERROR)]} />
+      </ThreadErrorCardProvider>
+    );
+    await using withCard = await renderElement(timeline(BUILD_CACHE_ERROR));
+    expect(withCard.container.querySelector('[data-v2-item-type="error"]')).toBeNull();
+    expect(withCard.text()).not.toContain("ECONNREFUSED");
+
+    // Once the card is dismissed the timeline carries the error, so it stays reachable.
+    await using dismissed = await renderElement(timeline(null));
+    await vi.waitFor(() =>
+      expect(dismissed.container.querySelector('[data-v2-item-type="error"]')).not.toBeNull(),
+    );
+    expect(dismissed.text()).toContain("ECONNREFUSED");
+  });
+});
+
+describe("MessagesTimeline running colour", () => {
+  it("draws the working row's label and glyph in the running status ink", async () => {
+    setup();
+    const runId = RunId.make("running-ink-run");
+    await using screen = await renderTimeline(
+      [message("Question", { runId }, "running-ink-user")],
+      {
+        isWorking: true,
+        activeTurnStartedAt: CREATED_AT,
+        latestRun: { runId, status: "running", startedAt: CREATED_AT, completedAt: null },
+      },
+    );
+    const probe = document.createElement("span");
+    probe.style.color = "var(--status-running-ink)";
+    screen.container.append(probe);
+    const running = getComputedStyle(probe).color;
+    const label = await vi.waitFor(() => {
+      const found = [...screen.container.querySelectorAll<HTMLElement>("span")].find(
+        (node) => node.textContent === "Running" && node.children.length === 0,
+      );
+      expect(found).toBeDefined();
+      return found!;
+    });
+    expect(getComputedStyle(label).color).toBe(running);
+    const glyph = screen.container.querySelector<SVGElement>("[data-streaming-glyph]")!;
+    expect(getComputedStyle(glyph).color).toBe(running);
+  });
+});
+
+describe("MessagesTimeline in-flight command row", () => {
+  it.each([
+    {
+      title: "Run integration tests",
+      command: "Run integration tests",
+      expected: "Running command",
+    },
+    { title: "Ran command", command: "Ran command", expected: "Running command" },
+    { title: "Run tests", command: "pnpm test --run", expected: "Running pnpm" },
+  ])(
+    "states one label for a running command $command titled $title",
+    async ({ title, command, expected }) => {
+      setup();
+      const runId = RunId.make("inflight-run");
+      await using screen = await renderTimeline(
+        [
+          message("Question", { runId }, "inflight-user"),
+          work("inflight-tool", {
+            runId,
+            label: title,
+            command,
+            rawCommand: command,
+            toolTitle: title,
+            tone: "tool",
+            itemType: "command_execution",
+            toolLifecycleStatus: "inProgress",
+          }),
+        ],
+        {
+          isWorking: true,
+          runningRunId: runId,
+          latestRun: { runId, status: "running", startedAt: CREATED_AT, completedAt: null },
+        },
+      );
+      await vi.waitFor(() => expect(screen.text()).toContain(expected));
+      expect(screen.text()).not.toMatch(/Running (Ran|Run)\b/);
+    },
+  );
 });

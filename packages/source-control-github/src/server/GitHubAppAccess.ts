@@ -69,13 +69,16 @@ export class GitHubAppAccess extends Context.Service<
   }
 >()("@houston-app/source-control-github/server/GitHubAppAccess") {}
 
+const GIT_SUFFIX = /\.git\/?$/;
+const OWNER_NAME_SEPARATOR = /[/:]/;
+
 /** Callers may name a repository as a URL, `host/owner/name` or `owner/name.git`. */
 function ownerAndName(repository: string): string {
   return repository
     .trim()
     .toLowerCase()
-    .replace(/\.git\/?$/, "")
-    .split(/[/:]/)
+    .replace(GIT_SUFFIX, "")
+    .split(OWNER_NAME_SEPARATOR)
     .filter((segment) => segment.length > 0)
     .slice(-2)
     .join("/");

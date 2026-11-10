@@ -24,6 +24,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
 import type * as Scope from "effect/Scope";
 
 import {
@@ -43,6 +44,8 @@ import {
 /** Checks take minutes; faster sweeps waste the account's shared host quota. */
 const SWEEP_MINUTES = 2;
 const READ_FAILURE_LIMIT = 8;
+/** Group reads in flight at once, inside the host's own request limit. */
+const GROUP_READS = 4;
 /** Without fingerprints, reread quiet PRs on snapshot changes or this interval to catch edits. */
 const QUIET_REREAD_MS = 10 * 60_000;
 /** Reread despite unchanged fingerprints; they miss review-thread comment edits. */
@@ -54,9 +57,18 @@ const providerFailureReason = (cause: Cause.Cause<PullRequestService.PullRequest
   Option.match(Cause.findErrorOption(cause), {
     onNone: () => null,
     onSome: (error) =>
-      error._tag === "PullRequestOperationError" && isProviderError(error.cause)
+      isProviderError(error.cause)
         ? error.cause.reason
-        : null,
+        : error._tag === "PullRequestUnavailableError"
+          ? ("missing-tool" as const)
+          : null,
+  });
+
+/** What the host needs before it can be read, when no retry can succeed without the user. */
+const unusableHostRequirement = (cause: Cause.Cause<PullRequestService.PullRequestError>) =>
+  Option.match(Cause.findErrorOption(cause), {
+    onNone: () => null,
+    onSome: (error) => (error._tag === "PullRequestUnavailableError" ? error.message : null),
   });
 
 const logFailure =
@@ -305,6 +317,20 @@ export const make = Effect.gen(function* () {
       Effect.tap(() => ended(target, "unreadable")),
     );
 
+  const stopUnusable = (requirement: string) => (target: WatchTarget) =>
+    record(target, null, {
+      text: `Houston stopped watching pull request #${target.link.number} (${target.link.url}) because the host cannot be read until this is fixed: ${requirement} Check the pull request yourself, and call watch_pull_request to watch it again once it is.`,
+      notification: {
+        source: { kind: "monitor" },
+        outcome: "failed",
+        summary: `#${target.link.number}: stopped watching, the host needs credentials`,
+      },
+    }).pipe(
+      Effect.tap(() => woke(target)),
+      Effect.catch(() => record(target, null)),
+      Effect.tap(() => ended(target, "unreadable")),
+    );
+
   const readRemarks = Effect.fn("PullRequestWatchReactor.readRemarks")(
     function* (
       key: string,
@@ -494,6 +520,13 @@ export const make = Effect.gen(function* () {
       lastReads.delete(group.key);
       const reason = providerFailureReason(read.cause);
       if (reason === "rate-limited") return;
+      // Missing or rejected credentials do not recover by retrying; say so on the first read.
+      const requirement = unusableHostRequirement(read.cause);
+      if (requirement !== null) {
+        readFailures.delete(group.key);
+        yield* eachTarget(group, stopUnusable(requirement));
+        return yield* Effect.failCause(read.cause);
+      }
       // Transport and host failures can outlast the failure limit; keep the watch for recovery.
       if (reason === "failed") {
         readFailures.delete(group.key);
@@ -626,22 +659,26 @@ export const make = Effect.gen(function* () {
         ),
       { discard: true },
     );
-    const fingerprints = yield* Effect.forEach(groups, fingerprintOf, {
-      concurrency: "unbounded",
-    });
+    // Every fingerprint is asked for at once so the host can batch them, and each group reads
+    // as soon as its own answer lands rather than waiting on the slowest host.
+    const reads = yield* Semaphore.make(GROUP_READS);
     yield* Effect.forEach(
       groups,
-      (group, index) => {
-        const fingerprint = fingerprints[index]!;
-        return fingerprint === "paused"
-          ? Effect.void
-          : readGroup(group, fingerprint).pipe(
-              Effect.catchCause(
-                logFailure("pull request watch check failed", { pullRequest: group.key }),
-              ),
-            );
-      },
-      { concurrency: 4, discard: true },
+      (group) =>
+        fingerprintOf(group).pipe(
+          Effect.flatMap((fingerprint) =>
+            fingerprint === "paused"
+              ? Effect.void
+              : reads.withPermit(
+                  readGroup(group, fingerprint).pipe(
+                    Effect.catchCause(
+                      logFailure("pull request watch check failed", { pullRequest: group.key }),
+                    ),
+                  ),
+                ),
+          ),
+        ),
+      { concurrency: "unbounded", discard: true },
     );
   }).pipe(
     Effect.catchCause(logFailure("pull request watch sweep failed", {})),

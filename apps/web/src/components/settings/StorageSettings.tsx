@@ -38,6 +38,7 @@ import { AdvancedSettings } from "./AdvancedSettings";
 import { FoldedSettingsSection } from "./FoldedSettingsSection";
 import { SettingsScopeNotice } from "./SettingsScopeNotice";
 import { SettingsGroup } from "./SettingsGroup";
+import { worktreesDirectoryProblem } from "./worktreesDirectoryInput";
 import type { ScopedSettingsTarget } from "./scopedSettings";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { searchableSetting } from "./settingsSearch";
@@ -57,6 +58,7 @@ export function WorktreesDirectoryRow() {
   const edited = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const draft = useRef("");
+  const [problem, setProblem] = useState<string | null>(null);
   if (
     connectedEnvironments.some(
       (environment) =>
@@ -70,14 +72,23 @@ export function WorktreesDirectoryRow() {
     <SettingsRow
       {...searchableSetting("storage-worktrees-location")}
       title="Worktree location"
-      description="Relative to each project."
+      description={
+        problem ? (
+          <span role="alert">{problem}</span>
+        ) : (
+          "An absolute folder for new worktrees. Leave empty to use Houston's own folder."
+        )
+      }
       serverScoped
       settingKeys={["worktreesDirectory"]}
       resetAction={
         mixed || settings.worktreesDirectory !== "" ? (
           <SettingResetButton
             label="worktree location"
-            onClick={() => updateSettings({ worktreesDirectory: "" })}
+            onClick={() => {
+              setProblem(null);
+              updateSettings({ worktreesDirectory: "" });
+            }}
           />
         ) : null
       }
@@ -89,9 +100,10 @@ export function WorktreesDirectoryRow() {
             className="w-full sm:w-[190px]"
             font="mono"
             aria-label="Worktree location"
+            aria-invalid={problem !== null || undefined}
             autoCapitalize="none"
             spellCheck={false}
-            placeholder={mixed ? "Mixed" : ".houston/worktrees"}
+            placeholder={mixed ? "Mixed" : "/home/you/worktrees"}
             defaultValue={mixed ? "" : settings.worktreesDirectory}
             onFocus={(event) => {
               draft.current = event.target.value;
@@ -100,11 +112,16 @@ export function WorktreesDirectoryRow() {
               edited.current = true;
               draft.current = resolvePastedPath(draft.current, event.target.value);
               event.target.value = draft.current;
+              setProblem(null);
             }}
             onBlur={(event) => {
               const value = event.target.value.trim();
-              if (edited.current && (mixed || value !== settings.worktreesDirectory))
+              const refusal = worktreesDirectoryProblem(value);
+              if (refusal !== null) {
+                setProblem(refusal);
+              } else if (edited.current && (mixed || value !== settings.worktreesDirectory)) {
                 updateSettings({ worktreesDirectory: value });
+              }
               edited.current = false;
             }}
           />
@@ -199,6 +216,8 @@ function lastRunSummary(
   return entries.map((entry) => `${entry.label}: ${entry.counts}`).join(" · ");
 }
 
+const PATH_SEPARATOR = /[\\/]/;
+
 function CleanupResults({
   report,
   environmentLabel,
@@ -213,7 +232,7 @@ function CleanupResults({
           entry.kind === "worktree"
             ? ((entry.threadId === null
                 ? entry.path
-                : entry.path?.split(/[\\/]/).findLast(Boolean)) ?? "Worktrees")
+                : entry.path?.split(PATH_SEPARATOR).findLast(Boolean)) ?? "Worktrees")
             : entry.kind === "logs"
               ? "Rotated logs"
               : "Browser artifacts";
@@ -532,7 +551,7 @@ export function WorktreeCleanupSection() {
     worktreeUnchanged: false,
   } as const satisfies Partial<WorktreeCleanupRules>;
   const cleanupModes = [
-    { value: "archived", label: "When archived", enabled: settings.worktreeOnDelete },
+    { value: "deleted", label: "When deleted", enabled: settings.worktreeOnDelete },
     { value: "merged", label: "When merged", enabled: settings.worktreeOnMerge },
     { value: "inactive", label: "When inactive", enabled: settings.worktreeAfterDays !== null },
   ] as const;
@@ -550,13 +569,26 @@ export function WorktreeCleanupSection() {
       : cleanupValue === "off"
         ? "Off"
         : (cleanupModes.find((entry) => entry.value === cleanupValue)?.label ?? "Off");
+  const cleanupRuleKeys = [
+    "worktreeOnDelete",
+    "worktreeOnMerge",
+    "worktreeAfterDays",
+    "worktreeSettledAfterDays",
+    "worktreeUnchanged",
+  ] as const satisfies ReadonlyArray<keyof WorktreeCleanupRules>;
+  const cleanupStatus = cleanupRuleKeys.some((key) => ruleStatus(key))
+    ? "Mixed across selected machines"
+    : undefined;
+  const cleanupManagedPaths = isProjectScope
+    ? ["worktreeCleanup"]
+    : ["worktreeCleanup", ...cleanupRuleKeys.map((key) => `storageCleanup.${key}`)];
   const handleCleanupChange = (value: string | null) => {
     if (value === null) return;
     if (value === "off") {
       updateWorktree({ ...cleanupRulesOff });
       return;
     }
-    if (value === "archived") {
+    if (value === "deleted") {
       updateWorktree({ ...cleanupRulesOff, worktreeOnDelete: true });
       return;
     }
@@ -574,15 +606,18 @@ export function WorktreeCleanupSection() {
       <>
         <SettingsRow
           title="Worktree cleanup"
-          description="Remove a worktree when its thread closes or is archived."
+          description="Remove a worktree automatically when its thread is deleted, its pull request merges, or it sits inactive."
+          status={cleanupStatus}
+          managedPaths={cleanupManagedPaths}
+          serverScoped={!isProjectScope}
           control={
-            <Select value={cleanupValue} onValueChange={handleCleanupChange}>
+            <Select value={cleanupStatus ? null : cleanupValue} onValueChange={handleCleanupChange}>
               <SelectTrigger size="sm" aria-label="Worktree cleanup">
-                <SelectValue>{cleanupLabel}</SelectValue>
+                <SelectValue>{cleanupStatus ? "Mixed" : cleanupLabel}</SelectValue>
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>
                 <SelectItem value="off">Off</SelectItem>
-                <SelectItem value="archived">When archived</SelectItem>
+                <SelectItem value="deleted">When deleted</SelectItem>
                 <SelectItem value="merged">When merged</SelectItem>
                 <SelectItem value="inactive">When inactive</SelectItem>
                 {cleanupValue === "custom" ? <SelectItem value="custom">Custom</SelectItem> : null}
@@ -590,24 +625,51 @@ export function WorktreeCleanupSection() {
             </Select>
           }
         />
-        <SettingsRow
-          title="Keep worktrees with local changes"
-          description="Never remove a worktree with uncommitted or unpushed work."
-          control={
-            <Switch
-              aria-label="Keep worktrees with local changes"
-              checked={settings.worktreeKeepWhen !== "tracked-changes"}
-              onCheckedChange={(keep) =>
-                updateWorktree({
-                  worktreeKeepWhen: keep ? "uncommitted-changes" : "tracked-changes",
-                })
-              }
-            />
-          }
-        />
-        <AdvancedSettings
-          targetIds={["storage-worktrees", searchableSetting("storage-worktree-keep-when").id]}
-        >
+        {connectedEnvironments.every(
+          (environment) =>
+            environment.serverConfig?.environment.capabilities.storageCleanupRun === true,
+        ) && (
+          <SettingsRow
+            {...searchableSetting("storage-worktree-keep-when")}
+            status={ruleStatus("worktreeKeepWhen")}
+            managedPaths={lockablePath("worktreeKeepWhen")}
+            description={
+              settings.worktreeKeepWhen === "any-local-files"
+                ? "Includes ignored files, except node_modules."
+                : settings.worktreeKeepWhen === "tracked-changes"
+                  ? "Deletes untracked and ignored files, including .env."
+                  : "Keeps edits and untracked files. Deletes ignored files, including .env."
+            }
+            serverScoped={!isProjectScope}
+            control={
+              <Select
+                value={ruleStatus("worktreeKeepWhen") ? null : settings.worktreeKeepWhen}
+                onValueChange={(next) => {
+                  if (
+                    next === "any-local-files" ||
+                    next === "uncommitted-changes" ||
+                    next === "tracked-changes"
+                  )
+                    updateWorktree({ worktreeKeepWhen: next });
+                }}
+              >
+                <SelectTrigger size="sm" aria-label="Keep worktrees with local changes">
+                  <SelectValue>
+                    {ruleStatus("worktreeKeepWhen")
+                      ? "Mixed"
+                      : KEEP_WHEN_LABELS[settings.worktreeKeepWhen]}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  <SelectItem value="any-local-files">Any local files</SelectItem>
+                  <SelectItem value="uncommitted-changes">Uncommitted changes</SelectItem>
+                  <SelectItem value="tracked-changes">Edited tracked files</SelectItem>
+                </SelectPopup>
+              </Select>
+            }
+          />
+        )}
+        <AdvancedSettings targetIds={["storage-worktrees"]}>
           {isProjectScope && (
             <SettingsRow
               title="Automatic worktree cleanup"
@@ -737,50 +799,6 @@ export function WorktreeCleanupSection() {
               />
             }
           />
-          {connectedEnvironments.every(
-            (environment) =>
-              environment.serverConfig?.environment.capabilities.storageCleanupRun === true,
-          ) && (
-            <SettingsRow
-              {...searchableSetting("storage-worktree-keep-when")}
-              status={ruleStatus("worktreeKeepWhen")}
-              managedPaths={lockablePath("worktreeKeepWhen")}
-              description={
-                settings.worktreeKeepWhen === "any-local-files"
-                  ? "Includes ignored files, except node_modules."
-                  : settings.worktreeKeepWhen === "tracked-changes"
-                    ? "Deletes untracked and ignored files, including .env."
-                    : "Keeps edits and untracked files. Deletes ignored files, including .env."
-              }
-              serverScoped={!isProjectScope}
-              control={
-                <Select
-                  value={ruleStatus("worktreeKeepWhen") ? null : settings.worktreeKeepWhen}
-                  onValueChange={(next) => {
-                    if (
-                      next === "any-local-files" ||
-                      next === "uncommitted-changes" ||
-                      next === "tracked-changes"
-                    )
-                      updateWorktree({ worktreeKeepWhen: next });
-                  }}
-                >
-                  <SelectTrigger size="sm" aria-label="Keep worktrees with local changes">
-                    <SelectValue>
-                      {ruleStatus("worktreeKeepWhen")
-                        ? "Mixed"
-                        : KEEP_WHEN_LABELS[settings.worktreeKeepWhen]}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectPopup align="end" alignItemWithTrigger={false}>
-                    <SelectItem value="any-local-files">Any local files</SelectItem>
-                    <SelectItem value="uncommitted-changes">Uncommitted changes</SelectItem>
-                    <SelectItem value="tracked-changes">Edited tracked files</SelectItem>
-                  </SelectPopup>
-                </Select>
-              }
-            />
-          )}
         </AdvancedSettings>
       </>
     </SettingsSection>

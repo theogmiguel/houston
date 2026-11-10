@@ -5,6 +5,8 @@ import { useEffect, useRef, useState } from "react";
 import { useTheme } from "~/hooks/useTheme";
 import { observeResize } from "~/lib/observeResize";
 
+const SAFE_IMAGE_DATA_URL = /^data:image\/(png|jpeg|gif|webp);base64,[a-z\d+/]*={0,2}$/i;
+
 export function sanitizeDocumentHtml(source: string): string {
   const fragment = DOMPurify.sanitize(source, {
     RETURN_DOM_FRAGMENT: true,
@@ -51,12 +53,7 @@ export function sanitizeDocumentHtml(source: string): string {
     ALLOWED_ATTR: ["src", "alt", "colspan", "rowspan", "data-odf-whitespace"],
   });
   for (const image of fragment.querySelectorAll("img")) {
-    if (
-      !/^data:image\/(png|jpeg|gif|webp);base64,[a-z\d+/]*={0,2}$/i.test(
-        image.getAttribute("src") ?? "",
-      )
-    )
-      image.remove();
+    if (!SAFE_IMAGE_DATA_URL.test(image.getAttribute("src") ?? "")) image.remove();
   }
   const container = document.createElement("div");
   container.append(fragment);

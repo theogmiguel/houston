@@ -20,9 +20,11 @@ const MAX_PART_BYTES = 16 * 1024 * 1024;
 
 type Part = Arr.NonEmptyReadonlyArray<Uint8Array>;
 
+const LENGTH_PATTERN = /^content-length:\s*(\d+)\s*$/im;
+
 const partLength = (headers: string) => {
   if (!headers.startsWith("--")) return undefined;
-  const length = Number(/^content-length:\s*(\d+)\s*$/im.exec(headers)?.[1]);
+  const length = Number(LENGTH_PATTERN.exec(headers)?.[1]);
   return length <= MAX_PART_BYTES ? length : undefined;
 };
 

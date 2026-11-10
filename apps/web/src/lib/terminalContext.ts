@@ -35,8 +35,11 @@ export function formatTerminalContextReference(context: TerminalContextReference
   });
 }
 
+const CRLF = /\r\n/g;
+const EDGE_LINE_BREAKS = /^\n+|\n+$/g;
+
 export function normalizeTerminalContextText(text: string): string {
-  return text.replace(/\r\n/g, "\n").replace(/^\n+|\n+$/g, "");
+  return text.replace(CRLF, "\n").replace(EDGE_LINE_BREAKS, "");
 }
 
 function hasTerminalContextText(context: { text: string }): boolean {

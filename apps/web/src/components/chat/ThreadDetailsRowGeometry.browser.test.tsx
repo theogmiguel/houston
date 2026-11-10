@@ -56,6 +56,7 @@ function Card() {
           threadRef={threadRef}
           anchor={anchor}
           handle={PopoverCreateHandle()}
+          defaultOpen
           contentKey="geometry"
         >
           {() => (
@@ -181,6 +182,8 @@ it("keeps every details row on a 28px rhythm with shared label and right edges",
     threadPanelVisibilityByThreadKey: {},
     threadPanelPresentationByThreadKey: {},
   });
+  // The 28px rhythm is the desktop card's; a phone-wide viewport gives the sheet's 44px rows.
+  await page.viewport(1280, 800);
   await using _screen = await render(<Card />, { router: false });
   await expect.element(page.getByRole("region", { name: "Thread details" })).toBeVisible();
 

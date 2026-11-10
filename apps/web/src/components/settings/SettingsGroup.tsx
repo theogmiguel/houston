@@ -18,11 +18,11 @@ export function SettingsGroup({
       className={cn(
         "relative text-foreground",
         variant === "grouped"
-          ? "overflow-hidden rounded-lg border border-border bg-card"
+          ? "overflow-hidden rounded-lg border border-(--contrast-card-border) bg-card"
           : "space-y-1",
         variant === "grouped" &&
           divided &&
-          "[&>*+*]:relative [&>*+*]:before:pointer-events-none [&>*+*]:before:absolute [&>*+*]:before:top-0 [&>*+*]:before:left-3.5 [&>*+*]:before:right-0 [&>*+*]:before:h-px [&>*+*]:before:bg-border [&>*+*]:before:content-['']",
+          "[&>*+*]:relative [&>*+*]:before:pointer-events-none [&>*+*]:before:absolute [&>*+*]:before:top-0 [&>*+*]:before:left-3.5 [&>*+*]:before:right-0 max-phone:[&>*+*]:before:left-4 max-phone:[&>*+*]:before:right-4 [&>*+*]:before:h-px [&>*+*]:before:bg-border [&>*+*]:before:content-['']",
         className,
       )}
     />

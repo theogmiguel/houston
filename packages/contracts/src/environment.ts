@@ -10,6 +10,7 @@ import {
 } from "./baseSchemas.ts";
 import { SourceControlProviderKind } from "./sourceControl.ts";
 
+export const VOICE_PROTOCOL_VERSION = 2;
 export const ORCHESTRATION_PROTOCOL_VERSION = 2;
 export const ORCHESTRATION_PROTOCOL_VERSION_TEXT = "2";
 export const ORCHESTRATION_PROTOCOL_QUERY_PARAM = "orchestrationProtocol";
@@ -91,6 +92,10 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   storageCleanup: Schema.optionalKey(Schema.Boolean),
   storageCleanupRun: Schema.optionalKey(Schema.Boolean),
   databaseStorage: Schema.optionalKey(Schema.Boolean),
+  /** Server answers houston.database.reclaim: a one-click return of the database's free pages. */
+  databaseReclaim: Schema.optionalKey(Schema.Boolean),
+  /** Mints pairing codes that approve one agent sign-in at a set level (`AUTO-…`). */
+  mcpApprovalCodes: Schema.optionalKey(Schema.Boolean),
   otlpEndpointCheck: Schema.optionalKey(Schema.Boolean),
   projectWorktreeCleanup: Schema.optionalKey(Schema.Boolean),
   settledWorktreeCleanup: Schema.optionalKey(Schema.Boolean),
@@ -108,6 +113,8 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   usageLimitSources: Schema.optionalKey(Schema.Boolean),
   /** Honors `workspaceSnapshotsOnDemand`; older servers send every snapshot and drop them in the stream. */
   providerWorkspaceSnapshotsOnDemand: Schema.optionalKey(Schema.Boolean),
+  /** Honors `modelCatalogOnly`; older servers drop the field and probe every provider. */
+  modelCatalogRefresh: Schema.optionalKey(Schema.Boolean),
   usagePriceOverrides: Schema.optionalKey(Schema.Boolean),
   usageModelAliases: Schema.optionalKey(Schema.Boolean),
   threadPinning: Schema.optionalKey(Schema.Boolean),
@@ -147,6 +154,13 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   commandOutputStreaming: Schema.optionalKey(Schema.Boolean),
   /** Server can transcribe 16 kHz mono PCM audio on the environment machine. */
   voiceTranscription: Schema.optionalKey(Schema.Boolean),
+  /** Server can forward a finished recording to a cloud transcription provider. */
+  cloudVoiceTranscription: Schema.optionalKey(Schema.Boolean),
+  /**
+   * Version of the dictation wire protocol: options travel with each recording and the project
+   * name is not sent. Servers that predate it omit the field and refuse the new requests.
+   */
+  voiceProtocol: Schema.optionalKey(Schema.Literal(2)),
   /** Hosts headless Chromium tabs streamed over /api/preview-stream for clients without a local runtime. */
   serverBrowser: Schema.optionalKey(Schema.Boolean),
   /** Server links to other environments (`PeerLink`) and its agents can work
@@ -165,6 +179,10 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   triage: Schema.optionalKey(Schema.Boolean),
   /** Server accepts `{ type: "once" }` scheduled tasks; older servers reject them on save. */
   oneTimeSchedules: Schema.optionalKey(Schema.Boolean),
+  /** Server honors `freshContext` on sends; older servers ignore it and keep the old context. */
+  freshContext: Schema.optionalKey(Schema.Boolean),
+  /** Server saves and runs scheduled task `threadMode`; older servers ignore it. */
+  scheduledTaskThreadModes: Schema.optionalKey(Schema.Boolean),
 });
 export type ExecutionEnvironmentCapabilities = typeof ExecutionEnvironmentCapabilities.Type;
 

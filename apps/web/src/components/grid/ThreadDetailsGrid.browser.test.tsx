@@ -100,7 +100,9 @@ const inlineCardsIn = (container: HTMLElement) =>
 const popoverCard = () => document.querySelector('[data-thread-details-panel="popover"]');
 
 const detailsToggle = (container: HTMLElement) =>
-  container.querySelector<HTMLButtonElement>('[aria-label="Toggle thread details panel"]');
+  container.querySelector<HTMLButtonElement>(
+    '[data-grid-cell][data-focused="true"] [aria-label="Toggle thread details"]',
+  );
 
 it(
   "moves an open inline details card to the cell that gains focus",

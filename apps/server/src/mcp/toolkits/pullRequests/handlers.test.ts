@@ -5,6 +5,7 @@ import {
   ThreadId,
   type OrchestrationV2ServerCommand as OrchestrationCommand,
   PullRequestOperationError,
+  PullRequestUnavailableError,
   type OrchestrationProjectShell,
   type PullRequestRef,
   type PullRequestReviewGuideResult,
@@ -27,6 +28,8 @@ import {
 } from "../../../orchestration-v2/testkit/pullRequestFixtures.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
 import * as PullRequestReviewGuideService from "../../../pullRequest/PullRequestReviewGuideService.ts";
+import * as PullRequestService from "../../../pullRequest/PullRequestService.ts";
+import { PullRequestProviderError } from "@houston-app/source-control-core/server/PullRequestProvider";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as McpToolAccessTestkit from "../../McpToolAccess.testkit.ts";
@@ -143,6 +146,10 @@ interface HarnessOptions {
     PullRequestReviewGuideResult & { started: boolean },
     PullRequestOperationError
   >;
+  /** The host read behind a link or watch; succeeds unless given. */
+  readonly read?: (
+    input: PullRequestRef,
+  ) => Effect.Effect<never, PullRequestService.PullRequestError>;
 }
 
 const NO_GUIDE: PullRequestReviewGuideResult = { guide: null, run: null, currentHeadSha: "head-1" };
@@ -166,7 +173,14 @@ const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
       yield* Ref.update(commands, (recorded) => [...recorded, command]);
       return { sequence: 1, storedEvents: [] };
     });
+  const reads = yield* Ref.make<ReadonlyArray<PullRequestRef>>([]);
   const layerDependencies = Layer.mergeAll(
+    Layer.mock(PullRequestService.PullRequestService)({
+      detail: (input) =>
+        Ref.update(reads, (recorded) => [...recorded, input]).pipe(
+          Effect.andThen(options.read?.(input) ?? Effect.succeed({} as never)),
+        ),
+    }),
     Layer.mock(ProjectService.ProjectService)({
       getShell: () => Effect.succeed(Option.fromNullishOr(project)),
       listShells: () => Effect.succeed(options.projects ?? (project ? [project] : [])),
@@ -191,7 +205,7 @@ const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
     }),
     Layer.mock(Orchestrator.OrchestratorV2)({
       getThreadShell: (id) =>
-        Effect.succeed(id === THREAD_ID && thread ? v2PullRequestThread(thread) : null),
+        Effect.succeed(id === thread?.id ? v2PullRequestThread(thread) : null),
       dispatch,
     }),
     Layer.succeed(SecureRandom.SecureRandom, testCrypto),
@@ -218,7 +232,7 @@ const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
       Effect.provideService(McpInvocationContext.McpInvocationContext, invocation(capabilities)),
       Effect.provide(layerDependencies),
     );
-  return { commands, guideRequests, call };
+  return { commands, guideRequests, reads, call };
 });
 
 describe("pull request toolkit handlers", () => {
@@ -237,6 +251,21 @@ describe("pull request toolkit handlers", () => {
     }),
   );
 
+  it.effect("points a bare thread uuid at the mcp: thread it belongs to", () =>
+    Effect.gen(function* () {
+      const bareId = ThreadId.make("5d0b4a3e-8c1f-4a52-9d37-2f6c7e1b9a04");
+      const harness = yield* makeHarness({
+        thread: { ...makeThread([]), id: ThreadId.make(`mcp:${bareId}`) },
+      });
+      const error = yield* harness
+        .call("link_pull_request", { threadId: bareId, number: 123 })
+        .pipe(Effect.flip);
+      expect(error.message).toBe(`Thread ${bareId} was not found. Did you mean \`mcp:${bareId}\`?`);
+      expect(error).toMatchObject({ _tag: "OrchestratorMcpFailure", code: "thread_not_found" });
+      expect(yield* Ref.get(harness.commands)).toEqual([]);
+    }),
+  );
+
   it.effect("links by URL with source agent on the token's thread", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness();
@@ -249,6 +278,7 @@ describe("pull request toolkit handlers", () => {
         number: 123,
         url: "https://github.com/Example/Houston/pull/123/files",
         alreadyLinked: false,
+        tracking: "ok",
       });
       expect(yield* Ref.get(harness.commands)).toMatchObject([
         {
@@ -260,6 +290,75 @@ describe("pull request toolkit handlers", () => {
           source: "agent",
         },
       ]);
+    }),
+  );
+
+  const bitbucketFailure = (reason: "missing-tool" | "rate-limited" | "not-found") =>
+    new PullRequestProviderError({
+      provider: SourceControlProviderKind.make("bitbucket"),
+      operation: "detail",
+      reason,
+      detail: "Bitbucket returned HTTP 404.",
+    });
+  const requirement =
+    "Bitbucket needs API credentials on the server. Add them in Settings → Source Control.";
+
+  it.effect.each(["link_pull_request", "watch_pull_request"] as const)(
+    "%s records the pull request but reports that the host cannot read it",
+    (tool) =>
+      Effect.gen(function* () {
+        const harness = yield* makeHarness({
+          read: () =>
+            Effect.fail(
+              new PullRequestUnavailableError({
+                reason: "cli-missing",
+                provider: SourceControlProviderKind.make("bitbucket"),
+                requirement,
+                cause: bitbucketFailure("missing-tool"),
+              }),
+            ),
+        });
+        const result = yield* harness.call(tool, {
+          url: "https://bitbucket.org/acme/private/pull-requests/7",
+        });
+        expect(result).toMatchObject({ number: 7, tracking: "unauthenticated" });
+        expect(result.next).toContain(requirement);
+        expect(yield* Ref.get(harness.commands)).toHaveLength(1);
+        expect(yield* Ref.get(harness.reads)).toMatchObject([
+          { projectId: PROJECT_ID, host: "bitbucket.org", repository: "acme/private", number: 7 },
+        ]);
+      }),
+  );
+
+  it.effect("reports a pull request the host does not find, or will not read yet", () =>
+    Effect.gen(function* () {
+      const operation = (reason: "not-found" | "rate-limited") =>
+        new PullRequestOperationError({
+          operation: "detail",
+          detail: "Bitbucket returned HTTP 404.",
+          ...(reason === "not-found" ? { reason } : {}),
+          cause: bitbucketFailure(reason),
+        });
+      const url = "https://bitbucket.org/acme/private/pull-requests/7";
+      const missing = yield* makeHarness({ read: () => Effect.fail(operation("not-found")) });
+      expect(yield* missing.call("watch_pull_request", { url })).toMatchObject({
+        tracking: "not-found",
+      });
+      const limited = yield* makeHarness({ read: () => Effect.fail(operation("rate-limited")) });
+      const result = yield* limited.call("watch_pull_request", { url });
+      expect(result).toMatchObject({ tracking: "rate-limited" });
+      expect(result.next).toBeUndefined();
+    }),
+  );
+
+  it.effect("does not read the host to stop a watch", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      const result = yield* harness.call("unwatch_pull_request", {
+        url: "https://github.com/example/houston/pull/9",
+      });
+      expect(result).not.toHaveProperty("tracking");
+      expect(yield* Ref.get(harness.reads)).toEqual([]);
     }),
   );
 
@@ -464,6 +563,7 @@ describe("pull request toolkit handlers", () => {
         number: 123,
         url: supplied,
         alreadyLinked: false,
+        tracking: "ok",
       });
       expect(yield* Ref.get(harness.commands)).toMatchObject([
         { type: "thread.pull-request.link", number: 123, url: supplied },

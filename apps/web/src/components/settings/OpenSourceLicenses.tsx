@@ -26,12 +26,14 @@ class LicenseManifestLoadError extends Data.TaggedError("LicenseManifestLoadErro
   readonly message: string;
 }> {}
 
+const TRAILING_SLASH = /\/$/;
+
 // Not keepAlive: a failed load must not stick for the session, so each visit to the page loads
 // the manifest again (a static asset the HTTP cache serves).
 const licenseManifestAtom = Atom.make(
   Effect.gen(function* () {
     const response = yield* HttpClient.get(
-      `${import.meta.env.BASE_URL.replace(/\/$/, "")}/third-party-licenses.json`,
+      `${import.meta.env.BASE_URL.replace(TRAILING_SLASH, "")}/third-party-licenses.json`,
     );
     if (response.status < 200 || response.status >= 300) {
       return yield* new LicenseManifestLoadError({
@@ -214,7 +216,7 @@ function LicenseHeaderAction({
 
 function LicenseManifestError({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <div className="flex flex-col items-start gap-3 px-3 py-5 sm:px-4">
+    <div className="flex flex-col items-start gap-3 px-4 py-5">
       <div className="flex flex-col gap-1">
         <h3 className="text-sm font-medium text-foreground">Open-source notices are unavailable</h3>
         <p className="max-w-[70ch] text-pretty text-xs leading-normal text-muted-foreground/80">

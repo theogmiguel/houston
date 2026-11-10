@@ -12,6 +12,7 @@ import {
   ClientSettingsPatch,
   ClaudeSettings,
   DEFAULT_SERVER_SETTINGS,
+  PROJECT_SCOPED_SERVER_SETTING_KEYS,
   globalIdleCompaction,
   idleCompactionPatch,
   requiredScopesForProjectMutation,
@@ -20,8 +21,10 @@ import {
   resolveProviderInstanceEnabled,
   ServerSettings,
   ServerSettingsPatch,
+  VoiceTranscriptionDestination,
   withIdleCompaction,
 } from "./settings.ts";
+import { SETTINGS_SECRET_MAX_BYTES } from "./settingsSecretValue.ts";
 
 const decodeClientSettings = Schema.decodeUnknownSync(ClientSettingsSchema);
 const decodeClientSettingsPatch = Schema.decodeUnknownSync(ClientSettingsPatch);
@@ -316,6 +319,21 @@ describe("resolveIdleCompaction", () => {
   });
 });
 
+describe("ClientSettings environment identification", () => {
+  it("defaults to the pill", () => {
+    expect(decodeClientSettings({}).environmentIdentificationMode).toBe("pill");
+  });
+
+  it.each(["artwork", "nightly-artwork", "dev-artwork", "pill", "none"])(
+    "still decodes the stored mode %s",
+    (mode) => {
+      expect(decodeClientSettings({ environmentIdentificationMode: mode })).toMatchObject({
+        environmentIdentificationMode: mode,
+      });
+    },
+  );
+});
+
 describe("ClientSettings notifications", () => {
   it("requires opt-in when existing settings omit notification preferences", () => {
     expect(decodeClientSettings({}).notificationMode).toBe("off");
@@ -334,6 +352,19 @@ describe("ClientSettings quit confirmation", () => {
 
     expect(settings.confirmQuit).toBe(mode);
     expect(encodeClientSettings(settings).confirmQuit).toBe(mode);
+  });
+});
+
+describe("ClientSettings animations", () => {
+  it("plays animations by default", () => {
+    expect(decodeClientSettings({}).animationsEnabled).toBe(true);
+  });
+
+  it("ignores the retired panel animation duration", () => {
+    const settings = decodeClientSettings({ panelAnimationDurationMs: 150 });
+
+    expect(settings.animationsEnabled).toBe(true);
+    expect(encodeClientSettings(settings)).not.toHaveProperty("panelAnimationDurationMs");
   });
 });
 
@@ -534,44 +565,117 @@ describe("ClientSettings microphone", () => {
     );
   });
 
-  it("follows the primary transcription environment by default", () => {
-    expect(decodeClientSettings({}).voiceTranscriptionEnvironmentId).toBeNull();
-  });
-
-  it("accepts a transcription environment selection", () => {
-    expect(
-      decodeClientSettingsPatch({ voiceTranscriptionEnvironmentId: "environment-2" })
-        .voiceTranscriptionEnvironmentId,
-    ).toBe("environment-2");
+  it("keeps dictation preferences on the device and drops the old environment pin", () => {
+    const decoded = decodeClientSettings({
+      voiceTranscriptionEnvironmentId: "environment-2",
+      speechPostProcessingEnabled: true,
+    });
+    expect(decoded).not.toHaveProperty("voiceTranscriptionEnvironmentId");
+    expect(decoded).not.toHaveProperty("speechPostProcessingEnabled");
+    expect(decoded).toMatchObject({
+      speechLanguage: "auto",
+      speechTranslateToEnglish: false,
+      speechCustomWords: [],
+      speechSilenceFiltering: true,
+      speechRemoveFillerWords: true,
+      speechPostProcessingPrompt: { mode: "default", customInstructions: "" },
+      speechCorrectionWord: "",
+    });
+    expect(() => decodeClientSettingsPatch({ speechCorrectionWord: "x".repeat(51) })).toThrow();
   });
 });
 
-describe("ServerSettings speech model", () => {
-  it("uses the recommended local transcription model by default", () => {
-    expect(DEFAULT_SERVER_SETTINGS.speechModelId).toBe(
-      "handy-computer/parakeet-unified-en-0.6b-gguf",
-    );
+describe("VoiceTranscriptionDestination", () => {
+  const decode = Schema.decodeUnknownSync(VoiceTranscriptionDestination);
+  const environmentId = "environment-1";
+
+  it("keeps decoding an environment destination", () => {
+    expect(decode({ kind: "environment", environmentId })).toEqual({
+      kind: "environment",
+      environmentId,
+    });
   });
 
-  it("starts with no custom transcription words", () => {
-    expect(DEFAULT_SERVER_SETTINGS.speechAcceleration).toBe("auto");
-    expect(DEFAULT_SERVER_SETTINGS.speechModelUnloadTimeout).toBe("min_15");
-    expect(DEFAULT_SERVER_SETTINGS.speechLanguage).toBe("auto");
-    expect(DEFAULT_SERVER_SETTINGS.speechCustomWords).toEqual([]);
-    expect(DEFAULT_SERVER_SETTINGS.speechRemoveFillerWords).toBe(true);
-    expect(DEFAULT_SERVER_SETTINGS.speechPostProcessingEnabled).toBe(false);
-    expect(DEFAULT_SERVER_SETTINGS.speechCorrectionWord).toBe("");
-    expect(DEFAULT_SERVER_SETTINGS.speechPostProcessingModelSelection).not.toBe(
-      DEFAULT_SERVER_SETTINGS.textGenerationModelSelection,
-    );
-    expect(DEFAULT_SERVER_SETTINGS.speechPostProcessingModelSelection).toMatchObject({
+  it("accepts a cloud grant per provider and requires an exact model for OpenRouter", () => {
+    for (const provider of ["openai", "xai"]) {
+      expect(decode({ kind: "cloud", environmentId, provider })).toMatchObject({ provider });
+    }
+    expect(() => decode({ kind: "cloud", environmentId, provider: "openrouter" })).toThrow();
+    expect(
+      decode({ kind: "cloud", environmentId, provider: "openrouter", model: "acme/voice-1" }),
+    ).toMatchObject({ model: "acme/voice-1" });
+    expect(() =>
+      decode({ kind: "cloud", environmentId, provider: "openrouter", model: "openrouter/auto" }),
+    ).toThrow();
+  });
+});
+
+describe("ServerSettings cloud speech credentials", () => {
+  it("defaults to no keys and accepts literals and references per provider", () => {
+    expect(DEFAULT_SERVER_SETTINGS.cloudSpeechCredentials).toEqual({
+      openai: "",
+      xai: "",
+      openrouter: "",
+    });
+    const reference = { provider: "vault", reference: "voice/key" };
+    expect(
+      decodeServerSettingsPatch({ cloudSpeechCredentials: { openai: "sk-1", xai: reference } }),
+    ).toEqual({ cloudSpeechCredentials: { openai: "sk-1", xai: reference } });
+  });
+
+  it("refuses a key over the credential bound, naming the sizes", () => {
+    const oversize = "k".repeat(SETTINGS_SECRET_MAX_BYTES + 1);
+    expect(() =>
+      decodeServerSettingsPatch({ cloudSpeechCredentials: { openrouter: oversize } }),
+    ).toThrow(`over the limit of ${SETTINGS_SECRET_MAX_BYTES} bytes`);
+  });
+});
+
+describe("ServerSettings speech", () => {
+  it("stores the model and resources on the environment", () => {
+    expect(DEFAULT_SERVER_SETTINGS).toMatchObject({
+      speechModelId: "handy-computer/parakeet-unified-en-0.6b-gguf",
+      speechAcceleration: "auto",
+      speechModelUnloadTimeout: "min_15",
+      speechProjectCustomWords: [],
+      speechPostProcessingModelSelection: null,
+    });
+    expect(DEFAULT_SERVER_SETTINGS).not.toHaveProperty("speechLanguage");
+    expect(DEFAULT_SERVER_SETTINGS).not.toHaveProperty("speechCustomWords");
+    expect(DEFAULT_SERVER_SETTINGS).not.toHaveProperty("speechPostProcessingEnabled");
+    expect(PROJECT_SCOPED_SERVER_SETTING_KEYS).toContain("speechProjectCustomWords");
+  });
+
+  it("decodes the cleanup model that older servers defaulted to as unset", () => {
+    const legacyDefault = {
+      instanceId: "codex",
       model: "gpt-6-luna",
       options: [{ id: "reasoningEffort", value: "low" }],
-    });
-    expect(DEFAULT_SERVER_SETTINGS.speechPostProcessingPrompt).toEqual({
-      mode: "default",
-      customInstructions: "",
-    });
+    };
+    expect(
+      decodeServerSettings({ speechPostProcessingModelSelection: legacyDefault })
+        .speechPostProcessingModelSelection,
+    ).toBeNull();
+    const chosen = { instanceId: "codex", model: "gpt-6-luna", options: [] };
+    expect(
+      decodeServerSettings({ speechPostProcessingModelSelection: chosen })
+        .speechPostProcessingModelSelection,
+    ).toEqual(chosen);
+    expect(
+      decodeServerSettingsPatch({ speechPostProcessingModelSelection: null })
+        .speechPostProcessingModelSelection,
+    ).toBeNull();
+  });
+
+  it("reads the retired dictation keys only through legacySpeech", () => {
+    const legacySpeech = {
+      speechLanguage: "pt",
+      speechCustomWords: [{ term: "Houston", aliases: [] }],
+      speechPostProcessingPrompt: { mode: "custom" as const, customInstructions: "Keep names." },
+    };
+    expect(decodeServerSettings({ legacySpeech }).legacySpeech).toEqual(legacySpeech);
+    expect(decodeServerSettings({ speechLanguage: "pt" })).not.toHaveProperty("speechLanguage");
+    expect(() => decodeServerSettings({ legacySpeech: { speechLanguage: "x" } })).toThrow();
   });
 });
 
@@ -581,5 +685,29 @@ describe("ClientSettings composer context strip", () => {
     expect(
       decodeClientSettings({ persistComposerContextStrip: false }).persistComposerContextStrip,
     ).toBe(false);
+  });
+});
+
+describe("ClientSettingsSchema wordWrap", () => {
+  it("defaults to no wrapping so code keeps its indentation", () => {
+    expect(decodeClientSettings({}).wordWrap).toBe(false);
+  });
+
+  it("keeps a saved choice to wrap", () => {
+    expect(decodeClientSettings({ wordWrap: true }).wordWrap).toBe(true);
+  });
+});
+
+describe("ClientSettingsSchema sidebarShowNeedsYou", () => {
+  it("leaves the section unset until the user chooses, so the device decides", () => {
+    expect(decodeClientSettings({}).sidebarShowNeedsYou).toBeUndefined();
+  });
+
+  it("keeps a saved opt-in", () => {
+    expect(decodeClientSettings({ sidebarShowNeedsYou: true }).sidebarShowNeedsYou).toBe(true);
+  });
+
+  it("keeps a saved opt-out", () => {
+    expect(decodeClientSettings({ sidebarShowNeedsYou: false }).sidebarShowNeedsYou).toBe(false);
   });
 });

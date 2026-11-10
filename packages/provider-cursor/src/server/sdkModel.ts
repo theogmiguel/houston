@@ -36,6 +36,8 @@ export function cursorSdkParameterPriority(parameterId: string): number {
   }
 }
 
+const SUFFIXED_COUNT = /^(\d+)([km])$/i;
+
 export function cursorContextWindowTokens(
   modelSelection: ModelSelection,
   models: ReadonlyArray<ServerProviderModel>,
@@ -49,7 +51,7 @@ export function cursorContextWindowTokens(
       ?.capabilities?.optionDescriptors?.find((option) => option.id === "contextWindow");
     value = getProviderOptionCurrentValue(descriptor);
   }
-  const match = /^(\d+)([km])$/i.exec(typeof value === "string" ? value.trim() : "");
+  const match = SUFFIXED_COUNT.exec(typeof value === "string" ? value.trim() : "");
   if (match === null) return undefined;
   const tokens = Number(match[1]) * (match[2]?.toLowerCase() === "m" ? 1_000_000 : 1_000);
   return Number.isSafeInteger(tokens) && tokens > 0 ? tokens : undefined;

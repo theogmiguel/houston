@@ -24,6 +24,9 @@ const GENERATED_DIRECTORIES = new Set([
 const TEST_DIRECTORIES = new Set(["__tests__", "tests", "test"]);
 const MODULE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"];
 
+const GENERATED_FILE_MARKER = /\.generated\./;
+const TEST_FILE_MARKER = /\.(?:test|spec)\./;
+
 function diffFileTier(path: string): DiffFileTier {
   const segments = path.split("/");
   const name = segments.at(-1) ?? "";
@@ -32,13 +35,13 @@ function diffFileTier(path: string): DiffFileTier {
     name.endsWith(".snap") ||
     name.endsWith(".min.js") ||
     name.endsWith(".min.css") ||
-    /\.generated\./.test(name) ||
+    GENERATED_FILE_MARKER.test(name) ||
     segments.slice(0, -1).some((segment) => GENERATED_DIRECTORIES.has(segment))
   ) {
     return "generated";
   }
   if (
-    /\.(?:test|spec)\./.test(name) ||
+    TEST_FILE_MARKER.test(name) ||
     segments.slice(0, -1).some((segment) => TEST_DIRECTORIES.has(segment))
   ) {
     return "test";
@@ -117,10 +120,12 @@ function orderByImports(
   return ordered;
 }
 
+const TEST_OR_SPEC_SUFFIX = /\.(?:test|spec)\..*$/;
+
 // `a.logic.test.ts` covers `a.logic.ts` while `a.browser.test.ts` covers `a.ts`, so the longest
 // dotted prefix that names a source file wins.
 function testedSourcePosition(path: string, sourcePositions: ReadonlyMap<string, number>): number {
-  let name = (path.split("/").at(-1) ?? "").replace(/\.(?:test|spec)\..*$/, "");
+  let name = (path.split("/").at(-1) ?? "").replace(TEST_OR_SPEC_SUFFIX, "");
   while (true) {
     const position = sourcePositions.get(name);
     if (position !== undefined) return position;

@@ -15,6 +15,8 @@ import { frozenSize } from "./sheet-paint";
 import type { SheetLayout, SheetMethods, SheetTab } from "./sheet-protocol";
 import { serveWorker, Transfer } from "./worker-rpc";
 
+const SIGNED_NUMBER_LITERAL = /^[-+][\d\s.,%\p{Sc}]+(?:e[-+]\d+)?$/iu;
+
 // One worker holds one open workbook: its engine, recalculation, display lists and the painting of its cells. The
 // window terminates the worker when the workbook closes, which is the only way the engine's memory is given back.
 
@@ -303,7 +305,5 @@ function visibleTabs(workbook: WorkbookHandle, info: SheetInfo): SheetTab[] {
  * with a sign, such as "-12.50", is safe, and quoting it would paste text instead of the number.
  */
 function literal(cell: XlsxCellRead) {
-  return (
-    cell.value.kind === "number" && /^[-+][\d\s.,%\p{Sc}]+(?:e[-+]\d+)?$/iu.test(cell.displayText)
-  );
+  return cell.value.kind === "number" && SIGNED_NUMBER_LITERAL.test(cell.displayText);
 }

@@ -14,12 +14,14 @@ const CodexModelAdapter = Schema.Struct({
 });
 const decodeCodexModelAdapter = Schema.decodeUnknownOption(CodexModelAdapter);
 
+const LEADING_V = /^v/;
+
 /** Codex catalogs omit models released after the installed CLI. */
 function codexUpdateRequiredModels(
   catalog: ModelCatalog.ProviderCatalog | undefined,
   draft: ServerProviderDraft,
 ): ReadonlyArray<ServerProviderUpdateRequiredModel> {
-  const version = draft.version?.replace(/^v/, "");
+  const version = draft.version?.replace(LEADING_V, "");
   if (!catalog || !version || parseSemver(version) === null) return [];
   const discovered = new Set(draft.models.map((model) => codexModelFamily(model.slug)));
   return catalog.models.flatMap((entry) => {

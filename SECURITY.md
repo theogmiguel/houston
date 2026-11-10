@@ -24,7 +24,8 @@ dictation. The security-sensitive surfaces include:
   address over Houston's own MCP endpoint.
 - **The browser pane's consent model** — the native browser pane your agents can drive,
   and how it confirms a destructive act before it happens.
-- **The OS keychain** — where Houston stores secrets, and never in the database or the log.
+- **The secret store** — where Houston stores secrets, one 0600 file each in a 0700
+  directory, and never in the database or the log.
 - **Network-backed features** — particularly browser automation, MCP servers and cloud
   dictation, which can transmit user-selected content to external services.
 - **Remote access** — the opt-in listener for paired phones and computers: pairing codes,

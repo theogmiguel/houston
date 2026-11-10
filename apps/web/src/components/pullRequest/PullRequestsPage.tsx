@@ -16,6 +16,7 @@ import type {
   PullRequestListInput,
   PullRequestListResult,
   PullRequestListState,
+  PullRequestSummary,
 } from "@houston-app/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
@@ -65,6 +66,8 @@ import { PullRequestCompactFilterMenu } from "./PullRequestCompactFilterMenu";
 import { INVOLVEMENT_TABS, SORT_OPTIONS, STATE_TABS } from "./pullRequestListOptions";
 import { PullRequestsColumn } from "./PullRequestsColumn";
 import { PullRequestListGroups } from "./PullRequestListGroups";
+import { pullRequestPanelReference } from "./usePullRequestDetail";
+import { usePullRequestIntentPrefetch } from "./usePullRequestIntentPrefetch";
 import {
   usePullRequestDisplayGroups,
   usePullRequestQueryFilters,
@@ -95,7 +98,6 @@ import { useStableCallback } from "~/hooks/useStableCallback";
 import { useOpenPanelPullRequestUrl } from "~/hooks/useOpenPanelPullRequestUrl";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { toastManager } from "../ui/toast";
-import { usePanelAnimationSettings, usePanelPresence } from "~/panelAnimations";
 import {
   PULL_REQUESTS_PANEL_REF,
   selectActiveRightPanelSurface,
@@ -105,6 +107,7 @@ import {
   type PullRequestSurface,
 } from "~/rightPanelStore";
 import { useSidebarProjectGroups } from "~/hooks/useSidebarProjectGroups";
+import { useIsPhone } from "~/mobile/usePhone";
 import {
   pullRequestEnvironment,
   usePullRequestList,
@@ -146,6 +149,7 @@ const EMPTY_PREVIEW_DESKTOP_STATE = {};
 const EMPTY_TERMINAL_LABELS = new Map<string, string>();
 const EMPTY_PENDING_SURFACES = new Set<string>();
 export function PullRequestsPage() {
+  const isPhone = useIsPhone();
   const search = useSearch({ from: "/_chat/pull-requests" });
   const sort = search.sort ?? "ready";
   const statsPolicy: PullRequestStatsPolicy =
@@ -213,22 +217,9 @@ export function PullRequestsPage() {
   const selectedPullRequestSurface =
     selectedRightPanelSurface?.kind === "pull-request" ? selectedRightPanelSurface : null;
   const activePullRequestSurface = rightPanelState.isOpen ? selectedPullRequestSurface : null;
-  const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
-    usePanelAnimationSettings();
-  const rightPanelPresenceValue = {
-    activeSurface: selectedPullRequestSurface,
-    surfaces: rightPanelState.surfaces,
-  };
-  const rightPanelPresence = usePanelPresence(
-    rightPanelState.isOpen && selectedPullRequestSurface !== null,
-    rightPanelPresenceValue,
-    panelAnimationsActive,
-    rightPanelRef?.threadId ?? null,
-    panelAnimationDurationMs,
-  );
-  const rightPanelPresent = rightPanelPresence.present;
-  const renderedPullRequestSurface = rightPanelPresence.value?.activeSurface ?? null;
-  const renderedRightPanelSurfaces = rightPanelPresence.value?.surfaces ?? [];
+  const rightPanelPresent = rightPanelState.isOpen && selectedPullRequestSurface !== null;
+  const renderedPullRequestSurface = rightPanelPresent ? selectedPullRequestSurface : null;
+  const renderedRightPanelSurfaces = rightPanelPresent ? rightPanelState.surfaces : [];
   const panelEnvironmentId =
     (renderedPullRequestSurface?.environmentId as EnvironmentId | undefined) ??
     selectedProject?.environmentId ??
@@ -468,9 +459,10 @@ export function PullRequestsPage() {
   const overrideEntry = (
     entry: EnvironmentPullRequestEntry,
     action: PullRequestAction,
+    reply?: PullRequestSummary,
   ): number | null => {
     const token = ++overrideToken.current;
-    const override = pullRequestOverrideAfterAction(entry, action, new Date(), token);
+    const override = pullRequestOverrideAfterAction(entry, action, new Date(), token, reply);
     if (override === null) return null;
     setOverrides((current) => new Map(current).set(pullRequestEntryKey(entry), override));
     return token;
@@ -485,13 +477,17 @@ export function PullRequestsPage() {
     });
   };
   const detailOverrideTokens = useRef(new Map<string, number | null>());
-  const onSpeedAction = useStableCallback(({ entry, action }: PullRequestSpeedActionResult) => {
-    // Some hosts accept a merge before it completes. Let the next host read declare it merged.
-    if (action !== "merge") overrideEntry(entry, action);
-  });
-  const onBatchClosed = useStableCallback((entry: EnvironmentPullRequestEntry) => {
-    onSpeedAction({ entry, action: "close" });
-  });
+  const onSpeedAction = useStableCallback(
+    ({ entry, action, reply }: PullRequestSpeedActionResult) => {
+      // Some hosts accept a merge before it completes. Without a reply, let the next read say so.
+      if (reply !== undefined || action !== "merge") overrideEntry(entry, action, reply);
+    },
+  );
+  const onBatchClosed = useStableCallback(
+    (entry: EnvironmentPullRequestEntry, reply: PullRequestSummary | undefined) => {
+      onSpeedAction({ entry, action: "close", reply });
+    },
+  );
   const { close: closeBatch, closingKeys } = usePullRequestCloseBatch(onBatchClosed);
   const [snapshotEnvironmentKey, setSnapshotEnvironmentKey] = useState("");
   if (environmentKey.length > 0 && snapshotEnvironmentKey !== environmentKey) {
@@ -1056,7 +1052,8 @@ export function PullRequestsPage() {
   );
   const rightPanelAvailable = selectedPullRequestSurface !== null;
   const [maximized, setMaximized] = useState(false);
-  const rightPanelMaximized = rightPanelState.isOpen && maximized;
+  // The phone has no room for a split: an open pull request takes the page.
+  const rightPanelMaximized = rightPanelState.isOpen && (maximized || isPhone);
   if (!rightPanelState.isOpen && maximized) setMaximized(false);
   const toggleRightPanelMaximized = () => {
     if (rightPanelState.isOpen) setMaximized((value) => !value);
@@ -1101,11 +1098,15 @@ export function PullRequestsPage() {
           },
     );
 
+  const closeRightPanel = () => {
+    if (rightPanelRef === null) return;
+    useRightPanelStore.getState().close(rightPanelRef);
+    updateSearch(clearedSelection);
+  };
   const toggleRightPanel = () => {
     if (rightPanelRef === null) return;
     if (rightPanelState.isOpen) {
-      useRightPanelStore.getState().close(rightPanelRef);
-      updateSearch(clearedSelection);
+      closeRightPanel();
       return;
     }
     if (selectedPullRequestSurface === null) return;
@@ -1123,6 +1124,9 @@ export function PullRequestsPage() {
     ),
   );
 
+  const prefetchEntry = usePullRequestIntentPrefetch((entry) =>
+    listedPullRequestsBySurface.has(pullRequestListEntryId(entry)),
+  );
   const selectEntry = (entry: PullRequestRowTarget) => {
     if (rightPanelRef === null) return;
     useRightPanelStore.getState().openPullRequest(rightPanelRef, entry);
@@ -1289,6 +1293,7 @@ export function PullRequestsPage() {
           showProvider={showProvider}
           statsRef={registerStatsRow}
           onSelect={selectEntry}
+          onIntent={prefetchEntry}
           hostActionsOf={hostActionsOf}
           onActed={onSpeedAction}
           closingKeys={closingKeys}
@@ -1432,16 +1437,7 @@ export function PullRequestsPage() {
     rightPanelControl: !pullRequestsSupported ? null : (
       <span
         aria-hidden
-        className={cn(
-          "shrink-0",
-          rightPanelState.isOpen ? "-ml-3 w-0" : "w-7 sm:w-5",
-          panelAnimationsActive && "transition-[width,margin] ease-out",
-        )}
-        style={
-          panelAnimationsActive
-            ? { transitionDuration: `${panelAnimationDurationMs}ms` }
-            : undefined
-        }
+        className={cn("shrink-0", rightPanelState.isOpen ? "-ml-3 w-0" : "w-7 sm:w-5")}
       />
     ),
     titlebarControls:
@@ -1462,6 +1458,7 @@ export function PullRequestsPage() {
     maximizedAway: rightPanelMaximized,
     listBody,
     scrollRef,
+    phone: isPhone,
   };
 
   const activateSurface = (surface: PullRequestSurface) => {
@@ -1560,9 +1557,9 @@ export function PullRequestsPage() {
   }, [keybindings]);
 
   return (
-    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
+    <SidebarInset className="min-h-0 overflow-hidden overscroll-y-none">
       <div className="relative flex min-h-0 flex-1">
-        {pullRequestsSupported && rightPanelPresent ? openPanelControls : null}
+        {pullRequestsSupported && rightPanelPresent && !isPhone ? openPanelControls : null}
         <PullRequestsColumn {...columnProps} />
 
         {rightPanelPresent && renderedPullRequestSurface && panelEnvironmentId !== null ? (
@@ -1570,6 +1567,7 @@ export function PullRequestsPage() {
             mode="inline"
             open={rightPanelState.isOpen}
             maximized={rightPanelMaximized}
+            hideTabBar={isPhone}
             keybindings={keybindings}
             getShortcutContext={getShortcutContext}
             widthStorageKey="houston:pull-request-panel-width"
@@ -1620,10 +1618,12 @@ export function PullRequestsPage() {
               swapKey={renderedPullRequestSurface.id}
               className="flex min-h-0 flex-1 flex-col"
               contentClassName="flex min-h-0 flex-1 flex-col"
+              innerClassName="max-phone:flex max-phone:min-h-0 max-phone:flex-1 max-phone:flex-col"
             >
               <PullRequestDetailPanel
                 getShortcutContext={getShortcutContext}
                 shortcutsEnabled={activePullRequestSurface?.id === renderedPullRequestSurface.id}
+                {...(isPhone ? { onBack: closeRightPanel } : {})}
                 environmentId={panelEnvironmentId}
                 onGuideShown={onGuideShown}
                 onSelectPullRequest={(reference) => {
@@ -1643,14 +1643,10 @@ export function PullRequestsPage() {
                     selectedEnvironmentId: panelEnvironmentId,
                   });
                 }}
-                reference={{
+                reference={pullRequestPanelReference({
+                  ...renderedPullRequestSurface,
                   projectId: renderedPullRequestSurface.projectId as ProjectId,
-                  repository: renderedPullRequestSurface.repository,
-                  number: renderedPullRequestSurface.number,
-                  ...(renderedPullRequestSurface.host
-                    ? { host: renderedPullRequestSurface.host }
-                    : {}),
-                }}
+                })}
                 listEntry={
                   listedPullRequestsBySurface.get(
                     pullRequestListEntryId(renderedPullRequestSurface),
@@ -1658,12 +1654,19 @@ export function PullRequestsPage() {
                 }
                 refreshToken={detailRefreshToken}
                 tabOnPage
-                onActed={(action, phase = "done") => {
+                onActed={(action, phase = "done", reply) => {
                   // From every row held, not the ones on screen: a pull request closed from an open
                   // list has left the screen, and reopening it has to find it anyway.
                   const acted = heldPullRequestsBySurface.get(
                     pullRequestListEntryId(renderedPullRequestSurface),
                   );
+                  if (reply !== undefined) {
+                    if (acted !== undefined) {
+                      if (action !== undefined) overrideEntry(acted, action, reply);
+                      detailOverrideTokens.current.delete(pullRequestEntryKey(acted));
+                    }
+                    return;
+                  }
                   const stateOnly =
                     action !== undefined &&
                     acted !== undefined &&

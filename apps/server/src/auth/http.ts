@@ -17,6 +17,7 @@ import {
   EnvironmentScopeRequiredError,
   EnvironmentAuthenticatedAuth,
   EnvironmentAuthenticatedPrincipal,
+  mcpClientScopes,
 } from "@houston-app/contracts";
 import type { AuthEnvironmentScope, DpopFailureReason } from "@houston-app/contracts";
 import { parseOAuthScope } from "@houston-app/shared/oauthScope";
@@ -49,13 +50,15 @@ const appendDpopChallengeHeader = HttpEffect.appendPreResponseHandler((_request,
   Effect.succeed(HttpServerResponse.setHeader(response, "www-authenticate", "DPoP")),
 );
 
+const USES_DPOP_PATTERN = /^DPoP /i;
+
 const appendDpopChallengeOnUnauthorized =
   /* Request instrumentation already owns the span; keep this helper in that context. */
   Effect.fnUntraced(function* (error: EnvironmentAuthInvalidError) {
     const request = yield* HttpServerRequest.HttpServerRequest;
     const usesDpop =
       (request.originalUrl.startsWith("/oauth/token") && request.headers.dpop !== undefined) ||
-      request.headers.authorization?.startsWith("DPoP ") === true;
+      USES_DPOP_PATTERN.test(request.headers.authorization ?? "");
     if (usesDpop) {
       yield* appendDpopChallengeHeader;
     }
@@ -438,7 +441,9 @@ export const layer = HttpApiBuilder.group(
           function* (args) {
             yield* annotateEnvironmentRequest(args.endpoint.name);
             const session = yield* requireEnvironmentScope(AuthAccessWriteScope);
-            const delegatedScopes = args.payload.scopes ?? AuthStandardClientScopes;
+            const delegatedScopes = args.payload.access
+              ? mcpClientScopes(args.payload.access)
+              : (args.payload.scopes ?? AuthStandardClientScopes);
             if (
               delegatedScopes.length === 0 ||
               new Set<AuthEnvironmentScope>(delegatedScopes).size !== delegatedScopes.length

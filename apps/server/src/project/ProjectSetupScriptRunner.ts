@@ -150,13 +150,12 @@ function completionSentinelPattern(token: string): RegExp {
   return new RegExp(`${COMPLETION_SENTINEL_PREFIX}_${token}:(-?\\d+)`);
 }
 
+const ANSI_ESCAPE_SEQUENCE =
+  /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Za-z0-9]|\x1b[=>]/g;
+const CONTROL_CHARACTER = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g;
+
 function stripTerminalControl(text: string): string {
-  return text
-    .replace(
-      /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Za-z0-9]|\x1b[=>]/g,
-      "",
-    )
-    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "");
+  return text.replace(ANSI_ESCAPE_SEQUENCE, "").replace(CONTROL_CHARACTER, "");
 }
 
 // Line editors (zsh, fish, bash 5.1+) enable bracketed paste when they start reading a command.
@@ -173,13 +172,18 @@ function lineEditorReading(text: string, previous: boolean): boolean {
 
 type CompletionShell = "posix" | "fish" | "powershell";
 
+const PATH_SEPARATOR = /[/\\]/;
+const EXE_SUFFIX = /\.exe$/;
+
 function resolveCompletionShell(shell: string): CompletionShell | null {
-  const name = (shell.split(/[/\\]/).at(-1) ?? shell).toLowerCase().replace(/\.exe$/, "");
+  const name = (shell.split(PATH_SEPARATOR).at(-1) ?? shell).toLowerCase().replace(EXE_SUFFIX, "");
   if (name === "cmd") return null;
   if (name === "fish") return "fish";
   if (name === "pwsh" || name === "powershell") return "powershell";
   return "posix";
 }
+
+const LINE_BREAK = /\r?\n/g;
 
 // A block with its own closing line protects the sentinel from trailing comments, heredocs and scripts reading stdin.
 function wrapCommandForCompletion(
@@ -187,7 +191,7 @@ function wrapCommandForCompletion(
   shell: CompletionShell,
   sentinel: string,
 ): string {
-  const body = command.replace(/\r?\n/g, "\r");
+  const body = command.replace(LINE_BREAK, "\r");
   switch (shell) {
     case "powershell":
       return `$global:LASTEXITCODE = $null; & {\r${body}\r}; if ($null -ne $LASTEXITCODE) { $__houstonc = $LASTEXITCODE } elseif ($?) { $__houstonc = 0 } else { $__houstonc = 1 }; Write-Host "${sentinel}$__houstonc"`;
@@ -197,6 +201,8 @@ function wrapCommandForCompletion(
       return `( ${body}\r); printf '\\n${sentinel}%s\\n' "$?"`;
   }
 }
+
+const ANY_LINE_BREAK = /\r\n|\r|\n/;
 
 /** @public */
 export const make = Effect.gen(function* () {
@@ -262,7 +268,7 @@ export const make = Effect.gen(function* () {
         if (event.type === "output") {
           lineBuffer += event.data;
           // Bare CR redraws progress in place; split redraws instead of growing one line.
-          const lines = lineBuffer.split(/\r\n|\r|\n/);
+          const lines = lineBuffer.split(ANY_LINE_BREAK);
           lineBuffer = lines.pop() ?? "";
           // Bound newline-free output; the sentinel has its own line, so retaining the tail is safe.
           if (lineBuffer.length > PARTIAL_LINE_MAX_LENGTH) {
@@ -471,6 +477,7 @@ export const make = Effect.gen(function* () {
         .open({
           threadId: input.threadId,
           terminalId,
+          stopOnSettle: script.stopOnSettle ?? false,
           cwd,
           worktreePath: input.worktreePath,
           env: { ...env, NO_COLOR: "1", FORCE_COLOR: "0" },

@@ -5,7 +5,14 @@ export type VoiceTranscriptionOptions = {
 
 export type PreparedVoiceTranscription = {
   readonly locale: string;
+  /**
+   * Runs alongside capture once recording starts. Resolves with the transcript when it
+   * transcribed live, or null when `transcribe` still runs after the recording stops.
+   * A rejection stops the recording.
+   */
+  readonly start?: (uri: string, options: VoiceTranscriptionOptions) => Promise<string | null>;
   readonly transcribe: (uri: string, options: VoiceTranscriptionOptions) => Promise<string>;
+  /** Present when audio streams during capture; `finish` then replaces `transcribe`. */
   readonly streaming?: VoiceStreamingSession;
 };
 

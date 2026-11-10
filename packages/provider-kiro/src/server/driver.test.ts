@@ -1,9 +1,10 @@
 import { assert, describe, it } from "@effect/vitest";
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import { KiroSettings } from "../settings.ts";
 import { buildKiroAcpSpawnInput } from "./acpSupport.ts";
-import { kiroAuthFromWhoami } from "./status.ts";
+import { buildInitialKiroProviderSnapshot, kiroAuthFromWhoami } from "./status.ts";
 
 const decodeSettings = Schema.decodeUnknownSync(KiroSettings);
 
@@ -23,6 +24,13 @@ describe("KiroDriver", () => {
     assert.deepEqual(custom.args, ["acp", "--agent-engine=v3", "--auth-method=cli"]);
     assert.deepEqual(custom.env, { KIRO_API_KEY: "ksk_test" });
   });
+
+  it.effect("is kept out of the text generation model picker", () =>
+    Effect.gen(function* () {
+      const snapshot = yield* buildInitialKiroProviderSnapshot(decodeSettings({}));
+      assert.equal(snapshot.supportsTextGeneration, false);
+    }),
+  );
 
   // Outputs recorded from `kiro-cli whoami --format json` on Kiro CLI 2.27.0.
   it("reads the sign-in state from kiro-cli whoami", () => {

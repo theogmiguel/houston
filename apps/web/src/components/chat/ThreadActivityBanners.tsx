@@ -2,8 +2,10 @@ import type {
   EnvironmentId,
   OrchestrationV2PendingBackgroundTask,
   OrchestrationV2ProviderGoal,
+  OrchestrationV2ProviderSession,
   ThreadId,
 } from "@houston-app/contracts";
+import { RUNNING_INK_CLS } from "../ui/work-log-recipes";
 import type {
   EnvironmentThreadShell,
   ThreadStructure,
@@ -32,6 +34,19 @@ import { Button, InlineButton } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { ComposerBannerStackItem } from "./ComposerBannerStack";
 import type { ThreadNowItem } from "./ThreadNow";
+import { THREAD_NOW_DETAIL_ACTIVITY_CLS } from "../ui/thread-now-recipes";
+
+export function extensionStatusBannerItem(
+  statuses: NonNullable<OrchestrationV2ProviderSession["extensionStatuses"]>,
+): ComposerBannerStackItem | null {
+  if (statuses.length === 0) return null;
+  return {
+    id: "pi-extension-status",
+    variant: "default",
+    icon: <span>▸</span>,
+    title: <output>{`Pi · ${statuses.map((status) => status.text).join(" · ")}`}</output>,
+  };
+}
 
 /** Subagents and side chats waiting on the user, unless the parent is itself waiting on them. */
 export function childInputNowItem(input: {
@@ -151,6 +166,8 @@ export function runStopNowItem(input: {
   };
 }
 
+const WHITESPACE_RUN = /\s+/gu;
+
 /** Background commands and subagents, for the end of the timeline. */
 export function backgroundWorkNowItem(input: {
   readonly threadId: ThreadId;
@@ -172,16 +189,12 @@ export function backgroundWorkNowItem(input: {
     const subagent = item?.type === "subagent" ? item : undefined;
     return {
       task,
-      activity: subagent?.progress?.replace(/\s+/gu, " ").trim() || null,
+      activity: subagent?.progress?.replace(WHITESPACE_RUN, " ").trim() || null,
       startedAtMs: item?.startedAt ? DateTime.toEpochMillis(item.startedAt) : null,
-      updatedAtMs: subagent ? DateTime.toEpochMillis(subagent.updatedAt) : 0,
       childThreadId: task.childThreadId ?? subagent?.childThreadId ?? undefined,
     };
   });
   const [only] = rows.length === 1 ? rows : [];
-  const newest = rows
-    .filter((row) => row.activity)
-    .toSorted((left, right) => right.updatedAtMs - left.updatedAtMs)[0];
   const isCommand = (row: (typeof rows)[number]) => row.task.kind !== "subagent";
   const verb = presentation.waiting ? "Waiting on" : "Running";
   const onlyThreadId = only?.childThreadId;
@@ -191,7 +204,7 @@ export function backgroundWorkNowItem(input: {
     icon: rows.every(isCommand) ? <TerminalIcon /> : <CircleDashedIcon />,
     title: only ? (
       <>
-        <span className="text-(--accent-ink)">{verb}</span>{" "}
+        <span className={RUNNING_INK_CLS}>{verb}</span>{" "}
         <span
           className={cn(
             isCommand(only) && "font-mono in-data-[slot=popover-popup]:whitespace-pre-wrap",
@@ -203,15 +216,21 @@ export function backgroundWorkNowItem(input: {
     ) : (
       presentation.title
     ),
-    description: only ? (
-      only.activity
-    ) : newest ? (
-      `${newest.task.label}: ${newest.activity}`
-    ) : rows.every(isCommand) ? (
-      <span className="font-mono">{rows.map((row) => row.task.label).join(", ")}</span>
-    ) : (
-      rows.map((row) => row.task.label).join(", ")
-    ),
+    description: only ? only.activity : undefined,
+    ...(only
+      ? {}
+      : {
+          details: rows.map((row) => (
+            <span key={row.task.taskId} className={cn(isCommand(row) && "font-mono")}>
+              {row.task.label}
+              {row.activity ? (
+                <span className={THREAD_NOW_DETAIL_ACTIVITY_CLS}> · {row.activity}</span>
+              ) : null}
+            </span>
+          )),
+          detailsLabel: `Show details: ${presentation.title}`,
+        }),
+    spaced: true,
     actions: (
       <>
         {startedAtMs === null ? null : (

@@ -1,8 +1,24 @@
-import { type ReactNode } from "react";
+import { type ReactNode, use } from "react";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
+import {
+  RESTART_NOTE_LIST_CLS,
+  RESTART_NOTE_TIME_CLS,
+  RESTART_NOTE_TITLE_CLS,
+  RESTART_NOTE_TRIGGER_CLS,
+  RUNNING_GLYPH_CLS,
+  RUNNING_INK_CLS,
+} from "../ui/work-log-recipes";
+import { observeVisibleAnimation } from "~/lib/visibleAnimation";
+import { GLYPH_BOX_CLASS, GLYPH_BOX_SPIN_CLASS, splitGlyphSize } from "../ui/spinner";
 import { type TimestampFormat } from "@houston-app/contracts/settings";
-import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../timestampFormat";
+import {
+  formatChatTimestampTooltip,
+  formatDayAwareTimestamp,
+  formatShortTimestamp,
+} from "../../timestampFormat";
+import type { TimelineRestartNote } from "./MessagesTimeline.logic";
+import { TimelineRowCtx } from "./timelineRowContext";
 
 export const MESSAGE_HEADING_LEVEL = 3;
 
@@ -70,27 +86,90 @@ const STREAMING_DOTS = Array.from({ length: STREAMING_DOT_COUNT }, (_, index) =>
  * are geometry rather than a dashed stroke so the gap survives every webview and
  * the paint comes from CSS, not an SVG presentation attribute.
  */
-export function StreamingGlyph({ className }: { className?: string }) {
+export function StreamingGlyph({
+  className,
+  statusKind,
+}: {
+  className?: string | undefined;
+  /** Set where the ring stands for a thread's status, so the mark names its kind. */
+  statusKind?: string | undefined;
+}) {
+  const [boxClassName, glyphSize] = splitGlyphSize(className);
   return (
-    <svg
+    <span
       aria-hidden="true"
+      data-slot="glyph-box"
       data-streaming-glyph=""
-      viewBox="0 0 14 14"
+      {...(statusKind === undefined ? {} : { "data-status-kind": statusKind })}
+      ref={observeVisibleAnimation}
       className={cn(
-        "size-3.5 shrink-0 animate-spin text-(--accent-ink) [animation-duration:1.1s] motion-reduce:animate-none",
-        className,
+        GLYPH_BOX_CLASS,
+        GLYPH_BOX_SPIN_CLASS,
+        "motion-safe:[animation-duration:1.1s]",
+        statusKind === undefined ? RUNNING_INK_CLS : RUNNING_GLYPH_CLS,
+        boxClassName,
       )}
     >
-      {STREAMING_DOTS.map((dot, index) => (
-        <circle
-          key={index}
-          data-streaming-dot=""
-          cx={dot.cx}
-          cy={dot.cy}
-          r={STREAMING_DOT_RADIUS}
-          style={{ fill: "currentColor" }}
-        />
-      ))}
-    </svg>
+      <svg viewBox="0 0 14 14" className={cn("size-3.5", glyphSize)}>
+        {STREAMING_DOTS.map((dot, index) => (
+          <circle
+            key={index}
+            data-streaming-dot=""
+            cx={dot.cx}
+            cy={dot.cy}
+            r={STREAMING_DOT_RADIUS}
+            style={{ fill: "currentColor" }}
+          />
+        ))}
+      </svg>
+    </span>
+  );
+}
+
+/**
+ * The note a turn carries when it resumed after a restart. The thread's other restarts are not
+ * repeated on their turns; the tooltip lists each one with its time.
+ */
+export function RestartNoteTrigger({
+  note,
+  className,
+  prefix = "· ",
+}: {
+  note: TimelineRestartNote;
+  className?: string;
+  prefix?: string;
+}) {
+  const timestampFormat = (use(TimelineRowCtx) as { timestampFormat?: TimestampFormat } | null)
+    ?.timestampFormat;
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <span
+            tabIndex={0}
+            data-restart-note=""
+            className={cn(RESTART_NOTE_TRIGGER_CLS, className)}
+            onClick={(event) => event.stopPropagation()}
+          />
+        }
+      >
+        {prefix}
+        {note.label}
+      </TooltipTrigger>
+      <TooltipPopup>
+        <span className={RESTART_NOTE_TITLE_CLS}>
+          {note.restarts.length === 1
+            ? "Restarted once"
+            : `Restarted ${note.restarts.length} times`}
+        </span>
+        <ul className={RESTART_NOTE_LIST_CLS}>
+          {note.restarts.map((restart) => (
+            <li key={restart.at} className={RESTART_NOTE_TIME_CLS} data-restart-time="">
+              {formatShortTimestamp(restart.at, timestampFormat ?? "locale")}
+            </li>
+          ))}
+        </ul>
+      </TooltipPopup>
+    </Tooltip>
   );
 }

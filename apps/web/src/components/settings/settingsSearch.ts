@@ -107,6 +107,34 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/archived": "Archive",
 };
 
+/** The one line under each page's title. */
+export const SETTINGS_SECTION_DESCRIPTIONS: Readonly<Record<SettingsPath, string>> = {
+  "/settings/diagnostics": "Telemetry export and the data this app can send out.",
+  "/settings/projects": "How each project runs agents and what its actions do.",
+  "/settings/general": "Project grouping, notifications, time format and confirmations.",
+  "/settings/voice": "Dictation shortcut, microphone and transcription models.",
+  "/settings/appearance": "Theme, contrast, chat width and motion.",
+  "/settings/chat": "Composer behavior, send shortcut and slash menu.",
+  "/settings/diffs": "How changes and pull requests are shown.",
+  "/settings/keybindings": "Keyboard shortcuts for commands.",
+  "/settings/snap-shot": "Capture shortcut and what a SnapShot includes.",
+  "/settings/providers": "Agent providers, their health and usage limits.",
+  "/settings/threads": "Default model, permissions and what happens when limits hit.",
+  "/settings/browser": "Agent browser access, profiles and recording.",
+  "/settings/devices": "Devices that agents can drive.",
+  "/settings/scheduled-tasks": "Prompts that run on a schedule.",
+  "/settings/source-control": "Pull, merge and writing defaults for source control.",
+  "/settings/worktrees": "Where worktrees live and when they are cleaned up.",
+  "/settings/connections": "Linked environments and how work is balanced across them.",
+  "/settings/task-sources": "Slack and tracker sources that feed tasks.",
+  "/settings/access": "Network access and who can reach this server.",
+  "/settings/secrets": "Providers that supply secrets to agents.",
+  "/settings/maintenance": "Storage cleanup, update checks and background activity.",
+  "/settings/labs": "Early features that may change.",
+  "/settings/about": "Version and open source licenses.",
+  "/settings/archived": "Threads you archived.",
+};
+
 /** Sidebar order. A group without a heading is set apart by space alone. */
 export const SETTINGS_NAV_GROUPS: ReadonlyArray<{
   readonly heading: string | null;
@@ -268,7 +296,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "project-overview",
     title: "Project overview",
     to: "/settings/projects",
-    searchTerms: ["name icon emoji image checkout remove delete"],
+    searchTerms: ["name checkout remove delete"],
   },
   {
     id: "default-model",
@@ -320,7 +348,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "setting-glass-opacity",
     title: "Glass opacity",
     to: "/settings/appearance",
-    searchTerms: ["transparent transparency solid menus dialogs composer"],
+    searchTerms: ["transparent transparency solid translucent banners alerts composer"],
   },
   {
     id: "diff-color-scheme",
@@ -355,15 +383,16 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["latex tex katex equations formulas markdown"],
   },
   {
-    id: "panel-animations",
-    title: "Panel animations",
+    id: "animations",
+    title: "Animations",
     to: "/settings/appearance",
+    searchTerms: ["motion reduce transitions menus dialogs panels"],
   },
   {
     id: "environment-identification",
     title: "Environment identification",
     to: "/settings/appearance",
-    searchTerms: ["dev channel artwork pill label hide none"],
+    searchTerms: ["dev nightly channel pill label hide none"],
     targetId: "appearance-interface",
   },
   {
@@ -452,6 +481,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/labs",
     scope: "environment",
     searchTerms: ["beta link another machine vps peer agents work there delegate"],
+  },
+  {
+    id: "prompt-suggestions-beta",
+    title: "Suggest next prompt",
+    to: "/settings/labs",
+    scope: "environment",
+    searchTerms: ["beta tab autocomplete predict next message claude codex ghost text"],
   },
   {
     id: "simlock-hosts",
@@ -630,6 +666,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["add project base directory folder browser path home"],
   },
   {
+    id: "host-folder-clone-layout",
+    title: "Clone into host folders",
+    to: "/settings/threads",
+    scope: "environment-defaults",
+    searchTerms: ["clone destination host owner repository root layout"],
+  },
+  {
     id: "unpin-confirmation",
     title: "Unpin confirmation",
     to: "/settings/general",
@@ -652,6 +695,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Quit shortcut",
     to: "/settings/general",
     searchTerms: ["quit ctrl q hold press twice direct confirmation"],
+    desktopOnly: true,
   },
   {
     id: "keep-in-tray",
@@ -675,84 +719,102 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["generated thread titles prompt custom style naming rename regenerate"],
   },
   {
+    id: "voice-transcription-destination",
+    title: "Transcribe with",
+    to: "/settings/voice",
+    searchTerms: [
+      "send microphone audio speech voice dictation stt transcription environment machine consent privacy cloud OpenAI Grok xAI OpenRouter API key",
+    ],
+  },
+  {
+    id: "voice-microphone",
+    title: "Microphone",
+    to: "/settings/voice",
+    searchTerms: ["mic input audio device"],
+  },
+  {
+    id: "microphone-test",
+    title: "Test microphone",
+    to: "/settings/voice",
+    searchTerms: ["test mic audio playback loopback record input level"],
+  },
+  {
     id: "dictation-shortcut-mode",
-    title: "Dictation shortcut mode",
+    title: "Dictation shortcut",
     to: "/settings/voice",
     searchTerms: ["speech voice keyboard hotkey hold toggle auto"],
   },
   {
-    id: "transcription-environment",
-    title: "Transcription environment",
+    id: "speech-language",
+    title: "Transcription language",
     to: "/settings/voice",
-    desktopOnly: true,
-    searchTerms: ["speech voice stt server machine device"],
+    searchTerms: ["speech voice translate english auto detect"],
   },
   {
-    id: "local-voice-input",
+    id: "speech-models",
     title: "Transcription models",
     to: "/settings/voice",
-    desktopOnly: true,
-    searchTerms: ["speech voice stt download local whisper parakeet canary moonshine"],
+    searchTerms: [
+      "speech voice stt download whisper parakeet canary accuracy speed benchmark languages",
+    ],
   },
   {
-    id: "microphone",
-    title: "Microphone",
+    id: "transcription-test",
+    title: "Test model",
     to: "/settings/voice",
-    desktopOnly: true,
+    searchTerms: ["test voice speech model transcription recognition"],
   },
   {
-    id: "dictionary",
-    title: "Dictionary",
+    id: "speech-silence-filtering",
+    title: "Silence filtering",
     to: "/settings/voice",
-    desktopOnly: true,
-    searchTerms: ["speech voice transcription vocabulary names glossary"],
+    searchTerms: ["voice speech vad silero pauses noise"],
   },
   {
     id: "remove-filler-words",
     title: "Remove filler words",
     to: "/settings/voice",
-    desktopOnly: true,
     searchTerms: ["voice speech transcription hesitation um uh cleanup"],
   },
   {
-    id: "speech-acceleration",
-    title: "Transcription acceleration",
+    id: "speech-dictionary",
+    title: "Dictionary",
     to: "/settings/voice",
-    searchTerms: ["voice speech gpu cpu hardware transcription"],
+    searchTerms: ["speech voice transcription vocabulary names glossary alias"],
   },
   {
-    id: "speech-model-unload",
-    title: "Model unload",
+    id: "speech-project-dictionary",
+    title: "Project dictionary",
     to: "/settings/voice",
-    searchTerms: ["voice speech transcription memory idle timeout never"],
+    scope: "project-defaults",
+    searchTerms: [
+      "speech voice transcription vocabulary shared dictionary team environment glossary",
+    ],
   },
   {
     id: "speech-post-processing",
-    title: "Voice post-processing",
+    title: "Clean up transcripts with a provider",
     to: "/settings/voice",
-    searchTerms: ["speech transcription polish clean provider"],
-    desktopOnly: true,
+    searchTerms: ["speech transcription polish clean provider prompt post-processing"],
   },
   {
     id: "speech-post-processing-model",
-    title: "Voice post-processing model",
+    title: "Cleanup model",
     to: "/settings/voice",
-    searchTerms: ["speech transcription provider model"],
-    desktopOnly: true,
+    scope: "environment",
+    searchTerms: ["speech voice transcript cleanup provider model post-processing"],
   },
   {
     id: "speech-correction-word",
-    title: "Explicit correction cue",
+    title: "Correction cue",
     to: "/settings/voice",
-    searchTerms: ["speech voice self correction revise err"],
-    desktopOnly: true,
+    searchTerms: ["speech voice cleanup sorry scratch that fix mistake"],
   },
   {
-    id: "speech-post-processing-prompt",
-    title: "Voice post-processing prompt",
+    id: "speech-hardware",
+    title: "Transcription hardware and model unloading",
     to: "/settings/voice",
-    searchTerms: ["speech transcription instructions cleanup"],
-    desktopOnly: true,
+    searchTerms: ["speech voice stt advanced gpu cpu acceleration memory unload idle"],
   },
   {
     id: "app-version",
@@ -780,16 +842,24 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/about",
   },
   {
-    id: "legacy-plan-mode",
-    title: "Plan mode (legacy)",
+    id: "plan-mode",
+    title: "Plan mode",
     to: "/settings/labs",
-    searchTerms: ["build plan composer old"],
+    searchTerms: ["build plan composer"],
   },
   {
-    id: "legacy-context-window-indicator",
-    title: "Context window indicator (legacy)",
+    id: "context-window-indicator",
+    title: "Context window indicator",
     to: "/settings/labs",
-    searchTerms: ["composer meter usage tokens circle old"],
+    searchTerms: ["composer meter usage tokens circle"],
+  },
+  {
+    id: "tool-call-visibility",
+    title: "Tool calls in chat",
+    to: "/settings/labs",
+    searchTerms: [
+      "beta hide tool calls commands edits searches work log activity quiet chat zen final answers only",
+    ],
   },
   {
     id: "keybindings",
@@ -832,6 +902,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Capture sound",
     to: "/settings/snap-shot",
     targetId: "snap-shot-enabled",
+    searchTerms: ["audio style off whoosh click"],
   },
   {
     id: "snap-shot-flash",
@@ -847,10 +918,11 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "providers",
-    title: "Providers",
+    // The page is already titled Providers, so its first section names what the rows are.
+    title: "Connected agents",
     to: "/settings/providers",
     searchTerms: [
-      "agents cli codex claude cursor grok fx kiro opencode antigravity google sign in sign out install subscription instances authentication api key models configuration binary path config directory codex_home shadow home endpoint arguments environment variables display name accent color custom favorite hidden auto compact native sessions import resume",
+      "providers agents cli codex claude cursor grok fx kiro opencode antigravity google sign in sign out install subscription instances authentication api key models configuration binary path config directory codex_home shadow home endpoint arguments environment variables display name accent color custom favorite hidden auto compact native sessions import resume",
     ],
   },
   {
@@ -889,7 +961,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Device sources",
     to: "/settings/devices",
     searchTerms: [
-      "device hosts ssh remote mac mini identity key connection eas expo cloud simlock pool gateway local simulators",
+      "device hosts ssh remote mac mini identity key connection eas expo cloud simlock pool gateway local simulators xcode android studio avd",
     ],
   },
   {
@@ -897,6 +969,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Agents can use devices",
     to: "/settings/devices",
     targetId: "devices",
+    scope: "project-defaults",
     searchTerms: ["allow simulator emulator ios android drive tools sessions"],
   },
   {
@@ -905,13 +978,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/devices",
     targetId: "devices",
     searchTerms: ["device hub simulator emulator ios android install start version"],
-  },
-  {
-    id: "device-platform-support",
-    title: "Local simulators",
-    to: "/settings/devices",
-    targetId: "device-sources",
-    searchTerms: ["simulator support xcode android studio sdk avd runtime"],
   },
   {
     id: "browser-profiles",
@@ -998,9 +1064,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Remove agent credits when merging",
     to: "/settings/source-control",
     scope: "project-defaults",
-    searchTerms: [
-      `pull request ${SOURCE_CONTROL_HOST_LABELS} squash co-authored-by attribution claude codex generated`,
-    ],
+    searchTerms: ["pull request github squash co-authored-by attribution claude codex generated"],
   },
   {
     id: "pull-request-merge-method",

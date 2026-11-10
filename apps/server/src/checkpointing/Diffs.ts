@@ -5,13 +5,15 @@ export interface TurnDiffFileSummary {
   readonly deletions: number;
 }
 
+const COUNTS_PATTERN = /^(\d+|-)\t(\d+|-)\t/;
+
 export function parseTurnDiffFilesFromNumstat(numstat: string): ReadonlyArray<TurnDiffFileSummary> {
   const records = numstat.split("\0");
   const files: TurnDiffFileSummary[] = [];
 
   for (let index = 0; index < records.length; index += 1) {
     const record = records[index]!;
-    const counts = /^(\d+|-)\t(\d+|-)\t/.exec(record);
+    const counts = COUNTS_PATTERN.exec(record);
     if (!counts) continue;
 
     let path = record.slice(counts[0].length);

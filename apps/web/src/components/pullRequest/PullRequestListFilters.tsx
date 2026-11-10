@@ -99,7 +99,7 @@ export function PullRequestSearchInput({
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   return (
-    <InputGroup className="min-w-0 flex-1 **:[input]:h-9 sm:**:[input]:h-8">
+    <InputGroup className="min-w-0 flex-1 **:[input]:h-9 max-phone:**:[input]:h-11 sm:**:[input]:h-8">
       <InputGroupAddon>
         {busy ? <Spinner aria-hidden /> : <SearchIcon aria-hidden />}
       </InputGroupAddon>
@@ -557,7 +557,7 @@ export function PullRequestFiltersMenu({
   ];
   return (
     <Menu onOpenChange={onOpenChange}>
-      <MenuTrigger render={<Button variant="outline" />}>
+      <MenuTrigger render={<Button variant="outline" className="max-phone:h-11" />}>
         <ListFilterIcon className="size-4" />
         <span>Filters</span>
         {filterCount > 0 ? (

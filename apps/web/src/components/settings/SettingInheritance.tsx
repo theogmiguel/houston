@@ -164,6 +164,8 @@ export interface SettingOverridingProject extends ProjectOverrideEntry {
   readonly open: () => void;
 }
 
+const PATH_SEPARATOR = /[\\/]/;
+
 export function SettingInheritance({
   state,
   summary,
@@ -201,7 +203,10 @@ export function SettingInheritance({
     const path = scopeContext?.scope.members.find(
       (member) => member.environmentId === target.environmentId && member.id === target.projectId,
     )?.workspaceRoot;
-    const secondary = [labels.secondary, path?.split(/[\\/]/).filter(Boolean).slice(-2).join("/")]
+    const secondary = [
+      labels.secondary,
+      path?.split(PATH_SEPARATOR).filter(Boolean).slice(-2).join("/"),
+    ]
       .filter(Boolean)
       .join(" · ");
     const layers = settingInheritanceLayers(target, environment.serverConfig.settings, key);

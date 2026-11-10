@@ -15,28 +15,38 @@ function readSafeLabel(value: unknown): string | undefined {
   return typeof value === "string" && SAFE_ERROR_LABEL.test(value) ? value : undefined;
 }
 
+const POSITION_PATTERN = /(?::\d+){1,2}$/;
+
 function sanitizeStackUrl(value: string): string {
   try {
     const url = new URL(value);
+    // A frame's trailing :line:column parses as part of the query or fragment when one is present.
+    const position = POSITION_PATTERN.exec(url.hash || url.search)?.[0] ?? "";
     url.username = "";
     url.password = "";
     url.search = "";
     url.hash = "";
-    return url.toString();
+    return url.toString() + position;
   } catch {
     return value;
   }
 }
 
+const URL_IN_STACK_FRAME = /(?:https?|file):\/\/[^\s)]+/g;
+
 function sanitizeStackFrame(frame: string): string {
-  return frame.replace(/(?:https?|file):\/\/[^\s)]+/g, sanitizeStackUrl);
+  return frame.replace(URL_IN_STACK_FRAME, sanitizeStackUrl);
 }
+
+const LINE_BREAK = /\r?\n/;
+const STACK_FRAME_PREFIX = /^\s*at\s+/;
+const BROWSER_STACK_FRAME = /^[^@\s]+@(?:https?|file):\/\//;
 
 function readSafeStack(error: Error): string | undefined {
   try {
     const frames = error.stack
-      ?.split(/\r?\n/)
-      .filter((line) => /^\s*at\s+/.test(line) || /^[^@\s]+@(?:https?|file):\/\//.test(line))
+      ?.split(LINE_BREAK)
+      .filter((line) => STACK_FRAME_PREFIX.test(line) || BROWSER_STACK_FRAME.test(line))
       .slice(0, STACK_FRAME_LIMIT)
       .map(sanitizeStackFrame);
     return frames && frames.length > 0 ? frames.join("\n") : undefined;

@@ -19,11 +19,15 @@ const MODES = {
   custom: "Custom instructions",
 } satisfies Record<BranchNamingMode, string>;
 
+const TRAILING_SLASH = /\/$/u;
+const SLUG_PLACEHOLDER = /\{slug\}/gu;
+
 function parseBranchTemplate(value: string): string {
   const trimmed = value.trim();
   if (trimmed.endsWith("/{slug}")) return trimmed.slice(0, -"/{slug}".length);
-  if (trimmed.endsWith("{slug}")) return trimmed.slice(0, -"{slug}".length).replace(/\/$/u, "");
-  return trimmed.replace(/\{slug\}/gu, "").replace(/\/$/u, "");
+  if (trimmed.endsWith("{slug}"))
+    return trimmed.slice(0, -"{slug}".length).replace(TRAILING_SLASH, "");
+  return trimmed.replace(SLUG_PLACEHOLDER, "").replace(TRAILING_SLASH, "");
 }
 
 function formatBranchTemplate(prefix: string): string {
@@ -38,6 +42,9 @@ export function WorktreeBranchNamingRow() {
   const edited = useRef(false);
   const updateSettings = useUpdateScopedSettings();
   const prefixMixed = useScopedSettingsMixed(["branchNamePrefix"]);
+  const modeMixed = useScopedSettingsMixed(["branchNamingMode"]);
+  // Only the static mode reads the prefix; the other modes name branches from the model's output.
+  if (modeMixed || settings.branchNamingMode !== "static") return null;
 
   return (
     <SettingsRow

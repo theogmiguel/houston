@@ -1,7 +1,9 @@
 import { errorTag } from "@houston-app/shared/observability";
 
+const STRUCTURAL_PROTOCOL_METHOD_PATTERN = /^[A-Za-z][A-Za-z0-9._:/-]*$/;
+
 export function structuralProtocolMethod(value: string): string {
-  return value.length <= 128 && /^[A-Za-z][A-Za-z0-9._:/-]*$/.test(value) ? value : "unknown";
+  return value.length <= 128 && STRUCTURAL_PROTOCOL_METHOD_PATTERN.test(value) ? value : "unknown";
 }
 
 /** Never log payload values: they may contain secrets, prompts, or unbounded output. */

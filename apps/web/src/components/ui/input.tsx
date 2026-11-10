@@ -6,6 +6,8 @@ import { cn } from "~/lib/utils";
 type InputProps = Omit<InputPrimitive.Props & React.RefAttributes<HTMLInputElement>, "size"> & {
   size?: "compact" | "default" | "lg" | number;
   font?: "default" | "mono";
+  /** "ink" sets the placeholder at full text colour, for a field whose empty value names a default. */
+  placeholderTone?: "default" | "ink";
   unstyled?: boolean;
   nativeInput?: boolean;
 };
@@ -14,12 +16,14 @@ function Input({
   className,
   size = "default",
   font = "default",
+  placeholderTone = "default",
   unstyled = false,
   nativeInput = false,
   ...props
 }: InputProps) {
   const inputClassName = cn(
     "h-[26px] w-full min-w-0 rounded-[inherit] px-[9px] leading-[26px] outline-none placeholder:text-placeholder [transition:background-color_5000000s_ease-in-out_0s]",
+    placeholderTone === "ink" && "placeholder:text-foreground",
     size === "compact" && "h-[22px] px-2 text-xs leading-[22px]",
     size === "lg" && "h-[30px] px-[11px] leading-[30px]",
     props.type === "search" &&

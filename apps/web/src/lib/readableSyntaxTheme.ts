@@ -18,9 +18,11 @@ function contrastOnLightCode(rgb: readonly [number, number, number]): number {
   return (DARKEST_SURFACE_LUMINANCE + 0.05) / (0.2126 * r + 0.7152 * g + 0.0722 * b + 0.05);
 }
 
+const HEX_COLOR_WITH_ALPHA = /^#([0-9a-f]{6})([0-9a-f]{2})?$/i;
+
 /** Darkens a #rrggbb(aa) color in steps that keep its hue until it reads on light code. */
 export function readableOnLightCode(color: string, minContrast = MIN_CONTRAST): string {
-  const match = /^#([0-9a-f]{6})([0-9a-f]{2})?$/i.exec(color);
+  const match = HEX_COLOR_WITH_ALPHA.exec(color);
   if (!match) return color;
   let rgb = [0, 2, 4].map((start) => Number.parseInt(match[1]!.slice(start, start + 2), 16)) as [
     number,

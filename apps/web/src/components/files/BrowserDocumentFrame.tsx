@@ -69,8 +69,11 @@ const HTML_RENDER_SHORTCUT_COMMANDS: ReadonlySet<KeybindingCommand> = new Set([
   ...MODEL_PICKER_JUMP_KEYBINDING_COMMANDS,
 ]);
 
+const PDF_SUFFIX = /\.pdf$/i;
+const QUERY_OR_FRAGMENT = /[?#]/;
+
 export const isPdfPreviewFile = (path: string): boolean =>
-  /\.pdf$/i.test(path.split(/[?#]/, 1)[0] ?? "");
+  PDF_SUFFIX.test(path.split(QUERY_OR_FRAGMENT, 1)[0] ?? "");
 
 const PdfViewer = lazy(() => import("./PdfViewer"));
 
@@ -89,6 +92,8 @@ function PdfDocument(props: { src: string; title: string; documentKey: string })
   );
 }
 
+const NATIVE_PATTERN = /iPad|iPhone|iPod/;
+
 // Keep signed URL renewals from reloading the same revision.
 function PdfDocumentRevision(props: {
   src: string;
@@ -103,7 +108,7 @@ function PdfDocumentRevision(props: {
   const native =
     !isDesktopHost &&
     navigator.pdfViewerEnabled &&
-    !/iPad|iPhone|iPod/.test(navigator.userAgent) &&
+    !NATIVE_PATTERN.test(navigator.userAgent) &&
     !(navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   return native ? (
     // oxlint-disable-next-line react/iframe-missing-sandbox -- Chromium's PDF plugin requires an unsandboxed frame; src is an exact-file asset grant.

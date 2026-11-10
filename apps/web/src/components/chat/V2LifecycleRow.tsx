@@ -1,4 +1,5 @@
 import { ThreadHoverCardPopup } from "../ThreadHoverCard";
+import { RUNNING_INK_CLS } from "../ui/work-log-recipes";
 import { AgentElapsed } from "./AgentElapsed";
 import { projectedSubagentsToRuntime } from "@houston-app/client-runtime/state/subagentRuntime";
 import type { ReactNode } from "react";
@@ -22,7 +23,14 @@ import {
 import {
   formatSubagentDisplayTitle,
   resolveSubagentMetadata,
+  subagentDetailPreview,
 } from "@houston-app/client-runtime/state/subagent-display";
+import {
+  AGENT_GROUP_ROW_CLS,
+  AGENT_GROUP_ROW_INTERACTIVE_CLS,
+  AgentGroupRowText,
+  AgentGroupRowTrailing,
+} from "../ui/agent-group-card";
 import {
   ProviderDriverKind,
   type ModelSelection,
@@ -48,6 +56,7 @@ import {
   CircleXIcon,
   ArrowRightLeftIcon,
   ArrowRightIcon,
+  EraserIcon,
   GitForkIcon,
   MessageSquareIcon,
 } from "lucide-react";
@@ -78,6 +87,8 @@ export function V2LifecycleRow(props: {
   readonly resourceSummary?: boolean | undefined;
   readonly runs: ReadonlyArray<HandoffTimelineRun>;
   readonly onOpenThread: (threadId: ThreadId) => void;
+  /** `card` draws a subagent as a two-line row inside a subagent group card. */
+  readonly subagentLayout?: "line" | "card" | undefined;
 }) {
   const { item } = props;
   if (item.type === "run_interrupt_result") {
@@ -167,6 +178,7 @@ export function V2LifecycleRow(props: {
         threadId={item.childThreadId}
         remote={item.remoteChild}
         onOpenThread={props.onOpenThread}
+        layout={props.subagentLayout ?? "line"}
       />
     );
   }
@@ -418,6 +430,7 @@ function SubagentTimelineLink(props: {
   /** The thread in a linked environment that runs this task, when it runs there. */
   readonly remote?: OrchestrationV2RemoteTaskChild | undefined;
   readonly onOpenThread: (threadId: ThreadId) => void;
+  readonly layout?: "line" | "card";
   readonly event?: {
     readonly status: OrchestrationV2TurnItem["status"] | null;
     readonly label: string;
@@ -460,7 +473,32 @@ function SubagentTimelineLink(props: {
       : status === "completed"
         ? CircleCheckIcon
         : CircleStopIcon;
-  const content = (
+  const cardContent = (
+    <>
+      <EnvironmentSubagentAvatar
+        environmentId={props.parentRef.environmentId}
+        providerInstanceId={props.providerInstanceId}
+        driver={props.driver}
+        remote={remote}
+        status={liveStatus}
+      />
+      <AgentGroupRowText
+        title={props.title}
+        detail={
+          subagentDetailPreview({
+            status: liveStatus,
+            result: agent?.result ?? props.result,
+            progress: agent?.progress ?? props.progress,
+          }) ?? statusLabel
+        }
+      />
+      <AgentGroupRowTrailing elapsed={<SubagentElapsed agent={timing} />} opens={open !== null} />
+    </>
+  );
+  const card = props.layout === "card";
+  const content = card ? (
+    cardContent
+  ) : (
     <>
       <EnvironmentSubagentAvatar
         plain
@@ -482,7 +520,7 @@ function SubagentTimelineLink(props: {
         className={cn(
           "inline-flex shrink-0 items-center gap-1 text-xs font-medium",
           running
-            ? "text-(--accent-ink)"
+            ? RUNNING_INK_CLS
             : failed
               ? "text-destructive"
               : status === "completed"
@@ -507,8 +545,9 @@ function SubagentTimelineLink(props: {
       ) : null}
     </>
   );
-  const className =
-    "group/subagent flex h-8 w-full min-w-0 items-center gap-2 rounded-lg px-2 text-left";
+  const className = card
+    ? AGENT_GROUP_ROW_CLS
+    : "group/subagent flex h-8 w-full min-w-0 items-center gap-2 rounded-lg px-2 text-left";
   return (
     <Tooltip>
       <TooltipTrigger
@@ -527,7 +566,9 @@ function SubagentTimelineLink(props: {
               onClick={open}
               className={cn(
                 className,
-                "cursor-pointer transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
+                card
+                  ? AGENT_GROUP_ROW_INTERACTIVE_CLS
+                  : "cursor-pointer transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
               )}
             >
               {content}
@@ -605,6 +646,11 @@ function EnvironmentHandoffRow({
   const providers =
     useAtomValue(serverEnvironment.providersValueAtom(environmentId)) ?? EMPTY_SERVER_PROVIDERS;
   return <HandoffRow {...props} environmentId={environmentId} providers={providers} />;
+}
+
+/** Marks where `/clear` or an automation started a new provider session in this thread. */
+export function FreshSessionRow() {
+  return <TimelineSystemDivider label="New session" icon={EraserIcon} />;
 }
 
 /** A same-harness model or effort change. Shows only what changed. */

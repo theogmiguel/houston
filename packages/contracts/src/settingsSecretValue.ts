@@ -1,3 +1,4 @@
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SchemaAST from "effect/SchemaAST";
 
@@ -5,12 +6,34 @@ import { TrimmedString } from "./baseSchemas.ts";
 import { SecretReference } from "./secretReference.ts";
 
 /**
+ * The most a stored credential may hold. Real tokens are a few hundred bytes; 2048 matches the
+ * Slack and task-source token bounds and keeps a pasted file out of the secret store.
+ */
+export const SETTINGS_SECRET_MAX_BYTES = 2_048;
+
+const utf8Bytes = (value: string) => new TextEncoder().encode(value).length;
+
+/** A trimmed credential literal, refused above `SETTINGS_SECRET_MAX_BYTES`. */
+export const SecretLiteral = TrimmedString.check(
+  Schema.makeFilter(
+    (value: string) => {
+      const size = utf8Bytes(value);
+      return (
+        size <= SETTINGS_SECRET_MAX_BYTES ||
+        `credential is ${size} bytes, over the limit of ${SETTINGS_SECRET_MAX_BYTES} bytes`
+      );
+    },
+    { expected: `a credential of at most ${SETTINGS_SECRET_MAX_BYTES} bytes` },
+  ),
+);
+
+/**
  * A credential setting: the literal, which is kept in the secret store and redacted for
  * clients, or the secret reference to read it from, which is not itself a secret and is
  * stored and shown as written. Typing a settings field with it is the whole declaration:
  * forms offer a secret provider for it and the server reads the secret for its consumer.
  */
-export const SettingsSecretValue = Schema.Union([TrimmedString, SecretReference]).pipe(
+export const SettingsSecretValue = Schema.Union([SecretLiteral, SecretReference]).pipe(
   Schema.annotateKey({ settingsSecret: true, settingsSecretReference: true }),
 );
 export type SettingsSecretValue = typeof SettingsSecretValue.Type;
@@ -21,6 +44,35 @@ export const isSecretReference = Schema.is(SecretReference);
 export function settingsSecretLiteral(value: SettingsSecretValue | undefined): string {
   return typeof value === "string" ? value : "";
 }
+
+export class SettingsSecretUnresolvedError extends Schema.TaggedError<SettingsSecretUnresolvedError>()(
+  "SettingsSecretUnresolvedError",
+  { provider: Schema.String },
+) {
+  override get message(): string {
+    return `Could not read the credential from the secret provider "${this.provider}". Unlock or fix it in Settings, then try again.`;
+  }
+}
+
+/**
+ * The literal a credential setting holds once its secret is resolved. A reference still in place
+ * could not be read, and fails instead of passing for a missing token, so callers that would fall
+ * back to another credential cannot silently switch accounts.
+ */
+export const requireSettingsSecretLiteral = (
+  value: SettingsSecretValue | undefined,
+  secretProviders: Readonly<Record<string, { readonly label: string } | undefined>>,
+): Effect.Effect<string, SettingsSecretUnresolvedError> =>
+  isSecretReference(value)
+    ? Effect.fail(
+        new SettingsSecretUnresolvedError({
+          provider:
+            (Object.hasOwn(secretProviders, value.provider)
+              ? secretProviders[value.provider]?.label.trim()
+              : undefined) || value.provider,
+        }),
+      )
+    : Effect.succeed(value ?? "");
 
 export function acceptsSecretReference(schema: Schema.Top): boolean {
   return Schema.resolveAnnotationsKey(schema)?.settingsSecretReference === true;

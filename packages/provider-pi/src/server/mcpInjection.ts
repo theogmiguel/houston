@@ -32,7 +32,7 @@ const RESERVED_PI_LAUNCH_ARGUMENTS = new Set([
   "-v",
 ]);
 
-const PI_ARGUMENTS_WITH_VALUES = new Set([
+export const PI_ARGUMENTS_WITH_VALUES = new Set([
   "--api-key",
   "--append-system-prompt",
   "--exclude-tools",
@@ -163,8 +163,11 @@ function bearerTokenFromAuthorizationHeader(header: string): string {
   return header.startsWith("Bearer ") ? header.slice("Bearer ".length) : header;
 }
 
+const BACKSLASH = /\\/g;
+const TRAILING_SLASHES = /\/+$/;
+
 function normalizedPiPath(value: string): string {
-  return value.replace(/\\/g, "/").replace(/\/+$/, "");
+  return value.replace(BACKSLASH, "/").replace(TRAILING_SLASHES, "");
 }
 
 function hasExplicitExtension(args: ReadonlyArray<string>, extensionPath: string): boolean {
@@ -221,7 +224,7 @@ function withoutToolSelectionArgs(args: ReadonlyArray<string>): ReadonlyArray<st
 }
 
 function piHoustonMcpExtensionDestPath(cacheDir: string): string {
-  return `${cacheDir.replace(/\\/g, "/")}/${PI_HOUSTON_MCP_EXTENSION_FILENAME}`;
+  return `${cacheDir.replace(BACKSLASH, "/")}/${PI_HOUSTON_MCP_EXTENSION_FILENAME}`;
 }
 
 export const materializePiHoustonMcpExtension = Effect.fn("materializePiHoustonMcpExtension")(

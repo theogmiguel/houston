@@ -4,6 +4,7 @@ import {
   MessageId,
   NodeId,
   ORCHESTRATION_V2_WS_METHODS,
+  OrchestrationV2GetThreadProjectionError,
   RuntimeRequestId,
   ThreadId,
   TurnItemId,
@@ -2150,6 +2151,48 @@ describe("EnvironmentThreads", () => {
       expect(yield* Ref.get(harness.savedThreads)).toHaveLength(1);
       yield* Scope.close(scope, Exit.void);
       expect(yield* Ref.get(harness.savedThreads)).toHaveLength(1);
+    }),
+  );
+
+  it.effect("settles an id the server answers with thread_not_found as deleted", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ httpSnapshot: { _tag: "missing" } });
+      yield* Queue.offer(
+        harness.inputs,
+        new OrchestrationV2GetThreadProjectionError({
+          threadId: BASE_PROJECTION.thread.id,
+          message: `Failed to load orchestration V2 thread ${BASE_PROJECTION.thread.id}`,
+          reason: "thread_not_found",
+        }) as unknown as Error,
+      );
+
+      const state = yield* awaitThreadState(
+        harness.observed,
+        (value) => value.status === "deleted",
+      );
+
+      expect(Option.isNone(state.data)).toBe(true);
+      expect(yield* Ref.get(harness.removedThreads)).toEqual([BASE_PROJECTION.thread.id]);
+    }),
+  );
+
+  it.effect("keeps a thread retryable when a snapshot failure carries no thread_not_found", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ httpSnapshot: { _tag: "missing" } });
+      yield* Queue.offer(
+        harness.inputs,
+        new OrchestrationV2GetThreadProjectionError({
+          threadId: BASE_PROJECTION.thread.id,
+          message: `Failed to load orchestration V2 thread ${BASE_PROJECTION.thread.id}`,
+        }) as unknown as Error,
+      );
+
+      const state = yield* awaitThreadState(harness.observed, (value) =>
+        Option.isSome(value.error),
+      );
+
+      expect(state.status).toBe("empty");
+      expect(yield* Ref.get(harness.removedThreads)).toEqual([]);
     }),
   );
 

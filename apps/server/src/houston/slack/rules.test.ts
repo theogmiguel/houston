@@ -27,7 +27,7 @@ import {
   ownerAccepts,
   reactionMove,
   requestText,
-  slackKeychainService,
+  slackSecretName,
   sniffImage,
   statusReaction,
   workingCount,
@@ -137,16 +137,19 @@ describe("owner and channel ids are checked by prefix and count", () => {
   });
 });
 
-describe("the slack keychain service is scoped by base dir and differs from v1", () => {
-  it("one service per base dir, named houston-v2-slack-connection-<16 hex>", () => {
-    const release = slackKeychainService("/home/u/.houston");
-    const dev = slackKeychainService("/home/u/.houston-dev");
-    assert.notStrictEqual(release, dev);
-    assert.strictEqual(slackKeychainService("/home/u/.houston"), release);
-    assert.match(release, /^houston-v2-slack-connection-[0-9a-f]{16}$/);
-    for (const v1 of ["houston-slack", "houston-slack-dev", "houston-slack-dir-0123456789abcdef"]) {
-      assert.notStrictEqual(release, v1);
-      assert.notStrictEqual(dev, v1);
+describe("the slack secret names are fixed and file-safe", () => {
+  it("one name per token, under the houston-slack-connection prefix", () => {
+    assert.strictEqual(slackSecretName("app-token"), "houston-slack-connection-app-token");
+    assert.strictEqual(slackSecretName("bot-token"), "houston-slack-connection-bot-token");
+    for (const name of [slackSecretName("app-token"), slackSecretName("bot-token")]) {
+      assert.match(name, /^[A-Za-z0-9][A-Za-z0-9_-]*$/);
+      for (const v1 of [
+        "houston-slack",
+        "houston-slack-dev",
+        "houston-slack-dir-0123456789abcdef",
+      ]) {
+        assert.notStrictEqual(name, v1);
+      }
     }
   });
 });

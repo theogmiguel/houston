@@ -57,6 +57,8 @@ export function MiddleTruncate({
   );
 }
 
+const FIT_HEAD_PATTERN = /[\uD800-\uDBFF]/;
+
 // An overflowing head is cut after its last whole character: clip the partial glyph
 // and slide the tail left over the slack. Neither changes layout, so the observed
 // size stays the true available width.
@@ -81,7 +83,7 @@ function fitHead(head: HTMLElement) {
       if (widthTo(mid) <= head.clientWidth) fits = mid;
       else over = mid;
     }
-    if (/[\uD800-\uDBFF]/.test(text.data[fits - 1] ?? "")) fits -= 1;
+    if (FIT_HEAD_PATTERN.test(text.data[fits - 1] ?? "")) fits -= 1;
     slack = Math.max(0, head.clientWidth - widthTo(fits));
   }
   head.style.clipPath = slack > 0 ? `inset(-0.25em ${slack}px -0.25em 0)` : "";

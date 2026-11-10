@@ -9,6 +9,7 @@ import type {
   SourceControlRepositoryInfo,
 } from "@houston-app/contracts";
 import { SourceControlProviderKind } from "@houston-app/contracts";
+import { cloneUrlRepositoryPath } from "@houston-app/shared/cloneUrl";
 import { newProjectFolderName } from "@houston-app/shared/path";
 import * as Arr from "effect/Array";
 import * as Option from "effect/Option";
@@ -190,21 +191,49 @@ export function getAddProjectInitialQuery(baseDirectory: string | null | undefin
   return trimmed.length === 0 ? "~/" : ensureBrowseDirectoryPath(trimmed);
 }
 
+const QUERY_OR_FRAGMENT = /[?#]/;
+const SCP_STYLE_REMOTE_PREFIX = /^[^/\\:]+@[^/\\:]+:/;
+const PATH_OR_COLON_RUN = /[/\\:]+/;
+const DIGITS_ONLY = /^\d+$/;
+
 export function getCloneDirectoryName(repositoryOrRemoteUrl: string | null | undefined): string {
-  const withoutQuery = (repositoryOrRemoteUrl ?? "").split(/[?#]/)[0]?.trim() ?? "";
+  const withoutQuery = (repositoryOrRemoteUrl ?? "").split(QUERY_OR_FRAGMENT)[0]?.trim() ?? "";
   const schemeIndex = withoutQuery.indexOf("://");
-  const hasHost = schemeIndex >= 0 || /^[^/\\:]+@[^/\\:]+:/.test(withoutQuery);
+  const hasHost = schemeIndex >= 0 || SCP_STYLE_REMOTE_PREFIX.test(withoutQuery);
   const pathPart = schemeIndex >= 0 ? withoutQuery.slice(schemeIndex + "://".length) : withoutQuery;
-  const segments = pathPart.split(/[/\\:]+/).filter((segment) => segment.trim().length > 0);
+  const segments = pathPart.split(PATH_OR_COLON_RUN).filter((segment) => segment.trim().length > 0);
   if (hasHost && segments.length < 2) {
     return "";
   }
 
   const lastSegment = segments.at(-1)?.trim() ?? "";
-  if (hasHost && segments.length === 2 && /^\d+$/.test(lastSegment)) {
+  if (hasHost && segments.length === 2 && DIGITS_ONLY.test(lastSegment)) {
     return "";
   }
   return lastSegment.endsWith(".git") ? lastSegment.slice(0, -".git".length) : lastSegment;
+}
+
+/** The folder a clone gets below its base: `<repo>`, or `<host>/<owner>/<repo>`. */
+export function getCloneDirectoryPath(
+  remoteUrl: string,
+  hostFolderCloneLayout: boolean,
+  repository = remoteUrl,
+): string {
+  return (
+    (hostFolderCloneLayout ? cloneUrlRepositoryPath(remoteUrl) : null) ??
+    getCloneDirectoryName(repository)
+  );
+}
+
+/** The clone's own folder, which folder browsing keeps at the end of the destination. */
+export function getCloneDirectoryLeafName(
+  remoteUrl: string,
+  hostFolderCloneLayout: boolean,
+  repository = remoteUrl,
+): string {
+  return (
+    getCloneDirectoryPath(remoteUrl, hostFolderCloneLayout, repository).split("/").at(-1) ?? ""
+  );
 }
 
 export function getCloneDestinationPath(
@@ -215,7 +244,8 @@ export function getCloneDestinationPath(
   if (name.length === 0) {
     return directoryPath;
   }
-  return `${ensureBrowseDirectoryPath(directoryPath)}${name}`;
+  const base = ensureBrowseDirectoryPath(directoryPath);
+  return `${base}${base.endsWith("\\") ? name.replaceAll("/", "\\") : name}`;
 }
 
 export function getNewProjectPathPreview(newProjectsRoot: string, name: string): string {
@@ -250,11 +280,13 @@ export function getNewProjectPublishTarget(
   return targets.find((target) => target.definition.kind === kind) ?? targets[0] ?? null;
 }
 
+const PATH_SEPARATOR = /[\\/]/;
+
 export function getNewProjectRepository(
   target: Pick<NewProjectPublishTarget, "owner">,
   workspaceRoot: string,
 ): string {
-  const folderName = workspaceRoot.split(/[\\/]/).filter(Boolean).at(-1) ?? "";
+  const folderName = workspaceRoot.split(PATH_SEPARATOR).filter(Boolean).at(-1) ?? "";
   return target.owner ? `${target.owner}/${folderName}` : folderName;
 }
 

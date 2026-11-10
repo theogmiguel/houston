@@ -49,6 +49,8 @@ import {
   failEnvironmentAuthInvalid,
   failEnvironmentInternal,
 } from "./auth/http.ts";
+import * as ExportRedaction from "./houston/observability/ExportRedaction.ts";
+import * as ObservabilityExport from "./houston/observability/ObservabilityExport.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import { WEBHOOK_ROUTE_PREFIX } from "./scheduledTasks/ScheduledTaskService.ts";
 import {
@@ -68,24 +70,32 @@ const HTML_CONTENT_SECURITY_POLICY =
 
 // Proxies may strip disposition; force document-capable downloads to octet-stream.
 const DOWNLOAD_MIME_TYPE_PATTERN = /^[\w!#$&^.+-]+\/[\w!#$&^.+-]+$/;
+const DOWNLOAD_UNSAFE_MIME_TYPE = /(?:^text\/html$|\/xml(?:$|-)|\+xml$)/i;
+
 const isSafeDownloadMimeType = (mimeType: string): boolean =>
   DOWNLOAD_MIME_TYPE_PATTERN.test(mimeType) &&
-  !/(?:^text\/html$|\/xml(?:$|-)|\+xml$)/i.test(mimeType.trim().toLowerCase());
+  !DOWNLOAD_UNSAFE_MIME_TYPE.test(mimeType.trim().toLowerCase());
+const AUDIO_OR_VIDEO_MIME_PREFIX = /^(?:audio|video)\//i;
+
 const isSafeInlineMediaMimeType = (mimeType: string): boolean =>
-  DOWNLOAD_MIME_TYPE_PATTERN.test(mimeType) && /^(?:audio|video)\//i.test(mimeType);
+  DOWNLOAD_MIME_TYPE_PATTERN.test(mimeType) && AUDIO_OR_VIDEO_MIME_PREFIX.test(mimeType);
 const isSafeInlineDocumentMimeType = (mimeType: string): boolean =>
   mimeType.toLowerCase() === "application/pdf" || mimeType.toLowerCase() === "text/html";
+
+const QUOTED_STRING_UNSAFE_CHARACTER = /[\p{Cc}"\\]/gu;
+const ASCII_FALLBACK_PATTERN = /[^\u0020-\u007e]/g;
+const EXTENDED_NAME_PATTERN = /['()*]/g;
 
 export function downloadContentDisposition(fileName?: string): string {
   if (fileName === undefined) {
     return "attachment";
   }
   // toWellFormed: encodeURIComponent throws URIError on unpaired surrogates.
-  const sanitized = fileName.toWellFormed().replace(/[\p{Cc}"\\]/gu, "_");
-  const asciiFallback = sanitized.replace(/[^\u0020-\u007e]/g, "_");
+  const sanitized = fileName.toWellFormed().replace(QUOTED_STRING_UNSAFE_CHARACTER, "_");
+  const asciiFallback = sanitized.replace(ASCII_FALLBACK_PATTERN, "_");
   const needsExtended = asciiFallback !== sanitized;
   const extendedName = encodeURIComponent(sanitized).replace(
-    /['()*]/g,
+    EXTENDED_NAME_PATTERN,
     (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
   );
   return `attachment; filename="${asciiFallback}"${
@@ -139,8 +149,10 @@ export function assetResponseHeaders(
   };
 }
 
+const BYTE_RANGE_HEADER = /^bytes=(\d*)-(\d*)$/i;
+
 function assetByteRange(header: string, size: bigint) {
-  const match = /^bytes=(\d*)-(\d*)$/i.exec(header.trim());
+  const match = BYTE_RANGE_HEADER.exec(header.trim());
   if (!match || (!match[1] && !match[2])) return null;
   const first = match[1] ? BigInt(match[1]) : null;
   const last = match[2] ? BigInt(match[2]) : null;
@@ -197,7 +209,7 @@ export const assetFileResponse = Effect.fn("assetFileResponse")(function* (
   }
   const mediaFile = asset.file;
   const mediaInfo = mediaFile ? yield* statMediaFile(asset.path, mediaFile) : undefined;
-  const isMedia = /^(?:audio|video)\//i.test(headers["Content-Type"] ?? "");
+  const isMedia = AUDIO_OR_VIDEO_MIME_PREFIX.test(headers["Content-Type"] ?? "");
   if (isMedia) {
     // Without file identity, validators cannot guarantee byte equality; attachments must also expire with their URL.
     headers["Cache-Control"] = "private, no-store";
@@ -275,11 +287,10 @@ export const layerBrowserApiCors = Layer.unwrap(
   }),
 );
 
+const BRACKETED_HOSTNAME = /^\[(.*)\]$/;
+
 function isLoopbackHostname(hostname: string): boolean {
-  const normalizedHostname = hostname
-    .trim()
-    .toLowerCase()
-    .replace(/^\[(.*)\]$/, "$1");
+  const normalizedHostname = hostname.trim().toLowerCase().replace(BRACKETED_HOSTNAME, "$1");
   return LOOPBACK_HOSTNAMES.has(normalizedHostname);
 }
 
@@ -340,9 +351,7 @@ export const layerOtlpTracesProxyRoute = HttpRouter.add(
   Effect.gen(function* () {
     yield* authenticateRawRouteWithScope(AuthOrchestrationOperateScope);
     const request = yield* HttpServerRequest.HttpServerRequest;
-    const config = yield* ServerConfig.ServerConfig;
-    const otlpTracesUrl = config.otlpTracesUrl;
-    const otlpHeaders = config.otlpTracesExport.headers;
+    const target = yield* ObservabilityExport.resolve("traces", { quiet: true });
     const browserTraceCollector = yield* BrowserTraceCollector.BrowserTraceCollector;
     const httpClient = yield* HttpClient.HttpClient;
     const serialization = yield* OtlpSerialization.OtlpSerialization;
@@ -356,14 +365,14 @@ export const layerOtlpTracesProxyRoute = HttpRouter.add(
       Effect.catch((cause) => Effect.logWarning("Failed to decode browser OTLP traces", { cause })),
     );
 
-    if (otlpTracesUrl === undefined) {
+    if (target === undefined) {
       return HttpServerResponse.empty({ status: 204 });
     }
 
     return yield* httpClient
-      .post(otlpTracesUrl, {
-        body: serialization.traces(bodyJson),
-        headers: otlpHeaders,
+      .post(target.url, {
+        body: serialization.traces(ExportRedaction.exportedTraceData(bodyJson)),
+        headers: target.headers,
       })
       .pipe(
         Effect.flatMap(HttpClientResponse.filterStatusOk),
@@ -371,7 +380,7 @@ export const layerOtlpTracesProxyRoute = HttpRouter.add(
         Effect.tapError((cause) =>
           Effect.logWarning("Failed to export browser OTLP traces", {
             cause,
-            otlpTracesUrl,
+            otlpTracesUrl: target.url,
           }),
         ),
         Effect.orElseSucceed(() =>
@@ -440,7 +449,7 @@ export const layerAssetRoute = HttpRouter.add(
           // The URL can carry a token in its query string, and the error keeps the request it
           // failed on; the host and the failure kind are enough to diagnose.
           Effect.logWarning("Failed to fetch source control media.", {
-            host: URL.canParse(asset.url) ? new URL(asset.url).host : undefined,
+            host: URL.parse(asset.url)?.host,
             reason: cause.reason._tag,
           }),
         ),
@@ -566,6 +575,10 @@ const streamStaticFile = (file: FileSystem.File, size: bigint) =>
     }),
   );
 
+const LEADING_PATH_SEPARATORS = /^[/\\]+/;
+const IMMUTABLE_PATTERN = /^assets\/.+-[\w-]{8}\.[^/]+$/;
+const HANDLE_STATIC_AND_DEV_REQUEST_PATTERN = /^W\//i;
+
 const handleStaticAndDevRequest = Effect.fn("handleStaticAndDevRequest")(
   function* (immutableBuildAssets: ReadonlySet<string>) {
     const request = yield* HttpServerRequest.HttpServerRequest;
@@ -605,9 +618,11 @@ const handleStaticAndDevRequest = Effect.fn("handleStaticAndDevRequest")(
     const path = yield* Path.Path;
     const staticRoot = path.resolve(staticDir);
     const staticRequestPath = url.value.pathname === "/" ? "/index.html" : url.value.pathname;
-    const rawStaticRelativePath = staticRequestPath.replace(/^[/\\]+/, "");
+    const rawStaticRelativePath = staticRequestPath.replace(LEADING_PATH_SEPARATORS, "");
     const hasRawLeadingParentSegment = rawStaticRelativePath.startsWith("..");
-    const staticRelativePath = path.normalize(rawStaticRelativePath).replace(/^[/\\]+/, "");
+    const staticRelativePath = path
+      .normalize(rawStaticRelativePath)
+      .replace(LEADING_PATH_SEPARATORS, "");
     const hasPathTraversalSegment = staticRelativePath.startsWith("..");
     if (
       staticRelativePath.length === 0 ||
@@ -650,9 +665,7 @@ const handleStaticAndDevRequest = Effect.fn("handleStaticAndDevRequest")(
     // A hash-like name is not enough: custom static files can use the same naming pattern.
     const relativePath = path.relative(staticRoot, filePath).replaceAll("\\", "/");
     const immutable =
-      !isHtml &&
-      /^assets\/.+-[\w-]{8}\.[^/]+$/.test(relativePath) &&
-      immutableBuildAssets.has(relativePath);
+      !isHtml && IMMUTABLE_PATTERN.test(relativePath) && immutableBuildAssets.has(relativePath);
     const cacheControl = immutable ? "public, max-age=31536000, immutable" : "no-cache";
     const validators = (info: FileSystem.File.Info) => {
       // Deployments can preserve HTML size and mtime while changing its bundle URLs.
@@ -680,7 +693,8 @@ const handleStaticAndDevRequest = Effect.fn("handleStaticAndDevRequest")(
             const candidate = value.trim();
             return (
               candidate === "*" ||
-              (etag !== undefined && candidate.replace(/^W\//i, "") === etag.slice(2))
+              (etag !== undefined &&
+                candidate.replace(HANDLE_STATIC_AND_DEV_REQUEST_PATTERN, "") === etag.slice(2))
             );
           })
         : ifModifiedSince !== undefined &&

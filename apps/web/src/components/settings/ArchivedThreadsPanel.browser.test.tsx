@@ -49,11 +49,7 @@ describe("ArchivedThreadsPanel", () => {
     await using screen = await render(<ArchivedThreadsPanel />);
     await expect.element(screen.getByText("No archived threads")).toBeVisible();
     await expect
-      .element(
-        screen.getByText(
-          "Threads you archive stay searchable here and can be restored at any time.",
-        ),
-      )
+      .element(screen.getByText("Archived threads can be restored at any time."))
       .toBeVisible();
     await expect.element(screen.getByText("Archive a thread")).toBeVisible();
     await expect.element(screen.getByText("Restore anytime")).toBeVisible();

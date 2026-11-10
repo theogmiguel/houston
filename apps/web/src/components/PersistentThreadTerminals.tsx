@@ -25,8 +25,8 @@ import { useEnvironmentScope } from "../state/session";
 import { useKnownTerminalSessions } from "../state/terminalSessions";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { useThreadTerminalActions } from "./terminal/useThreadTerminalActions";
-import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import { resolveTerminalWorktreePath } from "./ChatView.logic";
+import { LazyThreadTerminalDrawer } from "./terminal/LazyThreadTerminalDrawer";
 
 /** Where a drawer or panel opens new terminals when a script run overrides the thread's own. */
 export type PersistentTerminalLaunchContext = {
@@ -247,13 +247,10 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
       className={cn(
         "grid shrink-0 overflow-clip",
         active ? (visible ? "grid-rows-[1fr]" : "grid-rows-[0fr]") : "hidden",
-        active &&
-          "[[data-panel-animations=true]_&]:transition-[grid-template-rows] [[data-panel-animations=true]_&]:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:ease-standard",
-        active && visible && "[[data-panel-animations=true]_&]:starting:grid-rows-[0fr]!",
       )}
     >
       <div className="min-h-0 overflow-clip">
-        <ThreadTerminalDrawer
+        <LazyThreadTerminalDrawer
           threadRef={threadRef}
           threadId={threadId}
           cwd={cwd}
@@ -384,7 +381,7 @@ export const PersistentThreadTerminalPanel = memo(function PersistentThreadTermi
   if (!project || !cwd) return null;
 
   return (
-    <ThreadTerminalDrawer
+    <LazyThreadTerminalDrawer
       mode="panel"
       visible={visible}
       threadRef={threadRef}
