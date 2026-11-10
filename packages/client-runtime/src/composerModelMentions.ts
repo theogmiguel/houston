@@ -2,14 +2,29 @@ import { rankModelPickerSearch, type ModelPickerSearchableModel } from "./modelS
 
 const COMPOSER_MODEL_MENTION_LIMIT = 8;
 
-const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+const MENTION_SEPARATORS = /[:/]+/gu;
+const HYPHENS = /-+/gu;
+const WHITESPACE = /\s+/gu;
+const WORD_CHAR = /[\p{L}\p{N}]/u;
+
+/** True when `token` occurs in `haystack` at the start of a word. */
+function startsAWord(haystack: string, token: string): boolean {
+  for (
+    let index = haystack.indexOf(token);
+    index !== -1;
+    index = haystack.indexOf(token, index + 1)
+  ) {
+    if (index === 0 || !WORD_CHAR.test(haystack[index - 1] ?? "")) return true;
+  }
+  return false;
+}
 
 /** Mentions can't contain spaces, so `:`, `/` and `-` split words, as in `@gpt:traex`. */
 function mentionSearchQueries(query: string): ReadonlyArray<string> {
-  const spaced = query.replace(/[:/]+/gu, " ").trim();
-  const unhyphenated = spaced.replace(/-+/gu, " ").trim();
+  const spaced = query.replace(MENTION_SEPARATORS, " ").trim();
+  const unhyphenated = spaced.replace(HYPHENS, " ").trim();
   // One letter would fill the menu with models and push files out of it.
-  if (unhyphenated.replace(/\s+/gu, "").length < 2) return [];
+  if (unhyphenated.replace(WHITESPACE, "").length < 2) return [];
   return unhyphenated === spaced ? [spaced] : [spaced, unhyphenated];
 }
 
@@ -23,8 +38,8 @@ export function rankComposerModelMentions<T>(
     // Every word must start a word of the model's names. Fuzzy hits would push files out of the `@` menu.
     const tokens = words
       .toLowerCase()
-      .split(/\s+/u)
-      .map((token) => new RegExp(`(?:^|[^\\p{L}\\p{N}])${escapeRegExp(token)}`, "u"));
+      .split(WHITESPACE)
+      .filter((token) => token.length > 0);
     const literal = candidates.filter((candidate) => {
       const model = toSearchable(candidate);
       const haystack = [
@@ -36,7 +51,7 @@ export function rankComposerModelMentions<T>(
       ]
         .join(" ")
         .toLowerCase();
-      return tokens.every((token) => token.test(haystack));
+      return tokens.every((token) => startsAWord(haystack, token));
     });
     const ranked = rankModelPickerSearch(literal, words, toSearchable);
     if (ranked.length > 0) return ranked.slice(0, COMPOSER_MODEL_MENTION_LIMIT);

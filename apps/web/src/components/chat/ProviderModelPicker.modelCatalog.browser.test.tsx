@@ -5,7 +5,7 @@ import {
   type ServerProvider,
 } from "@houston-app/contracts";
 import { compileResolvedKeybindingsConfig } from "@houston-app/shared/keybindings";
-import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 
 import "~/index.css";
@@ -54,7 +54,13 @@ const provider: ServerProvider = {
 };
 const environmentId = EnvironmentId.make("local");
 
-const renderPicker = () =>
+const renderPicker = (modelCatalogRefresh = true) => {
+  mocks.refreshProviders.mockClear();
+  mocks.modelCatalogRefresh = modelCatalogRefresh;
+  return renderPickerScreen();
+};
+
+const renderPickerScreen = () =>
   render(
     <TooltipProvider delay={0}>
       <ProviderModelPicker
@@ -73,11 +79,6 @@ const renderPicker = () =>
   );
 
 describe("ProviderModelPicker model catalog refresh", () => {
-  beforeEach(() => {
-    mocks.refreshProviders.mockClear();
-    mocks.modelCatalogRefresh = true;
-  });
-
   it("asks the server for new models each time the picker opens", async () => {
     await using _screen = await renderPicker();
     expect(mocks.refreshProviders).not.toHaveBeenCalled();
@@ -91,8 +92,7 @@ describe("ProviderModelPicker model catalog refresh", () => {
   });
 
   it("sends nothing to a server that would probe every provider for it", async () => {
-    mocks.modelCatalogRefresh = false;
-    await using _screen = await renderPicker();
+    await using _screen = await renderPicker(false);
 
     await page.getByRole("button", { name: /Opus 5\.5/ }).click();
     await expect.element(page.getByRole("combobox").first()).toBeVisible();
