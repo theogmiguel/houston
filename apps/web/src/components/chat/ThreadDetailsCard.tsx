@@ -192,19 +192,21 @@ export function ThreadDetailsCard({
     environmentId,
     threadId,
   ]);
-  const popoverAnchor =
-    anchor.current ??
-    (fallbackAnchorElement
-      ? {
-          getBoundingClientRect: () => {
-            const cell = fallbackAnchorElement.closest<HTMLElement>(
-              "[data-grid-cell], [data-grid-empty-draft]",
-            );
-            const rect = (cell ?? fallbackAnchorElement).getBoundingClientRect();
-            return new DOMRect(rect.left, rect.top + 34, rect.width, 0);
-          },
-        }
-      : undefined);
+  // A grid cell anchors to the cell, not the shared header button: the panel width is capped
+  // by the anchor width, so a button-sized anchor collapses the card to its border.
+  const gridCell = fallbackAnchorElement?.closest<HTMLElement>(
+    "[data-grid-cell], [data-grid-empty-draft]",
+  );
+  const fallbackRectSource = gridCell ?? fallbackAnchorElement;
+  const fallbackAnchor = fallbackRectSource
+    ? {
+        getBoundingClientRect: () => {
+          const rect = fallbackRectSource.getBoundingClientRect();
+          return new DOMRect(rect.left, rect.top + 34, rect.width, 0);
+        },
+      }
+    : undefined;
+  const popoverAnchor = gridCell ? fallbackAnchor : (anchor.current ?? fallbackAnchor);
   const card = (
     <div
       className={cn(
