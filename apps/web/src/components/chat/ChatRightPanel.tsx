@@ -86,7 +86,13 @@ export function ChatRightPanel(props: ChatRightPanelProps) {
         layoutControls={isPhone ? null : layoutControls}
         leadingControl={
           isPhone ? (
-            <Button variant="ghost" size="icon" aria-label="Back to thread" onClick={onCloseSheet}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-11"
+              aria-label="Back to thread"
+              onClick={onCloseSheet}
+            >
               <ArrowLeftIcon className="size-4" />
             </Button>
           ) : undefined

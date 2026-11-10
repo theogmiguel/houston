@@ -293,6 +293,10 @@ home page, thread bar and bottom tab bar.
 - **Hit areas are 44px.** Touch primitives expand through `pointer-coarse`; phone-only rows,
   tabs and bar controls use `h-11` (44px). A smaller visible box is acceptable only when its
   hit target reaches the same floor.
+- **Sheets share one recipe.** A phone bottom sheet is `SheetPopup variant="phone"` with
+  `PhoneSheetHeader` (a 44px bar, title at the 16px inset, a 44px close centred on it), the
+  scrim, rounded top corners and the bottom inset on the popup. Rows inside are 44px, full
+  width, with content on the 16px gutter; `phone-page` is the same popup as a full-window page.
 - **Safe areas are applied once.** `#root` owns the top inset. A phone page applies `pb-safe`
   around its content, the tab bar or a sheet owns the bottom inset in its own surface, and a
   composer inside the page drops its own safe-area term so the inset is not counted twice.

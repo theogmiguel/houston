@@ -43,6 +43,8 @@ import {
   resolveThreadPanelPullRequestAction,
 } from "../pullRequest/pullRequestDetail.logic";
 import { PullRequestChecksPopover } from "../pullRequest/PullRequestChecksPopover";
+import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
+import { THREAD_DETAILS_PANEL_ICON_CLASS } from "./threadDetailsPanelStyles";
 import {
   pullRequestChecksState,
   PullRequestCheckStatusIcon,
@@ -392,7 +394,13 @@ export function ThreadDetailsPrRow({
               />
             }
           >
-            <span className="block truncate">{rowLabel}</span>
+            <span className="flex min-w-0 items-center gap-1.5">
+              <PullRequestGlyph.pullRequest
+                aria-hidden
+                className={cn(THREAD_DETAILS_PANEL_ICON_CLASS, "me-0.5 hidden max-phone:block")}
+              />
+              <span className="block truncate">{rowLabel}</span>
+            </span>
           </TooltipTrigger>
           {rowTooltip}
         </Tooltip>

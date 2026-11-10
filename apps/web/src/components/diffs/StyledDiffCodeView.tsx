@@ -79,6 +79,21 @@ export const DIFF_VIEW_UNSAFE_CSS = `${DIFF_SURFACE_THEME_UNSAFE_CSS}
   opacity: 0;
 }
 
+/* On a phone the viewer sits in an inset container, so the scroll cue is a light shadow
+   instead of a hard rule. */
+@media (max-width: 40rem) {
+  /* The expand row shares the code's edges instead of sitting 8px inside them. */
+  [data-separator-wrapper] {
+    padding-inline: 0 !important;
+  }
+
+  [data-overflow="scroll"] [data-code] [data-gutter]::after {
+    left: calc(100cqi - 20px);
+    width: 20px;
+    background: linear-gradient(to left, color-mix(in srgb, var(--code-foreground) 16%, transparent), transparent);
+  }
+}
+
 @container scroll-state(scrollable: right) {
   [data-overflow="scroll"] [data-code] [data-gutter]::after {
     opacity: 1;
@@ -286,6 +301,8 @@ type StyledDiffCodeViewProps<LAnnotation> = (
   readonly options?: StyledDiffCodeViewOptions<LAnnotation>;
   readonly viewerRef?: Ref<CodeViewHandle<LAnnotation, undefined>>;
   readonly unsafeCSSExtra?: string;
+  /** The host hides the viewer's file headers, so none of them reserves its 32px. */
+  readonly hiddenFileHeaders?: boolean;
 };
 
 export function StyledDiffCodeView<LAnnotation = undefined>({
@@ -293,6 +310,7 @@ export function StyledDiffCodeView<LAnnotation = undefined>({
   viewerRef,
   className,
   unsafeCSSExtra,
+  hiddenFileHeaders = false,
   ...props
 }: StyledDiffCodeViewProps<LAnnotation>) {
   return (
@@ -325,7 +343,7 @@ export function StyledDiffCodeView<LAnnotation = undefined>({
             ? `${DIFF_VIEW_UNSAFE_CSS}\n${unsafeCSSExtra}`
             : DIFF_VIEW_UNSAFE_CSS,
           itemMetrics: {
-            diffHeaderHeight: 32,
+            diffHeaderHeight: hiddenFileHeaders ? 0 : 32,
             hunkSeparatorHeight: 24,
             // Zero both spacing and paddingTop; Pierre's expanded-file fallback otherwise adds an 8px header
             // gap.

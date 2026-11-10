@@ -22,6 +22,7 @@ import {
   withPendingChanges,
 } from "../../test/fakeEnvironment";
 import { render } from "../../test/render";
+import { expectFullWidthRows, expectSheetRecipe } from "./phoneGeometry";
 
 // The socket is the only fake layer: the client runtime hands every connection the in-process session.
 vi.mock("../../../../packages/client-runtime/src/connection/driver.ts", async (importOriginal) => {
@@ -174,12 +175,12 @@ async function openDetails() {
   await vi.waitFor(() => expect(detailsSheet()).not.toBeNull(), { timeout: 5_000 });
 }
 
-async function closeDetailsWithSameButton() {
-  await userEvent.click(detailsButton()!);
+async function closeDetailsFromSheet() {
+  await userEvent.click(page.getByRole("button", { name: "Close" }).element());
   await vi.waitFor(() => expect(detailsSheet()).toBeNull(), { timeout: 5_000 });
 }
 
-it("opens thread details in a bottom sheet and closes it with the same button", async () => {
+it("opens thread details in a bottom sheet and closes it from the sheet header", async () => {
   const { screen } = await openThread(390);
   await using _screen = screen;
 
@@ -199,7 +200,7 @@ it("opens thread details in a bottom sheet and closes it with the same button", 
   expect(sheetText).toContain("#42");
   expect(sheetText).toContain("Context");
 
-  await closeDetailsWithSameButton();
+  await closeDetailsFromSheet();
   expect(detailsButton()?.getAttribute("aria-pressed")).toBe("false");
 });
 
@@ -308,6 +309,200 @@ it("opens Files, browses the tree and reads a file without editing", async () =>
   );
   expect(composer()).not.toBeNull();
 });
+
+it.each([390, 320])(
+  "lays the details sheet out like the other phone sheets at %ipx",
+  async (width) => {
+    const { screen } = await openThread(width);
+    await using _screen = screen;
+    await openDetails();
+    const sheet = detailsSheet()!;
+    await vi.waitFor(() => expect(allText(sheet)).toContain("#42"), { timeout: 5_000 });
+    expectSheetRecipe(sheet, width);
+
+    // One surface: the card inside the sheet adds no shadow, radius or inset of its own.
+    const card = sheet.querySelector<HTMLElement>("[data-thread-details-card]")!;
+    expect(getComputedStyle(card).boxShadow).toBe("none");
+    expect(parseFloat(getComputedStyle(card).borderTopLeftRadius)).toBe(0);
+    expect(card.getBoundingClientRect().left).toBeCloseTo(sheet.getBoundingClientRect().left, 0);
+
+    // The sheet is sized to its rows: no blank band under the last one.
+    const rows = [...sheet.querySelectorAll<HTMLElement>("[data-thread-details-row]")].filter(
+      (row) => row.getClientRects().length > 0,
+    );
+    expectFullWidthRows(sheet, rows, width);
+    const sheetRect = sheet.getBoundingClientRect();
+    const lastBottom = Math.max(...rows.map((row) => row.getBoundingClientRect().bottom));
+    expect(sheetRect.bottom - lastBottom).toBeLessThanOrEqual(64);
+
+    // Select rows (workspace, branch) put their icon on the same inset as the plain rows.
+    for (const label of sheet.querySelectorAll<HTMLElement>('[data-slot="select-label"]')) {
+      const icon = label.querySelector<SVGElement>("svg");
+      if (icon === null) continue;
+      expect(icon.getBoundingClientRect().left - sheetRect.left).toBeCloseTo(16, 0);
+    }
+
+    // The pull request row has a leading icon and its label shares the other rows' label column.
+    const prRow = rows.find((row) => row.textContent?.includes("#42"))!;
+    const prIcon = prRow.querySelector<SVGElement>("svg")!;
+    expect(prIcon.getBoundingClientRect().left - sheetRect.left).toBeCloseTo(16, 0);
+    const changesRow = detailsRowButton("Changes")!;
+    const labelLeft = (row: HTMLElement, text: string) => {
+      const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        if (node.textContent?.includes(text)) {
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          return range.getBoundingClientRect().left;
+        }
+      }
+      throw new Error(`no text "${text}" in row`);
+    };
+    expect(labelLeft(prRow, "#42")).toBeCloseTo(labelLeft(changesRow, "Changes"), 0);
+  },
+);
+
+it.each([390, 320])(
+  "gives the Changes panel a 44px bar, one close action and a 16px gutter at %ipx",
+  async (width) => {
+    const { screen } = await openThread(width);
+    await using _screen = screen;
+    await openDetails();
+    await userEvent.click(detailsRowButton("Changes")!);
+    const panel = await vi.waitFor(
+      () => {
+        const found = document.querySelector<HTMLElement>('[data-preview-panel-mode="sheet"]');
+        expect(found).not.toBeNull();
+        return found!;
+      },
+      { timeout: 5_000 },
+    );
+    const popup = panel.closest<HTMLElement>('[data-slot="sheet-popup"]')!;
+    expect(parseFloat(getComputedStyle(popup).borderInlineStartWidth)).toBe(0);
+
+    const bar = panel.querySelector<HTMLElement>("[data-right-panel-tabbar]")!;
+    expect(bar.getBoundingClientRect().height).toBeCloseTo(44, 0);
+    expect(parseFloat(getComputedStyle(bar).borderBottomWidth)).toBe(1);
+    const back = page.getByRole("button", { name: "Back to thread" }).element();
+    expect(back.getBoundingClientRect().height).toBeGreaterThanOrEqual(43.5);
+    expect(back.querySelector("svg")!.getBoundingClientRect().left).toBeCloseTo(16, 0);
+    expect(
+      panel.querySelector('[data-diff-panel-scope] [aria-label="Close Changes"]'),
+      "the back control is the only close action",
+    ).toBeNull();
+
+    const changedFile = await vi.waitFor(
+      () => {
+        const found = [...panel.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+          button.textContent?.includes("App.tsx"),
+        );
+        expect(found).not.toBeUndefined();
+        return found!;
+      },
+      { timeout: 10_000 },
+    );
+    const fileRow = changedFile.parentElement!;
+    expect(fileRow.getBoundingClientRect().height).toBeGreaterThanOrEqual(43.5);
+    expect(changedFile.querySelector("svg")!.getBoundingClientRect().left).toBeCloseTo(16, 0);
+    const status = [...changedFile.querySelectorAll<HTMLElement>("span")].find(
+      (span) => span.textContent === "M",
+    )!;
+    expect(width - status.getBoundingClientRect().right).toBeGreaterThanOrEqual(16 - 0.5);
+
+    const toolbar = panel.querySelector<HTMLElement>("[data-surface-subheader]")!;
+    const toolbarControls = [...toolbar.querySelectorAll<HTMLElement>("button")].filter(
+      (control) => control.getClientRects().length > 0,
+    );
+    expect(toolbarControls.length).toBeGreaterThan(0);
+    for (const control of toolbarControls) {
+      expect(
+        control.getBoundingClientRect().height,
+        control.getAttribute("aria-label") ?? control.textContent ?? "control",
+      ).toBeGreaterThanOrEqual(43.5);
+    }
+    const toolbarText = [...toolbar.querySelectorAll<HTMLElement>("span")].find((span) =>
+      span.textContent?.includes("Against"),
+    );
+    if (toolbarText) {
+      expect(toolbarText.getBoundingClientRect().left).toBeCloseTo(16, 0);
+    }
+    for (const button of panel.querySelectorAll<HTMLElement>('[aria-label="Add panel surface"]')) {
+      expect(button.getBoundingClientRect().height).toBeGreaterThanOrEqual(43.5);
+    }
+
+    await userEvent.click(changedFile);
+    await vi.waitFor(
+      () => expect(allText(document.body)).toContain("export const app = phone();"),
+      {
+        timeout: 30_000,
+      },
+    );
+    const viewer = panel.querySelector<HTMLElement>("diffs-container");
+    expect(viewer, "diff viewer").not.toBeNull();
+    const viewerRect = viewer!.getBoundingClientRect();
+    expect(viewerRect.left).toBeGreaterThanOrEqual(8 - 0.5);
+    expect(width - viewerRect.right).toBeGreaterThanOrEqual(8 - 0.5);
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
+
+    // No reserved header band between the file bar and the first line, and the expand row shares
+    // the code's edges.
+    const fileBar = panel.querySelector<HTMLElement>("button[data-title]")!.parentElement!;
+    const root = viewer!.shadowRoot!;
+    const firstLine = root.querySelector<HTMLElement>("[data-line]")!;
+    expect(
+      firstLine.getBoundingClientRect().top - fileBar.getBoundingClientRect().bottom,
+      "gap under the file bar",
+    ).toBeLessThanOrEqual(8);
+    const expandRow = root.querySelector<HTMLElement>("[data-separator-wrapper]");
+    if (expandRow) {
+      expect(expandRow.getBoundingClientRect().left).toBeCloseTo(viewerRect.left, 0);
+      expect(expandRow.getBoundingClientRect().right).toBeCloseTo(viewerRect.right, 0);
+      expect(parseFloat(getComputedStyle(expandRow).paddingLeft)).toBe(0);
+    }
+  },
+);
+
+it.each([390, 320])(
+  "gives the Files panel full-width 44px rows on the 16px gutter at %ipx",
+  async (width) => {
+    const { screen } = await openThread(width);
+    await using _screen = screen;
+    await openDetails();
+    await userEvent.click(detailsRowButton("Files")!);
+    const readme = await vi.waitFor(
+      () => {
+        const found = document.querySelector<HTMLElement>(
+          '[role="treeitem"][data-item-path="README.md"]',
+        );
+        expect(found).not.toBeNull();
+        return found!;
+      },
+      { timeout: 10_000 },
+    );
+    const panel = document.querySelector<HTMLElement>('[data-preview-panel-mode="sheet"]')!;
+    const popup = panel.closest<HTMLElement>('[data-slot="sheet-popup"]')!;
+    expect(parseFloat(getComputedStyle(popup).borderInlineStartWidth)).toBe(0);
+    const bar = panel.querySelector<HTMLElement>("[data-right-panel-tabbar]")!;
+    expect(bar.getBoundingClientRect().height).toBeCloseTo(44, 0);
+    expect(
+      page.getByRole("button", { name: "Back to thread" }).element().getBoundingClientRect().height,
+    ).toBeGreaterThanOrEqual(43.5);
+
+    const rect = readme.getBoundingClientRect();
+    expect(rect.left).toBeCloseTo(0, 0);
+    expect(rect.right).toBeCloseTo(width, 0);
+    expect(rect.height).toBeGreaterThanOrEqual(43.5);
+    expect(readme.firstElementChild!.getBoundingClientRect().left).toBeCloseTo(16, 0);
+    const search = panel.querySelector<HTMLElement>('input[type="search"]')!;
+    expect(
+      search.closest("[data-surface-subheader]")!.getBoundingClientRect().height,
+    ).toBeGreaterThan(44);
+    expect(
+      search.parentElement!.getBoundingClientRect().left,
+      "the filter field sits on the gutter",
+    ).toBeCloseTo(16, 0);
+  },
+);
 
 it("hides a restored desktop-only terminal tab on phone", async () => {
   const { screen } = await openThread(390);

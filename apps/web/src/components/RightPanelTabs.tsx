@@ -87,6 +87,7 @@ import {
 import { useBrowserDefaults } from "~/browser/browserDefaults";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { PanelTabCloseButton } from "~/components/ui/panel-tab-close-button";
+import { PHONE_PANEL_BAR_CLS } from "~/components/ui/phone-recipes";
 import { faviconUrlForOrigin } from "@houston-app/shared/favicon";
 import { useTheme } from "~/hooks/useTheme";
 import { useDeviceState } from "~/state/device";
@@ -917,6 +918,8 @@ function RightPanelTab(
     previewUrl: string | null;
     previewCapturedUrl: string | null;
     theme: "light" | "dark";
+    /** The phone's tab is a 36px chip with a 44px hit area. */
+    phone?: boolean;
     environmentId: EnvironmentId | null;
     pullRequestStatusSeed: PullRequestTabStatusSeed | undefined;
     renaming: boolean;
@@ -1051,6 +1054,8 @@ function RightPanelTab(
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cn(
         "cursor-pointer group/tab flex h-7 max-w-36 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium",
+        props.phone &&
+          "relative h-9 max-w-48 px-3 after:absolute after:inset-x-0 after:-inset-y-1 after:content-['']",
         props.ownsDesktopTitleBar && "[-webkit-app-region:no-drag]",
         props.active
           ? "bg-selected text-foreground"
@@ -1375,7 +1380,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           render={
             <Button
               aria-label="Add panel surface"
-              className="shrink-0"
+              className={cn("shrink-0", props.phone && "size-11")}
               size="icon-xs"
               variant="ghost-muted"
             />
@@ -1485,6 +1490,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                     previewUrl={favicon.url}
                     previewCapturedUrl={favicon.capturedUrl}
                     theme={resolvedTheme}
+                    phone={props.phone === true}
                     environmentId={props.environmentId}
                     pullRequestStatusSeed={props.pullRequestStatusSeeds?.[surface.id]}
                     renaming={renamingDevice === surface.id}
@@ -1570,6 +1576,8 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
         className={cn(
           "group/panel-header flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1 pl-2",
           props.mode === "inline" && !props.layoutControls ? "pr-3" : "pr-1",
+          // The phone's bar matches the thread bar: 44px, a divider below, the back control on the gutter.
+          props.phone && PHONE_PANEL_BAR_CLS,
           ownsDesktopTitleBar && "drag-region",
           ownsDesktopTitleBar &&
             "wco:pr-(--workspace-native-controls-inset) custom-chrome:pr-(--workspace-native-controls-inset)",

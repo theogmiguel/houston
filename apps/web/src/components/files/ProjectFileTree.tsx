@@ -134,7 +134,8 @@ export function ProjectFileTree({
 }: ProjectFileTreeProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   // The phone has no drag and drop: a row still opens on tap, but never starts a mention drag.
-  const dragEnabled = !useIsPhone();
+  const isPhone = useIsPhone();
+  const dragEnabled = !isPhone;
   const { resolvedTheme } = useTheme();
   const selectedVisible = rows.some((row) => row.entry.path === selectedPath);
   const firstFile = rows.find((row) => row.entry.kind === "file")?.entry.path ?? null;
@@ -303,11 +304,14 @@ export function ProjectFileTree({
                 onDragStart={dragEnabled ? (event) => onEntryDragStart(entry, event) : undefined}
                 onDragEnd={dragEnabled ? onEntryDragEnd : undefined}
                 className={cn(
-                  "mx-1.5 flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border-0 bg-transparent pr-2 text-left text-xs outline-none",
+                  "mx-1.5 flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border-0 bg-transparent pr-2 text-left text-xs outline-none max-phone:mx-0 max-phone:h-11 max-phone:w-full max-phone:rounded-none max-phone:pr-4 max-phone:text-sm",
                   "text-[var(--t1)] hover:bg-[var(--hover)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--accent-ink)]",
                   selected && "bg-[var(--sel)]",
                 )}
-                style={{ paddingLeft: 8 + depth * 14, opacity: entry.ignored ? 0.5 : undefined }}
+                style={{
+                  paddingLeft: (isPhone ? 16 : 8) + depth * 14,
+                  opacity: entry.ignored ? 0.5 : undefined,
+                }}
               >
                 <span className="flex w-[13px] shrink-0 items-center justify-center text-[var(--houston)]">
                   {directory ? (

@@ -10,6 +10,7 @@ import type {
 } from "@houston-app/contracts";
 import { scopedThreadKey } from "@houston-app/client-runtime/environment";
 import { lazy, Suspense } from "react";
+import { useIsPhone } from "../../mobile/usePhone";
 import SideChatPane from "./SideChatPane";
 import type { ComposerImageAttachment, DraftId } from "../../composerDraftStore";
 import type { ShortcutMatchContext } from "../../keybindings";
@@ -83,7 +84,8 @@ export function RightPanelSurfaceContent(props: {
   readonly files: RightPanelFileProps;
   readonly sideChatParentPanel: SideChatParentPanel;
 }) {
-  const { surface, threadRef, visible, onCloseSurface } = props;
+  const { surface, threadRef, visible } = props;
+  const isPhone = useIsPhone();
   if (surface === null) return null;
   switch (surface.kind) {
     case "preview":
@@ -118,7 +120,8 @@ export function RightPanelSurfaceContent(props: {
             composerDraftTarget={props.composerDraftTarget}
             workspaceMutationId={props.workspaceMutationId}
             visible={visible}
-            onClose={() => props.onCloseSurface(surface)}
+            // The phone bar's Back control is the one close action.
+            {...(isPhone ? {} : { onClose: () => props.onCloseSurface(surface) })}
           />
         </Suspense>
       );

@@ -208,7 +208,9 @@ export function ThreadDetailsCard({
   const card = (
     <div
       className={cn(
-        "isolate contain-paint grid max-h-full grid-rows-[minmax(0,1fr)] overflow-hidden rounded-xl bg-[var(--surface-raised)] shadow-[var(--shadow-1)]",
+        "isolate contain-paint grid max-h-full grid-rows-[minmax(0,1fr)] overflow-hidden",
+        // The sheet is the container; the card inside it adds no surface of its own.
+        !sheet && "rounded-xl bg-[var(--surface-raised)] shadow-[var(--shadow-1)]",
         !sheet &&
           mode === "popover" &&
           "max-h-[min(calc(100dvh-6.5rem),calc(var(--available-height,100dvh)-1rem))]",
@@ -218,7 +220,7 @@ export function ThreadDetailsCard({
       data-thread-details-card
     >
       <ScrollArea scrollFade className="min-h-0">
-        <div ref={setContentElement} className="py-1">
+        <div ref={setContentElement} className={sheet ? "pb-2" : "py-1"}>
           {children(density)}
         </div>
       </ScrollArea>

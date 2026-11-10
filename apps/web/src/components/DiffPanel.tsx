@@ -7,6 +7,7 @@ import {
 } from "@houston-app/client-runtime/state/runtime";
 import { safeErrorLogAttributes } from "@houston-app/client-runtime/errors";
 import type { ReviewBranchCommitsResult, ScopedThreadRef, RunId } from "@houston-app/contracts";
+import { useIsPhone } from "../mobile/usePhone";
 import { ArrowRightIcon, CheckIcon, ChevronDownIcon, XIcon } from "lucide-react";
 import { ChevronDown, ChevronRight } from "lucide";
 import * as Schema from "effect/Schema";
@@ -252,6 +253,7 @@ export default function DiffPanel({
   onClose,
 }: DiffPanelProps) {
   const resolvedTheme = useRenderedAppearance();
+  const isPhone = useIsPhone();
   const startNewThread = useNewThreadHandler();
   const settings = useClientSettings((settings) => ({
     diffFilesCollapsed: settings.diffFilesCollapsed,
@@ -1684,7 +1686,7 @@ export default function DiffPanel({
                 </div>
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                   <div
-                    className="flex h-(--h-pane-head) min-h-(--h-pane-head) shrink-0 items-center gap-1 border-b border-border bg-[var(--pane-head)] ps-1.5 pe-2"
+                    className="flex h-(--h-pane-head) min-h-(--h-pane-head) shrink-0 items-center gap-1 border-b border-border bg-[var(--pane-head)] ps-1.5 pe-2 max-phone:px-4"
                     onClickCapture={(event) => {
                       const composedPath = event.nativeEvent.composedPath?.() ?? [];
                       for (const node of composedPath) {
@@ -1774,7 +1776,7 @@ export default function DiffPanel({
                       />
                     ) : null}
                   </div>
-                  <div className="min-h-0 min-w-0 flex-1">
+                  <div className="min-h-0 min-w-0 flex-1 max-phone:px-2">
                     <AnnotatableCodeView
                       key={collapseScopeKey ?? reviewSectionId}
                       environmentId={activeThread?.environmentId}
@@ -1790,6 +1792,8 @@ export default function DiffPanel({
                       composerDraftTarget={composerDraftTarget}
                       onCommentAdded={addToReviewBatch}
                       unsafeCSSExtra={SINGLE_FILE_DIFF_HEADER_CSS}
+                      // The phone drops the header gap; desktop keeps its measured layout.
+                      hiddenFileHeaders={isPhone}
                       renderHeaderFilenameSuffix={() => null}
                       onRevealSearchMatch={unfoldDiffFile}
                       renderHeaderPrefix={() => null}

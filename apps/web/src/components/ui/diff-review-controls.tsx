@@ -53,7 +53,7 @@ export function DiffFileList(props: {
   readonly onStageToggle?: (path: string) => void;
 }) {
   return (
-    <div className="flex flex-col gap-px px-1.5 py-1.5">
+    <div className="flex flex-col gap-px px-1.5 py-1.5 max-phone:px-0">
       {props.entries.map((entry) => {
         const selected = entry.path === props.selectedPath;
         const state = props.fileState?.(entry.path);
@@ -61,7 +61,7 @@ export function DiffFileList(props: {
           <div
             key={entry.path}
             className={cn(
-              "flex h-7 w-full min-w-0 shrink-0 items-center gap-2 rounded-md px-2 text-xs",
+              "flex h-7 w-full min-w-0 shrink-0 items-center gap-2 rounded-md px-2 text-xs max-phone:h-11 max-phone:rounded-none max-phone:px-4 max-phone:text-sm",
               selected ? "bg-selected text-foreground" : "text-secondary-foreground hover:bg-hover",
             )}
           >
@@ -81,7 +81,7 @@ export function DiffFileList(props: {
                 <span className="text-diff-addition">+{entry.additions}</span>{" "}
                 <span className="text-diff-deletion">−{entry.deletions}</span>
               </span>
-              <span className="w-3 shrink-0 text-center font-mono text-2xs text-muted-foreground">
+              <span className="w-3 shrink-0 text-center font-mono text-2xs text-muted-foreground max-phone:w-4 max-phone:text-xs max-phone:font-medium max-phone:text-secondary-foreground">
                 {entry.status === undefined ? "" : (DIFF_STATUS_LETTERS[entry.status] ?? "M")}
               </span>
             </button>
