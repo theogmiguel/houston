@@ -70,14 +70,14 @@ export const SIDEBAR_ROW_ACTIONS_CLS =
   "absolute inset-y-0 right-0.75 flex shrink-0 items-center gap-0.5";
 
 /** A project's rows hang from a 1px guide under the centre of its folder glyph. */
-export const SIDEBAR_PROJECT_GUIDE_CLS = "ml-3.25 border-l border-sidebar-border pl-1";
+export const SIDEBAR_PROJECT_GUIDE_CLS = "ml-3.25 border-l border-border pl-1";
 
 /**
  * A grid's cards hang from a 1px guide under the centre of its chevron; the grid on screen draws
  * it in the secondary text tone. The 4px of padding below, with the next row's 2px, make 6px.
  */
 export const SIDEBAR_GRID_GUIDE_CLS =
-  "ml-1.5 flex flex-col gap-0.5 border-l border-sidebar-border pb-1 pl-0.75";
+  "ml-1.5 flex flex-col gap-0.5 border-l border-border pb-1 pl-0.75";
 
 export const SIDEBAR_GRID_GUIDE_ON_SCREEN_CLS = "border-secondary-label";
 

@@ -230,6 +230,7 @@ import { useDictationSubmissionShortcut } from "../../speech/useDictationSubmiss
 import { ComposerFooterPrimaryActions } from "./ComposerFooterControls";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
+import { composerTopDrawerVariant } from "./composerTopDrawerVariant";
 import { resolveComposerMenuActiveItemId } from "./composerMenuHighlight";
 import { buildPullRequestReferenceContext } from "../pullRequest/pullRequestDetail.logic";
 import {
@@ -3820,7 +3821,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             {showComposerTopDrawer ? (
               <ComposerBanner.Root
                 data-chat-composer-top-drawer="true"
-                variant="warning"
+                variant={composerTopDrawerVariant({
+                  hasPendingUserInput: pendingUserInputs.length > 0,
+                })}
                 inCard="drawer"
               >
                 {pendingUserInputs.length > 0 ? (
