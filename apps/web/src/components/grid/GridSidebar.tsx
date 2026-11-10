@@ -102,10 +102,17 @@ import {
 } from "./sidebarCollapse";
 import {
   buildSidebarProjectSections,
+  moveProjectGroup,
   orderSidebarProjectGroups,
   type SidebarProjectSection as SidebarProjectSectionModel,
 } from "./sidebarProjectSections";
 import { preorderThreads } from "../../grid/tree";
+import { useUiStateStore } from "../../uiStateStore";
+import {
+  PROJECT_REORDER_ATTRIBUTE,
+  useProjectReorderDrag,
+  type ProjectReorderDrag,
+} from "./projectReorderDrag";
 import { useOpenGridDraft } from "../../grid/useOpenGridDraft";
 import { useProject, useQuietThreadShells, useProjects } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
@@ -820,6 +827,19 @@ export function GridSidebar() {
     activityAt: (grid) => gridActivityAt(grid, threads, nowIso),
   });
 
+  const reorder = useProjectReorderDrag((draggedKey, targetKey, side) => {
+    const moved = moveProjectGroup({
+      groups: orderedProjectGroups,
+      draggedKey,
+      targetKey,
+      side,
+    });
+    if (moved === null) return;
+    const store = useUiStateStore.getState();
+    // Archived projects are not on the rail; they keep their place after the visible ones.
+    store.setProjectOrder([...moved, ...store.projectOrder.filter((key) => !moved.includes(key))]);
+  });
+
   return (
     <>
       <SidebarChromeHeader isDesktopHost={isDesktopHost} />
@@ -936,6 +956,7 @@ export function GridSidebar() {
                 runningSubagents={runningSubagentsByThread}
                 dragging={dragging}
                 dropTarget={dropTarget}
+                projectReorder={{ drag: reorder.drag, begin: reorder.begin }}
                 onOpenThread={openThread}
                 onSelectThread={selectThread}
                 onCloseThread={(thread) => closeThreads([thread])}
@@ -1224,6 +1245,7 @@ export function SidebarProjectSection({
   runningSubagents,
   dragging,
   dropTarget,
+  projectReorder,
   onOpenThread,
   onSelectThread,
   onCloseThread,
@@ -1253,6 +1275,13 @@ export function SidebarProjectSection({
   runningSubagents: ReadonlyMap<string, number>;
   dragging: DraggedThread | null;
   dropTarget: string | null;
+  /** Lets the user drag the project to a new place in the rail; absent, the section is fixed. */
+  projectReorder?:
+    | {
+        drag: ProjectReorderDrag | null;
+        begin: (event: ReactPointerEvent<HTMLElement>, projectKey: string) => void;
+      }
+    | undefined;
   onOpenThread: (gridId: string, threadId: string) => void;
   onSelectThread: (
     thread: EnvironmentThreadShell,
@@ -1279,13 +1308,30 @@ export function SidebarProjectSection({
   const gridCount = section.grids.length;
   const projectMenu = section.isScratch ? undefined : onOpenProjectMenu;
   const summary = gridCount === 0 ? "No grids" : gridCount === 1 ? "1 grid" : `${gridCount} grids`;
+  const reorderable = projectReorder !== undefined && !section.isScratch;
+  const reorderDrag = projectReorder?.drag ?? null;
+  const dropSide =
+    reorderDrag !== null && reorderDrag.targetKey === section.projectKey ? reorderDrag.side : null;
 
   return (
     <div
-      className="flex flex-col gap-px"
+      className={cn(
+        "relative flex flex-col gap-px",
+        reorderDrag?.draggedKey === section.projectKey && "opacity-50",
+        dropSide === "before" &&
+          "before:absolute before:inset-x-0 before:top-0 before:z-10 before:h-0.5 before:bg-(--accent-ink)",
+        dropSide === "after" &&
+          "after:absolute after:inset-x-0 after:bottom-0 after:z-10 after:h-0.5 after:bg-(--accent-ink)",
+      )}
       data-project-key={section.isScratch ? "no-project" : section.projectKey}
+      {...(reorderable ? { [PROJECT_REORDER_ATTRIBUTE]: "" } : {})}
     >
-      <div className={SIDEBAR_PROJECT_ROW_CLS}>
+      <div
+        className={SIDEBAR_PROJECT_ROW_CLS}
+        {...(reorderable
+          ? { onPointerDown: (event) => projectReorder.begin(event, section.projectKey) }
+          : {})}
+      >
         <Tooltip>
           <TooltipTrigger
             render={

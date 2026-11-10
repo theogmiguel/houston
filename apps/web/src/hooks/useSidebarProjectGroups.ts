@@ -16,7 +16,6 @@ export function useSidebarProjectGroups() {
   const threads = useQuietThreadShells();
   const delegatedUnderParent = useDelegatedUnderParent();
   const projectOrder = useUiStateStore((store) => store.projectOrder);
-  const sortOrder = useClientSettings((s) => s.sidebarProjectSortOrder);
   const groupingSettings = useClientSettings(selectProjectGroupingSettings);
   const environments = useEnvironmentIdentities();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -33,11 +32,12 @@ export function useSidebarProjectGroups() {
     environments.map((environment) => [environment.environmentId, environment.label] as const),
   );
   const unsortedGroups = buildSidebarProjectSnapshots({
-    projects: sortOrder === "manual" ? orderedProjects : projects,
+    projects: orderedProjects,
     groupScratchProjects: true,
     settings: groupingSettings,
     primaryEnvironmentId,
     resolveEnvironmentLabel: (environmentId) => labels.get(environmentId) ?? null,
   });
-  return sortSidebarV2ProjectGroups(unsortedGroups, threads, sortOrder, delegatedUnderParent);
+  // The rail keeps the order the user dragged projects into; activity never reorders it.
+  return sortSidebarV2ProjectGroups(unsortedGroups, threads, "manual", delegatedUnderParent);
 }
