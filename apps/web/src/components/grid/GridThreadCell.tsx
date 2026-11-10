@@ -1,5 +1,5 @@
-import { scopeProjectRef, scopeThreadRef } from "@houston-app/client-runtime/environment";
-import type { EnvironmentId, ProjectId, ScopedThreadRef, ThreadId } from "@houston-app/contracts";
+import { scopeThreadRef } from "@houston-app/client-runtime/environment";
+import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@houston-app/contracts";
 import { EllipsisIcon, Maximize2Icon, Minimize2Icon, SquareMenuIcon, XIcon } from "lucide-react";
 import {
   useEffect,
@@ -16,7 +16,7 @@ import { resolveThreadStatusPill } from "../Sidebar.logic";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { type DraftId, useComposerDraftStore } from "../../composerDraftStore";
-import { useProject, useQuietThreadShell } from "../../state/entities";
+import { useQuietThreadShell } from "../../state/entities";
 import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
 import { paneDensityLayout } from "../../grid/density";
 import { subscribeGridCellRename } from "../../grid/gridCellCommands";
@@ -113,11 +113,6 @@ export function GridThreadCell({
   const environmentId = grid.environmentId as EnvironmentId;
   const threadId = node.threadId as ThreadId;
   const threadRef = scopeThreadRef(environmentId, threadId);
-  const project = useProject(
-    phone ? scopeProjectRef(environmentId, grid.projectId as ProjectId) : null,
-  );
-  const phoneProjectName =
-    project === null ? null : project.isScratch ? "No project" : project.title.trim() || null;
   const shell = useQuietThreadShell(threadRef);
   const draftId = node.draftId as DraftId | undefined;
   const draftSession = useComposerDraftStore((store) =>
@@ -396,7 +391,6 @@ export function GridThreadCell({
     >
       {phone ? (
         <PhoneThreadBar
-          projectName={phoneProjectName}
           title={title}
           status={status}
           renaming={renaming}

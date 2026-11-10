@@ -83,7 +83,8 @@ it("gives a phone thread its own bar with back, title, details and menu", async 
     .element(screen.getByRole("button", { name: `Thread actions for ${LONG_TITLE}` }))
     .toBeVisible();
   await expect.element(screen.getByRole("button", { name: "Thread details" })).toBeVisible();
-  expect(phoneBar()!.textContent).toContain(LONG_PROJECT);
+  // The project is on the home page; the bar gives its width to the title.
+  expect(phoneBar()!.textContent).not.toContain(LONG_PROJECT);
   expect(phoneBar()!.textContent).toContain(LONG_TITLE);
 
   // The desktop header, pane actions and rail toggle give way to the bar.
@@ -142,6 +143,25 @@ it("keeps the bar inside a 320px viewport with long project and thread names", a
     expect(buttonRect.left).toBeGreaterThanOrEqual(0);
     expect(buttonRect.right).toBeLessThanOrEqual(320);
   }
+});
+
+it("lets the title take the width the breadcrumb used to hold", async () => {
+  const { screen } = await openThread(390);
+  await using _screen = screen;
+
+  const bar = phoneBar()!;
+  const title = bar.querySelector("h1")!;
+  const barRect = bar.getBoundingClientRect();
+  expect(barRect.height).toBe(44);
+  expect(getComputedStyle(bar).borderBottomWidth).toBe("1px");
+  const back = screen.getByRole("button", { name: "Back to threads" }).element();
+  const menu = screen.getByRole("button", { name: `Thread actions for ${LONG_TITLE}` }).element();
+  const details = screen.getByRole("button", { name: "Thread details" }).element();
+  const free =
+    details.getBoundingClientRect().left - back.getBoundingClientRect().right;
+  // The title fills what the three controls and the status glyph leave.
+  expect(title.getBoundingClientRect().width).toBeGreaterThan(free - 40);
+  expect(menu.getBoundingClientRect().right).toBeLessThanOrEqual(390);
 });
 
 it("keeps the desktop header at 1024px", async () => {

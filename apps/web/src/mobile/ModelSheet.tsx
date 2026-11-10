@@ -87,7 +87,7 @@ export const ModelSheet = memo(function ModelSheet(props: {
         data-composer-shortcut="composer.effort composer.mode"
         data-phone-model-sheet-trigger="true"
         onClick={() => props.onOpenChange(true)}
-        className="max-w-36 min-w-0"
+        className="max-w-full min-w-0"
       >
         <span className="flex min-w-0 items-center gap-1.5">
           <span className="inline-flex shrink-0 items-center">
@@ -109,7 +109,8 @@ export const ModelSheet = memo(function ModelSheet(props: {
           <span className="truncate" data-composer-control-label>
             {modelLabel}
           </span>
-          {effort.suffix}
+          {/* The model name outranks the effort word: a narrow composer drops the word first. */}
+          <span className="contents @max-[22rem]/composer-surface:hidden">{effort.suffix}</span>
           <ChevronDownIcon aria-hidden="true" className="size-3.25 shrink-0" />
         </span>
       </ComposerControl>

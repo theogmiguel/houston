@@ -353,7 +353,7 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
       {expanded ? (
         <div
           className={cn(
-            "flex w-full items-center justify-end pe-1 text-callout text-(--houston) tabular-nums",
+            "flex w-full items-center justify-end pe-1 max-phone:pe-0 text-callout text-(--houston) tabular-nums",
             BUBBLE_MAX_WIDTH_CLASS,
           )}
         >
@@ -372,7 +372,7 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
               timestampFormat={ctx.timestampFormat}
               alwaysVisible
             />
-            <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100">
+            <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-200 max-phone:hidden max-phone:pointer-coarse:flex pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100">
               {typeof revertTurnCount === "number" && (
                 <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
               )}
@@ -1037,7 +1037,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       <UserMessageProjectedStatus row={row} />
       <div
         className={cn(
-          "flex w-full items-center justify-end pe-1 text-callout text-(--houston) tabular-nums",
+          "flex w-full items-center justify-end pe-1 max-phone:pe-0 text-callout text-(--houston) tabular-nums",
           BUBBLE_MAX_WIDTH_CLASS,
         )}
       >
@@ -1063,7 +1063,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
               {formatChatTimestampTooltip(row.message.createdAt, ctx.timestampFormat)}
             </TooltipPopup>
           </Tooltip>
-          <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100">
+          <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-200 max-phone:hidden max-phone:pointer-coarse:flex pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100">
             {typeof revertTurnCount === "number" && (
               <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
             )}

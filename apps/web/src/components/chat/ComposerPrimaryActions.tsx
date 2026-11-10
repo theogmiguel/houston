@@ -256,7 +256,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           compact ? (
             <button
               type="button"
-              className={cn(messageActionGhostPillClassName, "w-7 px-0")}
+              className={cn(messageActionGhostPillClassName, "w-7 px-0 max-phone:h-11 max-phone:w-11")}
               {...pointerFocusProps}
               onClick={onPreviousPendingQuestion}
               disabled={pendingAction.isResponding}
@@ -267,7 +267,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           ) : (
             <button
               type="button"
-              className={messageActionGhostPillClassName}
+              className={cn(messageActionGhostPillClassName, "max-phone:h-11 max-phone:px-4")}
               {...pointerFocusProps}
               onClick={onPreviousPendingQuestion}
               disabled={pendingAction.isResponding}
@@ -278,7 +278,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         ) : null}
         <button
           type="submit"
-          className={messageActionPillClassName}
+          className={cn(messageActionPillClassName, "max-phone:h-11 max-phone:px-4")}
           {...pointerFocusProps}
           disabled={
             !canOperateThread ||

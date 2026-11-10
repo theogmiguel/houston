@@ -3650,6 +3650,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       }}
     />
   ) : null;
+  // A glance pane hides the changes bar, so on a phone its tray would stand empty above the card.
+  const showChangedFilesTray = changedFiles !== null && !(isPhone && paneDensity === "glance");
   return (
     <form
       ref={composerFormRef}
@@ -3704,9 +3706,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       {...threadContextDropTargetProps()}
     >
       <div className="relative">
-        {(contextControls && !composerNarrow) || changedFiles !== null ? (
+        {(contextControls && !composerNarrow) || showChangedFilesTray ? (
           <div data-composer-context-tray="true" className={CONTEXT_TRAY_CLS}>
-            {changedFiles !== null && changesExpanded ? (
+            {showChangedFilesTray && changedFiles !== null && changesExpanded ? (
               <ChangedFilesList summary={changedFiles.summary} onReview={changedFiles.onReview} />
             ) : null}
             <div className={CONTEXT_TRAY_ROW_CLS}>
@@ -3715,7 +3717,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   {cloneElement(contextControls, { forceNarrow: false, variant: "tray" })}
                 </div>
               ) : null}
-              {changedFiles === null ? null : (
+              {!showChangedFilesTray || changedFiles === null ? null : (
                 <ChangedFilesBar
                   {...changedFiles}
                   compact={composerNarrow}
@@ -4048,11 +4050,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 data-chat-composer-footer="true"
                 className={cn(
                   "flex min-w-0 flex-nowrap items-center gap-0.5 overflow-visible px-1.5 pt-0.5 pb-1.5",
+                  isPhone && "gap-2",
                   pendingUserInputs.length > 0 && "pt-1.5",
                   showMobilePendingAnswerActions && "hidden sm:flex",
                 )}
               >
-                {phoneAddSheet ? <div className="me-0.5">{phoneAddSheet}</div> : null}
+                {phoneAddSheet ? <div className={isPhone ? "" : "me-0.5"}>{phoneAddSheet}</div> : null}
                 {composerAttachButton ? <div className="me-0.5">{composerAttachButton}</div> : null}
                 <div
                   data-chat-composer-actions="right"
@@ -4060,13 +4063,19 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   data-chat-composer-primary-actions-compact={
                     isComposerPrimaryActionsCompact ? "true" : "false"
                   }
-                  className="flex min-w-0 flex-1 flex-nowrap items-center gap-0.5"
+                  className={cn(
+                    "flex min-w-0 flex-1 flex-nowrap items-center gap-0.5",
+                    isPhone && "gap-2",
+                  )}
                 >
                   <div
                     ref={attachExpandedControls}
                     data-chat-composer-controls="footer"
                     data-chat-composer-footer-controls="true"
-                    className="relative flex min-w-0 flex-1 items-center gap-0.5"
+                    className={cn(
+                      "relative flex min-w-0 flex-1 items-center gap-0.5",
+                      isPhone && "gap-2",
+                    )}
                   >
                     {composerControls}
                     {contextControls && composerNarrow

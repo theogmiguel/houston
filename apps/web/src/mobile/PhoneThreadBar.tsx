@@ -7,16 +7,13 @@ import { GridPaneRenameInput } from "../components/ui/grid-pane";
 import {
   PHONE_THREAD_BAR_BREADCRUMB_CLS,
   PHONE_THREAD_BAR_CLS,
-  PHONE_THREAD_BAR_PROJECT_CLS,
-  PHONE_THREAD_BAR_SEPARATOR_CLS,
   PHONE_THREAD_BAR_TITLE_CLS,
 } from "../components/ui/thread-header-recipes";
 import { ThreadStateGlyph } from "../components/ui/thread-state-glyph";
 import { textDirection } from "../textDirection";
 
-/** The phone's thread header: back to the rail, the thread's breadcrumb, details and its menu. */
+/** The phone's thread header: back to the rail, the thread's title, details and its menu. */
 export function PhoneThreadBar({
-  projectName,
   title,
   status,
   renaming,
@@ -31,7 +28,6 @@ export function PhoneThreadBar({
   onOpenMenu,
   onBack,
 }: {
-  projectName: string | null;
   title: string;
   status: ThreadStatusPill | null;
   renaming: boolean;
@@ -72,14 +68,6 @@ export function PhoneThreadBar({
         </div>
       ) : (
         <div className={PHONE_THREAD_BAR_BREADCRUMB_CLS}>
-          {projectName === null ? null : (
-            <>
-              <span className={PHONE_THREAD_BAR_PROJECT_CLS}>{projectName}</span>
-              <span aria-hidden className={PHONE_THREAD_BAR_SEPARATOR_CLS}>
-                /
-              </span>
-            </>
-          )}
           <h1 dir={textDirection(title)} className={PHONE_THREAD_BAR_TITLE_CLS}>
             {title}
           </h1>

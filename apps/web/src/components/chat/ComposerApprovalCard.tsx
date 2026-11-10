@@ -23,6 +23,8 @@ export interface ComposerApprovalCardProps {
   readonly count: number;
   readonly canOperateThread: boolean;
   readonly isResponding: boolean;
+  /** A phone shows the full request and gives each decision a 44px, half-width button. */
+  readonly phone?: boolean;
   readonly onRespond: (
     requestId: RuntimeRequestId,
     decision: ProviderApprovalDecision,
@@ -40,9 +42,10 @@ export const ComposerApprovalCard = memo(function ComposerApprovalCard({
   count,
   canOperateThread,
   isResponding,
+  phone = false,
   onRespond,
 }: ComposerApprovalCardProps) {
-  const compact = density === "compact" || density === "glance";
+  const compact = !phone && (density === "compact" || density === "glance");
   const title = APPROVAL_TITLES[approval.requestKind] ?? "Approval needed";
   const detail = approval.detail?.trim() || approval.reason?.trim() || "";
   const primaryOptions = approval.options?.filter(
@@ -68,7 +71,7 @@ export const ComposerApprovalCard = memo(function ComposerApprovalCard({
       data-composer-approval-card={density}
       className={cn(
         "flex min-w-0 flex-col gap-2 rounded-xl border border-warning/30 warning-wash-surface",
-        compact ? "px-2.5 py-2" : "px-3 py-3",
+        phone ? "p-4" : compact ? "px-2.5 py-2" : "px-3 py-3",
       )}
     >
       {compact ? (
@@ -95,12 +98,18 @@ export const ComposerApprovalCard = memo(function ComposerApprovalCard({
           ) : null}
         </div>
       )}
-      <div className="flex flex-wrap items-center justify-end gap-1.5">
+      <div
+        className={cn(
+          "flex items-center gap-1.5",
+          phone ? "gap-2" : "flex-wrap justify-end",
+        )}
+      >
         <ComposerPendingApprovalActions
           requestId={approval.requestId}
           disabled={!canOperateThread}
           isResponding={isResponding}
           canRespond={approval.responseCapability === "live"}
+          {...(phone ? { phone } : {})}
           {...(compact ? { options: primaryOptions } : {})}
           onRespondToApproval={onRespond}
         />

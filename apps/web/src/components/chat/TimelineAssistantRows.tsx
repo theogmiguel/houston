@@ -45,7 +45,8 @@ import { SecondOpinionReviewCard } from "./SecondOpinionReviewCard";
  * and the 2px row padding add up to the 24px between turns (`pb-0` on the row in
  * `MessagesTimeline`), so the gap does not depend on whether the footer is showing.
  */
-const ASSISTANT_TURN_FOOTER_CLASS_NAME = "mt-1.5 -mb-2 h-6";
+const ASSISTANT_TURN_FOOTER_CLASS_NAME =
+  "mt-1.5 -mb-2 h-6 max-phone:mb-0 max-phone:-ms-2";
 
 export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
@@ -59,7 +60,7 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
 
   return (
     <>
-      <div className="relative min-w-0 px-1 py-0.5">
+      <div className="relative min-w-0 px-1 py-0.5 max-phone:px-0">
         <MessageAuthorHeading>Houston</MessageAuthorHeading>
         <div data-thread-find-text="true">
           <AssistantCitationSource
@@ -291,7 +292,7 @@ export function AssistantMetaTimelineRow({
   row: Extract<TimelineRow, { kind: "assistant-meta" }>;
 }) {
   return (
-    <div className="px-1">
+    <div className="px-1 max-phone:px-0">
       <AssistantMessageMeta
         className="mt-0.5"
         projectedItem={row.projectedItem}
@@ -366,6 +367,11 @@ function AssistantMessageMeta({
           {attribution.providerDisplayName} · {attribution.modelLabel}
         </Text>
       ) : null}
+      {attribution !== null && !message.streaming ? (
+        <span aria-hidden className="hidden text-muted-foreground max-phone:inline">
+          ·
+        </span>
+      ) : null}
       {!message.streaming && (
         <Tooltip>
           <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
@@ -417,7 +423,7 @@ export function ProposedPlanTimelineRow({
   const ctx = use(TimelineRowCtx);
 
   return (
-    <div className="min-w-0 px-1 py-0.5">
+    <div className="min-w-0 px-1 py-0.5 max-phone:px-0">
       <ProposedPlanCard
         planMarkdown={row.proposedPlan.planMarkdown}
         environmentId={ctx.activeThreadEnvironmentId}
@@ -440,10 +446,10 @@ export function HtmlRenderTimelineRow({
   const onFullscreenChange = (fullscreen: boolean) => onAppFullscreenChange(row.id, fullscreen);
 
   if (ctx.renderHtmlRender) {
-    return <div className="min-w-0 px-1">{ctx.renderHtmlRender(row)}</div>;
+    return <div className="min-w-0 px-1 max-phone:px-0">{ctx.renderHtmlRender(row)}</div>;
   }
   return (
-    <div className="min-w-0 px-1">
+    <div className="min-w-0 px-1 max-phone:px-0">
       <HtmlRenderFrame
         key={row.htmlRender.attachmentId}
         environmentId={ctx.activeThreadEnvironmentId}
@@ -460,7 +466,7 @@ export function McpAppTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "
   const { awaitingUser } = use(TimelineRowActivityCtx);
 
   return (
-    <div className="min-w-0 px-1">
+    <div className="min-w-0 px-1 max-phone:px-0">
       <McpAppFrame
         key={row.mcpApp.attachmentId}
         environmentId={ctx.activeThreadEnvironmentId}

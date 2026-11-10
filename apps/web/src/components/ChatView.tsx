@@ -3105,6 +3105,7 @@ export default function ChatView(props: ChatViewProps) {
         count={pendingApprovals.length}
         canOperateThread={canOperateThread}
         isResponding={activePendingIsResponding}
+        phone={phoneShell}
         onRespond={onRespondToApprovalStable}
       />
     );

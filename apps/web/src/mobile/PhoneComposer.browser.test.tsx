@@ -19,6 +19,7 @@ import {
   threadWithHistory,
   threadWithPendingApproval,
   threadWithPendingQuestion,
+  withPendingChanges,
 } from "../../test/fakeEnvironment";
 import { render } from "../../test/render";
 import { expectFullWidthRows, expectSheetRecipe } from "./phoneGeometry";
@@ -79,6 +80,9 @@ installFakeEnvironment(
     threadWithHistory("phone-composer", 2),
     threadWithHistory("phone-add", 1),
     threadWithHistory("phone-send", 1),
+    withPendingChanges({ ...threadWithHistory("phone-changes", 1), branch: "feature/phone" }, [
+      { path: "src/App.tsx", additions: 3, deletions: 1 },
+    ]),
     threadWithPendingApproval("phone-approve"),
     threadWithPendingApproval("phone-decline"),
     threadWithPendingQuestion("phone-question"),
@@ -481,3 +485,125 @@ it("keeps the desktop composer at 1024px", async () => {
   );
   await expect.element(page.getByRole("button", { name: "Attach files" })).toBeVisible();
 });
+
+const GUTTER = 16;
+// The pane draws a 1px edge, so a 16px gutter starts 17px from the viewport.
+const EDGE = 1;
+
+function rect(element: Element) {
+  return element.getBoundingClientRect();
+}
+
+for (const width of [390, 320]) {
+  it(`keeps the model name whole and spaces the toolbar evenly at ${width}px`, async () => {
+    const { screen } = await openThread(width, "phone-composer");
+    await using _screen = screen;
+    await expandComposer();
+
+    const label = modelTrigger()!.querySelector<HTMLElement>("[data-composer-control-label]")!;
+    expect(label.textContent).toMatch(/^GPT-5\.\d$/);
+    expect(label.scrollWidth).toBeLessThanOrEqual(label.clientWidth);
+
+    const footer = document.querySelector<HTMLElement>('[data-chat-composer-footer="true"]')!;
+    const controls = [...footer.querySelectorAll<HTMLElement>("button")]
+      .filter((control) => control.getClientRects().length > 0)
+      .map((control) => rect(control))
+      .sort((a, b) => a.left - b.left);
+    expect(controls.length).toBeGreaterThanOrEqual(4);
+    const gaps = controls.slice(1).map((box, index) => box.left - controls[index]!.right);
+    for (const gap of gaps) expect(gap).toBeGreaterThanOrEqual(6);
+  });
+
+  it(`renders no empty tray above the composer at ${width}px`, async () => {
+    const { screen } = await openThread(width, "phone-changes");
+    await using _screen = screen;
+    await vi.waitFor(() =>
+      expect(document.querySelector('[data-chat-composer-form="true"]')).not.toBeNull(),
+    );
+    expect(document.querySelector("[data-composer-context-tray]")).toBeNull();
+    await expandComposer();
+    expect(document.querySelector("[data-composer-context-tray]")).toBeNull();
+  });
+
+  it(`puts the timeline, composer and cards on one 16px gutter at ${width}px`, async () => {
+    const { screen } = await openThread(width, "phone-composer");
+    await using _screen = screen;
+    const left = EDGE + GUTTER;
+    const right = width - EDGE - GUTTER;
+
+    const form = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLElement>('[data-chat-composer-form="true"]');
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    expect(rect(form).left).toBeCloseTo(left, 0);
+    expect(rect(form).right).toBeCloseTo(right, 0);
+
+    const prose = await vi.waitFor(() => {
+      const found = [...document.querySelectorAll<HTMLElement>("[data-timeline-root] p")].find(
+        (node) => node.textContent === "Answer 0 for phone-composer.",
+      );
+      expect(found).toBeDefined();
+      return found!;
+    });
+    expect(rect(prose).left).toBeCloseTo(left, 0);
+
+    const bubbleText = [...document.querySelectorAll<HTMLElement>("[data-timeline-root] *")].find(
+      (node) => node.children.length === 0 && node.textContent === "phone-composer: question 0",
+    )!;
+    let bubble: HTMLElement | null = bubbleText;
+    while (bubble !== null && getComputedStyle(bubble).backgroundColor === "rgba(0, 0, 0, 0)") {
+      bubble = bubble.parentElement;
+    }
+    expect(bubble).not.toBeNull();
+    expect(rect(bubble!).right).toBeCloseTo(right, 0);
+
+    const stamp = document.querySelector<HTMLElement>("[data-timeline-root] span.text-xs.tabular-nums");
+    if (stamp !== null && stamp.getClientRects().length > 0) {
+      expect(rect(stamp).right).toBeLessThanOrEqual(right + 0.5);
+    }
+    const meta = document.querySelector<HTMLElement>("[data-assistant-meta-footer]");
+    if (meta !== null) expect(rect(meta).left).toBeGreaterThanOrEqual(left - GUTTER / 2);
+  });
+
+  it(`shows the approval command and 44px decisions at ${width}px`, async () => {
+    const { screen } = await openThread(width, "phone-approve");
+    await using _screen = screen;
+    const card = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLElement>("[data-composer-approval-card]");
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    const detail = card.querySelector<HTMLElement>('[aria-label="Approval detail"]')!;
+    expect(detail.textContent?.trim()).not.toBe("");
+    expect(detail.scrollWidth).toBeLessThanOrEqual(detail.clientWidth);
+    const buttons = [...card.querySelectorAll<HTMLElement>("button")].map((b) => rect(b));
+    expect(buttons.length).toBeGreaterThanOrEqual(2);
+    for (const box of buttons) expect(box.height).toBeGreaterThanOrEqual(44);
+    const cardBox = rect(card);
+    expect(buttons[0]!.left - cardBox.left).toBeCloseTo(cardBox.right - buttons.at(-1)!.right, 0);
+    for (const [index, box] of buttons.slice(1).entries()) {
+      expect(box.left - buttons[index]!.right).toBeGreaterThanOrEqual(6);
+    }
+    expect(card.scrollWidth).toBeLessThanOrEqual(card.clientWidth);
+  });
+
+  it(`gives the question card a 44px submit and no key hints at ${width}px`, async () => {
+    const { screen } = await openThread(width, "phone-question");
+    await using _screen = screen;
+    await vi.waitFor(() =>
+      expect(document.querySelector("[data-pending-user-input-toggle]")).not.toBeNull(),
+    );
+    const submit = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLElement>(
+        '[data-chat-composer-mobile-pending-actions] button[type="submit"]',
+      );
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    expect(rect(submit).height).toBeGreaterThanOrEqual(44);
+    expect(
+      [...document.querySelectorAll("kbd")].filter((node) => node.getClientRects().length > 0),
+    ).toHaveLength(0);
+  });
+}
