@@ -2,7 +2,7 @@
 
 /** The phone home's 44px top bar: the wordmark, then search and new thread at the right. */
 export const PHONE_HOME_BAR_CLS =
-  "flex h-(--h-top) shrink-0 items-center gap-2 border-b border-b-(--divider) bg-sidebar px-2 text-sidebar-foreground";
+  "flex h-(--h-top) shrink-0 items-center gap-2 border-b border-b-(--divider) bg-sidebar pr-0.5 pl-4 text-sidebar-foreground";
 export const PHONE_HOME_BRAND_CLS = "min-w-0 gap-2 truncate text-base text-foreground";
 
 /** The bottom tab bar spans the window above the safe-area inset. */
@@ -55,14 +55,12 @@ export const PHONE_ROW_ACTION_ICON_CLS = "size-4 text-icon-muted";
 export const PHONE_PAGE_BAR_SIDEBAR_CLS = `${PHONE_PAGE_BAR_CLS} bg-sidebar`;
 /** A settings index row on a phone: full-bleed, 44px. */
 export const PHONE_NAV_ROW_CLS = "h-11 rounded-none px-4";
-/** A phone empty state card (usage with no data). */
-export const PHONE_EMPTY_CARD_CLS =
-  "rounded-(--r-group) border border-border bg-card px-4 py-6 text-center text-sm text-balance text-muted-foreground";
-/** A phone full-page empty state: centred stack, title, body. */
+/** A phone empty state: a centred stack of a heading, one muted line and an optional 44px action. */
 export const PHONE_EMPTY_STACK_CLS =
   "flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-4 text-center";
-export const PHONE_EMPTY_TITLE_CLS = "text-sm font-medium text-balance";
-export const PHONE_EMPTY_BODY_CLS = "text-xs text-balance text-muted-foreground";
+export const PHONE_EMPTY_TITLE_CLS = "text-heading font-medium text-balance text-foreground";
+export const PHONE_EMPTY_BODY_CLS = "text-sm text-balance text-muted-foreground";
+export const PHONE_EMPTY_ACTIONS_CLS = "mt-2 flex flex-wrap items-center justify-center gap-2";
 
 /**
  * Every control a phone settings page draws is a 44px tap target: select triggers, buttons,

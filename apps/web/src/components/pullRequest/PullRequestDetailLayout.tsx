@@ -29,7 +29,7 @@ export function PullRequestDetailHeaderBody({
   diffStat: ReactNode;
 }) {
   return (
-    <div className="col-span-2 mt-1 min-w-0 px-9 pb-4 max-phone:px-4">
+    <div className="col-span-2 mt-1 min-w-0 px-9 pb-4 max-phone:mt-3 max-phone:px-4">
       {title}
       <div className="mt-2 flex min-h-5 min-w-0 items-center gap-2 text-xs text-muted-foreground max-phone:flex-col max-phone:items-start max-phone:gap-1">
         <PullRequestMetaLine className="min-w-0 whitespace-nowrap max-phone:flex-wrap max-phone:whitespace-normal">
@@ -92,7 +92,7 @@ export function PullRequestDetailTabBar<Tab extends string>({
       inert={inert}
     >
       <ToggleGroup
-        className="shrink-0 max-phone:*:h-11"
+        className="shrink-0 max-phone:w-full max-phone:*:h-11 max-phone:*:flex-1"
         size="segmented"
         variant="segmented"
         value={[value]}

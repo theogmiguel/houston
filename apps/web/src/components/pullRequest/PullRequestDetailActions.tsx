@@ -23,6 +23,7 @@ import {
 } from "../ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { resolvePullRequestPrimaryControl } from "./pullRequestDetail.logic";
+import { useIsPhone } from "~/mobile/usePhone";
 import { PullRequestGlyph } from "./pullRequestIcons";
 import type { resolvePullRequestState } from "./pullRequestPresentation";
 import type { PickableEnvironment } from "./pullRequestProjectAssignment.logic";
@@ -94,6 +95,8 @@ export function PullRequestCheckoutMenu({
   /** The host's word for a change request, as in "pull request". */
   term: string;
 }) {
+  const phone = useIsPhone();
+  const checkoutLabel = handoff?.startsWith("checkout") ? "Checking out..." : "Check out";
   return (
     <Menu>
       <Tooltip>
@@ -102,17 +105,24 @@ export function PullRequestCheckoutMenu({
             <MenuTrigger
               disabled={handoff !== null || checkoutRoot === null}
               render={
-                <Button
-                  size="xs"
-                  variant="outline"
-                  aria-label={handoff?.startsWith("checkout") ? "Checking out..." : "Check out"}
-                >
-                  <GitBranchIcon aria-hidden className="size-3.5" />
-                  <span className="@max-[35rem]/pr-header:hidden">
-                    {handoff?.startsWith("checkout") ? "Checking out..." : "Check out"}
-                  </span>
-                  <ChevronDownIcon aria-hidden className="size-3.5 text-muted-foreground" />
-                </Button>
+                phone ? (
+                  <Button
+                    size="icon-xs"
+                    variant="ghost-muted"
+                    className="size-11"
+                    aria-label={checkoutLabel}
+                  >
+                    <GitBranchIcon aria-hidden className="size-4" />
+                  </Button>
+                ) : (
+                  <Button size="xs" variant="outline" aria-label={checkoutLabel}>
+                    <GitBranchIcon aria-hidden className="size-3.5" />
+                    <span className="@max-[35rem]/pr-header:hidden">
+                      {handoff?.startsWith("checkout") ? "Checking out..." : "Check out"}
+                    </span>
+                    <ChevronDownIcon aria-hidden className="size-3.5 text-muted-foreground" />
+                  </Button>
+                )
               }
             />
           }

@@ -3,6 +3,8 @@ import { PlusIcon, SearchIcon } from "lucide-react";
 
 import { openAddProjectDialog } from "../AddProjectDialog";
 import { Button } from "../ui/button";
+import { PhoneEmptyState } from "~/mobile/PhoneEmptyState";
+import { useIsPhone } from "~/mobile/usePhone";
 import { PullRequestListGhost } from "./PullRequestGhosts";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
 
@@ -45,6 +47,82 @@ function BranchMark({ joined }: { joined: boolean }) {
   );
 }
 
+const clipQuery = (query: string) => (query.length > 48 ? `${query.slice(0, 48)}…` : query);
+
+interface PhoneCopyState {
+  hasProjects: boolean;
+  query: string;
+  filtered: boolean;
+}
+
+function phoneTitle({ hasProjects, query, filtered }: PhoneCopyState): string {
+  if (!hasProjects) return "No projects in this workspace";
+  if (query.length > 0) return `Nothing matches “${clipQuery(query)}”`;
+  return filtered ? "Nothing under these filters" : "No pull requests";
+}
+
+function phoneBody({ hasProjects, query, filtered }: PhoneCopyState): string {
+  if (!hasProjects) return "Add a project, and the pull requests from its repository appear here.";
+  if (query.length > 0) return "Try fewer words, or search by number, author or branch.";
+  return filtered
+    ? "Widen the state, involvement or project filter to see more."
+    : "Pull requests from every project in this workspace appear here.";
+}
+
+function phoneActions({
+  hasProjects,
+  query,
+  canLoadMore,
+  loadingMore,
+  refreshing,
+  onClearQuery,
+  onLoadMore,
+  onRefresh,
+}: Pick<PhoneCopyState, "hasProjects" | "query"> & {
+  canLoadMore: boolean;
+  loadingMore: boolean;
+  refreshing: boolean;
+  onClearQuery: () => void;
+  onLoadMore: () => void;
+  onRefresh: () => void;
+}) {
+  if (!hasProjects) {
+    return (
+      <Button size="touch" onClick={() => openAddProjectDialog()}>
+        <PlusIcon className="size-3.5" />
+        Add project
+      </Button>
+    );
+  }
+  const check = (
+    <Button size="touch" variant="outline" disabled={refreshing} onClick={onRefresh}>
+      <RefreshIcon size="sm" refreshing={refreshing} />
+      {refreshing ? "Checking…" : "Check again"}
+    </Button>
+  );
+  if (query.length > 0) {
+    return (
+      <>
+        <Button size="touch" variant="outline" onClick={onClearQuery}>
+          <SearchIcon className="size-3.5" />
+          Clear search
+        </Button>
+        {check}
+      </>
+    );
+  }
+  return (
+    <>
+      {canLoadMore ? (
+        <Button size="touch" variant="outline" disabled={loadingMore} onClick={onLoadMore}>
+          {loadingMore ? "Loading…" : "Load more pull requests"}
+        </Button>
+      ) : null}
+      {check}
+    </>
+  );
+}
+
 export function PullRequestListEmptyState({
   query,
   filtered,
@@ -68,6 +146,28 @@ export function PullRequestListEmptyState({
   onLoadMore: () => void;
   onRefresh: () => void;
 }) {
+  const phone = useIsPhone();
+  if (phone && (!hasProjects || !searching)) {
+    return (
+      <PhoneEmptyState
+        data-pull-request-empty=""
+        title={phoneTitle({ hasProjects, query, filtered })}
+        action={phoneActions({
+          hasProjects,
+          query,
+          canLoadMore,
+          loadingMore,
+          refreshing,
+          onClearQuery,
+          onLoadMore,
+          onRefresh,
+        })}
+      >
+        {phoneBody({ hasProjects, query, filtered })}
+      </PhoneEmptyState>
+    );
+  }
+
   if (!hasProjects) {
     return (
       <Empty>
@@ -90,10 +190,7 @@ export function PullRequestListEmptyState({
 
   if (searching) {
     return (
-      <PullRequestListGhost
-        rows={5}
-        caption={`Searching every host for “${query.length > 48 ? `${query.slice(0, 48)}…` : query}”`}
-      />
+      <PullRequestListGhost rows={5} caption={`Searching every host for “${clipQuery(query)}”`} />
     );
   }
 

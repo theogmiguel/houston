@@ -37,6 +37,7 @@ import { resolveGridThreadOpen, type ThreadOpenIntent } from "../grid/gridThread
 import { containsThread, preorderThreads } from "../grid/tree";
 import { cn } from "../lib/utils";
 import { useMediaQuery } from "../hooks/useMediaQuery";
+import { PhoneEmptyState } from "../mobile/PhoneEmptyState";
 import { PhonePageBar } from "../mobile/PhonePageBar";
 import { PhoneTabBar } from "../mobile/PhoneTabBar";
 import { useIsPhone } from "../mobile/usePhone";
@@ -57,11 +58,6 @@ import { isSidebarHiddenThread } from "../components/Sidebar.logic";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { buildThreadRouteParams } from "../threadRoutes";
-import {
-  PHONE_EMPTY_BODY_CLS,
-  PHONE_EMPTY_STACK_CLS,
-  PHONE_EMPTY_TITLE_CLS,
-} from "~/components/ui/phone-recipes";
 
 export const Route = createFileRoute("/_chat/grid/$gridId")({
   component: GridRoute,
@@ -284,15 +280,16 @@ function GridRoute() {
       return (
         <SidebarInset className="min-h-0 overflow-hidden" data-phone-missing-grid="">
           <PhonePageBar title="Grid" />
-          <div className={PHONE_EMPTY_STACK_CLS}>
-            <p className={PHONE_EMPTY_TITLE_CLS}>This grid no longer exists</p>
-            <p className={PHONE_EMPTY_BODY_CLS}>
-              It was deleted on this machine, or its workspace is no longer open.
-            </p>
-            <Button variant="outline" className="mt-2 h-11 px-4" render={<Link to="/" />}>
-              Back to threads
-            </Button>
-          </div>
+          <PhoneEmptyState
+            title="This grid no longer exists"
+            action={
+              <Button size="touch" variant="outline" render={<Link to="/" />}>
+                Back to threads
+              </Button>
+            }
+          >
+            It was deleted on this machine, or its workspace is no longer open.
+          </PhoneEmptyState>
           <PhoneTabBar active="threads" />
         </SidebarInset>
       );

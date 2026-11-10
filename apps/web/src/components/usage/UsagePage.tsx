@@ -48,11 +48,11 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import {
   enumerateDays,
   enumerateHourStarts,
-  formatCount,
   formatDateTimeShort,
   formatDayShort,
   formatHourShort,
   formatPercent,
+  formatSessions,
   formatTokens,
   formatUsageContractMismatch,
   formatUsd,
@@ -118,7 +118,8 @@ import {
   saveUsagePagePreferences,
   type UsagePagePreferences,
 } from "./usagePagePreferences";
-import { PHONE_EMPTY_CARD_CLS, PHONE_NOTE_CLS } from "~/components/ui/phone-recipes";
+import { PHONE_NOTE_CLS } from "~/components/ui/phone-recipes";
+import { PhoneEmptyState } from "~/mobile/PhoneEmptyState";
 
 function isUsageMetric(value: string | null | undefined): value is UsageMetric {
   return METRIC_OPTIONS.some((option) => option.value === value);
@@ -674,9 +675,9 @@ function UsageOverview({
             {message}
           </p>
         ))}
-        <p data-usage-empty="" className={PHONE_EMPTY_CARD_CLS}>
-          No usage in this window. Sessions you run will show up here.
-        </p>
+        <PhoneEmptyState data-usage-empty="" title="No usage in this window" className="py-12">
+          Sessions you run will show up here.
+        </PhoneEmptyState>
         <UsagePlanLimits
           selectedEnvironmentIds={
             new Set(selectedEnvironments.map((environment) => environment.environmentId))
@@ -700,7 +701,7 @@ function UsageOverview({
           loading={loadingPartial}
           label="API-equivalent cost"
           value={formatUsd(merged.costUsd)}
-          detail={`${formatCount(merged.sessions)} sessions · ${formatUsd(averageCostPerDay)} a day`}
+          detail={`${formatSessions(merged.sessions)} · ${formatUsd(averageCostPerDay)} a day`}
         />
         <Metric
           loading={loadingPartial}
@@ -722,7 +723,7 @@ function UsageOverview({
         />
       </section>
 
-      <section className="flex min-w-0 flex-col gap-4 rounded-[10px] border border-border bg-card p-5">
+      <section className="flex min-w-0 flex-col gap-4 rounded-[10px] border border-border bg-card p-5 max-phone:p-4">
         <div className="flex flex-wrap items-center gap-3">
           <h2 className="text-[13px] leading-[18px] font-semibold text-[var(--t1)]">
             {metric === "tokens" ? "Tokens per" : "Cost per"} {shownHourly ? "hour" : "day"}
@@ -768,7 +769,7 @@ function UsageOverview({
           onCursorEnabled={onCursorEnabled}
         />
         {metric === "tokens" ? (
-          <section className="flex min-w-0 flex-col gap-3 rounded-[10px] border border-border bg-card p-5">
+          <section className="flex min-w-0 flex-col gap-3 rounded-[10px] border border-border bg-card p-5 max-phone:p-4">
             <UsageShareBar
               label="Tokens by type"
               segments={tokenTypeSegments(merged)}
@@ -1020,7 +1021,7 @@ function ByAgentCard({
                 >
                   {awaitingData
                     ? ""
-                    : `${formatCount(providerSessions)} sessions · ${formatTokens(totals?.totalTokens ?? 0)} tokens`}
+                    : `${formatSessions(providerSessions)} · ${formatTokens(totals?.totalTokens ?? 0)} tokens`}
                 </span>
               </span>
               <span className="flex shrink-0 flex-col items-end">
@@ -1082,7 +1083,7 @@ function WhereCostGoesCard({ merged }: { readonly merged: MergedUsage }) {
   const speedUpgrade = merged.speedCost.fast + merged.speedCost.ultrafast;
   const cacheSavings = merged.costQuality.cacheSavingsUsd;
   return (
-    <section className="grid gap-3 rounded-[10px] border border-border bg-card p-5">
+    <section className="grid gap-3 rounded-[10px] border border-border bg-card p-5 max-phone:p-4">
       <h2 className="text-[13px] leading-[18px] font-semibold text-[var(--t1)]">
         Where the cost goes
       </h2>
@@ -1157,7 +1158,7 @@ function UsageSourceFootnote({
       Read from{" "}
       {[...sources.values()]
         .sort((left, right) => left.path.localeCompare(right.path))
-        .map((source) => `${source.path} (${formatCount(source.sessions)} sessions)`)
+        .map((source) => `${source.path} (${formatSessions(source.sessions)})`)
         .join(" and ")}
       . Costs are estimates at API list prices; a subscription is billed differently.
     </p>
@@ -1308,7 +1309,7 @@ function Metric({
   readonly loading: boolean;
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-1 rounded-lg border border-border bg-card px-5 py-4">
+    <div className="flex min-w-0 flex-col gap-1 rounded-lg border border-border bg-card px-5 py-4 max-phone:px-4">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
       <span
         className={cn("text-stat font-semibold text-foreground tabular-nums", figureClass(loading))}

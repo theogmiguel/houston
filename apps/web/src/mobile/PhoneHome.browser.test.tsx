@@ -107,6 +107,21 @@ it("opens on the rail as the home page at 390px", async () => {
   expect(document.querySelector('[data-slot="sidebar"][data-mobile="true"]')).toBeNull();
 });
 
+it("puts the wordmark and the bar's last glyph on the 16px gutters", async () => {
+  for (const width of [390, 320]) {
+    const { screen } = await mountApp(width);
+    await using _screen = screen;
+    await vi.waitFor(() => expect(phoneHome()).not.toBeNull(), { timeout: 5_000 });
+    const bar = phoneHome()!.querySelector<HTMLElement>("header")!;
+    const mark = bar.querySelector("img")!.getBoundingClientRect();
+    expect(Math.round(mark.left), `wordmark left gutter at ${width}px`).toBe(16);
+    const glyphs = bar.querySelectorAll("button svg");
+    const last = glyphs[glyphs.length - 1]!.getBoundingClientRect();
+    expect(Math.round(width - last.right), `last glyph right gutter at ${width}px`).toBe(16);
+    await screen.unmount();
+  }
+});
+
 it("shows Needs you by default on a phone and keeps the opt-out", async () => {
   const { screen } = await mountApp(390);
   await using _screen = screen;

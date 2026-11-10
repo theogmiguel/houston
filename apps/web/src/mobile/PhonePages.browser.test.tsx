@@ -210,6 +210,26 @@ const expectGutter = (element: Element, label: string, viewport: number) => {
   expect(Math.round(viewport - rectOf(element).right), `${label} right gutter`).toBe(16);
 };
 
+/** One phone empty state: a centred 15px title, one muted 14px line and 44px actions. */
+function expectEmptyState(root: HTMLElement, label: string, viewport: number) {
+  const title = root.querySelector<HTMLElement>("h2");
+  expect(title, `${label} title`).not.toBeNull();
+  const body = title!.nextElementSibling as HTMLElement;
+  expect(getComputedStyle(title!).fontSize, `${label} title size`).toBe("15px");
+  expect(getComputedStyle(title!).fontWeight, `${label} title weight`).toBe("500");
+  expect(getComputedStyle(body).fontSize, `${label} line size`).toBe("14px");
+  for (const text of [title!, body]) {
+    expect(getComputedStyle(text).textAlign, `${label} alignment`).toBe("center");
+    const rect = rectOf(text);
+    expect(Math.abs(rect.left + rect.width / 2 - viewport / 2), `${label} centred`).toBeLessThan(2);
+    expect(rect.left, `${label} left gutter`).toBeGreaterThanOrEqual(16);
+    expect(viewport - rect.right, `${label} right gutter`).toBeGreaterThanOrEqual(16);
+  }
+  const stack = title!.parentElement!;
+  for (const action of stack.querySelectorAll("button, a")) expectTapHeight(action, `${label} action`);
+  expect(stack.querySelector(":scope > svg"), `${label} has no illustration`).toBeNull();
+}
+
 const waitForText = (text: string) =>
   vi.waitFor(() => expect(document.body.textContent).toContain(text), { timeout: 10_000 });
 
@@ -251,10 +271,36 @@ it("shows one short line instead of zeroed cards when usage is empty", async () 
     await waitForSelector("[data-usage-empty]");
     expect(document.body.textContent).not.toContain("API-equivalent cost");
     expect(document.body.textContent).not.toContain("0 sessions");
+    expectEmptyState(
+      document.querySelector<HTMLElement>("[data-usage-empty]")!,
+      `empty usage at ${width}px`,
+      width,
+    );
     expectPhoneLayout(`empty usage at ${width}px`);
     await screen.unmount();
   }
   localStorage.removeItem("houston:usage-page-preferences:v1");
+});
+
+it("shows the shared empty state, with a 44px Check again, when there are no pull requests", async () => {
+  using _environment = installFakeEnvironment([threadWithHistory("thread-phone", 2)], {
+    pullRequests: { entries: [], viewers: {} },
+  });
+  for (const { width, height } of PHONE_VIEWPORTS) {
+    // A window of its own, so the empty list does not stand in for the default window's rows.
+    const { screen } = await mountApp(
+      "/pull-requests?state=merged&involvement=reviewing",
+      width,
+      height,
+    );
+    await using _screen = screen;
+    await waitForSelector("[data-pull-request-empty]");
+    const empty = document.querySelector<HTMLElement>("[data-pull-request-empty]")!;
+    expectEmptyState(empty, `empty pull requests at ${width}px`, width);
+    expectTapHeight(screen.getByRole("button", { name: /Check again/ }).element(), "Check again");
+    expectPhoneLayout(`empty pull requests at ${width}px`);
+    await screen.unmount();
+  }
 });
 
 it("keeps pull requests and their detail on a phone screen", async () => {
@@ -346,12 +392,36 @@ it("gives the pull requests list the phone bar, a 16px gutter and 44px controls"
     const search = document.querySelector<HTMLElement>('input[aria-label="Search pull requests"]')!;
     expectGutter(search.closest('[data-slot="input-group"]') ?? search, "search", width);
     expect(Math.round(rectOf(involvement).left), "segment left gutter").toBe(16);
-    expect(Math.round(width - rectOf(refresh).right), "refresh right gutter").toBe(16);
+    expect(Math.round(width - rectOf(involvement).right), "segment right gutter").toBe(16);
     for (const toggle of involvement.querySelectorAll("button")) expectTapHeight(toggle, "segment");
     expectTapHeight(refresh, "refresh");
     expectTapHeight(search, "search");
-    // The refresh button shares the segment's row.
-    expect(Math.abs(centerY(refresh) - centerY(involvement))).toBeLessThan(4);
+    // The refresh is the bar's trailing icon: its glyph ends on the right gutter.
+    expect(bar!.contains(refresh), "refresh in the bar").toBe(true);
+    expect(
+      Math.round(width - rectOf(refresh.querySelector("svg")!).right),
+      "refresh glyph right gutter",
+    ).toBe(16);
+    // The segments are equal: one width, one padding.
+    const segments = [...involvement.querySelectorAll<HTMLElement>("button")];
+    const widths = segments.map((segment) => rectOf(segment).width);
+    expect(Math.max(...widths) - Math.min(...widths), "equal segment widths").toBeLessThan(1);
+    expect(
+      new Set(segments.map((segment) => getComputedStyle(segment).paddingLeft)).size,
+      "one segment padding",
+    ).toBe(1);
+    for (const segment of segments) expectNotTruncated(segment, "involvement segment");
+    // Every stacked control row sits one 12px step under the one above.
+    const view = document.querySelector<HTMLElement>('[aria-label="Pull request view"]')!;
+    const searchBox = search.closest<HTMLElement>('[data-slot="input-group"]') ?? search;
+    const sort = screen.getByRole("button", { name: /^Sort pull requests/ }).element();
+    const rows = [bar!, view, involvement, searchBox, sort];
+    for (let index = 1; index < rows.length; index += 1) {
+      expect(
+        Math.round(rectOf(rows[index]!).top - rectOf(rows[index - 1]!).bottom),
+        `control row ${index} gap at ${width}px`,
+      ).toBe(12);
+    }
     for (const name of [/^Sort pull requests/, /^Filters/, /^Filter by provider/]) {
       expectTapHeight(screen.getByRole("button", { name }).element(), String(name));
     }
@@ -450,13 +520,43 @@ it("shows a pull request on the phone bar with wrapped text and one gutter", asy
     expect(heading.scrollHeight).toBeGreaterThan(24);
     expectNotTruncated(heading, "title");
     expect(Math.round(rectOf(heading).left), "title gutter").toBe(16);
+    const barBottom = Math.max(
+      ...[...document.querySelectorAll<HTMLElement>('[data-preview-panel-maximized="true"] button')]
+        .filter((button) => rectOf(button).top < 44)
+        .map((button) => rectOf(button).bottom),
+    );
+    expect(Math.round(rectOf(heading).top - barBottom), "title sits under the bar").toBeGreaterThanOrEqual(12);
+    // The bar's controls are bare 44px icon buttons; the last glyph ends on the right gutter.
+    const barButtons = [
+      ...document.querySelectorAll<HTMLElement>('[data-preview-panel-maximized="true"] button'),
+    ].filter(
+      (button) =>
+        rectOf(button).top < 44 && rectOf(button).height > 0 && button.textContent?.trim() === "",
+    );
+    for (const button of barButtons) {
+      expectTapHeight(button, `bar control ${button.getAttribute("aria-label")}`);
+      expect(getComputedStyle(button).borderTopColor, "bar control border").toBe("rgba(0, 0, 0, 0)");
+    }
+    const lastGlyph = barButtons[barButtons.length - 1]!.querySelector("svg")!;
+    expect(Math.round(width - rectOf(lastGlyph).right), "bar's last glyph gutter").toBe(16);
+    const barIcons = barButtons.map((button) => getComputedStyle(button).color);
+    expect(new Set(barIcons.slice(-2)).size, "bar icons share one colour").toBe(1);
     expect(Math.round(rectOf(back).left) + 14, "back glyph gutter").toBe(16);
     const tabs = document.querySelector<HTMLElement>('nav[aria-label="Pull request tabs"]')!;
     expect(Math.round(rectOf(tabs.firstElementChild!).left), "tab gutter").toBe(16);
+    expect(
+      Math.round(width - rectOf(tabs.firstElementChild!).right),
+      "tab right gutter",
+    ).toBe(16);
+    const tabWidths = [...tabs.querySelectorAll("button")].map((tab) => rectOf(tab).width);
+    expect(Math.max(...tabWidths) - Math.min(...tabWidths), "equal tabs").toBeLessThan(1);
     const checkout = document.querySelector<HTMLElement>(
       '[aria-label="Copy checkout command"] code',
     );
-    if (checkout !== null) expectNotTruncated(checkout, "checkout command");
+    if (checkout !== null) {
+      expectNotTruncated(checkout, "checkout command");
+      expect(Math.round(rectOf(checkout).left), "checkout command gutter").toBe(16);
+    }
     // The panel runs down to the tab bar instead of stopping short.
     const panel = document.querySelector<HTMLElement>('[data-preview-panel-maximized="true"]')!;
     const tabBar = document.querySelector<HTMLElement>("[data-phone-tab-bar]")!;
@@ -503,6 +603,11 @@ it("titles usage once, inside the gutter, with 44px controls", async () => {
     }
     const card = document.querySelector<HTMLElement>("section")!;
     expectGutter(card, "usage card", width);
+    // A card's text sits one card padding (16px + the 1px border) inside it, as in settings.
+    const cost = card.firstElementChild as HTMLElement;
+    expect(cost.textContent, "cost card").toContain("API-equivalent cost");
+    const label = leafWithText(cost, "API-equivalent cost")!;
+    expect(Math.round(rectOf(label).left - rectOf(cost).left), "card text inset").toBe(17);
     expectTapHeight(screen.getByRole("button", { name: "Refresh usage" }).element(), "refresh");
     expectPhoneLayout(`usage at ${width}px`);
     await screen.unmount();
@@ -517,6 +622,11 @@ it("renders a missing grid inside the phone shell", async () => {
     await waitForSelector("[data-phone-missing-grid]");
     expect(document.querySelector("[data-phone-page-bar]")).not.toBeNull();
     expect(document.querySelector("[data-phone-tab-bar]")).not.toBeNull();
+    expectEmptyState(
+      document.querySelector<HTMLElement>("[data-phone-missing-grid]")!,
+      `missing grid at ${width}px`,
+      width,
+    );
     const message = screen.getByText("This grid no longer exists").element();
     const detail = screen.getByText(/It was deleted on this machine/).element();
     for (const text of [message, detail]) {

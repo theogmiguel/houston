@@ -254,6 +254,7 @@ export function PullRequestActionsMenu({
                   }
                   size="icon-xs"
                   variant="ghost-muted"
+                  className="max-phone:size-11"
                 />
               }
             >
