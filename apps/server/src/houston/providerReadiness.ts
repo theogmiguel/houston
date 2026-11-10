@@ -473,6 +473,7 @@ export const decorateProviderRegistry = Effect.fn("decorateProviderRegistry")(fu
       raw
         .refreshWorkspaceSnapshot(input)
         .pipe(Effect.flatMap(input.fresh === true ? clearing(() => [input.instanceId]) : decorate)),
+    refreshModelCatalog: raw.refreshModelCatalog,
     getProviderMaintenanceCapabilitiesForInstance:
       raw.getProviderMaintenanceCapabilitiesForInstance,
     setProviderMaintenanceActionState: (input) =>

@@ -43,6 +43,9 @@ thread.
 
 The default model, fallback model and default permissions for new threads are set in
 **Settings ▸ Threads**. The model picker is also bound to `Ctrl+Shift+M`.
+Opening the model picker checks for newly released models and for the CLI update that supports
+them, at most every five minutes. The check is skipped when provider update checks are turned
+off in **Settings**.
 
 ## Grids
 
