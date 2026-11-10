@@ -3984,7 +3984,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     }
                     placeholderSuffix={
                       offeredPromptSuggestion !== null ? (
-                        <span className="ml-2 inline-flex align-[1px]">
+                        <span className="ml-2 inline-flex">
                           <Kbd>⇥ Tab</Kbd>
                         </span>
                       ) : undefined
