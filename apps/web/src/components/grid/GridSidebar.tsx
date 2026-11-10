@@ -260,6 +260,7 @@ import {
   SIDEBAR_THREAD_PROJECT_CLS,
   SIDEBAR_THREAD_ROW_INDENT_CLS,
   SidebarOptionsMenu,
+  sidebarProjectSectionCls,
   SidebarSectionHeaderRow,
   type SidebarGridOptions,
 } from "../ui/sidebar-grids";
@@ -1784,14 +1785,10 @@ export function SidebarProjectSection({
 
   return (
     <div
-      className={cn(
-        "relative flex flex-col gap-px",
-        reorderDrag?.draggedKey === section.projectKey && "opacity-50",
-        dropSide === "before" &&
-          "before:absolute before:inset-x-0 before:top-0 before:z-10 before:h-0.5 before:bg-(--accent-ink)",
-        dropSide === "after" &&
-          "after:absolute after:inset-x-0 after:bottom-0 after:z-10 after:h-0.5 after:bg-(--accent-ink)",
-      )}
+      className={sidebarProjectSectionCls({
+        dragged: reorderDrag?.draggedKey === section.projectKey,
+        dropSide,
+      })}
       data-project-key={section.isScratch ? "no-project" : section.projectKey}
       {...(reorderable ? { [PROJECT_REORDER_ATTRIBUTE]: "" } : {})}
     >

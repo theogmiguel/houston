@@ -61,6 +61,24 @@ export const SIDEBAR_GRID_COUNT_CLS =
 export const SIDEBAR_PROJECT_ROW_CLS =
   "group/project sticky -top-px z-40 mt-1 flex items-center border-b border-transparent bg-sidebar before:absolute before:inset-x-0 before:-top-1 before:h-1 before:bg-sidebar before:content-[''] after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-2 after:bg-[linear-gradient(to_bottom,var(--color-sidebar)_50%,transparent)] after:opacity-0 after:content-[''] first:mt-0 data-stuck:border-sidebar-border data-stuck:after:opacity-100";
 
+/**
+ * A project section. It is positioned so a reorder drop line can sit on its top or
+ * bottom edge: `dropSide` names the edge a dragged project will land against.
+ */
+export function sidebarProjectSectionCls(state: {
+  dragged: boolean;
+  dropSide: "before" | "after" | null;
+}): string {
+  return cn(
+    "relative flex flex-col gap-px",
+    state.dragged && "opacity-50",
+    state.dropSide === "before" &&
+      "before:absolute before:inset-x-0 before:top-0 before:z-10 before:h-0.5 before:bg-(--accent-ink)",
+    state.dropSide === "after" &&
+      "after:absolute after:inset-x-0 after:bottom-0 after:z-10 after:h-0.5 after:bg-(--accent-ink)",
+  );
+}
+
 export const SIDEBAR_PROJECT_LABEL_CLS =
   "flex h-8 min-w-0 shrink cursor-pointer items-center gap-1.5 rounded-lg py-0 pr-1 pl-2 text-left text-xs font-semibold text-sidebar-foreground transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
