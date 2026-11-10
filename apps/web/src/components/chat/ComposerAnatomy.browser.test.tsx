@@ -133,6 +133,12 @@ it(
     expect(trayBox.top).toBeLessThan(cardWithTray.top);
     expect(trayBox.bottom).toBeLessThanOrEqual(cardWithTray.top + 12);
     expect(getComputedStyle(tray).borderBottomWidth).toBe("0px");
+    // The tab is lighter than the rail: it takes the pane-head plane, not the chrome plane.
+    const paneHead = document.createElement("div");
+    paneHead.style.backgroundColor = "var(--pane-head)";
+    document.body.append(paneHead);
+    expect(getComputedStyle(tray).backgroundColor).toBe(getComputedStyle(paneHead).backgroundColor);
+    paneHead.remove();
     expect(getComputedStyle(tray).flexWrap).not.toBe("wrap");
     for (const control of tray.querySelectorAll<HTMLElement>("[data-composer-context-control]")) {
       expect(control.getBoundingClientRect().right).toBeLessThanOrEqual(trayBox.right + 1);

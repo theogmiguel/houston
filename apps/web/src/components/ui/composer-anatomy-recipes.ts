@@ -19,7 +19,7 @@ export const CONTEXT_CHIP_PANEL_CLS = "flex w-72 flex-col gap-2 p-2";
  * rounded, no bottom edge (the card covers it), one muted line that never wraps.
  */
 export const CONTEXT_TRAY_CLS =
-  "relative z-0 -mb-2 mx-2.5 flex min-w-0 flex-col overflow-hidden rounded-t-lg border border-b-0 border-(--card-edge) bg-(--app-chrome-background) px-1.5 pt-0.5 pb-2.5 text-(--contrast-secondary-label) text-2xs leading-none whitespace-nowrap " +
+  "relative z-0 -mb-2 mx-2.5 flex min-w-0 flex-col overflow-hidden rounded-t-lg border border-b-0 border-(--card-edge) bg-(--pane-head) px-1.5 pt-0.5 pb-2.5 text-(--contrast-secondary-label) text-2xs leading-none whitespace-nowrap " +
   "[&_[data-composer-context-control]]:h-5.5! [&_[data-composer-context-control]]:rounded-md! [&_[data-composer-context-control]]:border-0! [&_[data-composer-context-control]]:px-1.5! [&_[data-composer-context-control]]:font-normal [&_[data-composer-context-control]]:text-2xs! [&_[data-composer-context-control]]:text-secondary-label!";
 
 /** A real branch name reads in the mono face; the checkout label stands in as plain text. */
