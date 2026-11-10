@@ -293,7 +293,7 @@ function ceilingReason(details: AuthMcpApprovalDetails, access: AuthMcpClientAcc
     : managedRuntimeModeCeilingMessage(ceiling.organization, ceiling.maxRuntimeMode);
 }
 
-function AccessOption({
+export function AccessOption({
   access,
   selected,
   managedReason,
@@ -302,11 +302,39 @@ function AccessOption({
   readonly selected: boolean;
   readonly managedReason: string | undefined;
 }) {
-  const { label, description, icon: Icon } = accessConfig[access];
+  const { label, description, icon } = accessConfig[access];
+  return (
+    <ChoiceOption
+      value={access}
+      label={label}
+      description={description}
+      icon={icon}
+      selected={selected}
+      unavailableReason={managedReason}
+    />
+  );
+}
+
+/** One card in a radio group of choices; an unavailable choice shows why instead of its text. */
+export function ChoiceOption({
+  value,
+  label,
+  description,
+  icon: Icon,
+  selected,
+  unavailableReason,
+}: {
+  readonly value: string;
+  readonly label: string;
+  readonly description: string;
+  readonly icon: LucideIcon;
+  readonly selected: boolean;
+  readonly unavailableReason: string | undefined;
+}) {
   return (
     <RadioPrimitive.Root
-      value={access}
-      disabled={managedReason !== undefined}
+      value={value}
+      disabled={unavailableReason !== undefined}
       className={cn(
         "flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2.5 text-left outline-none transition-[background-color,border-color,box-shadow]",
         "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
@@ -324,7 +352,9 @@ function AccessOption({
       />
       <span className="min-w-0">
         <span className="block text-sm font-medium text-foreground">{label}</span>
-        <span className="block text-xs text-muted-foreground">{managedReason ?? description}</span>
+        <span className="block text-xs text-muted-foreground">
+          {unavailableReason ?? description}
+        </span>
       </span>
     </RadioPrimitive.Root>
   );
