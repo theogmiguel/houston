@@ -1122,7 +1122,7 @@ function DiffColorsSettingsRow() {
             <SelectTrigger
               size="xs"
               variant="ghost"
-              className="w-auto min-w-0"
+              className="w-auto min-w-0 max-phone:min-w-11 max-phone:justify-center"
               aria-label="Diff colors"
               icon={<span aria-hidden="true" />}
             >
@@ -1888,6 +1888,7 @@ export function AboutSettingsPanel() {
                 render={<Link to="/settings/open-source-licenses" />}
                 size="sm"
                 variant="ghost"
+                inset="start"
               >
                 View
               </Button>

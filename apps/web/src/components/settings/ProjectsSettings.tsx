@@ -117,6 +117,7 @@ export function ProjectsSettings() {
                 <Button
                   size="sm"
                   variant="ghost"
+                  inset="start"
                   disabled={actionProject === null}
                   onClick={() => {
                     if (actionProject) openProject(actionProject.projectKey);

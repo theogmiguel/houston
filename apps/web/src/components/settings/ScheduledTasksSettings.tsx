@@ -444,6 +444,7 @@ export function ScheduledTasksSettings(target: {
           <Button
             size="xs"
             variant="ghost-muted"
+            inset="end"
             disabled={!creationEnvironment}
             onClick={() =>
               creationEnvironment &&

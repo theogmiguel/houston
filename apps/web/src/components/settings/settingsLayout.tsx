@@ -21,6 +21,7 @@ import {
 import { cn } from "../../lib/utils";
 import { WorkspacePageContainer, type WorkspacePageWidth } from "../WorkspacePageContainer";
 import { Button } from "../ui/button";
+import { PHONE_SETTINGS_TAP_TARGETS_CLS } from "../ui/phone-recipes";
 import { PageHeading } from "../ui/page-heading";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { useOptionalSettingsScope } from "./SettingsScopeContext";
@@ -666,7 +667,10 @@ export function SettingsPageContainer({
       onTargetHandled={clearTargetHash}
     >
       <div
-        className="topbar-scroll-fade scrollbar-gutter-both flex-1 overflow-y-auto max-phone:[scrollbar-gutter:auto]"
+        className={cn(
+          "topbar-scroll-fade scrollbar-gutter-both flex-1 overflow-y-auto max-phone:[scrollbar-gutter:auto]",
+          PHONE_SETTINGS_TAP_TARGETS_CLS,
+        )}
         data-settings-page-scroll
       >
         <WorkspacePageContainer

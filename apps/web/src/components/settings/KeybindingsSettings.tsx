@@ -86,6 +86,7 @@ import { QuickComposerShortcutSettings } from "./QuickComposerShortcutSettings";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { keybindingSearchAnchorId, searchableSetting } from "./settingsSearch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { PHONE_CARD_ROW_DIVIDER_CLS } from "../ui/phone-recipes";
 import { useAtomCommand } from "../../state/use-atom-command";
 
 function KeybindingPill({ value }: { value: string }) {
@@ -1249,7 +1250,7 @@ function KeybindingTableRow(props: KeybindingRowProps) {
   return (
     <tr
       id={anchorId}
-      className="border-t border-border/70 outline-none first:border-t-0 hover:bg-hover focus-visible:bg-hover max-phone:grid max-phone:grid-cols-[minmax(0,1fr)_auto] max-phone:gap-x-2 max-phone:px-4 max-phone:py-2"
+      className={`border-t border-border/70 outline-none first:border-t-0 ${PHONE_CARD_ROW_DIVIDER_CLS} hover:bg-hover focus-visible:bg-hover max-phone:grid max-phone:grid-cols-[minmax(0,1fr)_auto] max-phone:gap-x-2 max-phone:px-4 max-phone:py-2`}
     >
       <td className="px-3.5 py-2 align-middle max-phone:col-start-1 max-phone:row-start-1 max-phone:px-0 max-phone:py-0">
         <KeybindingRowTitle row={row} />

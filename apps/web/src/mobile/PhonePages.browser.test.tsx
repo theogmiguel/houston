@@ -756,6 +756,185 @@ it("keeps controls and values aligned on settings pages", async () => {
   }
 });
 
+/**
+ * Every phone control a settings page draws is a 44px tap target, except inline affordances:
+ * the micro glyphs marked touch-exempt and the scope pickers set inside the page's sentence.
+ */
+const SETTINGS_CONTROL_SELECTOR = [
+  '[data-slot="select-trigger"]',
+  "button:not(.touch-exempt):not([role=switch]):not([role=checkbox])",
+  '[data-slot="toggle"]',
+  '[data-slot="input"]',
+].join(",");
+
+function shortControls(): string[] {
+  const scroll = document.querySelector<HTMLElement>("[data-settings-page-scroll]");
+  const found: string[] = [];
+  for (const control of scroll?.querySelectorAll<HTMLElement>(SETTINGS_CONTROL_SELECTOR) ?? []) {
+    const rect = control.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) continue;
+    if (control.closest("[inert], [hidden]") !== null) continue;
+    if (rect.height < 43.5) {
+      const name = control.getAttribute("aria-label") ?? (control.textContent ?? "").trim();
+      found.push(`${name.slice(0, 40)} (${Math.round(rect.height)}px)`);
+    }
+  }
+  return found;
+}
+
+const TAP_TARGET_SECTIONS = [
+  "general",
+  "chat",
+  "browser",
+  "diffs",
+  "threads",
+  "voice",
+  "maintenance",
+  "worktrees",
+  "providers",
+  "task-sources",
+  "devices",
+  "access",
+  "keybindings",
+] as const;
+
+it("draws every settings control as a 44px tap target", async () => {
+  using _environment = installEnvironment();
+  const short: string[] = [];
+  for (const { width, height } of PHONE_VIEWPORTS) {
+    for (const section of TAP_TARGET_SECTIONS) {
+      await using _screen = await openSettings(section, width, height);
+      short.push(...shortControls().map((control) => `${section}@${width}: ${control}`));
+    }
+  }
+  expect(short).toEqual([]);
+});
+
+/** The box of a control's own label text, ignoring the padding of the button around it. */
+function textBoxOf(element: Element): DOMRect {
+  const range = document.createRange();
+  range.selectNodeContents(element);
+  return range.getBoundingClientRect();
+}
+
+const textElementStartingWith = (prefix: string) =>
+  [...document.querySelectorAll<HTMLElement>("p, h2, h3")].find((node) =>
+    node.textContent?.trim().startsWith(prefix),
+  );
+
+it("sits settings labels, swatches and trailing actions on the card insets", async () => {
+  using _environment = installEnvironment();
+  for (const { width, height } of PHONE_VIEWPORTS) {
+    const label = `at ${width}px`;
+    {
+      await using _screen = await openSettings("diffs", width, height);
+      const swatches = document.querySelector<HTMLElement>('[aria-label="Diff colors"]');
+      const rect = maybeRectOf(swatches);
+      expect(rect?.width ?? 0, `diff swatches width ${label}`).toBeGreaterThanOrEqual(44);
+      expect(rect?.height ?? 0, `diff swatches height ${label}`).toBeGreaterThanOrEqual(44);
+    }
+    {
+      await using _screen = await openSettings("about", width, height);
+      const view = page.getByRole("link", { name: "View", exact: true }).element();
+      const text = document.querySelector<HTMLElement>(
+        '[data-slot="settings-row"] h3, [data-slot="settings-row"] p',
+      );
+      expect(Math.round(textBoxOf(view).left), `About View ${label}`).toBe(
+        Math.round(maybeRectOf(text)?.left ?? -1),
+      );
+    }
+    {
+      await using _screen = await openSettings("projects", width, height);
+      const edit = [...document.querySelectorAll<HTMLElement>("button")].find((button) =>
+        (button.textContent ?? "").startsWith("Edit"),
+      );
+      const description = textElementStartingWith("Commands a project can run");
+      expect(edit, `Projects Edit ${label}`).toBeDefined();
+      expect(Math.round(textBoxOf(edit as HTMLElement).left), `Projects Edit ${label}`).toBe(
+        Math.round(maybeRectOf(description)?.left ?? -1),
+      );
+    }
+    {
+      await using _screen = await openSettings("scheduled-tasks", width, height);
+      const add = page.getByRole("button", { name: "New task" }).element();
+      expect(Math.round(width - textBoxOf(add).right), `+ New task ${label}`).toBe(GUTTER);
+    }
+    {
+      await using _screen = await openSettings("providers", width, height);
+      const refresh = page.getByRole("button", { name: "Refresh provider status" }).element();
+      const glyph = refresh.querySelector("svg");
+      expect(Math.round(width - (maybeRectOf(glyph)?.right ?? 0)), `refresh ${label}`).toBe(GUTTER);
+    }
+    {
+      await using _screen = await openSettings("secrets", width, height);
+      const intro = textElementStartingWith("Source control and task source tokens");
+      expect(Math.round(maybeRectOf(intro)?.left ?? -1), `Secrets intro ${label}`).toBe(GUTTER);
+      const notice =
+        textElementStartingWith("Update Houston on") ??
+        textElementStartingWith("Connect an environment");
+      expect(notice, "notice present").toBeDefined();
+      expect(fontSizeOf(notice as Element), `Secrets notice ${label}`).toBe(13);
+    }
+    {
+      await using _screen = await openSettings("worktrees", width, height);
+      const notice = textElementStartingWith("Update the selected environments");
+      expect(notice, "notice present").toBeDefined();
+      expect(fontSizeOf(notice as Element), `Worktrees notice ${label}`).toBe(13);
+    }
+    {
+      await using _screen = await openSettings("devices", width, height);
+      await waitForText("Local simulators");
+      const title = textElementStartingWith("Local simulators");
+      expect(fontSizeOf(title as Element), `Local simulators ${label}`).toBe(13);
+    }
+    {
+      await using _screen = await openSettings("appearance", width, height);
+      const scheme = textElementStartingWith("Color scheme");
+      const theme = [...document.querySelectorAll<HTMLElement>("h2")].find(
+        (node) => node.textContent === "Theme",
+      );
+      expect(scheme, `Color scheme heading ${label}`).toBeDefined();
+      expect(fontSizeOf(scheme as Element), `Color scheme ${label}`).toBe(
+        fontSizeOf(theme as Element),
+      );
+      expect(getComputedStyle(scheme as Element).fontWeight, `Color scheme weight ${label}`).toBe(
+        getComputedStyle(theme as Element).fontWeight,
+      );
+    }
+    {
+      await using _screen = await openSettings("keybindings", width, height);
+      const rows = [...document.querySelectorAll<HTMLElement>("tbody tr")].slice(1);
+      expect(rows.length, `keybinding rows ${label}`).toBeGreaterThan(0);
+      for (const row of rows) {
+        expect(getComputedStyle(row).borderTopWidth, `row border ${label}`).toBe("0px");
+        const before = getComputedStyle(row, "::before");
+        expect({ left: before.left, right: before.right }, `row divider ${label}`).toEqual({
+          left: `${GUTTER}px`,
+          right: `${GUTTER}px`,
+        });
+      }
+    }
+  }
+});
+
+it("draws settings index labels in the primary foreground", async () => {
+  using _environment = installEnvironment();
+  for (const { width, height } of PHONE_VIEWPORTS) {
+    const { screen } = await mountApp("/settings/general", width, height);
+    await using _screen = screen;
+    await waitForSelector("[data-settings-page-scroll]");
+    await userEvent.click(page.getByRole("button", { name: "Back to settings sections" }));
+    await waitForSelector('[aria-label="Settings sections"]');
+    const row = document.querySelector<HTMLElement>('[data-settings-section="/settings/general"]');
+    const header = document.querySelector<HTMLElement>('[role="group"] h3');
+    expect(row, "index row").not.toBeNull();
+    expect(header, "index section header").not.toBeNull();
+    expect(getComputedStyle(row as HTMLElement).color).not.toBe(
+      getComputedStyle(header as HTMLElement).color,
+    );
+  }
+});
+
 it("lists settings sections as a page and returns to the chosen one", async () => {
   using _environment = installEnvironment();
   for (const { width, height } of PHONE_VIEWPORTS) {

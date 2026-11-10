@@ -779,7 +779,7 @@ function DeviceSourceRow(props: { row: SourceRow }) {
     <div className="flex items-center gap-3 border-t border-border/60 px-4 py-3 first:border-t-0">
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-1.5">
-          <p className="truncate text-sm font-medium">{row.title}</p>
+          <p className="truncate text-sm font-medium max-phone:text-body">{row.title}</p>
           {row.kind ? (
             <span className="shrink-0 rounded border border-border px-1 text-3xs uppercase tracking-wide text-muted-foreground">
               {row.kind}

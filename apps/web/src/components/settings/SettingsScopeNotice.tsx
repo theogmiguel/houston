@@ -19,7 +19,7 @@ import {
   settingsScopeEnvironmentLabels,
   settingsScopeProjectMachines,
 } from "./settingsScopeAxis";
-import { PHONE_NOTE_CLS } from "~/components/ui/phone-recipes";
+import { PHONE_CARD_TEXT_CLS, PHONE_NOTE_CLS } from "~/components/ui/phone-recipes";
 
 interface ScopeChoice {
   label: string;
@@ -188,7 +188,7 @@ export function SettingsScopeNotice({
             ) : (
               <SettingsGroup key={group?.projectKey ?? target}>
                 {noteInCard ? (
-                  <p role="status" className={`px-4 py-3 ${PHONE_NOTE_CLS}`}>
+                  <p role="status" className={`px-4 py-3 ${PHONE_NOTE_CLS} ${PHONE_CARD_TEXT_CLS}`}>
                     {children}
                   </p>
                 ) : null}

@@ -114,7 +114,7 @@ function ScopeTrigger({
   return (
     <MenuTrigger
       aria-label={`${ariaLabel}: ${label}`}
-      render={<Button variant="ghost" size="sm" />}
+      render={<Button variant="ghost" size="sm" touch="exempt" />}
       className={SCOPE_TRIGGER_CLS}
     >
       {icon}

@@ -63,3 +63,21 @@ export const PHONE_EMPTY_STACK_CLS =
   "flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-4 text-center";
 export const PHONE_EMPTY_TITLE_CLS = "text-sm font-medium text-balance";
 export const PHONE_EMPTY_BODY_CLS = "text-xs text-balance text-muted-foreground";
+
+/**
+ * Every control a phone settings page draws is a 44px tap target: select triggers, buttons,
+ * segmented-control segments and text fields. Switches and checkboxes keep their own hit area,
+ * and inline affordances marked `touch-exempt` (the micro reset and info glyphs beside a row
+ * title, the scope pickers set inside a sentence) keep their size.
+ */
+export const PHONE_SETTINGS_TAP_TARGETS_CLS =
+  "max-phone:[&_[data-slot=select-trigger]]:min-h-11 max-phone:[&_button:not(.touch-exempt):not([role=switch]):not([role=checkbox])]:min-h-11 max-phone:[&_button:not(.touch-exempt):not([role=switch]):not([role=checkbox])]:min-w-11 max-phone:[&_[data-slot=toggle]]:min-h-11 max-phone:[&_[data-slot=input]]:min-h-11";
+
+/** A card's body text on a phone: the 13px body size the other settings cards use. */
+export const PHONE_CARD_TEXT_CLS = "max-phone:text-body";
+/** A card or section heading on a phone: the section heading style, 15px semibold. */
+export const PHONE_SECTION_HEADING_CLS =
+  "max-phone:text-prose max-phone:leading-5 max-phone:font-semibold max-phone:text-foreground/80";
+/** A table row's divider inside a phone card: a rule inset 16px at both ends instead of an edge-to-edge border. */
+export const PHONE_CARD_ROW_DIVIDER_CLS =
+  "max-phone:relative max-phone:border-t-0 max-phone:not-first:before:pointer-events-none max-phone:not-first:before:absolute max-phone:not-first:before:inset-x-4 max-phone:not-first:before:top-0 max-phone:not-first:before:h-px max-phone:not-first:before:bg-border max-phone:not-first:before:content-['']";

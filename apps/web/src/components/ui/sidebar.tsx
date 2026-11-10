@@ -772,7 +772,8 @@ const sidebarMenuButtonVariants = cva(
         icon: "size-8 justify-center rounded-[var(--control-radius)] p-0",
         lg: "h-12 rounded-[var(--control-radius)] px-[var(--sidebar-row-content-inset)] py-2 text-sm group-data-[collapsible=icon]:p-0!",
         sm: "h-7 rounded-[var(--control-radius)] px-[var(--sidebar-row-content-inset)] py-2 text-xs",
-        phone: "h-11 rounded-none px-4 py-2 text-sm",
+        // The doubled selector outranks a caller's muted label colour: a phone index row reads at full strength.
+        phone: "h-11 rounded-none px-4 py-2 text-sm [&&]:text-sidebar-foreground",
       },
       variant: {
         default: "font-medium text-sidebar-muted-foreground/80",
