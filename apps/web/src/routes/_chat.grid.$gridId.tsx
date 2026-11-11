@@ -31,7 +31,7 @@ import {
 import { useOpenGridDraft } from "../grid/useOpenGridDraft";
 import { useGridShortcuts } from "../grid/useGridShortcuts";
 import { rememberLastOpenGridId } from "../grid/lastGrid";
-import { useGridMaximizeStore } from "../grid/gridMaximizeStore";
+import { useGridMaximizeStore, useLeaveGridMaximize } from "../grid/gridMaximizeStore";
 import { ungroupedWorkspaceThreads } from "../grid/rail";
 import { resolveGridThreadOpen, type ThreadOpenIntent } from "../grid/gridThreadOpen";
 import { containsThread, preorderThreads } from "../grid/tree";
@@ -255,11 +255,7 @@ function GridRoute() {
   const shownMaximizedThreadId = effectiveMaximized ?? phoneThreadId;
   const phoneThreadPage = isPhone && phoneThreadId !== null;
 
-  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- a grid change or a removed cell must not leave another cell maximized
-  useEffect(() => {
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- the setter is recreated each render; a grid change is the only trigger
-    setMaximizedThreadId(null);
-  }, [gridId]);
+  useLeaveGridMaximize(gridId);
 
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- clears a maximize whose cell left the tree
   useEffect(() => {
