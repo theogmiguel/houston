@@ -31,26 +31,34 @@ const HALF = { x: 0, y: 0, width: 300, height: 300 };
 const FULL = { x: 0, y: 0, width: 600, height: 300 };
 
 describe("grid maximize morph", () => {
-  it("carries the box on a stand-in card and hides the chat until it is under way", () => {
+  it("carries the box on a stand-in card and never blanks the chat", () => {
     using _guard = motionGuard();
     const { root, cell, neighbour } = surface();
-    animateMaximizeMorph(root, cell, HALF, FULL, true, [neighbour]);
+    animateMaximizeMorph(root, cell, HALF, FULL, true);
     const card = root.querySelector<HTMLElement>("[data-grid-morph-card]");
     expect(card).not.toBeNull();
     expect(card!.getAnimations().length).toBe(2);
-    // The chat itself never scales: only its opacity and a small rise animate.
-    const [content] = cell.getAnimations();
-    const keyframes = (content!.effect as KeyframeEffect).getKeyframes();
-    expect(keyframes.map((frame) => Number(frame.opacity))).toEqual([0, 1]);
-    expect(keyframes.some((frame) => String(frame.transform).includes("scale"))).toBe(false);
+    // Only the card moves: the chat is laid out at its new size and shows from the first frame.
+    expect(cell.getAnimations().length).toBe(0);
+    expect(getComputedStyle(cell).opacity).toBe("1");
     expect(cell.dataset.maximizeMorph).toBe("");
-    expect(neighbour.getAnimations().length).toBe(1);
+    expect(neighbour.getAnimations().length).toBe(0);
+  });
+
+  it("shows the neighbours from the first frame of a restore", () => {
+    using _guard = motionGuard();
+    const { root, cell, neighbour } = surface();
+    animateMaximizeMorph(root, cell, FULL, HALF, false);
+    expect(root.querySelector("[data-grid-morph-card]")).not.toBeNull();
+    expect(neighbour.getAnimations().length).toBe(0);
+    expect(cell.getAnimations().length).toBe(0);
+    expect(getComputedStyle(neighbour).opacity).toBe("1");
   });
 
   it("removes the stand-in and hands the card back once it ends", async () => {
     using _guard = motionGuard();
-    const { root, cell, neighbour } = surface();
-    animateMaximizeMorph(root, cell, FULL, HALF, false, [neighbour]);
+    const { root, cell } = surface();
+    animateMaximizeMorph(root, cell, FULL, HALF, false);
     const animations = root.getAnimations({ subtree: true });
     for (const animation of animations) animation.finish();
     await vi.waitFor(() => {
@@ -62,11 +70,10 @@ describe("grid maximize morph", () => {
 
   it("settles a running morph before starting the next one", () => {
     using _guard = motionGuard();
-    const { root, cell, neighbour } = surface();
-    animateMaximizeMorph(root, cell, HALF, FULL, true, [neighbour]);
-    animateMaximizeMorph(root, cell, FULL, HALF, false, [neighbour]);
+    const { root, cell } = surface();
+    animateMaximizeMorph(root, cell, HALF, FULL, true);
+    animateMaximizeMorph(root, cell, FULL, HALF, false);
     expect(root.querySelectorAll("[data-grid-morph-card]").length).toBe(1);
-    expect(neighbour.style.visibility).toBe("hidden");
     finishMaximizeMorph(root);
     expect(root.querySelector("[data-grid-morph-card]")).toBeNull();
   });
@@ -74,8 +81,8 @@ describe("grid maximize morph", () => {
   it("snaps when motion is off", () => {
     using _guard = motionGuard();
     configureMotion({ off: true });
-    const { root, cell, neighbour } = surface();
-    animateMaximizeMorph(root, cell, HALF, FULL, true, [neighbour]);
+    const { root, cell } = surface();
+    animateMaximizeMorph(root, cell, HALF, FULL, true);
     expect(root.querySelector("[data-grid-morph-card]")).toBeNull();
     expect(cell.getAnimations().length).toBe(0);
   });

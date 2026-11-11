@@ -481,18 +481,12 @@ function morphMaximize(
 ): void {
   const from = before.get(threadId);
   const to = after.get(threadId);
-  const frames = [...root.querySelectorAll<HTMLElement>(":scope > [data-grid-cell-frame]")];
-  const frame = frames.find((candidate) => candidate.dataset.gridCellFrame === threadId);
+  const frame = [...root.querySelectorAll<HTMLElement>(":scope > [data-grid-cell-frame]")].find(
+    (candidate) => candidate.dataset.gridCellFrame === threadId,
+  );
   const cell = frame?.querySelector<HTMLElement>("[data-grid-cell]");
   if (from === undefined || to === undefined || cell == null) return;
-  animateMaximizeMorph(
-    root,
-    cell,
-    from,
-    to,
-    opening,
-    frames.filter((candidate) => candidate !== frame),
-  );
+  animateMaximizeMorph(root, cell, from, to, opening);
 }
 
 function setPx(element: HTMLElement, property: "left" | "top" | "width" | "height", value: number) {
