@@ -2907,9 +2907,6 @@ code {
    Going solo or back fades the cells' card layer; nothing else in the chat repaints. */
 
 [data-grid-surface] {
-  /* One curve and duration for every property that changes, so the scene moves as one. */
-  --grid-morph-duration: 260ms;
-  --grid-morph-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   /* The card a cell shows in a crowded grid, read here so a cell's own --pane can't recolour it. */
   --grid-card-surface: var(--background);
   --grid-cell-surface: var(--background);
@@ -2938,9 +2935,9 @@ code {
   border-bottom-color: transparent;
 }
 
-/* Cells that can swap keep their own compositing layer, so a move neither creates nor
-   drops one: either would repaint the whole chat on the move's first or last frame. */
-[data-grid-surface][data-multi] [data-grid-cell] {
+/* Every cell keeps one compositing layer for good, alone, maximized or in a grid, so no move,
+   maximize or restore creates or drops one: either would repaint the whole chat. */
+[data-grid-surface] [data-grid-cell] {
   will-change: transform;
 }
 
@@ -2964,9 +2961,10 @@ code {
   border-radius: var(--r-group);
   opacity: 0;
   will-change: opacity;
+  /* Going solo or back replaces the surface in place: one swap role for the card and the label. */
   transition:
-    opacity var(--grid-morph-duration) var(--grid-morph-ease),
-    border-color var(--grid-morph-duration) var(--grid-morph-ease);
+    opacity var(--motion-swap-in) var(--ease-standard),
+    border-color var(--motion-swap-in) var(--ease-standard);
 }
 
 [data-grid-surface][data-multi] [data-grid-cell]::before {
@@ -3041,8 +3039,8 @@ html[data-theme-reveal] [data-grid-surface] [data-grid-cell]::after {
 
 [data-grid-surface] [data-pane-label] {
   transition:
-    opacity var(--grid-morph-duration) var(--grid-morph-ease),
-    translate var(--grid-morph-duration) var(--grid-morph-ease);
+    opacity var(--motion-swap-in) var(--ease-standard),
+    translate var(--motion-swap-in) var(--ease-standard);
 }
 
 /* A pane shown alone has its title in the top bar. Its hidden header leaves the flow, so the
@@ -3056,27 +3054,6 @@ html[data-theme-reveal] [data-grid-surface] [data-grid-cell]::after {
   pointer-events: none;
 }
 
-/* A cell that joins the grid grows from nothing and fades in; one that leaves does the reverse.
-   Only those slots transition, so dragging a resize handle stays immediate. */
-[data-grid-surface] [data-grid-slot][data-leaving],
-[data-grid-surface][data-morphing] [data-grid-slot][data-entering] {
-  transition:
-    flex-grow var(--grid-morph-duration) var(--grid-morph-ease),
-    opacity var(--grid-morph-duration) var(--grid-morph-ease);
-}
-
-[data-grid-surface] [data-grid-slot][data-leaving] {
-  flex-grow: 0 !important;
-  opacity: 0;
-}
-
-[data-grid-surface][data-morphing] [data-grid-slot][data-entering] {
-  @starting-style {
-    flex-grow: 0;
-    opacity: 0;
-  }
-}
-
 [data-grid-surface][data-morphing] [data-pane-label] {
   @starting-style {
     opacity: 0;
@@ -3084,23 +3061,21 @@ html[data-theme-reveal] [data-grid-surface] [data-grid-cell]::after {
   }
 }
 
-/* Cells sit in frames over the slots, so they fade with their slot from there. */
+/* A cell that joins takes its slot at once and fades in; one that leaves gives its slot up at
+   once and fades out over its last box. The other cells FLIP into place, so no slot eases its
+   size: that would relayout every chat in the grid on every frame. */
 [data-grid-surface] [data-grid-cell-frame][data-leaving] {
   opacity: 0;
-  transition: opacity var(--grid-morph-duration) var(--grid-morph-ease);
+  pointer-events: none;
+  transition: opacity var(--motion-list-out) var(--ease-exit);
 }
 
 [data-grid-surface][data-morphing] [data-grid-cell-frame][data-entering] {
-  transition: opacity var(--grid-morph-duration) var(--grid-morph-ease);
+  transition: opacity var(--motion-list-in) var(--ease-standard);
 
   @starting-style {
     opacity: 0;
   }
-}
-
-[data-grid-surface] [data-grid-gutter][data-leaving] {
-  flex-basis: 0 !important;
-  transition: flex-basis var(--grid-morph-duration) var(--grid-morph-ease);
 }
 
 [data-grid-surface],

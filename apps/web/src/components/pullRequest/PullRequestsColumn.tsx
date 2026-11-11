@@ -1,4 +1,4 @@
-import type { PullRequestInvolvement, PullRequestListState } from "@houston-app/contracts";
+import type { PullRequestListInvolvement, PullRequestListState } from "@houston-app/contracts";
 import { Plug2Icon, SearchIcon } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 
@@ -104,11 +104,11 @@ export function PullRequestsColumn({
   refreshing: boolean;
   onRefresh: () => void;
   searchValue: string;
-  involvement: PullRequestInvolvement;
+  involvement: PullRequestListInvolvement;
   state: PullRequestListState;
   host: string | undefined;
   hostMenuOptions: ReadonlyArray<PullRequestFilterOption<string>>;
-  onInvolvement: (involvement: PullRequestInvolvement) => void;
+  onInvolvement: (involvement: PullRequestListInvolvement) => void;
   onState: (state: PullRequestListState) => void;
   onHost: (host: string | undefined) => void;
   searchInput: ReactNode;
@@ -301,7 +301,7 @@ export function PullRequestsColumn({
                     value={[involvement]}
                     onValueChange={(next) => {
                       const value = next[0];
-                      if (value) onInvolvement(value as PullRequestInvolvement);
+                      if (value) onInvolvement(value as PullRequestListInvolvement);
                     }}
                   >
                     {INVOLVEMENT_TABS.map((option) => (

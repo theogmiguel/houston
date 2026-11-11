@@ -11,7 +11,7 @@ import type {
   PullRequestAction,
   PullRequestActor,
   PullRequestDiffStat,
-  PullRequestInvolvement,
+  PullRequestListInvolvement,
   PullRequestLabel,
   PullRequestListCursors,
   PullRequestListFilters,
@@ -229,7 +229,7 @@ export function matchesPullRequestQuery(entry: PullRequestListEntry, query: stri
 export function filterPullRequestsByInvolvement<Entry extends ScopedEntry>(
   entries: ReadonlyArray<Entry>,
   viewers: PullRequestViewers,
-  involvement: PullRequestInvolvement,
+  involvement: PullRequestListInvolvement,
 ): ReadonlyArray<Entry> {
   if (involvement === "reviewing") {
     return entries.filter((entry) => entry.viewerReviewRequested);
@@ -746,7 +746,7 @@ export function sortPullRequestGroups<Entry extends PullRequestListEntry>(
   sort: PullRequestListSort,
   searchText: string,
   hasMeasuredSize: (entry: Entry) => boolean = (entry) => entry.additions + entry.deletions > 0,
-  involvement: PullRequestInvolvement = "all",
+  involvement: PullRequestListInvolvement = "all",
 ): ReadonlyArray<PullRequestGroup<Entry>> {
   const sortWithinGroups = (rank: (entries: ReadonlyArray<Entry>) => ReadonlyArray<Entry>) =>
     groups.map((group) => ({ ...group, entries: rank(group.entries) }));
@@ -762,7 +762,7 @@ export function sortPullRequestGroups<Entry extends PullRequestListEntry>(
       key === "others" ? involvement : key === "authored" ? "authored" : "reviewing";
     return groups.map((group) => {
       const groupRole = role(group.key);
-      if (groupRole === "all") return group;
+      if (groupRole === "all" || groupRole === "linked") return group;
       const rank =
         groupRole === "authored"
           ? rankPullRequestsBlockedOnAuthor

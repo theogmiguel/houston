@@ -751,7 +751,68 @@ describe("GridHost surface", () => {
     expect(getComputedStyle(soloSurface).paddingLeft).toBe("0px");
   });
 
-  it("shrinks a closing cell away before it leaves the tree", async () => {
+  it("tells only the maximized cell it shows alone, so the hidden cells do not re-render", async () => {
+    const maximized = new Map<string, boolean>();
+    await using _screen = await render(
+      <div style={{ display: "flex", width: 900, height: 600 }}>
+        <GridHost
+          grid={grid(row("thread-a", "thread-b", "thread-c"))}
+          maximizedThreadId="thread-b"
+          onTreeChange={() => {}}
+          onFocusThread={() => {}}
+          renderThread={(cell) => {
+            maximized.set(cell.node.threadId, cell.maximized);
+            return cellMarkup(cell);
+          }}
+        />
+      </div>,
+      { router: false },
+    );
+    expect(Object.fromEntries(maximized)).toEqual({
+      "thread-a": false,
+      "thread-b": true,
+      "thread-c": false,
+    });
+  });
+
+  it("keeps every cell on one compositing layer alone, in a grid and maximized", async () => {
+    const layers = (container: HTMLElement) =>
+      [...container.querySelectorAll<HTMLElement>("[data-grid-cell]")].map((cell) => [
+        getComputedStyle(cell).willChange,
+        getComputedStyle(cell, "::before").willChange,
+      ]);
+    await using solo = await mount(threadLeaf("thread-a", "p-thread-a"));
+    await using multi = await mount(row("thread-a", "thread-b"));
+    await using maximized = await mount(row("thread-a", "thread-b"), {
+      maximizedThreadId: "thread-a",
+    });
+    for (const screen of [solo, multi, maximized]) {
+      for (const layer of layers(screen.container)) {
+        expect(layer).toEqual(["transform", "opacity"]);
+      }
+    }
+  });
+
+  it("times going solo and back on the motion roles, so reduced motion stops it", async () => {
+    await using screen = await mount(row("thread-a", "thread-b"));
+    const cell = screen.container.querySelector<HTMLElement>(
+      '[data-grid-cell][data-thread-id="thread-a"]',
+    )!;
+    const label = document.createElement("div");
+    label.dataset.paneLabel = "";
+    cell.append(label);
+    for (const style of [getComputedStyle(cell, "::before"), getComputedStyle(label)]) {
+      expect(style.transitionDuration.split(", ")).toEqual(["0.16s", "0.16s"]);
+    }
+    configureMotion({ off: true });
+    try {
+      expect(getComputedStyle(cell, "::before").transitionDuration).toBe("0s, 0s");
+    } finally {
+      configureMotion({ off: false });
+    }
+  });
+
+  it("fades a closing cell out over its last box while the survivor takes its room", async () => {
     const changes: Array<LayoutNode | null> = [];
     let close: (() => void) | null = null;
     await using screen = await render(
@@ -769,13 +830,112 @@ describe("GridHost surface", () => {
       { router: false },
     );
 
+    const surface = screen.container.querySelector<HTMLElement>("[data-grid-surface]")!;
+    const leaving = screen.container.querySelector<HTMLElement>(
+      '[data-grid-cell-frame="thread-b"]',
+    )!;
+    const before = leaving.getBoundingClientRect().toJSON();
     await act(() => close?.());
-    // The survivor already reads as one thread while the closing cell shrinks.
-    expect(screen.container.querySelector("[data-grid-slot][data-leaving]")).not.toBeNull();
+    // The survivor already reads as one thread, at its final size, while the closing cell fades.
     expect(screen.container.querySelector("[data-grid-surface][data-multi]")).toBeNull();
+    expect(screen.container.querySelector('[data-cell-place="thread-b"]')).toBeNull();
+    const survivor = screen.container.querySelector<HTMLElement>('[data-cell-place="thread-a"]')!;
+    expect(survivor.getBoundingClientRect().width).toBe(surface.clientWidth);
+    expect(leaving.hasAttribute("data-leaving")).toBe(true);
+    expect(getComputedStyle(leaving).visibility).toBe("visible");
+    expect(leaving.getBoundingClientRect().toJSON()).toEqual(before);
+    expect(getComputedStyle(leaving).transitionProperty).toBe("opacity");
     expect(changes).toEqual([]);
     await vi.waitFor(() => expect(changes).toHaveLength(1));
     expect(preorderThreads(changes[0] ?? null).map((leaf) => leaf.threadId)).toEqual(["thread-a"]);
+  });
+
+  async function mountAsyncClose() {
+    let close: (() => void) | null = null;
+    const requests: Array<{ threadId: string; settle: () => void }> = [];
+    const view = (tree: LayoutNode) => (
+      <div style={{ display: "flex", width: 900, height: 600 }}>
+        <GridHost
+          grid={grid(tree)}
+          onTreeChange={() => {}}
+          onFocusThread={() => {}}
+          onCloseThread={(threadId) =>
+            new Promise<void>((resolve) => requests.push({ threadId, settle: resolve }))
+          }
+          renderThread={(cell) => {
+            if (cell.node.threadId === "thread-b") close = cell.onClose;
+            return cellMarkup(cell);
+          }}
+        />
+      </div>
+    );
+    const screen = await render(view(row("thread-a", "thread-b")), { router: false });
+    return {
+      screen,
+      requests,
+      close: () => close?.(),
+      show: (tree: LayoutNode) => screen.rerender(view(tree)),
+    };
+  }
+
+  it("keeps a closing cell gone while the server settles its thread", async () => {
+    const stage = await mountAsyncClose();
+    await using _screen = stage.screen;
+    await act(() => stage.close());
+    await vi.waitFor(() => expect(stage.requests).toHaveLength(1));
+    // The close request is in flight and the thread is still in the tree: nothing snaps back.
+    await act(async () => {});
+    const container = stage.screen.container;
+    expect(
+      container.querySelector('[data-grid-cell-frame="thread-b"][data-leaving]'),
+    ).not.toBeNull();
+    expect(container.querySelector("[data-grid-surface][data-multi]")).toBeNull();
+
+    await stage.show(threadLeaf("thread-a", "p-thread-a"));
+    await act(() => stage.requests[0]?.settle());
+    expect(container.querySelector("[data-leaving]")).toBeNull();
+    expect(container.querySelector('[data-grid-cell-frame="thread-b"]')).toBeNull();
+  });
+
+  it("brings a closing cell back when the server keeps its thread", async () => {
+    const stage = await mountAsyncClose();
+    await using _screen = stage.screen;
+    await act(() => stage.close());
+    await vi.waitFor(() => expect(stage.requests).toHaveLength(1));
+    await act(() => stage.requests[0]?.settle());
+    const container = stage.screen.container;
+    await vi.waitFor(() => expect(container.querySelector("[data-leaving]")).toBeNull());
+    expect(container.querySelector("[data-grid-surface][data-multi]")).not.toBeNull();
+  });
+
+  it("lays a joining cell out at its final size and fades it in", async () => {
+    const view = (tree: LayoutNode) => (
+      <div style={{ display: "flex", width: 900, height: 600 }}>
+        <GridHost
+          grid={grid(tree)}
+          onTreeChange={() => {}}
+          onFocusThread={() => {}}
+          renderThread={cellMarkup}
+        />
+      </div>
+    );
+    await using screen = await render(view(row("thread-a", "thread-b")), { router: false });
+    await screen.rerender(view(row("thread-a", "thread-b", "thread-c")));
+    const surface = screen.container.querySelector<HTMLElement>("[data-grid-surface]")!;
+    const third = (surface.clientWidth - 2 * 8 - 2 * 8) / 3;
+    for (const threadId of ["thread-a", "thread-b", "thread-c"]) {
+      const place = screen.container.querySelector<HTMLElement>(`[data-cell-place="${threadId}"]`)!;
+      expect(place.getBoundingClientRect().width).toBeCloseTo(third, 0);
+    }
+    // Only the compositor moves: no slot eases its size, which would relayout every chat per frame.
+    for (const slot of screen.container.querySelectorAll<HTMLElement>("[data-grid-slot]")) {
+      expect(getComputedStyle(slot).transitionProperty).not.toMatch(/flex/);
+    }
+    const joining = screen.container.querySelector<HTMLElement>(
+      '[data-grid-cell-frame="thread-c"]',
+    )!;
+    expect(joining.hasAttribute("data-entering")).toBe(true);
+    expect(getComputedStyle(joining).transitionProperty).toBe("opacity");
   });
 });
 
@@ -869,6 +1029,23 @@ describe("GridHost stable cells", () => {
     expect(stage.detached).toEqual([]);
   });
 
+  it("keeps a cell's DOM in place when another thread takes its pane", async () => {
+    await using stage = await mountStable(row("thread-a", "thread-b"));
+    const a = stage.cell("thread-a");
+    const tree = row("thread-a", "thread-b");
+    if (tree.kind !== "split") throw new Error("bad tree");
+    // A subagent opened in its parent's cell, then the parent back: one pane, two threads.
+    await stage.show({
+      ...tree,
+      children: [threadLeaf("thread-sub", "p-thread-a"), tree.children[1]!],
+    });
+    expect(stage.cell("thread-sub")).toBe(a);
+    expect(a.closest("[data-grid-cell-frame]")?.hasAttribute("data-entering")).toBe(false);
+    await stage.show(row("thread-a", "thread-b"));
+    expect(stage.cell("thread-a")).toBe(a);
+    expect(stage.detached).toEqual([]);
+  });
+
   it("keeps every cell's DOM in place when a cell is maximized and restored", async () => {
     await using stage = await mountStable(row("thread-a", "thread-b"));
     const a = stage.cell("thread-a");
@@ -898,7 +1075,7 @@ describe("GridHost stable cells", () => {
       const maximized = stage.cell("thread-c").getBoundingClientRect();
       expect([maximized.width, maximized.height]).toEqual([content.width, content.height]);
     });
-    // The neighbours fade out with the morph, then hide.
+    // The neighbours hide behind the maximized cell.
     await vi.waitFor(() => {
       expect(getComputedStyle(stage.cell("thread-a")).visibility).toBe("hidden");
     });

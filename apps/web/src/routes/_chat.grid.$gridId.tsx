@@ -31,7 +31,7 @@ import {
 import { useOpenGridDraft } from "../grid/useOpenGridDraft";
 import { useGridShortcuts } from "../grid/useGridShortcuts";
 import { rememberLastOpenGridId } from "../grid/lastGrid";
-import { useGridMaximizeStore } from "../grid/gridMaximizeStore";
+import { useGridMaximizeStore, useLeaveGridMaximize } from "../grid/gridMaximizeStore";
 import { ungroupedWorkspaceThreads } from "../grid/rail";
 import { resolveGridThreadOpen, type ThreadOpenIntent } from "../grid/gridThreadOpen";
 import { containsThread, preorderThreads } from "@houston-app/shared/grid/tree";
@@ -255,11 +255,7 @@ function GridRoute() {
   const shownMaximizedThreadId = effectiveMaximized ?? phoneThreadId;
   const phoneThreadPage = isPhone && phoneThreadId !== null;
 
-  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- a grid change or a removed cell must not leave another cell maximized
-  useEffect(() => {
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- the setter is recreated each render; a grid change is the only trigger
-    setMaximizedThreadId(null);
-  }, [gridId]);
+  useLeaveGridMaximize(gridId);
 
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- clears a maximize whose cell left the tree
   useEffect(() => {
@@ -490,8 +486,8 @@ function GridRoute() {
             maximizedThreadId={shownMaximizedThreadId}
             onTreeChange={(tree) => setTree(grid.id, tree)}
             onFocusThread={(threadId) => focusThread(grid.id, threadId)}
-            onCloseThread={(threadId) => {
-              void closeGridThread({
+            onCloseThread={(threadId) =>
+              closeGridThread({
                 gridId: grid.id,
                 threadId,
                 settle: (id) =>
@@ -514,8 +510,8 @@ function GridRoute() {
                     description: error instanceof Error ? error.message : "An error occurred.",
                   }),
                 );
-              });
-            }}
+              })
+            }
             onDropThread={(source, targetThreadId, side) => {
               const targetCount = grid.tree === null ? 0 : preorderThreads(grid.tree).length;
               const sourceProjectKey = workspaceKeyOf(source.environmentId, source.projectId);

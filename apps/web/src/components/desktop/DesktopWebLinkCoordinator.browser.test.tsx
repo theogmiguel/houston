@@ -130,7 +130,7 @@ const pullRequestUrl = "https://github.com/Effect-TS/effect/pull/9339";
 const pullRequestView = {
   to: "/pull-requests",
   search: {
-    involvement: "all",
+    involvement: "authored",
     state: "all",
     repository: "effect-ts/effect",
     number: 9339,

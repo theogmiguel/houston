@@ -19,6 +19,7 @@ const state = vi.hoisted(() => ({
   archiveThread: vi.fn(),
   pendingQuestion: false,
   banner: false,
+  chatViewRenders: 0,
 }));
 
 vi.mock("../../lib/archivedThreadsState", () => ({
@@ -60,44 +61,47 @@ vi.mock("../ChatView", async () => {
   };
   const noop = () => {};
   return {
-    default: (props: { shortcutsAtWindow?: boolean; visitActive?: boolean }) => (
-      <div
-        data-testid="chat-view"
-        data-chat-composer-surface="true"
-        data-shortcuts-at-window={props.shortcutsAtWindow === true ? "true" : undefined}
-        data-visit-active={props.visitActive === true ? "true" : undefined}
-      >
-        {state.banner ? (
-          <div data-composer-banner-shelf="true">
-            <ComposerBanner.Root inCard="notice" data-testid="notice">
-              Usage limits
+    default: (props: { shortcutsAtWindow?: boolean; visitActive?: boolean }) => {
+      state.chatViewRenders += 1;
+      return (
+        <div
+          data-testid="chat-view"
+          data-chat-composer-surface="true"
+          data-shortcuts-at-window={props.shortcutsAtWindow === true ? "true" : undefined}
+          data-visit-active={props.visitActive === true ? "true" : undefined}
+        >
+          {state.banner ? (
+            <div data-composer-banner-shelf="true">
+              <ComposerBanner.Root inCard="notice" data-testid="notice">
+                Usage limits
+              </ComposerBanner.Root>
+            </div>
+          ) : null}
+          {state.pendingQuestion ? (
+            <ComposerBanner.Root data-chat-composer-top-drawer="true" inCard="drawer">
+              <ComposerPendingUserInputPanel
+                pendingUserInputs={[prompt]}
+                cwd={undefined}
+                threadRef={{ environmentId, threadId }}
+                respondingRequestIds={[]}
+                answers={{}}
+                questionIndex={0}
+                onToggleOption={noop}
+                onAdvance={noop}
+                onDismiss={noop}
+              />
             </ComposerBanner.Root>
+          ) : null}
+          <div data-chat-composer-body="true">
+            <div data-testid="editor" contentEditable suppressContentEditableWarning />
+            <p data-thread-find-text="true">A long answer that must stay readable in every pane.</p>
           </div>
-        ) : null}
-        {state.pendingQuestion ? (
-          <ComposerBanner.Root data-chat-composer-top-drawer="true" inCard="drawer">
-            <ComposerPendingUserInputPanel
-              pendingUserInputs={[prompt]}
-              cwd={undefined}
-              threadRef={{ environmentId, threadId }}
-              respondingRequestIds={[]}
-              answers={{}}
-              questionIndex={0}
-              onToggleOption={noop}
-              onAdvance={noop}
-              onDismiss={noop}
-            />
-          </ComposerBanner.Root>
-        ) : null}
-        <div data-chat-composer-body="true">
-          <div data-testid="editor" contentEditable suppressContentEditableWarning />
-          <p data-thread-find-text="true">A long answer that must stay readable in every pane.</p>
+          <div data-chat-composer-footer="true">
+            <button type="button">Submit</button>
+          </div>
         </div>
-        <div data-chat-composer-footer="true">
-          <button type="button">Submit</button>
-        </div>
-      </div>
-    ),
+      );
+    },
   };
 });
 
@@ -887,6 +891,29 @@ describe("GridThreadCell shortcut scope", () => {
     const unfocusedView = unfocused.container.querySelector('[data-testid="chat-view"]');
     expect(unfocusedView?.getAttribute("data-shortcuts-at-window")).toBeNull();
     expect(unfocusedView?.getAttribute("data-visit-active")).toBeNull();
+  });
+});
+
+describe("GridThreadCell re-renders", () => {
+  it("leaves an unfocused cell's chat alone when focus moves between other cells", async () => {
+    state.draftSession = null;
+    const view = (focusedThreadId: string) => (
+      <GridThreadCell
+        node={{ kind: "thread", threadId: "thread-b", id: "p2" }}
+        grid={{ ...grid(twoThreadTree()), focusedThreadId }}
+        focused={false}
+        availableThreads={[]}
+        onFocus={() => {}}
+        onClose={() => {}}
+        onSplit={() => {}}
+        onOpenThread={() => {}}
+      />
+    );
+    await using screen = await render(view("thread-a"), { router: false });
+    const before = state.chatViewRenders;
+    // Focusing another cell hands every cell a new grid record and new callbacks.
+    await screen.rerender(view("thread-c"));
+    expect(state.chatViewRenders).toBe(before);
   });
 });
 

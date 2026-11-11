@@ -9,6 +9,17 @@ Requests lists the pull requests of the projects in scope. Search by title, bran
 number or `label:bug`; filter by state, involvement and draft; sort the result. A row shows
 its project, checks and review state.
 
+- **Mine** — pull requests you authored.
+- **Review requested** — pull requests that ask for your review.
+- **Agents** — pull requests linked to a thread: those a thread's agent opened or linked, and
+  those linked with **Link pull request**. They are read from the threads' links, which Houston
+  refreshes in the background, so labels are not shown and a change on the host can take
+  several minutes to appear.
+
+A project cloned from a fork, with an `upstream` remote beside `origin`, lists every pull
+request of the `origin` repository and, from the `upstream` repository, only the ones you
+authored or were asked to review.
+
 Open a request to read it in the right panel:
 
 - **Summary** — description, branches, reviewers and merge readiness. Where you can edit the

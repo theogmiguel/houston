@@ -231,7 +231,9 @@ The renderer ships in an Electron webview, so motion must stay on the compositor
   Exits are faster than entrances and use `ease-exit`.
 - Animate only `transform` and `opacity`. No transitions on width, height, padding, margin,
   flex-basis or inherited custom properties; no `backdrop-filter` on anything that moves;
-  `will-change` only while something moves.
+  `will-change` only while something moves. The exception is a surface that moves often and
+  repaints expensively (grid cells and their card layer): it keeps one permanent layer that no
+  state toggles.
 - Keyboard highlights, typing, streaming text, timeline rows and thread or route switches
   stay instant. Hover reveals fade opacity; they never toggle `display`.
 - Grid cells move by FLIP (`motion/paneMotion.ts`) and maximize through a stand-in card

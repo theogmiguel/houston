@@ -3,12 +3,11 @@ import { toJsxRuntime, type Components } from "hast-util-to-jsx-runtime";
 import { urlAttributes } from "html-url-attributes";
 import type { ReactElement } from "react";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
+import { remarkParseWithoutUnusedSyntax } from "@houston-app/shared/markdownSyntaxGates";
 import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
 import { type PluggableList, unified } from "unified";
 import { VFile } from "vfile";
-
-import { remarkParseWithoutUnusedSyntax } from "./markdownSyntaxGates";
 
 export type MarkdownUrlTransform = (url: string, key: string, node: Element) => string;
 

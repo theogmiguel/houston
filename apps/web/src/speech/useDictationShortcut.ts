@@ -41,6 +41,8 @@ type ShortcutInput = {
   previewFocus?: boolean;
   ownsFocus?: () => boolean;
   targetRef?: RefObject<HTMLElement | null>;
+  /** The thread composer that owns the window's shortcuts: the focused grid pane or a standalone view. */
+  ownsWindowShortcuts?: boolean;
 };
 
 const shortcutTargets = new Map<symbol, () => ShortcutInput & { backgroundThread: boolean }>();
@@ -57,6 +59,8 @@ function ownsShortcut(id: symbol) {
       read().ownsFocus?.() || read().targetRef?.current?.contains(document.activeElement),
   );
   if (focused) return focused[0] === id;
+  const windowOwner = entries.find(([, read]) => read().ownsWindowShortcuts === true);
+  if (windowOwner) return windowOwner[0] === id;
   return entries.find(([, read]) => !read().targetRef && !read().ownsFocus)?.[0] === id;
 }
 

@@ -1,5 +1,6 @@
-import type { PullRequestInvolvement, PullRequestListState } from "@houston-app/contracts";
+import type { PullRequestListInvolvement, PullRequestListState } from "@houston-app/contracts";
 import {
+  BotIcon,
   CalendarArrowDownIcon,
   CalendarArrowUpIcon,
   ClockIcon,
@@ -19,8 +20,8 @@ import { PullRequestGlyph } from "./pullRequestIcons";
 export const INVOLVEMENT_TABS = [
   { value: "authored", label: "Mine", Icon: PenLineIcon },
   { value: "reviewing", label: "Review requested", Icon: EyeIcon },
-  { value: "all", label: "Agents", Icon: LayersIcon },
-] as const satisfies ReadonlyArray<PullRequestFilterOption<PullRequestInvolvement>>;
+  { value: "linked", label: "Agents", Icon: BotIcon },
+] as const satisfies ReadonlyArray<PullRequestFilterOption<PullRequestListInvolvement>>;
 
 export const STATE_TABS = [
   { value: "all", label: "All", Icon: LayersIcon },

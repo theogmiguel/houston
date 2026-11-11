@@ -113,7 +113,7 @@ export function useOpenChangeRequestLink(
             to: "/pull-requests",
             search: ({ view: _view, ...previous }) => ({
               ...previous,
-              involvement: previous.involvement ?? "all",
+              involvement: previous.involvement ?? "authored",
               state: previous.state ?? "all",
               ...pullRequestsSearch,
             }),
@@ -124,7 +124,7 @@ export function useOpenChangeRequestLink(
       }
       void navigate({
         to: "/pull-requests",
-        search: { involvement: "all", state: "all", ...pullRequestsSearch },
+        search: { involvement: "authored", state: "all", ...pullRequestsSearch },
       });
       return true;
     };

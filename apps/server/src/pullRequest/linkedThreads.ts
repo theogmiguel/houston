@@ -3,11 +3,14 @@ import {
   threadPullRequestKeysEqual,
 } from "../sourceControl/threadPullRequests.ts";
 import {
+  ProjectId,
   PullRequestLinkedThreadsResult,
   PullRequestOperationError,
+  ThreadPullRequestLink,
   type ThreadPullRequestKey,
 } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as NodeSqliteClient from "@houston-app/shared/nodeSqliteClient";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -52,6 +55,40 @@ export const listLinkedPullRequestThreads = Effect.fn("listLinkedPullRequestThre
       new PullRequestOperationError({
         operation: "linkedThreads",
         detail: "Could not load linked threads.",
+        cause,
+      }),
+  ),
+);
+
+const decodeLink = Schema.decodeUnknownOption(Schema.fromJsonString(ThreadPullRequestLink));
+
+/** Every link a thread holds, archived threads included, for listing linked pull requests. */
+export const listThreadPullRequestLinks = Effect.fn("listThreadPullRequestLinks")(
+  function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const rows = yield* sql<{ projectId: string; link: string }>`
+      SELECT t.project_id AS "projectId", link.value AS link
+      FROM orchestration_v2_projection_threads AS t
+      JOIN json_each(
+        CASE WHEN json_valid(t.payload_json) THEN t.payload_json ELSE '{}' END,
+        '$.pullRequests'
+      ) AS link
+      WHERE t.deleted_at IS NULL
+        AND json_extract(link.value, '$.source') != 'stack-dismissed'
+        AND json_extract(t.payload_json, '$.lineage.sideChat') IS NOT 1
+    `.pipe(NodeSqliteClient.readOnly);
+    return rows.flatMap((row) =>
+      Option.match(decodeLink(row.link), {
+        onNone: () => [],
+        onSome: (link) => [{ projectId: ProjectId.make(row.projectId), link }],
+      }),
+    );
+  },
+  Effect.mapError(
+    (cause) =>
+      new PullRequestOperationError({
+        operation: "list",
+        detail: "Could not read the pull requests linked to threads.",
         cause,
       }),
   ),
