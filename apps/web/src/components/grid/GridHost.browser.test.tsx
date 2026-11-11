@@ -746,6 +746,24 @@ describe("GridHost surface", () => {
     expect(getComputedStyle(soloSurface).paddingLeft).toBe("0px");
   });
 
+  it("keeps every cell on one compositing layer alone, in a grid and maximized", async () => {
+    const layers = (container: HTMLElement) =>
+      [...container.querySelectorAll<HTMLElement>("[data-grid-cell]")].map((cell) => [
+        getComputedStyle(cell).willChange,
+        getComputedStyle(cell, "::before").willChange,
+      ]);
+    await using solo = await mount(threadLeaf("thread-a", "p-thread-a"));
+    await using multi = await mount(row("thread-a", "thread-b"));
+    await using maximized = await mount(row("thread-a", "thread-b"), {
+      maximizedThreadId: "thread-a",
+    });
+    for (const screen of [solo, multi, maximized]) {
+      for (const layer of layers(screen.container)) {
+        expect(layer).toEqual(["transform", "opacity"]);
+      }
+    }
+  });
+
   it("times going solo and back on the motion roles, so reduced motion stops it", async () => {
     await using screen = await mount(row("thread-a", "thread-b"));
     const cell = screen.container.querySelector<HTMLElement>(

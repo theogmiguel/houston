@@ -2935,9 +2935,9 @@ code {
   border-bottom-color: transparent;
 }
 
-/* Cells that can swap keep their own compositing layer, so a move neither creates nor
-   drops one: either would repaint the whole chat on the move's first or last frame. */
-[data-grid-surface][data-multi] [data-grid-cell] {
+/* Every cell keeps one compositing layer for good, alone, maximized or in a grid, so no move,
+   maximize or restore creates or drops one: either would repaint the whole chat. */
+[data-grid-surface] [data-grid-cell] {
   will-change: transform;
 }
 
