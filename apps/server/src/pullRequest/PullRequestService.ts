@@ -52,7 +52,9 @@ import {
   type PullRequestListStatsResult,
   type PullRequestProviderSummary,
   type PullRequestReactionInput,
+  type PullRequestInvolvement,
   type PullRequestRef,
+  type RepositoryIdentity,
   type PullRequestRoutingResult,
   type PullRequestRoutingIdentityInput,
   type PullRequestRoutingIdentityResult,
@@ -333,6 +335,8 @@ export interface SupportedProject {
   /** Unlike Azure repository names, remotes are unique across an organization. */
   readonly remote: string;
   readonly repositoryKey: string | null;
+  /** A fork's original repository: listings read only the viewer's own and review requests. */
+  readonly viewerOnly?: true;
 }
 
 interface WorkspaceProjects {
@@ -349,6 +353,12 @@ const sharedProjectReads = Context.Reference<{
   open: boolean;
   readonly reads: Map<string, Effect.Effect<WorkspaceProjects, PullRequestError>>;
 } | null>("houston/PullRequestService/sharedProjectReads", { defaultValue: () => null });
+
+interface ListTarget extends SupportedProject {
+  readonly involvement: PullRequestInvolvement;
+}
+
+const VIEWER_INVOLVEMENTS = ["authored", "reviewing"] as const;
 
 interface RepositoryBatch {
   readonly key: string;
@@ -409,6 +419,18 @@ function listCursorAt(
   ]);
   const cursor = `${boundary}|${(previous?.delivered ?? 0) + deliveredCount}|${[...seenAt].join(",")}`;
   return resumeAfter === undefined ? cursor : `${cursor}|${resumeAfter}`;
+}
+
+/** The repository a fork pushes to; a fork on another host keeps the original's listing. */
+function forkOrigin(
+  identity: RepositoryIdentity,
+): { readonly canonicalKey: string; readonly repository: string } | null {
+  const origin = identity.origin;
+  if (origin === undefined) return null;
+  const [host, ...path] = origin.canonicalKey.split("/");
+  if (host !== identity.canonicalKey.split("/")[0] || path.length === 0) return null;
+  const repository = origin.displayName ?? path.join("/");
+  return { canonicalKey: origin.canonicalKey, repository };
 }
 
 function isProviderUnusable(error: PullRequestProviderError): boolean {
@@ -924,7 +946,15 @@ export const make = Effect.gen(function* () {
           { kind: SourceControlProviderKind; projectCount: number }
         >();
         const viewerRoots = new Map<string, string[]>();
-        const seen = new Set<string>();
+        const seen = new Map<string, number>();
+        const add = (entry: SupportedProject) => {
+          const at = seen.get(entry.cursorKey);
+          if (at === undefined) {
+            seen.set(entry.cursorKey, supported.push(entry) - 1);
+          } else if (at >= 0 && supported[at]!.viewerOnly && !entry.viewerOnly) {
+            supported[at] = entry;
+          }
+        };
         for (const project of projects) {
           if (filter.projectId !== undefined && project.id !== filter.projectId) continue;
           if (filter.projectIds !== undefined && !filter.projectIds.includes(project.id)) continue;
@@ -954,28 +984,40 @@ export const make = Effect.gen(function* () {
           const repositoryKey =
             api?.repositoryKey?.({ canonicalKey: identity.canonicalKey }) ?? null;
           const key = listCursorKey(host, repositoryKey ?? repository);
-          if (seen.has(key)) continue;
-          seen.add(key);
           if (api === null) {
+            if (seen.has(key)) continue;
+            seen.set(key, -1);
             const counted = unimplemented.get(host);
             if (counted === undefined) unimplemented.set(host, { kind, projectCount: 1 });
             else counted.projectCount += 1;
             continue;
           }
-          supported.push({
-            cursorKey: key,
+          const supportedRepository = (selector: string, selectorKey: string | null) => ({
+            cursorKey: listCursorKey(host, selectorKey ?? selector),
             project,
             api: withRateLimitBackoff(api, host, rateLimits),
-            repository,
+            repository: selector,
             host,
             remote:
-              repositoryKey ??
-              sourceControlDefinitions.repositoryKeyFromRemote(`https://${host}/${repository}`),
+              selectorKey ??
+              sourceControlDefinitions.repositoryKeyFromRemote(`https://${host}/${selector}`),
             repositoryKey:
-              repositoryKey === null
+              selectorKey === null
                 ? null
-                : sourceControlDefinitions.canonicalRepositoryKey(repositoryKey.toLowerCase()),
+                : sourceControlDefinitions.canonicalRepositoryKey(selectorKey.toLowerCase()),
           });
+          const fork = forkOrigin(identity);
+          if (fork === null) {
+            add(supportedRepository(repository, repositoryKey));
+            continue;
+          }
+          add(
+            supportedRepository(
+              fork.repository,
+              api.repositoryKey?.({ canonicalKey: fork.canonicalKey }) ?? null,
+            ),
+          );
+          add({ ...supportedRepository(repository, repositoryKey), viewerOnly: true });
         }
         return { supported, unimplemented, viewerRoots };
       }),
@@ -985,14 +1027,17 @@ export const make = Effect.gen(function* () {
   const requireProject = (ref: PullRequestRef): Effect.Effect<SupportedProject, PullRequestError> =>
     listWorkspaceProjects({ projectId: ref.projectId }).pipe(
       Effect.flatMap(({ supported }): Effect.Effect<SupportedProject, PullRequestError> => {
-        const own = supported[0];
         const repository = ref.repository.trim();
         const host = ref.host?.trim().toLowerCase();
-        if (own !== undefined && own.repository.toLowerCase() === repository.toLowerCase()) {
-          if (host === undefined || host === own.host) return Effect.succeed(own);
-        }
+        // A fork's project holds its own repository and the original's.
+        const own = supported.find(
+          (candidate) =>
+            candidate.repository.toLowerCase() === repository.toLowerCase() &&
+            (host === undefined || host === candidate.host),
+        );
+        if (own !== undefined) return Effect.succeed(own);
         if (host === undefined) {
-          if (own === undefined) {
+          if (supported.length === 0) {
             return Effect.fail(new PullRequestUnavailableError({ reason: "provider-unsupported" }));
           }
           return Effect.fail(
@@ -1285,9 +1330,11 @@ export const make = Effect.gen(function* () {
     const epochAtStart = epochCounter;
     const continuation = yield* decodeCursors(input.cursors);
     const { supported: projects, unimplemented, viewerRoots } = yield* listWorkspaceProjects(input);
-    const projectCounts = new Map<string, number>();
-    for (const { host } of projects) {
-      projectCounts.set(host, (projectCounts.get(host) ?? 0) + 1);
+    const projectsByHost = new Map<string, Set<string>>();
+    for (const { host, project } of projects) {
+      const held = projectsByHost.get(host);
+      if (held === undefined) projectsByHost.set(host, new Set([project.id]));
+      else held.add(project.id);
     }
 
     const viewerResults = yield* resolveViewers(projects, viewerRoots);
@@ -1305,7 +1352,7 @@ export const make = Effect.gen(function* () {
           kind: result.kind,
           searchesOnHost: capabilities?.search ?? false,
           actions: capabilities?.actions ?? [],
-          projectCount: projectCounts.get(result.host) ?? 1,
+          projectCount: projectsByHost.get(result.host)?.size ?? 1,
           configured: result.viewer !== null,
           detail: result.error === null ? null : providerDetail(requirementOf, result.error),
         };
@@ -1321,18 +1368,36 @@ export const make = Effect.gen(function* () {
       })),
     ];
 
+    // A fork's original is asked twice, for the viewer's own requests and for their reviews,
+    // each carrying on from its own cursor.
+    const targets = projects.flatMap((project): ReadonlyArray<ListTarget> =>
+      project.viewerOnly === true && involvement === "all"
+        ? VIEWER_INVOLVEMENTS.map((asked) => ({
+            ...project,
+            cursorKey: `${project.cursorKey} ${asked}`,
+            involvement: asked,
+          }))
+        : [{ ...project, involvement }],
+    );
     const selected =
       continuation === null
-        ? projects
-        : projects.filter(({ cursorKey }) => continuation.has(cursorKey));
+        ? targets
+        : targets.filter(({ cursorKey }) => continuation.has(cursorKey));
     const readable = selected.filter(({ host }) => viewers[host] !== undefined);
-    const unreadable = selected
-      .filter(({ host }) => viewers[host] === undefined)
-      .map(({ project, repository }) => ({
-        projectId: project.id,
-        projectTitle: project.title,
-        message: `${repository} could not be read.`,
-      }));
+    const unreadable = [
+      ...new Map(
+        selected
+          .filter(({ host }) => viewers[host] === undefined)
+          .map(({ project, repository }) => [
+            `${project.id} ${repository}`,
+            {
+              projectId: project.id,
+              projectTitle: project.title,
+              message: `${repository} could not be read.`,
+            },
+          ]),
+      ).values(),
+    ];
     if (readable.length === 0) {
       const errors = viewerResults.flatMap((result) =>
         result.error === null || !selected.some(({ host }) => host === result.host)
@@ -1355,11 +1420,11 @@ export const make = Effect.gen(function* () {
     }
 
     const limit = input.limit ?? DEFAULT_REPOSITORY_LIST_LIMIT;
-    const cursorOf = (project: SupportedProject): ListCursor | undefined =>
+    const cursorOf = (project: ListTarget): ListCursor | undefined =>
       continuation?.get(project.cursorKey);
 
     const readSlice = (
-      project: SupportedProject,
+      project: ListTarget,
       cursor: ListCursor | undefined,
     ): Effect.Effect<RepositoryBatch> => {
       {
@@ -1371,7 +1436,7 @@ export const make = Effect.gen(function* () {
             repository: project.repository,
             host: project.host,
             state: input.state,
-            involvement,
+            involvement: project.involvement,
             viewer,
             limit,
             query: input.query,
@@ -1445,7 +1510,7 @@ export const make = Effect.gen(function* () {
     // Filters a host cannot apply thin out the slices it hands over, so a repository keeps
     // reading until it has a page's worth or runs out. The reads are bounded: a filter that
     // matches nothing would otherwise walk the repository's whole history in one request.
-    const readRepository = (project: SupportedProject): Effect.Effect<RepositoryBatch> => {
+    const readRepository = (project: ListTarget): Effect.Effect<RepositoryBatch> => {
       const fill = (batch: RepositoryBatch, reads: number): Effect.Effect<RepositoryBatch> => {
         const cursor = batch.nextCursor === null ? null : parseListCursor(batch.nextCursor);
         if (
@@ -1469,7 +1534,7 @@ export const make = Effect.gen(function* () {
     };
 
     const readTogether = (
-      chunk: ReadonlyArray<SupportedProject>,
+      chunk: ReadonlyArray<ListTarget>,
     ): Effect.Effect<ReadonlyArray<RepositoryBatch>> => {
       const first = chunk[0]!;
       const readAcross = first.api.listChangeRequestsAcross;
@@ -1483,7 +1548,7 @@ export const make = Effect.gen(function* () {
         host: first.host,
         repositories: chunk.map((project) => project.repository),
         state: input.state,
-        involvement,
+        involvement: first.involvement,
         viewer,
         limit,
         query: input.query,
@@ -1544,14 +1609,14 @@ export const make = Effect.gen(function* () {
       );
     };
 
-    const together = new Map<string, Array<SupportedProject>>();
-    const separate: Array<SupportedProject> = [];
+    const together = new Map<string, Array<ListTarget>>();
+    const separate: Array<ListTarget> = [];
     for (const project of readable) {
       if (project.api.listChangeRequestsAcross === undefined) {
         separate.push(project);
         continue;
       }
-      const key = `${project.host}\n${cursorOf(project)?.updatedBefore ?? ""}`;
+      const key = `${project.host}\n${project.involvement}\n${cursorOf(project)?.updatedBefore ?? ""}`;
       const group = together.get(key);
       if (group === undefined) together.set(key, [project]);
       else group.push(project);
@@ -1570,9 +1635,16 @@ export const make = Effect.gen(function* () {
     for (const batch of batches) {
       if (batch.nextCursor !== null) nextCursors[batch.key] = batch.nextCursor;
     }
-    const entries = batches
-      .flatMap((batch) => batch.entries)
-      .toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+    const entries = [
+      ...new Map(
+        batches
+          .flatMap((batch) => batch.entries)
+          .map((entry) => [
+            `${entry.host} ${entry.repository.toLowerCase()} ${entry.number}`,
+            entry,
+          ]),
+      ).values(),
+    ].toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt));
     // Hover cards on listed rows read from here. A pinned account or a mid-read refresh is another
     // scope; half the cache stays free for previews read directly.
     if ((yield* routingCredential) === null && epochCounter === epochAtStart) {
@@ -2697,21 +2769,22 @@ export const make = Effect.gen(function* () {
   )(function* (input) {
     if (input.refs.length === 0) return { stats: [] };
     const { supported } = yield* listWorkspaceProjects({});
-    const byProject = new Map(supported.map((project) => [project.project.id, project]));
+    const repositoryOf = (projectId: string, repository: string) =>
+      `${projectId} ${repository.trim().toLowerCase()}`;
+    const byRepository = new Map(
+      supported.map((project) => [repositoryOf(project.project.id, project.repository), project]),
+    );
     const wanted = new Map<
       string,
       { readonly project: SupportedProject; readonly number: number }
     >();
     for (const ref of input.refs) {
-      const project = byProject.get(ref.projectId);
-      if (
-        project === undefined ||
-        project.api.listChangeRequestStats === undefined ||
-        project.repository.toLowerCase() !== ref.repository.trim().toLowerCase()
-      ) {
-        continue;
-      }
-      wanted.set(`${project.project.id} ${ref.number}`, { project, number: ref.number });
+      const project = byRepository.get(repositoryOf(ref.projectId, ref.repository));
+      if (project === undefined || project.api.listChangeRequestStats === undefined) continue;
+      wanted.set(`${project.cursorKey} ${project.project.id} ${ref.number}`, {
+        project,
+        number: ref.number,
+      });
     }
     const byHost = new Map<string, Array<{ project: SupportedProject; number: number }>>();
     for (const entry of wanted.values()) {
