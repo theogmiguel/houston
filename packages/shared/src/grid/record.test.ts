@@ -14,8 +14,8 @@ import {
   setGridHiddenRecord,
   unpinGridRecord,
   workspaceKeyOf,
-} from "./record";
-import { preorderThreads } from "./tree";
+} from "./record.ts";
+import { preorderThreads } from "./tree.ts";
 
 const NOW = "2026-01-01T00:00:00.000Z";
 

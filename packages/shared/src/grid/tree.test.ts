@@ -26,7 +26,7 @@ import {
   threadLeaf,
   tidy,
   tidyColumns,
-} from "./tree";
+} from "./tree.ts";
 
 const leaf = (threadId: string) => threadLeaf(threadId, `p-${threadId}`);
 

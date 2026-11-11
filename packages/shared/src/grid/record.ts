@@ -7,7 +7,10 @@ import {
   preorderThreads,
   removeThread,
   threadLeaf,
-} from "./tree";
+} from "./tree.ts";
+
+// A stored grid without a creation time sorts first.
+const EPOCH = "1970-01-01T00:00:00.000Z";
 
 /** The most threads a grid can show before a returning thread needs a new one. */
 export const MAX_GRID_THREADS = 6;
@@ -327,7 +330,7 @@ function parseGrid(value: unknown): GridRecord | null {
       : {}),
     pinnedAt: typeof raw.pinnedAt === "string" ? raw.pinnedAt : null,
     hidden: raw.hidden === true,
-    createdAt: typeof raw.createdAt === "string" ? raw.createdAt : new Date(0).toISOString(),
+    createdAt: typeof raw.createdAt === "string" ? raw.createdAt : EPOCH,
   };
 }
 
