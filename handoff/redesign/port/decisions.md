@@ -30,8 +30,11 @@ scope.
    it on the server so MCP tools can read and change it. Focus, camera width and ghost tabs stay with
    the client, as focus and open panels do today.
 2. **The sidebar is grouped by workspace** (mock `mocks/sidebar-and-top-tabs.html`, variant A). There
-   is no project tree. A thread row names its project and branch above its title. Creating a thread
-   asks for its project through upstream's launcher.
+   is no project tree. Creating a thread asks for its project through upstream's launcher.
+   A thread row has three lines, as upstream's does, and this overrides the two-line row drawn in the
+   mocks: (1) the project's icon and name, with the thread's status at the right (Houston's existing
+   status vocabulary and marks, including the elapsed time of a running thread); (2) the title alone,
+   on the full width; (3) the branch, then the pull request, diff counts and provider at the right.
 3. **A workspace has no project.** Threads of any project and environment share a workspace. The
    `cross_project` refusal and the six-thread cap are removed.
 
