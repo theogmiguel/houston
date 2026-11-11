@@ -7,6 +7,10 @@ session that serves a thread. A **grid** is a named layout of threads in one pro
 Closing the window detaches the app from the local server. Threads, runs and grids continue
 on the server, and the next launch reconnects to them.
 
+The server keeps each grid's name, layout, pin and hidden state, so a change an agent makes to a
+grid appears in the open window. The window keeps a local copy for the first paint and for
+grids whose server is not connected; their edits are sent when it connects.
+
 ## Adding a project
 
 Houston starts with **Add a project to start**. Choose **Add folder** for an existing
