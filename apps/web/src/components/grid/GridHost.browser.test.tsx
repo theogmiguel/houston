@@ -1024,6 +1024,23 @@ describe("GridHost stable cells", () => {
     expect(stage.detached).toEqual([]);
   });
 
+  it("keeps a cell's DOM in place when another thread takes its pane", async () => {
+    await using stage = await mountStable(row("thread-a", "thread-b"));
+    const a = stage.cell("thread-a");
+    const tree = row("thread-a", "thread-b");
+    if (tree.kind !== "split") throw new Error("bad tree");
+    // A subagent opened in its parent's cell, then the parent back: one pane, two threads.
+    await stage.show({
+      ...tree,
+      children: [threadLeaf("thread-sub", "p-thread-a"), tree.children[1]!],
+    });
+    expect(stage.cell("thread-sub")).toBe(a);
+    expect(a.closest("[data-grid-cell-frame]")?.hasAttribute("data-entering")).toBe(false);
+    await stage.show(row("thread-a", "thread-b"));
+    expect(stage.cell("thread-a")).toBe(a);
+    expect(stage.detached).toEqual([]);
+  });
+
   it("keeps every cell's DOM in place when a cell is maximized and restored", async () => {
     await using stage = await mountStable(row("thread-a", "thread-b"));
     const a = stage.cell("thread-a");

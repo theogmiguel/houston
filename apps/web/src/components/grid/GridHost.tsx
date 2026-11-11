@@ -112,14 +112,15 @@ export function GridHost(props: GridHostProps) {
 
   const threadIds = tree === null ? [] : preorderThreads(tree).map((leaf) => leaf.threadId);
   const threadCount = threadIds.length;
-  // Cells that joined since the last tree of this grid grow in; a grid switch is not a join.
+  // Cells that joined since the last tree of this grid fade in; a grid switch is not a join,
+  // nor a thread that takes another's pane.
   const threadIdsKey = `${grid.id}\n${threadIds.join("\n")}`;
   const [shownTree, setShownTree] = useState({ key: threadIdsKey, gridId: grid.id, threadIds });
   const [enteringThreadIds, setEnteringThreadIds] = useState<ReadonlySet<string>>(EMPTY_IDS);
   if (shownTree.key !== threadIdsKey) {
     const before = new Set(shownTree.threadIds);
     const joined =
-      shownTree.gridId === grid.id && before.size > 0
+      shownTree.gridId === grid.id && before.size > 0 && threadIds.length > before.size
         ? threadIds.filter((threadId) => !before.has(threadId))
         : [];
     setShownTree({ key: threadIdsKey, gridId: grid.id, threadIds });
@@ -338,9 +339,10 @@ export function GridHost(props: GridHostProps) {
     });
   };
 
-  // Sorted by id, not by place: a cell's frame never moves in the DOM, whatever the layout does.
+  // Sorted and keyed by pane, not by place or thread: a cell's frame never moves in the DOM,
+  // whatever the layout does, and a thread that takes a pane keeps its mounted view.
   const leaves = preorderThreads(tree).toSorted((left, right) =>
-    left.threadId < right.threadId ? -1 : left.threadId > right.threadId ? 1 : 0,
+    left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
   );
   // Each frame starts at its layout box, so whatever a cell measures on mount is already right.
   const boxes = cellBoxes(layoutTree ?? tree, threadCount > 1);
@@ -359,7 +361,7 @@ export function GridHost(props: GridHostProps) {
       )}
       {leaves.map((leaf) => (
         <div
-          key={leaf.threadId}
+          key={leaf.id}
           data-grid-cell-frame={leaf.threadId}
           data-leaving={shownLeaving && leaf.threadId === leavingThreadId ? "" : undefined}
           data-entering={enteringThreadIds.has(leaf.threadId) ? "" : undefined}
