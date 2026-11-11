@@ -746,7 +746,7 @@ describe("GridHost surface", () => {
     expect(getComputedStyle(soloSurface).paddingLeft).toBe("0px");
   });
 
-  it("shrinks a closing cell away before it leaves the tree", async () => {
+  it("fades a closing cell out over its last box while the survivor takes its room", async () => {
     const changes: Array<LayoutNode | null> = [];
     let close: (() => void) | null = null;
     await using screen = await render(
@@ -764,10 +764,21 @@ describe("GridHost surface", () => {
       { router: false },
     );
 
+    const surface = screen.container.querySelector<HTMLElement>("[data-grid-surface]")!;
+    const leaving = screen.container.querySelector<HTMLElement>(
+      '[data-grid-cell-frame="thread-b"]',
+    )!;
+    const before = leaving.getBoundingClientRect().toJSON();
     await act(() => close?.());
-    // The survivor already reads as one thread while the closing cell shrinks.
-    expect(screen.container.querySelector("[data-grid-slot][data-leaving]")).not.toBeNull();
+    // The survivor already reads as one thread, at its final size, while the closing cell fades.
     expect(screen.container.querySelector("[data-grid-surface][data-multi]")).toBeNull();
+    expect(screen.container.querySelector('[data-cell-place="thread-b"]')).toBeNull();
+    const survivor = screen.container.querySelector<HTMLElement>('[data-cell-place="thread-a"]')!;
+    expect(survivor.getBoundingClientRect().width).toBe(surface.clientWidth);
+    expect(leaving.hasAttribute("data-leaving")).toBe(true);
+    expect(getComputedStyle(leaving).visibility).toBe("visible");
+    expect(leaving.getBoundingClientRect().toJSON()).toEqual(before);
+    expect(getComputedStyle(leaving).transitionProperty).toBe("opacity");
     expect(changes).toEqual([]);
     await vi.waitFor(() => expect(changes).toHaveLength(1));
     expect(preorderThreads(changes[0] ?? null).map((leaf) => leaf.threadId)).toEqual(["thread-a"]);
@@ -807,7 +818,7 @@ describe("GridHost surface", () => {
     await act(() => stage.close());
     await vi.waitFor(() => expect(stage.requests).toHaveLength(1));
     // The close request is in flight and the thread is still in the tree: nothing snaps back.
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await act(async () => {});
     const container = stage.screen.container;
     expect(
       container.querySelector('[data-grid-cell-frame="thread-b"][data-leaving]'),
@@ -829,6 +840,36 @@ describe("GridHost surface", () => {
     const container = stage.screen.container;
     await vi.waitFor(() => expect(container.querySelector("[data-leaving]")).toBeNull());
     expect(container.querySelector("[data-grid-surface][data-multi]")).not.toBeNull();
+  });
+
+  it("lays a joining cell out at its final size and fades it in", async () => {
+    const view = (tree: LayoutNode) => (
+      <div style={{ display: "flex", width: 900, height: 600 }}>
+        <GridHost
+          grid={grid(tree)}
+          onTreeChange={() => {}}
+          onFocusThread={() => {}}
+          renderThread={cellMarkup}
+        />
+      </div>
+    );
+    await using screen = await render(view(row("thread-a", "thread-b")), { router: false });
+    await screen.rerender(view(row("thread-a", "thread-b", "thread-c")));
+    const surface = screen.container.querySelector<HTMLElement>("[data-grid-surface]")!;
+    const third = (surface.clientWidth - 2 * 8 - 2 * 8) / 3;
+    for (const threadId of ["thread-a", "thread-b", "thread-c"]) {
+      const place = screen.container.querySelector<HTMLElement>(`[data-cell-place="${threadId}"]`)!;
+      expect(place.getBoundingClientRect().width).toBeCloseTo(third, 0);
+    }
+    // Only the compositor moves: no slot eases its size, which would relayout every chat per frame.
+    for (const slot of screen.container.querySelectorAll<HTMLElement>("[data-grid-slot]")) {
+      expect(getComputedStyle(slot).transitionProperty).not.toMatch(/flex/);
+    }
+    const joining = screen.container.querySelector<HTMLElement>(
+      '[data-grid-cell-frame="thread-c"]',
+    )!;
+    expect(joining.hasAttribute("data-entering")).toBe(true);
+    expect(getComputedStyle(joining).transitionProperty).toBe("opacity");
   });
 });
 

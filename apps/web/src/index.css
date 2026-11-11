@@ -3056,27 +3056,6 @@ html[data-theme-reveal] [data-grid-surface] [data-grid-cell]::after {
   pointer-events: none;
 }
 
-/* A cell that joins the grid grows from nothing and fades in; one that leaves does the reverse.
-   Only those slots transition, so dragging a resize handle stays immediate. */
-[data-grid-surface] [data-grid-slot][data-leaving],
-[data-grid-surface][data-morphing] [data-grid-slot][data-entering] {
-  transition:
-    flex-grow var(--grid-morph-duration) var(--grid-morph-ease),
-    opacity var(--grid-morph-duration) var(--grid-morph-ease);
-}
-
-[data-grid-surface] [data-grid-slot][data-leaving] {
-  flex-grow: 0 !important;
-  opacity: 0;
-}
-
-[data-grid-surface][data-morphing] [data-grid-slot][data-entering] {
-  @starting-style {
-    flex-grow: 0;
-    opacity: 0;
-  }
-}
-
 [data-grid-surface][data-morphing] [data-pane-label] {
   @starting-style {
     opacity: 0;
@@ -3084,23 +3063,21 @@ html[data-theme-reveal] [data-grid-surface] [data-grid-cell]::after {
   }
 }
 
-/* Cells sit in frames over the slots, so they fade with their slot from there. */
+/* A cell that joins takes its slot at once and fades in; one that leaves gives its slot up at
+   once and fades out over its last box. The other cells FLIP into place, so no slot eases its
+   size: that would relayout every chat in the grid on every frame. */
 [data-grid-surface] [data-grid-cell-frame][data-leaving] {
   opacity: 0;
-  transition: opacity var(--grid-morph-duration) var(--grid-morph-ease);
+  pointer-events: none;
+  transition: opacity var(--motion-list-out) var(--ease-exit);
 }
 
 [data-grid-surface][data-morphing] [data-grid-cell-frame][data-entering] {
-  transition: opacity var(--grid-morph-duration) var(--grid-morph-ease);
+  transition: opacity var(--motion-list-in) var(--ease-standard);
 
   @starting-style {
     opacity: 0;
   }
-}
-
-[data-grid-surface] [data-grid-gutter][data-leaving] {
-  flex-basis: 0 !important;
-  transition: flex-basis var(--grid-morph-duration) var(--grid-morph-ease);
 }
 
 [data-grid-surface],

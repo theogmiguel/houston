@@ -45,6 +45,7 @@ import { presetOf, snapSplitRatio, splitFractionLabel, stepSplitPreset } from ".
 import { beginLayoutResize, endLayoutResize } from "../../motion/layoutResize";
 import { animateMaximizeMorph, type CellRect } from "../../motion/maximizeMotion";
 import { offsetWithin, useGridCellFlip } from "../../motion/paneMotion";
+import { MOTION_ROLE_MS } from "../../motion/registry";
 import { GRID_BADGE_LINGER_MS, SNAP_DISTANCE_PX } from "../../motion/timings";
 import { announce } from "../../lib/announce";
 import { observeResize } from "../../lib/observeResize";
@@ -72,9 +73,6 @@ export interface GridCellRenderProps {
 
 /** The gap between cards; it is also each resize handle's width. */
 const GUTTER_PX = 8;
-
-/** Matches `--grid-morph-duration` in index.css; a closing cell is removed once it has shrunk away. */
-const GRID_MORPH_MS = 260;
 
 export interface GridHostProps {
   grid: GridRecord;
@@ -130,9 +128,17 @@ export function GridHost(props: GridHostProps) {
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- ends the join animation once its cells have grown in
   useEffect(() => {
     if (enteringThreadIds.size === 0) return;
-    const timer = window.setTimeout(() => setEnteringThreadIds(EMPTY_IDS), GRID_MORPH_MS);
+    const timer = window.setTimeout(
+      () => setEnteringThreadIds(EMPTY_IDS),
+      MOTION_ROLE_MS["list-in"],
+    );
     return () => window.clearTimeout(timer);
   }, [enteringThreadIds]);
+
+  const shownLeaving = leavingThreadId !== null && threadIds.includes(leavingThreadId);
+  // A leaving cell gives up its slot at once and fades over its last box while the others move.
+  const layoutTree =
+    tree !== null && shownLeaving ? (removeThread(tree, leavingThreadId) ?? tree) : tree;
 
   // Where each frame was last placed, so a maximize can morph from the box it leaves.
   const placedRects = useRef(new Map<string, CellRect>());
@@ -155,14 +161,8 @@ export function GridHost(props: GridHostProps) {
     );
   });
 
-  // Cells that existed before a tree change FLIP into their new slots; a join or
-  // a leave already animates through the grid's flex transition.
-  useGridCellFlip(
-    surfaceRef,
-    grid.id,
-    tree,
-    !reducedMotion && enteringThreadIds.size === 0 && leavingThreadId === null,
-  );
+  // Cells that existed before a layout change FLIP into their new slots.
+  useGridCellFlip(surfaceRef, grid.id, layoutTree, !reducedMotion);
 
   const refusalForDrop = (source: ThreadDragSource, side: Side): ThreadDropRefusal | null =>
     threadDropRefusal({
@@ -264,8 +264,6 @@ export function GridHost(props: GridHostProps) {
     tree === null || maximizedThreadId === undefined || maximizedThreadId === null
       ? null
       : findThread(tree, maximizedThreadId);
-  const shownLeaving = leavingThreadId !== null && threadIds.includes(leavingThreadId);
-  // A leaving cell already counts as gone, so the survivor morphs while it shrinks.
   const multi = maximizedLeaf === null && threadCount - (shownLeaving ? 1 : 0) > 1;
   const surface = (children: ReactNode) => (
     <div
@@ -315,7 +313,7 @@ export function GridHost(props: GridHostProps) {
       void Promise.resolve(removeCell(threadId)).finally(() =>
         setLeavingThreadId((current) => (current === threadId ? null : current)),
       );
-    }, GRID_MORPH_MS);
+    }, MOTION_ROLE_MS["list-out"]);
   };
 
   const renderLeaf = (node: ThreadNode, focused: boolean, maximized = false): ReactNode => {
@@ -345,7 +343,8 @@ export function GridHost(props: GridHostProps) {
     left.threadId < right.threadId ? -1 : left.threadId > right.threadId ? 1 : 0,
   );
   // Each frame starts at its layout box, so whatever a cell measures on mount is already right.
-  const boxes = cellBoxes(tree, threadCount > 1);
+  const boxes = cellBoxes(layoutTree ?? tree, threadCount > 1);
+  const lastBoxes = shownLeaving ? cellBoxes(tree, true) : boxes;
 
   return surface(
     <>
@@ -353,10 +352,8 @@ export function GridHost(props: GridHostProps) {
         <CellPlace threadId={maximizedLeaf.threadId} />
       ) : (
         <GridBranch
-          node={tree}
+          node={layoutTree ?? tree}
           path={[]}
-          leavingThreadId={shownLeaving ? leavingThreadId : null}
-          enteringThreadIds={enteringThreadIds}
           onTreeChange={(next) => onTreeChange(next)}
         />
       )}
@@ -370,7 +367,7 @@ export function GridHost(props: GridHostProps) {
           style={
             maximizedLeaf !== null && leaf.threadId === maximizedLeaf.threadId
               ? { left: 0, top: 0, width: "100%", height: "100%" }
-              : boxes.get(leaf.threadId)
+              : (boxes.get(leaf.threadId) ?? lastBoxes.get(leaf.threadId))
           }
         >
           {maximizedLeaf !== null
@@ -450,22 +447,28 @@ function placeCellFrames(root: HTMLElement, placed: Map<string, CellRect>): void
   }
   for (const frame of root.querySelectorAll<HTMLElement>(":scope > [data-grid-cell-frame]")) {
     const place = places.get(frame.dataset.gridCellFrame ?? "");
+    if (place === undefined && frame.hasAttribute("data-leaving")) {
+      frame.inert = true;
+      const last = placed.get(frame.dataset.gridCellFrame ?? "");
+      if (last !== undefined) placeAt(frame, last);
+      continue;
+    }
     const offset = place === undefined ? null : offsetWithin(place, root);
     const shown = place !== undefined && offset !== null;
     if (frame.inert === shown) frame.inert = !shown;
     frame.style.visibility = shown ? "" : "hidden";
     if (!shown) continue;
-    setPx(frame, "left", offset.x);
-    setPx(frame, "top", offset.y);
-    setPx(frame, "width", place.offsetWidth);
-    setPx(frame, "height", place.offsetHeight);
-    placed.set(place.dataset.cellPlace ?? "", {
-      x: offset.x,
-      y: offset.y,
-      width: place.offsetWidth,
-      height: place.offsetHeight,
-    });
+    const rect = { x: offset.x, y: offset.y, width: place.offsetWidth, height: place.offsetHeight };
+    placeAt(frame, rect);
+    placed.set(place.dataset.cellPlace ?? "", rect);
   }
+}
+
+function placeAt(frame: HTMLElement, rect: CellRect): void {
+  setPx(frame, "left", rect.x);
+  setPx(frame, "top", rect.y);
+  setPx(frame, "width", rect.width);
+  setPx(frame, "height", rect.height);
 }
 
 /** Starts the maximize or restore morph of `threadId` from its last box to its new one. */
@@ -500,28 +503,16 @@ function setPx(element: HTMLElement, property: "left" | "top" | "width" | "heigh
 function GridBranch({
   node,
   path,
-  leavingThreadId,
-  enteringThreadIds,
   onTreeChange,
 }: {
   node: LayoutNode;
   path: number[];
-  leavingThreadId: string | null;
-  enteringThreadIds: ReadonlySet<string>;
   onTreeChange: (tree: LayoutNode) => void;
 }) {
   if (node.kind === "thread") {
     return <CellPlace threadId={node.threadId} />;
   }
-  return (
-    <SplitView
-      node={node}
-      path={path}
-      leavingThreadId={leavingThreadId}
-      enteringThreadIds={enteringThreadIds}
-      onTreeChange={onTreeChange}
-    />
-  );
+  return <SplitView node={node} path={path} onTreeChange={onTreeChange} />;
 }
 
 interface ResizeDrag {
@@ -539,14 +530,10 @@ interface ResizeDrag {
 function SplitView({
   node,
   path,
-  leavingThreadId,
-  enteringThreadIds,
   onTreeChange,
 }: {
   node: SplitNode;
   path: number[];
-  leavingThreadId: string | null;
-  enteringThreadIds: ReadonlySet<string>;
   onTreeChange: (tree: LayoutNode) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -561,13 +548,6 @@ function SplitView({
   const frameRef = useRef<number | null>(null);
   const coordRef = useRef(0);
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
-  const isLeaving = (child: LayoutNode) =>
-    leavingThreadId !== null &&
-    preorderThreads(child).every((leaf) => leaf.threadId === leavingThreadId);
-  const isEntering = (child: LayoutNode) =>
-    enteringThreadIds.size > 0 &&
-    preorderThreads(child).every((leaf) => enteringThreadIds.has(leaf.threadId));
-  const leavingIndex = node.children.findIndex(isLeaving);
 
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- clears the badge timer and the pending resize frame when the divider unmounts
   useEffect(
@@ -716,8 +696,6 @@ function SplitView({
             ref={(element) => {
               slotRefs.current[index] = element;
             }}
-            data-leaving={index === leavingIndex ? "" : undefined}
-            data-entering={isEntering(child) ? "" : undefined}
             className="relative flex min-h-0 min-w-0 overflow-hidden"
             style={
               {
@@ -728,13 +706,7 @@ function SplitView({
               } satisfies CSSProperties
             }
           >
-            <GridBranch
-              node={child}
-              path={[...path, index]}
-              leavingThreadId={leavingThreadId}
-              enteringThreadIds={enteringThreadIds}
-              onTreeChange={onTreeChange}
-            />
+            <GridBranch node={child} path={[...path, index]} onTreeChange={onTreeChange} />
           </div>
           {index < node.children.length - 1 ? (
             <GridResizeDivider
@@ -745,10 +717,6 @@ function SplitView({
                   100,
               )}
               dragging={draggingIndex === index}
-              // The gutter beside a leaving cell closes with it, so nothing jumps when it is removed.
-              leaving={
-                leavingIndex !== -1 && (index === leavingIndex || index === leavingIndex - 1)
-              }
               style={{ flexBasis: GUTTER_PX }}
               badgeRef={(element) => {
                 badgeRefs.current[index] = element;
