@@ -2907,9 +2907,6 @@ code {
    Going solo or back fades the cells' card layer; nothing else in the chat repaints. */
 
 [data-grid-surface] {
-  /* One curve and duration for every property that changes, so the scene moves as one. */
-  --grid-morph-duration: 260ms;
-  --grid-morph-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   /* The card a cell shows in a crowded grid, read here so a cell's own --pane can't recolour it. */
   --grid-card-surface: var(--background);
   --grid-cell-surface: var(--background);
@@ -2964,9 +2961,10 @@ code {
   border-radius: var(--r-group);
   opacity: 0;
   will-change: opacity;
+  /* Going solo or back replaces the surface in place: one swap role for the card and the label. */
   transition:
-    opacity var(--grid-morph-duration) var(--grid-morph-ease),
-    border-color var(--grid-morph-duration) var(--grid-morph-ease);
+    opacity var(--motion-swap-in) var(--ease-standard),
+    border-color var(--motion-swap-in) var(--ease-standard);
 }
 
 [data-grid-surface][data-multi] [data-grid-cell]::before {
@@ -3041,8 +3039,8 @@ html[data-theme-reveal] [data-grid-surface] [data-grid-cell]::after {
 
 [data-grid-surface] [data-pane-label] {
   transition:
-    opacity var(--grid-morph-duration) var(--grid-morph-ease),
-    translate var(--grid-morph-duration) var(--grid-morph-ease);
+    opacity var(--motion-swap-in) var(--ease-standard),
+    translate var(--motion-swap-in) var(--ease-standard);
 }
 
 /* A pane shown alone has its title in the top bar. Its hidden header leaves the flow, so the

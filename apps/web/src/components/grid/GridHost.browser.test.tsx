@@ -746,6 +746,25 @@ describe("GridHost surface", () => {
     expect(getComputedStyle(soloSurface).paddingLeft).toBe("0px");
   });
 
+  it("times going solo and back on the motion roles, so reduced motion stops it", async () => {
+    await using screen = await mount(row("thread-a", "thread-b"));
+    const cell = screen.container.querySelector<HTMLElement>(
+      '[data-grid-cell][data-thread-id="thread-a"]',
+    )!;
+    const label = document.createElement("div");
+    label.dataset.paneLabel = "";
+    cell.append(label);
+    for (const style of [getComputedStyle(cell, "::before"), getComputedStyle(label)]) {
+      expect(style.transitionDuration.split(", ")).toEqual(["0.16s", "0.16s"]);
+    }
+    configureMotion({ off: true });
+    try {
+      expect(getComputedStyle(cell, "::before").transitionDuration).toBe("0s, 0s");
+    } finally {
+      configureMotion({ off: false });
+    }
+  });
+
   it("fades a closing cell out over its last box while the survivor takes its room", async () => {
     const changes: Array<LayoutNode | null> = [];
     let close: (() => void) | null = null;
