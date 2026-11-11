@@ -122,7 +122,8 @@ describe("GridHost", () => {
     // Every cell keeps its frame (and its chat's state); only the maximized one has a place.
     expect(html.match(/data-cell-place="[^"]*"/g)).toEqual(['data-cell-place="thread-b"']);
     expect(html).toMatch(/data-thread-id="thread-b" data-focused="true">maximized/);
-    expect(html).toMatch(/data-thread-id="thread-a" data-focused="false">maximized/);
+    // A hidden cell keeps its grid props, so a maximize re-renders only the maximized chat.
+    expect(html).toMatch(/data-thread-id="thread-a" data-focused="false">grid/);
   });
 
   it("hands each cell its thread id and close/split callbacks", () => {
