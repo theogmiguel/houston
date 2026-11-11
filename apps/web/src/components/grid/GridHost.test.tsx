@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import type { GridRecord } from "../../grid/gridStore";
-import { type LayoutNode, threadLeaf } from "../../grid/tree";
+import { type LayoutNode, threadLeaf } from "@houston-app/shared/grid/tree";
 import { GridHost, type GridCellRenderProps } from "./GridHost";
 
 function gridWith(tree: LayoutNode | null): GridRecord {

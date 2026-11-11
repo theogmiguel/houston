@@ -1,8 +1,4 @@
-/**
- * Ported from Houston v1's renderer split tree (ui/src/renderer/src/layout/tree.ts)
- * and reduced to thread leaves, which is all a v2 grid holds. A grid's tree lives in
- * the renderer only; it never reaches the server or the wire protocol.
- */
+/** The split tree of a grid, reduced to thread leaves. Pure: the renderer and the server share it. */
 
 export interface ThreadNode {
   kind: "thread";

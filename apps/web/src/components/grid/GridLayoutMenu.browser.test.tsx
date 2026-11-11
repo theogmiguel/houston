@@ -15,7 +15,7 @@ vi.mock(import("~/state/server"), async () => {
 });
 
 import { type GridRecord, useGridStore } from "../../grid/gridStore";
-import { type LayoutNode, preorderLeaves, threadLeaf } from "../../grid/tree";
+import { type LayoutNode, preorderLeaves, threadLeaf } from "@houston-app/shared/grid/tree";
 import { render } from "../../../test/render";
 import { Button } from "../ui/button";
 import { TooltipProvider } from "../ui/tooltip";

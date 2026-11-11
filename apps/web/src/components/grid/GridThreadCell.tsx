@@ -24,7 +24,12 @@ import { gridTerminalThreadRef } from "../../grid/gridTerminal";
 import { MAX_GRID_THREADS, type GridRecord, useGridStore } from "../../grid/gridStore";
 import type { ThreadOpenIntent } from "../../grid/gridThreadOpen";
 import type { ThreadDropRefusal } from "../../grid/projectMove";
-import { type Side, type SplitSide, type ThreadNode, preorderThreads } from "../../grid/tree";
+import {
+  type Side,
+  type SplitSide,
+  type ThreadNode,
+  preorderThreads,
+} from "@houston-app/shared/grid/tree";
 import { getThreadDragSource } from "../../grid/threadDrag";
 import { Button } from "../ui/button";
 import { GridDropIndicator } from "../ui/grid-drop-indicator";

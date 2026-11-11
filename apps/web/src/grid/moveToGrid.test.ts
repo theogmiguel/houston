@@ -2,7 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { gridById, MAX_GRID_THREADS, useGridStore } from "./gridStore";
 import { moveThreadToGridOrExplain } from "./moveToGrid";
-import { preorderLeaves } from "./tree";
+import { preorderLeaves } from "@houston-app/shared/grid/tree";
 
 const workspaceKey = "env-1:project-1";
 

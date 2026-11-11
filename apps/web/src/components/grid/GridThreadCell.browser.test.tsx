@@ -3,7 +3,12 @@ import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import { useGridStore, type GridRecord } from "../../grid/gridStore";
-import { threadLeaf, type Side, type SplitSide, type ThreadNode } from "../../grid/tree";
+import {
+  threadLeaf,
+  type Side,
+  type SplitSide,
+  type ThreadNode,
+} from "@houston-app/shared/grid/tree";
 import { render } from "../../../test/render";
 import { GridThreadCell } from "./GridThreadCell";
 

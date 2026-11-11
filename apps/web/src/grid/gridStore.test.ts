@@ -12,7 +12,7 @@ import {
   type GridRecord,
   useGridStore,
 } from "./gridStore";
-import { preorderLeaves } from "./tree";
+import { preorderLeaves } from "@houston-app/shared/grid/tree";
 
 const workspaceKey = "env-1:project-1";
 

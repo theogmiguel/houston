@@ -40,7 +40,7 @@ import {
   setRatio,
   swapThread,
   threadLeaf,
-} from "../../grid/tree";
+} from "@houston-app/shared/grid/tree";
 import { presetOf, snapSplitRatio, splitFractionLabel, stepSplitPreset } from "../../grid/resize";
 import { beginLayoutResize, endLayoutResize } from "../../motion/layoutResize";
 import { animateMaximizeMorph, type CellRect } from "../../motion/maximizeMotion";

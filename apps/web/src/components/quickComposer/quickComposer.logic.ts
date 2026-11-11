@@ -14,7 +14,7 @@ import { resolveNewThreadModelSelection } from "@houston-app/shared/usageLimits"
 
 import { ensureThreadInGrid } from "../../grid/ensureThreadInGrid";
 import { gridById, MAX_GRID_THREADS, useGridStore } from "../../grid/gridStore";
-import { preorderThreads } from "../../grid/tree";
+import { preorderThreads } from "@houston-app/shared/grid/tree";
 import { resolveProjectDefaultProviderModelSelection } from "../../providerInstances";
 
 export interface QuickComposerGridOption {

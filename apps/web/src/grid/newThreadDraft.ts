@@ -12,7 +12,13 @@ import {
   useGridStore,
   type GridRecord,
 } from "./gridStore";
-import { findThread, insertBeside, preorderThreads, threadLeaf, type SplitSide } from "./tree";
+import {
+  findThread,
+  insertBeside,
+  preorderThreads,
+  threadLeaf,
+  type SplitSide,
+} from "@houston-app/shared/grid/tree";
 
 export interface GridDraftOptions {
   gridId: string;

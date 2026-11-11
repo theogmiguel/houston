@@ -3,20 +3,38 @@ import { createJSONStorage, persist } from "zustand/middleware";
 
 import { randomUUID } from "../lib/utils";
 import { resolveStorage } from "../lib/storage";
+import {
+  type GridRecord,
+  MAX_GRID_THREADS,
+  addThreadToGrid,
+  containsThreadId,
+  createGridRecord as createGridRecordWith,
+  gridById,
+  gridsForWorkspace,
+  moveThreadToGridRecords,
+  parseGrids,
+  pinGridRecord,
+  placeThread,
+  removeThreadFromGridRecord,
+  renameGridRecord,
+  replaceThreadDraft,
+  setGridHiddenRecord,
+  unpinGridRecord,
+  updateGrid,
+  withTree,
+  workspaceKeyOf,
+} from "@houston-app/shared/grid/record";
 import { sameProject } from "./projectMove";
 import {
   type LayoutNode,
   type Side,
   type ThreadNode,
   type TidyShape,
-  appendThread,
   arrangeThreads,
   equalize,
   findThread,
-  gridPreset,
   insertBeside,
   insertThreadAtSlot,
-  isGridPreset,
   isLayoutNode,
   moveThread,
   preorderThreads,
@@ -27,7 +45,7 @@ import {
   swapThread,
   threadLeaf,
   tidy,
-} from "./tree";
+} from "@houston-app/shared/grid/tree";
 
 /** A thread that left a grid keeps the grid and pane slot it came from. */
 export interface ThreadOrigin {
@@ -50,40 +68,6 @@ export type ClosedCellsByGrid = Readonly<Record<string, readonly ClosedCell[]>>;
 
 /** A small stack per grid: enough to undo a run of closes without unbounded state. */
 export const MAX_CLOSED_CELLS_PER_GRID = 10;
-
-/** The most threads a grid can show before a returning thread needs a new one. */
-export const MAX_GRID_THREADS = 6;
-
-/**
- * A grid is a named layout of threads inside one workspace. It is renderer state:
- * localStorage only, never the server or the wire protocol.
- */
-export interface GridRecord {
-  id: string;
-  name: string;
-  environmentId: string;
-  projectId: string;
-  workspaceKey: string;
-  tree: LayoutNode | null;
-  focusedThreadId: string | null;
-  /**
-   * The draft an empty grid is showing before its first send gives the grid a leaf.
-   * It records where that draft's thread belongs so the thread is not placed twice.
-   */
-  pendingDraft?: { draftId: string; threadId: string } | null;
-  /** The grid's one thread-details flag; the focused cell shows its card while set. */
-  detailsOpen?: boolean;
-  /**
-   * The thread whose right panel the grid keeps showing whichever cell is focused; absent while
-   * the panel follows focus. It always names a thread in the tree.
-   */
-  panelPinnedThreadId?: string;
-  /** Pinned grids sort above their workspace's other grids. */
-  pinnedAt: string | null;
-  /** Hidden grids keep their threads but drop out of the workspace tree. */
-  hidden: boolean;
-  createdAt: string;
-}
 
 export interface GridStoreState {
   grids: GridRecord[];
@@ -163,21 +147,6 @@ export interface GridStoreState {
 
 export const GRID_STORAGE_KEY = "houston:grids:v1";
 
-export function workspaceKeyOf(environmentId: string, projectId: string): string {
-  return `${environmentId}:${projectId}`;
-}
-
-export function gridsForWorkspace(
-  grids: readonly GridRecord[],
-  workspaceKey: string,
-): GridRecord[] {
-  return grids.filter((grid) => grid.workspaceKey === workspaceKey);
-}
-
-export function gridById(grids: readonly GridRecord[], gridId: string): GridRecord | null {
-  return grids.find((grid) => grid.id === gridId) ?? null;
-}
-
 export function gridContainingThread(
   grids: readonly GridRecord[],
   environmentId: string,
@@ -243,141 +212,6 @@ export function sidebarOrderedGrids(
       activityAt(right) - activityAt(left) ||
       left.createdAt.localeCompare(right.createdAt),
   );
-}
-
-function nextGridName(grids: readonly GridRecord[], workspaceKey: string): string {
-  const names = new Set(
-    gridsForWorkspace(grids, workspaceKey).map((grid) => grid.name.toLowerCase()),
-  );
-  let n = 1;
-  while (names.has(`grid ${n}`)) n += 1;
-  return `Grid ${n}`;
-}
-
-function defaultFocus(tree: LayoutNode | null): string | null {
-  return tree === null ? null : (preorderThreads(tree)[0]?.threadId ?? null);
-}
-
-function updateGrid(
-  grids: readonly GridRecord[],
-  gridId: string,
-  update: (grid: GridRecord) => GridRecord,
-): GridRecord[] {
-  return grids.map((grid) => (grid.id === gridId ? update(grid) : grid));
-}
-
-function withTree(grid: GridRecord, tree: LayoutNode | null): GridRecord {
-  const focusedThreadId =
-    grid.focusedThreadId !== null && tree !== null && containsThreadId(tree, grid.focusedThreadId)
-      ? grid.focusedThreadId
-      : defaultFocus(tree);
-  const { panelPinnedThreadId, ...rest } = grid;
-  const keepsPin =
-    panelPinnedThreadId !== undefined &&
-    tree !== null &&
-    containsThreadId(tree, panelPinnedThreadId);
-  return {
-    ...rest,
-    tree,
-    focusedThreadId,
-    ...(keepsPin ? { panelPinnedThreadId } : {}),
-  };
-}
-
-function containsThreadId(tree: LayoutNode | null, threadId: string): boolean {
-  return tree !== null && preorderThreads(tree).some((leaf) => leaf.threadId === threadId);
-}
-
-/**
- * A thread lives in at most one grid: adding it elsewhere removes it from the
- * grid it was in, so two ChatViews never share one thread.
- */
-function removeThreadFromOtherGrids(
-  grids: ReadonlyArray<GridRecord>,
-  exceptGridId: string,
-  threadId: string,
-): GridRecord[] {
-  return grids.map((grid) =>
-    grid.id === exceptGridId || grid.tree === null || !containsThreadId(grid.tree, threadId)
-      ? grid
-      : withTree(grid, removeThread(grid.tree, threadId)),
-  );
-}
-
-function replaceThreadDraft(
-  tree: LayoutNode | null,
-  threadId: string,
-  draftId: string | null,
-): LayoutNode | null {
-  if (tree === null) return null;
-  if (tree.kind === "thread") {
-    if (tree.threadId !== threadId) return tree;
-    const { draftId: _draftId, ...rest } = tree;
-    return draftId === null ? rest : { ...rest, draftId };
-  }
-  return {
-    ...tree,
-    children: tree.children.map((child) => replaceThreadDraft(child, threadId, draftId)!),
-  };
-}
-
-function parsePendingDraft(value: unknown): { draftId: string; threadId: string } | null {
-  if (!value || typeof value !== "object") return null;
-  const raw = value as Partial<{ draftId: string; threadId: string }>;
-  if (typeof raw.draftId !== "string" || raw.draftId.length === 0) return null;
-  if (typeof raw.threadId !== "string" || raw.threadId.length === 0) return null;
-  return { draftId: raw.draftId, threadId: raw.threadId };
-}
-
-function parseGrid(value: unknown): GridRecord | null {
-  if (!value || typeof value !== "object") return null;
-  const raw = value as Partial<GridRecord>;
-  if (
-    typeof raw.id !== "string" ||
-    typeof raw.name !== "string" ||
-    typeof raw.environmentId !== "string" ||
-    typeof raw.projectId !== "string" ||
-    typeof raw.workspaceKey !== "string"
-  ) {
-    return null;
-  }
-  if (raw.tree !== null && raw.tree !== undefined && !isLayoutNode(raw.tree)) return null;
-  const tree = raw.tree ?? null;
-  const pendingDraft = parsePendingDraft(raw.pendingDraft);
-  return {
-    id: raw.id,
-    name: raw.name,
-    environmentId: raw.environmentId,
-    projectId: raw.projectId,
-    workspaceKey: raw.workspaceKey,
-    tree,
-    focusedThreadId:
-      typeof raw.focusedThreadId === "string" && containsThreadId(tree, raw.focusedThreadId)
-        ? raw.focusedThreadId
-        : defaultFocus(tree),
-    ...(pendingDraft === null ? {} : { pendingDraft }),
-    ...(raw.detailsOpen === true ? { detailsOpen: true as const } : {}),
-    ...(typeof raw.panelPinnedThreadId === "string" &&
-    containsThreadId(tree, raw.panelPinnedThreadId)
-      ? { panelPinnedThreadId: raw.panelPinnedThreadId }
-      : {}),
-    pinnedAt: typeof raw.pinnedAt === "string" ? raw.pinnedAt : null,
-    hidden: raw.hidden === true,
-    createdAt: typeof raw.createdAt === "string" ? raw.createdAt : new Date(0).toISOString(),
-  };
-}
-
-export function parseGrids(value: unknown): GridRecord[] {
-  if (!Array.isArray(value)) return [];
-  const seen = new Set<string>();
-  const grids: GridRecord[] = [];
-  for (const entry of value) {
-    const grid = parseGrid(entry);
-    if (grid === null || seen.has(grid.id)) continue;
-    seen.add(grid.id);
-    grids.push(grid);
-  }
-  return grids;
 }
 
 export function parseThreadOrigins(value: unknown): Record<string, ThreadOrigin> {
@@ -547,6 +381,16 @@ export function returnThreadToOrigin(
   };
 }
 
+export {
+  type GridRecord,
+  MAX_GRID_THREADS,
+  addThreadToGrid,
+  gridById,
+  gridsForWorkspace,
+  parseGrids,
+  workspaceKeyOf,
+};
+
 export function createGridRecord(
   grids: readonly GridRecord[],
   input: {
@@ -558,45 +402,11 @@ export function createGridRecord(
     now?: string;
   },
 ): GridRecord {
-  return {
+  return createGridRecordWith(grids, {
+    ...input,
     id: input.id ?? randomUUID(),
-    name: input.name?.trim() || nextGridName(grids, input.workspaceKey),
-    environmentId: input.environmentId,
-    projectId: input.projectId,
-    workspaceKey: input.workspaceKey,
-    tree: null,
-    focusedThreadId: null,
-    pinnedAt: null,
-    hidden: false,
-    createdAt: input.now ?? new Date().toISOString(),
-  };
-}
-
-function addThreadPreservingLayout(
-  tree: LayoutNode | null,
-  threadId: string,
-  previousIds: readonly string[],
-): LayoutNode {
-  if (tree === null) return gridPreset([threadId]) ?? threadLeaf(threadId);
-  // A grid that is still on its automatic arrangement keeps following the
-  // presets as it fills; a layout the user split or dragged keeps its shape.
-  if (isGridPreset(tree, previousIds)) {
-    return gridPreset([...previousIds, threadId]) ?? appendThread(tree, threadId);
-  }
-  return appendThread(tree, threadId);
-}
-
-export function addThreadToGrid(grid: GridRecord, threadId: string, draftId?: string): GridRecord {
-  const existing = grid.tree === null ? [] : preorderThreads(grid.tree);
-  if (existing.some((leaf) => leaf.threadId === threadId)) {
-    const withDraft =
-      draftId === undefined ? grid.tree : replaceThreadDraft(grid.tree, threadId, draftId);
-    return { ...withTree(grid, withDraft), focusedThreadId: threadId, pendingDraft: null };
-  }
-  const previousIds = existing.map((leaf) => leaf.threadId);
-  const tree = addThreadPreservingLayout(grid.tree, threadId, previousIds);
-  const withDraft = draftId === undefined ? tree : replaceThreadDraft(tree, threadId, draftId);
-  return { ...withTree(grid, withDraft), focusedThreadId: threadId, pendingDraft: null };
+    now: input.now ?? new Date().toISOString(),
+  });
 }
 
 export const useGridStore = create<GridStoreState>()(
@@ -612,10 +422,7 @@ export const useGridStore = create<GridStoreState>()(
       },
       renameGrid: (gridId, name) =>
         set((state) => ({
-          grids: updateGrid(state.grids, gridId, (grid) => ({
-            ...grid,
-            name: name.trim() || grid.name,
-          })),
+          grids: updateGrid(state.grids, gridId, (grid) => renameGridRecord(grid, name)),
         })),
       deleteGrid: (gridId) =>
         set((state) => {
@@ -627,46 +434,30 @@ export const useGridStore = create<GridStoreState>()(
         }),
       addThread: (gridId, threadId, draftId) =>
         set((state) => {
-          const target = gridById(state.grids, gridId);
-          if (target === null) return state;
-          const alreadyShown = containsThreadId(target.tree, threadId);
-          const count = target.tree === null ? 0 : preorderThreads(target.tree).length;
-          // The grid cap holds whether the thread arrives by drop, split or auto-placement.
-          if (!alreadyShown && count >= MAX_GRID_THREADS) return state;
+          const placed = placeThread(state.grids, {
+            gridId,
+            threadId,
+            ...(draftId === undefined ? {} : { draftId }),
+          });
+          if (!placed.ok) return state;
           return {
-            grids: updateGrid(
-              removeThreadFromOtherGrids(state.grids, gridId, threadId),
-              gridId,
-              (grid) => addThreadToGrid(grid, threadId, draftId),
-            ),
+            grids: placed.grids,
             closedCells: forgetClosedCellEverywhere(state.closedCells, threadId),
           };
         }),
       moveThreadToGrid: (input) => {
-        const state = get();
-        const target = gridById(state.grids, input.targetGridId);
-        if (target === null) return false;
-        if (
-          !sameProject(
-            {
-              environmentId: input.threadEnvironmentId,
-              projectId: input.threadProjectId,
-            },
-            target,
-          )
-        ) {
-          return false;
-        }
-        const shown = containsThreadId(target.tree, input.threadId);
-        const count = target.tree === null ? 0 : preorderThreads(target.tree).length;
-        if (!shown && count >= MAX_GRID_THREADS) return false;
-        get().addThread(input.targetGridId, input.threadId);
+        const placed = moveThreadToGridRecords(get().grids, input);
+        if (!placed.ok) return false;
+        set((state) => ({
+          grids: placed.grids,
+          closedCells: forgetClosedCellEverywhere(state.closedCells, input.threadId),
+        }));
         return true;
       },
       removeThreadFromGrid: (gridId, threadId) =>
         set((state) => ({
           grids: updateGrid(state.grids, gridId, (grid) =>
-            withTree(grid, grid.tree === null ? null : removeThread(grid.tree, threadId)),
+            removeThreadFromGridRecord(grid, threadId),
           ),
         })),
       setTree: (gridId, tree) =>
@@ -748,18 +539,17 @@ export const useGridStore = create<GridStoreState>()(
         })),
       pinGrid: (gridId, now) =>
         set((state) => ({
-          grids: updateGrid(state.grids, gridId, (grid) => ({
-            ...grid,
-            pinnedAt: grid.pinnedAt ?? now ?? new Date().toISOString(),
-          })),
+          grids: updateGrid(state.grids, gridId, (grid) =>
+            pinGridRecord(grid, now ?? new Date().toISOString()),
+          ),
         })),
       unpinGrid: (gridId) =>
         set((state) => ({
-          grids: updateGrid(state.grids, gridId, (grid) => ({ ...grid, pinnedAt: null })),
+          grids: updateGrid(state.grids, gridId, unpinGridRecord),
         })),
       setGridHidden: (gridId, hidden) =>
         set((state) => ({
-          grids: updateGrid(state.grids, gridId, (grid) => ({ ...grid, hidden })),
+          grids: updateGrid(state.grids, gridId, (grid) => setGridHiddenRecord(grid, hidden)),
         })),
       moveGridInWorkspace: (gridId, direction) =>
         set((state) => ({ grids: moveGridAmongSiblings(state.grids, gridId, direction) })),

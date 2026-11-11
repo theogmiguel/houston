@@ -22,7 +22,7 @@ import {
   useGridStore,
   workspaceKeyOf,
 } from "../../grid/gridStore";
-import { preorderThreads } from "../../grid/tree";
+import { preorderThreads } from "@houston-app/shared/grid/tree";
 
 // The socket is the only fake layer: the client runtime hands every connection the in-process session.
 vi.mock(

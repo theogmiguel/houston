@@ -12,7 +12,7 @@ import { render } from "../../../test/render";
 import { scopedThreadKey, scopeThreadRef } from "@houston-app/client-runtime/environment";
 import { useRightPanelStore } from "../../rightPanelStore";
 import type { GridRecord } from "../../grid/gridStore";
-import { threadLeaf } from "../../grid/tree";
+import { threadLeaf } from "@houston-app/shared/grid/tree";
 import { GridTopBarControls } from "./GridTopBarControls";
 
 const environmentId = EnvironmentId.make("env-1");

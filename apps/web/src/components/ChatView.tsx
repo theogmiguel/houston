@@ -381,7 +381,7 @@ import { ChatTerminalDrawers } from "./chat/ChatTerminalDrawers";
 import { GridLayoutMenu, GridLayoutMenuItems } from "./grid/GridLayoutMenu";
 import { toggleGridTerminal } from "../grid/gridTerminal";
 import { useGridStore } from "../grid/gridStore";
-import { preorderThreads } from "../grid/tree";
+import { preorderThreads } from "@houston-app/shared/grid/tree";
 import { ChatRightPanel } from "./chat/ChatRightPanel";
 import { useDraftEnvironmentRouting } from "./chat/useDraftEnvironmentRouting";
 import { branchMismatchBannerItem, extensionStatusBannerItem } from "./chat/ThreadActivityBanners";

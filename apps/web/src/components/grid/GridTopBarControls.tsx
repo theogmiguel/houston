@@ -4,7 +4,7 @@ import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@houston-app/cont
 import type { RefObject } from "react";
 
 import { toggleGridTerminal } from "../../grid/gridTerminal";
-import { findThread, preorderThreads } from "../../grid/tree";
+import { findThread, preorderThreads } from "@houston-app/shared/grid/tree";
 import type { GridRecord } from "../../grid/gridStore";
 import { shortcutLabelForCommand } from "../../keybindings";
 import { useRightPanelStore } from "../../rightPanelStore";

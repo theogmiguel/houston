@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 import { closeGridThread } from "./closeGridThread";
 import { gridById, useGridStore } from "./gridStore";
-import { preorderLeaves } from "./tree";
+import { preorderLeaves } from "@houston-app/shared/grid/tree";
 
 function seed(): void {
   useGridStore.setState({ grids: [], closedCells: {}, threadOrigins: {} });

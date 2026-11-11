@@ -7,7 +7,7 @@ import {
   workspaceKeyOf,
 } from "./gridStore";
 import { gridFullMoveToast, type ProjectOwner } from "./projectMove";
-import { preorderThreads } from "./tree";
+import { preorderThreads } from "@houston-app/shared/grid/tree";
 
 export interface MoveToGridTarget {
   readonly gridId: string;

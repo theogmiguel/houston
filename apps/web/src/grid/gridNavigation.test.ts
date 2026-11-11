@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { ensureThreadInGrid } from "./ensureThreadInGrid";
 import { resolveGridThreadTarget } from "./gridNavigation";
 import { gridContainingThread, useGridStore, workspaceKeyOf } from "./gridStore";
-import { preorderThreads } from "./tree";
+import { preorderThreads } from "@houston-app/shared/grid/tree";
 
 const parentByThreadId = new Map<string, string>();
 
