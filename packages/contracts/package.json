@@ -15,6 +15,10 @@
       "types": "./src/settings.ts",
       "import": "./src/settings.ts"
     },
+    "./houston/grids": {
+      "types": "./src/houston/grids.ts",
+      "import": "./src/houston/grids.ts"
+    },
     "./houston/providerReadiness": {
       "types": "./src/houston/providerReadiness.ts",
       "import": "./src/houston/providerReadiness.ts"
