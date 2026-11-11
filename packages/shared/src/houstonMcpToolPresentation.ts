@@ -353,6 +353,18 @@ const HOUSTON_MCP_TOOLS: Readonly<Record<string, HoustonMcpToolDefinition>> = {
     ["Organize", "Organizing", "Organized", "a thread"],
     "thread-organize",
   ),
+  houston_grid_list: tool(["List", "Listing", "Listed", "grids"], "thread-list"),
+  houston_grid_create: tool(["Create", "Creating", "Created", "a grid"], "thread-organize"),
+  houston_grid_update: tool(["Update", "Updating", "Updated", "a grid"], "thread-organize"),
+  houston_grid_delete: tool(["Delete", "Deleting", "Deleted", "a grid"], "thread-organize"),
+  houston_grid_place_thread: tool(
+    ["Place", "Placing", "Placed", "a thread in a grid"],
+    "thread-organize",
+  ),
+  houston_grid_remove_thread: tool(
+    ["Remove", "Removing", "Removed", "a thread from a grid"],
+    "thread-organize",
+  ),
   houston_thread_update: tool(
     ["Update", "Updating", "Updated", "Houston thread metadata"],
     "thread-update",
