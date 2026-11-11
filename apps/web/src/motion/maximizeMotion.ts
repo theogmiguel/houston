@@ -1,12 +1,12 @@
 /**
  * The grid's maximize and restore: a stand-in card carries the cell's box from its old
- * rect to its new one on the compositor, while the chat itself is already laid out at
- * its final size and fades in once the card is under way. Nothing is ever scaled that
- * holds text, and no cell relayouts mid-motion.
+ * rect to its new one on the compositor. The chat and its neighbours show at their final
+ * place from the first frame, so nothing blanks; nothing is ever scaled that holds text,
+ * and no cell relayouts mid-motion.
  */
 import { MotionAnimation, playMotion, toDevicePixel } from "./animation";
 import { probeCellMoveFrames } from "./frameProbe";
-import { MOTION_EASE, MOTION_ROLE_MS } from "./registry";
+import { MOTION_EASE } from "./registry";
 
 export interface CellRect {
   readonly x: number;
@@ -16,9 +16,6 @@ export interface CellRect {
 }
 
 const STANDARD = `cubic-bezier(${MOTION_EASE.standard.join(",")})`;
-const EXIT = `cubic-bezier(${MOTION_EASE.exit.join(",")})`;
-/** How far the chat rises while it fades in, matching `--motion-swap-rise`. */
-const CONTENT_RISE_PX = 6;
 
 const running = new WeakMap<HTMLElement, () => void>();
 
@@ -29,8 +26,7 @@ export function finishMaximizeMorph(root: HTMLElement): void {
 
 /**
  * Morphs `cell` between `from` and `to` (both in `root`'s layout coordinates).
- * `opening` is true for maximize, false for restore; `others` are the neighbours'
- * frames, which fade out on maximize and back in on restore.
+ * `opening` is true for maximize, false for restore.
  */
 export function animateMaximizeMorph(
   root: HTMLElement,
@@ -38,7 +34,6 @@ export function animateMaximizeMorph(
   from: CellRect,
   to: CellRect,
   opening: boolean,
-  others: readonly HTMLElement[],
 ): void {
   finishMaximizeMorph(root);
   if (to.width <= 0 || to.height <= 0) return;
@@ -71,35 +66,6 @@ export function animateMaximizeMorph(
     easing: STANDARD,
     fill: "forwards",
   });
-  const contentDelay = Math.max(MOTION_ROLE_MS["content-delay"], motion.durationMs * 0.25);
-  const content = cell.animate(
-    [
-      { opacity: 0, transform: `translateY(${CONTENT_RISE_PX}px)` },
-      { opacity: 1, transform: "none" },
-    ],
-    {
-      duration: MOTION_ROLE_MS["swap-in"],
-      delay: contentDelay,
-      easing: STANDARD,
-      fill: "backwards",
-    },
-  );
-  const neighbours = others.map((frame) => {
-    if (opening) {
-      frame.style.visibility = "visible";
-      return frame.animate([{ opacity: 1 }, { opacity: 0 }], {
-        duration: MOTION_ROLE_MS["overlay-out"],
-        easing: EXIT,
-        fill: "forwards",
-      });
-    }
-    return frame.animate([{ opacity: 0 }, { opacity: 1 }], {
-      duration: motion.durationMs * 0.8,
-      delay: MOTION_ROLE_MS["content-delay"],
-      easing: STANDARD,
-      fill: "backwards",
-    });
-  });
 
   let done = false;
   const finish = () => {
@@ -108,9 +74,6 @@ export function animateMaximizeMorph(
     running.delete(root);
     travel.cancel();
     tint.cancel();
-    content.cancel();
-    for (const animation of neighbours) animation.cancel();
-    if (opening) for (const frame of others) frame.style.visibility = "hidden";
     card.remove();
     // The cell's own card shows again with transitions still off for one frame, so it
     // takes over from the stand-in in place instead of fading in a second time.
@@ -120,11 +83,7 @@ export function animateMaximizeMorph(
     });
   };
   running.set(root, finish);
-  void Promise.allSettled([
-    tint.finished,
-    content.finished,
-    ...neighbours.map((a) => a.finished),
-  ]).then(() => {
+  void Promise.allSettled([tint.finished]).then(() => {
     if (running.get(root) === finish) finish();
   });
   probeCellMoveFrames(1, motion.durationMs, "maximize");

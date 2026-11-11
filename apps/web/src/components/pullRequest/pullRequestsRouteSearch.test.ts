@@ -32,6 +32,12 @@ describe("pull requests route search", () => {
     expect(matchedSearch("/pull-requests?q=true")?.q).toBeUndefined();
   });
 
+  it("keeps the Agents tab and opens a link to every pull request on Mine", () => {
+    expect(matchedSearch("/pull-requests?involvement=linked")?.involvement).toBe("linked");
+    expect(matchedSearch("/pull-requests?involvement=reviewing")?.involvement).toBe("reviewing");
+    expect(matchedSearch("/pull-requests?involvement=all")?.involvement).toBe("authored");
+  });
+
   it("keeps a q that is text, including quoted digits", () => {
     expect(matchedSearch("/pull-requests?q=fix")?.q).toBe("fix");
     expect(matchedSearch("/pull-requests?q=%224089%22")?.q).toBe("4089");

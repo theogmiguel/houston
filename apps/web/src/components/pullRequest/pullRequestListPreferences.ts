@@ -3,8 +3,8 @@ import * as Schema from "effect/Schema";
 import {
   EnvironmentId,
   ProjectId,
-  PullRequestInvolvement,
   PullRequestListFilters,
+  PullRequestListInvolvement,
   PullRequestListState,
 } from "@houston-app/contracts";
 
@@ -20,7 +20,7 @@ export const PullRequestListSort = Schema.Literals([
 export type PullRequestListSort = typeof PullRequestListSort.Type;
 
 export interface PullRequestListPreferences {
-  readonly involvement: PullRequestInvolvement;
+  readonly involvement: PullRequestListInvolvement;
   readonly state: PullRequestListState;
   readonly environmentId?: EnvironmentId;
   readonly projectId?: ProjectId;
@@ -39,13 +39,13 @@ export type PullRequestListPreferencePatch = {
 };
 
 const DEFAULT_PULL_REQUEST_LIST_PREFERENCES = {
-  involvement: "all",
+  involvement: "authored",
   state: "open",
 } as const satisfies PullRequestListPreferences;
 
 const BoundedPreference = Schema.String.check(Schema.isMaxLength(200));
 const PullRequestListPreferencesSchema = Schema.Struct({
-  involvement: PullRequestInvolvement,
+  involvement: PullRequestListInvolvement,
   state: PullRequestListState,
   environmentId: Schema.optional(EnvironmentId),
   projectId: Schema.optional(ProjectId),
@@ -75,7 +75,8 @@ export function pullRequestListPreferences(
   search: PullRequestListPreferences | Schema.Schema.Type<typeof PullRequestListPreferencesSchema>,
 ): PullRequestListPreferences {
   return {
-    involvement: search.involvement,
+    // No tab lists every pull request, so a remembered `all` opens on Mine.
+    involvement: search.involvement === "all" ? "authored" : search.involvement,
     state: search.state,
     ...(search.environmentId ? { environmentId: search.environmentId } : {}),
     ...(search.projectId ? { projectId: search.projectId } : {}),

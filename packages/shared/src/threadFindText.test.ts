@@ -1,8 +1,26 @@
 import { EnvironmentId, MessageId, ThreadId } from "@houston-app/contracts";
-import { expect, it } from "vite-plus/test";
+import type { Processor } from "unified";
+import { expect, it, vi } from "vite-plus/test";
 import { serializeAssistantCitation } from "./assistantCitations.ts";
 import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "./composerContextReferences.ts";
 import { searchableMessageSegments } from "./threadFindText.ts";
+
+const parsedByGates = vi.hoisted((): string[] => []);
+
+vi.mock(import("./markdownSyntaxGates.ts"), async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    remarkParseWithoutUnusedSyntax(this: Processor) {
+      actual.remarkParseWithoutUnusedSyntax.call(this);
+      const parse = this.parser!;
+      this.parser = (document, file) => {
+        parsedByGates.push(document);
+        return parse(document, file);
+      };
+    },
+  };
+});
 
 it("excludes review attachments rendered as context chips", () => {
   const text = [
@@ -116,4 +134,31 @@ it("indexes the citation chip label instead of its link text", () => {
   expect(searchableMessageSegments({ role: "user", text: commented, streaming: false })).toEqual([
     "my note",
   ]);
+});
+
+it.each([
+  ["a table", "| a | b |\n|---|:-:|\n| 1 | 2 |\n\nafter", ["a", "b", "1", "2", "after"]],
+  [
+    "autolink literals",
+    "see https://example.com/a_b_ and www.example.com/x. mail me@x.io now",
+    ["see https://example.com/a_b_ and www.example.com/x. mail me@x.io now"],
+  ],
+  ["task list items", "- [ ] todo\n- [x] done", [" todo", " done"]],
+  ["strikethrough", "text~~strike~~ and H~2~O", ["textstrike and H2O"]],
+  ["a footnote", "foot[^1] note\n\n[^1]: the note", ["foot1 note", "Footnotes", "the note ↩"]],
+])("searches %s as the renderer shows it", (_name, text, expected) => {
+  expect(searchableMessageSegments({ role: "assistant", text, streaming: false })).toEqual(
+    expected,
+  );
+  expect(searchableMessageSegments({ role: "user", text, streaming: false })).toEqual(expected);
+});
+
+it.each([
+  ["an assistant message", "assistant", "plain reply"],
+  ["an assistant message with preserved line breaks", "assistant", "★ Insight ─────\nline\nbreak"],
+  ["a user message", "user", "plain request"],
+] as const)("parses %s through the syntax gates", (_name, role, text) => {
+  parsedByGates.length = 0;
+  searchableMessageSegments({ role, text, streaming: false });
+  expect(parsedByGates).toEqual([text]);
 });

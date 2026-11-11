@@ -811,7 +811,12 @@ export const useGridStore = create<GridStoreState>()(
           input.side === "center"
             ? sourceInTarget
               ? (swapThread(current.tree, input.threadId, input.targetThreadId) ?? current.tree)
-              : replaceThread(current.tree, input.targetThreadId, threadLeaf(input.threadId))
+              : // The thread takes the cell's pane too, so the cell keeps its view mounted.
+                replaceThread(
+                  current.tree,
+                  input.targetThreadId,
+                  threadLeaf(input.threadId, findThread(current.tree, input.targetThreadId)?.id),
+                )
             : sourceInTarget
               ? moveThread(current.tree, input.threadId, input.targetThreadId, input.side)
               : insertBeside(

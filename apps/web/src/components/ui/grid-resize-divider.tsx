@@ -17,7 +17,6 @@ export function GridResizeDivider({
   orientation,
   valueNow,
   dragging,
-  leaving,
   badgeRef,
   style,
   onDoubleClick,
@@ -31,7 +30,6 @@ export function GridResizeDivider({
   orientation: "vertical" | "horizontal";
   valueNow: number;
   dragging: boolean;
-  leaving: boolean;
   badgeRef: Ref<HTMLDivElement>;
   style?: CSSProperties;
   onDoubleClick: MouseEventHandler<HTMLDivElement>;
@@ -51,7 +49,6 @@ export function GridResizeDivider({
       tabIndex={0}
       data-grid-gutter=""
       data-dragging={dragging ? "" : undefined}
-      data-leaving={leaving ? "" : undefined}
       style={style}
       className={cn(
         "group relative z-10 shrink-0 touch-none outline-none after:absolute after:rounded-full after:bg-transparent after:transition-colors after:content-[''] hover:after:bg-(--accent-ink) focus-visible:after:bg-(--accent-ink) data-[dragging]:after:bg-(--accent-ink)",

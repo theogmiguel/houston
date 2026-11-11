@@ -199,6 +199,34 @@ describe("grid records", () => {
     expect(target?.kind === "split" && target.weights).toEqual([70, 30]);
   });
 
+  it("keeps the cell's pane when another thread takes it, so its view stays mounted", () => {
+    freshStore();
+    createdGrid();
+    useGridStore.getState().setTree("g-1", {
+      kind: "split",
+      dir: "row",
+      children: [
+        { kind: "thread", threadId: "thread-parent", id: "p-parent" },
+        { kind: "thread", threadId: "thread-c", id: "p-c" },
+      ],
+      weights: [50, 50],
+    });
+
+    useGridStore.getState().moveThreadToCell({
+      threadId: "thread-sub",
+      targetGridId: "g-1",
+      targetThreadId: "thread-parent",
+      side: "center",
+    });
+
+    const tree = gridById(useGridStore.getState().grids, "g-1")!.tree;
+    expect(tree?.kind === "split" && tree.children[0]).toEqual({
+      kind: "thread",
+      threadId: "thread-sub",
+      id: "p-parent",
+    });
+  });
+
   it("refuses an edge drop that would make a seventh cell", () => {
     freshStore();
     createdGrid();

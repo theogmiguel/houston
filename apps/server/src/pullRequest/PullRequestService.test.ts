@@ -4826,3 +4826,329 @@ it.effect("passes the host's review requests through to the activity", () =>
     assert.deepStrictEqual(activity.reviewRequests, reviewRequests);
   }),
 );
+
+function forkProject(input: {
+  readonly id: string;
+  readonly title: string;
+  readonly workspaceRoot: string;
+  readonly upstream: string;
+  readonly origin: string;
+}): OrchestrationProjectShell {
+  const shell = project({ ...input, repository: input.upstream });
+  return {
+    ...shell,
+    repositoryIdentity: {
+      ...shell.repositoryIdentity!,
+      locator: {
+        source: "git-remote",
+        remoteName: "upstream",
+        remoteUrl: `https://github.com/${input.upstream}.git`,
+      },
+      origin: {
+        canonicalKey: `github.com/${input.origin.toLowerCase()}`,
+        remoteUrl: `https://github.com/${input.origin}.git`,
+        displayName: input.origin,
+      },
+    },
+  };
+}
+
+const forkOfChatwoot = forkProject({
+  id: "dispatch",
+  title: "dispatch",
+  workspaceRoot: "/dispatch",
+  upstream: "chatwoot/chatwoot",
+  origin: "Clube-do-Valor/dispatch",
+});
+
+it.effect("lists a fork's own repository, and only the viewer's requests on the original", () =>
+  Effect.gen(function* () {
+    const asked: Array<[string, string, string | undefined]> = [];
+    const service = yield* makeService({
+      projects: [forkOfChatwoot],
+      providers: [
+        fakePullRequestProvider(SourceControlProviderKind.make("github"), {
+          listChangeRequests: ({ repository, involvement, cursor }) => {
+            asked.push([repository, involvement, cursor?.updatedBefore]);
+            const number =
+              repository === "Clube-do-Valor/dispatch"
+                ? 1
+                : involvement === "authored"
+                  ? 2
+                  : involvement === "reviewing"
+                    ? 3
+                    : 4;
+            return Effect.succeed({
+              items: [changeRequest(number, `2026-07-0${number}T00:00:00Z`)],
+              truncated: true,
+              continues: true,
+            });
+          },
+        }),
+      ],
+    });
+
+    const result = yield* service.list({ state: "open" });
+
+    assert.deepStrictEqual(asked.toSorted(), [
+      ["Clube-do-Valor/dispatch", "all", undefined],
+      ["chatwoot/chatwoot", "authored", undefined],
+      ["chatwoot/chatwoot", "reviewing", undefined],
+    ]);
+    assert.deepStrictEqual(
+      result.entries.map((entry) => [entry.projectId, entry.repository, entry.number]),
+      [
+        ["dispatch", "chatwoot/chatwoot", 3],
+        ["dispatch", "chatwoot/chatwoot", 2],
+        ["dispatch", "Clube-do-Valor/dispatch", 1],
+      ],
+    );
+    assert.deepStrictEqual(result.nextCursors, {
+      "github.com clube-do-valor/dispatch": "2026-07-01T00:00:00Z|1|1",
+      "github.com chatwoot/chatwoot authored": "2026-07-02T00:00:00Z|1|2",
+      "github.com chatwoot/chatwoot reviewing": "2026-07-03T00:00:00Z|1|3",
+    });
+
+    asked.length = 0;
+    yield* service.list({
+      state: "open",
+      cursors: { "github.com chatwoot/chatwoot reviewing": "2026-07-03T00:00:00Z|1|3" },
+    });
+    assert.deepStrictEqual(asked, [["chatwoot/chatwoot", "reviewing", "2026-07-03T00:00:00Z"]]);
+
+    asked.length = 0;
+    yield* service.list({ state: "open", involvement: "authored" });
+    assert.deepStrictEqual(asked.toSorted(), [
+      ["Clube-do-Valor/dispatch", "authored", undefined],
+      ["chatwoot/chatwoot", "authored", undefined],
+    ]);
+  }),
+);
+
+it.effect("searches a fork's two repositories together, one question per involvement", () =>
+  Effect.gen(function* () {
+    const asked: Array<[ReadonlyArray<string>, string]> = [];
+    const service = yield* makeService({
+      projects: [forkOfChatwoot],
+      providers: [
+        fakePullRequestProvider(SourceControlProviderKind.make("github"), {
+          listChangeRequestsAcross: (input) => {
+            asked.push([input.repositories, input.involvement]);
+            return Effect.succeed({
+              items:
+                input.involvement === "all"
+                  ? [batchedChangeRequest(1, "Clube-do-Valor/dispatch", "2026-07-01T00:00:00Z")]
+                  : [batchedChangeRequest(7, "chatwoot/chatwoot", "2026-07-02T00:00:00Z")],
+              truncated: false,
+            });
+          },
+        }),
+      ],
+    });
+
+    const result = yield* service.list({ state: "open" });
+
+    assert.deepStrictEqual(asked.toSorted(), [
+      [["Clube-do-Valor/dispatch"], "all"],
+      [["chatwoot/chatwoot"], "authored"],
+      [["chatwoot/chatwoot"], "reviewing"],
+    ]);
+    // A team review request on one's own pull request answers both questions; it is listed once.
+    assert.deepStrictEqual(
+      result.entries.map((entry) => [entry.repository, entry.number]),
+      [
+        ["chatwoot/chatwoot", 7],
+        ["Clube-do-Valor/dispatch", 1],
+      ],
+    );
+  }),
+);
+
+it.effect("acts on and counts the lines of a fork's own pull requests in its own repository", () =>
+  Effect.gen(function* () {
+    const ran: Array<string> = [];
+    const counted: Array<unknown> = [];
+    const service = yield* makeService({
+      projects: [forkOfChatwoot],
+      providers: [
+        fakePullRequestProvider(SourceControlProviderKind.make("github"), {
+          runAction: (input) => {
+            ran.push(input.repository);
+            return Effect.void;
+          },
+          listChangeRequestStats: (input) => {
+            counted.push(input.changeRequests);
+            return Effect.succeed(
+              input.changeRequests.map((ref) => ({ ...ref, additions: 1, deletions: 1 })),
+            );
+          },
+        }),
+      ],
+    });
+
+    for (const repository of ["Clube-do-Valor/dispatch", "chatwoot/chatwoot"]) {
+      yield* service.runAction({
+        projectId: "dispatch" as ProjectId,
+        repository,
+        number: 1,
+        action: "close",
+      });
+    }
+    const stats = yield* service.listStats({
+      refs: [
+        { projectId: "dispatch" as ProjectId, repository: "Clube-do-Valor/dispatch", number: 1 },
+        { projectId: "dispatch" as ProjectId, repository: "chatwoot/chatwoot", number: 2 },
+      ],
+    });
+
+    assert.deepStrictEqual(ran, ["Clube-do-Valor/dispatch", "chatwoot/chatwoot"]);
+    assert.deepStrictEqual(stats.stats.map((stat) => [stat.repository, stat.number]).toSorted(), [
+      ["Clube-do-Valor/dispatch", 1],
+      ["chatwoot/chatwoot", 2],
+    ]);
+  }),
+);
+
+it.effect("lists a repository in full when another project checks it out directly", () =>
+  Effect.gen(function* () {
+    const asked: Array<[string, string]> = [];
+    const service = yield* makeService({
+      projects: [
+        forkOfChatwoot,
+        project({
+          id: "chatwoot",
+          title: "chatwoot",
+          workspaceRoot: "/c",
+          repository: "chatwoot/chatwoot",
+        }),
+      ],
+      providers: [
+        fakePullRequestProvider(SourceControlProviderKind.make("github"), {
+          listChangeRequests: ({ repository, involvement }) => {
+            asked.push([repository, involvement]);
+            return Effect.succeed({ items: [], truncated: false, continues: true });
+          },
+        }),
+      ],
+    });
+
+    yield* service.list({ state: "open" });
+
+    assert.deepStrictEqual(asked.toSorted(), [
+      ["Clube-do-Valor/dispatch", "all"],
+      ["chatwoot/chatwoot", "all"],
+    ]);
+  }),
+);
+
+function threadLink(input: {
+  readonly projectId: string;
+  readonly repository: string;
+  readonly number: number;
+  readonly state?: "open" | "closed" | "merged";
+  readonly source?: "manual" | "agent" | "stack-dismissed";
+  readonly syncedAt?: string;
+  readonly snapshot?: false;
+}): PullRequestService.ThreadLinkedPullRequest {
+  return {
+    projectId: input.projectId as ProjectId,
+    link: {
+      host: "github.com",
+      repository: input.repository,
+      number: input.number,
+      url: `https://github.com/${input.repository}/pull/${input.number}`,
+      source: input.source ?? "agent",
+      linkedAt: "2026-07-01T00:00:00.000Z",
+      snapshot:
+        input.snapshot === false
+          ? null
+          : {
+              state: input.state ?? "open",
+              title: `Linked ${input.number}`,
+              headBranch: `feat/${input.number}`,
+              baseBranch: "main",
+              isDraft: false,
+              updatedAt: `2026-07-0${input.number}T00:00:00.000Z`,
+              syncedAt: input.syncedAt ?? "2026-07-09T00:00:00.000Z",
+              author: { login: "bilal", name: null, avatarUrl: null },
+            },
+      stack: null,
+    },
+  };
+}
+
+it.effect("lists exactly the pull requests linked to threads, without asking the host", () =>
+  Effect.gen(function* () {
+    const listed: Array<string> = [];
+    const service = yield* makeService({
+      projects: [
+        forkOfChatwoot,
+        project({ id: "web", title: "web", workspaceRoot: "/web", repository: "acme/web" }),
+      ],
+      providers: [
+        fakePullRequestProvider(SourceControlProviderKind.make("github"), {
+          listChangeRequests: ({ repository }) => {
+            listed.push(repository);
+            return Effect.succeed({ items: [], truncated: false, continues: true });
+          },
+        }),
+      ],
+    });
+    const links = [
+      threadLink({ projectId: "dispatch", repository: "clube-do-valor/dispatch", number: 1 }),
+      threadLink({ projectId: "dispatch", repository: "chatwoot/chatwoot", number: 2 }),
+      threadLink({
+        projectId: "dispatch",
+        repository: "chatwoot/chatwoot",
+        number: 2,
+        syncedAt: "2026-07-01T00:00:00.000Z",
+      }),
+      threadLink({ projectId: "web", repository: "acme/web", number: 3, state: "merged" }),
+      threadLink({
+        projectId: "web",
+        repository: "acme/web",
+        number: 4,
+        source: "stack-dismissed",
+      }),
+      threadLink({ projectId: "web", repository: "acme/web", number: 5, snapshot: false }),
+      threadLink({ projectId: "gone", repository: "acme/gone", number: 6 }),
+    ];
+
+    const open = yield* service.listLinked({ state: "open", involvement: "linked" }, links);
+    assert.deepStrictEqual(
+      open.entries.map((entry) => [entry.projectId, entry.repository, entry.number]),
+      [
+        ["dispatch", "chatwoot/chatwoot", 2],
+        ["dispatch", "Clube-do-Valor/dispatch", 1],
+      ],
+    );
+    assert.strictEqual(open.viewers["github.com"], "bilal");
+    assert.deepStrictEqual(open.nextCursors, {});
+
+    const all = yield* service.listLinked({ state: "all", involvement: "linked" }, links);
+    assert.deepStrictEqual(
+      all.entries.map((entry) => entry.number),
+      [3, 2, 1],
+    );
+
+    const scoped = yield* service.listLinked(
+      { state: "all", involvement: "linked", projectId: "web" as ProjectId, query: "linked 3" },
+      links,
+    );
+    assert.deepStrictEqual(
+      scoped.entries.map((entry) => entry.number),
+      [3],
+    );
+
+    const page = yield* service.listLinked(
+      { state: "all", involvement: "linked", limit: 1 },
+      links,
+    );
+    assert.deepStrictEqual(
+      page.entries.map((entry) => entry.number),
+      [3],
+    );
+    assert.isTrue(page.truncated);
+    assert.deepStrictEqual(listed, []);
+  }),
+);
