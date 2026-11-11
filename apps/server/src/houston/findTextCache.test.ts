@@ -55,17 +55,14 @@ describe("find text cache", () => {
     }),
   );
 
-  it.effect(
-    "a clock jump sweeps once instead of replaying every skipped interval",
-    () =>
-      Effect.gen(function* () {
-        const { parse } = counting();
-        const cache = yield* makeFindTextCache();
-        yield* cache.get(key("m0"), parse("m0", 100));
-        yield* TestClock.setTime(Date.parse("2026-06-20T10:00:00.000Z"));
-        assert.strictEqual(cache.retainedBytes(), 0);
-      }),
-    5_000,
+  it.effect("a clock jump sweeps once instead of replaying every skipped interval", () =>
+    Effect.gen(function* () {
+      const { parse } = counting();
+      const cache = yield* makeFindTextCache();
+      yield* cache.get(key("m0"), parse("m0", 100));
+      yield* TestClock.setTime(Date.parse("2026-06-20T10:00:00.000Z"));
+      assert.strictEqual(cache.retainedBytes(), 0);
+    }),
   );
 
   it.effect("an empty cache keeps no sweep running", () =>
