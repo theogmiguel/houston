@@ -24,6 +24,8 @@ import {
   withTree,
   workspaceKeyOf,
 } from "@houston-app/shared/grid/record";
+import type { HoustonGridRecord } from "@houston-app/contracts/houston/grids";
+import { mergeServerRecord, reconcileServerGrids } from "./gridServerMerge";
 import { sameProject } from "./projectMove";
 import {
   type LayoutNode,
@@ -71,6 +73,8 @@ export const MAX_CLOSED_CELLS_PER_GRID = 10;
 
 export interface GridStoreState {
   grids: GridRecord[];
+  /** The server revision each grid last had here; a grid without one was never uploaded. */
+  serverRevisions: Readonly<Record<string, number>>;
   threadOrigins: ThreadOrigins;
   closedCells: ClosedCellsByGrid;
   createGrid: (input: {
@@ -81,6 +85,19 @@ export interface GridStoreState {
     id?: string;
     now?: string;
   }) => string;
+  /**
+   * Takes one environment's server grids into the store. `skip` names grids with an unconfirmed
+   * local change. Returns the ids dropped because the server no longer has them.
+   */
+  applyServerGrids: (
+    environmentId: string,
+    records: ReadonlyArray<HoustonGridRecord>,
+    skip: ReadonlySet<string>,
+  ) => string[];
+  /** Replaces one grid's server-owned fields with the server's copy, whatever its revision. */
+  adoptServerGrid: (record: HoustonGridRecord) => void;
+  /** Records a saved revision and the creation time the server assigned. */
+  setServerRevision: (gridId: string, revision: number, createdAt: string) => void;
   renameGrid: (gridId: string, name: string) => void;
   deleteGrid: (gridId: string) => void;
   addThread: (gridId: string, threadId: string, draftId?: string) => void;
@@ -225,6 +242,17 @@ export function parseThreadOrigins(value: unknown): Record<string, ThreadOrigin>
     origins[threadId] = { gridId: raw.gridId, slot: Math.trunc(raw.slot) };
   }
   return origins;
+}
+
+export function parseServerRevisions(value: unknown): Record<string, number> {
+  if (!value || typeof value !== "object") return {};
+  const revisions: Record<string, number> = {};
+  for (const [gridId, revision] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof revision === "number" && Number.isInteger(revision) && revision >= 0) {
+      revisions[gridId] = revision;
+    }
+  }
+  return revisions;
 }
 
 export function parseClosedCells(value: unknown): Record<string, ClosedCell[]> {
@@ -413,8 +441,44 @@ export const useGridStore = create<GridStoreState>()(
   persist(
     (set, get) => ({
       grids: [],
+      serverRevisions: {},
       threadOrigins: {},
       closedCells: {},
+      applyServerGrids: (environmentId, records, skip) => {
+        const state = get();
+        const reconciled = reconcileServerGrids({
+          grids: state.grids,
+          serverRevisions: state.serverRevisions,
+          environmentId,
+          records,
+          skip,
+        });
+        let closedCells = state.closedCells;
+        for (const id of reconciled.droppedIds) {
+          const { [id]: _stack, ...rest } = closedCells;
+          closedCells = rest;
+        }
+        set({
+          grids: reconciled.grids,
+          serverRevisions: reconciled.serverRevisions,
+          closedCells,
+        });
+        return reconciled.droppedIds;
+      },
+      adoptServerGrid: (record) =>
+        set((state) => ({
+          serverRevisions: { ...state.serverRevisions, [record.id]: record.revision },
+          grids: state.grids.some((grid) => grid.id === record.id)
+            ? updateGrid(state.grids, record.id, (grid) => mergeServerRecord(grid, record))
+            : [...state.grids, mergeServerRecord(undefined, record)],
+        })),
+      setServerRevision: (gridId, revision, createdAt) =>
+        set((state) => ({
+          serverRevisions: { ...state.serverRevisions, [gridId]: revision },
+          grids: updateGrid(state.grids, gridId, (grid) =>
+            grid.createdAt === createdAt ? grid : { ...grid, createdAt },
+          ),
+        })),
       createGrid: (input) => {
         const grid = createGridRecord(get().grids, input);
         set((state) => ({ grids: [...state.grids, grid] }));
@@ -427,9 +491,11 @@ export const useGridStore = create<GridStoreState>()(
       deleteGrid: (gridId) =>
         set((state) => {
           const { [gridId]: _stack, ...closedCells } = state.closedCells;
+          const { [gridId]: _revision, ...serverRevisions } = state.serverRevisions;
           return {
             grids: state.grids.filter((grid) => grid.id !== gridId),
             closedCells,
+            serverRevisions,
           };
         }),
       addThread: (gridId, threadId, draftId) =>
@@ -706,12 +772,14 @@ export const useGridStore = create<GridStoreState>()(
         const state = persisted as Partial<GridStoreState> | null;
         return {
           grids: parseGrids(state?.grids),
+          serverRevisions: parseServerRevisions(state?.serverRevisions),
           threadOrigins: parseThreadOrigins(state?.threadOrigins),
           closedCells: parseClosedCells(state?.closedCells),
         };
       },
-      partialize: ({ grids, threadOrigins, closedCells }) => ({
+      partialize: ({ grids, serverRevisions, threadOrigins, closedCells }) => ({
         grids,
+        serverRevisions,
         threadOrigins,
         closedCells,
       }),
