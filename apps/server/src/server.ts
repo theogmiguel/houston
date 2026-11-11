@@ -134,6 +134,7 @@ import * as HoustonTaskSourceOutbox from "./houston/taskSources/Outbox.ts";
 import * as HoustonTaskSourceStore from "./houston/taskSources/SourceStore.ts";
 import { layerTaskSources } from "./houston/taskSources/layer.ts";
 import * as SlackConnection from "./houston/slack/Connection.ts";
+import * as HoustonGrids from "./houston/grids.ts";
 import { layerSlack } from "./houston/slack/layer.ts";
 import * as SlackRunMessages from "./houston/slack/RunMessages.ts";
 import * as HoustonSlackStore from "./houston/slack/Store.ts";
@@ -622,6 +623,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.effectDiscard(HoustonTaskProjectSweep.sweep),
   Layer.effectDiscard(HoustonTaskSourceStore.sweep),
   Layer.effectDiscard(HoustonSlackStore.sweep),
+  Layer.effectDiscard(HoustonGrids.sweep).pipe(Layer.provideMerge(HoustonGrids.layer)),
   // Slack accepts requests through the same task runs the server offers.
   layerSlack(
     Layer.mergeAll(SlackWebApi.layer, SlackConnection.layerSocketTransport, SlackRunMessages.layer),

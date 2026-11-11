@@ -223,6 +223,7 @@ import * as HoustonTaskService from "./houston/tasks/TaskService.ts";
 import * as HoustonTaskRuns from "./houston/tasks/TaskRuns.ts";
 import * as HoustonTaskV1Import from "./houston/tasks/V1Import.ts";
 import * as HoustonTaskSourceService from "./houston/taskSources/SourceService.ts";
+import * as HoustonGrids from "./houston/grids.ts";
 import * as HoustonSlackService from "./houston/slack/Service.ts";
 import * as HoustonSlackV1Import from "./houston/slack/V1Import.ts";
 import * as HoustonTaskSourceV1Import from "./houston/taskSources/V1Import.ts";
@@ -1563,6 +1564,7 @@ export const layerWsRpc = (
       const houstonTaskRuns = yield* HoustonTaskRuns.HoustonTaskRuns;
       const houstonTaskSources = yield* HoustonTaskSourceService.HoustonTaskSourceService;
       const houstonTaskSourceImport = yield* HoustonTaskSourceV1Import.HoustonTaskSourceV1Import;
+      const houstonGrids = yield* HoustonGrids.HoustonGridService;
       const houstonSlack = yield* HoustonSlackService.HoustonSlackService;
       const houstonSlackImport = yield* HoustonSlackV1Import.HoustonSlackV1Import;
       const houstonMergeQueue = yield* HoustonMergeQueueService.HoustonMergeQueueService;
@@ -3366,6 +3368,10 @@ export const layerWsRpc = (
         [WS_METHODS.houstonTaskSourcesSubscribe]: (input) => houstonTaskSources.subscribe(input),
         [WS_METHODS.houstonTaskSourcesImportV1Status]: () => houstonTaskSourceImport.status,
         [WS_METHODS.houstonTaskSourcesImportV1Run]: () => houstonTaskSourceImport.run,
+        [WS_METHODS.houstonGridsList]: (input) => houstonGrids.list(input),
+        [WS_METHODS.houstonGridsPut]: (input) => houstonGrids.put(input),
+        [WS_METHODS.houstonGridsDelete]: (input) => houstonGrids.delete(input),
+        [WS_METHODS.houstonGridsSubscribe]: () => houstonGrids.subscribe,
         [WS_METHODS.houstonSlackGet]: () => houstonSlack.get,
         [WS_METHODS.houstonSlackConnect]: (input) => houstonSlack.connect(input),
         [WS_METHODS.houstonSlackDisconnect]: () => houstonSlack.disconnect,

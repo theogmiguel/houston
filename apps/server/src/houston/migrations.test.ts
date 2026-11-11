@@ -31,6 +31,7 @@ const HOUSTON_TRACK: Array<readonly [number, string]> = [
   [13, "ShellReadModels"],
   [16, "TimelineReadIndex"],
   [17, "TurnStartReadModels"],
+  [18, "Grids"],
 ];
 const TASK_TABLES = [
   "houston_task_acceptance",
@@ -638,5 +639,35 @@ describe("the removal migration drops the night shift and harness review tables"
         }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: file })));
       }),
     ),
+  );
+});
+
+describe("the grids migration runs on the Houston track", () => {
+  it.effect("houston_grids holds one row per grid id and indexes its project", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      assert.deepEqual(yield* houstonHistory, HOUSTON_TRACK);
+      assert.deepEqual(
+        (yield* sql<{ readonly name: string }>`
+          SELECT name FROM pragma_table_info('houston_grids') ORDER BY cid
+        `).map((column) => column.name),
+        ["id", "project_id", "record_json", "revision", "created_at", "updated_at"],
+      );
+      assert.deepEqual(
+        (yield* sql<{ readonly name: string }>`
+          SELECT name FROM pragma_index_list('houston_grids') WHERE origin = 'c'
+        `).map((index) => index.name),
+        ["idx_houston_grids_project"],
+      );
+      yield* sql`
+        INSERT INTO houston_grids (id, project_id, record_json, revision, created_at, updated_at)
+        VALUES ('g1', 'p1', '{}', 1, 'now', 'now')
+      `;
+      const duplicate = yield* Effect.exit(sql`
+        INSERT INTO houston_grids (id, project_id, record_json, revision, created_at, updated_at)
+        VALUES ('g1', 'p1', '{}', 1, 'now', 'now')
+      `);
+      assert.isTrue(duplicate._tag === "Failure");
+    }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
   );
 });
