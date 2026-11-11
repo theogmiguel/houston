@@ -772,6 +772,64 @@ describe("GridHost surface", () => {
     await vi.waitFor(() => expect(changes).toHaveLength(1));
     expect(preorderThreads(changes[0] ?? null).map((leaf) => leaf.threadId)).toEqual(["thread-a"]);
   });
+
+  async function mountAsyncClose() {
+    let close: (() => void) | null = null;
+    const requests: Array<{ threadId: string; settle: () => void }> = [];
+    const view = (tree: LayoutNode) => (
+      <div style={{ display: "flex", width: 900, height: 600 }}>
+        <GridHost
+          grid={grid(tree)}
+          onTreeChange={() => {}}
+          onFocusThread={() => {}}
+          onCloseThread={(threadId) =>
+            new Promise<void>((resolve) => requests.push({ threadId, settle: resolve }))
+          }
+          renderThread={(cell) => {
+            if (cell.node.threadId === "thread-b") close = cell.onClose;
+            return cellMarkup(cell);
+          }}
+        />
+      </div>
+    );
+    const screen = await render(view(row("thread-a", "thread-b")), { router: false });
+    return {
+      screen,
+      requests,
+      close: () => close?.(),
+      show: (tree: LayoutNode) => screen.rerender(view(tree)),
+    };
+  }
+
+  it("keeps a closing cell gone while the server settles its thread", async () => {
+    const stage = await mountAsyncClose();
+    await using _screen = stage.screen;
+    await act(() => stage.close());
+    await vi.waitFor(() => expect(stage.requests).toHaveLength(1));
+    // The close request is in flight and the thread is still in the tree: nothing snaps back.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const container = stage.screen.container;
+    expect(
+      container.querySelector('[data-grid-cell-frame="thread-b"][data-leaving]'),
+    ).not.toBeNull();
+    expect(container.querySelector("[data-grid-surface][data-multi]")).toBeNull();
+
+    await stage.show(threadLeaf("thread-a", "p-thread-a"));
+    await act(() => stage.requests[0]?.settle());
+    expect(container.querySelector("[data-leaving]")).toBeNull();
+    expect(container.querySelector('[data-grid-cell-frame="thread-b"]')).toBeNull();
+  });
+
+  it("brings a closing cell back when the server keeps its thread", async () => {
+    const stage = await mountAsyncClose();
+    await using _screen = stage.screen;
+    await act(() => stage.close());
+    await vi.waitFor(() => expect(stage.requests).toHaveLength(1));
+    await act(() => stage.requests[0]?.settle());
+    const container = stage.screen.container;
+    await vi.waitFor(() => expect(container.querySelector("[data-leaving]")).toBeNull());
+    expect(container.querySelector("[data-grid-surface][data-multi]")).not.toBeNull();
+  });
 });
 
 describe("GridHost stable cells", () => {

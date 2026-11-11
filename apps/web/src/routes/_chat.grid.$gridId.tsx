@@ -490,8 +490,8 @@ function GridRoute() {
             maximizedThreadId={shownMaximizedThreadId}
             onTreeChange={(tree) => setTree(grid.id, tree)}
             onFocusThread={(threadId) => focusThread(grid.id, threadId)}
-            onCloseThread={(threadId) => {
-              void closeGridThread({
+            onCloseThread={(threadId) =>
+              closeGridThread({
                 gridId: grid.id,
                 threadId,
                 settle: (id) =>
@@ -514,8 +514,8 @@ function GridRoute() {
                     description: error instanceof Error ? error.message : "An error occurred.",
                   }),
                 );
-              });
-            }}
+              })
+            }
             onDropThread={(source, targetThreadId, side) => {
               const targetCount = grid.tree === null ? 0 : preorderThreads(grid.tree).length;
               const sourceProjectKey = workspaceKeyOf(source.environmentId, source.projectId);

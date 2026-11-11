@@ -80,8 +80,11 @@ export interface GridHostProps {
   grid: GridRecord;
   onTreeChange: (tree: LayoutNode | null) => void;
   onFocusThread: (threadId: string) => void;
-  /** Closes a cell through the grid store, which remembers its slot. */
-  onCloseThread?: (threadId: string) => void;
+  /**
+   * Closes a cell through the grid store, which remembers its slot. A returned promise keeps
+   * the cell leaving until it settles; a thread still in the tree then comes back.
+   */
+  onCloseThread?: (threadId: string) => void | Promise<unknown>;
   /** Shows one cell alone without changing the tree or its sizes. */
   maximizedThreadId?: string | null;
   /** Moves a thread from outside this grid onto one of its cells. */
@@ -297,11 +300,8 @@ export function GridHost(props: GridHostProps) {
     onFocusThread(threadId);
   };
 
-  const removeCell = (threadId: string) => {
-    if (onCloseThread !== undefined) {
-      onCloseThread(threadId);
-      return;
-    }
+  const removeCell = (threadId: string): void | Promise<unknown> => {
+    if (onCloseThread !== undefined) return onCloseThread(threadId);
     onTreeChange(removeThread(tree, threadId));
   };
 
@@ -312,8 +312,9 @@ export function GridHost(props: GridHostProps) {
     }
     setLeavingThreadId(threadId);
     window.setTimeout(() => {
-      setLeavingThreadId((current) => (current === threadId ? null : current));
-      removeCell(threadId);
+      void Promise.resolve(removeCell(threadId)).finally(() =>
+        setLeavingThreadId((current) => (current === threadId ? null : current)),
+      );
     }, GRID_MORPH_MS);
   };
 
