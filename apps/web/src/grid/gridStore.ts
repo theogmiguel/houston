@@ -453,6 +453,7 @@ export const useGridStore = create<GridStoreState>()(
           records,
           skip,
         });
+        if (reconciled.grids === state.grids) return reconciled.droppedIds;
         let closedCells = state.closedCells;
         for (const id of reconciled.droppedIds) {
           const { [id]: _stack, ...rest } = closedCells;

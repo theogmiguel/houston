@@ -174,6 +174,17 @@ describe("reconcileServerGrids", () => {
     expect(result.serverRevisions).toEqual({});
   });
 
+  it("hands back the same arrays when the server told it nothing new", () => {
+    const grids = [local({ id: "g-1" }), local({ id: "never-sent" })];
+    const serverRevisions = { "g-1": 3 };
+    const result = reconcileServerGrids(
+      input({ grids, serverRevisions, records: [server({ revision: 3 })] }),
+    );
+    expect(result.grids).toBe(grids);
+    expect(result.serverRevisions).toBe(serverRevisions);
+    expect(result.droppedIds).toEqual([]);
+  });
+
   it("never touches another environment's grids", () => {
     const other = local({ id: "other", environmentId: "env-2", workspaceKey: "env-2:p" });
     const result = reconcileServerGrids(

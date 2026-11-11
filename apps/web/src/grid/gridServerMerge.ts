@@ -61,7 +61,7 @@ export function toServerRecord(
 }
 
 export interface ReconcileInput {
-  readonly grids: ReadonlyArray<GridRecord>;
+  readonly grids: GridRecord[];
   /** The server revision each synced grid last had here, by grid id. */
   readonly serverRevisions: Readonly<Record<string, number>>;
   readonly environmentId: string;
@@ -72,7 +72,7 @@ export interface ReconcileInput {
 
 export interface Reconciled {
   readonly grids: GridRecord[];
-  readonly serverRevisions: Record<string, number>;
+  readonly serverRevisions: Readonly<Record<string, number>>;
   /** Grids the server no longer has. */
   readonly droppedIds: string[];
 }
@@ -87,6 +87,7 @@ export function reconcileServerGrids(input: ReconcileInput): Reconciled {
   const serverRevisions = { ...input.serverRevisions };
   const droppedIds: string[] = [];
   const grids: GridRecord[] = [];
+  let changed = false;
   for (const grid of input.grids) {
     if (grid.environmentId !== input.environmentId) {
       grids.push(grid);
@@ -97,6 +98,7 @@ export function reconcileServerGrids(input: ReconcileInput): Reconciled {
       if (!input.skip.has(grid.id) && serverRevisions[grid.id] !== undefined) {
         delete serverRevisions[grid.id];
         droppedIds.push(grid.id);
+        changed = true;
         continue;
       }
       grids.push(grid);
@@ -110,10 +112,16 @@ export function reconcileServerGrids(input: ReconcileInput): Reconciled {
     }
     serverRevisions[grid.id] = record.revision;
     grids.push(mergeServerRecord(grid, record));
+    changed = true;
   }
   for (const record of byId.values()) {
     serverRevisions[record.id] = record.revision;
     grids.push(mergeServerRecord(undefined, record));
+    changed = true;
   }
-  return { grids, serverRevisions, droppedIds };
+  // An event that changes nothing here keeps the store's arrays, so no subscriber re-renders
+  // and no cache write follows.
+  return changed
+    ? { grids, serverRevisions, droppedIds }
+    : { grids: input.grids, serverRevisions: input.serverRevisions, droppedIds };
 }
