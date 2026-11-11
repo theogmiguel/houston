@@ -78,7 +78,7 @@ export function pullRequestsSearchForRestore<S extends PullRequestsSearchLike>(
   } = previous;
   return {
     ...filters,
-    involvement: previous.involvement ?? "all",
+    involvement: previous.involvement ?? "authored",
     state: previous.state ?? "open",
     ...(selected?.kind === "pull-request"
       ? {

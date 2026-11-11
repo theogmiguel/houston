@@ -3,7 +3,7 @@ import { parsePullRequestQuery } from "@houston-app/client-runtime/pull-request-
 import {
   type EnvironmentId,
   type ProjectId,
-  type PullRequestInvolvement,
+  type PullRequestListInvolvement,
   type PullRequestListFilters,
   type PullRequestListResult,
   type PullRequestListState,
@@ -248,7 +248,7 @@ export function usePullRequestDisplayGroups({
   viewers: PullRequestListResult["viewers"];
   sort: PullRequestListSort;
   text: string;
-  involvement: PullRequestInvolvement;
+  involvement: PullRequestListInvolvement;
 }) {
   const [hostsState, setHostsState] = useState<{
     readonly source: MergedPullRequestList | null;

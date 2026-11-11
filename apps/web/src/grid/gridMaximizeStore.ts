@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { create } from "zustand";
 
 export interface GridMaximizeState {
@@ -20,3 +21,15 @@ export const useGridMaximizeStore = create<GridMaximizeState>()((set) => ({
       return { maximizedThreadIdByGrid: next };
     }),
 }));
+
+/**
+ * A grid shows its cells again once it is left. Clearing on the way out, not on the way back,
+ * means a returning grid never paints its solo cell first and then replays the restore.
+ */
+export function useLeaveGridMaximize(gridId: string): void {
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- leaving a grid must not leave a cell of it maximized
+  useEffect(
+    () => () => useGridMaximizeStore.getState().setMaximizedThreadId(gridId, null),
+    [gridId],
+  );
+}

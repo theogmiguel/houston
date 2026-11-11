@@ -31,6 +31,7 @@ import { proposedPlanTitle, stripDisplayedPlanMarkdown } from "./proposedPlanTex
 import { unified } from "unified";
 import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
+import { remarkParseWithoutUnusedSyntax } from "./markdownSyntaxGates.ts";
 import {
   shouldPreserveAssistantLineBreaks,
   CHAT_MARKDOWN_REHYPE_PLUGINS,
@@ -80,16 +81,19 @@ export const THREAD_FIND_BLOCK_TAGS = new Set([
 
 const assistantProcessor = unified()
   .use(remarkParse)
+  .use(remarkParseWithoutUnusedSyntax)
   .use(CHAT_MARKDOWN_REMARK_PLUGINS)
   .use(remarkRehype, { allowDangerousHtml: true })
   .use(CHAT_MARKDOWN_REHYPE_PLUGINS);
 const assistantBreaksProcessor = unified()
   .use(remarkParse)
+  .use(remarkParseWithoutUnusedSyntax)
   .use(CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS)
   .use(remarkRehype, { allowDangerousHtml: true })
   .use(CHAT_MARKDOWN_REHYPE_PLUGINS);
 const userProcessor = unified()
   .use(remarkParse)
+  .use(remarkParseWithoutUnusedSyntax)
   .use(CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS)
   .use(remarkRehype, { allowDangerousHtml: true });
 

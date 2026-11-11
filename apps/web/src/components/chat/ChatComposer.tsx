@@ -399,6 +399,8 @@ export interface ChatComposerHandle {
 
 export interface ChatComposerProps {
   composerDraftTarget: ScopedThreadRef | DraftId;
+  /** True for the focused grid pane or a standalone view: window-level dictation lands here. */
+  ownsWindowShortcuts?: boolean;
   environmentId: EnvironmentId;
   canOperateThread: boolean;
   attachmentUploadsCapabilityKnown: boolean;
@@ -2065,6 +2067,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     disabled: dictationDisabled,
     terminalOpen,
     modelPickerOpen: isComposerModelPickerOpen,
+    ownsWindowShortcuts: props.ownsWindowShortcuts === true,
   });
   // Sits beside the send button in the footer and in the phone's collapsed row.
   const speechMicAction = speechInput.available ? (

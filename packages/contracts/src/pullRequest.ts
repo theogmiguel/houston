@@ -13,6 +13,9 @@ import {
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
 import { SourceControlProviderKind } from "./sourceControl.ts";
+import { PullRequestListInvolvement } from "./houston/pullRequestList.ts";
+
+export { PullRequestListInvolvement } from "./houston/pullRequestList.ts";
 
 export const PullRequestInvolvement = Schema.Literals(["all", "reviewing", "authored"]);
 export type PullRequestInvolvement = typeof PullRequestInvolvement.Type;
@@ -397,7 +400,7 @@ export type PullRequestListCursors = typeof PullRequestListCursors.Type;
 
 export const PullRequestListInput = Schema.Struct({
   state: PullRequestListState,
-  involvement: Schema.optional(PullRequestInvolvement),
+  involvement: Schema.optional(PullRequestListInvolvement),
   filters: Schema.optional(PullRequestListFilters),
   projectId: Schema.optional(ProjectId),
   projectIds: Schema.optional(Schema.Array(ProjectId).check(Schema.isMaxLength(100))),

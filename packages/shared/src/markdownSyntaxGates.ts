@@ -172,10 +172,8 @@ function hasAutolinkText(node: MdastNodes): boolean {
   return node.children.some(hasAutolinkText);
 }
 
-/**
- * Parses as remark-parse does, without the syntax extension constructs that cannot match the
- * text. Same tree, in about half the time.
- */
+// Parses as remark-parse does, without the syntax extension constructs that cannot match the
+// text. Same tree, in about half the time.
 function attachParserWithoutUnusedSyntax(this: Processor) {
   const data = this.data();
   const byMask = new Map<number, FromMarkdownOptions["extensions"]>();
