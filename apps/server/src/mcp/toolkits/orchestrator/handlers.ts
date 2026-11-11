@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as PeerForwarding from "../../../peer/PeerForwarding.ts";
 import * as PeerLinkRequests from "../../../peer/PeerLinkRequests.ts";
 import * as PeerLinks from "../../../peer/PeerLinks.ts";
+import { gridIdByThread, placeLaunched } from "../../../houston/gridToolkit/placement.ts";
 import { readCaller } from "../../threadAccess.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
@@ -144,21 +145,46 @@ const handlers = {
     Effect.gen(function* () {
       const scope = yield* McpInvocationContext.McpInvocationContext;
       const service = yield* OrchestratorMcpService.OrchestratorMcpService;
-      return yield* service.createThreads(scope, input);
+      const created = yield* service.createThreads(scope, input);
+      if (input.grid === undefined) return created;
+      const { caller } = yield* readCaller();
+      if (caller === undefined) return created;
+      const placements = yield* placeLaunched({
+        projectId: caller.projectId,
+        threadIds: created.threads.map((thread) => thread.threadId),
+        target: input.grid,
+        replaying: input.clientRequestId !== undefined,
+      });
+      return {
+        threads: created.threads.map((thread, index) => ({ ...thread, grid: placements[index] })),
+      };
     }),
   ),
   houston_thread_list: McpToolAccess.reads((input) =>
     Effect.gen(function* () {
       const scope = yield* McpInvocationContext.McpInvocationContext;
       const service = yield* OrchestratorMcpService.OrchestratorMcpService;
-      return yield* service.listThreads(scope, input);
+      const listed = yield* service.listThreads(scope, input);
+      const grids = yield* gridIdByThread;
+      return {
+        ...listed,
+        threads: listed.threads.map((thread) => ({
+          ...thread,
+          gridId: grids.get(thread.threadId) ?? null,
+        })),
+      };
     }),
   ),
   houston_thread_read: McpToolAccess.reads((input) =>
     Effect.gen(function* () {
       const scope = yield* McpInvocationContext.McpInvocationContext;
       const service = yield* OrchestratorMcpService.OrchestratorMcpService;
-      return yield* service.readThread(scope, input);
+      const read = yield* service.readThread(scope, input);
+      const grids = yield* gridIdByThread;
+      return {
+        ...read,
+        thread: { ...read.thread, gridId: grids.get(read.thread.threadId) ?? null },
+      };
     }),
   ),
   houston_thread_update: McpToolAccess.writesThreads(

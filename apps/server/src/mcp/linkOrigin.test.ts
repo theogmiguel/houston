@@ -47,6 +47,7 @@ import * as PeerForwarding from "../peer/PeerForwarding.ts";
 import * as ThreadSearch from "../orchestration-v2/ThreadSearch.ts";
 import * as PeerLinkRequests from "../peer/PeerLinkRequests.ts";
 import * as PeerLinks from "../peer/PeerLinks.ts";
+import { layerNoGrids } from "../houston/gridToolkit/gridToolkit.testkit.ts";
 
 // A linked environment's session drives this one's real orchestrator through
 // its real Houston tools. What the link starts carries its origin, and the link
@@ -120,7 +121,7 @@ const layerTools = Layer.mergeAll(
 ).pipe(
   Layer.provide(DocumentText.layer.pipe(Layer.provideMerge(NodeServices.layer))),
   Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
-  Layer.provide(layerLaunches),
+  Layer.provide(Layer.mergeAll(layerLaunches, layerNoGrids)),
   Layer.provide(NodeCrypto.layer),
   Layer.provide(
     Layer.mock(ProviderRegistry.ProviderRegistry)({ getProviders: Effect.succeed([]) }),
