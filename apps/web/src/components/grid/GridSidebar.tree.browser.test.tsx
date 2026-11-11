@@ -334,6 +334,36 @@ describe("sidebar tree: guides and alignment", () => {
     }
   });
 
+  it("draws the guides in a light ink inside the dark sidebar, so they show against the rail", async () => {
+    await page.viewport(1440, 900);
+    const root = document.documentElement;
+    root.classList.add("dark");
+    try {
+      const value = section([
+        { grid: grid("g1", "a"), threads: [thread("a")] },
+        { grid: grid("g2", "b"), threads: [thread("b")] },
+      ]);
+      await using screen = await render(
+        <div data-app-sidebar="">{tree(value, { openGridId: "g1" })}</div>,
+      );
+      // Normalised sRGB channels of a computed colour, whatever notation the engine prints.
+      const channels = (color: string) => {
+        const [r, g, b] = (color.match(/[\d.]+/g) ?? []).map(Number);
+        const scale = color.startsWith("color(") ? 1 : 255;
+        return [r! / scale, g! / scale, b! / scale];
+      };
+      const lightness = (el: HTMLElement) => {
+        const [r, g, b] = channels(getComputedStyle(el).borderLeftColor);
+        return (r! + g! + b!) / 3;
+      };
+      const projectGuide = screen.container.querySelector<HTMLElement>("[data-project-guide]")!;
+      expect(lightness(projectGuide), "project guide ink").toBeGreaterThan(0.5);
+      expect(lightness(cardsOf(screen.container, "g2")!), "grid guide ink").toBeGreaterThan(0.5);
+    } finally {
+      root.classList.remove("dark");
+    }
+  });
+
   it("tones the on-screen grid's guide stronger than the others, with no colour transition", async () => {
     await page.viewport(1440, 900);
     const value = section([
