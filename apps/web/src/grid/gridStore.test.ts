@@ -12,7 +12,7 @@ import {
   type GridRecord,
   useGridStore,
 } from "./gridStore";
-import { preorderLeaves } from "./tree";
+import { preorderLeaves } from "@houston-app/shared/grid/tree";
 
 const workspaceKey = "env-1:project-1";
 
@@ -644,5 +644,33 @@ describe("single-grid thread placement", () => {
       "thread-a",
     ]);
     expect(gridById(useGridStore.getState().grids, "g-other-project")!.tree).toBeNull();
+  });
+});
+
+describe("applyServerGrids", () => {
+  it("leaves the store alone when the server's grids match what it holds", () => {
+    freshStore();
+    const grid = createdGrid();
+    const record = {
+      id: grid.id,
+      environmentId: grid.environmentId,
+      projectId: grid.projectId,
+      workspaceKey: grid.workspaceKey,
+      name: grid.name,
+      tree: null,
+      pinnedAt: null,
+      hidden: false,
+      createdAt: grid.createdAt,
+      revision: 2,
+      updatedAt: grid.createdAt,
+    };
+    useGridStore.setState({ serverRevisions: { [grid.id]: 2 } });
+    let notifications = 0;
+    const stop = useGridStore.subscribe(() => {
+      notifications += 1;
+    });
+    useGridStore.getState().applyServerGrids("env-1", [record], new Set());
+    stop();
+    expect(notifications).toBe(0);
   });
 });

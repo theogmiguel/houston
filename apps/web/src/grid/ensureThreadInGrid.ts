@@ -4,7 +4,7 @@ import type { EnvironmentId, ProjectId, ThreadId } from "@houston-app/contracts"
 import { isSidebarHiddenThread } from "../components/Sidebar.logic";
 import { readThreadShell } from "../state/entities";
 import { gridContainingThread, MAX_GRID_THREADS, useGridStore, workspaceKeyOf } from "./gridStore";
-import { preorderThreads } from "./tree";
+import { preorderThreads } from "@houston-app/shared/grid/tree";
 
 /**
  * Places a thread started outside a grid in its workspace's grid, creating one if needed.

@@ -8,7 +8,7 @@ import {
   type GridRecord,
   type ThreadOrigins,
 } from "./gridStore";
-import { preorderLeaves } from "./tree";
+import { preorderLeaves } from "@houston-app/shared/grid/tree";
 
 const workspaceKey = "env-1:project-1";
 const now = "2026-10-29T12:00:00.000Z";

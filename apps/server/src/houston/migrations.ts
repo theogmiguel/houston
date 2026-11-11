@@ -13,6 +13,23 @@ import {
 // own history table and ids; upstream's table and ids stay untouched.
 const HOUSTON_MIGRATIONS_TABLE = "houston_sql_migrations";
 
+// One row per grid. The record JSON is the contract's HoustonGridRecord; project_id, revision and
+// the times are columns so a project's grids list without parsing every row.
+const Grids = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_grids (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      record_json TEXT NOT NULL,
+      revision INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    ) WITHOUT ROWID
+  `;
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_houston_grids_project ON houston_grids(project_id, created_at)`;
+});
+
 const ReviewFilesViewed = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   // Unticks delete their row; ref_name is "" on a detached HEAD, blob "" for an absent path.
@@ -785,6 +802,7 @@ const houstonMigrationEntries = [
   [13, "ShellReadModels", createShellReadModels],
   [16, "TimelineReadIndex", createTimelineReadIndexes],
   [17, "TurnStartReadModels", createTurnStartReadModels],
+  [18, "Grids", Grids],
 ] as const;
 
 // Ids land in merge order, so a database can record a higher id before a lower one; every

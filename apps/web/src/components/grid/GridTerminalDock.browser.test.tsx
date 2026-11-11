@@ -92,7 +92,7 @@ vi.mock(
 import { render } from "../../../test/render";
 import { scopedThreadKey } from "@houston-app/client-runtime/environment";
 import type { GridRecord } from "../../grid/gridStore";
-import { threadLeaf } from "../../grid/tree";
+import { threadLeaf } from "@houston-app/shared/grid/tree";
 import { useTerminalUiStateStore } from "../../terminalUiStateStore";
 import { GridHost, type GridCellRenderProps } from "./GridHost";
 import { GridTerminalDock } from "./GridTerminalDock";
