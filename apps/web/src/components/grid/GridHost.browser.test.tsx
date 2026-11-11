@@ -746,6 +746,30 @@ describe("GridHost surface", () => {
     expect(getComputedStyle(soloSurface).paddingLeft).toBe("0px");
   });
 
+  it("tells only the maximized cell it shows alone, so the hidden cells do not re-render", async () => {
+    const maximized = new Map<string, boolean>();
+    await using _screen = await render(
+      <div style={{ display: "flex", width: 900, height: 600 }}>
+        <GridHost
+          grid={grid(row("thread-a", "thread-b", "thread-c"))}
+          maximizedThreadId="thread-b"
+          onTreeChange={() => {}}
+          onFocusThread={() => {}}
+          renderThread={(cell) => {
+            maximized.set(cell.node.threadId, cell.maximized);
+            return cellMarkup(cell);
+          }}
+        />
+      </div>,
+      { router: false },
+    );
+    expect(Object.fromEntries(maximized)).toEqual({
+      "thread-a": false,
+      "thread-b": true,
+      "thread-c": false,
+    });
+  });
+
   it("keeps every cell on one compositing layer alone, in a grid and maximized", async () => {
     const layers = (container: HTMLElement) =>
       [...container.querySelectorAll<HTMLElement>("[data-grid-cell]")].map((cell) => [

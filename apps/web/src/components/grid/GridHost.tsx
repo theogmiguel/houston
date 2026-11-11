@@ -370,8 +370,13 @@ export function GridHost(props: GridHostProps) {
               : (boxes.get(leaf.threadId) ?? lastBoxes.get(leaf.threadId))
           }
         >
+          {/* A hidden cell keeps the props it had in the grid, so a maximize re-renders one chat. */}
           {maximizedLeaf !== null
-            ? renderLeaf(leaf, leaf.threadId === maximizedLeaf.threadId, true)
+            ? renderLeaf(
+                leaf,
+                leaf.threadId === maximizedLeaf.threadId,
+                leaf.threadId === maximizedLeaf.threadId,
+              )
             : renderLeaf(leaf, leaf.threadId === grid.focusedThreadId)}
         </div>
       ))}
