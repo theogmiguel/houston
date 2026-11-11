@@ -13,6 +13,7 @@ export function ChatCanvas({
   preview,
   composerOverlayElement,
   detailsCardTopInset = 0,
+  parentStripShown = false,
   detailsCardAllowOverlap = false,
   children,
   ...props
@@ -24,6 +25,8 @@ export function ChatCanvas({
   preview: ChatCanvasPreview | null;
   composerOverlayElement: HTMLElement | null;
   detailsCardTopInset?: number;
+  /** A subagent's parent strip sits at the top of the chat; the details card stays below it. */
+  parentStripShown?: boolean;
   /** A comfortable grid pane keeps its details card inline inside the cell. */
   detailsCardAllowOverlap?: boolean;
 }) {
@@ -39,6 +42,9 @@ export function ChatCanvas({
     if (!element || !probe) return;
     const findBar =
       detailsCardTopInset > 0 ? element.querySelector<HTMLElement>("[data-thread-find-bar]") : null;
+    const parentStrip = parentStripShown
+      ? element.querySelector<HTMLElement>("[data-subagent-parent-header]")
+      : null;
     const measure = () => {
       const canvasBounds = element.getBoundingClientRect();
       const findBarBounds = findBar?.getBoundingClientRect();
@@ -52,6 +58,9 @@ export function ChatCanvas({
                 bottom: findBarBounds ? findBarBounds.bottom - canvasBounds.top : 0,
               }
             : null,
+        parentStripBottom: parentStrip
+          ? parentStrip.getBoundingClientRect().bottom - canvasBounds.top
+          : 0,
         width: element.clientWidth,
         height: element.clientHeight,
         padding: Number.parseFloat(styles.paddingLeft),
@@ -66,10 +75,11 @@ export function ChatCanvas({
     measure();
     const observed: Element[] = [element, probe];
     if (findBar) observed.push(findBar);
+    if (parentStrip) observed.push(parentStrip);
     if (composerOverlayElement) observed.push(composerOverlayElement);
     if (timelineElement) observed.push(timelineElement);
     return observeResize(observed, measure);
-  }, [store, composerOverlayElement, timelineElement, detailsCardTopInset]);
+  }, [store, composerOverlayElement, timelineElement, detailsCardTopInset, parentStripShown]);
   const detailsCardInlineOpen = useRightPanelStore((state) =>
     threadRef === null
       ? false

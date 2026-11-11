@@ -333,14 +333,27 @@ function SubagentModelLabel(props: {
   environmentId: EnvironmentId;
   providerInstanceId: ProviderInstanceId;
   model: string | null;
+  modelSelection?: OrchestrationV2Subagent["modelSelection"];
+  /** Prefix the model with the name of the provider instance that runs it. */
+  withProvider?: boolean;
 }) {
   const providers = useAtomValue(serverEnvironment.providersValueAtom(props.environmentId));
-  if (props.model === null) return null;
+  const settings = useAtomValue(serverEnvironment.settingsValueAtom(props.environmentId));
+  if (props.model === null && props.modelSelection === undefined) return null;
   const provider = providers?.find(
     (candidate) => candidate.instanceId === props.providerInstanceId,
   );
-  const { modelLabel } = resolveSubagentMetadata({ model: props.model, provider });
-  return <span className="shrink-0 truncate text-xs text-muted-foreground">{modelLabel}</span>;
+  const { modelLabel } = resolveSubagentMetadata({
+    model: props.model,
+    modelSelection: props.modelSelection,
+    provider,
+  });
+  const derived = deriveProviderInstanceEntries(providers ?? []);
+  const providerName = (settings ? brandProviderInstanceEntries(derived, settings) : derived).find(
+    (entry) => entry.instanceId === props.providerInstanceId,
+  )?.displayName;
+  const label = props.withProvider && providerName ? `${providerName} · ${modelLabel}` : modelLabel;
+  return <span className="shrink-0 truncate text-xs text-muted-foreground">{label}</span>;
 }
 
 const NOTIFICATION_OUTCOME_STATUS: Record<
@@ -484,6 +497,15 @@ function SubagentTimelineLink(props: {
       />
       <AgentGroupRowText
         title={props.title}
+        meta={
+          <SubagentModelLabel
+            withProvider
+            environmentId={remote?.environmentId ?? props.parentRef.environmentId}
+            providerInstanceId={props.providerInstanceId}
+            model={agent?.model ?? null}
+            modelSelection={agent?.modelSelection}
+          />
+        }
         detail={
           subagentDetailPreview({
             status: liveStatus,

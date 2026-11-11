@@ -101,14 +101,20 @@ export const AGENT_GROUP_ROW_INTERACTIVE_CLS =
 /** The row's two lines: the agent's title, then its state or the start of its report. */
 export function AgentGroupRowText({
   title,
+  meta,
   detail,
 }: {
   readonly title: ReactNode;
+  /** What runs the agent, shown beside the title. */
+  readonly meta?: ReactNode;
   readonly detail: ReactNode;
 }) {
   return (
     <span className="flex min-w-0 flex-1 flex-col">
-      <span className="truncate text-body font-medium text-(--t1)">{title}</span>
+      <span className="flex min-w-0 items-baseline gap-2">
+        <span className="truncate text-body font-medium text-(--t1)">{title}</span>
+        {meta}
+      </span>
       <span className="truncate text-callout text-(--houston)">{detail}</span>
     </span>
   );

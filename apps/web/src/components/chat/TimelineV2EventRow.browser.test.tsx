@@ -3,6 +3,7 @@ import {
   NodeId,
   ProviderDriverKind,
   ProviderInstanceId,
+  type ServerProvider,
   ThreadId,
 } from "@houston-app/contracts";
 import * as DateTime from "effect/DateTime";
@@ -12,6 +13,8 @@ import { page, userEvent } from "vite-plus/test/browser";
 import "~/index.css";
 import { render } from "../../../test/render";
 
+const mockThread = vi.hoisted(() => ({ current: null as unknown }));
+
 vi.mock("../../state/threads", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../state/threads")>();
   const { Atom } = await import("effect/reactivity");
@@ -19,10 +22,12 @@ vi.mock("../../state/threads", async (importOriginal) => {
     ...actual,
     environmentThreadDetails: {
       ...actual.environmentThreadDetails,
-      threadAtom: () => Atom.make(null),
+      threadAtom: () => Atom.make(mockThread.current),
     },
   };
 });
+
+const mockProviders = vi.hoisted(() => ({ current: [] as ReadonlyArray<ServerProvider> }));
 
 vi.mock("../../state/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../state/server")>();
@@ -31,7 +36,7 @@ vi.mock("../../state/server", async (importOriginal) => {
     ...actual,
     serverEnvironment: {
       ...actual.serverEnvironment,
-      providersValueAtom: () => Atom.make([]),
+      providersValueAtom: () => Atom.make(mockProviders.current),
     },
   };
 });
@@ -136,8 +141,88 @@ describe("subagent group", () => {
   });
 });
 
-/** Captures read a fixed clock so their elapsed times are the same on every run. */
 const CAPTURE_NOW = Date.parse("2026-11-09T12:00:00.000Z");
+
+describe("subagent group row provider and model", () => {
+  it("names the provider and model of each running subagent in its row", async () => {
+    mockProviders.current = [
+      {
+        instanceId: ProviderInstanceId.make("codex"),
+        driver: ProviderDriverKind.make("codex"),
+        displayName: "Codex",
+        enabled: true,
+        installed: true,
+        version: "1.0.0",
+        status: "ready",
+        auth: { status: "authenticated" },
+        checkedAt: "2026-10-30T00:00:00.000Z",
+        models: [],
+        skills: [],
+        slashCommands: [],
+      } as ServerProvider,
+    ];
+    try {
+      const renderer = subagentItem(
+        "subagent-renderer",
+        "Review: web renderer",
+        "running",
+        RENDERER,
+      );
+      const contracts = subagentItem(
+        "subagent-contracts",
+        "Review: contracts",
+        "running",
+        CONTRACTS,
+      );
+      mockThread.current = {
+        projection: {
+          subagents: [renderer, contracts].map((item) => ({
+            id: item.subagentId,
+            status: "running",
+            title: item.title,
+            prompt: item.prompt,
+            result: null,
+            model: "gpt-5.5",
+            startedAt: null,
+            completedAt: null,
+            updatedAt: DateTime.makeUnsafe(CAPTURE_NOW),
+          })),
+        },
+      };
+      const group = {
+        id: "subagent-group-row",
+        kind: "event" as const,
+        continuesWorkLog: false,
+        projectedItem: { item: renderer },
+        subagents: [{ item: renderer }, { item: contracts }],
+      };
+      await using screen = await render(
+        <TimelineRowCtx
+          value={
+            {
+              activeThreadEnvironmentId: ENVIRONMENT,
+              workGroupViewState: {
+                scrollPositions: new Map(),
+                expandedEntries: new Set(["subagent-group:subagent-group-row"]),
+              },
+              runs: [],
+              onOpenThread: vi.fn(),
+              onToggleWorkEntry: vi.fn(),
+            } as never
+          }
+        >
+          <V2EventTimelineRow row={group as never} />
+        </TimelineRowCtx>,
+      );
+      await expect.element(screen.getByText("Codex · GPT-5.5").first()).toBeVisible();
+    } finally {
+      mockProviders.current = [];
+      mockThread.current = null;
+    }
+  });
+});
+
+/** Captures read a fixed clock so their elapsed times are the same on every run. */
 
 type CaptureStatus = "pending" | "running" | "waiting" | "completed" | "failed" | "cancelled";
 

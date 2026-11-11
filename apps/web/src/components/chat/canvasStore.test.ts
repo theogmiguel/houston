@@ -21,6 +21,7 @@ const measurements = (width: number, height = 900): ChatCanvasMeasurements => ({
   composerHeight: 180,
   timelineGutter: 0,
   findBar: null,
+  parentStripBottom: 0,
 });
 const preview: ChatCanvasPreview = {
   key: "browser:one",
@@ -67,6 +68,22 @@ describe("chat canvas model", () => {
     });
     expect(model.layout.overlapsDetailsCard).toBe(false);
     expect(model.detailsCardMode).toBe("inline");
+  });
+
+  it("places the inline card below the subagent's parent strip, or the find bar when that is lower", () => {
+    const resolve = (patch: Partial<ChatCanvasMeasurements>) =>
+      resolveChatCanvasModel({
+        measurements: { ...measurements(1400), ...patch },
+        detailsCardMeasurement: null,
+        threadRef,
+        preview: null,
+        detailsCardInlineOpen: true,
+      }).detailsCardPlacement?.y;
+    expect(resolve({})).toBe(12);
+    expect(resolve({ parentStripBottom: 34 })).toBe(12 + 34);
+    expect(
+      resolve({ parentStripBottom: 34, findBar: { left: 900, right: 1188, bottom: 48 } }),
+    ).toBe(12 + 48);
   });
 
   it("keeps state identity when a measurement repeats", () => {
