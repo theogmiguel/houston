@@ -125,6 +125,7 @@ import { layerJsonWithoutEcho } from "../rpcSerialization.ts";
 import * as HoustonResumeSessions from "../resumeSessions.ts";
 import * as HoustonReviewState from "../reviewState.ts";
 import * as HoustonGrids from "../grids.ts";
+import * as HoustonLayoutWorkspaces from "../layoutWorkspaces.ts";
 import * as HoustonMergeQueueService from "../mergeQueue/Service.ts";
 import { makeMemory } from "../secrets/HoustonSecrets.ts";
 import * as HoustonTaskSourceService from "../taskSources/SourceService.ts";
@@ -175,6 +176,7 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(HoustonTaskSourceService.HoustonTaskSourceService)({}),
   Layer.mock(HoustonTaskSourceV1Import.HoustonTaskSourceV1Import)({}),
   Layer.mock(HoustonGrids.HoustonGridService)({}),
+  Layer.mock(HoustonLayoutWorkspaces.HoustonLayoutWorkspaceService)({}),
   Layer.mock(HoustonMergeQueueService.HoustonMergeQueueService)({}),
   Layer.mock(KnownWorkspaces.KnownWorkspaces)({}),
   Layer.mock(McpAppRequests.McpAppRequests)({}),

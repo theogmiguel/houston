@@ -35,3 +35,14 @@ Items in the task brief that were not done as written, or were done differently.
     path was involved. The repository's other agents should be told in case a git command of theirs died around that time.
 15. **Network reads.** The partial clone fetched blobs from the upstream remote (read only). Nothing from the upstream clone was executed; the scripts that produced the data
     ran from a scratch directory outside the repository and the clone, with `python3 -I`.
+
+## Deviations: server foundation (layout workspaces)
+
+16. **Migration id 19.** Ids 14 and 15 are unused on the track (the track already skips them: 13 then 16); the next id above the highest recorded, 18, is 19.
+17. **Page tab shape.** `decisions.md` names the kind "page"; upstream has three kinds (`settings`, `usage`, `pull-requests`). The record uses `{ kind: "page", page: "settings" | "usage" | "pull-requests", href? }`.
+18. **Size bounds are checked after a level decodes.** Nesting is fixed at column, pane, tab, so depth is bounded by the schema's shape; array lengths are checked once that level's elements decode, bounded by the RPC message size. `grids.ts` bounds a recursive tree level by level; no equivalent is needed here.
+19. **Limits not in `decisions.md`.** Added `tabsPerWorkspace` (200) and `hrefChars` (2048) to the limits object, plus the rule that column, pane and tab ids are unique within a workspace, an active tab belongs to its pane, and a pane and a column hold at least one child. Global uniqueness of those ids across workspaces is not enforced; the migration derives ids from a hash of the grid id so converted workspaces do not collide.
+20. **Position is server-owned.** A put creates at the end and leaves a stored position alone; only `reorder` changes it. Not stated in `decisions.md`.
+21. **Delete moves chat tabs only.** The workspace's chat tabs (thread and draft) go to the end of the first remaining workspace's last pane (a new column when it has none); its surface, launcher and page tabs go with the workspace. When the move would break a bound the delete is refused naming it and nothing changes.
+22. **Migration decodes grids with its own reader**, not the grid contract, so the grid contract can be removed later without breaking migration 19. A stored grid that does not parse is skipped and named in the log. A thread present in two grids keeps its tab in the earlier grid (by creation time, then id); the later one loses it, and the log says so.
+23. **Contract tests were written after the contract file.** The server tests (conversion, migration, service, `/ws`) were written and seen failing first; the contract schema had to exist for them to import, and its own tests followed.

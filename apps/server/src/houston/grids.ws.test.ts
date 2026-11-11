@@ -114,6 +114,7 @@ import * as HoustonTaskRuns from "./tasks/TaskRuns.ts";
 import * as HoustonTaskV1Import from "./tasks/V1Import.ts";
 import * as HoustonTaskSourceService from "./taskSources/SourceService.ts";
 import * as HoustonGrids from "./grids.ts";
+import * as HoustonLayoutWorkspaces from "./layoutWorkspaces.ts";
 import * as HoustonSlackService from "./slack/Service.ts";
 import * as HoustonSlackV1Import from "./slack/V1Import.ts";
 import * as HoustonTaskSourceV1Import from "./taskSources/V1Import.ts";
@@ -305,6 +306,7 @@ const layerGrids = HoustonGrids.layer.pipe(
   Layer.provideMerge(
     Layer.mergeAll(
       layerUnusedRpcServices,
+      Layer.mock(HoustonLayoutWorkspaces.HoustonLayoutWorkspaceService)({}),
       Layer.succeed(ServerEnvironment.ServerEnvironmentIdentity, {
         getEnvironmentId: Effect.succeed(EnvironmentId.make("grid-test")),
       }),

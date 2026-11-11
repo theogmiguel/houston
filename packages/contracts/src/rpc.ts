@@ -298,6 +298,17 @@ import {
   HoustonGridRecord,
   HoustonGridStreamEvent,
 } from "./houston/grids.ts";
+import {
+  HoustonLayoutWorkspaceDeleteInput,
+  HoustonLayoutWorkspaceDeleteResult,
+  HoustonLayoutWorkspaceEmptyInput,
+  HoustonLayoutWorkspaceError,
+  HoustonLayoutWorkspacePutInput,
+  HoustonLayoutWorkspacePutResult,
+  HoustonLayoutWorkspaceRecordList,
+  HoustonLayoutWorkspaceReorderInput,
+  HoustonLayoutWorkspaceStreamEvent,
+} from "./houston/layoutWorkspaces.ts";
 import { KeybindingsConfigError } from "./keybindings.ts";
 import { OrchestrationSearchThreadsError } from "./threadSearch.ts";
 import {
@@ -662,6 +673,11 @@ export const WS_METHODS = {
   houstonGridsPut: "houston.grids.put",
   houstonGridsDelete: "houston.grids.delete",
   houstonGridsSubscribe: "houston.grids.subscribe",
+  houstonLayoutWorkspacesList: "houston.layoutWorkspaces.list",
+  houstonLayoutWorkspacesPut: "houston.layoutWorkspaces.put",
+  houstonLayoutWorkspacesReorder: "houston.layoutWorkspaces.reorder",
+  houstonLayoutWorkspacesDelete: "houston.layoutWorkspaces.delete",
+  houstonLayoutWorkspacesSubscribe: "houston.layoutWorkspaces.subscribe",
   houstonSlackGet: "houston.slack.get",
   houstonSlackConnect: "houston.slack.connect",
   houstonSlackDisconnect: "houston.slack.disconnect",
@@ -2127,6 +2143,45 @@ const WsHoustonGridsSubscribeRpc = Rpc.make(WS_METHODS.houstonGridsSubscribe, {
   stream: true,
 });
 
+const HoustonLayoutWorkspacesRpcError = Schema.Union([
+  HoustonLayoutWorkspaceError,
+  EnvironmentAuthorizationError,
+]);
+
+const WsHoustonLayoutWorkspacesListRpc = Rpc.make(WS_METHODS.houstonLayoutWorkspacesList, {
+  payload: HoustonLayoutWorkspaceEmptyInput,
+  success: HoustonLayoutWorkspaceRecordList,
+  error: HoustonLayoutWorkspacesRpcError,
+});
+
+const WsHoustonLayoutWorkspacesPutRpc = Rpc.make(WS_METHODS.houstonLayoutWorkspacesPut, {
+  payload: HoustonLayoutWorkspacePutInput,
+  success: HoustonLayoutWorkspacePutResult,
+  error: HoustonLayoutWorkspacesRpcError,
+});
+
+const WsHoustonLayoutWorkspacesReorderRpc = Rpc.make(WS_METHODS.houstonLayoutWorkspacesReorder, {
+  payload: HoustonLayoutWorkspaceReorderInput,
+  success: HoustonLayoutWorkspaceRecordList,
+  error: HoustonLayoutWorkspacesRpcError,
+});
+
+const WsHoustonLayoutWorkspacesDeleteRpc = Rpc.make(WS_METHODS.houstonLayoutWorkspacesDelete, {
+  payload: HoustonLayoutWorkspaceDeleteInput,
+  success: HoustonLayoutWorkspaceDeleteResult,
+  error: HoustonLayoutWorkspacesRpcError,
+});
+
+const WsHoustonLayoutWorkspacesSubscribeRpc = Rpc.make(
+  WS_METHODS.houstonLayoutWorkspacesSubscribe,
+  {
+    payload: HoustonLayoutWorkspaceEmptyInput,
+    success: HoustonLayoutWorkspaceStreamEvent,
+    error: HoustonLayoutWorkspacesRpcError,
+    stream: true,
+  },
+);
+
 const HoustonSlackRpcError = Schema.Union([HoustonSlackError, EnvironmentAuthorizationError]);
 
 const WsHoustonSlackGetRpc = Rpc.make(WS_METHODS.houstonSlackGet, {
@@ -2945,6 +3000,11 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonGridsPutRpc,
   WsHoustonGridsDeleteRpc,
   WsHoustonGridsSubscribeRpc,
+  WsHoustonLayoutWorkspacesListRpc,
+  WsHoustonLayoutWorkspacesPutRpc,
+  WsHoustonLayoutWorkspacesReorderRpc,
+  WsHoustonLayoutWorkspacesDeleteRpc,
+  WsHoustonLayoutWorkspacesSubscribeRpc,
   WsHoustonSlackGetRpc,
   WsHoustonSlackConnectRpc,
   WsHoustonSlackDisconnectRpc,

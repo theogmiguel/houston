@@ -19,6 +19,10 @@
       "types": "./src/houston/grids.ts",
       "import": "./src/houston/grids.ts"
     },
+    "./houston/layoutWorkspaces": {
+      "types": "./src/houston/layoutWorkspaces.ts",
+      "import": "./src/houston/layoutWorkspaces.ts"
+    },
     "./houston/providerReadiness": {
       "types": "./src/houston/providerReadiness.ts",
       "import": "./src/houston/providerReadiness.ts"
