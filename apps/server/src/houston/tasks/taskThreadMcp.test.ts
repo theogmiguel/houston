@@ -37,6 +37,7 @@ import { codexThreadRuntimeParams } from "../../orchestration-v2/Adapters/CodexA
 import * as ProjectService from "../../project/ProjectService.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import { ClaudeSettings } from "@houston-app/contracts";
+import { layerNoGrids } from "../gridToolkit/gridToolkit.testkit.ts";
 
 const environmentId = EnvironmentId.make("environment-task-threads");
 const planner = ThreadId.make("task-plan-1");
@@ -111,6 +112,7 @@ const layerMixedTools = (calls: Array<string>) => {
     Layer.provide(
       Layer.mergeAll(
         McpToolAccessTestkit.liveThreadsLayer,
+        layerNoGrids,
         Layer.mock(OrchestratorMcpService.OrchestratorMcpService)({}),
         Layer.mock(ProjectService.ProjectService)({}),
         NodeServices.layer,

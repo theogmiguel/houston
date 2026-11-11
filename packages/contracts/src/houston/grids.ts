@@ -182,6 +182,26 @@ export type HoustonGridPlaceThreadInput = typeof HoustonGridPlaceThreadInput.Typ
 export const HoustonGridRemoveThreadInput = Schema.Struct({ gridId: Id, threadId: Id });
 export type HoustonGridRemoveThreadInput = typeof HoustonGridRemoveThreadInput.Type;
 
+/** Where a thread an agent launches goes: an existing grid, or a new one named here. */
+export const HoustonGridLaunchTarget = Schema.Union([
+  Schema.Struct({ gridId: Id }),
+  Schema.Struct({
+    newGridName: TrimmedNonEmptyString.check(Schema.isMaxLength(HOUSTON_GRID_LIMITS.nameChars)),
+  }),
+]);
+export type HoustonGridLaunchTarget = typeof HoustonGridLaunchTarget.Type;
+
+/** What became of a launched thread's grid target; a refusal leaves the thread in place. */
+export const HoustonGridPlacement = Schema.Union([
+  Schema.Struct({ placed: Schema.Literal(true), gridId: Id }),
+  Schema.Struct({
+    placed: Schema.Literal(false),
+    gridId: Schema.optional(Id),
+    error: Schema.String,
+  }),
+]);
+export type HoustonGridPlacement = typeof HoustonGridPlacement.Type;
+
 /** The first event is the snapshot; every later one follows a committed change. */
 export const HoustonGridStreamEvent = Schema.Union([
   Schema.Struct({ snapshot: Schema.Struct({ grids: Schema.Array(HoustonGridRecord) }) }),

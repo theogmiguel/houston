@@ -277,6 +277,13 @@ the thread header however far the timeline is scrolled. A child's question or ap
 in the parent's pending approvals and needs your answer there. Agents reach threads,
 tasks and pulls through the server's MCP toolkits, not through the terminal.
 
+Agents also manage grids through the `houston_grid_*` tools, with the app closed: list, create,
+rename, hide, pin and delete a grid, and place a thread in it or take it out. A grid holds at most
+six threads and only threads of its own project; a refusal names the limit. `houston_thread_launch`
+and `create_threads` take a `grid` to put the new threads in an existing grid or a new one, and
+`houston_thread_read` and `houston_thread_list` report each thread's `gridId`. Placing a thread in
+a grid moves it out of its other grid.
+
 ## Closing
 
 Closing the window hides Houston in the tray when **Settings ▸ General ▸ Background ▸ Keep
