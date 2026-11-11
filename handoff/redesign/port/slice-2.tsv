@@ -1,0 +1,180 @@
+status	class	upstream_path	houston_path	houston_diff_lines_vs_fork	stack_diff_lines	note
+M	houston-missing	apps/server/src/guest/GuestShareService.ts			10	no-basename-match;deleted-in:4487f591eb chore(v2-server): remove T3 Connect cloud link, managed tunnels and agent-awareness relay
+M	manual	apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts	apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts	2323	199	merge3=clean;drift
+M	manual	apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts	apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts	702	56	merge3=clean;drift
+M	manual	apps/server/src/orchestration-v2/ContextHandoffBudget.test.ts	apps/server/src/orchestration-v2/ContextHandoffBudget.test.ts	4	2	merge3=clean;drift
+M	manual	apps/server/src/orchestration-v2/EventSink.ts	apps/server/src/orchestration-v2/EventSink.ts	45	2	merge3=conflicts:1;drift
+M	manual	apps/server/src/orchestration-v2/ProjectionStore.ts	apps/server/src/orchestration-v2/ProjectionStore.ts	1206	2	merge3=clean;drift
+M	manual	apps/server/src/orchestration-v2/ProviderEventIngestor.ts	apps/server/src/orchestration-v2/ProviderEventIngestor.ts	57	2	merge3=conflicts:1;drift
+M	manual	apps/server/src/orchestration-v2/ThreadFind.test.ts	apps/server/src/orchestration-v2/ThreadFind.test.ts	87	2	merge3=clean;drift
+M	manual	apps/server/src/orchestration-v2/ThreadManagementService.ts	apps/server/src/orchestration-v2/ThreadManagementService.ts	329	2	merge3=clean;drift
+M	manual	apps/server/src/orchestration-v2/ThreadStream.test.ts	apps/server/src/orchestration-v2/ThreadStream.test.ts	27	2	merge3=clean;drift
+M	manual	apps/server/src/orchestration-v2/ThreadStream.ts	apps/server/src/orchestration-v2/ThreadStream.ts	16	8	merge3=clean;drift
+M	mechanical	apps/server/src/orchestration-v2/ThreadTransportPerformance.test.ts	apps/server/src/orchestration-v2/ThreadTransportPerformance.test.ts	0	2	
+M	manual	apps/server/src/orchestration-v2/WireProjection.test.ts	apps/server/src/orchestration-v2/WireProjection.test.ts	72	85	merge3=conflicts:1;drift
+D	manual	apps/server/src/orchestration-v2/WireProjection.ts	apps/server/src/orchestration-v2/WireProjection.ts	89	415	merge3=n/a:deleted-upstream;drift
+M	mechanical+drift	apps/server/src/orchestration-v2/assistantStreaming.test.ts	apps/server/src/orchestration-v2/assistantStreaming.test.ts	0	3	
+M	manual	apps/server/src/orchestration-v2/assistantStreaming.ts	apps/server/src/orchestration-v2/assistantStreaming.ts	4	68	merge3=conflicts:1;drift
+M	manual	apps/server/src/orchestration-v2/http.ts	apps/server/src/orchestration-v2/http.ts	39	2	merge3=clean;drift
+M	manual	apps/server/src/orchestration-v2/threadHistoryPaging.test.ts	apps/server/src/orchestration-v2/threadHistoryPaging.test.ts	137	2	merge3=clean;drift
+M	manual	apps/server/src/terminal/Manager.test.ts	apps/server/src/terminal/Manager.test.ts	692	33	merge3=clean;drift
+M	manual	apps/server/src/terminal/Manager.ts	apps/server/src/terminal/Manager.ts	628	84	merge3=clean;drift
+M	manual	apps/server/src/ws.ts	apps/server/src/ws.ts	928	2	touched-in-slice-1;merge3=conflicts:1;drift
+M	manual	apps/web/src/components/AppSidebarLayout.tsx	apps/web/src/components/AppSidebarLayout.tsx	188	28	touched-in-slice-1;merge3=conflicts:3;drift
+M	mechanical+drift	apps/web/src/components/BranchPicker.tsx	apps/web/src/components/BranchPicker.tsx	0	63	touched-in-slice-1
+M	manual	apps/web/src/components/BranchToolbar.logic.ts	apps/web/src/components/BranchToolbar.logic.ts	28	19	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/BranchToolbar.tsx	apps/web/src/components/BranchToolbar.tsx	535	422	touched-in-slice-1;merge3=conflicts:14;drift
+M	manual	apps/web/src/components/BranchToolbarBranchSelector.tsx	apps/web/src/components/BranchToolbarBranchSelector.tsx	94	139	touched-in-slice-1;merge3=conflicts:6;drift
+D	manual	apps/web/src/components/BranchToolbarEnvModeSelector.tsx	apps/web/src/components/BranchToolbarEnvModeSelector.tsx	4	183	touched-in-slice-1;merge3=n/a:deleted-upstream;drift
+M	manual	apps/web/src/components/BranchToolbarEnvironmentSelector.tsx	apps/web/src/components/BranchToolbarEnvironmentSelector.tsx	2	47	touched-in-slice-1;merge3=conflicts:1;drift
+M	manual	apps/web/src/components/ChatView.tsx	apps/web/src/components/ChatView.tsx	1814	772	touched-in-slice-1;merge3=conflicts:23;drift
+M	manual	apps/web/src/components/ComposerContextLabel.tsx	apps/web/src/components/ComposerContextLabel.tsx	2	11	merge3=clean;drift
+D	manual	apps/web/src/components/ComposerContextPermissions.tsx	apps/web/src/components/ComposerContextPermissions.tsx	63	72	touched-in-slice-1;merge3=n/a:deleted-upstream;drift
+M	manual	apps/web/src/components/ComposerPromptEditorTiptap.tsx	apps/web/src/components/ComposerPromptEditorTiptap.tsx	405	159	merge3=conflicts:2;drift
+M	mechanical	apps/web/src/components/ContextChip.browser.test.tsx	apps/web/src/components/ContextChip.browser.test.tsx	0	23	touched-in-slice-1
+M	manual	apps/web/src/components/ContextChip.tsx	apps/web/src/components/ContextChip.tsx	13	67	touched-in-slice-1;merge3=conflicts:1;drift
+M	manual	apps/web/src/components/Icons.tsx	apps/web/src/components/Icons.tsx	9	10	touched-in-slice-1;merge3=clean;drift
+M	manual	apps/web/src/components/PersistentThreadTerminals.tsx	apps/web/src/components/PersistentThreadTerminals.tsx	31	9	merge3=clean;drift
+M	houston-missing	apps/web/src/components/SidebarStageBackdrop.tsx			4	touched-in-slice-1;no-basename-match
+M	manual	apps/web/src/components/ThreadTerminalDrawer.tsx	apps/web/src/components/ThreadTerminalDrawer.tsx	264	524	touched-in-slice-1;merge3=conflicts:9;drift
+M	manual	apps/web/src/components/WorktreeBaseBranchPicker.tsx	apps/web/src/components/WorktreeBaseBranchPicker.tsx	5	3	touched-in-slice-1;merge3=clean;drift
+M	manual	apps/web/src/components/chat/AssistantCitationChip.browser.test.tsx	apps/web/src/components/chat/AssistantCitationChip.browser.test.tsx	53	8	merge3=clean;drift
+M	manual	apps/web/src/components/chat/AssistantCitationChip.tsx	apps/web/src/components/chat/AssistantCitationChip.tsx	131	46	touched-in-slice-1;merge3=conflicts:6;drift
+M	manual	apps/web/src/components/chat/AssistantCitationCommentEditor.tsx	apps/web/src/components/chat/AssistantCitationCommentEditor.tsx	83	91	touched-in-slice-1;merge3=conflicts:4;drift
+M	manual	apps/web/src/components/chat/AssistantSelectionToolbar.tsx	apps/web/src/components/chat/AssistantSelectionToolbar.tsx	25	173	touched-in-slice-1;merge3=conflicts:4;drift
+M	manual	apps/web/src/components/chat/ChatBannerLane.tsx	apps/web/src/components/chat/ChatBannerLane.tsx	36	141	merge3=conflicts:2;drift
+M	manual	apps/web/src/components/chat/ChatComposer.tsx	apps/web/src/components/chat/ChatComposer.tsx	1256	666	touched-in-slice-1;merge3=conflicts:23;drift
+M	manual	apps/web/src/components/chat/ChildThreadApprovals.tsx	apps/web/src/components/chat/ChildThreadApprovals.tsx		48	absent-at-fork:added-upstream-after-fork;houston-has-own-file;drift
+A	new	apps/web/src/components/chat/ComposerApprovalPanel.tsx			147	
+M	manual	apps/web/src/components/chat/ComposerAttachmentStrip.tsx	apps/web/src/components/chat/ComposerAttachmentStrip.tsx	547	95	touched-in-slice-1;merge3=conflicts:11;drift
+M	manual	apps/web/src/components/chat/ComposerBanner.tsx	apps/web/src/components/chat/ComposerBanner.tsx	72	112	touched-in-slice-1;merge3=conflicts:5;drift
+M	manual	apps/web/src/components/chat/ComposerBannerStack.browser.test.tsx	apps/web/src/components/chat/ComposerBannerStack.browser.test.tsx	120	37	merge3=clean;drift
+M	manual	apps/web/src/components/chat/ComposerBannerStack.tsx	apps/web/src/components/chat/ComposerBannerStack.tsx	109	76	touched-in-slice-1;merge3=conflicts:5;drift
+M	manual	apps/web/src/components/chat/ComposerCommandMenu.tsx	apps/web/src/components/chat/ComposerCommandMenu.tsx	320	454	touched-in-slice-1;merge3=conflicts:4;drift
+M	manual	apps/web/src/components/chat/ComposerCommandMenuLayer.tsx	apps/web/src/components/chat/ComposerCommandMenuLayer.tsx	2	34	merge3=clean
+M	manual	apps/web/src/components/chat/ComposerControl.tsx	apps/web/src/components/chat/ComposerControl.tsx	6	6	touched-in-slice-1;merge3=conflicts:2;drift
+M	manual	apps/web/src/components/chat/ComposerControlsBar.tsx	apps/web/src/components/chat/ComposerControlsBar.tsx	189	74	touched-in-slice-1;merge3=conflicts:7;drift
+M	mechanical	apps/web/src/components/chat/ComposerFeedback.tsx	apps/web/src/components/chat/ComposerFeedback.tsx	0	4	
+M	manual	apps/web/src/components/chat/ComposerFooterControls.tsx	apps/web/src/components/chat/ComposerFooterControls.tsx	267	12	touched-in-slice-1;merge3=conflicts:4;drift
+M	houston-missing	apps/web/src/components/chat/ComposerModelEffort.tsx			220	touched-in-slice-1;absent-at-fork:added-upstream-after-fork
+M	manual	apps/web/src/components/chat/ComposerPendingApprovalActions.tsx	apps/web/src/components/chat/ComposerPendingApprovalActions.tsx	21	267	touched-in-slice-1;merge3=conflicts:2
+M	manual	apps/web/src/components/chat/ComposerPendingUserInputPanel.direction.browser.test.tsx	apps/web/src/components/chat/ComposerPendingUserInputPanel.direction.browser.test.tsx		6	absent-at-fork:added-upstream-after-fork;houston-has-own-file;drift
+M	manual	apps/web/src/components/chat/ComposerPendingUserInputPanel.navigation.browser.test.tsx	apps/web/src/components/chat/ComposerPendingUserInputPanel.navigation.browser.test.tsx	97	88	merge3=clean;drift
+M	manual	apps/web/src/components/chat/ComposerPendingUserInputPanel.tsx	apps/web/src/components/chat/ComposerPendingUserInputPanel.tsx	61	410	touched-in-slice-1;merge3=conflicts:4;drift
+M	manual	apps/web/src/components/chat/ComposerPermissionsSection.browser.test.tsx	apps/web/src/components/chat/ComposerPermissionsSection.browser.test.tsx	76	15	merge3=conflicts:2;drift
+M	manual	apps/web/src/components/chat/ComposerPrimaryActions.tsx	apps/web/src/components/chat/ComposerPrimaryActions.tsx	315	137	touched-in-slice-1;merge3=conflicts:8;drift
+M	mechanical	apps/web/src/components/chat/ComposerPromptLengthValidation.tsx	apps/web/src/components/chat/ComposerPromptLengthValidation.tsx	0	51	
+A	new	apps/web/src/components/chat/ComposerRequestCard.tsx			154	
+M	manual	apps/web/src/components/chat/ComposerStashBadge.tsx	apps/web/src/components/chat/ComposerStashBadge.tsx	62	70	merge3=conflicts:2
+M	manual	apps/web/src/components/chat/ComposerStashMenu.browser.test.tsx	apps/web/src/components/chat/ComposerStashMenu.browser.test.tsx	98	33	merge3=conflicts:1
+M	manual	apps/web/src/components/chat/ComposerStashMenu.tsx	apps/web/src/components/chat/ComposerStashMenu.tsx	224	229	touched-in-slice-1;merge3=conflicts:2
+M	manual	apps/web/src/components/chat/ComposerSurface.tsx	apps/web/src/components/chat/ComposerSurface.tsx	47	34	touched-in-slice-1;merge3=conflicts:5;drift
+A	new	apps/web/src/components/chat/ComposerTaskStatus.tsx			83	
+M	manual	apps/web/src/components/chat/ComposerUsageLimits.tsx	apps/web/src/components/chat/ComposerUsageLimits.tsx	42	467	touched-in-slice-1;merge3=conflicts:2;drift
+M	manual	apps/web/src/components/chat/DiffStatLabel.tsx	apps/web/src/components/chat/DiffStatLabel.tsx	27	59	touched-in-slice-1;merge3=clean;drift
+M	manual	apps/web/src/components/chat/ExpandedImageDialog.tsx	apps/web/src/components/chat/ExpandedImageDialog.tsx	14	450	touched-in-slice-1;merge3=conflicts:3;drift
+M	mechanical	apps/web/src/components/chat/ExpandedImagePreview.tsx	apps/web/src/components/chat/ExpandedImagePreview.tsx	0	4	
+M	manual	apps/web/src/components/chat/MarkdownCodeBlock.tsx	apps/web/src/components/chat/MarkdownCodeBlock.tsx	11	24	touched-in-slice-1;merge3=conflicts:1;drift
+M	manual	apps/web/src/components/chat/MarkdownTable.tsx	apps/web/src/components/chat/MarkdownTable.tsx	65	2	touched-in-slice-1;merge3=conflicts:1;drift
+M	manual	apps/web/src/components/chat/MessagesTimeline.browser.test.tsx	apps/web/src/components/chat/MessagesTimeline.browser.test.tsx	1769	678	touched-in-slice-1;merge3=conflicts:8;drift
+M	manual	apps/web/src/components/chat/MessagesTimeline.logic.test.ts	apps/web/src/components/chat/MessagesTimeline.logic.test.ts	848	1551	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/chat/MessagesTimeline.logic.ts	apps/web/src/components/chat/MessagesTimeline.logic.ts	745	1203	merge3=conflicts:19;drift
+M	manual	apps/web/src/components/chat/MessagesTimeline.tsx	apps/web/src/components/chat/MessagesTimeline.tsx	239	621	touched-in-slice-1;merge3=conflicts:12;drift
+M	manual	apps/web/src/components/chat/ModelPickerContent.tsx	apps/web/src/components/chat/ModelPickerContent.tsx	538	3	touched-in-slice-1;merge3=conflicts:3;drift
+M	manual	apps/web/src/components/chat/OpenInPicker.tsx	apps/web/src/components/chat/OpenInPicker.tsx	13	29	touched-in-slice-1;merge3=conflicts:2
+M	manual	apps/web/src/components/chat/ProviderModelPicker.tsx	apps/web/src/components/chat/ProviderModelPicker.tsx	400	5	touched-in-slice-1;merge3=clean;drift
+M	manual	apps/web/src/components/chat/ProviderStatusBanner.tsx	apps/web/src/components/chat/ProviderStatusBanner.tsx	52	190	touched-in-slice-1;merge3=conflicts:3;drift
+M	manual	apps/web/src/components/chat/QueuedRunsControl.browser.test.tsx	apps/web/src/components/chat/QueuedRunsControl.browser.test.tsx	2	42	merge3=clean
+M	manual	apps/web/src/components/chat/QueuedRunsControl.tsx	apps/web/src/components/chat/QueuedRunsControl.tsx	78	189	touched-in-slice-1;merge3=conflicts:3;drift
+M	manual	apps/web/src/components/chat/SkillInlineText.tsx	apps/web/src/components/chat/SkillInlineText.tsx	76	1	touched-in-slice-1;merge3=clean;drift
+M	manual	apps/web/src/components/chat/ThreadActivityBanners.tsx	apps/web/src/components/chat/ThreadActivityBanners.tsx	130	37	touched-in-slice-1;merge3=clean;drift
+M	manual	apps/web/src/components/chat/ThreadErrorBanner.tsx	apps/web/src/components/chat/ThreadErrorBanner.tsx	94	107	touched-in-slice-1;merge3=conflicts:3;drift
+M	manual	apps/web/src/components/chat/TimelineAssistantRows.tsx	apps/web/src/components/chat/TimelineAssistantRows.tsx	301	14	touched-in-slice-1;merge3=conflicts:3;drift
+M	manual	apps/web/src/components/chat/TimelineOverlays.tsx	apps/web/src/components/chat/TimelineOverlays.tsx	14	19	touched-in-slice-1;merge3=conflicts:1
+M	manual	apps/web/src/components/chat/TimelinePendingApprovalRow.tsx	apps/web/src/components/chat/TimelinePendingApprovalRow.tsx	154	142	touched-in-slice-1;merge3=conflicts:1
+M	manual	apps/web/src/components/chat/TimelineRowParts.tsx	apps/web/src/components/chat/TimelineRowParts.tsx	126	171	touched-in-slice-1;merge3=conflicts:4
+M	manual	apps/web/src/components/chat/TimelineUserMessageRow.tsx	apps/web/src/components/chat/TimelineUserMessageRow.tsx	1049	305	touched-in-slice-1;merge3=conflicts:18;drift
+M	manual	apps/web/src/components/chat/TimelineV2EventRow.tsx	apps/web/src/components/chat/TimelineV2EventRow.tsx	133	19	touched-in-slice-1;merge3=conflicts:2
+M	manual	apps/web/src/components/chat/TimelineWorkEntryRow.logic.ts	apps/web/src/components/chat/TimelineWorkEntryRow.logic.ts	114	2	touched-in-slice-1;merge3=clean;drift
+M	manual	apps/web/src/components/chat/TimelineWorkEntryRow.tsx	apps/web/src/components/chat/TimelineWorkEntryRow.tsx	264	197	touched-in-slice-1;merge3=conflicts:13;drift
+M	manual	apps/web/src/components/chat/TimelineWorkGroupRows.logic.ts	apps/web/src/components/chat/TimelineWorkGroupRows.logic.ts	9	14	merge3=clean
+M	manual	apps/web/src/components/chat/TimelineWorkGroupRows.tsx	apps/web/src/components/chat/TimelineWorkGroupRows.tsx	162	859	touched-in-slice-1;merge3=conflicts:7;drift
+M	manual	apps/web/src/components/chat/TraitsPicker.tsx	apps/web/src/components/chat/TraitsPicker.tsx	624	71	touched-in-slice-1;merge3=conflicts:5;drift
+M	manual	apps/web/src/components/chat/UsageLimitRecoveryBanner.tsx	apps/web/src/components/chat/UsageLimitRecoveryBanner.tsx	108	86	merge3=conflicts:1;drift
+M	mechanical+drift	apps/web/src/components/chat/V2ItemInspector.tsx	apps/web/src/components/chat/V2ItemInspector.tsx	0	16	touched-in-slice-1
+M	manual	apps/web/src/components/chat/V2LifecycleRow.tsx	apps/web/src/components/chat/V2LifecycleRow.tsx	296	66	touched-in-slice-1;merge3=conflicts:8;drift
+M	manual	apps/web/src/components/chat/WorkLog.tsx	apps/web/src/components/chat/WorkLog.tsx	93	74	touched-in-slice-1;merge3=conflicts:5
+M	manual	apps/web/src/components/chat/ZoomableImage.tsx	apps/web/src/components/chat/ZoomableImage.tsx	3	87	touched-in-slice-1;merge3=clean;drift
+M	manual	apps/web/src/components/chat/composerEventScope.ts	apps/web/src/components/chat/composerEventScope.ts	29	6	merge3=clean;drift
+M	manual	apps/web/src/components/chat/composerSubmission.ts	apps/web/src/components/chat/composerSubmission.ts	26	9	merge3=clean;drift
+A	new	apps/web/src/components/chat/observeComposerPromptLayout.browser.test.ts			45	
+A	new	apps/web/src/components/chat/observeComposerPromptLayout.ts			99	
+A	new	apps/web/src/components/chat/restingComposerControlsMeasurement.browser.test.tsx			57	
+M	manual	apps/web/src/components/chat/restingComposerControlsMeasurement.ts	apps/web/src/components/chat/restingComposerControlsMeasurement.ts	19	94	touched-in-slice-1;merge3=conflicts:5;drift
+M	manual	apps/web/src/components/chat/timelineRowContext.ts	apps/web/src/components/chat/timelineRowContext.ts	35	34	merge3=conflicts:1;drift
+A	new	apps/web/src/components/chat/timelineSlashCommands.ts			141	
+M	mechanical	apps/web/src/components/chat/useAutoBalanceUpdateBanner.tsx	apps/web/src/components/chat/useAutoBalanceUpdateBanner.tsx	0	128	
+A	new	apps/web/src/components/chat/useComposerAttachmentIntake.browser.test.tsx			80	
+M	manual	apps/web/src/components/chat/useComposerMenuItems.ts	apps/web/src/components/chat/useComposerMenuItems.ts	73	76	touched-in-slice-1;merge3=clean;drift
+M	manual	apps/web/src/components/chat/useComposerMultilinePrompt.ts	apps/web/src/components/chat/useComposerMultilinePrompt.ts	12	34	merge3=clean;drift
+M	manual	apps/web/src/components/chat/useComposerSend.ts	apps/web/src/components/chat/useComposerSend.ts	185	105	merge3=clean;drift
+M	manual	apps/web/src/components/chat/useComposerStash.ts	apps/web/src/components/chat/useComposerStash.ts	35	1	merge3=clean;drift
+M	manual	apps/web/src/components/chat/useRestingComposerControlsLayout.ts	apps/web/src/components/chat/useRestingComposerControlsLayout.ts	7	16	merge3=conflicts:3
+M	manual	apps/web/src/components/chat/useSystemComposerBanners.tsx	apps/web/src/components/chat/useSystemComposerBanners.tsx	44	65	merge3=conflicts:2;drift
+M	manual	apps/web/src/components/chat/useThreadFindPositionReader.ts	apps/web/src/components/chat/useThreadFindPositionReader.ts	7	11	merge3=clean;drift
+M	manual	apps/web/src/components/chat/useThreadLifecycle.tsx	apps/web/src/components/chat/useThreadLifecycle.tsx	183	5	merge3=clean;drift
+M	mechanical	apps/web/src/components/chat/useTimelineRows.ts	apps/web/src/components/chat/useTimelineRows.ts	0	78	
+M	manual	apps/web/src/components/composerFooterLayout.test.ts	apps/web/src/components/composerFooterLayout.test.ts	71	91	merge3=conflicts:2
+M	manual	apps/web/src/components/composerFooterLayout.ts	apps/web/src/components/composerFooterLayout.ts	42	75	merge3=conflicts:3
+M	manual	apps/web/src/components/contextChipParts.tsx	apps/web/src/components/contextChipParts.tsx	22	11	touched-in-slice-1;merge3=clean;drift
+M	follows-prior-slice	apps/web/src/components/design-system/DesignSystemPage.tsx			84	touched-in-slice-1;added-in-slice-1
+A	new	apps/web/src/components/design-system/DesignSystemSidebarNav.tsx			88	
+A	new	apps/web/src/components/design-system/scenes/PlaybackComposer.tsx			142	
+A	new	apps/web/src/components/design-system/scenes/PlaybackTimeline.tsx			90	
+A	new	apps/web/src/components/design-system/scenes/ScenesPage.tsx			322	
+A	new	apps/web/src/components/design-system/scenes/playback.test.ts			171	
+A	new	apps/web/src/components/design-system/scenes/playback.ts			576	
+A	new	apps/web/src/components/design-system/scenes/turnScripts.ts			538	
+M	houston-missing	apps/web/src/components/guest/GuestPage.browser.test.tsx			37	no-basename-match;deleted-in:57047f79ef chore(v2): remove T3 Connect RPCs, cloud routes and guest links
+M	mechanical+drift	apps/web/src/components/media/MediaActions.tsx	apps/web/src/components/media/MediaActions.tsx	0	30	
+M	manual	apps/web/src/components/search/ProjectContentSearchDialog.tsx	apps/web/src/components/search/ProjectContentSearchDialog.tsx	13	129	touched-in-slice-1;merge3=conflicts:1;drift
+M	manual	apps/web/src/components/settings/KeybindingsSettings.logic.ts	apps/web/src/components/settings/KeybindingsSettings.logic.ts	46	1	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/sidebar/SidebarThreadRow.tsx	apps/web/src/components/sidebar/SidebarThreadRow.tsx	321	7	touched-in-slice-1;merge3=conflicts:1;drift
+M	manual	apps/web/src/components/ui/button.tsx	apps/web/src/components/ui/button.tsx	80	1	touched-in-slice-1;merge3=conflicts:1;drift
+M	manual	apps/web/src/components/ui/command.tsx	apps/web/src/components/ui/command.tsx	37	24	touched-in-slice-1;merge3=conflicts:2;drift
+M	mechanical	apps/web/src/composerPlaceholder.ts	apps/web/src/composerPlaceholder.ts	0	3	
+M	manual	apps/web/src/index.css	apps/web/src/index.css	1553	213	touched-in-slice-1;merge3=conflicts:10;drift
+M	manual	apps/web/src/routeTree.gen.ts	apps/web/src/routeTree.gen.ts	168	62	touched-in-slice-1;merge3=conflicts:6;drift
+M	manual	apps/web/src/routes/__root.tsx	apps/web/src/routes/__root.tsx	111	11	touched-in-slice-1;merge3=conflicts:1;drift
+A	new	apps/web/src/routes/design-system.index.tsx			8	
+A	new	apps/web/src/routes/design-system.scenes.tsx			15	
+M	follows-prior-slice	apps/web/src/routes/design-system.tsx			55	touched-in-slice-1;added-in-slice-1
+M	manual	apps/web/src/session-logic.test.ts	apps/web/src/session-logic.test.ts	92	2	touched-in-slice-1;merge3=clean;drift
+M	manual	apps/web/src/session-logic.ts	apps/web/src/session-logic.ts	88	1	touched-in-slice-1;merge3=clean;drift
+M	manual	apps/web/test/appScenarios.renders.tsx	apps/web/test/appScenarios.renders.tsx	82	7	merge3=clean;drift
+M	houston-missing	docs/user/composer.md			25	no-basename-match
+M	manual	docs/user/keybindings.md	docs/user/keybindings.md	277	3	touched-in-slice-1;merge3=conflicts:1;drift
+M	houston-missing	docs/user/permission-modes.md			8	no-basename-match
+M	manual	docs/user/usage.md	docs/user/usage.md	184	5	merge3=conflicts:1;drift
+M	manual	packages/client-runtime/src/composerThreadItems.ts	packages/client-runtime/src/composerThreadItems.ts	21	64	merge3=clean;drift
+M	manual	packages/client-runtime/src/connection/presentation.test.ts	packages/client-runtime/src/connection/presentation.test.ts	26	1	merge3=clean;drift
+M	manual	packages/client-runtime/src/connection/presentation.ts	packages/client-runtime/src/connection/presentation.ts	8	3	merge3=clean;drift
+M	manual	packages/client-runtime/src/connection/supervisor.test.ts	packages/client-runtime/src/connection/supervisor.test.ts	761	1	merge3=clean;drift
+M	manual	packages/client-runtime/src/operations/commands.ts	packages/client-runtime/src/operations/commands.ts	178	17	merge3=clean;drift
+M	manual	packages/client-runtime/src/state/pendingUserInput.ts	packages/client-runtime/src/state/pendingUserInput.ts		7	absent-at-fork:added-upstream-after-fork;houston-has-own-file;drift
+M	manual	packages/client-runtime/src/state/terminalSession.ts	packages/client-runtime/src/state/terminalSession.ts	17	11	merge3=clean;drift
+M	manual	packages/client-runtime/src/state/threadCommands.ts	packages/client-runtime/src/state/threadCommands.ts	65	7	merge3=clean;drift
+M	manual	packages/client-runtime/src/state/threadRequests.test.ts	packages/client-runtime/src/state/threadRequests.test.ts	273	107	merge3=clean;drift
+M	manual	packages/client-runtime/src/state/threadRequests.ts	packages/client-runtime/src/state/threadRequests.ts	139	76	merge3=clean;drift
+M	manual	packages/contracts/src/keybindings.ts	packages/contracts/src/keybindings.ts	8	1	merge3=clean;drift
+M	manual	packages/contracts/src/orchestrationV2.ts	packages/contracts/src/orchestrationV2.ts	249	4	merge3=clean;drift
+M	manual	packages/contracts/src/terminal.ts	packages/contracts/src/terminal.ts	2	7	merge3=clean;drift
+M	manual	packages/shared/package.json	packages/shared/package.json	97	8	merge3=clean;drift
+A	new	packages/shared/src/assistantStreaming.ts			67	same-basename-in-houston:apps/server/src/orchestration-v2/assistantStreaming.ts
+M	manual	packages/shared/src/keybindings.ts	packages/shared/src/keybindings.ts	149	8	merge3=clean;drift
+M	manual	packages/shared/src/toolOutput.test.ts	packages/shared/src/toolOutput.test.ts	7	49	merge3=clean;drift
+M	manual	packages/shared/src/toolOutput.ts	packages/shared/src/toolOutput.ts	47	26	merge3=clean;drift
+M	manual	packages/shared/src/usageLimits.test.ts	packages/shared/src/usageLimits.test.ts	160	57	touched-in-slice-1;merge3=conflicts:1;drift
+M	manual	packages/shared/src/usageLimits.ts	packages/shared/src/usageLimits.ts	123	63	touched-in-slice-1;merge3=clean;drift
+A	new	packages/shared/src/wireProjection.ts			569	
+M	manual	vite.config.ts	vite.config.ts	218	11	touched-in-slice-1;merge3=conflicts:1;drift

@@ -1,0 +1,578 @@
+status	class	upstream_path	houston_path	houston_diff_lines_vs_fork	stack_diff_lines	note
+M	manual	AGENTS.md	AGENTS.md	452	1	merge3=conflicts:1;drift
+M	manual	apps/desktop/resources/dmg/dmg-background-latest.svg	apps/desktop/resources/dmg/dmg-background-latest.svg	37	30	merge3=conflicts:1
+M	manual	apps/desktop/resources/dmg/dmg-background-nightly.svg	apps/desktop/resources/dmg/dmg-background-nightly.svg	40	40	merge3=conflicts:1
+M	houston-missing	apps/desktop/src/app/DesktopLifecycle.test.ts			2	no-basename-match
+M	manual	apps/desktop/src/electron/ElectronTheme.ts	apps/desktop/src/electron/ElectronTheme.ts	83	21	merge3=clean;drift
+M	manual	apps/desktop/src/ipc/DesktopIpcHandlers.ts	apps/desktop/src/ipc/DesktopIpcHandlers.ts	45	4	merge3=conflicts:2;drift
+M	manual	apps/desktop/src/ipc/channels.ts	apps/desktop/src/ipc/channels.ts	30	2	merge3=conflicts:1;drift
+M	manual	apps/desktop/src/ipc/methods/window.ts	apps/desktop/src/ipc/methods/window.ts	218	26	merge3=conflicts:1;drift
+M	manual	apps/desktop/src/preload.ts	apps/desktop/src/preload.ts	131	5	merge3=clean;drift
+M	houston-missing	apps/desktop/src/settings/DesktopClientSettings.test.ts			3	no-basename-match
+M	houston-missing	apps/desktop/src/window/DesktopWindow.test.ts			2	no-basename-match
+M	manual	apps/desktop/src/window/DesktopWindow.ts	apps/desktop/src/window/DesktopWindow.ts	116	40	merge3=conflicts:2;drift
+M	houston-missing	apps/server/src/cloud/cliAuthHtml.ts			4	no-basename-match;deleted-in:4487f591eb chore(v2-server): remove T3 Connect cloud link, managed tunnels and agent-awareness relay
+M	manual	apps/server/src/ws.ts	apps/server/src/ws.ts	928	2	merge3=clean;drift
+M	manual	apps/web/index.html	apps/web/index.html	173	92	merge3=conflicts:3
+M	manual	apps/web/src/appInit.tsx	apps/web/src/appInit.tsx	63	27	merge3=conflicts:2;drift
+A	new	apps/web/src/assets/chrome/art-nightly-sunrise-light.jpg			bin	
+A	new	apps/web/src/assets/chrome/art-nightly-sunrise.jpg			bin	
+M	manual	apps/web/src/browser/BrowserDeviceToolbar.tsx	apps/web/src/browser/BrowserDeviceToolbar.tsx	39	2	merge3=clean;drift
+M	manual	apps/web/src/browser/HostedBrowserWebview.tsx	apps/web/src/browser/HostedBrowserWebview.tsx	47	2	merge3=conflicts:1;drift
+M	manual	apps/web/src/browser/ServerBrowserSurface.tsx	apps/web/src/browser/ServerBrowserSurface.tsx	196	26	merge3=conflicts:3;drift
+M	houston-missing	apps/web/src/cloud/useCloudLinkController.ts			2	no-basename-match;deleted-in:c87244d4c9 chore(v2-web): the app drops T3 Connect, sign-in and the hosted relay
+M	manual	apps/web/src/commandPaletteBus.ts	apps/web/src/commandPaletteBus.ts	8	12	merge3=clean
+M	manual	apps/web/src/components/AddProjectToMachineDialog.tsx	apps/web/src/components/AddProjectToMachineDialog.tsx	19	40	merge3=clean;drift
+M	manual	apps/web/src/components/AppRouteModal.tsx	apps/web/src/components/AppRouteModal.tsx	66	80	merge3=conflicts:3;drift
+M	manual	apps/web/src/components/AppSidebarLayout.tsx	apps/web/src/components/AppSidebarLayout.tsx	188	125	merge3=conflicts:7;drift
+M	mechanical+drift	apps/web/src/components/BranchPicker.tsx	apps/web/src/components/BranchPicker.tsx	0	2	
+M	manual	apps/web/src/components/BranchToolbar.tsx	apps/web/src/components/BranchToolbar.tsx	535	59	merge3=conflicts:5;drift
+M	manual	apps/web/src/components/BranchToolbarBranchSelector.tsx	apps/web/src/components/BranchToolbarBranchSelector.tsx	94	58	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/BranchToolbarEnvModeSelector.tsx	apps/web/src/components/BranchToolbarEnvModeSelector.tsx	4	4	merge3=clean;drift
+M	manual	apps/web/src/components/BranchToolbarEnvironmentSelector.tsx	apps/web/src/components/BranchToolbarEnvironmentSelector.tsx	2	9	merge3=clean;drift
+M	manual	apps/web/src/components/ChatMarkdown.tsx	apps/web/src/components/ChatMarkdown.tsx	496	32	merge3=conflicts:3;drift
+M	manual	apps/web/src/components/ChatView.tsx	apps/web/src/components/ChatView.tsx	1814	93	merge3=conflicts:9;drift
+M	mechanical+drift	apps/web/src/components/CommandBlock.tsx	apps/web/src/components/CommandBlock.tsx	0	4	
+M	manual	apps/web/src/components/CommandPalette.browser.test.tsx	apps/web/src/components/CommandPalette.browser.test.tsx	11	13	merge3=conflicts:2;drift
+M	manual	apps/web/src/components/CommandPalette.composition.browser.test.tsx	apps/web/src/components/CommandPalette.composition.browser.test.tsx		3	absent-at-fork:added-upstream-after-fork;houston-has-own-file;drift
+M	manual	apps/web/src/components/CommandPalette.logic.test.ts	apps/web/src/components/CommandPalette.logic.test.ts	202	4	merge3=clean;drift
+M	manual	apps/web/src/components/CommandPalette.logic.ts	apps/web/src/components/CommandPalette.logic.ts	174	77	merge3=conflicts:6;drift
+M	manual	apps/web/src/components/CommandPalette.tsx	apps/web/src/components/CommandPalette.tsx	1300	65	merge3=conflicts:3;drift
+M	mechanical+drift	apps/web/src/components/CommandPaletteAddProject.tsx	apps/web/src/components/CommandPaletteAddProject.tsx	0	10	
+M	manual	apps/web/src/components/CommandPaletteContent.tsx	apps/web/src/components/CommandPaletteContent.tsx	25	1	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/CommandPaletteProjectItems.tsx	apps/web/src/components/CommandPaletteProjectItems.tsx	13	30	merge3=conflicts:3;drift
+M	manual	apps/web/src/components/CommandPaletteResults.tsx	apps/web/src/components/CommandPaletteResults.tsx	84	146	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/CommandPaletteThemeItems.tsx	apps/web/src/components/CommandPaletteThemeItems.tsx	8	53	merge3=conflicts:1
+M	manual	apps/web/src/components/CommandPaletteThreadItems.tsx	apps/web/src/components/CommandPaletteThreadItems.tsx	58	68	merge3=conflicts:2;drift
+M	manual	apps/web/src/components/ComposerContextPermissions.tsx	apps/web/src/components/ComposerContextPermissions.tsx	63	7	merge3=clean;drift
+M	mechanical+drift	apps/web/src/components/ConfirmDialogHost.tsx	apps/web/src/components/ConfirmDialogHost.tsx	0	2	
+M	mechanical	apps/web/src/components/ConnectionStatusDot.tsx	apps/web/src/components/ConnectionStatusDot.tsx	0	4	
+M	mechanical	apps/web/src/components/ContextChip.browser.test.tsx	apps/web/src/components/ContextChip.browser.test.tsx	0	23	
+M	manual	apps/web/src/components/ContextChip.tsx	apps/web/src/components/ContextChip.tsx	13	82	merge3=clean;drift
+M	manual	apps/web/src/components/CustomSnoozeDialog.tsx	apps/web/src/components/CustomSnoozeDialog.tsx	16	4	merge3=clean;drift
+M	manual	apps/web/src/components/DevReplayHost.tsx	apps/web/src/components/DevReplayHost.tsx	8	2	merge3=clean
+M	houston-missing	apps/web/src/components/DiffFilePathCopyButton.tsx			7	no-basename-match;deleted-in:d219012237 refactor(web): one copy button and one clipboard feedback
+M	manual	apps/web/src/components/DiffPanel.tsx	apps/web/src/components/DiffPanel.tsx	1472	64	merge3=conflicts:7;drift
+M	manual	apps/web/src/components/DiffPanelShell.tsx	apps/web/src/components/DiffPanelShell.tsx	21	6	merge3=conflicts:1
+M	manual	apps/web/src/components/GitActionsControl.tsx	apps/web/src/components/GitActionsControl.tsx	339	410	merge3=conflicts:20;drift
+M	manual	apps/web/src/components/HostedEmptyState.tsx	apps/web/src/components/HostedEmptyState.tsx	76	22	merge3=conflicts:3;drift
+M	manual	apps/web/src/components/Icons.tsx	apps/web/src/components/Icons.tsx	9	15	merge3=clean;drift
+M	houston-missing	apps/web/src/components/InstallT3Commands.tsx			8	absent-at-fork:added-upstream-after-fork
+M	mechanical	apps/web/src/components/KeybindingsConfigWarning.tsx	apps/web/src/components/KeybindingsConfigWarning.tsx	0	2	
+M	manual	apps/web/src/components/ManagedPolicy.tsx	apps/web/src/components/ManagedPolicy.tsx		12	absent-at-fork:added-upstream-after-fork;houston-has-own-file;drift
+M	manual	apps/web/src/components/NoProjectsHero.tsx	apps/web/src/components/NoProjectsHero.tsx	195	68	merge3=conflicts:5
+A	new	apps/web/src/components/PaneNotch.tsx			55	
+M	houston-missing	apps/web/src/components/ProjectFavicon.browser.test.tsx			47	absent-at-fork:added-upstream-after-fork
+M	houston-missing	apps/web/src/components/ProjectFavicon.tsx			56	no-basename-match;deleted-in:9722cf517d refactor(web): delete the project icon components and their cache
+M	houston-missing	apps/web/src/components/ProjectMonogram.tsx			2	no-basename-match;deleted-in:9722cf517d refactor(web): delete the project icon components and their cache
+M	manual	apps/web/src/components/ProjectScriptsControl.tsx	apps/web/src/components/ProjectScriptsControl.tsx	11	261	merge3=clean;drift
+M	mechanical+drift	apps/web/src/components/ProviderUpdateLaunchNotification.logic.test.ts	apps/web/src/components/ProviderUpdateLaunchNotification.logic.test.ts	0	4	
+M	mechanical+drift	apps/web/src/components/ProviderUpdateLaunchNotification.logic.ts	apps/web/src/components/ProviderUpdateLaunchNotification.logic.ts	0	11	
+M	manual	apps/web/src/components/PullRequestThreadDialog.tsx	apps/web/src/components/PullRequestThreadDialog.tsx	22	24	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/QuitHoldOverlay.tsx	apps/web/src/components/QuitHoldOverlay.tsx	2	2	merge3=clean
+M	manual	apps/web/src/components/ReopenClosedViewShortcut.tsx	apps/web/src/components/ReopenClosedViewShortcut.tsx	18	1	merge3=clean;drift
+M	manual	apps/web/src/components/RightPanelTabs.tsx	apps/web/src/components/RightPanelTabs.tsx	628	42	merge3=conflicts:7;drift
+M	manual	apps/web/src/components/ServerUpdateAction.tsx	apps/web/src/components/ServerUpdateAction.tsx	109	17	merge3=clean;drift
+M	houston-missing	apps/web/src/components/Sidebar.browser.test.tsx			4	absent-at-fork:added-upstream-after-fork
+M	manual	apps/web/src/components/Sidebar.logic.test.ts	apps/web/src/components/Sidebar.logic.test.ts	539	15	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/Sidebar.logic.ts	apps/web/src/components/Sidebar.logic.ts	294	71	merge3=conflicts:6;drift
+M	houston-missing	apps/web/src/components/Sidebar.shortcuts.browser.test.tsx			1	absent-at-fork:added-upstream-after-fork
+M	manual	apps/web/src/components/Sidebar.snooze.ts	apps/web/src/components/Sidebar.snooze.ts	4	3	merge3=clean
+M	houston-missing	apps/web/src/components/Sidebar.tsx			231	no-basename-match;deleted-in:cc9524f520 chore(web): remove orphaned component modules
+M	houston-missing	apps/web/src/components/SidebarStageBackdrop.tsx			65	no-basename-match
+M	manual	apps/web/src/components/SlowRpcRequestToastCoordinator.tsx	apps/web/src/components/SlowRpcRequestToastCoordinator.tsx	5	8	merge3=conflicts:1
+M	manual	apps/web/src/components/SourceControlAppAccessNotice.tsx	apps/web/src/components/SourceControlAppAccessNotice.tsx	4	2	merge3=clean
+M	manual	apps/web/src/components/ThreadCommandSubtitle.tsx	apps/web/src/components/ThreadCommandSubtitle.tsx	105	115	merge3=conflicts:3
+M	manual	apps/web/src/components/ThreadHoverCard.tsx	apps/web/src/components/ThreadHoverCard.tsx	4	8	merge3=conflicts:1
+M	mechanical	apps/web/src/components/ThreadSearchMatch.tsx	apps/web/src/components/ThreadSearchMatch.tsx	0	6	
+M	manual	apps/web/src/components/ThreadStatusIndicators.tsx	apps/web/src/components/ThreadStatusIndicators.tsx	93	97	merge3=conflicts:9;drift
+M	manual	apps/web/src/components/ThreadTerminalDrawer.tsx	apps/web/src/components/ThreadTerminalDrawer.tsx	264	67	merge3=conflicts:15;drift
+M	manual	apps/web/src/components/UsageToggleShortcut.browser.test.tsx	apps/web/src/components/UsageToggleShortcut.browser.test.tsx	3	37	merge3=clean
+M	manual	apps/web/src/components/WorktreeBaseBranchPicker.tsx	apps/web/src/components/WorktreeBaseBranchPicker.tsx	5	2	merge3=clean;drift
+M	manual	apps/web/src/components/auth/ConnectAgentSurface.tsx	apps/web/src/components/auth/ConnectAgentSurface.tsx	76	38	merge3=conflicts:4;drift
+M	manual	apps/web/src/components/auth/PairingRouteSurface.tsx	apps/web/src/components/auth/PairingRouteSurface.tsx	4	11	merge3=clean
+M	manual	apps/web/src/components/chat/AssistantCitationChip.tsx	apps/web/src/components/chat/AssistantCitationChip.tsx	131	6	merge3=clean;drift
+M	manual	apps/web/src/components/chat/AssistantCitationCommentEditor.tsx	apps/web/src/components/chat/AssistantCitationCommentEditor.tsx	83	6	merge3=conflicts:2;drift
+M	manual	apps/web/src/components/chat/AssistantSelectionToolbar.tsx	apps/web/src/components/chat/AssistantSelectionToolbar.tsx	25	2	merge3=conflicts:1;drift
+M	houston-missing	apps/web/src/components/chat/BackgroundWorkDetails.tsx			10	absent-at-fork:added-upstream-after-fork
+M	houston-missing	apps/web/src/components/chat/ChangedFilesTree.tsx			36	no-basename-match;deleted-in:f99fff1b27 feat(web): grid panes get a real header and a size-aware composer, distinct status colours, centred new-thread composer, optional Needs you section
+M	manual	apps/web/src/components/chat/ChatComposer.tsx	apps/web/src/components/chat/ChatComposer.tsx	1256	16	merge3=conflicts:3;drift
+M	manual	apps/web/src/components/chat/ChatHeader.tsx	apps/web/src/components/chat/ChatHeader.tsx	375	274	merge3=conflicts:4;drift
+M	manual	apps/web/src/components/chat/ChatMarkdownMedia.tsx	apps/web/src/components/chat/ChatMarkdownMedia.tsx	10	8	merge3=clean;drift
+M	mechanical+drift	apps/web/src/components/chat/ChatOverlayHosts.tsx	apps/web/src/components/chat/ChatOverlayHosts.tsx	0	8	
+M	manual	apps/web/src/components/chat/ChatRightPanel.tsx	apps/web/src/components/chat/ChatRightPanel.tsx	73	10	merge3=conflicts:1
+M	manual	apps/web/src/components/chat/ComposerAttachmentStrip.tsx	apps/web/src/components/chat/ComposerAttachmentStrip.tsx	547	3	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/chat/ComposerBanner.tsx	apps/web/src/components/chat/ComposerBanner.tsx	72	78	merge3=conflicts:4;drift
+M	manual	apps/web/src/components/chat/ComposerBannerStack.tsx	apps/web/src/components/chat/ComposerBannerStack.tsx	109	4	merge3=clean;drift
+M	manual	apps/web/src/components/chat/ComposerCommandMenu.tsx	apps/web/src/components/chat/ComposerCommandMenu.tsx	320	33	merge3=conflicts:4;drift
+M	manual	apps/web/src/components/chat/ComposerControl.tsx	apps/web/src/components/chat/ComposerControl.tsx	6	24	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/chat/ComposerControlsBar.tsx	apps/web/src/components/chat/ComposerControlsBar.tsx	189	4	merge3=clean;drift
+M	manual	apps/web/src/components/chat/ComposerFooterControls.tsx	apps/web/src/components/chat/ComposerFooterControls.tsx	267	10	merge3=conflicts:1;drift
+M	houston-missing	apps/web/src/components/chat/ComposerModelEffort.tsx			175	absent-at-fork:added-upstream-after-fork
+M	manual	apps/web/src/components/chat/ComposerPendingApprovalActions.tsx	apps/web/src/components/chat/ComposerPendingApprovalActions.tsx	21	4	merge3=conflicts:2
+M	manual	apps/web/src/components/chat/ComposerPendingUserInputPanel.tsx	apps/web/src/components/chat/ComposerPendingUserInputPanel.tsx	61	19	merge3=conflicts:2;drift
+M	manual	apps/web/src/components/chat/ComposerPrimaryActions.tsx	apps/web/src/components/chat/ComposerPrimaryActions.tsx	315	46	merge3=conflicts:11;drift
+M	mechanical	apps/web/src/components/chat/ComposerServerUpdateStatus.tsx	apps/web/src/components/chat/ComposerServerUpdateStatus.tsx	0	2	
+M	manual	apps/web/src/components/chat/ComposerStashMenu.tsx	apps/web/src/components/chat/ComposerStashMenu.tsx	224	5	merge3=conflicts:1
+M	manual	apps/web/src/components/chat/ComposerSurface.tsx	apps/web/src/components/chat/ComposerSurface.tsx	47	33	merge3=conflicts:4;drift
+M	manual	apps/web/src/components/chat/ComposerUsageLimits.tsx	apps/web/src/components/chat/ComposerUsageLimits.tsx	42	19	merge3=clean;drift
+M	manual	apps/web/src/components/chat/DiffStatLabel.tsx	apps/web/src/components/chat/DiffStatLabel.tsx	27	8	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/chat/DraftHeroHeadline.tsx	apps/web/src/components/chat/DraftHeroHeadline.tsx	120	417	merge3=conflicts:6;drift
+D	manual	apps/web/src/components/chat/DraftHeroProjectHeading.tsx	apps/web/src/components/chat/DraftHeroProjectHeading.tsx	69	63	merge3=n/a:deleted-upstream;drift
+M	manual	apps/web/src/components/chat/EffortGlyph.tsx	apps/web/src/components/chat/EffortGlyph.tsx	25	19	merge3=clean;drift
+M	manual	apps/web/src/components/chat/ExpandedImageDialog.browser.test.tsx	apps/web/src/components/chat/ExpandedImageDialog.browser.test.tsx	39	6	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/chat/ExpandedImageDialog.tsx	apps/web/src/components/chat/ExpandedImageDialog.tsx	14	4	merge3=clean;drift
+M	houston-missing	apps/web/src/components/chat/GuestMessageAttachments.tsx			27	no-basename-match;deleted-in:57047f79ef chore(v2): remove T3 Connect RPCs, cloud routes and guest links
+M	houston-missing	apps/web/src/components/chat/GuestShareControls.tsx			12	no-basename-match;deleted-in:57047f79ef chore(v2): remove T3 Connect RPCs, cloud routes and guest links
+M	manual	apps/web/src/components/chat/HtmlRenderDialog.browser.test.tsx	apps/web/src/components/chat/HtmlRenderDialog.browser.test.tsx		16	absent-at-fork:added-upstream-after-fork;houston-has-own-file;drift
+M	manual	apps/web/src/components/chat/HtmlRenderDialog.tsx	apps/web/src/components/chat/HtmlRenderDialog.tsx	81	2	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/chat/HtmlRenderFrame.tsx	apps/web/src/components/chat/HtmlRenderFrame.tsx	134	4	merge3=conflicts:1;drift
+M	mechanical+drift	apps/web/src/components/chat/LinkRequestCard.tsx	apps/web/src/components/chat/LinkRequestCard.tsx	0	93	
+M	manual	apps/web/src/components/chat/MarkdownCodeBlock.tsx	apps/web/src/components/chat/MarkdownCodeBlock.tsx	11	8	merge3=clean;drift
+M	mechanical	apps/web/src/components/chat/MarkdownDetails.tsx	apps/web/src/components/chat/MarkdownDetails.tsx	0	9	
+M	manual	apps/web/src/components/chat/MarkdownTable.tsx	apps/web/src/components/chat/MarkdownTable.tsx	65	8	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/chat/McpAppFrame.tsx	apps/web/src/components/chat/McpAppFrame.tsx	25	8	merge3=clean;drift
+M	mechanical	apps/web/src/components/chat/MermaidDiagram.tsx	apps/web/src/components/chat/MermaidDiagram.tsx	0	6	
+M	houston-missing	apps/web/src/components/chat/MessageCopyButton.tsx			4	no-basename-match;deleted-in:d219012237 refactor(web): one copy button and one clipboard feedback
+M	manual	apps/web/src/components/chat/MessagesTimeline.browser.test.tsx	apps/web/src/components/chat/MessagesTimeline.browser.test.tsx	1769	15	merge3=clean;drift
+M	manual	apps/web/src/components/chat/MessagesTimeline.tsx	apps/web/src/components/chat/MessagesTimeline.tsx	239	65	merge3=conflicts:4;drift
+M	manual	apps/web/src/components/chat/ModelListRow.tsx	apps/web/src/components/chat/ModelListRow.tsx	233	103	merge3=conflicts:4;drift
+M	manual	apps/web/src/components/chat/ModelMentionChip.tsx	apps/web/src/components/chat/ModelMentionChip.tsx		6	absent-at-fork:added-upstream-after-fork;houston-has-own-file;drift
+M	manual	apps/web/src/components/chat/ModelPickerContent.tsx	apps/web/src/components/chat/ModelPickerContent.tsx	538	37	merge3=conflicts:6;drift
+M	manual	apps/web/src/components/chat/ModelPickerSidebar.tsx	apps/web/src/components/chat/ModelPickerSidebar.tsx	162	53	merge3=conflicts:7;drift
+M	houston-missing	apps/web/src/components/chat/NativeChildWorkDialog.tsx			26	absent-at-fork:added-upstream-after-fork
+M	manual	apps/web/src/components/chat/OpenInPicker.browser.test.tsx	apps/web/src/components/chat/OpenInPicker.browser.test.tsx	56	18	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/chat/OpenInPicker.tsx	apps/web/src/components/chat/OpenInPicker.tsx	13	134	merge3=conflicts:2
+M	manual	apps/web/src/components/chat/PanelLayoutControls.tsx	apps/web/src/components/chat/PanelLayoutControls.tsx	269	52	merge3=conflicts:4;drift
+M	manual	apps/web/src/components/chat/ProposedPlanCard.tsx	apps/web/src/components/chat/ProposedPlanCard.tsx	7	10	merge3=conflicts:1
+M	manual	apps/web/src/components/chat/ProviderInstanceIcon.tsx	apps/web/src/components/chat/ProviderInstanceIcon.tsx	33	2	merge3=clean;drift
+M	manual	apps/web/src/components/chat/ProviderModelPicker.tsx	apps/web/src/components/chat/ProviderModelPicker.tsx	400	34	merge3=conflicts:3;drift
+M	manual	apps/web/src/components/chat/ProviderStatusBanner.tsx	apps/web/src/components/chat/ProviderStatusBanner.tsx	52	4	merge3=conflicts:2;drift
+M	mechanical+drift	apps/web/src/components/chat/ProviderSubagentBar.tsx	apps/web/src/components/chat/ProviderSubagentBar.tsx	0	2	
+M	manual	apps/web/src/components/chat/QueuedRunsControl.tsx	apps/web/src/components/chat/QueuedRunsControl.tsx	78	10	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/chat/SecretRequestCard.tsx	apps/web/src/components/chat/SecretRequestCard.tsx	123	177	merge3=conflicts:3;drift
+M	manual	apps/web/src/components/chat/SkillInlineText.tsx	apps/web/src/components/chat/SkillInlineText.tsx	76	6	merge3=clean;drift
+M	manual	apps/web/src/components/chat/SubagentTooltipContent.tsx	apps/web/src/components/chat/SubagentTooltipContent.tsx	34	12	merge3=conflicts:1;drift
+M	mechanical	apps/web/src/components/chat/TerminalContextInlineChip.tsx	apps/web/src/components/chat/TerminalContextInlineChip.tsx	0	4	
+M	manual	apps/web/src/components/chat/ThreadActivityBanners.tsx	apps/web/src/components/chat/ThreadActivityBanners.tsx	130	17	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/chat/ThreadAutomationsPanel.permissions.browser.test.tsx	apps/web/src/components/chat/ThreadAutomationsPanel.permissions.browser.test.tsx	7	31	merge3=clean
+M	manual	apps/web/src/components/chat/ThreadAutomationsPanel.tsx	apps/web/src/components/chat/ThreadAutomationsPanel.tsx	117	267	merge3=conflicts:3;drift
+M	mechanical	apps/web/src/components/chat/ThreadContextDragGhost.tsx	apps/web/src/components/chat/ThreadContextDragGhost.tsx	0	6	
+M	manual	apps/web/src/components/chat/ThreadDetailsCard.browser.test.tsx	apps/web/src/components/chat/ThreadDetailsCard.browser.test.tsx	73	21	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/chat/ThreadDetailsCard.tsx	apps/web/src/components/chat/ThreadDetailsCard.tsx	306	51	merge3=conflicts:6;drift
+M	manual	apps/web/src/components/chat/ThreadDetailsControl.tsx	apps/web/src/components/chat/ThreadDetailsControl.tsx	2	45	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/chat/ThreadDetailsPanel.tsx	apps/web/src/components/chat/ThreadDetailsPanel.tsx	275	160	merge3=conflicts:6;drift
+M	manual	apps/web/src/components/chat/ThreadDetailsPrRow.tsx	apps/web/src/components/chat/ThreadDetailsPrRow.tsx	169	129	merge3=conflicts:5;drift
+M	manual	apps/web/src/components/chat/ThreadDetailsPrRows.tsx	apps/web/src/components/chat/ThreadDetailsPrRows.tsx	31	21	merge3=conflicts:2;drift
+M	manual	apps/web/src/components/chat/ThreadDetailsSection.tsx	apps/web/src/components/chat/ThreadDetailsSection.tsx	12	111	merge3=conflicts:2;drift
+M	manual	apps/web/src/components/chat/ThreadDetailsUsage.tsx	apps/web/src/components/chat/ThreadDetailsUsage.tsx		292	absent-at-fork:added-upstream-after-fork;houston-has-own-file;drift
+M	manual	apps/web/src/components/chat/ThreadErrorBanner.tsx	apps/web/src/components/chat/ThreadErrorBanner.tsx	94	7	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/chat/ThreadFindBar.tsx	apps/web/src/components/chat/ThreadFindBar.tsx	4	2	merge3=clean
+M	manual	apps/web/src/components/chat/ThreadLineageWorkflowRow.tsx	apps/web/src/components/chat/ThreadLineageWorkflowRow.tsx	41	20	merge3=clean;drift
+M	manual	apps/web/src/components/chat/ThreadNow.tsx	apps/web/src/components/chat/ThreadNow.tsx	60	2	merge3=clean;drift
+M	manual	apps/web/src/components/chat/ThreadRelationshipIcon.tsx	apps/web/src/components/chat/ThreadRelationshipIcon.tsx	18	2	merge3=clean;drift
+M	manual	apps/web/src/components/chat/ThreadRelationshipsControl.browser.test.tsx	apps/web/src/components/chat/ThreadRelationshipsControl.browser.test.tsx		12	absent-at-fork:added-upstream-after-fork;houston-has-own-file;drift
+M	manual	apps/web/src/components/chat/ThreadRelationshipsControl.tsx	apps/web/src/components/chat/ThreadRelationshipsControl.tsx	904	336	merge3=conflicts:10;drift
+M	manual	apps/web/src/components/chat/ThreadServersPanel.tsx	apps/web/src/components/chat/ThreadServersPanel.tsx	124	31	merge3=conflicts:2;drift
+M	mechanical	apps/web/src/components/chat/ThreadStatusLine.tsx	apps/web/src/components/chat/ThreadStatusLine.tsx	0	3	
+M	manual	apps/web/src/components/chat/TimelineAssistantRows.tsx	apps/web/src/components/chat/TimelineAssistantRows.tsx	301	6	merge3=clean;drift
+M	manual	apps/web/src/components/chat/TimelineMinimap.tsx	apps/web/src/components/chat/TimelineMinimap.tsx	50	4	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/chat/TimelineOverlays.tsx	apps/web/src/components/chat/TimelineOverlays.tsx	14	48	merge3=conflicts:3
+M	manual	apps/web/src/components/chat/TimelinePendingApprovalRow.tsx	apps/web/src/components/chat/TimelinePendingApprovalRow.tsx	154	11	merge3=conflicts:1
+M	manual	apps/web/src/components/chat/TimelineRowParts.tsx	apps/web/src/components/chat/TimelineRowParts.tsx	126	2	merge3=conflicts:1
+M	manual	apps/web/src/components/chat/TimelineSystemDivider.tsx	apps/web/src/components/chat/TimelineSystemDivider.tsx	8	38	merge3=conflicts:2;drift
+M	manual	apps/web/src/components/chat/TimelineToolActivityIcon.tsx	apps/web/src/components/chat/TimelineToolActivityIcon.tsx	8	22	merge3=clean
+M	manual	apps/web/src/components/chat/TimelineUserMessageRow.tsx	apps/web/src/components/chat/TimelineUserMessageRow.tsx	1049	95	merge3=conflicts:8;drift
+M	manual	apps/web/src/components/chat/TimelineV2EventRow.tsx	apps/web/src/components/chat/TimelineV2EventRow.tsx	133	39	merge3=conflicts:1
+M	manual	apps/web/src/components/chat/TimelineWorkEntryRow.logic.ts	apps/web/src/components/chat/TimelineWorkEntryRow.logic.ts	114	6	merge3=clean;drift
+M	manual	apps/web/src/components/chat/TimelineWorkEntryRow.tsx	apps/web/src/components/chat/TimelineWorkEntryRow.tsx	264	55	merge3=conflicts:3;drift
+M	manual	apps/web/src/components/chat/TimelineWorkGroupRows.tsx	apps/web/src/components/chat/TimelineWorkGroupRows.tsx	162	62	merge3=conflicts:3;drift
+M	manual	apps/web/src/components/chat/TraitsPicker.tsx	apps/web/src/components/chat/TraitsPicker.tsx	624	72	merge3=conflicts:11;drift
+M	manual	apps/web/src/components/chat/TriageDraftHero.tsx	apps/web/src/components/chat/TriageDraftHero.tsx	2	21	merge3=clean
+M	manual	apps/web/src/components/chat/UserMessageContextChips.tsx	apps/web/src/components/chat/UserMessageContextChips.tsx	11	29	merge3=clean;drift
+M	mechanical+drift	apps/web/src/components/chat/V2ItemInspector.tsx	apps/web/src/components/chat/V2ItemInspector.tsx	0	12	
+M	manual	apps/web/src/components/chat/V2LifecycleRow.tsx	apps/web/src/components/chat/V2LifecycleRow.tsx	296	45	merge3=conflicts:4;drift
+M	manual	apps/web/src/components/chat/VoiceInputSetup.tsx	apps/web/src/components/chat/VoiceInputSetup.tsx		6	absent-at-fork:added-upstream-after-fork;houston-has-own-file;drift
+M	manual	apps/web/src/components/chat/WorkLog.tsx	apps/web/src/components/chat/WorkLog.tsx	93	13	merge3=conflicts:4
+M	manual	apps/web/src/components/chat/WorkflowOpeningBlock.tsx	apps/web/src/components/chat/WorkflowOpeningBlock.tsx	15	37	merge3=conflicts:1;drift
+M	mechanical	apps/web/src/components/chat/WorkspaceEntryIcon.tsx	apps/web/src/components/chat/WorkspaceEntryIcon.tsx	0	8	
+M	mechanical+drift	apps/web/src/components/chat/WorktreeSetupCard.tsx	apps/web/src/components/chat/WorktreeSetupCard.tsx	0	32	
+M	manual	apps/web/src/components/chat/ZoomableImage.tsx	apps/web/src/components/chat/ZoomableImage.tsx	3	2	merge3=clean;drift
+M	manual	apps/web/src/components/chat/canvasStore.test.ts	apps/web/src/components/chat/canvasStore.test.ts	17	4	merge3=clean
+M	manual	apps/web/src/components/chat/composerFocusRedirect.ts	apps/web/src/components/chat/composerFocusRedirect.ts	17	3	merge3=clean;drift
+M	manual	apps/web/src/components/chat/composerProviderState.tsx	apps/web/src/components/chat/composerProviderState.tsx	68	2	merge3=clean;drift
+M	houston-missing	apps/web/src/components/chat/guestMessageStyle.tsx			2	no-basename-match;deleted-in:57047f79ef chore(v2): remove T3 Connect RPCs, cloud routes and guest links
+M	manual	apps/web/src/components/chat/providerIconUtils.ts	apps/web/src/components/chat/providerIconUtils.ts	40	15	merge3=clean;drift
+M	manual	apps/web/src/components/chat/restingComposerControlsMeasurement.ts	apps/web/src/components/chat/restingComposerControlsMeasurement.ts	19	50	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/chat/threadDetailsCardLayout.ts	apps/web/src/components/chat/threadDetailsCardLayout.ts	7	9	merge3=clean
+M	manual	apps/web/src/components/chat/threadDetailsItems.test.ts	apps/web/src/components/chat/threadDetailsItems.test.ts		11	absent-at-fork:added-upstream-after-fork;houston-has-own-file;drift
+M	manual	apps/web/src/components/chat/threadDetailsItems.ts	apps/web/src/components/chat/threadDetailsItems.ts		17	absent-at-fork:added-upstream-after-fork;houston-has-own-file;drift
+M	manual	apps/web/src/components/chat/threadDetailsPanelStyles.ts	apps/web/src/components/chat/threadDetailsPanelStyles.ts	22	58	merge3=conflicts:2
+M	manual	apps/web/src/components/chat/timelineViewport.ts	apps/web/src/components/chat/timelineViewport.ts	6	3	merge3=clean;drift
+M	manual	apps/web/src/components/chat/useComposerAttachmentIntake.ts	apps/web/src/components/chat/useComposerAttachmentIntake.ts	16	4	merge3=clean
+M	manual	apps/web/src/components/chat/useComposerMenuItems.ts	apps/web/src/components/chat/useComposerMenuItems.ts	73	7	merge3=clean;drift
+M	manual	apps/web/src/components/chat/useRightPanelActions.ts	apps/web/src/components/chat/useRightPanelActions.ts	35	15	merge3=clean;drift
+M	houston-missing	apps/web/src/components/clerk/ClerkUserProfilePage.tsx			6	no-basename-match;deleted-in:c87244d4c9 chore(v2-web): the app drops T3 Connect, sign-in and the hosted relay
+M	houston-missing	apps/web/src/components/clerk/MobileClientsUserProfilePage.logic.ts			2	no-basename-match;deleted-in:c87244d4c9 chore(v2-web): the app drops T3 Connect, sign-in and the hosted relay
+M	houston-missing	apps/web/src/components/clerk/MobileClientsUserProfilePage.tsx			22	no-basename-match;deleted-in:c87244d4c9 chore(v2-web): the app drops T3 Connect, sign-in and the hosted relay
+M	houston-missing	apps/web/src/components/clerk/RemoveT3ConnectEnvironmentDialog.tsx			2	no-basename-match;deleted-in:c87244d4c9 chore(v2-web): the app drops T3 Connect, sign-in and the hosted relay
+M	houston-missing	apps/web/src/components/clerk/T3ChatUserProfilePage.tsx			41	no-basename-match;deleted-in:c87244d4c9 chore(v2-web): the app drops T3 Connect, sign-in and the hosted relay
+M	houston-missing	apps/web/src/components/clerk/T3ConnectSidebarSignIn.tsx			2	no-basename-match;deleted-in:c87244d4c9 chore(v2-web): the app drops T3 Connect, sign-in and the hosted relay
+M	houston-missing	apps/web/src/components/clerk/T3ConnectUserProfilePage.tsx			44	no-basename-match;deleted-in:c87244d4c9 chore(v2-web): the app drops T3 Connect, sign-in and the hosted relay
+M	houston-missing	apps/web/src/components/clerk/clerkAppearance.ts			4	no-basename-match;deleted-in:c87244d4c9 chore(v2-web): the app drops T3 Connect, sign-in and the hosted relay
+M	houston-missing	apps/web/src/components/cloud/CloudEnvironmentConnectList.tsx			66	no-basename-match;deleted-in:c87244d4c9 chore(v2-web): the app drops T3 Connect, sign-in and the hosted relay
+M	houston-missing	apps/web/src/components/cloud/ConnectOnboardingDialog.tsx			8	no-basename-match;deleted-in:c87244d4c9 chore(v2-web): the app drops T3 Connect, sign-in and the hosted relay
+M	houston-missing	apps/web/src/components/cloud/RelayClientInstallDialog.tsx			10	no-basename-match;deleted-in:c87244d4c9 chore(v2-web): the app drops T3 Connect, sign-in and the hosted relay
+M	houston-missing	apps/web/src/components/cloud/TunnelUsage.tsx			4	no-basename-match;deleted-in:c87244d4c9 chore(v2-web): the app drops T3 Connect, sign-in and the hosted relay
+M	manual	apps/web/src/components/composerContextPresentation.tsx	apps/web/src/components/composerContextPresentation.tsx	4	9	merge3=clean;drift
+M	manual	apps/web/src/components/contextChipParts.tsx	apps/web/src/components/contextChipParts.tsx	22	11	merge3=clean;drift
+A	new	apps/web/src/components/design-system/DesignSystemPage.tsx			1679	
+M	manual	apps/web/src/components/desktop/SshPasswordPromptDialog.tsx	apps/web/src/components/desktop/SshPasswordPromptDialog.tsx	8	2	merge3=clean;drift
+M	manual	apps/web/src/components/device/DeviceControlsRail.tsx	apps/web/src/components/device/DeviceControlsRail.tsx	20	4	merge3=clean;drift
+M	mechanical	apps/web/src/components/device/DeviceHostUpdates.tsx	apps/web/src/components/device/DeviceHostUpdates.tsx	0	6	
+M	mechanical	apps/web/src/components/device/DeviceLoadingView.tsx	apps/web/src/components/device/DeviceLoadingView.tsx	0	6	
+M	manual	apps/web/src/components/device/DevicePanel.tsx	apps/web/src/components/device/DevicePanel.tsx	380	46	merge3=conflicts:3;drift
+M	manual	apps/web/src/components/device/DeviceSetup.tsx	apps/web/src/components/device/DeviceSetup.tsx	27	32	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/device/DeviceStreamView.tsx	apps/web/src/components/device/DeviceStreamView.tsx	47	4	merge3=clean;drift
+M	mechanical	apps/web/src/components/device/DeviceToolVersions.tsx	apps/web/src/components/device/DeviceToolVersions.tsx	0	12	
+M	manual	apps/web/src/components/device/DeviceToolsPanel.tsx	apps/web/src/components/device/DeviceToolsPanel.tsx	18	19	merge3=clean;drift
+M	manual	apps/web/src/components/device/DeviceWorkspace.tsx	apps/web/src/components/device/DeviceWorkspace.tsx	21	9	merge3=clean;drift
+M	manual	apps/web/src/components/diffs/AnnotatableCodeView.tsx	apps/web/src/components/diffs/AnnotatableCodeView.tsx	25	4	merge3=clean;drift
+M	manual	apps/web/src/components/diffs/DiffCommentAnnotation.tsx	apps/web/src/components/diffs/DiffCommentAnnotation.tsx	97	10	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/diffs/DiffFileLoadingBoundary.tsx	apps/web/src/components/diffs/DiffFileLoadingBoundary.tsx	30	2	merge3=conflicts:1
+M	manual	apps/web/src/components/diffs/DiffFileTree.tsx	apps/web/src/components/diffs/DiffFileTree.tsx	6	4	merge3=clean;drift
+M	manual	apps/web/src/components/diffs/StyledDiffCodeView.tsx	apps/web/src/components/diffs/StyledDiffCodeView.tsx	105	178	merge3=clean;drift
+M	manual	apps/web/src/components/files/AttachmentFilePreview.browser.test.tsx	apps/web/src/components/files/AttachmentFilePreview.browser.test.tsx	306	6	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/files/AttachmentFilePreview.tsx	apps/web/src/components/files/AttachmentFilePreview.tsx	26	7	merge3=clean;drift
+M	manual	apps/web/src/components/files/AudioPreview.tsx	apps/web/src/components/files/AudioPreview.tsx	9	14	merge3=clean;drift
+M	manual	apps/web/src/components/files/BinaryViewer.tsx	apps/web/src/components/files/BinaryViewer.tsx	16	57	merge3=conflicts:1
+M	manual	apps/web/src/components/files/BrowserDocumentFrame.tsx	apps/web/src/components/files/BrowserDocumentFrame.tsx	67	4	merge3=clean;drift
+M	manual	apps/web/src/components/files/DocumentPages.tsx	apps/web/src/components/files/DocumentPages.tsx	13	6	merge3=clean
+M	manual	apps/web/src/components/files/FileBreadcrumbs.tsx	apps/web/src/components/files/FileBreadcrumbs.tsx	20	16	merge3=conflicts:3
+M	manual	apps/web/src/components/files/FileBrowserPanel.tsx	apps/web/src/components/files/FileBrowserPanel.tsx	658	12	merge3=conflicts:4;drift
+M	manual	apps/web/src/components/files/FileExplorerPane.tsx	apps/web/src/components/files/FileExplorerPane.tsx		2	absent-at-fork:added-upstream-after-fork;houston-has-own-file;drift
+M	manual	apps/web/src/components/files/FilePreviewPanel.tsx	apps/web/src/components/files/FilePreviewPanel.tsx	250	18	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/files/FontViewer.tsx	apps/web/src/components/files/FontViewer.tsx	2	4	merge3=clean
+M	manual	apps/web/src/components/files/LargeTextViewer.tsx	apps/web/src/components/files/LargeTextViewer.tsx	9	33	merge3=clean
+M	manual	apps/web/src/components/files/MermaidViewer.tsx	apps/web/src/components/files/MermaidViewer.tsx	9	2	merge3=clean
+M	manual	apps/web/src/components/files/NotebookPreview.tsx	apps/web/src/components/files/NotebookPreview.tsx	56	35	merge3=clean
+M	manual	apps/web/src/components/files/OfficeViewer.tsx	apps/web/src/components/files/OfficeViewer.tsx	2	42	merge3=clean
+M	manual	apps/web/src/components/files/OpenXmlOfficeViewer.tsx	apps/web/src/components/files/OpenXmlOfficeViewer.tsx	2	7	merge3=clean
+M	manual	apps/web/src/components/files/PdfViewer.tsx	apps/web/src/components/files/PdfViewer.tsx	120	2	merge3=clean;drift
+M	manual	apps/web/src/components/files/PreviewImageContent.tsx	apps/web/src/components/files/PreviewImageContent.tsx	2	2	merge3=clean
+M	manual	apps/web/src/components/files/ProjectFilePicker.tsx	apps/web/src/components/files/ProjectFilePicker.tsx	4	10	merge3=clean
+M	manual	apps/web/src/components/files/VirtualTablePreview.tsx	apps/web/src/components/files/VirtualTablePreview.tsx	20	40	merge3=conflicts:1
+M	manual	apps/web/src/components/files/fileSaveSessions.browser.test.tsx	apps/web/src/components/files/fileSaveSessions.browser.test.tsx	4	5	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/files/fileSurfaceChrome.tsx	apps/web/src/components/files/fileSurfaceChrome.tsx	10	18	merge3=conflicts:2
+M	manual	apps/web/src/components/files/office/Presentation.tsx	apps/web/src/components/files/office/Presentation.tsx	2	6	merge3=clean
+M	manual	apps/web/src/components/files/office/Spreadsheet.tsx	apps/web/src/components/files/office/Spreadsheet.tsx	8	10	merge3=conflicts:2;drift
+M	houston-missing	apps/web/src/components/guest/GuestPage.tsx			44	no-basename-match;deleted-in:57047f79ef chore(v2): remove T3 Connect RPCs, cloud routes and guest links
+M	manual	apps/web/src/components/mcp/UseInAnotherAppDialog.tsx	apps/web/src/components/mcp/UseInAnotherAppDialog.tsx		99	absent-at-fork:added-upstream-after-fork;houston-has-own-file;drift
+M	manual	apps/web/src/components/media/MediaVideoPlayer.tsx	apps/web/src/components/media/MediaVideoPlayer.tsx	2	3	merge3=clean;drift
+M	manual	apps/web/src/components/onboarding/FirstRunGate.tsx	apps/web/src/components/onboarding/FirstRunGate.tsx	32	6	merge3=conflicts:2
+M	houston-missing	apps/web/src/components/onboarding/WelcomePage.tsx			110	absent-at-fork:added-upstream-after-fork
+M	mechanical	apps/web/src/components/permissions/PermissionChecklist.tsx	apps/web/src/components/permissions/PermissionChecklist.tsx	0	11	
+M	mechanical	apps/web/src/components/preview/BrowserMockup.tsx	apps/web/src/components/preview/BrowserMockup.tsx	0	2	
+M	manual	apps/web/src/components/preview/PreviewChromeRow.tsx	apps/web/src/components/preview/PreviewChromeRow.tsx	379	11	merge3=conflicts:3
+M	houston-missing	apps/web/src/components/preview/PreviewFindBar.tsx			2	absent-at-fork:added-upstream-after-fork
+M	manual	apps/web/src/components/preview/PreviewMoreMenu.tsx	apps/web/src/components/preview/PreviewMoreMenu.tsx	189	4	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/preview/PreviewRecentUrlCard.tsx	apps/web/src/components/preview/PreviewRecentUrlCard.tsx	4	13	merge3=conflicts:2
+M	mechanical	apps/web/src/components/preview/PreviewUnreachable.tsx	apps/web/src/components/preview/PreviewUnreachable.tsx	0	26	
+M	manual	apps/web/src/components/preview/PreviewView.tsx	apps/web/src/components/preview/PreviewView.tsx	280	12	merge3=conflicts:2;drift
+M	manual	apps/web/src/components/preview/RightPanelResizeHandle.tsx	apps/web/src/components/preview/RightPanelResizeHandle.tsx	13	2	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx	apps/web/src/components/preview/ThreadPreviewMiniPlayer.tsx	10	75	merge3=conflicts:1
+M	manual	apps/web/src/components/preview/ZoomIndicator.tsx	apps/web/src/components/preview/ZoomIndicator.tsx	8	2	merge3=conflicts:1
+M	manual	apps/web/src/components/projectScriptEditor.tsx	apps/web/src/components/projectScriptEditor.tsx	26	16	merge3=conflicts:2;drift
+M	manual	apps/web/src/components/promptLinks/HostedPromptLinkLanding.tsx	apps/web/src/components/promptLinks/HostedPromptLinkLanding.tsx	12	20	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/promptLinks/NewThreadLinkView.tsx	apps/web/src/components/promptLinks/NewThreadLinkView.tsx	37	4	merge3=clean;drift
+M	mechanical	apps/web/src/components/pullRequest/LinkPullRequestDialog.tsx	apps/web/src/components/pullRequest/LinkPullRequestDialog.tsx	0	2	
+M	manual	apps/web/src/components/pullRequest/PullRequestActionsMenu.tsx	apps/web/src/components/pullRequest/PullRequestActionsMenu.tsx	154	10	merge3=clean;drift
+M	mechanical	apps/web/src/components/pullRequest/PullRequestActivityUnavailableState.tsx	apps/web/src/components/pullRequest/PullRequestActivityUnavailableState.tsx	0	2	
+M	mechanical	apps/web/src/components/pullRequest/PullRequestBaseBranch.tsx	apps/web/src/components/pullRequest/PullRequestBaseBranch.tsx	0	2	
+M	manual	apps/web/src/components/pullRequest/PullRequestChangeBreakdownStat.tsx	apps/web/src/components/pullRequest/PullRequestChangeBreakdownStat.tsx	6	6	merge3=clean
+M	manual	apps/web/src/components/pullRequest/PullRequestChecksPopover.tsx	apps/web/src/components/pullRequest/PullRequestChecksPopover.tsx	2	19	merge3=clean
+M	manual	apps/web/src/components/pullRequest/PullRequestCodeTab.tsx	apps/web/src/components/pullRequest/PullRequestCodeTab.tsx	89	12	merge3=clean;drift
+M	manual	apps/web/src/components/pullRequest/PullRequestCommentForm.tsx	apps/web/src/components/pullRequest/PullRequestCommentForm.tsx	60	4	merge3=clean;drift
+M	manual	apps/web/src/components/pullRequest/PullRequestCompactFilterMenu.tsx	apps/web/src/components/pullRequest/PullRequestCompactFilterMenu.tsx	8	4	merge3=conflicts:1
+M	manual	apps/web/src/components/pullRequest/PullRequestComposer.tsx	apps/web/src/components/pullRequest/PullRequestComposer.tsx	4	4	merge3=clean;drift
+M	manual	apps/web/src/components/pullRequest/PullRequestCopyableCode.tsx	apps/web/src/components/pullRequest/PullRequestCopyableCode.tsx	19	2	merge3=conflicts:1
+M	manual	apps/web/src/components/pullRequest/PullRequestDetailActions.tsx	apps/web/src/components/pullRequest/PullRequestDetailActions.tsx	77	6	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/pullRequest/PullRequestDetailLayout.tsx	apps/web/src/components/pullRequest/PullRequestDetailLayout.tsx	26	6	merge3=conflicts:2
+M	manual	apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx	apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx	341	7	merge3=conflicts:1;drift
+M	mechanical	apps/web/src/components/pullRequest/PullRequestDiffUnavailableState.tsx	apps/web/src/components/pullRequest/PullRequestDiffUnavailableState.tsx	0	12	
+M	manual	apps/web/src/components/pullRequest/PullRequestGhosts.tsx	apps/web/src/components/pullRequest/PullRequestGhosts.tsx	21	2	merge3=conflicts:1
+M	manual	apps/web/src/components/pullRequest/PullRequestGuideTab.tsx	apps/web/src/components/pullRequest/PullRequestGuideTab.tsx	60	16	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/pullRequest/PullRequestLabelPicker.tsx	apps/web/src/components/pullRequest/PullRequestLabelPicker.tsx	6	8	merge3=clean
+M	manual	apps/web/src/components/pullRequest/PullRequestLinkPreview.browser.test.tsx	apps/web/src/components/pullRequest/PullRequestLinkPreview.browser.test.tsx		2	absent-at-fork:added-upstream-after-fork;houston-has-own-file;drift
+M	manual	apps/web/src/components/pullRequest/PullRequestLinkPreview.tsx	apps/web/src/components/pullRequest/PullRequestLinkPreview.tsx	51	46	merge3=conflicts:2;drift
+M	manual	apps/web/src/components/pullRequest/PullRequestListEmptyState.tsx	apps/web/src/components/pullRequest/PullRequestListEmptyState.tsx	109	8	merge3=clean
+M	manual	apps/web/src/components/pullRequest/PullRequestListFilters.tsx	apps/web/src/components/pullRequest/PullRequestListFilters.tsx	33	17	merge3=conflicts:1
+M	manual	apps/web/src/components/pullRequest/PullRequestListGroups.tsx	apps/web/src/components/pullRequest/PullRequestListGroups.tsx	117	4	merge3=clean;drift
+M	manual	apps/web/src/components/pullRequest/PullRequestListRow.tsx	apps/web/src/components/pullRequest/PullRequestListRow.tsx	34	8	merge3=conflicts:2
+M	manual	apps/web/src/components/pullRequest/PullRequestMarkdown.tsx	apps/web/src/components/pullRequest/PullRequestMarkdown.tsx	187	2	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/pullRequest/PullRequestMarkdownEditor.tsx	apps/web/src/components/pullRequest/PullRequestMarkdownEditor.tsx	12	4	merge3=clean;drift
+M	mechanical	apps/web/src/components/pullRequest/PullRequestMoreReplies.tsx	apps/web/src/components/pullRequest/PullRequestMoreReplies.tsx	0	14	
+M	manual	apps/web/src/components/pullRequest/PullRequestReactions.tsx	apps/web/src/components/pullRequest/PullRequestReactions.tsx	2	12	merge3=conflicts:1
+M	manual	apps/web/src/components/pullRequest/PullRequestReviewAnnotation.tsx	apps/web/src/components/pullRequest/PullRequestReviewAnnotation.tsx	149	22	merge3=conflicts:2;drift
+M	manual	apps/web/src/components/pullRequest/PullRequestRow.tsx	apps/web/src/components/pullRequest/PullRequestRow.tsx	50	6	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/pullRequest/PullRequestSpeedActions.tsx	apps/web/src/components/pullRequest/PullRequestSpeedActions.tsx	5	2	merge3=clean;drift
+M	mechanical	apps/web/src/components/pullRequest/PullRequestStackLayerContent.tsx	apps/web/src/components/pullRequest/PullRequestStackLayerContent.tsx	0	12	
+M	manual	apps/web/src/components/pullRequest/PullRequestStackMenu.tsx	apps/web/src/components/pullRequest/PullRequestStackMenu.tsx	24	12	merge3=clean;drift
+M	manual	apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx	apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx	310	21	merge3=conflicts:2;drift
+M	manual	apps/web/src/components/pullRequest/PullRequestTimelineTab.tsx	apps/web/src/components/pullRequest/PullRequestTimelineTab.tsx	220	48	merge3=conflicts:2;drift
+M	manual	apps/web/src/components/pullRequest/PullRequestTitleEditor.tsx	apps/web/src/components/pullRequest/PullRequestTitleEditor.tsx	4	4	merge3=conflicts:1
+M	manual	apps/web/src/components/pullRequest/PullRequestsColumn.tsx	apps/web/src/components/pullRequest/PullRequestsColumn.tsx	289	8	merge3=conflicts:2
+M	manual	apps/web/src/components/pullRequest/PullRequestsPage.tsx	apps/web/src/components/pullRequest/PullRequestsPage.tsx	467	9	merge3=conflicts:1;drift
+M	mechanical	apps/web/src/components/pullRequest/PullRequestsUnavailableState.tsx	apps/web/src/components/pullRequest/PullRequestsUnavailableState.tsx	0	4	
+M	manual	apps/web/src/components/pullRequest/ThreadPullRequestsPanel.tsx	apps/web/src/components/pullRequest/ThreadPullRequestsPanel.tsx	36	43	merge3=conflicts:2
+M	manual	apps/web/src/components/pullRequest/guide/GuideExcerpt.tsx	apps/web/src/components/pullRequest/guide/GuideExcerpt.tsx	8	12	merge3=clean;drift
+M	manual	apps/web/src/components/pullRequest/guide/GuideStop.tsx	apps/web/src/components/pullRequest/guide/GuideStop.tsx	8	29	merge3=conflicts:2;drift
+M	manual	apps/web/src/components/pullRequest/guide/GuideTour.tsx	apps/web/src/components/pullRequest/guide/GuideTour.tsx	80	4	merge3=conflicts:1
+M	manual	apps/web/src/components/pullRequest/pullRequestDetail.logic.ts	apps/web/src/components/pullRequest/pullRequestDetail.logic.ts	283	16	merge3=clean;drift
+M	manual	apps/web/src/components/pullRequest/pullRequestIcons.tsx	apps/web/src/components/pullRequest/pullRequestIcons.tsx	220	8	merge3=conflicts:3
+M	manual	apps/web/src/components/pullRequest/pullRequestPresentation.tsx	apps/web/src/components/pullRequest/pullRequestPresentation.tsx	176	54	merge3=conflicts:5;drift
+M	mechanical	apps/web/src/components/search/HighlightedSearchLine.tsx	apps/web/src/components/search/HighlightedSearchLine.tsx	0	4	
+M	manual	apps/web/src/components/search/ProjectContentSearchDialog.tsx	apps/web/src/components/search/ProjectContentSearchDialog.tsx	13	20	merge3=conflicts:2;drift
+M	manual	apps/web/src/components/settings/AcpRegistrySearchStep.tsx	apps/web/src/components/settings/AcpRegistrySearchStep.tsx	2	14	merge3=clean
+M	manual	apps/web/src/components/settings/AcpSessionManagementSection.tsx	apps/web/src/components/settings/AcpSessionManagementSection.tsx	35	26	merge3=conflicts:1;drift
+M	mechanical+drift	apps/web/src/components/settings/AddCodexAccountDialog.tsx	apps/web/src/components/settings/AddCodexAccountDialog.tsx	0	4	
+M	manual	apps/web/src/components/settings/AddEnvironmentDialog.tsx	apps/web/src/components/settings/AddEnvironmentDialog.tsx	133	30	merge3=conflicts:3;drift
+M	manual	apps/web/src/components/settings/AddProviderInstanceDialog.environment.browser.test.tsx	apps/web/src/components/settings/AddProviderInstanceDialog.environment.browser.test.tsx	26	10	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/settings/AddProviderInstanceDialog.tsx	apps/web/src/components/settings/AddProviderInstanceDialog.tsx	69	48	merge3=clean;drift
+M	manual	apps/web/src/components/settings/AddUsageLimitSourceDialog.tsx	apps/web/src/components/settings/AddUsageLimitSourceDialog.tsx	19	2	merge3=clean;drift
+M	manual	apps/web/src/components/settings/AdvancedSettings.tsx	apps/web/src/components/settings/AdvancedSettings.tsx	2	2	merge3=conflicts:1
+M	manual	apps/web/src/components/settings/AppearanceSettingsPanel.tsx	apps/web/src/components/settings/AppearanceSettingsPanel.tsx	346	150	merge3=conflicts:8;drift
+M	manual	apps/web/src/components/settings/ArchivedThreadsPanel.tsx	apps/web/src/components/settings/ArchivedThreadsPanel.tsx	164	20	merge3=conflicts:2;drift
+M	manual	apps/web/src/components/settings/AuthorizedClientsSettings.tsx	apps/web/src/components/settings/AuthorizedClientsSettings.tsx	261	101	merge3=conflicts:5;drift
+M	manual	apps/web/src/components/settings/BackgroundActivitySettings.tsx	apps/web/src/components/settings/BackgroundActivitySettings.tsx	230	18	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/settings/BrowserImportWizard.tsx	apps/web/src/components/settings/BrowserImportWizard.tsx	17	29	merge3=clean;drift
+M	manual	apps/web/src/components/settings/CaptureShortcutConfig.tsx	apps/web/src/components/settings/CaptureShortcutConfig.tsx	13	18	merge3=clean
+M	mechanical+drift	apps/web/src/components/settings/ChatGptAccountPicker.tsx	apps/web/src/components/settings/ChatGptAccountPicker.tsx	0	2	
+M	houston-missing	apps/web/src/components/settings/CliCommandSettingsRow.tsx			4	no-basename-match;deleted-in:3f07aa9fe1 feat(settings): remove dead settings, restore release branding, open houston:// links and keep saved credentials in the keychain
+M	manual	apps/web/src/components/settings/CloudVoiceConfiguration.tsx	apps/web/src/components/settings/CloudVoiceConfiguration.tsx		6	absent-at-fork:added-upstream-after-fork;houston-has-own-file;drift
+M	manual	apps/web/src/components/settings/CodexSetupSection.tsx	apps/web/src/components/settings/CodexSetupSection.tsx	86	35	merge3=conflicts:2;drift
+M	manual	apps/web/src/components/settings/ConnectionDiagnosisDetails.tsx	apps/web/src/components/settings/ConnectionDiagnosisDetails.tsx	13	50	merge3=clean
+M	manual	apps/web/src/components/settings/ConnectionsSettings.logic.ts	apps/web/src/components/settings/ConnectionsSettings.logic.ts	58	2	merge3=clean;drift
+M	manual	apps/web/src/components/settings/ConnectionsSettings.tsx	apps/web/src/components/settings/ConnectionsSettings.tsx	765	49	merge3=conflicts:4;drift
+M	manual	apps/web/src/components/settings/CustomModelEditor.tsx	apps/web/src/components/settings/CustomModelEditor.tsx	2	14	merge3=clean
+M	manual	apps/web/src/components/settings/DatabaseStorageNotice.tsx	apps/web/src/components/settings/DatabaseStorageNotice.tsx	118	6	merge3=conflicts:2;drift
+M	mechanical	apps/web/src/components/settings/DeviceHostEditor.tsx	apps/web/src/components/settings/DeviceHostEditor.tsx	0	10	
+M	manual	apps/web/src/components/settings/DeviceSourcesSettings.tsx	apps/web/src/components/settings/DeviceSourcesSettings.tsx	81	44	merge3=conflicts:4;drift
+M	manual	apps/web/src/components/settings/DiagnosticsSettings.tsx	apps/web/src/components/settings/DiagnosticsSettings.tsx	84	46	merge3=conflicts:1;drift
+M	mechanical+drift	apps/web/src/components/settings/EasDeviceHostEditor.tsx	apps/web/src/components/settings/EasDeviceHostEditor.tsx	0	26	
+M	manual	apps/web/src/components/settings/EnvironmentRoutesList.tsx	apps/web/src/components/settings/EnvironmentRoutesList.tsx	11	27	merge3=clean;drift
+M	manual	apps/web/src/components/settings/FoldedSettingsSection.tsx	apps/web/src/components/settings/FoldedSettingsSection.tsx	10	12	merge3=clean;drift
+M	manual	apps/web/src/components/settings/IntegrationsSettings.tsx	apps/web/src/components/settings/IntegrationsSettings.tsx	378	12	merge3=clean;drift
+M	manual	apps/web/src/components/settings/KeybindingsSettings.tsx	apps/web/src/components/settings/KeybindingsSettings.tsx	378	63	merge3=conflicts:4;drift
+M	manual	apps/web/src/components/settings/LabsSettingsPanel.tsx	apps/web/src/components/settings/LabsSettingsPanel.tsx	181	21	merge3=conflicts:3;drift
+M	mechanical	apps/web/src/components/settings/LinkAccessPicker.tsx	apps/web/src/components/settings/LinkAccessPicker.tsx	0	8	
+M	manual	apps/web/src/components/settings/LinkMachineSelect.tsx	apps/web/src/components/settings/LinkMachineSelect.tsx	4	2	merge3=clean;drift
+M	manual	apps/web/src/components/settings/LinkedEnvironmentsSettings.tsx	apps/web/src/components/settings/LinkedEnvironmentsSettings.tsx	6	35	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/settings/LoadBalancingSettings.tsx	apps/web/src/components/settings/LoadBalancingSettings.tsx	131	28	merge3=conflicts:2;drift
+M	manual	apps/web/src/components/settings/LocalEnvironmentSetting.tsx	apps/web/src/components/settings/LocalEnvironmentSetting.tsx	135	2	merge3=conflicts:1
+M	manual	apps/web/src/components/settings/MicrophoneTest.tsx	apps/web/src/components/settings/MicrophoneTest.tsx		2	absent-at-fork:added-upstream-after-fork;houston-has-own-file;drift
+M	houston-missing	apps/web/src/components/settings/MobileAppSettingsRow.tsx			6	no-basename-match;deleted-in:3f07aa9fe1 feat(settings): remove dead settings, restore release branding, open houston:// links and keep saved credentials in the keychain
+M	manual	apps/web/src/components/settings/MultipleAccountsNote.tsx	apps/web/src/components/settings/MultipleAccountsNote.tsx	4	10	merge3=conflicts:1
+M	manual	apps/web/src/components/settings/OpenSourceLicenses.tsx	apps/web/src/components/settings/OpenSourceLicenses.tsx	16	21	merge3=clean;drift
+M	houston-missing	apps/web/src/components/settings/PanelAnimationsPreview.tsx			6	no-basename-match;deleted-in:cc9524f520 chore(web): remove orphaned component modules
+M	manual	apps/web/src/components/settings/ProjectActionsList.tsx	apps/web/src/components/settings/ProjectActionsList.tsx	4	8	merge3=clean;drift
+M	manual	apps/web/src/components/settings/ProjectActionsSettings.tsx	apps/web/src/components/settings/ProjectActionsSettings.tsx	19	4	merge3=clean;drift
+M	manual	apps/web/src/components/settings/ProjectDefaultsSettings.tsx	apps/web/src/components/settings/ProjectDefaultsSettings.tsx	269	5	merge3=conflicts:1;drift
+M	houston-missing	apps/web/src/components/settings/ProjectIconPickerDialog.tsx			22	no-basename-match;deleted-in:03e7479bf7 refactor(web): drop project icons and monograms (wip)
+M	manual	apps/web/src/components/settings/ProjectSettingsPanel.tsx	apps/web/src/components/settings/ProjectSettingsPanel.tsx	338	41	merge3=conflicts:3;drift
+M	manual	apps/web/src/components/settings/ProjectsSettings.tsx	apps/web/src/components/settings/ProjectsSettings.tsx	92	4	merge3=clean
+M	manual	apps/web/src/components/settings/ProviderAuthTerminal.tsx	apps/web/src/components/settings/ProviderAuthTerminal.tsx	6	2	merge3=clean
+M	manual	apps/web/src/components/settings/ProviderAuthenticationSection.tsx	apps/web/src/components/settings/ProviderAuthenticationSection.tsx	72	10	merge3=clean;drift
+M	manual	apps/web/src/components/settings/ProviderInstanceCard.tsx	apps/web/src/components/settings/ProviderInstanceCard.tsx	383	74	merge3=conflicts:4;drift
+M	manual	apps/web/src/components/settings/ProviderModelsSection.tsx	apps/web/src/components/settings/ProviderModelsSection.tsx	136	51	merge3=conflicts:2;drift
+M	manual	apps/web/src/components/settings/ProviderSettingsForm.tsx	apps/web/src/components/settings/ProviderSettingsForm.tsx	185	4	merge3=clean;drift
+M	manual	apps/web/src/components/settings/ProviderSettingsPanel.tsx	apps/web/src/components/settings/ProviderSettingsPanel.tsx	190	27	merge3=conflicts:2;drift
+M	manual	apps/web/src/components/settings/ProviderSetupSection.tsx	apps/web/src/components/settings/ProviderSetupSection.tsx	36	8	merge3=clean;drift
+M	mechanical	apps/web/src/components/settings/ProviderWizardAuthenticationStep.tsx	apps/web/src/components/settings/ProviderWizardAuthenticationStep.tsx	0	6	
+M	manual	apps/web/src/components/settings/PullRequestRoutingSettings.tsx	apps/web/src/components/settings/PullRequestRoutingSettings.tsx	4	15	merge3=clean;drift
+M	manual	apps/web/src/components/settings/RedactedSensitiveText.tsx	apps/web/src/components/settings/RedactedSensitiveText.tsx	8	2	merge3=conflicts:1
+M	manual	apps/web/src/components/settings/ResourceTelemetryDiagnostics.tsx	apps/web/src/components/settings/ResourceTelemetryDiagnostics.tsx	78	190	merge3=conflicts:3;drift
+M	manual	apps/web/src/components/settings/SavedEnvironmentRows.tsx	apps/web/src/components/settings/SavedEnvironmentRows.tsx	427	58	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/settings/ScheduledTasksSettings.tsx	apps/web/src/components/settings/ScheduledTasksSettings.tsx	487	97	merge3=conflicts:8;drift
+M	manual	apps/web/src/components/settings/SecretProviderDialog.tsx	apps/web/src/components/settings/SecretProviderDialog.tsx		8	absent-at-fork:added-upstream-after-fork;houston-has-own-file;drift
+M	manual	apps/web/src/components/settings/SecretSourceInput.tsx	apps/web/src/components/settings/SecretSourceInput.tsx		2	absent-at-fork:added-upstream-after-fork;houston-has-own-file;drift
+M	houston-missing	apps/web/src/components/settings/SecretsSettings.logic.ts			10	absent-at-fork:added-upstream-after-fork
+M	manual	apps/web/src/components/settings/SecretsSettings.tsx	apps/web/src/components/settings/SecretsSettings.tsx		14	absent-at-fork:added-upstream-after-fork;houston-has-own-file;drift
+M	manual	apps/web/src/components/settings/SessionPermissions.tsx	apps/web/src/components/settings/SessionPermissions.tsx	11	4	merge3=clean;drift
+M	manual	apps/web/src/components/settings/SettingInheritance.tsx	apps/web/src/components/settings/SettingInheritance.tsx	38	96	merge3=conflicts:2;drift
+M	manual	apps/web/src/components/settings/SettingsFontPreviews.tsx	apps/web/src/components/settings/SettingsFontPreviews.tsx	6	7	merge3=clean
+M	manual	apps/web/src/components/settings/SettingsGroup.tsx	apps/web/src/components/settings/SettingsGroup.tsx	6	6	merge3=conflicts:1
+M	manual	apps/web/src/components/settings/SettingsPanels.tsx	apps/web/src/components/settings/SettingsPanels.tsx	988	63	merge3=conflicts:9;drift
+M	manual	apps/web/src/components/settings/SettingsScopeNotice.tsx	apps/web/src/components/settings/SettingsScopeNotice.tsx	71	95	merge3=conflicts:3;drift
+M	manual	apps/web/src/components/settings/SettingsScopeSentence.tsx	apps/web/src/components/settings/SettingsScopeSentence.tsx	260	14	merge3=conflicts:4;drift
+M	manual	apps/web/src/components/settings/SettingsSidebarNav.tsx	apps/web/src/components/settings/SettingsSidebarNav.tsx	190	32	merge3=conflicts:4;drift
+M	manual	apps/web/src/components/settings/SimlockDeviceHostEditor.tsx	apps/web/src/components/settings/SimlockDeviceHostEditor.tsx	87	33	merge3=clean;drift
+M	manual	apps/web/src/components/settings/SnapShotSettings.tsx	apps/web/src/components/settings/SnapShotSettings.tsx	331	4	merge3=conflicts:1
+M	manual	apps/web/src/components/settings/SnapShotSetupDialog.tsx	apps/web/src/components/settings/SnapShotSetupDialog.tsx	10	6	merge3=clean
+M	manual	apps/web/src/components/settings/SnoozePresetsSettings.tsx	apps/web/src/components/settings/SnoozePresetsSettings.tsx	216	23	merge3=conflicts:1;drift
+M	mechanical	apps/web/src/components/settings/SourceControlAccountSettings.tsx	apps/web/src/components/settings/SourceControlAccountSettings.tsx	0	30	
+M	manual	apps/web/src/components/settings/SourceControlAppSignInSettings.tsx	apps/web/src/components/settings/SourceControlAppSignInSettings.tsx	20	19	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/settings/SourceControlHostSettings.tsx	apps/web/src/components/settings/SourceControlHostSettings.tsx	4	2	merge3=clean;drift
+M	manual	apps/web/src/components/settings/SourceControlSettings.tsx	apps/web/src/components/settings/SourceControlSettings.tsx	171	34	merge3=conflicts:2
+M	manual	apps/web/src/components/settings/SourceControlTokenSettings.tsx	apps/web/src/components/settings/SourceControlTokenSettings.tsx	52	14	merge3=clean;drift
+M	manual	apps/web/src/components/settings/SourceControlWritingSettings.tsx	apps/web/src/components/settings/SourceControlWritingSettings.tsx	690	10	merge3=conflicts:4;drift
+M	manual	apps/web/src/components/settings/StorageSettings.tsx	apps/web/src/components/settings/StorageSettings.tsx	548	46	merge3=clean;drift
+A	new	apps/web/src/components/settings/SurfaceStylePreview.tsx			72	
+M	manual	apps/web/src/components/settings/TelemetryExportSettings.browser.test.tsx	apps/web/src/components/settings/TelemetryExportSettings.browser.test.tsx	5	6	merge3=clean
+M	manual	apps/web/src/components/settings/TelemetryExportSettings.tsx	apps/web/src/components/settings/TelemetryExportSettings.tsx	321	28	merge3=conflicts:3
+M	houston-missing	apps/web/src/components/settings/TextGeneratorsSettings.tsx			39	absent-at-fork:added-upstream-after-fork
+M	manual	apps/web/src/components/settings/ThemeColorPicker.tsx	apps/web/src/components/settings/ThemeColorPicker.tsx	59	8	merge3=clean;drift
+M	manual	apps/web/src/components/settings/ThemeEditorPanel.tsx	apps/web/src/components/settings/ThemeEditorPanel.tsx	44	45	merge3=clean;drift
+M	manual	apps/web/src/components/settings/ThemeImportDialog.tsx	apps/web/src/components/settings/ThemeImportDialog.tsx	40	8	merge3=clean;drift
+M	manual	apps/web/src/components/settings/ThemePreviewCircles.tsx	apps/web/src/components/settings/ThemePreviewCircles.tsx	14	19	merge3=conflicts:1
+M	manual	apps/web/src/components/settings/ThemeSearchSection.tsx	apps/web/src/components/settings/ThemeSearchSection.tsx	2	41	merge3=conflicts:1
+M	manual	apps/web/src/components/settings/ThemeSettings.tsx	apps/web/src/components/settings/ThemeSettings.tsx	458	251	merge3=conflicts:14
+M	manual	apps/web/src/components/settings/ThemeWireframe.tsx	apps/web/src/components/settings/ThemeWireframe.tsx	9	269	merge3=conflicts:2
+M	manual	apps/web/src/components/settings/ThreadDetailsItemsRow.tsx	apps/web/src/components/settings/ThreadDetailsItemsRow.tsx		8	absent-at-fork:added-upstream-after-fork;houston-has-own-file;drift
+M	houston-missing	apps/web/src/components/settings/UpdateTrackSwitchDialog.tsx			2	absent-at-fork:added-upstream-after-fork
+M	manual	apps/web/src/components/settings/UsageProviderSettings.tsx	apps/web/src/components/settings/UsageProviderSettings.tsx	7	20	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/settings/VoiceSettingsPanel.tsx	apps/web/src/components/settings/VoiceSettingsPanel.tsx		12	absent-at-fork:added-upstream-after-fork;houston-has-own-file;drift
+M	manual	apps/web/src/components/settings/providerStatus.test.ts	apps/web/src/components/settings/providerStatus.test.ts	150	5	merge3=conflicts:2
+M	manual	apps/web/src/components/settings/providerStatus.ts	apps/web/src/components/settings/providerStatus.ts	128	22	merge3=conflicts:1
+M	manual	apps/web/src/components/settings/settingsLayout.tsx	apps/web/src/components/settings/settingsLayout.tsx	241	45	merge3=conflicts:5;drift
+M	manual	apps/web/src/components/settings/settingsScope.test.ts	apps/web/src/components/settings/settingsScope.test.ts	28	2	merge3=conflicts:1;drift
+M	mechanical	apps/web/src/components/settings/settingsScope.ts	apps/web/src/components/settings/settingsScope.ts	0	7	
+M	mechanical	apps/web/src/components/settings/settingsScopeAxis.ts	apps/web/src/components/settings/settingsScopeAxis.ts	0	15	
+M	manual	apps/web/src/components/settings/settingsSearch.test.ts	apps/web/src/components/settings/settingsSearch.test.ts	151	1	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/settings/settingsSearch.ts	apps/web/src/components/settings/settingsSearch.ts	417	32	merge3=conflicts:2;drift
+M	manual	apps/web/src/components/settings/useSnapShotShortcutRecorder.tsx	apps/web/src/components/settings/useSnapShotShortcutRecorder.tsx	59	2	merge3=conflicts:1
+M	manual	apps/web/src/components/sidebar/DesktopUpdateStatusIcon.tsx	apps/web/src/components/sidebar/DesktopUpdateStatusIcon.tsx	77	41	merge3=conflicts:5
+M	manual	apps/web/src/components/sidebar/SidebarChrome.tsx	apps/web/src/components/sidebar/SidebarChrome.tsx	159	247	merge3=conflicts:8;drift
+M	manual	apps/web/src/components/sidebar/SidebarDraftBlock.browser.test.tsx	apps/web/src/components/sidebar/SidebarDraftBlock.browser.test.tsx		1	absent-at-fork:added-upstream-after-fork;houston-has-own-file;drift
+M	manual	apps/web/src/components/sidebar/SidebarDraftBlock.tsx	apps/web/src/components/sidebar/SidebarDraftBlock.tsx	25	42	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/sidebar/SidebarListMarkers.tsx	apps/web/src/components/sidebar/SidebarListMarkers.tsx	79	11	merge3=clean;drift
+M	manual	apps/web/src/components/sidebar/SidebarProjectFolderHeader.tsx	apps/web/src/components/sidebar/SidebarProjectFolderHeader.tsx	82	18	merge3=conflicts:3;drift
+M	manual	apps/web/src/components/sidebar/SidebarProviderUpdatePill.tsx	apps/web/src/components/sidebar/SidebarProviderUpdatePill.tsx	18	16	merge3=conflicts:3
+M	manual	apps/web/src/components/sidebar/SidebarThreadHeader.tsx	apps/web/src/components/sidebar/SidebarThreadHeader.tsx	142	92	merge3=conflicts:4;drift
+M	manual	apps/web/src/components/sidebar/SidebarThreadRow.tsx	apps/web/src/components/sidebar/SidebarThreadRow.tsx	321	520	merge3=conflicts:11;drift
+M	manual	apps/web/src/components/sidebar/SidebarThreadUndoNotice.tsx	apps/web/src/components/sidebar/SidebarThreadUndoNotice.tsx	51	2	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/sidebar/SidebarUpdateCapsule.tsx	apps/web/src/components/sidebar/SidebarUpdateCapsule.tsx	19	25	merge3=conflicts:2;drift
+M	manual	apps/web/src/components/sidebar/SidebarUpdatePill.tsx	apps/web/src/components/sidebar/SidebarUpdatePill.tsx	136	30	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.tsx	apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.tsx	179	39	merge3=conflicts:3;drift
+M	manual	apps/web/src/components/sidebar/UpdateEverythingDialog.tsx	apps/web/src/components/sidebar/UpdateEverythingDialog.tsx	39	43	merge3=conflicts:2;drift
+M	manual	apps/web/src/components/sidebar/routeReveal.ts	apps/web/src/components/sidebar/routeReveal.ts	3	10	merge3=clean;drift
+M	manual	apps/web/src/components/threadActionMenu.logic.ts	apps/web/src/components/threadActionMenu.logic.ts	474	4	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/ui/alert-dialog.tsx	apps/web/src/components/ui/alert-dialog.tsx	5	9	merge3=conflicts:2;drift
+M	manual	apps/web/src/components/ui/alert.tsx	apps/web/src/components/ui/alert.tsx	49	36	merge3=conflicts:2
+M	manual	apps/web/src/components/ui/autocomplete.tsx	apps/web/src/components/ui/autocomplete.tsx	14	23	merge3=conflicts:4;drift
+M	manual	apps/web/src/components/ui/badge.tsx	apps/web/src/components/ui/badge.tsx	24	42	merge3=conflicts:2
+M	manual	apps/web/src/components/ui/button.tsx	apps/web/src/components/ui/button.tsx	80	123	merge3=conflicts:5;drift
+M	manual	apps/web/src/components/ui/calendar.tsx	apps/web/src/components/ui/calendar.tsx	8	17	merge3=conflicts:2
+M	manual	apps/web/src/components/ui/checkbox.tsx	apps/web/src/components/ui/checkbox.tsx	5	35	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/ui/collapsible-section-header.tsx	apps/web/src/components/ui/collapsible-section-header.tsx	4	9	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/ui/collapsible.tsx	apps/web/src/components/ui/collapsible.tsx	20	13	merge3=clean
+M	manual	apps/web/src/components/ui/color-picker.tsx	apps/web/src/components/ui/color-picker.tsx	7	2	merge3=clean;drift
+M	manual	apps/web/src/components/ui/combobox.tsx	apps/web/src/components/ui/combobox.tsx	61	61	merge3=conflicts:4;drift
+M	manual	apps/web/src/components/ui/command.tsx	apps/web/src/components/ui/command.tsx	37	119	merge3=conflicts:7;drift
+M	manual	apps/web/src/components/ui/dialog-styles.ts	apps/web/src/components/ui/dialog-styles.ts	11	12	merge3=conflicts:2
+M	houston-missing	apps/web/src/components/ui/dialog.browser.test.tsx			2	absent-at-fork:added-upstream-after-fork
+M	manual	apps/web/src/components/ui/dialog.tsx	apps/web/src/components/ui/dialog.tsx	6	44	merge3=conflicts:4;drift
+M	manual	apps/web/src/components/ui/discovery-list.tsx	apps/web/src/components/ui/discovery-list.tsx	20	8	merge3=conflicts:2
+M	manual	apps/web/src/components/ui/empty.tsx	apps/web/src/components/ui/empty.tsx	32	35	merge3=conflicts:4
+M	manual	apps/web/src/components/ui/input-group.tsx	apps/web/src/components/ui/input-group.tsx	21	26	merge3=conflicts:2
+M	manual	apps/web/src/components/ui/input.tsx	apps/web/src/components/ui/input.tsx	19	16	merge3=conflicts:3
+M	manual	apps/web/src/components/ui/kbd.tsx	apps/web/src/components/ui/kbd.tsx	10	14	merge3=conflicts:1;drift
+M	mechanical	apps/web/src/components/ui/label.tsx	apps/web/src/components/ui/label.tsx	0	5	
+A	new	apps/web/src/components/ui/labeled-section.tsx			25	
+A	new	apps/web/src/components/ui/menu-row-text.ts			2	
+M	manual	apps/web/src/components/ui/menu.tsx	apps/web/src/components/ui/menu.tsx	78	75	merge3=conflicts:12;drift
+M	manual	apps/web/src/components/ui/number-field.tsx	apps/web/src/components/ui/number-field.tsx	8	10	merge3=conflicts:4
+M	manual	apps/web/src/components/ui/panel-tab-close-button.tsx	apps/web/src/components/ui/panel-tab-close-button.tsx	2	2	merge3=conflicts:1
+A	new	apps/web/src/components/ui/picker-styles.ts			1	
+M	manual	apps/web/src/components/ui/popover.tsx	apps/web/src/components/ui/popover.tsx	45	18	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/ui/preview-card.tsx	apps/web/src/components/ui/preview-card.tsx	4	2	merge3=conflicts:1
+M	manual	apps/web/src/components/ui/radio-group.tsx	apps/web/src/components/ui/radio-group.tsx	5	4	merge3=conflicts:2
+M	manual	apps/web/src/components/ui/refresh-icon.tsx	apps/web/src/components/ui/refresh-icon.tsx	24	4	merge3=conflicts:1
+M	manual	apps/web/src/components/ui/scroll-area.tsx	apps/web/src/components/ui/scroll-area.tsx	17	2	merge3=clean
+M	manual	apps/web/src/components/ui/select.tsx	apps/web/src/components/ui/select.tsx	25	62	merge3=conflicts:8;drift
+M	mechanical	apps/web/src/components/ui/separator.tsx	apps/web/src/components/ui/separator.tsx	0	2	
+M	manual	apps/web/src/components/ui/sheet.tsx	apps/web/src/components/ui/sheet.tsx	51	17	merge3=conflicts:6;drift
+M	manual	apps/web/src/components/ui/sidebar.tsx	apps/web/src/components/ui/sidebar.tsx	86	81	merge3=conflicts:9;drift
+M	manual	apps/web/src/components/ui/skeleton.tsx	apps/web/src/components/ui/skeleton.tsx	4	2	merge3=clean
+M	manual	apps/web/src/components/ui/standalone-page.tsx	apps/web/src/components/ui/standalone-page.tsx	67	8	merge3=conflicts:1
+A	new	apps/web/src/components/ui/status-dot.tsx			108	
+M	manual	apps/web/src/components/ui/switch.tsx	apps/web/src/components/ui/switch.tsx	18	4	merge3=conflicts:2
+M	manual	apps/web/src/components/ui/table.tsx	apps/web/src/components/ui/table.tsx	2	6	merge3=conflicts:1
+A	collides	apps/web/src/components/ui/text.tsx	apps/web/src/components/ui/text.tsx	125	64	
+M	manual	apps/web/src/components/ui/textarea.tsx	apps/web/src/components/ui/textarea.tsx	29	8	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/ui/toast.tsx	apps/web/src/components/ui/toast.tsx	47	86	merge3=conflicts:8;drift
+M	manual	apps/web/src/components/ui/toggle-group.tsx	apps/web/src/components/ui/toggle-group.tsx	56	28	merge3=conflicts:1
+M	manual	apps/web/src/components/ui/toggle.tsx	apps/web/src/components/ui/toggle.tsx	22	23	merge3=conflicts:3
+M	manual	apps/web/src/components/ui/tooltip.tsx	apps/web/src/components/ui/tooltip.tsx	19	26	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/ui/wizard.tsx	apps/web/src/components/ui/wizard.tsx	12	20	merge3=conflicts:4
+M	manual	apps/web/src/components/usage/UsageLimits.tsx	apps/web/src/components/usage/UsageLimits.tsx	48	50	merge3=conflicts:4;drift
+M	manual	apps/web/src/components/usage/UsageLimitsPooled.tsx	apps/web/src/components/usage/UsageLimitsPooled.tsx	68	16	merge3=conflicts:1;drift
+M	mechanical	apps/web/src/components/usage/UsageModelDialog.tsx	apps/web/src/components/usage/UsageModelDialog.tsx	0	14	
+M	manual	apps/web/src/components/usage/UsagePage.tsx	apps/web/src/components/usage/UsagePage.tsx	1216	48	merge3=conflicts:3;drift
+M	manual	apps/web/src/components/usage/UsagePriceOverrides.tsx	apps/web/src/components/usage/UsagePriceOverrides.tsx	6	17	merge3=clean
+M	manual	apps/web/src/components/usage/UsageProviderChart.tsx	apps/web/src/components/usage/UsageProviderChart.tsx	2	2	merge3=clean
+M	mechanical	apps/web/src/components/usage/UsageShareBar.tsx	apps/web/src/components/usage/UsageShareBar.tsx	0	10	
+M	manual	apps/web/src/connection/platform.ts	apps/web/src/connection/platform.ts	96	2	merge3=clean;drift
+M	manual	apps/web/src/contextMenuFallback.ts	apps/web/src/contextMenuFallback.ts	224	69	merge3=conflicts:2;drift
+A	new	apps/web/src/devArtworkPreview.ts			33	
+M	manual	apps/web/src/hooks/useHtmlRenderTheme.ts	apps/web/src/hooks/useHtmlRenderTheme.ts	10	6	merge3=conflicts:1
+M	manual	apps/web/src/hooks/useSettings.ts	apps/web/src/hooks/useSettings.ts	79	5	merge3=clean;drift
+M	manual	apps/web/src/hooks/useTheme.ts	apps/web/src/hooks/useTheme.ts	103	123	merge3=conflicts:2
+M	manual	apps/web/src/index.css	apps/web/src/index.css	1553	3349	merge3=conflicts:19;drift
+M	manual	apps/web/src/lib/diffRendering.ts	apps/web/src/lib/diffRendering.ts	51	74	merge3=conflicts:3;drift
+A	new	apps/web/src/lib/openLayers.ts			16	
+M	manual	apps/web/src/lib/utils.test.ts	apps/web/src/lib/utils.test.ts	20	1	merge3=clean
+M	manual	apps/web/src/lib/utils.ts	apps/web/src/lib/utils.ts	22	20	merge3=conflicts:2
+M	houston-missing	apps/web/src/navigationHistory.ts			98	absent-at-fork:added-upstream-after-fork
+M	manual	apps/web/src/pierre-tree-theme.ts	apps/web/src/pierre-tree-theme.ts	8	49	merge3=conflicts:1
+M	manual	apps/web/src/rightPanelStore.test.ts	apps/web/src/rightPanelStore.test.ts	61	25	merge3=clean;drift
+M	manual	apps/web/src/rightPanelStore.ts	apps/web/src/rightPanelStore.ts	139	18	merge3=conflicts:1;drift
+M	manual	apps/web/src/routeTree.gen.ts	apps/web/src/routeTree.gen.ts	168	21	merge3=conflicts:11;drift
+M	manual	apps/web/src/routes/__root.tsx	apps/web/src/routes/__root.tsx	111	26	merge3=conflicts:3;drift
+M	mechanical	apps/web/src/routes/_chat.settings.providers.tsx	apps/web/src/routes/_chat.settings.providers.tsx	0	2	
+M	manual	apps/web/src/routes/_chat.settings.tsx	apps/web/src/routes/_chat.settings.tsx	102	30	merge3=conflicts:3;drift
+A	new	apps/web/src/routes/design-system.tsx			11	
+M	manual	apps/web/src/session-logic.test.ts	apps/web/src/session-logic.test.ts	92	3	merge3=clean;drift
+M	manual	apps/web/src/session-logic.ts	apps/web/src/session-logic.ts	88	3	merge3=clean;drift
+M	houston-missing	apps/web/src/shortcuts/chatRouteCommands.test.ts			4	absent-at-fork:added-upstream-after-fork
+M	manual	apps/web/src/shortcuts/chatRouteCommands.ts	apps/web/src/shortcuts/chatRouteCommands.ts	75	29	merge3=conflicts:2;drift
+M	manual	apps/web/src/shortcuts/commandPaletteCommands.ts	apps/web/src/shortcuts/commandPaletteCommands.ts	3	18	merge3=conflicts:2;drift
+M	manual	apps/web/src/state/shell.ts	apps/web/src/state/shell.ts	10	17	merge3=clean;drift
+M	manual	apps/web/src/themeBoot.test.ts	apps/web/src/themeBoot.test.ts	56	32	merge3=conflicts:2
+M	manual	apps/web/src/themePalette.test.ts	apps/web/src/themePalette.test.ts	37	4	merge3=conflicts:1;drift
+M	manual	apps/web/src/themePalette.ts	apps/web/src/themePalette.ts	170	43	merge3=conflicts:2;drift
+M	houston-missing	assets/nightly/app-icon.icon/Assets/background.svg			146	no-basename-match
+D	houston-missing	assets/nightly/app-icon.icon/Assets/cloud-lower-left.svg			21	no-basename-match
+D	houston-missing	assets/nightly/app-icon.icon/Assets/cloud-upper-right.svg			21	no-basename-match
+M	houston-missing	assets/nightly/app-icon.icon/icon.json			21	no-basename-match
+M	houston-missing	assets/nightly/nightly-ios-1024.png			bin	no-basename-match
+M	houston-missing	assets/nightly/nightly-macos-1024.png			bin	no-basename-match
+M	houston-missing	assets/nightly/nightly-universal-1024.png			bin	no-basename-match
+M	houston-missing	assets/nightly/nightly-web-apple-touch-180.png			bin	no-basename-match
+M	houston-missing	assets/nightly/nightly-web-favicon-16x16.png			bin	no-basename-match
+M	houston-missing	assets/nightly/nightly-web-favicon-32x32.png			bin	no-basename-match
+M	houston-missing	assets/nightly/nightly-web-favicon.ico			bin	no-basename-match
+M	houston-missing	assets/nightly/nightly-windows.ico			bin	no-basename-match
+M	manual	docs/user/appearance.md	docs/user/appearance.md	138	17	merge3=conflicts:2;drift
+M	manual	docs/user/keybindings.md	docs/user/keybindings.md	277	4	merge3=conflicts:1;drift
+M	manual	oxlint-plugin-t3code/index.ts	oxlint-plugin-houston/index.ts	10	8	merge3=clean;drift
+A	new	oxlint-plugin-t3code/rules/no-dot-separated-text.ts			111	
+A	new	oxlint-plugin-t3code/rules/no-raw-type-classes.test.ts			67	
+A	new	oxlint-plugin-t3code/rules/no-raw-type-classes.ts			95	
+A	new	oxlint-plugin-t3code/rules/no-spaced-caps.ts			68	
+A	new	oxlint-plugin-t3code/rules/no-styled-raw-controls.test.ts			158	
+A	new	oxlint-plugin-t3code/rules/no-styled-raw-controls.ts			207	
+M	mechanical	packages/client-runtime/src/state/terminal.ts	packages/client-runtime/src/state/terminal.ts	0	4	
+M	manual	packages/client-runtime/src/threadPullRequests.test.ts	packages/client-runtime/src/threadPullRequests.test.ts	24	21	merge3=clean;drift
+M	manual	packages/contracts/src/ipc.ts	packages/contracts/src/ipc.ts	265	11	merge3=conflicts:1;drift
+M	manual	packages/contracts/src/server.ts	packages/contracts/src/server.ts	42	5	merge3=clean;drift
+M	manual	packages/contracts/src/settings.test.ts	packages/contracts/src/settings.test.ts	343	26	merge3=clean;drift
+M	manual	packages/contracts/src/settings.ts	packages/contracts/src/settings.ts	398	46	merge3=conflicts:5;drift
+M	manual	packages/shared/src/themePalettes.ts	packages/shared/src/themePalettes.ts	24	86	merge3=clean
+M	mechanical	packages/shared/src/themePreview.ts	packages/shared/src/themePreview.ts	0	8	
+M	manual	packages/shared/src/usageLimits.test.ts	packages/shared/src/usageLimits.test.ts	160	8	merge3=conflicts:1;drift
+M	manual	packages/shared/src/usageLimits.ts	packages/shared/src/usageLimits.ts	123	13	merge3=conflicts:1;drift
+M	mechanical	packages/source-control-core/src/shared/threadPullRequests.ts	packages/source-control-core/src/shared/threadPullRequests.ts	0	28	
+M	manual	scripts/build-desktop-artifact.ts	scripts/build-desktop-artifact.ts	4788	12	merge3=conflicts:1;drift
+M	houston-missing	scripts/export-android-icons.ts			43	no-basename-match
+M	manual	vite.config.ts	vite.config.ts	218	375	merge3=clean;drift
