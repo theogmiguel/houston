@@ -116,6 +116,7 @@ import * as HoustonResumeSessions from "../resumeSessions.ts";
 import * as HoustonReviewState from "../reviewState.ts";
 import * as HoustonTaskSourceService from "../taskSources/SourceService.ts";
 import * as HoustonTaskSourceV1Import from "../taskSources/V1Import.ts";
+import * as HoustonGrids from "../grids.ts";
 import * as HoustonSlackService from "../slack/Service.ts";
 import * as HoustonSlackV1Import from "../slack/V1Import.ts";
 import * as HoustonTaskRuns from "../tasks/TaskRuns.ts";
@@ -162,6 +163,7 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(HoustonTaskV1Import.HoustonTaskV1Import)({}),
   Layer.mock(HoustonTaskSourceService.HoustonTaskSourceService)({}),
   Layer.mock(HoustonTaskSourceV1Import.HoustonTaskSourceV1Import)({}),
+  Layer.mock(HoustonGrids.HoustonGridService)({}),
   Layer.mock(HoustonSlackService.HoustonSlackService)({}),
   Layer.mock(HoustonSlackV1Import.HoustonSlackV1Import)({}),
   Layer.mock(KnownWorkspaces.KnownWorkspaces)({}),

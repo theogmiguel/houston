@@ -1,4 +1,4 @@
-import { containsThread, type LayoutNode } from "./tree";
+import { containsThread, type LayoutNode } from "@houston-app/shared/grid/tree";
 
 export type GridThreadOpen =
   | { readonly kind: "navigate" }

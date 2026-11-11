@@ -4,7 +4,7 @@ import { page } from "vite-plus/test/browser";
 
 import { beginThreadDragAt, endThreadDrag, type ThreadDragSource } from "../../grid/threadDrag";
 import type { GridRecord } from "../../grid/gridStore";
-import { threadLeaf, type LayoutNode, type Side } from "../../grid/tree";
+import { threadLeaf, type LayoutNode, type Side } from "@houston-app/shared/grid/tree";
 import { act, render } from "../../../test/render";
 import { configureMotion } from "../../motion/registry";
 import { GridHost, type GridCellRenderProps } from "./GridHost";

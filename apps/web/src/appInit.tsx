@@ -15,6 +15,7 @@ import { retainThreadOverlaysForThread } from "./components/chat/threadOverlayRe
 import { startBackgroundThreadAnnouncements } from "./components/BackgroundThreadAnnouncer";
 import { startSshPasswordPromptQueue } from "./components/desktop/SshPasswordPromptDialog";
 import { startHostFreezeToasts } from "./components/HostFreezeToastCoordinator";
+import { startAppGridSync } from "./grid/gridSyncRuntime";
 import { startKeybindingsUpdateToasts } from "./components/KeybindingsUpdateToast";
 import { startLegacyThreadMigrationToast } from "./components/LegacyThreadMigrationToast";
 import { startPermissionUpdateNotices } from "./components/PermissionUpdateNotice";
@@ -226,6 +227,7 @@ export function startAppServices(): AppRouter {
   startSshPasswordPromptQueue();
 
   startKeybindingsUpdateToasts();
+  startAppGridSync();
   startSlowRpcRequestToasts();
   startHostFreezeToasts();
   startLegacyThreadMigrationToast();

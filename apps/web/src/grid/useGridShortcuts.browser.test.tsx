@@ -7,7 +7,7 @@ import { userEvent } from "vite-plus/test/browser";
 import { render } from "../../test/render";
 import type { GridRecord } from "./gridStore";
 import { useGridStore } from "./gridStore";
-import { threadLeaf } from "./tree";
+import { threadLeaf } from "@houston-app/shared/grid/tree";
 import { useGridShortcuts } from "./useGridShortcuts";
 
 const mod = {

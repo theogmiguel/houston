@@ -7,6 +7,10 @@ session that serves a thread. A **grid** is a named layout of threads in one pro
 Closing the window detaches the app from the local server. Threads, runs and grids continue
 on the server, and the next launch reconnects to them.
 
+The server keeps each grid's name, layout, pin and hidden state, so a change an agent makes to a
+grid appears in the open window. The window keeps a local copy for the first paint and for
+grids whose server is not connected; their edits are sent when it connects.
+
 ## Adding a project
 
 Houston starts with **Add a project to start**. Choose **Add folder** for an existing
@@ -272,6 +276,13 @@ parent thread shows its children in the timeline and in the thread relationships
 the thread header however far the timeline is scrolled. A child's question or approval request appears
 in the parent's pending approvals and needs your answer there. Agents reach threads,
 tasks and pulls through the server's MCP toolkits, not through the terminal.
+
+Agents also manage grids through the `houston_grid_*` tools, with the app closed: list, create,
+rename, hide, pin and delete a grid, and place a thread in it or take it out. A grid holds at most
+six threads and only threads of its own project; a refusal names the limit. `houston_thread_launch`
+and `create_threads` take a `grid` to put the new threads in an existing grid or a new one, and
+`houston_thread_read` and `houston_thread_list` report each thread's `gridId`. Placing a thread in
+a grid moves it out of its other grid.
 
 ## Closing
 

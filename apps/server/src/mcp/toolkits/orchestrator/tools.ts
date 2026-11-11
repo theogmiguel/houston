@@ -42,6 +42,7 @@ import { McpSchema, Tool, Toolkit } from "effect/ai";
 import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
 
+import { HoustonGridService } from "../../../houston/grids.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as PeerForwarding from "../../../peer/PeerForwarding.ts";
 import * as PeerLinkRequests from "../../../peer/PeerLinkRequests.ts";
@@ -55,6 +56,8 @@ const dependencies = [
   ThreadManagementService.ThreadManagementService,
   OrchestratorMcpService.OrchestratorMcpService,
 ];
+/** Tools that name a thread's grid. */
+const gridDependencies = [...dependencies, HoustonGridService];
 /** Listing this environment's links. */
 const linkDependencies = [...dependencies, PeerForwarding.PeerForwarding];
 /** Making and forgetting links. */
@@ -211,12 +214,12 @@ const RequestSecretTool = Tool.make("request_secret", {
 
 const CreateThreadsTool = Tool.make("create_threads", {
   description:
-    "Create new top-level threads in this checkout. Not delegation. One thread or its own worktree: `houston_thread_launch`. Project, branch, and worktree inherit.",
+    "Create new top-level threads in this checkout. Not delegation. One thread or its own worktree: `houston_thread_launch`. Project, branch, and worktree inherit. `grid` places them in a grid.",
   parameters: OrchestratorMcpCreateThreadsInput,
   success: OrchestratorMcpCreateThreadsResult,
   failure: OrchestratorMcpFailure,
   failureMode: "return",
-  dependencies,
+  dependencies: gridDependencies,
 })
   .annotate(Tool.Title, "Create Houston threads")
   .annotate(Tool.Destructive, true)
@@ -229,7 +232,7 @@ const ThreadListTool = Tool.make("houston_thread_list", {
   success: OrchestratorMcpThreadListResult,
   failure: OrchestratorMcpFailure,
   failureMode: "return",
-  dependencies,
+  dependencies: gridDependencies,
 })
   .annotate(Tool.Title, "List Houston threads")
   .annotate(Tool.Readonly, true)
@@ -243,7 +246,7 @@ const ThreadReadTool = Tool.make("houston_thread_read", {
   success: OrchestratorMcpThreadReadResult,
   failure: OrchestratorMcpFailure,
   failureMode: "return",
-  dependencies,
+  dependencies: gridDependencies,
 })
   .annotate(Tool.Title, "Read a Houston thread")
   .annotate(Tool.Strict, true)

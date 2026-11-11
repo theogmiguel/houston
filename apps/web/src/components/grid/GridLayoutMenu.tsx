@@ -4,7 +4,7 @@ import { ChevronDownIcon, Columns3Icon, LayoutGridIcon, Rows3Icon } from "lucide
 import type { ReactNode } from "react";
 
 import { type GridRecord, useGridStore } from "../../grid/gridStore";
-import { preorderThreads, type TidyShape } from "../../grid/tree";
+import { preorderThreads, type TidyShape } from "@houston-app/shared/grid/tree";
 import { shortcutLabelForCommand } from "../../keybindings";
 import { primaryServerKeybindingsAtom } from "../../state/server";
 import { Button } from "../ui/button";

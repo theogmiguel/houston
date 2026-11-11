@@ -3,7 +3,12 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 import type { GridRecord } from "../../grid/gridStore";
 import { beginThreadDragAt, endThreadDrag, type ThreadDragSource } from "../../grid/threadDrag";
-import { type LayoutNode, preorderLeaves, preorderThreads, threadLeaf } from "../../grid/tree";
+import {
+  type LayoutNode,
+  preorderLeaves,
+  preorderThreads,
+  threadLeaf,
+} from "@houston-app/shared/grid/tree";
 import { act, render } from "../../../test/render";
 import { configureMotion } from "../../motion/registry";
 import { userEvent } from "vite-plus/test/browser";
