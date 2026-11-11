@@ -15,7 +15,6 @@ import {
   searchablePlanSegments,
 } from "@houston-app/shared/threadFindText";
 import { countThreadSearchOccurrences } from "@houston-app/shared/threadSearch";
-import * as Cache from "effect/Cache";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -27,6 +26,7 @@ import {
   ProjectionStoreThreadNotFoundError,
   type ProjectionStoreV2Error,
 } from "./ProjectionStore.ts";
+import { makeBudgetedCache } from "../houston/budgetedCache.ts";
 
 interface FindRow {
   readonly position: number;
@@ -59,21 +59,28 @@ const scannedItemKey = (row: FindRow) => `${row.sourceThreadId}\u0000${row.sourc
 // digest changed; decoding and parsing are most of a long thread's scan.
 const payloadDigest = (payload: string) =>
   NodeCrypto.createHash("sha256").update(payload).digest("base64");
-class TextKey extends Data.Class<{
-  text: string;
-  role: "user" | "assistant" | "plan";
-  streaming: boolean;
-  hasContext: boolean;
+/** Identifies one parse: the item version's payload digest and the display context it used. */
+export class TextKey extends Data.Class<{
+  digest: string;
   cwd: string | undefined;
   skills: NonNullable<OrchestrationV2SearchThreadInput["skills"]>;
 }> {}
 
-function textKey(
+interface ParseInput {
+  readonly text: string;
+  readonly role: "user" | "assistant" | "plan";
+  readonly streaming: boolean;
+  readonly hasContext: boolean;
+  readonly cwd: string | undefined;
+  readonly skills: TextKey["skills"];
+}
+
+function parseInput(
   item: OrchestrationV2TurnItem,
   cwd: string | undefined,
   skills: TextKey["skills"],
-) {
-  return new TextKey({
+): ParseInput {
+  return {
     text:
       item.type === "proposed_plan"
         ? item.markdown
@@ -86,23 +93,50 @@ function textKey(
     hasContext: item.type === "user_message" && item.context !== undefined,
     cwd,
     skills,
-  });
+  };
 }
 
-function parseText(key: TextKey): readonly string[] {
-  return key.role === "plan"
-    ? searchablePlanSegments(key.text, key.cwd)
+function parseText(input: ParseInput): readonly string[] {
+  return input.role === "plan"
+    ? searchablePlanSegments(input.text, input.cwd)
     : (searchableMessageSegments(
         {
-          role: key.role,
-          text: key.text,
-          streaming: key.streaming,
-          context: key.hasContext ? { version: 1, records: [] } : undefined,
+          role: input.role,
+          text: input.text,
+          streaming: input.streaming,
+          context: input.hasContext ? { version: 1, records: [] } : undefined,
         },
-        key.cwd,
-        key.skills,
+        input.cwd,
+        input.skills,
       ) ?? []);
 }
+
+// Two bytes per character is V8's wide string form, so ASCII text is counted twice over; the
+// fixed terms cover the entry, key and segment headers.
+const textEntryBytes = (key: TextKey, segments: readonly string[]) =>
+  2 *
+    (key.digest.length +
+      (key.cwd?.length ?? 0) +
+      key.skills.reduce(
+        (total, skill) => total + skill.name.length + (skill.displayName?.length ?? 0),
+        0,
+      ) +
+      segments.reduce((total, segment) => total + segment.length, 0)) +
+  256 +
+  32 * key.skills.length +
+  16 * segments.length;
+
+export const makeFindTextCache = () =>
+  makeBudgetedCache({
+    bytes: textEntryBytes,
+    // Retyping a query rescans every message, so a thread whose parses fit here costs no parsing
+    // per keystroke; past it, only the messages that did not fit are parsed again.
+    maxBytes: 64 * 1024 * 1024,
+    // Bounds bookkeeping for threads of tiny messages.
+    maxEntries: 8192,
+    // Long enough to cover pauses while typing a query.
+    idleMs: 60_000,
+  });
 
 function documentFor(row: OrchestrationV2ProjectedTurnItem, count: number): FindDocument {
   return {
@@ -261,18 +295,7 @@ export const makeThreadFind = Effect.fn("makeThreadFind")(function* (
       },
     );
   });
-  // Scans visit every message; a cache smaller than the thread churns without hits.
-  const textCache = yield* Cache.make({
-    capacity: 8192,
-    timeToLive: "1 minute",
-    lookup: (key: TextKey) => Effect.sync(() => parseText(key)),
-  });
-  // Bounded separately because each entry can hold a large body; typing reuses the parse.
-  const largeTextCache = yield* Cache.make({
-    capacity: 32,
-    timeToLive: "1 minute",
-    lookup: (key: TextKey) => Effect.sync(() => parseText(key)),
-  });
+  const textCache = yield* makeFindTextCache();
   const scans = new Map<
     string,
     {
@@ -415,10 +438,10 @@ export const makeThreadFind = Effect.fn("makeThreadFind")(function* (
             };
           } else {
             const decoded = yield* decode(row, row.payload ?? "");
-            const key = textKey(decoded.item, cwd, input.skills ?? []);
-            const segments = yield* Cache.get(
-              key.text.length <= 32_768 ? textCache : largeTextCache,
-              key,
+            const skills = input.skills ?? [];
+            const segments = yield* textCache.get(
+              new TextKey({ digest: row.digest, cwd, skills }),
+              () => parseText(parseInput(decoded.item, cwd, skills)),
             );
             document = documentFor(decoded, countSegments(segments, input.query));
             yield* Effect.yieldNow;
