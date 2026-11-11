@@ -3,11 +3,13 @@ import {
   applyTerminalAttachStreamEvent,
   combineTerminalSessionState,
   EMPTY_TERMINAL_BUFFER_STATE,
+  EMPTY_TERMINAL_SESSION_STATE,
   INITIAL_TERMINAL_OUTPUT_CURSOR,
   nextTerminalAttachSeedState,
 } from "@houston-app/client-runtime/state/terminal";
 
 import {
+  canWriteTerminalSession,
   shouldClearTerminalSelectionAction,
   shouldHandleTerminalExit,
   synchronizeTerminalOutput,
@@ -114,4 +116,37 @@ it("reports an attach failure that leaves the output unchanged", () => {
   expect(terminal.getSelection).not.toHaveBeenCalled();
   expect(terminal.getSelectionCellCount).not.toHaveBeenCalled();
   expect(terminal.clearSelection).not.toHaveBeenCalled();
+});
+
+describe("terminal write gate", () => {
+  const snapshot = {
+    threadId: "thread",
+    terminalId: "term-1",
+    cwd: "/repo",
+    worktreePath: null,
+    status: "running" as const,
+    pid: 123,
+    history: "",
+    exitCode: null,
+    exitSignal: null,
+    label: "Terminal 1",
+    updatedAt: "2026-09-05T00:00:00.000Z",
+  };
+  const attach = (status: "running" | "exited") =>
+    applyTerminalAttachStreamEvent(nextTerminalAttachSeedState(), {
+      type: "snapshot",
+      snapshot: { ...snapshot, status },
+    });
+
+  it("refuses writes while no session exists on the server yet", () => {
+    expect(canWriteTerminalSession(EMPTY_TERMINAL_SESSION_STATE, true)).toBe(false);
+  });
+
+  it("refuses writes once the session has exited or the scope cannot operate", () => {
+    const running = combineTerminalSessionState(null, attach("running"));
+    expect(canWriteTerminalSession(running, true)).toBe(true);
+    expect(canWriteTerminalSession(running, false)).toBe(false);
+    const exited = combineTerminalSessionState(null, attach("exited"));
+    expect(canWriteTerminalSession(exited, true)).toBe(false);
+  });
 });
