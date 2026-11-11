@@ -1,7 +1,7 @@
 import type { AtomCommandResult } from "@houston-app/client-runtime/state/runtime";
 
 import { gridById, useGridStore } from "./gridStore";
-import { preorderThreads } from "./tree";
+import { preorderThreads } from "@houston-app/shared/grid/tree";
 
 /**
  * A cell's close button closes its thread: the thread goes to the Closed shelf

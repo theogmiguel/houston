@@ -5,7 +5,7 @@ import { resolveShortcutCommand } from "../keybindings";
 import { isEditableFocused } from "../lib/editableFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { type ClosedCell, useGridStore } from "./gridStore";
-import { adjacentThreadKey, preorderThreads, type TidyShape } from "./tree";
+import { adjacentThreadKey, preorderThreads, type TidyShape } from "@houston-app/shared/grid/tree";
 
 const TIDY_COMMAND_SHAPES: Readonly<Record<string, TidyShape | undefined>> = {
   "grid.tidy": "grid",

@@ -34,7 +34,7 @@ import { rememberLastOpenGridId } from "../grid/lastGrid";
 import { useGridMaximizeStore, useLeaveGridMaximize } from "../grid/gridMaximizeStore";
 import { ungroupedWorkspaceThreads } from "../grid/rail";
 import { resolveGridThreadOpen, type ThreadOpenIntent } from "../grid/gridThreadOpen";
-import { containsThread, preorderThreads } from "../grid/tree";
+import { containsThread, preorderThreads } from "@houston-app/shared/grid/tree";
 import { cn } from "../lib/utils";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { PhoneEmptyState } from "../mobile/PhoneEmptyState";

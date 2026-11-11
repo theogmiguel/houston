@@ -1,8 +1,4 @@
-/**
- * Ported from Houston v1's renderer split tree (ui/src/renderer/src/layout/tree.ts)
- * and reduced to thread leaves, which is all a v2 grid holds. A grid's tree lives in
- * the renderer only; it never reaches the server or the wire protocol.
- */
+/** The split tree of a grid, reduced to thread leaves. Pure: the renderer and the server share it. */
 
 export interface ThreadNode {
   kind: "thread";
@@ -61,6 +57,7 @@ export function clampSplitRatio(ratio: number, pairPx: number): number {
 
 let paneSeq = 0;
 export function newPaneId(): string {
+  // @effect-diagnostics-next-line globalDate:off -- A pane id only needs to differ across reloads, not to read the clock as an effect.
   return `p${Date.now()}-${++paneSeq}`;
 }
 
@@ -574,7 +571,15 @@ export function computeRects(tree: LayoutNode): {
   return { leaves, splitters };
 }
 
-export function quadrant(rect: DOMRect, x: number, y: number): Side {
+/** The part of a DOMRect `quadrant` reads. */
+export interface ClientRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+export function quadrant(rect: ClientRect, x: number, y: number): Side {
   const rx = (x - rect.left) / rect.width;
   const ry = (y - rect.top) / rect.height;
   if (rx >= 0.25 && rx <= 0.75 && ry >= 0.25 && ry <= 0.75) return "center";

@@ -10,7 +10,7 @@ import { sortSettledThreads } from "@houston-app/client-runtime/state/thread-sor
 import { isSidebarHiddenThread, resolveThreadStatusPill } from "../components/Sidebar.logic";
 import type { ThreadState } from "../components/ui/thread-state-glyph";
 import { workspaceKeyOf, type GridRecord } from "./gridStore";
-import { preorderThreads } from "./tree";
+import { preorderThreads } from "@houston-app/shared/grid/tree";
 
 /**
  * The grid rail's one status vocabulary. `idle` cards show their age; every

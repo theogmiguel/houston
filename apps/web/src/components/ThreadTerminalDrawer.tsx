@@ -413,6 +413,18 @@ function writableSessionGeneration(
     : null;
 }
 
+/**
+ * Whether the server has a running session this surface may write to. The
+ * terminal emits input on its own (query replies, focus reports), so every
+ * `terminal.write` is gated on this, like resize, rather than on scope alone.
+ */
+export function canWriteTerminalSession(
+  session: TerminalSessionState,
+  canOperate: boolean,
+): boolean {
+  return writableSessionGeneration(session, canOperate) !== null;
+}
+
 export function shouldHandleTerminalExit(
   current: TerminalSessionState["status"],
   synchronized: TerminalSessionState["status"],
@@ -557,6 +569,9 @@ function TerminalSessionViewport({
     (listener: (session: TerminalSessionState) => void) =>
       appAtomRegistry.subscribe(terminalSessionAtom, listener),
   );
+  const canWriteTerminal = useEffectEvent(() =>
+    canWriteTerminalSession(readTerminalSession(), hasTerminalWriteAccess()),
+  );
   const writeTerminal = useEffectEvent((data: string) =>
     runTerminalWrite({
       environmentId,
@@ -564,9 +579,7 @@ function TerminalSessionViewport({
     }),
   );
   const resizeTerminal = useEffectEvent((cols: number, rows: number) => {
-    if (writableSessionGeneration(readTerminalSession(), hasTerminalWriteAccess()) === null) {
-      return;
-    }
+    if (!canWriteTerminal()) return;
     return runTerminalResize({
       environmentId,
       input: { threadId, terminalId, cols, rows },
@@ -908,7 +921,7 @@ function TerminalSessionViewport({
       };
 
       const sendTerminalInput = async (data: string, fallbackError: string) => {
-        if (!hasTerminalWriteAccess()) return;
+        if (!canWriteTerminal()) return;
         const activeTerminal = terminalRef.current;
         if (!activeTerminal) return;
         const result = await writeTerminal(data);
@@ -1005,7 +1018,7 @@ function TerminalSessionViewport({
       }
 
       function handleData(data: string): void {
-        if (!hasTerminalWriteAccess()) return;
+        if (!canWriteTerminal()) return;
         void (async () => {
           const result = await writeTerminal(data);
           if (result._tag === "Success" || isAtomCommandInterrupted(result)) return;
@@ -1139,7 +1152,7 @@ function TerminalSessionViewport({
       }}
       onDrop={(event) => {
         const mention = event.dataTransfer.getData(COMPOSER_MENTION_DRAG_TYPE);
-        if (mention.length === 0 || !hasTerminalWriteAccess()) return;
+        if (mention.length === 0 || !canWriteTerminal()) return;
         event.preventDefault();
         void writeTerminal(`${mention} `);
       }}

@@ -138,7 +138,7 @@ import {
 } from "./sidebarProjectSections";
 import type { NeedsYouEntry } from "./needsYouSection";
 import { buildNeedsYouEntries, isNeedsYouThread } from "./needsYouSection";
-import { preorderThreads } from "../../grid/tree";
+import { preorderThreads } from "@houston-app/shared/grid/tree";
 import {
   PROJECT_REORDER_ATTRIBUTE,
   useProjectReorderDrag,

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { useGridStore } from "./gridStore";
 import { undoThreadMove, type ThreadMoveFeedback } from "./moveFeedback";
-import { preorderLeaves } from "./tree";
+import { preorderLeaves } from "@houston-app/shared/grid/tree";
 
 function seed() {
   useGridStore.setState({ grids: [], closedCells: {}, threadOrigins: {} });

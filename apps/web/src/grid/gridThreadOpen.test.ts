@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import { resolveGridThreadOpen } from "./gridThreadOpen";
-import { gridPreset } from "./tree";
+import { gridPreset } from "@houston-app/shared/grid/tree";
 
 const tree = gridPreset(["parent", "other"]);
 const base = {

@@ -39,6 +39,14 @@ import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as ProjectHandlers from "./handlers.ts";
 import { ProjectToolkit } from "./tools.ts";
+import * as GridHandlers from "../../../houston/gridToolkit/handlers.ts";
+import { GridToolkit } from "../../../houston/gridToolkit/tools.ts";
+import {
+  insertThreadRow,
+  layerGrids,
+  layerNoGrids,
+} from "../../../houston/gridToolkit/gridToolkit.testkit.ts";
+import type { HoustonGridService } from "../../../houston/grids.ts";
 
 const clientLaunchHarness = (input: {
   readonly runtimeModeCeiling: RuntimeMode;
@@ -53,6 +61,10 @@ const clientLaunchHarness = (input: {
   readonly webOrigin?: string;
   /** The orchestrator refuses the new thread's mode, as under a managed ceiling. */
   readonly refusedByCeiling?: true;
+  /** The grid service a launch places threads with; default holds no grids. */
+  readonly grids?: Layer.Layer<HoustonGridService>;
+  /** Runs when the launch fake accepts a thread, as the projection would record it. */
+  readonly onLaunched?: (launch: ThreadLaunch.ThreadLaunchInput) => Effect.Effect<void>;
 }) => {
   const projectId = ProjectId.make("project:client-target");
   const modelSelection = {
@@ -64,6 +76,7 @@ const clientLaunchHarness = (input: {
     model: input.overrideModel === undefined ? modelSelection : null,
   };
   const layerDependencies = Layer.mergeAll(
+    input.grids ?? layerNoGrids,
     Layer.mock(ProviderRegistry.ProviderRegistry)({
       getProviders: Effect.succeed(input.providers ?? []),
     }),
@@ -96,6 +109,19 @@ const clientLaunchHarness = (input: {
     }),
     Layer.mock(ThreadManagement.ThreadManagementService)({
       // A thread exists once a launch started it.
+      listProjectThreads: () =>
+        Effect.succeed(
+          input.launched.map(
+            (launch) =>
+              ({
+                id: launch.threadId,
+                projectId: launch.projectId,
+                title: launch.title,
+                status: "idle",
+                deletedAt: null,
+              }) as unknown as OrchestrationV2ThreadShell,
+          ),
+        ),
       getThreadShell: (threadId) => {
         const launch = input.launched.find((candidate) => candidate.threadId === threadId);
         return Effect.succeed(
@@ -131,19 +157,21 @@ const clientLaunchHarness = (input: {
             }),
           );
         }
-        return Effect.succeed({
-          threadId: launch.threadId,
-          projection: {
-            thread: {
-              id: launch.threadId,
-              projectId: launch.projectId,
-              title: launch.title,
-              modelSelection: launch.modelSelection,
+        return (input.onLaunched?.(launch) ?? Effect.void).pipe(
+          Effect.as({
+            threadId: launch.threadId,
+            projection: {
+              thread: {
+                id: launch.threadId,
+                projectId: launch.projectId,
+                title: launch.title,
+                modelSelection: launch.modelSelection,
+              },
+              runs: [],
             },
-            runs: [],
-          },
-          resumed: false,
-        } as unknown as ThreadLaunch.ThreadLaunchResult);
+            resumed: false,
+          } as unknown as ThreadLaunch.ThreadLaunchResult),
+        );
       },
     }),
     Layer.mock(Project.ProjectService)({
@@ -691,4 +719,110 @@ it.effect("an update the project refuses tells the agent why", () =>
 
     expect(refused.at(-1)?.result).toMatchObject({ code: "invalid_request", message: detail });
   }),
+);
+
+it.effect(
+  "an agent makes a grid, launches three threads into it, moves one to a second grid, lists both and deletes one",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const projectId = ProjectId.make("project:client-target");
+        const grids = yield* layerGrids([projectId]).pipe(Layer.build);
+        const launched: Array<ThreadLaunch.ThreadLaunchInput> = [];
+        const harness = clientLaunchHarness({
+          runtimeModeCeiling: "full-access",
+          launched,
+          grids: Layer.succeedContext(grids),
+          onLaunched: (launch) =>
+            insertThreadRow(String(launch.threadId), launch.projectId).pipe(Effect.provide(grids)),
+        });
+        const dependencies = harness.dependencies;
+        const launchToolkit = yield* ProjectToolkit.pipe(
+          Effect.provide(
+            McpToolAccess.HandlersLayer.layer(ProjectHandlers.layer).pipe(
+              Layer.provide(dependencies),
+            ),
+          ),
+        );
+        const gridToolkit = yield* GridToolkit.pipe(
+          Effect.provide(
+            McpToolAccess.HandlersLayer.layer(GridHandlers.layer).pipe(Layer.provide(dependencies)),
+          ),
+        );
+        const run = <T extends { handle: unknown }>(toolkit: T, name: string, input: object) =>
+          (
+            toolkit.handle as unknown as (
+              name: string,
+              input: object,
+            ) => Effect.Effect<Stream.Stream<{ result: unknown }>>
+          )(name, input).pipe(
+            Stream.unwrap,
+            Stream.runCollect,
+            Effect.map((results) => results.at(-1)?.result as any),
+            Effect.provide(dependencies),
+          );
+
+        const review = yield* run(gridToolkit, "houston_grid_create", {
+          projectId,
+          name: "Review",
+        });
+        expect(review).toMatchObject({ name: "Review", threadIds: [] });
+
+        const threadIds: string[] = [];
+        for (const title of ["one", "two", "three"]) {
+          const result = yield* run(launchToolkit, "houston_thread_launch", {
+            projectId,
+            title,
+            grid: { gridId: review.gridId },
+          });
+          expect(result.grid).toEqual({ placed: true, gridId: review.gridId });
+          threadIds.push(result.threadId);
+        }
+
+        const docs = yield* run(gridToolkit, "houston_grid_create", { projectId, name: "Docs" });
+        const moved = yield* run(gridToolkit, "houston_grid_place_thread", {
+          gridId: docs.gridId,
+          threadId: threadIds[1],
+        });
+        expect(moved.threadIds).toEqual([threadIds[1]]);
+
+        const listed = yield* run(gridToolkit, "houston_grid_list", { projectId });
+        expect(
+          listed.grids.map((grid: any) => [
+            grid.name,
+            grid.threads.map((thread: any) => [thread.threadId, thread.title]),
+          ]),
+        ).toEqual([
+          [
+            "Review",
+            [
+              [threadIds[0], "one"],
+              [threadIds[2], "three"],
+            ],
+          ],
+          ["Docs", [[threadIds[1], "two"]]],
+        ]);
+
+        expect(yield* run(gridToolkit, "houston_grid_delete", { gridId: review.gridId })).toEqual({
+          deleted: true,
+        });
+        const remaining = yield* run(gridToolkit, "houston_grid_list", { projectId });
+        expect(remaining.grids.map((grid: any) => grid.name)).toEqual(["Docs"]);
+
+        const named = yield* run(launchToolkit, "houston_thread_launch", {
+          projectId,
+          title: "four",
+          grid: { newGridName: "Fresh" },
+        });
+        expect(named.grid).toMatchObject({ placed: true });
+        const refused = yield* run(launchToolkit, "houston_thread_launch", {
+          projectId,
+          title: "five",
+          grid: { gridId: "ghost" },
+        });
+        expect(refused.threadId).toBeTypeOf("string");
+        expect(refused.grid).toMatchObject({ placed: false, gridId: "ghost" });
+        expect(refused.grid.error).toContain("ghost");
+      }),
+    ),
 );

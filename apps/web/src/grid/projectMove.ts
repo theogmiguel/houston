@@ -1,12 +1,6 @@
-export interface ProjectOwner {
-  readonly environmentId: string;
-  readonly projectId: string;
-}
+import { type ProjectOwner, sameProject } from "@houston-app/shared/grid/record";
 
-/** A thread belongs to one project in one environment; a grid belongs to exactly one. */
-export function sameProject(left: ProjectOwner, right: ProjectOwner): boolean {
-  return left.environmentId === right.environmentId && left.projectId === right.projectId;
-}
+export { type ProjectOwner, sameProject };
 
 /** The toast for a refused cross-project move names both projects. */
 export function crossProjectMoveToast(

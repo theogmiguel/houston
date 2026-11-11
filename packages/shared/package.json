@@ -3,6 +3,14 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./grid/tree": {
+      "types": "./src/grid/tree.ts",
+      "import": "./src/grid/tree.ts"
+    },
+    "./grid/record": {
+      "types": "./src/grid/record.ts",
+      "import": "./src/grid/record.ts"
+    },
     "./serverPackage": {
       "types": "./src/serverPackage.ts",
       "import": "./src/serverPackage.ts"

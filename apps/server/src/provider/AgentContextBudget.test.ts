@@ -51,6 +51,7 @@ import { buildCodexAdditionalContext } from "./CodexDeveloperInstructions.ts";
 import { DocumentText } from "./DocumentText.ts";
 import { ProviderRegistry } from "./ProviderRegistry.ts";
 import budget from "./agentContextBudget.json" with { type: "json" };
+import { layerNoGrids } from "../houston/gridToolkit/gridToolkit.testkit.ts";
 
 // Registration only stores tool definitions, so the handlers' services are never called.
 const toolHandlerServices = Layer.mergeAll(
@@ -85,6 +86,7 @@ const toolHandlerServices = Layer.mergeAll(
   Layer.mock(SourceControlRepositoryService)({}),
   Layer.mock(ThreadLaunchService)({}),
   Layer.mock(ThreadManagementService)({}),
+  layerNoGrids,
   Layer.mock(ThreadSearch)({}),
   Layer.mock(VcsStatusBroadcaster)({}),
   Layer.mock(HoustonSlackConversation)({}),

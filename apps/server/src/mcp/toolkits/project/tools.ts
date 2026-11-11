@@ -20,6 +20,10 @@ import {
   SourceControlCloneRepositoryInput,
   SourceControlCloneRepositoryResult,
 } from "@houston-app/contracts";
+import {
+  HoustonGridLaunchTarget,
+  HoustonGridPlacement,
+} from "@houston-app/contracts/houston/grids";
 import * as FileSystem from "effect/FileSystem";
 import * as DocumentText from "../../../provider/DocumentText.ts";
 import * as ServerConfig from "../../../config.ts";
@@ -36,6 +40,7 @@ import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.t
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as SourceControlRepositoryService from "../../../sourceControl/SourceControlRepositoryService.ts";
 import * as GitVcsDriver from "../../../vcs/GitVcsDriver.ts";
+import { HoustonGridService } from "../../../houston/grids.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 
 const shared = {
@@ -151,6 +156,12 @@ const ThreadLaunchTool = Tool.make("houston_thread_launch", {
     ),
     attachments: Schema.optional(Schema.Array(McpAttachmentInput).check(Schema.isMaxLength(8))),
     clientRequestId: Schema.optional(OrchestratorMcpClientRequestId),
+    grid: Schema.optional(
+      HoustonGridLaunchTarget.annotate({
+        description:
+          "Place the thread in a grid: `{gridId}` of this project, or `{newGridName}` for a new one. A refusal leaves the thread created; see `grid` in the result.",
+      }),
+    ),
     /** Set by a linked environment launching its agent's delegated task here; ignored otherwise. */
     delegatedFrom: Schema.optional(OrchestrationV2DelegatedFrom),
   }),
@@ -161,9 +172,11 @@ const ThreadLaunchTool = Tool.make("houston_thread_launch", {
     modelSelection: ModelSelection,
     runId: Schema.NullOr(RunId),
     status: Schema.NullOr(OrchestrationV2RunStatus),
+    grid: Schema.optional(HoustonGridPlacement),
   }),
   dependencies: [
     ...shared.dependencies,
+    HoustonGridService,
     ThreadLaunchService.ThreadLaunchService,
     ManagedProjectFolders.ManagedProjectFolders,
     GitVcsDriver.GitVcsDriver,

@@ -16,7 +16,7 @@ import {
 } from "../components/chat/threadContextDrag";
 import { useStableCallback } from "../hooks/useStableCallback";
 import type { ThreadDropRefusal } from "./projectMove";
-import type { Side } from "./tree";
+import type { Side } from "@houston-app/shared/grid/tree";
 
 /** The thread a drag carries: a sidebar row, a grid cell label or a menu move. */
 export interface ThreadDragSource {

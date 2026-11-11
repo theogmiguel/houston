@@ -25,6 +25,7 @@ import {
   ScheduledTaskSchedule,
   ScheduledTaskUpsertSchedule,
 } from "./scheduledTask.ts";
+import { HoustonGridLaunchTarget, HoustonGridPlacement } from "./houston/grids.ts";
 import { ProviderInteractionMode, ProviderRequestKind, RuntimeMode } from "./providerPolicy.ts";
 import { PullRequestState } from "./pullRequest.ts";
 import {
@@ -273,6 +274,11 @@ export const OrchestratorMcpCreateThreadsInput = Schema.Struct({
     Schema.isMaxLength(20),
   ),
   clientRequestId: Schema.optional(OrchestratorMcpClientRequestId),
+  grid: Schema.optional(
+    HoustonGridLaunchTarget.annotate({
+      description: "Place every new thread in this grid, or in one new grid named `newGridName`.",
+    }),
+  ),
 });
 export type OrchestratorMcpCreateThreadsInput = typeof OrchestratorMcpCreateThreadsInput.Type;
 
@@ -295,6 +301,7 @@ export const OrchestratorMcpCreatedThread = Schema.Struct({
   creationSource: OrchestrationV2CreationSource,
   providerInstanceId: ProviderInstanceId,
   model: Schema.String,
+  grid: Schema.optional(HoustonGridPlacement),
 });
 export type OrchestratorMcpCreatedThread = typeof OrchestratorMcpCreatedThread.Type;
 
@@ -374,6 +381,7 @@ export const OrchestratorMcpThreadListItem = Schema.Struct({
   parentThreadId: Schema.NullOr(ThreadId),
   relationshipToParent: Schema.NullOr(Schema.Literals(["fork", "subagent"])),
   itemCount: NonNegativeInt,
+  gridId: Schema.optional(Schema.NullOr(Schema.String)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -451,6 +459,7 @@ export const OrchestratorMcpThreadDetail = Schema.Struct({
   settledAt: Schema.NullOr(IsoDateTime),
   snoozed: Schema.Boolean,
   snoozedUntil: Schema.NullOr(IsoDateTime),
+  gridId: Schema.optional(Schema.NullOr(Schema.String)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
