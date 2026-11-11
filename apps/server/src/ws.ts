@@ -261,7 +261,10 @@ import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as TriageService from "./triage/TriageService.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import * as PullRequestReviewGuideService from "./pullRequest/PullRequestReviewGuideService.ts";
-import { listLinkedPullRequestThreads } from "./pullRequest/linkedThreads.ts";
+import {
+  listLinkedPullRequestThreads,
+  listThreadPullRequestLinks,
+} from "./pullRequest/linkedThreads.ts";
 import { pullRequestSyncKey } from "./pullRequest/pullRequestSyncKey.ts";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as PullRequestSyncReactor from "./orchestration-v2/PullRequestSyncReactor.ts";
@@ -2827,7 +2830,18 @@ export const layerWsRpc = (
               ),
             ),
           ),
-        [WS_METHODS.pullRequestsList]: (input) => pullRequests.list(input),
+        [WS_METHODS.pullRequestsList]: ({ involvement, ...input }) =>
+          involvement === "linked"
+            ? listThreadPullRequestLinks().pipe(
+                Effect.provideService(SqlClient.SqlClient, sql),
+                Effect.flatMap((links) =>
+                  pullRequests.listLinked({ ...input, involvement }, links),
+                ),
+              )
+            : pullRequests.list({
+                ...input,
+                ...(involvement === undefined ? {} : { involvement }),
+              }),
         [WS_METHODS.pullRequestsListStats]: (input) => pullRequests.listStats(input),
         [WS_METHODS.pullRequestsFilterOptions]: (input) => pullRequests.filterOptions(input),
         [WS_METHODS.pullRequestsRoutingIdentity]: (input) => pullRequests.routingIdentity(input),

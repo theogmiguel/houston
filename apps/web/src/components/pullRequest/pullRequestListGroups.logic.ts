@@ -1,5 +1,5 @@
 import type {
-  PullRequestInvolvement,
+  PullRequestListInvolvement,
   PullRequestListFilters,
   PullRequestListResult,
 } from "@houston-app/contracts";
@@ -41,7 +41,7 @@ export function pullRequestGroups({
   known: ReadonlyArray<EnvironmentPullRequestEntry>;
   providers: PullRequestListResult["providers"];
   viewers: PullRequestListResult["viewers"];
-  involvement: PullRequestInvolvement;
+  involvement: PullRequestListInvolvement;
   localFilters: PullRequestListFilters;
   hasLocalFilters: boolean;
   text: string;

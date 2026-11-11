@@ -3,7 +3,7 @@ import type {
   EnvironmentId,
   ProjectId,
   PullRequestFilterOptionsInput,
-  PullRequestInvolvement,
+  PullRequestListInvolvement,
   PullRequestListFilters,
   PullRequestListState,
   SourceControlProviderKind,
@@ -488,9 +488,9 @@ export function PullRequestFiltersMenu({
   state: PullRequestListState;
   stateOptions: ReadonlyArray<PullRequestFilterOption<PullRequestListState>>;
   onState: (state: PullRequestListState) => void;
-  involvement: PullRequestInvolvement;
-  involvementOptions: ReadonlyArray<PullRequestFilterOption<PullRequestInvolvement>>;
-  onInvolvement: (involvement: PullRequestInvolvement) => void;
+  involvement: PullRequestListInvolvement;
+  involvementOptions: ReadonlyArray<PullRequestFilterOption<PullRequestListInvolvement>>;
+  onInvolvement: (involvement: PullRequestListInvolvement) => void;
   filters: PullRequestListFilters;
   onFilters: (filters: PullRequestListFilters) => void;
   authorOptions?: ReadonlyArray<PullRequestAuthorFacet>;
@@ -515,7 +515,7 @@ export function PullRequestFiltersMenu({
   const selectedLabels = (filters.labels ?? []).flatMap((group) => group);
   const filterCount = [
     state !== "open",
-    involvement !== "all",
+    involvement !== "authored",
     host,
     server,
     projectId,

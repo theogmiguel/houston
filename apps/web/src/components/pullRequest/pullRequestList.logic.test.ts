@@ -40,6 +40,7 @@ import {
   clusterPullRequestStacks,
   pullRequestStackLayerRank,
 } from "./pullRequestList.logic";
+import { INVOLVEMENT_TABS } from "./pullRequestListOptions";
 import {
   readPullRequestListPreferences,
   writePullRequestListPreferences,
@@ -361,11 +362,31 @@ describe("remembered pull request list controls", () => {
     };
   };
 
+  it("opens a remembered every-pull-request tab on Mine, and keeps the Agents tab", () => {
+    const storage = makeStorage();
+    storage.setItem(
+      "houston.pullRequests.preferences",
+      JSON.stringify({ involvement: "all", state: "merged" }),
+    );
+    expect(readPullRequestListPreferences(storage)).toEqual({
+      involvement: "authored",
+      state: "merged",
+    });
+    writePullRequestListPreferences({ involvement: "linked", state: "open" }, storage);
+    expect(readPullRequestListPreferences(storage)).toEqual({
+      involvement: "linked",
+      state: "open",
+    });
+  });
+
   // regression: #9188 corrupt stored list controls broke the page
   it("falls back to the default controls when storage is corrupt", () => {
     const storage = makeStorage();
     storage.setItem("houston.pullRequests.preferences", "{not json");
-    expect(readPullRequestListPreferences(storage)).toEqual({ involvement: "all", state: "open" });
+    expect(readPullRequestListPreferences(storage)).toEqual({
+      involvement: "authored",
+      state: "open",
+    });
   });
 
   it("falls back when browser policy denies storage", () => {
@@ -377,9 +398,12 @@ describe("remembered pull request list controls", () => {
         throw new Error("storage denied");
       },
     };
-    expect(readPullRequestListPreferences(denied)).toEqual({ involvement: "all", state: "open" });
+    expect(readPullRequestListPreferences(denied)).toEqual({
+      involvement: "authored",
+      state: "open",
+    });
     expect(() =>
-      writePullRequestListPreferences({ involvement: "all", state: "open" }, denied),
+      writePullRequestListPreferences({ involvement: "authored", state: "open" }, denied),
     ).not.toThrow();
   });
 });
@@ -909,5 +933,15 @@ describe("stacked pull request grouping", () => {
     expect(pullRequestStackLayerRank(draft)).toBe(8);
     expect(pullRequestStackLayerRank(ready)).toBe(6);
     expect(pullRequestStackLayerRank(entry({ number: 6, state: "merged" }))).toBe(9);
+  });
+});
+
+describe("involvement tabs", () => {
+  it("offers Mine, Review requested and the pull requests agents' threads link", () => {
+    expect(INVOLVEMENT_TABS.map(({ value, label }) => [value, label])).toEqual([
+      ["authored", "Mine"],
+      ["reviewing", "Review requested"],
+      ["linked", "Agents"],
+    ]);
   });
 });

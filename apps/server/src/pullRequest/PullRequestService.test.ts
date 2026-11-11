@@ -5040,3 +5040,115 @@ it.effect("lists a repository in full when another project checks it out directl
     ]);
   }),
 );
+
+function threadLink(input: {
+  readonly projectId: string;
+  readonly repository: string;
+  readonly number: number;
+  readonly state?: "open" | "closed" | "merged";
+  readonly source?: "manual" | "agent" | "stack-dismissed";
+  readonly syncedAt?: string;
+  readonly snapshot?: false;
+}): PullRequestService.ThreadLinkedPullRequest {
+  return {
+    projectId: input.projectId as ProjectId,
+    link: {
+      host: "github.com",
+      repository: input.repository,
+      number: input.number,
+      url: `https://github.com/${input.repository}/pull/${input.number}`,
+      source: input.source ?? "agent",
+      linkedAt: "2026-07-01T00:00:00.000Z",
+      snapshot:
+        input.snapshot === false
+          ? null
+          : {
+              state: input.state ?? "open",
+              title: `Linked ${input.number}`,
+              headBranch: `feat/${input.number}`,
+              baseBranch: "main",
+              isDraft: false,
+              updatedAt: `2026-07-0${input.number}T00:00:00.000Z`,
+              syncedAt: input.syncedAt ?? "2026-07-09T00:00:00.000Z",
+              author: { login: "bilal", name: null, avatarUrl: null },
+            },
+      stack: null,
+    },
+  };
+}
+
+it.effect("lists exactly the pull requests linked to threads, without asking the host", () =>
+  Effect.gen(function* () {
+    const listed: Array<string> = [];
+    const service = yield* makeService({
+      projects: [
+        forkOfChatwoot,
+        project({ id: "web", title: "web", workspaceRoot: "/web", repository: "acme/web" }),
+      ],
+      providers: [
+        fakePullRequestProvider(SourceControlProviderKind.make("github"), {
+          listChangeRequests: ({ repository }) => {
+            listed.push(repository);
+            return Effect.succeed({ items: [], truncated: false, continues: true });
+          },
+        }),
+      ],
+    });
+    const links = [
+      threadLink({ projectId: "dispatch", repository: "clube-do-valor/dispatch", number: 1 }),
+      threadLink({ projectId: "dispatch", repository: "chatwoot/chatwoot", number: 2 }),
+      threadLink({
+        projectId: "dispatch",
+        repository: "chatwoot/chatwoot",
+        number: 2,
+        syncedAt: "2026-07-01T00:00:00.000Z",
+      }),
+      threadLink({ projectId: "web", repository: "acme/web", number: 3, state: "merged" }),
+      threadLink({
+        projectId: "web",
+        repository: "acme/web",
+        number: 4,
+        source: "stack-dismissed",
+      }),
+      threadLink({ projectId: "web", repository: "acme/web", number: 5, snapshot: false }),
+      threadLink({ projectId: "gone", repository: "acme/gone", number: 6 }),
+    ];
+
+    const open = yield* service.listLinked({ state: "open", involvement: "linked" }, links);
+    assert.deepStrictEqual(
+      open.entries.map((entry) => [entry.projectId, entry.repository, entry.number]),
+      [
+        ["dispatch", "chatwoot/chatwoot", 2],
+        ["dispatch", "Clube-do-Valor/dispatch", 1],
+      ],
+    );
+    assert.strictEqual(open.viewers["github.com"], "bilal");
+    assert.deepStrictEqual(open.nextCursors, {});
+
+    const all = yield* service.listLinked({ state: "all", involvement: "linked" }, links);
+    assert.deepStrictEqual(
+      all.entries.map((entry) => entry.number),
+      [3, 2, 1],
+    );
+
+    const scoped = yield* service.listLinked(
+      { state: "all", involvement: "linked", projectId: "web" as ProjectId, query: "linked 3" },
+      links,
+    );
+    assert.deepStrictEqual(
+      scoped.entries.map((entry) => entry.number),
+      [3],
+    );
+
+    const page = yield* service.listLinked(
+      { state: "all", involvement: "linked", limit: 1 },
+      links,
+    );
+    assert.deepStrictEqual(
+      page.entries.map((entry) => entry.number),
+      [3],
+    );
+    assert.isTrue(page.truncated);
+    assert.deepStrictEqual(listed, []);
+  }),
+);

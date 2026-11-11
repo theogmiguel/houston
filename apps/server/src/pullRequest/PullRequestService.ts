@@ -55,6 +55,7 @@ import {
   type PullRequestInvolvement,
   type PullRequestRef,
   type RepositoryIdentity,
+  type ThreadPullRequestLink,
   type PullRequestRoutingResult,
   type PullRequestRoutingIdentityInput,
   type PullRequestRoutingIdentityResult,
@@ -179,8 +180,11 @@ type CredentialRef = PullRequestRef & { readonly [credentialNamespace]?: string 
 export class PullRequestService extends Context.Service<
   PullRequestService,
   {
-    readonly list: (
+    readonly list: (input: HostListInput) => Effect.Effect<PullRequestListResult, PullRequestError>;
+    /** Lists the given thread links from their saved snapshots, without asking the host. */
+    readonly listLinked: (
       input: PullRequestListInput,
+      links: ReadonlyArray<ThreadLinkedPullRequest>,
     ) => Effect.Effect<PullRequestListResult, PullRequestError>;
     readonly listStats: (
       input: PullRequestListStatsInput,
@@ -325,6 +329,16 @@ const ACTION_ACCESS_REFUSALS: Record<PullRequestAction, string> = {
 
 const REVIEWER_REQUEST_REFUSAL = "You need write access on this repository to ask for a review.";
 const LABEL_CHANGE_REFUSAL = "You need triage access on this repository to change its labels.";
+
+/** A listing the host answers; linked pull requests are listed by `listLinked`. */
+export type HostListInput = PullRequestListInput & {
+  readonly involvement?: PullRequestInvolvement;
+};
+
+export interface ThreadLinkedPullRequest {
+  readonly projectId: ProjectId;
+  readonly link: ThreadPullRequestLink;
+}
 
 export interface SupportedProject {
   readonly cursorKey: string;
@@ -1323,12 +1337,10 @@ export const make = Effect.gen(function* () {
     };
   };
 
-  const listUncached: PullRequestService["Service"]["list"] = Effect.fn(
-    "PullRequestService.listUncached",
-  )(function* (input) {
-    const involvement = input.involvement ?? "all";
-    const epochAtStart = epochCounter;
-    const continuation = yield* decodeCursors(input.cursors);
+  /** The projects in scope, the viewer on each host, and how each host can be read. */
+  const readListScope = Effect.fn("PullRequestService.readListScope")(function* (
+    input: Pick<PullRequestListInput, "projectId" | "projectIds" | "host">,
+  ) {
     const { supported: projects, unimplemented, viewerRoots } = yield* listWorkspaceProjects(input);
     const projectsByHost = new Map<string, Set<string>>();
     for (const { host, project } of projects) {
@@ -1367,6 +1379,16 @@ export const make = Effect.gen(function* () {
         detail: "This host cannot be browsed here yet.",
       })),
     ];
+    return { projects, viewerResults, viewers, providers };
+  });
+
+  const listUncached: PullRequestService["Service"]["list"] = Effect.fn(
+    "PullRequestService.listUncached",
+  )(function* (input) {
+    const involvement = input.involvement ?? "all";
+    const epochAtStart = epochCounter;
+    const continuation = yield* decodeCursors(input.cursors);
+    const { projects, viewerResults, viewers, providers } = yield* readListScope(input);
 
     // A fork's original is asked twice, for the viewer's own requests and for their reviews,
     // each carrying on from its own cursor.
@@ -1664,6 +1686,71 @@ export const make = Effect.gen(function* () {
       errors: [...unreadable, ...batches.flatMap((batch) => batch.errors)],
       truncated: batches.some((batch) => batch.truncated),
       nextCursors,
+    };
+  });
+
+  const listLinked: PullRequestService["Service"]["listLinked"] = Effect.fn(
+    "PullRequestService.listLinked",
+  )(function* (input, links) {
+    const { projects, viewers, providers } = yield* readListScope(input);
+    const query = input.query?.trim().toLowerCase() ?? "";
+    const rows = new Map<string, { readonly entry: PullRequestListEntry; readonly at: number }>();
+    for (const { projectId, link } of links) {
+      const snapshot = link.snapshot;
+      if (snapshot === null || link.source === "stack-dismissed") continue;
+      const host = link.host.toLowerCase();
+      const repository = link.repository.toLowerCase();
+      const own = projects.filter((held) => held.project.id === projectId && held.host === host);
+      const project =
+        own.find((held) => held.repository.toLowerCase() === repository) ??
+        (own[0] === undefined ? undefined : { ...own[0], repository: link.repository });
+      if (project === undefined) continue;
+      const viewer = viewers[host] ?? "";
+      // A link keeps no labels, review requests or creation time; it was linked as it was made.
+      const item: ProviderChangeRequest = {
+        number: link.number,
+        title: snapshot.title,
+        url: link.url,
+        author: snapshot.author ?? null,
+        headBranch: snapshot.headBranch,
+        baseBranch: snapshot.baseBranch,
+        state: snapshot.state,
+        isDraft: snapshot.isDraft,
+        mergeability: snapshot.mergeability ?? "unknown",
+        additions: snapshot.additions ?? 0,
+        deletions: snapshot.deletions ?? 0,
+        createdAt: link.linkedAt,
+        updatedAt: snapshot.updatedAt ?? snapshot.syncedAt,
+        reviewRequestLogins: [],
+        labels: [],
+        ...(snapshot.reviewDecision === undefined
+          ? {}
+          : { reviewDecision: snapshot.reviewDecision }),
+        ...(snapshot.checksState === undefined ? {} : { checksState: snapshot.checksState }),
+      };
+      if (input.state !== "all" && item.state !== input.state) continue;
+      if (!matchesRowFilters(item, input.filters, viewer)) continue;
+      const text = `#${item.number} ${item.title} ${project.repository} ${item.headBranch} ${
+        item.author?.login ?? ""
+      }`.toLowerCase();
+      if (query.length > 0 && !text.includes(query)) continue;
+      const at = Date.parse(snapshot.syncedAt);
+      const key = `${host} ${repository} ${link.number}`;
+      const held = rows.get(key);
+      if (held !== undefined && held.at >= at) continue;
+      rows.set(key, { entry: toEntry({ project, item, viewer, observedAt: at }), at });
+    }
+    const entries = [...rows.values()]
+      .map(({ entry }) => entry)
+      .toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+    const limit = input.limit ?? DEFAULT_REPOSITORY_LIST_LIMIT;
+    return {
+      viewers: viewers as PullRequestListResult["viewers"],
+      providers,
+      entries: entries.slice(0, limit),
+      errors: [],
+      truncated: entries.length > limit,
+      nextCursors: {},
     };
   });
 
@@ -3141,7 +3228,7 @@ export const make = Effect.gen(function* () {
         ...(limit === null ? {} : { limit }),
         ...(query === null ? {} : { query }),
         ...(cursorEntries === null ? {} : { cursors: Object.fromEntries(cursorEntries) }),
-      } as PullRequestListInput);
+      } as HostListInput);
     },
     {
       capacity: LIST_CACHE_CAPACITY,
@@ -3859,6 +3946,7 @@ export const make = Effect.gen(function* () {
     );
 
   return PullRequestService.of({
+    listLinked,
     withSharedProjectReads,
     routing,
     routingIdentity,

@@ -4,7 +4,7 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
-import { listLinkedPullRequestThreads } from "./linkedThreads.ts";
+import { listLinkedPullRequestThreads, listThreadPullRequestLinks } from "./linkedThreads.ts";
 
 const encodePayload = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 
@@ -177,5 +177,56 @@ it.effect(
         }),
         { threads: [] },
       );
+    }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
+);
+
+it.effect(
+  "reads every thread's pull request links, skipping deleted, dismissed and side chat ones",
+  () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const createdAt = "2026-09-01T00:00:00.000Z";
+      const link = (number: number, source = "agent") => ({
+        host: "github.com",
+        repository: "acme/web",
+        number,
+        url: `https://github.com/acme/web/pull/${number}`,
+        source,
+        linkedAt: createdAt,
+        snapshot: null,
+        stack: null,
+      });
+      const threads = [
+        { id: "active", pullRequests: [link(1), link(2, "stack-dismissed")] },
+        { id: "archived", archived: true, pullRequests: [link(3)] },
+        { id: "deleted", deleted: true, pullRequests: [link(4)] },
+        { id: "side-chat", lineage: { sideChat: true }, pullRequests: [link(5)] },
+        { id: "malformed", pullRequests: [{ number: 6 }] },
+        { id: "none", pullRequests: [] },
+      ];
+      for (const thread of threads) {
+        const payload = yield* encodePayload({
+          linkedPullRequest: null,
+          ...(thread.lineage === undefined ? {} : { lineage: thread.lineage }),
+          pullRequests: thread.pullRequests,
+        });
+        yield* sql`
+        INSERT INTO orchestration_v2_projection_threads (
+          thread_id, project_id, title, default_provider, runtime_mode, interaction_mode,
+          created_at, updated_at, archived_at, deleted_at, payload_json
+        ) VALUES (
+          ${thread.id}, 'project-1', ${thread.id}, 'codex', 'full-access', 'default',
+          ${createdAt}, ${createdAt}, ${thread.archived === true ? createdAt : null},
+          ${thread.deleted === true ? createdAt : null}, ${payload}
+        )
+      `;
+      }
+
+      const links = yield* listThreadPullRequestLinks();
+
+      expect(links.map(({ projectId, link }) => [projectId, link.number]).toSorted()).toEqual([
+        ["project-1", 1],
+        ["project-1", 3],
+      ]);
     }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );
