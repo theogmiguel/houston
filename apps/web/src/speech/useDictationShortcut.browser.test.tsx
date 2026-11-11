@@ -109,6 +109,61 @@ it("dictates into the focused comment instead of the main composer", async () =>
   expect(fixture.main.start).toHaveBeenCalledOnce();
 });
 
+function Pane({
+  speech,
+  ownsWindowShortcuts,
+}: {
+  speech: ReturnType<typeof createSpeech>;
+  ownsWindowShortcuts: boolean;
+}) {
+  useDictationShortcut({
+    keybindings: DEFAULT_RESOLVED_KEYBINDINGS,
+    speech,
+    disabled: false,
+    terminalOpen: false,
+    modelPickerOpen: false,
+    ownsWindowShortcuts,
+  });
+  return null;
+}
+
+it("dictates into the focused grid pane, not the first pane mounted", async () => {
+  settings.mode = "toggle";
+  const first = createSpeech();
+  const focused = createSpeech();
+  await using _screen = await render(
+    <>
+      <Pane speech={first} ownsWindowShortcuts={false} />
+      <Pane speech={focused} ownsWindowShortcuts />
+    </>,
+  );
+  await act(() => {
+    key("keydown");
+    key("keyup");
+  });
+  expect(focused.start).toHaveBeenCalledOnce();
+  expect(first.start).not.toHaveBeenCalled();
+});
+
+it("a focused comment still takes dictation over the focused grid pane", async () => {
+  settings.mode = "toggle";
+  const pane = createSpeech();
+  const comment = createSpeech();
+  await using screen = await render(
+    <>
+      <Pane speech={pane} ownsWindowShortcuts />
+      <Comment speech={comment} />
+    </>,
+  );
+  screen.container.querySelector<HTMLTextAreaElement>('[aria-label="Comment"]')!.focus();
+  await act(() => {
+    key("keydown");
+    key("keyup");
+  });
+  expect(comment.start).toHaveBeenCalledOnce();
+  expect(pane.start).not.toHaveBeenCalled();
+});
+
 it("stops and cancels the recording owner even after focus moves", async () => {
   const fixture = setup();
   await using screen = await render(fixture.view());
