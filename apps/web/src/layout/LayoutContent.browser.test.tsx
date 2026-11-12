@@ -119,18 +119,20 @@ const APP_BOOT_TEST_TIMEOUT_MS = 45_000;
 const threadPath = (name: string) => `/${ENVIRONMENT_ID}/${name}`;
 
 it(
-  "a chat tab carries the thread's header with only the details toggle",
+  "a chat tab draws no header row; its details toggle is the only control at the end of the pane's tab bar",
   async () => {
     await using app = await bootAt(threadPath("thread-a"));
+    const bar = () =>
+      app.screen.container.querySelector("[data-layout-tab-bar] [data-layout-bar-actions]");
     await vi.waitFor(() => {
-      expect(
-        app.screen.container.querySelector("[data-layout-chat-tab] [data-chat-header]"),
-      ).not.toBeNull();
+      expect(bar()?.querySelector('[aria-label="Toggle thread details panel"]')).not.toBeNull();
     });
-    const header = app.screen.container.querySelector("[data-layout-chat-tab] [data-chat-header]")!;
-    expect(header.querySelector('[aria-label="Toggle thread details panel"]')).not.toBeNull();
-    expect(header.querySelector('[aria-label="Toggle right panel"]')).toBeNull();
-    expect(header.querySelector('[aria-label="Toggle terminal drawer"]')).toBeNull();
+    expect(
+      app.screen.container.querySelector("[data-layout-chat-tab] [data-chat-header]"),
+    ).toBeNull();
+    expect(bar()!.querySelectorAll("button")).toHaveLength(1);
+    expect(app.screen.container.querySelector('[aria-label="Toggle right panel"]')).toBeNull();
+    expect(app.screen.container.querySelector('[aria-label="Toggle terminal drawer"]')).toBeNull();
     expect(selectFocusedTab(useLayoutStore.getState().layout)?.content.kind).toBe("chat");
     await expect.element(page.getByTestId("composer-editor")).toBeVisible();
   },

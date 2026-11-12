@@ -1,3 +1,4 @@
+import { chatTabActions } from "./chatTabActions";
 import { useRouter } from "@tanstack/react-router";
 
 import { readLocalApi } from "../localApi";
@@ -62,14 +63,19 @@ function LoadedLayoutHost({ threadTarget, atIndex, active, narrow }: LayoutHostP
     if (!api) return;
     const state = useLayoutStore.getState();
     const link = tab.content.kind === "chat" ? tab.content : null;
+    const chat = link === null ? null : chatTabActions(tab.id);
     const items = buildLayoutTabMenuItems(state.layout, tab.id, {
       maximizedTabId: state.maximizedTabId,
       canCopyLink: link !== null,
+      canFindInThread: chat?.findInThread != null,
+      canOpenProjectSettings: chat?.openProjectSettings != null,
     });
     if (items.length === 0) return;
     void api.contextMenu.show(items, position).then((action) => {
       if (action === null || !isLayoutTabMenuId(action)) return;
       runLayoutTabMenuAction(action, tab.id, {
+        findInThread: () => chat?.findInThread?.(),
+        openProjectSettings: () => chat?.openProjectSettings?.(),
         copyLink: (target) => {
           if (target.content.kind !== "chat") return;
           const route = layoutChatRoute(target.content);

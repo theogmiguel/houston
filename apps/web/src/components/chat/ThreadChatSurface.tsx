@@ -3,6 +3,7 @@ import type { RefObject } from "react";
 
 import type { DraftId } from "../../composerDraftStore";
 import { useLayoutPane } from "../../layout/layoutPaneContext";
+import { paneBarAnchor, usePaneBarSlot } from "../../layout/paneBarSlots";
 import type { PaneDensity } from "../../threads/density";
 import ChatView from "../ChatView";
 
@@ -33,7 +34,10 @@ export function ThreadChatSurface({
   readonly hostTerminalRef?: ScopedThreadRef | null | undefined;
   readonly phoneShell?: boolean | undefined;
 }) {
-  const { focused, visible, tabId } = useLayoutPane();
+  const { focused, visible, tabId, paneId } = useLayoutPane();
+  const paneBar = tabId !== null && phoneShell !== true;
+  const barSlot = usePaneBarSlot(paneBar ? paneId : null);
+  const barAnchor = paneBarAnchor(paneBar ? paneId : null);
   const shared = {
     embedded: true as const,
     shortcutsAtWindow: focused,
@@ -42,12 +46,18 @@ export function ThreadChatSurface({
     environmentId: threadRef.environmentId,
     threadId: threadRef.threadId,
     ...(paneDensity === undefined ? {} : { paneDensity }),
-    ...(detailsCardAnchor ? { detailsCardAnchor } : {}),
+    ...(detailsCardAnchor
+      ? { detailsCardAnchor }
+      : barAnchor
+        ? { detailsCardAnchor: barAnchor }
+        : {}),
     ...(detailsOpen === undefined ? {} : { detailsOpen }),
     ...(onDetailsOpenChange === undefined ? {} : { onDetailsOpenChange }),
     phoneShell: phoneShell ?? false,
-    // A layout pane's chat carries its own header; the phone shell draws its own.
-    paneHeader: tabId !== null && phoneShell !== true,
+    // A layout pane's chat has no header row: its title is the tab, and its one control sits at
+    // the trailing end of the pane's tab bar. The phone shell draws its own bar.
+    paneHeader: paneBar,
+    ...(paneBar ? { paneTabId: tabId, paneBarSlot: visible ? barSlot : null } : {}),
   };
   return draftId === undefined ? (
     <ChatView {...shared} routeKind="server" />

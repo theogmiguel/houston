@@ -4,9 +4,9 @@ import {
   ChartNoAxesColumnIcon,
   FileIcon,
   FolderIcon,
+  FolderTreeIcon,
   GitCompareIcon,
   GlobeIcon,
-  MessageSquareIcon,
   SettingsIcon,
   SmartphoneIcon,
   SquareDashedIcon,
@@ -40,7 +40,7 @@ function surfaceIcon(kind: string): LucideIcon {
     case "diff":
       return GitCompareIcon;
     case "files":
-      return FolderIcon;
+      return FolderTreeIcon;
     case "file":
       return FileIcon;
     case "preview":
@@ -83,7 +83,7 @@ export function useLayoutTabLabel(): (tab: LayoutTab) => LayoutTabLabel {
         const ref = chatTargetThreadRef(content.target);
         const shell = ref === null ? null : (shellByKey.get(scopedThreadKey(ref)) ?? null);
         return {
-          icon: iconOf(MessageSquareIcon),
+          icon: iconOf(FolderIcon),
           title: shell?.title || NEW_THREAD_TITLE,
           mark: markOf(shell, nowIso),
         };

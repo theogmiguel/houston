@@ -17,6 +17,8 @@ export type LayoutTabMenuId =
   | "layout:new-column"
   | "layout:new-workspace"
   | "layout:fill"
+  | "layout:find-in-thread"
+  | "layout:project-settings"
   | "layout:copy-link"
   | "layout:close-tab"
   | "layout:close-other-tabs";
@@ -26,6 +28,10 @@ export interface LayoutTabMenuOptions {
   maximizedTabId?: string | null;
   /** The caller can build a link for this tab (a thread's chat); the item runs `copyLink`. */
   canCopyLink?: boolean;
+  /** The tab's chat can search its thread; the item runs `findInThread`. */
+  canFindInThread?: boolean;
+  /** The tab's chat has a project; the item runs `openProjectSettings`. */
+  canOpenProjectSettings?: boolean;
 }
 
 /** The layout actions of a tab's context menu. Every tab can close. */
@@ -62,14 +68,23 @@ export function buildLayoutTabMenuItems(
       icon: "maximize",
     });
   }
-  if (options.canCopyLink) {
-    items.push({ id: "layout:copy-link", label: "Copy link", icon: "link", separatorBefore: true });
+  const chatItems: ContextMenuItem<LayoutTabMenuId>[] = [];
+  if (options.canFindInThread) {
+    chatItems.push({ id: "layout:find-in-thread", label: "Find in thread", icon: "search" });
   }
+  if (options.canOpenProjectSettings) {
+    chatItems.push({ id: "layout:project-settings", label: "Project settings", icon: "settings" });
+  }
+  if (options.canCopyLink) {
+    chatItems.push({ id: "layout:copy-link", label: "Copy link", icon: "link" });
+  }
+  const [firstChatItem, ...otherChatItems] = chatItems;
+  if (firstChatItem) items.push({ ...firstChatItem, separatorBefore: true }, ...otherChatItems);
   items.push({
     id: "layout:close-tab",
     label: "Close",
     icon: "x",
-    separatorBefore: !options.canCopyLink,
+    separatorBefore: !firstChatItem,
   });
   if (hasSiblings) {
     items.push({ id: "layout:close-other-tabs", label: "Close others", icon: "copy-x" });
@@ -84,7 +99,11 @@ export function isLayoutTabMenuId(id: string): id is LayoutTabMenuId {
 export function runLayoutTabMenuAction(
   action: LayoutTabMenuId,
   tabId: string,
-  handlers: { copyLink?: (tab: LayoutTab) => void } = {},
+  handlers: {
+    copyLink?: (tab: LayoutTab) => void;
+    findInThread?: (tab: LayoutTab) => void;
+    openProjectSettings?: (tab: LayoutTab) => void;
+  } = {},
 ): void {
   const store = useLayoutStore.getState();
   const location = findLayoutTab(store.layout, (tab) => tab.id === tabId);
@@ -112,6 +131,12 @@ export function runLayoutTabMenuAction(
     case "layout:fill":
       store.focusTab(tabId);
       store.toggleMaximizedTab(tabId);
+      return;
+    case "layout:find-in-thread":
+      handlers.findInThread?.(location.tab);
+      return;
+    case "layout:project-settings":
+      handlers.openProjectSettings?.(location.tab);
       return;
     case "layout:copy-link":
       handlers.copyLink?.(location.tab);

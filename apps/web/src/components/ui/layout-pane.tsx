@@ -317,6 +317,25 @@ export function LayoutTabAdd({ label, onClick }: { label: string; onClick: () =>
   );
 }
 
+/** The tab bar's trailing end, where the chat of the pane's active tab places its one control. */
+export function LayoutTabBarActions({
+  ref,
+  className,
+  ...props
+}: HTMLAttributes<HTMLDivElement> & { ref?: Ref<HTMLDivElement> }) {
+  return (
+    <div
+      ref={ref}
+      data-layout-bar-actions=""
+      className={cn(
+        "ms-auto flex h-8 shrink-0 items-center self-end ps-1 [-webkit-app-region:no-drag]",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
 /** An empty pane's body: what it holds, and where a tab would go. */
 export function LayoutEmptyBody({ className, children, ...props }: HTMLAttributes<HTMLDivElement>) {
   return (

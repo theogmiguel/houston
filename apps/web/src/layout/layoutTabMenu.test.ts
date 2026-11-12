@@ -47,6 +47,39 @@ describe("buildLayoutTabMenuItems", () => {
     expect(ids(buildLayoutTabMenuItems(layout, "a"))[0]).toBe("layout:keep");
   });
 
+  it("offers a chat's find and project settings before copy link, which a pane without a header row has no other row for", () => {
+    const layout = buildLayout([[[["a"]]]]);
+    expect(
+      ids(
+        buildLayoutTabMenuItems(layout, "a", {
+          canCopyLink: true,
+          canFindInThread: true,
+          canOpenProjectSettings: true,
+        }),
+      ),
+    ).toEqual([
+      "layout:split-right",
+      "layout:split-down",
+      "layout:find-in-thread",
+      "layout:project-settings",
+      "layout:copy-link",
+      "layout:close-tab",
+    ]);
+  });
+
+  it("runs a chat's find and project settings through the caller's handlers", () => {
+    const layout = buildLayout([[[["a"]]]]);
+    useLayoutStore.getState().setLayoutFromServer(layout);
+    const calls: string[] = [];
+    const handlers = {
+      findInThread: () => calls.push("find"),
+      openProjectSettings: () => calls.push("settings"),
+    };
+    runLayoutTabMenuAction("layout:find-in-thread", "a", handlers);
+    runLayoutTabMenuAction("layout:project-settings", "a", handlers);
+    expect(calls).toEqual(["find", "settings"]);
+  });
+
   it("offers copy link only when the caller can build one", () => {
     const layout = buildLayout([[[["a"]]]]);
     expect(ids(buildLayoutTabMenuItems(layout, "a"))).not.toContain("layout:copy-link");

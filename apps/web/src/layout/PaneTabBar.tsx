@@ -2,6 +2,7 @@ import { memo, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import {
   LayoutTabAdd,
+  LayoutTabBarActions,
   LayoutTabBar,
   LayoutTabClose,
   LayoutTabIcon,
@@ -23,6 +24,7 @@ import { isLayoutGhostTab, type LayoutTab } from "./layoutModel";
 import { useLayoutPane } from "./layoutPaneContext";
 import { useLayoutStore } from "./layoutStore";
 import { beginLayoutTabDrag } from "./layoutTabDrag";
+import { registerPaneBarSlot } from "./paneBarSlots";
 
 export interface LayoutTabLabel {
   icon?: ReactNode;
@@ -197,6 +199,7 @@ export function LayoutPaneTabBar({
   const [overflowing, setOverflowing] = useState(false);
   const stripRef = useTabStripBehavior(activeTabId, setOverflowing);
   const chrome = placement === "window" ? layoutChromeInsets({ leadingEdge, trailingEdge }) : null;
+  const registerSlot = (element: HTMLElement | null) => registerPaneBarSlot(paneId, element);
   const leadingPad = leadingInset;
   const trailingPad = trailingInset ?? chrome?.trailing;
   return (
@@ -223,6 +226,7 @@ export function LayoutPaneTabBar({
         ))}
       </LayoutTabStrip>
       {onAdd ? <LayoutTabAdd label="New tab" onClick={() => onAdd(paneId)} /> : null}
+      <LayoutTabBarActions ref={registerSlot} />
       {trailing}
     </LayoutTabBar>
   );

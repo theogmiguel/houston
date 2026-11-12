@@ -607,6 +607,7 @@ it("opens the details card from a layout pane's header toggle at 1024px", async 
 
   const card = () => document.querySelector("[data-thread-details-card]");
   const toggle = screen.getByRole("button", { name: "Toggle thread details panel" });
+  await vi.waitFor(() => expect(toggle.element()).not.toBeNull(), { timeout: 10_000 });
   expect(card()).toBeNull();
   expect(toggle.element().getAttribute("aria-pressed")).toBe("false");
   await userEvent.click(toggle);
