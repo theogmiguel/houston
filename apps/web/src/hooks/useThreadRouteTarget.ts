@@ -1,7 +1,7 @@
 import type { ScopedThreadRef } from "@houston-app/contracts";
 import { useParams } from "@tanstack/react-router";
 
-import { selectFocusedChatTab } from "../layout/layoutModel";
+import { selectFocusedChatTarget } from "../layout/layoutModel";
 import { useLayoutStore } from "../layout/layoutStore";
 
 import {
@@ -32,7 +32,6 @@ export function useThreadRouteRef(): ScopedThreadRef | null {
  */
 export function useActiveThreadRouteTarget(): ThreadRouteTarget | null {
   const routeTarget = useThreadRouteTarget();
-  const focused = useLayoutStore((state) => selectFocusedChatTab(state.layout));
-  if (routeTarget !== null) return routeTarget;
-  return focused?.tab.content.kind === "chat" ? focused.tab.content.target : null;
+  const focused = useLayoutStore((state) => selectFocusedChatTarget(state.layout));
+  return routeTarget ?? focused;
 }

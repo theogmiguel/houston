@@ -14,6 +14,7 @@ import {
   placeLayoutTabs,
   replaceLayoutTabContent,
   resizeLayoutColumnEdge,
+  selectFocusedChatTarget,
   selectFocusedTab,
   selectFocusedWorkspace,
   selectLayoutPaneSlots,
@@ -536,5 +537,18 @@ describe("moveLayoutTabToWorkspace", () => {
     expect(tabContents(moved)).toEqual([[second], [first], []]);
     expect(selectFocusedWorkspace(moved)).toBe(moved.workspaces[0]);
     expect(selectFocusedTab(moved)?.content).toBe(second);
+  });
+});
+
+describe("selectFocusedChatTarget", () => {
+  it("returns the same reference on every read, so a store subscription settles", () => {
+    const state = layoutOf([[["a!"]], [["b"]]]);
+    const target = selectFocusedChatTarget(state);
+    expect(target).toEqual({ kind: "server", threadRef: refOf("a") });
+    expect(selectFocusedChatTarget(state)).toBe(target);
+  });
+
+  it("is null while the focused tab is not a chat", () => {
+    expect(selectFocusedChatTarget(layoutOf([[["a", "+!"]]]))).toBeNull();
   });
 });

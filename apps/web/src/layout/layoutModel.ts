@@ -421,6 +421,15 @@ export function selectFocusedChatTab(state: LayoutState): LayoutTabLocation | nu
   return findLayoutTab(state, (tab) => tab.id === focused.id);
 }
 
+/**
+ * The thread target of the focused tab when it is a chat. A store selector: it returns the
+ * state's own object, where `selectFocusedChatTab` builds a new location on every read.
+ */
+export function selectFocusedChatTarget(state: LayoutState): ThreadRouteTarget | null {
+  const focused = selectFocusedTab(state);
+  return focused?.content.kind === "chat" ? focused.content.target : null;
+}
+
 /** The tab is the focused one: what a maximized pane may stay maximized for. */
 export function isLayoutTabInFocusedGroup(state: LayoutState, tabId: string): boolean {
   return selectFocusedTab(state)?.id === tabId;
