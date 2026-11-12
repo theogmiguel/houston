@@ -871,6 +871,7 @@ export function LayoutWorkspaceStrip({
                   active && !staged && entry.pane.id === focusedPaneId ? "true" : undefined
                 }
                 focused={split && active && !staged && entry.pane.id === focusedPaneId}
+                dimmed={split && active && !staged && entry.pane.id !== focusedPaneId}
                 inert={staged}
                 squareStart={firstActive}
                 style={entry.style}

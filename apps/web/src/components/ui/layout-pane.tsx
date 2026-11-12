@@ -18,6 +18,7 @@ export type LayoutBarPlacement = "pane" | "window";
  */
 export function LayoutPaneFrame({
   focused,
+  dimmed = false,
   bar,
   squareStart,
   ref,
@@ -25,7 +26,10 @@ export function LayoutPaneFrame({
   children,
   ...props
 }: HTMLAttributes<HTMLDivElement> & {
+  /** Several panes share the strip and this one holds focus: its card takes a faint accent edge. */
   focused: boolean;
+  /** Several panes share the strip and another holds focus: this pane's active tab title is quieter. */
+  dimmed?: boolean;
   bar: ReactNode;
   /** The active tab is the bar's first: the surface's top-start corner meets it square. */
   squareStart: boolean;
@@ -36,7 +40,7 @@ export function LayoutPaneFrame({
       data-layout-pane-surface=""
       data-focused={focused ? "" : undefined}
       className={cn(
-        "relative flex min-h-0 flex-1 flex-col overflow-clip rounded-(--r-group) bg-(--pane)",
+        "relative flex min-h-0 flex-1 flex-col overflow-clip rounded-(--r-group) bg-(--pane) data-[focused]:ring-1 data-[focused]:ring-(--accent-ink)/25",
         squareStart && "rounded-ss-none",
       )}
     >
@@ -47,7 +51,8 @@ export function LayoutPaneFrame({
     <div
       ref={ref}
       data-layout-pane-frame=""
-      className={cn("absolute flex flex-col", className)}
+      data-pane-dimmed={dimmed ? "" : undefined}
+      className={cn("group/pane absolute flex flex-col", className)}
       {...props}
     >
       {bar}
@@ -214,7 +219,7 @@ export function LayoutTabShell({
         "relative flex min-w-0 items-center gap-1.5 px-3 text-xs outline-none transition-colors duration-(--motion-feedback) ease-standard focus-visible:ring-2 focus-visible:ring-(--accent-ink) focus-visible:ring-inset motion-reduce:transition-none",
         "h-8 self-end",
         active
-          ? "rounded-t-(--r-group) bg-(--pane) font-medium text-foreground"
+          ? "rounded-t-(--r-group) bg-(--pane) font-medium text-foreground group-data-[pane-dimmed]/pane:text-muted-foreground"
           : "rounded-(--r-ctl) text-muted-foreground hover:text-foreground",
         ghost && "italic",
         className,
