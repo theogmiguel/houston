@@ -33,6 +33,13 @@ import {
   type WorkspaceStack,
 } from "../motion/workspaceSwitch";
 import { LayoutResizeHandles } from "./ColumnResizeHandle";
+import {
+  keptTabIds,
+  nearTabIdsInOverview,
+  nearTabIdsOnStrip,
+  nextRecentTabIds,
+  nextRetainedTabIds,
+} from "./chatRetention";
 import { LayoutEmptyPane, LayoutLauncherShell } from "./EmptyPane";
 import { useLayoutBehavior } from "./layoutBehavior";
 import {
@@ -114,6 +121,12 @@ export interface LayoutWorkspaceStripProps {
    * scroll of the user's.
    */
   onScreenTabsChange?: (tabIds: ReadonlySet<string>) => void;
+  /**
+   * Tabs whose content is expensive to rebuild (a chat): once shown, their body stays mounted,
+   * hidden, when the tab stops being shown, until it closes. Each also learns from its pane's
+   * state (`near`, `kept`) when to draw its content.
+   */
+  retainTab?: (tab: LayoutTab) => boolean;
 }
 
 const FULL_STYLE = { left: 0, top: 0, width: "100%", height: "100%" } as const;
@@ -313,6 +326,7 @@ export function LayoutWorkspaceStrip({
   windowBarLeading,
   windowBarTrailing,
   onScreenTabsChange,
+  retainTab,
 }: LayoutWorkspaceStripProps) {
   const mediaNarrow = useMediaQuery("max-md");
   const narrow = narrowProp ?? mediaNarrow;
@@ -594,6 +608,90 @@ export function LayoutWorkspaceStrip({
     return () => scroller.removeEventListener("scroll", compute);
   });
 
+  // Where the strip's camera is, in half windows: it changes a couple of times per window of
+  // scroll, not per frame, so scrolling re-renders the strip rarely.
+  const [cameraStep, setCameraStep] = useState(0);
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- Subscribe to native scroll and schedule bounded render-window updates.
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    let frame: number | null = null;
+    const update = () => {
+      frame = null;
+      setCameraStep(Math.floor(scroller.scrollLeft / Math.max(1, viewportWidth / 2)));
+    };
+    const onScroll = () => {
+      if (frame === null) frame = window.requestAnimationFrame(update);
+    };
+    update();
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      if (frame !== null) window.cancelAnimationFrame(frame);
+      scroller.removeEventListener("scroll", onScroll);
+    };
+  }, [viewportWidth]);
+
+  const tabsById = new Map<string, { tab: LayoutTab; pane: LayoutPane }>();
+  for (const candidate of shown.workspaces) {
+    for (const column of candidate.columns) {
+      for (const pane of column.panes) {
+        for (const tab of pane.tabs) tabsById.set(tab.id, { tab, pane });
+      }
+    }
+  }
+  const retainable = (tabId: string) => {
+    const entry = tabsById.get(tabId);
+    return entry !== undefined && retainTab !== undefined && retainTab(entry.tab);
+  };
+  const shownTabIds = new Set(placed.flatMap((entry) => entry.pane.activeTabId ?? []));
+  // Mount newly shown tabs in the same render, then keep them mounted until they close, so a
+  // workspace or tab switch preserves their drafts, scroll and terminals.
+  const [retained, setRetained] = useState<readonly string[]>([]);
+  const nextRetained = nextRetainedTabIds(
+    [...shownTabIds].filter(retainable),
+    retained,
+    retainable,
+  );
+  if (!sameIds(nextRetained, retained)) setRetained(nextRetained);
+
+  // The tabs near the camera render the first time they come near.
+  const nearTabIds = (() => {
+    if (staged) return nearTabIdsInOverview(stage.rows, viewportWidth, stage.scale);
+    if (stacked) {
+      return nearTabIdsOnStrip(
+        stackRows.map((row) => ({
+          slots: row.slots,
+          rowPx: row.stripWidth * viewportWidth,
+          camera: row.camera,
+        })),
+        viewportWidth,
+      );
+    }
+    const rows = [{ slots: own.slots, rowPx: stripPx, camera: (cameraStep * viewportWidth) / 2 }];
+    // Focus can land past the camera before the scroll reports it.
+    if (focusedSlot) {
+      rows.push({
+        slots: [focusedSlot],
+        rowPx: stripPx,
+        camera: focusedSlot.rect.left * stripPx,
+      });
+    }
+    return nearTabIdsOnStrip(rows, viewportWidth);
+  })();
+  const [recent, setRecent] = useState<readonly string[]>([]);
+  const nextRecent = nextRecentTabIds(
+    new Set([...nearTabIds].filter(retainable)),
+    recent,
+    retainable,
+  );
+  if (!sameIds(nextRecent, recent)) setRecent(nextRecent);
+  const keptIds = keptTabIds(
+    nearTabIds,
+    recent,
+    active ? (focusedPane?.activeTabId ?? null) : null,
+    null,
+  );
+
   // The pane each column focuses when focus follows the view back to it.
   const lastFocusedByColumn = useRef(new Map<string, string>());
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- Remember the committed focused pane for later scroll-driven focus.
@@ -672,9 +770,31 @@ export function LayoutWorkspaceStrip({
     const current = selectFocusedPane(useLayoutStore.getState().layout)?.id;
     if (current !== paneId) useLayoutStore.getState().focusPane(paneId);
   };
-  const tabsOnScreen = [...placed].sort((a, b) =>
-    (a.slot.activeTabId ?? "").localeCompare(b.slot.activeTabId ?? ""),
-  );
+  const hiddenState = (tabId: string, paneId: string): LayoutPaneState => ({
+    tabId,
+    paneId,
+    split,
+    narrow: false,
+    leadingEdge: false,
+    trailingEdge: false,
+    focused: false,
+    related: false,
+    visible: false,
+    near: false,
+    kept: keptIds.has(tabId),
+  });
+  // One stable sibling layer in tab order: a tab moving between shown and hidden changes only its
+  // style, so its content is not remounted.
+  const bodies = [
+    ...placed.flatMap((entry) => {
+      const tab = entry.pane.tabs.find((candidate) => candidate.id === entry.pane.activeTabId);
+      return tab ? [{ tab, paneId: entry.pane.id, entry }] : [];
+    }),
+    ...retained.flatMap((tabId) => {
+      const held = shownTabIds.has(tabId) ? undefined : tabsById.get(tabId);
+      return held ? [{ tab: held.tab, paneId: held.pane.id, entry: null }] : [];
+    }),
+  ].toSorted((a, b) => a.tab.id.localeCompare(b.tab.id));
   const paneState = (entry: Placed, tabId: string): LayoutPaneState => {
     const widthPx = entry.slot.rect.width * entry.stripPx;
     return {
@@ -697,6 +817,8 @@ export function LayoutWorkspaceStrip({
       focused: active && !staged && entry.pane.id === focusedPaneId,
       related: false,
       visible: active,
+      near: nearTabIds.has(tabId),
+      kept: keptIds.has(tabId),
     };
   };
 
@@ -769,26 +891,29 @@ export function LayoutWorkspaceStrip({
               />
             );
           })}
-          {tabsOnScreen.map((entry) => {
-            const tab = entry.pane.tabs.find(
-              (candidate) => candidate.id === entry.pane.activeTabId,
-            );
-            if (!tab) return null;
+          {bodies.map(({ tab, paneId, entry }) => {
+            if (entry === null) {
+              const state = hiddenState(tab.id, paneId);
+              return (
+                <LayoutPaneBody key={tab.id} hidden placement="window">
+                  <LayoutPaneContext value={state}>{renderTab(tab, state)}</LayoutPaneContext>
+                </LayoutPaneBody>
+              );
+            }
+            const state = paneState(entry, tab.id);
             return (
               <LayoutPaneBody
                 key={tab.id}
-                data-layout-body-pane-id={entry.pane.id}
+                data-layout-body-pane-id={paneId}
                 data-layout-pane-focused={
-                  active && !staged && entry.pane.id === focusedPaneId ? "true" : undefined
+                  active && !staged && paneId === focusedPaneId ? "true" : undefined
                 }
                 inert={staged}
                 placement={entry.slot.hasAbove ? "pane" : "window"}
                 style={entry.style}
-                onPointerDownCapture={() => focusPane(entry.pane.id)}
+                onPointerDownCapture={() => focusPane(paneId)}
               >
-                <LayoutPaneContext value={paneState(entry, tab.id)}>
-                  {renderTab(tab, paneState(entry, tab.id))}
-                </LayoutPaneContext>
+                <LayoutPaneContext value={state}>{renderTab(tab, state)}</LayoutPaneContext>
               </LayoutPaneBody>
             );
           })}
@@ -823,6 +948,8 @@ export function LayoutWorkspaceStrip({
                   focused: row.own && active,
                   related: false,
                   visible: true,
+                  near: true,
+                  kept: true,
                 }}
               >
                 <LayoutLauncherShell tabId={null}>{empty}</LayoutLauncherShell>
@@ -870,6 +997,10 @@ export function LayoutWorkspaceStrip({
       ) : null}
     </div>
   );
+}
+
+function sameIds(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((id, index) => id === b[index]);
 }
 
 function fullSlot(): LayoutPaneSlot {

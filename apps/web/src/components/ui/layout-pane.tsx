@@ -62,20 +62,53 @@ export function LayoutPaneFrame({
 /** Where the active tab's content sits: under the bar, above the frame, clear of the bar's pointer. */
 export function LayoutPaneBody({
   placement,
+  hidden = false,
+  inert,
   children,
   className,
   ...props
-}: HTMLAttributes<HTMLDivElement> & { placement: LayoutBarPlacement }) {
+}: HTMLAttributes<HTMLDivElement> & {
+  placement: LayoutBarPlacement;
+  /**
+   * Off screen but mounted: moved out of the window (Electron keeps applying a stale window drag
+   * region to anything left in it) and skipped by rendering, so its state survives at no cost.
+   */
+  hidden?: boolean;
+}) {
   return (
     <div
-      className={cn("pointer-events-none absolute flex flex-col", className)}
+      className={cn(
+        "pointer-events-none absolute flex flex-col",
+        hidden && "inset-0 -translate-x-[calc(100%+100vw)] [content-visibility:hidden]",
+        className,
+      )}
       data-layout-pane-body=""
+      inert={hidden || inert}
       {...props}
     >
       <div aria-hidden className={placement === "window" ? "h-10 shrink-0" : "h-7.5 shrink-0"} />
       <div className="pointer-events-auto relative flex min-h-0 flex-1 flex-col overflow-clip rounded-b-(--r-group)">
         {children}
       </div>
+    </div>
+  );
+}
+
+/**
+ * What a tab shows while its content is not drawn: a quiet block with a few lines where the
+ * content will be, so the pane reads as present in the overview and as it comes near.
+ */
+export function LayoutStandIn({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div
+      aria-hidden
+      data-layout-stand-in=""
+      className={cn("flex min-h-0 min-w-0 flex-1 flex-col gap-3 bg-(--pane) p-6", className)}
+      {...props}
+    >
+      <div className="h-3 w-2/5 rounded-full bg-foreground/5" />
+      <div className="h-3 w-3/5 rounded-full bg-foreground/5" />
+      <div className="h-3 w-1/2 rounded-full bg-foreground/5" />
     </div>
   );
 }

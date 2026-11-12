@@ -15,6 +15,7 @@ import { LayoutOverview } from "./LayoutOverview";
 import { LayoutShortcutsOverlay } from "./LayoutShortcutsOverlay";
 import { useThreeFingerSwipe } from "./useThreeFingerSwipe";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
+import { LayoutChatGate } from "./LayoutChatGate";
 import { LayoutChatTab } from "./LayoutChatTab";
 import { LayoutLauncher } from "./LayoutLauncher";
 import { openLayoutNewTab } from "./layoutActions";
@@ -43,6 +44,9 @@ interface LayoutHostProps {
   /** One pane fills the window; the strip's own breakpoint decides when this is left out. */
   readonly narrow?: boolean;
 }
+
+/** A chat is the tab worth keeping mounted off screen. */
+const retainsChat = (tab: LayoutTab) => tab.content.kind === "chat";
 
 /** The main area of the chat routes. Nothing draws before the first layout snapshot. */
 export function LayoutHost(props: LayoutHostProps) {
@@ -81,12 +85,14 @@ function LoadedLayoutHost({ threadTarget, atIndex, active, narrow }: LayoutHostP
       switch (content.kind) {
         case "chat":
           return (
-            <LayoutChatTab
-              tab={tab}
-              target={content.target}
-              split={context.split}
-              onOpenThread={openThread}
-            />
+            <LayoutChatGate target={content.target}>
+              <LayoutChatTab
+                tab={tab}
+                target={content.target}
+                split={context.split}
+                onOpenThread={openThread}
+              />
+            </LayoutChatGate>
           );
         case "surface":
           return <LayoutSurfaceTab content={content} />;
@@ -158,6 +164,7 @@ function LoadedLayoutHost({ threadTarget, atIndex, active, narrow }: LayoutHostP
         empty={<LayoutLauncher tabId={null} context={null} />}
         active={active}
         onScreenTabsChange={onScreenTabsChange}
+        retainTab={retainsChat}
         windowBarTrailing={
           <>
             <ClosedTabRestoreButton reopen={requestReopenClosedView} />

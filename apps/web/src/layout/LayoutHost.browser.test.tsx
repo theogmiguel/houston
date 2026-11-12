@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 
@@ -7,10 +8,21 @@ import { buildLayout } from "./layoutFixtures";
 import { LayoutHost } from "./LayoutHost";
 import { useLayoutStore } from "./layoutStore";
 
+/** How many times each thread's chat mounted, so a test can tell a kept chat from a rebuilt one. */
+const chatMounts = vi.hoisted(() => new Map<string, number>());
+
 vi.mock(import("../components/chat/ThreadChatSurface"), () => ({
-  ThreadChatSurface: ({ threadRef }: { threadRef: { threadId: string } }) => (
-    <div data-testid={`chat-${threadRef.threadId}`}>chat {threadRef.threadId}</div>
-  ),
+  ThreadChatSurface: function MockChat({ threadRef }: { threadRef: { threadId: string } }) {
+    const [countMount] = useState(() => (element: HTMLElement | null) => {
+      if (element)
+        chatMounts.set(threadRef.threadId, (chatMounts.get(threadRef.threadId) ?? 0) + 1);
+    });
+    return (
+      <div ref={countMount} data-testid={`chat-${threadRef.threadId}`}>
+        chat {threadRef.threadId}
+      </div>
+    );
+  },
 }));
 
 vi.mock(import("../state/entities"), async (original) => ({
@@ -25,6 +37,7 @@ vi.mock(import("../state/shell"), async (original) => ({
 
 function openLayout(shape: string[][][][]): Disposable {
   useLayoutStore.getState().reset();
+  chatMounts.clear();
   useLayoutStore.getState().setLayoutFromServer(buildLayout(shape));
   return { [Symbol.dispose]: () => useLayoutStore.getState().reset() };
 }
@@ -97,5 +110,34 @@ describe("LayoutHost", () => {
       </Sized>,
     );
     await expect.poll(keys).toEqual([]);
+  });
+
+  it("draws a stand-in, not the chat, for a pane far from the camera, and the chat as it comes near", async () => {
+    const layout = buildLayout([[..."abcdefghij"].map((name) => [[name]])]);
+    for (const column of layout.workspaces[0]!.columns) column.width = 0.5;
+    layout.workspaces[0]!.cameraWidth = 1000;
+    useLayoutStore.getState().reset();
+    chatMounts.clear();
+    useLayoutStore.getState().setLayoutFromServer(layout);
+    await using screen = await render(host);
+    await expect.element(page.getByTestId("chat-a")).toBeVisible();
+    expect(page.getByTestId("chat-j").query()).toBeNull();
+    expect(screen.container.querySelectorAll("[data-layout-stand-in]").length).toBeGreaterThan(0);
+    const scroller = screen.container.querySelector<HTMLElement>("[data-layout-strip]")!;
+    scroller.scrollLeft = 4000;
+    await expect.element(page.getByTestId("chat-j")).toBeInTheDocument();
+    useLayoutStore.getState().reset();
+  });
+
+  it("keeps a chat mounted while its workspace is off screen and shows the same chat on return", async () => {
+    using _layout = openLayout([[[["t1"]]], [[["t2"]]]]);
+    await using _screen = await render(host);
+    await expect.element(page.getByTestId("chat-t1")).toBeVisible();
+    useLayoutStore.getState().focusWorkspace("w1");
+    await expect.element(page.getByTestId("chat-t2")).toBeVisible();
+    expect(page.getByTestId("chat-t1").query()).not.toBeNull();
+    useLayoutStore.getState().focusWorkspace("w0");
+    await expect.element(page.getByTestId("chat-t1")).toBeVisible();
+    expect(chatMounts.get("t1")).toBe(1);
   });
 });

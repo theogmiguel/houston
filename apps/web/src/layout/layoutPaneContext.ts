@@ -31,6 +31,16 @@ export interface LayoutPaneState {
   readonly related: boolean;
   /** The tab is on screen: the active tab of a pane in the focused workspace. */
   readonly visible: boolean;
+  /**
+   * The tab's pane is within a window of the strip's camera (or drawn large enough to read in the
+   * overview): an expensive tab, a chat, draws its content when it is.
+   */
+  readonly near: boolean;
+  /**
+   * An expensive tab that is drawn stays drawn while kept: near the camera, focused, or among the
+   * few most recently near. Otherwise it may release its content and stand in for it.
+   */
+  readonly kept: boolean;
 }
 
 export const LONE_PANE: LayoutPaneState = {
@@ -43,6 +53,8 @@ export const LONE_PANE: LayoutPaneState = {
   focused: true,
   related: false,
   visible: true,
+  near: true,
+  kept: true,
 };
 
 export const LayoutPaneContext = createContext<LayoutPaneState>(LONE_PANE);
