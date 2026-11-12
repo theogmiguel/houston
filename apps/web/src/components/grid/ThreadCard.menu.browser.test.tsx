@@ -7,7 +7,7 @@ import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/m
 import type { ThreadActionMenuId } from "../threadActionMenu.logic";
 import { render } from "../../../test/render";
 import { TooltipProvider } from "../ui/tooltip";
-import { ThreadCard } from "./GridSidebar";
+import { ThreadCard } from "./ThreadCard";
 import { ProjectFilterContext, type ThreadProjectFilter } from "./ProjectFilterPicker";
 
 const menu = vi.hoisted(() => ({
@@ -112,7 +112,6 @@ function thread(overrides: Partial<EnvironmentThreadShell> = {}): EnvironmentThr
 function card(
   overrides: {
     onOpen?: () => void;
-    onOpenGrid?: (gridId: string) => void;
     projectFilter?: ThreadProjectFilter;
   } = {},
 ) {
@@ -121,7 +120,7 @@ function card(
     <ProjectFilterContext.Provider value={projectFilter === undefined ? null : () => projectFilter}>
       <TooltipProvider delay={60_000}>
         <ThreadCard
-          gridId="grid-a"
+          workspaceId="ws-a"
           thread={thread()}
           query=""
           providerEntries={new Map()}
@@ -129,7 +128,7 @@ function card(
           focused={false}
           selected={false}
           dragging={false}
-          workspaceTitle="Houston"
+          projectTitle="Houston"
           timeLabel="9:00"
           onOpen={overrides.onOpen ?? (() => {})}
           onSelect={() => {}}
@@ -139,7 +138,7 @@ function card(
           onRename={() => {}}
           onSetAutoClose={() => {}}
           onDropOnThread={() => {}}
-          onOpenGrid={overrides.onOpenGrid ?? (() => {})}
+          workspaceMove={{ targets: [{ workspaceId: "ws-b", name: "Review" }], onMove: () => {} }}
           handleNewThread={async () => null}
         />
       </TooltipProvider>
@@ -182,8 +181,7 @@ describe("ThreadCard thread menu", () => {
     expect(labels(menuItems())).toEqual(
       expect.arrayContaining([
         "New thread on houston/split-drawer-state",
-        "Open in grid",
-        "Move to grid",
+        "Move to workspace",
         "Close thread",
         "Hold",
         "Rename thread",
@@ -225,7 +223,7 @@ describe("ThreadCard thread menu", () => {
     const rect = row.getBoundingClientRect();
     expect(menu.show.mock.calls[0]?.[1]).toEqual({ x: rect.left, y: rect.bottom + 4 });
     expect(labels(menuItems())).toEqual(
-      expect.arrayContaining(["Open in grid", "Close thread", "Rename thread"]),
+      expect.arrayContaining(["Move to workspace", "Close thread", "Rename thread"]),
     );
   });
 

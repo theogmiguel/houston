@@ -3,11 +3,11 @@ import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
-import { useGridStore } from "../../grid/gridStore";
 import { beginThreadDragAt, endThreadDrag, getThreadDragSource } from "../../grid/threadDrag";
 import { act, fakeTimers, render, type Screen } from "../../../test/render";
 import { TooltipProvider } from "../ui/tooltip";
-import { ThreadCard } from "./GridSidebar";
+import type { ThreadActionMenuWorkspaceInput } from "../../hooks/useThreadActionMenu";
+import { ThreadCard } from "./ThreadCard";
 import type { SidebarProviderEntry } from "../sidebar/SidebarThreadRow";
 
 vi.mock(import("@effect/atom-react"), async (original) => ({
@@ -79,21 +79,21 @@ function card(
     onSetAutoClose?: (enabled: boolean) => void;
     onRename?: (title: string) => void;
     onOpen?: () => void;
-    onOpenGrid?: (gridId: string) => void;
     onDropOnThread?: (source: unknown) => void;
     timeLabel?: string | null;
     tooltipDelay?: number;
     focused?: boolean;
     selected?: boolean;
-    gridId?: string | null;
+    workspaceId?: string | null;
     shelf?: "snoozed" | "settled";
     providerEntries?: ReadonlyMap<string, SidebarProviderEntry>;
+    workspaceMove?: ThreadActionMenuWorkspaceInput;
   } = {},
 ) {
   return (
     <TooltipProvider delay={overrides.tooltipDelay ?? 0}>
       <ThreadCard
-        gridId={overrides.gridId === undefined ? "grid-a" : overrides.gridId}
+        workspaceId={overrides.workspaceId === undefined ? "ws-a" : overrides.workspaceId}
         thread={value}
         query=""
         providerEntries={overrides.providerEntries ?? new Map()}
@@ -101,7 +101,7 @@ function card(
         focused={overrides.focused ?? false}
         selected={overrides.selected ?? false}
         dragging={false}
-        workspaceTitle="Houston"
+        projectTitle="Houston"
         timeLabel={overrides.timeLabel === undefined ? "9:00" : overrides.timeLabel}
         shelf={overrides.shelf ?? null}
         onOpen={overrides.onOpen ?? (() => {})}
@@ -112,7 +112,7 @@ function card(
         onRename={overrides.onRename ?? (() => {})}
         onSetAutoClose={overrides.onSetAutoClose ?? (() => {})}
         onDropOnThread={overrides.onDropOnThread ?? (() => {})}
-        {...(overrides.onOpenGrid === undefined ? {} : { onOpenGrid: overrides.onOpenGrid })}
+        workspaceMove={overrides.workspaceMove}
       />
     </TooltipProvider>
   );
@@ -146,12 +146,13 @@ function startRowDrag(row: HTMLElement): void {
 }
 
 describe("ThreadCard drag source", () => {
-  it("carries the thread's project so grid zones can accept or refuse it", async () => {
+  it("carries the thread's project and workspace so drop zones can accept or refuse it", async () => {
     await using screen = await render(card(thread()));
     const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
     startRowDrag(row);
     expect(getThreadDragSource()).toEqual({
-      gridId: "grid-a",
+      gridId: null,
+      workspaceId: "ws-a",
       threadId: "thread-a",
       environmentId: "env-1",
       projectId: "project-1",
@@ -160,11 +161,15 @@ describe("ThreadCard drag source", () => {
     endThreadDrag();
   });
 
-  it("lets a thread no grid shows start a drag", async () => {
-    await using screen = await render(card(thread(), { gridId: null }));
+  it("lets a thread outside any workspace start a drag", async () => {
+    await using screen = await render(card(thread(), { workspaceId: null }));
     const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
     startRowDrag(row);
-    expect(getThreadDragSource()).toMatchObject({ gridId: null, threadId: "thread-a" });
+    expect(getThreadDragSource()).toMatchObject({
+      gridId: null,
+      workspaceId: null,
+      threadId: "thread-a",
+    });
     endThreadDrag();
   });
 
@@ -175,7 +180,8 @@ describe("ThreadCard drag source", () => {
     const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
     const rect = row.getBoundingClientRect();
     const source = {
-      gridId: "grid-a",
+      gridId: null,
+      workspaceId: "ws-other",
       threadId: "thread-b",
       environmentId: "env-1",
       projectId: "project-1",
@@ -273,7 +279,7 @@ describe("ThreadCard", () => {
     await userEvent.hover(trigger);
     await userEvent.click(trigger);
 
-    const item = page.getByRole("menuitem", { name: /Open in grid/ });
+    const item = page.getByRole("menuitem", { name: /Rename thread/ });
     await expect.element(item).toBeVisible();
     await userEvent.hover(item);
 
@@ -337,7 +343,7 @@ describe("ThreadCard", () => {
     const trigger = screen.getByRole("button", { name: /Thread actions for/ });
     await expect.element(trigger).toBeVisible();
     await userEvent.click(trigger);
-    await expect.element(page.getByRole("menuitem", { name: /Open in grid/ })).toBeVisible();
+    await expect.element(page.getByRole("menuitem", { name: /Rename thread/ })).toBeVisible();
     // Choose Rename from the keyboard while the pointer still rests on the row.
     page
       .getByRole("menuitem", { name: /Rename/ })
@@ -397,24 +403,26 @@ describe("ThreadCard", () => {
 });
 
 describe("ThreadCard layout", () => {
-  it("leads with the title; a thread on its own branch adds one muted meta line below it", async () => {
+  it("leads with the project, then the title alone, then one muted meta line with the branch", async () => {
     await using screen = await render(
       card(thread({ tags: [], branch: "houston/split-drawer-state" } as never)),
     );
     const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
 
-    const height = row.getBoundingClientRect().height;
-    expect(height).toBe(52);
+    expect(row.getBoundingClientRect().height).toBe(60);
     expect(row.querySelector("[data-thread-extras-line]")).toBeNull();
 
-    const meta = row.querySelector<HTMLElement>("[data-thread-meta]")!;
+    const projectLine = row.querySelector<HTMLElement>("[data-thread-project-line]")!;
     const titleLine = row.querySelector<HTMLElement>("[data-thread-title-line]")!;
+    const meta = row.querySelector<HTMLElement>("[data-thread-meta]")!;
     const title = screen.getByText("Split drawer state from the thread store").element();
     const time = row.querySelector<HTMLElement>("[data-thread-time]")!;
     const branch = screen.getByText("houston/split-drawer-state").element();
-    expect(meta.contains(branch)).toBe(true);
+    expect(projectLine.querySelector("[data-thread-project]")?.textContent).toBe("Houston");
+    expect(projectLine.contains(time)).toBe(true);
     expect(titleLine.contains(title)).toBe(true);
-    expect(titleLine.contains(time)).toBe(true);
+    expect(titleLine.contains(time)).toBe(false);
+    expect(meta.contains(branch)).toBe(true);
     expect(meta.contains(time)).toBe(false);
     expect(getComputedStyle(branch).fontFamily).not.toContain("Mono");
     expect(getComputedStyle(branch).fontSize).toBe("12px");
@@ -422,17 +430,18 @@ describe("ThreadCard layout", () => {
     expect(getComputedStyle(title).fontWeight).toBe("500");
     expect(getComputedStyle(time).fontSize).toBe("12px");
 
-    // The title leads, the meta line follows, and the age ends the title line at the right edge.
+    // Project line, title line and meta line follow one another; the age ends the first line.
+    const projectBox = projectLine.getBoundingClientRect();
+    const titleBox = titleLine.getBoundingClientRect();
     const metaBox = meta.getBoundingClientRect();
-    const titleBox = title.getBoundingClientRect();
     const timeBox = time.getBoundingClientRect();
     const rowBox = row.getBoundingClientRect();
+    expect(projectBox.bottom).toBeLessThanOrEqual(titleBox.top);
     expect(titleBox.bottom).toBeLessThanOrEqual(metaBox.top);
     expect(rowBox.right - timeBox.right).toBeLessThan(16);
     expect(time.textContent).toMatch(/^\S+$/);
     expect(getComputedStyle(time).fontVariantNumeric).toContain("tabular-nums");
     expect(getComputedStyle(time).color).toBe(getComputedStyle(branch).color);
-    expect(row.textContent).not.toContain("not in a grid");
 
     // Meta-line icons share one 14px size.
     for (const icon of row.querySelectorAll<SVGElement>("[data-thread-meta] svg")) {
@@ -440,16 +449,15 @@ describe("ThreadCard layout", () => {
     }
   });
 
-  it("is two lines tall when the thread has nothing to report, and states no status", async () => {
+  it("is three lines tall when the thread has nothing to report, and states no status", async () => {
     await using screen = await render(card(thread({ tags: [], branch: "main" } as never)));
     const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
-    const height = row.getBoundingClientRect().height;
-    expect(height).toBe(52);
+    expect(row.getBoundingClientRect().height).toBe(60);
     const meta = row.querySelector<HTMLElement>("[data-thread-meta]")!;
     expect(getComputedStyle(meta).display).toBe("flex");
     expect(row.querySelector("[data-thread-status]")).toBeNull();
     expect(row.textContent).not.toContain("Idle");
-    expect(row.querySelector("[data-thread-title-line] [data-thread-time]")).not.toBeNull();
+    expect(row.querySelector("[data-thread-project-line] [data-thread-time]")).not.toBeNull();
     expect(meta.querySelector("[data-meta-label]")?.getAttribute("data-meta-label")).toBe(
       "Branch main",
     );
@@ -505,12 +513,12 @@ describe("ThreadCard layout", () => {
     expect(getComputedStyle(row).paddingLeft).toBe("8px");
   });
 
-  it("starts a flat row and a grid row at the same inset", async () => {
-    await using grid = await render(card(thread(), { gridId: "grid-a" }));
+  it("starts a flat row and a workspace row at the same inset", async () => {
+    await using grid = await render(card(thread(), { workspaceId: "ws-a" }));
     const gridLeft = getComputedStyle(
       grid.container.querySelector<HTMLElement>("[data-thread-key]")!,
     ).paddingLeft;
-    await using flat = await render(card(thread(), { gridId: null }));
+    await using flat = await render(card(thread(), { workspaceId: null }));
     const flatLeft = getComputedStyle(
       flat.container.querySelector<HTMLElement>("[data-thread-key]")!,
     ).paddingLeft;
@@ -654,16 +662,17 @@ describe("ThreadCard status marks", () => {
     expect(getComputedStyle(mark).color).toBe(tokenColor("--status-running"));
     expect(mark.hasAttribute("data-thread-status-glyph")).toBe(true);
     expect(mark.textContent).toBe("");
-    // The glyph closes the title line, right of the title, before the word and the elapsed time.
-    const titleBox = titleOf(screen).getBoundingClientRect();
-    expect(mark.getBoundingClientRect().left).toBeGreaterThanOrEqual(titleBox.right);
+    // The glyph closes the project line, right of the project name, before the word and the elapsed time.
+    const projectBox = projectNameOf(screen).getBoundingClientRect();
+    expect(mark.getBoundingClientRect().left).toBeGreaterThanOrEqual(projectBox.right);
     expect(
-      screen.container.querySelector("[data-thread-title-line] [data-thread-status]")?.textContent,
+      screen.container.querySelector("[data-thread-project-line] [data-thread-status]")
+        ?.textContent,
     ).toMatch(/^Running \d/);
     expect(screen.container.querySelector("[data-thread-meta] [data-thread-status]")).toBeNull();
   });
 
-  it("puts the status in the age's place on the title line and the tags on the second line", async () => {
+  it("puts the status in the age's place on the project line and the tags on the meta line", async () => {
     await using screen = await render(
       card(
         thread({
@@ -680,29 +689,29 @@ describe("ThreadCard status marks", () => {
       ),
     );
 
-    const titleLine = screen.container.querySelector<HTMLElement>("[data-thread-title-line]")!;
+    const projectLine = screen.container.querySelector<HTMLElement>("[data-thread-project-line]")!;
     const meta = screen.container.querySelector<HTMLElement>("[data-thread-meta]")!;
     const glyph = screen.getByRole("img", { name: "Running" }).element();
-    expect(titleLine.contains(glyph)).toBe(true);
+    expect(projectLine.contains(glyph)).toBe(true);
     const tags = [...meta.querySelectorAll<HTMLElement>("[data-thread-tag]")];
     expect(tags.map((tag) => tag.textContent)).toEqual(["#bug", "#linux"]);
     expect(getComputedStyle(tags[0]!).backgroundColor).not.toBe(tokenBackground("--sel"));
     expect(screen.container.querySelector("[data-thread-time]")).toBeNull();
 
-    // The status closes the title line at the row's right edge, after the title.
-    const status = titleLine.querySelector<HTMLElement>("[data-thread-status]")!;
+    // The status closes the project line at the row's right edge, after the project name.
+    const status = projectLine.querySelector<HTMLElement>("[data-thread-status]")!;
     const statusBox = status.getBoundingClientRect();
     const rowBox = screen.container.querySelector("[data-thread-key]")!.getBoundingClientRect();
-    expect(titleOf(screen).getBoundingClientRect().right).toBeLessThanOrEqual(statusBox.left);
+    expect(projectNameOf(screen).getBoundingClientRect().right).toBeLessThanOrEqual(statusBox.left);
     expect(rowBox.right - statusBox.right).toBeLessThan(16);
   });
 
-  it("puts only the age at the title line's end for a thread with nothing running", async () => {
+  it("puts only the age at the project line's end for a thread with nothing running", async () => {
     await using screen = await render(
       card(thread({ tags: ["bug"] } as never), { timeLabel: "9:00" }),
     );
-    const titleLine = screen.container.querySelector<HTMLElement>("[data-thread-title-line]")!;
-    const time = titleLine.querySelector<HTMLElement>("[data-thread-time]");
+    const projectLine = screen.container.querySelector<HTMLElement>("[data-thread-project-line]")!;
+    const time = projectLine.querySelector<HTMLElement>("[data-thread-time]");
     expect(time?.textContent).toBe("9:00");
     expect(time).toBeVisible();
     expect(screen.container.querySelectorAll("[data-thread-time]")).toHaveLength(1);
@@ -710,10 +719,10 @@ describe("ThreadCard status marks", () => {
     expect(screen.container.querySelector("[data-thread-status]")).toBeNull();
     expect(screen.container.querySelector("[data-streaming-glyph]")).toBeNull();
 
-    // The age closes the title line at the row's right edge, after the title.
+    // The age closes the project line at the row's right edge, after the project name.
     const timeBox = time!.getBoundingClientRect();
     const rowBox = screen.container.querySelector("[data-thread-key]")!.getBoundingClientRect();
-    expect(titleOf(screen).getBoundingClientRect().right).toBeLessThanOrEqual(timeBox.left);
+    expect(projectNameOf(screen).getBoundingClientRect().right).toBeLessThanOrEqual(timeBox.left);
     expect(rowBox.right - timeBox.right).toBeLessThan(16);
   });
 
@@ -768,7 +777,7 @@ describe("ThreadCard status marks", () => {
       // The glyph is named for assistive tech and the word beside it says the same.
       expect(named.getAttribute("aria-label"), label).toBe(label);
       expect(
-        screen.container.querySelector("[data-thread-title-line] [data-thread-status]")
+        screen.container.querySelector("[data-thread-project-line] [data-thread-status]")
           ?.textContent,
         label,
       ).toContain(label);
@@ -781,11 +790,11 @@ describe("ThreadCard status marks", () => {
     expect(glyphs.size).toBe(cases.length);
   });
 
-  it("fits two lines in 52px with a 16px meta line holding 14px text", async () => {
+  it("fits three lines in 60px with a 16px meta line holding 14px text", async () => {
     await using screen = await render(card(thread({ tags: [] } as never)));
     const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
     const height = row.getBoundingClientRect().height;
-    expect(height).toBe(52);
+    expect(height).toBe(60);
     const meta = row.querySelector<HTMLElement>("[data-thread-meta]")!;
     expect(getComputedStyle(meta).lineHeight).toBe("14px");
   });
@@ -811,6 +820,14 @@ function classColor(className: string): string {
   const color = getComputedStyle(probe).color;
   probe.remove();
   return color;
+}
+
+function projectNameOf(screen: Screen): HTMLElement {
+  const name = screen.container.querySelector("[data-thread-key] [data-thread-project]");
+  if (!(name instanceof HTMLElement)) {
+    throw new Error("The thread card has no project name.");
+  }
+  return name;
 }
 
 function titleOf(screen: Screen): HTMLElement {
@@ -967,97 +984,40 @@ describe.skipIf(!capturesEnabled)("ThreadCard captures", () => {
   );
 });
 
-describe("ThreadCard move to grid", () => {
-  function seedGrids() {
-    useGridStore.setState({ grids: [], threadOrigins: {}, closedCells: {} });
-    const store = useGridStore.getState();
-    store.createGrid({
-      environmentId: "env-1",
-      projectId: "project-1",
-      workspaceKey: "env-1:project-1",
-      id: "grid-a",
-      name: "Alpha",
-      now: "2026-01-01T00:00:00Z",
-    });
-    store.createGrid({
-      environmentId: "env-1",
-      projectId: "project-1",
-      workspaceKey: "env-1:project-1",
-      id: "grid-b",
-      name: "Review",
-      now: "2026-01-02T00:00:00Z",
-    });
-    store.createGrid({
-      environmentId: "env-1",
-      projectId: "project-2",
-      workspaceKey: "env-1:project-2",
-      id: "grid-other",
-      name: "Elsewhere",
-      now: "2026-01-03T00:00:00Z",
-    });
-    useGridStore.getState().addThread("grid-a", "thread-a");
-  }
+describe("ThreadCard move to workspace", () => {
+  const targets = [
+    { workspaceId: "ws-b", name: "Review" },
+    { workspaceId: "ws-c", name: "Elsewhere" },
+  ];
 
-  async function openMoveMenu() {
-    const screen = await render(card(thread(), { onOpenGrid: () => {} }));
+  async function openMoveMenu(onMove: (workspaceId: string) => void = () => {}) {
+    const screen = await render(card(thread(), { workspaceMove: { targets, onMove } }));
     await userEvent.hover(screen.container.querySelector("[data-thread-key]") as HTMLElement);
     await userEvent.click(screen.getByRole("button", { name: /Thread actions for/ }));
-    await userEvent.hover(page.getByRole("menuitem", { name: /Move to grid/ }));
+    await userEvent.hover(page.getByRole("menuitem", { name: /Move to workspace/ }));
     return screen;
   }
 
-  it("lists the project's other grids and no other project's grid", async () => {
-    seedGrids();
+  it("lists the other workspaces, whatever their project", async () => {
     await using _screen = await openMoveMenu();
 
     await expect.element(page.getByRole("menuitem", { name: "Review" })).toBeVisible();
-    await expect.element(page.getByRole("menuitem", { name: "New grid" })).toBeVisible();
-    expect(page.getByRole("menuitem", { name: "Alpha" }).elements()).toHaveLength(0);
-    expect(page.getByRole("menuitem", { name: "Elsewhere" }).elements()).toHaveLength(0);
+    await expect.element(page.getByRole("menuitem", { name: "Elsewhere" })).toBeVisible();
   });
 
-  it("hides the submenu when the thread has no project", async () => {
-    seedGrids();
-    await using screen = await render(
-      card(thread({ projectId: "" as never }), { onOpenGrid: () => {} }),
-    );
+  it("offers no submenu when no workspace input is given", async () => {
+    await using screen = await render(card(thread()));
     await userEvent.hover(screen.container.querySelector("[data-thread-key]") as HTMLElement);
     await userEvent.click(screen.getByRole("button", { name: /Thread actions for/ }));
-    await expect.element(page.getByRole("menuitem", { name: /Open in grid/ })).toBeVisible();
-    expect(page.getByRole("menuitem", { name: /Move to grid/ }).elements()).toHaveLength(0);
+    await expect.element(page.getByRole("menuitem", { name: /Rename thread/ })).toBeVisible();
+    expect(page.getByRole("menuitem", { name: /Move to workspace/ }).elements()).toHaveLength(0);
   });
 
-  it("moves the thread to the chosen grid and opens it", async () => {
-    seedGrids();
-    const onOpenGrid = vi.fn();
-    await using screen = await render(card(thread(), { onOpenGrid }));
-    await userEvent.hover(screen.container.querySelector("[data-thread-key]") as HTMLElement);
-    await userEvent.click(screen.getByRole("button", { name: /Thread actions for/ }));
-    await userEvent.hover(page.getByRole("menuitem", { name: /Move to grid/ }));
+  it("moves the thread to the chosen workspace", async () => {
+    const onMove = vi.fn();
+    await using _screen = await openMoveMenu(onMove);
     await userEvent.click(page.getByRole("menuitem", { name: "Review" }));
 
-    expect(onOpenGrid).toHaveBeenCalledExactlyOnceWith("grid-b");
-    const grids = useGridStore.getState().grids;
-    expect(grids.find((grid) => grid.id === "grid-a")?.tree).toBeNull();
-    expect(grids.find((grid) => grid.id === "grid-b")?.tree).toMatchObject({
-      kind: "thread",
-      threadId: "thread-a",
-    });
-  });
-
-  it("creates a new grid in the thread's project", async () => {
-    seedGrids();
-    const onOpenGrid = vi.fn();
-    await using screen = await render(card(thread(), { onOpenGrid }));
-    await userEvent.hover(screen.container.querySelector("[data-thread-key]") as HTMLElement);
-    await userEvent.click(screen.getByRole("button", { name: /Thread actions for/ }));
-    await userEvent.hover(page.getByRole("menuitem", { name: /Move to grid/ }));
-    await userEvent.click(page.getByRole("menuitem", { name: "New grid" }));
-
-    const createdId = onOpenGrid.mock.calls[0]?.[0] as string | undefined;
-    expect(createdId).toBeDefined();
-    const created = useGridStore.getState().grids.find((grid) => grid.id === createdId);
-    expect(created).toMatchObject({ environmentId: "env-1", projectId: "project-1" });
-    expect(created?.tree).toMatchObject({ kind: "thread", threadId: "thread-a" });
+    expect(onMove).toHaveBeenCalledExactlyOnceWith("ws-b");
   });
 });

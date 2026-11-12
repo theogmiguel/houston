@@ -7,11 +7,10 @@ import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/m
 import { ThreadId } from "@houston-app/contracts";
 
 import { render } from "../../../test/render";
-import type { GridRecord } from "../../grid/gridStore";
 import { clearThreadSelection } from "../../grid/sidebar";
 import { TooltipProvider } from "../ui/tooltip";
-import { SidebarProjectSection } from "./GridSidebar";
-import type { SidebarProjectSection as SidebarProjectSectionModel } from "./sidebarProjectSections";
+import { SidebarWorkspaceGroup } from "./GridSidebar";
+import type { SidebarWorkspaceSection } from "./sidebarWorkspaceSections";
 
 vi.mock("../../commandPaletteBus", () => ({
   openCommandPalette: () => {},
@@ -72,70 +71,56 @@ function thread(id: string, overrides: Partial<EnvironmentThreadShell> = {}) {
   } as unknown as EnvironmentThreadShell;
 }
 
-function grid(id: string, focusedThreadId: string | null): GridRecord {
+function section(
+  id: string,
+  threads: EnvironmentThreadShell[],
+  overrides: Partial<SidebarWorkspaceSection> = {},
+): SidebarWorkspaceSection {
   return {
-    id,
+    workspaceId: id,
     name: id,
-    environmentId: "env-1",
-    projectId: "project-1",
-    workspaceKey: "env-1:project-1",
-    tree: null,
-    focusedThreadId,
-    pinnedAt: null,
+    pinned: false,
     hidden: false,
-    createdAt: "2026-01-01T00:00:00.000Z",
+    empty: threads.length === 0,
+    threads,
+    needsYouThreads: [],
+    ...overrides,
   };
 }
 
-function props(
-  section: SidebarProjectSectionModel,
-  overrides: Partial<ComponentProps<typeof SidebarProjectSection>> = {},
-): ComponentProps<typeof SidebarProjectSection> {
+function groupProps(
+  value: SidebarWorkspaceSection,
+  overrides: Partial<ComponentProps<typeof SidebarWorkspaceGroup>> = {},
+): ComponentProps<typeof SidebarWorkspaceGroup> {
   return {
-    section,
+    section: value,
     query: "",
-    openGridId: null,
-    collapsed: true,
+    open: false,
+    collapsed: false,
     onToggleCollapsed: () => {},
-    collapsedGridIds: new Set(),
-    onToggleGridCollapsed: () => {},
-    providerEntries: new Map(),
+    previousWorkspaceId: null,
+    nextWorkspaceId: null,
+    hiddenWorkspaces: [],
+    focusedThreadKey: null,
+    providerEntriesByEnvironment: new Map(),
+    projectTitleOf: () => "Houston",
     nowIso: "2026-01-01T00:00:00.000Z",
     selection: clearThreadSelection(),
     runningSubagents: new Map(),
     dragging: null,
     dropTarget: null,
+    reorder: { drag: null, begin: () => {} },
     onOpenThread: () => {},
     onSelectThread: () => {},
     onCloseThread: () => {},
     onHoldThread: () => {},
     onPickHoldTime: async () => null,
-    onDropOnGrid: () => {},
-    onDropOnThread: () => {},
-    onCreateGrid: () => {},
-    onCreateThread: () => {},
+    onDropOnWorkspace: () => {},
+    onCreateWorkspace: () => {},
     onRenameThread: () => {},
     onSetAutoClose: () => {},
-    onShowGrid: () => {},
-    onOpenUngroupedThread: () => {},
+    workspaceMoveFor: () => undefined,
     ...overrides,
-  };
-}
-
-function section(
-  grids: SidebarProjectSectionModel["grids"],
-  ungroupedThreads: EnvironmentThreadShell[] = [],
-  title = "Houston",
-): SidebarProjectSectionModel {
-  return {
-    projectKey: `env-1:${title}`,
-    title,
-    isScratch: false,
-    environmentId: "env-1",
-    projectId: "project-1",
-    grids,
-    hiddenGrids: [],
-    ungroupedThreads,
   };
 }
 
@@ -144,103 +129,39 @@ const rect = (element: Element) => element.getBoundingClientRect();
 const rails = [280, 240] as const;
 
 function tree(
-  value: SidebarProjectSectionModel,
-  overrides: Partial<ComponentProps<typeof SidebarProjectSection>> = {},
+  values: ReadonlyArray<{
+    value: SidebarWorkspaceSection;
+    overrides?: Partial<ComponentProps<typeof SidebarWorkspaceGroup>>;
+  }>,
   width = 280,
 ) {
   return (
     <TooltipProvider delay={0}>
       <div style={{ width }} className="flex flex-col gap-px">
-        <SidebarProjectSection {...props(value, { collapsed: false, ...overrides })} />
+        {values.map(({ value, overrides }) => (
+          <SidebarWorkspaceGroup key={value.workspaceId} {...groupProps(value, overrides)} />
+        ))}
       </div>
     </TooltipProvider>
   );
 }
 
-const projectRow = (root: ParentNode) => root.querySelector<HTMLElement>("[data-project-heading]")!;
-const gridRow = (root: ParentNode, id: string) =>
+const workspaceRow = (root: ParentNode, id: string) =>
   root.querySelector<HTMLElement>(`[data-grid-key="${id}"] [data-grid-heading-row]`)!;
 const cardsOf = (root: ParentNode, id: string) =>
   root.querySelector<HTMLElement>(`[data-grid-key="${id}"] [data-grid-guide]`);
 
-describe("sidebar tree: project row", () => {
-  it("is a 28px bold row, and a project with nothing in it is regular and muted", async () => {
+describe("sidebar tree: workspace row", () => {
+  it("is a 24px regular muted row with a chevron that stays put, and the workspace on screen takes primary ink", async () => {
     await page.viewport(1440, 900);
     await using screen = await render(
-      <TooltipProvider delay={0}>
-        <div style={{ width: 280 }} className="flex flex-col gap-px">
-          <SidebarProjectSection
-            {...props(section([{ grid: grid("g1", null), threads: [thread("a")] }], [], "Full"), {
-              collapsed: false,
-            })}
-          />
-          <SidebarProjectSection {...props(section([], [], "Empty"), { collapsed: false })} />
-        </div>
-      </TooltipProvider>,
+      tree([
+        { value: section("w1", [thread("a")]), overrides: { open: true } },
+        { value: section("w2", [thread("b")]) },
+      ]),
     );
-    const rows = [...screen.container.querySelectorAll<HTMLElement>("[data-project-heading]")];
-    expect(rows.map((row) => rect(row).height)).toEqual([28, 28]);
-    const label = (row: HTMLElement) => row.querySelector<HTMLElement>("[data-sidebar-row]")!;
-    expect(Number(getComputedStyle(label(rows[0]!)).fontWeight)).toBeGreaterThanOrEqual(600);
-    expect(Number(getComputedStyle(label(rows[1]!)).fontWeight)).toBe(400);
-    expect(getComputedStyle(label(rows[1]!)).color).not.toBe(
-      getComputedStyle(label(rows[0]!)).color,
-    );
-  });
-
-  it("sits 12px below the project above it and 2px below the header when first", async () => {
-    await page.viewport(1440, 900);
-    await using screen = await render(
-      <TooltipProvider delay={0}>
-        <div style={{ width: 280 }} className="flex flex-col">
-          <SidebarProjectSection {...props(section([], [], "One"), { collapsed: true })} />
-          <SidebarProjectSection {...props(section([], [], "Two"), { collapsed: true })} />
-        </div>
-      </TooltipProvider>,
-    );
-    const wrappers = [...screen.container.querySelectorAll<HTMLElement>("[data-project-key]")];
-    expect(getComputedStyle(wrappers[0]!).marginTop).toBe("2px");
-    expect(getComputedStyle(wrappers[1]!).marginTop).toBe("12px");
-  });
-
-  it("shows the thread count with an amber dot only while collapsed, at the right edge", async () => {
-    await page.viewport(1440, 900);
-    const value = section([{ grid: grid("g1", null), threads: [thread("a"), needsYou()] }]);
-    await using screen = await render(tree(value, { collapsed: true }));
-    const row = projectRow(screen.container);
-    const count = row.querySelector<HTMLElement>("[data-heading-count]")!;
-    expect(count.textContent).toBe("2");
-    const dot = row.querySelector<HTMLElement>("[data-needs-you-dot]")!;
-    expect(rect(dot).width).toBe(6);
-    expect(rect(dot).right).toBeLessThan(rect(count).left);
-    expect(rect(count).right).toBeCloseTo(rect(row).right - 8, 0);
-    expect(dot.getAttribute("aria-hidden")).toBe("true");
-
-    await screen.rerender(tree(value, { collapsed: false }));
-    expect(projectRow(screen.container).querySelector("[data-heading-count]")).toBeNull();
-    expect(projectRow(screen.container).querySelector("[data-needs-you-dot]")).toBeNull();
-  });
-
-  it("shows no dot when nothing inside needs the user", async () => {
-    await page.viewport(1440, 900);
-    await using screen = await render(
-      tree(section([{ grid: grid("g1", null), threads: [thread("a")] }]), { collapsed: true }),
-    );
-    expect(screen.container.querySelector("[data-needs-you-dot]")).toBeNull();
-    expect(screen.container.querySelector("[data-heading-count]")?.textContent).toBe("1");
-  });
-});
-
-describe("sidebar tree: grid row", () => {
-  it("is a 24px regular muted row with a chevron that stays put, and the grid on screen takes primary ink", async () => {
-    await page.viewport(1440, 900);
-    const value = section([
-      { grid: grid("g1", "a"), threads: [thread("a")] },
-      { grid: grid("g2", "b"), threads: [thread("b")] },
-    ]);
-    await using screen = await render(tree(value, { openGridId: "g1" }));
-    const onScreen = gridRow(screen.container, "g1");
-    const other = gridRow(screen.container, "g2");
+    const onScreen = workspaceRow(screen.container, "w1");
+    const other = workspaceRow(screen.container, "w2");
     expect(rect(onScreen).height).toBe(24);
     const name = (row: HTMLElement) => row.querySelector<HTMLElement>("[data-grid-name]")!;
     expect(getComputedStyle(name(other)).fontSize).toBe("12px");
@@ -250,101 +171,92 @@ describe("sidebar tree: grid row", () => {
     expect(rect(chevron).width).toBe(14);
   });
 
-  it("keeps primary ink on the grid on screen while it is collapsed", async () => {
+  it("keeps primary ink on the workspace on screen while it is collapsed", async () => {
     await page.viewport(1440, 900);
-    const value = section([
-      { grid: grid("g1", "a"), threads: [thread("a")] },
-      { grid: grid("g2", "b"), threads: [thread("b")] },
-    ]);
     await using screen = await render(
-      tree(value, { openGridId: "g1", collapsedGridIds: new Set(["g1", "g2"]) }),
+      tree([
+        { value: section("w1", [thread("a")]), overrides: { open: true, collapsed: true } },
+        { value: section("w2", [thread("b")]), overrides: { collapsed: true } },
+      ]),
     );
     const name = (id: string) =>
-      gridRow(screen.container, id).querySelector<HTMLElement>("[data-grid-name]")!;
-    expect(getComputedStyle(name("g1")).color).not.toBe(getComputedStyle(name("g2")).color);
+      workspaceRow(screen.container, id).querySelector<HTMLElement>("[data-grid-name]")!;
+    expect(getComputedStyle(name("w1")).color).not.toBe(getComputedStyle(name("w2")).color);
   });
 
   it("shows the count and dot only while collapsed, and keeps the empty label on the right", async () => {
     await page.viewport(1440, 900);
-    const value = section([
-      { grid: grid("g1", null), threads: [thread("a"), needsYou()] },
-      { grid: grid("g2", null), threads: [] },
-    ]);
-    await using screen = await render(tree(value, { collapsedGridIds: new Set(["g1"]) }));
-    const collapsed = gridRow(screen.container, "g1");
+    const busy = section("w1", [thread("a"), needsYou()]);
+    const empty = section("w2", []);
+    await using screen = await render(
+      tree([{ value: busy, overrides: { collapsed: true } }, { value: empty }]),
+    );
+    const collapsed = workspaceRow(screen.container, "w1");
     const count = collapsed.querySelector<HTMLElement>("[data-heading-count]")!;
     expect(count.textContent).toBe("2");
     expect(collapsed.querySelector("[data-needs-you-dot]")).not.toBeNull();
     expect(rect(count).right).toBeCloseTo(rect(collapsed).right - 8, 0);
 
-    const empty = gridRow(screen.container, "g2");
-    const label = [...empty.querySelectorAll<HTMLElement>("span")].find(
+    const emptyRow = workspaceRow(screen.container, "w2");
+    const label = [...emptyRow.querySelectorAll<HTMLElement>("span")].find(
       (node) => node.textContent === "empty",
     )!;
-    expect(rect(label).right).toBeCloseTo(rect(empty).right - 8, 0);
+    expect(rect(label).right).toBeCloseTo(rect(emptyRow).right - 8, 0);
 
-    await screen.rerender(tree(value, { collapsedGridIds: new Set() }));
-    expect(gridRow(screen.container, "g1").querySelector("[data-heading-count]")).toBeNull();
-    expect(gridRow(screen.container, "g1").querySelector("[data-needs-you-dot]")).toBeNull();
+    await screen.rerender(tree([{ value: busy }, { value: empty }]));
+    expect(workspaceRow(screen.container, "w1").querySelector("[data-heading-count]")).toBeNull();
+    expect(workspaceRow(screen.container, "w1").querySelector("[data-needs-you-dot]")).toBeNull();
   });
 });
 
 describe("sidebar tree: guides and alignment", () => {
-  it("draws the project guide under the folder glyph and the grid guide under the chevron", async () => {
+  it("draws the workspace guide under the chevron", async () => {
     await page.viewport(1440, 900);
-    const value = section([{ grid: grid("g1", "a"), threads: [thread("a")] }]);
-    await using screen = await render(tree(value, { openGridId: "g1" }));
-    const project = projectRow(screen.container);
-    const folder = project.querySelector<HTMLElement>("[data-project-icon-box]")!;
-    const kids = screen.container.querySelector<HTMLElement>("[data-project-guide]")!;
-    expect(getComputedStyle(kids).borderLeftWidth).toBe("1px");
-    const folderCentre = rect(folder).left + rect(folder).width / 2;
-    expect(Math.abs(rect(kids).left + 0.5 - folderCentre)).toBeLessThanOrEqual(1);
-
-    const chevron = gridRow(screen.container, "g1").querySelector<HTMLElement>(
+    await using screen = await render(
+      tree([{ value: section("w1", [thread("a")]), overrides: { open: true } }]),
+    );
+    const chevron = workspaceRow(screen.container, "w1").querySelector<HTMLElement>(
       "[data-grid-chevron-box]",
     )!;
-    const cards = cardsOf(screen.container, "g1")!;
+    const cards = cardsOf(screen.container, "w1")!;
     expect(getComputedStyle(cards).borderLeftWidth).toBe("1px");
     const chevronCentre = rect(chevron).left + rect(chevron).width / 2;
     expect(Math.abs(rect(cards).left + 0.5 - chevronCentre)).toBeLessThanOrEqual(1);
   });
 
-  it("draws the guides in the border tone even when a theme's sidebar border is as dark as the rail", async () => {
+  it("draws the guide in the border tone even when a theme's sidebar border is as dark as the rail", async () => {
     await page.viewport(1440, 900);
     const root = document.documentElement;
     root.style.setProperty("--sidebar-border", "rgb(15, 15, 17)");
     try {
-      const value = section([
-        { grid: grid("g1", "a"), threads: [thread("a")] },
-        { grid: grid("g2", "b"), threads: [thread("b")] },
-      ]);
-      await using screen = await render(tree(value, { openGridId: "g1" }));
+      await using screen = await render(
+        tree([
+          { value: section("w1", [thread("a")]), overrides: { open: true } },
+          { value: section("w2", [thread("b")]) },
+        ]),
+      );
       const probe = document.createElement("div");
       probe.className = "border border-border";
       screen.container.append(probe);
       const border = getComputedStyle(probe).borderTopColor;
-      const projectGuide = screen.container.querySelector<HTMLElement>("[data-project-guide]")!;
-      expect(getComputedStyle(projectGuide).borderLeftColor, "project guide").toBe(border);
-      expect(getComputedStyle(cardsOf(screen.container, "g2")!).borderLeftColor, "grid guide").toBe(
-        border,
-      );
+      expect(getComputedStyle(cardsOf(screen.container, "w2")!).borderLeftColor).toBe(border);
     } finally {
       root.style.removeProperty("--sidebar-border");
     }
   });
 
-  it("draws the guides in a light ink inside the dark sidebar, so they show against the rail", async () => {
+  it("draws the guide in a light ink inside the dark sidebar, so it shows against the rail", async () => {
     await page.viewport(1440, 900);
     const root = document.documentElement;
     root.classList.add("dark");
     try {
-      const value = section([
-        { grid: grid("g1", "a"), threads: [thread("a")] },
-        { grid: grid("g2", "b"), threads: [thread("b")] },
-      ]);
       await using screen = await render(
-        <div data-app-sidebar="">{tree(value, { openGridId: "g1" })}</div>,
+        <div data-app-sidebar="">
+          {tree([
+            { value: section("w1", [thread("a")]), overrides: { open: true } },
+            { value: section("w2", [thread("b")]) },
+          ])}
+        </div>,
       );
       // Normalised sRGB channels of a computed colour, whatever notation the engine prints.
       const channels = (color: string) => {
@@ -352,115 +264,95 @@ describe("sidebar tree: guides and alignment", () => {
         const scale = color.startsWith("color(") ? 1 : 255;
         return [r! / scale, g! / scale, b! / scale];
       };
-      const lightness = (el: HTMLElement) => {
-        const [r, g, b] = channels(getComputedStyle(el).borderLeftColor);
-        return (r! + g! + b!) / 3;
-      };
-      const projectGuide = screen.container.querySelector<HTMLElement>("[data-project-guide]")!;
-      expect(lightness(projectGuide), "project guide ink").toBeGreaterThan(0.5);
-      expect(lightness(cardsOf(screen.container, "g2")!), "grid guide ink").toBeGreaterThan(0.5);
+      const [r, g, b] = channels(
+        getComputedStyle(cardsOf(screen.container, "w2")!).borderLeftColor,
+      );
+      expect((r! + g! + b!) / 3, "guide ink").toBeGreaterThan(0.5);
     } finally {
       root.classList.remove("dark");
     }
   });
 
-  it("tones the on-screen grid's guide stronger than the others, with no colour transition", async () => {
+  it("tones the on-screen workspace's guide stronger than the others, with no colour transition", async () => {
     await page.viewport(1440, 900);
-    const value = section([
-      { grid: grid("g1", "a"), threads: [thread("a")] },
-      { grid: grid("g2", "b"), threads: [thread("b")] },
-    ]);
-    await using screen = await render(tree(value, { openGridId: "g1" }));
-    const on = getComputedStyle(cardsOf(screen.container, "g1")!);
-    const off = getComputedStyle(cardsOf(screen.container, "g2")!);
+    await using screen = await render(
+      tree([
+        { value: section("w1", [thread("a")]), overrides: { open: true } },
+        { value: section("w2", [thread("b")]) },
+      ]),
+    );
+    const on = getComputedStyle(cardsOf(screen.container, "w1")!);
+    const off = getComputedStyle(cardsOf(screen.container, "w2")!);
     expect(on.borderLeftColor).not.toBe(off.borderLeftColor);
     expect(on.transitionProperty).not.toContain("color");
     expect(off.transitionProperty).not.toContain("color");
   });
 
-  it("starts a card 28px right of its project row, with grid names and thread titles on one left edge", async () => {
+  it("puts workspace names and thread titles on one left edge, with the card spanning the row's width", async () => {
     await page.viewport(1440, 900);
     for (const width of rails) {
-      const value = section([{ grid: grid("g1", "a"), threads: [thread("a")] }]);
-      await using screen = await render(tree(value, { openGridId: "g1" }, width));
+      await using screen = await render(
+        tree([{ value: section("w1", [thread("a")]), overrides: { open: true } }], width),
+      );
       const card = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
-      const row = projectRow(screen.container);
-      expect(rect(card).left - rect(row).left).toBeCloseTo(28, 0);
-      const name = gridRow(screen.container, "g1").querySelector<HTMLElement>("[data-grid-name]")!;
+      const row = workspaceRow(screen.container, "w1");
+      const name = row.querySelector<HTMLElement>("[data-grid-name]")!;
       const title = card.querySelector<HTMLElement>("[data-card-open]")!;
       expect(rect(name).left).toBeCloseTo(rect(title).left, 0);
       expect(rect(card).right).toBeCloseTo(rect(row).right, 0);
     }
   });
 
-  it("puts ungrouped threads on the project guide after its grids, 6px below the last grid", async () => {
+  it("leaves 7px between a workspace's last card and the next workspace row, and 3px between collapsed ones (2px margin plus the rail's 1px gap)", async () => {
     await page.viewport(1440, 900);
-    const value = section([{ grid: grid("g1", null), threads: [] }], [thread("loose")]);
-    await using screen = await render(tree(value));
-    const loose = screen.container.querySelector<HTMLElement>("[data-thread-key$=':loose']")!;
-    const grids = gridRow(screen.container, "g1");
-    const kids = screen.container.querySelector<HTMLElement>("[data-project-guide]")!;
-    expect(rect(loose).top - rect(grids).bottom).toBeCloseTo(6, 0);
-    expect(rect(loose).left).toBeGreaterThan(rect(kids).left);
-    expect(rect(loose).bottom).toBeLessThanOrEqual(rect(kids).bottom + 0.5);
-  });
-
-  it("leaves 6px between a grid's last card and the next grid row, and 2px between bare grid rows", async () => {
-    await page.viewport(1440, 900);
-    const value = section([
-      { grid: grid("g1", "a"), threads: [thread("a")] },
-      { grid: grid("g2", null), threads: [] },
-      { grid: grid("g3", null), threads: [] },
-    ]);
-    await using screen = await render(tree(value, { openGridId: "g1" }));
+    await using screen = await render(
+      tree([
+        { value: section("w1", [thread("a")]), overrides: { open: true } },
+        { value: section("w2", [thread("b")]), overrides: { collapsed: true } },
+        { value: section("w3", [thread("c")]), overrides: { collapsed: true } },
+      ]),
+    );
     const card = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
-    expect(rect(gridRow(screen.container, "g2")).top - rect(card).bottom).toBeCloseTo(6, 0);
-    expect(
-      rect(gridRow(screen.container, "g3")).top - rect(gridRow(screen.container, "g2")).bottom,
-    ).toBeCloseTo(2, 0);
+    const afterCards = rect(workspaceRow(screen.container, "w2")).top - rect(card).bottom;
+    const betweenBare =
+      rect(workspaceRow(screen.container, "w3")).top -
+      rect(workspaceRow(screen.container, "w2")).bottom;
+    expect(afterCards).toBeCloseTo(7, 0);
+    expect(betweenBare).toBeCloseTo(3, 0);
   });
 });
 
 describe("sidebar tree: hover and focus", () => {
-  it("reveals row actions by opacity at the right edge and hides the count meanwhile, without toggling display", async () => {
+  it("keeps the workspace actions on the row's right edge, shown on hover by opacity", async () => {
     await page.viewport(1440, 900);
-    const value = section([{ grid: grid("g1", "a"), threads: [thread("a")] }]);
-    await using screen = await render(tree(value, { collapsed: true }));
-    const row = projectRow(screen.container);
-    const plus = row.querySelector<HTMLElement>('[aria-label="New grid in Houston"]');
-    const more = plus;
-    const count = row.querySelector<HTMLElement>("[data-heading-trailing]")!;
-    const actions = [plus, more].filter((node): node is HTMLElement => node !== null);
-    expect(actions.length).toBeGreaterThan(0);
-    for (const action of actions) {
-      expect(getComputedStyle(action).display).not.toBe("none");
-      expect(getComputedStyle(action).opacity).toBe("0");
-    }
-    expect(getComputedStyle(count).opacity).toBe("1");
-    await userEvent.hover(row);
-    await expect.poll(() => getComputedStyle(actions[0]!).opacity).toBe("1");
-    await expect.poll(() => getComputedStyle(count).opacity).toBe("0");
-    expect(getComputedStyle(count).display).not.toBe("none");
-    const last = actions.at(-1)!;
-    expect(rect(last).right).toBeLessThanOrEqual(rect(row).right - 3 + 0.5);
-  });
-
-  it("keeps the grid actions on the row's right edge, shown on hover by opacity", async () => {
-    await page.viewport(1440, 900);
-    const value = section([{ grid: grid("g1", "a"), threads: [thread("a")] }]);
-    await using screen = await render(tree(value, { openGridId: "g1" }));
-    const row = gridRow(screen.container, "g1");
-    const more = row.querySelector<HTMLElement>('[aria-label^="Grid actions"]')!;
+    await using screen = await render(
+      tree([{ value: section("w1", [thread("a")]), overrides: { open: true } }]),
+    );
+    const row = workspaceRow(screen.container, "w1");
+    const more = row.querySelector<HTMLElement>('[aria-label^="Workspace actions"]')!;
     expect(getComputedStyle(more).opacity).toBe("0");
+    expect(getComputedStyle(more).display).not.toBe("none");
     await userEvent.hover(row);
     await expect.poll(() => getComputedStyle(more).opacity).toBe("1");
     expect(rect(more).right).toBeLessThanOrEqual(rect(row).right + 0.5);
   });
 
+  it("hides the collapsed count while the actions are shown, without toggling display", async () => {
+    await page.viewport(1440, 900);
+    await using screen = await render(
+      tree([{ value: section("w1", [thread("a")]), overrides: { collapsed: true } }]),
+    );
+    const row = workspaceRow(screen.container, "w1");
+    const count = row.querySelector<HTMLElement>("[data-heading-trailing]")!;
+    expect(getComputedStyle(count).opacity).toBe("1");
+    await userEvent.hover(row);
+    await expect.poll(() => getComputedStyle(count).opacity).toBe("0");
+    expect(getComputedStyle(count).display).not.toBe("none");
+  });
+
   it("draws keyboard focus as the inset ring on the row's button", async () => {
     await page.viewport(1440, 900);
-    const value = section([{ grid: grid("g1", "a"), threads: [thread("a")] }]);
-    await using _screen = await render(tree(value));
+    await using _screen = await render(tree([{ value: section("w1", [thread("a")]) }]));
     await userEvent.tab();
     const focused = document.activeElement as HTMLElement;
     expect(focused.matches("[data-sidebar-row]")).toBe(true);

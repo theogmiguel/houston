@@ -6,7 +6,7 @@ import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/m
 
 import { render } from "../../../test/render";
 import { TooltipProvider } from "../ui/tooltip";
-import { ThreadCard } from "./GridSidebar";
+import { ThreadCard } from "./ThreadCard";
 import { PaneThreadStatusMark } from "./threadStatusMark";
 
 const acknowledged = vi.hoisted(() => [] as Array<{ target: unknown; wokeAt: string }>);
@@ -76,7 +76,7 @@ function card(
   return (
     <TooltipProvider delay={0}>
       <ThreadCard
-        gridId={null}
+        workspaceId={null}
         thread={value}
         query=""
         providerEntries={new Map()}
@@ -84,7 +84,7 @@ function card(
         focused={false}
         selected={false}
         dragging={false}
-        workspaceTitle="Houston"
+        projectTitle="Houston"
         shelf={shelf}
         timeLabel={timeLabel}
         onOpen={() => {}}

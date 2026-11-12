@@ -8,7 +8,7 @@ import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/m
 import { composerTargetKey, useComposerDraftStore } from "../../composerDraftStore";
 import { render } from "../../../test/render";
 import { TooltipProvider } from "../ui/tooltip";
-import { ThreadCard } from "./GridSidebar";
+import { ThreadCard } from "./ThreadCard";
 import { ThreadJumpHintContext } from "./threadJumpHints";
 
 const fixture = vi.hoisted(() => ({
@@ -87,7 +87,7 @@ function card(
   return (
     <TooltipProvider delay={0}>
       <ThreadCard
-        gridId="grid-a"
+        workspaceId="ws-a"
         thread={value}
         query=""
         providerEntries={new Map()}
@@ -95,7 +95,7 @@ function card(
         focused={props.focused ?? false}
         selected={props.selected ?? false}
         dragging={false}
-        workspaceTitle="Houston"
+        projectTitle="Houston"
         timeLabel={props.timeLabel ?? null}
         onOpen={props.onOpen ?? (() => {})}
         onSelect={() => {}}

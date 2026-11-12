@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import "~/index.css";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
 import { render } from "../../../test/render";
-import { useGridStore } from "../../grid/gridStore";
+import { useLayoutStore } from "../../layout/layoutStore";
 import { SidebarProvider } from "../ui/sidebar";
 import { TooltipProvider } from "../ui/tooltip";
 import { GridSidebar } from "./GridSidebar";
@@ -175,7 +175,7 @@ function rowThreads() {
 
 function seedRows(): Disposable {
   localStorage.clear();
-  useGridStore.setState({ grids: [], threadOrigins: {} });
+  useLayoutStore.getState().reset();
   fixtures.threads = rowThreads();
   fixtures.groupsReady = true;
   return { [Symbol.dispose]: () => localStorage.clear() };

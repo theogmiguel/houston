@@ -6,7 +6,7 @@ import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/m
 
 import { render } from "../../../test/render";
 import { TooltipProvider } from "../ui/tooltip";
-import { ThreadCard } from "./GridSidebar";
+import { ThreadCard } from "./ThreadCard";
 import { EMPTY_THREAD_TITLE_MESSAGE, ThreadTitleInput } from "./threadTitleInput";
 
 vi.mock(import("@effect/atom-react"), async (original) => ({
@@ -148,7 +148,7 @@ describe("ThreadCard rename", () => {
     await using screen = await render(
       <TooltipProvider delay={0}>
         <ThreadCard
-          gridId={null}
+          workspaceId={null}
           thread={thread()}
           query=""
           providerEntries={new Map()}
@@ -156,7 +156,7 @@ describe("ThreadCard rename", () => {
           focused={false}
           selected={false}
           dragging={false}
-          workspaceTitle="Houston"
+          projectTitle="Houston"
           onOpen={onOpen}
           onSelect={() => {}}
           onClose={() => {}}

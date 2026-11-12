@@ -6,7 +6,7 @@ import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/m
 
 import { render } from "../../../test/render";
 import { TooltipProvider } from "../ui/tooltip";
-import { ThreadCard } from "./GridSidebar";
+import { ThreadCard } from "./ThreadCard";
 import { ThreadBulkMenuContext, useBulkThreadMenu } from "./useBulkThreadMenu";
 
 const fixture = vi.hoisted(() => ({
@@ -141,7 +141,7 @@ function card(selected: boolean, bulk: ((position: { x: number; y: number }) => 
     <ThreadBulkMenuContext.Provider value={bulk}>
       <TooltipProvider delay={0}>
         <ThreadCard
-          gridId="grid-a"
+          workspaceId="ws-a"
           thread={thread("a")}
           query=""
           providerEntries={new Map()}
@@ -149,7 +149,7 @@ function card(selected: boolean, bulk: ((position: { x: number; y: number }) => 
           focused={false}
           selected={selected}
           dragging={false}
-          workspaceTitle="Houston"
+          projectTitle="Houston"
           onOpen={() => {}}
           onSelect={() => {}}
           onClose={() => {}}

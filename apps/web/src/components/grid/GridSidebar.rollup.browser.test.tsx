@@ -6,11 +6,10 @@ import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/m
 import { ThreadId } from "@houston-app/contracts";
 
 import { render } from "../../../test/render";
-import type { GridRecord } from "../../grid/gridStore";
 import { clearThreadSelection } from "../../grid/sidebar";
 import { TooltipProvider } from "../ui/tooltip";
-import { SidebarProjectSection } from "./GridSidebar";
-import type { SidebarProjectSection as SidebarProjectSectionModel } from "./sidebarProjectSections";
+import { SidebarWorkspaceGroup } from "./GridSidebar";
+import type { SidebarWorkspaceSection } from "./sidebarWorkspaceSections";
 
 vi.mock("../../commandPaletteBus", () => ({
   openCommandPalette: () => {},
@@ -71,98 +70,69 @@ function thread(id: string, overrides: Partial<EnvironmentThreadShell> = {}) {
   } as unknown as EnvironmentThreadShell;
 }
 
-function grid(id: string, focusedThreadId: string | null): GridRecord {
-  return {
-    id,
-    name: id,
-    environmentId: "env-1",
-    projectId: "project-1",
-    workspaceKey: "env-1:project-1",
-    tree: null,
-    focusedThreadId,
-    pinnedAt: null,
+function group(
+  threads: EnvironmentThreadShell[],
+  overrides: Partial<ComponentProps<typeof SidebarWorkspaceGroup>> = {},
+) {
+  const section: SidebarWorkspaceSection = {
+    workspaceId: "ws-1",
+    name: "Research",
+    pinned: false,
     hidden: false,
-    createdAt: "2026-01-01T00:00:00.000Z",
+    empty: threads.length === 0,
+    threads,
+    needsYouThreads: [],
   };
-}
-
-function props(
-  section: SidebarProjectSectionModel,
-  overrides: Partial<ComponentProps<typeof SidebarProjectSection>> = {},
-): ComponentProps<typeof SidebarProjectSection> {
-  return {
-    section,
-    query: "",
-    openGridId: null,
-    collapsed: true,
-    onToggleCollapsed: () => {},
-    collapsedGridIds: new Set(),
-    onToggleGridCollapsed: () => {},
-    providerEntries: new Map(),
-    nowIso: "2026-01-01T00:00:00.000Z",
-    selection: clearThreadSelection(),
-    runningSubagents: new Map(),
-    dragging: null,
-    dropTarget: null,
-    onOpenThread: () => {},
-    onSelectThread: () => {},
-    onCloseThread: () => {},
-    onHoldThread: () => {},
-    onPickHoldTime: async () => null,
-    onDropOnGrid: () => {},
-    onDropOnThread: () => {},
-    onCreateGrid: () => {},
-    onCreateThread: () => {},
-    onRenameThread: () => {},
-    onSetAutoClose: () => {},
-    onShowGrid: () => {},
-    onOpenUngroupedThread: () => {},
-    ...overrides,
-  };
-}
-
-function section(
-  grids: SidebarProjectSectionModel["grids"],
-  ungroupedThreads: EnvironmentThreadShell[] = [],
-): SidebarProjectSectionModel {
-  return {
-    projectKey: "env-1:project-1",
-    title: "Houston",
-    isScratch: false,
-    environmentId: "env-1",
-    projectId: "project-1",
-    grids,
-    hiddenGrids: [],
-    ungroupedThreads,
-  };
+  return (
+    <TooltipProvider delay={0}>
+      <SidebarWorkspaceGroup
+        section={section}
+        query=""
+        open={false}
+        collapsed
+        onToggleCollapsed={() => {}}
+        previousWorkspaceId={null}
+        nextWorkspaceId={null}
+        hiddenWorkspaces={[]}
+        focusedThreadKey={null}
+        providerEntriesByEnvironment={new Map()}
+        projectTitleOf={() => "Houston"}
+        nowIso="2026-01-01T00:00:00.000Z"
+        selection={clearThreadSelection()}
+        runningSubagents={new Map()}
+        dragging={null}
+        dropTarget={null}
+        reorder={{ drag: null, begin: () => {} }}
+        onOpenThread={() => {}}
+        onSelectThread={() => {}}
+        onCloseThread={() => {}}
+        onHoldThread={() => {}}
+        onPickHoldTime={async () => null}
+        onDropOnWorkspace={() => {}}
+        onCreateWorkspace={() => {}}
+        onRenameThread={() => {}}
+        onSetAutoClose={() => {}}
+        workspaceMoveFor={() => undefined}
+        {...overrides}
+      />
+    </TooltipProvider>
+  );
 }
 
 const needsYou = () => thread("asks", { hasPendingUserInput: true });
 const running = () => thread("busy", { runtime: { status: "running" } as never });
 
 describe("heading count", () => {
-  it("shows the thread count and an amber dot on a collapsed project whose threads need the user", async () => {
-    await using screen = await render(
-      <TooltipProvider delay={0}>
-        <SidebarProjectSection
-          {...props(
-            section(
-              [{ grid: grid("g1", null), threads: [running(), needsYou()] }],
-              [thread("idle")],
-            ),
-          )}
-        />
-      </TooltipProvider>,
-    );
-    const label = screen.getByRole("button", { name: /^Houston/ }).element();
+  it("shows the thread count and an amber dot on a collapsed workspace whose threads need the user", async () => {
+    await using screen = await render(group([running(), needsYou(), thread("idle")]));
+    const label = screen.getByRole("button", { name: /^Research/ }).element();
     expect(label.querySelector("[data-heading-count]")?.textContent).toBe("3");
     expect(label.querySelector("[data-needs-you-dot]")).not.toBeNull();
-    expect(screen.container.querySelector("[data-attention-pips]")).toBeNull();
     expect(screen.container.querySelector("[data-attention-pip]")).toBeNull();
     expect(screen.container.textContent).not.toContain("busy");
   });
 
-  it("shows no count, dot or pip on an expanded project with a failed thread and threads that need the user", async () => {
+  it("shows no count, dot or pip on an expanded workspace with a failed thread and threads that need the user", async () => {
     const failed = thread("broke", {
       latestRun: {
         id: "run-broke",
@@ -173,72 +143,40 @@ describe("heading count", () => {
       runtime: { status: "failed", lastErrorClass: "provider_error" } as never,
     });
     await using screen = await render(
-      <TooltipProvider delay={0}>
-        <SidebarProjectSection
-          {...props(
-            section([
-              {
-                grid: grid("g1", null),
-                threads: [failed, needsYou(), thread("asks-too", { hasPendingApprovals: true })],
-              },
-            ]),
-            { collapsed: false },
-          )}
-        />
-      </TooltipProvider>,
+      group([failed, needsYou(), thread("asks-too", { hasPendingApprovals: true })], {
+        collapsed: false,
+      }),
     );
-    const label = screen.getByRole("button", { name: /^Houston/ }).element();
+    const label = screen.getByRole("button", { name: /^Research/ }).element();
     expect(label.querySelector("[data-heading-count]")).toBeNull();
     expect(label.querySelector("[data-needs-you-dot]")).toBeNull();
     expect(screen.container.querySelector("[data-attention-pip]")).toBeNull();
-    expect(screen.container.querySelector("[data-attention-pips]")).toBeNull();
   });
 
-  it("keeps the open thread's row under a collapsed project and counts it with the rest", async () => {
+  it("keeps the open thread's row under a collapsed workspace and counts it with the rest", async () => {
     await using screen = await render(
-      <TooltipProvider delay={0}>
-        <SidebarProjectSection
-          {...props(
-            section([
-              { grid: grid("g1", "open-one"), threads: [thread("open-one"), thread("other")] },
-            ]),
-            { openGridId: "g1" },
-          )}
-        />
-      </TooltipProvider>,
+      group([thread("open-one"), thread("other")], {
+        open: true,
+        focusedThreadKey: "env-1:open-one",
+      }),
     );
     expect(screen.container.querySelector("[data-thread-key$='open-one']")).not.toBeNull();
     expect(screen.container.querySelector("[data-thread-key$=':other']")).toBeNull();
-    expect(screen.getByRole("button", { name: /^Houston 2$/ }).element()).toBeVisible();
+    expect(screen.getByRole("button", { name: /^Research 2$/ }).element()).toBeVisible();
   });
 
-  it("shows no thread row under a collapsed project when no grid is open", async () => {
-    await using screen = await render(
-      <TooltipProvider delay={0}>
-        <SidebarProjectSection
-          {...props(section([{ grid: grid("g1", "a"), threads: [thread("a")] }]))}
-        />
-      </TooltipProvider>,
-    );
+  it("shows no thread row under a collapsed workspace when none of its threads is open", async () => {
+    await using screen = await render(group([thread("a")]));
     expect(screen.container.querySelector("[data-thread-key]")).toBeNull();
   });
 
-  it("counts a collapsed grid without a pip and keeps its open thread visible", async () => {
+  it("keeps a collapsed workspace's open thread visible and hides the one that needs the user", async () => {
     await using screen = await render(
-      <TooltipProvider delay={0}>
-        <SidebarProjectSection
-          {...props(section([{ grid: grid("g1", "a"), threads: [thread("a"), needsYou()] }]), {
-            collapsed: false,
-            openGridId: "g1",
-            collapsedGridIds: new Set(["g1"]),
-          })}
-        />
-      </TooltipProvider>,
+      group([thread("a"), needsYou()], { open: true, focusedThreadKey: "env-1:a" }),
     );
-    const heading = screen.getByRole("button", { name: /^g1/ }).element();
-    const gridRow = heading.closest<HTMLElement>("[data-grid-key]")!;
+    const heading = screen.getByRole("button", { name: /^Research/ }).element();
     expect(heading.querySelector("[data-heading-count]")?.textContent).toBe("2");
-    expect(gridRow.querySelector("[data-attention-pip]")).toBeNull();
+    expect(screen.container.querySelector("[data-attention-pip]")).toBeNull();
     expect(screen.container.querySelector("[data-thread-key$=':a']")).not.toBeNull();
     expect(screen.container.querySelector("[data-thread-key$=':asks']")).toBeNull();
   });

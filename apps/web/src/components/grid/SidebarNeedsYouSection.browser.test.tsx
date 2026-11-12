@@ -72,7 +72,7 @@ function thread(
 }
 
 const now = "2026-01-04T00:00:00.000Z";
-const workspaceTitles = new Map([
+const projectTitles = new Map([
   ["env-1:project-1", "Houston"],
   ["env-1:project-2", "notes"],
 ]);
@@ -98,7 +98,7 @@ function props(overrides: Partial<SidebarNeedsYouSectionProps> = {}): SidebarNee
     selection: clearThreadSelection(),
     runningSubagents: new Map(),
     dragging: null,
-    workspaceTitles,
+    projectTitleOf: (value) => projectTitles.get(`${value.environmentId}:${value.projectId}`) ?? "",
     onOpenThread: () => {},
     onSelectThread: () => {},
     onCloseThread: () => {},
@@ -111,7 +111,7 @@ function props(overrides: Partial<SidebarNeedsYouSectionProps> = {}): SidebarNee
 }
 
 describe("SidebarNeedsYouSection", () => {
-  it("lists the waiting threads in attention order with their project on the second line", async () => {
+  it("lists the waiting threads in attention order with their project on the first line", async () => {
     await using screen = await render(
       <TooltipProvider delay={0}>
         <SidebarNeedsYouSection {...props()} />

@@ -10,7 +10,7 @@ import { useComposerDraftStore } from "../../composerDraftStore";
 import { render } from "../../../test/render";
 import { TooltipProvider } from "../ui/tooltip";
 import type { SidebarProviderEntry } from "../sidebar/SidebarThreadRow";
-import { ThreadCard } from "./GridSidebar";
+import { ThreadCard } from "./ThreadCard";
 
 const fixture = vi.hoisted(() => ({
   terminalIds: [] as string[],
@@ -148,7 +148,7 @@ function card(value: EnvironmentThreadShell, props: { subagents?: number } = {})
   return (
     <TooltipProvider delay={0}>
       <ThreadCard
-        gridId="grid-a"
+        workspaceId="ws-a"
         thread={value}
         query=""
         providerEntries={PROVIDERS}
@@ -156,7 +156,7 @@ function card(value: EnvironmentThreadShell, props: { subagents?: number } = {})
         focused={false}
         selected={false}
         dragging={false}
-        workspaceTitle="Houston"
+        projectTitle="Houston"
         runningSubagents={props.subagents ?? 0}
         onOpen={() => {}}
         onSelect={() => {}}
@@ -203,7 +203,6 @@ const labelsOf = (row: HTMLElement, hidden: boolean) =>
 const FULL_ORDER = [
   "Branch feature/streaming-import-with-a-long-name",
   "Unsent draft",
-  "Uncommitted changes +128 −16",
   "Terminal running",
   "Runs on another machine",
   "2 subagents running",
@@ -227,7 +226,7 @@ const ORDER_PREFIXES = [
 ];
 
 describe("thread row anatomy", () => {
-  it("keeps every row 52px tall whatever it carries, with 2px between its lines, at the docked rail and the drawer", async () => {
+  it("keeps every row 60px tall whatever it carries, with 2px between its three lines, at the docked rail and the drawer", async () => {
     for (const rail of RAILS) {
       await page.viewport(rail.viewport, 900);
       reset();
@@ -251,10 +250,12 @@ describe("thread row anatomy", () => {
         (row) => row.getBoundingClientRect().height,
       );
       expect(heights).toHaveLength(rows.length);
-      for (const height of heights) expect(height).toBeCloseTo(52, 0);
+      for (const height of heights) expect(height).toBeCloseTo(60, 0);
       for (const row of screen.container.querySelectorAll<HTMLElement>("[data-thread-key]")) {
+        const project = row.querySelector("[data-thread-project-line]")!.getBoundingClientRect();
         const title = row.querySelector("[data-thread-title-line]")!.getBoundingClientRect();
         const meta = row.querySelector("[data-thread-meta]")!.getBoundingClientRect();
+        expect(title.top - project.bottom).toBeCloseTo(2, 0);
         expect(meta.top - title.bottom).toBeCloseTo(2, 0);
       }
     }
@@ -273,7 +274,7 @@ describe("thread row anatomy", () => {
     );
   });
 
-  it("puts only the title and the age on the first line", async () => {
+  it("puts the project and the age on the first line and the title alone on the second", async () => {
     for (const rail of RAILS) {
       await page.viewport(rail.viewport, 900);
       arrangeRich();
@@ -281,31 +282,40 @@ describe("thread row anatomy", () => {
         <div style={{ width: rail.width }}>{card(richThread(), { subagents: 2 })}</div>,
       );
       const row = rowOf(screen.container);
-      const line = row.querySelector<HTMLElement>("[data-thread-title-line]")!;
-      expect(line.querySelector("[data-card-open]")?.textContent).toBe(
+      const first = row.querySelector<HTMLElement>("[data-thread-project-line]")!;
+      expect(first.querySelector("[data-thread-project]")?.textContent).toBe("Houston");
+      expect(first.querySelector("[data-thread-time]")).not.toBeNull();
+      const time = first.querySelector<HTMLElement>("[data-thread-time]")!;
+      expect(getComputedStyle(time).fontVariantNumeric).toContain("tabular-nums");
+      expect(getComputedStyle(time).fontSize).toBe("12px");
+
+      const second = row.querySelector<HTMLElement>("[data-thread-title-line]")!;
+      expect(second.querySelector("[data-card-open]")?.textContent).toBe(
         "Stream CSV import for large files",
       );
-      expect(line.querySelector("[data-thread-time]")).not.toBeNull();
+      expect(second.textContent).toBe("Stream CSV import for large files");
+      expect(getComputedStyle(second.querySelector("[data-card-open] > span")!).fontSize).toBe(
+        "14px",
+      );
+      // The title takes the row's full content width.
+      const rowBox = row.getBoundingClientRect();
+      const titleBox = second.getBoundingClientRect();
+      expect(titleBox.left - rowBox.left).toBeLessThan(24);
+      expect(rowBox.right - titleBox.right).toBeLessThan(16);
       for (const selector of [
         "[data-thread-pull-request]",
-        "[data-thread-status]",
         "[data-thread-provider-mark]",
         "[data-thread-diff]",
         "[data-thread-tag]",
         "[data-thread-branch]",
       ]) {
-        expect(line.querySelector(selector), selector).toBeNull();
+        expect(first.querySelector(selector), selector).toBeNull();
+        expect(second.querySelector(selector), selector).toBeNull();
       }
-      const time = line.querySelector<HTMLElement>("[data-thread-time]")!;
-      expect(getComputedStyle(time).fontVariantNumeric).toContain("tabular-nums");
-      expect(getComputedStyle(time).fontSize).toBe("12px");
-      expect(getComputedStyle(line.querySelector("[data-card-open] > span")!).fontSize).toBe(
-        "14px",
-      );
     }
   });
 
-  it("draws the second line in one fixed order, with the provider mark last under the age", async () => {
+  it("draws the third line in one fixed order, with the provider mark last at the right edge", async () => {
     await page.viewport(1440, 900);
     arrangeRich();
     await using screen = await render(
@@ -320,12 +330,18 @@ describe("thread row anatomy", () => {
     const mark = row.querySelector<HTMLElement>("[data-thread-provider-mark]")!;
     const items = row.querySelector<HTMLElement>("[data-thread-meta-items]")!;
     const pullRequest = row.querySelector<HTMLElement>("[data-thread-pr-slot]")!;
-    expect(pullRequest.nextElementSibling).toBe(mark);
+    const diff = row.querySelector<HTMLElement>("[data-thread-diff]")!;
+    expect(diff.textContent).toContain("128");
+    expect(pullRequest.nextElementSibling).toBe(diff);
+    expect(diff.nextElementSibling).toBe(mark);
     expect(pullRequest.getBoundingClientRect().left).toBeGreaterThanOrEqual(
       items.getBoundingClientRect().right + 8 - 0.5,
     );
-    expect(mark.getBoundingClientRect().left).toBeGreaterThanOrEqual(
+    expect(diff.getBoundingClientRect().left).toBeGreaterThanOrEqual(
       pullRequest.getBoundingClientRect().right - 0.5,
+    );
+    expect(mark.getBoundingClientRect().left).toBeGreaterThanOrEqual(
+      diff.getBoundingClientRect().right - 0.5,
     );
     const time = row.querySelector<HTMLElement>("[data-thread-time]")!;
     expect(mark.getBoundingClientRect().right).toBeCloseTo(time.getBoundingClientRect().right, 0);
@@ -358,15 +374,17 @@ describe("thread row anatomy", () => {
         subagents: 1,
         labels: ["Branch main", "1 subagent running"],
         pullRequest: false,
+        diff: true,
       },
       {
         value: pullRequestAndDiff,
         subagents: 0,
-        labels: ["Branch main", "Uncommitted changes +128 −16"],
+        labels: ["Branch main"],
         pullRequest: true,
+        diff: true,
       },
     ];
-    for (const { value, subagents, labels, pullRequest } of cases) {
+    for (const { value, subagents, labels, pullRequest, diff } of cases) {
       await using screen = await render(
         <div style={{ width: 760 }}>{card(value, { subagents })}</div>,
       );
@@ -379,17 +397,19 @@ describe("thread row anatomy", () => {
       expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
       for (const label of labels) expect(drawn).toContain(label);
       expect(row.querySelector("[data-thread-pr-slot]") !== null).toBe(pullRequest);
+      // Both rows share the fixture totals, so the counts are drawn on each.
+      expect(row.querySelector("[data-thread-diff]") !== null).toBe(diff);
     }
   });
 
-  it("states no status for a calm row: only its age on the title line, and no Idle word", async () => {
+  it("states no status for a calm row: only its age on the project line, and no Idle word", async () => {
     await page.viewport(1440, 900);
     reset();
     await using calm = await render(<div style={{ width: 264 }}>{card(thread())}</div>);
     const row = rowOf(calm.container);
     expect(row.querySelector("[data-thread-status]")).toBeNull();
     expect(row.querySelector("[data-thread-status-glyph]")).toBeNull();
-    expect(row.querySelector("[data-thread-title-line] [data-thread-time]")).not.toBeNull();
+    expect(row.querySelector("[data-thread-project-line] [data-thread-time]")).not.toBeNull();
     expect(row.textContent).not.toContain("Idle");
     expect(itemsOf(row).map((item) => item.dataset.metaLabel)).not.toContain("Status");
     expect(itemsOf(row)[0]?.dataset.metaLabel).toBe("Branch main");
@@ -548,7 +568,7 @@ describe("thread row status glyphs", () => {
     { kind: "idle", word: "Idle", overrides: {} },
   ];
 
-  it("draws a distinct shape for each state and names the state at the title line's end", async () => {
+  it("draws a distinct shape for each state and names the state at the project line's end", async () => {
     await page.viewport(1440, 900);
     reset();
     const shapes = new Map<string, string>();
@@ -566,8 +586,8 @@ describe("thread row status glyphs", () => {
         expect(row.querySelector("[data-thread-status]")).toBeNull();
         continue;
       }
-      // Back keeps its dismissible word on the second line, clear of the hover actions.
-      const line = state.kind === "back" ? "[data-thread-meta]" : "[data-thread-title-line]";
+      // Every status, Back included, sits at the end of the project line.
+      const line = "[data-thread-project-line]";
       const glyph = row.querySelector<HTMLElement>(`${line} [data-thread-status-glyph]`)!;
       expect(glyph.dataset.statusKind, state.word).toBe(state.kind);
       expect(glyph.getAttribute("aria-label")).toBe(state.word);
@@ -644,7 +664,7 @@ describe("thread row status glyphs", () => {
       <TooltipProvider delay={0}>
         <div style={{ width: 264 }}>
           <ThreadCard
-            gridId={null}
+            workspaceId={null}
             thread={thread({ settledOverride: "settled" })}
             query=""
             providerEntries={PROVIDERS}
@@ -652,7 +672,7 @@ describe("thread row status glyphs", () => {
             focused={false}
             selected={false}
             dragging={false}
-            workspaceTitle="Houston"
+            projectTitle="Houston"
             timeLabel="Closed 2h"
             shelf="settled"
             onOpen={() => {}}

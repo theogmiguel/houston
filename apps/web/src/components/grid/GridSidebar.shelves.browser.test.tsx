@@ -4,7 +4,7 @@ import { page, userEvent } from "vite-plus/test/browser";
 import "~/index.css";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
 import { render } from "../../../test/render";
-import { useGridStore } from "../../grid/gridStore";
+import { useLayoutStore } from "../../layout/layoutStore";
 import { SETTLED_SHELF_EXPANDED_KEY, SNOOZED_SHELF_EXPANDED_KEY } from "../sidebar/shelfState";
 import { SidebarProvider } from "../ui/sidebar";
 import { TooltipProvider } from "../ui/tooltip";
@@ -142,7 +142,7 @@ function seedShelves(): Disposable {
   localStorage.clear();
   localStorage.setItem(SNOOZED_SHELF_EXPANDED_KEY, "true");
   localStorage.setItem(SETTLED_SHELF_EXPANDED_KEY, "true");
-  useGridStore.setState({ grids: [], threadOrigins: {} });
+  useLayoutStore.getState().reset();
   for (const action of Object.values(fixtures.actions)) {
     action.mockReset();
     action.mockResolvedValue({ _tag: "Success", value: undefined });

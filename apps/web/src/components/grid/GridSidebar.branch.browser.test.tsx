@@ -6,7 +6,7 @@ import { render } from "../../../test/render";
 import { TooltipProvider } from "../ui/tooltip";
 import { scopedThreadKey, scopeThreadRef } from "@houston-app/client-runtime/environment";
 import { endThreadDrag, getThreadDragSource } from "../../grid/threadDrag";
-import { ThreadCard } from "./GridSidebar";
+import { ThreadCard } from "./ThreadCard";
 import { SidebarSearchHighlightContext } from "./sidebarSearchResults";
 
 vi.mock(import("@effect/atom-react"), async (original) => ({
@@ -86,7 +86,7 @@ function card(value: EnvironmentThreadShell) {
   return (
     <TooltipProvider delay={0}>
       <ThreadCard
-        gridId="grid-a"
+        workspaceId="ws-a"
         thread={value}
         query=""
         providerEntries={new Map()}
@@ -94,7 +94,7 @@ function card(value: EnvironmentThreadShell) {
         focused={false}
         selected={false}
         dragging={false}
-        workspaceTitle="Houston"
+        projectTitle="Houston"
         onOpen={() => {}}
         onSelect={() => {}}
         onClose={() => {}}
@@ -156,7 +156,7 @@ describe("ThreadCard shelf row drag", () => {
     await using screen = await render(
       <TooltipProvider delay={0}>
         <ThreadCard
-          gridId={null}
+          workspaceId={null}
           thread={thread({ settledOverride: "settled" })}
           query=""
           providerEntries={new Map()}
@@ -164,7 +164,7 @@ describe("ThreadCard shelf row drag", () => {
           focused={false}
           selected={false}
           dragging={false}
-          workspaceTitle="Houston"
+          projectTitle="Houston"
           shelf="settled"
           onOpen={() => {}}
           onSelect={() => {}}
@@ -195,7 +195,7 @@ describe("ThreadCard shelf row drag", () => {
     at("pointermove", 30);
     try {
       expect(getThreadDragSource()).toMatchObject({
-        gridId: null,
+        workspaceId: null,
         threadId: "thread-a",
         title: "Local checkout thread",
       });

@@ -9,7 +9,7 @@ import { __setClientSettingsForTests } from "../../hooks/useSettings";
 import { act, render } from "../../../test/render";
 import { TooltipProvider } from "../ui/tooltip";
 import type { SidebarProviderEntry } from "../sidebar/SidebarThreadRow";
-import { ThreadCard } from "./GridSidebar";
+import { ThreadCard } from "./ThreadCard";
 
 vi.mock(import("@effect/atom-react"), async (original) => ({
   ...(await original()),
@@ -66,7 +66,7 @@ function thread(overrides: Record<string, unknown> = {}): EnvironmentThreadShell
 
 interface CardOverrides {
   shelf?: "snoozed" | "settled" | null;
-  gridId?: string | null;
+  workspaceId?: string | null;
   timeLabel?: string | null;
   runningSubagents?: number;
   onOpen?: () => void;
@@ -81,7 +81,7 @@ function card(value: EnvironmentThreadShell, overrides: CardOverrides = {}) {
   return (
     <TooltipProvider delay={0}>
       <ThreadCard
-        gridId={overrides.gridId === undefined ? "grid-a" : overrides.gridId}
+        workspaceId={overrides.workspaceId === undefined ? "ws-a" : overrides.workspaceId}
         thread={value}
         query=""
         providerEntries={overrides.providerEntries ?? new Map()}
@@ -89,7 +89,7 @@ function card(value: EnvironmentThreadShell, overrides: CardOverrides = {}) {
         focused={false}
         selected={false}
         dragging={false}
-        workspaceTitle="Houston"
+        projectTitle="Houston"
         timeLabel={overrides.timeLabel === undefined ? "9:00" : overrides.timeLabel}
         shelf={overrides.shelf ?? null}
         runningSubagents={overrides.runningSubagents ?? 0}
@@ -297,7 +297,7 @@ describe("ThreadCard for a thread no grid shows", () => {
     const onDropOnThread = vi.fn();
     await using screen = await render(
       <>
-        {card(thread(), { gridId: null, onDropOnThread })}
+        {card(thread(), { workspaceId: null, onDropOnThread })}
         <DropTargetProbe />
       </>,
     );
@@ -459,10 +459,10 @@ describe("ThreadCard status slot and branch line", () => {
     );
   }
 
-  it("states an attention status with its glyph at the title line's end, in place of the age", async () => {
+  it("states an attention status with its glyph at the project line's end, in place of the age", async () => {
     await using screen = await renderOne(worstCaseRow("v2-ui-feedback-composer"));
     const row = rowOf(screen.container);
-    const line = row.querySelector<HTMLElement>("[data-thread-title-line]")!;
+    const line = row.querySelector<HTMLElement>("[data-thread-project-line]")!;
     const status = line.querySelector<HTMLElement>("[data-thread-status]")!;
     expect(status.textContent).toBe("Input");
     expect(status.querySelector("[data-thread-status-glyph]")).not.toBeNull();
@@ -476,7 +476,7 @@ describe("ThreadCard status slot and branch line", () => {
     await using screen = await renderOne(withModel());
     const row = rowOf(screen.container);
     expect(row.querySelector("[data-thread-status]")).toBeNull();
-    expect(row.querySelector("[data-thread-title-line] [data-thread-time]")!.textContent).toBe(
+    expect(row.querySelector("[data-thread-project-line] [data-thread-time]")!.textContent).toBe(
       "3d",
     );
     expect(row.querySelector("[data-thread-status-glyph]")).toBeNull();

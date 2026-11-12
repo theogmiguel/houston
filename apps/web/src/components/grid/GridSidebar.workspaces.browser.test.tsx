@@ -1,18 +1,34 @@
+import { scopeThreadRef } from "@houston-app/client-runtime/environment";
+import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
+import { DEFAULT_CLIENT_SETTINGS } from "@houston-app/contracts/settings";
+import { EnvironmentId, ThreadId } from "@houston-app/contracts";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
-import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
-import { useGridStore, type GridRecord } from "../../grid/gridStore";
 import { clearThreadSelection } from "../../grid/sidebar";
 import { beginThreadDragAt, endThreadDrag } from "../../grid/threadDrag";
-import { act, render, type Screen } from "../../../test/render";
-import { DEFAULT_CLIENT_SETTINGS } from "@houston-app/contracts/settings";
 import { __setClientSettingsForTests } from "../../hooks/useSettings";
-import { SidebarNewGridMenu, SidebarOptionsMenu } from "../ui/sidebar-grids";
+import {
+  createLayoutState,
+  normalizeLayout,
+  openLayoutTab,
+  type LayoutState,
+  type LayoutTabContent,
+} from "../../layout/layoutModel";
+import { useLayoutStore } from "../../layout/layoutStore";
+import {
+  createLayoutWorkspaceNamed,
+  listLayoutWorkspaces,
+  WORKSPACE_NAME_MAX_CHARS,
+} from "../../layout/layoutWorkspaces";
+import { act, render, type Screen } from "../../../test/render";
+import { SidebarOptionsMenu } from "../ui/sidebar-grids";
+import { toastManager } from "../ui/toast";
 import { TooltipProvider } from "../ui/tooltip";
-import { GridGroup } from "./GridSidebar";
+import { SidebarWorkspaceGroup } from "./GridSidebar";
+import type { SidebarWorkspaceSection } from "./sidebarWorkspaceSections";
 
 vi.mock(import("@effect/atom-react"), async (original) => ({
   ...(await original()),
@@ -68,83 +84,109 @@ function thread(overrides: Record<string, unknown> = {}): EnvironmentThreadShell
   } as unknown as EnvironmentThreadShell;
 }
 
-function grid(overrides: Partial<GridRecord> = {}): GridRecord {
+/** A chat tab for a thread of the test environment. */
+function chat(id: string): LayoutTabContent {
   return {
-    id: "grid-a",
+    kind: "chat",
+    target: {
+      kind: "server",
+      threadRef: scopeThreadRef(EnvironmentId.make("env-1"), ThreadId.make(id)),
+    },
+  };
+}
+
+/** A layout with one named workspace per entry, each holding the given chats. */
+function layoutOf(
+  spec: ReadonlyArray<{ name: string; chats: ReadonlyArray<string> }>,
+): LayoutState {
+  let state = createLayoutState();
+  spec.forEach((entry, index) => {
+    if (index > 0) state = createLayoutWorkspaceNamed(state, entry.name).state;
+    else state = createLayoutWorkspaceNamed(state, entry.name).state;
+    for (const id of entry.chats) state = openLayoutTab(state, chat(id));
+  });
+  return normalizeLayout(state);
+}
+
+function workspace(overrides: Partial<SidebarWorkspaceSection> = {}): SidebarWorkspaceSection {
+  return {
+    workspaceId: "ws-a",
     name: "v2 rebuild",
-    environmentId: "env-1",
-    projectId: "project-1",
-    workspaceKey: "env-1:project-1",
-    tree: null,
-    focusedThreadId: null,
-    pinnedAt: null,
+    pinned: false,
     hidden: false,
-    createdAt: "2026-01-01T00:00:00.000Z",
+    empty: false,
+    threads: [],
+    needsYouThreads: [],
     ...overrides,
   };
 }
 
 function group(
-  value: GridRecord,
+  value: SidebarWorkspaceSection,
   threads: ReadonlyArray<EnvironmentThreadShell>,
   overrides: {
-    workspaceTitle?: string;
     open?: boolean;
     collapsed?: boolean;
+    focusedThreadKey?: string | null;
+    previousWorkspaceId?: string | null;
+    nextWorkspaceId?: string | null;
     onToggleCollapsed?: () => void;
-    onOpenThread?: (gridId: string, threadId: string) => void;
-    onDropOnGrid?: (source: unknown, gridId: string) => void;
+    onOpenThread?: (thread: EnvironmentThreadShell) => void;
+    onDropOnWorkspace?: (source: unknown, workspaceId: string) => void;
+    onCreateWorkspace?: () => void;
   } = {},
 ) {
   return (
     <TooltipProvider delay={0}>
-      <GridGroup
-        grid={value}
-        workspaceTitle={overrides.workspaceTitle ?? "Houston"}
-        threads={threads}
+      <SidebarWorkspaceGroup
+        section={{ ...value, threads, empty: value.empty || threads.length === 0 }}
         query=""
         open={overrides.open ?? false}
         collapsed={overrides.collapsed ?? false}
         onToggleCollapsed={overrides.onToggleCollapsed ?? (() => {})}
-        providerEntries={new Map()}
+        previousWorkspaceId={overrides.previousWorkspaceId ?? null}
+        nextWorkspaceId={overrides.nextWorkspaceId ?? null}
+        hiddenWorkspaces={[]}
+        focusedThreadKey={overrides.focusedThreadKey ?? null}
+        providerEntriesByEnvironment={new Map()}
+        projectTitleOf={(value) => (value.projectId === "project-2" ? "notes" : "Houston")}
         nowIso="2026-01-01T00:00:00.000Z"
         selection={clearThreadSelection()}
         runningSubagents={new Map()}
         dragging={null}
         dropTarget={null}
-        hiddenGrids={[]}
+        reorder={{ drag: null, begin: () => {} }}
         onOpenThread={overrides.onOpenThread ?? (() => {})}
         onSelectThread={() => {}}
         onCloseThread={() => {}}
         onHoldThread={() => {}}
         onPickHoldTime={async () => null}
-        onDropOnGrid={overrides.onDropOnGrid ?? (() => {})}
-        onDropOnThread={() => {}}
-        onCreateThread={() => {}}
+        onDropOnWorkspace={overrides.onDropOnWorkspace ?? (() => {})}
+        onCreateWorkspace={overrides.onCreateWorkspace ?? (() => {})}
         onRenameThread={() => {}}
         onSetAutoClose={() => {}}
-        onShowGrid={() => {}}
-        onCreateGrid={() => {}}
+        workspaceMoveFor={() => undefined}
+        handleNewThread={async () => null}
       />
     </TooltipProvider>
   );
 }
 
-function headingFor(screen: Screen, gridId: string): HTMLButtonElement {
+function headingFor(screen: Screen, workspaceId: string): HTMLButtonElement {
   const heading = screen.container.querySelector(
-    `[data-grid-key="${gridId}"] button[aria-expanded]`,
+    `[data-grid-key="${workspaceId}"] button[aria-expanded]`,
   );
   if (!(heading instanceof HTMLButtonElement)) {
-    throw new Error(`The grid ${gridId} has no heading button.`);
+    throw new Error(`The workspace ${workspaceId} has no heading button.`);
   }
   return heading;
 }
 
 /** The heading row: the toggle and its actions, which share one hover and selection fill. */
-function headingRowFor(screen: Screen, gridId: string): HTMLElement {
-  const row = headingFor(screen, gridId).closest("[data-grid-heading-row]");
+function headingRowFor(screen: Screen, workspaceId: string): HTMLElement {
+  const row = headingFor(screen, workspaceId).closest("[data-grid-heading-row]");
   if (!(row instanceof HTMLElement)) {
-    throw new Error(`The grid ${gridId} has no heading row.`);
+    throw new Error(`The workspace ${workspaceId} has no heading row.`);
   }
   return row;
 }
@@ -154,7 +196,7 @@ function headingGeometry(heading: HTMLButtonElement) {
   const chevronBox = heading.querySelector("[data-grid-chevron-box]");
   const name = heading.children[1];
   if (chevron === null || chevronBox === null || name === undefined) {
-    throw new Error("The grid heading is missing its chevron box or grid name.");
+    throw new Error("The workspace heading is missing its chevron box or name.");
   }
   const chevronRect = chevronBox.getBoundingClientRect();
   return {
@@ -172,68 +214,131 @@ function expectSameX(actual: number, expected: number): void {
 function CollapsibleGroup({
   value,
   threads,
-  workspaceTitle,
 }: {
-  value: GridRecord;
+  value: SidebarWorkspaceSection;
   threads: ReadonlyArray<EnvironmentThreadShell>;
-  workspaceTitle?: string;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   return group(value, threads, {
     collapsed,
-    ...(workspaceTitle === undefined ? {} : { workspaceTitle }),
     onToggleCollapsed: () => setCollapsed((current) => !current),
   });
 }
 
-describe("grid sidebar", () => {
-  it("lists a grid without repeating its project name", async () => {
-    const first = grid({ id: "grid-a", name: "v2 rebuild" });
-    const second = grid({
-      id: "grid-b",
-      name: "Grid 2",
-      projectId: "project-2",
-      workspaceKey: "env-1:project-2",
-    });
+const threadKey = (id: string) => `env-1:${id}`;
+
+/** Resets the layout store and the spies a test installed when its scope ends. */
+function session(): Disposable {
+  return {
+    [Symbol.dispose]: () => {
+      useLayoutStore.getState().reset();
+      vi.restoreAllMocks();
+    },
+  };
+}
+
+describe("workspace group", () => {
+  it("lists workspaces by name, with no project tree above them", async () => {
     const threads = [thread({ id: "thread-a" }), thread({ id: "thread-b", title: "Second" })];
     await using screen = await render(
       <>
-        {group(first, threads)}
-        {group(second, [], { workspaceTitle: "notes" })}
+        {group(workspace({ workspaceId: "ws-a", name: "v2 rebuild" }), threads)}
+        {group(workspace({ workspaceId: "ws-b", name: "Review" }), [])}
       </>,
     );
 
     expect(screen.getByRole("button", { name: /^v2 rebuild$/ }).element()).toBeVisible();
-    expect(screen.getByRole("button", { name: /^Grid 2 empty$/ }).element()).toBeVisible();
-    expect(screen.container.textContent).not.toContain("notes");
-    expect(screen.container.textContent).not.toContain("Workspaces");
+    expect(screen.getByRole("button", { name: /^Review empty$/ }).element()).toBeVisible();
+    expect(screen.container.textContent).not.toContain("Projects");
+    expect(screen.container.querySelector("[data-project-key]")).toBeNull();
   });
 
-  it("renders a one-thread grid with its heading and an indented thread row", async () => {
+  it("lists threads of two projects in one workspace, each row naming its own project", async () => {
+    await using screen = await render(
+      group(workspace(), [
+        thread({ id: "thread-a", projectId: "project-1" }),
+        thread({ id: "thread-b", projectId: "project-2", title: "Notes cleanup" }),
+      ]),
+    );
+    const projects = [...screen.container.querySelectorAll("[data-thread-project]")].map(
+      (element) => element.textContent,
+    );
+    expect(projects).toEqual(["Houston", "notes"]);
+  });
+
+  it("renders a one-thread workspace with its heading and an indented thread row", async () => {
     const onOpenThread = vi.fn();
     await using screen = await render(
-      group(grid({ id: "grid-c", name: "Landing copy" }), [thread({ id: "thread-c" })], {
-        workspaceTitle: "houston-site",
-        onOpenThread,
-      }),
+      group(
+        workspace({ workspaceId: "ws-c", name: "Landing copy" }),
+        [thread({ id: "thread-c" })],
+        {
+          onOpenThread,
+        },
+      ),
     );
 
     expect(screen.getByRole("button", { name: /^Landing copy$/ }).element()).toBeVisible();
-    expect(screen.container.textContent).not.toContain("houston-site");
     const row = screen.container.querySelector("[data-thread-key]") as HTMLElement;
     expect(getComputedStyle(row).paddingLeft).toBe("8px");
 
     await userEvent.click(screen.getByText("Split drawer state from the thread store").element());
-    expect(onOpenThread).toHaveBeenCalledWith("grid-c", "thread-c");
+    expect(onOpenThread).toHaveBeenCalledWith(expect.objectContaining({ id: "thread-c" }));
   });
 
-  it("renames a grid from its actions menu and keeps the input until Enter", async () => {
-    const value = grid({ id: "grid-r", name: "Grid 1" });
-    useGridStore.setState({ grids: [value] });
-    await using screen = await render(group(value, [thread({ id: "thread-r" })]));
+  it("shows an empty workspace's name, an empty label and a New thread action", async () => {
+    using _session = session();
+    useLayoutStore.setState({ layout: layoutOf([{ name: "Scratch", chats: [] }]) });
+    const target = listLayoutWorkspaces(useLayoutStore.getState().layout)[0]!;
+    await using screen = await render(
+      group(workspace({ workspaceId: target.id, name: "Scratch" }), []),
+    );
 
-    await userEvent.click(page.getByRole("button", { name: "Grid actions for Grid 1" }).element());
-    await userEvent.click(page.getByRole("menuitem", { name: /Rename grid/ }).element());
+    expect(screen.getByRole("button", { name: /^Scratch empty$/ }).element()).toBeVisible();
+    expect(screen.container.querySelector("[data-workspace-empty]")?.textContent).toContain(
+      "No threads yet",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "New thread", exact: true }).element(),
+    );
+    const opened = useLayoutStore
+      .getState()
+      .layout.workspaces.find((candidate) => candidate.id === target.id)!;
+    expect(opened.columns[0]?.panes[0]?.tabs[0]?.content.kind).toBe("launcher");
+  });
+
+  it("draws rows for unplaced threads under an empty workspace instead of the empty label", async () => {
+    await using screen = await render(
+      group(workspace({ empty: true }), [thread({ id: "thread-u" })]),
+    );
+    expect(screen.container.querySelector("[data-workspace-empty]")).toBeNull();
+    expect(screen.container.querySelectorAll("[data-thread-key]")).toHaveLength(1);
+  });
+
+  it("marks a pinned workspace with a pin glyph and none otherwise", async () => {
+    await using screen = await render(
+      <>
+        {group(workspace({ workspaceId: "ws-p", name: "Pinned one", pinned: true }), [])}
+        {group(workspace({ workspaceId: "ws-q", name: "Loose" }), [])}
+      </>,
+    );
+    expect(headingFor(screen, "ws-p").querySelector("[data-workspace-pin]")).not.toBeNull();
+    expect(headingFor(screen, "ws-q").querySelector("[data-workspace-pin]")).toBeNull();
+  });
+
+  it("renames a workspace from its actions menu in the layout store and keeps the input until Enter", async () => {
+    using _session = session();
+    const layout = layoutOf([{ name: "Grid 1", chats: ["thread-r"] }]);
+    useLayoutStore.setState({ layout });
+    const id = listLayoutWorkspaces(layout)[0]!.id;
+    await using screen = await render(
+      group(workspace({ workspaceId: id, name: "Grid 1" }), [thread({ id: "thread-r" })]),
+    );
+
+    await userEvent.click(
+      page.getByRole("button", { name: "Workspace actions for Grid 1" }).element(),
+    );
+    await userEvent.click(page.getByRole("menuitem", { name: /Rename workspace/ }).element());
 
     const input = screen.getByRole("textbox");
     await expect.element(input).toBeVisible();
@@ -241,32 +346,97 @@ describe("grid sidebar", () => {
 
     await userEvent.fill(input.element(), "Review");
     await userEvent.keyboard("{Enter}");
-    expect(useGridStore.getState().grids[0]?.name).toBe("Review");
+    expect(listLayoutWorkspaces(useLayoutStore.getState().layout)[0]?.name).toBe("Review");
   });
 
-  it("opens the grid menu on right-click and runs its actions", async () => {
-    const value = grid({ id: "grid-m", name: "Grid 1" });
-    useGridStore.setState({ grids: [value] });
-    await using screen = await render(group(value, [thread({ id: "thread-m" })]));
+  it("refuses a rename over the name limit, naming the limit and the length", async () => {
+    using _session = session();
+    const layout = layoutOf([{ name: "One", chats: ["thread-1"] }]);
+    useLayoutStore.setState({ layout });
+    const [first] = listLayoutWorkspaces(layout);
+    const tooLong = "x".repeat(WORKSPACE_NAME_MAX_CHARS + 1);
+    const add = vi.spyOn(toastManager, "add");
+    await using screen = await render(
+      group(workspace({ workspaceId: first!.id, name: "One" }), [thread({ id: "thread-1" })]),
+    );
 
-    await userEvent.click(headingFor(screen, "grid-m"), { button: "right" });
-    await userEvent.click(page.getByRole("menuitem", { name: "Pin grid" }).element());
-    await expect.poll(() => useGridStore.getState().grids[0]?.pinnedAt).not.toBeNull();
-
-    await userEvent.click(headingFor(screen, "grid-m"), { button: "right" });
-    await userEvent.click(page.getByRole("menuitem", { name: "Rename grid" }).element());
+    headingFor(screen, first!.id).focus();
+    await userEvent.keyboard("{F2}");
     const input = screen.getByRole("textbox");
-    await expect.element(input).toHaveFocus();
-    await userEvent.fill(input.element(), "Renamed");
+    await userEvent.fill(input.element(), tooLong);
     await userEvent.keyboard("{Enter}");
-    expect(useGridStore.getState().grids[0]?.name).toBe("Renamed");
+
+    expect(listLayoutWorkspaces(useLayoutStore.getState().layout)[0]?.name).toBe("One");
+    expect(add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: expect.stringContaining(String(WORKSPACE_NAME_MAX_CHARS)),
+      }),
+    );
+  });
+
+  it("opens the workspace menu on right-click and pins from it", async () => {
+    using _session = session();
+    const layout = layoutOf([{ name: "Grid 1", chats: ["thread-m"] }]);
+    useLayoutStore.setState({ layout });
+    const id = listLayoutWorkspaces(layout)[0]!.id;
+    await using screen = await render(
+      group(workspace({ workspaceId: id, name: "Grid 1" }), [thread({ id: "thread-m" })]),
+    );
+
+    await userEvent.click(headingFor(screen, id), { button: "right" });
+    await userEvent.click(page.getByRole("menuitem", { name: "Pin workspace" }).element());
+    await expect
+      .poll(() => listLayoutWorkspaces(useLayoutStore.getState().layout)[0]?.pinnedAt)
+      .not.toBeUndefined();
+  });
+
+  it("refuses to delete the last workspace at once, naming it, and leaves the layout alone", async () => {
+    using _session = session();
+    const layout = layoutOf([{ name: "Only", chats: ["thread-d"] }]);
+    useLayoutStore.setState({ layout });
+    const id = listLayoutWorkspaces(layout)[0]!.id;
+    const add = vi.spyOn(toastManager, "add");
+    await using screen = await render(
+      group(workspace({ workspaceId: id, name: "Only" }), [thread({ id: "thread-d" })]),
+    );
+
+    await userEvent.click(headingFor(screen, id), { button: "right" });
+    await userEvent.click(page.getByRole("menuitem", { name: /Delete workspace/ }).element());
+
+    expect(add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Could not delete workspace",
+        description: expect.stringContaining("Only"),
+      }),
+    );
+    expect(useLayoutStore.getState().layout).toBe(layout);
+  });
+
+  it("moves a workspace down and up from its menu with the neighbours given", async () => {
+    using _session = session();
+    const layout = layoutOf([
+      { name: "One", chats: ["thread-1"] },
+      { name: "Two", chats: ["thread-2"] },
+    ]);
+    useLayoutStore.setState({ layout });
+    const [first, second] = listLayoutWorkspaces(layout);
+    await using screen = await render(
+      group(workspace({ workspaceId: first!.id, name: "One" }), [thread({ id: "thread-1" })], {
+        nextWorkspaceId: second!.id,
+      }),
+    );
+
+    await userEvent.click(headingFor(screen, first!.id), { button: "right" });
+    await userEvent.click(page.getByRole("menuitem", { name: "Move workspace down" }).element());
+    await expect
+      .poll(() => listLayoutWorkspaces(useLayoutStore.getState().layout).map((w) => w.name))
+      .toEqual(["Two", "One"]);
   });
 
   it("keeps a long thread title clear of the row's hover actions", async () => {
-    const value = grid({ id: "grid-l", name: "Grid 1" });
     const title = "App de desenvolvimento para testes com um nome bem comprido";
     await using screen = await render(
-      <div style={{ width: 300 }}>{group(value, [thread({ id: "thread-l", title })])}</div>,
+      <div style={{ width: 300 }}>{group(workspace(), [thread({ id: "thread-l", title })])}</div>,
     );
 
     const row = screen.container.querySelector("[data-thread-key]") as HTMLElement;
@@ -275,18 +445,42 @@ describe("grid sidebar", () => {
     const close = screen.getByRole("button", { name: "Close thread" }).element();
     const actions = close.parentElement as HTMLElement;
     await expect.poll(() => getComputedStyle(actions).opacity).toBe("1");
-    // The actions take the meta line's right corner; the title line below never runs under them.
+    // The actions take the project line's right corner; the title line below never runs under them.
     const titleBox = titleText.getBoundingClientRect();
     const actionsBox = actions.getBoundingClientRect();
     expect(titleBox.top >= actionsBox.bottom || titleBox.right <= actionsBox.left).toBe(true);
   });
 
+  it("keeps a long project name and a long branch clear of the status and provider at 240px", async () => {
+    await using screen = await render(
+      <div style={{ width: 240 }}>
+        {group(workspace(), [
+          thread({
+            id: "thread-long",
+            branch: "feature/an-extremely-long-branch-name-that-cannot-fit-in-the-rail",
+            hasPendingUserInput: true,
+          }),
+        ])}
+      </div>,
+      {},
+    );
+    const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
+    const project = row.querySelector<HTMLElement>("[data-thread-project-line]")!;
+    const meta = row.querySelector<HTMLElement>("[data-thread-meta]")!;
+    expect(project.scrollWidth).toBeLessThanOrEqual(project.clientWidth + 1);
+    expect(meta.scrollWidth).toBeLessThanOrEqual(meta.clientWidth + 1);
+    const rowBox = row.getBoundingClientRect();
+    for (const line of [project, meta]) {
+      expect(line.getBoundingClientRect().right).toBeLessThanOrEqual(rowBox.right + 0.5);
+    }
+  });
+
   it("hides the heading actions again once a clicked heading loses the pointer, and shows them on keyboard focus", async () => {
-    const value = grid({ id: "grid-h", name: "Grid 1" });
+    const value = workspace({ workspaceId: "ws-h", name: "Grid 1" });
     await using screen = await render(group(value, [thread({ id: "thread-h" })]));
-    const heading = headingFor(screen, "grid-h");
+    const heading = headingFor(screen, "ws-h");
     const add = screen.getByRole("button", { name: "New thread in Grid 1" }).element();
-    const more = screen.getByRole("button", { name: "Grid actions for Grid 1" }).element();
+    const more = screen.getByRole("button", { name: "Workspace actions for Grid 1" }).element();
     const opacity = (element: Element) => Number(getComputedStyle(element).opacity);
 
     await userEvent.click(heading);
@@ -301,56 +495,32 @@ describe("grid sidebar", () => {
     expect(opacity(more)).toBe(1);
   });
 
-  it("renames a grid with F2 on its heading", async () => {
-    const value = grid({ id: "grid-f", name: "Grid 1" });
-    useGridStore.setState({ grids: [value] });
-    await using screen = await render(group(value, []));
-
-    headingFor(screen, "grid-f").focus();
-    await userEvent.keyboard("{F2}");
-    const input = screen.getByRole("textbox");
-    await expect.element(input).toHaveFocus();
-    await userEvent.fill(input.element(), "Docs");
-    await userEvent.keyboard("{Enter}");
-    expect(useGridStore.getState().grids[0]?.name).toBe("Docs");
-  });
-
-  it("keeps a one-thread grid's actions on the heading", async () => {
-    await using _screen = await render(
-      group(grid({ id: "grid-c", name: "Landing copy" }), [thread({ id: "thread-c" })]),
-    );
-
-    await userEvent.click(
-      page.getByRole("button", { name: "Grid actions for Landing copy" }).element(),
-    );
-    await expect.element(page.getByRole("menuitem", { name: "New thread" })).toBeVisible();
-    await expect.element(page.getByRole("menuitem", { name: /Rename grid/ })).toBeVisible();
-  });
-
-  it("tints only the open grid's heading", async () => {
+  it("tints only the open workspace's heading", async () => {
     const threads = [thread({ id: "thread-a" }), thread({ id: "thread-b", title: "Second" })];
     await using screen = await render(
       <>
-        {group(grid({ id: "grid-a", name: "v2 rebuild" }), threads, { open: true })}
-        {group(grid({ id: "grid-b", name: "Review" }), threads, { open: false })}
+        {group(workspace({ workspaceId: "ws-a", name: "v2 rebuild" }), threads, { open: true })}
+        {group(workspace({ workspaceId: "ws-b", name: "Review" }), threads, { open: false })}
       </>,
     );
 
-    expect(headingRowFor(screen, "grid-a").className).toContain("bg-sidebar-row-selected");
-    expect(headingRowFor(screen, "grid-b").className).not.toContain("bg-sidebar-row-selected");
+    expect(headingRowFor(screen, "ws-a").className).toContain("bg-sidebar-row-selected");
+    expect(headingRowFor(screen, "ws-b").className).not.toContain("bg-sidebar-row-selected");
   });
 
-  it("leaves an open empty grid's heading untinted", async () => {
+  it("leaves an open empty workspace's heading untinted", async () => {
     await using screen = await render(
-      group(grid({ id: "grid-e", name: "UI/UX design" }), [], { open: true }),
+      group(workspace({ workspaceId: "ws-e", name: "UI/UX design" }), [], { open: true }),
     );
 
-    expect(headingRowFor(screen, "grid-e").className).not.toContain("bg-sidebar-row-selected");
+    expect(headingRowFor(screen, "ws-e").className).not.toContain("bg-sidebar-row-selected");
   });
 
   it("fills the whole heading row, actions included, while it is hovered", async () => {
-    await using screen = await render(group(grid({ id: "grid-h2", name: "UI/UX design" }), []));
-    const row = headingRowFor(screen, "grid-h2");
+    await using screen = await render(
+      group(workspace({ workspaceId: "ws-h2", name: "UI/UX design" }), []),
+    );
+    const row = headingRowFor(screen, "ws-h2");
     const idle = getComputedStyle(row).backgroundColor;
 
     await userEvent.hover(
@@ -358,44 +528,38 @@ describe("grid sidebar", () => {
     );
 
     await expect.poll(() => getComputedStyle(row).backgroundColor).not.toBe(idle);
-    expect(headingFor(screen, "grid-h2").className).not.toContain("hover:bg-");
+    expect(headingFor(screen, "ws-h2").className).not.toContain("hover:bg-");
   });
 
-  it("leaves the open grid's heading untinted while its focused thread row shows the selection", async () => {
+  it("leaves the open workspace's heading untinted while its focused thread row shows the selection", async () => {
     const threads = [thread({ id: "thread-a" }), thread({ id: "thread-b", title: "Second" })];
     await using screen = await render(
-      group(grid({ id: "grid-a", name: "v2 rebuild", focusedThreadId: "thread-a" }), threads, {
-        open: true,
-      }),
+      group(workspace(), threads, { open: true, focusedThreadKey: threadKey("thread-a") }),
     );
 
-    expect(headingRowFor(screen, "grid-a").className).not.toContain("bg-sidebar-row-selected");
+    expect(headingRowFor(screen, "ws-a").className).not.toContain("bg-sidebar-row-selected");
   });
 
-  it("hands the open grid's selection fill to its revealed thread row while collapsed", async () => {
+  it("hands the open workspace's selection fill to its revealed thread row while collapsed", async () => {
     const threads = [thread({ id: "thread-a" }), thread({ id: "thread-b", title: "Second" })];
     await using screen = await render(
-      group(grid({ id: "grid-a", name: "v2 rebuild", focusedThreadId: "thread-a" }), threads, {
+      group(workspace(), threads, {
         open: true,
         collapsed: true,
+        focusedThreadKey: threadKey("thread-a"),
       }),
     );
 
-    expect(headingRowFor(screen, "grid-a").className).not.toContain("bg-sidebar-row-selected");
+    expect(headingRowFor(screen, "ws-a").className).not.toContain("bg-sidebar-row-selected");
     expect(screen.container.querySelector("[data-thread-key$=':thread-a']")).not.toBeNull();
     expect(screen.container.querySelector("[data-thread-key$=':thread-b']")).toBeNull();
   });
 
-  it("tints the open grid's heading when collapsing hides every row", async () => {
+  it("tints the open workspace's heading when collapsing hides every row", async () => {
     const threads = [thread({ id: "thread-a" }), thread({ id: "thread-b", title: "Second" })];
-    await using screen = await render(
-      group(grid({ id: "grid-a", name: "v2 rebuild", focusedThreadId: null }), threads, {
-        open: true,
-        collapsed: true,
-      }),
-    );
+    await using screen = await render(group(workspace(), threads, { open: true, collapsed: true }));
 
-    expect(headingRowFor(screen, "grid-a").className).toContain("bg-sidebar-row-selected");
+    expect(headingRowFor(screen, "ws-a").className).toContain("bg-sidebar-row-selected");
   });
 
   it("keeps the chevron and text still across collapse and thread counts", async () => {
@@ -409,18 +573,18 @@ describe("grid sidebar", () => {
         {counts.map((count) => (
           <CollapsibleGroup
             key={count}
-            value={grid({ id: `grid-${count}`, name: "v2 rebuild" })}
+            value={workspace({ workspaceId: `ws-${count}`, name: "v2 rebuild" })}
             threads={makeThreads(count)}
           />
         ))}
       </TooltipProvider>,
     );
 
-    const reference = headingGeometry(headingFor(screen, "grid-0"));
+    const reference = headingGeometry(headingFor(screen, "ws-0"));
     expect(reference.chevron.getAttribute("class")).toContain("rotate-90");
 
     for (const count of counts) {
-      const heading = headingFor(screen, `grid-${count}`);
+      const heading = headingFor(screen, `ws-${count}`);
       const expanded = headingGeometry(heading);
       expectSameX(expanded.chevronLeft, reference.chevronLeft);
       expectSameX(expanded.textLeft, reference.textLeft);
@@ -435,7 +599,7 @@ describe("grid sidebar", () => {
       expectSameX(collapsed.textLeft, reference.textLeft);
       expectSameX(collapsed.chevronWidth, expanded.chevronWidth);
 
-      const root = screen.container.querySelector(`[data-grid-key="grid-${count}"]`);
+      const root = screen.container.querySelector(`[data-grid-key="ws-${count}"]`);
       expect(root?.querySelectorAll("[data-thread-key]")).toHaveLength(0);
 
       await userEvent.click(heading);
@@ -447,9 +611,12 @@ describe("grid sidebar", () => {
 
   it("toggles collapse from Enter and Space on the focused heading", async () => {
     await using screen = await render(
-      <CollapsibleGroup value={grid({ id: "grid-toggle", name: "Toggle" })} threads={[thread()]} />,
+      <CollapsibleGroup
+        value={workspace({ workspaceId: "ws-toggle", name: "Toggle" })}
+        threads={[thread()]}
+      />,
     );
-    const heading = headingFor(screen, "grid-toggle");
+    const heading = headingFor(screen, "ws-toggle");
 
     heading.focus();
     expect(document.activeElement).toBe(heading);
@@ -466,24 +633,29 @@ describe("grid sidebar", () => {
     container.style.width = "220px";
     await using screen = await render(
       <TooltipProvider delay={0}>
-        {group(grid({ id: "grid-short", name: "Short" }), [], { workspaceTitle: "ws" })}
-        {group(grid({ id: "grid-long", name: "A very long grid name that never fits" }), [], {
-          workspaceTitle: "A very long workspace name that never fits",
-        })}
+        {group(workspace({ workspaceId: "ws-short", name: "Short" }), [])}
+        {group(
+          workspace({ workspaceId: "ws-long", name: "A very long workspace name that never fits" }),
+          [],
+        )}
       </TooltipProvider>,
       { container },
     );
 
-    const short = headingFor(screen, "grid-short");
-    const long = headingFor(screen, "grid-long");
+    const short = headingFor(screen, "ws-short");
+    const long = headingFor(screen, "ws-long");
     const shortGeometry = headingGeometry(short);
     const longGeometry = headingGeometry(long);
     expectSameX(longGeometry.chevronLeft, shortGeometry.chevronLeft);
     expectSameX(longGeometry.textLeft, shortGeometry.textLeft);
 
-    const shortActions = screen.getByRole("button", { name: "Grid actions for Short" }).element();
+    const shortActions = screen
+      .getByRole("button", { name: "Workspace actions for Short" })
+      .element();
     const longActions = screen
-      .getByRole("button", { name: "Grid actions for A very long grid name that never fits" })
+      .getByRole("button", {
+        name: "Workspace actions for A very long workspace name that never fits",
+      })
       .element();
     expectSameX(
       longActions.getBoundingClientRect().left,
@@ -491,131 +663,41 @@ describe("grid sidebar", () => {
     );
     expect(long.scrollWidth).toBeLessThanOrEqual(long.clientWidth + 1);
   });
-});
 
-describe("New grid menu", () => {
-  const workspaces = [
-    { key: "env-1:project-1", label: "Houston" },
-    { key: "env-1:project-2", label: "houston-site" },
-    { key: "env-1:project-3", label: "notes" },
-  ];
+  it("moves a dragged thread onto the workspace whose heading is under the pointer", async () => {
+    using _drag = { [Symbol.dispose]: () => endThreadDrag() };
+    const onDropOnWorkspace = vi.fn();
+    await using screen = await render(group(workspace(), [], { onDropOnWorkspace }), {
+      router: false,
+    });
+    const heading = headingFor(screen, "ws-a");
+    const rect = heading.getBoundingClientRect();
+    const source = {
+      gridId: null,
+      workspaceId: "ws-other",
+      threadId: "thread-a",
+      environmentId: "env-1",
+      projectId: "project-1",
+    };
 
-  it("preselects the given workspace and creates there on Enter", async () => {
-    const onSelect = vi.fn();
-    await using _screen = await render(
-      <SidebarNewGridMenu
-        workspaces={workspaces}
-        selectedKey="env-1:project-3"
-        onSelect={onSelect}
-        onOpenFolder={() => {}}
-      />,
+    await act(() =>
+      beginThreadDragAt(
+        source,
+        { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
+        1,
+      ),
     );
+    await act(() => {
+      window.dispatchEvent(new PointerEvent("pointerup", { pointerId: 1 }));
+    });
 
-    await userEvent.click(page.getByRole("button", { name: "New grid" }).element());
-    const selected = page.getByRole("menuitem", { name: "notes" }).element();
-    expect(selected.getAttribute("data-selected")).toBe("");
-    await vi.waitUntil(() => document.activeElement?.getAttribute("role") === "menu");
-
-    await userEvent.keyboard("{Enter}");
-    expect(onSelect).toHaveBeenCalledWith("env-1:project-3");
-  });
-
-  it("creates in the preselected workspace with Space before any navigation", async () => {
-    const onSelect = vi.fn();
-    await using _screen = await render(
-      <SidebarNewGridMenu
-        workspaces={workspaces}
-        selectedKey="env-1:project-2"
-        onSelect={onSelect}
-        onOpenFolder={() => {}}
-      />,
-    );
-
-    await userEvent.click(page.getByRole("button", { name: "New grid" }).element());
-    await vi.waitUntil(() => document.activeElement?.getAttribute("role") === "menu");
-
-    await userEvent.keyboard(" ");
-    expect(onSelect).toHaveBeenCalledWith("env-1:project-2");
-  });
-
-  it("creates in another workspace when its row is clicked", async () => {
-    const onSelect = vi.fn();
-    await using _screen = await render(
-      <SidebarNewGridMenu
-        workspaces={workspaces}
-        selectedKey="env-1:project-1"
-        onSelect={onSelect}
-        onOpenFolder={() => {}}
-      />,
-    );
-
-    await userEvent.click(page.getByRole("button", { name: "New grid" }).element());
-    await userEvent.click(page.getByRole("menuitem", { name: "houston-site" }).element());
-    expect(onSelect).toHaveBeenCalledWith("env-1:project-2");
-  });
-
-  it("names the grid from the optional field with Enter", async () => {
-    const onSelect = vi.fn();
-    await using screen = await render(
-      <SidebarNewGridMenu
-        workspaces={workspaces}
-        selectedKey="env-1:project-2"
-        onSelect={onSelect}
-        onOpenFolder={() => {}}
-      />,
-    );
-
-    await userEvent.click(page.getByRole("button", { name: "New grid" }).element());
-    const field = screen.getByRole("textbox", { name: "Grid name" });
-    await userEvent.fill(field.element(), "  Review sprint ");
-    await expect.element(field).toHaveValue("  Review sprint ");
-    await userEvent.keyboard("{Enter}");
-    expect(onSelect).toHaveBeenCalledExactlyOnceWith("env-1:project-2", "Review sprint");
-  });
-
-  it("names the grid in the workspace whose row is clicked, and a blank name keeps the default", async () => {
-    const onSelect = vi.fn();
-    await using screen = await render(
-      <SidebarNewGridMenu
-        workspaces={workspaces}
-        selectedKey="env-1:project-1"
-        onSelect={onSelect}
-        onOpenFolder={() => {}}
-      />,
-    );
-
-    await userEvent.click(page.getByRole("button", { name: "New grid" }).element());
-    await userEvent.fill(screen.getByRole("textbox", { name: "Grid name" }).element(), "Docs");
-    await userEvent.click(page.getByRole("menuitem", { name: "notes" }).element());
-    expect(onSelect).toHaveBeenLastCalledWith("env-1:project-3", "Docs");
-
-    await userEvent.click(page.getByRole("button", { name: "New grid" }).element());
-    await userEvent.fill(screen.getByRole("textbox", { name: "Grid name" }).element(), "   ");
-    await userEvent.click(page.getByRole("menuitem", { name: "notes" }).element());
-    expect(onSelect).toHaveBeenLastCalledWith("env-1:project-3");
-  });
-
-  it("runs the add-workspace flow from Open folder", async () => {
-    const onOpenFolder = vi.fn();
-    await using _screen = await render(
-      <SidebarNewGridMenu
-        workspaces={workspaces}
-        selectedKey="env-1:project-1"
-        onSelect={() => {}}
-        onOpenFolder={onOpenFolder}
-      />,
-    );
-
-    await userEvent.click(page.getByRole("button", { name: "New grid" }).element());
-    await userEvent.click(page.getByRole("menuitem", { name: /Open folder/ }).element());
-    expect(onOpenFolder).toHaveBeenCalledTimes(1);
+    expect(onDropOnWorkspace).toHaveBeenCalledWith(source, "ws-a");
   });
 });
 
 describe("View options", () => {
   const defaults = {
     threadSort: "grid",
-    gridSort: "created_at",
     showBranch: true,
     showPullRequest: true,
     showSubagents: true,
@@ -632,10 +714,9 @@ describe("View options", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "View options" }));
     await expect.element(page.getByText("Sort threads")).toBeVisible();
-    await expect.element(page.getByText("Sort grids")).toBeVisible();
     await expect.element(page.getByText("Rows show")).toBeVisible();
     await expect
-      .element(page.getByRole("menuitemradio", { name: "Grid order" }))
+      .element(page.getByRole("menuitemradio", { name: "Workspace order" }))
       .toHaveAttribute("aria-checked", "true");
     await expect
       .element(page.getByRole("menuitemcheckbox", { name: "Branch" }))
@@ -647,8 +728,8 @@ describe("View options", () => {
       0,
     );
 
-    await userEvent.click(page.getByRole("menuitemradio", { name: "Manual" }));
-    expect(onChange).toHaveBeenCalledWith({ gridSort: "manual" });
+    await userEvent.click(page.getByRole("menuitemradio", { name: "Created" }));
+    expect(onChange).toHaveBeenCalledWith({ threadSort: "created_at" });
     await userEvent.click(page.getByRole("menuitemcheckbox", { name: "Subagents" }));
     expect(onChange).toHaveBeenCalledWith({ showSubagents: false });
     await userEvent.click(page.getByRole("menuitemcheckbox", { name: "Show Needs you" }));
@@ -657,29 +738,15 @@ describe("View options", () => {
     expect(onReset).toHaveBeenCalledTimes(1);
   });
 
-  it("draws New grid as a folder with a plus", async () => {
-    await using screen = await render(
-      <SidebarNewGridMenu
-        workspaces={[{ key: "env-1:project-1", label: "Houston" }]}
-        selectedKey="env-1:project-1"
-        onSelect={() => {}}
-        onOpenFolder={() => {}}
-      />,
-      { router: false },
-    );
-    const trigger = screen.getByRole("button", { name: "New grid" }).element();
-    expect(trigger.querySelector("svg.lucide-folder-plus")).not.toBeNull();
-  });
-
   it("hides the branch line when Rows show leaves Branch off", async () => {
     __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
     try {
       {
-        await using shown = await render(group(grid(), [thread()]), { router: "/" });
+        await using shown = await render(group(workspace(), [thread()]), { router: "/" });
         expect(shown.container.textContent).toContain("houston/split-drawer-state");
       }
       __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, sidebarRowShowBranch: false });
-      await using hidden = await render(group(grid(), [thread()]), { router: "/" });
+      await using hidden = await render(group(workspace(), [thread()]), { router: "/" });
       expect(hidden.container.textContent).not.toContain("houston/split-drawer-state");
     } finally {
       __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
@@ -702,7 +769,7 @@ describe("View options", () => {
     __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
     try {
       {
-        await using shown = await render(group(grid(), [thread({ pullRequests: [merged] })]));
+        await using shown = await render(group(workspace(), [thread({ pullRequests: [merged] })]));
         const badge = shown.container.querySelector("[data-thread-pull-request]");
         expect(badge?.textContent).toBe("88");
         expect(badge?.querySelector("svg")?.classList.contains("text-merged-foreground")).toBe(
@@ -716,37 +783,10 @@ describe("View options", () => {
         ...DEFAULT_CLIENT_SETTINGS,
         sidebarRowShowPullRequest: false,
       });
-      await using hidden = await render(group(grid(), [thread({ pullRequests: [merged] })]));
+      await using hidden = await render(group(workspace(), [thread({ pullRequests: [merged] })]));
       expect(hidden.container.querySelector("[data-thread-pull-request]")).toBeNull();
     } finally {
       __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
     }
-  });
-
-  it("moves a dragged thread onto the grid whose heading is under the pointer", async () => {
-    using _drag = { [Symbol.dispose]: () => endThreadDrag() };
-    const onDropOnGrid = vi.fn();
-    await using screen = await render(group(grid(), [], { onDropOnGrid }), { router: false });
-    const heading = headingFor(screen, "grid-a");
-    const rect = heading.getBoundingClientRect();
-    const source = {
-      gridId: "grid-other",
-      threadId: "thread-a",
-      environmentId: "env-1",
-      projectId: "project-1",
-    };
-
-    await act(() =>
-      beginThreadDragAt(
-        source,
-        { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
-        1,
-      ),
-    );
-    await act(() => {
-      window.dispatchEvent(new PointerEvent("pointerup", { pointerId: 1 }));
-    });
-
-    expect(onDropOnGrid).toHaveBeenCalledWith(source, "grid-a");
   });
 });
