@@ -1,5 +1,6 @@
-// The former grid tools, kept as aliases of the workspace tools for one release. A `gridId` is a
-// workspace id, and a `projectId` is accepted and ignored because a workspace has no project.
+// The former `houston_grid_*` tools, kept as aliases of the workspace tools until the next release
+// removes them. A `gridId` is a workspace id, and a `projectId` is accepted and ignored because a
+// workspace has no project.
 import { ThreadId } from "@houston-app/contracts";
 import { HOUSTON_LAYOUT_WORKSPACE_LIMITS } from "@houston-app/contracts/houston/layoutWorkspaces";
 import * as Schema from "effect/Schema";
@@ -9,7 +10,7 @@ import {
   WorkspaceFields,
   WorkspaceThreadEntries,
   workspaceToolShared,
-} from "../workspaceToolkit/tools.ts";
+} from "./tools.ts";
 
 const shared = workspaceToolShared;
 
@@ -25,7 +26,7 @@ const projectId = Schema.optional(
 const GridFields = { ...WorkspaceFields, gridId: Schema.String };
 const Grid = Schema.Struct({ ...GridFields, threadIds: Schema.Array(Schema.String) });
 
-const aliasOf = (tool: string) => `Alias of \`${tool}\`; will be removed.`;
+const aliasOf = (tool: string) => `Alias of \`${tool}\`, removed in the next release.`;
 
 const GridListTool = Tool.make("houston_grid_list", {
   ...shared,

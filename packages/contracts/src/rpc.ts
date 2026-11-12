@@ -288,17 +288,6 @@ import {
   HoustonMergeQueueSummaryInput,
 } from "./houston/mergeQueue.ts";
 import {
-  HoustonGridDeleteInput,
-  HoustonGridDeleteResult,
-  HoustonGridEmptyInput,
-  HoustonGridError,
-  HoustonGridListInput,
-  HoustonGridPutInput,
-  HoustonGridPutResult,
-  HoustonGridRecord,
-  HoustonGridStreamEvent,
-} from "./houston/grids.ts";
-import {
   HoustonLayoutWorkspaceDeleteInput,
   HoustonLayoutWorkspaceDeleteResult,
   HoustonLayoutWorkspaceEmptyInput,
@@ -669,10 +658,6 @@ export const WS_METHODS = {
   houstonTaskSourcesSubscribe: "houston.taskSources.subscribe",
   houstonTaskSourcesImportV1Status: "houston.taskSources.importV1.status",
   houstonTaskSourcesImportV1Run: "houston.taskSources.importV1.run",
-  houstonGridsList: "houston.grids.list",
-  houstonGridsPut: "houston.grids.put",
-  houstonGridsDelete: "houston.grids.delete",
-  houstonGridsSubscribe: "houston.grids.subscribe",
   houstonLayoutWorkspacesList: "houston.layoutWorkspaces.list",
   houstonLayoutWorkspacesPut: "houston.layoutWorkspaces.put",
   houstonLayoutWorkspacesReorder: "houston.layoutWorkspaces.reorder",
@@ -2116,33 +2101,6 @@ const WsHoustonTaskSourcesImportV1RunRpc = Rpc.make(WS_METHODS.houstonTaskSource
   error: HoustonTaskSourceRpcError,
 });
 
-const HoustonGridsRpcError = Schema.Union([HoustonGridError, EnvironmentAuthorizationError]);
-
-const WsHoustonGridsListRpc = Rpc.make(WS_METHODS.houstonGridsList, {
-  payload: HoustonGridListInput,
-  success: Schema.Array(HoustonGridRecord),
-  error: HoustonGridsRpcError,
-});
-
-const WsHoustonGridsPutRpc = Rpc.make(WS_METHODS.houstonGridsPut, {
-  payload: HoustonGridPutInput,
-  success: HoustonGridPutResult,
-  error: HoustonGridsRpcError,
-});
-
-const WsHoustonGridsDeleteRpc = Rpc.make(WS_METHODS.houstonGridsDelete, {
-  payload: HoustonGridDeleteInput,
-  success: HoustonGridDeleteResult,
-  error: HoustonGridsRpcError,
-});
-
-const WsHoustonGridsSubscribeRpc = Rpc.make(WS_METHODS.houstonGridsSubscribe, {
-  payload: HoustonGridEmptyInput,
-  success: HoustonGridStreamEvent,
-  error: HoustonGridsRpcError,
-  stream: true,
-});
-
 const HoustonLayoutWorkspacesRpcError = Schema.Union([
   HoustonLayoutWorkspaceError,
   EnvironmentAuthorizationError,
@@ -2996,10 +2954,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonTaskSourcesSubscribeRpc,
   WsHoustonTaskSourcesImportV1StatusRpc,
   WsHoustonTaskSourcesImportV1RunRpc,
-  WsHoustonGridsListRpc,
-  WsHoustonGridsPutRpc,
-  WsHoustonGridsDeleteRpc,
-  WsHoustonGridsSubscribeRpc,
   WsHoustonLayoutWorkspacesListRpc,
   WsHoustonLayoutWorkspacesPutRpc,
   WsHoustonLayoutWorkspacesReorderRpc,

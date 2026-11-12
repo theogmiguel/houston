@@ -126,7 +126,6 @@ import * as ServerConfig from "../../config.ts";
 import { layerJsonWithoutEcho } from "../rpcSerialization.ts";
 import * as HoustonResumeSessions from "../resumeSessions.ts";
 import * as HoustonReviewState from "../reviewState.ts";
-import * as HoustonGrids from "../grids.ts";
 import * as HoustonLayoutWorkspaces from "../layoutWorkspaces.ts";
 import * as HoustonSlackService from "../slack/Service.ts";
 import * as HoustonSlackV1Import from "../slack/V1Import.ts";
@@ -170,7 +169,6 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(HostResources.HostResources)({}),
   Layer.mock(HoustonReviewState.HoustonReviewState)({}),
   Layer.mock(HoustonResumeSessions.HoustonResumeSessions)({}),
-  Layer.mock(HoustonGrids.HoustonGridService)({}),
   Layer.mock(HoustonLayoutWorkspaces.HoustonLayoutWorkspaceService)({}),
   Layer.mock(HoustonSlackService.HoustonSlackService)({}),
   Layer.mock(HoustonSlackV1Import.HoustonSlackV1Import)({}),

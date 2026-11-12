@@ -1,8 +1,8 @@
 import * as Effect from "effect/Effect";
 
 import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
-import * as Operations from "../workspaceToolkit/operations.ts";
-import { GridToolkit } from "./tools.ts";
+import * as Operations from "./operations.ts";
+import { GridToolkit } from "./gridAliasTools.ts";
 
 const writes = <P, A, E, R>(handle: (params: P) => Effect.Effect<A, E, R>) =>
   McpToolAccess.writesWithCapability(handle);

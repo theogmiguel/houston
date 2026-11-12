@@ -288,7 +288,7 @@ export const OrchestratorMcpCreateThreadsInput = Schema.Struct({
   grid: Schema.optional(
     HoustonGridLaunchTargetAlias.annotate({
       description:
-        "Alias of `workspace`, to be removed: `gridId` is a workspace id, `newGridName` a new workspace's name.",
+        "Alias of `workspace`, removed in the next release: `gridId` is a workspace id, `newGridName` a new workspace's name.",
     }),
   ),
 });

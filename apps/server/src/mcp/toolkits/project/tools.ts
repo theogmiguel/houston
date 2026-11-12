@@ -167,7 +167,7 @@ const ThreadLaunchTool = Tool.make("houston_thread_launch", {
     grid: Schema.optional(
       HoustonGridLaunchTargetAlias.annotate({
         description:
-          "Alias of `workspace`, to be removed: `gridId` is a workspace id, `newGridName` a new workspace's name.",
+          "Alias of `workspace`, removed in the next release: `gridId` is a workspace id, `newGridName` a new workspace's name.",
       }),
     ),
     /** Set by a linked environment launching its agent's delegated task here; ignored otherwise. */

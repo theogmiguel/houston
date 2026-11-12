@@ -331,7 +331,7 @@ export const HoustonLayoutLaunchTarget = Schema.Union([
 ]);
 export type HoustonLayoutLaunchTarget = typeof HoustonLayoutLaunchTarget.Type;
 
-/** The launch target of the grid tools, accepted as an alias of `HoustonLayoutLaunchTarget`. */
+/** The launch target of the `houston_grid_*` tools, accepted as an alias of `HoustonLayoutLaunchTarget` until it is removed in the next release. */
 export const HoustonGridLaunchTargetAlias = Schema.Union([
   Schema.Struct({ gridId: Id }),
   Schema.Struct({ newGridName: WorkspaceName }),
@@ -349,7 +349,7 @@ export const HoustonLayoutPlacement = Schema.Union([
 ]);
 export type HoustonLayoutPlacement = typeof HoustonLayoutPlacement.Type;
 
-/** `HoustonLayoutPlacement` as the grid tools reported it, with the workspace id as `gridId`. */
+/** `HoustonLayoutPlacement` as the `houston_grid_*` tools reported it, with the workspace id as `gridId`; removed in the next release. */
 export const HoustonGridPlacementAlias = Schema.Union([
   Schema.Struct({ placed: Schema.Literal(true), gridId: Id }),
   Schema.Struct({

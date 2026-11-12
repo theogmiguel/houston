@@ -17,8 +17,8 @@ import * as McpInvocationContext from "../../mcp/McpInvocationContext.ts";
 import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
 import { liveThreadShell } from "../../mcp/McpToolAccess.testkit.ts";
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
-import * as WorkspaceHandlers from "../workspaceToolkit/handlers.ts";
-import { WorkspaceToolkit } from "../workspaceToolkit/tools.ts";
+import * as WorkspaceHandlers from "./handlers.ts";
+import { WorkspaceToolkit } from "./tools.ts";
 import {
   chatContent,
   chatThreadsOf,
@@ -27,10 +27,10 @@ import {
   seedWorkspace,
   WORKSPACE_TEST_ENVIRONMENT,
   workspaceRecord,
-} from "../workspaceToolkit/workspaceToolkit.testkit.ts";
+} from "./workspaceToolkit.testkit.ts";
 import * as HoustonLayoutWorkspaces from "../layoutWorkspaces.ts";
-import * as GridHandlers from "./handlers.ts";
-import { GridToolkit } from "./tools.ts";
+import * as GridHandlers from "./gridAliasHandlers.ts";
+import { GridToolkit } from "./gridAliasTools.ts";
 
 const CALLER = ThreadId.make("thread:caller");
 const Service = HoustonLayoutWorkspaces.HoustonLayoutWorkspaceService;
@@ -163,16 +163,16 @@ const PAIRS = [
   ],
 ] as const;
 
-for (const [alias, aliasInput, tool, toolInput] of PAIRS) {
-  it.effect(`${alias} runs the same service calls as ${tool}`, () =>
+it.effect.each(PAIRS)(
+  "%s runs the same service calls as its workspace tool",
+  ([alias, aliasInput, tool, toolInput]) =>
     Effect.gen(function* () {
       const viaAlias = yield* trace("grid", alias, aliasInput, seeded);
       const viaTool = yield* trace("workspace", tool, toolInput, seeded);
       assert.isAbove(viaTool.methods.length, 0);
       assert.deepEqual(viaAlias.methods, viaTool.methods);
     }),
-  );
-}
+);
 
 it.effect("a grid id is a workspace id, and the alias answers with it as gridId", () =>
   Effect.gen(function* () {
@@ -219,11 +219,11 @@ it.effect("grid tools accept and ignore projectId", () =>
   }),
 );
 
-it.effect("grid tools advertise that they are aliases that will be removed", () =>
+it.effect("grid tools advertise that they are aliases removed in the next release", () =>
   Effect.sync(() => {
     for (const tool of Object.values(GridToolkit.tools)) {
       assert.match(tool.description ?? "", /Alias of `houston_workspace_[a-z_]+`/);
-      assert.include(tool.description ?? "", "will be removed");
+      assert.include(tool.description ?? "", "removed in the next release");
     }
   }),
 );
