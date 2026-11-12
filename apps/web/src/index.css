@@ -1085,7 +1085,8 @@ body {
   --content: #ffffff;
   --card: #ffffff;
   --raised: #ffffff;
-  --term: #fbfbfc;
+  /* The terminal surface is the pane's colour, so a terminal tab and its body read as one shape. */
+  --term: var(--pane);
   --code-bg: #f7f7fa;
   --t1: #1d1d1f;
   --t2: #424245;
@@ -1266,7 +1267,7 @@ body {
   --content: #18181b;
   --card: #1f1f23;
   --raised: #1f1f23;
-  --term: #0c0c0e;
+  --term: var(--pane);
   --code-bg: #1a1a1e;
   --t1: rgba(255, 255, 255, 0.92);
   --t2: rgba(255, 255, 255, 0.66);

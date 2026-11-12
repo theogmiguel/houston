@@ -45,7 +45,10 @@ import {
 import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
 import { Button, InlineButton } from "~/components/ui/button";
 import { PanelTabCloseButton } from "~/components/ui/panel-tab-close-button";
-import { terminalDrawerFrameClassName } from "~/components/ui/terminal-drawer-placeholder";
+import {
+  TerminalFloatingToolbar,
+  terminalDrawerFrameClassName,
+} from "~/components/ui/terminal-drawer-placeholder";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { readTextFromClipboard, writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { cn } from "~/lib/utils";
@@ -1793,7 +1796,7 @@ export default function ThreadTerminalDrawer({
       ) : null}
 
       {!hasTerminalSidebar && (
-        <div className="pointer-events-none absolute right-2 top-2 z-20">
+        <TerminalFloatingToolbar>
           <div className="pointer-events-auto inline-flex items-center overflow-hidden rounded-md border border-border/80 bg-background shadow-xs">
             <TerminalActionButton
               disabled={!canOperateTerminal}
@@ -1839,7 +1842,7 @@ export default function ThreadTerminalDrawer({
               <Trash2 className="size-3.25" />
             </TerminalActionButton>
           </div>
-        </div>
+        </TerminalFloatingToolbar>
       )}
 
       <div className="min-h-0 w-full flex-1">
