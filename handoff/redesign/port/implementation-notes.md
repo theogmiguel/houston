@@ -266,3 +266,13 @@ Constraints: nothing on a phone reads the grid store or navigates to `/grid/`; a
 210. **`docs/internals/renderer.md`:** only the Layout section and a few lines were rewritten. Other sections (window background, mascot, `tr-*` keys, shell gutters) describe an unrelated stale design and were left alone.
 211. **Deleted `motion/frameProbe.ts`** (no importers). ChatView's `embedded` prop is true for layout pane chats, so proactive panels stay off in panes.
 212. **Not seen in a running app.** Nothing was run against a real server or database.
+
+## Deviations: chrome restyle
+
+220. Every pane is a card on the window background; the strip scroller carries an 8px inset to the window edge and the 8px gutter between panes is unchanged. The card has no ring and no focus ring (the focused pane is still marked by `data-focused`), so the focus indication is the active tab's weight only.
+221. The tab bar sits above the card for both placements (window and pane); the lower pane's bar is 32px on the window background, not a bordered head inside the card. The active tab carries the concave corners in both placements; inactive tabs have no fill, not even on hover.
+222. The tab strip keeps 10px of end padding so the active last tab's concave corner is inside the scroll width; before, that corner made the strip report overflow, which clipped the last glyph and faded the strip.
+223. `ClosedTabRestoreButton`, `WorkspaceSwitcher` and their tests are deleted; nothing else used them. Reopen stays on its shortcut (`view.reopenClosed`) and gets a "Reopen closed tab" command palette entry, which did not exist.
+224. The sidebar's workspace guide line is gone. Thread rows are 76px cards (12px side padding, 10px vertical), inset 12px from the rail; the workspace heading shares that inset and no longer takes a selected tint. The open thread's card is on `--raised` with `--shadow-1`. Row action buttons shrank from 22px to 20px so they stay inside the 16px project line plus its 2px gap.
+225. A layout pane's chat header drops the "Toggle right panel" and "Toggle terminal drawer" buttons (`paneHeader`); the header row stays. Moving the details toggle into the tab strip and dropping the row would also drop the breadcrumb's pull request badge, parent-thread link, project settings and find-in-thread entries, and the details popover anchors on that header, so it is not a move-only change. The details icon is now `ListFilterIcon`.
+226. The terminal's own background (`--term`) differs from `--pane`, so a terminal tab and its body do not read as one silhouette in light theme.
