@@ -25,13 +25,11 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "./tooltip";
  * edge and the count (when collapsed) sits there until they appear.
  */
 export const SIDEBAR_GROUP_HEADING_CLS =
-  "flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1 rounded-lg py-0 pr-2 pl-0.75 text-left text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+  "flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1 rounded-lg py-0 pr-2 pl-3 text-left text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
 /** The workspace heading's row: the toggle and its actions share one hover, selection and drop fill. */
 export const SIDEBAR_GROUP_HEADING_ROW_CLS =
-  "group/workspace relative -ml-0.75 flex h-6 items-center rounded-lg transition-colors duration-(--motion-feedback) ease-standard hover:bg-sidebar-row-hover";
-
-export const SIDEBAR_GROUP_HEADING_ACTIVE_CLS = "bg-sidebar-row-selected";
+  "group/workspace relative mx-1 flex h-6 items-center rounded-lg transition-colors duration-(--motion-feedback) ease-standard hover:bg-sidebar-row-hover";
 
 export const SIDEBAR_GROUP_HEADING_DROP_CLS =
   "bg-(--accent-muted) ring-1 ring-(--accent-ink) ring-inset";
@@ -62,18 +60,10 @@ export const SIDEBAR_ROW_ACTIONS_CLS =
   "absolute inset-y-0 right-0.75 flex shrink-0 items-center gap-0.5";
 
 /**
- * A workspace's threads hang from a 1px guide under the centre of its chevron; the workspace on screen draws
- * it in the secondary text tone. The 4px of padding below, with the next row's 2px, make 6px.
+ * A workspace's thread cards: inset 4px inside the rail's own 8px, so a card sits 12px from the
+ * sidebar edge and lines up with the workspace heading, with 4px between cards.
  */
-export const SIDEBAR_GROUP_GUIDE_CLS =
-  "ml-1.5 flex flex-col gap-0.5 border-l border-border pb-1 pl-0.75";
-
-export const SIDEBAR_GROUP_GUIDE_ON_SCREEN_CLS = "border-secondary-label";
-
-/** A workspace's thread guide, in the stronger tone while the workspace is on screen. */
-export function sidebarGroupGuideCls(onScreen: boolean): string {
-  return cn(SIDEBAR_GROUP_GUIDE_CLS, onScreen && SIDEBAR_GROUP_GUIDE_ON_SCREEN_CLS);
-}
+export const SIDEBAR_GROUP_THREADS_CLS = "flex flex-col gap-1 px-1 pt-0.5 pb-1";
 
 /** A workspace's name, in primary ink while the workspace is on screen. */
 export function sidebarGroupNameCls(onScreen: boolean): string {
@@ -100,11 +90,10 @@ export const SIDEBAR_PROJECT_EMPTY_ACTION_CLS =
   "flex h-(--h-row) w-full cursor-pointer items-center gap-2 rounded-lg py-0 pr-2 pl-7.5 text-left text-xs text-secondary-label transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
 /**
- * Every thread row, in a workspace or directly under its project, starts at the rail's own inset: its
- * status glyph sits under the project heading's chevron, so a 264px sidebar leaves the title the
- * rest of the width.
+ * A thread card's inner start padding: text never touches the card edge. Matches the card's end
+ * padding in `SIDEBAR_THREAD_ROW_CLS`.
  */
-export const SIDEBAR_THREAD_ROW_INDENT_CLS = "pl-2";
+export const SIDEBAR_THREAD_ROW_INDENT_CLS = "pl-3";
 
 /** A fixed 14px box in both states; the chevron rotates inside instead of swapping icons. */
 export const SIDEBAR_GROUP_CHEVRON_BOX_CLS =
@@ -272,9 +261,9 @@ export const SIDEBAR_SEARCH_MARK_CLS = "rounded-(--r-badge) bg-(--warn-wash) px-
 /** Numbers and times on a row keep a steady width as they tick. */
 export const SIDEBAR_TABULAR_CLS = "tabular-nums";
 
-/** A thread row's frame: three lines, the focus ring painted on the row. */
+/** A thread card: 76px tall, 10px above and below its three lines, 12px at its ends. */
 export const SIDEBAR_THREAD_ROW_CLS =
-  "group/th relative flex h-15 w-full cursor-pointer items-center gap-2 rounded-lg pr-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+  "group/th relative flex h-19 w-full cursor-pointer items-center gap-2 rounded-(--r-group) py-2.5 pr-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
 /** The row's frame with its drag, file-drop and surface states. */
 export function sidebarThreadRowCls(state: {
@@ -301,11 +290,11 @@ export function sidebarThreadRowCls(state: {
 
 /** A text button on a row's hover actions (Close, Wake, Reopen). */
 export const SIDEBAR_THREAD_TEXT_ACTION_CLS =
-  "inline-flex h-5.5 cursor-pointer items-center gap-1 rounded-(--r-badge) px-1.5 text-xs text-secondary-foreground data-sweep-hit:bg-(--sel) hover:bg-(--sel) hover:text-foreground";
+  "inline-flex h-5 cursor-pointer items-center gap-1 rounded-(--r-badge) px-1.5 text-xs text-secondary-foreground data-sweep-hit:bg-(--sel) hover:bg-(--sel) hover:text-foreground";
 
 /** An icon button on a row's hover actions (Hold, Thread actions). */
 export const SIDEBAR_THREAD_ICON_ACTION_CLS =
-  "inline-grid size-5.5 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-foreground hover:bg-(--sel) hover:text-foreground";
+  "inline-grid size-5 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-foreground hover:bg-(--sel) hover:text-foreground";
 
 /** The title button inside a row; the row paints the focus ring. */
 export const SIDEBAR_THREAD_TITLE_BUTTON_CLS =

@@ -413,7 +413,7 @@ export function ThreadCard({
         }
       >
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <div data-thread-project-line="" className="flex h-5 min-w-0 items-center gap-2">
+          <div data-thread-project-line="" className="flex h-4 min-w-0 items-center gap-2">
             <span
               data-thread-project=""
               className={cn(
@@ -435,7 +435,7 @@ export function ThreadCard({
             {/* Status (or age) and hover actions share one cell; hidden actions leave the flow. */}
             <span
               className={cn(
-                "relative grid h-5 shrink-0 grid-rows-1 items-center justify-items-end",
+                "relative grid h-4 shrink-0 grid-rows-1 items-center justify-items-end",
                 backShown ? "ml-1" : "ml-auto",
               )}
             >
@@ -457,7 +457,7 @@ export function ThreadCard({
               </span>
               <span
                 className={cn(
-                  "col-start-1 row-start-1 flex h-[22px] items-center gap-0.5",
+                  "col-start-1 row-start-1 flex h-5 items-center gap-0.5",
                   MOTION_FEEDBACK_OPACITY,
                   actionsVisible ? ROW_ACTIONS_IN_FLOW : ROW_ACTIONS_OUT_OF_FLOW,
                   actionsVisible ? ROW_ACTIONS_VISIBLE : ROW_ACTIONS_REVEAL,

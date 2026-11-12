@@ -280,7 +280,7 @@ describe("workspace group", () => {
 
     expect(screen.getByRole("button", { name: /^Landing copy$/ }).element()).toBeVisible();
     const row = screen.container.querySelector("[data-thread-key]") as HTMLElement;
-    expect(getComputedStyle(row).paddingLeft).toBe("8px");
+    expect(getComputedStyle(row).paddingLeft).toBe("12px");
 
     await userEvent.click(screen.getByText("Split drawer state from the thread store").element());
     expect(onOpenThread).toHaveBeenCalledWith(expect.objectContaining({ id: "thread-c" }));
@@ -495,7 +495,7 @@ describe("workspace group", () => {
     expect(opacity(more)).toBe(1);
   });
 
-  it("tints only the open workspace's heading", async () => {
+  it("keeps every workspace heading untinted, open or not", async () => {
     const threads = [thread({ id: "thread-a" }), thread({ id: "thread-b", title: "Second" })];
     await using screen = await render(
       <>
@@ -504,7 +504,7 @@ describe("workspace group", () => {
       </>,
     );
 
-    expect(headingRowFor(screen, "ws-a").className).toContain("bg-sidebar-row-selected");
+    expect(headingRowFor(screen, "ws-a").className).not.toContain("bg-sidebar-row-selected");
     expect(headingRowFor(screen, "ws-b").className).not.toContain("bg-sidebar-row-selected");
   });
 
@@ -555,11 +555,11 @@ describe("workspace group", () => {
     expect(screen.container.querySelector("[data-thread-key$=':thread-b']")).toBeNull();
   });
 
-  it("tints the open workspace's heading when collapsing hides every row", async () => {
+  it("leaves the open workspace's heading untinted when collapsing hides every row", async () => {
     const threads = [thread({ id: "thread-a" }), thread({ id: "thread-b", title: "Second" })];
     await using screen = await render(group(workspace(), threads, { open: true, collapsed: true }));
 
-    expect(headingRowFor(screen, "ws-a").className).toContain("bg-sidebar-row-selected");
+    expect(headingRowFor(screen, "ws-a").className).not.toContain("bg-sidebar-row-selected");
   });
 
   it("keeps the chevron and text still across collapse and thread counts", async () => {

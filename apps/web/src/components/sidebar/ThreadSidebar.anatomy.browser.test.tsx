@@ -226,7 +226,7 @@ const ORDER_PREFIXES = [
 ];
 
 describe("thread row anatomy", () => {
-  it("keeps every row 60px tall whatever it carries, with 2px between its three lines, at the docked rail and the drawer", async () => {
+  it("keeps every row 76px tall whatever it carries, with 2px between its three lines, at the docked rail and the drawer", async () => {
     for (const rail of RAILS) {
       await page.viewport(rail.viewport, 900);
       reset();
@@ -250,7 +250,7 @@ describe("thread row anatomy", () => {
         (row) => row.getBoundingClientRect().height,
       );
       expect(heights).toHaveLength(rows.length);
-      for (const height of heights) expect(height).toBeCloseTo(60, 0);
+      for (const height of heights) expect(height).toBeCloseTo(76, 0);
       for (const row of screen.container.querySelectorAll<HTMLElement>("[data-thread-key]")) {
         const project = row.querySelector("[data-thread-project-line]")!.getBoundingClientRect();
         const title = row.querySelector("[data-thread-title-line]")!.getBoundingClientRect();

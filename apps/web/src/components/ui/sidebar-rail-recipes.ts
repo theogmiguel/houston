@@ -90,6 +90,6 @@ export const RAIL_SHORTCUT_ICON_REST_CLS = "text-secondary-label";
 export const SIDEBAR_ROW_SURFACE_CLS = {
   selected: "bg-(--row-current)",
   searchHighlight: "bg-(--sidebar-row-active)",
-  active: "bg-sidebar-row-selected",
+  active: "bg-(--raised) shadow-[var(--shadow-1)]",
   rest: "hover:bg-(--sidebar-row-hover)",
 } as const;

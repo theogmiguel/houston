@@ -143,7 +143,6 @@ import {
   SIDEBAR_GROUP_CHEVRON_EXPANDED_CLS,
   SIDEBAR_GROUP_COUNT_CLS,
   SIDEBAR_GROUP_EMPTY_CLS,
-  SIDEBAR_GROUP_HEADING_ACTIVE_CLS,
   SIDEBAR_GROUP_HEADING_CLS,
   SIDEBAR_GROUP_HEADING_DROP_CLS,
   SIDEBAR_GROUP_HEADING_ROW_CLS,
@@ -157,7 +156,7 @@ import {
   SIDEBAR_SECTION_ACTION_CLS,
   SidebarOptionsMenu,
   SidebarSectionHeaderRow,
-  sidebarGroupGuideCls,
+  SIDEBAR_GROUP_THREADS_CLS,
   sidebarGroupNameCls,
   type SidebarMenuOptions,
 } from "../ui/sidebar-sections";
@@ -1643,17 +1642,6 @@ export function SidebarWorkspaceGroup({
         data-reorder-side={reorderTarget ?? undefined}
         className={cn(
           SIDEBAR_GROUP_HEADING_ROW_CLS,
-          !renaming &&
-            open &&
-            threads.length > 0 &&
-            revealedThread === undefined &&
-            (collapsed ||
-              !threads.some(
-                (thread) =>
-                  scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)) ===
-                  focusedThreadKey,
-              )) &&
-            SIDEBAR_GROUP_HEADING_ACTIVE_CLS,
           !renaming && (isDropTarget || reorderTarget !== null) && SIDEBAR_GROUP_HEADING_DROP_CLS,
         )}
         onPointerDown={(event) => {
@@ -1786,7 +1774,7 @@ export function SidebarWorkspaceGroup({
       </div>
       <AnimatedHeight>
         {threads.length === 0 && !collapsed ? (
-          <div data-workspace-empty="" className={cn(sidebarGroupGuideCls(open), "py-1")}>
+          <div data-workspace-empty="" className={cn(SIDEBAR_GROUP_THREADS_CLS, "py-1")}>
             <div className="flex items-center gap-2 px-2 text-xs text-secondary-label">
               <span className="min-w-0 flex-1 truncate">No threads yet</span>
               <button type="button" onClick={createThread} className={SIDEBAR_EMPTY_ACTION_CLS}>
@@ -1795,7 +1783,7 @@ export function SidebarWorkspaceGroup({
             </div>
           </div>
         ) : shownThreads.length === 0 ? null : (
-          <div data-workspace-guide="" className={sidebarGroupGuideCls(open)}>
+          <div data-workspace-guide="" className={SIDEBAR_GROUP_THREADS_CLS}>
             {shownThreads.map((thread) => {
               const key = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
               return (

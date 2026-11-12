@@ -382,6 +382,21 @@ describe("ThreadSidebar workspaces", () => {
       (element) => element.textContent?.startsWith(name),
     )!;
 
+  // The row's hover actions overlay its trailing edge, so a click at the centre of a narrow rail
+  // lands on them; the heading's context menu is opened from its leading edge instead.
+  const openHeadingMenu = (heading: HTMLElement) => {
+    const box = heading.getBoundingClientRect();
+    heading.dispatchEvent(
+      new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        button: 2,
+        clientX: box.left + 8,
+        clientY: box.top + box.height / 2,
+      }),
+    );
+  };
+
   it("deletes a workspace after the confirmation", async () => {
     using _seed = seed(
       [
@@ -393,7 +408,7 @@ describe("ThreadSidebar workspaces", () => {
     await using screen = await render(<RailHarness />);
     await vi.waitFor(() => expect(groupNames(screen.container)).toEqual(["Keep", "Drop"]));
 
-    await userEvent.click(headingButton(screen.container, "Drop"), { button: "right" });
+    openHeadingMenu(headingButton(screen.container, "Drop"));
     await userEvent.click(page.getByRole("menuitem", { name: /Delete workspace/ }).element());
 
     await vi.waitFor(() => expect(groupNames(screen.container)).toEqual(["Keep"]));
@@ -405,7 +420,7 @@ describe("ThreadSidebar workspaces", () => {
     await using screen = await render(<RailHarness />);
     await vi.waitFor(() => expect(groupNames(screen.container)).toEqual(["Keep"]));
 
-    await userEvent.click(headingButton(screen.container, "Keep"), { button: "right" });
+    openHeadingMenu(headingButton(screen.container, "Keep"));
     await userEvent.click(page.getByRole("menuitem", { name: /Delete workspace/ }).element());
 
     expect(add).toHaveBeenCalledWith(
@@ -441,11 +456,10 @@ describe("ThreadSidebar workspaces", () => {
     );
     await using screen = await render(<RailHarness />);
     await vi.waitFor(() => expect(groupNames(screen.container)).toEqual(["One", "Two"]));
-    await userEvent.click(
+    openHeadingMenu(
       [...screen.container.querySelectorAll<HTMLElement>("[data-workspace-heading] button")].find(
         (element) => element.textContent?.startsWith("Two"),
       )!,
-      { button: "right" },
     );
     await userEvent.click(page.getByRole("menuitem", { name: "Move workspace up" }).element());
     await vi.waitFor(() => expect(groupNames(screen.container)).toEqual(["Two", "One"]));

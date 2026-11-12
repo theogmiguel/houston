@@ -401,7 +401,7 @@
 29 apps/web/src/components/sidebar/SidebarUpdateCapsule.tsx
 21 apps/web/src/components/sidebar/SidebarUpdatePill.tsx
 39 apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.tsx
-31 apps/web/src/components/sidebar/ThreadSidebar.tsx
+29 apps/web/src/components/sidebar/ThreadSidebar.tsx
 31 apps/web/src/components/sidebar/UpdateEverythingDialog.tsx
 1 apps/web/src/components/sidebar/updateEverythingRun.tsx
 9 apps/web/src/components/SlowRpcRequestToastCoordinator.tsx

@@ -210,85 +210,19 @@ describe("sidebar tree: workspace row", () => {
 });
 
 describe("sidebar tree: guides and alignment", () => {
-  it("draws the workspace guide under the chevron", async () => {
+  it("draws no guide line, and insets a workspace's cards 12px from the rail", async () => {
     await page.viewport(1440, 900);
     await using screen = await render(
       tree([{ value: section("w1", [thread("a")]), overrides: { open: true } }]),
     );
-    const chevron = workspaceRow(screen.container, "w1").querySelector<HTMLElement>(
-      "[data-workspace-chevron-box]",
-    )!;
     const cards = cardsOf(screen.container, "w1")!;
-    expect(getComputedStyle(cards).borderLeftWidth).toBe("1px");
-    const chevronCentre = rect(chevron).left + rect(chevron).width / 2;
-    expect(Math.abs(rect(cards).left + 0.5 - chevronCentre)).toBeLessThanOrEqual(1);
+    expect(getComputedStyle(cards).borderLeftWidth).toBe("0px");
+    const card = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
+    const rail = screen.container.querySelector<HTMLElement>("[data-workspace-key]")!;
+    expect(rect(card).left - rect(rail).left).toBeCloseTo(4, 0);
   });
 
-  it("draws the guide in the border tone even when a theme's sidebar border is as dark as the rail", async () => {
-    await page.viewport(1440, 900);
-    const root = document.documentElement;
-    root.style.setProperty("--sidebar-border", "rgb(15, 15, 17)");
-    try {
-      await using screen = await render(
-        tree([
-          { value: section("w1", [thread("a")]), overrides: { open: true } },
-          { value: section("w2", [thread("b")]) },
-        ]),
-      );
-      const probe = document.createElement("div");
-      probe.className = "border border-border";
-      screen.container.append(probe);
-      const border = getComputedStyle(probe).borderTopColor;
-      expect(getComputedStyle(cardsOf(screen.container, "w2")!).borderLeftColor).toBe(border);
-    } finally {
-      root.style.removeProperty("--sidebar-border");
-    }
-  });
-
-  it("draws the guide in a light ink inside the dark sidebar, so it shows against the rail", async () => {
-    await page.viewport(1440, 900);
-    const root = document.documentElement;
-    root.classList.add("dark");
-    try {
-      await using screen = await render(
-        <div data-app-sidebar="">
-          {tree([
-            { value: section("w1", [thread("a")]), overrides: { open: true } },
-            { value: section("w2", [thread("b")]) },
-          ])}
-        </div>,
-      );
-      // Normalised sRGB channels of a computed colour, whatever notation the engine prints.
-      const channels = (color: string) => {
-        const [r, g, b] = (color.match(/[\d.]+/g) ?? []).map(Number);
-        const scale = color.startsWith("color(") ? 1 : 255;
-        return [r! / scale, g! / scale, b! / scale];
-      };
-      const [r, g, b] = channels(
-        getComputedStyle(cardsOf(screen.container, "w2")!).borderLeftColor,
-      );
-      expect((r! + g! + b!) / 3, "guide ink").toBeGreaterThan(0.5);
-    } finally {
-      root.classList.remove("dark");
-    }
-  });
-
-  it("tones the on-screen workspace's guide stronger than the others, with no colour transition", async () => {
-    await page.viewport(1440, 900);
-    await using screen = await render(
-      tree([
-        { value: section("w1", [thread("a")]), overrides: { open: true } },
-        { value: section("w2", [thread("b")]) },
-      ]),
-    );
-    const on = getComputedStyle(cardsOf(screen.container, "w1")!);
-    const off = getComputedStyle(cardsOf(screen.container, "w2")!);
-    expect(on.borderLeftColor).not.toBe(off.borderLeftColor);
-    expect(on.transitionProperty).not.toContain("color");
-    expect(off.transitionProperty).not.toContain("color");
-  });
-
-  it("puts workspace names and thread titles on one left edge, with the card spanning the row's width", async () => {
+  it("puts the workspace chevron and thread titles on one left edge, with the card spanning the heading row's width", async () => {
     await page.viewport(1440, 900);
     for (const width of rails) {
       await using screen = await render(
@@ -296,9 +230,10 @@ describe("sidebar tree: guides and alignment", () => {
       );
       const card = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
       const row = workspaceRow(screen.container, "w1");
-      const name = row.querySelector<HTMLElement>("[data-workspace-name]")!;
+      const chevron = row.querySelector<HTMLElement>("[data-workspace-chevron-box]")!;
       const title = card.querySelector<HTMLElement>("[data-card-open]")!;
-      expect(rect(name).left).toBeCloseTo(rect(title).left, 0);
+      expect(rect(chevron).left).toBeCloseTo(rect(title).left, 0);
+      expect(rect(card).left).toBeCloseTo(rect(row).left, 0);
       expect(rect(card).right).toBeCloseTo(rect(row).right, 0);
     }
   });

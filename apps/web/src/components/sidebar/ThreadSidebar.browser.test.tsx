@@ -406,7 +406,7 @@ describe("ThreadCard layout", () => {
     );
     const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
 
-    expect(row.getBoundingClientRect().height).toBe(60);
+    expect(row.getBoundingClientRect().height).toBe(76);
     expect(row.querySelector("[data-thread-extras-line]")).toBeNull();
 
     const projectLine = row.querySelector<HTMLElement>("[data-thread-project-line]")!;
@@ -449,7 +449,7 @@ describe("ThreadCard layout", () => {
   it("is three lines tall when the thread has nothing to report, and states no status", async () => {
     await using screen = await render(card(thread({ tags: [], branch: "main" } as never)));
     const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
-    expect(row.getBoundingClientRect().height).toBe(60);
+    expect(row.getBoundingClientRect().height).toBe(76);
     const meta = row.querySelector<HTMLElement>("[data-thread-meta]")!;
     expect(getComputedStyle(meta).display).toBe("flex");
     expect(row.querySelector("[data-thread-status]")).toBeNull();
@@ -504,10 +504,11 @@ describe("ThreadCard layout", () => {
     }
   });
 
-  it("starts a thread row at the rail's own inset", async () => {
+  it("keeps a thread's text 12px inside its card", async () => {
     await using screen = await render(card(thread()));
     const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
-    expect(getComputedStyle(row).paddingLeft).toBe("8px");
+    expect(getComputedStyle(row).paddingLeft).toBe("12px");
+    expect(getComputedStyle(row).paddingRight).toBe("12px");
   });
 
   it("starts a flat row and a workspace row at the same inset", async () => {
@@ -529,7 +530,7 @@ describe("ThreadCard selected state", () => {
     const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
 
     expect(row.hasAttribute("data-thread-current")).toBe(true);
-    expect(getComputedStyle(row).backgroundColor).toBe(tokenBackground("--sidebar-row-selected"));
+    expect(getComputedStyle(row).backgroundColor).toBe(tokenBackground("--raised"));
     const title = screen.getByText("Split drawer state from the thread store").element();
     expect(getComputedStyle(title).fontWeight).toBe("500");
     expect(row.querySelector("[aria-current]")).not.toBeNull();
@@ -542,7 +543,7 @@ describe("ThreadCard selected state", () => {
     const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
 
     expect(row.hasAttribute("data-thread-current")).toBe(true);
-    expect(getComputedStyle(row).backgroundColor).toBe(tokenBackground("--sidebar-row-selected"));
+    expect(getComputedStyle(row).backgroundColor).toBe(tokenBackground("--raised"));
   });
 
   it("leaves a thread that is not open without a background", async () => {
@@ -558,7 +559,7 @@ describe("ThreadCard selected state", () => {
     const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
 
     expect(row.hasAttribute("data-thread-current")).toBe(true);
-    expect(getComputedStyle(row).backgroundColor).toBe(tokenBackground("--sidebar-row-selected"));
+    expect(getComputedStyle(row).backgroundColor).toBe(tokenBackground("--raised"));
   });
 });
 
@@ -587,27 +588,26 @@ function contrastRatio(a: [number, number, number], b: [number, number, number])
 }
 
 describe("ThreadCard selected row tint", () => {
-  it("washes the open row with the accent in light and keeps the title at 3:1", async () => {
+  it("lifts the open row onto the raised surface in light and keeps the title at 3:1", async () => {
     document.documentElement.classList.remove("dark");
     await using screen = await render(card(thread()), { router: "/env-1/thread-a" });
     const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
     const rail = tokenBackground("--rail");
     const fill = flatten(getComputedStyle(row).backgroundColor, rail);
-    const neutral = flatten(tokenBackground("--sel"), rail);
-    // A blue wash lifts the blue channel above the red one; the neutral overlay keeps them level.
-    expect(fill[2] - fill[0]).toBeGreaterThan(neutral[2] - neutral[0] + 8);
+    expect(getComputedStyle(row).backgroundColor).toBe(tokenBackground("--raised"));
+    expect(fill).not.toEqual(flatten(rail, rail));
     const title = screen.getByText("Split drawer state from the thread store").element();
     expect(
       contrastRatio(flatten(getComputedStyle(title).color, "#fff"), fill),
     ).toBeGreaterThanOrEqual(3);
   });
 
-  it("keeps the neutral overlay in dark and the title at 3:1", async () => {
+  it("lifts the open row onto the raised surface in dark and keeps the title at 3:1", async () => {
     document.documentElement.classList.add("dark");
     using _dark = { [Symbol.dispose]: () => document.documentElement.classList.remove("dark") };
     await using screen = await render(card(thread()), { router: "/env-1/thread-a" });
     const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
-    expect(getComputedStyle(row).backgroundColor).toBe(tokenBackground("--sidebar-row-selected"));
+    expect(getComputedStyle(row).backgroundColor).toBe(tokenBackground("--raised"));
     const rail = tokenBackground("--rail");
     const fill = flatten(getComputedStyle(row).backgroundColor, rail);
     const title = screen.getByText("Split drawer state from the thread store").element();
@@ -787,11 +787,11 @@ describe("ThreadCard status marks", () => {
     expect(glyphs.size).toBe(cases.length);
   });
 
-  it("fits three lines in 60px with a 16px meta line holding 14px text", async () => {
+  it("fits three lines in a 76px card with a 16px meta line holding 14px text", async () => {
     await using screen = await render(card(thread({ tags: [] } as never)));
     const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
     const height = row.getBoundingClientRect().height;
-    expect(height).toBe(60);
+    expect(height).toBe(76);
     const meta = row.querySelector<HTMLElement>("[data-thread-meta]")!;
     expect(getComputedStyle(meta).lineHeight).toBe("14px");
   });
@@ -876,7 +876,7 @@ describe("ThreadCard layout and contrast", () => {
     const row = screen.container.querySelector("[data-thread-key]") as HTMLElement;
     const title = titleOf(screen);
 
-    expect(row.className).toContain("bg-sidebar-row-selected");
+    expect(row.className).toContain("bg-(--raised)");
     expect(title.className).toContain("text-foreground");
     expect(getComputedStyle(title).color).toBe(classColor("text-foreground"));
   });
