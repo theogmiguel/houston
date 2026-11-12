@@ -584,6 +584,19 @@ it("opens the right panel as a tab of the layout at 1024px, with no phone bar", 
   expect(document.querySelector("[data-phone-tabs-trigger]")).toBeNull();
 });
 
+it("opens the details card from a layout pane's header toggle at 1024px", async () => {
+  const { screen } = await openThread(1024);
+  await using _screen = screen;
+
+  const card = () => document.querySelector("[data-thread-details-card]");
+  const toggle = screen.getByRole("button", { name: "Toggle thread details panel" });
+  expect(card()).toBeNull();
+  expect(toggle.element().getAttribute("aria-pressed")).toBe("false");
+  await userEvent.click(toggle);
+  await vi.waitFor(() => expect(card()).not.toBeNull(), { timeout: 5_000 });
+  expect(toggle.element().getAttribute("aria-pressed")).toBe("true");
+});
+
 it.each([390, 320])(
   "names the surface's mark and title on the thread bar, without desktop tab chrome at %ipx",
   async (width) => {

@@ -226,8 +226,9 @@ const EMPTY_THREAD_STATE: ThreadRightPanelState = {
   surfaces: [],
 };
 
+// Closed until asked for: several panes share the window, and a card in each would crowd them.
 const DEFAULT_THREAD_PANEL_VISIBILITY: ThreadPanelVisibility = {
-  inlineOpen: true,
+  inlineOpen: false,
   popoverOpen: false,
 };
 
@@ -638,8 +639,8 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
             persistedState.threadPanelVisibilityByThreadKey as Record<string, unknown>,
           ).flatMap(([threadKey, value]) => {
             if (!value || typeof value !== "object" || !("inlineOpen" in value)) return [];
-            return value.inlineOpen === false
-              ? [[threadKey, { inlineOpen: false, popoverOpen: false }]]
+            return value.inlineOpen === true
+              ? [[threadKey, { inlineOpen: true, popoverOpen: false }]]
               : [];
           }),
         )
@@ -1280,7 +1281,7 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
         threadPanelVisibilityByThreadKey: Object.fromEntries(
           Object.entries(state.threadPanelVisibilityByThreadKey).flatMap(
             ([threadKey, visibility]) =>
-              visibility.inlineOpen ? [] : [[threadKey, { inlineOpen: false, popoverOpen: false }]],
+              visibility.inlineOpen ? [[threadKey, { inlineOpen: true, popoverOpen: false }]] : [],
           ),
         ),
       }),
@@ -1335,13 +1336,10 @@ export function selectThreadPanelOpen(
   byThreadKey: Record<string, ThreadPanelVisibility>,
   ref: ScopedThreadRef | null | undefined,
   presentation: ThreadPanelPresentation,
-  defaultOpen = true,
+  defaultOpen = DEFAULT_THREAD_PANEL_VISIBILITY.inlineOpen,
 ): boolean {
-  const visibility =
-    defaultOpen || ref == null
-      ? selectThreadPanelVisibility(byThreadKey, ref)
-      : byThreadKey[scopedThreadKey(ref)];
-  if (visibility === undefined) return false;
+  const visibility = ref == null ? undefined : byThreadKey[scopedThreadKey(ref)];
+  if (visibility === undefined) return presentation === "inline" && defaultOpen;
   return presentation === "inline" ? visibility.inlineOpen : visibility.popoverOpen;
 }
 
