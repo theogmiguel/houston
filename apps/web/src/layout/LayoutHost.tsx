@@ -1,13 +1,9 @@
-import type { ScopedThreadRef } from "@houston-app/contracts";
-import { scopedThreadKey } from "@houston-app/client-runtime/environment";
 import { useRouter } from "@tanstack/react-router";
 
 import { requestReopenClosedView } from "../components/ReopenClosedViewShortcut";
 import { readLocalApi } from "../localApi";
-import { openThreadInLayout } from "../threads/openThreadInLayout";
-import type { ThreadOpenIntent } from "../threads/threadOpenContext";
 import type { ThreadRouteTarget } from "../threadRoutes";
-import { chatTargetThreadRef, threadKeysOfTabs } from "./layoutThreadRef";
+import { threadKeysOfTabs } from "./layoutThreadRef";
 import { ClosedTabRestoreButton } from "./ClosedTabRestore";
 import { LayoutHints } from "./LayoutHint";
 import { LayoutOnboarding } from "./LayoutOnboarding";
@@ -15,14 +11,10 @@ import { LayoutOverview } from "./LayoutOverview";
 import { LayoutShortcutsOverlay } from "./LayoutShortcutsOverlay";
 import { useThreeFingerSwipe } from "./useThreeFingerSwipe";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
-import { LayoutChatGate } from "./LayoutChatGate";
-import { LayoutChatTab } from "./LayoutChatTab";
 import { LayoutLauncher } from "./LayoutLauncher";
 import { openLayoutNewTab } from "./layoutActions";
 import { layoutChatRoute } from "./layoutChatRoute";
-import { selectFocusedTab, type LayoutTab, type LayoutWorkspace } from "./layoutModel";
-import { LayoutPaneContext } from "./layoutPaneContext";
-import { LayoutPageTab } from "./LayoutPageTab";
+import { type LayoutTab, type LayoutWorkspace } from "./layoutModel";
 import { LayoutSurfaceServices } from "./LayoutSurfaceServices";
 import { useLayoutStore } from "./layoutStore";
 import {
@@ -30,11 +22,11 @@ import {
   isLayoutTabMenuId,
   runLayoutTabMenuAction,
 } from "./layoutTabMenu";
-import { LayoutSurfaceTab } from "./LayoutSurfaceTab";
 import { useLayoutRouteSync } from "./useLayoutRouteSync";
 import { useLayoutTabLabel } from "./useLayoutTabLabel";
 import { useLayoutSurfaceSync } from "./surfaceSync";
-import { LayoutWorkspaceStrip, type LayoutTabRenderContext } from "./WorkspaceStrip";
+import { LayoutWorkspaceStrip } from "./WorkspaceStrip";
+import { useLayoutTabRenderer } from "./useLayoutTabRenderer";
 
 interface LayoutHostProps {
   /** The thread the URL names, or null on the index and on page routes. */
@@ -61,61 +53,7 @@ function LoadedLayoutHost({ threadTarget, atIndex, active, narrow }: LayoutHostP
   useLayoutSurfaceSync();
   useThreeFingerSwipe(active);
   const tabLabel = useLayoutTabLabel();
-  const focusedContent = selectFocusedTab(layout)?.content ?? null;
-  const focusedSurfaceThread = focusedContent?.kind === "surface" ? focusedContent.threadRef : null;
-  const focusedSurfaceKey =
-    focusedSurfaceThread === null ? null : scopedThreadKey(focusedSurfaceThread);
-
-  const openThread = (
-    ref: ScopedThreadRef,
-    intent: ThreadOpenIntent | undefined,
-    from: ScopedThreadRef | null,
-  ) =>
-    void openThreadInLayout(
-      {
-        navigate: (options) => router.navigate(options),
-        pathname: () => router.state.location.pathname,
-      },
-      ref,
-      { intent, from },
-    );
-
-  const renderTab = (tab: LayoutTab, context: LayoutTabRenderContext) => {
-    const content = tab.content;
-    const body = (() => {
-      switch (content.kind) {
-        case "chat":
-          return (
-            <LayoutChatGate target={content.target}>
-              <LayoutChatTab
-                tab={tab}
-                target={content.target}
-                split={context.split}
-                onOpenThread={openThread}
-              />
-            </LayoutChatGate>
-          );
-        case "surface":
-          return <LayoutSurfaceTab content={content} />;
-        case "launcher":
-          return <LayoutLauncher tabId={tab.id} context={content.context} />;
-        default:
-          return <LayoutPageTab content={content} />;
-      }
-    })();
-    const thread = content.kind === "chat" ? chatTargetThreadRef(content.target) : null;
-    const related =
-      thread !== null &&
-      focusedSurfaceKey !== null &&
-      scopedThreadKey(thread) === focusedSurfaceKey;
-    // The strip reports `related: false`; a chat whose surface has focus overrides it here. The
-    // provider is always present so that gaining or losing `related` never remounts the tab.
-    return (
-      <LayoutPaneContext value={related ? { ...context, related: true } : context}>
-        {body}
-      </LayoutPaneContext>
-    );
-  };
+  const renderTab = useLayoutTabRenderer(layout);
 
   const onAddTab = (paneId: string) => {
     useLayoutStore.getState().focusPane(paneId);
