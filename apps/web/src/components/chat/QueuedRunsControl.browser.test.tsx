@@ -203,3 +203,31 @@ it("stays inside the timeline scroller instead of growing the chat column", asyn
   const column = screen.getByTestId("column").element();
   expect(column.scrollHeight).toBe(column.clientHeight);
 });
+
+it("draws each queued message as one ellipsized line with its actions at the row's end", async () => {
+  setup();
+  const long =
+    "then run the whole suite and report back with a line long enough to truncate ".repeat(4);
+  state.projection = { projection: { messages: [] } };
+  state.workflow = {
+    activeRun: { id: "run:active" },
+    canPromoteToSteer: true,
+    queuedRuns: [
+      { run: { id: "run:one", userMessageId: "message:one" }, text: long, attachments: [] },
+    ],
+  };
+  await using screen = await renderQueue();
+  const row = screen.getByRole("listitem").element();
+  const text = [...row.querySelectorAll<HTMLElement>("span")].find((node) =>
+    node.textContent?.startsWith("then run the whole suite"),
+  )!;
+  expect(getComputedStyle(text).textOverflow).toBe("ellipsis");
+  expect(text.scrollWidth).toBeGreaterThan(text.clientWidth);
+  expect(row.getBoundingClientRect().height).toBeLessThanOrEqual(36);
+  const send = screen.getByRole("button", { name: "Send now" }).element();
+  const remove = screen.getByRole("button", { name: "Remove queued message" }).element();
+  expect(send.getBoundingClientRect().left).toBeGreaterThan(text.getBoundingClientRect().left);
+  expect(remove.getBoundingClientRect().right).toBeLessThanOrEqual(
+    row.getBoundingClientRect().right,
+  );
+});

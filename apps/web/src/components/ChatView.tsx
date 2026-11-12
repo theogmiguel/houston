@@ -3293,6 +3293,7 @@ export default function ChatView(props: ChatViewProps) {
           onCancelEdit={queuedRunEdit.cancelEdit}
           timestampFormat={timestampFormat}
           onOpenThread={onOpenRelatedThreadStable}
+          detached={activePendingApproval !== null}
         />
       </>
     ) : null;
@@ -3362,10 +3363,7 @@ export default function ChatView(props: ChatViewProps) {
   // The end of the timeline holds the thread's present and next turns: what it is doing now,
   // its lifecycle status, then your queued messages.
   const timelineFooter =
-    pendingHandoff === null &&
-    !hasThreadNow &&
-    threadStatusLine === null &&
-    !hasQueuedTurns ? null : (
+    pendingHandoff === null && !hasThreadNow && threadStatusLine === null ? null : (
       <>
         {pendingHandoff === null ? null : (
           <div className="chat-content-lane">
@@ -3385,7 +3383,6 @@ export default function ChatView(props: ChatViewProps) {
           goal={goalNow}
         />
         {threadStatusLine}
-        {hasQueuedTurns ? queuedRunsControl : null}
       </>
     );
 
@@ -3833,6 +3830,7 @@ export default function ChatView(props: ChatViewProps) {
                     <Swap swapKey={activePendingApproval?.requestId ?? "none"}>
                       {composerApprovalCard}
                     </Swap>
+                    {activePendingApproval !== null && hasQueuedTurns ? queuedRunsControl : null}
                     {!isDraftHeroState && environmentComposerBanners.length > 0 ? (
                       <div className="mb-1">
                         <ComposerBannerStack items={environmentComposerBanners} detached />
@@ -3894,6 +3892,11 @@ export default function ChatView(props: ChatViewProps) {
                               threadStatusPill={activeThreadStatusPill}
                               paneDensity={paneDensity}
                               changedFiles={changedFilesBar}
+                              queueTray={
+                                activePendingApproval === null && hasQueuedTurns
+                                  ? queuedRunsControl
+                                  : null
+                              }
                               {...(showComposerContextStrip
                                 ? {
                                     contextControls: (

@@ -69,6 +69,7 @@ import {
   useState,
   cloneElement,
   type ReactElement,
+  type ReactNode,
 } from "react";
 import { flushSync } from "react-dom";
 import {
@@ -430,6 +431,8 @@ export interface ChatComposerProps {
     ChangedFilesBarProps,
     "summary" | "onReview" | "onUndo" | "onKeep" | "disabled"
   > | null;
+  /** The queued messages, joined to the top of the card. */
+  queueTray?: ReactNode;
   contextControls?:
     | ReactElement<{
         forceNarrow?: boolean;
@@ -610,6 +613,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     forceExpandedOnMobile,
     paneDensity,
     contextControls,
+    queueTray = null,
     changedFiles = null,
     activeTurnStartedAt,
     projectSelectionRequired,
@@ -3764,6 +3768,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             </div>
           </div>
         ) : null}
+        {queueTray}
         <ComposerSurface.Main
           ref={composerMainSurfaceRef}
           data-inline-resting-controls="true"

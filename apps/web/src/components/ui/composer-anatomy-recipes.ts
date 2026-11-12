@@ -46,3 +46,17 @@ export const CHANGED_FILES_ROW_ICON_CLS = "size-3 shrink-0 text-muted-foreground
 export const CHANGED_FILES_ROW_DIR_CLS = "min-w-0 truncate text-muted-foreground";
 export const CHANGED_FILES_ROW_NAME_CLS = "shrink-0 text-foreground";
 export const CHANGED_FILES_ROW_STAT_CLS = "ms-auto shrink-0 ps-2";
+
+/**
+ * The queued messages joined to the top of the composer card: one hairline-edged tray of one-line
+ * rows. The card below squares its top corners (`ComposerSurface.Main`) so the two read as one.
+ */
+export const QUEUE_TRAY_CLS =
+  "relative z-10 flex w-full min-w-0 flex-col overflow-hidden rounded-t-xl border border-b-0 border-(--card-edge) bg-(--composer) text-xs";
+/** The same tray standing alone, above a composer that an approval card has replaced. */
+export const QUEUE_TRAY_DETACHED_CLS =
+  "relative z-10 mb-1 flex w-full min-w-0 flex-col overflow-hidden rounded-xl border border-(--card-edge) bg-(--composer) text-xs";
+export const QUEUE_ROW_CLS =
+  "group/queued flex min-w-0 flex-col border-t border-(--border) first:border-t-0";
+export const QUEUE_MORE_CLS =
+  "flex min-h-7 items-center justify-end border-t border-(--border) px-3 pointer-coarse:[&_[data-slot=inline-button]]:relative pointer-coarse:[&_[data-slot=inline-button]]:after:absolute pointer-coarse:[&_[data-slot=inline-button]]:after:-inset-x-1.5 pointer-coarse:[&_[data-slot=inline-button]]:after:-inset-y-3.5";
