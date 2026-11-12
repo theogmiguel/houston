@@ -250,3 +250,19 @@ Constraints: nothing on a phone reads the grid store or navigates to `/grid/`; a
 191. **Removed:** `GridThreadCell`'s phone branch; `GridRoute` (`/grid/$gridId` is now only a redirect to the workspace in the layout, on every viewport). `ThreadNotificationCoordinator` and the palette's thread pick always use `openThreadInLayout`. `overscroll-y-none` was left off the host's `SidebarInset` (ui-boundary guard); the body is `overflow-hidden` and the scrollers below it own their overscroll.
 192. **Open desktop issue, not fixed.** In a layout pane, "Toggle thread details panel" does not open `[data-thread-details-card]`: the store shows `inlineOpen: false` after the click, as if it toggled twice. The 1024px `PhoneDetails` test no longer exercises that toggle rather than hide it.
 193. **Not seen in a running app.** Verification is the browser suites only.
+
+## Deviations: grid removal
+
+200. **Steps 2 and 3 are one commit.** The server handlers implement the contract's `houston.grids.*` RPCs, so removing the contract and the server separately would leave a non-typechecking commit.
+201. **Migration 20 `RemoveGrids`** drops `houston_grids` and `idx_houston_grids_project` with `IF EXISTS`, so it is a no-op when the table is absent. Tests cover a database that never held grids, grids carried through 19 then 20, a database that already ran 19 with an edited workspace, a rerun with the table absent, and a file database. Migration 18/19 tests re-create the table through `restoreGrids`, because the full track now removes it.
+202. **Migration 19 is lossy by design.** A grid row that cannot be read is skipped, and fields the layout has no home for are not carried. Migration 20 deletes those rows with the table.
+203. **`workspaceKeyOf` became `projectKeyOf`** in `packages/shared/src/projectKey.ts`; it keys a project, not a workspace.
+204. **Kept names:** the persisted settings keys and the `"grid"` setting value, the `houston:sidebar:collapsed-grids` storage key (value unchanged behind `COLLAPSED_WORKSPACES_STORAGE_KEY`), `HoustonGridLaunchTargetAlias`, `HoustonGridPlacementAlias`, and the `/grid/$gridId` redirect.
+205. **Removed shortcuts and palette entries:** every grid-only keybinding and command-palette entry; `docs/user/keybindings.md` follows.
+206. **Tests ported to the layout:** composer file drop in a narrow pane, two-row composer toolbar, and question/approval card toolbars (`LayoutChatPane.browser.test.tsx`), and the hover-only assistant footer in a pane.
+207. **Tests deleted as grid-only:** GridSideChat, the GridSubagentOpen swap, GridRightPanel, GridHost, GridThreadCell, and the grid store, sync and merge tests.
+208. **Finding:** a 236px-wide composer overlaps its toolbar. The default column width (420px) keeps panes clear of this, so it was left unchanged.
+209. **Pre-existing failures, identical at baseline:** the ChatView, Composer* and NoActiveThreadState browser tests; `threadSnoozed` and two date-dependent client-runtime tests; `mcpApp.test.ts` in `packages/shared` (times out under load); lint-ratchet errors in three server files not touched here.
+210. **`docs/internals/renderer.md`:** only the Layout section and a few lines were rewritten. Other sections (window background, mascot, `tr-*` keys, shell gutters) describe an unrelated stale design and were left alone.
+211. **Deleted `motion/frameProbe.ts`** (no importers). ChatView's `embedded` prop is true for layout pane chats, so proactive panels stay off in panes.
+212. **Not seen in a running app.** Nothing was run against a real server or database.
