@@ -1142,7 +1142,7 @@ it("keeps the desktop layout at 1024px", async () => {
     await using _screen = screen;
     await waitForText("Project grouping");
     const nav = document.querySelector<HTMLElement>('[aria-label="Settings sections"]');
-    expect(nav?.closest("nav")?.getBoundingClientRect().width).toBe(264);
+    expect(nav?.closest("nav")?.getBoundingClientRect().width).toBe(240);
     expect(page.getByRole("button", { name: "Back to settings sections" }).elements()).toHaveLength(
       0,
     );
