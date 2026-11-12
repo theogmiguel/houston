@@ -15,9 +15,9 @@ worktree controls stay visible below the composer in active threads.
 
 **Environment identification** shows a Dev or Nightly pill beside the name in the sidebar
 header, on by default. Release builds show no pill. **Chat width** sets the width of the message
-timeline: Comfortable, Wide or Full. Grid cells keep their own widths.
+timeline: Comfortable, Wide or Full.
 
-**Animations** is on by default. Turning it off stops menu, dialog, list and grid motion
+**Animations** is on by default. Turning it off stops menu, dialog, list and layout motion
 across the application, as the system's reduce-motion setting also does. Panels and drawers
 open and close without animation either way.
 
@@ -49,11 +49,11 @@ not download fonts.
   message when the provider cannot steer.
 
 The composer's send menu also offers **Queue message**, **Steer message** and **Interrupt
-and send** while a turn runs. See [Threads and grids](threads-and-grids.md#the-composer).
+and send** while a turn runs. See [Threads and workspaces](threads-and-workspaces.md#the-composer).
 
 ## Diffs
 
 **Settings ▸ Diffs & pull requests** sets the diff layout, whether whitespace-only changes
 are hidden by default, whether files start expanded or collapsed, and the diff colors.
 **Open pull requests and changes panels proactively** opens the matching panel when an agent
-finishes, except in grid cells and narrow windows.
+finishes, except in layout panes and narrow windows.

@@ -20,12 +20,12 @@ A thread can show:
 - **Limited** — the provider reported a usage limit; the detail names the limit and, when
   the provider reports one, the reset time.
 
-The same marks appear in the sidebar, the grid rail and the command palette: a pulse for
+The same marks appear in the sidebar and the command palette: a pulse for
 running, a check for ready, an amber question for needs-you, a warning for failed, a clock
 for back.
 
 A child thread that is delegated work reports to its parent as well as appearing in its own
-grid. Its question or approval request shows in the parent's pending approvals; the parent
+tab. Its question or approval request shows in the parent's pending approvals; the parent
 answers there.
 
 **Settings ▸ Threads** sets whether a hold and a resume follow usage limits: **Hold until

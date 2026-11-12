@@ -13,8 +13,8 @@ the server's orchestration tools.
 
 - **Persistent threads.** Closing the desktop app detaches from the server without stopping
   running agents. Threads and their history survive restarts.
-- **Grids.** Arrange up to six threads side by side; shortcuts, find and actions follow the
-  focused cell.
+- **Workspaces.** Arrange threads and their surfaces in columns, panes and tabs; shortcuts, find
+  and actions follow the focused pane.
 - **Agent orchestration.** An agent can start, message and wait for other threads through
   the server's orchestration tools, and delegate work in managed Git worktrees.
 - **Tasks.** Keep a backlog per project, start tasks in isolated worktrees and review the
@@ -76,7 +76,7 @@ The [documentation index](docs/README.md) explains how to read the docs for an i
 release or the current source.
 
 - [Install Houston and configure providers](docs/user/install.md)
-- [Work with threads and grids](docs/user/threads-and-grids.md)
+- [Work with threads and workspaces](docs/user/threads-and-workspaces.md)
 - [Manage tasks and agent work](docs/user/tasks.md)
 - [Inspect Git changes and pull requests](docs/user/changes.md)
 - [Configure notifications](docs/user/notifications.md)

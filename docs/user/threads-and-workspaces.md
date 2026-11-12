@@ -1,15 +1,15 @@
-# Threads and grids
+# Threads and workspaces
 
 A **project** is a folder Houston runs work in. A **thread** is a structured conversation
 with one agent: a **turn** is one request and its answer, and a **run** is the provider
-session that serves a thread. A **grid** is a named layout of threads in one project.
+session that serves a thread. A **workspace** is a named layout of **columns**, each holding
+**panes**, each holding **tabs**; threads of any project share a workspace.
 
-Closing the window detaches the app from the local server. Threads, runs and grids continue
-on the server, and the next launch reconnects to them.
+Closing the window detaches the app from the local server. Threads, runs and workspaces
+continue on the server, and the next launch reconnects to them.
 
-The server keeps each grid's name, layout, pin and hidden state, so a change an agent makes to a
-grid appears in the open window. The window keeps a local copy for the first paint and for
-grids whose server is not connected; their edits are sent when it connects.
+The server keeps each workspace's name, columns, panes, tabs, pin and hidden state, so a change
+an agent makes to a workspace appears in the open window.
 
 ## Adding a project
 
@@ -25,8 +25,8 @@ and you can still change the destination before cloning.
 The add-project palette, opened from **Add project** at the top of the sidebar or from the
 command palette, lists **Open folder…**, **Clone repository…** and **New project…**,
 followed by the provider repositories Houston can clone from. **New project…** appears when
-the server configures a projects folder. Adding a project creates its **Grid 1** and opens
-it with the composer ready.
+the server configures a projects folder. Adding a project opens a new thread in the focused
+workspace with the composer ready.
 
 **Project settings** in a thread's action menu
 or the command palette renames a project, pins it, archives it and changes its checkouts.
@@ -39,7 +39,7 @@ processes when the thread settles; an agent's own shell command is never attache
 
 ## Creating a thread
 
-Choose **New thread** from a grid's **+**, from the command palette, or press `Ctrl+N`.
+Choose **New thread** from a workspace's **+**, from the command palette, or press `Ctrl+N`.
 Pick the provider and model in the composer, choose permissions, and send the first
 message. A new thread starts in a local checkout or in a new worktree, according to
 **Settings ▸ Threads ▸ New threads**; the composer's workspace control changes it for one
@@ -51,24 +51,39 @@ Opening the model picker checks for newly released models and for the CLI update
 them, at most every five minutes. The check is skipped when provider update checks are turned
 off in **Settings**.
 
-## Grids
+## Workspaces
 
-Each project label offers **New grid** (`+`), and each grid row offers **New thread**
-(`+`). A grid holds up to six threads. The seventh is refused and names the limit; start
-another grid for it.
+The main area shows one workspace at a time: a strip of columns, each a stack of panes, each
+pane a bar of tabs. A tab is a thread's chat, a surface of a thread (changes, files, a file, a
+browser, a terminal, a pull request, a device), a launcher that starts a thread or opens a
+surface, or the **Pull requests** page. A thread's chat has one tab across all workspaces;
+opening a thread that is already open focuses its tab. Settings and Usage open as dialogs
+above the layout.
 
-- **Split** a cell right or down to show another thread beside it. The picker offers only
-  threads that are not shown in another grid.
-- **Move to…** swaps a cell with another thread in the same grid.
-- **Maximize cell** gives one thread the whole grid; **Restore cell** returns the layout.
-- **Close thread** (the cell's ×) closes the thread: it moves to **Closed** and keeps its
-  slot, so reopening it from **Closed** (or **Undo** on the toast) puts it back in the same
-  cell. On a draft cell the × just removes the cell.
-- **Tidy** rearranges the cells: **Balanced grid**, **One row** or **One column**.
-  **Equalize** resets every split to an even share. These are also rebindable commands.
+- **New workspace** (`+` in the sidebar's **Workspaces** header) adds one; the workspace
+  switcher and the sidebar list them all, and at least one always exists.
+- A column and its panes share the strip: **Open a new tab in a new column** and **Open a new
+  tab in a new pane below** split the focused pane, and dragging a tab to a pane's edge does the
+  same. Drag a tab between panes or onto another workspace to move it.
+- Closing a tab closes that view only; the thread keeps its history. **Reopen closed tab**
+  (the button in an empty workspace, or its rebindable shortcut) brings back the most recent
+  one.
+- **Fill the window** gives the focused pane the whole window, and the same command undoes it.
+  **Column width** cycles ⅓, ½, ⅔ and full width; **Center column**, **Pull pane into the left
+  column** and **Push pane out to its own column** rearrange the strip. The workspaces overview
+  zooms out to every workspace.
+- A column stays at least 420px wide. The layout settings in **Settings ▸ Appearance** set what
+  happens when a new pane has no room (shrink the columns, then scroll; always shrink; or always scroll),
+  where new tabs go, and where the terminal and the side pane open for a thread.
+- A workspace holds at most 24 columns, 12 panes per column, 50 tabs per pane and 200 tabs in
+  all, and a name is at most 120 characters. A change that would pass a limit is refused with a
+  message naming the limit.
 
-The focused cell receives the thread shortcuts; other cells bind none. Click a cell before
-using a thread shortcut.
+The focused pane receives the thread shortcuts; other panes bind none. Click a pane before using
+a thread shortcut. The layout shortcuts are listed in [Keybindings](keybindings.md#layout).
+
+A link of the form `/grid/<id>` from an earlier version opens the workspace that carries the
+same id.
 
 ## The sidebar
 
@@ -185,7 +200,8 @@ The foot of the rail carries two shelves:
   you choose **Show more**; the button reads **Loading** while it works and offers **Retry**
   if the read fails.
 
-**Settings ▸ General ▸ Sidebar** sets the thread order inside a group.
+**Settings ▸ General ▸ Sidebar** sets the thread order inside a group: workspace order (the
+panes' order) by default, or last activity or creation time.
 
 ## Thread actions
 
@@ -246,10 +262,8 @@ separate set of surfaces; see [The right panel](right-panel.md). A thread's **de
 control (`Ctrl+Shift+B`) shows its environment, branch, pull requests, scripts, local
 servers, context and usage limits. The card starts closed and stays as you leave it.
 
-In a grid, the right panel follows the focused pane: focusing another pane shows that
-thread's panel. The pin in the panel header (**Pin to** the thread's title) keeps the panel
-on its thread while you work in other panes, and the header then names the thread. Unpin it,
-or close the panel, to return to following focus.
+In the layout a thread's surfaces open as tabs, beside or below its chat as set in the layout
+settings in **Settings ▸ Appearance**, instead of a panel that follows the focused pane.
 
 A cheap command that needs a real terminal, such as `sudo apt install` or
 `git push --force-with-lease`, can start with `!`: `!sudo apt install foo` opens the
@@ -273,12 +287,13 @@ the thread header however far the timeline is scrolled. A child's question or ap
 in the parent's pending approvals and needs your answer there. Agents reach threads,
 tasks and pulls through the server's MCP toolkits, not through the terminal.
 
-Agents also manage grids through the `houston_grid_*` tools, with the app closed: list, create,
-rename, hide, pin and delete a grid, and place a thread in it or take it out. A grid holds at most
-six threads and only threads of its own project; a refusal names the limit. `houston_thread_launch`
-and `create_threads` take a `grid` to put the new threads in an existing grid or a new one, and
-`houston_thread_read` and `houston_thread_list` report each thread's `gridId`. Placing a thread in
-a grid moves it out of its other grid.
+Agents also manage workspaces through the `houston_workspace_*` tools, with the app closed: list,
+create, rename, hide, pin, reorder and delete a workspace, and add a thread's chat to one or take
+it out. A thread's chat is in one workspace at a time, so adding it moves it out of its other
+workspace. `houston_thread_launch` and `create_threads` take a `workspace` to put the new threads
+in an existing workspace or a new one, and `houston_thread_read` and `houston_thread_list` report
+each thread's `workspaceId`. The earlier `houston_grid_*` tools, the `grid` launch target and the
+`gridId` field remain as aliases of these and are removed in the next release.
 
 ## Closing
 

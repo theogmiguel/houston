@@ -47,8 +47,8 @@ transcript cleanup, acceleration and model unload. See [Dictation](dictation.md)
 ## Diffs & pull requests
 
 Diff layout, whitespace, default file expansion and colors. **Open pull requests and
-changes panels proactively** opens the matching panel when an agent finishes, except in grid
-cells and narrow windows.
+changes panels proactively** opens the matching panel when an agent finishes, except in layout
+panes and narrow windows.
 
 ## Keybindings
 
