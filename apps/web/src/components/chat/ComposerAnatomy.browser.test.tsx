@@ -109,14 +109,14 @@ it(
     );
     const cardBox = card.getBoundingClientRect();
 
-    // Wide form: the checkout, branch and access controls sit in a tray attached above the card,
-    // never in a second band under it and never in the card's own toolbar.
-    expect(document.querySelector('[data-slot="composer-context-strip"]')).toBeNull();
+    // Wide form: the checkout and branch controls sit in a quiet line under the card, never in
+    // the card's own toolbar. The checkout is on the left, the branch on the right.
+    expect(document.querySelector('[data-composer-changes-tray="true"]')).toBeNull();
     const tray = await vi.waitFor(
       () => {
         const found = document.querySelector<HTMLElement>('[data-composer-context-tray="true"]');
         if (found?.querySelector("[data-composer-context-control]") == null) {
-          throw new Error("context controls are not in the composer tray yet");
+          throw new Error("context controls are not in the composer's workspace line yet");
         }
         return found;
       },
@@ -127,22 +127,20 @@ it(
     expect(footer.querySelector('[aria-label^="Workspace:"]')).toBeNull();
     const trayBox = tray.getBoundingClientRect();
     const cardWithTray = card.getBoundingClientRect();
-    // Inset from the card on both sides, sitting on top of it.
-    expect(trayBox.left - cardWithTray.left).toBeGreaterThanOrEqual(8);
-    expect(cardWithTray.right - trayBox.right).toBeGreaterThanOrEqual(8);
-    expect(trayBox.top).toBeLessThan(cardWithTray.top);
-    expect(trayBox.bottom).toBeLessThanOrEqual(cardWithTray.top + 12);
-    expect(getComputedStyle(tray).borderBottomWidth).toBe("0px");
-    // The tab is lighter than the rail: it takes the pane-head plane, not the chrome plane.
-    const paneHead = document.createElement("div");
-    paneHead.style.backgroundColor = "var(--pane-head)";
-    document.body.append(paneHead);
-    expect(getComputedStyle(tray).backgroundColor).toBe(getComputedStyle(paneHead).backgroundColor);
-    paneHead.remove();
+    expect(trayBox.top).toBeGreaterThanOrEqual(cardWithTray.bottom);
+    expect(trayBox.top - cardWithTray.bottom).toBeLessThanOrEqual(12);
+    expect(getComputedStyle(tray).borderTopWidth).toBe("0px");
+    expect(getComputedStyle(tray).backgroundColor).toBe("rgba(0, 0, 0, 0)");
     expect(getComputedStyle(tray).flexWrap).not.toBe("wrap");
-    for (const control of tray.querySelectorAll<HTMLElement>("[data-composer-context-control]")) {
+    const controls = [...tray.querySelectorAll<HTMLElement>("[data-composer-context-control]")];
+    for (const control of controls) {
       expect(control.getBoundingClientRect().right).toBeLessThanOrEqual(trayBox.right + 1);
     }
+    const lefts = controls.map((control) => control.getBoundingClientRect().left);
+    expect(Math.min(...lefts) - trayBox.left).toBeLessThan(trayBox.width / 4);
+    expect(
+      trayBox.right - Math.max(...controls.map((c) => c.getBoundingClientRect().right)),
+    ).toBeLessThan(trayBox.width / 4);
     expect(footer.getBoundingClientRect().top).toBeLessThan(cardBox.bottom);
     expect(card.contains(footer)).toBe(true);
 

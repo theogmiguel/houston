@@ -109,12 +109,11 @@ it.each([1440, 800])(
     expect(Math.abs(groupCentre - (pane.top + pane.height / 2))).toBeLessThanOrEqual(24);
 
     // Hero, project card, composer: one stacked group. The project card sits 8px over the
-    // composer's context tray (checkout, PR, branch), which is attached to the composer.
+    // composer; the workspace line (checkout, PR, branch) sits under it.
     expect(headingBox.bottom).toBeLessThan(contextBox.top);
+    expect(Math.abs(contextBox.bottom + 8 - card.top)).toBeLessThan(2);
     const contextTray = document.querySelector<HTMLElement>("[data-composer-context-tray]")!;
-    const trayBox = contextTray.getBoundingClientRect();
-    expect(Math.abs(contextBox.bottom + 8 - trayBox.top)).toBeLessThan(2);
-    expect(trayBox.bottom).toBeGreaterThanOrEqual(card.top);
+    expect(contextTray.getBoundingClientRect().top).toBeGreaterThanOrEqual(card.bottom);
 
     // The tray matches the composer's width and radius exactly.
     expect(Math.abs(contextBox.width - card.width)).toBeLessThan(1);

@@ -314,11 +314,7 @@ import {
 } from "./preparingComposerImages";
 import { ComposerControlsBar } from "./ComposerControlsBar";
 import { useCompactChipTier } from "./useCompactChipTier";
-import {
-  CONTEXT_TRAY_CLS,
-  CONTEXT_TRAY_CONTEXT_CLS,
-  CONTEXT_TRAY_ROW_CLS,
-} from "../ui/composer-anatomy-recipes";
+import { CHANGED_FILES_TRAY_CLS, CHANGED_FILES_TRAY_ROW_CLS } from "../ui/composer-anatomy-recipes";
 import { ChangedFilesBar, ChangedFilesList, type ChangedFilesBarProps } from "./ChangedFilesBar";
 import { composerCommandKeyHandler } from "./composerCommandKey";
 import { usePromptSuggestion } from "./usePromptSuggestion";
@@ -3753,25 +3749,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       {...threadContextDropTargetProps()}
     >
       <div className="relative">
-        {(contextControls && !composerNarrow) || showChangedFilesTray ? (
-          <div data-composer-context-tray="true" className={CONTEXT_TRAY_CLS}>
-            {showChangedFilesTray && changedFiles !== null && changesExpanded ? (
+        {showChangedFilesTray && changedFiles !== null ? (
+          <div data-composer-changes-tray="true" className={CHANGED_FILES_TRAY_CLS}>
+            {changesExpanded ? (
               <ChangedFilesList summary={changedFiles.summary} onReview={changedFiles.onReview} />
             ) : null}
-            <div className={CONTEXT_TRAY_ROW_CLS}>
-              {contextControls && !composerNarrow ? (
-                <div className={CONTEXT_TRAY_CONTEXT_CLS}>
-                  {cloneElement(contextControls, { forceNarrow: false, variant: "tray" })}
-                </div>
-              ) : null}
-              {!showChangedFilesTray || changedFiles === null ? null : (
-                <ChangedFilesBar
-                  {...changedFiles}
-                  compact={composerNarrow}
-                  expanded={changesExpanded}
-                  onExpandedChange={setChangesExpanded}
-                />
-              )}
+            <div className={CHANGED_FILES_TRAY_ROW_CLS}>
+              <ChangedFilesBar
+                {...changedFiles}
+                compact={composerNarrow}
+                expanded={changesExpanded}
+                onExpandedChange={setChangesExpanded}
+              />
             </div>
           </div>
         ) : null}
@@ -4248,6 +4237,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             ) : null}
           </div>
         </ComposerSurface.Main>
+        {contextControls && !composerNarrow ? (
+          <ComposerSurface.ContextStrip data-composer-context-tray="true" className="mt-1.5">
+            {cloneElement(contextControls, { forceNarrow: false, variant: "tray" })}
+          </ComposerSurface.ContextStrip>
+        ) : null}
       </div>
     </form>
   );
