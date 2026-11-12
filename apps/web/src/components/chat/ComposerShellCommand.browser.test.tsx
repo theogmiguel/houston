@@ -18,6 +18,7 @@ import {
   threadWithHistory,
   type FakeDriver,
 } from "../../../test/fakeEnvironment";
+import { loadEmptyLayout } from "../../../test/loadedLayout";
 import { render } from "../../../test/render";
 
 // The socket is the only fake layer; see test/appScenarios.renders.tsx.
@@ -49,6 +50,7 @@ it(
       ...DEFAULT_CLIENT_SETTINGS,
       onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
     });
+    loadEmptyLayout();
     const threadId = ThreadId.make("composer-bang");
     const router = getRouter(
       createMemoryHistory({ initialEntries: [`/${ENVIRONMENT_ID}/${threadId}`] }),

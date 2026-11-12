@@ -15,6 +15,7 @@ import {
   threadWithHistory,
   type FakeDriver,
 } from "../../test/fakeEnvironment";
+import { loadEmptyLayout } from "../../test/loadedLayout";
 import { render } from "../../test/render";
 
 // The socket is the only fake layer: the client runtime hands every connection the in-process session.
@@ -39,6 +40,7 @@ async function mountMissingThread() {
     ...DEFAULT_CLIENT_SETTINGS,
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
   });
+  loadEmptyLayout();
   await page.viewport(1440, 900);
   const router = getRouter(
     createMemoryHistory({ initialEntries: [`/${ENVIRONMENT_ID}/${MISSING_ID}`] }),
