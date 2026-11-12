@@ -54,17 +54,18 @@ vi.mock(import("./useThreadSurfaceOpeners"), () => {
     "side-chat",
   ] as const;
   return {
-    useThreadSurfaceOpeners: () => ({
-      surfaces: Object.fromEntries(
-        kinds.map((kind) => [
-          kind,
-          kind === "diff"
-            ? { available: false, reason: "Not a Git repository." }
-            : { available: true, reason: "" },
-        ]),
-      ),
-      open: harness.open,
-    }),
+    useThreadSurfaceOpeners: () =>
+      ({
+        surfaces: Object.fromEntries(
+          kinds.map((kind) => [
+            kind,
+            kind === "diff"
+              ? { available: false, reason: "Not a Git repository." }
+              : { available: true, reason: "" },
+          ]),
+        ),
+        open: harness.open,
+      }) as never,
   };
 });
 
