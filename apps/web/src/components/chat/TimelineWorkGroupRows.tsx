@@ -288,7 +288,7 @@ function ExpandedWorkGroupEntries({
           data-tool-group-scroll
           style={{ maxHeight: `calc(min(18rem, 50dvh) + ${expandedContentHeight}px)` }}
           className={cn(
-            "ms-3.5 scrollbar-gutter-stable scroll-py-6 overflow-x-hidden border-s border-border ps-2.5 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
+            "scrollbar-gutter-stable scroll-py-6 overflow-x-hidden focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
             NESTED_WORK_TYPE_CLASS,
             getVirtualizedScrollFadeClassName(fades),
           )}
