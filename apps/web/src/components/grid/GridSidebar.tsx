@@ -7,7 +7,9 @@ import {
 } from "@houston-app/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
 import { canSnooze, effectiveSnoozed } from "@houston-app/client-runtime/state/thread-settled";
-import { useLocation, useNavigate } from "@tanstack/react-router";
+import { useLocation, useNavigate, useRouter } from "@tanstack/react-router";
+import { openThreadInLayout } from "../../threads/openThreadInLayout";
+import { isPhoneViewport } from "../../mobile/usePhone";
 import {
   AlarmClockOffIcon,
   ChevronRightIcon,
@@ -372,6 +374,7 @@ export function GridSidebar({
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const searchShortcutLabel = shortcutLabelForCommand(keybindings, "commandPalette.toggle");
   const navigate = useNavigate();
+  const router = useRouter();
   const pathname = useLocation({ select: (location) => location.pathname });
   const sidebarVisible = useSidebarVisibility();
   const { isMobile: sidebarIsDrawer, setOpenMobile: setSidebarDrawerOpen } = useSidebar();
@@ -419,6 +422,17 @@ export function GridSidebar({
     // Opening a thread ends a multi-selection; its rows may be on other panes now.
     if (selection.selectedThreadKeys.size > 0) setSelection(clearThreadSelection());
     useGridStore.getState().focusThread(gridId, threadId);
+    const grid = gridById(useGridStore.getState().grids, gridId);
+    if (grid !== null && !isPhoneViewport()) {
+      void openThreadInLayout(
+        {
+          navigate: (options) => navigate(options),
+          pathname: () => router.state.location.pathname,
+        },
+        scopeThreadRef(grid.environmentId as EnvironmentId, threadId as ThreadId),
+      );
+      return;
+    }
     void navigate({ to: "/grid/$gridId", params: { gridId } });
   };
 

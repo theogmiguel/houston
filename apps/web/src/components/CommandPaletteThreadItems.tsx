@@ -14,7 +14,9 @@ import {
 } from "@houston-app/shared/paletteSearch";
 import type { EnvironmentId, ThreadId } from "@houston-app/contracts";
 import { useAtomValue } from "@effect/atom-react";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouter } from "@tanstack/react-router";
+import { openThreadInLayout } from "../threads/openThreadInLayout";
+import { isPhoneViewport } from "../mobile/usePhone";
 import { useState } from "react";
 
 import {
@@ -98,6 +100,7 @@ export function useCommandPaletteThreadItems(input: {
 }) {
   const { activeThread, threadSearchQuery } = input;
   const navigate = useNavigate();
+  const router = useRouter();
   const threads = useVisibleThreadShells();
   const { projectEnvironmentLocationById } = useEnvironmentLookups();
   const providerEntryByEnvironmentAndInstanceId = useProviderEntryByEnvironmentAndInstanceId();
@@ -194,6 +197,16 @@ export function useCommandPaletteThreadItems(input: {
         projectId: thread.projectId,
         threadId: thread.id,
       });
+      if (!isPhoneViewport()) {
+        await openThreadInLayout(
+          {
+            navigate: (options) => navigate(options),
+            pathname: () => router.state.location.pathname,
+          },
+          scopeThreadRef(thread.environmentId, thread.id),
+        );
+        return;
+      }
       if (target !== null) {
         useGridStore.getState().focusThread(target.gridId, target.threadId);
         await navigate({ to: "/grid/$gridId", params: { gridId: target.gridId } });

@@ -34,6 +34,11 @@ export function startMainAppLocationTracking(router: AnyRouter): () => void {
   return router.subscribe("onResolved", record);
 }
 
+/** The last main-app location, or null before one was seen. */
+export function getMainAppHref(): string | null {
+  return mainAppHref;
+}
+
 export function useNavigateToMainApp() {
   const navigate = useNavigate();
   return () => navigate({ href: mainAppHref ?? "/" });

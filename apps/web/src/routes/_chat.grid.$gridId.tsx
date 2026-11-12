@@ -42,6 +42,7 @@ import { PhoneEmptyState } from "../mobile/PhoneEmptyState";
 import { PhonePageBar } from "../mobile/PhonePageBar";
 import { PhoneTabBar } from "../mobile/PhoneTabBar";
 import { useIsPhone } from "../mobile/usePhone";
+import { useLayoutStore } from "../layout/layoutStore";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { useStableCallback } from "../hooks/useStableCallback";
 import { useThreadActions } from "../hooks/useThreadActions";
@@ -60,8 +61,24 @@ import { primaryServerKeybindingsAtom } from "../state/server";
 import { buildThreadRouteParams } from "../threadRoutes";
 
 export const Route = createFileRoute("/_chat/grid/$gridId")({
-  component: GridRoute,
+  component: GridRouteEntry,
 });
+
+function GridRouteEntry() {
+  return useIsPhone() ? <GridRoute /> : <GridToWorkspaceRedirect />;
+}
+
+/** A grid link opens the workspace that carries the grid's id. */
+function GridToWorkspaceRedirect() {
+  const { gridId } = Route.useParams();
+  const navigate = useNavigate();
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- focuses the workspace with the grid's id once, then leaves the retired route
+  useEffect(() => {
+    useLayoutStore.getState().focusWorkspace(gridId);
+    void navigate({ to: "/", replace: true });
+  }, [gridId, navigate]);
+  return null;
+}
 
 function GridRoute() {
   const { gridId } = Route.useParams();

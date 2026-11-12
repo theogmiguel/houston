@@ -88,6 +88,8 @@ interface PersistentThreadTerminalDrawerProps {
   onAddTerminalContext?: ((selection: TerminalContextSelection) => void) | undefined;
   /** Set by a grid's dock, whose terminal belongs to the grid rather than a thread. */
   projectRef?: ScopedProjectRef | null;
+  /** The terminal fills the box that holds it instead of docking at its stored height. */
+  fill?: boolean;
 }
 
 export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDrawer({
@@ -103,6 +105,7 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
   keybindings,
   onAddTerminalContext,
   projectRef: projectRefOverride = null,
+  fill = false,
 }: PersistentThreadTerminalDrawerProps) {
   const canOperateTerminal = useEnvironmentScope(threadRef.environmentId, AuthTerminalOperateScope);
   const serverThread = useQuietThreadShell(threadRef);
@@ -245,12 +248,14 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
   return (
     <div
       className={cn(
-        "grid shrink-0 overflow-clip",
+        "grid overflow-clip",
+        fill ? "min-h-0 flex-1" : "shrink-0",
         active ? (visible ? "grid-rows-[1fr]" : "grid-rows-[0fr]") : "hidden",
       )}
     >
       <div className="min-h-0 overflow-clip">
         <LazyThreadTerminalDrawer
+          {...(fill ? { mode: "panel" as const } : {})}
           threadRef={threadRef}
           threadId={threadId}
           cwd={cwd}

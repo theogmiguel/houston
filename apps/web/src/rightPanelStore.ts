@@ -194,6 +194,14 @@ interface RightPanelStoreState {
   reconcileFileSurfaces: (ref: ScopedThreadRef, workspaceAvailable: boolean) => void;
   show: (ref: ScopedThreadRef) => void;
   close: (ref: ScopedThreadRef) => void;
+  /**
+   * The layout's own changes to a thread's surfaces: tabs that closed, hid or took focus. They are
+   * not the user's choice, so they leave the user-action revision alone.
+   */
+  syncFromLayout: (
+    ref: ScopedThreadRef,
+    update: { open?: boolean; activeSurfaceId?: string; dropSurfaceIds?: readonly string[] },
+  ) => void;
   setMaximized: (ref: ScopedThreadRef, maximized: boolean) => void;
   toggleVisibility: (ref: ScopedThreadRef) => void;
   toggle: (
@@ -1107,6 +1115,37 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
           userAction(state, scopedThreadKey(ref), (current) =>
             current.isOpen ? { ...current, isOpen: false } : current,
           ),
+        ),
+      syncFromLayout: (ref, update) =>
+        set((state) =>
+          automaticUpdate(state, scopedThreadKey(ref), (current) => {
+            let next = current;
+            if (update.dropSurfaceIds && update.dropSurfaceIds.length > 0) {
+              const dropped = new Set(update.dropSurfaceIds);
+              const surfaces = next.surfaces.filter((surface) => !dropped.has(surface.id));
+              if (surfaces.length !== next.surfaces.length) {
+                next = {
+                  ...next,
+                  surfaces,
+                  isOpen: next.isOpen && surfaces.length > 0,
+                  activeSurfaceId: surfaces.some((surface) => surface.id === next.activeSurfaceId)
+                    ? next.activeSurfaceId
+                    : (surfaces[0]?.id ?? null),
+                };
+              }
+            }
+            if (update.open !== undefined && next.isOpen !== update.open) {
+              next = { ...next, isOpen: update.open && next.surfaces.length > 0 };
+            }
+            if (
+              update.activeSurfaceId !== undefined &&
+              next.activeSurfaceId !== update.activeSurfaceId &&
+              next.surfaces.some((surface) => surface.id === update.activeSurfaceId)
+            ) {
+              next = { ...next, activeSurfaceId: update.activeSurfaceId };
+            }
+            return next;
+          }),
         ),
       setMaximized: (ref, maximized) =>
         set((state) =>

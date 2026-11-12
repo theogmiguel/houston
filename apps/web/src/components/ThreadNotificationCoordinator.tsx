@@ -4,6 +4,7 @@ import {
   presentThreadShell,
 } from "@houston-app/client-runtime/state/models";
 import { isShownUnderParent } from "@houston-app/client-runtime/state/threads";
+import { scopeThreadRef } from "@houston-app/client-runtime/environment";
 import type { AnyRouter } from "@tanstack/react-router";
 import type {
   EnvironmentId,
@@ -37,6 +38,8 @@ import {
 } from "../threadNotifications";
 import { resolveSidebarThreadStatus, type SidebarThreadStatus } from "./Sidebar.logic";
 import { gridContainingThread, useGridStore } from "../grid/gridStore";
+import { openThreadInLayout } from "../threads/openThreadInLayout";
+import { isPhoneViewport } from "../mobile/usePhone";
 import { resolveGridThreadTarget } from "../grid/gridNavigation";
 import {
   createThreadNotificationGate,
@@ -113,6 +116,16 @@ export function startThreadNotifications(
   // Lands in the thread's grid with its cell focused; the standalone route is
   // the fallback when no grid can take the thread.
   const openThread = (environmentId: EnvironmentId, projectId: ProjectId, threadId: ThreadId) => {
+    if (!isPhoneViewport()) {
+      void openThreadInLayout(
+        {
+          navigate: (options) => router.navigate(options),
+          pathname: () => router.state.location.pathname,
+        },
+        scopeThreadRef(environmentId, threadId),
+      );
+      return;
+    }
     const target = resolveGridThreadTarget({ environmentId, projectId, threadId });
     if (target !== null) {
       useGridStore.getState().focusThread(target.gridId, target.threadId);

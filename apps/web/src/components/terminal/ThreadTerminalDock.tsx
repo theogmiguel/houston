@@ -20,11 +20,14 @@ export function ThreadTerminalDock({
   projectRef,
   launchContext,
   keybindings,
+  fill = false,
 }: {
   readonly threadRef: ScopedThreadRef;
   readonly projectRef: ScopedProjectRef;
   readonly launchContext: PersistentTerminalLaunchContext | null;
   readonly keybindings: ResolvedKeybindingsConfig;
+  /** The terminal fills its box, as a terminal tab does, instead of docking at its own height. */
+  readonly fill?: boolean;
 }) {
   const terminalOpen = useTerminalUiStateStore(
     (state) =>
@@ -56,6 +59,7 @@ export function ThreadTerminalDock({
         shortcutLabelForCommand(keybindings, "terminal.close", shortcutLabelOptions) ?? undefined
       }
       keybindings={keybindings}
+      fill={fill}
     />
   );
 }

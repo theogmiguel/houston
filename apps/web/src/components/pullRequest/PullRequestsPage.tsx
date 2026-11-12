@@ -22,7 +22,8 @@ import type {
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { ArrowDownUpIcon, LayersIcon, Plug2Icon } from "lucide-react";
-import { useEffect, useEffectEvent, useRef, useState, type ComponentProps } from "react";
+import { use, useEffect, useEffectEvent, useRef, useState, type ComponentProps } from "react";
+import { LayoutPageLocationContext } from "../../layout/pageNavigation";
 import { observeIntersection } from "~/lib/observeIntersection";
 
 import {
@@ -151,7 +152,10 @@ const EMPTY_TERMINAL_LABELS = new Map<string, string>();
 const EMPTY_PENDING_SURFACES = new Set<string>();
 export function PullRequestsPage() {
   const isPhone = useIsPhone();
-  const search = useSearch({ from: "/_chat/pull-requests" });
+  // A page tab reads its own location; the routed page reads the URL's.
+  const tabLocation = use(LayoutPageLocationContext);
+  const routedSearch = useSearch({ from: "/_chat/pull-requests", shouldThrow: false });
+  const search = (tabLocation?.search ?? routedSearch) as PullRequestsSearch;
   const sort = search.sort ?? "ready";
   const statsPolicy: PullRequestStatsPolicy =
     sort === "ready" || sort === "largest" || sort === "smallest" ? "eager" : "visible";
