@@ -140,7 +140,7 @@ function TooltipPopup({
         <TooltipPrimitive.Popup
           className={cn(
             overlayMotion,
-            "relative flex text-balance rounded-[var(--r-ctl)] text-popover-foreground text-xs data-instant:duration-0",
+            "relative flex text-balance rounded-[var(--r-selection)] text-popover-foreground text-xs data-instant:duration-0",
             variant === "glass" ? "dropdown-glass" : "border bg-popover shadow-[var(--shadow-1)]",
             variant === "code"
               ? "max-w-120 wrap-anywhere text-left font-mono text-[11px] leading-relaxed"
@@ -150,7 +150,7 @@ function TooltipPopup({
           data-slot="tooltip-popup"
           {...props}
         >
-          <div className="min-w-0 px-2 py-1" data-slot="tooltip-viewport">
+          <div className="min-w-0 px-2.5 py-1.5" data-slot="tooltip-viewport">
             {children}
           </div>
         </TooltipPrimitive.Popup>
