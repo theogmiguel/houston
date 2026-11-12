@@ -15,6 +15,7 @@ import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
 import { type CommandHandler, type CommandScopeOptions, registerCommands } from "./dispatcher";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { resolveThreadRouteTarget } from "../threadRoutes";
+import { isUsagePagePath } from "../components/usage/usageShortcuts";
 
 function consume(event: KeyboardEvent): void {
   event.preventDefault();
@@ -91,7 +92,7 @@ export function installCommandPaletteCommands(
       "usage.open": (event) => {
         consume(event);
         dispatchCommandPalette({ _tag: "SetOpen", open: false });
-        void router.navigate({ to: "/usage" });
+        void router.navigate({ to: "/settings/usage" });
       },
       "commandPalette.toggle": toggleOverlay("commandPalette.toggle"),
       "filePicker.toggle": toggleOverlay("filePicker.toggle"),
@@ -113,7 +114,7 @@ export function installCommandPaletteCommands(
             ? selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, threadRef) ===
               "preview"
             : false,
-          usagePageOpen: router.state.location.pathname === "/usage",
+          usagePageOpen: isUsagePagePath(router.state.location.pathname),
         };
       },
     },

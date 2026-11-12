@@ -26,6 +26,7 @@ import {
   TabletSmartphoneIcon,
   WrenchIcon,
   XIcon,
+  ChartNoAxesColumnIcon,
 } from "lucide-react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 
@@ -84,6 +85,7 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/keybindings": KeyboardIcon,
   "/settings/snap-shot": SnapShotIcon,
   "/settings/providers": BotIcon,
+  "/settings/usage": ChartNoAxesColumnIcon,
   "/settings/threads": MessagesSquareIcon,
   "/settings/browser": GlobeIcon,
   "/settings/devices": TabletSmartphoneIcon,

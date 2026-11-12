@@ -37,6 +37,7 @@ import { ThreadSidebar } from "./sidebar/ThreadSidebar";
 import { ThreadDragOverlay } from "./ui/thread-drag-overlay";
 import { SidebarBrandWidthProbe } from "./sidebar/SidebarChrome";
 import { isAppModalPage } from "./sidebar/mainAppLocation";
+import { isUsagePagePath } from "./usage/usageShortcuts";
 import {
   clampThreadSidebarWidth,
   resolveInitialThreadSidebarWidth,
@@ -121,7 +122,7 @@ function readInitialThreadSidebarWidth(): number {
 }
 
 function readUsagePageOpen(router: AnyRouter) {
-  return router.state.location.pathname === "/usage";
+  return isUsagePagePath(router.state.location.pathname);
 }
 
 function isKeybindingCaptureTarget(event: KeyboardEvent) {
@@ -311,7 +312,9 @@ function registerAppShellCommands(router: AnyRouter, shellElement: Element): () 
 
 function SidebarControl() {
   const router = useRouter();
-  const usagePageOpen = useLocation({ select: (location) => location.pathname === "/usage" });
+  const usagePageOpen = useLocation({
+    select: (location) => isUsagePagePath(location.pathname),
+  });
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { toggleSidebar, isMobile, mobileSheetMounted } = useSidebar();
   const isSidebarVisible = useSidebarVisibility();

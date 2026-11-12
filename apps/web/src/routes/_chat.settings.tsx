@@ -131,6 +131,7 @@ function SettingsContentLayout() {
   const [restoreSignal, setRestoreSignal] = useState(0);
   const hasRestore = !(
     location.pathname === "/settings/about" ||
+    location.pathname === "/settings/usage" ||
     location.pathname === "/settings/open-source-licenses" ||
     location.pathname === "/settings/archived"
   );

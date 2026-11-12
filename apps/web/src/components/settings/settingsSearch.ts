@@ -25,6 +25,7 @@ export type SettingsPath =
   | "/settings/keybindings"
   | "/settings/snap-shot"
   | "/settings/providers"
+  | "/settings/usage"
   | "/settings/threads"
   | "/settings/browser"
   | "/settings/devices"
@@ -91,6 +92,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/keybindings": "Keybindings",
   "/settings/snap-shot": "SnapShots",
   "/settings/providers": "Providers",
+  "/settings/usage": "Usage",
   "/settings/threads": "Threads",
   "/settings/browser": "Browser",
   "/settings/devices": "Devices",
@@ -119,6 +121,8 @@ export const SETTINGS_SECTION_DESCRIPTIONS: Readonly<Record<SettingsPath, string
   "/settings/keybindings": "Keyboard shortcuts for commands.",
   "/settings/snap-shot": "Capture shortcut and what a SnapShot includes.",
   "/settings/providers": "Agent providers, their health and usage limits.",
+  "/settings/usage":
+    "What your Claude Code and Codex sessions on this machine would cost at API prices. Read locally; nothing is sent anywhere.",
   "/settings/threads": "Default model, permissions and what happens when limits hit.",
   "/settings/browser": "Agent browser access, profiles and recording.",
   "/settings/devices": "Devices that agents can drive.",
@@ -156,6 +160,7 @@ export const SETTINGS_NAV_GROUPS: ReadonlyArray<{
     heading: "Agents",
     paths: [
       "/settings/providers",
+      "/settings/usage",
       "/settings/threads",
       "/settings/browser",
       "/settings/devices",
@@ -926,6 +931,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+    id: "usage",
+    title: "Usage",
+    to: "/settings/usage",
+    searchTerms: [
+      "usage tokens cost spend limits stats analytics period metric day week month sessions models api price",
+    ],
+  },
+  {
     id: "usage-providers",
     title: "Usage providers",
     to: "/settings/providers",
@@ -1288,6 +1301,7 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   "/settings/snap-shot": null,
   "/settings/keybindings": null,
   "/settings/providers": null,
+  "/settings/usage": null,
   "/settings/threads": null,
   "/settings/browser": null,
   "/settings/devices": null,
