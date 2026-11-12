@@ -1,9 +1,10 @@
 import { scopeThreadRef } from "@houston-app/client-runtime/environment";
+import { MessageSquareOffIcon } from "lucide-react";
 import { useEffect } from "react";
 
 import { ThreadChatSurface } from "../components/chat/ThreadChatSurface";
 import { Button } from "../components/ui/button";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty";
+import { PanelEmptyState } from "../components/ui/empty-state";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { usePaneDensity } from "../threads/usePaneDensity";
 import { useSidebarPendingFileDropStore } from "../sidebarPendingFileDropStore";
@@ -157,14 +158,16 @@ function MissingThread({ threadId, tabId }: { readonly threadId: string; readonl
     );
   }
   return (
-    <Empty data-layout-missing-thread={threadId}>
-      <EmptyHeader>
-        <EmptyTitle>This thread no longer exists</EmptyTitle>
-        <EmptyDescription>{message}</EmptyDescription>
-        <Button variant="secondary" size="sm" onClick={closeTab}>
-          Close tab
-        </Button>
-      </EmptyHeader>
-    </Empty>
+    <div data-layout-missing-thread={threadId} className="flex min-h-0 flex-1 flex-col">
+      <PanelEmptyState
+        icon={<MessageSquareOffIcon />}
+        title="This thread no longer exists"
+        action={
+          <Button variant="outline" size="xs" onClick={closeTab}>
+            Close tab
+          </Button>
+        }
+      />
+    </div>
   );
 }
