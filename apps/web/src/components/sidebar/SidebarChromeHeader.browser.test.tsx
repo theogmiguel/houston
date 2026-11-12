@@ -2,12 +2,13 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 import "~/index.css";
 import { render } from "../../../test/render";
+import { primaryServerKeybindingsAtom } from "../../state/server";
 import { SidebarProvider } from "../ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./SidebarChrome";
 
 vi.mock(import("@effect/atom-react"), async (original) => ({
   ...(await original()),
-  useAtomValue: (() => null) as never,
+  useAtomValue: ((atom: unknown) => (atom === primaryServerKeybindingsAtom ? [] : null)) as never,
 }));
 
 // The footer's update pills and undo notice read live atoms; the border is the footer's own.

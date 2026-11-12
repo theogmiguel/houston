@@ -12,6 +12,7 @@ import { TooltipProvider } from "../ui/tooltip";
 import { COLLAPSED_WORKSPACES_STORAGE_KEY, useCollapsedKeys } from "./sidebarCollapse";
 import {
   SidebarAddProjectButton,
+  SidebarToolbarActions,
   SidebarWorkspaceGroup,
   SidebarWorkspacesHeader,
 } from "./ThreadSidebar";
@@ -249,43 +250,58 @@ describe("Workspaces header", () => {
     expect(openAddProjectDialog).toHaveBeenCalledTimes(1);
   });
 
-  it("draws the title with view options, New workspace and Add project, and reveals them on focus", async () => {
+  it("draws a quiet Workspaces label whose actions show on hover or focus", async () => {
+    resetTestState();
+    const hidden = { ...section("ws-hidden", "Archive", []), hidden: true };
+    await using screen = await render(
+      <TooltipProvider delay={0}>
+        <SidebarWorkspacesHeader hiddenWorkspaces={[hidden]} />
+      </TooltipProvider>,
+    );
+
+    const label = getComputedStyle(screen.getByText("Workspaces").element());
+    expect(label.textTransform).toBe("none");
+    expect(label.letterSpacing).toBe("normal");
+    const hiddenMenu = screen.getByRole("button", { name: "Hidden workspaces" }).element();
+    const actions = hiddenMenu.parentElement as HTMLElement;
+    expect(getComputedStyle(actions).opacity).toBe("0");
+    expect(actions.className).toContain("group-focus-within/section:opacity-100");
+  });
+
+  it("puts new thread, add project and view options beside the search, with New workspace in the options menu", async () => {
     resetTestState();
     const onNewWorkspace = vi.fn();
     await using screen = await render(
       <TooltipProvider delay={0}>
-        <SidebarWorkspacesHeader
-          options={options}
-          onChange={() => {}}
-          onReset={() => {}}
-          onNewWorkspace={onNewWorkspace}
-        />
+        <div className="flex">
+          <SidebarToolbarActions
+            options={options}
+            onChange={() => {}}
+            onReset={() => {}}
+            onNewWorkspace={onNewWorkspace}
+          />
+        </div>
       </TooltipProvider>,
     );
 
-    expect(screen.container.textContent).toContain("Workspaces");
-    const label = getComputedStyle(screen.getByText("Workspaces").element());
-    expect(label.textTransform).toBe("none");
-    expect(label.letterSpacing).toBe("normal");
-    const add = screen.getByRole("button", { name: "Add project" }).element();
-    const viewOptions = screen.getByRole("button", { name: "View options" }).element();
-    const actions = add.parentElement as HTMLElement;
-    expect(getComputedStyle(actions).opacity).toBe("0");
-    expect(actions.className).toContain("group-focus-within/section:opacity-100");
-
-    viewOptions.focus();
-    expect(viewOptions.matches(":focus-visible") || viewOptions === document.activeElement).toBe(
-      true,
+    const names = ["New thread", "Add project", "View options"];
+    const boxes = names.map((name) =>
+      screen.getByRole("button", { name }).element().getBoundingClientRect(),
     );
+    for (const box of boxes) {
+      expect(box.width).toBe(28);
+      expect(box.height).toBe(28);
+      expect(box.top).toBe(boxes[0]!.top);
+    }
+    expect(screen.getByRole("button", { name: "New workspace" }).elements()).toHaveLength(0);
 
-    await userEvent.click(screen.getByRole("button", { name: "New workspace" }).element());
-    expect(onNewWorkspace).toHaveBeenCalledTimes(1);
-
-    await userEvent.click(add);
+    await userEvent.click(screen.getByRole("button", { name: "Add project" }).element());
     expect(openAddProjectDialog).toHaveBeenCalledTimes(1);
 
-    await userEvent.click(viewOptions);
+    await userEvent.click(screen.getByRole("button", { name: "View options" }).element());
     await expect.element(page.getByText("Sort threads")).toBeVisible();
+    await userEvent.click(page.getByRole("menuitem", { name: "New workspace" }).element());
+    expect(onNewWorkspace).toHaveBeenCalledTimes(1);
   });
 
   it("lists hidden workspaces and shows one again in the layout store", async () => {
@@ -293,13 +309,7 @@ describe("Workspaces header", () => {
     const hidden = { ...section("ws-hidden", "Archive", []), hidden: true };
     await using screen = await render(
       <TooltipProvider delay={0}>
-        <SidebarWorkspacesHeader
-          options={options}
-          onChange={() => {}}
-          onReset={() => {}}
-          onNewWorkspace={() => {}}
-          hiddenWorkspaces={[hidden]}
-        />
+        <SidebarWorkspacesHeader hiddenWorkspaces={[hidden]} />
       </TooltipProvider>,
     );
     await userEvent.click(screen.getByRole("button", { name: "Hidden workspaces" }).element());
@@ -310,12 +320,7 @@ describe("Workspaces header", () => {
     resetTestState();
     await using screen = await render(
       <TooltipProvider delay={0}>
-        <SidebarWorkspacesHeader
-          options={options}
-          onChange={() => {}}
-          onReset={() => {}}
-          onNewWorkspace={() => {}}
-        />
+        <SidebarWorkspacesHeader />
       </TooltipProvider>,
     );
     expect(screen.container.querySelector("[aria-label='Hidden workspaces']")).toBeNull();

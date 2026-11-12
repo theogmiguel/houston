@@ -210,9 +210,9 @@ function seed(spec: Parameters<typeof layoutOf>[0], threads: EnvironmentThreadSh
 }
 
 const groupNames = (container: HTMLElement) =>
-  [...container.querySelectorAll<HTMLElement>("[data-workspace-heading] [data-workspace-name]")].map(
-    (element) => element.textContent,
-  );
+  [
+    ...container.querySelectorAll<HTMLElement>("[data-workspace-heading] [data-workspace-name]"),
+  ].map((element) => element.textContent);
 const rowsIn = (container: HTMLElement, workspaceName: string) => {
   const heading = [...container.querySelectorAll<HTMLElement>("[data-workspace-name]")].find(
     (element) => element.textContent === workspaceName,
@@ -301,7 +301,9 @@ describe("ThreadSidebar workspaces", () => {
     useLayoutStore.setState({ layout: setLayoutWorkspaceHidden(layout, tucked.id, true) });
     await using screen = await render(<RailHarness />);
     await vi.waitFor(() => expect(groupNames(screen.container)).toEqual(["Shown"]));
-    await userEvent.click(page.getByRole("button", { name: "Hidden workspaces" }).element());
+    // The harness draws the rail unsized, so the search row's buttons overlap this one: click it directly.
+    (page.getByRole("button", { name: "Hidden workspaces" }).element() as HTMLElement).click();
+    await expect.element(page.getByRole("menuitem", { name: /Tucked/ })).toBeVisible();
     await userEvent.click(page.getByRole("menuitem", { name: /Tucked/ }).element());
     await vi.waitFor(() => expect(groupNames(screen.container)).toEqual(["Shown", "Tucked"]));
   });
@@ -353,7 +355,8 @@ describe("ThreadSidebar workspaces", () => {
     await using screen = await render(<RailHarness />);
     await vi.waitFor(() => expect(groupNames(screen.container)).toEqual(["Existing"]));
 
-    await userEvent.click(screen.getByRole("button", { name: "New workspace" }).element());
+    await userEvent.click(screen.getByRole("button", { name: "View options" }).element());
+    await userEvent.click(page.getByRole("menuitem", { name: "New workspace" }).element());
     const input = screen.getByRole("textbox", { name: "New workspace name" });
     await userEvent.fill(input.element(), "Fresh");
     await userEvent.keyboard("{Enter}");
@@ -368,7 +371,8 @@ describe("ThreadSidebar workspaces", () => {
   it("refuses an over-long new workspace name, naming the limit", async () => {
     using _seed = seed([{ name: "Existing", chats: ["t1"] }], [liveThread("t1")]);
     await using screen = await render(<RailHarness />);
-    await userEvent.click(screen.getByRole("button", { name: "New workspace" }).element());
+    await userEvent.click(screen.getByRole("button", { name: "View options" }).element());
+    await userEvent.click(page.getByRole("menuitem", { name: "New workspace" }).element());
     const input = screen.getByRole("textbox", { name: "New workspace name" });
     await userEvent.fill(input.element(), "x".repeat(500));
     await userEvent.keyboard("{Enter}");
@@ -436,9 +440,9 @@ describe("ThreadSidebar workspaces", () => {
     using _seed = seed([{ name: "Before", chats: ["t1"] }], [liveThread("t1")]);
     await using screen = await render(<RailHarness />);
     await vi.waitFor(() => expect(groupNames(screen.container)).toEqual(["Before"]));
-    await userEvent.click(
-      screen.getByRole("button", { name: "Workspace actions for Before" }).element(),
-    );
+    (
+      screen.getByRole("button", { name: "Workspace actions for Before" }).element() as HTMLElement
+    ).click();
     await userEvent.click(page.getByRole("menuitem", { name: /Rename workspace/ }).element());
     const input = screen.getByRole("textbox", { name: "Rename workspace Before" });
     await userEvent.fill(input.element(), "After");

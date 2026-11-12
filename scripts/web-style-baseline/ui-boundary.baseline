@@ -392,10 +392,8 @@
 31 apps/web/src/components/sidebar/SidebarListMarkers.tsx
 12 apps/web/src/components/sidebar/SidebarProjectFolderHeader.tsx
 24 apps/web/src/components/sidebar/SidebarProviderUpdatePill.tsx
-22 apps/web/src/components/sidebar/SidebarRailNav.tsx
 3 apps/web/src/components/sidebar/SidebarRowTime.tsx
 5 apps/web/src/components/sidebar/SidebarShelves.tsx
-16 apps/web/src/components/sidebar/SidebarThreadHeader.tsx
 166 apps/web/src/components/sidebar/SidebarThreadRow.tsx
 7 apps/web/src/components/sidebar/SidebarThreadUndoNotice.tsx
 29 apps/web/src/components/sidebar/SidebarUpdateCapsule.tsx
@@ -413,7 +411,7 @@
 5 apps/web/src/components/ThreadNotificationCoordinator.tsx
 10 apps/web/src/components/ThreadSearchMatch.tsx
 31 apps/web/src/components/ThreadStatusIndicators.tsx
-65 apps/web/src/components/ThreadTerminalDrawer.tsx
+64 apps/web/src/components/ThreadTerminalDrawer.tsx
 23 apps/web/src/components/usage/UsageActivity.tsx
 30 apps/web/src/components/usage/UsageLimits.tsx
 120 apps/web/src/components/usage/UsageLimitsPooled.tsx

@@ -1,5 +1,5 @@
 import type { SidebarGridThreadSortOrder } from "@houston-app/contracts/settings";
-import { SlidersHorizontalIcon } from "lucide-react";
+import { PlusIcon, SlidersHorizontalIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { cn } from "~/lib/utils";
@@ -78,7 +78,7 @@ export const SIDEBAR_PROJECT_ICON_BOX_CLS =
 export const SIDEBAR_NEEDS_YOU_SECTION_CLS = "flex flex-col gap-0.5";
 
 export const SIDEBAR_NEEDS_YOU_HEADING_CLS =
-  "flex h-(--h-row) min-w-0 shrink-0 items-center gap-1 rounded-lg pr-1 pl-2 text-xs font-semibold text-secondary-label";
+  "flex h-(--h-row) min-w-0 shrink-0 items-center gap-1 rounded-lg pr-1 pl-2 text-xs font-medium text-secondary-label";
 
 export const SIDEBAR_NEEDS_YOU_HEADING_GLYPH_CLS = "inline-grid size-3 shrink-0 place-items-center";
 
@@ -115,6 +115,10 @@ export const SIDEBAR_GROUP_RENAME_CLS =
 
 export const SIDEBAR_SECTION_ACTION_CLS =
   "-my-1.5 inline-grid size-6 shrink-0 cursor-pointer place-items-center rounded-(--r-ctl) text-secondary-label transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+
+/** A quiet, always visible icon button beside the rail's search field, as tall as the field. */
+export const SIDEBAR_TOOLBAR_ACTION_CLS =
+  "inline-grid size-7 shrink-0 cursor-pointer place-items-center rounded-(--r-ctl) text-secondary-label transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
 const SIDEBAR_SECTION_HEADER_ROW_CLS =
   "group/section flex h-(--h-row) shrink-0 items-center gap-1 rounded-lg pr-1 pl-2 text-xs font-semibold text-secondary-label";
@@ -176,10 +180,16 @@ export function SidebarOptionsMenu({
   options,
   onChange,
   onReset,
+  onNewWorkspace,
+  toolbar = false,
 }: {
   options: SidebarMenuOptions;
   onChange: (patch: Partial<SidebarMenuOptions>) => void;
   onReset: () => void;
+  /** Adds "New workspace" at the top of the menu. */
+  onNewWorkspace?: () => void;
+  /** The button sits in the rail's search row, as tall as the field, instead of a section header. */
+  toolbar?: boolean;
 }) {
   return (
     <Menu>
@@ -191,7 +201,10 @@ export function SidebarOptionsMenu({
                 <button
                   type="button"
                   aria-label="View options"
-                  className={cn(SIDEBAR_SECTION_ACTION_CLS, "data-popup-open:bg-(--sel)")}
+                  className={cn(
+                    toolbar ? SIDEBAR_TOOLBAR_ACTION_CLS : SIDEBAR_SECTION_ACTION_CLS,
+                    "data-popup-open:bg-(--sel)",
+                  )}
                 />
               }
             />
@@ -201,7 +214,16 @@ export function SidebarOptionsMenu({
         </MenuTrigger>
         <TooltipPopup side="bottom">View options</TooltipPopup>
       </Tooltip>
-      <MenuPopup align="start" side="bottom" className="min-w-56">
+      <MenuPopup align="end" side="bottom" className="min-w-56">
+        {onNewWorkspace ? (
+          <>
+            <MenuItem onClick={onNewWorkspace}>
+              <PlusIcon aria-hidden />
+              New workspace
+            </MenuItem>
+            <MenuSeparator />
+          </>
+        ) : null}
         <MenuGroup>
           <MenuGroupLabel>Sort threads</MenuGroupLabel>
           <MenuRadioGroup

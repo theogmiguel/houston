@@ -9,6 +9,7 @@ import {
   ChevronRightIcon,
   EyeOffIcon,
   FolderPlusIcon,
+  SquarePenIcon,
   MoreHorizontalIcon,
   PinIcon,
   PlusIcon,
@@ -123,12 +124,10 @@ import { formatUpcomingTimestamp } from "../../timestampFormat";
 import { AnimatedHeight } from "../AnimatedHeight";
 import { isAppModalPage } from "./mainAppLocation";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./SidebarChrome";
-import { SidebarRailKbd, SidebarRailNav } from "./SidebarRailNav";
+import { openCommandPalette } from "../../commandPaletteBus";
+import { SidebarRailNav } from "./SidebarRailNav";
 import type { SidebarProviderEntry } from "./SidebarThreadRow";
-import {
-  EMPTY_PROVIDER_ENTRIES,
-  sidebarProviderEntriesAtom,
-} from "./sidebarProviderEntries";
+import { EMPTY_PROVIDER_ENTRIES, sidebarProviderEntriesAtom } from "./sidebarProviderEntries";
 import { useSnoozeWakeClock, useThreadJumpHintsVisible } from "../Sidebar.logic";
 import { resolveSnoozePresets, type SnoozePreset } from "../Sidebar.snooze";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
@@ -154,6 +153,7 @@ import {
   SIDEBAR_ROW_ACTIONS_CLS,
   SIDEBAR_ROW_TRAILING_CLS,
   SIDEBAR_SECTION_ACTION_CLS,
+  SIDEBAR_TOOLBAR_ACTION_CLS,
   SidebarOptionsMenu,
   SidebarSectionHeaderRow,
   SIDEBAR_GROUP_THREADS_CLS,
@@ -244,7 +244,6 @@ export function ThreadSidebar({
     showNeedsYou,
   };
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
-  const searchShortcutLabel = shortcutLabelForCommand(keybindings, "commandPalette.toggle");
   const navigate = useNavigate();
   const router = useRouter();
   const pathname = useLocation({ select: (location) => location.pathname });
@@ -873,8 +872,19 @@ export function ThreadSidebar({
               {isPage ? null : (
                 <SidebarHeader>
                   <SidebarRailNav
-                    sectionHeading={false}
-                    hideTasks={hideTasks}
+                    actions={
+                      <SidebarToolbarActions
+                        options={sidebarOptions}
+                        onChange={(patch) => void updateClientSettings(sidebarOptionsPatch(patch))}
+                        onReset={() =>
+                          void updateClientSettings({
+                            ...SIDEBAR_OPTIONS_DEFAULTS,
+                            sidebarShowNeedsYou: isPhone,
+                          })
+                        }
+                        onNewWorkspace={startCreatingWorkspace}
+                      />
+                    }
                     search={
                       <label className="flex h-7 w-full shrink-0 items-center gap-2 rounded-(--control-radius) px-2 text-sm text-secondary-foreground hover:bg-sidebar-row-hover focus-within:ring-2 focus-within:ring-ring focus-within:ring-inset">
                         <SearchIcon
@@ -948,8 +958,6 @@ export function ThreadSidebar({
                           >
                             <XIcon aria-hidden className="size-3" />
                           </button>
-                        ) : searchShortcutLabel ? (
-                          <SidebarRailKbd>{searchShortcutLabel}</SidebarRailKbd>
                         ) : null}
                       </label>
                     }
@@ -983,16 +991,7 @@ export function ThreadSidebar({
                     handleNewThread={handleNewThread}
                   />
                   <SidebarWorkspacesHeader
-                    options={sidebarOptions}
-                    onChange={(patch) => void updateClientSettings(sidebarOptionsPatch(patch))}
-                    onReset={() =>
-                      void updateClientSettings({
-                        ...SIDEBAR_OPTIONS_DEFAULTS,
-                        sidebarShowNeedsYou: isPhone,
-                      })
-                    }
                     hiddenWorkspaces={hiddenSections}
-                    onNewWorkspace={startCreatingWorkspace}
                     projectFilter={
                       openProjectGroups.length > 1 ? (
                         <ProjectFilterPicker
@@ -1145,7 +1144,7 @@ export function ThreadSidebar({
                   </div>
                 </div>
               ) : null}
-              {isPage ? null : <SidebarChromeFooter />}
+              {isPage ? null : <SidebarChromeFooter hideTasks={hideTasks} />}
               {dragging !== null ? (
                 <span aria-hidden className="sr-only">
                   Dragging thread
@@ -1210,20 +1209,12 @@ function HiddenWorkspacesMenu({
   );
 }
 
-/** The Workspaces header's controls: project filter, hidden workspaces, view options, New workspace, Add project. */
+/** The Workspaces label; its project filter and hidden-workspaces menu show on hover. */
 export function SidebarWorkspacesHeader({
-  options,
-  onChange,
-  onReset,
   hiddenWorkspaces = [],
-  onNewWorkspace,
   projectFilter = null,
 }: {
-  options: SidebarMenuOptions;
-  onChange: (patch: Partial<SidebarMenuOptions>) => void;
-  onReset: () => void;
   hiddenWorkspaces?: ReadonlyArray<SidebarWorkspaceSection>;
-  onNewWorkspace: () => void;
   /** The project filter picker, when there is more than one project to choose from. */
   projectFilter?: ReactNode;
 }) {
@@ -1239,26 +1230,53 @@ export function SidebarWorkspacesHeader({
               onShow={(workspaceId) => hideLayoutWorkspaceAction(workspaceId, false)}
             />
           ) : null}
-          <SidebarOptionsMenu options={options} onChange={onChange} onReset={onReset} />
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <button
-                  type="button"
-                  aria-label="New workspace"
-                  onClick={onNewWorkspace}
-                  className={SIDEBAR_SECTION_ACTION_CLS}
-                />
-              }
-            >
-              <PlusIcon aria-hidden className="size-[15px]" />
-            </TooltipTrigger>
-            <TooltipPopup side="bottom">New workspace</TooltipPopup>
-          </Tooltip>
-          <SidebarAddProjectButton />
         </>
       }
     />
+  );
+}
+
+/**
+ * The quiet icon buttons beside the search field: new thread, add project and view options. New
+ * workspace sits at the top of the view options menu.
+ */
+export function SidebarToolbarActions({
+  options,
+  onChange,
+  onReset,
+  onNewWorkspace,
+}: {
+  options: SidebarMenuOptions;
+  onChange: (patch: Partial<SidebarMenuOptions>) => void;
+  onReset: () => void;
+  onNewWorkspace: () => void;
+}) {
+  return (
+    <>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              aria-label="New thread"
+              onClick={() => openCommandPalette({ open: "new-thread-in" })}
+              className={SIDEBAR_TOOLBAR_ACTION_CLS}
+            />
+          }
+        >
+          <SquarePenIcon aria-hidden className="size-[15px]" />
+        </TooltipTrigger>
+        <TooltipPopup side="bottom">New thread</TooltipPopup>
+      </Tooltip>
+      <SidebarAddProjectButton />
+      <SidebarOptionsMenu
+        options={options}
+        onChange={onChange}
+        onReset={onReset}
+        onNewWorkspace={onNewWorkspace}
+        toolbar
+      />
+    </>
   );
 }
 
@@ -1272,7 +1290,7 @@ export function SidebarAddProjectButton() {
             type="button"
             aria-label="Add project"
             onClick={() => openAddProjectDialog()}
-            className={SIDEBAR_SECTION_ACTION_CLS}
+            className={SIDEBAR_TOOLBAR_ACTION_CLS}
           />
         }
       >

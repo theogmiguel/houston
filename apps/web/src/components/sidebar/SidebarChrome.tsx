@@ -1,10 +1,24 @@
-import { ArrowLeftIcon, MonitorIcon, MoonIcon, SettingsIcon, SunIcon } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  ChartNoAxesColumnIcon,
+  ListChecksIcon,
+  MonitorIcon,
+  MoonIcon,
+  SettingsIcon,
+  SunIcon,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { memo } from "react";
+import { useAtomValue } from "@effect/atom-react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { useTheme } from "../../hooks/useTheme";
+import { shortcutLabelForCommand } from "../../keybindings";
+import { usePullRequestsSupported } from "../../state/environments";
+import { primaryServerKeybindingsAtom } from "../../state/server";
+import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
+import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
 import { cn } from "../../lib/utils";
 import { HoustonWordmark } from "../HoustonWordmark";
 import {
@@ -125,10 +139,16 @@ function SidebarBrandMark() {
 function SidebarUtilityItem({
   icon,
   label,
+  tooltip = label,
+  active = false,
   onClick,
 }: {
   icon: ReactNode;
   label: string;
+  /** The hover label; the name with its shortcut when one opens it. */
+  tooltip?: string;
+  /** The page this button opens is the one on screen. */
+  active?: boolean;
   onClick: (source: Element) => void;
 }) {
   return (
@@ -138,6 +158,8 @@ function SidebarUtilityItem({
           render={
             <SidebarMenuButton
               aria-label={label}
+              aria-current={active ? "page" : undefined}
+              isActive={active}
               onClick={(event) => onClick(event.currentTarget)}
               size="icon"
               className="size-7 [&_svg]:size-[15px]"
@@ -146,17 +168,26 @@ function SidebarUtilityItem({
             </SidebarMenuButton>
           }
         />
-        <TooltipPopup side="top">{label}</TooltipPopup>
+        <TooltipPopup side="top">{tooltip}</TooltipPopup>
       </Tooltip>
     </SidebarMenuItem>
   );
 }
 
-export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
+export const SidebarUtilityMenu = memo(function SidebarUtilityMenu({
+  hideTasks = false,
+}: {
+  /** The phone's home keeps Pull requests and Usage, without the Tasks destination. */
+  hideTasks?: boolean;
+}) {
   const navigate = useNavigate();
   const navigateToMainApp = useNavigateToMainApp();
   const { isMobile, setOpenMobile } = useSidebar();
   const { appearanceMode, setAppearanceMode } = useTheme();
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const usageShortcut = shortcutLabelForCommand(keybindings, "usage.open");
+  const pullRequestsSupported = usePullRequestsSupported();
+  const pathname = useLocation({ select: (location) => location.pathname });
   const isOnUtilityPage = useLocation({
     select: (location) => isSidebarUtilityPage(location.pathname),
   });
@@ -175,6 +206,14 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
     closeMobileSidebar();
     void navigate({ to: "/settings" });
   };
+  const openPage = (to: "/tasks" | "/usage") => {
+    closeMobileSidebar();
+    void navigate({ to });
+  };
+  const openPullRequests = () => {
+    closeMobileSidebar();
+    void navigate({ to: "/pull-requests", search: readPullRequestListPreferences() });
+  };
   const handleBackClick = () => {
     closeMobileSidebar();
     void navigateToMainApp();
@@ -190,31 +229,58 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
           </SidebarMenuButton>
         </SidebarMenuItem>
       ) : (
-        <>
-          <SidebarUtilityItem
-            icon={<SettingsIcon />}
-            label="Settings"
-            onClick={handleSettingsClick}
-          />
-          <SidebarUtilityItem
-            icon={<ThemeIcon />}
-            label={`Theme: ${themeLabel}`}
-            onClick={cycleTheme}
-          />
-        </>
+        <SidebarUtilityItem
+          icon={<SettingsIcon />}
+          label="Settings"
+          onClick={handleSettingsClick}
+        />
+      )}
+      {pullRequestsSupported ? (
+        <SidebarUtilityItem
+          icon={<PullRequestGlyph.pullRequest />}
+          label="Pull requests"
+          active={pathname === "/pull-requests"}
+          onClick={openPullRequests}
+        />
+      ) : null}
+      {hideTasks ? null : (
+        <SidebarUtilityItem
+          icon={<ListChecksIcon />}
+          label="Tasks"
+          active={pathname === "/tasks"}
+          onClick={() => openPage("/tasks")}
+        />
+      )}
+      <SidebarUtilityItem
+        icon={<ChartNoAxesColumnIcon />}
+        label="Usage"
+        tooltip={usageShortcut === null ? "Usage" : `Usage · ${usageShortcut}`}
+        active={pathname === "/usage"}
+        onClick={() => openPage("/usage")}
+      />
+      {isOnUtilityPage ? null : (
+        <SidebarUtilityItem
+          icon={<ThemeIcon />}
+          label={`Theme: ${themeLabel}`}
+          onClick={cycleTheme}
+        />
       )}
       <SidebarThreadUndoNotice />
     </SidebarMenu>
   );
 });
 
-export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
+export const SidebarChromeFooter = memo(function SidebarChromeFooter({
+  hideTasks = false,
+}: {
+  hideTasks?: boolean;
+}) {
   return (
     <SidebarFooter className="mt-auto" separated>
       <SidebarUpdatePill />
       <SidebarProviderUpdatePill />
       <SidebarUpdateArchitectureWarning />
-      <SidebarUtilityMenu />
+      <SidebarUtilityMenu hideTasks={hideTasks} />
     </SidebarFooter>
   );
 });

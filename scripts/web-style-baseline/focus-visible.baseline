@@ -18,7 +18,6 @@
 2 apps/web/src/components/settings/FoldedSettingsSection.tsx
 2 apps/web/src/components/settings/ThemeColorPicker.tsx
 1 apps/web/src/components/settings/ThemeImportDialog.tsx
-1 apps/web/src/components/sidebar/SidebarThreadHeader.tsx
 2 apps/web/src/components/sidebar/SidebarThreadRow.tsx
 1 apps/web/src/components/sidebar/ThreadSidebar.tsx
 4 apps/web/src/components/ui/autocomplete.tsx
