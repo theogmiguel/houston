@@ -7,15 +7,12 @@ import { applyAppearanceContrast } from "./appearanceContrast";
 import { applyAppearanceFontVariables, TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "./appearanceFonts";
 import { startElectronBrowserHost } from "./browser/ElectronBrowserHost";
 import { startBrowserProfileReporting } from "./browser/BrowserProfileReporter";
-import { ensureThreadPlaced } from "./threads/ensureThreadPlaced";
-import { GRID_STORAGE_KEY, useGridStore } from "./grid/gridStore";
 import { startPreviewTitleRecording } from "./browserHistoryStore";
 import { configureMotion } from "./motion/registry";
 import { retainThreadOverlaysForThread } from "./components/chat/threadOverlayRetention";
 import { startBackgroundThreadAnnouncements } from "./components/BackgroundThreadAnnouncer";
 import { startSshPasswordPromptQueue } from "./components/desktop/SshPasswordPromptDialog";
 import { startHostFreezeToasts } from "./components/HostFreezeToastCoordinator";
-import { startAppGridSync } from "./grid/gridSyncRuntime";
 import { startAppLayoutSync } from "./layout/layoutSyncRuntime";
 import { startKeybindingsUpdateToasts } from "./components/KeybindingsUpdateToast";
 import { startLegacyThreadMigrationToast } from "./components/LegacyThreadMigrationToast";
@@ -213,7 +210,6 @@ export function startAppServices(): AppRouter {
     registry: appAtomRegistry,
     threadShellAtom: environmentThreadShells.quietThreadShellAtom,
     threadRefsAtom: environmentThreadShells.threadRefsAtom,
-    onThreadArrived: ensureThreadPlaced,
   });
   subscribeComposerDraftModelReconciliation({
     registry: appAtomRegistry,
@@ -228,7 +224,6 @@ export function startAppServices(): AppRouter {
   startSshPasswordPromptQueue();
 
   startKeybindingsUpdateToasts();
-  startAppGridSync();
   startAppLayoutSync();
   startSlowRpcRequestToasts();
   startHostFreezeToasts();
@@ -243,11 +238,6 @@ export function startAppServices(): AppRouter {
     startGuideRunNotifications(appAtomRegistry, router);
     if (isDesktopHost) startDesktopUpdateLaunchNotice();
   }
-  // The quick window and the main window share the persisted grid store; either one's
-  // placement must reach the other instead of waiting for a reload.
-  window.addEventListener("storage", (event) => {
-    if (event.key === GRID_STORAGE_KEY) void useGridStore.persist.rehydrate();
-  });
 
   return router;
 }

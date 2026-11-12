@@ -31,7 +31,6 @@ const projects: ReadonlyArray<QuickComposerProjectOption> = [
     environmentId: "env" as QuickComposerProjectOption["environmentId"],
     projectId: "houston" as QuickComposerProjectOption["projectId"],
     title: "Houston",
-    grids: [{ id: "grid-1", name: "Grid 1" }],
   },
 ];
 
@@ -68,7 +67,7 @@ it("closes the window when the server accepts the thread", async () => {
   expect(start).toBeDefined();
   await act(async () => start!.click());
   expect(onSubmit).toHaveBeenCalledWith(
-    expect.objectContaining({ prompt: "Fix the flaky test", gridId: null }),
+    expect.objectContaining({ prompt: "Fix the flaky test" }),
   );
   expect(onClose).toHaveBeenCalledTimes(1);
 });

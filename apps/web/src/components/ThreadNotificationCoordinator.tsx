@@ -4,7 +4,7 @@ import {
   presentThreadShell,
 } from "@houston-app/client-runtime/state/models";
 import { isShownUnderParent } from "@houston-app/client-runtime/state/threads";
-import { scopeThreadRef } from "@houston-app/client-runtime/environment";
+import { scopedThreadKey, scopeThreadRef } from "@houston-app/client-runtime/environment";
 import type { AnyRouter } from "@tanstack/react-router";
 import type {
   EnvironmentId,
@@ -37,7 +37,7 @@ import {
   unlockNotificationAudio,
 } from "../threadNotifications";
 import { resolveSidebarThreadStatus, type SidebarThreadStatus } from "./Sidebar.logic";
-import { gridContainingThread, useGridStore } from "../grid/gridStore";
+import { useLayoutStore } from "../layout/layoutStore";
 import { openThreadInLayout } from "../threads/openThreadInLayout";
 import {
   createThreadNotificationGate,
@@ -162,19 +162,13 @@ export function startThreadNotifications(
     const active = (router.state.matches.at(-1)?.params ?? {}) as {
       environmentId?: string;
       threadId?: string;
-      gridId?: string;
     };
-    // A grid route names no thread; the thread on screen is the one in one of
-    // its cells. Without this check every completion toasted inside the grid.
-    const activeGridId = typeof active.gridId === "string" ? active.gridId : null;
-    const containingGrid = gridContainingThread(
-      useGridStore.getState().grids,
-      environmentId,
-      thread.id,
-    );
+    // A layout can show several chats at once; the thread on screen is any of them.
     const onScreen =
       (active.environmentId === environmentId && active.threadId === thread.id) ||
-      (activeGridId !== null && containingGrid?.id === activeGridId);
+      useLayoutStore
+        .getState()
+        .onScreenThreadKeys.has(scopedThreadKey(scopeThreadRef(environmentId, thread.id)));
     const title =
       kind === "completion"
         ? "Thread completed"

@@ -75,10 +75,6 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+w", command: "terminal.close", when: "terminalFocus" },
   { key: "mod+w", command: "rightPanel.close", when: "!terminalFocus" },
   { key: "mod+shift+t", command: "view.reopenClosed" },
-  { key: "y", command: "grid.tidy", when: "!terminalFocus && !editableFocus" },
-  { key: "h", command: "grid.tidyRow", when: "!terminalFocus && !editableFocus" },
-  { key: "v", command: "grid.tidyColumn", when: "!terminalFocus && !editableFocus" },
-  { key: "=", command: "grid.equalize", when: "!terminalFocus && !editableFocus" },
   { key: "mod+d", command: "diff.toggle", when: "!terminalFocus" },
   // Layout panes: cmd+\ opens a new pane to the right, alt+cmd+shift+D below.
   { key: "mod+\\", command: "layout.splitRight", when: "!terminalFocus" },
@@ -148,16 +144,7 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
     command: "thread.stop",
     when: "!terminalFocus && !modelPickerOpen && !composerMenuOpen",
   },
-  {
-    key: "mod+shift+enter",
-    command: "thread.steerQueuedMessage",
-    when: "!terminalFocus && !gridRoute",
-  },
-  {
-    key: "mod+shift+enter",
-    command: "grid.toggleMaximizedCell",
-    when: "!terminalFocus && gridRoute",
-  },
+  { key: "mod+shift+enter", command: "thread.steerQueuedMessage", when: "!terminalFocus" },
   { key: "alt+arrowup", command: "thread.editQueuedMessage", when: "composerFocus" },
   { key: "mod+enter", command: "composer.sendAlternate", when: "composerFocus && turnRunning" },
   {

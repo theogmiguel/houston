@@ -414,11 +414,6 @@ export function commandLabel(command: KeybindingCommand): string {
   if (usagePeriod) return `Usage: Period: ${usagePeriod.label}`;
   if (command === "view.reopenClosed") return "Reopen Closed Tab";
   if (command in LAYOUT_COMMAND_LABELS) return LAYOUT_COMMAND_LABELS[command as LayoutKeybindingCommand];
-  if (command === "grid.tidy") return "Grid: Tidy Into Balanced Grid";
-  if (command === "grid.tidyRow") return "Grid: Tidy Into One Row";
-  if (command === "grid.tidyColumn") return "Grid: Tidy Into One Column";
-  if (command === "grid.equalize") return "Grid: Equalize Splits";
-  if (command === "grid.toggleMaximizedCell") return "Grid: Maximize or Restore Cell";
   if (command === "thread.attentionNext") return "Thread: Next Thread Needing Attention";
   if (command === "thread.attentionPrevious") return "Thread: Previous Thread Needing Attention";
   if (command === "preview.focusUrl") return "Preview: Focus URL";

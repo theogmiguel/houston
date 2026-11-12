@@ -673,7 +673,6 @@ describe("workspace group", () => {
     const heading = headingFor(screen, "ws-a");
     const rect = heading.getBoundingClientRect();
     const source = {
-      gridId: null,
       workspaceId: "ws-other",
       threadId: "thread-a",
       environmentId: "env-1",

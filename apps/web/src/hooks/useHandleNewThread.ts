@@ -19,7 +19,6 @@ import {
   useComposerDraftStore,
 } from "../composerDraftStore";
 import { newDraftId, newThreadId } from "../lib/utils";
-import { useGrid } from "../grid/gridStore";
 import { openAsNewThreadTab } from "../threads/openDraftInLayout";
 import { orderItemsByPreferredIds } from "../components/Sidebar.logic";
 import {
@@ -466,16 +465,7 @@ export function resolveDefaultProjectRef(
 export function useHandleNewThread() {
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const routeTarget = useThreadRouteTarget();
-  const gridId = useParams({ strict: false, select: (params) => params.gridId });
-  const grid = useGrid(typeof gridId === "string" ? gridId : null);
-  // A grid route carries no thread params; its focused cell is the active thread.
-  const gridThreadRef =
-    grid === null || grid.focusedThreadId === null
-      ? null
-      : scopeThreadRef(grid.environmentId as EnvironmentId, grid.focusedThreadId as ThreadId);
-  const routeThreadRef =
-    (routeTarget?.kind === "server" ? routeTarget.threadRef : null) ??
-    (routeTarget === null ? gridThreadRef : null);
+  const routeThreadRef = routeTarget?.kind === "server" ? routeTarget.threadRef : null;
   const routeDraftId = routeTarget?.kind === "draft" ? routeTarget.draftId : null;
   const activeThread = useQuietThreadShell(routeThreadRef);
   const getDraftThread = useComposerDraftStore((store) => store.getDraftThread);

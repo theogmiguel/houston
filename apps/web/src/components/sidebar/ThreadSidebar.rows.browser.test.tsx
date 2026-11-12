@@ -305,7 +305,7 @@ describe("ThreadCard for a thread no grid shows", () => {
 
     await act(() =>
       beginThreadDragAt(
-        { gridId: "grid-a", threadId: "thread-b", environmentId: "env-1", projectId: "project-1" },
+        { threadId: "thread-b", environmentId: "env-1", projectId: "project-1" },
         { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
         1,
       ),

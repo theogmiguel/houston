@@ -6,7 +6,7 @@ sets the desktop's **Quick composer** global shortcut.
 
 Add a binding, change one, reset it to its default, or remove it. A command can have more
 than one binding, and a binding can carry a condition such as `terminalFocus` or
-`gridRoute`. The file that stores the bindings can be opened in your editor from this page.
+`previewOpen`. The file that stores the bindings can be opened in your editor from this page.
 Keybindings are stored by the server, so they apply to the environment you are editing.
 
 `Mod` is `Ctrl` on Linux and Windows and `Cmd` on macOS.
@@ -31,13 +31,13 @@ Keybindings are stored by the server, so they apply to the environment you are e
 | `Ctrl+Shift+F`                  | Project search                                                          |
 | `Ctrl+F`                        | Find in thread                                                          |
 | `Ctrl+U`                        | Usage                                                                   |
-| `Ctrl+Shift+T`                  | Reopen closed tab or grid cell                                          |
+| `Ctrl+Shift+T`                  | Reopen closed tab                                                       |
 | `Ctrl+Shift+S`                  | Close thread                                                            |
 | `Ctrl+Shift+P`                  | Pin thread                                                              |
 | `Ctrl+.` / `Ctrl+Shift+.`       | Next / previous thread needing attention                                |
 | `Ctrl+Shift+[` / `Ctrl+Shift+]` | Previous / next thread                                                  |
 | `Ctrl+1` … `Ctrl+9`             | Jump to a thread                                                        |
-| `Ctrl+Shift+Enter`              | Steer the first queued message; in a grid, maximize or restore the cell |
+| `Ctrl+Shift+Enter`              | Steer the first queued message                                          |
 | `Ctrl+Alt+Enter`                | Send in the background                                                  |
 | `Esc`                           | Stop the current turn                                                   |
 | `Ctrl+S`                        | Stash the composer prompt                                               |
@@ -50,10 +50,6 @@ Keybindings are stored by the server, so they apply to the environment you are e
 | `Ctrl+Shift+C`                  | Copy pull request link or thread reference                              |
 | `Ctrl+Shift+K`                  | Copy pull request number                                                |
 | `Ctrl+Q`                        | Quit, following the quit confirmation setting                           |
-
-Grid commands are rebindable too: **Balanced grid**, **One row**, **One column** and
-**Equalize splits** are `Y`, `H`, `V` and `=` when no terminal or editable field has focus.
-The focused grid cell receives the thread shortcuts; other cells bind none.
 
 ## Layout
 
@@ -99,13 +95,12 @@ In a diff, `Ctrl+F` opens find, `Enter` and `Shift+Enter` move between matches, 
 toggles case matching. In Changes, `/` focuses the file filter and `J`/`K` move between
 matches.
 
-In the sidebar, `F2` renames the focused thread or grid. `Up`, `Down`, `Home` and `End`
+In the sidebar, `F2` renames the focused thread or workspace. `Up`, `Down`, `Home` and `End`
 move between rows, `Left` and `Right` collapse or expand a section or move to its parent or
 first child, and `Enter` or `Space` opens the focused row. While the search field has focus,
 `Down` and `Up` move the highlighted result and `Enter` opens it. Holding the jump modifier
 labels the first nine rows with their `Ctrl+1` … `Ctrl+9` shortcut. Drag a thread onto
-another thread in its grid to reorder it, onto a grid heading to move it to that grid, or onto
-**Closed** to close it.
+a workspace heading to move it there, or onto **Closed** to close it.
 
 ## Usage
 

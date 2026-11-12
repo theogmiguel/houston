@@ -216,7 +216,6 @@ describe("SidebarShelves", () => {
     if (row === null) throw new Error("closed shelf missing");
     const rect = row.getBoundingClientRect();
     const source = {
-      gridId: "g-1",
       threadId: "thread-a",
       environmentId: "env-1",
       projectId: "project-1",

@@ -324,7 +324,6 @@ describe("ThreadSidebar workspaces", () => {
     ].find((element) => element.textContent?.startsWith("To"))!;
     const rect = heading.getBoundingClientRect();
     const source = {
-      gridId: null,
       workspaceId: before.workspaces[0]!.id,
       threadId: "t1",
       environmentId: "env-1",

@@ -151,7 +151,6 @@ describe("ThreadCard drag source", () => {
     const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
     startRowDrag(row);
     expect(getThreadDragSource()).toEqual({
-      gridId: null,
       workspaceId: "ws-a",
       threadId: "thread-a",
       environmentId: "env-1",
@@ -166,7 +165,6 @@ describe("ThreadCard drag source", () => {
     const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
     startRowDrag(row);
     expect(getThreadDragSource()).toMatchObject({
-      gridId: null,
       workspaceId: null,
       threadId: "thread-a",
     });
@@ -180,7 +178,6 @@ describe("ThreadCard drag source", () => {
     const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
     const rect = row.getBoundingClientRect();
     const source = {
-      gridId: null,
       workspaceId: "ws-other",
       threadId: "thread-b",
       environmentId: "env-1",

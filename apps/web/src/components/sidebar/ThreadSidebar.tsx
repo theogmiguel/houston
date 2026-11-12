@@ -547,7 +547,7 @@ export function ThreadSidebar({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing || !sidebarVisible) return;
       const command = resolveShortcutCommand(event, keybindings, {
-        context: { gridRoute: true, terminalFocus: false, editableFocus: false },
+        context: { terminalFocus: false, editableFocus: false },
       });
       const direction =
         command === "thread.attentionNext" ? 1 : command === "thread.attentionPrevious" ? -1 : null;

@@ -319,7 +319,6 @@ export function ThreadCard({
       if (control !== null && !control.hasAttribute("data-card-open")) return;
     }
     beginThreadDrag(event, {
-      gridId: null,
       workspaceId,
       threadId: thread.id,
       environmentId: thread.environmentId,

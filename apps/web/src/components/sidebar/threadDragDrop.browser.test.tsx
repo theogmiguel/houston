@@ -14,7 +14,6 @@ import { useRowFileDrop } from "./useRowFileDrop";
 const endDragAfter = () => ({ [Symbol.dispose]: () => endThreadDrag() });
 
 const source = (title?: string) => ({
-  gridId: null,
   threadId: "t1",
   environmentId: "env-1",
   projectId: "p1",

@@ -15,37 +15,24 @@ import {
   moveThreadContextDrag,
 } from "../components/chat/threadContextDrag";
 import { useStableCallback } from "../hooks/useStableCallback";
-import type { ThreadDropRefusal } from "../grid/projectMove";
-import type { Side } from "@houston-app/shared/grid/tree";
 
-/** The thread a drag carries: a sidebar row, a grid cell label or a menu move. */
+/** The thread a drag carries: a sidebar row. */
 export interface ThreadDragSource {
-  /** The grid the thread currently lives in; null for a thread no grid shows. */
-  readonly gridId: string | null;
-  /** The layout workspace showing the thread's chat; a sidebar row sets it, a grid cell does not. */
+  /** The layout workspace showing the thread's chat, or null when none shows it. */
   readonly workspaceId?: string | null;
   readonly threadId: string;
   readonly environmentId: string;
   readonly projectId: string;
   /**
    * The thread's title. A source that has one can also be dropped on a chat composer, which takes
-   * the thread as context; a source without one only moves within the grids.
+   * the thread as context; a source without one only moves between workspaces.
    */
   readonly title?: string;
 }
 
 /** What a live drag would do if it ended under the pointer. */
 export type ThreadDropTarget =
-  | {
-      readonly kind: "cell";
-      readonly gridId: string;
-      readonly threadId: string;
-      readonly side: Side;
-      readonly refusal: ThreadDropRefusal | null;
-    }
-  | { readonly kind: "grid"; readonly gridId: string }
   | { readonly kind: "workspace"; readonly workspaceId: string }
-  | { readonly kind: "thread"; readonly gridId: string | null; readonly threadId: string }
   | { readonly kind: "closed" };
 
 export interface ThreadDragState {
@@ -95,7 +82,7 @@ function getState(): ThreadDragState | null {
   return state;
 }
 
-/** The drag in flight, shared by the sidebar, every grid and the overlay. */
+/** The drag in flight, shared by the sidebar and the overlay. */
 export function useThreadDragState(): ThreadDragState | null {
   return useSyncExternalStore(subscribe, getState, () => null);
 }
@@ -165,23 +152,8 @@ function resolveDrop(
 function sameTarget(left: ThreadDropTarget | null, right: ThreadDropTarget | null): boolean {
   if (left === null || right === null) return left === right;
   if (left.kind !== right.kind) return false;
-  if (left.kind === "cell") {
-    return (
-      right.kind === "cell" &&
-      left.gridId === right.gridId &&
-      left.threadId === right.threadId &&
-      left.side === right.side &&
-      left.refusal === right.refusal
-    );
-  }
-  if (left.kind === "grid") return right.kind === "grid" && left.gridId === right.gridId;
   if (left.kind === "workspace") {
     return right.kind === "workspace" && left.workspaceId === right.workspaceId;
-  }
-  if (left.kind === "thread") {
-    return (
-      right.kind === "thread" && left.gridId === right.gridId && left.threadId === right.threadId
-    );
   }
   return true;
 }
@@ -191,7 +163,7 @@ function updateDrag(source: ThreadDragSource, point: ThreadDragPoint): void {
   activeZone = found?.zone ?? null;
   lastPoint = point;
   const target = found?.target ?? null;
-  // Over no rail or grid target, a titled thread can still land on a chat composer.
+  // Over no rail target, a titled thread can still land on a chat composer.
   if (source.title !== undefined) {
     if (target === null) moveThreadContextDrag(point, { title: source.title, count: 1 });
     else endThreadContextDrag();
@@ -218,7 +190,7 @@ function endDragState(): void {
 }
 
 /**
- * The click a drag ends on must not also open the row or the cell label. The
+ * The click a drag ends on must not also open the row. The
  * listener is removed after the task in case the drop navigated away.
  */
 function swallowNextClick(): void {

@@ -785,7 +785,7 @@ export function availablePaletteActions<
 export const ROOT_COMMAND_VALUES: ReadonlyArray<string> = [
   "action:new-thread",
   "action:new-thread-without-project",
-  "action:grid-new",
+  "action:workspace-new",
   "action:settings",
   "action:change-appearance",
 ];

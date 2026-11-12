@@ -2,7 +2,7 @@ import { ArrowLeftIcon, ChevronDownIcon, EllipsisIcon, SquareMenuIcon } from "lu
 import type { ReactNode, RefObject } from "react";
 
 import { Button } from "../components/ui/button";
-import { GridPaneRenameInput } from "../components/ui/grid-pane";
+import { ThreadRenameInput } from "../components/ui/thread-rename-input";
 import {
   PHONE_TABS_CHEVRON_CLS,
   PHONE_TABS_COUNT_CLS,
@@ -84,7 +84,7 @@ export function PhoneThreadBar({
       </Button>
       {renaming ? (
         <div className="flex min-w-0 flex-1 items-center">
-          <GridPaneRenameInput
+          <ThreadRenameInput
             value={renameValue}
             onChange={onChangeRename}
             onCommit={onCommitRename}

@@ -12,22 +12,13 @@ import type { EnvironmentProject } from "@houston-app/client-runtime/state/shell
 import { resolveProjectSettings } from "@houston-app/shared/projectSettings";
 import { resolveNewThreadModelSelection } from "@houston-app/shared/usageLimits";
 
-import { ensureThreadPlaced } from "../../threads/ensureThreadPlaced";
-import { gridById, MAX_GRID_THREADS, useGridStore } from "../../grid/gridStore";
-import { preorderThreads } from "@houston-app/shared/grid/tree";
 import { resolveProjectDefaultProviderModelSelection } from "../../providerInstances";
-
-export interface QuickComposerGridOption {
-  readonly id: string;
-  readonly name: string;
-}
 
 export interface QuickComposerProjectOption {
   readonly key: string;
   readonly environmentId: EnvironmentId;
   readonly projectId: ProjectId;
   readonly title: string;
-  readonly grids: ReadonlyArray<QuickComposerGridOption>;
 }
 
 export interface QuickComposerImage {
@@ -97,27 +88,4 @@ export function resolveQuickComposerStart(input: {
     runtimeMode: resolved.settings.defaultRuntimeMode,
     interactionMode: "default",
   };
-}
-
-/** Places a thread the quick composer started: its chosen grid when there is room, else the workspace's grid. */
-export function placeQuickComposerThread(input: {
-  readonly environmentId: EnvironmentId;
-  readonly projectId: ProjectId;
-  readonly threadId: ThreadId;
-  readonly gridId: string | null;
-}): string | null {
-  const store = useGridStore.getState();
-  if (input.gridId !== null) {
-    const grid = gridById(store.grids, input.gridId);
-    const count = grid?.tree === null || grid === null ? 0 : preorderThreads(grid.tree).length;
-    if (grid !== null && count < MAX_GRID_THREADS) {
-      store.addThread(grid.id, input.threadId);
-      return grid.id;
-    }
-  }
-  return ensureThreadPlaced({
-    environmentId: input.environmentId,
-    projectId: input.projectId,
-    threadId: input.threadId,
-  });
 }
