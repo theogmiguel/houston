@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 import { scopedThreadKey, scopeThreadRef } from "@houston-app/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
 import {
@@ -15,6 +16,14 @@ import {
 } from "lucide-react";
 
 import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
+import {
+  EMPTY_PROVIDER_ENTRIES,
+  sidebarProviderEntriesAtom,
+} from "../components/sidebar/sidebarProviderEntries";
+import {
+  SidebarProviderStack,
+  type SidebarProviderEntry,
+} from "../components/sidebar/SidebarThreadRow";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { resolveThreadRowState } from "../threads/sidebarModel";
 import { selectThreadRightPanelState, useRightPanelStore } from "../rightPanelStore";
@@ -62,6 +71,29 @@ function surfaceIcon(kind: string): LucideIcon {
   }
 }
 
+/**
+ * A chat tab's icon: the mark of the provider the thread runs on, as its sidebar card shows it.
+ * A draft, or a thread whose provider this client does not know, shows the folder.
+ */
+export function ChatTabIcon({
+  shell,
+  providerEntries,
+}: {
+  readonly shell: EnvironmentThreadShell | null;
+  readonly providerEntries: ReadonlyMap<string, SidebarProviderEntry>;
+}) {
+  const mark =
+    shell === null ? null : (
+      <SidebarProviderStack thread={shell} providerEntryByInstanceId={providerEntries} quiet />
+    );
+  return (
+    <span data-chat-tab-icon="" className="inline-grid size-3.5 shrink-0 place-items-center">
+      {mark}
+      <FolderIcon aria-hidden className="size-3.5 not-only:hidden" />
+    </span>
+  );
+}
+
 /** The status a thread's tab marks: work running, or something that needs the person. */
 function markOf(shell: EnvironmentThreadShell | null, nowIso: string): LayoutTabLabel["mark"] {
   if (shell === null) return undefined;
@@ -76,6 +108,7 @@ function markOf(shell: EnvironmentThreadShell | null, nowIso: string): LayoutTab
  */
 export function useLayoutTabLabel(): (tab: LayoutTab) => LayoutTabLabel {
   const shells = useQuietThreadShells();
+  const providerEntriesByEnvironment = useAtomValue(sidebarProviderEntriesAtom);
   const panels = useRightPanelStore((state) => state.byThreadKey);
   const nowMinute = useNowMinute();
   const nowIso = `${nowMinute}:00.000Z`;
@@ -91,7 +124,15 @@ export function useLayoutTabLabel(): (tab: LayoutTab) => LayoutTabLabel {
         const ref = chatTargetThreadRef(content.target);
         const shell = ref === null ? null : (shellByKey.get(scopedThreadKey(ref)) ?? null);
         return {
-          icon: iconOf(FolderIcon),
+          icon: (
+            <ChatTabIcon
+              shell={shell}
+              providerEntries={
+                (shell === null ? undefined : providerEntriesByEnvironment.get(shell.environmentId)) ??
+                EMPTY_PROVIDER_ENTRIES
+              }
+            />
+          ),
           title: shell?.title || NEW_THREAD_TITLE,
           mark: markOf(shell, nowIso),
         };
