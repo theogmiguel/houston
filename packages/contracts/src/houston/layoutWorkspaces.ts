@@ -317,3 +317,45 @@ export const HoustonLayoutWorkspaceStreamEvent = Schema.Union([
   Schema.Struct({ deleted: Schema.Struct({ workspaceId: Id }) }),
 ]);
 export type HoustonLayoutWorkspaceStreamEvent = typeof HoustonLayoutWorkspaceStreamEvent.Type;
+
+// Launch placement.
+
+const WorkspaceName = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(HOUSTON_LAYOUT_WORKSPACE_LIMITS.nameChars),
+);
+
+/** Where threads an agent launches go: an existing workspace, or one new workspace named here. */
+export const HoustonLayoutLaunchTarget = Schema.Union([
+  Schema.Struct({ workspaceId: Id }),
+  Schema.Struct({ newWorkspaceName: WorkspaceName }),
+]);
+export type HoustonLayoutLaunchTarget = typeof HoustonLayoutLaunchTarget.Type;
+
+/** The launch target of the grid tools, accepted as an alias of `HoustonLayoutLaunchTarget`. */
+export const HoustonGridLaunchTargetAlias = Schema.Union([
+  Schema.Struct({ gridId: Id }),
+  Schema.Struct({ newGridName: WorkspaceName }),
+]);
+export type HoustonGridLaunchTargetAlias = typeof HoustonGridLaunchTargetAlias.Type;
+
+/** What became of a launched thread's workspace target; a refusal leaves the thread in place. */
+export const HoustonLayoutPlacement = Schema.Union([
+  Schema.Struct({ placed: Schema.Literal(true), workspaceId: Id }),
+  Schema.Struct({
+    placed: Schema.Literal(false),
+    workspaceId: Schema.optional(Id),
+    error: Schema.String,
+  }),
+]);
+export type HoustonLayoutPlacement = typeof HoustonLayoutPlacement.Type;
+
+/** `HoustonLayoutPlacement` as the grid tools reported it, with the workspace id as `gridId`. */
+export const HoustonGridPlacementAlias = Schema.Union([
+  Schema.Struct({ placed: Schema.Literal(true), gridId: Id }),
+  Schema.Struct({
+    placed: Schema.Literal(false),
+    gridId: Schema.optional(Id),
+    error: Schema.String,
+  }),
+]);
+export type HoustonGridPlacementAlias = typeof HoustonGridPlacementAlias.Type;

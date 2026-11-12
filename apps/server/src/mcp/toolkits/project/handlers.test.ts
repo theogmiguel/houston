@@ -39,14 +39,13 @@ import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as ProjectHandlers from "./handlers.ts";
 import { ProjectToolkit } from "./tools.ts";
-import * as GridHandlers from "../../../houston/gridToolkit/handlers.ts";
-import { GridToolkit } from "../../../houston/gridToolkit/tools.ts";
+import * as WorkspaceHandlers from "../../../houston/workspaceToolkit/handlers.ts";
+import { WorkspaceToolkit } from "../../../houston/workspaceToolkit/tools.ts";
 import {
-  insertThreadRow,
-  layerGrids,
-  layerNoGrids,
-} from "../../../houston/gridToolkit/gridToolkit.testkit.ts";
-import type { HoustonGridService } from "../../../houston/grids.ts";
+  layerNoWorkspaces,
+  layerWorkspaces,
+} from "../../../houston/workspaceToolkit/workspaceToolkit.testkit.ts";
+import type { HoustonLayoutWorkspaceService } from "../../../houston/layoutWorkspaces.ts";
 
 const clientLaunchHarness = (input: {
   readonly runtimeModeCeiling: RuntimeMode;
@@ -61,8 +60,8 @@ const clientLaunchHarness = (input: {
   readonly webOrigin?: string;
   /** The orchestrator refuses the new thread's mode, as under a managed ceiling. */
   readonly refusedByCeiling?: true;
-  /** The grid service a launch places threads with; default holds no grids. */
-  readonly grids?: Layer.Layer<HoustonGridService>;
+  /** The workspace service a launch places threads with; default holds no workspaces. */
+  readonly workspaces?: Layer.Layer<HoustonLayoutWorkspaceService>;
   /** Runs when the launch fake accepts a thread, as the projection would record it. */
   readonly onLaunched?: (launch: ThreadLaunch.ThreadLaunchInput) => Effect.Effect<void>;
 }) => {
@@ -76,7 +75,7 @@ const clientLaunchHarness = (input: {
     model: input.overrideModel === undefined ? modelSelection : null,
   };
   const layerDependencies = Layer.mergeAll(
-    input.grids ?? layerNoGrids,
+    input.workspaces ?? layerNoWorkspaces,
     Layer.mock(ProviderRegistry.ProviderRegistry)({
       getProviders: Effect.succeed(input.providers ?? []),
     }),
@@ -722,19 +721,17 @@ it.effect("an update the project refuses tells the agent why", () =>
 );
 
 it.effect(
-  "an agent makes a grid, launches three threads into it, moves one to a second grid, lists both and deletes one",
+  "an agent makes a workspace, launches three threads into it, moves one to a second workspace, lists both and deletes one",
   () =>
     Effect.scoped(
       Effect.gen(function* () {
         const projectId = ProjectId.make("project:client-target");
-        const grids = yield* layerGrids([projectId]).pipe(Layer.build);
+        const workspaces = yield* layerWorkspaces.pipe(Layer.build);
         const launched: Array<ThreadLaunch.ThreadLaunchInput> = [];
         const harness = clientLaunchHarness({
           runtimeModeCeiling: "full-access",
           launched,
-          grids: Layer.succeedContext(grids),
-          onLaunched: (launch) =>
-            insertThreadRow(String(launch.threadId), launch.projectId).pipe(Effect.provide(grids)),
+          workspaces: Layer.succeedContext(workspaces),
         });
         const dependencies = harness.dependencies;
         const launchToolkit = yield* ProjectToolkit.pipe(
@@ -744,9 +741,11 @@ it.effect(
             ),
           ),
         );
-        const gridToolkit = yield* GridToolkit.pipe(
+        const workspaceToolkit = yield* WorkspaceToolkit.pipe(
           Effect.provide(
-            McpToolAccess.HandlersLayer.layer(GridHandlers.layer).pipe(Layer.provide(dependencies)),
+            McpToolAccess.HandlersLayer.layer(WorkspaceHandlers.layer).pipe(
+              Layer.provide(dependencies),
+            ),
           ),
         );
         const run = <T extends { handle: unknown }>(toolkit: T, name: string, input: object) =>
@@ -762,10 +761,7 @@ it.effect(
             Effect.provide(dependencies),
           );
 
-        const review = yield* run(gridToolkit, "houston_grid_create", {
-          projectId,
-          name: "Review",
-        });
+        const review = yield* run(workspaceToolkit, "houston_workspace_create", { name: "Review" });
         expect(review).toMatchObject({ name: "Review", threadIds: [] });
 
         const threadIds: string[] = [];
@@ -773,26 +769,29 @@ it.effect(
           const result = yield* run(launchToolkit, "houston_thread_launch", {
             projectId,
             title,
-            grid: { gridId: review.gridId },
+            workspace: { workspaceId: review.workspaceId },
           });
-          expect(result.grid).toEqual({ placed: true, gridId: review.gridId });
+          expect(result.workspace).toEqual({ placed: true, workspaceId: review.workspaceId });
+          expect(result.grid).toEqual({ placed: true, gridId: review.workspaceId });
           threadIds.push(result.threadId);
         }
 
-        const docs = yield* run(gridToolkit, "houston_grid_create", { projectId, name: "Docs" });
-        const moved = yield* run(gridToolkit, "houston_grid_place_thread", {
-          gridId: docs.gridId,
+        const docs = yield* run(workspaceToolkit, "houston_workspace_create", { name: "Docs" });
+        const moved = yield* run(workspaceToolkit, "houston_workspace_add_thread", {
+          workspaceId: docs.workspaceId,
           threadId: threadIds[1],
         });
         expect(moved.threadIds).toEqual([threadIds[1]]);
 
-        const listed = yield* run(gridToolkit, "houston_grid_list", { projectId });
+        const listed = yield* run(workspaceToolkit, "houston_workspace_list", {});
         expect(
-          listed.grids.map((grid: any) => [
-            grid.name,
-            grid.threads.map((thread: any) => [thread.threadId, thread.title]),
+          listed.workspaces.map((workspace: any) => [
+            workspace.name,
+            workspace.threads.map((thread: any) => [thread.threadId, thread.title]),
           ]),
         ).toEqual([
+          // The workspace every database starts with.
+          ["Workspace 1", []],
           [
             "Review",
             [
@@ -803,26 +802,37 @@ it.effect(
           ["Docs", [[threadIds[1], "two"]]],
         ]);
 
-        expect(yield* run(gridToolkit, "houston_grid_delete", { gridId: review.gridId })).toEqual({
-          deleted: true,
-        });
-        const remaining = yield* run(gridToolkit, "houston_grid_list", { projectId });
-        expect(remaining.grids.map((grid: any) => grid.name)).toEqual(["Docs"]);
+        expect(
+          yield* run(workspaceToolkit, "houston_workspace_delete", {
+            workspaceId: review.workspaceId,
+          }),
+        ).toEqual({ deleted: true });
+        const remaining = yield* run(workspaceToolkit, "houston_workspace_list", {});
+        expect(remaining.workspaces.map((workspace: any) => workspace.name)).toEqual([
+          "Workspace 1",
+          "Docs",
+        ]);
+        // The deleted workspace's threads moved to the first workspace.
+        expect(remaining.workspaces[0].threads.map((thread: any) => thread.threadId)).toEqual([
+          threadIds[0],
+          threadIds[2],
+        ]);
 
         const named = yield* run(launchToolkit, "houston_thread_launch", {
           projectId,
           title: "four",
           grid: { newGridName: "Fresh" },
         });
+        expect(named.workspace).toMatchObject({ placed: true });
         expect(named.grid).toMatchObject({ placed: true });
         const refused = yield* run(launchToolkit, "houston_thread_launch", {
           projectId,
           title: "five",
-          grid: { gridId: "ghost" },
+          workspace: { workspaceId: "ghost" },
         });
         expect(refused.threadId).toBeTypeOf("string");
-        expect(refused.grid).toMatchObject({ placed: false, gridId: "ghost" });
-        expect(refused.grid.error).toContain("ghost");
+        expect(refused.workspace).toMatchObject({ placed: false, workspaceId: "ghost" });
+        expect(refused.workspace.error).toContain("ghost");
       }),
     ),
 );

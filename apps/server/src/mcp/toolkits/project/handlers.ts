@@ -1,4 +1,8 @@
-import { placeLaunched } from "../../../houston/gridToolkit/placement.ts";
+import {
+  gridPlacementOf,
+  launchTargetOf,
+  placeLaunched,
+} from "../../../houston/workspaceToolkit/placement.ts";
 import {
   CommandId,
   MessageId,
@@ -276,13 +280,14 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
         );
         const thread = result.projection.thread;
         const run = result.projection.runs.find((run) => run.userMessageId === messageId);
-        const grid =
-          input.grid === undefined
+        const target = launchTargetOf(input);
+        const workspace =
+          target === undefined
             ? undefined
             : (yield* placeLaunched({
-                projectId: thread.projectId,
+                environmentId: scope.environmentId,
                 threadIds: [thread.id],
-                target: input.grid,
+                target,
                 replaying: input.clientRequestId !== undefined,
               }))[0];
         return {
@@ -292,7 +297,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
           modelSelection: thread.modelSelection,
           runId: run?.id ?? null,
           status: run?.status ?? null,
-          ...(grid === undefined ? {} : { grid }),
+          ...(workspace === undefined ? {} : { workspace, grid: gridPlacementOf(workspace) }),
         };
       }),
     // The launched thread carries the caller's link, if it has one.
