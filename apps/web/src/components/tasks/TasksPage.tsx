@@ -48,6 +48,7 @@ import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { SidebarInset } from "../ui/sidebar";
 import { toastManager } from "../ui/toast";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
+import { ScrollRow } from "../ui/scroll-row";
 import {
   WorkspaceBreadcrumb,
   WorkspaceBreadcrumbItem,
@@ -440,7 +441,7 @@ export function TasksPage() {
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
           <WorkspacePageHeader desktop={isDesktopHost}>
-            <WorkspaceBreadcrumb ariaLabel="Tasks breadcrumb">
+            <WorkspaceBreadcrumb ariaLabel="Tasks breadcrumb" className="shrink-0">
               <WorkspaceBreadcrumbItem current={view !== "sources"}>
                 <Text as="h1" variant="headline" weight="semibold">
                   Tasks
@@ -457,73 +458,85 @@ export function TasksPage() {
                 </>
               ) : null}
             </WorkspaceBreadcrumb>
-            <ToggleGroup
-              value={[view]}
-              onValueChange={(next) => {
-                const target =
-                  next[0] === "projects" ? "projects" : next[0] === "sources" ? "sources" : "queue";
-                updateSearch({ view: target });
-              }}
-            >
-              <Toggle value="queue">Queue</Toggle>
-              <Toggle value="projects">By project</Toggle>
-              <Toggle value="sources">Sources</Toggle>
-            </ToggleGroup>
-            <div className="min-w-0 flex-1" />
-            {view === "sources" ? null : (
-              <>
-                <InputGroup className="w-56 min-w-24 shrink">
-                  <InputGroupAddon>
-                    <SearchIcon />
-                  </InputGroupAddon>
-                  <InputGroupInput
-                    value={search.q ?? ""}
-                    placeholder="Search"
-                    aria-label="Search tasks"
-                    onChange={(event) =>
-                      updateSearch({ q: event.currentTarget.value || undefined })
-                    }
-                  />
-                </InputGroup>
-                <div className="w-44 shrink-0">
-                  <Select
-                    value={workspace}
-                    onValueChange={(value) => {
-                      if (typeof value === "string") updateSearch({ workspace: value });
-                    }}
-                  >
-                    <SelectTrigger aria-label="Workspace">
-                      <SelectValue>
-                        {workspaceOptions(projectOptions).find(
-                          (option) => option.value === workspace,
-                        )?.label ?? "All workspaces"}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectPopup>
-                      {workspaceOptions(projectOptions).map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectPopup>
-                  </Select>
-                </div>
-                {view === "projects" ? (
+            {/* In a narrow pane the controls scroll sideways instead of overlapping the title. */}
+            <ScrollRow className="flex-1 gap-3">
+              <ToggleGroup
+                className="shrink-0"
+                value={[view]}
+                onValueChange={(next) => {
+                  const target =
+                    next[0] === "projects"
+                      ? "projects"
+                      : next[0] === "sources"
+                        ? "sources"
+                        : "queue";
+                  updateSearch({ view: target });
+                }}
+              >
+                <Toggle value="queue">Queue</Toggle>
+                <Toggle value="projects">By project</Toggle>
+                <Toggle value="sources">Sources</Toggle>
+              </ToggleGroup>
+              <div className="min-w-0 flex-1" />
+              {view === "sources" ? null : (
+                <>
+                  <InputGroup className="w-56 min-w-24 shrink">
+                    <InputGroupAddon>
+                      <SearchIcon />
+                    </InputGroupAddon>
+                    <InputGroupInput
+                      value={search.q ?? ""}
+                      placeholder="Search"
+                      aria-label="Search tasks"
+                      onChange={(event) =>
+                        updateSearch({ q: event.currentTarget.value || undefined })
+                      }
+                    />
+                  </InputGroup>
+                  <div className="w-44 shrink-0">
+                    <Select
+                      value={workspace}
+                      onValueChange={(value) => {
+                        if (typeof value === "string") updateSearch({ workspace: value });
+                      }}
+                    >
+                      <SelectTrigger aria-label="Workspace">
+                        <SelectValue>
+                          {workspaceOptions(projectOptions).find(
+                            (option) => option.value === workspace,
+                          )?.label ?? "All workspaces"}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectPopup>
+                        {workspaceOptions(projectOptions).map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectPopup>
+                    </Select>
+                  </div>
+                  {view === "projects" ? (
+                    <Button
+                      variant="outline"
+                      disabled={selectedProject === null}
+                      onClick={() => setNewProjectOpen(true)}
+                    >
+                      <PlusIcon aria-hidden />
+                      New project
+                    </Button>
+                  ) : null}
                   <Button
-                    variant="outline"
-                    disabled={selectedProject === null}
-                    onClick={() => setNewProjectOpen(true)}
+                    className="shrink-0"
+                    disabled={newTaskDisabled}
+                    onClick={() => setEditorOpen(true)}
                   >
                     <PlusIcon aria-hidden />
-                    New project
+                    New task
                   </Button>
-                ) : null}
-                <Button disabled={newTaskDisabled} onClick={() => setEditorOpen(true)}>
-                  <PlusIcon aria-hidden />
-                  New task
-                </Button>
-              </>
-            )}
+                </>
+              )}
+            </ScrollRow>
           </WorkspacePageHeader>
           <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-4 pt-1">
             <div className="min-h-0 flex-1 overflow-y-auto">
