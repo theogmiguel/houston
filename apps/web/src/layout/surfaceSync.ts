@@ -1,5 +1,6 @@
 /** Surface stores own resources; this sync owns their tabs. Hiding tabs keeps resources alive, while
  * closing a surface releases it through closeThreadSurface. */
+import { isPhoneViewport } from "../mobile/usePhone";
 import { parseScopedThreadKey, scopedThreadKey } from "@houston-app/client-runtime/environment";
 import type { ScopedThreadRef } from "@houston-app/contracts";
 import { useEffect } from "react";
@@ -65,13 +66,21 @@ export function requestLayoutSurfacePlacement(
   }, 5000);
 }
 
-/** Where Settings › Layout puts a thread's terminal or side pane, relative to its chat. */
+/**
+ * Where Settings › Layout puts a thread's terminal or side pane, relative to its chat. A phone
+ * shows one pane at a time, so there they are tabs of the chat's own pane whatever Settings says.
+ */
 export function layoutSurfaceDestination(
   chat: LayoutTabLocation,
   terminal: boolean,
 ): LayoutTabDestination {
   const behavior = getLayoutBehavior();
-  const placement = terminal ? behavior.terminalPlacement : behavior.sidePanePlacement;
+  const placement =
+    typeof window !== "undefined" && isPhoneViewport()
+      ? "new-tab"
+      : terminal
+        ? behavior.terminalPlacement
+        : behavior.sidePanePlacement;
   if (placement === "new-tab") {
     return {
       kind: "pane",

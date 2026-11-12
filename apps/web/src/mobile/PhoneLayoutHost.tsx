@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { LayoutLauncher } from "../layout/LayoutLauncher";
 import { LayoutSurfaceServices } from "../layout/LayoutSurfaceServices";
-import { type LayoutPane, type LayoutTab, selectFocusedPane } from "../layout/layoutModel";
+import { type LayoutTab, selectFocusedPane } from "../layout/layoutModel";
 import type { LayoutPaneState } from "../layout/layoutPaneContext";
 import { threadKeysOfTabs } from "../layout/layoutThreadRef";
 import { useLayoutStore } from "../layout/layoutStore";
@@ -14,6 +14,7 @@ import { LayoutPaneContext } from "../layout/layoutPaneContext";
 import { SidebarInset } from "../components/ui/sidebar";
 import type { ThreadRouteTarget } from "../threadRoutes";
 import { PhonePaneBar } from "./PhonePaneBar";
+import { useHiddenOnPhone } from "./phoneTabs";
 import { PhoneThreadHostContext } from "./phoneThreadHost";
 
 /**
@@ -39,15 +40,16 @@ function sameIds(a: readonly string[], b: readonly string[]) {
  * The chat tabs of the shown pane that have been on screen, so leaving one for a surface and
  * coming back keeps its timeline and scroll. Switching to another pane starts over.
  */
-function useRetainedChatTabs(pane: LayoutPane | null, activeTabId: string | null): string[] {
+function useRetainedChatTabs(
+  paneId: string | null,
+  tabs: readonly LayoutTab[],
+  activeTabId: string | null,
+): string[] {
   const [retained, setRetained] = useState<{ paneId: string | null; ids: string[] }>({
     paneId: null,
     ids: [],
   });
-  const paneId = pane?.id ?? null;
-  const chatIds = new Set(
-    (pane?.tabs ?? []).filter((tab) => tab.content.kind === "chat").map((tab) => tab.id),
-  );
+  const chatIds = new Set(tabs.filter((tab) => tab.content.kind === "chat").map((tab) => tab.id));
   const next = (retained.paneId === paneId ? retained.ids : []).filter((id) => chatIds.has(id));
   if (activeTabId !== null && chatIds.has(activeTabId) && !next.includes(activeTabId)) {
     next.push(activeTabId);
@@ -69,9 +71,12 @@ function LoadedPhoneLayoutHost({
   const tabLabel = useLayoutTabLabel();
   const renderTab = useLayoutTabRenderer(layout);
   const pane = selectFocusedPane(layout);
-  const tabs = pane?.tabs ?? [];
-  const activeTab = tabs.find((tab) => tab.id === pane?.activeTabId) ?? null;
-  const retained = useRetainedChatTabs(pane, activeTab?.id ?? null);
+  const hiddenOnPhone = useHiddenOnPhone();
+  const tabs = (pane?.tabs ?? []).filter((tab) => !hiddenOnPhone(tab));
+  // A tab the phone hides can hold the pane's focus (restored from another device): the first tab
+  // it offers shows instead.
+  const activeTab = tabs.find((tab) => tab.id === pane?.activeTabId) ?? tabs[0] ?? null;
+  const retained = useRetainedChatTabs(pane?.id ?? null, tabs, activeTab?.id ?? null);
   // Details belong to the tab that opened them: moving to another tab closes them.
   const [details, setDetails] = useState<{ tabId: string; open: boolean } | null>(null);
   const detailsAnchor = useRef<Element | null>(null);

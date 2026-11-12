@@ -491,8 +491,8 @@ it("keeps the desktop composer at 1024px", async () => {
 });
 
 const GUTTER = 16;
-// The pane draws a 1px edge, so a 16px gutter starts 17px from the viewport.
-const EDGE = 1;
+// The phone's pane draws no edge, so the gutter starts at the viewport.
+const EDGE = 0;
 
 function rect(element: Element) {
   return element.getBoundingClientRect();

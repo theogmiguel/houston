@@ -73,7 +73,13 @@ export function PhoneThreadBar({
   );
   return (
     <div data-phone-thread-bar="" className={PHONE_THREAD_BAR_CLS}>
-      <Button variant="ghost" size="icon" aria-label="Back to threads" onClick={onBack}>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="size-11"
+        aria-label="Back to threads"
+        onClick={onBack}
+      >
         <ArrowLeftIcon className="size-4" />
       </Button>
       {renaming ? (
@@ -109,6 +115,7 @@ export function PhoneThreadBar({
           ref={onDetailsRef}
           variant="ghost"
           size="icon"
+          className="size-11"
           aria-label="Thread details"
           aria-pressed={detailsOpen}
           onClick={onToggleDetails}
@@ -121,6 +128,7 @@ export function PhoneThreadBar({
           ref={menuButtonRef}
           variant="ghost"
           size="icon"
+          className="size-11"
           aria-label={`Thread actions for ${title}`}
           aria-haspopup="menu"
           onClick={onOpenMenu}
