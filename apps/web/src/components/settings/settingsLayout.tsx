@@ -278,9 +278,9 @@ export function SettingsUnavailableGroup({
   if (message === undefined) return children;
 
   return (
-    <div className="border-border/60 bg-muted/20 py-1.5">
+    <div className="py-1.5">
       <div className="flex items-start gap-2 px-4 py-2 text-xs leading-relaxed text-muted-foreground">
-        <InfoIcon className="mt-0.5 size-3.5 shrink-0 text-warning" />
+        <InfoIcon className="mt-0.5 size-3.5 shrink-0" />
         <p>{message}</p>
       </div>
       <div className="[&_h3]:opacity-64 [&_p]:opacity-64 max-phone:[&>*+*]:relative max-phone:[&>*+*]:before:pointer-events-none max-phone:[&>*+*]:before:absolute max-phone:[&>*+*]:before:top-0 max-phone:[&>*+*]:before:left-4 max-phone:[&>*+*]:before:right-4 max-phone:[&>*+*]:before:h-px max-phone:[&>*+*]:before:bg-border max-phone:[&>*+*]:before:content-['']">
@@ -509,7 +509,7 @@ export function SettingsRow({
       tabIndex={rowProps.id ? -1 : rowProps.tabIndex}
       data-slot="settings-row"
       className={cn(
-        "@container/settings-row min-h-12 px-4 aria-disabled:opacity-64 aria-disabled:[&_*]:text-muted-foreground hover:bg-hover",
+        "@container/settings-row min-h-12 px-4 aria-disabled:opacity-64 aria-disabled:[&_*]:text-muted-foreground",
         children ? "pt-3 pb-1" : "py-3",
         className,
       )}

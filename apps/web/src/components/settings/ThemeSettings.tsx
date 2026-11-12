@@ -863,7 +863,7 @@ export function ThemeLibrary({
       {view !== "library" ? (
         <>
           <h3
-            className={`flex items-center text-2xs leading-3.5 font-semibold text-muted-foreground ${PHONE_SECTION_HEADING_CLS}`}
+            className={`flex items-center text-prose font-semibold text-foreground/80 ${PHONE_SECTION_HEADING_CLS}`}
           >
             {searchableSetting("color-scheme").title}
           </h3>
