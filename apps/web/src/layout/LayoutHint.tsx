@@ -15,7 +15,7 @@ import { primaryServerKeybindingsAtom } from "../state/server";
 import { countedLayoutWorkspaces } from "./layoutCommands";
 import { selectFocusedWorkspace, type LayoutWorkspace } from "./layoutModel";
 import { useLayoutStore, type LayoutHint as LayoutHintState } from "./layoutStore";
-import { workspaceDisplayName } from "./WorkspaceSwitcher";
+import { workspaceDisplayName } from "./layoutWorkspaces";
 
 /** How many workspace bars the stack glyph draws before it scrolls. */
 const WORKSPACE_BARS = 5;

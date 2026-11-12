@@ -40,6 +40,19 @@ export function listLayoutWorkspaces(state: LayoutState): LayoutWorkspace[] {
   );
 }
 
+/** What a workspace is called where it is listed: its name, else `resolveTitle`'s, else its place. */
+export function workspaceDisplayName(
+  workspace: LayoutWorkspace,
+  position: number,
+  resolveTitle?: (workspace: LayoutWorkspace) => string | null,
+): string {
+  const named = workspace.name?.trim();
+  if (named) return named;
+  const title = resolveTitle?.(workspace)?.trim();
+  if (title) return title;
+  return workspace.columns.length === 0 ? "Empty workspace" : `Workspace ${position + 1}`;
+}
+
 function describe(workspace: LayoutWorkspace, state: LayoutState): string {
   return workspace.name ?? `Workspace ${state.workspaces.indexOf(workspace) + 1}`;
 }

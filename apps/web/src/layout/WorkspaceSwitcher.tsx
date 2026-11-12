@@ -34,25 +34,16 @@ import {
   moveLayoutWorkspaceAction,
   renameLayoutWorkspaceAction,
 } from "./layoutWorkspaceActions";
-import { listLayoutWorkspaces, WORKSPACE_NAME_MAX_CHARS } from "./layoutWorkspaces";
+import {
+  listLayoutWorkspaces,
+  workspaceDisplayName,
+  WORKSPACE_NAME_MAX_CHARS,
+} from "./layoutWorkspaces";
 
 export interface WorkspaceSwitcherProps {
   /** The title of a workspace without a name of its own, such as its lead tab's title. */
   readonly resolveWorkspaceTitle?: (workspace: LayoutWorkspace) => string | null;
   readonly className?: string;
-}
-
-/** What a workspace is called where it is listed. */
-export function workspaceDisplayName(
-  workspace: LayoutWorkspace,
-  position: number,
-  resolveTitle?: (workspace: LayoutWorkspace) => string | null,
-): string {
-  const named = workspace.name?.trim();
-  if (named) return named;
-  const title = resolveTitle?.(workspace)?.trim();
-  if (title) return title;
-  return workspace.columns.length === 0 ? "Empty workspace" : `Workspace ${position + 1}`;
 }
 
 function paneCount(workspace: LayoutWorkspace): number {
