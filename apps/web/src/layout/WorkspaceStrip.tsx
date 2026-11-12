@@ -1,0 +1,734 @@
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+
+import {
+  LayoutEmptyWorkspaceFrame,
+  LayoutHeldWidth,
+  LayoutPaneBody,
+  LayoutPaneFrame,
+  LayoutPeekDot,
+  LayoutStage,
+  LayoutStripScroller,
+} from "../components/ui/layout-pane";
+import { useMediaQuery } from "../hooks/useMediaQuery";
+import { observeResize } from "../lib/observeResize";
+import { isMacPlatform } from "../lib/utils";
+import {
+  endUserStripScroll,
+  moveStripCamera,
+  noteUserStripScroll,
+  settleStripCamera,
+  userStripScrollAge,
+} from "../motion/stripCamera";
+import { sidewaysWheelScrollsStrip, wheelDeltaPx } from "../motion/wheelGesture";
+import {
+  applyWorkspaceStackTransform,
+  attachWorkspaceSwitch,
+  finishWorkspaceSwitch,
+  rememberWorkspaceCamera,
+  useWorkspaceStack,
+  workspaceCamera,
+  workspaceStackCamera,
+  type WorkspaceStack,
+} from "../motion/workspaceSwitch";
+import { LayoutResizeHandles } from "./ColumnResizeHandle";
+import { LayoutEmptyPane, LayoutLauncherShell } from "./EmptyPane";
+import { useLayoutBehavior } from "./layoutBehavior";
+import {
+  selectFocusedPane,
+  selectFocusedWorkspace,
+  selectWindowStartPaneId,
+  type LayoutPane,
+  type LayoutPaneSlot,
+  type LayoutState,
+  type LayoutTab,
+  type LayoutViewport,
+  type LayoutWorkspace,
+} from "./layoutModel";
+import { LayoutPaneContext, type LayoutPaneState } from "./layoutPaneContext";
+import { setLayoutStripViewportWidth, useLayoutStore } from "./layoutStore";
+import {
+  FULL_RECT,
+  selectShownSlots,
+  slotStyle,
+  stackSlotStyle,
+  type StackRow,
+} from "./paneGeometry";
+import { LayoutPaneTabBar, type LayoutTabLabel } from "./PaneTabBar";
+
+/** Gutter between rows while a workspace switch moves them: where the window chrome shows. */
+const SWITCH_ROW_GAP_PX = 8;
+/**
+ * A split pane narrower than this opens its right panel as a sheet, as a window under the
+ * base's 980px breakpoint does.
+ */
+const INLINE_PANEL_MIN_PX = 981;
+/** A strip scroll counts as the user's for this long after their wheel, swipe or drag stops. */
+const USER_SCROLL_END_MS = 250;
+
+/** What a pane tells the content `renderTab` draws for its active tab. */
+export type LayoutTabRenderContext = LayoutPaneState;
+
+export interface LayoutWorkspaceStripProps {
+  /** The layout to draw: the store's, or a preview of it. */
+  layout: LayoutState;
+  /** The content of a tab; the strip never looks inside it. */
+  renderTab: (tab: LayoutTab, context: LayoutTabRenderContext) => ReactNode;
+  tabLabel: (tab: LayoutTab) => LayoutTabLabel;
+  /** Shows a `+` on each tab bar and runs with the pane that asked. */
+  onAddTab?: (paneId: string) => void;
+  onTabContextMenu?: (tab: LayoutTab, position: { x: number; y: number }) => void;
+  /** What an empty workspace holds: the launcher. */
+  empty?: ReactNode;
+  /** False while the layout sits beneath a page: the strip hides and takes no input. */
+  active?: boolean;
+  /** One pane fills the window; defaults to the `max-md` breakpoint. */
+  narrow?: boolean;
+  /** Placed before the tabs of the top pane at the window's leading edge. */
+  windowBarLeading?: ReactNode;
+  /** Placed after the tabs of the top pane at the window's trailing edge. */
+  windowBarTrailing?: ReactNode;
+}
+
+const FULL_STYLE = { left: 0, top: 0, width: "100%", height: "100%" } as const;
+
+interface Placed {
+  workspace: LayoutWorkspace;
+  pane: LayoutPane;
+  slot: LayoutPaneSlot;
+  style: React.CSSProperties;
+  /** Pixel width of the strip the slot's rect is a share of. */
+  stripPx: number;
+}
+
+function selectStackRows(
+  stack: WorkspaceStack,
+  layout: LayoutState,
+  viewport: LayoutViewport,
+  narrow: boolean,
+  maximizedTabId: string | null,
+): StackRow[] {
+  return stack.rows.map(({ id, offset }) => {
+    // A row's workspace can be gone (an empty one left behind): it shows as empty.
+    const workspace = layout.workspaces.find((candidate) => candidate.id === id) ?? null;
+    if (!workspace || workspace.columns.length === 0) {
+      return { id, workspace, offset, slots: [], stripWidth: 1, camera: 0 };
+    }
+    const shown = selectShownSlots(workspace, viewport, narrow, maximizedTabId);
+    const stripPx = shown.stripWidth * viewport.width;
+    return {
+      id,
+      workspace,
+      offset,
+      slots: shown.slots,
+      stripWidth: shown.stripWidth,
+      camera: workspaceStackCamera(workspace, shown.slots, stripPx, viewport.width),
+    };
+  });
+}
+
+/** The strip's visible width in px, kept current as the window or sidebar resizes. */
+function useElementWidth(ref: React.RefObject<HTMLElement | null>): number {
+  const [width, setWidth] = useState(() => (typeof window === "undefined" ? 0 : window.innerWidth));
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- observes the strip DOM width so pane geometry follows window and sidebar resizes
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    setWidth(element.clientWidth);
+    return observeResize(element, () => setWidth(element.clientWidth));
+  }, [ref]);
+  return width;
+}
+
+interface StripSpan {
+  left: number;
+  width: number;
+}
+
+/**
+ * Preserve screen positions when the strip's edge shifts, except at its start, and reveal the
+ * focused pane after a resize without exposing trailing chrome.
+ */
+function useStripResizeScroll(
+  scrollerRef: React.RefObject<HTMLDivElement | null>,
+  focusedSpanRef: React.RefObject<StripSpan | null>,
+  active: boolean,
+): void {
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- Observe strip resizes and preserve its DOM scroll position before paint.
+  useLayoutEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller || !active) return;
+    let scrollLeft = scroller.scrollLeft;
+    let width = scroller.clientWidth;
+    let left = scroller.getBoundingClientRect().left;
+    const onScroll = () => {
+      // The clamp of a resize the observer has not seen yet: it starts from before it.
+      if (scroller.clientWidth !== width) return;
+      scrollLeft = scroller.scrollLeft;
+    };
+    const stopObserving = observeResize(scroller, () => {
+      if (scroller.clientWidth === width) return;
+      const grew = scroller.clientWidth > width;
+      width = scroller.clientWidth;
+      const nextLeft = scroller.getBoundingClientRect().left;
+      const shift = nextLeft - left;
+      left = nextLeft;
+      const clamped = grew && scroller.scrollLeft + width >= scroller.scrollWidth - 1;
+      const from = clamped ? scrollLeft : scroller.scrollLeft;
+      let target =
+        Math.abs(shift) < 0.5 ? scroller.scrollLeft : from > 0 ? Math.max(0, from + shift) : 0;
+      const focused = focusedSpanRef.current;
+      if (focused && focused.left < target - 1) target = focused.left;
+      else if (focused && focused.left + focused.width > target + width + 1) {
+        target = Math.min(focused.left, focused.left + focused.width - width);
+      }
+      scrollLeft = target;
+      if (Math.abs(target - scroller.scrollLeft) < 0.5) return;
+      settleStripCamera();
+      scroller.scrollLeft = target;
+    });
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      stopObserving();
+      scroller.removeEventListener("scroll", onScroll);
+    };
+  }, [active, focusedSpanRef, scrollerRef]);
+}
+
+/**
+ * Sideways wheel, the held-chord wheel and a middle-button drag move the strip, and any scroll
+ * of the user's takes the camera over from a spring in flight.
+ */
+function useStripScrollGestures(scrollerRef: React.RefObject<HTMLDivElement | null>): void {
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- Own wheel, middle-drag and touch subscriptions on the mounted strip scroller.
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const mac = isMacPlatform(navigator.platform);
+    const held = (event: MouseEvent) =>
+      mac ? event.metaKey && event.altKey : event.ctrlKey && event.altKey;
+    let endTimer: ReturnType<typeof setTimeout> | null = null;
+    const noteUserScroll = () => {
+      noteUserStripScroll();
+      if (endTimer !== null) clearTimeout(endTimer);
+      endTimer = setTimeout(() => {
+        endTimer = null;
+        if (userStripScrollAge() >= USER_SCROLL_END_MS) endUserStripScroll();
+      }, USER_SCROLL_END_MS);
+    };
+    const moveStrip = (event: WheelEvent) => {
+      event.preventDefault();
+      settleStripCamera();
+      noteUserScroll();
+      scroller.scrollLeft += wheelDeltaPx(event.deltaX, event);
+    };
+    const onHeldWheel = (event: WheelEvent) => {
+      if (held(event) && Math.abs(event.deltaX) > Math.abs(event.deltaY)) moveStrip(event);
+    };
+    const onSidewaysWheel = (event: WheelEvent) => {
+      if (event.defaultPrevented) return;
+      if (sidewaysWheelScrollsStrip(event.composedPath(), scroller, event.deltaX, event.deltaY)) {
+        moveStrip(event);
+      }
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.button !== 1 || !held(event)) return;
+      event.preventDefault();
+      settleStripCamera();
+      const startX = event.clientX;
+      const startLeft = scroller.scrollLeft;
+      const move = (moveEvent: PointerEvent) => {
+        noteUserScroll();
+        scroller.scrollLeft = startLeft - (moveEvent.clientX - startX);
+      };
+      const end = () => {
+        window.removeEventListener("pointermove", move, true);
+        window.removeEventListener("pointerup", end, true);
+        window.removeEventListener("pointercancel", end, true);
+      };
+      window.addEventListener("pointermove", move, true);
+      window.addEventListener("pointerup", end, true);
+      window.addEventListener("pointercancel", end, true);
+    };
+    // A finger drags the scroll itself, so it lands the camera where it shows.
+    const onTouchMove = () => {
+      settleStripCamera();
+      noteUserScroll();
+    };
+    scroller.addEventListener("wheel", onHeldWheel, { passive: false, capture: true });
+    scroller.addEventListener("wheel", onSidewaysWheel, { passive: false });
+    scroller.addEventListener("pointerdown", onPointerDown, true);
+    scroller.addEventListener("touchmove", onTouchMove, { passive: true });
+    return () => {
+      if (endTimer !== null) clearTimeout(endTimer);
+      scroller.removeEventListener("wheel", onHeldWheel, true);
+      scroller.removeEventListener("wheel", onSidewaysWheel);
+      scroller.removeEventListener("pointerdown", onPointerDown, true);
+      scroller.removeEventListener("touchmove", onTouchMove);
+    };
+  }, [scrollerRef]);
+}
+
+/**
+ * The workspace strip: the focused workspace's columns in a row that scrolls sideways, each
+ * column a stack of panes, each pane a tab bar over its active tab's content. Tab content comes
+ * from `renderTab`, so the strip imports no chat, terminal or route code. While a workspace
+ * switch is in motion the workspaces stack vertically and the camera moves on the compositor.
+ */
+export function LayoutWorkspaceStrip({
+  layout,
+  renderTab,
+  tabLabel,
+  onAddTab,
+  onTabContextMenu,
+  empty,
+  active = true,
+  narrow: narrowProp,
+  windowBarLeading,
+  windowBarTrailing,
+}: LayoutWorkspaceStripProps) {
+  const mediaNarrow = useMediaQuery("max-md");
+  const narrow = narrowProp ?? mediaNarrow;
+  // A resize drag previews here and commits to the store once on release.
+  const [preview, setPreview] = useState<{ layout: LayoutState; heldStripPx: number } | null>(null);
+  const shown = preview?.layout ?? layout;
+  const workspace = selectFocusedWorkspace(shown);
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const viewportWidth = useElementWidth(scrollerRef);
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- Publish the measured desktop strip width for imperative pane placement.
+  useEffect(() => {
+    // Below md one pane fills the window; columns stay arranged for the last wide one. The first
+    // render's guess (the window's width) is not reported.
+    if (narrow || scrollerRef.current?.clientWidth !== viewportWidth) return;
+    setLayoutStripViewportWidth(viewportWidth);
+  }, [narrow, viewportWidth]);
+  const maximizedTabId = useLayoutStore((state) => state.maximizedTabId);
+  const unseenTabIds = useLayoutStore((state) => state.unseenTabIds);
+  const centerRequest = useLayoutStore((state) => state.centerRequest);
+  const { whenNoRoom } = useLayoutBehavior();
+  const workspaceStack = useWorkspaceStack();
+  const stacked = workspaceStack !== null;
+  const viewport: LayoutViewport = { width: viewportWidth, whenNoRoom };
+  const own = selectShownSlots(workspace, viewport, narrow, maximizedTabId);
+  const stripPx = own.stripWidth * viewportWidth;
+  const stackRows = workspaceStack
+    ? selectStackRows(workspaceStack, shown, viewport, narrow, maximizedTabId)
+    : [];
+  const dragging = preview !== null;
+  const split = own.paneCount > 1;
+
+  const paneOf = (candidate: LayoutWorkspace, paneId: string): LayoutPane | null => {
+    for (const column of candidate.columns) {
+      const pane = column.panes.find((entry) => entry.id === paneId);
+      if (pane) return pane;
+    }
+    return null;
+  };
+  const placed: Placed[] = [];
+  const emptyRows: { id: string; style: React.CSSProperties; own: boolean }[] = [];
+  if (workspaceStack) {
+    for (const row of stackRows) {
+      if (!row.workspace || row.slots.length === 0) {
+        emptyRows.push({
+          id: row.id,
+          style: stackSlotStyle(row, { ...fullSlot(), rect: { ...FULL_RECT } }, workspaceStack.gap),
+          own: false,
+        });
+        continue;
+      }
+      for (const slot of row.slots) {
+        const pane = paneOf(row.workspace, slot.paneId);
+        if (pane) {
+          placed.push({
+            workspace: row.workspace,
+            pane,
+            slot,
+            style: stackSlotStyle(row, slot, workspaceStack.gap),
+            stripPx: row.stripWidth * viewportWidth,
+          });
+        }
+      }
+    }
+  } else if (workspace.columns.length === 0) {
+    emptyRows.push({ id: workspace.id, style: FULL_STYLE, own: true });
+  } else {
+    for (const slot of own.slots) {
+      const pane = paneOf(workspace, slot.paneId);
+      if (pane) placed.push({ workspace, pane, slot, style: slotStyle(slot), stripPx });
+    }
+  }
+
+  const focusedPane = selectFocusedPane(shown);
+  const focusedPaneId = focusedPane?.id ?? null;
+  const focusedSlot = own.slots.find((slot) => slot.paneId === focusedPaneId) ?? null;
+  const focusedLeft = focusedSlot ? Math.round(focusedSlot.rect.left * stripPx) : null;
+  const focusedWidth = focusedSlot ? Math.round(focusedSlot.rect.width * stripPx) : null;
+
+  // The panes that touch the window's top corners, where native window controls sit. Derived
+  // from the scroll position at coarse steps, not per frame.
+  const [edges, setEdges] = useState<{ leading: string | null; trailing: string | null }>({
+    leading: null,
+    trailing: null,
+  });
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- Derive window-edge panes from the committed scroll position and publish them only when they change.
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const compute = () => {
+      const left = scroller.scrollLeft;
+      const width = scroller.clientWidth;
+      const leading = selectWindowStartPaneId(own.slots, left, stripPx);
+      const trailing =
+        own.slots.find(
+          (slot) =>
+            !slot.hasAbove &&
+            Math.abs((slot.rect.left + slot.rect.width) * stripPx - (left + width)) < 1,
+        )?.paneId ?? null;
+      setEdges((current) =>
+        current.leading === leading && current.trailing === trailing
+          ? current
+          : { leading, trailing },
+      );
+    };
+    compute();
+    scroller.addEventListener("scroll", compute, { passive: true });
+    return () => scroller.removeEventListener("scroll", compute);
+  });
+
+  const stagedFlagsRef = useRef({ shown: true, blocked: false });
+  const stripShown = !stacked && !narrow && maximizedTabId === null && !dragging;
+  const focusedSpanRef = useRef<StripSpan | null>(null);
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- Publish committed geometry for native gesture callbacks.
+  useLayoutEffect(() => {
+    stagedFlagsRef.current = { shown: stripShown, blocked: false };
+    focusedSpanRef.current =
+      focusedLeft === null || focusedWidth === null
+        ? null
+        : { left: focusedLeft, width: focusedWidth };
+  });
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- Attach workspace gestures to the mounted strip DOM and release them on cleanup.
+  useEffect(() => {
+    const root = rootRef.current;
+    const scroller = scrollerRef.current;
+    const stage = stageRef.current;
+    if (!active || !root || !scroller || !stage) return;
+    return attachWorkspaceSwitch({
+      root,
+      scroller,
+      stage,
+      gap: () => SWITCH_ROW_GAP_PX,
+      blocked: () => useLayoutStore.getState().overviewOpen,
+      stripShown: () => stagedFlagsRef.current.shown,
+    });
+  }, [active]);
+
+  // The switch's stack and the strip trade places: entering, the stage spans one window and each
+  // row carries its own scroll; leaving, the strip scrolls to where its row was drawn.
+  const wasStacked = useRef(false);
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- Transfer DOM scroll and transforms when entering or leaving the workspace stack.
+  useLayoutEffect(() => {
+    const scroller = scrollerRef.current;
+    const stage = stageRef.current;
+    if (!scroller || !stage) return;
+    if (stacked) {
+      for (const row of stackRows) rememberWorkspaceCamera(row.id, row.camera);
+      if (!wasStacked.current) scroller.scrollLeft = 0;
+      wasStacked.current = true;
+      applyWorkspaceStackTransform();
+      return;
+    }
+    if (!wasStacked.current) return;
+    wasStacked.current = false;
+    finishWorkspaceSwitch();
+    stage.style.transform = "";
+    scroller.scrollLeft = workspaceCamera(workspace.id) ?? 0;
+  }, [stackRows, stacked, workspace.id]);
+
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- Reveal the committed focused pane with an imperative camera move after measuring its DOM.
+  useLayoutEffect(() => {
+    const scroller = scrollerRef.current;
+    const stage = stageRef.current;
+    if (!scroller || !stage || stacked || dragging) return;
+    if (focusedPaneId === null || focusedLeft === null || focusedWidth === null) return;
+    // The first render sizes the strip for the window's width, before the scroller is measured.
+    if (scroller.clientWidth !== viewportWidth) return;
+    const left = focusedLeft;
+    const right = left + focusedWidth;
+    const viewLeft = scroller.scrollLeft;
+    const viewRight = viewLeft + scroller.clientWidth;
+    let target: number | null = null;
+    if (left < viewLeft - 1) target = left;
+    else if (right > viewRight + 1) target = Math.min(left, right - scroller.clientWidth);
+    if (target === null) return;
+    // The scroll lands at once and the stage springs there on the compositor.
+    moveStripCamera(scroller, stage, target);
+  }, [dragging, focusedLeft, focusedPaneId, focusedWidth, stacked, viewportWidth]);
+
+  useStripResizeScroll(scrollerRef, focusedSpanRef, !stacked && !narrow && maximizedTabId === null);
+  useStripScrollGestures(scrollerRef);
+
+  // Center the focused column in the window (a one-shot scroll).
+  const handledCenterRequest = useRef(centerRequest);
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- Scroll the DOM strip in response to an external center request.
+  useLayoutEffect(() => {
+    if (handledCenterRequest.current === centerRequest) return;
+    handledCenterRequest.current = centerRequest;
+    const scroller = scrollerRef.current;
+    const stage = stageRef.current;
+    if (!scroller || !stage || focusedLeft === null || focusedWidth === null) return;
+    const target = Math.max(
+      0,
+      Math.min(
+        stripPx - scroller.clientWidth,
+        focusedLeft + focusedWidth / 2 - scroller.clientWidth / 2,
+      ),
+    );
+    if (Math.abs(target - scroller.scrollLeft) < 1) return;
+    moveStripCamera(scroller, stage, target);
+  }, [centerRequest, focusedLeft, focusedWidth, stripPx]);
+
+  // The first off-screen pane an agent opened on each side of the window.
+  const [peeks, setPeeks] = useState<{ left: string | null; right: string | null }>({
+    left: null,
+    right: null,
+  });
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- Track unseen panes against the committed scroll position, publishing only when a peek changes.
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller || stacked) return;
+    const compute = () => {
+      const viewLeft = scroller.scrollLeft;
+      const viewRight = viewLeft + scroller.clientWidth;
+      let left: string | null = null;
+      let right: string | null = null;
+      const seen: string[] = [];
+      for (const slot of own.slots) {
+        const tabId = slot.activeTabId;
+        if (tabId === null || !unseenTabIds.has(tabId)) continue;
+        const start = slot.rect.left * stripPx;
+        const end = start + slot.rect.width * stripPx;
+        if (end <= viewLeft + 1) left ??= tabId;
+        else if (start >= viewRight - 1) right ??= tabId;
+        else seen.push(tabId);
+      }
+      if (seen.length > 0) useLayoutStore.getState().markTabsSeen(seen);
+      setPeeks((current) =>
+        current.left === left && current.right === right ? current : { left, right },
+      );
+    };
+    compute();
+    scroller.addEventListener("scroll", compute, { passive: true });
+    return () => scroller.removeEventListener("scroll", compute);
+  });
+
+  const focusPane = (paneId: string) => {
+    if (useLayoutStore.getState().layout.workspaces.length === 0) return;
+    const current = selectFocusedPane(useLayoutStore.getState().layout)?.id;
+    if (current !== paneId) useLayoutStore.getState().focusPane(paneId);
+  };
+  const tabsOnScreen = [...placed].sort((a, b) =>
+    (a.slot.activeTabId ?? "").localeCompare(b.slot.activeTabId ?? ""),
+  );
+  const paneState = (entry: Placed, tabId: string): LayoutPaneState => {
+    const widthPx = entry.slot.rect.width * entry.stripPx;
+    return {
+      tabId,
+      paneId: entry.pane.id,
+      split,
+      narrow: split && widthPx < INLINE_PANEL_MIN_PX,
+      leadingEdge: edges.leading === null ? !entry.slot.hasLeft : edges.leading === entry.pane.id,
+      trailingEdge:
+        edges.trailing === null ? !entry.slot.hasRight : edges.trailing === entry.pane.id,
+      focused: active && entry.pane.id === focusedPaneId,
+      visible: active,
+    };
+  };
+
+  return (
+    <div ref={rootRef} className="relative h-full min-h-0 w-full">
+      <LayoutStripScroller
+        ref={scrollerRef}
+        inactive={!active}
+        mode={stacked ? "clip" : own.stripWidth > 1 ? "scroll" : "fit"}
+      >
+        <LayoutStage
+          ref={stageRef}
+          style={
+            stacked || own.fits ? { width: "100%" } : { width: `${stripPx}px`, minWidth: "100%" }
+          }
+        >
+          {placed.map((entry) => {
+            const placement = entry.slot.hasAbove ? "pane" : "window";
+            const firstActive =
+              entry.pane.tabs.length > 0 && entry.pane.tabs[0]!.id === entry.pane.activeTabId;
+            const leading = entry.slot.hasAbove
+              ? undefined
+              : edges.leading === entry.pane.id
+                ? windowBarLeading
+                : undefined;
+            const trailing = entry.slot.hasAbove
+              ? undefined
+              : edges.trailing === entry.pane.id
+                ? windowBarTrailing
+                : undefined;
+            return (
+              <LayoutPaneFrame
+                key={entry.pane.id}
+                data-layout-pane-id={entry.pane.id}
+                data-layout-pane-focused={
+                  active && entry.pane.id === focusedPaneId ? "true" : undefined
+                }
+                focused={active && entry.pane.id === focusedPaneId}
+                placement={placement}
+                squareStart={placement === "window" && firstActive}
+                style={entry.style}
+                onPointerDownCapture={() => focusPane(entry.pane.id)}
+                bar={
+                  <PaneBarOf
+                    entry={entry}
+                    placement={placement}
+                    state={paneState(entry, entry.pane.activeTabId ?? "")}
+                    tabLabel={tabLabel}
+                    onAddTab={onAddTab}
+                    onTabContextMenu={onTabContextMenu}
+                    leading={leading}
+                    trailing={trailing}
+                  />
+                }
+              />
+            );
+          })}
+          {tabsOnScreen.map((entry) => {
+            const tab = entry.pane.tabs.find(
+              (candidate) => candidate.id === entry.pane.activeTabId,
+            );
+            if (!tab) return null;
+            return (
+              <LayoutPaneBody
+                key={tab.id}
+                placement={entry.slot.hasAbove ? "pane" : "window"}
+                style={entry.style}
+                onPointerDownCapture={() => focusPane(entry.pane.id)}
+              >
+                <LayoutPaneContext value={paneState(entry, tab.id)}>
+                  {renderTab(tab, paneState(entry, tab.id))}
+                </LayoutPaneContext>
+              </LayoutPaneBody>
+            );
+          })}
+          {placed
+            .filter((entry) => entry.pane.activeTabId === null)
+            .map((entry) => (
+              <LayoutPaneBody
+                key={`empty:${entry.pane.id}`}
+                placement={entry.slot.hasAbove ? "pane" : "window"}
+                style={entry.style}
+              >
+                <LayoutEmptyPane />
+              </LayoutPaneBody>
+            ))}
+          {emptyRows.map((row) => (
+            <LayoutEmptyWorkspaceFrame
+              key={row.id}
+              data-layout-empty-workspace={row.id}
+              drawn
+              style={row.style}
+              inert={!row.own || !active}
+              onPointerDownCapture={undefined}
+            >
+              <LayoutPaneContext
+                value={{
+                  tabId: null,
+                  paneId: null,
+                  split: !row.own,
+                  narrow: false,
+                  leadingEdge: true,
+                  trailingEdge: true,
+                  focused: row.own && active,
+                  visible: true,
+                }}
+              >
+                <LayoutLauncherShell tabId={null}>{empty}</LayoutLauncherShell>
+              </LayoutPaneContext>
+            </LayoutEmptyWorkspaceFrame>
+          ))}
+          {!stacked && own.slots.length > 1 ? (
+            <LayoutResizeHandles
+              layout={layout}
+              workspace={workspace}
+              slots={own.slots}
+              stripWidth={stripPx / own.unitWidth}
+              unitWidth={own.unitWidth}
+              scrollerRef={scrollerRef}
+              onPreview={setPreview}
+            />
+          ) : null}
+        </LayoutStage>
+        {preview ? <LayoutHeldWidth width={preview.heldStripPx} /> : null}
+      </LayoutStripScroller>
+      {active && peeks.left && !stacked ? (
+        <LayoutPeekDot
+          side="left"
+          label="New pane to the left"
+          onClick={() => useLayoutStore.getState().focusTab(peeks.left!)}
+        />
+      ) : null}
+      {active && peeks.right && !stacked ? (
+        <LayoutPeekDot
+          side="right"
+          label="New pane to the right"
+          onClick={() => useLayoutStore.getState().focusTab(peeks.right!)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function fullSlot(): LayoutPaneSlot {
+  return {
+    paneId: "",
+    activeTabId: null,
+    rect: { ...FULL_RECT },
+    hasLeft: false,
+    hasRight: false,
+    hasAbove: false,
+    hasBelow: false,
+  };
+}
+
+function PaneBarOf({
+  entry,
+  placement,
+  state,
+  tabLabel,
+  onAddTab,
+  onTabContextMenu,
+  leading,
+  trailing,
+}: {
+  entry: Placed;
+  placement: "pane" | "window";
+  state: LayoutPaneState;
+  tabLabel: (tab: LayoutTab) => LayoutTabLabel;
+  onAddTab: ((paneId: string) => void) | undefined;
+  onTabContextMenu: ((tab: LayoutTab, position: { x: number; y: number }) => void) | undefined;
+  leading: ReactNode;
+  trailing: ReactNode;
+}) {
+  return (
+    <LayoutPaneContext value={state}>
+      <LayoutPaneTabBar
+        paneId={entry.pane.id}
+        tabs={entry.pane.tabs}
+        activeTabId={entry.pane.activeTabId}
+        placement={placement}
+        tabLabel={tabLabel}
+        {...(onAddTab ? { onAdd: onAddTab } : {})}
+        {...(onTabContextMenu ? { onTabContextMenu } : {})}
+        leading={leading}
+        trailing={trailing}
+      />
+    </LayoutPaneContext>
+  );
+}
