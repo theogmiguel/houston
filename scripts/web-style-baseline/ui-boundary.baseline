@@ -202,7 +202,7 @@
 6 apps/web/src/components/grid/GridHost.tsx
 2 apps/web/src/components/grid/GridLayoutMenu.tsx
 5 apps/web/src/components/grid/GridShelves.tsx
-43 apps/web/src/components/grid/GridSidebar.tsx
+31 apps/web/src/components/grid/GridSidebar.tsx
 4 apps/web/src/components/grid/GridThreadBranch.tsx
 2 apps/web/src/components/grid/GridThreadCell.tsx
 13 apps/web/src/components/HostedEmptyState.tsx
@@ -436,7 +436,6 @@
 1 apps/web/src/lib/accessibilityAnnouncements.ts
 1 apps/web/src/lib/announce.ts
 19 apps/web/src/routes/__root.tsx
-13 apps/web/src/routes/_chat.grid.$gridId.tsx
 1 apps/web/src/routes/_chat.index.tsx
 1 apps/web/src/routes/_chat.new.tsx
 2 apps/web/src/routes/_chat.settings.providers.tsx

@@ -231,3 +231,22 @@ Constraints: groups are layout workspaces (no project tree); a workspace may hol
 150. **The phone shell stays on the route path.** It shows one thread per route through `ThreadRouteView` and uses the grid store for its home list. Moving it onto the layout needs a redesign: one pane with its tabs reached through the phone's tab bar and sheets, a phone variant of the strip's tab switcher, and the home list reading workspaces instead of grids. Not attempted.
 151. **The palette's thread list was not driven in a browser test.** Its `LegendList` raises "Maximum update depth exceeded" in the fake environment; the test calls `openThreadInLayout`, which the palette calls, with the app's router.
 152. **Known failures not from this change.** The 1024px cases in `mobile/PhoneComposer`, `PhoneDetails`, `PhoneThreadShell` and `PhonePages` browser tests still expect the retired `/grid/` route and `[data-grid-page]`; once one fails, later cases in its file fail with it (the "back button" cases pass alone). They were not updated: a loaded empty layout in their mount makes a dialog intercept the row click, which was not diagnosed.
+
+## Deviations: phone
+
+Constraints: nothing on a phone reads the grid store or navigates to `/grid/`; a thread opens as the layout's focused pane showing its chat tab, one tab at a time; the pane's other tabs are reached from a bottom sheet opened from the bar; Houston tokens and recipes only (`components/ui/phone-recipes.ts`, `thread-header-recipes.ts`).
+
+180. **Hosting.** `PhoneLayoutHost` (`mobile/`) replaces `ThreadRouteView` in `PhoneChatRouteLayout`. It draws the focused pane's tabs through `useLayoutTabRenderer`, extracted from `LayoutHost` so both hosts share one renderer, and syncs the URL with `useLayoutRouteSync(target, false)`. Nothing draws before the first layout snapshot. `PhoneThreadHostContext` carries the details state so `LayoutChatTab` stays one component.
+181. **One-tab pane keeps the count and chevron** on the bar's tabs button, so the sheet stays reachable for "New tab".
+182. **Terminal and browser tabs stay hidden on the phone** (`useHiddenOnPhone`). A tab the phone hides that holds the pane's focus falls back to the first tab offered.
+183. **Surfaces always open as tabs of the chat's own pane on a phone** (`layoutSurfaceDestination` forces `new-tab`), so a pane never splits into columns.
+184. **Details and menu buttons follow the tab.** Details only for chat tabs; the menu only for tabs with a server thread. Other tabs show their own mark and title.
+185. **Bar buttons are 44px** (`size-11`), as are the sheet's close buttons.
+186. **Closing a tab from the sheet** uses `closeLayoutTabByUser`. Closing the pane's last tab goes Home through the route sync.
+187. **Not mounted on the phone:** `LayoutOnboarding`, hints, overview and the shortcuts overlay.
+188. **`openAsNewThreadTab` now applies on the phone** (the phone exception in `createNewThreadHandler` and `openGridDraftWhereShown` was removed): a new thread started from Home or the launcher replaces the focused tab. Not exercised end to end: the fake environment does not serve what the draft flow needs, so the browser test observes the launcher's call to the handler only.
+189. **Chats stay mounted only within the shown pane,** hidden and `inert` while a sibling tab shows; switching panes starts over.
+190. **Rename from the palette** (`subscribeGridCellRename`) is not wired on the phone.
+191. **Removed:** `GridThreadCell`'s phone branch; `GridRoute` (`/grid/$gridId` is now only a redirect to the workspace in the layout, on every viewport). `ThreadNotificationCoordinator` and the palette's thread pick always use `openThreadInLayout`. `overscroll-y-none` was left off the host's `SidebarInset` (ui-boundary guard); the body is `overflow-hidden` and the scrollers below it own their overscroll.
+192. **Open desktop issue, not fixed.** In a layout pane, "Toggle thread details panel" does not open `[data-thread-details-card]`: the store shows `inlineOpen: false` after the click, as if it toggled twice. The 1024px `PhoneDetails` test no longer exercises that toggle rather than hide it.
+193. **Not seen in a running app.** Verification is the browser suites only.

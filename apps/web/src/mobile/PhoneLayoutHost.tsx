@@ -121,7 +121,7 @@ function LoadedPhoneLayoutHost({
       }}
     >
       <SidebarInset
-        className="min-h-0 overflow-hidden overscroll-y-none"
+        className="min-h-0 overflow-hidden"
         data-phone-layout-host=""
         inert={!active}
       >
