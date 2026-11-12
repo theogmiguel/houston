@@ -11,6 +11,7 @@ import {
 } from "../components/ui/layout-pane";
 import { LayoutOverviewBackdrop } from "../components/ui/layout-overlay";
 import { useMediaQuery } from "../hooks/useMediaQuery";
+import { useStableCallback } from "../hooks/useStableCallback";
 import { observeResize } from "../lib/observeResize";
 import { isMacPlatform } from "../lib/utils";
 import {
@@ -65,6 +66,7 @@ import {
   type StackRow,
 } from "./paneGeometry";
 import { LayoutPaneTabBar, type LayoutTabLabel } from "./PaneTabBar";
+import { paneToFollow, tabIdsOnScreen } from "./stripView";
 
 /** Gutter between rows while a workspace switch moves them: where the window chrome shows. */
 const SWITCH_ROW_GAP_PX = 8;
@@ -75,6 +77,14 @@ const SWITCH_ROW_GAP_PX = 8;
 const INLINE_PANEL_MIN_PX = 981;
 /** A strip scroll counts as the user's for this long after their wheel, swipe or drag stops. */
 const USER_SCROLL_END_MS = 250;
+/** The panes on screen are reported once the strip's scroll has been quiet this long. */
+const ON_SCREEN_SCROLL_SETTLE_MS = 120;
+/**
+ * A settled scroll is the user's when their gesture moved the strip this recently; a fling keeps
+ * scrolling a while after the touch ends.
+ */
+const USER_SCROLL_SETTLE_WINDOW_MS = 2000;
+const NO_TABS: ReadonlySet<string> = new Set();
 
 /** What a pane tells the content `renderTab` draws for its active tab. */
 export type LayoutTabRenderContext = LayoutPaneState;
@@ -98,6 +108,12 @@ export interface LayoutWorkspaceStripProps {
   windowBarLeading?: ReactNode;
   /** Placed after the tabs of the top pane at the window's trailing edge. */
   windowBarTrailing?: ReactNode;
+  /**
+   * The active tabs at least half on screen, reported once the strip's scroll settles and when
+   * the strip is hidden (empty). The strip also moves focus to the column most in view after a
+   * scroll of the user's.
+   */
+  onScreenTabsChange?: (tabIds: ReadonlySet<string>) => void;
 }
 
 const FULL_STYLE = { left: 0, top: 0, width: "100%", height: "100%" } as const;
@@ -296,6 +312,7 @@ export function LayoutWorkspaceStrip({
   narrow: narrowProp,
   windowBarLeading,
   windowBarTrailing,
+  onScreenTabsChange,
 }: LayoutWorkspaceStripProps) {
   const mediaNarrow = useMediaQuery("max-md");
   const narrow = narrowProp ?? mediaNarrow;
@@ -576,6 +593,79 @@ export function LayoutWorkspaceStrip({
     scroller.addEventListener("scroll", compute, { passive: true });
     return () => scroller.removeEventListener("scroll", compute);
   });
+
+  // The pane each column focuses when focus follows the view back to it.
+  const lastFocusedByColumn = useRef(new Map<string, string>());
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- Remember the committed focused pane for later scroll-driven focus.
+  useEffect(() => {
+    if (focusedPaneId === null) return;
+    const column = workspace.columns.find((candidate) =>
+      candidate.panes.some((pane) => pane.id === focusedPaneId),
+    );
+    if (column) lastFocusedByColumn.current.set(column.id, focusedPaneId);
+  }, [focusedPaneId, workspace]);
+
+  // Which panes are on screen, and focus following the view as in niri: once a sideways scroll
+  // of the user's settles with the focused pane under half on screen, the column most in view
+  // takes focus. Derived from the slots and the settled scroll, never per frame.
+  const reportOnScreen = useStableCallback((ids: ReadonlySet<string>) => onScreenTabsChange?.(ids));
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- Subscribe to settled strip scrolling and publish the panes on screen and the focus that follows.
+  useEffect(() => {
+    if (!active) {
+      reportOnScreen(NO_TABS);
+      return;
+    }
+    if (dragging || staged || stacked) return;
+    const scroller = scrollerRef.current;
+    const compute = (settled: boolean) => {
+      const slots = own.slots;
+      // In shares of the strip, which the window may clip on the right.
+      const measured = scroller !== null && stripPx > 0;
+      const viewStart = measured ? scroller.scrollLeft / stripPx : 0;
+      const viewEnd = measured ? (scroller.scrollLeft + scroller.clientWidth) / stripPx : 1;
+      if (settled && measured && userStripScrollAge() <= USER_SCROLL_SETTLE_WINDOW_MS) {
+        endUserStripScroll();
+        const store = useLayoutStore.getState();
+        const current = selectFocusedWorkspace(store.layout);
+        const target = paneToFollow(
+          current.columns,
+          current.focusedPaneId,
+          slots,
+          viewStart,
+          viewEnd,
+          lastFocusedByColumn.current,
+        );
+        if (target !== null) store.focusPane(target);
+      }
+      reportOnScreen(tabIdsOnScreen(slots, viewStart, viewEnd));
+    };
+    compute(false);
+    if (!scroller) return;
+    let timer: number | null = null;
+    const settle = () => {
+      // The user's gesture may still be going between its scroll events.
+      const age = userStripScrollAge();
+      if (age < USER_SCROLL_END_MS) {
+        timer = window.setTimeout(settle, USER_SCROLL_END_MS - age);
+        return;
+      }
+      timer = null;
+      compute(true);
+    };
+    const onScroll = () => {
+      if (timer !== null) window.clearTimeout(timer);
+      timer = window.setTimeout(settle, ON_SCREEN_SCROLL_SETTLE_MS);
+    };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    // A render between a scroll and its settle re-subscribes: the settle still waits.
+    if (userStripScrollAge() <= USER_SCROLL_SETTLE_WINDOW_MS) onScroll();
+    return () => {
+      if (timer !== null) window.clearTimeout(timer);
+      scroller.removeEventListener("scroll", onScroll);
+    };
+  }, [active, dragging, own.slots, reportOnScreen, stacked, staged, stripPx]);
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- Clear the published panes when the strip unmounts.
+  useEffect(() => () => reportOnScreen(NO_TABS), [reportOnScreen]);
 
   const focusPane = (paneId: string) => {
     if (useLayoutStore.getState().layout.workspaces.length === 0) return;

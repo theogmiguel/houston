@@ -85,4 +85,17 @@ describe("LayoutHost", () => {
     await using screen = await render(host);
     expect(screen.container.querySelector("[data-new-tab-launcher]")).not.toBeNull();
   });
+
+  it("publishes the threads on screen for the sidebar, and clears them when the layout is covered", async () => {
+    using _layout = openLayout([[[["t1"]], [["t2"]]]]);
+    await using screen = await render(host);
+    const keys = () => [...useLayoutStore.getState().onScreenThreadKeys].toSorted();
+    await expect.poll(() => keys().map((key) => key.split(":").at(-1))).toEqual(["t1", "t2"]);
+    await screen.rerender(
+      <Sized>
+        <LayoutHost threadTarget={null} atIndex active={false} narrow={false} />
+      </Sized>,
+    );
+    await expect.poll(keys).toEqual([]);
+  });
 });

@@ -7,7 +7,7 @@ import { readLocalApi } from "../localApi";
 import { openThreadInLayout } from "../threads/openThreadInLayout";
 import type { ThreadOpenIntent } from "../threads/threadOpenContext";
 import type { ThreadRouteTarget } from "../threadRoutes";
-import { chatTargetThreadRef } from "./layoutThreadRef";
+import { chatTargetThreadRef, threadKeysOfTabs } from "./layoutThreadRef";
 import { ClosedTabRestoreButton } from "./ClosedTabRestore";
 import { LayoutHints } from "./LayoutHint";
 import { LayoutOnboarding } from "./LayoutOnboarding";
@@ -137,6 +137,11 @@ function LoadedLayoutHost({ threadTarget, atIndex, active, narrow }: LayoutHostP
     });
   };
 
+  const onScreenTabsChange = (tabIds: ReadonlySet<string>) =>
+    useLayoutStore
+      .getState()
+      .setOnScreenThreadKeys(threadKeysOfTabs(useLayoutStore.getState().layout, tabIds));
+
   const resolveWorkspaceTitle = (workspace: LayoutWorkspace) => {
     const lead = workspace.columns[0]?.panes[0]?.tabs[0];
     return lead ? tabLabel(lead).title : null;
@@ -152,6 +157,7 @@ function LoadedLayoutHost({ threadTarget, atIndex, active, narrow }: LayoutHostP
         onTabContextMenu={onTabContextMenu}
         empty={<LayoutLauncher tabId={null} context={null} />}
         active={active}
+        onScreenTabsChange={onScreenTabsChange}
         windowBarTrailing={
           <>
             <ClosedTabRestoreButton reopen={requestReopenClosedView} />
