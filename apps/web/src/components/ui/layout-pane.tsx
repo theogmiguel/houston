@@ -566,19 +566,29 @@ export function LayoutStripScroller({
   );
 }
 
-/** The strip's stage: panes sit on it by rect, and a camera move transforms it. */
+/**
+ * The strip's stage: panes sit on it by rect, and a camera move transforms it. Under the overview
+ * it leaves the strip's clip for a fixed frame the size of the strip (`--overview-frame-*`), so
+ * the zoom can carry every workspace's row over the window.
+ */
 export function LayoutStage({
+  staged = false,
   ref,
   style,
   className,
   children,
   ...props
-}: HTMLAttributes<HTMLDivElement> & { ref?: Ref<HTMLDivElement> }) {
+}: HTMLAttributes<HTMLDivElement> & { staged?: boolean; ref?: Ref<HTMLDivElement> }) {
   return (
     <div
       ref={ref}
       data-layout-stage=""
-      className={cn("relative isolate h-full overflow-clip", className)}
+      className={cn(
+        staged
+          ? "fixed top-(--overview-frame-top) left-(--overview-frame-left) z-30 h-(--overview-frame-height) w-(--overview-frame-width)"
+          : "relative isolate h-full overflow-clip",
+        className,
+      )}
       style={{ transformOrigin: "top left", ...style }}
       {...props}
     >

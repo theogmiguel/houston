@@ -11,6 +11,7 @@ import { chatTargetThreadRef } from "./layoutThreadRef";
 import { ClosedTabRestoreButton } from "./ClosedTabRestore";
 import { LayoutHints } from "./LayoutHint";
 import { LayoutOnboarding } from "./LayoutOnboarding";
+import { LayoutOverview } from "./LayoutOverview";
 import { LayoutShortcutsOverlay } from "./LayoutShortcutsOverlay";
 import { useThreeFingerSwipe } from "./useThreeFingerSwipe";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
@@ -161,6 +162,7 @@ function LoadedLayoutHost({ threadTarget, atIndex, active, narrow }: LayoutHostP
       />
       <LayoutHints resolveWorkspaceTitle={resolveWorkspaceTitle} />
       <LayoutOnboarding />
+      {active ? <LayoutOverview /> : null}
       <LayoutShortcutsOverlay />
     </>
   );

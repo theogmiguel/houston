@@ -21,12 +21,18 @@ function key() {
 afterEach(() => useLayoutStore.getState().reset());
 
 describe("buildLayoutCommandHandlers", () => {
-  it("handles every layout command but the overview", () => {
+  it("handles every layout command", () => {
     const handled = Object.keys(buildLayoutCommandHandlers()).toSorted();
-    const expected = LAYOUT_KEYBINDING_COMMANDS.filter(
-      (command) => command !== "layout.overview",
-    ).toSorted();
-    expect(handled).toEqual(expected);
+    expect(handled).toEqual([...LAYOUT_KEYBINDING_COMMANDS].toSorted());
+  });
+
+  it("opens the overview on layout.overview and closes it on the same key", () => {
+    useLayoutStore.getState().setLayoutFromServer(buildLayout([[[["a"]]]]));
+    const handler = buildLayoutCommandHandlers()["layout.overview"]!;
+    expect(handler(key())).toBe(true);
+    expect(useLayoutStore.getState().overviewOpen).toBe(true);
+    expect(handler(key())).toBe(true);
+    expect(useLayoutStore.getState().overviewOpen).toBe(false);
   });
 
   it("moves focus to the next column on layout.focusRight", () => {

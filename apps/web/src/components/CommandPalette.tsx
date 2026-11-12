@@ -1217,20 +1217,7 @@ function OpenCommandPaletteDialog(props: {
   };
 
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
-  // The overview has no stage to draw yet, so its entry is left out rather than trapping input.
-  actionItems.push(
-    ...buildLayoutPaletteItems().map((item) =>
-      item.kind === "submenu"
-        ? {
-            ...item,
-            groups: item.groups.map((group) => ({
-              ...group,
-              items: group.items.filter((entry) => entry.value !== "action:layout.overview"),
-            })),
-          }
-        : item,
-    ),
-  );
+  actionItems.push(...buildLayoutPaletteItems());
 
   if (projects.length > 0) {
     const activeProjectTitle =

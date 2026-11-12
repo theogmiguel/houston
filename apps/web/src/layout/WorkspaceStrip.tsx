@@ -9,6 +9,7 @@ import {
   LayoutStage,
   LayoutStripScroller,
 } from "../components/ui/layout-pane";
+import { LayoutOverviewBackdrop } from "../components/ui/layout-overlay";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { observeResize } from "../lib/observeResize";
 import { isMacPlatform } from "../lib/utils";
@@ -46,8 +47,18 @@ import {
 } from "./layoutModel";
 import { LayoutPaneContext, type LayoutPaneState } from "./layoutPaneContext";
 import { setLayoutStripViewportWidth, useLayoutStore } from "./layoutStore";
+import { getOverviewEntry, getOverviewPhase, useOverviewPhase } from "./overviewPhase";
+import { onOverviewBackgroundPointerDown, OverviewStageOverlay } from "./OverviewStageOverlay";
+import {
+  overviewSlotStyle,
+  selectOverviewStage,
+  selectOverviewStartPaneIds,
+} from "./overviewStage";
+import { overviewZoomTransition } from "./overviewZoom";
+import { useOverviewStage } from "./useOverviewStage";
 import {
   FULL_RECT,
+  HALF_PANE_GAP,
   selectShownSlots,
   slotStyle,
   stackSlotStyle,
@@ -308,13 +319,22 @@ export function LayoutWorkspaceStrip({
   const centerRequest = useLayoutStore((state) => state.centerRequest);
   const { whenNoRoom } = useLayoutBehavior();
   const workspaceStack = useWorkspaceStack();
-  const stacked = workspaceStack !== null;
+  // The overview lays every workspace out on one stage, so the panes it shows are the live ones,
+  // zoomed out. A workspace switch it interrupts hands its stack over.
+  const overviewPhase = useOverviewPhase();
+  const staged = overviewPhase !== "closed";
+  const stacked = !staged && workspaceStack !== null;
   const viewport: LayoutViewport = { width: viewportWidth, whenNoRoom };
+  const stage = selectOverviewStage(shown, viewport, window.innerWidth);
+  const overviewStarts = staged
+    ? selectOverviewStartPaneIds(stage, viewportWidth, getOverviewEntry())
+    : null;
   const own = selectShownSlots(workspace, viewport, narrow, maximizedTabId);
   const stripPx = own.stripWidth * viewportWidth;
-  const stackRows = workspaceStack
-    ? selectStackRows(workspaceStack, shown, viewport, narrow, maximizedTabId)
-    : [];
+  const stackRows =
+    workspaceStack && !staged
+      ? selectStackRows(workspaceStack, shown, viewport, narrow, maximizedTabId)
+      : [];
   const dragging = preview !== null;
   const split = own.paneCount > 1;
 
@@ -327,7 +347,30 @@ export function LayoutWorkspaceStrip({
   };
   const placed: Placed[] = [];
   const emptyRows: { id: string; style: React.CSSProperties; own: boolean }[] = [];
-  if (workspaceStack) {
+  if (staged) {
+    for (const row of stage.rows) {
+      if (row.workspace.columns.length === 0) {
+        emptyRows.push({
+          id: row.workspace.id,
+          style: overviewSlotStyle(row, fullSlot(), stage.gap, HALF_PANE_GAP),
+          own: false,
+        });
+        continue;
+      }
+      for (const slot of row.slots) {
+        const pane = paneOf(row.workspace, slot.paneId);
+        if (pane) {
+          placed.push({
+            workspace: row.workspace,
+            pane,
+            slot,
+            style: overviewSlotStyle(row, slot, stage.gap, HALF_PANE_GAP),
+            stripPx: row.stripWidth * viewportWidth,
+          });
+        }
+      }
+    }
+  } else if (workspaceStack) {
     for (const row of stackRows) {
       if (!row.workspace || row.slots.length === 0) {
         emptyRows.push({
@@ -397,7 +440,7 @@ export function LayoutWorkspaceStrip({
   });
 
   const stagedFlagsRef = useRef({ shown: true, blocked: false });
-  const stripShown = !stacked && !narrow && maximizedTabId === null && !dragging;
+  const stripShown = !staged && !stacked && !narrow && maximizedTabId === null && !dragging;
   const focusedSpanRef = useRef<StripSpan | null>(null);
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- Publish committed geometry for native gesture callbacks.
   useLayoutEffect(() => {
@@ -418,7 +461,7 @@ export function LayoutWorkspaceStrip({
       scroller,
       stage,
       gap: () => SWITCH_ROW_GAP_PX,
-      blocked: () => useLayoutStore.getState().overviewOpen,
+      blocked: () => useLayoutStore.getState().overviewOpen || getOverviewPhase() !== "closed",
       stripShown: () => stagedFlagsRef.current.shown,
     });
   }, [active]);
@@ -440,16 +483,22 @@ export function LayoutWorkspaceStrip({
     }
     if (!wasStacked.current) return;
     wasStacked.current = false;
+    // The overview took the stage mid-switch and places it itself.
+    if (staged) return;
     finishWorkspaceSwitch();
     stage.style.transform = "";
     scroller.scrollLeft = workspaceCamera(workspace.id) ?? 0;
-  }, [stackRows, stacked, workspace.id]);
+  }, [stackRows, stacked, staged, workspace.id]);
+
+  // Before the reveal below: leaving the overview hands the strip its scroll back first, so the
+  // reveal finds the focused pane in place.
+  useOverviewStage(overviewPhase, stage, scrollerRef, stageRef);
 
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- Reveal the committed focused pane with an imperative camera move after measuring its DOM.
   useLayoutEffect(() => {
     const scroller = scrollerRef.current;
     const stage = stageRef.current;
-    if (!scroller || !stage || stacked || dragging) return;
+    if (!scroller || !stage || stacked || staged || dragging) return;
     if (focusedPaneId === null || focusedLeft === null || focusedWidth === null) return;
     // The first render sizes the strip for the window's width, before the scroller is measured.
     if (scroller.clientWidth !== viewportWidth) return;
@@ -463,9 +512,13 @@ export function LayoutWorkspaceStrip({
     if (target === null) return;
     // The scroll lands at once and the stage springs there on the compositor.
     moveStripCamera(scroller, stage, target);
-  }, [dragging, focusedLeft, focusedPaneId, focusedWidth, stacked, viewportWidth]);
+  }, [dragging, focusedLeft, focusedPaneId, focusedWidth, stacked, staged, viewportWidth]);
 
-  useStripResizeScroll(scrollerRef, focusedSpanRef, !stacked && !narrow && maximizedTabId === null);
+  useStripResizeScroll(
+    scrollerRef,
+    focusedSpanRef,
+    !staged && !stacked && !narrow && maximizedTabId === null,
+  );
   useStripScrollGestures(scrollerRef);
 
   // Center the focused column in the window (a one-shot scroll).
@@ -496,7 +549,7 @@ export function LayoutWorkspaceStrip({
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- Track unseen panes against the committed scroll position, publishing only when a peek changes.
   useEffect(() => {
     const scroller = scrollerRef.current;
-    if (!scroller || stacked) return;
+    if (!scroller || stacked || staged) return;
     const compute = () => {
       const viewLeft = scroller.scrollLeft;
       const viewRight = viewLeft + scroller.clientWidth;
@@ -539,10 +592,19 @@ export function LayoutWorkspaceStrip({
       paneId: entry.pane.id,
       split,
       narrow: split && widthPx < INLINE_PANEL_MIN_PX,
-      leadingEdge: edges.leading === null ? !entry.slot.hasLeft : edges.leading === entry.pane.id,
-      trailingEdge:
-        edges.trailing === null ? !entry.slot.hasRight : edges.trailing === entry.pane.id,
-      focused: active && entry.pane.id === focusedPaneId,
+      // Zoomed out, the pane where the window will start keeps its inset; none touches the right.
+      leadingEdge: overviewStarts
+        ? overviewStarts.has(entry.pane.id)
+        : edges.leading === null
+          ? !entry.slot.hasLeft
+          : edges.leading === entry.pane.id,
+      trailingEdge: staged
+        ? false
+        : edges.trailing === null
+          ? !entry.slot.hasRight
+          : edges.trailing === entry.pane.id,
+      // The overview owns the keys; the chat takes focus back when it closes.
+      focused: active && !staged && entry.pane.id === focusedPaneId,
       related: false,
       visible: active,
     };
@@ -553,36 +615,51 @@ export function LayoutWorkspaceStrip({
       <LayoutStripScroller
         ref={scrollerRef}
         inactive={!active}
-        mode={stacked ? "clip" : own.stripWidth > 1 ? "scroll" : "fit"}
+        mode={stacked ? "clip" : own.stripWidth > 1 && !staged ? "scroll" : "fit"}
+        onPointerDown={staged ? onOverviewBackgroundPointerDown : undefined}
       >
+        {staged ? (
+          <LayoutOverviewBackdrop
+            closing={overviewPhase === "closing"}
+            style={overviewZoomTransition()}
+          />
+        ) : null}
         <LayoutStage
           ref={stageRef}
+          staged={staged}
           style={
-            stacked || own.fits ? { width: "100%" } : { width: `${stripPx}px`, minWidth: "100%" }
+            staged
+              ? undefined
+              : stacked || own.fits
+                ? { width: "100%" }
+                : { width: `${stripPx}px`, minWidth: "100%" }
           }
         >
           {placed.map((entry) => {
             const placement = entry.slot.hasAbove ? "pane" : "window";
             const firstActive =
               entry.pane.tabs.length > 0 && entry.pane.tabs[0]!.id === entry.pane.activeTabId;
-            const leading = entry.slot.hasAbove
-              ? undefined
-              : edges.leading === entry.pane.id
-                ? windowBarLeading
-                : undefined;
-            const trailing = entry.slot.hasAbove
-              ? undefined
-              : edges.trailing === entry.pane.id
-                ? windowBarTrailing
-                : undefined;
+            const leading =
+              entry.slot.hasAbove || staged
+                ? undefined
+                : edges.leading === entry.pane.id
+                  ? windowBarLeading
+                  : undefined;
+            const trailing =
+              entry.slot.hasAbove || staged
+                ? undefined
+                : edges.trailing === entry.pane.id
+                  ? windowBarTrailing
+                  : undefined;
             return (
               <LayoutPaneFrame
                 key={entry.pane.id}
                 data-layout-pane-id={entry.pane.id}
                 data-layout-pane-focused={
-                  active && entry.pane.id === focusedPaneId ? "true" : undefined
+                  active && !staged && entry.pane.id === focusedPaneId ? "true" : undefined
                 }
-                focused={active && entry.pane.id === focusedPaneId}
+                focused={active && !staged && entry.pane.id === focusedPaneId}
+                inert={staged}
                 placement={placement}
                 squareStart={placement === "window" && firstActive}
                 style={entry.style}
@@ -610,6 +687,11 @@ export function LayoutWorkspaceStrip({
             return (
               <LayoutPaneBody
                 key={tab.id}
+                data-layout-body-pane-id={entry.pane.id}
+                data-layout-pane-focused={
+                  active && !staged && entry.pane.id === focusedPaneId ? "true" : undefined
+                }
+                inert={staged}
                 placement={entry.slot.hasAbove ? "pane" : "window"}
                 style={entry.style}
                 onPointerDownCapture={() => focusPane(entry.pane.id)}
@@ -657,7 +739,18 @@ export function LayoutWorkspaceStrip({
               </LayoutPaneContext>
             </LayoutEmptyWorkspaceFrame>
           ))}
-          {!stacked && own.slots.length > 1 ? (
+          {staged ? (
+            <OverviewStageOverlay
+              layout={shown}
+              stage={stage}
+              phase={overviewPhase}
+              resolveTabLabel={(tab) => {
+                const label = tabLabel(tab);
+                return { icon: label.icon ?? null, title: label.title };
+              }}
+            />
+          ) : null}
+          {!stacked && !staged && own.slots.length > 1 ? (
             <LayoutResizeHandles
               layout={layout}
               workspace={workspace}

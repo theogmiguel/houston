@@ -285,6 +285,29 @@ export function LayoutOverviewFooter({ className, ...props }: HTMLAttributes<HTM
   );
 }
 
+/**
+ * The window chrome behind the zoomed-out stage. The caller sets the zoom's transition length and
+ * `closing` while the zoom back in runs.
+ */
+export function LayoutOverviewBackdrop({
+  closing,
+  className,
+  ...props
+}: HTMLAttributes<HTMLDivElement> & { closing: boolean }) {
+  return (
+    <div
+      aria-hidden
+      data-chrome-scope=""
+      className={cn(
+        "fixed inset-0 z-30 bg-(--app-chrome-background) motion-safe:transition-opacity motion-safe:starting:opacity-0",
+        closing && "opacity-0",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
 /** The first-use tips: a quiet block under a hairline. */
 export function LayoutTipsPanel({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
   return (

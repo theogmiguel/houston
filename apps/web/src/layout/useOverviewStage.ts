@@ -233,7 +233,7 @@ export function useOverviewStage(
       if (!inPopoverAbove(document.activeElement)) {
         document
           .querySelector<HTMLElement>(
-            "[data-layout-pane-focused='true'][data-layout-pane-id] [contenteditable='true']",
+            "[data-layout-body-pane-id][data-layout-pane-focused='true'] [contenteditable='true']",
           )
           ?.focus({ preventScroll: true });
       }

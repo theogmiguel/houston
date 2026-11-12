@@ -91,9 +91,10 @@ export function panesBesideWindow(
       if (!onStrip && nearWindow) near.add(slot.paneId);
     }
   }
-  return [...element.querySelectorAll<HTMLElement>("[data-layout-pane-id]")].filter((pane) =>
-    near.has(pane.dataset.layoutPaneId ?? ""),
-  );
+  // A pane is its frame (tab bar and surface) and its body (the tab's content).
+  return [
+    ...element.querySelectorAll<HTMLElement>("[data-layout-pane-id], [data-layout-body-pane-id]"),
+  ].filter((pane) => near.has(pane.dataset.layoutPaneId ?? pane.dataset.layoutBodyPaneId ?? ""));
 }
 
 /**

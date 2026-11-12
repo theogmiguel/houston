@@ -23,13 +23,12 @@ function runRouteLayoutCommand(command: LayoutKeybindingCommand): void {
 }
 
 /**
- * One handler per `layout.*` command except the overview, which has no stage to draw yet. A dialog
- * above the layout keeps the keys, and an open overview answers only the commands it lists.
+ * One handler per `layout.*` command. A dialog above the layout keeps the keys, and an open
+ * overview answers only the commands it lists.
  */
 export function buildLayoutCommandHandlers(): CommandHandlers {
   const handlers: CommandHandlers = {};
   for (const command of LAYOUT_KEYBINDING_COMMANDS) {
-    if (command === "layout.overview") continue;
     handlers[command] = (event) => {
       if (isLayoutModalOpen()) return false;
       const overviewOpen = useLayoutStore.getState().overviewOpen;
