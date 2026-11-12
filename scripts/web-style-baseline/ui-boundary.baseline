@@ -28,7 +28,7 @@
 14 apps/web/src/components/chat/ChildThreadApprovals.tsx
 8 apps/web/src/components/chat/CommandOutputPanel.tsx
 3 apps/web/src/components/chat/CompactComposerControlsMenu.tsx
-25 apps/web/src/components/chat/ComposerApprovalCard.tsx
+23 apps/web/src/components/chat/ComposerApprovalCard.tsx
 85 apps/web/src/components/chat/ComposerAttachmentStrip.tsx
 32 apps/web/src/components/chat/ComposerBanner.tsx
 9 apps/web/src/components/chat/ComposerBannerStack.tsx
@@ -70,7 +70,7 @@
 2 apps/web/src/components/chat/MarkdownTable.tsx
 21 apps/web/src/components/chat/McpAppFrame.tsx
 8 apps/web/src/components/chat/MermaidDiagram.tsx
-60 apps/web/src/components/chat/MessagesTimeline.tsx
+59 apps/web/src/components/chat/MessagesTimeline.tsx
 19 apps/web/src/components/chat/ModelListRow.tsx
 29 apps/web/src/components/chat/ModelPickerContent.tsx
 1 apps/web/src/components/chat/OpenInPicker.tsx
@@ -117,7 +117,7 @@
 4 apps/web/src/components/chat/TimelineToolActivityIcon.tsx
 106 apps/web/src/components/chat/TimelineUserMessageRow.tsx
 45 apps/web/src/components/chat/TimelineWorkEntryRow.tsx
-24 apps/web/src/components/chat/TimelineWorkGroupRows.tsx
+22 apps/web/src/components/chat/TimelineWorkGroupRows.tsx
 40 apps/web/src/components/chat/TraitsPicker.tsx
 7 apps/web/src/components/chat/TraitsSpeed.tsx
 14 apps/web/src/components/chat/TriageDraftHero.tsx
