@@ -727,7 +727,9 @@ export const BranchToolbar = memo(function BranchToolbar({
       data-composer-context-control
     >
       <FolderIcon className="size-3 shrink-0" />
-      <ComposerContextLabel>{activeProject.title}</ComposerContextLabel>
+      <span className={cn("min-w-0", workspaceIconOnly && CHIP_LABEL_ICON_ONLY_CLS)}>
+        <ComposerContextLabel>{activeProject.title}</ComposerContextLabel>
+      </span>
     </span>
   ) : null;
   const hideRunContextWide = isServerThread && variant !== "tray";
@@ -840,12 +842,14 @@ export const BranchToolbar = memo(function BranchToolbar({
     return (
       <>
         {projectChip}
-        <Separator
-          orientation="vertical"
-          aria-hidden
-          data-composer-divider
-          className="mx-1 h-4! shrink-0"
-        />
+        {projectChip !== null ? (
+          <Separator
+            orientation="vertical"
+            aria-hidden
+            data-composer-divider
+            className="mx-1 h-4! shrink-0"
+          />
+        ) : null}
         <Popover>
           <PopoverTrigger
             render={
@@ -898,12 +902,12 @@ export const BranchToolbar = memo(function BranchToolbar({
       <div
         ref={attachStrip}
         data-composer-context-tray-content
-        className="flex min-w-0 flex-1 items-center gap-1"
+        className="flex min-w-0 shrink items-center gap-1"
       >
         {projectChip}
         {runContextNode}
         {uploadsNode}
-        {showGitControls ? branchSelector("all", "ms-auto min-w-0") : null}
+        {showGitControls ? branchSelector("all", "min-w-0") : null}
         {trailing}
       </div>
     );

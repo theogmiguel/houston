@@ -169,7 +169,7 @@ function overlapping(first: HTMLElement, second: HTMLElement): boolean {
 }
 
 it(
-  "keeps the two-row composer with its model and workspace chips in a narrow pane",
+  "keeps the footer row under the composer card whole, with the checkout and the model picker in it, in a narrow pane",
   async () => {
     using _environment = installFakeEnvironment([
       threadWithHistory("pane-composer-a", 1),
@@ -190,15 +190,25 @@ it(
         expect(found).not.toBeNull();
         return found!;
       });
-      // Row 1 is the input alone; the toolbar sits wholly under it.
+      // Row 1 is the input alone; the card's toolbar sits wholly under it.
       expect(footer.getBoundingClientRect().top).toBeGreaterThanOrEqual(
         editor.getBoundingClientRect().bottom - 1,
       );
+      // The checkout and the pickers live in the row under the card, never in the card.
+      expect(footer.querySelector("[data-chat-provider-model-picker]")).toBeNull();
+      expect(footer.querySelector('[aria-label^="Workspace:"]')).toBeNull();
+      const row = tab.querySelector<HTMLElement>('[data-composer-context-tray="true"]')!;
+      expect(row).not.toBeNull();
+      const card = tab.querySelector<HTMLElement>("[data-chat-composer-main-surface]")!;
+      expect(row.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+        card.getBoundingClientRect().bottom - 1,
+      );
+      expect(row.getBoundingClientRect().height).toBeLessThanOrEqual(32);
 
       // The model chip never shows a clipped name: it is whole, or it dropped to the provider
       // mark with the full name in its tooltip.
       const modelChip = await vi.waitFor(() => {
-        const found = footer.querySelector<HTMLElement>("[data-chat-provider-model-picker]");
+        const found = row.querySelector<HTMLElement>("[data-chat-provider-model-picker]");
         expect(found).not.toBeNull();
         return found!;
       });
@@ -211,13 +221,19 @@ it(
         expect(modelLabel.scrollWidth).toBeLessThanOrEqual(modelLabel.clientWidth + 1);
       }
       // No lock or other unlabelled glyph shows: access is in the model picker's footer.
-      expect(footer.querySelector('[aria-label^="Permissions:"]')).toBeNull();
-      expect(footer.querySelector('[aria-label^="Workspace:"]')).not.toBeNull();
+      expect(row.querySelector('[aria-label^="Permissions:"]')).toBeNull();
+      expect(row.querySelector('[aria-label^="Workspace:"]')).not.toBeNull();
 
-      const controls = visibleControls(footer);
+      const controls = [...visibleControls(footer), ...visibleControls(row)];
       const footerBox = footer.getBoundingClientRect();
+      const rowBox = row.getBoundingClientRect();
       for (const [index, first] of controls.entries()) {
-        expect(first.getBoundingClientRect().right).toBeLessThanOrEqual(footerBox.right + 1);
+        expect(first.getBoundingClientRect().right).toBeLessThanOrEqual(
+          Math.max(footerBox.right, rowBox.right) + 1,
+        );
+        expect(first.getBoundingClientRect().left).toBeGreaterThanOrEqual(
+          Math.min(footerBox.left, rowBox.left) - 1,
+        );
         for (const second of controls.slice(index + 1)) {
           expect(
             overlapping(first, second),

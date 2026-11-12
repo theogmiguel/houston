@@ -4123,30 +4123,31 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     isPhone && "gap-2",
                   )}
                 >
-                  <div
-                    ref={attachExpandedControls}
-                    data-chat-composer-controls="footer"
-                    data-chat-composer-footer-controls="true"
-                    className={cn(
-                      "relative flex min-w-0 flex-1 items-center gap-0.5",
-                      isPhone && "gap-2",
-                    )}
-                  >
-                    {composerControls}
-                    {contextControls && composerNarrow
-                      ? cloneElement(contextControls, {
-                          forceNarrow: true,
-                          workspaceIconOnly: compactChipTier >= 2,
-                          prIconOnly: compactChipTier >= 1,
-                        })
-                      : null}
-                    <ComposerStashBadge
-                      count={stashQueue.length}
-                      menuOpen={isStashMenuOpen}
-                      pulseKey={stashPulseKey}
-                      onToggleMenu={toggleStashMenuStable}
-                    />
-                  </div>
+                  {isPhone ? (
+                    <div
+                      ref={attachExpandedControls}
+                      data-chat-composer-controls="footer"
+                      data-chat-composer-footer-controls="true"
+                      className="relative flex min-w-0 flex-1 items-center gap-2"
+                    >
+                      {composerControls}
+                      {contextControls && composerNarrow
+                        ? cloneElement(contextControls, {
+                            forceNarrow: true,
+                            workspaceIconOnly: compactChipTier >= 2,
+                            prIconOnly: compactChipTier >= 1,
+                          })
+                        : null}
+                      <ComposerStashBadge
+                        count={stashQueue.length}
+                        menuOpen={isStashMenuOpen}
+                        pulseKey={stashPulseKey}
+                        onToggleMenu={toggleStashMenuStable}
+                      />
+                    </div>
+                  ) : (
+                    <div className="min-w-0 flex-1" aria-hidden="true" />
+                  )}
                   {speechMicAction ? (
                     <div className="me-0.5 flex shrink-0 items-center">{speechMicAction}</div>
                   ) : null}
@@ -4237,11 +4238,42 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             ) : null}
           </div>
         </ComposerSurface.Main>
-        {contextControls && !composerNarrow ? (
-          <ComposerSurface.ContextStrip data-composer-context-tray="true" className="mt-1.5">
-            {cloneElement(contextControls, { forceNarrow: false, variant: "tray" })}
+        {isPhone ? null : (
+          <ComposerSurface.ContextStrip data-composer-context-tray="true" className="mt-1.5 gap-1">
+            {contextControls && !composerNarrow ? (
+              <div className="flex min-w-0 shrink items-center">
+                {cloneElement(contextControls, { forceNarrow: false, variant: "tray" })}
+              </div>
+            ) : null}
+            {showInlineRestingControls ? null : (
+              <div
+                ref={attachExpandedControls}
+                data-chat-composer-controls="footer"
+                data-chat-composer-footer-controls="true"
+                className="relative flex min-w-0 flex-1 items-center gap-0.5"
+              >
+                {contextControls && composerNarrow ? (
+                  <div className="flex min-w-0 shrink-0 items-center">
+                    {cloneElement(contextControls, {
+                      forceNarrow: true,
+                      workspaceIconOnly: compactChipTier >= 2,
+                      prIconOnly: compactChipTier >= 1,
+                    })}
+                  </div>
+                ) : null}
+                {/* Pushes the pickers to the right; unlike justify-end, an overflow runs off the end where the chip tiers can measure it. */}
+                <div className="min-w-0 flex-1" aria-hidden="true" />
+                {composerControls}
+                <ComposerStashBadge
+                  count={stashQueue.length}
+                  menuOpen={isStashMenuOpen}
+                  pulseKey={stashPulseKey}
+                  onToggleMenu={toggleStashMenuStable}
+                />
+              </div>
+            )}
           </ComposerSurface.ContextStrip>
-        ) : null}
+        )}
       </div>
     </form>
   );
