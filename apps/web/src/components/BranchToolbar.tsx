@@ -725,6 +725,7 @@ export const BranchToolbar = memo(function BranchToolbar({
     <span
       className="inline-flex min-w-0 max-w-[7rem] shrink-0 items-center gap-1 font-normal"
       data-composer-context-control
+      {...(workspaceIconOnly ? { title: activeProject.title } : {})}
     >
       <FolderIcon className="size-3 shrink-0" />
       <span className={cn("min-w-0", workspaceIconOnly && CHIP_LABEL_ICON_ONLY_CLS)}>
