@@ -28,7 +28,7 @@ followed by the provider repositories Houston can clone from. **New project…**
 the server configures a projects folder. Adding a project creates its **Grid 1** and opens
 it with the composer ready.
 
-Projects appear as sections in the sidebar. **Project settings** in a thread's action menu
+**Project settings** in a thread's action menu
 or the command palette renames a project, pins it, archives it and changes its checkouts.
 Pinned projects lead the list.
 
@@ -73,44 +73,50 @@ using a thread shortcut.
 ## The sidebar
 
 The sidebar opens with search and one row of icon buttons for **Pull requests**, **Tasks** and
-**Usage** (hover for the name; the open page is highlighted), then one section per project.
-Each section label collapses with **Enter** or **Space** and keeps its state; a search opens
-every section it matches in. The **…** button beside the label, or a right-click, opens the
-project's actions. Under the label are the project's grids, then its threads that no grid shows, marked **not in a
-grid**. Grid rows name only the grid. Threads started without a project sit at the foot of
-the list under **No project**. With no projects at all, the rail offers **Add project**.
+**Usage** (hover for the name; the open page is highlighted), then one group per layout
+workspace, in the order of the workspace switcher. A group lists the threads whose chat is
+open in that workspace, whichever project they belong to. A thread whose chat is not placed in
+any workspace is listed under the first one. Each group label collapses with **Enter** or
+**Space** and keeps its state; a search opens every group it matches in. The **…** button
+beside the label, or a right-click, opens the workspace's actions. With no projects at all, the
+rail offers **Add project**.
 
-In a phone-width browser the sidebar is the home page: the same project, grid and thread
-sections without the rail's header and footer, a top bar with search and new thread, and a
-bottom tab bar for **Threads**, **Pull requests**, **Usage** and **Settings**. A thread opens
-alone with a back control that returns to the list.
+The **Workspaces** header carries **Filter by project**, the **Hidden workspaces** menu,
+**View options**, **New workspace** (**+**) and **Add project**. A workspace's menu offers
+**New thread**, **Rename workspace** (`F2`), **Pin workspace** / **Unpin workspace**,
+**Move workspace up** / **Move workspace down**, **Hide workspace** and **Delete workspace**.
+Pinned workspaces come first. Hiding removes a workspace from the sidebar only; the workspace
+switcher still lists it, and **Hidden workspaces** restores it. The last workspace cannot be
+deleted: the sidebar says so in a message. Names are limited in length; a longer name is
+refused with a message naming the limit.
 
-Each project hangs its grids from a thin guide line, and each grid hangs its threads from
-another. The project is the only bold row; a project with no grids or threads is muted. The grid
-on screen is drawn in the primary text colour with a stronger guide. A collapsed project or grid
-shows how many threads it holds on its right, with an amber dot when any of them waits for you
-or failed; an open one shows nothing there. Hovering or focusing a row shows its actions,
-including **New thread** (the **+** button), in place of the count. A collapsed project or grid
-still lists the thread that is open, and the project heading stays pinned at the top of the list
-while its threads scroll. On a narrow sidebar a thread's branch name shortens first, and the
-running sub-agent count is the first item to drop from the line.
+In a phone-width browser the sidebar is the home page: the same workspace groups without the
+rail's header and footer, a top bar with search and new thread, and a bottom tab bar for
+**Threads**, **Pull requests**, **Usage** and **Settings**. A thread opens alone with a back
+control that returns to the list.
 
-**Show Needs you** in the rail's **View options** pins one section above the projects with the
-threads waiting on you from every project: input and approval requests first, then failures and
-threads that came back. Those threads leave their project sections, which instead end with a
+Each group hangs its threads from a thin guide line. A collapsed group shows how many threads
+it holds on its right, with an amber dot when any of them waits for you or failed; an open one
+shows nothing there. Hovering or focusing a heading shows its actions, including **New
+thread** (the **+** button), in place of the count. A collapsed group still lists the thread
+that is open. On a narrow sidebar a thread's branch name shortens first, and the running
+sub-agent count is the first item to drop from the line.
+
+**Show Needs you** in the rail's **View options** pins one section above the groups with the
+threads waiting on you from every workspace: input and approval requests first, then failures
+and threads that came back. Those threads leave their groups, which instead end with a
 muted **+N in Needs you** line; the amber dot on a collapsed heading still counts them. The setting is off by default
 on desktop and on by default in a phone-width browser; a saved choice wins on either. The
 section is hidden when nothing is waiting.
 
-**Filter by project** in the rail header limits the sections, the shelves, search and the
+**Filter by project** in the rail header limits the groups, the shelves, search and the
 older Closed threads Houston loads to the projects you pick. Click a project to choose only
 that one, `Shift`-click to add or remove others, and choose it again to clear the filter.
-The filter persists across restarts. The gear beside a project, or a right-click on it,
-opens its **Project settings**; projects from different machines show where they run.
+The filter persists across restarts.
 
 ### Search
 
-Search filters projects, grids and threads by title, branch and pull request number, and
+Search filters workspaces and threads by title, branch and pull request number, and
 also lists threads whose messages match under **In messages**, with the matching snippet.
 It covers **On hold** and **Closed** threads, which expand while a search runs. `Down` and
 `Up` move the highlighted result, `Enter` opens it, and `Escape` clears the search. A
@@ -119,28 +125,23 @@ message match opens its thread with Find on the matched text. With no match the 
 
 ### Rows
 
-Every thread row is two lines tall. The status glyph, a distinct shape and colour for each
-state, sits in a fixed column on the left. The first line holds only the title and the age;
-on hover or focus the age gives way to the row's actions. The second line is muted and shows,
-in this order:
+Every thread row is three lines tall:
 
-- the status word, always: **Approval**, **Input**, **Request**, **Needs you**, **Failed**,
-  **Limited**, **Goal**, **Waiting**, **Running**, **Ready**, **Idle** or **Back** (which has
-  a dismiss control). A running or waiting thread says for how long ("Running for 7m"); its age keeps showing the
-  last activity;
-- an unsent draft, with **Discard**;
-- the linked pull request: its glyph carries the state colour and the number stays neutral;
-- the checkout's uncommitted line counts;
-- a running terminal, which opens that terminal;
-- whether the thread uses a worktree or the project's local checkout, with its branch when
-  that is not the default branch, and a machine icon when the thread runs on another machine;
-- running subagents, then tags (as `#tag` text);
-- a regenerating title.
+1. The project's icon and name on the left; the status at the right: **Approval**, **Input**,
+   **Request**, **Needs you**, **Failed**, **Limited**, **Goal**, **Waiting**, **Running**,
+   **Ready**, **Idle** or **Back** (which has a dismiss control). A running or waiting thread
+   says for how long. On hover or focus the status gives way to the row's actions.
+2. The title, alone, across the full width.
+3. A muted line: the branch (whether the thread uses a worktree or the project's local
+   checkout, and a machine icon when it runs on another machine), then an unsent draft with
+   **Discard**, the linked pull request (its glyph carries the state colour and the number
+   stays neutral), a running terminal that opens that terminal, running subagents, tags (as
+   `#tag` text) and a regenerating title. At the right: the checkout's uncommitted line
+   counts and the provider mark; a provider without a logo shows its initials on a neutral
+   square.
 
-The provider mark closes the line at the right, under the age; a provider without a logo shows its
-initials on a neutral square. When the items do not fit,
-whole items drop from the end behind a **+N** counter; hovering it lists what is hidden.
-Closed rows show how long ago the thread closed.
+When the items on the third line do not fit, whole items drop from the end behind a **+N**
+counter; hovering it lists what is hidden. Closed rows show how long ago the thread closed.
 
 Hovering a row opens a card with the project, the machine when there are several, the
 checkout and branch (with a warning when the checkout is on a different branch than the
@@ -153,7 +154,7 @@ The first nine rows show their `Ctrl+1` … `Ctrl+9` jump label while the modifi
 ### Selecting and navigating
 
 `Up`, `Down`, `Home` and `End` move between rows, and `Left` and `Right` collapse or expand
-a section, or move to its parent or first child. `Enter` or `Space` opens the focused row; `Shift`- or `Ctrl`-click selects
+a group, or move to its parent or first child. `Enter` or `Space` opens the focused row; `Shift`- or `Ctrl`-click selects
 several. Opening a thread clears the selection and scrolls its row into view.
 Double-click a thread's title, or press `F2`, to rename it; `Enter` or leaving the field
 saves, `Escape` cancels, and an empty title is refused with a message. If the server
@@ -166,30 +167,25 @@ asks for confirmation.
 ### Dragging
 
 - Drag a row onto a chat composer to attach that thread as context.
-- Drag a **Closed** or **On hold** row into the rail to reopen or wake it in the grid it
-  left.
+- Drag a thread row onto another workspace group to move its chat tab to that workspace.
+  Drag a workspace heading to reorder workspaces.
+- Drag a **Closed** or **On hold** row into the rail to reopen or wake it in its workspace.
 - Drop files from a file manager onto a row to add them to that thread's draft; they go
   out with its next message. Files over an environment's limit, or beyond the attachment
   cap, are refused with a message naming the limit.
 - Press **Close**, **Reopen thread** or **Wake thread now** on one row and sweep across the
   same button on other rows to apply it to every row swept. `Escape` cancels the sweep.
 
-A grid's menu offers **New thread**, **Rename grid** (`F2`), **Pin grid** / **Unpin grid**,
-**Move grid up** / **Move grid down**, **Hide grid**, **Delete grid**, **Close all ready**,
-and a submenu to create or show grids in the same project. Hidden grids are restored from
-the **Hidden grids** menu in the sidebar header.
-
 The foot of the rail carries two shelves:
 
 - **On hold** lists threads with a hold that has not expired. **Wake thread now** returns
   one early. Hold presets are set in **Settings ▸ Threads ▸ Hold options**.
-- **Closed** lists closed threads. **Reopen thread** returns one to its grid. A thread can
+- **Closed** lists closed threads. **Reopen thread** returns one to its workspace. A thread can
   also be dragged onto **Closed**. Houston loads older closed threads from the server as
   you choose **Show more**; the button reads **Loading** while it works and offers **Retry**
   if the read fails.
 
-Pinned grids come first in their project. **Settings ▸ General ▸ Sidebar** sets project
-grouping and order.
+**Settings ▸ General ▸ Sidebar** sets the thread order inside a group.
 
 ## Thread actions
 
