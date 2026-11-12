@@ -12,13 +12,12 @@ import { TooltipPopup } from "./tooltip";
 export type LayoutBarPlacement = "pane" | "window";
 
 /**
- * A pane's frame: its rect in the strip, the tab bar and the surface. A `window` bar is the
- * top pane of a column lifted into the window chrome above the surface; a `pane` bar sits
- * inside the surface.
+ * A pane's frame: its rect in the strip, the tab bar and the surface. The surface is a card on
+ * the window background and the bar sits above it, so the active tab and the card read as one
+ * silhouette. A `window` bar is the top pane of a column, sharing the window chrome's row.
  */
 export function LayoutPaneFrame({
   focused,
-  placement,
   bar,
   squareStart,
   ref,
@@ -27,7 +26,6 @@ export function LayoutPaneFrame({
   ...props
 }: HTMLAttributes<HTMLDivElement> & {
   focused: boolean;
-  placement: LayoutBarPlacement;
   bar: ReactNode;
   /** The active tab is the bar's first: the surface's top-start corner meets it square. */
   squareStart: boolean;
@@ -38,11 +36,10 @@ export function LayoutPaneFrame({
       data-layout-pane-surface=""
       data-focused={focused ? "" : undefined}
       className={cn(
-        "relative flex min-h-0 flex-1 flex-col overflow-clip rounded-(--r-group) bg-(--pane) ring-1 ring-(--divider) ring-inset transition-shadow duration-(--motion-feedback) ease-standard data-[focused]:ring-(--line-strong) motion-reduce:transition-none",
+        "relative flex min-h-0 flex-1 flex-col overflow-clip rounded-(--r-group) bg-(--pane)",
         squareStart && "rounded-ss-none",
       )}
     >
-      {placement === "pane" ? bar : null}
       {children}
     </div>
   );
@@ -53,7 +50,7 @@ export function LayoutPaneFrame({
       className={cn("absolute flex flex-col", className)}
       {...props}
     >
-      {placement === "window" ? bar : null}
+      {bar}
       {surface}
     </div>
   );
@@ -86,7 +83,7 @@ export function LayoutPaneBody({
       inert={hidden || inert}
       {...props}
     >
-      <div aria-hidden className={placement === "window" ? "h-10 shrink-0" : "h-7.5 shrink-0"} />
+      <div aria-hidden className={placement === "window" ? "h-10 shrink-0" : "h-8 shrink-0"} />
       <div className="pointer-events-auto relative flex min-h-0 flex-1 flex-col overflow-clip rounded-b-(--r-group)">
         {children}
       </div>
@@ -114,8 +111,8 @@ export function LayoutStandIn({ className, ...props }: HTMLAttributes<HTMLDivEle
 }
 
 /**
- * The tab bar. The window bar is the window chrome's 40px row; the pane bar is the 30px head
- * of its pane. `leadingInset` and `trailingInset` keep tabs clear of the window controls.
+ * The tab bar, on the window background above its pane's card. The window bar is the window
+ * chrome's 40px row; the pane bar is 32px. `leadingInset` and `trailingInset` keep tabs clear of the window controls.
  */
 export function LayoutTabBar({
   placement,
@@ -139,9 +136,7 @@ export function LayoutTabBar({
       style={style}
       className={cn(
         "flex shrink-0 items-end [-webkit-app-region:drag]",
-        placement === "window"
-          ? "h-10 bg-(--app-chrome-background)"
-          : "h-7.5 items-stretch border-b border-(--divider) bg-(--pane-head)",
+        placement === "window" ? "h-10" : "h-8",
         className,
       )}
       {...props}
@@ -165,7 +160,7 @@ export function LayoutTabStrip({
       data-layout-tab-strip=""
       data-overflowing={overflowing ? "" : undefined}
       className={cn(
-        "flex min-w-0 items-stretch overflow-x-auto overscroll-x-contain [-webkit-app-region:no-drag] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden data-[overflowing]:[mask-image:linear-gradient(90deg,black_calc(100%-28px),transparent)]",
+        "flex min-w-0 items-stretch overflow-x-auto pe-2.5 overscroll-x-contain [-webkit-app-region:no-drag] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden data-[overflowing]:[mask-image:linear-gradient(90deg,black_calc(100%-28px),transparent)]",
         className,
       )}
       {...props}
@@ -195,13 +190,12 @@ export function LayoutTabSlot({ className, children, ...props }: HTMLAttributes<
 }
 
 /**
- * A tab. Active tabs are the pane surface's colour; in a window bar an active tab also flares
- * into the surface with concave lower corners. A ghost tab is italic until kept.
+ * A tab. Active tabs are the pane surface's colour and flare into the card with concave lower
+ * corners (the first tab meets the card's square corner). A ghost tab is italic until kept.
  */
 export function LayoutTabShell({
   active,
   ghost,
-  placement,
   first,
   className,
   children,
@@ -209,10 +203,8 @@ export function LayoutTabShell({
 }: HTMLAttributes<HTMLButtonElement> & {
   active: boolean;
   ghost: boolean;
-  placement: LayoutBarPlacement;
   first: boolean;
 }) {
-  const window = placement === "window";
   return (
     <button
       type="button"
@@ -220,17 +212,17 @@ export function LayoutTabShell({
       data-ghost={ghost ? "" : undefined}
       className={cn(
         "relative flex min-w-0 items-center gap-1.5 px-3 text-xs outline-none transition-colors duration-(--motion-feedback) ease-standard focus-visible:ring-2 focus-visible:ring-(--accent-ink) focus-visible:ring-inset motion-reduce:transition-none",
-        window ? "h-8 self-end rounded-t-(--r-group)" : "h-full border-e border-(--divider)",
+        "h-8 self-end",
         active
-          ? "bg-(--pane) font-medium text-foreground"
-          : "text-muted-foreground hover:bg-hover hover:text-foreground",
+          ? "rounded-t-(--r-group) bg-(--pane) font-medium text-foreground"
+          : "rounded-(--r-ctl) text-muted-foreground hover:text-foreground",
         ghost && "italic",
         className,
       )}
       {...props}
     >
       {children}
-      {window && active ? (
+      {active ? (
         <>
           {first ? null : (
             <span
@@ -262,7 +254,7 @@ export function LayoutTabIcon({ children }: { children: ReactNode }) {
 }
 
 export function LayoutTabTitle({ className, ...props }: HTMLAttributes<HTMLSpanElement>) {
-  return <span className={cn("min-w-0 truncate", className)} {...props} />;
+  return <span className={cn("min-w-0 truncate pe-0.5", className)} {...props} />;
 }
 
 export type LayoutTabMarkTone = "running" | "attention" | "dirty";
@@ -318,7 +310,7 @@ export function LayoutTabAdd({ label, onClick }: { label: string; onClick: () =>
       aria-label={label}
       data-layout-tab-add=""
       onClick={onClick}
-      className="grid h-8 w-7.5 shrink-0 cursor-pointer place-items-center self-end rounded-(--r-ctl) text-muted-foreground outline-none transition-colors duration-(--motion-feedback) ease-standard hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-(--accent-ink) focus-visible:ring-inset motion-reduce:transition-none [-webkit-app-region:no-drag]"
+      className="grid h-8 w-7 shrink-0 cursor-pointer place-items-center self-end rounded-(--r-ctl) text-muted-foreground outline-none transition-colors duration-(--motion-feedback) ease-standard hover:text-foreground focus-visible:ring-2 focus-visible:ring-(--accent-ink) focus-visible:ring-inset motion-reduce:transition-none [-webkit-app-region:no-drag]"
     >
       <PlusIcon aria-hidden className="size-3.5" />
     </button>
@@ -584,7 +576,7 @@ export function LayoutStripScroller({
       data-layout-strip=""
       inert={inactive}
       className={cn(
-        "relative h-full min-h-0 w-full overscroll-x-none bg-(--app-chrome-background)",
+        "relative h-full min-h-0 w-full overscroll-x-none bg-(--app-chrome-background) px-2 pb-2",
         inactive && "pointer-events-none invisible absolute inset-0",
         mode === "scroll" &&
           "overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",

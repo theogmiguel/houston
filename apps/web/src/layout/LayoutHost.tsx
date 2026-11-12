@@ -1,16 +1,13 @@
 import { useRouter } from "@tanstack/react-router";
 
-import { requestReopenClosedView } from "../components/ReopenClosedViewShortcut";
 import { readLocalApi } from "../localApi";
 import type { ThreadRouteTarget } from "../threadRoutes";
 import { threadKeysOfTabs } from "./layoutThreadRef";
-import { ClosedTabRestoreButton } from "./ClosedTabRestore";
 import { LayoutHints } from "./LayoutHint";
 import { LayoutOnboarding } from "./LayoutOnboarding";
 import { LayoutOverview } from "./LayoutOverview";
 import { LayoutShortcutsOverlay } from "./LayoutShortcutsOverlay";
 import { useThreeFingerSwipe } from "./useThreeFingerSwipe";
-import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 import { LayoutLauncher } from "./LayoutLauncher";
 import { openLayoutNewTab } from "./layoutActions";
 import { layoutChatRoute } from "./layoutChatRoute";
@@ -105,12 +102,6 @@ function LoadedLayoutHost({ threadTarget, atIndex, active, narrow }: LayoutHostP
         active={active}
         onScreenTabsChange={onScreenTabsChange}
         retainTab={retainsChat}
-        windowBarTrailing={
-          <>
-            <ClosedTabRestoreButton reopen={requestReopenClosedView} />
-            <WorkspaceSwitcher resolveWorkspaceTitle={resolveWorkspaceTitle} />
-          </>
-        }
         {...(narrow === undefined ? {} : { narrow })}
       />
       <LayoutHints resolveWorkspaceTitle={resolveWorkspaceTitle} />

@@ -108,14 +108,12 @@ export const LayoutPaneTab = memo(function LayoutPaneTab({
   tab,
   label,
   active,
-  placement,
   first,
   onContextMenu,
 }: {
   tab: LayoutTab;
   label: LayoutTabLabel;
   active: boolean;
-  placement: LayoutBarPlacement;
   first: boolean;
   onContextMenu: ((tab: LayoutTab, position: { x: number; y: number }) => void) | undefined;
 }) {
@@ -127,7 +125,6 @@ export const LayoutPaneTab = memo(function LayoutPaneTab({
             <LayoutTabShell
               active={active}
               ghost={isLayoutGhostTab(tab)}
-              placement={placement}
               first={first}
               data-layout-pane-tab={tab.id}
               role="tab"
@@ -220,7 +217,6 @@ export function LayoutPaneTabBar({
             tab={tab}
             label={tabLabel(tab)}
             active={tab.id === activeTabId}
-            placement={placement}
             first={index === 0}
             onContextMenu={onTabContextMenu}
           />

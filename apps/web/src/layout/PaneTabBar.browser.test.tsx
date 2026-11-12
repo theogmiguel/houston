@@ -238,12 +238,12 @@ describe("placements", () => {
     expect(corners).toEqual(["end"]);
   });
 
-  it("keeps a pane's own bar at 30px, with no concave corners", async () => {
+  it("keeps a pane's own bar at 32px, with the same concave corners on its active tab", async () => {
     using _layout = openLayout([[[["a", "b"]]]]);
     await using screen = await render(<BarOf placement="pane" />, { router: false });
     const bar = screen.container.querySelector<HTMLElement>("[data-layout-tab-bar='pane']")!;
-    expect(bar.getBoundingClientRect().height).toBe(30);
-    expect(screen.container.querySelectorAll("[data-layout-tab-corner]")).toHaveLength(0);
+    expect(bar.getBoundingClientRect().height).toBe(32);
+    expect(screen.container.querySelectorAll("[data-layout-tab-corner]")).toHaveLength(1);
   });
 
   it("leaves room for native window chrome through the insets it is given", async () => {

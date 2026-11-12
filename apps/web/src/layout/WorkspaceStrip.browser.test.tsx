@@ -79,7 +79,7 @@ describe("one pane", () => {
     using _layout = openLayout([[[["a", "b"]]]]);
     await using screen = await render(<Harness />, { router: false });
     const frame = frameOf(screen.container, "w0c0p0");
-    expect(rect(frame)).toMatchObject({ left: 0, top: 0, width: 1000, height: 600 });
+    expect(rect(frame)).toMatchObject({ left: 8, top: 0, width: 984, height: 592 });
     const bar = frame.querySelector("[data-layout-tab-bar]")!;
     expect(bar.getAttribute("data-layout-tab-bar")).toBe("window");
     expect(rect(bar).height).toBe(40);
@@ -111,7 +111,7 @@ describe("columns and stacked panes", () => {
     expect(rect(first!).right + 4).toBeCloseTo(rect(second!).left - 4, 0);
     expect(rect(second!).left - rect(first!).right).toBe(8);
     expect(rect(third!).left - rect(second!).right).toBe(8);
-    expect(rect(third!).right).toBe(1000);
+    expect(rect(third!).right).toBe(992);
     for (const frame of frames(screen.container)) {
       expect(
         frame.querySelector("[data-layout-tab-bar]")!.getAttribute("data-layout-tab-bar"),
@@ -120,7 +120,7 @@ describe("columns and stacked panes", () => {
     expect(separators(screen.container, "vertical")).toHaveLength(3);
   });
 
-  it("stacks a column's panes, the lower one with its bar inside its own surface", async () => {
+  it("stacks a column's panes, the lower one with its bar above its own card", async () => {
     using _layout = openLayout([[[["a"], ["b"]]]]);
     await using screen = await render(<Harness />, { router: false });
     const top = frameOf(screen.container, "w0c0p0");
@@ -131,8 +131,8 @@ describe("columns and stacked panes", () => {
     );
     const lower = bottom.querySelector("[data-layout-tab-bar]")!;
     expect(lower.getAttribute("data-layout-tab-bar")).toBe("pane");
-    expect(lower.closest("[data-layout-pane-surface]")).not.toBeNull();
-    expect(rect(lower).height).toBe(30);
+    expect(lower.closest("[data-layout-pane-surface]")).toBeNull();
+    expect(rect(lower).height).toBe(32);
     expect(separators(screen.container, "horizontal")).toHaveLength(1);
   });
 
@@ -148,15 +148,13 @@ describe("columns and stacked panes", () => {
 });
 
 describe("focus", () => {
-  it("rings only the focused pane, and moves the ring to a pane pressed on", async () => {
+  it("marks only the focused pane, and moves the mark to a pane pressed on", async () => {
     using _layout = openLayout([[[["a"]], [["b"]]]]);
     await using screen = await render(<Harness />, { router: false });
     const surface = (id: string) =>
       frameOf(screen.container, id).querySelector<HTMLElement>("[data-layout-pane-surface]")!;
     expect(surface("w0c0p0").hasAttribute("data-focused")).toBe(true);
     expect(surface("w0c1p0").hasAttribute("data-focused")).toBe(false);
-    const focusedRing = getComputedStyle(surface("w0c0p0")).boxShadow;
-    expect(getComputedStyle(surface("w0c1p0")).boxShadow).not.toBe(focusedRing);
     const body = screen.container.querySelector("[data-body='b']")!;
     const at = rect(body);
     await act(() => pointer("pointerdown", body, at.left + 10, at.top + 10));
@@ -188,7 +186,7 @@ describe("empty", () => {
       router: false,
     });
     const empty = screen.container.querySelector<HTMLElement>("[data-layout-empty-workspace]")!;
-    expect(rect(empty)).toMatchObject({ width: 1000, height: 600 });
+    expect(rect(empty)).toMatchObject({ width: 984, height: 592 });
     expect(empty.querySelector("[data-launcher]")).not.toBeNull();
     expect(screen.container.querySelectorAll("[data-layout-tab-strip]")).toHaveLength(0);
   });
@@ -209,7 +207,7 @@ describe("narrow window", () => {
     using _layout = openLayout([[[["a"]], [["b"]]]]);
     await using screen = await render(<Harness narrow width={480} />, { router: false });
     expect(frames(screen.container)).toHaveLength(1);
-    expect(rect(frames(screen.container)[0]!)).toMatchObject({ width: 480, height: 600 });
+    expect(rect(frames(screen.container)[0]!)).toMatchObject({ width: 464, height: 592 });
     expect(screen.container.querySelector("[data-body='b']")).toBeNull();
     expect(separators(screen.container, "vertical")).toHaveLength(0);
   });
@@ -347,8 +345,6 @@ describe("motion and themes", () => {
     await using screen = await render(<Harness />, { router: false });
     const tab = screen.container.querySelector<HTMLElement>("[data-layout-pane-tab]")!;
     expect(getComputedStyle(tab).transitionProperty).toBe("none");
-    const surface = screen.container.querySelector<HTMLElement>("[data-layout-pane-surface]")!;
-    expect(getComputedStyle(surface).transitionProperty).toBe("none");
   });
 
   it("eases tab feedback on the feedback role when motion is on", async () => {
@@ -377,7 +373,7 @@ describe("motion and themes", () => {
         expect(getComputedStyle(surface).backgroundColor).toBe(
           getComputedStyle(probe).backgroundColor,
         );
-        const bar = screen.container.querySelector<HTMLElement>("[data-layout-tab-bar='window']")!;
+        const bar = screen.container.querySelector<HTMLElement>("[data-layout-strip]")!;
         const chrome = screen.container.querySelector<HTMLElement>("[data-probe-bar]")!;
         expect(getComputedStyle(bar).backgroundColor).toBe(
           getComputedStyle(chrome).backgroundColor,

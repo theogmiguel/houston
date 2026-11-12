@@ -870,10 +870,9 @@ export function LayoutWorkspaceStrip({
                 data-layout-pane-focused={
                   active && !staged && entry.pane.id === focusedPaneId ? "true" : undefined
                 }
-                focused={active && !staged && entry.pane.id === focusedPaneId}
+                focused={split && active && !staged && entry.pane.id === focusedPaneId}
                 inert={staged}
-                placement={placement}
-                squareStart={placement === "window" && firstActive}
+                squareStart={firstActive}
                 style={entry.style}
                 onPointerDownCapture={() => focusPane(entry.pane.id)}
                 bar={
