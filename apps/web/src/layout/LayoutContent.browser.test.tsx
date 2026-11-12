@@ -215,6 +215,29 @@ it(
 );
 
 it(
+  "a sidebar row opens its thread in the layout without a grid holding it",
+  async () => {
+    await using app = await bootAt("/");
+    const row = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLElement>(
+        `[data-sidebar-row="${ENVIRONMENT_ID}:thread-b"]`,
+      );
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    row.click();
+    await vi.waitFor(() => {
+      expect(app.router.state.location.pathname).toBe(threadPath("thread-b"));
+      expect(selectFocusedTab(useLayoutStore.getState().layout)?.content).toMatchObject({
+        kind: "chat",
+        target: { threadRef: { threadId: "thread-b" } },
+      });
+    });
+  },
+  APP_BOOT_TEST_TIMEOUT_MS,
+);
+
+it(
   "a grid link focuses the workspace with the grid's id and leaves the retired route",
   async () => {
     await using app = await bootAt("/grid/w1", [[[["thread-a"]]], [[["thread-b"]]]]);
