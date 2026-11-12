@@ -71,6 +71,7 @@ vi.mock(import("./useThreadSurfaceOpeners"), () => {
 
 import { render } from "../../test/render";
 import { buildLayout } from "./layoutFixtures";
+import { createLayoutLauncherContent, findLayoutTab } from "./layoutModel";
 import { LayoutLauncher } from "./LayoutLauncher";
 import { useLayoutStore } from "./layoutStore";
 
@@ -150,5 +151,27 @@ describe("LayoutLauncher", () => {
     ).find((candidate) => candidate.textContent?.startsWith("No project"))!;
     expect(refused.getAttribute("aria-disabled")).toBe("true");
     expect(refused.textContent).toContain("scratch folder");
+  });
+
+  it("opens Settings as its modal and leaves no placeholder tab behind", async () => {
+    useLayoutStore.getState().setLayoutFromServer(buildLayout([[[["a", "b"]]]]));
+    useLayoutStore.getState().replaceTabContent("a", createLayoutLauncherContent(null));
+    await using screen = await render(<LayoutLauncher tabId="a" context={null} />);
+    const settings = Array.from(
+      screen.container.querySelectorAll<HTMLElement>("[data-layout-launcher-row]"),
+    ).find((candidate) => candidate.textContent?.startsWith("Settings"))!;
+    settings.click();
+    await vi.waitFor(() => {
+      expect(screen.router?.state.location.pathname).toBe("/settings/general");
+      expect(findLayoutTab(useLayoutStore.getState().layout, (tab) => tab.id === "a")).toBeNull();
+    });
+    const kinds = useLayoutStore
+      .getState()
+      .layout.workspaces.flatMap((workspace) =>
+        workspace.columns.flatMap((column) =>
+          column.panes.flatMap((pane) => pane.tabs.map((tab) => tab.content.kind)),
+        ),
+      );
+    expect(kinds).toEqual(["chat"]);
   });
 });
