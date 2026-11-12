@@ -24,7 +24,7 @@ import { requestWorkspaceFocus } from "../../lib/workspaceFocus";
 import { readInlineDetailsHandoff, recordInlineDetailsHandoff } from "./inlineDetailsFollow";
 import { prefersReducedMotion } from "../../hooks/useReducedMotion";
 
-// The grid cannot paint a card across its cell borders, so a focus move becomes a short
+// A pane cannot paint a card across its borders, so a focus move becomes a short
 // slide and fade from the previous cell's side instead of a full cross-cell flight.
 const FOLLOW_OFFSET_MAX_X = 28;
 const FOLLOW_OFFSET_MAX_Y = 16;
@@ -54,12 +54,12 @@ export function ThreadDetailsCard({
   contentKey: string;
   /** Closed until the header toggle or its shortcut opens it; a stored choice wins. */
   defaultOpen?: boolean;
-  /** Compact and glance grid panes have no room for an inline card, so they only pop over. */
+  /** Compact and glance layout panes have no room for an inline card, so they only pop over. */
   allowInline?: boolean;
-  /** A grid owns its one details flag, so it controls the card instead of the thread store. */
+  /** A layout pane owns its one details flag, so it controls the card instead of the thread store. */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
-  /** A grid focus move slides the inline card in from the cell that lost focus. */
+  /** A pane focus move slides the inline card in from the pane that lost focus. */
   animateFollow?: boolean;
   /** The phone presents the card in a bottom sheet instead of a popover. */
   sheet?: boolean;
@@ -106,7 +106,7 @@ export function ThreadDetailsCard({
     if (!controlled && mode === "inline" && popoverOpen)
       useRightPanelStore.getState().setThreadPanelOpen(threadRef, "popover", false);
   }, [controlled, mode, popoverOpen, threadRef]);
-  // The grid moves an open inline card to the cell that gains focus; it reads
+  // The layout moves an open inline card to the pane that gains focus; it reads
   // this instead of guessing from the two open flags.
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- publishes the presentation this card actually renders to the right panel store
   useLayoutEffect(() => {
@@ -114,9 +114,9 @@ export function ThreadDetailsCard({
   }, [mode, threadRef]);
   const asideRef = useRef<HTMLElement | null>(null);
   const threadKey = scopedThreadKey(threadRef);
-  // The grid hands the card's rect from the cell that lost focus to the cell that gained
+  // The layout hands the card's rect from the pane that lost focus to the pane that gained
   // it; the new card slides in from that side. A fresh opening has no handoff.
-  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- records the inline card's rect and animates it when a grid cell gains focus
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- records the inline card's rect and animates it when a layout pane gains focus
   useLayoutEffect(() => {
     if (!animateFollow) return;
     const element = asideRef.current;
@@ -143,7 +143,7 @@ export function ThreadDetailsCard({
     recordInlineDetailsHandoff(threadKey, rect);
   }, [animateFollow, inlineOpen, mode, placement, threadKey]);
   const [contentElement, setContentElement] = useState<HTMLDivElement | null>(null);
-  // A grid cell renders its own pane head and omits the route header that owns the
+  // A layout pane renders its own pane head and omits the route header that owns the
   // details button, so the popover anchors to the cell's top right instead of the viewport.
   // State, not a ref: the popover anchor is derived during render, and reading a ref
   // there makes the React Compiler skip the component.
@@ -192,21 +192,15 @@ export function ThreadDetailsCard({
     environmentId,
     threadId,
   ]);
-  // A grid cell anchors to the cell, not the shared header button: the panel width is capped
-  // by the anchor width, so a button-sized anchor collapses the card to its border.
-  const gridCell = fallbackAnchorElement?.closest<HTMLElement>(
-    "[data-grid-cell], [data-grid-empty-draft]",
-  );
-  const fallbackRectSource = gridCell ?? fallbackAnchorElement;
-  const fallbackAnchor = fallbackRectSource
+  const fallbackAnchor = fallbackAnchorElement
     ? {
         getBoundingClientRect: () => {
-          const rect = fallbackRectSource.getBoundingClientRect();
+          const rect = fallbackAnchorElement.getBoundingClientRect();
           return new DOMRect(rect.left, rect.top + 34, rect.width, 0);
         },
       }
     : undefined;
-  const popoverAnchor = gridCell ? fallbackAnchor : (anchor.current ?? fallbackAnchor);
+  const popoverAnchor = anchor.current ?? fallbackAnchor;
   const card = (
     <div
       className={cn(
@@ -259,7 +253,7 @@ export function ThreadDetailsCard({
             details.cancel();
             return;
           }
-          // The grid's details button closes the popover itself; letting the outside press
+          // The pane's details button closes the popover itself; letting the outside press
           // close it first would make the same click reopen it.
           if (
             controlled &&

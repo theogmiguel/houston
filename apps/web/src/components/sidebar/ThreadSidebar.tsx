@@ -83,7 +83,7 @@ import { useIsPhone } from "../../mobile/usePhone";
 import { ThreadContextDragGhost } from "../chat/ThreadContextDragGhost";
 import { RowActionSweepContext, type RowActionSweep } from "./rowActionSweepContext";
 import { beginRowActionSweep } from "../../threads/rowActionSweep";
-import { COLLAPSED_GRIDS_STORAGE_KEY, useCollapsedKeys } from "./sidebarCollapse";
+import { COLLAPSED_WORKSPACES_STORAGE_KEY, useCollapsedKeys } from "./sidebarCollapse";
 import { hiddenWorkspaceIdFromAction, workspaceHeadingMenuItems } from "./workspaceHeadingMenu";
 import {
   buildSidebarWorkspaceSections,
@@ -267,7 +267,7 @@ export function ThreadSidebar({
   const [searchIndex, setSearchIndex] = useState(0);
   const [selection, setSelection] = useState<ThreadSelection>(clearThreadSelection);
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
-  const collapsedWorkspaces = useCollapsedKeys(COLLAPSED_GRIDS_STORAGE_KEY);
+  const collapsedWorkspaces = useCollapsedKeys(COLLAPSED_WORKSPACES_STORAGE_KEY);
   const dragging = useThreadDragSource();
   const dropTargetSide = useThreadDropTarget();
   const dropTarget =
@@ -1031,7 +1031,7 @@ export function ThreadSidebar({
               <div
                 ref={attachSidebarTree}
                 className="shrink-0 px-2 pt-1 pb-1 empty:hidden"
-                data-testid="grid-shelves-pin"
+                data-testid="sidebar-shelves-pin"
               >
                 <SidebarShelves
                   held={heldShown}
@@ -1634,12 +1634,11 @@ export function SidebarWorkspaceGroup({
     <div
       className="mt-0.5 flex flex-col"
       data-workspace-key={workspaceId}
-      data-grid-key={workspaceId}
       {...{ [WORKSPACE_REORDER_ATTRIBUTE]: "" }}
     >
       <div
         ref={headerRef}
-        data-grid-heading-row=""
+        data-workspace-heading-row=""
         data-workspace-heading=""
         data-reorder-side={reorderTarget ?? undefined}
         className={cn(
@@ -1705,7 +1704,7 @@ export function SidebarWorkspaceGroup({
                   aria-expanded={!collapsed}
                   className={SIDEBAR_GROUP_HEADING_CLS}
                 >
-                  <span className={SIDEBAR_GROUP_CHEVRON_BOX_CLS} data-grid-chevron-box="">
+                  <span className={SIDEBAR_GROUP_CHEVRON_BOX_CLS} data-workspace-chevron-box="">
                     <ChevronRightIcon
                       aria-hidden
                       className={cn(
@@ -1714,7 +1713,7 @@ export function SidebarWorkspaceGroup({
                       )}
                     />
                   </span>
-                  <span data-grid-name="" className={sidebarGroupNameCls(open)}>
+                  <span data-workspace-name="" className={sidebarGroupNameCls(open)}>
                     <HighlightedText text={workspaceName} query={query} />
                   </span>
                   {section.pinned ? (
@@ -1796,7 +1795,7 @@ export function SidebarWorkspaceGroup({
             </div>
           </div>
         ) : shownThreads.length === 0 ? null : (
-          <div data-grid-guide="" className={sidebarGroupGuideCls(open)}>
+          <div data-workspace-guide="" className={sidebarGroupGuideCls(open)}>
             {shownThreads.map((thread) => {
               const key = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
               return (

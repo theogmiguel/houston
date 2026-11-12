@@ -159,7 +159,7 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
   const addPullRequestsSurfaceStable = useStableCallback(addPullRequestsSurface);
   const addDeviceSurface = () => {
     if (!activeThreadRef) return;
-    // Grid cells do not mount the chat overlay hosts, so the device surface carries its setup wizard there.
+    // An embedded chat does not mount the chat overlay hosts, so the device surface carries its setup wizard there.
     if (!embedded && (!deviceState.onboardingCompleted || deviceState.hostStatus === "disabled")) {
       openDeviceSetupDialog(scopedThreadKey(activeThreadRef));
       return;

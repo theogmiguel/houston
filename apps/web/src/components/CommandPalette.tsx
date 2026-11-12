@@ -45,12 +45,11 @@ import {
   type EnvironmentId,
   type FilesystemBrowseResult,
   type ProjectId,
-  type ThreadId,
   SourceControlProviderKind,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
   resolveEnvironmentMachineKind,
 } from "@houston-app/contracts";
-import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeftIcon,
   BugIcon,
@@ -67,9 +66,6 @@ import {
   FolderPlusIcon,
   LayoutGridIcon,
   ListChecksIcon,
-  Maximize2Icon,
-  Minimize2Icon,
-  PencilIcon,
   MessageSquareDashedIcon,
   LinkIcon,
   MessageSquareIcon,

@@ -86,7 +86,7 @@ function subagentChild(
   });
 }
 
-describe("grid thread state", () => {
+describe("workspace thread state", () => {
   it("maps a running thread to Running", () => {
     expect(
       resolveThreadRowState(
@@ -230,7 +230,7 @@ describe("running subagent count", () => {
   });
 });
 
-describe("grid thread selection", () => {
+describe("workspace thread selection", () => {
   const orderedKeys = ["a", "b", "c", "d"];
 
   it("selects a range from the anchor when Shift is held", () => {
@@ -341,7 +341,7 @@ describe("attention navigation", () => {
   });
 });
 
-describe("grid search and pull requests", () => {
+describe("workspace search and pull requests", () => {
   it("matches title, branch and pull request number", () => {
     const searchable = {
       title: "Port provider tests",
@@ -366,7 +366,7 @@ describe("grid search and pull requests", () => {
   });
 });
 
-describe("grid shelves", () => {
+describe("workspace shelves", () => {
   const workspaceKeys = new Set(["env-1:project-1"]);
 
   it("sorts held threads by wake time and closed threads newest first", () => {

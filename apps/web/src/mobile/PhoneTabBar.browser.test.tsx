@@ -77,7 +77,7 @@ it("shows the home's top bar and the four-tab bottom bar at 390px", async () => 
   await expect.element(screen.getByRole("button", { name: "Search" })).toBeVisible();
   await expect.element(screen.getByRole("button", { name: "New thread" })).toBeVisible();
   expect(home.querySelector("header")!.textContent).toContain("Houston");
-  expect(home.querySelector('input[aria-label="Search workspaces, grids and threads"]')).toBeNull();
+  expect(home.querySelector('input[aria-label="Search workspaces and threads"]')).toBeNull();
   expect(home.querySelector("[data-rail-shortcuts]")).toBeNull();
   expect(home.querySelector('[data-rail-shortcut="Pull requests"]')).toBeNull();
   expect(home.querySelector('[data-rail-shortcut="Usage"]')).toBeNull();
@@ -177,7 +177,7 @@ it("opens the existing search and new-thread flows from the top bar", async () =
   await userEvent.keyboard("{Escape}");
 
   await userEvent.click(screen.getByRole("button", { name: "New thread" }));
-  // "New thread in..." is the desktop's project picker for a thread without a grid.
+  // "New thread in..." is the desktop's project picker for a thread without a project.
   const projectSearch = page.getByPlaceholder("Search...");
   await expect.element(projectSearch).toBeVisible();
   await expect.element(projectSearch).toHaveFocus();

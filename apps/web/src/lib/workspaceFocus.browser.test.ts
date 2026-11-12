@@ -73,7 +73,7 @@ describe("workspace area focus", () => {
   it("moves Escape in a composer editor to its own pane's conversation", () => {
     using fixture = setup();
     const pane = (name: string) => {
-      const cell = fixture.append(`<section data-grid-cell="${name}"></section>`);
+      const cell = fixture.append(`<section data-pane="${name}"></section>`);
       const conversation = fixture.area("conversation", 1, cell);
       const composer = fixture.area("composer", 2, cell);
       const editor = document.createElement("div");

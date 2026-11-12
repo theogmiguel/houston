@@ -45,7 +45,7 @@ export interface SidebarShelvesProps {
 }
 
 /**
- * The grid rail's shelves. Both cover every workspace and sit at the foot of
+ * The sidebar rail's shelves. Both cover every workspace and sit at the foot of
  * the rail, as the thread sidebar's shelves do.
  */
 export function SidebarShelves({
@@ -94,13 +94,13 @@ export function SidebarShelves({
   if (!showHeld && !showClosed) return null;
 
   return (
-    <div className="flex flex-col gap-px" data-testid="grid-shelves">
+    <div className="flex flex-col gap-px" data-testid="sidebar-shelves">
       <Separator className="mb-1" data-shelves-rule="" />
       <AnimatedHeight>
         {showHeld && snoozedOpen ? (
           <div
             className="flex max-h-56 flex-col gap-px overflow-y-auto pb-1"
-            data-testid="grid-snoozed-shelf-list"
+            data-testid="sidebar-snoozed-shelf-list"
           >
             {held.map((thread) => (
               <div key={thread.id}>{renderCard(thread, "snoozed")}</div>
@@ -131,7 +131,7 @@ export function SidebarShelves({
           {settledOpen ? (
             <div
               className="flex max-h-56 flex-col gap-px overflow-y-auto pb-1"
-              data-testid="grid-settled-shelf-list"
+              data-testid="sidebar-settled-shelf-list"
             >
               {visibleClosed.map((thread) => (
                 <div key={thread.id}>{renderCard(thread, "settled")}</div>

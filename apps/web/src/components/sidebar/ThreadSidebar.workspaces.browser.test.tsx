@@ -174,7 +174,7 @@ function group(
 
 function headingFor(screen: Screen, workspaceId: string): HTMLButtonElement {
   const heading = screen.container.querySelector(
-    `[data-grid-key="${workspaceId}"] button[aria-expanded]`,
+    `[data-workspace-key="${workspaceId}"] button[aria-expanded]`,
   );
   if (!(heading instanceof HTMLButtonElement)) {
     throw new Error(`The workspace ${workspaceId} has no heading button.`);
@@ -184,7 +184,7 @@ function headingFor(screen: Screen, workspaceId: string): HTMLButtonElement {
 
 /** The heading row: the toggle and its actions, which share one hover and selection fill. */
 function headingRowFor(screen: Screen, workspaceId: string): HTMLElement {
-  const row = headingFor(screen, workspaceId).closest("[data-grid-heading-row]");
+  const row = headingFor(screen, workspaceId).closest("[data-workspace-heading-row]");
   if (!(row instanceof HTMLElement)) {
     throw new Error(`The workspace ${workspaceId} has no heading row.`);
   }
@@ -193,7 +193,7 @@ function headingRowFor(screen: Screen, workspaceId: string): HTMLElement {
 
 function headingGeometry(heading: HTMLButtonElement) {
   const chevron = heading.querySelector("svg");
-  const chevronBox = heading.querySelector("[data-grid-chevron-box]");
+  const chevronBox = heading.querySelector("[data-workspace-chevron-box]");
   const name = heading.children[1];
   if (chevron === null || chevronBox === null || name === undefined) {
     throw new Error("The workspace heading is missing its chevron box or name.");
@@ -599,7 +599,7 @@ describe("workspace group", () => {
       expectSameX(collapsed.textLeft, reference.textLeft);
       expectSameX(collapsed.chevronWidth, expanded.chevronWidth);
 
-      const root = screen.container.querySelector(`[data-grid-key="ws-${count}"]`);
+      const root = screen.container.querySelector(`[data-workspace-key="ws-${count}"]`);
       expect(root?.querySelectorAll("[data-thread-key]")).toHaveLength(0);
 
       await userEvent.click(heading);

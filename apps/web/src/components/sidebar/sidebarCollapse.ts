@@ -2,8 +2,8 @@ import * as Schema from "effect/Schema";
 
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 
-/** Grid collapse survives a reload, like the shelves' expansion. */
-export const COLLAPSED_GRIDS_STORAGE_KEY = "houston:sidebar:collapsed-grids";
+/** Workspace collapse survives a reload, like the shelves' expansion. The key keeps its earlier name so a saved choice still applies. */
+export const COLLAPSED_WORKSPACES_STORAGE_KEY = "houston:sidebar:collapsed-grids";
 
 /** Project sections collapse independently and remember it the same way. */
 export const COLLAPSED_PROJECTS_STORAGE_KEY = "houston:sidebar:collapsed-projects";

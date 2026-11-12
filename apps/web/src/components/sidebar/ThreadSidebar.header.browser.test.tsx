@@ -9,7 +9,7 @@ import { ThreadId } from "@houston-app/contracts";
 import { render } from "../../../test/render";
 import { clearThreadSelection } from "../../threads/sidebarModel";
 import { TooltipProvider } from "../ui/tooltip";
-import { COLLAPSED_GRIDS_STORAGE_KEY, useCollapsedKeys } from "./sidebarCollapse";
+import { COLLAPSED_WORKSPACES_STORAGE_KEY, useCollapsedKeys } from "./sidebarCollapse";
 import {
   SidebarAddProjectButton,
   SidebarWorkspaceGroup,
@@ -139,7 +139,7 @@ function CollapsibleSections({
   sections: ReadonlyArray<SidebarWorkspaceSection>;
   query?: string;
 }) {
-  const collapsed = useCollapsedKeys(COLLAPSED_GRIDS_STORAGE_KEY);
+  const collapsed = useCollapsedKeys(COLLAPSED_WORKSPACES_STORAGE_KEY);
   return (
     <TooltipProvider delay={0}>
       {sections.map((value) => (
@@ -195,7 +195,7 @@ describe("workspace groups on the rail", () => {
 
   it("expands a collapsed workspace while a search is active so its matches show", async () => {
     resetTestState();
-    localStorage.setItem(COLLAPSED_GRIDS_STORAGE_KEY, JSON.stringify(["ws-1"]));
+    localStorage.setItem(COLLAPSED_WORKSPACES_STORAGE_KEY, JSON.stringify(["ws-1"]));
     await using screen = await render(
       <CollapsibleSections sections={workspaceSections()} query="thread-a" />,
     );
@@ -210,7 +210,7 @@ describe("workspace groups on the rail", () => {
 
   it("keeps a collapsed workspace collapsed without a search", async () => {
     resetTestState();
-    localStorage.setItem(COLLAPSED_GRIDS_STORAGE_KEY, JSON.stringify(["ws-1"]));
+    localStorage.setItem(COLLAPSED_WORKSPACES_STORAGE_KEY, JSON.stringify(["ws-1"]));
     await using screen = await render(<CollapsibleSections sections={workspaceSections()} />);
     expect(screen.container.querySelector("[data-thread-key]")).toBeNull();
   });

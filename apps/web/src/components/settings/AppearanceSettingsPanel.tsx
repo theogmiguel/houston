@@ -155,7 +155,7 @@ export function AppearanceSettingsPanel() {
 
         <SettingsRow
           {...searchableSetting("animations")}
-          description="Animate menus, dialogs, lists and grid changes. Your system's reduce-motion setting also turns them off."
+          description="Animate menus, dialogs, lists and layout changes. Your system's reduce-motion setting also turns them off."
           control={
             <Switch
               checked={settings.animationsEnabled}

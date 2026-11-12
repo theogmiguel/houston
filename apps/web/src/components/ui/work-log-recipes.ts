@@ -20,7 +20,7 @@ export const RESTART_NOTE_FOLD_CLS = "text-callout text-(--houston)";
 export const RESTART_NOTE_WORKING_CLS = "text-(--t2)";
 
 /**
- * The working row's interrupt hint. Below 28rem of row width (a grid pane of six or more) the
+ * The working row's interrupt hint. Below 28rem of row width (a layout pane of six or more) the
  * timer and restart note need the space, so the hint stays as screen-reader text and the row's
  * tooltip.
  */

@@ -17,8 +17,8 @@ export interface PaneSize {
 }
 
 /**
- * The density a pane would use at this size. Solo is reserved for a grid that
- * holds one thread: a wider pane in a crowded grid is comfortable, not solo.
+ * The density a pane would use at this size. Solo is reserved for a layout that
+ * holds one thread: a wider pane in a crowded layout is comfortable, not solo.
  */
 export function paneDensityFor(size: PaneSize, threadCount: number): PaneDensity {
   if (threadCount === 1 && size.width >= 900) return "solo";

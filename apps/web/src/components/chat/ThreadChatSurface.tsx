@@ -4,7 +4,7 @@ import type { RefObject } from "react";
 import type { DraftId } from "../../composerDraftStore";
 import { useLayoutPane } from "../../layout/layoutPaneContext";
 import type { PaneDensity } from "../../threads/density";
-import ChatView, { type RightPanelPortalTarget } from "../ChatView";
+import ChatView from "../ChatView";
 
 /**
  * The chat of one thread, or of one draft of a thread, for a host that gives it a pane: the
@@ -16,7 +16,6 @@ export function ThreadChatSurface({
   threadRef,
   draftId,
   paneDensity,
-  rightPanelPortal,
   detailsCardAnchor,
   detailsOpen,
   onDetailsOpenChange,
@@ -27,8 +26,6 @@ export function ThreadChatSurface({
   /** The thread is still a draft; the composer store holds its session. */
   readonly draftId?: DraftId | undefined;
   readonly paneDensity?: PaneDensity | undefined;
-  /** Where the focused chat mounts its thread's right panel, when the host owns one. */
-  readonly rightPanelPortal?: RightPanelPortalTarget | null | undefined;
   readonly detailsCardAnchor?: RefObject<Element | null> | null | undefined;
   readonly detailsOpen?: boolean | undefined;
   readonly onDetailsOpenChange?: ((open: boolean) => void) | undefined;
@@ -45,12 +42,11 @@ export function ThreadChatSurface({
     environmentId: threadRef.environmentId,
     threadId: threadRef.threadId,
     ...(paneDensity === undefined ? {} : { paneDensity }),
-    rightPanelPortal: rightPanelPortal ?? null,
     ...(detailsCardAnchor ? { detailsCardAnchor } : {}),
     ...(detailsOpen === undefined ? {} : { detailsOpen }),
     ...(onDetailsOpenChange === undefined ? {} : { onDetailsOpenChange }),
     phoneShell: phoneShell ?? false,
-    // A layout pane's chat carries its own header; the grid cell and the phone shell draw theirs.
+    // A layout pane's chat carries its own header; the phone shell draws its own.
     paneHeader: tabId !== null && phoneShell !== true,
   };
   return draftId === undefined ? (

@@ -52,7 +52,7 @@ async function open(rows = closed) {
     { router: false },
   );
   await userEvent.click(
-    screen.container.querySelector<HTMLElement>('[data-testid="grid-settled-shelf-toggle"]')!,
+    screen.container.querySelector<HTMLElement>('[data-testid="sidebar-settled-shelf-toggle"]')!,
   );
   return screen;
 }

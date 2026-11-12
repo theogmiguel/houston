@@ -9,7 +9,7 @@ export function SidebarNoProjects() {
   return (
     <div data-sidebar-no-projects="" className="flex flex-col gap-1 px-2 py-3">
       <p className={RAIL_EMPTY_TITLE_CLS}>No projects yet</p>
-      <p className={RAIL_EMPTY_HINT_CLS}>Add a project to create its first grid.</p>
+      <p className={RAIL_EMPTY_HINT_CLS}>Add a project to start its first thread.</p>
       <button
         type="button"
         onClick={() => openAddProjectDialog()}

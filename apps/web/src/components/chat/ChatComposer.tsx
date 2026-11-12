@@ -399,7 +399,7 @@ export interface ChatComposerHandle {
 
 export interface ChatComposerProps {
   composerDraftTarget: ScopedThreadRef | DraftId;
-  /** True for the focused grid pane or a standalone view: window-level dictation lands here. */
+  /** True for the focused layout pane or a standalone view: window-level dictation lands here. */
   ownsWindowShortcuts?: boolean;
   environmentId: EnvironmentId;
   canOperateThread: boolean;
@@ -423,7 +423,7 @@ export interface ChatComposerProps {
   threadStatusPill?: ThreadStatusPill | null;
   promptHistoryEntries: ReadonlyArray<TimelineEntry>;
   forceExpandedOnMobile: boolean;
-  /** A grid pane's density; glance keeps the composer on one line until focused. */
+  /** A layout pane's density; glance keeps the composer on one line until focused. */
   paneDensity?: PaneDensity | undefined;
   /**
    * The workspace, branch and access chips, rendered in the composer toolbar. The composer

@@ -88,7 +88,7 @@ Use the [glossary](docs/internals/glossary.md) consistently:
   the server's MCP toolkits.
 - **Houston migration track:** Houston's own migration table and ids, applied after upstream's.
 
-<!-- Host and renderer terms (Theo): workspace, grid, drawer and renderer terms. -->
+<!-- Host and renderer terms (Theo): workspace, pane, drawer and renderer terms. -->
 
 ## Safety boundaries
 
@@ -232,14 +232,9 @@ The renderer ships in an Electron webview, so motion must stay on the compositor
 - Animate only `transform` and `opacity`. No transitions on width, height, padding, margin,
   flex-basis or inherited custom properties; no `backdrop-filter` on anything that moves;
   `will-change` only while something moves. The exception is a surface that moves often and
-  repaints expensively (grid cells and their card layer): it keeps one permanent layer that no
-  state toggles.
+  repaints expensively: it keeps one permanent layer that no state toggles.
 - Keyboard highlights, typing, streaming text, timeline rows and thread or route switches
   stay instant. Hover reveals fade opacity; they never toggle `display`.
-- Grid cells move by FLIP (`motion/paneMotion.ts`) and maximize through a stand-in card
-  (`motion/maximizeMotion.ts`), both on the `registry.ts` spring. Measure grid changes with
-  the frame probe (`source: "frame-probe"` in
-  `~/.houston-dev/v2/userdata/logs/app-debug.ndjson`).
 - Reduced motion (the system preference or the Appearance **Animations** switch) turns every
   role to 0ms in CSS and `resolveMotion` returns `off` in script. Gate motion only through the
   `motion-safe`/`motion-reduce` variants or `prefersReducedMotion`/`useReducedMotion`, never a

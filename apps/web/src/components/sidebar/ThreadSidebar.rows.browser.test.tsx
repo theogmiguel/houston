@@ -198,7 +198,7 @@ describe("ThreadCard title against the trailing time and actions", () => {
     );
   });
 
-  it("cross-fades the time label and the actions in one grid cell", async () => {
+  it("cross-fades the time label and the actions in one layout pane", async () => {
     await using screen = await render(
       <div style={{ width: 240 }}>{card(thread({ title: LONG_TITLE }), { timeLabel: "6m" })}</div>,
     );
@@ -291,7 +291,7 @@ describe("ThreadCard on a shelf", () => {
   });
 });
 
-describe("ThreadCard for a thread no grid shows", () => {
+describe("ThreadCard for a thread no workspace shows", () => {
   it("does not register a drop target", async () => {
     using _drag = { [Symbol.dispose]: () => endThreadDrag() };
     const onDropOnThread = vi.fn();

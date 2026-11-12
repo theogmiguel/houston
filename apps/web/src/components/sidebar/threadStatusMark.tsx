@@ -150,7 +150,7 @@ export function ThreadStatusWord({
 }
 
 /**
- * The grid pane label's status mark. It draws the same kind as the thread's rail
+ * The layout pane label's status mark. It draws the same kind as the thread's rail
  * row, so a state looks the same beside the pane title as it does down the list.
  */
 export function PaneThreadStatusMark({

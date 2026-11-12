@@ -180,12 +180,12 @@ async function renderElement(
   element: ReactElement,
   {
     width = 900,
-    grid = false,
+    pane = false,
     ...options
-  }: { router?: false; width?: number; grid?: boolean } = {},
+  }: { router?: false; width?: number; pane?: boolean } = {},
 ) {
   const container = document.createElement("div");
-  if (grid) container.setAttribute("data-grid-cell", "");
+  if (pane) container.setAttribute("data-layout-pane-id", "pane-1");
   container.style.cssText = `height: 1200px; width: ${width}px; display: flex; flex-direction: column;`;
   const screen = await render(element, { container, ...options });
   const buttons = (name: string | RegExp) =>
@@ -207,7 +207,7 @@ async function renderElement(
 function renderTimeline(
   entries: ReadonlyArray<Entry>,
   props: Partial<TimelineProps> = {},
-  options: { width?: number; grid?: boolean } = {},
+  options: { width?: number; pane?: boolean } = {},
 ) {
   return renderElement(
     <MessagesTimeline {...baseProps()} timelineEntries={entries as Entry[]} {...props} />,
@@ -2689,15 +2689,15 @@ describe("MessagesTimeline rhythm", () => {
 
 describe("MessagesTimeline compact density", () => {
   it.each([
-    { width: 340, grid: false, compact: true },
-    { width: 570, grid: true, compact: true },
-    { width: 570, grid: false, compact: false },
-    { width: 900, grid: false, compact: false },
+    { width: 340, pane: false, compact: true },
+    { width: 570, pane: true, compact: true },
+    { width: 570, pane: false, compact: false },
+    { width: 900, pane: false, compact: false },
   ])(
-    "hides the latest answer's footer until hover at $width px (grid pane: $grid)",
-    async ({ width, grid, compact }) => {
+    "hides the latest answer's footer until hover at $width px (layout pane: $pane)",
+    async ({ width, pane, compact }) => {
       setup();
-      const runId = RunId.make(`compact-run-${width}-${grid}`);
+      const runId = RunId.make(`compact-run-${width}-${pane}`);
       await using screen = await renderTimeline(
         [
           message("Question", { runId }, "compact-user"),
@@ -2713,7 +2713,7 @@ describe("MessagesTimeline compact density", () => {
         {
           latestRun: { runId, status: "completed", startedAt: CREATED_AT, completedAt: CREATED_AT },
         },
-        { width, grid },
+        { width, pane },
       );
       const root = screen.container;
       const footer = await vi.waitFor(() => {

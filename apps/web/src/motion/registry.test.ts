@@ -11,23 +11,23 @@ import {
 afterEach(() => configureMotion({ off: false, slowdown: 1 }));
 
 describe("resolveMotion", () => {
-  it("plays the grid spring by default", () => {
-    const { config, slowdown } = resolveMotion("grid-cell-movement");
+  it("plays the layout spring by default", () => {
+    const { config, slowdown } = resolveMotion("workspace-switch");
     expect(config.kind).toBe("spring");
     expect(slowdown).toBe(1);
   });
 
   it("turns every animation off under the global switch", () => {
     configureMotion({ off: true });
-    expect(resolveMotion("grid-cell-enter").config).toEqual({ kind: "off" });
+    expect(resolveMotion("horizontal-view-movement").config).toEqual({ kind: "off" });
   });
 
   it("honours a per-name override", () => {
     configureMotion({
-      animations: { "grid-cell-enter": { kind: "easing", durationMs: 100, curve: "linear" } },
+      animations: { "horizontal-view-movement": { kind: "easing", durationMs: 100, curve: "linear" } },
     });
-    expect(resolveMotion("grid-cell-enter").config.kind).toBe("easing");
-    expect(resolveMotion("grid-cell-movement").config.kind).toBe("spring");
+    expect(resolveMotion("horizontal-view-movement").config.kind).toBe("easing");
+    expect(resolveMotion("workspace-switch").config.kind).toBe("spring");
   });
 
   it("clamps the slowdown to a usable range", () => {

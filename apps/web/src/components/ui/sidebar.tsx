@@ -643,7 +643,7 @@ function SidebarInset({ className, ...props }: React.ComponentProps<"main">) {
     <main
       className={cn(
         // The work area is flush with the canvas; the rail's own 1px divider is the only seam.
-        // A grid pane is the only surface that draws a card.
+        // A layout pane is the only surface that draws a card.
         "relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background",
         className,
       )}

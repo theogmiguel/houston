@@ -35,7 +35,7 @@ function failureToast(title: string, error: unknown) {
 
 /**
  * The right-click menu of a multi-selection. Close and Hold go through the
- * rail's own handlers so the open grid advances as it does for one thread.
+ * rail's own handlers so the open workspace advances as it does for one thread.
  */
 export function useBulkThreadMenu(input: {
   selectedThreads: ReadonlyArray<EnvironmentThreadShell>;

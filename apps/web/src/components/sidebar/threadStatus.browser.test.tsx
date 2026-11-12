@@ -117,7 +117,7 @@ function failedThread(): EnvironmentThreadShell {
 }
 
 describe("thread status glyphs", () => {
-  it("draws the same kind on the rail row and the grid pane label", async () => {
+  it("draws the same kind on the rail row and the layout pane label", async () => {
     const failed = failedThread();
     await using row = await render(card(failed));
     await using pane = await render(

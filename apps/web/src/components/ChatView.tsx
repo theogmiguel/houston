@@ -122,7 +122,6 @@ import { resolveThreadReferenceCopyTarget } from "@houston-app/client-runtime/th
 import { resolveTerminalSessionLabel } from "@houston-app/shared/terminalLabels";
 import { useAtomValue } from "@effect/atom-react";
 import {
-  type ReactNode,
   type RefObject,
   type SetStateAction,
   use,
@@ -131,7 +130,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { createPortal } from "react-dom";
 import { BackgroundThreadContext } from "./chat/backgroundThread";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { assistantCitationFromLocation } from "../lib/assistantCitationNavigation";
@@ -420,29 +418,25 @@ type ChatViewProps =
       onDiffPanelOpen?: () => void;
       reserveTitleBarControlInset?: boolean;
       forceExpandedMobileComposer?: boolean;
-      /** A grid cell, or a side chat in its parent's right panel. */
+      /** A layout pane, or a side chat in its parent's right panel. */
       embedded?: boolean | SideChatParentPanel;
-      /** A focused grid cell runs the window thread shortcuts the standalone view has. */
+      /** A focused layout pane runs the window thread shortcuts the standalone view has. */
       shortcutsAtWindow?: boolean;
       /** Only a visible, focused cell may advance the thread's read watermark. */
       visitActive?: boolean;
-      /** The grid pane's density; omitted on the thread route. */
+      /** The pane's density; omitted on the thread route. */
       paneDensity?: PaneDensity;
-      /** An empty grid centres the draft composer without a pane head. */
+      /** An empty pane centres the draft composer without a pane head. */
       centerDraftComposer?: boolean;
       hideDraftHeroHeadline?: boolean;
-      /** A grid route renders the focused cell's panel beside the grid, not in the cell. */
-      rightPanelPortal?: RightPanelPortalTarget | null | undefined;
-      /** The grid top bar's details control, which anchors a cell's popover card. */
+      /** The control that anchors a pane's details popover card. */
       detailsCardAnchor?: RefObject<Element | null>;
-      /** The grid owns one details flag; the focused cell shows its card. */
+      /** The host owns one details flag; the focused pane shows its card. */
       detailsOpen?: boolean;
       onDetailsOpenChange?: (open: boolean) => void;
       /** A host terminal dock takes this chat's terminal toggle and chords. */
       hostTerminalRef?: ScopedThreadRef | null;
-      /** Arrangement controls the host adds to the header of a chat that owns its page. */
-      headerLayoutControls?: ChatHeaderLayoutControls | undefined;
-      /** The phone thread page already reserves the bottom safe area around the cell. */
+      /** The phone thread page already reserves the bottom safe area around the chat. */
       phoneShell?: boolean;
       /** A layout pane's chat: the pane's tab bar owns the window chrome, the chat keeps its header. */
       paneHeader?: boolean;
@@ -455,50 +449,31 @@ type ChatViewProps =
       onDiffPanelOpen?: () => void;
       reserveTitleBarControlInset?: boolean;
       forceExpandedMobileComposer?: boolean;
-      /** A grid cell; a side chat never renders the draft route. */
+      /** A layout pane; a side chat never renders the draft route. */
       embedded?: boolean;
-      /** A focused grid cell runs the window thread shortcuts the standalone view has. */
+      /** A focused layout pane runs the window thread shortcuts the standalone view has. */
       shortcutsAtWindow?: boolean;
       /** Only a visible, focused cell may advance the thread's read watermark. */
       visitActive?: boolean;
-      /** The grid pane's density; omitted on the thread route. */
+      /** The pane's density; omitted on the thread route. */
       paneDensity?: PaneDensity;
-      /** An empty grid centres the draft composer without a pane head. */
+      /** An empty pane centres the draft composer without a pane head. */
       centerDraftComposer?: boolean;
       hideDraftHeroHeadline?: boolean;
-      /** A grid route renders the focused cell's panel beside the grid, not in the cell. */
-      rightPanelPortal?: RightPanelPortalTarget | null | undefined;
-      /** The grid top bar's details control, which anchors a cell's popover card. */
+      /** The control that anchors a pane's details popover card. */
       detailsCardAnchor?: RefObject<Element | null>;
-      /** The grid owns one details flag; the focused cell shows its card. */
+      /** The host owns one details flag; the focused pane shows its card. */
       detailsOpen?: boolean;
       onDetailsOpenChange?: (open: boolean) => void;
       /** A host terminal dock takes this chat's terminal toggle and chords. */
       hostTerminalRef?: ScopedThreadRef | null;
-      /** Arrangement controls the host adds to the header of a chat that owns its page. */
-      headerLayoutControls?: ChatHeaderLayoutControls | undefined;
-      /** The phone thread page already reserves the bottom safe area around the cell. */
+      /** The phone thread page already reserves the bottom safe area around the chat. */
       phoneShell?: boolean;
       /** A layout pane's chat: the pane's tab bar owns the window chrome, the chat keeps its header. */
       paneHeader?: boolean;
       routeKind: "draft";
       draftId: DraftId;
     };
-
-export interface ChatHeaderLayoutControls {
-  readonly control: ReactNode;
-  readonly menuItems: ReactNode;
-}
-
-/** Where a grid cell mounts the focused thread's right panel. */
-export interface RightPanelPortalTarget {
-  /** The grid row's panel slot; the panel becomes a flex sibling of the grid. */
-  readonly host: HTMLElement;
-  /** The row the panel shares for width clamping, when the cell's own row is not it. */
-  readonly container: HTMLElement | null;
-  /** Controls the grid adds to the panel header, before the maximize control. */
-  readonly headerControls?: ReactNode;
-}
 
 const DismissedFallbackWindowSchema = Schema.NullOr(Schema.String);
 
@@ -516,22 +491,20 @@ export default function ChatView(props: ChatViewProps) {
   } = props;
   const centerDraftComposer = props.centerDraftComposer === true;
   const hideDraftHeroHeadline = props.hideDraftHeroHeadline === true;
-  const rightPanelPortal = props.rightPanelPortal ?? null;
   const detailsCardAnchor = props.detailsCardAnchor;
   const detailsOpen = props.detailsOpen;
   const onDetailsOpenChange = props.onDetailsOpenChange;
   const hostTerminalRef = props.hostTerminalRef ?? null;
-  const headerLayoutControls = props.headerLayoutControls;
   const paneHeader = props.paneHeader === true;
   const allowInlineDetails =
     paneDensity === undefined || paneDensity === "solo" || paneDensity === "comfortable";
-  // A comfortable grid pane is too narrow for the chat lane and the card side by side, but
+  // A comfortable layout pane is too narrow for the chat lane and the card side by side, but
   // it still shows the card inline inside the cell rather than as a top-bar popover.
   const detailsCardAllowOverlap = paneDensity === "comfortable";
   const detailsCardAnimateFollow = paneDensity === "comfortable" || paneDensity === "solo";
   const parentPanel = typeof embeddedOption === "object" ? embeddedOption : undefined;
   const embedded = embeddedOption !== false;
-  // A grid cell is embedded for layout, but its focused pane owns the window
+  // An embedded chat in a focused pane owns the window
   // shortcuts: Esc stops its run, Mod+J its terminal, Mod+F its find bar.
   const shortcutsEmbedded = embedded && props.shortcutsAtWindow !== true;
   const visitActive = props.visitActive !== false;
@@ -607,7 +580,7 @@ export default function ChatView(props: ChatViewProps) {
           lastVisitedAt: fallbackLastVisitedAt,
         });
   const promptRef = useRef("");
-  // The shared handle serves app-wide commands, so several chat views (grid cells) overwrite
+  // The shared handle serves app-wide commands, so several chat views (layout panes) overwrite
   // each other's entry. A view acts on its own composer and only publishes the handle.
   const composerRef = useRef<ChatComposerHandle | null>(null);
   const sharedComposerRef = useComposerHandleContext();
@@ -1117,7 +1090,7 @@ export default function ChatView(props: ChatViewProps) {
   );
   const browserAvailable = isPreviewSupportedInRuntime() || activeEnvironmentServerBrowser;
   const activeThreadShell = serverThread;
-  // One status vocabulary for the sidebar, the grid and this thread's timeline row.
+  // One status vocabulary for the sidebar, the layout and this thread's timeline row.
   const activeThreadStatusPill =
     activeThreadShell === null ? null : resolveThreadStatusPill({ thread: activeThreadShell });
   const limitRecoveryRun =
@@ -1211,8 +1184,8 @@ export default function ChatView(props: ChatViewProps) {
     renderedRightPanelSurface,
   );
   const canMaximizeRightPanel = rightPanelOpen;
-  // A grid cell owns its panel only while the grid route supplies a slot; a side chat never does.
-  const ownsRightPanel = !embedded || rightPanelPortal !== null;
+  // A side chat never owns a panel.
+  const ownsRightPanel = !embedded;
   // An embedded side chat has no panel; a stale maximized flag would hide its own column.
   const rightPanelMaximized =
     ownsRightPanel && canMaximizeRightPanel && rightPanelState.maximized === true;
@@ -2946,8 +2919,8 @@ export default function ChatView(props: ChatViewProps) {
   // A delegated task is a remote thread's subagent.
   const isSubagentThread =
     activeThread?.lineage.relationshipToParent === "subagent" || delegatedFrom !== null;
-  // Side chats open in the right panel, so only the view that owns it offers them (a grid's
-  // focused cell, never a side chat's own view). They do not nest or start from subagents, and
+  // Side chats open in the right panel, so only the view that owns it offers them (a layout
+  // pane's chat, never a side chat's own view). They do not nest or start from subagents, and
   // older servers would fork a listed thread.
   const sideChatsOffered =
     ownsRightPanel &&
@@ -3469,9 +3442,6 @@ export default function ChatView(props: ChatViewProps) {
     return embedded ? null : <NoActiveThreadState />;
   }
 
-  const mountRightPanel = (panel: ReactNode) =>
-    rightPanelPortal === null ? panel : createPortal(panel, rightPanelPortal.host);
-
   const rightPanelContent = activeThreadRef ? (
     <ThreadSurfaceContent
       threadRef={activeThreadRef}
@@ -3526,7 +3496,7 @@ export default function ChatView(props: ChatViewProps) {
         data-standalone-thread={embedded ? undefined : ""}
         inert={rightPanelMaximized}
       >
-        {/* A grid cell carries its own title and actions, so the route header would
+        {/* A layout pane carries its own title and actions, so the route header would
             duplicate them and its drag region would fight the window controls. */}
         {(embedded && !paneHeader) || rightPanelMaximized ? null : (
           <header
@@ -3574,12 +3544,6 @@ export default function ChatView(props: ChatViewProps) {
             />
             <ChatHeaderPanelControls
               {...panelToggleControlProps}
-              {...(headerLayoutControls === undefined
-                ? {}
-                : {
-                    gridLayoutControl: headerLayoutControls.control,
-                    gridLayoutMenuItems: headerLayoutControls.menuItems,
-                  })}
             />
           </header>
         )}
@@ -4273,10 +4237,10 @@ export default function ChatView(props: ChatViewProps) {
       </div>
 
       {rightPanelPresent && activeThreadRef && ownsRightPanel
-        ? mountRightPanel(
+        ? (
             <ChatRightPanel
               sheet={shouldUsePlanSidebarSheet}
-              workspaceLayoutElement={rightPanelPortal?.container ?? workspaceLayoutElement}
+              workspaceLayoutElement={workspaceLayoutElement}
               widthStorageKey={`houston:preview-panel-width:${activeThreadKey}`}
               onCloseSheet={closePreviewPanelStable}
               open={rightPanelOpen}
@@ -4286,7 +4250,6 @@ export default function ChatView(props: ChatViewProps) {
               layoutControls={
                 rightPanelOpen ? (
                   <div className="flex min-w-0 shrink-0 items-center gap-1">
-                    {rightPanelPortal?.headerControls}
                     <RightPanelMaximizeControl
                       maximized={rightPanelMaximized}
                       onToggle={toggleRightPanelMaximizedStable}
@@ -4333,7 +4296,7 @@ export default function ChatView(props: ChatViewProps) {
               sideChatDisabledReason={sideChatDisabledReason}
             >
               {rightPanelContent}
-            </ChatRightPanel>,
+            </ChatRightPanel>
           )
         : null}
 

@@ -41,7 +41,7 @@ type ShortcutInput = {
   previewFocus?: boolean;
   ownsFocus?: () => boolean;
   targetRef?: RefObject<HTMLElement | null>;
-  /** The thread composer that owns the window's shortcuts: the focused grid pane or a standalone view. */
+  /** The thread composer that owns the window's shortcuts: the focused layout pane or a standalone view. */
   ownsWindowShortcuts?: boolean;
 };
 

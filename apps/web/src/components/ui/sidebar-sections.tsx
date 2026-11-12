@@ -20,16 +20,16 @@ import { SIDEBAR_ROW_SURFACE_CLS } from "./sidebar-rail-recipes";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./tooltip";
 
 /**
- * The project row is the tree's only bold row; a grid row is a 24px regular, muted line, one step
+ * The project row is the tree's only bold row; a workspace row is a 24px regular, muted line, one step
  * in. A button fills its row, so the row's whole width toggles it; the actions overlay the right
  * edge and the count (when collapsed) sits there until they appear.
  */
 export const SIDEBAR_GROUP_HEADING_CLS =
   "flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1 rounded-lg py-0 pr-2 pl-0.75 text-left text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
-/** The grid heading's row: the toggle and its actions share one hover, selection and drop fill. */
+/** The workspace heading's row: the toggle and its actions share one hover, selection and drop fill. */
 export const SIDEBAR_GROUP_HEADING_ROW_CLS =
-  "group/grid relative -ml-0.75 flex h-6 items-center rounded-lg transition-colors duration-(--motion-feedback) ease-standard hover:bg-sidebar-row-hover";
+  "group/workspace relative -ml-0.75 flex h-6 items-center rounded-lg transition-colors duration-(--motion-feedback) ease-standard hover:bg-sidebar-row-hover";
 
 export const SIDEBAR_GROUP_HEADING_ACTIVE_CLS = "bg-sidebar-row-selected";
 
@@ -38,7 +38,7 @@ export const SIDEBAR_GROUP_HEADING_DROP_CLS =
 
 export const SIDEBAR_GROUP_NAME_CLS = "min-w-0 truncate text-xs font-normal text-secondary-label";
 
-/** The name of the grid on screen takes primary ink, collapsed or not. */
+/** The name of the workspace on screen takes primary ink, collapsed or not. */
 export const SIDEBAR_GROUP_NAME_ON_SCREEN_CLS = "text-sidebar-foreground";
 
 export const SIDEBAR_GROUP_EMPTY_CLS = "text-xs text-secondary-label";
@@ -48,11 +48,11 @@ export const SIDEBAR_GROUP_COUNT_CLS =
   "shrink-0 text-xs font-medium text-secondary-label tabular-nums";
 
 /**
- * The right-aligned slot of a collapsed row: its dot and count (or a grid's "empty" label). It
+ * The right-aligned slot of a collapsed row: its dot and count (or a workspace's "empty" label). It
  * fades out, never leaves the layout, while the row's actions fade in over it.
  */
 export const SIDEBAR_ROW_TRAILING_CLS =
-  "ms-auto flex shrink-0 items-center transition-opacity duration-(--motion-feedback) ease-standard group-hover/grid:opacity-0 group-has-focus-visible/grid:opacity-0";
+  "ms-auto flex shrink-0 items-center transition-opacity duration-(--motion-feedback) ease-standard group-hover/workspace:opacity-0 group-has-focus-visible/workspace:opacity-0";
 
 /** Six pixels of amber before a count: something inside waits on the user. */
 export const SIDEBAR_NEEDS_YOU_DOT_CLS = "mr-1.5 size-1.5 shrink-0 rounded-full bg-warning";
@@ -62,7 +62,7 @@ export const SIDEBAR_ROW_ACTIONS_CLS =
   "absolute inset-y-0 right-0.75 flex shrink-0 items-center gap-0.5";
 
 /**
- * A grid's cards hang from a 1px guide under the centre of its chevron; the grid on screen draws
+ * A workspace's threads hang from a 1px guide under the centre of its chevron; the workspace on screen draws
  * it in the secondary text tone. The 4px of padding below, with the next row's 2px, make 6px.
  */
 export const SIDEBAR_GROUP_GUIDE_CLS =
@@ -70,12 +70,12 @@ export const SIDEBAR_GROUP_GUIDE_CLS =
 
 export const SIDEBAR_GROUP_GUIDE_ON_SCREEN_CLS = "border-secondary-label";
 
-/** A grid's card guide, in the stronger tone while the grid is on screen. */
+/** A workspace's thread guide, in the stronger tone while the workspace is on screen. */
 export function sidebarGroupGuideCls(onScreen: boolean): string {
   return cn(SIDEBAR_GROUP_GUIDE_CLS, onScreen && SIDEBAR_GROUP_GUIDE_ON_SCREEN_CLS);
 }
 
-/** A grid's name, in primary ink while the grid is on screen. */
+/** A workspace's name, in primary ink while the workspace is on screen. */
 export function sidebarGroupNameCls(onScreen: boolean): string {
   return cn(SIDEBAR_GROUP_NAME_CLS, onScreen && SIDEBAR_GROUP_NAME_ON_SCREEN_CLS);
 }
@@ -100,7 +100,7 @@ export const SIDEBAR_PROJECT_EMPTY_ACTION_CLS =
   "flex h-(--h-row) w-full cursor-pointer items-center gap-2 rounded-lg py-0 pr-2 pl-7.5 text-left text-xs text-secondary-label transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
 /**
- * Every thread row, in a grid or directly under its project, starts at the rail's own inset: its
+ * Every thread row, in a workspace or directly under its project, starts at the rail's own inset: its
  * status glyph sits under the project heading's chevron, so a 264px sidebar leaves the title the
  * rest of the width.
  */
@@ -119,7 +119,7 @@ export const SIDEBAR_GROUP_CHEVRON_EXPANDED_CLS = "rotate-90";
 export const SIDEBAR_EMPTY_ACTION_CLS =
   "inline-flex h-6 cursor-pointer items-center rounded-(--r-ctl) border border-(--line-strong) px-2 text-xs text-foreground hover:bg-sidebar-row-hover max-phone:h-11 max-phone:px-4 max-phone:text-sm";
 export const SIDEBAR_GROUP_ACTION_CLS =
-  "inline-grid size-5 shrink-0 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-label opacity-0 transition-opacity duration-(--motion-feedback) ease-standard hover:bg-(--sel) hover:text-foreground group-hover/grid:opacity-100 group-has-focus-visible/grid:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+  "inline-grid size-5 shrink-0 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-label opacity-0 transition-opacity duration-(--motion-feedback) ease-standard hover:bg-(--sel) hover:text-foreground group-hover/workspace:opacity-100 group-has-focus-visible/workspace:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
 export const SIDEBAR_GROUP_RENAME_CLS =
   "h-6 min-w-0 flex-1 rounded-(--r-ctl) border border-input bg-background px-1.5 text-xs font-normal text-foreground outline-none focus:border-ring focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
@@ -182,7 +182,7 @@ function OptionRadioItem({ value, label }: { value: string; label: string }) {
   );
 }
 
-/** The Grids heading's Sidebar options: how the rail sorts and what each thread row shows. */
+/** The Workspaces heading's Sidebar options: how the rail sorts and what each thread row shows. */
 export function SidebarOptionsMenu({
   options,
   onChange,

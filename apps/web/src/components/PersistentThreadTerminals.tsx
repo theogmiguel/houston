@@ -86,7 +86,7 @@ interface PersistentThreadTerminalDrawerProps {
   closeShortcutLabel: string | undefined;
   keybindings: ResolvedKeybindingsConfig;
   onAddTerminalContext?: ((selection: TerminalContextSelection) => void) | undefined;
-  /** Set by a grid's dock, whose terminal belongs to the grid rather than a thread. */
+  /** Set for a terminal that belongs to a workspace rather than a thread. */
   projectRef?: ScopedProjectRef | null;
   /** The terminal fills the box that holds it instead of docking at its stored height. */
   fill?: boolean;

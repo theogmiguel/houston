@@ -210,11 +210,11 @@ function seed(spec: Parameters<typeof layoutOf>[0], threads: EnvironmentThreadSh
 }
 
 const groupNames = (container: HTMLElement) =>
-  [...container.querySelectorAll<HTMLElement>("[data-workspace-heading] [data-grid-name]")].map(
+  [...container.querySelectorAll<HTMLElement>("[data-workspace-heading] [data-workspace-name]")].map(
     (element) => element.textContent,
   );
 const rowsIn = (container: HTMLElement, workspaceName: string) => {
-  const heading = [...container.querySelectorAll<HTMLElement>("[data-grid-name]")].find(
+  const heading = [...container.querySelectorAll<HTMLElement>("[data-workspace-name]")].find(
     (element) => element.textContent === workspaceName,
   );
   const root = heading?.closest<HTMLElement>("[data-workspace-key]");

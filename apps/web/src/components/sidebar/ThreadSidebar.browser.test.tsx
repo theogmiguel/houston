@@ -511,15 +511,15 @@ describe("ThreadCard layout", () => {
   });
 
   it("starts a flat row and a workspace row at the same inset", async () => {
-    await using grid = await render(card(thread(), { workspaceId: "ws-a" }));
-    const gridLeft = getComputedStyle(
-      grid.container.querySelector<HTMLElement>("[data-thread-key]")!,
+    await using workspaceCard = await render(card(thread(), { workspaceId: "ws-a" }));
+    const workspaceLeft = getComputedStyle(
+      workspaceCard.container.querySelector<HTMLElement>("[data-thread-key]")!,
     ).paddingLeft;
     await using flat = await render(card(thread(), { workspaceId: null }));
     const flatLeft = getComputedStyle(
       flat.container.querySelector<HTMLElement>("[data-thread-key]")!,
     ).paddingLeft;
-    expect(flatLeft).toBe(gridLeft);
+    expect(flatLeft).toBe(workspaceLeft);
   });
 });
 
@@ -553,7 +553,7 @@ describe("ThreadCard selected state", () => {
     expect(getComputedStyle(row).backgroundColor).toBe("rgba(0, 0, 0, 0)");
   });
 
-  it("treats the focused cell of the open grid as the open thread", async () => {
+  it("treats the focused pane of the open workspace as the open thread", async () => {
     await using screen = await render(card(thread(), { focused: true }));
     const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
 

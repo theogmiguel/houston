@@ -147,9 +147,9 @@ function tree(
 }
 
 const workspaceRow = (root: ParentNode, id: string) =>
-  root.querySelector<HTMLElement>(`[data-grid-key="${id}"] [data-grid-heading-row]`)!;
+  root.querySelector<HTMLElement>(`[data-workspace-key="${id}"] [data-workspace-heading-row]`)!;
 const cardsOf = (root: ParentNode, id: string) =>
-  root.querySelector<HTMLElement>(`[data-grid-key="${id}"] [data-grid-guide]`);
+  root.querySelector<HTMLElement>(`[data-workspace-key="${id}"] [data-workspace-guide]`);
 
 describe("sidebar tree: workspace row", () => {
   it("is a 24px regular muted row with a chevron that stays put, and the workspace on screen takes primary ink", async () => {
@@ -163,11 +163,11 @@ describe("sidebar tree: workspace row", () => {
     const onScreen = workspaceRow(screen.container, "w1");
     const other = workspaceRow(screen.container, "w2");
     expect(rect(onScreen).height).toBe(24);
-    const name = (row: HTMLElement) => row.querySelector<HTMLElement>("[data-grid-name]")!;
+    const name = (row: HTMLElement) => row.querySelector<HTMLElement>("[data-workspace-name]")!;
     expect(getComputedStyle(name(other)).fontSize).toBe("12px");
     expect(Number(getComputedStyle(name(other)).fontWeight)).toBe(400);
     expect(getComputedStyle(name(onScreen)).color).not.toBe(getComputedStyle(name(other)).color);
-    const chevron = other.querySelector<HTMLElement>("[data-grid-chevron-box]")!;
+    const chevron = other.querySelector<HTMLElement>("[data-workspace-chevron-box]")!;
     expect(rect(chevron).width).toBe(14);
   });
 
@@ -180,7 +180,7 @@ describe("sidebar tree: workspace row", () => {
       ]),
     );
     const name = (id: string) =>
-      workspaceRow(screen.container, id).querySelector<HTMLElement>("[data-grid-name]")!;
+      workspaceRow(screen.container, id).querySelector<HTMLElement>("[data-workspace-name]")!;
     expect(getComputedStyle(name("w1")).color).not.toBe(getComputedStyle(name("w2")).color);
   });
 
@@ -216,7 +216,7 @@ describe("sidebar tree: guides and alignment", () => {
       tree([{ value: section("w1", [thread("a")]), overrides: { open: true } }]),
     );
     const chevron = workspaceRow(screen.container, "w1").querySelector<HTMLElement>(
-      "[data-grid-chevron-box]",
+      "[data-workspace-chevron-box]",
     )!;
     const cards = cardsOf(screen.container, "w1")!;
     expect(getComputedStyle(cards).borderLeftWidth).toBe("1px");
@@ -296,7 +296,7 @@ describe("sidebar tree: guides and alignment", () => {
       );
       const card = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
       const row = workspaceRow(screen.container, "w1");
-      const name = row.querySelector<HTMLElement>("[data-grid-name]")!;
+      const name = row.querySelector<HTMLElement>("[data-workspace-name]")!;
       const title = card.querySelector<HTMLElement>("[data-card-open]")!;
       expect(rect(name).left).toBeCloseTo(rect(title).left, 0);
       expect(rect(card).right).toBeCloseTo(rect(row).right, 0);

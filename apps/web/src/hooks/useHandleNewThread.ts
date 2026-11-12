@@ -5,11 +5,10 @@ import {
 } from "@houston-app/client-runtime/environment";
 import {
   DEFAULT_SERVER_SETTINGS,
-  type EnvironmentId,
   type ScopedProjectRef,
   type ThreadId,
 } from "@houston-app/contracts";
-import { type AnyRouter, useParams, useRouter } from "@tanstack/react-router";
+import { type AnyRouter, useRouter } from "@tanstack/react-router";
 import {
   composerDraftHasUserContent,
   markPromotedDraftThreadByRef,
@@ -92,7 +91,7 @@ export function createNewThreadHandler(router: AnyRouter) {
       envMode?: DraftThreadEnvMode;
       startFromOrigin?: boolean;
       replace?: boolean;
-      /** Route to the draft after registering it; false for callers that render it in a grid pane. */
+      /** Route to the draft after registering it; false for callers that render it in a layout pane. */
       navigate?: boolean;
       /** Composer text for the draft, set before it shows. A draft with user text keeps it. */
       prompt?: string;

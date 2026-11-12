@@ -430,7 +430,7 @@ it.each(["draft", "thread"] as const)(
   APP_BOOT_TEST_TIMEOUT_MS,
 );
 
-// Compact toolbar at grid-6 (370px pane), grid-5 small pane (340px) and narrower: each chip shows
+// Compact toolbar at a 370px pane, a 340px small pane and narrower: each chip shows
 // its whole label or only its icon, and nothing overlaps.
 it.each([342, 312, 280, 240])(
   "folds the compact toolbar's chips to whole labels or icons in a %ipx composer",

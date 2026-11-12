@@ -207,10 +207,10 @@ it("opens an idle child from Lineage when its shell has not been loaded", async 
   );
 });
 
-it("opens a subagent through the grid cell's opener instead of leaving the grid", async () => {
+it("opens a subagent through the layout pane's opener instead of leaving the layout", async () => {
   setup();
   const projection = makeThreadProjectionFixture();
-  const childId = ThreadId.make("grid-child");
+  const childId = ThreadId.make("pane-child");
   const environmentId = EnvironmentId.make("local");
   state.projection = {
     ...projection,
@@ -228,7 +228,7 @@ it("opens a subagent through the grid cell's opener instead of leaving the grid"
         childThreadId: childId,
         nativeTaskRef: null,
         prompt: "Inspect the change",
-        title: "Grid child",
+        title: "Pane child",
         model: null,
         status: "completed",
         result: null,
@@ -251,7 +251,7 @@ it("opens a subagent through the grid cell's opener instead of leaving the grid"
   );
   const pathname = screen.router?.state.location.pathname;
   await screen.getByRole("button", { name: /Previous agents/ }).click();
-  await screen.getByRole("button", { name: /Grid child/ }).click();
+  await screen.getByRole("button", { name: /Pane child/ }).click();
   await vi.waitFor(() => expect(open).toHaveBeenCalledWith({ environmentId, threadId: childId }));
   expect(screen.router?.state.location.pathname).toBe(pathname);
 });

@@ -1248,7 +1248,7 @@ export function DiffsSettingsPanel() {
         <PullRequestLinksOpenInAppSetting />
         <SettingsRow
           {...searchableSetting("proactive-panels")}
-          description="Open linked pull requests first. Otherwise, open Changes for edits to at least 3 files or 50 lines. Not in grid cells or narrow windows."
+          description="Open linked pull requests first. Otherwise, open Changes for edits to at least 3 files or 50 lines. Not in layout panes or narrow windows."
           resetAction={
             settings.proactivePanelsEnabled !== DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled ? (
               <SettingResetButton

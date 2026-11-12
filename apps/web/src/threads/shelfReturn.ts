@@ -3,7 +3,7 @@ import { effectiveSnoozed } from "@houston-app/client-runtime/state/thread-settl
 
 /**
  * What dropping a shelf row into the rail does: a held thread wakes and a closed one reopens, so
- * it returns to the grid it left. Null for a thread that is on neither shelf.
+ * it returns to the workspace it left. Null for a thread that is on neither shelf.
  */
 export function shelfReturnAction(
   thread: Pick<

@@ -102,7 +102,7 @@ it("opens on the rail as the home page at 390px", async () => {
   expect(threadRow()).not.toBeNull();
   expect(document.querySelector("[data-phone-tab-bar]")).not.toBeNull();
   expect(
-    phoneHome()!.querySelector('input[aria-label="Search workspaces, grids and threads"]'),
+    phoneHome()!.querySelector('input[aria-label="Search workspaces and threads"]'),
   ).toBeNull();
   expect(phoneHome()!.querySelector("[data-rail-shortcuts]")).toBeNull();
   expect(phoneHome()!.querySelector('[data-rail-shortcut="Tasks"]')).toBeNull();

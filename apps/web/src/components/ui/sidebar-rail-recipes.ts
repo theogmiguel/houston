@@ -1,6 +1,6 @@
 import { MOTION_FEEDBACK } from "./motion-recipes";
 
-/** Visual recipes for the grid rail's rows, results, hover card and inline controls. */
+/** Visual recipes for the sidebar rail's rows, results, hover card and inline controls. */
 
 /** A small icon button at the end of a menu row, such as a project's settings gear. */
 export const RAIL_MENU_ROW_BUTTON_CLS =

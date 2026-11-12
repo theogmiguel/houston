@@ -477,7 +477,7 @@ function adoptLegacySurfaceTabs(layout: LayoutState) {
 }
 
 /**
- * Once the layout and both surface stores have loaded: surfaces left open by the grid era become
+ * Once the layout and both surface stores have loaded: surfaces left open by earlier builds become
  * tabs, tabs whose surface is gone close, and each store's open state matches what the layout shows.
  */
 function reconcileOnLoad() {

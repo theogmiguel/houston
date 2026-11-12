@@ -1,6 +1,5 @@
 /** Gesture pieces from niri: turn a delta stream into a velocity and a projected end, and
- * rubber-band past the last stop. The grid's resize and drag do not use them yet; the module
- * carries the behaviour the layout model of a future slice depends on. */
+ * rubber-band past the last stop. The strip's wheel gesture and workspace switch use them. */
 
 /** Deltas older than this no longer count toward the velocity. */
 const HISTORY_LIMIT_MS = 150;

@@ -6,7 +6,6 @@ import type {
   RuntimeMode,
   ServerProvider,
   ServerSettings,
-  ThreadId,
 } from "@houston-app/contracts";
 import type { EnvironmentProject } from "@houston-app/client-runtime/state/shell";
 import { resolveProjectSettings } from "@houston-app/shared/projectSettings";

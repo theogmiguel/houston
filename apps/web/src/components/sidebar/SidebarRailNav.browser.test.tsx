@@ -21,7 +21,7 @@ vi.mock("../AddProjectDialog", () => ({
 }));
 
 describe("SidebarRailNav", () => {
-  it("starts threads from a grid's + instead of a New thread row", async () => {
+  it("starts threads from a workspace's + instead of a New thread row", async () => {
     await using screen = await render(<SidebarRailNav search={<span>Search</span>} />);
 
     const text = screen.container.textContent ?? "";
@@ -65,15 +65,15 @@ describe("SidebarRailNav", () => {
     await using screen = await render(
       <SidebarRailNav
         search={<span>Search</span>}
-        sectionTitle="Grids"
-        sectionActions={<button type="button">New grid</button>}
+        sectionTitle="Collections"
+        sectionActions={<button type="button">New collection</button>}
       />,
     );
 
     const text = screen.container.textContent ?? "";
-    expect(text).toContain("Grids");
+    expect(text).toContain("Collections");
     expect(text).not.toContain("Workspaces");
-    expect(screen.getByRole("button", { name: "New grid" }).element()).toBeVisible();
+    expect(screen.getByRole("button", { name: "New collection" }).element()).toBeVisible();
   });
 
   it("keeps Add project reachable in the section heading", async () => {

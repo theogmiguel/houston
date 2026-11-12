@@ -164,7 +164,7 @@ describe("SidebarUpdatePill release notes", () => {
         releaseNotes: [
           {
             version: "0.9.4",
-            items: ["Faster thread switching in grids of six."],
+            items: ["Faster thread switching in layouts of six."],
             totalItems: 1,
             releasedAt: "2026-10-27",
           },
@@ -179,7 +179,7 @@ describe("SidebarUpdatePill release notes", () => {
     expect(notes.textContent).toContain("Houston 0.9.4 is available");
     expect(notes.textContent).toContain("You have 0.9.2");
     expect(notes.textContent).toContain("What's new");
-    expect(notes.textContent).toContain("Faster thread switching in grids of six.");
+    expect(notes.textContent).toContain("Faster thread switching in layouts of six.");
 
     await expect.element(page.getByRole("button", { name: "Download update" })).toBeVisible();
     await userEvent.click(page.getByRole("button", { name: "Later" }));

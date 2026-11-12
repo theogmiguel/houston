@@ -406,7 +406,7 @@ export function ServerBrowserSurface(props: {
       if (capTimer !== null) clearTimeout(capTimer);
       capTimer = setTimeout(growCap, previous === null ? 0 : RESIZE_THROTTLE_MS * 2);
     };
-    // A grid resize moves the surface every pointer move; fit it once on release.
+    // A pane resize moves the surface every pointer move; fit it once on release.
     let resizedDuringLayout = false;
     const scheduleMeasure = () => {
       if (timer !== null) return;

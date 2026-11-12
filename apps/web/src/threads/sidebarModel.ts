@@ -11,7 +11,7 @@ import type { ThreadState } from "../components/ui/thread-state-glyph";
 import { workspaceKeyOf } from "@houston-app/shared/grid/record";
 
 /**
- * The grid rail's one status vocabulary. `idle` cards show their age; every
+ * The sidebar rail's one status vocabulary. `idle` cards show their age; every
  * other state shows an outlined glyph and a word.
  */
 export type ThreadRowState = ThreadState | "idle";

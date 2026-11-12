@@ -110,7 +110,7 @@ export function SidebarDragBoundary(props: {
 }
 
 /**
- * A shelf header for lists that are not dnd-kit sortable, such as the grid
+ * A shelf header for lists that are not dnd-kit sortable, such as the sidebar
  * rail. The rail treats the shelves as an archive area: a leading icon names
  * each list, and the muted count stays right of the label.
  */
@@ -129,7 +129,7 @@ export function SidebarShelfHeader(props: {
       <button
         type="button"
         data-sidebar-row={`shelf:${props.shelf}`}
-        data-testid={`grid-${props.shelf}-shelf-toggle`}
+        data-testid={`sidebar-${props.shelf}-shelf-toggle`}
         onClick={props.toggle.onToggle}
         aria-expanded={props.toggle.expanded}
         className={cn(
@@ -153,7 +153,7 @@ export function SidebarShelfHeader(props: {
       role="treeitem"
       tabIndex={-1}
       data-sidebar-row={`shelf:${props.shelf}`}
-      data-testid={`grid-${props.shelf}-shelf-toggle`}
+      data-testid={`sidebar-${props.shelf}-shelf-toggle`}
       onClick={props.toggle.onToggle}
       expanded={props.toggle.expanded}
       tone={props.isDropTarget ? "accent" : props.dragging ? "emphasized" : "muted"}

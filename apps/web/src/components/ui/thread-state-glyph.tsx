@@ -5,7 +5,7 @@ import { StreamingGlyph } from "../chat/TimelineRowParts";
 
 /**
  * What a thread row's status line can say, one kind per word. This is the app's
- * single status vocabulary: the grid rail, the grid pane label, the sidebar,
+ * single status vocabulary: the sidebar rail, the pane label, the sidebar,
  * the tasks page and the command palette all draw these marks.
  */
 export type ThreadStatusKind =

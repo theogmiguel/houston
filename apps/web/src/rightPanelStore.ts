@@ -120,7 +120,7 @@ interface RightPanelStoreState {
   requestMaximize: (ref: ScopedThreadRef) => void;
   consumeMaximizeRequest: (ref: ScopedThreadRef) => boolean;
   threadPanelVisibilityByThreadKey: Record<string, ThreadPanelVisibility>;
-  /** The presentation each details card actually renders, which a grid uses to follow focus. */
+  /** The presentation each details card actually renders, which a layout pane uses to follow focus. */
   threadPanelPresentationByThreadKey: Record<string, ThreadPanelPresentation>;
   userActionRevisionByThreadKey: Record<string, number>;
   closeRevisionByThreadKey: Record<string, number>;

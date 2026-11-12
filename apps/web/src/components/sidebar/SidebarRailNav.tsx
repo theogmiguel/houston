@@ -136,7 +136,7 @@ export function SidebarRailSearchButton() {
 }
 
 /**
- * The rail's fixed entries, shared by the thread and grid sidebars: search, one row of icon
+ * The rail's fixed entries, shared by the thread and sidebar: search, one row of icon
  * buttons for pull requests, tasks and usage, then a section heading whose title and actions the
  * caller owns. Ctrl N still starts a thread, but the row is gone.
  */
