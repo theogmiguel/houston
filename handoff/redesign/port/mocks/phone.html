@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Phone layout</title>
+<style>
+[data-theme=graphite]{--page:#0b0b0c;--rail:#1c1c1f;--content:#161618;--border:rgba(255,255,255,.09);--line-strong:rgba(255,255,255,.16);--field:rgba(255,255,255,.06);--hover:rgba(255,255,255,.05);--sel:rgba(255,255,255,.09);--accent:#2f6fe8;--accent-ink:#64a0ff;--t1:rgba(255,255,255,.92);--t2:rgba(255,255,255,.66);--t3:rgba(255,255,255,.52);--warn:#f5a524;--ok-ink:#30d158;--stop-ink:#ff6b61;--add-bg:rgba(48,209,88,.10);--del-bg:rgba(255,107,97,.10);--pane:#0f0f11;--pane-head:#18181b;--claude:#d97757;--composer:#18181b;--scrim:rgba(0,0,0,.5)}
+[data-theme=paper]{--page:#e4e4e8;--rail:#ececef;--content:#f5f5f7;--border:rgba(0,0,0,.09);--line-strong:rgba(0,0,0,.16);--field:rgba(0,0,0,.05);--hover:rgba(0,0,0,.045);--sel:rgba(0,0,0,.09);--accent:#0a63e0;--accent-ink:#0a5cd1;--t1:#1d1d1f;--t2:#424245;--t3:#5b5b60;--warn:#b45309;--ok-ink:#1d7a3a;--stop-ink:#c0362c;--add-bg:rgba(29,122,58,.09);--del-bg:rgba(192,54,44,.08);--pane:#fff;--pane-head:#f7f7f9;--claude:#c25f3f;--composer:#fff;--scrim:rgba(0,0,0,.28)}
+*{box-sizing:border-box}
+#wrap{color:var(--t1);font:13px/18px Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+.mono{font-family:'JetBrains Mono',ui-monospace,Consolas,monospace;font-size:11px}
+.top{display:flex;align-items:center;gap:12px;margin:0 0 14px}
+.top h1{font-size:13px;font-weight:600;margin:0}
+.top button{margin-left:auto;height:28px;padding:0 12px;border-radius:6px;border:1px solid var(--border);background:var(--field);color:var(--t1);font:inherit;font-weight:500;cursor:pointer}
+.variant{margin:0 0 18px}
+.variant h2{font-size:13px;font-weight:600;margin:0 0 2px}
+.variant p{margin:0 0 8px;color:var(--muted-foreground,#888);font-size:12px;line-height:16px}
+.phones{display:flex;gap:12px}
+.cap{color:var(--muted-foreground,#888);font-size:11px;margin:6px 0 0}
+.phone{position:relative;width:224px;height:370px;border-radius:22px;border:1px solid var(--line-strong);background:var(--content);overflow:hidden;display:flex;flex-direction:column}
+.ico{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.trunc{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.bar{height:44px;flex:none;display:flex;align-items:center;gap:8px;padding:0 10px;border-bottom:1px solid var(--border)}
+.bar .ib{width:32px;height:32px;display:grid;place-items:center;color:var(--t2);flex:none;border-radius:8px}
+.bar .ti{font-weight:600;flex:1}
+.st{width:8px;height:8px;border-radius:50%;background:var(--accent-ink);flex:none}
+.body{flex:1;min-height:0;padding:12px;display:flex;flex-direction:column;gap:10px;overflow:hidden}
+.msg{color:var(--t2);font-size:13px;line-height:19px}
+.msg.me{align-self:flex-end;background:var(--field);color:var(--t1);padding:7px 10px;border-radius:12px;max-width:85%}
+.tool{border:1px solid var(--border);border-radius:8px;padding:6px 8px;color:var(--t3);display:flex;gap:6px;align-items:center}
+.comp{flex:none;margin:0 10px 10px;border:1px solid var(--line-strong);border-radius:14px;background:var(--composer);padding:9px 10px;color:var(--t3);display:flex;align-items:center;gap:8px}
+.comp .send{margin-left:auto;width:26px;height:26px;border-radius:50%;background:var(--accent);display:grid;place-items:center;color:#fff}
+.diff{flex:1;min-height:0;display:flex;flex-direction:column}
+.diff .f{display:flex;align-items:center;gap:8px;height:34px;padding:0 12px;border-bottom:1px solid var(--border);color:var(--t2)}
+.diff .f .n{margin-left:auto;font-size:11px;font-variant-numeric:tabular-nums}
+.add{color:var(--ok-ink)}.del{color:var(--stop-ink)}
+.ln{padding:1px 12px;white-space:nowrap;overflow:hidden}
+.ln.a{background:var(--add-bg)}.ln.d{background:var(--del-bg)}
+/* A: title opens a sheet */
+.pill{display:flex;align-items:center;gap:6px;flex:1;min-width:0;height:32px;padding:0 8px;border-radius:8px;background:var(--field)}
+.pill .k{color:var(--t3);font-size:11px;font-variant-numeric:tabular-nums;flex:none}
+.scrim{position:absolute;inset:0;background:var(--scrim)}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:var(--rail);border-top:1px solid var(--line-strong);border-radius:16px 16px 0 0;padding:6px 8px 10px}
+.grab{width:32px;height:4px;border-radius:2px;background:var(--line-strong);margin:2px auto 8px}
+.sh{color:var(--t3);font-size:11px;font-weight:600;padding:4px 8px}
+.sr{display:flex;align-items:center;gap:10px;height:44px;padding:0 8px;border-radius:8px;color:var(--t2)}
+.sr.on{background:var(--sel);color:var(--t1)}
+.sr .x{margin-left:auto;color:var(--t3)}
+.sr .sub{color:var(--t3);font-size:11px}
+/* B: strip of tabs under the bar */
+.strip{flex:none;height:38px;display:flex;align-items:center;gap:6px;padding:0 10px;border-bottom:1px solid var(--border);overflow:hidden}
+.chip{height:28px;padding:0 10px;border-radius:14px;display:inline-flex;align-items:center;gap:6px;color:var(--t2);white-space:nowrap;flex:none;font-size:12px}
+.chip.on{background:var(--sel);color:var(--t1);font-weight:500}
+.chip.plus{padding:0;width:28px;justify-content:center;color:var(--t3)}
+/* C: pages with dots */
+.dots{flex:none;height:18px;display:flex;align-items:center;justify-content:center;gap:5px}
+.dots i{width:5px;height:5px;border-radius:50%;background:var(--line-strong)}
+.dots i.on{background:var(--t1);width:14px;border-radius:3px}
+.peek{position:absolute;top:44px;bottom:0;right:-196px;width:224px;background:var(--pane);border-left:1px solid var(--line-strong)}
+.shift{transform:translateX(-32px)}
+/* home */
+.ws{display:flex;align-items:center;height:30px;padding:8px 12px 0;color:var(--t3);font-size:11px;font-weight:600}
+.ws .c{margin-left:auto;font-weight:400;font-variant-numeric:tabular-nums}
+.th{margin:2px 8px;padding:7px 8px;border-radius:8px}
+.th.on{background:var(--sel)}
+.th .l{display:flex;align-items:center;gap:6px;color:var(--t3);font-size:11px}
+.th .l .r{margin-left:auto}
+.th .t{color:var(--t1);font-weight:500;margin:1px 0}
+.nav{flex:none;height:50px;border-top:1px solid var(--border);display:flex}
+.nav div{flex:1;display:grid;place-items:center;color:var(--t3)}
+.nav div.on{color:var(--accent-ink)}
+</style>
+</head>
+<body><div id="wrap" data-theme="graphite">
+<div class="top"><h1>Phone: one pane at a time, its tabs reachable</h1><button id="theme" type="button">Light theme</button></div>
+<div id="root"></div>
+<script>
+const I = {
+  back:'<svg class="ico" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>',
+  more:'<svg class="ico" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>',
+  chev:'<svg class="ico" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>',
+  chat:'<svg class="ico" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+  diff:'<svg class="ico" viewBox="0 0 24 24"><path d="M12 3v14M5 10h14M5 21h14"/></svg>',
+  term:'<svg class="ico" viewBox="0 0 24 24"><path d="M4 17l6-5-6-5M12 19h8"/></svg>',
+  globe:'<svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18"/></svg>',
+  plus:'<svg class="ico" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+  x:'<svg class="ico" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  up:'<svg class="ico" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg>',
+  search:'<svg class="ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>',
+  pr:'<svg class="ico" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/><path d="M6 8v8M18 16V9a3 3 0 0 0-3-3h-3"/></svg>',
+  bars:'<svg class="ico" viewBox="0 0 24 24"><path d="M6 20V10M12 20V4M18 20v-7"/></svg>',
+  gear:'<svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>',
+};
+const TITLE = 'Port the layout system';
+const chat = `<div class="body"><div class="msg me">Mount the panes and wire the shortcuts</div><div class="msg">The strip now renders the focused workspace. I am wiring the 25 layout shortcuts next.</div><div class="tool mono">${I.term}<span class="trunc">vp test run src/layout</span></div><div class="msg">153 browser tests pass.</div></div><div class="comp">${I.plus}<span>Message</span><span class="send">${I.up}</span></div>`;
+const changes = `<div class="diff"><div class="f">${I.diff}<span class="trunc mono">layout/LayoutHost.tsx</span><span class="n"><span class="add">+84</span> <span class="del">-12</span></span></div><div class="ln mono d">- return &lt;GridHost grid={grid} /&gt;</div><div class="ln mono a">+ return &lt;LayoutWorkspaceStrip</div><div class="ln mono a">+   layout={layout}</div><div class="ln mono a">+   renderTab={renderTab} /&gt;</div><div class="f">${I.diff}<span class="trunc mono">routes/_chat.tsx</span><span class="n"><span class="add">+9</span> <span class="del">-31</span></span></div><div class="ln mono d">- &lt;Outlet /&gt;</div><div class="ln mono a">+ &lt;LayoutHost /&gt;</div></div>`;
+const bar = (mid) => `<div class="bar"><span class="ib">${I.back}</span>${mid}<span class="ib">${I.more}</span></div>`;
+const plain = `<span class="st"></span><span class="ti trunc">${TITLE}</span>`;
+const phone = (inner, cap) => `<div><div class="phone">${inner}</div><div class="cap">${cap}</div></div>`;
+const sheet = `<div class="scrim"></div><div class="sheet"><div class="grab"></div><div class="sh">Tabs in this pane</div>
+<div class="sr on">${I.chat}<span class="trunc">${TITLE}</span><span class="x">${I.x}</span></div>
+<div class="sr">${I.diff}<span>Changes</span><span class="sub">4 files</span><span class="x">${I.x}</span></div>
+<div class="sr">${I.term}<span>Terminal</span><span class="x">${I.x}</span></div>
+<div class="sr">${I.globe}<span class="trunc">localhost:5173</span><span class="x">${I.x}</span></div>
+<div class="sr">${I.plus}<span>New tab</span></div></div>`;
+const strip = (on) => `<div class="strip">${[['chat','Chat'],['diff','Changes'],['term','Terminal'],['globe','Browser']].map(([k,l],i)=>`<span class="chip${i===on?' on':''}">${I[k]}${l}</span>`).join('')}<span class="chip plus">${I.plus}</span></div>`;
+const dots = (on) => `<div class="dots">${[0,1,2,3].map(i=>`<i${i===on?' class="on"':''}></i>`).join('')}</div>`;
+const home = `<div class="bar"><span class="ti">Houston</span><span class="ib">${I.search}</span><span class="ib">${I.plus}</span></div>
+<div style="flex:1;min-height:0;overflow:hidden">
+<div class="ws">Redesign<span class="c">3</span></div>
+<div class="th on"><div class="l"><span>Houston</span><span class="r" style="color:var(--accent-ink)">Working 4m</span></div><div class="t trunc">${TITLE}</div><div class="l"><span class="mono trunc">v2-redesign</span><span class="r"><span class="add">+2.1k</span> <span class="del">-340</span></span></div></div>
+<div class="th"><div class="l"><span>t3code</span><span class="r">Done</span></div><div class="t trunc">Map upstream pull requests</div><div class="l"><span class="mono trunc">main</span></div></div>
+<div class="th"><div class="l"><span>Houston</span><span class="r" style="color:var(--warn)">Needs you</span></div><div class="t trunc">Sidebar grouped by workspace</div><div class="l"><span class="mono trunc">v2-redesign</span><span class="r">#412</span></div></div>
+<div class="ws">Intranet<span class="c">1</span></div>
+<div class="th"><div class="l"><span>intranet-cdv</span><span class="r">Idle</span></div><div class="t trunc">Dashboard filters</div><div class="l"><span class="mono trunc">feat/filters</span></div></div>
+</div>
+<div class="nav"><div class="on">${I.chat}</div><div>${I.pr}</div><div>${I.bars}</div><div>${I.gear}</div></div>`;
+
+const V = [
+  ['Home (same in every variant)', 'The sidebar as a page, grouped by workspace, with the three-line rows. Tapping a thread opens the pane that holds its chat tab. The bottom navigation is unchanged.',
+    [phone(home, 'Home')]],
+  ['A. The title opens a sheet of tabs', 'The thread bar keeps one row. The title becomes a button with the tab count; tapping it lists the pane’s tabs in a bottom sheet, with close and New tab. Least chrome, most room for the chat; switching takes two taps.',
+    [phone(bar(`<span class="pill"><span class="st"></span><span class="trunc" style="font-weight:600;flex:1">${TITLE}</span><span class="k">4</span>${I.chev}</span>`) + chat, 'Chat tab'),
+     phone(bar(`<span class="pill"><span class="st"></span><span class="trunc" style="font-weight:600;flex:1">${TITLE}</span><span class="k">4</span>${I.chev}</span>`) + chat + sheet, 'Sheet open'),
+     phone(bar(`<span class="pill">${I.diff}<span class="trunc" style="font-weight:600;flex:1">Changes</span><span class="k">4</span>${I.chev}</span>`) + changes, 'Changes tab')]],
+  ['B. A row of tabs under the bar', 'A second row shows the pane’s tabs as chips that scroll sideways, with + at the end. Every tab is one tap away and always visible; costs 38px of height on every screen. Closing a tab is a long press.',
+    [phone(bar(plain) + strip(0) + chat, 'Chat tab'),
+     phone(bar(plain) + strip(1) + changes, 'Changes tab')]],
+  ['C. Swipe between tabs', 'Tabs are pages: swipe sideways to move between them, with dots under the bar showing position. Closest to the desktop’s sideways strip and its fluid feel; tabs are not named until you land on them, and a sideways swipe competes with scrolling code and diffs.',
+    [phone(bar(plain) + dots(0) + chat, 'Chat tab'),
+     phone(bar(plain) + dots(0) + `<div class="shift" style="display:flex;flex-direction:column;flex:1;min-height:0">${chat}</div><div class="peek"></div>`, 'Mid-swipe'),
+     phone(bar(`${I.diff}<span class="ti trunc">Changes</span>`) + dots(1) + changes, 'Changes tab')]],
+];
+document.getElementById('root').innerHTML = V.map(([t,d,p]) => `<section class="variant"><h2>${t}</h2><p>${d}</p><div class="phones">${p.join('')}</div></section>`).join('');
+const btn = document.getElementById('theme');
+btn.addEventListener('click', () => {
+  const dark = document.getElementById('wrap').dataset.theme === 'graphite';
+  document.getElementById('wrap').dataset.theme = dark ? 'paper' : 'graphite';
+  btn.textContent = dark ? 'Dark theme' : 'Light theme';
+});
+</script>
+</div></body>
+</html>

@@ -35,6 +35,10 @@ scope.
    mocks: (1) the project's icon and name, with the thread's status at the right (Houston's existing
    status vocabulary and marks, including the elapsed time of a running thread); (2) the title alone,
    on the full width; (3) the branch, then the pull request, diff counts and provider at the right.
+   On a phone the shell shows one pane at a time, as upstream does in a narrow window (mock
+   `mocks/phone.html`, variant A): the thread bar's title is a button with the pane's tab count
+   that opens a bottom sheet listing the pane's tabs, with close and New tab. Home is the sidebar
+   as a page; the bottom navigation is unchanged.
 3. **A workspace has no project.** Threads of any project and environment share a workspace. The
    `cross_project` refusal and the six-thread cap are removed.
 
