@@ -17,7 +17,7 @@ import {
 import { Tooltip, TooltipTrigger } from "../components/ui/tooltip";
 import { observeResize } from "../lib/observeResize";
 import { setWheelScroller, wheelDeltaPx } from "../motion/wheelGesture";
-import { currentLayoutChromeInsets } from "./layoutChrome";
+import { layoutChromeInsets } from "./layoutChrome";
 import { closeLayoutTabByUser } from "./layoutActions";
 import { isLayoutGhostTab, type LayoutTab } from "./layoutModel";
 import { useLayoutPane } from "./layoutPaneContext";
@@ -199,14 +199,16 @@ export function LayoutPaneTabBar({
   const { leadingEdge, trailingEdge } = useLayoutPane();
   const [overflowing, setOverflowing] = useState(false);
   const stripRef = useTabStripBehavior(activeTabId, setOverflowing);
-  const chrome =
-    placement === "window" ? currentLayoutChromeInsets({ leadingEdge, trailingEdge }) : null;
-  const leadingPad = leadingInset ?? chrome?.leading;
+  const chrome = placement === "window" ? layoutChromeInsets({ leadingEdge, trailingEdge }) : null;
+  const leadingPad = leadingInset;
   const trailingPad = trailingInset ?? chrome?.trailing;
   return (
     <LayoutTabBar
       placement={placement}
       leadingInset={leadingPad}
+      {...(leadingInset === undefined && chrome?.leadingClassName
+        ? { className: chrome.leadingClassName }
+        : {})}
       trailingInset={trailingPad}
       data-layout-bar-pane={paneId}
     >

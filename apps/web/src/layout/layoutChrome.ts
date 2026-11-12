@@ -1,12 +1,13 @@
-import { isDesktopHost } from "../env";
-import { isMacPlatform } from "../lib/utils";
+import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../workspaceTitlebar";
 
-/** The three traffic lights and their margin: a window bar at the leading edge starts after them. */
-export const MAC_TRAFFIC_LIGHTS_INSET = "4.75rem";
+/**
+ * The room the window's native caption buttons take at the trailing edge: Windows' and Linux's
+ * (`.wco`) and Houston's own on a frameless window (`.custom-chrome`). The variable is 0 where the
+ * window has none, so a browser and macOS need no case of their own.
+ */
+export const NATIVE_CONTROLS_INSET = "var(--workspace-native-controls-inset)";
 
-export interface LayoutChromeEnvironment {
-  mac: boolean;
-  desktopHost: boolean;
+export interface LayoutChromeEdges {
   /** The pane touches the window's top-left corner. */
   leadingEdge: boolean;
   /** The pane touches the window's top-right corner. */
@@ -14,26 +15,16 @@ export interface LayoutChromeEnvironment {
 }
 
 /**
- * The room a window-bar tab strip leaves for native window chrome: the macOS traffic lights at
- * the leading edge, and the caption buttons (`--workspace-native-controls-inset`, 0 where the
- * window has none) at the trailing edge.
+ * The room a window-bar tab strip leaves for window chrome. Leading edge: the class pads by
+ * `--workspace-titlebar-content-left` (the sidebar toggle and, on macOS, the traffic lights) while
+ * the sidebar is collapsed. Trailing edge: the native caption buttons.
  */
-export function layoutChromeInsets(environment: LayoutChromeEnvironment): {
-  leading: string | undefined;
+export function layoutChromeInsets({ leadingEdge, trailingEdge }: LayoutChromeEdges): {
+  leadingClassName: string | undefined;
   trailing: string | undefined;
 } {
-  const { mac, desktopHost, leadingEdge, trailingEdge } = environment;
   return {
-    leading: mac && desktopHost && leadingEdge ? MAC_TRAFFIC_LIGHTS_INSET : undefined,
-    trailing:
-      !mac && desktopHost && trailingEdge ? "var(--workspace-native-controls-inset)" : undefined,
+    leadingClassName: leadingEdge ? COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS : undefined,
+    trailing: trailingEdge ? NATIVE_CONTROLS_INSET : undefined,
   };
-}
-
-export function currentLayoutChromeInsets(edges: { leadingEdge: boolean; trailingEdge: boolean }) {
-  return layoutChromeInsets({
-    mac: typeof navigator !== "undefined" && isMacPlatform(navigator.platform),
-    desktopHost: isDesktopHost,
-    ...edges,
-  });
 }

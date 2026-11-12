@@ -256,4 +256,21 @@ describe("placements", () => {
     expect(getComputedStyle(bar).paddingInlineStart).toBe("76px");
     expect(getComputedStyle(bar).paddingInlineEnd).toBe("90px");
   });
+  it("clears the collapsed sidebar's toggle at the leading edge, and nothing outside a sidebar shell", async () => {
+    using _layout = openLayout([[[["a"]]]]);
+    const inset = (state: "collapsed" | undefined) => (
+      <div
+        data-sidebar-state={state}
+        style={{ "--workspace-titlebar-content-left": "76px" } as React.CSSProperties}
+      >
+        <BarOf placement="window" />
+      </div>
+    );
+    await using collapsed = await render(inset("collapsed"), { router: false });
+    const collapsedBar = collapsed.container.querySelector<HTMLElement>("[data-layout-tab-bar]")!;
+    expect(getComputedStyle(collapsedBar).paddingInlineStart).toBe("76px");
+    await using bare = await render(inset(undefined), { router: false });
+    const bareBar = bare.container.querySelector<HTMLElement>("[data-layout-tab-bar]")!;
+    expect(getComputedStyle(bareBar).paddingInlineStart).not.toBe("76px");
+  });
 });
