@@ -285,6 +285,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
           target === undefined
             ? undefined
             : (yield* placeLaunched({
+                caller: context,
                 environmentId: scope.environmentId,
                 threadIds: [thread.id],
                 target,

@@ -153,9 +153,10 @@ const handlers = {
       const created = yield* service.createThreads(scope, input);
       const target = launchTargetOf(input);
       if (target === undefined) return created;
-      const { caller } = yield* readCaller();
-      if (caller === undefined) return created;
+      const context = yield* readCaller();
+      if (context.caller === undefined) return created;
       const placements = yield* placeLaunched({
+        caller: context,
         environmentId: scope.environmentId,
         threadIds: created.threads.map((thread) => thread.threadId),
         target,

@@ -1,6 +1,6 @@
 // Puts threads an agent just launched into the workspace it asked for. A refusal never undoes the
 // launch: the thread exists, and the result says why it is not in the workspace.
-import type { ThreadId } from "@houston-app/contracts";
+import type { OrchestratorMcpFailure, ThreadId } from "@houston-app/contracts";
 import {
   type HoustonGridLaunchTargetAlias,
   type HoustonGridPlacementAlias,
@@ -11,6 +11,8 @@ import {
 } from "@houston-app/contracts/houston/layoutWorkspaces";
 import * as Effect from "effect/Effect";
 
+import { assertNotLinked } from "../../mcp/linkOrigin.ts";
+import type { Caller } from "../../mcp/threadAccess.ts";
 import { HoustonLayoutWorkspaceService } from "../layoutWorkspaces.ts";
 import { chatThreadIdsOf, createWorkspace, placeThread } from "./workspaceChanges.ts";
 
@@ -57,14 +59,27 @@ const unplaced = (error: string, workspaceId?: string): HoustonLayoutPlacement =
 /**
  * Places `threadIds` per `target`, one placement per thread in the same order. A named new
  * workspace is made once for the batch. With `replaying`, a thread already open in a workspace is
- * reported there, so a retried launch neither moves it nor makes a second new workspace.
+ * reported there, so a retried launch neither moves it nor makes a second new workspace. A caller
+ * fenced by a link launches its threads but places none: it may not change workspaces through the
+ * workspace tools either.
  */
 export const placeLaunched = Effect.fn("HoustonWorkspaceToolkit.placeLaunched")(function* (input: {
+  readonly caller: Pick<Caller, "scope" | "caller">;
   readonly environmentId: string;
   readonly threadIds: ReadonlyArray<ThreadId>;
   readonly target: HoustonLayoutLaunchTarget;
   readonly replaying: boolean;
 }) {
+  const allowed: Effect.Effect<void, OrchestratorMcpFailure> = assertNotLinked(
+    input.caller,
+    "change this environment's workspaces",
+  );
+  const fenced = yield* allowed.pipe(
+    Effect.match({ onFailure: (failure) => failure.message, onSuccess: () => undefined }),
+  );
+  if (fenced !== undefined) {
+    return input.threadIds.map(() => unplaced(fenced)) as ReadonlyArray<HoustonLayoutPlacement>;
+  }
   const workspaces = yield* HoustonLayoutWorkspaceService;
   const place = Effect.gen(function* () {
     const known = input.replaying
