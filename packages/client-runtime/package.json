@@ -263,6 +263,10 @@
       "types": "./src/state/grids.ts",
       "default": "./src/state/grids.ts"
     },
+    "./state/layoutWorkspaces": {
+      "types": "./src/state/layoutWorkspaces.ts",
+      "default": "./src/state/layoutWorkspaces.ts"
+    },
     "./state/tasks": {
       "types": "./src/state/tasks.ts",
       "default": "./src/state/tasks.ts"
