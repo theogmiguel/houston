@@ -90,3 +90,12 @@ the workspace typecheck and the suites it touches green.
 
 Agents append to `implementation-notes.md` under Deviations, stage explicit paths, do not push, and
 never use `pkill`, `pgrep` or any process match by name.
+
+## Visual direction: Houston with upstream's form
+
+The whole renderer follows upstream's structure, not only the layout: panes as cards with joined
+tabs, sidebar thread cards with upstream's proportions, one top-right control per pane, the
+composer's footer row, and the shape of menus, dialogs, settings and the pull request pages.
+Houston keeps its identity: accent, logo, typography, the light and dark themes and its tokens.
+Every recipe goes through Houston tokens; only neutral values (radius, spacing, the contrast
+between canvas and card) may change. Upstream's palette and background grid are not adopted.
