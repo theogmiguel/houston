@@ -119,7 +119,7 @@ const APP_BOOT_TEST_TIMEOUT_MS = 45_000;
 const threadPath = (name: string) => `/${ENVIRONMENT_ID}/${name}`;
 
 it(
-  "a chat tab carries the thread's header with its panel toggles",
+  "a chat tab carries the thread's header with only the details toggle",
   async () => {
     await using app = await bootAt(threadPath("thread-a"));
     await vi.waitFor(() => {
@@ -128,8 +128,9 @@ it(
       ).not.toBeNull();
     });
     const header = app.screen.container.querySelector("[data-layout-chat-tab] [data-chat-header]")!;
-    expect(header.querySelector('[aria-label="Toggle right panel"]')).not.toBeNull();
-    expect(header.querySelector('[aria-label="Toggle terminal drawer"]')).not.toBeNull();
+    expect(header.querySelector('[aria-label="Toggle thread details panel"]')).not.toBeNull();
+    expect(header.querySelector('[aria-label="Toggle right panel"]')).toBeNull();
+    expect(header.querySelector('[aria-label="Toggle terminal drawer"]')).toBeNull();
     expect(selectFocusedTab(useLayoutStore.getState().layout)?.content.kind).toBe("chat");
     await expect.element(page.getByTestId("composer-editor")).toBeVisible();
   },
@@ -142,19 +143,17 @@ const rowStartingWith = (container: Element, label: string) =>
   );
 
 it(
-  "the toggle in a chat tab's header opens the thread's surface as a tab beside it",
+  "the launcher opens the thread's surface as a tab beside the chat",
   async () => {
     await using app = await bootAt(threadPath("thread-a"));
     await vi.waitFor(() => {
-      expect(
-        app.screen.container.querySelector(
-          '[data-layout-chat-tab] [aria-label="Toggle right panel"]',
-        ),
-      ).not.toBeNull();
+      expect(app.screen.container.querySelector("[data-layout-tab-add]")).not.toBeNull();
     });
-    app.screen.container
-      .querySelector<HTMLButtonElement>('[data-layout-chat-tab] [aria-label="Toggle right panel"]')!
-      .click();
+    app.screen.container.querySelector<HTMLButtonElement>("[data-layout-tab-add]")!.click();
+    await vi.waitFor(() => {
+      expect(rowStartingWith(app.screen.container, "Changes")).toBeDefined();
+    });
+    rowStartingWith(app.screen.container, "Changes")!.click();
     await vi.waitFor(() => {
       expect(app.screen.container.querySelector("[data-layout-surface-tab]")).not.toBeNull();
     });

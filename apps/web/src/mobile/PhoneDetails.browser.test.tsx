@@ -195,6 +195,22 @@ async function openSurface(label: string) {
   );
 }
 
+/** Opens a surface the way a desktop user does: a new tab, then the launcher's row for it. */
+async function openFromLauncher(label: string) {
+  await userEvent.click(page.getByRole("button", { name: "New tab" }).first());
+  const row = await vi.waitFor(
+    () => {
+      const found = [
+        ...document.querySelectorAll<HTMLElement>("[data-layout-launcher-row]"),
+      ].find((candidate) => candidate.textContent?.startsWith(label));
+      expect(found).toBeDefined();
+      return found!;
+    },
+    { timeout: 10_000 },
+  );
+  await userEvent.click(row);
+}
+
 /** Returns to the thread's chat through the bar's sheet of tabs. */
 async function backToChat() {
   await userEvent.click(document.querySelector<HTMLElement>("[data-phone-tabs-trigger]")!);
@@ -573,13 +589,14 @@ it("keeps the details sheet and its controls inside a 320px viewport", async () 
   }
 });
 
-it("opens the right panel as a tab of the layout at 1024px, with no phone bar", async () => {
+it("opens a surface from the launcher as a tab of the layout at 1024px, with no phone bar and no right panel toggle", async () => {
   const { screen } = await openThread(1024);
   await using _screen = screen;
 
   expect(phoneBar()).toBeNull();
   expect(detailsSheet()).toBeNull();
-  await userEvent.click(screen.getByRole("button", { name: "Toggle right panel" }));
+  expect(document.querySelector('[aria-label="Toggle right panel"]')).toBeNull();
+  await openFromLauncher("Changes");
   await vi.waitFor(() => expect(surfaceTab()).not.toBeNull(), { timeout: 5_000 });
   expect(document.querySelector("[data-phone-tabs-trigger]")).toBeNull();
 });
@@ -601,7 +618,8 @@ it("opens the terminal as a tab and draws no drawer inside the chat at 1024px", 
   const { screen } = await openThread(1024);
   await using _screen = screen;
 
-  await userEvent.click(screen.getByRole("button", { name: "Toggle terminal drawer" }));
+  expect(document.querySelector('[aria-label="Toggle terminal drawer"]')).toBeNull();
+  await openFromLauncher("Terminal");
   await vi.waitFor(() => expect(surfaceTab()).not.toBeNull(), { timeout: 5_000 });
   expect(
     document.querySelector(

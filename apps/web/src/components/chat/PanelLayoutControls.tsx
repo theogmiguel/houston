@@ -1,4 +1,10 @@
-import { MoreHorizontalIcon, PanelBottomIcon, PanelRightIcon, SquareMenuIcon } from "lucide-react";
+import {
+  ListFilterIcon,
+  MoreHorizontalIcon,
+  PanelBottomIcon,
+  PanelRightIcon,
+  SquareMenuIcon,
+} from "lucide-react";
 import { Maximize2, Minimize2 } from "lucide";
 import { MorphIcon } from "~/components/MorphIcon";
 import { memo, type RefObject } from "react";
@@ -76,7 +82,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
       variant="ghost"
       size="sm"
     >
-      <SquareMenuIcon className="size-4" />
+      <ListFilterIcon className="size-4" />
     </Toggle>
   );
   const threadPanelControl = (

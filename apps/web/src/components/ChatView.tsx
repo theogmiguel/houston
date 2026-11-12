@@ -3451,7 +3451,11 @@ export default function ChatView(props: ChatViewProps) {
   ) : null;
   const headerRowPullRequest =
     activeThreadShell === null ? null : resolveRowPullRequest(activeThreadShell);
+  // A layout pane opens its surfaces from the launcher, the palette and shortcuts, so its header
+  // keeps only the details toggle.
   const panelToggleControlProps = {
+    showTerminalControl: !paneHeader,
+    showRightPanelControl: !paneHeader,
     terminalAvailable: activeProject !== null,
     terminalOpen: terminalUiState.terminalOpen,
     terminalShortcutLabel: shortcutLabelForCommand(keybindings, "terminal.toggle"),
