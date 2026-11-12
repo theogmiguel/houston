@@ -4220,7 +4220,8 @@ export default function ChatView(props: ChatViewProps) {
           </ThreadFindCanvas>
         </div>
 
-        {parentPanel ? null : (
+        {/* In a layout pane the terminal is a tab of its own, beside or below the chat. */}
+        {parentPanel || paneHeader ? null : (
           <ChatTerminalDrawers
             activeThreadKey={activeThreadKey}
             activeTerminalOpen={Boolean(terminalUiState.terminalOpen)}

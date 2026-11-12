@@ -597,6 +597,19 @@ it("opens the details card from a layout pane's header toggle at 1024px", async 
   expect(toggle.element().getAttribute("aria-pressed")).toBe("true");
 });
 
+it("opens the terminal as a tab and draws no drawer inside the chat at 1024px", async () => {
+  const { screen } = await openThread(1024);
+  await using _screen = screen;
+
+  await userEvent.click(screen.getByRole("button", { name: "Toggle terminal drawer" }));
+  await vi.waitFor(() => expect(surfaceTab()).not.toBeNull(), { timeout: 5_000 });
+  expect(
+    document.querySelector(
+      "[data-layout-chat-tab] :is([data-thread-terminal-drawer], [data-thread-terminal-drawer-placeholder])",
+    ),
+  ).toBeNull();
+});
+
 it.each([390, 320])(
   "names the surface's mark and title on the thread bar, without desktop tab chrome at %ipx",
   async (width) => {
