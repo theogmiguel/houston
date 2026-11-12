@@ -4,13 +4,13 @@ import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/m
 import {
   ChartNoAxesColumnIcon,
   FileIcon,
-  FolderIcon,
   FolderTreeIcon,
   GitCompareIcon,
   GlobeIcon,
   SettingsIcon,
   SmartphoneIcon,
   SquareDashedIcon,
+  SquarePenIcon,
   SquareTerminalIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -72,8 +72,9 @@ function surfaceIcon(kind: string): LucideIcon {
 }
 
 /**
- * A chat tab's icon: the mark of the provider the thread runs on, as its sidebar card shows it.
- * A draft, or a thread whose provider this client does not know, shows the folder.
+ * A chat tab's icon. A thread that has run at least once shows the mark of the provider it runs
+ * on, as its sidebar card does. Before its first run the provider is only a default, so a draft
+ * or an unsent thread shows the new-thread glyph; so does a provider this client does not know.
  */
 export function ChatTabIcon({
   shell,
@@ -83,13 +84,13 @@ export function ChatTabIcon({
   readonly providerEntries: ReadonlyMap<string, SidebarProviderEntry>;
 }) {
   const mark =
-    shell === null ? null : (
+    shell === null || shell.latestRun === null ? null : (
       <SidebarProviderStack thread={shell} providerEntryByInstanceId={providerEntries} quiet />
     );
   return (
     <span data-chat-tab-icon="" className="inline-grid size-3.5 shrink-0 place-items-center">
       {mark}
-      <FolderIcon aria-hidden className="size-3.5 not-only:hidden" />
+      <SquarePenIcon aria-hidden className="size-3.5 not-only:hidden" />
     </span>
   );
 }

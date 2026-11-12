@@ -45,6 +45,7 @@ describe("chat tab icon", () => {
     id: "t1",
     environmentId: "env-1",
     runtime: null,
+    latestRun: { runId: "run-1" },
     modelSelection: { instanceId: "claude", model: "claude-test" },
     providerInstanceHistory: [],
   } as unknown as EnvironmentThreadShell;
@@ -59,25 +60,27 @@ describe("chat tab icon", () => {
     models: [],
   } as unknown as SidebarProviderEntry;
 
-  it("shows the thread's provider mark instead of the folder", async () => {
+  it("shows the provider mark of a thread that has run", async () => {
     await using screen = await render(
       <ChatTabIcon shell={shell} providerEntries={new Map([["claude", claude]])} />,
     );
     const icon = screen.container.querySelector<HTMLElement>("[data-chat-tab-icon]")!;
     expect(icon.querySelector('[data-provider-mark][aria-label="Claude"]')).not.toBeNull();
-    const folder = icon.querySelector<SVGElement>("svg.lucide-folder")!;
+    const folder = icon.querySelector<SVGElement>("svg.lucide-square-pen")!;
     expect(getComputedStyle(folder).display).toBe("none");
   });
 
-  it("keeps the folder for a draft and for a provider this client does not know", async () => {
+  it("shows the new-thread glyph for a draft, a thread that has not run and an unknown provider", async () => {
+    const unsent = { ...shell, latestRun: null } as EnvironmentThreadShell;
     for (const [value, entries] of [
       [null, new Map([["claude", claude]])],
+      [unsent, new Map([["claude", claude]])],
       [shell, new Map<string, SidebarProviderEntry>()],
     ] as const) {
       await using screen = await render(<ChatTabIcon shell={value} providerEntries={entries} />);
       const icon = screen.container.querySelector<HTMLElement>("[data-chat-tab-icon]")!;
       expect(icon.querySelector("[data-provider-mark]")).toBeNull();
-      const folder = icon.querySelector<SVGElement>("svg.lucide-folder")!;
+      const folder = icon.querySelector<SVGElement>("svg.lucide-square-pen")!;
       expect(getComputedStyle(folder).display).not.toBe("none");
     }
   });
