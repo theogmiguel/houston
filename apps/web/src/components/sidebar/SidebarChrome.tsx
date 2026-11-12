@@ -1,24 +1,15 @@
-import {
-  ArrowLeftIcon,
-  ChartNoAxesColumnIcon,
-  ListChecksIcon,
-  MonitorIcon,
-  MoonIcon,
-  SettingsIcon,
-  SunIcon,
-} from "lucide-react";
+import { ListChecksIcon, MonitorIcon, MoonIcon, SettingsIcon, SunIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { memo } from "react";
-import { useAtomValue } from "@effect/atom-react";
-import { Link, useLocation, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { useTheme } from "../../hooks/useTheme";
-import { shortcutLabelForCommand } from "../../keybindings";
 import { usePullRequestsSupported } from "../../state/environments";
-import { primaryServerKeybindingsAtom } from "../../state/server";
+import { useOpenLayoutPage } from "../../layout/pageNavigation";
+import { isLayoutPageContent, selectFocusedTab, type LayoutState } from "../../layout/layoutModel";
+import { useLayoutStore } from "../../layout/layoutStore";
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
-import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
 import { cn } from "../../lib/utils";
 import { HoustonWordmark } from "../HoustonWordmark";
 import {
@@ -35,7 +26,6 @@ import {
   useSidebar,
 } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { isSidebarUtilityPage, useNavigateToMainApp } from "./mainAppLocation";
 import { nextRailThemeMode, railThemeLabel } from "./railTheme";
 import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
@@ -174,23 +164,24 @@ function SidebarUtilityItem({
   );
 }
 
+/** The page tab the focused pane shows, if any, so its footer button reads as the current one. */
+const selectFocusedPageKind = (state: { layout: LayoutState }) => {
+  const content = selectFocusedTab(state.layout)?.content;
+  return content !== undefined && isLayoutPageContent(content) ? content.kind : null;
+};
+
 export const SidebarUtilityMenu = memo(function SidebarUtilityMenu({
   hideTasks = false,
 }: {
-  /** The phone's home keeps Pull requests and Usage, without the Tasks destination. */
+  /** The phone's home keeps Pull requests, without the Tasks destination. */
   hideTasks?: boolean;
 }) {
   const navigate = useNavigate();
-  const navigateToMainApp = useNavigateToMainApp();
+  const openLayoutPage = useOpenLayoutPage();
   const { isMobile, setOpenMobile } = useSidebar();
   const { appearanceMode, setAppearanceMode } = useTheme();
-  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
-  const usageShortcut = shortcutLabelForCommand(keybindings, "usage.open");
   const pullRequestsSupported = usePullRequestsSupported();
-  const pathname = useLocation({ select: (location) => location.pathname });
-  const isOnUtilityPage = useLocation({
-    select: (location) => isSidebarUtilityPage(location.pathname),
-  });
+  const focusedPage = useLayoutStore(selectFocusedPageKind);
   const closeMobileSidebar = () => {
     if (isMobile) {
       setOpenMobile(false);
@@ -206,65 +197,37 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu({
     closeMobileSidebar();
     void navigate({ to: "/settings" });
   };
-  const openPage = (to: "/tasks" | "/usage") => {
+  // A page is a tab: focus the one already open, otherwise add one beside the focused tab.
+  const openPage = (kind: "pull-requests" | "tasks") => {
     closeMobileSidebar();
-    void navigate({ to });
-  };
-  const openPullRequests = () => {
-    closeMobileSidebar();
-    void navigate({ to: "/pull-requests", search: readPullRequestListPreferences() });
-  };
-  const handleBackClick = () => {
-    closeMobileSidebar();
-    void navigateToMainApp();
+    void openLayoutPage(kind);
   };
 
   return (
     <SidebarMenu className="flex-row items-center">
-      {isOnUtilityPage ? (
-        <SidebarMenuItem className="min-w-0 flex-1">
-          <SidebarMenuButton onClick={handleBackClick}>
-            <ArrowLeftIcon />
-            <span>Back</span>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
-      ) : (
-        <SidebarUtilityItem
-          icon={<SettingsIcon />}
-          label="Settings"
-          onClick={handleSettingsClick}
-        />
-      )}
       {pullRequestsSupported ? (
         <SidebarUtilityItem
           icon={<PullRequestGlyph.pullRequest />}
           label="Pull requests"
-          active={pathname === "/pull-requests"}
-          onClick={openPullRequests}
+          active={focusedPage === "pull-requests"}
+          onClick={() => openPage("pull-requests")}
         />
       ) : null}
       {hideTasks ? null : (
         <SidebarUtilityItem
           icon={<ListChecksIcon />}
           label="Tasks"
-          active={pathname === "/tasks"}
-          onClick={() => openPage("/tasks")}
+          active={focusedPage === "tasks"}
+          onClick={() => openPage("tasks")}
         />
       )}
+      <li aria-hidden className="min-w-0 flex-1" />
       <SidebarUtilityItem
-        icon={<ChartNoAxesColumnIcon />}
-        label="Usage"
-        tooltip={usageShortcut === null ? "Usage" : `Usage · ${usageShortcut}`}
-        active={pathname === "/usage"}
-        onClick={() => openPage("/usage")}
+        icon={<ThemeIcon />}
+        label={`Theme: ${themeLabel}`}
+        onClick={cycleTheme}
       />
-      {isOnUtilityPage ? null : (
-        <SidebarUtilityItem
-          icon={<ThemeIcon />}
-          label={`Theme: ${themeLabel}`}
-          onClick={cycleTheme}
-        />
-      )}
+      <SidebarUtilityItem icon={<SettingsIcon />} label="Settings" onClick={handleSettingsClick} />
       <SidebarThreadUndoNotice />
     </SidebarMenu>
   );
