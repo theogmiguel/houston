@@ -594,7 +594,7 @@ const SETTINGS_DETAIL_PAGE_HEADINGS: Readonly<
   },
 };
 
-/** The title and one-line description every settings page opens with. */
+/** The one-line description every settings page opens with; its title is the breadcrumb. */
 function SettingsPageHeading() {
   const pathname = useLocation({
     select: (location) => location.pathname.replace(/\/+$/, "") || "/",

@@ -1,6 +1,9 @@
 import type { ReactNode } from "react";
 
-/** A page's title with one muted line under it. */
+/**
+ * A page's one muted line. The title stays in the document outline for assistive tech only:
+ * the header's breadcrumb already shows it.
+ */
 export function PageHeading({
   title,
   description,
@@ -9,8 +12,8 @@ export function PageHeading({
   readonly description: ReactNode;
 }) {
   return (
-    <header className="flex flex-col gap-0.5">
-      <h1 className="text-title font-semibold text-foreground">{title}</h1>
+    <header className="flex flex-col">
+      <h1 className="sr-only">{title}</h1>
       <p className="text-body text-muted-foreground">{description}</p>
     </header>
   );

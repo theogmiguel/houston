@@ -14,7 +14,7 @@ import {
 import { SETTINGS_SECTION_DESCRIPTIONS, SETTINGS_SECTION_LABELS } from "./settingsSearch";
 
 describe("SettingsPageContainer heading", () => {
-  it("opens every settings page with its title and one muted line", async () => {
+  it("opens every settings page with one muted line and no visible repeat of the breadcrumb title", async () => {
     await using screen = await render(
       <SettingsPageContainer>
         <p>content</p>
@@ -23,9 +23,10 @@ describe("SettingsPageContainer heading", () => {
     );
 
     const title = screen.getByRole("heading", { level: 1, name: "Appearance" }).element();
-    const style = getComputedStyle(title);
-    expect(style.fontSize).toBe("20px");
-    expect(style.fontWeight).toBe("600");
+    const titleBox = title.getBoundingClientRect();
+    // The title stays for assistive tech and takes no room on the page.
+    expect(titleBox.width).toBeLessThanOrEqual(1);
+    expect(titleBox.height).toBeLessThanOrEqual(1);
     const description = screen.getByText(SETTINGS_SECTION_DESCRIPTIONS["/settings/appearance"]);
     await expect.element(description).toBeVisible();
     expect(title.compareDocumentPosition(description.element())).toBe(
@@ -41,8 +42,11 @@ describe("SettingsPageContainer heading", () => {
       { router: "/settings/open-source-licenses" },
     );
 
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Open source licenses" }).elements(),
+    ).toHaveLength(1);
     await expect
-      .element(screen.getByRole("heading", { level: 1, name: "Open source licenses" }))
+      .element(screen.getByText("The third-party software this app includes."))
       .toBeVisible();
   });
 
