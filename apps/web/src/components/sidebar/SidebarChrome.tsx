@@ -276,7 +276,7 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter({
   hideTasks?: boolean;
 }) {
   return (
-    <SidebarFooter className="mt-auto" separated>
+    <SidebarFooter className="mt-auto">
       <SidebarUpdatePill />
       <SidebarProviderUpdatePill />
       <SidebarUpdateArchitectureWarning />

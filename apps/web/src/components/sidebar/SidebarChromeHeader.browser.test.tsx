@@ -62,7 +62,7 @@ describe("SidebarChromeHeader", () => {
 });
 
 describe("SidebarChromeFooter", () => {
-  it("is separated from the thread list by a 1px border", async () => {
+  it("draws no divider above its buttons", async () => {
     await using screen = await render(
       <SidebarProvider defaultOpen>
         <SidebarChromeFooter />
@@ -71,8 +71,6 @@ describe("SidebarChromeFooter", () => {
 
     const footer = screen.container.querySelector<HTMLElement>("[data-slot=sidebar-footer]")!;
     const style = getComputedStyle(footer);
-    expect(style.borderTopWidth).toBe("1px");
-    expect(style.borderTopStyle).toBe("solid");
-    expect(style.borderTopColor).not.toBe("rgba(0, 0, 0, 0)");
+    expect(style.borderTopWidth).toBe("0px");
   });
 });
