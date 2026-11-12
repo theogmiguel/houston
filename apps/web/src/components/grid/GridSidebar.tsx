@@ -136,6 +136,7 @@ import { SidebarContent, SidebarHeader, useSidebar, useSidebarVisibility } from 
 import { ThreadCard, HighlightedText } from "./ThreadCard";
 import type { ThreadActionMenuWorkspaceInput } from "../../hooks/useThreadActionMenu";
 import {
+  SIDEBAR_EMPTY_ACTION_CLS,
   SIDEBAR_GRID_ACTION_CLS,
   SIDEBAR_GRID_CHEVRON_BOX_CLS,
   SIDEBAR_GRID_CHEVRON_CLS,
@@ -1099,12 +1100,7 @@ export function GridSidebar({
                     </span>
                     <Menu>
                       <MenuTrigger
-                        render={
-                          <button
-                            type="button"
-                            className="inline-flex h-6 cursor-pointer items-center rounded-(--r-ctl) border border-(--line-strong) px-2 text-xs text-foreground hover:bg-sidebar-row-hover"
-                          />
-                        }
+                        render={<button type="button" className={SIDEBAR_EMPTY_ACTION_CLS} />}
                       >
                         Hold
                       </MenuTrigger>
@@ -1136,7 +1132,7 @@ export function GridSidebar({
                     </Menu>
                     <button
                       type="button"
-                      className="inline-flex h-6 cursor-pointer items-center rounded-(--r-ctl) border border-(--line-strong) px-2 text-xs text-foreground hover:bg-sidebar-row-hover"
+                      className={SIDEBAR_EMPTY_ACTION_CLS}
                       onClick={() => {
                         closeThreads(selectedThreads);
                         setSelection(clearThreadSelection());
@@ -1794,11 +1790,7 @@ export function SidebarWorkspaceGroup({
           <div data-workspace-empty="" className={cn(sidebarGridGuideCls(open), "py-1")}>
             <div className="flex items-center gap-2 px-2 text-xs text-secondary-label">
               <span className="min-w-0 flex-1 truncate">No threads yet</span>
-              <button
-                type="button"
-                onClick={createThread}
-                className="inline-flex h-6 cursor-pointer items-center rounded-(--r-ctl) border border-(--line-strong) px-2 text-xs text-foreground hover:bg-sidebar-row-hover"
-              >
+              <button type="button" onClick={createThread} className={SIDEBAR_EMPTY_ACTION_CLS}>
                 New thread
               </button>
             </div>

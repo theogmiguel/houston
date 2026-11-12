@@ -18,6 +18,7 @@ import {
 } from "../threadRoutes";
 import type { ScopedThreadRef } from "@houston-app/contracts";
 import type { LayoutTab } from "./layoutModel";
+import { PhoneEmptyState } from "../mobile/PhoneEmptyState";
 import { usePhoneThreadHost } from "../mobile/phoneThreadHost";
 import { useLayoutPane } from "./layoutPaneContext";
 import { useLayoutStore } from "./layoutStore";
@@ -137,16 +138,30 @@ export function LayoutChatTab({
 }
 
 function MissingThread({ threadId, tabId }: { readonly threadId: string; readonly tabId: string }) {
+  const phone = usePhoneThreadHost();
+  const closeTab = () => useLayoutStore.getState().closeTab(tabId);
+  const message = `No thread with id ${threadId} is stored on this machine.`;
+  if (phone !== null) {
+    return (
+      <PhoneEmptyState
+        data-layout-missing-thread={threadId}
+        title="This thread no longer exists"
+        action={
+          <Button size="touch" variant="outline" onClick={closeTab}>
+            Close tab
+          </Button>
+        }
+      >
+        {message}
+      </PhoneEmptyState>
+    );
+  }
   return (
     <Empty data-layout-missing-thread={threadId}>
       <EmptyHeader>
         <EmptyTitle>This thread no longer exists</EmptyTitle>
-        <EmptyDescription>No thread with id {threadId} is stored on this machine.</EmptyDescription>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => useLayoutStore.getState().closeTab(tabId)}
-        >
+        <EmptyDescription>{message}</EmptyDescription>
+        <Button variant="secondary" size="sm" onClick={closeTab}>
           Close tab
         </Button>
       </EmptyHeader>

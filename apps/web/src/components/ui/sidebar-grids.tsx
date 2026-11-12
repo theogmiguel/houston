@@ -115,6 +115,9 @@ export const SIDEBAR_GRID_CHEVRON_CLS =
 
 export const SIDEBAR_GRID_CHEVRON_EXPANDED_CLS = "rotate-90";
 
+/** The empty workspace's "New thread": a small outlined button, a 44px tap target on a phone. */
+export const SIDEBAR_EMPTY_ACTION_CLS =
+  "inline-flex h-6 cursor-pointer items-center rounded-(--r-ctl) border border-(--line-strong) px-2 text-xs text-foreground hover:bg-sidebar-row-hover max-phone:h-11 max-phone:px-4 max-phone:text-sm";
 export const SIDEBAR_GRID_ACTION_CLS =
   "inline-grid size-5 shrink-0 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-label opacity-0 transition-opacity duration-(--motion-feedback) ease-standard hover:bg-(--sel) hover:text-foreground group-hover/grid:opacity-100 group-has-focus-visible/grid:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
