@@ -63,7 +63,6 @@ export function LayoutLauncherRow({
       role="listitem"
       data-layout-launcher-row=""
       aria-disabled={disabled || undefined}
-      title={disabledReason}
       onClick={disabled ? undefined : onSelect}
       className={cn(
         "flex min-h-8 w-full items-center gap-2.5 rounded-(--r-selection) px-2.5 py-1 text-left text-body outline-none transition-colors duration-(--motion-feedback) ease-standard hover:bg-hover focus-visible:ring-2 focus-visible:ring-(--accent-ink) focus-visible:ring-inset motion-reduce:transition-none",
@@ -73,7 +72,7 @@ export function LayoutLauncherRow({
       <span className="grid size-4 shrink-0 place-items-center text-muted-foreground">{icon}</span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {(disabledReason ?? detail) ? (
-        <span className="hidden min-w-0 max-w-1/2 truncate text-caption text-muted-foreground @xs:block">
+        <span className="sr-only min-w-0 max-w-1/2 truncate text-caption text-muted-foreground @xs:not-sr-only">
           {disabledReason ?? detail}
         </span>
       ) : null}
