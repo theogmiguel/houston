@@ -669,7 +669,6 @@ export function ThreadCard({
               thread={thread}
               rowRef={rowRef}
               focused={focused}
-              emphasized={active || selected}
             />
             {/* A fixed slot, so the marks line up under the statuses whatever the row carries. */}
             <span

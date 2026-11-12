@@ -1,4 +1,3 @@
-import { MOTION_FEEDBACK } from "./motion-recipes";
 
 /** Visual recipes for the sidebar rail's rows, results, hover card and inline controls. */
 
@@ -30,25 +29,12 @@ export const HOVER_CARD_TEXT_CLS = "break-words";
 export const RAIL_KBD_CLS = "border border-sidebar-border font-sans text-3xs text-secondary-label";
 
 /**
- * A row's diff totals rest in the meta ink: repeated down a list, the green and red would be
- * the loudest thing in the rail. They take the diff colours while the row is hovered, holds
- * focus, or is the open or selected thread (`emphasized`).
+ * A row's diff totals use the timeline's diff colours at rest, so a changed checkout reads
+ * without hovering. The mono 2xs digits stay below the title in size and weight.
  */
-export const ROW_DIFF_COUNTS_CLS = "font-mono text-2xs tabular-nums text-secondary-label";
-const ROW_DIFF_ADDED_CLS = `${MOTION_FEEDBACK} group-hover/th:text-diff-addition-foreground group-focus-within/th:text-diff-addition-foreground`;
-const ROW_DIFF_REMOVED_CLS = `${MOTION_FEEDBACK} group-hover/th:text-diff-deletion-foreground group-focus-within/th:text-diff-deletion-foreground`;
-
-/** The added-lines total of a row; `emphasized` shows its colour without the hover or focus. */
-export function rowDiffAddedCls(emphasized: boolean): string {
-  return emphasized ? `${ROW_DIFF_ADDED_CLS} text-diff-addition-foreground` : ROW_DIFF_ADDED_CLS;
-}
-
-/** The removed-lines total of a row; `emphasized` shows its colour without the hover or focus. */
-export function rowDiffRemovedCls(emphasized: boolean): string {
-  return emphasized
-    ? `${ROW_DIFF_REMOVED_CLS} text-diff-deletion-foreground`
-    : ROW_DIFF_REMOVED_CLS;
-}
+export const ROW_DIFF_COUNTS_CLS = "font-mono text-2xs tabular-nums";
+export const ROW_DIFF_ADDED_CLS = "text-diff-addition-foreground";
+export const ROW_DIFF_REMOVED_CLS = "text-diff-deletion-foreground";
 
 /** The unsent-draft mark; the pencil gives way to a cross on hover or focus. */
 export const ROW_DRAFT_MARK_CLS = `group/draft cursor-pointer text-warning-foreground outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring`;
