@@ -28,8 +28,8 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { nextRailThemeMode, railThemeLabel } from "./railTheme";
 import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
-import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
-import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
+import { SidebarUpdateArchitectureWarning } from "./SidebarUpdatePill";
+import { SidebarUpdatesButton } from "./SidebarUpdatesButton";
 import { observeResize } from "~/lib/observeResize";
 
 /**
@@ -222,6 +222,7 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu({
         />
       )}
       <li aria-hidden className="min-w-0 flex-1" />
+      <SidebarUpdatesButton />
       <SidebarUtilityItem
         icon={<ThemeIcon />}
         label={`Theme: ${themeLabel}`}
@@ -240,8 +241,6 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter({
 }) {
   return (
     <SidebarFooter className="mt-auto">
-      <SidebarUpdatePill />
-      <SidebarProviderUpdatePill />
       <SidebarUpdateArchitectureWarning />
       <SidebarUtilityMenu hideTasks={hideTasks} />
     </SidebarFooter>

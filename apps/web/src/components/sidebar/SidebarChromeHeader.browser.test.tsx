@@ -11,13 +11,14 @@ vi.mock(import("@effect/atom-react"), async (original) => ({
   useAtomValue: ((atom: unknown) => (atom === primaryServerKeybindingsAtom ? [] : null)) as never,
 }));
 
-// The footer's update pills and undo notice read live atoms; the border is the footer's own.
-vi.mock(import("./SidebarUpdatePill"), () => ({
-  SidebarUpdatePill: () => <></>,
+// The footer's update button and undo notice read live atoms; the border is the footer's own.
+vi.mock(import("./SidebarUpdatePill"), async (original) => ({
+  ...(await original()),
   SidebarUpdateArchitectureWarning: () => <></>,
 }));
-vi.mock(import("./SidebarProviderUpdatePill"), () => ({
-  SidebarProviderUpdatePill: () => <></>,
+vi.mock(import("./SidebarUpdatesButton"), async (original) => ({
+  ...(await original()),
+  SidebarUpdatesButton: (() => null) as never,
 }));
 vi.mock(import("./SidebarThreadUndoNotice"), () => ({ SidebarThreadUndoNotice: () => <></> }));
 

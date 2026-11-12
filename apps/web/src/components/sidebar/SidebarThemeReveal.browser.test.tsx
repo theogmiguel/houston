@@ -11,6 +11,11 @@ vi.mock(import("@effect/atom-react"), async (original) => ({
   useAtomValue: (() => []) as never,
 }));
 
+vi.mock(import("./SidebarUpdatesButton"), async (original) => ({
+  ...(await original()),
+  SidebarUpdatesButton: (() => null) as never,
+}));
+
 const APPEARANCE_MODE_KEY = "houston:theme-appearance-mode";
 
 afterEach(() => {

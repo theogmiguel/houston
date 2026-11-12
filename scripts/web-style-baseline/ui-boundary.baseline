@@ -391,13 +391,13 @@
 23 apps/web/src/components/sidebar/SidebarDraftBlock.tsx
 31 apps/web/src/components/sidebar/SidebarListMarkers.tsx
 12 apps/web/src/components/sidebar/SidebarProjectFolderHeader.tsx
-24 apps/web/src/components/sidebar/SidebarProviderUpdatePill.tsx
+13 apps/web/src/components/sidebar/SidebarProviderUpdatePill.tsx
 3 apps/web/src/components/sidebar/SidebarRowTime.tsx
 5 apps/web/src/components/sidebar/SidebarShelves.tsx
 166 apps/web/src/components/sidebar/SidebarThreadRow.tsx
 7 apps/web/src/components/sidebar/SidebarThreadUndoNotice.tsx
 29 apps/web/src/components/sidebar/SidebarUpdateCapsule.tsx
-21 apps/web/src/components/sidebar/SidebarUpdatePill.tsx
+15 apps/web/src/components/sidebar/SidebarUpdatePill.tsx
 39 apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.tsx
 29 apps/web/src/components/sidebar/ThreadSidebar.tsx
 31 apps/web/src/components/sidebar/UpdateEverythingDialog.tsx

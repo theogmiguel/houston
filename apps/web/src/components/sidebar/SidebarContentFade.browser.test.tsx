@@ -106,8 +106,11 @@ vi.mock(import("./SidebarChrome"), async (original) => ({
 
 vi.mock(import("./SidebarUpdatePill"), async (original) => ({
   ...(await original()),
-  SidebarUpdatePill: () => <></>,
   SidebarUpdateArchitectureWarning: () => <></>,
+}));
+vi.mock(import("./SidebarUpdatesButton"), async (original) => ({
+  ...(await original()),
+  SidebarUpdatesButton: (() => null) as never,
 }));
 
 vi.mock(import("../../hooks/useSidebarProjectGroups"), () => ({

@@ -14,11 +14,8 @@ vi.mock("../../state/environments", async (original) => ({
   ...(await original<typeof import("../../state/environments")>()),
   usePullRequestsSupported: () => true,
 }));
-vi.mock("./SidebarUpdatePill", () => ({
-  SidebarUpdatePill: () => <></>,
-  SidebarUpdateArchitectureWarning: () => <></>,
-}));
-vi.mock("./SidebarProviderUpdatePill", () => ({ SidebarProviderUpdatePill: () => <></> }));
+vi.mock("./SidebarUpdatePill", () => ({ SidebarUpdateArchitectureWarning: () => <></> }));
+vi.mock("./SidebarUpdatesButton", () => ({ SidebarUpdatesButton: () => null }));
 vi.mock("./SidebarThreadUndoNotice", () => ({ SidebarThreadUndoNotice: () => <></> }));
 
 const renderFooter = (hideTasks = false, router = "/") =>
