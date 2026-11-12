@@ -460,6 +460,7 @@ function PullRequestLabelFilter({
 }
 
 export function PullRequestFiltersMenu({
+  quiet = false,
   onOpenChange,
   state,
   stateOptions,
@@ -484,6 +485,8 @@ export function PullRequestFiltersMenu({
   unavailable,
   onProject,
 }: {
+  /** The desktop toolbar's quiet text button; a phone keeps the outlined 44px one. */
+  quiet?: boolean;
   onOpenChange?: (open: boolean) => void;
   state: PullRequestListState;
   stateOptions: ReadonlyArray<PullRequestFilterOption<PullRequestListState>>;
@@ -557,7 +560,15 @@ export function PullRequestFiltersMenu({
   ];
   return (
     <Menu onOpenChange={onOpenChange}>
-      <MenuTrigger render={<Button variant="outline" className="max-phone:h-11" />}>
+      <MenuTrigger
+        render={
+          quiet ? (
+            <Button variant="ghost-muted" size="sm" />
+          ) : (
+            <Button variant="outline" className="max-phone:h-11" />
+          )
+        }
+      >
         <ListFilterIcon className="size-4" />
         <span>Filters</span>
         {filterCount > 0 ? (

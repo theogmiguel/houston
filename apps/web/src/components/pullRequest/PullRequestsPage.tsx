@@ -1366,7 +1366,7 @@ export function PullRequestsPage() {
       label="Sort pull requests"
       triggerIcon={<ArrowDownUpIcon aria-hidden className="size-4" />}
       triggerLabel="Sort"
-      outlined
+      outlined={isPhone}
       value={sort}
       options={SORT_OPTIONS}
       onChange={(next) => updateListScope({ sort: next })}
@@ -1374,6 +1374,7 @@ export function PullRequestsPage() {
   );
   const filtersMenu = (
     <PullRequestFiltersMenuInSidebarOrder
+      quiet={!isPhone}
       onOpenChange={setFiltersOpen}
       state={search.state}
       stateOptions={STATE_TABS}
@@ -1428,7 +1429,6 @@ export function PullRequestsPage() {
     queueBody,
     refreshing,
     onRefresh: () => void refreshFromHost(),
-    searchValue: search.q ?? "",
     involvement: search.involvement,
     state: search.state,
     host: search.host,

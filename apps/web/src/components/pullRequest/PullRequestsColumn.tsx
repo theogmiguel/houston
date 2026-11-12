@@ -1,9 +1,8 @@
 import type { PullRequestListInvolvement, PullRequestListState } from "@houston-app/contracts";
-import { Plug2Icon, SearchIcon } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { Plug2Icon } from "lucide-react";
+import { useEffect, useRef, type ReactNode, type RefObject } from "react";
 
 import { isDesktopHost } from "~/env";
-import { observeIntersection } from "~/lib/observeIntersection";
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 import { RefreshIcon } from "../ui/refresh-icon";
@@ -22,60 +21,9 @@ import { PullRequestCompactFilterMenu } from "./PullRequestCompactFilterMenu";
 import type { PullRequestFilterOption } from "./PullRequestListFilters";
 import { INVOLVEMENT_TABS, STATE_TABS } from "./pullRequestListOptions";
 
-function ExpandableSearch({
-  searchInput,
-  searchValue,
-  open,
-  onOpenChange,
-  onFocusWithin,
-}: {
-  searchInput: ReactNode;
-  searchValue: string;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  /**
-   * An unmount fires no blur, which is the point: whoever unmounted this can still see the reader
-   * was mid-typing and move the focus somewhere that continues the sentence.
-   */
-  onFocusWithin?: (focused: boolean) => void;
-}) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- focuses the search input DOM node when the topbar search opens
-  useEffect(() => {
-    if (!open) return;
-    containerRef.current?.querySelector("input")?.focus();
-  }, [open]);
-  if (open || searchValue.length > 0) {
-    return (
-      <div
-        ref={containerRef}
-        className="w-56 min-w-24 shrink"
-        onFocus={() => onFocusWithin?.(true)}
-        onBlur={() => {
-          onFocusWithin?.(false);
-          if (searchValue.length === 0) onOpenChange(false);
-        }}
-      >
-        {searchInput}
-      </div>
-    );
-  }
-  return (
-    <Button
-      size="icon-sm"
-      variant="ghost"
-      aria-label="Search pull requests"
-      onClick={() => onOpenChange(true)}
-    >
-      <SearchIcon className="size-4" />
-    </Button>
-  );
-}
-
 export function PullRequestsColumn({
   refreshing,
   onRefresh,
-  searchValue,
   involvement,
   state,
   host,
@@ -103,7 +51,6 @@ export function PullRequestsColumn({
   phone?: boolean;
   refreshing: boolean;
   onRefresh: () => void;
-  searchValue: string;
   involvement: PullRequestListInvolvement;
   state: PullRequestListState;
   host: string | undefined;
@@ -127,23 +74,7 @@ export function PullRequestsColumn({
   scrollRef: RefObject<HTMLDivElement | null>;
 }) {
   const contentArea = workspaceAreaProps("pull-requests", 1, "Pull requests");
-  const markerRef = useRef<HTMLDivElement | null>(null);
-  const [condensed, setCondensed] = useState(false);
-  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- IntersectionObserver on the scroll marker condenses the topbar
-  useEffect(() => {
-    const marker = markerRef.current;
-    if (!marker) return;
-    return observeIntersection(marker, (entry) => setCondensed(!phone && !entry.isIntersecting), {
-      root: scrollRef.current,
-    });
-  }, [phone, scrollRef]);
-  // Typing into the topbar search narrows the list, and a short enough list un-scrolls the
-  // page — which dissolves the condensed topbar and unmounts the very input being typed in.
-  const topbarSearchFocusedRef = useRef(false);
-  const inFlowSearchRef = useRef<HTMLDivElement | null>(null);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const topbarSearchRef = useRef<HTMLDivElement | null>(null);
-  const searchExpanded = searchOpen || searchValue.length > 0;
+  const searchRootRef = useRef<HTMLDivElement | null>(null);
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- window keydown listener focuses the visible search input on Cmd/Ctrl+F
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -151,26 +82,13 @@ export function PullRequestsColumn({
       if (event.key.toLowerCase() !== "f" || !(event.metaKey || event.ctrlKey)) return;
       if (event.altKey || event.shiftKey) return;
       event.preventDefault();
-      // A closed topbar search has no input yet; opening it mounts one that focuses itself.
-      if (condensed) setSearchOpen(true);
-      const input = (condensed ? topbarSearchRef : inFlowSearchRef).current?.querySelector("input");
+      const input = searchRootRef.current?.querySelector("input");
       input?.focus();
       input?.select();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [condensed]);
-  if (!condensed && searchOpen) setSearchOpen(false);
-  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- moves DOM focus to the in-flow search when the topbar search it was typed in unmounts
-  useEffect(() => {
-    if (condensed) return;
-    if (!topbarSearchFocusedRef.current) return;
-    topbarSearchFocusedRef.current = false;
-    const input = inFlowSearchRef.current?.querySelector("input");
-    if (!input) return;
-    input.focus();
-    input.setSelectionRange(input.value.length, input.value.length);
-  }, [condensed]);
+  }, []);
 
   const viewToggle = (
     <ToggleGroup
@@ -221,58 +139,37 @@ export function PullRequestsColumn({
           className="relative bg-background"
         >
           {titlebarControls}
-          {condensed ? (
-            <WorkspaceBreadcrumb ariaLabel="Pull request scope" className="overflow-hidden">
-              <WorkspaceBreadcrumbItem current className={cn(searchExpanded && "sr-only")}>
-                <h1 className="truncate">Pull requests</h1>
-              </WorkspaceBreadcrumbItem>
-              {searchExpanded ? null : <WorkspaceBreadcrumbSeparator />}
-              {view === "requests" ? (
-                <WorkspaceBreadcrumbItem className="shrink gap-1.5">
+          <WorkspaceBreadcrumb ariaLabel="Pull requests breadcrumb">
+            <WorkspaceBreadcrumbItem current>
+              <h1 className="truncate">Pull requests</h1>
+            </WorkspaceBreadcrumbItem>
+            {view === "requests" ? (
+              <>
+                <WorkspaceBreadcrumbSeparator />
+                <WorkspaceBreadcrumbItem className="shrink">
                   <PullRequestCompactFilterMenu
-                    label="Filter by state"
-                    value={state}
-                    options={STATE_TABS}
-                    onChange={onState}
-                    className="shrink-0"
+                    label="Filter by provider"
+                    value={host ?? ""}
+                    options={hostMenuOptions}
+                    onChange={(next) => onHost(next === "" ? undefined : next)}
                   />
-                  <PullRequestCompactFilterMenu
-                    label="Filter by involvement"
-                    value={involvement}
-                    options={INVOLVEMENT_TABS}
-                    onChange={onInvolvement}
-                  />
-                  {hostMenuOptions.length > 2 ? (
-                    <PullRequestCompactFilterMenu
-                      label="Filter by host"
-                      value={host ?? ""}
-                      options={hostMenuOptions}
-                      onChange={(next) => onHost(next === "" ? undefined : next)}
-                    />
-                  ) : null}
                 </WorkspaceBreadcrumbItem>
-              ) : null}
-            </WorkspaceBreadcrumb>
-          ) : (
-            <WorkspaceBreadcrumb ariaLabel="Pull requests breadcrumb">
-              <WorkspaceBreadcrumbItem current>
-                <h1 className="truncate">Pull requests</h1>
-              </WorkspaceBreadcrumbItem>
-            </WorkspaceBreadcrumb>
-          )}
-          {phone ? null : viewToggle}
+              </>
+            ) : null}
+          </WorkspaceBreadcrumb>
+          {viewToggle}
           <div className="min-w-0 flex-1" />
-          {condensed && view === "requests" ? (
-            <div ref={topbarSearchRef} className="flex shrink items-center gap-1.5">
-              <ExpandableSearch
-                searchInput={searchInput}
-                searchValue={searchValue}
-                open={searchOpen}
-                onOpenChange={setSearchOpen}
-                onFocusWithin={(focused) => {
-                  topbarSearchFocusedRef.current = focused;
-                }}
+          {view === "requests" ? (
+            <div ref={searchRootRef} className="flex shrink items-center gap-1">
+              <PullRequestCompactFilterMenu
+                label="Filter by state"
+                value={state}
+                options={STATE_TABS}
+                onChange={onState}
               />
+              {sortMenu}
+              {filtersMenu}
+              <div className="w-56 min-w-24 shrink">{searchInput}</div>
               <PullRequestRefreshControl compact refreshing={refreshing} onRefresh={onRefresh} />
             </div>
           ) : null}
@@ -286,13 +183,14 @@ export function PullRequestsColumn({
       >
         <WorkspacePageContainer
           width="expanded"
-          className="min-h-full gap-4 max-phone:px-4 max-phone:pt-3"
+          className="min-h-full gap-3 max-phone:px-4 max-phone:pt-3"
         >
           {view === "queue" ? (
             queueBody
           ) : (
             <>
-              <div className="flex flex-col gap-3">
+              {phone ? (
+              <div ref={searchRootRef} className="flex flex-col gap-3">
                 <div className="flex flex-wrap items-center gap-2 max-phone:flex-nowrap max-phone:[&_[data-slot=toggle-group]>*]:px-1 max-phone:[&_[data-slot=toggle-group]>*]:leading-4 max-phone:[&_[data-slot=toggle-group]>*]:whitespace-normal max-phone:[&_[data-slot=toggle-group]>*]:text-balance">
                   <ToggleGroup
                     aria-label="Pull request involvement"
@@ -311,14 +209,8 @@ export function PullRequestsColumn({
                     ))}
                   </ToggleGroup>
                   <div className="min-w-0 flex-1 max-phone:hidden" />
-                  {!condensed && !phone ? (
-                    <PullRequestRefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-                  ) : null}
                 </div>
-                <div
-                  ref={inFlowSearchRef}
-                  className="flex flex-wrap items-center gap-2 max-phone:gap-y-3"
-                >
+                <div className="flex flex-wrap items-center gap-2 max-phone:gap-y-3">
                   <div className="min-w-0 basis-full @lg/pr-list:basis-0 @lg/pr-list:flex-1">
                     {searchInput}
                   </div>
@@ -335,8 +227,8 @@ export function PullRequestsColumn({
                     onChange={(next) => onHost(next === "" ? undefined : next)}
                   />
                 </div>
-                <div ref={markerRef} aria-hidden className="-mt-3 h-px w-full" />
               </div>
+              ) : null}
 
               {listBody}
             </>

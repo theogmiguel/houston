@@ -127,6 +127,12 @@ function ChecksBody({
   );
 }
 
+const CHECKS_STATE_SHORT_LABEL: Readonly<Record<PullRequestChecksState, string>> = {
+  passing: "Checks passing",
+  failing: "Checks failing",
+  pending: "Checks running",
+};
+
 export function PullRequestChecksPopover({
   checksState,
   checks,
@@ -144,7 +150,8 @@ export function PullRequestChecksPopover({
   environmentId?: EnvironmentId;
   reference?: PullRequestRef;
   threadRef?: ScopedThreadRef | null;
-  variant?: "icon" | "count";
+  /** `label` names the state beside the glyph, for a list row's status line. */
+  variant?: "icon" | "count" | "label";
   className?: string;
   render?: React.ReactElement;
 }) {
@@ -179,6 +186,9 @@ export function PullRequestChecksPopover({
         onClick={(event) => event.stopPropagation()}
       >
         <presentation.Icon aria-hidden className={cn("size-3.5", presentation.toneClassName)} />
+        {variant === "label" ? (
+          <span className={cn("ml-1.5", presentation.toneClassName)}>{CHECKS_STATE_SHORT_LABEL[checksState]}</span>
+        ) : null}
         {variant === "count" ? (
           <>
             {checks !== undefined && incompleteCount > 0 ? (

@@ -22,7 +22,6 @@ it("keeps the open detail panel against the row's right edge and resizes it from
       <PullRequestsColumn
         refreshing={false}
         onRefresh={() => {}}
-        searchValue=""
         involvement="authored"
         state="open"
         host={undefined}

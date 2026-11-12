@@ -63,6 +63,7 @@ export function PullRequestRowLines({
   title,
   status,
   signals,
+  trailing,
   meta,
   metaClassName,
   updatedAt,
@@ -71,13 +72,15 @@ export function PullRequestRowLines({
   title: ReactNode;
   status?: ReactNode;
   signals?: ReactNode;
+  /** The meta line's right end, before the age: the row's status in words. */
+  trailing?: ReactNode;
   meta?: ReactNode;
   metaClassName?: string;
   updatedAt?: string | null | undefined;
 }) {
   const phone = useIsPhone();
   const updated = updatedAt ? (
-    <span className="ml-auto shrink-0 whitespace-nowrap tabular-nums">
+    <span className={cn("shrink-0 whitespace-nowrap tabular-nums", !trailing && "ml-auto")}>
       <RelativeTime timestamp={updatedAt} />
     </span>
   ) : null;
@@ -87,7 +90,7 @@ export function PullRequestRowLines({
           row, and moves the stat onto the meta line. */}
       <span className="flex min-w-0 items-center gap-1.5 max-phone:flex-wrap max-phone:gap-y-1">
         <span className="flex min-w-0 items-center gap-1.5 max-phone:block max-phone:basis-full">
-          {number}
+          <span className="order-2 flex shrink-0 max-phone:order-none">{number}</span>
           <span className="min-w-0 truncate text-sm max-phone:ml-1.5 max-phone:inline max-phone:whitespace-normal max-phone:break-words">
             {title}
           </span>
@@ -110,6 +113,9 @@ export function PullRequestRowLines({
         {meta}
         {phone && status ? (
           <span className="flex shrink-0 items-center gap-1.5">{status}</span>
+        ) : null}
+        {trailing ? (
+          <span className="ml-auto flex shrink-0 items-center gap-1.5">{trailing}</span>
         ) : null}
         {updated}
       </span>
