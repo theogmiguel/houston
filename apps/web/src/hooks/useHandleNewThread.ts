@@ -444,7 +444,8 @@ export function createNewThreadHandler(router: AnyRouter) {
   return (...args: Parameters<typeof openNewThread>) => {
     const open = () => openNewThread(...args);
     // A caller that renders the draft itself (`navigate: false`) places it; so does a phone.
-    return args[1]?.navigate === false || isPhoneViewport() ? open() : openAsNewThreadTab(open);
+    const onPhone = typeof window !== "undefined" && isPhoneViewport();
+    return args[1]?.navigate === false || onPhone ? open() : openAsNewThreadTab(open);
   };
 }
 
