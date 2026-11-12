@@ -55,6 +55,30 @@ Grid commands are rebindable too: **Balanced grid**, **One row**, **One column**
 **Equalize splits** are `Y`, `H`, `V` and `=` when no terminal or editable field has focus.
 The focused grid cell receives the thread shortcuts; other cells bind none.
 
+## Layout
+
+The main area is a layout of columns of panes, each with tabs. The shortcuts below act on the
+focused pane. All are rebindable and appear in the command palette under **Layout…**;
+`Mod+/` lists them in a sheet.
+
+| Shortcut (Linux and Windows)            | Command                                                |
+| --------------------------------------- | ------------------------------------------------------ |
+| `Ctrl+\`                                | Open a new tab in a new column (not in a terminal)     |
+| `Ctrl+Alt+Shift+D`                      | Open a new tab in a new pane below (not in a terminal) |
+| `Ctrl+Alt+F`                            | Fill the window with the focused pane, or undo it      |
+| `Alt+Shift+Arrow`                       | Focus the pane to the left, right, above or below      |
+| `Ctrl+Alt+Shift+Arrow`                  | Move the focused tab to that side                      |
+| `Ctrl+Alt+Home` / `Ctrl+Alt+End`        | Focus the first / last column                          |
+| `Ctrl+Alt+R`                            | Cycle the column's width                               |
+| `Ctrl+Alt+C`                            | Center the column                                      |
+| `Ctrl+Alt+[` / `Ctrl+Alt+]`             | Pull the pane's neighbour in from the left / right     |
+| `Ctrl+Alt+U` / `Ctrl+Alt+I`             | Focus the next / previous workspace                    |
+| `Ctrl+Alt+Shift+U` / `Ctrl+Alt+Shift+I` | Move the focused tab to the next / previous workspace  |
+
+On macOS the focus and move shortcuts use `Cmd+Option+Arrow` and `Cmd+Ctrl+Option+Arrow`, and
+the workspace moves use `Cmd+Ctrl+Option+U` and `Cmd+Ctrl+Option+I`. A dialog above the layout
+keeps its own keys.
+
 ## Terminal
 
 The focused terminal receives its keys directly. Houston keeps these terminal-native

@@ -2,16 +2,23 @@ import type { ScopedThreadRef } from "@houston-app/contracts";
 import { scopedThreadKey } from "@houston-app/client-runtime/environment";
 import { useRouter } from "@tanstack/react-router";
 
+import { requestReopenClosedView } from "../components/ReopenClosedViewShortcut";
 import { readLocalApi } from "../localApi";
 import { openThreadInLayout } from "../threads/openThreadInLayout";
 import type { ThreadOpenIntent } from "../threads/threadOpenContext";
 import type { ThreadRouteTarget } from "../threadRoutes";
 import { chatTargetThreadRef } from "./layoutThreadRef";
+import { ClosedTabRestoreButton } from "./ClosedTabRestore";
+import { LayoutHints } from "./LayoutHint";
+import { LayoutOnboarding } from "./LayoutOnboarding";
+import { LayoutShortcutsOverlay } from "./LayoutShortcutsOverlay";
+import { useThreeFingerSwipe } from "./useThreeFingerSwipe";
+import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 import { LayoutChatTab } from "./LayoutChatTab";
 import { LayoutLauncher } from "./LayoutLauncher";
 import { openLayoutNewTab } from "./layoutActions";
 import { layoutChatRoute } from "./layoutChatRoute";
-import { selectFocusedTab, type LayoutTab } from "./layoutModel";
+import { selectFocusedTab, type LayoutTab, type LayoutWorkspace } from "./layoutModel";
 import { LayoutPaneContext } from "./layoutPaneContext";
 import { LayoutPageTab } from "./LayoutPageTab";
 import { useLayoutStore } from "./layoutStore";
@@ -46,6 +53,7 @@ function LoadedLayoutHost({ threadTarget, atIndex, active, narrow }: LayoutHostP
   const router = useRouter();
   const layout = useLayoutRouteSync(threadTarget, atIndex);
   useLayoutSurfaceSync();
+  useThreeFingerSwipe(active);
   const tabLabel = useLayoutTabLabel();
   const focusedContent = selectFocusedTab(layout)?.content ?? null;
   const focusedSurfaceThread = focusedContent?.kind === "surface" ? focusedContent.threadRef : null;
@@ -128,16 +136,32 @@ function LoadedLayoutHost({ threadTarget, atIndex, active, narrow }: LayoutHostP
     });
   };
 
+  const resolveWorkspaceTitle = (workspace: LayoutWorkspace) => {
+    const lead = workspace.columns[0]?.panes[0]?.tabs[0];
+    return lead ? tabLabel(lead).title : null;
+  };
+
   return (
-    <LayoutWorkspaceStrip
-      layout={layout}
-      renderTab={renderTab}
-      tabLabel={tabLabel}
-      onAddTab={onAddTab}
-      onTabContextMenu={onTabContextMenu}
-      empty={<LayoutLauncher tabId={null} context={null} />}
-      active={active}
-      {...(narrow === undefined ? {} : { narrow })}
-    />
+    <>
+      <LayoutWorkspaceStrip
+        layout={layout}
+        renderTab={renderTab}
+        tabLabel={tabLabel}
+        onAddTab={onAddTab}
+        onTabContextMenu={onTabContextMenu}
+        empty={<LayoutLauncher tabId={null} context={null} />}
+        active={active}
+        windowBarTrailing={
+          <>
+            <ClosedTabRestoreButton reopen={requestReopenClosedView} />
+            <WorkspaceSwitcher resolveWorkspaceTitle={resolveWorkspaceTitle} />
+          </>
+        }
+        {...(narrow === undefined ? {} : { narrow })}
+      />
+      <LayoutHints resolveWorkspaceTitle={resolveWorkspaceTitle} />
+      <LayoutOnboarding />
+      <LayoutShortcutsOverlay />
+    </>
   );
 }

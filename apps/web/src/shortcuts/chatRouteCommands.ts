@@ -33,6 +33,7 @@ import {
 } from "../grid/gridStore";
 import { openGridDraft } from "../grid/newThreadDraft";
 import { type CommandHandler, registerCommands } from "./dispatcher";
+import { buildLayoutCommandHandlers } from "./layoutCommandHandlers";
 
 const CHAT_ROUTE_ID = "/_chat";
 
@@ -153,6 +154,7 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
 
   return registerCommands(
     {
+      ...buildLayoutCommandHandlers(),
       "chat.newLocal": startNewLocal,
       "chat.newWithoutProject": (event) => {
         const { activeThread, activeDraftThread } = readThreadContext();
