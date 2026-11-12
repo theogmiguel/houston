@@ -992,6 +992,21 @@ export function ThreadSidebar({
                   />
                   <SidebarWorkspacesHeader
                     hiddenWorkspaces={hiddenSections}
+                    {...(isPage
+                      ? {
+                          phoneControls: {
+                            options: sidebarOptions,
+                            onChange: (patch: Partial<SidebarMenuOptions>) =>
+                              void updateClientSettings(sidebarOptionsPatch(patch)),
+                            onReset: () =>
+                              void updateClientSettings({
+                                ...SIDEBAR_OPTIONS_DEFAULTS,
+                                sidebarShowNeedsYou: isPhone,
+                              }),
+                            onNewWorkspace: startCreatingWorkspace,
+                          },
+                        }
+                      : {})}
                     projectFilter={
                       openProjectGroups.length > 1 ? (
                         <ProjectFilterPicker
@@ -1209,14 +1224,25 @@ function HiddenWorkspacesMenu({
   );
 }
 
-/** The Workspaces label; its project filter and hidden-workspaces menu show on hover. */
+/**
+ * The Workspaces label; its project filter and hidden-workspaces menu show on hover. The phone
+ * page has no toolbar, so it passes `phoneControls` to keep view options, New workspace and Add
+ * project in this header.
+ */
 export function SidebarWorkspacesHeader({
   hiddenWorkspaces = [],
   projectFilter = null,
+  phoneControls,
 }: {
   hiddenWorkspaces?: ReadonlyArray<SidebarWorkspaceSection>;
   /** The project filter picker, when there is more than one project to choose from. */
   projectFilter?: ReactNode;
+  phoneControls?: {
+    options: SidebarMenuOptions;
+    onChange: (patch: Partial<SidebarMenuOptions>) => void;
+    onReset: () => void;
+    onNewWorkspace: () => void;
+  };
 }) {
   return (
     <SidebarSectionHeaderRow
@@ -1229,6 +1255,31 @@ export function SidebarWorkspacesHeader({
               workspaces={hiddenWorkspaces}
               onShow={(workspaceId) => hideLayoutWorkspaceAction(workspaceId, false)}
             />
+          ) : null}
+          {phoneControls ? (
+            <>
+              <SidebarOptionsMenu
+                options={phoneControls.options}
+                onChange={phoneControls.onChange}
+                onReset={phoneControls.onReset}
+              />
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      aria-label="New workspace"
+                      onClick={phoneControls.onNewWorkspace}
+                      className={SIDEBAR_SECTION_ACTION_CLS}
+                    />
+                  }
+                >
+                  <PlusIcon aria-hidden className="size-[15px]" />
+                </TooltipTrigger>
+                <TooltipPopup side="bottom">New workspace</TooltipPopup>
+              </Tooltip>
+              <SidebarAddProjectButton sectionAction />
+            </>
           ) : null}
         </>
       }
@@ -1281,7 +1332,7 @@ export function SidebarToolbarActions({
 }
 
 /** Add project: opens the chooser for a folder, a clone or a new repository. */
-export function SidebarAddProjectButton() {
+export function SidebarAddProjectButton({ sectionAction = false }: { sectionAction?: boolean }) {
   return (
     <Tooltip>
       <TooltipTrigger
@@ -1290,7 +1341,7 @@ export function SidebarAddProjectButton() {
             type="button"
             aria-label="Add project"
             onClick={() => openAddProjectDialog()}
-            className={SIDEBAR_TOOLBAR_ACTION_CLS}
+            className={sectionAction ? SIDEBAR_SECTION_ACTION_CLS : SIDEBAR_TOOLBAR_ACTION_CLS}
           />
         }
       >
