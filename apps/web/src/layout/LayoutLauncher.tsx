@@ -6,11 +6,15 @@ import {
   FolderIcon,
   GitCompareIcon,
   GlobeIcon,
+  MessageSquareTextIcon,
   PlusIcon,
   SettingsIcon,
+  SquareDashedIcon,
   SquareTerminalIcon,
+  TabletSmartphoneIcon,
 } from "lucide-react";
 
+import { useBrowserDefaults } from "../browser/browserDefaults";
 import { sortScopedProjectsForSidebar } from "../components/Sidebar.logic";
 import {
   LayoutLauncherGroup,
@@ -19,21 +23,24 @@ import {
   LayoutLauncherFrame,
 } from "../components/ui/layout-launcher";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
-import { useRightPanelStore } from "../rightPanelStore";
+import { useScratchProject } from "../hooks/useScratchProject";
 import { useProjects, useVisibleThreadShells } from "../state/entities";
-import { useTerminalUiStateStore } from "../terminalUiStateStore";
 import type { ThreadRouteTarget } from "../threadRoutes";
-import { findLayoutTab, type LayoutPageContent } from "./layoutModel";
+import {
+  findLayoutSurfaceTabs,
+  findLayoutTab,
+  THREAD_TERMINAL_SURFACE_ID,
+  type LayoutPageContent,
+} from "./layoutModel";
 import { useLayoutPane } from "./layoutPaneContext";
 import { chatTargetThreadRef } from "./layoutThreadRef";
 import { runInNewLayoutTab, useLayoutStore } from "./layoutStore";
 import { useOpenLayoutPage } from "./pageNavigation";
 import { requestLayoutSurfacePlacement } from "./surfaceSync";
-
-type LauncherSurface = "diff" | "files" | "browser" | "terminal" | "pull-requests";
+import { useThreadSurfaceOpeners, type LauncherSurfaceKind } from "./useThreadSurfaceOpeners";
 
 const SURFACES: ReadonlyArray<{
-  kind: LauncherSurface;
+  kind: LauncherSurfaceKind;
   label: string;
   icon: typeof GitCompareIcon;
 }> = [
@@ -41,27 +48,26 @@ const SURFACES: ReadonlyArray<{
   { kind: "files", label: "Files", icon: FolderIcon },
   { kind: "browser", label: "Browser", icon: GlobeIcon },
   { kind: "terminal", label: "Terminal", icon: SquareTerminalIcon },
-  { kind: "pull-requests", label: "Pull requests", icon: PullRequestGlyph.pullRequest },
+  { kind: "pull-request", label: "Pull request", icon: PullRequestGlyph.pullRequest },
+  { kind: "pull-requests", label: "Linked pull requests", icon: PullRequestGlyph.link },
+  { kind: "device", label: "Device", icon: TabletSmartphoneIcon },
+  { kind: "side-chat", label: "Side chat", icon: MessageSquareTextIcon },
 ];
 
-function openSurface(threadRef: ScopedThreadRef, kind: LauncherSurface): void {
-  const panels = useRightPanelStore.getState();
-  switch (kind) {
-    case "terminal":
-      useTerminalUiStateStore.getState().setTerminalOpen(threadRef, true);
-      return;
-    case "browser":
-      panels.openBrowser(threadRef, null);
-      return;
-    default:
-      panels.open(threadRef, kind);
-  }
-}
+/** Kinds whose open is a store change the layout sync answers at once; the rest finish later. */
+const IMMEDIATE_SURFACES: ReadonlySet<LauncherSurfaceKind> = new Set([
+  "diff",
+  "files",
+  "terminal",
+  "pull-request",
+  "pull-requests",
+  "device",
+]);
 
 /**
- * What a launcher tab offers: start a thread in a project (the tab turns into its chat), open a
- * surface of the thread the tab was opened from (the tab turns into it), or open a page. An empty
- * workspace shows the same launcher with no tab to replace.
+ * What a launcher tab offers: start a thread in a project or without one (the tab turns into its
+ * chat), open a surface of the thread the tab was opened from (the tab turns into it), or open a
+ * page. An empty workspace shows the same launcher with no tab to replace.
  */
 export function LayoutLauncher({
   tabId,
@@ -75,6 +81,7 @@ export function LayoutLauncher({
   const projects = useProjects();
   const threads = useVisibleThreadShells();
   const handleNewThread = useNewThreadHandler();
+  const { scratchEnvironmentId, startScratchThread } = useScratchProject();
   const openPage = useOpenLayoutPage();
   const focusedWorkspaceId = useLayoutStore((state) => state.layout.focusedWorkspaceId);
   const contextRef = context === null ? null : chatTargetThreadRef(context);
@@ -83,24 +90,10 @@ export function LayoutLauncher({
     threads,
     "updated_at",
   );
+  const scratchEnvironment = scratchEnvironmentId(contextRef?.environmentId ?? null);
 
   const start = (action: () => Promise<unknown>) =>
     void (tabId === null ? action() : runInNewLayoutTab(action, { replaceTabId: tabId }));
-  const showSurface = (kind: LauncherSurface) => {
-    if (contextRef === null) return;
-    requestLayoutSurfacePlacement(
-      contextRef,
-      tabId !== null && paneId !== null
-        ? { kind: "pane", paneId, replaceTabId: tabId }
-        : { kind: "workspace", workspaceId: focusedWorkspaceId },
-    );
-    openSurface(contextRef, kind);
-    // A surface that already had a tab is focused instead of placed, which leaves the launcher.
-    const store = useLayoutStore.getState();
-    if (tabId !== null && findLayoutTab(store.layout, (tab) => tab.id === tabId)) {
-      store.closeTab(tabId);
-    }
-  };
   const showPage = (kind: LayoutPageContent["kind"]) =>
     void openPage(
       kind,
@@ -114,37 +107,28 @@ export function LayoutLauncher({
     <LayoutLauncherFrame data-new-tab-launcher="">
       <LayoutLauncherList aria-label="New tab">
         <LayoutLauncherGroup>Start a thread in</LayoutLauncherGroup>
-        {ranked.length === 0 ? (
+        {ranked.map((project) => (
           <LayoutLauncherRow
+            key={`${project.environmentId}:${project.id}`}
             icon={<PlusIcon aria-hidden className="size-4" />}
-            label="No projects yet"
-            disabledReason="Add a project first."
-            onSelect={() => undefined}
+            label={project.title}
+            onSelect={() =>
+              start(() => handleNewThread(scopeProjectRef(project.environmentId, project.id)))
+            }
           />
-        ) : (
-          ranked.map((project) => (
-            <LayoutLauncherRow
-              key={`${project.environmentId}:${project.id}`}
-              icon={<PlusIcon aria-hidden className="size-4" />}
-              label={project.title}
-              onSelect={() =>
-                start(() => handleNewThread(scopeProjectRef(project.environmentId, project.id)))
-              }
-            />
-          ))
-        )}
+        ))}
+        <LayoutLauncherRow
+          icon={<SquareDashedIcon aria-hidden className="size-4" />}
+          label="No project"
+          {...(scratchEnvironment === null
+            ? { disabledReason: "No connected environment offers a scratch folder." }
+            : {})}
+          onSelect={() => {
+            if (scratchEnvironment !== null) start(() => startScratchThread(scratchEnvironment));
+          }}
+        />
         {contextRef === null ? null : (
-          <>
-            <LayoutLauncherGroup>Open beside this thread</LayoutLauncherGroup>
-            {SURFACES.map(({ kind, label, icon: Icon }) => (
-              <LayoutLauncherRow
-                key={kind}
-                icon={<Icon aria-hidden className="size-4" />}
-                label={label}
-                onSelect={() => showSurface(kind)}
-              />
-            ))}
-          </>
+          <LauncherSurfaces threadRef={contextRef} tabId={tabId} paneId={paneId} />
         )}
         <LayoutLauncherGroup>Open a page</LayoutLauncherGroup>
         <LayoutLauncherRow
@@ -164,5 +148,71 @@ export function LayoutLauncher({
         />
       </LayoutLauncherList>
     </LayoutLauncherFrame>
+  );
+}
+
+/** The surfaces of the thread the launcher was opened from. */
+function LauncherSurfaces({
+  threadRef,
+  tabId,
+  paneId,
+}: {
+  readonly threadRef: ScopedThreadRef;
+  readonly tabId: string | null;
+  readonly paneId: string | null;
+}) {
+  const openers = useThreadSurfaceOpeners(threadRef);
+  const profiles = useBrowserDefaults().profiles;
+  const focusedWorkspaceId = useLayoutStore((state) => state.layout.focusedWorkspaceId);
+
+  const show = (kind: LauncherSurfaceKind, browserProfileId?: string) => {
+    requestLayoutSurfacePlacement(
+      threadRef,
+      tabId !== null && paneId !== null
+        ? { kind: "pane", paneId, replaceTabId: tabId }
+        : { kind: "workspace", workspaceId: focusedWorkspaceId },
+    );
+    openers.open(kind, browserProfileId);
+    if (!IMMEDIATE_SURFACES.has(kind)) return;
+    // A surface that already had a tab is focused instead of placed, which leaves the launcher.
+    const store = useLayoutStore.getState();
+    if (kind === "terminal") {
+      const terminal = findLayoutSurfaceTabs(store.layout, threadRef).find(
+        ({ tab }) =>
+          tab.content.kind === "surface" && tab.content.surfaceId === THREAD_TERMINAL_SURFACE_ID,
+      );
+      if (terminal) store.focusTab(terminal.tab.id);
+    }
+    if (tabId !== null && findLayoutTab(store.layout, (tab) => tab.id === tabId)) {
+      store.closeTab(tabId);
+    }
+  };
+
+  return (
+    <>
+      <LayoutLauncherGroup>Open beside this thread</LayoutLauncherGroup>
+      {SURFACES.map(({ kind, label, icon: Icon }) => {
+        const { available, reason } = openers.surfaces[kind];
+        return (
+          <LayoutLauncherRow
+            key={kind}
+            icon={<Icon aria-hidden className="size-4" />}
+            label={label}
+            {...(available ? {} : { disabledReason: reason })}
+            onSelect={() => show(kind)}
+          />
+        );
+      })}
+      {openers.surfaces.browser.available && profiles.length > 1
+        ? profiles.map((profile) => (
+            <LayoutLauncherRow
+              key={profile.id}
+              icon={<GlobeIcon aria-hidden className="size-4" />}
+              label={`Browser in ${profile.name}`}
+              onSelect={() => show("browser", profile.id)}
+            />
+          ))
+        : null}
+    </>
   );
 }
