@@ -26,7 +26,7 @@ export function LayoutPaneFrame({
   children,
   ...props
 }: HTMLAttributes<HTMLDivElement> & {
-  /** Several panes share the strip and this one holds focus: its card takes a faint accent edge. */
+  /** Several panes share the strip and this one holds focus: its card takes a faint accent edge on the sides and bottom. */
   focused: boolean;
   /** Several panes share the strip and another holds focus: this pane's active tab title is quieter. */
   dimmed?: boolean;
@@ -40,11 +40,20 @@ export function LayoutPaneFrame({
       data-layout-pane-surface=""
       data-focused={focused ? "" : undefined}
       className={cn(
-        "relative flex min-h-0 flex-1 flex-col overflow-clip rounded-(--r-group) bg-(--pane) data-[focused]:ring-1 data-[focused]:ring-(--accent-ink)/25",
+        "relative flex min-h-0 flex-1 flex-col overflow-clip rounded-(--r-group) bg-(--pane)",
         squareStart && "rounded-ss-none",
       )}
     >
       {children}
+      {focused ? (
+        // The sides and bottom only, fading in from the top: a line along the top edge would run
+        // under the active tab and split it from the card.
+        <span
+          aria-hidden
+          data-layout-focus-edge=""
+          className="pointer-events-none absolute inset-0 z-30 rounded-[inherit] border border-t-0 border-(--accent-ink)/25 mask-[linear-gradient(to_bottom,transparent,black_24px)]"
+        />
+      ) : null}
     </div>
   );
   return (

@@ -154,6 +154,12 @@ describe("focus", () => {
     const surface = (id: string) =>
       frameOf(screen.container, id).querySelector<HTMLElement>("[data-layout-pane-surface]")!;
     expect(surface("w0c0p0").hasAttribute("data-focused")).toBe(true);
+    // The focus edge never runs along the top, where it would cut the active tab from the card.
+    const edge = surface("w0c0p0").querySelector<HTMLElement>("[data-layout-focus-edge]")!;
+    expect(edge).not.toBeNull();
+    expect(getComputedStyle(edge).borderTopWidth).toBe("0px");
+    expect(getComputedStyle(edge).borderLeftWidth).toBe("1px");
+    expect(surface("w0c1p0").querySelector("[data-layout-focus-edge]")).toBeNull();
     expect(surface("w0c1p0").hasAttribute("data-focused")).toBe(false);
     const body = screen.container.querySelector("[data-body='b']")!;
     const at = rect(body);
