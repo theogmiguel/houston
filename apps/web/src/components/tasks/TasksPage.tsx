@@ -457,82 +457,77 @@ export function TasksPage() {
                 </>
               ) : null}
             </WorkspaceBreadcrumb>
-          </WorkspacePageHeader>
-          <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-4">
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <ToggleGroup
-                value={[view]}
-                onValueChange={(next) => {
-                  const target =
-                    next[0] === "projects"
-                      ? "projects"
-                      : next[0] === "sources"
-                        ? "sources"
-                        : "queue";
-                  updateSearch({ view: target });
-                }}
-              >
-                <Toggle value="queue">Queue</Toggle>
-                <Toggle value="projects">By project</Toggle>
-                <Toggle value="sources">Sources</Toggle>
-              </ToggleGroup>
-              {view === "sources" ? null : (
-                <>
-                  <InputGroup className="min-w-40 flex-1">
-                    <InputGroupAddon>
-                      <SearchIcon />
-                    </InputGroupAddon>
-                    <InputGroupInput
-                      value={search.q ?? ""}
-                      placeholder="Search"
-                      aria-label="Search tasks"
-                      size="compact"
-                      onChange={(event) =>
-                        updateSearch({ q: event.currentTarget.value || undefined })
-                      }
-                    />
-                  </InputGroup>
-                  <div className="w-48 shrink-0">
-                    <Select
-                      value={workspace}
-                      onValueChange={(value) => {
-                        if (typeof value === "string") updateSearch({ workspace: value });
-                      }}
-                    >
-                      <SelectTrigger aria-label="Workspace">
-                        <SelectValue>
-                          {workspaceOptions(projectOptions).find(
-                            (option) => option.value === workspace,
-                          )?.label ?? "All workspaces"}
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectPopup>
-                        {workspaceOptions(projectOptions).map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectPopup>
-                    </Select>
-                  </div>
-                  {view === "projects" ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={selectedProject === null}
-                      onClick={() => setNewProjectOpen(true)}
-                    >
-                      <PlusIcon aria-hidden />
-                      New project
-                    </Button>
-                  ) : null}
-                  <Button size="sm" disabled={newTaskDisabled} onClick={() => setEditorOpen(true)}>
+            <ToggleGroup
+              value={[view]}
+              onValueChange={(next) => {
+                const target =
+                  next[0] === "projects" ? "projects" : next[0] === "sources" ? "sources" : "queue";
+                updateSearch({ view: target });
+              }}
+            >
+              <Toggle value="queue">Queue</Toggle>
+              <Toggle value="projects">By project</Toggle>
+              <Toggle value="sources">Sources</Toggle>
+            </ToggleGroup>
+            <div className="min-w-0 flex-1" />
+            {view === "sources" ? null : (
+              <>
+                <InputGroup className="w-56 min-w-24 shrink">
+                  <InputGroupAddon>
+                    <SearchIcon />
+                  </InputGroupAddon>
+                  <InputGroupInput
+                    value={search.q ?? ""}
+                    placeholder="Search"
+                    aria-label="Search tasks"
+                    size="compact"
+                    onChange={(event) =>
+                      updateSearch({ q: event.currentTarget.value || undefined })
+                    }
+                  />
+                </InputGroup>
+                <div className="w-44 shrink-0">
+                  <Select
+                    value={workspace}
+                    onValueChange={(value) => {
+                      if (typeof value === "string") updateSearch({ workspace: value });
+                    }}
+                  >
+                    <SelectTrigger aria-label="Workspace">
+                      <SelectValue>
+                        {workspaceOptions(projectOptions).find(
+                          (option) => option.value === workspace,
+                        )?.label ?? "All workspaces"}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectPopup>
+                      {workspaceOptions(projectOptions).map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectPopup>
+                  </Select>
+                </div>
+                {view === "projects" ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={selectedProject === null}
+                    onClick={() => setNewProjectOpen(true)}
+                  >
                     <PlusIcon aria-hidden />
-                    New task
+                    New project
                   </Button>
-                </>
-              )}
-            </div>
+                ) : null}
+                <Button size="sm" disabled={newTaskDisabled} onClick={() => setEditorOpen(true)}>
+                  <PlusIcon aria-hidden />
+                  New task
+                </Button>
+              </>
+            )}
+          </WorkspacePageHeader>
+          <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-4 pt-1">
             <div className="min-h-0 flex-1 overflow-y-auto">
               {tasksError !== null && !snapshot.loaded ? (
                 <Alert variant="error">
