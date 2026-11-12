@@ -9,10 +9,15 @@ afterEach(() => {
 });
 
 describe("buildLayoutPaletteItems", () => {
-  const [submenu, sheet] = buildLayoutPaletteItems();
+  const [submenu, reopen, sheet] = buildLayoutPaletteItems();
 
-  it("offers a Layout submenu and the shortcut sheet", () => {
+  it("offers a Layout submenu, Reopen closed tab and the shortcut sheet", () => {
     expect(submenu).toMatchObject({ kind: "submenu", title: "Layout…" });
+    expect(reopen).toMatchObject({
+      kind: "action",
+      title: "Reopen closed tab",
+      shortcutCommand: "view.reopenClosed",
+    });
     expect(sheet).toMatchObject({ kind: "action", shortcutCommand: "layout.shortcutSheet" });
   });
 

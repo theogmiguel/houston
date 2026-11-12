@@ -60,14 +60,13 @@ surface, or the **Pull requests** page. A thread's chat has one tab across all w
 opening a thread that is already open focuses its tab. Settings and Usage open as dialogs
 above the layout.
 
-- **New workspace** (`+` in the sidebar's **Workspaces** header) adds one; the workspace
-  switcher and the sidebar list them all, and at least one always exists.
+- **New workspace** (`+` in the sidebar's **Workspaces** header) adds one; the sidebar lists
+  them all, and at least one always exists.
 - A column and its panes share the strip: **Open a new tab in a new column** and **Open a new
   tab in a new pane below** split the focused pane, and dragging a tab to a pane's edge does the
   same. Drag a tab between panes or onto another workspace to move it.
 - Closing a tab closes that view only; the thread keeps its history. **Reopen closed tab**
-  (the button in an empty workspace, or its rebindable shortcut) brings back the most recent
-  one.
+  (its rebindable shortcut, or the command palette) brings back the most recent one.
 - **Fill the window** gives the focused pane the whole window, and the same command undoes it.
   **Column width** cycles ⅓, ½, ⅔ and full width; **Center column**, **Pull pane into the left
   column** and **Push pane out to its own column** rearrange the strip. The workspaces overview
@@ -89,7 +88,7 @@ same id.
 
 The sidebar opens with search and one row of icon buttons for **Pull requests**, **Tasks** and
 **Usage** (hover for the name; the open page is highlighted), then one group per layout
-workspace, in the order of the workspace switcher. A group lists the threads whose chat is
+workspace, in workspace order. A group lists the threads whose chat is
 open in that workspace, whichever project they belong to. A thread whose chat is not placed in
 any workspace is listed under the first one. Each group label collapses with **Enter** or
 **Space** and keeps its state; a search opens every group it matches in. The **…** button
@@ -258,7 +257,9 @@ stays out of the thread until you choose **Send to thread**.
 ## Terminals and the right panel
 
 Each thread has a terminal drawer for shell commands (`Ctrl+J`). The right panel is a
-separate set of surfaces; see [The right panel](right-panel.md). A thread's **details**
+separate set of surfaces; see [The right panel](right-panel.md). In a layout pane, a terminal
+or a panel surface opens as a tab: use the new-tab launcher (**Changes**, **Files**,
+**Browser**, **Terminal**), the command palette or the shortcut. A thread's **details**
 control (`Ctrl+Shift+B`) shows its environment, branch, pull requests, scripts, local
 servers, context and usage limits. The card starts closed and stays as you leave it.
 

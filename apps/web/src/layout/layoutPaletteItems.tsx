@@ -14,9 +14,11 @@ import {
   Maximize2Icon,
   MoveHorizontalIcon,
   RulerIcon,
+  Undo2Icon,
   type LucideIcon,
 } from "lucide-react";
 
+import { requestReopenClosedView } from "../components/ReopenClosedViewShortcut";
 import {
   ADDON_ICON_CLASS,
   ITEM_ICON_CLASS,
@@ -169,6 +171,17 @@ export function buildLayoutPaletteItems(): Array<
       icon: <LayoutGridIcon className={ITEM_ICON_CLASS} />,
       addonIcon: <LayoutGridIcon className={ADDON_ICON_CLASS} />,
       groups: [{ value: "layout", label: "Layout", items }],
+    },
+    {
+      kind: "action",
+      value: "action:view.reopenClosed",
+      searchTerms: ["reopen", "closed tab", "restore", "undo close"],
+      title: "Reopen closed tab",
+      icon: <Undo2Icon className={ITEM_ICON_CLASS} />,
+      shortcutCommand: "view.reopenClosed",
+      run: async () => {
+        await requestReopenClosedView();
+      },
     },
     {
       kind: "action",
