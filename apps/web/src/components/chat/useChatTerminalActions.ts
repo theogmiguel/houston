@@ -6,6 +6,8 @@ import type { Dispatch } from "react";
 import type { ComposerHandleRef } from "../../composerHandleContext";
 import type { selectThreadTerminalUiState } from "../../terminalUiStateStore";
 import { useStableCallback } from "../../hooks/useStableCallback";
+import { useLayoutPane } from "../../layout/layoutPaneContext";
+import { toggleThreadTerminalPane } from "../../layout/openRules";
 import { useRightPanelTerminalActions } from "../terminal/useRightPanelTerminalActions";
 import { useThreadTerminalActions } from "../terminal/useThreadTerminalActions";
 import { getTerminalLabel } from "@houston-app/shared/terminalLabels";
@@ -115,6 +117,7 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
   const storeNewTerminal = useTerminalUiStateStore((s) => s.newTerminal);
   const storeCloseTerminal = useTerminalUiStateStore((s) => s.closeTerminal);
   const terminalActions = useThreadTerminalActions(activeThreadRef);
+  const layoutPane = useLayoutPane();
 
   const activeTerminalGroup =
     terminalUiState.terminalGroups.find(
@@ -137,7 +140,7 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
     focusActiveDrawerTerminal(activeThreadRef);
   };
   const setTerminalOpenStable = useStableCallback(setTerminalOpen);
-  const toggleTerminalVisibility = () => {
+  const toggleTerminalOpen = () => {
     if (!activeThreadRef) return;
     const nextOpen = !terminalUiState.terminalOpen;
     if (
@@ -164,6 +167,14 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
       return;
     }
     setTerminalOpen(nextOpen);
+  };
+  // In a layout pane the terminal is a tab: showing it follows the layout's rules for where it
+  // goes and whether a tab already holds it.
+  const toggleTerminalVisibility = () => {
+    if (!activeThreadRef || layoutPane.tabId === null) return toggleTerminalOpen();
+    toggleThreadTerminalPane(activeThreadRef, () => {
+      if (!terminalUiState.terminalOpen) toggleTerminalOpen();
+    });
   };
   const toggleTerminalVisibilityStable = useStableCallback(toggleTerminalVisibility);
   const splitTerminal = (direction: "horizontal" | "vertical" = "horizontal") => {

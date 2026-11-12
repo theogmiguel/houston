@@ -42,7 +42,7 @@ import { PhoneEmptyState } from "../mobile/PhoneEmptyState";
 import { PhonePageBar } from "../mobile/PhonePageBar";
 import { PhoneTabBar } from "../mobile/PhoneTabBar";
 import { useIsPhone } from "../mobile/usePhone";
-import { useLayoutStore } from "../layout/layoutStore";
+import { focusWorkspaceInLayout } from "../layout/openWorkspaceInLayout";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { useStableCallback } from "../hooks/useStableCallback";
 import { useThreadActions } from "../hooks/useThreadActions";
@@ -74,7 +74,8 @@ function GridToWorkspaceRedirect() {
   const navigate = useNavigate();
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- focuses the workspace with the grid's id once, then leaves the retired route
   useEffect(() => {
-    useLayoutStore.getState().focusWorkspace(gridId);
+    // A grid id with no workspace leaves the focused one in place.
+    focusWorkspaceInLayout(gridId);
     void navigate({ to: "/", replace: true });
   }, [gridId, navigate]);
   return null;

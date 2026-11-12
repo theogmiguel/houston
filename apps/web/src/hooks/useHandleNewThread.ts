@@ -20,6 +20,8 @@ import {
 } from "../composerDraftStore";
 import { newDraftId, newThreadId } from "../lib/utils";
 import { useGrid } from "../grid/gridStore";
+import { isPhoneViewport } from "../mobile/usePhone";
+import { openAsNewThreadTab } from "../threads/openDraftInLayout";
 import { orderItemsByPreferredIds } from "../components/Sidebar.logic";
 import {
   deriveLogicalProjectKeyFromSettings,
@@ -84,7 +86,7 @@ export function createNewThreadHandler(router: AnyRouter) {
     return resolveThreadRouteTarget(currentRouteParams);
   };
 
-  return (
+  const openNewThread = (
     projectRef: ScopedProjectRef,
     options?: {
       branch?: string | null;
@@ -438,6 +440,11 @@ export function createNewThreadHandler(router: AnyRouter) {
       }
       return { draftId, threadId };
     })();
+  };
+  return (...args: Parameters<typeof openNewThread>) => {
+    const open = () => openNewThread(...args);
+    // A caller that renders the draft itself (`navigate: false`) places it; so does a phone.
+    return args[1]?.navigate === false || isPhoneViewport() ? open() : openAsNewThreadTab(open);
   };
 }
 

@@ -31,7 +31,7 @@ import {
   gridContainingThread,
   useGridStore,
 } from "../grid/gridStore";
-import { openGridDraft } from "../grid/newThreadDraft";
+import { openGridDraftWhereShown } from "../grid/openGridDraftWhereShown";
 import { type CommandHandler, registerCommands } from "./dispatcher";
 import { buildLayoutCommandHandlers } from "./layoutCommandHandlers";
 
@@ -129,11 +129,12 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
     claim(event);
     const grid = readRouteGrid();
     if (grid !== null) {
-      void openGridDraft(
+      void openGridDraftWhereShown(
         { gridId: grid.id, focusedThreadId: grid.focusedThreadId },
         handleNewThread,
-      ).then((opened) => {
-        if (opened === null) return;
+        { navigate: (options) => router.navigate(options) },
+      ).then(({ opened, inLayout }) => {
+        if (opened === null || inLayout) return;
         void router.navigate({ to: "/grid/$gridId", params: { gridId: opened.gridId } });
       });
       return;
