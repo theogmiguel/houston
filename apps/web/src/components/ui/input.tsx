@@ -22,10 +22,10 @@ function Input({
   ...props
 }: InputProps) {
   const inputClassName = cn(
-    "h-(--h-ctl) w-full min-w-0 rounded-[inherit] px-[9px] leading-(--h-ctl) outline-none placeholder:text-placeholder [transition:background-color_5000000s_ease-in-out_0s]",
+    "h-[26px] w-full min-w-0 rounded-[inherit] px-[9px] leading-[26px] outline-none placeholder:text-placeholder [transition:background-color_5000000s_ease-in-out_0s]",
     placeholderTone === "ink" && "placeholder:text-foreground",
     size === "compact" && "h-[22px] px-2 text-xs leading-[22px]",
-    size === "lg" && "h-8 px-[11px] leading-8",
+    size === "lg" && "h-[30px] px-[11px] leading-[30px]",
     props.type === "search" &&
       "[&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none [&::-webkit-search-results-button]:appearance-none [&::-webkit-search-results-decoration]:appearance-none",
     props.type === "number" &&
