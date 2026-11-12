@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { buildThreadActionMenuItems, type ThreadActionMenuState } from "./threadActionMenu.logic";
+import {
+  buildThreadActionMenuItems,
+  threadActionRequiresOperate,
+  type ThreadActionMenuState,
+} from "./threadActionMenu.logic";
 
 const baseState: ThreadActionMenuState = {
   canOperate: true,
@@ -134,6 +138,27 @@ describe("buildThreadActionMenuItems", () => {
     expect(
       items.find((item) => item.id === "move-to-grid")?.children?.map((item) => item.id),
     ).toEqual(["move-to-grid:grid-b", "move-to-grid:new"]);
+  });
+
+  it("offers Move to workspace with every other workspace, and nothing when there is none", () => {
+    const items = buildThreadActionMenuItems({
+      ...baseState,
+      workspace: {
+        targets: [
+          { workspaceId: "w2", name: "Reviews" },
+          { workspaceId: "w3", name: "Today" },
+        ],
+      },
+    });
+    const move = items.find((item) => item.id === "move-to-workspace");
+    expect(move?.label).toBe("Move to workspace");
+    expect(move?.children?.map((item) => [item.id, item.label])).toEqual([
+      ["move-to-workspace:w2", "Reviews"],
+      ["move-to-workspace:w3", "Today"],
+    ]);
+    const alone = buildThreadActionMenuItems({ ...baseState, workspace: { targets: [] } });
+    expect(alone.some((item) => item.id === "move-to-workspace")).toBe(false);
+    expect(threadActionRequiresOperate("move-to-workspace:w2")).toBe(false);
   });
 
   it("keeps every action of the previous menu reachable", () => {

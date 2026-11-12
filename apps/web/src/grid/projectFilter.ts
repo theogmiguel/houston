@@ -49,3 +49,20 @@ export function groupContainsWorkspace(
     (ref) => ref.environmentId === workspace.environmentId && ref.projectId === workspace.projectId,
   );
 }
+
+/**
+ * Pinned projects lead, then the order the caller gives. Threads with no
+ * project (the scratch group) always sit at the foot of the rail.
+ */
+export function orderSidebarProjectGroups(
+  groups: ReadonlyArray<SidebarProjectSnapshot>,
+): SidebarProjectSnapshot[] {
+  const open = groups.filter((group) => !group.archived);
+  const projects = open.filter((group) => !group.isScratch);
+  const scratch = open.filter((group) => group.isScratch);
+  return [
+    ...projects.filter((group) => group.pinned),
+    ...projects.filter((group) => !group.pinned),
+    ...scratch,
+  ];
+}

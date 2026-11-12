@@ -7,6 +7,8 @@ export type ThreadActionMenuId =
   | "open-in-grid"
   | "move-to-grid"
   | `move-to-grid:${string}`
+  | "move-to-workspace"
+  | `move-to-workspace:${string}`
   | "settle"
   | "unsettle"
   | "auto-settle"
@@ -95,6 +97,11 @@ export interface ThreadActionMenuGridState {
   readonly moveTargets: ReadonlyArray<ThreadActionMenuTarget>;
 }
 
+/** The workspaces a thread's chat can move to; absent when the surface lists no workspaces. */
+export interface ThreadActionMenuWorkspaceState {
+  readonly targets: ReadonlyArray<{ readonly workspaceId: string; readonly name: string }>;
+}
+
 /** The layout actions only a grid cell offers. */
 export interface ThreadActionMenuCellState {
   readonly split: ThreadActionMenuSplitChoices | null;
@@ -133,6 +140,7 @@ export interface ThreadActionMenuState {
   /** A No project thread with its own folder, on a server that can promote it. */
   readonly canTurnIntoProject?: boolean;
   readonly grid?: ThreadActionMenuGridState | undefined;
+  readonly workspace?: ThreadActionMenuWorkspaceState | undefined;
   readonly cell?: ThreadActionMenuCellState | undefined;
 }
 
@@ -144,6 +152,8 @@ export function threadActionRequiresOperate(action: ThreadActionMenuId): boolean
     action === "open-in-grid" ||
     action === "move-to-grid" ||
     action.startsWith("move-to-grid:") ||
+    action === "move-to-workspace" ||
+    action.startsWith("move-to-workspace:") ||
     action === "project-settings" ||
     action === "mark-unread" ||
     action === "copy" ||
@@ -316,6 +326,17 @@ export function buildThreadActionMenuItems(
                   separatorBefore: state.grid.moveTargets.length > 0,
                 },
               ],
+            }
+          : null,
+        state.workspace !== undefined && state.workspace.targets.length > 0
+          ? {
+              id: "move-to-workspace",
+              label: "Move to workspace",
+              icon: "layout-grid",
+              children: state.workspace.targets.map((target) => ({
+                id: `move-to-workspace:${target.workspaceId}` as const,
+                label: target.name,
+              })),
             }
           : null,
         {

@@ -2,7 +2,7 @@ import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/m
 import { describe, expect, it } from "vite-plus/test";
 
 import {
-  attentionCardsForGrids,
+  attentionCardsForWorkspaces,
   attentionNavigationDirection,
   type AttentionCard,
   clearThreadSelection,
@@ -12,12 +12,9 @@ import {
   resolveGridThreadState,
   runningSubagentsByParentThread,
   subagentParentKey,
-  threadCardsInPaneOrder,
   threadMatchesGridSearch,
   updateThreadSelection,
-  visibleGridThreads,
 } from "./sidebar";
-import type { GridRecord } from "./gridStore";
 
 const NOW = "2026-10-29T12:00:00.000Z";
 
@@ -71,22 +68,6 @@ function thread(
     deletedAt: null,
     ...overrides,
   } as EnvironmentThreadShell;
-}
-
-function grid(tree: GridRecord["tree"], overrides: Partial<GridRecord> = {}): GridRecord {
-  return {
-    id: "g-1",
-    name: "Grid 1",
-    environmentId: "env-1",
-    projectId: "project-1",
-    workspaceKey: "env-1:project-1",
-    tree,
-    focusedThreadId: null,
-    pinnedAt: null,
-    hidden: false,
-    createdAt: "2026-10-29T10:00:00.000Z",
-    ...overrides,
-  };
 }
 
 function subagentChild(
@@ -249,91 +230,6 @@ describe("running subagent count", () => {
   });
 });
 
-describe("grid tree order", () => {
-  it("lists cards in pane order, left to right, top to bottom", () => {
-    const order = grid({
-      kind: "split",
-      dir: "col",
-      weights: [50, 50],
-      children: [
-        {
-          kind: "split",
-          dir: "row",
-          weights: [50, 50],
-          children: [
-            { kind: "thread", threadId: "thread-b", id: "p2" },
-            { kind: "thread", threadId: "thread-a", id: "p1" },
-          ],
-        },
-        { kind: "thread", threadId: "thread-c", id: "p3" },
-      ],
-    });
-    const threads = [
-      thread({ id: "thread-a" }),
-      thread({ id: "thread-b" }),
-      thread({ id: "thread-c" }),
-    ];
-    expect(threadCardsInPaneOrder(order, threads).map((entry) => entry.id)).toEqual([
-      "thread-b",
-      "thread-a",
-      "thread-c",
-    ]);
-  });
-
-  it("drops archived, closed and held threads from the rail", () => {
-    const order = grid({
-      kind: "split",
-      dir: "row",
-      weights: [25, 25, 25, 25],
-      children: [
-        { kind: "thread", threadId: "thread-open", id: "p1" },
-        { kind: "thread", threadId: "thread-closed", id: "p2" },
-        { kind: "thread", threadId: "thread-held", id: "p3" },
-        { kind: "thread", threadId: "thread-archived", id: "p4" },
-      ],
-    });
-    const threads = [
-      thread({ id: "thread-open" }),
-      thread({ id: "thread-closed", settledOverride: "settled" }),
-      thread({
-        id: "thread-held",
-        snoozedUntil: "2026-10-29T13:00:00.000Z",
-        snoozedAt: "2026-10-29T11:00:00.000Z",
-      }),
-      thread({ id: "thread-archived", archivedAt: "2026-10-29T11:30:00.000Z" }),
-    ];
-    expect(visibleGridThreads(order, threads, NOW).map((entry) => entry.id)).toEqual([
-      "thread-open",
-    ]);
-  });
-
-  it("drops a subagent child thread from the rail", () => {
-    const order = grid({
-      kind: "split",
-      dir: "row",
-      weights: [50, 50],
-      children: [
-        { kind: "thread", threadId: "thread-parent", id: "p1" },
-        { kind: "thread", threadId: "thread-child", id: "p2" },
-      ],
-    });
-    const threads = [
-      thread({ id: "thread-parent" }),
-      thread({
-        id: "thread-child",
-        lineage: {
-          relationshipToParent: "subagent",
-          parentThreadId: "thread-parent" as never,
-          rootThreadId: "thread-parent" as never,
-        },
-      }),
-    ];
-    expect(visibleGridThreads(order, threads, NOW).map((entry) => entry.id)).toEqual([
-      "thread-parent",
-    ]);
-  });
-});
-
 describe("grid thread selection", () => {
   const orderedKeys = ["a", "b", "c", "d"];
 
@@ -411,46 +307,36 @@ describe("attention navigation shortcut", () => {
 
 describe("attention navigation", () => {
   const cards: AttentionCard[] = [
-    { gridId: "g-1", threadId: "running", state: "running" },
-    { gridId: "g-1", threadId: "ready", state: "ready" },
-    { gridId: "g-2", threadId: "needs", state: "needs" },
-    { gridId: "g-2", threadId: "idle", state: "idle" },
+    { workspaceId: "w-1", threadId: "running", state: "running" },
+    { workspaceId: "w-1", threadId: "ready", state: "ready" },
+    { workspaceId: "w-2", threadId: "needs", state: "needs" },
+    { workspaceId: "w-2", threadId: "idle", state: "idle" },
   ];
 
   it("walks Ready and Needs you cards across workspaces and wraps", () => {
     expect(nextAttentionCard(cards, null, 1)?.threadId).toBe("ready");
-    expect(nextAttentionCard(cards, { gridId: "g-1", threadId: "ready" }, 1)?.threadId).toBe(
-      "needs",
-    );
-    expect(nextAttentionCard(cards, { gridId: "g-2", threadId: "needs" }, 1)?.threadId).toBe(
-      "ready",
-    );
+    expect(nextAttentionCard(cards, { threadId: "ready" }, 1)?.threadId).toBe("needs");
+    expect(nextAttentionCard(cards, { threadId: "needs" }, 1)?.threadId).toBe("ready");
   });
 
   it("walks backwards and starts after a card that needs nothing", () => {
     expect(nextAttentionCard(cards, null, -1)?.threadId).toBe("needs");
-    expect(nextAttentionCard(cards, { gridId: "g-1", threadId: "running" }, 1)?.threadId).toBe(
-      "ready",
-    );
-    expect(nextAttentionCard(cards, { gridId: "g-2", threadId: "idle" }, -1)?.threadId).toBe(
-      "needs",
-    );
+    expect(nextAttentionCard(cards, { threadId: "running" }, 1)?.threadId).toBe("ready");
+    expect(nextAttentionCard(cards, { threadId: "idle" }, -1)?.threadId).toBe("needs");
   });
 
-  it("keeps a hidden grid's threads reachable with Ctrl .", () => {
-    const hidden = grid({ kind: "thread", threadId: "thread-b", id: "p1" }, { hidden: true });
-    const cards = attentionCardsForGrids(
-      [hidden],
-      [thread({ id: "thread-b", hasPendingApprovals: true })],
+  it("lists every thread of the workspaces it is given, so hidden ones stay reachable with Ctrl .", () => {
+    const cards = attentionCardsForWorkspaces(
+      [{ workspaceId: "w-1", threads: [thread({ id: "thread-b", hasPendingApprovals: true })] }],
       NOW,
     );
-    expect(cards).toEqual([{ gridId: "g-1", threadId: "thread-b", state: "needs" }]);
+    expect(cards).toEqual([{ workspaceId: "w-1", threadId: "thread-b", state: "needs" }]);
     expect(nextAttentionCard(cards, null, 1)?.threadId).toBe("thread-b");
   });
 
   it("returns null when no card needs attention", () => {
     expect(
-      nextAttentionCard([{ gridId: "g-1", threadId: "idle", state: "idle" }], null, 1),
+      nextAttentionCard([{ workspaceId: "w-1", threadId: "idle", state: "idle" }], null, 1),
     ).toBeNull();
   });
 });

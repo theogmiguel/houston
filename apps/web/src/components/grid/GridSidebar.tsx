@@ -1,162 +1,109 @@
 import { useAtomValue } from "@effect/atom-react";
 import { settlePromise } from "@houston-app/client-runtime/state/runtime";
-import {
-  scopedThreadKey,
-  scopeProjectRef,
-  scopeThreadRef,
-} from "@houston-app/client-runtime/environment";
+import { scopedThreadKey, scopeThreadRef } from "@houston-app/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
-import { canSnooze, effectiveSnoozed } from "@houston-app/client-runtime/state/thread-settled";
-import { useLocation, useNavigate, useRouter } from "@tanstack/react-router";
-import { openThreadInLayout } from "../../threads/openThreadInLayout";
-import { isPhoneViewport } from "../../mobile/usePhone";
+import { effectiveSnoozed } from "@houston-app/client-runtime/state/thread-settled";
+import { useNavigate, useRouter, useLocation } from "@tanstack/react-router";
+import { workspaceKeyOf } from "@houston-app/shared/grid/record";
 import {
-  AlarmClockOffIcon,
   ChevronRightIcon,
-  FolderIcon,
-  FolderOpenIcon,
-  ClockIcon,
   EyeOffIcon,
-  Grid2X2PlusIcon,
+  FolderPlusIcon,
   MoreHorizontalIcon,
+  PinIcon,
   PlusIcon,
   SearchIcon,
-  Undo2Icon,
-  UsersIcon,
   XIcon,
 } from "lucide-react";
-import {
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type PointerEvent as ReactPointerEvent,
-  type ReactNode,
-} from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
+import { openThreadInLayout } from "../../threads/openThreadInLayout";
 import { isCommandPaletteOpen } from "../../commandPaletteBus";
 import { openAddProjectDialog } from "../AddProjectDialog";
 import { requestCustomSnooze } from "../CustomSnoozeDialog";
 import { isDesktopHost } from "../../env";
-import { getThreadSortTimestamp, sortThreads } from "@houston-app/client-runtime/state/thread-sort";
+import { DEFAULT_SIDEBAR_GRID_THREAD_SORT_ORDER } from "@houston-app/contracts/settings";
 import {
-  DEFAULT_SIDEBAR_GRID_SORT_ORDER,
-  DEFAULT_SIDEBAR_GRID_THREAD_SORT_ORDER,
-} from "@houston-app/contracts/settings";
+  findLayoutTabByContent,
+  selectFocusedTab,
+  type LayoutWorkspace,
+} from "../../layout/layoutModel";
+import { chatTargetThreadRef } from "../../layout/layoutThreadRef";
+import { useLayoutStore } from "../../layout/layoutStore";
 import {
-  gridById,
-  type GridRecord,
-  orderedGridsForWorkspace,
-  useGridStore,
-  workspaceKeyOf,
-} from "../../grid/gridStore";
-import { moveThreadToGridOrExplain } from "../../grid/moveToGrid";
-import { crossProjectMoveToast, noProjectMoveToast, sameProject } from "../../grid/projectMove";
-import { showThreadMovedToast } from "../../grid/moveFeedback";
-import { resolveGridThreadTarget } from "../../grid/gridNavigation";
+  createLayoutWorkspaceAction,
+  deleteLayoutWorkspaceAction,
+  hideLayoutWorkspaceAction,
+  openLayoutLauncherInWorkspaceAction,
+  pinLayoutWorkspaceAction,
+  renameLayoutWorkspaceAction,
+  reorderLayoutWorkspaceAction,
+} from "../../layout/layoutWorkspaceActions";
+import { useLayoutTabLabel } from "../../layout/useLayoutTabLabel";
+import { nextRailTargetIndex } from "../../grid/rail";
 import {
-  nextRailTargetIndex,
-  pinnedThreadsFirst,
-  ungroupedWorkspaceThreads,
-} from "../../grid/rail";
-import { resolveRowPullRequest } from "../../threads/rowPullRequest";
-import {
-  beginThreadDrag,
   useThreadDragSource,
   useThreadDropTarget,
   useThreadDropZone,
   type ThreadDragSource,
 } from "../../grid/threadDrag";
 import {
-  attentionCardsForGrids,
+  attentionCardsForWorkspaces,
   clearThreadSelection,
   nextAttentionCard,
   partitionShelfThreads,
   resolveGridThreadState,
   runningSubagentsByParentThread,
   subagentParentKey,
-  threadMatchesGridSearch,
   updateThreadSelection,
-  visibleGridThreads,
-  type AttentionCard,
   type ThreadSelection,
 } from "../../grid/sidebar";
-import { revealedOpenThread } from "../../grid/collapsedRollup";
-import { ThreadRowPullRequestBadge } from "./ThreadRowPullRequestBadge";
 import { closedAgeLabel } from "../../grid/statusWord";
 import {
   activeProjectFilterKeys,
   applyProjectFilter,
   groupContainsWorkspace,
+  orderSidebarProjectGroups,
 } from "../../grid/projectFilter";
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
 import { useUiStateStore } from "../../uiStateStore";
 import { useEnvironmentMachines, usePrimaryEnvironmentId } from "../../state/environments";
-import {
-  ProjectFilterContext,
-  ProjectFilterPicker,
-  useThreadProjectFilter,
-} from "./ProjectFilterPicker";
+import { ProjectFilterContext, ProjectFilterPicker } from "./ProjectFilterPicker";
 import { jumpHintLabels } from "../../grid/jumpHints";
 import { useRevealOpenThread } from "../../grid/useRevealOpenThread";
-import { useStuckToTop } from "../../hooks/useStuckToTop";
 import { attachSidebarTree } from "../../lib/sidebarTree";
 import { useShortcutModifierState } from "../../shortcutModifierState";
 import { reportFailure } from "./reportFailure";
 import { SidebarNoProjects } from "./SidebarNoProjects";
 import { ThreadBulkMenuContext, useBulkThreadMenu } from "./useBulkThreadMenu";
-import { ThreadTitleInput } from "./threadTitleInput";
-import { JumpHintBadge, ThreadJumpHintContext, useThreadJumpHint } from "./threadJumpHints";
-import { threadHasStatus, ThreadStatusWord } from "./threadStatusMark";
-import {
-  ThreadCheckoutMark,
-  ThreadDiffItem,
-  ThreadDraftItem,
-  ThreadRemoteItem,
-  ThreadTerminalItem,
-} from "./threadRowIndicators";
-import { RowMeta, RowMetaItem } from "../ui/sidebar-row-meta";
+import { ThreadJumpHintContext } from "./threadJumpHints";
 import { GridShelves } from "./GridShelves";
 import { readLocalApi } from "../../localApi";
 import { useIsPhone } from "../../mobile/usePhone";
 import { ThreadContextDragGhost } from "../chat/ThreadContextDragGhost";
 import { RowActionSweepContext, type RowActionSweep } from "./rowActionSweepContext";
-import { beginRowActionSweep, sweepActionProps } from "../../grid/rowActionSweep";
-import { useRowFileDrop } from "./useRowFileDrop";
-import { ThreadHoverCard } from "./threadHoverCard";
-import { useProjectSectionMenu } from "./projectSectionMenu";
-import { gridHeadingMenuItems, hiddenGridIdFromAction } from "./gridHeadingMenu";
+import { beginRowActionSweep } from "../../grid/rowActionSweep";
+import { COLLAPSED_GRIDS_STORAGE_KEY, useCollapsedKeys } from "./sidebarCollapse";
+import { hiddenWorkspaceIdFromAction, workspaceHeadingMenuItems } from "./workspaceHeadingMenu";
 import {
-  COLLAPSED_GRIDS_STORAGE_KEY,
-  COLLAPSED_PROJECTS_STORAGE_KEY,
-  useCollapsedKeys,
-} from "./sidebarCollapse";
-import {
-  buildSidebarProjectSections,
-  moveProjectGroup,
-  orderSidebarProjectGroups,
-  type SidebarProjectSection as SidebarProjectSectionModel,
-} from "./sidebarProjectSections";
+  buildSidebarWorkspaceSections,
+  type SidebarWorkspaceSection,
+} from "./sidebarWorkspaceSections";
+import { moveThreadToWorkspaceWithFeedback, type ChatContent } from "./workspaceMoveFeedback";
 import type { NeedsYouEntry } from "./needsYouSection";
 import { buildNeedsYouEntries, isNeedsYouThread } from "./needsYouSection";
-import { preorderThreads } from "@houston-app/shared/grid/tree";
 import {
-  PROJECT_REORDER_ATTRIBUTE,
-  useProjectReorderDrag,
-  type ProjectReorderDrag,
-} from "./projectReorderDrag";
-import { useOpenGridDraft } from "../../grid/useOpenGridDraft";
-import { useProject, useQuietThreadShells, useProjects } from "../../state/entities";
-import { useEnvironmentQuery } from "../../state/query";
-import { vcsEnvironment } from "../../state/vcs";
+  WORKSPACE_REORDER_ATTRIBUTE,
+  useWorkspaceReorderDrag,
+  type WorkspaceReorderDrag,
+} from "./workspaceReorderDrag";
 import { useSidebarProjectGroups } from "../../hooks/useSidebarProjectGroups";
+import { useProjects, useQuietThreadShells } from "../../state/entities";
 import { registerSettleAndAdvance } from "../../settleAndAdvance";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { primaryServerKeybindingsAtom } from "../../state/server";
 import { threadEnvironment } from "../../state/threads";
 import { useThreadActions } from "../../hooks/useThreadActions";
-import { useThreadActionMenu } from "../../hooks/useThreadActionMenu";
 import { useNewThreadHandler, type NewThreadHandler } from "../../hooks/useHandleNewThread";
 import {
   resolveShortcutCommand,
@@ -172,153 +119,84 @@ import { cn } from "../../lib/utils";
 import { isModelPickerOpen } from "../../modelPickerVisibility";
 import { updateClientSettings, useClientSettings } from "../../hooks/useSettings";
 import { useNowMinute } from "../../hooks/useNowMinute";
-import { formatRelativeTimeLabel, formatUpcomingTimestamp } from "../../timestampFormat";
+import { formatUpcomingTimestamp } from "../../timestampFormat";
 import { AnimatedHeight } from "../AnimatedHeight";
 import { isAppModalPage } from "../sidebar/mainAppLocation";
 import { SidebarChromeFooter, SidebarChromeHeader } from "../sidebar/SidebarChrome";
 import { SidebarRailKbd, SidebarRailNav } from "../sidebar/SidebarRailNav";
-import { SidebarProviderStack, type SidebarProviderEntry } from "../sidebar/SidebarThreadRow";
+import type { SidebarProviderEntry } from "../sidebar/SidebarThreadRow";
 import {
   EMPTY_PROVIDER_ENTRIES,
   sidebarProviderEntriesAtom,
 } from "../sidebar/sidebarProviderEntries";
-import {
-  isTrailingDoubleClick,
-  useSnoozeWakeClock,
-  useThreadJumpHintsVisible,
-} from "../Sidebar.logic";
+import { useSnoozeWakeClock, useThreadJumpHintsVisible } from "../Sidebar.logic";
 import { resolveSnoozePresets, type SnoozePreset } from "../Sidebar.snooze";
+import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
+import { SidebarContent, SidebarHeader, useSidebar, useSidebarVisibility } from "../ui/sidebar";
+import { ThreadCard, HighlightedText } from "./ThreadCard";
+import type { ThreadActionMenuWorkspaceInput } from "../../hooks/useThreadActionMenu";
 import {
-  Menu,
-  MenuItem,
-  MenuPopup,
-  MenuSeparator,
-  MenuSub,
-  MenuSubPopup,
-  MenuSubTrigger,
-  MenuTrigger,
-} from "../ui/menu";
+  SIDEBAR_GRID_ACTION_CLS,
+  SIDEBAR_GRID_CHEVRON_BOX_CLS,
+  SIDEBAR_GRID_CHEVRON_CLS,
+  SIDEBAR_GRID_CHEVRON_EXPANDED_CLS,
+  SIDEBAR_GRID_COUNT_CLS,
+  SIDEBAR_GRID_EMPTY_CLS,
+  SIDEBAR_GRID_HEADING_ACTIVE_CLS,
+  SIDEBAR_GRID_HEADING_CLS,
+  SIDEBAR_GRID_HEADING_DROP_CLS,
+  SIDEBAR_GRID_HEADING_ROW_CLS,
+  SIDEBAR_GRID_RENAME_CLS,
+  SIDEBAR_NEEDS_YOU_DOT_CLS,
+  SIDEBAR_NEEDS_YOU_HEADING_CLS,
+  SIDEBAR_NEEDS_YOU_HEADING_GLYPH_CLS,
+  SIDEBAR_NEEDS_YOU_SECTION_CLS,
+  SIDEBAR_ROW_ACTIONS_CLS,
+  SIDEBAR_ROW_TRAILING_CLS,
+  SIDEBAR_SECTION_ACTION_CLS,
+  SidebarOptionsMenu,
+  SidebarSectionHeaderRow,
+  sidebarGridGuideCls,
+  sidebarGridNameCls,
+  type SidebarGridOptions,
+} from "../ui/sidebar-grids";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { stackedThreadToast, toastManager } from "../ui/toast";
 import {
-  FOCUS_ACTION_CLS,
-  FOCUS_ROW_CLS,
-  ROW_ACTIONS_REVEAL,
-  ROW_ACTIONS_VISIBLE,
-  ROW_STATUS_HIDDEN,
-  ROW_STATUS_RECEDE,
-  SidebarContent,
-  SidebarHeader,
-  useSidebar,
-  useSidebarVisibility,
-} from "../ui/sidebar";
-import { EnvironmentId, ProjectId, type ThreadId } from "@houston-app/contracts";
-import { MOTION_FEEDBACK, MOTION_FEEDBACK_OPACITY } from "../ui/motion-recipes";
-import {
-  ROW_SCROLL_MARGIN_CLS,
-  ROW_TITLE_TEXT_CLS,
-  SIDEBAR_ROW_SURFACE_CLS,
-} from "../ui/sidebar-rail-recipes";
-import { isThreadRoutePathname, parseThreadRoutePathname } from "../../threadRoutes";
-import { shelfReturnAction } from "../../grid/shelfReturn";
-import { olderSettledScopesForProjects } from "../../grid/olderSettledScopes";
+  SidebarContentResults,
+  SidebarNoSearchResults,
+  SidebarSearchHighlightContext,
+  type ContentResult,
+} from "./sidebarSearchResults";
 import {
   clampSearchHighlight,
   contentOnlyMatches,
   moveSearchHighlight,
   orderSearchResults,
 } from "../../grid/sidebarSearch";
+import { shelfReturnAction } from "../../grid/shelfReturn";
+import { olderSettledScopesForProjects } from "../../grid/olderSettledScopes";
 import { useThreadSearch } from "../../state/queries";
 import { findForMessageMatch, openThreadFindOnQuery } from "../chat/threadFindStore";
-import {
-  SidebarContentResults,
-  SidebarNoSearchResults,
-  SidebarSearchHighlightContext,
-  useSearchHighlight,
-  type ContentResult,
-} from "./sidebarSearchResults";
-import { SIDEBAR_THREAD_META_TEXT_CLASS, SIDEBAR_THREAD_TAG_CLASS } from "../ui/thread-tag-recipes";
-import {
-  SIDEBAR_GRID_ACTION_CLS,
-  SIDEBAR_GRID_CHEVRON_BOX_CLS,
-  SIDEBAR_GRID_CHEVRON_CLS,
-  SIDEBAR_GRID_CHEVRON_EXPANDED_CLS,
-  SIDEBAR_GRID_EMPTY_CLS,
-  SIDEBAR_NEEDS_YOU_DOT_CLS,
-  SIDEBAR_PROJECT_CONTENT_CLS,
-  SIDEBAR_PROJECT_GUIDE_CLS,
-  SIDEBAR_PROJECT_ICON_BOX_CLS,
-  SIDEBAR_PROJECT_LABEL_EMPTY_CLS,
-  SIDEBAR_ROW_ACTIONS_CLS,
-  SIDEBAR_ROW_TRAILING_CLS,
-  SIDEBAR_UNGROUPED_THREADS_CLS,
-  SIDEBAR_GRID_HEADING_ACTIVE_CLS,
-  SIDEBAR_GRID_HEADING_CLS,
-  SIDEBAR_GRID_HEADING_DROP_CLS,
-  SIDEBAR_GRID_HEADING_ROW_CLS,
-  SIDEBAR_GRID_COUNT_CLS,
-  sidebarGridGuideCls,
-  sidebarGridNameCls,
-  SIDEBAR_GRID_RENAME_CLS,
-  SIDEBAR_NEEDS_YOU_HEADING_CLS,
-  SIDEBAR_NEEDS_YOU_HEADING_GLYPH_CLS,
-  SIDEBAR_NEEDS_YOU_SECTION_CLS,
-  SIDEBAR_PROJECT_ACTION_CLS,
-  SIDEBAR_PROJECT_LABEL_CLS,
-  SIDEBAR_PROJECT_LABEL_TEXT_CLS,
-  SIDEBAR_PROJECT_NEEDS_YOU_CLS,
-  SIDEBAR_PROJECT_ROW_CLS,
-  SIDEBAR_PROJECT_SUMMARY_CLS,
-  SIDEBAR_SECTION_ACTION_CLS,
-  SIDEBAR_THREAD_PROJECT_CLS,
-  SIDEBAR_THREAD_ROW_INDENT_CLS,
-  SidebarOptionsMenu,
-  sidebarProjectSectionCls,
-  SidebarSectionHeaderRow,
-  type SidebarGridOptions,
-} from "../ui/sidebar-grids";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { stackedThreadToast, toastManager } from "../ui/toast";
-import {
-  PHONE_NOTE_CLS,
-  PHONE_ROW_ACTION_CLS,
-  PHONE_ROW_ACTION_ICON_CLS,
-} from "~/components/ui/phone-recipes";
+import { parseThreadRoutePathname } from "../../threadRoutes";
 
 type DraggedThread = ThreadDragSource;
 
-const AGO_SUFFIX_RE = / ago$/;
-const GRID_ROUTE_RE = /^\/grid\/([^/]+)/;
+const loggedUnplacedKeys = new Set<string>();
 
-function threadTimeLabel(thread: EnvironmentThreadShell, nowMinute: string): string {
-  const timestamp = thread.latestUserMessageAt ?? thread.updatedAt;
-  return formatRelativeTimeLabel(timestamp, Date.parse(`${nowMinute}:00.000Z`)).replace(
-    AGO_SUFFIX_RE,
-    "",
+/** Logs once per distinct set of threads the layout shows no chat for. */
+function logUnplacedThreads(threadIds: ReadonlyArray<string>, firstWorkspace: string): void {
+  if (threadIds.length === 0) return;
+  const key = `${firstWorkspace}\u0000${threadIds.join(",")}`;
+  if (loggedUnplacedKeys.has(key)) return;
+  loggedUnplacedKeys.add(key);
+  console.warn(
+    `The layout shows no chat tab for ${threadIds.length} thread(s) (${threadIds.join(", ")}); the sidebar lists them under the first workspace, "${firstWorkspace}", where the server places them.`,
   );
 }
 
-function HighlightedText({ text, query }: { text: string; query: string }) {
-  const needle = query.trim();
-  if (needle.length === 0) return <>{text}</>;
-  const lower = text.toLocaleLowerCase();
-  const target = needle.toLocaleLowerCase();
-  const parts: ReactNode[] = [];
-  let cursor = 0;
-  for (;;) {
-    const index = lower.indexOf(target, cursor);
-    if (index === -1) break;
-    if (index > cursor) parts.push(text.slice(cursor, index));
-    parts.push(
-      <mark
-        key={`${index}-${target}`}
-        className="rounded-(--r-badge) bg-(--warn-wash) px-px text-inherit"
-      >
-        {text.slice(index, index + needle.length)}
-      </mark>,
-    );
-    cursor = index + needle.length;
-  }
-  parts.push(text.slice(cursor));
-  return <>{parts}</>;
+function explain(title: string, description: string): void {
+  toastManager.add(stackedThreadToast({ type: "error", title, description }));
 }
 
 export function GridSidebar({
@@ -332,8 +210,6 @@ export function GridSidebar({
 } = {}) {
   const allProjects = useProjects();
   const threads = useQuietThreadShells();
-  // Reading the same project groups as the rest of the app makes the rail obey
-  // pin, grouping and sort order instead of raw store order.
   const projectGroups = useSidebarProjectGroups();
   const openProjectGroups = orderSidebarProjectGroups(projectGroups);
   const storedFilterKeys = useUiStateStore((store) => store.sidebarProjectScopeKeys);
@@ -349,13 +225,10 @@ export function GridSidebar({
       return project === undefined || project.archivedAt != null ? [] : [project];
     }),
   );
-  const grids = useGridStore((store) => store.grids);
-  const threadOrigins = useGridStore((store) => store.threadOrigins);
-  const createGrid = useGridStore((store) => store.createGrid);
+  const layout = useLayoutStore((store) => store.layout);
   const providerEntriesByEnvironment = useAtomValue(sidebarProviderEntriesAtom);
   const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
   const threadSort = useClientSettings((settings) => settings.sidebarGridThreadSortOrder);
-  const gridSort = useClientSettings((settings) => settings.sidebarGridSortOrder);
   const showBranch = useClientSettings((settings) => settings.sidebarRowShowBranch);
   const showPullRequest = useClientSettings((settings) => settings.sidebarRowShowPullRequest);
   const showSubagents = useClientSettings((settings) => settings.sidebarRowShowSubagents);
@@ -365,7 +238,6 @@ export function GridSidebar({
   const showNeedsYou = showNeedsYouChoice ?? isPhone;
   const sidebarOptions: SidebarGridOptions = {
     threadSort,
-    gridSort,
     showBranch,
     showPullRequest,
     showSubagents,
@@ -389,51 +261,40 @@ export function GridSidebar({
   const nowMinute = useNowMinute();
   const wakeClock = useSnoozeWakeClock(threads);
   const nowIso = new Date(wakeClock).toISOString();
-  const openGridId = GRID_ROUTE_RE.exec(pathname)?.[1] ?? null;
-  const openGrid =
-    openGridId === null ? null : (grids.find((grid) => grid.id === openGridId) ?? null);
 
   const [search, setSearch] = useState("");
   const [searchIndex, setSearchIndex] = useState(0);
   const [selection, setSelection] = useState<ThreadSelection>(clearThreadSelection);
-  const collapsedGrids = useCollapsedKeys(COLLAPSED_GRIDS_STORAGE_KEY);
-  const collapsedProjects = useCollapsedKeys(COLLAPSED_PROJECTS_STORAGE_KEY);
+  const [creatingWorkspace, setCreatingWorkspace] = useState(false);
+  const collapsedWorkspaces = useCollapsedKeys(COLLAPSED_GRIDS_STORAGE_KEY);
   const dragging = useThreadDragSource();
   const dropTargetSide = useThreadDropTarget();
   const dropTarget =
     dropTargetSide === null
       ? null
-      : dropTargetSide.kind === "grid"
-        ? `grid:${dropTargetSide.gridId}`
+      : dropTargetSide.kind === "workspace"
+        ? `workspace:${dropTargetSide.workspaceId}`
         : dropTargetSide.kind === "closed"
           ? "shelf:closed"
           : null;
-  const openGridDraft = useOpenGridDraft();
   const railRef = useRef<HTMLDivElement | null>(null);
 
   const actions = useThreadActions();
   const handleNewThread = useNewThreadHandler();
-  const openProjectMenu = useProjectSectionMenu();
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
 
-  const openThread = (gridId: string, threadId: string) => {
+  const openThread = (thread: Pick<EnvironmentThreadShell, "environmentId" | "id">) => {
     // Opening a thread ends a multi-selection; its rows may be on other panes now.
     if (selection.selectedThreadKeys.size > 0) setSelection(clearThreadSelection());
-    useGridStore.getState().focusThread(gridId, threadId);
-    const grid = gridById(useGridStore.getState().grids, gridId);
-    if (grid !== null && !isPhoneViewport()) {
-      void openThreadInLayout(
-        {
-          navigate: (options) => navigate(options),
-          pathname: () => router.state.location.pathname,
-        },
-        scopeThreadRef(grid.environmentId as EnvironmentId, threadId as ThreadId),
-      );
-      return;
-    }
-    void navigate({ to: "/grid/$gridId", params: { gridId } });
+    void openThreadInLayout(
+      {
+        navigate: (options) => navigate(options),
+        pathname: () => router.state.location.pathname,
+      },
+      scopeThreadRef(thread.environmentId, thread.id),
+    );
   };
 
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -462,79 +323,119 @@ export function GridSidebar({
     };
   };
 
-  // Opening a thread the filter hides (history, a link, the palette) widens the
-  // filter once, so the row the user navigated to is on the rail.
-  const openWorkspaceKey = openGrid?.workspaceKey ?? null;
+  const threadById = new Map<string, EnvironmentThreadShell>(
+    threads.map((thread) => [thread.id, thread] as const),
+  );
+  const threadKeyOf = (thread: { environmentId: string; id: string }) =>
+    scopedThreadKey(scopeThreadRef(thread.environmentId as never, thread.id as never));
+
+  // The thread behind the focused tab: its chat, or the thread a surface tab belongs to.
+  const focusedContent = selectFocusedTab(layout)?.content;
+  const focusedThreadRef =
+    focusedContent?.kind === "chat"
+      ? chatTargetThreadRef(focusedContent.target)
+      : focusedContent?.kind === "surface"
+        ? focusedContent.threadRef
+        : null;
+  const focusedThreadKey = focusedThreadRef === null ? null : scopedThreadKey(focusedThreadRef);
+  const focusedShell =
+    focusedThreadRef === null ? undefined : threadById.get(focusedThreadRef.threadId);
+  const currentFocus = focusedShell === undefined ? null : { threadId: focusedShell.id };
+  // A thread opened on its own route (a link, a reload) can have no tab yet; its route names it.
+  const routeRef = focusedShell === undefined ? parseThreadRoutePathname(pathname) : null;
+  const routeShell = routeRef === null ? undefined : threadById.get(routeRef.threadId);
+  const revealShell =
+    focusedShell ??
+    (routeShell?.environmentId === routeRef?.environmentId ? routeShell : undefined);
+  useRevealOpenThread(railRef, revealShell === undefined ? null : threadKeyOf(revealShell));
+
+  // Opening a thread the filter hides (history, a link, the palette) widens the filter once, so
+  // the row the user navigated to is on the rail.
+  const openProjectKey =
+    revealShell === undefined
+      ? null
+      : workspaceKeyOf(revealShell.environmentId, revealShell.projectId);
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- widens the persisted project filter when navigation lands on a project the filter hides
   useEffect(() => {
-    if (openWorkspaceKey === null || filterKeys.length === 0) return;
+    if (openProjectKey === null || filterKeys.length === 0) return;
     const hidden = !orderedProjectGroups.some((group) =>
       group.memberProjectRefs.some(
-        (ref) => workspaceKeyOf(ref.environmentId, ref.projectId) === openWorkspaceKey,
+        (ref) => workspaceKeyOf(ref.environmentId, ref.projectId) === openProjectKey,
       ),
     );
     // oxlint-disable-next-line react/set-state-in-effect -- the filter is persisted client state that navigation must be able to widen
     if (hidden) changeProjectFilter([]);
-    // Only a change of the open workspace widens; choosing a filter while a thread is open keeps it.
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- the filter and project list are read when the open workspace changes, not on every change of them
-  }, [openWorkspaceKey]);
+    // Only a change of the open project widens; choosing a filter while a thread is open keeps it.
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- the filter and project list are read when the open project changes, not on every change of them
+  }, [openProjectKey]);
 
-  const createGridInWorkspace = (workspaceKey: string, name?: string) => {
-    const project = projects.find(
-      (candidate) => workspaceKeyOf(candidate.environmentId, candidate.id) === workspaceKey,
-    );
-    if (project === undefined) return;
-    const gridId = createGrid({
-      environmentId: project.environmentId,
-      projectId: project.id,
-      workspaceKey,
-      ...(name === undefined ? {} : { name }),
-    });
-    void navigate({ to: "/grid/$gridId", params: { gridId } });
-  };
-
-  const createThreadInGrid = (grid: GridRecord) => {
-    void openGridDraft({ gridId: grid.id, focusedThreadId: grid.focusedThreadId });
-  };
-
-  const threadById = new Map<string, EnvironmentThreadShell>(
-    threads.map((thread) => [thread.id, thread] as const),
+  const workspaceKeys = new Set(
+    projects.map((project) => workspaceKeyOf(project.environmentId, project.id)),
   );
+  const projectTitles = new Map(
+    projects.map((project) => [workspaceKeyOf(project.environmentId, project.id), project.title]),
+  );
+  const projectTitleOf = (thread: Pick<EnvironmentThreadShell, "environmentId" | "projectId">) =>
+    projectTitles.get(workspaceKeyOf(thread.environmentId, thread.projectId)) ??
+    (thread.projectId.length === 0 ? "No project" : thread.projectId);
 
-  // The rail's flat order: workspaces, their grids, each grid's panes, then the
-  // workspace threads no grid shows. Keyboard traversal and shift-click ranges
-  // follow exactly what the rail draws.
-  const ungroupedByWorkspace = new Map<string, EnvironmentThreadShell[]>();
-  const railTargets = projects.flatMap((project) => {
-    const workspaceKey = workspaceKeyOf(project.environmentId, project.id);
-    const workspaceGrids = orderedGridsForWorkspace(grids, workspaceKey).filter(
-      (grid) => !grid.hidden,
-    );
-    const gridTargets = workspaceGrids.flatMap((grid) =>
-      visibleGridThreads(grid, threads, nowIso).map((thread) => ({
-        gridId: grid.id as string | null,
-        environmentId: thread.environmentId,
-        projectId: thread.projectId,
-        threadId: thread.id,
-      })),
-    );
-    const ungrouped = ungroupedWorkspaceThreads({ project, grids, threads, now: nowIso });
-    ungroupedByWorkspace.set(
-      workspaceKey,
-      pinnedThreadsFirst(threadSort === "grid" ? ungrouped : sortThreads(ungrouped, threadSort)),
-    );
-    return [
-      ...gridTargets,
-      ...ungrouped.map((thread) => ({
-        gridId: null,
-        environmentId: thread.environmentId,
-        projectId: thread.projectId,
-        threadId: thread.id,
-      })),
-    ];
+  const tabLabel = useLayoutTabLabel();
+  const resolveWorkspaceTitle = (workspace: LayoutWorkspace) => {
+    const lead = workspace.columns[0]?.panes[0]?.tabs[0];
+    return lead ? tabLabel(lead).title : null;
+  };
+
+  const needsYouEntries = showNeedsYou
+    ? buildNeedsYouEntries({ threads, nowIso, workspaceKeys })
+    : [];
+  const needsYouThreadIds = new Set(needsYouEntries.map((entry) => entry.thread.id));
+
+  const query = search.trim();
+  const searching = query.length > 0;
+  const sectionInput = {
+    layout,
+    threads,
+    threadSort,
+    nowIso,
+    projectKeys: workspaceKeys,
+    resolveWorkspaceTitle,
+  } as const;
+  // Everything the rail can reach, whatever it draws now: keyboard traversal, attention and
+  // jump hints follow the rows, not the search or the Needs you lift.
+  const everything = buildSidebarWorkspaceSections({
+    ...sectionInput,
+    query: "",
+    excludedThreadIds: undefined,
   });
+  const { sections, hiddenSections } = buildSidebarWorkspaceSections({
+    ...sectionInput,
+    query,
+    excludedThreadIds: showNeedsYou ? needsYouThreadIds : undefined,
+  });
+  const firstWorkspace = everything.sections[0] ?? everything.hiddenSections[0];
+  logUnplacedThreads(everything.unplacedThreadIds, firstWorkspace?.name ?? "");
+
+  const workspaceNames = new Map(
+    [...everything.sections, ...everything.hiddenSections].map((section) => [
+      section.workspaceId,
+      section.name,
+    ]),
+  );
+  const workspaceOfThread = new Map(
+    [...everything.sections, ...everything.hiddenSections].flatMap((section) =>
+      section.threads.map((thread) => [thread.id, section.workspaceId] as const),
+    ),
+  );
+  const railTargets = everything.sections.flatMap((section) =>
+    section.threads.map((thread) => ({
+      workspaceId: section.workspaceId,
+      environmentId: thread.environmentId,
+      projectId: thread.projectId,
+      threadId: thread.id,
+    })),
+  );
   const orderedThreadKeys = railTargets.map((target) =>
-    scopedThreadKey(scopeThreadRef(target.environmentId, target.threadId)),
+    scopedThreadKey(scopeThreadRef(target.environmentId, target.threadId as never)),
   );
   // The first nine rows carry their Mod+1..9 label while the modifier is held.
   const shortcutModifiers = useShortcutModifierState();
@@ -545,55 +446,18 @@ export function GridSidebar({
   );
   const jumpHints = jumpHintsVisible ? jumpHintLabels(orderedThreadKeys, keybindings) : null;
   const openRailTarget = (target: (typeof railTargets)[number]) => {
-    if (target.gridId !== null) {
-      openThread(target.gridId, target.threadId);
-      return;
-    }
-    const resolved = resolveGridThreadTarget({
-      environmentId: target.environmentId,
-      projectId: target.projectId,
-      threadId: target.threadId,
-    });
-    if (resolved !== null) openThread(resolved.gridId, resolved.threadId);
+    const thread = threadById.get(target.threadId);
+    if (thread !== undefined) openThread(thread);
   };
 
-  // Hidden grids still answer Ctrl .: their threads keep their grid and pane.
-  // Ungrouped threads answer too, so an approval cannot hide from the walk.
-  const allCards: AttentionCard[] = projects.flatMap((project) => {
-    const workspaceKey = workspaceKeyOf(project.environmentId, project.id);
-    return [
-      ...attentionCardsForGrids(orderedGridsForWorkspace(grids, workspaceKey), threads, nowIso),
-      ...(ungroupedByWorkspace.get(workspaceKey) ?? []).map((thread) => ({
-        gridId: null,
-        threadId: thread.id,
-        state: resolveGridThreadState(thread, nowIso),
-      })),
-    ];
-  });
-
-  const currentFocus =
-    openGrid === null || openGrid.focusedThreadId === null
-      ? null
-      : { gridId: openGrid.id, threadId: openGrid.focusedThreadId };
-  const openShell = currentFocus === null ? undefined : threadById.get(currentFocus.threadId);
-  // A thread opened on its own route (a link, a reload) has no open grid; its route names it.
-  const routeRef = openShell === undefined ? parseThreadRoutePathname(pathname) : null;
-  const routeShell = routeRef === null ? undefined : threadById.get(routeRef.threadId);
-  const revealShell =
-    openShell ?? (routeShell?.environmentId === routeRef?.environmentId ? routeShell : undefined);
-  useRevealOpenThread(
-    railRef,
-    revealShell === undefined
-      ? null
-      : scopedThreadKey(scopeThreadRef(revealShell.environmentId, revealShell.id)),
+  // Hidden workspaces still answer Ctrl .: their threads keep their place.
+  const allCards = attentionCardsForWorkspaces(
+    [...everything.sections, ...everything.hiddenSections],
+    nowIso,
   );
 
   const removeFromSelection = (threadsToRemove: ReadonlyArray<EnvironmentThreadShell>) => {
-    const keys = new Set(
-      threadsToRemove.map((thread) =>
-        scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-      ),
-    );
+    const keys = new Set(threadsToRemove.map(threadKeyOf));
     setSelection((current) => ({
       selectedThreadKeys: new Set([...current.selectedThreadKeys].filter((key) => !keys.has(key))),
       anchorThreadKey:
@@ -605,19 +469,14 @@ export function GridSidebar({
 
   const closeThreads = (threadsToClose: ReadonlyArray<EnvironmentThreadShell>) => {
     removeFromSelection(threadsToClose);
-    const closedKeys = new Set<string>(threadsToClose.map((thread) => thread.id));
-    if (
-      openGrid !== null &&
-      openGrid.focusedThreadId !== null &&
-      closedKeys.has(openGrid.focusedThreadId)
-    ) {
-      const remaining = visibleGridThreads(openGrid, threads, nowIso).filter(
-        (thread) => !closedKeys.has(thread.id),
+    const closedIds = new Set<string>(threadsToClose.map((thread) => thread.id));
+    if (currentFocus !== null && closedIds.has(currentFocus.threadId)) {
+      // Closing the open thread moves to the next row of its workspace.
+      const section = everything.sections.find((candidate) =>
+        candidate.threads.some((thread) => thread.id === currentFocus.threadId),
       );
-      // Closing the last cell keeps the grid on screen; its empty state offers
-      // a draft, and the closed thread is listed on the Closed shelf.
-      const next = remaining[0];
-      if (next !== undefined) openThread(openGrid.id, next.id);
+      const next = section?.threads.find((thread) => !closedIds.has(thread.id));
+      if (next !== undefined) openThread(next);
     }
     for (const thread of threadsToClose) {
       void (async () => {
@@ -707,16 +566,7 @@ export function GridSidebar({
       event.preventDefault();
       event.stopPropagation();
       const thread = threadById.get(card.threadId);
-      if (thread !== undefined) {
-        openRailTarget({
-          gridId: card.gridId,
-          environmentId: thread.environmentId,
-          projectId: thread.projectId,
-          threadId: thread.id,
-        });
-      } else if (card.gridId !== null) {
-        openThread(card.gridId, card.threadId);
-      }
+      if (thread !== undefined) openThread(thread);
     };
     const onEscape = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.key !== "Escape") return;
@@ -733,8 +583,8 @@ export function GridSidebar({
     };
   });
 
-  // Thread traversal and jump: the rail owns the order, so Mod+Shift+[ / ] and
-  // Mod+1..9 walk the same rows the user sees, including ungrouped threads.
+  // Thread traversal and jump: the rail owns the order, so Mod+Shift+[ / ] and Mod+1..9 walk the
+  // same rows the user sees.
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- window keydown listener for thread traversal and jump shortcuts
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -775,7 +625,7 @@ export function GridSidebar({
     thread: EnvironmentThreadShell,
     input: { shiftKey: boolean; toggleKey: boolean },
   ) => {
-    const key = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
+    const key = threadKeyOf(thread);
     setSelection((current) =>
       updateThreadSelection(current, {
         orderedKeys: orderedThreadKeys,
@@ -787,9 +637,7 @@ export function GridSidebar({
   };
 
   const selectedThreads = threads.filter((thread) =>
-    selection.selectedThreadKeys.has(
-      scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-    ),
+    selection.selectedThreadKeys.has(threadKeyOf(thread)),
   );
 
   const openBulkMenu = useBulkThreadMenu({
@@ -810,88 +658,21 @@ export function GridSidebar({
           selectedHoldEnvironmentId,
         );
 
-  // A drag lands the thread in the target grid but does not move the user; the
-  // toast offers the grid and the way back.
-  const moveThreadToGrid = (source: DraggedThread, targetGridId: string) => {
-    if (returnShelfThreadFromDrag(source)) return;
-    if (source.gridId === targetGridId) return;
-    const thread = threadById.get(source.threadId);
-    const target = gridById(useGridStore.getState().grids, targetGridId);
-    if (thread === undefined || target === null) return;
-    if (thread.projectId.length === 0) {
-      toastManager.add(stackedThreadToast({ type: "error", ...noProjectMoveToast(target.name) }));
-      return;
-    }
-    if (!sameProject(thread, target)) {
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          ...crossProjectMoveToast(
-            workspaceTitles.get(workspaceKeyOf(thread.environmentId, thread.projectId)) ??
-              thread.projectId,
-            workspaceTitles.get(target.workspaceKey) ?? target.projectId,
-          ),
-        }),
-      );
-      return;
-    }
-    const refusal = moveThreadToGridOrExplain({
-      threadId: source.threadId,
-      threadEnvironmentId: thread.environmentId,
-      threadProjectId: thread.projectId,
-      targetGridId,
-    });
-    if (refusal !== null) {
-      toastManager.add(stackedThreadToast({ type: "error", ...refusal }));
-      return;
-    }
-    showThreadMovedToast({
-      threadId: thread.id,
-      threadEnvironmentId: thread.environmentId,
-      threadProjectId: thread.projectId,
-      threadTitle: thread.title,
-      sourceGridId: source.gridId,
-      targetGridId,
-      onOpenTarget: (gridId) => openThread(gridId, thread.id),
-    });
-  };
-  const dropThreadOnThread = (
-    source: DraggedThread,
-    targetGridId: string,
-    targetThreadId: string,
-  ) => {
-    if (returnShelfThreadFromDrag(source)) return;
-    if (source.gridId === targetGridId) {
-      useGridStore.getState().reorderGridThreads(targetGridId, source.threadId, targetThreadId);
-      return;
-    }
-    moveThreadToGrid(source, targetGridId);
-  };
-  const openReturnedThread = (thread: EnvironmentThreadShell) => {
-    const target = resolveGridThreadTarget({
-      environmentId: thread.environmentId,
-      projectId: thread.projectId,
-      threadId: thread.id,
-      fromShelf: true,
-    });
-    if (target !== null) openThread(target.gridId, target.threadId);
-  };
-
   const wakeShelfThread = (thread: EnvironmentThreadShell, open = true) => {
     void (async () => {
       const result = await actions.unsnoozeThread(scopeThreadRef(thread.environmentId, thread.id));
-      if (!reportFailure("Failed to bring thread back", result) && open) openReturnedThread(thread);
+      if (!reportFailure("Failed to bring thread back", result) && open) openThread(thread);
     })();
   };
 
   const reopenShelfThread = (thread: EnvironmentThreadShell, open = true) => {
     void (async () => {
       const result = await actions.unsettleThread(scopeThreadRef(thread.environmentId, thread.id));
-      if (!reportFailure("Failed to reopen thread", result) && open) openReturnedThread(thread);
+      if (!reportFailure("Failed to reopen thread", result) && open) openThread(thread);
     })();
   };
 
-  // A shelf row dropped into the rail returns to its grid without moving the user.
+  // A shelf row dropped into the rail returns to its workspace without moving the user.
   const returnShelfThreadFromDrag = (source: DraggedThread) => {
     const thread = threadById.get(source.threadId);
     if (thread === undefined) return false;
@@ -901,84 +682,49 @@ export function GridSidebar({
     return action !== null;
   };
 
-  const workspaceKeys = new Set(
-    projects.map((project) => workspaceKeyOf(project.environmentId, project.id)),
-  );
-  const workspaceTitles = new Map(
-    projects.map((project) => [workspaceKeyOf(project.environmentId, project.id), project.title]),
-  );
+  // A move lands the thread's chat in the workspace but does not move the user; the toast offers
+  // the workspace and the way back.
+  const moveThreadToWorkspace = (thread: EnvironmentThreadShell, targetWorkspaceId: string) => {
+    const content: ChatContent = {
+      kind: "chat",
+      target: { kind: "server", threadRef: scopeThreadRef(thread.environmentId, thread.id) },
+    };
+    const shownIn = workspaceOfThread.get(thread.id) ?? targetWorkspaceId;
+    const placedIn = findLayoutTabByContent(useLayoutStore.getState().layout, content)?.workspace
+      .id;
+    if (placedIn === targetWorkspaceId) return;
+    moveThreadToWorkspaceWithFeedback({
+      content,
+      threadTitle: thread.title,
+      source: {
+        workspaceId: placedIn ?? shownIn,
+        name: workspaceNames.get(placedIn ?? shownIn) ?? "",
+      },
+      target: { workspaceId: targetWorkspaceId, name: workspaceNames.get(targetWorkspaceId) ?? "" },
+      onOpenTarget: (workspaceId) => useLayoutStore.getState().focusWorkspace(workspaceId),
+    });
+  };
+  const dropOnWorkspace = (source: DraggedThread, targetWorkspaceId: string) => {
+    if (returnShelfThreadFromDrag(source)) return;
+    const thread = threadById.get(source.threadId);
+    if (thread !== undefined) moveThreadToWorkspace(thread, targetWorkspaceId);
+  };
+  const workspaceMoveFor = (
+    thread: EnvironmentThreadShell,
+  ): ThreadActionMenuWorkspaceInput | undefined => {
+    const current = workspaceOfThread.get(thread.id) ?? null;
+    return {
+      targets: everything.sections
+        .filter((section) => section.workspaceId !== current)
+        .map((section) => ({ workspaceId: section.workspaceId, name: section.name })),
+      onMove: (workspaceId) => moveThreadToWorkspace(thread, workspaceId),
+    };
+  };
+
   const shelves = partitionShelfThreads(threads, workspaceKeys, nowIso);
   const runningSubagentsByThread = runningSubagentsByParentThread(threads, nowIso);
-  // A held or closed thread leaves its pane but keeps its slot for the return.
-  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- keeps the grid store in step with thread lifecycle from the server
-  useEffect(() => {
-    for (const grid of grids) {
-      if (grid.tree === null) continue;
-      for (const leaf of preorderThreads(grid.tree)) {
-        const thread = threads.find((candidate) => candidate.id === leaf.threadId);
-        if (thread === undefined || thread.archivedAt !== null || thread.deletedAt !== null) {
-          continue;
-        }
-        const shelved =
-          thread.settledOverride === "settled" || effectiveSnoozed(thread, { now: nowIso });
-        if (!shelved) continue;
-        const store = useGridStore.getState();
-        if (store.threadOrigins[leaf.threadId] !== undefined) continue;
-        store.detachThreadForShelf(leaf.threadId);
-      }
-    }
-  }, [grids, threads, nowIso]);
 
-  // A woken or reopened thread returns to the grid and slot it left.
-  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- keeps the grid store in step with a wake or reopen from the server
-  useEffect(() => {
-    for (const threadId of Object.keys(threadOrigins)) {
-      const thread = threadById.get(threadId);
-      if (thread === undefined || thread.archivedAt !== null || thread.deletedAt !== null) {
-        continue;
-      }
-      if (thread.settledOverride === "settled") continue;
-      if (effectiveSnoozed(thread, { now: nowIso })) continue;
-      useGridStore.getState().returnThreadToOrigin({
-        threadId,
-        environmentId: thread.environmentId,
-        projectId: thread.projectId,
-      });
-    }
-  }, [threadById, threadOrigins, nowIso]);
-
-  const query = search.trim();
-  const searchMatchThreads = [
-    ...projects.flatMap((project) =>
-      orderedGridsForWorkspace(grids, workspaceKeyOf(project.environmentId, project.id))
-        .filter((grid) => !grid.hidden)
-        .flatMap((grid) =>
-          visibleGridThreads(grid, threads, nowIso).filter((thread) =>
-            threadMatchesGridSearch(
-              {
-                title: thread.title,
-                branch: thread.branch,
-                pullRequests: thread.pullRequests,
-              },
-              query,
-            ),
-          ),
-        ),
-    ),
-    ...projects.flatMap((project) =>
-      (ungroupedByWorkspace.get(workspaceKeyOf(project.environmentId, project.id)) ?? []).filter(
-        (thread) =>
-          threadMatchesGridSearch(
-            {
-              title: thread.title,
-              branch: thread.branch,
-              pullRequests: thread.pullRequests,
-            },
-            query,
-          ),
-      ),
-    ),
-  ];
+  const searchMatchThreads = sections.flatMap((section) => section.threads);
 
   // A press-and-sweep across Close, Reopen or Wake buttons applies that action to every row swept.
   const rowSweep: RowActionSweep = (event, action, threadKey) =>
@@ -994,15 +740,12 @@ export function GridSidebar({
         else for (const thread of targets) wakeShelfThread(thread, false);
       },
     });
-  const searching = query.length > 0;
-  const heldShown = searching
-    ? shelves.held.filter((thread) => threadMatchesGridSearch(thread, query))
-    : shelves.held;
-  const closedShown = searching
-    ? shelves.closed.filter((thread) => threadMatchesGridSearch(thread, query))
-    : shelves.closed;
-  const threadKeyOf = (thread: { environmentId: string; id: string }) =>
-    scopedThreadKey(scopeThreadRef(thread.environmentId as EnvironmentId, thread.id as ThreadId));
+  const matchesQuery = (thread: EnvironmentThreadShell) =>
+    thread.title.toLocaleLowerCase().includes(query.toLocaleLowerCase()) ||
+    (thread.branch?.toLocaleLowerCase().includes(query.toLocaleLowerCase()) ?? false) ||
+    thread.pullRequests.some((pullRequest) => `#${pullRequest.number}`.includes(query));
+  const heldShown = searching ? shelves.held.filter(matchesQuery) : shelves.held;
+  const closedShown = searching ? shelves.closed.filter(matchesQuery) : shelves.closed;
   const messageSearch = useThreadSearch(
     [...new Set(projects.map((project) => project.environmentId))],
     query,
@@ -1017,16 +760,11 @@ export function GridSidebar({
           workspaceKeys.has(workspaceKeyOf(match.environmentId, match.projectId)),
       })
     : [];
-  // Opens a thread wherever it lives: in a grid, ungrouped, on hold or closed.
+  // Opens a thread wherever it lives: in a workspace, on hold or closed.
   const openFoundThread = (thread: EnvironmentThreadShell) => {
-    const target = railTargets.find(
-      (candidate) =>
-        candidate.threadId === thread.id && candidate.environmentId === thread.environmentId,
-    );
-    if (target !== undefined) openRailTarget(target);
-    else if (thread.settledOverride === "settled") reopenShelfThread(thread);
+    if (thread.settledOverride === "settled") reopenShelfThread(thread);
     else if (effectiveSnoozed(thread, { now: nowIso })) wakeShelfThread(thread);
-    else openReturnedThread(thread);
+    else openThread(thread);
   };
   const contentResults: ContentResult[] = contentMatches.flatMap((match) => {
     const thread = threadById.get(match.threadId);
@@ -1068,52 +806,55 @@ export function GridSidebar({
     return true;
   };
 
-  const hiddenGridGroups = projects.flatMap((project) => {
-    const workspaceKey = workspaceKeyOf(project.environmentId, project.id);
-    const workspaceHidden = orderedGridsForWorkspace(grids, workspaceKey).filter(
-      (grid) => grid.hidden,
-    );
-    return workspaceHidden.length === 0
-      ? []
-      : [{ workspaceKey, title: project.title, grids: workspaceHidden }];
-  });
+  const openNeedsYouThread = (thread: EnvironmentThreadShell) => openThread(thread);
 
-  const needsYouEntries = showNeedsYou
-    ? buildNeedsYouEntries({ threads, nowIso, workspaceKeys })
-    : [];
-  const needsYouThreadIds = new Set(needsYouEntries.map((entry) => entry.thread.id));
-  const openNeedsYouThread = (thread: EnvironmentThreadShell) =>
-    openRailTarget({
-      gridId: null,
-      environmentId: thread.environmentId,
-      projectId: thread.projectId,
-      threadId: thread.id,
-    });
+  const reorder = useWorkspaceReorderDrag((draggedId, targetId, side) =>
+    reorderLayoutWorkspaceAction(draggedId, targetId, side),
+  );
 
-  const sections = buildSidebarProjectSections({
-    groups: orderedProjectGroups,
-    grids,
-    threads,
-    threadSort,
-    gridSort,
-    nowIso,
-    query,
-    activityAt: (grid) => gridActivityAt(grid, threads, nowIso),
-    ...(showNeedsYou ? { excludedThreadIds: needsYouThreadIds } : {}),
-  });
+  const startCreatingWorkspace = () => setCreatingWorkspace(true);
+  const createWorkspace = (name: string): string | null => {
+    const refusal = createLayoutWorkspaceAction(name);
+    if (refusal !== null) return refusal;
+    // The new workspace is stored once it holds a tab, so it opens a launcher to start a thread in.
+    openLayoutLauncherInWorkspaceAction(useLayoutStore.getState().layout.focusedWorkspaceId);
+    return null;
+  };
 
-  const reorder = useProjectReorderDrag((draggedKey, targetKey, side) => {
-    const moved = moveProjectGroup({
-      groups: openProjectGroups,
-      draggedKey,
-      targetKey,
-      side,
-    });
-    if (moved === null) return;
-    const store = useUiStateStore.getState();
-    // Archived projects are not on the rail; they keep their place after the visible ones.
-    store.setProjectOrder([...moved, ...store.projectOrder.filter((key) => !moved.includes(key))]);
-  });
+  const renderGroup = (section: SidebarWorkspaceSection, index: number) => (
+    <SidebarWorkspaceGroup
+      key={section.workspaceId}
+      section={section}
+      query={query}
+      open={layout.focusedWorkspaceId === section.workspaceId}
+      // A search opens every group so its matches show.
+      collapsed={!searching && collapsedWorkspaces.collapsed.has(section.workspaceId)}
+      onToggleCollapsed={() => collapsedWorkspaces.toggle(section.workspaceId)}
+      previousWorkspaceId={sections[index - 1]?.workspaceId ?? null}
+      nextWorkspaceId={sections[index + 1]?.workspaceId ?? null}
+      hiddenWorkspaces={hiddenSections}
+      focusedThreadKey={focusedThreadKey}
+      providerEntriesByEnvironment={providerEntriesByEnvironment}
+      projectTitleOf={projectTitleOf}
+      nowIso={nowIso}
+      selection={selection}
+      runningSubagents={runningSubagentsByThread}
+      dragging={dragging}
+      dropTarget={dropTarget}
+      reorder={{ drag: reorder.drag, begin: reorder.begin }}
+      onOpenThread={openThread}
+      onSelectThread={selectThread}
+      onCloseThread={(thread) => closeThreads([thread])}
+      onHoldThread={(thread, preset) => holdThreads([thread], preset.snoozedUntil)}
+      onPickHoldTime={pickHoldTime}
+      onDropOnWorkspace={dropOnWorkspace}
+      onCreateWorkspace={startCreatingWorkspace}
+      onRenameThread={renameThread}
+      onSetAutoClose={setAutoClose}
+      workspaceMoveFor={workspaceMoveFor}
+      handleNewThread={handleNewThread}
+    />
+  );
 
   return (
     <ProjectFilterContext.Provider value={threadProjectFilter}>
@@ -1167,40 +908,35 @@ export function GridSidebar({
                             }
                             if (event.key === "Enter") {
                               if (openHighlightedSearchResult()) return;
-                              const matchedGrid = sections
-                                .flatMap((section) => section.grids.map((entry) => entry.grid))
-                                .find((grid) =>
-                                  grid.name.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
-                                );
-                              if (matchedGrid !== undefined) {
-                                const candidate = railTargets.find(
-                                  (target) => target.gridId === matchedGrid.id,
-                                );
-                                if (candidate !== undefined) openRailTarget(candidate);
+                              const needle = query.toLocaleLowerCase();
+                              const matchedWorkspace = sections.find((section) =>
+                                section.name.toLocaleLowerCase().includes(needle),
+                              );
+                              if (matchedWorkspace !== undefined) {
+                                const first = matchedWorkspace.threads[0];
+                                if (first !== undefined) openThread(first);
                                 else
-                                  void navigate({
-                                    to: "/grid/$gridId",
-                                    params: { gridId: matchedGrid.id },
-                                  });
+                                  useLayoutStore
+                                    .getState()
+                                    .focusWorkspace(matchedWorkspace.workspaceId);
                                 return;
                               }
                               const matchedProject = projects.find((project) =>
-                                project.title
-                                  .toLocaleLowerCase()
-                                  .includes(query.toLocaleLowerCase()),
+                                project.title.toLocaleLowerCase().includes(needle),
                               );
-                              const workspaceTarget =
+                              const projectTarget =
                                 matchedProject === undefined
                                   ? undefined
                                   : railTargets.find(
                                       (target) =>
-                                        target.environmentId === matchedProject.environmentId,
+                                        target.environmentId === matchedProject.environmentId &&
+                                        target.projectId === matchedProject.id,
                                     );
-                              if (workspaceTarget !== undefined) openRailTarget(workspaceTarget);
+                              if (projectTarget !== undefined) openRailTarget(projectTarget);
                             }
                           }}
                           placeholder="Search"
-                          aria-label="Search workspaces, grids and threads"
+                          aria-label="Search workspaces and threads"
                           className="min-w-0 flex-1 bg-transparent text-inherit outline-none placeholder:text-secondary-label"
                         />
                         {query.length > 0 ? (
@@ -1235,7 +971,8 @@ export function GridSidebar({
                     selection={selection}
                     runningSubagents={runningSubagentsByThread}
                     dragging={dragging}
-                    workspaceTitles={workspaceTitles}
+                    projectTitleOf={projectTitleOf}
+                    workspaceMoveFor={workspaceMoveFor}
                     onOpenThread={openNeedsYouThread}
                     onSelectThread={selectThread}
                     onCloseThread={(thread) => closeThreads([thread])}
@@ -1245,7 +982,7 @@ export function GridSidebar({
                     onSetAutoClose={setAutoClose}
                     handleNewThread={handleNewThread}
                   />
-                  <SidebarProjectsHeader
+                  <SidebarWorkspacesHeader
                     options={sidebarOptions}
                     onChange={(patch) => void updateClientSettings(sidebarOptionsPatch(patch))}
                     onReset={() =>
@@ -1254,7 +991,8 @@ export function GridSidebar({
                         sidebarShowNeedsYou: isPhone,
                       })
                     }
-                    hiddenGridGroups={hiddenGridGroups}
+                    hiddenWorkspaces={hiddenSections}
+                    onNewWorkspace={startCreatingWorkspace}
                     projectFilter={
                       openProjectGroups.length > 1 ? (
                         <ProjectFilterPicker
@@ -1269,74 +1007,14 @@ export function GridSidebar({
                     }
                   />
                   <div className="flex flex-col gap-px">
-                    {sections.length === 0 && query.length === 0 ? <SidebarNoProjects /> : null}
-                    {sections.map((section) => (
-                      <SidebarProjectSection
-                        key={section.projectKey}
-                        section={section}
-                        query={query}
-                        openGridId={openGrid?.id ?? null}
-                        collapsed={collapsedProjects.collapsed.has(section.projectKey)}
-                        onToggleCollapsed={() => collapsedProjects.toggle(section.projectKey)}
-                        collapsedGridIds={collapsedGrids.collapsed}
-                        onToggleGridCollapsed={collapsedGrids.toggle}
-                        providerEntries={
-                          providerEntriesByEnvironment.get(section.environmentId) ??
-                          EMPTY_PROVIDER_ENTRIES
-                        }
-                        nowIso={nowIso}
-                        selection={selection}
-                        runningSubagents={runningSubagentsByThread}
-                        dragging={dragging}
-                        dropTarget={dropTarget}
-                        projectReorder={{ drag: reorder.drag, begin: reorder.begin }}
-                        onOpenThread={openThread}
-                        onSelectThread={selectThread}
-                        onCloseThread={(thread) => closeThreads([thread])}
-                        onHoldThread={(thread, preset) =>
-                          holdThreads([thread], preset.snoozedUntil)
-                        }
-                        onPickHoldTime={pickHoldTime}
-                        onDropOnGrid={(source, targetGridId) =>
-                          moveThreadToGrid(source, targetGridId)
-                        }
-                        onDropOnThread={dropThreadOnThread}
-                        onCreateGrid={() =>
-                          createGridInWorkspace(
-                            workspaceKeyOf(section.environmentId, section.projectId),
-                          )
-                        }
-                        onOpenProjectMenu={(position) => {
-                          const group = projectGroups.find(
-                            (candidate) => candidate.projectKey === section.projectKey,
-                          );
-                          if (group === undefined) return;
-                          void openProjectMenu(group, position, () =>
-                            createGridInWorkspace(
-                              workspaceKeyOf(section.environmentId, section.projectId),
-                            ),
-                          );
-                        }}
-                        onCreateThread={(gridId) => {
-                          const grid = gridById(grids, gridId);
-                          if (grid !== null) createThreadInGrid(grid);
-                        }}
-                        onRenameThread={renameThread}
-                        onSetAutoClose={setAutoClose}
-                        handleNewThread={handleNewThread}
-                        onShowGrid={(gridId) =>
-                          useGridStore.getState().setGridHidden(gridId, false)
-                        }
-                        onOpenUngroupedThread={(thread) =>
-                          openRailTarget({
-                            gridId: null,
-                            environmentId: thread.environmentId,
-                            projectId: thread.projectId,
-                            threadId: thread.id,
-                          })
-                        }
+                    {creatingWorkspace ? (
+                      <NewWorkspaceField
+                        onCreate={createWorkspace}
+                        onDone={() => setCreatingWorkspace(false)}
                       />
-                    ))}
+                    ) : null}
+                    {projects.length === 0 && query.length === 0 ? <SidebarNoProjects /> : null}
+                    {sections.map(renderGroup)}
                     {searching ? <SidebarContentResults results={contentResults} /> : null}
                     {searching &&
                     sections.length === 0 &&
@@ -1373,7 +1051,7 @@ export function GridSidebar({
                   renderCard={(thread, shelf) => (
                     <ThreadCard
                       key={thread.id}
-                      gridId={null}
+                      workspaceId={null}
                       thread={thread}
                       query={query}
                       providerEntries={
@@ -1382,18 +1060,12 @@ export function GridSidebar({
                       }
                       nowIso={nowIso}
                       focused={false}
-                      selected={selection.selectedThreadKeys.has(
-                        scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-                      )}
+                      selected={selection.selectedThreadKeys.has(threadKeyOf(thread))}
                       dragging={false}
                       runningSubagents={
                         runningSubagentsByThread.get(subagentParentKey(thread)) ?? 0
                       }
-                      workspaceTitle={
-                        workspaceTitles.get(
-                          workspaceKeyOf(thread.environmentId, thread.projectId),
-                        ) ?? ""
-                      }
+                      projectTitle={projectTitleOf(thread)}
                       timeLabel={
                         shelf === "snoozed" && thread.snoozedUntil !== null
                           ? formatUpcomingTimestamp(thread.snoozedUntil, timestampFormat)
@@ -1492,94 +1164,102 @@ export function GridSidebar({
   );
 }
 
-function HiddenGridsMenu({
-  groups,
-  onShowGrid,
+const SIDEBAR_OPTIONS_DEFAULTS = {
+  sidebarGridThreadSortOrder: DEFAULT_SIDEBAR_GRID_THREAD_SORT_ORDER,
+  sidebarRowShowBranch: true,
+  sidebarRowShowPullRequest: true,
+  sidebarRowShowSubagents: true,
+} as const;
+
+export function sidebarOptionsPatch(patch: Partial<SidebarGridOptions>) {
+  return {
+    ...(patch.threadSort === undefined ? {} : { sidebarGridThreadSortOrder: patch.threadSort }),
+    ...(patch.showBranch === undefined ? {} : { sidebarRowShowBranch: patch.showBranch }),
+    ...(patch.showPullRequest === undefined
+      ? {}
+      : { sidebarRowShowPullRequest: patch.showPullRequest }),
+    ...(patch.showSubagents === undefined ? {} : { sidebarRowShowSubagents: patch.showSubagents }),
+    ...(patch.showNeedsYou === undefined ? {} : { sidebarShowNeedsYou: patch.showNeedsYou }),
+  };
+}
+
+function HiddenWorkspacesMenu({
+  workspaces,
+  onShow,
 }: {
-  groups: ReadonlyArray<{
-    workspaceKey: string;
-    title: string;
-    grids: ReadonlyArray<GridRecord>;
-  }>;
-  onShowGrid: (gridId: string) => void;
+  workspaces: ReadonlyArray<SidebarWorkspaceSection>;
+  onShow: (workspaceId: string) => void;
 }) {
   return (
     <Menu>
       <MenuTrigger
         render={
-          <button type="button" aria-label="Hidden grids" className={SIDEBAR_SECTION_ACTION_CLS} />
+          <button
+            type="button"
+            aria-label="Hidden workspaces"
+            className={SIDEBAR_SECTION_ACTION_CLS}
+          />
         }
       >
-        <MoreHorizontalIcon aria-hidden className="size-[15px]" />
+        <EyeOffIcon aria-hidden className="size-[15px]" />
       </MenuTrigger>
       <MenuPopup side="bottom" align="end">
-        {groups.map((group) => (
-          <MenuSub key={group.workspaceKey}>
-            <MenuSubTrigger>
-              {group.title}
-              <ChevronRightIcon aria-hidden className="ml-auto size-3.5 text-secondary-label" />
-            </MenuSubTrigger>
-            <MenuSubPopup>
-              {group.grids.map((grid) => (
-                <MenuItem key={grid.id} onClick={() => onShowGrid(grid.id)}>
-                  <EyeOffIcon aria-hidden className="size-3.5" />
-                  <span className="min-w-0 flex-1 truncate">{grid.name}</span>
-                  <span className="text-2xs text-secondary-label">Show</span>
-                </MenuItem>
-              ))}
-            </MenuSubPopup>
-          </MenuSub>
+        {workspaces.map((workspace) => (
+          <MenuItem key={workspace.workspaceId} onClick={() => onShow(workspace.workspaceId)}>
+            <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
+            <span className="text-2xs text-secondary-label">Show</span>
+          </MenuItem>
         ))}
       </MenuPopup>
     </Menu>
   );
 }
 
-async function deleteGridWithConfirm(
-  grid: GridRecord,
-  deleteGrid: (gridId: string) => void,
-): Promise<void> {
-  const { requestConfirmDialog } = await import("../../confirmDialog");
-  const confirmed =
-    (await requestConfirmDialog(
-      `Delete the grid “${grid.name}”? Its threads stay in the project and appear under its grids.`,
-      { variant: "destructive" },
-    )) ?? false;
-  if (confirmed) deleteGrid(grid.id);
-}
-
-/** The Projects header's controls: hidden grids, the view options, then Add project. */
-export function SidebarProjectsHeader({
+/** The Workspaces header's controls: project filter, hidden workspaces, view options, New workspace, Add project. */
+export function SidebarWorkspacesHeader({
   options,
   onChange,
   onReset,
-  hiddenGridGroups = [],
+  hiddenWorkspaces = [],
+  onNewWorkspace,
   projectFilter = null,
 }: {
   options: SidebarGridOptions;
   onChange: (patch: Partial<SidebarGridOptions>) => void;
   onReset: () => void;
-  hiddenGridGroups?: ReadonlyArray<{
-    workspaceKey: string;
-    title: string;
-    grids: ReadonlyArray<GridRecord>;
-  }>;
+  hiddenWorkspaces?: ReadonlyArray<SidebarWorkspaceSection>;
+  onNewWorkspace: () => void;
   /** The project filter picker, when there is more than one project to choose from. */
   projectFilter?: ReactNode;
 }) {
   return (
     <SidebarSectionHeaderRow
-      title="Projects"
+      title="Workspaces"
       actions={
         <>
           {projectFilter}
-          {hiddenGridGroups.length > 0 ? (
-            <HiddenGridsMenu
-              groups={hiddenGridGroups}
-              onShowGrid={(gridId) => useGridStore.getState().setGridHidden(gridId, false)}
+          {hiddenWorkspaces.length > 0 ? (
+            <HiddenWorkspacesMenu
+              workspaces={hiddenWorkspaces}
+              onShow={(workspaceId) => hideLayoutWorkspaceAction(workspaceId, false)}
             />
           ) : null}
           <SidebarOptionsMenu options={options} onChange={onChange} onReset={onReset} />
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  aria-label="New workspace"
+                  onClick={onNewWorkspace}
+                  className={SIDEBAR_SECTION_ACTION_CLS}
+                />
+              }
+            >
+              <PlusIcon aria-hidden className="size-[15px]" />
+            </TooltipTrigger>
+            <TooltipPopup side="bottom">New workspace</TooltipPopup>
+          </Tooltip>
           <SidebarAddProjectButton />
         </>
       }
@@ -1587,7 +1267,7 @@ export function SidebarProjectsHeader({
   );
 }
 
-/** The Projects header's Add project: opens the chooser for a folder, a clone or a new repository. */
+/** Add project: opens the chooser for a folder, a clone or a new repository. */
 export function SidebarAddProjectButton() {
   return (
     <Tooltip>
@@ -1601,22 +1281,87 @@ export function SidebarAddProjectButton() {
           />
         }
       >
-        <PlusIcon aria-hidden className="size-[15px]" />
+        <FolderPlusIcon aria-hidden className="size-[15px]" />
       </TooltipTrigger>
       <TooltipPopup side="bottom">Add project</TooltipPopup>
     </Tooltip>
   );
 }
 
-function projectRowId(section: Pick<SidebarProjectSectionModel, "environmentId" | "projectId">) {
-  return `project:${workspaceKeyOf(section.environmentId, section.projectId)}`;
+/** A name field for a new workspace; Enter creates it, Escape or an empty blur cancels. */
+function NewWorkspaceField({
+  onCreate,
+  onDone,
+}: {
+  onCreate: (name: string) => string | null;
+  onDone: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const submit = () => {
+    const trimmed = name.trim();
+    if (trimmed.length === 0) {
+      onDone();
+      return;
+    }
+    const result = onCreate(trimmed);
+    if (result === null) {
+      onDone();
+      return;
+    }
+    setRefusal(result);
+  };
+  return (
+    <div className="flex flex-col gap-1 px-1 py-1">
+      <input
+        autoFocus
+        value={name}
+        placeholder="Workspace name"
+        aria-label="New workspace name"
+        aria-invalid={refusal !== null}
+        onChange={(event) => {
+          setName(event.target.value);
+          setRefusal(null);
+        }}
+        onBlur={() => {
+          if (refusal === null) submit();
+          else onDone();
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") submit();
+          if (event.key === "Escape") {
+            event.stopPropagation();
+            onDone();
+          }
+        }}
+        className={SIDEBAR_GRID_RENAME_CLS}
+      />
+      {refusal === null ? null : (
+        <span role="alert" className="px-1 text-2xs text-destructive-foreground">
+          {refusal}
+        </span>
+      )}
+    </div>
+  );
 }
 
-function gridRowId(grid: Pick<GridRecord, "id">) {
-  return `grid:${grid.id}`;
+function workspaceRowId(workspaceId: string) {
+  return `workspace:${workspaceId}`;
 }
 
-/** A project's grids, then the threads no grid shows, under one collapsible label. */
+async function deleteWorkspaceWithConfirm(section: SidebarWorkspaceSection): Promise<void> {
+  const { requestConfirmDialog } = await import("../../confirmDialog");
+  const confirmed =
+    (await requestConfirmDialog(
+      `Delete the workspace “${section.name}”? Its tabs close; its threads stay active and appear under another workspace.`,
+      { variant: "destructive" },
+    )) ?? false;
+  if (!confirmed) return;
+  const refusal = deleteLayoutWorkspaceAction(section.workspaceId);
+  if (refusal !== null) explain("Could not delete workspace", refusal);
+}
+
+/** The threads that wait on the user, lifted above the workspaces when the rail shows them. */
 export function SidebarNeedsYouSection({
   entries,
   providerEntriesByEnvironment,
@@ -1624,7 +1369,8 @@ export function SidebarNeedsYouSection({
   selection,
   runningSubagents,
   dragging,
-  workspaceTitles,
+  projectTitleOf,
+  workspaceMoveFor,
   onOpenThread,
   onSelectThread,
   onCloseThread,
@@ -1640,7 +1386,8 @@ export function SidebarNeedsYouSection({
   selection: ThreadSelection;
   runningSubagents: ReadonlyMap<string, number>;
   dragging: DraggedThread | null;
-  workspaceTitles: ReadonlyMap<string, string>;
+  projectTitleOf: (thread: EnvironmentThreadShell) => string;
+  workspaceMoveFor?: (thread: EnvironmentThreadShell) => ThreadActionMenuWorkspaceInput | undefined;
   onOpenThread: (thread: EnvironmentThreadShell) => void;
   onSelectThread: (
     thread: EnvironmentThreadShell,
@@ -1675,7 +1422,7 @@ export function SidebarNeedsYouSection({
         {entries.map(({ thread }) => (
           <ThreadCard
             key={thread.id}
-            gridId={null}
+            workspaceId={null}
             thread={thread}
             query=""
             providerEntries={
@@ -1688,13 +1435,7 @@ export function SidebarNeedsYouSection({
             )}
             dragging={dragging?.threadId === thread.id}
             runningSubagents={runningSubagents.get(subagentParentKey(thread)) ?? 0}
-            workspaceTitle={
-              workspaceTitles.get(workspaceKeyOf(thread.environmentId, thread.projectId)) ??
-              thread.projectId
-            }
-            projectLabel={
-              workspaceTitles.get(workspaceKeyOf(thread.environmentId, thread.projectId)) ?? null
-            }
+            projectTitle={projectTitleOf(thread)}
             onOpen={() => onOpenThread(thread)}
             onSelect={(input) => onSelectThread(thread, input)}
             onClose={() => onCloseThread(thread)}
@@ -1703,7 +1444,7 @@ export function SidebarNeedsYouSection({
             onRename={(title) => onRenameThread(thread, title)}
             onSetAutoClose={(enabled) => onSetAutoClose(thread, enabled)}
             onDropOnThread={() => {}}
-            onOpenGrid={() => onOpenThread(thread)}
+            workspaceMove={workspaceMoveFor?.(thread)}
             handleNewThread={handleNewThread}
           />
         ))}
@@ -1712,417 +1453,59 @@ export function SidebarNeedsYouSection({
   );
 }
 
-export function SidebarProjectSection({
+/** One layout workspace: its heading, then the threads whose chat tab it holds. */
+export function SidebarWorkspaceGroup({
   section,
-  query,
-  openGridId,
-  collapsed: collapsedPreference,
-  onToggleCollapsed,
-  collapsedGridIds,
-  onToggleGridCollapsed,
-  providerEntries,
-  nowIso,
-  selection,
-  runningSubagents,
-  dragging,
-  dropTarget,
-  projectReorder,
-  onOpenThread,
-  onSelectThread,
-  onCloseThread,
-  onHoldThread,
-  onPickHoldTime,
-  onDropOnGrid,
-  onDropOnThread,
-  onCreateGrid,
-  onCreateThread,
-  onRenameThread,
-  onSetAutoClose,
-  handleNewThread,
-  onShowGrid,
-  onOpenUngroupedThread,
-  onOpenProjectMenu,
-}: {
-  section: SidebarProjectSectionModel;
-  query: string;
-  openGridId: string | null;
-  collapsed: boolean;
-  onToggleCollapsed: () => void;
-  collapsedGridIds: ReadonlySet<string>;
-  onToggleGridCollapsed: (gridId: string) => void;
-  providerEntries: ReadonlyMap<string, SidebarProviderEntry>;
-  nowIso: string;
-  selection: ThreadSelection;
-  runningSubagents: ReadonlyMap<string, number>;
-  dragging: DraggedThread | null;
-  dropTarget: string | null;
-  /** Lets the user drag the project to a new place in the rail; absent, the section is fixed. */
-  projectReorder?:
-    | {
-        drag: ProjectReorderDrag | null;
-        begin: (event: ReactPointerEvent<HTMLElement>, projectKey: string) => void;
-      }
-    | undefined;
-  onOpenThread: (gridId: string, threadId: string) => void;
-  onSelectThread: (
-    thread: EnvironmentThreadShell,
-    input: { shiftKey: boolean; toggleKey: boolean },
-  ) => void;
-  onCloseThread: (thread: EnvironmentThreadShell) => void;
-  onHoldThread: (
-    thread: EnvironmentThreadShell,
-    preset: Pick<SnoozePreset, "snoozedUntil">,
-  ) => void;
-  onPickHoldTime: () => Promise<Pick<SnoozePreset, "snoozedUntil"> | null>;
-  onDropOnGrid: (source: DraggedThread, targetGridId: string) => void;
-  onDropOnThread: (source: DraggedThread, targetGridId: string, targetThreadId: string) => void;
-  onCreateGrid: () => void;
-  onCreateThread: (gridId: string) => void;
-  onRenameThread: (thread: EnvironmentThreadShell, title: string) => void;
-  onSetAutoClose: (thread: EnvironmentThreadShell, enabled: boolean) => void;
-  handleNewThread?: NewThreadHandler | undefined;
-  onShowGrid: (gridId: string) => void;
-  onOpenUngroupedThread: (thread: EnvironmentThreadShell) => void;
-  /** Opens the project's actions at a viewport point; the scratch section has none. */
-  onOpenProjectMenu?: ((position: { x: number; y: number }) => void) | undefined;
-}) {
-  // A search shows every match, so it opens a project the user collapsed.
-  const collapsed = query.length === 0 && collapsedPreference;
-  const projectMenu = section.isScratch ? undefined : onOpenProjectMenu;
-  const revealed = collapsed ? revealedOpenThread(section.grids, openGridId) : null;
-  const sectionThreads = [
-    ...section.grids.flatMap((entry) => entry.threads),
-    ...section.ungroupedThreads,
-  ];
-  const needsYouThreads = section.needsYouThreads ?? [];
-  const waitingOnYou = sectionThreads.some((thread) => isNeedsYouThread(thread, nowIso));
-  const headingRef = useRef<HTMLDivElement | null>(null);
-  const stuck = useStuckToTop(headingRef);
-  const projectRef = scopeProjectRef(
-    EnvironmentId.make(section.environmentId),
-    ProjectId.make(section.projectId),
-  );
-  const reorderable = projectReorder !== undefined && !section.isScratch;
-  const reorderDrag = projectReorder?.drag ?? null;
-  const dropSide =
-    reorderDrag !== null && reorderDrag.targetKey === section.projectKey ? reorderDrag.side : null;
-
-  return (
-    <div
-      className={sidebarProjectSectionCls({
-        dragged: reorderDrag?.draggedKey === section.projectKey,
-        dropSide,
-      })}
-      data-project-key={section.isScratch ? "no-project" : section.projectKey}
-      {...(reorderable ? { [PROJECT_REORDER_ATTRIBUTE]: "" } : {})}
-    >
-      <div
-        ref={headingRef}
-        data-project-heading=""
-        data-stuck={stuck ? "" : undefined}
-        className={SIDEBAR_PROJECT_ROW_CLS}
-        {...(reorderable
-          ? { onPointerDown: (event) => projectReorder.begin(event, section.projectKey) }
-          : {})}
-      >
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                type="button"
-                data-sidebar-row={projectRowId(section)}
-                aria-expanded={!collapsed}
-                onClick={onToggleCollapsed}
-                onContextMenu={(event) => {
-                  if (projectMenu === undefined) return;
-                  event.preventDefault();
-                  projectMenu({ x: event.clientX, y: event.clientY });
-                }}
-                onKeyDown={(event) => {
-                  if (projectMenu === undefined) return;
-                  if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) {
-                    return;
-                  }
-                  event.preventDefault();
-                  const rect = event.currentTarget.getBoundingClientRect();
-                  projectMenu({ x: rect.left, y: rect.bottom + 4 });
-                }}
-                className={cn(
-                  SIDEBAR_PROJECT_LABEL_CLS,
-                  sectionThreads.length === 0 &&
-                    section.grids.length === 0 &&
-                    SIDEBAR_PROJECT_LABEL_EMPTY_CLS,
-                )}
-              >
-                <span className={SIDEBAR_PROJECT_ICON_BOX_CLS} data-project-icon-box="">
-                  {collapsed ? (
-                    <FolderIcon aria-hidden className="size-3" />
-                  ) : (
-                    <FolderOpenIcon aria-hidden className="size-3" />
-                  )}
-                </span>
-                <span className={SIDEBAR_PROJECT_LABEL_TEXT_CLS}>{section.title}</span>
-                {collapsed && sectionThreads.length > 0 ? (
-                  <span className={SIDEBAR_ROW_TRAILING_CLS} data-heading-trailing="">
-                    {waitingOnYou ? (
-                      <span
-                        aria-hidden
-                        className={SIDEBAR_NEEDS_YOU_DOT_CLS}
-                        data-needs-you-dot=""
-                      />
-                    ) : null}
-                    <span className={SIDEBAR_PROJECT_SUMMARY_CLS} data-heading-count="">
-                      {sectionThreads.length}
-                    </span>
-                  </span>
-                ) : null}
-              </button>
-            }
-          />
-          <TooltipPopup side="bottom" align="start">
-            {section.title}
-          </TooltipPopup>
-        </Tooltip>
-        {section.isScratch ? null : (
-          <span className={SIDEBAR_ROW_ACTIONS_CLS}>
-            {handleNewThread === undefined ? null : (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <button
-                      type="button"
-                      aria-label={`New thread in ${section.title}`}
-                      onClick={() => void handleNewThread(projectRef)}
-                      className={SIDEBAR_PROJECT_ACTION_CLS}
-                    />
-                  }
-                >
-                  <PlusIcon aria-hidden className="size-3.5" />
-                </TooltipTrigger>
-                <TooltipPopup side="bottom" align="end">
-                  {`New thread in ${section.title}`}
-                </TooltipPopup>
-              </Tooltip>
-            )}
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <button
-                    type="button"
-                    aria-label={`New grid in ${section.title}`}
-                    onClick={onCreateGrid}
-                    className={SIDEBAR_PROJECT_ACTION_CLS}
-                  />
-                }
-              >
-                <Grid2X2PlusIcon aria-hidden className="size-3.5" />
-              </TooltipTrigger>
-              <TooltipPopup side="bottom" align="end">
-                {`New grid in ${section.title}`}
-              </TooltipPopup>
-            </Tooltip>
-            {projectMenu === undefined ? null : (
-              <button
-                type="button"
-                aria-label={`Project actions for ${section.title}`}
-                aria-haspopup="menu"
-                onClick={(event) => {
-                  const rect = event.currentTarget.getBoundingClientRect();
-                  projectMenu({ x: rect.left, y: rect.bottom + 4 });
-                }}
-                className={SIDEBAR_PROJECT_ACTION_CLS}
-              >
-                <MoreHorizontalIcon aria-hidden className="size-3.5" />
-              </button>
-            )}
-          </span>
-        )}
-      </div>
-      <AnimatedHeight>
-        {collapsed ? (
-          revealed === null ? null : (
-            <div className={SIDEBAR_PROJECT_GUIDE_CLS} data-project-guide="">
-              <div className={sidebarGridGuideCls(true)} data-grid-guide="">
-                <ThreadCard
-                  key={revealed.thread.id}
-                  gridId={revealed.grid.id}
-                  thread={revealed.thread}
-                  query={query}
-                  providerEntries={providerEntries}
-                  nowIso={nowIso}
-                  focused
-                  selected={selection.selectedThreadKeys.has(
-                    scopedThreadKey(
-                      scopeThreadRef(revealed.thread.environmentId, revealed.thread.id),
-                    ),
-                  )}
-                  dragging={dragging?.threadId === revealed.thread.id}
-                  runningSubagents={runningSubagents.get(subagentParentKey(revealed.thread)) ?? 0}
-                  workspaceTitle={section.title}
-                  treeParent={gridRowId(revealed.grid)}
-                  onOpen={() => onOpenThread(revealed.grid.id, revealed.thread.id)}
-                  onSelect={(input) => onSelectThread(revealed.thread, input)}
-                  onClose={() => onCloseThread(revealed.thread)}
-                  onHold={(preset) => onHoldThread(revealed.thread, preset)}
-                  onPickHoldTime={onPickHoldTime}
-                  onRename={(title) => onRenameThread(revealed.thread, title)}
-                  onSetAutoClose={(enabled) => onSetAutoClose(revealed.thread, enabled)}
-                  onDropOnThread={(source) =>
-                    onDropOnThread(source, revealed.grid.id, revealed.thread.id)
-                  }
-                  onOpenGrid={(targetGridId) => onOpenThread(targetGridId, revealed.thread.id)}
-                  handleNewThread={handleNewThread}
-                />
-              </div>
-            </div>
-          )
-        ) : (
-          <div className={SIDEBAR_PROJECT_CONTENT_CLS}>
-            {section.grids.length + section.ungroupedThreads.length === 0 ? null : (
-              <div className={SIDEBAR_PROJECT_GUIDE_CLS} data-project-guide="">
-                {section.grids.map(({ grid, threads }) => (
-                  <GridGroup
-                    key={grid.id}
-                    grid={grid}
-                    workspaceTitle={section.title}
-                    threads={threads}
-                    query={query}
-                    open={openGridId === grid.id}
-                    collapsed={query.length === 0 && collapsedGridIds.has(grid.id)}
-                    onToggleCollapsed={() => onToggleGridCollapsed(grid.id)}
-                    providerEntries={providerEntries}
-                    nowIso={nowIso}
-                    selection={selection}
-                    runningSubagents={runningSubagents}
-                    dragging={dragging}
-                    dropTarget={dropTarget}
-                    hiddenGrids={section.hiddenGrids}
-                    onOpenThread={onOpenThread}
-                    onSelectThread={onSelectThread}
-                    onCloseThread={onCloseThread}
-                    onHoldThread={onHoldThread}
-                    onPickHoldTime={onPickHoldTime}
-                    onDropOnGrid={onDropOnGrid}
-                    onDropOnThread={onDropOnThread}
-                    onCreateThread={() => onCreateThread(grid.id)}
-                    onRenameThread={onRenameThread}
-                    onSetAutoClose={onSetAutoClose}
-                    handleNewThread={handleNewThread}
-                    onShowGrid={onShowGrid}
-                    onCreateGrid={onCreateGrid}
-                  />
-                ))}
-                {section.ungroupedThreads.length === 0 ? null : (
-                  <div className={SIDEBAR_UNGROUPED_THREADS_CLS}>
-                    {section.ungroupedThreads.map((thread) => (
-                      <ThreadCard
-                        key={thread.id}
-                        gridId={null}
-                        thread={thread}
-                        query={query}
-                        providerEntries={providerEntries}
-                        nowIso={nowIso}
-                        focused={false}
-                        selected={selection.selectedThreadKeys.has(
-                          scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-                        )}
-                        dragging={dragging?.threadId === thread.id}
-                        workspaceTitle={section.title}
-                        treeParent={projectRowId(section)}
-                        runningSubagents={runningSubagents.get(subagentParentKey(thread)) ?? 0}
-                        onOpen={() => onOpenUngroupedThread(thread)}
-                        onSelect={(input) => onSelectThread(thread, input)}
-                        onClose={() => onCloseThread(thread)}
-                        onHold={(preset) => onHoldThread(thread, preset)}
-                        onPickHoldTime={onPickHoldTime}
-                        onRename={(title) => onRenameThread(thread, title)}
-                        onSetAutoClose={(enabled) => onSetAutoClose(thread, enabled)}
-                        onDropOnThread={() => {}}
-                        onOpenGrid={() => onOpenUngroupedThread(thread)}
-                        handleNewThread={handleNewThread}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-            {needsYouThreads.length > 0 ? (
-              <p data-project-needs-you="" className={SIDEBAR_PROJECT_NEEDS_YOU_CLS}>
-                +{needsYouThreads.length} in Needs you
-              </p>
-            ) : null}
-            {sectionThreads.length === 0 &&
-            section.grids.length === 0 &&
-            needsYouThreads.length === 0 &&
-            !section.isScratch &&
-            query.length === 0 &&
-            handleNewThread !== undefined ? (
-              <div data-project-empty="" className="phone:hidden">
-                <p className={`px-2 py-2 ${PHONE_NOTE_CLS}`}>No threads yet</p>
-                <button
-                  type="button"
-                  onClick={() => void handleNewThread(projectRef)}
-                  className={PHONE_ROW_ACTION_CLS}
-                >
-                  <PlusIcon aria-hidden className={PHONE_ROW_ACTION_ICON_CLS} />
-                  New thread
-                </button>
-              </div>
-            ) : null}
-          </div>
-        )}
-      </AnimatedHeight>
-    </div>
-  );
-}
-
-export function GridGroup({
-  grid,
-  workspaceTitle,
-  threads,
   query,
   open,
   collapsed,
   onToggleCollapsed,
-  providerEntries,
+  previousWorkspaceId,
+  nextWorkspaceId,
+  hiddenWorkspaces,
+  focusedThreadKey,
+  providerEntriesByEnvironment,
+  projectTitleOf,
   nowIso,
   selection,
   runningSubagents,
   dragging,
   dropTarget,
-  hiddenGrids,
+  reorder,
   onOpenThread,
   onSelectThread,
   onCloseThread,
   onHoldThread,
   onPickHoldTime,
-  onDropOnGrid,
-  onDropOnThread,
-  onCreateThread,
+  onDropOnWorkspace,
+  onCreateWorkspace,
   onRenameThread,
   onSetAutoClose,
+  workspaceMoveFor,
   handleNewThread,
-  onShowGrid,
-  onCreateGrid,
 }: {
-  grid: GridRecord;
-  workspaceTitle: string;
-  onRenameThread: (thread: EnvironmentThreadShell, title: string) => void;
-  onSetAutoClose: (thread: EnvironmentThreadShell, enabled: boolean) => void;
-  handleNewThread?: NewThreadHandler | undefined;
-  threads: ReadonlyArray<EnvironmentThreadShell>;
+  section: SidebarWorkspaceSection;
   query: string;
+  /** Whether the layout's focus is in this workspace. */
   open: boolean;
   collapsed: boolean;
   onToggleCollapsed: () => void;
-  providerEntries: ReadonlyMap<string, SidebarProviderEntry>;
+  previousWorkspaceId: string | null;
+  nextWorkspaceId: string | null;
+  hiddenWorkspaces: ReadonlyArray<SidebarWorkspaceSection>;
+  focusedThreadKey: string | null;
+  providerEntriesByEnvironment: ReadonlyMap<string, ReadonlyMap<string, SidebarProviderEntry>>;
+  projectTitleOf: (thread: EnvironmentThreadShell) => string;
   nowIso: string;
   selection: ThreadSelection;
   runningSubagents: ReadonlyMap<string, number>;
   dragging: DraggedThread | null;
   dropTarget: string | null;
-  hiddenGrids: ReadonlyArray<GridRecord>;
-  onOpenThread: (gridId: string, threadId: string) => void;
+  reorder: {
+    drag: WorkspaceReorderDrag | null;
+    begin: (event: React.PointerEvent<HTMLElement>, workspaceKey: string) => void;
+  };
+  onOpenThread: (thread: EnvironmentThreadShell) => void;
   onSelectThread: (
     thread: EnvironmentThreadShell,
     input: { shiftKey: boolean; toggleKey: boolean },
@@ -2133,140 +1516,172 @@ export function GridGroup({
     preset: Pick<SnoozePreset, "snoozedUntil">,
   ) => void;
   onPickHoldTime: () => Promise<Pick<SnoozePreset, "snoozedUntil"> | null>;
-  onDropOnGrid: (source: DraggedThread, targetGridId: string) => void;
-  onDropOnThread: (source: DraggedThread, targetGridId: string, targetThreadId: string) => void;
-  onCreateThread: () => void;
-  onShowGrid: (gridId: string) => void;
-  onCreateGrid: () => void;
+  onDropOnWorkspace: (source: DraggedThread, targetWorkspaceId: string) => void;
+  onCreateWorkspace: () => void;
+  onRenameThread: (thread: EnvironmentThreadShell, title: string) => void;
+  onSetAutoClose: (thread: EnvironmentThreadShell, enabled: boolean) => void;
+  workspaceMoveFor: (thread: EnvironmentThreadShell) => ThreadActionMenuWorkspaceInput | undefined;
+  handleNewThread?: NewThreadHandler | undefined;
 }) {
+  const { workspaceId, name: workspaceName, threads } = section;
   const [renaming, setRenaming] = useState(false);
-  const [name, setName] = useState(grid.name);
-  const renameGrid = useGridStore((store) => store.renameGrid);
-  const pinGrid = useGridStore((store) => store.pinGrid);
-  const unpinGrid = useGridStore((store) => store.unpinGrid);
-  const setGridHidden = useGridStore((store) => store.setGridHidden);
-  const deleteGrid = useGridStore((store) => store.deleteGrid);
-  const moveGridInWorkspace = useGridStore((store) => store.moveGridInWorkspace);
+  const [draftName, setDraftName] = useState(workspaceName);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const newThreadShortcut = shortcutLabelForCommand(keybindings, "chat.new");
-  const manualOrder = useClientSettings((settings) => settings.sidebarGridSortOrder === "manual");
-  const isDropTarget = dropTarget === `grid:${grid.id}`;
+  const isDropTarget = dropTarget === `workspace:${workspaceId}`;
   const headerRef = useRef<HTMLDivElement | null>(null);
   useThreadDropZone(
     headerRef,
-    () => ({ kind: "grid", gridId: grid.id }),
-    (source) => onDropOnGrid(source, grid.id),
+    () => ({ kind: "workspace", workspaceId }),
+    (source) => onDropOnWorkspace(source, workspaceId),
   );
-  const revealedThread =
-    collapsed && open ? threads.find((thread) => thread.id === grid.focusedThreadId) : undefined;
+  const reorderTarget =
+    reorder.drag !== null && reorder.drag.targetKey === workspaceId ? reorder.drag.side : null;
+  const revealedThread = collapsed
+    ? threads.find(
+        (thread) =>
+          scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)) === focusedThreadKey,
+      )
+    : undefined;
   const shownThreads = revealedThread === undefined ? (collapsed ? [] : threads) : [revealedThread];
   const readyThreads = threads.filter(
     (thread) => resolveGridThreadState(thread, nowIso) === "ready",
   );
-  const closeAllReady = () => {
-    for (const thread of readyThreads) onCloseThread(thread);
-  };
   const startRenaming = () => {
-    setName(grid.name);
+    setDraftName(workspaceName);
     setRenaming(true);
   };
   const finishRenaming = () => {
-    renameGrid(grid.id, name);
     setRenaming(false);
+    if (draftName.trim() === workspaceName) return;
+    const refusal = renameLayoutWorkspaceAction(workspaceId, draftName);
+    if (refusal !== null) explain("Could not rename workspace", refusal);
+  };
+  const createThread = () => openLayoutLauncherInWorkspaceAction(workspaceId);
+  const deleteWorkspace = () => {
+    // The last workspace cannot go; say so at once instead of asking to confirm a refused delete.
+    const remaining = useLayoutStore.getState().layout.workspaces.length;
+    if (previousWorkspaceId === null && nextWorkspaceId === null && hiddenWorkspaces.length === 0) {
+      explain(
+        "Could not delete workspace",
+        `“${workspaceName}” is the last workspace (${remaining} in the layout); a layout keeps at least one.`,
+      );
+      return;
+    }
+    void deleteWorkspaceWithConfirm(section);
   };
 
   const actionsButtonRef = useRef<HTMLButtonElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const openGridMenu = async (position: { x: number; y: number }) => {
+  const openWorkspaceMenu = async (position: { x: number; y: number }) => {
     const api = readLocalApi();
     if (!api) return;
-    const items = gridHeadingMenuItems({
-      pinned: grid.pinnedAt !== null,
-      manualOrder,
+    const items = workspaceHeadingMenuItems({
+      pinned: section.pinned,
+      canMoveUp: previousWorkspaceId !== null,
+      canMoveDown: nextWorkspaceId !== null,
       readyCount: readyThreads.length,
-      workspaceTitle,
-      hiddenGrids,
+      hiddenWorkspaces: hiddenWorkspaces.map((hidden) => ({
+        id: hidden.workspaceId,
+        name: hidden.name,
+      })),
     });
     setMenuOpen(true);
     const clicked = await settlePromise(() => api.contextMenu.show(items, position));
     setMenuOpen(false);
     if (clicked._tag === "Failure" || clicked.value === null) return;
     const action = clicked.value;
-    const hiddenGridId = hiddenGridIdFromAction(action);
-    if (hiddenGridId !== null) {
-      onShowGrid(hiddenGridId);
+    const hiddenId = hiddenWorkspaceIdFromAction(action);
+    if (hiddenId !== null) {
+      hideLayoutWorkspaceAction(hiddenId, false);
       return;
     }
     switch (action) {
       case "new-thread":
-        onCreateThread();
+        createThread();
         return;
       case "rename":
         startRenaming();
         return;
       case "toggle-pin":
-        if (grid.pinnedAt === null) pinGrid(grid.id);
-        else unpinGrid(grid.id);
+        pinLayoutWorkspaceAction(workspaceId, !section.pinned);
         return;
       case "move-up":
-        moveGridInWorkspace(grid.id, -1);
+        if (previousWorkspaceId !== null)
+          reorderLayoutWorkspaceAction(workspaceId, previousWorkspaceId, "before");
         return;
       case "move-down":
-        moveGridInWorkspace(grid.id, 1);
+        if (nextWorkspaceId !== null)
+          reorderLayoutWorkspaceAction(workspaceId, nextWorkspaceId, "after");
         return;
       case "hide":
-        setGridHidden(grid.id, true);
+        hideLayoutWorkspaceAction(workspaceId, true);
         return;
       case "delete":
-        await deleteGridWithConfirm(grid, deleteGrid);
+        deleteWorkspace();
         return;
       case "close-ready":
-        closeAllReady();
+        for (const thread of readyThreads) onCloseThread(thread);
         return;
-      case "new-grid":
-        onCreateGrid();
+      case "new-workspace":
+        onCreateWorkspace();
         return;
     }
   };
-  const openGridMenuBelow = (element: HTMLElement | null) => {
+  const openWorkspaceMenuBelow = (element: HTMLElement | null) => {
     const rect = element?.getBoundingClientRect();
     if (rect === undefined) return;
-    void openGridMenu({ x: rect.left, y: rect.bottom + 4 });
+    void openWorkspaceMenu({ x: rect.left, y: rect.bottom + 4 });
   };
 
   return (
-    <div className="mt-0.5 flex flex-col" data-grid-key={grid.id}>
+    <div
+      className="mt-0.5 flex flex-col"
+      data-workspace-key={workspaceId}
+      data-grid-key={workspaceId}
+      {...{ [WORKSPACE_REORDER_ATTRIBUTE]: "" }}
+    >
       <div
         ref={headerRef}
         data-grid-heading-row=""
+        data-workspace-heading=""
+        data-reorder-side={reorderTarget ?? undefined}
         className={cn(
           SIDEBAR_GRID_HEADING_ROW_CLS,
-          // One selection fill at a time: the focused thread row carries it while visible. An
-          // empty grid has nothing to select, so its heading stays untinted.
           !renaming &&
             open &&
             threads.length > 0 &&
             revealedThread === undefined &&
-            (collapsed || !threads.some((thread) => thread.id === grid.focusedThreadId)) &&
+            (collapsed ||
+              !threads.some(
+                (thread) =>
+                  scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)) ===
+                  focusedThreadKey,
+              )) &&
             SIDEBAR_GRID_HEADING_ACTIVE_CLS,
-          !renaming && isDropTarget && SIDEBAR_GRID_HEADING_DROP_CLS,
+          !renaming && (isDropTarget || reorderTarget !== null) && SIDEBAR_GRID_HEADING_DROP_CLS,
         )}
+        onPointerDown={(event) => {
+          if (renaming) return;
+          reorder.begin(event, workspaceId);
+        }}
         onContextMenu={(event) => {
           if (renaming) return;
           event.preventDefault();
-          void openGridMenu({ x: event.clientX, y: event.clientY });
+          void openWorkspaceMenu({ x: event.clientX, y: event.clientY });
         }}
       >
         {renaming ? (
           <input
             autoFocus
-            value={name}
-            onChange={(event) => setName(event.target.value)}
+            value={draftName}
+            aria-label={`Rename workspace ${workspaceName}`}
+            onChange={(event) => setDraftName(event.target.value)}
             onBlur={finishRenaming}
             onKeyDown={(event) => {
               if (event.key === "Enter") event.currentTarget.blur();
               if (event.key === "Escape") {
-                setName(grid.name);
+                setDraftName(workspaceName);
                 setRenaming(false);
               }
             }}
@@ -2278,8 +1693,7 @@ export function GridGroup({
               render={
                 <button
                   type="button"
-                  data-sidebar-row={gridRowId(grid)}
-                  data-sidebar-parent={`project:${grid.workspaceKey}`}
+                  data-sidebar-row={workspaceRowId(workspaceId)}
                   onClick={onToggleCollapsed}
                   onKeyDown={(event) => {
                     if (event.key === "F2") {
@@ -2289,7 +1703,7 @@ export function GridGroup({
                     }
                     if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
                       event.preventDefault();
-                      openGridMenuBelow(event.currentTarget);
+                      openWorkspaceMenuBelow(event.currentTarget);
                     }
                   }}
                   aria-expanded={!collapsed}
@@ -2305,8 +1719,15 @@ export function GridGroup({
                     />
                   </span>
                   <span data-grid-name="" className={sidebarGridNameCls(open)}>
-                    <HighlightedText text={grid.name} query={query} />
+                    <HighlightedText text={workspaceName} query={query} />
                   </span>
+                  {section.pinned ? (
+                    <PinIcon
+                      aria-label="Pinned"
+                      data-workspace-pin=""
+                      className="size-3 shrink-0 text-secondary-label"
+                    />
+                  ) : null}
                   {threads.length === 0 ? (
                     <span className={SIDEBAR_ROW_TRAILING_CLS} data-heading-trailing="">
                       <span className={SIDEBAR_GRID_EMPTY_CLS}>empty</span>
@@ -2329,7 +1750,7 @@ export function GridGroup({
               }
             />
             <TooltipPopup side="bottom" align="start">
-              {grid.name}
+              {workspaceName}
             </TooltipPopup>
           </Tooltip>
         )}
@@ -2340,8 +1761,8 @@ export function GridGroup({
                 render={
                   <button
                     type="button"
-                    aria-label={`New thread in ${grid.name}`}
-                    onClick={onCreateThread}
+                    aria-label={`New thread in ${workspaceName}`}
+                    onClick={createThread}
                     className={SIDEBAR_GRID_ACTION_CLS}
                   />
                 }
@@ -2350,17 +1771,17 @@ export function GridGroup({
               </TooltipTrigger>
               <TooltipPopup side="top">
                 {newThreadShortcut === null
-                  ? `New thread in ${grid.name}`
-                  : `New thread in ${grid.name} · ${newThreadShortcut}`}
+                  ? `New thread in ${workspaceName}`
+                  : `New thread in ${workspaceName} · ${newThreadShortcut}`}
               </TooltipPopup>
             </Tooltip>
             <button
               ref={actionsButtonRef}
               type="button"
-              aria-label={`Grid actions for ${grid.name}`}
+              aria-label={`Workspace actions for ${workspaceName}`}
               aria-haspopup="menu"
               aria-expanded={menuOpen}
-              onClick={() => openGridMenuBelow(actionsButtonRef.current)}
+              onClick={() => openWorkspaceMenuBelow(actionsButtonRef.current)}
               className={cn(SIDEBAR_GRID_ACTION_CLS, menuOpen && "opacity-100")}
             >
               <MoreHorizontalIcon aria-hidden className="size-3.5" />
@@ -2369,707 +1790,55 @@ export function GridGroup({
         )}
       </div>
       <AnimatedHeight>
-        {shownThreads.length === 0 ? null : (
+        {threads.length === 0 && !collapsed ? (
+          <div data-workspace-empty="" className={cn(sidebarGridGuideCls(open), "py-1")}>
+            <div className="flex items-center gap-2 px-2 text-xs text-secondary-label">
+              <span className="min-w-0 flex-1 truncate">No threads yet</span>
+              <button
+                type="button"
+                onClick={createThread}
+                className="inline-flex h-6 cursor-pointer items-center rounded-(--r-ctl) border border-(--line-strong) px-2 text-xs text-foreground hover:bg-sidebar-row-hover"
+              >
+                New thread
+              </button>
+            </div>
+          </div>
+        ) : shownThreads.length === 0 ? null : (
           <div data-grid-guide="" className={sidebarGridGuideCls(open)}>
-            {shownThreads.map((thread) => (
-              <ThreadCard
-                key={thread.id}
-                gridId={grid.id}
-                thread={thread}
-                query={query}
-                providerEntries={providerEntries}
-                nowIso={nowIso}
-                focused={open && grid.focusedThreadId === thread.id}
-                selected={selection.selectedThreadKeys.has(
-                  scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-                )}
-                dragging={dragging?.threadId === thread.id}
-                runningSubagents={runningSubagents.get(subagentParentKey(thread)) ?? 0}
-                workspaceTitle={workspaceTitle}
-                treeParent={gridRowId(grid)}
-                onOpen={() => onOpenThread(grid.id, thread.id)}
-                onSelect={(input) => onSelectThread(thread, input)}
-                onClose={() => onCloseThread(thread)}
-                onHold={(preset) => onHoldThread(thread, preset)}
-                onPickHoldTime={onPickHoldTime}
-                onRename={(title) => onRenameThread(thread, title)}
-                onSetAutoClose={(enabled) => onSetAutoClose(thread, enabled)}
-                onDropOnThread={(source) => onDropOnThread(source, grid.id, thread.id)}
-                onOpenGrid={(targetGridId) => onOpenThread(targetGridId, thread.id)}
-                handleNewThread={handleNewThread}
-              />
-            ))}
+            {shownThreads.map((thread) => {
+              const key = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
+              return (
+                <ThreadCard
+                  key={thread.id}
+                  workspaceId={workspaceId}
+                  thread={thread}
+                  query={query}
+                  providerEntries={
+                    providerEntriesByEnvironment.get(thread.environmentId) ?? EMPTY_PROVIDER_ENTRIES
+                  }
+                  nowIso={nowIso}
+                  focused={open && focusedThreadKey === key}
+                  selected={selection.selectedThreadKeys.has(key)}
+                  dragging={dragging?.threadId === thread.id}
+                  runningSubagents={runningSubagents.get(subagentParentKey(thread)) ?? 0}
+                  projectTitle={projectTitleOf(thread)}
+                  treeParent={workspaceRowId(workspaceId)}
+                  onOpen={() => onOpenThread(thread)}
+                  onSelect={(input) => onSelectThread(thread, input)}
+                  onClose={() => onCloseThread(thread)}
+                  onHold={(preset) => onHoldThread(thread, preset)}
+                  onPickHoldTime={onPickHoldTime}
+                  onRename={(title) => onRenameThread(thread, title)}
+                  onSetAutoClose={(enabled) => onSetAutoClose(thread, enabled)}
+                  onDropOnThread={(source) => onDropOnWorkspace(source, workspaceId)}
+                  workspaceMove={workspaceMoveFor(thread)}
+                  handleNewThread={handleNewThread}
+                />
+              );
+            })}
           </div>
         )}
       </AnimatedHeight>
     </div>
-  );
-}
-
-/**
- * The narrowest a branch name gets before the line drops items instead: the checkout mark plus
- * the first characters of the name and an ellipsis (about 56px at 12px type).
- */
-const BRANCH_MIN_WIDTH_PX = 56;
-
-/** Branch names every checkout is assumed to treat as the project's default. */
-const CONVENTIONAL_DEFAULT_BRANCHES: ReadonlySet<string> = new Set(["main", "master"]);
-
-/**
- * The branch a thread works on: the one it recorded, or else the branch its
- * checkout (its worktree, or the project's own folder) currently has. `isDefault`
- * is the checkout's own answer when the branch came from it, else `main` or `master`.
- */
-function useThreadBranch(thread: EnvironmentThreadShell): {
-  name: string | null;
-  isDefault: boolean;
-} {
-  const readsCheckout = thread.branch === null;
-  const project = useProject(
-    readsCheckout && thread.worktreePath === null
-      ? scopeProjectRef(thread.environmentId, thread.projectId)
-      : null,
-  );
-  const cwd = thread.worktreePath ?? project?.workspaceRoot ?? null;
-  const status = useEnvironmentQuery(
-    readsCheckout && cwd !== null
-      ? vcsEnvironment.status({ environmentId: thread.environmentId, input: { cwd } })
-      : null,
-  );
-  const name = thread.branch ?? status.data?.refName ?? null;
-  const conventional = name !== null && CONVENTIONAL_DEFAULT_BRANCHES.has(name);
-  return {
-    name,
-    isDefault: thread.branch === null ? (status.data?.isDefaultRef ?? conventional) : conventional,
-  };
-}
-
-// Positioned so the actions paint above the faded time; out of flow until the row is hovered or focused.
-const ROW_ACTIONS_IN_FLOW = "relative";
-const ROW_ACTIONS_OUT_OF_FLOW =
-  "absolute top-0 right-0 group-hover/th:relative group-has-[:focus-visible]/th:relative";
-
-export function ThreadCard({
-  gridId,
-  thread,
-  query,
-  providerEntries,
-  nowIso,
-  focused,
-  selected,
-  dragging,
-  workspaceTitle,
-  projectLabel = null,
-  timeLabel = null,
-  shelf = null,
-  runningSubagents = 0,
-  treeParent,
-  onOpen,
-  onSelect,
-  onClose,
-  onHold,
-  onPickHoldTime,
-  onRename,
-  onSetAutoClose,
-  onWake,
-  onReopen,
-  onDropOnThread,
-  onOpenGrid,
-  handleNewThread,
-}: {
-  gridId: string | null;
-  thread: EnvironmentThreadShell;
-  query: string;
-  providerEntries: ReadonlyMap<string, SidebarProviderEntry>;
-  nowIso: string;
-  focused: boolean;
-  selected: boolean;
-  dragging: boolean;
-  workspaceTitle: string;
-  /** Names the row's project first on the second line, for rows outside a project group. */
-  projectLabel?: string | null;
-  timeLabel?: string | null;
-  shelf?: "snoozed" | "settled" | null;
-  runningSubagents?: number;
-  /** The row id of the grid or project this row sits under, for arrow-key navigation. */
-  treeParent?: string | undefined;
-  onOpen: () => void;
-  onSelect: (input: { shiftKey: boolean; toggleKey: boolean }) => void;
-  onClose: () => void;
-  onHold: (preset: Pick<SnoozePreset, "snoozedUntil">) => void;
-  onPickHoldTime: () => Promise<Pick<SnoozePreset, "snoozedUntil"> | null>;
-  onRename: (title: string) => void;
-  onSetAutoClose: (enabled: boolean) => void;
-  onWake?: () => void;
-  onReopen?: () => void;
-  onDropOnThread: (source: DraggedThread) => void;
-  /** Opens the grid a menu move landed in; absent hides the Move to grid submenu. */
-  onOpenGrid?: ((gridId: string) => void) | undefined;
-  /** Supplies New thread on branch; absent hides that item. */
-  handleNewThread?: NewThreadHandler | undefined;
-}) {
-  const [renaming, setRenaming] = useState(false);
-  const [actionsHovered, setActionsHovered] = useState(false);
-  const [holdMenuOpen, setHoldMenuOpen] = useState(false);
-  const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
-  const nowMinute = useNowMinute();
-  const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
-  const showBranch = useClientSettings((settings) => settings.sidebarRowShowBranch);
-  const { name: branchName } = useThreadBranch(thread);
-  const showPullRequest = useClientSettings((settings) => settings.sidebarRowShowPullRequest);
-  const showSubagents = useClientSettings((settings) => settings.sidebarRowShowSubagents);
-  const state = resolveGridThreadState(thread, nowIso);
-  // The open thread: the focused cell of the open grid, or the thread's own route.
-  const routeActive = useLocation({
-    select: (location) =>
-      isThreadRoutePathname(location.pathname, scopeThreadRef(thread.environmentId, thread.id)),
-  });
-  const active = focused || routeActive;
-  const rowPullRequest = resolveRowPullRequest(thread);
-  const providerEntry = providerEntries.get(thread.providerInstanceId);
-  const presets = resolveSnoozePresets(
-    new Date(`${nowMinute}:00.000Z`),
-    timestampFormat,
-    thread.environmentId,
-  );
-  const threadKey = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
-  const searchHighlight = useSearchHighlight(threadKey);
-  const fileDrop = useRowFileDrop(thread);
-  const jumpHint = useThreadJumpHint(threadKey);
-  const bulkMenu = useContext(ThreadBulkMenuContext);
-  const sweep = useContext(RowActionSweepContext);
-  const regeneratingTitle = thread.titleRegeneration != null;
-  const canHold = canSnooze(thread, { now: nowIso });
-  const actionsVisible = actionsHovered || holdMenuOpen || actionsMenuOpen;
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const rowRef = useRef<HTMLDivElement | null>(null);
-  const actionsButtonRef = useRef<HTMLButtonElement | null>(null);
-  const threadRef = scopeThreadRef(thread.environmentId, thread.id);
-  const startRename = () => setRenaming(true);
-  const timeNode = (
-    <span data-thread-time="" className={cn("tabular-nums", SIDEBAR_THREAD_META_TEXT_CLASS)}>
-      {timeLabel ?? threadTimeLabel(thread, nowMinute)}
-    </span>
-  );
-  const openCardMenu = async (position: { x: number; y: number }) => {
-    setActionsMenuOpen(true);
-    await openMenu(position).finally(() => setActionsMenuOpen(false));
-  };
-  const openCardMenuFromButton = () => {
-    const rect = actionsButtonRef.current?.getBoundingClientRect();
-    if (rect === undefined || rect === null) return;
-    void openCardMenu({ x: rect.left, y: rect.bottom + 4 });
-  };
-  // A selected row in a multi-selection opens the menu for the whole selection.
-  const openRowMenu = (position: { x: number; y: number }) => {
-    if (selected && bulkMenu !== null) bulkMenu(position);
-    else void openCardMenu(position);
-  };
-  const openCardMenuFromRow = () => {
-    const rect = rowRef.current?.getBoundingClientRect();
-    if (rect === undefined || rect === null) return;
-    openRowMenu({ x: rect.left, y: rect.bottom + 4 });
-  };
-  const projectFilter = useThreadProjectFilter({
-    environmentId: thread.environmentId,
-    projectId: thread.projectId,
-  });
-  const { openMenu } = useThreadActionMenu({
-    threadRef,
-    thread,
-    projectFilter,
-    onStartRename: startRename,
-    handleNewThread,
-    grid: {
-      currentGridId: gridId,
-      isFocusedCell: focused,
-      onOpen,
-      ...(onOpenGrid === undefined ? {} : { onOpenGrid }),
-    },
-    onCloseThread: onClose,
-    onHoldThread: (snoozedUntil) => onHold({ snoozedUntil }),
-    onSetAutoSettle: onSetAutoClose,
-    onReopenThread: onReopen,
-    onWakeThread: onWake,
-  });
-
-  const applyPreset = (preset: Pick<SnoozePreset, "snoozedUntil"> | undefined) => {
-    if (preset !== undefined) onHold(preset);
-  };
-
-  const close = () => {
-    onClose();
-  };
-
-  // Hidden, not disabled, while the actions are in use: a disabled tooltip ignores the pointer
-  // leaving the row, so a hover open still pending would land after the pointer was gone.
-  const previewSuppressed = actionsHovered || holdMenuOpen || actionsMenuOpen;
-
-  const startRowDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (renaming) return;
-    const target = event.target;
-    if (target instanceof Element) {
-      if (target.closest("input, textarea, [contenteditable='true']") !== null) return;
-      // The title button starts the drag; the row's other controls keep their click.
-      const control = target.closest("button, a, [role='button']");
-      if (control !== null && !control.hasAttribute("data-card-open")) return;
-    }
-    beginThreadDrag(event, {
-      gridId,
-      threadId: thread.id,
-      environmentId: thread.environmentId,
-      projectId: thread.projectId,
-      title: thread.title,
-    });
-  };
-  useThreadDropZone(
-    rowRef,
-    (_point, source) =>
-      shelf === null && gridId !== null && source.threadId !== thread.id
-        ? { kind: "thread", gridId, threadId: thread.id }
-        : null,
-    (source) => onDropOnThread(source),
-  );
-
-  return (
-    <Tooltip open={previewOpen && !previewSuppressed} onOpenChange={setPreviewOpen}>
-      <TooltipTrigger
-        render={
-          <div
-            ref={(element) => {
-              rowRef.current = element;
-              searchHighlight.attach(element);
-            }}
-            data-search-highlighted={searchHighlight.highlighted || undefined}
-            data-file-drop-over={fileDrop.over || undefined}
-            {...fileDrop.handlers}
-            onPointerDown={startRowDrag}
-            tabIndex={-1}
-            data-thread-key={threadKey}
-            data-sidebar-row={threadKey}
-            data-sidebar-parent={treeParent}
-            data-thread-current={active ? "" : undefined}
-            aria-busy={regeneratingTitle || undefined}
-            onContextMenu={(event) => {
-              if (renaming) return;
-              event.preventDefault();
-              openRowMenu({ x: event.clientX, y: event.clientY });
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
-                event.preventDefault();
-                openCardMenuFromRow();
-                return;
-              }
-              // The row's own keys; its buttons keep theirs.
-              if (event.target !== event.currentTarget) return;
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                if (shelf === null && (event.shiftKey || event.metaKey || event.ctrlKey)) {
-                  onSelect({ shiftKey: event.shiftKey, toggleKey: event.metaKey || event.ctrlKey });
-                } else {
-                  onOpen();
-                }
-              } else if (event.key === "F2") {
-                event.preventDefault();
-                startRename();
-              }
-            }}
-            onClick={(event) => {
-              if (
-                event.target instanceof Element &&
-                event.target.closest("button, input, [role='button'], [role='menu']") !== null
-              ) {
-                return;
-              }
-              if (shelf === null && (event.shiftKey || event.metaKey || event.ctrlKey)) {
-                onSelect({ shiftKey: event.shiftKey, toggleKey: event.metaKey || event.ctrlKey });
-                return;
-              }
-              onOpen();
-            }}
-            className={cn(
-              `group/th relative flex h-13 w-full items-center gap-2 rounded-lg pr-2 text-left outline-none ${MOTION_FEEDBACK} ${FOCUS_ROW_CLS}`,
-              SIDEBAR_THREAD_ROW_INDENT_CLS,
-              ROW_SCROLL_MARGIN_CLS,
-              "cursor-pointer",
-              dragging && "opacity-50",
-              fileDrop.over && "bg-(--accent-muted) ring-1 ring-(--accent-ink) ring-inset",
-              selected
-                ? SIDEBAR_ROW_SURFACE_CLS.selected
-                : searchHighlight.highlighted
-                  ? SIDEBAR_ROW_SURFACE_CLS.searchHighlight
-                  : active
-                    ? SIDEBAR_ROW_SURFACE_CLS.active
-                    : SIDEBAR_ROW_SURFACE_CLS.rest,
-            )}
-          />
-        }
-      >
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <div data-thread-title-line="" className="flex h-5 min-w-0 items-center gap-2">
-            {renaming ? (
-              <ThreadTitleInput
-                title={thread.title}
-                onCommit={(next) => {
-                  setRenaming(false);
-                  onRename(next);
-                }}
-                onCancel={() => setRenaming(false)}
-              />
-            ) : (
-              <button
-                type="button"
-                data-card-open=""
-                onClick={(event) => {
-                  if (shelf === null && (event.shiftKey || event.metaKey || event.ctrlKey)) {
-                    event.preventDefault();
-                    onSelect({
-                      shiftKey: event.shiftKey,
-                      toggleKey: event.metaKey || event.ctrlKey,
-                    });
-                    return;
-                  }
-                  // The second click of a double-click renames; it must not open the thread again.
-                  if (isTrailingDoubleClick(event.detail)) return;
-                  onOpen();
-                }}
-                onDoubleClick={(event) => {
-                  event.preventDefault();
-                  startRename();
-                }}
-                onKeyDown={(event: ReactKeyboardEvent<HTMLButtonElement>) => {
-                  if (event.key === "F2") {
-                    event.preventDefault();
-                    startRename();
-                  }
-                }}
-                aria-current={active ? "true" : undefined}
-                className="flex min-w-0 flex-1 cursor-pointer items-center text-left outline-none"
-              >
-                <span
-                  className={cn(
-                    "min-w-0 flex-1 truncate",
-                    ROW_TITLE_TEXT_CLS,
-                    regeneratingTitle && "opacity-55",
-                  )}
-                >
-                  <HighlightedText text={thread.title} query={query} />
-                </span>
-              </button>
-            )}
-            {/*
-            The age and the hover actions share one grid cell at the title line's right edge, so ages
-            scan down one column whatever the row carries. Hidden actions leave the flow, so a resting
-            title runs up to the age; shown, they join it and the title truncates before them.
-          */}
-            <span className="relative ml-auto grid h-5 shrink-0 grid-rows-1 items-center justify-items-end">
-              <span
-                className={cn(
-                  "col-start-1 row-start-1 flex min-w-7 items-center justify-end",
-                  ROW_STATUS_RECEDE,
-                  MOTION_FEEDBACK_OPACITY,
-                  actionsVisible && ROW_STATUS_HIDDEN,
-                )}
-              >
-                {jumpHint !== null ? (
-                  <JumpHintBadge label={jumpHint} />
-                ) : shelf !== null ? null : threadHasStatus(thread, state) ? (
-                  <ThreadStatusWord thread={thread} state={state} nowIso={nowIso} />
-                ) : (
-                  timeNode
-                )}
-              </span>
-              <span
-                className={cn(
-                  "col-start-1 row-start-1 flex h-[22px] items-center gap-0.5",
-                  MOTION_FEEDBACK_OPACITY,
-                  actionsVisible ? ROW_ACTIONS_IN_FLOW : ROW_ACTIONS_OUT_OF_FLOW,
-                  actionsVisible ? ROW_ACTIONS_VISIBLE : ROW_ACTIONS_REVEAL,
-                )}
-                onMouseEnter={() => setActionsHovered(true)}
-                onMouseLeave={() => setActionsHovered(false)}
-              >
-                {shelf !== null ? (
-                  <button
-                    type="button"
-                    aria-label={shelf === "snoozed" ? "Wake thread now" : "Reopen thread"}
-                    {...sweepActionProps(shelf === "snoozed" ? "wake" : "reopen")}
-                    onPointerDown={(event) =>
-                      sweep?.(event, shelf === "snoozed" ? "wake" : "reopen", threadKey)
-                    }
-                    onClick={shelf === "snoozed" ? onWake : onReopen}
-                    className={cn(
-                      "inline-flex h-[22px] cursor-pointer items-center gap-1 rounded-(--r-badge) px-1.5 text-xs text-secondary-foreground data-sweep-hit:bg-(--sel) hover:bg-(--sel) hover:text-foreground",
-                      FOCUS_ACTION_CLS,
-                    )}
-                  >
-                    {shelf === "snoozed" ? (
-                      <>
-                        <AlarmClockOffIcon aria-hidden className="size-3.5" />
-                        Wake
-                      </>
-                    ) : (
-                      <>
-                        <Undo2Icon aria-hidden className="size-3.5" />
-                        Reopen
-                      </>
-                    )}
-                  </button>
-                ) : (
-                  <>
-                    {canHold ? (
-                      <Menu onOpenChange={setHoldMenuOpen}>
-                        <MenuTrigger
-                          render={
-                            <button
-                              type="button"
-                              aria-label="Hold"
-                              className={cn(
-                                "inline-grid size-[22px] cursor-pointer place-items-center rounded-(--r-badge) text-secondary-foreground hover:bg-(--sel) hover:text-foreground",
-                                FOCUS_ACTION_CLS,
-                              )}
-                            >
-                              <ClockIcon aria-hidden className="size-3.5" />
-                            </button>
-                          }
-                        />
-                        <MenuPopup side="bottom" align="end">
-                          <HoldMenuItems
-                            presets={presets}
-                            onPick={applyPreset}
-                            onPickTime={onPickHoldTime}
-                          />
-                        </MenuPopup>
-                      </Menu>
-                    ) : null}
-                    <button
-                      type="button"
-                      aria-label="Close thread"
-                      {...sweepActionProps("close")}
-                      onPointerDown={(event) => sweep?.(event, "close", threadKey)}
-                      onClick={close}
-                      className={cn(
-                        "inline-flex h-[22px] cursor-pointer items-center gap-1 rounded-(--r-badge) px-1.5 text-xs text-secondary-foreground data-sweep-hit:bg-(--sel) hover:bg-(--sel) hover:text-foreground",
-                        FOCUS_ACTION_CLS,
-                      )}
-                    >
-                      <XIcon aria-hidden className="size-3.5" />
-                      Close
-                    </button>
-                    <button
-                      ref={actionsButtonRef}
-                      type="button"
-                      aria-label={`Thread actions for ${thread.title}`}
-                      aria-haspopup="menu"
-                      onClick={openCardMenuFromButton}
-                      className={cn(
-                        "inline-grid size-5.5 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-foreground hover:bg-(--sel) hover:text-foreground",
-                        FOCUS_ACTION_CLS,
-                      )}
-                    >
-                      <MoreHorizontalIcon aria-hidden className="size-3.5" />
-                    </button>
-                  </>
-                )}
-              </span>
-            </span>
-          </div>
-          {/*
-          One muted line in a fixed order: checkout and branch, draft, line totals, terminal, machine,
-          subagents, tags, title regeneration. Items that do not fit drop from the right, whole,
-          behind a +N counter. The pull request and the provider mark close the line.
-        */}
-          <div
-            data-thread-meta=""
-            className={cn("flex h-4 min-w-0 items-center gap-2", SIDEBAR_THREAD_META_TEXT_CLASS)}
-          >
-            <RowMeta>
-              {projectLabel !== null ? (
-                <RowMetaItem label={projectLabel}>
-                  <span data-thread-project="" className={SIDEBAR_THREAD_PROJECT_CLS}>
-                    {projectLabel}
-                  </span>
-                </RowMetaItem>
-              ) : null}
-              {/* A shelf row's label ("tomorrow at 9:00 AM", "Closed 2h") is too long for the title line. */}
-              {shelf !== null && jumpHint === null ? (
-                <RowMetaItem label="Time" keep>
-                  {timeNode}
-                </RowMetaItem>
-              ) : null}
-              {state === "back" && shelf === null ? (
-                <RowMetaItem label="Status" keep>
-                  <ThreadStatusWord thread={thread} state={state} nowIso={nowIso} />
-                </RowMetaItem>
-              ) : null}
-              {showBranch && branchName !== null ? (
-                <RowMetaItem label={`Branch ${branchName}`} minWidth={BRANCH_MIN_WIDTH_PX}>
-                  <span data-thread-branch="" className="inline-flex min-w-0 items-center gap-1">
-                    <ThreadCheckoutMark thread={thread} />
-                    <span className="min-w-0 truncate">{branchName}</span>
-                  </span>
-                </RowMetaItem>
-              ) : showBranch && thread.worktreePath?.trim() ? (
-                <RowMetaItem label="Worktree">
-                  <ThreadCheckoutMark thread={thread} />
-                </RowMetaItem>
-              ) : null}
-              <ThreadDraftItem thread={thread} focused={focused} />
-              <ThreadDiffItem
-                thread={thread}
-                rowRef={rowRef}
-                focused={focused}
-                emphasized={active || selected}
-              />
-              <ThreadTerminalItem thread={thread} onActivate={onOpen} />
-              <ThreadRemoteItem thread={thread} />
-              {showSubagents && runningSubagents > 0 ? (
-                <RowMetaItem
-                  dropsFirst
-                  label={
-                    runningSubagents === 1
-                      ? "1 subagent running"
-                      : `${runningSubagents} subagents running`
-                  }
-                >
-                  <span
-                    role="img"
-                    aria-label={
-                      runningSubagents === 1
-                        ? "1 subagent running"
-                        : `${runningSubagents} subagents running`
-                    }
-                    className="inline-flex shrink-0 items-center gap-1 tabular-nums"
-                  >
-                    <UsersIcon aria-hidden className="size-3.5 shrink-0" />
-                    <span aria-hidden>{runningSubagents}</span>
-                  </span>
-                </RowMetaItem>
-              ) : null}
-              {(thread.tags ?? []).map((tag) => (
-                <RowMetaItem key={tag} label={`#${tag}`}>
-                  <span data-thread-tag="" className={SIDEBAR_THREAD_TAG_CLASS}>
-                    #{tag}
-                  </span>
-                </RowMetaItem>
-              ))}
-              {regeneratingTitle ? (
-                <RowMetaItem label="Renaming title">
-                  <span data-thread-regenerating="" className="shrink-0">
-                    Renaming…
-                  </span>
-                </RowMetaItem>
-              ) : null}
-            </RowMeta>
-            {showPullRequest && rowPullRequest !== null ? (
-              <span data-thread-pr-slot="" className="inline-flex shrink-0">
-                <ThreadRowPullRequestBadge
-                  threadRef={threadRef}
-                  pullRequest={rowPullRequest}
-                  pullRequestCount={thread.pullRequests.length}
-                  onOpenThread={onOpen}
-                />
-              </span>
-            ) : null}
-            {/* A fixed slot, so the marks line up under the ages whatever the row carries. */}
-            <span
-              data-thread-provider-mark=""
-              className="inline-grid size-4 shrink-0 place-items-center"
-            >
-              {providerEntry !== undefined ? (
-                <SidebarProviderStack
-                  thread={thread}
-                  providerEntryByInstanceId={providerEntries}
-                  quiet
-                />
-              ) : null}
-            </span>
-          </div>
-        </div>
-        {selected ? (
-          <span className="sr-only" aria-live="polite">
-            Selected
-          </span>
-        ) : null}
-      </TooltipTrigger>
-      <TooltipPopup side="bottom" align="start" className="max-w-65">
-        <ThreadHoverCard
-          thread={thread}
-          workspaceTitle={workspaceTitle}
-          providerEntries={providerEntries}
-          branchName={branchName}
-          nowMs={Date.parse(`${nowMinute}:00.000Z`)}
-        />
-      </TooltipPopup>
-    </Tooltip>
-  );
-}
-
-function HoldMenuItems({
-  presets,
-  onPick,
-  onPickTime,
-}: {
-  presets: ReadonlyArray<SnoozePreset>;
-  onPick: (preset: Pick<SnoozePreset, "snoozedUntil">) => void;
-  onPickTime: () => Promise<Pick<SnoozePreset, "snoozedUntil"> | null>;
-}) {
-  return (
-    <>
-      <div className="px-2 pt-1 pb-1 text-2xs font-semibold text-secondary-label">Hold until</div>
-      {presets.map((preset) => (
-        <MenuItem key={preset.id} onClick={() => onPick(preset)}>
-          {preset.label}
-          <span className="ml-auto text-2xs text-secondary-label">{preset.whenLabel}</span>
-        </MenuItem>
-      ))}
-      <MenuSeparator />
-      <MenuItem
-        onClick={() => {
-          void (async () => {
-            const picked = await onPickTime();
-            if (picked !== null) onPick(picked);
-          })();
-        }}
-      >
-        Pick a time…
-      </MenuItem>
-    </>
-  );
-}
-
-const SIDEBAR_OPTIONS_DEFAULTS = {
-  sidebarGridThreadSortOrder: DEFAULT_SIDEBAR_GRID_THREAD_SORT_ORDER,
-  sidebarGridSortOrder: DEFAULT_SIDEBAR_GRID_SORT_ORDER,
-  sidebarRowShowBranch: true,
-  sidebarRowShowPullRequest: true,
-  sidebarRowShowSubagents: true,
-  sidebarShowNeedsYou: false,
-} as const;
-
-export function sidebarOptionsPatch(patch: Partial<SidebarGridOptions>) {
-  return {
-    ...(patch.threadSort === undefined ? {} : { sidebarGridThreadSortOrder: patch.threadSort }),
-    ...(patch.gridSort === undefined ? {} : { sidebarGridSortOrder: patch.gridSort }),
-    ...(patch.showBranch === undefined ? {} : { sidebarRowShowBranch: patch.showBranch }),
-    ...(patch.showPullRequest === undefined
-      ? {}
-      : { sidebarRowShowPullRequest: patch.showPullRequest }),
-    ...(patch.showSubagents === undefined ? {} : { sidebarRowShowSubagents: patch.showSubagents }),
-    ...(patch.showNeedsYou === undefined ? {} : { sidebarShowNeedsYou: patch.showNeedsYou }),
-  };
-}
-
-/** A grid's last activity for the rail's "Last activity" order: its newest thread, else its creation. */
-function gridActivityAt(
-  grid: GridRecord,
-  threads: ReadonlyArray<EnvironmentThreadShell>,
-  nowIso: string,
-): number {
-  const created = Date.parse(grid.createdAt);
-  return visibleGridThreads(grid, threads, nowIso).reduce(
-    (latest, thread) => Math.max(latest, getThreadSortTimestamp(thread, "updated_at")),
-    Number.isNaN(created) ? Number.NEGATIVE_INFINITY : created,
   );
 }

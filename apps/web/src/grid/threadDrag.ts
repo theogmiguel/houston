@@ -22,6 +22,8 @@ import type { Side } from "@houston-app/shared/grid/tree";
 export interface ThreadDragSource {
   /** The grid the thread currently lives in; null for a thread no grid shows. */
   readonly gridId: string | null;
+  /** The layout workspace showing the thread's chat; a sidebar row sets it, a grid cell does not. */
+  readonly workspaceId?: string | null;
   readonly threadId: string;
   readonly environmentId: string;
   readonly projectId: string;
@@ -42,6 +44,7 @@ export type ThreadDropTarget =
       readonly refusal: ThreadDropRefusal | null;
     }
   | { readonly kind: "grid"; readonly gridId: string }
+  | { readonly kind: "workspace"; readonly workspaceId: string }
   | { readonly kind: "thread"; readonly gridId: string | null; readonly threadId: string }
   | { readonly kind: "closed" };
 
@@ -172,6 +175,9 @@ function sameTarget(left: ThreadDropTarget | null, right: ThreadDropTarget | nul
     );
   }
   if (left.kind === "grid") return right.kind === "grid" && left.gridId === right.gridId;
+  if (left.kind === "workspace") {
+    return right.kind === "workspace" && left.workspaceId === right.workspaceId;
+  }
   if (left.kind === "thread") {
     return (
       right.kind === "thread" && left.gridId === right.gridId && left.threadId === right.threadId

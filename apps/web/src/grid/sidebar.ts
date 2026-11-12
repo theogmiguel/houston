@@ -8,8 +8,7 @@ import { sortSettledThreads } from "@houston-app/client-runtime/state/thread-sor
 
 import { isSidebarHiddenThread, resolveThreadStatusPill } from "../components/Sidebar.logic";
 import type { ThreadState } from "../components/ui/thread-state-glyph";
-import { workspaceKeyOf, type GridRecord } from "./gridStore";
-import { preorderThreads } from "@houston-app/shared/grid/tree";
+import { workspaceKeyOf } from "@houston-app/shared/grid/record";
 
 /**
  * The grid rail's one status vocabulary. `idle` cards show their age; every
@@ -51,34 +50,6 @@ export function gridThreadStateLabel(state: GridThreadState, elapsed?: string): 
     case "idle":
       return null;
   }
-}
-
-export function threadCardsInPaneOrder(
-  grid: GridRecord,
-  threads: ReadonlyArray<EnvironmentThreadShell>,
-): EnvironmentThreadShell[] {
-  const byId = new Map<string, EnvironmentThreadShell>(
-    threads.map((thread) => [thread.id, thread] as const),
-  );
-  return (grid.tree === null ? [] : preorderThreads(grid.tree)).flatMap((leaf) => {
-    const thread = byId.get(leaf.threadId);
-    return thread === undefined ? [] : [thread];
-  });
-}
-
-/** Threads that still belong on the rail: not archived, closed, held or a subagent child. */
-export function visibleGridThreads(
-  grid: GridRecord,
-  threads: ReadonlyArray<EnvironmentThreadShell>,
-  now: string,
-): EnvironmentThreadShell[] {
-  return threadCardsInPaneOrder(grid, threads).filter(
-    (thread) =>
-      thread.archivedAt === null &&
-      thread.settledOverride !== "settled" &&
-      !isSidebarHiddenThread(thread) &&
-      !effectiveSnoozed(thread, { now }),
-  );
 }
 
 export interface ShelfThreads {
@@ -154,21 +125,23 @@ export function resolveGridThreadAttentionState(state: GridThreadState): boolean
 }
 
 export interface AttentionCard {
-  /** Null for a workspace thread that is not in any grid. */
-  readonly gridId: string | null;
+  /** The workspace whose group lists the thread. */
+  readonly workspaceId: string;
   readonly threadId: string;
   readonly state: GridThreadState;
 }
 
-/** Attention cards in rail order. Hidden grids stay reachable with Ctrl . */
-export function attentionCardsForGrids(
-  grids: ReadonlyArray<GridRecord>,
-  threads: ReadonlyArray<EnvironmentThreadShell>,
+/** Attention cards in rail order; hidden workspaces stay reachable with Ctrl . */
+export function attentionCardsForWorkspaces(
+  workspaces: ReadonlyArray<{
+    readonly workspaceId: string;
+    readonly threads: ReadonlyArray<EnvironmentThreadShell>;
+  }>,
   now: string,
 ): AttentionCard[] {
-  return grids.flatMap((grid) =>
-    visibleGridThreads(grid, threads, now).map((thread) => ({
-      gridId: grid.id,
+  return workspaces.flatMap((workspace) =>
+    workspace.threads.map((thread) => ({
+      workspaceId: workspace.workspaceId,
       threadId: thread.id,
       state: resolveGridThreadState(thread, now),
     })),
@@ -198,22 +171,20 @@ export function attentionNavigationDirection(event: AttentionNavigationEvent): 1
 
 /**
  * `Ctrl .` walks Needs you and Ready cards across every workspace in rail
- * order: workspaces, then grids, then panes left to right, top to bottom.
+ * order: workspaces, then the rows of each.
  * `Ctrl Shift .` walks back. It wraps, and a focused card that needs nothing
  * starts the walk at the following card. `Ctrl J` stays the terminal drawer.
  */
 export function nextAttentionCard(
   cards: ReadonlyArray<AttentionCard>,
-  current: { readonly gridId: string | null; readonly threadId: string } | null,
+  current: { readonly threadId: string } | null,
   direction: 1 | -1,
 ): AttentionCard | null {
   const candidates = cards.filter((card) => resolveGridThreadAttentionState(card.state));
   if (candidates.length === 0) return null;
   if (current === null)
     return direction === 1 ? (candidates[0] ?? null) : (candidates.at(-1) ?? null);
-  const currentIndex = cards.findIndex(
-    (card) => card.gridId === current.gridId && card.threadId === current.threadId,
-  );
+  const currentIndex = cards.findIndex((card) => card.threadId === current.threadId);
   const start = currentIndex === -1 ? (direction === 1 ? -1 : cards.length) : currentIndex;
   for (let step = 1; step <= cards.length; step += 1) {
     const index = (((start + direction * step) % cards.length) + cards.length) % cards.length;

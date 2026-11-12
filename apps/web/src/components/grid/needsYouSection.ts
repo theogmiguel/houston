@@ -2,7 +2,7 @@ import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/m
 import { effectiveSnoozed } from "@houston-app/client-runtime/state/thread-settled";
 import { getThreadSortTimestamp } from "@houston-app/client-runtime/state/thread-sort";
 
-import { workspaceKeyOf } from "../../grid/gridStore";
+import { workspaceKeyOf } from "@houston-app/shared/grid/record";
 import { resolveGridThreadState } from "../../grid/sidebar";
 import { gridThreadStatusWord } from "../../grid/statusWord";
 import { isSidebarHiddenThread } from "../Sidebar.logic";

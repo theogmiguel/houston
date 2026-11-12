@@ -43,7 +43,6 @@ export function railWorkspaces<
 }
 
 export interface RailTarget {
-  readonly gridId: string | null;
   readonly threadId: string;
 }
 
@@ -59,11 +58,7 @@ export function nextRailTargetIndex(
 ): number | null {
   if (targets.length === 0) return null;
   const currentIndex =
-    current === null
-      ? -1
-      : targets.findIndex(
-          (target) => target.gridId === current.gridId && target.threadId === current.threadId,
-        );
+    current === null ? -1 : targets.findIndex((target) => target.threadId === current.threadId);
   if (currentIndex === -1) return direction === "previous" ? targets.length - 1 : 0;
   const nextIndex = currentIndex + (direction === "previous" ? -1 : 1);
   return nextIndex < 0 || nextIndex >= targets.length ? null : nextIndex;

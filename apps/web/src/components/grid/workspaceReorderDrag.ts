@@ -3,29 +3,29 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { suppressTextSelection } from "../../lib/suppressTextSelection";
 
-export type ProjectDropSide = "before" | "after";
+export type WorkspaceDropSide = "before" | "after";
 
-export interface ProjectReorderDrag {
+export interface WorkspaceReorderDrag {
   readonly draggedKey: string;
   readonly targetKey: string | null;
-  readonly side: ProjectDropSide;
+  readonly side: WorkspaceDropSide;
 }
 
-/** Pointer travel before a press on a project row becomes a drag, so a short press still toggles it. */
+/** Pointer travel before a press on a workspace heading becomes a drag, so a short press still toggles it. */
 const DRAG_THRESHOLD_PX = 6;
 
-/** Marks a rail section that can be reordered; the scratch section carries no mark. */
-export const PROJECT_REORDER_ATTRIBUTE = "data-project-reorder";
+/** Marks a rail group that can be reordered. */
+export const WORKSPACE_REORDER_ATTRIBUTE = "data-workspace-reorder";
 
 function targetUnderPointer(
   x: number,
   y: number,
   draggedKey: string,
-): { key: string; side: ProjectDropSide } | null {
+): { key: string; side: WorkspaceDropSide } | null {
   for (const element of document.elementsFromPoint(x, y)) {
-    const section = element.closest<HTMLElement>(`[${PROJECT_REORDER_ATTRIBUTE}]`);
+    const section = element.closest<HTMLElement>(`[${WORKSPACE_REORDER_ATTRIBUTE}]`);
     if (section === null) continue;
-    const key = section.dataset.projectKey;
+    const key = section.dataset.workspaceKey;
     if (key === undefined || key === draggedKey) return null;
     const rect = section.getBoundingClientRect();
     return { key, side: y < rect.top + rect.height / 2 ? "before" : "after" };
@@ -34,29 +34,33 @@ function targetUnderPointer(
 }
 
 /**
- * Pointer-driven reordering of the rail's project sections. A press that moves
+ * Pointer-driven reordering of the rail's workspace groups. A press that moves
  * past the threshold becomes a drag; the drop calls `onDrop` with the section
  * under the pointer and which half of it the pointer is in.
  */
-export function useProjectReorderDrag(
-  onDrop: (draggedKey: string, targetKey: string, side: ProjectDropSide) => void,
+export function useWorkspaceReorderDrag(
+  onDrop: (draggedKey: string, targetKey: string, side: WorkspaceDropSide) => void,
 ): {
-  drag: ProjectReorderDrag | null;
-  begin: (event: ReactPointerEvent<HTMLElement>, projectKey: string) => void;
+  drag: WorkspaceReorderDrag | null;
+  begin: (event: ReactPointerEvent<HTMLElement>, workspaceKey: string) => void;
 } {
-  const [drag, setDrag] = useState<ProjectReorderDrag | null>(null);
+  const [drag, setDrag] = useState<WorkspaceReorderDrag | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
   const stableDrop = useStableCallback(onDrop);
 
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- cancels a gesture in flight when the rail unmounts
   useEffect(() => () => stopRef.current?.(), []);
 
-  const begin = (event: ReactPointerEvent<HTMLElement>, projectKey: string) => {
+  const begin = (event: ReactPointerEvent<HTMLElement>, workspaceKey: string) => {
     if (event.button !== 0 || event.pointerType === "touch" || stopRef.current !== null) return;
     const { pointerId, clientX: startX, clientY: startY } = event;
     let dragging = false;
     let published = false;
-    let current: ProjectReorderDrag = { draggedKey: projectKey, targetKey: null, side: "before" };
+    let current: WorkspaceReorderDrag = {
+      draggedKey: workspaceKey,
+      targetKey: null,
+      side: "before",
+    };
     let releaseSelection: (() => void) | null = null;
 
     const move = (moveEvent: PointerEvent) => {
@@ -71,9 +75,9 @@ export function useProjectReorderDrag(
         releaseSelection = suppressTextSelection(document.documentElement);
       }
       moveEvent.preventDefault();
-      const hit = targetUnderPointer(moveEvent.clientX, moveEvent.clientY, projectKey);
-      const next: ProjectReorderDrag = {
-        draggedKey: projectKey,
+      const hit = targetUnderPointer(moveEvent.clientX, moveEvent.clientY, workspaceKey);
+      const next: WorkspaceReorderDrag = {
+        draggedKey: workspaceKey,
         targetKey: hit?.key ?? null,
         side: hit?.side ?? "before",
       };
@@ -100,7 +104,7 @@ export function useProjectReorderDrag(
       window.addEventListener("click", swallow, { capture: true, once: true });
       window.setTimeout(() => window.removeEventListener("click", swallow, true), 0);
       if (commit && current.targetKey !== null) {
-        stableDrop(projectKey, current.targetKey, current.side);
+        stableDrop(workspaceKey, current.targetKey, current.side);
       }
     };
     const up = (upEvent: PointerEvent) => {

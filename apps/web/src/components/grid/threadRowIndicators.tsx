@@ -137,7 +137,7 @@ export function ThreadDraftItem({
 }
 
 /** The checkout's uncommitted line totals, in the muted ink until the row is hovered or open. */
-export function ThreadDiffItem({
+export function ThreadDiffCounts({
   thread,
   rowRef,
   focused,
@@ -152,17 +152,15 @@ export function ThreadDiffItem({
   const diff = useThreadDiffTotals(thread, rowRef, focused);
   if (diff === null) return null;
   return (
-    <RowMetaItem label={`Uncommitted changes ${formatGridDiffCounts(diff)}`}>
-      <span
-        role="img"
-        aria-label={`Uncommitted changes ${formatGridDiffCounts(diff)}`}
-        data-thread-diff=""
-        className={`shrink-0 ${ROW_DIFF_COUNTS_CLS}`}
-      >
-        <span className={rowDiffAddedCls(emphasized)}>+{formatDiffCount(diff.insertions)}</span>{" "}
-        <span className={rowDiffRemovedCls(emphasized)}>−{formatDiffCount(diff.deletions)}</span>
-      </span>
-    </RowMetaItem>
+    <span
+      role="img"
+      aria-label={`Uncommitted changes ${formatGridDiffCounts(diff)}`}
+      data-thread-diff=""
+      className={`shrink-0 ${ROW_DIFF_COUNTS_CLS}`}
+    >
+      <span className={rowDiffAddedCls(emphasized)}>+{formatDiffCount(diff.insertions)}</span>{" "}
+      <span className={rowDiffRemovedCls(emphasized)}>−{formatDiffCount(diff.deletions)}</span>
+    </span>
   );
 }
 

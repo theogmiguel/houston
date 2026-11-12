@@ -62,6 +62,12 @@ export interface ThreadActionMenuGridInput {
   readonly onOpenGrid?: ((gridId: string) => void) | undefined;
 }
 
+export interface ThreadActionMenuWorkspaceInput {
+  /** The workspaces the thread's chat can move to, never the one it is in. */
+  readonly targets: ReadonlyArray<{ readonly workspaceId: string; readonly name: string }>;
+  readonly onMove: (workspaceId: string) => void;
+}
+
 export interface ThreadActionMenuCellInput {
   readonly split?:
     | {
@@ -89,6 +95,8 @@ export function useThreadActionMenu(input: {
   readonly handleNewThread?: NewThreadHandler | undefined;
   /** The grid surface this menu acts on; absent for the route header. */
   readonly grid?: ThreadActionMenuGridInput | undefined;
+  /** The layout workspaces a sidebar row can move its thread to; absent hides Move to workspace. */
+  readonly workspace?: ThreadActionMenuWorkspaceInput | undefined;
   /** The layout actions a grid cell offers on top of the thread actions. */
   readonly cell?: ThreadActionMenuCellInput | undefined;
   /** A surface whose close/hold/auto-close add local effects to the shared action. */
@@ -106,7 +114,7 @@ export function useThreadActionMenu(input: {
     | null
     | undefined;
 }) {
-  const { threadRef, onStartRename, onFind, handleNewThread, grid, cell } = input;
+  const { threadRef, onStartRename, onFind, handleNewThread, grid, cell, workspace } = input;
   const {
     unsettleThread,
     unsnoozeThread,
@@ -152,7 +160,9 @@ export function useThreadActionMenu(input: {
     const api = readLocalApi();
     if (!api) return;
     const thread = input.thread === undefined ? readThreadShell(threadRef) : input.thread;
-    if (thread === null && cell === undefined && grid === undefined) return;
+    if (thread === null && cell === undefined && grid === undefined && workspace === undefined) {
+      return;
+    }
     const now = new Date();
     const nowIso = now.toISOString();
     const environmentId = threadRef.environmentId;
@@ -210,6 +220,7 @@ export function useThreadActionMenu(input: {
               canMoveToGrid,
               moveTargets,
             },
+      workspace: workspace === undefined ? undefined : { targets: workspace.targets },
       cell: cellState(),
     });
     const clicked = await settlePromise(() => api.contextMenu.show(items, position));
@@ -228,6 +239,10 @@ export function useThreadActionMenu(input: {
     }
     if (action === "open-in-grid") {
       grid?.onOpen();
+      return;
+    }
+    if (action.startsWith("move-to-workspace:")) {
+      workspace?.onMove(action.slice("move-to-workspace:".length));
       return;
     }
     if (action.startsWith("move-to-grid:")) {
