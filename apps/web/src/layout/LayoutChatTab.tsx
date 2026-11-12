@@ -18,6 +18,8 @@ import {
 } from "../threadRoutes";
 import type { ScopedThreadRef } from "@houston-app/contracts";
 import type { LayoutTab } from "./layoutModel";
+import { usePhoneThreadHost } from "../mobile/phoneThreadHost";
+import { useLayoutPane } from "./layoutPaneContext";
 import { useLayoutStore } from "./layoutStore";
 
 /** Panes beside each other count as a split for the chat's density. */
@@ -70,6 +72,8 @@ export function LayoutChatTab({
     draftThreadExists: draftThread !== null,
   });
   const { ref: densityRef, density } = usePaneDensity(split ? SPLIT_THREAD_COUNT : 1);
+  const phone = usePhoneThreadHost();
+  const { visible } = useLayoutPane();
 
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- hands a promoted draft's tab to its thread, or closes the tab of a draft nothing holds
   useEffect(() => {
@@ -107,6 +111,14 @@ export function LayoutChatTab({
           threadRef={threadRef}
           draftId={session && draftId !== null ? draftId : undefined}
           paneDensity={density}
+          {...(phone === null
+            ? {}
+            : {
+                phoneShell: true,
+                detailsOpen: phone.detailsOpen && visible,
+                onDetailsOpenChange: phone.onDetailsOpenChange,
+                detailsCardAnchor: phone.detailsAnchor,
+              })}
         />
       </ThreadOpenProvider>
     );

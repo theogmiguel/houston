@@ -29,6 +29,18 @@ export const PHONE_THREAD_BAR_CLS =
 export const PHONE_THREAD_BAR_BREADCRUMB_CLS = "flex min-w-0 flex-1 items-center overflow-hidden";
 export const PHONE_THREAD_BAR_TITLE_CLS =
   "min-w-0 flex-1 truncate text-sm font-medium text-foreground";
+/** The bar's one button: the active tab's mark and title, the pane's tab count and a chevron. */
+export const PHONE_TABS_TRIGGER_CLS =
+  "flex h-11 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-start outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
+export const PHONE_TABS_MARK_CLS = "inline-grid size-3.5 shrink-0 place-items-center";
+/** The pane's tab count, a quiet chip before the chevron. */
+export const PHONE_TABS_COUNT_CLS =
+  "inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-foreground/[0.06] px-1.5 text-2xs text-secondary-label";
+export const PHONE_TABS_CHEVRON_CLS = "size-3.5 shrink-0 text-icon-muted";
+/** A tab's row in the sheet: the pick area fills the row, the close button sits at its end. */
+export const PHONE_TAB_SHEET_ROW_CLS = "flex items-center";
+export const PHONE_TAB_SHEET_PICK_CLS = "min-w-0 flex-1";
+export const PHONE_TAB_SHEET_TITLE_CLS = "min-w-0 flex-1 truncate text-start";
 
 /** The new-thread summary tray: exactly the composer's width and radius, 8px above it. */
 export const DRAFT_PROJECT_CONTEXT_CLS =

@@ -10,6 +10,7 @@ import { AppRoot } from "~/AppRoot";
 import { __setClientSettingsForTests } from "~/hooks/useSettings";
 import { getRouter } from "~/router";
 import { installFakeEnvironment, threadWithHistory } from "../../test/fakeEnvironment";
+import { loadEmptyLayout } from "../../test/loadedLayout";
 import { render } from "../../test/render";
 
 // The socket is the only fake layer: the client runtime hands every connection the in-process session.
@@ -43,6 +44,7 @@ async function mountApp(width: number) {
     ...DEFAULT_CLIENT_SETTINGS,
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
   });
+  loadEmptyLayout();
   await page.viewport(width, 844);
   const router = getRouter(createMemoryHistory({ initialEntries: ["/"] }));
   await router.load();
@@ -61,13 +63,16 @@ async function openThread(width: number) {
   const { screen, router } = await mountApp(width);
   await vi.waitFor(() => expect(threadRow()).not.toBeNull(), { timeout: 5_000 });
   await userEvent.click(threadRow()!);
-  await vi.waitFor(() => expect(router.state.location.pathname).toMatch(/^\/grid\//), {
-    timeout: 5_000,
-  });
+  await vi.waitFor(
+    () => expect(router.state.location.pathname).toMatch(/^\/environment-render\//),
+    {
+      timeout: 5_000,
+    },
+  );
   if (width < 640) {
     await vi.waitFor(() => expect(phoneBar()).not.toBeNull(), { timeout: 5_000 });
   } else {
-    await vi.waitFor(() => expect(document.querySelector("[data-grid-page]")).not.toBeNull(), {
+    await vi.waitFor(() => expect(document.querySelector("[data-layout-strip]")).not.toBeNull(), {
       timeout: 5_000,
     });
   }
@@ -83,6 +88,10 @@ it("gives a phone thread its own bar with back, title, details and menu", async 
     .element(screen.getByRole("button", { name: `Thread actions for ${LONG_TITLE}` }))
     .toBeVisible();
   await expect.element(screen.getByRole("button", { name: "Thread details" })).toBeVisible();
+  // The title is the button that opens the pane's tabs, and it counts them.
+  const tabs = screen.getByRole("button", { name: `${LONG_TITLE}, 1 tab` });
+  await expect.element(tabs).toBeVisible();
+  expect(tabs.element().textContent).toContain("1");
   // The project is on the home page; the bar gives its width to the title.
   expect(phoneBar()!.textContent).not.toContain(LONG_PROJECT);
   expect(phoneBar()!.textContent).toContain(LONG_TITLE);
@@ -133,7 +142,7 @@ it("keeps the bar inside a 320px viewport with long project and thread names", a
   expect(rect.left).toBeGreaterThanOrEqual(0);
   expect(rect.right).toBeLessThanOrEqual(320);
 
-  const title = bar.querySelector("h1")!;
+  const title = bar.querySelector<HTMLElement>("[data-phone-bar-title]")!;
   expect(title.scrollWidth).toBeGreaterThan(title.clientWidth);
   expect(getComputedStyle(title).textOverflow).toBe("ellipsis");
 
@@ -145,12 +154,13 @@ it("keeps the bar inside a 320px viewport with long project and thread names", a
   }
 });
 
-it("lets the title take the width the breadcrumb used to hold", async () => {
+it("lets the tabs button take the width the controls leave", async () => {
   const { screen } = await openThread(390);
   await using _screen = screen;
 
   const bar = phoneBar()!;
-  const title = bar.querySelector("h1")!;
+  const title = bar.querySelector<HTMLElement>("[data-phone-bar-title]")!;
+  const trigger = bar.querySelector<HTMLElement>("[data-phone-tabs-trigger]")!;
   const barRect = bar.getBoundingClientRect();
   expect(barRect.height).toBe(44);
   expect(getComputedStyle(bar).borderBottomWidth).toBe("1px");
@@ -158,12 +168,14 @@ it("lets the title take the width the breadcrumb used to hold", async () => {
   const menu = screen.getByRole("button", { name: `Thread actions for ${LONG_TITLE}` }).element();
   const details = screen.getByRole("button", { name: "Thread details" }).element();
   const free = details.getBoundingClientRect().left - back.getBoundingClientRect().right;
-  // The title fills what the three controls and the status glyph leave.
-  expect(title.getBoundingClientRect().width).toBeGreaterThan(free - 40);
+  // The button fills what the back, details and menu controls leave; the title fills the button
+  // less its status glyph, count and chevron.
+  expect(trigger.getBoundingClientRect().width).toBeGreaterThan(free - 12);
+  expect(title.getBoundingClientRect().width).toBeGreaterThan(free - 100);
   expect(menu.getBoundingClientRect().right).toBeLessThanOrEqual(390);
 });
 
-it("keeps the desktop header at 1024px", async () => {
+it("keeps the layout's tab bar at 1024px", async () => {
   const { screen } = await openThread(1024);
   await using _screen = screen;
 
@@ -171,8 +183,6 @@ it("keeps the desktop header at 1024px", async () => {
   await expect
     .element(screen.getByRole("button", { name: "Back to threads" }))
     .not.toBeInTheDocument();
-  expect(document.querySelector("[data-panel-layout-controls]")).not.toBeNull();
-  expect(document.querySelector("[data-pane-label]")).not.toBeNull();
-  expect(document.querySelector("[data-grid-crumb-project]")?.textContent).toBe(LONG_PROJECT);
-  await expect.element(screen.getByRole("button", { name: "Tidy panes" })).toBeVisible();
+  expect(document.querySelector("[data-layout-pane-tab]")).not.toBeNull();
+  expect(document.querySelector("[data-phone-tabs-trigger]")).toBeNull();
 });

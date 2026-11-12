@@ -40,7 +40,6 @@ import { cn } from "../../lib/utils";
 import { TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR } from "../chat/composerFocusRedirect";
 import { useThreadActionMenu } from "../../hooks/useThreadActionMenu";
 import { GridPaneHeader } from "../ui/grid-pane-header";
-import { PhoneThreadBar } from "../../mobile/PhoneThreadBar";
 import { ThreadOpenProvider } from "../../threads/threadOpenContext";
 import { PaneThreadStatusMark } from "./threadStatusMark";
 import { usePaneDensity } from "./usePaneDensity";
@@ -70,9 +69,6 @@ export function GridThreadCell({
   swapTargets = [],
   onSwapWith,
   onOpenGrid,
-  onBack,
-  onDetailsRef,
-  phone = false,
 }: {
   node: ThreadNode;
   grid: GridRecord;
@@ -110,12 +106,6 @@ export function GridThreadCell({
   onSwapWith?: ((threadId: string) => void) | undefined;
   /** Opens a grid the shared menu moved this cell's thread to. */
   onOpenGrid?: ((gridId: string) => void) | undefined;
-  /** The phone's back control: returns to the rail's home page. */
-  onBack?: (() => void) | undefined;
-  /** The phone bar's details control; the grid route owns the anchor ref. */
-  onDetailsRef?: ((node: HTMLButtonElement | null) => void) | undefined;
-  /** The grid route is a phone thread shell: the pane header becomes the phone bar. */
-  phone?: boolean;
 }) {
   const environmentId = grid.environmentId as EnvironmentId;
   const threadId = node.threadId as ThreadId;
@@ -196,23 +186,18 @@ export function GridThreadCell({
       onOpen: onFocus,
       ...(onOpenGrid === undefined ? {} : { onOpenGrid }),
     },
-    // A phone shows one thread at a time, so the layout actions a split cell offers do not apply.
-    ...(phone
-      ? {}
-      : {
-          cell: {
-            split: showSplit
-              ? {
-                  availableThreads: availableForSplit,
-                  atCap: threadCount >= MAX_GRID_THREADS,
-                  onPick: onSplit,
-                  ...(onNewThread === undefined ? {} : { onNewThread }),
-                }
-              : null,
-            swapTargets: moveTargets,
-            ...(onSwapWith === undefined ? {} : { onSwapWith }),
-          },
-        }),
+    cell: {
+      split: showSplit
+        ? {
+            availableThreads: availableForSplit,
+            atCap: threadCount >= MAX_GRID_THREADS,
+            onPick: onSplit,
+            ...(onNewThread === undefined ? {} : { onNewThread }),
+          }
+        : null,
+      swapTargets: moveTargets,
+      ...(onSwapWith === undefined ? {} : { onSwapWith }),
+    },
     onThreadArchived: closeArchivedCell,
   });
   const openMoreMenu = () => {
@@ -396,37 +381,19 @@ export function GridThreadCell({
           "[&_[data-chat-composer-resting-row]]:hidden [&_[data-changed-files-state=tree]]:hidden [&_[data-changed-files-bar]]:hidden",
       )}
     >
-      {phone ? (
-        <PhoneThreadBar
-          title={title}
-          status={status}
-          renaming={renaming}
-          renameValue={renameValue}
-          onChangeRename={setRenameValue}
-          onCommitRename={commitRename}
-          onCancelRename={() => setRenaming(false)}
-          detailsOpen={focused && detailsOpen === true}
-          {...(onToggleDetails === undefined ? {} : { onToggleDetails })}
-          {...(onDetailsRef === undefined ? {} : { onDetailsRef })}
-          menuButtonRef={moreButtonRef}
-          onOpenMenu={openMoreMenu}
-          onBack={onBack ?? (() => {})}
-        />
-      ) : (
-        <GridPaneHeader
-          title={title}
-          status={shell === null ? null : <PaneThreadStatusMark thread={shell} status={status} />}
-          focused={focused}
-          renaming={renaming}
-          renameValue={renameValue}
-          onChangeRename={setRenameValue}
-          onCommitRename={commitRename}
-          onCancelRename={() => setRenaming(false)}
-          onDoubleClickTitle={canRename ? startRename : undefined}
-          onDragHandlePointerDown={onDragHandlePointerDown}
-          actions={paneActions(true)}
-        />
-      )}
+      <GridPaneHeader
+        title={title}
+        status={shell === null ? null : <PaneThreadStatusMark thread={shell} status={status} />}
+        focused={focused}
+        renaming={renaming}
+        renameValue={renameValue}
+        onChangeRename={setRenameValue}
+        onCommitRename={commitRename}
+        onCancelRename={() => setRenaming(false)}
+        onDoubleClickTitle={canRename ? startRename : undefined}
+        onDragHandlePointerDown={onDragHandlePointerDown}
+        actions={paneActions(true)}
+      />
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <ThreadOpenProvider open={onOpenThread}>
           <LayoutPaneContext value={{ ...LONE_PANE, focused, visible: true }}>
@@ -439,7 +406,6 @@ export function GridThreadCell({
               detailsCardAnchor={threadDetailsAnchor}
               detailsOpen={detailsOpen}
               onDetailsOpenChange={onDetailsOpenChange}
-              phoneShell={phone}
             />
           </LayoutPaneContext>
         </ThreadOpenProvider>

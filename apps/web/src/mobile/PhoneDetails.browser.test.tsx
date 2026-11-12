@@ -11,7 +11,6 @@ import "~/index.css";
 import { AppRoot } from "~/AppRoot";
 import { __setClientSettingsForTests } from "~/hooks/useSettings";
 import { getRouter } from "~/router";
-import { useGridStore } from "~/grid/gridStore";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { useDiffPanelStore } from "~/diffPanelStore";
 import {
@@ -21,6 +20,7 @@ import {
   threadWithHistory,
   withPendingChanges,
 } from "../../test/fakeEnvironment";
+import { loadEmptyLayout } from "../../test/loadedLayout";
 import { render } from "../../test/render";
 import { expectFullWidthRows, expectSheetRecipe, textLeft } from "./phoneGeometry";
 
@@ -98,7 +98,7 @@ installFakeEnvironment(
 );
 
 async function mountApp(width: number) {
-  useGridStore.setState({ grids: [], threadOrigins: {} });
+  loadEmptyLayout();
   useRightPanelStore.setState({
     byThreadKey: {},
     threadPanelVisibilityByThreadKey: {},
@@ -138,13 +138,16 @@ async function openThread(width: number) {
     { timeout: 5_000 },
   );
   await userEvent.click(row);
-  await vi.waitFor(() => expect(router.state.location.pathname).toMatch(/^\/grid\//), {
-    timeout: 5_000,
-  });
+  await vi.waitFor(
+    () => expect(router.state.location.pathname).toMatch(/^\/environment-render\//),
+    {
+      timeout: 5_000,
+    },
+  );
   if (width < 640) {
     await vi.waitFor(() => expect(phoneBar()).not.toBeNull(), { timeout: 5_000 });
   } else {
-    await vi.waitFor(() => expect(document.querySelector("[data-grid-page]")).not.toBeNull(), {
+    await vi.waitFor(() => expect(document.querySelector("[data-layout-strip]")).not.toBeNull(), {
       timeout: 5_000,
     });
   }

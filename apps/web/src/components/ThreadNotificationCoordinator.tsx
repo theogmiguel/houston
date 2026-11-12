@@ -39,8 +39,6 @@ import {
 import { resolveSidebarThreadStatus, type SidebarThreadStatus } from "./Sidebar.logic";
 import { gridContainingThread, useGridStore } from "../grid/gridStore";
 import { openThreadInLayout } from "../threads/openThreadInLayout";
-import { isPhoneViewport } from "../mobile/usePhone";
-import { resolveGridThreadTarget } from "../grid/gridNavigation";
 import {
   createThreadNotificationGate,
   type ThreadNotificationKind,
@@ -113,29 +111,15 @@ export function startThreadNotifications(
     setNotificationBadge(0);
   };
 
-  // Lands in the thread's grid with its cell focused; the standalone route is
-  // the fallback when no grid can take the thread.
-  const openThread = (environmentId: EnvironmentId, projectId: ProjectId, threadId: ThreadId) => {
-    if (!isPhoneViewport()) {
-      void openThreadInLayout(
-        {
-          navigate: (options) => router.navigate(options),
-          pathname: () => router.state.location.pathname,
-        },
-        scopeThreadRef(environmentId, threadId),
-      );
-      return;
-    }
-    const target = resolveGridThreadTarget({ environmentId, projectId, threadId });
-    if (target !== null) {
-      useGridStore.getState().focusThread(target.gridId, target.threadId);
-      void router.navigate({ to: "/grid/$gridId", params: { gridId: target.gridId } });
-      return;
-    }
-    void router.navigate({
-      to: "/$environmentId/$threadId",
-      params: { environmentId, threadId },
-    });
+  // Focuses the thread's tab in the layout, opening one when no tab shows it.
+  const openThread = (environmentId: EnvironmentId, threadId: ThreadId) => {
+    void openThreadInLayout(
+      {
+        navigate: (options) => router.navigate(options),
+        pathname: () => router.state.location.pathname,
+      },
+      scopeThreadRef(environmentId, threadId),
+    );
   };
 
   const showWebNotification = (
@@ -160,7 +144,7 @@ export function startThreadNotifications(
         notification.close();
         window.focus();
         void window.hostBridge?.revealWindow().catch(() => undefined);
-        openThread(environmentId, projectId, threadId);
+        openThread(environmentId, threadId);
       });
     } catch {
       // Some browsers expose Notification but reject desktop presentation.
@@ -235,7 +219,7 @@ export function startThreadNotifications(
           children: "Open thread",
           onClick: () => {
             toastManager.close(toastId);
-            openThread(environmentId, thread.projectId, thread.id);
+            openThread(environmentId, thread.id);
           },
         },
       });
@@ -463,7 +447,7 @@ export function startThreadNotifications(
     nativeTargets.delete(key);
     setNotificationBadge(pending.size);
     void window.hostBridge?.revealWindow().catch(() => undefined);
-    openThread(target.environmentId, target.projectId, target.threadId);
+    openThread(target.environmentId, target.threadId);
   });
 
   const unsubscribeSettings = subscribeClientSettings(onSettings);

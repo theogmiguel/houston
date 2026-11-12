@@ -2,7 +2,6 @@ import { scopedThreadKey } from "@houston-app/client-runtime/environment";
 import { Outlet, createFileRoute, redirect, useLocation, useMatches } from "@tanstack/react-router";
 import { useState } from "react";
 
-import { ThreadRouteView } from "../components/ThreadRouteView";
 import { isAppModalPage } from "../components/sidebar/mainAppLocation";
 import { SidebarInset } from "../components/ui/sidebar";
 import { resolveThreadRouteTarget, type ThreadRouteTarget } from "../threadRoutes";
@@ -12,6 +11,7 @@ import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
 import { LayoutHost } from "../layout/LayoutHost";
 import { layoutRoutePage } from "../layout/pageNavigation";
 import { useIndexShowsLayout } from "../layout/useIndexShowsLayout";
+import { PhoneLayoutHost } from "../mobile/PhoneLayoutHost";
 import { useIsPhone } from "../mobile/usePhone";
 
 function threadRouteTargetKey(target: ThreadRouteTarget | null) {
@@ -54,7 +54,7 @@ function LayoutChatRouteLayout() {
 }
 
 function PhoneChatRouteLayout() {
-  // Render both routes here so draft promotion keeps the same ChatView mounted.
+  // The thread and draft routes render here, so promoting a draft keeps its tab and chat mounted.
   const threadTarget = useThreadRouteTarget();
   // Read matches, not location, so this agrees with the params useThreadRouteTarget reads.
   const modalOpen = useMatches({
@@ -72,7 +72,7 @@ function PhoneChatRouteLayout() {
         <ThreadLinkPrompt threadRef={shownTarget.threadRef} />
       ) : null}
       {shownTarget ? (
-        <ThreadRouteView target={shownTarget} background={modalOpen} />
+        <PhoneLayoutHost threadTarget={shownTarget} active={!modalOpen} />
       ) : modalOpen ? (
         <SidebarInset className="min-h-0" />
       ) : (

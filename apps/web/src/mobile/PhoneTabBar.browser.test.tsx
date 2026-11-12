@@ -10,6 +10,7 @@ import { AppRoot } from "~/AppRoot";
 import { __setClientSettingsForTests } from "~/hooks/useSettings";
 import { getRouter } from "~/router";
 import { installFakeEnvironment, threadWithHistory } from "../../test/fakeEnvironment";
+import { loadEmptyLayout } from "../../test/loadedLayout";
 import { render } from "../../test/render";
 
 // The socket is the only fake layer: the client runtime hands every connection the in-process session.
@@ -37,6 +38,7 @@ async function mountApp(width: number, height = 844) {
     ...DEFAULT_CLIENT_SETTINGS,
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
   });
+  loadEmptyLayout();
   await page.viewport(width, height);
   const router = getRouter(createMemoryHistory({ initialEntries: ["/"] }));
   await router.load();
@@ -188,9 +190,12 @@ it("hides the tab bar on a thread page", async () => {
   await waitForHome();
 
   await userEvent.click(threadRow()!);
-  await vi.waitFor(() => expect(router.state.location.pathname).toMatch(/^\/grid\//), {
-    timeout: 5_000,
-  });
+  await vi.waitFor(
+    () => expect(router.state.location.pathname).toMatch(/^\/environment-render\//),
+    {
+      timeout: 5_000,
+    },
+  );
   await vi.waitFor(() => expect(document.querySelector("[data-phone-thread-bar]")).not.toBeNull(), {
     timeout: 5_000,
   });

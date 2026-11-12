@@ -1,21 +1,29 @@
-import { ArrowLeftIcon, EllipsisIcon, SquareMenuIcon } from "lucide-react";
-import type { RefObject } from "react";
+import { ArrowLeftIcon, ChevronDownIcon, EllipsisIcon, SquareMenuIcon } from "lucide-react";
+import type { ReactNode, RefObject } from "react";
 
-import type { ThreadStatusPill } from "../components/Sidebar.logic";
 import { Button } from "../components/ui/button";
 import { GridPaneRenameInput } from "../components/ui/grid-pane";
 import {
+  PHONE_TABS_CHEVRON_CLS,
+  PHONE_TABS_COUNT_CLS,
+  PHONE_TABS_MARK_CLS,
+  PHONE_TABS_TRIGGER_CLS,
   PHONE_THREAD_BAR_BREADCRUMB_CLS,
   PHONE_THREAD_BAR_CLS,
   PHONE_THREAD_BAR_TITLE_CLS,
 } from "../components/ui/thread-header-recipes";
-import { ThreadStateGlyph } from "../components/ui/thread-state-glyph";
 import { textDirection } from "../textDirection";
 
-/** The phone's thread header: back to the rail, the thread's title, details and its menu. */
+/**
+ * The phone's thread header, one row: back to the rail, one button holding the active tab's mark,
+ * title and the pane's tab count (it opens the pane's tabs), then the thread's details and menu.
+ */
 export function PhoneThreadBar({
   title,
-  status,
+  mark,
+  tabCount,
+  onOpenTabs,
+  tabsTriggerRef,
   renaming,
   renameValue,
   onChangeRename,
@@ -29,7 +37,12 @@ export function PhoneThreadBar({
   onBack,
 }: {
   title: string;
-  status: ThreadStatusPill | null;
+  /** The active tab's mark: a thread's status glyph or a surface's icon. */
+  mark: ReactNode;
+  tabCount: number;
+  /** Absent while the pane holds no tab, so there is nothing to list. */
+  onOpenTabs?: (() => void) | undefined;
+  tabsTriggerRef?: RefObject<HTMLButtonElement | null> | undefined;
   renaming: boolean;
   renameValue: string;
   onChangeRename: (value: string) => void;
@@ -39,24 +52,30 @@ export function PhoneThreadBar({
   onToggleDetails?: (() => void) | undefined;
   onDetailsRef?: ((node: HTMLButtonElement | null) => void) | undefined;
   menuButtonRef?: RefObject<HTMLButtonElement | null> | undefined;
-  onOpenMenu: () => void;
+  onOpenMenu?: (() => void) | undefined;
   onBack: () => void;
 }) {
+  const label = (
+    <>
+      {mark === null ? null : (
+        <span data-phone-thread-status="" className={PHONE_TABS_MARK_CLS}>
+          {mark}
+        </span>
+      )}
+      <span
+        dir={textDirection(title)}
+        data-phone-bar-title=""
+        className={PHONE_THREAD_BAR_TITLE_CLS}
+      >
+        {title}
+      </span>
+    </>
+  );
   return (
     <div data-phone-thread-bar="" className={PHONE_THREAD_BAR_CLS}>
       <Button variant="ghost" size="icon" aria-label="Back to threads" onClick={onBack}>
         <ArrowLeftIcon className="size-4" />
       </Button>
-      {status === null ? null : (
-        <span
-          role="img"
-          aria-label={status.label}
-          data-phone-thread-status=""
-          className="inline-grid size-3.5 shrink-0 place-items-center"
-        >
-          <ThreadStateGlyph state={status.state} colored />
-        </span>
-      )}
       {renaming ? (
         <div className="flex min-w-0 flex-1 items-center">
           <GridPaneRenameInput
@@ -66,12 +85,24 @@ export function PhoneThreadBar({
             onCancel={onCancelRename}
           />
         </div>
+      ) : onOpenTabs === undefined ? (
+        <div className={PHONE_THREAD_BAR_BREADCRUMB_CLS}>{label}</div>
       ) : (
-        <div className={PHONE_THREAD_BAR_BREADCRUMB_CLS}>
-          <h1 dir={textDirection(title)} className={PHONE_THREAD_BAR_TITLE_CLS}>
-            {title}
-          </h1>
-        </div>
+        <button
+          ref={tabsTriggerRef}
+          type="button"
+          data-phone-tabs-trigger=""
+          aria-haspopup="dialog"
+          aria-label={`${title}, ${tabCount} ${tabCount === 1 ? "tab" : "tabs"}`}
+          onClick={onOpenTabs}
+          className={PHONE_TABS_TRIGGER_CLS}
+        >
+          {label}
+          <span data-phone-tabs-count="" aria-hidden className={PHONE_TABS_COUNT_CLS}>
+            {tabCount}
+          </span>
+          <ChevronDownIcon aria-hidden className={PHONE_TABS_CHEVRON_CLS} />
+        </button>
       )}
       {onToggleDetails === undefined ? null : (
         <Button
@@ -85,16 +116,18 @@ export function PhoneThreadBar({
           <SquareMenuIcon className="size-4" />
         </Button>
       )}
-      <Button
-        ref={menuButtonRef}
-        variant="ghost"
-        size="icon"
-        aria-label={`Thread actions for ${title}`}
-        aria-haspopup="menu"
-        onClick={onOpenMenu}
-      >
-        <EllipsisIcon className="size-4" />
-      </Button>
+      {onOpenMenu === undefined ? null : (
+        <Button
+          ref={menuButtonRef}
+          variant="ghost"
+          size="icon"
+          aria-label={`Thread actions for ${title}`}
+          aria-haspopup="menu"
+          onClick={onOpenMenu}
+        >
+          <EllipsisIcon className="size-4" />
+        </Button>
+      )}
     </div>
   );
 }

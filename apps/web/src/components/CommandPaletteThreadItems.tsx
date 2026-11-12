@@ -16,7 +16,6 @@ import type { EnvironmentId, ThreadId } from "@houston-app/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { openThreadInLayout } from "../threads/openThreadInLayout";
-import { isPhoneViewport } from "../mobile/usePhone";
 import { useState } from "react";
 
 import {
@@ -34,10 +33,7 @@ import { useThreadSearch } from "../state/queries";
 import { primaryServerProvidersAtom } from "../state/server";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
-import { buildThreadRouteParams } from "../threadRoutes";
 import { resolveGridThreadState } from "../grid/sidebar";
-import { resolveGridThreadTarget } from "../grid/gridNavigation";
-import { useGridStore } from "../grid/gridStore";
 import { ThreadStatusGlyph } from "./grid/threadStatusMark";
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import { buildThreadActionItems } from "./CommandPalette.logic";
@@ -190,32 +186,13 @@ export function useCommandPaletteThreadItems(input: {
           },
         });
       }
-      // A pick opens the thread where the rail shows it. A thread outside every
-      // grid is placed first, so the grid layout is not lost on the way.
-      const target = resolveGridThreadTarget({
-        environmentId: thread.environmentId,
-        projectId: thread.projectId,
-        threadId: thread.id,
-      });
-      if (!isPhoneViewport()) {
-        await openThreadInLayout(
-          {
-            navigate: (options) => navigate(options),
-            pathname: () => router.state.location.pathname,
-          },
-          scopeThreadRef(thread.environmentId, thread.id),
-        );
-        return;
-      }
-      if (target !== null) {
-        useGridStore.getState().focusThread(target.gridId, target.threadId);
-        await navigate({ to: "/grid/$gridId", params: { gridId: target.gridId } });
-        return;
-      }
-      await navigate({
-        to: "/$environmentId/$threadId",
-        params: buildThreadRouteParams(scopeThreadRef(thread.environmentId, thread.id)),
-      });
+      await openThreadInLayout(
+        {
+          navigate: (options) => navigate(options),
+          pathname: () => router.state.location.pathname,
+        },
+        scopeThreadRef(thread.environmentId, thread.id),
+      );
     },
   });
 

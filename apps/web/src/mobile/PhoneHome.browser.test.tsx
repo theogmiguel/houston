@@ -14,6 +14,7 @@ import {
   threadWithHistory,
   withPendingChanges,
 } from "../../test/fakeEnvironment";
+import { loadEmptyLayout } from "../../test/loadedLayout";
 import { render } from "../../test/render";
 
 // The socket is the only fake layer: the client runtime hands every connection the in-process session.
@@ -72,6 +73,7 @@ async function mountApp(width: number) {
     ...DEFAULT_CLIENT_SETTINGS,
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
   });
+  loadEmptyLayout();
   await page.viewport(width, 844);
   const router = getRouter(createMemoryHistory({ initialEntries: ["/"] }));
   await router.load();
@@ -147,9 +149,12 @@ it("navigates to a thread tapped on the phone home", async () => {
 
   await userEvent.click(threadRow()!);
 
-  await vi.waitFor(() => expect(router.state.location.pathname).toMatch(/^\/grid\//), {
-    timeout: 5_000,
-  });
+  await vi.waitFor(
+    () => expect(router.state.location.pathname).toMatch(/^\/environment-render\//),
+    {
+      timeout: 5_000,
+    },
+  );
 });
 
 it("starts every row's diff stat at the same gap after its branch name", async () => {
