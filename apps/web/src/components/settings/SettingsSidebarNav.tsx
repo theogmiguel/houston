@@ -4,7 +4,6 @@ import {
   ArchiveIcon,
   BotIcon,
   CalendarClockIcon,
-  ChevronLeftIcon,
   createLucideIcon,
   FlaskConicalIcon,
   FolderGit2Icon,
@@ -40,7 +39,6 @@ import {
 } from "../ui/phone-recipes";
 import { ScrollArea } from "../ui/scroll-area";
 import {
-  SidebarFooter,
   SidebarGroup,
   SidebarMenu,
   SidebarMenuButton,
@@ -60,7 +58,6 @@ import { useAvailableSettingsSearchItems } from "./useAvailableSettingsSearchIte
 import { validateSettingsScopeSearch } from "./settingsScope";
 import { useSettingsSectionNavigation } from "./useSettingsSectionNavigation";
 import { workspaceAreaProps } from "../../lib/workspaceFocus";
-import { useCloseAppModal } from "../sidebar/mainAppLocation";
 
 const SnapShotIcon = createLucideIcon("snap-shot", [
   [
@@ -134,7 +131,6 @@ export function SettingsSidebarNav({
 }) {
   const navArea = workspaceAreaProps("settings-nav", 0, "Settings sections");
   const navigate = useNavigate();
-  const closeAppModal = useCloseAppModal();
   const currentHash = useLocation({ select: (location) => location.hash });
   const currentSearch = useLocation({ select: (location) => location.search });
   const scopeSearch = validateSettingsScopeSearch(currentSearch);
@@ -264,11 +260,11 @@ export function SettingsSidebarNav({
       {...navArea}
       role="navigation"
       className={cn(
-        "flex min-h-0 shrink-0 flex-col overflow-hidden bg-sidebar text-sidebar-foreground",
+        "flex min-h-0 shrink-0 flex-col overflow-hidden text-sidebar-foreground",
         phonePage
           ? "w-full"
           : cn(
-              "w-[264px] border-e max-md:w-14",
+              "w-60 border-e max-md:w-14",
               compactSearchOpen &&
                 "max-md:absolute max-md:inset-y-0 max-md:start-0 max-md:z-10 max-md:w-full",
             ),
@@ -278,16 +274,7 @@ export function SettingsSidebarNav({
         <div className={PHONE_PAGE_BAR_SIDEBAR_CLS}>
           <span className={PHONE_PAGE_BAR_TITLE_CLS}>Settings</span>
         </div>
-      ) : (
-        <div
-          className={cn(
-            "flex h-9 shrink-0 items-center px-3.5 text-[13px] font-semibold text-sidebar-foreground mt-2",
-            !compactSearchOpen && "max-md:hidden",
-          )}
-        >
-          Settings
-        </div>
-      )}
+      ) : null}
       <ScrollArea
         hideScrollbars
         scrollFade
@@ -482,23 +469,6 @@ export function SettingsSidebarNav({
         {/* Room for the last row to clear the fade where the list meets the pinned Back row. */}
         <div aria-hidden className="h-2 shrink-0" />
       </ScrollArea>
-      {phonePage ? null : (
-        <SidebarFooter className="shrink-0 max-md:hidden">
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                size="sm"
-                className="h-7 gap-2 px-2 text-[13px] font-medium text-sidebar-muted-foreground"
-                onClick={() => void closeAppModal()}
-              >
-                <ChevronLeftIcon />
-                <span>Back</span>
-                <Kbd className="ms-auto h-4 min-w-4 rounded px-1 text-[11px]">Esc</Kbd>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarFooter>
-      )}
     </nav>
   );
 }

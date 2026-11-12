@@ -8,12 +8,13 @@ import { PhoneTabBar, usePhoneTab } from "../mobile/PhoneTabBar";
 import { useCloseAppModal } from "./sidebar/mainAppLocation";
 import { Button } from "./ui/button";
 import { DialogBackdrop } from "./ui/dialog";
+import { DIALOG_POPUP_CLASS } from "./ui/dialog-styles";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
 /**
- * Large surface for the Settings and Usage routes. Esc, the close button, or a press on the
- * backdrop returns to the page that opened it. `fullscreen` drops the backdrop and frame so
- * Settings reads as a page. Keyboard guards that skip dialogs exempt `[data-app-modal]`,
+ * Large card over the dimmed app for the Settings route. Esc, the close button, or a press on
+ * the backdrop returns to the page that opened it. `fullscreen` drops the backdrop and frame so
+ * the surface reads as a page, as it does on a phone. Keyboard guards that skip dialogs exempt `[data-app-modal]`,
  * because these pages own their shortcuts.
  */
 export function AppRouteModal({
@@ -65,12 +66,13 @@ export function AppRouteModal({
               "--app-modal-titlebar-height": `${nativeTitlebarHeight}px`,
               "--app-modal-top-inset": `max(env(safe-area-inset-top), ${nativeTitlebarHeight}px)`,
               "--app-modal-sm-top": `max(1.5rem, ${nativeTitlebarHeight}px)`,
+              "--app-modal-lg-top": `max(2.5rem, ${nativeTitlebarHeight}px)`,
             } as CSSProperties
           }
           className={
             fullscreen
               ? "fixed inset-0 z-50 flex"
-              : "fixed inset-0 z-50 flex items-center justify-center sm:p-6 sm:pt-(--app-modal-sm-top) lg:p-10"
+              : "fixed inset-0 z-50 flex items-center justify-center sm:p-6 sm:pt-(--app-modal-sm-top) lg:p-10 lg:pt-(--app-modal-lg-top)"
           }
           onPointerDown={(event) => {
             backdropPressRef.current = event.target === event.currentTarget;
@@ -88,10 +90,13 @@ export function AppRouteModal({
             data-slot="dialog-popup"
             data-app-modal=""
             className={cn(
-              "relative flex size-full min-h-0 min-w-0 flex-col overflow-hidden bg-background max-sm:pt-(--app-modal-top-inset) text-foreground outline-none transition-[opacity,scale] duration-150 ease-out motion-reduce:transition-none [-webkit-app-region:no-drag] data-ending-style:scale-[0.985] data-ending-style:opacity-0 data-starting-style:scale-[0.985] data-starting-style:opacity-0",
+              fullscreen
+                ? "relative flex size-full min-h-0 min-w-0 flex-col overflow-hidden bg-background text-foreground outline-none transition-[opacity,scale] duration-(--motion-modal-in) ease-standard data-ending-style:opacity-0 data-starting-style:opacity-0 [-webkit-app-region:no-drag] max-sm:pt-(--app-modal-top-inset)"
+                : cn(
+                    DIALOG_POPUP_CLASS,
+                    "size-full overflow-hidden text-foreground max-sm:rounded-none max-sm:border-0 max-sm:pt-(--app-modal-top-inset) sm:max-h-[60rem] sm:max-w-[80rem]",
+                  ),
               !phoneTabBarShown && "max-sm:pb-safe",
-              !fullscreen &&
-                "sm:max-h-[60rem] sm:max-w-[80rem] sm:rounded-2xl sm:border sm:shadow-2xl/40",
             )}
           >
             {/* The emptied strip still moves the window, as the titlebar it replaces does. */}

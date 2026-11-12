@@ -67,19 +67,6 @@ const SettingsSearchTargetContext = createContext<SettingsSearchTargetContextVal
   onTargetHandled: noop,
 });
 
-/** Page-level actions the route places in the title row, beside the heading. */
-const SettingsPageActionsContext = createContext<ReactNode>(null);
-
-export function SettingsPageActionsProvider({
-  actions,
-  children,
-}: {
-  readonly actions: ReactNode;
-  readonly children: ReactNode;
-}) {
-  return <SettingsPageActionsContext value={actions}>{children}</SettingsPageActionsContext>;
-}
-
 function SettingsSearchTargetProvider({
   targetId,
   highlightTarget = true,
@@ -612,7 +599,6 @@ function SettingsPageHeading() {
   const pathname = useLocation({
     select: (location) => location.pathname.replace(/\/+$/, "") || "/",
   });
-  const actions = useContext(SettingsPageActionsContext);
   const section =
     (Object.hasOwn(SETTINGS_SECTION_LABELS, pathname)
       ? {
@@ -621,14 +607,7 @@ function SettingsPageHeading() {
         }
       : undefined) ?? SETTINGS_DETAIL_PAGE_HEADINGS[pathname];
   if (section === undefined) return null;
-  const heading = <PageHeading title={section.title} description={section.description} />;
-  if (actions === null || actions === undefined) return heading;
-  return (
-    <div className="flex items-start justify-between gap-4">
-      {heading}
-      <div className="flex shrink-0 items-center gap-1 pt-0.5">{actions}</div>
-    </div>
-  );
+  return <PageHeading title={section.title} description={section.description} />;
 }
 const LEADING_HASH = /^#/;
 

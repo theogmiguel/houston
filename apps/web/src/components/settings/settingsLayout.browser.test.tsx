@@ -7,7 +7,6 @@ import { Swap } from "../ui/swap";
 import { render } from "../../../test/render";
 import { SettingsBreadcrumb } from "./SettingsBreadcrumb";
 import {
-  SettingsPageActionsProvider,
   SettingsPageContainer,
   SettingsRow,
   SettingsSection,
@@ -45,25 +44,6 @@ describe("SettingsPageContainer heading", () => {
     await expect
       .element(screen.getByRole("heading", { level: 1, name: "Open source licenses" }))
       .toBeVisible();
-  });
-
-  it("puts the page actions in the title row, to the right of the title", async () => {
-    await using screen = await render(
-      <SettingsPageActionsProvider actions={<button type="button">Restore defaults</button>}>
-        <SettingsPageContainer>
-          <p>content</p>
-        </SettingsPageContainer>
-      </SettingsPageActionsProvider>,
-      { router: "/settings/appearance" },
-    );
-
-    const title = screen.getByRole("heading", { level: 1, name: "Appearance" }).element();
-    const action = screen.getByRole("button", { name: "Restore defaults" }).element();
-    expect(action.getBoundingClientRect().left).toBeGreaterThan(title.getBoundingClientRect().left);
-    // The action shares the title's row instead of floating in the window header.
-    expect(
-      Math.abs(action.getBoundingClientRect().top - title.getBoundingClientRect().top),
-    ).toBeLessThan(12);
   });
 
   it("centres the content column in the canvas", async () => {
