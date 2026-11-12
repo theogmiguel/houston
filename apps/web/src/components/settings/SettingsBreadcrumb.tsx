@@ -22,9 +22,7 @@ export function SettingsBreadcrumb({ pathname }: { pathname: string }) {
   const sectionLabel = settingsBreadcrumbLabel(pathname);
 
   return (
-    <WorkspaceBreadcrumb
-      ariaLabel="Settings breadcrumb"
-    >
+    <WorkspaceBreadcrumb ariaLabel="Settings breadcrumb">
       {sectionLabel ? (
         <>
           <WorkspaceBreadcrumbItem className="font-normal">Settings</WorkspaceBreadcrumbItem>

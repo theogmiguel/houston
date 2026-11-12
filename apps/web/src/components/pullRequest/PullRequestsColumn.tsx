@@ -190,44 +190,44 @@ export function PullRequestsColumn({
           ) : (
             <>
               {phone ? (
-              <div ref={searchRootRef} className="flex flex-col gap-3">
-                <div className="flex flex-wrap items-center gap-2 max-phone:flex-nowrap max-phone:[&_[data-slot=toggle-group]>*]:px-1 max-phone:[&_[data-slot=toggle-group]>*]:leading-4 max-phone:[&_[data-slot=toggle-group]>*]:whitespace-normal max-phone:[&_[data-slot=toggle-group]>*]:text-balance">
-                  <ToggleGroup
-                    aria-label="Pull request involvement"
-                    variant="segmented"
-                    className="max-phone:w-full max-phone:*:h-11 max-phone:*:flex-1"
-                    value={[involvement]}
-                    onValueChange={(next) => {
-                      const value = next[0];
-                      if (value) onInvolvement(value as PullRequestListInvolvement);
-                    }}
-                  >
-                    {INVOLVEMENT_TABS.map((option) => (
-                      <Toggle key={option.value} value={option.value}>
-                        {option.label}
-                      </Toggle>
-                    ))}
-                  </ToggleGroup>
-                  <div className="min-w-0 flex-1 max-phone:hidden" />
-                </div>
-                <div className="flex flex-wrap items-center gap-2 max-phone:gap-y-3">
-                  <div className="min-w-0 basis-full @lg/pr-list:basis-0 @lg/pr-list:flex-1">
-                    {searchInput}
+                <div ref={searchRootRef} className="flex flex-col gap-3">
+                  <div className="flex flex-wrap items-center gap-2 max-phone:flex-nowrap max-phone:[&_[data-slot=toggle-group]>*]:px-1 max-phone:[&_[data-slot=toggle-group]>*]:leading-4 max-phone:[&_[data-slot=toggle-group]>*]:whitespace-normal max-phone:[&_[data-slot=toggle-group]>*]:text-balance">
+                    <ToggleGroup
+                      aria-label="Pull request involvement"
+                      variant="segmented"
+                      className="max-phone:w-full max-phone:*:h-11 max-phone:*:flex-1"
+                      value={[involvement]}
+                      onValueChange={(next) => {
+                        const value = next[0];
+                        if (value) onInvolvement(value as PullRequestListInvolvement);
+                      }}
+                    >
+                      {INVOLVEMENT_TABS.map((option) => (
+                        <Toggle key={option.value} value={option.value}>
+                          {option.label}
+                        </Toggle>
+                      ))}
+                    </ToggleGroup>
+                    <div className="min-w-0 flex-1 max-phone:hidden" />
                   </div>
-                  {sortMenu}
-                  {filtersMenu}
-                  <PullRequestCompactFilterMenu
-                    label="Filter by provider"
-                    outlined
-                    iconOnly={host !== undefined}
-                    triggerIcon={<Plug2Icon aria-hidden className="size-4" />}
-                    triggerLabel="All"
-                    value={host ?? ""}
-                    options={hostMenuOptions}
-                    onChange={(next) => onHost(next === "" ? undefined : next)}
-                  />
+                  <div className="flex flex-wrap items-center gap-2 max-phone:gap-y-3">
+                    <div className="min-w-0 basis-full @lg/pr-list:basis-0 @lg/pr-list:flex-1">
+                      {searchInput}
+                    </div>
+                    {sortMenu}
+                    {filtersMenu}
+                    <PullRequestCompactFilterMenu
+                      label="Filter by provider"
+                      outlined
+                      iconOnly={host !== undefined}
+                      triggerIcon={<Plug2Icon aria-hidden className="size-4" />}
+                      triggerLabel="All"
+                      value={host ?? ""}
+                      options={hostMenuOptions}
+                      onChange={(next) => onHost(next === "" ? undefined : next)}
+                    />
+                  </div>
                 </div>
-              </div>
               ) : null}
 
               {listBody}

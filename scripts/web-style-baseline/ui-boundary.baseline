@@ -255,8 +255,8 @@
 14 apps/web/src/components/pullRequest/PullRequestCopyableCode.tsx
 9 apps/web/src/components/pullRequest/PullRequestDetailActions.tsx
 27 apps/web/src/components/pullRequest/PullRequestDetailCrumbs.tsx
-14 apps/web/src/components/pullRequest/PullRequestDetailLayout.tsx
-72 apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
+12 apps/web/src/components/pullRequest/PullRequestDetailLayout.tsx
+68 apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx
 17 apps/web/src/components/pullRequest/PullRequestDiffUnavailableState.tsx
 2 apps/web/src/components/pullRequest/PullRequestEditButton.tsx
 55 apps/web/src/components/pullRequest/PullRequestGhosts.tsx
@@ -276,7 +276,7 @@
 12 apps/web/src/components/pullRequest/PullRequestReviewAnnotation.tsx
 1 apps/web/src/components/pullRequest/PullRequestReviewerPicker.tsx
 12 apps/web/src/components/pullRequest/PullRequestRow.tsx
-5 apps/web/src/components/pullRequest/PullRequestsColumn.tsx
+4 apps/web/src/components/pullRequest/PullRequestsColumn.tsx
 11 apps/web/src/components/pullRequest/PullRequestsPage.tsx
 2 apps/web/src/components/pullRequest/PullRequestStackHeader.tsx
 3 apps/web/src/components/pullRequest/PullRequestStackLayerContent.tsx
@@ -362,11 +362,11 @@
 2 apps/web/src/components/settings/SettingsBreadcrumb.tsx
 7 apps/web/src/components/settings/SettingsFontPreviews.tsx
 6 apps/web/src/components/settings/SettingsGroup.tsx
-26 apps/web/src/components/settings/settingsLayout.tsx
+23 apps/web/src/components/settings/settingsLayout.tsx
 15 apps/web/src/components/settings/SettingsPanels.tsx
 13 apps/web/src/components/settings/SettingsScopeNotice.tsx
 9 apps/web/src/components/settings/SettingsScopeSentence.tsx
-33 apps/web/src/components/settings/SettingsSidebarNav.tsx
+24 apps/web/src/components/settings/SettingsSidebarNav.tsx
 16 apps/web/src/components/settings/SimlockDeviceHostEditor.tsx
 2 apps/web/src/components/settings/SnapShotSettings.tsx
 17 apps/web/src/components/settings/SnapShotSetupDialog.tsx
@@ -417,7 +417,7 @@
 120 apps/web/src/components/usage/UsageLimitsPooled.tsx
 11 apps/web/src/components/usage/UsageModelDialog.tsx
 24 apps/web/src/components/usage/UsageModelRow.tsx
-198 apps/web/src/components/usage/UsagePage.tsx
+196 apps/web/src/components/usage/UsagePage.tsx
 46 apps/web/src/components/usage/UsagePlanLimits.tsx
 33 apps/web/src/components/usage/UsagePriceOverrides.tsx
 26 apps/web/src/components/usage/UsageProviderChart.tsx
