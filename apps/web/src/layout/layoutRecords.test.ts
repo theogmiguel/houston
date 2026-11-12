@@ -205,6 +205,20 @@ describe("layoutStateFromRecords", () => {
     expect(layoutRecordContentKey(back[0]!)).toBe(layoutRecordContentKey(original[0]!));
   });
 
+  it("keeps a workspace's pin and hidden state through a round trip and counts them as content", () => {
+    const pinned = { ...record("a", 0, ["ta"]), pinnedAt: NOW, hidden: true };
+    const state = layoutStateFromRecords([pinned], null, new Set());
+    expect(state.workspaces[0]).toMatchObject({ pinnedAt: NOW, hidden: true });
+    const [back] = layoutStateToRecords(
+      state,
+      new Map([["a", { name: "Name a", createdAt: NOW }]]),
+      NOW,
+    );
+    expect(back).toMatchObject({ pinnedAt: NOW, hidden: true });
+    expect(layoutRecordContentKey(back!)).toBe(layoutRecordContentKey(pinned));
+    expect(layoutRecordContentKey(pinned)).not.toBe(layoutRecordContentKey(record("a", 0, ["ta"])));
+  });
+
   it("yields the default empty layout for no records", () => {
     expect(layoutStateFromRecords([], null, new Set()).workspaces).toHaveLength(1);
   });

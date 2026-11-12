@@ -103,6 +103,10 @@ export interface LayoutWorkspace {
    * px widths and the window clips them. Null until the strip is measured.
    */
   cameraWidth: number | null;
+  /** When the sidebar pinned this workspace; stored with it on the server. Absent: not pinned. */
+  pinnedAt?: string | null;
+  /** The sidebar lists a hidden workspace only in its hidden-workspaces menu. Absent: shown. */
+  hidden?: boolean;
 }
 
 export interface LayoutState {

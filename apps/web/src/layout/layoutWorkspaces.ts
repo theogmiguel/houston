@@ -6,11 +6,17 @@
 import { HOUSTON_LAYOUT_WORKSPACE_LIMITS } from "@houston-app/contracts/houston/layoutWorkspaces";
 
 import {
+  findLayoutPane,
+  findLayoutTabByContent,
+  focusLayoutPane,
   focusLayoutWorkspace,
   moveLayoutTab,
   normalizeLayout,
+  placeLayoutContent,
   renameLayoutWorkspace,
+  selectFocusedPane,
   type LayoutState,
+  type LayoutTabContent,
   type LayoutTab,
   type LayoutWorkspace,
 } from "./layoutModel";
@@ -60,7 +66,10 @@ export function renameLayoutWorkspaceChecked(
   name: string,
 ): WorkspaceResult {
   if (!state.workspaces.some((workspace) => workspace.id === workspaceId)) {
-    return { state, refusal: `Workspace '${workspaceId}' does not exist, so it cannot be renamed.` };
+    return {
+      state,
+      refusal: `Workspace '${workspaceId}' does not exist, so it cannot be renamed.`,
+    };
   }
   const refusal = nameRefusal(name);
   if (refusal) return { state, refusal };
@@ -140,3 +149,97 @@ export function deleteLayoutWorkspace(state: LayoutState, workspaceId: string): 
   return { state: next, refusal: null };
 }
 
+function mapWorkspace(
+  state: LayoutState,
+  workspaceId: string,
+  change: (workspace: LayoutWorkspace) => LayoutWorkspace,
+): LayoutState {
+  let changed = false;
+  const workspaces = state.workspaces.map((workspace) => {
+    if (workspace.id !== workspaceId) return workspace;
+    const next = change(workspace);
+    changed = next !== workspace;
+    return next;
+  });
+  return changed ? { ...state, workspaces } : state;
+}
+
+/** Pin a workspace (`now` is when) or unpin it. The sidebar lists pinned workspaces first. */
+export function setLayoutWorkspacePinned(
+  state: LayoutState,
+  workspaceId: string,
+  pinned: boolean,
+  now: string,
+): LayoutState {
+  return mapWorkspace(state, workspaceId, (workspace) => {
+    const isPinned = (workspace.pinnedAt ?? null) !== null;
+    if (isPinned === pinned) return workspace;
+    return { ...workspace, pinnedAt: pinned ? now : null };
+  });
+}
+
+/** Hide a workspace from the sidebar's list, or show it again. The strip still holds it. */
+export function setLayoutWorkspaceHidden(
+  state: LayoutState,
+  workspaceId: string,
+  hidden: boolean,
+): LayoutState {
+  return mapWorkspace(state, workspaceId, (workspace) =>
+    (workspace.hidden ?? false) === hidden ? workspace : { ...workspace, hidden },
+  );
+}
+
+/**
+ * Put a workspace just before or after another (a drag in the sidebar). The empty workspace at
+ * the bottom of the stack stays last, so a drop beside it lands above it.
+ */
+export function reorderLayoutWorkspace(
+  state: LayoutState,
+  workspaceId: string,
+  targetId: string,
+  side: "before" | "after",
+): LayoutState {
+  if (workspaceId === targetId) return state;
+  const moving = state.workspaces.find((workspace) => workspace.id === workspaceId);
+  const target = state.workspaces.find((workspace) => workspace.id === targetId);
+  if (!moving || !target || moving.columns.length === 0) return state;
+  const rest = state.workspaces.filter((workspace) => workspace.id !== workspaceId);
+  let index = rest.indexOf(target) + (side === "after" ? 1 : 0);
+  if (rest.at(-1)?.columns.length === 0) index = Math.min(index, rest.length - 1);
+  const workspaces = [...rest.slice(0, index), moving, ...rest.slice(index)];
+  return workspaces.every((workspace, i) => workspace === state.workspaces[i])
+    ? state
+    : { ...state, workspaces };
+}
+
+/**
+ * Put a thread's chat at the end of a workspace: move the tab that shows it, or open one there.
+ * The user stays where they were unless the moved tab was the one they were on.
+ */
+export function moveLayoutChatToWorkspace(
+  state: LayoutState,
+  content: Extract<LayoutTabContent, { kind: "chat" }>,
+  workspaceId: string,
+): WorkspaceResult {
+  const target = state.workspaces.find((workspace) => workspace.id === workspaceId);
+  if (!target) {
+    const known = state.workspaces.map((workspace) => workspace.id).join(", ");
+    return {
+      state,
+      refusal: `Workspace '${workspaceId}' does not exist, so the thread cannot move there. Known workspaces: ${known}.`,
+    };
+  }
+  const existing = findLayoutTabByContent(state, content);
+  if (existing?.workspace.id === workspaceId) return { state, refusal: null };
+  const focusedPaneId = selectFocusedPane(state)?.id ?? null;
+  const placed = placeLayoutContent(state, content, {
+    kind: "column",
+    workspaceId,
+    index: target.columns.length,
+  });
+  const stays =
+    focusedPaneId !== null &&
+    existing?.pane.id !== focusedPaneId &&
+    findLayoutPane(placed, focusedPaneId) !== null;
+  return { state: stays ? focusLayoutPane(placed, focusedPaneId) : placed, refusal: null };
+}

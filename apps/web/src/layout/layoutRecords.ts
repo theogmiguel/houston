@@ -147,8 +147,8 @@ export function layoutStateToRecords(
         })),
       })),
     })),
-    pinnedAt: null,
-    hidden: false,
+    pinnedAt: workspace.pinnedAt ?? null,
+    hidden: workspace.hidden ?? false,
     createdAt: known.get(workspace.id)?.createdAt ?? now,
     revision: 0,
     updatedAt: now,
@@ -157,9 +157,15 @@ export function layoutStateToRecords(
 
 /** The stored content of a workspace, so a local change and the server's copy can be compared. */
 export function layoutRecordContentKey(
-  record: Pick<HoustonLayoutWorkspaceRecord, "name" | "columns">,
+  record: Pick<HoustonLayoutWorkspaceRecord, "name" | "columns"> &
+    Partial<Pick<HoustonLayoutWorkspaceRecord, "pinnedAt" | "hidden">>,
 ): string {
-  return JSON.stringify([record.name, record.columns]);
+  return JSON.stringify([
+    record.name,
+    record.columns,
+    record.pinnedAt ?? null,
+    record.hidden ?? false,
+  ]);
 }
 
 /**
@@ -196,6 +202,8 @@ export function layoutStateFromRecords(
       columns,
       focusedPaneId: local?.focusedPaneId ?? null,
       cameraWidth: local?.cameraWidth ?? null,
+      ...(record.pinnedAt === null ? {} : { pinnedAt: record.pinnedAt }),
+      ...(record.hidden ? { hidden: true } : {}),
     };
   });
   const recordIds = new Set(workspaces.map((workspace) => workspace.id));

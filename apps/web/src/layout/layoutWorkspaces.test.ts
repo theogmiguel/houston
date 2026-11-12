@@ -5,7 +5,9 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   createLayoutState,
   normalizeLayout,
+  findLayoutTabByContent,
   openLayoutTab,
+  selectFocusedChatTab,
   selectFocusedWorkspace,
   type LayoutState,
   type LayoutTabContent,
@@ -14,8 +16,12 @@ import {
   createLayoutWorkspaceNamed,
   deleteLayoutWorkspace,
   listLayoutWorkspaces,
+  moveLayoutChatToWorkspace,
   moveLayoutWorkspaceById,
   renameLayoutWorkspaceChecked,
+  reorderLayoutWorkspace,
+  setLayoutWorkspaceHidden,
+  setLayoutWorkspacePinned,
   WORKSPACE_NAME_MAX_CHARS,
 } from "./layoutWorkspaces";
 
@@ -149,5 +155,127 @@ describe("deleteLayoutWorkspace", () => {
     const focusedFirst = { ...state, focusedWorkspaceId: first.id };
     const { state: next } = deleteLayoutWorkspace(focusedFirst, state.workspaces[1]!.id);
     expect(next.focusedWorkspaceId).toBe(first.id);
+  });
+});
+
+describe("setLayoutWorkspacePinned and setLayoutWorkspaceHidden", () => {
+  it("pin stamps the time, unpin clears it, and repeating either changes nothing", () => {
+    const state = twoWorkspaces();
+    const id = state.workspaces[0]!.id;
+    const pinned = setLayoutWorkspacePinned(state, id, true, "2026-01-01T00:00:00.000Z");
+    expect(pinned.workspaces[0]!.pinnedAt).toBe("2026-01-01T00:00:00.000Z");
+    expect(setLayoutWorkspacePinned(pinned, id, true, "2027-01-01T00:00:00.000Z")).toBe(pinned);
+    expect(setLayoutWorkspacePinned(pinned, id, false, "x").workspaces[0]!.pinnedAt).toBeNull();
+    expect(setLayoutWorkspacePinned(state, id, false, "x")).toBe(state);
+  });
+
+  it("hide and show toggle the flag and leave the tabs alone", () => {
+    const state = twoWorkspaces();
+    const id = state.workspaces[1]!.id;
+    const hidden = setLayoutWorkspaceHidden(state, id, true);
+    expect(hidden.workspaces[1]!.hidden).toBe(true);
+    expect(hidden.workspaces[1]!.columns).toBe(state.workspaces[1]!.columns);
+    expect(setLayoutWorkspaceHidden(hidden, id, true)).toBe(hidden);
+    expect(setLayoutWorkspaceHidden(hidden, id, false).workspaces[1]!.hidden).toBe(false);
+  });
+});
+
+describe("reorderLayoutWorkspace", () => {
+  function three(): LayoutState {
+    let state = twoWorkspaces();
+    state = createLayoutWorkspaceNamed(state, "Third").state;
+    return normalizeLayout(openLayoutTab(state, chat("c")));
+  }
+  const order = (state: LayoutState) => listLayoutWorkspaces(state).map((w) => w.name);
+
+  it("puts a workspace before or after another", () => {
+    const state = three();
+    const [first, , third] = listLayoutWorkspaces(state);
+    expect(order(reorderLayoutWorkspace(state, third!.id, first!.id, "before"))).toEqual([
+      "Third",
+      null,
+      "Second",
+    ]);
+    expect(order(reorderLayoutWorkspace(state, first!.id, third!.id, "after"))).toEqual([
+      "Second",
+      "Third",
+      null,
+    ]);
+  });
+
+  it("changes nothing for a drop on itself, a drop in place, or an unknown id", () => {
+    const state = three();
+    const [first, second] = listLayoutWorkspaces(state);
+    expect(reorderLayoutWorkspace(state, first!.id, first!.id, "after")).toBe(state);
+    expect(reorderLayoutWorkspace(state, first!.id, second!.id, "before")).toBe(state);
+    expect(reorderLayoutWorkspace(state, "nope", first!.id, "after")).toBe(state);
+  });
+
+  it("keeps the empty workspace at the bottom", () => {
+    const state = twoWorkspaces();
+    const empty = state.workspaces.at(-1)!;
+    expect(empty.columns).toHaveLength(0);
+    const moved = reorderLayoutWorkspace(state, state.workspaces[0]!.id, empty.id, "after");
+    expect(moved.workspaces.at(-1)).toBe(empty);
+    expect(moved.workspaces[1]!.id).toBe(state.workspaces[0]!.id);
+  });
+});
+
+describe("moveLayoutChatToWorkspace", () => {
+  it("moves a chat's tab to the end of another workspace and keeps the user where they were", () => {
+    const state = twoWorkspaces();
+    const [first, second] = listLayoutWorkspaces(state);
+    const focusedBefore = state.focusedWorkspaceId;
+    expect(focusedBefore).toBe(second!.id);
+    const { state: next, refusal } = moveLayoutChatToWorkspace(
+      state,
+      chat("a") as Extract<LayoutTabContent, { kind: "chat" }>,
+      second!.id,
+    );
+    expect(refusal).toBeNull();
+    expect(findLayoutTabByContent(next, chat("a"))!.workspace.id).toBe(second!.id);
+    expect(next.focusedWorkspaceId).toBe(second!.id);
+    expect(next.workspaces.find((w) => w.id === first!.id)?.columns ?? []).toHaveLength(0);
+  });
+
+  it("focus stays on another workspace when a chat is moved into a third", () => {
+    let state = twoWorkspaces();
+    state = createLayoutWorkspaceNamed(state, "Third").state;
+    state = openLayoutTab(state, chat("c"));
+    state = normalizeLayout(state);
+    const [first, second, third] = listLayoutWorkspaces(state);
+    const stateOnSecond = { ...state, focusedWorkspaceId: second!.id };
+    const { state: next } = moveLayoutChatToWorkspace(
+      stateOnSecond,
+      chat("c") as Extract<LayoutTabContent, { kind: "chat" }>,
+      first!.id,
+    );
+    expect(findLayoutTabByContent(next, chat("c"))!.workspace.id).toBe(first!.id);
+    expect(next.focusedWorkspaceId).toBe(second!.id);
+    expect(third).toBeDefined();
+  });
+
+  it("opens a tab for a chat that is shown nowhere", () => {
+    const state = twoWorkspaces();
+    const [first] = listLayoutWorkspaces(state);
+    const { state: next } = moveLayoutChatToWorkspace(
+      state,
+      chat("loose") as Extract<LayoutTabContent, { kind: "chat" }>,
+      first!.id,
+    );
+    expect(findLayoutTabByContent(next, chat("loose"))!.workspace.id).toBe(first!.id);
+    expect(selectFocusedChatTab(next)).not.toBeNull();
+  });
+
+  it("refuses an unknown workspace, naming it and the known ones", () => {
+    const state = twoWorkspaces();
+    const { state: next, refusal } = moveLayoutChatToWorkspace(
+      state,
+      chat("a") as Extract<LayoutTabContent, { kind: "chat" }>,
+      "nope",
+    );
+    expect(next).toBe(state);
+    expect(refusal).toContain("'nope'");
+    expect(refusal).toContain(state.workspaces[0]!.id);
   });
 });
