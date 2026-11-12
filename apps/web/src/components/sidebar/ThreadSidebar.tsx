@@ -4,7 +4,7 @@ import { scopedThreadKey, scopeThreadRef } from "@houston-app/client-runtime/env
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
 import { effectiveSnoozed } from "@houston-app/client-runtime/state/thread-settled";
 import { useNavigate, useRouter, useLocation } from "@tanstack/react-router";
-import { workspaceKeyOf } from "@houston-app/shared/grid/record";
+import { projectKeyOf } from "@houston-app/shared/projectKey";
 import {
   ChevronRightIcon,
   EyeOffIcon,
@@ -355,13 +355,13 @@ export function ThreadSidebar({
   const openProjectKey =
     revealShell === undefined
       ? null
-      : workspaceKeyOf(revealShell.environmentId, revealShell.projectId);
+      : projectKeyOf(revealShell.environmentId, revealShell.projectId);
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- widens the persisted project filter when navigation lands on a project the filter hides
   useEffect(() => {
     if (openProjectKey === null || filterKeys.length === 0) return;
     const hidden = !orderedProjectGroups.some((group) =>
       group.memberProjectRefs.some(
-        (ref) => workspaceKeyOf(ref.environmentId, ref.projectId) === openProjectKey,
+        (ref) => projectKeyOf(ref.environmentId, ref.projectId) === openProjectKey,
       ),
     );
     // oxlint-disable-next-line react/set-state-in-effect -- the filter is persisted client state that navigation must be able to widen
@@ -370,14 +370,14 @@ export function ThreadSidebar({
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- the filter and project list are read when the open project changes, not on every change of them
   }, [openProjectKey]);
 
-  const workspaceKeys = new Set(
-    projects.map((project) => workspaceKeyOf(project.environmentId, project.id)),
+  const projectKeys = new Set(
+    projects.map((project) => projectKeyOf(project.environmentId, project.id)),
   );
   const projectTitles = new Map(
-    projects.map((project) => [workspaceKeyOf(project.environmentId, project.id), project.title]),
+    projects.map((project) => [projectKeyOf(project.environmentId, project.id), project.title]),
   );
   const projectTitleOf = (thread: Pick<EnvironmentThreadShell, "environmentId" | "projectId">) =>
-    projectTitles.get(workspaceKeyOf(thread.environmentId, thread.projectId)) ??
+    projectTitles.get(projectKeyOf(thread.environmentId, thread.projectId)) ??
     (thread.projectId.length === 0 ? "No project" : thread.projectId);
 
   const tabLabel = useLayoutTabLabel();
@@ -387,7 +387,7 @@ export function ThreadSidebar({
   };
 
   const needsYouEntries = showNeedsYou
-    ? buildNeedsYouEntries({ threads, nowIso, workspaceKeys })
+    ? buildNeedsYouEntries({ threads, nowIso, projectKeys })
     : [];
   const needsYouThreadIds = new Set(needsYouEntries.map((entry) => entry.thread.id));
 
@@ -398,7 +398,7 @@ export function ThreadSidebar({
     threads,
     threadSort,
     nowIso,
-    projectKeys: workspaceKeys,
+    projectKeys,
     resolveWorkspaceTitle,
   } as const;
   // Everything the rail can reach, whatever it draws now: keyboard traversal, attention and
@@ -722,7 +722,7 @@ export function ThreadSidebar({
     };
   };
 
-  const shelves = partitionShelfThreads(threads, workspaceKeys, nowIso);
+  const shelves = partitionShelfThreads(threads, projectKeys, nowIso);
   const runningSubagentsByThread = runningSubagentsByParentThread(threads, nowIso);
 
   const searchMatchThreads = sections.flatMap((section) => section.threads);
@@ -758,7 +758,7 @@ export function ThreadSidebar({
         shownKeys: new Set(titleResultThreads.map(threadKeyOf)),
         isVisible: (match) =>
           threadById.has(match.threadId) &&
-          workspaceKeys.has(workspaceKeyOf(match.environmentId, match.projectId)),
+          projectKeys.has(projectKeyOf(match.environmentId, match.projectId)),
       })
     : [];
   // Opens a thread wherever it lives: in a workspace, on hold or closed.
@@ -1040,7 +1040,7 @@ export function ThreadSidebar({
                   older={{
                     scopes: olderSettledScopesForProjects(projects),
                     threads: threads.filter((thread) =>
-                      workspaceKeys.has(workspaceKeyOf(thread.environmentId, thread.projectId)),
+                      projectKeys.has(projectKeyOf(thread.environmentId, thread.projectId)),
                     ),
                   }}
                   closedDropTarget={dropTarget === "shelf:closed"}

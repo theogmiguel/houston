@@ -259,10 +259,6 @@
       "types": "./src/state/review.ts",
       "default": "./src/state/review.ts"
     },
-    "./state/grids": {
-      "types": "./src/state/grids.ts",
-      "default": "./src/state/grids.ts"
-    },
     "./state/layoutWorkspaces": {
       "types": "./src/state/layoutWorkspaces.ts",
       "default": "./src/state/layoutWorkspaces.ts"

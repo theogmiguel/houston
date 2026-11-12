@@ -2,7 +2,7 @@ import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/m
 import { effectiveSnoozed } from "@houston-app/client-runtime/state/thread-settled";
 import { getThreadSortTimestamp } from "@houston-app/client-runtime/state/thread-sort";
 
-import { workspaceKeyOf } from "@houston-app/shared/grid/record";
+import { projectKeyOf } from "@houston-app/shared/projectKey";
 import { resolveThreadRowState } from "../../threads/sidebarModel";
 import { threadStatusWord } from "../../threads/statusWord";
 import { isSidebarHiddenThread } from "../Sidebar.logic";
@@ -61,11 +61,11 @@ export function isNeedsYouThread(thread: EnvironmentThreadShell, nowIso: string)
 export function buildNeedsYouEntries(input: {
   readonly threads: ReadonlyArray<EnvironmentThreadShell>;
   readonly nowIso: string;
-  readonly workspaceKeys: ReadonlySet<string>;
+  readonly projectKeys: ReadonlySet<string>;
 }): NeedsYouEntry[] {
   const byGroup = new Map<NeedsYouGroup, NeedsYouEntry[]>();
   for (const thread of input.threads) {
-    if (!input.workspaceKeys.has(workspaceKeyOf(thread.environmentId, thread.projectId))) continue;
+    if (!input.projectKeys.has(projectKeyOf(thread.environmentId, thread.projectId))) continue;
     if (isExcludedFromNeedsYou(thread, input.nowIso)) continue;
     const group = needsYouGroupOf(thread, input.nowIso);
     if (group === null) continue;

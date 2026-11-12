@@ -3,7 +3,7 @@ import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/m
 import { effectiveSnoozed } from "@houston-app/client-runtime/state/thread-settled";
 import { sortThreads } from "@houston-app/client-runtime/state/thread-sort";
 import type { SidebarGridThreadSortOrder } from "@houston-app/contracts/settings";
-import { workspaceKeyOf } from "@houston-app/shared/grid/record";
+import { projectKeyOf } from "@houston-app/shared/projectKey";
 
 import type { LayoutState, LayoutWorkspace } from "../../layout/layoutModel";
 import { listLayoutWorkspaces, workspaceDisplayName } from "../../layout/layoutWorkspaces";
@@ -39,7 +39,7 @@ export interface SidebarWorkspaceSectionsInput {
   readonly threadSort: SidebarGridThreadSortOrder;
   readonly nowIso: string;
   readonly query: string;
-  /** `workspaceKeyOf` keys of the projects the rail shows; null shows every project. */
+  /** `projectKeyOf` keys of the projects the rail shows; null shows every project. */
   readonly projectKeys: ReadonlySet<string> | null;
   /** Threads lifted into the "Needs you" section, so their workspaces do not repeat them. */
   readonly excludedThreadIds: ReadonlySet<string> | undefined;
@@ -112,7 +112,7 @@ export function buildSidebarWorkspaceSections(
       (thread) =>
         isRailThread(thread, input.nowIso) &&
         (input.projectKeys === null ||
-          input.projectKeys.has(workspaceKeyOf(thread.environmentId, thread.projectId))),
+          input.projectKeys.has(projectKeyOf(thread.environmentId, thread.projectId))),
     )
     .toSorted(
       (left, right) =>

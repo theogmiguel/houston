@@ -36,13 +36,13 @@ function thread(id: string, overrides: Record<string, unknown> = {}): Environmen
 }
 
 const now = "2026-01-04T00:00:00.000Z";
-const workspaceKeys = new Set(["env-1:project-1"]);
+const projectKeys = new Set(["env-1:project-1"]);
 
 describe("buildNeedsYouEntries", () => {
   it("orders Input, Approval, Failed, Back, then newest activity within a family", () => {
     const entries = buildNeedsYouEntries({
       nowIso: now,
-      workspaceKeys,
+      projectKeys,
       threads: [
         thread("back", {
           unsettledAt: "2026-01-03T00:00:00.000Z",
@@ -78,7 +78,7 @@ describe("buildNeedsYouEntries", () => {
   it("leaves out archived, closed, deleted and closed-project threads", () => {
     const entries = buildNeedsYouEntries({
       nowIso: now,
-      workspaceKeys,
+      projectKeys,
       threads: [
         thread("archived", { hasPendingUserInput: true, archivedAt: "2026-01-02T00:00:00.000Z" }),
         thread("closed", { hasPendingUserInput: true, settledOverride: "settled" }),

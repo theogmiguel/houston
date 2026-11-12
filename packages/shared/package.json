@@ -11,6 +11,10 @@
       "types": "./src/grid/record.ts",
       "import": "./src/grid/record.ts"
     },
+    "./projectKey": {
+      "types": "./src/projectKey.ts",
+      "import": "./src/projectKey.ts"
+    },
     "./serverPackage": {
       "types": "./src/serverPackage.ts",
       "import": "./src/serverPackage.ts"

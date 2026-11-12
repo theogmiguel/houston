@@ -8,7 +8,7 @@ import { sortSettledThreads } from "@houston-app/client-runtime/state/thread-sor
 
 import { isSidebarHiddenThread, resolveThreadStatusPill } from "../components/Sidebar.logic";
 import type { ThreadState } from "../components/ui/thread-state-glyph";
-import { workspaceKeyOf } from "@houston-app/shared/grid/record";
+import { projectKeyOf } from "@houston-app/shared/projectKey";
 
 /**
  * The sidebar rail's one status vocabulary. `idle` cards show their age; every
@@ -99,7 +99,7 @@ function wakeTimeMs(thread: EnvironmentThreadShell): number {
  */
 export function partitionShelfThreads(
   threads: ReadonlyArray<EnvironmentThreadShell>,
-  workspaceKeys: ReadonlySet<string>,
+  projectKeys: ReadonlySet<string>,
   now: string,
 ): ShelfThreads {
   const held: EnvironmentThreadShell[] = [];
@@ -107,7 +107,7 @@ export function partitionShelfThreads(
   for (const thread of threads) {
     if (thread.archivedAt !== null || thread.deletedAt !== null) continue;
     if (isSidebarHiddenThread(thread)) continue;
-    if (!workspaceKeys.has(workspaceKeyOf(thread.environmentId, thread.projectId))) continue;
+    if (!projectKeys.has(projectKeyOf(thread.environmentId, thread.projectId))) continue;
     if (effectiveSnoozed(thread, { now })) {
       held.push(thread);
     } else if (thread.settledOverride === "settled") {

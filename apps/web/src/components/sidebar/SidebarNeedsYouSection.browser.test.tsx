@@ -80,7 +80,7 @@ const projectTitles = new Map([
 function entries() {
   return buildNeedsYouEntries({
     nowIso: now,
-    workspaceKeys: new Set(["env-1:project-1", "env-1:project-2"]),
+    projectKeys: new Set(["env-1:project-1", "env-1:project-2"]),
     threads: [
       thread("fix-it", "project-1", { hasPendingUserInput: true }),
       thread("broken", "project-2", {

@@ -367,7 +367,7 @@ describe("workspace search and pull requests", () => {
 });
 
 describe("workspace shelves", () => {
-  const workspaceKeys = new Set(["env-1:project-1"]);
+  const projectKeys = new Set(["env-1:project-1"]);
 
   it("sorts held threads by wake time and closed threads newest first", () => {
     const shelves = partitionShelfThreads(
@@ -393,7 +393,7 @@ describe("workspace shelves", () => {
           settledAt: "2026-10-29T11:00:00.000Z",
         }),
       ],
-      workspaceKeys,
+      projectKeys,
       NOW,
     );
     expect(shelves.held.map((entry) => entry.id)).toEqual(["held-soon", "held-late"]);
@@ -407,7 +407,7 @@ describe("workspace shelves", () => {
         thread({ id: "archived", archivedAt: "2026-10-29T11:00:00.000Z" }),
         thread({ id: "other", projectId: "project-2" as never }),
       ],
-      workspaceKeys,
+      projectKeys,
       NOW,
     );
     expect(shelves.held.map((entry) => entry.id)).toEqual(["held"]);
@@ -439,7 +439,7 @@ describe("workspace shelves", () => {
           },
         }),
       ],
-      workspaceKeys,
+      projectKeys,
       NOW,
     );
     expect(shelves.held.map((entry) => entry.id)).toEqual(["held"]);

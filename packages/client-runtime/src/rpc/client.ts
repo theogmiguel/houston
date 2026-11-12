@@ -72,7 +72,6 @@ export type EnvironmentSubscriptionRpcTag =
   | typeof WS_METHODS.subscribeWorktreeSetup
   | typeof WS_METHODS.subscribeProjectClones
   | typeof WS_METHODS.houstonTasksSubscribe
-  | typeof WS_METHODS.houstonGridsSubscribe
   | typeof WS_METHODS.houstonLayoutWorkspacesSubscribe
   | typeof WS_METHODS.houstonMergeQueueSubscribe
   | typeof WS_METHODS.houstonMergeQueueSubscribeSummary
