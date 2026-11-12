@@ -12,7 +12,7 @@
 1 apps/web/src/components/ui/input-group.tsx
 1 apps/web/src/components/ui/input.tsx
 1 apps/web/src/components/ui/kbd.tsx
-6 apps/web/src/components/ui/menu.tsx
+5 apps/web/src/components/ui/menu.tsx
 3 apps/web/src/components/ui/select.tsx
 1 apps/web/src/components/ui/toggle.tsx
 1 apps/web/src/components/ui/tooltip.tsx

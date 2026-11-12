@@ -329,7 +329,7 @@ export function showContextMenuFallback<T extends string>(
         button.setAttribute("role", "menuitem");
         button.setAttribute("aria-disabled", String(isDisabled));
         const rowBase =
-          "flex w-full cursor-default select-none items-center gap-2.5 rounded-[var(--r-selection)] px-2.5 py-1 text-left outline-none transition-colors min-h-8 text-[13px]";
+          "flex w-full cursor-default select-none items-center gap-2.5 rounded-[var(--r-selection)] px-2.5 py-1 text-left outline-none transition-colors min-h-8 text-body";
         button.className = isDisabled
           ? `${rowBase} pointer-events-none cursor-not-allowed text-muted-foreground opacity-64`
           : isLeafDestructive
