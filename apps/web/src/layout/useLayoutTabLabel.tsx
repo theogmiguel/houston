@@ -2,7 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { scopedThreadKey, scopeThreadRef } from "@houston-app/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
 import {
-  ChartNoAxesColumnIcon,
+  ListChecksIcon,
   FileIcon,
   FolderTreeIcon,
   GitCompareIcon,
@@ -37,15 +37,15 @@ const NEW_THREAD_TITLE = "New thread";
 
 const PAGE_TITLES = {
   settings: "Settings",
-  usage: "Usage",
   "pull-requests": "Pull requests",
+  tasks: "Tasks",
 } as const;
 
 /** Each page tab carries its own icon, the one its sidebar footer and launcher row show. */
 const PAGE_ICONS: Record<keyof typeof PAGE_TITLES, LucideIcon> = {
   settings: SettingsIcon,
-  usage: ChartNoAxesColumnIcon,
   "pull-requests": PullRequestGlyph.pullRequest,
+  tasks: ListChecksIcon,
 };
 
 function iconOf(Icon: LucideIcon) {
@@ -129,8 +129,9 @@ export function useLayoutTabLabel(): (tab: LayoutTab) => LayoutTabLabel {
             <ChatTabIcon
               shell={shell}
               providerEntries={
-                (shell === null ? undefined : providerEntriesByEnvironment.get(shell.environmentId)) ??
-                EMPTY_PROVIDER_ENTRIES
+                (shell === null
+                  ? undefined
+                  : providerEntriesByEnvironment.get(shell.environmentId)) ?? EMPTY_PROVIDER_ENTRIES
               }
             />
           ),
@@ -164,8 +165,8 @@ export function useLayoutTabLabel(): (tab: LayoutTab) => LayoutTabLabel {
       case "launcher":
         return { icon: iconOf(SquareDashedIcon), title: "New tab" };
       case "settings":
-      case "usage":
       case "pull-requests":
+      case "tasks":
         return {
           icon: iconOf(PAGE_ICONS[content.kind]),
           title: PAGE_TITLES[content.kind],

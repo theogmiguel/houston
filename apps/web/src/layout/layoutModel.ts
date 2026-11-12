@@ -20,8 +20,8 @@ export type LayoutCompanionKind = "panel" | "terminal";
  */
 export const THREAD_TERMINAL_SURFACE_ID = "thread-terminal";
 
-/** Pull requests always shows as a workspace tab; Settings and Usage open as modals. */
-export type LayoutPageContent = { kind: "settings" | "usage" | "pull-requests"; href?: string };
+/** Pull requests and Tasks show as workspace tabs; Settings opens as a card over the layout. */
+export type LayoutPageContent = { kind: "settings" | "pull-requests" | "tasks"; href?: string };
 
 export type LayoutTabContent =
   | { kind: "chat"; target: ThreadRouteTarget }
@@ -42,7 +42,7 @@ export type LayoutTabContent =
 
 export function isLayoutPageContent(content: LayoutTabContent): content is LayoutPageContent {
   return (
-    content.kind === "settings" || content.kind === "usage" || content.kind === "pull-requests"
+    content.kind === "settings" || content.kind === "pull-requests" || content.kind === "tasks"
   );
 }
 

@@ -15,14 +15,15 @@ import {
 import { useLayoutStore } from "./layoutStore";
 import { readPullRequestListPreferences } from "../components/pullRequest/pullRequestListPreferences";
 
-/** The page tab a URL shows in the layout. Settings and Usage open as modals over it instead. */
+/** The page tab a URL shows in the layout. Settings opens as a card over it instead. */
 export function layoutRoutePage(location: {
   pathname: string;
   href: string;
 }): LayoutPageContent | null {
-  return location.pathname === "/pull-requests"
-    ? { kind: "pull-requests", href: location.href }
-    : null;
+  if (location.pathname === "/pull-requests") {
+    return { kind: "pull-requests", href: location.href };
+  }
+  return location.pathname === "/tasks" ? { kind: "tasks", href: location.href } : null;
 }
 
 export function layoutPageHref(content: LayoutPageContent): string {
@@ -70,7 +71,7 @@ export function useOpenLayoutPage() {
     destination?: LayoutTabDestination,
     replaceTabId?: string,
   ) => {
-    if (kind === "settings" || kind === "usage") {
+    if (kind === "settings") {
       return navigate({ href: layoutPageHref({ kind }) }).then(() => {
         if (replaceTabId) useLayoutStore.getState().closeTab(replaceTabId);
       });

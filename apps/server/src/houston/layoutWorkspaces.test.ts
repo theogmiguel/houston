@@ -13,6 +13,7 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as HoustonLayoutWorkspaces from "./layoutWorkspaces.ts";
@@ -576,6 +577,114 @@ describe("the stream", () => {
         events.map((event) => Object.keys(event)[0]),
         ["snapshot", "upserted"],
       );
+    }).pipe(Effect.provide(layer)),
+  );
+});
+
+describe("a stored layout from before Usage left the page kinds", () => {
+  const storeRaw = (id: string, columns: unknown[]) =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const stored = {
+        ...record(id),
+        columns,
+        position: 5,
+        revision: 1,
+      };
+      yield* sql`
+        INSERT INTO houston_layout_workspaces (id, position, record_json, revision, created_at, updated_at)
+        VALUES (${id}, 5, ${JSON.stringify(stored)}, 1, ${stored.createdAt}, ${stored.updatedAt})
+      `;
+    });
+  const rawTab = (id: string, content: unknown) => ({ id, content });
+  const usageContent = { kind: "page", page: "usage" };
+  const rawPane = (id: string, size: number, activeTabId: string | null, tabs: unknown[]) => ({
+    id,
+    size,
+    activeTabId,
+    tabs,
+  });
+
+  it.effect("loads with the usage tab dropped and the pane's active tab moved on", () =>
+    Effect.gen(function* () {
+      const service = yield* HoustonLayoutWorkspaces.HoustonLayoutWorkspaceService;
+      yield* storeRaw("legacy", [
+        {
+          id: "c1",
+          width: 1,
+          panes: [
+            rawPane("p1", 1, "t-usage", [
+              rawTab("t-usage", usageContent),
+              rawTab("t-chat", chat("thread-1")),
+            ]),
+          ],
+        },
+      ]);
+      const loaded = yield* service.get("legacy");
+      const pane = loaded.columns[0]!.panes[0]!;
+      assert.deepEqual(
+        pane.tabs.map((tab) => tab.id),
+        ["t-chat"],
+      );
+      assert.equal(pane.activeTabId, "t-chat");
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("drops a pane whose only tab was usage and rescales its siblings", () =>
+    Effect.gen(function* () {
+      const service = yield* HoustonLayoutWorkspaces.HoustonLayoutWorkspaceService;
+      yield* storeRaw("legacy", [
+        {
+          id: "c1",
+          width: 1,
+          panes: [
+            rawPane("p1", 0.5, "t-chat", [rawTab("t-chat", chat("thread-1"))]),
+            rawPane("p2", 0.5, "t-usage", [rawTab("t-usage", usageContent)]),
+          ],
+        },
+        {
+          id: "c2",
+          width: 0.5,
+          panes: [
+            rawPane("p3", 1, "t-usage-2", [rawTab("t-usage-2", { kind: "page", page: "usage" })]),
+          ],
+        },
+      ]);
+      const loaded = yield* service.get("legacy");
+      assert.deepEqual(
+        loaded.columns.map((col) => col.id),
+        ["c1"],
+      );
+      assert.deepEqual(
+        loaded.columns[0]!.panes.map((pane) => [pane.id, pane.size]),
+        [["p1", 1]],
+      );
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("a workspace that held only usage loads empty and still lists", () =>
+    Effect.gen(function* () {
+      const service = yield* HoustonLayoutWorkspaces.HoustonLayoutWorkspaceService;
+      yield* storeRaw("legacy", [
+        {
+          id: "c1",
+          width: 1,
+          panes: [rawPane("p1", 1, "t-usage", [rawTab("t-usage", usageContent)])],
+        },
+      ]);
+      const loaded = yield* service.get("legacy");
+      assert.deepEqual(loaded.columns, []);
+      assert.include(
+        (yield* service.list).map((workspace) => workspace.id),
+        "legacy",
+      );
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("a tasks page tab is stored and loaded", () =>
+    Effect.gen(function* () {
+      const saved = yield* create(record("t", [column([{ kind: "page", page: "tasks" }])]));
+      assert.deepEqual(tabContentsOf(saved), [{ kind: "page", page: "tasks" }]);
     }).pipe(Effect.provide(layer)),
   );
 });

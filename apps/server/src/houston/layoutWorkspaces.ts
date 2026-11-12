@@ -2,6 +2,7 @@
 // mutation commits in one transaction, bumps the revision of each workspace it changes and then
 // publishes the change. The layout holds one tab per content, and never fewer than one workspace.
 import {
+  HOUSTON_LAYOUT_PAGES,
   HOUSTON_LAYOUT_WORKSPACE_LIMITS,
   type HoustonLayoutColumn,
   HoustonLayoutWorkspaceError,
@@ -72,9 +73,66 @@ interface WorkspaceRow {
   readonly record_json: string;
 }
 
-const decodeRecord = Schema.decodeUnknownOption(
-  Schema.fromJsonString(HoustonLayoutWorkspaceRecord),
-);
+const decodeStrict = Schema.decodeUnknownOption(HoustonLayoutWorkspaceRecord);
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const isRetiredPageTab = (tab: unknown): boolean => {
+  if (!isRecord(tab) || !isRecord(tab.content) || tab.content.kind !== "page") return false;
+  return !(HOUSTON_LAYOUT_PAGES as ReadonlyArray<unknown>).includes(tab.content.page);
+};
+
+/**
+ * Drops the page tabs a stored layout holds for a page that no longer exists, the way closing
+ * them would: a pane left without tabs and a column left without panes go, the panes that stay
+ * share the column's height again, and a pane whose active tab went activates its first tab.
+ * Returns the value untouched when nothing was dropped.
+ */
+export const dropRetiredPageTabs = (stored: unknown): unknown => {
+  if (!isRecord(stored) || !Array.isArray(stored.columns)) return stored;
+  let dropped = false;
+  const columns = stored.columns.flatMap((column: unknown) => {
+    if (!isRecord(column) || !Array.isArray(column.panes)) return [column];
+    const panes = column.panes.flatMap((pane: unknown) => {
+      if (!isRecord(pane) || !Array.isArray(pane.tabs)) return [pane];
+      const tabs = pane.tabs.filter((tab: unknown) => !isRetiredPageTab(tab));
+      if (tabs.length === pane.tabs.length) return [pane];
+      dropped = true;
+      if (tabs.length === 0) return [];
+      const active = tabs.some((tab: unknown) => isRecord(tab) && tab.id === pane.activeTabId);
+      return [
+        { ...pane, tabs, activeTabId: active ? pane.activeTabId : (tabs[0] as { id: string }).id },
+      ];
+    });
+    if (panes.length === 0) return [];
+    if (panes.length === column.panes.length) return [{ ...column, panes }];
+    const total = panes.reduce(
+      (sum: number, pane: unknown) =>
+        sum + (isRecord(pane) && typeof pane.size === "number" ? pane.size : 0),
+      0,
+    );
+    return [
+      {
+        ...column,
+        panes: panes.map((pane: unknown) =>
+          isRecord(pane) && typeof pane.size === "number" && total > 0
+            ? { ...pane, size: pane.size / total }
+            : pane,
+        ),
+      },
+    ];
+  });
+  return dropped ? { ...stored, columns } : stored;
+};
+
+const decodeRecord = (json: string) => {
+  try {
+    return decodeStrict(dropRetiredPageTabs(JSON.parse(json)));
+  } catch {
+    return Option.none();
+  }
+};
 const encodeRecord = Schema.encodeSync(Schema.fromJsonString(HoustonLayoutWorkspaceRecord));
 
 const upserted = (record: HoustonLayoutWorkspaceRecord): HoustonLayoutWorkspaceStreamEvent => ({

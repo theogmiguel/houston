@@ -2,6 +2,7 @@
 import { scopeThreadRef } from "@houston-app/client-runtime/environment";
 import { EnvironmentId, ThreadId } from "@houston-app/contracts";
 import {
+  HOUSTON_LAYOUT_PAGES,
   HOUSTON_LAYOUT_WORKSPACE_LIMITS,
   type HoustonLayoutTab,
   type HoustonLayoutTabContent,
@@ -72,8 +73,8 @@ export function tabContentToRecord(content: LayoutTabContent): HoustonLayoutTabC
         context: content.context === null ? null : chatTargetToRecord(content.context),
       };
     case "settings":
-    case "usage":
     case "pull-requests":
+    case "tasks":
       return {
         kind: "page",
         page: content.kind,
@@ -82,7 +83,11 @@ export function tabContentToRecord(content: LayoutTabContent): HoustonLayoutTabC
   }
 }
 
-export function tabContentFromRecord(content: HoustonLayoutTabContent): LayoutTabContent {
+/** The page kinds a tab can hold; a stored kind outside it belongs to a page that no longer exists. */
+const LAYOUT_PAGE_KINDS: ReadonlyArray<string> = HOUSTON_LAYOUT_PAGES;
+
+/** Null for a page tab of a page that no longer exists. */
+export function tabContentFromRecord(content: HoustonLayoutTabContent): LayoutTabContent | null {
   switch (content.kind) {
     case "chat":
       return { kind: "chat", target: chatTargetFromRecord(content.target) };
@@ -102,6 +107,7 @@ export function tabContentFromRecord(content: HoustonLayoutTabContent): LayoutTa
         context: content.context === null ? null : chatTargetFromRecord(content.context),
       };
     case "page":
+      if (!LAYOUT_PAGE_KINDS.includes(content.page)) return null;
       return { kind: content.page, ...(content.href === undefined ? {} : { href: content.href }) };
   }
 }
@@ -190,9 +196,13 @@ export function layoutStateFromRecords(
         id: pane.id,
         size: pane.size,
         activeTabId: pane.activeTabId,
-        tabs: pane.tabs.map((tab): LayoutTab => {
-          const base = { id: tab.id, content: tabContentFromRecord(tab.content) };
-          return ghostTabIds.has(tab.id) ? { ...base, ghostOf: null } : base;
+        // A tab of a page that no longer exists is dropped as if it had been closed; the
+        // normalization below collapses a pane or column it leaves empty.
+        tabs: pane.tabs.flatMap((tab): LayoutTab[] => {
+          const content = tabContentFromRecord(tab.content);
+          if (content === null) return [];
+          const base = { id: tab.id, content };
+          return [ghostTabIds.has(tab.id) ? { ...base, ghostOf: null } : base];
         }),
       })),
     }));

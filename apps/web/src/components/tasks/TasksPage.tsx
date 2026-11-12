@@ -5,10 +5,12 @@ import { squashAtomCommandFailure } from "@houston-app/client-runtime/state/runt
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { PlusIcon, SearchIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { use, useEffect, useState } from "react";
 
 import { environmentProjects } from "~/state/projects";
 import { usePrimaryEnvironmentId } from "~/state/environments";
+import { validateTasksSearch, type TasksSearch, type TasksView } from "./tasksSearch";
+import { LayoutPageLocationContext } from "~/layout/pageNavigation";
 import { loadTaskSettings, tasksEnvironment, useTasksView } from "~/state/tasks";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useOpenThread } from "~/threads/useOpenThread";
@@ -63,15 +65,7 @@ import {
   type TaskNextActionKind,
 } from "./tasks.logic";
 
-export type TasksView = "queue" | "projects" | "sources";
-
-export interface TasksSearch {
-  readonly task?: string;
-  readonly view?: TasksView;
-  readonly workspace?: string;
-  readonly q?: string;
-  readonly new?: boolean;
-}
+export type { TasksSearch, TasksView } from "./tasksSearch";
 
 function readableFailure(error: unknown): string {
   if (error instanceof Error && error.message.length > 0) return error.message;
@@ -195,7 +189,13 @@ function NewProjectDialog({
 }
 
 export function TasksPage() {
-  const search = useSearch({ from: "/_chat/tasks" });
+  // A page tab reads its own location; the routed page reads the URL's.
+  const tabLocation = use(LayoutPageLocationContext);
+  const routedSearch = useSearch({ from: "/_chat/tasks", shouldThrow: false });
+  const search: TasksSearch =
+    tabLocation === null
+      ? (routedSearch ?? validateTasksSearch({}))
+      : validateTasksSearch(tabLocation.search);
   const navigate = useNavigate({ from: "/tasks" });
   const environmentId = usePrimaryEnvironmentId();
   const projects = useAtomValue(environmentProjects.projectsAtom).filter(

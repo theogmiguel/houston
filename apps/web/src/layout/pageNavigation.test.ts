@@ -12,8 +12,14 @@ describe("layoutRoutePage", () => {
     }
   });
 
+  it("shows every tasks URL as the layout's page tab, keeping its search", () => {
+    for (const href of ["/tasks", "/tasks?view=sources&q=a", "/tasks?task=T-1"]) {
+      expect(layoutRoutePage({ pathname: "/tasks", href })).toEqual({ kind: "tasks", href });
+    }
+  });
+
   it("leaves Settings and Usage to their modals", () => {
-    for (const pathname of ["/settings/general", "/usage"]) {
+    for (const pathname of ["/settings/general", "/settings/usage", "/usage"]) {
       expect(layoutRoutePage({ pathname, href: pathname })).toBeNull();
     }
   });

@@ -3,7 +3,6 @@ import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
 import { scopeProjectRef } from "@houston-app/client-runtime/environment";
 import type { ScopedThreadRef } from "@houston-app/contracts";
 import {
-  ChartNoAxesColumnIcon,
   FolderIcon,
   GitCompareIcon,
   GlobeIcon,
@@ -13,6 +12,7 @@ import {
   SquareDashedIcon,
   SquareTerminalIcon,
   TabletSmartphoneIcon,
+  ListChecksIcon,
 } from "lucide-react";
 
 import { useBrowserDefaults } from "../browser/browserDefaults";
@@ -146,14 +146,14 @@ export function LayoutLauncher({
           onSelect={() => showPage("settings")}
         />
         <LayoutLauncherRow
-          icon={<ChartNoAxesColumnIcon aria-hidden className="size-4" />}
-          label="Usage"
-          onSelect={() => showPage("usage")}
-        />
-        <LayoutLauncherRow
           icon={<PullRequestGlyph.pullRequest aria-hidden className="size-4" />}
           label="Pull requests"
           onSelect={() => showPage("pull-requests")}
+        />
+        <LayoutLauncherRow
+          icon={<ListChecksIcon aria-hidden className="size-4" />}
+          label="Tasks"
+          onSelect={() => showPage("tasks")}
         />
       </LayoutLauncherList>
     </LayoutLauncherFrame>

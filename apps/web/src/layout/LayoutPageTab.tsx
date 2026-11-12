@@ -3,6 +3,7 @@ import { lazy, Suspense } from "react";
 import { Button } from "../components/ui/button";
 import { Spinner } from "../components/ui/spinner";
 import { validatePullRequestsSearch } from "../components/pullRequest/pullRequestsSearch";
+import { validateTasksSearch } from "../components/tasks/tasksSearch";
 import type { LayoutPageContent } from "./layoutModel";
 import {
   LayoutPageLocationContext,
@@ -16,9 +17,13 @@ const PullRequestsPage = lazy(() =>
   })),
 );
 
+const TasksPage = lazy(() =>
+  import("../components/tasks/TasksPage").then((module) => ({ default: module.TasksPage })),
+);
+
 /**
- * A page opened as a tab. Pull requests render in the pane against the tab's own URL; Settings
- * and Usage are modals over the layout, so their tab offers the way in.
+ * A page opened as a tab. Pull requests and Tasks render in the pane against the tab's own URL;
+ * Settings is a card over the layout, so its tab offers the way in.
  */
 export function LayoutPageTab({ content }: { readonly content: LayoutPageContent }) {
   const openPage = useOpenLayoutPage();
@@ -30,14 +35,22 @@ export function LayoutPageTab({ content }: { readonly content: LayoutPageContent
           ...parsed,
           search: validatePullRequestsSearch(parsed.search),
         }
-      : parsed;
+      : content.kind === "tasks"
+        ? { ...parsed, search: validateTasksSearch(parsed.search) }
+        : parsed;
   return (
     <LayoutPageLocationContext value={location}>
       <div
         data-layout-page-tab={content.kind}
         className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
       >
-        {content.kind === "pull-requests" ? (
+        {content.kind === "settings" ? (
+          <div className="flex min-h-0 flex-1 items-center justify-center">
+            <Button variant="ghost" onClick={() => void openPage("settings")}>
+              Open settings
+            </Button>
+          </div>
+        ) : (
           <Suspense
             fallback={
               <div className="flex flex-1 items-center justify-center">
@@ -45,14 +58,8 @@ export function LayoutPageTab({ content }: { readonly content: LayoutPageContent
               </div>
             }
           >
-            <PullRequestsPage />
+            {content.kind === "pull-requests" ? <PullRequestsPage /> : <TasksPage />}
           </Suspense>
-        ) : (
-          <div className="flex min-h-0 flex-1 items-center justify-center">
-            <Button variant="ghost" onClick={() => void openPage(content.kind)}>
-              {content.kind === "settings" ? "Open settings" : "Open usage"}
-            </Button>
-          </div>
         )}
       </div>
     </LayoutPageLocationContext>

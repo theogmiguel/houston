@@ -60,6 +60,7 @@ describe("layoutStateToRecords", () => {
       { kind: "surface", threadRef: ref("a"), surfaceId: "diff" },
       { kind: "launcher", id: "launcher:1", context: null },
       { kind: "pull-requests", href: "/pull-requests" },
+      { kind: "tasks", href: "/tasks?view=queue" },
     ];
     const tabs = content.map((c, i) => tab(`t${i}`, c, i === 0));
     const records = layoutStateToRecords(
@@ -69,12 +70,19 @@ describe("layoutStateToRecords", () => {
     );
     expect(records).toHaveLength(1);
     const stored = records[0]!.columns[0]!.panes[0]!.tabs;
-    expect(stored.map((t) => t.content.kind)).toEqual(["chat", "surface", "launcher", "page"]);
+    expect(stored.map((t) => t.content.kind)).toEqual([
+      "chat",
+      "surface",
+      "launcher",
+      "page",
+      "page",
+    ]);
     expect(stored[3]!.content).toEqual({
       kind: "page",
       page: "pull-requests",
       href: "/pull-requests",
     });
+    expect(stored[4]!.content).toEqual({ kind: "page", page: "tasks", href: "/tasks?view=queue" });
     expect(JSON.stringify(records)).not.toContain("ghostOf");
   });
 
@@ -221,5 +229,91 @@ describe("layoutStateFromRecords", () => {
 
   it("yields the default empty layout for no records", () => {
     expect(layoutStateFromRecords([], null, new Set()).workspaces).toHaveLength(1);
+  });
+});
+
+describe("a stored layout that still holds a Usage page tab", () => {
+  const paneRecord = (
+    id: string,
+    size: number,
+    tabs: { id: string; content: unknown }[],
+    activeTabId: string,
+  ) => ({ id, size, activeTabId, tabs });
+  const chatRecord = (id: string) => ({
+    id,
+    content: {
+      kind: "chat",
+      target: { kind: "server", threadRef: { environmentId: "local", threadId: id } },
+    },
+  });
+  const usageRecord = (id: string) => ({ id, content: { kind: "page", page: "usage" } });
+  const recordOf = (columns: unknown[]) =>
+    ({
+      id: "w1",
+      name: "One",
+      position: 0,
+      columns,
+      pinnedAt: null,
+      hidden: false,
+      createdAt: NOW,
+      revision: 1,
+      updatedAt: NOW,
+    }) as unknown as HoustonLayoutWorkspaceRecord;
+
+  it("drops the tab and activates the pane's first remaining tab", () => {
+    const state = layoutStateFromRecords(
+      [
+        recordOf([
+          {
+            id: "c1",
+            width: 1,
+            panes: [paneRecord("p1", 1, [usageRecord("t-usage"), chatRecord("t-chat")], "t-usage")],
+          },
+        ]),
+      ],
+      null,
+      new Set(),
+    );
+    const pane = state.workspaces[0]!.columns[0]!.panes[0]!;
+    expect(pane.tabs.map((entry) => entry.id)).toEqual(["t-chat"]);
+    expect(pane.activeTabId).toBe("t-chat");
+  });
+
+  it("collapses a pane whose only tab was Usage and rescales the pane beside it", () => {
+    const state = layoutStateFromRecords(
+      [
+        recordOf([
+          {
+            id: "c1",
+            width: 1,
+            panes: [
+              paneRecord("p1", 0.5, [chatRecord("t-chat")], "t-chat"),
+              paneRecord("p2", 0.5, [usageRecord("t-usage")], "t-usage"),
+            ],
+          },
+        ]),
+      ],
+      null,
+      new Set(),
+    );
+    const panes = state.workspaces[0]!.columns[0]!.panes;
+    expect(panes.map((pane) => [pane.id, pane.size])).toEqual([["p1", 1]]);
+  });
+
+  it("leaves a workspace that held only Usage empty instead of failing the load", () => {
+    const state = layoutStateFromRecords(
+      [
+        recordOf([
+          {
+            id: "c1",
+            width: 1,
+            panes: [paneRecord("p1", 1, [usageRecord("t-usage")], "t-usage")],
+          },
+        ]),
+      ],
+      null,
+      new Set(),
+    );
+    expect(state.workspaces.flatMap((entry) => entry.columns)).toEqual([]);
   });
 });

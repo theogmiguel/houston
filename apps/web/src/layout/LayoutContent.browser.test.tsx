@@ -148,12 +148,33 @@ it(
     });
     await app.router.navigate({ to: "/pull-requests", search: {} as never });
     await vi.waitFor(() => {
-      expect(app.screen.container.querySelector('[data-layout-page-tab="pull-requests"]')).not.toBeNull();
-      expect(app.screen.container.querySelector('[data-layout-page-tab="pull-requests"] h1')).not.toBeNull();
+      expect(
+        app.screen.container.querySelector('[data-layout-page-tab="pull-requests"]'),
+      ).not.toBeNull();
+      expect(
+        app.screen.container.querySelector('[data-layout-page-tab="pull-requests"] h1'),
+      ).not.toBeNull();
     });
     const page = app.screen.container.querySelector('[data-layout-page-tab="pull-requests"]')!;
     expect(page.querySelector("[data-workspace-titlebar-controls]")).toBeNull();
     expect(page.querySelector('[aria-label="Toggle right panel"]')).toBeNull();
+  },
+  APP_BOOT_TEST_TIMEOUT_MS,
+);
+
+it(
+  "a tasks route opens a Tasks tab in the layout instead of replacing the window",
+  async () => {
+    await using app = await bootAt(threadPath("thread-a"));
+    await vi.waitFor(() => {
+      expect(app.screen.container.querySelector("[data-layout-tab-add]")).not.toBeNull();
+    });
+    await app.router.navigate({ to: "/tasks", search: {} as never });
+    await vi.waitFor(() => {
+      expect(app.screen.container.querySelector('[data-layout-page-tab="tasks"]')).not.toBeNull();
+    });
+    expect(selectFocusedTab(useLayoutStore.getState().layout)?.content.kind).toBe("tasks");
+    expect(app.screen.container.querySelector("[data-layout-chat-tab]")).not.toBeNull();
   },
   APP_BOOT_TEST_TIMEOUT_MS,
 );
