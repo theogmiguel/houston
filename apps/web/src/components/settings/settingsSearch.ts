@@ -121,8 +121,7 @@ export const SETTINGS_SECTION_DESCRIPTIONS: Readonly<Record<SettingsPath, string
   "/settings/keybindings": "Keyboard shortcuts for commands.",
   "/settings/snap-shot": "Capture shortcut and what a SnapShot includes.",
   "/settings/providers": "Agent providers, their health and usage limits.",
-  "/settings/usage":
-    "What your Claude Code and Codex sessions on this machine would cost at API prices. Read locally; nothing is sent anywhere.",
+  "/settings/usage": "What your agent sessions would cost at API prices, read locally.",
   "/settings/threads": "Default model, permissions and what happens when limits hit.",
   "/settings/browser": "Agent browser access, profiles and recording.",
   "/settings/devices": "Devices that agents can drive.",
