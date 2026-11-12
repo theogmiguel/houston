@@ -36,7 +36,7 @@ export function ThreadChatSurface({
   readonly hostTerminalRef?: ScopedThreadRef | null | undefined;
   readonly phoneShell?: boolean | undefined;
 }) {
-  const { focused, visible } = useLayoutPane();
+  const { focused, visible, tabId } = useLayoutPane();
   const shared = {
     embedded: true as const,
     shortcutsAtWindow: focused,
@@ -50,6 +50,8 @@ export function ThreadChatSurface({
     ...(detailsOpen === undefined ? {} : { detailsOpen }),
     ...(onDetailsOpenChange === undefined ? {} : { onDetailsOpenChange }),
     phoneShell: phoneShell ?? false,
+    // A layout pane's chat carries its own header; the grid cell and the phone shell draw theirs.
+    paneHeader: tabId !== null && phoneShell !== true,
   };
   return draftId === undefined ? (
     <ChatView {...shared} routeKind="server" />

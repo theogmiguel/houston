@@ -444,6 +444,8 @@ type ChatViewProps =
       headerLayoutControls?: ChatHeaderLayoutControls | undefined;
       /** The phone thread page already reserves the bottom safe area around the cell. */
       phoneShell?: boolean;
+      /** A layout pane's chat: the pane's tab bar owns the window chrome, the chat keeps its header. */
+      paneHeader?: boolean;
       routeKind: "server";
       draftId?: never;
     }
@@ -477,6 +479,8 @@ type ChatViewProps =
       headerLayoutControls?: ChatHeaderLayoutControls | undefined;
       /** The phone thread page already reserves the bottom safe area around the cell. */
       phoneShell?: boolean;
+      /** A layout pane's chat: the pane's tab bar owns the window chrome, the chat keeps its header. */
+      paneHeader?: boolean;
       routeKind: "draft";
       draftId: DraftId;
     };
@@ -518,6 +522,7 @@ export default function ChatView(props: ChatViewProps) {
   const onDetailsOpenChange = props.onDetailsOpenChange;
   const hostTerminalRef = props.hostTerminalRef ?? null;
   const headerLayoutControls = props.headerLayoutControls;
+  const paneHeader = props.paneHeader === true;
   const allowInlineDetails =
     paneDensity === undefined || paneDensity === "solo" || paneDensity === "comfortable";
   // A comfortable grid pane is too narrow for the chat lane and the card side by side, but
@@ -3523,30 +3528,32 @@ export default function ChatView(props: ChatViewProps) {
       >
         {/* A grid cell carries its own title and actions, so the route header would
             duplicate them and its drag region would fight the window controls. */}
-        {embedded || rightPanelMaximized ? null : (
+        {(embedded && !paneHeader) || rightPanelMaximized ? null : (
           <header
             ref={threadPanelPopoverAnchorRef}
             data-chat-header
-            data-drag-region="deep"
+            {...(paneHeader ? {} : { "data-drag-region": "deep" })}
             className={cn(
               "relative bg-background",
-              isDesktopHost
-                ? cn(
-                    "drag-region flex h-(--workspace-topbar-height) min-h-(--workspace-topbar-height) shrink-0 items-center",
-                    rightPanelOpen ? "pl-3 sm:pl-5 pr-0" : "px-3 sm:px-5",
-                    !inlineRightPanelOwnsTitleBar &&
-                      "custom-chrome:pr-(--workspace-native-controls-inset)",
-                    reserveTitleBarControlInset &&
+              paneHeader
+                ? "flex h-(--workspace-topbar-height) min-h-(--workspace-topbar-height) shrink-0 items-center px-3 sm:px-5"
+                : isDesktopHost
+                  ? cn(
+                      "drag-region flex h-(--workspace-topbar-height) min-h-(--workspace-topbar-height) shrink-0 items-center",
+                      rightPanelOpen ? "pl-3 sm:pl-5 pr-0" : "px-3 sm:px-5",
                       !inlineRightPanelOwnsTitleBar &&
-                      "wco:pr-(--workspace-native-controls-inset)",
-                  )
-                : cn(
-                    "flex h-(--workspace-topbar-height) min-h-(--workspace-topbar-height) shrink-0 items-center pl-(--workspace-gutter-start)",
-                    rightPanelOpen ? "pr-0" : "pr-(--workspace-gutter-end)",
-                    !inlineRightPanelOwnsTitleBar &&
-                      "custom-chrome:pr-(--workspace-native-controls-inset)",
-                  ),
-              COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
+                        "custom-chrome:pr-(--workspace-native-controls-inset)",
+                      reserveTitleBarControlInset &&
+                        !inlineRightPanelOwnsTitleBar &&
+                        "wco:pr-(--workspace-native-controls-inset)",
+                    )
+                  : cn(
+                      "flex h-(--workspace-topbar-height) min-h-(--workspace-topbar-height) shrink-0 items-center pl-(--workspace-gutter-start)",
+                      rightPanelOpen ? "pr-0" : "pr-(--workspace-gutter-end)",
+                      !inlineRightPanelOwnsTitleBar &&
+                        "custom-chrome:pr-(--workspace-native-controls-inset)",
+                    ),
+              !paneHeader && COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
             )}
           >
             <ChatHeader
