@@ -2815,11 +2815,11 @@ code {
 }
 
 @layer components {
-  .chat-lane-probe {
+  [data-chat-lane-probe] {
     padding-inline-start: 1rem;
   }
   @container chat-canvas (min-width: 640px) {
-    .chat-lane-probe {
+    [data-chat-lane-probe] {
       padding-inline-start: var(--chat-lane-gutter, 3rem);
     }
   }

@@ -20,6 +20,7 @@ import { PhonePageBar } from "../../mobile/PhonePageBar";
 import { PullRequestCompactFilterMenu } from "./PullRequestCompactFilterMenu";
 import type { PullRequestFilterOption } from "./PullRequestListFilters";
 import { INVOLVEMENT_TABS, STATE_TABS } from "./pullRequestListOptions";
+import { ScrollRow } from "../ui/scroll-row";
 
 export function PullRequestsColumn({
   refreshing,
@@ -163,10 +164,7 @@ export function PullRequestsColumn({
           {viewToggle}
           <div className="min-w-0 flex-1" />
           {view === "requests" ? (
-            <div
-              ref={searchRootRef}
-              className="scrollbar-hidden flex min-w-0 shrink items-center gap-1 overflow-x-auto"
-            >
+            <ScrollRow ref={searchRootRef}>
               <PullRequestCompactFilterMenu
                 label="Filter by state"
                 value={state}
@@ -177,7 +175,7 @@ export function PullRequestsColumn({
               {filtersMenu}
               <div className="w-56 min-w-24 shrink">{searchInput}</div>
               <PullRequestRefreshControl compact refreshing={refreshing} onRefresh={onRefresh} />
-            </div>
+            </ScrollRow>
           ) : null}
           {rightPanelControl}
         </WorkspacePageHeader>
