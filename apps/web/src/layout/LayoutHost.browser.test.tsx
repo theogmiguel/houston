@@ -171,12 +171,15 @@ describe("LayoutHost", () => {
     useLayoutStore.getState().focusWorkspace("w1");
     await expect.element(page.getByTestId("chat-t2")).toBeVisible();
     await expect.element(page.getByTestId("chat-t3")).toBeVisible();
-    expect(
-      page
-        .getByTestId("chat-t1")
-        .element()
-        .closest("[data-layout-pane-body]")
-        ?.hasAttribute("inert"),
-    ).toBe(true);
+    // Mid-switch both workspaces are drawn; once it lands the first one's body is hidden.
+    await expect
+      .poll(() =>
+        page
+          .getByTestId("chat-t1")
+          .element()
+          .closest("[data-layout-pane-body]")
+          ?.hasAttribute("inert"),
+      )
+      .toBe(true);
   });
 });
