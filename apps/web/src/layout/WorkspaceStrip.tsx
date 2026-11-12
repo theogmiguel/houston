@@ -508,9 +508,11 @@ export function LayoutWorkspaceStrip({
         if (tabId === null || !unseenTabIds.has(tabId)) continue;
         const start = slot.rect.left * stripPx;
         const end = start + slot.rect.width * stripPx;
-        if (end <= viewLeft + 1) left ??= tabId;
-        else if (start >= viewRight - 1) right ??= tabId;
-        else seen.push(tabId);
+        if (end <= viewLeft + 1) {
+          if (left === null) left = tabId;
+        } else if (start >= viewRight - 1) {
+          if (right === null) right = tabId;
+        } else seen.push(tabId);
       }
       if (seen.length > 0) useLayoutStore.getState().markTabsSeen(seen);
       setPeeks((current) =>
