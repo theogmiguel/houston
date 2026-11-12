@@ -1260,9 +1260,9 @@ body {
 [data-theme="graphite"] {
   color-scheme: dark;
   /* Houston's Graphite palette: three planes from dark to light. Chrome (rail, top bar,
-     pane gutter) sits below the canvas, and cards, the composer and popovers take the
-     raised tier. */
-  --rail: #111113;
+     pane gutter) sits well below the canvas so a pane card and its tabs read against it, and
+     cards, the composer and popovers take the raised tier. */
+  --rail: #08080a;
   --content: #18181b;
   --card: #1f1f23;
   --raised: #1f1f23;

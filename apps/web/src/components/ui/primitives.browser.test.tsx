@@ -108,7 +108,7 @@ describe("Houston primitives", () => {
       "--composer": "#ffffff",
     };
     const graphite = {
-      "--rail": "#111113",
+      "--rail": "#08080a",
       "--content": "#18181b",
       "--card": "#1f1f23",
       "--raised": "#1f1f23",

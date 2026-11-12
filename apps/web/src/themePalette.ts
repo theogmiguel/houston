@@ -421,8 +421,8 @@ const STANDARD_WEB_THEME_COLORS: Record<ThemeAppearance, Partial<ThemeColors>> =
   },
   dark: {
     canvas: "#18181b",
-    chrome: "#111113",
-    toolbar: "#111113",
+    chrome: "#08080a",
+    toolbar: "#08080a",
     surface: "#1f1f23",
     surfaceRaised: "#1f1f23",
     surfaceOverlay: "#1f1f23",
