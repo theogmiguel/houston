@@ -154,11 +154,8 @@ describe("focus", () => {
     const surface = (id: string) =>
       frameOf(screen.container, id).querySelector<HTMLElement>("[data-layout-pane-surface]")!;
     expect(surface("w0c0p0").hasAttribute("data-focused")).toBe(true);
-    // The focus edge never runs along the top, where it would cut the active tab from the card.
-    const edge = surface("w0c0p0").querySelector<HTMLElement>("[data-layout-focus-edge]")!;
-    expect(edge).not.toBeNull();
-    expect(getComputedStyle(edge).borderTopWidth).toBe("0px");
-    expect(getComputedStyle(edge).borderLeftWidth).toBe("1px");
+    // The focused pane draws no frame: its cue is the quieter labels of the others.
+    expect(surface("w0c0p0").querySelector("[data-layout-focus-edge]")).toBeNull();
     expect(surface("w0c1p0").querySelector("[data-layout-focus-edge]")).toBeNull();
     expect(surface("w0c1p0").hasAttribute("data-focused")).toBe(false);
     const body = screen.container.querySelector("[data-body='b']")!;
@@ -167,6 +164,35 @@ describe("focus", () => {
     expect(selectFocusedPane(useLayoutStore.getState().layout)?.id).toBe("w0c1p0");
     expect(surface("w0c1p0").hasAttribute("data-focused")).toBe(true);
     expect(surface("w0c0p0").hasAttribute("data-focused")).toBe(false);
+  });
+
+  it("drops every tab label one tier in an unfocused pane, and nothing in a lone pane", async () => {
+    using _layout = openLayout([[[["a", "b"]], [["c", "d"]]]]);
+    await using screen = await render(<Harness />, { router: false });
+    const probe = document.createElement("span");
+    screen.container.append(probe);
+    const resolve = (cls: string) => {
+      probe.className = cls;
+      return getComputedStyle(probe).color;
+    };
+    const tabIn = (paneId: string, active: boolean) =>
+      frameOf(screen.container, paneId).querySelector<HTMLElement>(
+        `[data-layout-pane-tab]${active ? "[data-active]" : ":not([data-active])"}`,
+      )!;
+    const focusedActive = getComputedStyle(tabIn("w0c0p0", true)).color;
+    const focusedInactive = getComputedStyle(tabIn("w0c0p0", false)).color;
+    const dimmedActive = getComputedStyle(tabIn("w0c1p0", true)).color;
+    const dimmedInactive = getComputedStyle(tabIn("w0c1p0", false)).color;
+    expect(focusedActive).toBe(resolve("text-foreground"));
+    expect(focusedInactive).toBe(resolve("text-muted-foreground"));
+    expect(dimmedActive).toBe(resolve("text-muted-foreground"));
+    expect(dimmedInactive).toBe(resolve("text-muted-foreground/70"));
+  });
+
+  it("dims nothing in a lone pane", async () => {
+    using _layout = openLayout([[[["a", "b"]]]]);
+    await using screen = await render(<Harness />, { router: false });
+    expect(screen.container.querySelector("[data-pane-dimmed]")).toBeNull();
   });
 
   it("tells a tab's content whether its pane is focused", async () => {

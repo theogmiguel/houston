@@ -26,9 +26,9 @@ export function LayoutPaneFrame({
   children,
   ...props
 }: HTMLAttributes<HTMLDivElement> & {
-  /** Several panes share the strip and this one holds focus: its card takes a faint accent edge on the sides and bottom. */
+  /** The pane holds keyboard focus; marked on the surface for behaviour and tests, not drawn. */
   focused: boolean;
-  /** Several panes share the strip and another holds focus: this pane's active tab title is quieter. */
+  /** Several panes share the strip and another holds focus: every tab label in this pane drops one tier. */
   dimmed?: boolean;
   bar: ReactNode;
   /** The active tab is the bar's first: the surface's top-start corner meets it square. */
@@ -45,15 +45,6 @@ export function LayoutPaneFrame({
       )}
     >
       {children}
-      {focused ? (
-        // The sides and bottom only, fading in from the top: a line along the top edge would run
-        // under the active tab and split it from the card.
-        <span
-          aria-hidden
-          data-layout-focus-edge=""
-          className="pointer-events-none absolute inset-0 z-30 rounded-[inherit] border border-t-0 border-(--accent-ink)/25 mask-[linear-gradient(to_bottom,transparent,black_24px)]"
-        />
-      ) : null}
     </div>
   );
   return (
@@ -229,7 +220,7 @@ export function LayoutTabShell({
         "h-8 self-end",
         active
           ? "rounded-t-(--r-group) bg-(--pane) font-medium text-foreground group-data-[pane-dimmed]/pane:text-muted-foreground"
-          : "rounded-(--r-ctl) text-muted-foreground hover:text-foreground",
+          : "rounded-(--r-ctl) text-muted-foreground hover:text-foreground group-data-[pane-dimmed]/pane:text-muted-foreground/70 group-data-[pane-dimmed]/pane:hover:text-foreground",
         ghost && "italic",
         className,
       )}
