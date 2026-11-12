@@ -13,7 +13,13 @@ export type MotionConfig =
   | ({ readonly kind: "spring" } & SpringParams)
   | { readonly kind: "easing"; readonly durationMs: number; readonly curve: MotionCurve };
 
-export type MotionName = "grid-cell-movement" | "grid-cell-enter" | "grid-cell-maximize";
+export type MotionName =
+  | "grid-cell-movement"
+  | "grid-cell-enter"
+  | "grid-cell-maximize"
+  | "horizontal-view-movement"
+  | "workspace-switch"
+  | "overview-open-close";
 
 /**
  * The CSS motion roles in index.css (`--motion-*`), for animations driven from script.
@@ -63,6 +69,11 @@ const MOTION_DEFAULTS: Readonly<Record<MotionName, MotionConfig>> = {
   "grid-cell-movement": GRID_CELL_SPRING,
   "grid-cell-enter": GRID_CELL_SPRING,
   "grid-cell-maximize": GRID_CELL_SPRING,
+  // The layout's camera, workspace stack and overview zoom share the grid's spring, so every
+  // movement of the window settles with one feel.
+  "horizontal-view-movement": GRID_CELL_SPRING,
+  "workspace-switch": GRID_CELL_SPRING,
+  "overview-open-close": GRID_CELL_SPRING,
 };
 
 interface MotionSettings {

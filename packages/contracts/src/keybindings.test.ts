@@ -2,7 +2,12 @@ import { assert, it } from "@effect/vitest";
 import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 
-import { ResolvedKeybindingsConfig } from "./keybindings.ts";
+import {
+  KeybindingRule,
+  LAYOUT_KEYBINDING_COMMANDS,
+  ResolvedKeybindingsConfig,
+  STATIC_KEYBINDING_COMMANDS,
+} from "./keybindings.ts";
 
 const decode = <S extends Schema.Top>(
   schema: S,
@@ -50,3 +55,26 @@ it.effect("drops malformed resolved rule entries", () =>
     );
   }),
 );
+
+it.effect("accepts every layout command as a keybinding rule", () =>
+  Effect.gen(function* () {
+    for (const command of LAYOUT_KEYBINDING_COMMANDS) {
+      const rule = yield* decode(KeybindingRule, { key: "mod+alt+x", command });
+      assert.strictEqual(rule.command, command);
+    }
+  }),
+);
+
+it.effect("rejects a layout command the contract does not declare", () =>
+  Effect.gen(function* () {
+    const result = yield* Effect.exit(
+      decode(KeybindingRule, { key: "mod+alt+x", command: "layout.unknown" }),
+    );
+    assert.strictEqual(result._tag, "Failure");
+  }),
+);
+
+it("lists the layout commands once in the static command list", () => {
+  const listed = STATIC_KEYBINDING_COMMANDS.filter((command) => command.startsWith("layout."));
+  assert.deepEqual([...listed].toSorted(), [...LAYOUT_KEYBINDING_COMMANDS].toSorted());
+});

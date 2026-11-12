@@ -9,6 +9,7 @@ import * as Schema from "effect/Schema";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
+import type { DraftId } from "./composerDraftStore";
 import { resolveStorage } from "./lib/storage";
 import { randomUUID } from "./lib/utils";
 import { type RightPanelSurface } from "./rightPanelStore";
@@ -19,7 +20,15 @@ export type ClosedView =
       threadRef: ScopedThreadRef;
       surface: Exclude<RightPanelSurface, { kind: "terminal" }>;
     }
-  | { kind: "browser"; threadRef: ScopedThreadRef; snapshot: PreviewSessionSnapshot };
+  | { kind: "browser"; threadRef: ScopedThreadRef; snapshot: PreviewSessionSnapshot }
+  | {
+      kind: "chat";
+      threadRef: ScopedThreadRef;
+      draftId?: DraftId;
+      /** The pane the tab sat in and its position there, so a reopen puts it back. */
+      paneId: string;
+      index: number;
+    };
 
 export type ClosedViewEntry = ClosedView & { id: string };
 
@@ -42,11 +51,19 @@ const sameTarget = (entry: ClosedViewEntry, view: ClosedView): boolean => {
       return view.kind === "panel-tab" && entry.surface.id === view.surface.id;
     case "browser":
       return view.kind === "browser" && entry.snapshot.tabId === view.snapshot.tabId;
+    case "chat":
+      return view.kind === "chat" && entry.draftId === view.draftId;
   }
 };
 
+/**
+ * Closed chats stay in memory: they point at pane ids of the layout the server holds, which a
+ * reload can replace, and incognito browsers never leave the session.
+ */
 const isPersistentView = (entry: ClosedViewEntry) =>
-  entry.kind !== "browser" || entry.snapshot.profileId !== INCOGNITO_BROWSER_PROFILE_ID;
+  entry.kind === "chat"
+    ? false
+    : entry.kind !== "browser" || entry.snapshot.profileId !== INCOGNITO_BROWSER_PROFILE_ID;
 
 const isThreadRef = Schema.is(ScopedThreadRef);
 const isSnapshot = Schema.is(PreviewSessionSnapshot);

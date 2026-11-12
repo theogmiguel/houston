@@ -787,6 +787,90 @@ describe("resolveShortcutCommand", () => {
   });
 });
 
+describe("layout shortcuts", () => {
+  const resolve = (
+    input: ShortcutEventLike,
+    platform: string,
+    context: Partial<Record<string, boolean>> = {},
+  ) =>
+    resolveShortcutCommand(input, DEFAULT_RESOLVED_KEYBINDINGS, {
+      platform,
+      context: { isDesktop: false, ...context } as never,
+    });
+
+  it("focuses with alt+cmd+arrow on macOS and alt+shift+arrow elsewhere", () => {
+    assert.strictEqual(
+      resolve(event({ key: "ArrowLeft", metaKey: true, altKey: true }), "MacIntel"),
+      "layout.focusLeft",
+    );
+    assert.strictEqual(
+      resolve(event({ key: "ArrowRight", altKey: true, shiftKey: true }), "Linux x86_64"),
+      "layout.focusRight",
+    );
+    assert.isNull(resolve(event({ key: "ArrowRight", altKey: true, shiftKey: true }), "MacIntel"));
+  });
+
+  it("moves with ctrl+alt+cmd+arrow on macOS and ctrl+alt+shift+arrow elsewhere", () => {
+    assert.strictEqual(
+      resolve(
+        event({ key: "ArrowUp", metaKey: true, ctrlKey: true, altKey: true }),
+        "MacIntel",
+      ),
+      "layout.moveUp",
+    );
+    assert.strictEqual(
+      resolve(event({ key: "ArrowDown", ctrlKey: true, altKey: true, shiftKey: true }), "Win32"),
+      "layout.moveDown",
+    );
+  });
+
+  it("repeats the arrows on h j k l only in the macOS desktop app", () => {
+    const h = event({ key: "h", code: "KeyH", metaKey: true, altKey: true });
+    assert.isNull(resolve(h, "MacIntel", { isDesktop: false }));
+    assert.strictEqual(resolve(h, "MacIntel", { isDesktop: true }), "layout.focusLeft");
+    const ctrlH = event({ key: "h", code: "KeyH", metaKey: true, ctrlKey: true, altKey: true });
+    assert.strictEqual(resolve(ctrlH, "MacIntel", { isDesktop: true }), "layout.moveLeft");
+    const linuxH = event({ key: "h", code: "KeyH", ctrlKey: true, altKey: true });
+    assert.isNull(resolve(linuxH, "Linux x86_64", { isDesktop: true }));
+  });
+
+  it("splits right with mod+\\ outside a terminal and leaves the terminal its own keys", () => {
+    const split = event({ key: "\\", code: "Backslash", ctrlKey: true });
+    assert.strictEqual(resolve(split, "Linux x86_64"), "layout.splitRight");
+    assert.isNull(resolve(split, "Linux x86_64", { terminalFocus: true }));
+  });
+
+  it("opens the overview and the shortcut sheet", () => {
+    assert.strictEqual(
+      resolve(event({ key: "o", code: "KeyO", ctrlKey: true, altKey: true }), "Linux x86_64"),
+      "layout.overview",
+    );
+    assert.strictEqual(
+      resolve(event({ key: "/", code: "Slash", ctrlKey: true }), "Linux x86_64"),
+      "layout.shortcutSheet",
+    );
+  });
+
+  it("reorders workspaces only on macOS: elsewhere ctrl+alt+shift+u sends the pane", () => {
+    const u = event({ key: "u", code: "KeyU", altKey: true, shiftKey: true });
+    assert.strictEqual(
+      resolve({ ...u, metaKey: true }, "MacIntel"),
+      "layout.moveWorkspaceDown",
+    );
+    assert.strictEqual(
+      resolve({ ...u, ctrlKey: true }, "Linux x86_64"),
+      "layout.moveToWorkspaceDown",
+    );
+  });
+
+  it("labels a layout command with its chord for the palette", () => {
+    assert.strictEqual(
+      shortcutLabelForCommand(DEFAULT_RESOLVED_KEYBINDINGS, "layout.overview", "MacIntel"),
+      "⌥⌘O",
+    );
+  });
+});
+
 describe("isRichTextBoldShortcut", () => {
   const selected = { isCollapsed: false };
 

@@ -37,6 +37,8 @@ export interface ShortcutMatchContext {
   gridRoute?: boolean;
   isWeb: boolean;
   isDesktop: boolean;
+  /** macOS, where mod is Cmd. Derived from the platform unless the context gives it. */
+  isMac?: boolean;
   editableFocus?: boolean;
   /** An inline composer menu owns Escape while it is open. */
   composerMenuOpen?: boolean;
@@ -70,6 +72,7 @@ function resolveContext(options: ShortcutMatchOptions | undefined): ShortcutMatc
     previewOpen: false,
     isWeb: !isDesktopHost,
     isDesktop: isDesktopHost,
+    isMac: isMacPlatform(resolvePlatform(options)),
     editableFocus: false,
     ...options?.context,
   };

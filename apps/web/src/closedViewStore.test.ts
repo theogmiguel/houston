@@ -132,4 +132,28 @@ describe("closedViewStore", () => {
     expect(saved).not.toContain("private.example");
     expect(saved).not.toContain("Private page");
   });
+
+  it("replaces a closed chat of the same draft and keeps chats out of persisted state", () => {
+    const chat = (paneId: string, draftId?: string) =>
+      ({
+        kind: "chat",
+        threadRef: refA,
+        paneId,
+        index: 0,
+        ...(draftId ? { draftId: draftId as never } : {}),
+      }) as const;
+    const store = useClosedViewStore.getState();
+    store.remember(chat("pane-1"));
+    store.remember(chat("pane-2"));
+    store.remember(chat("pane-3", "draft-1"));
+    expect(useClosedViewStore.getState().entries.map((entry) => entry.kind)).toEqual([
+      "chat",
+      "chat",
+    ]);
+    expect(useClosedViewStore.getState().entries[1]).toMatchObject({ paneId: "pane-2" });
+    const persisted = useClosedViewStore.persist.getOptions().partialize?.(
+      useClosedViewStore.getState(),
+    );
+    expect(persisted).toEqual({ entries: [] });
+  });
 });
