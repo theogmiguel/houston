@@ -541,6 +541,7 @@ export function LayoutWorkspaceStrip({
       trailingEdge:
         edges.trailing === null ? !entry.slot.hasRight : edges.trailing === entry.pane.id,
       focused: active && entry.pane.id === focusedPaneId,
+      related: false,
       visible: active,
     };
   };
@@ -646,6 +647,7 @@ export function LayoutWorkspaceStrip({
                   leadingEdge: true,
                   trailingEdge: true,
                   focused: row.own && active,
+                  related: false,
                   visible: true,
                 }}
               >
