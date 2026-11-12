@@ -68,7 +68,7 @@ function MenuPopup({
           data-slot="menu-popup"
           {...props}
         >
-          <div className="max-h-(--available-height) w-full overflow-y-auto p-1">{children}</div>
+          <div className="max-h-(--available-height) w-full overflow-y-auto p-1.5">{children}</div>
         </MenuPrimitive.Popup>
       </MenuPrimitive.Positioner>
     </MenuPrimitive.Portal>
@@ -131,12 +131,12 @@ function MenuItem({
   return (
     <MenuPrimitive.Item
       className={cn(
-        "[&>svg]:-mx-0.5 flex min-h-7 cursor-pointer select-none items-center gap-2 rounded-[var(--r-ctl)] px-2 text-[13px] text-foreground outline-none data-disabled:pointer-events-none data-disabled:cursor-not-allowed data-highlighted:bg-[var(--sel)] data-inset:ps-8 data-[variant=destructive]:text-destructive-foreground data-highlighted:text-hover-foreground data-disabled:opacity-64 [&>svg:not([class*='opacity-'])]:opacity-80 [&>svg:not([class*='size-'])]:size-4 [&>svg:not([class*='text-'])]:text-muted-foreground data-[variant=destructive]:[&>svg:not([class*='text-'])]:text-current [&>svg]:pointer-events-none [&>svg]:shrink-0 [&>[data-slot=glyph-box]]:-mx-0.5 [&>[data-slot=glyph-box]]:pointer-events-none [&>[data-slot=glyph-box]:not([class*='opacity-'])]:opacity-80 [&>[data-slot=glyph-box]:not([class*='text-'])]:text-muted-foreground data-[variant=destructive]:[&>[data-slot=glyph-box]:not([class*='text-'])]:text-current [&>[data-slot=glyph-box]>svg:not([class*='size-'])]:size-4",
+        "[&>svg]:-mx-0.5 flex min-h-8 cursor-pointer select-none items-center gap-2.5 rounded-[var(--r-selection)] px-2.5 text-[13px] text-foreground outline-none data-disabled:pointer-events-none data-disabled:cursor-not-allowed data-highlighted:bg-[var(--sel)] data-inset:ps-9 data-[variant=destructive]:text-destructive-foreground data-highlighted:text-hover-foreground data-disabled:opacity-64 [&>svg:not([class*='opacity-'])]:opacity-80 [&>svg:not([class*='size-'])]:size-4 [&>svg:not([class*='text-'])]:text-muted-foreground data-[variant=destructive]:[&>svg:not([class*='text-'])]:text-current [&>svg]:pointer-events-none [&>svg]:shrink-0 [&>[data-slot=glyph-box]]:-mx-0.5 [&>[data-slot=glyph-box]]:pointer-events-none [&>[data-slot=glyph-box]:not([class*='opacity-'])]:opacity-80 [&>[data-slot=glyph-box]:not([class*='text-'])]:text-muted-foreground data-[variant=destructive]:[&>[data-slot=glyph-box]:not([class*='text-'])]:text-current [&>[data-slot=glyph-box]>svg:not([class*='size-'])]:size-4",
         variant === "ghost" &&
           buttonVariants({
             variant: "ghost",
             size: "compact",
-            className: "h-auto min-h-7 w-full text-xs",
+            className: "h-auto min-h-8 w-full text-xs",
           }),
         density === "touch" && "min-h-10 sm:min-h-10",
         className,
@@ -187,9 +187,9 @@ function MenuCheckboxItem({
     <MenuPrimitive.CheckboxItem
       checked={checked}
       className={cn(
-        "grid min-h-7 in-data-[side=none]:min-w-[calc(var(--anchor-width)+1.25rem)] cursor-pointer items-center gap-2 rounded-[var(--r-ctl)] ps-2 text-[13px] text-foreground outline-none data-disabled:pointer-events-none data-disabled:cursor-not-allowed data-highlighted:bg-[var(--sel)] data-highlighted:text-hover-foreground data-disabled:opacity-64 [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+        "grid min-h-8 in-data-[side=none]:min-w-[calc(var(--anchor-width)+1.25rem)] cursor-pointer items-center gap-2.5 rounded-[var(--r-selection)] ps-2.5 text-[13px] text-foreground outline-none data-disabled:pointer-events-none data-disabled:cursor-not-allowed data-highlighted:bg-[var(--sel)] data-highlighted:text-hover-foreground data-disabled:opacity-64 [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
         variant === "switch"
-          ? "grid-cols-[1fr_auto] gap-4 pe-1.5"
+          ? "grid-cols-[1fr_auto] gap-4 pe-2"
           : "grid-cols-[1rem_minmax(0,1fr)] pe-4",
         variant === "icon" && "grid-cols-[0.625rem_minmax(0,1fr)]",
         className,
@@ -249,7 +249,7 @@ function MenuRadioItem({
   return (
     <MenuPrimitive.RadioItem
       className={cn(
-        "[&_svg]:-mx-0.5 flex min-h-7 in-data-[side=none]:min-w-[calc(var(--anchor-width)+1.25rem)] cursor-pointer items-center rounded-[var(--r-ctl)] px-2 text-[13px] text-foreground outline-none data-checked:bg-[var(--sel)] data-disabled:pointer-events-none data-disabled:cursor-not-allowed data-highlighted:bg-[var(--sel)] data-highlighted:text-hover-foreground data-disabled:opacity-64 [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+        "[&_svg]:-mx-0.5 flex min-h-8 in-data-[side=none]:min-w-[calc(var(--anchor-width)+1.25rem)] cursor-pointer items-center rounded-[var(--r-selection)] px-2.5 text-[13px] text-foreground outline-none data-checked:bg-[var(--sel)] data-disabled:pointer-events-none data-disabled:cursor-not-allowed data-highlighted:bg-[var(--sel)] data-highlighted:text-hover-foreground data-disabled:opacity-64 [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
         className,
       )}
       data-slot="menu-radio-item"
@@ -287,7 +287,7 @@ function MenuGroupLabel({
   return (
     <MenuPrimitive.GroupLabel
       className={cn(
-        "px-2 py-1.5 font-semibold text-[11px] text-muted-foreground data-inset:ps-9 sm:data-inset:ps-8",
+        "px-2.5 pt-2 pb-1 font-medium text-xs text-muted-foreground data-inset:ps-9",
         className,
       )}
       data-inset={inset}
@@ -300,7 +300,7 @@ function MenuGroupLabel({
 function MenuSeparator({ className, ...props }: MenuPrimitive.Separator.Props) {
   return (
     <MenuPrimitive.Separator
-      className={cn("mx-2 my-1 h-px bg-border", className)}
+      className={cn("mx-2.5 my-1.5 h-px bg-border", className)}
       data-slot="menu-separator"
       {...props}
     />
@@ -361,7 +361,7 @@ function MenuSubTrigger({
     <MenuPrimitive.SubmenuTrigger
       className={cn(
         // Exclude the last SVG so leading-icon margin rules cannot remove the chevron's ms-auto alignment.
-        "[&>svg:not(:last-child)]:-mx-0.5 flex min-h-7 cursor-pointer items-center gap-2 rounded-[var(--r-ctl)] px-2 text-[13px] text-foreground outline-none data-disabled:cursor-not-allowed data-disabled:pointer-events-none data-highlighted:bg-[var(--sel)] data-popup-open:bg-[var(--sel)] data-inset:ps-8 data-highlighted:text-hover-foreground data-popup-open:text-hover-foreground data-disabled:opacity-64 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground [&>svg:not(:last-child):not([class*='opacity-'])]:opacity-80 [&_svg]:pointer-events-none [&>svg]:shrink-0",
+        "[&>svg:not(:last-child)]:-mx-0.5 flex min-h-8 cursor-pointer items-center gap-2.5 rounded-[var(--r-selection)] px-2.5 text-[13px] text-foreground outline-none data-disabled:cursor-not-allowed data-disabled:pointer-events-none data-highlighted:bg-[var(--sel)] data-popup-open:bg-[var(--sel)] data-inset:ps-9 data-highlighted:text-hover-foreground data-popup-open:text-hover-foreground data-disabled:opacity-64 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground [&>svg:not(:last-child):not([class*='opacity-'])]:opacity-80 [&_svg]:pointer-events-none [&>svg]:shrink-0",
         density === "touch" && "min-h-10 sm:min-h-10",
         className,
       )}
