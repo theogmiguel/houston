@@ -344,7 +344,7 @@ function LinkEnvironmentAction({ environmentId }: { readonly environmentId: Envi
             <LinkAccessPicker value={access} onChange={setAccess} disabled={busy} />
           </form>
         </DialogPanel>
-        <DialogFooter variant="bare">
+        <DialogFooter>
           <DialogClose disabled={busy} render={<Button variant="outline" type="button" />}>
             Cancel
           </DialogClose>

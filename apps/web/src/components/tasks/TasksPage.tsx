@@ -181,7 +181,7 @@ function NewProjectDialog({
             </div>
           </div>
         </DialogPanel>
-        <DialogFooter variant="bare">
+        <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>

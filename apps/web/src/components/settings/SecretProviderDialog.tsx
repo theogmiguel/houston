@@ -137,7 +137,7 @@ export function SecretProviderDialog({
             </div>
           </form>
         </DialogPanel>
-        <DialogFooter variant="bare">
+        <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>

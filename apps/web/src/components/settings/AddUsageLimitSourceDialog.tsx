@@ -115,7 +115,7 @@ export function AddUsageLimitSourceDialog({
             </div>
           </form>
         </DialogPanel>
-        <DialogFooter variant="bare">
+        <DialogFooter>
           <Button
             variant="outline"
             onClick={() => {

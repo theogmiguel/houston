@@ -327,7 +327,7 @@ function TaskEditorForm({
           )}
         </div>
       </DialogPanel>
-      <DialogFooter variant="bare">
+      <DialogFooter>
         <Button type="button" variant="outline" onClick={onCancel}>
           Cancel
         </Button>

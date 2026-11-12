@@ -208,7 +208,7 @@ export function MergeQueueHandToThreadDialog({
             </p>
           </div>
         </DialogPanel>
-        <DialogFooter variant="bare">
+        <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
