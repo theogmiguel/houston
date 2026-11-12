@@ -72,7 +72,7 @@ export function PullRequestRowLines({
   title: ReactNode;
   status?: ReactNode;
   signals?: ReactNode;
-  /** The meta line's right end, before the age: the row's status in words. */
+  /** The meta line's right end, before the age, on a wide row; a phone sets it beside the title. */
   trailing?: ReactNode;
   meta?: ReactNode;
   metaClassName?: string;
@@ -80,7 +80,7 @@ export function PullRequestRowLines({
 }) {
   const phone = useIsPhone();
   const updated = updatedAt ? (
-    <span className={cn("shrink-0 whitespace-nowrap tabular-nums", !trailing && "ml-auto")}>
+    <span className={cn("shrink-0 whitespace-nowrap tabular-nums", (phone || !trailing) && "ml-auto")}>
       <RelativeTime timestamp={updatedAt} />
     </span>
   ) : null;
@@ -90,14 +90,15 @@ export function PullRequestRowLines({
           row, and moves the stat onto the meta line. */}
       <span className="flex min-w-0 items-center gap-1.5 max-phone:flex-wrap max-phone:gap-y-1">
         <span className="flex min-w-0 items-center gap-1.5 max-phone:block max-phone:basis-full">
-          <span className="order-2 flex shrink-0 max-phone:order-none">{number}</span>
+          <span className="order-2 flex shrink-0 max-phone:contents">{number}</span>
           <span className="min-w-0 truncate text-sm max-phone:ml-1.5 max-phone:inline max-phone:whitespace-normal max-phone:break-words">
             {title}
           </span>
         </span>
-        {signals ? (
+        {signals || (phone && trailing) ? (
           <span className="flex shrink-0 items-center gap-1 text-2xs max-phone:flex-wrap">
             {signals}
+            {phone ? trailing : null}
           </span>
         ) : null}
         {status && !phone ? (
@@ -114,7 +115,7 @@ export function PullRequestRowLines({
         {phone && status ? (
           <span className="flex shrink-0 items-center gap-1.5">{status}</span>
         ) : null}
-        {trailing ? (
+        {trailing && !phone ? (
           <span className="ml-auto flex shrink-0 items-center gap-1.5">{trailing}</span>
         ) : null}
         {updated}

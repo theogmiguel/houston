@@ -10,6 +10,7 @@ import {
 import { memo, type RefCallback } from "react";
 
 import { cn } from "~/lib/utils";
+import { useIsPhone } from "~/mobile/usePhone";
 import { getSourceControlPresentationForKind } from "~/sourceControlPresentation";
 
 import { Badge } from "../ui/badge";
@@ -111,6 +112,7 @@ function PullRequestRowImpl({
   sweeping?: boolean;
   onCloseSweepStart?: (entry: EnvironmentPullRequestEntry, event: PointerEvent) => void;
 }) {
+  const phone = useIsPhone();
   const { Icon, providerName, terminology } = getSourceControlPresentationForKind(entry.provider);
   return (
     <div
@@ -208,7 +210,7 @@ function PullRequestRowImpl({
                 )
               ) : (
                 <PullRequestChecksPopover
-                  variant="label"
+                  variant={phone ? "icon" : "label"}
                   checksState={entry.checksState}
                   environmentId={entry.environmentId}
                   reference={{
