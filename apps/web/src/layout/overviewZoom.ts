@@ -5,7 +5,6 @@ import {
   overviewZoomedIn,
   type OverviewRow,
   type OverviewStageLayout,
-  type StageBox,
   type StageTransform,
 } from "./overviewStage";
 import { setOverviewPhase, type OverviewPhase } from "./overviewPhase";

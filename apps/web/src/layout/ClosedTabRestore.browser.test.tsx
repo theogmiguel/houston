@@ -1,6 +1,6 @@
 import { scopeThreadRef } from "@houston-app/client-runtime/environment";
 import { EnvironmentId, ThreadId } from "@houston-app/contracts";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import { render } from "../../test/render";
@@ -11,14 +11,20 @@ import { ClosedTabRestoreButton, reopenClosedTab } from "./ClosedTabRestore";
 
 const threadRef = scopeThreadRef(EnvironmentId.make("local"), ThreadId.make("t"));
 
-beforeEach(() => useClosedViewStore.setState({ entries: [] }));
-afterEach(() => {
-  vi.restoreAllMocks();
+/** Puts the stores in a known state for one test and restores them when the test ends. */
+function openSession(): Disposable {
   useClosedViewStore.setState({ entries: [] });
-});
+  return {
+    [Symbol.dispose]() {
+      vi.restoreAllMocks();
+      useClosedViewStore.setState({ entries: [] });
+    },
+  };
+}
 
 describe("ClosedTabRestoreButton", () => {
   it("explains that there is nothing to reopen and does not call the reopen", async () => {
+    using _session = openSession();
     const add = vi.spyOn(toastManager, "add");
     const reopen = vi.fn(() => true);
     await using _screen = await render(<ClosedTabRestoreButton reopen={reopen} />);
@@ -31,6 +37,7 @@ describe("ClosedTabRestoreButton", () => {
   });
 
   it("reopens when a tab was closed", async () => {
+    using _session = openSession();
     useClosedViewStore.getState().remember({
       kind: "panel-tab",
       threadRef,
@@ -47,6 +54,7 @@ describe("ClosedTabRestoreButton", () => {
 
 describe("reopenClosedTab", () => {
   it("reports a reopen that failed, with the reason when it threw", async () => {
+    using _session = openSession();
     useClosedViewStore.getState().remember({
       kind: "panel-tab",
       threadRef,
@@ -54,12 +62,16 @@ describe("reopenClosedTab", () => {
     });
     const add = vi.spyOn(toastManager, "add");
     expect(await reopenClosedTab(() => false)).toBe(false);
-    expect(add).toHaveBeenLastCalledWith(expect.objectContaining({ title: "Could not reopen the tab" }));
+    expect(add).toHaveBeenLastCalledWith(
+      expect.objectContaining({ title: "Could not reopen the tab" }),
+    );
     expect(
       await reopenClosedTab(() => {
         throw new Error("the thread was deleted");
       }),
     ).toBe(false);
-    expect(add).toHaveBeenLastCalledWith(expect.objectContaining({ description: "the thread was deleted" }));
+    expect(add).toHaveBeenLastCalledWith(
+      expect.objectContaining({ description: "the thread was deleted" }),
+    );
   });
 });

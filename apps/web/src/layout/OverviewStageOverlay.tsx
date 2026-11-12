@@ -3,11 +3,18 @@
  * land, and the drop lines while a pane is dragged. Rows are laid out by `overviewStage`; the host
  * mounts this inside the stage element `useOverviewStage` zooms.
  */
-import { PlusIcon } from "lucide-react";
 import { useRef, useState, type CSSProperties, type ReactNode, type Ref } from "react";
 import { createPortal } from "react-dom";
 
-import { cn } from "../lib/utils";
+import {
+  LayoutOverviewDragChip,
+  LayoutOverviewEmptyRow,
+  LayoutOverviewFocusRing,
+  LayoutOverviewInsertBar,
+  LayoutOverviewNewWorkspace,
+  LayoutOverviewPane,
+  LayoutOverviewRoot,
+} from "../components/ui/layout-overlay";
 import { chooseOverviewTab } from "./LayoutOverview";
 import {
   findLayoutTab,
@@ -26,11 +33,7 @@ import {
   requestOverviewOpen,
   type OverviewPhase,
 } from "./overviewPhase";
-import {
-  overviewRowBox,
-  type OverviewRow,
-  type OverviewStageLayout,
-} from "./overviewStage";
+import { overviewRowBox, type OverviewRow, type OverviewStageLayout } from "./overviewStage";
 
 /** Pointer travel before a press on a pane becomes a drag. */
 const DRAG_THRESHOLD = 6;
@@ -130,13 +133,7 @@ export function OverviewStageOverlay({
   const open = phaseNow === "open" || phaseNow === "opening";
   // Unscaled px that show as `px` on screen once zoomed out.
   const px = (value: number) => `calc(${value}px / var(--overview-scale, ${scale}))`;
-  const focusRing = (
-    <div
-      aria-hidden
-      className="pointer-events-none absolute rounded-[var(--r-group)] border-foreground/70"
-      style={{ inset: px(-3), borderWidth: px(1.5) }}
-    />
-  );
+  const focusRing = <LayoutOverviewFocusRing style={{ inset: px(-3), borderWidth: px(1.5) }} />;
 
   const resolveTarget = (
     point: { x: number; y: number },
@@ -252,11 +249,11 @@ export function OverviewStageOverlay({
           ?.index ?? rows.length);
 
   return (
-    <div
+    <LayoutOverviewRoot
       data-layout-overview=""
       role="dialog"
       aria-label="Workspaces overview"
-      className={cn("absolute inset-0", !open && "pointer-events-none")}
+      open={open}
     >
       {rows.map((row) => {
         const focusedRow = row.workspace.id === focusedRowId;
@@ -288,35 +285,26 @@ export function OverviewStageOverlay({
               const focused = open && focusedRow && row.workspace.focusedPaneId === slot.paneId;
               const dragging = drag !== null && tab.id === drag.tabId;
               return (
-                <div
+                <LayoutOverviewPane
                   key={slot.paneId}
                   data-overview-pane={slot.paneId}
                   data-overview-pane-focused={focused ? "true" : undefined}
-                  className={cn(
-                    "absolute cursor-pointer rounded-[var(--r-group)]",
-                    dragging && "bg-background/60",
-                  )}
+                  dragging={dragging}
                   style={paneBox(slot)}
                   onPointerDown={(event) => beginDrag(event, tab)}
                 >
                   {focused ? focusRing : null}
-                </div>
+                </LayoutOverviewPane>
               );
             })}
             {row.workspace.columns.length === 0 && open ? (
               <>
-                <div
-                  aria-hidden
-                              className="pointer-events-none absolute inset-0 rounded-[var(--r-group)] border-dashed border-border"
-                  style={{ borderWidth: px(1) }}
-                />
+                <LayoutOverviewEmptyRow style={{ borderWidth: px(1) }} />
                 {focusedRow ? focusRing : null}
               </>
             ) : null}
             {insertIndex !== null ? (
-              <div
-                aria-hidden
-                          className="pointer-events-none absolute z-10 -translate-x-1/2 rounded-full bg-foreground"
+              <LayoutOverviewInsertBar
                 style={{
                   left: `${(edges[insertIndex] ?? 1) * 100}%`,
                   top: px(-4),
@@ -329,7 +317,7 @@ export function OverviewStageOverlay({
         );
       })}
       {workspaceLineRow !== null ? (
-        <NewWorkspaceLine
+        <LayoutOverviewNewWorkspace
           style={{
             top: `calc(${workspaceLineRow * 100}% + ${workspaceLineRow * gap - gap / 2}px)`,
             transform: `translateY(-50%) scale(calc(1 / var(--overview-scale, ${scale})))`,
@@ -339,7 +327,7 @@ export function OverviewStageOverlay({
       {drag && draggedTab ? (
         <OverviewDragChip ref={chipRef} label={resolveTabLabel(draggedTab)} point={drag.point} />
       ) : null}
-    </div>
+    </LayoutOverviewRoot>
   );
 }
 
@@ -385,26 +373,6 @@ function isUsefulColumnDrop(
   return false;
 }
 
-/**
- * The pen's insert line (kLefu) with its "New workspace" pill (K6fnj), drawn
- * at screen size: `style` places it on the stage and undoes the zoom.
- */
-function NewWorkspaceLine({ style }: { style: CSSProperties }) {
-  return (
-    <div
-      aria-hidden
-      className="pointer-events-none absolute inset-x-0 z-10 flex items-center justify-center"
-      style={style}
-    >
-      <div className="h-1 w-4/5 max-w-175 rounded-full bg-foreground" />
-      <div className="absolute flex h-6.5 items-center gap-1.5 rounded-[var(--r-ctl)] bg-foreground px-2.5 text-caption text-background shadow-(--shadow-1)">
-        <PlusIcon aria-hidden className="size-3.25" />
-        New workspace
-      </div>
-    </div>
-  );
-}
-
 function chipTransform(point: { x: number; y: number }): string {
   return `translate(${point.x - 20}px, ${point.y - 14}px)`;
 }
@@ -426,16 +394,10 @@ function OverviewDragChip({
   point: { x: number; y: number };
 }) {
   return createPortal(
-    <div
-      ref={ref}
-      aria-hidden
-      className="pointer-events-none fixed top-0 left-0 z-50 flex h-7 max-w-60 -rotate-2 items-center gap-1.5 rounded-[var(--r-ctl)] bg-(--raised) px-2.5 text-caption text-foreground shadow-(--shadow-1) [&_svg]:size-3.5"
-      style={{ transform: chipTransform(point) }}
-    >
+    <LayoutOverviewDragChip ref={ref} style={{ transform: chipTransform(point) }}>
       {label.icon}
       <span className="min-w-0 truncate">{label.title}</span>
-    </div>,
+    </LayoutOverviewDragChip>,
     document.body,
   );
 }
-

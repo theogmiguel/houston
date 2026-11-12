@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
+import { describe, expect, it } from "vite-plus/test";
 
 import { useLayoutBehaviorStore } from "./layoutBehavior";
 import {
@@ -9,20 +9,29 @@ import {
   useLayoutDeviceSettingsStore,
 } from "./layoutDeviceSettings";
 
-beforeEach(() => {
+/** Puts the stores in a known state for one test and restores them when the test ends. */
+function openSession(): Disposable {
   localStorage.removeItem(LAYOUT_DEVICE_SETTINGS_KEY);
   resetLayoutDeviceSettings();
-});
-afterEach(() => localStorage.removeItem(LAYOUT_DEVICE_SETTINGS_KEY));
+  return {
+    [Symbol.dispose]() {
+      localStorage.removeItem(LAYOUT_DEVICE_SETTINGS_KEY);
+    },
+  };
+}
 
 describe("the device settings store", () => {
   it("persists an update and reads it back", () => {
+    using _session = openSession();
     updateLayoutDeviceSettings({ newTabPosition: "end" });
-    expect(JSON.parse(localStorage.getItem(LAYOUT_DEVICE_SETTINGS_KEY)!).newTabPosition).toBe("end");
+    expect(JSON.parse(localStorage.getItem(LAYOUT_DEVICE_SETTINGS_KEY)!).newTabPosition).toBe(
+      "end",
+    );
     expect(useLayoutDeviceSettingsStore.getState().settings.newTabPosition).toBe("end");
   });
 
   it("still works when storage refuses the write", () => {
+    using _session = openSession();
     const original = Storage.prototype.setItem;
     Storage.prototype.setItem = () => {
       throw new Error("quota");
@@ -36,8 +45,12 @@ describe("the device settings store", () => {
   });
 
   it("feeds the layout behavior, keeping the remembered companion shares", () => {
+    using _session = openSession();
     useLayoutBehaviorStore.setState({
-      behavior: { ...useLayoutBehaviorStore.getState().behavior, companionShares: { terminal: 0.3 } },
+      behavior: {
+        ...useLayoutBehaviorStore.getState().behavior,
+        companionShares: { terminal: 0.3 },
+      },
     });
     const stop = startLayoutDeviceSettingsSync();
     try {

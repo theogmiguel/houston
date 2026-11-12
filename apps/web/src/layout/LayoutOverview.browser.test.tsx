@@ -1,6 +1,6 @@
 import { scopeThreadRef } from "@houston-app/client-runtime/environment";
 import { EnvironmentId, ThreadId } from "@houston-app/contracts";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import { render } from "../../test/render";
@@ -38,31 +38,39 @@ function stacked(count: number): LayoutState {
   return focusLayoutWorkspace(normalizeLayout(state), state.workspaces[0]!.id);
 }
 
-beforeEach(() => {
+/** Puts the stores in a known state for one test and restores them when the test ends. */
+function openSession(): Disposable {
   useLayoutStore.getState().reset();
   setOverviewPhase("closed");
-});
-afterEach(() => {
-  useLayoutStore.getState().setOverviewOpen(false);
-  setOverviewPhase("closed");
-  useLayoutStore.getState().reset();
-  configureMotion({ off: false });
-});
+  return {
+    [Symbol.dispose]() {
+      useLayoutStore.getState().setOverviewOpen(false);
+      setOverviewPhase("closed");
+      useLayoutStore.getState().reset();
+      configureMotion({ off: false });
+    },
+  };
+}
 
 describe("overviewCloseHintText", () => {
   it("names the user's keys when they sit on the arrows", () => {
+    using _session = openSession();
     expect(overviewCloseHintText("Alt+O", "Alt+Shift+Left")).toBe(
       "hjkl, arrows or Alt+Shift+arrows to move, Enter to open, Alt+O or Esc to close",
     );
   });
 
   it("leaves a rebinding off the arrows unnamed", () => {
-    expect(overviewCloseHintText(null, "Alt+H")).toBe("hjkl or arrows to move, Enter to open, Esc to close");
+    using _session = openSession();
+    expect(overviewCloseHintText(null, "Alt+H")).toBe(
+      "hjkl or arrows to move, Enter to open, Esc to close",
+    );
   });
 });
 
 describe("LayoutOverview", () => {
   it("opens from the store, shows its hint and closes on Escape", async () => {
+    using _session = openSession();
     useLayoutStore.setState({ layout: stacked(2) });
     await using _screen = await render(<LayoutOverview />);
     useLayoutStore.getState().setOverviewOpen(true);
@@ -73,6 +81,7 @@ describe("LayoutOverview", () => {
   });
 
   it("moves the selection by keyboard and opens the focused pane on Enter", async () => {
+    using _session = openSession();
     useLayoutStore.setState({ layout: stacked(2) });
     const picked = vi.fn();
     await using _screen = await render(<LayoutOverview onPick={picked} />);
@@ -89,6 +98,7 @@ describe("LayoutOverview", () => {
   });
 
   it("opens with an empty workspace and picks nothing", async () => {
+    using _session = openSession();
     const picked = vi.fn();
     await using _screen = await render(<LayoutOverview onPick={picked} />);
     useLayoutStore.getState().setOverviewOpen(true);
@@ -99,6 +109,7 @@ describe("LayoutOverview", () => {
   });
 
   it("leaves the keys to a dialog open above it", async () => {
+    using _session = openSession();
     useLayoutStore.setState({ layout: stacked(2) });
     await using _screen = await render(
       <>
@@ -113,27 +124,28 @@ describe("LayoutOverview", () => {
   });
 });
 
-describe("OverviewStageOverlay", () => {
-  function renderOverlay(layout: LayoutState, onPick = vi.fn()) {
-    const viewport = { width: 1000, whenNoRoom: "shrink-then-scroll" } as const;
-    const stage = selectOverviewStage(layout, viewport, 1000);
-    return {
-      onPick,
-      ui: (
-        <div style={{ position: "relative", width: 1000, height: 600 }}>
-          <OverviewStageOverlay
-            layout={layout}
-            stage={stage}
-            phase="open"
-            onPick={onPick}
-            resolveTabLabel={(tab) => ({ icon: null, title: tab.id })}
-          />
-        </div>
-      ),
-    };
-  }
+function renderOverlay(layout: LayoutState, onPick = vi.fn(), width = 1000) {
+  const viewport = { width, whenNoRoom: "shrink-then-scroll" } as const;
+  const stage = selectOverviewStage(layout, viewport, width);
+  return {
+    onPick,
+    ui: (
+      <div data-overview-host="" style={{ position: "relative", width, height: 600 }}>
+        <OverviewStageOverlay
+          layout={layout}
+          stage={stage}
+          phase="open"
+          onPick={onPick}
+          resolveTabLabel={(tab) => ({ icon: null, title: tab.id })}
+        />
+      </div>
+    ),
+  };
+}
 
+describe("OverviewStageOverlay", () => {
   it("draws a pane per workspace row and picks one on click", async () => {
+    using _session = openSession();
     const layout = stacked(3);
     useLayoutStore.setState({ layout });
     setOverviewPhase("open");
@@ -147,6 +159,7 @@ describe("OverviewStageOverlay", () => {
   });
 
   it("marks the focused pane and shows an empty workspace as a dashed row", async () => {
+    using _session = openSession();
     const layout = createLayoutState();
     useLayoutStore.setState({ layout });
     setOverviewPhase("open");
@@ -157,9 +170,57 @@ describe("OverviewStageOverlay", () => {
   });
 });
 
+describe("overview at a narrow width", () => {
+  it("keeps every pane and the close hint inside a 320px window", async () => {
+    using _session = openSession();
+    await page.viewport(360, 640);
+    try {
+      const layout = stacked(3);
+      useLayoutStore.setState({ layout });
+      setOverviewPhase("open");
+      const { ui } = renderOverlay(layout, vi.fn(), 320);
+      await using screen = await render(
+        <>
+          {ui}
+          <LayoutOverview />
+        </>,
+      );
+      useLayoutStore.getState().setOverviewOpen(true);
+      await expect.element(page.getByText(/to move, Enter to open/)).toBeVisible();
+      const host = screen.container.querySelector("[data-overview-host]")!.getBoundingClientRect();
+      const panes = [...screen.container.querySelectorAll("[data-overview-pane]")];
+      expect(panes).toHaveLength(3);
+      for (const pane of panes) {
+        const rect = pane.getBoundingClientRect();
+        expect(rect.width).toBeGreaterThan(0);
+        expect(rect.left).toBeGreaterThanOrEqual(host.left - 1);
+        expect(rect.right).toBeLessThanOrEqual(host.right + 1);
+      }
+      const footer = document.querySelector("[data-overview-close-hint]")!.getBoundingClientRect();
+      expect(footer.width).toBeLessThanOrEqual(360);
+    } finally {
+      await page.viewport(1280, 720);
+    }
+  });
+});
+
 describe("overview motion", () => {
+  it("draws its footer without a transition under reduced motion", async () => {
+    using _session = openSession();
+    useLayoutStore.setState({ layout: stacked(2) });
+    configureMotion({ off: true });
+    await using _screen = await render(<LayoutOverview />);
+    useLayoutStore.getState().setOverviewOpen(true);
+    await expect.element(page.getByText(/to move, Enter to open/)).toBeVisible();
+    const footer = document.querySelector<HTMLElement>("[data-overview-close-hint]")!;
+    expect(footer.style.transitionDuration).toBe("0ms");
+  });
+
   it("zooms with a spring by default and at once under reduced motion", () => {
-    expect(Number.parseFloat(String(overviewZoomTransition().transitionDuration))).toBeGreaterThan(0);
+    using _session = openSession();
+    expect(Number.parseFloat(String(overviewZoomTransition().transitionDuration))).toBeGreaterThan(
+      0,
+    );
     configureMotion({ off: true });
     expect(overviewZoomTransition().transitionDuration).toBe("0ms");
   });

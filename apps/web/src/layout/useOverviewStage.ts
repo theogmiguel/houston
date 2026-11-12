@@ -7,12 +7,11 @@ import { useLayoutEffect, useRef } from "react";
 
 import { useStableCallback } from "../hooks/useStableCallback";
 import { observeResize } from "../lib/observeResize";
-import { MotionAnimation, type MotionRun } from "../motion/animation";
+import type { MotionRun } from "../motion/animation";
 import { closeHintHeight } from "./LayoutOverview";
 import { inPopoverAbove, isInOpenLayer } from "./layoutKeyGuards";
 import {
   boundOverviewTransform,
-  OVERVIEW_ROW_GAP,
   overviewExitScrollLeft,
   overviewRowShift,
   overviewZoomedIn,
@@ -30,7 +29,6 @@ import {
   isOverviewInteractive,
   requestOverviewOpen,
   setOverviewCamera,
-  setOverviewPhase,
   type OverviewPhase,
 } from "./overviewPhase";
 import {
@@ -55,7 +53,6 @@ const PINCH_THRESHOLD = 40;
 function windowSize(): WindowSize {
   return { width: window.innerWidth, height: window.innerHeight };
 }
-
 
 /**
  * Start and finish the zoom at the strip real scroll position.
@@ -245,7 +242,13 @@ export function useOverviewStage(
     if (phaseNow === "open") {
       const footerHeight = closeHintHeight();
       if (manual.current && !selectionChanged) {
-        manual.current = boundOverviewTransform(stage, box, manual.current, footerHeight, windowSize());
+        manual.current = boundOverviewTransform(
+          stage,
+          box,
+          manual.current,
+          footerHeight,
+          windowSize(),
+        );
         zoomShare.current = manual.current.scale / stage.scale;
         applyStageTransform(element, manual.current, 0);
       } else {
@@ -263,7 +266,13 @@ export function useOverviewStage(
         );
         applyStageTransform(
           element,
-          boundOverviewTransform(stage, box, overviewZoomedOut(stage, box, windowSize(), scale), footerHeight, windowSize()),
+          boundOverviewTransform(
+            stage,
+            box,
+            overviewZoomedOut(stage, box, windowSize(), scale),
+            footerHeight,
+            windowSize(),
+          ),
           durationMs,
         );
       }
@@ -301,7 +310,13 @@ export function useOverviewStage(
           const footerHeight = closeHintHeight();
           applyStageTransform(
             element,
-            boundOverviewTransform(stage, box, overviewZoomedOut(stage, box, windowSize()), footerHeight, windowSize()),
+            boundOverviewTransform(
+              stage,
+              box,
+              overviewZoomedOut(stage, box, windowSize()),
+              footerHeight,
+              windowSize(),
+            ),
             durationMs,
           );
           stopZoom = afterZoom(element, durationMs, "open");

@@ -7,6 +7,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
+import { LayoutOverviewFooter } from "../components/ui/layout-overlay";
 import { isEditableFocused } from "../lib/editableFocus";
 import { shortcutLabelForCommand } from "../keybindings";
 import { settleStripCamera } from "../motion/stripCamera";
@@ -15,7 +16,12 @@ import { isMacPlatform } from "../lib/utils";
 import { registerCommands } from "../shortcuts/dispatcher";
 import { useStableCallback } from "../hooks/useStableCallback";
 import { primaryServerKeybindingsAtom } from "../state/server";
-import { findInOpenLayers, inPopoverAbove, isInOpenLayer, isLayoutModalOpen } from "./layoutKeyGuards";
+import {
+  findInOpenLayers,
+  inPopoverAbove,
+  isInOpenLayer,
+  isLayoutModalOpen,
+} from "./layoutKeyGuards";
 import { selectFocusedTab, type LayoutDirection, type LayoutTab } from "./layoutModel";
 import { useLayoutStore } from "./layoutStore";
 import {
@@ -154,10 +160,7 @@ export function closeHintHeight(): number {
 }
 
 /** "hjkl or arrows to move, Enter to open, Esc to close", with the user's own keys. */
-export function overviewCloseHintText(
-  closeKey: string | null,
-  focusKey: string | null,
-): string {
+export function overviewCloseHintText(closeKey: string | null, focusKey: string | null): string {
   // The layout focus keys move the selection too ("Alt+Shift+Left" reads as "Alt+Shift+arrows");
   // a rebinding off the arrows is left unnamed.
   const modifiers = focusKey?.endsWith("Left") ? focusKey.slice(0, -"Left".length) : null;
@@ -172,13 +175,9 @@ function OverviewCloseHint() {
     shortcutLabelForCommand(keybindings, "layout.focusLeft"),
   );
   return createPortal(
-    <div
-      data-overview-close-hint=""
-      className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex h-(--h-top) items-center justify-center bg-(--app-chrome-background) text-caption text-muted-foreground motion-safe:transition-opacity motion-safe:duration-(--motion-overlay-in) motion-safe:ease-standard motion-safe:starting:opacity-0"
-      style={overviewZoomTransition()}
-    >
+    <LayoutOverviewFooter data-overview-close-hint="" style={overviewZoomTransition()}>
       {text}
-    </div>,
+    </LayoutOverviewFooter>,
     document.body,
   );
 }

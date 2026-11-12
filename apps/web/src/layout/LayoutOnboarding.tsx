@@ -11,6 +11,14 @@ import { useEffect, useRef, useState } from "react";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Dialog, DialogDescription, DialogPopup, DialogTitle } from "../components/ui/dialog";
+import {
+  LayoutBodyText,
+  LayoutHeadline,
+  LayoutMetaText,
+  LayoutMutedIcon,
+  LayoutTip,
+  LayoutTipsPanel,
+} from "../components/ui/layout-overlay";
 import { Popover, PopoverPopup } from "../components/ui/popover";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { isMacPlatform } from "../lib/utils";
@@ -64,18 +72,15 @@ export function LayoutLearningTips() {
   ].filter((tip) => !learned.includes(tip.key));
   if (tips.length === 0) return null;
   return (
-    <div
-      className="mt-5 flex flex-col gap-2 border-t border-(--divider) pt-4 text-muted-foreground"
-      aria-label="Try the layout"
-    >
-      <span className="text-caption">Try the layout</span>
+    <LayoutTipsPanel className="mt-5" aria-label="Try the layout">
+      <LayoutMetaText>Try the layout</LayoutMetaText>
       {tips.map(({ key, Icon, text }) => (
-        <div key={key} className="flex items-center gap-2 text-body">
+        <LayoutTip key={key}>
           <Icon className="size-3.5 shrink-0" />
           {text}
-        </div>
+        </LayoutTip>
       ))}
-    </div>
+    </LayoutTipsPanel>
   );
 }
 
@@ -143,9 +148,7 @@ export function LayoutOnboarding() {
         <DialogPopup className="max-w-250" bottomStickOnMobile={false}>
           <div className="flex min-h-0 flex-col gap-6 overflow-y-auto p-8">
             <div className="flex flex-col gap-2">
-              <DialogTitle render={<h1 />}>
-                Tabs, side by side
-              </DialogTitle>
+              <DialogTitle render={<h1 />}>Tabs, side by side</DialogTitle>
               <DialogDescription>
                 Chats, terminals, diffs and the browser are all tabs now. Put them side by side,
                 scroll to the rest, and zoom out to see it all.
@@ -172,14 +175,13 @@ export function LayoutOnboarding() {
               ).map(([lesson, title, description]) => (
                 <div key={lesson} className="flex min-w-0 flex-col gap-2.5">
                   <LayoutTourDiagram lesson={lesson} />
-                  <h2 className="text-headline text-foreground">{title}</h2>
-                  <p className="text-body text-muted-foreground">{description}</p>
+                  <LayoutHeadline>{title}</LayoutHeadline>
+                  <LayoutBodyText>{description}</LayoutBodyText>
                 </div>
               ))}
             </div>
             <div className="flex justify-end gap-2">
               <Button
-                
                 onClick={() => {
                   setLearnedBeforeTour(learned);
                   setStep(0);
@@ -220,18 +222,18 @@ export function LayoutOnboarding() {
       >
         <div className="flex flex-col gap-2" role="region" aria-label="Layout tour">
           {step === 0 ? (
-            <current.Icon className="size-6 text-muted-foreground" aria-hidden />
+            <LayoutMutedIcon icon={current.Icon} className="size-6" />
           ) : (
             <LayoutTourDiagram
               lesson={step === 1 ? "split" : step === 2 || step === 3 ? "overview" : "keys"}
             />
           )}
           {step === 4 ? <LayoutTourKeys modifiers={keys} /> : null}
-          <h2 className="text-headline text-foreground">{current.title}</h2>
-          <p className="text-body text-muted-foreground">{current.text}</p>
+          <LayoutHeadline>{current.title}</LayoutHeadline>
+          <LayoutBodyText>{current.text}</LayoutBodyText>
           <div className="mt-2 flex items-center gap-2">
-            <span className="mr-auto flex items-center gap-2 text-caption text-muted-foreground">
-              <span>{step + 1} of 5</span>
+            <span className="mr-auto flex items-center gap-2">
+              <LayoutMetaText>{step + 1} of 5</LayoutMetaText>
               {tried ? <Badge variant="success">Tried</Badge> : null}
             </span>
             <Button size="sm" variant="ghost-muted" onClick={finish}>
@@ -239,7 +241,7 @@ export function LayoutOnboarding() {
             </Button>
             <Button
               ref={nextRef}
-              
+
               onClick={() => {
                 if (step === 4) finish();
                 else setStep(step + 1);

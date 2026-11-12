@@ -20,22 +20,43 @@ import {
   useEffect,
   useRef,
   useState,
-  type ButtonHTMLAttributes,
   type CSSProperties,
   type KeyboardEvent,
   type PointerEvent as ReactPointerEvent,
-  type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
 import { useAtomValue } from "@effect/atom-react";
 
+import {
+  LayoutActionIcon,
+  LayoutEditorButton,
+  LayoutEditorCanvas,
+  LayoutEditorChipGhost,
+  LayoutEditorDivider,
+  LayoutEditorDropLayer,
+  LayoutEditorDropZone,
+  LayoutEditorEdgeBar,
+  LayoutEditorGhostLayer,
+  LayoutEditorGrip,
+  LayoutEditorPane,
+  LayoutEditorPaneTab,
+  LayoutEditorPill,
+  LayoutEditorReadout,
+  LayoutEditorSlider,
+  LayoutEditorSliderValue,
+  LayoutHairline,
+  LayoutMutedIcon,
+  LayoutPaneSkeleton,
+  LayoutPopoverSection,
+  type LayoutPaneSkeletonShape,
+} from "../components/ui/layout-overlay";
 import { Popover, PopoverPopup, PopoverTrigger } from "../components/ui/popover";
 import { Toggle, ToggleGroup } from "../components/ui/toggle-group";
 import { Text } from "../components/ui/text";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { SettingsGroup } from "../components/settings/SettingsGroup";
 import { shortcutLabelForCommand } from "../keybindings";
-import { cn, isMacPlatform } from "../lib/utils";
+import { isMacPlatform } from "../lib/utils";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { resolveLayoutDropTarget, type LayoutDropTarget } from "./layoutDrag";
 import { LAYOUT_COLUMN_WIDTH_PRESETS } from "./layoutModel";
@@ -58,98 +79,12 @@ import {
   type LayoutTemplatePath,
 } from "./layoutTemplate";
 
-type LayoutPaneSkeletonShape = "chat" | "terminal" | "diff" | "lines";
-
 /** Snap a share to a column width preset when it lies within 12px of one. */
 function snapToPreset(raw: number, extentPx: number): { value: number; snapped: number | null } {
   for (const preset of LAYOUT_COLUMN_WIDTH_PRESETS) {
     if (Math.abs(raw - preset) * extentPx <= 12) return { value: preset, snapped: preset };
   }
   return { value: raw, snapped: null };
-}
-
-/** Placeholder lines shaped like what a pane holds; the editor never renders live content. */
-function LayoutPaneSkeleton({ shape }: { shape: LayoutPaneSkeletonShape }) {
-  const line = "h-1 rounded-full bg-foreground/14";
-  if (shape === "chat") {
-    return (
-      <div className="flex min-h-0 flex-1 flex-col gap-1.5 p-2.5 pt-2">
-        <div className="ms-auto h-4 w-1/2 rounded-[var(--r-badge)] bg-foreground/8" />
-        <div className={cn(line, "mt-2 w-3/5")} />
-        <div className={cn(line, "w-1/2")} />
-        <div className="mt-auto flex h-5 items-center justify-end rounded-[var(--r-ctl)] border border-foreground/8 bg-foreground/4 pe-1">
-          <div className="size-2 rounded-full bg-foreground/60" />
-        </div>
-      </div>
-    );
-  }
-  if (shape === "terminal") {
-    return (
-      <div className="flex flex-col gap-1.5 p-2.5 pt-2">
-        <div className={cn(line, "w-1/2")} />
-        <div className="h-1 w-1/3 rounded-full bg-(--ok)/55" />
-        <div className={cn(line, "w-2/5")} />
-      </div>
-    );
-  }
-  if (shape === "diff") {
-    return (
-      <div className="flex flex-col gap-1.5 p-2 pt-1.5">
-        <div className={cn(line, "w-1/2")} />
-        <div className={cn(line, "w-3/5")} />
-        <div className="mt-1 h-1.5 rounded-xs bg-(--add-bg)" />
-        <div className="h-1.5 rounded-xs bg-(--del-bg)" />
-      </div>
-    );
-  }
-  return (
-    <div className="flex flex-col gap-1.5 p-2 pt-1.5">
-      <div className={cn(line, "w-1/2")} />
-      <div className={cn(line, "w-3/5")} />
-      <div className={cn(line, "w-2/5")} />
-    </div>
-  );
-}
-
-/** A mini pane's tab, drawn at the pane's top-left. */
-function PaneNotchTab({ className, children }: { className?: string; children: ReactNode }) {
-  return (
-    <span
-      className={cn(
-        "relative flex min-w-0 items-center rounded-br-sm bg-(--app-chrome-background)",
-        className,
-      )}
-    >
-      {children}
-    </span>
-  );
-}
-
-/** A bare button for the editor's drag chips and pane panels; their looks are local to the canvas. */
-function ContentButton({
-  variant,
-  destructive = false,
-  className,
-  ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant: "drag-chip" | "panel" | "action";
-  destructive?: boolean;
-}) {
-  return (
-    <button
-      {...props}
-      className={cn(
-        "outline-none focus-visible:outline-2 focus-visible:outline-ring",
-        variant === "drag-chip" &&
-          "flex h-6 cursor-grab items-center gap-1.5 rounded-[var(--r-ctl)] border border-border bg-(--field) px-2 text-callout text-foreground touch-none",
-        variant === "panel" && "cursor-pointer rounded-[var(--r-badge)] bg-(--pane) text-left",
-        variant === "action" &&
-          "flex h-(--h-row) w-full items-center gap-2 rounded-[var(--r-ctl)] px-2 text-left text-body hover:bg-hover",
-        variant === "action" && destructive && "text-destructive-foreground",
-        className,
-      )}
-    />
-  );
 }
 
 const PANE_KINDS: ReadonlyArray<{
@@ -567,11 +502,7 @@ export function LayoutTemplateEditor({
 
   return (
     <SettingsGroup divided={false} className="flex flex-col gap-3 px-4 py-3">
-      <div
-        ref={canvasRef}
-        className="relative h-65 overflow-hidden rounded-[var(--r-group)] border border-border bg-(--app-chrome-background) select-none"
-        style={{ padding: CANVAS_PADDING_PX }}
-      >
+      <LayoutEditorCanvas ref={canvasRef} style={{ padding: CANVAS_PADDING_PX }}>
         {stripPreview ? (
           <StripPreview whenNoRoom={stripPreview} />
         ) : (
@@ -606,7 +537,7 @@ export function LayoutTemplateEditor({
             ) : null}
           </div>
         )}
-      </div>
+      </LayoutEditorCanvas>
       <div className="flex flex-wrap items-center gap-2">
         <Text variant="caption" tone="muted" as="h3">
           Drag in
@@ -615,7 +546,7 @@ export function LayoutTemplateEditor({
           <Tooltip key={kind}>
             <TooltipTrigger
               render={
-                <ContentButton
+                <LayoutEditorButton
                   variant="drag-chip"
                   type="button"
                   onPointerDown={(event) => onChipPointerDown(event, kind)}
@@ -626,7 +557,7 @@ export function LayoutTemplateEditor({
                 />
               }
             >
-              <Icon aria-hidden className="size-3 text-muted-foreground" />
+              <LayoutMutedIcon icon={Icon} className="size-3" />
               {label}
             </TooltipTrigger>
             <TooltipPopup side="top">
@@ -634,7 +565,7 @@ export function LayoutTemplateEditor({
             </TooltipPopup>
           </Tooltip>
         ))}
-        <span className="ms-auto text-caption text-muted-foreground">
+        <Text variant="caption" tone="muted" className="ms-auto">
           {chipDrag
             ? "Edges extend"
             : stripPreview === "always-shrink"
@@ -642,17 +573,15 @@ export function LayoutTemplateEditor({
               : stripPreview
                 ? "Columns keep their width"
                 : "Drag dividers to resize"}
-        </span>
+        </Text>
       </div>
       {chipDrag
         ? createPortal(
-            <div
-              aria-hidden
-              className="pointer-events-none fixed z-[140] -rotate-2"
+            <LayoutEditorGhostLayer
               style={{ left: chipDrag.point.x + 8, top: chipDrag.point.y + 8 }}
             >
               <ChipGhost kind={chipDrag.kind} />
-            </div>,
+            </LayoutEditorGhostLayer>,
             document.body,
           )
         : null}
@@ -694,21 +623,23 @@ function StripPreview({ whenNoRoom }: { whenNoRoom: LayoutWhenNoRoom }) {
         rect={{ left: 0, top, width: 0.5, height: 0.6 }}
       />
       {shrink ? null : (
-        <PreviewPill
+        <LayoutEditorPill
+          floating
           icon={ArrowRightIcon}
           className="-translate-y-1/2"
           style={{ right: 8, top: "38%" }}
         >
           New tabs continue here
-        </PreviewPill>
+        </LayoutEditorPill>
       )}
-      <PreviewPill
+      <LayoutEditorPill
+        floating
         icon={ArrowDownIcon}
         className="-translate-x-1/2 -translate-y-1/2"
         style={{ left: "50%", top: `${top * 100}%` }}
       >
         Next workspace below
-      </PreviewPill>
+      </LayoutEditorPill>
     </div>
   );
 }
@@ -727,13 +658,10 @@ function PreviewPane({
   rect: Rect;
 }) {
   return (
-    <div
-      className="absolute flex flex-col overflow-hidden rounded-[var(--r-ctl)] bg-(--pane)"
-      style={slotStyle(rect)}
-    >
+    <LayoutEditorPane style={slotStyle(rect)}>
       <PaneTab icon={Icon} label={label} badge={badge} />
       <LayoutPaneSkeleton shape={shape} />
-    </div>
+    </LayoutEditorPane>
   );
 }
 
@@ -748,53 +676,13 @@ function PaneTab({
   badge: number | null;
 }) {
   return (
-    <span className="flex h-5 min-w-0 shrink-0 items-start">
-      <PaneNotchTab className="h-5 gap-1.25 px-1.75 text-caption text-foreground">
-        <Icon aria-hidden className="size-2.75 shrink-0 text-muted-foreground" />
-        <span className="min-w-0 truncate">{label}</span>
-      </PaneNotchTab>
-      {badge !== null ? (
-        <span className="ms-auto mt-0.5 me-0.5 shrink-0 rounded-badge bg-foreground/8 px-1.5 text-micro leading-4.5 text-muted-foreground tabular-nums">
-          {percent(badge)}
-        </span>
-      ) : null}
-    </span>
-  );
-}
-
-function PreviewPill({
-  icon: Icon,
-  className,
-  style,
-  children,
-}: {
-  icon: LucideIcon;
-  className: string;
-  style: CSSProperties;
-  children: ReactNode;
-}) {
-  return (
-    <span
-      className={cn(
-        "pointer-events-none absolute z-10 flex h-6 items-center gap-1.5 rounded-[var(--r-ctl)] bg-foreground px-2 text-callout whitespace-nowrap text-background shadow-(--shadow-1)",
-        className,
-      )}
-      style={style}
-    >
-      <Icon aria-hidden className="size-3" />
-      {children}
-    </span>
+    <LayoutEditorPaneTab icon={Icon} label={label} badge={badge === null ? null : percent(badge)} />
   );
 }
 
 function ChipGhost({ kind }: { kind: LayoutPaneKind }) {
   const { label, icon: Icon } = paneKindMeta(kind);
-  return (
-    <div className="flex h-6.5 items-center gap-1.5 rounded-[var(--r-ctl)] dropdown-glass px-2.25 text-callout text-foreground shadow-(--shadow-1)">
-      <Icon aria-hidden className="size-3 text-muted-foreground" />
-      {label}
-    </div>
-  );
+  return <LayoutEditorChipGhost icon={Icon}>{label}</LayoutEditorChipGhost>;
 }
 
 function TemplatePane({
@@ -817,7 +705,7 @@ function TemplatePane({
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger
         render={
-          <ContentButton
+          <LayoutEditorButton
             variant="panel"
             type="button"
             aria-label={`${label} pane`}
@@ -896,7 +784,7 @@ function PanePopoverBody({
         remove();
       }}
     >
-      <PopoverSection label="Pane">
+      <LayoutPopoverSection label="Pane">
         <ToggleGroup
           aria-label="Pane kind"
           variant="segmented"
@@ -919,9 +807,9 @@ function PanePopoverBody({
             </Toggle>
           ))}
         </ToggleGroup>
-      </PopoverSection>
+      </LayoutPopoverSection>
       {canLayoutTemplatePaneSpan(template, path) ? (
-        <PopoverSection label="Spans">
+        <LayoutPopoverSection label="Spans">
           <ToggleGroup
             aria-label="Pane span"
             variant="segmented"
@@ -941,15 +829,13 @@ function PanePopoverBody({
               Full width
             </Toggle>
           </ToggleGroup>
-        </PopoverSection>
+        </LayoutPopoverSection>
       ) : null}
       {measure ? (
-        <PopoverSection label={measure.axis === "height" ? "Height" : "Width"}>
+        <LayoutPopoverSection label={measure.axis === "height" ? "Height" : "Width"}>
           <div className="flex items-center gap-2">
-            <input
+            <LayoutEditorSlider
               aria-label={measure.axis === "height" ? "Pane height" : "Column width"}
-              className="settings-slider min-w-0 flex-1"
-              type="range"
               min={15}
               max={85}
               step={1}
@@ -960,13 +846,11 @@ function PanePopoverBody({
               onKeyUp={commitShare}
               onBlur={commitShare}
             />
-            <span className="w-9 text-end text-callout text-foreground tabular-nums">
-              {percent(share)}
-            </span>
+            <LayoutEditorSliderValue>{percent(share)}</LayoutEditorSliderValue>
           </div>
-        </PopoverSection>
+        </LayoutPopoverSection>
       ) : null}
-      <div className="my-1 h-px bg-divider" />
+      <LayoutHairline className="my-1" />
       <PopoverAction
         icon={Columns2Icon}
         label="Split right"
@@ -991,15 +875,6 @@ function PanePopoverBody({
   );
 }
 
-function PopoverSection({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex flex-col gap-1.5 p-1.5">
-      <span className="text-caption text-muted-foreground">{label}</span>
-      {children}
-    </div>
-  );
-}
-
 function PopoverAction({
   icon: Icon,
   label,
@@ -1016,7 +891,7 @@ function PopoverAction({
   onClick: () => void;
 }) {
   return (
-    <ContentButton
+    <LayoutEditorButton
       variant="action"
       destructive={destructive}
       type="button"
@@ -1024,16 +899,14 @@ function PopoverAction({
       onClick={onClick}
       className="w-full"
     >
-      <Icon
-        aria-hidden
-        className={cn(
-          "size-3.5",
-          destructive ? "text-destructive-foreground" : "text-muted-foreground",
-        )}
-      />
+      <LayoutActionIcon icon={Icon} destructive={destructive} />
       <span className="min-w-0 flex-1 truncate">{label}</span>
-      {shortcut ? <span className="text-callout text-muted-foreground">{shortcut}</span> : null}
-    </ContentButton>
+      {shortcut ? (
+        <Text variant="callout" tone="muted">
+          {shortcut}
+        </Text>
+      ) : null}
+    </LayoutEditorButton>
   );
 }
 
@@ -1069,33 +942,21 @@ function TemplateDivider({
         width: 8,
       };
   return (
-    <div
-      role="separator"
-      tabIndex={0}
+    <LayoutEditorDivider
+      horizontal={horizontal}
+      active={active}
       aria-orientation={horizontal ? "horizontal" : "vertical"}
       aria-label={horizontal ? "Resize panes" : "Resize columns"}
       aria-valuemin={15}
       aria-valuemax={85}
       aria-valuenow={Math.round(share * 100)}
-      className={cn(
-        "group absolute z-10 flex items-center justify-center outline-none focus-visible:outline-2 focus-visible:outline-ring",
-        horizontal ? "cursor-row-resize" : "cursor-col-resize",
-      )}
       style={style}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
       onKeyDown={onKeyDown}
-    >
-      <div
-        className={cn(
-          "rounded-full group-hover:bg-foreground/60 group-focus-visible:bg-foreground/60",
-          horizontal ? "h-1 w-7" : "h-7 w-1",
-          active ? "bg-foreground/80" : "bg-dim-foreground",
-        )}
-      />
-    </div>
+    />
   );
 }
 
@@ -1114,13 +975,9 @@ function DividerReadout({ divider, share }: { divider: DividerSlot; share: numbe
           top: `${(pair.top + pair.height / 2) * 100}%`,
         };
   return (
-    <div
-      aria-hidden
-      className="pointer-events-none absolute z-20 flex h-6.5 -translate-x-1/2 -translate-y-1/2 items-center gap-2 rounded-[var(--r-ctl)] bg-foreground px-2.5 text-callout text-background tabular-nums shadow-(--shadow-1)"
-      style={style}
-    >
+    <LayoutEditorReadout style={style}>
       {divider.kind === "pane" ? "Top" : "Left"} {first}%
-    </div>
+    </LayoutEditorReadout>
   );
 }
 
@@ -1169,48 +1026,25 @@ function DropFeedback({
   const edgeActive = (edge: "left" | "right" | "bottom") =>
     target?.kind === "extend" && target.edge === edge;
   return (
-    <div aria-hidden className="pointer-events-none absolute inset-0 z-20">
+    <LayoutEditorDropLayer>
       {panes.flatMap((slot) =>
         sides.map((side) => (
-          <div
+          <LayoutEditorGrip
             key={`${slot.id}:${side}`}
-            className={cn(
-              "absolute rounded-full",
-              side === "left" || side === "right" ? "-translate-y-1/2" : "-translate-x-1/2",
-              isTarget(slot, side) ? "bg-foreground" : "bg-foreground/25",
-            )}
+            side={side}
+            active={isTarget(slot, side)}
             style={gripStyle(slot, side)}
           />
         )),
       )}
-      <div
-        className={cn(
-          "absolute inset-y-0 -left-1.5 w-0.75 rounded-full",
-          edgeActive("left") ? "bg-foreground" : "bg-foreground/25",
-        )}
-      />
-      <div
-        className={cn(
-          "absolute inset-y-0 -right-1.5 w-0.75 rounded-full",
-          edgeActive("right") ? "bg-foreground" : "bg-foreground/25",
-        )}
-      />
-      <div
-        className={cn(
-          "absolute inset-x-0 -bottom-1.5 h-0.75 rounded-full",
-          edgeActive("bottom") ? "bg-foreground" : "bg-foreground/25",
-        )}
-      />
+      <LayoutEditorEdgeBar edge="left" active={edgeActive("left")} />
+      <LayoutEditorEdgeBar edge="right" active={edgeActive("right")} />
+      <LayoutEditorEdgeBar edge="bottom" active={edgeActive("bottom")} />
       {zone && target ? (
-        <div
-          className="absolute flex items-end justify-center rounded-[var(--r-ctl)] border border-foreground/80 bg-foreground/6 pb-2"
-          style={slotStyle(zone)}
-        >
-          <span className="flex h-6 items-center gap-1.5 rounded-[var(--r-ctl)] bg-foreground px-2 text-callout whitespace-nowrap text-background shadow-(--shadow-1)">
-            {dropLabel(target)}
-          </span>
-        </div>
+        <LayoutEditorDropZone style={slotStyle(zone)}>
+          <LayoutEditorPill>{dropLabel(target)}</LayoutEditorPill>
+        </LayoutEditorDropZone>
       ) : null}
-    </div>
+    </LayoutEditorDropLayer>
   );
 }

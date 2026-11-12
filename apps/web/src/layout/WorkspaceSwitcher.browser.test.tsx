@@ -1,6 +1,6 @@
 import { scopeThreadRef } from "@houston-app/client-runtime/environment";
 import { EnvironmentId, ThreadId } from "@houston-app/contracts";
-import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
+import { describe, expect, it } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import { render } from "../../test/render";
@@ -41,11 +41,19 @@ const names = () =>
     .layout.workspaces.filter((workspace) => workspace.columns.length > 0)
     .map((workspace) => workspace.name);
 
-beforeEach(() => useLayoutStore.getState().reset());
-afterEach(() => useLayoutStore.getState().reset());
+/** Puts the stores in a known state for one test and restores them when the test ends. */
+function openSession(): Disposable {
+  useLayoutStore.getState().reset();
+  return {
+    [Symbol.dispose]() {
+      useLayoutStore.getState().reset();
+    },
+  };
+}
 
 describe("WorkspaceSwitcher", () => {
   it("shows one workspace without a position count", async () => {
+    using _session = openSession();
     useLayoutStore.setState({ layout: openLayoutTab(createLayoutState(), chat("only")) });
     await using _screen = await render(<WorkspaceSwitcher />);
     await expect.element(page.getByRole("button", { name: "Workspaces" })).toBeVisible();
@@ -53,6 +61,7 @@ describe("WorkspaceSwitcher", () => {
   });
 
   it("shows the position among many workspaces and goes to one", async () => {
+    using _session = openSession();
     useLayoutStore.setState({ layout: withWorkspaces(["Alpha", "Beta", "Gamma"]) });
     await using _screen = await render(<WorkspaceSwitcher />);
     await userEvent.click(page.getByRole("button", { name: "Workspaces" }));
@@ -63,19 +72,25 @@ describe("WorkspaceSwitcher", () => {
   });
 
   it("keeps a long name inside its trigger", async () => {
-    const long = "A workspace named for a very long migration of the billing platform ".repeat(2).trim();
+    using _session = openSession();
+    const long = "A workspace named for a very long migration of the billing platform "
+      .repeat(2)
+      .trim();
     useLayoutStore.setState({ layout: withWorkspaces([long.slice(0, 120)]) });
     await using screen = await render(
       <div style={{ width: 220 }}>
         <WorkspaceSwitcher />
       </div>,
     );
-    const trigger = screen.container.querySelector<HTMLElement>("[data-layout-workspace-switcher]")!;
+    const trigger = screen.container.querySelector<HTMLElement>(
+      "[data-layout-workspace-switcher]",
+    )!;
     expect(trigger.scrollWidth).toBeLessThanOrEqual(220);
     expect(trigger.getBoundingClientRect().width).toBeLessThanOrEqual(220);
   });
 
   it("lists an empty workspace as empty", async () => {
+    using _session = openSession();
     await using _screen = await render(<WorkspaceSwitcher />);
     await expect.element(page.getByText("Empty workspace")).toBeVisible();
     await userEvent.click(page.getByRole("button", { name: "Workspaces" }));
@@ -83,15 +98,19 @@ describe("WorkspaceSwitcher", () => {
   });
 
   it("refuses to delete the last workspace and says why", async () => {
+    using _session = openSession();
     useLayoutStore.setState({ layout: openLayoutTab(createLayoutState(), chat("only")) });
     await using _screen = await render(<WorkspaceSwitcher />);
     await userEvent.click(page.getByRole("button", { name: "Workspaces" }));
     await userEvent.click(page.getByRole("button", { name: /^Delete / }));
     await expect.element(page.getByText(/is the last workspace \(1 of 1\)/)).toBeVisible();
-    expect(useLayoutStore.getState().layout.workspaces.some((w) => w.columns.length > 0)).toBe(true);
+    expect(useLayoutStore.getState().layout.workspaces.some((w) => w.columns.length > 0)).toBe(
+      true,
+    );
   });
 
   it("renames with Enter and refuses a name over the limit", async () => {
+    using _session = openSession();
     useLayoutStore.setState({ layout: withWorkspaces(["Alpha", "Beta"]) });
     await using _screen = await render(<WorkspaceSwitcher />);
     await userEvent.click(page.getByRole("button", { name: "Workspaces" }));
@@ -99,13 +118,16 @@ describe("WorkspaceSwitcher", () => {
     const field = page.getByRole("textbox", { name: "Rename Alpha" });
     await userEvent.fill(field, "x".repeat(121));
     await userEvent.keyboard("{Enter}");
-    await expect.element(page.getByText("A workspace name is at most 120 characters; got 121.")).toBeVisible();
+    await expect
+      .element(page.getByText("A workspace name is at most 120 characters; got 121."))
+      .toBeVisible();
     await userEvent.fill(field, "Inbox");
     await userEvent.keyboard("{Enter}");
     expect(names()).toContain("Inbox");
   });
 
   it("reorders, and deletes after a confirmation", async () => {
+    using _session = openSession();
     useLayoutStore.setState({ layout: withWorkspaces(["Alpha", "Beta"]) });
     await using _screen = await render(<WorkspaceSwitcher />);
     await userEvent.click(page.getByRole("button", { name: "Workspaces" }));
@@ -118,6 +140,7 @@ describe("WorkspaceSwitcher", () => {
   });
 
   it("creates a workspace by name", async () => {
+    using _session = openSession();
     useLayoutStore.setState({ layout: openLayoutTab(createLayoutState(), chat("one")) });
     await using _screen = await render(<WorkspaceSwitcher />);
     await userEvent.click(page.getByRole("button", { name: "Workspaces" }));
@@ -125,17 +148,22 @@ describe("WorkspaceSwitcher", () => {
     await userEvent.fill(page.getByRole("textbox", { name: "New workspace name" }), "Research");
     await userEvent.keyboard("{Enter}");
     const layout = useLayoutStore.getState().layout;
-    expect(layout.workspaces.find((w) => w.id === layout.focusedWorkspaceId)?.name).toBe("Research");
+    expect(layout.workspaces.find((w) => w.id === layout.focusedWorkspaceId)?.name).toBe(
+      "Research",
+    );
   });
 
   it("hides the title at a narrow width and keeps an accessible name", async () => {
+    using _session = openSession();
     useLayoutStore.setState({ layout: withWorkspaces(["Alpha", "Beta"]) });
     await using screen = await render(
       <div style={{ width: 120 }}>
         <WorkspaceSwitcher />
       </div>,
     );
-    const trigger = screen.container.querySelector<HTMLElement>("[data-layout-workspace-switcher]")!;
+    const trigger = screen.container.querySelector<HTMLElement>(
+      "[data-layout-workspace-switcher]",
+    )!;
     expect(trigger.getBoundingClientRect().width).toBeLessThanOrEqual(120);
     await expect.element(page.getByRole("button", { name: "Workspaces" })).toBeVisible();
   });

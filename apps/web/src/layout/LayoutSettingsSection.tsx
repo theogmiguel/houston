@@ -17,13 +17,20 @@ import {
   RotateCcwIcon,
   SquarePlusIcon,
   Undo2Icon,
-  GitPullRequestIcon,
   type LucideIcon,
 } from "lucide-react";
 import { useState } from "react";
 
+import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
 import { Button } from "../components/ui/button";
-import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../components/ui/select";
+import { LayoutMutedIcon, LayoutSectionTitle } from "../components/ui/layout-overlay";
+import {
+  Select,
+  SelectItem,
+  SelectPopup,
+  SelectTrigger,
+  SelectValue,
+} from "../components/ui/select";
 import { Switch } from "../components/ui/switch";
 import {
   SettingResetButton,
@@ -80,7 +87,7 @@ const SIDE_PANE_OPENS_ON_OPTIONS: ReadonlyArray<PlacementOption<LayoutSidePaneOp
   { value: "diff", label: "Diff", icon: FileDiffIcon },
   { value: "files", label: "Files", icon: FolderTreeIcon },
   { value: "browser", label: "Browser", icon: GlobeIcon },
-  { value: "pull-request", label: "Pull request", icon: GitPullRequestIcon },
+  { value: "pull-request", label: "Pull request", icon: PullRequestGlyph.pullRequest },
 ];
 
 const WHEN_NO_ROOM_OPTIONS: ReadonlyArray<PlacementOption<LayoutWhenNoRoom>> = [
@@ -131,7 +138,7 @@ export function LayoutSettingsSection() {
     <div className="space-y-6">
       <section className="space-y-2" aria-label="Your layout">
         <div className="flex min-h-7 items-center justify-between gap-4">
-          <h2 className="text-caption text-muted-foreground">Your layout</h2>
+          <LayoutSectionTitle>Your layout</LayoutSectionTitle>
           <div className="-me-2 flex shrink-0 items-center gap-1">
             <Button size="xs" variant="ghost-muted" disabled={steps.length === 0} onClick={undo}>
               <Undo2Icon aria-hidden />
@@ -206,7 +213,9 @@ export function LayoutSettingsSection() {
               <Switch
                 aria-label="Three-finger swipe"
                 checked={settings.threeFingerSwipe}
-                onCheckedChange={(threeFingerSwipe) => updateLayoutDeviceSettings({ threeFingerSwipe })}
+                onCheckedChange={(threeFingerSwipe) =>
+                  updateLayoutDeviceSettings({ threeFingerSwipe })
+                }
               />
             }
           />
@@ -270,7 +279,7 @@ function PlacementRow<Value extends string>({
                 const Icon = option.icon;
                 return (
                   <span className="flex items-center gap-2">
-                    <Icon aria-hidden className="size-3.5 text-muted-foreground" />
+                    <LayoutMutedIcon icon={Icon} className="size-3.5" />
                     {option.label}
                   </span>
                 );

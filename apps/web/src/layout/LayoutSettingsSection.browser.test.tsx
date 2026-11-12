@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
+import { describe, expect, it } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 
 import { render } from "../../test/render";
@@ -14,16 +14,20 @@ import { DEFAULT_LAYOUT_SETTINGS, DEFAULT_LAYOUT_TEMPLATE } from "./layoutSettin
 import { layoutTemplatesEqual } from "./layoutTemplate";
 
 describe("LayoutSettingsSection", () => {
-  beforeEach(() => {
+  /** Puts the stores in a known state for one test and restores them when the test ends. */
+  function openSession(): Disposable {
     resetLayoutDeviceSettings();
-  });
-  afterEach(() => {
-    window.localStorage.removeItem(LAYOUT_DEVICE_SETTINGS_KEY);
-    resetLayoutDeviceSettings();
-    document.body.innerHTML = "";
-  });
+    return {
+      [Symbol.dispose]() {
+        window.localStorage.removeItem(LAYOUT_DEVICE_SETTINGS_KEY);
+        resetLayoutDeviceSettings();
+        document.body.innerHTML = "";
+      },
+    };
+  }
 
   it("shows the defaults with no reset buttons", async () => {
+    using _session = openSession();
     const screen = await render(<LayoutSettingsSection />);
     try {
       await expect.element(page.getByText("Your layout")).toBeVisible();
@@ -38,6 +42,7 @@ describe("LayoutSettingsSection", () => {
   });
 
   it("offers a reset for a changed placement and restores the default", async () => {
+    using _session = openSession();
     updateLayoutDeviceSettings({ terminalPlacement: "new-tab" });
     const screen = await render(<LayoutSettingsSection />);
     try {
@@ -51,6 +56,7 @@ describe("LayoutSettingsSection", () => {
   });
 
   it("resets the template to the default and undoes the reset", async () => {
+    using _session = openSession();
     const custom = {
       columns: [
         { size: 0.5, panes: [{ kind: "chat" as const, size: 1, span: "column" as const }] },
@@ -61,7 +67,9 @@ describe("LayoutSettingsSection", () => {
     const screen = await render(<LayoutSettingsSection />);
     try {
       await page.getByRole("button", { name: "Reset", exact: true }).click();
-      expect(layoutTemplatesEqual(getLayoutDeviceSettings().template, DEFAULT_LAYOUT_TEMPLATE)).toBe(true);
+      expect(
+        layoutTemplatesEqual(getLayoutDeviceSettings().template, DEFAULT_LAYOUT_TEMPLATE),
+      ).toBe(true);
       await page.getByRole("button", { name: "Undo" }).click();
       expect(layoutTemplatesEqual(getLayoutDeviceSettings().template, custom)).toBe(true);
     } finally {
@@ -70,6 +78,7 @@ describe("LayoutSettingsSection", () => {
   });
 
   it("shows the trackpad swipe switch only on macOS", async () => {
+    using _session = openSession();
     const screen = await render(<LayoutSettingsSection />);
     try {
       const isMac = /mac/i.test(navigator.platform);

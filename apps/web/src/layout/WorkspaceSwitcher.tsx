@@ -6,7 +6,6 @@
 import {
   ArrowDownIcon,
   ArrowUpIcon,
-  CheckIcon,
   LayersIcon,
   PencilIcon,
   PlusIcon,
@@ -16,6 +15,15 @@ import { useState, type KeyboardEvent } from "react";
 
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
+import {
+  LayoutErrorText,
+  LayoutListRow,
+  LayoutListRowActions,
+  LayoutListRowButton,
+  LayoutListRowCheck,
+  LayoutMetaText,
+  LayoutPopoverFooter,
+} from "../components/ui/layout-overlay";
 import { Popover, PopoverPopup, PopoverTrigger } from "../components/ui/popover";
 import { cn } from "../lib/utils";
 import type { LayoutWorkspace } from "./layoutModel";
@@ -139,9 +147,9 @@ export function WorkspaceSwitcher({ resolveWorkspaceTitle, className }: Workspac
           {focused ? nameOf(focused) : "Workspace"}
         </span>
         {workspaces.length > 1 ? (
-          <span className="shrink-0 text-caption text-muted-foreground tabular-nums">
+          <LayoutMetaText tabular className="shrink-0">
             {focusedIndex + 1} of {workspaces.length}
-          </span>
+          </LayoutMetaText>
         ) : null}
       </PopoverTrigger>
       <PopoverPopup align="start" className="w-72" aria-label="Workspaces list">
@@ -152,11 +160,7 @@ export function WorkspaceSwitcher({ resolveWorkspaceTitle, className }: Workspac
               const renaming = editing?.kind === "rename" && editing.workspaceId === workspace.id;
               const name = nameOf(workspace);
               return (
-                <li
-                  key={workspace.id}
-                  data-workspace-id={workspace.id}
-                  className="group/row flex min-h-(--h-row) items-center gap-1 rounded-[var(--r-ctl)] px-1 hover:bg-hover focus-within:bg-hover"
-                >
+                <LayoutListRow key={workspace.id} data-workspace-id={workspace.id}>
                   {renaming ? (
                     <Input
                       autoFocus
@@ -167,25 +171,18 @@ export function WorkspaceSwitcher({ resolveWorkspaceTitle, className }: Workspac
                       onKeyDown={onEditKey}
                     />
                   ) : (
-                    <button
-                      type="button"
+                    <LayoutListRowButton
                       aria-label={`Go to ${name}`}
                       aria-current={isFocused ? "true" : undefined}
-                      className="flex min-w-0 flex-1 items-center gap-2 rounded-[var(--r-ctl)] px-1 py-1 text-left text-body outline-none focus-visible:outline-2 focus-visible:outline-ring"
                       onClick={() => {
                         focusWorkspace(workspace.id);
                         setOpen(false);
                       }}
                     >
-                      <CheckIcon
-                        aria-hidden
-                        className={cn("size-3.5 shrink-0", !isFocused && "opacity-0")}
-                      />
+                      <LayoutListRowCheck shown={isFocused} />
                       <span className="min-w-0 flex-1 truncate">{name}</span>
-                      <span className="shrink-0 text-caption text-muted-foreground">
-                        {paneSummary(workspace)}
-                      </span>
-                    </button>
+                      <LayoutMetaText className="shrink-0">{paneSummary(workspace)}</LayoutMetaText>
+                    </LayoutListRowButton>
                   )}
                   {confirming === workspace.id ? (
                     <span className="flex shrink-0 items-center gap-1">
@@ -205,12 +202,17 @@ export function WorkspaceSwitcher({ resolveWorkspaceTitle, className }: Workspac
                       </Button>
                     </span>
                   ) : renaming ? null : (
-                    <span className="flex shrink-0 items-center opacity-0 transition-opacity duration-(--motion-feedback) ease-standard group-focus-within/row:opacity-100 group-hover/row:opacity-100 motion-reduce:transition-none pointer-coarse:opacity-100">
+                    <LayoutListRowActions>
                       <Button
                         size="icon-sm"
                         variant="ghost-muted"
                         aria-label={`Rename ${name}`}
-                        onClick={() => startEdit({ kind: "rename", workspaceId: workspace.id }, workspace.name ?? "")}
+                        onClick={() =>
+                          startEdit(
+                            { kind: "rename", workspaceId: workspace.id },
+                            workspace.name ?? "",
+                          )
+                        }
                       >
                         <PencilIcon aria-hidden />
                       </Button>
@@ -247,18 +249,14 @@ export function WorkspaceSwitcher({ resolveWorkspaceTitle, className }: Workspac
                       >
                         <Trash2Icon aria-hidden />
                       </Button>
-                    </span>
+                    </LayoutListRowActions>
                   )}
-                </li>
+                </LayoutListRow>
               );
             })}
           </ul>
-          {message ? (
-            <p role="alert" className="px-2 py-1 text-caption text-(--stop-ink)">
-              {message}
-            </p>
-          ) : null}
-          <div className="border-t border-(--divider) pt-1">
+          {message ? <LayoutErrorText>{message}</LayoutErrorText> : null}
+          <LayoutPopoverFooter>
             {editing?.kind === "create" ? (
               <div className="flex items-center gap-1 px-1">
                 <Input
@@ -285,7 +283,7 @@ export function WorkspaceSwitcher({ resolveWorkspaceTitle, className }: Workspac
                 New workspace
               </Button>
             )}
-          </div>
+          </LayoutPopoverFooter>
         </div>
       </PopoverPopup>
     </Popover>

@@ -1,6 +1,6 @@
 import { scopeThreadRef } from "@houston-app/client-runtime/environment";
 import { EnvironmentId, ThreadId } from "@houston-app/contracts";
-import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
+import { describe, expect, it } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 
 import { render } from "../../test/render";
@@ -41,14 +41,20 @@ const Host = () => (
   </div>
 );
 
-beforeEach(() => {
+/** Puts the stores in a known state for one test and restores them when the test ends. */
+function openSession(): Disposable {
   useLayoutStore.getState().reset();
   useLayoutStore.setState({ hint: null });
-});
-afterEach(() => useLayoutStore.getState().reset());
+  return {
+    [Symbol.dispose]() {
+      useLayoutStore.getState().reset();
+    },
+  };
+}
 
 describe("LayoutHints", () => {
   it("shows a column hint and clears it after its one-shot fade", async () => {
+    using _session = openSession();
     await using _screen = await render(<Host />);
     useLayoutStore.getState().showHint({ kind: "column", index: 1, count: 4, command: null });
     await expect.element(page.getByText("Column 2 of 4")).toBeVisible();
@@ -57,6 +63,7 @@ describe("LayoutHints", () => {
   });
 
   it("names a workspace a pane was sent to, with its place in the stack", async () => {
+    using _session = openSession();
     const layout = withWorkspaces(["Research", "Review"]);
     useLayoutStore.setState({ layout });
     await using _screen = await render(<Host />);
@@ -71,6 +78,7 @@ describe("LayoutHints", () => {
   });
 
   it("names the workspace a switch landed on", async () => {
+    using _session = openSession();
     useLayoutStore.setState({ layout: withWorkspaces(["Research", "Review"]) });
     await using _screen = await render(<Host />);
     useLayoutStore.getState().focusWorkspaceStep(1);
@@ -78,18 +86,21 @@ describe("LayoutHints", () => {
   });
 
   it("says nothing on a switch when there is only one workspace", async () => {
+    using _session = openSession();
     await using _screen = await render(<Host />);
     useLayoutStore.getState().focusWorkspaceStep(1);
     expect(useLayoutStore.getState().hint).toBeNull();
   });
 
   it("titles the terminal hint from the caller's resolver", async () => {
+    using _session = openSession();
     await using _screen = await render(<Host />);
     useLayoutStore.getState().showHint({ kind: "terminal", threadRef });
     await expect.element(page.getByText("Terminal for Billing migration")).toBeVisible();
   });
 
   it("fades with a transition that reduced motion turns off", async () => {
+    using _session = openSession();
     await using _screen = await render(<Host />);
     useLayoutStore.getState().showHint({ kind: "column", index: 0, count: 2, command: null });
     await expect.element(page.getByText("Column 1 of 2")).toBeVisible();

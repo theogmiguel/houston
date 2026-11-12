@@ -9,14 +9,11 @@ import type { ScopedThreadRef } from "@houston-app/contracts";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { Kbd } from "../components/ui/kbd";
+import { LayoutHintLabel, LayoutHintMark, LayoutHintShell } from "../components/ui/layout-overlay";
 import { shortcutLabelForCommand } from "../keybindings";
-import { cn } from "../lib/utils";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { countedLayoutWorkspaces } from "./layoutCommands";
-import {
-  selectFocusedWorkspace,
-  type LayoutWorkspace,
-} from "./layoutModel";
+import { selectFocusedWorkspace, type LayoutWorkspace } from "./layoutModel";
 import { useLayoutStore, type LayoutHint as LayoutHintState } from "./layoutStore";
 import { workspaceDisplayName } from "./WorkspaceSwitcher";
 
@@ -24,6 +21,9 @@ import { workspaceDisplayName } from "./WorkspaceSwitcher";
 const WORKSPACE_BARS = 5;
 /** Column cells the strip glyph draws before it stops adding cells. */
 const COLUMN_CELLS = 8;
+
+/** A trailing arrow key name in a shortcut label. */
+const TRAILING_ARROW = /(Left|Right|Up|Down)$/;
 
 const ARROWS: Record<string, string> = { Left: "←", Right: "→", Up: "↑", Down: "↓" };
 
@@ -113,18 +113,9 @@ function HintPill({
   children: ReactNode;
 }) {
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      data-layout-hint={kind}
-      className={cn(
-        "pointer-events-none absolute bottom-12 left-1/2 z-40 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-2.5 rounded-[var(--r-ctl)] px-3 dropdown-glass transition-opacity duration-(--motion-overlay-out) ease-exit motion-reduce:transition-none",
-        small ? "h-7" : "h-8",
-        leaving && "opacity-0",
-      )}
-    >
+    <LayoutHintShell data-layout-hint={kind} leaving={leaving} small={small}>
       {children}
-    </div>
+    </LayoutHintShell>
   );
 }
 
@@ -147,9 +138,9 @@ function TerminalHintPill({
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   return (
     <HintPill kind="terminal" leaving={leaving}>
-      <span className="min-w-0 truncate text-callout text-foreground">
+      <LayoutHintLabel>
         Terminal for {resolveThreadTitle?.(hint.threadRef) ?? "New thread"}
-      </span>
+      </LayoutHintLabel>
       <Shortcut label={shortcutLabelForCommand(keybindings, "terminal.toggle")} />
     </HintPill>
   );
@@ -184,20 +175,21 @@ function WorkspaceHintPill({
           const more =
             (bar === 0 && index > 0) || (bar === WORKSPACE_BARS - 1 && index < hint.count - 1);
           return (
-            <span
+            <LayoutHintMark
               key={bar}
-              className={cn(
-                "h-1 rounded-xs",
-                small ? (more ? "w-1" : "w-2") : more ? "w-1.5" : "w-2.5",
-                index === hint.index ? "bg-foreground" : "bg-foreground/20",
-              )}
+              shape="bar"
+              active={index === hint.index}
+              narrow={more}
+              small={small}
             />
           );
         })}
       </span>
-      <span className="min-w-0 truncate text-callout text-foreground">
-        {hint.kind === "workspace" ? `${name} · workspace ${hint.index + 1} of ${hint.count}` : name}
-      </span>
+      <LayoutHintLabel>
+        {hint.kind === "workspace"
+          ? `${name} · workspace ${hint.index + 1} of ${hint.count}`
+          : name}
+      </LayoutHintLabel>
       <Shortcut label={keys} />
     </HintPill>
   );
@@ -208,25 +200,21 @@ function ColumnHintPill({ hint }: { hint: Extract<LayoutHintState, { kind: "colu
   const leaving = useHintLifetime(hint.id);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const label = hint.command ? shortcutLabelForCommand(keybindings, hint.command) : null;
-  const keys = label?.replace(/(Left|Right|Up|Down)$/, (name) => ARROWS[name] ?? name) ?? null;
+  const keys = label?.replace(TRAILING_ARROW, (name) => ARROWS[name] ?? name) ?? null;
   return (
     <HintPill kind="column" leaving={leaving}>
       <span aria-hidden className="flex shrink-0 items-center gap-0.5">
         {Array.from({ length: Math.min(hint.count, COLUMN_CELLS) }, (_, index) => (
-          <span
+          <LayoutHintMark
             key={index}
-            className={cn(
-              "h-2.5 rounded-xs",
-              index === Math.min(hint.index, COLUMN_CELLS - 1)
-                ? "w-2.5 bg-foreground"
-                : "w-2 bg-foreground/20",
-            )}
+            shape="cell"
+            active={index === Math.min(hint.index, COLUMN_CELLS - 1)}
           />
         ))}
       </span>
-      <span className="min-w-0 truncate text-callout text-foreground">
+      <LayoutHintLabel>
         Column {hint.index + 1} of {hint.count}
-      </span>
+      </LayoutHintLabel>
       <Shortcut label={keys} />
     </HintPill>
   );

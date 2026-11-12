@@ -27,7 +27,14 @@ import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { commandLabel } from "../components/settings/KeybindingsSettings.logic";
 import { Dialog, DialogPopup } from "../components/ui/dialog";
 import { Kbd } from "../components/ui/kbd";
+import {
+  LayoutHairline,
+  LayoutHeadline,
+  LayoutHoldBackdrop,
+  LayoutHoldPanel,
+} from "../components/ui/layout-overlay";
 import { ScrollArea } from "../components/ui/scroll-area";
+import { Text } from "../components/ui/text";
 import {
   effectiveShortcutsForCommand,
   formatShortcutKeyLabel,
@@ -40,7 +47,10 @@ import { registerCommands } from "../shortcuts/dispatcher";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { isLayoutModalOpen } from "./layoutKeyGuards";
 import { ROUTE_LAYOUT_COMMANDS, isLayoutCommand, runLayoutCommand } from "./layoutCommands";
-import { setLayoutOverlayMode as setMode, useLayoutOverlayStore as useOverlayStore } from "./layoutOverlayStore";
+import {
+  setLayoutOverlayMode as setMode,
+  useLayoutOverlayStore as useOverlayStore,
+} from "./layoutOverlayStore";
 import { useLayoutStore } from "./layoutStore";
 
 /** Holding the layout modifier this long shows the menu (pen WbSUY). */
@@ -73,8 +83,13 @@ function isLayoutChord(shortcut: KeybindingShortcut): boolean {
 /** The modifiers of a shortcut as the platform writes them ("⌥⌘", "Ctrl+Alt"). */
 function modifierLabel(shortcut: KeybindingShortcut): string {
   const probe = formatShortcutLabel({ ...shortcut, key: "x" }, navigator.platform);
-  return probe.slice(0, -1).replace(/\+$/, "");
+  return probe.slice(0, -1).replace(TRAILING_PLUS, "");
 }
+
+/** The `+` a modifier label ends with once the probe key is cut off. */
+const TRAILING_PLUS = /\+$/;
+/** A numbered jump command such as `thread.jump.3`. */
+const JUMP_COMMAND = /\.jump\.\d$/;
 
 interface MenuRow {
   icon: LucideIcon;
@@ -260,10 +275,7 @@ export function LayoutShortcutsOverlay() {
       const entry = [
         ...MENU_GROUPS.flatMap((group) => group.rows.flatMap((row) => row.keys)),
         ...EXTRA_HELD_KEYS,
-      ].find(
-        (candidate) =>
-          keys.has(candidate.key),
-      );
+      ].find((candidate) => keys.has(candidate.key));
       if (!entry) return;
       const keybindings = appAtomRegistry.get(primaryServerKeybindingsAtom);
       const bound = resolveShortcutCommand(event, keybindings);
@@ -350,38 +362,39 @@ function LayoutHoldMenu() {
   const groups = SHEET_LAYOUT_GROUPS.slice(0, 3)
     .map((group) => ({
       label: group.label,
-      rows: [
-        ...group.rows,
-      ].flatMap((row) => {
-        const shortcuts = row.commands
-          .flatMap((command) => shortcutsFor(keybindings, command).slice(0, 1));
+      rows: [...group.rows].flatMap((row) => {
+        const shortcuts = row.commands.flatMap((command) =>
+          shortcutsFor(keybindings, command).slice(0, 1),
+        );
         return shortcuts.length > 0 ? [{ label: row.label, chords: chordsFor(shortcuts) }] : [];
       }),
     }))
     .filter((group) => group.rows.length > 0);
 
   return createPortal(
-    <div className="pointer-events-none fixed inset-0 z-110 flex items-center justify-center bg-black/50 p-2">
-      <div
-        role="dialog"
-        aria-label="Layout keys"
-        data-layout-hold-menu=""
-        className="flex max-h-[calc(100dvh-1rem)] w-170 max-w-full flex-col gap-4 overflow-y-auto rounded-[var(--r-group)] p-5 dialog-glass"
-      >
+    <LayoutHoldBackdrop>
+      <LayoutHoldPanel role="dialog" aria-label="Layout keys" data-layout-hold-menu="">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-col gap-1">
-            <span className="text-headline text-foreground">Layout shortcuts</span>
-            <span className="flex items-center gap-1.5 text-caption text-foreground">
-              Mod is <Kbd>{holdLabel}</Kbd>
+            <LayoutHeadline as="span">Layout shortcuts</LayoutHeadline>
+            <span className="flex items-center gap-1.5">
+              <Text variant="caption">Mod is</Text>
+              <Kbd>{holdLabel}</Kbd>
             </span>
           </div>
-          <span className="flex shrink-0 items-center gap-1.5 text-caption text-muted-foreground">
-            Release <Kbd>{holdLabel}</Kbd> to close
+          <span className="flex shrink-0 items-center gap-1.5">
+            <Text variant="caption" tone="muted">
+              Release
+            </Text>
+            <Kbd>{holdLabel}</Kbd>
+            <Text variant="caption" tone="muted">
+              to close
+            </Text>
           </span>
         </div>
         <ShortcutGrid groups={groups} compact />
-      </div>
-    </div>,
+      </LayoutHoldPanel>
+    </LayoutHoldBackdrop>,
     document.body,
   );
 }
@@ -469,8 +482,7 @@ function LayoutShortcutSheet() {
   const layoutGroups = SHEET_LAYOUT_GROUPS.map((group) => ({
     label: group.label,
     rows: group.rows.flatMap((row) => {
-      const shortcuts = row.commands
-        .flatMap(firstOf);
+      const shortcuts = row.commands.flatMap(firstOf);
       return shortcuts.length > 0 ? [{ label: row.label, chords: chordsFor(shortcuts) }] : [];
     }),
   })).filter((group) => group.rows.length > 0);
@@ -481,7 +493,7 @@ function LayoutShortcutSheet() {
     (command) =>
       !shown.has(command) &&
       !command.startsWith("layout.") &&
-      !/\.jump\.\d$/.test(command) &&
+      !JUMP_COMMAND.test(command) &&
       shortcutsFor(keybindings, command).length > 0,
   );
   const areas = SHEET_AREAS.map((area, index) => ({
@@ -501,26 +513,31 @@ function LayoutShortcutSheet() {
     <div className="flex flex-col gap-5 p-5">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-col gap-1">
-          <h2 className="text-headline text-foreground">Keyboard shortcuts</h2>
+          <LayoutHeadline>Keyboard shortcuts</LayoutHeadline>
           {cycle ? (
-            <span className="flex items-center gap-1.5 text-caption text-foreground">
-              Layout Mod is <Kbd>{modifierLabel(cycle)}</Kbd>
+            <span className="flex items-center gap-1.5">
+              <Text variant="caption">Layout Mod is</Text>
+              <Kbd>{modifierLabel(cycle)}</Kbd>
             </span>
           ) : null}
         </div>
-        <div className="flex shrink-0 items-center gap-1.5 text-callout text-muted-foreground">
-          <span>Press</span>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <Text variant="callout" tone="muted">
+            Press
+          </Text>
           <Kbd>Esc</Kbd>
-          <span>to close</span>
+          <Text variant="callout" tone="muted">
+            to close
+          </Text>
         </div>
       </div>
       <ShortcutGrid groups={layoutGroups} />
-      <div className="h-px bg-(--divider)" />
+      <LayoutHairline />
       <ShortcutGrid groups={areas} />
       {mac ? null : (
-        <p className="text-callout text-muted-foreground">
+        <Text as="p" variant="callout" tone="muted">
           Off macOS, Ctrl takes the place of ⌘ and Alt+Shift moves focus.
-        </p>
+        </Text>
       )}
     </div>
   );
@@ -545,12 +562,12 @@ function ShortcutGrid({
     >
       {groups.map((group) => (
         <div key={group.label} className="flex min-w-0 flex-col gap-2">
-          <div className={cn(compact ? "text-caption" : "text-callout", "text-muted-foreground")}>
+          <Text as="div" variant={compact ? "caption" : "callout"} tone="muted">
             {group.label}
-          </div>
+          </Text>
           {group.rows.map((row) => (
             <div key={row.label} className="flex flex-col items-start gap-1">
-              <span className="text-callout text-foreground">{row.label}</span>
+              <Text variant="callout">{row.label}</Text>
               <div className="flex max-w-full flex-wrap gap-1">
                 {row.chords.map((chord) => (
                   <Kbd key={chord.modifiers}>

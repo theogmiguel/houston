@@ -1,9 +1,14 @@
-import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
+import { describe, expect, it } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import { render } from "../../test/render";
 import "../index.css";
-import { LAYOUT_LEARNED_KEY, LAYOUT_TOUR_KEY, LayoutLearningTips, LayoutOnboarding } from "./LayoutOnboarding";
+import {
+  LAYOUT_LEARNED_KEY,
+  LAYOUT_TOUR_KEY,
+  LayoutLearningTips,
+  LayoutOnboarding,
+} from "./LayoutOnboarding";
 import { useLayoutStore } from "./layoutStore";
 
 const Host = () => (
@@ -13,19 +18,23 @@ const Host = () => (
   </>
 );
 
-beforeEach(() => {
+/** Puts the stores in a known state for one test and restores them when the test ends. */
+function openSession(): Disposable {
   localStorage.removeItem(LAYOUT_TOUR_KEY);
   localStorage.removeItem(LAYOUT_LEARNED_KEY);
   useLayoutStore.getState().reset();
-});
-afterEach(() => {
-  useLayoutStore.getState().setOverviewOpen(false);
-  localStorage.removeItem(LAYOUT_TOUR_KEY);
-  localStorage.removeItem(LAYOUT_LEARNED_KEY);
-});
+  return {
+    [Symbol.dispose]() {
+      useLayoutStore.getState().setOverviewOpen(false);
+      localStorage.removeItem(LAYOUT_TOUR_KEY);
+      localStorage.removeItem(LAYOUT_LEARNED_KEY);
+    },
+  };
+}
 
 describe("LayoutOnboarding", () => {
   it("walks the five steps from the introduction to the end and is not shown again", async () => {
+    using _session = openSession();
     const first = await render(<Host />);
     await expect.element(page.getByRole("heading", { name: "Tabs, side by side" })).toBeVisible();
     await userEvent.click(page.getByRole("button", { name: "Show me" }));
@@ -44,6 +53,7 @@ describe("LayoutOnboarding", () => {
   });
 
   it("is dismissed for good by Got it on the introduction", async () => {
+    using _session = openSession();
     await using _screen = await render(<Host />);
     await userEvent.click(page.getByRole("button", { name: "Got it" }));
     expect(localStorage.getItem(LAYOUT_TOUR_KEY)).toBe("true");
@@ -51,6 +61,7 @@ describe("LayoutOnboarding", () => {
   });
 
   it("can be skipped in the middle", async () => {
+    using _session = openSession();
     await using _screen = await render(<Host />);
     await userEvent.click(page.getByRole("button", { name: "Show me" }));
     await userEvent.click(page.getByRole("button", { name: "Next" }));
@@ -59,6 +70,7 @@ describe("LayoutOnboarding", () => {
   });
 
   it("does not count its own zoom-out as the overview tried", async () => {
+    using _session = openSession();
     await using _screen = await render(<Host />);
     await userEvent.click(page.getByRole("button", { name: "Show me" }));
     for (let step = 1; step <= 3; step++) {
@@ -71,6 +83,7 @@ describe("LayoutOnboarding", () => {
   });
 
   it("fits a narrow window", async () => {
+    using _session = openSession();
     await page.viewport(360, 640);
     try {
       await using _screen = await render(<Host />);
@@ -85,12 +98,14 @@ describe("LayoutOnboarding", () => {
 
 describe("LayoutLearningTips", () => {
   it("lists the tips until the layout has been used", async () => {
+    using _session = openSession();
     await using _screen = await render(<LayoutLearningTips />);
     await expect.element(page.getByText("Drag a tab to the right edge")).toBeVisible();
     await expect.element(page.getByText(/to see the layout keys/)).toBeVisible();
   });
 
   it("hides a tip once its lesson is learned", async () => {
+    using _session = openSession();
     localStorage.setItem(LAYOUT_LEARNED_KEY, JSON.stringify(["split", "keys"]));
     await using screen = await render(<LayoutLearningTips />);
     expect(screen.container.textContent).toBe("");
