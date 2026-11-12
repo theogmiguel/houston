@@ -299,6 +299,18 @@ function placeSurfaceTabs(
   });
 }
 
+/** Points the thread's layout tabs showing surface `from` at surface `to`. */
+function retargetReplacedSurface(threadRef: ScopedThreadRef, from: string, to: string) {
+  layoutUpdate(() => {
+    for (const location of findLayoutSurfaceTabs(useLayoutStore.getState().layout, threadRef)) {
+      if (surfaceIdOf(location.tab) !== from) continue;
+      useLayoutStore
+        .getState()
+        .replaceTabContent(location.tab.id, { kind: "surface", threadRef, surfaceId: to });
+    }
+  });
+}
+
 function closeTabs(ids: readonly string[]) {
   if (ids.length === 0) return;
   const set = new Set(ids);
@@ -396,12 +408,88 @@ function syncThreadTerminal(threadRef: ScopedThreadRef, open: boolean, focus = t
 }
 
 /**
- * Once the layout and both surface stores have loaded: tabs whose surface is gone close, and each
- * store's open state matches what the layout shows.
+ * Threads whose surfaces were open before the layout showed them as tabs: set once per page load,
+ * and emptied as each thread's chat tab adopts them.
+ */
+let legacySurfaceThreadKeys: Set<string> | null = null;
+
+function layoutHoldsSurfaceTabs(layout: LayoutState): boolean {
+  return layout.workspaces.some((workspace) =>
+    workspace.columns.some((column) =>
+      column.panes.some((pane) => pane.tabs.some((tab) => tab.content.kind === "surface")),
+    ),
+  );
+}
+
+/** A chat tab for a thread whose surfaces were open becomes that thread's surface tabs. */
+function adoptLegacySurfaceTabs(layout: LayoutState) {
+  if (!legacySurfaceThreadKeys?.size) return;
+  for (const workspace of layout.workspaces) {
+    for (const column of workspace.columns) {
+      for (const pane of column.panes) {
+        for (const tab of pane.tabs) {
+          if (tab.content.kind !== "chat") continue;
+          const target = tab.content.target;
+          const draft =
+            target.kind === "draft"
+              ? useComposerDraftStore.getState().getDraftSession(target.draftId)
+              : null;
+          const threadRef =
+            target.kind === "server"
+              ? target.threadRef
+              : draft
+                ? { environmentId: draft.environmentId, threadId: draft.threadId }
+                : null;
+          if (!threadRef) continue;
+          if (!legacySurfaceThreadKeys.delete(scopedThreadKey(threadRef))) continue;
+          const focused = selectFocusedTab(useLayoutStore.getState().layout);
+          const panel = selectThreadRightPanelState(
+            useRightPanelStore.getState().byThreadKey,
+            threadRef,
+          );
+          syncThreadSurfaces(threadRef, EMPTY_THREAD_STATE, panel, {
+            byUser: true,
+            closing: false,
+          });
+          if (
+            selectThreadTerminalUiState(
+              useTerminalUiStateStore.getState().terminalUiStateByThreadKey,
+              threadRef,
+            ).terminalOpen
+          ) {
+            pendingPlacements.set(scopedThreadKey(threadRef), { kind: "below" });
+            syncThreadTerminal(threadRef, true, false);
+          }
+          if (focused) layoutUpdate(() => useLayoutStore.getState().focusTab(focused.id));
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Once the layout and both surface stores have loaded: surfaces left open by the grid era become
+ * tabs, tabs whose surface is gone close, and each store's open state matches what the layout shows.
  */
 function reconcileOnLoad() {
   const rightPanel = useRightPanelStore.getState();
   let layout = useLayoutStore.getState().layout;
+  // A layout that has never held a surface tab meets stores that still read open: those
+  // surfaces predate the layout's tabs, so they become tabs rather than being hidden.
+  if (legacySurfaceThreadKeys === null) {
+    legacySurfaceThreadKeys = layoutHoldsSurfaceTabs(layout)
+      ? new Set()
+      : new Set([
+          ...Object.entries(rightPanel.byThreadKey)
+            .filter(([key, state]) => state.isOpen && key !== PULL_REQUESTS_PANEL_KEY)
+            .map(([key]) => key),
+          ...Object.entries(useTerminalUiStateStore.getState().terminalUiStateByThreadKey)
+            .filter(([, state]) => state.terminalOpen)
+            .map(([key]) => key),
+        ]);
+  }
+  adoptLegacySurfaceTabs(layout);
+  layout = useLayoutStore.getState().layout;
   // Tabs whose surface is gone.
   const threadKeys = new Set<string>();
   const gone: string[] = [];
@@ -427,7 +515,7 @@ function reconcileOnLoad() {
   closeTabs(gone);
   // Open where the layout shows them; hidden where it does not.
   for (const [key, state] of Object.entries(useRightPanelStore.getState().byThreadKey)) {
-    if (key === PULL_REQUESTS_PANEL_KEY) continue;
+    if (key === PULL_REQUESTS_PANEL_KEY || legacySurfaceThreadKeys.has(key)) continue;
     const threadRef = parseScopedThreadKey(key);
     if (!threadRef) continue;
     const shown = threadKeys.has(key);
@@ -448,10 +536,11 @@ function reconcileOnLoad() {
     }
   }
   for (const [key, state] of Object.entries(terminals.terminalUiStateByThreadKey)) {
-    if (!state.terminalOpen || terminalKeys.has(key)) continue;
+    if (!state.terminalOpen || terminalKeys.has(key) || legacySurfaceThreadKeys.has(key)) continue;
     const threadRef = parseScopedThreadKey(key);
     if (threadRef) terminals.setTerminalOpen(threadRef, false);
   }
+  adoptLegacySurfaceTabs(useLayoutStore.getState().layout);
 }
 
 function surfaceIdOfContent(tab: LayoutTab): string {
@@ -536,6 +625,10 @@ function start(): () => void {
         if (before === after) continue;
         const threadRef = parseScopedThreadKey(key);
         if (!threadRef) continue;
+        const replacement = state.surfaceReplacementByThreadKey[key];
+        if (replacement && replacement !== previous.surfaceReplacementByThreadKey[key]) {
+          retargetReplacedSurface(threadRef, replacement.from, replacement.to);
+        }
         syncThreadSurfaces(threadRef, before, after, {
           byUser:
             (state.userActionRevisionByThreadKey[key] ?? 0) !==

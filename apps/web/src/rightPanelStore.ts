@@ -124,6 +124,8 @@ interface RightPanelStoreState {
   threadPanelPresentationByThreadKey: Record<string, ThreadPanelPresentation>;
   userActionRevisionByThreadKey: Record<string, number>;
   closeRevisionByThreadKey: Record<string, number>;
+  /** Session-only: the surface a thread last replaced in place, which its layout tab follows. */
+  surfaceReplacementByThreadKey: Record<string, { readonly from: string; readonly to: string }>;
   getUserActionRevision: (ref: ScopedThreadRef) => number;
   markUserAction: (ref: ScopedThreadRef) => number;
   /** Refused if the user chose a panel after expectedUserActionRevision was read. */
@@ -663,6 +665,7 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
       threadPanelPresentationByThreadKey: {},
       userActionRevisionByThreadKey: {},
       closeRevisionByThreadKey: {},
+      surfaceReplacementByThreadKey: {},
       getUserActionRevision: (ref) =>
         get().userActionRevisionByThreadKey[scopedThreadKey(ref)] ?? 0,
       markUserAction: (ref) => {
@@ -856,20 +859,22 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
           }),
         ),
       navigateFolder: (ref, surfaceId, relativePath, folderTrail, keepSource = false) =>
-        set((state) =>
-          userAction(state, scopedThreadKey(ref), (current) => {
-            const index = current.surfaces.findIndex((surface) => surface.id === surfaceId);
-            if (index < 0) return current;
+        set((state) => {
+          const key = scopedThreadKey(ref);
+          const before = state.byThreadKey[key];
+          const next = userAction(state, key, (thread) => {
+            const index = thread.surfaces.findIndex((surface) => surface.id === surfaceId);
+            if (index < 0) return thread;
             const trail = folderTrail === relativePath ? {} : { folderTrail };
             const target: RightPanelSurface =
               relativePath === ""
                 ? { ...singletonSurface("files"), ...trail }
                 : { ...fileSurface(relativePath, null, 1), ...trail };
-            const source = current.surfaces[index]!;
-            const existing = current.surfaces.some(
+            const source = thread.surfaces[index]!;
+            const existing = thread.surfaces.some(
               (surface, i) => i !== index && surface.id === target.id,
             );
-            const surfaces = current.surfaces.flatMap((surface, i) => {
+            const surfaces = thread.surfaces.flatMap((surface, i) => {
               if (i === index) {
                 const kept = keepSource ? [source] : [];
                 return existing ? kept : [...kept, target];
@@ -878,9 +883,27 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
                 ? []
                 : [surface];
             });
-            return { ...current, isOpen: true, activeSurfaceId: target.id, surfaces };
-          }),
-        ),
+            return { ...thread, isOpen: true, activeSurfaceId: target.id, surfaces };
+          });
+          const target = next.byThreadKey?.[key]?.activeSurfaceId;
+          // A tab showing the folder follows it to the file or folder that took its place.
+          const replaced =
+            !keepSource &&
+            target !== undefined &&
+            target !== null &&
+            target !== surfaceId &&
+            before?.surfaces.some((surface) => surface.id === surfaceId) === true &&
+            // A target the thread already showed is not a replacement: the source just closes.
+            !before.surfaces.some((surface) => surface.id === target);
+          if (!replaced) return next;
+          return {
+            ...next,
+            surfaceReplacementByThreadKey: {
+              ...state.surfaceReplacementByThreadKey,
+              [key]: { from: surfaceId, to: target },
+            },
+          };
+        }),
       openAttachment: (ref, attachment) =>
         set((state) =>
           userAction(state, scopedThreadKey(ref), (current) => {

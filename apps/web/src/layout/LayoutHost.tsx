@@ -23,6 +23,7 @@ import { layoutChatRoute } from "./layoutChatRoute";
 import { selectFocusedTab, type LayoutTab, type LayoutWorkspace } from "./layoutModel";
 import { LayoutPaneContext } from "./layoutPaneContext";
 import { LayoutPageTab } from "./LayoutPageTab";
+import { LayoutSurfaceServices } from "./LayoutSurfaceServices";
 import { useLayoutStore } from "./layoutStore";
 import {
   buildLayoutTabMenuItems,
@@ -177,6 +178,7 @@ function LoadedLayoutHost({ threadTarget, atIndex, active, narrow }: LayoutHostP
       <LayoutOnboarding />
       {active ? <LayoutOverview /> : null}
       <LayoutShortcutsOverlay />
+      <LayoutSurfaceServices />
     </>
   );
 }
