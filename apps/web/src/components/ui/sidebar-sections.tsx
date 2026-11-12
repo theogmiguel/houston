@@ -60,10 +60,12 @@ export const SIDEBAR_ROW_ACTIONS_CLS =
   "absolute inset-y-0 right-0.75 flex shrink-0 items-center gap-0.5";
 
 /**
- * A workspace's thread cards: inset 4px inside the rail's own 8px, so a card sits 12px from the
- * sidebar edge and lines up with the workspace heading, with 4px between cards.
+ * A workspace's thread cards, with 4px between cards. On desktop they hang from a guide line
+ * that drops from the centre of the heading's chevron (22px in), and sit 6px to its right; a
+ * phone keeps them 4px inside the rail, in line with the heading.
  */
-export const SIDEBAR_GROUP_THREADS_CLS = "flex flex-col gap-1 px-1 pt-0.5 pb-1";
+export const SIDEBAR_GROUP_THREADS_CLS =
+  "flex flex-col gap-1 px-1 pt-0.5 pb-1 sm:ml-5.5 sm:border-l sm:border-border sm:pl-1.5";
 
 /** A workspace's name, in primary ink while the workspace is on screen. */
 export function sidebarGroupNameCls(onScreen: boolean): string {

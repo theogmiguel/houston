@@ -210,19 +210,25 @@ describe("sidebar tree: workspace row", () => {
 });
 
 describe("sidebar tree: guides and alignment", () => {
-  it("draws no guide line, and insets a workspace's cards 12px from the rail", async () => {
+  it("hangs a workspace's cards from a guide line under the chevron's centre", async () => {
     await page.viewport(1440, 900);
     await using screen = await render(
       tree([{ value: section("w1", [thread("a")]), overrides: { open: true } }]),
     );
     const cards = cardsOf(screen.container, "w1")!;
-    expect(getComputedStyle(cards).borderLeftWidth).toBe("0px");
+    expect(getComputedStyle(cards).borderLeftWidth).toBe("1px");
+    const chevron = workspaceRow(screen.container, "w1").querySelector<HTMLElement>(
+      "[data-workspace-chevron-box]",
+    )!;
+    const chevronCentre = rect(chevron).left + rect(chevron).width / 2;
+    // The 1px line ends on the chevron's centre.
+    expect(rect(cards).left + 1).toBeCloseTo(chevronCentre, 0);
     const card = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
-    const rail = screen.container.querySelector<HTMLElement>("[data-workspace-key]")!;
-    expect(rect(card).left - rect(rail).left).toBeCloseTo(4, 0);
+    expect(rect(card).left - rect(cards).left).toBeCloseTo(7, 0);
+    expect(rect(card).height).toBe(76);
   });
 
-  it("puts the workspace chevron and thread titles on one left edge, with the card spanning the heading row's width", async () => {
+  it("keeps a card's right edge on the heading row's, at every rail width", async () => {
     await page.viewport(1440, 900);
     for (const width of rails) {
       await using screen = await render(
@@ -230,11 +236,8 @@ describe("sidebar tree: guides and alignment", () => {
       );
       const card = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
       const row = workspaceRow(screen.container, "w1");
-      const chevron = row.querySelector<HTMLElement>("[data-workspace-chevron-box]")!;
-      const title = card.querySelector<HTMLElement>("[data-card-open]")!;
-      expect(rect(chevron).left).toBeCloseTo(rect(title).left, 0);
-      expect(rect(card).left).toBeCloseTo(rect(row).left, 0);
       expect(rect(card).right).toBeCloseTo(rect(row).right, 0);
+      expect(rect(card).left).toBeGreaterThan(rect(row).left);
     }
   });
 
