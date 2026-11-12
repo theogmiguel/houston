@@ -65,7 +65,7 @@ export function LayoutLauncherRow({
       aria-disabled={disabled || undefined}
       onClick={disabled ? undefined : onSelect}
       className={cn(
-        "flex min-h-8 w-full items-center gap-2.5 rounded-(--r-selection) px-2.5 py-1 text-left text-body outline-none transition-colors duration-(--motion-feedback) ease-standard hover:bg-hover focus-visible:ring-2 focus-visible:ring-(--accent-ink) focus-visible:ring-inset motion-reduce:transition-none",
+        "flex h-8 w-full items-center gap-2.5 rounded-(--r-selection) px-2.5 text-left text-body outline-none transition-colors duration-(--motion-feedback) ease-standard hover:bg-hover focus-visible:ring-2 focus-visible:ring-(--accent-ink) focus-visible:ring-inset motion-reduce:transition-none",
         disabled ? "cursor-default text-muted-foreground opacity-60" : "cursor-pointer",
       )}
     >

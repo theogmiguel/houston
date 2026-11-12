@@ -107,6 +107,17 @@ describe("LayoutLauncher", () => {
     ]);
   });
 
+  it("draws every row at one height, with or without a shortcut", async () => {
+    useLayoutStore.getState().setLayoutFromServer(buildLayout([[]]));
+    await using screen = await render(<LayoutLauncher tabId={null} context={context} />);
+    const heights = new Set(
+      Array.from(screen.container.querySelectorAll("[data-layout-launcher-row]")).map((row) =>
+        Math.round(row.getBoundingClientRect().height),
+      ),
+    );
+    expect([...heights]).toEqual([32]);
+  });
+
   it("says why a surface is unavailable and does not open it", async () => {
     useLayoutStore.getState().setLayoutFromServer(buildLayout([[]]));
     harness.open.mockClear();
