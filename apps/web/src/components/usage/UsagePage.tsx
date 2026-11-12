@@ -392,8 +392,8 @@ export function UsagePage() {
       <RefreshIcon size="sm" refreshing={isRefreshing} />
     </Button>
   );
-  const usageActions = (
-    <div className="flex min-w-0 flex-wrap items-center gap-2 max-phone:gap-x-4">
+  const usageFilters = (
+    <>
       <UsageEnvironmentFilter
         environments={environments}
         selectedEnvironments={selectedEnvironments}
@@ -410,42 +410,51 @@ export function UsagePage() {
         hiddenProviders={hiddenProviders}
         onChange={(next) => updatePreferences({ hiddenProviders: next })}
       />
-      <div className="ml-auto flex min-w-0 flex-wrap items-center gap-2 max-phone:contents">
-        {showingLimits ? null : (
-          <ToggleGroup
-            aria-label="Usage period"
-            className="max-phone:order-2 max-phone:w-full max-phone:*:h-11 max-phone:*:flex-1"
-            variant="segmented"
-            value={[String(windowDays)]}
-            onValueChange={(next) => {
-              const value = next[0];
-              if (value) selectWindow(Number(value));
-            }}
-          >
-            {WINDOW_OPTIONS.map((option) => (
-              <Toggle key={option.days} value={String(option.days)} title={shortcutTitle(option)}>
-                {option.label}
-              </Toggle>
-            ))}
-          </ToggleGroup>
-        )}
+    </>
+  );
+  const usageControls = (
+    <div className="flex min-w-0 flex-wrap items-center gap-2 max-phone:contents">
+      {showingLimits ? null : (
         <ToggleGroup
-          aria-label="Usage metric"
-          className="max-phone:order-3 max-phone:w-full max-phone:*:h-11 max-phone:*:flex-1"
+          aria-label="Usage period"
+          className="max-phone:order-2 max-phone:w-full max-phone:*:h-11 max-phone:*:flex-1"
           variant="segmented"
-          value={[metric]}
+          value={[String(windowDays)]}
           onValueChange={(next) => {
             const value = next[0];
-            if (isUsageMetric(value)) selectMetric(value);
+            if (value) selectWindow(Number(value));
           }}
         >
-          {METRIC_OPTIONS.map((option) => (
-            <Toggle key={option.value} value={option.value} title={shortcutTitle(option)}>
+          {WINDOW_OPTIONS.map((option) => (
+            <Toggle key={option.days} value={String(option.days)} title={shortcutTitle(option)}>
               {option.label}
             </Toggle>
           ))}
         </ToggleGroup>
-        {isPhone ? null : refreshButton}
+      )}
+      <ToggleGroup
+        aria-label="Usage metric"
+        className="max-phone:order-3 max-phone:w-full max-phone:*:h-11 max-phone:*:flex-1"
+        variant="segmented"
+        value={[metric]}
+        onValueChange={(next) => {
+          const value = next[0];
+          if (isUsageMetric(value)) selectMetric(value);
+        }}
+      >
+        {METRIC_OPTIONS.map((option) => (
+          <Toggle key={option.value} value={option.value} title={shortcutTitle(option)}>
+            {option.label}
+          </Toggle>
+        ))}
+      </ToggleGroup>
+    </div>
+  );
+  const usageActions = (
+    <div className="flex min-w-0 flex-wrap items-center gap-2 max-phone:gap-x-4">
+      {usageFilters}
+      <div className="ml-auto flex min-w-0 flex-wrap items-center gap-2 max-phone:contents">
+        {usageControls}
       </div>
     </div>
   );
@@ -461,6 +470,10 @@ export function UsagePage() {
               <h1 className="truncate">Usage</h1>
             </WorkspaceBreadcrumbItem>
           </WorkspaceBreadcrumb>
+          {usageFilters}
+          <div className="min-w-0 flex-1" />
+          {usageControls}
+          {refreshButton}
         </WorkspacePageHeader>
       )}
 
@@ -468,7 +481,6 @@ export function UsagePage() {
         <WorkspacePageContainer width="wide" className="gap-7 max-phone:gap-4 max-phone:px-4">
           <div className="flex flex-wrap items-start gap-4">
             <div className="min-w-0 flex-1">
-              {isPhone ? null : <h1 className="text-large-title font-bold">Usage</h1>}
               {showingLimits ? null : (
                 <>
                   <p className="mt-1 max-w-[62ch] text-sm leading-5 text-secondary-foreground">
@@ -480,7 +492,7 @@ export function UsagePage() {
               )}
             </div>
           </div>
-          {usageActions}
+          {isPhone ? usageActions : null}
           {selectedEnvironments.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               {environments.length === 0
