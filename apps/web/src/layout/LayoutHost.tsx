@@ -108,11 +108,12 @@ function LoadedLayoutHost({ threadTarget, atIndex, active, narrow }: LayoutHostP
       thread !== null &&
       focusedSurfaceKey !== null &&
       scopedThreadKey(thread) === focusedSurfaceKey;
-    // The strip reports `related: false`; a chat whose surface has focus overrides it here.
-    return related ? (
-      <LayoutPaneContext value={{ ...context, related: true }}>{body}</LayoutPaneContext>
-    ) : (
-      body
+    // The strip reports `related: false`; a chat whose surface has focus overrides it here. The
+    // provider is always present so that gaining or losing `related` never remounts the tab.
+    return (
+      <LayoutPaneContext value={related ? { ...context, related: true } : context}>
+        {body}
+      </LayoutPaneContext>
     );
   };
 
