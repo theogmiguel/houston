@@ -247,7 +247,7 @@ describe("Providers page row insets", () => {
     }
   });
 
-  it("sizes the health-check number input's line box to its 26px field", async () => {
+  it("sizes the health-check number input's line box to its 28px field", async () => {
     await setup();
     await page.viewport(1440, 900);
     await using screen = await render(panel());
@@ -256,7 +256,7 @@ describe("Providers page row insets", () => {
       .getByRole("textbox", { name: "Provider health check interval in seconds" })
       .element();
     const style = getComputedStyle(input);
-    expect(style.height).toBe("26px");
-    expect(style.lineHeight).toBe("26px");
+    expect(style.height).toBe("28px");
+    expect(style.lineHeight).toBe("28px");
   });
 });
