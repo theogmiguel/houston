@@ -132,4 +132,19 @@ describe("the overview on the strip", () => {
     await expect.poll(() => getOverviewPhase()).toBe("open");
     expect(screen.container.querySelectorAll("[data-overview-workspace]")).toHaveLength(1);
   });
+
+  it("drags a pane above the first row into a workspace of its own", async () => {
+    using _layout = openLayout(TWO_WORKSPACES);
+    await using screen = await render(<Harness />, { router: false });
+    open();
+    await expect.poll(() => getOverviewPhase()).toBe("open");
+    const pane = screen.container.querySelector<HTMLElement>("[data-overview-pane='w0c1p0']")!;
+    const host = pane.closest<HTMLElement>("[data-layout-stage]")!.parentElement!;
+    const tabsOf = (workspace: { columns: { panes: { activeTabId: string | null }[] }[] }) =>
+      workspace.columns.flatMap((column) => column.panes.map((p) => p.activeTabId));
+    await userEvent.dragAndDrop(pane, host, { targetPosition: { x: 500, y: 6 } });
+    const workspaces = useLayoutStore.getState().layout.workspaces.map(tabsOf);
+    expect(workspaces[0]).toEqual(["b"]);
+    expect(workspaces.flat().toSorted()).toEqual(["a", "b", "c"]);
+  });
 });

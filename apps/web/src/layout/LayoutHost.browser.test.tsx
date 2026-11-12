@@ -140,4 +140,43 @@ describe("LayoutHost", () => {
     await expect.element(page.getByTestId("chat-t1")).toBeVisible();
     expect(chatMounts.get("t1")).toBe(1);
   });
+
+  it("gives a closed pane's space to its neighbour when its last tab closes", async () => {
+    using _layout = openLayout([[[["t1"]], [["t2"]]]]);
+    await using _screen = await render(host);
+    await expect.element(page.getByTestId("chat-t2")).toBeVisible();
+    useLayoutStore.getState().closeTab("t1");
+    await expect.poll(() => page.getByTestId("chat-t1").query()).toBeNull();
+    await expect
+      .poll(() => page.getByTestId("chat-t2").element().getBoundingClientRect().width)
+      .toBeGreaterThan(900);
+    expect(useLayoutStore.getState().layout.workspaces[0]!.columns).toHaveLength(1);
+  });
+
+  it("shows the launcher once the last tab of the last pane closes", async () => {
+    using _layout = openLayout([[[["t1"]]]]);
+    await using screen = await render(host);
+    await expect.element(page.getByTestId("chat-t1")).toBeVisible();
+    useLayoutStore.getState().closeTab("t1");
+    await expect
+      .poll(() => screen.container.querySelector("[data-new-tab-launcher]"))
+      .not.toBeNull();
+    expect(page.getByTestId("chat-t1").query()).toBeNull();
+  });
+
+  it("switches to another workspace and shows its panes", async () => {
+    using _layout = openLayout([[[["t1"]]], [[["t2"]], [["t3"]]]]);
+    await using _screen = await render(host);
+    await expect.element(page.getByTestId("chat-t1")).toBeVisible();
+    useLayoutStore.getState().focusWorkspace("w1");
+    await expect.element(page.getByTestId("chat-t2")).toBeVisible();
+    await expect.element(page.getByTestId("chat-t3")).toBeVisible();
+    expect(
+      page
+        .getByTestId("chat-t1")
+        .element()
+        .closest("[data-layout-pane-body]")
+        ?.hasAttribute("inert"),
+    ).toBe(true);
+  });
 });
