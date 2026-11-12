@@ -2,7 +2,7 @@ import type { ProviderApprovalDecision, RuntimeRequestId } from "@houston-app/co
 import { TriangleAlertIcon } from "lucide-react";
 import { memo } from "react";
 
-import type { PaneDensity } from "../../grid/density";
+import type { PaneDensity } from "../../threads/density";
 import { type PendingApproval } from "../../session-logic";
 import { cn } from "../../lib/utils";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";

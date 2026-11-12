@@ -24,7 +24,7 @@ import {
 } from "./chat/optimisticUserMessages";
 import { useTimelineRewind } from "./chat/useTimelineRewind";
 import { useThreadLifecycle } from "./chat/useThreadLifecycle";
-import { useThreadOpen } from "./grid/threadOpenContext";
+import { useThreadOpen } from "../threads/threadOpenContext";
 import { useRightPanelActions } from "./chat/useRightPanelActions";
 import { type TerminalLaunchContext, useChatTerminalActions } from "./chat/useChatTerminalActions";
 import { useComposerSend } from "./chat/useComposerSend";
@@ -42,7 +42,9 @@ import { recallCheckoutIsRepo, rememberCheckoutIsRepo } from "./ChatView.logic";
 import { useLogicalProjectEnvironments } from "../hooks/useLogicalProjectEnvironments";
 import { useStableCallback } from "../hooks/useStableCallback";
 import { useProjectScriptEditing } from "./chat/useProjectScriptEditing";
-import { RightPanelSurfaceContent } from "./chat/RightPanelSurfaceContent";
+import { ThreadSurfaceContent } from "./chat/ThreadSurfaceContent";
+import { selectPendingFileSurfaceIds, useFilePendingStore } from "./files/filePendingStore";
+import { publishThreadChatBridge } from "../layout/threadSurfaceBridge";
 import { usePendingThreadRequests } from "./chat/usePendingThreadRequests";
 import { isScratchProject } from "@houston-app/client-runtime/state/projects";
 import { visibleThreadPullRequests } from "@houston-app/shared/threadPullRequests";
@@ -182,7 +184,6 @@ import {
 } from "./preview/ThreadPreviewMiniPlayer";
 import { createChatCanvasStore, resolveChatCanvasModel } from "./chat/canvasStore";
 import { usePreviewSession } from "./preview/usePreviewSession";
-import { getConfiguredPreviewUrls } from "./preview/previewEmptyStateLogic";
 
 import {
   previewMiniPlayerSourceKey,
@@ -313,7 +314,7 @@ import {
   shouldShowComposerContextStrip,
   shouldShowEnvironmentIndicator,
 } from "./BranchToolbar.logic";
-import { resolveRowPullRequest } from "../grid/sidebar";
+import { resolveRowPullRequest } from "../threads/rowPullRequest";
 import {
   getProviderStatusBannerKey,
   shouldShowProviderStatusBanner,
@@ -378,17 +379,14 @@ import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { observeResize } from "~/lib/observeResize";
 import { ThreadVisitWatermark } from "./chat/ThreadVisitWatermark";
 import { ChatTerminalDrawers } from "./chat/ChatTerminalDrawers";
-import { GridLayoutMenu, GridLayoutMenuItems } from "./grid/GridLayoutMenu";
-import { toggleGridTerminal } from "../grid/gridTerminal";
-import { useGridStore } from "../grid/gridStore";
-import { preorderThreads } from "@houston-app/shared/grid/tree";
+import { toggleTerminal } from "./terminal/toggleTerminal";
 import { ChatRightPanel } from "./chat/ChatRightPanel";
 import { useDraftEnvironmentRouting } from "./chat/useDraftEnvironmentRouting";
 import { branchMismatchBannerItem, extensionStatusBannerItem } from "./chat/ThreadActivityBanners";
 import { ThreadNow } from "./chat/ThreadNow";
 import { ComposerApprovalCard } from "./chat/ComposerApprovalCard";
 import { checkpointFileTotals } from "@houston-app/client-runtime/state/thread-checkpoints";
-import type { PaneDensity } from "../grid/density";
+import type { PaneDensity } from "../threads/density";
 import type { ThreadStructure } from "@houston-app/client-runtime/state/shell";
 import { useDelayedStatus } from "../hooks/useDelayedStatus";
 import { useTimelineFollow } from "./chat/useTimelineFollow";
@@ -414,7 +412,6 @@ const EMPTY_FEEDBACK_SUBMISSIONS: ReadonlyArray<CodexFeedbackSubmission> = [];
 const EMPTY_PROVIDER_SKILLS: ServerProvider["skills"] = [];
 const EMPTY_TURN_ITEMS: ThreadStructure["turnItems"] = [];
 const EMPTY_AUTO_UPDATE_ENVIRONMENTS: ReadonlyArray<EnvironmentPresentation> = [];
-const EMPTY_PENDING_FILE_SURFACE_IDS: ReadonlySet<string> = new Set();
 
 type ChatViewProps =
   | {
@@ -441,8 +438,10 @@ type ChatViewProps =
       /** The grid owns one details flag; the focused cell shows its card. */
       detailsOpen?: boolean;
       onDetailsOpenChange?: (open: boolean) => void;
-      /** The grid's terminal dock takes this cell's terminal toggle and chords. */
-      gridTerminalRef?: ScopedThreadRef | null;
+      /** A host terminal dock takes this chat's terminal toggle and chords. */
+      hostTerminalRef?: ScopedThreadRef | null;
+      /** Arrangement controls the host adds to the header of a chat that owns its page. */
+      headerLayoutControls?: ChatHeaderLayoutControls | undefined;
       /** The phone thread page already reserves the bottom safe area around the cell. */
       phoneShell?: boolean;
       routeKind: "server";
@@ -472,13 +471,20 @@ type ChatViewProps =
       /** The grid owns one details flag; the focused cell shows its card. */
       detailsOpen?: boolean;
       onDetailsOpenChange?: (open: boolean) => void;
-      /** The grid's terminal dock takes this cell's terminal toggle and chords. */
-      gridTerminalRef?: ScopedThreadRef | null;
+      /** A host terminal dock takes this chat's terminal toggle and chords. */
+      hostTerminalRef?: ScopedThreadRef | null;
+      /** Arrangement controls the host adds to the header of a chat that owns its page. */
+      headerLayoutControls?: ChatHeaderLayoutControls | undefined;
       /** The phone thread page already reserves the bottom safe area around the cell. */
       phoneShell?: boolean;
       routeKind: "draft";
       draftId: DraftId;
     };
+
+export interface ChatHeaderLayoutControls {
+  readonly control: ReactNode;
+  readonly menuItems: ReactNode;
+}
 
 /** Where a grid cell mounts the focused thread's right panel. */
 export interface RightPanelPortalTarget {
@@ -510,7 +516,8 @@ export default function ChatView(props: ChatViewProps) {
   const detailsCardAnchor = props.detailsCardAnchor;
   const detailsOpen = props.detailsOpen;
   const onDetailsOpenChange = props.onDetailsOpenChange;
-  const gridTerminalRef = props.gridTerminalRef ?? null;
+  const hostTerminalRef = props.hostTerminalRef ?? null;
+  const headerLayoutControls = props.headerLayoutControls;
   const allowInlineDetails =
     paneDensity === undefined || paneDensity === "solo" || paneDensity === "comfortable";
   // A comfortable grid pane is too narrow for the chat lane and the card side by side, but
@@ -1063,14 +1070,6 @@ export default function ChatView(props: ChatViewProps) {
     (isServerThread ? activeThread?.runtimeMode : undefined) ??
     defaultRuntimeMode;
   const isLocalDraftThread = !isServerThread && localDraftThread !== undefined;
-  const activeGrid = useGridStore(
-    (state) =>
-      state.grids.find(
-        (grid) =>
-          grid.tree !== null &&
-          preorderThreads(grid.tree).some((leaf) => leaf.threadId === threadId),
-      ) ?? null,
-  );
   const canCheckoutPullRequestIntoThread = canWriteSourceControl && isLocalDraftThread;
   const activeThreadId = activeThread?.id ?? null;
   // Turn items can lag projection hydration; keep the environment locked through that gap.
@@ -1258,29 +1257,9 @@ export default function ChatView(props: ChatViewProps) {
   const activeProjectKey = activeProject
     ? `${activeProject.environmentId}:${activeProject.workspaceRoot}`
     : null;
-  const [pendingFileSurfaceIdsByProject, setPendingFileSurfaceIdsByProject] = useState<
-    ReadonlyMap<string, ReadonlySet<string>>
-  >(() => new Map());
-  const pendingFileSurfaceIds = activeProjectKey
-    ? (pendingFileSurfaceIdsByProject.get(activeProjectKey) ?? EMPTY_PENDING_FILE_SURFACE_IDS)
-    : EMPTY_PENDING_FILE_SURFACE_IDS;
-  const handleFilePendingChange = (relativePath: string, pending: boolean) => {
-    if (!activeProjectKey) return;
-    setPendingFileSurfaceIdsByProject((currentByProject) => {
-      const current = currentByProject.get(activeProjectKey) ?? EMPTY_PENDING_FILE_SURFACE_IDS;
-      const surfaceId = `file:${relativePath}`;
-      if (current.has(surfaceId) === pending) return currentByProject;
-      const next = new Set(current);
-      if (pending) next.add(surfaceId);
-      else next.delete(surfaceId);
-      const nextByProject = new Map(currentByProject);
-      if (next.size === 0) nextByProject.delete(activeProjectKey);
-      else nextByProject.set(activeProjectKey, next);
-      return nextByProject;
-    });
-  };
-  const handleFilePendingChangeStable = useStableCallback(handleFilePendingChange);
-  const configuredPreviewUrls = getConfiguredPreviewUrls(activeProjectScripts);
+  const pendingFileSurfaceIds = useFilePendingStore((state) =>
+    selectPendingFileSurfaceIds(state.byProjectKey, activeProjectKey),
+  );
 
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- drops file surfaces from the right panel store once bootstrap shows the thread has no workspace
   useEffect(() => {
@@ -2048,15 +2027,11 @@ export default function ChatView(props: ChatViewProps) {
   const queuedRunsControlRef = useRef<QueuedRunsControlHandle>(null);
 
   const {
-    activatePanelTerminalStable,
     addTerminalContextToDraftStable,
     addTerminalSurfaceStable,
-    closePanelTerminalStable,
     lastInvokedScriptByProjectId,
     runProjectScriptStable,
     runShellCommandStable,
-    splitPanelTerminalStable,
-    splitPanelTerminalVerticalStable,
     toggleTerminalVisibilityStable,
     shortcuts: terminalShortcuts,
   } = useChatTerminalActions({
@@ -2076,9 +2051,9 @@ export default function ChatView(props: ChatViewProps) {
     gitCwd,
     setTerminalUiLaunchContext,
     setThreadError,
-    ...(gridTerminalRef === null
+    ...(hostTerminalRef === null
       ? {}
-      : { onToggleGridTerminal: () => toggleGridTerminal(gridTerminalRef) }),
+      : { onToggleHostTerminal: () => toggleTerminal(hostTerminalRef) }),
   });
   const {
     saveProjectScript: saveProjectScriptStable,
@@ -2526,7 +2501,6 @@ export default function ChatView(props: ChatViewProps) {
     onOpenToolDiffStable,
     onOpenTurnDiffStable,
     openChangesFromThreadPanelStable,
-    openFileSurfaceStable,
     toggleRightPanelMaximizedStable,
     toggleRightPanelStable,
     toggleThreadPanelStable,
@@ -3458,6 +3432,33 @@ export default function ChatView(props: ChatViewProps) {
     openToolDiff: onOpenToolDiffStable,
     runShellCommand: runSideChatShellCommandStable,
   };
+  const chatBridgeReady = activeThread !== undefined && !isSendBusy && phase !== "connecting";
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- publishes this chat's composer and workspace hooks for the thread's surface content while it is mounted
+  useEffect(() => {
+    if (activeThreadRef === null) return;
+    return publishThreadChatBridge(activeThreadRef, {
+      workspaceMutationId,
+      sendReady: chatBridgeReady,
+      sendAnnotation: sendPreviewAnnotationStable,
+      addTerminalContext: addTerminalContextToDraftStable,
+      terminalLaunchContext: activeTerminalLaunchContext ?? null,
+      composerDraftTarget,
+      getShortcutContext: getShortcutContextStable,
+      sideChatParentPanel,
+      linkedPullRequest: linkedThreadPullRequest,
+    });
+  }, [
+    activeTerminalLaunchContext,
+    activeThreadRef,
+    addTerminalContextToDraftStable,
+    chatBridgeReady,
+    composerDraftTarget,
+    getShortcutContextStable,
+    linkedThreadPullRequest,
+    sendPreviewAnnotationStable,
+    sideChatParentPanel,
+    workspaceMutationId,
+  ]);
 
   if (!activeThread) {
     return embedded ? null : <NoActiveThreadState />;
@@ -3467,55 +3468,10 @@ export default function ChatView(props: ChatViewProps) {
     rightPanelPortal === null ? panel : createPortal(panel, rightPanelPortal.host);
 
   const rightPanelContent = activeThreadRef ? (
-    <RightPanelSurfaceContent
-      surface={renderedRightPanelSurface}
-      activeSurfaceId={activeRightPanelSurface?.id ?? null}
+    <ThreadSurfaceContent
       threadRef={activeThreadRef}
-      environmentId={activeThread.environmentId}
+      surfaceId={renderedRightPanelSurface?.id ?? null}
       visible={rightPanelOpen}
-      composerDraftTarget={composerDraftTarget}
-      keybindings={keybindings}
-      configuredPreviewUrls={configuredPreviewUrls}
-      workspaceMutationId={workspaceMutationId}
-      getShortcutContext={getShortcutContextStable}
-      onSendAnnotation={sendPreviewAnnotationStable}
-      onCloseSurface={closeRightPanelSurface}
-      sideChatParentPanel={sideChatParentPanel}
-      terminal={{
-        launchContext: activeTerminalLaunchContext ?? null,
-        keybindings,
-        onAddTerminalContext: addTerminalContextToDraftStable,
-        onSplitTerminal: splitPanelTerminalStable,
-        onSplitTerminalVertical: splitPanelTerminalVerticalStable,
-        onNewTerminal: addTerminalSurfaceStable,
-        onActiveTerminalChange: activatePanelTerminalStable,
-        onCloseTerminal: closePanelTerminalStable,
-        splitShortcutLabel: splitTerminalShortcutLabel ?? undefined,
-        splitVerticalShortcutLabel: splitTerminalVerticalShortcutLabel ?? undefined,
-        newShortcutLabel: newTerminalShortcutLabel ?? undefined,
-        closeShortcutLabel: closeTerminalShortcutLabel ?? undefined,
-      }}
-      pullRequest={{
-        capabilityKnown: pullRequestsCapabilityKnown,
-        supported: supportsPullRequests,
-        projectId: activeThread.projectId,
-        pullRequests: visiblePullRequests,
-        linkedPullRequest: linkedThreadPullRequest,
-        branchPullRequest: activeThreadShell?.branchPullRequest ?? activeThread.branchPullRequest,
-        onBack:
-          pullRequestsSurfaceAvailable && visiblePullRequestCount > 1
-            ? addPullRequestsSurfaceStable
-            : undefined,
-      }}
-      files={{
-        projectId: activeProject?.id,
-        projectName: activeProject?.title ?? null,
-        workspaceRoot: activeWorkspaceRoot,
-        availableEditors,
-        pendingSurfaceIds: pendingFileSurfaceIds,
-        onOpenFile: openFileSurfaceStable,
-        onPendingChange: handleFilePendingChangeStable,
-      }}
     />
   ) : null;
   const headerRowPullRequest =
@@ -3611,8 +3567,12 @@ export default function ChatView(props: ChatViewProps) {
             />
             <ChatHeaderPanelControls
               {...panelToggleControlProps}
-              gridLayoutControl={<GridLayoutMenu grid={activeGrid} />}
-              gridLayoutMenuItems={<GridLayoutMenuItems grid={activeGrid} />}
+              {...(headerLayoutControls === undefined
+                ? {}
+                : {
+                    gridLayoutControl: headerLayoutControls.control,
+                    gridLayoutMenuItems: headerLayoutControls.menuItems,
+                  })}
             />
           </header>
         )}

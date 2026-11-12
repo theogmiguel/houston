@@ -8,8 +8,8 @@ import {
   subscribeDraftThreadPromotion,
   useComposerDraftStore,
 } from "../composerDraftStore";
-import { ensureThreadInGrid } from "./ensureThreadInGrid";
-import { gridContainingThread, useGridStore, workspaceKeyOf } from "./gridStore";
+import { ensureThreadPlaced } from "./ensureThreadPlaced";
+import { gridContainingThread, useGridStore, workspaceKeyOf } from "../grid/gridStore";
 
 const environmentId = EnvironmentId.make("env-1");
 const projectId = ProjectId.make("project-1");
@@ -31,11 +31,11 @@ function freshStore(): void {
   });
 }
 
-describe("ensureThreadInGrid", () => {
+describe("ensureThreadPlaced", () => {
   beforeEach(freshStore);
 
   it("creates the workspace's first grid for a thread started outside one", () => {
-    const gridId = ensureThreadInGrid({ environmentId, projectId, threadId });
+    const gridId = ensureThreadPlaced({ environmentId, projectId, threadId });
     expect(gridId).not.toBeNull();
     expect(
       gridContainingThread(useGridStore.getState().grids, environmentId, threadId),
@@ -49,7 +49,7 @@ describe("ensureThreadInGrid", () => {
       projectId,
       workspaceKey,
     });
-    expect(ensureThreadInGrid({ environmentId, projectId, threadId })).toBe(gridId);
+    expect(ensureThreadPlaced({ environmentId, projectId, threadId })).toBe(gridId);
     expect(useGridStore.getState().grids).toHaveLength(1);
     expect(gridContainingThread(useGridStore.getState().grids, environmentId, threadId)?.id).toBe(
       gridId,
@@ -57,8 +57,8 @@ describe("ensureThreadInGrid", () => {
   });
 
   it("leaves a thread that already has a pane untouched", () => {
-    const gridId = ensureThreadInGrid({ environmentId, projectId, threadId });
-    expect(ensureThreadInGrid({ environmentId, projectId, threadId })).toBeNull();
+    const gridId = ensureThreadPlaced({ environmentId, projectId, threadId });
+    expect(ensureThreadPlaced({ environmentId, projectId, threadId })).toBeNull();
     expect(useGridStore.getState().grids).toHaveLength(1);
     expect(gridId).not.toBeNull();
   });
@@ -72,7 +72,7 @@ describe("ensureThreadInGrid", () => {
     useGridStore.setState({
       threadOrigins: { [threadId]: { gridId, slot: 0 } },
     });
-    expect(ensureThreadInGrid({ environmentId, projectId, threadId })).toBeNull();
+    expect(ensureThreadPlaced({ environmentId, projectId, threadId })).toBeNull();
     expect(useGridStore.getState().grids).toHaveLength(1);
     expect(gridContainingThread(useGridStore.getState().grids, environmentId, threadId)).toBeNull();
   });
@@ -87,7 +87,7 @@ describe("ensureThreadInGrid", () => {
     for (let index = 0; index < 6; index += 1) {
       useGridStore.getState().addThread(fullGridId, `full-${index}`);
     }
-    const newGridId = ensureThreadInGrid({ environmentId, projectId, threadId });
+    const newGridId = ensureThreadPlaced({ environmentId, projectId, threadId });
     expect(newGridId).not.toBeNull();
     expect(newGridId).not.toBe(fullGridId);
     expect(gridContainingThread(useGridStore.getState().grids, environmentId, threadId)?.id).toBe(
@@ -113,7 +113,7 @@ describe("ensureThreadInGrid", () => {
       now: "2026-02-01T00:00:00.000Z",
     });
 
-    expect(ensureThreadInGrid({ environmentId, projectId, threadId, draftId: "draft-1" })).toBe(
+    expect(ensureThreadPlaced({ environmentId, projectId, threadId, draftId: "draft-1" })).toBe(
       emptyGridId,
     );
     expect(gridContainingThread(useGridStore.getState().grids, environmentId, threadId)?.id).toBe(
@@ -156,7 +156,7 @@ describe("draft promotion placement", () => {
       registry,
       threadRefsAtom,
       threadShellAtom: () => emptyShellAtom,
-      onThreadArrived: ensureThreadInGrid,
+      onThreadArrived: ensureThreadPlaced,
     });
     flush();
 

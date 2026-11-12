@@ -7,7 +7,7 @@ import { applyAppearanceContrast } from "./appearanceContrast";
 import { applyAppearanceFontVariables, TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "./appearanceFonts";
 import { startElectronBrowserHost } from "./browser/ElectronBrowserHost";
 import { startBrowserProfileReporting } from "./browser/BrowserProfileReporter";
-import { ensureThreadInGrid } from "./grid/ensureThreadInGrid";
+import { ensureThreadPlaced } from "./threads/ensureThreadPlaced";
 import { GRID_STORAGE_KEY, useGridStore } from "./grid/gridStore";
 import { startPreviewTitleRecording } from "./browserHistoryStore";
 import { configureMotion } from "./motion/registry";
@@ -16,6 +16,7 @@ import { startBackgroundThreadAnnouncements } from "./components/BackgroundThrea
 import { startSshPasswordPromptQueue } from "./components/desktop/SshPasswordPromptDialog";
 import { startHostFreezeToasts } from "./components/HostFreezeToastCoordinator";
 import { startAppGridSync } from "./grid/gridSyncRuntime";
+import { startAppLayoutSync } from "./layout/layoutSyncRuntime";
 import { startKeybindingsUpdateToasts } from "./components/KeybindingsUpdateToast";
 import { startLegacyThreadMigrationToast } from "./components/LegacyThreadMigrationToast";
 import { startPermissionUpdateNotices } from "./components/PermissionUpdateNotice";
@@ -212,7 +213,7 @@ export function startAppServices(): AppRouter {
     registry: appAtomRegistry,
     threadShellAtom: environmentThreadShells.quietThreadShellAtom,
     threadRefsAtom: environmentThreadShells.threadRefsAtom,
-    onThreadArrived: ensureThreadInGrid,
+    onThreadArrived: ensureThreadPlaced,
   });
   subscribeComposerDraftModelReconciliation({
     registry: appAtomRegistry,
@@ -228,6 +229,7 @@ export function startAppServices(): AppRouter {
 
   startKeybindingsUpdateToasts();
   startAppGridSync();
+  startAppLayoutSync();
   startSlowRpcRequestToasts();
   startHostFreezeToasts();
   startLegacyThreadMigrationToast();

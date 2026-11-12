@@ -3,7 +3,7 @@ import { scopeThreadRef, scopedThreadKey } from "@houston-app/client-runtime/env
 import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@houston-app/contracts";
 import type { RefObject } from "react";
 
-import { toggleGridTerminal } from "../../grid/gridTerminal";
+import { toggleTerminal } from "../terminal/toggleTerminal";
 import { findThread, preorderThreads } from "@houston-app/shared/grid/tree";
 import type { GridRecord } from "../../grid/gridStore";
 import { shortcutLabelForCommand } from "../../keybindings";
@@ -99,7 +99,7 @@ export function GridTopBarControls({
       }
       onToggleTerminal={() => {
         if (gridTerminalRef !== null) {
-          toggleGridTerminal(gridTerminalRef);
+          toggleTerminal(gridTerminalRef);
           return;
         }
         if (focusedRef !== null) {

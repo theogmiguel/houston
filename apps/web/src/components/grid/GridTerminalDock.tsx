@@ -8,13 +8,9 @@ import { projectScriptCwd } from "@houston-app/shared/projectScripts";
 
 import { gridTerminalThreadRef } from "../../grid/gridTerminal";
 import type { GridRecord } from "../../grid/gridStore";
-import { shortcutLabelForCommand } from "../../keybindings";
 import { useProject } from "../../state/entities";
-import { useTerminalUiStateStore, selectThreadTerminalUiState } from "../../terminalUiStateStore";
-import {
-  PersistentThreadTerminalDrawer,
-  type PersistentTerminalLaunchContext,
-} from "../PersistentThreadTerminals";
+import type { PersistentTerminalLaunchContext } from "../PersistentThreadTerminals";
+import { ThreadTerminalDock } from "../terminal/ThreadTerminalDock";
 
 /**
  * The grid's one terminal, docked under the whole grid rather than inside a
@@ -28,44 +24,21 @@ export function GridTerminalDock({
   keybindings: ResolvedKeybindingsConfig;
 }) {
   const environmentId = grid.environmentId as EnvironmentId;
-  const threadRef = gridTerminalThreadRef(environmentId, grid.id);
-  const project = useProject(scopeProjectRef(environmentId, ProjectId.make(grid.projectId)));
+  const projectRef = scopeProjectRef(environmentId, ProjectId.make(grid.projectId));
+  const project = useProject(projectRef);
   const cwd =
     project === null
       ? null
       : projectScriptCwd({ project: { cwd: project.workspaceRoot }, worktreePath: null });
   const launchContext: PersistentTerminalLaunchContext | null =
     cwd === null ? null : { cwd, worktreePath: null };
-  const terminalOpen = useTerminalUiStateStore(
-    (state) =>
-      selectThreadTerminalUiState(state.terminalUiStateByThreadKey, threadRef).terminalOpen,
-  );
-  const shortcutLabelOptions = {
-    context: { terminalFocus: true, terminalOpen },
-  };
 
   return (
     <div data-grid-terminal-dock="" className="flex min-h-0 w-full min-w-0 flex-col">
-      <PersistentThreadTerminalDrawer
-        threadRef={threadRef}
-        threadId={threadRef.threadId}
-        active
-        composerHeight={0}
+      <ThreadTerminalDock
+        threadRef={gridTerminalThreadRef(environmentId, grid.id)}
+        projectRef={projectRef}
         launchContext={launchContext}
-        projectRef={scopeProjectRef(environmentId, ProjectId.make(grid.projectId))}
-        splitShortcutLabel={
-          shortcutLabelForCommand(keybindings, "terminal.split", shortcutLabelOptions) ?? undefined
-        }
-        splitVerticalShortcutLabel={
-          shortcutLabelForCommand(keybindings, "terminal.splitVertical", shortcutLabelOptions) ??
-          undefined
-        }
-        newShortcutLabel={
-          shortcutLabelForCommand(keybindings, "terminal.new", shortcutLabelOptions) ?? undefined
-        }
-        closeShortcutLabel={
-          shortcutLabelForCommand(keybindings, "terminal.close", shortcutLabelOptions) ?? undefined
-        }
         keybindings={keybindings}
       />
     </div>

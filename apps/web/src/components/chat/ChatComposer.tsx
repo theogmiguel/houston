@@ -274,7 +274,7 @@ import { hasProviderSetup } from "./ProviderStatusBanner";
 import { type AppModelOption, getAppModelOptionsForInstance } from "../../modelSelection";
 import type { UnifiedSettings } from "@houston-app/contracts/settings";
 import { isVideoAttachment, type SessionPhase, type Thread, type ThreadShell } from "../../types";
-import type { PaneDensity } from "../../grid/density";
+import type { PaneDensity } from "../../threads/density";
 import { type ComposerPromptHistoryPosition } from "./composerPromptHistory";
 import type { PendingUserInputDraftAnswer } from "@houston-app/client-runtime/state/pending-user-input";
 import type { ThreadStatusPill } from "../Sidebar.logic";

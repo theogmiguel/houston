@@ -1,9 +1,6 @@
 import { scopeThreadRef } from "@houston-app/client-runtime/environment";
 import { ThreadId, type EnvironmentId, type ScopedThreadRef } from "@houston-app/contracts";
 
-import { focusActiveDrawerTerminal } from "../lib/terminalFocus";
-import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
-
 const GRID_TERMINAL_THREAD_PREFIX = "grid-terminal-";
 
 /**
@@ -15,11 +12,4 @@ export function gridTerminalThreadRef(
   gridId: string,
 ): ScopedThreadRef {
   return scopeThreadRef(environmentId, ThreadId.make(`${GRID_TERMINAL_THREAD_PREFIX}${gridId}`));
-}
-
-export function toggleGridTerminal(threadRef: ScopedThreadRef): void {
-  const store = useTerminalUiStateStore.getState();
-  const terminalUiState = selectThreadTerminalUiState(store.terminalUiStateByThreadKey, threadRef);
-  store.setTerminalOpen(threadRef, !terminalUiState.terminalOpen);
-  focusActiveDrawerTerminal(threadRef);
 }

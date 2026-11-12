@@ -4,7 +4,7 @@ import type { EnvironmentId, ProjectId, ThreadId } from "@houston-app/contracts"
 
 import { readThreadShell } from "../state/entities";
 import { gridContainingThread, useGridStore } from "./gridStore";
-import { ensureThreadInGrid } from "./ensureThreadInGrid";
+import { ensureThreadPlaced } from "../threads/ensureThreadPlaced";
 
 export interface GridThreadNavigationTarget {
   readonly gridId: string;
@@ -56,6 +56,6 @@ export function resolveGridThreadTarget(input: {
     return gridId === null ? null : { gridId, threadId: input.threadId };
   }
 
-  const gridId = ensureThreadInGrid(input);
+  const gridId = ensureThreadPlaced(input);
   return gridId === null ? null : { gridId, threadId: input.threadId };
 }

@@ -6,12 +6,13 @@ import { LayoutGridIcon } from "lucide-react";
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { GridEmptyDraft } from "../components/grid/GridEmptyDraft";
-import { ThreadOpenProvider } from "../components/grid/threadOpenContext";
+import { ThreadOpenProvider } from "../threads/threadOpenContext";
 import { GridHost } from "../components/grid/GridHost";
 import { GridRightPanelPin } from "../components/chat/GridRightPanelPin";
 import { GridThreadBranch } from "../components/grid/GridThreadBranch";
 import { GridThreadCell } from "../components/grid/GridThreadCell";
 import { GridTerminalDock } from "../components/grid/GridTerminalDock";
+import { useRightPanelWindowShortcuts } from "../components/chat/useRightPanelWindowShortcuts";
 import { clearInlineDetailsHandoff } from "../components/chat/inlineDetailsFollow";
 import { GridTopBarControls } from "../components/grid/GridTopBarControls";
 import { Button } from "../components/ui/button";
@@ -49,7 +50,6 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@houston-app/client-runtime/state/runtime";
-import { resolveShortcutCommand } from "../keybindings";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import { useRightPanelStore } from "../rightPanelStore";
 import { useQuietThreadShells, useProjects } from "../state/entities";
@@ -156,53 +156,18 @@ function GridRoute() {
   }, [grid]);
 
   // The grid's cells are embedded chats, which leave window shortcuts to the route.
-  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- window keydown listener for the focused thread's right panel shortcuts
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) return;
-      const command = resolveShortcutCommand(event, keybindings, { context: {} });
-      if (
-        command !== "rightPanel.toggle" &&
-        command !== "rightPanel.toggleMaximized" &&
-        command !== "threadPanel.toggle"
-      )
-        return;
+  useRightPanelWindowShortcuts({
+    keybindings,
+    getThreadRef: () => {
       const current = useGridStore.getState().grids.find((entry) => entry.id === gridId);
-      if (current === undefined) return;
-      if (command === "threadPanel.toggle") {
-        event.preventDefault();
-        event.stopPropagation();
-        if (event.repeat) return;
-        toggleThreadDetails();
-        return;
-      }
-      const shortcutThreadId = current.panelPinnedThreadId ?? current.focusedThreadId;
-      if (shortcutThreadId === null) return;
-      const ref = scopeThreadRef(
-        current.environmentId as EnvironmentId,
-        shortcutThreadId as ThreadId,
-      );
-      const store = useRightPanelStore.getState();
-      const threadPanel = store.byThreadKey[scopedThreadKey(ref)];
-      if (command === "rightPanel.toggleMaximized" && threadPanel?.isOpen !== true) return;
-      event.preventDefault();
-      event.stopPropagation();
-      if (event.repeat) return;
-      if (command === "rightPanel.toggle" && threadPanel?.isOpen === true) {
-        store.setMaximized(ref, false);
-        store.close(ref);
-        useGridStore.getState().setPanelPinnedThread(gridId, null);
-        return;
-      }
-      if (command === "rightPanel.toggle") {
-        store.toggleVisibility(ref);
-        return;
-      }
-      store.setMaximized(ref, threadPanel?.maximized !== true);
-    };
-    window.addEventListener("keydown", onKeyDown, true);
-    return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [gridId, keybindings, toggleThreadDetails]);
+      const threadId = current?.panelPinnedThreadId ?? current?.focusedThreadId ?? null;
+      return current === undefined || threadId === null
+        ? null
+        : scopeThreadRef(current.environmentId as EnvironmentId, threadId as ThreadId);
+    },
+    onToggleThreadDetails: toggleThreadDetails,
+    onPanelClosed: () => useGridStore.getState().setPanelPinnedThread(gridId, null),
+  });
 
   // A popover card belongs to one cell. Following focus would reopen it over the next
   // thread, so a focus move out of a popover cell turns the grid's details off.

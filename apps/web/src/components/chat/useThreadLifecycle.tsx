@@ -46,7 +46,7 @@ import {
   type AtomCommandResult,
 } from "@houston-app/client-runtime/state/runtime";
 import { useUiStateStore } from "../../uiStateStore";
-import { useThreadOpen } from "../grid/threadOpenContext";
+import { useThreadOpen } from "../../threads/threadOpenContext";
 import { type ChatMessage } from "../../types";
 import { AlarmClockIcon, CheckCircle2Icon } from "lucide-react";
 import { stackedThreadToast, toastManager } from "../ui/toast";

@@ -9,7 +9,8 @@ import { isSidebarHiddenThread } from "./Sidebar.logic";
 import { NoActiveThreadState } from "./NoActiveThreadState";
 import { SidebarInset } from "./ui/sidebar";
 import { useComposerDraftStore } from "../composerDraftStore";
-import { ensureThreadInGrid } from "../grid/ensureThreadInGrid";
+import { useThreadGridLayoutControls } from "./grid/useThreadGridLayoutControls";
+import { ensureThreadPlaced } from "../threads/ensureThreadPlaced";
 import { useSidebarPendingFileDropStore } from "../sidebarPendingFileDropStore";
 import { useQuietThreadShell } from "../state/entities";
 import { useEnvironmentShellStatus } from "../state/shell";
@@ -42,6 +43,9 @@ export function ThreadRouteView({
     draftId === null ? null : store.getPromotedDraftRedirect(draftId),
   );
   const serverThreadRef = target.kind === "server" ? target.threadRef : null;
+  const headerLayoutControls = useThreadGridLayoutControls(
+    serverThreadRef?.threadId ?? draftSession?.threadId ?? draftRedirect?.threadId ?? null,
+  );
   const serverThreadShell = useQuietThreadShell(serverThreadRef);
   const shellStatus = useEnvironmentShellStatus(serverThreadRef?.environmentId ?? null);
   const bootstrapComplete = isThreadRouteSnapshotAuthoritative(shellStatus);
@@ -66,7 +70,7 @@ export function ThreadRouteView({
       serverThreadId === null
     )
       return;
-    ensureThreadInGrid({
+    ensureThreadPlaced({
       environmentId: serverThreadEnvironmentId,
       projectId: serverThreadProjectId,
       threadId: serverThreadId,
@@ -136,6 +140,7 @@ export function ThreadRouteView({
           environmentId={draftSession.environmentId}
           threadId={draftSession.threadId}
           routeKind="draft"
+          headerLayoutControls={headerLayoutControls}
           forceExpandedMobileComposer
         />
       );
@@ -147,6 +152,7 @@ export function ThreadRouteView({
           environmentId={draftRedirect.environmentId}
           threadId={draftRedirect.threadId}
           routeKind="server"
+          headerLayoutControls={headerLayoutControls}
         />
       );
       redirect = (
@@ -166,6 +172,7 @@ export function ThreadRouteView({
         environmentId={target.threadRef.environmentId}
         threadId={target.threadRef.threadId}
         routeKind="server"
+        headerLayoutControls={headerLayoutControls}
       />
     );
   } else if (renderState === "missing" && target.kind === "server" && !background) {

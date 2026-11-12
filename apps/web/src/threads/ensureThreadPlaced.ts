@@ -3,14 +3,19 @@ import type { EnvironmentId, ProjectId, ThreadId } from "@houston-app/contracts"
 
 import { isSidebarHiddenThread } from "../components/Sidebar.logic";
 import { readThreadShell } from "../state/entities";
-import { gridContainingThread, MAX_GRID_THREADS, useGridStore, workspaceKeyOf } from "./gridStore";
+import {
+  gridContainingThread,
+  MAX_GRID_THREADS,
+  useGridStore,
+  workspaceKeyOf,
+} from "../grid/gridStore";
 import { preorderThreads } from "@houston-app/shared/grid/tree";
 
 /**
  * Places a thread started outside a grid in its workspace's grid, creating one if needed.
  * A subagent never gets a cell: it is skipped, and a parent whose cell it holds takes it back.
  */
-export function ensureThreadInGrid(input: {
+export function ensureThreadPlaced(input: {
   readonly environmentId: EnvironmentId;
   readonly projectId: ProjectId;
   readonly threadId: ThreadId;

@@ -1,7 +1,7 @@
 import { EnvironmentId, ProjectId, ThreadId } from "@houston-app/contracts";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { ensureThreadInGrid } from "./ensureThreadInGrid";
+import { ensureThreadPlaced } from "../threads/ensureThreadPlaced";
 import { resolveGridThreadTarget } from "./gridNavigation";
 import { gridContainingThread, useGridStore, workspaceKeyOf } from "./gridStore";
 import { preorderThreads } from "@houston-app/shared/grid/tree";
@@ -113,7 +113,7 @@ describe("resolveGridThreadTarget", () => {
     parentByThreadId.set(childId, "thread-parent");
     const gridId = useGridStore.getState().createGrid({ environmentId, projectId, workspaceKey });
 
-    expect(ensureThreadInGrid({ environmentId, projectId, threadId: childId })).toBeNull();
+    expect(ensureThreadPlaced({ environmentId, projectId, threadId: childId })).toBeNull();
     expect(gridContainingThread(useGridStore.getState().grids, environmentId, childId)).toBeNull();
     expect(useGridStore.getState().grids.map((grid) => grid.id)).toEqual([gridId]);
   });

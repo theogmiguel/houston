@@ -10,7 +10,9 @@ import {
   type RefObject,
 } from "react";
 
-import ChatView, { type RightPanelPortalTarget } from "../ChatView";
+import { type RightPanelPortalTarget } from "../ChatView";
+import { ThreadChatSurface } from "../chat/ThreadChatSurface";
+import { LayoutPaneContext, LONE_PANE } from "../../layout/layoutPaneContext";
 import { resolveThreadStatusPill } from "../Sidebar.logic";
 
 import { useStableCallback } from "../../hooks/useStableCallback";
@@ -18,11 +20,11 @@ import { useThreadActions } from "../../hooks/useThreadActions";
 import { type DraftId, useComposerDraftStore } from "../../composerDraftStore";
 import { useQuietThreadShell } from "../../state/entities";
 import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
-import { paneDensityLayout } from "../../grid/density";
+import { paneDensityLayout } from "../../threads/density";
 import { subscribeGridCellRename } from "../../grid/gridCellCommands";
 import { gridTerminalThreadRef } from "../../grid/gridTerminal";
 import { MAX_GRID_THREADS, type GridRecord, useGridStore } from "../../grid/gridStore";
-import type { ThreadOpenIntent } from "../../grid/gridThreadOpen";
+import type { ThreadOpenIntent } from "../../threads/threadOpenContext";
 import type { ThreadDropRefusal } from "../../grid/projectMove";
 import {
   type Side,
@@ -39,7 +41,7 @@ import { TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR } from "../chat/composerFocusRedi
 import { useThreadActionMenu } from "../../hooks/useThreadActionMenu";
 import { GridPaneHeader } from "../ui/grid-pane-header";
 import { PhoneThreadBar } from "../../mobile/PhoneThreadBar";
-import { ThreadOpenProvider } from "./threadOpenContext";
+import { ThreadOpenProvider } from "../../threads/threadOpenContext";
 import { PaneThreadStatusMark } from "./threadStatusMark";
 import { usePaneDensity } from "./usePaneDensity";
 
@@ -427,40 +429,19 @@ export function GridThreadCell({
       )}
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <ThreadOpenProvider open={onOpenThread}>
-          {showDraft ? (
-            <ChatView
-              embedded
-              shortcutsAtWindow={focused}
-              visitActive={focused}
-              gridTerminalRef={maximized ? null : gridTerminalThreadRef(environmentId, grid.id)}
-              draftId={draftId}
-              environmentId={environmentId}
-              threadId={threadId}
+          <LayoutPaneContext value={{ ...LONE_PANE, focused, visible: true }}>
+            <ThreadChatSurface
+              threadRef={threadRef}
+              draftId={showDraft ? draftId : undefined}
+              hostTerminalRef={maximized ? null : gridTerminalThreadRef(environmentId, grid.id)}
               paneDensity={density}
               rightPanelPortal={rightPanelPortal}
-              {...(threadDetailsAnchor ? { detailsCardAnchor: threadDetailsAnchor } : {})}
-              {...(detailsOpen === undefined ? {} : { detailsOpen })}
-              {...(onDetailsOpenChange === undefined ? {} : { onDetailsOpenChange })}
+              detailsCardAnchor={threadDetailsAnchor}
+              detailsOpen={detailsOpen}
+              onDetailsOpenChange={onDetailsOpenChange}
               phoneShell={phone}
-              routeKind="draft"
             />
-          ) : (
-            <ChatView
-              embedded
-              shortcutsAtWindow={focused}
-              visitActive={focused}
-              gridTerminalRef={maximized ? null : gridTerminalThreadRef(environmentId, grid.id)}
-              environmentId={environmentId}
-              threadId={threadId}
-              paneDensity={density}
-              rightPanelPortal={rightPanelPortal}
-              {...(threadDetailsAnchor ? { detailsCardAnchor: threadDetailsAnchor } : {})}
-              {...(detailsOpen === undefined ? {} : { detailsOpen })}
-              {...(onDetailsOpenChange === undefined ? {} : { onDetailsOpenChange })}
-              phoneShell={phone}
-              routeKind="server"
-            />
-          )}
+          </LayoutPaneContext>
         </ThreadOpenProvider>
       </div>
       {dropRefusal !== null ? (

@@ -1,7 +1,7 @@
 import type { PullRequestChecksState, ScopedThreadRef } from "@houston-app/contracts";
 import type { MouseEvent as ReactMouseEvent } from "react";
 
-import type { RowPullRequest } from "../../grid/sidebar";
+import type { RowPullRequest } from "../../threads/rowPullRequest";
 import { useSupportsMultiplePullRequests } from "../../hooks/useSupportsMultiplePullRequests";
 import { useOpenPrLink } from "../../lib/openPullRequestLink";
 import { useRightPanelStore } from "../../rightPanelStore";

@@ -58,6 +58,7 @@ import {
   pinnedThreadsFirst,
   ungroupedWorkspaceThreads,
 } from "../../grid/rail";
+import { resolveRowPullRequest } from "../../threads/rowPullRequest";
 import {
   beginThreadDrag,
   useThreadDragSource,
@@ -69,7 +70,6 @@ import {
   attentionCardsForGrids,
   clearThreadSelection,
   nextAttentionCard,
-  resolveRowPullRequest,
   partitionShelfThreads,
   resolveGridThreadState,
   runningSubagentsByParentThread,

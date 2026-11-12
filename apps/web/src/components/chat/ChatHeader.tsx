@@ -45,7 +45,7 @@ import {
   THREAD_TITLE_TEXT_CLS,
 } from "../ui/thread-header-recipes";
 import { ThreadRowPullRequestBadge } from "../grid/ThreadRowPullRequestBadge";
-import type { RowPullRequest } from "~/grid/sidebar";
+import type { RowPullRequest } from "~/threads/rowPullRequest";
 import { textDirection } from "~/textDirection";
 
 interface ChatHeaderProps {

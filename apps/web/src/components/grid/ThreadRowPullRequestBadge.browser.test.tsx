@@ -36,7 +36,7 @@ import { ToastProvider } from "../ui/toast";
 import { TooltipProvider } from "../ui/tooltip";
 import { AppAtomRegistryProvider } from "../../rpc/atomRegistry";
 import { useRightPanelStore, selectActiveRightPanelSurface } from "../../rightPanelStore";
-import type { RowPullRequest } from "../../grid/sidebar";
+import type { RowPullRequest } from "../../threads/rowPullRequest";
 import { ThreadRowPullRequestBadge } from "./ThreadRowPullRequestBadge";
 
 const environmentId = EnvironmentId.make("local");

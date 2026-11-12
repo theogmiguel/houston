@@ -90,7 +90,7 @@ vi.mock("~/state/environments", () => ({
 vi.mock("~/state/server", () => ({
   primaryServerKeybindingsAtom: Atom.make({}),
 }));
-vi.mock("~/grid/openThreadInGrid", () => ({ useOpenThreadInGrid: () => async () => {} }));
+vi.mock("~/threads/useOpenThread", () => ({ useOpenThread: () => async () => {} }));
 vi.mock("./TaskDetailPanel", () => ({
   TaskDetailPanel: ({ taskKey }: { taskKey: string }) => <div data-task-detail>{taskKey}</div>,
 }));

@@ -5,8 +5,8 @@ import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import { render } from "../../../test/render";
-import { ThreadOpenProvider } from "../grid/threadOpenContext";
-import type { ThreadOpenIntent } from "../../grid/gridThreadOpen";
+import { ThreadOpenProvider } from "../../threads/threadOpenContext";
+import type { ThreadOpenIntent } from "../../threads/threadOpenContext";
 import { ResumeSessionDialog } from "./resume-session-dialog";
 
 const environmentId = EnvironmentId.make("environment");

@@ -11,7 +11,7 @@ import { environmentProjects } from "~/state/projects";
 import { usePrimaryEnvironmentId } from "~/state/environments";
 import { loadTaskSettings, tasksEnvironment, useTasksView } from "~/state/tasks";
 import { useAtomCommand } from "~/state/use-atom-command";
-import { useOpenThreadInGrid } from "~/grid/openThreadInGrid";
+import { useOpenThread } from "~/threads/useOpenThread";
 import { requestConfirmDialog } from "~/confirmDialog";
 import { isDesktopHost } from "~/env";
 import { isTerminalFocused } from "~/lib/terminalFocus";
@@ -219,7 +219,7 @@ export function TasksPage() {
     environmentId,
     view === "sources" ? "all" : scope,
   );
-  const openThread = useOpenThreadInGrid();
+  const openThread = useOpenThread();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const startTask = useAtomCommand(tasksEnvironment.start);
   const planStart = useAtomCommand(tasksEnvironment.planStart);

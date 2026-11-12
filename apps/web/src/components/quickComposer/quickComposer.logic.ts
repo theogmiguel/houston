@@ -12,7 +12,7 @@ import type { EnvironmentProject } from "@houston-app/client-runtime/state/shell
 import { resolveProjectSettings } from "@houston-app/shared/projectSettings";
 import { resolveNewThreadModelSelection } from "@houston-app/shared/usageLimits";
 
-import { ensureThreadInGrid } from "../../grid/ensureThreadInGrid";
+import { ensureThreadPlaced } from "../../threads/ensureThreadPlaced";
 import { gridById, MAX_GRID_THREADS, useGridStore } from "../../grid/gridStore";
 import { preorderThreads } from "@houston-app/shared/grid/tree";
 import { resolveProjectDefaultProviderModelSelection } from "../../providerInstances";
@@ -115,7 +115,7 @@ export function placeQuickComposerThread(input: {
       return grid.id;
     }
   }
-  return ensureThreadInGrid({
+  return ensureThreadPlaced({
     environmentId: input.environmentId,
     projectId: input.projectId,
     threadId: input.threadId,

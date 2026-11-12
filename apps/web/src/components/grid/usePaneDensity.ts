@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "react";
 
-import { paneDensityFor, retierPaneDensity, type PaneDensity } from "../../grid/density";
+import { paneDensityFor, retierPaneDensity, type PaneDensity } from "../../threads/density";
 import { observeResize } from "../../lib/observeResize";
 
 const RESIZE_SETTLE_MS = 150;

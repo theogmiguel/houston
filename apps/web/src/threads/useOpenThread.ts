@@ -2,14 +2,14 @@ import type { EnvironmentId, ProjectId, ThreadId } from "@houston-app/contracts"
 import { useNavigate } from "@tanstack/react-router";
 
 import { useStableCallback } from "../hooks/useStableCallback";
-import { resolveGridThreadTarget } from "./gridNavigation";
-import { useGridStore } from "./gridStore";
+import { resolveGridThreadTarget } from "../grid/gridNavigation";
+import { useGridStore } from "../grid/gridStore";
 
 /**
  * Lands in the thread's grid with its cell focused; the standalone route is the
  * fallback when no grid can take the thread.
  */
-export function useOpenThreadInGrid(): (input: {
+export function useOpenThread(): (input: {
   readonly environmentId: EnvironmentId;
   readonly projectId: ProjectId | null;
   readonly threadId: ThreadId;

@@ -55,7 +55,7 @@ vi.mock(import("../../state/use-atom-command"), () => ({
 import { render } from "../../../test/render";
 import { makeThreadProjectionFixture } from "../../test-fixtures";
 import { ToastProvider } from "../ui/toast";
-import { ThreadOpenProvider } from "../grid/threadOpenContext";
+import { ThreadOpenProvider } from "../../threads/threadOpenContext";
 import { ThreadRelationshipsPanel } from "./ThreadRelationshipsControl";
 
 const environmentId = EnvironmentId.make("environment");

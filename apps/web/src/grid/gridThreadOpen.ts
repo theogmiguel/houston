@@ -1,13 +1,14 @@
 import { containsThread, type LayoutNode } from "@houston-app/shared/grid/tree";
 
+import type { ThreadOpenIntent } from "../threads/threadOpenContext";
+
 export type GridThreadOpen =
   | { readonly kind: "navigate" }
   | { readonly kind: "focus" }
   | { readonly kind: "replace"; readonly cellThreadId: string }
   | { readonly kind: "add" };
 
-/** `peek` follows a related thread (a subagent, its parent); `join` adds one, like a resume. */
-export type ThreadOpenIntent = "peek" | "join";
+export type { ThreadOpenIntent };
 
 // Shown threads get focus; a peek from a cell replaces it, so peeking never grows the grid;
 // a join gets its own cell while there is room, even before its shell is listed; anything else

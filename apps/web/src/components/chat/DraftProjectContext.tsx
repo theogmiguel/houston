@@ -3,7 +3,8 @@ import { scopeThreadRef } from "@houston-app/client-runtime/environment";
 import type { ScopedThreadRef } from "@houston-app/contracts";
 import { useState, type ReactNode } from "react";
 
-import { resolveGridThreadState, resolveRowPullRequest } from "~/grid/sidebar";
+import { resolveGridThreadState } from "~/grid/sidebar";
+import { resolveRowPullRequest } from "~/threads/rowPullRequest";
 import { gridThreadStatusKind } from "~/grid/statusWord";
 import { useNowMinute } from "~/hooks/useNowMinute";
 import { cn } from "~/lib/utils";
