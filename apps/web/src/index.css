@@ -2464,18 +2464,22 @@ code {
   vertical-align: top;
 }
 
-.chat-markdown :is(th, td):first-child {
-  padding-inline-start: 0;
-}
-
-.chat-markdown :is(th, td):last-child {
-  padding-inline-end: 0;
-}
-
+/* The header is a filled, rounded strip; the body rows hang under it with the same inset. */
 .chat-markdown thead th {
-  border-bottom: 1px solid color-mix(in srgb, var(--contrast-border) 60%, transparent);
+  background-color: var(--hover);
   padding-block: 0.55rem;
-  font-weight: 600;
+  color: var(--contrast-secondary-label);
+  font-weight: 500;
+}
+
+.chat-markdown thead th:first-child {
+  border-start-start-radius: var(--r-ctl);
+  border-end-start-radius: var(--r-ctl);
+}
+
+.chat-markdown thead th:last-child {
+  border-start-end-radius: var(--r-ctl);
+  border-end-end-radius: var(--r-ctl);
 }
 
 .chat-markdown tbody td {
