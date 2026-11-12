@@ -139,6 +139,25 @@ it(
   APP_BOOT_TEST_TIMEOUT_MS,
 );
 
+it(
+  "a pull requests tab draws no floating details toggle over its header",
+  async () => {
+    await using app = await bootAt(threadPath("thread-a"));
+    await vi.waitFor(() => {
+      expect(app.screen.container.querySelector("[data-layout-tab-add]")).not.toBeNull();
+    });
+    await app.router.navigate({ to: "/pull-requests", search: {} as never });
+    await vi.waitFor(() => {
+      expect(app.screen.container.querySelector('[data-layout-page-tab="pull-requests"]')).not.toBeNull();
+      expect(app.screen.container.querySelector('[data-layout-page-tab="pull-requests"] h1')).not.toBeNull();
+    });
+    const page = app.screen.container.querySelector('[data-layout-page-tab="pull-requests"]')!;
+    expect(page.querySelector("[data-workspace-titlebar-controls]")).toBeNull();
+    expect(page.querySelector('[aria-label="Toggle right panel"]')).toBeNull();
+  },
+  APP_BOOT_TEST_TIMEOUT_MS,
+);
+
 const rowStartingWith = (container: Element, label: string) =>
   Array.from(container.querySelectorAll<HTMLElement>("[data-layout-launcher-row]")).find((row) =>
     row.textContent?.startsWith(label),

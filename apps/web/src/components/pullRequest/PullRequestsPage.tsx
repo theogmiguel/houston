@@ -91,6 +91,7 @@ import { isDesktopHost } from "~/env";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "~/keybindings";
 import { registerCommands } from "~/shortcuts/dispatcher";
 import { isTerminalFocused } from "~/lib/terminalFocus";
+import { useLayoutPane } from "../../layout/layoutPaneContext";
 import { PanelLayoutControls, RightPanelMaximizeControl } from "../chat/PanelLayoutControls";
 import { Button } from "../ui/button";
 import { SidebarInset } from "../ui/sidebar";
@@ -1055,6 +1056,7 @@ export function PullRequestsPage() {
       closeSensorRef.current = sensor;
     },
   );
+  const inPane = useLayoutPane().tabId !== null;
   const rightPanelAvailable = selectedPullRequestSurface !== null;
   const [maximized, setMaximized] = useState(false);
   // The phone has no room for a split: an open pull request takes the page.
@@ -1439,7 +1441,13 @@ export function PullRequestsPage() {
     searchInput,
     sortMenu,
     filtersMenu,
-    rightPanelControl: !pullRequestsSupported ? null : (
+    rightPanelControl: !pullRequestsSupported ? null : inPane ? (
+      // A pane has no window titlebar to float a control in: the toggle takes its own place at the
+      // end of the header row, and only while there is a pull request to open.
+      rightPanelAvailable && !rightPanelPresent ? (
+        <div className="flex h-8 shrink-0 items-center">{panelToggleControls}</div>
+      ) : null
+    ) : (
       <span
         aria-hidden
         className={cn("shrink-0", rightPanelState.isOpen ? "-ml-3 w-0" : "w-7 sm:w-5")}
@@ -1455,7 +1463,7 @@ export function PullRequestsPage() {
             aria-hidden
             className="pointer-events-none absolute inset-y-0 left-full w-7 [-webkit-app-region:no-drag]"
           />
-        ) : (
+        ) : inPane ? null : (
           openPanelControls
         )
       ) : null,

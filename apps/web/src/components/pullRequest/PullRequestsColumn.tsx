@@ -139,7 +139,10 @@ export function PullRequestsColumn({
           className="relative bg-background"
         >
           {titlebarControls}
-          <WorkspaceBreadcrumb ariaLabel="Pull requests breadcrumb">
+          <WorkspaceBreadcrumb
+            ariaLabel="Pull requests breadcrumb"
+            className="@max-xl/pr-list:hidden"
+          >
             <WorkspaceBreadcrumbItem current>
               <h1 className="truncate">Pull requests</h1>
             </WorkspaceBreadcrumbItem>
@@ -160,7 +163,10 @@ export function PullRequestsColumn({
           {viewToggle}
           <div className="min-w-0 flex-1" />
           {view === "requests" ? (
-            <div ref={searchRootRef} className="flex shrink items-center gap-1">
+            <div
+              ref={searchRootRef}
+              className="scrollbar-hidden flex min-w-0 shrink items-center gap-1 overflow-x-auto"
+            >
               <PullRequestCompactFilterMenu
                 label="Filter by state"
                 value={state}

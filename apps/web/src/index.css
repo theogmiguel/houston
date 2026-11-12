@@ -627,6 +627,14 @@ body {
   box-shadow: var(--shadow-1);
 }
 
+/* A row that scrolls sideways without drawing a scrollbar: a header's controls in a pane too narrow to show them all. */
+@utility scrollbar-hidden {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 @utility topbar-scroll-fade {
   -webkit-mask-image:
     linear-gradient(
