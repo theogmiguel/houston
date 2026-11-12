@@ -1,8 +1,8 @@
 import { scopedThreadKey, scopeThreadRef } from "@houston-app/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
 
-import { resolveGridThreadState } from "./sidebar";
-import { gridThreadStatusKind } from "./statusWord";
+import { resolveThreadRowState } from "../threads/sidebarModel";
+import { threadStatusKind } from "../threads/statusWord";
 
 /** The attention families a heading counts: warning, failed, then back. */
 export type AttentionGroup = "needs" | "failed" | "back";
@@ -30,7 +30,7 @@ export function attentionPips(
     const key = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
     if (seen.has(key)) continue;
     seen.add(key);
-    const kind = gridThreadStatusKind(thread, resolveGridThreadState(thread, nowIso));
+    const kind = threadStatusKind(thread, resolveThreadRowState(thread, nowIso));
     const group: AttentionGroup | null =
       kind === "failed"
         ? "failed"

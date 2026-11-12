@@ -19,7 +19,7 @@ vi.mock(import("../../state/use-orchestration-command"), async (importOriginal) 
 vi.mock(import("~/hooks/useThreadActionMenu"), () => ({
   useThreadActionMenu: () => ({ openMenu: async () => {}, closeMenu: () => {} }),
 }));
-vi.mock(import("../grid/ThreadRowPullRequestBadge"), () => ({
+vi.mock(import("../sidebar/ThreadRowPullRequestBadge"), () => ({
   ThreadRowPullRequestBadge: (props: {
     pullRequest: { number: number };
     pullRequestCount: number;

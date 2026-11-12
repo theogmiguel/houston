@@ -46,7 +46,7 @@
   "apps/web/src/components/files/ProjectFileTree.tsx": 7,
   "apps/web/src/components/grid/GridRightPanel.browser.test.tsx": 1,
   "apps/web/src/components/grid/GridThreadCell.browser.test.tsx": 7,
-  "apps/web/src/components/grid/sidebarCollapse.ts": 1,
+  "apps/web/src/components/sidebar/sidebarCollapse.ts": 1,
   "apps/web/src/components/grid/ThreadDetailsGrid.browser.test.tsx": 7,
   "apps/web/src/components/HoustonWordmark.tsx": 1,
   "apps/web/src/components/preview/PreviewChromeRow.tsx": 17,

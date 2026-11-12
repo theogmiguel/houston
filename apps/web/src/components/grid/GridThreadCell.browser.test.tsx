@@ -109,7 +109,7 @@ vi.mock("../ChatMarkdown", () => ({
   default: ({ text }: { text: string }) => <p>{text}</p>,
 }));
 
-vi.mock("./ThreadRowPullRequestBadge", () => ({
+vi.mock("../sidebar/ThreadRowPullRequestBadge", () => ({
   ThreadRowPullRequestBadge: (props: { pullRequest: { number: number } }) => (
     <span data-testid="pane-pr">#{props.pullRequest.number}</span>
   ),

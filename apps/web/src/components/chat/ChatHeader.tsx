@@ -44,7 +44,7 @@ import {
   THREAD_TITLE_INPUT_CLS,
   THREAD_TITLE_TEXT_CLS,
 } from "../ui/thread-header-recipes";
-import { ThreadRowPullRequestBadge } from "../grid/ThreadRowPullRequestBadge";
+import { ThreadRowPullRequestBadge } from "../sidebar/ThreadRowPullRequestBadge";
 import type { RowPullRequest } from "~/threads/rowPullRequest";
 import { textDirection } from "~/textDirection";
 

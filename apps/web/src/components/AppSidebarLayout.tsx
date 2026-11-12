@@ -33,7 +33,7 @@ import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../termina
 import { cn, isMacPlatform } from "../lib/utils";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { BackgroundThreadAnnouncer } from "./BackgroundThreadAnnouncer";
-import { GridSidebar } from "./grid/GridSidebar";
+import { ThreadSidebar } from "./sidebar/ThreadSidebar";
 import { ThreadDragOverlay } from "./ui/thread-drag-overlay";
 import { SidebarBrandWidthProbe } from "./sidebar/SidebarChrome";
 import { isAppModalPage } from "./sidebar/mainAppLocation";
@@ -488,7 +488,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
         }}
         style={windowControlsInsetStyle}
       >
-        <GridSidebar />
+        <ThreadSidebar />
         <SidebarRail onDoubleClick={resetSidebarWidth} />
       </Sidebar>
       <PhoneShell>{children}</PhoneShell>

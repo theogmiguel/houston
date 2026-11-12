@@ -56,7 +56,7 @@ import {
   threadStatusKindGlyphClass,
   threadStatusKindTextClass,
 } from "./ui/thread-state-glyph";
-import { gridThreadStatusKind } from "../grid/statusWord";
+import { threadStatusKind } from "../threads/statusWord";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import {
   PULL_REQUEST_PRESENTATION,
@@ -628,7 +628,7 @@ function ThreadStatusLabel({
   thread: SidebarThreadSummary;
   compact?: boolean;
 }) {
-  const kind = gridThreadStatusKind(thread, status.state);
+  const kind = threadStatusKind(thread, status.state);
   if (compact) {
     return (
       <Tooltip>

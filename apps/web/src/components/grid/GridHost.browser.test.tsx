@@ -2,7 +2,7 @@ import "~/index.css";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import type { GridRecord } from "../../grid/gridStore";
-import { beginThreadDragAt, endThreadDrag, type ThreadDragSource } from "../../grid/threadDrag";
+import { beginThreadDragAt, endThreadDrag, type ThreadDragSource } from "../../threads/threadDrag";
 import {
   type LayoutNode,
   preorderLeaves,

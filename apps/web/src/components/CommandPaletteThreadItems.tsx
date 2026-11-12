@@ -33,8 +33,8 @@ import { useThreadSearch } from "../state/queries";
 import { primaryServerProvidersAtom } from "../state/server";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
-import { resolveGridThreadState } from "../grid/sidebar";
-import { ThreadStatusGlyph } from "./grid/threadStatusMark";
+import { resolveThreadRowState } from "../threads/sidebarModel";
+import { ThreadStatusGlyph } from "./sidebar/threadStatusMark";
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import { buildThreadActionItems } from "./CommandPalette.logic";
 import { useEnvironmentLookups, useProjectLookups } from "./CommandPaletteLookups";
@@ -120,7 +120,7 @@ export function useCommandPaletteThreadItems(input: {
     projectByKey,
     icon: null,
     renderIcon: (thread) => (
-      <ThreadStatusGlyph thread={thread} state={resolveGridThreadState(thread, nowIso)} />
+      <ThreadStatusGlyph thread={thread} state={resolveThreadRowState(thread, nowIso)} />
     ),
     renderTrailingContent: (thread) => <ThreadRowTrailingStatus thread={thread} />,
     renderDescription: (thread, { projectTitle }) => {

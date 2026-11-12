@@ -23,7 +23,7 @@ import {
   useThreadDropZone,
   type ThreadDragSource,
   type ThreadDropTarget,
-} from "../../grid/threadDrag";
+} from "../../threads/threadDrag";
 import {
   type LayoutNode,
   type Side,

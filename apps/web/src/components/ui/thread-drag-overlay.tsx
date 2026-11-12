@@ -1,6 +1,6 @@
 import { createPortal } from "react-dom";
 
-import { useThreadDragState } from "~/grid/threadDrag";
+import { useThreadDragState } from "~/threads/threadDrag";
 
 /**
  * Covers the window while a thread drag is live: it keeps a terminal, browser

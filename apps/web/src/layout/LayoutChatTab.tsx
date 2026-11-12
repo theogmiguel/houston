@@ -5,7 +5,7 @@ import { ThreadChatSurface } from "../components/chat/ThreadChatSurface";
 import { Button } from "../components/ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty";
 import { useComposerDraftStore } from "../composerDraftStore";
-import { usePaneDensity } from "../components/grid/usePaneDensity";
+import { usePaneDensity } from "../threads/usePaneDensity";
 import { useSidebarPendingFileDropStore } from "../sidebarPendingFileDropStore";
 import { useQuietThreadShell } from "../state/entities";
 import { useEnvironmentShellStatus } from "../state/shell";

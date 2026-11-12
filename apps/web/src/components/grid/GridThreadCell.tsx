@@ -32,7 +32,7 @@ import {
   type ThreadNode,
   preorderThreads,
 } from "@houston-app/shared/grid/tree";
-import { getThreadDragSource } from "../../grid/threadDrag";
+import { getThreadDragSource } from "../../threads/threadDrag";
 import { Button } from "../ui/button";
 import { GridDropIndicator } from "../ui/grid-drop-indicator";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -41,8 +41,8 @@ import { TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR } from "../chat/composerFocusRedi
 import { useThreadActionMenu } from "../../hooks/useThreadActionMenu";
 import { GridPaneHeader } from "../ui/grid-pane-header";
 import { ThreadOpenProvider } from "../../threads/threadOpenContext";
-import { PaneThreadStatusMark } from "./threadStatusMark";
-import { usePaneDensity } from "./usePaneDensity";
+import { PaneThreadStatusMark } from "../sidebar/threadStatusMark";
+import { usePaneDensity } from "../../threads/usePaneDensity";
 
 export function GridThreadCell({
   node,

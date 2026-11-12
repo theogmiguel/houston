@@ -3,9 +3,9 @@ import { scopeThreadRef } from "@houston-app/client-runtime/environment";
 import type { ScopedThreadRef } from "@houston-app/contracts";
 import { useState, type ReactNode } from "react";
 
-import { resolveGridThreadState } from "~/grid/sidebar";
+import { resolveThreadRowState } from "~/threads/sidebarModel";
 import { resolveRowPullRequest } from "~/threads/rowPullRequest";
-import { gridThreadStatusKind } from "~/grid/statusWord";
+import { threadStatusKind } from "~/threads/statusWord";
 import { useNowMinute } from "~/hooks/useNowMinute";
 import { cn } from "~/lib/utils";
 import { resolveSidebarThreadStatus } from "../Sidebar.logic";
@@ -108,8 +108,8 @@ export function DraftProjectContext({ threads, onOpenThread }: DraftProjectConte
 
   const nowIso = `${nowMinute}:00.000Z`;
   const entries: ReadonlyArray<ContextEntry> = threads.map((thread) => {
-    const state = resolveGridThreadState(thread, nowIso);
-    return { thread, kind: gridThreadStatusKind(thread, state) };
+    const state = resolveThreadRowState(thread, nowIso);
+    return { thread, kind: threadStatusKind(thread, state) };
   });
   const counts = {
     running: threads.filter((thread) => matchesFilter(thread, "running")).length,

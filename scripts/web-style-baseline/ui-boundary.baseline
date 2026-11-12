@@ -201,8 +201,8 @@
 192 apps/web/src/components/GitActionsControl.tsx
 6 apps/web/src/components/grid/GridHost.tsx
 2 apps/web/src/components/grid/GridLayoutMenu.tsx
-5 apps/web/src/components/grid/GridShelves.tsx
-31 apps/web/src/components/grid/GridSidebar.tsx
+5 apps/web/src/components/sidebar/SidebarShelves.tsx
+31 apps/web/src/components/sidebar/ThreadSidebar.tsx
 4 apps/web/src/components/grid/GridThreadBranch.tsx
 2 apps/web/src/components/grid/GridThreadCell.tsx
 13 apps/web/src/components/HostedEmptyState.tsx

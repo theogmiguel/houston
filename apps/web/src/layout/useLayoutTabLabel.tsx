@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 
 import { useNowMinute } from "../hooks/useNowMinute";
-import { resolveGridThreadState } from "../grid/sidebar";
+import { resolveThreadRowState } from "../threads/sidebarModel";
 import { selectThreadRightPanelState, useRightPanelStore } from "../rightPanelStore";
 import { useQuietThreadShells } from "../state/entities";
 import { chatTargetThreadRef } from "./layoutThreadRef";
@@ -57,7 +57,7 @@ function surfaceIcon(kind: string): LucideIcon {
 /** The status a thread's tab marks: work running, or something that needs the person. */
 function markOf(shell: EnvironmentThreadShell | null, nowIso: string): LayoutTabLabel["mark"] {
   if (shell === null) return undefined;
-  const state = resolveGridThreadState(shell, nowIso);
+  const state = resolveThreadRowState(shell, nowIso);
   if (state === "running") return "running";
   return state === "needs" || state === "failed" ? "attention" : undefined;
 }
