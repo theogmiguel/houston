@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { userEvent } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import { Swap } from "../ui/swap";
@@ -15,6 +15,7 @@ import { SETTINGS_SECTION_DESCRIPTIONS, SETTINGS_SECTION_LABELS } from "./settin
 
 describe("SettingsPageContainer heading", () => {
   it("opens every settings page with one muted line and no visible repeat of the breadcrumb title", async () => {
+    await page.viewport(1280, 800);
     await using screen = await render(
       <SettingsPageContainer>
         <p>content</p>
@@ -32,6 +33,20 @@ describe("SettingsPageContainer heading", () => {
     expect(title.compareDocumentPosition(description.element())).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
+  });
+
+  it("keeps the title visible on a phone", async () => {
+    await page.viewport(390, 800);
+    await using screen = await render(
+      <SettingsPageContainer>
+        <p>content</p>
+      </SettingsPageContainer>,
+      { router: "/settings/appearance" },
+    );
+
+    const title = screen.getByRole("heading", { level: 1, name: "Appearance" }).element();
+    await expect.element(title).toBeVisible();
+    expect(title.getBoundingClientRect().height).toBeGreaterThan(10);
   });
 
   it("titles the open source licenses detail page", async () => {
