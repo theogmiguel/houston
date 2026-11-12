@@ -17,8 +17,9 @@ import {
 // own history table and ids; upstream's table and ids stay untouched.
 const HOUSTON_MIGRATIONS_TABLE = "houston_sql_migrations";
 
-// One row per grid. The record JSON is the contract's HoustonGridRecord; project_id, revision and
-// the times are columns so a project's grids list without parsing every row.
+// One row per grid, as an earlier build stored it. The record JSON is a grid's tree of threads;
+// project_id, revision and the times are columns. Migration 19 copies each row into a layout
+// workspace and migration 20 drops the table.
 const Grids = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   yield* sql`
@@ -120,6 +121,14 @@ const LayoutWorkspaces = Effect.gen(function* () {
       VALUES (${record.id}, 0, ${encodeWorkspace(record)}, 1, ${now}, ${now})
     `;
   }
+});
+
+// Migration 19 copied every readable grid into a layout workspace and nothing reads houston_grids
+// any more, so the table and its index are removed. A database without the table has nothing to do.
+const RemoveGrids = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`DROP INDEX IF EXISTS idx_houston_grids_project`;
+  yield* sql`DROP TABLE IF EXISTS houston_grids`;
 });
 
 const ReviewFilesViewed = Effect.gen(function* () {
@@ -896,6 +905,7 @@ const houstonMigrationEntries = [
   [17, "TurnStartReadModels", createTurnStartReadModels],
   [18, "Grids", Grids],
   [19, "LayoutWorkspaces", LayoutWorkspaces],
+  [20, "RemoveGrids", RemoveGrids],
 ] as const;
 
 // Ids land in merge order, so a database can record a higher id before a lower one; every
