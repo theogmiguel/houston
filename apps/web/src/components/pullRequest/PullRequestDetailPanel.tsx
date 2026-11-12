@@ -25,8 +25,6 @@ import {
 import {
   ArrowDownUpIcon,
   ArrowLeftIcon,
-  CircleDotIcon,
-  ExternalLinkIcon,
   FileDiffIcon,
   GitCommitHorizontalIcon,
   MessageSquareIcon,
@@ -84,7 +82,6 @@ import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
 import { MiddleTruncate } from "../ui/middle-truncate";
 import {
-  PullRequestChecksStatusLine,
   PullRequestDetailHeaderBody,
   PullRequestDetailTabBar,
 } from "./PullRequestDetailLayout";
@@ -148,7 +145,6 @@ import {
   shouldRefreshPullRequestActivity,
 } from "./pullRequestDetail.logic";
 import { resolvePickableEnvironments } from "./pullRequestProjectAssignment.logic";
-import { PullRequestChecksPopover } from "./PullRequestChecksPopover";
 import { PullRequestReadinessCard } from "./PullRequestReadinessCard";
 import { useInlineActionConfirm } from "./useInlineActionConfirm";
 import { PullRequestChecksTab } from "./PullRequestChecksTab";
@@ -1506,7 +1502,7 @@ export function PullRequestDetailPanel({
             inert={!condensed}
           >
             {detail ? (
-              <div className="col-span-2 min-w-0 px-9 pb-2 pt-1 max-phone:px-4">
+              <div className="col-span-2 min-w-0 px-4 pb-2 pt-1 max-phone:px-4">
                 <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
                   <span className="flex min-w-0 shrink items-center gap-1.5 overflow-hidden text-xs text-muted-foreground">
                     <PullRequestActorLabel
@@ -1671,29 +1667,7 @@ export function PullRequestDetailPanel({
                   pendingAction={pendingAction}
                   perform={perform}
                 />
-              ) : (
-                <PullRequestChecksStatusLine
-                  className={cn(
-                    "text-muted-foreground",
-                    // With no state and no summary the line is a bare dot.
-                    checksState === null && !checksSummary && "max-phone:hidden",
-                  )}
-                  aria-label={checksSummary ? `Checks: ${checksSummary}` : "Checks"}
-                  icon={
-                    checksState !== null ? (
-                      <PullRequestChecksPopover
-                        checks={detail.checks}
-                        stale={checksStale}
-                        checksState={checksState}
-                        threadRef={threadRef}
-                      />
-                    ) : (
-                      <CircleDotIcon aria-hidden className="size-3.5" />
-                    )
-                  }
-                  label={checksSummary}
-                />
-              )
+              ) : null
             ) : tab === "timeline" ? (
               <div className="ml-auto flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
                 <PullRequestMetaLine
@@ -1768,14 +1742,6 @@ export function PullRequestDetailPanel({
                 </Button>
               </div>
             ) : null}
-            <button
-              type="button"
-              className="ml-auto inline-flex shrink-0 items-center gap-1 text-xs text-[var(--houston)] underline-offset-2 hover:text-[var(--t1)] hover:underline"
-              onClick={() => void readLocalApi()?.shell.openExternal(detail.url)}
-            >
-              {openOnHostText}
-              <ExternalLinkIcon aria-hidden className="size-3" />
-            </button>
           </PullRequestDetailTabBar>
         ) : null}
       </div>
