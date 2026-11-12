@@ -60,11 +60,13 @@ import {
   ArrowRightIcon,
   BotIcon,
   CircleAlertIcon,
+  MessageSquareIcon,
   MessagesSquareIcon,
   Minimize2Icon,
 } from "lucide-react";
 import { ChevronDown, ChevronRight } from "lucide";
 import { MorphIcon } from "~/components/MorphIcon";
+import { PanelEmptyState } from "../ui/empty-state";
 import { Skeleton } from "../ui/skeleton";
 import { ExpandedImagePreview } from "./ExpandedImagePreview";
 import {
@@ -1325,7 +1327,11 @@ const ConversationTimeline = memo(function ConversationTimeline({
           className="flex h-full items-center justify-center ps-(--chat-lane-inset-start) pe-(--chat-lane-inset-end)"
           style={{ paddingBottom: emptyPlaceholderInset }}
         >
-          <p className="text-sm text-muted-foreground">Send a message to start the conversation.</p>
+          <PanelEmptyState
+            icon={<MessageSquareIcon />}
+            title="No messages yet"
+            description="Send a message to start the conversation."
+          />
         </div>
       </>
     );
