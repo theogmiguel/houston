@@ -5,6 +5,7 @@ import { memo } from "react";
 import type { PaneDensity } from "../../threads/density";
 import { type PendingApproval } from "../../session-logic";
 import { cn } from "../../lib/utils";
+import { SURFACE_LIFT_CLASS } from "../ui/surface-recipes";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 
@@ -77,7 +78,8 @@ export const ComposerApprovalCard = memo(function ComposerApprovalCard({
       aria-label="Approval needed"
       data-composer-approval-card={density}
       className={cn(
-        "flex min-w-0 flex-col gap-2 rounded-xl border border-warning/30 warning-wash-surface",
+        "flex min-w-0 flex-col gap-2 rounded-xl border border-(--card-edge) bg-(--composer)",
+        SURFACE_LIFT_CLASS,
         phone ? "p-4" : compact ? "px-2.5 py-2" : "px-3 py-3",
       )}
     >

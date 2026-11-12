@@ -29,7 +29,7 @@ function alphaOf(color: string): number {
 }
 
 describe("ComposerApprovalCard surface", () => {
-  it("paints an opaque warning wash over the composer in both themes", async () => {
+  it("sits on the composer's own surface and edge, with only its icon in the warning ink, in both themes", async () => {
     await using screen = await render(
       <ComposerApprovalCard
         approval={approval}
@@ -44,17 +44,24 @@ describe("ComposerApprovalCard surface", () => {
     );
     const element = approvalCard(screen.container);
     const root = document.documentElement;
+    const resolve = (value: string) => {
+      const probe = document.createElement("div");
+      probe.style.backgroundColor = value;
+      document.body.append(probe);
+      const resolved = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return resolved;
+    };
 
-    root.classList.remove("dark");
     try {
-      const light = getComputedStyle(element);
-      expect(alphaOf(light.backgroundColor)).toBe(1);
-      expect(light.backgroundImage).toContain("linear-gradient");
-
-      root.classList.add("dark");
-      const dark = getComputedStyle(element);
-      expect(alphaOf(dark.backgroundColor)).toBe(1);
-      expect(dark.backgroundImage).toContain("linear-gradient");
+      for (const dark of [false, true]) {
+        root.classList.toggle("dark", dark);
+        const style = getComputedStyle(element);
+        expect(alphaOf(style.backgroundColor)).toBe(1);
+        expect(style.backgroundColor).toBe(resolve("var(--composer)"));
+        expect(style.backgroundImage).toBe("none");
+        expect(style.borderTopColor).toBe(resolve("var(--card-edge)"));
+      }
     } finally {
       root.classList.remove("dark");
     }
