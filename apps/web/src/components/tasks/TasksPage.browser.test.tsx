@@ -1,3 +1,4 @@
+import "~/index.css";
 import type { HoustonTaskSummary, HoustonTaskScope } from "@houston-app/contracts/houston/tasks";
 import { EnvironmentId } from "@houston-app/contracts";
 import { Atom } from "effect/reactivity";
@@ -175,6 +176,18 @@ it("lists the queue with the workspace picker and opens the new task editor", as
   await screen.getByRole("button", { name: "New task" }).click();
   await expect.element(screen.getByRole("dialog")).toBeVisible();
   expect(screen.container.textContent).toContain("New task");
+});
+
+it("sizes every control of the header row to the control height", async () => {
+  reset();
+  await using screen = await render(<TasksPage />);
+  const header = screen.container.querySelector("header")!;
+  const heights = [
+    header.querySelector('[aria-label="Search tasks"]')!.closest("[data-slot=input-group]")!,
+    header.querySelector('[aria-label="Workspace"]')!,
+    Array.from(header.querySelectorAll("button")).find((b) => b.textContent === "New task")!,
+  ].map((element) => Math.round(element.getBoundingClientRect().height));
+  expect(heights).toEqual([28, 28, 28]);
 });
 
 it("opens a task in the right panel tab and records it in the route", async () => {

@@ -480,7 +480,6 @@ export function TasksPage() {
                     value={search.q ?? ""}
                     placeholder="Search"
                     aria-label="Search tasks"
-                    size="compact"
                     onChange={(event) =>
                       updateSearch({ q: event.currentTarget.value || undefined })
                     }
@@ -511,7 +510,6 @@ export function TasksPage() {
                 </div>
                 {view === "projects" ? (
                   <Button
-                    size="sm"
                     variant="outline"
                     disabled={selectedProject === null}
                     onClick={() => setNewProjectOpen(true)}
@@ -520,7 +518,7 @@ export function TasksPage() {
                     New project
                   </Button>
                 ) : null}
-                <Button size="sm" disabled={newTaskDisabled} onClick={() => setEditorOpen(true)}>
+                <Button disabled={newTaskDisabled} onClick={() => setEditorOpen(true)}>
                   <PlusIcon aria-hidden />
                   New task
                 </Button>
