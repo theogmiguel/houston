@@ -1,6 +1,7 @@
 import type { HTMLAttributes, ReactNode } from "react";
 
 import { cn } from "../../lib/utils";
+import { Kbd } from "./kbd";
 
 /**
  * The paint of the new-tab launcher: a narrow column of grouped rows. Feature components in
@@ -24,7 +25,7 @@ export function LayoutLauncherList({ className, ...props }: HTMLAttributes<HTMLD
   return (
     <div
       role="list"
-      className={cn("flex w-full max-w-110 flex-col gap-0.5 py-6 text-left", className)}
+      className={cn("@container flex w-full max-w-110 flex-col gap-0.5 py-6 text-left", className)}
       {...props}
     />
   );
@@ -32,7 +33,7 @@ export function LayoutLauncherList({ className, ...props }: HTMLAttributes<HTMLD
 
 export function LayoutLauncherGroup({ children }: { children: ReactNode }) {
   return (
-    <div role="presentation" className="px-2 pt-3 pb-1 text-caption text-muted-foreground">
+    <div role="presentation" className="truncate px-2.5 pt-4 pb-1.5 text-caption text-muted-foreground">
       {children}
     </div>
   );
@@ -42,12 +43,15 @@ export function LayoutLauncherRow({
   icon,
   label,
   detail,
+  shortcut,
   disabledReason,
   onSelect,
 }: {
   icon: ReactNode;
   label: string;
   detail?: string | undefined;
+  /** The app-wide shortcut that does the same, when one is bound; it hides in a narrow pane. */
+  shortcut?: string | null | undefined;
   /** Says why the row cannot be used; the row stays visible and does nothing. */
   disabledReason?: string | undefined;
   onSelect: () => void;
@@ -59,19 +63,21 @@ export function LayoutLauncherRow({
       role="listitem"
       data-layout-launcher-row=""
       aria-disabled={disabled || undefined}
+      title={disabledReason}
       onClick={disabled ? undefined : onSelect}
       className={cn(
-        "flex w-full items-center gap-2.5 rounded-(--r-ctl) px-2 py-1.5 text-left text-body outline-none transition-colors duration-(--motion-feedback) ease-standard hover:bg-hover focus-visible:ring-2 focus-visible:ring-(--accent-ink) focus-visible:ring-inset motion-reduce:transition-none",
+        "flex min-h-8 w-full items-center gap-2.5 rounded-(--r-selection) px-2.5 py-1 text-left text-body outline-none transition-colors duration-(--motion-feedback) ease-standard hover:bg-hover focus-visible:ring-2 focus-visible:ring-(--accent-ink) focus-visible:ring-inset motion-reduce:transition-none",
         disabled ? "cursor-default text-muted-foreground opacity-60" : "cursor-pointer",
       )}
     >
       <span className="grid size-4 shrink-0 place-items-center text-muted-foreground">{icon}</span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {(disabledReason ?? detail) ? (
-        <span className="min-w-0 max-w-1/2 truncate text-caption text-muted-foreground">
+        <span className="hidden min-w-0 max-w-1/2 truncate text-caption text-muted-foreground @xs:block">
           {disabledReason ?? detail}
         </span>
       ) : null}
+      {shortcut && !disabled ? <Kbd className="hidden @xs:inline-flex">{shortcut}</Kbd> : null}
     </button>
   );
 }

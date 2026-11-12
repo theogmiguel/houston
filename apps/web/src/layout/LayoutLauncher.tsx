@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
 import { scopeProjectRef } from "@houston-app/client-runtime/environment";
 import type { ScopedThreadRef } from "@houston-app/contracts";
@@ -22,9 +23,11 @@ import {
   LayoutLauncherRow,
   LayoutLauncherFrame,
 } from "../components/ui/layout-launcher";
+import { shortcutLabelForCommand } from "../keybindings";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useScratchProject } from "../hooks/useScratchProject";
 import { useProjects, useVisibleThreadShells } from "../state/entities";
+import { primaryServerKeybindingsAtom } from "../state/server";
 import type { ThreadRouteTarget } from "../threadRoutes";
 import {
   findLayoutSurfaceTabs,
@@ -53,6 +56,12 @@ const SURFACES: ReadonlyArray<{
   { kind: "device", label: "Device", icon: TabletSmartphoneIcon },
   { kind: "side-chat", label: "Side chat", icon: MessageSquareTextIcon },
 ];
+
+/** The app-wide command that already opens a surface, where one exists. */
+const SURFACE_COMMANDS: Partial<Record<LauncherSurfaceKind, "diff.toggle" | "terminal.toggle">> = {
+  diff: "diff.toggle",
+  terminal: "terminal.toggle",
+};
 
 /** Kinds whose open is a store change the layout sync answers at once; the rest finish later. */
 const IMMEDIATE_SURFACES: ReadonlySet<LauncherSurfaceKind> = new Set([
@@ -164,6 +173,7 @@ function LauncherSurfaces({
   const openers = useThreadSurfaceOpeners(threadRef);
   const profiles = useBrowserDefaults().profiles;
   const focusedWorkspaceId = useLayoutStore((state) => state.layout.focusedWorkspaceId);
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
 
   const show = (kind: LauncherSurfaceKind, browserProfileId?: string) => {
     requestLayoutSurfacePlacement(
@@ -198,6 +208,7 @@ function LauncherSurfaces({
             key={kind}
             icon={<Icon aria-hidden className="size-4" />}
             label={label}
+            shortcut={shortcutLabelForCommand(keybindings, SURFACE_COMMANDS[kind] ?? null)}
             {...(available ? {} : { disabledReason: reason })}
             onSelect={() => show(kind)}
           />
