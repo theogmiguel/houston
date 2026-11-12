@@ -79,6 +79,7 @@ export function PhoneTabsSheet({
                   type="button"
                   variant="ghost"
                   size="icon"
+                  className="size-11"
                   aria-label={`Close ${tab.title}`}
                   onClick={() => onClose(tab.id)}
                 >
