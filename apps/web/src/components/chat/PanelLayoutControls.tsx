@@ -1,10 +1,4 @@
-import {
-  ListFilterIcon,
-  MoreHorizontalIcon,
-  PanelBottomIcon,
-  PanelRightIcon,
-  SquareMenuIcon,
-} from "lucide-react";
+import { MenuIcon, MoreHorizontalIcon, PanelBottomIcon, PanelRightIcon } from "lucide-react";
 import { Maximize2, Minimize2 } from "lucide";
 import { MorphIcon } from "~/components/MorphIcon";
 import { memo, type RefObject } from "react";
@@ -82,7 +76,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
       variant="ghost"
       size="sm"
     >
-      <ListFilterIcon className="size-4" />
+      <MenuIcon className="size-4" />
     </Toggle>
   );
   const threadPanelControl = (
@@ -128,7 +122,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
                   checked={threadPanelOpen}
                   onCheckedChange={() => onToggleThreadPanel()}
                 >
-                  <SquareMenuIcon />
+                  <MenuIcon />
                   Toggle thread details
                   {threadPanelShortcutLabel ? (
                     <MenuShortcut>{threadPanelShortcutLabel}</MenuShortcut>
