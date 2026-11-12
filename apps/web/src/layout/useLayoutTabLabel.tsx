@@ -14,6 +14,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { resolveThreadRowState } from "../threads/sidebarModel";
 import { selectThreadRightPanelState, useRightPanelStore } from "../rightPanelStore";
@@ -30,6 +31,13 @@ const PAGE_TITLES = {
   usage: "Usage",
   "pull-requests": "Pull requests",
 } as const;
+
+/** Each page tab carries its own icon, the one its sidebar footer and launcher row show. */
+const PAGE_ICONS: Record<keyof typeof PAGE_TITLES, LucideIcon> = {
+  settings: SettingsIcon,
+  usage: ChartNoAxesColumnIcon,
+  "pull-requests": PullRequestGlyph.pullRequest,
+};
 
 function iconOf(Icon: LucideIcon) {
   return <Icon aria-hidden className="size-3.5 shrink-0" />;
@@ -117,7 +125,7 @@ export function useLayoutTabLabel(): (tab: LayoutTab) => LayoutTabLabel {
       case "usage":
       case "pull-requests":
         return {
-          icon: iconOf(content.kind === "settings" ? SettingsIcon : ChartNoAxesColumnIcon),
+          icon: iconOf(PAGE_ICONS[content.kind]),
           title: PAGE_TITLES[content.kind],
         };
     }
