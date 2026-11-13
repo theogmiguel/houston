@@ -7,6 +7,7 @@ import {
   createLayoutState,
   normalizeLayout,
   openLayoutTab,
+  replaceLayoutTabContent,
   type LayoutState,
   type LayoutTabContent,
 } from "../../layout/layoutModel";
@@ -14,6 +15,7 @@ import { createLayoutWorkspaceNamed } from "../../layout/layoutWorkspaces";
 import { membershipKeyOf, type ThreadMembershipState } from "../../layout/threadMembership";
 import {
   buildSidebarWorkspaceSections,
+  createSidebarRowOrderMemory,
   type SidebarWorkspaceSectionsInput,
 } from "./sidebarWorkspaceSections";
 
@@ -131,6 +133,22 @@ describe("buildSidebarWorkspaceSections", () => {
     });
     expect(sections.map((s) => s.name)).toEqual(["Today"]);
     expect(ids(sections[0]!.threads)).toEqual(["b", "a", "c-not-open"]);
+  });
+
+  it("keeps two threads in place while one tab alternates between them", () => {
+    const withA = layoutOf([["Today", ["a"]]]);
+    const tabId = withA.workspaces[0]!.columns[0]!.panes[0]!.tabs[0]!.id;
+    const withB = replaceLayoutTabContent(withA, tabId, chat("b"));
+    const memberships = membershipsOf(withA, { b: "Today" });
+    const rowOrder = createSidebarRowOrderMemory();
+    const rows = (layout: LayoutState) =>
+      ids(
+        build({ ...base, layout, memberships, rowOrder, threads: [thread("b"), thread("a")] })
+          .sections[0]!.threads,
+      );
+    expect(rows(withA)).toEqual(["a", "b"]);
+    expect(rows(withB)).toEqual(["a", "b"]);
+    expect(rows(withA)).toEqual(["a", "b"]);
   });
 
   it("lists several workspaces in the layout's order and keeps each thread under its own", () => {

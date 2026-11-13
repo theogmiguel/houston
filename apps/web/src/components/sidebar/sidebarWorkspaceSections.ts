@@ -44,8 +44,36 @@ export interface SidebarWorkspaceSectionsInput {
   readonly projectKeys: ReadonlySet<string> | null;
   /** Threads lifted into the "Needs you" section, so their workspaces do not repeat them. */
   readonly excludedThreadIds: ReadonlySet<string> | undefined;
+  /** Where each row last sat; without it a thread whose tab closed drops to the end. */
+  readonly rowOrder?: SidebarRowOrderMemory | undefined;
   /** The title of a workspace without a name, such as its lead tab's title. */
   readonly resolveWorkspaceTitle?: ((workspace: LayoutWorkspace) => string | null) | undefined;
+}
+
+/**
+ * The tab position each thread last held and when it took it. A thread that loses its tab keeps
+ * its place, so two threads that take turns in one tab do not swap rows on every click.
+ */
+export interface SidebarRowOrderMemory {
+  readonly slots: Map<string, { readonly position: number; readonly since: number }>;
+  next: number;
+}
+
+export function createSidebarRowOrderMemory(): SidebarRowOrderMemory {
+  return { slots: new Map(), next: 0 };
+}
+
+const UNPLACED = { position: Number.POSITIVE_INFINITY, since: Number.POSITIVE_INFINITY };
+
+/** Records the positions the open tabs hold now and ranks a thread by the last one it held. */
+function rowRanker(layout: LayoutState, memory: SidebarRowOrderMemory | undefined) {
+  const slots = memory?.slots ?? new Map<string, { position: number; since: number }>();
+  let next = memory?.next ?? 0;
+  chatTabOrder(layout).forEach((key, position) => {
+    if (slots.get(key)?.position !== position) slots.set(key, { position, since: next++ });
+  });
+  if (memory) memory.next = next;
+  return (key: string) => slots.get(key) ?? UNPLACED;
 }
 
 /** Threads that still belong on the rail: not archived, deleted, closed, held or a subagent child. */
@@ -105,7 +133,7 @@ export function buildSidebarWorkspaceSections(
   const first = workspaces[0];
   if (first === undefined) return { sections: [], hiddenSections: [] };
 
-  const position = new Map(chatTabOrder(input.layout).map((key, index) => [key, index]));
+  const rank = rowRanker(input.layout, input.rowOrder);
   const listed = new Set(workspaces.map((workspace) => workspace.id));
   const rows = input.threads
     .filter(
@@ -114,11 +142,12 @@ export function buildSidebarWorkspaceSections(
         (input.projectKeys === null ||
           input.projectKeys.has(projectKeyOf(thread.environmentId, thread.projectId))),
     )
-    .toSorted(
-      (left, right) =>
-        (position.get(keyOf(left)) ?? Number.POSITIVE_INFINITY) -
-        (position.get(keyOf(right)) ?? Number.POSITIVE_INFINITY),
-    );
+    .toSorted((left, right) => {
+      const [a, b] = [rank(keyOf(left)), rank(keyOf(right))];
+      // Infinity minus Infinity is NaN, so equal positions are compared before subtracting.
+      if (a.position !== b.position) return a.position - b.position;
+      return a.since === b.since ? 0 : a.since - b.since;
+    });
 
   const byWorkspace = new Map<string, EnvironmentThreadShell[]>();
   for (const thread of rows) {

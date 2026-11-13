@@ -98,6 +98,7 @@ import { COLLAPSED_WORKSPACES_STORAGE_KEY, useCollapsedKeys } from "./sidebarCol
 import { hiddenWorkspaceIdFromAction, workspaceHeadingMenuItems } from "./workspaceHeadingMenu";
 import {
   buildSidebarWorkspaceSections,
+  createSidebarRowOrderMemory,
   type SidebarWorkspaceSection,
 } from "./sidebarWorkspaceSections";
 import { moveThreadToWorkspaceWithFeedback } from "./workspaceMoveFeedback";
@@ -269,6 +270,7 @@ export function ThreadSidebar({
   const [searchIndex, setSearchIndex] = useState(0);
   const [selection, setSelection] = useState<ThreadSelection>(clearThreadSelection);
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
+  const [rowOrder] = useState(createSidebarRowOrderMemory);
   const collapsedWorkspaces = useCollapsedKeys(COLLAPSED_WORKSPACES_STORAGE_KEY);
   const dragging = useThreadDragSource();
   const closedShelfIsDropTarget = useThreadDropTarget()?.kind === "closed";
@@ -453,6 +455,7 @@ export function ThreadSidebar({
     nowIso,
     projectKeys,
     resolveWorkspaceTitle,
+    rowOrder,
   } as const;
   // Everything the rail can reach, whatever it draws now: keyboard traversal, attention and
   // jump hints follow the rows, not the search or the Needs you lift.
