@@ -1,15 +1,10 @@
-import { ListChecksIcon, MonitorIcon, MoonIcon, SettingsIcon, SunIcon } from "lucide-react";
+import { MonitorIcon, MoonIcon, SettingsIcon, SunIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { memo } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { useTheme } from "../../hooks/useTheme";
-import { usePullRequestsSupported } from "../../state/environments";
-import { useOpenLayoutPage } from "../../layout/pageNavigation";
-import { isLayoutPageContent, selectFocusedTab, type LayoutState } from "../../layout/layoutModel";
-import { useLayoutStore } from "../../layout/layoutStore";
-import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { cn } from "../../lib/utils";
 import { HoustonWordmark } from "../HoustonWordmark";
 import {
@@ -130,15 +125,12 @@ function SidebarUtilityItem({
   icon,
   label,
   tooltip = label,
-  active = false,
   onClick,
 }: {
   icon: ReactNode;
   label: string;
   /** The hover label; the name with its shortcut when one opens it. */
   tooltip?: string;
-  /** The page this button opens is the one on screen. */
-  active?: boolean;
   onClick: (source: Element) => void;
 }) {
   return (
@@ -148,8 +140,6 @@ function SidebarUtilityItem({
           render={
             <SidebarMenuButton
               aria-label={label}
-              aria-current={active ? "page" : undefined}
-              isActive={active}
               onClick={(event) => onClick(event.currentTarget)}
               size="icon"
               className="size-7 [&_svg]:size-[15px]"
@@ -164,29 +154,10 @@ function SidebarUtilityItem({
   );
 }
 
-/** The page tab the focused pane shows, if any, so its footer button reads as the current one. */
-const selectFocusedPageKind = (state: { layout: LayoutState }) => {
-  const content = selectFocusedTab(state.layout)?.content;
-  return content !== undefined && isLayoutPageContent(content) ? content.kind : null;
-};
-
-export const SidebarUtilityMenu = memo(function SidebarUtilityMenu({
-  hideTasks = false,
-}: {
-  /** The phone's home keeps Pull requests, without the Tasks destination. */
-  hideTasks?: boolean;
-}) {
+export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const navigate = useNavigate();
-  const openLayoutPage = useOpenLayoutPage();
   const { isMobile, setOpenMobile } = useSidebar();
   const { appearanceMode, setAppearanceMode } = useTheme();
-  const pullRequestsSupported = usePullRequestsSupported();
-  const focusedPage = useLayoutStore(selectFocusedPageKind);
-  const closeMobileSidebar = () => {
-    if (isMobile) {
-      setOpenMobile(false);
-    }
-  };
   const themeLabel = railThemeLabel(appearanceMode);
   const ThemeIcon =
     appearanceMode === "dark" ? MoonIcon : appearanceMode === "light" ? SunIcon : MonitorIcon;
@@ -194,55 +165,32 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu({
     setAppearanceMode(nextRailThemeMode(appearanceMode), source);
   };
   const handleSettingsClick = () => {
-    closeMobileSidebar();
+    if (isMobile) {
+      setOpenMobile(false);
+    }
     void navigate({ to: "/settings" });
-  };
-  // A page is a tab: focus the one already open, otherwise add one beside the focused tab.
-  const openPage = (kind: "pull-requests" | "tasks") => {
-    closeMobileSidebar();
-    void openLayoutPage(kind);
   };
 
   return (
     <SidebarMenu className="flex-row items-center">
-      {pullRequestsSupported ? (
-        <SidebarUtilityItem
-          icon={<PullRequestGlyph.pullRequest />}
-          label="Pull requests"
-          active={focusedPage === "pull-requests"}
-          onClick={() => openPage("pull-requests")}
-        />
-      ) : null}
-      {hideTasks ? null : (
-        <SidebarUtilityItem
-          icon={<ListChecksIcon />}
-          label="Tasks"
-          active={focusedPage === "tasks"}
-          onClick={() => openPage("tasks")}
-        />
-      )}
-      <li aria-hidden className="min-w-0 flex-1" />
-      <SidebarUpdatesButton />
+      <SidebarUtilityItem icon={<SettingsIcon />} label="Settings" onClick={handleSettingsClick} />
       <SidebarUtilityItem
         icon={<ThemeIcon />}
         label={`Theme: ${themeLabel}`}
         onClick={cycleTheme}
       />
-      <SidebarUtilityItem icon={<SettingsIcon />} label="Settings" onClick={handleSettingsClick} />
+      <li aria-hidden className="min-w-0 flex-1" />
+      <SidebarUpdatesButton />
       <SidebarThreadUndoNotice />
     </SidebarMenu>
   );
 });
 
-export const SidebarChromeFooter = memo(function SidebarChromeFooter({
-  hideTasks = false,
-}: {
-  hideTasks?: boolean;
-}) {
+export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
   return (
     <SidebarFooter className="mt-auto">
       <SidebarUpdateArchitectureWarning />
-      <SidebarUtilityMenu hideTasks={hideTasks} />
+      <SidebarUtilityMenu />
     </SidebarFooter>
   );
 });

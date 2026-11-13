@@ -193,11 +193,8 @@ function explain(title: string, description: string): void {
 }
 
 export function ThreadSidebar({
-  hideTasks = false,
   isPage = false,
 }: {
-  /** The phone's home drops the rail's Tasks destination. */
-  hideTasks?: boolean;
   /** The rail stands alone as a page, without the controls of the docked column. */
   isPage?: boolean;
 } = {}) {
@@ -1208,7 +1205,7 @@ export function ThreadSidebar({
                   </div>
                 </div>
               ) : null}
-              {isPage ? null : <SidebarChromeFooter hideTasks={hideTasks} />}
+              {isPage ? null : <SidebarChromeFooter />}
               {dragging !== null ? (
                 <span aria-hidden className="sr-only">
                   Dragging thread
