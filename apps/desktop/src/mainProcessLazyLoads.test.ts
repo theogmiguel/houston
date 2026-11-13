@@ -6,14 +6,19 @@ vi.mock("electron-updater", async (importOriginal) => {
   evaluated.add("electron-updater");
   return importOriginal();
 });
+vi.mock("tldts", async (importOriginal) => {
+  evaluated.add("tldts");
+  return importOriginal();
+});
 
 // The first import transforms most of the main-process module graph.
 const COLD_IMPORT_TIMEOUT_MS = 60_000;
 
 it(
-  "loading the main-process modules evaluates no updater package",
+  "loading the main-process modules evaluates no updater or public-suffix package",
   async () => {
     await import("./electron/ElectronUpdater.ts");
+    await import("./preview/Passkeys.ts");
     await import("./updates/DesktopUpdates.ts");
 
     expect([...evaluated]).toEqual([]);
