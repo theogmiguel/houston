@@ -146,7 +146,7 @@ describe("layoutTabContentKey", () => {
         threadRef: { environmentId: "e", threadId: "t" },
         surfaceId: "diff",
       }),
-      layoutTabContentKey({ kind: "page", page: "usage" }),
+      layoutTabContentKey({ kind: "page", page: "tasks" }),
       layoutTabContentKey({ kind: "launcher", id: "t", context: null }),
     ];
     expect(new Set(keys).size).toBe(keys.length);
