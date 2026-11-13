@@ -107,6 +107,11 @@ server uses the PID that file names.
   `RpcInstrumentation.ts` and given a scope in `RpcAuthorization.ts`.
 - **The host owns no agent state.** It supervises the server and bridges desktop features;
   host utilities and native helpers live under `apps/desktop/src` and `apps/desktop/native`.
+- **The host's launch evaluates only what the first window needs.** The main process is one
+  bundle, so every static import runs before the window opens. A package used later or on one
+  platform (the updater, the D-Bus client, the macOS passkey backend) is loaded with `import()`
+  where it is used; `apps/desktop/src/mainProcessLazyLoads.test.ts` fails if one becomes eager.
+  The updater attaches only after the main window is shown.
 
 ## Repository map
 
