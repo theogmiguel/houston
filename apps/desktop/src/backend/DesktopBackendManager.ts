@@ -301,6 +301,13 @@ export interface BackendInstanceSpec {
   readonly onPreflightFailed?: (failure: PreflightFailure) => Effect.Effect<boolean>;
   /** Resolve the live server owning the state directory, or fail so the pool can report it. */
   readonly onStateDirOwned?: () => Effect.Effect<Option.Option<DesktopBackendAttachment>>;
+  /**
+   * A healthy server already serving this config's state, found before spawning.
+   * None spawns as usual; the spawned server's ownership lock still decides.
+   */
+  readonly attachBeforeSpawn?: (
+    config: DesktopBackendStartConfig,
+  ) => Effect.Effect<Option.Option<DesktopBackendAttachment>>;
   readonly onAttached?: (attachment: DesktopBackendAttachment) => Effect.Effect<void>;
   /** Fires on each repeated crash or readiness timeout until the backend becomes ready. */
   readonly onStartupFailure?: (failure: BackendStartupFailure) => Effect.Effect<void>;
@@ -770,6 +777,22 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
     });
   });
 
+  // Callers hold the state mutex.
+  const attach = Effect.fn("desktop.backendInstance.attach")(function* (
+    attachment: DesktopBackendAttachment,
+  ) {
+    yield* Ref.update(state, (latest) => ({
+      ...latest,
+      desiredRunning: false,
+      ready: true,
+      config: Option.some(attachment.config),
+      attached: Option.some(attachment),
+      lastFailure: Option.none<BackendStartupFailure>(),
+    }));
+    yield* spec.onReady?.(attachment.httpBaseUrl, attachment.pid) ?? Effect.void;
+    yield* spec.onAttached?.(attachment) ?? Effect.void;
+  });
+
   const start: Effect.Effect<void> = Effect.suspend(() =>
     mutex.withPermits(1)(
       Effect.gen(function* () {
@@ -883,6 +906,12 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
           return;
         }
 
+        const running = yield* spec.attachBeforeSpawn?.(config.value) ?? Effect.succeedNone;
+        if (Option.isSome(running)) {
+          yield* attach(running.value);
+          return;
+        }
+
         const runScope = yield* Scope.make("sequential");
         const runId = yield* Ref.modify(state, (latest) => [
           latest.nextRunId,
@@ -977,19 +1006,7 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
                 if (stateDirOwned && !stopRequested) {
                   const attachment = yield* spec.onStateDirOwned?.() ?? Effect.succeedNone;
                   if (Option.isSome(attachment)) {
-                    yield* Ref.update(state, (latest) => ({
-                      ...latest,
-                      desiredRunning: false,
-                      ready: true,
-                      config: Option.some(attachment.value.config),
-                      attached: attachment,
-                      lastFailure: Option.none<BackendStartupFailure>(),
-                    }));
-                    yield* (
-                      spec.onReady?.(attachment.value.httpBaseUrl, attachment.value.pid) ??
-                        Effect.void
-                    );
-                    yield* spec.onAttached?.(attachment.value) ?? Effect.void;
+                    yield* attach(attachment.value);
                     return;
                   }
                   yield* Ref.update(state, (latest) => ({ ...latest, desiredRunning: false }));
