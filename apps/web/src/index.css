@@ -1114,11 +1114,11 @@ body {
   --sel: rgba(0, 0, 0, 0.09);
   --tog-off: rgba(0, 0, 0, 0.22);
   /* Indigo from the app mark; the fill keeps 5.2:1 against white button text. */
-  --accent: #5b58e8;
+  --accent: #2563eb;
   --accent-surface: var(--hover);
-  --accent-hover: #4a47d6;
-  --accent-ink: #4b44d8;
-  --accent-muted: rgba(91, 88, 232, 0.12);
+  --accent-hover: #1d4ed8;
+  --accent-ink: #1d4ed8;
+  --accent-muted: rgba(37, 99, 235, 0.12);
   --ok: #1d7a3a;
   --warn: #b45309;
   --stop: #c0362c;
@@ -1292,10 +1292,10 @@ body {
   --sel: rgba(255, 255, 255, 0.09);
   --tog-off: rgba(255, 255, 255, 0.18);
   /* Indigo from the app mark; white sits at 5.1:1 on the fill. */
-  --accent: #6d4aff;
-  --accent-hover: #5b3ae6;
-  --accent-ink: #a8a5ff;
-  --accent-muted: rgba(109, 74, 255, 0.16);
+  --accent: #3b82f6;
+  --accent-hover: #2563eb;
+  --accent-ink: #64a0ff;
+  --accent-muted: rgba(59, 130, 246, 0.16);
   --ok: #30d158;
   --warn: #f5a524;
   --stop: #ff6b61;
