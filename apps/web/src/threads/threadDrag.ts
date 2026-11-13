@@ -12,9 +12,12 @@ import type { EnvironmentId, ThreadId } from "@houston-app/contracts";
 import {
   dropThreadContext,
   endThreadContextDrag,
+  findThreadContextDropTarget,
+  listThreadContextDropTargets,
   moveThreadContextDrag,
 } from "../components/chat/threadContextDrag";
 import { useStableCallback } from "../hooks/useStableCallback";
+import { cancelLayoutDrag, dropLayoutDrag, moveLayoutDrag } from "../layout/layoutDrag";
 
 /** The thread a drag carries: a sidebar row. */
 export interface ThreadDragSource {
@@ -30,13 +33,41 @@ export interface ThreadDragSource {
   readonly title?: string;
 }
 
+/** A chat or page tab dragged out of a pane: it can land on a workspace in the sidebar. */
+export interface TabDragSource {
+  readonly tabId: string;
+  /** The layout workspace holding the tab. */
+  readonly workspaceId: string;
+  /** The server thread the tab shows; null for a draft, a terminal or a page. */
+  readonly thread: { readonly environmentId: string; readonly threadId: string } | null;
+  readonly title: string | null;
+}
+
+/** What a drag carries: a sidebar card or a layout tab. */
+export type WorkspaceDragSource = ThreadDragSource | TabDragSource;
+
+export function isTabDragSource(source: WorkspaceDragSource): source is TabDragSource {
+  return "tabId" in source;
+}
+
+/** The layout workspace a dragged thing sits in now, or null when none holds it. */
+export function dragSourceWorkspaceId(source: WorkspaceDragSource): string | null {
+  return source.workspaceId ?? null;
+}
+
 /** What a live drag would do if it ended under the pointer. */
 export type ThreadDropTarget =
-  | { readonly kind: "workspace"; readonly workspaceId: string }
+  | {
+      readonly kind: "workspace";
+      readonly workspaceId: string;
+      /** True over the workspace's heading, where a hover switches the visible workspace. */
+      readonly heading?: true;
+    }
+  | { readonly kind: "new-workspace" }
   | { readonly kind: "closed" };
 
 export interface ThreadDragState {
-  readonly source: ThreadDragSource;
+  readonly source: WorkspaceDragSource;
   readonly target: ThreadDropTarget | null;
 }
 
@@ -51,8 +82,8 @@ const DRAG_THRESHOLD_PX = 6;
 export interface ThreadDropZone {
   /** Read lazily: the zone's element can mount after the zone is registered. */
   getElement: () => HTMLElement | null;
-  resolve: (point: ThreadDragPoint, source: ThreadDragSource) => ThreadDropTarget | null;
-  drop: (source: ThreadDragSource, target: ThreadDropTarget) => void;
+  resolve: (point: ThreadDragPoint, source: WorkspaceDragSource) => ThreadDropTarget | null;
+  drop: (source: WorkspaceDragSource, target: ThreadDropTarget) => void;
 }
 
 const zones = new Set<ThreadDropZone>();
@@ -87,8 +118,10 @@ export function useThreadDragState(): ThreadDragState | null {
   return useSyncExternalStore(subscribe, getState, () => null);
 }
 
+/** The sidebar card being dragged; null while nothing, or a tab, is. */
 export function useThreadDragSource(): ThreadDragSource | null {
-  return useThreadDragState()?.source ?? null;
+  const source = useThreadDragState()?.source ?? null;
+  return source === null || isTabDragSource(source) ? null : source;
 }
 
 export function useThreadDropTarget(): ThreadDropTarget | null {
@@ -96,7 +129,13 @@ export function useThreadDropTarget(): ThreadDropTarget | null {
 }
 
 export function getThreadDragSource(): ThreadDragSource | null {
-  return state?.source ?? null;
+  const source = state?.source ?? null;
+  return source === null || isTabDragSource(source) ? null : source;
+}
+
+/** The pointer's last position in the drag in flight, for edge auto-scroll. */
+export function getThreadDragPoint(): ThreadDragPoint | null {
+  return lastPoint;
 }
 
 /**
@@ -133,7 +172,7 @@ function contains(rect: DOMRect, point: ThreadDragPoint): boolean {
 /** The smallest zone under the pointer that takes the drop. */
 function resolveDrop(
   point: ThreadDragPoint,
-  source: ThreadDragSource,
+  source: WorkspaceDragSource,
 ): { zone: ThreadDropZone; target: ThreadDropTarget } | null {
   let best: { zone: ThreadDropZone; target: ThreadDropTarget; area: number } | null = null;
   for (const zone of zones) {
@@ -153,26 +192,46 @@ function sameTarget(left: ThreadDropTarget | null, right: ThreadDropTarget | nul
   if (left === null || right === null) return left === right;
   if (left.kind !== right.kind) return false;
   if (left.kind === "workspace") {
-    return right.kind === "workspace" && left.workspaceId === right.workspaceId;
+    return (
+      right.kind === "workspace" &&
+      left.workspaceId === right.workspaceId &&
+      left.heading === right.heading
+    );
   }
   return true;
 }
 
-function updateDrag(source: ThreadDragSource, point: ThreadDragPoint): void {
+function updateDrag(source: WorkspaceDragSource, point: ThreadDragPoint): void {
   const found = resolveDrop(point, source);
   activeZone = found?.zone ?? null;
   lastPoint = point;
   const target = found?.target ?? null;
-  // Over no rail target, a titled thread can still land on a chat composer.
-  if (source.title !== undefined) {
-    if (target === null) moveThreadContextDrag(point, { title: source.title, count: 1 });
-    else endThreadContextDrag();
+  // Over no rail target, a titled card can still land on a chat composer or in the layout's
+  // panes; the layout drag decides which pane side or edge takes it.
+  if (!isTabDragSource(source) && source.title !== undefined) {
+    if (target === null) {
+      moveThreadContextDrag(point, { title: source.title, count: 1 });
+      moveLayoutDrag(layoutSourceOf(source), point, {
+        composer: findThreadContextDropTarget(point),
+        composerTargets: listThreadContextDropTargets(),
+      });
+    } else {
+      endThreadContextDrag();
+      cancelLayoutDrag();
+    }
   }
   if (state !== null && sameTarget(state.target, target)) return;
   publish({ source, target });
 }
 
-function beginDragState(source: ThreadDragSource): void {
+function layoutSourceOf(source: ThreadDragSource) {
+  return {
+    kind: "thread",
+    threadRef: scopeThreadRef(source.environmentId as EnvironmentId, source.threadId as ThreadId),
+  } as const;
+}
+
+function beginDragState(source: WorkspaceDragSource): void {
   // A press that travelled before the threshold may already have painted a
   // selection; a drag starts with none.
   releaseSelection?.();
@@ -180,10 +239,11 @@ function beginDragState(source: ThreadDragSource): void {
   publish({ source, target: null });
 }
 
-function endDragState(): void {
+function endDragState(cancelLayout = true): void {
   activeZone = null;
   lastPoint = null;
   endThreadContextDrag();
+  if (cancelLayout) cancelLayoutDrag();
   releaseSelection?.();
   releaseSelection = null;
   publish(null);
@@ -238,9 +298,12 @@ function trackGesture(
     const zone = activeZone;
     const target = state?.target ?? null;
     const releasedAt = lastPoint;
+    const toLayoutOrComposer = commit && zone === null && source.title !== undefined;
+    // The layout commits its own target before the drag state clears it.
+    const layoutTookIt = toLayoutOrComposer && dropLayoutDrag();
     endDragState();
     if (commit && zone !== null && target !== null) zone.drop(source, target);
-    else if (commit && source.title !== undefined && releasedAt !== null) {
+    else if (toLayoutOrComposer && !layoutTookIt && releasedAt !== null) {
       dropThreadContext(releasedAt, [
         scopeThreadRef(source.environmentId as EnvironmentId, source.threadId as ThreadId),
       ]);
@@ -292,6 +355,28 @@ export function beginThreadDragAt(
   beginDragState(source);
   updateDrag(source, point);
   trackGesture(source, pointerId, point, true);
+}
+
+/**
+ * Follow a tab drag over the sidebar's drop zones. Returns true while a zone has the pointer, so
+ * the caller leaves the layout's own pane targets out of it.
+ */
+export function moveTabDrag(source: TabDragSource, point: ThreadDragPoint): boolean {
+  if (state === null) beginDragState(source);
+  updateDrag(source, point);
+  return activeZone !== null;
+}
+
+/** End a tab drag; on commit the zone under the pointer takes it. Returns true when one did. */
+export function endTabDrag(commit: boolean): boolean {
+  const zone = activeZone;
+  const target = state?.target ?? null;
+  const source = state?.source ?? null;
+  // A tab drag's layout targets belong to its caller, which commits or cancels them.
+  endDragState(false);
+  if (!commit || zone === null || target === null || source === null) return false;
+  zone.drop(source, target);
+  return true;
 }
 
 /** Cancel the drag in flight; the drop target gets nothing. */

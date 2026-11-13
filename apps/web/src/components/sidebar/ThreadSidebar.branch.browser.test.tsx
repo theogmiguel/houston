@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vite-plus/test";
+import { page } from "vite-plus/test/browser";
 
 import "~/index.css";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
@@ -78,6 +79,12 @@ function thread(overrides: Partial<EnvironmentThreadShell> = {}): EnvironmentThr
     autoSettleDisabledAt: null,
     lastVisitedAt: null,
     unsettledAt: null,
+    lineage: {
+      relationshipToParent: null,
+      parentThreadId: null,
+      rootThreadId: "thread-a",
+      sideChat: false,
+    },
     ...overrides,
   } as EnvironmentThreadShell;
 }
@@ -153,6 +160,7 @@ describe("ThreadCard search highlight", () => {
 
 describe("ThreadCard shelf row drag", () => {
   it("starts a drag from a Closed row that carries the thread, so it can return to the rail", async () => {
+    await page.viewport(1024, 768);
     await using screen = await render(
       <TooltipProvider delay={0}>
         <ThreadCard

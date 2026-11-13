@@ -70,6 +70,16 @@ function findDropTarget(point: { x: number; y: number }): HTMLElement | null {
   );
 }
 
+/** The chat composer under the point, or null. */
+export function findThreadContextDropTarget(point: { x: number; y: number }): HTMLElement | null {
+  return findDropTarget(point);
+}
+
+/** Every composer that takes a dropped thread as context. */
+export function listThreadContextDropTargets(): HTMLElement[] {
+  return [...document.querySelectorAll<HTMLElement>(`[${DROP_TARGET_ATTRIBUTE}]`)];
+}
+
 export function moveThreadContextDrag(
   point: { x: number; y: number },
   label: { title: string; count: number },

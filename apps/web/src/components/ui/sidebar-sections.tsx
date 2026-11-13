@@ -1,6 +1,6 @@
 import type { SidebarGridThreadSortOrder } from "@houston-app/contracts/settings";
 import { PlusIcon, SlidersHorizontalIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 
 import { cn } from "~/lib/utils";
 import {
@@ -33,6 +33,34 @@ export const SIDEBAR_GROUP_HEADING_ROW_CLS =
 
 export const SIDEBAR_GROUP_HEADING_DROP_CLS =
   "bg-(--accent-muted) ring-1 ring-(--accent-ink) ring-inset";
+
+/** A workspace section a drag can drop on: the pane drop zones' fill and ring around the whole section. */
+export const SIDEBAR_GROUP_SECTION_DROP_CLS =
+  "rounded-lg bg-(--accent-muted) ring-1 ring-(--accent-ink) ring-inset";
+
+/** The row at the end of the workspace list that creates a workspace around what is dropped on it. */
+export function SidebarNewWorkspaceDropRow({
+  over,
+  ref,
+}: {
+  over: boolean;
+  ref: Ref<HTMLDivElement>;
+}) {
+  return (
+    <div
+      ref={ref}
+      data-new-workspace-drop=""
+      data-drop-over={over || undefined}
+      className={cn(
+        "mx-1 mt-0.5 flex h-6 items-center gap-1 rounded-lg px-3 text-xs text-secondary-label",
+        over && SIDEBAR_GROUP_SECTION_DROP_CLS,
+      )}
+    >
+      <PlusIcon aria-hidden className="size-3.5 shrink-0" />
+      <span className="min-w-0 truncate">New workspace</span>
+    </div>
+  );
+}
 
 export const SIDEBAR_GROUP_NAME_CLS = "min-w-0 truncate text-xs font-normal text-secondary-label";
 

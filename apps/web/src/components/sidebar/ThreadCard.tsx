@@ -33,7 +33,15 @@ import { useClientSettings } from "../../hooks/useSettings";
 import { useNowMinute } from "../../hooks/useNowMinute";
 import { resolveThreadRowState } from "../../threads/sidebarModel";
 import { sweepActionProps } from "../../threads/rowActionSweep";
-import { beginThreadDrag, useThreadDropZone, type ThreadDragSource } from "../../threads/threadDrag";
+import { useThreadMembershipStore } from "../../layout/threadMembership";
+import { useIsPhone } from "../../mobile/usePhone";
+import { isThreadDraggable } from "../../threads/workspaceDrop";
+import {
+  beginThreadDrag,
+  dragSourceWorkspaceId,
+  useThreadDropZone,
+  type WorkspaceDragSource,
+} from "../../threads/threadDrag";
 import { useProject } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
 import { vcsEnvironment } from "../../state/vcs";
@@ -215,7 +223,7 @@ export function ThreadCard({
   onSetAutoClose: (enabled: boolean) => void;
   onWake?: () => void;
   onReopen?: () => void;
-  onDropOnThread: (source: ThreadDragSource) => void;
+  onDropOnThread: (source: WorkspaceDragSource) => void;
   /** Lists the other workspaces in the thread menu; absent hides Move to workspace. */
   workspaceMove?: ThreadActionMenuWorkspaceInput | undefined;
   /** Supplies New thread on branch; absent hides that item. */
@@ -309,8 +317,13 @@ export function ThreadCard({
   // leaving the row, so a hover open still pending would land after the pointer was gone.
   const previewSuppressed = actionsHovered || holdMenuOpen || actionsMenuOpen;
 
+  const isPhone = useIsPhone();
+  const parentThreadId = useThreadMembershipStore(
+    (store) => store.byThread.get(threadKey)?.parentThreadId ?? null,
+  );
   const startRowDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (renaming) return;
+    // The phone shell has no drag; a child follows its parent; an archived or side thread stays put.
+    if (renaming || isPhone || !isThreadDraggable(thread, { parentThreadId })) return;
     const target = event.target;
     if (target instanceof Element) {
       if (target.closest("input, textarea, [contenteditable='true']") !== null) return;
@@ -329,7 +342,10 @@ export function ThreadCard({
   useThreadDropZone(
     rowRef,
     (_point, source) =>
-      shelf === null && workspaceId !== null && source.threadId !== thread.id
+      shelf === null &&
+      workspaceId !== null &&
+      dragSourceWorkspaceId(source) !== workspaceId &&
+      !("threadId" in source && source.threadId === thread.id)
         ? { kind: "workspace", workspaceId }
         : null,
     (source) => onDropOnThread(source),
@@ -665,11 +681,7 @@ export function ThreadCard({
                 />
               </span>
             ) : null}
-            <ThreadDiffCounts
-              thread={thread}
-              rowRef={rowRef}
-              focused={focused}
-            />
+            <ThreadDiffCounts thread={thread} rowRef={rowRef} focused={focused} />
             {/* A fixed slot, so the marks line up under the statuses whatever the row carries. */}
             <span
               data-thread-provider-mark=""

@@ -108,7 +108,6 @@ function groupProps(
     selection: clearThreadSelection(),
     runningSubagents: new Map(),
     dragging: null,
-    dropTarget: null,
     reorder: { drag: null, begin: () => {} },
     onOpenThread: () => {},
     onSelectThread: () => {},

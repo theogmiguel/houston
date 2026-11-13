@@ -7,7 +7,11 @@ import type { OlderSettledScope } from "@houston-app/client-runtime/state/thread
 import { useOlderSettledShelf, useOlderSettledShelfGrowth } from "../../state/olderSettledShelf";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { AnimatedHeight } from "../AnimatedHeight";
-import { useThreadDropZone, type ThreadDragSource } from "../../threads/threadDrag";
+import {
+  isTabDragSource,
+  useThreadDropZone,
+  type ThreadDragSource,
+} from "../../threads/threadDrag";
 import { cn } from "../../lib/utils";
 import { Separator } from "../ui/separator";
 import { MOTION_FEEDBACK_DEFAULT_EASE } from "../ui/motion-recipes";
@@ -61,8 +65,10 @@ export function SidebarShelves({
   const closedRef = useRef<HTMLDivElement | null>(null);
   useThreadDropZone(
     closedRef,
-    () => ({ kind: "closed" }),
-    (source) => onClosedDrop?.(source),
+    (_point, source) => (isTabDragSource(source) ? null : { kind: "closed" }),
+    (source) => {
+      if (!isTabDragSource(source)) onClosedDrop?.(source);
+    },
   );
   const [snoozedExpanded, setSnoozedExpanded] = useLocalStorage(
     SNOOZED_SHELF_EXPANDED_KEY,

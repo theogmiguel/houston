@@ -3,6 +3,7 @@ import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
+import { ThreadId } from "@houston-app/contracts";
 import { beginThreadDragAt, endThreadDrag, getThreadDragSource } from "../../threads/threadDrag";
 import { act, fakeTimers, render, type Screen } from "../../../test/render";
 import { TooltipProvider } from "../ui/tooltip";
@@ -53,6 +54,12 @@ function thread(overrides: Partial<EnvironmentThreadShell> = {}): EnvironmentThr
     autoSettleDisabledAt: null,
     lastVisitedAt: null,
     unsettledAt: null,
+    lineage: {
+      relationshipToParent: null,
+      parentThreadId: null,
+      rootThreadId: "thread-a",
+      sideChat: false,
+    },
     ...overrides,
   } as EnvironmentThreadShell;
 }
@@ -147,6 +154,7 @@ function startRowDrag(row: HTMLElement): void {
 
 describe("ThreadCard drag source", () => {
   it("carries the thread's project and workspace so drop zones can accept or refuse it", async () => {
+    await page.viewport(1024, 768);
     await using screen = await render(card(thread()));
     const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
     startRowDrag(row);
@@ -160,7 +168,37 @@ describe("ThreadCard drag source", () => {
     endThreadDrag();
   });
 
+  it("case 21: starts no drag in the phone shell", async () => {
+    await page.viewport(400, 800);
+    await using screen = await render(card(thread()));
+    const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
+    startRowDrag(row);
+    expect(getThreadDragSource()).toBeNull();
+    endThreadDrag();
+  });
+
+  it("case 19: starts no drag for a child thread, which follows its parent", async () => {
+    await page.viewport(1024, 768);
+    await using screen = await render(
+      card(
+        thread({
+          lineage: {
+            relationshipToParent: "subagent",
+            parentThreadId: ThreadId.make("p"),
+            rootThreadId: ThreadId.make("p"),
+            sideChat: false,
+          },
+        }),
+      ),
+    );
+    const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
+    startRowDrag(row);
+    expect(getThreadDragSource()).toBeNull();
+    endThreadDrag();
+  });
+
   it("lets a thread outside any workspace start a drag", async () => {
+    await page.viewport(1024, 768);
     await using screen = await render(card(thread(), { workspaceId: null }));
     const row = screen.container.querySelector<HTMLElement>("[data-thread-key]")!;
     startRowDrag(row);

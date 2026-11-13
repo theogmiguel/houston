@@ -42,11 +42,22 @@ import {
 import { useLayoutTabLabel } from "../../layout/useLayoutTabLabel";
 import { nextRailTargetIndex } from "../../threads/rail";
 import {
+  dragSourceWorkspaceId,
+  isTabDragSource,
   useThreadDragSource,
+  type ThreadDragSource,
   useThreadDropTarget,
   useThreadDropZone,
-  type ThreadDragSource,
+  type WorkspaceDragSource,
 } from "../../threads/threadDrag";
+import {
+  NEW_WORKSPACE_DROP,
+  WORKSPACE_SPRING_LOAD_MS,
+  resolveWorkspaceDrop,
+} from "../../threads/workspaceDrop";
+import { moveTabToWorkspaceDrop } from "../../layout/workspaceTabDrop";
+import { SidebarNewWorkspaceDropZone } from "./SidebarNewWorkspaceDropZone";
+import { useDragAutoScroll } from "./useDragAutoScroll";
 import {
   attentionCardsForWorkspaces,
   clearThreadSelection,
@@ -151,6 +162,7 @@ import {
   SIDEBAR_GROUP_EMPTY_CLS,
   SIDEBAR_GROUP_HEADING_CLS,
   SIDEBAR_GROUP_HEADING_DROP_CLS,
+  SIDEBAR_GROUP_SECTION_DROP_CLS,
   SIDEBAR_GROUP_HEADING_ROW_CLS,
   SIDEBAR_GROUP_RENAME_CLS,
   SIDEBAR_NEEDS_YOU_DOT_CLS,
@@ -187,7 +199,7 @@ import { useThreadSearch } from "../../state/queries";
 import { findForMessageMatch, openThreadFindOnQuery } from "../chat/threadFindStore";
 import { parseThreadRoutePathname } from "../../threadRoutes";
 
-type DraggedThread = ThreadDragSource;
+type DraggedThread = WorkspaceDragSource;
 
 function explain(title: string, description: string): void {
   toastManager.add(stackedThreadToast({ type: "error", title, description }));
@@ -259,16 +271,9 @@ export function ThreadSidebar({
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
   const collapsedWorkspaces = useCollapsedKeys(COLLAPSED_WORKSPACES_STORAGE_KEY);
   const dragging = useThreadDragSource();
-  const dropTargetSide = useThreadDropTarget();
-  const dropTarget =
-    dropTargetSide === null
-      ? null
-      : dropTargetSide.kind === "workspace"
-        ? `workspace:${dropTargetSide.workspaceId}`
-        : dropTargetSide.kind === "closed"
-          ? "shelf:closed"
-          : null;
+  const closedShelfIsDropTarget = useThreadDropTarget()?.kind === "closed";
   const railRef = useRef<HTMLDivElement | null>(null);
+  useDragAutoScroll(railRef);
 
   const actions = useThreadActions();
   const handleNewThread = useNewThreadHandler();
@@ -714,7 +719,7 @@ export function ThreadSidebar({
   };
 
   // A shelf row dropped into the rail returns to its workspace without moving the user.
-  const returnShelfThreadFromDrag = (source: DraggedThread) => {
+  const returnShelfThreadFromDrag = (source: ThreadDragSource) => {
     const thread = threadById.get(source.threadId);
     if (thread === undefined) return false;
     const action = shelfReturnAction(thread, nowIso);
@@ -726,7 +731,7 @@ export function ThreadSidebar({
   // The server moves the thread, its children and their tabs in one step but does not move the
   // user; the toast offers the workspace and the way back.
   const moveThreadToWorkspace = (
-    thread: EnvironmentThreadShell,
+    thread: { environmentId: string; id: string; title: string | null },
     target: string | "new-workspace",
   ) => {
     const current = memberships.byThread.get(threadKeyOf(thread))?.workspaceId;
@@ -742,10 +747,27 @@ export function ThreadSidebar({
       onOpenTarget: (workspaceId) => useLayoutStore.getState().focusWorkspace(workspaceId),
     });
   };
+  // A drop calls the move the thread menu calls; a tab without a server thread moves as a tab.
   const dropOnWorkspace = (source: DraggedThread, targetWorkspaceId: string) => {
-    if (returnShelfThreadFromDrag(source)) return;
-    const thread = threadById.get(source.threadId);
-    if (thread !== undefined) moveThreadToWorkspace(thread, targetWorkspaceId);
+    if (!isTabDragSource(source) && returnShelfThreadFromDrag(source)) return;
+    const operation = resolveWorkspaceDrop(source, targetWorkspaceId);
+    if (operation.kind === "move-thread") {
+      const shell = threadById.get(operation.thread.threadId);
+      moveThreadToWorkspace(
+        shell ?? {
+          environmentId: operation.thread.environmentId,
+          id: operation.thread.threadId,
+          title: operation.title,
+        },
+        operation.target,
+      );
+    } else if (operation.kind === "move-tab") {
+      try {
+        moveTabToWorkspaceDrop(operation.tabId, operation.target);
+      } catch (error) {
+        explain("Cannot move this tab", error instanceof Error ? error.message : String(error));
+      }
+    }
   };
   const workspaceMoveFor = (
     thread: EnvironmentThreadShell,
@@ -884,7 +906,6 @@ export function ThreadSidebar({
       selection={selection}
       runningSubagents={runningSubagentsByThread}
       dragging={dragging}
-      dropTarget={dropTarget}
       reorder={{ drag: reorder.drag, begin: reorder.begin }}
       onOpenThread={openThread}
       onSelectThread={selectThread}
@@ -1075,6 +1096,11 @@ export function ThreadSidebar({
                     ) : null}
                     {projects.length === 0 && query.length === 0 ? <SidebarNoProjects /> : null}
                     {sections.map(renderGroup)}
+                    {isPage ? null : (
+                      <SidebarNewWorkspaceDropZone
+                        onDrop={(source) => dropOnWorkspace(source, NEW_WORKSPACE_DROP)}
+                      />
+                    )}
                     {searching ? <SidebarContentResults results={contentResults} /> : null}
                     {searching &&
                     sections.length === 0 &&
@@ -1102,7 +1128,7 @@ export function ThreadSidebar({
                       projectKeys.has(projectKeyOf(thread.environmentId, thread.projectId)),
                     ),
                   }}
-                  closedDropTarget={dropTarget === "shelf:closed"}
+                  closedDropTarget={closedShelfIsDropTarget}
                   closedDragActive={dragging !== null}
                   onClosedDrop={(source) => {
                     const thread = threadById.get(source.threadId);
@@ -1483,7 +1509,7 @@ export function SidebarNeedsYouSection({
   nowIso: string;
   selection: ThreadSelection;
   runningSubagents: ReadonlyMap<string, number>;
-  dragging: DraggedThread | null;
+  dragging: ThreadDragSource | null;
   projectTitleOf: (thread: EnvironmentThreadShell) => string;
   workspaceMoveFor?: (thread: EnvironmentThreadShell) => ThreadActionMenuWorkspaceInput | undefined;
   onOpenThread: (thread: EnvironmentThreadShell) => void;
@@ -1568,7 +1594,6 @@ export function SidebarWorkspaceGroup({
   selection,
   runningSubagents,
   dragging,
-  dropTarget,
   reorder,
   onOpenThread,
   onSelectThread,
@@ -1598,8 +1623,7 @@ export function SidebarWorkspaceGroup({
   nowIso: string;
   selection: ThreadSelection;
   runningSubagents: ReadonlyMap<string, number>;
-  dragging: DraggedThread | null;
-  dropTarget: string | null;
+  dragging: ThreadDragSource | null;
   reorder: {
     drag: WorkspaceReorderDrag | null;
     begin: (event: React.PointerEvent<HTMLElement>, workspaceKey: string) => void;
@@ -1629,13 +1653,39 @@ export function SidebarWorkspaceGroup({
   const [draftName, setDraftName] = useState(workspaceName);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const newThreadShortcut = shortcutLabelForCommand(keybindings, "chat.new");
-  const isDropTarget = dropTarget === `workspace:${workspaceId}`;
+  const dropTarget = useThreadDropTarget();
+  const isDropTarget = dropTarget?.kind === "workspace" && dropTarget.workspaceId === workspaceId;
+  const headingHovered = isDropTarget && dropTarget.heading === true;
+  const sectionRef = useRef<HTMLDivElement | null>(null);
   const headerRef = useRef<HTMLDivElement | null>(null);
+  // A workspace takes a drop from anywhere in its section, collapsed or not, unless the dragged
+  // thing already sits in it: that drop would change nothing, so it is no target at all.
   useThreadDropZone(
-    headerRef,
-    () => ({ kind: "workspace", workspaceId }),
+    sectionRef,
+    (_point, source) =>
+      dragSourceWorkspaceId(source) === workspaceId ? null : { kind: "workspace", workspaceId },
     (source) => onDropOnWorkspace(source, workspaceId),
   );
+  useThreadDropZone(
+    headerRef,
+    (_point, source) =>
+      dragSourceWorkspaceId(source) === workspaceId
+        ? null
+        : { kind: "workspace", workspaceId, heading: true },
+    (source) => onDropOnWorkspace(source, workspaceId),
+  );
+  // Resting on a heading shows that workspace, so the drop can name one of its panes.
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- a timer that lasts as long as the hover
+  useEffect(() => {
+    if (!headingHovered || open) return;
+    const timer = window.setTimeout(
+      () => useLayoutStore.getState().focusWorkspace(workspaceId),
+      WORKSPACE_SPRING_LOAD_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [headingHovered, open, workspaceId]);
+  const reorderHighlight =
+    !renaming && reorder.drag !== null && reorder.drag.targetKey === workspaceId;
   const reorderTarget =
     reorder.drag !== null && reorder.drag.targetKey === workspaceId ? reorder.drag.side : null;
   const revealedThread = collapsed
@@ -1737,8 +1787,10 @@ export function SidebarWorkspaceGroup({
 
   return (
     <div
-      className="mt-0.5 flex flex-col"
+      ref={sectionRef}
+      className={cn("mt-0.5 flex flex-col", isDropTarget && SIDEBAR_GROUP_SECTION_DROP_CLS)}
       data-workspace-key={workspaceId}
+      data-drop-over={isDropTarget || undefined}
       {...{ [WORKSPACE_REORDER_ATTRIBUTE]: "" }}
     >
       <div
@@ -1748,7 +1800,7 @@ export function SidebarWorkspaceGroup({
         data-reorder-side={reorderTarget ?? undefined}
         className={cn(
           SIDEBAR_GROUP_HEADING_ROW_CLS,
-          !renaming && (isDropTarget || reorderTarget !== null) && SIDEBAR_GROUP_HEADING_DROP_CLS,
+          reorderHighlight && SIDEBAR_GROUP_HEADING_DROP_CLS,
         )}
         onPointerDown={(event) => {
           if (renaming) return;
