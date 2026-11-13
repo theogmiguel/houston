@@ -3,7 +3,9 @@ import { page, userEvent } from "vite-plus/test/browser";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@houston-app/shared/keybindings";
 import { DEFAULT_CLIENT_SETTINGS } from "@houston-app/contracts/settings";
 import { act, render } from "../../test/render";
-import { CommandPalette } from "./CommandPalette";
+import { CommandPalette } from "./CommandPaletteShell";
+// The shell loads its body on demand; loading it here keeps a cold transform out of the polls.
+import "./CommandPalette";
 import { openCommandPalette } from "../commandPaletteBus";
 import { primaryServerKeybindingsAtom } from "../state/server";
 

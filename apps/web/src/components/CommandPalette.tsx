@@ -88,7 +88,6 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
-  type ReactNode,
 } from "react";
 import type { LegendListRef } from "@legendapp/list/react";
 import { useAtomValue } from "@effect/atom-react";
@@ -98,10 +97,7 @@ import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstra
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
 import { copyThreadReference } from "../lib/copyThreadReference";
-import {
-  queueWorkspaceFocusFromPalette,
-  restoreWorkspaceFocusFromPalette,
-} from "../lib/workspaceFocus";
+import { queueWorkspaceFocusFromPalette } from "../lib/workspaceFocus";
 import {
   composerPromptLink,
   copyPromptLink,
@@ -163,12 +159,6 @@ import {
 } from "@houston-app/client-runtime/state/projects";
 import { resolvePastedPath } from "@houston-app/shared/path";
 import {
-  dispatchCommandPalette,
-  getCommandPaletteReturnFocus,
-  useCommandPaletteMount,
-  useCommandPaletteStore,
-} from "../commandPaletteStore";
-import {
   PULL_REQUESTS_PANEL_REF,
   selectSelectedRightPanelSurface,
   useRightPanelStore,
@@ -178,7 +168,6 @@ import {
   sortThreads,
 } from "@houston-app/client-runtime/state/thread-sort";
 import {
-  cn,
   getLocalFileManagerName,
   isMacPlatform,
   isWindowsPlatform,
@@ -230,6 +219,7 @@ import {
 } from "./CommandPalette.logic";
 import { resolveEnvironmentOptionLabel } from "./BranchToolbar.logic";
 import { CommandPaletteContent } from "./CommandPaletteContent";
+import { clearEarlyCommandPaletteQuery, readEarlyCommandPaletteQuery } from "./CommandPaletteShell";
 import {
   selectCommandPaletteClientSettings,
   useEnvironmentLookups,
@@ -263,12 +253,10 @@ import { ProjectContentSearchDialog } from "./search/ProjectContentSearchDialog"
 import { settingsForThisPlatform, SETTINGS_SECTION_LABELS } from "./settings/settingsSearch";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { resolveShortcutCommand, threadJumpIndexFromCommand } from "../keybindings";
-import { CommandDialog, CommandDialogPopup, CommandFooterAction } from "./ui/command";
+import { CommandFooterAction } from "./ui/command";
 import { Kbd } from "./ui/kbd";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { suggestAppAccessForRemote } from "./sourceControlAppAccessToast";
-import { ComposerHandleContext, useComposerHandleContext } from "../composerHandleContext";
-import type { ChatComposerHandle } from "./chat/ChatComposer";
 import { openUseInAnotherApp } from "./mcp/useInAnotherAppRequest";
 import { pickableProjectGroups } from "@houston-app/client-runtime/state/project-grouping";
 import { buildSidebarProjectPickerEntries } from "../sidebarProjectGrouping";
@@ -314,44 +302,8 @@ function openIntentView(intent: CommandPaletteOpenIntent | null): CommandPalette
 
 const NEW_THREAD_NO_PROJECT_VALUE = "new-thread-in:no-project";
 
-export function CommandPalette({ children }: { children: ReactNode }) {
-  useCommandPaletteMount();
-  const state = useCommandPaletteStore();
-  const setOpen = (open: boolean) => dispatchCommandPalette({ _tag: "SetOpen", open });
-  const openChildSearch = (mode: "files" | "content", context: CommandPaletteReturnContext) =>
-    dispatchCommandPalette({ _tag: "OpenChildSearch", mode, context });
-  const composerHandleRef = useRef<ChatComposerHandle | null>(null);
-
-  return (
-    <ComposerHandleContext value={composerHandleRef}>
-      <CommandDialog
-        open={state.open}
-        onOpenChange={(open, eventDetails) => {
-          if (!open && eventDetails.reason === "escape-key" && state.mode !== "command") {
-            eventDetails.cancel();
-            dispatchCommandPalette({ _tag: "BackToCommand" });
-            return;
-          }
-          setOpen(open);
-        }}
-      >
-        <div className="contents" inert={state.open}>
-          {children}
-        </div>
-        <CommandPaletteDialog
-          mode={state.mode}
-          session={state.session}
-          openIntent={state.openIntent}
-          setOpen={setOpen}
-          openChildSearch={openChildSearch}
-          initialContext={state.restoredSearch}
-        />
-      </CommandDialog>
-    </ComposerHandleContext>
-  );
-}
-
-function CommandPaletteDialog(props: {
+/** The palette's content for its mode; CommandPaletteShell loads it on demand. */
+export function CommandPaletteBody(props: {
   readonly mode: SearchOverlayMode;
   readonly session: number;
   readonly openIntent: CommandPaletteOpenIntent | null;
@@ -362,49 +314,18 @@ function CommandPaletteDialog(props: {
   ) => void;
   readonly initialContext: CommandPaletteReturnContext | undefined;
 }) {
-  const composerHandleRef = useComposerHandleContext();
-
-  return (
-    <CommandDialogPopup
-      aria-label={
-        props.mode === "files"
-          ? "File picker"
-          : props.mode === "content"
-            ? "Search project contents"
-            : "Command palette"
-      }
-      className={cn("overflow-hidden", props.mode === "content" && "h-105")}
-      data-command-palette="true"
-      data-palette-mode={props.mode}
-      data-testid="command-palette"
-      finalFocus={() => {
-        if (restoreWorkspaceFocusFromPalette()) return false;
-        const returnFocus = getCommandPaletteReturnFocus();
-        if (returnFocus === false) return false;
-        const composer = composerHandleRef?.current;
-        // Behind the Settings modal the composer is inert and cannot take focus.
-        if (!composer || document.querySelector("[data-app-modal]")) return returnFocus;
-        composer.focusAtEnd();
-        return false;
-      }}
-      onBackdropPointerDown={() => {
-        props.setOpen(false);
-      }}
-    >
-      {props.mode === "files" ? (
-        <ProjectFilePicker setOpen={props.setOpen} />
-      ) : props.mode === "content" ? (
-        <ProjectContentSearchDialog onOpenChange={props.setOpen} />
-      ) : (
-        <OpenCommandPaletteDialog
-          key={props.session}
-          openIntent={props.openIntent}
-          setOpen={props.setOpen}
-          openChildSearch={props.openChildSearch}
-          initialContext={props.initialContext}
-        />
-      )}
-    </CommandDialogPopup>
+  return props.mode === "files" ? (
+    <ProjectFilePicker setOpen={props.setOpen} />
+  ) : props.mode === "content" ? (
+    <ProjectContentSearchDialog onOpenChange={props.setOpen} />
+  ) : (
+    <OpenCommandPaletteDialog
+      key={props.session}
+      openIntent={props.openIntent}
+      setOpen={props.setOpen}
+      openChildSearch={props.openChildSearch}
+      initialContext={props.initialContext}
+    />
   );
 }
 
@@ -425,10 +346,13 @@ function OpenCommandPaletteDialog(props: {
   // Keyed by palette session: the intent and restored search only seed this
   // mount, and closing must not change what the closing palette shows.
   const cloneIntentHandled = useRef(false);
+  const [earlyQuery] = useState(readEarlyCommandPaletteQuery);
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- the early text seeded this mount; a later palette must start from its own intent.
+  useEffect(() => clearEarlyCommandPaletteQuery(), []);
   const [initialSearch] = useState(
     () =>
       props.initialContext ?? {
-        query: props.openIntent?.kind === "search" ? props.openIntent.query : "",
+        query: earlyQuery ?? (props.openIntent?.kind === "search" ? props.openIntent.query : ""),
         linkedThreadSearch: props.openIntent?.kind === "search" ? props.openIntent : null,
       },
   );
@@ -441,7 +365,7 @@ function OpenCommandPaletteDialog(props: {
   const [searchState, dispatchSearch] = useReducer(reduceCommandPaletteSearchState, null, () => {
     const view = props.initialContext ? null : openIntentView(props.openIntent);
     return view
-      ? { query: "", views: [{ view, parentQuery: "" }] }
+      ? { query: earlyQuery ?? "", views: [{ view, parentQuery: "" }] }
       : createCommandPaletteSearchState(initialSearch.query);
   });
   const { query, views: viewStack } = searchState;

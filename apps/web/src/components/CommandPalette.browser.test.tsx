@@ -4,7 +4,9 @@ import { page } from "vite-plus/test/browser";
 import { render } from "../../test/render";
 import { openCommandPalette } from "../commandPaletteBus";
 import { useCommandPaletteStore } from "../commandPaletteStore";
-import { CommandPalette } from "./CommandPalette";
+import { CommandPalette } from "./CommandPaletteShell";
+// The shell loads its body on demand; loading it here keeps a cold transform out of the polls.
+import "./CommandPalette";
 
 function setup() {
   useCommandPaletteStore.setState(useCommandPaletteStore.getInitialState(), true);

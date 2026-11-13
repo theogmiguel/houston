@@ -132,10 +132,11 @@
 33 apps/web/src/components/ChatMarkdown.tsx
 11 apps/web/src/components/ChatView.tsx
 8 apps/web/src/components/CommandBlock.tsx
-12 apps/web/src/components/CommandPalette.tsx
+11 apps/web/src/components/CommandPalette.tsx
 15 apps/web/src/components/CommandPaletteAddProject.tsx
 4 apps/web/src/components/CommandPaletteContent.tsx
 28 apps/web/src/components/CommandPaletteResults.tsx
+1 apps/web/src/components/CommandPaletteShell.tsx
 5 apps/web/src/components/CommandPaletteThemeItems.tsx
 6 apps/web/src/components/ComposerContextLabel.tsx
 29 apps/web/src/components/composerContextPresentation.tsx
