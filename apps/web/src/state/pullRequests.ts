@@ -35,7 +35,7 @@ import {
   type EnvironmentPullRequestStat,
   type MergedPullRequestList,
 } from "../components/pullRequest/pullRequestList.logic";
-import { writePullRequestDetailSnapshot } from "../components/pullRequest/pullRequestDetail.logic";
+import { writePullRequestDetailSnapshot } from "../components/pullRequest/pullRequestDetailSnapshot";
 import { pullRequestChecksState } from "../components/pullRequest/pullRequestPresentation";
 import { useGuideRunStore } from "../components/pullRequest/guide/guideRunStore";
 import { formatEnvironmentQueryError } from "./query";

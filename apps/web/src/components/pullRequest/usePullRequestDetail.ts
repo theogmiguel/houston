@@ -21,7 +21,7 @@ import {
 import {
   readPullRequestDetailSnapshot,
   resolveDisplayedPullRequestDetail,
-} from "./pullRequestDetail.logic";
+} from "./pullRequestDetailSnapshot";
 
 // Query atoms key on JSON order, so the panel and the row prefetch must build the ref here.
 export function pullRequestPanelReference(target: {
