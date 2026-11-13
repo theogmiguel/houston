@@ -6,7 +6,7 @@ import {
   HOUSTON_LAYOUT_WORKSPACE_LIMITS,
   type HoustonLayoutColumn,
   type HoustonLayoutThreadAssignInput,
-  type HoustonLayoutThreadMembership,
+  HoustonLayoutThreadMembership,
   type HoustonLayoutThreadMoveInput,
   type HoustonLayoutThreadMoveResult,
   HoustonLayoutWorkspaceError,
@@ -188,6 +188,11 @@ const membershipOf = (row: MembershipRow): HoustonLayoutThreadMembership => ({
   workspaceId: row.workspace_id,
   parentThreadId: row.parent_thread_id,
 });
+
+// Typed as a plain predicate: a stored row already has the membership's shape, not its bounds.
+const isMembership: (row: HoustonLayoutThreadMembership) => boolean = Schema.is(
+  HoustonLayoutThreadMembership,
+);
 
 const membershipEvent = (
   membership: HoustonLayoutThreadMembership,
@@ -1016,7 +1021,18 @@ const make = Effect.gen(function* () {
       const subscription = yield* PubSub.subscribe(events);
       yield* repair;
       const workspaces = yield* readAll;
-      const threadMemberships = yield* readMemberships;
+      // One entry the contract refuses would fail the whole snapshot and leave the window empty.
+      const stored = yield* readMemberships;
+      const threadMemberships = stored.filter((row) => isMembership(row));
+      if (threadMemberships.length < stored.length) {
+        yield* Effect.logWarning(
+          "Houston layout workspaces: left thread memberships the contract refuses out of the snapshot.",
+          {
+            skipped: stored.length - threadMemberships.length,
+            threadIds: stored.filter((row) => !isMembership(row)).map((row) => row.threadId),
+          },
+        );
+      }
       return Stream.concat(
         Stream.succeed<HoustonLayoutWorkspaceStreamEvent>({
           snapshot: { workspaces, memberships: threadMemberships },

@@ -452,6 +452,57 @@ describe("layout workspaces over /ws", () => {
     ),
   );
 
+  it.effect("the snapshot carries a subagent thread whose id is longer than a layout id", () =>
+    withWs(
+      Effect.gen(function* () {
+        // The id the server mints for a provider subagent started inside a delegated task.
+        const threadId =
+          "thread:provider:claudeAgent:native-thread:provider-thread%3Aprovider%3AclaudeAgent%3Anative-thread%3Apending%253Arun%253Athread%253Athread%25253Adelegated-task%25253Acommand%2525253Amcp%2525253A198d45c5-4e2b-4b0a-a912-e367d4c6e59f%2525253Adelegate-task%2525253A04431ca0-bcc3-4bb6-bd7a-2da15d953d42%253Aordinal%253A1%3Aa2b10cdefbc075870";
+        const client = yield* makeWsClient();
+        yield* client.request("list", WS_METHODS.houstonLayoutWorkspacesList, {});
+        const [first] = (yield* Queue.take(client.responses)) as Listed;
+        yield* client.request("assign", WS_METHODS.houstonLayoutWorkspacesAssignThread, {
+          environmentId: "layout-test",
+          threadId,
+          workspaceId: first!.id,
+        });
+        assert.deepInclude(yield* Queue.take(client.responses), { threadId });
+
+        yield* client.request("put", WS_METHODS.houstonLayoutWorkspacesPut, {
+          workspace: workspace({
+            id: "w2",
+            columns: [
+              {
+                id: "col-1",
+                width: 1,
+                panes: [
+                  {
+                    id: "pane-1",
+                    size: 1,
+                    activeTabId: "tab-sub",
+                    tabs: [{ ...tab(threadId), id: "tab-sub" }],
+                  },
+                ],
+              },
+            ],
+          }),
+          expectedRevision: 0,
+        });
+        assert.deepInclude(yield* Queue.take(client.responses), { status: "saved" });
+
+        yield* client.request("watch", WS_METHODS.houstonLayoutWorkspacesSubscribe, {});
+        const event = (yield* Queue.take(client.responses)) as {
+          snapshot: { memberships: ReadonlyArray<{ threadId: string; workspaceId: string }> };
+        };
+        assert.deepInclude(
+          event.snapshot.memberships.map((membership) => membership.threadId),
+          threadId,
+        );
+        yield* client.interrupt("watch");
+      }),
+    ),
+  );
+
   it.effect("a name over the limit is refused before the handler runs", () =>
     withWs(
       Effect.gen(function* () {

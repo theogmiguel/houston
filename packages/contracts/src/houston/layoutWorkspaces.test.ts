@@ -26,6 +26,13 @@ const pane = (n: number, tabs = [tab(n)]) => ({
   tabs,
 });
 const column = (n: number) => ({ id: `col-${n}`, width: 1, panes: [pane(n)] });
+// Thread ids as the server mints them: a delegated task's (129 characters) and that of a provider
+// subagent started inside it (335), which embeds its parent's id percent-encoded once more.
+const DELEGATED_THREAD_ID =
+  "thread:delegated-task:command%3Amcp%3A198d45c5-4e2b-4b0a-a912-e367d4c6e59f%3Adelegate-task%3A04431ca0-bcc3-4bb6-bd7a-2da15d953d42";
+const NESTED_SUBAGENT_THREAD_ID =
+  "thread:provider:claudeAgent:native-thread:provider-thread%3Aprovider%3AclaudeAgent%3Anative-thread%3Apending%253Arun%253Athread%253Athread%25253Adelegated-task%25253Acommand%2525253Amcp%2525253A198d45c5-4e2b-4b0a-a912-e367d4c6e59f%2525253Adelegate-task%2525253A04431ca0-bcc3-4bb6-bd7a-2da15d953d42%253Aordinal%253A1%3Aa2b10cdefbc075870";
+
 const record = (overrides: Record<string, unknown> = {}) => ({
   id: "w1",
   name: "Main",
@@ -193,5 +200,40 @@ describe("payloads", () => {
     expect(accepts(HoustonLayoutWorkspaceStreamEvent, { membership: { threadId: "t1" } })).toBe(
       false,
     );
+  });
+
+  it("a thread id is not held to the bound of the ids a layout mints", () => {
+    expect(DELEGATED_THREAD_ID.length).toBeGreaterThan(LIMITS.idChars);
+    const membership = {
+      environmentId: "env",
+      threadId: NESTED_SUBAGENT_THREAD_ID,
+      workspaceId: "w1",
+      parentThreadId: DELEGATED_THREAD_ID,
+    };
+    expect(
+      accepts(HoustonLayoutWorkspaceStreamEvent, {
+        snapshot: { workspaces: [record()], memberships: [membership] },
+      }),
+    ).toBe(true);
+    expect(accepts(HoustonLayoutWorkspaceStreamEvent, { membership })).toBe(true);
+    expect(
+      accepts(HoustonLayoutWorkspaceStreamEvent, {
+        membershipRemoved: { environmentId: "env", threadId: NESTED_SUBAGENT_THREAD_ID },
+      }),
+    ).toBe(true);
+    const threadRef = { environmentId: "env", threadId: NESTED_SUBAGENT_THREAD_ID };
+    const tabs = [
+      tab(1, { kind: "chat", target: { kind: "server", threadRef } }),
+      tab(2, { kind: "surface", threadRef, surfaceId: "diff" }),
+    ];
+    expect(
+      accepts(
+        HoustonLayoutWorkspaceRecord,
+        record({ columns: [{ id: "col-1", width: 1, panes: [pane(1, tabs)] }] }),
+      ),
+    ).toBe(true);
+    expect(
+      accepts(HoustonLayoutWorkspaceStreamEvent, { membership: { ...membership, threadId: "" } }),
+    ).toBe(false);
   });
 });

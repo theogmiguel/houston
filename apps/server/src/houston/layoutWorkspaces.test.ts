@@ -560,6 +560,33 @@ describe("the stream", () => {
     }).pipe(Effect.provide(layer)),
   );
 
+  // Composed: no service path stores a membership with an empty id; the row is written directly.
+  it.effect("the snapshot leaves out a membership the contract refuses and keeps the rest", () =>
+    Effect.gen(function* () {
+      const service = yield* HoustonLayoutWorkspaces.HoustonLayoutWorkspaceService;
+      const sql = yield* SqlClient.SqlClient;
+      const [original] = yield* service.list;
+      yield* service.assignThread({
+        environmentId: "env",
+        threadId: "kept",
+        workspaceId: original!.id,
+      });
+      yield* sql`
+        INSERT INTO houston_layout_thread_membership
+          (environment_id, thread_id, workspace_id, parent_thread_id)
+        VALUES ('env', '', ${original!.id}, NULL)
+      `;
+      const [event] = yield* service.subscribe.pipe(Stream.take(1), Stream.runCollect);
+      const snapshot = event as {
+        snapshot: { memberships: ReadonlyArray<{ threadId: string }> };
+      };
+      assert.deepEqual(
+        snapshot.snapshot.memberships.map((membership) => membership.threadId),
+        ["kept"],
+      );
+    }).pipe(Effect.provide(layer)),
+  );
+
   it.effect("a refused change publishes nothing", () =>
     Effect.gen(function* () {
       const service = yield* HoustonLayoutWorkspaces.HoustonLayoutWorkspaceService;
