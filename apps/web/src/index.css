@@ -1499,7 +1499,7 @@ html[data-theme-id]:not([data-theme-id=""]) {
 
 /* Houston's board roles (--rail, --pane, --t1, ...) are painted straight by components, so a
    theme must reach them too, not only the semantic aliases above. Each role takes the theme role
-   upstream shows on the same surface: thread bodies sit on the canvas, the top strip and pane
+   painted on the same surface: thread bodies sit on the canvas, the top strip and pane
    gutter on the toolbar, the composer on the raised surface, hover and selection fills on the
    accent surface. Neutral text overlays stay the theme's text at Houston's alphas. */
 html[data-theme-id]:not([data-theme-id=""]) {
