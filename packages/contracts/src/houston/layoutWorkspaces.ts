@@ -14,6 +14,7 @@ export const HOUSTON_LAYOUT_WORKSPACE_LIMITS = {
   tabsPerPane: 50,
   /** Caps a workspace's stored size independently of how its tabs are spread over panes. */
   tabsPerWorkspace: 200,
+  /** The ids a layout mints: workspace, column, pane, tab, draft, launcher and surface. */
   idChars: 128,
   /** The longest href a page tab keeps; matches the usual URL length ceiling of browsers. */
   hrefChars: 2048,
@@ -23,6 +24,10 @@ const Id = Schema.String.check(
   Schema.isNonEmpty(),
   Schema.isMaxLength(HOUSTON_LAYOUT_WORKSPACE_LIMITS.idChars),
 );
+
+// A thread id is the server's, not a layout's, and carries no bound here: a subagent's id embeds
+// its parent's percent-encoded, so it grows with every level of nesting.
+const ThreadIdText = Schema.String.check(Schema.isNonEmpty());
 
 /** A fraction of the strip (column width) or of a column's height (pane size). */
 const Share = Schema.Number.check(
@@ -40,7 +45,7 @@ export type HoustonLayoutChatTarget =
   | { readonly kind: "server"; readonly threadRef: HoustonLayoutThreadRef }
   | { readonly kind: "draft"; readonly draftId: string };
 
-const ThreadRef = Schema.Struct({ environmentId: Id, threadId: Id });
+const ThreadRef = Schema.Struct({ environmentId: Id, threadId: ThreadIdText });
 
 const ChatTarget = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("server"), threadRef: ThreadRef }),
@@ -321,16 +326,16 @@ export type HoustonLayoutWorkspaceDeleteResult = typeof HoustonLayoutWorkspaceDe
  */
 export const HoustonLayoutThreadMembership = Schema.Struct({
   environmentId: Id,
-  threadId: Id,
+  threadId: ThreadIdText,
   workspaceId: Id,
-  parentThreadId: Schema.NullOr(Id),
+  parentThreadId: Schema.NullOr(ThreadIdText),
 });
 export type HoustonLayoutThreadMembership = typeof HoustonLayoutThreadMembership.Type;
 
 /** Records the workspace a new thread belongs to; a thread that already has one keeps it. */
 export const HoustonLayoutThreadAssignInput = Schema.Struct({
   environmentId: Id,
-  threadId: Id,
+  threadId: ThreadIdText,
   workspaceId: Id,
 });
 export type HoustonLayoutThreadAssignInput = typeof HoustonLayoutThreadAssignInput.Type;
@@ -341,7 +346,7 @@ export type HoustonLayoutThreadAssignInput = typeof HoustonLayoutThreadAssignInp
  */
 export const HoustonLayoutThreadMoveInput = Schema.Struct({
   environmentId: Id,
-  threadId: Id,
+  threadId: ThreadIdText,
   workspaceId: Id,
   paneId: Schema.optional(Id),
   index: Schema.optional(NonNegativeInt),
@@ -375,7 +380,7 @@ export const HoustonLayoutWorkspaceStreamEvent = Schema.Union([
   Schema.Struct({ deleted: Schema.Struct({ workspaceId: Id }) }),
   Schema.Struct({ membership: HoustonLayoutThreadMembership }),
   Schema.Struct({
-    membershipRemoved: Schema.Struct({ environmentId: Id, threadId: Id }),
+    membershipRemoved: Schema.Struct({ environmentId: Id, threadId: ThreadIdText }),
   }),
 ]);
 export type HoustonLayoutWorkspaceStreamEvent = typeof HoustonLayoutWorkspaceStreamEvent.Type;
