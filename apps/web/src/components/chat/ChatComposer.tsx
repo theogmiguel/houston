@@ -2675,10 +2675,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // The collapsed mobile web composer keeps a second controls row inside the card.
   const showInlineRestingControls = isComposerCollapsedMobile;
   const composerControlsHidden = showInlineRestingControls && !restingControlsVisible;
-  // The compact toolbar drops chip labels as its width runs out: pull request, branch, model.
+  // The compact toolbar drops chip labels as its width runs out. On a phone one toolbar holds the
+  // context and the pickers, so it climbs pull request, branch, model; elsewhere the pickers have
+  // the card's toolbar to themselves and the context has the tab under the card.
   const compactChipTier = useCompactChipTier(
     expandedControlsNode,
     composerNarrow && !showInlineRestingControls,
+    composerWidth,
+  );
+  const [contextTabNode, setContextTabNode] = useState<HTMLDivElement | null>(null);
+  const contextChipTier = useCompactChipTier(
+    contextTabNode,
+    composerNarrow && !isPhone,
     composerWidth,
   );
   if (composerControlsHidden && isComposerModelPickerOpen) {
@@ -2770,7 +2778,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       composerControlsHidden={composerControlsHidden}
       restingHiddenBlockCount={restingHiddenBlockCount}
       iconOnlyBlockCount={iconOnlyBlockCount}
-      modelIconOnly={modelIconOnly || compactChipTier >= 3}
+      modelIconOnly={modelIconOnly || compactChipTier >= (isPhone ? 3 : 1)}
       compactForm={composerNarrow}
       showProviderUnavailable={showProviderUnavailable}
       providerSetupInstanceId={providerSetupInstanceId}
@@ -4128,31 +4136,30 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     isPhone && "gap-2",
                   )}
                 >
-                  {isPhone ? (
-                    <div
-                      ref={attachExpandedControls}
-                      data-chat-composer-controls="footer"
-                      data-chat-composer-footer-controls="true"
-                      className="relative flex min-w-0 flex-1 items-center gap-2"
-                    >
-                      {composerControls}
-                      {contextControls && composerNarrow
-                        ? cloneElement(contextControls, {
-                            forceNarrow: true,
-                            workspaceIconOnly: compactChipTier >= 2,
-                            prIconOnly: compactChipTier >= 1,
-                          })
-                        : null}
-                      <ComposerStashBadge
-                        count={stashQueue.length}
-                        menuOpen={isStashMenuOpen}
-                        pulseKey={stashPulseKey}
-                        onToggleMenu={toggleStashMenuStable}
-                      />
-                    </div>
-                  ) : (
-                    <div className="min-w-0 flex-1" aria-hidden="true" />
-                  )}
+                  <div
+                    ref={attachExpandedControls}
+                    data-chat-composer-controls="footer"
+                    data-chat-composer-footer-controls="true"
+                    className={cn(
+                      "relative flex min-w-0 flex-1 items-center gap-0.5",
+                      isPhone && "gap-2",
+                    )}
+                  >
+                    {composerControls}
+                    {isPhone && contextControls && composerNarrow
+                      ? cloneElement(contextControls, {
+                          forceNarrow: true,
+                          workspaceIconOnly: compactChipTier >= 2,
+                          prIconOnly: compactChipTier >= 1,
+                        })
+                      : null}
+                    <ComposerStashBadge
+                      count={stashQueue.length}
+                      menuOpen={isStashMenuOpen}
+                      pulseKey={stashPulseKey}
+                      onToggleMenu={toggleStashMenuStable}
+                    />
+                  </div>
                   {speechMicAction ? (
                     <div className="me-0.5 flex shrink-0 items-center">{speechMicAction}</div>
                   ) : null}
@@ -4243,41 +4250,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             ) : null}
           </div>
         </ComposerSurface.Main>
-        {isPhone ? null : (
-          <ComposerSurface.ContextStrip data-composer-context-tray="true" className="mt-1.5 gap-1">
-            {contextControls && !composerNarrow ? (
-              <div className="flex min-w-0 shrink items-center">
-                {cloneElement(contextControls, { forceNarrow: false, variant: "tray" })}
-              </div>
-            ) : null}
-            {showInlineRestingControls ? null : (
-              <div
-                ref={attachExpandedControls}
-                data-chat-composer-controls="footer"
-                data-chat-composer-footer-controls="true"
-                className="relative flex min-w-0 flex-1 items-center gap-0.5"
-              >
-                {contextControls && composerNarrow ? (
-                  <div className="flex min-w-0 shrink-0 items-center">
-                    {cloneElement(contextControls, {
-                      forceNarrow: true,
-                      workspaceIconOnly: compactChipTier >= 2,
-                      prIconOnly: compactChipTier >= 1,
-                    })}
-                  </div>
-                ) : null}
-                {/* Pushes the pickers to the right; unlike justify-end, an overflow runs off the end where the chip tiers can measure it. */}
-                <div className="min-w-0 flex-1" aria-hidden="true" />
-                {composerControls}
-                <ComposerStashBadge
-                  count={stashQueue.length}
-                  menuOpen={isStashMenuOpen}
-                  pulseKey={stashPulseKey}
-                  onToggleMenu={toggleStashMenuStable}
-                />
-              </div>
-            )}
-          </ComposerSurface.ContextStrip>
+        {isPhone || !contextControls ? null : (
+          <ComposerSurface.ContextTab ref={setContextTabNode} data-composer-context-tray="true">
+            {composerNarrow
+              ? cloneElement(contextControls, {
+                  forceNarrow: true,
+                  workspaceIconOnly: contextChipTier >= 2,
+                  prIconOnly: contextChipTier >= 1,
+                })
+              : cloneElement(contextControls, { forceNarrow: false, variant: "tray" })}
+          </ComposerSurface.ContextTab>
         )}
       </div>
     </form>

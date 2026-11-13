@@ -71,4 +71,26 @@ function ContextStrip({ className, ...props }: ComponentProps<"div">) {
   );
 }
 
-export const ComposerSurface = { Shell, Host, Main, ContextStrip };
+/**
+ * The context tab under the card (project, environment, worktree, branch): inset from the card's
+ * edges and tucked under its bottom edge, opaque so the thread never shows through its labels.
+ */
+function ContextTab({ className, ...props }: ComponentProps<"div">) {
+  return (
+    <div
+      data-slot="composer-context-tab"
+      className={cn(
+        "group/composer-context relative z-0 mx-2.5 -mt-2 flex h-8.5 min-w-0 items-center gap-px overflow-x-clip rounded-b-lg border border-t-0 border-(--card-edge) bg-(--composer) px-1.5 pt-2 text-(--contrast-secondary-label) text-xs",
+        // Every tab control is a borderless 22px, 12px sans text button in the muted label ink.
+        "[&_[data-composer-context-control]]:max-w-none! [&_[data-composer-context-control]]:h-5.5! [&_[data-composer-context-control]]:rounded-(--r-ctl)! [&_[data-composer-context-control]]:border-0! [&_[data-composer-context-control]]:px-1.5! [&_[data-composer-context-control]]:font-normal [&_[data-composer-context-control]]:text-secondary-label! [&_[data-composer-context-control]]:text-xs!",
+        "[&_[data-composer-label]]:font-normal [&_[data-composer-label]]:text-secondary-label",
+        // Branch names inside a label render mono elsewhere; the tab keeps one sans face.
+        "[&_[data-composer-label]_*]:font-sans",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+export const ComposerSurface = { Shell, Host, Main, ContextStrip, ContextTab };
