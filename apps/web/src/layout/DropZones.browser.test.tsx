@@ -55,7 +55,7 @@ describe("drag overlay", () => {
     expect(overlay()).toBeNull();
   });
 
-  it("lifts a tilted copy of the dragged tab under the pointer", async () => {
+  it("shows the dragged tab as a chip beside the pointer", async () => {
     using _layout = openLayout();
     await using _screen = await render(<Scene />, { router: false });
     await act(() => moveLayoutDrag(SOURCE, { x: 700, y: 300 }));
@@ -64,11 +64,18 @@ describe("drag overlay", () => {
     expect(getComputedStyle(ghost).transform).not.toBe("none");
   });
 
-  it("grips every side of every pane", async () => {
-    using _layout = openLayout();
+  it("draws only the chip where the layout would not change", async () => {
+    using _layout = openLayout([[[["a"]]]]);
     await using _screen = await render(<Scene />, { router: false });
-    await act(() => moveLayoutDrag(SOURCE, { x: 700, y: 300 }));
-    expect(overlay()!.querySelectorAll("[data-layout-drop-grip]")).toHaveLength(8);
+    await act(() => moveLayoutDrag(SOURCE, { x: 500, y: 300 }));
+    const drawn = [
+      ...overlay()!.querySelectorAll(
+        "[data-layout-drag-ghost], [data-layout-drop-zone], [data-layout-drop-pill], [data-layout-drop-insert]",
+      ),
+    ];
+    expect(drawn.map((element) => Object.keys((element as HTMLElement).dataset)[0])).toEqual([
+      "layoutDragGhost",
+    ]);
   });
 });
 
@@ -78,10 +85,7 @@ describe("drop zones", () => {
     return {
       zone: overlay()!.querySelector<HTMLElement>("[data-layout-drop-zone]"),
       pill: overlay()!.querySelector<HTMLElement>("[data-layout-drop-pill]")?.textContent ?? null,
-      activeGrip:
-        overlay()!
-          .querySelector("[data-layout-drop-grip][data-active]")
-          ?.getAttribute("data-layout-drop-grip") ?? null,
+      mark: overlay()!.querySelector<HTMLElement>("[data-layout-drop-insert]"),
     };
   }
 
@@ -90,8 +94,10 @@ describe("drop zones", () => {
     await using screen = await render(<Scene />, { router: false });
     const target = pane(screen.container, "w0c1p0");
     const result = await dragTo(target.left + 100, target.top + 20);
-    expect(result.zone).not.toBeNull();
-    expect(result.pill).toMatch(/Into|tab|Add/i);
+    // Between tabs the mark alone says where: no zone, no label.
+    expect(result.mark).not.toBeNull();
+    expect(result.zone).toBeNull();
+    expect(result.pill).toBeNull();
   });
 
   it("marks the gap between tabs where the dragged tab lands, and no gap over a body", async () => {
@@ -125,10 +131,15 @@ describe("drop zones", () => {
       target.top + 48 + (target.height - 48) * fy,
     );
     expect(result.zone).not.toBeNull();
-    expect(result.activeGrip).toBe(side);
     const zone = result.zone!.getBoundingClientRect();
-    if (side === "left" || side === "right") expect(zone.width).toBeLessThan(target.width / 2);
-    else expect(zone.height).toBeLessThan(target.height / 2);
+    const middle = {
+      x: target.left + target.width / 2,
+      y: target.top + 48 + (target.height - 48) / 2,
+    };
+    if (side === "left") expect(zone.right).toBeLessThan(middle.x);
+    if (side === "right") expect(zone.left).toBeGreaterThan(middle.x);
+    if (side === "up") expect(zone.bottom).toBeLessThan(middle.y);
+    if (side === "down") expect(zone.top).toBeGreaterThan(middle.y);
   });
 
   it.each(["left", "right"] as const)(
@@ -136,10 +147,10 @@ describe("drop zones", () => {
     async (edge) => {
       using _layout = openLayout();
       await using _screen = await render(<Scene />, { router: false });
-      await dragTo(edge === "left" ? 2 : 998, 300);
-      expect(
-        overlay()!.querySelector(`[data-layout-drop-extend='${edge}'][data-active]`),
-      ).not.toBeNull();
+      const result = await dragTo(edge === "left" ? 2 : 998, 300);
+      const zone = result.zone!.getBoundingClientRect();
+      if (edge === "left") expect(zone.right).toBeLessThan(500);
+      else expect(zone.left).toBeGreaterThan(500);
       expect(overlay()!.querySelector("[data-layout-drop-pill]")?.textContent).toMatch(/column/i);
     },
   );
@@ -149,10 +160,8 @@ describe("drop zones", () => {
     using _layout = openLayout([[[["a", "b"]], [["c"]]], []]);
     await using screen = await render(<Scene />, { router: false });
     const strip = screen.container.querySelector("[data-layout-strip]")!.getBoundingClientRect();
-    await dragTo(strip.left + 500, strip.bottom - 2);
-    expect(
-      overlay()!.querySelector("[data-layout-drop-extend='bottom'][data-active]"),
-    ).not.toBeNull();
+    const result = await dragTo(strip.left + 500, strip.bottom - 2);
+    expect(result.zone!.getBoundingClientRect().top).toBeGreaterThan(strip.top + 300);
   });
 
   it("previews no drop where the layout would not change", async () => {
@@ -160,11 +169,12 @@ describe("drop zones", () => {
     await using screen = await render(<Scene />, { router: false });
     const own = pane(screen.container, "w0c1p0");
     const lone = await dragTo(own.left + 50, own.top + 20);
-    expect(lone.zone).not.toBeNull();
+    expect(lone.mark).not.toBeNull();
     useLayoutStore.getState().setLayoutFromServer(buildLayout([[[["a"]]]]));
     await act(() => cancelLayoutDrag());
     const result = await dragTo(500, 300);
     expect(result.zone).toBeNull();
+    expect(result.mark).toBeNull();
   });
 });
 

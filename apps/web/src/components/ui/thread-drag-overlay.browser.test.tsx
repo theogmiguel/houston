@@ -2,27 +2,35 @@ import { describe, expect, it } from "vite-plus/test";
 
 import "~/index.css";
 import { act, render } from "../../../test/render";
+import { ThreadContextDragGhost } from "../chat/ThreadContextDragGhost";
 import { beginThreadDragAt, endThreadDrag } from "../../threads/threadDrag";
 import { LayoutResizeGuide, LayoutResizeGutter } from "./layout-pane";
 import { ThreadDragOverlay } from "./thread-drag-overlay";
 
 const SOURCE = { threadId: "t1", environmentId: "env", projectId: "p1", title: "Fix the login" };
-const ghost = () => document.querySelector<HTMLElement>("[data-thread-drag-ghost]");
+const ghosts = () => [...document.querySelectorAll<HTMLElement>("[data-layout-drag-ghost]")];
 
 describe("thread drag overlay", () => {
-  it("carries the dragged card's title under the pointer until the drag ends", async () => {
-    await using _screen = await render(<ThreadDragOverlay />, { router: false });
-    expect(ghost()).toBeNull();
+  it("draws one chip with the dragged card's title beside the pointer until the drag ends", async () => {
+    await using _screen = await render(
+      <>
+        <ThreadDragOverlay />
+        <ThreadContextDragGhost />
+      </>,
+      { router: false },
+    );
+    expect(ghosts()).toHaveLength(0);
     await act(() => beginThreadDragAt(SOURCE, { x: 300, y: 200 }, 1));
     try {
-      expect(ghost()!.textContent).toBe("Fix the login");
-      const box = ghost()!.getBoundingClientRect();
+      expect(ghosts().map((ghost) => ghost.textContent)).toEqual(["Fix the login"]);
+      const box = ghosts()[0]!.getBoundingClientRect();
       expect(box.left).toBeGreaterThan(300);
       expect(box.left).toBeLessThan(330);
+      expect(box.top).toBeGreaterThan(200);
     } finally {
       await act(() => endThreadDrag());
     }
-    expect(ghost()).toBeNull();
+    expect(ghosts()).toHaveLength(0);
   });
 });
 

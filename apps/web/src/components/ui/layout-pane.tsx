@@ -496,7 +496,7 @@ export function LayoutDropZoneBox({ style }: { style: CSSProperties }) {
   return (
     <div
       data-layout-drop-zone=""
-      className="absolute rounded-(--r-group) bg-hover ring-1 ring-(--accent-ink) ring-inset"
+      className="absolute rounded-(--r-group) bg-(--accent-muted) ring-1 ring-(--accent-ink)/55 ring-inset"
       style={style}
     />
   );
@@ -513,55 +513,12 @@ export function LayoutDropInsertMark({ style }: { style: CSSProperties }) {
   );
 }
 
-/** A grip on a pane's side: the side a drop would split. */
-export function LayoutDropGrip({
-  side,
-  active,
-  style,
-}: {
-  side: "left" | "right" | "up" | "down";
-  active: boolean;
-  style: CSSProperties;
-}) {
-  return (
-    <div
-      data-layout-drop-grip={side}
-      data-active={active ? "" : undefined}
-      className={cn("absolute rounded-full", active ? "bg-foreground" : "bg-foreground/35")}
-      style={style}
-    />
-  );
-}
-
-/** A bar outside the strip's edge: a drop there makes a new column (or workspace, below). */
-export function LayoutDropExtendBar({
-  edge,
-  active,
-  style,
-}: {
-  edge: "left" | "right" | "bottom";
-  active: boolean;
-  style: CSSProperties;
-}) {
-  return (
-    <div
-      data-layout-drop-extend={edge}
-      data-active={active ? "" : undefined}
-      className={cn(
-        "absolute rounded-(--r-badge) ring-1 ring-inset",
-        active ? "bg-foreground/35 ring-foreground/50" : "bg-foreground/12 ring-foreground/20",
-      )}
-      style={style}
-    />
-  );
-}
-
-/** The label that names where the drop lands. */
+/** The name of the drop, in the accent ink at the middle of its zone. */
 export function LayoutDropPill({ style, children }: { style: CSSProperties; children: ReactNode }) {
   return (
     <div
       data-layout-drop-pill=""
-      className="absolute flex h-6.5 -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 rounded-(--r-ctl) bg-foreground px-2.5 text-xs whitespace-nowrap text-background shadow-[var(--shadow-1)]"
+      className="absolute flex -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 text-xs font-medium whitespace-nowrap text-(--accent-ink)"
       style={style}
     >
       {children}
@@ -569,18 +526,23 @@ export function LayoutDropPill({ style, children }: { style: CSSProperties; chil
   );
 }
 
-/** The lifted, tilted tab under the pointer while a tab is dragged. */
+/** The raised chip beside the pointer that names what is being dragged. */
 export function LayoutDragGhost({
-  style,
+  point,
   children,
-}: {
-  style: CSSProperties;
+  ...props
+}: HTMLAttributes<HTMLDivElement> & {
+  point: { x: number; y: number };
   children: ReactNode;
 }) {
+  // Right of and below the pointer, clear of the grabbing cursor's 16px glyph.
+  const style = { transform: `translate(${point.x + 18}px, ${point.y + 12}px)` };
   return (
     <div
+      aria-hidden
       data-layout-drag-ghost=""
-      className="absolute top-0 left-0 flex h-8 max-w-48 items-center gap-1.5 rounded-t-(--r-group) bg-(--raised) px-3 text-xs text-foreground shadow-[var(--shadow-1)]"
+      {...props}
+      className="pointer-events-none fixed top-0 left-0 z-[95] flex h-7 max-w-48 items-center gap-1.5 rounded-(--r-ctl) border border-(--card-edge) bg-(--raised) px-2.5 text-xs text-foreground shadow-[var(--shadow-1)]"
       style={style}
     >
       {children}

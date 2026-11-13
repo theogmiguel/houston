@@ -81,7 +81,7 @@ describe("dropping a sidebar card on the layout", () => {
     const target = pane(screen.container, "w0c0p0");
     const point = { x: target.left + target.width - 10, y: target.top + 20 };
     await act(() => beginThreadDragAt(card, point, 1));
-    expect(document.querySelector("[data-layout-drop-zone]")).not.toBeNull();
+    expect(document.querySelector("[data-layout-drop-insert]")).not.toBeNull();
     await act(() => release(point));
     const opened = tabWhere();
     expect(opened?.pane.id).toBe("w0c0p0");

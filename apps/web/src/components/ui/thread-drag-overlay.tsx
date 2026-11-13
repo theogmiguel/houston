@@ -1,5 +1,9 @@
+import { MessagesSquareIcon } from "lucide-react";
 import { createPortal } from "react-dom";
 
+import { LayoutDragGhost } from "./layout-pane";
+
+import { useThreadContextDragGhost } from "~/components/chat/threadContextDrag";
 import { isTabDragSource, useThreadDragPoint, useThreadDragState } from "~/threads/threadDrag";
 
 /**
@@ -11,6 +15,8 @@ import { isTabDragSource, useThreadDragPoint, useThreadDragState } from "~/threa
 export function ThreadDragOverlay() {
   const state = useThreadDragState();
   const point = useThreadDragPoint();
+  // Over the panes and composers the context drag draws the chip; this one covers the sidebar.
+  const contextGhost = useThreadContextDragGhost();
   if (state === null) return null;
   const title = isTabDragSource(state.source) ? undefined : state.source.title;
   return createPortal(
@@ -20,15 +26,11 @@ export function ThreadDragOverlay() {
         aria-hidden
         className="fixed inset-0 z-50 cursor-grabbing select-none"
       />
-      {title !== undefined && point !== null ? (
-        <div
-          data-thread-drag-ghost=""
-          aria-hidden
-          className="pointer-events-none fixed top-0 left-0 z-[95] flex h-8 max-w-48 items-center rounded-(--r-group) bg-(--raised) px-3 text-xs text-foreground shadow-[var(--shadow-1)]"
-          style={{ transform: `translate(${point.x + 12}px, ${point.y + 10}px) rotate(-2deg)` }}
-        >
+      {title !== undefined && point !== null && contextGhost === null ? (
+        <LayoutDragGhost data-thread-drag-ghost="" point={point}>
+          <MessagesSquareIcon className="size-3.5 shrink-0 text-secondary-label" />
           <span className="min-w-0 truncate">{title}</span>
-        </div>
+        </LayoutDragGhost>
       ) : null}
     </>,
     document.body,

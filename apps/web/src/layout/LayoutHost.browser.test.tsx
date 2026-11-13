@@ -197,7 +197,7 @@ describe("LayoutHost: a drag over the panes", () => {
     await act(() => moveLayoutDrag({ kind: "tab", tabId: "a" }, { x: 700, y: 300 }));
     try {
       expect(overlay()!.querySelector("[data-layout-drag-ghost]")).not.toBeNull();
-      expect(overlay()!.querySelectorAll("[data-layout-drop-grip]").length).toBeGreaterThan(0);
+      expect(overlay()!.querySelector("[data-layout-drop-zone]")).not.toBeNull();
     } finally {
       await act(() => cancelLayoutDrag());
     }

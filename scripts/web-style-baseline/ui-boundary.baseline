@@ -93,7 +93,7 @@
 1 apps/web/src/components/chat/ThreadActivityAnnouncer.tsx
 10 apps/web/src/components/chat/ThreadActivityBanners.tsx
 12 apps/web/src/components/chat/ThreadAutomationsPanel.tsx
-12 apps/web/src/components/chat/ThreadContextDragGhost.tsx
+2 apps/web/src/components/chat/ThreadContextDragGhost.tsx
 10 apps/web/src/components/chat/ThreadDetailsCard.tsx
 27 apps/web/src/components/chat/ThreadDetailsPrRow.tsx
 5 apps/web/src/components/chat/ThreadDetailsSection.tsx
