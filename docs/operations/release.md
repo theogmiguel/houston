@@ -402,6 +402,15 @@ All platforms use the same packaging script the release workflows call. It
 builds the renderer, the desktop bundle and the server, stages their
 dependencies, and hands the result to electron-builder.
 
+The packages carry only files a runtime path loads. Source maps, package
+sources and documentation, and native binaries for another platform, CPU or
+libc are left out. Windows runs the server from `server.asar`, so `app.asar`
+leaves out the server and every package only the server reaches;
+`server.asar` keeps the Linux `node-pty` prebuilds and sources the WSL server
+loads or builds. A runtime change that reads a newly excluded file must narrow
+the exclusion in `scripts/build-desktop-artifact.ts`; run **Build installers**
+for Windows before merging such a change.
+
 Linux, for the host architecture:
 
 ```
