@@ -245,9 +245,8 @@ import {
   NewProjectPublishHostPicker,
   NewProjectSummary,
   RemoteRepositorySummary,
-  remoteProjectSourceIcon,
-  sourceControlHostIcon,
 } from "./CommandPaletteAddProject";
+import { remoteProjectSourceIcon, sourceControlHostIcon } from "../sourceControlPresentation";
 import { openAddProjectDialog } from "./AddProjectDialog";
 import { useCommandPaletteThreadItems } from "./CommandPaletteThreadItems";
 import { useCommandPaletteThemeItems } from "./CommandPaletteThemeItems";
