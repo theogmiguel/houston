@@ -74,7 +74,8 @@ export type SearchOverlayMode = "command" | "files" | "content";
 
 export type CommandPaletteOpenIntent =
   | { readonly kind: "add-project"; readonly request?: AddProjectFlowRequest }
-  | { readonly kind: "new-thread-in" | "change-theme" }
+  | { readonly kind: "new-thread-in"; readonly newTab?: boolean }
+  | { readonly kind: "change-theme" }
   | {
       readonly kind: "search";
       readonly query: string;
@@ -101,7 +102,7 @@ export type CommandPaletteUiAction =
       readonly linkedThreads?: CommandPaletteLinkedThreads;
     }
   | { readonly _tag: "OpenAddProject"; readonly request?: AddProjectFlowRequest }
-  | { readonly _tag: "OpenNewThreadIn" }
+  | { readonly _tag: "OpenNewThreadIn"; readonly newTab?: boolean }
   | { readonly _tag: "OpenChangeTheme" }
   | {
       readonly _tag: "OpenChildSearch";
@@ -160,7 +161,10 @@ export function reduceCommandPaletteUiState(
         ...(action.request === undefined ? {} : { request: action.request }),
       });
     case "OpenNewThreadIn":
-      return openWithIntent({ kind: "new-thread-in" });
+      return openWithIntent({
+        kind: "new-thread-in",
+        ...(action.newTab === true ? { newTab: true } : {}),
+      });
     case "OpenChangeTheme":
       return openWithIntent({ kind: "change-theme" });
   }

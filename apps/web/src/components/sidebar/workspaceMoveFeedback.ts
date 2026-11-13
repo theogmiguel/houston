@@ -1,14 +1,17 @@
-import type { LayoutTabContent } from "../../layout/layoutModel";
-import { moveLayoutChatToWorkspaceAction } from "../../layout/layoutWorkspaceActions";
+import {
+  createEmptyWorkspaceOnServer,
+  moveThreadToWorkspaceOnServer,
+  type ThreadRef,
+} from "../../layout/threadWorkspaceCommands";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 
-export type ChatContent = Extract<LayoutTabContent, { kind: "chat" }>;
-
 export interface ThreadWorkspaceMove {
-  readonly content: ChatContent;
+  readonly thread: ThreadRef;
   readonly threadTitle: string | null;
-  readonly source: { readonly workspaceId: string; readonly name: string };
-  readonly target: { readonly workspaceId: string; readonly name: string };
+  /** An existing workspace, or `newWorkspace` to make one for the thread first. */
+  readonly target: { readonly workspaceId: string; readonly name: string } | "new-workspace";
+  /** The name of a workspace the window shows, for the toast and a refused undo. */
+  readonly nameOf: (workspaceId: string) => string;
   readonly onOpenTarget: (workspaceId: string) => void;
 }
 
@@ -16,46 +19,75 @@ function explain(title: string, description: string): void {
   toastManager.add(stackedThreadToast({ type: "error", title, description }));
 }
 
+const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
 /**
- * Moves a thread's chat to another workspace without taking the user along, then offers the
- * workspace and the way back. A refused move explains itself and reports false.
+ * Moves a thread, its children and their open tabs to another workspace without taking the user
+ * along, then offers the workspace and the way back. A refused move explains itself, leaves the
+ * thread where it was and reports false.
  */
-export function moveThreadToWorkspaceWithFeedback(move: ThreadWorkspaceMove): boolean {
-  const refusal = moveLayoutChatToWorkspaceAction(move.content, move.target.workspaceId);
-  if (refusal !== null) {
-    explain("Cannot move this thread", refusal);
+export async function moveThreadToWorkspaceWithFeedback(
+  move: ThreadWorkspaceMove,
+): Promise<boolean> {
+  let target: { workspaceId: string; name: string };
+  let result: Awaited<ReturnType<typeof moveThreadToWorkspaceOnServer>>;
+  try {
+    if (move.target === "new-workspace") {
+      const created = await createEmptyWorkspaceOnServer();
+      target = { workspaceId: created.id, name: created.name };
+    } else {
+      target = move.target;
+    }
+    result = await moveThreadToWorkspaceOnServer({
+      thread: move.thread,
+      workspaceId: target.workspaceId,
+    });
+  } catch (error) {
+    explain("Cannot move this thread", messageOf(error));
     return false;
   }
+  const { previous } = result;
   const named = move.threadTitle === null ? "The thread" : `“${move.threadTitle}”`;
+  const undo =
+    previous.workspaceId === null
+      ? []
+      : [
+          {
+            id: "undo",
+            props: {
+              children: "Undo",
+              onClick: () => {
+                void moveThreadToWorkspaceOnServer({
+                  thread: move.thread,
+                  workspaceId: previous.workspaceId!,
+                  paneId: previous.paneId,
+                  index: previous.index,
+                }).catch((error: unknown) =>
+                  explain(
+                    `Cannot move back to “${move.nameOf(previous.workspaceId!)}”`,
+                    messageOf(error),
+                  ),
+                );
+              },
+            },
+          },
+        ];
   toastManager.add(
     stackedThreadToast({
       type: "success",
-      title: `Moved to “${move.target.name}”`,
-      description: `${named} is now in “${move.target.name}”.`,
+      title: `Moved to “${target.name}”`,
+      description: `${named} is now in “${target.name}”.`,
       data: {
         secondaryActionVariant: "outline",
         additionalActions: [
           {
             id: "open",
             props: {
-              children: `Open ${move.target.name}`,
-              onClick: () => move.onOpenTarget(move.target.workspaceId),
+              children: `Open ${target.name}`,
+              onClick: () => move.onOpenTarget(target.workspaceId),
             },
           },
-          {
-            id: "undo",
-            props: {
-              children: "Undo",
-              onClick: () => {
-                const undoRefusal = moveLayoutChatToWorkspaceAction(
-                  move.content,
-                  move.source.workspaceId,
-                );
-                if (undoRefusal !== null)
-                  explain(`Cannot move back to “${move.source.name}”`, undoRefusal);
-              },
-            },
-          },
+          ...undo,
         ],
       },
     }),

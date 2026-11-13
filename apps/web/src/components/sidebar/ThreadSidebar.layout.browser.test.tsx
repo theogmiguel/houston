@@ -1,5 +1,6 @@
 import { scopeThreadRef } from "@houston-app/client-runtime/environment";
 import { EnvironmentId, ThreadId } from "@houston-app/contracts";
+import * as Cause from "effect/Cause";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
@@ -9,14 +10,13 @@ import { act, render } from "../../../test/render";
 import { beginThreadDragAt, endThreadDrag } from "../../threads/threadDrag";
 import {
   createLayoutState,
-  findLayoutTabByContent,
   normalizeLayout,
   openLayoutTab,
-  selectFocusedTab,
   type LayoutState,
   type LayoutTabContent,
 } from "../../layout/layoutModel";
 import { useLayoutStore } from "../../layout/layoutStore";
+import { setThreadMemberships } from "../../layout/threadMembership";
 import {
   createLayoutWorkspaceNamed,
   listLayoutWorkspaces,
@@ -27,6 +27,24 @@ import { toastManager } from "../ui/toast";
 import { SidebarProvider } from "../ui/sidebar";
 import { TooltipProvider } from "../ui/tooltip";
 import { ThreadSidebar } from "./ThreadSidebar";
+
+const moves = vi.hoisted(() => ({
+  calls: [] as Array<{ thread: { threadId: string }; workspaceId: string }>,
+}));
+
+vi.mock(import("../../layout/threadWorkspaceCommands"), async (original) => ({
+  ...(await original()),
+  moveThreadToWorkspaceOnServer: (async (input: {
+    thread: { threadId: string };
+    workspaceId: string;
+  }) => {
+    moves.calls.push(input);
+    return {
+      membership: { ...input.thread, workspaceId: input.workspaceId, parentThreadId: null },
+      previous: { workspaceId: null, paneId: null, index: null },
+    };
+  }) as never,
+}));
 
 const fixtures = vi.hoisted(() => ({
   projects: [
@@ -52,7 +70,9 @@ const fixtures = vi.hoisted(() => ({
     snoozeThread: vi.fn(),
     unsnoozeThread: vi.fn(),
     setThreadAutoSettle: vi.fn(),
+    deleteThread: vi.fn(async (..._args: unknown[]) => ({ _tag: "Success", value: undefined })),
   },
+  confirm: vi.fn(async (..._args: unknown[]) => true),
 }));
 
 vi.mock(import("./sidebarProviderEntries"), async (original) => ({
@@ -129,7 +149,9 @@ vi.mock(import("../../hooks/useSidebarProjectGroups"), () => ({
     })) as never,
 }));
 
-vi.mock("../../confirmDialog", () => ({ requestConfirmDialog: async () => true }));
+vi.mock("../../confirmDialog", () => ({
+  requestConfirmDialog: (...args: unknown[]) => fixtures.confirm(...args),
+}));
 
 vi.mock(import("../../hooks/useThreadActions"), async (original) => ({
   ...(await original()),
@@ -198,12 +220,44 @@ function RailHarness() {
   );
 }
 
-function seed(spec: Parameters<typeof layoutOf>[0], threads: EnvironmentThreadShell[]): Disposable {
+/**
+ * Seeds the layout and the memberships the server would report: each thread belongs to the
+ * workspace holding its chat tab, and `members` adds threads that have no tab open.
+ */
+function seed(
+  spec: Parameters<typeof layoutOf>[0],
+  threads: EnvironmentThreadShell[],
+  members: ReadonlyArray<readonly [threadId: string, workspaceName: string]> = [],
+): Disposable {
   localStorage.clear();
   fixtures.threads = threads;
-  useLayoutStore.setState({ layout: layoutOf(spec) });
+  moves.calls = [];
+  const layout = layoutOf(spec);
+  useLayoutStore.setState({ layout });
+  const idOfWorkspace = (name: string) =>
+    listLayoutWorkspaces(layout).find((workspace) => workspace.name === name)!.id;
+  setThreadMemberships(
+    [
+      ...spec.flatMap((entry) =>
+        entry.chats.map((threadId) => ({
+          environmentId: "env-1",
+          threadId,
+          workspaceId: idOfWorkspace(entry.name),
+          parentThreadId: null,
+        })),
+      ),
+      ...members.map(([threadId, name]) => ({
+        environmentId: "env-1",
+        threadId,
+        workspaceId: idOfWorkspace(name),
+        parentThreadId: null,
+      })),
+    ],
+    true,
+  );
   return {
     [Symbol.dispose]: () => {
+      setThreadMemberships([], false);
       localStorage.clear();
       endThreadDrag();
       vi.restoreAllMocks();
@@ -277,18 +331,19 @@ describe("ThreadSidebar workspaces", () => {
     );
   });
 
-  it("lists a thread no tab shows under the first workspace and says so once", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  it("lists a thread whose tabs are all closed under its workspace, and one with no membership nowhere", async () => {
     using _seed = seed(
       [
         { name: "First", chats: ["t1"] },
         { name: "Second", chats: ["t2"] },
       ],
-      [liveThread("t1"), liveThread("t2"), liveThread("orphan")],
+      [liveThread("t1"), liveThread("t2"), liveThread("closed"), liveThread("unplaced")],
+      [["closed", "Second"]],
     );
     await using screen = await render(<RailHarness />);
-    await vi.waitFor(() => expect(rowsIn(screen.container, "First")).toEqual(["t1", "orphan"]));
-    expect(warn.mock.calls.filter((call) => String(call[0]).includes("orphan")).length).toBe(1);
+    await vi.waitFor(() => expect(rowsIn(screen.container, "Second")).toEqual(["t2", "closed"]));
+    expect(rowsIn(screen.container, "First")).toEqual(["t1"]);
+    expect(screen.container.querySelector('[data-thread-key="env-1:unplaced"]')).toBeNull();
   });
 
   it("keeps a hidden workspace off the rail and lists it in the hidden menu", async () => {
@@ -345,12 +400,12 @@ describe("ThreadSidebar workspaces", () => {
       window.dispatchEvent(new PointerEvent("pointerup", { pointerId: 1 }));
     });
 
-    await vi.waitFor(() => expect(rowsIn(screen.container, "To")).toContain("t1"));
-    expect(rowsIn(screen.container, "From")).toEqual(["t2"]);
-    const placed = findLayoutTabByContent(useLayoutStore.getState().layout, chat("t1"));
-    expect(placed?.workspace.name).toBe("To");
+    await vi.waitFor(() => expect(moves.calls).toHaveLength(1));
+    expect(moves.calls[0]).toMatchObject({
+      thread: { threadId: "t1" },
+      workspaceId: before.workspaces[1]!.id,
+    });
     expect(useLayoutStore.getState().layout.focusedWorkspaceId).toBe(focusedBefore);
-    expect(selectFocusedTab(useLayoutStore.getState().layout)).not.toBeNull();
   });
 
   it("creates a workspace from the header with a name and lists it", async () => {
@@ -404,14 +459,24 @@ describe("ThreadSidebar workspaces", () => {
     );
   };
 
-  it("deletes a workspace after the confirmation", async () => {
+  it("deletes a workspace and its threads after a confirmation that names it, the threads and the running ones", async () => {
     using _seed = seed(
       [
         { name: "Keep", chats: ["t1"] },
         { name: "Drop", chats: ["t2"] },
       ],
-      [liveThread("t1"), liveThread("t2")],
+      [
+        liveThread("t1"),
+        {
+          ...liveThread("t2"),
+          runtime: { status: "running", activeRunId: null, lastError: null } as never,
+        },
+        liveThread("t3"),
+      ],
+      [["t3", "Drop"]],
     );
+    fixtures.confirm.mockClear();
+    fixtures.actions.deleteThread.mockClear();
     await using screen = await render(<RailHarness />);
     await vi.waitFor(() => expect(groupNames(screen.container)).toEqual(["Keep", "Drop"]));
 
@@ -419,6 +484,66 @@ describe("ThreadSidebar workspaces", () => {
     await userEvent.click(page.getByRole("menuitem", { name: /Delete workspace/ }).element());
 
     await vi.waitFor(() => expect(groupNames(screen.container)).toEqual(["Keep"]));
+    expect(fixtures.confirm).toHaveBeenCalledWith(
+      expect.stringContaining("“Drop” and its 2 threads? 1 thread is running"),
+      { variant: "destructive" },
+    );
+    expect(
+      fixtures.actions.deleteThread.mock.calls.map(
+        (call) => (call[0] as { threadId: string }).threadId,
+      ),
+    ).toEqual(["t2", "t3"]);
+  });
+
+  it("deletes an empty workspace without asking", async () => {
+    using _seed = seed(
+      [
+        { name: "Keep", chats: ["t1"] },
+        { name: "Blank", chats: [] },
+      ],
+      [liveThread("t1")],
+    );
+    fixtures.confirm.mockClear();
+    fixtures.actions.deleteThread.mockClear();
+    await using screen = await render(<RailHarness />);
+    await vi.waitFor(() => expect(groupNames(screen.container)).toContain("Blank"));
+
+    openHeadingMenu(headingButton(screen.container, "Blank"));
+    await userEvent.click(page.getByRole("menuitem", { name: /Delete workspace/ }).element());
+
+    await vi.waitFor(() => expect(groupNames(screen.container)).toEqual(["Keep"]));
+    expect(fixtures.confirm).not.toHaveBeenCalled();
+    expect(fixtures.actions.deleteThread).not.toHaveBeenCalled();
+  });
+
+  it("keeps the workspace and names the thread and the workspace when a thread cannot be deleted", async () => {
+    using _seed = seed(
+      [
+        { name: "Keep", chats: ["t1"] },
+        { name: "Drop", chats: ["t2"] },
+      ],
+      [liveThread("t1"), liveThread("t2", "project-1", "Stuck")],
+    );
+    fixtures.actions.deleteThread.mockResolvedValueOnce({
+      _tag: "Failure",
+      cause: Cause.fail(new Error("worktree is busy")),
+    } as never);
+    const add = vi.spyOn(toastManager, "add");
+    await using screen = await render(<RailHarness />);
+    await vi.waitFor(() => expect(groupNames(screen.container)).toEqual(["Keep", "Drop"]));
+
+    openHeadingMenu(headingButton(screen.container, "Drop"));
+    await userEvent.click(page.getByRole("menuitem", { name: /Delete workspace/ }).element());
+
+    await vi.waitFor(() =>
+      expect(add).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Could not delete workspace",
+          description: expect.stringMatching(/“Stuck” \(t2\).*workspace “Drop”/),
+        }),
+      ),
+    );
+    expect(groupNames(screen.container)).toEqual(["Keep", "Drop"]);
   });
 
   it("refuses to delete the last workspace, naming it, and keeps it", async () => {

@@ -7,6 +7,7 @@ import { projectKeyOf } from "@houston-app/shared/projectKey";
 
 import type { LayoutState, LayoutWorkspace } from "../../layout/layoutModel";
 import { listLayoutWorkspaces, workspaceDisplayName } from "../../layout/layoutWorkspaces";
+import type { ThreadMembershipState } from "../../layout/threadMembership";
 import { pinnedThreadsFirst } from "../../threads/rail";
 import { threadMatchesSidebarSearch } from "../../threads/sidebarModel";
 import { isSidebarHiddenThread } from "../Sidebar.logic";
@@ -16,7 +17,7 @@ export interface SidebarWorkspaceSection {
   readonly name: string;
   readonly pinned: boolean;
   readonly hidden: boolean;
-  /** The workspace holds no chat tab; it is listed because the user is on it. */
+  /** The workspace has no tab open; it is listed because threads belong to it or the user is on it. */
   readonly empty: boolean;
   /** The rows the section draws, in order. */
   readonly threads: ReadonlyArray<EnvironmentThreadShell>;
@@ -29,12 +30,12 @@ export interface SidebarWorkspaceSections {
   readonly sections: ReadonlyArray<SidebarWorkspaceSection>;
   /** Hidden workspaces, for the menu that shows them again. Never searched. */
   readonly hiddenSections: ReadonlyArray<SidebarWorkspaceSection>;
-  /** Threads that no workspace shows a chat for; they were put under the first workspace. */
-  readonly unplacedThreadIds: ReadonlyArray<string>;
 }
 
 export interface SidebarWorkspaceSectionsInput {
   readonly layout: LayoutState;
+  /** The workspace each thread belongs to; a thread without an entry is not listed yet. */
+  readonly memberships: ThreadMembershipState;
   readonly threads: ReadonlyArray<EnvironmentThreadShell>;
   readonly threadSort: SidebarGridThreadSortOrder;
   readonly nowIso: string;
@@ -58,9 +59,9 @@ export function isRailThread(thread: EnvironmentThreadShell, nowIso: string): bo
   );
 }
 
-/** Each thread's workspace, by `scopedThreadKey`, and the order its chat tabs sit in the layout. */
-function chatPlacement(layout: LayoutState): { workspaceOf: Map<string, string>; order: string[] } {
-  const workspaceOf = new Map<string, string>();
+/** The order the chat tabs sit in the layout, by `scopedThreadKey`; rows follow it. */
+function chatTabOrder(layout: LayoutState): string[] {
+  const seen = new Set<string>();
   const order: string[] = [];
   for (const workspace of layout.workspaces) {
     for (const column of workspace.columns) {
@@ -68,14 +69,14 @@ function chatPlacement(layout: LayoutState): { workspaceOf: Map<string, string>;
         for (const tab of pane.tabs) {
           if (tab.content.kind !== "chat" || tab.content.target.kind !== "server") continue;
           const key = scopedThreadKey(tab.content.target.threadRef);
-          if (workspaceOf.has(key)) continue;
-          workspaceOf.set(key, workspace.id);
+          if (seen.has(key)) continue;
+          seen.add(key);
           order.push(key);
         }
       }
     }
   }
-  return { workspaceOf, order };
+  return order;
 }
 
 function sortRows(
@@ -89,9 +90,9 @@ const keyOf = (thread: EnvironmentThreadShell) =>
   scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
 
 /**
- * The rail's groups: the layout's workspaces, each with the threads whose chat tab it holds. A
- * thread no workspace shows goes under the first workspace, as the server places it, and is
- * reported in `unplacedThreadIds`.
+ * The rail's groups: the layout's workspaces, each with the threads that belong to it. A thread
+ * the server has not placed yet, or whose workspace the layout does not hold yet, is left out until
+ * it is, so it never shows under one workspace and then jumps to another.
  */
 export function buildSidebarWorkspaceSections(
   input: SidebarWorkspaceSectionsInput,
@@ -102,10 +103,9 @@ export function buildSidebarWorkspaceSections(
   const excluded = query.length === 0 ? input.excludedThreadIds : undefined;
   const workspaces = listLayoutWorkspaces(input.layout);
   const first = workspaces[0];
-  if (first === undefined) return { sections: [], hiddenSections: [], unplacedThreadIds: [] };
+  if (first === undefined) return { sections: [], hiddenSections: [] };
 
-  const { workspaceOf, order } = chatPlacement(input.layout);
-  const position = new Map(order.map((key, index) => [key, index]));
+  const position = new Map(chatTabOrder(input.layout).map((key, index) => [key, index]));
   const listed = new Set(workspaces.map((workspace) => workspace.id));
   const rows = input.threads
     .filter(
@@ -121,12 +121,9 @@ export function buildSidebarWorkspaceSections(
     );
 
   const byWorkspace = new Map<string, EnvironmentThreadShell[]>();
-  const unplacedThreadIds: string[] = [];
   for (const thread of rows) {
-    const placed = workspaceOf.get(keyOf(thread));
-    // A chat in the empty workspace the strip keeps at the bottom is placed there but not listed.
-    const home = placed !== undefined && listed.has(placed) ? placed : first.id;
-    if (placed === undefined) unplacedThreadIds.push(thread.id);
+    const home = input.memberships.byThread.get(keyOf(thread))?.workspaceId;
+    if (home === undefined || !listed.has(home)) continue;
     const bucket = byWorkspace.get(home) ?? [];
     bucket.push(thread);
     byWorkspace.set(home, bucket);
@@ -178,6 +175,5 @@ export function buildSidebarWorkspaceSections(
       ...shownSections.filter((section) => !section.pinned),
     ],
     hiddenSections: all.filter((section) => section.hidden),
-    unplacedThreadIds,
   };
 }

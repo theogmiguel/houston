@@ -11,7 +11,11 @@ import {
   type LayoutTabContent,
 } from "../../layout/layoutModel";
 import { createLayoutWorkspaceNamed } from "../../layout/layoutWorkspaces";
-import { buildSidebarWorkspaceSections } from "./sidebarWorkspaceSections";
+import { membershipKeyOf, type ThreadMembershipState } from "../../layout/threadMembership";
+import {
+  buildSidebarWorkspaceSections,
+  type SidebarWorkspaceSectionsInput,
+} from "./sidebarWorkspaceSections";
 
 const NOW = "2026-06-01T12:00:00.000Z";
 const environmentId = EnvironmentId.make("env-1");
@@ -65,6 +69,49 @@ function layoutOf(spec: ReadonlyArray<readonly [string, ReadonlyArray<string>]>)
   return state;
 }
 
+/**
+ * The memberships a server would hold for `layout`: each thread with a chat tab belongs to that
+ * tab's workspace, and `extra` places threads that have no tab, by workspace name.
+ */
+function membershipsOf(
+  layout: LayoutState,
+  extra: Readonly<Record<string, string>> = {},
+): ThreadMembershipState {
+  const byThread = new Map<string, { workspaceId: string; parentThreadId: string | null }>();
+  for (const workspace of layout.workspaces) {
+    for (const column of workspace.columns) {
+      for (const pane of column.panes) {
+        for (const tab of pane.tabs) {
+          if (tab.content.kind !== "chat" || tab.content.target.kind !== "server") continue;
+          const ref = tab.content.target.threadRef;
+          byThread.set(membershipKeyOf(ref.environmentId, ref.threadId), {
+            workspaceId: workspace.id,
+            parentThreadId: null,
+          });
+        }
+      }
+    }
+  }
+  for (const [threadId, name] of Object.entries(extra)) {
+    const workspace = layout.workspaces.find((candidate) => candidate.name === name);
+    byThread.set(membershipKeyOf(environmentId, threadId), {
+      workspaceId: workspace?.id ?? name,
+      parentThreadId: null,
+    });
+  }
+  return { loaded: true, byThread, occupied: new Set() };
+}
+
+type BuildInput = Omit<SidebarWorkspaceSectionsInput, "memberships"> & {
+  readonly memberships?: ThreadMembershipState;
+  readonly extra?: Readonly<Record<string, string>>;
+};
+const build = ({ memberships, extra, ...input }: BuildInput) =>
+  buildSidebarWorkspaceSections({
+    ...input,
+    memberships: memberships ?? membershipsOf(input.layout, extra),
+  });
+
 const base = {
   nowIso: NOW,
   query: "",
@@ -75,10 +122,11 @@ const base = {
 const ids = (threads: ReadonlyArray<EnvironmentThreadShell>) => threads.map((t) => t.id);
 
 describe("buildSidebarWorkspaceSections", () => {
-  it("lists one workspace with the threads whose chat tab it holds, in tab order", () => {
-    const { sections } = buildSidebarWorkspaceSections({
+  it("lists one workspace with its threads, those with an open tab first and in tab order", () => {
+    const { sections } = build({
       ...base,
       layout: layoutOf([["Today", ["b", "a"]]]),
+      extra: { "c-not-open": "Today" },
       threads: [thread("a"), thread("b"), thread("c-not-open")],
     });
     expect(sections.map((s) => s.name)).toEqual(["Today"]);
@@ -86,7 +134,7 @@ describe("buildSidebarWorkspaceSections", () => {
   });
 
   it("lists several workspaces in the layout's order and keeps each thread under its own", () => {
-    const { sections } = buildSidebarWorkspaceSections({
+    const { sections } = build({
       ...base,
       layout: layoutOf([
         ["First", ["a"]],
@@ -101,7 +149,7 @@ describe("buildSidebarWorkspaceSections", () => {
   });
 
   it("lets one workspace hold threads of two projects", () => {
-    const { sections } = buildSidebarWorkspaceSections({
+    const { sections } = build({
       ...base,
       layout: layoutOf([["Mixed", ["a", "b"]]]),
       threads: [thread("a", "p1"), thread("b", "p2")],
@@ -111,11 +159,9 @@ describe("buildSidebarWorkspaceSections", () => {
 
   it("lists the empty workspace the user is on, with no threads, and not the unfocused trailing one", () => {
     const layout = layoutOf([["Full", ["a"]]]);
-    expect(
-      buildSidebarWorkspaceSections({ ...base, layout, threads: [thread("a")] }).sections,
-    ).toHaveLength(1);
+    expect(build({ ...base, layout, threads: [thread("a")] }).sections).toHaveLength(1);
     const onEmpty = createLayoutWorkspaceNamed(layout, "Blank").state;
-    const { sections } = buildSidebarWorkspaceSections({
+    const { sections } = build({
       ...base,
       layout: onEmpty,
       threads: [thread("a")],
@@ -126,18 +172,76 @@ describe("buildSidebarWorkspaceSections", () => {
     ]);
   });
 
-  it("puts a thread whose chat is in no workspace under the first one and reports it", () => {
-    const result = buildSidebarWorkspaceSections({
+  it("rule 9: a thread with no tab open stays under the workspace it belongs to", () => {
+    const result = build({
       ...base,
       layout: layoutOf([
         ["First", ["a"]],
         ["Second", ["b"]],
       ]),
+      extra: { loose: "Second" },
       threads: [thread("a"), thread("b"), thread("loose")],
     });
-    expect(ids(result.sections[0]!.threads)).toEqual(["a", "loose"]);
-    expect(ids(result.sections[1]!.threads)).toEqual(["b"]);
-    expect(result.unplacedThreadIds).toEqual(["loose"]);
+    expect(ids(result.sections[0]!.threads)).toEqual(["a"]);
+    expect(ids(result.sections[1]!.threads)).toEqual(["b", "loose"]);
+  });
+
+  it("does not list a thread the server has not placed yet, nor jump it under the first workspace", () => {
+    const layout = layoutOf([
+      ["First", ["a"]],
+      ["Second", ["b"]],
+    ]);
+    const input = { ...base, layout, threads: [thread("a"), thread("b"), thread("new")] };
+    const before = build(input);
+    expect(before.sections.flatMap((s) => ids(s.threads))).toEqual(["a", "b"]);
+    const after = build({ ...input, extra: { new: "Second" } });
+    expect(ids(after.sections[0]!.threads)).toEqual(["a"]);
+    expect(ids(after.sections[1]!.threads)).toEqual(["b", "new"]);
+  });
+
+  it("lists nothing before the first membership snapshot arrives", () => {
+    const layout = layoutOf([["First", ["a"]]]);
+    const { sections } = build({
+      ...base,
+      layout,
+      memberships: { loaded: false, byThread: new Map(), occupied: new Set() },
+      threads: [thread("a")],
+    });
+    expect(sections.map((s) => s.threads.length)).toEqual([0]);
+  });
+
+  it("ignores a membership whose thread is not loaded and one whose workspace is not in the layout", () => {
+    const layout = layoutOf([["First", ["a"]]]);
+    const { sections } = build({
+      ...base,
+      layout,
+      extra: { unknown: "First", stray: "no-such-workspace" },
+      threads: [thread("a"), thread("stray")],
+    });
+    expect(ids(sections[0]!.threads)).toEqual(["a"]);
+  });
+
+  it("lists a workspace that has threads but no open tab", () => {
+    const layout = layoutOf([
+      ["First", ["a"]],
+      ["Second", ["b"]],
+    ]);
+    const closed = {
+      ...layout,
+      workspaces: layout.workspaces.map((workspace) =>
+        workspace.name === "Second" ? { ...workspace, columns: [] } : workspace,
+      ),
+    };
+    const { sections } = build({
+      ...base,
+      layout: closed,
+      memberships: membershipsOf(layout),
+      threads: [thread("a"), thread("b")],
+    });
+    expect(sections.map((s) => [s.name, ids(s.threads), s.empty])).toEqual([
+      ["First", ["a"], false],
+      ["Second", ["b"], true],
+    ]);
   });
 
   it("ignores a draft chat and surface tabs when placing threads", () => {
@@ -147,13 +251,12 @@ describe("buildSidebarWorkspaceSections", () => {
       threadRef: scopeThreadRef(environmentId, ThreadId.make("b")),
       surfaceId: "diff",
     });
-    const { sections, unplacedThreadIds } = buildSidebarWorkspaceSections({
+    const { sections } = build({
       ...base,
       layout,
       threads: [thread("a"), thread("b")],
     });
-    expect(ids(sections[0]!.threads)).toEqual(["a", "b"]);
-    expect(unplacedThreadIds).toEqual(["b"]);
+    expect(ids(sections[0]!.threads)).toEqual(["a"]);
   });
 
   it("leaves out archived, deleted, closed, held and subagent threads", () => {
@@ -171,7 +274,7 @@ describe("buildSidebarWorkspaceSections", () => {
         },
       } as Partial<EnvironmentThreadShell>),
     ];
-    const { sections } = buildSidebarWorkspaceSections({
+    const { sections } = build({
       ...base,
       layout: layoutOf([["W", ["a"]]]),
       threads: [thread("a"), ...hidden],
@@ -180,7 +283,7 @@ describe("buildSidebarWorkspaceSections", () => {
   });
 
   it("leaves out threads of projects outside the filter", () => {
-    const { sections } = buildSidebarWorkspaceSections({
+    const { sections } = build({
       ...base,
       projectKeys: new Set(["env-1:p1"]),
       layout: layoutOf([["W", ["a", "b"]]]),
@@ -206,7 +309,7 @@ describe("buildSidebarWorkspaceSections", () => {
             : w,
       ),
     };
-    const result = buildSidebarWorkspaceSections({
+    const result = build({
       ...base,
       layout: marked,
       threads: [thread("a"), thread("b"), thread("c"), thread("d")],
@@ -219,14 +322,14 @@ describe("buildSidebarWorkspaceSections", () => {
   it("names an unnamed workspace by the resolver, else by its place", () => {
     let layout = openLayoutTab(createLayoutState(), chat("a"));
     layout = normalizeLayout(layout);
-    const resolved = buildSidebarWorkspaceSections({
+    const resolved = build({
       ...base,
       layout,
       threads: [thread("a")],
       resolveWorkspaceTitle: () => "Lead tab",
     });
     expect(resolved.sections[0]!.name).toBe("Lead tab");
-    const placed = buildSidebarWorkspaceSections({ ...base, layout, threads: [thread("a")] });
+    const placed = build({ ...base, layout, threads: [thread("a")] });
     expect(placed.sections[0]!.name).toBe("Workspace 1");
   });
 
@@ -240,14 +343,13 @@ describe("buildSidebarWorkspaceSections", () => {
       } as Partial<EnvironmentThreadShell>),
     ];
     const layout = layoutOf([["W", ["old", "new", "pinned"]]]);
+    expect(ids(build({ ...base, layout, threads }).sections[0]!.threads)).toEqual([
+      "pinned",
+      "old",
+      "new",
+    ]);
     expect(
-      ids(buildSidebarWorkspaceSections({ ...base, layout, threads }).sections[0]!.threads),
-    ).toEqual(["pinned", "old", "new"]);
-    expect(
-      ids(
-        buildSidebarWorkspaceSections({ ...base, threadSort: "updated_at", layout, threads })
-          .sections[0]!.threads,
-      ),
+      ids(build({ ...base, threadSort: "updated_at", layout, threads }).sections[0]!.threads),
     ).toEqual(["pinned", "new", "old"]);
   });
 
@@ -263,7 +365,7 @@ describe("buildSidebarWorkspaceSections", () => {
     ];
 
     it("keeps matching threads and drops workspaces with none", () => {
-      const { sections } = buildSidebarWorkspaceSections({
+      const { sections } = build({
         ...base,
         layout,
         threads,
@@ -273,7 +375,7 @@ describe("buildSidebarWorkspaceSections", () => {
     });
 
     it("shows every thread of a workspace whose name matches", () => {
-      const { sections } = buildSidebarWorkspaceSections({
+      const { sections } = build({
         ...base,
         layout,
         threads,
@@ -287,7 +389,7 @@ describe("buildSidebarWorkspaceSections", () => {
         ...layout,
         workspaces: layout.workspaces.map((w) => (w.name === "Alpha" ? { ...w, hidden: true } : w)),
       };
-      const result = buildSidebarWorkspaceSections({
+      const result = build({
         ...base,
         layout: hidden,
         threads,
@@ -298,7 +400,7 @@ describe("buildSidebarWorkspaceSections", () => {
   });
 
   it("lifts the threads Needs you lists out of their workspace and counts them", () => {
-    const { sections } = buildSidebarWorkspaceSections({
+    const { sections } = build({
       ...base,
       layout: layoutOf([["W", ["a", "b"]]]),
       threads: [thread("a"), thread("b")],
@@ -309,7 +411,7 @@ describe("buildSidebarWorkspaceSections", () => {
   });
 
   it("keeps those threads in their workspace while searching", () => {
-    const { sections } = buildSidebarWorkspaceSections({
+    const { sections } = build({
       ...base,
       query: "a",
       layout: layoutOf([["W", ["a"]]]),

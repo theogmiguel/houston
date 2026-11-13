@@ -130,7 +130,7 @@ describe("buildThreadActionMenuItems", () => {
     ]);
   });
 
-  it("offers Move to workspace with every other workspace, and nothing when there is none", () => {
+  it("offers Move to workspace with every other workspace and New workspace, and nothing for a thread that cannot move", () => {
     const items = buildThreadActionMenuItems({
       ...baseState,
       workspace: {
@@ -145,10 +145,19 @@ describe("buildThreadActionMenuItems", () => {
     expect(move?.children?.map((item) => [item.id, item.label])).toEqual([
       ["move-to-workspace:w2", "Reviews"],
       ["move-to-workspace:w3", "Today"],
+      ["move-to-new-workspace", "New workspace"],
     ]);
     const alone = buildThreadActionMenuItems({ ...baseState, workspace: { targets: [] } });
-    expect(alone.some((item) => item.id === "move-to-workspace")).toBe(false);
+    expect(
+      alone
+        .find((item) => item.id === "move-to-workspace")
+        ?.children?.map((item) => [item.id, item.label]),
+    ).toEqual([["move-to-new-workspace", "New workspace"]]);
+    // A child thread follows its parent: the surface passes no workspace, so no item appears.
+    const child = buildThreadActionMenuItems({ ...baseState, workspace: undefined });
+    expect(child.some((item) => item.id === "move-to-workspace")).toBe(false);
     expect(threadActionRequiresOperate("move-to-workspace:w2")).toBe(false);
+    expect(threadActionRequiresOperate("move-to-new-workspace")).toBe(false);
   });
 
   it("keeps every action of the previous menu reachable", () => {

@@ -987,8 +987,13 @@ describe("ThreadCard move to workspace", () => {
     { workspaceId: "ws-c", name: "Elsewhere" },
   ];
 
-  async function openMoveMenu(onMove: (workspaceId: string) => void = () => {}) {
-    const screen = await render(card(thread(), { workspaceMove: { targets, onMove } }));
+  async function openMoveMenu(
+    onMove: (workspaceId: string) => void = () => {},
+    onMoveToNew: () => void = () => {},
+  ) {
+    const screen = await render(
+      card(thread(), { workspaceMove: { targets, onMove, onMoveToNew } }),
+    );
     await userEvent.hover(screen.container.querySelector("[data-thread-key]") as HTMLElement);
     await userEvent.click(screen.getByRole("button", { name: /Thread actions for/ }));
     await userEvent.hover(page.getByRole("menuitem", { name: /Move to workspace/ }));
@@ -1000,6 +1005,15 @@ describe("ThreadCard move to workspace", () => {
 
     await expect.element(page.getByRole("menuitem", { name: "Review" })).toBeVisible();
     await expect.element(page.getByRole("menuitem", { name: "Elsewhere" })).toBeVisible();
+    await expect.element(page.getByRole("menuitem", { name: "New workspace" })).toBeVisible();
+  });
+
+  it("moves the thread to a new workspace", async () => {
+    const onMoveToNew = vi.fn();
+    await using _screen = await openMoveMenu(() => {}, onMoveToNew);
+    await userEvent.click(page.getByRole("menuitem", { name: "New workspace" }));
+
+    expect(onMoveToNew).toHaveBeenCalledOnce();
   });
 
   it("offers no submenu when no workspace input is given", async () => {

@@ -5,6 +5,7 @@ import "~/index.css";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
 import { render } from "../../../test/render";
 import { useLayoutStore } from "../../layout/layoutStore";
+import { setThreadMemberships } from "../../layout/threadMembership";
 import { SidebarProvider } from "../ui/sidebar";
 import { TooltipProvider } from "../ui/tooltip";
 import { ThreadSidebar } from "./ThreadSidebar";
@@ -181,7 +182,23 @@ function seedRows(): Disposable {
   useLayoutStore.getState().reset();
   fixtures.threads = rowThreads();
   fixtures.groupsReady = true;
-  return { [Symbol.dispose]: () => localStorage.clear() };
+  // The server has placed every thread in the layout's only workspace.
+  const workspaceId = useLayoutStore.getState().layout.workspaces[0]!.id;
+  setThreadMemberships(
+    fixtures.threads.map((thread) => ({
+      environmentId: "env-1",
+      threadId: (thread as { id: string }).id,
+      workspaceId,
+      parentThreadId: null,
+    })),
+    true,
+  );
+  return {
+    [Symbol.dispose]: () => {
+      localStorage.clear();
+      setThreadMemberships([], false);
+    },
+  };
 }
 
 /** Threads known, project list not yet delivered: the rail has no rows to draw them in. */

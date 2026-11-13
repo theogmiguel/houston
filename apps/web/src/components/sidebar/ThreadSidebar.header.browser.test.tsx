@@ -18,6 +18,12 @@ import {
 } from "./ThreadSidebar";
 import type { SidebarWorkspaceSection } from "./sidebarWorkspaceSections";
 
+const openCommandPalette = vi.fn();
+vi.mock(import("../../commandPaletteBus"), async (original) => ({
+  ...(await original()),
+  openCommandPalette: ((detail: unknown) => openCommandPalette(detail)) as never,
+}));
+
 const openAddProjectDialog = vi.fn();
 vi.mock("../AddProjectDialog", () => ({
   openAddProjectDialog: () => openAddProjectDialog(),
@@ -302,6 +308,23 @@ describe("Workspaces header", () => {
     await expect.element(page.getByText("Sort threads")).toBeVisible();
     await userEvent.click(page.getByRole("menuitem", { name: "New workspace" }).element());
     expect(onNewWorkspace).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts a thread from the toolbar in a new tab of the focused pane", async () => {
+    resetTestState();
+    openCommandPalette.mockClear();
+    await using screen = await render(
+      <TooltipProvider delay={0}>
+        <SidebarToolbarActions
+          options={options}
+          onChange={() => {}}
+          onReset={() => {}}
+          onNewWorkspace={() => {}}
+        />
+      </TooltipProvider>,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "New thread" }).element());
+    expect(openCommandPalette).toHaveBeenCalledWith({ open: "new-thread-in", newTab: true });
   });
 
   it("lists hidden workspaces and shows one again in the layout store", async () => {

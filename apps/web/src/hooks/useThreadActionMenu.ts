@@ -50,6 +50,7 @@ export interface ThreadActionMenuWorkspaceInput {
   /** The workspaces the thread's chat can move to, never the one it is in. */
   readonly targets: ReadonlyArray<{ readonly workspaceId: string; readonly name: string }>;
   readonly onMove: (workspaceId: string) => void;
+  readonly onMoveToNew: () => void;
 }
 
 export function useThreadActionMenu(input: {
@@ -160,6 +161,10 @@ export function useThreadActionMenu(input: {
         "Thread action unavailable",
         new Error("This connection cannot change threads."),
       );
+      return;
+    }
+    if (action === "move-to-new-workspace") {
+      workspace?.onMoveToNew();
       return;
     }
     if (action.startsWith("move-to-workspace:")) {

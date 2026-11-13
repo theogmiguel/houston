@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { settlePromise } from "@houston-app/client-runtime/state/runtime";
 import { scopedThreadKey, scopeThreadRef } from "@houston-app/client-runtime/environment";
+import { squashAtomCommandFailure } from "@houston-app/client-runtime/state/runtime";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
 import { effectiveSnoozed } from "@houston-app/client-runtime/state/thread-settled";
 import { useNavigate, useRouter, useLocation } from "@tanstack/react-router";
@@ -24,13 +25,10 @@ import { openAddProjectDialog } from "../AddProjectDialog";
 import { requestCustomSnooze } from "../CustomSnoozeDialog";
 import { isDesktopHost } from "../../env";
 import { DEFAULT_SIDEBAR_GRID_THREAD_SORT_ORDER } from "@houston-app/contracts/settings";
-import {
-  findLayoutTabByContent,
-  selectFocusedTab,
-  type LayoutWorkspace,
-} from "../../layout/layoutModel";
+import { selectFocusedTab, type LayoutWorkspace } from "../../layout/layoutModel";
 import { chatTargetThreadRef } from "../../layout/layoutThreadRef";
 import { useLayoutStore } from "../../layout/layoutStore";
+import { useThreadMembershipStore } from "../../layout/threadMembership";
 import {
   createLayoutWorkspaceAction,
   deleteLayoutWorkspaceAction,
@@ -90,7 +88,15 @@ import {
   buildSidebarWorkspaceSections,
   type SidebarWorkspaceSection,
 } from "./sidebarWorkspaceSections";
-import { moveThreadToWorkspaceWithFeedback, type ChatContent } from "./workspaceMoveFeedback";
+import { moveThreadToWorkspaceWithFeedback } from "./workspaceMoveFeedback";
+import { planForeignThreadAssignments } from "./foreignThreadMembership";
+import { assignThreadWorkspace } from "../../layout/threadWorkspaceCommands";
+import { layoutEnvironmentId } from "../../layout/layoutSyncRuntime";
+import {
+  deleteWorkspaceThreads,
+  planWorkspaceDeletion,
+  workspaceDeletionMessage,
+} from "./workspaceDeletion";
 import type { NeedsYouEntry } from "./needsYouSection";
 import { buildNeedsYouEntries, isNeedsYouThread } from "./needsYouSection";
 import {
@@ -182,19 +188,6 @@ import { parseThreadRoutePathname } from "../../threadRoutes";
 
 type DraggedThread = ThreadDragSource;
 
-const loggedUnplacedKeys = new Set<string>();
-
-/** Logs once per distinct set of threads the layout shows no chat for. */
-function logUnplacedThreads(threadIds: ReadonlyArray<string>, firstWorkspace: string): void {
-  if (threadIds.length === 0) return;
-  const key = `${firstWorkspace}\u0000${threadIds.join(",")}`;
-  if (loggedUnplacedKeys.has(key)) return;
-  loggedUnplacedKeys.add(key);
-  console.warn(
-    `The layout shows no chat tab for ${threadIds.length} thread(s) (${threadIds.join(", ")}); the sidebar lists them under the first workspace, "${firstWorkspace}", where the server places them.`,
-  );
-}
-
 function explain(title: string, description: string): void {
   toastManager.add(stackedThreadToast({ type: "error", title, description }));
 }
@@ -226,6 +219,7 @@ export function ThreadSidebar({
     }),
   );
   const layout = useLayoutStore((store) => store.layout);
+  const memberships = useThreadMembershipStore((store) => store);
   const providerEntriesByEnvironment = useAtomValue(sidebarProviderEntriesAtom);
   const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
   const threadSort = useClientSettings((settings) => settings.sidebarGridThreadSortOrder);
@@ -280,6 +274,63 @@ export function ThreadSidebar({
 
   const actions = useThreadActions();
   const handleNewThread = useNewThreadHandler();
+  // Each foreign thread is asked for once; a refused ask is retried on the next load, not in a loop.
+  const askedForeignThreads = useRef(new Set<string>());
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- threads of other environments are hosted outside the layout server, so the window reports their workspace to it
+  useEffect(() => {
+    const pending = planForeignThreadAssignments({
+      threads,
+      memberships,
+      layout,
+      layoutEnvironmentId: layoutEnvironmentId(),
+    }).filter(
+      (entry) => !askedForeignThreads.current.has(`${entry.environmentId}:${entry.threadId}`),
+    );
+    for (const entry of pending) {
+      askedForeignThreads.current.add(`${entry.environmentId}:${entry.threadId}`);
+      void assignThreadWorkspace(entry, entry.workspaceId).catch(() => {
+        askedForeignThreads.current.delete(`${entry.environmentId}:${entry.threadId}`);
+      });
+    }
+  }, [threads, memberships, layout]);
+  const deleteWorkspaceAndThreads = async (section: SidebarWorkspaceSection) => {
+    const plan = planWorkspaceDeletion({
+      workspaceId: section.workspaceId,
+      memberships,
+      threads,
+      nowIso,
+    });
+    // An empty workspace has nothing to lose, so it goes without asking.
+    if (plan.threads.length > 0) {
+      const { requestConfirmDialog } = await import("../../confirmDialog");
+      const confirmed =
+        (await requestConfirmDialog(workspaceDeletionMessage(section.name, plan), {
+          variant: "destructive",
+        })) ?? false;
+      if (!confirmed) return;
+      const failure = await deleteWorkspaceThreads({
+        workspaceName: section.name,
+        plan,
+        deleteThread: async (thread, deletedThreadKeys) => {
+          const result = await actions.deleteThread(
+            scopeThreadRef(thread.environmentId, thread.id),
+            {
+              deletedThreadKeys,
+            },
+          );
+          if (result === null || result._tag === "Success") return null;
+          const error = squashAtomCommandFailure(result);
+          return error instanceof Error ? error.message : String(error);
+        },
+      });
+      if (failure !== null) {
+        explain("Could not delete workspace", failure);
+        return;
+      }
+    }
+    const refusal = deleteLayoutWorkspaceAction(section.workspaceId);
+    if (refusal !== null) explain("Could not delete workspace", refusal);
+  };
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
@@ -393,6 +444,7 @@ export function ThreadSidebar({
   const searching = query.length > 0;
   const sectionInput = {
     layout,
+    memberships,
     threads,
     threadSort,
     nowIso,
@@ -411,19 +463,12 @@ export function ThreadSidebar({
     query,
     excludedThreadIds: showNeedsYou ? needsYouThreadIds : undefined,
   });
-  const firstWorkspace = everything.sections[0] ?? everything.hiddenSections[0];
-  logUnplacedThreads(everything.unplacedThreadIds, firstWorkspace?.name ?? "");
 
   const workspaceNames = new Map(
     [...everything.sections, ...everything.hiddenSections].map((section) => [
       section.workspaceId,
       section.name,
     ]),
-  );
-  const workspaceOfThread = new Map(
-    [...everything.sections, ...everything.hiddenSections].flatMap((section) =>
-      section.threads.map((thread) => [thread.id, section.workspaceId] as const),
-    ),
   );
   const railTargets = everything.sections.flatMap((section) =>
     section.threads.map((thread) => ({
@@ -681,25 +726,22 @@ export function ThreadSidebar({
     return action !== null;
   };
 
-  // A move lands the thread's chat in the workspace but does not move the user; the toast offers
-  // the workspace and the way back.
-  const moveThreadToWorkspace = (thread: EnvironmentThreadShell, targetWorkspaceId: string) => {
-    const content: ChatContent = {
-      kind: "chat",
-      target: { kind: "server", threadRef: scopeThreadRef(thread.environmentId, thread.id) },
-    };
-    const shownIn = workspaceOfThread.get(thread.id) ?? targetWorkspaceId;
-    const placedIn = findLayoutTabByContent(useLayoutStore.getState().layout, content)?.workspace
-      .id;
-    if (placedIn === targetWorkspaceId) return;
-    moveThreadToWorkspaceWithFeedback({
-      content,
+  // The server moves the thread, its children and their tabs in one step but does not move the
+  // user; the toast offers the workspace and the way back.
+  const moveThreadToWorkspace = (
+    thread: EnvironmentThreadShell,
+    target: string | "new-workspace",
+  ) => {
+    const current = memberships.byThread.get(threadKeyOf(thread))?.workspaceId;
+    if (target === current) return;
+    void moveThreadToWorkspaceWithFeedback({
+      thread: { environmentId: thread.environmentId, threadId: thread.id },
       threadTitle: thread.title,
-      source: {
-        workspaceId: placedIn ?? shownIn,
-        name: workspaceNames.get(placedIn ?? shownIn) ?? "",
-      },
-      target: { workspaceId: targetWorkspaceId, name: workspaceNames.get(targetWorkspaceId) ?? "" },
+      target:
+        target === "new-workspace"
+          ? "new-workspace"
+          : { workspaceId: target, name: workspaceNames.get(target) ?? "" },
+      nameOf: (workspaceId) => workspaceNames.get(workspaceId) ?? "",
       onOpenTarget: (workspaceId) => useLayoutStore.getState().focusWorkspace(workspaceId),
     });
   };
@@ -711,12 +753,18 @@ export function ThreadSidebar({
   const workspaceMoveFor = (
     thread: EnvironmentThreadShell,
   ): ThreadActionMenuWorkspaceInput | undefined => {
-    const current = workspaceOfThread.get(thread.id) ?? null;
+    const entry = memberships.byThread.get(threadKeyOf(thread));
+    // A subagent child follows its parent and has no workspace choice of its own.
+    if (entry?.parentThreadId != null || thread.lineage.relationshipToParent === "subagent") {
+      return undefined;
+    }
+    const current = entry?.workspaceId ?? null;
     return {
       targets: everything.sections
         .filter((section) => section.workspaceId !== current)
         .map((section) => ({ workspaceId: section.workspaceId, name: section.name })),
       onMove: (workspaceId) => moveThreadToWorkspace(thread, workspaceId),
+      onMoveToNew: () => moveThreadToWorkspace(thread, "new-workspace"),
     };
   };
 
@@ -852,6 +900,7 @@ export function ThreadSidebar({
       onSetAutoClose={setAutoClose}
       workspaceMoveFor={workspaceMoveFor}
       handleNewThread={handleNewThread}
+      onDeleteWorkspace={(target) => void deleteWorkspaceAndThreads(target)}
     />
   );
 
@@ -1310,7 +1359,7 @@ export function SidebarToolbarActions({
             <button
               type="button"
               aria-label="New thread"
-              onClick={() => openCommandPalette({ open: "new-thread-in" })}
+              onClick={() => openCommandPalette({ open: "new-thread-in", newTab: true })}
               className={SIDEBAR_TOOLBAR_ACTION_CLS}
             />
           }
@@ -1411,18 +1460,6 @@ function NewWorkspaceField({
 
 function workspaceRowId(workspaceId: string) {
   return `workspace:${workspaceId}`;
-}
-
-async function deleteWorkspaceWithConfirm(section: SidebarWorkspaceSection): Promise<void> {
-  const { requestConfirmDialog } = await import("../../confirmDialog");
-  const confirmed =
-    (await requestConfirmDialog(
-      `Delete the workspace “${section.name}”? Its tabs close; its threads stay active and appear under another workspace.`,
-      { variant: "destructive" },
-    )) ?? false;
-  if (!confirmed) return;
-  const refusal = deleteLayoutWorkspaceAction(section.workspaceId);
-  if (refusal !== null) explain("Could not delete workspace", refusal);
 }
 
 /** The threads that wait on the user, lifted above the workspaces when the rail shows them. */
@@ -1547,6 +1584,7 @@ export function SidebarWorkspaceGroup({
   onSetAutoClose,
   workspaceMoveFor,
   handleNewThread,
+  onDeleteWorkspace,
 }: {
   section: SidebarWorkspaceSection;
   query: string;
@@ -1586,6 +1624,8 @@ export function SidebarWorkspaceGroup({
   onSetAutoClose: (thread: EnvironmentThreadShell, enabled: boolean) => void;
   workspaceMoveFor: (thread: EnvironmentThreadShell) => ThreadActionMenuWorkspaceInput | undefined;
   handleNewThread?: NewThreadHandler | undefined;
+  /** Deletes the workspace and its threads after asking; absent, the menu item does nothing. */
+  onDeleteWorkspace?: ((section: SidebarWorkspaceSection) => void) | undefined;
 }) {
   const { workspaceId, name: workspaceName, threads } = section;
   const [renaming, setRenaming] = useState(false);
@@ -1632,7 +1672,7 @@ export function SidebarWorkspaceGroup({
       );
       return;
     }
-    void deleteWorkspaceWithConfirm(section);
+    onDeleteWorkspace?.(section);
   };
 
   const actionsButtonRef = useRef<HTMLButtonElement | null>(null);

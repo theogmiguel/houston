@@ -138,7 +138,11 @@ function card(
           onRename={() => {}}
           onSetAutoClose={() => {}}
           onDropOnThread={() => {}}
-          workspaceMove={{ targets: [{ workspaceId: "ws-b", name: "Review" }], onMove: () => {} }}
+          workspaceMove={{
+            targets: [{ workspaceId: "ws-b", name: "Review" }],
+            onMove: () => {},
+            onMoveToNew: () => {},
+          }}
           handleNewThread={async () => null}
         />
       </TooltipProvider>

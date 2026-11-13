@@ -1089,4 +1089,19 @@ describe("command palette opening groups", () => {
     expect(groups.map((group) => group.value)).not.toContain("recent-threads");
     expect(groups.map((group) => group.value)).not.toContain("projects");
   });
+
+  it("carries the new-tab request of the toolbar's New thread into the open intent", () => {
+    const closed: CommandPaletteUiState = {
+      open: false,
+      mode: "command",
+      openIntent: null,
+      session: 0,
+    };
+    expect(
+      reduceCommandPaletteUiState(closed, { _tag: "OpenNewThreadIn", newTab: true }).openIntent,
+    ).toEqual({ kind: "new-thread-in", newTab: true });
+    expect(reduceCommandPaletteUiState(closed, { _tag: "OpenNewThreadIn" }).openIntent).toEqual({
+      kind: "new-thread-in",
+    });
+  });
 });

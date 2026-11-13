@@ -66,6 +66,7 @@ import { APP_VERSION } from "~/branding";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
+import type { HoustonLayoutThreadMembership } from "@houston-app/contracts/houston/layoutWorkspaces";
 import type * as Scope from "effect/Scope";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
@@ -845,6 +846,23 @@ const realFetch = globalThis.fetch;
 const encodedDescriptor = Schema.encodeSync(ExecutionEnvironmentDescriptor)(
   Schema.decodeUnknownSync(ExecutionEnvironmentDescriptor)(descriptor),
 );
+
+/**
+ * The workspace assignments the layout server would hold for the installed threads: each goes to
+ * `workspaceId`, a subagent follows its parent, and a side chat has none.
+ */
+export function fakeThreadMemberships(
+  workspaceId: string,
+): ReadonlyArray<HoustonLayoutThreadMembership> {
+  return threads
+    .filter((thread) => thread.sideChatOf === undefined)
+    .map((thread) => ({
+      environmentId: ENVIRONMENT_ID,
+      threadId: thread.id,
+      workspaceId,
+      parentThreadId: thread.subagentOf ?? null,
+    }));
+}
 
 /**
  * Serves the environment's HTTP API and these threads until disposed. `deletedThreadIds` names

@@ -278,7 +278,7 @@ import { readPullRequestListPreferences } from "~/components/pullRequest/pullReq
 import { useActiveThreadRouteTarget } from "../hooks/useThreadRouteTarget";
 import { buildLayoutPaletteItems } from "../layout/layoutPaletteItems";
 import { useThreadActions } from "../hooks/useThreadActions";
-import { useLayoutStore } from "../layout/layoutStore";
+import { runInNewLayoutTab, useLayoutStore } from "../layout/layoutStore";
 import {
   createLayoutWorkspaceAction,
   hideLayoutWorkspaceAction,
@@ -922,6 +922,8 @@ function OpenCommandPaletteDialog(props: {
     true,
   );
 
+  const opensInNewTab =
+    props.openIntent?.kind === "new-thread-in" && props.openIntent.newTab === true;
   const openingOrderThreadItems = useOrderWhileOpen(
     (() => {
       const isScratch = (project: CommandPaletteProject) =>
@@ -932,19 +934,22 @@ function OpenCommandPaletteDialog(props: {
         locationByEnvironmentId: projectEnvironmentLocationById,
         pin: projectPin,
         runProject: async (project) => {
-          const group = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`);
-          const contextualRefBelongsToGroup =
-            contextualProjectRef !== null &&
-            group?.memberProjectRefs.some(
-              (projectRef) =>
-                projectRef.environmentId === contextualProjectRef.environmentId &&
-                projectRef.projectId === contextualProjectRef.projectId,
+          const startThread = async () => {
+            const group = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`);
+            const contextualRefBelongsToGroup =
+              contextualProjectRef !== null &&
+              group?.memberProjectRefs.some(
+                (projectRef) =>
+                  projectRef.environmentId === contextualProjectRef.environmentId &&
+                  projectRef.projectId === contextualProjectRef.projectId,
+              );
+            await handleNewThread(
+              contextualRefBelongsToGroup
+                ? contextualProjectRef
+                : scopeProjectRef(project.environmentId, project.id),
             );
-          await handleNewThread(
-            contextualRefBelongsToGroup
-              ? contextualProjectRef
-              : scopeProjectRef(project.environmentId, project.id),
-          );
+          };
+          await (opensInNewTab ? runInNewLayoutTab(startThread) : startThread());
         },
       });
       if (scratchTargetEnvironmentId === null) return projectItems;
@@ -968,7 +973,10 @@ function OpenCommandPaletteDialog(props: {
           title: "No project",
           icon: <MessageSquareDashedIcon className={ITEM_ICON_CLASS} />,
           shortcutCommand: "chat.newWithoutProject" as const,
-          run: () => startScratchThread(scratchTargetEnvironmentId),
+          run: () =>
+            opensInNewTab
+              ? runInNewLayoutTab(() => startScratchThread(scratchTargetEnvironmentId))
+              : startScratchThread(scratchTargetEnvironmentId),
         },
         ...projectItems.slice(noProjectIndex),
       ];
@@ -1259,7 +1267,11 @@ function OpenCommandPaletteDialog(props: {
       const refusal = createLayoutWorkspaceAction("");
       if (refusal !== null) {
         toastManager.add(
-          stackedThreadToast({ type: "error", title: "Cannot create a workspace", description: refusal }),
+          stackedThreadToast({
+            type: "error",
+            title: "Cannot create a workspace",
+            description: refusal,
+          }),
         );
       }
     },

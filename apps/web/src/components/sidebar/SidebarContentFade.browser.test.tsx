@@ -15,7 +15,8 @@ import {
   type LayoutTabContent,
 } from "../../layout/layoutModel";
 import { useLayoutStore } from "../../layout/layoutStore";
-import { createLayoutWorkspaceNamed } from "../../layout/layoutWorkspaces";
+import { createLayoutWorkspaceNamed, listLayoutWorkspaces } from "../../layout/layoutWorkspaces";
+import { setThreadMemberships } from "../../layout/threadMembership";
 import { Sidebar, SidebarFooter, SidebarProvider } from "../ui/sidebar";
 import { TooltipProvider } from "../ui/tooltip";
 import { ThreadSidebar } from "./ThreadSidebar";
@@ -200,9 +201,24 @@ function RailHarness() {
 function seed(spec: Parameters<typeof layoutOf>[0], threads: EnvironmentThreadShell[]): Disposable {
   localStorage.clear();
   fixtures.threads = threads;
-  useLayoutStore.setState({ layout: layoutOf(spec) });
+  const layout = layoutOf(spec);
+  useLayoutStore.setState({ layout });
+  setThreadMemberships(
+    spec.flatMap((entry) =>
+      entry.chats.map((threadId) => ({
+        environmentId: "env-1",
+        threadId,
+        workspaceId: listLayoutWorkspaces(layout).find(
+          (workspace) => workspace.name === entry.name,
+        )!.id,
+        parentThreadId: null,
+      })),
+    ),
+    true,
+  );
   return {
     [Symbol.dispose]: () => {
+      setThreadMemberships([], false);
       localStorage.clear();
       endThreadDrag();
       vi.restoreAllMocks();

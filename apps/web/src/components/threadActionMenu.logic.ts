@@ -6,6 +6,7 @@ export type ThreadActionMenuId =
   | "new-thread-on-branch"
   | "move-to-workspace"
   | `move-to-workspace:${string}`
+  | "move-to-new-workspace"
   | "settle"
   | "unsettle"
   | "auto-settle"
@@ -71,7 +72,7 @@ export function buildDraftActionMenuItems(options: {
   ];
 }
 
-/** The workspaces a thread's chat can move to; absent when the surface lists no workspaces. */
+/** The workspaces a thread can move to; absent when it cannot move (a child follows its parent). */
 export interface ThreadActionMenuWorkspaceState {
   readonly targets: ReadonlyArray<{ readonly workspaceId: string; readonly name: string }>;
 }
@@ -117,6 +118,7 @@ export function threadActionRequiresOperate(action: ThreadActionMenuId): boolean
     action === "new-thread-on-branch" ||
     action === "move-to-workspace" ||
     action.startsWith("move-to-workspace:") ||
+    action === "move-to-new-workspace" ||
     action === "project-settings" ||
     action === "mark-unread" ||
     action === "copy" ||
@@ -210,15 +212,22 @@ export function buildThreadActionMenuItems(
     : [];
   const organise = hasThread
     ? menuSection("organise", "Organise", [
-        state.workspace !== undefined && state.workspace.targets.length > 0
+        state.workspace !== undefined
           ? {
               id: "move-to-workspace",
               label: "Move to workspace",
               icon: "layout-grid",
-              children: state.workspace.targets.map((target) => ({
-                id: `move-to-workspace:${target.workspaceId}` as const,
-                label: target.name,
-              })),
+              children: [
+                ...state.workspace.targets.map((target) => ({
+                  id: `move-to-workspace:${target.workspaceId}` as const,
+                  label: target.name,
+                })),
+                {
+                  id: "move-to-new-workspace" as const,
+                  label: "New workspace",
+                  separatorBefore: state.workspace.targets.length > 0,
+                },
+              ],
             }
           : null,
         {
