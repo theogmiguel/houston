@@ -194,21 +194,23 @@ it(
       expect(footer.getBoundingClientRect().top).toBeGreaterThanOrEqual(
         editor.getBoundingClientRect().bottom - 1,
       );
-      // The checkout and the pickers live in the row under the card, never in the card.
-      expect(footer.querySelector("[data-chat-provider-model-picker]")).toBeNull();
+      // The pickers live in the card's toolbar; the checkout lives in the tab under the card.
       expect(footer.querySelector('[aria-label^="Workspace:"]')).toBeNull();
       const row = tab.querySelector<HTMLElement>('[data-composer-context-tray="true"]')!;
       expect(row).not.toBeNull();
       const card = tab.querySelector<HTMLElement>("[data-chat-composer-main-surface]")!;
-      expect(row.getBoundingClientRect().top).toBeGreaterThanOrEqual(
-        card.getBoundingClientRect().bottom - 1,
+      expect(row.getBoundingClientRect().bottom).toBeGreaterThan(
+        card.getBoundingClientRect().bottom,
       );
-      expect(row.getBoundingClientRect().height).toBeLessThanOrEqual(32);
+      expect(
+        row.getBoundingClientRect().bottom - card.getBoundingClientRect().bottom,
+      ).toBeLessThanOrEqual(32);
+      expect(row.querySelector("[data-chat-provider-model-picker]")).toBeNull();
 
       // The model chip never shows a clipped name: it is whole, or it dropped to the provider
       // mark with the full name in its tooltip.
       const modelChip = await vi.waitFor(() => {
-        const found = row.querySelector<HTMLElement>("[data-chat-provider-model-picker]");
+        const found = footer.querySelector<HTMLElement>("[data-chat-provider-model-picker]");
         expect(found).not.toBeNull();
         return found!;
       });

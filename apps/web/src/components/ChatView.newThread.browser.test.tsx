@@ -108,9 +108,14 @@ it.each([1440, 800])(
     expect(card.left).toBeGreaterThanOrEqual(pane.left);
     expect(card.right).toBeLessThanOrEqual(pane.right);
     expect(stack.getBoundingClientRect().bottom).toBeLessThanOrEqual(pane.bottom);
-    // The checkout and branch line sits under the card, inside the pane.
-    const contextTray = document.querySelector<HTMLElement>("[data-composer-context-tray]")!;
-    expect(contextTray.getBoundingClientRect().top).toBeGreaterThanOrEqual(card.bottom);
+    // The context tab hangs under the card once the environment reports it, inside the pane.
+    const contextTray = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLElement>("[data-composer-context-tray]");
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    // The bottom-anchored stack grows by the tab, so the card is measured again.
+    expect(contextTray.getBoundingClientRect().bottom).toBeGreaterThan(composerBoxes().card.bottom);
     expect(contextTray.getBoundingClientRect().bottom).toBeLessThanOrEqual(pane.bottom);
   },
   APP_BOOT_TEST_TIMEOUT_MS,

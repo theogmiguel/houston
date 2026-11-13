@@ -45,6 +45,7 @@ import {
   useEffectEvent,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
   type SyntheticEvent,
 } from "react";
@@ -169,6 +170,12 @@ const TIMELINE_LIST_HEADER = <div className="h-3 sm:h-4" />;
 const TIMELINE_LIST_FADE_HEADER = (
   <div className="h-[var(--workspace-titlebar-scroll-fade-height)]" />
 );
+/**
+ * The gap between the last row and the composer's overlay. The fade before the composer starts
+ * this far above the overlay (`--timeline-end-fade-height` in index.css), so a thread at its end
+ * keeps its last row clear of the fade.
+ */
+const TIMELINE_END_GAP_PX = 16;
 function TimelineListFooter({
   composerInset,
   onGrow,
@@ -194,7 +201,7 @@ function TimelineListFooter({
     <div>
       <div ref={contentRef}>{children}</div>
       <div aria-hidden style={{ height: composerInset }} />
-      <div aria-hidden className="h-3 sm:h-4" />
+      <div aria-hidden style={{ height: TIMELINE_END_GAP_PX }} />
     </div>
   );
 }
@@ -1283,6 +1290,15 @@ const ConversationTimeline = memo(function ConversationTimeline({
       </div>
     </TimelineRowCtx>
   );
+  const topFade = topFadeEnabled && scrolledFromTop;
+  const timelineFadeStyle = {
+    ...(topFade
+      ? { "--timeline-fade-top": "calc(var(--workspace-titlebar-scroll-fade-height) + 1px)" }
+      : {}),
+    ...(contentInsetEndAdjustment > 0
+      ? { "--timeline-fade-end": `${contentInsetEndAdjustment + TIMELINE_END_GAP_PX}px` }
+      : {}),
+  } as CSSProperties;
   const listExtraData = { identity: listIdentityKey, rowCount: rows.length, sharedState };
   const timelineListFooter = (
     <TimelineListFooter
@@ -1395,8 +1411,9 @@ const ConversationTimeline = memo(function ConversationTimeline({
               onItemSizeChanged={handleItemSizeChanged}
               className={cn(
                 "messages-timeline-scroll scrollbar-gutter-both h-full min-h-0 overflow-x-hidden overscroll-y-contain [overflow-anchor:none]",
-                topFadeEnabled && scrolledFromTop && "topbar-scroll-fade",
+                (topFade || contentInsetEndAdjustment > 0) && "timeline-scroll-fade",
               )}
+              style={timelineFadeStyle}
               ListHeaderComponent={listHeader}
               ListFooterComponent={timelineListFooter}
             />

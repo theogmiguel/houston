@@ -674,6 +674,49 @@ body {
     var(--app-scrollbar-width) 100%;
 }
 
+/* The chat timeline's two edge fades as one mask: rows dissolve under the header (while the list is
+   scrolled) and before the composer that floats over the list's end, so no row shows through the
+   composer's context tab. Each band is as tall as its custom property and a 0px band draws
+   nothing; the scrollbar lane stays opaque. */
+@utility timeline-scroll-fade {
+  --timeline-scroll-fade-mask:
+    linear-gradient(
+      to bottom,
+      transparent 0%,
+      rgb(0 0 0 / 10%) 10%,
+      rgb(0 0 0 / 30%) 24%,
+      rgb(0 0 0 / 58%) 42%,
+      rgb(0 0 0 / 82%) 62%,
+      rgb(0 0 0 / 96%) 82%,
+      black 100%
+    ),
+    linear-gradient(
+      to bottom,
+      black 0,
+      rgb(0 0 0 / 96%) calc(var(--timeline-end-fade-height) * 0.18),
+      rgb(0 0 0 / 82%) calc(var(--timeline-end-fade-height) * 0.38),
+      rgb(0 0 0 / 58%) calc(var(--timeline-end-fade-height) * 0.58),
+      rgb(0 0 0 / 30%) calc(var(--timeline-end-fade-height) * 0.76),
+      rgb(0 0 0 / 10%) calc(var(--timeline-end-fade-height) * 0.9),
+      transparent var(--timeline-end-fade-height)
+    ),
+    linear-gradient(black, black), linear-gradient(black, black);
+  --timeline-scroll-fade-size:
+    100% var(--timeline-fade-top, 0px), 100% var(--timeline-fade-end, 0px),
+    100% calc(100% - var(--timeline-fade-top, 0px) - var(--timeline-fade-end, 0px) + 2px),
+    var(--app-scrollbar-width) 100%;
+  --timeline-scroll-fade-position:
+    top, bottom, left 0 top calc(var(--timeline-fade-top, 0px) - 1px), right;
+  -webkit-mask-image: var(--timeline-scroll-fade-mask);
+  -webkit-mask-position: var(--timeline-scroll-fade-position);
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: var(--timeline-scroll-fade-size);
+  mask-image: var(--timeline-scroll-fade-mask);
+  mask-position: var(--timeline-scroll-fade-position);
+  mask-repeat: no-repeat;
+  mask-size: var(--timeline-scroll-fade-size);
+}
+
 /* Virtualizers own their native scroll element, so they cannot use ScrollArea's
    viewport fade. Keep the scrollbar lane opaque while sharing the same fade
    contract across those lists. */
@@ -2882,6 +2925,10 @@ code {
      instead of being cut. It is tall enough that a card's divider line under the header is
      already faint. The list's header spacer is as tall, so rows rest below it. */
   --workspace-titlebar-scroll-fade-height: 3rem;
+  /* The fade before the composer. The list rests 16px above the composer's overlay and the
+     composer's own top edge sits 6px inside it, so 22px ends the fade on that edge and leaves the
+     last row of a thread at its end whole. */
+  --timeline-end-fade-height: 22px;
 }
 
 /* The timeline prose measure and rhythm: 14/22 in the shared lane (leading 1.57, the range the

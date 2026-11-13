@@ -112,8 +112,8 @@ it(
     );
     const cardBox = card.getBoundingClientRect();
 
-    // Wide form: one quiet footer row under the card holds the checkout and branch on the left
-    // and the pickers on the right; the card itself holds only the text with attach, voice and send.
+    // Wide form: an opaque tab under the card holds the checkout and branch; the card holds the
+    // text and, in its toolbar, attach, the pickers, voice and send.
     expect(document.querySelector('[data-composer-changes-tray="true"]')).toBeNull();
     const tray = await vi.waitFor(
       () => {
@@ -128,15 +128,20 @@ it(
     const footer = document.querySelector<HTMLElement>('[data-chat-composer-footer="true"]')!;
     expect(footer.querySelector("[data-composer-context-control]")).toBeNull();
     expect(footer.querySelector('[aria-label^="Workspace:"]')).toBeNull();
-    expect(footer.querySelector("[data-chat-provider-model-picker]")).toBeNull();
-    const pickers = tray.querySelector<HTMLElement>("[data-chat-provider-model-picker]");
+    expect(tray.querySelector("[data-chat-provider-model-picker]")).toBeNull();
+    const pickers = footer.querySelector<HTMLElement>("[data-chat-provider-model-picker]");
     expect(pickers).not.toBeNull();
     const trayBox = tray.getBoundingClientRect();
     const cardWithTray = card.getBoundingClientRect();
-    expect(trayBox.top).toBeGreaterThanOrEqual(cardWithTray.bottom);
-    expect(trayBox.top - cardWithTray.bottom).toBeLessThanOrEqual(12);
+    // The tab tucks under the card's bottom edge and hangs below it, inset from the card's sides.
+    expect(trayBox.top).toBeLessThanOrEqual(cardWithTray.bottom);
+    expect(trayBox.bottom).toBeGreaterThan(cardWithTray.bottom + 16);
+    expect(trayBox.left).toBeGreaterThan(cardWithTray.left);
+    expect(trayBox.right).toBeLessThan(cardWithTray.right);
     expect(getComputedStyle(tray).borderTopWidth).toBe("0px");
-    expect(getComputedStyle(tray).backgroundColor).toBe("rgba(0, 0, 0, 0)");
+    // Opaque, in the card's own fill, so the thread never shows through the labels.
+    expect(getComputedStyle(tray).backgroundColor).toBe(getComputedStyle(card).backgroundColor);
+    expect(getComputedStyle(tray).backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
     expect(getComputedStyle(tray).flexWrap).not.toBe("wrap");
     const controls = [...tray.querySelectorAll<HTMLElement>("[data-composer-context-control]")];
     for (const control of controls) {
@@ -144,11 +149,6 @@ it(
     }
     const lefts = controls.map((control) => control.getBoundingClientRect().left);
     expect(Math.min(...lefts) - trayBox.left).toBeLessThan(trayBox.width / 4);
-    // Checkout and branch stay on the left; the model picker is the right-aligned end of the row.
-    expect(Math.max(...controls.map((c) => c.getBoundingClientRect().right))).toBeLessThan(
-      pickers!.getBoundingClientRect().left,
-    );
-    expect(trayBox.right - pickers!.getBoundingClientRect().right).toBeLessThan(trayBox.width / 4);
     expect(footer.getBoundingClientRect().top).toBeLessThan(cardBox.bottom);
     expect(card.contains(footer)).toBe(true);
 
@@ -252,14 +252,15 @@ it(
         expect(Math.abs(surface.getBoundingClientRect().height - restingHeight)).toBeLessThan(2),
       );
 
-      // The card's footer never holds context or pickers, at any width.
+      // The card's toolbar holds the pickers and never the context, at any width.
       expect(footer.querySelectorAll("[data-composer-context-control]")).toHaveLength(0);
-      expect(footer.querySelector("[data-chat-provider-model-picker]")).toBeNull();
       const trayNow = document.querySelector<HTMLElement>('[data-composer-context-tray="true"]')!;
       expect(trayNow).not.toBeNull();
       expect(trayNow.querySelector("[data-composer-context-control]")).not.toBeNull();
       // The row stays one line: no control wraps below another or leaves the row.
-      expect(trayNow.getBoundingClientRect().height).toBeLessThanOrEqual(32);
+      expect(
+        trayNow.getBoundingClientRect().bottom - card.getBoundingClientRect().bottom,
+      ).toBeLessThanOrEqual(32);
       const trayBoxNow = trayNow.getBoundingClientRect();
       for (const control of trayNow.querySelectorAll<HTMLElement>("button")) {
         if (control.getClientRects().length === 0) continue;
@@ -291,7 +292,8 @@ it(
       }
       // The model chip stays at every width: it names the model down to a 340px pane and is the
       // provider mark only below that.
-      const modelChip = trayNow.querySelector<HTMLElement>("[data-chat-provider-model-picker]");
+      expect(trayNow.querySelector("[data-chat-provider-model-picker]")).toBeNull();
+      const modelChip = footer.querySelector<HTMLElement>("[data-chat-provider-model-picker]");
       expect(modelChip).not.toBeNull();
       if (width >= 340) {
         expect(modelChip!.dataset.chatProviderModelPickerIconOnly).toBeUndefined();
@@ -472,22 +474,26 @@ it.each([342, 312, 280, 240])(
     await vi.waitFor(() =>
       expect(Math.abs(surface.getBoundingClientRect().width - width)).toBeLessThan(3),
     );
-    const footer = document.querySelector<HTMLElement>('[data-composer-context-tray="true"]')!;
+    const footer = document.querySelector<HTMLElement>('[data-chat-composer-footer="true"]')!;
+    const tab = document.querySelector<HTMLElement>('[data-composer-context-tray="true"]')!;
     const modelChip = await vi.waitFor(() => {
       const found = footer.querySelector<HTMLElement>("[data-chat-provider-model-picker]");
       expect(found).not.toBeNull();
       return found!;
     });
     const workspaceChip = await vi.waitFor(() => {
-      const found = footer.querySelector<HTMLElement>('[aria-label^="Workspace:"]');
+      const found = tab.querySelector<HTMLElement>('[aria-label^="Workspace:"]');
       expect(found).not.toBeNull();
       return found!;
     });
 
-    // Let the tier settle: nothing overflows the toolbar.
+    // Let the tiers settle: nothing overflows the toolbar or the tab.
     const controls = footer.querySelector<HTMLElement>('[data-chat-composer-controls="footer"]')!;
     await vi.waitFor(
-      () => expect(controls.scrollWidth).toBeLessThanOrEqual(controls.clientWidth + 1),
+      () => {
+        expect(controls.scrollWidth).toBeLessThanOrEqual(controls.clientWidth + 1);
+        expect(tab.scrollWidth).toBeLessThanOrEqual(tab.clientWidth + 1);
+      },
       { timeout: 5_000 },
     );
 
@@ -512,12 +518,13 @@ it.each([342, 312, 280, 240])(
     } else {
       expect(workspaceChip.getAttribute("title")).not.toBeNull();
     }
-    // The branch label drops before the model label, so a visible branch label means a visible model.
-    if (isVisibleText(branchLabel)) expect(isVisibleText(modelLabel)).toBe(true);
     if (width >= 342) expect(isVisibleText(modelLabel)).toBe(true);
 
     const surfaceBox = surface.getBoundingClientRect();
-    const buttons = [...footer.querySelectorAll<HTMLElement>("button")].filter(
+    const buttons = [
+      ...footer.querySelectorAll<HTMLElement>("button"),
+      ...tab.querySelectorAll<HTMLElement>("button"),
+    ].filter(
       (button) =>
         button.getClientRects().length > 0 && getComputedStyle(button).visibility !== "hidden",
     );

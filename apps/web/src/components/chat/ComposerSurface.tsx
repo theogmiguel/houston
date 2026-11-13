@@ -2,6 +2,7 @@ import type { ComponentProps } from "react";
 
 import { cn } from "~/lib/utils";
 import { SURFACE_LIFT_CLASS } from "~/components/ui/surface-recipes";
+import { CONTEXT_TAB_CLS } from "../ui/composer-anatomy-recipes";
 
 function Shell({
   contextRow = false,
@@ -71,4 +72,14 @@ function ContextStrip({ className, ...props }: ComponentProps<"div">) {
   );
 }
 
-export const ComposerSurface = { Shell, Host, Main, ContextStrip };
+/**
+ * The context tab under the card (project, environment, worktree, branch): inset from the card's
+ * edges and tucked under its bottom edge, opaque so the thread never shows through its labels.
+ */
+function ContextTab({ className, ...props }: ComponentProps<"div">) {
+  return (
+    <div data-slot="composer-context-tab" className={cn(CONTEXT_TAB_CLS, className)} {...props} />
+  );
+}
+
+export const ComposerSurface = { Shell, Host, Main, ContextStrip, ContextTab };
