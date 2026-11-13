@@ -333,7 +333,10 @@ export function ThreadSidebar({
         return;
       }
     }
-    const refusal = deleteLayoutWorkspaceAction(section.workspaceId);
+    const refusal = deleteLayoutWorkspaceAction(
+      section.workspaceId,
+      new Set(plan.threads.map(threadKeyOf)),
+    );
     if (refusal !== null) explain("Could not delete workspace", refusal);
   };
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {

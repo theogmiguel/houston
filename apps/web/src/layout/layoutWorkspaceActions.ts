@@ -34,8 +34,13 @@ export function renameLayoutWorkspaceAction(workspaceId: string, name: string): 
   return applyWorkspaceChange((layout) => renameLayoutWorkspaceChecked(layout, workspaceId, name));
 }
 
-export function deleteLayoutWorkspaceAction(workspaceId: string): string | null {
-  return applyWorkspaceChange((layout) => deleteLayoutWorkspace(layout, workspaceId));
+export function deleteLayoutWorkspaceAction(
+  workspaceId: string,
+  deletedThreads?: ReadonlySet<string>,
+): string | null {
+  return applyWorkspaceChange((layout) =>
+    deleteLayoutWorkspace(layout, workspaceId, deletedThreads ? { deletedThreads } : {}),
+  );
 }
 
 export function moveLayoutWorkspaceAction(workspaceId: string, delta: 1 | -1): void {
