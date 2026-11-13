@@ -1,6 +1,7 @@
 import { assert, describe, it } from "@effect/vitest";
 
 import {
+  canAttachBeforeSpawn,
   decideServerAttachment,
   type PersistedServerRuntimeState,
 } from "./DesktopServerAttachment.ts";
@@ -117,5 +118,21 @@ describe("decideServerAttachment", () => {
       }),
       { _tag: "InvalidOrigin", pid: 4242, origin: "file:///tmp/server" },
     );
+  });
+});
+
+describe("canAttachBeforeSpawn", () => {
+  it("checks for a running server before a local spawn", () => {
+    assert.isTrue(canAttachBeforeSpawn({ config: {}, isDevelopment: false }));
+  });
+
+  it("spawns a WSL server, whose state is not under the local record's directory", () => {
+    assert.isFalse(
+      canAttachBeforeSpawn({ config: { runningDistro: "Ubuntu" }, isDevelopment: false }),
+    );
+  });
+
+  it("spawns a development server, which keeps its state under dev/", () => {
+    assert.isFalse(canAttachBeforeSpawn({ config: {}, isDevelopment: true }));
   });
 });

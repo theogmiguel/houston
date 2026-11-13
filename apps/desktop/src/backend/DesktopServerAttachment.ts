@@ -84,6 +84,17 @@ export function decideServerAttachment(input: {
   };
 }
 
+/**
+ * Whether the runtime record `resolve` reads first belongs to the state directory this spawn
+ * would lock. A WSL server keeps its state in the distro, a Vite development server under `dev/`.
+ */
+export function canAttachBeforeSpawn(input: {
+  readonly config: Pick<DesktopBackendManager.DesktopBackendStartConfig, "runningDistro">;
+  readonly isDevelopment: boolean;
+}): boolean {
+  return input.config.runningDistro === undefined && !input.isDevelopment;
+}
+
 /** Signal 0 only probes existence; EPERM still means alive. */
 export function isProcessAlive(pid: number): boolean {
   if (!Number.isInteger(pid) || pid <= 0) return false;

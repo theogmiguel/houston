@@ -181,6 +181,22 @@ export const layer = Layer.effect(
       },
     );
 
+    const attachmentOf = (
+      result: Extract<DesktopServerAttachment.ServerAttachmentResult, { _tag: "Attached" }>,
+    ) =>
+      logBackendPoolWarning("attaching to a server that owns the state directory", {
+        pid: result.server.pid,
+        origin: result.server.origin,
+        versionSkew: result.server.versionSkew,
+      }).pipe(
+        Effect.as({
+          config: result.config,
+          httpBaseUrl: new URL(result.server.origin),
+          pid: result.server.pid,
+          warning: result.warning,
+        } satisfies DesktopBackendManager.DesktopBackendAttachment),
+      );
+
     const primary = yield* DesktopBackendManager.makeBackendInstance({
       id: DesktopBackendManager.PRIMARY_INSTANCE_ID,
       // Resolve lazily: startup loads persisted settings after pool initialization.
@@ -229,17 +245,7 @@ export const layer = Layer.effect(
       onStateDirOwned: Effect.fn("desktop.backendPool.onStateDirOwned")(function* () {
         const result = yield* serverAttachment.resolve;
         if (result._tag === "Attached") {
-          yield* logBackendPoolWarning("attaching to a server that owns the state directory", {
-            pid: result.server.pid,
-            origin: result.server.origin,
-            versionSkew: result.server.versionSkew,
-          });
-          return Option.some({
-            config: result.config,
-            httpBaseUrl: new URL(result.server.origin),
-            pid: result.server.pid,
-            warning: result.warning,
-          } satisfies DesktopBackendManager.DesktopBackendAttachment);
+          return Option.some(yield* attachmentOf(result));
         }
         yield* electronDialog.showErrorBox(
           "This Houston home is unavailable",
@@ -247,6 +253,21 @@ export const layer = Layer.effect(
         );
         yield* electronApp.quit;
         return Option.none<DesktopBackendManager.DesktopBackendAttachment>();
+      }),
+      // Any other outcome spawns, and a server still starting then wins the ownership lock.
+      attachBeforeSpawn: Effect.fn("desktop.backendPool.attachBeforeSpawn")(function* (config) {
+        if (
+          !DesktopServerAttachment.canAttachBeforeSpawn({
+            config,
+            isDevelopment: environment.isDevelopment,
+          })
+        ) {
+          return Option.none<DesktopBackendManager.DesktopBackendAttachment>();
+        }
+        const result = yield* serverAttachment.resolve;
+        return result._tag === "Attached"
+          ? Option.some(yield* attachmentOf(result))
+          : Option.none<DesktopBackendManager.DesktopBackendAttachment>();
       }),
       onAttached: (attachment) =>
         serverStatus.publish({
