@@ -4,6 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   createLayoutState,
+  focusLayoutTab,
   layoutChatSwaps,
   moveLayoutTab,
   moveLayoutTabToWorkspace,
@@ -550,5 +551,16 @@ describe("selectFocusedChatTarget", () => {
 
   it("is null while the focused tab is not a chat", () => {
     expect(selectFocusedChatTarget(layoutOf([[["a", "+!"]]]))).toBeNull();
+  });
+
+  it("focuses the open tab of a page instead of adding a second one", () => {
+    const opened = openLayoutTab(showLayoutContent(createLayoutState(), chat), { kind: "tasks" });
+    const tasksTab = selectFocusedTab(opened)!;
+    const refocused = openLayoutTab(
+      focusLayoutTab(opened, selectFocusedWorkspace(opened).columns[0]!.panes[0]!.tabs[0]!.id),
+      { kind: "tasks", href: "/tasks?new=true" },
+    );
+    expect(selectFocusedTab(refocused)?.id).toBe(tasksTab.id);
+    expect(selectFocusedWorkspace(refocused).columns[0]!.panes[0]!.tabs).toHaveLength(2);
   });
 });

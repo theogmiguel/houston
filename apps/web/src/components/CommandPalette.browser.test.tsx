@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 
 import { render } from "../../test/render";
@@ -40,5 +40,15 @@ describe("CommandPalette open intents", () => {
     await expect
       .element(page.getByText("Use Houston in another app (MCP)", { exact: true }))
       .toBeInTheDocument();
+  });
+
+  it("lists Open tasks and routes it to the Tasks page", async () => {
+    setup();
+    await using screen = await render(<CommandPalette>{null}</CommandPalette>);
+
+    openCommandPalette({ query: "open tasks" });
+    await page.getByText("Open tasks", { exact: true }).click();
+
+    await vi.waitFor(() => expect(screen.router?.state.location.pathname).toBe("/tasks"));
   });
 });
