@@ -2,7 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import "~/index.css";
 import { render } from "../../../test/render";
-import { CommandDialog, CommandDialogPopup } from "./command";
+import { CommandDialog, CommandDialogPopup } from "./command-dialog";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "./menu";
 import { Popover, PopoverPopup, PopoverTrigger } from "./popover";
 

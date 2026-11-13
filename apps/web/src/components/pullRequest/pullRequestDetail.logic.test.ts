@@ -49,17 +49,19 @@ import {
   orderPullRequestComments,
   pullRequestCheckoutCommand,
   checkoutFailureDescription,
-  readPullRequestDetailSnapshot,
-  resolveDisplayedPullRequestDetail,
-  resolvePullRequestReferenceHost,
   resolvePullRequestPrimaryControl,
   allowsSinglePullRequestMerge,
   shouldRefreshPullRequestActivity,
   resolveBaseFreshness,
   buildPullRequestTimeline,
-  writePullRequestDetailSnapshot,
   readableFailure,
 } from "./pullRequestDetail.logic";
+import {
+  readPullRequestDetailSnapshot,
+  resolveDisplayedPullRequestDetail,
+  resolvePullRequestReferenceHost,
+  writePullRequestDetailSnapshot,
+} from "./pullRequestDetailSnapshot";
 import type { ReviewCommentContext } from "~/reviewCommentContext";
 
 describe("pull request checkout commands", () => {

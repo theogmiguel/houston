@@ -14,7 +14,7 @@ per platform and never ran the renderer's own tests.
 | `typecheck`        | changed code                         | `pnpm -r --no-bail typecheck` for every workspace package                                                                                               |
 | `test-packages`    | workspace package changes            | package suites and the node:test script suites                                                                                                          |
 | `test-server`      | server changes                       | `apps/server` `src/` and `scripts/` tests in six vitest shards                                                                                          |
-| `test-web`         | web changes                          | the production renderer build and the `unit` vitest project                                                                                             |
+| `test-web`         | web changes                          | the production renderer build, its boot budget and the `unit` vitest project                                                                            |
 | `test-web-browser` | web changes                          | the `browser` vitest project in four shards                                                                                                             |
 | `native-linux`     | native changes, and every non-PR run | `cargo test` for the Houston 1 cleanup helper and the Linux capture helpers                                                                             |
 | `server-windows`   | server changes                       | the server suites in three Windows shards                                                                                                               |
@@ -22,6 +22,18 @@ per platform and never ran the renderer's own tests.
 
 `ci-gate` fails when any job failed or was cancelled, or when `changes` did not succeed. A job
 skipped by the path filter counts as a pass.
+
+## Renderer boot budget
+
+`scripts/check-web-boot-budget.mjs` reads the web build's `.vite/manifest.json` and sums the
+JavaScript and CSS a cold start loads before React mounts: the HTML entry, its static imports, and
+the chunks its own dynamic imports preload (`bootstrap.ts` loads `main.tsx` at once), each with its
+static imports and stylesheets. `test-web` fails when that closure exceeds `BOOT_BUDGET_BYTES`.
+
+Code that the first paint does not need belongs behind a dynamic import. A module that boot code
+imports puts every export another chunk uses into the boot closure, so a helper that start-up
+code needs lives apart from heavy siblings. Raise the budget only with the reason in the commit.
+Run the check locally after `pnpm --filter @houston-app/web build`; `--verbose` lists every file.
 
 ## Path filtering
 

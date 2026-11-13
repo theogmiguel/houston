@@ -225,9 +225,10 @@ jobs:
       - uses: ./.github/actions/setup
       - name: Workspace package tests (web, server and scripts excluded)
         run: pnpm -r --no-bail --no-sort --filter "!@houston-app/web" --filter "!@houston-app/cli" --filter "!@houston-app/scripts" test
-      - name: Script tests (licence generator, style guard, desktop packaging, npm launcher)
+      - name: Script tests (licence generator, style guard, boot budget, desktop packaging, npm launcher)
         run: >-
           node --test scripts/gen-third-party-licenses.test.mjs scripts/check-web-style.test.mjs
+          scripts/check-web-boot-budget.test.mjs
           scripts/build-desktop-artifact.test.mjs scripts/refresh-updater-metadata.test.mjs
           scripts/build-npm-launcher.test.mjs
           scripts/ci/windows-known-failures.test.mjs
@@ -316,6 +317,8 @@ jobs:
       - uses: ./.github/actions/setup
       - name: Build the renderer
         run: pnpm --filter @houston-app/web build
+      - name: Renderer boot budget
+        run: node scripts/check-web-boot-budget.mjs
       - name: Web unit tests
         run: pnpm --filter @houston-app/web exec vp test run --project unit
       - name: Report job timing

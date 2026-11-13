@@ -56,6 +56,8 @@ import {
   AddProjectToMachineDialogHost,
   openAddProjectToMachine,
 } from "./AddProjectToMachineDialog";
+// The host loads the dialog on demand; loading it here keeps a cold transform out of the polls.
+import "./AddProjectToMachineDialogForm";
 
 const environmentId = EnvironmentId.make("environment-1");
 const projectRef = scopeProjectRef(environmentId, ProjectId.make("project-1"));
