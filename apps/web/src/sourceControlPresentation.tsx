@@ -1,4 +1,9 @@
-import type { ElementType } from "react";
+import type {
+  AddProjectRemoteSource,
+  NewProjectPublishTarget,
+} from "@houston-app/client-runtime/operations/projects";
+import { LinkIcon } from "lucide-react";
+import type { ElementType, ReactNode } from "react";
 import type { SourceControlProviderInfo } from "@houston-app/contracts";
 import { sourceControlClients } from "@houston-app/client-runtime/source-control-clients";
 import type {
@@ -26,6 +31,23 @@ export function sourceControlIcon(definition: SourceControlDefinition): SourceCo
     SOURCE_CONTROL_ICONS.set(definition, Icon);
   }
   return Icon;
+}
+
+export function remoteProjectSourceIcon(
+  source: AddProjectRemoteSource,
+  className: string,
+): ReactNode {
+  if (source === "url") return <LinkIcon className={className} />;
+  const Icon = sourceControlIcon(sourceControlClients.get(source));
+  return <Icon className={className} />;
+}
+
+export function sourceControlHostIcon(
+  definition: NewProjectPublishTarget["definition"],
+  className: string,
+): ReactNode {
+  const Icon = sourceControlIcon(definition);
+  return <Icon className={className} />;
 }
 
 export interface SourceControlPresentation {
