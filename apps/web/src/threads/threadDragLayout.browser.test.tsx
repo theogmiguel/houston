@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import "~/index.css";
 import { act, render } from "../../test/render";
 import { LayoutDropZones } from "../layout/DropZones";
-import { cancelLayoutDrag } from "../layout/layoutDrag";
+import { cancelLayoutDrag, setLayoutThreadDropListener } from "../layout/layoutDrag";
+import { setThreadMemberships } from "../layout/threadMembership";
 import { buildLayout } from "../layout/layoutFixtures";
 import { findLayoutTab, countLayoutTabs } from "../layout/layoutModel";
 import { useLayoutStore } from "../layout/layoutStore";
@@ -177,5 +178,45 @@ describe("dragging a tab inside the visible workspace", () => {
       findLayoutTab(useLayoutStore.getState().layout, (tab) => tab.id === "a")?.workspace.columns
         .length,
     ).toBe(3);
+  });
+});
+
+describe("dropping a sidebar card on a pane of another workspace", () => {
+  const member = (workspaceId: string) =>
+    setThreadMemberships(
+      [{ environmentId: "local", threadId: "t1", workspaceId, parentThreadId: null }] as never,
+      true,
+    );
+
+  it("reports the move with where the thread sat, so the caller can offer the way back", async () => {
+    using _layout = seed([[[["a"]]], [[["t1", "x"]]]]);
+    member("w1");
+    const moved = vi.fn();
+    using _listener = { [Symbol.dispose]: setLayoutThreadDropListener(moved) };
+    await using screen = await render(<Scene />, { router: false });
+    const target = pane(screen.container, "w0c0p0");
+    const point = { x: target.left + target.width - 10, y: target.top + 20 };
+    await act(() => beginThreadDragAt(card, point, 1));
+    await act(() => release(point));
+    expect(moved).toHaveBeenCalledExactlyOnceWith({
+      threadRef: expect.objectContaining({ threadId: "t1" }),
+      title: "Fix the build",
+      previous: { workspaceId: "w1", paneId: "w1c0p0", index: 0 },
+      targetWorkspaceId: "w0",
+    });
+  });
+
+  it("reports nothing when the thread already belongs to the visible workspace", async () => {
+    using _layout = seed([[[["a", "t1"]]], [[["x"]]]]);
+    member("w0");
+    const moved = vi.fn();
+    using _listener = { [Symbol.dispose]: setLayoutThreadDropListener(moved) };
+    await using screen = await render(<Scene />, { router: false });
+    const target = pane(screen.container, "w0c0p0");
+    const point = { x: target.left + target.width - 10, y: target.top + 20 };
+    await act(() => beginThreadDragAt(card, point, 1));
+    await act(() => release(point));
+    expect(tabWhere()?.pane.id).toBe("w0c0p0");
+    expect(moved).not.toHaveBeenCalled();
   });
 });

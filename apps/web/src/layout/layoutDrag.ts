@@ -9,6 +9,7 @@ import { useSyncExternalStore } from "react";
 import {
   findLayoutPane,
   findLayoutTab,
+  findLayoutTabByContent,
   selectFocusedChatTab,
   selectFocusedWorkspace,
   type LayoutDirection,
@@ -17,10 +18,36 @@ import {
 } from "./layoutModel";
 import { notePaneDrop } from "../motion/paneDrop";
 import { useLayoutStore } from "./layoutStore";
+import { useThreadMembershipStore } from "./threadMembership";
 
 export type LayoutDragSource =
   | { kind: "tab"; tabId: string }
-  | { kind: "thread"; threadRef: ScopedThreadRef };
+  | { kind: "thread"; threadRef: ScopedThreadRef; title?: string };
+
+/** A sidebar card dropped on a pane that took its thread into another workspace. */
+export interface LayoutThreadDrop {
+  readonly threadRef: ScopedThreadRef;
+  readonly title: string | null;
+  /** Where the thread belonged and sat before the drop; the way back. */
+  readonly previous: {
+    readonly workspaceId: string;
+    readonly paneId: string | null;
+    readonly index: number | null;
+  };
+  readonly targetWorkspaceId: string;
+}
+
+let threadDropListener: ((drop: LayoutThreadDrop) => void) | null = null;
+
+/** Registers who is told of a card drop that changes a thread's workspace; returns the way off. */
+export function setLayoutThreadDropListener(
+  listener: ((drop: LayoutThreadDrop) => void) | null,
+): () => void {
+  threadDropListener = listener;
+  return () => {
+    if (threadDropListener === listener) threadDropListener = null;
+  };
+}
 
 export type LayoutDropTarget =
   | { kind: "side"; paneId: string; side: LayoutDirection }
@@ -352,12 +379,45 @@ function commitLayoutDrop(source: LayoutDragSource, target: LayoutDropTarget): b
   if (source.kind === "tab") {
     store.moveTab(source.tabId, destination);
   } else {
-    store.placeContent(
-      { kind: "chat", target: { kind: "server", threadRef: source.threadRef } },
-      destination,
-    );
+    placeDraggedThread(source, destination);
   }
   return true;
+}
+
+function placeDraggedThread(
+  source: Extract<LayoutDragSource, { kind: "thread" }>,
+  destination: LayoutTabDestination,
+): void {
+  const content = {
+    kind: "chat",
+    target: { kind: "server", threadRef: source.threadRef },
+  } as const;
+  const store = useLayoutStore.getState();
+  const before = findLayoutTabByContent(store.layout, content);
+  const membership = useThreadMembershipStore
+    .getState()
+    .byThread.get(scopedThreadKey(source.threadRef));
+  store.placeContent(content, destination);
+  const after = findLayoutTabByContent(useLayoutStore.getState().layout, content);
+  const previousWorkspaceId = membership?.workspaceId ?? before?.workspace.id ?? null;
+  if (
+    after === null ||
+    previousWorkspaceId === null ||
+    previousWorkspaceId === after.workspace.id ||
+    membership?.parentThreadId != null
+  ) {
+    return;
+  }
+  threadDropListener?.({
+    threadRef: source.threadRef,
+    title: source.title ?? null,
+    previous: {
+      workspaceId: previousWorkspaceId,
+      paneId: before?.pane.id ?? null,
+      index: before?.tabIndex ?? null,
+    },
+    targetWorkspaceId: after.workspace.id,
+  });
 }
 
 export const OPEN_THREAD_TO_THE_SIDE_MENU_ID = "open-to-the-side" as const;

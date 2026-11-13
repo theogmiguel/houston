@@ -65,4 +65,28 @@ describe("moveThreadToWorkspaceWithFeedback for a drop", () => {
     expect(toasts).toHaveLength(1);
     expect(toasts[0]).toMatchObject({ type: "error", description: "no workspace 'ws-gone'" });
   });
+
+  it("a move the window already made toasts without moving again, and Undo moves back to the old pane", async () => {
+    const move = vi.spyOn(commands, "moveThreadToWorkspaceOnServer").mockResolvedValue({
+      membership: { ...thread, workspaceId: "ws-a", parentThreadId: null },
+      previous: { workspaceId: "ws-b", paneId: null, index: null },
+    } as never);
+    const moved = await moveThreadToWorkspaceWithFeedback({
+      ...base,
+      target: { workspaceId: "ws-b", name: "Beta" },
+      placed: { previous: { workspaceId: "ws-a", paneId: "p1", index: 2 } },
+    });
+    expect(moved).toBe(true);
+    expect(move).not.toHaveBeenCalled();
+    expect(toasts[0]).toMatchObject({ type: "success", title: "Moved to “Beta”" });
+    const actions = (
+      toasts[0] as unknown as {
+        data: {
+          additionalActions: Array<{ id: string; props: { onClick: () => void } }>;
+        };
+      }
+    ).data.additionalActions;
+    actions.find((action) => action.id === "undo")!.props.onClick();
+    expect(move).toHaveBeenCalledWith({ thread, workspaceId: "ws-a", paneId: "p1", index: 2 });
+  });
 });

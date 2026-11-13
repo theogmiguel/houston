@@ -3,7 +3,11 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 
 import "~/index.css";
-import { render } from "../../test/render";
+import { act, render } from "../../test/render";
+import { toastManager } from "../components/ui/toast";
+import { beginThreadDragAt, endThreadDrag } from "../threads/threadDrag";
+import { cancelLayoutDrag } from "./layoutDrag";
+import { setThreadMemberships } from "./threadMembership";
 import { buildLayout } from "./layoutFixtures";
 import { LayoutHost } from "./LayoutHost";
 import { useLayoutStore } from "./layoutStore";
@@ -181,5 +185,77 @@ describe("LayoutHost", () => {
           ?.hasAttribute("inert"),
       )
       .toBe(true);
+  });
+});
+
+describe("LayoutHost: a sidebar card dropped on a pane", () => {
+  const dropCard = async (screen: { container: HTMLElement }, threadId: string) => {
+    const pane = screen.container
+      .querySelector<HTMLElement>("[data-layout-pane-id='w0c0p0']")!
+      .getBoundingClientRect();
+    const point = { x: pane.left + pane.width - 10, y: pane.top + 20 };
+    await act(() =>
+      beginThreadDragAt(
+        {
+          workspaceId: "w1",
+          threadId,
+          environmentId: "local",
+          projectId: "p1",
+          title: "Fix the build",
+        },
+        point,
+        1,
+      ),
+    );
+    await act(() => {
+      window.dispatchEvent(
+        new PointerEvent("pointerup", {
+          bubbles: true,
+          cancelable: true,
+          pointerId: 1,
+          clientX: point.x,
+          clientY: point.y,
+        }),
+      );
+    });
+  };
+  const membership = (threadId: string, workspaceId: string) =>
+    setThreadMemberships(
+      [{ environmentId: "local", threadId, workspaceId, parentThreadId: null }] as never,
+      true,
+    );
+  const cleanup = (): Disposable => ({
+    [Symbol.dispose]: () => {
+      endThreadDrag();
+      cancelLayoutDrag();
+      vi.restoreAllMocks();
+    },
+  });
+
+  it("toasts the move with Undo when the thread comes from another workspace", async () => {
+    using _layout = openLayout([[[["a"]]], [[["t1"]]]]);
+    using _cleanup = cleanup();
+    membership("t1", "w1");
+    const toasts: unknown[] = [];
+    vi.spyOn(toastManager, "add").mockImplementation(((toast: unknown) => {
+      toasts.push(toast);
+      return "id";
+    }) as never);
+    await using screen = await render(host);
+    await dropCard(screen, "t1");
+    await expect.poll(() => toasts.length).toBe(1);
+    expect(toasts[0]).toMatchObject({ type: "success" });
+    expect((toasts[0] as { title: string }).title).toMatch(/^Moved to /);
+    expect(JSON.stringify(toasts[0])).toContain("Undo");
+  });
+
+  it("shows no toast when the thread already belongs to the visible workspace", async () => {
+    using _layout = openLayout([[[["a", "t1"]]], [[["x"]]]]);
+    using _cleanup = cleanup();
+    membership("t1", "w0");
+    const add = vi.spyOn(toastManager, "add").mockImplementation((() => "id") as never);
+    await using screen = await render(host);
+    await dropCard(screen, "t1");
+    expect(add).not.toHaveBeenCalled();
   });
 });

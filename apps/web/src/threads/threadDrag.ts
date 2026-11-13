@@ -228,6 +228,7 @@ function layoutSourceOf(source: ThreadDragSource) {
   return {
     kind: "thread",
     threadRef: scopeThreadRef(source.environmentId as EnvironmentId, source.threadId as ThreadId),
+    ...(source.title === undefined ? {} : { title: source.title }),
   } as const;
 }
 

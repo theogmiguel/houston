@@ -3,6 +3,7 @@ import {
   moveThreadToWorkspaceOnServer,
   type ThreadRef,
 } from "../../layout/threadWorkspaceCommands";
+import type { HoustonLayoutThreadMoveResult } from "@houston-app/contracts/houston/layoutWorkspaces";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 
 export interface ThreadWorkspaceMove {
@@ -13,6 +14,11 @@ export interface ThreadWorkspaceMove {
   /** The name of a workspace the window shows, for the toast and a refused undo. */
   readonly nameOf: (workspaceId: string) => string;
   readonly onOpenTarget: (workspaceId: string) => void;
+  /**
+   * Set when the window already placed the thread's tab in the target (a drop on a pane), so
+   * only the toast and the way back to `previous` remain.
+   */
+  readonly placed?: { readonly previous: HoustonLayoutThreadMoveResult["previous"] };
 }
 
 function explain(title: string, description: string): void {
@@ -30,7 +36,7 @@ export async function moveThreadToWorkspaceWithFeedback(
   move: ThreadWorkspaceMove,
 ): Promise<boolean> {
   let target: { workspaceId: string; name: string };
-  let result: Awaited<ReturnType<typeof moveThreadToWorkspaceOnServer>>;
+  let previous: HoustonLayoutThreadMoveResult["previous"];
   try {
     if (move.target === "new-workspace") {
       const created = await createEmptyWorkspaceOnServer();
@@ -38,15 +44,18 @@ export async function moveThreadToWorkspaceWithFeedback(
     } else {
       target = move.target;
     }
-    result = await moveThreadToWorkspaceOnServer({
-      thread: move.thread,
-      workspaceId: target.workspaceId,
-    });
+    previous =
+      move.placed?.previous ??
+      (
+        await moveThreadToWorkspaceOnServer({
+          thread: move.thread,
+          workspaceId: target.workspaceId,
+        })
+      ).previous;
   } catch (error) {
     explain("Cannot move this thread", messageOf(error));
     return false;
   }
-  const { previous } = result;
   const named = move.threadTitle === null ? "The thread" : `“${move.threadTitle}”`;
   const undo =
     previous.workspaceId === null

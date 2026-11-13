@@ -1,6 +1,7 @@
 import { scopedThreadKey } from "@houston-app/client-runtime/environment";
 import { chatTabActions } from "./chatTabActions";
 import { useRouter } from "@tanstack/react-router";
+import { useEffect } from "react";
 
 import { readLocalApi } from "../localApi";
 import type { ThreadRouteTarget } from "../threadRoutes";
@@ -11,6 +12,7 @@ import { LayoutOverview } from "./LayoutOverview";
 import { LayoutShortcutsOverlay } from "./LayoutShortcutsOverlay";
 import { useThreeFingerSwipe } from "./useThreeFingerSwipe";
 import { LayoutLauncher } from "./LayoutLauncher";
+import { setLayoutThreadDropListener } from "./layoutDrag";
 import { openLayoutNewTab } from "./layoutActions";
 import { layoutChatRoute } from "./layoutChatRoute";
 import { type LayoutTab, type LayoutWorkspace } from "./layoutModel";
@@ -62,6 +64,41 @@ function LoadedLayoutHost({ threadTarget, atIndex, active, narrow }: LayoutHostP
     openLayoutNewTab();
   };
 
+  const resolveWorkspaceTitle = (workspace: LayoutWorkspace) => {
+    const lead = workspace.columns[0]?.panes[0]?.tabs[0];
+    return lead ? tabLabel(lead).title : null;
+  };
+
+  const nameOf = (workspaceId: string) => {
+    const { workspaces } = useLayoutStore.getState().layout;
+    const index = workspaces.findIndex((workspace) => workspace.id === workspaceId);
+    const workspace = workspaces[index];
+    return workspace === undefined
+      ? workspaceId
+      : workspaceDisplayName(workspace, index, resolveWorkspaceTitle);
+  };
+
+  // A card dropped on a pane of another workspace moves the thread there; say so, and offer the
+  // way back, like a drop on the sidebar does.
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- registers a module-level drop listener for the host's lifetime
+  useEffect(
+    () =>
+      setLayoutThreadDropListener((drop) => {
+        void moveThreadToWorkspaceWithFeedback({
+          thread: {
+            environmentId: drop.threadRef.environmentId,
+            threadId: drop.threadRef.threadId,
+          },
+          threadTitle: drop.title,
+          target: { workspaceId: drop.targetWorkspaceId, name: nameOf(drop.targetWorkspaceId) },
+          nameOf,
+          onOpenTarget: (id) => useLayoutStore.getState().focusWorkspace(id),
+          placed: { previous: drop.previous },
+        });
+      }),
+    [nameOf],
+  );
+
   const onTabContextMenu = (tab: LayoutTab, position: { x: number; y: number }) => {
     const api = readLocalApi();
     if (!api) return;
@@ -69,13 +106,6 @@ function LoadedLayoutHost({ threadTarget, atIndex, active, narrow }: LayoutHostP
     const link = tab.content.kind === "chat" ? tab.content : null;
     const chat = link === null ? null : chatTabActions(tab.id);
     const workspaces = listLayoutWorkspaces(state.layout);
-    const nameOf = (workspaceId: string) => {
-      const index = state.layout.workspaces.findIndex((workspace) => workspace.id === workspaceId);
-      const workspace = state.layout.workspaces[index];
-      return workspace === undefined
-        ? workspaceId
-        : workspaceDisplayName(workspace, index, resolveWorkspaceTitle);
-    };
     const threadRef =
       tab.content.kind === "chat" && tab.content.target.kind === "server"
         ? tab.content.target.threadRef
@@ -134,11 +164,6 @@ function LoadedLayoutHost({ threadTarget, atIndex, active, narrow }: LayoutHostP
     useLayoutStore
       .getState()
       .setOnScreenThreadKeys(threadKeysOfTabs(useLayoutStore.getState().layout, tabIds));
-
-  const resolveWorkspaceTitle = (workspace: LayoutWorkspace) => {
-    const lead = workspace.columns[0]?.panes[0]?.tabs[0];
-    return lead ? tabLabel(lead).title : null;
-  };
 
   return (
     <>
