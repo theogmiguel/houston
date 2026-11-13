@@ -21,6 +21,7 @@ import { openThreadInLayout } from "../threads/openThreadInLayout";
 import { buildLayout } from "./layoutFixtures";
 import { selectFocusedTab, type LayoutState } from "./layoutModel";
 import { useLayoutStore } from "./layoutStore";
+import { setThreadMemberships } from "./threadMembership";
 
 // The socket is the only fake layer: the client runtime hands every connection the in-process session.
 vi.mock("../../../../packages/client-runtime/src/connection/driver.ts", async (importOriginal) => {
@@ -97,7 +98,18 @@ const tabCount = () =>
 
 async function bootAt(path: string, shape: string[][][][] = [[]]) {
   useLayoutStore.getState().reset();
-  useLayoutStore.getState().setLayoutFromServer(layoutOf(shape));
+  const layout = layoutOf(shape);
+  useLayoutStore.getState().setLayoutFromServer(layout);
+  // The server has placed every thread in the layout's first workspace.
+  setThreadMemberships(
+    THREADS.map((thread) => ({
+      environmentId: ENVIRONMENT_ID,
+      threadId: thread.id,
+      workspaceId: layout.workspaces[0]!.id,
+      parentThreadId: null,
+    })),
+    true,
+  );
   const router = getRouter(createMemoryHistory({ initialEntries: [path] }));
   await router.load();
   const container = document.createElement("div");
@@ -108,6 +120,7 @@ async function bootAt(path: string, shape: string[][][][] = [[]]) {
     router,
     [Symbol.asyncDispose]: async () => {
       await screen[Symbol.asyncDispose]();
+      setThreadMemberships([], false);
       useLayoutStore.getState().reset();
     },
   };

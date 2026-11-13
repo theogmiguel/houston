@@ -1,3 +1,4 @@
+import { scopedThreadKey } from "@houston-app/client-runtime/environment";
 import { chatTabActions } from "./chatTabActions";
 import { useRouter } from "@tanstack/react-router";
 
@@ -22,6 +23,9 @@ import {
 } from "./layoutTabMenu";
 import { useLayoutRouteSync } from "./useLayoutRouteSync";
 import { useLayoutTabLabel } from "./useLayoutTabLabel";
+import { listLayoutWorkspaces, workspaceDisplayName } from "./layoutWorkspaces";
+import { useThreadMembershipStore } from "./threadMembership";
+import { moveThreadToWorkspaceWithFeedback } from "../components/sidebar/workspaceMoveFeedback";
 import { useLayoutSurfaceSync } from "./surfaceSync";
 import { LayoutWorkspaceStrip } from "./WorkspaceStrip";
 import { useLayoutTabRenderer } from "./useLayoutTabRenderer";
@@ -64,11 +68,37 @@ function LoadedLayoutHost({ threadTarget, atIndex, active, narrow }: LayoutHostP
     const state = useLayoutStore.getState();
     const link = tab.content.kind === "chat" ? tab.content : null;
     const chat = link === null ? null : chatTabActions(tab.id);
+    const workspaces = listLayoutWorkspaces(state.layout);
+    const nameOf = (workspaceId: string) => {
+      const index = state.layout.workspaces.findIndex((workspace) => workspace.id === workspaceId);
+      const workspace = state.layout.workspaces[index];
+      return workspace === undefined
+        ? workspaceId
+        : workspaceDisplayName(workspace, index, resolveWorkspaceTitle);
+    };
+    const threadRef =
+      tab.content.kind === "chat" && tab.content.target.kind === "server"
+        ? tab.content.target.threadRef
+        : null;
+    const membership =
+      threadRef === null
+        ? undefined
+        : useThreadMembershipStore.getState().byThread.get(scopedThreadKey(threadRef));
+    // A thread that follows its parent, or one the server has not placed yet, cannot be moved.
+    const canMove =
+      threadRef !== null && membership !== undefined && membership.parentThreadId === null;
     const items = buildLayoutTabMenuItems(state.layout, tab.id, {
       maximizedTabId: state.maximizedTabId,
       canCopyLink: link !== null,
       canFindInThread: chat?.findInThread != null,
       canOpenProjectSettings: chat?.openProjectSettings != null,
+      ...(canMove
+        ? {
+            moveToWorkspaceTargets: workspaces
+              .filter((workspace) => workspace.id !== membership.workspaceId)
+              .map((workspace) => ({ workspaceId: workspace.id, name: nameOf(workspace.id) })),
+          }
+        : {}),
     });
     if (items.length === 0) return;
     void api.contextMenu.show(items, position).then((action) => {
@@ -76,6 +106,20 @@ function LoadedLayoutHost({ threadTarget, atIndex, active, narrow }: LayoutHostP
       runLayoutTabMenuAction(action, tab.id, {
         findInThread: () => chat?.findInThread?.(),
         openProjectSettings: () => chat?.openProjectSettings?.(),
+        moveToWorkspace: (target, workspaceId) => {
+          if (target.content.kind !== "chat" || target.content.target.kind !== "server") return;
+          const ref = target.content.target.threadRef;
+          void moveThreadToWorkspaceWithFeedback({
+            thread: { environmentId: ref.environmentId, threadId: ref.threadId },
+            threadTitle: tabLabel(target).title,
+            target:
+              workspaceId === "new-workspace"
+                ? "new-workspace"
+                : { workspaceId, name: nameOf(workspaceId) },
+            nameOf,
+            onOpenTarget: (id) => useLayoutStore.getState().focusWorkspace(id),
+          });
+        },
         copyLink: (target) => {
           if (target.content.kind !== "chat") return;
           const route = layoutChatRoute(target.content);

@@ -8,6 +8,8 @@ import {
   findLayoutTab,
   findLayoutTabByContent,
   focusLayoutTab,
+  focusLayoutWorkspace,
+  selectFocusedWorkspace,
   layoutTabContentKey,
   isLayoutPageContent,
   openLayoutGhostChat,
@@ -21,6 +23,7 @@ import {
 } from "./layoutModel";
 import { useLayoutBehavior, type LayoutNewTabPosition } from "./layoutBehavior";
 import { arrangeLayoutChange, useLayoutStore, type LayoutNewTabRequest } from "./layoutStore";
+import { membershipKeyOf, useThreadMembershipStore } from "./threadMembership";
 import { followLayoutCompanions } from "./openRules";
 import { layoutChatRoute } from "./layoutChatRoute";
 import { layoutPageHref, layoutRoutePage } from "./pageNavigation";
@@ -45,16 +48,33 @@ function isReloadedRoute(): boolean {
 }
 
 /**
+ * A thread with no tab open opens in the workspace it belongs to, so the focused workspace never
+ * collects another workspace's threads. A thread that already has a tab keeps it where it is.
+ */
+function focusHomeWorkspace(layout: LayoutState, content: LayoutTabContent): LayoutState {
+  if (content.kind !== "chat" || content.target.kind !== "server") return layout;
+  if (findLayoutTabByContent(layout, content)) return layout;
+  const { threadRef } = content.target;
+  const home = useThreadMembershipStore
+    .getState()
+    .byThread.get(membershipKeyOf(threadRef.environmentId, threadRef.threadId))?.workspaceId;
+  if (home === undefined || home === selectFocusedWorkspace(layout).id) return layout;
+  if (!layout.workspaces.some((workspace) => workspace.id === home)) return layout;
+  return focusLayoutWorkspace(layout, home);
+}
+
+/**
  * Show the route's thread in the layout: focus the tab showing it, hand a
  * promoted draft's tab to its thread, open it where a new tab was requested,
  * or else replace the focused tab without creating a pane.
  */
-function showRouteInLayout(
-  layout: LayoutState,
+export function showRouteInLayout(
+  layoutBefore: LayoutState,
   content: LayoutTabContent,
   promotedDraftId: DraftId | null,
   newTab: RouteNewTab | null,
 ): LayoutState {
+  const layout = focusHomeWorkspace(layoutBefore, content);
   if (isLayoutPageContent(content)) {
     const opened = openLayoutTab(layout, content);
     const existing = findLayoutTabByContent(opened, content);

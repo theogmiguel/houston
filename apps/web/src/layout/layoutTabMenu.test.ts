@@ -88,6 +88,19 @@ describe("buildLayoutTabMenuItems", () => {
     );
   });
 
+  it("offers Move to workspace with the other workspaces and a new one, only when the caller has targets", () => {
+    const layout = buildLayout([[[["a"]]]]);
+    expect(ids(buildLayoutTabMenuItems(layout, "a"))).not.toContain("layout:move-to-workspace");
+    const item = buildLayoutTabMenuItems(layout, "a", {
+      moveToWorkspaceTargets: [{ workspaceId: "w2", name: "Docs" }],
+    }).find((entry) => entry.id === "layout:move-to-workspace");
+    expect(item?.label).toBe("Move to workspace");
+    expect(ids(item?.children ?? [])).toEqual([
+      "layout:move-to-workspace:w2",
+      "layout:move-to-new-workspace",
+    ]);
+  });
+
   it("is empty for a tab that is not in the layout", () => {
     expect(buildLayoutTabMenuItems(buildLayout([[[["a"]]]]), "missing")).toEqual([]);
   });
@@ -111,6 +124,17 @@ describe("runLayoutTabMenuAction", () => {
     const { layout } = useLayoutStore.getState();
     expect(findLayoutTab(layout, (tab) => tab.id === "a")).toBeNull();
     expect(findLayoutTab(layout, (tab) => tab.id === "b")).not.toBeNull();
+  });
+
+  it("hands a workspace choice and a new workspace to the caller's mover", () => {
+    useLayoutStore.getState().setLayoutFromServer(buildLayout([[[["a"]]]]));
+    const moved: string[] = [];
+    const handlers = {
+      moveToWorkspace: (tab: { id: string }, target: string) => moved.push(`${tab.id}>${target}`),
+    };
+    runLayoutTabMenuAction("layout:move-to-workspace:w2", "a", handlers);
+    runLayoutTabMenuAction("layout:move-to-new-workspace", "a", handlers);
+    expect(moved).toEqual(["a>w2", "a>new-workspace"]);
   });
 
   it("hands copy link to the caller's copier", () => {

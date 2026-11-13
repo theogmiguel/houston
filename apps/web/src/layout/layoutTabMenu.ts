@@ -16,6 +16,9 @@ export type LayoutTabMenuId =
   | "layout:split-down"
   | "layout:new-column"
   | "layout:new-workspace"
+  | `layout:move-to-workspace:${string}`
+  | "layout:move-to-workspace"
+  | "layout:move-to-new-workspace"
   | "layout:fill"
   | "layout:find-in-thread"
   | "layout:project-settings"
@@ -32,6 +35,11 @@ export interface LayoutTabMenuOptions {
   canFindInThread?: boolean;
   /** The tab's chat has a project; the item runs `openProjectSettings`. */
   canOpenProjectSettings?: boolean;
+  /**
+   * The workspaces the tab's thread can move to, never its own. Absent for a tab with no thread to
+   * move: a page, a draft, a thread that follows its parent.
+   */
+  moveToWorkspaceTargets?: ReadonlyArray<{ readonly workspaceId: string; readonly name: string }>;
 }
 
 /** The layout actions of a tab's context menu. Every tab can close. */
@@ -78,6 +86,24 @@ export function buildLayoutTabMenuItems(
   if (options.canCopyLink) {
     chatItems.push({ id: "layout:copy-link", label: "Copy link", icon: "link" });
   }
+  if (options.moveToWorkspaceTargets !== undefined) {
+    chatItems.push({
+      id: "layout:move-to-workspace" as const,
+      label: "Move to workspace",
+      icon: "layout-grid",
+      children: [
+        ...options.moveToWorkspaceTargets.map((target) => ({
+          id: `layout:move-to-workspace:${target.workspaceId}` as const,
+          label: target.name,
+        })),
+        {
+          id: "layout:move-to-new-workspace" as const,
+          label: "New workspace",
+          separatorBefore: options.moveToWorkspaceTargets.length > 0,
+        },
+      ],
+    });
+  }
   const [firstChatItem, ...otherChatItems] = chatItems;
   if (firstChatItem) items.push({ ...firstChatItem, separatorBefore: true }, ...otherChatItems);
   items.push({
@@ -103,11 +129,17 @@ export function runLayoutTabMenuAction(
     copyLink?: (tab: LayoutTab) => void;
     findInThread?: (tab: LayoutTab) => void;
     openProjectSettings?: (tab: LayoutTab) => void;
+    /** Moves the tab's thread to a workspace, or to a new one. */
+    moveToWorkspace?: (tab: LayoutTab, target: string | "new-workspace") => void;
   } = {},
 ): void {
   const store = useLayoutStore.getState();
   const location = findLayoutTab(store.layout, (tab) => tab.id === tabId);
   if (!location) return;
+  if (action.startsWith("layout:move-to-workspace:")) {
+    handlers.moveToWorkspace?.(location.tab, action.slice("layout:move-to-workspace:".length));
+    return;
+  }
   switch (action) {
     case "layout:keep":
       store.keepTab(tabId);
@@ -140,6 +172,9 @@ export function runLayoutTabMenuAction(
       return;
     case "layout:copy-link":
       handlers.copyLink?.(location.tab);
+      return;
+    case "layout:move-to-new-workspace":
+      handlers.moveToWorkspace?.(location.tab, "new-workspace");
       return;
     case "layout:close-tab":
       closeLayoutTabByUser(tabId);
