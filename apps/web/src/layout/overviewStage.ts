@@ -226,7 +226,8 @@ export function boundOverviewTransform(
   const widest = Math.max(1, ...stage.rows.map((row) => row.stripWidth));
   const bound = (value: number, start: number, end: number, origin: number, extent: number) => {
     const near = OVERVIEW_ROW_GAP - origin - transform.scale * start;
-    const far = Math.max(OVERVIEW_ROW_GAP, extent - OVERVIEW_ROW_GAP) - origin - transform.scale * end;
+    const far =
+      Math.max(OVERVIEW_ROW_GAP, extent - OVERVIEW_ROW_GAP) - origin - transform.scale * end;
     return Math.max(Math.min(near, far), Math.min(Math.max(near, far), value));
   };
   return {

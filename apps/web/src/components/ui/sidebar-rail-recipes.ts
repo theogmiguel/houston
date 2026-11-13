@@ -1,4 +1,3 @@
-
 /** Visual recipes for the sidebar rail's rows, results, hover card and inline controls. */
 
 /** A small icon button at the end of a menu row, such as a project's settings gear. */

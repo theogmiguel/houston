@@ -165,7 +165,10 @@ describe("closeLayoutTabByUser: reopening", () => {
     using layout = setup([other, parent]);
     useClosedViewStore.setState({ entries: [] });
     const tab = layout.tabOf(parent)!;
-    const location = findLayoutTab(useLayoutStore.getState().layout, (candidate) => candidate.id === tab.id)!;
+    const location = findLayoutTab(
+      useLayoutStore.getState().layout,
+      (candidate) => candidate.id === tab.id,
+    )!;
     closeLayoutTabByUser(tab.id);
     expect(useClosedViewStore.getState().entries).toMatchObject([
       { kind: "chat", threadRef: parentRef, paneId: location.pane.id, index: location.tabIndex },

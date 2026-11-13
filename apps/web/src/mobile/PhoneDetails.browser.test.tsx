@@ -200,9 +200,9 @@ async function openFromLauncher(label: string) {
   await userEvent.click(page.getByRole("button", { name: "New tab" }).first());
   const row = await vi.waitFor(
     () => {
-      const found = [
-        ...document.querySelectorAll<HTMLElement>("[data-layout-launcher-row]"),
-      ].find((candidate) => candidate.textContent?.startsWith(label));
+      const found = [...document.querySelectorAll<HTMLElement>("[data-layout-launcher-row]")].find(
+        (candidate) => candidate.textContent?.startsWith(label),
+      );
       expect(found).toBeDefined();
       return found!;
     },

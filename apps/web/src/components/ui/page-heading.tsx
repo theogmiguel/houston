@@ -13,7 +13,9 @@ export function PageHeading({
 }) {
   return (
     <header className="flex flex-col max-phone:gap-0.5">
-      <h1 className="sr-only max-phone:not-sr-only max-phone:text-title max-phone:font-semibold max-phone:text-foreground">{title}</h1>
+      <h1 className="sr-only max-phone:not-sr-only max-phone:text-title max-phone:font-semibold max-phone:text-foreground">
+        {title}
+      </h1>
       <p className="text-body text-muted-foreground">{description}</p>
     </header>
   );

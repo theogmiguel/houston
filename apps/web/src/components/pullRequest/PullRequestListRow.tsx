@@ -80,7 +80,9 @@ export function PullRequestRowLines({
 }) {
   const phone = useIsPhone();
   const updated = updatedAt ? (
-    <span className={cn("shrink-0 whitespace-nowrap tabular-nums", (phone || !trailing) && "ml-auto")}>
+    <span
+      className={cn("shrink-0 whitespace-nowrap tabular-nums", (phone || !trailing) && "ml-auto")}
+    >
       <RelativeTime timestamp={updatedAt} />
     </span>
   ) : null;

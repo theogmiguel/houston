@@ -36,16 +36,16 @@ and an existing primitive before a one-off class.
 
 ## Source of truth
 
-| Concern                                                     | Canonical location                                                                                                |
-| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| Colour, radius, type, motion, control metrics and utilities | `apps/web/src/index.css`                                                                                          |
-| Tailwind bindings (`@theme`, `@theme inline`, `@utility`)   | `apps/web/src/index.css`                                                                                          |
-| Appearance resolution, theme ids and custom themes          | `apps/web/src/hooks/useTheme.ts`, `apps/web/src/themePalette.ts`                                                  |
-| Primitives and their variants                               | `apps/web/src/components/ui/*.tsx`                                                                                |
-| Shell, sidebar, workspace and thread layout                      | `apps/web/src/components/AppSidebarLayout.tsx`, `components/sidebar/ThreadSidebar.tsx`, `layout/WorkspaceStrip.tsx`, `ChatView.tsx` |
-| Terminal colours and ANSI palette                           | `apps/web/src/components/ThreadTerminalDrawer.tsx`, `packages/shared/src/terminalOutput.ts`                       |
-| Style rules and pinned violations                           | `scripts/check-web-style.mjs`, `scripts/web-style-baseline/`                                                      |
-| Approved design boards (interim)                            | `handoff/design/README.md`                                                                                        |
+| Concern                                                     | Canonical location                                                                                                                  |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Colour, radius, type, motion, control metrics and utilities | `apps/web/src/index.css`                                                                                                            |
+| Tailwind bindings (`@theme`, `@theme inline`, `@utility`)   | `apps/web/src/index.css`                                                                                                            |
+| Appearance resolution, theme ids and custom themes          | `apps/web/src/hooks/useTheme.ts`, `apps/web/src/themePalette.ts`                                                                    |
+| Primitives and their variants                               | `apps/web/src/components/ui/*.tsx`                                                                                                  |
+| Shell, sidebar, workspace and thread layout                 | `apps/web/src/components/AppSidebarLayout.tsx`, `components/sidebar/ThreadSidebar.tsx`, `layout/WorkspaceStrip.tsx`, `ChatView.tsx` |
+| Terminal colours and ANSI palette                           | `apps/web/src/components/ThreadTerminalDrawer.tsx`, `packages/shared/src/terminalOutput.ts`                                         |
+| Style rules and pinned violations                           | `scripts/check-web-style.mjs`, `scripts/web-style-baseline/`                                                                        |
+| Approved design boards (interim)                            | `handoff/design/README.md`                                                                                                          |
 
 `handoff/` is removed before `v2` merges, so the durable v2 conventions are the ones on this
 page and the rules in `scripts/check-web-style.mjs`.
@@ -91,7 +91,7 @@ should sit quieter than their label.
 | Token            | Use it for                                                                                                                                                |
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--border`       | Ordinary hairlines: inputs, cards, control edges.                                                                                                         |
-| `--divider`      | One-pixel seams between shell surfaces: sidebar, top bar, layout panes, right panel.                                                                        |
+| `--divider`      | One-pixel seams between shell surfaces: sidebar, top bar, layout panes, right panel.                                                                      |
 | `--card-edge`    | Edges of raised content cards (settings groups, changed files, plans); one step firmer than `--border` in light. Use it through `--contrast-card-border`. |
 | `--border-hover` | The hover state of an ordinary hairline.                                                                                                                  |
 | `--line-strong`  | The interactive edge of a field or a selected control.                                                                                                    |

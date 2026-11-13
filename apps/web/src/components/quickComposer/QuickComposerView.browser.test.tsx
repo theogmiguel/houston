@@ -66,9 +66,7 @@ it("closes the window when the server accepts the thread", async () => {
   );
   expect(start).toBeDefined();
   await act(async () => start!.click());
-  expect(onSubmit).toHaveBeenCalledWith(
-    expect.objectContaining({ prompt: "Fix the flaky test" }),
-  );
+  expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ prompt: "Fix the flaky test" }));
   expect(onClose).toHaveBeenCalledTimes(1);
 });
 

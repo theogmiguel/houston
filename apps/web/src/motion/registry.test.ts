@@ -24,7 +24,9 @@ describe("resolveMotion", () => {
 
   it("honours a per-name override", () => {
     configureMotion({
-      animations: { "horizontal-view-movement": { kind: "easing", durationMs: 100, curve: "linear" } },
+      animations: {
+        "horizontal-view-movement": { kind: "easing", durationMs: 100, curve: "linear" },
+      },
     });
     expect(resolveMotion("horizontal-view-movement").config.kind).toBe("easing");
     expect(resolveMotion("workspace-switch").config.kind).toBe("spring");

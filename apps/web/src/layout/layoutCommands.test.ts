@@ -144,9 +144,7 @@ describe("countedLayoutWorkspaces", () => {
         {
           id: "c",
           width: 1,
-          panes: [
-            { id: "p", size: 1, activeTabId: "t", tabs: [{ id: "t", content: page("x") }] },
-          ],
+          panes: [{ id: "p", size: 1, activeTabId: "t", tabs: [{ id: "t", content: page("x") }] }],
         },
       ],
     };

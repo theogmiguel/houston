@@ -62,10 +62,7 @@ it("shows every panel toggle in the header while the right panel is closed", asy
 it("folds the layout controls into a More menu below the drawer breakpoint, keeping the side panel toggle", async () => {
   await using _viewport = await viewport(800);
   await using screen = await render(
-    <ChatHeaderPanelControls
-      {...controls(false)}
-      threadPanelShortcutLabel="Ctrl+I"
-    />,
+    <ChatHeaderPanelControls {...controls(false)} threadPanelShortcutLabel="Ctrl+I" />,
   );
 
   expect(labels(screen.container)).toEqual(["More layout controls", "Toggle right panel"]);

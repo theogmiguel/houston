@@ -6,11 +6,7 @@ import "~/index.css";
 import { Swap } from "../ui/swap";
 import { render } from "../../../test/render";
 import { SettingsBreadcrumb } from "./SettingsBreadcrumb";
-import {
-  SettingsPageContainer,
-  SettingsRow,
-  SettingsSection,
-} from "./settingsLayout";
+import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { SETTINGS_SECTION_DESCRIPTIONS, SETTINGS_SECTION_LABELS } from "./settingsSearch";
 
 describe("SettingsPageContainer heading", () => {

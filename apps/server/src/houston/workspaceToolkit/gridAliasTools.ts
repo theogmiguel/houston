@@ -6,11 +6,7 @@ import { HOUSTON_LAYOUT_WORKSPACE_LIMITS } from "@houston-app/contracts/houston/
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
 
-import {
-  WorkspaceFields,
-  WorkspaceThreadEntries,
-  workspaceToolShared,
-} from "./tools.ts";
+import { WorkspaceFields, WorkspaceThreadEntries, workspaceToolShared } from "./tools.ts";
 
 const shared = workspaceToolShared;
 

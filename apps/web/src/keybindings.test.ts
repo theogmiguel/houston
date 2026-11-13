@@ -812,10 +812,7 @@ describe("layout shortcuts", () => {
 
   it("moves with ctrl+alt+cmd+arrow on macOS and ctrl+alt+shift+arrow elsewhere", () => {
     assert.strictEqual(
-      resolve(
-        event({ key: "ArrowUp", metaKey: true, ctrlKey: true, altKey: true }),
-        "MacIntel",
-      ),
+      resolve(event({ key: "ArrowUp", metaKey: true, ctrlKey: true, altKey: true }), "MacIntel"),
       "layout.moveUp",
     );
     assert.strictEqual(
@@ -853,10 +850,7 @@ describe("layout shortcuts", () => {
 
   it("reorders workspaces only on macOS: elsewhere ctrl+alt+shift+u sends the pane", () => {
     const u = event({ key: "u", code: "KeyU", altKey: true, shiftKey: true });
-    assert.strictEqual(
-      resolve({ ...u, metaKey: true }, "MacIntel"),
-      "layout.moveWorkspaceDown",
-    );
+    assert.strictEqual(resolve({ ...u, metaKey: true }, "MacIntel"), "layout.moveWorkspaceDown");
     assert.strictEqual(
       resolve({ ...u, ctrlKey: true }, "Linux x86_64"),
       "layout.moveToWorkspaceDown",
@@ -1099,7 +1093,9 @@ describe("attention keybinding commands", () => {
       "thread.attentionNext",
     );
     assert.equal(
-      resolveShortcutCommand(previousAttention, DEFAULT_RESOLVED_KEYBINDINGS, { platform: "Linux" }),
+      resolveShortcutCommand(previousAttention, DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "Linux",
+      }),
       "thread.attentionPrevious",
     );
     assert.equal(

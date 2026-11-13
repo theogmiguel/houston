@@ -83,7 +83,9 @@ describe("layout keybinding defaults", () => {
     const boundOn = (isMac: boolean) =>
       new Set(
         layoutRules
-          .filter((rule) => evaluate(rule.whenAst, { isMac, isDesktop: true, terminalFocus: false }))
+          .filter((rule) =>
+            evaluate(rule.whenAst, { isMac, isDesktop: true, terminalFocus: false }),
+          )
           .map((rule) => rule.command),
       );
     expect([...boundOn(true)].toSorted()).toEqual([...LAYOUT_KEYBINDING_COMMANDS].toSorted());

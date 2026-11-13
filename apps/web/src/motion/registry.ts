@@ -13,10 +13,7 @@ export type MotionConfig =
   | ({ readonly kind: "spring" } & SpringParams)
   | { readonly kind: "easing"; readonly durationMs: number; readonly curve: MotionCurve };
 
-export type MotionName =
-  | "horizontal-view-movement"
-  | "workspace-switch"
-  | "overview-open-close";
+export type MotionName = "horizontal-view-movement" | "workspace-switch" | "overview-open-close";
 
 /**
  * The CSS motion roles in index.css (`--motion-*`), for animations driven from script.

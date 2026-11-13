@@ -149,7 +149,13 @@ describe("exit scroll", () => {
 describe("overviewSlotStyle", () => {
   it("insets a pane by the edge only on the sides that have a neighbor", () => {
     const row = stageOf(stack("a")).rows[0]!;
-    const slot = { ...row.slots[0]!, hasLeft: true, hasRight: false, hasAbove: false, hasBelow: false };
+    const slot = {
+      ...row.slots[0]!,
+      hasLeft: true,
+      hasRight: false,
+      hasAbove: false,
+      hasBelow: false,
+    };
     const style = overviewSlotStyle(row, slot, 10, "4px");
     expect(style.left).toContain("+ 4px");
     expect(style.width).toContain("- 4px - 0px");

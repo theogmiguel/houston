@@ -76,7 +76,10 @@ describe("surfaceTabTitle", () => {
       ),
     ).toBe("Docs");
     expect(
-      surfaceTabTitle(browser("1"), snapshot({ _tag: "Loaded", title: " ", url: "https://x.dev/p" })),
+      surfaceTabTitle(
+        browser("1"),
+        snapshot({ _tag: "Loaded", title: " ", url: "https://x.dev/p" }),
+      ),
     ).toBe("x.dev");
     expect(surfaceTabTitle(browser("1"), snapshot({ _tag: "Idle" }))).toBe("Browser");
     expect(surfaceTabTitle(browser(null), null)).toBe("Browser");

@@ -70,9 +70,7 @@ describe("SidebarChromeFooter", () => {
   it("opens Settings as its modal route", async () => {
     await using screen = await renderFooter();
     await userEvent.click(screen.getByRole("button", { name: "Settings" }).element());
-    await vi.waitFor(() =>
-      expect(screen.router?.state.location.pathname).toBe("/settings"),
-    );
+    await vi.waitFor(() => expect(screen.router?.state.location.pathname).toBe("/settings"));
   });
 });
 

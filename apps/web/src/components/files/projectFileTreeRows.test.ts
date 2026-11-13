@@ -33,7 +33,11 @@ describe("projectFileTreeRows", () => {
 
   it("keeps a deep search result and its ancestors visible", () => {
     const rows = projectFileTreeRows(entries, new Set(), "layoutstore");
-    expect(rows.map((row) => row.entry.path)).toEqual(["src", "src/layout", "src/layout/layoutStore.ts"]);
+    expect(rows.map((row) => row.entry.path)).toEqual([
+      "src",
+      "src/layout",
+      "src/layout/layoutStore.ts",
+    ]);
   });
 
   it("returns the ancestor directories for a reveal", () => {

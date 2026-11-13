@@ -45,8 +45,12 @@ describe("SidebarShelves", () => {
       { router: false },
     );
 
-    expect(screen.container.querySelector('[data-testid="sidebar-snoozed-shelf-toggle"]')).toBeNull();
-    expect(screen.container.querySelector('[data-testid="sidebar-settled-shelf-toggle"]')).toBeNull();
+    expect(
+      screen.container.querySelector('[data-testid="sidebar-snoozed-shelf-toggle"]'),
+    ).toBeNull();
+    expect(
+      screen.container.querySelector('[data-testid="sidebar-settled-shelf-toggle"]'),
+    ).toBeNull();
     expect(screen.container.textContent).not.toMatch(/On hold|Closed/);
   });
 
@@ -79,7 +83,9 @@ describe("SidebarShelves", () => {
     );
 
     await expect.element(screen.getByRole("button", { name: /Closed/ })).toBeVisible();
-    expect(screen.container.querySelector('[data-testid="sidebar-snoozed-shelf-toggle"]')).toBeNull();
+    expect(
+      screen.container.querySelector('[data-testid="sidebar-snoozed-shelf-toggle"]'),
+    ).toBeNull();
   });
 
   it("marks each shelf with its archive icon and opens its list above the row", async () => {
@@ -94,13 +100,17 @@ describe("SidebarShelves", () => {
     );
 
     const onHold = screen.container.querySelector('[data-testid="sidebar-snoozed-shelf-toggle"]');
-    const closedRow = screen.container.querySelector('[data-testid="sidebar-settled-shelf-toggle"]');
+    const closedRow = screen.container.querySelector(
+      '[data-testid="sidebar-settled-shelf-toggle"]',
+    );
     expect(onHold?.querySelector('[data-shelf-icon="snoozed"]')).not.toBeNull();
     expect(closedRow?.querySelector('[data-shelf-icon="settled"]')).not.toBeNull();
 
     await userEvent.click(onHold as HTMLElement);
     const onHoldList = screen.container.querySelector('[data-testid="sidebar-snoozed-shelf-list"]');
-    const onHoldRow = screen.container.querySelector('[data-testid="sidebar-snoozed-shelf-toggle"]');
+    const onHoldRow = screen.container.querySelector(
+      '[data-testid="sidebar-snoozed-shelf-toggle"]',
+    );
     expect(onHoldList).not.toBeNull();
     expect(
       Boolean(onHoldList!.compareDocumentPosition(onHoldRow!) & Node.DOCUMENT_POSITION_FOLLOWING),

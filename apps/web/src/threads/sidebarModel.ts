@@ -16,10 +16,7 @@ import { projectKeyOf } from "@houston-app/shared/projectKey";
  */
 export type ThreadRowState = ThreadState | "idle";
 
-export function resolveThreadRowState(
-  thread: EnvironmentThreadShell,
-  now: string,
-): ThreadRowState {
+export function resolveThreadRowState(thread: EnvironmentThreadShell, now: string): ThreadRowState {
   const status = resolveThreadStatusPill({ thread });
   if (status !== null) return status.state;
   // A reopened thread uses the same Back mark as a woken one: its unsettle

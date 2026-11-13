@@ -33,7 +33,10 @@ export function LayoutLauncherList({ className, ...props }: HTMLAttributes<HTMLD
 
 export function LayoutLauncherGroup({ children }: { children: ReactNode }) {
   return (
-    <div role="presentation" className="truncate px-2.5 pt-4 pb-1.5 text-caption text-muted-foreground">
+    <div
+      role="presentation"
+      className="truncate px-2.5 pt-4 pb-1.5 text-caption text-muted-foreground"
+    >
       {children}
     </div>
   );

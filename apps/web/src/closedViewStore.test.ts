@@ -151,9 +151,9 @@ describe("closedViewStore", () => {
       "chat",
     ]);
     expect(useClosedViewStore.getState().entries[1]).toMatchObject({ paneId: "pane-2" });
-    const persisted = useClosedViewStore.persist.getOptions().partialize?.(
-      useClosedViewStore.getState(),
-    );
+    const persisted = useClosedViewStore.persist
+      .getOptions()
+      .partialize?.(useClosedViewStore.getState());
     expect(persisted).toEqual({ entries: [] });
   });
 });

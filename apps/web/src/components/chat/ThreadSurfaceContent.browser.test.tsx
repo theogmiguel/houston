@@ -83,18 +83,18 @@ describe("ThreadSurfaceContent", () => {
   it("renders the addressed surface of the thread without any chat mounted", async () => {
     using _stores = freshStores();
     useRightPanelStore.getState().open(threadRef, "diff");
-    const surfaceId = useRightPanelStore.getState().byThreadKey[
-      `${threadRef.environmentId}:${threadRef.threadId}`
-    ]?.surfaces[0]?.id;
+    const surfaceId =
+      useRightPanelStore.getState().byThreadKey[`${threadRef.environmentId}:${threadRef.threadId}`]
+        ?.surfaces[0]?.id;
     expect(surfaceId).toBeDefined();
 
     await using screen = await render(
       <ThreadSurfaceContent threadRef={threadRef} surfaceId={surfaceId!} visible={false} />,
     );
 
-    expect(screen.container.querySelector("[data-testid=surface]")?.getAttribute("data-surface-id")).toBe(
-      surfaceId,
-    );
+    expect(
+      screen.container.querySelector("[data-testid=surface]")?.getAttribute("data-surface-id"),
+    ).toBe(surfaceId);
     expect(captured.props).toMatchObject({
       visible: false,
       workspaceMutationId: null,
@@ -105,9 +105,9 @@ describe("ThreadSurfaceContent", () => {
   it("takes the composer target and workspace revision from the thread's mounted chat", async () => {
     using _stores = freshStores();
     useRightPanelStore.getState().open(threadRef, "diff");
-    const surfaceId = useRightPanelStore.getState().byThreadKey[
-      `${threadRef.environmentId}:${threadRef.threadId}`
-    ]?.surfaces[0]?.id;
+    const surfaceId =
+      useRightPanelStore.getState().byThreadKey[`${threadRef.environmentId}:${threadRef.threadId}`]
+        ?.surfaces[0]?.id;
     const unpublish = publishThreadChatBridge(threadRef, bridge());
 
     await using _screen = await render(

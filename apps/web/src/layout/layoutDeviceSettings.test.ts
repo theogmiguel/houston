@@ -5,8 +5,14 @@ import { DEFAULT_LAYOUT_SETTINGS } from "./layoutSettings";
 
 describe("decodeLayoutDeviceSettings", () => {
   it("falls back to the defaults for anything that is not an object", () => {
-    expect(decodeLayoutDeviceSettings(null)).toEqual({ ...DEFAULT_LAYOUT_SETTINGS, threeFingerSwipe: false });
-    expect(decodeLayoutDeviceSettings("nope")).toEqual({ ...DEFAULT_LAYOUT_SETTINGS, threeFingerSwipe: false });
+    expect(decodeLayoutDeviceSettings(null)).toEqual({
+      ...DEFAULT_LAYOUT_SETTINGS,
+      threeFingerSwipe: false,
+    });
+    expect(decodeLayoutDeviceSettings("nope")).toEqual({
+      ...DEFAULT_LAYOUT_SETTINGS,
+      threeFingerSwipe: false,
+    });
   });
 
   it("keeps valid fields and defaults the invalid ones", () => {
@@ -39,4 +45,3 @@ describe("decodeLayoutDeviceSettings", () => {
     expect(decodeLayoutDeviceSettings({ threeFingerSwipe: "yes" }).threeFingerSwipe).toBe(false);
   });
 });
-

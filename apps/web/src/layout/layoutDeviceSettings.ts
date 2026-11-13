@@ -74,7 +74,11 @@ function decodeTemplate(value: unknown): LayoutTemplate | null {
       if (typeof pane.kind !== "string" || !PANE_KINDS.has(pane.kind)) return null;
       if (pane.span !== "column" && pane.span !== "full") return null;
       if (pane.kind === "chat") chats += 1;
-      panes.push({ kind: pane.kind as LayoutPaneKind, size: pane.size, span: pane.span as "column" | "full" });
+      panes.push({
+        kind: pane.kind as LayoutPaneKind,
+        size: pane.size,
+        span: pane.span as "column" | "full",
+      });
     }
     columns.push({ size: column.size, panes });
   }

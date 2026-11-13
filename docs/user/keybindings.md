@@ -13,43 +13,43 @@ Keybindings are stored by the server, so they apply to the environment you are e
 
 ## Common defaults
 
-| Shortcut                        | Command                                                                 |
-| ------------------------------- | ----------------------------------------------------------------------- |
-| `Ctrl+K`                        | Command palette                                                         |
-| `Ctrl+N`                        | New thread                                                              |
-| `Ctrl+Shift+N`                  | New local thread                                                        |
-| `Ctrl+Alt+N`                    | New thread without a project                                            |
-| `Ctrl+B`                        | Toggle sidebar                                                          |
-| `Ctrl+J`                        | Toggle terminal drawer                                                  |
-| `Ctrl+Alt+B`                    | Toggle right panel                                                      |
-| `Ctrl+Shift+B`                  | Toggle thread details                                                   |
-| `Ctrl+T`                        | New right-panel surface                                                 |
-| `Ctrl+W`                        | Close terminal or right-panel tab                                       |
-| `Ctrl+D`                        | Toggle diff (outside a terminal)                                        |
-| `Ctrl+P`                        | File picker                                                             |
-| `Ctrl+Alt+V`                    | Dictate in the composer                                                 |
-| `Ctrl+Shift+F`                  | Project search                                                          |
-| `Ctrl+F`                        | Find in thread                                                          |
-| `Ctrl+U`                        | Usage                                                                   |
-| `Ctrl+Shift+T`                  | Reopen closed tab                                                       |
-| `Ctrl+Shift+S`                  | Close thread                                                            |
-| `Ctrl+Shift+P`                  | Pin thread                                                              |
-| `Ctrl+.` / `Ctrl+Shift+.`       | Next / previous thread needing attention                                |
-| `Ctrl+Shift+[` / `Ctrl+Shift+]` | Previous / next thread                                                  |
-| `Ctrl+1` … `Ctrl+9`             | Jump to a thread                                                        |
-| `Ctrl+Shift+Enter`              | Steer the first queued message                                          |
-| `Ctrl+Alt+Enter`                | Send in the background                                                  |
-| `Esc`                           | Stop the current turn                                                   |
-| `Ctrl+S`                        | Stash the composer prompt                                               |
-| `Ctrl+Shift+M`                  | Model picker                                                            |
-| `Ctrl+Shift+E`                  | Reasoning effort                                                        |
-| `Ctrl+Shift+A`                  | Interaction mode                                                        |
-| `Ctrl+Shift+X`                  | Workspace                                                               |
-| `Ctrl+Shift+G`                  | Branch                                                                  |
-| `Ctrl+Shift+L`                  | Previous worktree                                                       |
-| `Ctrl+Shift+C`                  | Copy pull request link or thread reference                              |
-| `Ctrl+Shift+K`                  | Copy pull request number                                                |
-| `Ctrl+Q`                        | Quit, following the quit confirmation setting                           |
+| Shortcut                        | Command                                       |
+| ------------------------------- | --------------------------------------------- |
+| `Ctrl+K`                        | Command palette                               |
+| `Ctrl+N`                        | New thread                                    |
+| `Ctrl+Shift+N`                  | New local thread                              |
+| `Ctrl+Alt+N`                    | New thread without a project                  |
+| `Ctrl+B`                        | Toggle sidebar                                |
+| `Ctrl+J`                        | Toggle terminal drawer                        |
+| `Ctrl+Alt+B`                    | Toggle right panel                            |
+| `Ctrl+Shift+B`                  | Toggle thread details                         |
+| `Ctrl+T`                        | New right-panel surface                       |
+| `Ctrl+W`                        | Close terminal or right-panel tab             |
+| `Ctrl+D`                        | Toggle diff (outside a terminal)              |
+| `Ctrl+P`                        | File picker                                   |
+| `Ctrl+Alt+V`                    | Dictate in the composer                       |
+| `Ctrl+Shift+F`                  | Project search                                |
+| `Ctrl+F`                        | Find in thread                                |
+| `Ctrl+U`                        | Usage                                         |
+| `Ctrl+Shift+T`                  | Reopen closed tab                             |
+| `Ctrl+Shift+S`                  | Close thread                                  |
+| `Ctrl+Shift+P`                  | Pin thread                                    |
+| `Ctrl+.` / `Ctrl+Shift+.`       | Next / previous thread needing attention      |
+| `Ctrl+Shift+[` / `Ctrl+Shift+]` | Previous / next thread                        |
+| `Ctrl+1` … `Ctrl+9`             | Jump to a thread                              |
+| `Ctrl+Shift+Enter`              | Steer the first queued message                |
+| `Ctrl+Alt+Enter`                | Send in the background                        |
+| `Esc`                           | Stop the current turn                         |
+| `Ctrl+S`                        | Stash the composer prompt                     |
+| `Ctrl+Shift+M`                  | Model picker                                  |
+| `Ctrl+Shift+E`                  | Reasoning effort                              |
+| `Ctrl+Shift+A`                  | Interaction mode                              |
+| `Ctrl+Shift+X`                  | Workspace                                     |
+| `Ctrl+Shift+G`                  | Branch                                        |
+| `Ctrl+Shift+L`                  | Previous worktree                             |
+| `Ctrl+Shift+C`                  | Copy pull request link or thread reference    |
+| `Ctrl+Shift+K`                  | Copy pull request number                      |
+| `Ctrl+Q`                        | Quit, following the quit confirmation setting |
 
 ## Layout
 

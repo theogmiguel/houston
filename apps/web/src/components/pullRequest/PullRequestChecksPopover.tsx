@@ -187,7 +187,9 @@ export function PullRequestChecksPopover({
       >
         <presentation.Icon aria-hidden className={cn("size-3.5", presentation.toneClassName)} />
         {variant === "label" ? (
-          <span className={cn("ml-1.5", presentation.toneClassName)}>{CHECKS_STATE_SHORT_LABEL[checksState]}</span>
+          <span className={cn("ml-1.5", presentation.toneClassName)}>
+            {CHECKS_STATE_SHORT_LABEL[checksState]}
+          </span>
         ) : null}
         {variant === "count" ? (
           <>

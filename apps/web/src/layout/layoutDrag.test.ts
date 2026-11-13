@@ -180,7 +180,11 @@ describe("isLayoutDropUseful", () => {
     open(chat("one"), "active-pane");
     const paneId = tabOf(chat("one")).pane.id;
     expect(
-      isLayoutDropUseful(layout(), { kind: "thread", threadRef: ref("x") }, { kind: "into", paneId }),
+      isLayoutDropUseful(
+        layout(),
+        { kind: "thread", threadRef: ref("x") },
+        { kind: "into", paneId },
+      ),
     ).toBe(true);
   });
 

@@ -413,7 +413,8 @@ export function commandLabel(command: KeybindingCommand): string {
   const usagePeriod = WINDOW_OPTIONS.find((option) => option.command === command);
   if (usagePeriod) return `Usage: Period: ${usagePeriod.label}`;
   if (command === "view.reopenClosed") return "Reopen Closed Tab";
-  if (command in LAYOUT_COMMAND_LABELS) return LAYOUT_COMMAND_LABELS[command as LayoutKeybindingCommand];
+  if (command in LAYOUT_COMMAND_LABELS)
+    return LAYOUT_COMMAND_LABELS[command as LayoutKeybindingCommand];
   if (command === "thread.attentionNext") return "Thread: Next Thread Needing Attention";
   if (command === "thread.attentionPrevious") return "Thread: Previous Thread Needing Attention";
   if (command === "preview.focusUrl") return "Preview: Focus URL";

@@ -6,13 +6,7 @@ import { memo, type RefObject } from "react";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import type { ThreadPanelPresentation } from "../../rightPanelLayout";
 import { Button } from "../ui/button";
-import {
-  Menu,
-  MenuCheckboxItem,
-  MenuPopup,
-  MenuShortcut,
-  MenuTrigger,
-} from "../ui/menu";
+import { Menu, MenuCheckboxItem, MenuPopup, MenuShortcut, MenuTrigger } from "../ui/menu";
 import { PopoverCreateHandle, PopoverPanelAnchor, PopoverTrigger } from "../ui/popover";
 import { SIDEBAR_MOBILE_QUERY } from "../ui/sidebar";
 import { Toggle } from "../ui/toggle";
