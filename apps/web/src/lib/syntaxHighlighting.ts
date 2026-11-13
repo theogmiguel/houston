@@ -7,7 +7,9 @@ import {
   type SupportedLanguages,
 } from "@pierre/diffs";
 
-import { DIFF_THEME_NAMES } from "./diffRendering";
+import { DIFF_THEME_NAMES } from "./diffThemeNames";
+// Registers the readable light theme the highlighter loads.
+import "./readableSyntaxTheme";
 
 // Highlights has no lexer for these dialects, so they use their base language's.
 setCustomExtension("luau", "lua");

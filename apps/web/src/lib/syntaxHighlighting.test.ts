@@ -2,7 +2,7 @@ import { getFiletypeFromFileName } from "@pierre/diffs";
 import { describe, expect, it } from "vite-plus/test";
 
 import { getSyntaxHighlighterPromise } from "./syntaxHighlighting";
-import { DIFF_THEME_NAMES } from "./diffRendering";
+import { DIFF_THEME_NAMES } from "./diffThemeNames";
 
 describe("dialect file types", () => {
   it.each([

@@ -2,7 +2,7 @@ import { getFiletypeFromFileName } from "@pierre/diffs";
 import type { ProjectContentMatch } from "@houston-app/contracts";
 import { memo, Suspense, use, type CSSProperties } from "react";
 
-import { resolveDiffThemeName } from "~/lib/diffRendering";
+import { resolveDiffThemeName } from "~/lib/diffThemeNames";
 import { getSyntaxHighlighterPromise } from "~/lib/syntaxHighlighting";
 
 import { RenderErrorBoundary } from "../RenderErrorBoundary";
