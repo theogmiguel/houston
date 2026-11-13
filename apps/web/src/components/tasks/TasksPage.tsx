@@ -459,7 +459,7 @@ export function TasksPage() {
               ) : null}
             </WorkspaceBreadcrumb>
             {/* In a narrow pane the controls scroll sideways instead of overlapping the title. */}
-            <ScrollRow className="flex-1 gap-3">
+            <ScrollRow className="flex-1" spacing="loose">
               <ToggleGroup
                 className="shrink-0"
                 value={[view]}
