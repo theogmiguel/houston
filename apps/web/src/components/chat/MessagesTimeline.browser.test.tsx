@@ -442,6 +442,88 @@ describe("MessagesTimeline top fade", () => {
   });
 });
 
+describe("MessagesTimeline fade before the composer", () => {
+  const COMPOSER_INSET = 120;
+  const entries = (prefix: string) =>
+    Array.from({ length: 30 }, (_, index) =>
+      message(`Context ${index}\n\n`.repeat(8), { role: "assistant" }, `${prefix}-${index}`),
+    );
+
+  it("dissolves the rows above the composer's overlay, scrolled or not", async () => {
+    await using _viewport = await desktopViewport();
+    const props = baseProps();
+    const container = document.createElement("div");
+    container.style.cssText = "height: 600px; width: 900px; display: flex; flex-direction: column;";
+    await using _screen = await render(
+      <MessagesTimeline
+        {...props}
+        contentInsetEndAdjustment={COMPOSER_INSET}
+        timelineEntries={entries("end-fade")}
+      />,
+      { container },
+    );
+    const viewport = props.listRef.current!.getScrollableNode()!;
+    await act(() => {
+      viewport.scrollTop = 0;
+      viewport.dispatchEvent(new Event("scroll"));
+    });
+    await vi.waitFor(() => expect(getComputedStyle(viewport).maskImage).not.toBe("none"));
+    const sizes = getComputedStyle(viewport).maskSize.split(",");
+    // No band under the header at the top of the list; the end band covers the overlay and the gap above it.
+    expect(sizes[0]!.trim()).toBe("100% 0px");
+    expect(sizes[1]!.trim()).toBe(`100% ${COMPOSER_INSET + 16}px`);
+    expect(getComputedStyle(viewport).getPropertyValue("--timeline-end-fade-height")).toBe("22px");
+  });
+
+  it("leaves the last row whole when the thread is at its end, in a narrow pane too", async () => {
+    await using _viewport = await desktopViewport(500, 900);
+    const props = baseProps();
+    const container = document.createElement("div");
+    container.style.cssText = "height: 600px; width: 480px; display: flex; flex-direction: column;";
+    await using _screen = await render(
+      <MessagesTimeline
+        {...props}
+        contentInsetEndAdjustment={COMPOSER_INSET}
+        timelineEntries={[
+          ...entries("end-row"),
+          message("The very last line", { role: "assistant" }, "end-row-last"),
+        ]}
+      />,
+      { container },
+    );
+    const viewport = props.listRef.current!.getScrollableNode()!;
+    await vi.waitFor(() => {
+      expect(viewport.scrollTop).toBeGreaterThan(0);
+      expect(viewport.scrollTop + viewport.clientHeight).toBeGreaterThanOrEqual(
+        viewport.scrollHeight - 1,
+      );
+    });
+    const lastLine = [...container.querySelectorAll<HTMLElement>("p")].find(
+      (node) => node.textContent === "The very last line",
+    )!;
+    const fadeStart = viewport.getBoundingClientRect().bottom - (COMPOSER_INSET + 16);
+    expect(lastLine.getBoundingClientRect().bottom).toBeLessThanOrEqual(fadeStart + 0.5);
+  });
+
+  it("draws no end band while nothing floats over the list", async () => {
+    await using _viewport = await desktopViewport();
+    const props = baseProps();
+    const container = document.createElement("div");
+    container.style.cssText = "height: 600px; width: 900px; display: flex; flex-direction: column;";
+    await using _screen = await render(
+      <MessagesTimeline {...props} topFadeEnabled timelineEntries={entries("no-end")} />,
+      { container },
+    );
+    const viewport = props.listRef.current!.getScrollableNode()!;
+    await act(() => {
+      viewport.scrollTop = 400;
+      viewport.dispatchEvent(new Event("scroll"));
+    });
+    await vi.waitFor(() => expect(getComputedStyle(viewport).maskImage).not.toBe("none"));
+    expect(getComputedStyle(viewport).maskSize.split(",")[1]!.trim()).toBe("100% 0px");
+  });
+});
+
 describe("MessagesTimeline messages", () => {
   it("settles when equally long messages have very different rendered heights", async () => {
     const props = baseProps();
