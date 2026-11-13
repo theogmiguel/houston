@@ -1,9 +1,6 @@
-import { Dialog as CommandDialogPrimitive } from "@base-ui/react/dialog";
 import { SearchIcon } from "lucide-react";
-import { useRef } from "react";
 import type * as React from "react";
 import { cn } from "~/lib/utils";
-import { useNativeTitlebarHeight } from "~/lib/windowControlsOverlay";
 import {
   Autocomplete,
   AutocompleteCollection,
@@ -15,82 +12,8 @@ import {
   AutocompleteListHeading,
   AutocompleteListVirtualized,
 } from "~/components/ui/autocomplete";
-import { DIALOG_BACKDROP_CLASS, DIALOG_POPUP_CLASS } from "~/components/ui/dialog-styles";
+import { COMMAND_INPUT_CLASS, COMMAND_INPUT_FRAME_CLASS } from "~/components/ui/command-dialog";
 import { Button } from "~/components/ui/button";
-
-const CommandDialog = CommandDialogPrimitive.Root;
-
-const CommandDialogPortal = CommandDialogPrimitive.Portal;
-
-function CommandDialogTrigger(props: CommandDialogPrimitive.Trigger.Props) {
-  return <CommandDialogPrimitive.Trigger data-slot="command-dialog-trigger" {...props} />;
-}
-
-function CommandDialogBackdrop({ className, ...props }: CommandDialogPrimitive.Backdrop.Props) {
-  return (
-    <CommandDialogPrimitive.Backdrop
-      // The palette floats over a busy workspace, so it dims more than an ordinary dialog.
-      className={cn(
-        DIALOG_BACKDROP_CLASS,
-        "[--dialog-scrim:color-mix(in_srgb,#000_60%,transparent)]",
-        className,
-      )}
-      data-slot="command-dialog-backdrop"
-      {...props}
-    />
-  );
-}
-
-function CommandDialogViewport({ className, ...props }: CommandDialogPrimitive.Viewport.Props) {
-  // Short desktop windows would put the search field under the native window controls.
-  const nativeTitlebarHeight = useNativeTitlebarHeight();
-  const titlebarStyle = {
-    "--command-titlebar-height": `${nativeTitlebarHeight}px`,
-  } as React.CSSProperties;
-  return (
-    <CommandDialogPrimitive.Viewport
-      className={cn(
-        "pointer-events-none fixed inset-0 z-50 flex flex-col items-center px-4 pt-[max(--spacing(4),4vh,calc(var(--command-titlebar-height)+--spacing(2)))] pb-[max(--spacing(4),4vh)] sm:pt-[max(10vh,calc(var(--command-titlebar-height)+--spacing(2)))] sm:pb-[10vh]",
-        className,
-      )}
-      data-slot="command-dialog-viewport"
-      style={titlebarStyle}
-      {...props}
-    />
-  );
-}
-
-function CommandDialogPopup({
-  className,
-  children,
-  onBackdropPointerDown,
-  ...props
-}: CommandDialogPrimitive.Popup.Props & {
-  onBackdropPointerDown?: React.PointerEventHandler<HTMLDivElement>;
-}) {
-  const popupRef = useRef<HTMLDivElement>(null);
-  return (
-    <CommandDialogPortal>
-      <CommandDialogBackdrop onPointerDown={onBackdropPointerDown} />
-      <CommandDialogViewport>
-        <CommandDialogPrimitive.Popup
-          // The first tabbable can be an input addon, such as a submenu's Back button.
-          initialFocus={() => popupRef.current?.querySelector("input") ?? true}
-          ref={popupRef}
-          className={cn(
-            DIALOG_POPUP_CLASS,
-            "pointer-events-auto max-h-105 max-w-[640px] rounded-(--r-group) text-foreground",
-            className,
-          )}
-          data-slot="command-dialog-popup"
-          {...props}
-        >
-          {children}
-        </CommandDialogPrimitive.Popup>
-      </CommandDialogViewport>
-    </CommandDialogPortal>
-  );
-}
 
 function Command({
   autoHighlight = "always",
@@ -115,11 +38,11 @@ function CommandInput({
   ...props
 }: React.ComponentProps<typeof AutocompleteInput> & { endAddon?: React.ReactNode }) {
   return (
-    <div className="relative border-b border-border px-[var(--command-shell-inset)] py-2.5 [&_[data-slot=autocomplete-start-addon]]:ps-[calc(var(--command-shell-inset)+0.0625rem)]">
+    <div className={COMMAND_INPUT_FRAME_CLASS}>
       <AutocompleteInput
         autoFocus
         className={cn(
-          "border-transparent! bg-transparent! shadow-none before:hidden has-focus-visible:ring-0 has-focus-visible:outline-0! placeholder:text-placeholder *:data-[slot=autocomplete-input]:ps-9! sm:*:data-[slot=autocomplete-input]:ps-[calc(var(--command-shell-inset)+1.5rem)]!",
+          COMMAND_INPUT_CLASS,
           endAddon && "*:data-[slot=autocomplete-input]:pe-16!",
           className,
         )}
@@ -263,9 +186,6 @@ function CommandFooterAction({
 export {
   Command,
   CommandCollection,
-  CommandDialog,
-  CommandDialogPopup,
-  CommandDialogTrigger,
   CommandFooter,
   CommandFooterAction,
   CommandGroup,

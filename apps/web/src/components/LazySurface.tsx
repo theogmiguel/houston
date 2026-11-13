@@ -16,18 +16,20 @@ export function lazySurface<P>(load: () => Promise<ComponentType<P>>): LazySurfa
 const reloadPage = () => window.location.reload();
 
 // Its own Suspense and error boundary, so a failed chunk degrades only this surface;
-// `renderFrame` wraps both the loading placeholder (null) and the failure notice.
+// `renderFrame` wraps both the loading placeholder (`loading`, else null) and the failure notice.
 export function LazySurfaceBoundary<P extends object>({
   surface,
   props,
   label,
   renderFrame,
+  loading = null,
   reload = reloadPage,
 }: {
   readonly surface: LazySurface<P>;
   readonly props: P;
   readonly label: string;
   readonly renderFrame: (content: ReactNode) => ReactNode;
+  readonly loading?: ReactNode;
   readonly reload?: () => void;
 }) {
   const failure = (
@@ -44,7 +46,7 @@ export function LazySurfaceBoundary<P extends object>({
   );
   return (
     <RenderErrorBoundary fallback={renderFrame(failure)}>
-      <Suspense fallback={renderFrame(null)}>{createElement(surface, props)}</Suspense>
+      <Suspense fallback={renderFrame(loading)}>{createElement(surface, props)}</Suspense>
     </RenderErrorBoundary>
   );
 }

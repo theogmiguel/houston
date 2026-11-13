@@ -4,7 +4,8 @@ import { page, userEvent } from "vite-plus/test/browser";
 
 import { render } from "../../test/render";
 import { CommandPaletteContent } from "./CommandPaletteContent";
-import { CommandDialog, CommandDialogPopup, CommandItem, CommandList } from "./ui/command";
+import { CommandDialog, CommandDialogPopup } from "./ui/command-dialog";
+import { CommandItem, CommandList } from "./ui/command";
 
 function SubmenuPalette() {
   const [open, setOpen] = useState(false);
