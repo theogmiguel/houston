@@ -3389,6 +3389,12 @@ export const layerWsRpc = (
         [WS_METHODS.houstonLayoutWorkspacesDelete]: (input) =>
           houstonLayoutWorkspaces.delete(input),
         [WS_METHODS.houstonLayoutWorkspacesSubscribe]: () => houstonLayoutWorkspaces.subscribe,
+        [WS_METHODS.houstonLayoutWorkspacesAssignThread]: (input) =>
+          houstonLayoutWorkspaces.assignThread(input),
+        [WS_METHODS.houstonLayoutWorkspacesMoveThread]: (input) =>
+          houstonLayoutWorkspaces.moveThread(input),
+        [WS_METHODS.houstonLayoutWorkspacesSetFocus]: ({ workspaceId }) =>
+          houstonLayoutWorkspaces.setFocus(workspaceId).pipe(Effect.as({})),
         [WS_METHODS.houstonSlackGet]: () => houstonSlack.get,
         [WS_METHODS.houstonSlackConnect]: (input) => houstonSlack.connect(input),
         [WS_METHODS.houstonSlackDisconnect]: () => houstonSlack.disconnect,

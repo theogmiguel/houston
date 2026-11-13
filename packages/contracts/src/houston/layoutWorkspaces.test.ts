@@ -163,12 +163,35 @@ describe("payloads", () => {
 
   it("the stream carries a snapshot, an upsert or a delete", () => {
     expect(
-      accepts(HoustonLayoutWorkspaceStreamEvent, { snapshot: { workspaces: [record()] } }),
+      accepts(HoustonLayoutWorkspaceStreamEvent, {
+        snapshot: { workspaces: [record()], memberships: [] },
+      }),
     ).toBe(true);
+    expect(
+      accepts(HoustonLayoutWorkspaceStreamEvent, { snapshot: { workspaces: [record()] } }),
+    ).toBe(false);
     expect(accepts(HoustonLayoutWorkspaceStreamEvent, { upserted: record() })).toBe(true);
     expect(accepts(HoustonLayoutWorkspaceStreamEvent, { deleted: { workspaceId: "w1" } })).toBe(
       true,
     );
     expect(accepts(HoustonLayoutWorkspaceStreamEvent, { deleted: {} })).toBe(false);
+  });
+
+  it("the stream carries a thread's workspace and its removal", () => {
+    const membership = {
+      environmentId: "env",
+      threadId: "t1",
+      workspaceId: "w1",
+      parentThreadId: null,
+    };
+    expect(accepts(HoustonLayoutWorkspaceStreamEvent, { membership })).toBe(true);
+    expect(
+      accepts(HoustonLayoutWorkspaceStreamEvent, {
+        membershipRemoved: { environmentId: "env", threadId: "t1" },
+      }),
+    ).toBe(true);
+    expect(accepts(HoustonLayoutWorkspaceStreamEvent, { membership: { threadId: "t1" } })).toBe(
+      false,
+    );
   });
 });

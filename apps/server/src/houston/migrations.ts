@@ -6,6 +6,7 @@ import * as Migrator from "effect/sql/Migrator";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import { convertGridTree, readLegacyGrid } from "./layoutWorkspaceConversion.ts";
+import { membershipsFromTabs, type StoredWorkspaceTabs } from "./membershipBackfill.ts";
 import {
   createProjectionReadIndexes,
   createShellReadModels,
@@ -119,6 +120,53 @@ const LayoutWorkspaces = Effect.gen(function* () {
     yield* sql`
       INSERT INTO houston_layout_workspaces (id, position, record_json, revision, created_at, updated_at)
       VALUES (${record.id}, 0, ${encodeWorkspace(record)}, 1, ${now}, ${now})
+    `;
+  }
+});
+
+const readStoredColumns = (json: string): StoredWorkspaceTabs["columns"] | null => {
+  try {
+    const parsed = JSON.parse(json) as { columns?: StoredWorkspaceTabs["columns"] };
+    return Array.isArray(parsed.columns) ? parsed.columns : [];
+  } catch {
+    return null;
+  }
+};
+
+// Which workspace each chat thread belongs to, and the last workspace a client reported as
+// focused. A thread with an open chat tab starts in that tab's workspace; threads with no tab are
+// assigned when the server starts, because only the server knows its environment id.
+const LayoutThreadMembership = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_layout_thread_membership (
+      environment_id TEXT NOT NULL,
+      thread_id TEXT NOT NULL,
+      workspace_id TEXT NOT NULL,
+      parent_thread_id TEXT,
+      PRIMARY KEY (environment_id, thread_id)
+    ) WITHOUT ROWID
+  `;
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_houston_layout_membership_workspace ON houston_layout_thread_membership(workspace_id)`;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_layout_focus (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      workspace_id TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `;
+  const rows = yield* sql<{ readonly id: string; readonly record_json: string }>`
+    SELECT id, record_json FROM houston_layout_workspaces ORDER BY position, created_at, id
+  `;
+  const workspaces = rows.flatMap((row) => {
+    const columns = readStoredColumns(row.record_json);
+    return columns === null ? [] : [{ id: row.id, columns }];
+  });
+  for (const membership of membershipsFromTabs(workspaces)) {
+    yield* sql`
+      INSERT OR IGNORE INTO houston_layout_thread_membership
+        (environment_id, thread_id, workspace_id, parent_thread_id)
+      VALUES (${membership.environmentId}, ${membership.threadId}, ${membership.workspaceId}, NULL)
     `;
   }
 });
@@ -906,6 +954,7 @@ const houstonMigrationEntries = [
   [18, "Grids", Grids],
   [19, "LayoutWorkspaces", LayoutWorkspaces],
   [20, "RemoveGrids", RemoveGrids],
+  [21, "LayoutThreadMembership", LayoutThreadMembership],
 ] as const;
 
 // Ids land in merge order, so a database can record a higher id before a lower one; every

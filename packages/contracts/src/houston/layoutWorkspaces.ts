@@ -229,7 +229,10 @@ export const findLayoutViolation = (layout: LayoutShape): HoustonLayoutViolation
   return undefined;
 };
 
-/** One workspace as stored; focus, camera width and ghost tabs stay with the client. */
+/**
+ * One workspace as stored. On-screen focus, camera width and ghost tabs stay with the client; the
+ * server keeps the last reported focus as the default workspace for threads created without a parent.
+ */
 export const HoustonLayoutWorkspaceRecord = Schema.Struct({
   id: Id,
   name: TrimmedNonEmptyString.check(Schema.isMaxLength(HOUSTON_LAYOUT_WORKSPACE_LIMITS.nameChars)),
@@ -255,6 +258,7 @@ export const HoustonLayoutWorkspaceErrorKind = Schema.Literals([
   "not_found",
   "duplicate_content",
   "last_workspace",
+  "has_threads",
 ]);
 export type HoustonLayoutWorkspaceErrorKind = typeof HoustonLayoutWorkspaceErrorKind.Type;
 
@@ -301,20 +305,78 @@ export const HoustonLayoutWorkspaceReorderInput = Schema.Struct({
 });
 export type HoustonLayoutWorkspaceReorderInput = typeof HoustonLayoutWorkspaceReorderInput.Type;
 
-/** Deleting a workspace moves its threads' chat tabs to the first remaining workspace. */
+/**
+ * Deleting a workspace is refused while a live thread belongs to it; the caller deletes those
+ * threads first. Chat tabs of other content move to the first remaining workspace.
+ */
 export const HoustonLayoutWorkspaceDeleteInput = Schema.Struct({ workspaceId: Id });
 export type HoustonLayoutWorkspaceDeleteInput = typeof HoustonLayoutWorkspaceDeleteInput.Type;
 
 export const HoustonLayoutWorkspaceDeleteResult = Schema.Struct({ deleted: Schema.Boolean });
 export type HoustonLayoutWorkspaceDeleteResult = typeof HoustonLayoutWorkspaceDeleteResult.Type;
 
+/**
+ * The workspace a chat thread belongs to. `parentThreadId` is set for a subagent child, which has
+ * no workspace choice of its own and follows its parent.
+ */
+export const HoustonLayoutThreadMembership = Schema.Struct({
+  environmentId: Id,
+  threadId: Id,
+  workspaceId: Id,
+  parentThreadId: Schema.NullOr(Id),
+});
+export type HoustonLayoutThreadMembership = typeof HoustonLayoutThreadMembership.Type;
+
+/** Records the workspace a new thread belongs to; a thread that already has one keeps it. */
+export const HoustonLayoutThreadAssignInput = Schema.Struct({
+  environmentId: Id,
+  threadId: Id,
+  workspaceId: Id,
+});
+export type HoustonLayoutThreadAssignInput = typeof HoustonLayoutThreadAssignInput.Type;
+
+/**
+ * Moves a thread, its children and their chat tabs to a workspace in one transaction. Tabs go
+ * to `paneId` (at `index`) when that pane is in the target, else the end of its last pane.
+ */
+export const HoustonLayoutThreadMoveInput = Schema.Struct({
+  environmentId: Id,
+  threadId: Id,
+  workspaceId: Id,
+  paneId: Schema.optional(Id),
+  index: Schema.optional(NonNegativeInt),
+});
+export type HoustonLayoutThreadMoveInput = typeof HoustonLayoutThreadMoveInput.Type;
+
+/** `previous` is where the thread's first chat tab sat, so a caller can move it back. */
+export const HoustonLayoutThreadMoveResult = Schema.Struct({
+  membership: HoustonLayoutThreadMembership,
+  previous: Schema.Struct({
+    workspaceId: Schema.NullOr(Id),
+    paneId: Schema.NullOr(Id),
+    index: Schema.NullOr(NonNegativeInt),
+  }),
+});
+export type HoustonLayoutThreadMoveResult = typeof HoustonLayoutThreadMoveResult.Type;
+
+/** The workspace the person last had focused; a default for threads created without a parent. */
+export const HoustonLayoutFocusInput = Schema.Struct({ workspaceId: Id });
+export type HoustonLayoutFocusInput = typeof HoustonLayoutFocusInput.Type;
+
 /** The first event is the snapshot; every later one follows a committed change. */
 export const HoustonLayoutWorkspaceStreamEvent = Schema.Union([
   Schema.Struct({
-    snapshot: Schema.Struct({ workspaces: Schema.Array(HoustonLayoutWorkspaceRecord) }),
+    snapshot: Schema.Struct({
+      workspaces: Schema.Array(HoustonLayoutWorkspaceRecord),
+      memberships: Schema.Array(HoustonLayoutThreadMembership),
+    }),
   }),
   Schema.Struct({ upserted: HoustonLayoutWorkspaceRecord }),
   Schema.Struct({ deleted: Schema.Struct({ workspaceId: Id }) }),
+  Schema.Struct({ membership: HoustonLayoutThreadMembership }),
+  Schema.Struct({
+    membershipRemoved: Schema.Struct({ environmentId: Id, threadId: Id }),
+  }),
 ]);
 export type HoustonLayoutWorkspaceStreamEvent = typeof HoustonLayoutWorkspaceStreamEvent.Type;
 

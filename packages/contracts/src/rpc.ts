@@ -288,6 +288,11 @@ import {
   HoustonMergeQueueSummaryInput,
 } from "./houston/mergeQueue.ts";
 import {
+  HoustonLayoutFocusInput,
+  HoustonLayoutThreadAssignInput,
+  HoustonLayoutThreadMembership,
+  HoustonLayoutThreadMoveInput,
+  HoustonLayoutThreadMoveResult,
   HoustonLayoutWorkspaceDeleteInput,
   HoustonLayoutWorkspaceDeleteResult,
   HoustonLayoutWorkspaceEmptyInput,
@@ -663,6 +668,9 @@ export const WS_METHODS = {
   houstonLayoutWorkspacesReorder: "houston.layoutWorkspaces.reorder",
   houstonLayoutWorkspacesDelete: "houston.layoutWorkspaces.delete",
   houstonLayoutWorkspacesSubscribe: "houston.layoutWorkspaces.subscribe",
+  houstonLayoutWorkspacesAssignThread: "houston.layoutWorkspaces.assignThread",
+  houstonLayoutWorkspacesMoveThread: "houston.layoutWorkspaces.moveThread",
+  houstonLayoutWorkspacesSetFocus: "houston.layoutWorkspaces.setFocus",
   houstonSlackGet: "houston.slack.get",
   houstonSlackConnect: "houston.slack.connect",
   houstonSlackDisconnect: "houston.slack.disconnect",
@@ -2130,6 +2138,30 @@ const WsHoustonLayoutWorkspacesDeleteRpc = Rpc.make(WS_METHODS.houstonLayoutWork
   error: HoustonLayoutWorkspacesRpcError,
 });
 
+const WsHoustonLayoutWorkspacesAssignThreadRpc = Rpc.make(
+  WS_METHODS.houstonLayoutWorkspacesAssignThread,
+  {
+    payload: HoustonLayoutThreadAssignInput,
+    success: HoustonLayoutThreadMembership,
+    error: HoustonLayoutWorkspacesRpcError,
+  },
+);
+
+const WsHoustonLayoutWorkspacesMoveThreadRpc = Rpc.make(
+  WS_METHODS.houstonLayoutWorkspacesMoveThread,
+  {
+    payload: HoustonLayoutThreadMoveInput,
+    success: HoustonLayoutThreadMoveResult,
+    error: HoustonLayoutWorkspacesRpcError,
+  },
+);
+
+const WsHoustonLayoutWorkspacesSetFocusRpc = Rpc.make(WS_METHODS.houstonLayoutWorkspacesSetFocus, {
+  payload: HoustonLayoutFocusInput,
+  success: HoustonLayoutWorkspaceEmptyInput,
+  error: HoustonLayoutWorkspacesRpcError,
+});
+
 const WsHoustonLayoutWorkspacesSubscribeRpc = Rpc.make(
   WS_METHODS.houstonLayoutWorkspacesSubscribe,
   {
@@ -2959,6 +2991,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonLayoutWorkspacesReorderRpc,
   WsHoustonLayoutWorkspacesDeleteRpc,
   WsHoustonLayoutWorkspacesSubscribeRpc,
+  WsHoustonLayoutWorkspacesAssignThreadRpc,
+  WsHoustonLayoutWorkspacesMoveThreadRpc,
+  WsHoustonLayoutWorkspacesSetFocusRpc,
   WsHoustonSlackGetRpc,
   WsHoustonSlackConnectRpc,
   WsHoustonSlackDisconnectRpc,

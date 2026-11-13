@@ -35,6 +35,7 @@ const HOUSTON_TRACK: Array<readonly [number, string]> = [
   [18, "Grids"],
   [19, "LayoutWorkspaces"],
   [20, "RemoveGrids"],
+  [21, "LayoutThreadMembership"],
 ];
 const TASK_TABLES = [
   "houston_task_acceptance",
@@ -1127,22 +1128,85 @@ describe("the grids removal migration", () => {
     }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
   );
 
-  it.effect(
-    "a file database at upstream's head applies 18, 19 and 20 and ends without the table",
-    () =>
-      withDatabaseFile((file) =>
-        Effect.gen(function* () {
-          yield* runMigrations();
-          assert.deepEqual(
-            (yield* runHoustonMigrations()).filter(([id]) => id >= 18),
-            [
-              [18, "Grids"],
-              [19, "LayoutWorkspaces"],
-              [20, "RemoveGrids"],
-            ],
-          );
-          assert.deepEqual(yield* gridObjects, []);
-        }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: file }))),
-      ),
+  it.effect("a file database at upstream's head applies 18 to 21 and ends without the table", () =>
+    withDatabaseFile((file) =>
+      Effect.gen(function* () {
+        yield* runMigrations();
+        assert.deepEqual(
+          (yield* runHoustonMigrations()).filter(([id]) => id >= 18),
+          [
+            [18, "Grids"],
+            [19, "LayoutWorkspaces"],
+            [20, "RemoveGrids"],
+            [21, "LayoutThreadMembership"],
+          ],
+        );
+        assert.deepEqual(yield* gridObjects, []);
+      }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: file }))),
+    ),
+  );
+});
+
+describe("the thread membership migration", () => {
+  const tabsRecord = (id: string, position: number, threads: string[]) => ({
+    id,
+    position,
+    record_json: JSON.stringify({
+      id,
+      name: id,
+      position,
+      columns: [
+        {
+          id: `c-${id}`,
+          width: 1,
+          panes: [
+            {
+              id: `p-${id}`,
+              size: 1,
+              activeTabId: null,
+              tabs: threads.map((threadId) => ({
+                id: `t-${id}-${threadId}`,
+                content: {
+                  kind: "chat",
+                  target: { kind: "server", threadRef: { environmentId: "env", threadId } },
+                },
+              })),
+            },
+          ],
+        },
+      ],
+      pinnedAt: null,
+      hidden: false,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      revision: 1,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }),
+  });
+
+  it.effect("rule 8: a thread with a chat tab starts in that tab's workspace", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`DELETE FROM houston_layout_workspaces`;
+      for (const row of [tabsRecord("a", 0, ["one"]), tabsRecord("b", 1, ["two", "one"])]) {
+        yield* sql`
+          INSERT INTO houston_layout_workspaces (id, position, record_json, revision, created_at, updated_at)
+          VALUES (${row.id}, ${row.position}, ${row.record_json}, 1, '2026-01-01', '2026-01-01')
+        `;
+      }
+      yield* sql`DROP TABLE houston_layout_thread_membership`;
+      yield* sql`DROP TABLE houston_layout_focus`;
+      yield* sql`DELETE FROM houston_sql_migrations WHERE migration_id = 21`;
+      assert.deepEqual(yield* runHoustonMigrations(), [[21, "LayoutThreadMembership"]]);
+      const rows = yield* sql<{ readonly thread_id: string; readonly workspace_id: string }>`
+        SELECT thread_id, workspace_id FROM houston_layout_thread_membership ORDER BY thread_id
+      `;
+      assert.deepEqual(
+        rows.map((row) => [row.thread_id, row.workspace_id]),
+        [
+          ["one", "a"],
+          ["two", "b"],
+        ],
+      );
+    }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
   );
 });

@@ -540,7 +540,7 @@ describe("the stream", () => {
       const service = yield* HoustonLayoutWorkspaces.HoustonLayoutWorkspaceService;
       const [original] = yield* service.list;
       const watcher = yield* service.subscribe.pipe(
-        Stream.take(6),
+        Stream.take(8),
         Stream.runCollect,
         Effect.forkChild,
       );
