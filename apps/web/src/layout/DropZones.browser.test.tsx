@@ -64,6 +64,14 @@ describe("drag overlay", () => {
     expect(getComputedStyle(ghost).transform).not.toBe("none");
   });
 
+  it("keeps the chip and draws no destination while the sidebar has the drag", async () => {
+    using _layout = openLayout();
+    await using _screen = await render(<Scene />, { router: false });
+    await act(() => moveLayoutDrag(SOURCE, { x: 700, y: 300 }, { targetless: true }));
+    expect(overlay()!.querySelector("[data-layout-drag-ghost]")).not.toBeNull();
+    expect(overlay()!.querySelector("[data-layout-drop-zone]")).toBeNull();
+  });
+
   it("draws only the chip where the layout would not change", async () => {
     using _layout = openLayout([[[["a"]]]]);
     await using _screen = await render(<Scene />, { router: false });

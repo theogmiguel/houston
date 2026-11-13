@@ -48,7 +48,8 @@ export function beginLayoutTabDrag(event: ReactPointerEvent, tabId: string): voi
     moveEvent.preventDefault();
     const point = { x: moveEvent.clientX, y: moveEvent.clientY };
     if (sidebarSource !== null && moveTabDrag(sidebarSource, point)) {
-      cancelLayoutDrag();
+      // The sidebar shows the destination; the layout keeps only the tab's chip on the pointer.
+      moveLayoutDrag(source, point, { targetless: true });
       return;
     }
     moveLayoutDrag(source, point);

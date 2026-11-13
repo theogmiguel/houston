@@ -287,7 +287,12 @@ export function composerTakesDrag(source: LayoutDragSource, composer: HTMLElemen
 export function moveLayoutDrag(
   source: LayoutDragSource,
   point: { x: number; y: number },
-  options: { composer?: HTMLElement | null; composerTargets?: readonly HTMLElement[] } = {},
+  options: {
+    composer?: HTMLElement | null;
+    composerTargets?: readonly HTMLElement[];
+    /** Another surface (the sidebar) has the drop: follow the pointer, target nothing. */
+    targetless?: boolean;
+  } = {},
 ): void {
   const measured = measure();
   if (!measured) {
@@ -302,7 +307,10 @@ export function moveLayoutDrag(
           .filter((composer) => composerTakesDrag(source, composer))
           .map((composer) => toRect(composer.getBoundingClientRect()));
   const composer = options.composer ? toRect(options.composer.getBoundingClientRect()) : null;
-  let raw = composer ? null : resolveLayoutDropTarget(point, measured.panes, measured.strip);
+  let raw =
+    composer || options.targetless
+      ? null
+      : resolveLayoutDropTarget(point, measured.panes, measured.strip);
   if (raw?.kind === "into") {
     const paneId = raw.paneId;
     const tabs = measured.panes
