@@ -3,6 +3,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import type { ToolCallDiffTarget } from "../../diffPanelStore";
 import { AudioPreviewUnmountContext } from "../files/AudioPreview";
 import { ThreadFindTimelineContext } from "./ThreadFindProvider";
+import { DiffStatLabel } from "./DiffStatLabel";
 import { MarkdownFindContext } from "./markdownFindContext";
 import { useChatCanvas } from "./ChatCanvasContext";
 import { WorkLogBlock } from "./WorkLog";
@@ -59,11 +60,13 @@ import {
   ArrowRightIcon,
   BotIcon,
   CircleAlertIcon,
+  MessageSquareIcon,
   MessagesSquareIcon,
   Minimize2Icon,
 } from "lucide-react";
 import { ChevronDown, ChevronRight } from "lucide";
 import { MorphIcon } from "~/components/MorphIcon";
+import { PanelEmptyState } from "../ui/empty-state";
 import { Skeleton } from "../ui/skeleton";
 import { ExpandedImagePreview } from "./ExpandedImagePreview";
 import {
@@ -1324,7 +1327,11 @@ const ConversationTimeline = memo(function ConversationTimeline({
           className="flex h-full items-center justify-center ps-(--chat-lane-inset-start) pe-(--chat-lane-inset-end)"
           style={{ paddingBottom: emptyPlaceholderInset }}
         >
-          <p className="text-sm text-muted-foreground">Send a message to start the conversation.</p>
+          <PanelEmptyState
+            icon={<MessageSquareIcon />}
+            title="No messages yet"
+            description="Send a message to start the conversation."
+          />
         </div>
       </>
     );
@@ -1700,11 +1707,11 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
           aria-busy={loading}
           className="flex h-7 min-w-0 flex-1 cursor-pointer select-none items-center gap-2 rounded-(--r-ctl) px-2 text-left text-body text-(--t2) focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
         >
+          <span className="shrink-0">{row.label}</span>
           <MorphIcon
-            className="size-3.5 shrink-0 text-(--houston)"
+            className="-ms-1 size-3.5 shrink-0 text-(--houston)"
             icon={row.expanded ? ChevronDown : ChevronRight}
           />
-          <span className="shrink-0">{row.label}</span>
           {row.summary ? (
             <span className="min-w-0 truncate text-callout text-(--houston)">· {row.summary}</span>
           ) : null}
@@ -1713,6 +1720,14 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
           ) : null}
           {error ? <span className="shrink-0 text-callout text-(--houston)">· {error}</span> : null}
         </button>
+        {row.diffStat ? (
+          <DiffStatLabel
+            additions={row.diffStat.additions}
+            deletions={row.diffStat.deletions}
+            layout="inline"
+            className="me-2 shrink-0 text-callout"
+          />
+        ) : null}
         {row.expanded ? null : (
           // Expanded, the work rows below carry the times; the fold's own would repeat the turn's.
           <TimelineRowTimestamp

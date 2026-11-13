@@ -34,9 +34,10 @@ export interface ShortcutMatchContext {
   terminalOpen: boolean;
   previewFocus: boolean;
   previewOpen: boolean;
-  gridRoute?: boolean;
   isWeb: boolean;
   isDesktop: boolean;
+  /** macOS, where mod is Cmd. Derived from the platform unless the context gives it. */
+  isMac?: boolean;
   editableFocus?: boolean;
   /** An inline composer menu owns Escape while it is open. */
   composerMenuOpen?: boolean;
@@ -63,13 +64,13 @@ function resolvePlatform(options: ShortcutMatchOptions | undefined): string {
 
 function resolveContext(options: ShortcutMatchOptions | undefined): ShortcutMatchContext {
   return {
-    gridRoute: typeof window !== "undefined" && window.location.pathname.startsWith("/grid/"),
     terminalFocus: false,
     terminalOpen: false,
     previewFocus: false,
     previewOpen: false,
     isWeb: !isDesktopHost,
     isDesktop: isDesktopHost,
+    isMac: isMacPlatform(resolvePlatform(options)),
     editableFocus: false,
     ...options?.context,
   };

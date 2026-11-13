@@ -4,8 +4,7 @@ import {
   managedUpdatesDenial,
 } from "@houston-app/contracts";
 import { TriangleAlertIcon } from "lucide-react";
-import { type ComponentProps, useId, useRef, useState } from "react";
-import { flushSync } from "react-dom";
+import { useState } from "react";
 import { settlePromise, squashAtomCommandFailure } from "@houston-app/client-runtime/state/runtime";
 import { isDesktopHost } from "../../env";
 import { cn } from "../../lib/utils";
@@ -28,8 +27,6 @@ import {
 } from "../desktopUpdate.logic";
 import { showDesktopUpdateDownloadedToast } from "../desktopUpdate.toast";
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
-import { Popover, PopoverCreateHandle, PopoverPopup, PopoverTrigger } from "../ui/popover";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   DesktopUpdateStatusIcon,
   type DesktopUpdateStatusIconState,
@@ -47,35 +44,6 @@ import {
 } from "./updateEverythingRun";
 import { type ReportLocalUpdateError, useUpdateEverything } from "./useUpdateEverything";
 import { useReducedMotion } from "../../hooks/useReducedMotion";
-
-type SidebarUpdatePopoverChangeDetails = Parameters<
-  NonNullable<ComponentProps<typeof Popover>["onOpenChange"]>
->[1];
-type SidebarUpdatePopoverHandle = ReturnType<typeof PopoverCreateHandle>;
-
-function shouldUseSidebarUpdateReleaseNotesPopover(
-  showUpdateDetails: boolean,
-  state: DesktopUpdateState | null,
-): boolean {
-  return showUpdateDetails && (state?.releaseNotes.length ?? 0) > 0;
-}
-
-function handleSidebarUpdateReleaseNotesPopoverOpenChange(
-  _open: boolean,
-  details: Pick<SidebarUpdatePopoverChangeDetails, "reason" | "cancel">,
-): void {
-  if (details.reason === "trigger-press") details.cancel();
-}
-
-function openSidebarUpdateReleaseNotesPopoverOnForwardTab(
-  event: { readonly key: string; readonly shiftKey: boolean },
-  handle: Pick<SidebarUpdatePopoverHandle, "open">,
-  triggerId: string,
-): void {
-  if (event.key !== "Tab" || event.shiftKey) return;
-  // Hover-open popovers do not manage focus. Promote this one before native Tab runs.
-  flushSync(() => handle.open(triggerId));
-}
 
 function resolveSidebarUpdatePresentation({
   action,
@@ -229,21 +197,19 @@ export async function installLocalUpdate(
   }
 }
 
-export function SidebarUpdatePill() {
-  return <SidebarUpdateControl />;
-}
+/**
+ * The app's update state and actions. The footer's update button owns it, so a download, a run
+ * and a confirmation survive the popover closing.
+ */
+const FIRST_LETTER = /^./;
 
-function SidebarUpdateControl() {
+export function useSidebarUpdate() {
   const state = useDesktopUpdateState();
   // The desktop updates this machine, whose policy the primary environment reports.
   const updatesDenial = managedUpdatesDenial(usePrimaryManagedPolicy());
   const [isActionPending, setIsActionPending] = useState(false);
   const [isConfirmingEverything, setIsConfirmingEverything] = useState(false);
   const [checkAnimationKey, setCheckAnimationKey] = useState(0);
-  const [releaseNotesPopoverHandle] = useState(() => PopoverCreateHandle());
-  const suppressReleaseNotesFocusOpen = useRef(false);
-  const releaseNotesPopupRef = useRef<HTMLDivElement>(null);
-  const releaseNotesTriggerId = useId();
   const prefersReducedMotion = useReducedMotion();
 
   const updateStatus = state?.status;
@@ -302,19 +268,6 @@ function SidebarUpdateControl() {
         ? isDesktopUpdateButtonDisabled(state)
         : !canCheckForUpdate(state);
   const isInteractionDisabled = disabled || isActionPending || isRunningEverything;
-  const showReleaseNotesPopover =
-    !isRunningEverything && shouldUseSidebarUpdateReleaseNotesPopover(showUpdateDetails, state);
-
-  const [releaseNotesOpen, setReleaseNotesOpen] = useState(false);
-  const [releaseNotesTriggerFocusVisible, setReleaseNotesTriggerFocusVisible] = useState(false);
-  // Release notes close when they stop applying, and open when they start
-  // applying while the trigger already holds keyboard focus.
-  const [releaseNotesShownBefore, setReleaseNotesShownBefore] = useState(showReleaseNotesPopover);
-  if (releaseNotesShownBefore !== showReleaseNotesPopover) {
-    setReleaseNotesShownBefore(showReleaseNotesPopover);
-    setReleaseNotesOpen(showReleaseNotesPopover && releaseNotesTriggerFocusVisible);
-  }
-
   const handleAction = async () => {
     const bridge = window.hostBridge;
     if (isInteractionDisabled) return;
@@ -429,9 +382,11 @@ function SidebarUpdateControl() {
     );
   };
 
-  if (!isDesktopHost && !runsEverything && !isRunningEverything) return null;
-
   const pillCopy = resolveSidebarUpdatePillCopy(state, action);
+  const pillLabel = pillCopy.label ?? (runsEverything ? everything.summary : null);
+  const visible =
+    (isDesktopHost || runsEverything || isRunningEverything) &&
+    (run !== null || (showUpdateDetails && pillLabel !== null));
 
   const statusIcon = (
     <DesktopUpdateStatusIcon
@@ -454,174 +409,120 @@ function SidebarUpdateControl() {
     />
   );
 
+  const local: UpdateRunLocalState =
+    run === null || run.localVersion === null
+      ? null
+      : state?.status === "downloading"
+        ? { status: "downloading", percent: state.downloadPercent }
+        : { status: "waiting" };
+  const onRestart =
+    run !== null && run.localVersion === null && action === "install" && window.hostBridge
+      ? async () => {
+          saveUpdateEverythingResult({
+            localVersion: localUpdateVersion,
+            updatedServers: 0,
+            updatedProviders: 0,
+            failures: [],
+            restarting: [],
+          });
+          if (!(await installLocalUpdate(window.hostBridge!))) {
+            clearSavedUpdateEverythingResult();
+          }
+        }
+      : undefined;
+
+  const failed = pillCopy.tone === "error";
+  // What the update button says, in words, for its name and tooltip.
+  const summary = !visible
+    ? null
+    : failed
+      ? `Update failed: ${(pillCopy.label ?? "").replace(FIRST_LETTER, (letter) => letter.toLowerCase())}`
+      : action === "install"
+        ? "Update ready: restart to install"
+        : tooltip;
+  const tone: "failed" | "ready" | "downloading" | "available" = failed
+    ? "failed"
+    : action === "install"
+      ? "ready"
+      : isDownloading || run !== null
+        ? "downloading"
+        : "available";
+
+  return {
+    visible,
+    tone,
+    summary,
+    state,
+    action,
+    run,
+    local,
+    onRestart,
+    statusIcon,
+    confirmDialog,
+    pillLabel,
+    pillTone: pillCopy.tone,
+    tooltip,
+    runsEverything,
+    isInteractionDisabled,
+    handleAction,
+  };
+}
+
+export type SidebarUpdateModel = ReturnType<typeof useSidebarUpdate>;
+
+/** The app's row in the updates popover: the run's capsule, or the release and its action. */
+export function SidebarUpdateRow({
+  model,
+  onClose,
+}: {
+  readonly model: SidebarUpdateModel;
+  /** Called when "Later" is chosen, so the popover can close. */
+  readonly onClose?: () => void;
+}) {
+  const { state, run, action } = model;
+  if (!model.visible) return null;
   if (run !== null) {
-    const local: UpdateRunLocalState =
-      run.localVersion === null
-        ? null
-        : state?.status === "downloading"
-          ? { status: "downloading", percent: state.downloadPercent }
-          : { status: "waiting" };
     return (
-      <div className="flex w-full min-w-0">
-        <SidebarUpdateCapsule
-          run={run}
-          local={local}
-          icon={statusIcon}
-          {...(run.localVersion === null && action === "install" && window.hostBridge
-            ? {
-                onRestart: async () => {
-                  saveUpdateEverythingResult({
-                    localVersion: localUpdateVersion,
-                    updatedServers: 0,
-                    updatedProviders: 0,
-                    failures: [],
-                    restarting: [],
-                  });
-                  if (!(await installLocalUpdate(window.hostBridge!))) {
-                    clearSavedUpdateEverythingResult();
-                  }
-                },
-              }
-            : {})}
-        />
-        {confirmDialog}
-      </div>
+      <SidebarUpdateCapsule
+        run={run}
+        local={model.local}
+        icon={model.statusIcon}
+        {...(model.onRestart ? { onRestart: model.onRestart } : {})}
+      />
     );
   }
-
-  if (!showUpdateDetails) return null;
-
-  const pillLabel = pillCopy.label ?? (runsEverything ? everything.summary : null);
-  if (pillLabel === null) return null;
-
-  const updateButton = (
-    <button
-      type="button"
-      aria-label={idleTooltip?.detail ? `${tooltip}: ${idleTooltip.detail}` : tooltip}
-      aria-disabled={isInteractionDisabled || undefined}
-      className={cn(
-        "flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-headline leading-4.5 font-medium outline-hidden ring-ring transition-colors focus-visible:ring-2 focus-visible:ring-inset",
-        pillCopy.tone === "error"
-          ? "bg-destructive/12 text-destructive"
-          : "bg-sidebar-control-surface text-sidebar-foreground hover:bg-sidebar-row-hover",
-        isInteractionDisabled ? "cursor-not-allowed opacity-60" : "cursor-pointer",
-      )}
-      onClick={handleAction}
-      onBlur={() => {
-        suppressReleaseNotesFocusOpen.current = false;
-        setReleaseNotesTriggerFocusVisible(false);
-      }}
-      onFocus={(event) => {
-        const focusVisible = event.currentTarget.matches(":focus-visible");
-        setReleaseNotesTriggerFocusVisible(focusVisible);
-        if (!showReleaseNotesPopover || !focusVisible) return;
-        if (suppressReleaseNotesFocusOpen.current) {
-          suppressReleaseNotesFocusOpen.current = false;
-          return;
-        }
-        flushSync(() => releaseNotesPopoverHandle.open(releaseNotesTriggerId));
-      }}
-      onKeyDown={(event) => {
-        if (!showReleaseNotesPopover) return;
-        openSidebarUpdateReleaseNotesPopoverOnForwardTab(
-          event,
-          releaseNotesPopoverHandle,
-          releaseNotesTriggerId,
-        );
-      }}
-    >
-      {statusIcon}
-      <span className="min-w-0 flex-1 truncate">{pillLabel}</span>
-      {pillCopy.meta ? (
-        <span className="shrink-0 font-normal opacity-80">{pillCopy.meta}</span>
-      ) : null}
-    </button>
-  );
-
+  const hasNotes = state !== null && state.releaseNotes.length > 0;
+  const offersNotesAction = hasNotes && action !== "none" && !model.runsEverything;
   return (
-    <div className="w-full min-w-0">
-      <Popover
-        handle={releaseNotesPopoverHandle}
-        open={releaseNotesOpen && showReleaseNotesPopover}
-        triggerId={releaseNotesTriggerId}
-        onOpenChange={(open, details) => {
-          if (open && !showReleaseNotesPopover) {
-            details.cancel();
-            return;
-          }
-          handleSidebarUpdateReleaseNotesPopoverOpenChange(open, details);
-          if (!details.isCanceled) setReleaseNotesOpen(open);
-        }}
-      >
-        <Tooltip disabled={showReleaseNotesPopover}>
-          <TooltipTrigger
-            id={releaseNotesTriggerId}
-            render={
-              <PopoverTrigger
-                {...(!showReleaseNotesPopover
-                  ? {
-                      "aria-controls": undefined,
-                      "aria-expanded": undefined,
-                      "aria-haspopup": undefined,
-                    }
-                  : {})}
-                closeDelay={150}
-                handle={releaseNotesPopoverHandle}
-                id={releaseNotesTriggerId}
-                openOnHover={showReleaseNotesPopover}
-                render={updateButton}
-              />
-            }
-          />
-          {!showReleaseNotesPopover ? (
-            <TooltipPopup
-              align="center"
-              side="top"
-              variant={showUpdateDetails ? "glass" : "default"}
-            >
-              {idleTooltip?.detail ? (
-                <div className="text-left">
-                  <div className="font-medium">{idleTooltip.title}</div>
-                  <div className="text-muted-foreground">{idleTooltip.detail}</div>
-                </div>
-              ) : (
-                <span className="whitespace-pre-line">{tooltip}</span>
-              )}
-            </TooltipPopup>
-          ) : null}
-        </Tooltip>
-        {showReleaseNotesPopover && state ? (
-          <PopoverPopup
-            align="center"
-            aria-label="Update release notes"
-            initialFocus={false}
-            onKeyDownCapture={(event) => {
-              if (
-                event.key === "Escape" &&
-                releaseNotesPopupRef.current?.contains(document.activeElement)
-              ) {
-                suppressReleaseNotesFocusOpen.current = true;
-              }
-            }}
-            ref={releaseNotesPopupRef}
-            side="top"
-            width="lg"
-          >
-            <SidebarUpdateReleaseNotes
-              action={action}
-              onAction={() => {
-                setReleaseNotesOpen(false);
-                void handleAction();
-              }}
-              onDismiss={() => setReleaseNotesOpen(false)}
-              shell={window.hostBridge}
-              state={state}
-              tooltip={tooltip}
-            />
-          </PopoverPopup>
-        ) : null}
-      </Popover>
-      {confirmDialog}
+    <div className="flex min-w-0 flex-col gap-3">
+      {hasNotes && state !== null ? (
+        <SidebarUpdateReleaseNotes
+          action={offersNotesAction ? action : "none"}
+          onAction={() => void model.handleAction()}
+          {...(onClose ? { onDismiss: onClose } : {})}
+          shell={window.hostBridge}
+          state={state}
+          tooltip={model.tooltip}
+        />
+      ) : null}
+      {offersNotesAction ? null : (
+        <button
+          type="button"
+          aria-label={model.summary ?? model.tooltip}
+          aria-disabled={model.isInteractionDisabled || undefined}
+          className={cn(
+            "flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-headline leading-4.5 font-medium outline-hidden ring-ring transition-colors focus-visible:ring-2 focus-visible:ring-inset",
+            model.pillTone === "error"
+              ? "bg-destructive/12 text-destructive"
+              : "bg-sidebar-control-surface text-sidebar-foreground hover:bg-sidebar-row-hover",
+            model.isInteractionDisabled ? "cursor-not-allowed opacity-60" : "cursor-pointer",
+          )}
+          onClick={() => void model.handleAction()}
+        >
+          {model.statusIcon}
+          <span className="min-w-0 flex-1 truncate">{model.pillLabel}</span>
+        </button>
+      )}
     </div>
   );
 }

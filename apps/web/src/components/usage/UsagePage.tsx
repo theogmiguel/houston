@@ -188,7 +188,7 @@ function UsageModelDialogHost({
   );
 }
 
-export function UsagePage() {
+export function UsagePage({ embedded = false }: { readonly embedded?: boolean } = {}) {
   const isPhone = useIsPhone();
   const [preferences, setPreferences] = useState(readUsagePagePreferences);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -392,8 +392,8 @@ export function UsagePage() {
       <RefreshIcon size="sm" refreshing={isRefreshing} />
     </Button>
   );
-  const usageActions = (
-    <div className="flex min-w-0 flex-wrap items-center gap-2 max-phone:gap-x-4">
+  const usageFilters = (
+    <>
       <UsageEnvironmentFilter
         environments={environments}
         selectedEnvironments={selectedEnvironments}
@@ -410,136 +410,134 @@ export function UsagePage() {
         hiddenProviders={hiddenProviders}
         onChange={(next) => updatePreferences({ hiddenProviders: next })}
       />
-      <div className="ml-auto flex min-w-0 flex-wrap items-center gap-2 max-phone:contents">
-        {showingLimits ? null : (
-          <ToggleGroup
-            aria-label="Usage period"
-            className="max-phone:order-2 max-phone:w-full max-phone:*:h-11 max-phone:*:flex-1"
-            variant="segmented"
-            value={[String(windowDays)]}
-            onValueChange={(next) => {
-              const value = next[0];
-              if (value) selectWindow(Number(value));
-            }}
-          >
-            {WINDOW_OPTIONS.map((option) => (
-              <Toggle key={option.days} value={String(option.days)} title={shortcutTitle(option)}>
-                {option.label}
-              </Toggle>
-            ))}
-          </ToggleGroup>
-        )}
+    </>
+  );
+  const usageControls = (
+    <div className="flex min-w-0 flex-wrap items-center gap-2 max-phone:contents">
+      {showingLimits ? null : (
         <ToggleGroup
-          aria-label="Usage metric"
-          className="max-phone:order-3 max-phone:w-full max-phone:*:h-11 max-phone:*:flex-1"
+          aria-label="Usage period"
+          className="max-phone:order-2 max-phone:w-full max-phone:*:h-11 max-phone:*:flex-1"
           variant="segmented"
-          value={[metric]}
+          value={[String(windowDays)]}
           onValueChange={(next) => {
             const value = next[0];
-            if (isUsageMetric(value)) selectMetric(value);
+            if (value) selectWindow(Number(value));
           }}
         >
-          {METRIC_OPTIONS.map((option) => (
-            <Toggle key={option.value} value={option.value} title={shortcutTitle(option)}>
+          {WINDOW_OPTIONS.map((option) => (
+            <Toggle key={option.days} value={String(option.days)} title={shortcutTitle(option)}>
               {option.label}
             </Toggle>
           ))}
         </ToggleGroup>
-        {isPhone ? null : refreshButton}
+      )}
+      <ToggleGroup
+        aria-label="Usage metric"
+        className="max-phone:order-3 max-phone:w-full max-phone:*:h-11 max-phone:*:flex-1"
+        variant="segmented"
+        value={[metric]}
+        onValueChange={(next) => {
+          const value = next[0];
+          if (isUsageMetric(value)) selectMetric(value);
+        }}
+      >
+        {METRIC_OPTIONS.map((option) => (
+          <Toggle key={option.value} value={option.value} title={shortcutTitle(option)}>
+            {option.label}
+          </Toggle>
+        ))}
+      </ToggleGroup>
+    </div>
+  );
+  const usageActions = (
+    <div className="flex min-w-0 flex-wrap items-center gap-2 max-phone:gap-x-4">
+      {usageFilters}
+      <div className="ml-auto flex min-w-0 flex-wrap items-center gap-2 max-phone:contents">
+        {usageControls}
       </div>
     </div>
   );
 
-  return (
-    <SidebarInset className="min-h-0 overflow-hidden overscroll-y-none">
-      {isPhone ? (
-        <PhonePageBar title="Usage">{refreshButton}</PhonePageBar>
-      ) : (
-        <WorkspacePageHeader desktop={isDesktopHost}>
-          <WorkspaceBreadcrumb ariaLabel="Usage breadcrumb" className="min-w-0">
-            <WorkspaceBreadcrumbItem current>
-              <h1 className="truncate">Usage</h1>
-            </WorkspaceBreadcrumbItem>
-          </WorkspaceBreadcrumb>
-        </WorkspacePageHeader>
-      )}
-
-      <div className="topbar-scroll-fade scrollbar-gutter-both min-h-0 flex-1 overflow-y-auto max-phone:[scrollbar-gutter:auto]">
-        <WorkspacePageContainer width="wide" className="gap-7 max-phone:gap-4 max-phone:px-4">
-          <div className="flex flex-wrap items-start gap-4">
-            <div className="min-w-0 flex-1">
-              {isPhone ? null : <h1 className="text-large-title font-bold">Usage</h1>}
-              {showingLimits ? null : (
-                <>
-                  <p className="mt-1 max-w-[62ch] text-sm leading-5 text-secondary-foreground">
-                    What your Claude Code and Codex sessions on this machine would cost at API
-                    prices. Houston reads their transcripts locally; nothing is sent anywhere.
-                  </p>
-                  <p className="mt-1 text-xs leading-4 text-muted-foreground">{windowLabel}</p>
-                </>
-              )}
-            </div>
-          </div>
-          {usageActions}
-          {selectedEnvironments.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              {environments.length === 0
-                ? `Connect an environment to see ${showingLimits ? "limits" : "usage"}.`
-                : `Select an environment to see ${showingLimits ? "limits" : "usage"}.`}
-            </p>
-          ) : showingLimits ? (
-            <UsageLimitsSection
-              selectedEnvironmentIds={selectedEnvironmentIds}
-              hiddenProviders={hiddenProviders}
-              now={limitsNow}
-              cursorPrompt={
-                cursorAccessEnvironments.length > 0 ? (
-                  <CursorEnableLimits
-                    environments={cursorAccessEnvironments}
-                    onEnabled={() => {
-                      void refresh();
-                      void refreshLimits(false, true);
-                    }}
-                  />
-                ) : null
-              }
-            />
-          ) : shown === null ? (
-            <UsageSkeleton />
-          ) : !canReadDiagnostics ? (
-            <div className="space-y-2 py-12 text-center text-sm text-muted-foreground">
-              {selectedEnvironments.map((environment) => (
-                <p key={environment.environmentId}>
-                  {selectedEnvironments.length > 1 ? `${environment.label}: ` : null}
-                  {environment.error}
+  const body = (
+    <>
+      <div className="flex flex-wrap items-start gap-4">
+        <div className="min-w-0 flex-1">
+          {showingLimits ? null : (
+            <>
+              {embedded ? null : (
+                <p className="mt-1 max-w-[62ch] text-sm leading-5 text-secondary-foreground">
+                  What your Claude Code and Codex sessions on this machine would cost at API prices.
+                  Houston reads their transcripts locally; nothing is sent anywhere.
                 </p>
-              ))}
-            </div>
-          ) : (
-            <UsageOverview
-              merged={merged}
-              shownWindow={shownWindow}
-              hour12={hour12}
-              days={days}
-              hours={hours}
-              showingKept={showingKept}
-              metric={metric === "tokens" ? "tokens" : "cost"}
-              selectedEnvironments={selectedEnvironments}
-              selectedEnvironmentIds={selectedEnvironmentIds}
-              hiddenProviders={hiddenProviders}
-              refreshingUsage={refreshingUsage}
-              cursorAccessEnvironments={cursorAccessEnvironments}
-              showChatGptSharing={showChatGptSharing}
-              onCursorEnabled={() => {
-                void refresh();
-                void refreshLimits(false, true);
-              }}
-              onSelectModel={selectUsageModel}
-              now={limitsNow}
-            />
+              )}
+              <p className="mt-1 text-xs leading-4 text-muted-foreground">{windowLabel}</p>
+            </>
           )}
-        </WorkspacePageContainer>
+        </div>
       </div>
+      {isPhone ? usageActions : null}
+      {selectedEnvironments.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          {environments.length === 0
+            ? `Connect an environment to see ${showingLimits ? "limits" : "usage"}.`
+            : `Select an environment to see ${showingLimits ? "limits" : "usage"}.`}
+        </p>
+      ) : showingLimits ? (
+        <UsageLimitsSection
+          selectedEnvironmentIds={selectedEnvironmentIds}
+          hiddenProviders={hiddenProviders}
+          now={limitsNow}
+          cursorPrompt={
+            cursorAccessEnvironments.length > 0 ? (
+              <CursorEnableLimits
+                environments={cursorAccessEnvironments}
+                onEnabled={() => {
+                  void refresh();
+                  void refreshLimits(false, true);
+                }}
+              />
+            ) : null
+          }
+        />
+      ) : shown === null ? (
+        <UsageSkeleton />
+      ) : !canReadDiagnostics ? (
+        <div className="space-y-2 py-12 text-center text-sm text-muted-foreground">
+          {selectedEnvironments.map((environment) => (
+            <p key={environment.environmentId}>
+              {selectedEnvironments.length > 1 ? `${environment.label}: ` : null}
+              {environment.error}
+            </p>
+          ))}
+        </div>
+      ) : (
+        <UsageOverview
+          merged={merged}
+          shownWindow={shownWindow}
+          hour12={hour12}
+          days={days}
+          hours={hours}
+          showingKept={showingKept}
+          metric={metric === "tokens" ? "tokens" : "cost"}
+          selectedEnvironments={selectedEnvironments}
+          selectedEnvironmentIds={selectedEnvironmentIds}
+          hiddenProviders={hiddenProviders}
+          refreshingUsage={refreshingUsage}
+          cursorAccessEnvironments={cursorAccessEnvironments}
+          showChatGptSharing={showChatGptSharing}
+          onCursorEnabled={() => {
+            void refresh();
+            void refreshLimits(false, true);
+          }}
+          onSelectModel={selectUsageModel}
+          now={limitsNow}
+        />
+      )}
+    </>
+  );
+  const dialogs = (
+    <>
       {showingLimits ? null : (
         <UsageModelDialogHost
           models={merged.models}
@@ -566,6 +564,56 @@ export function UsagePage() {
           }}
         />
       ) : null}
+    </>
+  );
+
+  // Inside Settings the page is a column of its own: the controls lead it, and the board sizes
+  // against that column rather than the window.
+  if (embedded) {
+    return (
+      <div className="@container/usage flex min-w-0 flex-col gap-7">
+        <div data-usage-controls="" className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-2">
+          {usageFilters}
+          <div className="ms-auto flex min-w-0 flex-wrap items-center gap-2">
+            {usageControls}
+            {refreshButton}
+          </div>
+        </div>
+        <div data-usage-body="" className="flex min-w-0 flex-col gap-7">
+          {body}
+        </div>
+        {dialogs}
+      </div>
+    );
+  }
+
+  return (
+    <SidebarInset className="min-h-0 overflow-hidden overscroll-y-none">
+      {isPhone ? (
+        <PhonePageBar title="Usage">{refreshButton}</PhonePageBar>
+      ) : (
+        <WorkspacePageHeader desktop={isDesktopHost}>
+          <WorkspaceBreadcrumb ariaLabel="Usage breadcrumb" className="min-w-0">
+            <WorkspaceBreadcrumbItem current>
+              <h1 className="truncate">Usage</h1>
+            </WorkspaceBreadcrumbItem>
+          </WorkspaceBreadcrumb>
+          {usageFilters}
+          <div className="min-w-0 flex-1" />
+          {usageControls}
+          {refreshButton}
+        </WorkspacePageHeader>
+      )}
+
+      <div className="topbar-scroll-fade scrollbar-gutter-both min-h-0 flex-1 overflow-y-auto max-phone:[scrollbar-gutter:auto]">
+        <WorkspacePageContainer
+          width="wide"
+          className="@container/usage gap-7 max-phone:gap-4 max-phone:px-4"
+        >
+          {body}
+        </WorkspacePageContainer>
+      </div>
+      {dialogs}
     </SidebarInset>
   );
 }
@@ -696,7 +744,7 @@ function UsageOverview({
           {message}
         </p>
       ))}
-      <section className="grid grid-cols-1 gap-3 phone:grid-cols-2 lg:grid-cols-4">
+      <section className="grid grid-cols-1 gap-3 @2xl/usage:grid-cols-2 @3xl/usage:grid-cols-4">
         <Metric
           loading={loadingPartial}
           label="API-equivalent cost"
@@ -756,7 +804,7 @@ function UsageOverview({
         />
       </section>
 
-      <div className="grid gap-3 lg:grid-cols-2 lg:items-start">
+      <div className="grid gap-3 @4xl/usage:grid-cols-2 @4xl/usage:items-start">
         <ByAgentCard
           mode={metric === "tokens" ? "tokens" : "cost"}
           merged={merged}
@@ -1570,7 +1618,7 @@ function UsageProviderFilter({
 function UsageSkeleton() {
   return (
     <>
-      <section className="grid gap-6 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
+      <section className="grid gap-6 @4xl/usage:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
         <div className="flex flex-col gap-5">
           <div className="flex flex-col gap-1">
             <Skeleton className="h-10 w-36" />
@@ -1607,7 +1655,7 @@ function UsageSkeleton() {
         />
       </section>
 
-      <section className="grid gap-x-12 gap-y-8 lg:grid-cols-2">
+      <section className="grid gap-x-12 gap-y-8 @4xl/usage:grid-cols-2">
         <div className="flex flex-col gap-2.5">
           <Skeleton className="h-5 w-28" />
           <Skeleton className="h-2" />
@@ -1628,7 +1676,7 @@ function UsageSkeleton() {
 
 function MetricSkeletons({ labels }: { readonly labels: readonly string[] }) {
   return (
-    <div className="grid grid-cols-2 gap-x-6 gap-y-4 py-1 md:grid-cols-5">
+    <div className="grid grid-cols-2 gap-x-6 gap-y-4 py-1 @3xl/usage:grid-cols-5">
       {labels.map((label) => (
         <div key={label} className="flex flex-col gap-0.5">
           <span className="text-xs text-muted-foreground">{label}</span>

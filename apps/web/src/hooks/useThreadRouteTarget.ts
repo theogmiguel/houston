@@ -1,8 +1,8 @@
-import { scopeThreadRef } from "@houston-app/client-runtime/environment";
-import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@houston-app/contracts";
+import type { ScopedThreadRef } from "@houston-app/contracts";
 import { useParams } from "@tanstack/react-router";
 
-import { useGrid } from "../grid/gridStore";
+import { selectFocusedChatTarget } from "../layout/layoutModel";
+import { useLayoutStore } from "../layout/layoutStore";
 
 import {
   resolveThreadRouteRef,
@@ -27,20 +27,11 @@ export function useThreadRouteRef(): ScopedThreadRef | null {
 }
 
 /**
- * The route's thread target, or the focused cell's thread on a grid route.
- * Palette thread actions read this so they act on the pane on screen.
+ * The route's thread target, or the chat the layout has focused. Palette thread actions read
+ * this so they act on the pane on screen.
  */
 export function useActiveThreadRouteTarget(): ThreadRouteTarget | null {
   const routeTarget = useThreadRouteTarget();
-  const gridId = useParams({ strict: false, select: (params) => params.gridId });
-  const grid = useGrid(typeof gridId === "string" ? gridId : null);
-  if (routeTarget !== null) return routeTarget;
-  if (grid === null || grid.focusedThreadId === null) return null;
-  return {
-    kind: "server",
-    threadRef: scopeThreadRef(
-      grid.environmentId as EnvironmentId,
-      grid.focusedThreadId as ThreadId,
-    ),
-  };
+  const focused = useLayoutStore((state) => selectFocusedChatTarget(state.layout));
+  return routeTarget ?? focused;
 }

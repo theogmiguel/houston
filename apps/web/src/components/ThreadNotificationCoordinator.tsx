@@ -4,6 +4,7 @@ import {
   presentThreadShell,
 } from "@houston-app/client-runtime/state/models";
 import { isShownUnderParent } from "@houston-app/client-runtime/state/threads";
+import { scopedThreadKey, scopeThreadRef } from "@houston-app/client-runtime/environment";
 import type { AnyRouter } from "@tanstack/react-router";
 import type {
   EnvironmentId,
@@ -36,8 +37,8 @@ import {
   unlockNotificationAudio,
 } from "../threadNotifications";
 import { resolveSidebarThreadStatus, type SidebarThreadStatus } from "./Sidebar.logic";
-import { gridContainingThread, useGridStore } from "../grid/gridStore";
-import { resolveGridThreadTarget } from "../grid/gridNavigation";
+import { useLayoutStore } from "../layout/layoutStore";
+import { openThreadInLayout } from "../threads/openThreadInLayout";
 import {
   createThreadNotificationGate,
   type ThreadNotificationKind,
@@ -110,19 +111,15 @@ export function startThreadNotifications(
     setNotificationBadge(0);
   };
 
-  // Lands in the thread's grid with its cell focused; the standalone route is
-  // the fallback when no grid can take the thread.
-  const openThread = (environmentId: EnvironmentId, projectId: ProjectId, threadId: ThreadId) => {
-    const target = resolveGridThreadTarget({ environmentId, projectId, threadId });
-    if (target !== null) {
-      useGridStore.getState().focusThread(target.gridId, target.threadId);
-      void router.navigate({ to: "/grid/$gridId", params: { gridId: target.gridId } });
-      return;
-    }
-    void router.navigate({
-      to: "/$environmentId/$threadId",
-      params: { environmentId, threadId },
-    });
+  // Focuses the thread's tab in the layout, opening one when no tab shows it.
+  const openThread = (environmentId: EnvironmentId, threadId: ThreadId) => {
+    void openThreadInLayout(
+      {
+        navigate: (options) => router.navigate(options),
+        pathname: () => router.state.location.pathname,
+      },
+      scopeThreadRef(environmentId, threadId),
+    );
   };
 
   const showWebNotification = (
@@ -147,7 +144,7 @@ export function startThreadNotifications(
         notification.close();
         window.focus();
         void window.hostBridge?.revealWindow().catch(() => undefined);
-        openThread(environmentId, projectId, threadId);
+        openThread(environmentId, threadId);
       });
     } catch {
       // Some browsers expose Notification but reject desktop presentation.
@@ -165,19 +162,13 @@ export function startThreadNotifications(
     const active = (router.state.matches.at(-1)?.params ?? {}) as {
       environmentId?: string;
       threadId?: string;
-      gridId?: string;
     };
-    // A grid route names no thread; the thread on screen is the one in one of
-    // its cells. Without this check every completion toasted inside the grid.
-    const activeGridId = typeof active.gridId === "string" ? active.gridId : null;
-    const containingGrid = gridContainingThread(
-      useGridStore.getState().grids,
-      environmentId,
-      thread.id,
-    );
+    // A layout can show several chats at once; the thread on screen is any of them.
     const onScreen =
       (active.environmentId === environmentId && active.threadId === thread.id) ||
-      (activeGridId !== null && containingGrid?.id === activeGridId);
+      useLayoutStore
+        .getState()
+        .onScreenThreadKeys.has(scopedThreadKey(scopeThreadRef(environmentId, thread.id)));
     const title =
       kind === "completion"
         ? "Thread completed"
@@ -222,7 +213,7 @@ export function startThreadNotifications(
           children: "Open thread",
           onClick: () => {
             toastManager.close(toastId);
-            openThread(environmentId, thread.projectId, thread.id);
+            openThread(environmentId, thread.id);
           },
         },
       });
@@ -450,7 +441,7 @@ export function startThreadNotifications(
     nativeTargets.delete(key);
     setNotificationBadge(pending.size);
     void window.hostBridge?.revealWindow().catch(() => undefined);
-    openThread(target.environmentId, target.projectId, target.threadId);
+    openThread(target.environmentId, target.threadId);
   });
 
   const unsubscribeSettings = subscribeClientSettings(onSettings);

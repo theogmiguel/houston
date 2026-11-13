@@ -1,8 +1,8 @@
-/** A tag on the grid sidebar's thread card: muted `#tag` text with no fill. */
+/** A tag on the sidebar's thread card: muted `#tag` text with no fill. */
 export const SIDEBAR_THREAD_TAG_CLASS =
   "max-w-28 truncate text-xs leading-3.5 text-secondary-label";
 
-/** A tag chip in a grid cell's pane label. */
+/** A tag chip in a layout pane's label. */
 export const PANE_THREAD_TAG_CLASS =
   "max-w-20 truncate rounded-(--r-badge) border border-(--divider) px-1 text-2xs leading-4 text-(--houston)";
 

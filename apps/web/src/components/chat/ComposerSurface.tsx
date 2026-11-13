@@ -41,6 +41,8 @@ function Main({ className, ...props }: ComponentProps<"div">) {
         SURFACE_LIFT_CLASS,
         // On the new-thread page the composer is the page's one surface, so it rises a step.
         "[[data-draft-hero]_&]:bg-(--surface-raised) [[data-draft-hero]_&]:shadow-(--shadow-1)",
+        // A queue joined above the card shares its top edge, so the card's own top corners square off.
+        "[[data-thread-queue]~&]:rounded-t-none",
         // Focus lifts the hairline one step instead of drawing a ring.
         "focus-within:border-(--line-strong)",
         className,
@@ -58,7 +60,7 @@ function ContextStrip({ className, ...props }: ComponentProps<"div">) {
       className={cn(
         "group/composer-context relative z-0 mt-1 flex w-full min-w-0 items-center gap-px overflow-x-clip px-1 text-(--contrast-secondary-label) text-xs",
         // Every strip control is a borderless 22px, 12px sans text button in the muted label ink.
-        "[&_[data-composer-context-control]]:h-5.5! [&_[data-composer-context-control]]:rounded-md! [&_[data-composer-context-control]]:border-0! [&_[data-composer-context-control]]:px-1.5! [&_[data-composer-context-control]]:font-normal [&_[data-composer-context-control]]:text-secondary-label! [&_[data-composer-context-control]]:text-xs!",
+        "[&_[data-composer-context-control]]:max-w-none! [&_[data-composer-context-control]]:h-5.5! [&_[data-composer-context-control]]:rounded-(--r-ctl)! [&_[data-composer-context-control]]:border-0! [&_[data-composer-context-control]]:px-1.5! [&_[data-composer-context-control]]:font-normal [&_[data-composer-context-control]]:text-secondary-label! [&_[data-composer-context-control]]:text-xs!",
         "[&_[data-composer-label]]:font-normal [&_[data-composer-label]]:text-secondary-label",
         // Branch names inside a label render mono elsewhere; the strip keeps one sans face.
         "[&_[data-composer-label]_*]:font-sans",

@@ -160,7 +160,8 @@ export function ComposerControlsBar(props: {
     collapsed: composerControlsCollapsed,
     measuredHiddenBlockCount,
   });
-  const controlSize = composerControlsCollapsed ? "xs" : "sm";
+  // The pickers sit in the quiet footer row under the card, so they share the strip's text-button size.
+  const controlSize = "xs";
   const traitsInput = resolveComposerTraitsInput({
     provider: selectedProvider,
     instanceId: selectedInstanceId,

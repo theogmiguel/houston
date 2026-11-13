@@ -47,8 +47,9 @@ T3 Code — MIT
 ================================================================================
 
 Portions of Houston's thread server, provider adapters, orchestration, thread
-interface, desktop host and Linux window-capture helpers are adapted from T3 Code,
-https://github.com/pingdotgg/t3code, starting from commit 5b357b3b8. MIT asks
+interface, workspace layout model, desktop host and Linux window-capture helpers are
+adapted from T3 Code, https://github.com/pingdotgg/t3code, starting from commit
+5b357b3b8 (the layout model from pull request 28845 at 1f9675e2a). MIT asks
 that a copy of the software carry this notice, so here it is in full:
 
   MIT License

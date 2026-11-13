@@ -14,6 +14,7 @@ import {
   threadWithHistory,
   withPendingChanges,
 } from "../../test/fakeEnvironment";
+import { loadEmptyLayout } from "../../test/loadedLayout";
 import { render } from "../../test/render";
 
 // The socket is the only fake layer: the client runtime hands every connection the in-process session.
@@ -72,6 +73,7 @@ async function mountApp(width: number) {
     ...DEFAULT_CLIENT_SETTINGS,
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
   });
+  loadEmptyLayout();
   await page.viewport(width, 844);
   const router = getRouter(createMemoryHistory({ initialEntries: ["/"] }));
   await router.load();
@@ -100,7 +102,7 @@ it("opens on the rail as the home page at 390px", async () => {
   expect(threadRow()).not.toBeNull();
   expect(document.querySelector("[data-phone-tab-bar]")).not.toBeNull();
   expect(
-    phoneHome()!.querySelector('input[aria-label="Search workspaces, grids and threads"]'),
+    phoneHome()!.querySelector('input[aria-label="Search workspaces and threads"]'),
   ).toBeNull();
   expect(phoneHome()!.querySelector("[data-rail-shortcuts]")).toBeNull();
   expect(phoneHome()!.querySelector('[data-rail-shortcut="Tasks"]')).toBeNull();
@@ -147,25 +149,19 @@ it("navigates to a thread tapped on the phone home", async () => {
 
   await userEvent.click(threadRow()!);
 
-  await vi.waitFor(() => expect(router.state.location.pathname).toMatch(/^\/grid\//), {
-    timeout: 5_000,
-  });
+  await vi.waitFor(
+    () => expect(router.state.location.pathname).toMatch(/^\/environment-render\//),
+    {
+      timeout: 5_000,
+    },
+  );
 });
 
-it("starts every row's diff stat at the same gap after its branch name", async () => {
+it("ends every row's diff stat at the same gap before its provider mark", async () => {
   for (const width of [390, 320]) {
     const { screen } = await mountApp(width);
     await using _screen = screen;
     await vi.waitFor(() => expect(threadRow()).not.toBeNull(), { timeout: 5_000 });
-    await vi.waitFor(
-      () =>
-        expect(
-          phoneHome()!.querySelectorAll("[data-thread-branch]").length,
-          "rows with a branch",
-        ).toBeGreaterThanOrEqual(2),
-      { timeout: 5_000 },
-    );
-
     await vi.waitFor(
       () =>
         expect(phoneHome()!.querySelectorAll("[data-thread-diff]").length).toBeGreaterThanOrEqual(
@@ -173,22 +169,30 @@ it("starts every row's diff stat at the same gap after its branch name", async (
         ),
       { timeout: 5_000 },
     );
-    const gaps = [...phoneHome()!.querySelectorAll<HTMLElement>("[data-thread-branch]")].flatMap(
-      (branch) => {
-        const line = branch.closest<HTMLElement>("[data-thread-meta-items]");
-        const stat = line
-          ?.querySelector("[data-thread-diff]")
-          ?.closest<HTMLElement>("[data-meta-item]");
-        if (stat === null || stat === undefined || stat.getAttribute("aria-hidden") === "true") {
-          return [];
-        }
-        // Measured from the branch text, not from the box the row reserves for it.
-        const text = branch.querySelector<HTMLElement>("span.truncate")!;
-        return [Math.round(stat.getBoundingClientRect().left - text.getBoundingClientRect().right)];
+
+    const rows = [...phoneHome()!.querySelectorAll<HTMLElement>("[data-thread-diff]")].map(
+      (stat) => {
+        const line = stat.closest<HTMLElement>("[data-thread-meta]")!;
+        const mark = line.querySelector<HTMLElement>("[data-thread-provider-mark]")!;
+        const branch = line.querySelector<HTMLElement>("[data-thread-branch] span.truncate");
+        return {
+          gap: Math.round(mark.getBoundingClientRect().left - stat.getBoundingClientRect().right),
+          // The stat never overlaps the branch name that shares its line.
+          clear:
+            branch === null ||
+            stat.getBoundingClientRect().left >= branch.getBoundingClientRect().right,
+        };
       },
     );
-    expect(gaps.length, `rows whose stat is shown at ${width}px`).toBeGreaterThanOrEqual(2);
-    expect(new Set(gaps).size, `gap after the branch name: ${gaps.join(", ")}`).toBe(1);
+    expect(rows.length, `rows whose stat is shown at ${width}px`).toBeGreaterThanOrEqual(2);
+    expect(
+      new Set(rows.map((row) => row.gap)).size,
+      `gap before the provider mark: ${rows.map((row) => row.gap).join(", ")}`,
+    ).toBe(1);
+    expect(
+      rows.every((row) => row.clear),
+      `stat clear of the branch at ${width}px`,
+    ).toBe(true);
     await screen.unmount();
   }
 });

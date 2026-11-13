@@ -18,7 +18,6 @@ function controls(rightPanelOpen: boolean): PanelLayoutControlsProps {
     rightPanelAvailable: true,
     rightPanelOpen,
     rightPanelShortcutLabel: null,
-    gridLayoutControl: <button type="button">Grid layout</button>,
     onToggleTerminal: () => {},
     onToggleThreadPanel: () => {},
     onToggleRightPanel: () => {},
@@ -44,7 +43,6 @@ it("keeps the terminal and right panel toggles in the header while the right pan
 
   expect(labels(screen.container)).toEqual([
     "Toggle thread details panel",
-    "Grid layout",
     "Toggle terminal drawer",
     "Toggle right panel",
   ]);
@@ -56,7 +54,6 @@ it("shows every panel toggle in the header while the right panel is closed", asy
 
   expect(labels(screen.container)).toEqual([
     "Toggle thread details panel",
-    "Grid layout",
     "Toggle terminal drawer",
     "Toggle right panel",
   ]);
@@ -65,11 +62,7 @@ it("shows every panel toggle in the header while the right panel is closed", asy
 it("folds the layout controls into a More menu below the drawer breakpoint, keeping the side panel toggle", async () => {
   await using _viewport = await viewport(800);
   await using screen = await render(
-    <ChatHeaderPanelControls
-      {...controls(false)}
-      threadPanelShortcutLabel="Ctrl+I"
-      gridLayoutMenuItems={<div role="menuitem">Balanced grid</div>}
-    />,
+    <ChatHeaderPanelControls {...controls(false)} threadPanelShortcutLabel="Ctrl+I" />,
   );
 
   expect(labels(screen.container)).toEqual(["More layout controls", "Toggle right panel"]);
@@ -81,7 +74,6 @@ it("folds the layout controls into a More menu below the drawer breakpoint, keep
   await expect
     .element(page.getByRole("menuitemcheckbox", { name: /Toggle terminal drawer/ }))
     .toBeVisible();
-  await expect.element(page.getByRole("menuitem", { name: "Balanced grid" })).toBeVisible();
 });
 
 it("toggles the terminal and details from the More menu", async () => {
@@ -109,7 +101,6 @@ it("keeps a popover-presented details toggle in the header as the card's anchor"
     <ChatHeaderPanelControls
       {...controls(false)}
       threadPanelPresentation="popover"
-      gridLayoutMenuItems={<div role="menuitem">Balanced grid</div>}
       threadPanelPopoverHandle={PopoverCreateHandle()}
     />,
   );

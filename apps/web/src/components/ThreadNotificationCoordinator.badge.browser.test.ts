@@ -7,7 +7,7 @@ import { Atom, AtomRegistry } from "effect/reactivity";
 import { expect, it, vi } from "vite-plus/test";
 
 import { fakeTimers, stubGlobal } from "../../test/render";
-import { gridContainingThread, useGridStore } from "../grid/gridStore";
+import { buildThreadRouteParams } from "../threadRoutes";
 
 const state = vi.hoisted(() => ({
   mode: "notifications",
@@ -223,17 +223,14 @@ function setup(options: { hostBridge?: Record<string, unknown> } = {}) {
   };
 }
 
-// A notification click lands in the grid that holds the thread, with its cell focused.
-function expectOpenedInGrid(environmentId: string) {
-  const grid = gridContainingThread(
-    useGridStore.getState().grids,
-    EnvironmentId.make(environmentId),
-    "thread" as never,
-  );
-  expect(grid).not.toBeNull();
+// A notification click opens the thread in the layout, which routes to the thread.
+function expectOpenedInLayout(environmentId: string) {
   expect(state.navigate).toHaveBeenCalledWith({
-    to: "/grid/$gridId",
-    params: { gridId: grid!.id },
+    to: "/$environmentId/$threadId",
+    params: buildThreadRouteParams({
+      environmentId: EnvironmentId.make(environmentId),
+      threadId: "thread" as never,
+    }),
   });
 }
 
@@ -246,7 +243,7 @@ it.each(["hasPendingApprovals", "hasPendingUserInput"] as const)(
     expect(state.badge).toHaveBeenLastCalledWith(1);
     const notification = TestNotification.sent[0]!;
     notification.dispatchEvent(new Event("click"));
-    expectOpenedInGrid("one");
+    expectOpenedInLayout("one");
     state.mode = "sound";
     app.changeSettings();
     expect(state.badge).toHaveBeenLastCalledWith(0);
@@ -372,6 +369,6 @@ it("uses the host notifier for a desktop notice and focuses the thread when it i
   expect(TestNotification.sent).toEqual([]);
 
   focus?.("one:thread");
-  expectOpenedInGrid("one");
+  expectOpenedInLayout("one");
   expect(state.badge).toHaveBeenLastCalledWith(0);
 });

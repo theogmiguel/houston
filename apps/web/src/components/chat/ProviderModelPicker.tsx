@@ -97,7 +97,7 @@ const HEADER_CLEARANCE_PX = 8;
 
 /**
  * Where a docked popup's top edge may start: just under the route header of the column the
- * picker sits in. A grid cell has no header, so it keeps the default collision padding.
+ * picker sits in. A layout pane has no header, so it keeps the default collision padding.
  */
 function headerClearanceOf(trigger: HTMLElement | null): number | null {
   const header = trigger
@@ -193,9 +193,6 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   const [dockSide, setDockSide] = useState<"top" | "bottom">("bottom");
   // The new-thread page pins the popup under the card; the positioner must not flip it.
   const [dockPinned, setDockPinned] = useState(false);
-  // A picker opened inside a grid cell lives in that cell: it opens toward the roomier side and
-  // never spills past the cell's edges.
-  const [cellBoundary, setCellBoundary] = useState<HTMLElement | null>(null);
   // The route header is a DOM node outside React, measured each time the popup opens (also when a
   // shortcut opens it through `props.open`, which no handler of this component sees).
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- measures the header's rect and the room under the card, which only the DOM knows
@@ -203,17 +200,14 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     if (!docked || !isMenuOpen) return;
     const trigger = triggerRef.current;
     setHeaderClearance(headerClearanceOf(trigger));
-    const cell = trigger?.closest<HTMLElement>("[data-grid-cell]") ?? null;
-    setCellBoundary(cell);
     const card = composerCardOf(trigger);
     if (card === null) {
       setDockSide("bottom");
       return;
     }
     const cardRect = card.getBoundingClientRect();
-    const boundaryRect = cell?.getBoundingClientRect() ?? null;
-    const topLimit = boundaryRect?.top ?? headerClearanceOf(trigger) ?? 0;
-    const bottomLimit = boundaryRect?.bottom ?? window.innerHeight;
+    const topLimit = headerClearanceOf(trigger) ?? 0;
+    const bottomLimit = window.innerHeight;
     const roomAbove = cardRect.top - topLimit;
     const roomBelow = bottomLimit - cardRect.bottom;
     const inDraftHero = card.closest("[data-draft-hero]") !== null;
@@ -492,7 +486,6 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
               // The side with more room; a tie opens downward.
               side: dockSide,
               ...(dockPinned ? { collisionAvoidance: { side: "none" } as const } : {}),
-              ...(cellBoundary === null ? {} : { collisionBoundary: cellBoundary }),
               ...(headerClearance === null
                 ? { collisionPadding: { top: 5, right: 5, bottom: 5, left: 5 } }
                 : { collisionPadding: { top: headerClearance, right: 5, bottom: 5, left: 5 } }),

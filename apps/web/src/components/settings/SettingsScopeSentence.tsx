@@ -41,6 +41,7 @@ export const SETTINGS_DEVICE_ONLY_PATHS: ReadonlySet<string> = new Set([
   "/settings/diffs",
   "/settings/keybindings",
   "/settings/snap-shot",
+  "/settings/usage",
   "/settings/connections",
   // Network access and authorized clients belong to the environment serving this app.
   "/settings/access",

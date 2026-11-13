@@ -4,3 +4,6 @@ import { useMediaQuery } from "../hooks/useMediaQuery";
 export const PHONE_QUERY = "(width < 40rem)";
 
 export const useIsPhone = () => useMediaQuery(PHONE_QUERY);
+
+/** The same test for event handlers, which cannot call the hook. */
+export const isPhoneViewport = () => window.matchMedia(PHONE_QUERY).matches;

@@ -1,7 +1,12 @@
+import { HoustonLayoutWorkspaceRecord } from "@houston-app/contracts/houston/layoutWorkspaces";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import * as Migrator from "effect/sql/Migrator";
 import * as SqlClient from "effect/sql/SqlClient";
 
+import { convertGridTree, readLegacyGrid } from "./layoutWorkspaceConversion.ts";
+import { membershipsFromTabs, type StoredWorkspaceTabs } from "./membershipBackfill.ts";
 import {
   createProjectionReadIndexes,
   createShellReadModels,
@@ -13,8 +18,9 @@ import {
 // own history table and ids; upstream's table and ids stay untouched.
 const HOUSTON_MIGRATIONS_TABLE = "houston_sql_migrations";
 
-// One row per grid. The record JSON is the contract's HoustonGridRecord; project_id, revision and
-// the times are columns so a project's grids list without parsing every row.
+// One row per grid, as an earlier build stored it. The record JSON is a grid's tree of threads;
+// project_id, revision and the times are columns. Migration 19 copies each row into a layout
+// workspace and migration 20 drops the table.
 const Grids = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   yield* sql`
@@ -28,6 +34,149 @@ const Grids = Effect.gen(function* () {
     ) WITHOUT ROWID
   `;
   yield* sql`CREATE INDEX IF NOT EXISTS idx_houston_grids_project ON houston_grids(project_id, created_at)`;
+});
+
+const encodeWorkspace = Schema.encodeSync(Schema.fromJsonString(HoustonLayoutWorkspaceRecord));
+
+// One row per layout workspace (record_json is the contract's record). Every grid is copied in as
+// columns of panes, houston_grids untouched; a lossy conversion is logged per workspace. An empty
+// table gets one empty workspace, so the layout always has one.
+const LayoutWorkspaces = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_layout_workspaces (
+      id TEXT PRIMARY KEY,
+      position INTEGER NOT NULL,
+      record_json TEXT NOT NULL,
+      revision INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    ) WITHOUT ROWID
+  `;
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_houston_layout_workspaces_position ON houston_layout_workspaces(position, created_at)`;
+
+  const grids = yield* sql<{ readonly id: string; readonly record_json: string }>`
+    SELECT id, record_json FROM houston_grids ORDER BY created_at, id
+  `;
+  const next = (yield* sql<{ readonly next: number }>`
+    SELECT COALESCE(MAX(position) + 1, 0) AS next FROM houston_layout_workspaces
+  `)[0]!.next;
+  const claimedThreadIds = new Set<string>();
+  let position = next;
+  for (const row of grids) {
+    const grid = readLegacyGrid(row.record_json);
+    if (grid === null) {
+      yield* Effect.logWarning(
+        `Houston migration LayoutWorkspaces: grid ${row.id} was skipped because its stored record is not a readable grid.`,
+      );
+      continue;
+    }
+    const { columns, notes } = convertGridTree({
+      gridId: grid.id,
+      environmentId: grid.environmentId,
+      tree: grid.tree,
+      claimedThreadIds,
+    });
+    if (notes.length > 0) {
+      yield* Effect.logWarning(
+        `Houston migration LayoutWorkspaces: grid ${grid.id} ("${grid.name}") converted with loss: ${notes.join("; ")}.`,
+      );
+    }
+    const record = {
+      id: grid.id,
+      name: grid.name,
+      position,
+      columns,
+      pinnedAt: grid.pinnedAt,
+      hidden: grid.hidden,
+      createdAt: grid.createdAt,
+      revision: 1,
+      updatedAt: grid.updatedAt,
+    };
+    const inserted = yield* sql`
+      INSERT INTO houston_layout_workspaces (id, position, record_json, revision, created_at, updated_at)
+      VALUES (${record.id}, ${position}, ${encodeWorkspace(record)}, 1, ${record.createdAt}, ${record.updatedAt})
+      ON CONFLICT (id) DO NOTHING RETURNING id
+    `;
+    if (inserted.length > 0) position += 1;
+  }
+
+  const remaining = yield* sql<{ readonly count: number }>`
+    SELECT COUNT(*) AS count FROM houston_layout_workspaces
+  `;
+  if (remaining[0]!.count === 0) {
+    const now = DateTime.formatIso(yield* DateTime.now);
+    const record = {
+      id: "workspace:default",
+      name: "Workspace 1",
+      position: 0,
+      columns: [],
+      pinnedAt: null,
+      hidden: false,
+      createdAt: now,
+      revision: 1,
+      updatedAt: now,
+    };
+    yield* sql`
+      INSERT INTO houston_layout_workspaces (id, position, record_json, revision, created_at, updated_at)
+      VALUES (${record.id}, 0, ${encodeWorkspace(record)}, 1, ${now}, ${now})
+    `;
+  }
+});
+
+const readStoredColumns = (json: string): StoredWorkspaceTabs["columns"] | null => {
+  try {
+    const parsed = JSON.parse(json) as { columns?: StoredWorkspaceTabs["columns"] };
+    return Array.isArray(parsed.columns) ? parsed.columns : [];
+  } catch {
+    return null;
+  }
+};
+
+// Which workspace each chat thread belongs to, and the last workspace a client reported as
+// focused. A thread with an open chat tab starts in that tab's workspace; threads with no tab are
+// assigned when the server starts, because only the server knows its environment id.
+const LayoutThreadMembership = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_layout_thread_membership (
+      environment_id TEXT NOT NULL,
+      thread_id TEXT NOT NULL,
+      workspace_id TEXT NOT NULL,
+      parent_thread_id TEXT,
+      PRIMARY KEY (environment_id, thread_id)
+    ) WITHOUT ROWID
+  `;
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_houston_layout_membership_workspace ON houston_layout_thread_membership(workspace_id)`;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_layout_focus (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      workspace_id TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `;
+  const rows = yield* sql<{ readonly id: string; readonly record_json: string }>`
+    SELECT id, record_json FROM houston_layout_workspaces ORDER BY position, created_at, id
+  `;
+  const workspaces = rows.flatMap((row) => {
+    const columns = readStoredColumns(row.record_json);
+    return columns === null ? [] : [{ id: row.id, columns }];
+  });
+  for (const membership of membershipsFromTabs(workspaces)) {
+    yield* sql`
+      INSERT OR IGNORE INTO houston_layout_thread_membership
+        (environment_id, thread_id, workspace_id, parent_thread_id)
+      VALUES (${membership.environmentId}, ${membership.threadId}, ${membership.workspaceId}, NULL)
+    `;
+  }
+});
+
+// Migration 19 copied every readable grid into a layout workspace and nothing reads houston_grids
+// any more, so the table and its index are removed. A database without the table has nothing to do.
+const RemoveGrids = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`DROP INDEX IF EXISTS idx_houston_grids_project`;
+  yield* sql`DROP TABLE IF EXISTS houston_grids`;
 });
 
 const ReviewFilesViewed = Effect.gen(function* () {
@@ -803,6 +952,9 @@ const houstonMigrationEntries = [
   [16, "TimelineReadIndex", createTimelineReadIndexes],
   [17, "TurnStartReadModels", createTurnStartReadModels],
   [18, "Grids", Grids],
+  [19, "LayoutWorkspaces", LayoutWorkspaces],
+  [20, "RemoveGrids", RemoveGrids],
+  [21, "LayoutThreadMembership", LayoutThreadMembership],
 ] as const;
 
 // Ids land in merge order, so a database can record a higher id before a lower one; every

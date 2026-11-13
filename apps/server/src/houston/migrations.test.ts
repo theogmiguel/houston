@@ -6,6 +6,7 @@ import * as NodeSqliteClient from "@houston-app/shared/nodeSqliteClient";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Logger from "effect/Logger";
 import * as Path from "effect/Path";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Migrator from "effect/sql/Migrator";
@@ -32,6 +33,9 @@ const HOUSTON_TRACK: Array<readonly [number, string]> = [
   [16, "TimelineReadIndex"],
   [17, "TurnStartReadModels"],
   [18, "Grids"],
+  [19, "LayoutWorkspaces"],
+  [20, "RemoveGrids"],
+  [21, "LayoutThreadMembership"],
 ];
 const TASK_TABLES = [
   "houston_task_acceptance",
@@ -642,11 +646,22 @@ describe("the removal migration drops the night shift and harness review tables"
   );
 });
 
+/**
+ * Gives a migrated database the houston_grids table a build before migration 20 left in it:
+ * un-recording migration 18 makes the track run it again, and it creates the table when absent.
+ */
+const restoreGrids = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`DELETE FROM houston_sql_migrations WHERE migration_id = 18`;
+  assert.deepEqual(yield* runHoustonMigrations(), [[18, "Grids"]]);
+});
+
 describe("the grids migration runs on the Houston track", () => {
   it.effect("houston_grids holds one row per grid id and indexes its project", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       assert.deepEqual(yield* houstonHistory, HOUSTON_TRACK);
+      yield* restoreGrids;
       assert.deepEqual(
         (yield* sql<{ readonly name: string }>`
           SELECT name FROM pragma_table_info('houston_grids') ORDER BY cid
@@ -668,6 +683,528 @@ describe("the grids migration runs on the Houston track", () => {
         VALUES ('g1', 'p1', '{}', 1, 'now', 'now')
       `);
       assert.isTrue(duplicate._tag === "Failure");
+    }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
+  );
+});
+
+describe("the layout workspaces migration copies the grids", () => {
+  const leaf = (threadId: string) => ({ kind: "thread", threadId, id: `leaf-${threadId}` });
+  const split = (dir: "row" | "col", children: unknown[], weights?: number[]) => ({
+    kind: "split",
+    dir,
+    children,
+    weights: weights ?? children.map(() => 1),
+  });
+  const grid = (
+    id: string,
+    createdAt: string,
+    tree: unknown,
+    extra: Record<string, unknown> = {},
+  ) => ({
+    id,
+    environmentId: "env",
+    projectId: "p1",
+    workspaceKey: "env:p1",
+    name: `Grid ${id}`,
+    tree,
+    pinnedAt: null,
+    hidden: false,
+    createdAt,
+    revision: 4,
+    updatedAt: createdAt,
+    ...extra,
+  });
+  const insertGrid = (record: { id: string; createdAt: string }) =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* restoreGrids;
+      yield* sql`
+        INSERT INTO houston_grids (id, project_id, record_json, revision, created_at, updated_at)
+        VALUES (${record.id}, 'p1', ${JSON.stringify(record)}, 4, ${record.createdAt}, ${record.createdAt})
+      `;
+    });
+  const stored = Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    return (yield* sql<{ readonly position: number; readonly record_json: string }>`
+      SELECT position, record_json FROM houston_layout_workspaces ORDER BY position, id
+    `).map((row) => ({ position: row.position, record: JSON.parse(row.record_json) }));
+  });
+  /** Runs migration 19 again as a database that had not recorded it would. */
+  const rerun = Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* sql`DELETE FROM houston_sql_migrations WHERE migration_id = 19`;
+    return yield* runHoustonMigrations();
+  });
+  const emptyTable = Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* sql`DELETE FROM houston_layout_workspaces`;
+  });
+  const collectingLogs = (messages: string[]) =>
+    Logger.layer(
+      [
+        Logger.make(({ message }) => {
+          messages.push(Array.isArray(message) ? message.join(" ") : String(message));
+        }),
+      ],
+      { mergeWithExisting: false },
+    );
+  const threadsOf = (record: {
+    columns: Array<{
+      panes: Array<{ tabs: Array<{ content: { target: { threadRef: { threadId: string } } } }> }>;
+    }>;
+  }) =>
+    record.columns.map((column) =>
+      column.panes.map((pane) => pane.tabs.map((tab) => tab.content.target.threadRef.threadId)),
+    );
+
+  it.effect("creates houston_layout_workspaces with a position index", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      assert.deepEqual(yield* houstonHistory, HOUSTON_TRACK);
+      assert.deepEqual(
+        (yield* sql<{ readonly name: string }>`
+          SELECT name FROM pragma_table_info('houston_layout_workspaces') ORDER BY cid
+        `).map((column) => column.name),
+        ["id", "position", "record_json", "revision", "created_at", "updated_at"],
+      );
+      assert.deepEqual(
+        (yield* sql<{ readonly name: string }>`
+          SELECT name FROM pragma_index_list('houston_layout_workspaces') WHERE origin = 'c'
+        `).map((index) => index.name),
+        ["idx_houston_layout_workspaces_position"],
+      );
+    }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
+  );
+
+  it.effect("a database with no grids ends with one empty workspace", () =>
+    Effect.gen(function* () {
+      const rows = yield* stored;
+      assert.lengthOf(rows, 1);
+      assert.deepInclude(rows[0]!.record, {
+        name: "Workspace 1",
+        columns: [],
+        pinnedAt: null,
+        hidden: false,
+        revision: 1,
+      });
+      assert.equal(rows[0]!.position, 0);
+    }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
+  );
+
+  it.effect("copies each grid with its id, name, pin and hidden state, in creation order", () =>
+    Effect.gen(function* () {
+      yield* insertGrid(
+        grid("g2", "2026-01-02T00:00:00.000Z", leaf("b"), { name: "Second", hidden: true }),
+      );
+      yield* insertGrid(
+        grid("g1", "2026-01-01T00:00:00.000Z", split("row", [leaf("a"), leaf("c")], [1, 3]), {
+          name: "First",
+          pinnedAt: "2026-01-05T00:00:00.000Z",
+        }),
+      );
+      yield* emptyTable;
+      assert.deepEqual(yield* rerun, [[19, "LayoutWorkspaces"]]);
+      const rows = yield* stored;
+      assert.deepEqual(
+        rows.map((row) => [
+          row.position,
+          row.record.id,
+          row.record.name,
+          row.record.pinnedAt,
+          row.record.hidden,
+        ]),
+        [
+          [0, "g1", "First", "2026-01-05T00:00:00.000Z", false],
+          [1, "g2", "Second", null, true],
+        ],
+      );
+      assert.deepEqual(threadsOf(rows[0]!.record), [[["a"]], [["c"]]]);
+      assert.deepEqual(
+        rows[0]!.record.columns.map((column: { width: number }) => column.width),
+        [0.25, 0.75],
+      );
+      assert.equal(rows[0]!.record.createdAt, "2026-01-01T00:00:00.000Z");
+      assert.equal(rows[0]!.record.revision, 1);
+    }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
+  );
+
+  it.effect("leaves houston_grids untouched and is idempotent when run twice", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* insertGrid(
+        grid("g1", "2026-01-01T00:00:00.000Z", split("row", [leaf("a"), leaf("b")])),
+      );
+      yield* emptyTable;
+      const gridsBefore = yield* sql`SELECT * FROM houston_grids ORDER BY id`;
+      yield* rerun;
+      const first = yield* stored;
+      // An edit made after the copy must survive a second run.
+      yield* sql`
+        UPDATE houston_layout_workspaces
+        SET record_json = json_set(record_json, '$.name', 'Renamed'), revision = 2
+        WHERE id = 'g1'
+      `;
+      assert.deepEqual(yield* rerun, [[19, "LayoutWorkspaces"]]);
+      const second = yield* stored;
+      assert.lengthOf(second, first.length);
+      assert.equal(second[0]!.record.name, "Renamed");
+      assert.deepEqual(yield* sql`SELECT * FROM houston_grids ORDER BY id`, gridsBefore);
+    }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
+  );
+
+  it.effect("an empty table gets a default workspace even when grids exist but none decode", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* restoreGrids;
+      yield* sql`
+        INSERT INTO houston_grids (id, project_id, record_json, revision, created_at, updated_at)
+        VALUES ('bad', 'p1', 'not json', 1, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')
+      `;
+      yield* emptyTable;
+      yield* rerun;
+      const rows = yield* stored;
+      assert.deepEqual(
+        rows.map((row) => row.record.name),
+        ["Workspace 1"],
+      );
+    }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
+  );
+
+  const lossy: ReadonlyArray<readonly [string, unknown, string[][][]]> = [
+    [
+      "col(row(a,b), row(c,d))",
+      split("col", [split("row", [leaf("a"), leaf("b")]), split("row", [leaf("c"), leaf("d")])]),
+      [[["a"], ["b"], ["c"], ["d"]]],
+    ],
+    [
+      "col(row(a,b,c), row(d,e,f))",
+      split("col", [
+        split("row", [leaf("a"), leaf("b"), leaf("c")]),
+        split("row", [leaf("d"), leaf("e"), leaf("f")]),
+      ]),
+      [[["a"], ["b"], ["c"], ["d"], ["e"], ["f"]]],
+    ],
+    [
+      "row(a, col(row(b,c), row(d,e)))",
+      split("row", [
+        leaf("a"),
+        split("col", [split("row", [leaf("b"), leaf("c")]), split("row", [leaf("d"), leaf("e")])]),
+      ]),
+      [[["a"]], [["b"], ["c"], ["d"], ["e"]]],
+    ],
+    [
+      "col(row(a,b), c)",
+      split("col", [split("row", [leaf("a"), leaf("b")]), leaf("c")]),
+      [[["a"], ["b"], ["c"]]],
+    ],
+    [
+      "row > col > row alternation",
+      split("row", [split("col", [split("row", [leaf("a"), leaf("b")]), leaf("c")]), leaf("d")]),
+      [[["a"], ["b"], ["c"]], [["d"]]],
+    ],
+  ];
+  it.effect.each(lossy)("%s flattens and the log names the workspace", ([, tree, expected]) => {
+    const messages: string[] = [];
+    return Effect.gen(function* () {
+      yield* insertGrid(grid("lossy-grid", "2026-01-01T00:00:00.000Z", tree));
+      yield* emptyTable;
+      yield* rerun;
+      assert.deepEqual(threadsOf((yield* stored)[0]!.record), expected);
+      const line = messages.find((message) => message.includes("lossy-grid"));
+      assert.isDefined(line, `no log line names the workspace; got ${JSON.stringify(messages)}`);
+      assert.include(line!, "flattened");
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(Layer.fresh(SqlitePersistence.layerMemory), collectingLogs(messages)),
+      ),
+    );
+  });
+
+  it.effect("exact shapes log nothing about loss", () => {
+    const messages: string[] = [];
+    return Effect.gen(function* () {
+      yield* insertGrid(
+        grid(
+          "exact",
+          "2026-01-01T00:00:00.000Z",
+          split("row", [leaf("a"), split("col", [leaf("b"), leaf("c")])]),
+        ),
+      );
+      yield* emptyTable;
+      yield* rerun;
+      assert.deepEqual(threadsOf((yield* stored)[0]!.record), [[["a"]], [["b"], ["c"]]]);
+      assert.isFalse(messages.some((message) => message.includes("flattened")));
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(Layer.fresh(SqlitePersistence.layerMemory), collectingLogs(messages)),
+      ),
+    );
+  });
+
+  it.effect("a thread in two grids keeps its tab in the earlier one only", () => {
+    const messages: string[] = [];
+    return Effect.gen(function* () {
+      yield* insertGrid(grid("g1", "2026-01-01T00:00:00.000Z", leaf("a")));
+      yield* insertGrid(
+        grid("g2", "2026-01-02T00:00:00.000Z", split("row", [leaf("a"), leaf("b")])),
+      );
+      yield* emptyTable;
+      yield* rerun;
+      const rows = yield* stored;
+      assert.deepEqual(threadsOf(rows[0]!.record), [[["a"]]]);
+      assert.deepEqual(threadsOf(rows[1]!.record), [[["b"]]]);
+      assert.isTrue(
+        messages.some((message) => message.includes("g2") && message.includes("thread a")),
+      );
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(Layer.fresh(SqlitePersistence.layerMemory), collectingLogs(messages)),
+      ),
+    );
+  });
+
+  it.effect("a grid whose record no longer decodes is skipped and named in the log", () => {
+    const messages: string[] = [];
+    return Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* restoreGrids;
+      yield* sql`
+        INSERT INTO houston_grids (id, project_id, record_json, revision, created_at, updated_at)
+        VALUES ('broken', 'p1', '{"id":"broken"}', 1, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')
+      `;
+      yield* insertGrid(grid("ok", "2026-01-02T00:00:00.000Z", leaf("a")));
+      yield* emptyTable;
+      yield* rerun;
+      assert.deepEqual(
+        (yield* stored).map((row) => row.record.id),
+        ["ok"],
+      );
+      assert.isTrue(messages.some((message) => message.includes("broken")));
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(Layer.fresh(SqlitePersistence.layerMemory), collectingLogs(messages)),
+      ),
+    );
+  });
+});
+
+describe("the grids removal migration", () => {
+  const gridObjects = Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    return (yield* sql<{ readonly name: string }>`
+      SELECT name FROM sqlite_master WHERE name IN ('houston_grids', 'idx_houston_grids_project') ORDER BY name
+    `).map((row) => row.name);
+  });
+  const workspaces = Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    return (yield* sql<{ readonly id: string; readonly record_json: string }>`
+      SELECT id, record_json FROM houston_layout_workspaces ORDER BY position, id
+    `).map((row) => ({ id: row.id, record: JSON.parse(row.record_json) }));
+  });
+  const gridRecord = (id: string, createdAt: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    environmentId: "env",
+    projectId: "p1",
+    workspaceKey: "env:p1",
+    name: `Grid ${id}`,
+    tree: {
+      kind: "split",
+      dir: "row",
+      children: [
+        { kind: "thread", threadId: `${id}-a`, id: `leaf-${id}-a` },
+        { kind: "thread", threadId: `${id}-b`, id: `leaf-${id}-b` },
+      ],
+      weights: [1, 1],
+    },
+    pinnedAt: null,
+    hidden: false,
+    createdAt,
+    revision: 3,
+    updatedAt: createdAt,
+    ...extra,
+  });
+  const insertRow = (record: { id: string; createdAt: string }) =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`
+        INSERT INTO houston_grids (id, project_id, record_json, revision, created_at, updated_at)
+        VALUES (${record.id}, 'p1', ${JSON.stringify(record)}, 3, ${record.createdAt}, ${record.createdAt})
+      `;
+    });
+  /** Un-records the ids a database that had not reached them would lack, so the track runs them. */
+  const unrecord = (...ids: number[]) =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      for (const id of ids)
+        yield* sql`DELETE FROM houston_sql_migrations WHERE migration_id = ${id}`;
+    });
+
+  it.effect("a database that never held grids ends without the table or its index", () =>
+    Effect.gen(function* () {
+      assert.deepEqual(yield* houstonHistory, HOUSTON_TRACK);
+      assert.deepEqual(yield* gridObjects, []);
+      assert.lengthOf(yield* workspaces, 1);
+    }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
+  );
+
+  it.effect(
+    "a database holding grids runs 19 then 20: every grid is a workspace, the table is gone",
+    () =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        // Composed fixture: the state of a database that ran migration 18 and stored grids before 19.
+        yield* restoreGrids;
+        yield* insertRow(
+          gridRecord("g1", "2026-01-01T00:00:00.000Z", { pinnedAt: "2026-02-01T00:00:00.000Z" }),
+        );
+        yield* insertRow(gridRecord("g2", "2026-01-02T00:00:00.000Z", { hidden: true }));
+        yield* sql`DELETE FROM houston_layout_workspaces`;
+        yield* unrecord(19, 20);
+        assert.deepEqual(yield* runHoustonMigrations(), [
+          [19, "LayoutWorkspaces"],
+          [20, "RemoveGrids"],
+        ]);
+        const rows = yield* workspaces;
+        assert.deepEqual(
+          rows.map((row) => [row.id, row.record.name, row.record.pinnedAt, row.record.hidden]),
+          [
+            ["g1", "Grid g1", "2026-02-01T00:00:00.000Z", false],
+            ["g2", "Grid g2", null, true],
+          ],
+        );
+        assert.deepEqual(
+          rows.map((row) =>
+            row.record.columns.map((column: { panes: Array<{ tabs: unknown[] }> }) =>
+              column.panes.map((pane) => pane.tabs.length),
+            ),
+          ),
+          [
+            [[1], [1]],
+            [[1], [1]],
+          ],
+        );
+        assert.deepEqual(yield* gridObjects, []);
+      }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
+  );
+
+  it.effect(
+    "a database that already ran 19 loses the table and keeps its workspaces and their edits",
+    () =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        // Composed fixture: migration 19 ran, then the person edited a workspace, and 20 has not run.
+        yield* restoreGrids;
+        yield* insertRow(gridRecord("g1", "2026-01-01T00:00:00.000Z"));
+        yield* sql`DELETE FROM houston_layout_workspaces`;
+        yield* unrecord(19);
+        assert.deepEqual(yield* runHoustonMigrations(), [[19, "LayoutWorkspaces"]]);
+        yield* sql`
+        UPDATE houston_layout_workspaces
+        SET record_json = json_set(record_json, '$.name', 'Renamed'), revision = 2
+        WHERE id = 'g1'
+      `;
+        assert.deepEqual(yield* gridObjects, ["houston_grids", "idx_houston_grids_project"]);
+        yield* unrecord(20);
+        assert.deepEqual(yield* runHoustonMigrations(), [[20, "RemoveGrids"]]);
+        assert.deepEqual(yield* gridObjects, []);
+        const rows = yield* workspaces;
+        assert.deepEqual(
+          rows.map((row) => [row.id, row.record.name]),
+          [["g1", "Renamed"]],
+        );
+      }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
+  );
+
+  it.effect("runs again with the table absent and changes nothing", () =>
+    Effect.gen(function* () {
+      assert.deepEqual(yield* gridObjects, []);
+      const before = yield* workspaces;
+      yield* unrecord(20);
+      assert.deepEqual(yield* runHoustonMigrations(), [[20, "RemoveGrids"]]);
+      assert.deepEqual(yield* gridObjects, []);
+      assert.deepEqual(yield* workspaces, before);
+    }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
+  );
+
+  it.effect("a file database at upstream's head applies 18 to 21 and ends without the table", () =>
+    withDatabaseFile((file) =>
+      Effect.gen(function* () {
+        yield* runMigrations();
+        assert.deepEqual(
+          (yield* runHoustonMigrations()).filter(([id]) => id >= 18),
+          [
+            [18, "Grids"],
+            [19, "LayoutWorkspaces"],
+            [20, "RemoveGrids"],
+            [21, "LayoutThreadMembership"],
+          ],
+        );
+        assert.deepEqual(yield* gridObjects, []);
+      }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: file }))),
+    ),
+  );
+});
+
+describe("the thread membership migration", () => {
+  const tabsRecord = (id: string, position: number, threads: string[]) => ({
+    id,
+    position,
+    record_json: JSON.stringify({
+      id,
+      name: id,
+      position,
+      columns: [
+        {
+          id: `c-${id}`,
+          width: 1,
+          panes: [
+            {
+              id: `p-${id}`,
+              size: 1,
+              activeTabId: null,
+              tabs: threads.map((threadId) => ({
+                id: `t-${id}-${threadId}`,
+                content: {
+                  kind: "chat",
+                  target: { kind: "server", threadRef: { environmentId: "env", threadId } },
+                },
+              })),
+            },
+          ],
+        },
+      ],
+      pinnedAt: null,
+      hidden: false,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      revision: 1,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }),
+  });
+
+  it.effect("rule 8: a thread with a chat tab starts in that tab's workspace", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`DELETE FROM houston_layout_workspaces`;
+      for (const row of [tabsRecord("a", 0, ["one"]), tabsRecord("b", 1, ["two", "one"])]) {
+        yield* sql`
+          INSERT INTO houston_layout_workspaces (id, position, record_json, revision, created_at, updated_at)
+          VALUES (${row.id}, ${row.position}, ${row.record_json}, 1, '2026-01-01', '2026-01-01')
+        `;
+      }
+      yield* sql`DROP TABLE houston_layout_thread_membership`;
+      yield* sql`DROP TABLE houston_layout_focus`;
+      yield* sql`DELETE FROM houston_sql_migrations WHERE migration_id = 21`;
+      assert.deepEqual(yield* runHoustonMigrations(), [[21, "LayoutThreadMembership"]]);
+      const rows = yield* sql<{ readonly thread_id: string; readonly workspace_id: string }>`
+        SELECT thread_id, workspace_id FROM houston_layout_thread_membership ORDER BY thread_id
+      `;
+      assert.deepEqual(
+        rows.map((row) => [row.thread_id, row.workspace_id]),
+        [
+          ["one", "a"],
+          ["two", "b"],
+        ],
+      );
     }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
   );
 });

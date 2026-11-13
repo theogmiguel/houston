@@ -147,6 +147,7 @@ import type { useQueuedRunEdit } from "./useQueuedRunEdit";
 import type { useTimelineFollow } from "./useTimelineFollow";
 import type { useUsageLimitsPanel } from "./useUsageLimitsPanel";
 import type { useWorktreeSetup } from "./useWorktreeSetup";
+import { claimWorkspaceForNewThread } from "../../layout/threadWorkspaceCommands";
 
 const ENVIRONMENT_UNAVAILABLE_SEND_TOAST_TRAIL_SIZE = 3;
 
@@ -1358,6 +1359,9 @@ export function useComposerSend(input: ComposerSendInput) {
     let backgroundDraftOpened = false;
     let turnStartSucceeded = false;
     if (failure === null && turnAttachmentsResult._tag === "Success") {
+      if (isLocalDraftThread) {
+        await claimWorkspaceForNewThread({ environmentId, threadId: threadIdForSend });
+      }
       const bootstrap =
         isLocalDraftThread || baseBranchForWorktree
           ? {

@@ -5,13 +5,15 @@ import { squashAtomCommandFailure } from "@houston-app/client-runtime/state/runt
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { PlusIcon, SearchIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { use, useEffect, useState } from "react";
 
 import { environmentProjects } from "~/state/projects";
 import { usePrimaryEnvironmentId } from "~/state/environments";
+import { validateTasksSearch, type TasksSearch, type TasksView } from "./tasksSearch";
+import { LayoutPageLocationContext } from "~/layout/pageNavigation";
 import { loadTaskSettings, tasksEnvironment, useTasksView } from "~/state/tasks";
 import { useAtomCommand } from "~/state/use-atom-command";
-import { useOpenThreadInGrid } from "~/grid/openThreadInGrid";
+import { useOpenThread } from "~/threads/useOpenThread";
 import { requestConfirmDialog } from "~/confirmDialog";
 import { isDesktopHost } from "~/env";
 import { isTerminalFocused } from "~/lib/terminalFocus";
@@ -46,6 +48,7 @@ import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { SidebarInset } from "../ui/sidebar";
 import { toastManager } from "../ui/toast";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
+import { ScrollRow } from "../ui/scroll-row";
 import {
   WorkspaceBreadcrumb,
   WorkspaceBreadcrumbItem,
@@ -63,15 +66,7 @@ import {
   type TaskNextActionKind,
 } from "./tasks.logic";
 
-export type TasksView = "queue" | "projects" | "sources";
-
-export interface TasksSearch {
-  readonly task?: string;
-  readonly view?: TasksView;
-  readonly workspace?: string;
-  readonly q?: string;
-  readonly new?: boolean;
-}
+export type { TasksSearch, TasksView } from "./tasksSearch";
 
 function readableFailure(error: unknown): string {
   if (error instanceof Error && error.message.length > 0) return error.message;
@@ -181,7 +176,7 @@ function NewProjectDialog({
             </div>
           </div>
         </DialogPanel>
-        <DialogFooter variant="bare">
+        <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
@@ -195,7 +190,13 @@ function NewProjectDialog({
 }
 
 export function TasksPage() {
-  const search = useSearch({ from: "/_chat/tasks" });
+  // A page tab reads its own location; the routed page reads the URL's.
+  const tabLocation = use(LayoutPageLocationContext);
+  const routedSearch = useSearch({ from: "/_chat/tasks", shouldThrow: false });
+  const search: TasksSearch =
+    tabLocation === null
+      ? (routedSearch ?? validateTasksSearch({}))
+      : validateTasksSearch(tabLocation.search);
   const navigate = useNavigate({ from: "/tasks" });
   const environmentId = usePrimaryEnvironmentId();
   const projects = useAtomValue(environmentProjects.projectsAtom).filter(
@@ -219,7 +220,7 @@ export function TasksPage() {
     environmentId,
     view === "sources" ? "all" : scope,
   );
-  const openThread = useOpenThreadInGrid();
+  const openThread = useOpenThread();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const startTask = useAtomCommand(tasksEnvironment.start);
   const planStart = useAtomCommand(tasksEnvironment.planStart);
@@ -440,7 +441,7 @@ export function TasksPage() {
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
           <WorkspacePageHeader desktop={isDesktopHost}>
-            <WorkspaceBreadcrumb ariaLabel="Tasks breadcrumb">
+            <WorkspaceBreadcrumb ariaLabel="Tasks breadcrumb" className="shrink-0">
               <WorkspaceBreadcrumbItem current={view !== "sources"}>
                 <Text as="h1" variant="headline" weight="semibold">
                   Tasks
@@ -457,10 +458,10 @@ export function TasksPage() {
                 </>
               ) : null}
             </WorkspaceBreadcrumb>
-          </WorkspacePageHeader>
-          <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-4">
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
+            {/* In a narrow pane the controls scroll sideways instead of overlapping the title. */}
+            <ScrollRow className="flex-1" spacing="loose">
               <ToggleGroup
+                className="shrink-0"
                 value={[view]}
                 onValueChange={(next) => {
                   const target =
@@ -476,9 +477,10 @@ export function TasksPage() {
                 <Toggle value="projects">By project</Toggle>
                 <Toggle value="sources">Sources</Toggle>
               </ToggleGroup>
+              <div className="min-w-0 flex-1" />
               {view === "sources" ? null : (
                 <>
-                  <InputGroup className="min-w-40 flex-1">
+                  <InputGroup className="w-56 min-w-24 shrink">
                     <InputGroupAddon>
                       <SearchIcon />
                     </InputGroupAddon>
@@ -486,13 +488,12 @@ export function TasksPage() {
                       value={search.q ?? ""}
                       placeholder="Search"
                       aria-label="Search tasks"
-                      size="compact"
                       onChange={(event) =>
                         updateSearch({ q: event.currentTarget.value || undefined })
                       }
                     />
                   </InputGroup>
-                  <div className="w-48 shrink-0">
+                  <div className="w-44 shrink-0">
                     <Select
                       value={workspace}
                       onValueChange={(value) => {
@@ -517,7 +518,6 @@ export function TasksPage() {
                   </div>
                   {view === "projects" ? (
                     <Button
-                      size="sm"
                       variant="outline"
                       disabled={selectedProject === null}
                       onClick={() => setNewProjectOpen(true)}
@@ -526,13 +526,19 @@ export function TasksPage() {
                       New project
                     </Button>
                   ) : null}
-                  <Button size="sm" disabled={newTaskDisabled} onClick={() => setEditorOpen(true)}>
+                  <Button
+                    className="shrink-0"
+                    disabled={newTaskDisabled}
+                    onClick={() => setEditorOpen(true)}
+                  >
                     <PlusIcon aria-hidden />
                     New task
                   </Button>
                 </>
               )}
-            </div>
+            </ScrollRow>
+          </WorkspacePageHeader>
+          <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-4 pt-1">
             <div className="min-h-0 flex-1 overflow-y-auto">
               {tasksError !== null && !snapshot.loaded ? (
                 <Alert variant="error">

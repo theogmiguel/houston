@@ -10,6 +10,7 @@ import { AppRoot } from "~/AppRoot";
 import { __setClientSettingsForTests } from "~/hooks/useSettings";
 import { getRouter } from "~/router";
 import { installFakeEnvironment, threadWithHistory } from "../../test/fakeEnvironment";
+import { loadEmptyLayout } from "../../test/loadedLayout";
 import { act, fakeTimers, render } from "../../test/render";
 
 // The socket is the only fake layer: the client runtime hands every connection the in-process session.
@@ -34,6 +35,7 @@ __setClientSettingsForTests({
   ...DEFAULT_CLIENT_SETTINGS,
   onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
 });
+loadEmptyLayout();
 
 async function mountApp(width: number) {
   await page.viewport(width, 900);

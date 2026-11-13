@@ -8,7 +8,12 @@ import { SidebarUtilityMenu } from "./SidebarChrome";
 
 vi.mock(import("@effect/atom-react"), async (original) => ({
   ...(await original()),
-  useAtomValue: (() => null) as never,
+  useAtomValue: (() => []) as never,
+}));
+
+vi.mock(import("./SidebarUpdatesButton"), async (original) => ({
+  ...(await original()),
+  SidebarUpdatesButton: (() => null) as never,
 }));
 
 const APPEARANCE_MODE_KEY = "houston:theme-appearance-mode";

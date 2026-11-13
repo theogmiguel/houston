@@ -52,7 +52,7 @@ import {
 import { useRef, useState, type ReactNode } from "react";
 
 import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
-import { useThreadOpen } from "../grid/threadOpenContext";
+import { useThreadOpen } from "../../threads/threadOpenContext";
 import {
   useProjects,
   useQuietThreadShell,

@@ -368,7 +368,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
                   </div>
                 ) : null}
               </DialogPanel>
-              <DialogFooter variant="bare">
+              <DialogFooter>
                 <Button variant="outline" onClick={() => setIsRevealDialogOpen(false)}>
                   Done
                 </Button>
@@ -767,7 +767,7 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
               ) : null}
             </section>
           </DialogPanel>
-          <DialogFooter variant="bare">
+          <DialogFooter>
             <Button
               variant="outline"
               disabled={isCreatingPairingLink}

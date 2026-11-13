@@ -76,9 +76,6 @@ describe("the Animations setting in CSS", () => {
 
   it("zeroes every motion role and flips the motion variants", () => {
     using _motion = restoreMotionAfterTest();
-    const grid = document.createElement("div");
-    grid.dataset.gridSurface = "";
-    document.body.append(grid);
     const root = document.documentElement;
     const safe = probe("opacity-100 motion-safe:opacity-50");
     const reduce = probe("opacity-100 motion-reduce:opacity-50");
@@ -89,7 +86,6 @@ describe("the Animations setting in CSS", () => {
       expect(getComputedStyle(safe).getPropertyValue("--motion-swap-rise").trim()).toBe("0px");
       expect(getComputedStyle(safe).opacity).toBe("1");
       expect(getComputedStyle(reduce).opacity).toBe("0.5");
-      expect(getComputedStyle(grid).transitionProperty).toBe("none");
 
       configureMotion({ off: false });
       expect(root.dataset.motion).toBeUndefined();
@@ -99,7 +95,6 @@ describe("the Animations setting in CSS", () => {
     } finally {
       safe.remove();
       reduce.remove();
-      grid.remove();
     }
   });
 });

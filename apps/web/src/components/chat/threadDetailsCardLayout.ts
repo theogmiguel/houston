@@ -27,7 +27,7 @@ export function resolveThreadDetailsCardLayout({
   frame: PreviewMiniPlayerFrame | null;
   overlapsDetailsCard?: boolean;
   topInset?: number;
-  /** A grid pane keeps the card inline even when it leaves no room beside the chat. */
+  /** A layout pane keeps the card inline even when it leaves no room beside the chat. */
   allowOverlap?: boolean;
 }) {
   const gap = THREAD_DETAILS_CARD_GAP;

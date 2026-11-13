@@ -81,7 +81,8 @@ export const SidebarThreadSortOrder = Schema.Literals(["updated_at", "created_at
 export type SidebarThreadSortOrder = typeof SidebarThreadSortOrder.Type;
 const DEFAULT_SIDEBAR_THREAD_SORT_ORDER: SidebarThreadSortOrder = "updated_at";
 
-// The grid rail keeps each grid's threads in pane order unless the user picks a time order.
+// The sidebar keeps each workspace's threads in pane order (the stored value "grid", named by an
+// earlier build and kept so a saved choice still applies) unless the user picks a time order.
 export const SidebarGridThreadSortOrder = Schema.Literals(["grid", "updated_at", "created_at"]);
 export type SidebarGridThreadSortOrder = typeof SidebarGridThreadSortOrder.Type;
 export const DEFAULT_SIDEBAR_GRID_THREAD_SORT_ORDER: SidebarGridThreadSortOrder = "grid";
@@ -543,7 +544,7 @@ export const ClientSettingsSchema = Schema.Struct({
   sidebarGridSortOrder: SidebarGridSortOrder.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_GRID_SORT_ORDER)),
   ),
-  // What the grid rail's thread rows show under the title.
+  // What the sidebar's thread rows show under the title.
   sidebarRowShowBranch: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   sidebarRowShowPullRequest: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   sidebarRowShowSubagents: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),

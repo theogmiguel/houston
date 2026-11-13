@@ -147,8 +147,6 @@ html[data-theme-reveal] *::after {
   --h-top: 44px;
   --w-window-control: 30px;
   --h-pane-head: 30px;
-  /* Reserved top lane for a grid pane's floating label; the thread itself sets it. */
-  --pane-label-inset: 0px;
   --h-ctl: 28px;
   --h-row: 28px;
   --h-pill: 26px;
@@ -629,6 +627,14 @@ body {
   box-shadow: var(--shadow-1);
 }
 
+/* A row that scrolls sideways without drawing a scrollbar: a header's controls in a pane too narrow to show them all. */
+@utility scrollbar-hidden {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 @utility topbar-scroll-fade {
   -webkit-mask-image:
     linear-gradient(
@@ -1087,7 +1093,8 @@ body {
   --content: #ffffff;
   --card: #ffffff;
   --raised: #ffffff;
-  --term: #fbfbfc;
+  /* The terminal surface is the pane's colour, so a terminal tab and its body read as one shape. */
+  --term: var(--pane);
   --code-bg: #f7f7fa;
   --t1: #1d1d1f;
   --t2: #424245;
@@ -1107,11 +1114,11 @@ body {
   --sel: rgba(0, 0, 0, 0.09);
   --tog-off: rgba(0, 0, 0, 0.22);
   /* Indigo from the app mark; the fill keeps 5.2:1 against white button text. */
-  --accent: #5b58e8;
+  --accent: #2563eb;
   --accent-surface: var(--hover);
-  --accent-hover: #4a47d6;
-  --accent-ink: #4b44d8;
-  --accent-muted: rgba(91, 88, 232, 0.12);
+  --accent-hover: #1d4ed8;
+  --accent-ink: #1d4ed8;
+  --accent-muted: rgba(37, 99, 235, 0.12);
   --ok: #1d7a3a;
   --warn: #b45309;
   --stop: #c0362c;
@@ -1156,11 +1163,8 @@ body {
   --sheet-scrim: rgba(0, 0, 0, 0.32);
   --pane: #ffffff;
   --pane-head: #f7f7fa;
-  /* The space between grid pane cards: one tonal step below the canvas, so the
-     white pane cards read as separate surfaces. */
-  --grid-gutter: var(--rail);
   --composer: var(--raised);
-  /* The focused grid cell's frame: a neutral grey, never the accent. */
+  /* The focused pane's frame: a neutral grey, never the accent. */
   --focus-frame: rgba(0, 0, 0, 0.38);
   /* The user's message bubble and the composer's send button; themes give them the message
      roles. */
@@ -1183,7 +1187,7 @@ body {
   --r-dialog: 14px;
   /* The inset main canvas: one step softer than a dialog. */
   --r-canvas: 12px;
-  /* The 7px pill the board draws for grid labels and selection buttons. */
+  /* The 7px pill the board draws for pane labels and selection buttons. */
   --r-selection: 7px;
   --r-pill: 999px;
 
@@ -1265,13 +1269,13 @@ body {
 [data-theme="graphite"] {
   color-scheme: dark;
   /* Houston's Graphite palette: three planes from dark to light. Chrome (rail, top bar,
-     grid gutter) sits below the canvas, and cards, the composer and popovers take the
-     raised tier. */
-  --rail: #111113;
+     pane gutter) sits well below the canvas so a pane card and its tabs read against it, and
+     cards, the composer and popovers take the raised tier. */
+  --rail: #08080a;
   --content: #18181b;
   --card: #1f1f23;
   --raised: #1f1f23;
-  --term: #0c0c0e;
+  --term: var(--pane);
   --code-bg: #1a1a1e;
   --t1: rgba(255, 255, 255, 0.92);
   --t2: rgba(255, 255, 255, 0.66);
@@ -1288,10 +1292,10 @@ body {
   --sel: rgba(255, 255, 255, 0.09);
   --tog-off: rgba(255, 255, 255, 0.18);
   /* Indigo from the app mark; white sits at 5.1:1 on the fill. */
-  --accent: #6d4aff;
-  --accent-hover: #5b3ae6;
-  --accent-ink: #a8a5ff;
-  --accent-muted: rgba(109, 74, 255, 0.16);
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-ink: #64a0ff;
+  --accent-muted: rgba(37, 99, 235, 0.2);
   --ok: #30d158;
   --warn: #f5a524;
   --stop: #ff6b61;
@@ -1329,7 +1333,7 @@ body {
   --shadow-seg: 0 1px 2px rgba(0, 0, 0, 0.2), 0 0 0 1px #2a2a31;
   --scrim: rgba(0, 0, 0, 0.28);
   --sheet-scrim: rgba(0, 0, 0, 0.55);
-  /* A grid pane is the canvas; only the rounded card frame lifts above the gutter. */
+  /* A pane is the canvas; only the rounded card frame lifts above the gutter. */
   --pane: #18181b;
   --pane-head: #1f1f23;
   --composer: var(--raised);
@@ -1495,7 +1499,7 @@ html[data-theme-id]:not([data-theme-id=""]) {
 
 /* Houston's board roles (--rail, --pane, --t1, ...) are painted straight by components, so a
    theme must reach them too, not only the semantic aliases above. Each role takes the theme role
-   upstream shows on the same surface: thread bodies sit on the canvas, the top strip and grid
+   painted on the same surface: thread bodies sit on the canvas, the top strip and pane
    gutter on the toolbar, the composer on the raised surface, hover and selection fills on the
    accent surface. Neutral text overlays stay the theme's text at Houston's alphas. */
 html[data-theme-id]:not([data-theme-id=""]) {
@@ -2468,18 +2472,22 @@ code {
   vertical-align: top;
 }
 
-.chat-markdown :is(th, td):first-child {
-  padding-inline-start: 0;
-}
-
-.chat-markdown :is(th, td):last-child {
-  padding-inline-end: 0;
-}
-
+/* The header is a filled, rounded strip; the body rows hang under it with the same inset. */
 .chat-markdown thead th {
-  border-bottom: 1px solid color-mix(in srgb, var(--contrast-border) 60%, transparent);
+  background-color: var(--hover);
   padding-block: 0.55rem;
-  font-weight: 600;
+  color: var(--contrast-secondary-label);
+  font-weight: 500;
+}
+
+.chat-markdown thead th:first-child {
+  border-start-start-radius: var(--r-ctl);
+  border-end-start-radius: var(--r-ctl);
+}
+
+.chat-markdown thead th:last-child {
+  border-start-end-radius: var(--r-ctl);
+  border-end-end-radius: var(--r-ctl);
 }
 
 .chat-markdown tbody td {
@@ -2802,7 +2810,19 @@ code {
   margin: 0;
 }
 
+[data-chat-canvas] {
+  container: chat-canvas / inline-size;
+}
+
 @layer components {
+  [data-chat-lane-probe] {
+    padding-inline-start: 1rem;
+  }
+  @container chat-canvas (min-width: 640px) {
+    [data-chat-lane-probe] {
+      padding-inline-start: var(--chat-lane-gutter, 3rem);
+    }
+  }
   .chat-composer-lane {
     padding-inline-start: calc(
       env(safe-area-inset-left) + 1rem + var(--chat-lane-inset-start, 0px)
@@ -2822,7 +2842,9 @@ code {
     inset-inline-start: var(--chat-lane-inset-start, 0px);
     inset-inline-end: var(--chat-lane-inset-end, 0px);
   }
-  @media (min-width: 640px) {
+  /* The gutter follows the width the chat is given, not the window's: a narrow pane in a wide
+     window keeps the narrow gutter, so its card and timeline fill the pane. */
+  @container chat-canvas (min-width: 640px) {
     .chat-composer-lane {
       padding-inline-start: calc(
         env(safe-area-inset-left) + var(--chat-lane-gutter, 3rem) +
@@ -2902,191 +2924,14 @@ code {
   line-height: var(--text-mono--line-height);
 }
 
-/* Grid surface. One thread on screen reads as one surface with the top strip: no card, the
-   strip's colour, edge to edge. Two or more become cards on that colour with an 8px gutter.
-   Going solo or back fades the cells' card layer; nothing else in the chat repaints. */
-
-[data-grid-surface] {
-  /* The card a cell shows in a crowded grid, read here so a cell's own --pane can't recolour it. */
-  --grid-card-surface: var(--background);
-  --grid-cell-surface: var(--background);
-  --grid-cell-radius: 0px;
-  /* A stable offsetParent for the cell FLIP's layout measurements. */
-  position: relative;
-  /* One thread on screen is one surface: the canvas, edge to edge. */
-  background-color: var(--background);
-  /* The gutter snaps: easing it would relayout every cell's chat on every frame. */
-  padding: 0;
-}
-
-[data-grid-surface][data-multi] {
-  --grid-card-surface: var(--background);
-  --grid-cell-surface: var(--background);
-  --grid-cell-radius: var(--r-group);
-  /* The pane cards sit on the darker gutter with a full 8px margin, so no card corner
-     is clipped against the surface's edge. */
-  background-color: var(--grid-gutter);
-  padding: 8px;
-}
-
-/* With several panes the top bar and the gutter are one surface, with no divider between. */
-[data-grid-page]:has([data-grid-surface][data-multi]) > [data-drag-region] {
-  background-color: var(--grid-gutter);
-  border-bottom-color: transparent;
-}
-
-/* Every cell keeps one compositing layer for good, alone, maximized or in a grid, so no move,
-   maximize or restore creates or drops one: either would repaint the whole chat. */
-[data-grid-surface] [data-grid-cell] {
-  will-change: transform;
-}
-
-[data-grid-surface] [data-grid-cell] {
-  --pane: var(--grid-cell-surface);
-  border: 1px solid transparent;
-  border-radius: var(--grid-cell-radius);
-  isolation: isolate;
-}
-
-/* The card behind a cell. Going solo or back fades this one layer: an opacity change the
-   compositor runs alone, where easing the colours would repaint the whole chat each frame. */
-[data-grid-surface] [data-grid-cell]::before {
-  content: "";
-  position: absolute;
-  inset: -1px;
-  z-index: -1;
-  pointer-events: none;
-  background-color: var(--grid-card-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-group);
-  opacity: 0;
-  will-change: opacity;
-  /* Going solo or back replaces the surface in place: one swap role for the card and the label. */
-  transition:
-    opacity var(--motion-swap-in) var(--ease-standard),
-    border-color var(--motion-swap-in) var(--ease-standard);
-}
-
-[data-grid-surface][data-multi] [data-grid-cell]::before {
-  opacity: 1;
-}
-
-/* The focused pane's ring is drawn inside the cell: the cell clips its overflow, so a border on
-   the card behind it (which sits outside the cell's box) never showed. */
-[data-grid-surface][data-multi] [data-grid-cell]::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 30;
-  pointer-events: none;
-  border-radius: inherit;
-  box-shadow: inset 0 0 0 1px var(--pane-focus-ring);
-  opacity: 0;
-  transition: opacity var(--motion-feedback) var(--ease-standard);
-}
-
-[data-grid-surface][data-multi] [data-grid-cell][data-focused="true"]::after {
-  opacity: 1;
-}
-
-/* Maximize and restore: a stand-in card carries the box while every cell's own card snaps
-   to where it ends, so the colour change happens once, inside the same move. */
-[data-grid-morph-card] {
-  position: absolute;
-  pointer-events: none;
-  background-color: var(--grid-card-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-group);
-  transform-origin: 0 0;
-  will-change: transform, opacity;
-}
-
-[data-grid-surface][data-maximize-morph] [data-grid-cell]::before {
-  transition: none;
-}
-
-[data-grid-surface] [data-grid-cell][data-maximize-morph]::before {
-  opacity: 0;
-}
-
-/* The chat inside a cell lets the cell's card show through instead of painting its own. */
-[data-grid-surface] [data-grid-cell] :is([data-chat-workspace], .bg-pane) {
-  background-color: transparent;
-}
-
-/* An empty grid's centred draft is its first thread, so it reads as one surface with the strip too. */
-[data-grid-empty-draft] {
-  --pane: var(--background);
-}
-
 /* The rule above On hold / Closed draws in the rail's divider colour, inset from both edges. */
 [data-shelves-rule] {
   background-color: var(--divider);
 }
 
-/* A thread outside a grid (a new thread, an opened thread) is one thread on screen: it reads
-   as one surface with its top strip, as a one-thread grid does. */
+/* A thread that owns its page (not embedded in a pane) reads as one surface with its top strip. */
 [data-standalone-thread] {
   --pane: var(--background);
-}
-
-/* The reveal's new snapshot is live; let the grid's surface colours land at once inside it. */
-html[data-theme-reveal] [data-grid-surface],
-html[data-theme-reveal] [data-grid-surface] [data-grid-cell]::before,
-html[data-theme-reveal] [data-grid-surface] [data-grid-cell]::after {
-  transition: none;
-}
-
-[data-grid-surface] [data-pane-label] {
-  transition:
-    opacity var(--motion-swap-in) var(--ease-standard),
-    translate var(--motion-swap-in) var(--ease-standard);
-}
-
-/* A pane shown alone has its title in the top bar. Its hidden header leaves the flow, so the
-   conversation and the details card start at the pane's top, as they do outside a grid. */
-[data-grid-surface]:not([data-multi]) [data-pane-label] {
-  position: absolute;
-  inset-inline: 0;
-  top: 0;
-  opacity: 0;
-  translate: 0 -4px;
-  pointer-events: none;
-}
-
-[data-grid-surface][data-morphing] [data-pane-label] {
-  @starting-style {
-    opacity: 0;
-    translate: 0 -4px;
-  }
-}
-
-/* A cell that joins takes its slot at once and fades in; one that leaves gives its slot up at
-   once and fades out over its last box. The other cells FLIP into place, so no slot eases its
-   size: that would relayout every chat in the grid on every frame. */
-[data-grid-surface] [data-grid-cell-frame][data-leaving] {
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--motion-list-out) var(--ease-exit);
-}
-
-[data-grid-surface][data-morphing] [data-grid-cell-frame][data-entering] {
-  transition: opacity var(--motion-list-in) var(--ease-standard);
-
-  @starting-style {
-    opacity: 0;
-  }
-}
-
-[data-grid-surface],
-[data-grid-surface] [data-grid-cell]::before,
-[data-grid-surface] [data-grid-cell]::after,
-[data-grid-surface] [data-pane-label],
-[data-grid-surface] [data-grid-slot],
-[data-grid-surface] [data-grid-gutter] {
-  @variant motion-reduce {
-    transition: none !important;
-  }
 }
 
 /* The docked right panel is the left sidebar's twin: the same rail colour and one divider. */

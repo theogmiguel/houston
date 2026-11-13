@@ -1,0 +1,14 @@
+status	class	upstream_path	houston_path	houston_diff_lines_vs_fork	stack_diff_lines	note
+M	manual	apps/web/src/components/chat/ChatComposer.tsx	apps/web/src/components/chat/ChatComposer.tsx	1256	161	touched-in-slice-1;merge3=conflicts:5;drift
+M	manual	apps/web/src/components/chat/ComposerFooterControls.tsx	apps/web/src/components/chat/ComposerFooterControls.tsx	267	6	touched-in-slice-1;merge3=conflicts:3;drift
+M	manual	apps/web/src/components/chat/ComposerPrimaryActions.tsx	apps/web/src/components/chat/ComposerPrimaryActions.tsx	315	50	touched-in-slice-1;merge3=conflicts:8;drift
+M	manual	apps/web/src/components/chat/ComposerSpeechButton.tsx	apps/web/src/components/chat/ComposerSpeechButton.tsx		179	absent-at-fork:added-upstream-after-fork;houston-has-own-file;drift
+M	houston-missing	apps/web/src/components/chat/VoiceInputErrorPill.tsx			2	absent-at-fork:added-upstream-after-fork
+M	manual	apps/web/src/components/chat/VoiceInputSetup.tsx	apps/web/src/components/chat/VoiceInputSetup.tsx		38	touched-in-slice-1;absent-at-fork:added-upstream-after-fork;houston-has-own-file;drift
+M	manual	apps/web/src/components/settings/MicrophoneTest.tsx	apps/web/src/components/settings/MicrophoneTest.tsx		47	touched-in-slice-1;absent-at-fork:added-upstream-after-fork;houston-has-own-file;drift
+M	manual	apps/web/src/components/settings/SpeechModelComparison.tsx	apps/web/src/components/settings/SpeechModelComparison.tsx		30	absent-at-fork:added-upstream-after-fork;houston-has-own-file;drift
+M	manual	apps/web/src/components/settings/VoiceSettingsPanel.tsx	apps/web/src/components/settings/VoiceSettingsPanel.tsx		90	touched-in-slice-1;absent-at-fork:added-upstream-after-fork;houston-has-own-file;drift
+M	manual	apps/web/src/speech/useEnvironmentSpeechInput.ts	apps/web/src/speech/useEnvironmentSpeechInput.ts		34	absent-at-fork:added-upstream-after-fork;houston-has-own-file;drift
+M	manual	apps/web/src/speech/useTextFieldSpeech.tsx	apps/web/src/speech/useTextFieldSpeech.tsx		4	absent-at-fork:added-upstream-after-fork;houston-has-own-file;drift
+M	houston-missing	docs/user/voice-input.md			7	absent-at-fork:added-upstream-after-fork
+M	manual	vite.config.ts	vite.config.ts	218	9	touched-in-slice-1;merge3=conflicts:1;drift

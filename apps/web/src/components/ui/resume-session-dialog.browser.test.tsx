@@ -5,8 +5,8 @@ import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import { render } from "../../../test/render";
-import { ThreadOpenProvider } from "../grid/threadOpenContext";
-import type { ThreadOpenIntent } from "../../grid/gridThreadOpen";
+import { ThreadOpenProvider } from "../../threads/threadOpenContext";
+import type { ThreadOpenIntent } from "../../threads/threadOpenContext";
 import { ResumeSessionDialog } from "./resume-session-dialog";
 
 const environmentId = EnvironmentId.make("environment");
@@ -92,7 +92,7 @@ describe("ResumeSessionDialog", () => {
 
     await userEvent.click(page.getByText("Fix the login"));
 
-    // `join` gives the thread its own grid cell instead of replacing the cell that resumed it.
+    // `join` gives the thread its own pane instead of replacing the pane that resumed it.
     expect(openThread).toHaveBeenCalledWith(
       expect.objectContaining({ environmentId, threadId }),
       "join",
@@ -114,7 +114,7 @@ describe("ResumeSessionDialog", () => {
       environmentId,
       input: { projectId, session: state.sessions[0]?.session },
     });
-    // `join` gives the thread its own grid cell instead of replacing the cell that resumed it.
+    // `join` gives the thread its own pane instead of replacing the pane that resumed it.
     expect(openThread).toHaveBeenCalledWith(
       expect.objectContaining({ environmentId, threadId }),
       "join",

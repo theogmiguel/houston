@@ -1,6 +1,7 @@
 import {
   STATIC_KEYBINDING_COMMANDS,
   type KeybindingCommand,
+  type LayoutKeybindingCommand,
   type KeybindingShortcut,
   type KeybindingWhenNode,
   type ResolvedKeybindingRule,
@@ -367,6 +368,34 @@ export function buildKeybindingCommandOptions(
   return [...commands].toSorted((left, right) => compareCommands(left, right, commandLabel));
 }
 
+const LAYOUT_COMMAND_LABELS: Readonly<Record<LayoutKeybindingCommand, string>> = {
+  "layout.splitRight": "Layout: New Pane to the Right",
+  "layout.splitDown": "Layout: New Pane Below",
+  "layout.fill": "Layout: Fill the Window",
+  "layout.focusLeft": "Layout: Focus Pane on the Left",
+  "layout.focusRight": "Layout: Focus Pane on the Right",
+  "layout.focusUp": "Layout: Focus Pane Above",
+  "layout.focusDown": "Layout: Focus Pane Below",
+  "layout.moveLeft": "Layout: Move Pane Left",
+  "layout.moveRight": "Layout: Move Pane Right",
+  "layout.moveUp": "Layout: Move Pane Up",
+  "layout.moveDown": "Layout: Move Pane Down",
+  "layout.focusFirstColumn": "Layout: Focus First Column",
+  "layout.focusLastColumn": "Layout: Focus Last Column",
+  "layout.cycleColumnWidth": "Layout: Cycle Column Width",
+  "layout.centerColumn": "Layout: Center Column",
+  "layout.pullLeft": "Layout: Pull Pane Into the Left Column",
+  "layout.pullRight": "Layout: Push Pane Out to Its Own Column",
+  "layout.shortcutSheet": "Layout: Show Every Shortcut",
+  "layout.focusWorkspaceDown": "Layout: Focus Next Workspace",
+  "layout.focusWorkspaceUp": "Layout: Focus Previous Workspace",
+  "layout.moveToWorkspaceDown": "Layout: Send Pane to the Next Workspace",
+  "layout.moveToWorkspaceUp": "Layout: Send Pane to the Previous Workspace",
+  "layout.moveWorkspaceDown": "Layout: Move Workspace Down",
+  "layout.moveWorkspaceUp": "Layout: Move Workspace Up",
+  "layout.overview": "Layout: Workspaces Overview",
+};
+
 export function commandLabel(command: KeybindingCommand): string {
   if (command === "workspace.focusNext") return "Focus Next Workspace Area";
   if (command === "workspace.focusPrevious") return "Focus Previous Workspace Area";
@@ -384,11 +413,8 @@ export function commandLabel(command: KeybindingCommand): string {
   const usagePeriod = WINDOW_OPTIONS.find((option) => option.command === command);
   if (usagePeriod) return `Usage: Period: ${usagePeriod.label}`;
   if (command === "view.reopenClosed") return "Reopen Closed Tab";
-  if (command === "grid.tidy") return "Grid: Tidy Into Balanced Grid";
-  if (command === "grid.tidyRow") return "Grid: Tidy Into One Row";
-  if (command === "grid.tidyColumn") return "Grid: Tidy Into One Column";
-  if (command === "grid.equalize") return "Grid: Equalize Splits";
-  if (command === "grid.toggleMaximizedCell") return "Grid: Maximize or Restore Cell";
+  if (command in LAYOUT_COMMAND_LABELS)
+    return LAYOUT_COMMAND_LABELS[command as LayoutKeybindingCommand];
   if (command === "thread.attentionNext") return "Thread: Next Thread Needing Attention";
   if (command === "thread.attentionPrevious") return "Thread: Previous Thread Needing Attention";
   if (command === "preview.focusUrl") return "Preview: Focus URL";

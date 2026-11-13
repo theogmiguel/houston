@@ -31,20 +31,16 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { quickComposerEnterSubmits, quickComposerHint } from "./quickComposerKeys";
 import type {
-  QuickComposerGridOption,
   QuickComposerImage,
   QuickComposerProjectOption,
   QuickComposerSubmitResult,
 } from "./quickComposer.logic";
-
-const NEW_GRID_VALUE = "__new__";
 
 export interface QuickComposerViewProps {
   readonly projects: ReadonlyArray<QuickComposerProjectOption>;
   readonly initialProjectKey: string | null;
   readonly onSubmit: (input: {
     readonly project: QuickComposerProjectOption;
-    readonly gridId: string | null;
     readonly prompt: string;
     readonly images: ReadonlyArray<QuickComposerImage>;
   }) => Promise<QuickComposerSubmitResult>;
@@ -58,7 +54,6 @@ export function QuickComposerView({
   onClose,
 }: QuickComposerViewProps) {
   const [projectKey, setProjectKey] = useState(initialProjectKey ?? projects[0]?.key ?? "");
-  const [gridId, setGridId] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
   const sendShortcut = useClientSettings((settings) => settings.sendShortcut);
   const [cursor, setCursor] = useState(0);
@@ -136,7 +131,6 @@ export function QuickComposerView({
     setError(null);
     const result = await onSubmit({
       project,
-      gridId,
       prompt,
       images,
     }).catch((cause: unknown) => ({
@@ -211,7 +205,6 @@ export function QuickComposerView({
           onValueChange={(value) => {
             if (typeof value !== "string") return;
             setProjectKey(value);
-            setGridId(null);
           }}
         >
           <SelectTrigger size="compact" className="min-w-0 flex-1" aria-label="Project">
@@ -221,25 +214,6 @@ export function QuickComposerView({
             {projects.map((option) => (
               <SelectItem key={option.key} value={option.key} className="w-full">
                 <span className="truncate">{option.title}</span>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Select
-          value={gridId ?? NEW_GRID_VALUE}
-          onValueChange={(value) => setGridId(value === NEW_GRID_VALUE ? null : String(value))}
-        >
-          <SelectTrigger size="compact" className="w-36" aria-label="Grid">
-            <SelectValue placeholder="Grid" />
-          </SelectTrigger>
-          <SelectContent alignItemWithTrigger={false} matchTriggerWidth={false}>
-            <SelectItem value={NEW_GRID_VALUE}>
-              {project !== null && project.grids.length === 0 ? "First grid" : "New grid"}
-            </SelectItem>
-            {(project?.grids ?? []).map((grid: QuickComposerGridOption) => (
-              <SelectItem key={grid.id} value={grid.id} className="w-full">
-                <span className="truncate">{grid.name}</span>
               </SelectItem>
             ))}
           </SelectContent>

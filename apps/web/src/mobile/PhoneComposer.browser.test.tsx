@@ -10,7 +10,6 @@ import "~/index.css";
 import { AppRoot } from "~/AppRoot";
 import { __setClientSettingsForTests } from "~/hooks/useSettings";
 import { getRouter } from "~/router";
-import { useGridStore } from "~/grid/gridStore";
 import {
   advertiseFileUploads,
   dispatchedCommands,
@@ -21,6 +20,7 @@ import {
   threadWithPendingQuestion,
   withPendingChanges,
 } from "../../test/fakeEnvironment";
+import { loadEmptyLayout } from "../../test/loadedLayout";
 import { render } from "../../test/render";
 import { expectFullWidthRows, expectSheetRecipe, textLeft } from "./phoneGeometry";
 
@@ -99,8 +99,8 @@ async function openThread(
   threadId: string,
   settings: Partial<typeof DEFAULT_CLIENT_SETTINGS> = {},
 ) {
-  // The grid store outlives one test's app; a leftover grid would mount extra hidden composers.
-  useGridStore.setState({ grids: [], threadOrigins: {} });
+  // The layout store outlives one test's app; a leftover tab would mount extra hidden composers.
+  loadEmptyLayout();
   __setClientSettingsForTests({
     ...DEFAULT_CLIENT_SETTINGS,
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
@@ -123,11 +123,14 @@ async function openThread(
     { timeout: 5_000 },
   );
   await userEvent.click(row);
-  await vi.waitFor(() => expect(router.state.location.pathname).toMatch(/^\/grid\//), {
-    timeout: 5_000,
-  });
+  await vi.waitFor(
+    () => expect(router.state.location.pathname).toMatch(/^\/environment-render\//),
+    {
+      timeout: 5_000,
+    },
+  );
   if (width >= 640) {
-    await vi.waitFor(() => expect(document.querySelector("[data-grid-page]")).not.toBeNull(), {
+    await vi.waitFor(() => expect(document.querySelector("[data-layout-strip]")).not.toBeNull(), {
       timeout: 5_000,
     });
   } else {
@@ -488,8 +491,8 @@ it("keeps the desktop composer at 1024px", async () => {
 });
 
 const GUTTER = 16;
-// The pane draws a 1px edge, so a 16px gutter starts 17px from the viewport.
-const EDGE = 1;
+// The phone's pane draws no edge, so the gutter starts at the viewport.
+const EDGE = 0;
 
 function rect(element: Element) {
   return element.getBoundingClientRect();

@@ -67,19 +67,6 @@ const SettingsSearchTargetContext = createContext<SettingsSearchTargetContextVal
   onTargetHandled: noop,
 });
 
-/** Page-level actions the route places in the title row, beside the heading. */
-const SettingsPageActionsContext = createContext<ReactNode>(null);
-
-export function SettingsPageActionsProvider({
-  actions,
-  children,
-}: {
-  readonly actions: ReactNode;
-  readonly children: ReactNode;
-}) {
-  return <SettingsPageActionsContext value={actions}>{children}</SettingsPageActionsContext>;
-}
-
 function SettingsSearchTargetProvider({
   targetId,
   highlightTarget = true,
@@ -291,9 +278,9 @@ export function SettingsUnavailableGroup({
   if (message === undefined) return children;
 
   return (
-    <div className="border-border/60 bg-muted/20 py-1.5">
+    <div className="py-1.5">
       <div className="flex items-start gap-2 px-4 py-2 text-xs leading-relaxed text-muted-foreground">
-        <InfoIcon className="mt-0.5 size-3.5 shrink-0 text-warning" />
+        <InfoIcon className="mt-0.5 size-3.5 shrink-0" />
         <p>{message}</p>
       </div>
       <div className="[&_h3]:opacity-64 [&_p]:opacity-64 max-phone:[&>*+*]:relative max-phone:[&>*+*]:before:pointer-events-none max-phone:[&>*+*]:before:absolute max-phone:[&>*+*]:before:top-0 max-phone:[&>*+*]:before:left-4 max-phone:[&>*+*]:before:right-4 max-phone:[&>*+*]:before:h-px max-phone:[&>*+*]:before:bg-border max-phone:[&>*+*]:before:content-['']">
@@ -522,7 +509,7 @@ export function SettingsRow({
       tabIndex={rowProps.id ? -1 : rowProps.tabIndex}
       data-slot="settings-row"
       className={cn(
-        "@container/settings-row min-h-12 px-4 aria-disabled:opacity-64 aria-disabled:[&_*]:text-muted-foreground hover:bg-hover",
+        "@container/settings-row min-h-12 px-4 aria-disabled:opacity-64 aria-disabled:[&_*]:text-muted-foreground",
         children ? "pt-3 pb-1" : "py-3",
         className,
       )}
@@ -607,12 +594,11 @@ const SETTINGS_DETAIL_PAGE_HEADINGS: Readonly<
   },
 };
 
-/** The title and one-line description every settings page opens with. */
+/** The one-line description every settings page opens with; its title is the breadcrumb. */
 function SettingsPageHeading() {
   const pathname = useLocation({
     select: (location) => location.pathname.replace(/\/+$/, "") || "/",
   });
-  const actions = useContext(SettingsPageActionsContext);
   const section =
     (Object.hasOwn(SETTINGS_SECTION_LABELS, pathname)
       ? {
@@ -621,14 +607,7 @@ function SettingsPageHeading() {
         }
       : undefined) ?? SETTINGS_DETAIL_PAGE_HEADINGS[pathname];
   if (section === undefined) return null;
-  const heading = <PageHeading title={section.title} description={section.description} />;
-  if (actions === null || actions === undefined) return heading;
-  return (
-    <div className="flex items-start justify-between gap-4">
-      {heading}
-      <div className="flex shrink-0 items-center gap-1 pt-0.5">{actions}</div>
-    </div>
-  );
+  return <PageHeading title={section.title} description={section.description} />;
 }
 const LEADING_HASH = /^#/;
 

@@ -23,7 +23,7 @@ import {
   resumeSessionStatusLabel,
   resumeSessionTitle,
 } from "../chat/resumeSession.logic";
-import { useThreadOpen } from "../grid/threadOpenContext";
+import { useThreadOpen } from "../../threads/threadOpenContext";
 import { Button } from "./button";
 import {
   Dialog,

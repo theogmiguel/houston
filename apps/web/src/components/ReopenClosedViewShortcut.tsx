@@ -55,6 +55,13 @@ const PREVIEW_FORWARDED_COMMANDS = [
 const isGlobalPullRequests = (ref: ScopedThreadRef) =>
   scopedThreadKey(ref) === scopedThreadKey(PULL_REQUESTS_PANEL_REF);
 
+let reopenRequest: (() => Promise<boolean>) | null = null;
+
+/** Reopens the latest closed view for a button; false while the shortcut host is not mounted. */
+export function requestReopenClosedView(): Promise<boolean> {
+  return reopenRequest === null ? Promise.resolve(false) : reopenRequest();
+}
+
 export function ReopenClosedViewShortcut() {
   const navigate = useNavigate();
   const params = useParams({ strict: false });
@@ -151,6 +158,17 @@ export function ReopenClosedViewShortcut() {
         });
       });
   });
+
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- exposes the queued reopen to buttons outside this component
+  useEffect(() => {
+    reopenRequest = () => {
+      enqueueReopen();
+      return pending.current.then(() => true);
+    };
+    return () => {
+      reopenRequest = null;
+    };
+  }, []);
 
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- subscribes to window keydown and the desktop menu action for the reopen closed view shortcut
   useEffect(() => {

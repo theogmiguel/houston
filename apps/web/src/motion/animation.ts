@@ -109,6 +109,30 @@ export class MotionAnimation {
   }
 }
 
+/**
+ * Keyframes held on whole device pixels, one per 8ms, so text is not resampled mid-move. The tail
+ * is trimmed once the rounded positions stop changing.
+ */
+function steppedKeyframes(
+  motion: MotionAnimation,
+  keyframe: (value: number) => Keyframe,
+): { keyframes: Keyframe[]; durationMs: number } {
+  const steps = Math.min(240, Math.max(2, Math.ceil(motion.durationMs / 8)));
+  const values: Keyframe[] = [];
+  for (let i = 0; i <= steps; i++) {
+    values.push(
+      keyframe(i === steps ? motion.to : motion.valueAt((i / steps) * motion.durationMs)),
+    );
+  }
+  const same = (a: Keyframe, b: Keyframe) => JSON.stringify(a) === JSON.stringify(b);
+  let last = steps;
+  while (last > 0 && same(values[last - 1]!, values[steps]!)) last--;
+  const keyframes = values
+    .slice(0, last + 1)
+    .map((value, i) => ({ ...value, offset: last === 0 ? 1 : i / last, easing: "steps(1, end)" }));
+  return { keyframes, durationMs: (last / steps) * motion.durationMs };
+}
+
 /** `px` rounded to the nearest device pixel, so text does not crawl during a move. */
 export function toDevicePixel(px: number): number {
   const ratio = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
@@ -134,15 +158,23 @@ export function playMotion(
   motion: MotionAnimation,
   keyframe: (value: number) => Keyframe,
   onFinish?: () => void,
+  /** Start on this timeline time, so a move triggered on a keydown joins the current frame. */
+  startTime?: Animation["startTime"],
+  /** Hold sampled keyframes on whole device pixels instead of a smooth curve. */
+  stepped = false,
 ): MotionRun {
-  if (motion.durationMs <= 0) {
+  const frames = stepped ? steppedKeyframes(motion, keyframe) : null;
+  if (motion.durationMs <= 0 || (frames && frames.durationMs <= 0)) {
     onFinish?.();
     return { motion, value: () => motion.to, velocity: () => 0, cancel: () => {} };
   }
-  const animation = element.animate([keyframe(motion.from), keyframe(motion.to)], {
-    duration: motion.durationMs,
-    easing: motion.cssEasing(),
-  });
+  const animation = frames
+    ? element.animate(frames.keyframes, { duration: frames.durationMs })
+    : element.animate([keyframe(motion.from), keyframe(motion.to)], {
+        duration: motion.durationMs,
+        easing: motion.cssEasing(),
+      });
+  if (startTime != null) animation.startTime = startTime;
   // Elapsed time once it stopped: at the end, or wherever it was cancelled.
   let stoppedAt: number | null = null;
   const elapsed = () => stoppedAt ?? Number(animation.currentTime ?? 0);

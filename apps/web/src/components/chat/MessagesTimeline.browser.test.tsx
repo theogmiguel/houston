@@ -180,12 +180,12 @@ async function renderElement(
   element: ReactElement,
   {
     width = 900,
-    grid = false,
+    pane = false,
     ...options
-  }: { router?: false; width?: number; grid?: boolean } = {},
+  }: { router?: false; width?: number; pane?: boolean } = {},
 ) {
   const container = document.createElement("div");
-  if (grid) container.setAttribute("data-grid-cell", "");
+  if (pane) container.setAttribute("data-layout-pane-id", "pane-1");
   container.style.cssText = `height: 1200px; width: ${width}px; display: flex; flex-direction: column;`;
   const screen = await render(element, { container, ...options });
   const buttons = (name: string | RegExp) =>
@@ -207,7 +207,7 @@ async function renderElement(
 function renderTimeline(
   entries: ReadonlyArray<Entry>,
   props: Partial<TimelineProps> = {},
-  options: { width?: number; grid?: boolean } = {},
+  options: { width?: number; pane?: boolean } = {},
 ) {
   return renderElement(
     <MessagesTimeline {...baseProps()} timelineEntries={entries as Entry[]} {...props} />,
@@ -1349,7 +1349,7 @@ describe("MessagesTimeline expanded turn with a read of an edited file", () => {
 });
 
 describe("MessagesTimeline expanded tool rows", () => {
-  it("runs under the header's rail to the prose column's right edge, with no border, at 1440x900", async () => {
+  it("runs flush with the prose column on both edges, with no border, at 1440x900", async () => {
     await using _viewport = await desktopViewport();
     setup();
     const runId = RunId.make("align-run");
@@ -1381,9 +1381,8 @@ describe("MessagesTimeline expanded tool rows", () => {
     expect(prose).toBeDefined();
     const rowBox = row.getBoundingClientRect();
     const proseBox = prose.getBoundingClientRect();
-    // A child of the group's header sits under a rail, indented from the prose column and
-    // flush with it on the right.
-    expect(rowBox.left).toBeGreaterThanOrEqual(proseBox.left + 20);
+    // A child of the group's header is flush with the prose column on both sides.
+    expect(Math.abs(rowBox.left - proseBox.left)).toBeLessThanOrEqual(1);
     expect(rowBox.right).toBeCloseTo(proseBox.right, 0);
     expect(getComputedStyle(row).borderTopWidth).toBe("0px");
     expect(getComputedStyle(row).borderLeftWidth).toBe("0px");
@@ -2052,6 +2051,53 @@ describe("TimelineChangesRow", () => {
   });
 });
 
+describe("turn fold diff stat", () => {
+  it("shows the turn's added and removed lines at the end of the Worked-for row, and only for a turn that changed files", async () => {
+    setup();
+    const changed = RunId.make("run-changed");
+    const quiet = RunId.make("run-quiet");
+    const entriesFor = (runId: RunId, tag: string): Entry[] => [
+      message(`Question ${tag}`, { role: "user", runId }, `user-${tag}`),
+      work(`tool-${tag}`, {
+        runId,
+        label: "Ran ls",
+        command: "ls -la",
+        tone: "tool",
+        itemType: "command_execution",
+        toolLifecycleStatus: "completed",
+      }),
+      message(`Answer ${tag}`, { role: "assistant", runId }, `final-${tag}`),
+    ];
+    await using screen = await renderTimeline(
+      [...entriesFor(changed, "changed"), ...entriesFor(quiet, "quiet")],
+      {
+        turnDiffSummaries: [
+          {
+            runId: changed,
+            checkpointTurnCount: 1,
+            checkpointRef: "checkpoint-changed" as never,
+            status: "ready",
+            files: [
+              { path: "a.ts", kind: "modified", additions: 4, deletions: 1 },
+              { path: "b.ts", kind: "modified", additions: 3, deletions: 0 },
+            ],
+            assistantMessageId: MessageId.make("final-changed"),
+            completedAt: CREATED_AT,
+          } as never,
+        ],
+      },
+    );
+    const folds = [
+      ...screen.container.querySelectorAll<HTMLElement>('[data-timeline-row-kind="turn-fold"]'),
+    ];
+    expect(folds).toHaveLength(2);
+    expect(folds[0]!.querySelector('[role="group"]')?.getAttribute("aria-label")).toBe(
+      "7 additions, 1 deletions",
+    );
+    expect(folds[1]!.querySelector('[role="group"]')).toBeNull();
+  });
+});
+
 describe("changed-files card beside the pending-changes row", () => {
   const diffFor = (runId: RunId, assistantId: string) =>
     ({
@@ -2633,7 +2679,7 @@ describe("MessagesTimeline rhythm", () => {
     expect(rowPadding(screen.container, fold)).toBe(12);
   });
 
-  it("nests the rows of an expanded group under the header's rail in 12px muted type", async () => {
+  it("sets the rows of an expanded group flush under the header in 12px muted type", async () => {
     await using _viewport = await desktopViewport();
     setup();
     const runId = RunId.make("nest-run");
@@ -2659,8 +2705,10 @@ describe("MessagesTimeline rhythm", () => {
     const row = screen.button("ls -la");
     const nest = row.closest<HTMLElement>("[data-work-log-nested]")!;
     expect(nest).not.toBeNull();
-    expect(getComputedStyle(nest).borderInlineStartWidth).toBe("1px");
-    expect(row.getBoundingClientRect().left).toBeGreaterThan(heading.getBoundingClientRect().left);
+    expect(getComputedStyle(nest).borderInlineStartWidth).toBe("0px");
+    expect(row.getBoundingClientRect().left).toBeLessThanOrEqual(
+      heading.getBoundingClientRect().left + 8,
+    );
     const label = [...row.querySelectorAll<HTMLElement>("*")].find(
       (element) => element.children.length === 0 && element.textContent?.includes("ls -la"),
     )!;
@@ -2689,15 +2737,15 @@ describe("MessagesTimeline rhythm", () => {
 
 describe("MessagesTimeline compact density", () => {
   it.each([
-    { width: 340, grid: false, compact: true },
-    { width: 570, grid: true, compact: true },
-    { width: 570, grid: false, compact: false },
-    { width: 900, grid: false, compact: false },
+    { width: 340, pane: false, compact: true },
+    { width: 570, pane: true, compact: true },
+    { width: 570, pane: false, compact: false },
+    { width: 900, pane: false, compact: false },
   ])(
-    "hides the latest answer's footer until hover at $width px (grid pane: $grid)",
-    async ({ width, grid, compact }) => {
+    "hides the latest answer's footer until hover at $width px (layout pane: $pane)",
+    async ({ width, pane, compact }) => {
       setup();
-      const runId = RunId.make(`compact-run-${width}-${grid}`);
+      const runId = RunId.make(`compact-run-${width}-${pane}`);
       await using screen = await renderTimeline(
         [
           message("Question", { runId }, "compact-user"),
@@ -2713,7 +2761,7 @@ describe("MessagesTimeline compact density", () => {
         {
           latestRun: { runId, status: "completed", startedAt: CREATED_AT, completedAt: CREATED_AT },
         },
-        { width, grid },
+        { width, pane },
       );
       const root = screen.container;
       const footer = await vi.waitFor(() => {

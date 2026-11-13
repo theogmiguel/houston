@@ -10,6 +10,7 @@ import {
 import { memo, type RefCallback } from "react";
 
 import { cn } from "~/lib/utils";
+import { useIsPhone } from "~/mobile/usePhone";
 import { getSourceControlPresentationForKind } from "~/sourceControlPresentation";
 
 import { Badge } from "../ui/badge";
@@ -63,7 +64,7 @@ function PullRequestRowLabels({ labels }: { labels: EnvironmentPullRequestEntry[
   );
 }
 
-const PAGE_ROW_CLASS = "px-2.5 py-2 max-phone:min-h-11 max-phone:rounded-none max-phone:px-0";
+const PAGE_ROW_CLASS = "px-3 py-3 max-phone:min-h-11 max-phone:rounded-none max-phone:px-0";
 
 // These providers put checks on the row; the others need the request opened.
 const CHECK_STATE_KNOWN_PROVIDERS = new Set(["github", "gitcafe", "gitlab"]);
@@ -111,6 +112,7 @@ function PullRequestRowImpl({
   sweeping?: boolean;
   onCloseSweepStart?: (entry: EnvironmentPullRequestEntry, event: PointerEvent) => void;
 }) {
+  const phone = useIsPhone();
   const { Icon, providerName, terminology } = getSourceControlPresentationForKind(entry.provider);
   return (
     <div
@@ -169,33 +171,6 @@ function PullRequestRowImpl({
             </span>
           }
           title={entry.title}
-          signals={
-            <>
-              {entry.checksState === undefined ? (
-                CHECK_STATE_KNOWN_PROVIDERS.has(entry.provider) ? null : (
-                  <PullRequestChecksUnknown provider={entry.provider} />
-                )
-              ) : (
-                <PullRequestChecksPopover
-                  checksState={entry.checksState}
-                  environmentId={entry.environmentId}
-                  reference={{
-                    projectId: entry.projectId,
-                    repository: entry.repository,
-                    number: entry.number,
-                  }}
-                />
-              )}
-              {entry.reviewDecision === undefined ? null : (
-                <PullRequestReviewDecisionGlyph decision={entry.reviewDecision} />
-              )}
-              {queuePosition === undefined || queuePosition === null ? null : (
-                <Badge size="sm" variant="info">
-                  {queuePosition > 0 ? `Queue ${queuePosition}` : "Queued"}
-                </Badge>
-              )}
-            </>
-          }
           status={
             <>
               {entry.stack ? (
@@ -225,6 +200,34 @@ function PullRequestRowImpl({
                 deletions={entry.deletions}
                 className="font-mono"
               />
+            </>
+          }
+          trailing={
+            <>
+              {entry.checksState === undefined ? (
+                CHECK_STATE_KNOWN_PROVIDERS.has(entry.provider) ? null : (
+                  <PullRequestChecksUnknown provider={entry.provider} />
+                )
+              ) : (
+                <PullRequestChecksPopover
+                  variant={phone ? "icon" : "label"}
+                  checksState={entry.checksState}
+                  environmentId={entry.environmentId}
+                  reference={{
+                    projectId: entry.projectId,
+                    repository: entry.repository,
+                    number: entry.number,
+                  }}
+                />
+              )}
+              {entry.reviewDecision === undefined ? null : (
+                <PullRequestReviewDecisionGlyph decision={entry.reviewDecision} />
+              )}
+              {queuePosition === undefined || queuePosition === null ? null : (
+                <Badge size="sm" variant="info">
+                  {queuePosition > 0 ? `Queue ${queuePosition}` : "Queued"}
+                </Badge>
+              )}
             </>
           }
           metaClassName="@container/pr-row-meta"

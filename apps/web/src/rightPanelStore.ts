@@ -120,10 +120,12 @@ interface RightPanelStoreState {
   requestMaximize: (ref: ScopedThreadRef) => void;
   consumeMaximizeRequest: (ref: ScopedThreadRef) => boolean;
   threadPanelVisibilityByThreadKey: Record<string, ThreadPanelVisibility>;
-  /** The presentation each details card actually renders, which a grid uses to follow focus. */
+  /** The presentation each details card actually renders, which a layout pane uses to follow focus. */
   threadPanelPresentationByThreadKey: Record<string, ThreadPanelPresentation>;
   userActionRevisionByThreadKey: Record<string, number>;
   closeRevisionByThreadKey: Record<string, number>;
+  /** Session-only: the surface a thread last replaced in place, which its layout tab follows. */
+  surfaceReplacementByThreadKey: Record<string, { readonly from: string; readonly to: string }>;
   getUserActionRevision: (ref: ScopedThreadRef) => number;
   markUserAction: (ref: ScopedThreadRef) => number;
   /** Refused if the user chose a panel after expectedUserActionRevision was read. */
@@ -194,6 +196,14 @@ interface RightPanelStoreState {
   reconcileFileSurfaces: (ref: ScopedThreadRef, workspaceAvailable: boolean) => void;
   show: (ref: ScopedThreadRef) => void;
   close: (ref: ScopedThreadRef) => void;
+  /**
+   * The layout's own changes to a thread's surfaces: tabs that closed, hid or took focus. They are
+   * not the user's choice, so they leave the user-action revision alone.
+   */
+  syncFromLayout: (
+    ref: ScopedThreadRef,
+    update: { open?: boolean; activeSurfaceId?: string; dropSurfaceIds?: readonly string[] },
+  ) => void;
   setMaximized: (ref: ScopedThreadRef, maximized: boolean) => void;
   toggleVisibility: (ref: ScopedThreadRef) => void;
   toggle: (
@@ -216,8 +226,9 @@ const EMPTY_THREAD_STATE: ThreadRightPanelState = {
   surfaces: [],
 };
 
+// Closed until asked for: several panes share the window, and a card in each would crowd them.
 const DEFAULT_THREAD_PANEL_VISIBILITY: ThreadPanelVisibility = {
-  inlineOpen: true,
+  inlineOpen: false,
   popoverOpen: false,
 };
 
@@ -628,8 +639,8 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
             persistedState.threadPanelVisibilityByThreadKey as Record<string, unknown>,
           ).flatMap(([threadKey, value]) => {
             if (!value || typeof value !== "object" || !("inlineOpen" in value)) return [];
-            return value.inlineOpen === false
-              ? [[threadKey, { inlineOpen: false, popoverOpen: false }]]
+            return value.inlineOpen === true
+              ? [[threadKey, { inlineOpen: true, popoverOpen: false }]]
               : [];
           }),
         )
@@ -655,6 +666,7 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
       threadPanelPresentationByThreadKey: {},
       userActionRevisionByThreadKey: {},
       closeRevisionByThreadKey: {},
+      surfaceReplacementByThreadKey: {},
       getUserActionRevision: (ref) =>
         get().userActionRevisionByThreadKey[scopedThreadKey(ref)] ?? 0,
       markUserAction: (ref) => {
@@ -848,20 +860,22 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
           }),
         ),
       navigateFolder: (ref, surfaceId, relativePath, folderTrail, keepSource = false) =>
-        set((state) =>
-          userAction(state, scopedThreadKey(ref), (current) => {
-            const index = current.surfaces.findIndex((surface) => surface.id === surfaceId);
-            if (index < 0) return current;
+        set((state) => {
+          const key = scopedThreadKey(ref);
+          const before = state.byThreadKey[key];
+          const next = userAction(state, key, (thread) => {
+            const index = thread.surfaces.findIndex((surface) => surface.id === surfaceId);
+            if (index < 0) return thread;
             const trail = folderTrail === relativePath ? {} : { folderTrail };
             const target: RightPanelSurface =
               relativePath === ""
                 ? { ...singletonSurface("files"), ...trail }
                 : { ...fileSurface(relativePath, null, 1), ...trail };
-            const source = current.surfaces[index]!;
-            const existing = current.surfaces.some(
+            const source = thread.surfaces[index]!;
+            const existing = thread.surfaces.some(
               (surface, i) => i !== index && surface.id === target.id,
             );
-            const surfaces = current.surfaces.flatMap((surface, i) => {
+            const surfaces = thread.surfaces.flatMap((surface, i) => {
               if (i === index) {
                 const kept = keepSource ? [source] : [];
                 return existing ? kept : [...kept, target];
@@ -870,9 +884,27 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
                 ? []
                 : [surface];
             });
-            return { ...current, isOpen: true, activeSurfaceId: target.id, surfaces };
-          }),
-        ),
+            return { ...thread, isOpen: true, activeSurfaceId: target.id, surfaces };
+          });
+          const target = next.byThreadKey?.[key]?.activeSurfaceId;
+          // A tab showing the folder follows it to the file or folder that took its place.
+          const replaced =
+            !keepSource &&
+            target !== undefined &&
+            target !== null &&
+            target !== surfaceId &&
+            before?.surfaces.some((surface) => surface.id === surfaceId) === true &&
+            // A target the thread already showed is not a replacement: the source just closes.
+            !before.surfaces.some((surface) => surface.id === target);
+          if (!replaced) return next;
+          return {
+            ...next,
+            surfaceReplacementByThreadKey: {
+              ...state.surfaceReplacementByThreadKey,
+              [key]: { from: surfaceId, to: target },
+            },
+          };
+        }),
       openAttachment: (ref, attachment) =>
         set((state) =>
           userAction(state, scopedThreadKey(ref), (current) => {
@@ -1108,6 +1140,37 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             current.isOpen ? { ...current, isOpen: false } : current,
           ),
         ),
+      syncFromLayout: (ref, update) =>
+        set((state) =>
+          automaticUpdate(state, scopedThreadKey(ref), (current) => {
+            let next = current;
+            if (update.dropSurfaceIds && update.dropSurfaceIds.length > 0) {
+              const dropped = new Set(update.dropSurfaceIds);
+              const surfaces = next.surfaces.filter((surface) => !dropped.has(surface.id));
+              if (surfaces.length !== next.surfaces.length) {
+                next = {
+                  ...next,
+                  surfaces,
+                  isOpen: next.isOpen && surfaces.length > 0,
+                  activeSurfaceId: surfaces.some((surface) => surface.id === next.activeSurfaceId)
+                    ? next.activeSurfaceId
+                    : (surfaces[0]?.id ?? null),
+                };
+              }
+            }
+            if (update.open !== undefined && next.isOpen !== update.open) {
+              next = { ...next, isOpen: update.open && next.surfaces.length > 0 };
+            }
+            if (
+              update.activeSurfaceId !== undefined &&
+              next.activeSurfaceId !== update.activeSurfaceId &&
+              next.surfaces.some((surface) => surface.id === update.activeSurfaceId)
+            ) {
+              next = { ...next, activeSurfaceId: update.activeSurfaceId };
+            }
+            return next;
+          }),
+        ),
       setMaximized: (ref, maximized) =>
         set((state) =>
           automaticUpdate(state, scopedThreadKey(ref), (current) => {
@@ -1218,7 +1281,7 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
         threadPanelVisibilityByThreadKey: Object.fromEntries(
           Object.entries(state.threadPanelVisibilityByThreadKey).flatMap(
             ([threadKey, visibility]) =>
-              visibility.inlineOpen ? [] : [[threadKey, { inlineOpen: false, popoverOpen: false }]],
+              visibility.inlineOpen ? [[threadKey, { inlineOpen: true, popoverOpen: false }]] : [],
           ),
         ),
       }),
@@ -1273,13 +1336,10 @@ export function selectThreadPanelOpen(
   byThreadKey: Record<string, ThreadPanelVisibility>,
   ref: ScopedThreadRef | null | undefined,
   presentation: ThreadPanelPresentation,
-  defaultOpen = true,
+  defaultOpen = DEFAULT_THREAD_PANEL_VISIBILITY.inlineOpen,
 ): boolean {
-  const visibility =
-    defaultOpen || ref == null
-      ? selectThreadPanelVisibility(byThreadKey, ref)
-      : byThreadKey[scopedThreadKey(ref)];
-  if (visibility === undefined) return false;
+  const visibility = ref == null ? undefined : byThreadKey[scopedThreadKey(ref)];
+  if (visibility === undefined) return presentation === "inline" && defaultOpen;
   return presentation === "inline" ? visibility.inlineOpen : visibility.popoverOpen;
 }
 

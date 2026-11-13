@@ -1,14 +1,18 @@
 import { scopedThreadKey } from "@houston-app/client-runtime/environment";
-import { Outlet, createFileRoute, redirect, useMatches } from "@tanstack/react-router";
+import { Outlet, createFileRoute, redirect, useLocation, useMatches } from "@tanstack/react-router";
 import { useState } from "react";
 
-import { ThreadRouteView } from "../components/ThreadRouteView";
 import { isAppModalPage } from "../components/sidebar/mainAppLocation";
 import { SidebarInset } from "../components/ui/sidebar";
 import { resolveThreadRouteTarget, type ThreadRouteTarget } from "../threadRoutes";
 import { retainThreadFindForRoute } from "../components/chat/threadFindStore";
 import { ThreadLinkPrompt } from "../components/promptLinks/ThreadLinkPrompt";
 import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
+import { LayoutHost } from "../layout/LayoutHost";
+import { layoutRoutePage } from "../layout/pageNavigation";
+import { useIndexShowsLayout } from "../layout/useIndexShowsLayout";
+import { PhoneLayoutHost } from "../mobile/PhoneLayoutHost";
+import { useIsPhone } from "../mobile/usePhone";
 
 function threadRouteTargetKey(target: ThreadRouteTarget | null) {
   if (!target) return null;
@@ -16,7 +20,41 @@ function threadRouteTargetKey(target: ThreadRouteTarget | null) {
 }
 
 function ChatRouteLayout() {
-  // Render both routes here so draft promotion keeps the same ChatView mounted.
+  return useIsPhone() ? <PhoneChatRouteLayout /> : <LayoutChatRouteLayout />;
+}
+
+/** The main area is the layout; routes the layout does not show render beside it. */
+function LayoutChatRouteLayout() {
+  const { authGateState } = Route.useRouteContext();
+  const location = useLocation();
+  const threadTarget = useThreadRouteTarget();
+  const modalOpen = useMatches({
+    select: (matches) => matches.some((match) => isAppModalPage(match.pathname)),
+  });
+  const atIndex = location.pathname === "/";
+  const indexShowsLayout = useIndexShowsLayout(authGateState.status === "hosted-static");
+  const layoutShowsRoute =
+    threadTarget !== null || layoutRoutePage(location) !== null || (atIndex && indexShowsLayout);
+  const hostActive = layoutShowsRoute || modalOpen;
+  return (
+    <>
+      {threadTarget?.kind === "server" && !modalOpen ? (
+        <ThreadLinkPrompt threadRef={threadTarget.threadRef} />
+      ) : null}
+      <SidebarInset className={hostActive ? "min-h-0" : "hidden"}>
+        <LayoutHost
+          threadTarget={threadTarget}
+          atIndex={atIndex && indexShowsLayout}
+          active={hostActive}
+        />
+      </SidebarInset>
+      {hostActive && !modalOpen ? null : <Outlet />}
+    </>
+  );
+}
+
+function PhoneChatRouteLayout() {
+  // The thread and draft routes render here, so promoting a draft keeps its tab and chat mounted.
   const threadTarget = useThreadRouteTarget();
   // Read matches, not location, so this agrees with the params useThreadRouteTarget reads.
   const modalOpen = useMatches({
@@ -34,7 +72,7 @@ function ChatRouteLayout() {
         <ThreadLinkPrompt threadRef={shownTarget.threadRef} />
       ) : null}
       {shownTarget ? (
-        <ThreadRouteView target={shownTarget} background={modalOpen} />
+        <PhoneLayoutHost threadTarget={shownTarget} active={!modalOpen} />
       ) : modalOpen ? (
         <SidebarInset className="min-h-0" />
       ) : (

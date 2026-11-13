@@ -13,7 +13,7 @@ export type MotionConfig =
   | ({ readonly kind: "spring" } & SpringParams)
   | { readonly kind: "easing"; readonly durationMs: number; readonly curve: MotionCurve };
 
-export type MotionName = "grid-cell-movement" | "grid-cell-enter" | "grid-cell-maximize";
+export type MotionName = "horizontal-view-movement" | "workspace-switch" | "overview-open-close";
 
 /**
  * The CSS motion roles in index.css (`--motion-*`), for animations driven from script.
@@ -55,14 +55,16 @@ const spring = (dampingRatio: number, stiffness: number, epsilon: number): Motio
 
 /**
  * The prototype's feel: a slight overshoot that settles in about 460ms. A
- * damping ratio of 0.9 keeps that bounce without the cell visibly wobbling.
+ * damping ratio of 0.9 keeps that bounce without the pane visibly wobbling.
  */
-const GRID_CELL_SPRING: MotionConfig = spring(0.9, 500, 0.0001);
+const LAYOUT_SPRING: MotionConfig = spring(0.9, 500, 0.0001);
 
 const MOTION_DEFAULTS: Readonly<Record<MotionName, MotionConfig>> = {
-  "grid-cell-movement": GRID_CELL_SPRING,
-  "grid-cell-enter": GRID_CELL_SPRING,
-  "grid-cell-maximize": GRID_CELL_SPRING,
+  // The layout's camera, workspace stack and overview zoom share one spring, so every
+  // movement of the window settles with one feel.
+  "horizontal-view-movement": LAYOUT_SPRING,
+  "workspace-switch": LAYOUT_SPRING,
+  "overview-open-close": LAYOUT_SPRING,
 };
 
 interface MotionSettings {

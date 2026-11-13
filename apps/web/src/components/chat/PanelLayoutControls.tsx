@@ -1,19 +1,12 @@
-import { MoreHorizontalIcon, PanelBottomIcon, PanelRightIcon, SquareMenuIcon } from "lucide-react";
+import { MenuIcon, MoreHorizontalIcon, PanelBottomIcon, PanelRightIcon } from "lucide-react";
 import { Maximize2, Minimize2 } from "lucide";
 import { MorphIcon } from "~/components/MorphIcon";
-import { memo, type ReactNode, type RefObject } from "react";
+import { memo, type RefObject } from "react";
 
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import type { ThreadPanelPresentation } from "../../rightPanelLayout";
 import { Button } from "../ui/button";
-import {
-  Menu,
-  MenuCheckboxItem,
-  MenuPopup,
-  MenuSeparator,
-  MenuShortcut,
-  MenuTrigger,
-} from "../ui/menu";
+import { Menu, MenuCheckboxItem, MenuPopup, MenuShortcut, MenuTrigger } from "../ui/menu";
 import { PopoverCreateHandle, PopoverPanelAnchor, PopoverTrigger } from "../ui/popover";
 import { SIDEBAR_MOBILE_QUERY } from "../ui/sidebar";
 import { Toggle } from "../ui/toggle";
@@ -29,16 +22,13 @@ export interface PanelLayoutControlsProps {
   threadPanelOpen: boolean;
   threadPanelPresentation: ThreadPanelPresentation;
   threadPanelPopoverHandle?: ReturnType<typeof PopoverCreateHandle>;
-  /** Anchors a grid cell's popover card under this control, as wide as the card. */
+  /** Anchors the popover card under this control, as wide as the card. */
   threadPanelAnchorRef?: RefObject<HTMLElement | null>;
   threadPanelShortcutLabel: string | null;
   rightPanelAvailable: boolean;
   rightPanelOpen: boolean;
   rightPanelShortcutLabel: string | null;
   rightPanelUnavailableLabel?: string;
-  gridLayoutControl?: ReactNode;
-  /** The grid layout actions as menu items, shown in the More menu where the drawer breakpoint applies. */
-  gridLayoutMenuItems?: ReactNode;
   onToggleTerminal: () => void;
   onToggleThreadPanel: () => void;
   onToggleRightPanel: () => void;
@@ -60,20 +50,17 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
   rightPanelOpen,
   rightPanelShortcutLabel,
   rightPanelUnavailableLabel = "Right panel is unavailable",
-  gridLayoutControl,
-  gridLayoutMenuItems,
   onToggleTerminal,
   onToggleThreadPanel,
   onToggleRightPanel,
 }: PanelLayoutControlsProps) {
-  // Below the sidebar's drawer breakpoint the header has room for one panel toggle: the layout
+  // Below the sidebar's drawer breakpoint the header has room for one panel toggle: the panel
   // controls fold into a More menu. A popover-presented details card keeps its toggle in the
   // header because that toggle is the card's anchor.
   const narrow = useMediaQuery(SIDEBAR_MOBILE_QUERY);
   const detailsInMenu = narrow && showThreadPanelControl && threadPanelPresentation !== "popover";
   const terminalInMenu = narrow && showTerminalControl;
-  const gridInMenu = narrow && gridLayoutMenuItems !== undefined;
-  const hasMoreMenu = detailsInMenu || terminalInMenu || gridInMenu;
+  const hasMoreMenu = detailsInMenu || terminalInMenu;
   const threadPanelToggle = (
     <Toggle
       className="relative shrink-0 [-webkit-app-region:no-drag]"
@@ -83,7 +70,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
       variant="ghost"
       size="sm"
     >
-      <SquareMenuIcon className="size-4" />
+      <MenuIcon className="size-4" />
     </Toggle>
   );
   const threadPanelControl = (
@@ -129,7 +116,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
                   checked={threadPanelOpen}
                   onCheckedChange={() => onToggleThreadPanel()}
                 >
-                  <SquareMenuIcon />
+                  <MenuIcon />
                   Toggle thread details
                   {threadPanelShortcutLabel ? (
                     <MenuShortcut>{threadPanelShortcutLabel}</MenuShortcut>
@@ -149,15 +136,10 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
                   ) : null}
                 </MenuCheckboxItem>
               ) : null}
-              {gridInMenu && (detailsInMenu || terminalInMenu) ? <MenuSeparator /> : null}
-              {gridInMenu ? gridLayoutMenuItems : null}
             </MenuPopup>
           </Menu>
         ) : null}
         {showThreadPanelControl && !detailsInMenu ? threadPanelControl : null}
-        {gridLayoutControl && !gridInMenu ? (
-          <div className="flex items-center">{gridLayoutControl}</div>
-        ) : null}
         {showTerminalControl && !terminalInMenu ? (
           <Tooltip>
             <TooltipTrigger render={<span className="flex shrink-0" />}>

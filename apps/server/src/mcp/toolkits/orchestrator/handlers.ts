@@ -4,7 +4,12 @@ import * as Effect from "effect/Effect";
 import * as PeerForwarding from "../../../peer/PeerForwarding.ts";
 import * as PeerLinkRequests from "../../../peer/PeerLinkRequests.ts";
 import * as PeerLinks from "../../../peer/PeerLinks.ts";
-import { gridIdByThread, placeLaunched } from "../../../houston/gridToolkit/placement.ts";
+import {
+  gridPlacementOf,
+  launchTargetOf,
+  placeLaunched,
+  workspaceIdByThread,
+} from "../../../houston/workspaceToolkit/placement.ts";
 import { readCaller } from "../../threadAccess.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
@@ -146,17 +151,23 @@ const handlers = {
       const scope = yield* McpInvocationContext.McpInvocationContext;
       const service = yield* OrchestratorMcpService.OrchestratorMcpService;
       const created = yield* service.createThreads(scope, input);
-      if (input.grid === undefined) return created;
-      const { caller } = yield* readCaller();
-      if (caller === undefined) return created;
+      const target = launchTargetOf(input);
+      if (target === undefined) return created;
+      const context = yield* readCaller();
+      if (context.caller === undefined) return created;
       const placements = yield* placeLaunched({
-        projectId: caller.projectId,
+        caller: context,
+        environmentId: scope.environmentId,
         threadIds: created.threads.map((thread) => thread.threadId),
-        target: input.grid,
+        target,
         replaying: input.clientRequestId !== undefined,
       });
       return {
-        threads: created.threads.map((thread, index) => ({ ...thread, grid: placements[index] })),
+        threads: created.threads.map((thread, index) => ({
+          ...thread,
+          workspace: placements[index],
+          grid: gridPlacementOf(placements[index]!),
+        })),
       };
     }),
   ),
@@ -165,12 +176,13 @@ const handlers = {
       const scope = yield* McpInvocationContext.McpInvocationContext;
       const service = yield* OrchestratorMcpService.OrchestratorMcpService;
       const listed = yield* service.listThreads(scope, input);
-      const grids = yield* gridIdByThread;
+      const workspaces = yield* workspaceIdByThread(scope.environmentId);
       return {
         ...listed,
         threads: listed.threads.map((thread) => ({
           ...thread,
-          gridId: grids.get(thread.threadId) ?? null,
+          workspaceId: workspaces.get(thread.threadId) ?? null,
+          gridId: workspaces.get(thread.threadId) ?? null,
         })),
       };
     }),
@@ -180,11 +192,9 @@ const handlers = {
       const scope = yield* McpInvocationContext.McpInvocationContext;
       const service = yield* OrchestratorMcpService.OrchestratorMcpService;
       const read = yield* service.readThread(scope, input);
-      const grids = yield* gridIdByThread;
-      return {
-        ...read,
-        thread: { ...read.thread, gridId: grids.get(read.thread.threadId) ?? null },
-      };
+      const workspaces = yield* workspaceIdByThread(scope.environmentId);
+      const workspaceId = workspaces.get(read.thread.threadId) ?? null;
+      return { ...read, thread: { ...read.thread, workspaceId, gridId: workspaceId } };
     }),
   ),
   houston_thread_update: McpToolAccess.writesThreads(

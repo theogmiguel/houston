@@ -39,7 +39,7 @@ vi.mock("~/state/use-atom-command", () => ({
   },
 }));
 vi.mock("~/state/environments", () => ({ useEnvironmentProviders: () => new Map() }));
-vi.mock("~/grid/openThreadInGrid", () => ({ useOpenThreadInGrid: () => async () => {} }));
+vi.mock("~/threads/useOpenThread", () => ({ useOpenThread: () => async () => {} }));
 vi.mock("~/localApi", () => ({ readLocalApi: () => null }));
 
 import { TaskDetailPanel } from "./TaskDetailPanel";

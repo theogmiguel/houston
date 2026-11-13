@@ -5,11 +5,10 @@ import {
 } from "@houston-app/client-runtime/environment";
 import {
   DEFAULT_SERVER_SETTINGS,
-  type EnvironmentId,
   type ScopedProjectRef,
   type ThreadId,
 } from "@houston-app/contracts";
-import { type AnyRouter, useParams, useRouter } from "@tanstack/react-router";
+import { type AnyRouter, useRouter } from "@tanstack/react-router";
 import {
   composerDraftHasUserContent,
   markPromotedDraftThreadByRef,
@@ -19,7 +18,7 @@ import {
   useComposerDraftStore,
 } from "../composerDraftStore";
 import { newDraftId, newThreadId } from "../lib/utils";
-import { useGrid } from "../grid/gridStore";
+import { openAsNewThreadTab } from "../threads/openDraftInLayout";
 import { orderItemsByPreferredIds } from "../components/Sidebar.logic";
 import {
   deriveLogicalProjectKeyFromSettings,
@@ -84,7 +83,7 @@ export function createNewThreadHandler(router: AnyRouter) {
     return resolveThreadRouteTarget(currentRouteParams);
   };
 
-  return (
+  const openNewThread = (
     projectRef: ScopedProjectRef,
     options?: {
       branch?: string | null;
@@ -92,7 +91,7 @@ export function createNewThreadHandler(router: AnyRouter) {
       envMode?: DraftThreadEnvMode;
       startFromOrigin?: boolean;
       replace?: boolean;
-      /** Route to the draft after registering it; false for callers that render it in a grid pane. */
+      /** Route to the draft after registering it; false for callers that render it in a layout pane. */
       navigate?: boolean;
       /** Composer text for the draft, set before it shows. A draft with user text keeps it. */
       prompt?: string;
@@ -439,6 +438,11 @@ export function createNewThreadHandler(router: AnyRouter) {
       return { draftId, threadId };
     })();
   };
+  return (...args: Parameters<typeof openNewThread>) => {
+    const open = () => openNewThread(...args);
+    // A caller that renders the draft itself (`navigate: false`) places it.
+    return args[1]?.navigate === false ? open() : openAsNewThreadTab(open);
+  };
 }
 
 export function resolveDefaultProjectRef(
@@ -460,16 +464,7 @@ export function resolveDefaultProjectRef(
 export function useHandleNewThread() {
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const routeTarget = useThreadRouteTarget();
-  const gridId = useParams({ strict: false, select: (params) => params.gridId });
-  const grid = useGrid(typeof gridId === "string" ? gridId : null);
-  // A grid route carries no thread params; its focused cell is the active thread.
-  const gridThreadRef =
-    grid === null || grid.focusedThreadId === null
-      ? null
-      : scopeThreadRef(grid.environmentId as EnvironmentId, grid.focusedThreadId as ThreadId);
-  const routeThreadRef =
-    (routeTarget?.kind === "server" ? routeTarget.threadRef : null) ??
-    (routeTarget === null ? gridThreadRef : null);
+  const routeThreadRef = routeTarget?.kind === "server" ? routeTarget.threadRef : null;
   const routeDraftId = routeTarget?.kind === "draft" ? routeTarget.draftId : null;
   const activeThread = useQuietThreadShell(routeThreadRef);
   const getDraftThread = useComposerDraftStore((store) => store.getDraftThread);

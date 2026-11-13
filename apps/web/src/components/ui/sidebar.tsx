@@ -643,7 +643,7 @@ function SidebarInset({ className, ...props }: React.ComponentProps<"main">) {
     <main
       className={cn(
         // The work area is flush with the canvas; the rail's own 1px divider is the only seam.
-        // A grid pane is the only surface that draws a card.
+        // A layout pane is the only surface that draws a card.
         "relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background",
         className,
       )}
@@ -696,28 +696,32 @@ function SidebarContent({
   return (
     <>
       {fixedHeader ? <div className="w-full shrink-0">{fixedHeader}</div> : null}
-      {/* A 24px fade over the bottom edge: the row cut by the footer dissolves, and the fade leaves at the end of the list. The top stays crisp: a project heading sticks there at full ink. */}
-      <ScrollArea
-        hideScrollbars
-        scrollFade
-        scrollFadeTop={false}
-        scrollFadePadding={false}
-        // Rows provide keyboard access; exclude the viewport from tab order to flatten VoiceOver's WebKit
-        // interaction boundary.
-        viewportTabIndex={-1}
-        className="h-auto min-h-0 flex-1 [&>[data-slot=scroll-area-viewport]]:[--fade-size:1.5rem]"
-      >
+      {/* A static 24px gradient to the sidebar colour over the list's bottom edge: the row the footer would cut dissolves. It is an overlay, not a mask, so a keyboard-focused row cannot switch it off. The top stays crisp: a project heading sticks there at full ink. */}
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <ScrollArea
+          hideScrollbars
+          // Rows provide keyboard access; exclude the viewport from tab order to flatten VoiceOver's WebKit
+          // interaction boundary.
+          viewportTabIndex={-1}
+          className="h-auto min-h-0 flex-1"
+        >
+          <div
+            className={cn(
+              "flex w-full min-w-0 flex-col pb-6 [overflow-anchor:none] group-data-[collapsible=icon]:overflow-hidden [&>[data-sidebar=group]+[data-sidebar=group]]:pt-0",
+              fixedHeader && "[&>[data-sidebar=group]:first-child]:pt-0",
+              className,
+            )}
+            data-sidebar="content"
+            data-slot="sidebar-content"
+            {...props}
+          />
+        </ScrollArea>
         <div
-          className={cn(
-            "flex w-full min-w-0 flex-col [overflow-anchor:none] group-data-[collapsible=icon]:overflow-hidden [&>[data-sidebar=group]+[data-sidebar=group]]:pt-0",
-            fixedHeader && "[&>[data-sidebar=group]:first-child]:pt-0",
-            className,
-          )}
-          data-sidebar="content"
-          data-slot="sidebar-content"
-          {...props}
+          aria-hidden
+          data-slot="sidebar-content-fade"
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-6 bg-linear-to-t from-sidebar to-transparent"
         />
-      </ScrollArea>
+      </div>
     </>
   );
 }

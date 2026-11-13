@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { cn } from "../../lib/utils";
-import { NESTED_WORK_RAIL_CLASS } from "../ui/work-log-recipes";
+import { NESTED_WORK_BLOCK_CLASS } from "../ui/work-log-recipes";
 import { IN_TURN_GAP_CLASS, PACKED_GAP_CLASS, TURN_GAP_CLASS } from "./timelineSpacing";
 
 const GroupedRows = createContext(false);
@@ -47,7 +47,7 @@ export function WorkLogBlock({
   return (
     <div className={gap}>
       {nested ? (
-        <div data-work-log-nested="" className={NESTED_WORK_RAIL_CLASS}>
+        <div data-work-log-nested="" className={NESTED_WORK_BLOCK_CLASS}>
           {children}
         </div>
       ) : (

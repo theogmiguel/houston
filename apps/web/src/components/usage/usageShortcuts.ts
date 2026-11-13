@@ -38,3 +38,8 @@ export function resolveUsageShortcut(
     context: { usagePageOpen: true },
   });
 }
+
+/** Usage is a page of its own on a phone and a Settings section elsewhere. */
+export function isUsagePagePath(pathname: string): boolean {
+  return pathname === "/usage" || pathname === "/settings/usage";
+}

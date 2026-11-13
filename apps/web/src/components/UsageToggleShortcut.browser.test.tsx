@@ -56,6 +56,18 @@ describe("usage toggle shortcut on Usage", () => {
     expect(back).toHaveBeenCalledOnce();
   });
 
+  it("goes back from the Usage section of Settings too", async () => {
+    vi.clearAllMocks();
+    using _platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
+    await using screen = await render(null, { router: "/settings/usage" });
+    using _commands = { [Symbol.dispose]: registerNavigationHistoryCommands(screen.router!) };
+
+    using back = vi.spyOn(window.history, "back").mockImplementation(() => undefined);
+    await userEvent.keyboard("{Control>}u{/Control}");
+
+    expect(back).toHaveBeenCalledOnce();
+  });
+
   // Both listeners sit on window, so the palette must not claim the key whatever their order.
   it("does not reopen Usage from the command palette", async () => {
     vi.clearAllMocks();

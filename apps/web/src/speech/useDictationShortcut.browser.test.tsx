@@ -127,7 +127,7 @@ function Pane({
   return null;
 }
 
-it("dictates into the focused grid pane, not the first pane mounted", async () => {
+it("dictates into the focused layout pane, not the first pane mounted", async () => {
   settings.mode = "toggle";
   const first = createSpeech();
   const focused = createSpeech();
@@ -145,7 +145,7 @@ it("dictates into the focused grid pane, not the first pane mounted", async () =
   expect(first.start).not.toHaveBeenCalled();
 });
 
-it("a focused comment still takes dictation over the focused grid pane", async () => {
+it("a focused comment still takes dictation over the focused layout pane", async () => {
   settings.mode = "toggle";
   const pane = createSpeech();
   const comment = createSpeech();

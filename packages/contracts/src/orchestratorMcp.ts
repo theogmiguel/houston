@@ -25,7 +25,12 @@ import {
   ScheduledTaskSchedule,
   ScheduledTaskUpsertSchedule,
 } from "./scheduledTask.ts";
-import { HoustonGridLaunchTarget, HoustonGridPlacement } from "./houston/grids.ts";
+import {
+  HoustonGridLaunchTargetAlias,
+  HoustonGridPlacementAlias,
+  HoustonLayoutLaunchTarget,
+  HoustonLayoutPlacement,
+} from "./houston/layoutWorkspaces.ts";
 import { ProviderInteractionMode, ProviderRequestKind, RuntimeMode } from "./providerPolicy.ts";
 import { PullRequestState } from "./pullRequest.ts";
 import {
@@ -274,9 +279,16 @@ export const OrchestratorMcpCreateThreadsInput = Schema.Struct({
     Schema.isMaxLength(20),
   ),
   clientRequestId: Schema.optional(OrchestratorMcpClientRequestId),
+  workspace: Schema.optional(
+    HoustonLayoutLaunchTarget.annotate({
+      description:
+        "Place every new thread in this workspace (`workspaceId`), or in one new workspace named `newWorkspaceName`.",
+    }),
+  ),
   grid: Schema.optional(
-    HoustonGridLaunchTarget.annotate({
-      description: "Place every new thread in this grid, or in one new grid named `newGridName`.",
+    HoustonGridLaunchTargetAlias.annotate({
+      description:
+        "Alias of `workspace`, removed in the next release: `gridId` is a workspace id, `newGridName` a new workspace's name.",
     }),
   ),
 });
@@ -301,7 +313,9 @@ export const OrchestratorMcpCreatedThread = Schema.Struct({
   creationSource: OrchestrationV2CreationSource,
   providerInstanceId: ProviderInstanceId,
   model: Schema.String,
-  grid: Schema.optional(HoustonGridPlacement),
+  workspace: Schema.optional(HoustonLayoutPlacement),
+  /** `workspace` under its former name. */
+  grid: Schema.optional(HoustonGridPlacementAlias),
 });
 export type OrchestratorMcpCreatedThread = typeof OrchestratorMcpCreatedThread.Type;
 
@@ -381,6 +395,8 @@ export const OrchestratorMcpThreadListItem = Schema.Struct({
   parentThreadId: Schema.NullOr(ThreadId),
   relationshipToParent: Schema.NullOr(Schema.Literals(["fork", "subagent"])),
   itemCount: NonNegativeInt,
+  workspaceId: Schema.optional(Schema.NullOr(Schema.String)),
+  /** `workspaceId` under its former name. */
   gridId: Schema.optional(Schema.NullOr(Schema.String)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -459,6 +475,8 @@ export const OrchestratorMcpThreadDetail = Schema.Struct({
   settledAt: Schema.NullOr(IsoDateTime),
   snoozed: Schema.Boolean,
   snoozedUntil: Schema.NullOr(IsoDateTime),
+  workspaceId: Schema.optional(Schema.NullOr(Schema.String)),
+  /** `workspaceId` under its former name. */
   gridId: Schema.optional(Schema.NullOr(Schema.String)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,

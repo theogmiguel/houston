@@ -114,7 +114,7 @@ function PopoverPopup({
             "relative flex h-(--popup-height,auto) w-(--popup-width,auto) rounded-[var(--r-group)] text-popover-foreground outline-none has-data-[slot=calendar]:rounded-[var(--r-dialog)]",
             variant === "default" && "dropdown-glass",
             variant === "dialog" && "dialog-glass",
-            tooltipStyle && "w-fit text-balance rounded-[var(--r-ctl)] text-xs",
+            tooltipStyle && "w-fit text-balance rounded-[var(--r-selection)] text-xs",
             !tooltipStyle && variant === "default" && "shadow-[var(--shadow-1)]",
             width !== "auto" && ["max-w-[calc(100vw-2rem)]", popoverPopupWidthClassName[width]],
             variant === "panel" &&
@@ -128,7 +128,7 @@ function PopoverPopup({
             className={cn(
               "relative size-full max-h-(--available-height) overflow-clip px-(--viewport-inline-padding) has-data-[slot=calendar]:p-2 data-instant:transition-none **:data-current:data-ending-style:opacity-0 **:data-current:data-starting-style:opacity-0 **:data-previous:data-ending-style:opacity-0 **:data-previous:data-starting-style:opacity-0 **:data-current:w-[calc(var(--popup-width)-2*var(--viewport-inline-padding)-2px)] **:data-previous:w-[calc(var(--popup-width)-2*var(--viewport-inline-padding)-2px)] **:data-current:opacity-100 **:data-previous:opacity-100 **:data-current:transition-opacity **:data-previous:transition-opacity",
               tooltipStyle && padding === "default"
-                ? "py-1 [--viewport-inline-padding:--spacing(2)]"
+                ? "py-1.5 [--viewport-inline-padding:--spacing(2.5)]"
                 : popoverViewportPaddingClassName[padding],
               !tooltipStyle && "not-data-transitioning:overflow-y-auto",
               variant === "panel" &&

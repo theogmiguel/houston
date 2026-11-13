@@ -3,10 +3,11 @@ import { Outlet, createFileRoute, redirect, useLocation } from "@tanstack/react-
 import { useState, type ReactNode } from "react";
 import { ArrowLeftIcon, RotateCcwIcon } from "lucide-react";
 import { Button } from "../components/ui/button";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { Swap } from "../components/ui/swap";
 import { useSettingsRestore } from "../components/settings/SettingsPanels";
 
-import { AppRouteModal } from "../components/AppRouteModal";
+import { AppRouteModal, AppRouteModalClose } from "../components/AppRouteModal";
 import { useIsPhone } from "../mobile/usePhone";
 import { PHONE_PAGE_BAR_CLS } from "../components/ui/phone-recipes";
 import { SettingsBreadcrumb } from "../components/settings/SettingsBreadcrumb";
@@ -18,10 +19,7 @@ import {
 import { useEnvironments } from "../state/environments";
 import { SettingsScopeNotice } from "../components/settings/SettingsScopeNotice";
 import { SETTINGS_DEVICE_ONLY_PATHS } from "../components/settings/SettingsScopeSentence";
-import {
-  SettingsPageActionsProvider,
-  SettingsPageContainer,
-} from "../components/settings/settingsLayout";
+import { SettingsPageContainer } from "../components/settings/settingsLayout";
 import {
   retainSettingsScope,
   validateSettingsRouteSearch,
@@ -36,15 +34,22 @@ import {
 function RestoreDeviceDefaultsButton({ onRestored }: { onRestored: () => void }) {
   const { changedSettingLabels, restoreDefaults } = useSettingsRestore(onRestored);
   return (
-    <Button
-      size="xs"
-      variant="ghost"
-      disabled={changedSettingLabels.length === 0}
-      onClick={() => void restoreDefaults()}
-    >
-      <RotateCcwIcon className="mx-1 size-3.5" />
-      <span className="max-sm:sr-only">Restore defaults</span>
-    </Button>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Restore defaults"
+            disabled={changedSettingLabels.length === 0}
+            onClick={() => void restoreDefaults()}
+          />
+        }
+      >
+        <RotateCcwIcon />
+      </TooltipTrigger>
+      <TooltipPopup side="bottom">Restore defaults</TooltipPopup>
+    </Tooltip>
   );
 }
 
@@ -124,6 +129,12 @@ function SettingsContentLayout() {
       ? environment?.environmentId
       : JSON.stringify(search);
   const [restoreSignal, setRestoreSignal] = useState(0);
+  const hasRestore = !(
+    location.pathname === "/settings/about" ||
+    location.pathname === "/settings/usage" ||
+    location.pathname === "/settings/open-source-licenses" ||
+    location.pathname === "/settings/archived"
+  );
 
   const content = (
     <div {...contentArea} className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -132,7 +143,7 @@ function SettingsContentLayout() {
         className={
           isPhone
             ? PHONE_PAGE_BAR_CLS
-            : "flex h-10 shrink-0 items-center gap-2 ps-3.5 pe-2 custom-chrome:pe-(--workspace-native-controls-inset)"
+            : "flex h-12 shrink-0 items-center gap-2 ps-5 pe-3 custom-chrome:pe-(--workspace-native-controls-inset)"
         }
       >
         {isPhone ? (
@@ -140,13 +151,20 @@ function SettingsContentLayout() {
             size="icon-phone-back"
             variant="ghost"
             aria-label="Back to settings sections"
-
             onClick={() => setPhoneSectionsOpen(true)}
           >
             <ArrowLeftIcon className="size-4" />
           </Button>
         ) : null}
         <SettingsBreadcrumb pathname={location.pathname} />
+        <div className="ms-auto flex items-center gap-1">
+          {hasRestore ? (
+            <RestoreDeviceDefaultsButton
+              onRestored={() => setRestoreSignal((value) => value + 1)}
+            />
+          ) : null}
+          {isPhone ? null : <AppRouteModalClose />}
+        </div>
       </header>
       <Swap
         swapKey={`${location.pathname}:${contentScopeKey}:${restoreSignal}`}
@@ -155,26 +173,14 @@ function SettingsContentLayout() {
         innerClassName="min-h-0 flex flex-1 flex-col"
       >
         <SettingsScopeBoundary pathname={location.pathname}>
-          <SettingsPageActionsProvider
-            actions={
-              location.pathname === "/settings/about" ||
-              location.pathname === "/settings/open-source-licenses" ||
-              location.pathname === "/settings/archived" ? null : (
-                <RestoreDeviceDefaultsButton
-                  onRestored={() => setRestoreSignal((value) => value + 1)}
-                />
-              )
-            }
-          >
-            <Outlet />
-          </SettingsPageActionsProvider>
+          <Outlet />
         </SettingsScopeBoundary>
       </Swap>
     </div>
   );
 
   return (
-    <AppRouteModal label="Settings" fullscreen>
+    <AppRouteModal label="Settings" fullscreen={isPhone}>
       <div className="relative flex min-h-0 flex-1">
         {isPhone ? (
           phoneSectionsOpen ? (

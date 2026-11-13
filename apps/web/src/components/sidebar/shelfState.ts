@@ -1,5 +1,5 @@
 /**
- * Shelf expansion and paging state shared by the thread sidebar and the grid
+ * Shelf expansion and paging state shared by the thread sidebar and the layout
  * rail. Reusing the keys keeps one workspace's shelves open wherever they are
  * shown and remembers the choice across launches.
  */

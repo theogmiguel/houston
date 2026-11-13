@@ -223,7 +223,7 @@ import * as HoustonTaskService from "./houston/tasks/TaskService.ts";
 import * as HoustonTaskRuns from "./houston/tasks/TaskRuns.ts";
 import * as HoustonTaskV1Import from "./houston/tasks/V1Import.ts";
 import * as HoustonTaskSourceService from "./houston/taskSources/SourceService.ts";
-import * as HoustonGrids from "./houston/grids.ts";
+import * as HoustonLayoutWorkspaces from "./houston/layoutWorkspaces.ts";
 import * as HoustonSlackService from "./houston/slack/Service.ts";
 import * as HoustonSlackV1Import from "./houston/slack/V1Import.ts";
 import * as HoustonTaskSourceV1Import from "./houston/taskSources/V1Import.ts";
@@ -1567,7 +1567,7 @@ export const layerWsRpc = (
       const houstonTaskRuns = yield* HoustonTaskRuns.HoustonTaskRuns;
       const houstonTaskSources = yield* HoustonTaskSourceService.HoustonTaskSourceService;
       const houstonTaskSourceImport = yield* HoustonTaskSourceV1Import.HoustonTaskSourceV1Import;
-      const houstonGrids = yield* HoustonGrids.HoustonGridService;
+      const houstonLayoutWorkspaces = yield* HoustonLayoutWorkspaces.HoustonLayoutWorkspaceService;
       const houstonSlack = yield* HoustonSlackService.HoustonSlackService;
       const houstonSlackImport = yield* HoustonSlackV1Import.HoustonSlackV1Import;
       const houstonMergeQueue = yield* HoustonMergeQueueService.HoustonMergeQueueService;
@@ -3382,10 +3382,19 @@ export const layerWsRpc = (
         [WS_METHODS.houstonTaskSourcesSubscribe]: (input) => houstonTaskSources.subscribe(input),
         [WS_METHODS.houstonTaskSourcesImportV1Status]: () => houstonTaskSourceImport.status,
         [WS_METHODS.houstonTaskSourcesImportV1Run]: () => houstonTaskSourceImport.run,
-        [WS_METHODS.houstonGridsList]: (input) => houstonGrids.list(input),
-        [WS_METHODS.houstonGridsPut]: (input) => houstonGrids.put(input),
-        [WS_METHODS.houstonGridsDelete]: (input) => houstonGrids.delete(input),
-        [WS_METHODS.houstonGridsSubscribe]: () => houstonGrids.subscribe,
+        [WS_METHODS.houstonLayoutWorkspacesList]: () => houstonLayoutWorkspaces.list,
+        [WS_METHODS.houstonLayoutWorkspacesPut]: (input) => houstonLayoutWorkspaces.put(input),
+        [WS_METHODS.houstonLayoutWorkspacesReorder]: (input) =>
+          houstonLayoutWorkspaces.reorder(input),
+        [WS_METHODS.houstonLayoutWorkspacesDelete]: (input) =>
+          houstonLayoutWorkspaces.delete(input),
+        [WS_METHODS.houstonLayoutWorkspacesSubscribe]: () => houstonLayoutWorkspaces.subscribe,
+        [WS_METHODS.houstonLayoutWorkspacesAssignThread]: (input) =>
+          houstonLayoutWorkspaces.assignThread(input),
+        [WS_METHODS.houstonLayoutWorkspacesMoveThread]: (input) =>
+          houstonLayoutWorkspaces.moveThread(input),
+        [WS_METHODS.houstonLayoutWorkspacesSetFocus]: ({ workspaceId }) =>
+          houstonLayoutWorkspaces.setFocus(workspaceId).pipe(Effect.as({})),
         [WS_METHODS.houstonSlackGet]: () => houstonSlack.get,
         [WS_METHODS.houstonSlackConnect]: (input) => houstonSlack.connect(input),
         [WS_METHODS.houstonSlackDisconnect]: () => houstonSlack.disconnect,

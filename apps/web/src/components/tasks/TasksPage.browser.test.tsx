@@ -1,3 +1,4 @@
+import "~/index.css";
 import type { HoustonTaskSummary, HoustonTaskScope } from "@houston-app/contracts/houston/tasks";
 import { EnvironmentId } from "@houston-app/contracts";
 import { Atom } from "effect/reactivity";
@@ -90,7 +91,7 @@ vi.mock("~/state/environments", () => ({
 vi.mock("~/state/server", () => ({
   primaryServerKeybindingsAtom: Atom.make({}),
 }));
-vi.mock("~/grid/openThreadInGrid", () => ({ useOpenThreadInGrid: () => async () => {} }));
+vi.mock("~/threads/useOpenThread", () => ({ useOpenThread: () => async () => {} }));
 vi.mock("./TaskDetailPanel", () => ({
   TaskDetailPanel: ({ taskKey }: { taskKey: string }) => <div data-task-detail>{taskKey}</div>,
 }));
@@ -175,6 +176,37 @@ it("lists the queue with the workspace picker and opens the new task editor", as
   await screen.getByRole("button", { name: "New task" }).click();
   await expect.element(screen.getByRole("dialog")).toBeVisible();
   expect(screen.container.textContent).toContain("New task");
+});
+
+it("sizes every control of the header row to the control height", async () => {
+  reset();
+  await using screen = await render(<TasksPage />);
+  const header = screen.container.querySelector("header")!;
+  const heights = [
+    header.querySelector('[aria-label="Search tasks"]')!.closest("[data-slot=input-group]")!,
+    header.querySelector('[aria-label="Workspace"]')!,
+    Array.from(header.querySelectorAll("button")).find((b) => b.textContent === "New task")!,
+  ].map((element) => Math.round(element.getBoundingClientRect().height));
+  expect(heights).toEqual([28, 28, 28]);
+});
+
+it("keeps the title clear of the controls in a 320px pane and scrolls the rest sideways", async () => {
+  route.set({});
+  const container = document.createElement("div");
+  container.style.cssText = "width: 320px; height: 600px; display: flex;";
+  await using screen = await render(<TasksPage />, { container });
+  const header = container.querySelector("header")!;
+  const title = header.querySelector("h1")!.getBoundingClientRect();
+  const queue = [...header.querySelectorAll("button")]
+    .find((button) => button.textContent === "Queue")!
+    .getBoundingClientRect();
+  expect(title.right).toBeLessThanOrEqual(queue.left);
+  const row = [...header.querySelectorAll<HTMLElement>("div")].find(
+    (element) => element.scrollWidth > element.clientWidth + 1,
+  );
+  expect(row, "a header row that scrolls").toBeDefined();
+  expect(header.scrollWidth).toBeLessThanOrEqual(header.clientWidth + 1);
+  void screen;
 });
 
 it("opens a task in the right panel tab and records it in the route", async () => {

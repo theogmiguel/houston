@@ -256,7 +256,7 @@ interface DiffPanelProps {
   composerDraftTarget: ScopedThreadRef | DraftId;
   workspaceMutationId: string | null;
   visible: boolean;
-  /** The pane's thread on routes that do not carry it, such as a grid cell. */
+  /** The pane's thread on routes that do not carry it, such as a layout pane. */
   threadRef?: ScopedThreadRef;
   /** Closes the panel surface; absent when the panel owns no close affordance. */
   onClose?: () => void;

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { buildThreadActionMenuItems, type ThreadActionMenuState } from "./threadActionMenu.logic";
+import {
+  buildThreadActionMenuItems,
+  threadActionRequiresOperate,
+  type ThreadActionMenuState,
+} from "./threadActionMenu.logic";
 
 const baseState: ThreadActionMenuState = {
   canOperate: true,
@@ -97,11 +101,6 @@ describe("buildThreadActionMenuItems", () => {
       branch: "main",
       canStartBranchThread: true,
       projectFilter: { label: "Houston", isActive: false },
-      grid: {
-        canOpenInGrid: true,
-        canMoveToGrid: true,
-        moveTargets: [{ gridId: "grid-b", name: "Review" }],
-      },
     });
     expect(items.map((item) => item.id)).toEqual([
       "section:thread",
@@ -112,8 +111,6 @@ describe("buildThreadActionMenuItems", () => {
       "settle",
       "snooze",
       "section:organise",
-      "open-in-grid",
-      "move-to-grid",
       "tags",
       "filter-by-project",
       "new-thread-on-branch",
@@ -131,9 +128,36 @@ describe("buildThreadActionMenuItems", () => {
       "Status",
       "Organise",
     ]);
+  });
+
+  it("offers Move to workspace with every other workspace and New workspace, and nothing for a thread that cannot move", () => {
+    const items = buildThreadActionMenuItems({
+      ...baseState,
+      workspace: {
+        targets: [
+          { workspaceId: "w2", name: "Reviews" },
+          { workspaceId: "w3", name: "Today" },
+        ],
+      },
+    });
+    const move = items.find((item) => item.id === "move-to-workspace");
+    expect(move?.label).toBe("Move to workspace");
+    expect(move?.children?.map((item) => [item.id, item.label])).toEqual([
+      ["move-to-workspace:w2", "Reviews"],
+      ["move-to-workspace:w3", "Today"],
+      ["move-to-new-workspace", "New workspace"],
+    ]);
+    const alone = buildThreadActionMenuItems({ ...baseState, workspace: { targets: [] } });
     expect(
-      items.find((item) => item.id === "move-to-grid")?.children?.map((item) => item.id),
-    ).toEqual(["move-to-grid:grid-b", "move-to-grid:new"]);
+      alone
+        .find((item) => item.id === "move-to-workspace")
+        ?.children?.map((item) => [item.id, item.label]),
+    ).toEqual([["move-to-new-workspace", "New workspace"]]);
+    // A child thread follows its parent: the surface passes no workspace, so no item appears.
+    const child = buildThreadActionMenuItems({ ...baseState, workspace: undefined });
+    expect(child.some((item) => item.id === "move-to-workspace")).toBe(false);
+    expect(threadActionRequiresOperate("move-to-workspace:w2")).toBe(false);
+    expect(threadActionRequiresOperate("move-to-new-workspace")).toBe(false);
   });
 
   it("keeps every action of the previous menu reachable", () => {
@@ -144,7 +168,6 @@ describe("buildThreadActionMenuItems", () => {
       canStartBranchThread: true,
       canTurnIntoProject: true,
       projectFilter: { label: "Houston", isActive: false },
-      grid: { canOpenInGrid: true, canMoveToGrid: true, moveTargets: [] },
     });
     const ids = (list: ReadonlyArray<{ id: string; children?: ReadonlyArray<never> }>): string[] =>
       list.flatMap((item) => [item.id, ...ids((item.children ?? []) as never)]);
@@ -152,8 +175,6 @@ describe("buildThreadActionMenuItems", () => {
       expect.arrayContaining([
         "find",
         "new-thread-on-branch",
-        "open-in-grid",
-        "move-to-grid",
         "settle",
         "snooze",
         "rename",
@@ -184,42 +205,13 @@ describe("buildThreadActionMenuItems", () => {
     expect(items.map((item) => item.id)).not.toContain("section:status");
   });
 
-  it("hides grid and thread actions the surface cannot perform", () => {
+  it("hides thread actions the surface cannot perform", () => {
     const items = buildThreadActionMenuItems({
       ...baseState,
       canFind: false,
       hasThread: false,
-      cell: {
-        split: { availableThreads: [], atCap: false, canCreateThread: false },
-        swapTargets: [],
-      },
     });
-    expect(items.map((item) => item.id)).toEqual(["section:layout", "split-right", "split-down"]);
-    expect(items[1]?.children?.map((item) => item.id)).toEqual(["split:right:none"]);
-  });
-
-  it("offers split and swap only with cell context", () => {
-    const items = buildThreadActionMenuItems({
-      ...baseState,
-      cell: {
-        split: {
-          availableThreads: [{ threadId: "thread-b", title: "Beta" }],
-          atCap: false,
-          canCreateThread: true,
-        },
-        swapTargets: [{ threadId: "thread-c", title: "Gamma" }],
-      },
-    });
-    expect(items.map((item) => item.id).slice(0, 4)).toEqual([
-      "section:layout",
-      "split-right",
-      "split-down",
-      "swap",
-    ]);
-    expect(items[1]?.children?.map((item) => item.id)).toEqual([
-      "split:right:thread-b",
-      "split:right:new",
-    ]);
-    expect(items[3]?.children?.map((item) => item.id)).toEqual(["swap:thread-c"]);
+    expect(items.map((item) => item.id)).not.toContain("rename");
+    expect(items.map((item) => item.id)).not.toContain("section:status");
   });
 });

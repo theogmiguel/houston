@@ -27,7 +27,7 @@ export function ChatCanvas({
   detailsCardTopInset?: number;
   /** A subagent's parent strip sits at the top of the chat; the details card stays below it. */
   parentStripShown?: boolean;
-  /** A comfortable grid pane keeps its details card inline inside the cell. */
+  /** A comfortable layout pane keeps its details card inline inside the cell. */
   detailsCardAllowOverlap?: boolean;
 }) {
   const elementRef = useRef<HTMLDivElement | null>(null);
@@ -124,7 +124,8 @@ export function ChatCanvas({
         <div
           ref={widthProbeRef}
           aria-hidden
-          className="pointer-events-none invisible absolute h-0 w-(--chat-content-max-width) min-w-[40rem] box-content ps-3 sm:ps-12"
+          className="pointer-events-none invisible absolute h-0 w-(--chat-content-max-width) min-w-[40rem] box-content"
+          data-chat-lane-probe
         />
         {children}
       </div>

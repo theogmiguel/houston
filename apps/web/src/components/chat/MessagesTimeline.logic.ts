@@ -611,6 +611,8 @@ type MessagesTimelineRowContent =
       runId: RunId;
       label: string;
       summary?: string;
+      /** Lines the turn added and removed across its changed files; absent when it changed none. */
+      diffStat?: { readonly additions: number; readonly deletions: number };
       /** Set on the one turn that resumed after the thread's latest restart. */
       restart?: TimelineRestartNote;
       expanded: boolean;
@@ -1785,6 +1787,15 @@ export function deriveMessagesTimelineRows(input: {
       turnDiffSummaryByAssistantMessageId.set(summary.assistantMessageId, summary);
     }
   }
+  const diffStatByRunId = new Map<RunId, { additions: number; deletions: number }>();
+  for (const summary of input.turnDiffSummaries) {
+    const total = diffStatByRunId.get(summary.runId) ?? { additions: 0, deletions: 0 };
+    for (const file of summary.files) {
+      total.additions += file.additions ?? 0;
+      total.deletions += file.deletions ?? 0;
+    }
+    diffStatByRunId.set(summary.runId, total);
+  }
   const unsettledRunId = deriveUnsettledRunId(input.latestRun ?? null, input.runningRunId ?? null);
   const revertTurnCountByUserMessageId = input.supportsConversationRollback
     ? deriveRevertTurnCountByUserMessageId({
@@ -2132,6 +2143,10 @@ export function deriveMessagesTimelineRows(input: {
         runId: turnFold.runId,
         label: turnFold.label,
         ...(turnFold.summary ? { summary: turnFold.summary } : {}),
+        ...(() => {
+          const diffStat = diffStatByRunId.get(turnFold.runId);
+          return diffStat && (diffStat.additions > 0 || diffStat.deletions > 0) ? { diffStat } : {};
+        })(),
         ...(turnFold.restart ? { restart: turnFold.restart } : {}),
         expanded: input.expandedRunIds?.has(turnFold.runId) ?? false,
       });
@@ -2959,6 +2974,8 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
         a.label === bf.label &&
         (a.kind !== "turn-fold" ||
           (a.summary === (bf as typeof a).summary &&
+            a.diffStat?.additions === (bf as typeof a).diffStat?.additions &&
+            a.diffStat?.deletions === (bf as typeof a).diffStat?.deletions &&
             sameRestartNote(a.restart, (bf as typeof a).restart))) &&
         a.expanded === bf.expanded &&
         anchors.length === nextAnchors.length &&

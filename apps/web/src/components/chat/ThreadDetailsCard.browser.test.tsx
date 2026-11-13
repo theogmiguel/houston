@@ -170,7 +170,7 @@ it("returns to full density when hidden items make the content fit", async () =>
   await expect.element(card).toHaveAttribute("data-density", "full");
 });
 
-it("stays closed in a grid cell until the top bar toggle opens it", async () => {
+it("stays closed in a layout pane until the top bar toggle opens it", async () => {
   using fixture = setup();
   await using _screen = await render(
     <Card threadRef={threadB} inline fixture={fixture} defaultOpen={false} />,
@@ -184,7 +184,7 @@ it("stays closed in a grid cell until the top bar toggle opens it", async () => 
   await expect.element(page.getByText("Details for thread-b")).toBeVisible();
 
   // The card closes its popover flag when it draws inline; the explicit
-  // grid choice must survive that, or the card would vanish on the next render.
+  // pane choice must survive that, or the card would vanish on the next render.
   await act(() => useRightPanelStore.getState().setThreadPanelOpen(threadB, "popover", false));
   await expect.element(page.getByText("Details for thread-b")).toBeVisible();
 

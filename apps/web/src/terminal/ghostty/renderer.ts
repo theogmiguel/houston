@@ -5,6 +5,7 @@ import {
   type GhosttyColor,
   type GhosttySnapshot,
 } from "./core";
+import { legibleTextColor } from "./contrast";
 
 export interface GhosttyCellMetrics {
   readonly width: number;
@@ -25,10 +26,15 @@ function cssColor(color: GhosttyColor): string {
   return `rgb(${color.r}, ${color.g}, ${color.b})`;
 }
 
+/** The colour a cell's text is drawn in: its own, moved only as far as AA contrast on its background needs. */
+function textColor(cell: GhosttyCell): GhosttyColor {
+  return legibleTextColor(cell.foreground, cell.background);
+}
+
 function sameTextStyle(left: GhosttyCell, right: GhosttyCell): boolean {
   // Selection only tints the background; splitting text runs shifts glyph spacing when advances differ from cell width.
   return (
-    ghosttyColorsEqual(left.foreground, right.foreground) &&
+    ghosttyColorsEqual(textColor(left), textColor(right)) &&
     left.bold === right.bold &&
     left.italic === right.italic &&
     left.invisible === right.invisible
@@ -246,7 +252,7 @@ export function renderGhosttySnapshot(options: {
         );
         context.clip();
         context.font = fontForCell(first, fontSize, fontFamily);
-        context.fillStyle = cssColor(first.foreground);
+        context.fillStyle = cssColor(textColor(first));
         context.fillText(
           text,
           padding + runStart * metrics.width,
@@ -269,7 +275,7 @@ export function renderGhosttySnapshot(options: {
       if (!cell || (!cell.underline && !cell.strikethrough && !cell.overline && !hoveredLink)) {
         continue;
       }
-      context.fillStyle = cssColor(cell.foreground);
+      context.fillStyle = cssColor(textColor(cell));
       const left = padding + column * metrics.width;
       if (cell.underline || hoveredLink) {
         context.fillRect(left, top + metrics.height - 2, metrics.width, 1);

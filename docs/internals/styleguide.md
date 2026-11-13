@@ -21,9 +21,10 @@ status. The panes are the product.
 - **One accent.** The indigo from the app mark (`--accent`) is the brand fill; `--accent-ink`
   is the readable version for text, icons and focus. Selection, running state, focus, primary
   actions and the 8% wash on a user turn are where the brand hue appears.
-- **The shell is square.** Grid panes have no radius and no card border. One 1px
-  `--divider` separates the sidebar, top bar, grid cells and right panel. A grid of two or
-  more threads carries a floating pane label instead of a pane header.
+- **Panes are framed, the rest of the shell is flat.** One 1px `--divider` separates the sidebar,
+  top bar and right panel. A layout pane is a `--pane` surface rounded by `--r-group` with a 1px
+  `--divider` inset ring, `--line-strong` while it is focused; neighbouring panes share an 8px
+  gutter.
 - **Controls come from primitives.** `apps/web/src/components/ui/` owns the visual recipes;
   feature code composes them with layout utilities.
 
@@ -35,16 +36,16 @@ and an existing primitive before a one-off class.
 
 ## Source of truth
 
-| Concern                                                     | Canonical location                                                                                                |
-| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| Colour, radius, type, motion, control metrics and utilities | `apps/web/src/index.css`                                                                                          |
-| Tailwind bindings (`@theme`, `@theme inline`, `@utility`)   | `apps/web/src/index.css`                                                                                          |
-| Appearance resolution, theme ids and custom themes          | `apps/web/src/hooks/useTheme.ts`, `apps/web/src/themePalette.ts`                                                  |
-| Primitives and their variants                               | `apps/web/src/components/ui/*.tsx`                                                                                |
-| Shell, sidebar, grid and thread layout                      | `apps/web/src/components/AppSidebarLayout.tsx`, `grid/GridSidebar.tsx`, `grid/GridThreadCell.tsx`, `ChatView.tsx` |
-| Terminal colours and ANSI palette                           | `apps/web/src/components/ThreadTerminalDrawer.tsx`, `packages/shared/src/terminalOutput.ts`                       |
-| Style rules and pinned violations                           | `scripts/check-web-style.mjs`, `scripts/web-style-baseline/`                                                      |
-| Approved design boards (interim)                            | `handoff/design/README.md`                                                                                        |
+| Concern                                                     | Canonical location                                                                                                                  |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Colour, radius, type, motion, control metrics and utilities | `apps/web/src/index.css`                                                                                                            |
+| Tailwind bindings (`@theme`, `@theme inline`, `@utility`)   | `apps/web/src/index.css`                                                                                                            |
+| Appearance resolution, theme ids and custom themes          | `apps/web/src/hooks/useTheme.ts`, `apps/web/src/themePalette.ts`                                                                    |
+| Primitives and their variants                               | `apps/web/src/components/ui/*.tsx`                                                                                                  |
+| Shell, sidebar, workspace and thread layout                 | `apps/web/src/components/AppSidebarLayout.tsx`, `components/sidebar/ThreadSidebar.tsx`, `layout/WorkspaceStrip.tsx`, `ChatView.tsx` |
+| Terminal colours and ANSI palette                           | `apps/web/src/components/ThreadTerminalDrawer.tsx`, `packages/shared/src/terminalOutput.ts`                                         |
+| Style rules and pinned violations                           | `scripts/check-web-style.mjs`, `scripts/web-style-baseline/`                                                                        |
+| Approved design boards (interim)                            | `handoff/design/README.md`                                                                                                          |
 
 `handoff/` is removed before `v2` merges, so the durable v2 conventions are the ones on this
 page and the rules in `scripts/check-web-style.mjs`.
@@ -61,8 +62,8 @@ Tokens come in surface/foreground pairs. Use the role, not the value.
 | `--content`   | The main canvas. Also exposed as `--background`.        |
 | `--card`      | Cards and panels lifted off the canvas.                 |
 | `--raised`    | The floating tier: menus, popovers, dialogs.            |
-| `--pane`      | A thread or grid cell surface.                          |
-| `--pane-head` | The grid label and pane header fill.                    |
+| `--pane`      | A layout pane's surface.                                |
+| `--pane-head` | The pane tab bar's fill.                                |
 | `--composer`  | The composer and its attached banners.                  |
 | `--term`      | The terminal surface. Also `--terminal-background`.     |
 | `--code-bg`   | Code blocks and diff bodies. Also `--code-background`.  |
@@ -90,7 +91,7 @@ should sit quieter than their label.
 | Token            | Use it for                                                                                                                                                |
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--border`       | Ordinary hairlines: inputs, cards, control edges.                                                                                                         |
-| `--divider`      | One-pixel seams between shell surfaces: sidebar, top bar, grid cells, right panel.                                                                        |
+| `--divider`      | One-pixel seams between shell surfaces: sidebar, top bar, layout panes, right panel.                                                                      |
 | `--card-edge`    | Edges of raised content cards (settings groups, changed files, plans); one step firmer than `--border` in light. Use it through `--contrast-card-border`. |
 | `--border-hover` | The hover state of an ordinary hairline.                                                                                                                  |
 | `--line-strong`  | The interactive edge of a field or a selected control.                                                                                                    |
@@ -192,7 +193,7 @@ Primitive heights are part of their recipe:
 visible box is acceptable only when the hit target reaches the same floor.
 
 **Known drift.** `--h-ctl` is 28px, but the `Input` primitive is 26px by default and the
-grid label is a 26px pill (`--h-pill`). Treat the table above as the per-primitive contract,
+pill (`--h-pill`) is 26px. Treat the table above as the per-primitive contract,
 not as a single universal control height.
 
 ## Radius
@@ -201,7 +202,7 @@ not as a single universal control height.
 | --------------- | ----- | ----------------------------------------------------------- |
 | `--r-badge`     | 4px   | Badges, small value plates, inline code.                    |
 | `--r-ctl`       | 6px   | Buttons, inputs, selects, menu rows and chips.              |
-| `--r-selection` | 7px   | Grid labels and selection buttons.                          |
+| `--r-selection` | 7px   | Selection buttons.                                          |
 | `--r-group`     | 10px  | Cards, panes, popovers, menus and dialogs. Also `--radius`. |
 | `--r-dialog`    | 14px  | Top-level dialogs.                                          |
 | `--r-pill`      | 999px | Switches, avatars and capsule chips.                        |
@@ -221,7 +222,7 @@ A surface is a token, not a hand-built recipe. The ladder is:
 | Canvas   | `--content` | The main work area, flush and divided from the rail.         |
 | Card     | `--card`    | Panels and rows lifted off the canvas by an edge and a lift. |
 | Floating | `--raised`  | Menus, popovers, dialogs and tooltips.                       |
-| Pane     | `--pane`    | A thread or grid cell.                                       |
+| Pane     | `--pane`    | A layout pane.                                               |
 
 Floating surfaces use one of the shared utilities:
 
@@ -237,13 +238,10 @@ Floating surfaces use one of the shared utilities:
 
 `--shadow-1` is the floating shadow, `--shadow-2` the dialog shadow, and `--shadow-seg` the
 pressed-segment shadow. The composer has its own `--shadow-composer` and
-`--shadow-composer-dark`. Grid panes are flat: separation comes from `--divider`, never a
-drop shadow or a card border.
+`--shadow-composer-dark`. Layout panes carry no drop shadow: separation comes from the
+`--divider` ring and the gutter.
 
 ## Layout anatomy
-
-![The grid in the light theme](styleguide/grid--light.webp)
-![The grid in the dark theme](styleguide/grid--dark.webp)
 
 - **Shell.** `AppSidebarLayout` composes `SidebarProvider` with a left `Sidebar` and the
   route content. The thread sidebar is resizable between 240px and 440px, defaults to
@@ -251,16 +249,13 @@ drop shadow or a card border.
 - **Top bar.** 40px (`--h-top`, `--workspace-topbar-height`), a drag region with no native
   title bar. Controls opt out with `no-drag`. On the desktop host the three window controls
   occupy `--w-window-control` each at the right end.
-- **Thread route.** A thread fills the content area flush: no card radius, no gutter, no
-  pane header when it is the only thread. The chat lane is 760px
+- **Thread route.** A thread fills its pane flush: no card radius and no gutter of its own. The chat lane is 760px
   (`--chat-content-max-width`), while the timeline narrows to 720px; the thread-details
   card is 340px (`--thread-details-panel-width`). The composer sits at the bottom of the
   lane.
-- **Grid.** Cells are divided by 1px `--divider`. A grid with two or more threads has no
-  pane header; each cell carries a floating label at `top-2 left-2`: provider mark,
-  truncated title, status glyph, and the pane actions on hover. The label is a 26px
-  (`--h-pill`), 7px (`--r-selection`) pill on `--pane-head` with a 1px `--divider` border.
-  A single thread has no label.
+- **Layout.** Panes sit in columns of a horizontal strip, separated by an 8px gutter. A pane's
+  tab bar lists its tabs; on the top pane of a column the bar may sit in the window chrome above
+  the surface instead of inside it.
 - **Right panel.** Docked to the right edge, flush and divided by `--divider`. It opens on
   an "Open a surface" launcher and gains tiled surfaces (Files, Diff, Browser, Terminal,
   Pull request) through the launcher or the "Add panel surface" menu. Its top row holds the
@@ -282,7 +277,7 @@ the docked layout. `apps/web/src/mobile/usePhone.ts` mirrors the token as
 Tailwind variants gate CSS at the same width. A phone replaces the desktop chrome with its own
 home page, thread bar and bottom tab bar.
 
-- **`apps/web/src/mobile/` adapts, never forks.** It reuses `GridSidebar`, `ChatView`,
+- **`apps/web/src/mobile/` adapts, never forks.** It reuses `ThreadSidebar`, `ChatView`,
   `ChatComposer`, `RightPanelTabs`, `ThreadDetailsCard` and the composer's pickers. It owns
   only what has no desktop counterpart: the phone shell and tab bar, the thread bar, and the
   bottom sheets for model, attachments, details and files or changes.
@@ -377,7 +372,7 @@ a statement of fact ("No results.") is enough when there is nothing to do.
 
 ### Status
 
-Use `ThreadStateGlyph` anywhere a thread's state is shown: sidebar rows, grid labels, the
+Use `ThreadStateGlyph` anywhere a thread's state is shown: sidebar rows, the
 right panel and the timeline. Use the word alongside the glyph when the row does not already
 identify the state. Keep the status words separate from chrome copy.
 

@@ -1,5 +1,7 @@
 import { useLayoutEffect, useState } from "react";
 
+import { observeResize } from "~/lib/observeResize";
+
 /**
  * The most chips that can drop their label: pull request, then branch, then model. Tier 0 shows
  * every label; each step collapses the next chip to its icon.
@@ -32,6 +34,21 @@ export function useCompactChipTier(
     observer.observe(toolbar, { childList: true, subtree: true, characterData: true });
     return () => observer.disconnect();
   }, [toolbar, enabled]);
+
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- chip widths change with fonts and catalogs, which only layout reports
+  useLayoutEffect(() => {
+    if (toolbar === null || !enabled) return;
+    // Chips can grow without a DOM change; a resize only ever adds a tier, never resets one, so a
+    // tier step cannot re-trigger itself.
+    const climbIfOverflowing = () => {
+      if (toolbar.scrollWidth <= toolbar.clientWidth + OVERFLOW_TOLERANCE_PX) return;
+      setState((current) => {
+        const currentTier = current.key === key ? current.tier : 0;
+        return currentTier >= COMPACT_CHIP_MAX_TIER ? current : { key, tier: currentTier + 1 };
+      });
+    };
+    return observeResize([toolbar, ...Array.from(toolbar.children)], climbIfOverflowing);
+  }, [toolbar, enabled, key]);
 
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- overflow is a layout measurement; the next tier is set before paint
   useLayoutEffect(() => {

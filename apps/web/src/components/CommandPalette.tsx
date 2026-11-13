@@ -45,12 +45,11 @@ import {
   type EnvironmentId,
   type FilesystemBrowseResult,
   type ProjectId,
-  type ThreadId,
   SourceControlProviderKind,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
   resolveEnvironmentMachineKind,
 } from "@houston-app/contracts";
-import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeftIcon,
   BugIcon,
@@ -67,9 +66,6 @@ import {
   FolderPlusIcon,
   LayoutGridIcon,
   ListChecksIcon,
-  Maximize2Icon,
-  Minimize2Icon,
-  PencilIcon,
   MessageSquareDashedIcon,
   LinkIcon,
   MessageSquareIcon,
@@ -280,11 +276,14 @@ import { buildSidebarProjectPickerEntries } from "../sidebarProjectGrouping";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { readPullRequestListPreferences } from "~/components/pullRequest/pullRequestListPreferences";
 import { useActiveThreadRouteTarget } from "../hooks/useThreadRouteTarget";
-import { useGrid, useGridStore, workspaceKeyOf } from "../grid/gridStore";
-import { useGridMaximizeStore } from "../grid/gridMaximizeStore";
-import { requestGridCellRename } from "../grid/gridCellCommands";
+import { buildLayoutPaletteItems } from "../layout/layoutPaletteItems";
 import { useThreadActions } from "../hooks/useThreadActions";
-import { useOpenGridDraft } from "../grid/useOpenGridDraft";
+import { runInNewLayoutTab, useLayoutStore } from "../layout/layoutStore";
+import {
+  createLayoutWorkspaceAction,
+  hideLayoutWorkspaceAction,
+  pinLayoutWorkspaceAction,
+} from "../layout/layoutWorkspaceActions";
 import { threadRecentUse } from "@houston-app/shared/paletteSearch";
 
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
@@ -490,22 +489,13 @@ function OpenCommandPaletteDialog(props: {
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
   const paletteRouteTarget = useActiveThreadRouteTarget();
-  const gridIdParam = useParams({ strict: false, select: (params) => params.gridId });
-  const openGrid = useGrid(typeof gridIdParam === "string" ? gridIdParam : null);
-  const openGridDraft = useOpenGridDraft();
-  const openFirstGridForProject = async (environmentId: EnvironmentId, projectId: string) => {
-    const gridId = useGridStore.getState().createGrid({
-      environmentId,
-      projectId,
-      workspaceKey: workspaceKeyOf(environmentId, projectId),
-    });
-    await openGridDraft({ gridId, focusedThreadId: null });
-    return gridId;
-  };
-  const maximizedCellThreadId = useGridMaximizeStore((store) =>
-    openGrid === null ? null : (store.maximizedThreadIdByGrid[openGrid.id] ?? null),
+  const focusedWorkspace = useLayoutStore((store) =>
+    store.layout.workspaces.find((workspace) => workspace.id === store.layout.focusedWorkspaceId),
   );
-  const setMaximizedCellThreadId = useGridMaximizeStore((store) => store.setMaximizedThreadId);
+  // Opens a draft in the layout for a project that was just added.
+  const openDraftForProject = async (environmentId: EnvironmentId, projectId: string) => {
+    await handleNewThread(scopeProjectRef(environmentId, projectId as ProjectId));
+  };
   const { confirmAndDeleteThread } = useThreadActions();
   const projects = useProjects();
   const taskBacklog = useAllTasksSnapshot();
@@ -932,6 +922,8 @@ function OpenCommandPaletteDialog(props: {
     true,
   );
 
+  const opensInNewTab =
+    props.openIntent?.kind === "new-thread-in" && props.openIntent.newTab === true;
   const openingOrderThreadItems = useOrderWhileOpen(
     (() => {
       const isScratch = (project: CommandPaletteProject) =>
@@ -942,19 +934,22 @@ function OpenCommandPaletteDialog(props: {
         locationByEnvironmentId: projectEnvironmentLocationById,
         pin: projectPin,
         runProject: async (project) => {
-          const group = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`);
-          const contextualRefBelongsToGroup =
-            contextualProjectRef !== null &&
-            group?.memberProjectRefs.some(
-              (projectRef) =>
-                projectRef.environmentId === contextualProjectRef.environmentId &&
-                projectRef.projectId === contextualProjectRef.projectId,
+          const startThread = async () => {
+            const group = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`);
+            const contextualRefBelongsToGroup =
+              contextualProjectRef !== null &&
+              group?.memberProjectRefs.some(
+                (projectRef) =>
+                  projectRef.environmentId === contextualProjectRef.environmentId &&
+                  projectRef.projectId === contextualProjectRef.projectId,
+              );
+            await handleNewThread(
+              contextualRefBelongsToGroup
+                ? contextualProjectRef
+                : scopeProjectRef(project.environmentId, project.id),
             );
-          await handleNewThread(
-            contextualRefBelongsToGroup
-              ? contextualProjectRef
-              : scopeProjectRef(project.environmentId, project.id),
-          );
+          };
+          await (opensInNewTab ? runInNewLayoutTab(startThread) : startThread());
         },
       });
       if (scratchTargetEnvironmentId === null) return projectItems;
@@ -978,7 +973,10 @@ function OpenCommandPaletteDialog(props: {
           title: "No project",
           icon: <MessageSquareDashedIcon className={ITEM_ICON_CLASS} />,
           shortcutCommand: "chat.newWithoutProject" as const,
-          run: () => startScratchThread(scratchTargetEnvironmentId),
+          run: () =>
+            opensInNewTab
+              ? runInNewLayoutTab(() => startScratchThread(scratchTargetEnvironmentId))
+              : startScratchThread(scratchTargetEnvironmentId),
         },
         ...projectItems.slice(noProjectIndex),
       ];
@@ -1216,6 +1214,7 @@ function OpenCommandPaletteDialog(props: {
   };
 
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
+  actionItems.push(...buildLayoutPaletteItems());
 
   if (projects.length > 0) {
     const activeProjectTitle =
@@ -1237,13 +1236,6 @@ function OpenCommandPaletteDialog(props: {
         icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
         shortcutCommand: "chat.newLocal",
         run: async () => {
-          if (openGrid !== null) {
-            await openGridDraft({
-              gridId: openGrid.id,
-              focusedThreadId: openGrid.focusedThreadId,
-            });
-            return;
-          }
           await startNewThreadFromContext({
             activeDraftThread,
             activeThread: activeThread ?? undefined,
@@ -1265,116 +1257,62 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
-  if (openGrid !== null) {
-    const grid = openGrid;
-    const store = () => useGridStore.getState();
+  actionItems.push({
+    kind: "action",
+    value: "action:workspace-new",
+    searchTerms: ["new workspace", "workspace", "create", "layout"],
+    title: "New workspace",
+    icon: <LayoutGridIcon className={ITEM_ICON_CLASS} />,
+    run: async () => {
+      const refusal = createLayoutWorkspaceAction("");
+      if (refusal !== null) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Cannot create a workspace",
+            description: refusal,
+          }),
+        );
+      }
+    },
+  });
+  if (focusedWorkspace !== undefined) {
+    const workspace = focusedWorkspace;
+    const pinned = workspace.pinnedAt != null;
     actionItems.push({
       kind: "action",
-      value: "action:grid-new",
-      searchTerms: ["new grid", "grid", "create", "layout"],
-      title: "New grid in this workspace",
-      icon: <LayoutGridIcon className={ITEM_ICON_CLASS} />,
-      run: async () => {
-        const gridId = store().createGrid({
-          environmentId: grid.environmentId,
-          projectId: grid.projectId,
-          workspaceKey: grid.workspaceKey,
-        });
-        await navigate({ to: "/grid/$gridId", params: { gridId } });
-      },
-    });
-    const gridLayoutActions = [
-      { value: "action:grid-tidy", title: "Tidy grid", shape: "grid" as const },
-      { value: "action:grid-tidy-row", title: "Tidy grid into one row", shape: "row" as const },
-      {
-        value: "action:grid-tidy-column",
-        title: "Tidy grid into one column",
-        shape: "column" as const,
-      },
-    ];
-    for (const action of gridLayoutActions) {
-      actionItems.push({
-        kind: "action",
-        value: action.value,
-        searchTerms: ["grid", "tidy", "layout", "arrange"],
-        title: action.title,
-        icon: <LayoutGridIcon className={ITEM_ICON_CLASS} />,
-        run: async () => store().tidyGrid(grid.id, action.shape),
-      });
-    }
-    actionItems.push({
-      kind: "action",
-      value: "action:grid-equalize",
-      searchTerms: ["grid", "equalize", "layout", "sizes"],
-      title: "Equalize grid cells",
-      icon: <LayoutGridIcon className={ITEM_ICON_CLASS} />,
-      run: async () => store().equalizeGrid(grid.id),
+      value: "action:workspace-pin",
+      searchTerms: ["workspace", "pin", "unpin", "favorite"],
+      title: pinned ? "Unpin workspace" : "Pin workspace",
+      icon: pinned ? (
+        <PinOffIcon className={ITEM_ICON_CLASS} />
+      ) : (
+        <PinIcon className={ITEM_ICON_CLASS} />
+      ),
+      run: async () => pinLayoutWorkspaceAction(workspace.id, !pinned),
     });
     actionItems.push({
       kind: "action",
-      value: "action:grid-pin",
-      searchTerms: ["grid", "pin", "unpin", "favorite"],
-      title: grid.pinnedAt === null ? "Pin grid" : "Unpin grid",
-      icon:
-        grid.pinnedAt === null ? (
-          <PinIcon className={ITEM_ICON_CLASS} />
-        ) : (
-          <PinOffIcon className={ITEM_ICON_CLASS} />
-        ),
-      run: async () => {
-        if (grid.pinnedAt === null) store().pinGrid(grid.id);
-        else store().unpinGrid(grid.id);
-      },
-    });
-    actionItems.push({
-      kind: "action",
-      value: "action:grid-hide",
-      searchTerms: ["grid", "hide", "visibility"],
-      title: "Hide grid",
+      value: "action:workspace-hide",
+      searchTerms: ["workspace", "hide", "visibility"],
+      title: "Hide workspace from the sidebar",
       icon: <EyeOffIcon className={ITEM_ICON_CLASS} />,
+      run: async () => hideLayoutWorkspaceAction(workspace.id, true),
+    });
+  }
+  const focusedThreadRef =
+    paletteRouteTarget?.kind === "server" ? paletteRouteTarget.threadRef : null;
+  if (focusedThreadRef !== null) {
+    actionItems.push({
+      kind: "action",
+      value: "action:thread-delete",
+      searchTerms: ["thread", "delete", "remove"],
+      title: "Delete focused thread",
+      icon: <TrashIcon className={ITEM_ICON_CLASS} />,
       run: async () => {
-        store().setGridHidden(grid.id, true);
-        await navigate({ to: "/" });
+        await confirmAndDeleteThread(focusedThreadRef);
       },
     });
-    const focusedThreadId = grid.focusedThreadId;
-    if (focusedThreadId !== null) {
-      const focusedThreadRef = scopeThreadRef(
-        grid.environmentId as EnvironmentId,
-        focusedThreadId as ThreadId,
-      );
-      actionItems.push({
-        kind: "action",
-        value: "action:grid-thread-rename",
-        searchTerms: ["grid", "thread", "rename", "title"],
-        title: "Rename focused thread",
-        icon: <PencilIcon className={ITEM_ICON_CLASS} />,
-        run: async () => requestGridCellRename(focusedThreadId),
-      });
-      actionItems.push({
-        kind: "action",
-        value: "action:grid-thread-delete",
-        searchTerms: ["grid", "thread", "delete", "remove"],
-        title: "Delete focused thread",
-        icon: <TrashIcon className={ITEM_ICON_CLASS} />,
-        run: async () => {
-          await confirmAndDeleteThread(focusedThreadRef);
-        },
-      });
-      const isMaximized = maximizedCellThreadId === focusedThreadId;
-      actionItems.push({
-        kind: "action",
-        value: "action:grid-thread-maximize",
-        searchTerms: ["grid", "cell", "maximize", "restore", "focus"],
-        title: isMaximized ? "Restore cell in grid" : "Maximize focused cell",
-        icon: isMaximized ? (
-          <Minimize2Icon className={ITEM_ICON_CLASS} />
-        ) : (
-          <Maximize2Icon className={ITEM_ICON_CLASS} />
-        ),
-        run: async () => setMaximizedCellThreadId(grid.id, isMaximized ? null : focusedThreadId),
-      });
-    }
   }
 
   if (scratchTargetEnvironmentId !== null) {
@@ -1785,7 +1723,7 @@ function OpenCommandPaletteDialog(props: {
     icon: <ChartNoAxesColumnIcon className={ITEM_ICON_CLASS} />,
     shortcutCommand: "usage.open",
     run: async () => {
-      await navigate({ to: "/usage" });
+      await navigate({ to: "/settings/usage" });
     },
   });
 
@@ -2081,7 +2019,7 @@ function OpenCommandPaletteDialog(props: {
     }
 
     const navigationResult = await settlePromise(() =>
-      openFirstGridForProject(input.environmentId, projectId),
+      openDraftForProject(input.environmentId, projectId),
     );
     if (navigationResult._tag === "Failure") {
       const error = squashAtomCommandFailure(navigationResult);
@@ -2337,7 +2275,7 @@ function OpenCommandPaletteDialog(props: {
     const projectRef = scopeProjectRef(addProjectCloneFlow.environmentId, projectId);
     await waitForProject(projectRef, 3_000).catch(() => null);
     const navigationResult = await settlePromise(() =>
-      openFirstGridForProject(addProjectCloneFlow.environmentId, projectId),
+      openDraftForProject(addProjectCloneFlow.environmentId, projectId),
     );
     if (navigationResult._tag === "Failure") {
       const error = squashAtomCommandFailure(navigationResult);

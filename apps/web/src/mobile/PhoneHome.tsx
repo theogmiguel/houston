@@ -1,7 +1,7 @@
 import { PlusIcon, SearchIcon } from "lucide-react";
 
 import { openCommandPalette } from "../commandPaletteBus";
-import { GridSidebar } from "../components/grid/GridSidebar";
+import { ThreadSidebar } from "../components/sidebar/ThreadSidebar";
 import { HoustonWordmark } from "../components/HoustonWordmark";
 import { Button } from "../components/ui/button";
 import { PHONE_HOME_BAR_CLS, PHONE_HOME_BRAND_CLS } from "../components/ui/phone-recipes";
@@ -46,7 +46,7 @@ export function PhoneHome() {
         aria-label="Threads"
         className="h-auto w-full min-h-0 flex-1"
       >
-        <GridSidebar isPage />
+        <ThreadSidebar isPage />
       </Sidebar>
     </SidebarInset>
   );

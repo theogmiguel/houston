@@ -20,7 +20,6 @@ import { pickSnoozePreset, resolveSnoozePresets } from "../components/Sidebar.sn
 import {
   buildThreadActionMenuItems,
   threadActionRequiresOperate,
-  type ThreadActionMenuCellState,
   type ThreadActionMenuId,
 } from "../components/threadActionMenu.logic";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
@@ -33,8 +32,6 @@ import {
 } from "../state/entities";
 import { readLocalApi } from "../localApi";
 import { threadRuntimeCanArchive } from "@houston-app/client-runtime/state/models";
-import { moveThreadToGridOrExplain, moveToGridTargets } from "../grid/moveToGrid";
-import { useGridStore, workspaceKeyOf } from "../grid/gridStore";
 import { useClientSettings } from "./useSettings";
 import { canTurnThreadIntoProject, useThreadActions } from "./useThreadActions";
 import type { NewThreadHandler } from "./useHandleNewThread";
@@ -49,34 +46,11 @@ function failureToast(title: string, error: unknown) {
   );
 }
 
-export type ThreadActionMenuSplitSide = "right" | "bottom";
-
-export interface ThreadActionMenuGridInput {
-  /** The grid the surface shows the thread in, or null when no grid shows it. */
-  readonly currentGridId: string | null;
-  /** The thread is already the grid's focused cell, so there is nothing to open. */
-  readonly isFocusedCell: boolean;
-  /** Opens the thread where it already lives. */
-  readonly onOpen: () => void;
-  /** Opens the grid a menu move landed in; absent hides Move to grid. */
-  readonly onOpenGrid?: ((gridId: string) => void) | undefined;
-}
-
-export interface ThreadActionMenuCellInput {
-  readonly split?:
-    | {
-        readonly availableThreads: ReadonlyArray<{
-          readonly threadId: string;
-          readonly title: string;
-        }>;
-        readonly atCap: boolean;
-        readonly onPick: (side: ThreadActionMenuSplitSide, threadId: string) => void;
-        readonly onNewThread?: (side: ThreadActionMenuSplitSide) => void;
-      }
-    | null
-    | undefined;
-  readonly swapTargets?: ReadonlyArray<{ readonly threadId: string; readonly title: string }>;
-  readonly onSwapWith?: (threadId: string) => void;
+export interface ThreadActionMenuWorkspaceInput {
+  /** The workspaces the thread's chat can move to, never the one it is in. */
+  readonly targets: ReadonlyArray<{ readonly workspaceId: string; readonly name: string }>;
+  readonly onMove: (workspaceId: string) => void;
+  readonly onMoveToNew: () => void;
 }
 
 export function useThreadActionMenu(input: {
@@ -87,10 +61,8 @@ export function useThreadActionMenu(input: {
   readonly onFind?: ((threadRef: ScopedThreadRef) => void) | undefined;
   /** The caller owns thread creation, so this hook stays out of its draft store. */
   readonly handleNewThread?: NewThreadHandler | undefined;
-  /** The grid surface this menu acts on; absent for the route header. */
-  readonly grid?: ThreadActionMenuGridInput | undefined;
-  /** The layout actions a grid cell offers on top of the thread actions. */
-  readonly cell?: ThreadActionMenuCellInput | undefined;
+  /** The layout workspaces a sidebar row can move its thread to; absent hides Move to workspace. */
+  readonly workspace?: ThreadActionMenuWorkspaceInput | undefined;
   /** A surface whose close/hold/auto-close add local effects to the shared action. */
   readonly onCloseThread?: (() => void) | undefined;
   readonly onHoldThread?: ((snoozedUntil: string) => void) | undefined;
@@ -98,15 +70,13 @@ export function useThreadActionMenu(input: {
   /** A surface that navigates after a reopen or wake supplies it, so the menu matches its button. */
   readonly onReopenThread?: (() => void) | undefined;
   readonly onWakeThread?: (() => void) | undefined;
-  /** A grid cell closes itself once its thread is archived. */
-  readonly onThreadArchived?: (() => void) | undefined;
   /** The rail's project filter for this thread's project; absent hides Filter by project. */
   readonly projectFilter?:
     | { readonly label: string; readonly isActive: boolean; readonly onToggle: () => void }
     | null
     | undefined;
 }) {
-  const { threadRef, onStartRename, onFind, handleNewThread, grid, cell } = input;
+  const { threadRef, onStartRename, onFind, handleNewThread, workspace } = input;
   const {
     unsettleThread,
     unsnoozeThread,
@@ -130,21 +100,6 @@ export function useThreadActionMenu(input: {
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
 
-  const cellState = (): ThreadActionMenuCellState | undefined => {
-    if (cell === undefined) return undefined;
-    return {
-      split:
-        cell.split === undefined || cell.split === null
-          ? null
-          : {
-              availableThreads: cell.split.availableThreads,
-              atCap: cell.split.atCap,
-              canCreateThread: cell.split.onNewThread !== undefined,
-            },
-      swapTargets: cell.swapTargets ?? [],
-    };
-  };
-
   const menuOpen = useRef(false);
   const openMenu = async (position: { x: number; y: number }) => {
     if (threadRef === null) return;
@@ -152,7 +107,9 @@ export function useThreadActionMenu(input: {
     const api = readLocalApi();
     if (!api) return;
     const thread = input.thread === undefined ? readThreadShell(threadRef) : input.thread;
-    if (thread === null && cell === undefined && grid === undefined) return;
+    if (thread === null && workspace === undefined) {
+      return;
+    }
     const now = new Date();
     const nowIso = now.toISOString();
     const environmentId = threadRef.environmentId;
@@ -163,18 +120,6 @@ export function useThreadActionMenu(input: {
       snooze: configLoaded,
       titleRegeneration: configLoaded,
     };
-    const canMoveToGrid =
-      thread !== null &&
-      grid !== undefined &&
-      grid.onOpenGrid !== undefined &&
-      thread.projectId.length > 0;
-    const moveTargets = canMoveToGrid
-      ? moveToGridTargets(useGridStore.getState().grids, {
-          environmentId,
-          projectId: thread.projectId,
-          currentGridId: grid?.currentGridId ?? null,
-        })
-      : [];
     const threadTags = thread?.tags ?? [];
     const workspaceTags = [
       ...new Set([...threadTags, ...readThreadShells().flatMap((shell) => shell.tags ?? [])]),
@@ -202,15 +147,7 @@ export function useThreadActionMenu(input: {
       snoozePresets:
         thread !== null ? resolveSnoozePresets(now, timestampFormat, environmentId) : [],
       canTurnIntoProject: thread !== null && canTurnThreadIntoProject(threadRef),
-      grid:
-        grid === undefined
-          ? undefined
-          : {
-              canOpenInGrid: thread !== null && !grid.isFocusedCell,
-              canMoveToGrid,
-              moveTargets,
-            },
-      cell: cellState(),
+      workspace: workspace === undefined ? undefined : { targets: workspace.targets },
     });
     const clicked = await settlePromise(() => api.contextMenu.show(items, position));
     menuOpen.current = false;
@@ -226,46 +163,12 @@ export function useThreadActionMenu(input: {
       );
       return;
     }
-    if (action === "open-in-grid") {
-      grid?.onOpen();
+    if (action === "move-to-new-workspace") {
+      workspace?.onMoveToNew();
       return;
     }
-    if (action.startsWith("move-to-grid:")) {
-      if (thread === null || grid === undefined) return;
-      const target = action.slice("move-to-grid:".length);
-      const targetGridId =
-        target === "new"
-          ? useGridStore.getState().createGrid({
-              environmentId: thread.environmentId,
-              projectId: thread.projectId,
-              workspaceKey: workspaceKeyOf(thread.environmentId, thread.projectId),
-            })
-          : target;
-      const refusal = moveThreadToGridOrExplain({
-        threadId: thread.id,
-        threadEnvironmentId: thread.environmentId,
-        threadProjectId: thread.projectId,
-        targetGridId,
-      });
-      if (refusal !== null) {
-        toastManager.add(stackedThreadToast({ type: "error", ...refusal }));
-        return;
-      }
-      grid.onOpenGrid?.(targetGridId);
-      return;
-    }
-    if (action.startsWith("split:")) {
-      const rest = action.slice("split:".length);
-      const separator = rest.indexOf(":");
-      const side = rest.slice(0, separator);
-      const target = rest.slice(separator + 1);
-      if (side !== "right" && side !== "bottom") return;
-      if (target === "new") cell?.split?.onNewThread?.(side);
-      else if (target.length > 0 && target !== "none") cell?.split?.onPick(side, target);
-      return;
-    }
-    if (action.startsWith("swap:")) {
-      cell?.onSwapWith?.(action.slice("swap:".length));
+    if (action.startsWith("move-to-workspace:")) {
+      workspace?.onMove(action.slice("move-to-workspace:".length));
       return;
     }
     if (thread === null) return;
@@ -419,7 +322,6 @@ export function useThreadActionMenu(input: {
         const result = await archiveThread(threadRef, {
           onArchived: () => {
             didArchive = true;
-            input.onThreadArchived?.();
           },
         });
         if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {

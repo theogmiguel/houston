@@ -18,6 +18,7 @@ import { __setClientSettingsForTests } from "~/hooks/useSettings";
 import { SETTINGS_SECTION_LABELS } from "~/components/settings/settingsSearch";
 import { getRouter } from "~/router";
 import { installFakeEnvironment, PROJECT_ID, threadWithHistory } from "../../test/fakeEnvironment";
+import { loadEmptyLayout } from "../../test/loadedLayout";
 import { render } from "../../test/render";
 
 vi.mock("../../../../packages/client-runtime/src/connection/driver.ts", async (importOriginal) => {
@@ -108,6 +109,13 @@ const usageBuckets: ReadonlyArray<UsageBucket> = [
   usageBucket("2026-11-08", "claude-sonnet-4-5-20250929-with-a-long-name", 2.1),
 ];
 
+/** A thread that the server reports deleted, so its route names a thread that is gone. */
+function installMissingThreadEnvironment(): Disposable {
+  return installFakeEnvironment([threadWithHistory("thread-phone", 2)], {
+    deletedThreadIds: ["missing-thread"],
+  });
+}
+
 function installEnvironment(): Disposable {
   return installFakeEnvironment([threadWithHistory("thread-phone", 2)], {
     pullRequests: { entries: pullRequests, viewers: { "github.com": "theogmiguel" } },
@@ -116,6 +124,7 @@ function installEnvironment(): Disposable {
 }
 
 async function mountApp(path: string, width: number, height: number) {
+  loadEmptyLayout();
   __setClientSettingsForTests({
     ...DEFAULT_CLIENT_SETTINGS,
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
@@ -237,21 +246,24 @@ const waitForText = (text: string) =>
 const waitForSelector = (selector: string) =>
   vi.waitFor(() => expect(document.querySelector(selector)).not.toBeNull(), { timeout: 10_000 });
 
-// The client keeps the shell it last read, so the test that needs a project without threads runs
+// The client keeps the shell it last read, so the test that needs a workspace without threads runs
 // before any test that installs threads.
-it("offers a new thread under a project that has none", async () => {
+it("offers a new thread in a workspace that has none", async () => {
   using _environment = installFakeEnvironment([], {});
   for (const { width, height } of PHONE_VIEWPORTS) {
     const { screen } = await mountApp("/", width, height);
     await using _screen = screen;
-    await waitForSelector("[data-project-empty]");
-    const empty = document.querySelector<HTMLElement>("[data-project-empty]")!;
+    await waitForSelector("[data-workspace-empty]");
+    const empty = document.querySelector<HTMLElement>("[data-workspace-empty]")!;
     expect(empty.textContent).toContain("No threads yet");
-    expect(Math.round(rectOf(empty.querySelector("p")!).left + 8), "empty line gutter").toBe(16);
+    expect(
+      Math.round(rectOf(empty.querySelector("span")!).left),
+      "empty line gutter",
+    ).toBeGreaterThanOrEqual(16);
     const action = empty.querySelector<HTMLElement>("button")!;
     expect(action.textContent).toContain("New thread");
     expectTapHeight(action, "New thread");
-    expectPhoneLayout(`empty project at ${width}px`);
+    expectPhoneLayout(`empty workspace at ${width}px`);
     await screen.unmount();
   }
 });
@@ -617,31 +629,43 @@ it("titles usage once, inside the gutter, with 44px controls", async () => {
   }
 });
 
-it("renders a missing grid inside the phone shell", async () => {
-  using _environment = installEnvironment();
+it("renders a missing thread inside the phone shell", async () => {
+  using _environment = installMissingThreadEnvironment();
   for (const { width, height } of PHONE_VIEWPORTS) {
-    const { screen } = await mountApp("/grid/missing-grid", width, height);
+    const { screen } = await mountApp("/environment-render/missing-thread", width, height);
     await using _screen = screen;
-    await waitForSelector("[data-phone-missing-grid]");
-    expect(document.querySelector("[data-phone-page-bar]")).not.toBeNull();
-    expect(document.querySelector("[data-phone-tab-bar]")).not.toBeNull();
+    await waitForSelector("[data-layout-missing-thread]");
+    // The thread bar stays, so back to the home is one tap away; a thread has no tab bar.
+    expect(document.querySelector("[data-phone-thread-bar]")).not.toBeNull();
+    expect(document.querySelector("[data-phone-tab-bar]")).toBeNull();
     expectEmptyState(
-      document.querySelector<HTMLElement>("[data-phone-missing-grid]")!,
-      `missing grid at ${width}px`,
+      document.querySelector<HTMLElement>("[data-layout-missing-thread]")!,
+      `missing thread at ${width}px`,
       width,
     );
-    const message = screen.getByText("This grid no longer exists").element();
-    const detail = screen.getByText(/It was deleted on this machine/).element();
+    const message = screen.getByText("This thread no longer exists").element();
+    const detail = screen.getByText(/No thread with id missing-thread/).element();
     for (const text of [message, detail]) {
       expect(getComputedStyle(text).textWrap, "balanced text").toMatch(/balance/);
       expect(rectOf(text).left, "text gutter").toBeGreaterThanOrEqual(16);
       expect(width - rectOf(text).right, "text gutter").toBeGreaterThanOrEqual(16);
     }
-    const back = screen.getByRole("link", { name: "Back to threads" }).element();
-    expectTapHeight(back, "Back to threads");
-    expectPhoneLayout(`missing grid at ${width}px`);
+    const close = screen.getByRole("button", { name: "Close tab" }).element();
+    expectTapHeight(close, "Close tab");
+    expectPhoneLayout(`missing thread at ${width}px`);
     await screen.unmount();
   }
+});
+
+it("returns to the home from a missing thread's Close tab", async () => {
+  using _environment = installMissingThreadEnvironment();
+  const { screen, router } = await mountApp("/environment-render/missing-thread", 390, 844);
+  await using _screen = screen;
+  await waitForSelector("[data-layout-missing-thread]");
+
+  await userEvent.click(screen.getByRole("button", { name: "Close tab" }));
+  await vi.waitFor(() => expect(router.state.location.pathname).toBe("/"), { timeout: 5_000 });
+  await waitForSelector("[data-phone-home]");
 });
 
 const SETTINGS_SECTIONS = [
@@ -1118,7 +1142,7 @@ it("keeps the desktop layout at 1024px", async () => {
     await using _screen = screen;
     await waitForText("Project grouping");
     const nav = document.querySelector<HTMLElement>('[aria-label="Settings sections"]');
-    expect(nav?.closest("nav")?.getBoundingClientRect().width).toBe(264);
+    expect(nav?.closest("nav")?.getBoundingClientRect().width).toBe(240);
     expect(page.getByRole("button", { name: "Back to settings sections" }).elements()).toHaveLength(
       0,
     );

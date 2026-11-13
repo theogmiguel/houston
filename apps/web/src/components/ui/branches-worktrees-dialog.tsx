@@ -381,7 +381,7 @@ export function BranchesWorktreesDialog(props: {
             </div>
           </section>
         </DialogPanel>
-        <DialogFooter variant="bare">
+        <DialogFooter>
           <Button
             type="button"
             variant="outline"

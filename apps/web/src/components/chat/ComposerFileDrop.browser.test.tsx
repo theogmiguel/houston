@@ -18,6 +18,7 @@ import {
   installFakeEnvironment,
   type FakeDriver,
 } from "../../../test/fakeEnvironment";
+import { loadEmptyLayout } from "../../../test/loadedLayout";
 import { render } from "../../../test/render";
 
 // The socket is the only fake layer; see test/appScenarios.renders.tsx.
@@ -54,6 +55,7 @@ async function bootDraftComposer() {
     ...DEFAULT_CLIENT_SETTINGS,
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
   });
+  loadEmptyLayout();
   const draftId = DraftId.make(`draft-file-drop-${++bootCount}`);
   useComposerDraftStore
     .getState()

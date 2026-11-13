@@ -1,21 +1,17 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { userEvent } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import { Swap } from "../ui/swap";
 import { render } from "../../../test/render";
 import { SettingsBreadcrumb } from "./SettingsBreadcrumb";
-import {
-  SettingsPageActionsProvider,
-  SettingsPageContainer,
-  SettingsRow,
-  SettingsSection,
-} from "./settingsLayout";
+import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { SETTINGS_SECTION_DESCRIPTIONS, SETTINGS_SECTION_LABELS } from "./settingsSearch";
 
 describe("SettingsPageContainer heading", () => {
-  it("opens every settings page with its title and one muted line", async () => {
+  it("opens every settings page with one muted line and no visible repeat of the breadcrumb title", async () => {
+    await page.viewport(1280, 800);
     await using screen = await render(
       <SettingsPageContainer>
         <p>content</p>
@@ -24,14 +20,29 @@ describe("SettingsPageContainer heading", () => {
     );
 
     const title = screen.getByRole("heading", { level: 1, name: "Appearance" }).element();
-    const style = getComputedStyle(title);
-    expect(style.fontSize).toBe("20px");
-    expect(style.fontWeight).toBe("600");
+    const titleBox = title.getBoundingClientRect();
+    // The title stays for assistive tech and takes no room on the page.
+    expect(titleBox.width).toBeLessThanOrEqual(1);
+    expect(titleBox.height).toBeLessThanOrEqual(1);
     const description = screen.getByText(SETTINGS_SECTION_DESCRIPTIONS["/settings/appearance"]);
     await expect.element(description).toBeVisible();
     expect(title.compareDocumentPosition(description.element())).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
+  });
+
+  it("keeps the title visible on a phone", async () => {
+    await page.viewport(390, 800);
+    await using screen = await render(
+      <SettingsPageContainer>
+        <p>content</p>
+      </SettingsPageContainer>,
+      { router: "/settings/appearance" },
+    );
+
+    const title = screen.getByRole("heading", { level: 1, name: "Appearance" }).element();
+    await expect.element(title).toBeVisible();
+    expect(title.getBoundingClientRect().height).toBeGreaterThan(10);
   });
 
   it("titles the open source licenses detail page", async () => {
@@ -42,28 +53,12 @@ describe("SettingsPageContainer heading", () => {
       { router: "/settings/open-source-licenses" },
     );
 
-    await expect
-      .element(screen.getByRole("heading", { level: 1, name: "Open source licenses" }))
-      .toBeVisible();
-  });
-
-  it("puts the page actions in the title row, to the right of the title", async () => {
-    await using screen = await render(
-      <SettingsPageActionsProvider actions={<button type="button">Restore defaults</button>}>
-        <SettingsPageContainer>
-          <p>content</p>
-        </SettingsPageContainer>
-      </SettingsPageActionsProvider>,
-      { router: "/settings/appearance" },
-    );
-
-    const title = screen.getByRole("heading", { level: 1, name: "Appearance" }).element();
-    const action = screen.getByRole("button", { name: "Restore defaults" }).element();
-    expect(action.getBoundingClientRect().left).toBeGreaterThan(title.getBoundingClientRect().left);
-    // The action shares the title's row instead of floating in the window header.
     expect(
-      Math.abs(action.getBoundingClientRect().top - title.getBoundingClientRect().top),
-    ).toBeLessThan(12);
+      screen.getByRole("heading", { level: 1, name: "Open source licenses" }).elements(),
+    ).toHaveLength(1);
+    await expect
+      .element(screen.getByText("The third-party software this app includes."))
+      .toBeVisible();
   });
 
   it("centres the content column in the canvas", async () => {

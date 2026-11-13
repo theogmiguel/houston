@@ -45,7 +45,10 @@ import {
 import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
 import { Button, InlineButton } from "~/components/ui/button";
 import { PanelTabCloseButton } from "~/components/ui/panel-tab-close-button";
-import { terminalDrawerFrameClassName } from "~/components/ui/terminal-drawer-placeholder";
+import {
+  TerminalFloatingToolbar,
+  terminalDrawerFrameClassName,
+} from "~/components/ui/terminal-drawer-placeholder";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { readTextFromClipboard, writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { cn } from "~/lib/utils";
@@ -198,24 +201,29 @@ function hexToGhosttyColor(hex: string): GhosttyColor {
   return { r: (value >> 16) & 255, g: (value >> 8) & 255, b: value & 255 };
 }
 
-const TERMINAL_PALETTES = {
+/**
+ * The light palette keeps every ANSI colour at 4.5:1 or better on the white terminal (WCAG AA for
+ * normal text), including the bright variants prompts use; the usual editor values for yellow,
+ * cyan and the bright colours fall between 2:1 and 3.4:1 there.
+ */
+export const TERMINAL_PALETTES = {
   light: [
     "#000000",
-    "#cd3131",
+    "#c92a2a",
     "#107c10",
-    "#949800",
+    "#7a5f00",
     "#0451a5",
-    "#bc05bc",
-    "#0598bc",
+    "#a8039f",
+    "#0a6c88",
     "#555555",
     "#666666",
-    "#cd3131",
-    "#14ce14",
-    "#b5ba00",
-    "#0451a5",
-    "#bc05bc",
-    "#0598bc",
-    "#a5a5a5",
+    "#c92a2a",
+    "#11801a",
+    "#856500",
+    "#0a5bc4",
+    "#a8039f",
+    "#0a6c88",
+    "#6b6b6b",
   ].map(hexToGhosttyColor),
   dark: [
     "#000000",
@@ -1793,7 +1801,7 @@ export default function ThreadTerminalDrawer({
       ) : null}
 
       {!hasTerminalSidebar && (
-        <div className="pointer-events-none absolute right-2 top-2 z-20">
+        <TerminalFloatingToolbar>
           <div className="pointer-events-auto inline-flex items-center overflow-hidden rounded-md border border-border/80 bg-background shadow-xs">
             <TerminalActionButton
               disabled={!canOperateTerminal}
@@ -1839,7 +1847,7 @@ export default function ThreadTerminalDrawer({
               <Trash2 className="size-3.25" />
             </TerminalActionButton>
           </div>
-        </div>
+        </TerminalFloatingToolbar>
       )}
 
       <div className="min-h-0 w-full flex-1">

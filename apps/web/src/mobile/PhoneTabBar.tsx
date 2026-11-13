@@ -47,7 +47,7 @@ export function usePhoneTab(): PhoneTab | null {
 
 /**
  * The phone's bottom navigation: one tab per top-level page, the current one in brand ink. A page
- * outside the four destinations (a missing grid) names the tab it belongs to with `active`.
+ * outside the four destinations (a missing workspace) names the tab it belongs to with `active`.
  */
 export function PhoneTabBar({ active }: { active?: PhoneTab }) {
   const navigate = useNavigate();

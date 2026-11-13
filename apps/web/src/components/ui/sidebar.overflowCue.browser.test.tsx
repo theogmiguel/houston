@@ -15,7 +15,7 @@ function bottomFadePx(viewport: HTMLElement): number {
 }
 
 describe("SidebarContent overflow cue", () => {
-  it("fades the bottom 24px while rows continue below it, with no chevron, and not at the end", async () => {
+  it("fades the bottom 24px with an overlay while rows continue below it, with no chevron", async () => {
     await using screen = await render(
       <div style={{ height: 200 }} className="flex flex-col">
         <SidebarContent>
@@ -25,10 +25,11 @@ describe("SidebarContent overflow cue", () => {
     );
     const viewport = viewportOf(screen.container);
     expect(getComputedStyle(viewport.parentElement!, "::after").content).toBe("none");
-    expect(Number.parseFloat(getComputedStyle(viewport).getPropertyValue("--fade-size"))).toBe(1.5);
-    expect(getComputedStyle(viewport).getPropertyValue("--fade-size").trim()).toBe("1.5rem");
+    const fade = screen.container.querySelector<HTMLElement>("[data-slot=sidebar-content-fade]")!;
+    expect(fade.getBoundingClientRect().height).toBe(24);
+    expect(getComputedStyle(fade).backgroundImage).toContain("linear-gradient");
     await expect.poll(() => bottomFadePx(viewport)).toBeGreaterThan(0);
-    expect(getComputedStyle(viewport).maskImage).not.toBe("none");
+    expect(getComputedStyle(viewport).maskImage).toBe("none");
 
     viewport.scrollTop = viewport.scrollHeight;
     await expect.poll(() => bottomFadePx(viewport)).toBe(0);

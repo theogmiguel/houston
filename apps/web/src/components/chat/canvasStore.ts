@@ -97,7 +97,7 @@ export function resolveChatCanvasModel({
   threadRef: ScopedThreadRef | null;
   preview: ChatCanvasPreview | null;
   detailsCardInlineOpen: boolean;
-  /** A comfortable grid pane keeps the card inline inside the cell when no room is beside it. */
+  /** A comfortable layout pane keeps the card inline inside the cell when no room is beside it. */
   detailsCardAllowOverlap?: boolean;
 }) {
   const container = { width: measurements.width, height: measurements.height };
@@ -112,8 +112,8 @@ export function resolveChatCanvasModel({
     frame: null,
     topInset: detailsCardTopInset,
   });
-  // A grid pane keeps the card inline over the chat when it cannot sit beside it, so
-  // the card never falls back to a popover anchored to the grid's top bar button.
+  // A layout pane keeps the card inline over the chat when it cannot sit beside it, so
+  // the card never falls back to a popover anchored to the pane's top bar button.
   const overlaysChat = besideChat === null && detailsCardAllowOverlap;
   const preferredDetailsCard =
     besideChat ??

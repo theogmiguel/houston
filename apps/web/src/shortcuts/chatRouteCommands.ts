@@ -1,5 +1,4 @@
-import { AuthPreviewOperateScope, type EnvironmentId, type ThreadId } from "@houston-app/contracts";
-import { scopeThreadRef } from "@houston-app/client-runtime/environment";
+import { AuthPreviewOperateScope, type EnvironmentId } from "@houston-app/contracts";
 import type { AnyRouter } from "@tanstack/react-router";
 
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
@@ -25,14 +24,8 @@ import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../termina
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { resolveThreadRouteTarget } from "../threadRoutes";
 import { useUiStateStore } from "../uiStateStore";
-import {
-  gridById,
-  gridContainingDraft,
-  gridContainingThread,
-  useGridStore,
-} from "../grid/gridStore";
-import { openGridDraft } from "../grid/newThreadDraft";
 import { type CommandHandler, registerCommands } from "./dispatcher";
+import { buildLayoutCommandHandlers } from "./layoutCommandHandlers";
 
 const CHAT_ROUTE_ID = "/_chat";
 
@@ -56,13 +49,7 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
   const readRouteTarget = () => resolveThreadRouteTarget(router.state.matches.at(-1)?.params ?? {});
   const readRouteThreadRef = () => {
     const target = readRouteTarget();
-    if (target?.kind === "server") return target.threadRef;
-    // A grid route has no thread params; its focused cell is the active thread,
-    // so preview shortcuts act on the pane the user is looking at.
-    const grid = readRouteGrid();
-    return grid === null || grid.focusedThreadId === null
-      ? null
-      : scopeThreadRef(grid.environmentId as EnvironmentId, grid.focusedThreadId as ThreadId);
+    return target?.kind === "server" ? target.threadRef : null;
   };
   const readPreviewOpen = () => {
     const threadRef = readRouteThreadRef();
@@ -108,35 +95,8 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
     event.stopPropagation();
   };
 
-  const readRouteGrid = () => {
-    const grids = useGridStore.getState().grids;
-    const params = (router.state.matches.at(-1)?.params ?? {}) as Record<
-      string,
-      string | undefined
-    >;
-    if (typeof params.gridId === "string") {
-      return gridById(grids, params.gridId);
-    }
-    const target = readRouteTarget();
-    if (target?.kind === "server") {
-      return gridContainingThread(grids, target.threadRef.environmentId, target.threadRef.threadId);
-    }
-    return target?.kind === "draft" ? gridContainingDraft(grids, target.draftId) : null;
-  };
-
   const startNewLocal: CommandHandler = (event) => {
     claim(event);
-    const grid = readRouteGrid();
-    if (grid !== null) {
-      void openGridDraft(
-        { gridId: grid.id, focusedThreadId: grid.focusedThreadId },
-        handleNewThread,
-      ).then((opened) => {
-        if (opened === null) return;
-        void router.navigate({ to: "/grid/$gridId", params: { gridId: opened.gridId } });
-      });
-      return;
-    }
     // With no current or open project, such as when every project is archived, pick one.
     void startNewThreadFromContext(readThreadContext()).then((started) => {
       if (!started) openCommandPalette({ open: "new-thread-in" });
@@ -153,6 +113,7 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
 
   return registerCommands(
     {
+      ...buildLayoutCommandHandlers(),
       "chat.newLocal": startNewLocal,
       "chat.newWithoutProject": (event) => {
         const { activeThread, activeDraftThread } = readThreadContext();
@@ -164,7 +125,8 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
         void scratch.startScratchThread(environmentId);
       },
       "chat.new": (event) => {
-        if (readRouteGrid() !== null) {
+        // A thread on screen supplies the project, so the picker is not needed.
+        if (readRouteTarget() !== null) {
           startNewLocal(event);
           return;
         }

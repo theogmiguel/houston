@@ -69,6 +69,7 @@ import {
   useState,
   cloneElement,
   type ReactElement,
+  type ReactNode,
 } from "react";
 import { flushSync } from "react-dom";
 import {
@@ -274,7 +275,7 @@ import { hasProviderSetup } from "./ProviderStatusBanner";
 import { type AppModelOption, getAppModelOptionsForInstance } from "../../modelSelection";
 import type { UnifiedSettings } from "@houston-app/contracts/settings";
 import { isVideoAttachment, type SessionPhase, type Thread, type ThreadShell } from "../../types";
-import type { PaneDensity } from "../../grid/density";
+import type { PaneDensity } from "../../threads/density";
 import { type ComposerPromptHistoryPosition } from "./composerPromptHistory";
 import type { PendingUserInputDraftAnswer } from "@houston-app/client-runtime/state/pending-user-input";
 import type { ThreadStatusPill } from "../Sidebar.logic";
@@ -314,11 +315,7 @@ import {
 } from "./preparingComposerImages";
 import { ComposerControlsBar } from "./ComposerControlsBar";
 import { useCompactChipTier } from "./useCompactChipTier";
-import {
-  CONTEXT_TRAY_CLS,
-  CONTEXT_TRAY_CONTEXT_CLS,
-  CONTEXT_TRAY_ROW_CLS,
-} from "../ui/composer-anatomy-recipes";
+import { CHANGED_FILES_TRAY_CLS, CHANGED_FILES_TRAY_ROW_CLS } from "../ui/composer-anatomy-recipes";
 import { ChangedFilesBar, ChangedFilesList, type ChangedFilesBarProps } from "./ChangedFilesBar";
 import { composerCommandKeyHandler } from "./composerCommandKey";
 import { usePromptSuggestion } from "./usePromptSuggestion";
@@ -399,7 +396,7 @@ export interface ChatComposerHandle {
 
 export interface ChatComposerProps {
   composerDraftTarget: ScopedThreadRef | DraftId;
-  /** True for the focused grid pane or a standalone view: window-level dictation lands here. */
+  /** True for the focused layout pane or a standalone view: window-level dictation lands here. */
   ownsWindowShortcuts?: boolean;
   environmentId: EnvironmentId;
   canOperateThread: boolean;
@@ -423,7 +420,7 @@ export interface ChatComposerProps {
   threadStatusPill?: ThreadStatusPill | null;
   promptHistoryEntries: ReadonlyArray<TimelineEntry>;
   forceExpandedOnMobile: boolean;
-  /** A grid pane's density; glance keeps the composer on one line until focused. */
+  /** A layout pane's density; glance keeps the composer on one line until focused. */
   paneDensity?: PaneDensity | undefined;
   /**
    * The workspace, branch and access chips, rendered in the composer toolbar. The composer
@@ -434,6 +431,8 @@ export interface ChatComposerProps {
     ChangedFilesBarProps,
     "summary" | "onReview" | "onUndo" | "onKeep" | "disabled"
   > | null;
+  /** The queued messages, joined to the top of the card. */
+  queueTray?: ReactNode;
   contextControls?:
     | ReactElement<{
         forceNarrow?: boolean;
@@ -614,6 +613,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     forceExpandedOnMobile,
     paneDensity,
     contextControls,
+    queueTray = null,
     changedFiles = null,
     activeTurnStartedAt,
     projectSelectionRequired,
@@ -3753,28 +3753,22 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       {...threadContextDropTargetProps()}
     >
       <div className="relative">
-        {(contextControls && !composerNarrow) || showChangedFilesTray ? (
-          <div data-composer-context-tray="true" className={CONTEXT_TRAY_CLS}>
-            {showChangedFilesTray && changedFiles !== null && changesExpanded ? (
+        {showChangedFilesTray && changedFiles !== null ? (
+          <div data-composer-changes-tray="true" className={CHANGED_FILES_TRAY_CLS}>
+            {changesExpanded ? (
               <ChangedFilesList summary={changedFiles.summary} onReview={changedFiles.onReview} />
             ) : null}
-            <div className={CONTEXT_TRAY_ROW_CLS}>
-              {contextControls && !composerNarrow ? (
-                <div className={CONTEXT_TRAY_CONTEXT_CLS}>
-                  {cloneElement(contextControls, { forceNarrow: false, variant: "tray" })}
-                </div>
-              ) : null}
-              {!showChangedFilesTray || changedFiles === null ? null : (
-                <ChangedFilesBar
-                  {...changedFiles}
-                  compact={composerNarrow}
-                  expanded={changesExpanded}
-                  onExpandedChange={setChangesExpanded}
-                />
-              )}
+            <div className={CHANGED_FILES_TRAY_ROW_CLS}>
+              <ChangedFilesBar
+                {...changedFiles}
+                compact={composerNarrow}
+                expanded={changesExpanded}
+                onExpandedChange={setChangesExpanded}
+              />
             </div>
           </div>
         ) : null}
+        {queueTray}
         <ComposerSurface.Main
           ref={composerMainSurfaceRef}
           data-inline-resting-controls="true"
@@ -4134,30 +4128,31 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     isPhone && "gap-2",
                   )}
                 >
-                  <div
-                    ref={attachExpandedControls}
-                    data-chat-composer-controls="footer"
-                    data-chat-composer-footer-controls="true"
-                    className={cn(
-                      "relative flex min-w-0 flex-1 items-center gap-0.5",
-                      isPhone && "gap-2",
-                    )}
-                  >
-                    {composerControls}
-                    {contextControls && composerNarrow
-                      ? cloneElement(contextControls, {
-                          forceNarrow: true,
-                          workspaceIconOnly: compactChipTier >= 2,
-                          prIconOnly: compactChipTier >= 1,
-                        })
-                      : null}
-                    <ComposerStashBadge
-                      count={stashQueue.length}
-                      menuOpen={isStashMenuOpen}
-                      pulseKey={stashPulseKey}
-                      onToggleMenu={toggleStashMenuStable}
-                    />
-                  </div>
+                  {isPhone ? (
+                    <div
+                      ref={attachExpandedControls}
+                      data-chat-composer-controls="footer"
+                      data-chat-composer-footer-controls="true"
+                      className="relative flex min-w-0 flex-1 items-center gap-2"
+                    >
+                      {composerControls}
+                      {contextControls && composerNarrow
+                        ? cloneElement(contextControls, {
+                            forceNarrow: true,
+                            workspaceIconOnly: compactChipTier >= 2,
+                            prIconOnly: compactChipTier >= 1,
+                          })
+                        : null}
+                      <ComposerStashBadge
+                        count={stashQueue.length}
+                        menuOpen={isStashMenuOpen}
+                        pulseKey={stashPulseKey}
+                        onToggleMenu={toggleStashMenuStable}
+                      />
+                    </div>
+                  ) : (
+                    <div className="min-w-0 flex-1" aria-hidden="true" />
+                  )}
                   {speechMicAction ? (
                     <div className="me-0.5 flex shrink-0 items-center">{speechMicAction}</div>
                   ) : null}
@@ -4248,6 +4243,42 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             ) : null}
           </div>
         </ComposerSurface.Main>
+        {isPhone ? null : (
+          <ComposerSurface.ContextStrip data-composer-context-tray="true" className="mt-1.5 gap-1">
+            {contextControls && !composerNarrow ? (
+              <div className="flex min-w-0 shrink items-center">
+                {cloneElement(contextControls, { forceNarrow: false, variant: "tray" })}
+              </div>
+            ) : null}
+            {showInlineRestingControls ? null : (
+              <div
+                ref={attachExpandedControls}
+                data-chat-composer-controls="footer"
+                data-chat-composer-footer-controls="true"
+                className="relative flex min-w-0 flex-1 items-center gap-0.5"
+              >
+                {contextControls && composerNarrow ? (
+                  <div className="flex min-w-0 shrink-0 items-center">
+                    {cloneElement(contextControls, {
+                      forceNarrow: true,
+                      workspaceIconOnly: compactChipTier >= 2,
+                      prIconOnly: compactChipTier >= 1,
+                    })}
+                  </div>
+                ) : null}
+                {/* Pushes the pickers to the right; unlike justify-end, an overflow runs off the end where the chip tiers can measure it. */}
+                <div className="min-w-0 flex-1" aria-hidden="true" />
+                {composerControls}
+                <ComposerStashBadge
+                  count={stashQueue.length}
+                  menuOpen={isStashMenuOpen}
+                  pulseKey={stashPulseKey}
+                  onToggleMenu={toggleStashMenuStable}
+                />
+              </div>
+            )}
+          </ComposerSurface.ContextStrip>
+        )}
       </div>
     </form>
   );

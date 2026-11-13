@@ -4,9 +4,9 @@ import type { SnoozePreset } from "@houston-app/client-runtime/state/thread-sett
 export type ThreadActionMenuId =
   | "find"
   | "new-thread-on-branch"
-  | "open-in-grid"
-  | "move-to-grid"
-  | `move-to-grid:${string}`
+  | "move-to-workspace"
+  | `move-to-workspace:${string}`
+  | "move-to-new-workspace"
   | "settle"
   | "unsettle"
   | "auto-settle"
@@ -31,11 +31,6 @@ export type ThreadActionMenuId =
   | "project-settings"
   | "archive"
   | "delete"
-  | "split-right"
-  | "split-down"
-  | `split:${string}`
-  | "swap"
-  | `swap:${string}`
   | "more"
   | `section:${string}`;
 
@@ -77,28 +72,9 @@ export function buildDraftActionMenuItems(options: {
   ];
 }
 
-export interface ThreadActionMenuTarget {
-  readonly gridId: string;
-  readonly name: string;
-}
-
-export interface ThreadActionMenuSplitChoices {
-  readonly availableThreads: ReadonlyArray<{ readonly threadId: string; readonly title: string }>;
-  readonly atCap: boolean;
-  readonly canCreateThread: boolean;
-}
-
-/** The grid surface a menu acts on; absent when the surface has no grid (the route header). */
-export interface ThreadActionMenuGridState {
-  readonly canOpenInGrid: boolean;
-  readonly canMoveToGrid: boolean;
-  readonly moveTargets: ReadonlyArray<ThreadActionMenuTarget>;
-}
-
-/** The layout actions only a grid cell offers. */
-export interface ThreadActionMenuCellState {
-  readonly split: ThreadActionMenuSplitChoices | null;
-  readonly swapTargets: ReadonlyArray<{ readonly threadId: string; readonly title: string }>;
+/** The workspaces a thread can move to; absent when it cannot move (a child follows its parent). */
+export interface ThreadActionMenuWorkspaceState {
+  readonly targets: ReadonlyArray<{ readonly workspaceId: string; readonly name: string }>;
 }
 
 export interface ThreadActionMenuState {
@@ -106,7 +82,7 @@ export interface ThreadActionMenuState {
   readonly canFind?: boolean;
   /** The surface owns thread creation, so it can start one on the thread's branch. */
   readonly canStartBranchThread?: boolean;
-  /** No thread is behind the cell yet (a draft pane), so only layout actions apply. */
+  /** False when no thread is behind the surface yet (a draft), so thread actions are left out. */
   readonly hasThread?: boolean;
   readonly branch: string | null;
   readonly projectFilter: {
@@ -132,66 +108,27 @@ export interface ThreadActionMenuState {
   readonly snoozePresets: ReadonlyArray<SnoozePreset>;
   /** A No project thread with its own folder, on a server that can promote it. */
   readonly canTurnIntoProject?: boolean;
-  readonly grid?: ThreadActionMenuGridState | undefined;
-  readonly cell?: ThreadActionMenuCellState | undefined;
+  readonly workspace?: ThreadActionMenuWorkspaceState | undefined;
 }
 
-/** Local navigation, read markers, copying and grid layout remain available to read-only clients. */
+/** Local navigation, read markers, copying and workspace moves remain available to read-only clients. */
 export function threadActionRequiresOperate(action: ThreadActionMenuId): boolean {
   if (
     action === "find" ||
     action === "new-thread-on-branch" ||
-    action === "open-in-grid" ||
-    action === "move-to-grid" ||
-    action.startsWith("move-to-grid:") ||
+    action === "move-to-workspace" ||
+    action.startsWith("move-to-workspace:") ||
+    action === "move-to-new-workspace" ||
     action === "project-settings" ||
     action === "mark-unread" ||
     action === "copy" ||
     action.startsWith("copy-") ||
-    action === "swap" ||
     action === "more" ||
-    action.startsWith("section:") ||
-    action.startsWith("swap:") ||
-    action === "split-right" ||
-    action === "split-down" ||
-    action.startsWith("split:")
+    action.startsWith("section:")
   ) {
     return false;
   }
   return true;
-}
-
-const SPLIT_SIDES = [
-  { id: "split-right", side: "right", label: "Split right" },
-  { id: "split-down", side: "bottom", label: "Split down" },
-] as const;
-
-function splitTargets(
-  side: "right" | "bottom",
-  split: ThreadActionMenuSplitChoices,
-): ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> {
-  const prefix = side === "right" ? "split:right" : "split:bottom";
-  const targets: ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> =
-    split.availableThreads.length > 0
-      ? split.availableThreads.map((thread) => ({
-          id: `${prefix}:${thread.threadId}` as const,
-          label: thread.title,
-        }))
-      : [
-          {
-            id: `${prefix}:none` as const,
-            label: split.atCap
-              ? "This grid holds six threads"
-              : "No other thread in this workspace",
-            disabled: true,
-          },
-        ];
-  return [
-    ...targets,
-    ...(split.canCreateThread
-      ? [{ id: `${prefix}:new` as const, label: "New thread…", separatorBefore: true }]
-      : []),
-  ];
 }
 
 type ThreadActionMenuItem = ContextMenuItem<ThreadActionMenuId>;
@@ -223,28 +160,6 @@ export function buildThreadActionMenuItems(
   state: ThreadActionMenuState,
 ): ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> {
   const hasThread = state.hasThread !== false;
-  const cell = state.cell;
-  const layout = menuSection("layout", "Layout", [
-    ...(cell !== undefined && cell.split !== null
-      ? SPLIT_SIDES.map(({ id, side, label }) => ({
-          id,
-          label,
-          children: splitTargets(side, cell.split!),
-        }))
-      : []),
-    ...(cell !== undefined && cell.swapTargets.length > 0
-      ? [
-          {
-            id: "swap" as const,
-            label: "Move to…",
-            children: cell.swapTargets.map((thread) => ({
-              id: `swap:${thread.threadId}` as const,
-              label: `Swap with ${thread.title}`,
-            })),
-          },
-        ]
-      : []),
-  ]);
   const thread = hasThread
     ? menuSection("thread", "Thread", [
         { id: "rename", label: "Rename thread", icon: "pencil" },
@@ -297,23 +212,20 @@ export function buildThreadActionMenuItems(
     : [];
   const organise = hasThread
     ? menuSection("organise", "Organise", [
-        state.grid?.canOpenInGrid
-          ? { id: "open-in-grid", label: "Open in grid", icon: "layout-grid" }
-          : null,
-        state.grid?.canMoveToGrid
+        state.workspace !== undefined
           ? {
-              id: "move-to-grid",
-              label: "Move to grid",
+              id: "move-to-workspace",
+              label: "Move to workspace",
               icon: "layout-grid",
               children: [
-                ...state.grid.moveTargets.map((target) => ({
-                  id: `move-to-grid:${target.gridId}` as const,
+                ...state.workspace.targets.map((target) => ({
+                  id: `move-to-workspace:${target.workspaceId}` as const,
                   label: target.name,
                 })),
                 {
-                  id: "move-to-grid:new" as const,
-                  label: "New grid",
-                  separatorBefore: state.grid.moveTargets.length > 0,
+                  id: "move-to-new-workspace" as const,
+                  label: "New workspace",
+                  separatorBefore: state.workspace.targets.length > 0,
                 },
               ],
             }
@@ -419,7 +331,6 @@ export function buildThreadActionMenuItems(
       ]
     : [];
   const items: ReadonlyArray<ThreadActionMenuItem> = [
-    ...layout,
     ...thread,
     ...status,
     ...organise,

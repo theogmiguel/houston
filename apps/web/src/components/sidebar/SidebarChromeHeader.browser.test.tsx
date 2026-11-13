@@ -2,21 +2,23 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 import "~/index.css";
 import { render } from "../../../test/render";
+import { primaryServerKeybindingsAtom } from "../../state/server";
 import { SidebarProvider } from "../ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./SidebarChrome";
 
 vi.mock(import("@effect/atom-react"), async (original) => ({
   ...(await original()),
-  useAtomValue: (() => null) as never,
+  useAtomValue: ((atom: unknown) => (atom === primaryServerKeybindingsAtom ? [] : null)) as never,
 }));
 
-// The footer's update pills and undo notice read live atoms; the border is the footer's own.
-vi.mock(import("./SidebarUpdatePill"), () => ({
-  SidebarUpdatePill: () => <></>,
+// The footer's update button and undo notice read live atoms; the border is the footer's own.
+vi.mock(import("./SidebarUpdatePill"), async (original) => ({
+  ...(await original()),
   SidebarUpdateArchitectureWarning: () => <></>,
 }));
-vi.mock(import("./SidebarProviderUpdatePill"), () => ({
-  SidebarProviderUpdatePill: () => <></>,
+vi.mock(import("./SidebarUpdatesButton"), async (original) => ({
+  ...(await original()),
+  SidebarUpdatesButton: (() => null) as never,
 }));
 vi.mock(import("./SidebarThreadUndoNotice"), () => ({ SidebarThreadUndoNotice: () => <></> }));
 
@@ -61,7 +63,7 @@ describe("SidebarChromeHeader", () => {
 });
 
 describe("SidebarChromeFooter", () => {
-  it("is separated from the thread list by a 1px border", async () => {
+  it("draws no divider above its buttons", async () => {
     await using screen = await render(
       <SidebarProvider defaultOpen>
         <SidebarChromeFooter />
@@ -70,8 +72,6 @@ describe("SidebarChromeFooter", () => {
 
     const footer = screen.container.querySelector<HTMLElement>("[data-slot=sidebar-footer]")!;
     const style = getComputedStyle(footer);
-    expect(style.borderTopWidth).toBe("1px");
-    expect(style.borderTopStyle).toBe("solid");
-    expect(style.borderTopColor).not.toBe("rgba(0, 0, 0, 0)");
+    expect(style.borderTopWidth).toBe("0px");
   });
 });

@@ -24,7 +24,7 @@ import { useState, type ReactNode } from "react";
 
 import { RelativeTime } from "~/components/RelativeTime";
 import { requestConfirmDialog } from "~/confirmDialog";
-import { useOpenThreadInGrid } from "~/grid/openThreadInGrid";
+import { useOpenThread } from "~/threads/useOpenThread";
 import { useEnvironmentProviders } from "~/state/environments";
 import { refreshTaskDetail, useTaskDetail, useTaskSettings } from "~/state/tasks";
 import { Alert, AlertAction, AlertDescription } from "../ui/alert";
@@ -418,7 +418,7 @@ export function TaskDetailPanel({
   const result = useTaskDetail(environmentId, taskKey);
   const detail = result !== null && result._tag === "Success" ? result.value : null;
   const settings = useTaskSettings(environmentId, detail?.task.projectId ?? null);
-  const openThread = useOpenThreadInGrid();
+  const openThread = useOpenThread();
   const commands = useTaskCommands(environmentId);
   const [tab, setTab] = useState<DetailTab>("overview");
   const [comment, setComment] = useState("");

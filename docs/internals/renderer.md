@@ -22,10 +22,10 @@ equivalent of the installed app.
 
 ```
 apps/web/src/
-  AppRoot.tsx          the application root; routes own workspaces, grids and panes
+  AppRoot.tsx          the application root; routes own workspaces and panes
   routes/              TanStack Router route files
-  components/          the UI; grid/, chat/, sidebar/, settings/, files/, browser/
-  motion/              the motion probes and the pane/maximize springs
+  components/          the UI; chat/, sidebar/, settings/, files/, browser/
+  motion/              the motion roles and springs, the motion probe and the strip's gestures
   environments/        server discovery, auth and the per-environment HTTP/WS layers
   terminal/ghostty/    the terminal engine: vendored WASM → Canvas 2D
   lib/                 host bridge helpers, clipboard, file transfer and desktop window
@@ -220,52 +220,34 @@ throwing.
 
 ## Layout
 
-`layout/tree.ts` owns the split tree, and it is **entirely client-side** — no part of it
-exists in the protocol or the database.
+The main area is a **workspace**: a strip of columns, each a stack of panes, each pane a bar of
+tabs. `apps/web/src/layout/layoutModel.ts` holds the pure model: its functions return the same
+object when nothing changes, so a store update that does nothing renders nothing. `layoutStore.ts`
+holds the state for the device, across environments, and `LayoutHost` renders the focused
+workspace.
 
-Node union: `LeafNode { kind:'leaf', session, id }`, `BrowserNode`, `EditorNode`,
-`GitNode`, plus split and stack containers (`GridSlot = PaneNode | StackNode`).
+The server owns the durable copy (`houston_layout_workspaces`, one row per workspace; every
+mutation commits in one transaction and bumps the revision), so an agent's change through the
+`houston_workspace_*` tools reaches the open window. `layoutSync.ts` pushes a change after a
+settle delay and retries a lost revision race a bounded number of times before it shows the
+server's copy; both constants carry their rationale in the code. Layout is never held in the
+browser's storage.
 
-`LeafNode.id` is a **durable pane identity**, minted once and persisted with the layout,
-distinct from the session occupying it. Respawn mints a fresh session id, so a pane
-identified by its session would lose identity every time it came back. The roster's explicit
-collapsed or expanded choice uses this same pane identity, so remounting or
-continuing a session does not reset it to the responsive default.
+A tab's content is a thread's chat, a surface, a launcher or a page. A content has one tab across
+all workspaces, so opening an open thread focuses its tab. Surface state stays in the surface
+stores (`rightPanelStore`, `terminalUiStateStore`); `surfaceSync.ts` keeps their tabs in step with
+the layout when the two have loaded. A thread whose chat is on no tab is listed under the first
+workspace and gains a tab when opened.
 
-Grid metadata is `GridMeta { id, name, named? }`; the tree is stored separately. `named`
-records that a grid was auto-named from its first session or renamed by the user;
-`isAutoNameable` treats a record predating the field as unnamed only when its persisted
-name still matches `/^Grid \d+$/`.
+Columns carry a width as a fraction of the strip. By default a column stays at least
+`LAYOUT_READABLE_COLUMN_PX` (420) wide and the strip scrolls when the columns no longer fit; the
+workspace records the strip width it was arranged at (`cameraWidth`) so a long strip does not
+reflow when the window resizes. The user can choose to always shrink or always scroll instead.
+Panes are positioned from the model's geometry (`paneGeometry.ts`).
 
-| `localStorage` key                    | Holds                                    |
-| ------------------------------------- | ---------------------------------------- |
-| `tr-grids:<workspacePath>`            | that workspace's `GridMeta[]`            |
-| `tr-layout:<workspacePath>::<gridId>` | that grid's `LayoutState { tree, cols }` |
-| `tr-theme`, `tr-chrome-theme`         | terminal palette and chrome theme        |
-
-`DEFAULT_GRID_ID` is the fixed string `g-default` and is never minted, so migration is
-deterministic — a second read or a second window cannot mint a different "default" and
-orphan the first one's layout. Migration moves a bare `tr-layout:<path>` value under
-`::g-default` and registers one grid; once `tr-grids:<path>` exists it never runs again.
-`loadLayout` clamps `cols` to 1..4 and returns `{ tree: null, cols: 2 }` on a corrupt
-entry rather than crashing the workspace. Removing a workspace cleans both keys.
-
-Layout is therefore per-browser-profile state: never synced and never in the DB. The one
-exception on the wire is a workspace transfer: export sends the workspace's grid entries as
-an opaque string (`layout/transferGrids.ts`) that the daemon stores in the file unread;
-import hands it back with the old-to-new session ids, and the renderer writes the remapped
-grids, with new grid and pane ids and without grid tags, beside the target's own.
-
-`components/LayoutView.tsx` renders it. Panes are absolutely positioned inside one
-container — a CSS-grid layout engine was tried and rejected: a React `insertBefore` on
-a grid's own reconciliation triggers layer churn far more often than absolute rects do. Geometry is computed as percentages, then converted to
-`calc(<pct>% + <gutter>px)` insets — `GUTTER_PX` 8 at a grid edge, 4 (half) on a shared
-interior seam. One function, `paneSlotGeometry`, produces those four declarations, because
-the splitter drag's DOM fast path writes them too: writing bare percentages there dropped
-the gutter for the length of the gesture and every pane jumped 8px on grab. The drag holds
-its state in a ref and writes the DOM directly rather than re-rendering per pointer move;
-the keyboard nudge is 4 % of the sibling pair's span. Expand-to-full hides siblings by
-`visibility` — it does not unmount them.
+Every bound (columns, panes per column, tabs per pane and per workspace, name and id length) is in
+`HOUSTON_LAYOUT_WORKSPACE_LIMITS`; a refusal names the limit, the actual value and the
+operation.
 
 ### Tab order
 
@@ -276,13 +258,12 @@ does is walk plain DOM order:
 1. `Sidebar` (rail), when expanded — workspace rows, then their nav-row buttons.
 2. The titlebar (`App.tsx`'s `<header>`) — rail toggle (only when the rail is
    collapsed), mode `Segmented`, Tidy, `WindowControls`.
-3. `<main>` — exactly one of the pane grid (`LayoutView`), Settings, a rail nav-row
+3. `<main>` — exactly one of the layout (`LayoutHost`), Settings, a rail nav-row
    surface, Agents chat, or the new-session composer. These are alternates in one
    ternary, never siblings, so nothing after this point is reachable in the same
    pass except whichever one is mounted.
-4. Inside the grid, panes and their resize splitters follow `layout/tree.ts`'s tree
-   order — not a guaranteed reading order (not necessarily top-left to
-   bottom-right).
+4. Inside the layout, panes and their column resize handles follow the strip's column order,
+   then each column's pane order.
 
 Two widgets implement real roving tabindex (`FilesPane` and `Segmented`) and are
 locally well-behaved, but participate in no larger scheme.

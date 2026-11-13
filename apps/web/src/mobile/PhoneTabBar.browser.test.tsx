@@ -10,6 +10,7 @@ import { AppRoot } from "~/AppRoot";
 import { __setClientSettingsForTests } from "~/hooks/useSettings";
 import { getRouter } from "~/router";
 import { installFakeEnvironment, threadWithHistory } from "../../test/fakeEnvironment";
+import { loadEmptyLayout } from "../../test/loadedLayout";
 import { render } from "../../test/render";
 
 // The socket is the only fake layer: the client runtime hands every connection the in-process session.
@@ -37,6 +38,7 @@ async function mountApp(width: number, height = 844) {
     ...DEFAULT_CLIENT_SETTINGS,
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
   });
+  loadEmptyLayout();
   await page.viewport(width, height);
   const router = getRouter(createMemoryHistory({ initialEntries: ["/"] }));
   await router.load();
@@ -75,7 +77,7 @@ it("shows the home's top bar and the four-tab bottom bar at 390px", async () => 
   await expect.element(screen.getByRole("button", { name: "Search" })).toBeVisible();
   await expect.element(screen.getByRole("button", { name: "New thread" })).toBeVisible();
   expect(home.querySelector("header")!.textContent).toContain("Houston");
-  expect(home.querySelector('input[aria-label="Search workspaces, grids and threads"]')).toBeNull();
+  expect(home.querySelector('input[aria-label="Search workspaces and threads"]')).toBeNull();
   expect(home.querySelector("[data-rail-shortcuts]")).toBeNull();
   expect(home.querySelector('[data-rail-shortcut="Pull requests"]')).toBeNull();
   expect(home.querySelector('[data-rail-shortcut="Usage"]')).toBeNull();
@@ -175,7 +177,7 @@ it("opens the existing search and new-thread flows from the top bar", async () =
   await userEvent.keyboard("{Escape}");
 
   await userEvent.click(screen.getByRole("button", { name: "New thread" }));
-  // "New thread in..." is the desktop's project picker for a thread without a grid.
+  // "New thread in..." is the desktop's project picker for a thread without a project.
   const projectSearch = page.getByPlaceholder("Search...");
   await expect.element(projectSearch).toBeVisible();
   await expect.element(projectSearch).toHaveFocus();
@@ -188,9 +190,12 @@ it("hides the tab bar on a thread page", async () => {
   await waitForHome();
 
   await userEvent.click(threadRow()!);
-  await vi.waitFor(() => expect(router.state.location.pathname).toMatch(/^\/grid\//), {
-    timeout: 5_000,
-  });
+  await vi.waitFor(
+    () => expect(router.state.location.pathname).toMatch(/^\/environment-render\//),
+    {
+      timeout: 5_000,
+    },
+  );
   await vi.waitFor(() => expect(document.querySelector("[data-phone-thread-bar]")).not.toBeNull(), {
     timeout: 5_000,
   });

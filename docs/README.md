@@ -10,8 +10,8 @@ For an installed build, use the documentation at its version tag from the
 
 - [Installing Houston](user/install.md) — requirements, the desktop app, providers and first
   run
-- [Threads and grids](user/threads-and-grids.md) — projects, threads, grids, the sidebar and
-  agent-to-agent work
+- [Threads and workspaces](user/threads-and-workspaces.md) — projects, threads, workspaces, the
+  sidebar and agent-to-agent work
 - [The right panel](user/right-panel.md) — Files, Diff, Browser, pull requests, side chat and
   the browser's consent model
 - [Agent status](user/agent-status.md) — how Houston reports agent state and provider

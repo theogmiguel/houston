@@ -1,3 +1,5 @@
+import { createPortal } from "react-dom";
+import { registerChatTabActions } from "../layout/chatTabActions";
 import { ChildThreadApprovals } from "./chat/ChildThreadApprovals";
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { sourceControlClients } from "@houston-app/client-runtime/source-control-clients";
@@ -24,7 +26,7 @@ import {
 } from "./chat/optimisticUserMessages";
 import { useTimelineRewind } from "./chat/useTimelineRewind";
 import { useThreadLifecycle } from "./chat/useThreadLifecycle";
-import { useThreadOpen } from "./grid/threadOpenContext";
+import { useThreadOpen } from "../threads/threadOpenContext";
 import { useRightPanelActions } from "./chat/useRightPanelActions";
 import { type TerminalLaunchContext, useChatTerminalActions } from "./chat/useChatTerminalActions";
 import { useComposerSend } from "./chat/useComposerSend";
@@ -42,7 +44,9 @@ import { recallCheckoutIsRepo, rememberCheckoutIsRepo } from "./ChatView.logic";
 import { useLogicalProjectEnvironments } from "../hooks/useLogicalProjectEnvironments";
 import { useStableCallback } from "../hooks/useStableCallback";
 import { useProjectScriptEditing } from "./chat/useProjectScriptEditing";
-import { RightPanelSurfaceContent } from "./chat/RightPanelSurfaceContent";
+import { ThreadSurfaceContent } from "./chat/ThreadSurfaceContent";
+import { selectPendingFileSurfaceIds, useFilePendingStore } from "./files/filePendingStore";
+import { publishThreadChatBridge } from "../layout/threadSurfaceBridge";
 import { usePendingThreadRequests } from "./chat/usePendingThreadRequests";
 import { isScratchProject } from "@houston-app/client-runtime/state/projects";
 import { visibleThreadPullRequests } from "@houston-app/shared/threadPullRequests";
@@ -120,7 +124,6 @@ import { resolveThreadReferenceCopyTarget } from "@houston-app/client-runtime/th
 import { resolveTerminalSessionLabel } from "@houston-app/shared/terminalLabels";
 import { useAtomValue } from "@effect/atom-react";
 import {
-  type ReactNode,
   type RefObject,
   type SetStateAction,
   use,
@@ -129,7 +132,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { createPortal } from "react-dom";
 import { BackgroundThreadContext } from "./chat/backgroundThread";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { assistantCitationFromLocation } from "../lib/assistantCitationNavigation";
@@ -182,7 +184,6 @@ import {
 } from "./preview/ThreadPreviewMiniPlayer";
 import { createChatCanvasStore, resolveChatCanvasModel } from "./chat/canvasStore";
 import { usePreviewSession } from "./preview/usePreviewSession";
-import { getConfiguredPreviewUrls } from "./preview/previewEmptyStateLogic";
 
 import {
   previewMiniPlayerSourceKey,
@@ -313,7 +314,7 @@ import {
   shouldShowComposerContextStrip,
   shouldShowEnvironmentIndicator,
 } from "./BranchToolbar.logic";
-import { resolveRowPullRequest } from "../grid/sidebar";
+import { resolveRowPullRequest } from "../threads/rowPullRequest";
 import {
   getProviderStatusBannerKey,
   shouldShowProviderStatusBanner,
@@ -378,17 +379,14 @@ import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { observeResize } from "~/lib/observeResize";
 import { ThreadVisitWatermark } from "./chat/ThreadVisitWatermark";
 import { ChatTerminalDrawers } from "./chat/ChatTerminalDrawers";
-import { GridLayoutMenu, GridLayoutMenuItems } from "./grid/GridLayoutMenu";
-import { toggleGridTerminal } from "../grid/gridTerminal";
-import { useGridStore } from "../grid/gridStore";
-import { preorderThreads } from "@houston-app/shared/grid/tree";
+import { toggleTerminal } from "./terminal/toggleTerminal";
 import { ChatRightPanel } from "./chat/ChatRightPanel";
 import { useDraftEnvironmentRouting } from "./chat/useDraftEnvironmentRouting";
 import { branchMismatchBannerItem, extensionStatusBannerItem } from "./chat/ThreadActivityBanners";
 import { ThreadNow } from "./chat/ThreadNow";
 import { ComposerApprovalCard } from "./chat/ComposerApprovalCard";
 import { checkpointFileTotals } from "@houston-app/client-runtime/state/thread-checkpoints";
-import type { PaneDensity } from "../grid/density";
+import type { PaneDensity } from "../threads/density";
 import type { ThreadStructure } from "@houston-app/client-runtime/state/shell";
 import { useDelayedStatus } from "../hooks/useDelayedStatus";
 import { useTimelineFollow } from "./chat/useTimelineFollow";
@@ -414,7 +412,6 @@ const EMPTY_FEEDBACK_SUBMISSIONS: ReadonlyArray<CodexFeedbackSubmission> = [];
 const EMPTY_PROVIDER_SKILLS: ServerProvider["skills"] = [];
 const EMPTY_TURN_ITEMS: ThreadStructure["turnItems"] = [];
 const EMPTY_AUTO_UPDATE_ENVIRONMENTS: ReadonlyArray<EnvironmentPresentation> = [];
-const EMPTY_PENDING_FILE_SURFACE_IDS: ReadonlySet<string> = new Set();
 
 type ChatViewProps =
   | {
@@ -423,28 +420,32 @@ type ChatViewProps =
       onDiffPanelOpen?: () => void;
       reserveTitleBarControlInset?: boolean;
       forceExpandedMobileComposer?: boolean;
-      /** A grid cell, or a side chat in its parent's right panel. */
+      /** A layout pane, or a side chat in its parent's right panel. */
       embedded?: boolean | SideChatParentPanel;
-      /** A focused grid cell runs the window thread shortcuts the standalone view has. */
+      /** A focused layout pane runs the window thread shortcuts the standalone view has. */
       shortcutsAtWindow?: boolean;
       /** Only a visible, focused cell may advance the thread's read watermark. */
       visitActive?: boolean;
-      /** The grid pane's density; omitted on the thread route. */
+      /** The pane's density; omitted on the thread route. */
       paneDensity?: PaneDensity;
-      /** An empty grid centres the draft composer without a pane head. */
+      /** An empty pane centres the draft composer without a pane head. */
       centerDraftComposer?: boolean;
       hideDraftHeroHeadline?: boolean;
-      /** A grid route renders the focused cell's panel beside the grid, not in the cell. */
-      rightPanelPortal?: RightPanelPortalTarget | null | undefined;
-      /** The grid top bar's details control, which anchors a cell's popover card. */
+      /** The control that anchors a pane's details popover card. */
       detailsCardAnchor?: RefObject<Element | null>;
-      /** The grid owns one details flag; the focused cell shows its card. */
+      /** The host owns one details flag; the focused pane shows its card. */
       detailsOpen?: boolean;
       onDetailsOpenChange?: (open: boolean) => void;
-      /** The grid's terminal dock takes this cell's terminal toggle and chords. */
-      gridTerminalRef?: ScopedThreadRef | null;
-      /** The phone thread page already reserves the bottom safe area around the cell. */
+      /** A host terminal dock takes this chat's terminal toggle and chords. */
+      hostTerminalRef?: ScopedThreadRef | null;
+      /** The phone thread page already reserves the bottom safe area around the chat. */
       phoneShell?: boolean;
+      /** A layout pane's chat: it draws no header row; its title is the pane's tab. */
+      paneHeader?: boolean;
+      /** The tab the chat shows in, whose context menu offers the chat's find and project settings. */
+      paneTabId?: string;
+      /** Where the chat portals its details toggle: the trailing end of the pane's tab bar. */
+      paneBarSlot?: HTMLElement | null;
       routeKind: "server";
       draftId?: never;
     }
@@ -454,41 +455,35 @@ type ChatViewProps =
       onDiffPanelOpen?: () => void;
       reserveTitleBarControlInset?: boolean;
       forceExpandedMobileComposer?: boolean;
-      /** A grid cell; a side chat never renders the draft route. */
+      /** A layout pane; a side chat never renders the draft route. */
       embedded?: boolean;
-      /** A focused grid cell runs the window thread shortcuts the standalone view has. */
+      /** A focused layout pane runs the window thread shortcuts the standalone view has. */
       shortcutsAtWindow?: boolean;
       /** Only a visible, focused cell may advance the thread's read watermark. */
       visitActive?: boolean;
-      /** The grid pane's density; omitted on the thread route. */
+      /** The pane's density; omitted on the thread route. */
       paneDensity?: PaneDensity;
-      /** An empty grid centres the draft composer without a pane head. */
+      /** An empty pane centres the draft composer without a pane head. */
       centerDraftComposer?: boolean;
       hideDraftHeroHeadline?: boolean;
-      /** A grid route renders the focused cell's panel beside the grid, not in the cell. */
-      rightPanelPortal?: RightPanelPortalTarget | null | undefined;
-      /** The grid top bar's details control, which anchors a cell's popover card. */
+      /** The control that anchors a pane's details popover card. */
       detailsCardAnchor?: RefObject<Element | null>;
-      /** The grid owns one details flag; the focused cell shows its card. */
+      /** The host owns one details flag; the focused pane shows its card. */
       detailsOpen?: boolean;
       onDetailsOpenChange?: (open: boolean) => void;
-      /** The grid's terminal dock takes this cell's terminal toggle and chords. */
-      gridTerminalRef?: ScopedThreadRef | null;
-      /** The phone thread page already reserves the bottom safe area around the cell. */
+      /** A host terminal dock takes this chat's terminal toggle and chords. */
+      hostTerminalRef?: ScopedThreadRef | null;
+      /** The phone thread page already reserves the bottom safe area around the chat. */
       phoneShell?: boolean;
+      /** A layout pane's chat: it draws no header row; its title is the pane's tab. */
+      paneHeader?: boolean;
+      /** The tab the chat shows in, whose context menu offers the chat's find and project settings. */
+      paneTabId?: string;
+      /** Where the chat portals its details toggle: the trailing end of the pane's tab bar. */
+      paneBarSlot?: HTMLElement | null;
       routeKind: "draft";
       draftId: DraftId;
     };
-
-/** Where a grid cell mounts the focused thread's right panel. */
-export interface RightPanelPortalTarget {
-  /** The grid row's panel slot; the panel becomes a flex sibling of the grid. */
-  readonly host: HTMLElement;
-  /** The row the panel shares for width clamping, when the cell's own row is not it. */
-  readonly container: HTMLElement | null;
-  /** Controls the grid adds to the panel header, before the maximize control. */
-  readonly headerControls?: ReactNode;
-}
 
 const DismissedFallbackWindowSchema = Schema.NullOr(Schema.String);
 
@@ -506,20 +501,22 @@ export default function ChatView(props: ChatViewProps) {
   } = props;
   const centerDraftComposer = props.centerDraftComposer === true;
   const hideDraftHeroHeadline = props.hideDraftHeroHeadline === true;
-  const rightPanelPortal = props.rightPanelPortal ?? null;
   const detailsCardAnchor = props.detailsCardAnchor;
   const detailsOpen = props.detailsOpen;
   const onDetailsOpenChange = props.onDetailsOpenChange;
-  const gridTerminalRef = props.gridTerminalRef ?? null;
+  const hostTerminalRef = props.hostTerminalRef ?? null;
+  const paneHeader = props.paneHeader === true;
+  const paneTabId = props.paneTabId ?? null;
+  const paneBarSlot = props.paneBarSlot ?? null;
   const allowInlineDetails =
     paneDensity === undefined || paneDensity === "solo" || paneDensity === "comfortable";
-  // A comfortable grid pane is too narrow for the chat lane and the card side by side, but
+  // A comfortable layout pane is too narrow for the chat lane and the card side by side, but
   // it still shows the card inline inside the cell rather than as a top-bar popover.
   const detailsCardAllowOverlap = paneDensity === "comfortable";
   const detailsCardAnimateFollow = paneDensity === "comfortable" || paneDensity === "solo";
   const parentPanel = typeof embeddedOption === "object" ? embeddedOption : undefined;
   const embedded = embeddedOption !== false;
-  // A grid cell is embedded for layout, but its focused pane owns the window
+  // An embedded chat in a focused pane owns the window
   // shortcuts: Esc stops its run, Mod+J its terminal, Mod+F its find bar.
   const shortcutsEmbedded = embedded && props.shortcutsAtWindow !== true;
   const visitActive = props.visitActive !== false;
@@ -595,7 +592,7 @@ export default function ChatView(props: ChatViewProps) {
           lastVisitedAt: fallbackLastVisitedAt,
         });
   const promptRef = useRef("");
-  // The shared handle serves app-wide commands, so several chat views (grid cells) overwrite
+  // The shared handle serves app-wide commands, so several chat views (layout panes) overwrite
   // each other's entry. A view acts on its own composer and only publishes the handle.
   const composerRef = useRef<ChatComposerHandle | null>(null);
   const sharedComposerRef = useComposerHandleContext();
@@ -1063,14 +1060,6 @@ export default function ChatView(props: ChatViewProps) {
     (isServerThread ? activeThread?.runtimeMode : undefined) ??
     defaultRuntimeMode;
   const isLocalDraftThread = !isServerThread && localDraftThread !== undefined;
-  const activeGrid = useGridStore(
-    (state) =>
-      state.grids.find(
-        (grid) =>
-          grid.tree !== null &&
-          preorderThreads(grid.tree).some((leaf) => leaf.threadId === threadId),
-      ) ?? null,
-  );
   const canCheckoutPullRequestIntoThread = canWriteSourceControl && isLocalDraftThread;
   const activeThreadId = activeThread?.id ?? null;
   // Turn items can lag projection hydration; keep the environment locked through that gap.
@@ -1113,7 +1102,7 @@ export default function ChatView(props: ChatViewProps) {
   );
   const browserAvailable = isPreviewSupportedInRuntime() || activeEnvironmentServerBrowser;
   const activeThreadShell = serverThread;
-  // One status vocabulary for the sidebar, the grid and this thread's timeline row.
+  // One status vocabulary for the sidebar, the layout and this thread's timeline row.
   const activeThreadStatusPill =
     activeThreadShell === null ? null : resolveThreadStatusPill({ thread: activeThreadShell });
   const limitRecoveryRun =
@@ -1207,8 +1196,8 @@ export default function ChatView(props: ChatViewProps) {
     renderedRightPanelSurface,
   );
   const canMaximizeRightPanel = rightPanelOpen;
-  // A grid cell owns its panel only while the grid route supplies a slot; a side chat never does.
-  const ownsRightPanel = !embedded || rightPanelPortal !== null;
+  // A side chat never owns a panel.
+  const ownsRightPanel = !embedded;
   // An embedded side chat has no panel; a stale maximized flag would hide its own column.
   const rightPanelMaximized =
     ownsRightPanel && canMaximizeRightPanel && rightPanelState.maximized === true;
@@ -1240,47 +1229,26 @@ export default function ChatView(props: ChatViewProps) {
     startNewThreadForProject(activeProjectRef, handleNewThread);
   };
   const projectGroupingSettings = selectProjectGroupingSettings(settings);
-  const activeDraftLogicalProjectKey =
-    !isServerThread && activeProject
-      ? deriveLogicalProjectKeyFromSettings(activeProject, projectGroupingSettings)
-      : undefined;
-  const handleOpenDraftProjectSettings = () => {
-    if (!activeDraftLogicalProjectKey) return;
+  const activeLogicalProjectKey = activeProject
+    ? deriveLogicalProjectKeyFromSettings(activeProject, projectGroupingSettings)
+    : undefined;
+  const handleOpenProjectSettings = () => {
+    if (!activeLogicalProjectKey) return;
     void navigate({
       to: "/projects/$projectKey",
-      params: { projectKey: activeDraftLogicalProjectKey },
+      params: { projectKey: activeLogicalProjectKey },
     });
   };
-  const handleOpenDraftProjectSettingsStable = useStableCallback(handleOpenDraftProjectSettings);
+  const openProjectSettingsStable = useStableCallback(handleOpenProjectSettings);
   const activeEnvironmentBootstrapComplete = useEnvironmentShellHasSnapshot(
     activeThread?.environmentId ?? null,
   );
   const activeProjectKey = activeProject
     ? `${activeProject.environmentId}:${activeProject.workspaceRoot}`
     : null;
-  const [pendingFileSurfaceIdsByProject, setPendingFileSurfaceIdsByProject] = useState<
-    ReadonlyMap<string, ReadonlySet<string>>
-  >(() => new Map());
-  const pendingFileSurfaceIds = activeProjectKey
-    ? (pendingFileSurfaceIdsByProject.get(activeProjectKey) ?? EMPTY_PENDING_FILE_SURFACE_IDS)
-    : EMPTY_PENDING_FILE_SURFACE_IDS;
-  const handleFilePendingChange = (relativePath: string, pending: boolean) => {
-    if (!activeProjectKey) return;
-    setPendingFileSurfaceIdsByProject((currentByProject) => {
-      const current = currentByProject.get(activeProjectKey) ?? EMPTY_PENDING_FILE_SURFACE_IDS;
-      const surfaceId = `file:${relativePath}`;
-      if (current.has(surfaceId) === pending) return currentByProject;
-      const next = new Set(current);
-      if (pending) next.add(surfaceId);
-      else next.delete(surfaceId);
-      const nextByProject = new Map(currentByProject);
-      if (next.size === 0) nextByProject.delete(activeProjectKey);
-      else nextByProject.set(activeProjectKey, next);
-      return nextByProject;
-    });
-  };
-  const handleFilePendingChangeStable = useStableCallback(handleFilePendingChange);
-  const configuredPreviewUrls = getConfiguredPreviewUrls(activeProjectScripts);
+  const pendingFileSurfaceIds = useFilePendingStore((state) =>
+    selectPendingFileSurfaceIds(state.byProjectKey, activeProjectKey),
+  );
 
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- drops file surfaces from the right panel store once bootstrap shows the thread has no workspace
   useEffect(() => {
@@ -2048,15 +2016,11 @@ export default function ChatView(props: ChatViewProps) {
   const queuedRunsControlRef = useRef<QueuedRunsControlHandle>(null);
 
   const {
-    activatePanelTerminalStable,
     addTerminalContextToDraftStable,
     addTerminalSurfaceStable,
-    closePanelTerminalStable,
     lastInvokedScriptByProjectId,
     runProjectScriptStable,
     runShellCommandStable,
-    splitPanelTerminalStable,
-    splitPanelTerminalVerticalStable,
     toggleTerminalVisibilityStable,
     shortcuts: terminalShortcuts,
   } = useChatTerminalActions({
@@ -2076,9 +2040,9 @@ export default function ChatView(props: ChatViewProps) {
     gitCwd,
     setTerminalUiLaunchContext,
     setThreadError,
-    ...(gridTerminalRef === null
+    ...(hostTerminalRef === null
       ? {}
-      : { onToggleGridTerminal: () => toggleGridTerminal(gridTerminalRef) }),
+      : { onToggleHostTerminal: () => toggleTerminal(hostTerminalRef) }),
   });
   const {
     saveProjectScript: saveProjectScriptStable,
@@ -2526,7 +2490,6 @@ export default function ChatView(props: ChatViewProps) {
     onOpenToolDiffStable,
     onOpenTurnDiffStable,
     openChangesFromThreadPanelStable,
-    openFileSurfaceStable,
     toggleRightPanelMaximizedStable,
     toggleRightPanelStable,
     toggleThreadPanelStable,
@@ -2897,6 +2860,24 @@ export default function ChatView(props: ChatViewProps) {
       openThreadFind(activeThreadKey);
     }
   });
+  const findInPaneThread = useStableCallback(() => {
+    if (threadFindEnabled && activeThreadKey !== null) openThreadFind(activeThreadKey);
+  });
+  const hasProjectSettings = activeLogicalProjectKey !== undefined;
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- offers this chat's find and project settings to its pane tab's context menu while it is mounted
+  useEffect(() => {
+    if (paneTabId === null) return;
+    return registerChatTabActions(paneTabId, {
+      findInThread: threadFindEnabled ? findInPaneThread : null,
+      openProjectSettings: hasProjectSettings ? openProjectSettingsStable : null,
+    });
+  }, [
+    paneTabId,
+    threadFindEnabled,
+    hasProjectSettings,
+    findInPaneThread,
+    openProjectSettingsStable,
+  ]);
 
   useChatShortcuts({
     enabled: activeThreadId !== null && !backgroundThread,
@@ -2967,8 +2948,8 @@ export default function ChatView(props: ChatViewProps) {
   // A delegated task is a remote thread's subagent.
   const isSubagentThread =
     activeThread?.lineage.relationshipToParent === "subagent" || delegatedFrom !== null;
-  // Side chats open in the right panel, so only the view that owns it offers them (a grid's
-  // focused cell, never a side chat's own view). They do not nest or start from subagents, and
+  // Side chats open in the right panel, so only the view that owns it offers them (a layout
+  // pane's chat, never a side chat's own view). They do not nest or start from subagents, and
   // older servers would fork a listed thread.
   const sideChatsOffered =
     ownsRightPanel &&
@@ -3312,6 +3293,7 @@ export default function ChatView(props: ChatViewProps) {
           onCancelEdit={queuedRunEdit.cancelEdit}
           timestampFormat={timestampFormat}
           onOpenThread={onOpenRelatedThreadStable}
+          detached={activePendingApproval !== null}
         />
       </>
     ) : null;
@@ -3381,10 +3363,7 @@ export default function ChatView(props: ChatViewProps) {
   // The end of the timeline holds the thread's present and next turns: what it is doing now,
   // its lifecycle status, then your queued messages.
   const timelineFooter =
-    pendingHandoff === null &&
-    !hasThreadNow &&
-    threadStatusLine === null &&
-    !hasQueuedTurns ? null : (
+    pendingHandoff === null && !hasThreadNow && threadStatusLine === null ? null : (
       <>
         {pendingHandoff === null ? null : (
           <div className="chat-content-lane">
@@ -3404,7 +3383,6 @@ export default function ChatView(props: ChatViewProps) {
           goal={goalNow}
         />
         {threadStatusLine}
-        {hasQueuedTurns ? queuedRunsControl : null}
       </>
     );
 
@@ -3458,69 +3436,52 @@ export default function ChatView(props: ChatViewProps) {
     openToolDiff: onOpenToolDiffStable,
     runShellCommand: runSideChatShellCommandStable,
   };
+  const chatBridgeReady = activeThread !== undefined && !isSendBusy && phase !== "connecting";
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- publishes this chat's composer and workspace hooks for the thread's surface content while it is mounted
+  useEffect(() => {
+    if (activeThreadRef === null) return;
+    return publishThreadChatBridge(activeThreadRef, {
+      workspaceMutationId,
+      sendReady: chatBridgeReady,
+      sendAnnotation: sendPreviewAnnotationStable,
+      addTerminalContext: addTerminalContextToDraftStable,
+      terminalLaunchContext: activeTerminalLaunchContext ?? null,
+      composerDraftTarget,
+      getShortcutContext: getShortcutContextStable,
+      sideChatParentPanel,
+      linkedPullRequest: linkedThreadPullRequest,
+    });
+  }, [
+    activeTerminalLaunchContext,
+    activeThreadRef,
+    addTerminalContextToDraftStable,
+    chatBridgeReady,
+    composerDraftTarget,
+    getShortcutContextStable,
+    linkedThreadPullRequest,
+    sendPreviewAnnotationStable,
+    sideChatParentPanel,
+    workspaceMutationId,
+  ]);
 
   if (!activeThread) {
     return embedded ? null : <NoActiveThreadState />;
   }
 
-  const mountRightPanel = (panel: ReactNode) =>
-    rightPanelPortal === null ? panel : createPortal(panel, rightPanelPortal.host);
-
   const rightPanelContent = activeThreadRef ? (
-    <RightPanelSurfaceContent
-      surface={renderedRightPanelSurface}
-      activeSurfaceId={activeRightPanelSurface?.id ?? null}
+    <ThreadSurfaceContent
       threadRef={activeThreadRef}
-      environmentId={activeThread.environmentId}
+      surfaceId={renderedRightPanelSurface?.id ?? null}
       visible={rightPanelOpen}
-      composerDraftTarget={composerDraftTarget}
-      keybindings={keybindings}
-      configuredPreviewUrls={configuredPreviewUrls}
-      workspaceMutationId={workspaceMutationId}
-      getShortcutContext={getShortcutContextStable}
-      onSendAnnotation={sendPreviewAnnotationStable}
-      onCloseSurface={closeRightPanelSurface}
-      sideChatParentPanel={sideChatParentPanel}
-      terminal={{
-        launchContext: activeTerminalLaunchContext ?? null,
-        keybindings,
-        onAddTerminalContext: addTerminalContextToDraftStable,
-        onSplitTerminal: splitPanelTerminalStable,
-        onSplitTerminalVertical: splitPanelTerminalVerticalStable,
-        onNewTerminal: addTerminalSurfaceStable,
-        onActiveTerminalChange: activatePanelTerminalStable,
-        onCloseTerminal: closePanelTerminalStable,
-        splitShortcutLabel: splitTerminalShortcutLabel ?? undefined,
-        splitVerticalShortcutLabel: splitTerminalVerticalShortcutLabel ?? undefined,
-        newShortcutLabel: newTerminalShortcutLabel ?? undefined,
-        closeShortcutLabel: closeTerminalShortcutLabel ?? undefined,
-      }}
-      pullRequest={{
-        capabilityKnown: pullRequestsCapabilityKnown,
-        supported: supportsPullRequests,
-        projectId: activeThread.projectId,
-        pullRequests: visiblePullRequests,
-        linkedPullRequest: linkedThreadPullRequest,
-        branchPullRequest: activeThreadShell?.branchPullRequest ?? activeThread.branchPullRequest,
-        onBack:
-          pullRequestsSurfaceAvailable && visiblePullRequestCount > 1
-            ? addPullRequestsSurfaceStable
-            : undefined,
-      }}
-      files={{
-        projectId: activeProject?.id,
-        projectName: activeProject?.title ?? null,
-        workspaceRoot: activeWorkspaceRoot,
-        availableEditors,
-        pendingSurfaceIds: pendingFileSurfaceIds,
-        onOpenFile: openFileSurfaceStable,
-        onPendingChange: handleFilePendingChangeStable,
-      }}
     />
   ) : null;
   const headerRowPullRequest =
     activeThreadShell === null ? null : resolveRowPullRequest(activeThreadShell);
+  // A layout pane opens its surfaces from the launcher, the palette and shortcuts, so its bar
+  // slot carries only the details toggle.
   const panelToggleControlProps = {
+    showTerminalControl: !paneHeader,
+    showRightPanelControl: !paneHeader,
     terminalAvailable: activeProject !== null,
     terminalOpen: terminalUiState.terminalOpen,
     terminalShortcutLabel: shortcutLabelForCommand(keybindings, "terminal.toggle"),
@@ -3565,8 +3526,8 @@ export default function ChatView(props: ChatViewProps) {
         data-standalone-thread={embedded ? undefined : ""}
         inert={rightPanelMaximized}
       >
-        {/* A grid cell carries its own title and actions, so the route header would
-            duplicate them and its drag region would fight the window controls. */}
+        {/* A layout pane draws no header: its title is the tab, and its details toggle sits at
+            the trailing end of the pane's tab bar. */}
         {embedded || rightPanelMaximized ? null : (
           <header
             ref={threadPanelPopoverAnchorRef}
@@ -3604,18 +3565,17 @@ export default function ChatView(props: ChatViewProps) {
               pullRequest={headerRowPullRequest}
               pullRequestCount={activeThreadShell?.pullRequests.length ?? 0}
               onOpenThread={onOpenRelatedThreadStable}
-              {...(activeDraftLogicalProjectKey
-                ? { onOpenProjectSettings: handleOpenDraftProjectSettingsStable }
+              {...(!isServerThread && activeLogicalProjectKey
+                ? { onOpenProjectSettings: openProjectSettingsStable }
                 : {})}
               {...(threadFindEnabled ? { onFindInThread: openThreadFindStable } : {})}
             />
-            <ChatHeaderPanelControls
-              {...panelToggleControlProps}
-              gridLayoutControl={<GridLayoutMenu grid={activeGrid} />}
-              gridLayoutMenuItems={<GridLayoutMenuItems grid={activeGrid} />}
-            />
+            <ChatHeaderPanelControls {...panelToggleControlProps} />
           </header>
         )}
+        {paneHeader && paneBarSlot !== null
+          ? createPortal(<ChatHeaderPanelControls {...panelToggleControlProps} />, paneBarSlot)
+          : null}
 
         {environmentBannerItems.length > 0 ? (
           <div
@@ -3870,6 +3830,7 @@ export default function ChatView(props: ChatViewProps) {
                     <Swap swapKey={activePendingApproval?.requestId ?? "none"}>
                       {composerApprovalCard}
                     </Swap>
+                    {activePendingApproval !== null && hasQueuedTurns ? queuedRunsControl : null}
                     {!isDraftHeroState && environmentComposerBanners.length > 0 ? (
                       <div className="mb-1">
                         <ComposerBannerStack items={environmentComposerBanners} detached />
@@ -3931,6 +3892,11 @@ export default function ChatView(props: ChatViewProps) {
                               threadStatusPill={activeThreadStatusPill}
                               paneDensity={paneDensity}
                               changedFiles={changedFilesBar}
+                              queueTray={
+                                activePendingApproval === null && hasQueuedTurns
+                                  ? queuedRunsControl
+                                  : null
+                              }
                               {...(showComposerContextStrip
                                 ? {
                                     contextControls: (
@@ -4289,7 +4255,8 @@ export default function ChatView(props: ChatViewProps) {
           </ThreadFindCanvas>
         </div>
 
-        {parentPanel ? null : (
+        {/* In a layout pane the terminal is a tab of its own, beside or below the chat. */}
+        {parentPanel || paneHeader ? null : (
           <ChatTerminalDrawers
             activeThreadKey={activeThreadKey}
             activeTerminalOpen={Boolean(terminalUiState.terminalOpen)}
@@ -4305,70 +4272,67 @@ export default function ChatView(props: ChatViewProps) {
         )}
       </div>
 
-      {rightPanelPresent && activeThreadRef && ownsRightPanel
-        ? mountRightPanel(
-            <ChatRightPanel
-              sheet={shouldUsePlanSidebarSheet}
-              workspaceLayoutElement={rightPanelPortal?.container ?? workspaceLayoutElement}
-              widthStorageKey={`houston:preview-panel-width:${activeThreadKey}`}
-              onCloseSheet={closePreviewPanelStable}
-              open={rightPanelOpen}
-              keybindings={keybindings}
-              getShortcutContext={getShortcutContextStable}
-              maximized={rightPanelMaximized}
-              layoutControls={
-                rightPanelOpen ? (
-                  <div className="flex min-w-0 shrink-0 items-center gap-1">
-                    {rightPanelPortal?.headerControls}
-                    <RightPanelMaximizeControl
-                      maximized={rightPanelMaximized}
-                      onToggle={toggleRightPanelMaximizedStable}
-                    />
-                  </div>
-                ) : null
-              }
-              surfaces={renderedRightPanelSurfaces}
-              environmentId={activeThreadRef.environmentId}
-              activeSurfaceId={renderedRightPanelSurface?.id ?? null}
-              pendingSurfaceIds={pendingFileSurfaceIds}
-              previewSessions={activePreviewState.sessions}
-              desktopByTabId={activePreviewState.desktopByTabId}
-              previewRuntimeTabId={resolvePreviewRuntimeTabId}
-              terminalLabelsById={activeTerminalLabelsById}
-              onActivate={activateRightPanelSurfaceStable}
-              onCloseSurface={closeRightPanelSurfaceStable}
-              onRenameDevice={(surfaceId, title) => {
-                if (activeThreadRef)
-                  useRightPanelStore.getState().renameDevice(activeThreadRef, surfaceId, title);
-              }}
-              onCloseOtherSurfaces={closeOtherRightPanelSurfacesStable}
-              onCloseSurfacesToRight={closeRightPanelSurfacesToRightStable}
-              onCloseAllSurfaces={closeAllRightPanelSurfacesStable}
-              onMoveSurface={moveRightPanelSurfaceStable}
-              onCopyFilePath={copyRightPanelFilePathStable}
-              onAddBrowser={() => createBrowserSurface()}
-              onAddBrowserInProfile={createBrowserSurfaceStable}
-              onAddTerminal={addTerminalSurfaceStable}
-              onAddDiff={addDiffSurfaceStable}
-              onAddFiles={addFilesSurfaceStable}
-              onAddPullRequest={addPullRequestSurfaceStable}
-              onAddPullRequests={addPullRequestsSurfaceStable}
-              onAddDevice={addDeviceSurfaceStable}
-              onAddSideChat={sideChatsOffered ? openSideChatStable : undefined}
-              browserAvailable={canOperatePreview && browserAvailable}
-              terminalAvailable={activeProject !== null && canOperateTerminal}
-              diffAvailable={isServerThread && isGitRepo}
-              filesAvailable={activeProject !== null}
-              pullRequestAvailable={pullRequestSurfaceAvailable}
-              pullRequestsAvailable={pullRequestsSurfaceAvailable}
-              deviceAvailable={activeThreadRef !== null}
-              sideChatAvailable={sideChat.available}
-              sideChatDisabledReason={sideChatDisabledReason}
-            >
-              {rightPanelContent}
-            </ChatRightPanel>,
-          )
-        : null}
+      {rightPanelPresent && activeThreadRef && ownsRightPanel ? (
+        <ChatRightPanel
+          sheet={shouldUsePlanSidebarSheet}
+          workspaceLayoutElement={workspaceLayoutElement}
+          widthStorageKey={`houston:preview-panel-width:${activeThreadKey}`}
+          onCloseSheet={closePreviewPanelStable}
+          open={rightPanelOpen}
+          keybindings={keybindings}
+          getShortcutContext={getShortcutContextStable}
+          maximized={rightPanelMaximized}
+          layoutControls={
+            rightPanelOpen ? (
+              <div className="flex min-w-0 shrink-0 items-center gap-1">
+                <RightPanelMaximizeControl
+                  maximized={rightPanelMaximized}
+                  onToggle={toggleRightPanelMaximizedStable}
+                />
+              </div>
+            ) : null
+          }
+          surfaces={renderedRightPanelSurfaces}
+          environmentId={activeThreadRef.environmentId}
+          activeSurfaceId={renderedRightPanelSurface?.id ?? null}
+          pendingSurfaceIds={pendingFileSurfaceIds}
+          previewSessions={activePreviewState.sessions}
+          desktopByTabId={activePreviewState.desktopByTabId}
+          previewRuntimeTabId={resolvePreviewRuntimeTabId}
+          terminalLabelsById={activeTerminalLabelsById}
+          onActivate={activateRightPanelSurfaceStable}
+          onCloseSurface={closeRightPanelSurfaceStable}
+          onRenameDevice={(surfaceId, title) => {
+            if (activeThreadRef)
+              useRightPanelStore.getState().renameDevice(activeThreadRef, surfaceId, title);
+          }}
+          onCloseOtherSurfaces={closeOtherRightPanelSurfacesStable}
+          onCloseSurfacesToRight={closeRightPanelSurfacesToRightStable}
+          onCloseAllSurfaces={closeAllRightPanelSurfacesStable}
+          onMoveSurface={moveRightPanelSurfaceStable}
+          onCopyFilePath={copyRightPanelFilePathStable}
+          onAddBrowser={() => createBrowserSurface()}
+          onAddBrowserInProfile={createBrowserSurfaceStable}
+          onAddTerminal={addTerminalSurfaceStable}
+          onAddDiff={addDiffSurfaceStable}
+          onAddFiles={addFilesSurfaceStable}
+          onAddPullRequest={addPullRequestSurfaceStable}
+          onAddPullRequests={addPullRequestsSurfaceStable}
+          onAddDevice={addDeviceSurfaceStable}
+          onAddSideChat={sideChatsOffered ? openSideChatStable : undefined}
+          browserAvailable={canOperatePreview && browserAvailable}
+          terminalAvailable={activeProject !== null && canOperateTerminal}
+          diffAvailable={isServerThread && isGitRepo}
+          filesAvailable={activeProject !== null}
+          pullRequestAvailable={pullRequestSurfaceAvailable}
+          pullRequestsAvailable={pullRequestsSurfaceAvailable}
+          deviceAvailable={activeThreadRef !== null}
+          sideChatAvailable={sideChat.available}
+          sideChatDisabledReason={sideChatDisabledReason}
+        >
+          {rightPanelContent}
+        </ChatRightPanel>
+      ) : null}
 
       <RevertConfirmHost threadKey={routeThreadKey} onConfirm={onConfirmRevertStable} />
       <ResumeSessionDialog

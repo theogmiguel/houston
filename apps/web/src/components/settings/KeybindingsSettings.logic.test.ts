@@ -1,5 +1,5 @@
 import { assert, describe, expect, it } from "vite-plus/test";
-import type { ResolvedKeybindingsConfig } from "@houston-app/contracts";
+import { LAYOUT_KEYBINDING_COMMANDS, type ResolvedKeybindingsConfig } from "@houston-app/contracts";
 import {
   compileResolvedKeybindingsConfig,
   parseKeybindingShortcut,
@@ -9,6 +9,8 @@ import { resolveShortcutCommand } from "../../keybindings";
 
 import {
   buildKeybindingRows,
+  buildWhenVariableOptions,
+  commandLabel,
   keybindingConflictLabels,
   keybindingFromKeyboardEvent,
   parseWhenExpressionDraft,
@@ -299,5 +301,17 @@ describe("KeybindingsSettings.logic", () => {
     );
 
     expect(rows.map((row) => row.conflicts)).toEqual([[], []]);
+  });
+});
+
+describe("layout commands in settings", () => {
+  it("gives every layout command a readable, distinct label", () => {
+    const labels = LAYOUT_KEYBINDING_COMMANDS.map((command) => commandLabel(command));
+    for (const label of labels) expect(label).toMatch(/^Layout: [A-Z]/);
+    expect(new Set(labels).size).toBe(labels.length);
+  });
+
+  it("offers isMac as a condition, since the layout defaults use it", () => {
+    expect(buildWhenVariableOptions()).toContain("isMac");
   });
 });

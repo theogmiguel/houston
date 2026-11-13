@@ -549,7 +549,7 @@ function ProjectScriptEditorForm({
           </fieldset>
         </form>
       </DialogPanel>
-      <DialogFooter variant="bare">
+      <DialogFooter>
         {isEditing && (
           <Button
             type="button"

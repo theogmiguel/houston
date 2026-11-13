@@ -1,7 +1,7 @@
-import { ArrowLeftIcon, MonitorIcon, MoonIcon, SettingsIcon, SunIcon } from "lucide-react";
+import { MonitorIcon, MoonIcon, SettingsIcon, SunIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { memo } from "react";
-import { Link, useLocation, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { useTheme } from "../../hooks/useTheme";
@@ -21,13 +21,11 @@ import {
   useSidebar,
 } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { isSidebarUtilityPage, useNavigateToMainApp } from "./mainAppLocation";
 import { nextRailThemeMode, railThemeLabel } from "./railTheme";
 import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
-import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
-import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
+import { SidebarUpdateArchitectureWarning } from "./SidebarUpdatePill";
+import { SidebarUpdatesButton } from "./SidebarUpdatesButton";
 import { observeResize } from "~/lib/observeResize";
-import { readLastOpenGridId } from "../../grid/lastGrid";
 
 /**
  * The rail's brand row: Houston's mark and name, with the sidebar's hide
@@ -101,24 +99,12 @@ export function SidebarBrandWidthProbe({
   );
 }
 
-const OPEN_GRID_ID_PATTERN = /^\/grid\/([^/]+)/;
-
 function SidebarBrand() {
-  const pathname = useLocation({ select: (location) => location.pathname });
-  const openGridId = OPEN_GRID_ID_PATTERN.exec(pathname)?.[1] ?? readLastOpenGridId();
-  const className =
-    "relative z-10 ml-[calc(var(--workspace-controls-left)-0.75rem)] flex h-7 w-fit min-w-0 shrink items-center overflow-hidden rounded-(--control-radius) text-foreground outline-none ring-ring focus-visible:ring-2 focus-visible:ring-inset";
-  // The wordmark returns to the grid last on screen, not to a fresh draft route.
-  return openGridId === null ? (
-    <Link aria-label="Go to threads" className={className} to="/">
-      <SidebarBrandMark />
-    </Link>
-  ) : (
+  return (
     <Link
       aria-label="Go to threads"
-      className={className}
-      to="/grid/$gridId"
-      params={{ gridId: openGridId }}
+      className="relative z-10 ml-[calc(var(--workspace-controls-left)-0.75rem)] flex h-7 w-fit min-w-0 shrink items-center overflow-hidden rounded-(--control-radius) text-foreground outline-none ring-ring focus-visible:ring-2 focus-visible:ring-inset"
+      to="/"
     >
       <SidebarBrandMark />
     </Link>
@@ -138,10 +124,13 @@ function SidebarBrandMark() {
 function SidebarUtilityItem({
   icon,
   label,
+  tooltip = label,
   onClick,
 }: {
   icon: ReactNode;
   label: string;
+  /** The hover label; the name with its shortcut when one opens it. */
+  tooltip?: string;
   onClick: (source: Element) => void;
 }) {
   return (
@@ -159,7 +148,7 @@ function SidebarUtilityItem({
             </SidebarMenuButton>
           }
         />
-        <TooltipPopup side="top">{label}</TooltipPopup>
+        <TooltipPopup side="top">{tooltip}</TooltipPopup>
       </Tooltip>
     </SidebarMenuItem>
   );
@@ -167,17 +156,8 @@ function SidebarUtilityItem({
 
 export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const navigate = useNavigate();
-  const navigateToMainApp = useNavigateToMainApp();
   const { isMobile, setOpenMobile } = useSidebar();
   const { appearanceMode, setAppearanceMode } = useTheme();
-  const isOnUtilityPage = useLocation({
-    select: (location) => isSidebarUtilityPage(location.pathname),
-  });
-  const closeMobileSidebar = () => {
-    if (isMobile) {
-      setOpenMobile(false);
-    }
-  };
   const themeLabel = railThemeLabel(appearanceMode);
   const ThemeIcon =
     appearanceMode === "dark" ? MoonIcon : appearanceMode === "light" ? SunIcon : MonitorIcon;
@@ -185,37 +165,22 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
     setAppearanceMode(nextRailThemeMode(appearanceMode), source);
   };
   const handleSettingsClick = () => {
-    closeMobileSidebar();
+    if (isMobile) {
+      setOpenMobile(false);
+    }
     void navigate({ to: "/settings" });
-  };
-  const handleBackClick = () => {
-    closeMobileSidebar();
-    void navigateToMainApp();
   };
 
   return (
     <SidebarMenu className="flex-row items-center">
-      {isOnUtilityPage ? (
-        <SidebarMenuItem className="min-w-0 flex-1">
-          <SidebarMenuButton onClick={handleBackClick}>
-            <ArrowLeftIcon />
-            <span>Back</span>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
-      ) : (
-        <>
-          <SidebarUtilityItem
-            icon={<SettingsIcon />}
-            label="Settings"
-            onClick={handleSettingsClick}
-          />
-          <SidebarUtilityItem
-            icon={<ThemeIcon />}
-            label={`Theme: ${themeLabel}`}
-            onClick={cycleTheme}
-          />
-        </>
-      )}
+      <SidebarUtilityItem icon={<SettingsIcon />} label="Settings" onClick={handleSettingsClick} />
+      <SidebarUtilityItem
+        icon={<ThemeIcon />}
+        label={`Theme: ${themeLabel}`}
+        onClick={cycleTheme}
+      />
+      <li aria-hidden className="min-w-0 flex-1" />
+      <SidebarUpdatesButton />
       <SidebarThreadUndoNotice />
     </SidebarMenu>
   );
@@ -223,9 +188,7 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
 
 export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
   return (
-    <SidebarFooter className="mt-auto" separated>
-      <SidebarUpdatePill />
-      <SidebarProviderUpdatePill />
+    <SidebarFooter className="mt-auto">
       <SidebarUpdateArchitectureWarning />
       <SidebarUtilityMenu />
     </SidebarFooter>

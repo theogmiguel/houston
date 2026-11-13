@@ -111,7 +111,7 @@ export function PullRequestDetailCrumbs({
 }) {
   const ready = detail !== null && toneClassName !== null;
   return (
-    <div className="pl-9 grid h-7 min-w-0 items-center overflow-hidden max-phone:h-11 max-phone:border-b max-phone:border-border/60 max-phone:pl-4">
+    <div className="pl-4 grid h-7 min-w-0 items-center overflow-hidden max-phone:h-11 max-phone:border-b max-phone:border-border/60 max-phone:pl-4">
       <div
         aria-hidden={condensed}
         inert={condensed}

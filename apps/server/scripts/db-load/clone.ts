@@ -13,6 +13,9 @@ const SKIPPED_TABLES = new Set([
   "orchestration_v2_projection_metadata",
   "houston_task_counter",
   "sqlite_sequence",
+  // The window's arrangement, shared by every unit; cloned threads join it through their membership rows.
+  "houston_layout_workspaces",
+  "houston_layout_focus",
   // Trigger-maintained read models (houston/projectionReadModels.ts): cloning the source rows fills them.
   "houston_thread_shell",
   "houston_user_messages",

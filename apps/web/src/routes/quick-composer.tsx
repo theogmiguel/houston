@@ -12,9 +12,7 @@ import { environmentServerConfigsAtom } from "../state/server";
 import { threadEnvironment } from "../state/threads";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { useProjects } from "../state/entities";
-import { workspaceKeyOf, useGridStore } from "../grid/gridStore";
 import {
-  placeQuickComposerThread,
   quickComposerProjectKey,
   resolveQuickComposerStart,
   type QuickComposerProjectOption,
@@ -28,7 +26,6 @@ function closeQuickComposer() {
 function QuickComposerRoute() {
   const projects = useProjects();
   const serverConfigs = useAtomValue(environmentServerConfigsAtom);
-  const grids = useGridStore((store) => store.grids);
   const startTurn = useOrchestrationCommand(threadEnvironment.startTurn, {
     reportFailure: false,
   });
@@ -39,13 +36,6 @@ function QuickComposerRoute() {
       environmentId: project.environmentId,
       projectId: project.id,
       title: project.title,
-      grids: grids
-        .filter(
-          (grid) =>
-            grid.workspaceKey === workspaceKeyOf(project.environmentId, project.id) && !grid.hidden,
-        )
-        .toSorted((left, right) => left.createdAt.localeCompare(right.createdAt))
-        .map((grid) => ({ id: grid.id, name: grid.name })),
     }));
 
   return (
@@ -53,7 +43,7 @@ function QuickComposerRoute() {
       projects={options}
       initialProjectKey={options[0]?.key ?? null}
       onClose={closeQuickComposer}
-      onSubmit={async ({ project, gridId, prompt, images }) => {
+      onSubmit={async ({ project, prompt, images }) => {
         const config = serverConfigs.get(project.environmentId);
         if (config === undefined) {
           return {
@@ -134,12 +124,6 @@ function QuickComposerRoute() {
           };
         }
 
-        placeQuickComposerThread({
-          environmentId: project.environmentId,
-          projectId: project.projectId,
-          threadId,
-          gridId,
-        });
         return { ok: true };
       }}
     />

@@ -593,7 +593,7 @@ export function UsagePriceOverrides({
             </div>
           ) : null}
         </DialogPanel>
-        <DialogFooter variant="bare" className="items-center sm:justify-between">
+        <DialogFooter className="items-center sm:justify-between">
           <span className="text-xs text-muted-foreground">
             {hasChanges ? `Changes apply to ${destinationLabel}` : ""}
           </span>

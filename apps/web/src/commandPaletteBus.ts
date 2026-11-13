@@ -10,6 +10,8 @@ export interface CommandPaletteLinkedThreads {
 
 export interface CommandPaletteOpenDetail {
   readonly open?: "add-project" | "new-thread-in";
+  /** With new-thread-in, the thread opens in a new tab of the focused pane, not in place. */
+  readonly newTab?: boolean;
   /** With add-project, the flow to start and the environment or source it starts from. */
   readonly addProject?: AddProjectFlowRequest;
   readonly query?: string;
@@ -21,7 +23,10 @@ export function openCommandPalette(detail: CommandPaletteOpenDetail = {}): void 
   // store, it would pop a stale palette once the app shell mounts.
   if (!isCommandPaletteMounted()) return;
   if (detail.open === "new-thread-in") {
-    dispatchCommandPalette({ _tag: "OpenNewThreadIn" });
+    dispatchCommandPalette({
+      _tag: "OpenNewThreadIn",
+      ...(detail.newTab === true ? { newTab: true } : {}),
+    });
   } else if (detail.open === "add-project") {
     dispatchCommandPalette({
       _tag: "OpenAddProject",

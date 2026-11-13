@@ -33,3 +33,27 @@ it("measures where a subagent's parent strip ends so the details card can sit be
     .toBe(strip.getBoundingClientRect().height);
   expect(store.getState().measurements.parentStripBottom).toBeGreaterThan(0);
 });
+
+it.each([
+  [324, 16],
+  [520, 16],
+  [700, 48],
+])("a %ipx chat canvas keeps a %ipx lane gutter in a wide window", async (width, gutter) => {
+  const store = createChatCanvasStore();
+  await using screen = await render(
+    <div style={{ width, height: 600, display: "flex" }}>
+      <ChatCanvas
+        store={store}
+        threadRef={threadRef}
+        preview={null}
+        composerOverlayElement={null}
+        parentStripShown={false}
+      >
+        <div className="chat-composer-lane" data-lane />
+      </ChatCanvas>
+    </div>,
+  );
+  const lane = getComputedStyle(screen.container.querySelector<HTMLElement>("[data-lane]")!);
+  expect([lane.paddingLeft, lane.paddingRight]).toEqual([`${gutter}px`, `${gutter}px`]);
+  await expect.poll(() => store.getState().measurements.padding).toBe(gutter);
+});

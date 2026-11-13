@@ -23,13 +23,9 @@ describe("SettingsSidebarNav at a 900px-high window", () => {
   it("keeps every section label fully visible without scrolling", async () => {
     await using screen = await mount();
 
-    const footer = screen.container.querySelector<HTMLElement>('[data-sidebar="footer"]')!;
     const viewport = screen.container.querySelector<HTMLElement>(
       '[data-slot="scroll-area-viewport"]',
     )!;
-    expect(viewport.getBoundingClientRect().bottom).toBeLessThanOrEqual(
-      footer.getBoundingClientRect().top + 1,
-    );
     const last = [...screen.container.querySelectorAll<HTMLElement>("[data-settings-section]")].at(
       -1,
     )!;
@@ -39,33 +35,17 @@ describe("SettingsSidebarNav at a 900px-high window", () => {
     );
     expect(viewport.scrollHeight).toBeLessThanOrEqual(viewport.clientHeight);
   });
-
-  it("brings the last row fully above the footer once scrolled to the end", async () => {
-    await using screen = await mount();
-
-    const footer = screen.container.querySelector<HTMLElement>('[data-sidebar="footer"]')!;
-    const viewport = screen.container.querySelector<HTMLElement>(
-      '[data-slot="scroll-area-viewport"]',
-    )!;
-    viewport.scrollTop = viewport.scrollHeight;
-    const last = [...screen.container.querySelectorAll<HTMLElement>("[data-settings-section]")].at(
-      -1,
-    )!;
-    await expect
-      .poll(() => last.getBoundingClientRect().bottom)
-      .toBeLessThanOrEqual(footer.getBoundingClientRect().top);
-  });
 });
 
 describe("SettingsBreadcrumb beside the nav", () => {
-  it("is hidden from md up on a page the nav lists, where the nav marks the location", async () => {
+  it("stays visible from md up on a page the nav lists, as the card header's title", async () => {
     await page.viewport(1440, 900);
     await using screen = await render(<SettingsBreadcrumb pathname="/settings/providers" />, {
       router: "/settings/providers",
     });
 
     const crumbs = screen.container.querySelector<HTMLElement>("nav")!;
-    expect(getComputedStyle(crumbs).display).toBe("none");
+    expect(getComputedStyle(crumbs).display).not.toBe("none");
   });
 
   it("stays visible below md, where the nav is an icon rail", async () => {

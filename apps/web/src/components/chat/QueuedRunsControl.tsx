@@ -36,8 +36,14 @@ import { Button, InlineButton } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { TimestampFormat } from "@houston-app/contracts/settings";
 import { TimelineRowTimestamp } from "./TimelineRowParts";
-import { FoldedMessageHeader, useScheduledTaskTitle } from "./TimelineUserMessageRow";
+import { useScheduledTaskTitle } from "./TimelineUserMessageRow";
 import { messageDeliveryPresentation } from "./messageDelivery";
+import {
+  QUEUE_MORE_CLS,
+  QUEUE_ROW_CLS,
+  QUEUE_TRAY_CLS,
+  QUEUE_TRAY_DETACHED_CLS,
+} from "../ui/composer-anatomy-recipes";
 
 export interface EditQueuedRunRequest {
   readonly runId: RunId;
@@ -92,6 +98,8 @@ export function QueuedRunsControl({
   readonly onCancelEdit: () => void;
   readonly timestampFormat: TimestampFormat;
   readonly onOpenThread: (threadId: ThreadId) => void;
+  /** Stands alone as a card instead of joining the top of the composer card. */
+  readonly detached?: boolean;
 }) {
   const projection = useThreadProjection(
     scopeThreadRef(props.environmentId, props.threadId),
@@ -240,12 +248,12 @@ export function QueuedRunsControl({
       aria-label={`${items.length} queued message${items.length === 1 ? "" : "s"}`}
       data-thread-queue="true"
       // Anchors the sr-only live region; unanchored, it escapes the timeline scroller and makes the chat column scroll.
-      className="relative mx-auto flex w-full max-w-(--chat-content-max-width) flex-col gap-2 pb-4"
+      className={props.detached === true ? QUEUE_TRAY_DETACHED_CLS : QUEUE_TRAY_CLS}
     >
       <span className="sr-only" aria-live="polite">
         {items.length} queued
       </span>
-      <ol className="flex flex-col items-end gap-3" id={queueListId}>
+      <ol className="flex min-w-0 flex-col" id={queueListId}>
         {visibleItems.map((item, position) => {
           const previewText = isAttachmentOnlyBootstrapPrompt(item.text)
             ? ""
@@ -262,7 +270,7 @@ export function QueuedRunsControl({
               aria-posinset={position + 1}
               aria-setsize={items.length}
               aria-current={isEditing ? "true" : undefined}
-              className="group/queued flex w-full flex-col items-end gap-1"
+              className={QUEUE_ROW_CLS}
             >
               <QueuedMessage
                 environmentId={props.environmentId}
@@ -274,35 +282,33 @@ export function QueuedRunsControl({
                 onOpenThread={props.onOpenThread}
               >
                 {canSendRun(item.freshContext) && !isEditing ? (
-                  <>
-                    <Tooltip>
-                      <TooltipTrigger render={<span className="flex shrink-0" />}>
-                        <Button
-                          size="xs"
-                          variant="ghost-muted"
-                          disabled={item.runId === null || busyRunId !== null}
-                          onClick={() => {
-                            if (item.runId !== null) {
-                              void sendQueuedMessage(item.runId);
-                            }
-                          }}
-                        >
-                          <ArrowUpIcon />
-                          Send now
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipPopup>
-                        {`${workflow?.canSendNow ? "Start a turn with this message" : workflow?.promoteSkipsCompaction ? "Skip compaction and send this message" : "Send into the current turn"}${item.serverIndex === 0 && props.steerShortcutLabel ? ` (${props.steerShortcutLabel})` : ""}`}
-                      </TooltipPopup>
-                    </Tooltip>
-                  </>
+                  <Tooltip>
+                    <TooltipTrigger render={<span className="flex shrink-0" />}>
+                      <Button
+                        size="xs"
+                        variant="ghost-muted"
+                        disabled={item.runId === null || busyRunId !== null}
+                        onClick={() => {
+                          if (item.runId !== null) {
+                            void sendQueuedMessage(item.runId);
+                          }
+                        }}
+                      >
+                        <ArrowUpIcon />
+                        Send now
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipPopup>
+                      {`${workflow?.canSendNow ? "Start a turn with this message" : workflow?.promoteSkipsCompaction ? "Skip compaction and send this message" : "Send into the current turn"}${item.serverIndex === 0 && props.steerShortcutLabel ? ` (${props.steerShortcutLabel})` : ""}`}
+                    </TooltipPopup>
+                  </Tooltip>
                 ) : null}
                 {item.message?.delivery ? (
                   <Tooltip>
                     <TooltipTrigger
                       render={
                         <span
-                          className="flex items-center gap-1 px-1"
+                          className="flex shrink-0 items-center gap-1 px-1"
                           data-user-message-delivery={item.message.delivery.state}
                         />
                       }
@@ -315,14 +321,14 @@ export function QueuedRunsControl({
                   </Tooltip>
                 ) : null}
                 {item.pending ? (
-                  <span className="flex items-center gap-1 px-1">
+                  <span className="flex shrink-0 items-center gap-1 px-1">
                     <Clock3Icon aria-hidden className="size-3" />
                     Saving
                   </span>
                 ) : null}
                 {isEditing ? (
                   <>
-                    <span className="px-1 text-foreground">Editing in the composer</span>
+                    <span className="shrink-0 px-1 text-foreground">Editing in the composer</span>
                     <Button
                       size="xs"
                       variant="ghost"
@@ -392,7 +398,7 @@ export function QueuedRunsControl({
         })}
       </ol>
       {collapsible ? (
-        <div className="self-end pe-1 text-xs pointer-coarse:[&_[data-slot=inline-button]]:relative pointer-coarse:[&_[data-slot=inline-button]]:after:absolute pointer-coarse:[&_[data-slot=inline-button]]:after:-inset-x-1.5 pointer-coarse:[&_[data-slot=inline-button]]:after:-inset-y-3.5">
+        <div className={QUEUE_MORE_CLS}>
           <InlineButton
             tone="muted"
             aria-expanded={showAll}
@@ -405,7 +411,7 @@ export function QueuedRunsControl({
             <ChevronDownIcon
               aria-hidden
               className={cn(
-                "size-3.5 transition-transform duration-150 motion-reduce:transition-none",
+                "size-3.5 transition-transform duration-(--motion-disclosure) motion-reduce:transition-none",
                 showAll && "rotate-180",
               )}
             />
@@ -420,7 +426,10 @@ type QueuedRunMessage = NonNullable<ThreadQueueProjection["messages"][number]>;
 
 const LINE_BREAK = /\r?\n/;
 
-/** A queued turn wears its sent form's attribution; only the dashed edge and controls differ. */
+/**
+ * One line of the queue: sender, the message cut to one line, then the row's actions. A message
+ * from an automation or another agent folds; opening it shows the whole text under the line.
+ */
 function QueuedMessage(props: {
   readonly environmentId: EnvironmentId;
   readonly message: QueuedRunMessage | undefined;
@@ -456,70 +465,70 @@ function QueuedMessage(props: {
             summary: props.previewText.split(LINE_BREAK).find((line) => line.trim()) ?? "",
           }
         : null;
-  const bodyVisible = fold === null || expanded;
+  const textTone = props.isEditing ? "text-foreground" : "text-muted-foreground";
 
   return (
     <>
-      {attribution === "houston" ? (
-        <p className="me-1 text-2xs text-muted-foreground/70">Sent by Houston</p>
-      ) : null}
-      {/* Dashed and unfilled: a turn that has not been sent yet. */}
-      <div
-        className={cn(
-          "flex min-w-0 max-w-[80%] flex-col rounded-2xl border border-dashed text-sm",
-          props.isEditing
-            ? "border-primary/60 text-foreground"
-            : "border-muted-foreground/40 text-muted-foreground",
-          fold === null && "px-3 py-2",
-          fold !== null && expanded && "w-full",
-        )}
-      >
-        {fold ? (
-          <FoldedMessageHeader
-            icon={fold.icon}
-            label={fold.label}
-            summary={fold.summary}
-            expanded={expanded}
-            onToggle={() => setExpanded((value) => !value)}
-          />
+      <div className="flex min-h-8 min-w-0 items-center gap-2 px-3">
+        {props.thumbnails.length > 0 ? (
+          <span className="flex shrink-0 items-center gap-1">
+            {props.thumbnails.slice(0, 3).map((thumbnail) => (
+              <span
+                key={thumbnail.key}
+                className="size-5 overflow-hidden rounded-sm border border-border/70 bg-background"
+              >
+                {thumbnail.url ? (
+                  <img
+                    src={thumbnail.url}
+                    alt={thumbnail.name}
+                    className="size-full object-cover"
+                  />
+                ) : (
+                  <span aria-label={thumbnail.name} className="block size-full bg-muted/60" />
+                )}
+              </span>
+            ))}
+          </span>
         ) : null}
-        {bodyVisible ? (
-          <div
+        {attribution === "houston" ? (
+          <span className="shrink-0 text-muted-foreground/70">Sent by Houston</span>
+        ) : null}
+        {fold ? (
+          <button
+            type="button"
+            aria-expanded={expanded}
+            data-scroll-anchor-ignore
+            onClick={() => setExpanded((value) => !value)}
             className={cn(
-              "flex flex-col gap-2",
-              fold !== null && "max-h-96 overflow-auto px-3 pb-2",
+              "flex min-w-0 flex-1 items-center gap-1.5 rounded-sm text-left outline-none focus-visible:outline-2 focus-visible:outline-ring",
+              textTone,
             )}
           >
-            {props.thumbnails.length > 0 ? (
-              <span className="flex flex-wrap items-center gap-1">
-                {props.thumbnails.map((thumbnail) => (
-                  <span
-                    key={thumbnail.key}
-                    className="size-8 overflow-hidden rounded-md border border-border/70 bg-background"
-                  >
-                    {thumbnail.url ? (
-                      <img
-                        src={thumbnail.url}
-                        alt={thumbnail.name}
-                        className="size-full object-cover"
-                      />
-                    ) : (
-                      <span aria-label={thumbnail.name} className="block size-full bg-muted/60" />
-                    )}
-                  </span>
-                ))}
-              </span>
-            ) : null}
-            {/* In full, like a sent turn: a queued message is read before it is sent. */}
+            <fold.icon aria-hidden className="size-3.5 shrink-0" />
+            <span className="max-w-1/2 shrink-0 truncate">{fold.label}</span>
+            <span className="min-w-0 flex-1 truncate">{fold.summary}</span>
+            <ChevronDownIcon
+              aria-hidden
+              className={cn("size-3.5 shrink-0 transition-transform", expanded && "rotate-180")}
+            />
+          </button>
+        ) : (
+          <Tooltip>
+            <TooltipTrigger
+              render={<span className={cn("min-w-0 flex-1 truncate", textTone)} />}
+              // The row shows one line; the tooltip carries the whole message.
+            >
+              {props.previewText.split(LINE_BREAK).join(" ")}
+            </TooltipTrigger>
             {props.previewText ? (
-              <p className="whitespace-pre-wrap wrap-anywhere">{props.previewText}</p>
+              <TooltipPopup side="top" className="max-w-96 whitespace-pre-wrap wrap-anywhere">
+                {props.previewText}
+              </TooltipPopup>
             ) : null}
-          </div>
-        ) : null}
-      </div>
-      <div className="flex items-center gap-0.5 pe-1 text-xs text-muted-foreground">
+          </Tooltip>
+        )}
         {props.message ? (
-          <span className="me-1 flex items-center gap-2 px-1 opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover/queued:opacity-100">
+          <span className="flex shrink-0 items-center gap-2 px-1 opacity-0 transition-opacity duration-(--motion-feedback) pointer-coarse:opacity-100 focus-within:opacity-100 group-hover/queued:opacity-100">
             {attribution === "agent" && senderThreadId ? (
               <InlineButton tone="muted" onClick={() => props.onOpenThread(senderThreadId)}>
                 Open thread
@@ -545,8 +554,15 @@ function QueuedMessage(props: {
             />
           </span>
         ) : null}
-        {props.children}
+        <div className="flex shrink-0 items-center gap-0.5 text-muted-foreground">
+          {props.children}
+        </div>
       </div>
+      {fold && expanded ? (
+        <p className="max-h-48 overflow-auto px-3 pb-2 text-muted-foreground whitespace-pre-wrap wrap-anywhere">
+          {props.previewText}
+        </p>
+      ) : null}
     </>
   );
 }

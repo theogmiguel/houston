@@ -54,12 +54,12 @@ import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as PeerForwarding from "../peer/PeerForwarding.ts";
 import * as PeerLinkRequests from "../peer/PeerLinkRequests.ts";
 import * as PeerLinks from "../peer/PeerLinks.ts";
-import { layerNoGrids } from "../houston/gridToolkit/gridToolkit.testkit.ts";
+import { layerNoWorkspaces } from "../houston/workspaceToolkit/workspaceToolkit.testkit.ts";
 
 const layerOrchestratorToolkit = McpHttpServer.layerOrchestratorToolkit.pipe(
   Layer.provide(Layer.mock(ThreadLaunchService.ThreadLaunchService)({})),
   Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
-  Layer.provide(layerNoGrids),
+  Layer.provide(layerNoWorkspaces),
 );
 
 /** A task delegated here always has a local child thread. */

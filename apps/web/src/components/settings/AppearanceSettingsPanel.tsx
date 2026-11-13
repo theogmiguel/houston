@@ -38,6 +38,7 @@ import {
 } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { AdvancedSettings } from "./AdvancedSettings";
+import { LayoutSettingsSection } from "../../layout/LayoutSettingsSection";
 import { TypographySection, WordWrapRow } from "./TypographySettings";
 import { ThreadDetailsItemsRow } from "./ThreadDetailsItemsRow";
 
@@ -154,7 +155,7 @@ export function AppearanceSettingsPanel() {
 
         <SettingsRow
           {...searchableSetting("animations")}
-          description="Animate menus, dialogs, lists and grid changes. Your system's reduce-motion setting also turns them off."
+          description="Animate menus, dialogs, lists and layout changes. Your system's reduce-motion setting also turns them off."
           control={
             <Switch
               checked={settings.animationsEnabled}
@@ -296,6 +297,8 @@ export function AppearanceSettingsPanel() {
       </Dialog>
 
       <TypographySection />
+
+      <LayoutSettingsSection />
 
       <SettingsSection id="appearance-chat" title="Chat">
         <SettingsRow

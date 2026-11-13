@@ -57,10 +57,10 @@ function engineName(): string {
 
 function surfaceName(target: EventTarget | null): string {
   if (!(target instanceof Element)) return "?";
-  const named = target.closest("[data-slot],[data-grid-cell],[data-testid]");
+  const named = target.closest("[data-slot],[data-layout-pane-id],[data-testid]");
   if (named instanceof HTMLElement) {
     if (named.dataset.slot !== undefined) return named.dataset.slot;
-    if (named.dataset.gridCell !== undefined) return "grid-cell";
+    if (named.dataset.layoutPaneId !== undefined) return "layout-pane";
     if (named.dataset.testid !== undefined) return `testid:${named.dataset.testid}`;
   }
   const className = typeof target.className === "string" ? target.className.split(/\s+/u)[0] : "";

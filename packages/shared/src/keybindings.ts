@@ -75,11 +75,55 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+w", command: "terminal.close", when: "terminalFocus" },
   { key: "mod+w", command: "rightPanel.close", when: "!terminalFocus" },
   { key: "mod+shift+t", command: "view.reopenClosed" },
-  { key: "y", command: "grid.tidy", when: "!terminalFocus && !editableFocus" },
-  { key: "h", command: "grid.tidyRow", when: "!terminalFocus && !editableFocus" },
-  { key: "v", command: "grid.tidyColumn", when: "!terminalFocus && !editableFocus" },
-  { key: "=", command: "grid.equalize", when: "!terminalFocus && !editableFocus" },
   { key: "mod+d", command: "diff.toggle", when: "!terminalFocus" },
+  // Layout panes: cmd+\ opens a new pane to the right, alt+cmd+shift+D below.
+  { key: "mod+\\", command: "layout.splitRight", when: "!terminalFocus" },
+  { key: "mod+alt+shift+d", command: "layout.splitDown", when: "!terminalFocus" },
+  { key: "mod+alt+f", command: "layout.fill" },
+  // alt+cmd looks, ctrl+alt+cmd moves. Off macOS mod is ctrl, so arrows use
+  // alt+shift to focus and ctrl+alt+shift to move. H J K L repeat the arrows
+  // on the macOS desktop app only: the web keeps alt+cmd+J and alt+cmd+I for
+  // the browser's devtools.
+  ...(
+    [
+      ["arrowleft", "h", "Left"],
+      ["arrowright", "l", "Right"],
+      ["arrowup", "k", "Up"],
+      ["arrowdown", "j", "Down"],
+    ] as const
+  ).flatMap(([arrow, letter, direction]): KeybindingRule[] => [
+    { key: `mod+alt+${arrow}`, command: `layout.focus${direction}` as const, when: "isMac" },
+    { key: `alt+shift+${arrow}`, command: `layout.focus${direction}` as const, when: "!isMac" },
+    { key: `mod+ctrl+alt+${arrow}`, command: `layout.move${direction}` as const, when: "isMac" },
+    { key: `mod+alt+shift+${arrow}`, command: `layout.move${direction}` as const, when: "!isMac" },
+    {
+      key: `mod+alt+${letter}`,
+      command: `layout.focus${direction}` as const,
+      when: "isMac && isDesktop",
+    },
+    {
+      key: `mod+ctrl+alt+${letter}`,
+      command: `layout.move${direction}` as const,
+      when: "isMac && isDesktop",
+    },
+  ]),
+  { key: "mod+alt+home", command: "layout.focusFirstColumn" },
+  { key: "mod+alt+end", command: "layout.focusLastColumn" },
+  { key: "mod+alt+r", command: "layout.cycleColumnWidth" },
+  { key: "mod+alt+c", command: "layout.centerColumn" },
+  { key: "mod+alt+[", command: "layout.pullLeft" },
+  { key: "mod+alt+]", command: "layout.pullRight" },
+  { key: "mod+/", command: "layout.shortcutSheet" },
+  // Workspaces stack vertically: U goes down to the next, I up.
+  { key: "mod+alt+u", command: "layout.focusWorkspaceDown" },
+  { key: "mod+alt+i", command: "layout.focusWorkspaceUp" },
+  { key: "mod+ctrl+alt+u", command: "layout.moveToWorkspaceDown", when: "isMac" },
+  { key: "mod+ctrl+alt+i", command: "layout.moveToWorkspaceUp", when: "isMac" },
+  { key: "mod+alt+shift+u", command: "layout.moveToWorkspaceDown", when: "!isMac" },
+  { key: "mod+alt+shift+i", command: "layout.moveToWorkspaceUp", when: "!isMac" },
+  { key: "mod+alt+shift+u", command: "layout.moveWorkspaceDown", when: "isMac" },
+  { key: "mod+alt+shift+i", command: "layout.moveWorkspaceUp", when: "isMac" },
+  { key: "mod+alt+o", command: "layout.overview" },
   { key: "mod+shift+j", command: "preview.toggle" },
   { key: "mod+r", command: "preview.refresh", when: "previewFocus" },
   { key: "mod+l", command: "preview.focusUrl", when: "previewFocus" },
@@ -100,16 +144,7 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
     command: "thread.stop",
     when: "!terminalFocus && !modelPickerOpen && !composerMenuOpen",
   },
-  {
-    key: "mod+shift+enter",
-    command: "thread.steerQueuedMessage",
-    when: "!terminalFocus && !gridRoute",
-  },
-  {
-    key: "mod+shift+enter",
-    command: "grid.toggleMaximizedCell",
-    when: "!terminalFocus && gridRoute",
-  },
+  { key: "mod+shift+enter", command: "thread.steerQueuedMessage", when: "!terminalFocus" },
   { key: "alt+arrowup", command: "thread.editQueuedMessage", when: "composerFocus" },
   { key: "mod+enter", command: "composer.sendAlternate", when: "composerFocus && turnRunning" },
   {

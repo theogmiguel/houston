@@ -417,17 +417,17 @@ const STANDARD_WEB_THEME_COLORS: Record<ThemeAppearance, Partial<ThemeColors>> =
     surfaceRaised: "#ffffff",
     surfaceOverlay: "#ffffff",
     messageSurface: "#f6f6f6",
-    terminalBackground: "#fbfbfc",
+    terminalBackground: "#ffffff",
   },
   dark: {
     canvas: "#18181b",
-    chrome: "#111113",
-    toolbar: "#111113",
+    chrome: "#08080a",
+    toolbar: "#08080a",
     surface: "#1f1f23",
     surfaceRaised: "#1f1f23",
     surfaceOverlay: "#1f1f23",
     messageSurface: "#2c2c30",
-    terminalBackground: "#0c0c0e",
+    terminalBackground: "#18181b",
   },
 };
 

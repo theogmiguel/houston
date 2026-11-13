@@ -18,6 +18,7 @@ import {
   installFakeEnvironment,
   type FakeDriver,
 } from "../../../test/fakeEnvironment";
+import { loadEmptyLayout } from "../../../test/loadedLayout";
 import { render } from "../../../test/render";
 
 // The socket is the only fake layer; see test/appScenarios.renders.tsx.
@@ -48,6 +49,9 @@ async function bootDraftComposer() {
     ...DEFAULT_CLIENT_SETTINGS,
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
   });
+  loadEmptyLayout();
+  // The phone shell collapses an unfocused composer and draws no attachment strip.
+  await page.viewport(1440, 900);
   const draftId = DraftId.make(`draft-host-clipboard-${++bootCount}`);
   useComposerDraftStore
     .getState()

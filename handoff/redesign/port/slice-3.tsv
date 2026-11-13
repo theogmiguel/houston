@@ -1,0 +1,132 @@
+status	class	upstream_path	houston_path	houston_diff_lines_vs_fork	stack_diff_lines	note
+M	manual	apps/server/src/pullRequest/PullRequestService.ts	apps/server/src/pullRequest/PullRequestService.ts	643	45	merge3=clean;drift
+M	manual	apps/server/src/vcs/GitVcsDriverCore.test.ts	apps/server/src/vcs/GitVcsDriverCore.test.ts	2991	65	merge3=conflicts:4;drift
+M	manual	apps/server/src/vcs/GitVcsDriverCore.ts	apps/server/src/vcs/GitVcsDriverCore.ts	2000	60	merge3=conflicts:5;drift
+M	manual	apps/web/src/browserFaviconStore.ts	apps/web/src/browserFaviconStore.ts	8	29	merge3=conflicts:1
+D	manual	apps/web/src/components/AnimatedWidth.tsx	apps/web/src/components/AnimatedWidth.tsx	2	40	merge3=n/a:deleted-upstream
+M	manual	apps/web/src/components/DiffPanel.browser.test.tsx	apps/web/src/components/DiffPanel.browser.test.tsx		4	absent-at-fork:added-upstream-after-fork;houston-has-own-file;drift
+M	manual	apps/web/src/components/DiffPanel.tsx	apps/web/src/components/DiffPanel.tsx	1472	445	touched-in-slice-1;merge3=conflicts:15;drift
+M	manual	apps/web/src/components/DiffPanelShell.tsx	apps/web/src/components/DiffPanelShell.tsx	21	3	touched-in-slice-1;merge3=conflicts:1
+M	manual	apps/web/src/components/DiffWorkerPoolProvider.tsx	apps/web/src/components/DiffWorkerPoolProvider.tsx	4	33	merge3=clean
+A	new	apps/web/src/components/PanelEmptyState.tsx			42	
+M	manual	apps/web/src/components/ThreadTerminalDrawer.tsx	apps/web/src/components/ThreadTerminalDrawer.tsx	264	5	touched-in-slice-1;merge3=conflicts:1;drift
+M	manual	apps/web/src/components/chat/RightPanelSurfaceContent.tsx	apps/web/src/components/chat/RightPanelSurfaceContent.tsx	99	12	merge3=clean;drift
+M	manual	apps/web/src/components/chat/ThreadDetailsPrRow.tsx	apps/web/src/components/chat/ThreadDetailsPrRow.tsx	169	2	touched-in-slice-1;merge3=conflicts:1;drift
+M	manual	apps/web/src/components/device/DevicePanel.browser.test.tsx	apps/web/src/components/device/DevicePanel.browser.test.tsx	25	160	merge3=clean;drift
+M	manual	apps/web/src/components/device/DevicePanel.tsx	apps/web/src/components/device/DevicePanel.tsx	380	540	touched-in-slice-1;merge3=conflicts:3;drift
+M	mechanical+drift	apps/web/src/components/diffs/AnnotatableCodeView.browser.test.tsx	apps/web/src/components/diffs/AnnotatableCodeView.browser.test.tsx	0	2	
+M	manual	apps/web/src/components/diffs/AnnotatableCodeView.tsx	apps/web/src/components/diffs/AnnotatableCodeView.tsx	25	18	touched-in-slice-1;merge3=conflicts:2;drift
+M	manual	apps/web/src/components/diffs/DiffCommentAnnotation.tsx	apps/web/src/components/diffs/DiffCommentAnnotation.tsx	97	105	touched-in-slice-1;merge3=conflicts:3;drift
+A	new	apps/web/src/components/diffs/DiffFileHeaderParts.tsx			81	
+A	new	apps/web/src/components/diffs/DiffReviewTray.tsx			61	
+A	new	apps/web/src/components/diffs/DiffViewControls.tsx			280	
+M	manual	apps/web/src/components/diffs/StyledDiffCodeView.tsx	apps/web/src/components/diffs/StyledDiffCodeView.tsx	105	93	touched-in-slice-1;merge3=conflicts:4;drift
+M	manual	apps/web/src/components/files/AttachmentFilePreview.tsx	apps/web/src/components/files/AttachmentFilePreview.tsx	26	47	touched-in-slice-1;merge3=conflicts:2;drift
+M	manual	apps/web/src/components/files/AudioPreview.tsx	apps/web/src/components/files/AudioPreview.tsx	9	242	touched-in-slice-1;merge3=clean;drift
+M	manual	apps/web/src/components/files/FileBreadcrumbs.tsx	apps/web/src/components/files/FileBreadcrumbs.tsx	20	12	touched-in-slice-1;merge3=clean
+M	manual	apps/web/src/components/files/FileBrowserPanel.tsx	apps/web/src/components/files/FileBrowserPanel.tsx	658	119	touched-in-slice-1;merge3=conflicts:8;drift
+M	mechanical	apps/web/src/components/files/FileMarkdownPreview.tsx	apps/web/src/components/files/FileMarkdownPreview.tsx	0	21	
+A	new	apps/web/src/components/files/FileMediaDetails.tsx			83	
+M	manual	apps/web/src/components/files/FilePreviewPanel.browser.test.tsx	apps/web/src/components/files/FilePreviewPanel.browser.test.tsx		1	absent-at-fork:added-upstream-after-fork;houston-has-own-file;drift
+M	manual	apps/web/src/components/files/FilePreviewPanel.tsx	apps/web/src/components/files/FilePreviewPanel.tsx	250	244	touched-in-slice-1;merge3=conflicts:8;drift
+M	manual	apps/web/src/components/files/LargeTextViewer.tsx	apps/web/src/components/files/LargeTextViewer.tsx	9	13	touched-in-slice-1;merge3=conflicts:1
+M	manual	apps/web/src/components/files/VirtualTablePreview.tsx	apps/web/src/components/files/VirtualTablePreview.tsx	20	107	touched-in-slice-1;merge3=conflicts:7
+A	new	apps/web/src/components/files/addFileToChat.ts			33	
+M	mechanical	apps/web/src/components/files/fileCommentAnnotations.ts	apps/web/src/components/files/fileCommentAnnotations.ts	0	2	
+A	new	apps/web/src/components/files/fileMarkdownPreview.css			91	
+M	manual	apps/web/src/components/files/fileSurfaceChrome.tsx	apps/web/src/components/files/fileSurfaceChrome.tsx	10	123	touched-in-slice-1;merge3=conflicts:2
+M	manual	apps/web/src/components/files/projectFilesQueryState.ts	apps/web/src/components/files/projectFilesQueryState.ts	41	3	merge3=clean
+A	new	apps/web/src/components/media/MediaTransport.tsx			225	
+M	mechanical	apps/web/src/components/media/MediaVideoPlayer.browser.test.tsx	apps/web/src/components/media/MediaVideoPlayer.browser.test.tsx	0	45	
+M	manual	apps/web/src/components/media/MediaVideoPlayer.tsx	apps/web/src/components/media/MediaVideoPlayer.tsx	2	44	touched-in-slice-1;merge3=clean;drift
+A	new	apps/web/src/components/media/mediaFileInfo.ts			66	
+M	manual	apps/web/src/components/preview/AgentBrowserCursor.tsx	apps/web/src/components/preview/AgentBrowserCursor.tsx	4	4	merge3=conflicts:1
+D	mechanical	apps/web/src/components/preview/BrowserMockup.tsx	apps/web/src/components/preview/BrowserMockup.tsx	0	23	touched-in-slice-1;delete
+M	manual	apps/web/src/components/preview/PreviewEmptyState.tsx	apps/web/src/components/preview/PreviewEmptyState.tsx	12	97	merge3=conflicts:3;drift
+M	mechanical	apps/web/src/components/preview/PreviewFaviconIcon.tsx	apps/web/src/components/preview/PreviewFaviconIcon.tsx	0	22	
+M	manual	apps/web/src/components/preview/PreviewLocalServerCard.tsx	apps/web/src/components/preview/PreviewLocalServerCard.tsx	8	35	merge3=conflicts:2
+M	manual	apps/web/src/components/preview/PreviewRecentUrlCard.tsx	apps/web/src/components/preview/PreviewRecentUrlCard.tsx	4	64	touched-in-slice-1;merge3=conflicts:3
+M	mechanical	apps/web/src/components/preview/PreviewUnreachable.tsx	apps/web/src/components/preview/PreviewUnreachable.tsx	0	137	touched-in-slice-1
+M	manual	apps/web/src/components/preview/PreviewView.tsx	apps/web/src/components/preview/PreviewView.tsx	280	7	touched-in-slice-1;merge3=clean;drift
+M	manual	apps/web/src/components/pullRequest/PullRequestActionsMenu.browser.test.tsx	apps/web/src/components/pullRequest/PullRequestActionsMenu.browser.test.tsx		33	absent-at-fork:added-upstream-after-fork;houston-has-own-file;drift
+M	manual	apps/web/src/components/pullRequest/PullRequestActionsMenu.tsx	apps/web/src/components/pullRequest/PullRequestActionsMenu.tsx	154	108	touched-in-slice-1;merge3=clean;drift
+M	mechanical	apps/web/src/components/pullRequest/PullRequestBaseBranch.tsx	apps/web/src/components/pullRequest/PullRequestBaseBranch.tsx	0	52	touched-in-slice-1
+M	mechanical	apps/web/src/components/pullRequest/PullRequestCandidatePicker.tsx	apps/web/src/components/pullRequest/PullRequestCandidatePicker.tsx	0	56	
+M	manual	apps/web/src/components/pullRequest/PullRequestChecksPopover.tsx	apps/web/src/components/pullRequest/PullRequestChecksPopover.tsx	2	25	touched-in-slice-1;merge3=conflicts:1
+M	manual	apps/web/src/components/pullRequest/PullRequestCodeTab.browser.test.tsx	apps/web/src/components/pullRequest/PullRequestCodeTab.browser.test.tsx	12	14	merge3=conflicts:2;drift
+M	manual	apps/web/src/components/pullRequest/PullRequestCodeTab.tsx	apps/web/src/components/pullRequest/PullRequestCodeTab.tsx	89	532	touched-in-slice-1;merge3=conflicts:5;drift
+M	mechanical	apps/web/src/components/pullRequest/PullRequestCommentBody.tsx	apps/web/src/components/pullRequest/PullRequestCommentBody.tsx	0	72	
+M	manual	apps/web/src/components/pullRequest/PullRequestCommentForm.tsx	apps/web/src/components/pullRequest/PullRequestCommentForm.tsx	60	9	touched-in-slice-1;merge3=conflicts:1;drift
+M	manual	apps/web/src/components/pullRequest/PullRequestCompactFilterMenu.tsx	apps/web/src/components/pullRequest/PullRequestCompactFilterMenu.tsx	8	16	touched-in-slice-1;merge3=conflicts:1
+M	manual	apps/web/src/components/pullRequest/PullRequestComposer.tsx	apps/web/src/components/pullRequest/PullRequestComposer.tsx	4	143	touched-in-slice-1;merge3=conflicts:1;drift
+M	manual	apps/web/src/components/pullRequest/PullRequestDetailActions.tsx	apps/web/src/components/pullRequest/PullRequestDetailActions.tsx	77	694	touched-in-slice-1;merge3=conflicts:2;drift
+M	manual	apps/web/src/components/pullRequest/PullRequestDetailCrumbs.tsx	apps/web/src/components/pullRequest/PullRequestDetailCrumbs.tsx	6	210	merge3=conflicts:2
+M	manual	apps/web/src/components/pullRequest/PullRequestDetailLayout.tsx	apps/web/src/components/pullRequest/PullRequestDetailLayout.tsx	26	123	touched-in-slice-1;merge3=conflicts:2
+M	manual	apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx	apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx	341	798	touched-in-slice-1;merge3=conflicts:16;drift
+M	manual	apps/web/src/components/pullRequest/PullRequestGhosts.tsx	apps/web/src/components/pullRequest/PullRequestGhosts.tsx	21	349	touched-in-slice-1;merge3=conflicts:6
+M	manual	apps/web/src/components/pullRequest/PullRequestLabelPicker.tsx	apps/web/src/components/pullRequest/PullRequestLabelPicker.tsx	6	103	touched-in-slice-1;merge3=conflicts:1
+M	manual	apps/web/src/components/pullRequest/PullRequestListEmptyState.tsx	apps/web/src/components/pullRequest/PullRequestListEmptyState.tsx	109	216	touched-in-slice-1;merge3=conflicts:3
+M	manual	apps/web/src/components/pullRequest/PullRequestListFilters.tsx	apps/web/src/components/pullRequest/PullRequestListFilters.tsx	33	131	touched-in-slice-1;merge3=conflicts:4
+M	manual	apps/web/src/components/pullRequest/PullRequestListGroups.tsx	apps/web/src/components/pullRequest/PullRequestListGroups.tsx	117	93	touched-in-slice-1;merge3=conflicts:1;drift
+M	manual	apps/web/src/components/pullRequest/PullRequestListRow.tsx	apps/web/src/components/pullRequest/PullRequestListRow.tsx	34	47	touched-in-slice-1;merge3=conflicts:4
+M	manual	apps/web/src/components/pullRequest/PullRequestMarkdown.tsx	apps/web/src/components/pullRequest/PullRequestMarkdown.tsx	187	4	touched-in-slice-1;merge3=clean;drift
+M	manual	apps/web/src/components/pullRequest/PullRequestMarkdownTextarea.tsx	apps/web/src/components/pullRequest/PullRequestMarkdownTextarea.tsx		10	absent-at-fork:added-upstream-after-fork;houston-has-own-file;drift
+A	new	apps/web/src/components/pullRequest/PullRequestQuietEntries.tsx			186	
+M	manual	apps/web/src/components/pullRequest/PullRequestReactions.tsx	apps/web/src/components/pullRequest/PullRequestReactions.tsx	2	38	touched-in-slice-1;merge3=conflicts:3
+A	collides	apps/web/src/components/pullRequest/PullRequestReadinessCard.tsx	apps/web/src/components/pullRequest/PullRequestReadinessCard.tsx	343	554	
+M	manual	apps/web/src/components/pullRequest/PullRequestReviewAnnotation.tsx	apps/web/src/components/pullRequest/PullRequestReviewAnnotation.tsx	149	309	touched-in-slice-1;merge3=conflicts:3;drift
+M	manual	apps/web/src/components/pullRequest/PullRequestReviewForm.browser.test.tsx	apps/web/src/components/pullRequest/PullRequestReviewForm.browser.test.tsx		2	absent-at-fork:added-upstream-after-fork;houston-has-own-file;drift
+M	manual	apps/web/src/components/pullRequest/PullRequestReviewForm.tsx	apps/web/src/components/pullRequest/PullRequestReviewForm.tsx	92	144	merge3=conflicts:2;drift
+M	manual	apps/web/src/components/pullRequest/PullRequestReviewerPicker.tsx	apps/web/src/components/pullRequest/PullRequestReviewerPicker.tsx	80	60	merge3=conflicts:2;drift
+M	manual	apps/web/src/components/pullRequest/PullRequestRow.tsx	apps/web/src/components/pullRequest/PullRequestRow.tsx	50	278	touched-in-slice-1;merge3=conflicts:5;drift
+A	collides	apps/web/src/components/pullRequest/PullRequestStackGroup.tsx	apps/web/src/components/pullRequest/PullRequestStackGroup.tsx	264	332	
+M	mechanical	apps/web/src/components/pullRequest/PullRequestStackHeader.tsx	apps/web/src/components/pullRequest/PullRequestStackHeader.tsx	0	28	
+M	mechanical	apps/web/src/components/pullRequest/PullRequestStackLayerContent.tsx	apps/web/src/components/pullRequest/PullRequestStackLayerContent.tsx	0	66	touched-in-slice-1
+M	mechanical	apps/web/src/components/pullRequest/PullRequestStackLayers.tsx	apps/web/src/components/pullRequest/PullRequestStackLayers.tsx	0	73	
+M	manual	apps/web/src/components/pullRequest/PullRequestStackMenu.tsx	apps/web/src/components/pullRequest/PullRequestStackMenu.tsx	24	178	touched-in-slice-1;merge3=conflicts:1;drift
+M	manual	apps/web/src/components/pullRequest/PullRequestStackPopover.tsx	apps/web/src/components/pullRequest/PullRequestStackPopover.tsx	6	24	merge3=clean
+A	new	apps/web/src/components/pullRequest/PullRequestSubmitKeyHint.tsx			9	
+M	manual	apps/web/src/components/pullRequest/PullRequestSummaryTab.browser.test.tsx	apps/web/src/components/pullRequest/PullRequestSummaryTab.browser.test.tsx	81	201	merge3=conflicts:1;drift
+M	manual	apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx	apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx	310	873	touched-in-slice-1;merge3=conflicts:13;drift
+M	manual	apps/web/src/components/pullRequest/PullRequestTimelineTab.browser.test.tsx	apps/web/src/components/pullRequest/PullRequestTimelineTab.browser.test.tsx		91	absent-at-fork:added-upstream-after-fork;houston-has-own-file;drift
+M	manual	apps/web/src/components/pullRequest/PullRequestTimelineTab.tsx	apps/web/src/components/pullRequest/PullRequestTimelineTab.tsx	220	1193	touched-in-slice-1;merge3=conflicts:16;drift
+M	manual	apps/web/src/components/pullRequest/PullRequestTitleEditor.tsx	apps/web/src/components/pullRequest/PullRequestTitleEditor.tsx	4	25	touched-in-slice-1;merge3=conflicts:1
+M	manual	apps/web/src/components/pullRequest/PullRequestsColumn.tsx	apps/web/src/components/pullRequest/PullRequestsColumn.tsx	289	174	touched-in-slice-1;merge3=conflicts:6
+M	manual	apps/web/src/components/pullRequest/PullRequestsPage.tsx	apps/web/src/components/pullRequest/PullRequestsPage.tsx	467	154	touched-in-slice-1;merge3=conflicts:4;drift
+M	manual	apps/web/src/components/pullRequest/ThreadPullRequestsPanel.tsx	apps/web/src/components/pullRequest/ThreadPullRequestsPanel.tsx	36	49	touched-in-slice-1;merge3=conflicts:3
+M	manual	apps/web/src/components/pullRequest/guide/GuideExcerpt.tsx	apps/web/src/components/pullRequest/guide/GuideExcerpt.tsx	8	2	touched-in-slice-1;merge3=clean;drift
+M	manual	apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts	apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts	494	223	merge3=conflicts:2;drift
+M	manual	apps/web/src/components/pullRequest/pullRequestDetail.logic.ts	apps/web/src/components/pullRequest/pullRequestDetail.logic.ts	283	363	touched-in-slice-1;merge3=conflicts:5;drift
+M	manual	apps/web/src/components/pullRequest/pullRequestList.logic.ts	apps/web/src/components/pullRequest/pullRequestList.logic.ts	153	43	merge3=conflicts:1;drift
+M	mechanical	apps/web/src/components/pullRequest/pullRequestMarkdown.logic.test.ts	apps/web/src/components/pullRequest/pullRequestMarkdown.logic.test.ts	0	32	
+M	manual	apps/web/src/components/pullRequest/pullRequestMarkdown.logic.ts	apps/web/src/components/pullRequest/pullRequestMarkdown.logic.ts	45	29	merge3=clean;drift
+M	manual	apps/web/src/components/pullRequest/pullRequestPresentation.tsx	apps/web/src/components/pullRequest/pullRequestPresentation.tsx	176	23	touched-in-slice-1;merge3=conflicts:2;drift
+M	manual	apps/web/src/components/pullRequest/pullRequestsRouteSearch.test.ts	apps/web/src/components/pullRequest/pullRequestsRouteSearch.test.ts	6	13	merge3=clean
+M	manual	apps/web/src/components/pullRequest/useInlineActionConfirm.browser.test.tsx	apps/web/src/components/pullRequest/useInlineActionConfirm.browser.test.tsx	36	39	merge3=clean;drift
+M	manual	apps/web/src/components/pullRequest/usePullRequestDetail.ts	apps/web/src/components/pullRequest/usePullRequestDetail.ts	16	3	merge3=clean;drift
+M	manual	apps/web/src/components/ui/button.tsx	apps/web/src/components/ui/button.tsx	80	2	touched-in-slice-1;merge3=conflicts:1;drift
+M	manual	apps/web/src/components/ui/group.tsx	apps/web/src/components/ui/group.tsx	12	10	merge3=conflicts:4
+M	manual	apps/web/src/components/ui/toggle-group.tsx	apps/web/src/components/ui/toggle-group.tsx	56	24	touched-in-slice-1;merge3=conflicts:1
+M	manual	apps/web/src/components/ui/toggle.tsx	apps/web/src/components/ui/toggle.tsx	22	5	touched-in-slice-1;merge3=conflicts:2
+M	manual	apps/web/src/components/usage/UsageLimitsPooled.tsx	apps/web/src/components/usage/UsageLimitsPooled.tsx	68	87	touched-in-slice-1;merge3=conflicts:3;drift
+M	manual	apps/web/src/components/usage/UsagePage.tsx	apps/web/src/components/usage/UsagePage.tsx	1216	277	touched-in-slice-1;merge3=conflicts:12;drift
+M	manual	apps/web/src/components/usage/UsagePriceOverrides.tsx	apps/web/src/components/usage/UsagePriceOverrides.tsx	6	29	touched-in-slice-1;merge3=conflicts:2
+M	manual	apps/web/src/index.css	apps/web/src/index.css	1553	5	touched-in-slice-1;merge3=conflicts:1;drift
+M	manual	apps/web/src/pierre-tree-theme.ts	apps/web/src/pierre-tree-theme.ts	8	32	touched-in-slice-1;merge3=conflicts:1
+M	manual	apps/web/src/reviewCommentContext.ts	apps/web/src/reviewCommentContext.ts	4	3	merge3=clean;drift
+M	manual	apps/web/src/routes/_chat.pull-requests.tsx	apps/web/src/routes/_chat.pull-requests.tsx	5	7	merge3=clean;drift
+M	manual	packages/contracts/src/git.ts	packages/contracts/src/git.ts	164	12	merge3=conflicts:2;drift
+M	manual	packages/contracts/src/pullRequest.ts	packages/contracts/src/pullRequest.ts	105	46	merge3=conflicts:1;drift
+M	manual	packages/shared/src/delimitedPreview.test.ts	packages/shared/src/delimitedPreview.test.ts	39	19	merge3=clean;drift
+M	manual	packages/shared/src/delimitedPreview.ts	packages/shared/src/delimitedPreview.ts	23	33	merge3=clean;drift
+M	manual	packages/source-control-core/src/server/PullRequestProvider.ts	packages/source-control-core/src/server/PullRequestProvider.ts	56	3	merge3=clean;drift
+M	manual	packages/source-control-github/src/server/GitHubPullRequestApi.test.ts	packages/source-control-github/src/server/GitHubPullRequestApi.test.ts	579	81	merge3=conflicts:3;drift
+M	manual	packages/source-control-github/src/server/GitHubPullRequestApi.ts	packages/source-control-github/src/server/GitHubPullRequestApi.ts	445	21	merge3=conflicts:2;drift
+M	manual	packages/source-control-github/src/server/GitHubPullRequestProvider.ts	packages/source-control-github/src/server/GitHubPullRequestProvider.ts	81	21	merge3=clean;drift
+M	manual	packages/source-control-github/src/server/gitHubPullRequestJson.test.ts	packages/source-control-github/src/server/gitHubPullRequestJson.test.ts	241	107	merge3=clean;drift
+M	manual	packages/source-control-github/src/server/gitHubPullRequestJson.ts	packages/source-control-github/src/server/gitHubPullRequestJson.ts	348	166	merge3=conflicts:3;drift
+M	manual	packages/source-control-github/src/server/pullRequestReads.graphql	packages/source-control-github/src/server/pullRequestReads.graphql	70	27	merge3=clean;drift
+M	manual	packages/source-control-github/src/server/pullRequestReads.graphql.ts	packages/source-control-github/src/server/pullRequestReads.graphql.ts	294	80	merge3=clean;drift
+M	manual	packages/source-control-github/src/server/pullRequestReviews.graphql	packages/source-control-github/src/server/pullRequestReviews.graphql	132	57	merge3=clean;drift
+M	manual	packages/source-control-github/src/server/pullRequestReviews.graphql.ts	packages/source-control-github/src/server/pullRequestReviews.graphql.ts	201	119	merge3=conflicts:3;drift
+M	manual	vite.config.ts	vite.config.ts	218	15	touched-in-slice-1;merge3=conflicts:1;drift

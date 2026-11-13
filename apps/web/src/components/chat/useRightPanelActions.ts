@@ -5,6 +5,9 @@ import { formatFilePathForClipboard } from "@houston-app/client-runtime/media-ac
 import { resolvePathLinkTarget } from "@houston-app/shared/fileLinks";
 import { resolveExplicitDiffOpenOnActivate } from "../ChatView.logic";
 import { useStableCallback } from "../../hooks/useStableCallback";
+import { getLayoutBehavior } from "../../layout/layoutBehavior";
+import { useLayoutPane } from "../../layout/layoutPaneContext";
+import { toggleThreadSidePane, toggleThreadSurfaceTab } from "../../layout/openRules";
 import { type ScopedThreadRef, type RunId } from "@houston-app/contracts";
 import { scopedThreadKey } from "@houston-app/client-runtime/environment";
 import { useEffect } from "react";
@@ -21,7 +24,7 @@ import {
   useRightPanelStore,
 } from "../../rightPanelStore";
 import { requestWorkspaceContentFocus, requestWorkspaceFocus } from "../../lib/workspaceFocus";
-import { setActivePreviewTab } from "../../previewStateStore";
+import { isPreviewSupportedInRuntime, setActivePreviewTab } from "../../previewStateStore";
 import { addBrowserSurface } from "../preview/addBrowserSurface";
 import { focusActivePanelTerminal, focusTerminal } from "../../lib/terminalFocus";
 import { subscribePreviewAction } from "../preview/previewActionBus";
@@ -97,16 +100,21 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
   } = input;
 
   const openPreview = useAtomCommand(previewEnvironment.open, { reportFailure: false });
+  const layoutPane = useLayoutPane();
+  const inLayoutPane = layoutPane.tabId !== null;
   const onToggleDiff = () => {
-    if (!isServerThread) {
+    if (!isServerThread || !activeThreadRef) {
       return;
     }
-    if (!diffOpen) {
-      onDiffPanelOpen?.();
-    }
-    if (activeThreadRef) {
+    const toggleDiff = () => {
+      if (!diffOpen) {
+        onDiffPanelOpen?.();
+      }
       useRightPanelStore.getState().toggle(activeThreadRef, "diff");
-    }
+    };
+    // A diff tab behind another tab comes forward before the toggle hides it.
+    if (inLayoutPane) toggleThreadSurfaceTab(activeThreadRef, "diff", toggleDiff);
+    else toggleDiff();
   };
   const onToggleDiffStable = useStableCallback(onToggleDiff);
   const createBrowserSurface = (profileId?: string) => {
@@ -151,7 +159,7 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
   const addPullRequestsSurfaceStable = useStableCallback(addPullRequestsSurface);
   const addDeviceSurface = () => {
     if (!activeThreadRef) return;
-    // Grid cells do not mount the chat overlay hosts, so the device surface carries its setup wizard there.
+    // An embedded chat does not mount the chat overlay hosts, so the device surface carries its setup wizard there.
     if (!embedded && (!deviceState.onboardingCompleted || deviceState.hostStatus === "disabled")) {
       openDeviceSetupDialog(scopedThreadKey(activeThreadRef));
       return;
@@ -216,8 +224,43 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
     }
   };
   const activateRightPanelSurfaceStable = useStableCallback(activateRightPanelSurface);
+  const addPullRequestSurface = () => {
+    if (!supportsPullRequests || activeThreadRef === null || pullRequestPanelTarget === null)
+      return;
+    useRightPanelStore.getState().openPullRequest(activeThreadRef, pullRequestPanelTarget);
+  };
+  const addPullRequestSurfaceStable = useStableCallback(addPullRequestSurface);
+  const pullRequestSurfaceAvailable = supportsPullRequests && pullRequestPanelTarget !== null;
+  // The side pane's first use opens what Settings › Layout says, falling back to Changes or Files.
+  const openSidePaneDefault = (): boolean => {
+    if (!activeThreadRef) return false;
+    const opensOn = getLayoutBehavior().sidePaneOpensOn;
+    if ((opensOn === "diff" || opensOn === "last-used") && isServerThread && isGitRepo) {
+      addDiffSurface();
+      return true;
+    }
+    if ((opensOn === "files" || opensOn === "last-used") && activeProject) {
+      addFilesSurface();
+      return true;
+    }
+    if (opensOn === "browser" && isPreviewSupportedInRuntime()) {
+      createBrowserSurface();
+      return true;
+    }
+    if (opensOn === "pull-request" && pullRequestSurfaceAvailable) {
+      addPullRequestSurface();
+      return true;
+    }
+    return false;
+  };
+  const openSidePaneDefaultStable = useStableCallback(openSidePaneDefault);
   const toggleRightPanel = () => {
     if (!activeThreadRef) return;
+    // In a layout pane the side pane is the thread's surface tabs, beside the chat.
+    if (inLayoutPane) {
+      toggleThreadSidePane(activeThreadRef, openSidePaneDefaultStable);
+      return;
+    }
     if (rightPanelOpen) {
       closePreviewPanel();
       return;
@@ -289,12 +332,6 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
     );
   };
   const copyRightPanelFilePathStable = useStableCallback(copyRightPanelFilePath);
-  const addPullRequestSurface = () => {
-    if (!supportsPullRequests || activeThreadRef === null || pullRequestPanelTarget === null)
-      return;
-    useRightPanelStore.getState().openPullRequest(activeThreadRef, pullRequestPanelTarget);
-  };
-  const addPullRequestSurfaceStable = useStableCallback(addPullRequestSurface);
   const onOpenTurnDiff = (runId: RunId, filePath?: string) => {
     if (!isServerThread || !activeThreadRef) return;
     const diffOpen =

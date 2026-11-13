@@ -36,7 +36,6 @@ vi.mock("../hooks/useHandleNewThread", () => ({
   useNewThreadHandler: () => async () => undefined,
 }));
 vi.mock("../hooks/useOpenPanelPullRequestUrl", () => ({ useOpenPanelPullRequestUrl: () => null }));
-vi.mock("../grid/useOpenGridDraft", () => ({ useOpenGridDraft: () => async () => null }));
 vi.mock("../connection/useDesktopLocalBootstraps", () => ({ useDesktopLocalBootstraps: () => [] }));
 vi.mock("../state/use-atom-command", () => ({
   useAtomCommand: () => async () => ({ _tag: "Success", value: undefined }),

@@ -13,14 +13,13 @@
 1 apps/web/src/components/files/FileBrowserPanel.tsx
 1 apps/web/src/components/files/ProjectFileTree.tsx
 3 apps/web/src/components/GitActionsControl.tsx
-2 apps/web/src/components/grid/GridSidebar.tsx
 1 apps/web/src/components/preview/PreviewChromeRow.tsx
 2 apps/web/src/components/RightPanelTabs.tsx
 2 apps/web/src/components/settings/FoldedSettingsSection.tsx
 2 apps/web/src/components/settings/ThemeColorPicker.tsx
 1 apps/web/src/components/settings/ThemeImportDialog.tsx
-1 apps/web/src/components/sidebar/SidebarThreadHeader.tsx
 2 apps/web/src/components/sidebar/SidebarThreadRow.tsx
+1 apps/web/src/components/sidebar/ThreadSidebar.tsx
 4 apps/web/src/components/ui/autocomplete.tsx
 3 apps/web/src/components/ui/combobox.tsx
 1 apps/web/src/components/ui/dialog-styles.ts
