@@ -71,7 +71,7 @@ vi.mock(import("./useThreadSurfaceOpeners"), () => {
 
 import { render } from "../../test/render";
 import { buildLayout } from "./layoutFixtures";
-import { createLayoutLauncherContent, findLayoutTab } from "./layoutModel";
+import { createLayoutLauncherContent, selectFocusedTab } from "./layoutModel";
 import { LayoutLauncher } from "./LayoutLauncher";
 import { useLayoutStore } from "./layoutStore";
 
@@ -101,7 +101,6 @@ describe("LayoutLauncher", () => {
       "Side chat",
       "Browser in Work",
       "Browser in Home",
-      "Settings",
       "Pull requests",
       "Tasks",
     ]);
@@ -164,17 +163,18 @@ describe("LayoutLauncher", () => {
     expect(refused.textContent).toContain("scratch folder");
   });
 
-  it("opens Settings as its modal and leaves no placeholder tab behind", async () => {
+  it("focuses the open tab of a page instead of opening a second one", async () => {
     useLayoutStore.getState().setLayoutFromServer(buildLayout([[[["a", "b"]]]]));
+    useLayoutStore.getState().replaceTabContent("b", { kind: "tasks" });
+    useLayoutStore.getState().focusTab("a");
     useLayoutStore.getState().replaceTabContent("a", createLayoutLauncherContent(null));
     await using screen = await render(<LayoutLauncher tabId="a" context={null} />);
-    const settings = Array.from(
+    const tasks = Array.from(
       screen.container.querySelectorAll<HTMLElement>("[data-layout-launcher-row]"),
-    ).find((candidate) => candidate.textContent?.startsWith("Settings"))!;
-    settings.click();
+    ).find((candidate) => candidate.textContent?.startsWith("Tasks"))!;
+    tasks.click();
     await vi.waitFor(() => {
-      expect(screen.router?.state.location.pathname).toBe("/settings/general");
-      expect(findLayoutTab(useLayoutStore.getState().layout, (tab) => tab.id === "a")).toBeNull();
+      expect(selectFocusedTab(useLayoutStore.getState().layout)?.id).toBe("b");
     });
     const kinds = useLayoutStore
       .getState()
@@ -183,6 +183,6 @@ describe("LayoutLauncher", () => {
           column.panes.flatMap((pane) => pane.tabs.map((tab) => tab.content.kind)),
         ),
       );
-    expect(kinds).toEqual(["chat"]);
+    expect(kinds).toEqual(["tasks"]);
   });
 });

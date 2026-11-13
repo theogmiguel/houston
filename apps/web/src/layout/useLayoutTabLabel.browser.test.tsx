@@ -22,20 +22,20 @@ function Icons({ tabs }: { readonly tabs: readonly LayoutTab[] }) {
   );
 }
 
-const pageTab = (kind: "settings" | "pull-requests" | "tasks"): LayoutTab => ({
+const pageTab = (kind: "pull-requests" | "tasks"): LayoutTab => ({
   id: kind,
   content: { kind },
 });
 
 describe("page tab icons", () => {
-  it("gives Settings, Pull requests and Tasks each their own icon", async () => {
+  it("gives Pull requests and Tasks each their own icon", async () => {
     await using screen = await render(
-      <Icons tabs={[pageTab("settings"), pageTab("pull-requests"), pageTab("tasks")]} />,
+      <Icons tabs={[pageTab("pull-requests"), pageTab("tasks")]} />,
     );
     const iconOf = (id: string) =>
       screen.container.querySelector(`[data-tab="${id}"] svg`)?.getAttribute("class") ?? "";
-    const icons = ["settings", "pull-requests", "tasks"].map(iconOf);
-    expect(new Set(icons).size, `icon classes: ${icons.join(" | ")}`).toBe(3);
+    const icons = ["pull-requests", "tasks"].map(iconOf);
+    expect(new Set(icons).size, `icon classes: ${icons.join(" | ")}`).toBe(2);
     expect(iconOf("pull-requests")).toContain("pull-request");
   });
 });

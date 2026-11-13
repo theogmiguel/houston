@@ -18,7 +18,7 @@ import {
 } from "./layoutModel";
 
 const viewport = { width: 1000, whenNoRoom: "shrink-then-scroll" } as const;
-const settings: LayoutTabContent = { kind: "settings" };
+const settings: LayoutTabContent = { kind: "tasks" };
 
 function workspace(id: string, withPane: boolean): LayoutWorkspace {
   return {

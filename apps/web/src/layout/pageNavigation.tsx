@@ -15,7 +15,7 @@ import {
 import { useLayoutStore } from "./layoutStore";
 import { readPullRequestListPreferences } from "../components/pullRequest/pullRequestListPreferences";
 
-/** The page tab a URL shows in the layout. Settings opens as a card over it instead. */
+/** The page tab a URL shows in the layout. Settings is a card over it, never a tab. */
 export function layoutRoutePage(location: {
   pathname: string;
   href: string;
@@ -27,8 +27,7 @@ export function layoutRoutePage(location: {
 }
 
 export function layoutPageHref(content: LayoutPageContent): string {
-  const href =
-    content.href ?? (content.kind === "settings" ? "/settings/general" : `/${content.kind}`);
+  const href = content.href ?? `/${content.kind}`;
   const url = new URL(href, "http://houston.invalid");
   if (content.href === undefined && content.kind === "pull-requests") {
     url.search = defaultStringifySearch(readPullRequestListPreferences());
@@ -71,11 +70,6 @@ export function useOpenLayoutPage() {
     destination?: LayoutTabDestination,
     replaceTabId?: string,
   ) => {
-    if (kind === "settings") {
-      return navigate({ href: layoutPageHref({ kind }) }).then(() => {
-        if (replaceTabId) useLayoutStore.getState().closeTab(replaceTabId);
-      });
-    }
     const store = useLayoutStore.getState();
     const existing = findLayoutTabByContent(store.layout, { kind });
     if (existing) {

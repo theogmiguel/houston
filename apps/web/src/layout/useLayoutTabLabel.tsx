@@ -7,7 +7,6 @@ import {
   FolderTreeIcon,
   GitCompareIcon,
   GlobeIcon,
-  SettingsIcon,
   SmartphoneIcon,
   SquareDashedIcon,
   SquarePenIcon,
@@ -36,14 +35,12 @@ import { surfaceTabTitle } from "./surfaceTabLabels";
 const NEW_THREAD_TITLE = "New thread";
 
 const PAGE_TITLES = {
-  settings: "Settings",
   "pull-requests": "Pull requests",
   tasks: "Tasks",
 } as const;
 
 /** Each page tab carries its own icon, the one its sidebar footer and launcher row show. */
 const PAGE_ICONS: Record<keyof typeof PAGE_TITLES, LucideIcon> = {
-  settings: SettingsIcon,
   "pull-requests": PullRequestGlyph.pullRequest,
   tasks: ListChecksIcon,
 };
@@ -164,7 +161,6 @@ export function useLayoutTabLabel(): (tab: LayoutTab) => LayoutTabLabel {
       }
       case "launcher":
         return { icon: iconOf(SquareDashedIcon), title: "New tab" };
-      case "settings":
       case "pull-requests":
       case "tasks":
         return {

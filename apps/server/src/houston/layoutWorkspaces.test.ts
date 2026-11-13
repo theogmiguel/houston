@@ -681,6 +681,30 @@ describe("a stored layout from before Usage left the page kinds", () => {
     }).pipe(Effect.provide(layer)),
   );
 
+  it.effect("loads with a settings tab dropped, as it does for a retired page", () =>
+    Effect.gen(function* () {
+      const service = yield* HoustonLayoutWorkspaces.HoustonLayoutWorkspaceService;
+      yield* storeRaw("legacy", [
+        {
+          id: "c1",
+          width: 1,
+          panes: [
+            rawPane("p1", 1, "t-settings", [
+              rawTab("t-settings", { kind: "page", page: "settings", href: "/settings/general" }),
+              rawTab("t-chat", chat("thread-1")),
+            ]),
+          ],
+        },
+      ]);
+      const pane = (yield* service.get("legacy")).columns[0]!.panes[0]!;
+      assert.deepEqual(
+        pane.tabs.map((tab) => tab.id),
+        ["t-chat"],
+      );
+      assert.equal(pane.activeTabId, "t-chat");
+    }).pipe(Effect.provide(layer)),
+  );
+
   it.effect("a tasks page tab is stored and loaded", () =>
     Effect.gen(function* () {
       const saved = yield* create(record("t", [column([{ kind: "page", page: "tasks" }])]));

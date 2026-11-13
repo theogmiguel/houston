@@ -12,7 +12,7 @@ import {
   workspaceStackCamera,
 } from "./workspaceSwitch";
 
-const content: LayoutTabContent = { kind: "settings" };
+const content: LayoutTabContent = { kind: "tasks" };
 
 function workspace(id: string) {
   return {

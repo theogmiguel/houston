@@ -8,7 +8,6 @@ import {
   GlobeIcon,
   MessageSquareTextIcon,
   PlusIcon,
-  SettingsIcon,
   SquareDashedIcon,
   SquareTerminalIcon,
   TabletSmartphoneIcon,
@@ -140,11 +139,6 @@ export function LayoutLauncher({
           <LauncherSurfaces threadRef={contextRef} tabId={tabId} paneId={paneId} />
         )}
         <LayoutLauncherGroup>Open a page</LayoutLauncherGroup>
-        <LayoutLauncherRow
-          icon={<SettingsIcon aria-hidden className="size-4" />}
-          label="Settings"
-          onSelect={() => showPage("settings")}
-        />
         <LayoutLauncherRow
           icon={<PullRequestGlyph.pullRequest aria-hidden className="size-4" />}
           label="Pull requests"

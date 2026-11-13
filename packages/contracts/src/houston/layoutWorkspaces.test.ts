@@ -45,7 +45,7 @@ describe("HoustonLayoutWorkspaceRecord", () => {
       { kind: "chat", target: { kind: "draft", draftId: "d1" } },
       { kind: "surface", threadRef: { environmentId: "env", threadId: "t1" }, surfaceId: "diff" },
       { kind: "launcher", id: "l1", context: null },
-      { kind: "page", page: "settings", href: "/settings/general" },
+      { kind: "page", page: "tasks", href: "/tasks" },
     ];
     const tabs = contents.map((content, n) => tab(n, content));
     expect(

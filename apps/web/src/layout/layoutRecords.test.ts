@@ -279,6 +279,35 @@ describe("a stored layout that still holds a Usage page tab", () => {
     expect(pane.activeTabId).toBe("t-chat");
   });
 
+  it("drops a Settings tab the same way", () => {
+    const state = layoutStateFromRecords(
+      [
+        recordOf([
+          {
+            id: "c1",
+            width: 1,
+            panes: [
+              paneRecord(
+                "p1",
+                1,
+                [
+                  { id: "t-settings", content: { kind: "page", page: "settings" } },
+                  chatRecord("t-chat"),
+                ],
+                "t-settings",
+              ),
+            ],
+          },
+        ]),
+      ],
+      null,
+      new Set(),
+    );
+    const pane = state.workspaces[0]!.columns[0]!.panes[0]!;
+    expect(pane.tabs.map((entry) => entry.id)).toEqual(["t-chat"]);
+    expect(pane.activeTabId).toBe("t-chat");
+  });
+
   it("collapses a pane whose only tab was Usage and rescales the pane beside it", () => {
     const state = layoutStateFromRecords(
       [
