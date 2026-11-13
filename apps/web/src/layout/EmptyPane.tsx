@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import { LayoutEmptyBody } from "../components/ui/layout-pane";
+import { LayoutEmptyBody, LayoutLauncherBody } from "../components/ui/layout-pane";
 
 /** A pane whose active tab is gone: it says so instead of drawing a blank surface. */
 export function LayoutEmptyPane({ children }: { children?: ReactNode }) {
@@ -27,9 +27,9 @@ export function LayoutLauncherShell({
   footer?: ReactNode;
 }) {
   return (
-    <LayoutEmptyBody data-layout-launcher={tabId ?? ""}>
+    <LayoutLauncherBody data-layout-launcher={tabId ?? ""}>
       {children}
       {footer}
-    </LayoutEmptyBody>
+    </LayoutLauncherBody>
   );
 }

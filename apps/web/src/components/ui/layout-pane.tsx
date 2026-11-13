@@ -356,6 +356,11 @@ export function LayoutEmptyBody({ className, children, ...props }: HTMLAttribute
   );
 }
 
+/** Hosts a launcher at the pane's full width; the launcher centres and caps its own list. */
+export function LayoutLauncherBody(props: HTMLAttributes<HTMLDivElement>) {
+  return <div className="flex min-h-0 min-w-0 flex-1 flex-col text-sm" {...props} />;
+}
+
 /** The strip's own empty workspace, or one drawn under the overview or mid-switch. */
 export function LayoutEmptyWorkspaceFrame({
   drawn,
