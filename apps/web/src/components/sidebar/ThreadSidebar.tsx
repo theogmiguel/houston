@@ -21,6 +21,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { openThreadInLayout } from "../../threads/openThreadInLayout";
 import { isCommandPaletteOpen } from "../../commandPaletteBus";
+import { requestConfirmDialog } from "../../confirmDialog";
 import { openAddProjectDialog } from "../AddProjectDialog";
 import { requestCustomSnooze } from "../CustomSnoozeDialog";
 import { isDesktopHost } from "../../env";
@@ -299,7 +300,6 @@ export function ThreadSidebar({
     });
     // An empty workspace has nothing to lose, so it goes without asking.
     if (plan.threads.length > 0) {
-      const { requestConfirmDialog } = await import("../../confirmDialog");
       const confirmed =
         (await requestConfirmDialog(workspaceDeletionMessage(section.name, plan), {
           variant: "destructive",
