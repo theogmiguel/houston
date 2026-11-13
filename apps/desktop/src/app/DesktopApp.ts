@@ -347,7 +347,8 @@ const startup = Effect.gen(function* () {
   yield* appIdentity.configure;
   yield* previewPasskeys.configure;
   yield* applicationMenu.configure;
-  yield* updates.configure;
+  // electron-updater loads after the first window, off the path to it.
+  yield* updates.configure(DesktopUpdates.afterFirstWindow(yield* DesktopState.DesktopState));
   yield* DesktopRemoteUpdates.listen;
   yield* DesktopStartupRecovery.listen;
   yield* linuxUrlHandler.register;
