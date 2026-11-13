@@ -50,6 +50,7 @@ it(
       onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
     });
     loadEmptyLayout();
+    await page.viewport(1440, 900);
     const draftId = DraftId.make("draft-27443");
     const threadId = ThreadId.make("thread-27443");
     useComposerDraftStore

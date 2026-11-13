@@ -50,6 +50,8 @@ async function bootDraftComposer() {
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
   });
   loadEmptyLayout();
+  // The phone shell collapses an unfocused composer and draws no attachment strip.
+  await page.viewport(1440, 900);
   const draftId = DraftId.make(`draft-host-clipboard-${++bootCount}`);
   useComposerDraftStore
     .getState()
