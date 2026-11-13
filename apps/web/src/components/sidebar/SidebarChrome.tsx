@@ -116,7 +116,7 @@ function SidebarBrandMark() {
     <HoustonWordmark
       aria-label="Houston"
       className="min-w-0 gap-2 truncate text-base text-foreground"
-      markClassName="size-6.5"
+      markClassName="size-[22px]"
     />
   );
 }
