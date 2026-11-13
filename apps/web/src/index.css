@@ -1292,10 +1292,10 @@ body {
   --sel: rgba(255, 255, 255, 0.09);
   --tog-off: rgba(255, 255, 255, 0.18);
   /* Indigo from the app mark; white sits at 5.1:1 on the fill. */
-  --accent: #3b82f6;
-  --accent-hover: #2563eb;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
   --accent-ink: #64a0ff;
-  --accent-muted: rgba(59, 130, 246, 0.16);
+  --accent-muted: rgba(37, 99, 235, 0.2);
   --ok: #30d158;
   --warn: #f5a524;
   --stop: #ff6b61;

@@ -102,11 +102,14 @@ describe("status colours", () => {
     },
   );
 
-  it.each([false, true])("keeps state out of the accent violet (dark=%s)", (dark) => {
+  // Running is the one state that shares the accent's blue: the accent ink is the running ink.
+  it.each([false, true])("keeps every state but running out of the accent (dark=%s)", (dark) => {
     using _theme = themed(dark);
     const accent = painted("--accent");
     const accentInk = painted("--accent-ink");
+    expect(painted("--status-running-ink")).toEqual(accentInk);
     for (const variable of [...STATUS_INKS, ...STATUS_HUES]) {
+      if (variable === "--status-running-ink" || variable === "--status-running") continue;
       expect(painted(variable), `${variable} borrows the accent`).not.toEqual(accent);
       expect(painted(variable), `${variable} borrows the accent ink`).not.toEqual(accentInk);
     }
