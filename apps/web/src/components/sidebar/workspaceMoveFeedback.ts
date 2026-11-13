@@ -92,7 +92,8 @@ export async function moveThreadToWorkspaceWithFeedback(
           {
             id: "open",
             props: {
-              children: `Open ${target.name}`,
+              children: "Open",
+              "aria-label": `Open ${target.name}`,
               onClick: () => move.onOpenTarget(target.workspaceId),
             },
           },
