@@ -9,6 +9,7 @@ import { threadKeysOfTabs } from "./layoutThreadRef";
 import { LayoutHints } from "./LayoutHint";
 import { LayoutOnboarding } from "./LayoutOnboarding";
 import { LayoutOverview } from "./LayoutOverview";
+import { LayoutDropZones } from "./DropZones";
 import { LayoutShortcutsOverlay } from "./LayoutShortcutsOverlay";
 import { useThreeFingerSwipe } from "./useThreeFingerSwipe";
 import { LayoutLauncher } from "./LayoutLauncher";
@@ -179,6 +180,7 @@ function LoadedLayoutHost({ threadTarget, atIndex, active, narrow }: LayoutHostP
         retainTab={retainsChat}
         {...(narrow === undefined ? {} : { narrow })}
       />
+      {active ? <LayoutDropZones tabLabel={tabLabel} /> : null}
       <LayoutHints resolveWorkspaceTitle={resolveWorkspaceTitle} />
       <LayoutOnboarding />
       {active ? <LayoutOverview /> : null}

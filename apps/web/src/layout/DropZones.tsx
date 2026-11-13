@@ -242,11 +242,11 @@ export function LayoutDropZones({ tabLabel }: { tabLabel: (tab: LayoutTab) => La
       <LayoutPassiveLayer>
         <ExtendBars state={state} />
         {zone ? <LayoutDropZoneBox style={zone} /> : null}
-        {insert ? <LayoutDropInsertMark style={insert} /> : null}
         {state.panes.map((pane) => (
           <PaneGrips key={pane.paneId} pane={pane} target={state.target} />
         ))}
         {dragged ? <DraggedTab tab={dragged} point={state.point} tabLabel={tabLabel} /> : null}
+        {insert ? <LayoutDropInsertMark style={insert} /> : null}
         {zone && state.target ? (
           <LayoutDropPill
             style={{ left: zone.left + zone.width / 2, top: zone.top + zone.height / 2 }}

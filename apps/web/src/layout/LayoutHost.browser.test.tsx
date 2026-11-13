@@ -6,7 +6,7 @@ import "~/index.css";
 import { act, render } from "../../test/render";
 import { toastManager } from "../components/ui/toast";
 import { beginThreadDragAt, endThreadDrag } from "../threads/threadDrag";
-import { cancelLayoutDrag } from "./layoutDrag";
+import { cancelLayoutDrag, moveLayoutDrag } from "./layoutDrag";
 import { setThreadMemberships } from "./threadMembership";
 import { buildLayout } from "./layoutFixtures";
 import { LayoutHost } from "./LayoutHost";
@@ -185,6 +185,23 @@ describe("LayoutHost", () => {
           ?.hasAttribute("inert"),
       )
       .toBe(true);
+  });
+});
+
+describe("LayoutHost: a drag over the panes", () => {
+  it("draws the drop overlay while a tab is dragged and removes it when the drag ends", async () => {
+    using _layout = openLayout([[[["a", "b"]], [["c"]]]]);
+    await using _screen = await render(host);
+    const overlay = () => document.querySelector("[data-layout-drag-overlay]");
+    expect(overlay()).toBeNull();
+    await act(() => moveLayoutDrag({ kind: "tab", tabId: "a" }, { x: 700, y: 300 }));
+    try {
+      expect(overlay()!.querySelector("[data-layout-drag-ghost]")).not.toBeNull();
+      expect(overlay()!.querySelectorAll("[data-layout-drop-grip]").length).toBeGreaterThan(0);
+    } finally {
+      await act(() => cancelLayoutDrag());
+    }
+    expect(overlay()).toBeNull();
   });
 });
 
