@@ -6,9 +6,9 @@ import {
   useThreadDropZone,
   type WorkspaceDragSource,
 } from "../../threads/threadDrag";
-import { SidebarNewWorkspaceDropRow } from "../ui/sidebar-sections";
+import { SidebarNewWorkspaceDropArea } from "../ui/sidebar-sections";
 
-/** The quiet row that ends the workspace list during a drag: dropping on it makes a workspace. */
+/** The blank area that ends the workspace list: dropping a card or tab on it makes a workspace. */
 export function SidebarNewWorkspaceDropZone({
   onDrop,
 }: {
@@ -22,5 +22,5 @@ export function SidebarNewWorkspaceDropZone({
     () => ({ kind: "new-workspace" }),
     (source) => onDrop(source),
   );
-  return dragging ? <SidebarNewWorkspaceDropRow ref={ref} over={over} /> : null;
+  return <SidebarNewWorkspaceDropArea ref={ref} dragging={dragging} over={over} />;
 }

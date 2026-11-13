@@ -38,11 +38,17 @@ export const SIDEBAR_GROUP_HEADING_DROP_CLS =
 export const SIDEBAR_GROUP_SECTION_DROP_CLS =
   "rounded-lg bg-(--accent-muted) ring-1 ring-(--accent-ink) ring-inset";
 
-/** The row at the end of the workspace list that creates a workspace around what is dropped on it. */
-export function SidebarNewWorkspaceDropRow({
+/**
+ * The blank area below the last workspace: it takes the rest of the list's height and, during a
+ * drag, never less than `NEW_WORKSPACE_ZONE_MIN_PX` (`min-h-24`). It draws nothing until the
+ * pointer is over it, then the workspace sections' drop highlight and a quiet label.
+ */
+export function SidebarNewWorkspaceDropArea({
+  dragging,
   over,
   ref,
 }: {
+  dragging: boolean;
   over: boolean;
   ref: Ref<HTMLDivElement>;
 }) {
@@ -52,12 +58,12 @@ export function SidebarNewWorkspaceDropRow({
       data-new-workspace-drop=""
       data-drop-over={over || undefined}
       className={cn(
-        "mx-1 mt-0.5 flex h-6 items-center gap-1 rounded-lg px-3 text-xs text-secondary-label",
+        "mx-1 mt-0.5 flex flex-1 items-center justify-center text-xs text-secondary-label",
+        dragging && "min-h-24",
         over && SIDEBAR_GROUP_SECTION_DROP_CLS,
       )}
     >
-      <PlusIcon aria-hidden className="size-3.5 shrink-0" />
-      <span className="min-w-0 truncate">New workspace</span>
+      {over ? "New workspace" : null}
     </div>
   );
 }

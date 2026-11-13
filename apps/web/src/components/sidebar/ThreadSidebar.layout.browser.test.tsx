@@ -24,16 +24,22 @@ import {
 } from "../../layout/layoutWorkspaces";
 import { configureMotion } from "../../motion/registry";
 import { toastManager } from "../ui/toast";
+import { NEW_WORKSPACE_ZONE_MIN_PX } from "../../threads/workspaceDrop";
 import { SidebarProvider } from "../ui/sidebar";
 import { TooltipProvider } from "../ui/tooltip";
 import { ThreadSidebar } from "./ThreadSidebar";
 
 const moves = vi.hoisted(() => ({
   calls: [] as Array<{ thread: { threadId: string }; workspaceId: string }>,
+  created: 0,
 }));
 
 vi.mock(import("../../layout/threadWorkspaceCommands"), async (original) => ({
   ...(await original()),
+  createEmptyWorkspaceOnServer: (async () => {
+    moves.created += 1;
+    return { id: "ws-new", name: "Workspace 9" };
+  }) as never,
   moveThreadToWorkspaceOnServer: (async (input: {
     thread: { threadId: string };
     workspaceId: string;
@@ -232,6 +238,7 @@ function seed(
   localStorage.clear();
   fixtures.threads = threads;
   moves.calls = [];
+  moves.created = 0;
   const layout = layoutOf(spec);
   useLayoutStore.setState({ layout });
   const idOfWorkspace = (name: string) =>
@@ -636,5 +643,127 @@ describe("ThreadSidebar workspaces", () => {
     } finally {
       configureMotion({ off: false });
     }
+  });
+});
+
+/** The list's own bottom padding (`pb-10` plus the content's `pb-6`) the zone stops short of. */
+const BLANK_ZONE_BOTTOM_PADDING_PX = 64;
+
+describe("ThreadSidebar new workspace drop zone", () => {
+  const blank = (container: HTMLElement) =>
+    container.querySelector<HTMLElement>("[data-new-workspace-drop]")!;
+  const source = (workspaceId: string) => ({
+    workspaceId,
+    threadId: "t1",
+    environmentId: "env-1",
+    projectId: "project-1",
+    title: "t1",
+  });
+  const centreOf = (element: Element) => {
+    const rect = element.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  };
+  const move = (point: { x: number; y: number }) => {
+    window.dispatchEvent(
+      new PointerEvent("pointermove", {
+        bubbles: true,
+        cancelable: true,
+        pointerId: 1,
+        clientX: point.x,
+        clientY: point.y,
+      }),
+    );
+  };
+
+  it("adds no row during a drag; the blank area below the last workspace shows the highlight and label only under the pointer", async () => {
+    using _seed = seed(
+      [
+        { name: "From", chats: ["t1"] },
+        { name: "To", chats: ["t2"] },
+      ],
+      [liveThread("t1"), liveThread("t2")],
+    );
+    await using screen = await render(<RailHarness />);
+    await vi.waitFor(() => expect(groupNames(screen.container)).toEqual(["From", "To"]));
+    const sections = [...screen.container.querySelectorAll<HTMLElement>("[data-workspace-key]")];
+    const lastBottom = sections.at(-1)!.getBoundingClientRect().bottom;
+    const fromId = useLayoutStore.getState().layout.workspaces[0]!.id;
+
+    await act(() => beginThreadDragAt(source(fromId), { x: 0, y: 0 }, 1));
+    const zone = blank(screen.container);
+    expect(zone.getBoundingClientRect().top).toBeGreaterThanOrEqual(lastBottom);
+    expect(zone.getBoundingClientRect().height).toBeGreaterThanOrEqual(NEW_WORKSPACE_ZONE_MIN_PX);
+    expect(zone.hasAttribute("data-drop-over")).toBe(false);
+    expect(screen.container.textContent).not.toContain("New workspace");
+    // A short list leaves blank space; the zone takes all of it, down to the list's padding.
+    const view = zone
+      .closest<HTMLElement>("[data-slot='scroll-area-viewport']")!
+      .getBoundingClientRect();
+    expect(view.bottom - zone.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+      BLANK_ZONE_BOTTOM_PADDING_PX,
+    );
+
+    await act(() => move(centreOf(zone)));
+    expect(zone.hasAttribute("data-drop-over")).toBe(true);
+    expect(zone.textContent).toBe("New workspace");
+
+    const heading = sections.at(-1)!.querySelector<HTMLElement>("[data-workspace-heading]")!;
+    await act(() => move(centreOf(heading)));
+    expect(zone.hasAttribute("data-drop-over")).toBe(false);
+    expect(zone.textContent).toBe("");
+  });
+
+  it("drops on the blank area into a new workspace with the same toast as before", async () => {
+    using _seed = seed(
+      [
+        { name: "From", chats: ["t1"] },
+        { name: "To", chats: ["t2"] },
+      ],
+      [liveThread("t1"), liveThread("t2")],
+    );
+    const added: Array<{ title?: string }> = [];
+    vi.spyOn(toastManager, "add").mockImplementation(((toast: { title?: string }) => {
+      added.push(toast);
+      return "id";
+    }) as never);
+    await using screen = await render(<RailHarness />);
+    await vi.waitFor(() => expect(groupNames(screen.container)).toEqual(["From", "To"]));
+    const fromId = useLayoutStore.getState().layout.workspaces[0]!.id;
+
+    await act(() => beginThreadDragAt(source(fromId), { x: 0, y: 0 }, 1));
+    const point = centreOf(blank(screen.container));
+    await act(() => move(point));
+    await act(() => {
+      window.dispatchEvent(
+        new PointerEvent("pointerup", { pointerId: 1, clientX: point.x, clientY: point.y }),
+      );
+    });
+    await vi.waitFor(() => expect(moves.calls).toHaveLength(1));
+    expect(moves.created).toBe(1);
+    expect(moves.calls[0]).toMatchObject({ thread: { threadId: "t1" }, workspaceId: "ws-new" });
+    await vi.waitFor(() =>
+      expect(added.map((toast) => toast.title)).toContain("Moved to “Workspace 9”"),
+    );
+  });
+
+  it("keeps a blank strip after a list that fills the sidebar, reachable by scrolling", async () => {
+    const names = Array.from({ length: 40 }, (_, index) => `Space ${index}`);
+    using _seed = seed(
+      names.map((name, index) => ({ name, chats: [`c${index}`] })),
+      names.map((_, index) => liveThread(`c${index}`)),
+    );
+    await using screen = await render(<RailHarness />);
+    await vi.waitFor(() => expect(groupNames(screen.container)).toHaveLength(40));
+    const fromId = useLayoutStore.getState().layout.workspaces[0]!.id;
+
+    await act(() => beginThreadDragAt({ ...source(fromId), threadId: "c0" }, { x: 0, y: 0 }, 1));
+    const zone = blank(screen.container);
+    expect(zone.getBoundingClientRect().height).toBeGreaterThanOrEqual(NEW_WORKSPACE_ZONE_MIN_PX);
+    zone.scrollIntoView({ block: "end" });
+    const viewport = zone.closest<HTMLElement>("[data-slot='scroll-area-viewport']")!;
+    const view = viewport.getBoundingClientRect();
+    const rect = zone.getBoundingClientRect();
+    expect(rect.top).toBeGreaterThanOrEqual(view.top);
+    expect(rect.top + NEW_WORKSPACE_ZONE_MIN_PX).toBeLessThanOrEqual(view.bottom);
   });
 });

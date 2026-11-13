@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import "~/index.css";
 import { clearThreadSelection } from "../../threads/sidebarModel";
 import { beginThreadDragAt, endThreadDrag, type TabDragSource } from "../../threads/threadDrag";
-import { WORKSPACE_SPRING_LOAD_MS } from "../../threads/workspaceDrop";
+import { NEW_WORKSPACE_ZONE_MIN_PX, WORKSPACE_SPRING_LOAD_MS } from "../../threads/workspaceDrop";
 import { buildLayout } from "../../layout/layoutFixtures";
 import { cancelLayoutDrag } from "../../layout/layoutDrag";
 import { useLayoutStore } from "../../layout/layoutStore";
@@ -268,7 +268,7 @@ describe("dropping a sidebar card on a workspace", () => {
     await act(() => press("Escape"));
     await act(() => firePointer("pointerup", centre(heading)));
     expect(onDrop).not.toHaveBeenCalled();
-    expect(newZone()).toBeNull();
+    expect(newZone()!.hasAttribute("data-drop-over")).toBe(false);
 
     await act(() => beginThreadDragAt(cardSource("ws-c"), { x: 900, y: 900 }, 1));
     await act(() => firePointer("pointerup", { x: 900, y: 900 }));
@@ -278,22 +278,27 @@ describe("dropping a sidebar card on a workspace", () => {
 });
 
 describe("the new workspace zone", () => {
-  it("case 5: appears only during a drag and takes a card dropped on it", async () => {
+  it("case 5: is the blank area, with no row and no label until the pointer is over it", async () => {
     using _cleanup = cleanUp();
     const onDropNew = vi.fn();
-    await using _screen = await render(
+    await using screen = await render(
       <Rail onDrop={() => {}} onDropNew={onDropNew} groups={[{ id: "ws-a" }]} />,
       { router: false },
     );
-    expect(newZone()).toBeNull();
+    expect(newZone()!.getBoundingClientRect().height).toBe(0);
     await act(() => beginThreadDragAt(cardSource("ws-a"), { x: 900, y: 900 }, 1));
     const zone = newZone()!;
-    expect(zone).not.toBeNull();
+    expect(zone.getBoundingClientRect().height).toBeGreaterThanOrEqual(NEW_WORKSPACE_ZONE_MIN_PX);
+    expect(zone.hasAttribute("data-drop-over")).toBe(false);
+    expect(zone.textContent).toBe("");
+    expect(screen.container.textContent).not.toContain("New workspace");
     await act(() => firePointer("pointermove", centre(zone)));
     expect(zone.hasAttribute("data-drop-over")).toBe(true);
+    expect(zone.textContent).toBe("New workspace");
     await act(() => firePointer("pointerup", centre(zone)));
     expect(onDropNew).toHaveBeenCalledWith(cardSource("ws-a"));
-    expect(newZone()).toBeNull();
+    expect(newZone()!.getBoundingClientRect().height).toBe(0);
+    expect(newZone()!.textContent).toBe("");
   });
 });
 
@@ -364,7 +369,7 @@ describe("dragging a layout tab to the sidebar", () => {
     await act(() => press("Escape"));
     await act(() => firePointer("pointerup", centre(heading), 3));
     expect(onDrop).not.toHaveBeenCalled();
-    expect(newZone()).toBeNull();
+    expect(newZone()!.hasAttribute("data-drop-over")).toBe(false);
   });
 });
 

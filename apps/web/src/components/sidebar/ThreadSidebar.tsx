@@ -1032,13 +1032,13 @@ export function ThreadSidebar({
                   />
                 </SidebarHeader>
               )}
-              <SidebarContent>
+              <SidebarContent className="min-h-full">
                 <div
                   ref={(element) => {
                     railRef.current = element;
                     return attachSidebarTree(element);
                   }}
-                  className="flex min-h-full flex-col px-2 pb-10"
+                  className="flex flex-1 flex-col px-2 pb-10"
                 >
                   <SidebarNeedsYouSection
                     entries={needsYouEntries}
@@ -1097,11 +1097,6 @@ export function ThreadSidebar({
                     ) : null}
                     {projects.length === 0 && query.length === 0 ? <SidebarNoProjects /> : null}
                     {sections.map(renderGroup)}
-                    {isPage ? null : (
-                      <SidebarNewWorkspaceDropZone
-                        onDrop={(source) => dropOnWorkspace(source, NEW_WORKSPACE_DROP)}
-                      />
-                    )}
                     {searching ? <SidebarContentResults results={contentResults} /> : null}
                     {searching &&
                     sections.length === 0 &&
@@ -1111,6 +1106,11 @@ export function ThreadSidebar({
                       <SidebarNoSearchResults query={query} />
                     ) : null}
                   </div>
+                  {isPage ? null : (
+                    <SidebarNewWorkspaceDropZone
+                      onDrop={(source) => dropOnWorkspace(source, NEW_WORKSPACE_DROP)}
+                    />
+                  )}
                 </div>
               </SidebarContent>
               {/* Collapses while SidebarShelves renders nothing (both shelves empty, no drag). */}

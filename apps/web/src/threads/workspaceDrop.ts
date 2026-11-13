@@ -10,6 +10,12 @@ export const NEW_WORKSPACE_DROP = "new-workspace" as const;
  */
 export const WORKSPACE_SPRING_LOAD_MS = 600;
 
+/**
+ * Height of the blank strip a drag keeps at the end of the workspace list, so a long list still
+ * ends in a target the pointer can rest on; matches the `min-h-24` of the zone's recipe.
+ */
+export const NEW_WORKSPACE_ZONE_MIN_PX = 96;
+
 /** Pointer distance from the sidebar list's top or bottom edge where a drag starts scrolling it. */
 export const DRAG_AUTO_SCROLL_BAND_PX = 40;
 
