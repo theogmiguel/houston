@@ -12,6 +12,7 @@ import {
 import { DraftId } from "../composerDraftStore";
 import type { ThreadRouteTarget } from "../threadRoutes";
 import {
+  isEmptyWorkspaceRetained,
   normalizeLayout,
   type LayoutColumn,
   type LayoutPane,
@@ -124,8 +125,8 @@ function nameOf(
 
 /**
  * The workspaces to store. The empty workspace at the bottom of the strip is the place a new
- * workspace starts, so it is stored only once it holds tabs; when no workspace holds any, the
- * first stays so the server always has one. `position` is the server's to set and is filled
+ * workspace starts, so it is stored only once it holds tabs or threads; when no workspace holds
+ * any, the first stays so the server always has one. `position` is the server's to set and is filled
  * from the place in this list; the server ignores it on a put.
  */
 export function layoutStateToRecords(
@@ -133,7 +134,9 @@ export function layoutStateToRecords(
   known: ReadonlyMap<string, KnownLayoutRecord>,
   now: string,
 ): HoustonLayoutWorkspaceRecord[] {
-  const filled = state.workspaces.filter((workspace) => workspace.columns.length > 0);
+  const filled = state.workspaces.filter(
+    (workspace) => workspace.columns.length > 0 || isEmptyWorkspaceRetained(workspace.id),
+  );
   const kept = filled.length > 0 ? filled : state.workspaces.slice(0, 1);
   return kept.map((workspace, index) => ({
     id: workspace.id,

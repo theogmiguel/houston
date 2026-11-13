@@ -67,13 +67,16 @@ function ghostIdsOf(layout: LayoutState): Set<string> {
   return ids;
 }
 
+/** Stops the sync; `flush` sends any pending local change now and resolves once it was handled. */
+export type LayoutSyncHandle = (() => void) & { readonly flush: () => Promise<void> };
+
 /**
  * Keeps the layout store and the server's workspaces in step. The server owns the columns, panes,
  * tabs, sizes and names; its changes flow into the store, and a local change is sent back once it
  * settles. A change is sent only when its content differs from what the server last reported, so
  * a change that came from the server is never echoed. Returns a stop function.
  */
-export function startLayoutSync(deps: LayoutSyncDeps): () => void {
+export function startLayoutSync(deps: LayoutSyncDeps): LayoutSyncHandle {
   const { store } = deps;
   const now = deps.now ?? (() => new Date().toISOString());
   const report = deps.report ?? ((message: string) => console.warn(message));
@@ -84,6 +87,9 @@ export function startLayoutSync(deps: LayoutSyncDeps): () => void {
   let running = false;
   let changedWhileRunning = false;
   let applying = false;
+  /** Content of each workspace as this window last sent it, to tell its echo from a foreign change. */
+  const sent = new Map<string, string>();
+  let current: Promise<void> | null = null;
 
   const known = (): Map<string, KnownLayoutRecord> =>
     new Map(
@@ -132,7 +138,9 @@ export function startLayoutSync(deps: LayoutSyncDeps): () => void {
   /** Saves one workspace; false when the window gave up and the server's copy stands. */
   async function putOne(record: HoustonLayoutWorkspaceRecord): Promise<"saved" | "gave-up"> {
     let expectedRevision = server.get(record.id)?.revision ?? 0;
+    sent.set(record.id, layoutRecordContentKey(record));
     for (let attempt = 1; attempt <= LAYOUT_CONFLICT_ATTEMPTS; attempt += 1) {
+      const based = server.get(record.id);
       const result = await deps.put({ workspace: record, expectedRevision });
       if (result.status === "saved") {
         server.set(record.id, result.workspace);
@@ -144,6 +152,17 @@ export function startLayoutSync(deps: LayoutSyncDeps): () => void {
       } else {
         server.set(record.id, result.current);
         expectedRevision = result.current.revision;
+        // The server changed what this edit was based on (a tab moved with its thread, another
+        // client saved): sending the edit again would undo that change, so the server's copy stands.
+        if (
+          based !== undefined &&
+          layoutRecordContentKey(result.current) !== layoutRecordContentKey(based)
+        ) {
+          report(
+            `Workspace '${record.name}' (${record.id}) changed on the server from revision ${based.revision} to ${result.current.revision} while a local edit was pending; showing the server's copy.`,
+          );
+          return "gave-up";
+        }
       }
     }
     report(
@@ -152,7 +171,15 @@ export function startLayoutSync(deps: LayoutSyncDeps): () => void {
     return "gave-up";
   }
 
-  async function push(): Promise<void> {
+  function push(): Promise<void> {
+    const run = pushOnce();
+    current = run;
+    return run.finally(() => {
+      if (current === run) current = null;
+    });
+  }
+
+  async function pushOnce(): Promise<void> {
     if (running) {
       changedWhileRunning = true;
       return;
@@ -244,6 +271,21 @@ export function startLayoutSync(deps: LayoutSyncDeps): () => void {
     if (adopt || (timer === null && differsFromServer())) adoptServer();
   }
 
+  /** True when a workspace moved on the server that this window has also edited, unsent. */
+  const supersedesLocalEdit = (previous: Map<string, HoustonLayoutWorkspaceRecord>): boolean => {
+    const wanted = new Map(desired().map((record) => [record.id, record]));
+    for (const next of server.values()) {
+      const before = previous.get(next.id);
+      const local = wanted.get(next.id);
+      if (before === undefined || local === undefined || next.revision <= before.revision) continue;
+      const nextKey = layoutRecordContentKey(next);
+      if (nextKey === layoutRecordContentKey(before) || nextKey === sent.get(next.id)) continue;
+      const localKey = layoutRecordContentKey(local);
+      if (localKey !== layoutRecordContentKey(before) && localKey !== nextKey) return true;
+    }
+    return false;
+  };
+
   const onStoreChange = (
     next: { readonly layout: LayoutState },
     previous: { readonly layout: LayoutState },
@@ -262,17 +304,39 @@ export function startLayoutSync(deps: LayoutSyncDeps): () => void {
     if (!snapshot.loaded) return;
     const firstSnapshot = !loaded;
     loaded = true;
+    const previous = server;
     server = new Map(snapshot.workspaces.map((record) => [record.id, record]));
+    if (!firstSnapshot && (timer !== null || running) && supersedesLocalEdit(previous)) {
+      // The server changed a workspace this window had edited and not yet sent, such as a tab
+      // that moved with its thread: the edit was computed from older state, so it is dropped.
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      if (running) changedWhileRunning = false;
+      adoptServer();
+      return;
+    }
     // Unsent local changes keep priority; the push uses the revisions just learned.
     if (timer !== null || running) return;
     if (firstSnapshot) adoptServer(true);
     else if (differsFromServer()) adoptServer();
   });
 
-  return () => {
+  const stop = () => {
     stopStore();
     stopServer();
     if (timer !== null) clearTimeout(timer);
     timer = null;
   };
+  const flush = async (): Promise<void> => {
+    if (timer !== null) {
+      clearTimeout(timer);
+      timer = null;
+      await push();
+    } else if (current !== null) {
+      await current;
+    }
+  };
+  return Object.assign(stop, { flush });
 }

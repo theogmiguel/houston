@@ -129,6 +129,20 @@ export type LayoutTabDestination =
   | { kind: "split"; paneId: string; side: LayoutDirection; exact?: boolean }
   | { kind: "column"; workspaceId: string; index: number };
 
+let retainsEmptyWorkspace: (workspaceId: string) => boolean = () => false;
+
+/**
+ * Names the workspaces that keep existing with no tab open, because threads belong to them. The
+ * layout otherwise drops an empty workspace the way it drops an empty pane.
+ */
+export function setEmptyWorkspaceRetention(retains: (workspaceId: string) => boolean): void {
+  retainsEmptyWorkspace = retains;
+}
+
+export function isEmptyWorkspaceRetained(workspaceId: string): boolean {
+  return retainsEmptyWorkspace(workspaceId);
+}
+
 export type LayoutOpenPlacement = "active-pane" | "new-column" | "split-down";
 
 export interface LayoutOpenOptions {
@@ -575,14 +589,16 @@ export function normalizeLayout(state: LayoutState): LayoutState {
     (workspace, index) =>
       workspace.columns.length > 0 ||
       workspace.id === state.focusedWorkspaceId ||
-      index === workspaces.length - 1,
+      index === workspaces.length - 1 ||
+      retainsEmptyWorkspace(workspace.id),
   );
   // Drop an empty, unfocused workspace that sits right above the trailing one.
   while (
     workspaces.length > 1 &&
     workspaces.at(-1)!.columns.length === 0 &&
     workspaces.at(-2)!.columns.length === 0 &&
-    workspaces.at(-2)!.id !== state.focusedWorkspaceId
+    workspaces.at(-2)!.id !== state.focusedWorkspaceId &&
+    !retainsEmptyWorkspace(workspaces.at(-2)!.id)
   ) {
     workspaces.splice(workspaces.length - 2, 1);
   }

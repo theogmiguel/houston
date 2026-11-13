@@ -301,4 +301,79 @@ describe("layout sync", () => {
     expect(JSON.stringify([...server.records.values()])).not.toContain("ghostOf");
     stop();
   });
+
+  it("rule 11: a server-side move survives a local put computed from older state", async () => {
+    const server = fakeServer([record("a", 0, "ta"), record("b", 1, "tb")]);
+    const stop = start(server);
+    // A tab the server will move: it sits in workspace a, which the window then edits.
+    const a = server.records.get("a")!;
+    const moving = {
+      id: "a-tm",
+      content: toRecordContent(chat("tm")),
+    };
+    const withMoving = {
+      ...a,
+      revision: 2,
+      columns: [
+        {
+          ...a.columns[0]!,
+          panes: [{ ...a.columns[0]!.panes[0]!, tabs: [...a.columns[0]!.panes[0]!.tabs, moving] }],
+        },
+      ],
+    };
+    server.records.set("a", withMoving);
+    server.emit();
+    // The window edits workspace a; its push waits for the debounce.
+    store.getState().openKeptTab(chat("tc"));
+    // Before it fires, the server moves tm to workspace b, bumping both revisions.
+    const b = server.records.get("b")!;
+    server.records.set("a", { ...a, revision: 3 });
+    server.records.set("b", {
+      ...b,
+      revision: 2,
+      columns: [
+        {
+          ...b.columns[0]!,
+          panes: [{ ...b.columns[0]!.panes[0]!, tabs: [...b.columns[0]!.panes[0]!.tabs, moving] }],
+        },
+      ],
+    });
+    server.emit();
+    await settle();
+    const tabsOf = (id: string) =>
+      server.records
+        .get(id)!
+        .columns.flatMap((c) => c.panes.flatMap((p) => p.tabs.map((t) => t.id)));
+    expect(tabsOf("b")).toContain("a-tm");
+    expect(tabsOf("a")).not.toContain("a-tm");
+    expect(server.calls.filter((call) => call.startsWith("put:a@"))).toEqual([]);
+    const local = store
+      .getState()
+      .layout.workspaces.flatMap((w) => w.columns.flatMap((c) => c.panes.flatMap((p) => p.tabs)));
+    expect(local.filter((tab) => tab.id === "a-tm")).toHaveLength(1);
+    stop();
+  });
+
+  it("rule 11: a save that meets a server-side move shows the server's copy and says so", async () => {
+    const server = fakeServer([record("a", 0, "ta")]);
+    const stop = start(server);
+    store.getState().openKeptTab(chat("tc"));
+    // The put is already on its way when the server's move lands: the revision it carries is stale.
+    const a = server.records.get("a")!;
+    server.records.set("a", { ...a, revision: 2, name: "Moved by the server" });
+    await settle();
+    expect(server.records.get("a")!.name).toBe("Moved by the server");
+    expect(reports.join("\n")).toContain("changed on the server");
+    expect(store.getState().layout.workspaces[0]!.name).toBe("Moved by the server");
+    stop();
+  });
+
+  it("flush sends a pending change at once", async () => {
+    const server = fakeServer([record("a", 0, "ta")]);
+    const stop = start(server);
+    store.getState().openKeptTab(chat("tc"));
+    await stop.flush();
+    expect(server.calls).toEqual(["put:a@1"]);
+    stop();
+  });
 });
