@@ -308,6 +308,7 @@ export function ThreadSidebar({
       const confirmed =
         (await requestConfirmDialog(workspaceDeletionMessage(section.name, plan), {
           variant: "destructive",
+          confirmLabel: "Delete workspace",
         })) ?? false;
       if (!confirmed) return;
       const failure = await deleteWorkspaceThreads({

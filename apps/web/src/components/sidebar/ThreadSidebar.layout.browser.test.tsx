@@ -486,7 +486,7 @@ describe("ThreadSidebar workspaces", () => {
     await vi.waitFor(() => expect(groupNames(screen.container)).toEqual(["Keep"]));
     expect(fixtures.confirm).toHaveBeenCalledWith(
       expect.stringContaining("“Drop” and its 2 threads? 1 thread is running"),
-      { variant: "destructive" },
+      { variant: "destructive", confirmLabel: "Delete workspace" },
     );
     expect(
       fixtures.actions.deleteThread.mock.calls.map(

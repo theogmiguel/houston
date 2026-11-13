@@ -81,4 +81,24 @@ describe("confirm dialog coordinator", () => {
     unregister();
     return expect(confirmation).resolves.toBe(true);
   });
+
+  it("carries a custom confirm label into the dialog state and defaults to none", () => {
+    const unregister = mountHost();
+    void requestConfirmDialog("Delete the workspace?", {
+      variant: "destructive",
+      confirmLabel: "Delete workspace",
+    });
+    expect(readConfirmDialogState()).toEqual({
+      status: "confirming",
+      message: "Delete the workspace?",
+      variant: "destructive",
+      confirmLabel: "Delete workspace",
+    });
+    respondToConfirmDialog(true);
+    completeConfirmDialogClose();
+    void requestConfirmDialog("Plain?");
+    expect(readConfirmDialogState()).toMatchObject({ status: "confirming" });
+    expect((readConfirmDialogState() as { confirmLabel?: string }).confirmLabel).toBeUndefined();
+    unregister();
+  });
 });
