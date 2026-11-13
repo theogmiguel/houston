@@ -94,6 +94,23 @@ describe("drop zones", () => {
     expect(result.pill).toMatch(/Into|tab|Add/i);
   });
 
+  it("marks the gap between tabs where the dragged tab lands, and no gap over a body", async () => {
+    using _layout = openLayout();
+    await using screen = await render(<Scene />, { router: false });
+    const mark = () => overlay()!.querySelector<HTMLElement>("[data-layout-drop-insert]");
+    const tabB = screen.container
+      .querySelector<HTMLElement>("[data-layout-pane-tab='b']")!
+      .getBoundingClientRect();
+    const source = { kind: "tab", tabId: "c" } as const;
+    await act(() => moveLayoutDrag(source, { x: tabB.left + 4, y: tabB.top + tabB.height / 2 }));
+    expect(Math.abs(mark()!.getBoundingClientRect().left + 1 - tabB.left)).toBeLessThan(1.5);
+    await act(() => moveLayoutDrag(source, { x: tabB.right - 4, y: tabB.top + tabB.height / 2 }));
+    expect(Math.abs(mark()!.getBoundingClientRect().left + 1 - tabB.right)).toBeLessThan(1.5);
+    const target = pane(screen.container, "w0c0p0");
+    await act(() => moveLayoutDrag(source, { x: target.left + 40, y: target.bottom - 60 }));
+    expect(mark()).toBeNull();
+  });
+
   it.each([
     ["left", 0.1, 0.5],
     ["right", 0.9, 0.5],

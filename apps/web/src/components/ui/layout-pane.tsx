@@ -436,7 +436,7 @@ export function LayoutResizeGutter({
   );
 }
 
-/** The line on the edge a drag moves, and the pill naming the new size. */
+/** The line on the edge a drag moves, in the gutter line's colour so the two read as one. */
 export function LayoutResizeGuide({
   orientation,
   style,
@@ -447,8 +447,9 @@ export function LayoutResizeGuide({
   return (
     <div
       aria-hidden
+      data-layout-resize-guide={orientation}
       className={cn(
-        "absolute rounded-full bg-foreground",
+        "absolute rounded-full bg-(--accent-ink)",
         orientation === "vertical" ? "w-0.5 -translate-x-1/2" : "h-0.5 -translate-y-1/2",
       )}
       style={style}
@@ -496,6 +497,17 @@ export function LayoutDropZoneBox({ style }: { style: CSSProperties }) {
     <div
       data-layout-drop-zone=""
       className="absolute rounded-(--r-group) bg-hover ring-1 ring-(--accent-ink) ring-inset"
+      style={style}
+    />
+  );
+}
+
+/** The mark between two tabs where a dropped tab lands. */
+export function LayoutDropInsertMark({ style }: { style: CSSProperties }) {
+  return (
+    <div
+      data-layout-drop-insert=""
+      className="absolute w-0.5 -translate-x-1/2 rounded-full bg-(--accent-ink)"
       style={style}
     />
   );

@@ -133,6 +133,23 @@ export function getThreadDragSource(): ThreadDragSource | null {
   return source === null || isTabDragSource(source) ? null : source;
 }
 
+const pointListeners = new Set<() => void>();
+
+function setLastPoint(point: ThreadDragPoint | null): void {
+  lastPoint = point;
+  for (const listener of pointListeners) listener();
+}
+
+function subscribePoint(listener: () => void): () => void {
+  pointListeners.add(listener);
+  return () => pointListeners.delete(listener);
+}
+
+/** The pointer's position while a card is dragged, for the copy that follows it. */
+export function useThreadDragPoint(): ThreadDragPoint | null {
+  return useSyncExternalStore(subscribePoint, getThreadDragPoint, () => null);
+}
+
 /** The pointer's last position in the drag in flight, for edge auto-scroll. */
 export function getThreadDragPoint(): ThreadDragPoint | null {
   return lastPoint;
@@ -204,7 +221,7 @@ function sameTarget(left: ThreadDropTarget | null, right: ThreadDropTarget | nul
 function updateDrag(source: WorkspaceDragSource, point: ThreadDragPoint): void {
   const found = resolveDrop(point, source);
   activeZone = found?.zone ?? null;
-  lastPoint = point;
+  setLastPoint(point);
   const target = found?.target ?? null;
   // Over no rail target, a titled card can still land on a chat composer or in the layout's
   // panes; the layout drag decides which pane side or edge takes it.
@@ -242,7 +259,7 @@ function beginDragState(source: WorkspaceDragSource): void {
 
 function endDragState(cancelLayout = true): void {
   activeZone = null;
-  lastPoint = null;
+  setLastPoint(null);
   endThreadContextDrag();
   if (cancelLayout) cancelLayoutDrag();
   releaseSelection?.();

@@ -6,6 +6,7 @@ import {
   LayoutDragOverlay,
   LayoutDropExtendBar,
   LayoutDropGrip,
+  LayoutDropInsertMark,
   LayoutDropPill,
   LayoutDropZoneBox,
   LayoutPassiveLayer,
@@ -83,6 +84,25 @@ export function dropTargetZone(state: LayoutDragState, target: LayoutDropTarget)
     case "down":
       return box({ ...body, top: midY + half });
   }
+}
+
+/** Where a tab dropped on a tab bar lands: the gap before the tab at the target's index. */
+export function dropInsertMark(
+  state: LayoutDragState,
+  target: LayoutDropTarget,
+): { left: number; top: number; height: number } | null {
+  if (target.kind !== "into" || target.index === undefined) return null;
+  const pane = state.panes.find((candidate) => candidate.paneId === target.paneId);
+  const draggedTabId = state.source.kind === "tab" ? state.source.tabId : null;
+  const tabs = pane?.tabs?.filter((tab) => tab.id !== draggedTabId) ?? [];
+  const last = tabs.at(-1);
+  if (last === undefined) return null;
+  const next = tabs[target.index];
+  return {
+    left: next === undefined ? last.rect.right : next.rect.left,
+    top: last.rect.top,
+    height: last.rect.bottom - last.rect.top,
+  };
 }
 
 function PillIcon({ target }: { target: LayoutDropTarget }) {
@@ -216,11 +236,13 @@ export function LayoutDropZones({ tabLabel }: { tabLabel: (tab: LayoutTab) => La
   );
   if (!state) return null;
   const zone = state.target ? dropTargetZone(state, state.target) : null;
+  const insert = state.target ? dropInsertMark(state, state.target) : null;
   return createPortal(
     <LayoutDragOverlay>
       <LayoutPassiveLayer>
         <ExtendBars state={state} />
         {zone ? <LayoutDropZoneBox style={zone} /> : null}
+        {insert ? <LayoutDropInsertMark style={insert} /> : null}
         {state.panes.map((pane) => (
           <PaneGrips key={pane.paneId} pane={pane} target={state.target} />
         ))}

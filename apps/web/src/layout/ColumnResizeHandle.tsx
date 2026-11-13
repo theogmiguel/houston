@@ -502,7 +502,7 @@ function ResizeFeedback({ drag, stripWidth }: { drag: ResizeGuide; stripWidth: n
       <LayoutPassiveLayer>
         <LayoutResizeGuide
           orientation="vertical"
-          style={{ left: toPct(edge), top: "52px", bottom: "48px" }}
+          style={{ left: toPct(edge), top: 0, bottom: 0 }}
         />
         <LayoutPill
           style={{ left: toPct(edge), top: "58%" }}
@@ -521,8 +521,8 @@ function ResizeFeedback({ drag, stripWidth }: { drag: ResizeGuide; stripWidth: n
       <LayoutResizeGuide
         orientation="horizontal"
         style={{
-          left: `calc(${left} + 52px)`,
-          width: `calc(${width} - 104px)`,
+          left,
+          width,
           top: `${edge * 100}%`,
         }}
       />
