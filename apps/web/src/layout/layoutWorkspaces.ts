@@ -3,6 +3,7 @@
  * bound, reordering any workspace, and deleting one. A refusal comes back as text that names the
  * offending value and the rule, so the surface can show it as is.
  */
+import { scopedThreadKey } from "@houston-app/client-runtime/environment";
 import { HOUSTON_LAYOUT_WORKSPACE_LIMITS } from "@houston-app/contracts/houston/layoutWorkspaces";
 
 import {
@@ -118,11 +119,19 @@ function chatTabsOf(workspace: LayoutWorkspace): LayoutTab[] {
 }
 
 /**
- * Remove a workspace. Its chats move to the end of the last pane of the first remaining
- * workspace, as the server does when it deletes one; its surfaces, launchers and pages go with it.
+ * Remove a workspace. The chats of its surviving threads move to the end of the last pane of the
+ * first remaining workspace, as the server does when it deletes one. Everything else goes with it:
+ * the chats of `deletedThreads`, unsent drafts, surfaces, launchers and pages.
  * The last workspace is refused: one must always remain.
  */
-export function deleteLayoutWorkspace(state: LayoutState, workspaceId: string): WorkspaceResult {
+export function deleteLayoutWorkspace(
+  state: LayoutState,
+  workspaceId: string,
+  options: {
+    /** `scopedThreadKey`s of the threads the caller deleted along with the workspace. */
+    readonly deletedThreads?: ReadonlySet<string>;
+  } = {},
+): WorkspaceResult {
   const target = state.workspaces.find((workspace) => workspace.id === workspaceId);
   if (!target) {
     const known = state.workspaces.map((workspace) => workspace.id).join(", ");
@@ -143,7 +152,11 @@ export function deleteLayoutWorkspace(state: LayoutState, workspaceId: string): 
   }
   const home = state.workspaces.find((workspace) => workspace !== target)!;
   let moved = state;
-  for (const tab of chatTabsOf(target)) {
+  const survives = (tab: LayoutTab) =>
+    tab.content.kind === "chat" &&
+    tab.content.target.kind === "server" &&
+    options.deletedThreads?.has(scopedThreadKey(tab.content.target.threadRef)) !== true;
+  for (const tab of chatTabsOf(target).filter(survives)) {
     const homeNow = moved.workspaces.find((workspace) => workspace.id === home.id)!;
     const lastColumn = homeNow.columns.at(-1);
     const lastPane = lastColumn?.panes.at(-1);

@@ -1,6 +1,8 @@
-import { scopeThreadRef } from "@houston-app/client-runtime/environment";
+import { scopedThreadKey, scopeThreadRef } from "@houston-app/client-runtime/environment";
 import { EnvironmentId, ThreadId } from "@houston-app/contracts";
 import { describe, expect, it } from "vite-plus/test";
+
+import type { DraftId } from "../composerDraftStore";
 
 import {
   createLayoutState,
@@ -122,6 +124,23 @@ describe("deleteLayoutWorkspace", () => {
     expect(listLayoutWorkspaces(next)).toHaveLength(1);
     const tabs = next.workspaces[0]!.columns.flatMap((c) => c.panes.flatMap((p) => p.tabs));
     expect(tabs.map((tab) => tab.content.kind)).toEqual(["chat", "chat"]);
+  });
+
+  it("drops the chat of a thread the caller deleted, and an unsent draft, with the workspace", () => {
+    let state = twoWorkspaces();
+    state = openLayoutTab(state, {
+      kind: "chat",
+      target: { kind: "draft", draftId: "draft-1" as DraftId },
+    });
+    const second = state.workspaces[1]!;
+    const deletedThreads = new Set([
+      scopedThreadKey(scopeThreadRef(environmentId, ThreadId.make("b"))),
+    ]);
+    const { state: next } = deleteLayoutWorkspace(state, second.id, { deletedThreads });
+    const tabs = next.workspaces.flatMap((w) =>
+      w.columns.flatMap((c) => c.panes.flatMap((p) => p.tabs)),
+    );
+    expect(tabs.map((tab) => tab.content)).toEqual([chat("a")]);
   });
 
   it("drops surface tabs with the workspace", () => {

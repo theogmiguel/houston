@@ -103,6 +103,14 @@ describe("LayoutHost", () => {
     expect(screen.container.querySelector("[data-new-tab-launcher]")).not.toBeNull();
   });
 
+  it("gives the launcher of an empty workspace the width its rows need", async () => {
+    using _layout = openLayout([[]]);
+    await using screen = await render(host);
+    const row = screen.container.querySelector<HTMLElement>("[data-layout-launcher-row]")!;
+    // The list is capped at 440px; inside the 1000px host it must reach that, not shrink to icons.
+    expect(row.getBoundingClientRect().width).toBeGreaterThan(400);
+  });
+
   it("publishes the threads on screen for the sidebar, and clears them when the layout is covered", async () => {
     using _layout = openLayout([[[["t1"]], [["t2"]]]]);
     await using screen = await render(host);
