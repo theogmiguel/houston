@@ -60,3 +60,15 @@ export const QUEUE_ROW_CLS =
   "group/queued flex min-w-0 flex-col border-t border-(--border) first:border-t-0";
 export const QUEUE_MORE_CLS =
   "flex min-h-7 items-center justify-end border-t border-(--border) px-3 pointer-coarse:[&_[data-slot=inline-button]]:relative pointer-coarse:[&_[data-slot=inline-button]]:after:absolute pointer-coarse:[&_[data-slot=inline-button]]:after:-inset-x-1.5 pointer-coarse:[&_[data-slot=inline-button]]:after:-inset-y-3.5";
+
+/**
+ * The context tab under the composer card: inset from the card's edges and tucked under its bottom
+ * edge, opaque in the card's own fill so the thread never shows through its labels. Every control
+ * in it is a borderless 22px, 12px sans text button in the muted label ink; a branch name keeps
+ * the sans face.
+ */
+export const CONTEXT_TAB_CLS =
+  "group/composer-context relative z-0 mx-2.5 -mt-2 flex h-8.5 min-w-0 items-center gap-px overflow-x-clip rounded-b-lg border border-t-0 border-(--card-edge) bg-(--composer) px-1.5 pt-2 text-(--contrast-secondary-label) text-xs " +
+  "[&_[data-composer-context-control]]:max-w-none! [&_[data-composer-context-control]]:h-5.5! [&_[data-composer-context-control]]:rounded-(--r-ctl)! [&_[data-composer-context-control]]:border-0! [&_[data-composer-context-control]]:px-1.5! [&_[data-composer-context-control]]:font-normal [&_[data-composer-context-control]]:text-secondary-label! [&_[data-composer-context-control]]:text-xs! " +
+  "[&_[data-composer-label]]:font-normal [&_[data-composer-label]]:text-secondary-label " +
+  "[&_[data-composer-label]_*]:font-sans";
