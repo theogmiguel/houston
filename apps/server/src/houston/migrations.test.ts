@@ -903,24 +903,22 @@ describe("the layout workspaces migration copies the grids", () => {
       [[["a"], ["b"], ["c"]], [["d"]]],
     ],
   ];
-  for (const [label, tree, expected] of lossy) {
-    it.effect(`${label} flattens and the log names the workspace`, () => {
-      const messages: string[] = [];
-      return Effect.gen(function* () {
-        yield* insertGrid(grid("lossy-grid", "2026-01-01T00:00:00.000Z", tree));
-        yield* emptyTable;
-        yield* rerun;
-        assert.deepEqual(threadsOf((yield* stored)[0]!.record), expected);
-        const line = messages.find((message) => message.includes("lossy-grid"));
-        assert.isDefined(line, `no log line names the workspace; got ${JSON.stringify(messages)}`);
-        assert.include(line!, "flattened");
-      }).pipe(
-        Effect.provide(
-          Layer.mergeAll(Layer.fresh(SqlitePersistence.layerMemory), collectingLogs(messages)),
-        ),
-      );
-    });
-  }
+  it.effect.each(lossy)("%s flattens and the log names the workspace", ([, tree, expected]) => {
+    const messages: string[] = [];
+    return Effect.gen(function* () {
+      yield* insertGrid(grid("lossy-grid", "2026-01-01T00:00:00.000Z", tree));
+      yield* emptyTable;
+      yield* rerun;
+      assert.deepEqual(threadsOf((yield* stored)[0]!.record), expected);
+      const line = messages.find((message) => message.includes("lossy-grid"));
+      assert.isDefined(line, `no log line names the workspace; got ${JSON.stringify(messages)}`);
+      assert.include(line!, "flattened");
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(Layer.fresh(SqlitePersistence.layerMemory), collectingLogs(messages)),
+      ),
+    );
+  });
 
   it.effect("exact shapes log nothing about loss", () => {
     const messages: string[] = [];

@@ -57,11 +57,9 @@ const unplaced = (error: string, workspaceId?: string): HoustonLayoutPlacement =
 });
 
 /**
- * Places `threadIds` per `target`, one placement per thread in the same order. A named new
- * workspace is made once for the batch. With `replaying`, a thread already open in a workspace is
- * reported there, so a retried launch neither moves it nor makes a second new workspace. A caller
- * fenced by a link launches its threads but places none: it may not change workspaces through the
- * workspace tools either.
+ * Places `threadIds` per `target`, one placement each, in order; a named new workspace is made
+ * once per batch. With `replaying`, a thread already open is reported where it is, so a retried
+ * launch moves nothing. A caller fenced by a link launches its threads but places none.
  */
 export const placeLaunched = Effect.fn("HoustonWorkspaceToolkit.placeLaunched")(function* (input: {
   readonly caller: Pick<Caller, "scope" | "caller">;

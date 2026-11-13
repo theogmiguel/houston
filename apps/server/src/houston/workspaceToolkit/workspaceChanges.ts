@@ -109,11 +109,9 @@ export const createWorkspace = Effect.fn("HoustonWorkspaceToolkit.createWorkspac
 );
 
 /**
- * Opens `threadId`'s chat in the workspace as a tab at the end of its last pane, in a new column
- * when it has none. A thread's chat is in one workspace at a time: a tab it has elsewhere is
- * taken out first, keeping that workspace's other tabs, and the tab keeps its id. A thread already
- * open in the workspace stays where it is. The new tab is checked against the workspace's bounds
- * before the old one is touched.
+ * Opens `threadId`'s chat as a tab at the end of the workspace's last pane (a new column when it
+ * has none); a thread already open there stays put. A chat is in one workspace at a time: its tab
+ * elsewhere is taken out, keeping its id, after the new tab passes the workspace's bounds.
  */
 export const placeThread = Effect.fn("HoustonWorkspaceToolkit.placeThread")(function* (input: {
   readonly workspaceId: string;
