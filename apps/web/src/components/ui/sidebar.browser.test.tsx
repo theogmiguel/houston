@@ -91,7 +91,7 @@ describe("Sidebar", () => {
     expect(containerStyle.borderRightColor).toBe(resolveColor("var(--divider)"));
   });
 
-  it("fades scrolled content over a whole row at its edges, and not once the list is scrolled clear", async () => {
+  it("dissolves the list's bottom 24px into the sidebar colour, and scrolls the last row clear of it", async () => {
     await page.viewport(1280, 400);
     await using screen = await render(
       <SidebarProvider defaultOpen className="h-dvh! min-h-0!">
@@ -111,21 +111,29 @@ describe("Sidebar", () => {
     const viewport = screen.container.querySelector<HTMLElement>(
       '[data-slot="scroll-area-viewport"]',
     )!;
-    expect(getComputedStyle(viewport).getPropertyValue("--fade-size")).toBe("1.5rem");
-    // The fade is driven by the viewport's measured overflow, not by a scroll-state query, so it is
-    // present in every Chromium: the bottom layer dissolves the last 24px while content remains below.
-    await vi.waitFor(() =>
-      expect(getComputedStyle(viewport).maskImage).toContain(
-        "linear-gradient(rgb(0, 0, 0) calc(100% - 24px), rgba(0, 0, 0, 0) 100%)",
-      ),
+    const fade = screen.container.querySelector<HTMLElement>("[data-slot=sidebar-content-fade]")!;
+    const fadeStyle = getComputedStyle(fade);
+    // The fade is an overlay above the list, so no focus or scroll state can switch it off and the
+    // viewport itself is never masked.
+    expect(fade.getBoundingClientRect().height).toBe(24);
+    expect(fade.getBoundingClientRect().bottom).toBeCloseTo(
+      viewport.getBoundingClientRect().bottom,
+      0,
     );
+    expect(fadeStyle.backgroundImage).toContain("linear-gradient");
+    expect(fadeStyle.pointerEvents).toBe("none");
+    expect(getComputedStyle(viewport).maskImage).toBe("none");
 
     viewport.scrollTop = viewport.scrollHeight;
     await vi.waitFor(() =>
       expect(viewport.style.getPropertyValue("--scroll-area-overflow-y-end")).toBe("0px"),
     );
-    expect(getComputedStyle(viewport).maskImage).not.toContain(
-      "linear-gradient(rgb(0, 0, 0) calc(100% - 24px), rgba(0, 0, 0, 0) 100%)",
+    // The list ends with 24px of padding, so its last row scrolls clear of the overlay.
+    const lastRow = screen.container.querySelector<HTMLElement>(
+      "[data-slot=sidebar-content] > :last-child",
+    )!;
+    expect(lastRow.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+      fade.getBoundingClientRect().top + 0.5,
     );
   });
 
