@@ -221,11 +221,7 @@ describe("ThemeEditorPanel", () => {
       const long = "x".repeat(THEME_CSS_MAX_LENGTH + 1);
       await userEvent.fill(field, long);
       await expect
-        .element(
-          view.screen.getByText(`${THEME_CSS_MAX_LENGTH + 1} of ${THEME_CSS_MAX_LENGTH}`, {
-            exact: false,
-          }),
-        )
+        .element(view.screen.getByText("20,001 of 20,000 characters", { exact: false }))
         .toBeVisible();
       await userEvent.fill(view.screen.getByRole("textbox", { name: "Theme name" }), "Too long");
       await userEvent.click(view.screen.getByRole("button", { name: "Create theme" }));

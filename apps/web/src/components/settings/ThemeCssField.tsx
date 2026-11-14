@@ -12,7 +12,7 @@ export function themeCssProblem(css: string): string | null {
   const check = checkThemeCss(css);
   switch (check.kind) {
     case "too-long":
-      return `${check.length} of ${check.limit} characters. Shorten it to save.`;
+      return `${check.length.toLocaleString("en-US")} of ${check.limit.toLocaleString("en-US")} characters. Shorten it to save.`;
     case "loads-files":
       return "Rules that load files are ignored. Only data: and #id addresses work.";
     case "backslash":
