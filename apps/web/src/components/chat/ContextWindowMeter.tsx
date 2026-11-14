@@ -31,10 +31,10 @@ export function ContextWindowMeter(props: {
   const { usage, modelDisplayName, onCompact, compactDisabled, compactDisabledReason } = props;
   const usedPercentage = formatPercentage(usage.usedPercentage);
   const normalizedPercentage = Math.max(0, Math.min(100, usage.usedPercentage ?? 0));
-  // A 16px pie: a stroke as wide as the radius, dashed to the used share, starting at 12 o'clock.
-  const pieRadius = 4;
-  const pieCircumference = 2 * Math.PI * pieRadius;
-  const pieDashOffset = pieCircumference * (1 - normalizedPercentage / 100);
+  // A 16px ring: the track is always whole and the arc over it grows clockwise from 12 o'clock.
+  const ringRadius = 6;
+  const ringCircumference = 2 * Math.PI * ringRadius;
+  const ringDashOffset = ringCircumference * (1 - normalizedPercentage / 100);
   const totalProcessedTokens = usage.totalProcessedTokens ?? null;
   const showTotalProcessed = totalProcessedTokens !== null && totalProcessedTokens > 0;
   const isOverloaded = normalizedPercentage > 90;
@@ -70,17 +70,28 @@ export function ContextWindowMeter(props: {
                 className="-rotate-90 size-4 shrink-0 transform-gpu mx-0!"
                 aria-hidden="true"
               >
-                <circle cx="8" cy="8" r="7" fill="currentColor" fillOpacity="0.24" />
                 <circle
                   cx="8"
                   cy="8"
-                  r={pieRadius}
+                  r={ringRadius}
                   fill="none"
                   stroke="currentColor"
-                  strokeWidth="8"
-                  strokeDasharray={pieCircumference}
-                  strokeDashoffset={pieDashOffset}
+                  strokeOpacity="0.24"
+                  strokeWidth="2.5"
                 />
+                {normalizedPercentage > 0 ? (
+                  <circle
+                    cx="8"
+                    cy="8"
+                    r={ringRadius}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeDasharray={ringCircumference}
+                    strokeDashoffset={ringDashOffset}
+                  />
+                ) : null}
               </svg>
               {isNearFull && usedPercentage ? (
                 <span className="tabular-nums">{usedPercentage}</span>

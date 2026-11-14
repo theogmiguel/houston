@@ -118,7 +118,7 @@ export function formatContextWindowCompactionMessage(
 /**
  * Share of the window used from which the footer meter turns into a warning. At 80% the window is
  * close enough to full that auto-compaction or a manual /compact becomes a real consideration;
- * below it the meter stays a quiet pie.
+ * below it the meter stays a quiet ring.
  */
 export const CONTEXT_METER_WARN_PERCENT = 80;
 

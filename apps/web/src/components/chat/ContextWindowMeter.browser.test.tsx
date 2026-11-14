@@ -34,7 +34,7 @@ function renderMeter(usedPercentage: number | null) {
 
 const WARN_COLOR_CLASS = "text-(--warn-ink)";
 
-it("shows only the muted pie below 80% used", async () => {
+it("shows only the muted ring below 80% used", async () => {
   await using _screen = await renderMeter(8);
   const meter = page.getByRole("button", { name: "Context window 8% used" });
   await expect.element(meter).toBeVisible();
@@ -43,6 +43,21 @@ it("shows only the muted pie below 80% used", async () => {
   expect(element.querySelector(`.${CSS.escape(WARN_COLOR_CLASS)}`)).toBeNull();
   const svg = element.querySelector("svg") as SVGElement;
   expect(svg.getBoundingClientRect().width).toBe(16);
+});
+
+it("draws a hollow ring whose arc grows with the used share", async () => {
+  await using _screen = await renderMeter(25);
+  const circles = [
+    ...page
+      .getByRole("button", { name: "Context window 25% used" })
+      .element()
+      .querySelectorAll("circle"),
+  ];
+  expect(circles).toHaveLength(2);
+  expect(circles.map((circle) => circle.getAttribute("fill"))).toEqual(["none", "none"]);
+  const arc = circles[1] as SVGCircleElement;
+  const circumference = Number(arc.getAttribute("stroke-dasharray"));
+  expect(Number(arc.getAttribute("stroke-dashoffset"))).toBeCloseTo(circumference * 0.75, 3);
 });
 
 it("opens the popover with the compact action below 80% used", async () => {
@@ -56,7 +71,7 @@ it("opens the popover with the compact action below 80% used", async () => {
   await expect.element(page.getByRole("button", { name: "Compact context" })).toBeVisible();
 });
 
-it("shows a 16px pie and the percentage in the warning colour from 80% used", async () => {
+it("shows a 16px ring and the percentage in the warning colour from 80% used", async () => {
   await using _screen = await renderMeter(85);
   const meter = page.getByRole("button", { name: "Context window 85% used" });
   await expect.element(meter).toHaveTextContent("85%");
@@ -66,7 +81,7 @@ it("shows a 16px pie and the percentage in the warning colour from 80% used", as
   expect(svg.getBoundingClientRect().width).toBe(16);
 });
 
-it("still renders an empty pie when the used share is unknown", async () => {
+it("still renders an empty ring when the used share is unknown", async () => {
   await using _screen = await renderMeter(null);
   const meter = page.getByRole("button", { name: "Context window 0 tokens used" });
   await expect.element(meter).toBeVisible();
