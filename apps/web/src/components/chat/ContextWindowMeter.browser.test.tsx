@@ -8,20 +8,20 @@ import { render } from "../../../test/render";
 import { TooltipProvider } from "../ui/tooltip";
 import { ContextWindowMeter } from "./ContextWindowMeter";
 
-function snapshot(usedPercentage: number): ContextWindowSnapshot {
+function snapshot(usedPercentage: number | null): ContextWindowSnapshot {
   const maxTokens = 200_000;
-  const usedTokens = Math.round((maxTokens * usedPercentage) / 100);
+  const usedTokens = Math.round((maxTokens * (usedPercentage ?? 0)) / 100);
   return {
     usedTokens,
     maxTokens,
     remainingTokens: maxTokens - usedTokens,
     usedPercentage,
-    remainingPercentage: 100 - usedPercentage,
+    remainingPercentage: usedPercentage === null ? null : 100 - usedPercentage,
     updatedAt: "2026-01-01T00:00:00.000Z",
   } as unknown as ContextWindowSnapshot;
 }
 
-function renderMeter(usedPercentage: number) {
+function renderMeter(usedPercentage: number | null) {
   return render(
     <TooltipProvider delay={0}>
       <div data-testid="host">
@@ -32,17 +32,60 @@ function renderMeter(usedPercentage: number) {
   );
 }
 
-it("renders nothing below 80% used", async () => {
-  await using _screen = await renderMeter(79);
-  expect(document.querySelector('[data-testid="host"]')?.children).toHaveLength(0);
+const WARN_COLOR_CLASS = "text-(--warn-ink)";
+
+it("shows only the muted ring below 80% used", async () => {
+  await using _screen = await renderMeter(8);
+  const meter = page.getByRole("button", { name: "Context window 8% used" });
+  await expect.element(meter).toBeVisible();
+  const element = meter.element();
+  expect(element.textContent?.trim()).toBe("");
+  expect(element.querySelector(`.${CSS.escape(WARN_COLOR_CLASS)}`)).toBeNull();
+  const svg = element.querySelector("svg") as SVGElement;
+  expect(svg.getBoundingClientRect().width).toBe(16);
 });
 
-it("shows a 16px pie and the percentage from 80% used", async () => {
-  await using _screen = await renderMeter(82);
-  const meter = page.getByRole("button", { name: "Context window 82% used" });
-  await expect.element(meter).toHaveTextContent("82%");
-  const svg = meter.element().querySelector("svg") as SVGElement;
+it("draws a hollow ring whose arc grows with the used share", async () => {
+  await using _screen = await renderMeter(25);
+  const circles = [
+    ...page
+      .getByRole("button", { name: "Context window 25% used" })
+      .element()
+      .querySelectorAll("circle"),
+  ];
+  expect(circles).toHaveLength(2);
+  expect(circles.map((circle) => circle.getAttribute("fill"))).toEqual(["none", "none"]);
+  const arc = circles[1] as SVGCircleElement;
+  const circumference = Number(arc.getAttribute("stroke-dasharray"));
+  expect(Number(arc.getAttribute("stroke-dashoffset"))).toBeCloseTo(circumference * 0.75, 3);
+});
+
+it("opens the popover with the compact action below 80% used", async () => {
+  await using _screen = await render(
+    <TooltipProvider delay={0}>
+      <ContextWindowMeter usage={snapshot(8)} modelDisplayName="Opus" onCompact={() => {}} />
+    </TooltipProvider>,
+    { router: false },
+  );
+  await userEvent.hover(page.getByRole("button", { name: "Context window 8% used" }));
+  await expect.element(page.getByRole("button", { name: "Compact context" })).toBeVisible();
+});
+
+it("shows a 16px ring and the percentage in the warning colour from 80% used", async () => {
+  await using _screen = await renderMeter(85);
+  const meter = page.getByRole("button", { name: "Context window 85% used" });
+  await expect.element(meter).toHaveTextContent("85%");
+  const element = meter.element();
+  expect(element.querySelector(`.${CSS.escape(WARN_COLOR_CLASS)}`)).not.toBeNull();
+  const svg = element.querySelector("svg") as SVGElement;
   expect(svg.getBoundingClientRect().width).toBe(16);
+});
+
+it("still renders an empty ring when the used share is unknown", async () => {
+  await using _screen = await renderMeter(null);
+  const meter = page.getByRole("button", { name: "Context window 0 tokens used" });
+  await expect.element(meter).toBeVisible();
+  expect(meter.element().textContent?.trim()).toBe("");
 });
 
 it("fills the popover bar with a scaleX transform, not a width", async () => {

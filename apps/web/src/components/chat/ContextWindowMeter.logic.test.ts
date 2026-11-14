@@ -9,8 +9,8 @@ import {
   hasAvailableCompactionProvider,
   hasDismissedResumeCompaction,
   resolveContextWindowModelDisplayName,
-  CONTEXT_METER_MIN_USED_PERCENT,
-  shouldShowContextWindowMeter,
+  CONTEXT_METER_WARN_PERCENT,
+  isContextWindowNearFull,
 } from "./ContextWindowMeter.logic";
 
 function claudeProvider(input: {
@@ -141,19 +141,19 @@ describe("hasDismissedResumeCompaction", () => {
   });
 });
 
-describe("shouldShowContextWindowMeter", () => {
-  it("hides the meter below the threshold", () => {
-    expect(shouldShowContextWindowMeter(CONTEXT_METER_MIN_USED_PERCENT - 0.1)).toBe(false);
-    expect(shouldShowContextWindowMeter(0)).toBe(false);
+describe("isContextWindowNearFull", () => {
+  it("is false below the warning share", () => {
+    expect(isContextWindowNearFull(CONTEXT_METER_WARN_PERCENT - 0.1)).toBe(false);
+    expect(isContextWindowNearFull(0)).toBe(false);
   });
 
-  it("shows the meter from the threshold", () => {
-    expect(shouldShowContextWindowMeter(CONTEXT_METER_MIN_USED_PERCENT)).toBe(true);
-    expect(shouldShowContextWindowMeter(100)).toBe(true);
+  it("is true from the warning share", () => {
+    expect(isContextWindowNearFull(CONTEXT_METER_WARN_PERCENT)).toBe(true);
+    expect(isContextWindowNearFull(100)).toBe(true);
   });
 
-  it("hides the meter when the used share is unknown", () => {
-    expect(shouldShowContextWindowMeter(null)).toBe(false);
-    expect(shouldShowContextWindowMeter(Number.NaN)).toBe(false);
+  it("is false when the used share is unknown", () => {
+    expect(isContextWindowNearFull(null)).toBe(false);
+    expect(isContextWindowNearFull(Number.NaN)).toBe(false);
   });
 });

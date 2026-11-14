@@ -5,7 +5,8 @@ reports it: tokens used, the limit and the percentage left. The latest completed
 kept while the agent works and is replaced after compaction.
 
 **Settings ▸ Labs ▸ Context window indicator** adds a small meter to the composer. It is
-optional and off by default, and appears once 80% of the window is used.
+optional and off by default. The meter stays visible while the thread has a context reading
+and turns into a warning from 80% of the window used.
 
 ## What it reads
 
