@@ -32,6 +32,17 @@ describe("resolveHoustonMcpToolPresentation", () => {
     }
   });
 
+  it("presents the theme tools as reading and setting the theme", () => {
+    expect(resolveHoustonMcpToolPresentation("houston_theme_read")?.displayName).toBe(
+      "Read themes",
+    );
+    expect(resolveHoustonMcpToolPresentation("houston_theme_set")?.displayName).toBe(
+      "Set the theme",
+    );
+    expect(resolveHoustonMcpSummaryAction("houston_theme_read", {})).toBe("theme-read");
+    expect(resolveHoustonMcpSummaryAction("houston_theme_set", {})).toBe("theme-set");
+  });
+
   it("matches OpenCode 2's per-thread server names, whose thread ids hold underscores", () => {
     expect(
       resolveHoustonMcpToolPresentation("houston-thread_opencode2-adapter_delegate_task")

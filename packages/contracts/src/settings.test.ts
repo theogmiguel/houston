@@ -10,6 +10,7 @@ import {
 import {
   ClientSettingsSchema,
   ClientSettingsPatch,
+  ClientServerSettingsPatch,
   ClaudeSettings,
   DEFAULT_SERVER_SETTINGS,
   PROJECT_SCOPED_SERVER_SETTING_KEYS,
@@ -39,9 +40,38 @@ const decodeStringOnlyEnvironment = Schema.decodeUnknownSync(
   ),
 );
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
+const decodeClientServerSettingsPatch = Schema.decodeUnknownSync(ClientServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const encodeServerSettingsPatch = Schema.encodeSync(ServerSettingsPatch);
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
+
+describe("theme defaults", () => {
+  const themeDefaults = {
+    defaultTheme: "grove",
+    defaultThemeSetAt: "2026-11-13T00:00:00.000Z",
+    defaultAppearance: "dark",
+    defaultAppearanceSetAt: "2026-11-13T00:00:00.000Z",
+  } as const;
+
+  it("drops theme defaults from a client's settings patch", () => {
+    expect(
+      decodeClientServerSettingsPatch({ newWorktreesStartFromOrigin: false, ...themeDefaults }),
+    ).toEqual({ newWorktreesStartFromOrigin: false });
+  });
+
+  it("lets the server's own patch set them", () => {
+    expect(decodeServerSettingsPatch(themeDefaults)).toEqual(themeDefaults);
+  });
+
+  it("defaults the appearance to none set", () => {
+    expect(decodeServerSettings({}).defaultAppearance).toBe("");
+    expect(decodeServerSettings({}).defaultAppearanceSetAt).toBe("");
+  });
+
+  it("refuses an appearance that is not light, dark or system", () => {
+    expect(() => decodeServerSettings({ defaultAppearance: "sepia" })).toThrow();
+  });
+});
 
 describe("storage cleanup settings", () => {
   it("keeps cleanup disabled for existing installations", () => {
