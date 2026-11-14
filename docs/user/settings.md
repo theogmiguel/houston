@@ -21,7 +21,22 @@ Search Settings by feature or setting name. `Esc` clears an active search.
 - **Confirmations** — ask before unpinning, archiving or deleting a thread, and, in the
   desktop app, whether the quit shortcut quits directly or waits for a second press.
 - **Background** — **Keep in tray**, shown when the desktop has a working tray.
-- **Display** — timestamp format.
+- **Display** — interface language and timestamp format.
+
+### Language
+
+**Settings → General → Display → Language** switches the interface between English
+(default) and Português (Brasil). The change applies at once, is saved on this device and
+survives a restart. Restoring the default settings returns it to English.
+
+Only part of the interface is translated: the Settings sidebar, page titles and
+descriptions, the breadcrumb, settings search (a query matches the translated or the
+English name), and most row titles and descriptions on the General, Appearance, Chat,
+Diffs and Labs pages. Rows on the other pages are translated only where their text is
+shared with those pages. Everything else stays in English, including the thread view,
+composer, menus, dialogs, toasts, the values inside controls and text that includes
+names or numbers. Product and developer terms (Houston, thread, worktree, commit,
+pull request) are kept in English. A string without a translation is shown in English.
 
 ## Appearance
 
