@@ -13,7 +13,11 @@ import {
 } from "@houston-app/contracts";
 import { fromJsonStringPretty } from "@houston-app/shared/schemaJson";
 import { themeCssLoadsRemoteFiles } from "@houston-app/shared/themeCss";
-import { BUILT_IN_THEME_IDS, UNPUBLISHABLE_THEME_IDS } from "@houston-app/shared/themePalettes";
+import {
+  BUILT_IN_THEME_IDS,
+  STANDARD_THEME_ID,
+  UNPUBLISHABLE_THEME_IDS,
+} from "@houston-app/shared/themePalettes";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -391,7 +395,11 @@ const make = Effect.gen(function* () {
       Effect.gen(function* () {
         if (themeId === undefined) return yield* select;
         if (theme === undefined) {
-          const known = [...BUILT_IN_THEME_IDS, ...(yield* refresh).themes.map(({ id }) => id)];
+          const known = [
+            STANDARD_THEME_ID,
+            ...BUILT_IN_THEME_IDS,
+            ...(yield* refresh).themes.map(({ id }) => id),
+          ];
           if (!known.includes(themeId)) {
             return yield* new EnvironmentThemeRefusedError({
               themeId,

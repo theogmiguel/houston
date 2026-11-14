@@ -2,6 +2,12 @@ export const BUILT_IN_THEME_IDS = ["t3-chat", "grove", "ocean", "ember", "iris"]
 
 export const MOBILE_DEFAULT_THEME_ID = "houston";
 
+/**
+ * Houston's own look: the standard colors with no theme on top. Selecting it takes the active
+ * theme, and its CSS, away.
+ */
+export const STANDARD_THEME_ID = MOBILE_DEFAULT_THEME_ID;
+
 export const MOBILE_THEME_IDS = [MOBILE_DEFAULT_THEME_ID, ...BUILT_IN_THEME_IDS] as const;
 
 /** Reserve appearance keywords, built-ins, and legacy aliases so custom themes cannot capture stored preferences. */
@@ -17,7 +23,7 @@ export const RESERVED_THEME_IDS: ReadonlySet<string> = new Set([
   "houston-iris",
 ]);
 
-/** The mobile default id is valid in saved themes but cannot be published because web/desktop cannot resolve it. */
+/** The standard look's id can be selected but never published, since it names the absence of a theme. */
 export const UNPUBLISHABLE_THEME_IDS: ReadonlySet<string> = new Set([
   ...RESERVED_THEME_IDS,
   MOBILE_DEFAULT_THEME_ID,

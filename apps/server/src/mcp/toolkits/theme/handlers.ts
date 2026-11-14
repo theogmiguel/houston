@@ -1,6 +1,6 @@
 import { OrchestratorMcpFailure } from "@houston-app/contracts";
 import { THEME_GUIDE } from "@houston-app/shared/themeCss";
-import { BUILT_IN_THEME_IDS } from "@houston-app/shared/themePalettes";
+import { BUILT_IN_THEME_IDS, STANDARD_THEME_ID } from "@houston-app/shared/themePalettes";
 import * as Effect from "effect/Effect";
 import * as Struct from "effect/Struct";
 import * as EnvironmentTheme from "../../../environmentTheme.ts";
@@ -29,7 +29,7 @@ export const layer = McpToolAccess.toLayer(ThemeToolkit, {
       );
       return {
         current,
-        builtIn: BUILT_IN_THEME_IDS,
+        builtIn: [STANDARD_THEME_ID, ...BUILT_IN_THEME_IDS],
         published: published.map(({ id, name, css }) => ({ id, name, hasCss: Boolean(css) })),
         ...(theme === undefined ? {} : { theme: Struct.omit(theme, ["id"]) }),
         guide: THEME_GUIDE,

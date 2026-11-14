@@ -132,7 +132,7 @@ it.effect("reads the themes with a guide that lists selectors and how to undo", 
       current: "agent-look",
       published: [{ id: "agent-look", name: "Agent Look", hasCss: true }],
     });
-    expect(all).toHaveProperty("builtIn");
+    expect((all as { builtIn: ReadonlyArray<string> }).builtIn[0]).toBe("houston");
     expect(all).not.toHaveProperty("theme");
     expect((all as { guide: string }).guide).toContain("[data-chat-header]");
     expect((all as { guide: string }).guide).toContain("houston theme set");

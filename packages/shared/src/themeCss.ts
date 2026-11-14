@@ -1,5 +1,5 @@
 import { THEME_CSS_MAX_LENGTH } from "@houston-app/contracts";
-import { BUILT_IN_THEME_IDS, THEME_COLOR_ROLES } from "./themePalettes.ts";
+import { BUILT_IN_THEME_IDS, STANDARD_THEME_ID, THEME_COLOR_ROLES } from "./themePalettes.ts";
 
 const FETCHES_BY_STRING = /image-set\(|\bsrc\(/i;
 // Only CSS whitespace may come first. \s also matches U+00A0, which makes the address relative.
@@ -82,5 +82,5 @@ export const THEME_GUIDE = [
   ...THEME_CSS_HOOKS.map((hook) => `- ${hook.selector}: ${hook.styles}`),
   "",
   "You cannot see the result. Make small changes, then ask the user how it looks.",
-  `To undo, switch to a built-in theme (${BUILT_IN_THEME_IDS.join(", ")}), or run \`houston theme set <id>\` on the server.`,
+  `To undo, switch to \`${STANDARD_THEME_ID}\`, which is Houston's default look with no theme, or run \`houston theme set ${STANDARD_THEME_ID}\` on the server. Other built-in themes: ${BUILT_IN_THEME_IDS.join(", ")}.`,
 ].join("\n");

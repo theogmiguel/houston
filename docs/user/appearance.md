@@ -28,8 +28,9 @@ and other `data-` attributes, such as `[data-chat-header]` or `[data-slot="butto
 rules are more specific than yours and need `!important`. CSS cannot reach terminal text, the
 file tree or diff internals; use theme colors for those.
 
-If a rule hides something you need, pick a built-in theme in **Colors & themes**, or run
-`houston theme set grove` on the machine that runs the server (any built-in theme id works).
+If a rule hides something you need, pick the Houston theme in **Colors & themes**, or run
+`houston theme set houston` on the machine that runs the server. `houston` is the default look
+with no theme; a built-in theme id such as `grove` works too.
 
 ### Ask an agent
 
@@ -39,7 +40,7 @@ dark mode". It publishes a theme with colors and CSS on the server and switches 
 desktop clients of that server to it, or switches them to light, dark or system mode. It can
 only change the server it runs on, and only from a thread with full access or the default
 access mode. The agent cannot see the result, so it works in small steps and asks how it looks.
-Ask it to set a built-in theme to undo a change, or use the steps above.
+Ask it to switch back to the default look to undo a change, or use the steps above.
 
 The same page sets **Contrast**, **Glass opacity**, **Animations**, **Environment
 identification**, **Chat width**, **Effort display**, **Render math** and whether branch and

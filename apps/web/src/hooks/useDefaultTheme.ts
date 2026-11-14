@@ -1,8 +1,14 @@
+import { STANDARD_THEME_ID } from "@houston-app/shared/themePalettes";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { primaryEnvironmentIdAtom } from "../state/primaryEnvironment";
 import { primaryServerSettingsAtom } from "../state/server";
 import { getThemeDefinition, singleAppearanceOf, subscribeToCustomThemes } from "../themePalette";
-import { setAppearanceMode, setTheme } from "./useTheme";
+import {
+  readAppearanceModePreference,
+  readThemePreference,
+  setAppearanceMode,
+  setTheme,
+} from "./useTheme";
 
 const APPLIED_DEFAULT_THEME_STORAGE_PREFIX = "houston:default-theme-applied:v2:";
 const APPLIED_DEFAULT_APPEARANCE_STORAGE_PREFIX = "houston:default-appearance-applied:v1:";
@@ -27,6 +33,17 @@ export function defaultThemeToApply(input: {
   // published set changes.
   if (!input.resolves) return null;
   return generation;
+}
+
+/**
+ * The stored preference for an environment default. The standard look has no theme of its own,
+ * so it is stored as the appearance mode the client already uses.
+ */
+export function defaultThemePreference(
+  defaultTheme: string,
+  appearanceMode: "light" | "dark" | "system",
+): string {
+  return defaultTheme === STANDARD_THEME_ID ? appearanceMode : defaultTheme;
 }
 
 /** A single-appearance theme sets its own mode unless a mode was set with it or after it. */
@@ -60,20 +77,22 @@ function adoptDefaultTheme(): void {
   if (environmentId === null) return;
   const settings = appAtomRegistry.get(primaryServerSettingsAtom);
   const { defaultTheme, defaultThemeSetAt } = settings;
-  const definition = getThemeDefinition(defaultTheme);
+  const standard = defaultTheme === STANDARD_THEME_ID;
+  const definition = standard ? null : getThemeDefinition(defaultTheme);
   const storageKey = `${APPLIED_DEFAULT_THEME_STORAGE_PREFIX}${environmentId}`;
   const generation = defaultThemeToApply({
     environmentId,
     defaultTheme,
     defaultThemeSetAt,
     appliedGeneration: readAppliedGeneration(storageKey),
-    resolves: definition !== null,
+    resolves: standard || definition !== null,
   });
-  if (generation === null || definition === null) return;
+  if (generation === null) return;
 
+  const appearanceMode = readAppearanceModePreference(readThemePreference());
+  if (!setTheme(defaultThemePreference(defaultTheme, appearanceMode))) return;
   // A single-appearance theme needs both preference and appearance writes to take effect.
-  if (!setTheme(defaultTheme)) return;
-  const half = singleAppearanceOf(definition);
+  const half = definition === null ? null : singleAppearanceOf(definition);
   // Only record adoption after both writes succeed, so an appearance failure remains retryable.
   if (half !== null && themeSetsOwnMode(settings) && !setAppearanceMode(half)) return;
   writeAppliedGeneration(storageKey, generation);

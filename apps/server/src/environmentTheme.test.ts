@@ -299,6 +299,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("environment them
         yield* themes.apply({ themeId: "grove" });
         yield* themes.apply({ themeId: "grove", appearance: "dark" });
         yield* themes.apply({ appearance: "light" });
+        yield* themes.apply({ themeId: "houston" });
 
         assert.deepEqual(
           (yield* themes.current).map((theme) => theme.id),
@@ -310,6 +311,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("environment them
           { theme: "grove" },
           { theme: "grove", appearance: "dark" },
           { appearance: "light" },
+          { theme: "houston" },
         ]);
       }),
       selected,
