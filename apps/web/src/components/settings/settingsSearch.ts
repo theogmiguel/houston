@@ -554,6 +554,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["notification toast popup completion input approval failure"],
   },
   {
+    id: "language",
+    title: "Language",
+    to: "/settings/general",
+    searchTerms: ["locale translation english português portuguese brasil brazilian idioma"],
+  },
+  {
     id: "time-format",
     title: "Time format",
     to: "/settings/general",
@@ -1461,9 +1467,11 @@ export function settingsForThisPlatform(
   );
 }
 
+/** `translate` adds the displayed title and section to the fields a query can match. */
 export function searchSettings(
   query: string,
   items: ReadonlyArray<SettingsSearchItem> = SETTINGS_SEARCH_ITEMS,
+  translate: (source: string) => string = (source) => source,
 ): ReadonlyArray<SettingsSearchItem> {
   const normalizedQuery = normalizeSearchText(query);
   if (normalizedQuery.length === 0) return [];
@@ -1471,9 +1479,11 @@ export function searchSettings(
 
   return settingsForThisPlatform(items)
     .flatMap((item, index) => {
-      const title = normalizeSearchText(item.title);
+      const title = normalizeSearchText(translate(item.title));
       const fields = [
         title,
+        normalizeSearchText(item.title),
+        normalizeSearchText(translate(SETTINGS_SECTION_LABELS[item.to])),
         normalizeSearchText(SETTINGS_SECTION_LABELS[item.to]),
         ...(item.searchTerms ?? []).map(normalizeSearchText),
       ];

@@ -24,6 +24,7 @@ import { Button } from "../ui/button";
 import { PHONE_SETTINGS_TAP_TARGETS_CLS } from "../ui/phone-recipes";
 import { PageHeading } from "../ui/page-heading";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { useT } from "../../i18n/useT";
 import { useOptionalSettingsScope } from "./SettingsScopeContext";
 import { SettingsScopeSentence } from "./SettingsScopeSentence";
 import {
@@ -238,6 +239,7 @@ export function SettingsSection({
   children: ReactNode;
 }) {
   const targetRef = useSettingsSearchTarget<HTMLElement>(sectionProps.id);
+  const t = useT();
 
   return (
     <section
@@ -247,13 +249,13 @@ export function SettingsSection({
       className={cn(!hideTitle && "space-y-2", className)}
     >
       {hideTitle ? (
-        <h2 className="sr-only">{title}</h2>
+        <h2 className="sr-only">{t(title)}</h2>
       ) : (
         <div data-settings-scroll-target className="flex items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-1">
             <h2 className="flex items-center gap-2 text-prose font-semibold text-foreground/80">
               {icon}
-              {title}
+              {t(title)}
             </h2>
             {titleAction}
           </div>
@@ -348,6 +350,7 @@ export function SettingsRow({
   children?: ReactNode;
 }) {
   const targetRef = useSettingsSearchTarget<HTMLDivElement>(rowProps.id);
+  const t = useT();
   const primarySettingsAvailable = usePrimarySettingsAvailable();
   const context = useOptionalSettingsScope();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -517,7 +520,9 @@ export function SettingsRow({
       <div className="flex flex-col gap-3 @min-[32rem]/settings-row:grid @min-[32rem]/settings-row:grid-cols-[minmax(0,1fr)_auto] @min-[32rem]/settings-row:items-center @min-[32rem]/settings-row:gap-4">
         <div className="min-w-0 flex-1 space-y-px">
           <div className="flex min-h-5 items-center gap-1.5">
-            <h3 className="text-[13px] leading-[18px] font-medium text-foreground">{title}</h3>
+            <h3 className="text-[13px] leading-[18px] font-medium text-foreground">
+              {typeof title === "string" ? t(title) : title}
+            </h3>
             {renderedInheritance ? (
               <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
                 {renderedInheritance}
@@ -528,7 +533,9 @@ export function SettingsRow({
             </span>
           </div>
           {description ? (
-            <p className="max-w-[56ch] text-xs leading-4 text-muted-foreground">{description}</p>
+            <p className="max-w-[56ch] text-xs leading-4 text-muted-foreground">
+              {typeof description === "string" ? t(description) : description}
+            </p>
           ) : null}
           {renderedStatus ? (
             <div className="pt-0.5 text-xs text-muted-foreground">{renderedStatus}</div>
@@ -596,6 +603,7 @@ const SETTINGS_DETAIL_PAGE_HEADINGS: Readonly<
 
 /** The one-line description every settings page opens with; its title is the breadcrumb. */
 function SettingsPageHeading() {
+  const t = useT();
   const pathname = useLocation({
     select: (location) => location.pathname.replace(/\/+$/, "") || "/",
   });
@@ -607,7 +615,7 @@ function SettingsPageHeading() {
         }
       : undefined) ?? SETTINGS_DETAIL_PAGE_HEADINGS[pathname];
   if (section === undefined) return null;
-  return <PageHeading title={section.title} description={section.description} />;
+  return <PageHeading title={t(section.title)} description={t(section.description)} />;
 }
 const LEADING_HASH = /^#/;
 

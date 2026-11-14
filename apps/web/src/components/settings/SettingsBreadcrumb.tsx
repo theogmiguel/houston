@@ -1,3 +1,4 @@
+import { useT } from "../../i18n/useT";
 import {
   WorkspaceBreadcrumb,
   WorkspaceBreadcrumbItem,
@@ -19,18 +20,19 @@ function settingsBreadcrumbLabel(pathname: string): string | null {
 }
 
 export function SettingsBreadcrumb({ pathname }: { pathname: string }) {
+  const t = useT();
   const sectionLabel = settingsBreadcrumbLabel(pathname);
 
   return (
-    <WorkspaceBreadcrumb ariaLabel="Settings breadcrumb">
+    <WorkspaceBreadcrumb ariaLabel={t("Settings breadcrumb")}>
       {sectionLabel ? (
         <>
-          <WorkspaceBreadcrumbItem className="font-normal">Settings</WorkspaceBreadcrumbItem>
+          <WorkspaceBreadcrumbItem className="font-normal">{t("Settings")}</WorkspaceBreadcrumbItem>
           <WorkspaceBreadcrumbSeparator />
         </>
       ) : null}
       <WorkspaceBreadcrumbItem current className="truncate font-semibold">
-        {sectionLabel ?? "Settings"}
+        {t(sectionLabel ?? "Settings")}
       </WorkspaceBreadcrumbItem>
     </WorkspaceBreadcrumb>
   );

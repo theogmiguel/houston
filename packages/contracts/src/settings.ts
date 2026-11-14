@@ -559,6 +559,9 @@ export const ClientSettingsSchema = Schema.Struct({
   timestampFormat: TimestampFormat.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_TIMESTAMP_FORMAT)),
   ),
+  // A locale code. An open string so a later locale or a downgrade needs no migration; a
+  // value the renderer has no catalogue for renders English.
+  language: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed("en"))),
   // Desktop-local input device name. An empty string follows the operating
   // system default, which remains stable when devices are added or removed.
   voiceMicrophone: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
@@ -2035,6 +2038,7 @@ export const ClientSettingsPatch = Schema.Struct({
   sidebarRowShowSubagents: Schema.optionalKey(Schema.Boolean),
   sidebarShowNeedsYou: Schema.optionalKey(Schema.Boolean),
   timestampFormat: Schema.optionalKey(TimestampFormat),
+  language: Schema.optionalKey(Schema.String),
   voiceMicrophone: Schema.optionalKey(Schema.String),
   voiceShortcutMode: Schema.optionalKey(VoiceShortcutMode),
   speechLanguage: Schema.optionalKey(SpeechLanguage),
