@@ -120,3 +120,23 @@ it("applies the active theme's CSS and removes it when another theme becomes act
   applyThemePalette("grove", "light");
   expect(getComputedStyle(probe).color).not.toBe("rgb(11, 12, 13)");
 });
+
+it("keeps only the rule types it can check and drops a rule whose text still spells a fetch", () => {
+  using _css = { [Symbol.dispose]: () => applyThemeCss(undefined) };
+
+  const dropped = applyThemeCss(`
+    @page { margin: 1cm; }
+    @position-try --leak { top: 0; }
+    .escaped\\:selector { color: red; }
+    @media (min-width: 0px) { [data-theme-css-probe] { color: rgb(1, 2, 3); } }
+    @font-face { font-family: kept; src: url("data:font/woff2;base64,AA=="); }
+  `);
+
+  const text = appliedRuleText();
+  expect(text).not.toContain("@page");
+  expect(text).not.toContain("@position-try");
+  expect(text).not.toContain("escaped");
+  expect(text).toContain("rgb(1, 2, 3)");
+  expect(text).toContain("@font-face");
+  expect(dropped).toBe(3);
+});

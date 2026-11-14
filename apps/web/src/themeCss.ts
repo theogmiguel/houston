@@ -16,13 +16,34 @@ let appliedDropped = 0;
 
 type RuleParent = Pick<CSSStyleSheet, "cssRules" | "deleteRule">;
 
-// @keyframes also has both members, but its deleteRule takes a keyframe selector.
-const isRuleParent = (rule: CSSRule): rule is CSSRule & RuleParent =>
-  "cssRules" in rule && "deleteRule" in rule && !(rule instanceof CSSKeyframesRule);
+// The only rule types a theme may keep. A type the engine adds later is unknown here, so it is
+// dropped until someone decides how to check it. Names are looked up at run time because an
+// older engine may lack some of them.
+const DECLARATION_RULES = ["CSSStyleRule", "CSSFontFaceRule", "CSSNestedDeclarations"];
+const GROUPING_RULES = [
+  "CSSStyleRule",
+  "CSSMediaRule",
+  "CSSSupportsRule",
+  "CSSContainerRule",
+  "CSSLayerBlockRule",
+  "CSSScopeRule",
+  "CSSStartingStyleRule",
+];
+// Neither loads anything: one orders layers, the other names a namespace. CSSOM also refuses
+// to delete a namespace rule while style rules remain.
+const INERT_RULES = ["CSSLayerStatementRule", "CSSNamespaceRule"];
 
-/** Returns whether the rule has declarations, and counts the ones it dropped into `dropped`. */
-function stripDeclarations(rule: CSSRule, dropped: { count: number }): boolean {
-  if (!("style" in rule) || !(rule.style instanceof CSSStyleDeclaration)) return false;
+function isOneOf(rule: CSSRule, names: ReadonlyArray<string>): boolean {
+  const scope = globalThis as unknown as Record<string, unknown>;
+  return names.some((name) => {
+    const type = scope[name];
+    return typeof type === "function" && rule instanceof type;
+  });
+}
+
+/** Counts the declarations it dropped from the rule into `dropped`. */
+function stripDeclarations(rule: CSSRule, dropped: { count: number }): void {
+  if (!("style" in rule) || !(rule.style instanceof CSSStyleDeclaration)) return;
   for (let item = rule.style.length - 1; item >= 0; item--) {
     const property = rule.style.item(item);
     if (themeCssValueFetches(rule.style.getPropertyValue(property))) {
@@ -30,31 +51,32 @@ function stripDeclarations(rule: CSSRule, dropped: { count: number }): boolean {
       dropped.count += 1;
     }
   }
-  return true;
 }
 
-/** Keeps only rule shapes it can check, so a new at-rule that fetches is dropped by default. */
+/** Whether the rule is a type the guard checks, after its declarations and children are checked. */
+function keepsRule(rule: CSSRule, dropped: { count: number }): boolean {
+  if (rule instanceof CSSKeyframesRule) {
+    for (const frame of rule.cssRules) stripDeclarations(frame, dropped);
+    return true;
+  }
+  // A registered property's initial value is used wherever var() reads it.
+  if (rule instanceof CSSPropertyRule) return !themeCssValueFetches(rule.initialValue ?? "");
+  const declares = isOneOf(rule, DECLARATION_RULES);
+  const groups = isOneOf(rule, GROUPING_RULES);
+  if (declares) stripDeclarations(rule, dropped);
+  if (groups) stripFetches(rule as CSSRule & RuleParent, dropped);
+  return declares || groups;
+}
+
 function stripFetches(parent: RuleParent, dropped: { count: number }): void {
   for (let index = parent.cssRules.length - 1; index >= 0; index--) {
     const rule = parent.cssRules[index];
-    if (!rule) continue;
-    const hasStyle = stripDeclarations(rule, dropped);
-    if (rule instanceof CSSKeyframesRule) {
-      for (const frame of rule.cssRules) stripDeclarations(frame, dropped);
-    } else if (isRuleParent(rule)) {
-      stripFetches(rule, dropped);
-    } else if (rule instanceof CSSPropertyRule) {
-      // A registered property's initial value is used wherever var() reads it.
-      if (themeCssValueFetches(rule.initialValue ?? "")) {
-        parent.deleteRule(index);
-        dropped.count += 1;
-      }
-    } else if (
-      !hasStyle &&
-      !(rule instanceof CSSLayerStatementRule) &&
-      // Names a namespace without loading it. CSSOM refuses to delete one while style rules remain.
-      !(rule instanceof CSSNamespaceRule)
-    ) {
+    // A namespace rule's url() is a name, never an address to load.
+    if (!rule || isOneOf(rule, INERT_RULES)) continue;
+    // The second check reads the whole rule as the engine serializes it, so a fetch or an
+    // escape in a part no branch above looks at (a selector, an at-rule's condition) still
+    // drops the rule.
+    if (!keepsRule(rule, dropped) || themeCssValueFetches(rule.cssText)) {
       parent.deleteRule(index);
       dropped.count += 1;
     }
