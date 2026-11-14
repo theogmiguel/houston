@@ -328,6 +328,7 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           BUBBLE_CHIP_CLASS_NAME,
           expanded && "w-full",
         )}
+        data-user-message-bubble=""
       >
         <MessageAuthorHeading>Automation</MessageAuthorHeading>
         <FoldedMessageHeader
@@ -884,6 +885,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           !mediaOnly && !fileCardsOnly && !audioOnly && "px-3.5 py-2.5",
           folded && "ps-9",
         )}
+        data-user-message-bubble=""
       >
         {folded ? (
           <Tooltip>

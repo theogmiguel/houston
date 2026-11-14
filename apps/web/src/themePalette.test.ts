@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { converter } from "culori/fn";
+import { THEME_CSS_MAX_LENGTH } from "@houston-app/contracts";
 import { BUILT_IN_THEMES } from "@houston-app/shared/themePalettes";
 
 import { CONTEXT_CHIP_ACCENTS, contextChipColorVariable } from "./lib/contextChipAccents";
@@ -15,6 +16,7 @@ import {
   invalidateCustomThemes,
   installCustomTheme,
   parseThemeFile,
+  publishedThemeDefinitions,
   removeCustomTheme,
   replaceCustomThemeCollection,
   resolveDesktopTheme,
@@ -269,6 +271,74 @@ describe("theme files", () => {
 
     expect(theme.colors.accent).toBe("oklch(0.5 1e+303 0)");
     expect(themeColorToHex(theme.colors.accent)).toBe("#b5005e");
+  });
+
+  describe("custom CSS", () => {
+    const css = "[data-chat-header] { border-bottom: 1px solid red; }";
+    const file = {
+      version: THEME_FILE_VERSION,
+      id: "styled",
+      name: "Styled",
+      appearance: "dark",
+      colors: { canvas: "#101010", accent: "#7aa2f7" },
+      css,
+    };
+
+    it("survives import and export", () => {
+      const theme = parseThemeFile(file);
+      expect(theme.css).toBe(css);
+      expect(JSON.parse(serializeThemeFile(theme)).css).toBe(css);
+      expect(parseThemeFile(JSON.parse(serializeThemeFile(theme))).css).toBe(css);
+      expect(parseThemeFile({ ...file, css: undefined })).not.toHaveProperty("css");
+      expect(
+        JSON.parse(serializeThemeFile(parseThemeFile({ ...file, css: "" }))),
+      ).not.toHaveProperty("css");
+    });
+
+    it("refuses an import over the limit, naming the limit, the length and the operation", () => {
+      const length = THEME_CSS_MAX_LENGTH + 1;
+      expect(() => parseThemeFile({ ...file, css: "x".repeat(length) })).toThrow(
+        `Cannot import theme CSS of ${length} characters: the limit is ${THEME_CSS_MAX_LENGTH}.`,
+      );
+      expect(() => parseThemeFile({ ...file, css: 3 })).toThrow(/CSS must be text/);
+    });
+
+    it("survives save and reload", () => {
+      const stored = new Map<string, string>();
+      vi.stubGlobal("window", {
+        localStorage: {
+          getItem: (key: string) => stored.get(key) ?? null,
+          setItem: (key: string, value: string) => stored.set(key, value),
+        },
+      });
+      invalidateCustomThemes();
+      installCustomTheme(parseThemeFile(file));
+      expect(JSON.parse(stored.get(CUSTOM_THEMES_STORAGE_KEY) ?? "[]")[0].css).toBe(css);
+      invalidateCustomThemes();
+      expect(getCustomThemes().find((theme) => theme.id === "styled")?.css).toBe(css);
+      removeCustomTheme("styled");
+      vi.unstubAllGlobals();
+      invalidateCustomThemes();
+    });
+
+    it("is kept on a theme the server publishes", () => {
+      const [theme] = publishedThemeDefinitions([
+        {
+          id: "agent-look",
+          name: "Agent Look",
+          appearance: "dark",
+          canvas: "#101010",
+          accent: "#7aa2f7",
+          css,
+        },
+      ]);
+      expect(theme?.css).toBe(css);
+      expect(
+        publishedThemeDefinitions([
+          { id: "plain", name: "Plain", appearance: "dark", canvas: "#101010", accent: "#7aa2f7" },
+        ])[0],
+      ).not.toHaveProperty("css");
+    });
   });
 
   it("keeps optional light and dark palettes under one theme id", () => {
