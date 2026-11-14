@@ -9,6 +9,38 @@ Diffs & pull requests** control the composer and diffs.
 themes. A custom theme can be created from scratch, duplicated from an existing one, edited,
 exported or imported. VS Code theme files can be imported.
 
+### Custom CSS
+
+For a change that colors cannot make, open **Custom CSS** in the theme editor. The CSS is saved
+with the theme, applies after Houston's own styles on web and desktop, previews as you type, and
+is included when you export or import the theme. It holds up to 20,000 characters; the editor
+shows the count when you go over, and the theme is not saved until it fits. Use `.dark` or
+`:root:not(.dark)` to target one appearance.
+
+Custom CSS cannot load files, so a theme from another person or an agent cannot send what is on
+your screen to another site. `@import`, `image-set()` and `url()` are ignored, except `url()`
+with a `data:` address or an `#id`. A declaration that contains a backslash is ignored too, and
+so is an at-rule Houston cannot check. Only the affected declaration or rule is dropped; the
+rest of the theme still applies.
+
+Class names in the app change between releases. For rules that keep working, target `data-slot`
+and other `data-` attributes, such as `[data-chat-header]` or `[data-slot="button"]`. Some app
+rules are more specific than yours and need `!important`. CSS cannot reach terminal text, the
+file tree or diff internals; use theme colors for those.
+
+If a rule hides something you need, pick a built-in theme in **Colors & themes**, or run
+`houston theme set grove` on the machine that runs the server (any built-in theme id works).
+
+### Ask an agent
+
+An agent running in a thread on this machine can restyle Houston for you. Ask it to change the
+look, for example "make the chat header taller", "give Houston a solarized theme" or "switch me to
+dark mode". It publishes a theme with colors and CSS on the server and switches the web and
+desktop clients of that server to it, or switches them to light, dark or system mode. It can
+only change the server it runs on, and only from a thread with full access or the default
+access mode. The agent cannot see the result, so it works in small steps and asks how it looks.
+Ask it to set a built-in theme to undo a change, or use the steps above.
+
 The same page sets **Contrast**, **Glass opacity**, **Animations**, **Environment
 identification**, **Chat width**, **Effort display**, **Render math** and whether branch and
 worktree controls stay visible below the composer in active threads.
