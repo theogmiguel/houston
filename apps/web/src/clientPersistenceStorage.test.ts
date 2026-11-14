@@ -56,6 +56,20 @@ describe("clientPersistenceStorage", () => {
     },
   );
 
+  it("keeps the saved language across a reload", async () => {
+    const testWindow = getTestWindow();
+    const { readBrowserClientSettings, writeBrowserClientSettings } =
+      await import("./clientPersistenceStorage");
+
+    writeBrowserClientSettings({ ...DEFAULT_CLIENT_SETTINGS, language: "pt-BR" });
+
+    vi.resetModules();
+    const reloaded = await import("./clientPersistenceStorage");
+    expect(testWindow.localStorage.getItem("houston:client-settings:v1")).toContain("pt-BR");
+    expect(reloaded.readBrowserClientSettings()?.language).toBe("pt-BR");
+    expect(readBrowserClientSettings()?.language).toBe("pt-BR");
+  });
+
   it("preserves saved settings across a transient read failure", async () => {
     const testWindow = getTestWindow();
     const settings = { ...DEFAULT_CLIENT_SETTINGS, timestampFormat: "12-hour" as const };

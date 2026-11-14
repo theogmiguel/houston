@@ -6,12 +6,14 @@ import { cn } from "~/lib/utils";
 
 type TextareaProps = React.ComponentProps<"textarea"> & {
   size?: "sm" | "default" | "lg" | number;
+  font?: "default" | "mono";
   unstyled?: boolean;
 };
 
 function Textarea({
   className,
   size = "default",
+  font = "default",
   unstyled = false,
   rows,
   ...props
@@ -32,6 +34,7 @@ function Textarea({
         render={(defaultProps) => (
           <textarea
             className={cn(
+              font === "mono" && "font-mono text-xs",
               "field-sizing-content max-h-64 w-full rounded-[inherit] px-[calc(--spacing(3)-1px)] py-[calc(--spacing(1.5)-1px)] outline-none wrap-anywhere",
               rows === undefined && "min-h-17.5 max-sm:min-h-20.5",
               size === "sm" && "px-[calc(--spacing(2.5)-1px)] py-[calc(--spacing(1)-1px)]",

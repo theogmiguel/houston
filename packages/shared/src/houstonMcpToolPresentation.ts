@@ -55,6 +55,8 @@ export type HoustonMcpToolSummaryAction =
   | "environment-link"
   | "environment-unlink"
   | "environment-update"
+  | "theme-read"
+  | "theme-set"
   | "attachment-prepare"
   | "attachment-discard"
   | "attachment-send"
@@ -405,6 +407,8 @@ const HOUSTON_MCP_TOOLS: Readonly<Record<string, HoustonMcpToolDefinition>> = {
     ["Read", "Reading", "Read", "environment preferences"],
     "environment-read",
   ),
+  houston_theme_read: tool(["Read", "Reading", "Read", "themes"], "theme-read"),
+  houston_theme_set: tool(["Set", "Setting", "Set", "the theme"], "theme-set"),
   houston_environment_links: tool(
     ["List", "Listing", "Listed", "linked environments"],
     "environment-links",

@@ -104,6 +104,13 @@ import {
   SettingsSection,
 } from "./settingsLayout";
 import { Houston1CleanupRow, Houston1ImportSection } from "./Houston1Section";
+import {
+  isSupportedLocale,
+  NATIVE_LANGUAGE_NAMES,
+  resolveLocale,
+  SUPPORTED_LOCALES,
+} from "../../i18n/translate";
+import { useT } from "../../i18n/useT";
 import { searchableSetting } from "./settingsSearch";
 import { BackgroundActivitySettingsRow, GitFetchIntervalRow } from "./BackgroundActivitySettings";
 import { PullRequestLinksOpenInAppSetting } from "./IntegrationsSettings";
@@ -370,6 +377,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       ? ["Animations"]
       : []),
     ...(settings.environmentIdentificationMode === "none" ? ["Environment identification"] : []),
+    ...(settings.language !== DEFAULT_UNIFIED_SETTINGS.language ? ["Language"] : []),
     ...(settings.timestampFormat !== DEFAULT_UNIFIED_SETTINGS.timestampFormat
       ? ["Time format"]
       : []),
@@ -445,6 +453,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ? ["Continue threads after restarts"]
       : []),
     ...(isBackgroundActivityDirty ? ["Background activity"] : []),
+    ...(settings.keepAwakeWhileAgentsWork !== DEFAULT_UNIFIED_SETTINGS.keepAwakeWhileAgentsWork
+      ? ["Keep awake while agents work"]
+      : []),
     ...(settings.defaultThreadEnvMode !== DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode
       ? ["New thread mode"]
       : []),
@@ -534,6 +545,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       chatWidth: DEFAULT_UNIFIED_SETTINGS.chatWidth,
       effortDisplay: DEFAULT_UNIFIED_SETTINGS.effortDisplay,
       mathRenderingEnabled: DEFAULT_UNIFIED_SETTINGS.mathRenderingEnabled,
+      language: DEFAULT_UNIFIED_SETTINGS.language,
       timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
       notificationMode: DEFAULT_UNIFIED_SETTINGS.notificationMode,
       inAppNotificationsEnabled: DEFAULT_UNIFIED_SETTINGS.inAppNotificationsEnabled,
@@ -562,6 +574,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
       continueThreadsAfterServerUpdate: DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate,
+      keepAwakeWhileAgentsWork: DEFAULT_UNIFIED_SETTINGS.keepAwakeWhileAgentsWork,
       backgroundActivity: DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
       backgroundActivityProfile: DEFAULT_UNIFIED_SETTINGS.backgroundActivityProfile,
       automaticGitFetchInterval: DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval,
@@ -704,6 +717,7 @@ export function ComposerFeaturesSection() {
 }
 
 export function GeneralSettingsPanel() {
+  const t = useT();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const lastEnabledProjectGroupingMode = useRef<SidebarProjectGroupingMode>(
@@ -889,6 +903,39 @@ export function GeneralSettingsPanel() {
       </SettingsSection>
 
       <SettingsSection id="display" title="Display">
+        <SettingsRow
+          {...searchableSetting("language")}
+          description="The language of the interface. Parts of the app are not translated yet and stay in English."
+          resetAction={
+            settings.language !== DEFAULT_UNIFIED_SETTINGS.language ? (
+              <SettingResetButton
+                label="language"
+                onClick={() => updateSettings({ language: DEFAULT_UNIFIED_SETTINGS.language })}
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={resolveLocale(settings.language)}
+              onValueChange={(value) => {
+                if (typeof value === "string" && isSupportedLocale(value)) {
+                  updateSettings({ language: value });
+                }
+              }}
+            >
+              <SelectTrigger size="sm" className="w-full sm:w-40" aria-label={t("Language")}>
+                <SelectValue>{NATIVE_LANGUAGE_NAMES[resolveLocale(settings.language)]}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {SUPPORTED_LOCALES.map((locale) => (
+                  <SelectItem hideIndicator key={locale} value={locale}>
+                    {NATIVE_LANGUAGE_NAMES[locale]}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          }
+        />
         <SettingsRow
           {...searchableSetting("time-format")}
           description="System default follows your browser or OS clock preference."
@@ -1806,6 +1853,38 @@ export function MaintenanceSettingsPanel() {
                 updateSettings({ continueThreadsAfterServerUpdate: Boolean(checked) })
               }
               aria-label="Continue threads after restarts"
+            />
+          }
+        />
+        <SettingsRow
+          {...searchableSetting("keep-awake-while-agents-work")}
+          serverScoped
+          settingKeys={["keepAwakeWhileAgentsWork"]}
+          description="Keep the computer from sleeping while agents are working. Linux and Windows only; closing a laptop lid still sleeps it."
+          status={!hasServerTargets ? "Needs a connected environment." : undefined}
+          resetAction={
+            hasServerTargets &&
+            settings.keepAwakeWhileAgentsWork !==
+              DEFAULT_UNIFIED_SETTINGS.keepAwakeWhileAgentsWork ? (
+              <SettingResetButton
+                label="keep awake while agents work"
+                onClick={() =>
+                  updateSettings({
+                    keepAwakeWhileAgentsWork: DEFAULT_UNIFIED_SETTINGS.keepAwakeWhileAgentsWork,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <ScopedSwitch
+              settingKeys={["keepAwakeWhileAgentsWork"]}
+              checked={settings.keepAwakeWhileAgentsWork}
+              disabled={!hasServerTargets}
+              onCheckedChange={(checked) =>
+                updateSettings({ keepAwakeWhileAgentsWork: Boolean(checked) })
+              }
+              aria-label="Keep awake while agents work"
             />
           }
         />

@@ -21,6 +21,7 @@ import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as HostPowerMonitor from "./background/HostPowerMonitor.ts";
+import * as KeepAwake from "./background/KeepAwake.ts";
 import * as ServerConfig from "./config.ts";
 import { withUntracedRequests } from "./http.ts";
 import * as ServerHttp from "./http.ts";
@@ -591,6 +592,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   StorageCleanup.layer.pipe(Layer.provide(ProjectionStoreV2.layer)),
   DatabaseStorage.layer.pipe(Layer.provide(ProjectionMaintenance.layer)),
   layerThreadPullRequestWorker,
+  KeepAwake.layer,
   Layer.effectDiscard(
     Effect.gen(function* () {
       const service = yield* PullRequestSyncReactor.PullRequestSyncReactor;
@@ -674,7 +676,8 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
     ),
     Layer.provideMerge(RuntimeLayer.layerEventInfrastructure),
     Layer.provideMerge(Layer.merge(ProjectStore.layer, ThreadSearch.layer)),
-    Layer.provideMerge(SecretResolver.layer),
+    // Above the settings the theme service writes when an agent applies a theme.
+    Layer.provideMerge(Layer.merge(SecretResolver.layer, EnvironmentTheme.layer)),
     Layer.provideMerge(layerServerSettings),
     Layer.provideMerge(layerSourceControlProviderRegistry),
     Layer.provideMerge(layerGit),
@@ -689,9 +692,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
     Layer.provideMerge(layerHoustonSecrets),
     Layer.provideMerge(layerHoustonTaskPersistence),
     Layer.provideMerge(layerPersistence),
-    Layer.provideMerge(
-      Layer.mergeAll(Keybindings.layer, EnvironmentTheme.layer, UsageLimitSources.layer),
-    ),
+    Layer.provideMerge(Layer.mergeAll(Keybindings.layer, UsageLimitSources.layer)),
     Layer.provideMerge(ProviderRegistry.layer),
     Layer.provideMerge(ProviderInstanceRegistryHydration.layer),
     // Provider hydration builds the Claude runner, which reports agents to the same scanner the

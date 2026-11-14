@@ -114,6 +114,37 @@ it.each(["Update existing", "Keep both"])(
   },
 );
 
+it.each(["Update existing", "Keep both"])("keeps a theme's custom CSS after %s", async (choice) => {
+  using _themes = {
+    [Symbol.dispose]() {
+      window.localStorage.removeItem(CUSTOM_THEMES_STORAGE_KEY);
+      invalidateCustomThemes();
+    },
+  };
+  const css = "[data-chat-header] { border-bottom: 1px solid red; }";
+  installCustomTheme(parseThemeFile(theme("Dusk")));
+  await using _screen = await render(
+    <ThemeImportDialog
+      open
+      onOpenChange={() => {}}
+      onImported={() => true}
+      onImportedMany={() => {}}
+    />,
+  );
+  const input = document.querySelector<HTMLInputElement>('input[type="file"]')!;
+  await userEvent.upload(input, [
+    themeFile("Dawn"),
+    new File([JSON.stringify({ ...theme("Dusk", "#f97316"), css })], "Dusk.json", {
+      type: "application/json",
+    }),
+  ]);
+  await expect.element(page.getByText("Already installed")).toBeVisible();
+  await page.getByRole("button", { name: choice }).click();
+  invalidateCustomThemes();
+  const label = choice === "Update existing" ? "Dusk" : "Dusk (1)";
+  expect(getCustomThemes().find((theme) => theme.label === label)?.css).toBe(css);
+});
+
 function isolateThemes() {
   const previous = localStorage.getItem(CUSTOM_THEMES_STORAGE_KEY);
   localStorage.removeItem(CUSTOM_THEMES_STORAGE_KEY);

@@ -21,7 +21,22 @@ Search Settings by feature or setting name. `Esc` clears an active search.
 - **Confirmations** — ask before unpinning, archiving or deleting a thread, and, in the
   desktop app, whether the quit shortcut quits directly or waits for a second press.
 - **Background** — **Keep in tray**, shown when the desktop has a working tray.
-- **Display** — timestamp format.
+- **Display** — interface language and timestamp format.
+
+### Language
+
+**Settings → General → Display → Language** switches the interface between English
+(default) and Português (Brasil). The change applies at once, is saved on this device and
+survives a restart. Restoring the default settings returns it to English.
+
+Only part of the interface is translated: the Settings sidebar, page titles and
+descriptions, the breadcrumb, settings search (a query matches the translated or the
+English name), and most row titles and descriptions on the General, Appearance, Chat,
+Diffs and Labs pages. Rows on the other pages are translated only where their text is
+shared with those pages. Everything else stays in English, including the thread view,
+composer, menus, dialogs, toasts, the values inside controls and text that includes
+names or numbers. Product and developer terms (Houston, thread, worktree, commit,
+pull request) are kept in English. A string without a translation is shown in English.
 
 ## Appearance
 
@@ -138,9 +153,14 @@ their own pages.
 
 ## Maintenance
 
-Provider update checks, continuing threads after a restart, background activity, database
-storage, browser artifacts and rotated logs, diagnostics, and **Coming from Houston 1**. See
+Provider update checks, continuing threads after a restart, keeping the computer awake while
+agents work, background activity, database storage, browser artifacts and rotated logs, diagnostics, and **Coming from Houston 1**. See
 [Updating Houston](updating.md#coming-from-houston-1).
+
+**Keep awake while agents work** (Settings → Maintenance, on by default) stops the computer from
+sleeping while at least one agent run is active and lets it sleep about a minute after the last
+one ends. Turning it off releases the hold at once. It works on Linux (through `systemd-inhibit`)
+and Windows; on other platforms it does nothing. Closing a laptop lid still sleeps the machine.
 
 **Database** (Settings → Maintenance → Storage) appears when a database holds at least 64 MiB of
 space freed by history cleanup. **Reclaim now** returns it to disk while Houston and its agent
@@ -157,6 +177,20 @@ receiver you choose, to Datadog, or to a Datadog Agent on this machine. See
 
 Linked environments (beta), Simlock device hosts (alpha), and optional composer features that
 are off by default: plan mode and the context window indicator.
+
+**Tool calls in chat** controls how much of the agent's work a thread shows. It applies to this
+device only.
+
+| Value               | Shows                                                                    |
+| ------------------- | ------------------------------------------------------------------------ |
+| **Show all**        | Every command, file edit and search. This is the default.                |
+| **Hide successful** | Calls that are running or failed. Completed calls are hidden.            |
+| **Hide all**        | Only failed calls. Running and completed calls are hidden.               |
+| **Zen**             | Your messages and the agent's final answer for each turn, plus failures. |
+
+In every value, approval requests, questions to you and errors stay visible, and a working
+indicator shows while the agent runs. Hidden calls are not deleted: choosing **Show all** restores
+them. While Find is open, **Zen** shows the agent's in-between messages so matches can be found.
 
 **Suggest next prompt** shows a predicted next message in the empty composer after a Claude or
 Codex turn completes. Press `Tab` to fill it in, then edit or send it, or press `Escape` to

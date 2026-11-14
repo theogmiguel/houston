@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { defaultThemeGeneration, defaultThemeToApply } from "./useDefaultTheme";
+import {
+  defaultThemeGeneration,
+  defaultThemePreference,
+  defaultThemeToApply,
+  themeSetsOwnMode,
+} from "./useDefaultTheme";
 
 const BASE = {
   environmentId: "env-1",
@@ -26,4 +31,20 @@ describe("default theme adoption", () => {
     expect(next).not.toBe(null);
     expect(next).not.toBe(applied);
   });
+});
+
+it("lets a theme set its own mode only when no mode was set with it or after it", () => {
+  const theme = "2026-11-13T10:00:00.000Z";
+  const set = (defaultAppearance: string, defaultAppearanceSetAt: string) =>
+    themeSetsOwnMode({ defaultThemeSetAt: theme, defaultAppearance, defaultAppearanceSetAt });
+  expect(set("", "")).toBe(true);
+  expect(set("dark", "2026-11-13T09:00:00.000Z")).toBe(true);
+  expect(set("dark", theme)).toBe(false);
+  expect(set("light", "2026-11-13T11:00:00.000Z")).toBe(false);
+});
+
+it("turns the standard look into the mode the client already uses, and keeps any other theme id", () => {
+  expect(defaultThemePreference("houston", "dark")).toBe("dark");
+  expect(defaultThemePreference("houston", "system")).toBe("system");
+  expect(defaultThemePreference("grove", "dark")).toBe("grove");
 });

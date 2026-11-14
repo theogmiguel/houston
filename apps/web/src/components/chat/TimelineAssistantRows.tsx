@@ -5,7 +5,8 @@ import { useAtomValue } from "@effect/atom-react";
 import { memo, use, useState } from "react";
 import { type ChatMessage, type TurnDiffSummary } from "../../types";
 import ChatMarkdown from "../ChatMarkdown";
-import { GitForkIcon } from "lucide-react";
+import { GitForkIcon, ReplyIcon } from "lucide-react";
+import { captureAssistantMessageOpening } from "~/lib/assistantTextSelection";
 import { Button } from "../ui/button";
 import { ProposedPlanCard } from "./ProposedPlanCard";
 import { HtmlRenderFrame } from "./HtmlRenderFrame";
@@ -286,6 +287,46 @@ function AssistantForkButton({
   );
 }
 
+/** Quotes the opening of this response into the composer, as a quote chip the user can remove. */
+function AssistantReplyButton({ message }: { message: ChatMessage }) {
+  const { threadRef, onReplyToResponse } = use(TimelineRowCtx);
+  if (!threadRef || !onReplyToResponse || !message.text.trim()) return null;
+
+  const reply = () => {
+    // The footer can sit below trailing tool rows, so the message may be virtualized away.
+    const source = [
+      ...document.querySelectorAll<HTMLElement>("[data-assistant-citation-source]"),
+    ].find(
+      (element) =>
+        element.dataset.assistantCitationSource === message.id &&
+        element.dataset.assistantCitationThread === threadRef.threadId &&
+        element.dataset.assistantCitationEnvironment === threadRef.environmentId,
+    );
+    const opening = captureAssistantMessageOpening(source ?? null, message.text);
+    if (!opening) return;
+    onReplyToResponse({ version: 1, ...threadRef, messageId: message.id, ...opening });
+  };
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost-muted"
+            onClick={reply}
+            aria-label="Reply to this response"
+          />
+        }
+      >
+        <ReplyIcon className="size-3" />
+      </TooltipTrigger>
+      <TooltipPopup side="top">Reply to this response</TooltipPopup>
+    </Tooltip>
+  );
+}
+
 export function AssistantMetaTimelineRow({
   row,
 }: {
@@ -356,6 +397,7 @@ function AssistantMessageMeta({
         showCopyButton={showCopyButton}
         streaming={copyStreaming}
       />
+      {!message.streaming ? <AssistantReplyButton message={message} /> : null}
       {projectedItem?.item.type === "assistant_message" ? (
         <AssistantForkButton projectedItem={projectedItem} />
       ) : null}

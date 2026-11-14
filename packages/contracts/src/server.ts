@@ -555,6 +555,13 @@ const EnvironmentThemeColors = Schema.Record(
   TrimmedNonEmptyString.check(Schema.isMaxLength(64)),
 );
 
+/**
+ * Longest custom CSS a theme carries. Large enough for a full restyle plus a small embedded
+ * image, small enough that a typical theme file stays within the server's 32 KiB file limit
+ * (escaped quotes and newlines count double, so the server also checks the file's bytes).
+ */
+export const THEME_CSS_MAX_LENGTH = 20_000;
+
 const environmentThemeFields = {
   version: Schema.optional(Schema.Literal(1)),
   name: TrimmedNonEmptyString.check(Schema.isMaxLength(48)),
@@ -569,6 +576,8 @@ const environmentThemeFields = {
       dark: Schema.optional(EnvironmentThemeColors),
     }),
   ),
+  /** Custom styles for web and desktop clients. */
+  css: Schema.optional(Schema.String.check(Schema.isMaxLength(THEME_CSS_MAX_LENGTH))),
 };
 
 export const EnvironmentThemeFile = Schema.Struct(environmentThemeFields);

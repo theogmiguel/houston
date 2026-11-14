@@ -22,10 +22,12 @@ import * as DateTime from "effect/DateTime";
 import { Atom, AtomRegistry } from "effect/reactivity";
 import { RegistryContext } from "@effect/atom-react";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/shell";
+import { DEFAULT_CLIENT_SETTINGS, type ToolCallVisibility } from "@houston-app/contracts/settings";
 import { describe, expect, it, onTestFinished, vi } from "vite-plus/test";
 
 import "~/index.css";
 
+import { __setClientSettingsForTests } from "../../hooks/useSettings";
 import { environmentThreadDetails, environmentThreadShells } from "../../state/threads";
 import { act, fakeTimers, render, stubGlobal } from "../../../test/render";
 import { TimelineChangesRow } from "./TimelineChangesRow";
@@ -47,6 +49,7 @@ import {
   COMPOSER_CONTEXT_CLIPBOARD_MIME,
   decodeComposerContextFragment,
 } from "@houston-app/shared/composerContextClipboard";
+import { serializeAssistantCitation } from "@houston-app/shared/assistantCitations";
 import { collectComposerContextReferences } from "@houston-app/shared/composerContextReferences";
 import type { ThreadStatusPill } from "../Sidebar.logic";
 
@@ -2961,4 +2964,202 @@ describe("MessagesTimeline in-flight command row", () => {
       expect(screen.text()).not.toMatch(/Running (Ran|Run)\b/);
     },
   );
+});
+
+describe("MessagesTimeline tool call visibility", () => {
+  // The three tools are what each mode keeps or hides; the approval and the failed call are
+  // things the user must act on or see, so they stay in every mode.
+  const EXPECTED: Record<
+    ToolCallVisibility,
+    { readonly okCall: boolean; readonly failedCall: boolean }
+  > = {
+    showAll: { okCall: true, failedCall: true },
+    hideSuccessful: { okCall: false, failedCall: true },
+    hideAll: { okCall: false, failedCall: true },
+    zen: { okCall: false, failedCall: true },
+  };
+
+  it.each(Object.keys(EXPECTED) as ToolCallVisibility[])(
+    "%s keeps approvals and failures visible",
+    async (mode) => {
+      setup();
+      __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, toolCallVisibility: mode });
+      onTestFinished(() => __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS));
+      const fixture = makeStreamingTimelineFixture();
+      const source = fixture.visibleTurnItems[4]!;
+      if (source.item.type !== "dynamic_tool") throw new Error("Expected fixture tool");
+      const requestId = RuntimeRequestId.make("visibility-approval");
+      const approval: PendingApproval = {
+        requestId,
+        requestKind: "command",
+        createdAt: fixture.time(6),
+        detail: "approval-needed-command",
+        responseCapability: "live",
+      };
+      const approvalEntries = deriveTimelineEntriesFromVisibleTurnItems({
+        visibleTurnItems: [
+          {
+            ...source,
+            sourceItemId: TurnItemId.make("visibility-approval-item"),
+            item: {
+              ...source.item,
+              id: TurnItemId.make("visibility-approval-item"),
+              type: "approval_request" as const,
+              status: "waiting" as const,
+              requestId,
+              requestKind: approval.requestKind,
+              prompt: approval.detail,
+            },
+          },
+        ],
+        optimisticMessages: [],
+      });
+      const runId = fixture.runId;
+      const toolEntry = (id: string, command: string, status: "completed" | "failed") =>
+        work(id, {
+          runId,
+          label: "Ran command",
+          command,
+          tone: status === "failed" ? "error" : "tool",
+          itemType: "command_execution",
+          toolLifecycleStatus: status,
+        });
+      await using screen = await renderElement(
+        <MessagesTimeline
+          {...baseProps()}
+          timelineEntries={[
+            message("Question", { runId: null }, "visibility-user"),
+            toolEntry("visibility-ok", "list-files-ok", "completed"),
+            toolEntry("visibility-failed", "broken-command-failed", "failed"),
+            ...approvalEntries,
+          ]}
+          pendingApprovals={[approval]}
+          canOperateThread
+          onRespondToApproval={async () => {}}
+          isWorking
+          runningRunId={runId}
+        />,
+      );
+      await expect.element(screen.getByRole("group", { name: "Command approval" })).toBeVisible();
+      await expect.element(screen.getByText("approval-needed-command")).toBeVisible();
+      await expect.element(screen.getByText("Question")).toBeVisible();
+      const { okCall, failedCall } = EXPECTED[mode];
+      await vi.waitFor(() => {
+        const text = screen.text();
+        expect(
+          {
+            failedCall: text.includes("broken-command-failed"),
+            okCall: text.includes("list-files-ok"),
+          },
+          text,
+        ).toEqual({ okCall, failedCall });
+      });
+    },
+  );
+
+  it.each([
+    ["showAll", true],
+    ["hideSuccessful", true],
+    ["hideAll", false],
+    ["zen", false],
+  ] as const)("%s: a call still running is shown = %s", async (mode, shown) => {
+    setup();
+    __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, toolCallVisibility: mode });
+    onTestFinished(() => __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS));
+    const runId = RunId.make("visibility-running-run");
+    await using screen = await renderTimeline(
+      [
+        message("Question", { runId: null }, "visibility-running-user"),
+        work("visibility-running", {
+          runId,
+          label: "Ran command",
+          command: "still-running-call",
+          tone: "tool",
+          itemType: "command_execution",
+          toolLifecycleStatus: "inProgress",
+        }),
+      ],
+      { isWorking: true, runningRunId: runId },
+    );
+    await expect.element(screen.getByText("Question")).toBeVisible();
+    await vi.waitFor(() => {
+      expect(screen.text().includes("still-running-call"), screen.text()).toBe(shown);
+    });
+  });
+});
+
+describe("MessagesTimeline reply to a response", () => {
+  const assistantEntries = (text: string, overrides = {}) => [
+    message("Question", {}, "question"),
+    message(text, { role: "assistant", ...overrides }, "answer"),
+  ];
+
+  it("quotes a short response whole when Reply is pressed", async () => {
+    const onReplyToResponse = vi.fn(() => true);
+    await using screen = await renderTimeline(assistantEntries("Done. I added clamp."), {
+      onReplyToResponse,
+    });
+    await click(screen.button("Reply to this response"));
+    const [citation] = onReplyToResponse.mock.calls[0] as unknown as [Record<string, unknown>];
+    expect(citation).toMatchObject({
+      version: 1,
+      environmentId: "environment-local",
+      messageId: "answer",
+      text: "Done. I added clamp.",
+      start: 0,
+      prefix: "",
+      suffix: "",
+    });
+    expect(String(citation.threadId)).toMatch(/^thread-/);
+  });
+
+  it("quotes only the opening of a long response", async () => {
+    const onReplyToResponse = vi.fn(() => true);
+    const long = `${"word ".repeat(200)}tail`;
+    await using screen = await renderTimeline(assistantEntries(long), { onReplyToResponse });
+    await click(screen.button("Reply to this response"));
+    const [citation] = onReplyToResponse.mock.calls[0] as unknown as [{ text: string }];
+    expect(citation.text.length).toBeLessThanOrEqual(300);
+    expect(long.startsWith(citation.text)).toBe(true);
+  });
+
+  it("offers no Reply without a handler, while streaming, or for an empty response", async () => {
+    await using plain = await renderTimeline(assistantEntries("Done."));
+    expect(plain.buttons("Reply to this response")).toHaveLength(0);
+    await plain.rerender(
+      <MessagesTimeline
+        {...baseProps()}
+        onReplyToResponse={() => true}
+        timelineEntries={assistantEntries("Partial", { streaming: true })}
+      />,
+    );
+    expect(plain.buttons("Reply to this response")).toHaveLength(0);
+    await plain.rerender(
+      <MessagesTimeline
+        {...baseProps()}
+        onReplyToResponse={() => true}
+        timelineEntries={assistantEntries("   ")}
+      />,
+    );
+    expect(plain.buttons("Reply to this response")).toHaveLength(0);
+  });
+
+  it("shows a sent quote as a card instead of raw link text", async () => {
+    const quote = serializeAssistantCitation({
+      version: 1,
+      environmentId: ENVIRONMENT_ID,
+      threadId: ThreadId.make("thread-1"),
+      messageId: MessageId.make("answer"),
+      text: "Done. I added clamp.",
+      start: 0,
+      end: 20,
+      prefix: "",
+      suffix: "",
+    });
+    await using screen = await renderTimeline([message(`${quote}\n\nwhy there?`, {}, "reply")]);
+    const card = screen.container.querySelector("[data-assistant-citation-card]");
+    expect(card?.textContent).toBe("Done. I added clamp.");
+    expect(screen.text()).toContain("why there?");
+    expect(screen.text()).not.toContain("houston-citation");
+  });
 });

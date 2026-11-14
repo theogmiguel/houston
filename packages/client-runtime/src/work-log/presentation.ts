@@ -343,8 +343,10 @@ export function workEntryHiddenByToolCallVisibility(
   visibility: ToolCallVisibility,
 ): boolean {
   if (visibility === "showAll" || !HIDEABLE_TOOL_CALL_ITEM_TYPES.has(entry.itemType)) return false;
-  if (visibility !== "hideSuccessful") return true;
-  return entry.toolLifecycleStatus === "completed" && !workEntryDisplayIndicatesToolFailure(entry);
+  if (entry.toolLifecycleStatus === "failed" || workEntryDisplayIndicatesToolFailure(entry)) {
+    return false;
+  }
+  return visibility === "hideAll" || entry.toolLifecycleStatus === "completed";
 }
 
 function workLogEntryIsLocalCodeSearch(entry: WorkLogPresentationEntry): boolean {
@@ -556,6 +558,7 @@ function summaryActionPriority(action: ToolGroupAction | HoustonMcpToolSummaryAc
     case "project-delete":
     case "project-clone":
     case "environment-update":
+    case "theme-set":
     case "attachment-prepare":
     case "attachment-discard":
     case "attachment-send":

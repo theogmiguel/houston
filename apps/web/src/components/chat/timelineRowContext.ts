@@ -1,5 +1,6 @@
 import type { ToolCallDiffTarget } from "../../diffPanelStore";
 import type {
+  AssistantCitation,
   ProviderApprovalDecision,
   RuntimeRequestId,
   WorktreeSetupSnapshot,
@@ -62,6 +63,8 @@ export interface TimelineRowSharedState {
     | ((requestId: RuntimeRequestId, decision: ProviderApprovalDecision) => Promise<unknown>)
     | undefined;
   citationRequest: AssistantCitationTarget | null;
+  /** Quotes a response into the composer; false when the composer cannot take it. Absent hides "Reply". */
+  onReplyToResponse: ((citation: AssistantCitation) => boolean) | undefined;
   listRef: React.RefObject<LegendListRef | null>;
   timestampFormat: TimestampFormat;
   routeThreadKey: string;

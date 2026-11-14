@@ -357,6 +357,12 @@ export function summarizeHoustonToolCalls(
     case "environment-update":
       label = phrase("Updated", "update", `environment preferences ${times}`);
       break;
+    case "theme-read":
+      label = phrase("Checked", "check", `themes ${times}`);
+      break;
+    case "theme-set":
+      label = phrase("Set", "set", `the theme ${times}`);
+      break;
     case "environment-links":
       label = phrase("Listed", "list", `linked environments ${times}`);
       break;

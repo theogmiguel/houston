@@ -244,6 +244,14 @@ and steered messages show their delivery state, and a dropped message names the 
 **Follow-up behavior** in **Settings ▸ Chat** sets what a plain send does while a turn
 runs.
 
+Hovering a finished assistant response shows **Reply to this response**. It adds a quote chip
+with the opening of that response (up to 300 characters) to the composer, which the chip's
+remove button takes back out; replying to several responses adds several chips. Selecting
+text in a response and choosing **Comment on selected text** quotes just that passage with a
+comment. In the sent message each quote shows as a card, clamped to three lines, above the
+text you typed; clicking the card opens the quoted response. The agent receives the quoted text as
+reference material, not as instructions.
+
 `Ctrl+S` stashes the current prompt. The stash menu restores or deletes a stashed prompt.
 
 **Plan mode** is optional and off by default (**Settings ▸ Labs**). Enter it with `/plan` or

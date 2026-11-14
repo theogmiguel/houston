@@ -9,7 +9,11 @@ import {
   environmentThemeFileHasColors,
 } from "@houston-app/contracts";
 import { fromJsonStringPretty, fromLenientJson } from "@houston-app/shared/schemaJson";
-import { BUILT_IN_THEME_IDS, UNPUBLISHABLE_THEME_IDS } from "@houston-app/shared/themePalettes";
+import {
+  BUILT_IN_THEME_IDS,
+  STANDARD_THEME_ID,
+  UNPUBLISHABLE_THEME_IDS,
+} from "@houston-app/shared/themePalettes";
 import * as Config from "effect/Config";
 import * as Console from "effect/Console";
 import * as DateTime from "effect/DateTime";
@@ -372,10 +376,14 @@ const publishThemeFile = Effect.fn(function* (input: {
   return { themeId, revert, cleanup };
 });
 
-/** Web and desktop cannot resolve the mobile default, and mobile does not follow this setting. */
+/** The standard look, the built-in themes and the published ones. Mobile does not follow this setting. */
 const resolvableThemeIds = Effect.fn(function* (themesDir: string) {
   const published = yield* readPublishedThemes(themesDir);
-  return [...BUILT_IN_THEME_IDS, ...published.map((theme) => theme.id)].toSorted();
+  return [
+    STANDARD_THEME_ID,
+    ...BUILT_IN_THEME_IDS,
+    ...published.map((theme) => theme.id),
+  ].toSorted();
 });
 
 const themeSetCommand = Command.make("set", {

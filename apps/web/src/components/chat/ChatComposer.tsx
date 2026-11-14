@@ -349,6 +349,8 @@ export interface ChatComposerHandle {
     citation: AssistantCitation,
     sourceAnchor: AssistantCitationSourceAnchor,
   ) => boolean;
+  /** Puts a quote of a response into the composer, with no comment editor. */
+  replyToResponse: (citation: AssistantCitation) => boolean;
   openModelPicker: () => void;
   stepReasoningEffort: (direction: 1 | -1) => void;
   toggleModelPicker: () => void;
@@ -3405,6 +3407,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           "cursor",
           { ensureLeadingBoundary: true, citationCommentAnchor: sourceAnchor },
         ),
+      replyToResponse: (citation) => {
+        const inserted = insertComposerTextStable(
+          formatAssistantCitationForComposer(citation),
+          "cursor",
+          { ensureLeadingBoundary: true },
+        );
+        if (inserted) focusComposer();
+        return inserted;
+      },
       openModelPicker: openModelPickerStable,
       stepReasoningEffort: (direction) => {
         if (noProviderAvailable || pendingUserInputs.length > 0 || isEditingQueuedMessage) {

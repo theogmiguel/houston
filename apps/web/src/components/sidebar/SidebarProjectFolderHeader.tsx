@@ -63,6 +63,7 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
   return (
     <li
       data-testid="sidebar-project-folder"
+      data-sidebar-project=""
       className="group/project-folder relative mt-2 list-none first:mt-0"
     >
       <button

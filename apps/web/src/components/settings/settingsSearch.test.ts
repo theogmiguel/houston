@@ -54,6 +54,16 @@ const ITEMS: ReadonlyArray<SettingsSearchItem> = [
 ];
 
 describe("searchSettings", () => {
+  it("finds a setting by its translated title or section", () => {
+    const translated = (source: string) =>
+      ({ "Automatic updates": "Atualizações automáticas", General: "Geral" })[source] ?? source;
+    const ids = (query: string) => searchSettings(query, ITEMS, translated).map((item) => item.id);
+
+    expect(ids("atualizações")).toEqual(["automatic-updates"]);
+    expect(ids("geral")).toContain("automatic-updates");
+    expect(ids("automatic")).toEqual(["automatic-updates"]);
+  });
+
   it("matches titles, sections, and remembered setting details", () => {
     expect(searchSettings("word", ITEMS).map((item) => item.id)).toEqual(["word-wrap"]);
     expect(searchSettings("network", ITEMS).map((item) => item.id)).toEqual(["network-access"]);
