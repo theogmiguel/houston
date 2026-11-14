@@ -22,10 +22,12 @@ import * as DateTime from "effect/DateTime";
 import { Atom, AtomRegistry } from "effect/reactivity";
 import { RegistryContext } from "@effect/atom-react";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/shell";
+import { DEFAULT_CLIENT_SETTINGS, type ToolCallVisibility } from "@houston-app/contracts/settings";
 import { describe, expect, it, onTestFinished, vi } from "vite-plus/test";
 
 import "~/index.css";
 
+import { __setClientSettingsForTests } from "../../hooks/useSettings";
 import { environmentThreadDetails, environmentThreadShells } from "../../state/threads";
 import { act, fakeTimers, render, stubGlobal } from "../../../test/render";
 import { TimelineChangesRow } from "./TimelineChangesRow";
@@ -2961,4 +2963,126 @@ describe("MessagesTimeline in-flight command row", () => {
       expect(screen.text()).not.toMatch(/Running (Ran|Run)\b/);
     },
   );
+});
+
+describe("MessagesTimeline tool call visibility", () => {
+  // The three tools are what each mode keeps or hides; the approval and the failed call are
+  // things the user must act on or see, so they stay in every mode.
+  const EXPECTED: Record<
+    ToolCallVisibility,
+    { readonly okCall: boolean; readonly failedCall: boolean }
+  > = {
+    showAll: { okCall: true, failedCall: true },
+    hideSuccessful: { okCall: false, failedCall: true },
+    hideAll: { okCall: false, failedCall: true },
+    zen: { okCall: false, failedCall: true },
+  };
+
+  it.each(Object.keys(EXPECTED) as ToolCallVisibility[])(
+    "%s keeps approvals and failures visible",
+    async (mode) => {
+      setup();
+      __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, toolCallVisibility: mode });
+      onTestFinished(() => __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS));
+      const fixture = makeStreamingTimelineFixture();
+      const source = fixture.visibleTurnItems[4]!;
+      if (source.item.type !== "dynamic_tool") throw new Error("Expected fixture tool");
+      const requestId = RuntimeRequestId.make("visibility-approval");
+      const approval: PendingApproval = {
+        requestId,
+        requestKind: "command",
+        createdAt: fixture.time(6),
+        detail: "approval-needed-command",
+        responseCapability: "live",
+      };
+      const approvalEntries = deriveTimelineEntriesFromVisibleTurnItems({
+        visibleTurnItems: [
+          {
+            ...source,
+            sourceItemId: TurnItemId.make("visibility-approval-item"),
+            item: {
+              ...source.item,
+              id: TurnItemId.make("visibility-approval-item"),
+              type: "approval_request" as const,
+              status: "waiting" as const,
+              requestId,
+              requestKind: approval.requestKind,
+              prompt: approval.detail,
+            },
+          },
+        ],
+        optimisticMessages: [],
+      });
+      const runId = fixture.runId;
+      const toolEntry = (id: string, command: string, status: "completed" | "failed") =>
+        work(id, {
+          runId,
+          label: "Ran command",
+          command,
+          tone: status === "failed" ? "error" : "tool",
+          itemType: "command_execution",
+          toolLifecycleStatus: status,
+        });
+      await using screen = await renderElement(
+        <MessagesTimeline
+          {...baseProps()}
+          timelineEntries={[
+            message("Question", { runId: null }, "visibility-user"),
+            toolEntry("visibility-ok", "list-files-ok", "completed"),
+            toolEntry("visibility-failed", "broken-command-failed", "failed"),
+            ...approvalEntries,
+          ]}
+          pendingApprovals={[approval]}
+          canOperateThread
+          onRespondToApproval={async () => {}}
+          isWorking
+          runningRunId={runId}
+        />,
+      );
+      await expect.element(screen.getByRole("group", { name: "Command approval" })).toBeVisible();
+      await expect.element(screen.getByText("approval-needed-command")).toBeVisible();
+      await expect.element(screen.getByText("Question")).toBeVisible();
+      const { okCall, failedCall } = EXPECTED[mode];
+      await vi.waitFor(() => {
+        const text = screen.text();
+        expect(
+          {
+            failedCall: text.includes("broken-command-failed"),
+            okCall: text.includes("list-files-ok"),
+          },
+          text,
+        ).toEqual({ okCall, failedCall });
+      });
+    },
+  );
+
+  it.each([
+    ["showAll", true],
+    ["hideSuccessful", true],
+    ["hideAll", false],
+    ["zen", false],
+  ] as const)("%s: a call still running is shown = %s", async (mode, shown) => {
+    setup();
+    __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, toolCallVisibility: mode });
+    onTestFinished(() => __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS));
+    const runId = RunId.make("visibility-running-run");
+    await using screen = await renderTimeline(
+      [
+        message("Question", { runId: null }, "visibility-running-user"),
+        work("visibility-running", {
+          runId,
+          label: "Ran command",
+          command: "still-running-call",
+          tone: "tool",
+          itemType: "command_execution",
+          toolLifecycleStatus: "inProgress",
+        }),
+      ],
+      { isWorking: true, runningRunId: runId },
+    );
+    await expect.element(screen.getByText("Question")).toBeVisible();
+    await vi.waitFor(() => {
+      expect(screen.text().includes("still-running-call"), screen.text()).toBe(shown);
+    });
+  });
 });

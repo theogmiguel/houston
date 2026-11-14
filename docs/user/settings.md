@@ -163,6 +163,20 @@ receiver you choose, to Datadog, or to a Datadog Agent on this machine. See
 Linked environments (beta), Simlock device hosts (alpha), and optional composer features that
 are off by default: plan mode and the context window indicator.
 
+**Tool calls in chat** controls how much of the agent's work a thread shows. It applies to this
+device only.
+
+| Value               | Shows                                                                    |
+| ------------------- | ------------------------------------------------------------------------ |
+| **Show all**        | Every command, file edit and search. This is the default.                |
+| **Hide successful** | Calls that are running or failed. Completed calls are hidden.            |
+| **Hide all**        | Only failed calls. Running and completed calls are hidden.               |
+| **Zen**             | Your messages and the agent's final answer for each turn, plus failures. |
+
+In every value, approval requests, questions to you and errors stay visible, and a working
+indicator shows while the agent runs. Hidden calls are not deleted: choosing **Show all** restores
+them. While Find is open, **Zen** shows the agent's in-between messages so matches can be found.
+
 **Suggest next prompt** shows a predicted next message in the empty composer after a Claude or
 Codex turn completes. Press `Tab` to fill it in, then edit or send it, or press `Escape` to
 dismiss it. Each suggestion is one extra request that reuses the turn's prompt cache, so it uses
