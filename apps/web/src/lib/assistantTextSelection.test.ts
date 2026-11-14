@@ -12,6 +12,7 @@ import {
 
 import {
   type AssistantTextSelector,
+  captureAssistantMessageOpening,
   captureAssistantTextSelection,
   createAssistantTextSelector,
   findAssistantCitationText,
@@ -505,5 +506,46 @@ describe("findAssistantCitationText", () => {
       start,
       end: start + 5,
     });
+  });
+});
+
+describe("captureAssistantMessageOpening", () => {
+  it("quotes a short response whole, with no context around it", () => {
+    expect(captureAssistantMessageOpening(null, "Done. I added clamp.")).toEqual({
+      text: "Done. I added clamp.",
+      start: 0,
+      end: 20,
+      prefix: "",
+      suffix: "",
+    });
+  });
+
+  it("quotes only the opening of a long response and records what follows as context", () => {
+    const text = `${"word ".repeat(200)}tail`;
+    const opening = captureAssistantMessageOpening(null, text)!;
+    expect(opening.text).toHaveLength(300);
+    expect(text.startsWith(opening.text)).toBe(true);
+    expect(opening.start).toBe(0);
+    expect(opening.suffix.length).toBeGreaterThan(0);
+  });
+
+  it("skips leading whitespace (counted as one space) and never splits a surrogate pair", () => {
+    const text = `\n\n${"a".repeat(299)}😀 more`;
+    const opening = captureAssistantMessageOpening(null, text)!;
+    expect(opening.text).toBe("a".repeat(299));
+    expect(opening.start).toBe(1);
+  });
+
+  it("returns null for a response with no text", () => {
+    expect(captureAssistantMessageOpening(null, "  \n ")).toBeNull();
+  });
+
+  it("reads the rendered text of the source when it is mounted", () => {
+    const source = assistantSource(new SelectionNode("P").append(textNode("Rendered opening")));
+    const opening = captureAssistantMessageOpening(
+      source as unknown as HTMLElement,
+      "raw **markdown**",
+    )!;
+    expect(opening.text).toBe("Rendered opening");
   });
 });
