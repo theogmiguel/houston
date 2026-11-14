@@ -688,7 +688,7 @@ export function ComposerFeaturesSection() {
       />
       <SettingsRow
         {...searchableSetting("context-window-indicator")}
-        description="Shows context window usage as a circular indicator in the composer once 80% of the window is used."
+        description="Shows context window usage as a circular indicator in the composer. It turns into a warning from 80% of the window used."
         control={
           <Switch
             checked={settings.contextWindowMeterEnabled}

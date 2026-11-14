@@ -116,16 +116,17 @@ export function formatContextWindowCompactionMessage(
 }
 
 /**
- * The footer meter shows from this share of the window used. Below it the meter is noise: the
- * window is far from full and auto-compaction or a manual /compact is not yet a consideration.
+ * Share of the window used from which the footer meter turns into a warning. At 80% the window is
+ * close enough to full that auto-compaction or a manual /compact becomes a real consideration;
+ * below it the meter stays a quiet pie.
  */
-export const CONTEXT_METER_MIN_USED_PERCENT = 80;
+export const CONTEXT_METER_WARN_PERCENT = 80;
 
-export function shouldShowContextWindowMeter(usedPercentage: number | null): boolean {
+export function isContextWindowNearFull(usedPercentage: number | null): boolean {
   return (
     usedPercentage !== null &&
     Number.isFinite(usedPercentage) &&
-    usedPercentage >= CONTEXT_METER_MIN_USED_PERCENT
+    usedPercentage >= CONTEXT_METER_WARN_PERCENT
   );
 }
 

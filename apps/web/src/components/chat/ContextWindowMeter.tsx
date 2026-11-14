@@ -4,7 +4,7 @@ import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import {
   formatContextWindowCompactionMessage,
   formatContextWindowCost,
-  shouldShowContextWindowMeter,
+  isContextWindowNearFull,
 } from "./ContextWindowMeter.logic";
 import { Minimize2Icon } from "lucide-react";
 import { composerFloatingLayerProps } from "./composerEventScope";
@@ -42,7 +42,7 @@ export function ContextWindowMeter(props: {
     ? "var(--color-error)"
     : "color-mix(in oklab, var(--color-muted-foreground) 72%, transparent)";
 
-  if (!shouldShowContextWindowMeter(usage.usedPercentage)) return null;
+  const isNearFull = isContextWindowNearFull(usage.usedPercentage);
 
   return (
     <Popover>
@@ -60,7 +60,11 @@ export function ContextWindowMeter(props: {
                 : `Context window ${formatContextWindowTokens(usage.usedTokens)} tokens used`
             }
           >
-            <span className="flex items-center gap-1 text-(--warn-ink)">
+            <span
+              className={
+                isNearFull ? "flex items-center gap-1 text-(--warn-ink)" : "flex items-center gap-1"
+              }
+            >
               <svg
                 viewBox="0 0 16 16"
                 className="-rotate-90 size-4 shrink-0 transform-gpu mx-0!"
@@ -78,7 +82,9 @@ export function ContextWindowMeter(props: {
                   strokeDashoffset={pieDashOffset}
                 />
               </svg>
-              {usedPercentage ? <span className="tabular-nums">{usedPercentage}</span> : null}
+              {isNearFull && usedPercentage ? (
+                <span className="tabular-nums">{usedPercentage}</span>
+              ) : null}
             </span>
           </Button>
         }
