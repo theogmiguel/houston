@@ -46,10 +46,18 @@ function headings(container: HTMLElement): string[] {
   return [...container.querySelectorAll("h2, h3")].map((node) => node.textContent?.trim() ?? "");
 }
 
-/** Starts a test from saved settings and restores the defaults when the test ends. */
+/**
+ * Starts a test from saved settings and restores the defaults when the test ends. Choosing a
+ * language also writes it to storage, which later test files in the same browser would hydrate.
+ */
 function savedSettings(language: string): Disposable {
   __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, language });
-  return { [Symbol.dispose]: () => __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS) };
+  return {
+    [Symbol.dispose]: () => {
+      __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
+      localStorage.removeItem("houston:client-settings:v1");
+    },
+  };
 }
 
 describe("Language setting", () => {
