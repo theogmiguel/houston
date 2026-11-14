@@ -95,7 +95,7 @@ import { defaultUrlTransform } from "react-markdown";
 import { parseAssistantCitationHref } from "@houston-app/shared/assistantCitations";
 import { parseComposerContextHref } from "@houston-app/shared/composerContextReferences";
 import { parseThreadLinkHref } from "@houston-app/shared/threadLinks";
-import { AssistantCitationChip } from "./chat/AssistantCitationChip";
+import { AssistantCitationCard } from "./chat/AssistantCitationChip";
 import { MarkdownThreadLink } from "./chat/MarkdownThreadLink";
 import { mathKind } from "@houston-app/shared/markdownMath";
 import remarkMath from "remark-math";
@@ -1203,7 +1203,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
     } = use(ChatMarkdownRendererContext);
     const text = use(ChatMarkdownTextContext);
     const citation = href ? parseAssistantCitationHref(href) : null;
-    if (citation) return <AssistantCitationChip citation={citation} />;
+    if (citation) return <AssistantCitationCard citation={citation} />;
     const threadLink = href ? parseThreadLinkHref(href) : null;
     if (threadLink) {
       const written = hastPlainTextDeep(node);

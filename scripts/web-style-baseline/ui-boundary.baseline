@@ -15,7 +15,7 @@
 5 apps/web/src/components/BranchToolbarEnvironmentSelector.tsx
 6 apps/web/src/components/BranchToolbarEnvModeSelector.tsx
 1 apps/web/src/components/chat/AgentElapsed.tsx
-9 apps/web/src/components/chat/AssistantCitationChip.tsx
+3 apps/web/src/components/chat/AssistantCitationChip.tsx
 11 apps/web/src/components/chat/AssistantCitationCommentEditor.tsx
 2 apps/web/src/components/chat/AssistantModelAttributionLine.tsx
 2 apps/web/src/components/chat/ChangedFilesBar.tsx
