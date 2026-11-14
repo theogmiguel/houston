@@ -247,6 +247,7 @@ import {
   providerSupportsManualCompaction,
   resolveContextWindowModelDisplayName,
 } from "./ContextWindowMeter.logic";
+import { ContextWindowMeter } from "./ContextWindowMeter";
 import {
   buildAttachmentVideoPreview,
   buildExpandedImagePreview,
@@ -4160,16 +4161,21 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       onToggleMenu={toggleStashMenuStable}
                     />
                   </div>
+                  {settings.contextWindowMeterEnabled && activeContextWindow ? (
+                    <ContextWindowMeter
+                      usage={activeContextWindow}
+                      modelDisplayName={activeThreadModelDisplayName}
+                      onCompact={compactCommandAvailable ? compactThreadContextStable : undefined}
+                      compactDisabled={compactDisabled || noProviderAvailable || isSendBusy}
+                      compactDisabledReason={resolvedCompactDisabledReason}
+                    />
+                  ) : null}
                   {speechMicAction ? (
                     <div className="me-0.5 flex shrink-0 items-center">{speechMicAction}</div>
                   ) : null}
                   <ComposerFooterPrimaryActions
                     compact={isComposerPrimaryActionsCompact}
                     canOperateThread={canOperateThread}
-                    activeContextWindow={
-                      settings.contextWindowMeterEnabled ? activeContextWindow : null
-                    }
-                    activeThreadModelDisplayName={activeThreadModelDisplayName}
                     pendingAction={pendingPrimaryAction}
                     isRunning={phase === "running"}
                     runningStartedAt={phase === "running" ? (activeTurnStartedAt ?? null) : null}
@@ -4218,11 +4224,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     compactBeforeSendTokens={props.resumeCompactionTokens}
                     keepFullHistory={props.keepFullHistory}
                     onToggleKeepFullHistory={props.onToggleKeepFullHistory}
-                    compactDisabled={compactDisabled || noProviderAvailable || isSendBusy}
-                    compactDisabledReason={resolvedCompactDisabledReason}
-                    {...(compactCommandAvailable
-                      ? { onCompactContext: compactThreadContextStable }
-                      : {})}
                   />
                 </div>
               </div>

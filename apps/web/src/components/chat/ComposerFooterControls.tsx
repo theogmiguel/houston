@@ -10,7 +10,6 @@ import { type ComponentProps, type KeyboardEvent, memo, useId, useRef, useState 
 
 import { cn } from "~/lib/utils";
 
-import type { ContextWindowSnapshot } from "../../lib/contextWindow";
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { Menu, MenuPopup, MenuTrigger } from "../ui/menu";
 import {
@@ -24,7 +23,6 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ComposerControl, ComposerControlIcon } from "./ComposerControl";
 import { focusRequestedPermission, useComposerMenuProps } from "./composerEventScope";
 import { ComposerCompactBeforeSendChip, ComposerPrimaryActions } from "./ComposerPrimaryActions";
-import { ContextWindowMeter } from "./ContextWindowMeter";
 import { resolveModelPickerSelectedModel } from "./ModelPickerContent";
 import { ProviderModelPicker } from "./ProviderModelPicker";
 import { runtimeModeConfig } from "./runtimeModeConfig";
@@ -324,8 +322,6 @@ export function ComposerPermissionsPicker(props: {
 export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(props: {
   compact: boolean;
   canOperateThread: boolean;
-  activeContextWindow: ContextWindowSnapshot | null;
-  activeThreadModelDisplayName: string | null;
   isPreparingWorktree: boolean;
   pendingAction: {
     questionIndex: number;
@@ -359,9 +355,6 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
   onSubmitWithMode?: ((mode: "queue" | "steer" | "restart") => void) | undefined;
-  onCompactContext?: (() => void) | undefined;
-  compactDisabled: boolean;
-  compactDisabledReason: string | null;
   compactBeforeSendTokens: number | null;
   keepFullHistory: boolean;
   onToggleKeepFullHistory: () => void;
@@ -385,15 +378,6 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
           onToggleKeepFullHistory={props.onToggleKeepFullHistory}
           disabled={!props.canOperateThread}
           preserveComposerFocusOnPointerDown={props.preserveComposerFocusOnPointerDown ?? false}
-        />
-      ) : null}
-      {props.activeContextWindow ? (
-        <ContextWindowMeter
-          usage={props.activeContextWindow}
-          modelDisplayName={props.activeThreadModelDisplayName}
-          onCompact={props.onCompactContext}
-          compactDisabled={props.compactDisabled}
-          compactDisabledReason={props.compactDisabledReason}
         />
       ) : null}
       <ComposerPrimaryActions
