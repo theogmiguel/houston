@@ -49,6 +49,7 @@ import {
   COMPOSER_CONTEXT_CLIPBOARD_MIME,
   decodeComposerContextFragment,
 } from "@houston-app/shared/composerContextClipboard";
+import { serializeAssistantCitation } from "@houston-app/shared/assistantCitations";
 import { collectComposerContextReferences } from "@houston-app/shared/composerContextReferences";
 import type { ThreadStatusPill } from "../Sidebar.logic";
 
@@ -3084,5 +3085,81 @@ describe("MessagesTimeline tool call visibility", () => {
     await vi.waitFor(() => {
       expect(screen.text().includes("still-running-call"), screen.text()).toBe(shown);
     });
+  });
+});
+
+describe("MessagesTimeline reply to a response", () => {
+  const assistantEntries = (text: string, overrides = {}) => [
+    message("Question", {}, "question"),
+    message(text, { role: "assistant", ...overrides }, "answer"),
+  ];
+
+  it("quotes a short response whole when Reply is pressed", async () => {
+    const onReplyToResponse = vi.fn(() => true);
+    await using screen = await renderTimeline(assistantEntries("Done. I added clamp."), {
+      onReplyToResponse,
+    });
+    await click(screen.button("Reply to this response"));
+    const [citation] = onReplyToResponse.mock.calls[0] as unknown as [Record<string, unknown>];
+    expect(citation).toMatchObject({
+      version: 1,
+      environmentId: "environment-local",
+      messageId: "answer",
+      text: "Done. I added clamp.",
+      start: 0,
+      prefix: "",
+      suffix: "",
+    });
+    expect(String(citation.threadId)).toMatch(/^thread-/);
+  });
+
+  it("quotes only the opening of a long response", async () => {
+    const onReplyToResponse = vi.fn(() => true);
+    const long = `${"word ".repeat(200)}tail`;
+    await using screen = await renderTimeline(assistantEntries(long), { onReplyToResponse });
+    await click(screen.button("Reply to this response"));
+    const [citation] = onReplyToResponse.mock.calls[0] as unknown as [{ text: string }];
+    expect(citation.text.length).toBeLessThanOrEqual(300);
+    expect(long.startsWith(citation.text)).toBe(true);
+  });
+
+  it("offers no Reply without a handler, while streaming, or for an empty response", async () => {
+    await using plain = await renderTimeline(assistantEntries("Done."));
+    expect(plain.buttons("Reply to this response")).toHaveLength(0);
+    await plain.rerender(
+      <MessagesTimeline
+        {...baseProps()}
+        onReplyToResponse={() => true}
+        timelineEntries={assistantEntries("Partial", { streaming: true })}
+      />,
+    );
+    expect(plain.buttons("Reply to this response")).toHaveLength(0);
+    await plain.rerender(
+      <MessagesTimeline
+        {...baseProps()}
+        onReplyToResponse={() => true}
+        timelineEntries={assistantEntries("   ")}
+      />,
+    );
+    expect(plain.buttons("Reply to this response")).toHaveLength(0);
+  });
+
+  it("shows a sent quote as a card instead of raw link text", async () => {
+    const quote = serializeAssistantCitation({
+      version: 1,
+      environmentId: ENVIRONMENT_ID,
+      threadId: ThreadId.make("thread-1"),
+      messageId: MessageId.make("answer"),
+      text: "Done. I added clamp.",
+      start: 0,
+      end: 20,
+      prefix: "",
+      suffix: "",
+    });
+    await using screen = await renderTimeline([message(`${quote}\n\nwhy there?`, {}, "reply")]);
+    const card = screen.container.querySelector("[data-assistant-citation-card]");
+    expect(card?.textContent).toBe("Done. I added clamp.");
+    expect(screen.text()).toContain("why there?");
+    expect(screen.text()).not.toContain("houston-citation");
   });
 });

@@ -56,7 +56,6 @@ function mount(sourceAnchor: AssistantCitationSourceAnchor, onSave: () => boolea
     return (
       <AssistantCitationChip
         citation={citation}
-        composer
         commentEditor={{ open, sourceAnchor, onOpenChange: setOpen, onSave }}
       />
     );

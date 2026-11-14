@@ -3,10 +3,7 @@ import { resolveUserMessagePresentation } from "@houston-app/client-runtime/user
 import { isLiveSubagentTurnItem } from "@houston-app/client-runtime/state/subagentRuntime";
 import * as DateTime from "effect/DateTime";
 import * as Equal from "effect/Equal";
-import {
-  assistantCitationLabel,
-  collectAssistantCitations,
-} from "@houston-app/shared/assistantCitations";
+import { collectAssistantCitations } from "@houston-app/shared/assistantCitations";
 import { shallow } from "zustand/vanilla/shallow";
 import { claudeResumeCompactionAge } from "@houston-app/shared/claudeCompaction";
 import {
@@ -3080,6 +3077,8 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
 
 const MAX_COLLAPSED_USER_MESSAGE_LINES = 8;
 const MAX_COLLAPSED_USER_MESSAGE_LENGTH = 600;
+/** Lines a quote card clamps to; keep in step with the card's `line-clamp` in the timeline. */
+const QUOTE_CARD_LINES = 3;
 const MARKDOWN_LINK = /!?\[([^\]\n]*)\]\((?:<[^>\n]*>|[^\s)]*)\)/g;
 
 function visibleUserMessageText(text: string): string {
@@ -3087,7 +3086,9 @@ function visibleUserMessageText(text: string): string {
   let visible = "";
   let cursor = 0;
   for (const match of collectAssistantCitations(text)) {
-    visible += linkLabels(text.slice(cursor, match.start)) + assistantCitationLabel(match.citation);
+    visible += linkLabels(text.slice(cursor, match.start));
+    // A quote shows as a card of at most QUOTE_CARD_LINES lines, with its comment under it.
+    visible += "\u275D\n".repeat(QUOTE_CARD_LINES) + (match.citation.comment ?? "");
     cursor = match.end;
   }
   return visible + linkLabels(text.slice(cursor));

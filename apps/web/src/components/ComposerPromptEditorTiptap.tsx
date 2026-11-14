@@ -515,7 +515,6 @@ function ComposerCitationNodeView({ node, editor, getPos }: NodeViewProps) {
     >
       <AssistantCitationChip
         citation={citation}
-        composer
         onRemove={onRemove}
         commentEditor={{
           open: commentTarget !== null,
