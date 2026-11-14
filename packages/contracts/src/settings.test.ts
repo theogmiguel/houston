@@ -334,6 +334,21 @@ describe("ClientSettings environment identification", () => {
   );
 });
 
+describe("ClientSettings language", () => {
+  it("defaults to English", () => {
+    expect(decodeClientSettings({}).language).toBe("en");
+  });
+
+  it("round-trips a saved language", () => {
+    const saved = decodeClientSettings({ language: "pt-BR" });
+    expect(decodeClientSettings(encodeClientSettings(saved)).language).toBe("pt-BR");
+  });
+
+  it("accepts a language in a patch", () => {
+    expect(decodeClientSettingsPatch({ language: "pt-BR" })).toEqual({ language: "pt-BR" });
+  });
+});
+
 describe("ClientSettings notifications", () => {
   it("requires opt-in when existing settings omit notification preferences", () => {
     expect(decodeClientSettings({}).notificationMode).toBe("off");
