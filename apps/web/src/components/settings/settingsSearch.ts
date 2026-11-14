@@ -633,6 +633,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+    id: "keep-awake-while-agents-work",
+    title: "Keep awake while agents work",
+    to: "/settings/maintenance",
+    scope: "environment-defaults",
+    searchTerms: ["sleep prevent stay awake power laptop lid inhibit suspend idle"],
+  },
+  {
     id: "background-activity",
     title: "Background activity",
     to: "/settings/maintenance",

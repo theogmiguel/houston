@@ -138,9 +138,14 @@ their own pages.
 
 ## Maintenance
 
-Provider update checks, continuing threads after a restart, background activity, database
-storage, browser artifacts and rotated logs, diagnostics, and **Coming from Houston 1**. See
+Provider update checks, continuing threads after a restart, keeping the computer awake while
+agents work, background activity, database storage, browser artifacts and rotated logs, diagnostics, and **Coming from Houston 1**. See
 [Updating Houston](updating.md#coming-from-houston-1).
+
+**Keep awake while agents work** (Settings → Maintenance, on by default) stops the computer from
+sleeping while at least one agent run is active and lets it sleep about a minute after the last
+one ends. Turning it off releases the hold at once. It works on Linux (through `systemd-inhibit`)
+and Windows; on other platforms it does nothing. Closing a laptop lid still sleeps the machine.
 
 **Database** (Settings → Maintenance → Storage) appears when a database holds at least 64 MiB of
 space freed by history cleanup. **Reclaim now** returns it to disk while Houston and its agent
