@@ -56,6 +56,12 @@ describe("summarizeHoustonToolCalls", () => {
     );
   });
 
+  it("labels theme reads and sets", () => {
+    const call = completed({ toolName: "houston_theme_set", args: { themeId: "grove" } });
+    expect(summarizeHoustonToolCalls("theme-read", [call]).label).toBe("Checked themes 1 time");
+    expect(summarizeHoustonToolCalls("theme-set", [call]).label).toBe("Set the theme 1 time");
+  });
+
   it("excludes failed and unfinished sends even if the provider reports completed", () => {
     const calls: T3ToolSummaryCall[] = [
       completed({ threadId: "success" }, { messageId: "ok", threadId: "success" }),

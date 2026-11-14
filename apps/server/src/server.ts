@@ -674,7 +674,8 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
     ),
     Layer.provideMerge(RuntimeLayer.layerEventInfrastructure),
     Layer.provideMerge(Layer.merge(ProjectStore.layer, ThreadSearch.layer)),
-    Layer.provideMerge(SecretResolver.layer),
+    // Above the settings the theme service writes when an agent applies a theme.
+    Layer.provideMerge(Layer.merge(SecretResolver.layer, EnvironmentTheme.layer)),
     Layer.provideMerge(layerServerSettings),
     Layer.provideMerge(layerSourceControlProviderRegistry),
     Layer.provideMerge(layerGit),
@@ -689,9 +690,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
     Layer.provideMerge(layerHoustonSecrets),
     Layer.provideMerge(layerHoustonTaskPersistence),
     Layer.provideMerge(layerPersistence),
-    Layer.provideMerge(
-      Layer.mergeAll(Keybindings.layer, EnvironmentTheme.layer, UsageLimitSources.layer),
-    ),
+    Layer.provideMerge(Layer.mergeAll(Keybindings.layer, UsageLimitSources.layer)),
     Layer.provideMerge(ProviderRegistry.layer),
     Layer.provideMerge(ProviderInstanceRegistryHydration.layer),
     // Provider hydration builds the Claude runner, which reports agents to the same scanner the

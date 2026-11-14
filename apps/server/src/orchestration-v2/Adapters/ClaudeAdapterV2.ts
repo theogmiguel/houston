@@ -1975,6 +1975,7 @@ export const CLAUDE_READ_ONLY_HOUSTON_MCP_ALLOWED_TOOLS: ReadonlyArray<string> =
   "mcp__houston__houston_preview_list",
   "mcp__houston__houston_environment_read",
   "mcp__houston__houston_environment_links",
+  "mcp__houston__houston_theme_read",
   "mcp__houston__html_preview",
   "mcp__houston__html_render",
 ];
