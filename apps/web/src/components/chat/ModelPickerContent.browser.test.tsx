@@ -145,11 +145,11 @@ it("draws the multi-model footer, search hint and collapsed legacy section", asy
     { container },
   );
 
-  await expect.element(page.getByPlaceholder("Search models")).toBeVisible();
+  await expect.element(page.getByPlaceholder("Search models…")).toBeVisible();
   await expect.element(page.getByText("Shift-click adds a model")).toBeVisible();
   await expect.element(page.getByText("200k · High").first()).toBeVisible();
   await expect.element(page.getByText("2 models selected")).toBeVisible();
-  await expect.element(page.getByText("Legacy models · 1")).toBeVisible();
+  await expect.element(page.getByText("Show more · 1")).toBeVisible();
 
   await page.getByRole("button", { name: "Send to 2" }).click();
   expect(onSendSelectedModels).toHaveBeenCalledOnce();
@@ -276,18 +276,60 @@ it("keeps the full model name under Favorites", async () => {
   expect(rowNames()).not.toContain("Opus 5.5");
 });
 
-it("keeps the jump hints out of sight until the modifier is held", async () => {
+it("shows the jump hints at rest, without holding a modifier", async () => {
   await using _screen = await pickerContent({ keybindings: true });
-  const hint = () => document.querySelector<HTMLElement>('[role="option"] kbd')!;
   await expect.element(page.getByRole("option", { name: /Opus 5\.5/ })).toBeVisible();
-  const before = document.querySelector<HTMLElement>('[role="option"]')!.getBoundingClientRect();
-  expect(getComputedStyle(hint()).visibility).toBe("hidden");
-  await userEvent.keyboard("{Control>}");
-  await expect.poll(() => getComputedStyle(hint()).visibility).toBe("visible");
-  const during = document.querySelector<HTMLElement>('[role="option"]')!.getBoundingClientRect();
-  expect(during.height).toBe(before.height);
-  await userEvent.keyboard("{/Control}");
-  await expect.poll(() => getComputedStyle(hint()).visibility).toBe("hidden");
+  const hints = document.querySelectorAll<HTMLElement>('[role="option"] kbd');
+  // One binding (mod+1): only the first row has a jump hint, and it is drawn.
+  expect(hints).toHaveLength(1);
+  expect(getComputedStyle(hints[0]!).visibility).toBe("visible");
+  expect(hints[0]!.textContent?.trim()).not.toBe("");
+  // The hint sits at the far right of its row, after the model name.
+  const row = hints[0]!.closest<HTMLElement>('[role="option"]')!;
+  const name = row.querySelector<HTMLElement>("span.truncate")!;
+  expect(hints[0]!.getBoundingClientRect().left).toBeGreaterThan(
+    name.getBoundingClientRect().right,
+  );
+  expect(row.getBoundingClientRect().right - hints[0]!.getBoundingClientRect().right).toBeLessThan(
+    16,
+  );
+});
+
+it("gives each provider tab an accessible name, with Favorites first", async () => {
+  await using _screen = await pickerContent();
+  const tabs = Array.from(
+    document.querySelectorAll<HTMLElement>("[data-model-picker-sidebar] button"),
+  );
+  expect(tabs.map((tab) => tab.getAttribute("aria-label"))).toEqual([
+    "Favorites",
+    "Claude",
+    "Codex",
+  ]);
+  // Icon-only: no visible label beside the mark.
+  for (const tab of tabs) expect(tab.textContent?.trim()).toBe("");
+  expect(tabs.find((tab) => tab.getAttribute("aria-label") === "Claude")!.ariaPressed).toBe("true");
+});
+
+it("marks the selected model with a check right after its name, and only that model", async () => {
+  await using _screen = await pickerContent();
+  const selected = page.getByRole("option", { name: /Opus 5\.5/ });
+  await expect.element(selected).toBeVisible();
+  const check = selected.element().querySelector<SVGElement>(".lucide-check")!;
+  expect(check).not.toBeNull();
+  const name = selected.element().querySelector<HTMLElement>("span.truncate")!;
+  const gap = check.getBoundingClientRect().left - name.getBoundingClientRect().right;
+  expect(gap).toBeGreaterThanOrEqual(0);
+  expect(gap).toBeLessThan(16);
+  const other = page.getByRole("option", { name: /Sonnet 5\.5/ });
+  expect(other.element().querySelector(".lucide-check")).toBeNull();
+});
+
+it("words the legacy group as Show more and Show less", async () => {
+  await using _screen = await pickerContent();
+  const toggle = page.getByText(/^Show more/);
+  await expect.element(toggle).toBeVisible();
+  await toggle.click();
+  await expect.element(page.getByText(/^Show less/)).toBeVisible();
 });
 
 it("keeps the model list one height whatever the open provider offers", async () => {
@@ -323,6 +365,6 @@ it("keeps the model list one height whatever the open provider offers", async ()
   await expect.element(page.getByRole("option", { name: /GPT-5\.6 Luna/ })).toBeVisible();
   expect(listHeight(), "one-model provider list height").toBe(claudeHeight);
 
-  await userEvent.type(page.getByPlaceholder("Search models").element(), "zzz-no-match");
+  await userEvent.type(page.getByPlaceholder("Search models…").element(), "zzz-no-match");
   expect(listHeight(), "no-match search list height").toBe(claudeHeight);
 });

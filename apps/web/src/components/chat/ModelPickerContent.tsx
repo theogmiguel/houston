@@ -23,7 +23,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { ChevronDownIcon, SearchIcon } from "lucide-react";
+import { SearchIcon } from "lucide-react";
 import { ModelListRow } from "./ModelListRow";
 import { ModelPickerSidebar } from "./ModelPickerSidebar";
 import { resolveModelPickerTraits } from "./modelPickerTraits";
@@ -40,10 +40,8 @@ import { ModelEsque } from "./providerIconUtils";
 import { isCommandPaletteOpen } from "../../commandPaletteBus";
 import { registerModelPickerContent } from "../../modelPickerVisibility";
 import { primaryServerKeybindingsAtom } from "../../state/server";
-import { useShortcutModifierState } from "../../shortcutModifierState";
 import {
   modelPickerJumpCommandForIndex,
-  shouldShowModelPickerJumpHintsForModifiers,
   modelPickerJumpIndexFromCommand,
   resolveShortcutCommand,
   shortcutLabelForCommand,
@@ -485,6 +483,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
 
   const handleSelectInstance = (instanceId: ProviderInstanceId | "favorites") => {
     setSelectedInstanceId(instanceId);
+    setSearchQuery("");
     window.requestAnimationFrame(() => {
       focusSearchInput();
     });
@@ -651,7 +650,8 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     }
     return [...available, ...disabled];
   })();
-  const showSidebar = !isSearching && sidebarInstanceEntries.length > 0;
+  // The tab row stays while searching so the popup keeps its height; a tab pick ends the search.
+  const showSidebar = sidebarInstanceEntries.length > 0;
   const instanceOrder = instanceEntries.map((entry) => entry.instanceId);
 
   const filteredModels = (() => {
@@ -790,15 +790,9 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     keybindings,
     props.terminalOpen,
   );
-  const jumpModifiers = useShortcutModifierState();
-  const jumpHintsVisible = shouldShowModelPickerJumpHintsForModifiers(jumpModifiers, keybindings, {
-    platform: navigator.platform,
-    context: { terminalFocus: false, terminalOpen: props.terminalOpen, modelPickerOpen: true },
-  });
   const modelListExtraData = {
     favoritesSet,
     modelJumpLabelByKey,
-    jumpHintsVisible,
     activeModelKey,
     selectedModelKeySet,
   };
@@ -868,7 +862,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         className={cn(
           "relative flex max-h-(--available-height) flex-col overflow-hidden bg-(--raised)",
           !props.phone && "max-w-[calc(100vw-2rem)]",
-          props.docked ? MODEL_PICKER_DOCKED_CLASS : "w-[26.75rem] rounded-lg border border-border",
+          props.docked ? MODEL_PICKER_DOCKED_CLASS : "w-[25rem] rounded-lg border border-border",
         )}
         data-model-picker-content="true"
       >
@@ -914,7 +908,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
             }
           }}
         >
-          <div className={cn("flex min-h-0 flex-1", props.phone ? "flex-col" : "flex-row")}>
+          <div className="flex min-h-0 flex-1 flex-col">
             {showSidebar ? (
               <ModelPickerSidebar
                 selectedInstanceId={selectedInstanceId}
@@ -923,7 +917,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                 instanceEntries={sidebarInstanceEntries}
                 showFavorites
                 phone={props.phone === true}
-
                 {...(selectableUnavailableInstanceIds ? { selectableUnavailableInstanceIds } : {})}
                 {...(lockedDisabledInstanceIds
                   ? {
@@ -937,14 +930,14 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
               <div
                 className={cn(
-                  "flex shrink-0 items-center gap-1.75 rounded-md bg-(--field) text-(--houston)",
-                  props.phone ? "mx-4 mt-2 mb-1 h-11 px-3" : "mx-1.5 mt-1.5 mb-1 h-7 px-2",
+                  "flex shrink-0 items-center gap-2 border-b border-(--accent) text-(--houston)",
+                  props.phone ? "mx-4 mt-2 mb-1 h-11" : "mx-3 mt-1 mb-1 h-8",
                 )}
               >
                 <SearchIcon aria-hidden="true" className="size-3.25 shrink-0" />
                 <ComboboxPrimitive.Input
                   ref={searchInputRef}
-                  placeholder="Search models"
+                  placeholder="Search models…"
                   className={cn(
                     "min-w-0 flex-1 bg-transparent p-0 text-(--t1) text-xs outline-none placeholder:text-(--houston)",
                     props.phone ? "h-full" : "h-5 leading-5",
@@ -1039,19 +1032,13 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                       >
                         <div
                           className={cn(
-                            "flex min-w-0 flex-1 items-center gap-1.5 text-(--houston) text-xs",
-                            props.phone ? "h-11" : "h-7 px-2",
+                            "flex min-w-0 flex-1 items-center text-(--houston) text-xs",
+                            props.phone ? "h-11" : "h-7",
                           )}
                         >
-                          <ChevronDownIcon
-                            aria-hidden="true"
-                            className={cn(
-                              "size-3.25 shrink-0 transition-transform",
-                              legacySection.isExpanded && "rotate-180",
-                            )}
-                          />
                           <span className="truncate">
-                            Legacy models · {legacySection.legacyModels.length}
+                            {legacySection.isExpanded ? "Show less" : "Show more"} ·{" "}
+                            {legacySection.legacyModels.length}
                           </span>
                         </div>
                       </ComboboxItem>
@@ -1088,12 +1075,10 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                         model.instanceId !== selectedInstanceId ||
                         Boolean(model.subProvider)
                       }
-                      multiple={onToggleModel !== undefined}
                       phone={props.phone === true}
                       showNewBadge={model.badge === "new"}
                       unavailable={model.isUnavailable === true}
                       jumpLabel={modelJumpLabelByKey.get(modelKey) ?? null}
-                      jumpHintVisible={jumpHintsVisible}
                       disabledReason={disabledReason}
                       onToggleFavorite={toggleFavorite}
                     />

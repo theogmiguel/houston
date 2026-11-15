@@ -6,6 +6,7 @@ import {
 import { memo } from "react";
 import { CheckIcon, StarIcon } from "lucide-react";
 import { getDisplayModelName } from "./providerIconUtils";
+import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { ComboboxItem } from "../ui/combobox";
 import { Badge } from "../ui/badge";
 import { Kbd } from "../ui/kbd";
@@ -81,14 +82,11 @@ export const ModelListRow = memo(function ModelListRow(props: {
   isFavorite: boolean;
   isSelected: boolean;
   showProvider: boolean;
-  multiple?: boolean;
   /** A phone row is full width with a 44px floor and the sheet's 16px gutter. */
   phone?: boolean;
   showNewBadge?: boolean;
   unavailable?: boolean;
   jumpLabel?: string | null;
-  /** The jump modifier is held; the hint keeps its space either way so rows do not shift. */
-  jumpHintVisible?: boolean;
   disabledReason?: string | null;
   onToggleFavorite: (instanceId: ProviderInstanceId, slug: string) => void;
 }) {
@@ -140,41 +138,30 @@ export const ModelListRow = memo(function ModelListRow(props: {
     </Tooltip>
   );
 
-  const trailing = props.multiple ? (
-    props.isSelected ? (
-      <span className="relative flex size-3.5 items-center justify-center">
+  // The star keeps its space whether or not it shows, so a row never shifts on hover. A phone
+  // row has no keycap and marks the selected model with a check at the far edge, where the star
+  // takes its place on hover.
+  const star = (
+    <span
+      className={cn(
+        "flex size-3.5 shrink-0 items-center justify-center",
+        !props.isFavorite && "opacity-0 group-hover:opacity-100 group-data-highlighted:opacity-100",
+      )}
+    >
+      {favoriteButton}
+    </span>
+  );
+  const trailing =
+    props.phone && props.isSelected ? (
+      <span className="relative flex size-3.5 shrink-0 items-center justify-center">
         <CheckIcon className="size-3.5 text-(--t1) group-hover:opacity-0" aria-hidden="true" />
         <span className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100">
           {favoriteButton}
         </span>
       </span>
     ) : (
-      <span
-        className={cn(
-          "flex size-3.5 items-center justify-center",
-          !props.isFavorite && "opacity-0 group-hover:opacity-100",
-        )}
-      >
-        {favoriteButton}
-      </span>
-    )
-  ) : props.isSelected ? (
-    <span className="relative flex size-3.5 items-center justify-center">
-      <CheckIcon className="size-3.5 text-(--t1) group-hover:opacity-0" aria-hidden="true" />
-      <span className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100">
-        {favoriteButton}
-      </span>
-    </span>
-  ) : (
-    <span
-      className={cn(
-        "flex size-3.5 items-center justify-center",
-        !props.isFavorite && "opacity-0 group-hover:opacity-100",
-      )}
-    >
-      {favoriteButton}
-    </span>
-  );
+      star
+    );
 
   const row = (
     <ComboboxItem
@@ -189,8 +176,19 @@ export const ModelListRow = memo(function ModelListRow(props: {
           "data-disabled:pointer-events-auto data-disabled:cursor-not-allowed",
       )}
     >
-      <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto_14px] items-center gap-x-2 gap-y-0.5 text-left">
-        <div className="col-start-1 row-start-1 flex min-w-0 items-center gap-1.5">
+      <div className="flex w-full min-w-0 flex-col text-left">
+        <div className="flex min-w-0 items-center gap-2">
+          <ProviderInstanceIcon
+            driverKind={props.driverKind}
+            displayName={props.providerDisplayName}
+            accentColor={props.providerAccentColor}
+            acpRegistryAgentId={props.acpRegistryAgentId}
+            acpRegistryIconUrl={props.acpRegistryIconUrl}
+            badgeContent="none"
+            size="compact"
+            className="z-0"
+            iconClassName="size-3.5"
+          />
           <span
             className="min-w-0 truncate text-(--t1) text-headline leading-snug"
             // Names the row in full on hover only when it is cut off.
@@ -201,6 +199,9 @@ export const ModelListRow = memo(function ModelListRow(props: {
           >
             {rowName}
           </span>
+          {props.isSelected && !props.phone ? (
+            <CheckIcon aria-hidden="true" className="size-3.5 shrink-0 text-(--t1)" />
+          ) : null}
           {props.showNewBadge ? (
             <span
               className="shrink-0 rounded-sm border border-(--line-strong) px-1 text-3xs font-semibold leading-4 text-(--t2)"
@@ -214,17 +215,12 @@ export const ModelListRow = memo(function ModelListRow(props: {
               Unavailable
             </Badge>
           ) : null}
+          <span className="flex-1" />
+          {trailing}
+          {props.jumpLabel && !props.phone ? <Kbd>{props.jumpLabel}</Kbd> : null}
         </div>
-        {props.jumpLabel ? (
-          <Kbd concealed={!props.jumpHintVisible} className="col-start-2 row-start-1">
-            {props.jumpLabel}
-          </Kbd>
-        ) : null}
-        <div className="col-start-3 row-start-1 flex items-center justify-end">{trailing}</div>
         {meta ? (
-          <div className="col-span-2 col-start-1 row-start-2 min-w-0 truncate text-(--houston) text-2xs">
-            {meta}
-          </div>
+          <div className="min-w-0 truncate ps-5.5 text-(--houston) text-2xs">{meta}</div>
         ) : null}
       </div>
     </ComboboxItem>

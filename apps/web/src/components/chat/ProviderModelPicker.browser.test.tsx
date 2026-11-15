@@ -251,7 +251,7 @@ it("docks an effort panel under the list and stays open after a model pick", asy
     .toBe(true);
 });
 
-it("lines the docked popup up with the composer card and titles the effort panel without the model name", async () => {
+it("lines the docked popup up with the composer card and titles the effort panel Reasoning", async () => {
   await page.viewport(1440, 900);
   await using _screen = await render(
     <TooltipProvider delay={0}>
@@ -283,8 +283,8 @@ it("lines the docked popup up with the composer card and titles the effort panel
   await expect.poll(() => document.querySelector("[data-model-picker-effort]") !== null).toBe(true);
 
   const panel = document.querySelector<HTMLElement>("[data-model-picker-effort]")!;
-  // The label names the setting only: the selected model is already shown in the list above it.
-  expect(panel.textContent).toContain("Effort");
+  // Without traits the header has the setting's name and no model to name beside it.
+  expect(panel.textContent).toContain("Reasoning");
   expect(panel.textContent).not.toContain("Claude Opus 5.5");
 
   await expect
@@ -369,18 +369,18 @@ describe("the docked popup's shape", () => {
   const rect = (selector: string) =>
     document.querySelector<HTMLElement>(selector)!.getBoundingClientRect();
 
-  it("is one 428px frame with the list over the effort panel", async () => {
+  it("is one 400px frame with the list over the effort panel", async () => {
     await using _screen = await openDocked();
 
     const frame = () =>
       document.querySelector<HTMLElement>('[data-model-picker-content="true"]')!.parentElement!;
-    await expect.poll(() => Math.round(frame().getBoundingClientRect().width)).toBe(428);
+    await expect.poll(() => Math.round(frame().getBoundingClientRect().width)).toBe(400);
     const list = rect('[data-model-picker-content="true"]');
     const panel = rect("[data-model-picker-effort]");
     expect(panel.top).toBeGreaterThanOrEqual(list.bottom - 1);
     // Both fill the frame inside its 1px border.
-    expect(Math.round(list.width)).toBe(426);
-    expect(Math.round(panel.width)).toBe(426);
+    expect(Math.round(list.width)).toBe(398);
+    expect(Math.round(panel.width)).toBe(398);
   });
 
   it("has no footer when the strip holds the permissions", async () => {
@@ -564,7 +564,7 @@ describe("docked popup and the composer context row", () => {
       .toBe(true);
   });
 
-  it("puts the providers in a column beside the models", async () => {
+  it("puts the providers in a row above the search field", async () => {
     await page.viewport(1440, 900);
     await using _screen = await render(
       <TooltipProvider delay={0}>
@@ -597,8 +597,11 @@ describe("docked popup and the composer context row", () => {
     const content = document.querySelector<HTMLElement>("[data-model-picker-content]")!;
     const search = content.querySelector<HTMLElement>("input")!;
     const sidebar = content.querySelector<HTMLElement>("[data-model-picker-sidebar]")!;
-    expect(sidebar.getBoundingClientRect().right).toBeLessThanOrEqual(
-      search.getBoundingClientRect().left,
+    expect(sidebar.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+      search.getBoundingClientRect().top,
+    );
+    expect(Math.round(sidebar.getBoundingClientRect().width)).toBe(
+      Math.round(content.getBoundingClientRect().width),
     );
   });
 
@@ -747,7 +750,7 @@ describe("Ultracode in the picker's footer", () => {
     expect(document.querySelector("[data-composer-permissions]")).toBeNull();
   });
 
-  it("names the current mode in muted text beside four icon-only segments", async () => {
+  it("names the current mode on its own chip and keeps the others named", async () => {
     await using _screen = await openPicker(true);
     const group = page.getByRole("radiogroup", { name: "Permissions" });
     await expect.element(group).toBeVisible();
@@ -755,23 +758,14 @@ describe("Ultracode in the picker's footer", () => {
     expect(radios.map((radio) => radio.getAttribute("aria-label"))).toEqual(
       runtimeModeOptions.map((mode) => runtimeModeConfig[mode].label),
     );
-    for (const radio of radios) expect(radio.textContent).toBe("");
+    const checked = radios.find((radio) => radio.getAttribute("aria-checked") === "true")!;
+    expect(checked.textContent).toBe(runtimeModeConfig["approval-required"].label);
     const label = document.querySelector<HTMLElement>("[data-composer-permissions-label]")!;
-    expect(label.textContent).toBe(runtimeModeConfig["approval-required"].label);
-    expect(label.getBoundingClientRect().right).toBeLessThanOrEqual(
-      group.element().getBoundingClientRect().left,
-    );
-    expect(radios.filter((radio) => radio.getAttribute("aria-checked") === "true")).toHaveLength(1);
-  });
-
-  it("previews a mode's name on hover and focus", async () => {
-    await using _screen = await openPicker(true);
-    const label = () =>
-      document.querySelector<HTMLElement>("[data-composer-permissions-label]")!.textContent;
-    await userEvent.hover(page.getByRole("radio", { name: "Auto-accept edits" }));
-    await expect.poll(label).toBe("Auto-accept edits");
-    await userEvent.unhover(page.getByRole("radio", { name: "Auto-accept edits" }));
-    await expect.poll(label).toBe(runtimeModeConfig["approval-required"].label);
+    expect(label.getBoundingClientRect().width).toBeGreaterThan(0);
+    expect(checked.contains(label)).toBe(true);
+    for (const radio of radios.filter((node) => node !== checked)) {
+      expect(radio.textContent).toBe("");
+    }
   });
 
   it("applies a pick with one click and keeps the popup open", async () => {
@@ -824,4 +818,88 @@ it("sizes the options band to its rows", async () => {
   const panel = document.querySelector<HTMLElement>("[data-model-picker-effort]")!;
   // The rows plus the rule above them; the old 88px floor would leave an empty band.
   expect(panel.getBoundingClientRect().height).toBeLessThanOrEqual(38);
+});
+
+describe("the picker's footer chips", () => {
+  const fastMode: Extract<ProviderOptionDescriptor, { type: "boolean" }> = {
+    id: "fastMode",
+    label: "Fast mode",
+    type: "boolean",
+    currentValue: false,
+  };
+  const ultracode: Extract<ProviderOptionDescriptor, { type: "boolean" }> = {
+    id: "ultracode",
+    label: "Ultracode",
+    type: "boolean",
+    currentValue: false,
+  };
+  const permissions = {
+    runtimeMode: "full-access" as const,
+    runtimeModeOptions: runtimeModeOptions.map((mode) => ({ mode, ...runtimeModeConfig[mode] })),
+    onRuntimeModeChange: () => {},
+  };
+
+  const optionChanges: unknown[] = [];
+
+  function footer(descriptors: ReadonlyArray<ProviderOptionDescriptor>) {
+    const models = [
+      {
+        slug: "opus",
+        name: "Claude Opus 5.5",
+        isCustom: false,
+        capabilities: { optionDescriptors: descriptors },
+      },
+    ];
+    return render(
+      <TooltipProvider delay={0}>
+        <div style={{ width: 400 }}>
+          <ComposerPickerFooter
+            traits={{
+              provider: CLAUDE_KIND,
+              instanceId: CLAUDE,
+              models,
+              model: "opus",
+              modelOptions: undefined,
+              planModeEnabled: false,
+              onModelOptionsChange: (options) => {
+                optionChanges.push(options);
+              },
+            }}
+            permissions={permissions}
+          />
+        </div>
+      </TooltipProvider>,
+      { router: false },
+    );
+  }
+
+  it("draws Standard / Fast, Ultracode and a labelled access chip when the model offers them", async () => {
+    await using _screen = await footer([effort, fastMode, ultracode]);
+    const speed = page.getByRole("radiogroup", { name: "Fast mode" });
+    await expect.element(speed).toBeVisible();
+    const segments = Array.from(speed.element().querySelectorAll<HTMLElement>('[role="radio"]'));
+    expect(segments.map((segment) => segment.textContent?.trim())).toEqual(["Standard", "Fast"]);
+    // The bolt marks Fast only.
+    expect(segments[1]!.querySelector("svg")).not.toBeNull();
+    expect(segments[0]!.querySelector("svg")).toBeNull();
+    await expect.element(page.getByRole("button", { name: "Ultracode" })).toBeVisible();
+    await expect
+      .element(page.getByRole("radio", { name: "Full access" }))
+      .toHaveTextContent("Full access");
+  });
+
+  it("draws neither Fast nor Ultracode when the model offers neither", async () => {
+    await using _screen = await footer([effort]);
+    await expect.element(page.getByRole("radiogroup", { name: "Permissions" })).toBeVisible();
+    expect(page.getByRole("radiogroup", { name: "Fast mode" }).elements()).toHaveLength(0);
+    expect(page.getByRole("button", { name: "Ultracode" }).elements()).toHaveLength(0);
+  });
+
+  it("writes the Fast choice through the model options", async () => {
+    optionChanges.length = 0;
+    await using _screen = await footer([effort, fastMode]);
+    await userEvent.click(page.getByRole("radio", { name: "Fast" }));
+    expect(optionChanges).toHaveLength(1);
+    expect(JSON.stringify(optionChanges[0])).toContain("fastMode");
+  });
 });

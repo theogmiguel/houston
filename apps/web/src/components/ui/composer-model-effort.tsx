@@ -10,10 +10,10 @@ import { WorkflowIcon } from "lucide-react";
 import {
   createContext,
   type KeyboardEvent,
+  type ReactElement,
   type ReactNode,
   useContext,
   useId,
-  useState,
 } from "react";
 
 import { cn } from "~/lib/utils";
@@ -22,10 +22,16 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "./tooltip";
 import type { ComposerControlSize } from "../chat/ComposerControl";
 import {
   moveBetweenPermissionSegments,
-  supervisedRuntimeModeOption,
   type RuntimeModeOption,
 } from "../chat/ComposerFooterControls";
-import { PERMISSION_SEGMENT_CLS } from "./composer-picker-recipes";
+import {
+  PICKER_CHIP_SEGMENT_CLS,
+  PICKER_CHIP_TRACK_CLS,
+  PICKER_SEGMENT_ACCENT_CLS,
+  PICKER_SEGMENT_CLS,
+  PICKER_SEGMENT_TRACK_CLS,
+} from "./composer-picker-recipes";
+import { getDisplayModelName } from "../chat/providerIconUtils";
 import { EffortGlyph, FastBolt, resolveEffortGlyph } from "../chat/EffortGlyph";
 import {
   getTraitsSectionVisibility,
@@ -193,6 +199,36 @@ function OptionGroup(props: { label: string; children: ReactNode; note?: ReactNo
   );
 }
 
+/**
+ * One setting as a header line over a full-width segmented control: the muted label on the left,
+ * an optional detail (the selected model's name) on the right.
+ */
+function SegmentedGroup(props: {
+  label: string;
+  detail?: string | null | undefined;
+  children: ReactNode;
+  note?: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-baseline justify-between gap-2 text-xs">
+        <span aria-hidden="true" className="shrink-0 text-(--houston)">
+          {props.label}
+        </span>
+        {props.detail ? (
+          <span className="min-w-0 truncate text-(--t2)" data-model-picker-effort-model="true">
+            {props.detail}
+          </span>
+        ) : null}
+      </div>
+      {props.note}
+      <div role="radiogroup" aria-label={props.label} className={PICKER_SEGMENT_TRACK_CLS}>
+        {props.children}
+      </div>
+    </div>
+  );
+}
+
 function ColumnRow(props: {
   label: string;
   /** Shown on hover; the chip is too small to print it beside the label. */
@@ -204,6 +240,8 @@ function ColumnRow(props: {
   level: boolean;
   onPick: () => void;
   icon?: ReactNode;
+  /** Draws the row as an equal-width segment of a segmented control instead of a wrapping chip. */
+  segment?: boolean;
 }) {
   const phone = useContext(EffortPhoneContext);
   const rowProps = {
@@ -215,7 +253,12 @@ function ColumnRow(props: {
     "data-effort-level": props.level || undefined,
     // The reasoning control holds the panel's one tab stop; the arrow keys move between rows.
     tabIndex: props.selected && props.level ? 0 : -1,
-    className: phone ? cn(CHIP, PHONE_CHIP) : CHIP,
+    "data-checked": props.selected || undefined,
+    className: props.segment
+      ? cn(PICKER_SEGMENT_CLS, props.level && PICKER_SEGMENT_ACCENT_CLS)
+      : phone
+        ? cn(CHIP, PHONE_CHIP)
+        : CHIP,
     onClick: props.onPick,
   } as const;
   const content = (
@@ -261,8 +304,10 @@ function moveBetweenRows(event: KeyboardEvent<HTMLElement>) {
   next.scrollIntoView({ block: "nearest" });
 }
 
-function EffortLevels(props: { traits: TraitsSelectionInput }) {
+function EffortLevels(props: { traits: TraitsSelectionInput; phone: boolean }) {
   const traits = useTraitsSelection(props.traits);
+  const selectedModel = props.traits.models.find((model) => model.slug === props.traits.model);
+  const modelName = selectedModel ? getDisplayModelName(selectedModel) : null;
   const { effort, others } = columnControls(
     props.traits.provider,
     traits.selectDescriptors,
@@ -283,32 +328,43 @@ function EffortLevels(props: { traits: TraitsSelectionInput }) {
       </>
     );
   }
-  if (!effort && others.length === 0) return <NoEffortRow />;
+  if (!effort && others.length === 0) {
+    return props.phone ? <NoEffortRow /> : <NoReasoningRow modelName={modelName} />;
+  }
   const renderControl = (control: ColumnControl) => {
     const isEffort = control === effort;
     const { descriptor } = control;
+    const Group = props.phone ? OptionGroup : SegmentedGroup;
+    const groupLabel = props.phone || !isEffort ? descriptor.label : REASONING_LABEL;
+    const groupDetail = isEffort ? modelName : null;
     if (control.kind === "boolean") {
       return (
-        <OptionGroup key={descriptor.id} label={descriptor.label}>
+        <Group
+          key={descriptor.id}
+          label={groupLabel}
+          {...(props.phone ? {} : { detail: groupDetail })}
+        >
           {([true, false] as const).map((value) => (
             <ColumnRow
               key={String(value)}
               label={value ? "On" : "Off"}
               selected={(control.descriptor.currentValue === true) === value}
               level={isEffort}
+              segment={!props.phone}
               onPick={() => traits.changeBoolean(descriptor.id, value)}
             />
           ))}
-        </OptionGroup>
+        </Group>
       );
     }
     const locked =
       descriptor.id === traits.primarySelectDescriptor?.id && traits.ultrathinkInBodyText;
     const value = traits.selectValue(control.descriptor);
     return (
-      <OptionGroup
+      <Group
         key={descriptor.id}
-        label={descriptor.label}
+        label={groupLabel}
+        {...(props.phone ? {} : { detail: groupDetail })}
         note={
           locked ? (
             <span className="text-(--houston) text-xs">{ULTRATHINK_IN_BODY_NOTE}</span>
@@ -324,10 +380,11 @@ function EffortLevels(props: { traits: TraitsSelectionInput }) {
             isDefault={option.isDefault}
             disabled={locked}
             level={isEffort}
+            segment={!props.phone}
             onPick={() => traits.changeSelect(control.descriptor, option.id)}
           />
         ))}
-      </OptionGroup>
+      </Group>
     );
   };
   return (
@@ -335,6 +392,19 @@ function EffortLevels(props: { traits: TraitsSelectionInput }) {
       {effort ? renderControl(effort) : null}
       {others.map(renderControl)}
     </>
+  );
+}
+
+const REASONING_LABEL = "Reasoning";
+
+/** The docked panel's reasoning header with nothing to choose beneath it. */
+function NoReasoningRow(props: { modelName: string | null }) {
+  return (
+    <SegmentedGroup label={REASONING_LABEL} detail={props.modelName}>
+      <span className="flex h-7 flex-1 items-center px-2.5 text-(--houston) text-xs">
+        No effort levels
+      </span>
+    </SegmentedGroup>
   );
 }
 
@@ -390,30 +460,111 @@ export function ComposerEffortPanel(props: {
   traits: TraitsSelectionInput | null;
   phone?: boolean;
 }) {
+  const phone = props.phone === true;
   return (
-    <EffortPhoneContext value={props.phone === true}>
+    <EffortPhoneContext value={phone}>
       <div
-        className={cn("flex flex-col gap-1", props.phone ? "px-4 py-2" : "px-3 py-2")}
+        className={cn("flex flex-col", phone ? "gap-1 px-4 py-2" : "gap-3 px-3 py-2.5")}
         onKeyDown={moveBetweenRows}
       >
         {props.traits ? (
           <>
-            <EffortLevels traits={props.traits} />
-            <SpeedGroup traits={props.traits} />
+            <EffortLevels traits={props.traits} phone={phone} />
+            {/* Outside the phone sheet, speed is a chip in the picker's footer. */}
+            {phone ? <SpeedGroup traits={props.traits} /> : null}
           </>
-        ) : (
+        ) : phone ? (
           <div className="flex items-start gap-1">
             <span className={GROUP_LABEL}>Effort</span>
             <span className="pt-1.5 text-(--houston) text-xs">No effort levels</span>
           </div>
+        ) : (
+          <NoReasoningRow modelName={null} />
         )}
       </div>
     </EffortPhoneContext>
   );
 }
 
-const FOOTER_SEGMENT =
-  "flex h-6 cursor-pointer items-center justify-center gap-1 px-2 text-muted-foreground text-xs outline-none first:rounded-l-md last:rounded-r-md hover:text-foreground data-checked:bg-input/72 data-checked:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+/** Names a footer segment on hover when it has something to say. */
+function SegmentTip(props: { tip: string | undefined; children: ReactElement }) {
+  if (!props.tip) return props.children;
+  return (
+    <Tooltip>
+      <TooltipTrigger render={props.children} />
+      <TooltipPopup side="top" className="max-w-56">
+        {props.tip}
+      </TooltipPopup>
+    </Tooltip>
+  );
+}
+
+/** A footer chip's segment: icon and label, sized to its content inside the chip's track. */
+const FOOTER_SEGMENT = cn(PICKER_SEGMENT_CLS, PICKER_CHIP_SEGMENT_CLS);
+
+/**
+ * Standard / Fast for a model that offers Claude's Fast mode or Codex service tiers: one segment
+ * per tier, a bolt on the fast ones.
+ */
+function SpeedControl(props: { traits: TraitsSelectionInput }) {
+  const traits = useTraitsSelection(props.traits);
+  const { speedSelect, fastToggle } = splitSpeed(
+    props.traits.provider,
+    traits.selectDescriptors,
+    traits.booleanDescriptors,
+  );
+  if (traits.modelIsUnavailable || (!speedSelect && !fastToggle)) return null;
+  const bolt = (label: string) =>
+    label === "Fast" || label === "Ultrafast" ? <FastBolt ultra={label === "Ultrafast"} /> : null;
+  const segments: ReadonlyArray<{
+    key: string;
+    label: string;
+    selected: boolean;
+    description?: string | undefined;
+    onPick: () => void;
+  }> = speedSelect
+    ? selectableProviderOptionChoices(speedSelect).map((option) => ({
+        key: option.id,
+        label: option.label,
+        selected: option.id === traits.selectValue(speedSelect),
+        description: option.description,
+        onPick: () => traits.changeSelect(speedSelect, option.id),
+      }))
+    : fastToggle
+      ? ([false, true] as const).map((value) => ({
+          key: String(value),
+          label: value ? "Fast" : "Standard",
+          selected: (fastToggle.currentValue === true) === value,
+          onPick: () => traits.changeBoolean(fastToggle.id, value),
+        }))
+      : [];
+  return (
+    <div
+      role="radiogroup"
+      aria-label={speedSelect?.label ?? fastToggle?.label ?? "Speed"}
+      className={PICKER_CHIP_TRACK_CLS}
+      onKeyDown={moveBetweenPermissionSegments('[role="radio"]')}
+    >
+      {segments.map((segment) => (
+        <SegmentTip key={segment.key} tip={segment.description}>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={segment.selected}
+            data-checked={segment.selected || undefined}
+            // Only the checked segment is a tab stop; Left and Right reach the others.
+            tabIndex={segment.selected ? 0 : -1}
+            className={FOOTER_SEGMENT}
+            onClick={segment.onPick}
+          >
+            {bolt(segment.label)}
+            {segment.label}
+          </button>
+        </SegmentTip>
+      ))}
+    </div>
+  );
+}
 
 function UltracodeControl(props: { traits: TraitsSelectionInput }) {
   const traits = useTraitsSelection(props.traits);
@@ -425,7 +576,7 @@ function UltracodeControl(props: { traits: TraitsSelectionInput }) {
   if (traits.modelIsUnavailable || !ultracodeToggle) return null;
   const on = ultracodeToggle.currentValue === true;
   return (
-    <div className="flex rounded-lg bg-input/40 p-0.5">
+    <div className={PICKER_CHIP_TRACK_CLS}>
       <button
         type="button"
         aria-pressed={on}
@@ -441,29 +592,22 @@ function UltracodeControl(props: { traits: TraitsSelectionInput }) {
 }
 
 /**
- * The permission modes as icon-only segments for a popover outside a Menu root, with the shown
- * mode named beside them: the checked mode, or the one under the pointer or focus. A pick
- * applies at once and leaves the popover open.
+ * The permission modes as one chip for a popover outside a Menu root: an icon segment per mode,
+ * with the checked mode's name beside its icon. A pick applies at once and leaves the popover
+ * open; the other modes name themselves in their tooltip and accessible name.
  */
 function PermissionsSegments(props: {
   runtimeMode: RuntimeMode;
   runtimeModeOptions: ReadonlyArray<RuntimeModeOption>;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
-  const [previewMode, setPreviewMode] = useState<RuntimeMode | null>(null);
   const descriptionId = useId();
-  const shown =
-    props.runtimeModeOptions.find((option) => option.mode === (previewMode ?? props.runtimeMode)) ??
-    supervisedRuntimeModeOption;
   return (
-    <div data-composer-permissions className="ms-auto flex items-center gap-2">
-      <span aria-hidden="true" data-composer-permissions-label className="text-(--houston) text-xs">
-        {shown.label}
-      </span>
+    <div data-composer-permissions className="flex items-center">
       <div
         role="radiogroup"
         aria-label="Permissions"
-        className="flex rounded-lg bg-input/40 p-0.5"
+        className={PICKER_CHIP_TRACK_CLS}
         onKeyDown={moveBetweenPermissionSegments('[role="radio"]')}
       >
         {props.runtimeModeOptions.map((option) => {
@@ -471,32 +615,31 @@ function PermissionsSegments(props: {
           const checked = option.mode === props.runtimeMode;
           const disabled = option.disabledReason !== undefined;
           return (
-            <button
-              key={option.mode}
-              type="button"
-              role="radio"
-              aria-checked={checked}
-              aria-disabled={disabled || undefined}
-              aria-label={option.label}
-              aria-describedby={`${descriptionId}-${option.mode}`}
-              data-checked={checked || undefined}
-              data-disabled={disabled || undefined}
-              // Only the checked segment is a tab stop; Left and Right reach the others.
-              tabIndex={checked ? 0 : -1}
-              onClick={() => {
-                if (!disabled && !checked) props.onRuntimeModeChange(option.mode);
-              }}
-              onPointerEnter={() => setPreviewMode(option.mode)}
-              onPointerLeave={() => setPreviewMode(null)}
-              onFocus={() => setPreviewMode(option.mode)}
-              onBlur={() => setPreviewMode(null)}
-              className={cn(
-                PERMISSION_SEGMENT_CLS,
-                "w-7 not-data-checked:hover:bg-hover not-data-checked:hover:text-foreground",
-              )}
-            >
-              <OptionIcon aria-hidden="true" className="size-3.5" />
-            </button>
+            <SegmentTip key={option.mode} tip={checked ? undefined : option.label}>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={checked}
+                aria-disabled={disabled || undefined}
+                aria-label={option.label}
+                aria-describedby={`${descriptionId}-${option.mode}`}
+                data-checked={checked || undefined}
+                data-disabled={disabled || undefined}
+                // Only the checked segment is a tab stop; Left and Right reach the others.
+                tabIndex={checked ? 0 : -1}
+                onClick={() => {
+                  if (!disabled && !checked) props.onRuntimeModeChange(option.mode);
+                }}
+                className={cn(FOOTER_SEGMENT, !checked && "px-2")}
+              >
+                <OptionIcon aria-hidden="true" className="size-3.5" />
+                {checked ? (
+                  <span aria-hidden="true" data-composer-permissions-label>
+                    {option.label}
+                  </span>
+                ) : null}
+              </button>
+            </SegmentTip>
           );
         })}
       </div>
@@ -510,8 +653,9 @@ function PermissionsSegments(props: {
 }
 
 /**
- * The model picker's footer holds Ultracode and, where no other control on screen does,
- * Permissions. With neither it renders nothing.
+ * The model picker's footer: labelled chips for Fast, Ultracode and, where no other control on
+ * screen does, Permissions. A chip the model does not offer is not drawn; with none it renders
+ * nothing.
  */
 export function ComposerPickerFooter(props: {
   traits?: TraitsSelectionInput | null;
@@ -523,7 +667,8 @@ export function ComposerPickerFooter(props: {
 }) {
   const { permissions } = props;
   return (
-    <div className="flex flex-wrap items-center gap-2 border-t border-border bg-(--field) px-2 py-1 empty:hidden">
+    <div className="flex flex-wrap items-center gap-2 border-t border-border px-3 py-2 empty:hidden">
+      {props.traits ? <SpeedControl traits={props.traits} /> : null}
       {props.traits ? <UltracodeControl traits={props.traits} /> : null}
       {permissions ? (
         <PermissionsSegments

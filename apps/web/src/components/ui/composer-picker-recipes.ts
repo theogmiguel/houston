@@ -6,7 +6,7 @@ export const MODEL_TRIGGER_GROUP_CLASS = "group/model-trigger";
  * the same two-part stack, so it only narrows.
  */
 export const DOCKED_PICKER_FRAME_CLASS =
-  "flex max-h-(--available-height) w-[26.75rem] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-lg border border-border bg-(--raised)";
+  "flex max-h-(--available-height) w-[25rem] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-lg border border-border bg-(--raised)";
 
 /**
  * The effort panel under the model list, with the rule that separates them. It takes the
@@ -31,3 +31,18 @@ export const MODEL_PICKER_HINT_CLS =
 /** One segment of the permission modes' toggle; width and hover are the caller's. */
 export const PERMISSION_SEGMENT_CLS =
   "flex h-6 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none data-disabled:cursor-not-allowed data-disabled:opacity-40 data-checked:bg-input/72 data-checked:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+
+/**
+ * A segmented control inside the docked picker: a filled track holding equal-width segments. A
+ * segment keeps its label whole (`min-w-fit`), so a narrow popup scrolls the track sideways
+ * instead of clipping text.
+ */
+export const PICKER_SEGMENT_TRACK_CLS =
+  "flex min-w-0 overflow-x-auto rounded-md bg-(--field) p-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
+export const PICKER_SEGMENT_CLS =
+  "flex h-7 min-w-fit flex-1 cursor-pointer items-center justify-center gap-1 whitespace-nowrap rounded-[calc(var(--r-ctl)-1px)] px-2.5 text-(--t2) text-xs outline-none transition-colors hover:text-(--t1) focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset data-checked:bg-(--sel) data-checked:text-(--t1) data-disabled:cursor-not-allowed data-disabled:opacity-40 disabled:cursor-not-allowed disabled:opacity-64";
+/** The reasoning control's active segment carries the accent. */
+export const PICKER_SEGMENT_ACCENT_CLS = "data-checked:text-(--accent-ink)";
+/** A footer chip: a track around one or more segments, sized to its content. */
+export const PICKER_CHIP_TRACK_CLS = "flex shrink-0 rounded-md bg-(--field) p-0.5";
+export const PICKER_CHIP_SEGMENT_CLS = "flex-none";
