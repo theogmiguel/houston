@@ -13,6 +13,9 @@ import {
   MODEL_PICKER_SIDEBAR_PHONE_ROW_CLS,
   MODEL_PICKER_SIDEBAR_PHONE_TRACK_CLS,
   MODEL_PICKER_SIDEBAR_SCROLL_CLS,
+  MODEL_PICKER_TAB_CLS,
+  MODEL_PICKER_TAB_DISABLED_CLS,
+  MODEL_PICKER_TAB_TRACK_CLS,
   MODEL_PICKER_SIDEBAR_FAVORITES_CLS,
   MODEL_PICKER_SIDEBAR_LABEL_CLS,
   MODEL_PICKER_SIDEBAR_ROW_CLS,
@@ -82,7 +85,7 @@ function unavailableInstanceReason(
   return entry.snapshot.message?.trim() || (entry.status === "error" ? "Unavailable" : "Not ready");
 }
 
-const PICKER_TOOLTIP_SIDE = "left" as const;
+const PICKER_TOOLTIP_SIDE = "bottom" as const;
 const PICKER_TOOLTIP_SIDE_OFFSET = 8;
 
 export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
@@ -94,7 +97,10 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
   disabledInstanceIds?: ReadonlySet<ProviderInstanceId>;
   selectableUnavailableInstanceIds?: ReadonlySet<ProviderInstanceId>;
   getDisabledInstanceTooltip?: (entry: ProviderInstanceEntry) => string;
-  /** Lays the providers out as one scrolling row with 44px chips (the phone sheet). */
+  /**
+   * Lays the providers out as one scrolling row of labelled 44px chips (the phone sheet). Without
+   * it they are square icon-only tabs; each keeps its name as its accessible name and tooltip.
+   */
   phone?: boolean;
 }) {
   const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
@@ -109,50 +115,47 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
       className={props.phone ? MODEL_PICKER_SIDEBAR_PHONE_CLS : MODEL_PICKER_SIDEBAR_CLS}
       data-model-picker-sidebar="true"
       aria-label="Providers"
-      orientation={props.phone ? "horizontal" : "vertical"}
+      orientation="horizontal"
       onKeyDown={(event) => {
         if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-        if (event.key === "ArrowRight") {
+        // Left and Right move between the tabs; Down leaves the row for the search field.
+        if (event.key === (props.phone ? "ArrowRight" : "ArrowDown")) {
           event.preventDefault();
           props.onFocusSearch();
           return;
         }
       }}
     >
-      <div
-        className={cn(
-          MODEL_PICKER_SIDEBAR_SCROLL_CLS,
-          props.phone && "overflow-x-auto overflow-y-hidden",
-        )}
-      >
+      <div className={MODEL_PICKER_SIDEBAR_SCROLL_CLS}>
         <div
           className={
-            props.phone
-              ? MODEL_PICKER_SIDEBAR_PHONE_TRACK_CLS
-              : "relative flex min-h-full flex-col gap-px p-1.5"
+            props.phone ? MODEL_PICKER_SIDEBAR_PHONE_TRACK_CLS : MODEL_PICKER_TAB_TRACK_CLS
           }
         >
           {showFavorites ? (
             <>
-              <div
-                className={cn("relative", props.phone ? "shrink-0" : "w-full")}
-                data-model-picker-provider="favorites"
-              >
+              <div className="relative shrink-0" data-model-picker-provider="favorites">
                 <Tooltip>
                   <TooltipTrigger
                     render={
                       <Toolbar.Button
-                        className={cn(
-                          MODEL_PICKER_SIDEBAR_FAVORITES_CLS,
-                          props.phone && MODEL_PICKER_SIDEBAR_PHONE_ROW_CLS,
-                        )}
+                        className={
+                          props.phone
+                            ? cn(
+                                MODEL_PICKER_SIDEBAR_FAVORITES_CLS,
+                                MODEL_PICKER_SIDEBAR_PHONE_ROW_CLS,
+                              )
+                            : MODEL_PICKER_TAB_CLS
+                        }
                         onClick={() => handleSelect("favorites")}
                         type="button"
                         aria-label="Favorites"
                         aria-pressed={props.selectedInstanceId === "favorites"}
                       >
                         <StarIcon className="size-3.5 shrink-0" aria-hidden />
-                        <span className={MODEL_PICKER_SIDEBAR_LABEL_CLS}>Favorites</span>
+                        {props.phone ? (
+                          <span className={MODEL_PICKER_SIDEBAR_LABEL_CLS}>Favorites</span>
+                        ) : null}
                       </Toolbar.Button>
                     }
                   />
@@ -191,13 +194,13 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
             const button = (
               <Toolbar.Button
                 className={cn(
-                  MODEL_PICKER_SIDEBAR_ROW_CLS,
                   props.phone
-                    ? MODEL_PICKER_SIDEBAR_PHONE_ROW_CLS
-                    : reason === null
-                      ? "min-h-7 py-1"
-                      : "items-start py-1",
-                  isDisabled && MODEL_PICKER_SIDEBAR_ROW_DISABLED_CLS,
+                    ? cn(
+                        MODEL_PICKER_SIDEBAR_ROW_CLS,
+                        MODEL_PICKER_SIDEBAR_PHONE_ROW_CLS,
+                        isDisabled && MODEL_PICKER_SIDEBAR_ROW_DISABLED_CLS,
+                      )
+                    : cn(MODEL_PICKER_TAB_CLS, isDisabled && MODEL_PICKER_TAB_DISABLED_CLS),
                 )}
                 data-provider-accent-color={entry.accentColor}
                 onClick={() => !isDisabled && handleSelect(entry.instanceId)}
@@ -222,7 +225,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                   acpRegistryAgentId={entry.acpRegistryAgentId}
                   acpRegistryIconUrl={entry.acpRegistryIconUrl}
                   showBadge={showInstanceBadge}
-                  className={cn("z-30 shrink-0", reason === null ? "size-3.5" : "size-3.5 mt-0.5")}
+                  className="z-30 shrink-0"
                   iconClassName="size-3.5"
                   indicatorBackground={
                     isHovered && !isDisabled
@@ -233,35 +236,33 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                   }
                   {...(entry.accentColor ? { badgeClassName: "h-3 min-w-3 px-0.5 text-5xs" } : {})}
                 />
-                <span className={MODEL_PICKER_SIDEBAR_NAME_CLS}>
-                  <span
-                    className={MODEL_PICKER_SIDEBAR_NAME_TEXT_CLS}
-                    data-model-picker-provider-name="true"
-                  >
-                    {entry.displayName}
-                  </span>
-                  {reason !== null ? (
-                    <small
-                      className={MODEL_PICKER_SIDEBAR_REASON_CLS}
-                      data-model-picker-provider-reason="true"
+                {props.phone ? (
+                  <span className={MODEL_PICKER_SIDEBAR_NAME_CLS}>
+                    <span
+                      className={MODEL_PICKER_SIDEBAR_NAME_TEXT_CLS}
+                      data-model-picker-provider-name="true"
                     >
-                      {reason}
-                    </small>
-                  ) : null}
-                </span>
+                      {entry.displayName}
+                    </span>
+                    {reason !== null ? (
+                      <small
+                        className={MODEL_PICKER_SIDEBAR_REASON_CLS}
+                        data-model-picker-provider-reason="true"
+                      >
+                        {reason}
+                      </small>
+                    ) : null}
+                  </span>
+                ) : null}
               </Toolbar.Button>
             );
 
-            const trigger = isDisabled ? (
-              <span className="relative block w-full">{button}</span>
-            ) : (
-              button
-            );
+            const trigger = isDisabled ? <span className="relative block">{button}</span> : button;
 
             return (
               <div
                 key={entry.instanceId}
-                className={cn("relative", props.phone ? "shrink-0" : "w-full")}
+                className="relative shrink-0"
                 data-model-picker-provider={entry.instanceId}
               >
                 <Tooltip>

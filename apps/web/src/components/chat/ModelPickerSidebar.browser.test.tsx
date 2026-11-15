@@ -38,7 +38,7 @@ const signedOut = provider({
   message: "Sign in with Google to use Antigravity.",
 });
 
-function sidebar(selected: ProviderInstanceId) {
+function sidebar(selected: ProviderInstanceId, phone = false) {
   return (
     <TooltipProvider delay={0}>
       <ModelPickerSidebar
@@ -47,13 +47,14 @@ function sidebar(selected: ProviderInstanceId) {
         onFocusSearch={() => {}}
         instanceEntries={deriveProviderInstanceEntries([provider(), signedOut])}
         showFavorites={false}
+        phone={phone}
       />
     </TooltipProvider>
   );
 }
 
-it("keeps an unavailable provider in the list and says why", async () => {
-  await using screen = await render(sidebar(ProviderInstanceId.make("claude")));
+it("keeps an unavailable provider in the phone row and says why", async () => {
+  await using screen = await render(sidebar(ProviderInstanceId.make("claude"), true));
 
   const antigravity = screen.container.querySelector<HTMLElement>(
     '[data-model-picker-provider="antigravity"]',
@@ -63,8 +64,8 @@ it("keeps an unavailable provider in the list and says why", async () => {
   expect(antigravity?.querySelector("button")?.disabled).toBe(true);
 });
 
-it("gives only the unavailable provider a reason line", async () => {
-  await using screen = await render(sidebar(ProviderInstanceId.make("claude")));
+it("gives only the unavailable provider a reason line on the phone", async () => {
+  await using screen = await render(sidebar(ProviderInstanceId.make("claude"), true));
 
   const reasons = screen.container.querySelectorAll("[data-model-picker-provider-reason]");
   expect(reasons).toHaveLength(1);
@@ -73,27 +74,21 @@ it("gives only the unavailable provider a reason line", async () => {
   expect(ready?.textContent).toBe("Claude");
 });
 
-it("wraps a long instance name to two lines instead of truncating it", async () => {
-  const personal = provider({
-    instanceId: ProviderInstanceId.make("claude-personal"),
-    displayName: "Claude Personal",
-  });
-  await using screen = await render(
-    <TooltipProvider delay={0}>
-      <div style={{ width: 120 }}>
-        <ModelPickerSidebar
-          selectedInstanceId={ProviderInstanceId.make("claude-personal")}
-          onSelectInstance={() => {}}
-          onFocusSearch={() => {}}
-          instanceEntries={deriveProviderInstanceEntries([personal])}
-          showFavorites={false}
-        />
-      </div>
-    </TooltipProvider>,
-  );
-  const name = screen.container.querySelector<HTMLElement>("[data-model-picker-provider-name]")!;
-  const lineHeight = Number.parseFloat(getComputedStyle(name).lineHeight);
-  expect(name.textContent).toBe("Claude Personal");
-  expect(name.scrollHeight).toBeLessThanOrEqual(name.clientHeight);
-  expect(name.getBoundingClientRect().height).toBeGreaterThan(lineHeight * 1.5);
+it("draws square icon-only tabs that keep each provider's name and say why one is unavailable", async () => {
+  await using screen = await render(sidebar(ProviderInstanceId.make("claude")));
+
+  const tabs = Array.from(screen.container.querySelectorAll<HTMLButtonElement>("button"));
+  const names = tabs.map((tab) => tab.getAttribute("aria-label"));
+  expect(names[0]).toBe("Claude");
+  expect(names[1]).toContain("Antigravity");
+  expect(names[1]).toContain("Sign in with Google to use Antigravity.");
+  for (const tab of tabs) {
+    expect(tab.textContent?.trim()).toBe("");
+    const box = tab.getBoundingClientRect();
+    expect(box.width).toBe(box.height);
+  }
+  expect(tabs[0]!.getAttribute("aria-pressed")).toBe("true");
+  expect(tabs[1]!.disabled).toBe(true);
+  // One row: every tab shares a top edge.
+  expect(new Set(tabs.map((tab) => Math.round(tab.getBoundingClientRect().top))).size).toBe(1);
 });

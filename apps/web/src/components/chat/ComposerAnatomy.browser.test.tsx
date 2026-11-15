@@ -203,7 +203,7 @@ it(
     await userEvent.keyboard("{Control>}a{/Control}{Backspace}");
 
     await userEvent.keyboard("{Control>}{Shift>}m{/Shift}{/Control}");
-    await expect.element(page.getByPlaceholder("Search models")).toBeVisible();
+    await expect.element(page.getByPlaceholder("Search models…")).toBeVisible();
     await userEvent.keyboard("{Escape}");
 
     // One anatomy at every composer width: the placeholder never wraps away from its row, the
