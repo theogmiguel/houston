@@ -382,6 +382,7 @@ export function ThreadCard({
             onPointerDown={startRowDrag}
             tabIndex={-1}
             data-thread-key={threadKey}
+            data-thread-row=""
             data-sidebar-row={threadKey}
             data-sidebar-parent={treeParent}
             data-thread-current={active ? "" : undefined}

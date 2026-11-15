@@ -35,7 +35,7 @@ export const THEME_CSS_HOOKS = [
   { selector: '[data-slot="sidebar"]', styles: "app sidebar" },
   { selector: '[data-slot="sidebar-inner"]', styles: "sidebar surface" },
   { selector: "[data-sidebar-project]", styles: "sidebar project folder row" },
-  { selector: "[data-thread-item]", styles: "sidebar thread row" },
+  { selector: "[data-thread-row]", styles: "sidebar thread row or card" },
   { selector: "[data-chat-header]", styles: "chat header" },
   { selector: '[data-workspace-area="conversation"]', styles: "chat area, behind the messages" },
   { selector: ".messages-timeline-scroll", styles: "chat scroller" },

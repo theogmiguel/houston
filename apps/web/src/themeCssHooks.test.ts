@@ -31,6 +31,17 @@ it.each(THEME_CSS_HOOKS.map((hook) => hook.selector))(
   },
 );
 
+// The sidebar draws a thread as a list row, a folder row, or a card, from two components.
+it.each(["components/sidebar/SidebarThreadRow.tsx", "components/sidebar/ThreadCard.tsx"])(
+  "%s marks the thread row it paints",
+  (file) => {
+    const text = NodeFS.readFileSync(NodePath.join(sourceDirectory, file), "utf8");
+    expect(text, `${file} paints a thread row without data-thread-row`).toMatch(
+      /(?<![\w-])data-thread-row(?![\w-])/,
+    );
+  },
+);
+
 it("matches nothing for a selector that is not in the source", () => {
   expect(sourcePattern("[data-removed-hook-for-test]").test(source)).toBe(false);
   expect(sourcePattern('[data-slot="removed-slot-for-test"]').test(source)).toBe(false);
