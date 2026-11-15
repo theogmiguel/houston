@@ -11,7 +11,14 @@ const MARK_CLASS =
 
 /** Houston's app mark alone, in the current text colour, for rows that render a product icon. */
 export function HoustonMark({ className }: { readonly className?: string }) {
-  return <span aria-hidden style={MARK_MASK} className={cn(MARK_CLASS, "size-4", className)} />;
+  return (
+    <span
+      aria-hidden
+      data-houston-mark=""
+      style={MARK_MASK}
+      className={cn(MARK_CLASS, "size-4", className)}
+    />
+  );
 }
 
 /**

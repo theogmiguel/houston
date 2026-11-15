@@ -23,18 +23,18 @@ vi.mock(import("./SidebarUpdatesButton"), async (original) => ({
 vi.mock(import("./SidebarThreadUndoNotice"), () => ({ SidebarThreadUndoNotice: () => <></> }));
 
 describe("SidebarChromeHeader", () => {
-  it("draws the board's brand row: a 22px mark, Houston and the hide button", async () => {
+  it("draws the board's brand row: a 26px mark, Houston and the hide button", async () => {
     await using screen = await render(
       <SidebarProvider defaultOpen>
         <SidebarChromeHeader isDesktopHost={false} />
       </SidebarProvider>,
     );
 
-    const mark = screen.container.querySelector("img");
+    const mark = screen.container.querySelector("[data-houston-mark]");
     expect(mark).not.toBeNull();
-    const style = getComputedStyle(mark as HTMLImageElement);
-    expect(style.width).toBe("22px");
-    expect(style.height).toBe("22px");
+    const style = getComputedStyle(mark as HTMLElement);
+    expect(style.width).toBe("26px");
+    expect(style.height).toBe("26px");
 
     await expect.element(screen.getByText("Houston")).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "Hide sidebar" })).toBeVisible();
