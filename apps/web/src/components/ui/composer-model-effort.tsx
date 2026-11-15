@@ -13,7 +13,6 @@ import {
   type ReactElement,
   type ReactNode,
   useContext,
-  useId,
 } from "react";
 
 import { cn } from "~/lib/utils";
@@ -22,6 +21,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "./tooltip";
 import type { ComposerControlSize } from "../chat/ComposerControl";
 import {
   moveBetweenPermissionSegments,
+  supervisedRuntimeModeOption,
   type RuntimeModeOption,
 } from "../chat/ComposerFooterControls";
 import {
@@ -32,6 +32,15 @@ import {
   PICKER_SEGMENT_TRACK_CLS,
 } from "./composer-picker-recipes";
 import { getDisplayModelName } from "../chat/providerIconUtils";
+import { composerFloatingLayerProps } from "../chat/composerEventScope";
+import {
+  Menu,
+  MenuPopup,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuRadioItemIndicator,
+  MenuTrigger,
+} from "./menu";
 import { EffortGlyph, FastBolt, resolveEffortGlyph } from "../chat/EffortGlyph";
 import {
   getTraitsSectionVisibility,
@@ -592,62 +601,67 @@ function UltracodeControl(props: { traits: TraitsSelectionInput }) {
 }
 
 /**
- * The permission modes as one chip for a popover outside a Menu root: an icon segment per mode,
- * with the checked mode's name beside its icon. A pick applies at once and leaves the popover
- * open; the other modes name themselves in their tooltip and accessible name.
+ * The permission mode as one chip: the checked mode's icon and name. It opens a menu of every
+ * mode with its description; a pick applies at once and closes only that menu, leaving the
+ * picker open. The chip never cycles, so one click cannot raise permissions without a named pick.
  */
-function PermissionsSegments(props: {
+function PermissionsChip(props: {
   runtimeMode: RuntimeMode;
   runtimeModeOptions: ReadonlyArray<RuntimeModeOption>;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
-  const descriptionId = useId();
+  const current =
+    props.runtimeModeOptions.find((option) => option.mode === props.runtimeMode) ??
+    supervisedRuntimeModeOption;
+  const CurrentIcon = current.icon;
   return (
-    <div data-composer-permissions className="flex items-center">
-      <div
-        role="radiogroup"
-        aria-label="Permissions"
-        className={PICKER_CHIP_TRACK_CLS}
-        onKeyDown={moveBetweenPermissionSegments('[role="radio"]')}
-      >
-        {props.runtimeModeOptions.map((option) => {
-          const OptionIcon = option.icon;
-          const checked = option.mode === props.runtimeMode;
-          const disabled = option.disabledReason !== undefined;
-          return (
-            <SegmentTip key={option.mode} tip={checked ? undefined : option.label}>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={checked}
-                aria-disabled={disabled || undefined}
-                aria-label={option.label}
-                aria-describedby={`${descriptionId}-${option.mode}`}
-                data-checked={checked || undefined}
-                data-disabled={disabled || undefined}
-                // Only the checked segment is a tab stop; Left and Right reach the others.
-                tabIndex={checked ? 0 : -1}
-                onClick={() => {
-                  if (!disabled && !checked) props.onRuntimeModeChange(option.mode);
-                }}
-                className={cn(FOOTER_SEGMENT, !checked && "px-2")}
-              >
-                <OptionIcon aria-hidden="true" className="size-3.5" />
-                {checked ? (
-                  <span aria-hidden="true" data-composer-permissions-label>
-                    {option.label}
+    <div data-composer-permissions className={PICKER_CHIP_TRACK_CLS}>
+      <Menu>
+        <MenuTrigger
+          aria-label={`Permissions: ${current.label}`}
+          className={FOOTER_SEGMENT}
+          render={<button type="button" />}
+        >
+          <CurrentIcon aria-hidden="true" className="size-3.5" />
+          <span data-composer-permissions-label>{current.label}</span>
+        </MenuTrigger>
+        {/* The popup keeps the composer's layer mark but not its focus return: closing the menu
+            leaves focus on the chip, inside the picker. */}
+        <MenuPopup align="start" side="top" {...composerFloatingLayerProps}>
+          <MenuRadioGroup
+            aria-label="Permissions"
+            value={props.runtimeMode}
+            onValueChange={(value: RuntimeMode) => {
+              if (value !== props.runtimeMode) props.onRuntimeModeChange(value);
+            }}
+          >
+            {props.runtimeModeOptions.map((option) => {
+              const OptionIcon = option.icon;
+              return (
+                <MenuRadioItem
+                  key={option.mode}
+                  value={option.mode}
+                  disabled={option.disabledReason !== undefined}
+                  label={option.label}
+                  closeOnClick
+                  className="min-h-10 py-1"
+                >
+                  <span className="flex items-center gap-2.5">
+                    <OptionIcon aria-hidden="true" className="size-4 text-muted-foreground" />
+                    <span className="flex min-w-0 flex-1 flex-col leading-snug">
+                      <span>{option.label}</span>
+                      <span className="text-muted-foreground text-xs">
+                        {option.disabledReason ?? option.description}
+                      </span>
+                    </span>
+                    <MenuRadioItemIndicator />
                   </span>
-                ) : null}
-              </button>
-            </SegmentTip>
-          );
-        })}
-      </div>
-      {props.runtimeModeOptions.map((option) => (
-        <span key={option.mode} id={`${descriptionId}-${option.mode}`} className="sr-only">
-          {option.disabledReason ?? option.description}
-        </span>
-      ))}
+                </MenuRadioItem>
+              );
+            })}
+          </MenuRadioGroup>
+        </MenuPopup>
+      </Menu>
     </div>
   );
 }
@@ -671,7 +685,7 @@ export function ComposerPickerFooter(props: {
       {props.traits ? <SpeedControl traits={props.traits} /> : null}
       {props.traits ? <UltracodeControl traits={props.traits} /> : null}
       {permissions ? (
-        <PermissionsSegments
+        <PermissionsChip
           runtimeMode={permissions.runtimeMode}
           runtimeModeOptions={permissions.runtimeModeOptions}
           onRuntimeModeChange={permissions.onRuntimeModeChange}

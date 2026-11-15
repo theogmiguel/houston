@@ -332,7 +332,7 @@ it("words the legacy group as Show more and Show less", async () => {
   await expect.element(page.getByText(/^Show less/)).toBeVisible();
 });
 
-it("keeps the model list one height whatever the open provider offers", async () => {
+it("sizes the model list to the models the open provider offers", async () => {
   const container = document.createElement("div");
   container.style.width = "520px";
   container.style.height = "520px";
@@ -363,8 +363,5 @@ it("keeps the model list one height whatever the open provider offers", async ()
 
   await page.getByRole("button", { name: "Codex" }).click();
   await expect.element(page.getByRole("option", { name: /GPT-5\.6 Luna/ })).toBeVisible();
-  expect(listHeight(), "one-model provider list height").toBe(claudeHeight);
-
-  await userEvent.type(page.getByPlaceholder("Search models…").element(), "zzz-no-match");
-  expect(listHeight(), "no-match search list height").toBe(claudeHeight);
+  expect(listHeight(), "one-model provider list height").toBeLessThan(claudeHeight);
 });

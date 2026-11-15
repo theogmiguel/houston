@@ -654,6 +654,12 @@ describe("docked popup and the composer context row", () => {
 });
 
 describe("Ultracode in the picker's footer", () => {
+  const fastMode: Extract<ProviderOptionDescriptor, { type: "boolean" }> = {
+    id: "fastMode",
+    label: "Fast mode",
+    type: "boolean",
+    currentValue: false,
+  };
   const ultracode: Extract<ProviderOptionDescriptor, { type: "boolean" }> = {
     id: "ultracode",
     label: "Ultracode",
@@ -667,7 +673,7 @@ describe("Ultracode in the picker's footer", () => {
         slug: "opus",
         name: "Claude Opus 5.5",
         isCustom: false,
-        capabilities: { optionDescriptors: [effort, ultracode] },
+        capabilities: { optionDescriptors: [effort, fastMode, ultracode] },
       },
     ],
   };
@@ -737,7 +743,7 @@ describe("Ultracode in the picker's footer", () => {
     )!.parentElement!;
     expect(frame.contains(toggle)).toBe(true);
     expect(frame.querySelector("[data-composer-permissions-trigger]")).toBeNull();
-    expect(frame.querySelector('[role="radiogroup"][aria-label="Permissions"]')).not.toBeNull();
+    expect(frame.querySelector("[data-composer-permissions]")).not.toBeNull();
     const list = document.querySelector<HTMLElement>('[data-model-picker-content="true"]')!;
     expect(toggle.getBoundingClientRect().top).toBeGreaterThanOrEqual(
       list.getBoundingClientRect().bottom,
@@ -750,48 +756,97 @@ describe("Ultracode in the picker's footer", () => {
     expect(document.querySelector("[data-composer-permissions]")).toBeNull();
   });
 
-  it("names the current mode on its own chip and keeps the others named", async () => {
+  const chip = () => page.getByRole("button", { name: /^Permissions: / });
+  const menuItems = () =>
+    Array.from(document.querySelectorAll<HTMLElement>('[role="menuitemradio"]'));
+
+  it("draws the Fast toggle, Ultracode and one access chip on a single footer row", async () => {
     await using _screen = await openPicker(true);
-    const group = page.getByRole("radiogroup", { name: "Permissions" });
-    await expect.element(group).toBeVisible();
-    const radios = Array.from(group.element().querySelectorAll<HTMLElement>('[role="radio"]'));
-    expect(radios.map((radio) => radio.getAttribute("aria-label"))).toEqual(
-      runtimeModeOptions.map((mode) => runtimeModeConfig[mode].label),
+    await expect.element(chip()).toBeVisible();
+    const speed = document.querySelector<HTMLElement>(
+      '[role="radiogroup"][aria-label="Fast mode"]',
+    )!;
+    const ultra = page.getByRole("button", { name: "Ultracode" }).element();
+    const access = chip().element();
+    const tops = [speed, ultra.parentElement!, access.parentElement!].map((node) =>
+      Math.round(node.getBoundingClientRect().top),
     );
-    const checked = radios.find((radio) => radio.getAttribute("aria-checked") === "true")!;
-    expect(checked.textContent).toBe(runtimeModeConfig["approval-required"].label);
-    const label = document.querySelector<HTMLElement>("[data-composer-permissions-label]")!;
-    expect(label.getBoundingClientRect().width).toBeGreaterThan(0);
-    expect(checked.contains(label)).toBe(true);
-    for (const radio of radios.filter((node) => node !== checked)) {
-      expect(radio.textContent).toBe("");
-    }
+    expect(new Set(tops).size, `chip tops ${tops.join(", ")}`).toBe(1);
+    const frame = document.querySelector<HTMLElement>(
+      '[data-model-picker-content="true"]',
+    )!.parentElement!;
+    expect(access.getBoundingClientRect().right).toBeLessThanOrEqual(
+      frame.getBoundingClientRect().right,
+    );
   });
 
-  it("applies a pick with one click and keeps the popup open", async () => {
+  it("names the chip for the current mode and shows its label", async () => {
+    await using _screen = await openPicker(true);
+    const access = chip().element();
+    expect(access.getAttribute("aria-label")).toBe(
+      `Permissions: ${runtimeModeConfig["approval-required"].label}`,
+    );
+    const label = document.querySelector<HTMLElement>("[data-composer-permissions-label]")!;
+    expect(label.textContent).toBe(runtimeModeConfig["approval-required"].label);
+    expect(access.contains(label)).toBe(true);
+    expect(label.getBoundingClientRect().width).toBeGreaterThan(0);
+  });
+
+  it("opens a menu listing every mode with its description and never cycles on click", async () => {
     permissionChanges.length = 0;
     await using _screen = await openPicker(true);
-    await userEvent.click(page.getByRole("radio", { name: "Auto-accept edits" }));
+    await userEvent.click(chip());
+    await expect.poll(() => menuItems().length).toBe(runtimeModeOptions.length);
+    expect(permissionChanges).toEqual([]);
+    for (const [index, mode] of runtimeModeOptions.entries()) {
+      const text = menuItems()[index]!.textContent ?? "";
+      expect(text).toContain(runtimeModeConfig[mode].label);
+      expect(text).toContain(
+        mode === "full-access" ? "Full access is off here." : runtimeModeConfig[mode].description,
+      );
+    }
+    // The menu layers above the picker popup.
+    const menu = document.querySelector<HTMLElement>('[data-slot="menu-positioner"]')!;
+    const picker = document.querySelector<HTMLElement>('[data-slot="popover-positioner"]')!;
+    expect(menu.compareDocumentPosition(picker) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+  });
+
+  it("applies a pick, closes only the menu and keeps the picker open", async () => {
+    permissionChanges.length = 0;
+    await using _screen = await openPicker(true);
+    await userEvent.click(chip());
+    await expect.poll(() => menuItems().length).toBeGreaterThan(0);
+    await userEvent.click(page.getByRole("menuitemradio", { name: /Auto-accept edits/ }));
     expect(permissionChanges).toEqual(["auto-accept-edits"]);
+    await expect.poll(() => menuItems().length).toBe(0);
     expect(document.querySelector("[data-model-picker-content]")).not.toBeNull();
   });
 
-  it("moves focus with Left and Right and refuses a disabled mode", async () => {
+  it("closes only the menu on Escape and returns focus to the chip", async () => {
+    await using _screen = await openPicker(true);
+    chip().element().focus();
+    await userEvent.keyboard("{Enter}");
+    await expect.poll(() => menuItems().length).toBeGreaterThan(0);
+    await userEvent.keyboard("{ArrowDown}");
+    await userEvent.keyboard("{Escape}");
+    await expect.poll(() => menuItems().length).toBe(0);
+    expect(document.querySelector("[data-model-picker-content]")).not.toBeNull();
+    await expect.element(chip()).toHaveFocus();
+  });
+
+  it("lists a disabled mode with its reason and refuses to pick it", async () => {
     permissionChanges.length = 0;
     await using _screen = await openPicker(true);
-    const checked = page.getByRole("radio", { name: runtimeModeConfig["approval-required"].label });
-    checked.element().focus();
-    await userEvent.keyboard("{ArrowRight}");
-    await expect
-      .element(page.getByRole("radio", { name: runtimeModeConfig["auto-accept-edits"].label }))
-      .toHaveFocus();
-    await userEvent.keyboard("{ArrowLeft}");
-    await expect.element(checked).toHaveFocus();
-    const disabled = page.getByRole("radio", { name: runtimeModeConfig["full-access"].label });
-    expect(disabled.element().getAttribute("aria-disabled")).toBe("true");
-    // A DOM click: the locator refuses to act on an aria-disabled control.
-    (disabled.element() as HTMLElement).click();
+    await userEvent.click(chip());
+    await expect.poll(() => menuItems().length).toBeGreaterThan(0);
+    const full = menuItems().find((item) =>
+      item.textContent?.includes(runtimeModeConfig["full-access"].label),
+    )!;
+    expect(full.textContent).toContain("Full access is off here.");
+    expect(full.hasAttribute("data-disabled")).toBe(true);
+    full.click();
     expect(permissionChanges).toEqual([]);
+    expect(menuItems().length).toBeGreaterThan(0);
   });
 });
 
@@ -884,13 +939,15 @@ describe("the picker's footer chips", () => {
     expect(segments[0]!.querySelector("svg")).toBeNull();
     await expect.element(page.getByRole("button", { name: "Ultracode" })).toBeVisible();
     await expect
-      .element(page.getByRole("radio", { name: "Full access" }))
+      .element(page.getByRole("button", { name: "Permissions: Full access" }))
       .toHaveTextContent("Full access");
   });
 
   it("draws neither Fast nor Ultracode when the model offers neither", async () => {
     await using _screen = await footer([effort]);
-    await expect.element(page.getByRole("radiogroup", { name: "Permissions" })).toBeVisible();
+    await expect
+      .element(page.getByRole("button", { name: "Permissions: Full access" }))
+      .toBeVisible();
     expect(page.getByRole("radiogroup", { name: "Fast mode" }).elements()).toHaveLength(0);
     expect(page.getByRole("button", { name: "Ultracode" }).elements()).toHaveLength(0);
   });

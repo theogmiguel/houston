@@ -816,7 +816,9 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       event.repeat ||
       event.isComposing ||
       event.keyCode === 229 ||
-      isCommandPaletteOpen()
+      isCommandPaletteOpen() ||
+      // A menu opened from the picker (the access chip) owns its keys while it is open.
+      (document.activeElement?.closest('[data-slot="menu-popup"]') ?? null) !== null
     ) {
       return;
     }
