@@ -272,10 +272,19 @@ function ModelPickerList({
 }) {
   const [showTopScrollFade, setShowTopScrollFade] = useState(false);
   const [showBottomScrollFade, setShowBottomScrollFade] = useState(false);
+  const [measuredHeight, setMeasuredHeight] = useState<number | null>(null);
+  const maxHeight = MAX_VISIBLE_MODEL_ROWS * MODEL_LIST_ESTIMATED_ITEM_SIZE;
   const updateScrollFades = () => {
     const scrollElement = listRef.current?.getScrollableNode();
     if (!(scrollElement instanceof HTMLElement)) {
       return;
+    }
+    // Rows with a second line are taller than the estimate, so the list grows to what it holds.
+    const frame = scrollElement.closest<HTMLElement>("[data-model-picker-list]");
+    if (!phone && frame && scrollElement.scrollHeight > scrollElement.clientHeight + 1) {
+      // The frame is taller than its scroller by the list's own insets.
+      const insets = frame.clientHeight - scrollElement.clientHeight;
+      setMeasuredHeight(Math.min(scrollElement.scrollHeight + insets, maxHeight));
     }
     const maxScrollOffset = Math.max(0, scrollElement.scrollHeight - scrollElement.clientHeight);
     setShowTopScrollFade(scrollElement.scrollTop > 1);
@@ -288,6 +297,7 @@ function ModelPickerList({
   const [fadesResetFor, setFadesResetFor] = useState(itemListKey);
   if (fadesResetFor !== itemListKey) {
     setFadesResetFor(itemListKey);
+    setMeasuredHeight(null);
     setShowTopScrollFade(false);
     setShowBottomScrollFade(itemKeys.length > 5);
   }
@@ -319,7 +329,10 @@ function ModelPickerList({
           ? itemKeys.length > 0
             ? { height: rows * itemSize + 8 }
             : undefined
-          : { height: MAX_VISIBLE_MODEL_ROWS * itemSize }
+          : {
+              // The frame hugs a short list and scrolls a long one. 12px is the list's own padding.
+              height: measuredHeight ?? Math.min(itemKeys.length * itemSize + 12, maxHeight),
+            }
       }
     >
       <ComboboxListVirtualized flush={phone}>
