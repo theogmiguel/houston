@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import indexHtml from "../index.html?raw";
+import markSvg from "./assets/houston-mark.svg?raw";
 import {
   CUSTOM_THEMES_STORAGE_KEY,
   getDefaultThemeColors,
@@ -408,7 +409,12 @@ describe("boot splash styles", () => {
   });
 
   it("shows the transparent logo mark with no tile background or shadow in either theme", () => {
-    expect(indexHtml).toContain('id="boot-shell-logo" src="./src/assets/houston-mark.svg"');
+    // The mark is inline so it takes the boot text colour; it must stay the asset's drawing.
+    const paths = (svg: string) => [...svg.matchAll(/\sd="([^"]+)"/g)].map((match) => match[1]);
+    const inlineMark = indexHtml.match(/<svg\s+id="boot-shell-logo"[\s\S]*?<\/svg>/)?.[0] ?? "";
+    expect(paths(inlineMark).length).toBeGreaterThan(0);
+    expect(paths(inlineMark)).toEqual(paths(markSvg));
+    expect(inlineMark).toContain('fill="currentColor"');
     const card = rule("#boot-shell-card");
     expect(card).not.toMatch(/box-shadow|background|border-radius/);
     expect(indexHtml).not.toContain("html.dark #boot-shell-card");
