@@ -72,6 +72,18 @@ NodeTest.test("check mode refuses stale metadata and names the field", async () 
   }
 });
 
+NodeTest.test("check mode accepts metadata whose top-level path has no size", async () => {
+  const { directory, metadataPath } = await fixture();
+  try {
+    await refresh(directory);
+    const refreshed = NodeFS.readFileSync(metadataPath, "utf8");
+    NodeAssert.deepEqual(await refresh(directory, { check: true }), []);
+    NodeAssert.equal(NodeFS.readFileSync(metadataPath, "utf8"), refreshed);
+  } finally {
+    NodeFS.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 NodeTest.test("metadata naming a missing artifact fails with its name", async () => {
   const { directory } = await fixture();
   try {

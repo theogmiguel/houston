@@ -81,7 +81,7 @@ try {
     [
       ...pnpm.slice(1),
       "--filter",
-      "houston",
+      "@houston-app/cli",
       "deploy",
       deployed,
       "--prod",

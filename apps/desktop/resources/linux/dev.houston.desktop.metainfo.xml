@@ -10,9 +10,9 @@
   </developer>
   <description>
     <p>
-      Houston is a local-first mission control for CLI coding agents: a grid of
-      real terminals running your agent CLIs in your own project directories,
-      where an agent can spawn and drive another agent in a new pane.
+      Houston is a local-first mission control for coding agents: it runs them
+      in persistent threads served by a local server, so agent runs continue
+      when the window closes and agents can delegate work to other threads.
     </p>
   </description>
   <launchable type="desktop-id">dev.houston.desktop.desktop</launchable>

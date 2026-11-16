@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 import * as NodeAssert from "node:assert/strict";
+import * as NodeModule from "node:module";
 import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeTest from "node:test";
 import * as NodeURL from "node:url";
 
 import {
   createBuildConfig,
+  createStageWorkspaceConfig,
   DESKTOP_APP_ID,
   DESKTOP_COPYRIGHT,
   DESKTOP_HOMEPAGE,
@@ -15,7 +18,9 @@ import {
   DESKTOP_SHORT_DESCRIPTION,
   GITHUB_PUBLISH_CONFIG,
   LINUX_DEB_DEPENDS,
+  asarEntryPath,
   missingPackagedResources,
+  stageWindowsServerSidecar,
   resolveDesktopTargets,
   resolveExtraResources,
   resolveMacFileExclusions,
@@ -64,6 +69,78 @@ NodeTest.test("the NSIS hook keeps the Tauri install directory and daemon cleanu
   NodeAssert.match(hook, /!macro customUnInstall/);
   NodeAssert.match(hook, /\.houston\\daemon\.json/);
   NodeAssert.match(hook, /StartsWith\('\$INSTDIR'\)/);
+});
+
+NodeTest.test("the NSIS hook defines only macros the installer templates insert", () => {
+  // makensis runs with warnings as errors, and a function that only an
+  // uninserted macro references is a warning.
+  const hook = NodeFS.readFileSync(
+    NodePath.join(REPO_ROOT, "apps/desktop/resources/installer.nsh"),
+    "utf8",
+  );
+  const fromDesktop = NodeModule.createRequire(
+    NodePath.join(REPO_ROOT, "apps/desktop/package.json"),
+  );
+  const fromBuilder = NodeModule.createRequire(
+    fromDesktop.resolve("electron-builder/package.json"),
+  );
+  const templates = NodePath.join(
+    NodePath.dirname(fromBuilder.resolve("app-builder-lib/package.json")),
+    "templates/nsis",
+  );
+  const inserted = NodeFS.readdirSync(templates, { encoding: "utf8", recursive: true })
+    .filter((entry) => /\.ns[hi]$/.test(entry))
+    .map((entry) => NodeFS.readFileSync(NodePath.join(templates, entry), "utf8"))
+    .join("\n");
+  const defined = [...hook.matchAll(/^!macro (\w+)/gm)].map((match) => match[1]);
+  NodeAssert.notEqual(defined.length, 0);
+  for (const macro of defined) {
+    NodeAssert.match(
+      inserted,
+      new RegExp(`!insertmacro ${macro}\\b`),
+      `installer.nsh defines ${macro}, which no installer template inserts`,
+    );
+  }
+  NodeAssert.doesNotMatch(hook, /StrFunc\.nsh/);
+});
+
+NodeTest.test("the NSIS hook declares its install variables only in the installer build", () => {
+  const hook = NodeFS.readFileSync(
+    NodePath.join(REPO_ROOT, "apps/desktop/resources/installer.nsh"),
+    "utf8",
+  );
+  const declared = [...hook.matchAll(/^\s*Var \/GLOBAL (\w+)$/gm)].map((match) => match[1]);
+  NodeAssert.deepEqual(declared, ["houstonUpdateMode", "houstonRestart", "houstonLaunchArgs"]);
+  const guarded = /!ifndef BUILD_UNINSTALLER\n((?: {2}Var \/GLOBAL \w+\n)+)!endif/.exec(hook)?.[1];
+  NodeAssert.equal(guarded?.match(/Var \/GLOBAL/g)?.length, declared.length);
+  const uninstall = /!macro customUnInstall\n([\s\S]*?)!macroend/.exec(hook)?.[1] ?? "";
+  for (const name of declared) NodeAssert.equal(uninstall.includes(`$${name}`), false);
+});
+
+NodeTest.test("every label in the NSIS hook is a jump target", () => {
+  // An unused label is a makensis warning, and the build treats warnings as errors.
+  const hook = NodeFS.readFileSync(
+    NodePath.join(REPO_ROOT, "apps/desktop/resources/installer.nsh"),
+    "utf8",
+  );
+  const labels = [...hook.matchAll(/^(\w+):$/gm)].map((match) => match[1]);
+  NodeAssert.notEqual(labels.length, 0);
+  for (const label of labels) {
+    NodeAssert.match(
+      hook,
+      new RegExp(`\\b${label}\\b(?!:)`),
+      `installer.nsh declares the label ${label}, which nothing jumps to`,
+    );
+  }
+});
+
+NodeTest.test("the NSIS hook reads the daemon pid past the key's separator", () => {
+  const hook = NodeFS.readFileSync(
+    NodePath.join(REPO_ROOT, "apps/desktop/resources/installer.nsh"),
+    "utf8",
+  );
+  NodeAssert.match(hook, /StrCmp \$R4 ':' houstonUninstallNextSeparator houstonUninstallParsePid/);
+  NodeAssert.match(hook, /IntCmp \$R1 0 houstonUninstallDone houstonUninstallDone\n/);
 });
 
 NodeTest.test("the NSIS hook accepts the arguments the Tauri updater passes", () => {
@@ -125,7 +202,7 @@ NodeTest.test("the packaged metadata matches the bundle strings", () => {
   NodeAssert.equal(DESKTOP_SHORT_DESCRIPTION, "Mission control for CLI coding agents");
   NodeAssert.equal(
     DESKTOP_LONG_DESCRIPTION,
-    "Houston is a local-first mission control for CLI coding agents: a grid of real terminals running your agent CLIs in your own project directories, where an agent can spawn and drive another agent in a new pane.",
+    "Houston is a local-first mission control for coding agents: it runs them in persistent threads served by a local server, so agent runs continue when the window closes and agents can delegate work to other threads.",
   );
   NodeAssert.equal(DESKTOP_PUBLISHER, "Théo Miguel");
   NodeAssert.equal(DESKTOP_COPYRIGHT, "Copyright © 2026 Théo Miguel");
@@ -173,6 +250,51 @@ NodeTest.test("missing packaged resources name every required lookup", () => {
     "kde-capture/houston-kde-snap-shot",
     "hyprland-capture/houston-hyprland-snap-shot",
   ]);
+});
+
+NodeTest.test("Windows packages the Houston 1 cleanup helper under its .exe name", () => {
+  const asked = [];
+  const { missing } = missingPackagedResources({
+    platform: "win",
+    exists: (path) => {
+      asked.push(path);
+      return path === "houston-v1-cleanup.exe";
+    },
+  });
+  NodeAssert.equal(missing.includes("houston-v1-cleanup"), false);
+  NodeAssert.equal(asked.includes("houston-v1-cleanup"), false);
+  NodeAssert.deepEqual(resolveExtraResources("win", () => false)[0], {
+    from: "apps/desktop/prod-resources/houston-v1-cleanup.exe",
+    to: "houston-v1-cleanup.exe",
+  });
+  NodeAssert.deepEqual(resolveExtraResources("linux", () => false)[0], {
+    from: "apps/desktop/prod-resources/houston-v1-cleanup",
+    to: "houston-v1-cleanup",
+  });
+});
+
+NodeTest.test("an archive lookup uses the platform's path separator", () => {
+  NodeAssert.equal(asarEntryPath("apps/server/dist/bin.mjs", "\\"), "apps\\server\\dist\\bin.mjs");
+  NodeAssert.equal(asarEntryPath("apps/server/dist/bin.mjs", "/"), "apps/server/dist/bin.mjs");
+});
+
+NodeTest.test("the Windows server archive is written before its staging source goes", async () => {
+  const stage = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "houston-server-sidecar-"));
+  try {
+    const dist = NodePath.join(stage, "apps/server/dist");
+    NodeFS.mkdirSync(dist, { recursive: true });
+    NodeFS.writeFileSync(NodePath.join(dist, "bin.mjs"), "export {};\n");
+    await stageWindowsServerSidecar(stage);
+    const archive = NodePath.join(stage, "apps/desktop/prod-resources/windows-server/server.asar");
+    NodeAssert.equal(NodeFS.existsSync(archive), true);
+    const asar = NodeModule.createRequire(import.meta.url)("@electron/asar");
+    NodeAssert.doesNotThrow(() =>
+      asar.statFile(archive, asarEntryPath("apps/server/dist/bin.mjs")),
+    );
+    NodeAssert.equal(NodeFS.existsSync(NodePath.join(stage, "server-sidecar")), false);
+  } finally {
+    NodeFS.rmSync(stage, { recursive: true });
+  }
 });
 
 NodeTest.test("a resource present in the stage is not reported missing", () => {
@@ -232,5 +354,27 @@ NodeTest.test("a single-architecture macOS build drops the other Darwin prebuild
   NodeAssert.ok(
     macConfig.files.includes("!**/node_modules/**/prebuilds/darwin-x64/**/*"),
     "the macOS build config carries the exclusion",
+  );
+});
+
+NodeTest.test("the staged install decides every dependency build script it meets", () => {
+  const { allowBuilds } = createStageWorkspaceConfig({ platform: "mac", arch: "arm64" });
+  NodeAssert.equal(
+    allowBuilds["objc-js"],
+    false,
+    "pnpm fails the staged macOS install on an install script nobody allowed or denied",
+  );
+});
+
+NodeTest.test("the dependency listing starts pnpm through a shell on Windows", () => {
+  const source = NodeFS.readFileSync(
+    NodePath.join(import.meta.dirname, "build-desktop-artifact.ts"),
+    "utf8",
+  );
+  const listing = source.slice(source.indexOf("function listResolvedDependencies"));
+  NodeAssert.match(
+    listing.slice(0, listing.indexOf("\n}\n")),
+    /shell: process\.platform === "win32"/,
+    "pnpm is a .cmd shim on Windows and spawnSync cannot start it without a shell",
   );
 });

@@ -26,7 +26,7 @@ export const DESKTOP_EXECUTABLE_NAME = "houston";
 export const DESKTOP_CATEGORY = "DeveloperTool";
 export const DESKTOP_SHORT_DESCRIPTION = "Mission control for CLI coding agents";
 export const DESKTOP_LONG_DESCRIPTION =
-  "Houston is a local-first mission control for CLI coding agents: a grid of real terminals running your agent CLIs in your own project directories, where an agent can spawn and drive another agent in a new pane.";
+  "Houston is a local-first mission control for coding agents: it runs them in persistent threads served by a local server, so agent runs continue when the window closes and agents can delegate work to other threads.";
 export const DESKTOP_PUBLISHER = "Théo Miguel";
 export const DESKTOP_COPYRIGHT = "Copyright © 2026 Théo Miguel";
 export const DESKTOP_HOMEPAGE = "https://github.com/theogmiguel/houston";
@@ -121,6 +121,13 @@ export interface PackagedResourceRequirement {
   readonly area: "resources" | "app";
   readonly platforms?: readonly BuildPlatform[];
   readonly optional?: boolean;
+  /** A native executable: Windows packages it with the `.exe` suffix. */
+  readonly executable?: boolean;
+}
+
+/** The file name a native executable has on the target platform. */
+export function executableName(platform: BuildPlatform, name: string): string {
+  return platform === "win" ? `${name}.exe` : name;
 }
 
 /**
@@ -133,6 +140,7 @@ export const PACKAGED_RESOURCE_REQUIREMENTS: readonly PackagedResourceRequiremen
     lookup: "houston-v1-cleanup",
     source: V1_CLEANUP_BINARY,
     area: "resources",
+    executable: true,
   },
   {
     lookup: "third-party-licenses.json",
@@ -284,7 +292,8 @@ export function createStageWorkspaceConfig(input: {
       input.platform === "linux"
         ? { os: [hostOs], cpu: [input.arch], libc: ["glibc"] }
         : { os: [hostOs], cpu: [input.arch] },
-    allowBuilds: { koffi: true, "node-pty": true },
+    // objc-js ships prebuilds; an install script left undecided fails the staged install on macOS.
+    allowBuilds: { koffi: true, "node-pty": true, "objc-js": false },
     patchedDependencies: STAGE_PATCHED_DEPENDENCIES,
   };
 }
@@ -382,7 +391,10 @@ export function resolveExtraResources(
   // The app carries `prod-resources` for lookups made relative to app.getAppPath().
   // Extra resources are the host helpers it reads straight from process.resourcesPath.
   const resources: Array<Record<string, unknown>> = [
-    { from: "apps/desktop/prod-resources/houston-v1-cleanup", to: V1_CLEANUP_BINARY },
+    {
+      from: `apps/desktop/prod-resources/${executableName(platform, V1_CLEANUP_BINARY)}`,
+      to: executableName(platform, V1_CLEANUP_BINARY),
+    },
     {
       from: "apps/desktop/prod-resources/third-party-licenses.json",
       to: "third-party-licenses.json",
@@ -429,7 +441,11 @@ export function missingPackagedResources(input: {
     if (requirement.platforms !== undefined && !requirement.platforms.includes(input.platform)) {
       continue;
     }
-    if (input.exists(requirement.source)) continue;
+    const source =
+      requirement.executable === true
+        ? executableName(input.platform, requirement.source)
+        : requirement.source;
+    if (input.exists(source)) continue;
     if (requirement.optional === true) {
       skippedOptional.push(requirement.lookup);
     } else {
@@ -533,7 +549,8 @@ function listResolvedDependencies(filter: string): Record<string, string> {
   const result = NodeChildProcess.spawnSync(
     "pnpm",
     ["--filter", filter, "list", "--depth", "0", "--prod", "--json"],
-    { cwd: REPO_ROOT, encoding: "utf8" },
+    // pnpm is a .cmd shim on Windows, which only a shell can start.
+    { cwd: REPO_ROOT, encoding: "utf8", shell: process.platform === "win32" },
   );
   if (result.status !== 0) {
     throw new Error(
@@ -572,7 +589,7 @@ function buildDesktopBundles(verbose: boolean): void {
 }
 
 function buildV1Cleanup(platform: BuildPlatform, verbose: boolean): string {
-  const executable = platform === "win" ? `${V1_CLEANUP_BINARY}.exe` : V1_CLEANUP_BINARY;
+  const executable = executableName(platform, V1_CLEANUP_BINARY);
   const binary = NodePath.join(REPO_ROOT, V1_CLEANUP_CRATE, "target", "release", executable);
   const crateManifest = NodePath.join(REPO_ROOT, V1_CLEANUP_CRATE, "Cargo.toml");
   const source = NodePath.join(REPO_ROOT, V1_CLEANUP_CRATE, "src");
@@ -620,10 +637,7 @@ function stageResources(input: {
   const v1Cleanup = buildV1Cleanup(input.platform, input.verbose);
   copyFile(
     v1Cleanup,
-    NodePath.join(
-      prodResourcesDir,
-      input.platform === "win" ? `${V1_CLEANUP_BINARY}.exe` : V1_CLEANUP_BINARY,
-    ),
+    NodePath.join(prodResourcesDir, executableName(input.platform, V1_CLEANUP_BINARY)),
     0o755,
   );
 
@@ -648,10 +662,15 @@ function stageResources(input: {
   }
 }
 
-function stageWindowsServerSidecar(stageAppDir: string): void {
+/** Packs the staged server into the archive the Windows host starts it from. */
+export async function stageWindowsServerSidecar(stageAppDir: string): Promise<void> {
   const require = NodeModule.createRequire(import.meta.url);
   const asar = require("@electron/asar") as {
-    createPackageWithOptions(source: string, destination: string, options?: unknown): void;
+    createPackageWithOptions(
+      source: string,
+      destination: string,
+      options?: unknown,
+    ): Promise<unknown>;
   };
   const sourceDir = NodePath.join(stageAppDir, "server-sidecar");
   const asarPath = NodePath.join(
@@ -670,7 +689,8 @@ function stageWindowsServerSidecar(stageAppDir: string): void {
   }
   NodeFS.mkdirSync(NodePath.dirname(asarPath), { recursive: true });
   NodeFS.rmSync(asarPath, { force: true });
-  asar.createPackageWithOptions(sourceDir, asarPath, {
+  // The archive is written asynchronously; its source must outlive the write.
+  await asar.createPackageWithOptions(sourceDir, asarPath, {
     unpack: WINDOWS_NATIVE_ASAR_UNPACK_GLOB,
   });
   NodeFS.rmSync(sourceDir, { recursive: true, force: true });
@@ -824,6 +844,11 @@ function runElectronBuilder(options: BuildOptions, stageAppDir: string): void {
   run("pnpm", args, { env, verbose: options.verbose });
 }
 
+/** The archive reader splits an entry path on the platform separator, not on "/". */
+export function asarEntryPath(path: string, separator: string = NodePath.sep): string {
+  return path.split("/").join(separator);
+}
+
 function verifyPackagedOutput(options: BuildOptions): void {
   const unpackedName =
     options.platform === "linux"
@@ -851,7 +876,7 @@ function verifyPackagedOutput(options: BuildOptions): void {
       statFile(archive: string, path: string): unknown;
     };
     try {
-      asar.statFile(appAsar, path);
+      asar.statFile(appAsar, asarEntryPath(path));
       return true;
     } catch {
       return false;
@@ -896,7 +921,7 @@ function printArtifacts(outputDir: string): void {
   }
 }
 
-export function main(): void {
+export async function main(): Promise<void> {
   const options = resolveBuildOptions();
   const hostPlatform = detectHostPlatform(process.platform);
   if (options.platform !== hostPlatform) {
@@ -918,7 +943,7 @@ export function main(): void {
     installStageDependencies(stageAppDir, options.verbose);
     stageResourceMonitor(stageAppDir);
     if (options.platform === "win") {
-      stageWindowsServerSidecar(stageAppDir);
+      await stageWindowsServerSidecar(stageAppDir);
     }
     verifyStagedResources(stageAppDir, options.platform);
     runElectronBuilder(options, stageAppDir);
@@ -938,10 +963,8 @@ if (
   process.argv[1] !== undefined &&
   NodePath.resolve(process.argv[1]) === NodeURL.fileURLToPath(import.meta.url)
 ) {
-  try {
-    main();
-  } catch (error) {
+  main().catch((error: unknown) => {
     console.error(`[desktop-artifact] ${error instanceof Error ? error.message : String(error)}`);
     process.exitCode = 1;
-  }
+  });
 }

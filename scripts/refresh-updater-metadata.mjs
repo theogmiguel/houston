@@ -49,7 +49,7 @@ async function refreshFile(directory, metadataPath, check) {
     }
     const path = PATH_PATTERN.exec(line);
     if (path !== null) {
-      topLevel = { url: path[1], hashIndex: null, hashIndent: "" };
+      topLevel = { url: path[1], hashIndex: null, hashIndent: "", sizeIndex: null };
       pending.push(topLevel);
       return;
     }

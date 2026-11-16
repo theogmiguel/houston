@@ -1,12 +1,3 @@
-!include "StrFunc.nsh"
-!ifdef BUILD_UNINSTALLER
-  ${UnStrRep}
-  !define HoustonStrRep '${UnStrRep}'
-!else
-  ${StrRep}
-  !define HoustonStrRep '${StrRep}'
-!endif
-
 ; The Tauri updater starts the downloaded installer with /P /UPDATE /R /ARGS and
 ; expects it to relaunch the app. Houston owns that relaunch so the /ARGS payload
 ; reaches the new process; electron-builder's own start is suppressed here and
@@ -15,32 +6,13 @@
   !undef RUN_AFTER_FINISH
 !endif
 
-Var /GLOBAL houstonUpdateMode
-Var /GLOBAL houstonRestart
-Var /GLOBAL houstonLaunchArgs
-
-!macro customAppRunningMessages
-  Push $0
-  Push $1
-  ${If} $IsPowerShellAvailable == 0
-    System::Call 'kernel32::SetEnvironmentVariable(t "HOUSTON_INSTALL_DIR", t "$INSTDIR")'
-    nsExec::ExecToStack `"$PowerShellPath" -NoProfile -NonInteractive -C "Get-CimInstance -ClassName Win32_Process | Where-Object { $$_.ExecutablePath -and [IO.Path]::GetDirectoryName($$_.ExecutablePath) -eq $$env:HOUSTON_INSTALL_DIR } | ForEach-Object { [IO.Path]::GetFileNameWithoutExtension($$_.ExecutablePath) } | Where-Object { $$_ -in 'Houston (Alpha)', 'Houston (Beta)', 'Houston (Nightly)' } | Select-Object -First 1 | ForEach-Object { [Console]::Write($$_) }"`
-    Pop $0
-    Pop $1
-    System::Call 'kernel32::SetEnvironmentVariable(t "HOUSTON_INSTALL_DIR", p 0)'
-    ${If} $0 == 0
-      ${If} $1 == "Houston (Alpha)"
-      ${OrIf} $1 == "Houston (Beta)"
-      ${OrIf} $1 == "Houston (Nightly)"
-        ${HoustonStrRep} $appRunningMessage $appRunningMessage "${PRODUCT_NAME}" $1
-        ${HoustonStrRep} $appClosingMessage $appClosingMessage "${PRODUCT_NAME}" $1
-        ${HoustonStrRep} $appCannotBeClosedMessage $appCannotBeClosedMessage "${PRODUCT_NAME}" $1
-      ${EndIf}
-    ${EndIf}
-  ${EndIf}
-  Pop $1
-  Pop $0
-!macroend
+; The uninstaller build inserts neither macro that uses these, and a variable
+; nothing references is a makensis warning.
+!ifndef BUILD_UNINSTALLER
+  Var /GLOBAL houstonUpdateMode
+  Var /GLOBAL houstonRestart
+  Var /GLOBAL houstonLaunchArgs
+!endif
 
 !macro customInstall
   !ifndef DO_NOT_CREATE_START_MENU_SHORTCUT
@@ -132,14 +104,16 @@ houstonUninstallScanLine:
   StrCmp $R4 '"pid"' houstonUninstallFoundPid
   IntOp $R3 $R3 + 1
   StrLen $R5 $R2
-  IntCmp $R3 $R5 houstonUninstallReadLoop houstonUninstallReadLoop houstonUninstallReadLoop
+  IntCmp $R3 $R5 houstonUninstallReadLoop houstonUninstallScanLine houstonUninstallReadLoop
 houstonUninstallFoundPid:
   IntOp $R3 $R3 + 5
-houstonUninstallChompWhitespace:
+houstonUninstallSkipSeparator:
   StrCpy $R4 $R2 1 $R3
-  StrCmp $R4 ' ' 0 houstonUninstallParsePid
+  StrCmp $R4 ' ' houstonUninstallNextSeparator
+  StrCmp $R4 ':' houstonUninstallNextSeparator houstonUninstallParsePid
+houstonUninstallNextSeparator:
   IntOp $R3 $R3 + 1
-  Goto houstonUninstallChompWhitespace
+  Goto houstonUninstallSkipSeparator
 houstonUninstallParsePid:
   StrCpy $R4 $R2 1 $R3
   StrCmp $R4 '' houstonUninstallReadEnd
@@ -153,7 +127,9 @@ houstonUninstallParsePid:
 houstonUninstallReadEnd:
   FileClose $R0
 
-  StrCmp $R1 "" houstonUninstallDone
+  ; Only a positive integer reaches the command line below.
+  IntOp $R1 $R1 + 0
+  IntCmp $R1 0 houstonUninstallDone houstonUninstallDone
   nsExec::ExecToLog `"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -Command "$$p = Get-Process -Id $R1 -ErrorAction SilentlyContinue; if ($$p -and $$p.Path.StartsWith('$INSTDIR')) { Stop-Process -Id $R1 -Force }"`
 
 houstonUninstallDone:
