@@ -89,7 +89,7 @@ jobs:
             echo "static: no changed-file range on $EVENT_NAME; skipping the changed-file checks"
             exit 0
           fi
-          mapfile -t files < <(git diff --name-only --diff-filter=ACMR "${range[@]}" | grep -vE '^handoff/' || true)
+          mapfile -t files < <(git diff --name-only --diff-filter=ACMR "${range[@]}")
           mapfile -t formattable < <(printf '%s\n' "${files[@]}" | grep -E '\.(ts|tsx|js|jsx|mjs|cjs|mts|cts|json|jsonc|css|html?|md|ya?ml)$' || true)
           if [ "${#formattable[@]}" -gt 0 ]; then
             pnpm exec vp fmt --check --no-error-on-unmatched-pattern "${formattable[@]}"
@@ -145,14 +145,6 @@ jobs:
           echo "static: upstream MIT notice present in NOTICE and the licence inventory"
       - name: check-third-party-licenses.sh (committed inventory matches the dependency graphs)
         run: ./scripts/check-third-party-licenses.sh
-      # handoff/ is working material, so it is dropped from the index and disk
-      # before the hygiene scan.
-      - name: Drop handoff/ from the checked-out tree
-        run: |
-          if [ -d handoff ]; then
-            git rm -r -q --cached handoff
-            rm -rf handoff
-          fi
       - name: check-doc-hygiene.sh (Markdown tree shape, no diary content)
         run: bash scripts/check-doc-hygiene.sh
       - name: Report job timing

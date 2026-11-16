@@ -45,10 +45,8 @@ and an existing primitive before a one-off class.
 | Shell, sidebar, workspace and thread layout                 | `apps/web/src/components/AppSidebarLayout.tsx`, `components/sidebar/ThreadSidebar.tsx`, `layout/WorkspaceStrip.tsx`, `ChatView.tsx` |
 | Terminal colours and ANSI palette                           | `apps/web/src/components/ThreadTerminalDrawer.tsx`, `packages/shared/src/terminalOutput.ts`                                         |
 | Style rules and pinned violations                           | `scripts/check-web-style.mjs`, `scripts/web-style-baseline/`                                                                        |
-| Approved design boards (interim)                            | `handoff/design/README.md`                                                                                                          |
 
-`handoff/` is removed before `v2` merges, so the durable v2 conventions are the ones on this
-page and the rules in `scripts/check-web-style.mjs`.
+The durable conventions are the ones on this page and the rules in `scripts/check-web-style.mjs`.
 
 ## Color roles
 

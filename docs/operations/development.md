@@ -187,7 +187,7 @@ Hermetic, sub-second text-search invariants, run in `ci.yml`'s `static` job.
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | `check-dev-channel.sh`          | `dev.sh`'s channel resolution: inherited env never wins, `--channel` validation, `--print-target` has no side effects                      |
 | `check-case-collisions.sh`      | tracked paths stay unique on case-insensitive filesystems                                                                                  |
-| `check-doc-hygiene.sh`          | Markdown only in the allowed tree, with no dates, phase numbers, other product names or dead pointers; `static` runs it without `handoff/` |
+| `check-doc-hygiene.sh`          | Markdown only in the allowed tree, with no dates, phase numbers, other product names or dead pointers |
 | `check-comment-hygiene.sh`      | a comment block is at most three lines and names no date, plan number, other app or person                                                 |
 | `check-web-style.sh`            | the `apps/web` design-system guards; `--self-test` proves each fires on its bad fixture                                                    |
 | `check-third-party-licenses.sh` | the committed inventory matches the native crates' Cargo graphs and the pnpm workspace; it runs in the `static` job                        |
