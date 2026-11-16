@@ -1843,6 +1843,30 @@ export function resizeLayoutColumn(
   });
 }
 
+/**
+ * A column narrowed until the strip is shorter than the window hands the room it gave up to the
+ * next column, or keeps it when it is the last one. A strip that was already short stays that short.
+ */
+function fillNarrowedStrip(before: LayoutState, after: LayoutState, columnId: string): LayoutState {
+  return mapWorkspaces(after, (workspace) => {
+    const index = workspace.columns.findIndex((column) => column.id === columnId);
+    const previous = before.workspaces
+      .find((candidate) => candidate.id === workspace.id)
+      ?.columns.find((column) => column.id === columnId);
+    if (index < 0 || !previous || workspace.columns.length < 2) return workspace;
+    const total = workspace.columns.reduce((sum, column) => sum + column.width, 0);
+    const room = Math.min(1 - total, previous.width - workspace.columns[index]!.width);
+    if (room <= 1e-6) return workspace;
+    const taker = index + 1 < workspace.columns.length ? index + 1 : index;
+    return {
+      ...workspace,
+      columns: workspace.columns.map((column, columnIndex) =>
+        columnIndex === taker ? { ...column, width: column.width + room } : column,
+      ),
+    };
+  });
+}
+
 export function resizeLayoutColumnEdge(
   state: LayoutState,
   columnId: string,
@@ -1872,9 +1896,10 @@ export function resizeLayoutColumnEdge(
   const index = workspace?.columns.findIndex((column) => column.id === columnId) ?? -1;
   const neighbor = workspace?.columns[index + 1];
   if (mode !== "always-shrink" || !workspace || !neighbor || !Number.isFinite(width)) {
+    const resized = resizeLayoutColumn(rebased, columnId, width);
     return arrangeLayoutWorkspaces(
       state,
-      resizeLayoutColumn(rebased, columnId, width),
+      mode === "shrink-then-scroll" ? fillNarrowedStrip(rebased, resized, columnId) : resized,
       cameraWidth,
     );
   }

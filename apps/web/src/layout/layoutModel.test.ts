@@ -488,7 +488,37 @@ describe("resizeLayoutColumnEdge", () => {
         viewportWidth,
       ),
     );
-    expect(drawn).toEqual(pointers.map((pointer) => [pointer, pointer + 660]));
+    // Below 340 the pair no longer reaches the window's edge, so the terminal takes the rest.
+    expect(drawn).toEqual(pointers.map((pointer) => [pointer, Math.max(pointer + 660, 1000)]));
+  });
+
+  const fitted = (...columns: ReturnType<typeof column>[]): LayoutState => ({
+    focusedWorkspaceId: "workspace",
+    workspaces: [{ id: "workspace", name: null, focusedPaneId: null, cameraWidth: 1000, columns }],
+  });
+
+  it("gives the next column the room a narrowed column leaves, so the strip still fills the window", () => {
+    const base = fitted(column("chat", 0.5), column("diff", 0.25), column("terminal", 0.25));
+    const narrowed = resizeLayoutColumnEdge(base, "chat", 0.3, "shrink-then-scroll", 1000);
+    expect(drawnRightEdges(narrowed, 1000)).toEqual([300, 750, 1000]);
+  });
+
+  it("keeps the last column against the window's edge when it is the one narrowed", () => {
+    const base = fitted(column("chat", 0.5), column("terminal", 0.5));
+    const narrowed = resizeLayoutColumnEdge(base, "terminal", 0.3, "shrink-then-scroll", 1000);
+    expect(drawnRightEdges(narrowed, 1000)).toEqual([500, 1000]);
+  });
+
+  it("fills only the room this drag left when the strip was already short", () => {
+    const base = fitted(column("chat", 0.4), column("terminal", 0.4));
+    const narrowed = resizeLayoutColumnEdge(base, "chat", 0.3, "shrink-then-scroll", 1000);
+    expect(drawnRightEdges(narrowed, 1000)).toEqual([300, 800]);
+  });
+
+  it("leaves the gap when columns always scroll", () => {
+    const base = fitted(column("chat", 0.5), column("terminal", 0.5));
+    const narrowed = resizeLayoutColumnEdge(base, "chat", 0.3, "always-scroll", 1000);
+    expect(drawnRightEdges(narrowed, 1000, "always-scroll")).toEqual([300, 800]);
   });
 
   it("lands the dragged edge where it is released when columns always shrink to fit", () => {
