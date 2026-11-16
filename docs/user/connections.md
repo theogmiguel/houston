@@ -102,5 +102,5 @@ in the `secrets` folder of the channel's state directory, scoped to the channel,
 provider. They are never written to the database, logs, traces or RPC replies. The store
 needs no operating system keychain, so it works on servers and headless machines. The trade-off:
 any process running as your user can read the files, and a backup of the state directory
-includes them. Tokens an earlier version kept in the keychain are copied into the store on
-first start; the keychain entries stay, and you can delete them yourself.
+includes them. Tokens an earlier version kept in the keychain are copied into the store at start, once the
+keychain can be read; the keychain entries stay, and you can delete them yourself.

@@ -8,8 +8,8 @@ Houston checks for a newer release and installs it when you click.
 checks about 15 seconds after start and then every four minutes, and **Check for Updates**
 runs one now. Checking is passive: installing always needs your click.
 
-The request fetches the public `latest.json` manifest from the project's GitHub releases. It
-is not a GitHub API call, carries nothing about you and ignores prereleases.
+The request reads the public `latest*.yml` update feed attached to the project's GitHub
+releases. It carries nothing about you and ignores prereleases.
 
 When a newer release exists, the row offers **Download** and then **Install**. **Release
 notes** opens the release page. A failed check or download shows the reason instead of
@@ -17,15 +17,14 @@ silently doing nothing.
 
 ## Installing
 
-**Install** asks for confirmation, downloads the update for this platform and installer,
-and verifies its signature before installing. A missing artifact, a bad signature or a
-manifest that moved on stops the install and names the cause. The app restarts on the new
-version.
+**Download** fetches the update for this platform and installer and checks it against the
+checksum in the update feed. **Install** asks for confirmation and restarts the app on the
+new version. A failed download or install shows the cause.
 
-Closing the window does not stop the server. After an update, the next launch finds a
-detached server left by another build, stops it and starts the server bundled with the new
-build, so its running agent runs end. Finish work you want to keep before updating a machine
-whose server is running agents.
+Closing the window does not stop the server. If a server from another build is still
+running when Houston starts, Houston attaches to it, warns that its version differs from
+the app's, and never stops it; quit that server yourself to run the server bundled with the
+new build.
 
 ## Coming from Houston 1
 
@@ -33,14 +32,14 @@ Houston 2 installs as the same application as Houston 1, so it replaces it witho
 migration step. Houston 2 keeps its own data in the channel directory's `v2` child and never
 changes Houston 1's files.
 
-On the first start, Houston stops Houston 1's daemon unit for the channel and removes the
+On each start, Houston stops Houston 1's daemon unit for the channel and removes the
 hook and MCP entries Houston 1 added to Claude, Codex, OpenCode, Antigravity and ZCode. The
 removal stands down while a Houston 1 daemon is still running, because that daemon would
 reinstall its entries at startup; **Settings ▸ Maintenance** shows the outcome and names
 anything that still needs you to quit Houston 1.
 
-Houston 1 conversations import automatically on first start. The rest is a one-time,
-read-only import in **Settings ▸ Maintenance** under **Coming from Houston 1**:
+Houston 1 conversations are not imported. A one-time, read-only import in **Settings ▸
+Maintenance** under **Coming from Houston 1** copies:
 
 - projects from Houston 1 workspaces that still exist on disk;
 - the Tasks backlog and its settings;

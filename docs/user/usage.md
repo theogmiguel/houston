@@ -1,6 +1,6 @@
 # Usage
 
-Open **Usage** from the sidebar or press `Ctrl+U` to see token totals and API-equivalent
+Open **Settings ▸ Agents ▸ Usage** or press `Ctrl+U` to see token totals and API-equivalent
 costs for the threads Houston runs on this machine.
 
 Choose **24 hours**, **7 days**, **30 days** or **90 days**, and switch between **Cost**,

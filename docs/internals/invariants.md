@@ -28,22 +28,25 @@ they captured.
 and `shell.openPath`. Electron takes the URL or path as a value, never as shell text, so a
 renderer-supplied string cannot become an interpreter command.
 
-### In-distro commands use `wsl.exe --exec`
+### In-distro commands avoid a second shell parse
 
-Every command the app runs inside a WSL distro is `wsl.exe -d <distro> --exec <argv...>`, built
-in `apps/desktop/src/wsl/DesktopWslEnvironment.ts`.
+Commands the app runs inside a WSL distro are `wsl.exe -d <distro> ...`, built in
+`apps/desktop/src/wsl/DesktopWslEnvironment.ts` and
+`apps/desktop/src/backend/DesktopBackendConfiguration.ts`. Scripts travel on stdin (`sh -s`,
+`bash -l -s`) rather than as quoted argv.
 
 **Why.** After `--`, `wsl.exe` hands the argv to the distro's login shell, which parses it
 a second time: on WSL 2.6.1 that expanded `$HOME` inside single quotes. `--exec` passes each
-argument through unchanged.
+argument through unchanged but omits the login-shell `PATH` that provider CLIs and npm need, so
+only commands that do not need it use `--exec`.
 
 ## Channels and state
 
 ### Protect the installed release channel
 
 `~/.houston` is the installed app's live channel. A development build resolves its channel
-from `--channel` and defaults to `dev`; `--channel release` prints a warning naming the live
-directory. Tests use temporary homes and never the real one.
+from `HOUSTON_CHANNEL`; `scripts/dev.sh --channel <name>` sets it and defaults to `dev`, and
+`--channel release` prints a warning naming the live directory. Tests use temporary homes and never the real one.
 
 ### One server per channel directory
 
@@ -60,7 +63,7 @@ so closing or crashing the window stops neither the server nor its agent runs.
 ### v1 state is read, never written
 
 v2 keeps its state in `<channel dir>/v2/`. Everything a v1 install left directly under the
-channel directory stays as it was: the Tasks and task-source imports open `houston.db`
+channel directory stays as it was: the Tasks, task-source and Slack imports open `houston.db`
 read-only, and the host's start-up cleanup only reads its discovery file, to stand down while that
 channel's v1 daemon still runs.
 
@@ -105,8 +108,6 @@ may not be copied. Since both sides speak Tailwind, a pasted class _renders_ —
 it rendered there. Where a licence does permit copying, the copy carries its notice in
 `NOTICE`, added in the same commit that lands the copy.
 
-<!-- Renderer invariants (Theo). -->
-
 ## Doc and comment hygiene
 
 ### Doc shape and comment shape are gated, not asked for
@@ -114,7 +115,8 @@ it rendered there. Where a licence does permit copying, the copy carries its not
 **Enforced by** `scripts/check-doc-hygiene.sh` (allowed tree, no diary content — no dates,
 no `phase N`/`step N` numbering, no pointer into a private clone directory) and
 `scripts/check-comment-hygiene.sh` (the same rules plus a length cap, applied to code
-comments) — both run in CI and again on every edit through the project hook.
+comments) — both run in CI, and the comment check runs again on every code-file edit through
+the project hook (`scripts/hooks/comment-hygiene-hook.sh`).
 
 **Why.** The same rules living only in prose let the tree drift for months before anyone
 noticed comments and docs had accumulated diary content.
@@ -122,7 +124,8 @@ noticed comments and docs had accumulated diary content.
 ## Ratchets only tighten, and a gate proves it can fail
 
 The `apps/web` style guards pin a per-file count in `scripts/web-style-baseline/`; CI fails
-on a raised count or a stale entry, and `--update` only lowers pins.
+on a raised count or a stale entry. `--update` rewrites a baseline to the scanner's current
+counts, so the baseline diff in review is what shows a pin that rose.
 `check-web-style.sh --self-test` points each guard at its `bad` fixture and requires it to
 fail.
 

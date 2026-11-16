@@ -13,43 +13,43 @@ Keybindings are stored by the server, so they apply to the environment you are e
 
 ## Common defaults
 
-| Shortcut                        | Command                                       |
-| ------------------------------- | --------------------------------------------- |
-| `Ctrl+K`                        | Command palette                               |
-| `Ctrl+N`                        | New thread                                    |
-| `Ctrl+Shift+N`                  | New local thread                              |
-| `Ctrl+Alt+N`                    | New thread without a project                  |
-| `Ctrl+B`                        | Toggle sidebar                                |
-| `Ctrl+J`                        | Toggle terminal drawer                        |
-| `Ctrl+Alt+B`                    | Toggle right panel                            |
-| `Ctrl+Shift+B`                  | Toggle thread details                         |
-| `Ctrl+T`                        | New right-panel surface                       |
-| `Ctrl+W`                        | Close terminal or right-panel tab             |
-| `Ctrl+D`                        | Toggle diff (outside a terminal)              |
-| `Ctrl+P`                        | File picker                                   |
-| `Ctrl+Alt+V`                    | Dictate in the composer                       |
-| `Ctrl+Shift+F`                  | Project search                                |
-| `Ctrl+F`                        | Find in thread                                |
-| `Ctrl+U`                        | Usage                                         |
-| `Ctrl+Shift+T`                  | Reopen closed tab                             |
-| `Ctrl+Shift+S`                  | Close thread                                  |
-| `Ctrl+Shift+P`                  | Pin thread                                    |
-| `Ctrl+.` / `Ctrl+Shift+.`       | Next / previous thread needing attention      |
-| `Ctrl+Shift+[` / `Ctrl+Shift+]` | Previous / next thread                        |
-| `Ctrl+1` … `Ctrl+9`             | Jump to a thread                              |
-| `Ctrl+Shift+Enter`              | Steer the first queued message                |
-| `Ctrl+Alt+Enter`                | Send in the background                        |
-| `Esc`                           | Stop the current turn                         |
-| `Ctrl+S`                        | Stash the composer prompt                     |
-| `Ctrl+Shift+M`                  | Model picker                                  |
-| `Ctrl+Shift+E`                  | Reasoning effort                              |
-| `Ctrl+Shift+A`                  | Interaction mode                              |
-| `Ctrl+Shift+X`                  | Workspace                                     |
-| `Ctrl+Shift+G`                  | Branch                                        |
-| `Ctrl+Shift+L`                  | Previous worktree                             |
-| `Ctrl+Shift+C`                  | Copy pull request link or thread reference    |
-| `Ctrl+Shift+K`                  | Copy pull request number                      |
-| `Ctrl+Q`                        | Quit, following the quit confirmation setting |
+| Shortcut                        | Command                                                                                                 |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `Ctrl+K`                        | Command palette                                                                                         |
+| `Ctrl+N`                        | New thread                                                                                              |
+| `Ctrl+Shift+N`                  | New local thread                                                                                        |
+| `Ctrl+Alt+N`                    | New thread without a project                                                                            |
+| `Ctrl+B`                        | Toggle sidebar                                                                                          |
+| `Ctrl+J`                        | Toggle terminal drawer                                                                                  |
+| `Ctrl+Alt+B`                    | Toggle right panel                                                                                      |
+| `Ctrl+Shift+B`                  | Toggle thread details                                                                                   |
+| `Ctrl+T`                        | New right-panel surface (panel open)                                                                    |
+| `Ctrl+W`                        | Close terminal or right-panel tab                                                                       |
+| `Ctrl+D`                        | Toggle diff (outside a terminal)                                                                        |
+| `Ctrl+P`                        | File picker                                                                                             |
+| `Ctrl+Alt+V`                    | Dictate in the composer                                                                                 |
+| `Ctrl+Shift+F`                  | Project search                                                                                          |
+| `Ctrl+F`                        | Find in thread                                                                                          |
+| `Ctrl+U`                        | Usage                                                                                                   |
+| `Ctrl+Shift+T`                  | Reopen closed tab                                                                                       |
+| `Ctrl+Shift+S`                  | Close thread                                                                                            |
+| `Ctrl+Shift+P`                  | Pin thread                                                                                              |
+| `Ctrl+.` / `Ctrl+Shift+.`       | Next / previous thread needing attention                                                                |
+| `Ctrl+Shift+[` / `Ctrl+Shift+]` | Previous / next thread                                                                                  |
+| `Ctrl+1` … `Ctrl+9`             | Jump to a thread (desktop app)                                                                          |
+| `Ctrl+Shift+Enter`              | Steer the first queued message                                                                          |
+| `Ctrl+Alt+Enter`                | Start in the background (new thread), or send and start a new thread                                    |
+| `Esc`                           | Stop the current turn                                                                                   |
+| `Ctrl+S`                        | Stash the composer prompt                                                                               |
+| `Ctrl+Shift+M`                  | Model picker                                                                                            |
+| `Ctrl+Shift+E`                  | Reasoning effort                                                                                        |
+| `Ctrl+Shift+A`                  | Interaction mode                                                                                        |
+| `Ctrl+Shift+X`                  | Workspace                                                                                               |
+| `Ctrl+Shift+G`                  | Branch                                                                                                  |
+| `Ctrl+Shift+L`                  | Previous worktree                                                                                       |
+| `Ctrl+Shift+C`                  | Copy pull request link or thread reference                                                              |
+| `Ctrl+Shift+K`                  | Copy pull request number                                                                                |
+| `Ctrl+Q`                        | Quit the desktop app, following **Settings ▸ General ▸ Confirmations ▸ Quit shortcut** (not rebindable) |
 
 ## Layout
 
@@ -57,19 +57,20 @@ The main area is a layout of columns of panes, each with tabs. The shortcuts bel
 focused pane. All are rebindable and appear in the command palette under **Layout…**;
 `Mod+/` lists them in a sheet.
 
-| Shortcut (Linux and Windows)            | Command                                                |
-| --------------------------------------- | ------------------------------------------------------ |
-| `Ctrl+\`                                | Open a new tab in a new column (not in a terminal)     |
-| `Ctrl+Alt+Shift+D`                      | Open a new tab in a new pane below (not in a terminal) |
-| `Ctrl+Alt+F`                            | Fill the window with the focused pane, or undo it      |
-| `Alt+Shift+Arrow`                       | Focus the pane to the left, right, above or below      |
-| `Ctrl+Alt+Shift+Arrow`                  | Move the focused tab to that side                      |
-| `Ctrl+Alt+Home` / `Ctrl+Alt+End`        | Focus the first / last column                          |
-| `Ctrl+Alt+R`                            | Cycle the column's width                               |
-| `Ctrl+Alt+C`                            | Center the column                                      |
-| `Ctrl+Alt+[` / `Ctrl+Alt+]`             | Pull the pane's neighbour in from the left / right     |
-| `Ctrl+Alt+U` / `Ctrl+Alt+I`             | Focus the next / previous workspace                    |
-| `Ctrl+Alt+Shift+U` / `Ctrl+Alt+Shift+I` | Move the focused tab to the next / previous workspace  |
+| Shortcut (Linux and Windows)            | Command                                                            |
+| --------------------------------------- | ------------------------------------------------------------------ |
+| `Ctrl+\`                                | New pane to the right (not in a terminal)                          |
+| `Ctrl+Alt+Shift+D`                      | New pane below (not in a terminal)                                 |
+| `Ctrl+Alt+F`                            | Fill the window with the focused pane, or undo it                  |
+| `Alt+Shift+Arrow`                       | Focus the pane to the left, right, above or below                  |
+| `Ctrl+Alt+Shift+Arrow`                  | Move the focused tab to that side                                  |
+| `Ctrl+Alt+Home` / `Ctrl+Alt+End`        | Focus the first / last column                                      |
+| `Ctrl+Alt+R`                            | Cycle the column's width                                           |
+| `Ctrl+Alt+C`                            | Center the column                                                  |
+| `Ctrl+Alt+[` / `Ctrl+Alt+]`             | Pull the pane into the left column / push it out to its own column |
+| `Ctrl+Alt+O`                            | Workspaces overview                                                |
+| `Ctrl+Alt+U` / `Ctrl+Alt+I`             | Focus the next / previous workspace                                |
+| `Ctrl+Alt+Shift+U` / `Ctrl+Alt+Shift+I` | Move the focused tab to the next / previous workspace              |
 
 On macOS the focus and move shortcuts use `Cmd+Option+Arrow` and `Cmd+Ctrl+Option+Arrow`, and
 the workspace moves use `Cmd+Ctrl+Option+U` and `Cmd+Ctrl+Option+I`. A dialog above the layout

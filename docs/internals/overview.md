@@ -38,7 +38,8 @@ codebase.
 
 ### One server per channel, and a host that is a client
 
-The host resolves its channel from `--channel` (debug builds default to `dev`), then reads
+The host resolves its channel from `HOUSTON_CHANNEL` (unset or `release` is the installed
+channel; `scripts/dev.sh --channel <name>` sets it and defaults to `dev`), then reads
 `<channel dir>/v2/userdata/server-runtime.json`. When the server it names answers, the host
 attaches; otherwise it spawns one detached (`setsid` on Linux, a job breakaway on Windows)
 and waits for the runtime file. Upstream's server ownership lock makes a second server for
@@ -93,8 +94,6 @@ what the newest client sends.
 Closing the window, or quitting from the tray, ends the host process. The server and its agent
 runs continue; the next launch attaches to the server the runtime file names. Stopping a
 server uses the PID that file names.
-
-<!-- Host details (Theo): tray and hide-to-tray, desktop bridge, updates, WSL. -->
 
 ## Boundaries that matter
 

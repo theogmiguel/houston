@@ -84,7 +84,7 @@ channel's v1 hook entries from the agent CLI configs. The `houston` MCP entries 
 across channels (Claude, Codex and Antigravity) leave only while no other channel's v1
 daemon runs.
 
-`HOUSTON_SESSION` is set inside a pane of the installed v1 release; `dev.sh` uses it to
+`HOUSTON_SESSION` is set inside a pane of the installed release; `dev.sh` uses it to
 refuse `--fresh` from a pane on its own target channel.
 
 ## Running it
@@ -155,17 +155,30 @@ with three jobs on Windows.
 
 ### Full gate commands
 
-**The workspace** (the web build first: the server bundle copies `apps/web/dist` and the
-desktop host serves it):
+**The workspace**, as `ci.yml` runs it (the web build before the web tests: the server bundle
+copies `apps/web/dist` and the desktop host serves it). `pnpm -r` skips `apps/web` and
+`apps/desktop`, whose typecheck is a `vp` task:
 
 ```
-pnpm -r typecheck
+pnpm -r --no-bail typecheck
+(cd apps/desktop && pnpm exec vp run typecheck)
+(cd apps/web && pnpm exec vp run typecheck)
 pnpm --filter @houston-app/web build
-pnpm --filter @houston-app/contracts --filter @houston-app/shared test
-pnpm --filter @houston-app/cli exec vp test run src/houston
+pnpm --filter @houston-app/web exec vp test run --project unit
+pnpm --filter @houston-app/web exec vp test run --project browser
+pnpm -r --no-bail --no-sort --filter "!@houston-app/web" --filter "!@houston-app/cli" --filter "!@houston-app/scripts" test
+pnpm --filter @houston-app/cli exec vp test run src/ scripts/
+node --test scripts/gen-third-party-licenses.test.mjs scripts/check-web-style.test.mjs \
+  scripts/build-desktop-artifact.test.mjs scripts/refresh-updater-metadata.test.mjs \
+  scripts/build-npm-launcher.test.mjs scripts/ci/windows-known-failures.test.mjs
 ```
 
-**The native crates** (`apps/desktop/native` and `native`):
+The browser project needs Playwright's Chromium (`node apps/web/node_modules/playwright/cli.js
+install chromium`).
+
+**The native crates** are independent: run these in each crate directory
+(`apps/desktop/native/houston-v1-cleanup`, `native/kde-snap-shot`,
+`native/hyprland-snap-shot`):
 
 ```
 cargo fmt --all --check
@@ -183,14 +196,15 @@ temporary directory. The bare `--unlock` recipe is only safe in CI and the testb
 
 Hermetic, sub-second text-search invariants, run in `ci.yml`'s `static` job.
 
-| Script                          | Enforces                                                                                                                                   |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `check-dev-channel.sh`          | `dev.sh`'s channel resolution: inherited env never wins, `--channel` validation, `--print-target` has no side effects                      |
-| `check-case-collisions.sh`      | tracked paths stay unique on case-insensitive filesystems                                                                                  |
-| `check-doc-hygiene.sh`          | Markdown only in the allowed tree, with no dates, phase numbers, other product names or dead pointers |
-| `check-comment-hygiene.sh`      | a comment block is at most three lines and names no date, plan number, other app or person                                                 |
-| `check-web-style.sh`            | the `apps/web` design-system guards; `--self-test` proves each fires on its bad fixture                                                    |
-| `check-third-party-licenses.sh` | the committed inventory matches the native crates' Cargo graphs and the pnpm workspace; it runs in the `static` job                        |
+| Script                          | Enforces                                                                                                              |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `check-dev-channel.sh`          | `dev.sh`'s channel resolution: inherited env never wins, `--channel` validation, `--print-target` has no side effects |
+| `check-kill-guard.sh`           | raw `libc::kill(` calls stay inside `houston-v1-cleanup`'s `sys/pid.rs`, which checks every PID                       |
+| `check-case-collisions.sh`      | tracked paths stay unique on case-insensitive filesystems                                                             |
+| `check-doc-hygiene.sh`          | Markdown only in the allowed tree, with no dates, phase numbers, other product names or dead pointers                 |
+| `check-comment-hygiene.sh`      | a comment block is at most three lines and names no date, plan number, other app or person                            |
+| `check-web-style.sh`            | the `apps/web` design-system guards; `--self-test` proves each fires on its bad fixture                               |
+| `check-third-party-licenses.sh` | the committed inventory matches the native crates' Cargo graphs and the pnpm workspace; it runs in the `static` job   |
 
 The `apps/web` style rules keep a per-file count in `scripts/web-style-baseline/<rule>.baseline`.
 CI fails on a new file, a raised count or a stale entry; after removing a violation, lower
@@ -301,4 +315,6 @@ pnpm dist:desktop:win
 Output lands in `release/` as `Houston-<version>-x64-setup.exe`. The release workflows supply
 the updater signing keys.
 
-**The Windows installer is not Authenticode-signed**, so SmartScreen warns on first run.
+**The Windows installer is not Authenticode-signed** unless the release's Azure signing
+secrets are set ([release](release.md#windows-signing-two-signatures-different-purposes)), so
+SmartScreen warns on first run.

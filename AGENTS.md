@@ -5,18 +5,6 @@ Electron host starts, or attaches to, a detached TypeScript server for its chann
 renderer presents each agent conversation as a **thread**. Closing the application detaches
 the client; the server and its agent runs continue.
 
-## Branch `v2`
-
-`v2` and its `v2-*` slice branches carry the rebuild. `handoff/` holds the decisions and the
-slice plan; read `handoff/HANDOFF.md` and `handoff/PLAN.md` before starting a slice.
-
-- **Tests first:** a slice includes its tests and lands only with them green.
-- **Shared branch:** `v2` has two maintainers pushing from separate machines. Never
-  rebase or force-push `v2`; slices enter through PRs `v2-<slice> → v2`. Regenerate lockfiles
-  and the licence inventory instead of hand-merging them.
-- `check-doc-hygiene.sh` fails on `handoff/` by design; `handoff/` is deleted before `v2`
-  merges into `main`.
-
 Prefer the smallest design that satisfies the requirement. Verify documentation against
 the implementation and correct discrepancies in the same change. If an instruction
 conflicts with the task, explain the conflict and obtain maintainer direction.
@@ -68,7 +56,7 @@ conflicts with the task, explain the conflict and obtain maintainer direction.
 
 - **Renderer:** the web app under `apps/web`. Its primitives adopt Houston's tokens and
   recipes and are bound by the style guards; feature components that still follow the original
-  port are exempt from the feature-`className` rule until a slice adapts them.
+  port are exempt from the feature-`className` rule until they are adapted.
 
 ## Terms
 
@@ -158,7 +146,8 @@ The [development runbook](docs/operations/development.md) contains exact command
 ## Pull requests and releases
 
 - All changes to `main` go through a PR, including documentation. Merge only with green
-  CI and completed local gates. Do not assume branch protection is configured; verify
+  CI and completed local gates. Regenerate lockfiles and the licence inventory instead of
+  hand-merging them. Do not assume branch protection is configured; verify
   repository settings when administering it.
 - Use conventional PR titles that describe user-visible behaviour, for example
   `fix(threads): a renamed thread keeps its name after a restart`. Release notes group the

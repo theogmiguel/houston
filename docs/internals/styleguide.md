@@ -12,7 +12,7 @@ status. The panes are the product.
 - **Two appearance modes.** `paper` is the light palette and `graphite` is the dark one.
   `useTheme` writes `.dark` on `<html>` and the chosen theme id to `data-theme-id`; a
   "System" preference resolves to one of the two before either is applied. Named themes
-  (T3 Chat, Grove, Ocean, Ember, Iris) and user-defined themes override the role variables
+  (Grove, Ocean, Ember, Iris and others) and user-defined themes override the role variables
   under `html[data-theme-id]`.
 - **Neutral grounds in a small ladder.** The rail is one tonal step off the content canvas,
   cards lift above it, and the terminal is the darkest surface. The main work area runs flush to
@@ -36,15 +36,15 @@ and an existing primitive before a one-off class.
 
 ## Source of truth
 
-| Concern                                                     | Canonical location                                                                                                                  |
-| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| Colour, radius, type, motion, control metrics and utilities | `apps/web/src/index.css`                                                                                                            |
-| Tailwind bindings (`@theme`, `@theme inline`, `@utility`)   | `apps/web/src/index.css`                                                                                                            |
-| Appearance resolution, theme ids and custom themes          | `apps/web/src/hooks/useTheme.ts`, `apps/web/src/themePalette.ts`                                                                    |
-| Primitives and their variants                               | `apps/web/src/components/ui/*.tsx`                                                                                                  |
-| Shell, sidebar, workspace and thread layout                 | `apps/web/src/components/AppSidebarLayout.tsx`, `components/sidebar/ThreadSidebar.tsx`, `layout/WorkspaceStrip.tsx`, `ChatView.tsx` |
-| Terminal colours and ANSI palette                           | `apps/web/src/components/ThreadTerminalDrawer.tsx`, `packages/shared/src/terminalOutput.ts`                                         |
-| Style rules and pinned violations                           | `scripts/check-web-style.mjs`, `scripts/web-style-baseline/`                                                                        |
+| Concern                                                     | Canonical location                                                                                                                             |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Colour, radius, type, motion, control metrics and utilities | `apps/web/src/index.css`                                                                                                                       |
+| Tailwind bindings (`@theme`, `@theme inline`, `@utility`)   | `apps/web/src/index.css`                                                                                                                       |
+| Appearance resolution, theme ids and custom themes          | `apps/web/src/hooks/useTheme.ts`, `apps/web/src/themePalette.ts`, `packages/shared/src/themePalettes.ts`                                       |
+| Primitives and their variants                               | `apps/web/src/components/ui/*.tsx`                                                                                                             |
+| Shell, sidebar, workspace and thread layout                 | `apps/web/src/components/AppSidebarLayout.tsx`, `components/sidebar/ThreadSidebar.tsx`, `layout/WorkspaceStrip.tsx`, `components/ChatView.tsx` |
+| Terminal colours and ANSI palette                           | `apps/web/src/components/ThreadTerminalDrawer.tsx`, `packages/shared/src/terminalOutput.ts`                                                    |
+| Style rules and pinned violations                           | `scripts/check-web-style.mjs`, `scripts/web-style-baseline/`                                                                                   |
 
 The durable conventions are the ones on this page and the rules in `scripts/check-web-style.mjs`.
 
@@ -69,7 +69,7 @@ Tokens come in surface/foreground pairs. Use the role, not the value.
 | `--hover`     | The neutral hover overlay. Exposed as `bg-hover`.       |
 | `--sel`       | The neutral selected overlay. Exposed as `bg-selected`. |
 
-The semantic aliases used by copied feature components resolve to those values:
+The semantic aliases used by feature components resolve to those values:
 `--background` → `--content`, `--app-chrome-background` → `--rail`, `--popover` → `--raised`,
 `--sidebar` → `--rail`, and `--foreground` → `--t1`.
 
@@ -123,8 +123,8 @@ the fill and wash variants. Text uses the `-ink` token; fills use the base token
 
 ### Known drift
 
-The design boards call the brand colour "accent". In the code, `bg-accent` and
-`text-accent-foreground` do not exist: the neutral hover fill is `bg-hover`, and the brand
+The brand colour is commonly called "accent", but `bg-accent` and
+`text-accent-foreground` do not exist in the code: the neutral hover fill is `bg-hover`, and the brand
 fill is `bg-primary` or `bg-(--accent)`. `--accent-foreground` is `--t1`, the ink over the
 neutral hover surface, not white text for a brand plate.
 
@@ -166,7 +166,7 @@ rejected by the `spacing` rule. There is no `--space-*` token set.
 
 | Token                | Value | What it measures                                    |
 | -------------------- | ----- | --------------------------------------------------- |
-| `--h-top`            | 40px  | The app top bar (`--workspace-topbar-height`).      |
+| `--h-top`            | 44px  | The app top bar (`--workspace-topbar-height`).      |
 | `--h-pane-head`      | 30px  | A pane header and the diff panel's toolbar.         |
 | `--h-ctl`            | 28px  | Buttons, selects and toggles at their default size. |
 | `--h-row`            | 28px  | Sidebar and rail rows.                              |
@@ -243,13 +243,13 @@ pressed-segment shadow. The composer has its own `--shadow-composer` and
 
 - **Shell.** `AppSidebarLayout` composes `SidebarProvider` with a left `Sidebar` and the
   route content. The thread sidebar is resizable between 240px and 440px, defaults to
-  340px, and collapses off-canvas. Its rows are `--h-row` on `--sidebar` (the rail).
-- **Top bar.** 40px (`--h-top`, `--workspace-topbar-height`), a drag region with no native
+  280px, and collapses off-canvas. Its rows are `--h-row` on `--sidebar` (the rail).
+- **Top bar.** 44px (`--h-top`, `--workspace-topbar-height`), a drag region with no native
   title bar. Controls opt out with `no-drag`. On the desktop host the three window controls
   occupy `--w-window-control` each at the right end.
 - **Thread route.** A thread fills its pane flush: no card radius and no gutter of its own. The chat lane is 760px
-  (`--chat-content-max-width`), while the timeline narrows to 720px; the thread-details
-  card is 340px (`--thread-details-panel-width`). The composer sits at the bottom of the
+  (`--chat-content-max-width`) and the composer and timeline share it; the thread-details
+  card is 280px (`--thread-details-panel-width`). The composer sits at the bottom of the
   lane.
 - **Layout.** Panes sit in columns of a horizontal strip, separated by an 8px gutter. A pane's
   tab bar lists its tabs; on the top pane of a column the bar may sit in the window chrome above
@@ -261,7 +261,7 @@ pressed-segment shadow. The composer has its own `--shadow-composer` and
 - **Bottom terminal.** The `ThreadTerminalDrawer` is a bottom sheet over the thread and is
   dismissed without closing the agent session.
 - **Settings.** `/settings/<section>` is a full-window route with its own left navigation
-  and a 720px (`--settings-w`) content column. The page header is the 40px top bar; each page
+  and a 720px (`--settings-w`) content column. The page header is the 44px top bar; each page
   opens with its title and a one-line description from `SettingsPageContainer`, then the scope line.
 - **Content pages.** `WorkspacePageContainer` owns the column: `readable` is 896px
   (`max-w-4xl`), `wide` is 1040px, and `expanded` is 1152px (`max-w-6xl`). There is no
@@ -324,7 +324,7 @@ the primitives actually use.
 
 Compose from `apps/web/src/components/ui/`. Add a variant to a primitive instead of writing a
 new visual recipe in a feature file. The `ui-boundary` rule scans feature class strings; its
-baseline records copied feature components until a slice adapts them.
+baseline records the feature components that still carry their own recipes.
 
 | Primitive                          | Use                                                                                                                                                                                                                                                                              |
 | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -349,11 +349,10 @@ baseline records copied feature components until a slice adapts them.
 | `ThreadStateGlyph`                 | The one thread-status vocabulary: `running`, `ready`, `needs`, `failed`, `back`.                                                                                                                                                                                                 |
 | `CopyButton`                       | Copy with the shared copied-state feedback.                                                                                                                                                                                                                                      |
 
-The thread state tokens are the readable ones:
-`running` → `text-(--accent-ink)`, `ready` → `text-success-foreground`, `needs` →
-`text-(--warn-ink)`, `failed` → `text-error-foreground`, `back` →
-`text-secondary-foreground`. The glyph shapes differ as well, so colour is never the only
-signal.
+Thread state ink comes from the `--status-*-ink` tokens
+(`THREAD_STATUS_KIND_TEXT_CLASS` in `components/ui/thread-state-glyph.tsx`), never from the
+accent, and each keeps 4.5:1 on the canvas and the rail in both themes. The glyph shapes
+differ as well, so colour is never the only signal.
 
 ![A replayed thread with a plan and an approval in the light theme](styleguide/thread-showcase--light.webp)
 ![A replayed thread with a plan and an approval in the dark theme](styleguide/thread-showcase--dark.webp)
@@ -387,11 +386,11 @@ The composer is the primary surface: one card holding the input and its toolbar.
 row (project, environment, branch, permissions) sits below the card as borderless muted text,
 and the changed-files bar attaches to the card's top edge. The controls inside keep their own
 focus rings, and the footer ends in one primary action whose icon
-names what Enter does. The timeline is 14/20 prose in a 720px lane with a 0.75rem block gap.
+names what Enter does. The timeline is 14/20 prose in the same lane.
 
 ### Pull requests and usage
 
-Destination pages use `WorkspacePageContainer` and the 40px page header. Pull requests uses
+Destination pages use `WorkspacePageContainer` and the 44px page header. Pull requests uses
 the `expanded` column and usage the `wide` one; their tables and charts use the status tokens
 above rather than the Tailwind palette.
 
@@ -434,8 +433,12 @@ above rather than the Tailwind palette.
 
 ## Motion
 
-- Named easing: `--ease-drawer` (`cubic-bezier(0.32, 0.72, 0, 1)`) for surfaces that slide
-  or pop in. Everything else uses Tailwind's `duration-*` and `ease-*` utilities at 120–200ms.
+- Name a role, never a raw value: `duration-(--motion-overlay-in)` with `ease-standard` or
+  `ease-exit`. The `--motion-*` roles live in `index.css` and are mirrored for script in
+  `MOTION_ROLE_MS` (`apps/web/src/motion/registry.ts`); a test keeps them in step. Exits are
+  faster than entrances. `--ease-drawer` (`cubic-bezier(0.32, 0.72, 0, 1)`) is for surfaces
+  that slide or pop in. The `houston/no-raw-motion` lint rule flags raw durations, easings and
+  `transition-all`.
 - Named animations: `--animate-skeleton`, `--animate-status-pulse`, `--animate-status-ping`,
   the stash-pulse set, `live-tool-shine` and `live-activity-focus`.
 - Animate transform and opacity. The status pulse and skeleton step their opacity so the
@@ -485,7 +488,7 @@ surface is `--term` (its own ground, not `--content`). Command output rendered i
 the palettes in `packages/shared/src/terminalOutput.ts`, so an ANSI-styled line matches the
 terminal without importing chrome CSS.
 
-The ANSI palette is fixed per appearance; it is not a user-selectable preset list in v2.
+The ANSI palette is fixed per appearance; it is not a user-selectable preset list.
 Never assume the terminal background equals a chrome token: the terminal is free to be the
 darkest surface while the surrounding pane is a card.
 
@@ -496,10 +499,10 @@ violations in `scripts/web-style-baseline/`. A change may lower a pin, never rai
 
 ```sh
 bash scripts/check-web-style.sh              # every rule against its baseline
-bash scripts/check-web-style.sh --all        # print every failure
+bash scripts/check-web-style.sh --all        # the same check, without the closing baseline reminder
 bash scripts/check-web-style.sh --list       # list the rules
 bash scripts/check-web-style.sh --print copy # print hits for one rule
-bash scripts/check-web-style.sh --update copy # lower one pin to today's count
+bash scripts/check-web-style.sh --update copy # rewrite one baseline to today's counts
 bash scripts/check-web-style.sh --self-test  # prove each rule fires on its fixtures
 ```
 
@@ -530,9 +533,8 @@ Baselines are per file, not per total: moving a violation between files still ne
 `--update`. `--update` records what the scanner finds, so fix a false positive in the scanner
 and its fixture rather than pinning it.
 
-Complementary checks: `scripts/check-upstream.mjs` byte-compares vendored `apps/web` files
-against `upstream.json`; `knip` owns module-level reachability (it exempts unused exports
-under `components/ui/*.tsx`, because `cva` variants are selected dynamically); and
+Complementary checks: `knip` owns module-level reachability (it exempts unused exports
+under `components/ui/*.tsx`, because `cva` variants are selected dynamically), and
 `bash scripts/check-comment-hygiene.sh` keeps comments free of session history.
 
 ## When this is silent

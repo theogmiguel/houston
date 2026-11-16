@@ -22,10 +22,9 @@ To clone into `<host>/<owner>/<repo>` folders, turn on **Clone into host folders
 **Settings ▸ Threads**. Clones then default to that path under the add-project base directory,
 and you can still change the destination before cloning.
 
-The add-project palette, opened from **Add project** at the top of the sidebar or from the
-command palette, lists **Open folder…**, **Clone repository…** and **New project…**,
-followed by the provider repositories Houston can clone from. **New project…** appears when
-the server configures a projects folder. Adding a project opens a new thread in the focused
+**Add project**, in the sidebar's search row or the command palette, offers **Open folder**,
+**Clone repository** and **New project**, followed by the provider repositories Houston can
+clone from. **New project** appears when the server configures a projects folder. Adding a project opens a new thread in the focused
 workspace with the composer ready.
 
 **Project settings** in a thread's action menu
@@ -34,7 +33,7 @@ Pinned projects lead the list.
 
 Project actions are commands a project can run from a thread, such as a dev server, tests
 or lint. Add them under **Settings ▸ Projects ▸ Actions** or from the thread's action menu.
-An action with **Stop when the thread settles** turned on stops its terminal and child
+An action with **Stop this action when the thread settles** turned on stops its terminal and child
 processes when the thread settles; an agent's own shell command is never attached to it.
 
 ## Creating a thread
@@ -48,22 +47,23 @@ thread.
 The default model, fallback model and default permissions for new threads are set in
 **Settings ▸ Threads**. The model picker is also bound to `Ctrl+Shift+M`.
 Opening the model picker checks for newly released models and for the CLI update that supports
-them, at most every five minutes. The check is skipped when provider update checks are turned
-off in **Settings**.
+them, at most every five minutes. The check is skipped when **Provider update checks** is turned
+off in **Settings ▸ Maintenance**.
 
 ## Workspaces
 
 The main area shows one workspace at a time: a strip of columns, each a stack of panes, each
 pane a bar of tabs. A tab is a thread's chat, a surface of a thread (changes, files, a file, a
 browser, a terminal, a pull request, a device), a launcher that starts a thread or opens a
-surface, or the **Pull requests** page. A thread's chat has one tab across all workspaces;
-opening a thread that is already open focuses its tab. Settings and Usage open as dialogs
-above the layout.
+surface, or the **Pull requests** or **Tasks** page. A thread's chat has one tab across all workspaces;
+opening a thread that is already open focuses its tab. Settings, which includes Usage, opens
+as a card above the layout.
 
-- **New workspace** (`+` in the sidebar's **Workspaces** header) adds one; the sidebar lists
+- **New workspace** (in the sidebar's **View options** menu) adds one; the sidebar lists
   them all, and at least one always exists.
-- A column and its panes share the strip: **Open a new tab in a new column** and **Open a new
-  tab in a new pane below** split the focused pane, and dragging a tab to a pane's edge does the
+- A column and its panes share the strip: **New pane to the right** and **New pane below**
+  (under **Layout…** in the command palette) open a new tab in a new column or pane, a tab's
+  **Split right** and **Split down** split its pane, and dragging a tab to a pane's edge does the
   same. Drag a tab between panes or onto another workspace to move it.
 - Closing a tab closes that view only; the thread keeps its history. **Reopen closed tab**
   (its rebindable shortcut, or the command palette) brings back the most recent one.
@@ -71,9 +71,11 @@ above the layout.
   **Column width** cycles ⅓, ½, ⅔ and full width; **Center column**, **Pull pane into the left
   column** and **Push pane out to its own column** rearrange the strip. The workspaces overview
   zooms out to every workspace.
-- A column stays at least 420px wide. The layout settings in **Settings ▸ Appearance** set what
-  happens when a new pane has no room (shrink the columns, then scroll; always shrink; or always scroll),
-  where new tabs go, and where the terminal and the side pane open for a thread.
+- Columns always fill at least the window's width. **Settings ▸ Appearance ▸ Behavior** sets
+  what happens when a new pane has no room (**When it doesn't fit**): **Shrink, then scroll**
+  (the default) narrows columns to 420px before the strip scrolls, **Always shrink** keeps every
+  column in view, and **Always scroll** keeps column widths and scrolls. The same block sets where
+  new tabs go and where the terminal and the side pane open for a thread.
 - A workspace holds at most 24 columns, 12 panes per column, 50 tabs per pane and 200 tabs in
   all, and a name is at most 120 characters. A change that would pass a limit is refused with a
   message naming the limit.
@@ -86,17 +88,17 @@ same id.
 
 ## The sidebar
 
-The sidebar opens with search and one row of icon buttons for **Pull requests**, **Tasks** and
-**Usage** (hover for the name; the open page is highlighted), then one group per layout
-workspace, in workspace order. A group lists the threads whose chat is
+The sidebar opens with search and icon buttons for **New thread**, **Add project** and
+**View options**, then one group per layout workspace, in workspace order. A group lists the threads whose chat is
 open in that workspace, whichever project they belong to. A thread whose chat is not placed in
 any workspace is listed under the first one. Each group label collapses with **Enter** or
 **Space** and keeps its state; a search opens every group it matches in. The **…** button
 beside the label, or a right-click, opens the workspace's actions. With no projects at all, the
 rail offers **Add project**.
 
-The **Workspaces** header carries **Filter by project**, the **Hidden workspaces** menu,
-**View options**, **New workspace** (**+**) and **Add project**. A workspace's menu offers
+The **Workspaces** header carries **Filter by project** and the **Hidden workspaces** menu.
+**View options** sorts threads (**Workspace order**, **Last activity** or **Created**), chooses
+what rows show and holds **New workspace**. A workspace's menu offers
 **New thread**, **Rename workspace** (`F2`), **Pin workspace** / **Unpin workspace**,
 **Move workspace up** / **Move workspace down**, **Hide workspace** and **Delete workspace**.
 Pinned workspaces come first. Hiding removes a workspace from the sidebar only; the workspace
@@ -110,7 +112,7 @@ rail's header and footer, a top bar with search and new thread, and a bottom tab
 control that returns to the list.
 
 Each group hangs its threads from a thin guide line. A collapsed group shows how many threads
-it holds on its right, with an amber dot when any of them waits for you or failed; an open one
+it holds on its right, with an amber dot when any of them waits for you, failed or came back; an open one
 shows nothing there. Hovering or focusing a heading shows its actions, including **New
 thread** (the **+** button), in place of the count. A collapsed group still lists the thread
 that is open. On a narrow sidebar a thread's branch name shortens first, and the running
@@ -118,8 +120,7 @@ sub-agent count is the first item to drop from the line.
 
 **Show Needs you** in the rail's **View options** pins one section above the groups with the
 threads waiting on you from every workspace: input and approval requests first, then failures
-and threads that came back. Those threads leave their groups, which instead end with a
-muted **+N in Needs you** line; the amber dot on a collapsed heading still counts them. The setting is off by default
+and threads that came back. Those threads leave their groups while the rail is not searching. The setting is off by default
 on desktop and on by default in a phone-width browser; a saved choice wins on either. The
 section is hidden when nothing is waiting.
 
@@ -143,7 +144,7 @@ Every thread row is three lines tall:
 
 1. The project's icon and name on the left; the status at the right: **Approval**, **Input**,
    **Request**, **Needs you**, **Failed**, **Limited**, **Goal**, **Waiting**, **Running**,
-   **Ready**, **Idle** or **Back** (which has a dismiss control). A running or waiting thread
+   **Ready** or **Back** (which has a dismiss control). A running or waiting thread
    says for how long. On hover or focus the status gives way to the row's actions.
 2. The title, alone, across the full width.
 3. A muted line: the branch (whether the thread uses a worktree or the project's local
@@ -162,7 +163,8 @@ checkout and branch (with a warning when the checkout is on a different branch t
 thread's), the provider and model, the providers the thread was handed off between, running
 terminal processes, the last error or usage limit, and linked pull requests.
 
-The first nine rows show their `Ctrl+1` … `Ctrl+9` jump label while the modifier is held.
+In the desktop app, the first nine rows show their `Ctrl+1` … `Ctrl+9` jump label while the
+modifier is held.
 **Hold** is hidden for a thread that cannot be held.
 
 ### Selecting and navigating
@@ -199,8 +201,8 @@ The foot of the rail carries two shelves:
   you choose **Show more**; the button reads **Loading** while it works and offers **Retry**
   if the read fails.
 
-**Settings ▸ General ▸ Sidebar** sets the thread order inside a group: workspace order (the
-panes' order) by default, or last activity or creation time.
+**View options ▸ Sort threads** sets the thread order inside a group: **Workspace order** (the
+panes' order) by default, **Last activity** or **Created**.
 
 ## Thread actions
 
@@ -210,6 +212,7 @@ A thread's menu offers:
 - **Close thread** (`Ctrl+Shift+S`) or **Reopen thread**
 - **Hold** with a preset, or **Bring thread back**
 - **Rename thread** (`F2`), **Regenerate title**, **Mark unread**
+- **Move to workspace**, **Tags**
 - **Copy** path, branch, thread or thread ID
 - **Project settings**, **Auto-close behavior**
 - **Archive thread**, **Delete**
@@ -308,6 +311,6 @@ each thread's `workspaceId`. The earlier `houston_grid_*` tools, the `grid` laun
 
 Closing the window hides Houston in the tray when **Settings ▸ General ▸ Background ▸ Keep
 in tray** is on; otherwise it quits the app. Either way the server and its runs continue.
-**Quit** from the menu, the tray or `Ctrl+Q` follows **Settings ▸ General ▸ Confirmations ▸
-Quit shortcut**: direct, or a hold/press-twice confirmation. The tray's **Quit and keep
-sessions** quits the client without touching the server's runs.
+`Ctrl+Q` follows **Settings ▸ General ▸ Confirmations ▸ Quit shortcut**: **Direct**, **Hold** or
+**Press twice**. Quitting from the tray's **Quit Houston** quits the client without touching the
+server's runs.

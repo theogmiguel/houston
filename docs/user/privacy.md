@@ -25,9 +25,9 @@ Houston does not use your data to train AI models.
 
 ## Exporting diagnostics yourself
 
-**Settings ▸ Diagnostics ▸ OpenTelemetry export** sends the server's traces, metrics and logs to
-an OTLP HTTP receiver you choose, such as a local Jaeger or Grafana instance. Leave the fields
-empty to export nothing. Changes apply after the server restarts.
+**Settings ▸ Maintenance ▸ Diagnostics ▸ OpenTelemetry export** sends the server's traces,
+metrics and logs to an OTLP HTTP receiver you choose, such as a local Jaeger or Grafana
+instance. Leave the fields empty to export nothing. Changes apply after the server restarts.
 
 An export contains span names and timings, Houston's own ids, outcomes and error types, the
 host of each outgoing request, SQL statements with their values as placeholders, and the
@@ -55,7 +55,7 @@ For each signal, the first of these that is set decides where it goes:
    `OTEL_<SIGNAL>_EXPORTER=none` turns the signal off).
 3. A URL the desktop app passes to the server at start.
 4. The Datadog destination, for the signals it sends.
-5. The URL fields in **Settings ▸ Diagnostics ▸ OpenTelemetry export**.
+5. The URL fields in **Settings ▸ Maintenance ▸ Diagnostics ▸ OpenTelemetry export**.
 
 An environment URL wins over a Datadog choice even when it points at a Datadog site, and it is
 sent with only the headers its own variables give: Houston never adds the stored key to it.

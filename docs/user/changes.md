@@ -1,8 +1,8 @@
 # Changes
 
 **Changes** is the Git surface for a thread's checkout. Open it from the right panel's
-**Diff** tab, from the thread header, or with `Ctrl+D`. Drag the panel edge to resize it;
-double-click the edge to reset the width.
+**Diff** tab, from a new tab's **Changes** entry, from the thread header, or with `Ctrl+D`. Drag
+the edge between panes to resize it.
 
 ## Comparing changes
 

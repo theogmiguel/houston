@@ -11,7 +11,7 @@ and approval. Merging a PR or pushing a tag does not publish a release.
    the workflow branch and `ref` on `main` for a stable release.
 2. Choose `kind`: `patch` for fixes, `minor` for features, `major` for a breaking
    release, or `rc` for a prerelease. Keep `include_windows` checked for the normal
-   Linux and Windows release. Leave `resume_tag` empty and `preview_only` unchecked.
+   release. Leave `resume_tag` empty and `preview_only` unchecked.
 3. Run the workflow. Its summary shows the source commit, next version, previous
    public release, selected platforms and release notes. It checks source CI,
    updates the three manifests, pushes the release commit and
@@ -46,7 +46,7 @@ version; another cut or changes to `main` can change the next result.
 | ----------------- | ---------------------------------------------------------------------------------- |
 | `kind`            | `patch`, `minor`, `major` or `rc`; ignored when resuming                           |
 | `ref`             | Source branch, tag or SHA; stable cuts require the current tip of `main`           |
-| `include_windows` | Defaults to `true`; disabling it deliberately produces Linux packages only         |
+| `include_windows` | Defaults to `true`; disabling it deliberately omits the Windows installer          |
 | `preview_only`    | Inspect source CI, version and notes without building or changing repository state |
 | `resume_tag`      | Existing tag to rebuild without another version commit or tag                      |
 
@@ -131,9 +131,11 @@ not synchronize the manifest; finish editorial review before promoting it.
 | Build installers                   | `build-installers.yml` | Manual packaging validation; no version bump, tag or release             |
 | Build Linux packages (internal)    | `release-linux.yml`    | Reusable Linux builds and packaged runtime checks                        |
 | Build Windows installer (internal) | `release-windows.yml`  | Reusable Electron packaging, Authenticode and updater signing            |
+| Build macOS packages (internal)    | `release-macos.yml`    | Reusable unsigned `.dmg` and `.app.tar.gz` builds for arm64 and x64      |
+| Build server archives (internal)   | `release-server.yml`   | Reusable server archives for Linux and macOS, x64 and arm64              |
 | Create release draft (internal)    | `release-publish.yml`  | Reusable signature verification, updater manifest and draft creation     |
 
-The three internal workflows are called by the manual workflows; their lack of
+The five internal workflows are called by the manual workflows; their lack of
 independent runs does not mean they are unused. They are not dispatched directly.
 
 CI runs the jobs in `.github/workflows/ci.yml`: `changes`, `static`, `typecheck`,
@@ -141,19 +143,21 @@ CI runs the jobs in `.github/workflows/ci.yml`: `changes`, `static`, `typecheck`
 `server-windows` and the `ci-gate` aggregate. Cut release requires a successful run
 for the exact source commit and successful completion of every required job. A green run for an older
 commit is insufficient. Stable cuts require main CI; RC cuts may use PR CI for
-that exact PR head targeting `main`. Main pushes limited to documentation are
-excluded by CI's path filters; manually run CI for that commit before cutting.
-See the [development runbook](development.md) for the remaining local gates.
+that exact PR head targeting `main`. A push to `main` runs every CI job, including
+a documentation-only commit. See the [development runbook](development.md) for the remaining local gates.
 
 **Build installers** accepts any source ref and resolves it once to an immutable
-commit shared by all jobs. Both platforms are selected by default. Selecting
-`windows` still builds the Linux packages. It uploads artifacts only and is the packaging check to run before
+commit shared by all jobs. Its `platform` input is `all` (the default), `linux`,
+`windows` or `macos`; `windows` and `macos` still build the Linux packages. It
+uploads artifacts only and is the packaging check to run before
 merging changes to the bundle pipeline.
 
 Linux builds x86_64 and aarch64 AppImages and debs. Windows builds its NSIS
-installer in parallel; no platform job waits for another, and no intermediate
-artifact is uploaded. Every job builds the Electron host with
-`scripts/build-desktop-artifact.ts`.
+installer in parallel, and every cut also builds unsigned macOS bundles (`.dmg`
+and `.app.tar.gz`, arm64 and x64) and the server archives; no platform job waits for
+another, and no intermediate artifact is uploaded. Every desktop job builds the
+Electron host with `scripts/build-desktop-artifact.ts`. The deb's package name is
+`houston`: it installs under `/opt/Houston` and links `/usr/bin/houston`.
 
 Before filing the draft, Linux packages run headlessly on Ubuntu 22.04, Ubuntu
 24.04, Debian 12 and current Fedora. The packaged x86_64 app also runs
@@ -234,39 +238,27 @@ is wired for both and running the unsigned one.
 
 ### Houston checks for a release; you click to install it
 
-The host fetches `releases/latest/download/latest.json`, the same manifest the
-app's updater reads, once at start, every six hours, and whenever the About
-panel's **Check now** is pressed, and broadcasts what it found. The panel names
-the release, shows a teaser of its notes and links to the release page, whose URL
-is built from the manifest's version. The notes are the manifest's `notes`
-field, synchronized from the reviewed draft by **Promote draft to public**. Edits
-made after publication do not change what the panel shows.
-Scheduled checks also revalidate the shared model catalog independently of the release result.
-Release checks send the last valid ETag within a host lifetime; a `304` reuses the cached
-release payload. Restarting the app performs a full release check.
+The Electron host updates through electron-updater. It reads `latest.yml`
+(Windows), `latest-linux.yml` or `latest-linux-arm64.yml` from the repository's
+GitHub releases about 15 seconds after start, every four minutes, and whenever
+Settings ▸ About's **Check for Updates** is pressed. A stable installation
+ignores prereleases, so an RC is not offered. Checking never downloads or
+installs: **Download** and then **Install** each need a click, and
+electron-updater verifies the download against the sha512 and size in the feed.
+Linux updates need the AppImage or the deb: a deb installs through `dpkg`, and an
+AppImage replaces its own file and relaunches. `HOUSTON_DISABLE_AUTO_UPDATE`
+turns updating off.
 
-**Install update** is the other half: the app fetches the fixed manifest
-`releases/latest/download/latest.json`, picks the entry for this exact bundle
-(`linux-x86_64-deb`, `linux-x86_64-appimage`, `windows-x86_64-nsis`),
-downloads it, verifies the artifact's signature against the public key in
-`scripts/updater-pubkey.txt`, and installs. It refuses by name when the manifest
-publishes nothing for this bundle, when the signature does not verify, and when
-the manifest's version is no longer the one the panel showed.
-
-The manifest is the **update bridge**. Installed Tauri copies keep using it, and
-the entry it selects is the Electron build of the same version: the AppImage or
-deb on Linux, the NSIS installer on Windows. On Linux a deb install runs the
-system package manager's usual privileged install; an AppImage install replaces
-the running file and relaunches into the new mount. On Windows the NSIS
-installer is started the way the Tauri updater starts its own — `/P /UPDATE /R
-/ARGS` — which the Electron installer's `customInit` accepts, reuses
-`%LOCALAPPDATA%\Houston`, removes the Tauri uninstall registry entry, and
-relaunches Houston with the supplied arguments. The progress and the outcome
-appear in the panel. Nothing installs without a click, and nothing unsigned or
-unverifiable installs at all.
-
-An Electron installation updates from electron-updater's `latest*.yml` feed
-instead; both feeds describe the same release.
+`latest.json` is the **update bridge** for installed copies of the earlier
+application, which updated through a Tauri updater. They read the manifest, pick
+the entry for their bundle (`linux-x86_64-deb`, `linux-x86_64-appimage`,
+`windows-x86_64-nsis`), and verify its Minisign signature against the public key
+in `scripts/updater-pubkey.txt`. The entry it selects is the Electron build of the
+same version: the AppImage or deb on Linux, the NSIS installer on Windows. On
+Windows the NSIS installer is started the way the Tauri updater starts its own
+— `/P /UPDATE /R /ARGS` — which the Electron installer's `customInit` accepts,
+reuses `%LOCALAPPDATA%\Houston`, removes the Tauri uninstall registry entry, and
+relaunches Houston with the supplied arguments.
 
 **Getting the keypair in place** is one maintainer sitting, and releases do not
 run without it:
@@ -277,8 +269,8 @@ run without it:
    manager.
 2. Repository → Settings → Secrets and variables → Actions: add
    `TAURI_SIGNING_PRIVATE_KEY` (the file's contents) and
-   `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (the passphrase). Every release
-   workflow refuses a run without them; a cut stops before it pushes anything.
+   `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (the passphrase). A cut
+   refuses a run without them and stops before it pushes anything.
 3. Paste the **public** key into `scripts/updater-pubkey.txt` (a public key is
    not a secret and belongs in the tree). The publish and promotion gates verify
    every artifact and its signed comment against this key with Minisign before
@@ -316,18 +308,20 @@ What every release carries:
    them during packaging, and `release-publish.yml` and promotion check that
    each hash and size describes the uploaded bytes.
 3. `release-publish.yml` verifies the Minisign set — one AppImage and one deb
-   for Linux x86_64 and ARM64, plus one Windows x86_64 NSIS installer when the
-   cut included Windows, a `.sig` beside each, every filename carrying the
+   for Linux x86_64 and ARM64, one `.app.tar.gz` and one `.dmg` for macOS x64 and
+   arm64, plus one Windows x86_64 NSIS installer when the cut included Windows, a
+   `.sig` beside each, every filename carrying the
    release's version — and refuses anything else. It also verifies every
    bundle and signed comment against `scripts/updater-pubkey.txt`. Promotion
    repeats this verification over the downloaded draft assets before making
    them public.
 4. `latest.json` embeds each `.sig` file's contents under the bare
-   `linux-<arch>` / `windows-<arch>` key and the bundle-specific `-appimage`,
-   `-deb` and `-nsis` keys, so a deb install and an AppImage install each
-   resolve their own payload. The artifact names are
-   `Houston-<version>-<arch>.AppImage`, `Houston-<version>-<arch>.deb` and
-   `Houston-<version>-<arch>-setup.exe`.
+   `linux-<arch>` / `windows-<arch>` / `darwin-<arch>` key and the bundle-specific
+   `-appimage`, `-deb`, `-nsis` and `-app` keys, so a deb install and an AppImage
+   install each resolve their own payload. The artifact names are
+   `Houston-<version>-<arch>.AppImage`, `Houston-<version>-<arch>.deb`,
+   `Houston-<version>-<arch>-setup.exe` and
+   `Houston-<version>-<arch>.app.tar.gz`.
 5. The manifest and the `latest*.yml` files are published as release assets,
    which is what makes the URLs above resolvable.
 
@@ -336,11 +330,10 @@ What every release carries:
 None of these live in the tree; they are GitHub settings, and a fresh clone of
 the repo does not carry them.
 
-- **Branch protection on `main`**: require a pull request, and require the
-  status checks `safety-checks`, `renderer-checks`, `core-checks` and
-  `licence-inventory`. Every pull request must run all four — a required check
-  that never runs stays pending and blocks the merge for ever, which is why
-  `ci.yml` no longer skips jobs on a docs-only change. Give deploy keys the
+- **Branch protection on `main`**: require a pull request and the single status
+  check `ci-gate`. It runs on every pull request and treats jobs skipped by the
+  path filter as a pass, so a documentation-only change never leaves a required
+  check pending. Give deploy keys the
   ruleset bypass; do not give users one. **Cut release** authenticates with the
   sole write-enabled deploy key and remains the only path around the PR rule.
 - **The `stable-release` environment**: create it under Settings ▸
@@ -351,8 +344,10 @@ the repo does not carry them.
   Settings ▸ Trusted Publisher, add GitHub Actions with repository
   `theogmiguel/houston`, workflow `publish-draft.yml` and environment
   `stable-release`. The workflow holds no npm token; without this entry its
-  publish step fails after the GitHub release is already public, and the launcher
-  can be published by hand from the tag with `scripts/build-npm-launcher.mjs`.
+  publish step fails after the GitHub release is already public. Publish the
+  launcher by hand from the tag: `node scripts/build-npm-launcher.mjs --version
+  <X.Y.Z> --output-dir npm-packages`, then `npm publish --access public --tag
+  latest npm-packages/houston-app.tgz` (`--tag preview` for an RC).
 - **Discussions**: on, with an **Ideas** category. Feature requests are routed
   there by `.github/ISSUE_TEMPLATE/config.yml`, which points at it by URL.
 - **Private vulnerability reporting**: on. `SECURITY.md` sends reporters to the
@@ -501,6 +496,10 @@ gh release create "$release_tag" --draft --verify-tag \
 
 Add `--prerelease` for an `rc` — the same rule the workflow applies — or
 publishing the draft would offer a candidate through `releases/latest`.
+
+`gen-update-manifest.py` requires the Linux, Windows and macOS bundles; pass
+`--no-windows`, `--no-macos` or `--linux-only` when the artifact directory
+deliberately lacks them.
 
 Fully manual, and the same work `release-publish.yml` does — including its
 refusals: the manifest script rejects a set with a missing or invalid `.sig`, a

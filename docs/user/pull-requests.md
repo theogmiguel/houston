@@ -1,7 +1,8 @@
 # Pull requests
 
-Open **Pull requests** from the sidebar or press `Ctrl+Shift+K` in a thread to copy the
-current request number. The page has two views: **Requests** and **Merge queue**.
+Open **Pull requests** from the command palette (**Open pull requests**) or a new tab's
+**Open a page** list. In a thread, `Ctrl+Shift+K` copies the current request number. The page has
+two views: **Requests** and **Merge queue**.
 
 ## Requests
 
@@ -24,14 +25,15 @@ Open a request to read it in the right panel:
 
 - **Summary** — description, branches, reviewers and merge readiness. Where you can edit the
   description, you can also tick its checkboxes here.
+- **Guide** — appears when review guides are turned on in **Settings ▸ Source control**.
 - **Timeline** — comments and review activity.
 - **Files** — the diff; each file carries a **Viewed** toggle. A viewed file that changes
   after a new push reads unviewed and shows **Changed since viewed**.
 - **Checks** — checks with their state; a failing check can show its available log.
 - **Queue** — appears when the request is in the merge queue; see below.
 
-**Hide resolved** and **Hide bots** filter discussions; each says how many items it
-affects. A comment counts as a bot's when GitHub reports its author as an app. A discussion
+The **Filter** menu on the Summary's comments shows or hides **Bot comments** and **Resolved or
+dismissed** items, both hidden by default; the button says how many items are hidden. A comment counts as a bot's when GitHub reports its author as an app. A discussion
 counts as a bot's until a person replies.
 
 The merge box offers the methods the repository allows: squash, merge commit or rebase. It
@@ -39,7 +41,7 @@ reports checks, required reviews and conflicts with the base branch. **Enable au
 asks GitHub to merge once the required checks and reviews pass. **Copy link**, **Convert to
 draft** / **Ready for review**, **Reopen** and **Close** are in the request's menu.
 
-The thread's **Pull request** tab lists requests linked to the thread. **Link pull request**
+The thread's **Linked pull requests** tab lists requests linked to the thread. **Link pull request**
 links one by URL or number, and **Unlink from thread** removes the association without
 closing the request on the host. Create a new request from the Git menu's create action.
 

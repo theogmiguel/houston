@@ -1,6 +1,10 @@
-# Houston
+<p align="center">
+  <img src="assets/prod/houston-black-web-apple-touch-180.png" width="80" height="80" alt="Houston logo" />
+</p>
 
-**Local-first mission control for CLI coding agents on Linux and Windows.**
+<h1 align="center">Houston</h1>
+
+<p align="center"><strong>Local-first mission control for coding agents on Linux and Windows.</strong></p>
 
 Houston runs coding agents in persistent threads served by a detached local server. Agent
 runs continue when the window closes, and agents can delegate work to other threads through
@@ -42,13 +46,13 @@ Download the current release from [GitHub Releases](https://github.com/theogmigu
 | Linux ARM64    | AppImage, `.deb`   | glibc 2.35 or newer |
 | Windows x86_64 | NSIS `.exe`        | Windows 10 or 11    |
 
-Linux and Windows receive official release packages. Windows support starts with v0.14.0.
-macOS and Windows ARM64 do not have official builds. Alpine, NixOS, BSD and other
+Linux and Windows receive official release packages. macOS and Windows ARM64 do not have
+official builds. Alpine, NixOS, BSD and other
 non-glibc environments do not receive official packages; community or source builds are
 best effort.
 
 The Windows installer is not Authenticode-signed, so SmartScreen may warn on first launch.
-Release artifacts are signed for Houston's updater and verified before installation.
+Updates are verified against the release's checksums before installation.
 Some features have platform-specific limits; see the
 [installation guide](docs/user/install.md#platform-differences) for the supported paths.
 
