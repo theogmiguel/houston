@@ -89,7 +89,10 @@ export function LayoutPaneBody({
       {...props}
     >
       <div aria-hidden className={placement === "window" ? "h-10 shrink-0" : "h-8 shrink-0"} />
-      <div className="pointer-events-auto relative flex min-h-0 flex-1 flex-col overflow-clip rounded-b-(--r-group)">
+      <div
+        data-layout-pane-content=""
+        className="pointer-events-auto relative flex min-h-0 flex-1 flex-col overflow-clip rounded-b-(--r-group)"
+      >
         {children}
       </div>
     </div>

@@ -42,6 +42,23 @@ it.each(["components/sidebar/SidebarThreadRow.tsx", "components/sidebar/ThreadCa
   },
 );
 
+// Theme CSS finds the selected tab as [data-layout-pane-tab][aria-selected="true"].
+it("the pane tab says whether it is selected", () => {
+  const text = NodeFS.readFileSync(NodePath.join(sourceDirectory, "layout/PaneTabBar.tsx"), "utf8");
+  expect(text).toMatch(/data-layout-pane-tab=[\s\S]{0,80}aria-selected=\{active\}/);
+});
+
+it("the guide names the pane and tab selectors", () => {
+  const selectors: ReadonlyArray<string> = THEME_CSS_HOOKS.map((hook) => hook.selector);
+  for (const selector of [
+    "[data-layout-tab-bar]",
+    "[data-layout-pane-tab]",
+    "[data-layout-pane-content]",
+  ]) {
+    expect(selectors, `${selector} is not a theme hook`).toContain(selector);
+  }
+});
+
 it("matches nothing for a selector that is not in the source", () => {
   expect(sourcePattern("[data-removed-hook-for-test]").test(source)).toBe(false);
   expect(sourcePattern('[data-slot="removed-slot-for-test"]').test(source)).toBe(false);
