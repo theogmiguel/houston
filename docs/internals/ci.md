@@ -1,9 +1,7 @@
 # Continuous integration
 
-`.github/workflows/ci.yml` is the only gate for pull requests to `v2`, pushes to
-it and manual dispatches. It replaces the former split between
-the desktop-only `ci.yml` and `v2-checks.yml`, which ran the server suites in nine area jobs
-per platform and never ran the renderer's own tests.
+`.github/workflows/ci.yml` is the only gate for pull requests to `main`, pushes to it and manual
+dispatches. The release preflight accepts a commit only when its `ci-gate` job succeeded.
 
 ## Jobs
 
@@ -78,7 +76,7 @@ form collides with the web package's same-named task.
 not expose a job's own creation time) and run time:
 
 ```
-GH_TOKEN=... node scripts/ci/timing-report.mjs --branch v2 --runs 30
+GH_TOKEN=... node scripts/ci/timing-report.mjs --branch main --runs 30
 ```
 
 It prints one markdown table of per-job medians and p90 values and one row for the whole run.
@@ -95,8 +93,8 @@ the `static` job runs. It prints `nothing relevant changed` and exits 0 when the
 
 ## Branch rules and dependency updates
 
-`v2` takes changes through pull requests. Its ruleset requires `ci-gate` on a branch that is up to
-date with `v2`, needs no approving review, and blocks force pushes and deletion; repository admins
+`main` takes changes through pull requests. Its ruleset requires `ci-gate`, needs no approving
+review, and blocks force pushes and deletion; repository admins
 can bypass it in an emergency. There is no merge queue, nightly run or CODEOWNERS file.
 
 `.github/dependabot.yml` opens one weekly pull request per ecosystem (npm, GitHub Actions, Cargo)
