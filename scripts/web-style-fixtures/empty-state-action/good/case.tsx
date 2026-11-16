@@ -1,1 +1,5 @@
-export const good = () => <Empty><EmptyTitle>No projects yet</EmptyTitle></Empty>;
+export const good = () => (
+  <Empty>
+    <EmptyTitle>No projects yet</EmptyTitle>
+  </Empty>
+);

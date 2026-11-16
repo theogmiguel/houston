@@ -1,1 +1,5 @@
-export const bad = () => <select><option value="a" /></select>;
+export const bad = () => (
+  <select>
+    <option value="a" />
+  </select>
+);

@@ -17,12 +17,26 @@ test("workspace members ignores column-0 comments inside the list", () => {
 });
 
 test("workspace members ignores trailing comments and blank lines", () => {
-  const text = yaml("packages: # members", "  - scripts # tooling", "", '  - "packages/*"  # quoted', "");
+  const text = yaml(
+    "packages: # members",
+    "  - scripts # tooling",
+    "",
+    '  - "packages/*"  # quoted',
+    "",
+  );
   assert.deepEqual(parseWorkspaceMembers(text), ["scripts", "packages/*"]);
 });
 
 test("workspace members accepts a list indented at the key's column", () => {
-  const text = yaml("packages:", "- apps/server", "- scripts", "", "allowBuilds:", "  esbuild: true", "");
+  const text = yaml(
+    "packages:",
+    "- apps/server",
+    "- scripts",
+    "",
+    "allowBuilds:",
+    "  esbuild: true",
+    "",
+  );
   assert.deepEqual(parseWorkspaceMembers(text), ["apps/server", "scripts"]);
 });
 
@@ -38,7 +52,10 @@ test("workspace members throws naming a recursive glob", () => {
 
 test("workspace members throws naming a negation", () => {
   const text = yaml("packages:", "  - scripts", '  - "!packages/legacy"', "");
-  assert.throws(() => parseWorkspaceMembers(text), /unsupported workspace member "!packages\/legacy"/);
+  assert.throws(
+    () => parseWorkspaceMembers(text),
+    /unsupported workspace member "!packages\/legacy"/,
+  );
 });
 
 test("workspace members throws on an entry that is not a dash line", () => {
