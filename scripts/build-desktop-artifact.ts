@@ -26,7 +26,7 @@ export const DESKTOP_EXECUTABLE_NAME = "houston";
 export const DESKTOP_CATEGORY = "DeveloperTool";
 export const DESKTOP_SHORT_DESCRIPTION = "Mission control for CLI coding agents";
 export const DESKTOP_LONG_DESCRIPTION =
-  "Houston is a local-first mission control for CLI coding agents: a grid of real terminals running your agent CLIs in your own project directories, where an agent can spawn and drive another agent in a new pane.";
+  "Houston is a local-first mission control for coding agents: it runs them in persistent threads served by a local server, so agent runs continue when the window closes and agents can delegate work to other threads.";
 export const DESKTOP_PUBLISHER = "Théo Miguel";
 export const DESKTOP_COPYRIGHT = "Copyright © 2026 Théo Miguel";
 export const DESKTOP_HOMEPAGE = "https://github.com/theogmiguel/houston";

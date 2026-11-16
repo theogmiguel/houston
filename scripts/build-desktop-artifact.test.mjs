@@ -160,7 +160,7 @@ NodeTest.test("the packaged metadata matches the bundle strings", () => {
   NodeAssert.equal(DESKTOP_SHORT_DESCRIPTION, "Mission control for CLI coding agents");
   NodeAssert.equal(
     DESKTOP_LONG_DESCRIPTION,
-    "Houston is a local-first mission control for CLI coding agents: a grid of real terminals running your agent CLIs in your own project directories, where an agent can spawn and drive another agent in a new pane.",
+    "Houston is a local-first mission control for coding agents: it runs them in persistent threads served by a local server, so agent runs continue when the window closes and agents can delegate work to other threads.",
   );
   NodeAssert.equal(DESKTOP_PUBLISHER, "Théo Miguel");
   NodeAssert.equal(DESKTOP_COPYRIGHT, "Copyright © 2026 Théo Miguel");
