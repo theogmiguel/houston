@@ -85,9 +85,7 @@ export function Houston1ImportSection() {
       <SettingsRow
         id="houston-1-import"
         title="Import Houston 1 data"
-        description={`Houston 1 conversations import automatically on first start. ${houston1ImportDescription(
-          statuses,
-        )}`}
+        description={houston1ImportDescription(statuses)}
         status={failure ?? undefined}
         control={
           steps.length > 0 ? (
