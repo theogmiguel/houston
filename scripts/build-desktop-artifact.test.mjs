@@ -7,6 +7,7 @@ import * as NodeURL from "node:url";
 
 import {
   createBuildConfig,
+  createStageWorkspaceConfig,
   DESKTOP_APP_ID,
   DESKTOP_COPYRIGHT,
   DESKTOP_HOMEPAGE,
@@ -232,5 +233,27 @@ NodeTest.test("a single-architecture macOS build drops the other Darwin prebuild
   NodeAssert.ok(
     macConfig.files.includes("!**/node_modules/**/prebuilds/darwin-x64/**/*"),
     "the macOS build config carries the exclusion",
+  );
+});
+
+NodeTest.test("the staged install decides every dependency build script it meets", () => {
+  const { allowBuilds } = createStageWorkspaceConfig({ platform: "mac", arch: "arm64" });
+  NodeAssert.equal(
+    allowBuilds["objc-js"],
+    false,
+    "pnpm fails the staged macOS install on an install script nobody allowed or denied",
+  );
+});
+
+NodeTest.test("the dependency listing starts pnpm through a shell on Windows", () => {
+  const source = NodeFS.readFileSync(
+    NodePath.join(import.meta.dirname, "build-desktop-artifact.ts"),
+    "utf8",
+  );
+  const listing = source.slice(source.indexOf("function listResolvedDependencies"));
+  NodeAssert.match(
+    listing.slice(0, listing.indexOf("\n}\n")),
+    /shell: process\.platform === "win32"/,
+    "pnpm is a .cmd shim on Windows and spawnSync cannot start it without a shell",
   );
 });

@@ -284,7 +284,8 @@ export function createStageWorkspaceConfig(input: {
       input.platform === "linux"
         ? { os: [hostOs], cpu: [input.arch], libc: ["glibc"] }
         : { os: [hostOs], cpu: [input.arch] },
-    allowBuilds: { koffi: true, "node-pty": true },
+    // objc-js ships prebuilds; an install script left undecided fails the staged install on macOS.
+    allowBuilds: { koffi: true, "node-pty": true, "objc-js": false },
     patchedDependencies: STAGE_PATCHED_DEPENDENCIES,
   };
 }
@@ -533,7 +534,8 @@ function listResolvedDependencies(filter: string): Record<string, string> {
   const result = NodeChildProcess.spawnSync(
     "pnpm",
     ["--filter", filter, "list", "--depth", "0", "--prod", "--json"],
-    { cwd: REPO_ROOT, encoding: "utf8" },
+    // pnpm is a .cmd shim on Windows, which only a shell can start.
+    { cwd: REPO_ROOT, encoding: "utf8", shell: process.platform === "win32" },
   );
   if (result.status !== 0) {
     throw new Error(
