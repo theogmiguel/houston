@@ -6,17 +6,21 @@
 
 <p align="center"><strong>Local-first mission control for coding agents on Linux and Windows.</strong></p>
 
-Houston runs coding agents in persistent threads served by a detached local server. Agent
-runs continue when the window closes, and agents can delegate work to other threads through
-the server's orchestration tools.
+<p align="center">
+  <img src=".github/assets/houston-hero.png" width="100%" alt="Houston with a thread next to the diff of its changes" />
+</p>
+
+Houston runs coding agents in persistent threads served by a local server. Agent runs
+continue when the window closes, and agents can delegate work to other threads through the
+server's orchestration tools.
 
 [Download Houston](https://github.com/theogmiguel/houston/releases) ·
 [Documentation](docs/README.md) · [Contributing](CONTRIBUTING.md)
 
 ## Why Houston
 
-- **Persistent threads.** Closing the desktop app detaches from the server without stopping
-  running agents. Threads and their history survive restarts.
+- **Persistent threads.** Closing the window leaves Houston in the tray with its agents
+  running. Threads and their history survive restarts.
 - **Workspaces.** Arrange threads and their surfaces in columns, panes and tabs; shortcuts, find
   and actions follow the focused pane.
 - **Agent orchestration.** An agent can start, message and wait for other threads through
@@ -61,10 +65,11 @@ For source builds, prerequisites and platform-specific commands, follow
 
 ## How it works
 
-The desktop app starts, or attaches to, a detached TypeScript server for its channel and
+The desktop app starts, or attaches to, a TypeScript server for its channel and
 talks to it over one authenticated WebSocket. The server owns threads, provider adapters,
 local state and the orchestration tools; agent status comes from each provider's structured
 stream. Closing the window removes the client; it does not stop the server or its agent runs.
+Quitting Houston stops the server it started.
 
 The architecture is documented in [`docs/internals/overview.md`](docs/internals/overview.md).
 
