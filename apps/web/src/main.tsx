@@ -1,0 +1,41 @@
+import "./lib/legacyStorageMigration";
+
+import React from "react";
+import ReactDOM from "react-dom/client";
+
+import "./fonts";
+import "./index.css";
+
+import { startAppServices } from "./appInit";
+import { AppRoot } from "./AppRoot";
+import { reloadForChunkLoadError } from "./lib/chunkReloadGuard";
+
+const router = startAppServices();
+
+if (import.meta.env.DEV || import.meta.env.VITE_RELEASE_CHANNEL === "dev") {
+  void import("./motion/motionProbe").then(({ installMotionProbe }) => installMotionProbe());
+}
+
+let reloadScheduled = false;
+window.addEventListener("vite:preloadError", (event) => {
+  if (reloadForChunkLoadError()) {
+    reloadScheduled = true;
+    event.preventDefault();
+  }
+});
+
+const app = <AppRoot router={router} />;
+
+export const startup = router
+  .load()
+  .then(() => {
+    // Route chunk failures resolve router.load() and surface later through the error boundary.
+    if (reloadScheduled) return;
+    ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+      <React.StrictMode>{app}</React.StrictMode>,
+    );
+  })
+  .catch((error: unknown) => {
+    if (reloadScheduled) return;
+    throw error;
+  });

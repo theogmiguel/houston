@@ -1,0 +1,690 @@
+import { SettingsGroup } from "./SettingsGroup";
+import { AuthSettingsWriteScope } from "@houston-app/contracts";
+import { usePrimaryEnvironmentId, usePrimaryEnvironment } from "../../state/environments";
+import { useEnvironmentScope, useEnvironmentsWithScope } from "../../state/session";
+import { useServerConfigs } from "../../state/entities";
+import { InfoIcon, Undo2Icon } from "lucide-react";
+import {
+  DEFAULT_SERVER_SETTINGS,
+  isManagedSettingPath,
+  type ServerSettings,
+} from "@houston-app/contracts";
+import * as Equal from "effect/Equal";
+import { useLocation, useNavigate } from "@tanstack/react-router";
+import { createContext, type ComponentPropsWithoutRef, type ReactNode, useContext } from "react";
+
+import { prefersReducedMotion } from "../../hooks/useReducedMotion";
+import {
+  PRIMARY_SETTINGS_UNAVAILABLE_MESSAGE,
+  usePrimarySettingsAvailable,
+} from "../../hooks/useSettings";
+import { cn } from "../../lib/utils";
+import { WorkspacePageContainer, type WorkspacePageWidth } from "../WorkspacePageContainer";
+import { Button } from "../ui/button";
+import { PHONE_SETTINGS_TAP_TARGETS_CLS } from "../ui/phone-recipes";
+import { PageHeading } from "../ui/page-heading";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { useT } from "../../i18n/useT";
+import { useOptionalSettingsScope } from "./SettingsScopeContext";
+import { SettingsScopeSentence } from "./SettingsScopeSentence";
+import {
+  SETTINGS_SECTION_DESCRIPTIONS,
+  SETTINGS_SECTION_LABELS,
+  type SettingsPath,
+} from "./settingsSearch";
+import {
+  isProjectScopedSettingKey,
+  listProjectOverrides,
+  type ProjectOverrideEntry,
+  scopedSettingsAreMixed,
+  scopedSettingsSource,
+} from "./scopedSettings";
+import { useClearProjectOverrides, useClearScopedSettings } from "./useScopedSettings";
+import {
+  SettingInheritance,
+  type SettingInheritanceState,
+  type SettingOverridingProject,
+} from "./SettingInheritance";
+
+const EMPTY_SETTING_KEYS: readonly (keyof ServerSettings)[] = [];
+const EMPTY_MANAGED_PATHS: readonly string[] = [];
+
+declare module "@tanstack/react-router" {
+  interface HistoryState {
+    settingsTargetHighlight?: boolean;
+  }
+}
+
+interface SettingsSearchTargetContextValue {
+  readonly targetId: string | null;
+  readonly highlightTarget: boolean;
+  readonly onTargetHandled: () => void;
+}
+
+const noop = () => undefined;
+const SettingsSearchTargetContext = createContext<SettingsSearchTargetContextValue>({
+  targetId: null,
+  highlightTarget: true,
+  onTargetHandled: noop,
+});
+
+function SettingsSearchTargetProvider({
+  targetId,
+  highlightTarget = true,
+  onTargetHandled = noop,
+  children,
+}: {
+  targetId: string | null;
+  highlightTarget?: boolean;
+  onTargetHandled?: () => void;
+  children: ReactNode;
+}) {
+  const value = { targetId, highlightTarget, onTargetHandled };
+  return <SettingsSearchTargetContext value={value}>{children}</SettingsSearchTargetContext>;
+}
+
+let pendingTargetScroll: AbortController | undefined;
+
+function scrollAndFocusSettingsTarget(target: HTMLElement, highlight = true): void {
+  pendingTargetScroll?.abort();
+  const reducedMotion = prefersReducedMotion();
+  const markedScrollTarget =
+    typeof target.querySelector === "function"
+      ? target.querySelector<HTMLElement>(":scope > [data-settings-scroll-target]")
+      : null;
+  const scrollTarget =
+    markedScrollTarget ??
+    (target.tagName === "SECTION" && target.firstElementChild
+      ? (target.firstElementChild as HTMLElement)
+      : target);
+
+  const scroll = () =>
+    scrollTarget.scrollIntoView({
+      behavior: reducedMotion ? "auto" : "smooth",
+      block: "center",
+    });
+  scroll();
+  const panel = target.parentElement?.closest<HTMLElement>(
+    '[data-slot="collapsible-panel"][data-open]',
+  );
+  const heightTransition = () =>
+    panel
+      ?.getAnimations()
+      .find(
+        (animation) =>
+          animation instanceof CSSTransition && animation.transitionProperty === "height",
+      );
+  if (panel && (panel.hasAttribute("data-starting-style") || heightTransition())) {
+    const controller = new AbortController();
+    pendingTargetScroll = controller;
+    const { signal } = controller;
+    const finishScroll = () => {
+      if (signal.aborted) return;
+      controller.abort();
+      if (
+        panel.hasAttribute("data-open") &&
+        target.isConnected &&
+        document.activeElement === target
+      ) {
+        scroll();
+      }
+    };
+    const waitForHeight = () => {
+      const transition = heightTransition();
+      if (transition) {
+        void transition.finished.then(finishScroll, () => controller.abort());
+      } else {
+        finishScroll();
+      }
+    };
+    // Base UI clears the starting style before the height transition finishes.
+    if (panel.hasAttribute("data-starting-style")) {
+      const observer = new MutationObserver(() => {
+        if (!panel.hasAttribute("data-starting-style")) {
+          observer.disconnect();
+          waitForHeight();
+        }
+      });
+      observer.observe(panel, { attributes: true, attributeFilter: ["data-starting-style"] });
+      signal.addEventListener("abort", () => observer.disconnect(), { once: true });
+    } else {
+      waitForHeight();
+    }
+    target.addEventListener("blur", () => controller.abort(), { once: true, signal });
+  }
+  target.focus({ preventScroll: true });
+  target.classList.remove("settings-search-target-pulse");
+  if (!highlight || reducedMotion) return;
+  void target.offsetWidth;
+  target.classList.add("settings-search-target-pulse");
+  target.addEventListener("blur", () => target.classList.remove("settings-search-target-pulse"), {
+    once: true,
+  });
+}
+
+export function useSettingsSearchTargetId(): string | null {
+  return useContext(SettingsSearchTargetContext).targetId;
+}
+
+export function useSettingsSearchTarget<T extends HTMLElement>(id: string | undefined) {
+  const { targetId, highlightTarget, onTargetHandled } = useContext(SettingsSearchTargetContext);
+  const isSearchTarget = id !== undefined && id === targetId;
+  const targetRef = (target: T | null) => {
+    if (target && isSearchTarget) {
+      scrollAndFocusSettingsTarget(target, highlightTarget);
+      onTargetHandled();
+    }
+  };
+
+  return targetRef;
+}
+
+export function SettingsSearchTarget({
+  children,
+  ...targetProps
+}: ComponentPropsWithoutRef<"div">) {
+  const targetRef = useSettingsSearchTarget<HTMLDivElement>(targetProps.id);
+  return (
+    <div {...targetProps} ref={targetRef} tabIndex={targetProps.id ? -1 : targetProps.tabIndex}>
+      {children}
+    </div>
+  );
+}
+
+// Settings pickers reuse composer controls but match the bordered selects beside them.
+export const SETTINGS_PICKER_TRIGGER_CLASSNAME =
+  "min-w-0 max-w-none shrink-0 border-input bg-background font-normal text-foreground max-phone:text-headline shadow-xs/5 hover:bg-hover/50 dark:bg-input/32 [&_svg[data-composer-control-chevron]]:opacity-70";
+
+export function PolicyTooltip({
+  children,
+  label = "Background policy details",
+}: {
+  readonly children: string;
+  readonly label?: string;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        delay={200}
+        render={
+          <Button size="icon-micro" variant="ghost-muted" aria-label={label}>
+            <InfoIcon className="size-3.5" />
+          </Button>
+        }
+      />
+      <TooltipPopup side="top">{children}</TooltipPopup>
+    </Tooltip>
+  );
+}
+
+export function SettingsSection({
+  title,
+  hideTitle = false,
+  icon,
+  titleAction,
+  headerAction,
+  variant = "grouped",
+  footer,
+  children,
+  className,
+  ...sectionProps
+}: ComponentPropsWithoutRef<"section"> & {
+  title: string;
+  hideTitle?: boolean;
+  icon?: ReactNode;
+  titleAction?: ReactNode;
+  headerAction?: ReactNode;
+  footer?: ReactNode;
+  variant?: "grouped" | "plain";
+  children: ReactNode;
+}) {
+  const targetRef = useSettingsSearchTarget<HTMLElement>(sectionProps.id);
+  const t = useT();
+
+  return (
+    <section
+      {...sectionProps}
+      ref={targetRef}
+      tabIndex={sectionProps.id ? -1 : sectionProps.tabIndex}
+      className={cn(!hideTitle && "space-y-2", className)}
+    >
+      {hideTitle ? (
+        <h2 className="sr-only">{t(title)}</h2>
+      ) : (
+        <div data-settings-scroll-target className="flex items-center justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-1">
+            <h2 className="flex items-center gap-2 text-prose font-semibold text-foreground/80">
+              {icon}
+              {t(title)}
+            </h2>
+            {titleAction}
+          </div>
+          <div className="flex min-w-0 items-center justify-end">{headerAction}</div>
+        </div>
+      )}
+      <SettingsGroup data-settings-scroll-target={hideTitle ? "" : undefined} variant={variant}>
+        {children}
+      </SettingsGroup>
+      {footer}
+    </section>
+  );
+}
+
+export function SettingsUnavailableGroup({
+  children,
+  message,
+}: {
+  children: ReactNode;
+  message?: ReactNode;
+}) {
+  if (message === undefined) return children;
+
+  return (
+    <div className="py-1.5">
+      <div className="flex items-start gap-2 px-4 py-2 text-xs leading-relaxed text-muted-foreground">
+        <InfoIcon className="mt-0.5 size-3.5 shrink-0" />
+        <p>{message}</p>
+      </div>
+      <div className="[&_h3]:opacity-64 [&_p]:opacity-64 max-phone:[&>*+*]:relative max-phone:[&>*+*]:before:pointer-events-none max-phone:[&>*+*]:before:absolute max-phone:[&>*+*]:before:top-0 max-phone:[&>*+*]:before:left-4 max-phone:[&>*+*]:before:right-4 max-phone:[&>*+*]:before:h-px max-phone:[&>*+*]:before:bg-border max-phone:[&>*+*]:before:content-['']">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function projectOverrides(
+  context: ReturnType<typeof useOptionalSettingsScope>,
+  scopedKeys: ReadonlyArray<keyof ServerSettings>,
+): SettingOverridingProject[] {
+  if (context === null || scopedKeys.length === 0) return [];
+  return listProjectOverrides(context.connectedEnvironments, scopedKeys).flatMap((entry) => {
+    const group = context.groups.find((candidate) =>
+      candidate.memberProjects.some(
+        (member) => member.environmentId === entry.environmentId && member.id === entry.projectId,
+      ),
+    );
+    if (!group) return [];
+    return [
+      {
+        ...entry,
+        label: group.displayName,
+        open: () =>
+          context.selectScope({
+            project: group.projectKey,
+            ...(context.search.machine ? { machine: context.search.machine } : {}),
+          }),
+      },
+    ];
+  });
+}
+
+export function SettingsRow({
+  title,
+  description,
+  status,
+  resetAction,
+  onResetOverride,
+  control,
+  serverScoped = false,
+  settingKeys = EMPTY_SETTING_KEYS,
+  managedPaths = EMPTY_MANAGED_PATHS,
+  mixed: mixedOverride,
+  managed,
+  children,
+  className,
+  ...rowProps
+}: Omit<ComponentPropsWithoutRef<"div">, "title"> & {
+  title: ReactNode;
+  description?: ReactNode;
+  status?: ReactNode;
+  resetAction?: ReactNode;
+  onResetOverride?: () => void;
+  control?: ReactNode;
+  serverScoped?: boolean;
+  settingKeys?: readonly (keyof ServerSettings)[];
+  /** Dot paths inside a setting, such as `storageCleanup.logsAfterDays`, an administrator can lock. */
+  managedPaths?: readonly string[];
+  mixed?: boolean;
+  /** Why an administrator's policy turns this row's control off, from the contract's denial helpers. */
+  managed?: string | undefined;
+  children?: ReactNode;
+}) {
+  const targetRef = useSettingsSearchTarget<HTMLDivElement>(rowProps.id);
+  const t = useT();
+  const primarySettingsAvailable = usePrimarySettingsAvailable();
+  const context = useOptionalSettingsScope();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const primaryEnvironment = usePrimaryEnvironment();
+  const primaryCanWrite = useEnvironmentScope(primaryEnvironmentId, AuthSettingsWriteScope);
+  const writableIds = useEnvironmentsWithScope(
+    context?.connectedEnvironments ?? [],
+    AuthSettingsWriteScope,
+  );
+  const canWriteSettings = context
+    ? context.connectedEnvironments.length > 0 &&
+      context.connectedEnvironments.every((target) => writableIds.has(target.environmentId))
+    : primaryCanWrite;
+  const serverConfigs = useServerConfigs();
+  // An administrator's lock on any target wins over every other reason a control is inert.
+  const lockablePaths = [...settingKeys, ...managedPaths];
+  const managedBy =
+    lockablePaths.length === 0
+      ? undefined
+      : (context
+          ? context.connectedEnvironments.map((environment) => environment.serverConfig)
+          : [primaryEnvironmentId === null ? undefined : serverConfigs.get(primaryEnvironmentId)]
+        )
+          .map((config) => config?.managedPolicy)
+          .find(
+            (policy) =>
+              policy !== undefined &&
+              lockablePaths.some((path) => isManagedSettingPath(policy, path)),
+          )?.organization;
+  const clearOverrides = useClearScopedSettings();
+  const clearProjectOverrides = useClearProjectOverrides();
+  const isProjectScope =
+    context !== null && (context.scope.kind === "project" || context.scope.kind === "checkout");
+  const scopedKeys = settingKeys.filter(isProjectScopedSettingKey);
+  const environmentWide = isProjectScope && serverScoped && scopedKeys.length === 0;
+  const mixed =
+    mixedOverride ?? (context !== null && scopedSettingsAreMixed(context.targets, settingKeys));
+  const source =
+    context && isProjectScope ? scopedSettingsSource(context.targets, scopedKeys) : null;
+  const unavailable =
+    serverScoped &&
+    (!canWriteSettings ||
+      !(context ? context.connectedEnvironments.length > 0 : primarySettingsAvailable));
+  const inheritedFrom =
+    source === "environment" && context?.scope.environmentIds.length === 1
+      ? (context.environments.find(
+          (environment) => environment.environmentId === context.scope.environmentIds[0],
+        )?.label ?? "environment")
+      : "environment";
+  const environmentSettingsById = new Map(
+    (context?.connectedEnvironments ?? []).flatMap((environment) =>
+      environment.serverConfig
+        ? [[environment.environmentId, environment.serverConfig.settings] as const]
+        : [],
+    ),
+  );
+  const overridingProjects = isProjectScope ? [] : projectOverrides(context, scopedKeys);
+  const renderedReset =
+    unavailable || managedBy !== undefined || managed !== undefined ? null : isProjectScope &&
+      scopedKeys.length > 0 ? (
+      source === "project" || source === "mixed" ? (
+        <SettingResetButton
+          label={typeof title === "string" ? title : "override"}
+          tooltip="Reset to inherited value"
+          onClick={() => (onResetOverride ? onResetOverride() : clearOverrides(scopedKeys))}
+        />
+      ) : null
+    ) : (
+      resetAction
+    );
+  const inertControl = (message: string) => (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <span
+            tabIndex={0}
+            className="flex w-full items-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring @min-[32rem]/settings-row:w-auto"
+          />
+        }
+      >
+        <div
+          inert
+          className="flex w-full items-center gap-2 opacity-50 @min-[32rem]/settings-row:w-auto"
+        >
+          {control}
+        </div>
+      </TooltipTrigger>
+      <TooltipPopup side="top">{message}</TooltipPopup>
+    </Tooltip>
+  );
+  const renderedControl =
+    managed !== undefined && control
+      ? inertControl(managed)
+      : managedBy !== undefined && control
+        ? inertControl(`Managed by ${managedBy}.`)
+        : unavailable && control
+          ? inertControl(
+              !canWriteSettings
+                ? `This connection lacks permission to change settings on ${
+                    context
+                      ? context.connectedEnvironments
+                          .filter((target) => !writableIds.has(target.environmentId))
+                          .map((target) => target.label)
+                          .join(", ") || "the selected environment"
+                      : (primaryEnvironment?.label ?? "the primary environment")
+                  }.`
+                : context
+                  ? "Reconnect the selected environment to change this setting."
+                  : PRIMARY_SETTINGS_UNAVAILABLE_MESSAGE,
+            )
+          : environmentWide && control
+            ? inertControl("Environment-wide setting. Select an environment to change it.")
+            : control;
+  const customized =
+    context !== null &&
+    settingKeys.some((key) =>
+      context.targets.some((candidate) => {
+        const environmentSettings = environmentSettingsById.get(candidate.environmentId);
+        return (
+          environmentSettings !== undefined &&
+          !Equal.equals(environmentSettings[key], DEFAULT_SERVER_SETTINGS[key])
+        );
+      }),
+    );
+  const inheritance: { state: SettingInheritanceState; summary: string } = mixed
+    ? { state: "mixed", summary: "Mixed across selected environments" }
+    : source === "project"
+      ? { state: "overridden", summary: "Overridden for this project" }
+      : source === "houston.json"
+        ? { state: "inherited", summary: "Inherited from the repository's houston.json" }
+        : source === "environment" && scopedKeys.length > 0
+          ? { state: "inherited", summary: `Inherited from ${inheritedFrom}` }
+          : customized
+            ? { state: "environment", summary: "Set on the environment" }
+            : { state: "default", summary: "Built-in default" };
+  const renderedInheritance =
+    context && serverScoped && settingKeys.length > 0 ? (
+      <SettingInheritance
+        state={inheritance.state}
+        summary={inheritance.summary}
+        targets={context.targets}
+        environments={context.connectedEnvironments}
+        keys={settingKeys}
+        overridingProjects={overridingProjects}
+        {...(canWriteSettings
+          ? {
+              onClearOverrides: (entries: readonly ProjectOverrideEntry[]) =>
+                clearProjectOverrides(entries, scopedKeys),
+            }
+          : {})}
+      />
+    ) : null;
+  const renderedStatus = status;
+
+  return (
+    <div
+      {...rowProps}
+      ref={targetRef}
+      tabIndex={rowProps.id ? -1 : rowProps.tabIndex}
+      data-slot="settings-row"
+      className={cn(
+        "@container/settings-row min-h-12 px-4 aria-disabled:opacity-64 aria-disabled:[&_*]:text-muted-foreground",
+        children ? "pt-3 pb-1" : "py-3",
+        className,
+      )}
+    >
+      <div className="flex flex-col gap-3 @min-[32rem]/settings-row:grid @min-[32rem]/settings-row:grid-cols-[minmax(0,1fr)_auto] @min-[32rem]/settings-row:items-center @min-[32rem]/settings-row:gap-4">
+        <div className="min-w-0 flex-1 space-y-px">
+          <div className="flex min-h-5 items-center gap-1.5">
+            <h3 className="text-[13px] leading-[18px] font-medium text-foreground">
+              {typeof title === "string" ? t(title) : title}
+            </h3>
+            {renderedInheritance ? (
+              <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
+                {renderedInheritance}
+              </span>
+            ) : null}
+            <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
+              {renderedReset}
+            </span>
+          </div>
+          {description ? (
+            <p className="max-w-[56ch] text-xs leading-4 text-muted-foreground">
+              {typeof description === "string" ? t(description) : description}
+            </p>
+          ) : null}
+          {renderedStatus ? (
+            <div className="pt-0.5 text-xs text-muted-foreground">{renderedStatus}</div>
+          ) : null}
+        </div>
+        {renderedControl ? (
+          <div className="flex w-full min-w-0 shrink-0 items-center gap-2 @min-[32rem]/settings-row:w-auto @min-[32rem]/settings-row:justify-end @min-[32rem]/settings-row:[&_[data-slot=select-trigger]]:min-w-40 max-phone:[&>*]:min-w-0 max-phone:[&_[data-slot=select-trigger]]:w-full max-phone:[&_[data-slot=select-trigger]]:max-w-none max-phone:[&_[data-slot=select-trigger]]:flex-1">
+            {renderedControl}
+          </div>
+        ) : null}
+      </div>
+      {unavailable && children ? (
+        <div inert className="opacity-50">
+          {children}
+        </div>
+      ) : (
+        children
+      )}
+    </div>
+  );
+}
+
+export function SettingResetButton({
+  label,
+  tooltip = "Reset to default",
+  disabled = false,
+  onClick,
+}: {
+  label: string;
+  tooltip?: string;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            size="icon-micro"
+            variant="ghost-muted"
+            aria-label={`Reset ${label} to default`}
+            disabled={disabled}
+            onClick={(event) => {
+              event.stopPropagation();
+              onClick();
+            }}
+          >
+            <Undo2Icon className="size-3" />
+          </Button>
+        }
+      />
+      <TooltipPopup side="top">{tooltip}</TooltipPopup>
+    </Tooltip>
+  );
+}
+
+const SETTINGS_DETAIL_PAGE_HEADINGS: Readonly<
+  Record<string, { readonly title: string; readonly description: string }>
+> = {
+  "/settings/open-source-licenses": {
+    title: "Open source licenses",
+    description: "The third-party software this app includes.",
+  },
+};
+
+/** The one-line description every settings page opens with; its title is the breadcrumb. */
+function SettingsPageHeading() {
+  const t = useT();
+  const pathname = useLocation({
+    select: (location) => location.pathname.replace(/\/+$/, "") || "/",
+  });
+  const section =
+    (Object.hasOwn(SETTINGS_SECTION_LABELS, pathname)
+      ? {
+          title: SETTINGS_SECTION_LABELS[pathname as SettingsPath],
+          description: SETTINGS_SECTION_DESCRIPTIONS[pathname as SettingsPath],
+        }
+      : undefined) ?? SETTINGS_DETAIL_PAGE_HEADINGS[pathname];
+  if (section === undefined) return null;
+  return <PageHeading title={t(section.title)} description={t(section.description)} />;
+}
+const LEADING_HASH = /^#/;
+
+export function SettingsPageContainer({
+  children,
+  className,
+  width = "readable",
+  searchTargetFallbacks,
+}: {
+  children: ReactNode;
+  className?: string;
+  width?: WorkspacePageWidth;
+  /** Anchor to focus instead when a hash names a row that is not mounted, or an id that moved. */
+  searchTargetFallbacks?: Readonly<Record<string, string | undefined>>;
+}) {
+  const navigate = useNavigate();
+  const hash = useLocation({ select: (location) => location.hash });
+  const highlightTarget = useLocation({
+    select: (location) => location.state.settingsTargetHighlight !== false,
+  });
+  const targetId = hash.replace(LEADING_HASH, "") || null;
+  const clearTargetHash = () => {
+    void navigate({
+      hash: "",
+      replace: true,
+      resetScroll: false,
+      hashScrollIntoView: false,
+      state: { settingsTargetHighlight: true },
+    });
+  };
+
+  return (
+    <SettingsSearchTargetProvider
+      targetId={targetId === null ? null : (searchTargetFallbacks?.[targetId] ?? targetId)}
+      highlightTarget={highlightTarget}
+      onTargetHandled={clearTargetHash}
+    >
+      <div
+        className={cn(
+          "topbar-scroll-fade scrollbar-gutter-both flex-1 overflow-y-auto max-phone:[scrollbar-gutter:auto]",
+          PHONE_SETTINGS_TAP_TARGETS_CLS,
+        )}
+        data-settings-page-scroll
+      >
+        <WorkspacePageContainer
+          width={width}
+          className={cn(
+            width === "readable" &&
+              "max-w-(--settings-w) gap-7 px-6 pt-8 pb-16 sm:px-8 max-phone:px-4 max-phone:pt-6",
+            className,
+          )}
+        >
+          <div className="flex flex-col gap-3">
+            <SettingsPageHeading />
+            <SettingsScopeSentence />
+          </div>
+          {children}
+        </WorkspacePageContainer>
+      </div>
+    </SettingsSearchTargetProvider>
+  );
+}
+
+export function scrollToSettingsTarget(
+  targetId: string,
+  { highlight = true }: { readonly highlight?: boolean } = {},
+): boolean {
+  const target = document.getElementById(targetId);
+  if (!target) return false;
+  scrollAndFocusSettingsTarget(target, highlight);
+  return true;
+}

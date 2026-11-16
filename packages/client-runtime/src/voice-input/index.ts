@@ -1,0 +1,41 @@
+export {
+  VoiceInputController,
+  VOICE_RECORDING_LIMIT_SECONDS,
+  voiceInputBlocksSubmission,
+  voiceInputFreezesEditor,
+  type VoiceDraftSnapshot,
+  type VoiceInputControllerDependencies,
+  type VoiceInputPhase,
+  type VoiceInputState,
+  type VoiceRecorder,
+  type VoiceRecorderStatus,
+} from "./controller.ts";
+export {
+  VoiceTranscriptionError,
+  throwIfVoiceTranscriptionAborted,
+  type PreparedVoiceTranscription,
+  type VoiceStreamingSession,
+  type VoiceTranscriber,
+  type VoiceTranscriptionErrorCode,
+  type VoiceTranscriptionOptions,
+} from "./transcription.ts";
+export {
+  cancelEnvironmentSpeechModelDownload,
+  downloadEnvironmentSpeechModel,
+  getCloudSpeechKeys,
+  getCloudSpeechModels,
+  getEnvironmentSpeechModels,
+  requireCloudSpeechKey,
+  setCloudSpeechKey,
+  transcribeCloudPcm,
+  getEnvironmentSpeechStatus,
+  postProcessEnvironmentTranscript,
+  prepareEnvironmentSpeechModel,
+  updateEnvironmentSpeechAcceleration,
+  updateEnvironmentSpeechModelUnloadTimeout,
+  getEnvironmentSpeechStreamUrl,
+  removeEnvironmentSpeechModel,
+  selectEnvironmentSpeechModel,
+  transcribeEnvironmentPcm,
+} from "./environment.ts";
+export { openSpeechStream } from "./stream.ts";

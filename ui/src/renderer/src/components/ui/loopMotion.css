@@ -1,3 +1,0 @@
-@media (prefers-reduced-motion: reduce) {
-  .loop-anim { opacity: var(--dot-pulse-opacity, 1); }
-}

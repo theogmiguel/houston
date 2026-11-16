@@ -27,14 +27,6 @@ ui/harness-shots/
 # local CSS-conversion measuring harness, path-coupled to ui/ — never committed
 ui/p5-harness/
 
-# staged Tauri sidecars (scripts/build-app.sh copies tr-helper here as
-# tr-helper-<target triple>) — build output, never source
-src-tauri/binaries/
-
-# The Linux daemon staged for the Windows installer's WSL support
-# (scripts/build-app.ps1 fills it) — build output, never source
-src-tauri/wsl/
-
 # Local browser-inspection leftovers (Playwright CLI sessions and their screenshots)
 .playwright-cli/
 output/
@@ -48,3 +40,42 @@ __pycache__/
 
 # Local memory-tool configuration.
 .texas-ranger.toml
+
+# Imported Houston tree (v2). node_modules/ and dist/ above already cover every
+# workspace; these are the remaining build and tool outputs upstream ignores.
+.bun/
+.turbo/
+*.tsbuildinfo
+apps/*/node_modules/
+apps/*/dist/
+apps/*/dist-exe/
+packages/*/node_modules/
+packages/*/dist/
+.vite-plus/
+apps/*/.vite-plus/
+packages/*/.vite-plus/
+.houston-worktree/
+.tanstack/
+.vitest-*
+__screenshots__/
+apps/web/.playwright/
+apps/web/playwright-report/
+squashfs-root/
+.vercel/
+.gstack/
+.plans/
+audits/
+.showcase/
+.alchemy/
+.pnpm-store/
+.idea/
+
+# vitest reporter output written beside the package under test
+.vitest/
+
+# Electron host build output.
+dist-electron/
+.electron-runtime/
+
+# Electron host packaging output (AppImage, deb, NSIS, update manifests).
+release/

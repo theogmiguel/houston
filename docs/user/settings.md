@@ -1,0 +1,215 @@
+# Settings
+
+Settings is organized in groups. Every page has its own search terms; the search field in
+the settings sidebar finds a page, a section or a single setting by name.
+
+| Group       | Pages                                                                           |
+| ----------- | ------------------------------------------------------------------------------- |
+| —           | General, Appearance, Chat, Voice, Diffs & pull requests, Keybindings, SnapShots |
+| Agents      | Providers, Usage, Threads, Browser, Devices, Scheduled tasks                    |
+| Code        | Projects, Source control, Worktrees                                             |
+| Connections | Environments, Task sources, Sharing & access, Secrets                           |
+| —           | Maintenance, Labs, About, Archive                                               |
+
+Search Settings by feature or setting name. `Esc` clears an active search.
+
+## General
+
+- **Sidebar** — group matching repositories across environments, and order projects.
+- **Notifications** — thread notifications with a style (notifications, sound, both or
+  off), and in-app notifications.
+- **Confirmations** — ask before unpinning, archiving or deleting a thread, and, in the
+  desktop app, whether the quit shortcut quits directly or waits for a second press.
+- **Background** — **Keep in tray**, shown when the desktop has a working tray.
+- **Display** — interface language and timestamp format.
+
+### Language
+
+**Settings → General → Display → Language** switches the interface between English
+(default) and Português (Brasil). The change applies at once, is saved on this device and
+survives a restart. Restoring the default settings returns it to English.
+
+Only part of the interface is translated: the Settings sidebar, page titles and
+descriptions, the breadcrumb, settings search (a query matches the translated or the
+English name), and most row titles and descriptions on the General, Appearance, Chat,
+Diffs and Labs pages. Rows on the other pages are translated only where their text is
+shared with those pages. Everything else stays in English, including the thread view,
+composer, menus, dialogs, toasts, the values inside controls and text that includes
+names or numbers. Product and developer terms (Houston, thread, worktree, commit,
+pull request) are kept in English. A string without a translation is shown in English.
+
+## Appearance
+
+Colors and themes, light/dark/system mode, contrast, glass opacity, animations,
+environment identification, chat width, effort display, math rendering and composer
+context. **Typography** sets interface, prompt, code and terminal fonts, their sizes, word
+wrap and separate fonts. Custom themes can be created, duplicated, edited, exported and
+imported; VS Code theme files can be imported. See [Appearance](appearance.md).
+
+## Chat
+
+The rich-text composer, the send shortcut, whether skills appear in the `/` menu, and
+**Follow-up behavior** for a message sent while an agent is working.
+
+## Voice
+
+How speech is transcribed (an environment or a cloud provider with its API key; this device only, Off by
+default), the microphone and its test,
+the dictation shortcut, speech models and their comparison by language, language and
+translation, the personal and project dictionaries, silence filtering, filler-word removal,
+transcript cleanup, acceleration and model unload. See [Dictation](dictation.md).
+
+## Diffs & pull requests
+
+Diff layout, whitespace, default file expansion and colors. **Open pull requests and
+changes panels proactively** opens the matching panel when an agent finishes, except in layout
+panes and narrow windows.
+
+## Keybindings
+
+Every command with its current chord, condition and source. Add, change, reset or remove a
+binding; the file that stores them can be opened in your editor. The desktop's **Quick
+composer** global shortcut is here too. See [Keybindings](keybindings.md).
+
+## SnapShots
+
+Enable SnapShots, record a capture shortcut, include the captured window's text when the
+platform exposes it, and choose the capture sound, flash and animation.
+
+## Providers
+
+Add and configure providers, sign in or out, install updates, set binary paths, config
+directories, environment variables and models, and set the provider health check interval.
+Each provider shows its readiness and one action to resolve it. See
+[Install](install.md#providers) and [Agent status](agent-status.md).
+
+Claude has two switches, both on by default:
+
+- **Claude in Chrome** lets a thread's Claude use the Claude in Chrome extension to read
+  and drive your Chrome tabs. The extension and a Chromium browser are required.
+- **Artifacts** lets Claude publish pages as private Artifacts on claude.ai. The page's
+  content is sent to your Claude account, and the account must have Artifacts.
+
+## Usage
+
+Token totals, API-equivalent costs and provider limits for the threads Houston runs. See
+[Usage](usage.md).
+
+## Threads
+
+Default model, fallback model, default permissions, where new threads start (local checkout
+or new worktree), hold presets, resume and hold behavior at usage limits, auto-close on
+merge and after inactivity, the add-project base directory, host-folder clone layout, text
+generation model and instructions, and response streaming.
+
+## Browser
+
+Browser profiles, default viewport, zoom, appearance, link target, search engine, agent
+browser access, automatic floating preview, and recording options.
+
+## Devices
+
+Device sources, whether agents may use devices, and device hub settings. Platform support
+limits are named on the page. SSH device hosts currently need macOS or Linux; to use devices
+on a Windows machine, run Houston there and connect to its environment.
+
+## Scheduled tasks
+
+Prompts that run on a schedule or a webhook, with their project, provider, model, next run
+and delivery history. See [Tasks](tasks.md#scheduled-tasks).
+
+## Projects
+
+Project list, project overview (name, pin, archive, checkouts), project actions, merge queue
+settings and merge history. See [Merge queue](pull-requests.md#merge-queue).
+
+## Source control
+
+Accounts and tokens for each host, repository conventions, generated change description
+and pull request text, review guides (beta), automatic pull and the default merge method.
+
+## Worktrees
+
+Worktree location (an absolute folder; empty uses Houston's data folder), whether new
+worktrees start from the remote, submodule handling, branch
+naming, and cleanup of worktrees created by Houston.
+
+## Environments
+
+The machines Houston can run work on. Add an environment with a remote link and pairing
+code, or over SSH, choose how work is balanced across environments, and share pull requests
+between trusted environments. See [Environments and task sources](connections.md).
+
+## Task sources
+
+Slack intake, per-project GitHub issues and Notion, and the Houston 1 import.
+
+## Sharing & access
+
+This machine's version, endpoint and network access; Tailscale HTTPS; the WSL backend on
+Windows; pairing a device and the list of authorized clients. Access is granted per client
+and can be revoked.
+
+## Secrets
+
+Secret providers, currently 1Password, used as the source of a provider credential. A
+stored credential is never shown again. Source control and task source tokens are set on
+their own pages.
+
+## Maintenance
+
+Provider update checks, continuing threads after a restart, keeping the computer awake while
+agents work, background activity, database storage, browser artifacts and rotated logs, diagnostics, and **Coming from Houston 1**. See
+[Updating Houston](updating.md#coming-from-houston-1).
+
+**Keep awake while agents work** (Settings → Maintenance, on by default) stops the computer from
+sleeping while at least one agent run is active and lets it sleep about a minute after the last
+one ends. Turning it off releases the hold at once. It works on Linux (through `systemd-inhibit`)
+and Windows; on other platforms it does nothing. Closing a laptop lid still sleeps the machine.
+
+**Database** (Settings → Maintenance → Storage) appears when a database holds at least 64 MiB of
+space freed by history cleanup. **Reclaim now** returns it to disk while Houston and its agent
+runs keep working, for up to two minutes per click; click again if space is left. It needs free
+disk space next to the database for the write-ahead log and refuses, naming the amount needed
+and what is free, when there is not enough. A database created before automatic shrinking can
+only be shrunk while Houston is stopped; the page then shows the `houston doctor` command to run.
+
+Diagnostics includes **OpenTelemetry export**, which sends traces, metrics and logs to an OTLP
+receiver you choose, to Datadog, or to a Datadog Agent on this machine. See
+[Exporting diagnostics yourself](privacy.md#exporting-diagnostics-yourself).
+
+## Labs
+
+Linked environments (beta), Simlock device hosts (alpha), and optional composer features that
+are off by default: plan mode and the context window indicator.
+
+**Tool calls in chat** controls how much of the agent's work a thread shows. It applies to this
+device only.
+
+| Value               | Shows                                                                    |
+| ------------------- | ------------------------------------------------------------------------ |
+| **Show all**        | Every command, file edit and search. This is the default.                |
+| **Hide successful** | Calls that are running or failed. Completed calls are hidden.            |
+| **Hide all**        | Only failed calls. Running and completed calls are hidden.               |
+| **Zen**             | Your messages and the agent's final answer for each turn, plus failures. |
+
+In every value, approval requests, questions to you and errors stay visible, and a working
+indicator shows while the agent runs. Hidden calls are not deleted: choosing **Show all** restores
+them. While Find is open, **Zen** shows the agent's in-between messages so matches can be found.
+
+**Suggest next prompt** shows a predicted next message in the empty composer after a Claude or
+Codex turn completes. Press `Tab` to fill it in, then edit or send it, or press `Escape` to
+dismiss it. Each suggestion is one extra request that reuses the turn's prompt cache, so it uses
+a little of your plan's usage. Claude skips suggestions on the first turn of a thread and near
+usage limits. Codex needs version 0.165 or later. Threads started by another agent never
+request suggestions. Codex follows a change to the setting at once; open Claude threads follow
+it after they restart. Suggestions appear on devices with a mouse or trackpad.
+
+## About
+
+Version, update check, install, release notes and open source licenses. See
+[Updating Houston](updating.md).
+
+## Archive
+
+Archived threads, with restore and delete.

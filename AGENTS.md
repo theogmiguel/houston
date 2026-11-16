@@ -1,9 +1,9 @@
 # Houston contributor instructions
 
-Houston is a local-first desktop application for CLI coding agents on Linux and Windows.
-A Tauri client connects to a detached Rust daemon that owns real PTYs in project directories.
-The renderer presents sessions as terminal panes. Closing the application detaches the
-client; the daemon and its sessions continue running.
+Houston is a local-first desktop application for coding agents on Linux and Windows. An
+Electron host starts, or attaches to, a TypeScript server for its channel; the renderer
+presents each agent conversation as a **thread**. Closing the window keeps the host in the
+tray, so the server and its agent runs continue; quitting stops the server the host started.
 
 Prefer the smallest design that satisfies the requirement. Verify documentation against
 the implementation and correct discrepancies in the same change. If an instruction
@@ -11,131 +11,157 @@ conflicts with the task, explain the conflict and obtain maintainer direction.
 
 ## Invariants
 
-- **Terminal fidelity:** panes are real PTYs rendered with libghostty-vt. Preserve input
-  delivery; do not replace terminal interaction with chat wrappers or transcript scraping.
-- **Reported status:** use CLI lifecycle hooks or supported ACP streams for agent status.
-  Do not infer status from terminal pixels or text. Exceptions are explicitly documented
-  in [invariants](docs/internals/invariants.md).
-- **Local state:** one user, one machine, one SQLite database per channel in each
-  environment (the app's own machine, and each enabled WSL distro). Houston has no
-  telemetry service. Local-first does not mean offline: hosted agent CLIs and optional
-  network-backed features must state what they transmit and when. Updates require an
-  explicit user action. Store secrets in the OS keychain, never in the database or logs.
-- **Bounded work:** use binary PTY frames and bounded buffers. Keep JSON and continuous
-  animation off the terminal rendering hot path; verify performance with measurements.
-- **External configuration:** changes to agent CLI configuration must use reversible
-  managed-marker blocks. Never manually rewrite `~/.claude.json`.
+- **Server lifetime** (`apps/server`): the server owns threads and agent runs, and a window is
+  only a client. Closing the window stops neither the server nor its runs. Quitting stops the
+  server the host started; a server the host attached to is never stopped by it. One server
+  runs per channel; clients find it through `<channel dir>/v2/userdata/server-runtime.json`.
+- **Local state** (`<channel dir>/v2`): one user, one machine, one SQLite database per channel.
+  Upstream's tables follow upstream's migrations; Houston's tables live on the Houston migration
+  track (`houston_sql_migrations`), whose ids never enter upstream's migrator. Telemetry is
+  allowed to improve Houston: anonymous usage data and crash and diagnostic data (OpenTelemetry
+  traces, metrics and logs). It never includes source code, prompts, agent responses, file
+  contents, credentials or paths, can be turned off, and `docs/user/privacy.md` lists what is sent,
+  to whom and how to turn it off before it ships. Local-first does not mean offline: a
+  network-backed feature can be turned off, sends nothing while off, and sends no credential or
+  user content to a destination the user did not configure. Updates require an explicit user
+  action.
+- **v1 state** (`~/.houston`): v2 never deletes, moves or opens v1's state read-write. A one-time
+  import reads v1's `houston.db` read-only. The host's one v1 cleanup reads the channel
+  directory and edits only the agent CLI configs v1 changed.
+- **Reported status** (provider adapters): agent status comes from each provider adapter's
+  structured stream (SDK, app-server, server or ACP events), never from terminal output.
+- **Orchestration** (orchestration-v2): agent-to-agent work uses upstream's orchestration-v2 and
+  the server's MCP toolkits. A credential carries only the capabilities its thread needs: a
+  read-only thread runs with the provider's own read-only sandbox, no user MCP servers, and no
+  MCP credential beyond the operations it must submit.
+- **Contracts** (`packages/contracts`): every server ↔ renderer message is typed there. Houston
+  additions live under `houston/` and use `houston.*` RPC names. A new WebSocket method is listed in
+  `RpcInstrumentation.ts` and given a scope in `RpcAuthorization.ts`.
+- **External configuration** (managed-marker): changes to an agent CLI's configuration are
+  reversible managed-marker blocks. `~/.claude.json` is never rewritten; it changes only through
+  `claude mcp`.
+- **Secrets** (secret store): tokens live in the server's secret store (`ServerSecretStore`),
+  one 0600 file per secret in a 0700 directory under the channel's state, scoped by channel
+  directory, project and provider, never in the database, logs, traces, errors, RPC replies or
+  stream events. A token is bounded in size and refused by name above the bound. The OS keychain
+  is read only once, by the import of earlier builds' tokens, and never written or deleted.
+- **Untrusted input**: text from outside (GitHub, Notion, Slack, imported files) is bounded,
+  attributed and kept from acting as instructions before it reaches a prompt; text Houston sends
+  out is escaped so it cannot mention, link or close anything it did not mean to.
+- **Houston additions** (`apps/server/src/houston`): Houston code lives under `houston/`
+  directories. Ported code is pushed only with the MIT notice in `NOTICE` and
+  `third-party-licenses.config.json`.
+
+<!-- Host and renderer invariants (Theo): the Electron host, the desktop bridge, the renderer
+     base and style guards, the terminal drawer. Until then the rule below stands. -->
+
+- **Renderer:** the web app under `apps/web`. Its primitives adopt Houston's tokens and
+  recipes and are bound by the style guards; feature components that still follow the original
+  port are exempt from the feature-`className` rule until they are adapted.
 
 ## Terms
 
 Use the [glossary](docs/internals/glossary.md) consistently:
 
-- **Contributor agent:** the agent editing Houston. Check `HOUSTON_SESSION` before
-  operations that could affect the pane hosting it.
-- **Agent:** a coding CLI hosted by Houston. A **session** is its PTY (or a shell PTY);
-  a **pane** is the corresponding cell in the renderer grid.
-- **Workspace:** a project directory known to the daemon. Sessions belong to a workspace.
-  A **grid** is a named layout; its split tree lives in renderer `localStorage`, not the
-  database or wire protocol (a workspace transfer carries it as an opaque string).
-- **Daemon:** `houston-core`, which owns PTYs, storage, hooks and MCP for one **channel**.
-  The installed `release` channel uses `~/.houston`; `dev` uses `~/.houston-dev`.
-- **Hooks:** CLI lifecycle events delivered as drop files and applied by the daemon.
-- **Orchestration:** agent-to-agent operations through `pane_*` MCP tools or `hs-pane`.
-  Each signal is one inbox row, delivered through `pane_wait`, a Stop hook or a paste.
+- **Contributor agent:** the agent editing Houston. Contributor agents run in the installed
+  release built from `main`; check `HOUSTON_SESSION` before operations that could affect the
+  pane hosting it.
+- **Server:** the TypeScript server under `apps/server`, run by the host for one
+  **channel**. The installed `release` channel keeps its state in
+  `~/.houston/v2`; `dev` uses `~/.houston-dev/v2`.
+- **Thread:** a structured conversation with one agent. A **turn** is one request and its answer;
+  a **run** is the provider session that serves a thread.
+- **Side thread:** a read-only thread beside another one (an aside, a second opinion, a task
+  planner or reviewer). It never writes to its source.
+- **Orchestration:** agent-to-agent work through orchestration-v2 (`delegate_task`, subagents) and
+  the server's MCP toolkits.
+- **Houston migration track:** Houston's own migration table and ids, applied after upstream's.
+
+<!-- Host and renderer terms (Theo): workspace, pane, drawer and renderer terms. -->
 
 ## Safety boundaries
 
-1. **Identify processes by channel.** Never use `pkill -f`, `pgrep | kill`, or a PID
-   selected by matching a name or path. Confirm the target channel and use its
-   `daemon.json` PID. Production code must use `houston_core::pid` for `kill(2)`;
+1. **Identify processes by channel.** Stop a server only by the PID its channel's
+   `server-runtime.json` names. Never use `pkill -f`, `pgrep | kill`, or a PID chosen by matching a
+   name, path or parent PID. Host code signals processes only through `crate::sys::pid`;
    non-positive PIDs can broadcast signals, and casting `u32::MAX` to `pid_t` produces -1.
-2. **Protect installed state.** Never start a development daemon against `~/.houston`,
-   open its database read-write, or clean that directory. `--channel release` requires
-   explicit instruction. Installed binaries under `~/.local/lib/houston/` must remain
-   independent of the checkout; preserve `install-desktop.sh`'s repository-path refusal.
-3. **One daemon per state directory.** Preserve the advisory `daemon.lock`: competing
-   daemons would overwrite discovery state and share a database. Restart development
-   through `scripts/dev.sh --fresh` on Linux or `scripts/dev.ps1 --fresh` on Windows;
-   both refuse to restart their own hosting channel.
-4. **Never touch the host keyring.** Do not run `gnome-keyring-daemon` (least of all
-   `--unlock`) on the host: it re-encrypts the user's real login keyring and locks them
-   out. Tests that need a Secret Service run through `scripts/with-test-keyring.sh`.
+2. **Protect installed state.** Never point a development server at `~/.houston` or
+   `~/.houston/v2`, and never open v1's database read-write. `--channel release` requires
+   explicit instruction. Tests use temporary directories and never the real home.
+3. **One server per channel.** Preserve upstream's server ownership lock; a second server for the
+   same base directory exits instead of sharing its database.
+4. **Never touch the host keyring.** Server tests use the in-memory secret store and keychain
+   layers; only `server.ts` provides the live ones. Do not run `gnome-keyring-daemon` (least of all
+   `--unlock`) on the host: it re-encrypts the user's real login keyring and locks them out.
+   Host tests that need a Secret Service run through `scripts/with-test-keyring.sh`.
+5. **Never touch the user's repositories by accident.** Server git commands that act for the
+   user neutralise user configuration that could reach refs outside their own worktree
+   (`rebase.updateRefs`, `push.followTags`, hooks, signing, submodule recursion), push only with a
+   lease to branches the server owns, and leave the user's checkout byte-identical.
 
 ## Cross-surface checklist
 
 Before completing a change, identify which of these checks apply:
 
-- **Host:** `core/houston-core/src/main.rs` starts background loops through `boot.rs`.
-  The app's `daemon_host.rs` connects or spawns a detached daemon (through
-  `houston-supervisor` on Linux). The app must never invoke daemon boot loops;
-  `check-loop-spawn-sync.sh` enforces this boundary.
-- **Transport:** control JSON and binary PTY frames share the authenticated `/ws`
-  connection in the app, other clients and tests. Terminal-byte features use `server.rs`.
-- **Providers:** Claude, Codex, Antigravity, OpenCode and ZCode have distinct launch and
-  hook installation paths. Support each relevant provider or refuse it by name. Cursor,
-  Grok, Droid, Copilot and Aider are recognised identities only; they are not spawnable.
-- **Protocol:** type all `/ws` messages in `core/houston-protocol`. Bump
-  `PROTOCOL_VERSION` once per wire-changing batch, regenerate TypeScript and update
-  `protocol/protocol.md` in the same commit. Run `check-protocol-sync.sh`.
-- **State transitions:** provide reversal and visibility: spawn/kill, pin/unpin, and
-  settings with a visible current value. Errors for limits name the limit, actual value
-  and requested operation.
-- **Platforms:** Linux and Windows are supported release platforms. Linux uses Unix PTYs
-  and WebKitGTK; Windows uses ConPTY, WebView2 and an NSIS installer. Every
-  platform-specific behaviour needs an equivalent or an explicit refusal elsewhere.
-  WSL environments are Windows-only and refuse by name elsewhere; in-distro commands use
-  `wsl.exe --exec`, never `--`.
+- **Migrations:** a Houston migration takes the next free id on the Houston track. The Houston
+  runner applies every id a database has not recorded, in ascending order, so PRs that carry
+  Houston migrations may merge in any order; an id never changes once it has merged.
+- **Providers:** support each provider for a feature or refuse it by name; a refusal names the
+  provider and the missing capability.
+- **State transitions:** provide reversal and visibility, and settings with a visible current
+  value. Errors for limits name the limit, actual value and requested operation.
+- **Platforms:** Linux and Windows are supported release platforms. A platform-specific behaviour
+  has an equivalent elsewhere or a named limitation.
+- **Network:** a feature that sends anything off the machine can be disabled and sends nothing
+  while disabled, never sends credentials or user content to a destination the user did not
+  configure, and has user-facing text that is true about what it sends (it need not enumerate
+  every call).
 - **Documentation:** describe user-visible behaviour in the PR title used for release
   notes. Update the relevant `docs/user/` page when usage changes.
+
+<!-- Host, renderer and installer items (Theo). -->
 
 ## Development and verification
 
 The [development runbook](docs/operations/development.md) contains exact commands.
 
-- `scripts/dev.sh` (Linux) and `scripts/dev.ps1` (Windows) build the renderer and debug app
-  on the dev channel. There is no HMR; rebuild after changes. Live-test daemon changes with
-  the platform's development script and `--fresh`.
-- On Linux, run heavy builds under `scripts/oom-shield.sh`, with `nice -n 19` and `-j 3`.
-  On Windows, limit Cargo to three jobs. Never run concurrent Cargo workloads.
-  Run `perf_smoke` at normal priority on an idle
-  machine; results obtained under load do not establish a performance regression.
-- Agent worktrees under `.houston/worktrees/` build the dev profile only, never
-  `--release`. Create one with `pane_spawn`'s `worktree` argument (`hs-pane spawn
-  --worktree SLUG`), not `git worktree add`, so Houston records it. Remove a worktree once
-  its branch is integrated; `scripts/sweep-targets.sh` bounds what remains (see the
-  runbook's disk usage section).
-- For each change, run `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, relevant
-  test binaries and safety scripts in the affected crate. For renderer changes, run
-  `bun run typecheck` and affected tests.
-- At integration boundaries and before every push, run the full suites under the memory
-  guard. Run renderer checks in the documented order: `check:css` and `check:bundle`
-  consume build output. Use `bun run test`; `bun test` is a different runner.
-- New daemon behaviour requires an integration test in `core/houston-core/tests/`.
-  Bug fixes require a regression test that fails before the fix. Fixtures must represent
-  states the system can actually produce.
+- The server package is `houston`: run its tests with
+  `pnpm --filter @houston-app/cli exec vp test run <files>`. A filter that matches no package exits 0 without
+  running anything, and so does a `-t` pattern that matches no test, so confirm with
+  `--reporter=verbose` that a proof ran.
+- Tests come before code, and a bug fix has a regression test that fails before the fix. Fixtures
+  represent states the system can produce; composed fixtures are labelled as composed.
+- Server code that reaches a provider, GitHub, Notion, Slack or the secret store is tested against
+  replay fixtures, local fakes and the in-memory secret store, never the real service.
+- For desktop-host changes, run the package's typecheck and tests, then `cargo fmt`,
+  `cargo clippy --all-targets -- -D warnings` and `cargo test` in each native crate under
+  `apps/desktop/native` and `native`. On Linux, run heavy builds under `scripts/oom-shield.sh`,
+  with `nice -n 19` and `-j 3`. On Windows, limit Cargo to three jobs. Never run concurrent
+  Cargo workloads.
 - Diagnose failures using the discriminator appropriate to the failure mode in
   [testing](docs/internals/testing.md); a standalone rerun is not sufficient for every case.
-- Push and PR CI runs `safety-checks`, `renderer-checks`, `core-checks`, `core-integration`,
-  `linux-native-checks`, `windows-renderer-checks`, `windows-checks` and `licence-inventory`.
-  Contributors still run the full suites locally before every push.
+- Push and PR CI runs the static guards, the workspace typecheck and suites, the renderer unit
+  and browser tests, and the native checks; `ci-gate` is the single aggregate check. Contributors
+  still run the full suites locally before every push. See [CI](docs/internals/ci.md).
 
 ## Pull requests and releases
 
 - All changes to `main` go through a PR, including documentation. Merge only with green
-  CI and completed local gates. Do not assume branch protection is configured; verify
+  CI and completed local gates. Regenerate lockfiles and the licence inventory instead of
+  hand-merging them. Do not assume branch protection is configured; verify
   repository settings when administering it.
 - Use conventional PR titles that describe user-visible behaviour, for example
-  `fix(panes): a renamed pane keeps its name across respawn`. Release notes group the
+  `fix(threads): a renamed thread keeps its name after a restart`. Release notes group the
   items in each PR's `## Release notes` section; legacy titles are a fallback. Use
   explicit `None` for internal-only changes. See the release runbook for categories.
 - Explain the problem and resulting change in the PR body. Omit generated-by footers
   and agent session links. Keep one concern per commit. Destructive Git operations
   require explicit authorization.
-- Only a release changes versions. Feature PRs must not edit the four version manifests.
+- Only a release changes versions. Feature PRs must not edit the three version manifests.
   The manually dispatched **Cut release** workflow uses `scripts/set-version.sh` to update
-  all four manifests and both lockfiles, commit, tag, build and create a draft release.
-  Stable cuts require the tip of `main`, an unused tag and a version newer than the last
-  stable release. See the [release runbook](docs/operations/release.md).
+  the three manifests (`apps/desktop`, `apps/server`, `apps/web`), commit, tag, build and
+  create a draft release. Stable cuts require the tip of `main`, an unused tag and a version newer than the
+  last stable release. See the [release runbook](docs/operations/release.md).
 - A manually pushed `v*` tag starts no workflow; releases are produced only by **Cut
   release**. `build-installers.yml` builds selected OSes (both by default) and files nothing.
 
@@ -161,25 +187,45 @@ Explain constraints and usage; avoid personal narrative, unsupported claims and 
 
 ## Architecture and style
 
-The daemon owns sessions independently of connected clients. Control-plane events and
-detach drive persistence; terminal bytes use binary frames. Agent orchestration uses MCP
-on the daemon port with per-pane bearer tokens. See the
+The server owns threads and agent runs independently of connected clients. See the
 [architecture overview](docs/internals/overview.md).
 
-- `core/houston-protocol`: Rust wire schema and generated TypeScript source types.
-- `core/houston-core`: daemon, PTYs, persistence, hooks, orchestration and provider logic.
-- `src-tauri`: desktop application, daemon connection, native browser, watchdog and tray.
-- `ui/src/renderer/src`: React renderer, terminal engine, layout, components and transport.
+- `apps/server`: the server; Houston's additions under `src/houston/`.
+- `apps/web`: the renderer.
+- `packages/contracts`: the server ↔ renderer schema; Houston's under `src/houston/`.
+- `packages/*`: the provider, source-control and shared packages.
+- `apps/desktop`: the Electron host, server supervision, desktop bridge and tray.
+- `apps/desktop/native` and `native`: the host's native helper crates.
 - `scripts/`: development, build, installation and safety checks.
-  `protocol/protocol.md`: protocol reference.
-- Keep provider complexity at provider boundaries, core models testable and renderer
+- Keep provider complexity at provider boundaries, server models testable and renderer
   logic focused on presentation. Change only what the task requires.
-- Compose renderer UI from `ui/src/renderer/src/components/ui/`; add missing roles there
-  as variants with a `ui-primitives` specimen case. Feature `className` values carry
-  layout only. UI PRs attach before and after captures.
 - Comments explain non-obvious usage and follow the comment hygiene budget. Tunable
   constants need a short rationale; measure when their values affect performance.
 - Errors include the offending value and expected shape. Avoid unrelated product names
   in code and comments; document the technical constraint instead.
-- Follow the [style guide](docs/internals/styleguide.md): theme tokens, shared chrome
-  constants, `Tooltip` instead of `title`, and `Select` instead of native `<select>`.
+- Follow the [style guide](docs/internals/styleguide.md).
+
+<!-- Renderer composition and capture rules (Theo). -->
+
+### Motion
+
+The renderer ships in an Electron webview, so motion must stay on the compositor.
+
+- Name a role, never a raw value: `duration-(--motion-overlay-in)`, `ease-standard` or
+  `ease-exit`. The roles live in `apps/web/src/index.css` (`--motion-*`), mirrored for
+  script in `MOTION_ROLE_MS`/`MOTION_EASE` (`apps/web/src/motion/registry.ts`); a test keeps
+  them in step. `houston/no-raw-motion` flags raw durations, easings and `transition-all`.
+- Roles: `feedback` (hover, press, checked), `overlay` (menu, popover, tooltip, select),
+  `modal` (dialog, sheet), `toast`, `swap` (content replaced in place), `list` (row in or
+  out), `disclosure` (expand, collapse), `value` (a glyph or number that changes meaning).
+  Exits are faster than entrances and use `ease-exit`.
+- Animate only `transform` and `opacity`. No transitions on width, height, padding, margin,
+  flex-basis or inherited custom properties; no `backdrop-filter` on anything that moves;
+  `will-change` only while something moves. The exception is a surface that moves often and
+  repaints expensively: it keeps one permanent layer that no state toggles.
+- Keyboard highlights, typing, streaming text, timeline rows and thread or route switches
+  stay instant. Hover reveals fade opacity; they never toggle `display`.
+- Reduced motion (the system preference or the Appearance **Animations** switch) turns every
+  role to 0ms in CSS and `resolveMotion` returns `off` in script. Gate motion only through the
+  `motion-safe`/`motion-reduce` variants or `prefersReducedMotion`/`useReducedMotion`, never a
+  direct `prefers-reduced-motion` query.

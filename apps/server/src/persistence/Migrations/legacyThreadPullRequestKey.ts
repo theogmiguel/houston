@@ -1,0 +1,115 @@
+import type { ThreadLinkedPullRequest, ThreadPullRequestKey } from "@houston-app/contracts";
+
+/**
+ * Frozen for migrations 050 and 064: the change request URL parsing and key normalization they
+ * shipped with. Migrations are history, so they must not follow the live source control hosts.
+ */
+
+interface FrozenLink {
+  readonly host: string;
+  readonly repository: string;
+  readonly number: number;
+  readonly authority?: string;
+}
+
+const AZURE_SSH_REPOSITORY_KEY =
+  /^(?:ssh\.dev\.azure\.com|vs-ssh\.visualstudio\.com)\/v3\/([^/]+)\/([^/]+)\/([^/]+)$/u;
+const AZURE_VISUALSTUDIO_REPOSITORY_KEY =
+  /^([^.]+)\.visualstudio\.com\/(?:defaultcollection\/)?([^/]+)\/_git\/([^/]+)$/u;
+
+function canonicalRepositoryKey(key: string): string {
+  return key
+    .replace(AZURE_SSH_REPOSITORY_KEY, "dev.azure.com/$1/$2/_git/$3")
+    .replace(AZURE_VISUALSTUDIO_REPOSITORY_KEY, "dev.azure.com/$1/$2/_git/$3");
+}
+
+function isHostOf(hostname: string, apex: string, label: string): boolean {
+  return hostname === apex || hostname.endsWith(`.${apex}`) || hostname.split(".").includes(label);
+}
+
+function claim(host: string, match: RegExpExecArray | null): FrozenLink | null {
+  const repository = match?.[1];
+  const number = Number(match?.[2]);
+  return repository && Number.isSafeInteger(number) && number > 0
+    ? { host, repository: repository.toLowerCase(), number }
+    : null;
+}
+
+const PULL_OR_PULLS_PATH = /^\/([^/]+\/[^/]+)\/pulls?\/(\d+)(?:\/|$)/u;
+const PULL_PATH = /^\/([^/]+\/[^/]+)\/pull\/(\d+)(?:\/|$)/u;
+const FORGEJO_PATTERN = /^\/([^/]+(?:\/[^/]+)+)\/pulls\/(\d+)(?:\/|$)/u;
+const GITLAB_PATTERN = /^\/([^/]+(?:\/[^/]+)+)\/-\/merge_requests\/(\d+)(?:\/|$)/u;
+const PULL_REQUESTS_PATH = /^\/([^/]+\/[^/]+)\/pull-requests\/(\d+)(?:\/|$)/u;
+const AZURE_PATTERN = /^\/((?:[^/]+\/)*_git\/[^/]+)\/pullrequest\/(\d+)(?:\/|$)/u;
+
+function parseChangeRequestUrl(targetUrl: string): FrozenLink | null {
+  let url: URL;
+  try {
+    url = new URL(targetUrl);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+  const host = url.hostname.toLowerCase();
+
+  if (host === "git.cafe" || host === "staging.git.cafe") {
+    const match = PULL_OR_PULLS_PATH.exec(url.pathname);
+    if (match) return claim(host, match);
+  } else {
+    if (isHostOf(host, "github.com", "github")) {
+      const match = PULL_PATH.exec(url.pathname);
+      if (match) return claim(host, match);
+    }
+    const forgejo = FORGEJO_PATTERN.exec(url.pathname);
+    if (forgejo) {
+      const link = claim(host, forgejo);
+      return link === null ? null : { ...link, authority: url.host.toLowerCase() };
+    }
+    const gitlab = GITLAB_PATTERN.exec(url.pathname);
+    if (gitlab) return claim(host, gitlab);
+    if (isHostOf(host, "bitbucket.org", "bitbucket")) {
+      const match = PULL_REQUESTS_PATH.exec(url.pathname);
+      if (match) return claim(host, match);
+    }
+  }
+  const azure = AZURE_PATTERN.exec(url.pathname);
+  const link = claim(host, azure);
+  return link === null || url.port === "" ? link : { ...link, authority: url.host.toLowerCase() };
+}
+
+function normalizeThreadPullRequestKey(
+  key: ThreadPullRequestKey & { readonly authority?: string },
+): ThreadPullRequestKey {
+  const canonical = canonicalRepositoryKey(
+    `${(key.authority ?? key.host).trim().toLowerCase()}/${key.repository.trim().toLowerCase()}`,
+  );
+  const separator = canonical.indexOf("/");
+  return {
+    host: canonical.slice(0, separator),
+    repository: canonical.slice(separator + 1),
+    number: key.number,
+  };
+}
+
+export function legacyThreadPullRequestKey(
+  linked: Pick<ThreadLinkedPullRequest, "repository" | "number" | "url">,
+): ThreadPullRequestKey {
+  const parsed = parseChangeRequestUrl(linked.url);
+  if (parsed !== null && parsed.number === linked.number) {
+    const canonical = canonicalRepositoryKey(`${parsed.host}/${parsed.repository}`);
+    if (parsed.authority !== undefined || canonical.startsWith("dev.azure.com/")) {
+      return normalizeThreadPullRequestKey(parsed);
+    }
+  }
+  let host: string;
+  try {
+    host = new URL(linked.url).hostname;
+  } catch {
+    host = "unknown";
+  }
+  return {
+    host: host.trim().toLowerCase() || "unknown",
+    repository: linked.repository.trim().toLowerCase(),
+    number: linked.number,
+  };
+}

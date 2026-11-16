@@ -126,41 +126,11 @@ if ($Fresh) {
     }
 }
 
-$App = Join-Path $Root 'src-tauri\target\debug\houston-tauri.exe'
+$Launcher = Join-Path $Root 'apps\desktop\scripts\start-electron.mjs'
 
-Write-Host '[dev] building the renderer...'
-Invoke-BuildStep -WorkingDirectory (Join-Path $Root 'ui') -FilePath 'bun' -ArgumentList @('run', 'build')
+Write-Host '[dev] building the v2 web renderer, server and desktop host...'
+Invoke-BuildStep -WorkingDirectory $Root -FilePath 'npx' -ArgumentList @('-y', 'pnpm@12.14.0', 'run', 'build:desktop')
 
-Write-Host '[dev] building the daemon and hook helper (debug)...'
-Invoke-BuildStep -WorkingDirectory (Join-Path $Root 'core') -FilePath 'cargo' -ArgumentList @('build', '--bin', 'houston-core', '--bin', 'tr-helper')
-
-$RustcVersion = & rustc -vV
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-$HostTriple = ($RustcVersion | Where-Object { $_ -match '^host: ' }) -replace '^host: ', ''
-if ([string]::IsNullOrWhiteSpace($HostTriple)) {
-    throw '[dev] could not read the host target triple from rustc -vV'
-}
-$SidecarDir = Join-Path $Root 'src-tauri\binaries'
-New-Item -ItemType Directory -Path $SidecarDir -Force | Out-Null
-foreach ($Sidecar in @('tr-helper', 'houston-core')) {
-    Copy-Item -LiteralPath (Join-Path $Root "core\target\debug\$Sidecar.exe") -Destination (Join-Path $SidecarDir "$Sidecar-$HostTriple.exe") -Force
-}
-
-Write-Host '[dev] building the app (debug)...'
-Invoke-BuildStep -WorkingDirectory (Join-Path $Root 'src-tauri') -FilePath 'cargo' -ArgumentList @('build')
-
-if (-not (Test-Path -LiteralPath $App)) {
-    Write-DevErr @("[dev] app binary missing at $App after a successful build - did the bin name change in src-tauri/Cargo.toml?")
-    exit 1
-}
-
-$env:HOUSTON_DAEMON_BIN_DIR = Join-Path $Root 'core\target\debug'
-
-$AppArgs = @('--channel', $env:HOUSTON_CHANNEL)
-if ($Fresh) {
-    $AppArgs += '--daemon-fresh'
-}
-
-Write-Host "[dev] starting the app on channel '$env:HOUSTON_CHANNEL'... (Ctrl+C ends it AND its sessions)"
-& $App @AppArgs
+Write-Host "[dev] starting the desktop app on channel '$env:HOUSTON_CHANNEL'... (Ctrl+C ends it AND its sessions)"
+& node $Launcher
 exit $LASTEXITCODE

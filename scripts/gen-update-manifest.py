@@ -24,48 +24,69 @@ from urllib.parse import quote
 # Debian bundle arch names differ from the platform key's (amd64 -> x86_64).
 ARCHES = {
     "amd64": "x86_64",
+    "x86_64": "x86_64",
     "x64": "x86_64",
     "aarch64": "aarch64",
     "arm64": "aarch64",
     "armv7": "armv7",
+    "armv7l": "armv7",
     "armhf": "armv7",
     "i686": "i686",
     "i386": "i686",
 }
 EXPECTED_LINUX_ARCHES = {"x86_64", "aarch64"}
 EXPECTED_WINDOWS_ARCHES = {"x86_64"}
+EXPECTED_MACOS_ARCHES = {"x86_64", "aarch64"}
 
-# Order matters: the .tar.gz suffix is the AppImage updater payload in Tauri's
-# v1-compatible mode and would otherwise be read as an unknown artifact.
+# The desktop package names its artifacts Houston-<version>-<arch>.<ext>; the
+# arch token is electron-builder's: x86_64 for AppImage and Windows x64, amd64
+# for deb, and x64/arm64 for NSIS and macOS.
+VERSION_PATTERN = r"\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z.]*)?"
 BUNDLES = (
-    (
-        "appimage_tar",
-        re.compile(
-            r"^Houston_(?P<version>[^_]+)_(?P<arch>amd64|aarch64|armv7|i686)\.AppImage\.tar\.gz$"
-        ),
-    ),
     (
         "appimage",
         re.compile(
-            r"^Houston_(?P<version>[^_]+)_(?P<arch>amd64|aarch64|armv7|i686)\.AppImage$"
+            rf"^Houston-(?P<version>{VERSION_PATTERN})-(?P<arch>x86_64|arm64|armv7l|i386)\.AppImage$"
         ),
     ),
     (
         "deb",
         re.compile(
-            r"^Houston_(?P<version>[^_]+)_(?P<arch>amd64|arm64|i386|armhf)\.deb$"
+            rf"^Houston-(?P<version>{VERSION_PATTERN})-(?P<arch>amd64|arm64|i386|armhf)\.deb$"
         ),
     ),
     (
         "nsis",
-        re.compile(r"^Houston_(?P<version>[^_]+)_(?P<arch>x64|arm64)-setup\.exe$"),
+        re.compile(
+            rf"^Houston-(?P<version>{VERSION_PATTERN})-(?P<arch>x64|arm64)-setup\.exe$"
+        ),
+    ),
+    # The bridge has no Tauri .app.tar.gz to reuse: the macOS build repacks the
+    # packaged .app under this name so installed Tauri copies can update.
+    (
+        "macos_app",
+        re.compile(
+            rf"^Houston-(?P<version>{VERSION_PATTERN})-(?P<arch>x64|arm64)\.app\.tar\.gz$"
+        ),
+    ),
+    (
+        "dmg",
+        re.compile(
+            rf"^Houston-(?P<version>{VERSION_PATTERN})-(?P<arch>x64|arm64)\.dmg$"
+        ),
     ),
 )
 
+SERVER_ARCHIVE = re.compile(
+    r"^houston-(?P<version>[^/]+)-(?:linux|darwin)-(?:x64|arm64)\.tar\.gz$"
+)
+# electron-updater's own feed files ride along in the same release; they carry
+# sha512 rather than Minisign signatures and are not part of latest.json.
+ELECTRON_UPDATER_METADATA = re.compile(r"^latest(?:-[A-Za-z0-9]+)*\.ya?ml$")
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.+-]+)?$")
 REPOSITORY_RE = re.compile(r"^[^/\s]+/[^/\s]+$")
 TAG_RE = re.compile(r"^[0-9A-Za-z._+-]+$")
-TAURI_CONFIG = Path(__file__).resolve().parent.parent / "src-tauri/tauri.conf.json"
+PUBLIC_KEY = Path(__file__).resolve().parent / "updater-pubkey.txt"
 
 
 class Refused(Exception):
@@ -111,12 +132,18 @@ def read_signature(path: Path) -> str:
     return text
 
 
-def verify_signatures(artifacts: Path, signatures: dict[str, str], config: Path):
+def verify_signatures(artifacts: Path, signatures: dict[str, str], public_key_file: Path):
     try:
-        encoded_key = json.loads(config.read_text(encoding="utf-8"))["plugins"]["updater"]["pubkey"]
+        encoded_key = public_key_file.read_text(encoding="utf-8").strip()
         public_key = base64.b64decode(encoded_key, validate=True)
-    except (OSError, ValueError, KeyError, TypeError) as error:
-        raise Refused(f"{config}: expected a Tauri updater public key: {error}") from error
+    except (OSError, ValueError, TypeError) as error:
+        raise Refused(
+            f"{public_key_file}: expected the base64 Minisign public key installed copies trust: {error}"
+        ) from error
+    if not public_key.startswith(b"untrusted comment:"):
+        raise Refused(
+            f"{public_key_file}: decoded to {public_key[:24]!r}; expected a Minisign public key beginning with `untrusted comment:`"
+        )
 
     with tempfile.TemporaryDirectory(prefix="houston-signatures-") as tmp:
         key_path = Path(tmp) / "updater.pub"
@@ -140,7 +167,9 @@ def verify_signatures(artifacts: Path, signatures: dict[str, str], config: Path)
                 ) from error
             if result.returncode:
                 reason = result.stderr.strip() or result.stdout.strip()
-                raise Refused(f"{name}: signature does not verify against {config}: {reason}")
+                raise Refused(
+                    f"{name}: signature does not verify against {public_key_file}: {reason}"
+                )
 
 
 def collect(
@@ -149,10 +178,12 @@ def collect(
     signatures: dict[str, str],
     *,
     include_windows: bool,
-) -> tuple[dict[str, dict[str, Bundle]], dict[str, Bundle]]:
+    include_macos: bool,
+) -> tuple[dict[str, dict[str, Bundle]], dict[str, Bundle], dict[str, dict[str, Bundle]]]:
     artifact_version = version.split("+", 1)[0]
     linux: dict[str, dict[str, Bundle]] = {}
     windows: dict[str, Bundle] = {}
+    darwin: dict[str, dict[str, Bundle]] = {}
     sig_names: set[str] = set()
 
     for path in sorted(artifacts.iterdir()):
@@ -162,6 +193,20 @@ def collect(
             raise Refused(
                 f"{path.name} is already in the artifact set; the publish stage generates it and will not ship a second copy"
             )
+        # Server archives, their checksums and electron-updater's own feed files
+        # ride along in the same release, but latest.json describes only the
+        # Minisign-signed bundles installed Tauri copies consume.
+        if path.name == "SHA256SUMS":
+            continue
+        if ELECTRON_UPDATER_METADATA.match(path.name):
+            continue
+        server_archive = SERVER_ARCHIVE.match(path.name)
+        if server_archive:
+            if server_archive.group("version") != artifact_version:
+                raise Refused(
+                    f"{path.name} carries version {server_archive.group('version')}, but this release is {version}"
+                )
+            continue
         if path.name.endswith(".sig"):
             sig_names.add(path.name[: -len(".sig")])
             signatures[path.name[: -len(".sig")]] = read_signature(path)
@@ -169,8 +214,10 @@ def collect(
         found = match_bundle(path.name)
         if found is None:
             raise Refused(
-                f"unrecognised artifact {path.name}; expected only Houston_<version>_<arch>.AppImage, "
-                f"Houston_<version>_<arch>.deb, Houston_<version>_<arch>-setup.exe, their .sig files, and nothing else"
+                f"unrecognised artifact {path.name}; expected only Houston-<version>-<arch>.AppImage, "
+                f"Houston-<version>-<arch>.deb, Houston-<version>-<arch>-setup.exe, "
+                f"Houston-<version>-<arch>.app.tar.gz, Houston-<version>-<arch>.dmg, their .sig files, "
+                f"and electron-updater's latest*.yml"
             )
         kind, file_version, arch = found
         if file_version != artifact_version:
@@ -185,6 +232,13 @@ def collect(
                     f"two Windows NSIS installers for {arch}: {windows[arch].name} and {path.name}; expected one"
                 )
             windows[arch] = bundle
+        elif kind in ("macos_app", "dmg"):
+            by_kind = darwin.setdefault(arch, {})
+            if kind in by_kind:
+                raise Refused(
+                    f"two {kind} bundles for {arch}: {by_kind[kind].name} and {path.name}; expected one"
+                )
+            by_kind[kind] = bundle
         else:
             by_kind = linux.setdefault(arch, {})
             if kind in by_kind:
@@ -193,7 +247,11 @@ def collect(
                 )
             by_kind[kind] = bundle
 
-    every = [b for by_kind in linux.values() for b in by_kind.values()] + list(windows.values())
+    every = (
+        [b for by_kind in linux.values() for b in by_kind.values()]
+        + list(windows.values())
+        + [b for by_kind in darwin.values() for b in by_kind.values()]
+    )
     missing_sigs = sorted(b.name for b in every if b.name not in sig_names)
     if missing_sigs:
         raise Refused(
@@ -210,7 +268,7 @@ def collect(
         problems.append(f"missing the Linux bundles for {arch}")
     for arch in sorted(EXPECTED_LINUX_ARCHES & linux.keys()):
         by_kind = linux[arch]
-        if not {"appimage", "appimage_tar"} & by_kind.keys():
+        if "appimage" not in by_kind:
             problems.append(f"missing the Linux AppImage for {arch}")
         if "deb" not in by_kind:
             problems.append(f"missing the Linux .deb for {arch}")
@@ -219,17 +277,31 @@ def collect(
             problems.append(f"missing the Windows NSIS setup .exe for {arch}")
     elif windows:
         problems.append("Windows artifacts were provided for a Linux-only release")
+    if include_macos:
+        for arch in sorted(EXPECTED_MACOS_ARCHES - darwin.keys()):
+            problems.append(f"missing the macOS bundles for {arch}")
+        for arch in sorted(EXPECTED_MACOS_ARCHES & darwin.keys()):
+            by_kind = darwin[arch]
+            if "macos_app" not in by_kind:
+                problems.append(f"missing the macOS updater .app.tar.gz for {arch}")
+            if "dmg" not in by_kind:
+                problems.append(f"missing the macOS .dmg for {arch}")
+    elif darwin:
+        problems.append("macOS artifacts were provided for a release that excludes macOS")
     unexpected_linux = sorted(linux.keys() - EXPECTED_LINUX_ARCHES)
     unexpected_windows = sorted(windows.keys() - EXPECTED_WINDOWS_ARCHES)
+    unexpected_darwin = sorted(darwin.keys() - EXPECTED_MACOS_ARCHES)
     if unexpected_linux:
         problems.append(f"unsupported Linux architecture(s) {', '.join(unexpected_linux)}")
     if unexpected_windows:
         problems.append(f"unsupported Windows architecture(s) {', '.join(unexpected_windows)}")
+    if unexpected_darwin:
+        problems.append(f"unsupported macOS architecture(s) {', '.join(unexpected_darwin)}")
     if problems:
         raise Refused(
             f"invalid artifact set: {', '.join(problems)}; a release carries every official platform's bundle"
         )
-    return linux, windows
+    return linux, windows, darwin
 
 
 def assemble(
@@ -241,7 +313,8 @@ def assemble(
     repository: str,
     pub_date: str | None = None,
     include_windows: bool = True,
-    tauri_config: Path = TAURI_CONFIG,
+    include_macos: bool = True,
+    public_key_file: Path = PUBLIC_KEY,
 ) -> dict:
     if not VERSION_RE.match(version):
         raise Refused(f"version {version!r} is not semver; expected MAJOR.MINOR.PATCH with optional -rc.N or +build metadata")
@@ -251,10 +324,14 @@ def assemble(
         raise Refused(f"tag {tag!r} is not a URL-safe git tag; expected e.g. v0.11.0 or v0.12.0-rc.1")
 
     signatures: dict[str, str] = {}
-    linux, windows = collect(
-        artifacts_dir, version, signatures, include_windows=include_windows
+    linux, windows, darwin = collect(
+        artifacts_dir,
+        version,
+        signatures,
+        include_windows=include_windows,
+        include_macos=include_macos,
     )
-    verify_signatures(artifacts_dir, signatures, tauri_config)
+    verify_signatures(artifacts_dir, signatures, public_key_file)
 
     notes = notes_file.read_text(encoding="utf-8").strip()
     if not notes:
@@ -271,13 +348,18 @@ def assemble(
     platforms: dict[str, dict] = {}
     for arch in sorted(linux):
         by_kind = linux[arch]
-        appimage = by_kind.get("appimage_tar") or by_kind["appimage"]
+        appimage = by_kind["appimage"]
         platforms[f"linux-{arch}"] = entry(appimage)
         platforms[f"linux-{arch}-appimage"] = entry(appimage)
         platforms[f"linux-{arch}-deb"] = entry(by_kind["deb"])
     for arch in sorted(windows):
         platforms[f"windows-{arch}"] = entry(windows[arch])
         platforms[f"windows-{arch}-nsis"] = entry(windows[arch])
+    for arch in sorted(darwin):
+        app = darwin[arch]["macos_app"]
+        platforms[f"darwin-{arch}"] = entry(app)
+        # The host names the running bundle type, which is always App on macOS.
+        platforms[f"darwin-{arch}-app"] = entry(app)
 
     if pub_date is None:
         pub_date = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -299,13 +381,23 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--repository", required=True)
     parser.add_argument("--pub-date", default=None)
     parser.add_argument(
-        "--tauri-config", type=Path, default=TAURI_CONFIG,
-        help="Tauri configuration containing the trusted updater public key",
+        "--public-key", type=Path, default=PUBLIC_KEY,
+        help="File containing the base64 Minisign public key installed copies trust",
     )
     parser.add_argument(
         "--linux-only",
         action="store_true",
-        help="accept and publish the complete Linux artifact set without Windows",
+        help="accept and publish the complete Linux artifact set without Windows or macOS",
+    )
+    parser.add_argument(
+        "--no-windows",
+        action="store_true",
+        help="accept and publish Linux and macOS without Windows installers",
+    )
+    parser.add_argument(
+        "--no-macos",
+        action="store_true",
+        help="accept and publish Linux and Windows without macOS bundles",
     )
     args = parser.parse_args(argv)
 
@@ -317,8 +409,9 @@ def main(argv: list[str]) -> int:
             tag=args.tag,
             repository=args.repository,
             pub_date=args.pub_date,
-            include_windows=not args.linux_only,
-            tauri_config=args.tauri_config,
+            include_windows=not args.linux_only and not args.no_windows,
+            include_macos=not args.linux_only and not args.no_macos,
+            public_key_file=args.public_key,
         )
     except Refused as refused:
         print(f"error: {refused}", file=sys.stderr)

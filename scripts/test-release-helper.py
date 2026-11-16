@@ -258,11 +258,11 @@ Ignored
         with self.assertRaisesRegex(helper.Refused, "Expected API array"):
             helper.baseline(self.client, SOURCE)
 
-    def test_main_ci_exact_sha_and_all_eight_jobs(self):
+    def test_main_ci_exact_sha_and_the_gate_job(self):
         self.fake.ci()
         result = helper.preflight(self.client, SOURCE)
         self.assertEqual(result["source_sha"], SOURCE)
-        self.assertEqual(len(result["required_jobs"]), 8)
+        self.assertEqual(result["required_jobs"], ["ci-gate"])
 
     def test_wrong_sha_branch_or_event_ci_refuses(self):
         for fixture in (run(sha=OLD), run(branch="feature"), run(event="pull_request")):
@@ -290,10 +290,10 @@ Ignored
 
     def test_missing_skipped_failed_or_pending_required_job_refuses(self):
         good = [{"name": n, "status": "completed", "conclusion": "success"} for n in helper.REQUIRED_JOBS]
-        for bad in (good[1:], [dict(j, conclusion="skipped") for j in good],
+        for bad in ([], [dict(j, conclusion="skipped") for j in good],
                     [dict(j, conclusion="failure") for j in good], [dict(j, status="in_progress") for j in good]):
             self.fake.ci(jobs=bad)
-            with self.subTest(jobs=bad), self.assertRaisesRegex(helper.Refused, "safety-checks"):
+            with self.subTest(jobs=bad), self.assertRaisesRegex(helper.Refused, "ci-gate"):
                 helper.preflight(self.client, SOURCE)
 
     def test_runs_and_jobs_paginated(self):

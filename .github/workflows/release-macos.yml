@@ -1,0 +1,210 @@
+name: Build macOS packages (internal)
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: "Manifest version from the version-guard job: names the uploaded artifact and must match the checked-out tree"
+        type: string
+        required: true
+      ref:
+        description: "Commit to build; a cut passes its tag and Build installers passes a resolved SHA"
+        type: string
+        required: false
+        default: ""
+      tauri_cli_version:
+        description: "Pinned Tauri CLI version, used only for Minisign signing so installed Tauri copies can update"
+        type: string
+        required: true
+      require_signing:
+        description: "Fail when the updater signing secrets are absent; a real release passes true, a dry run false"
+        type: boolean
+        required: false
+        default: true
+    secrets:
+      # Declared so a caller can see the contract; both are optional because a
+      # dry run passes no secrets. Callers use `secrets: inherit`.
+      TAURI_SIGNING_PRIVATE_KEY:
+        description: "Updater signing key. Set, the macOS .app.tar.gz and .dmg ship a .sig beside them"
+        required: false
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+        description: "Passphrase for TAURI_SIGNING_PRIVATE_KEY; leave unset for an unencrypted key"
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  macos-bundle:
+    # One native runner per architecture: the Node server and its native
+    # packages are not portable across arches. Intel uses the only label GitHub
+    # still publishes for x86_64. macOS is an unsigned internal build.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    env:
+      HOUSTON_CHANNEL: dev
+    steps:
+      - name: Record start time
+        run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+
+      # The whole tree must be the release commit, not just the file a bundle
+      # filename reads: every manifest reports its own version at runtime.
+      - name: Require the checked-out tree to carry the release version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          base="${VERSION%%+*}"
+          [ -n "$base" ] || { echo "::error::version input '$VERSION' has no base before its + build metadata"; exit 1; }
+          ./scripts/set-version.sh --check "$base"
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/native/houston-v1-cleanup
+          key: release-macos-${{ matrix.arch }}
+          cache-on-failure: true
+
+      - name: Cache the pinned Tauri CLI
+        id: tauri-cli-cache
+        uses: actions/cache@v5
+        with:
+          path: ~/.cargo/bin/cargo-tauri
+          key: cargo-tauri-${{ inputs.tauri_cli_version }}-macos-${{ matrix.arch }}
+      - name: Install the pinned Tauri CLI for Minisign signing
+        if: steps.tauri-cli-cache.outputs.cache-hit != 'true'
+        run: cargo install tauri-cli --version ${{ inputs.tauri_cli_version }} --locked
+
+      # Secrets cannot be used in an `if:`, so they are read into env here and
+      # tested; the decision travels on as a step output. Updater signing is
+      # required for a cut.
+      - name: Decide which signing path this run takes
+        id: signing
+        env:
+          REQUIRE_SIGNING: ${{ inputs.require_signing }}
+          SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$SIGNING_KEY" ]; then
+            if [ "$REQUIRE_SIGNING" = "true" ]; then
+              echo "::error::this release is signed and TAURI_SIGNING_PRIVATE_KEY is missing. Set it under Settings -> Secrets and variables -> Actions; latest.json cannot carry a verifiable macOS signature without it."
+              exit 1
+            fi
+            echo "updater_signed=false" >> "$GITHUB_OUTPUT"
+            echo "TAURI_SIGNING_PRIVATE_KEY is not set and this run does not require signing: the macOS bundle ships without updater signatures, and no updater can verify it." >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "TAURI_SIGNING_PRIVATE_KEY<<HOUSTON_SIGNING_KEY_EOF"
+              printf '%s\n' "$SIGNING_KEY"
+              echo "HOUSTON_SIGNING_KEY_EOF"
+            } >> "$GITHUB_ENV"
+            if [ -n "$SIGNING_KEY_PASSWORD" ]; then
+              {
+                echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD<<HOUSTON_SIGNING_PASSWORD_EOF"
+                printf '%s\n' "$SIGNING_KEY_PASSWORD"
+                echo "HOUSTON_SIGNING_PASSWORD_EOF"
+              } >> "$GITHUB_ENV"
+            fi
+            echo "updater_signed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # The desktop and server bundles use the Node version the workspace pins
+      # in package.json engines.node, not the runner's default.
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: package.json
+          cache: pnpm
+      - name: Install the workspace
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the DMG
+        env:
+          VERSION: ${{ inputs.version }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          rm -rf release
+          base="${VERSION%%+*}"
+          node scripts/build-desktop-artifact.ts \
+            --platform mac --target dmg --arch "$ARCH" \
+            --version "$base" --output-dir release --verbose
+
+      # The DMG is the installer a person opens; the bridge gives installed
+      # Tauri copies a signed .app.tar.gz for their own updater.
+      - name: Collect the app, DMG and updater archive
+        env:
+          VERSION: ${{ inputs.version }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          mkdir -p dist
+          base="${VERSION%%+*}"
+          unpacked="release/mac"
+          [ "$ARCH" = "arm64" ] && unpacked="release/mac-arm64"
+          [ -d "$unpacked/Houston.app" ] || { echo "::error::expected $unpacked/Houston.app after the desktop build"; exit 1; }
+          tar -czf "dist/Houston-${base}-${ARCH}.app.tar.gz" -C "$unpacked" Houston.app
+
+          dmgs=(release/*.dmg)
+          [ "${#dmgs[@]}" -eq 1 ] || { echo "::error::the desktop build produced ${#dmgs[@]} DMGs, expected one: ${dmgs[*]}"; exit 1; }
+          cp "${dmgs[0]}" "dist/Houston-${base}-${ARCH}.dmg"
+
+      - name: Sign the DMG and the updater archive
+        if: steps.signing.outputs.updater_signed == 'true'
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for artifact in dist/*.dmg dist/*.app.tar.gz; do
+            cargo tauri signer sign "$artifact"
+          done
+
+      - name: Assert the updater signatures and the DMG
+        env:
+          VERSION: ${{ inputs.version }}
+          ARCH: ${{ matrix.arch }}
+          SIGNED: ${{ steps.signing.outputs.updater_signed }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          dmgs=(dist/*.dmg)
+          [ "${#dmgs[@]}" -eq 1 ] || { echo "::error::expected exactly one DMG in dist, found ${#dmgs[@]}"; exit 1; }
+          if [ "$SIGNED" = "true" ]; then
+            for artifact in dist/*.dmg dist/*.app.tar.gz; do
+              [ -f "$artifact.sig" ] || { echo "::error::$artifact has no .sig beside it, but this run has TAURI_SIGNING_PRIVATE_KEY"; exit 1; }
+            done
+            ls -lh dist
+          else
+            echo "unsigned run: $(ls -1 dist)"
+          fi
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: houston-${{ inputs.version }}-macos-${{ matrix.arch }}
+          path: dist/
+          if-no-files-found: error
+
+      - name: Record job timing
+        if: always()
+        continue-on-error: true
+        run: |
+          elapsed=$(( $(date +%s) - JOB_START ))
+          {
+            echo "| Job | Elapsed (s) |"
+            echo "|---|---|"
+            echo "| macos-bundle (${{ matrix.arch }}) | $elapsed |"
+          } >> "$GITHUB_STEP_SUMMARY"

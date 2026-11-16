@@ -1,0 +1,40 @@
+{
+  "name": "@houston-app/provider-testing",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./fakeCli": {
+      "types": "./src/fakeCli.ts",
+      "import": "./src/fakeCli.ts"
+    },
+    "./replayGate": {
+      "types": "./src/replayGate.ts",
+      "import": "./src/replayGate.ts"
+    },
+    "./replayTranscript": {
+      "types": "./src/replayTranscript.ts",
+      "import": "./src/replayTranscript.ts"
+    },
+    "./replayWorkspace": {
+      "types": "./src/replayWorkspace.ts",
+      "import": "./src/replayWorkspace.ts"
+    },
+    "./TestProviderHost": {
+      "types": "./src/TestProviderHost.ts",
+      "import": "./src/TestProviderHost.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@effect/platform-node": "catalog:",
+    "@houston-app/contracts": "workspace:*",
+    "@houston-app/provider-core": "workspace:*",
+    "@houston-app/shared": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:"
+  }
+}

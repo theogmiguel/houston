@@ -15,29 +15,23 @@ backported patch.
 ## Scope
 
 Houston is a local, single-user app with no Houston account or hosted control plane. The
-daemon's control endpoint listens on loopback only; the optional remote access listener is
-off by default and serves only devices the user paired. Network-backed features are explicit, including hosted agent CLIs,
-GitHub operations, browser and MCP integrations, model downloads and optional cloud
+server listens on loopback unless **Network access** is turned on, and remote access serves
+only devices the user paired. Network-backed features are explicit, including hosted agent
+CLIs, GitHub operations, browser and MCP integrations, model downloads and optional cloud
 dictation. The security-sensitive surfaces include:
 
-- **The per-pane MCP credential** — the bearer token that scopes what a pane's agent can
-  address over Houston's own MCP endpoint.
-- **The browser pane's consent model** — the native browser pane your agents can drive,
-  and how it confirms a destructive act before it happens.
-- **The OS keychain** — where Houston stores secrets, and never in the database or the log.
+- **The thread-scoped MCP credential** — the credential that scopes what a thread's agent
+  can address over Houston's own MCP endpoint. A read-only thread gets no more than the
+  operations it must submit.
+- **The browser panel's consent model** — the browser panel your agents can drive, and how it
+  asks for confirmation before a destructive act.
+- **The secret store** — where Houston stores secrets, one 0600 file each in a 0700
+  directory, and never in the database or the log.
 - **Network-backed features** — particularly browser automation, MCP servers and cloud
   dictation, which can transmit user-selected content to external services.
-- **Remote access** — the opt-in listener for paired phones and computers: pairing codes,
-  per-device bearer tokens (only their SHA-256 is stored), the Host and Origin checks and
-  the authentication lockout, and the HTTPS it serves on a private address: a local
-  certificate authority whose key is in the OS keychain and whose name constraints limit it
-  to private addresses and `.local` names. A paired device can read and type into every
-  pane, which is equivalent to a shell as the user; a way to obtain that access without
-  pairing, to reach the control endpoint through this listener, or to make the authority
-  certify a name outside its constraints, is in scope. Hook drops carry bounded,
-  masked tool targets and Claude edit previews as an exception to digest-only tool inputs.
-  The daemon retains these previews only in memory while remote access is on; incomplete
-  previews cannot be approved remotely.
+- **Remote access** — the opt-in listener for paired devices: pairing codes, per-device
+  sessions, the Host and Origin checks, and the optional Tailscale HTTPS address. A way to
+  obtain a paired device's access without pairing is in scope.
 - **Writes into another CLI's own config** — the managed-marker blocks Houston installs
   into an agent CLI's hooks or MCP configuration.
 

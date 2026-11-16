@@ -1,50 +1,102 @@
 name: CI
 
-# Public and fork-gated: PRs run safety scripts, renderer/core suites and every Linux
-# houston-core integration test. Load-sensitive gates stay local (docs/operations/development.md).
-# Windows runs core unit tests and portable ConPTY regressions.
+# The single gate for pull requests and pushes to main. Heavy jobs run on
+# the runner variables documented in docs/internals/ci.md, so switching to a
+# faster provider is a repository-variable change rather than a workflow edit.
 on:
-  pull_request: {}
+  pull_request:
+    branches: [main, v2]
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
-    branches: [main]
-    # Push only, not pull_request: once these jobs are required checks, a
-    # docs-only PR that skipped them via paths-ignore could never satisfy a
-    # required check and would never merge.
-    paths-ignore:
-      - '**/*.md'
-      - 'docs/**'
-      - '.gitignore'
-      - 'LICENSE'
+    branches: [main, v2]
   workflow_dispatch:
 
-# A superseded run is wasted Actions minutes: cancel the previous run for this ref
-# when a new commit lands on it. Keyed per PR (or per ref for pushes) so unrelated
-# work is never cancelled.
+# A superseded PR run is wasted minutes, so cancel it. A push run may be the
+# source a release is cut from, so key it by SHA and never cancel it.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.event_name == 'pull_request' && format('ci-pr-{0}', github.event.pull_request.number) || format('ci-push-{0}', github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  HOUSTON_CHANNEL: dev
 
 jobs:
-  # Cheapest and most consequential job: hermetic, sub-second text-search invariants.
-  # Runs first so a violated safety rule fails fast, before any crate builds.
-  safety-checks:
+  # Cheap path filter every other job waits on. The script fails closed, so a
+  # diff it cannot classify runs the full suite instead of skipping work.
+  changes:
+    runs-on: ${{ vars.CI_RUNNER_LINUX_SMALL || 'ubuntu-24.04' }}
+    # A checkout plus one diff; measured under a minute.
+    timeout-minutes: 5
+    outputs:
+      web: ${{ steps.changes.outputs.web }}
+      server: ${{ steps.changes.outputs.server }}
+      packages: ${{ steps.changes.outputs.packages }}
+      native: ${{ steps.changes.outputs.native }}
+      workflows: ${{ steps.changes.outputs.workflows }}
+      deps: ${{ steps.changes.outputs.deps }}
+      docs_only: ${{ steps.changes.outputs.docs_only }}
+    steps:
+      # Depth 2 gives HEAD (the PR merge commit) and both parents; HEAD^1 is the
+      # base tip, so the diff is exactly the PR's own changes. Blobless keeps the
+      # fetch small because only paths are read.
+      - uses: actions/checkout@v5
+        with:
+          filter: blob:none
+          fetch-depth: 2
+      - name: Classify changed paths
+        id: changes
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+            node scripts/ci/changes.mjs --all >> "$GITHUB_OUTPUT"
+          else
+            git diff --name-only HEAD^1 HEAD | node scripts/ci/changes.mjs >> "$GITHUB_OUTPUT"
+          fi
+
+  # Seconds of hermetic checks, so one machine is cheaper than many queued ones.
+  # Licence inventory needs a Rust toolchain only to resolve Cargo metadata.
+  static:
+    runs-on: ${{ vars.CI_RUNNER_LINUX_SMALL || 'ubuntu-24.04' }}
     permissions:
       contents: read
       pull-requests: read
-    runs-on: ubuntu-latest
-    env:
-      HOUSTON_CHANNEL: dev
+    # The licence inventory is the long pole, about 2 minutes cold.
+    timeout-minutes: 20
     steps:
-      # Job-level elapsed time via one timestamp diff — GitHub only exposes per-step
-      # durations through the Jobs API after each step completes, which needs a
-      # token call for a number this gets for free.
       - name: Record job start time
         run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@v5
         with:
-          # Ratchets compare origin/<base> (PR) or HEAD~1 (push), so they need history.
-          # The root commit is the one exception: it records the first baseline.
-          fetch-depth: 0
+          filter: blob:none
+          fetch-depth: 2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup
+      # The tree carries pre-existing format findings, so the gate checks the paths this change
+      # touches instead of blocking day one.
+      - name: Format the changed files
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            range=(HEAD^1 HEAD)
+          elif [ "$EVENT_NAME" = "push" ] && git rev-parse --verify --quiet HEAD^ >/dev/null; then
+            range=(HEAD^ HEAD)
+          else
+            echo "static: no changed-file range on $EVENT_NAME; skipping the changed-file checks"
+            exit 0
+          fi
+          mapfile -t files < <(git diff --name-only --diff-filter=ACMR "${range[@]}")
+          mapfile -t formattable < <(printf '%s\n' "${files[@]}" | grep -E '\.(ts|tsx|js|jsx|mjs|cjs|mts|cts|json|jsonc|css|html?|md|ya?ml)$' || true)
+          if [ "${#formattable[@]}" -gt 0 ]; then
+            pnpm exec vp fmt --check --no-error-on-unmatched-pattern "${formattable[@]}"
+          fi
+      # Whole tree, about 16 s: a file may not exceed its error count in scripts/lint-baseline.json.
+      - name: Lint ratchet
+        run: node scripts/ci/lint-ratchet.mjs
       - name: Validate workflow syntax and reusable workflow contracts
         run: |
           tool_dir="$RUNNER_TEMP/actionlint"
@@ -68,426 +120,337 @@ jobs:
         run: |
           gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" > "$RUNNER_TEMP/release-pr.json"
           python3 scripts/release-helper.py check-pr --pr-file "$RUNNER_TEMP/release-pr.json"
-      - name: check-watchdog.sh (tauri tracing-feature ban, monotonic clocks)
-        run: bash scripts/check-watchdog.sh
       - name: check-dev-channel.sh (dev.sh channel resolution)
         run: bash scripts/check-dev-channel.sh
       - name: check-kill-guard.sh (kill(2) broadcast guard)
         run: bash scripts/check-kill-guard.sh
-      - name: check-protocol-sync.sh (daemon/UI/doc wire version agree)
-        run: bash scripts/check-protocol-sync.sh
       - name: check-case-collisions.sh (paths unique on case-insensitive filesystems)
         run: bash scripts/check-case-collisions.sh
-      - name: check-loop-spawn-sync.sh (both daemon hosts call the loop-spawn helper)
-        run: bash scripts/check-loop-spawn-sync.sh
-      - name: check-title-tooltip-guard.sh (title= component-prop vs Tooltip conversion)
-        run: bash scripts/check-title-tooltip-guard.sh
-      - name: check-spawn-window.sh (CREATE_NO_WINDOW lint config still armed)
-        run: bash scripts/check-spawn-window.sh
-      - name: check-env-ratchet.sh (direct process-environment access only goes down)
-        run: bash scripts/check-env-ratchet.sh
-      - name: check-wsl-bundle.sh (the Windows installer bundles the Linux daemon for WSL)
-        run: bash scripts/check-wsl-bundle.sh
-      - name: check-icon-imports.sh (raw lucide-react imports outside components/icons.tsx)
-        run: bash scripts/check-icon-imports.sh
-      - name: check-native-select.sh (no native <select> — its popup is a GTK window)
-        run: bash scripts/check-native-select.sh
-      - name: check-native-input.sh (no native checkbox/radio — its box is drawn by the OS theme)
-        run: bash scripts/check-native-input.sh
-      - name: check-menu-descriptions.sh (a menu item description wraps or truncates on purpose)
-        run: bash scripts/check-menu-descriptions.sh
-      - name: check-doc-hygiene.sh (Markdown tree shape, plan cap, no diary content)
-        run: bash scripts/check-doc-hygiene.sh
       - name: check-comment-hygiene.sh (no dates/phases/diary/app names in code comments)
         run: bash scripts/check-comment-hygiene.sh
-      - name: check-type-scale.sh (semantic text tokens and an absolute 11px floor)
-        run: bash scripts/check-type-scale.sh
-      - name: check-label-tracking.sh (label step's uppercase tracking never leaks onto other text)
-        run: bash scripts/check-label-tracking.sh
-      - name: check-control-metrics.sh (control heights come from --h-* tokens)
-        run: bash scripts/check-control-metrics.sh
-      - name: check-radius-tokens.sh (corner radii come from --tr-radius-* rungs)
-        run: bash scripts/check-radius-tokens.sh
-      - name: check-spacing-tokens.sh (a stack's rhythm is the container's gap)
-        run: bash scripts/check-spacing-tokens.sh
-      - name: check-button-recipes.sh (button overlays keep the shared .btn base)
-        run: bash scripts/check-button-recipes.sh
-      - name: check-icon-metrics.sh (icon size/stroke come from --tr-icon-* rungs)
-        run: bash scripts/check-icon-metrics.sh
-      - name: check-status-glyph.sh (a rounded status image renders StatusGlyph, never a local dot)
-        run: bash scripts/check-status-glyph.sh
-      - name: check-shadow-recipes.sh (shadow recipes come from tokens/shadowChrome.ts, never a literal)
-        run: bash scripts/check-shadow-recipes.sh
-      - name: check-ellipsis.sh (real ellipsis character, never ASCII "...", in user-facing text)
-        run: bash scripts/check-ellipsis.sh
-      - name: check-focus-visible.sh (a killed outline gets its own focus-visible paint back)
-        run: bash scripts/check-focus-visible.sh
-      - name: check-empty-state-action.sh (an empty state offers the action its copy names)
-        run: bash scripts/check-empty-state-action.sh
-      - name: check-ui-boundary.sh (feature class strings use layout utilities only)
-        run: bash scripts/check-ui-boundary.sh
-      - name: check-page-width.sh (every page root uses the one --page-w column)
-        run: bash scripts/check-page-width.sh
-      - name: check-copy.sh (interface copy uses sentence case and status vocabulary)
-        run: bash scripts/check-copy.sh
-      - name: check-ratchets-only-tighten.sh (the complexity ratchet only tightens)
-        run: bash scripts/check-ratchets-only-tighten.sh
-      - uses: oven-sh/setup-bun@v2
-      # check-mutations.sh drives ui's complexity gate, which shells out to the
-      # pinned oxlint under ui/node_modules — without this install the gate throws
-      # before it can name the planted violation, reading as "the check did not fire".
-      - name: Install renderer dependencies (oxlint for check-complexity)
-        run: bun install --frozen-lockfile
-        working-directory: ui
-      # Last because it runs the other guards against a broken fixture: every
-      # covered check must fail on it by name.
-      - name: check-mutations.sh (every covered check proves it fires)
-        run: bash scripts/check-mutations.sh
-      - name: Report job timing
-        if: always()
-        continue-on-error: true
+      - name: check-web-style.sh (apps/web design-system guards, baseline ratchet)
+        run: bash scripts/check-web-style.sh --all
+      - name: check-web-style.sh --self-test (each guard fires on its bad fixture)
+        run: bash scripts/check-web-style.sh --self-test
+      - name: Upstream MIT notice is present
         run: |
-          elapsed=$(( $(date +%s) - JOB_START ))
-          {
-            echo "### ${{ github.job }} timing"
-            echo "| job | elapsed (s) |"
-            echo "|---|---|"
-            echo "| ${{ github.job }} | $elapsed |"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  # Fork PRs need more than a text search: typecheck and the jsdom suite catch
-  # what safety-checks' pattern scans cannot.
-  renderer-checks:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Record job start time
-        run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v5
-      - uses: oven-sh/setup-bun@v2
-      - name: Install renderer dependencies
-        run: bun install --frozen-lockfile
-        working-directory: ui
-      - name: Typecheck
-        run: bun run typecheck
-        working-directory: ui
-      # Never bare `bun test` — that invokes Bun's own test runner, not vitest,
-      # and fails the jsdom-based suite.
-      - name: Test
-        run: bun run test
-        working-directory: ui
-      - name: Report job timing
-        if: always()
-        continue-on-error: true
-        run: |
-          elapsed=$(( $(date +%s) - JOB_START ))
-          {
-            echo "### ${{ github.job }} timing"
-            echo "| job | elapsed (s) |"
-            echo "|---|---|"
-            echo "| ${{ github.job }} | $elapsed |"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  # Core formatting, Clippy, unit tests and doctests; the integration suites run in
-  # core-integration.
-  core-checks:
-    runs-on: ubuntu-latest
-    env:
-      HOUSTON_CHANNEL: dev
-      CARGO_BUILD_JOBS: 3
-    steps:
-      - name: Record job start time
-        run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v5
-      # The runner ships none of the -dev headers these -sys crates need, so the
-      # job would die in clippy rather than a test without them (alsa/dbus/udev/
-      # clang/cmake/nasm). gnome-keyring and dbus-x11 are for the test step below.
-      - name: Install native build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libasound2-dev libdbus-1-dev libudev-dev \
-            clang libclang-dev cmake nasm \
-            gnome-keyring dbus-x11 zsh
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: core
-      # Same pinned tarball + Zig build.rs step the release-linux bundle job
-      # caches, scoped to core/ only — src-tauri isn't built here. build.rs keeps
-      # Zig's fetched packages in this directory too, so its hash is in the key.
-      - name: Cache the pinned libghostty-vt source and Zig
-        uses: actions/cache@v5
-        with:
-          path: core/target/ghostty-vt
-          key: ghostty-vt-core-ubuntu-latest-${{ hashFiles('core/houston-core/ghostty-vt.lock', 'core/houston-core/build.rs') }}
-      - name: cargo fmt
-        run: cargo fmt --all --check --manifest-path core/Cargo.toml
-      - name: cargo clippy
-        run: cargo clippy --all-targets --manifest-path core/Cargo.toml -- -D warnings
-      # Pinned to the version core/.config/nextest.toml requires.
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: nextest@0.9.148
-      # voice::cloud's tests talk to a Secret Service the runner has none of; a
-      # private session bus with gnome-keyring unlocked is the same fix the local
-      # Linux gate uses. No oom-shield here — that's a local-machine concern.
-      - name: cargo nextest --lib
-        run: |
-          # shellcheck disable=SC2016
-          dbus-run-session -- bash -c '
-            eval "$(echo -n "" | gnome-keyring-daemon --unlock --components=secrets 2>/dev/null)"
-            cargo nextest run --profile ci --lib --manifest-path core/Cargo.toml'
-      # nextest does not run documentation tests.
-      - name: cargo test --doc
-        run: cargo test --doc --locked --manifest-path core/Cargo.toml
-      - name: Report job timing
-        if: always()
-        continue-on-error: true
-        run: |
-          elapsed=$(( $(date +%s) - JOB_START ))
-          {
-            echo "### ${{ github.job }} timing"
-            echo "| job | elapsed (s) |"
-            echo "|---|---|"
-            echo "| ${{ github.job }} | $elapsed |"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  # Every houston-core integration test, the `it` binary included, on Linux. The suites
-  # boot real daemons and PTYs and take a while, so this runs beside core-checks rather
-  # than inside it. The Windows job below keeps its own selection.
-  core-integration:
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    env:
-      HOUSTON_CHANNEL: dev
-      CARGO_BUILD_JOBS: 3
-    steps:
-      - name: Record job start time
-        run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v5
-      - name: Install native build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libasound2-dev libdbus-1-dev libudev-dev \
-            clang libclang-dev cmake nasm \
-            gnome-keyring dbus-x11 zsh
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: core
-          key: core-integration
-      - name: Cache the pinned libghostty-vt source and Zig
-        uses: actions/cache@v5
-        with:
-          path: core/target/ghostty-vt
-          key: ghostty-vt-core-ubuntu-latest-${{ hashFiles('core/houston-core/ghostty-vt.lock', 'core/houston-core/build.rs') }}
-      # Pinned to the version core/.config/nextest.toml requires.
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: nextest@0.9.148
-      # --no-fail-fast reports every failing test in one run. The restored-CLI
-      # regressions in resume_wire run real bash and zsh integration rc files.
-      - name: cargo nextest (all houston-core tests)
-        run: >
-          bash scripts/with-test-keyring.sh cargo nextest run --profile ci --locked
-          --no-fail-fast --manifest-path core/Cargo.toml -p houston-core
-      - name: Report job timing
-        if: always()
-        continue-on-error: true
-        run: |
-          elapsed=$(( $(date +%s) - JOB_START ))
-          {
-            echo "### ${{ github.job }} timing"
-            echo "| job | elapsed (s) |"
-            echo "|---|---|"
-            echo "| ${{ github.job }} | $elapsed |"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  linux-native-checks:
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    env:
-      HOUSTON_CHANNEL: dev
-      CARGO_BUILD_JOBS: 3
-    steps:
-      - uses: actions/checkout@v5
-      - name: Install native build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev \
-            libasound2-dev libdbus-1-dev libudev-dev \
-            clang libclang-dev cmake nasm gnome-keyring dbus-x11 zsh
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            core
-            src-tauri
-          key: linux-native-checks
-      # houston-core's build.rs resolves its cache next to the cargo target dir of
-      # the crate being built, which here is src-tauri/target.
-      - name: Cache the pinned libghostty-vt source and Zig
-        uses: actions/cache@v5
-        with:
-          path: src-tauri/target/ghostty-vt
-          key: ghostty-vt-src-tauri-ubuntu-latest-${{ hashFiles('core/houston-core/ghostty-vt.lock', 'core/houston-core/build.rs') }}
-      - uses: oven-sh/setup-bun@v2
-      - name: Build renderer assets for native compilation
-        working-directory: ui
-        run: |
-          bun install --frozen-lockfile
-          bun run build
-      - name: Stage debug sidecars
-        run: |
-          bash scripts/stage-helper.sh
-          bash scripts/stage-helper.sh --bin houston-core
-          bash scripts/stage-helper.sh --bin houston-supervisor
-      - name: Check native formatting and Clippy
-        run: |
-          cargo fmt --all --check --manifest-path src-tauri/Cargo.toml
-          cargo clippy --locked --all-targets --manifest-path src-tauri/Cargo.toml -- -D warnings
-          cargo clippy --locked --all-targets --features bench --manifest-path src-tauri/Cargo.toml -- -D warnings
-      - name: Test native application
-        run: |
-          bash scripts/with-test-keyring.sh cargo test --locked --manifest-path src-tauri/Cargo.toml -- --test-threads=3
-          bash scripts/with-test-keyring.sh cargo test --locked --features bench --manifest-path src-tauri/Cargo.toml -- --test-threads=3
-
-  windows-renderer-checks:
-    runs-on: windows-2022
-    timeout-minutes: 15
-    defaults:
-      run:
-        shell: pwsh
-    steps:
-      - name: Record job start time
-        run: '"JOB_START=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())" >> $env:GITHUB_ENV'
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: '24'
-      - uses: oven-sh/setup-bun@v2
-      - name: Install renderer dependencies
-        run: bun install --frozen-lockfile
-        working-directory: ui
-      - name: Typecheck renderer
-        working-directory: ui
-        run: bun run typecheck
-      - name: Test renderer
-        working-directory: ui
-        run: bun run test
-      - name: Build renderer
-        working-directory: ui
-        run: bun run build
-      - name: Check renderer output
-        working-directory: ui
-        run: |
-          bun run check:complexity
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          bun run check:css
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          bun run check:bundle
-          exit $LASTEXITCODE
-      - name: Report job timing
-        if: always()
-        continue-on-error: true
-        run: |
-          $elapsed = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - [long]$env:JOB_START
-          "| Job | Elapsed (s) |`n|---|---|`n| windows-renderer-checks | $elapsed |" >> $env:GITHUB_STEP_SUMMARY
-
-  windows-checks:
-    runs-on: windows-2022
-    timeout-minutes: 45
-    env:
-      HOUSTON_CHANNEL: dev
-      CARGO_BUILD_JOBS: 3
-    defaults:
-      run:
-        shell: pwsh
-    steps:
-      - name: Record job start time
-        run: '"JOB_START=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())" >> $env:GITHUB_ENV'
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            core
-            src-tauri
-          key: windows-checks
-      - uses: oven-sh/setup-bun@v2
-      - name: Build renderer assets for native compilation
-        working-directory: ui
-        run: |
-          bun install --frozen-lockfile
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          bun run build
-          exit $LASTEXITCODE
-      - name: Check core formatting and Clippy
-        working-directory: core
-        run: |
-          cargo fmt --all --check
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cargo clippy --locked --all-targets -- -D warnings
-          exit $LASTEXITCODE
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: nextest@0.9.148
-      - name: Test core
-        working-directory: core
-        run: |
-          cargo nextest run --profile ci --locked -p houston-core --lib
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cargo nextest run --profile ci --locked --no-fail-fast -p houston-core -E 'test(/^protocol_version_wire::/) | test(/^env_hygiene_wire::/) | test(/^nonascii_longpath_wire::/) | test(/^checkpoints_wire::/) | test(/^git_discard_wire::/) | test(/^git_tools_wire::/) | test(/^git_wire::/) | test(/^manage_wire::/) | test(/^shutdown_drain_wire::/) | test(/^subprocess_deadlines_windows::/) | test(/^tasks_wire::/) | test(/^windows_claude_hooks_wire::/) | test(/^windows_codex_hooks_wire::/) | test(/^windows_codex_launch_wire::/) | test(/^windows_instruction_submit::/) | test(/^launch_prompt_isolation::/) | test(/^claude_turns_wire::/) | test(/^session_activity::/) | test(/^generated_titles::/) | test(/^recovery_ownership::/) | test(/^voice_model_reuse::/) | test(/^windows_orchestration_wire::/) | test(/^wsl_wire::/)'
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cargo nextest run --profile ci --locked -p houston-core --features test-barriers -E 'test(/^ssh_stalled_window::/) | test(/^windows_pty_lifecycle::/)'
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cargo test --locked -p houston-core --doc
-          exit $LASTEXITCODE
-      - name: Stage debug sidecars
-        run: |
-          cargo build --locked --manifest-path core/Cargo.toml --bin houston-core --bin tr-helper
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          New-Item -ItemType Directory -Force src-tauri/binaries | Out-Null
-          foreach ($name in @('houston-core', 'tr-helper')) {
-            Copy-Item "core/target/debug/$name.exe" "src-tauri/binaries/$name-x86_64-pc-windows-msvc.exe"
-          }
-      - name: Check native application
-        working-directory: src-tauri
-        run: |
-          cargo fmt --all --check
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cargo clippy --locked --all-targets -- -D warnings
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cargo test --locked -- --test-threads=3
-          exit $LASTEXITCODE
-      - name: Report job timing
-        if: always()
-        continue-on-error: true
-        run: |
-          $elapsed = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - [long]$env:JOB_START
-          "| Job | Elapsed (s) |`n|---|---|`n| windows-checks | $elapsed |" >> $env:GITHUB_STEP_SUMMARY
-
-  # The committed third-party inventory is generated from both dependency graphs
-  # at once, so this needs the Rust toolchain (cargo metadata, no build) and the
-  # renderer's node_modules together — a shape none of the three jobs above has.
-  licence-inventory:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      # No components and no build cache: `cargo metadata` resolves the graph and
-      # compiles nothing, so a restore-and-save cycle would cost more than it saves.
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: oven-sh/setup-bun@v2
-      - name: Install renderer dependencies
-        run: bun install --frozen-lockfile
-        working-directory: ui
+          notice='Copyright (c) 2026 T3 Tools Inc.'
+          for file in NOTICE third-party-licenses.config.json apps/desktop/resources/third-party-licenses.json; do
+            if ! grep -qF "$notice" "$file"; then
+              echo "static: $file lacks the upstream licence line \"$notice\"; ported code cannot ship without it." >&2
+              echo "  Restore it in NOTICE and third-party-licenses.config.json, then run: node scripts/gen-third-party-licenses.mjs" >&2
+              exit 1
+            fi
+          done
+          echo "static: upstream MIT notice present in NOTICE and the licence inventory"
       - name: check-third-party-licenses.sh (committed inventory matches the dependency graphs)
         run: ./scripts/check-third-party-licenses.sh
+      - name: check-doc-hygiene.sh (Markdown tree shape, no diary content)
+        run: bash scripts/check-doc-hygiene.sh
+      - name: Report job timing
+        if: always()
+        continue-on-error: true
+        run: |
+          elapsed=$(( $(date +%s) - JOB_START ))
+          {
+            echo "### ${{ github.job }} timing"
+            echo "| job | elapsed (s) |"
+            echo "|---|---|"
+            echo "| ${{ github.job }} | $elapsed |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # The whole workspace, one job: each package runs its own typecheck script.
+  typecheck:
+    needs: changes
+    if: >-
+      needs.changes.outputs.docs_only != 'true' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.draft != true)
+    runs-on: ${{ vars.CI_RUNNER_LINUX_SMALL || 'ubuntu-24.04' }}
+    # The full workspace typecheck measured 92 s uncached.
+    timeout-minutes: 20
+    steps:
+      - name: Record job start time
+        run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v5
+        with:
+          filter: blob:none
+      - uses: ./.github/actions/setup
+      # The root "typecheck" script uses vp run, which cannot resolve a task and a
+      # package script with the same name; pnpm runs each package's own script.
+      # apps/web and apps/desktop declare typecheck as a vp task instead, which pnpm skips.
+      - name: Typecheck the workspace
+        run: |
+          status=0
+          pnpm -r --no-bail typecheck || status=1
+          for app in apps/desktop apps/web; do
+            (cd "$app" && pnpm exec vp run typecheck) || status=1
+          done
+          exit "$status"
+      - name: Report job timing
+        if: always()
+        continue-on-error: true
+        run: |
+          elapsed=$(( $(date +%s) - JOB_START ))
+          {
+            echo "### ${{ github.job }} timing"
+            echo "| job | elapsed (s) |"
+            echo "|---|---|"
+            echo "| ${{ github.job }} | $elapsed |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Workspace package suites plus the scripts package's node:test suites; web and
+  # server have their own jobs.
+  test-packages:
+    needs: changes
+    if: >-
+      needs.changes.outputs.packages == 'true' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.draft != true)
+    runs-on: ${{ vars.CI_RUNNER_LINUX_SMALL || 'ubuntu-24.04' }}
+    # Package suites plus the node:test script suites; measured in a few minutes.
+    timeout-minutes: 30
+    steps:
+      - name: Record job start time
+        run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v5
+        with:
+          filter: blob:none
+      - uses: ./.github/actions/setup
+      - name: Workspace package tests (web, server and scripts excluded)
+        run: pnpm -r --no-bail --no-sort --filter "!@houston-app/web" --filter "!@houston-app/cli" --filter "!@houston-app/scripts" test
+      - name: Script tests (licence generator, style guard, desktop packaging, npm launcher)
+        run: >-
+          node --test scripts/gen-third-party-licenses.test.mjs scripts/check-web-style.test.mjs
+          scripts/build-desktop-artifact.test.mjs scripts/refresh-updater-metadata.test.mjs
+          scripts/build-npm-launcher.test.mjs
+          scripts/ci/windows-known-failures.test.mjs
+      - name: Report job timing
+        if: always()
+        continue-on-error: true
+        run: |
+          elapsed=$(( $(date +%s) - JOB_START ))
+          {
+            echo "### ${{ github.job }} timing"
+            echo "| job | elapsed (s) |"
+            echo "|---|---|"
+            echo "| ${{ github.job }} | $elapsed |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # One command replaces the nine area jobs. Six shards fit the 4-vCPU runner
+  # and keep every shard well under the job timeout.
+  test-server:
+    needs: changes
+    if: >-
+      needs.changes.outputs.server == 'true' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.draft != true)
+    runs-on: ${{ vars.CI_RUNNER_LINUX || 'ubuntu-24.04' }}
+    # The old monolith was 758 s over the same files; six shards leave 3x headroom.
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    steps:
+      - name: Record job start time
+        run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v5
+        with:
+          filter: blob:none
+      - uses: ./.github/actions/setup
+      - name: Resolve Playwright version
+        id: playwright_version
+        run: echo "version=$(node -p "require('./apps/server/node_modules/playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Cache Chromium
+        id: chromium_cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-shell-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright_version.outputs.version }}
+      - name: Install Chromium for server browser integration tests
+        if: steps.chromium_cache.outputs.cache-hit != 'true'
+        run: node apps/server/node_modules/playwright-core/cli.js install --only-shell chromium
+      - name: Install missing Chromium system dependencies
+        run: |
+          browser=$(find "$HOME/.cache/ms-playwright" -name chrome-headless-shell -type f -print -quit)
+          test -n "$browser"
+          if ldd "$browser" | grep '=> not found'; then
+            node apps/server/node_modules/playwright-core/cli.js install-deps chromium
+          fi
+      - name: Server tests (src and scripts)
+        run: pnpm --filter @houston-app/cli exec vp test run src/ scripts/ --shard=${{ matrix.shard }}/6
+      - name: Report job timing
+        if: always()
+        continue-on-error: true
+        run: |
+          elapsed=$(( $(date +%s) - JOB_START ))
+          {
+            echo "### ${{ github.job }} timing"
+            echo "| job | elapsed (s) |"
+            echo "|---|---|"
+            echo "| ${{ github.job }} | $elapsed |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # The renderer had no CI coverage: unit tests, browser tests and the production
+  # build now run here, so a web-only change is gated without the native jobs.
+  test-web:
+    needs: changes
+    if: >-
+      needs.changes.outputs.web == 'true' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.draft != true)
+    runs-on: ${{ vars.CI_RUNNER_LINUX_SMALL || 'ubuntu-24.04' }}
+    # The renderer build and its unit project; measured in a few minutes.
+    timeout-minutes: 25
+    steps:
+      - name: Record job start time
+        run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v5
+        with:
+          filter: blob:none
+      - uses: ./.github/actions/setup
+      - name: Build the renderer
+        run: pnpm --filter @houston-app/web build
+      - name: Web unit tests
+        run: pnpm --filter @houston-app/web exec vp test run --project unit
+      - name: Report job timing
+        if: always()
+        continue-on-error: true
+        run: |
+          elapsed=$(( $(date +%s) - JOB_START ))
+          {
+            echo "### ${{ github.job }} timing"
+            echo "| job | elapsed (s) |"
+            echo "|---|---|"
+            echo "| ${{ github.job }} | $elapsed |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  test-web-browser:
+    needs: changes
+    if: >-
+      needs.changes.outputs.web == 'true' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.draft != true)
+    runs-on: ${{ vars.CI_RUNNER_LINUX || 'ubuntu-24.04' }}
+    # Four browser shards; a cold Chromium install dominates the first run.
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - name: Record job start time
+        run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v5
+        with:
+          filter: blob:none
+      - uses: ./.github/actions/setup
+      - name: Resolve Playwright version
+        id: playwright_version
+        run: echo "version=$(node -p "require('./apps/web/node_modules/playwright/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Cache Chromium
+        id: chromium_cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright_version.outputs.version }}
+      - name: Install Chromium for browser tests
+        if: steps.chromium_cache.outputs.cache-hit != 'true'
+        run: node apps/web/node_modules/playwright/cli.js install chromium
+      - name: Install missing Chromium system dependencies
+        run: |
+          browser=$(find "$HOME/.cache/ms-playwright" -type f \( -name chrome -o -name chrome-headless-shell \) -print -quit)
+          test -n "$browser"
+          if ldd "$browser" | grep '=> not found'; then
+            node apps/web/node_modules/playwright/cli.js install-deps chromium
+          fi
+      # Two workers keep each Chromium page responsive on the 4-vCPU runner: at the default worker count
+      # clicks timed out under load; two retries absorb the remaining scheduling noise.
+      - name: Web browser tests
+        run: pnpm --filter @houston-app/web exec vp test run --project browser --shard=${{ matrix.shard }}/4 --maxWorkers=2 --retry=2
+      - name: Report job timing
+        if: always()
+        continue-on-error: true
+        run: |
+          elapsed=$(( $(date +%s) - JOB_START ))
+          {
+            echo "### ${{ github.job }} timing"
+            echo "| job | elapsed (s) |"
+            echo "|---|---|"
+            echo "| ${{ github.job }} | $elapsed |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Native jobs run only when their own paths change on a PR. Pushes and manual
+  # dispatches always exercise them. The host is TypeScript now;
+  # Rust covers the v1 cleanup helper and the Linux capture helpers.
+  native-linux:
+    needs: changes
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.draft != true && needs.changes.outputs.native == 'true')
+    runs-on: ${{ vars.CI_RUNNER_LINUX || 'ubuntu-24.04' }}
+    # A cold build of the three small crates; measured well under the budget.
+    timeout-minutes: 45
+    env:
+      CARGO_BUILD_JOBS: 3
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          filter: blob:none
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libxkbcommon-dev libwayland-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            apps/desktop/native/houston-v1-cleanup
+            native/kde-snap-shot
+            native/hyprland-snap-shot
+          key: linux-native-checks
+      - name: Test the Houston 1 cleanup helper
+        run: cargo test --locked --manifest-path apps/desktop/native/houston-v1-cleanup/Cargo.toml
+      - name: Test the Linux capture helpers
+        run: |
+          cargo test --locked --manifest-path native/kde-snap-shot/Cargo.toml
+          cargo test --locked --manifest-path native/hyprland-snap-shot/Cargo.toml
+
+  # Windows server parity gates every PR that touches the server, like test-server.
+  server-windows:
+    needs: changes
+    if: >-
+      needs.changes.outputs.server == 'true' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.draft != true)
+    uses: ./.github/workflows/server-windows.yml
+
+  # The single check to require. A job skipped by the path filter is a pass; a
+  # failure, a cancellation, or a failed path filter is not.
+  ci-gate:
+    if: always()
+    needs:
+      - changes
+      - static
+      - typecheck
+      - test-packages
+      - test-server
+      - test-web
+      - test-web-browser
+      - native-linux
+      - server-windows
+    runs-on: ${{ vars.CI_RUNNER_LINUX_SMALL || 'ubuntu-24.04' }}
+    # One jq read over the job results.
+    timeout-minutes: 5
+    steps:
+      - name: Require every job to pass or be skipped by the path filter
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          printf '%s' "$NEEDS" > needs.json
+          bad=$(jq -r 'to_entries[] | select(.value.result != "success" and .value.result != "skipped") | "\(.key)=\(.value.result)"' needs.json)
+          if [ -n "$bad" ]; then
+            echo "ci-gate: jobs that failed or were cancelled: $bad" >&2
+            exit 1
+          fi
+          changes=$(jq -r '.changes.result' needs.json)
+          if [ "$changes" != "success" ]; then
+            echo "ci-gate: the changes job ended $changes; expected success so the path filter ran" >&2
+            exit 1
+          fi
+          echo "ci-gate: every job passed or was skipped by the path filter"

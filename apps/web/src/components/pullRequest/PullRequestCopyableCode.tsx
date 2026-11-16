@@ -1,0 +1,67 @@
+import { useCopyButton } from "~/components/ui/copy-button";
+import { cn } from "~/lib/utils";
+
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+
+export function PullRequestCopyableCode({
+  value,
+  target,
+  copyLabel,
+  copiedLabel,
+  className,
+  tooltipSide = "top",
+  onError,
+}: {
+  readonly value: string;
+  readonly target: string;
+  readonly copyLabel: string;
+  readonly copiedLabel: string;
+  readonly className?: string;
+  readonly tooltipSide?: "top" | "bottom";
+  readonly onError?: (error: Error) => void;
+}) {
+  const { copy, copied, ref } = useCopyButton({
+    target,
+    timeout: 1600,
+    ...(onError ? { onError } : {}),
+  });
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            ref={ref}
+            type="button"
+            className={cn(
+              "relative grid w-fit min-w-0 max-w-full shrink cursor-pointer rounded px-1 py-0.5 max-phone:px-0 text-left outline-none transition-colors pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11 hover:bg-hover/45 hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
+              className,
+            )}
+            aria-label={copied ? copiedLabel : copyLabel}
+            onClick={() => copy(value)}
+          />
+        }
+      >
+        <code
+          className={cn(
+            "col-start-1 row-start-1 min-w-0 truncate max-phone:break-all max-phone:whitespace-normal transition-opacity duration-150 motion-reduce:transition-none",
+            copied ? "opacity-0" : "opacity-100",
+          )}
+        >
+          {value}
+        </code>
+        <span
+          aria-hidden="true"
+          className={cn(
+            "col-start-1 row-start-1 truncate text-center transition-opacity duration-150 motion-reduce:transition-none",
+            copied ? "opacity-100" : "opacity-0",
+          )}
+        >
+          Copied
+        </span>
+      </TooltipTrigger>
+      <TooltipPopup variant="code" side={tooltipSide}>
+        {`${copied ? "Copied" : copyLabel}: ${value}`}
+      </TooltipPopup>
+    </Tooltip>
+  );
+}

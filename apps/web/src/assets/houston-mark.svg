@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none"><defs>
+<clipPath id="h1"><rect x="-20" y="32" width="104" height="60"/></clipPath><clipPath id="b1"><rect x="-20" y="-28" width="104" height="60"/></clipPath>
+<mask id="p1" maskUnits="userSpaceOnUse" x="-20" y="-20" width="104" height="104"><rect x="-20" y="-20" width="104" height="104" fill="#fff"/><g clip-path="url(#h1)"><path d="M2.5 32a29.5 7.5 0 1 0 59 0a29.5 7.5 0 1 0 -59 0ZM7.1 32a24.9 2.9 0 1 0 49.8 0a24.9 2.9 0 1 0 -49.8 0Z" fill-rule="evenodd" fill="#000" stroke="#000" stroke-width="5.6" stroke-linejoin="round"/></g></mask>
+<mask id="r1" maskUnits="userSpaceOnUse" x="-20" y="-20" width="104" height="104"><rect x="-20" y="-20" width="104" height="104" fill="#fff"/><g clip-path="url(#b1)"><circle cx="32" cy="32" r="21.3" fill="#000"/></g></mask></defs>
+<g transform="rotate(-22 32 32)"><circle cx="32" cy="32" r="18.5" fill="currentColor" mask="url(#p1)"/>
+<path d="M2.5 32a29.5 7.5 0 1 0 59 0a29.5 7.5 0 1 0 -59 0ZM7.1 32a24.9 2.9 0 1 0 49.8 0a24.9 2.9 0 1 0 -49.8 0Z" fill-rule="evenodd" fill="currentColor" mask="url(#r1)"/></g></svg>

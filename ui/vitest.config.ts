@@ -1,9 +1,0 @@
-import { defineConfig } from 'vitest/config'
-import { fileURLToPath } from 'node:url'
-
-export default defineConfig({
-  root: fileURLToPath(new URL('.', import.meta.url)),
-  test: {
-    setupFiles: ['./src/renderer/src/test/jsdomRangeGeometry.ts', './src/renderer/src/test/layoutSaves.ts']
-  }
-})

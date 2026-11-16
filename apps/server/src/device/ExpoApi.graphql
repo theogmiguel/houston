@@ -1,0 +1,83 @@
+query HoustonExpoViewer {
+  meActor {
+    __typename
+    ... on UserActor {
+      username
+    }
+    ... on Robot {
+      firstName
+    }
+    accounts {
+      name
+      appsPaginated(first: 100) {
+        edges {
+          node {
+            id
+            fullName
+          }
+        }
+      }
+    }
+  }
+}
+
+query HoustonEasSimulatorAvailability($appId: String!, $filter: [String!]) {
+  app {
+    byId(appId: $appId) {
+      ownerAccount {
+        name
+        accountFeatureGates(filter: $filter)
+      }
+    }
+  }
+}
+
+mutation HoustonCreateEasSimulatorSession($input: CreateDeviceRunSessionInput!) {
+  deviceRunSession {
+    createDeviceRunSession(deviceRunSessionInput: $input) {
+      id
+    }
+  }
+}
+
+query HoustonEasSimulatorSession($id: ID!) {
+  deviceRunSessions {
+    byId(deviceRunSessionId: $id) {
+      id
+      status
+      remoteConfig {
+        ... on AgentDeviceRunSessionRemoteConfig {
+          agentDeviceRemoteSessionUrl
+          agentDeviceRemoteSessionToken
+          webPreviewToken
+          previewApiUrl
+        }
+      }
+    }
+  }
+}
+
+query HoustonActiveEasSimulatorSessions($appId: String!, $filter: DeviceRunSessionFilterInput) {
+  app {
+    byId(appId: $appId) {
+      deviceRunSessionsPaginated(first: 50, filter: $filter) {
+        edges {
+          node {
+            id
+            status
+            name
+          }
+        }
+      }
+    }
+  }
+}
+
+mutation HoustonStopEasSimulatorSession($id: ID!) {
+  deviceRunSession {
+    ensureDeviceRunSessionStopped(deviceRunSessionId: $id) {
+      id
+      status
+    }
+  }
+}

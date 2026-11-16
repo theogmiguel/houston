@@ -1,0 +1,170 @@
+import { Popover as PopoverPrimitive } from "@base-ui/react/popover";
+import type { RefObject } from "react";
+
+import { cn } from "~/lib/utils";
+
+import { renderClosingPositioner } from "./closing-positioner";
+import { overlayMotion } from "./overlayMotion";
+
+const PopoverCreateHandle = PopoverPrimitive.createHandle;
+
+const Popover = PopoverPrimitive.Root;
+
+function PopoverTrigger({ className, children, ...props }: PopoverPrimitive.Trigger.Props) {
+  return (
+    <PopoverPrimitive.Trigger className={className} data-slot="popover-trigger" {...props}>
+      {children}
+    </PopoverPrimitive.Trigger>
+  );
+}
+
+/** A zero-height anchor as wide as the details card, so a panel popover keeps its width. */
+function PopoverPanelAnchor({ anchorRef }: { anchorRef: RefObject<HTMLElement | null> }) {
+  return (
+    <span
+      ref={anchorRef}
+      aria-hidden
+      className="pointer-events-none absolute top-[calc(100%+0.5rem)] right-0 h-0 w-[calc(var(--thread-details-panel-width)+1rem)]"
+    />
+  );
+}
+
+const popoverPopupWidthClassName = {
+  auto: "",
+  sm: "w-64",
+  md: "w-80",
+  lg: "w-96",
+} as const;
+
+const popoverViewportPaddingClassName = {
+  default: "py-4 [--viewport-inline-padding:--spacing(4)]",
+  compact: "py-2 [--viewport-inline-padding:--spacing(3)]",
+  none: "rounded-[calc(var(--radius-lg)-1px)] py-0 [--viewport-inline-padding:0px]",
+} as const;
+
+function PopoverPopup({
+  children,
+  className,
+  padding = "default",
+  variant = "default",
+  width = "auto",
+  side = "bottom",
+  align = "center",
+  sideOffset = 4,
+  alignOffset = 0,
+  collisionAvoidance,
+  collisionPadding,
+  collisionBoundary,
+  tooltipStyle = false,
+  keepMounted = false,
+  anchor,
+  touchBackdrop = false,
+  ...props
+}: PopoverPrimitive.Popup.Props & {
+  padding?: keyof typeof popoverViewportPaddingClassName;
+  variant?: "default" | "panel" | "dialog";
+  side?: PopoverPrimitive.Positioner.Props["side"];
+  align?: PopoverPrimitive.Positioner.Props["align"];
+  sideOffset?: PopoverPrimitive.Positioner.Props["sideOffset"];
+  alignOffset?: PopoverPrimitive.Positioner.Props["alignOffset"];
+  collisionAvoidance?: PopoverPrimitive.Positioner.Props["collisionAvoidance"];
+  collisionPadding?: PopoverPrimitive.Positioner.Props["collisionPadding"];
+  collisionBoundary?: PopoverPrimitive.Positioner.Props["collisionBoundary"];
+  tooltipStyle?: boolean;
+  keepMounted?: PopoverPrimitive.Portal.Props["keepMounted"];
+  anchor?: PopoverPrimitive.Positioner.Props["anchor"];
+  width?: keyof typeof popoverPopupWidthClassName;
+  touchBackdrop?: boolean;
+}) {
+  // Viewport rekeys on close; persistent single-trigger forms need stable containers for drafts and submit
+  // guards.
+  const Viewport = keepMounted ? "div" : PopoverPrimitive.Viewport;
+  return (
+    <PopoverPrimitive.Portal keepMounted={keepMounted}>
+      {touchBackdrop ? (
+        // On touch, the backdrop consumes outside taps so closing cannot also activate the control beneath.
+        <PopoverPrimitive.Backdrop
+          className="fixed inset-0 z-[130] hidden pointer-coarse:block"
+          data-slot="popover-backdrop"
+        />
+      ) : null}
+      <PopoverPrimitive.Positioner
+        align={align}
+        alignOffset={alignOffset}
+        anchor={anchor}
+        collisionAvoidance={collisionAvoidance}
+        collisionBoundary={collisionBoundary}
+        collisionPadding={collisionPadding ?? (variant === "panel" ? 0 : undefined)}
+        className={cn(
+          "h-(--positioner-height) max-h-(--available-height) w-(--positioner-width) max-w-(--available-width)",
+          // Kept-mounted positioners first paint at the window origin, so a transform transition slides them in from there.
+          !keepMounted && "transition-transform data-instant:transition-none",
+          variant === "panel"
+            ? "z-(--z-sheet) w-[min(calc(var(--thread-details-panel-width)+--spacing(4)),calc(var(--anchor-width)---spacing(2)))] transition-[top] duration-(--motion-overlay-in) ease-standard data-instant:transition-[top] motion-reduce:transition-none motion-reduce:data-instant:transition-none"
+            : "z-[130]",
+        )}
+        data-slot="popover-positioner"
+        render={renderClosingPositioner}
+        side={side}
+        sideOffset={sideOffset}
+      >
+        <PopoverPrimitive.Popup
+          className={cn(
+            overlayMotion,
+            "relative flex h-(--popup-height,auto) w-(--popup-width,auto) rounded-[var(--r-group)] text-popover-foreground outline-none has-data-[slot=calendar]:rounded-[var(--r-dialog)]",
+            variant === "default" && "dropdown-glass",
+            variant === "dialog" && "dialog-glass",
+            tooltipStyle && "w-fit text-balance rounded-[var(--r-selection)] text-xs",
+            !tooltipStyle && variant === "default" && "shadow-[var(--shadow-1)]",
+            width !== "auto" && ["max-w-[calc(100vw-2rem)]", popoverPopupWidthClassName[width]],
+            variant === "panel" &&
+              "w-full overflow-visible rounded-none border-0 bg-transparent shadow-none before:hidden [backdrop-filter:none] [-webkit-backdrop-filter:none]",
+            className,
+          )}
+          data-slot="popover-popup"
+          {...props}
+        >
+          <Viewport
+            className={cn(
+              "relative size-full max-h-(--available-height) overflow-clip px-(--viewport-inline-padding) has-data-[slot=calendar]:p-2 data-instant:transition-none **:data-current:data-ending-style:opacity-0 **:data-current:data-starting-style:opacity-0 **:data-previous:data-ending-style:opacity-0 **:data-previous:data-starting-style:opacity-0 **:data-current:w-[calc(var(--popup-width)-2*var(--viewport-inline-padding)-2px)] **:data-previous:w-[calc(var(--popup-width)-2*var(--viewport-inline-padding)-2px)] **:data-current:opacity-100 **:data-previous:opacity-100 **:data-current:transition-opacity **:data-previous:transition-opacity",
+              tooltipStyle && padding === "default"
+                ? "py-1.5 [--viewport-inline-padding:--spacing(2.5)]"
+                : popoverViewportPaddingClassName[padding],
+              !tooltipStyle && "not-data-transitioning:overflow-y-auto",
+              variant === "panel" &&
+                "overflow-visible py-2 [--viewport-inline-padding:--spacing(2)]",
+            )}
+            data-slot="popover-viewport"
+          >
+            {children}
+          </Viewport>
+        </PopoverPrimitive.Popup>
+      </PopoverPrimitive.Positioner>
+    </PopoverPrimitive.Portal>
+  );
+}
+
+function PopoverClose({ ...props }: PopoverPrimitive.Close.Props) {
+  return <PopoverPrimitive.Close data-slot="popover-close" {...props} />;
+}
+
+function PopoverTitle({ className, ...props }: PopoverPrimitive.Title.Props) {
+  return (
+    <PopoverPrimitive.Title
+      className={cn("font-semibold text-sm leading-none", className)}
+      data-slot="popover-title"
+      {...props}
+    />
+  );
+}
+
+export {
+  PopoverCreateHandle,
+  Popover,
+  PopoverPanelAnchor,
+  PopoverTrigger,
+  PopoverPopup,
+  PopoverPopup as PopoverContent,
+  PopoverTitle,
+  PopoverClose,
+};

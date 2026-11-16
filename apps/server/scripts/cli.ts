@@ -1,0 +1,177 @@
+#!/usr/bin/env node
+import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Logger from "effect/Logger";
+import * as Option from "effect/Option";
+import * as Path from "effect/Path";
+import { Command, Flag } from "effect/cli";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
+
+import { DEVELOPMENT_ICON_OVERRIDES } from "../../../scripts/lib/brand-assets.ts";
+import { findEsmImportsOfExternalPackages } from "../../../scripts/lib/cli-executable-imports.ts";
+import { injectLinuxArm64Sea } from "../../../scripts/lib/linux-arm64-sea.ts";
+import rootPackageJson from "../../../package.json" with { type: "json" };
+import * as HostProcess from "@houston-app/shared/HostProcess";
+import { resolveSpawnCommand } from "@houston-app/shared/shell";
+import {
+  ServerCliCommandExitError,
+  ServerCliDevelopmentIconTargetMissingError,
+  ServerCliExecutableImportError,
+} from "./cliErrors.ts";
+
+const RepoRoot = Effect.service(Path.Path).pipe(
+  Effect.flatMap((path) => path.fromFileUrl(new URL("../../..", import.meta.url))),
+);
+
+const runCommand = Effect.fn("runCommand")(function* (command: ChildProcess.StandardCommand) {
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  const child = yield* spawner.spawn(command);
+  const exitCode = yield* child.exitCode;
+
+  if (exitCode !== 0) {
+    return yield* new ServerCliCommandExitError({
+      command: command.command,
+      args: command.args.map(String),
+      cwd: command.options.cwd,
+      exitCode,
+    });
+  }
+});
+
+const applyDevelopmentIconOverrides = Effect.fn("applyDevelopmentIconOverrides")(function* (
+  repoRoot: string,
+  serverDir: string,
+) {
+  const path = yield* Path.Path;
+  const fs = yield* FileSystem.FileSystem;
+
+  for (const override of DEVELOPMENT_ICON_OVERRIDES) {
+    const sourcePath = path.join(repoRoot, override.sourceRelativePath);
+    const targetPath = path.join(serverDir, override.targetRelativePath);
+
+    // A channel without its own icon sources keeps the production icons.
+    if (!(yield* fs.exists(sourcePath))) {
+      continue;
+    }
+    if (!(yield* fs.exists(targetPath))) {
+      return yield* new ServerCliDevelopmentIconTargetMissingError({ targetPath });
+    }
+
+    yield* fs.copyFile(sourcePath, targetPath);
+  }
+
+  yield* Effect.log("[cli] Applied development icon overrides to dist/client");
+});
+
+const buildCmd = Command.make(
+  "build",
+  {
+    verbose: Flag.Boolean("verbose").pipe(Flag.withDefault(false)),
+  },
+  (config) =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const fs = yield* FileSystem.FileSystem;
+      const repoRoot = yield* RepoRoot;
+      const serverDir = path.join(repoRoot, "apps/server");
+
+      yield* Effect.log("[cli] Running tsdown...");
+      yield* runCommand(
+        ChildProcess.make(process.execPath, ["--run", "build:bundle"], {
+          cwd: serverDir,
+          stdout: config.verbose ? "inherit" : "ignore",
+          stderr: "inherit",
+          shell: false,
+        }),
+      );
+
+      const webDist = path.join(repoRoot, "apps/web/dist");
+      const clientTarget = path.join(serverDir, "dist/client");
+
+      if (yield* fs.exists(webDist)) {
+        yield* fs.copy(webDist, clientTarget);
+        yield* applyDevelopmentIconOverrides(repoRoot, serverDir);
+        yield* Effect.log("[cli] Bundled web app into dist/client");
+      } else {
+        yield* Effect.logWarning("[cli] Web dist not found. Skipping client bundle.");
+      }
+    }),
+).pipe(Command.withDescription("Build the server package (tsdown + bundle web client)."));
+
+const buildExeCmd = Command.make(
+  "build-exe",
+  {
+    verbose: Flag.Boolean("verbose").pipe(Flag.withDefault(false)),
+    target: Flag.String("target").pipe(
+      Flag.withDescription(
+        "Cross-build for <platform>-<arch> in nodejs.org naming (for example darwin-x64); defaults to the host.",
+      ),
+      Flag.optional,
+    ),
+  },
+  (config) =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const fs = yield* FileSystem.FileSystem;
+      const repoRoot = yield* RepoRoot;
+      const serverDir = path.join(repoRoot, "apps/server");
+
+      yield* Effect.log("[cli] Building single-executable...");
+      const target = Option.getOrUndefined(config.target);
+      // TEMPORARY one-time Node fix. Remove when fixed: https://github.com/nodejs/node/issues/67048
+      const linuxArm64 =
+        !target &&
+        (yield* HostProcess.Platform) === "linux" &&
+        (yield* HostProcess.Architecture) === "arm64";
+      const spawnCommand = yield* resolveSpawnCommand("vp", ["pack"]);
+      yield* runCommand(
+        ChildProcess.make(spawnCommand.command, spawnCommand.args, {
+          cwd: serverDir,
+          env: {
+            ...process.env,
+            HOUSTON_PACK_EXE: linuxArm64 ? "bundle" : "1",
+            HOUSTON_PACK_EXE_TARGET: target ?? "",
+          },
+          stdout: config.verbose ? "inherit" : "ignore",
+          stderr: "inherit",
+          shell: spawnCommand.shell,
+        }),
+      );
+
+      // Executables reject non-builtin imports even when bundling succeeds; inspect the emitted graph.
+      const bundlePath = path.join(serverDir, "dist-exe/bin.mjs");
+      const specifiers = findEsmImportsOfExternalPackages(yield* fs.readFileString(bundlePath));
+      if (specifiers.length > 0) {
+        return yield* new ServerCliExecutableImportError({ bundlePath, specifiers });
+      }
+      // TEMPORARY one-time Node fix. Remove when fixed: https://github.com/nodejs/node/issues/67048
+      if (linuxArm64) {
+        yield* injectLinuxArm64Sea({
+          bundlePath,
+          outputPath: path.join(serverDir, "dist-exe/houston"),
+          nodeVersion: rootPackageJson.engines.node,
+          verbose: config.verbose,
+        });
+      }
+      yield* Effect.log(
+        "[cli] Built dist-exe/houston (expects client/, resource-monitor/, and the runtime-external node_modules beside it; scripts/build-server-archive.ts assembles that tree)",
+      );
+    }),
+).pipe(
+  Command.withDescription(
+    `Build the server as a Node single-executable. Native builds require Node ${rootPackageJson.engines.node}; explicit cross-target builds need a Node 25.7+ host for --build-sea. Linux ARM64 builds only on a Linux ARM64 host. The binary still resolves native packages from a node_modules tree beside it.`,
+  ),
+);
+
+const cli = Command.make("cli").pipe(
+  Command.withDescription("Houston server build CLI."),
+  Command.withSubcommands([buildCmd, buildExeCmd]),
+);
+
+Command.run(cli, { version: "0.0.0" }).pipe(
+  Effect.scoped,
+  Effect.provide([Logger.layer([Logger.consolePretty()]), NodeServices.layer]),
+  NodeRuntime.runMain,
+);

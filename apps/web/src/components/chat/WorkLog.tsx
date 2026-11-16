@@ -1,0 +1,211 @@
+import {
+  createContext,
+  use,
+  useLayoutEffect,
+  useRef,
+  type ComponentProps,
+  type ReactNode,
+} from "react";
+import { cn } from "../../lib/utils";
+import { NESTED_WORK_BLOCK_CLASS } from "../ui/work-log-recipes";
+import { IN_TURN_GAP_CLASS, PACKED_GAP_CLASS, TURN_GAP_CLASS } from "./timelineSpacing";
+
+const GroupedRows = createContext(false);
+
+/**
+ * Groups may span virtualized timeline items. Each part owns its trailing space: the in-turn gap
+ * after a group's last row, the turn gap when a user message follows, and none between the rows
+ * of one group so a nested rail stays unbroken.
+ */
+export function WorkLogBlock({
+  layout = "standalone",
+  continues = false,
+  endsGroup = false,
+  leadsToTurn = false,
+  nested = false,
+  children,
+}: {
+  layout?: "standalone" | "group-header" | "group-content";
+  continues?: boolean | undefined;
+  /** The last row of an expanded group: it leaves the same gap a message does. */
+  endsGroup?: boolean | undefined;
+  /** A user message follows: the turn gap replaces the in-turn gap. */
+  leadsToTurn?: boolean | undefined;
+  /** A child of an expanded group's header: indented under a thin rail, set smaller and muted. */
+  nested?: boolean | undefined;
+  children: ReactNode;
+}) {
+  const gap = leadsToTurn
+    ? TURN_GAP_CLASS
+    : endsGroup
+      ? IN_TURN_GAP_CLASS
+      : continues || layout === "group-header"
+        ? "pb-0"
+        : layout === "group-content"
+          ? PACKED_GAP_CLASS
+          : IN_TURN_GAP_CLASS;
+  return (
+    <div className={gap}>
+      {nested ? (
+        <div data-work-log-nested="" className={NESTED_WORK_BLOCK_CLASS}>
+          {children}
+        </div>
+      ) : (
+        children
+      )}
+    </div>
+  );
+}
+
+export function WorkLogList({ children }: { children: ReactNode }) {
+  return (
+    <GroupedRows value>
+      <div className="flex min-w-0 flex-col">{children}</div>
+    </GroupedRows>
+  );
+}
+
+type RowContent = {
+  icon?: ReactNode;
+  label: ReactNode;
+  /** Quiet detail (a timestamp) that sits right after the label instead of at the row's end. */
+  meta?: ReactNode;
+  trailing?: ReactNode;
+  wrapLabel?: boolean;
+};
+
+function WorkLogLine({ icon, label, meta, trailing, wrapLabel }: RowContent) {
+  return (
+    <div
+      className={cn(
+        "flex min-h-7 min-w-0 gap-2 text-body text-(--t2) select-none [&_*]:select-none",
+        wrapLabel ? "items-start py-0.5" : "items-center",
+      )}
+    >
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        {icon ? (
+          <span className="flex size-3.5 shrink-0 items-center justify-center text-(--houston) [&_svg]:size-3.5">
+            {icon}
+          </span>
+        ) : null}
+        <div
+          className={cn(
+            "min-w-0",
+            !wrapLabel &&
+              "truncate [&_*]:whitespace-nowrap @max-[560px]/pane:overflow-visible @max-[560px]/pane:whitespace-normal @max-[560px]/pane:[&_*]:whitespace-normal",
+          )}
+        >
+          {label}
+        </div>
+        {meta}
+      </div>
+      {trailing}
+    </div>
+  );
+}
+
+const interactionClassName =
+  "cursor-pointer focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring";
+
+function useRowClassName(interactive: boolean) {
+  const grouped = use(GroupedRows);
+  return cn(
+    // The 4px inset puts the hover fill on the prose column's edges (messages use px-1); the 4px
+    // padding keeps the icon and label where an 8px-padded full-width row had them.
+    "group/timeline-row relative mx-1 w-[calc(100%-0.5rem)] min-w-0 rounded-(--r-ctl) px-1 text-left transition-colors max-phone:mx-0 max-phone:w-full max-phone:px-0",
+    grouped ? "py-0" : "py-0.5",
+    interactive && "hover:bg-(--hover)",
+    interactive && interactionClassName,
+  );
+}
+
+export function WorkLogButton({
+  icon,
+  label,
+  meta,
+  trailing,
+  wrapLabel = false,
+  ...buttonProps
+}: RowContent & Omit<ComponentProps<"button">, "className" | "style" | "children">) {
+  const className = useRowClassName(true);
+  return (
+    <button {...buttonProps} type="button" className={className}>
+      <WorkLogLine
+        icon={icon}
+        label={label}
+        meta={meta}
+        trailing={trailing}
+        wrapLabel={wrapLabel}
+      />
+    </button>
+  );
+}
+
+/** Div disclosure permits selectable detail and nested actions. */
+export function WorkLogRow({
+  icon,
+  label,
+  meta,
+  trailing,
+  wrapLabel = false,
+  children,
+  ...rowProps
+}: RowContent & Omit<ComponentProps<"div">, "className" | "style">) {
+  const className = useRowClassName(rowProps.onClick !== undefined);
+  return (
+    <div {...rowProps} className={className}>
+      <WorkLogLine
+        icon={icon}
+        label={label}
+        meta={meta}
+        trailing={trailing}
+        wrapLabel={wrapLabel}
+      />
+      {children}
+    </div>
+  );
+}
+
+const LIVE_EDGE_PX = 4;
+
+export function WorkLogDetails({
+  children,
+  kind = "text",
+  followLive = false,
+}: {
+  children: ReactNode;
+  kind?: "text" | "panel" | "media";
+
+  followLive?: boolean;
+}) {
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const atLiveEdgeRef = useRef(true);
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- pins the scroller's scrollTop to the bottom after each commit while following live output
+  useLayoutEffect(() => {
+    const scroller = scrollerRef.current;
+    if (followLive && atLiveEdgeRef.current && scroller) {
+      scroller.scrollTop = scroller.scrollHeight;
+    }
+  });
+  return (
+    <div
+      ref={scrollerRef}
+      onScroll={(event) => {
+        const { scrollHeight, scrollTop, clientHeight } = event.currentTarget;
+        atLiveEdgeRef.current = scrollHeight - scrollTop - clientHeight <= LIVE_EDGE_PX;
+      }}
+      className={cn(
+        "cursor-auto",
+        kind === "text"
+          ? "ms-7 flex max-h-96 flex-col gap-3 overflow-auto px-0.5 py-1 select-text"
+          : kind === "panel"
+            ? "mt-0.5 mb-1.5 pb-2"
+            : "mt-1",
+      )}
+      onClick={(event) => event.stopPropagation()}
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      {children}
+    </div>
+  );
+}

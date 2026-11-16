@@ -7,23 +7,23 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: 'Branch, tag or SHA to build'
+        description: "Branch, tag or SHA to build; empty builds the ref this workflow was dispatched from"
         type: string
-        default: 'main'
-        required: true
+        default: ""
+        required: false
       platform:
-        description: 'Installer platforms to validate; windows also builds the Linux bundles, whose daemon it carries for WSL'
+        description: "Installer platforms to validate; windows also builds the Linux bundles"
         type: choice
-        options: [all, linux, windows]
+        options: [all, linux, windows, macos]
         default: all
-        required: true
+        required: false
 
 permissions:
   contents: read
 
-# Version-PINNED, not a caret range — an unpinned CLI would change the bundle
-# under us. The one source of truth; a job output (below) is the only way to
-# hand it to a called workflow, since a reusable workflow's `with:` can't resolve `env`.
+# Version-PINNED, not a caret range: the signing CLI must not change under us.
+# A job output is the only way to hand it to a called workflow, since a reusable
+# workflow's `with:` cannot resolve `env`.
 env:
   TAURI_CLI_VERSION: 2.11.4
 
@@ -42,13 +42,13 @@ jobs:
 
       - uses: actions/checkout@v5
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ inputs.ref || github.ref }}
       - id: check
         run: |
           set -euo pipefail
           version=$(./scripts/check-manifest-versions.sh)
-          # The four are what the bundle filenames read; both lockfiles carry
-          # the workspace crates' own versions and must move with them.
+          # The three manifests are what the bundle filenames and runtime
+          # versions read, and they must agree before anything is built.
           ./scripts/set-version.sh --check "$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
@@ -64,8 +64,7 @@ jobs:
             echo "| version-guard | $elapsed |"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # Runs for every platform choice: the Windows installer carries the Linux x86_64
-  # daemon this job builds, for WSL distros.
+  # Runs for every platform choice; the Windows packaging job waits for it.
   linux-bundle:
     needs: version-guard
     uses: ./.github/workflows/release-linux.yml
@@ -78,23 +77,24 @@ jobs:
       require_signing: false
     secrets: inherit
 
-  windows-compile:
+  macos-bundle:
     needs: version-guard
-    if: inputs.platform != 'linux'
-    uses: ./.github/workflows/release-windows.yml
+    if: inputs.platform == 'all' || inputs.platform == 'macos'
+    uses: ./.github/workflows/release-macos.yml
     with:
-      stage: compile
       ref: ${{ needs.version-guard.outputs.source_sha }}
       version: ${{ needs.version-guard.outputs.version }}
       tauri_cli_version: ${{ needs.version-guard.outputs.tauri_cli_version }}
+      # This workflow files nothing, so signing is never required; the bundle
+      # still signs when the updater/Apple secrets happen to be present.
       require_signing: false
+    secrets: inherit
 
   windows-bundle:
-    needs: [version-guard, linux-bundle, windows-compile]
-    if: inputs.platform != 'linux'
+    needs: version-guard
+    if: inputs.platform == 'all' || inputs.platform == 'windows'
     uses: ./.github/workflows/release-windows.yml
     with:
-      stage: bundle
       ref: ${{ needs.version-guard.outputs.source_sha }}
       version: ${{ needs.version-guard.outputs.version }}
       tauri_cli_version: ${{ needs.version-guard.outputs.tauri_cli_version }}

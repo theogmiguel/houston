@@ -1,0 +1,262 @@
+import * as HostProcess from "@houston-app/shared/HostProcess";
+import * as Config from "effect/Config";
+import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Path from "effect/Path";
+import * as PlatformError from "effect/PlatformError";
+import * as Semaphore from "effect/Semaphore";
+
+import { SshPasswordPromptError } from "./errors.ts";
+
+export interface SshPasswordRequest {
+  readonly destination: string;
+  readonly username: string | null;
+  readonly prompt: string;
+  readonly attempt: number;
+}
+
+interface SshAskpassFile {
+  readonly path: string;
+  readonly contents: string;
+  readonly mode?: number;
+}
+
+export interface SshAskpassHelperDescriptor {
+  readonly launcherPath: string;
+  readonly files: ReadonlyArray<SshAskpassFile>;
+}
+
+export interface SshAuthOptions {
+  readonly authSecret?: string | null;
+  readonly batchMode?: "yes" | "no";
+  readonly interactiveAuth?: boolean;
+}
+
+export interface SshPasswordPromptShape {
+  readonly isAvailable: boolean;
+  readonly request: (
+    request: SshPasswordRequest,
+  ) => Effect.Effect<string | null, SshPasswordPromptError>;
+}
+
+export class SshPasswordPrompt extends Context.Service<SshPasswordPrompt, SshPasswordPromptShape>()(
+  "@houston-app/ssh/auth/SshPasswordPrompt",
+) {
+  static readonly disabledLayer = Layer.succeed(
+    SshPasswordPrompt,
+    SshPasswordPrompt.of({
+      isAvailable: false,
+      request: Effect.fn("SshPasswordPrompt.request")(function () {
+        return Effect.succeed(null);
+      }),
+    }),
+  );
+}
+
+export interface SshChildEnvironmentOptions {
+  readonly interactiveAuth?: boolean;
+  readonly baseEnv?: NodeJS.ProcessEnv;
+  readonly askpassDirectory?: string;
+  readonly authSecret?: string | null;
+}
+
+const SSH_ASKPASS_DIR_NAME = "houston-ssh-askpass";
+
+const TRAILING_PATH_SEPARATORS = /[\\/]+$/u;
+
+function joinSshAskpassPath(
+  directory: string,
+  fileName: string,
+  platform: NodeJS.Platform,
+): string {
+  const trimmed = directory.replace(TRAILING_PATH_SEPARATORS, "");
+  return platform === "win32" ? `${trimmed}\\${fileName}` : `${trimmed}/${fileName}`;
+}
+
+const ASKPASS_POSIX_SCRIPT = `#!/bin/sh
+# Invoked by ssh via SSH_ASKPASS when Houston re-runs ssh with a cached password
+# from the renderer's in-app prompt. We never expose a native dialog here - if
+# HOUSTON_SSH_AUTH_SECRET is missing, that's a caller bug and we fail loudly.
+if [ "\${HOUSTON_SSH_AUTH_SECRET+x}" = "x" ]; then
+  printf "%s\\n" "$HOUSTON_SSH_AUTH_SECRET"
+  exit 0
+fi
+printf 'Houston ssh-askpass invoked without HOUSTON_SSH_AUTH_SECRET.\\n' >&2
+exit 1
+`;
+
+const ASKPASS_WINDOWS_LAUNCHER_SCRIPT = `@echo off\r
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0ssh-askpass.ps1" %*\r
+`;
+
+const ASKPASS_WINDOWS_SCRIPT = `# Invoked by ssh via SSH_ASKPASS (through ssh-askpass.cmd) when Houston re-runs\r
+# ssh with a cached password from the renderer's in-app prompt. We never expose\r
+# a native dialog here - if HOUSTON_SSH_AUTH_SECRET is missing, that's a caller bug\r
+# and we fail loudly.\r
+if ($null -ne $env:HOUSTON_SSH_AUTH_SECRET) {\r
+  [Console]::Out.WriteLine($env:HOUSTON_SSH_AUTH_SECRET)\r
+  exit 0\r
+}\r
+[Console]::Error.WriteLine("Houston ssh-askpass invoked without HOUSTON_SSH_AUTH_SECRET.")\r
+exit 1\r
+`;
+
+const buildSshAskpassHelperDescriptor = Effect.fn("ssh/auth.buildSshAskpassHelperDescriptor")(
+  function* (input: {
+    readonly directory: string;
+  }): Effect.fn.Return<SshAskpassHelperDescriptor, never, Path.Path> {
+    const platform = yield* HostProcess.Platform;
+    const path = yield* Path.Path;
+    const directory = input.directory;
+
+    if (platform === "win32") {
+      const powershellPath = joinSshAskpassPath(directory, "ssh-askpass.ps1", platform);
+      return {
+        launcherPath: joinSshAskpassPath(directory, "ssh-askpass.cmd", platform),
+        files: [
+          {
+            path: joinSshAskpassPath(directory, "ssh-askpass.cmd", platform),
+            contents: ASKPASS_WINDOWS_LAUNCHER_SCRIPT,
+          },
+          {
+            path: powershellPath,
+            contents: ASKPASS_WINDOWS_SCRIPT,
+          },
+        ],
+      };
+    }
+
+    return {
+      launcherPath: path.join(directory, "ssh-askpass.sh"),
+      files: [
+        {
+          path: path.join(directory, "ssh-askpass.sh"),
+          contents: ASKPASS_POSIX_SCRIPT,
+          mode: 0o700,
+        },
+      ],
+    };
+  },
+);
+
+const ensureSshAskpassHelpers = Effect.fn("ssh/auth.ensureSshAskpassHelpers")(function* (input: {
+  readonly directory: string;
+}): Effect.fn.Return<string, PlatformError.PlatformError, FileSystem.FileSystem | Path.Path> {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const descriptor = yield* buildSshAskpassHelperDescriptor(input);
+  const platform = yield* HostProcess.Platform;
+
+  yield* fs.makeDirectory(path.dirname(descriptor.launcherPath), { recursive: true });
+
+  for (const file of descriptor.files) {
+    const existing = yield* fs.exists(file.path);
+    const current = existing ? yield* fs.readFileString(file.path) : null;
+    if (current !== file.contents) {
+      yield* fs.writeFileString(file.path, file.contents);
+    }
+    if (file.mode !== undefined && platform !== "win32") {
+      yield* fs.chmod(file.path, file.mode);
+    }
+  }
+
+  return descriptor.launcherPath;
+});
+
+// Keep setup serialized through cancellation so writes finish before another command uses the helper.
+let defaultSshAskpassRuntimeDirectory: string | undefined;
+const defaultSshAskpassLock = Semaphore.makeUnsafe(1);
+
+const ensureDefaultSshAskpassHelpers = Effect.fn("ssh/auth.ensureDefaultSshAskpassHelpers")(
+  function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const userId = yield* HostProcess.UserId;
+    let runtimeDirectory = defaultSshAskpassRuntimeDirectory;
+    if (runtimeDirectory !== undefined) {
+      const cached = runtimeDirectory;
+      const reusable = yield* Effect.all([fs.realPath(cached), fs.stat(cached)]).pipe(
+        Effect.map(
+          ([resolved, info]) =>
+            resolved === cached &&
+            info.type === "Directory" &&
+            (userId === undefined || Option.getOrUndefined(info.uid) === userId),
+        ),
+        Effect.orElseSucceed(() => false),
+      );
+      if (!reusable) {
+        runtimeDirectory = undefined;
+      }
+    }
+    runtimeDirectory ??= yield* fs.realPath(
+      yield* fs.makeTempDirectory({ prefix: "houston-ssh-runtime-" }),
+    );
+    const launcherPath = yield* ensureSshAskpassHelpers({
+      directory: path.join(runtimeDirectory, SSH_ASKPASS_DIR_NAME),
+    });
+    defaultSshAskpassRuntimeDirectory = runtimeDirectory;
+    return launcherPath;
+  },
+  (effect) => defaultSshAskpassLock.withPermit(Effect.uninterruptible(effect)),
+);
+
+export const buildSshChildEnvironment = Effect.fn("ssh/auth.buildSshChildEnvironment")(function* (
+  input: SshChildEnvironmentOptions = {},
+): Effect.fn.Return<
+  NodeJS.ProcessEnv,
+  PlatformError.PlatformError,
+  FileSystem.FileSystem | Path.Path
+> {
+  const baseEnv = { ...input.baseEnv };
+  if (!input.interactiveAuth) {
+    return baseEnv;
+  }
+
+  const platform = yield* HostProcess.Platform;
+  const hostDisplay = input.baseEnv
+    ? input.baseEnv.DISPLAY
+    : yield* Config.String("DISPLAY").pipe(
+        Config.option,
+        Effect.orElseSucceed(() => Option.none<string>()),
+        Effect.map(Option.getOrUndefined),
+      );
+  const sshAskpass =
+    input.askpassDirectory === undefined
+      ? yield* ensureDefaultSshAskpassHelpers()
+      : yield* ensureSshAskpassHelpers({ directory: input.askpassDirectory });
+
+  return {
+    ...baseEnv,
+    SSH_ASKPASS: sshAskpass,
+    SSH_ASKPASS_REQUIRE: "force",
+    ...(input.authSecret === undefined ? {} : { HOUSTON_SSH_AUTH_SECRET: input.authSecret ?? "" }),
+    ...(platform === "win32" || baseEnv.DISPLAY || hostDisplay ? {} : { DISPLAY: "houston" }),
+  };
+});
+
+const PUBLICKEY_DENIED =
+  /permission denied \((?:publickey|password|keyboard-interactive|hostbased|gssapi-with-mic)[^)]*\)/u;
+const AUTHENTICATION_FAILED = /authentication failed/u;
+const TOO_MANY_FAILURES = /too many authentication failures/u;
+
+export function isSshAuthFailure(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  const normalized = message.toLowerCase();
+  return (
+    PUBLICKEY_DENIED.test(normalized) ||
+    AUTHENTICATION_FAILED.test(normalized) ||
+    TOO_MANY_FAILURES.test(normalized)
+  );
+}
+
+const SIGNING_FAILURE_MESSAGE =
+  /sign_and_send_pubkey: signing failed(?: for [^\n]* from agent:|: (?:agent refused operation|communication with agent failed))/u;
+
+// A local agent signing failure cannot be remedied by the remote account password.
+export function isSshAgentSigningFailure(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return SIGNING_FAILURE_MESSAGE.test(message);
+}

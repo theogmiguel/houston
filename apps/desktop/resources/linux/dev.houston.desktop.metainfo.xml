@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>dev.houston.desktop</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Houston</name>
+  <summary>Mission control for CLI coding agents</summary>
+  <developer id="com.houston">
+    <name>Houston</name>
+  </developer>
+  <description>
+    <p>
+      Houston is a local-first mission control for CLI coding agents: a grid of
+      real terminals running your agent CLIs in your own project directories,
+      where an agent can spawn and drive another agent in a new pane.
+    </p>
+  </description>
+  <launchable type="desktop-id">dev.houston.desktop.desktop</launchable>
+  <icon type="stock">dev.houston.desktop</icon>
+  <provides>
+    <binary>houston</binary>
+  </provides>
+  <categories>
+    <category>Development</category>
+  </categories>
+  <url type="homepage">https://github.com/theogmiguel/houston</url>
+  <url type="bugtracker">https://github.com/theogmiguel/houston/issues</url>
+  <url type="vcs-browser">https://github.com/theogmiguel/houston</url>
+</component>

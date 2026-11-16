@@ -11,10 +11,10 @@ and approval. Merging a PR or pushing a tag does not publish a release.
    the workflow branch and `ref` on `main` for a stable release.
 2. Choose `kind`: `patch` for fixes, `minor` for features, `major` for a breaking
    release, or `rc` for a prerelease. Keep `include_windows` checked for the normal
-   Linux and Windows release. Leave `resume_tag` empty and `preview_only` unchecked.
+   release. Leave `resume_tag` empty and `preview_only` unchecked.
 3. Run the workflow. Its summary shows the source commit, next version, previous
    public release, selected platforms and release notes. It checks source CI,
-   updates the four manifests and both lockfiles, pushes the release commit and
+   updates the three manifests, pushes the release commit and
    tag, builds the installers and creates a **draft**. Nothing is public yet.
 4. Follow the draft link in the summary, or open **Releases** in the repository.
    Review the grouped notes, expand any legacy title-only entries, and save edits
@@ -31,6 +31,10 @@ and approval. Merging a PR or pushing a tag does not publish a release.
    links to the public release. Stable installations can discover the update;
    installation still requires an explicit user action. An RC stays a prerelease
    and is not offered through the stable update feed.
+7. After the release is public, the same run publishes the `houston-app` npm launcher at
+   the release version: `latest` for a stable release, `preview` for a prerelease. The
+   launcher downloads that release's server archive, so it is published only after the
+   archives are public. A tag cut before the launcher existed skips this step with a warning.
 
 To review the proposed version and notes before building, run **Cut release**
 with `preview_only` checked. It uploads a `release-notes-<tag>` Actions artifact
@@ -38,13 +42,13 @@ and writes a preview summary, but creates no commit, tag, installer or release.
 Run again with that option unchecked when ready. A preview does not reserve its
 version; another cut or changes to `main` can change the next result.
 
-| Cut release input | Meaning |
-|---|---|
-| `kind` | `patch`, `minor`, `major` or `rc`; ignored when resuming |
-| `ref` | Source branch, tag or SHA; stable cuts require the current tip of `main` |
-| `include_windows` | Defaults to `true`; disabling it deliberately produces Linux packages only |
-| `preview_only` | Inspect source CI, version and notes without building or changing repository state |
-| `resume_tag` | Existing tag to rebuild without another version commit or tag |
+| Cut release input | Meaning                                                                            |
+| ----------------- | ---------------------------------------------------------------------------------- |
+| `kind`            | `patch`, `minor`, `major` or `rc`; ignored when resuming                           |
+| `ref`             | Source branch, tag or SHA; stable cuts require the current tip of `main`           |
+| `include_windows` | Defaults to `true`; disabling it deliberately omits the Windows installer          |
+| `preview_only`    | Inspect source CI, version and notes without building or changing repository state |
+| `resume_tag`      | Existing tag to rebuild without another version commit or tag                      |
 
 ## Recover a failed attempt
 
@@ -119,42 +123,44 @@ not synchronize the manifest; finish editorial review before promoting it.
 
 ## Workflow responsibilities
 
-| Actions name | File | Purpose |
-|---|---|---|
-| CI | `ci.yml` | PR and main validation; no installers or publication |
-| Cut release | `cut-release.yml` | Manual version allocation, notes, builds and draft |
-| Promote draft to public | `publish-draft.yml` | Manual publication after smoke-test attestation and environment approval |
-| Build installers | `build-installers.yml` | Manual packaging validation; no version bump, tag or release |
-| Build Linux packages (internal) | `release-linux.yml` | Reusable Linux builds and packaged runtime checks |
-| Build Windows installer (internal) | `release-windows.yml` | Reusable native compilation and subsequent NSIS packaging |
-| Create release draft (internal) | `release-publish.yml` | Reusable signature verification, updater manifest and draft creation |
+| Actions name                       | File                   | Purpose                                                                  |
+| ---------------------------------- | ---------------------- | ------------------------------------------------------------------------ |
+| CI                                 | `ci.yml`               | PR and main validation; no installers or publication                     |
+| Cut release                        | `cut-release.yml`      | Manual version allocation, notes, builds and draft                       |
+| Promote draft to public            | `publish-draft.yml`    | Manual publication after smoke-test attestation and environment approval |
+| Build installers                   | `build-installers.yml` | Manual packaging validation; no version bump, tag or release             |
+| Build Linux packages (internal)    | `release-linux.yml`    | Reusable Linux builds and packaged runtime checks                        |
+| Build Windows installer (internal) | `release-windows.yml`  | Reusable Electron packaging, Authenticode and updater signing            |
+| Build macOS packages (internal)    | `release-macos.yml`    | Reusable unsigned `.dmg` and `.app.tar.gz` builds for arm64 and x64      |
+| Build server archives (internal)   | `release-server.yml`   | Reusable server archives for Linux and macOS, x64 and arm64              |
+| Create release draft (internal)    | `release-publish.yml`  | Reusable signature verification, updater manifest and draft creation     |
 
-The three internal workflows are called by the manual workflows; their lack of
+The five internal workflows are called by the manual workflows; their lack of
 independent runs does not mean they are unused. They are not dispatched directly.
 
-CI runs eight jobs: `safety-checks`, `renderer-checks`, `core-checks`,
-`core-integration`, `linux-native-checks`, `windows-renderer-checks`, `windows-checks` and
-`licence-inventory`. Cut release requires a successful run for the exact source
-commit and successful completion of every required job. A green run for an older
+CI runs the jobs in `.github/workflows/ci.yml`: `changes`, `static`, `typecheck`,
+`test-packages`, `test-server`, `test-web`, `test-web-browser`, `native-linux`,
+`server-windows` and the `ci-gate` aggregate. Cut release requires a successful run
+for the exact source commit and successful completion of every required job. A green run for an older
 commit is insufficient. Stable cuts require main CI; RC cuts may use PR CI for
-that exact PR head targeting `main`. Main pushes limited to documentation are
-excluded by CI's path filters; manually run CI for that commit before cutting.
-See the [development runbook](development.md) for the remaining local gates.
+that exact PR head targeting `main`. A push to `main` runs every CI job, including
+a documentation-only commit. See the [development runbook](development.md) for the remaining local gates.
 
 **Build installers** accepts any source ref and resolves it once to an immutable
-commit shared by all jobs. Both platforms are selected by default. Selecting
-`windows` still builds Linux packages because Windows embeds their x86_64 daemon
-for WSL. It uploads artifacts only and is the packaging check to run before
+commit shared by all jobs. Its `platform` input is `all` (the default), `linux`,
+`windows` or `macos`; `windows` and `macos` still build the Linux packages. It
+uploads artifacts only and is the packaging check to run before
 merging changes to the bundle pipeline.
 
-Linux builds x86_64 and aarch64 packages. Windows native compilation starts in
-parallel with Linux; NSIS packaging waits for the Linux WSL artifact and validates
-its real daemon and helper before bundling. The intermediate Windows native
-artifact is internal to Actions and is not a release asset. This removes Linux
-build time from the start of Windows compilation without omitting WSL resources.
+Linux builds x86_64 and aarch64 AppImages and debs. Windows builds its NSIS
+installer in parallel, and every cut also builds unsigned macOS bundles (`.dmg`
+and `.app.tar.gz`, arm64 and x64) and the server archives; no platform job waits for
+another, and no intermediate artifact is uploaded. Every desktop job builds the
+Electron host with `scripts/build-desktop-artifact.ts`. The deb's package name is
+`houston`: it installs under `/opt/Houston` and links `/usr/bin/houston`.
 
 Before filing the draft, Linux packages run headlessly on Ubuntu 22.04, Ubuntu
-24.04, Debian 12 and current Fedora. The packaged x86_64 app and daemon also run
+24.04, Debian 12 and current Fedora. The packaged x86_64 app also runs
 under QEMU's baseline CPU. These checks catch missing runtime dependencies, ABI
 floor changes and unsupported CPU instructions. They do not replace graphical
 smoke tests on real Linux and Windows desktops.
@@ -163,13 +169,11 @@ smoke tests on real Linux and Windows desktops.
 
 Only a release changes versions. Feature PRs do not edit the version manifests:
 
-- `src-tauri/tauri.conf.json`
-- `src-tauri/Cargo.toml`
-- `ui/package.json`
-- `core/Cargo.toml` (`workspace.package.version`)
+- `apps/desktop/package.json` (the Electron app's version and the bundle filenames)
+- `apps/server/package.json` (the server archives and `houston` runtime read it)
+- `apps/web/package.json` (the renderer bundle the desktop host serves)
 
-`scripts/set-version.sh X.Y.Z` updates all four and both Cargo lockfiles using
-`cargo update --workspace`, without updating dependencies. It accepts `X.Y.Z` or
+`scripts/set-version.sh X.Y.Z` updates all three. It accepts `X.Y.Z` or
 `X.Y.Z-rc.N`. `scripts/check-manifest-versions.sh` verifies agreement and checks a
 resumed tag's expected version. Cut release runs these scripts; contributors do
 not bump versions by hand.
@@ -193,7 +197,7 @@ uses the configured release deploy key. A manually pushed `v*` tag starts no
 workflow. The `stable-release` environment's required reviewer is the publication
 control; configure it as described below rather than relying on the checkbox alone.
 
-### Windows signing: two paths, one secret
+### Windows signing: two signatures, different purposes
 
 The Windows installer, when a cut builds one, gets two independent signatures.
 The updater one is not optional: a Windows cut signs the `.exe` with the
@@ -206,12 +210,17 @@ secret, `AZURE_TRUSTED_SIGNING_ACCOUNT_NAME`:
   and the job summary says so and names the missing secret. This is the
   documented normal state and it never fails the build. `README.md` and
   `docs/user/install.md` tell downloaders to expect the warning.
-- **Present** — `azure/trusted-signing-action` signs the bundled `.exe` in
-  place. That rewrites the file's bytes, which is why the order matters:
-  Authenticode first, then `cargo tauri signer sign` for the updater. A
+- **Present** — `azure/trusted-signing-action` signs the installer in the
+  staging directory. That rewrites the file's bytes, which is why the order
+  matters: Authenticode first, then the Tauri CLI signer for the bridge. A
   Minisign signature over the pre-Authenticode bytes would never verify, so a
-  stale `.sig` is removed before the updater signs. Both paths produce the
-  same `.exe` and `.exe.sig` names, and nothing downstream changes.
+  stale `.sig` is removed before the updater signs.
+
+Authenticode also invalidates electron-builder's sha512 and size in
+`latest.yml`, so `scripts/refresh-updater-metadata.mjs` recomputes them from the
+final bytes. NSIS differential packages are disabled: their block map is built
+before signing and a rewritten installer cannot match it, so Windows updates are
+full downloads.
 
 **The maintainer's decision**, and the only one: whether to buy Azure Trusted
 Signing. It is the cheaper of the two ways to get a signature a fresh Windows
@@ -229,34 +238,27 @@ is wired for both and running the unsigned one.
 
 ### Houston checks for a release; you click to install it
 
-The daemon fetches `releases/latest/download/latest.json`, the same manifest the
-app's updater reads, once at start, every six hours, and whenever the About
-panel's **Check now** is pressed, and broadcasts what it found. The panel names
-the release, shows a teaser of its notes and links to the release page, whose URL
-is built from the manifest's version. The notes are the manifest's `notes`
-field, synchronized from the reviewed draft by **Promote draft to public**. Edits
-made after publication do not change what the panel shows.
-Scheduled checks also revalidate the shared model catalog independently of the release result.
-Release checks send the last valid ETag within a daemon lifetime; a `304` reuses the cached
-release payload. Restarting the daemon performs a full release check.
+The Electron host updates through electron-updater. It reads `latest.yml`
+(Windows), `latest-linux.yml` or `latest-linux-arm64.yml` from the repository's
+GitHub releases about 15 seconds after start, every four minutes, and whenever
+Settings ▸ About's **Check for Updates** is pressed. A stable installation
+ignores prereleases, so an RC is not offered. Checking never downloads or
+installs: **Download** and then **Install** each need a click, and
+electron-updater verifies the download against the sha512 and size in the feed.
+Linux updates need the AppImage or the deb: a deb installs through `dpkg`, and an
+AppImage replaces its own file and relaunches. `HOUSTON_DISABLE_AUTO_UPDATE`
+turns updating off.
 
-**Install update** is the other half: the app fetches the fixed manifest
-`releases/latest/download/latest.json`, picks the entry for this exact bundle
-(`linux-x86_64-deb`, `linux-x86_64-appimage`, `windows-x86_64-nsis`),
-downloads it, verifies the artifact's signature against the public key in
-`src-tauri/tauri.conf.json`, and installs. It refuses by name when the manifest
-publishes nothing for this bundle, when the signature does not verify, when the
-manifest's version is no longer the one the panel showed, and — on Windows —
-when the channel's daemon has live sessions, because the installer replaces the
-`houston-core.exe` they run on.
-
-On Linux a deb install runs the system package manager's usual privileged
-install, and the app then asks the running daemon to hand its sessions to the
-newly installed `houston-core`; a handoff the daemon refuses leaves every
-session on the current daemon and says why. An AppImage install replaces the
-running file and relaunches into the new mount. On Windows the NSIS installer
-runs; the progress and the outcome appear in the panel. Nothing installs
-without a click, and nothing unsigned or unverifiable installs at all.
+`latest.json` is the **update bridge** for installed copies of the earlier
+application, which updated through a Tauri updater. They read the manifest, pick
+the entry for their bundle (`linux-x86_64-deb`, `linux-x86_64-appimage`,
+`windows-x86_64-nsis`), and verify its Minisign signature against the public key
+in `scripts/updater-pubkey.txt`. The entry it selects is the Electron build of the
+same version: the AppImage or deb on Linux, the NSIS installer on Windows. On
+Windows the NSIS installer is started the way the Tauri updater starts its own
+— `/P /UPDATE /R /ARGS` — which the Electron installer's `customInit` accepts,
+reuses `%LOCALAPPDATA%\Houston`, removes the Tauri uninstall registry entry, and
+relaunches Houston with the supplied arguments.
 
 **Getting the keypair in place** is one maintainer sitting, and releases do not
 run without it:
@@ -267,13 +269,13 @@ run without it:
    manager.
 2. Repository → Settings → Secrets and variables → Actions: add
    `TAURI_SIGNING_PRIVATE_KEY` (the file's contents) and
-   `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (the passphrase). Every release
-   workflow refuses a run without them; a cut stops before it pushes anything.
-3. Paste the **public** key into `src-tauri/tauri.conf.json` under
-   `plugins → updater → pubkey` (a public key is not a secret and belongs in
-   the tree). The publish and promotion gates verify every artifact and its
-   signed comment against this key with Minisign before publishing anything.
-   A mismatched signing secret stops the release, even if the bundler succeeds.
+   `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (the passphrase). A cut
+   refuses a run without them and stops before it pushes anything.
+3. Paste the **public** key into `scripts/updater-pubkey.txt` (a public key is
+   not a secret and belongs in the tree). The publish and promotion gates verify
+   every artifact and its signed comment against this key with Minisign before
+   publishing anything. A mismatched signing secret stops the release, even if
+   the package build succeeds.
 
 Keep the private key backed up securely. Installed copies trust the public key
 embedded when they were built: replacing it in the repository does not change
@@ -284,48 +286,68 @@ manually to trust a new pair.
 
 ### Public update feed
 
-The updater uses one public release asset:
-`https://github.com/theogmiguel/houston/releases/latest/download/latest.json`.
-Each published release attaches `latest.json` with the signatures of its
-release artifacts, so installed copies can select and verify the matching
-installer. The first published release establishes this feed; an end-to-end
-update is exercised by installing that release and moving to a subsequent one.
+Two feed shapes are published from the same release assets.
+
+`https://github.com/theogmiguel/houston/releases/latest/download/latest.json`
+is the Minisign-signed bridge read by installed Tauri copies. Each published
+release attaches it with the signatures of its Electron artifacts, so an
+installed copy can select and verify the installer for its bundle.
+
+electron-updater reads `latest-linux.yml`, `latest-linux-arm64.yml` and
+`latest.yml` from the same release, with sha512 hashes instead of Minisign
+signatures. An Electron installation updates from those files.
 
 What every release carries:
 
-1. The bundle workflows sign what they build. On Windows that is
-   `cargo tauri signer sign` after the optional Authenticode step; on Linux the
-   bundler signs the AppImage and the deb as it writes them, and the workflow
-   signs any it left unsigned.
-2. `release-publish.yml` verifies the set — one AppImage family and one deb for
-   Linux x86_64 and ARM64, plus one Windows x86_64 NSIS installer when the cut
-   included Windows, a `.sig` beside each, every filename carrying the
-   release's version — and refuses anything else. It also verifies every bundle
-   and signed comment against `plugins.updater.pubkey`. Promotion repeats this
-   verification over the downloaded draft assets before making them public.
-3. `latest.json` embeds each `.sig` file's contents under both the bare
-   `linux-<arch>` / `windows-<arch>` key and the bundle-specific
-   `-appimage`, `-deb` and `-nsis` keys, so a deb install and an AppImage
-   install each resolve their own payload.
-4. The manifest is published as a release asset, which is what makes the URL
-   above resolvable.
+1. The bundle workflows build with `scripts/build-desktop-artifact.ts`, then
+   sign every updater artifact with the Tauri CLI signer: the AppImage and deb
+   on Linux, the NSIS installer on Windows, the `.app.tar.gz` and `.dmg` on
+   macOS. On Windows the Minisign step follows the optional Authenticode step.
+2. Linux ARM64 writes `latest-linux-arm64.yml`; Linux x86_64 writes
+   `latest-linux.yml`; Windows writes `latest.yml`. Electron-builder writes
+   them during packaging, and `release-publish.yml` and promotion check that
+   each hash and size describes the uploaded bytes.
+3. `release-publish.yml` verifies the Minisign set — one AppImage and one deb
+   for Linux x86_64 and ARM64, one `.app.tar.gz` and one `.dmg` for macOS x64 and
+   arm64, plus one Windows x86_64 NSIS installer when the cut included Windows, a
+   `.sig` beside each, every filename carrying the
+   release's version — and refuses anything else. It also verifies every
+   bundle and signed comment against `scripts/updater-pubkey.txt`. Promotion
+   repeats this verification over the downloaded draft assets before making
+   them public.
+4. `latest.json` embeds each `.sig` file's contents under the bare
+   `linux-<arch>` / `windows-<arch>` / `darwin-<arch>` key and the bundle-specific
+   `-appimage`, `-deb`, `-nsis` and `-app` keys, so a deb install and an AppImage
+   install each resolve their own payload. The artifact names are
+   `Houston-<version>-<arch>.AppImage`, `Houston-<version>-<arch>.deb`,
+   `Houston-<version>-<arch>-setup.exe` and
+   `Houston-<version>-<arch>.app.tar.gz`.
+5. The manifest and the `latest*.yml` files are published as release assets,
+   which is what makes the URLs above resolvable.
 
 ### Repository settings a maintainer sets by hand
 
 None of these live in the tree; they are GitHub settings, and a fresh clone of
 the repo does not carry them.
 
-- **Branch protection on `main`**: require a pull request, and require the
-  status checks `safety-checks`, `renderer-checks`, `core-checks` and
-  `licence-inventory`. Every pull request must run all four — a required check
-  that never runs stays pending and blocks the merge for ever, which is why
-  `ci.yml` no longer skips jobs on a docs-only change. Give deploy keys the
+- **Branch protection on `main`**: require a pull request and the single status
+  check `ci-gate`. It runs on every pull request and treats jobs skipped by the
+  path filter as a pass, so a documentation-only change never leaves a required
+  check pending. Give deploy keys the
   ruleset bypass; do not give users one. **Cut release** authenticates with the
   sole write-enabled deploy key and remains the only path around the PR rule.
 - **The `stable-release` environment**: create it under Settings ▸
   Environments and add a required reviewer. `publish-draft.yml` names it, and
   until it exists the promote workflow runs unprotected — the reviewer is the
   only thing standing between a smoke-tested draft and the public.
+- **npm trusted publisher for `houston-app`**: on npmjs.com, under the package's
+  Settings ▸ Trusted Publisher, add GitHub Actions with repository
+  `theogmiguel/houston`, workflow `publish-draft.yml` and environment
+  `stable-release`. The workflow holds no npm token; without this entry its
+  publish step fails after the GitHub release is already public. Publish the
+  launcher by hand from the tag: `node scripts/build-npm-launcher.mjs --version
+  <X.Y.Z> --output-dir npm-packages`, then `npm publish --access public --tag
+  latest npm-packages/houston-app.tgz` (`--tag preview` for an RC).
 - **Discussions**: on, with an **Ideas** category. Feature requests are routed
   there by `.github/ISSUE_TEMPLATE/config.yml`, which points at it by URL.
 - **Private vulnerability reporting**: on. `SECURITY.md` sends reporters to the
@@ -358,129 +380,104 @@ Linux, from a Windows host, via the WSL2 testbed:
 ./scripts/linux-vm.sh gate
 ```
 
-Or natively on Linux, the same commands `docs/operations/development.md` names for
-`core`/`src-tauri`/`ui`.
+Or natively on Linux, the same commands `docs/operations/development.md` names for the
+workspace and the native crates.
 
 `linux-vm.sh gate` runs only a subset of the CI safety scripts. It does
 not replace the complete local gate in
 [`docs/operations/development.md`](development.md); a release must run the
 remaining checks as well.
 
-Windows: natively, the same `cargo nextest run && cargo test --doc && cargo clippy --all-targets -- -D
-warnings && cargo fmt` / `bun run typecheck && bun run test && bun run build
-&& bun run check:css` commands — typed by hand, not wrapped in a script.
+Windows: natively, the same commands as the development runbook's full gate, typed by
+hand, not wrapped in a script.
 
 ### 2. Build artifacts
 
-Linux, via the testbed:
+All platforms use the same packaging script the release workflows call. It
+builds the renderer, the desktop bundle and the server, stages their
+dependencies, and hands the result to electron-builder.
+
+Linux, for the host architecture:
 
 ```
-./scripts/linux-vm.sh build
-./scripts/linux-vm.sh wait build
+pnpm install --frozen-lockfile
+CARGO_BUILD_JOBS=3 node scripts/build-desktop-artifact.ts \
+  --platform linux --target AppImage --arch x64 \
+  --version <X.Y.Z> --output-dir release --verbose
 ```
 
-This calls `scripts/build-app.sh --bundles appimage,deb` on the VM. Use that
-script rather than invoking `cargo tauri build` directly: it builds the
-renderer, checks generated protocol bindings and stages every required Linux
-sidecar before bundling.
+Output: `release/Houston-<version>-x86_64.AppImage`,
+`release/Houston-<version>-amd64.deb` and `release/latest-linux.yml`.
 
-**The testbed's distro is the artifact's glibc floor.** It defaults to Ubuntu
-24.04, which builds bundles needing glibc 2.38 or newer — AppImage included,
-because the bundler copies the host's libraries — and that breaks the promise
-the release workflow keeps by building on 22.04. Before a local cut, gate the result from the
-repo root inside the VM:
+**The build host's distro is the artifact's glibc floor.** Building on Ubuntu
+24.04 produces bundles needing glibc 2.38 or newer — AppImage included, because
+the bundler copies the host's libraries — and that breaks the promise the
+release workflow keeps by building on 22.04. Before a local cut, gate the
+result:
 
 ```
 ./scripts/check-linux-abi.sh <deb> x86_64
 ```
 
-It refuses a too-new bundle and prints the symbol versions that caused it. A
-`LINUX_VM_DISTRO=Ubuntu-22.04` testbed is the other way to keep the floor.
-
-`build-app.sh`, unpacked:
-
-1. Re-execs itself under `scripts/oom-shield.sh` (`-j 3`) unless already
-   shielded, so the **whole pipeline** — renderer build included — is one
-   serialized unit. Concurrent runs can race while `vite build` applies
-   `emptyOutDir: true`.
-2. `cd ui && bun run build` (unless `--skip-renderer`).
-3. `./scripts/check-renderer-fresh.sh` — unconditional, not skippable by any
-   flag.
-4. Builds and stages `tr-helper`, `houston-core` and `houston-supervisor` at
-   `src-tauri/binaries/<name>-<host target triple>`, where Tauri's
-   `bundle.externalBin` expects them. This runs **before** the bundle: a
-   missing external binary fails the `src-tauri` build outright.
-5. `CARGO_BUILD_JOBS=3 cargo tauri build --bundles <targets>`, then copies the
-   un-suffixed helper beside the app binary in `target/release` for the
-   un-bundled dev layout and for `install-desktop.sh`.
-
-Bundle output: `src-tauri/target/release/bundle/{appimage,deb}/*.{AppImage,deb}`.
+It refuses a too-new bundle and prints the symbol versions that caused it. Use a
+22.04 machine or the `LINUX_VM_DISTRO=Ubuntu-22.04` testbed to keep the floor.
 
 Windows:
 
 ```powershell
-$env:HOUSTON_WSL_LINUX_BIN_DIR = '<Linux core/target/release>'
-./scripts/build-app.ps1
-cd src-tauri
-cargo tauri bundle --bundles nsis --ci
+node scripts/build-desktop-artifact.ts --platform win --target nsis --arch x64 --version <X.Y.Z> --output-dir release --verbose
 ```
 
-Build the Linux `houston-core`, `tr-helper` and `houston-supervisor` at the same
-commit inside WSL first, and point `HOUSTON_WSL_LINUX_BIN_DIR` to that output.
-The script requires these resources and validates them before building the app.
-See [Windows artifacts](development.md#windows) for the prerequisite build.
+Output: `release/Houston-<version>-x64-setup.exe` and `release/latest.yml`.
 
-`build-app.ps1` runs the renderer gates, stages the native sidecars from one
-locked Cargo build, and builds the production app through
-`cargo tauri build --no-bundle --ci -- --locked`, with three Cargo jobs.
-The separate bundle step packages that build without recompiling it. A release
-requires updater signing keys; a local unsigned build can use `--no-sign`.
+macOS (unsigned internal build):
 
-Bundle output: `src-tauri/target/release/bundle/nsis/*.exe`.
+```
+node scripts/build-desktop-artifact.ts --platform mac --target dmg --arch arm64 --version <X.Y.Z> --output-dir release --verbose
+```
+
+Output: `release/Houston-<version>-arm64.dmg`. Repack
+`release/mac-arm64/Houston.app` as `Houston-<version>-arm64.app.tar.gz` for the
+Tauri bridge, as `release-macos.yml` does.
+
+A release requires updater signing keys. Without `TAURI_SIGNING_PRIVATE_KEY` the
+build still works, but no installed copy can verify its artifacts.
 
 ### 3. Smoke-test the bundle
 
 A stable cut creates only a **draft**, and **Promote draft to public** is what
-makes it visible. CI proves the built x86_64 AppImage *loads and answers* on
+makes it visible. CI proves the built x86_64 AppImage _loads and answers_ on
 the four distributions above, but not that the window opens: runners are
 headless, so no webview ever initializes there. Manual smoke-test is a hard
 requirement before promoting or handing anything out, local release or not:
-install the artifact and run it (`./scripts/linux-vm.sh app` on the Linux testbed)
-first. Smoke-test every platform included in the draft before promotion.
+install the artifact and run it on a real desktop first. Smoke-test every
+platform included in the draft before promotion.
 
 For Windows, install the NSIS artifact on Windows 10 or 11 and launch it on an
-isolated test channel. Verify terminal input and coloured output, browser navigation,
-task startup in a worktree and child-pane orchestration. Close and reopen the app
-to confirm that its detached daemon and sessions remain available. Verify the
-update flow separately: Windows updates stop sessions before replacing the daemon.
-
-A Windows installer also gets a WSL pass, because no CI job reaches a real distro.
-Install it, then on a test channel (for example `houston.exe --channel wslt`, so
-neither the release state nor the distro's `~/.houston` is touched):
-
-1. Settings → WSL → **Enable** an x86_64 WSL 2 distro; its row reaches the running state.
-2. **Workspaces → + → Local folder…** → a folder under `\\wsl.localhost\<distro>\home\…`;
-   the rail shows it with `WSL: <distro>`.
-3. Open a shell pane there; `uname -s` prints `Linux` and `pwd` the POSIX path.
-4. In that pane, `houston .` from another folder selects it in the Windows app.
-5. Quit from the tray; the distro's `~/.houston-wslt/daemon.json` is gone afterwards.
-
-The `wsl_live` tests in [`development.md`](development.md#wsl_live) cover the daemon,
-relay and session path of that pass against the same distro without the installer.
+isolated test channel. Start a thread with each installed agent CLI, close and reopen
+the window, and confirm that the server and its agent runs remain available.
 
 ### 4. Publish
 
 A local cut signs its bundles the same way CI does, so the two secrets have to
 be in the environment when the build runs (`TAURI_SIGNING_PRIVATE_KEY`,
-`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`) — on the VM too, since the Linux build is
-where the `.sig` files come from. Then generate the notes once, build the
-manifest from the files the bundles produced, and file the release with the
-same body `latest.json` carries. Install the `minisign` CLI first; the manifest
-generator requires it for signature verification:
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`). Sign every release artifact with the
+Tauri CLI (`cargo tauri signer sign <artifact>`), keeping the `.sig` beside it,
+then refresh electron-builder's feed hashes and generate the notes once. Build
+the manifest from the signed files and file the release with the same body
+`latest.json` carries. Install the `minisign` CLI first; the manifest generator
+requires it for signature verification.
 
 ```bash
 release_tag=v0.10.0
 release_version=${release_tag#v}
+
+for artifact in <artifacts-dir>/*.AppImage <artifacts-dir>/*.deb \
+                <artifacts-dir>/*-setup.exe <artifacts-dir>/*.app.tar.gz \
+                <artifacts-dir>/*.dmg; do
+  cargo tauri signer sign "$artifact"
+done
+node scripts/refresh-updater-metadata.mjs <artifacts-dir>
 
 python3 scripts/release-helper.py notes \
   --repo theogmiguel/houston --source "$release_tag" --tag "$release_tag" \
@@ -500,6 +497,10 @@ gh release create "$release_tag" --draft --verify-tag \
 Add `--prerelease` for an `rc` — the same rule the workflow applies — or
 publishing the draft would offer a candidate through `releases/latest`.
 
+`gen-update-manifest.py` requires the Linux, Windows and macOS bundles; pass
+`--no-windows`, `--no-macos` or `--linux-only` when the artifact directory
+deliberately lacks them.
+
 Fully manual, and the same work `release-publish.yml` does — including its
 refusals: the manifest script rejects a set with a missing or invalid `.sig`, a
 missing architecture or a filename from another version, so the release never
@@ -514,46 +515,15 @@ The local-install step, separate from packaging:
 ./scripts/install-desktop.sh
 ```
 
-Refuses, in order, on:
+Refuses on:
 
-- Missing promo-art PNG.
-- Missing app binary at `src-tauri/target/release/houston` (told to run
-  `build-app.sh`).
-- **Renderer staleness** — re-runs `check-renderer-fresh.sh`.
-- **Binary staleness** — re-runs `check-binary-fresh.sh` (mtime-compares the
-  binary against the Rust source, `Cargo.toml`/`Cargo.lock`, and
-  `tauri.conf.json`).
+- Missing AppImage at `release/Houston-*.AppImage` (told to run
+  `pnpm dist:desktop:linux`), unless `TR_APP` names one.
 - **Repo-path leak** — after writing `launch.sh`, `start.sh`, and the
   `.desktop` file into `~/.local/lib/houston/` and
   `~/.local/share/applications/`, greps all three for the repo's own
   absolute path and refuses to finish if found. This is what keeps the
-  installed app from ever executing a path inside the repo — an ordinary
-  `cargo build --release` in this tree must never be able to relink what the
-  installed app runs.
+  installed app from ever executing a path inside the repo.
 
-Installs: `~/.local/lib/houston/{houston, tr-helper, houston-core,
-houston-supervisor, start.sh, launch.sh}`,
-`~/.local/share/applications/houston.desktop`
-(`StartupWMClass=houston`), and night-tile PNGs at 48/64/128/256/512px under
-`~/.local/share/icons/hicolor/**/apps/houston.png`.
-
-## `tr-helper`
-
-A slim agent-facing helper binary serving only `hook` — `hs-mail` (the
-file-based inter-pane IPC it used to serve) is retired; messages between
-panes are inbox rows delivered through `pane_submit`/`hs-pane` instead. Built
-separately from `core/Cargo.toml` and copied beside the app binary. It links
-~6 shared objects against the full app binary's ~130 (GTK/WebKit/GStreamer),
-avoiding a 20–40 ms / ~38 MB dynamic-link cost per hook event. Its copy is
-best-effort in `install-desktop.sh` (warns, not fatal, if missing — the
-resolver falls back to the full app binary).
-
-It **is** bundled. `tauri.conf.json` declares
-`"bundle": { "externalBin": ["binaries/tr-helper", "binaries/houston-core"] }`, so Tauri picks up
-`src-tauri/binaries/tr-helper-<target triple>[.exe]` (the suffix is the
-convention — Tauri appends the triple when it looks, and strips it again when
-it installs) and drops it beside the app binary in every bundle:
-`/usr/bin/tr-helper` next to `/usr/bin/houston` in the deb, `usr/bin/` inside
-the AppImage mount, the install dir under NSIS. Each of those is the directory
-`agent_helper_exe` stats, so the resolver needs to know nothing about
-packaging. Nothing is uploaded loose any more.
+Installs: `~/.local/lib/houston/{houston.AppImage, start.sh, launch.sh}` and
+`~/.local/share/applications/houston.desktop` (`StartupWMClass=houston`).

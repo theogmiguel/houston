@@ -1,0 +1,46 @@
+import { PreviewCard as PreviewCardPrimitive } from "@base-ui/react/preview-card";
+
+import { cn } from "~/lib/utils";
+import { overlayMotion } from "./overlayMotion";
+
+const PreviewCard = PreviewCardPrimitive.Root;
+
+function PreviewCardTrigger(props: PreviewCardPrimitive.Trigger.Props) {
+  return <PreviewCardPrimitive.Trigger data-slot="preview-card-trigger" {...props} />;
+}
+
+function PreviewCardPopup({
+  className,
+  align = "start",
+  side = "top",
+  sideOffset = 6,
+  ...props
+}: PreviewCardPrimitive.Popup.Props & {
+  align?: PreviewCardPrimitive.Positioner.Props["align"];
+  side?: PreviewCardPrimitive.Positioner.Props["side"];
+  sideOffset?: PreviewCardPrimitive.Positioner.Props["sideOffset"];
+}) {
+  return (
+    <PreviewCardPrimitive.Portal>
+      <PreviewCardPrimitive.Positioner
+        align={align}
+        className="z-[140] max-w-(--available-width)"
+        data-slot="preview-card-positioner"
+        side={side}
+        sideOffset={sideOffset}
+      >
+        <PreviewCardPrimitive.Popup
+          className={cn(
+            overlayMotion,
+            "rounded-[var(--r-group)] border border-border bg-popover text-popover-foreground shadow-[var(--shadow-1)] outline-none",
+            className,
+          )}
+          data-slot="preview-card-popup"
+          {...props}
+        />
+      </PreviewCardPrimitive.Positioner>
+    </PreviewCardPrimitive.Portal>
+  );
+}
+
+export { PreviewCard, PreviewCardPopup, PreviewCardTrigger };

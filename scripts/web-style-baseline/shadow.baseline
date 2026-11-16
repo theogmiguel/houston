@@ -1,0 +1,11 @@
+1 apps/web/src/components/chat/composerProviderState.tsx
+1 apps/web/src/components/preview/PreviewChromeRow.tsx
+1 apps/web/src/components/settings/ThemePreviewCircles.tsx
+1 apps/web/src/components/settings/ThemeSettings.tsx
+4 apps/web/src/components/settings/ThemeWireframe.tsx
+1 apps/web/src/components/ui/checkbox.tsx
+3 apps/web/src/components/ui/color-picker.tsx
+1 apps/web/src/components/ui/menu.tsx
+1 apps/web/src/components/ui/radio-group.tsx
+2 apps/web/src/components/ui/sheet.tsx
+1 apps/web/src/components/ui/switch.tsx

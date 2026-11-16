@@ -1,0 +1,145 @@
+import {
+  TrimmedNonEmptyString,
+  ServerProviderCompatibilityStatus,
+  type ProviderDriverKind,
+  type ServerProvider,
+  type ServerProviderCompatibilityAdvisory,
+} from "@houston-app/contracts";
+import { satisfiesSemverRange } from "@houston-app/shared/semver";
+import * as Schema from "effect/Schema";
+import packageJson from "../../package.json" with { type: "json" };
+
+const STABLE_VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
+
+const StableVersion = TrimmedNonEmptyString.pipe(
+  Schema.check(Schema.makeFilter((value) => STABLE_VERSION_PATTERN.test(value))),
+);
+const WHITESPACE_RUN = /\s+/;
+const VERSION_RANGE_PATTERN = /^(?:\^|>=|>|<=|<|=)?v?\d+(?:\.\d+){0,2}$/;
+
+const VersionRange = TrimmedNonEmptyString.pipe(
+  Schema.check(
+    Schema.makeFilter((value) =>
+      value.split("||").every((group) => {
+        const tokens = group.trim().split(WHITESPACE_RUN);
+        return tokens.every((token) => VERSION_RANGE_PATTERN.test(token));
+      }),
+    ),
+  ),
+);
+const Policy = Schema.Struct({
+  driver: TrimmedNonEmptyString,
+  houstonCodeRange: VersionRange,
+  recommendedRange: Schema.optionalKey(VersionRange),
+  recommendedVersion: Schema.optionalKey(StableVersion),
+  ranges: Schema.Array(
+    Schema.Struct({
+      range: VersionRange,
+      status: ServerProviderCompatibilityStatus,
+    }),
+  ),
+});
+
+export const ProviderCompatibilityPolicy = Policy.pipe(
+  Schema.check(
+    Schema.makeFilter(
+      (policy) => {
+        const version = policy.recommendedVersion;
+        if (version === undefined) return true;
+        return (
+          (policy.recommendedRange === undefined ||
+            satisfiesSemverRange(version, policy.recommendedRange)) &&
+          policy.ranges.find((entry) => satisfiesSemverRange(version, entry.range))?.status ===
+            "supported"
+        );
+      },
+      { expected: "a recommended version in a supported range" },
+    ),
+  ),
+);
+export type ProviderCompatibilityPolicy = typeof ProviderCompatibilityPolicy.Type;
+
+const LEADING_V = /^v/;
+const DATED_RELEASE_VERSION = /^(\d{4}\.\d{2}\.\d{2})-[a-f0-9]+$/;
+const ACP_SERVER_VERSION = /^agy_acp_server_(\d+\.\d+\.\d+)$/;
+const RELEASE_CANDIDATE_VERSION = /^(\d+\.\d+\.\d+)-R\d+(?:\.\d+)?$/;
+
+export function resolveProviderCompatibility(
+  policies: ReadonlyArray<ProviderCompatibilityPolicy> | undefined,
+  driver: ProviderDriverKind,
+  version: string | null,
+  houstonCodeVersion = packageJson.version,
+): ServerProviderCompatibilityAdvisory | undefined {
+  const policy = policies?.find(
+    (entry) =>
+      entry.driver === driver && satisfiesSemverRange(houstonCodeVersion, entry.houstonCodeRange),
+  );
+  if (!policy) return undefined;
+  const unprefixed = version?.replace(LEADING_V, "");
+  // Strip Cursor build hashes, Google ACP release prefixes and Muse revisions; leave semver prereleases unknown.
+  const stable =
+    driver === "cursor"
+      ? unprefixed?.replace(DATED_RELEASE_VERSION, "$1")
+      : driver === "antigravity"
+        ? unprefixed?.replace(ACP_SERVER_VERSION, "$1")
+        : driver === "muse"
+          ? unprefixed?.replace(RELEASE_CANDIDATE_VERSION, "$1")
+          : unprefixed;
+  const status =
+    stable && STABLE_VERSION_PATTERN.test(stable)
+      ? (policy.ranges.find((entry) => satisfiesSemverRange(stable, entry.range))?.status ??
+        "unknown")
+      : "unknown";
+  const message =
+    status === "broken"
+      ? "This provider version is known to be incompatible with this Houston release."
+      : status === "unsupported"
+        ? "This provider version is outside the supported range for this Houston release."
+        : status === "graceful"
+          ? "This provider version has limited compatibility with this Houston release."
+          : null;
+  const recommendedVersion = policy.recommendedVersion ?? null;
+  const recommendedRange = policy.recommendedRange ?? null;
+  const recommendation = recommendedVersion ?? recommendedRange;
+  return {
+    status,
+    message: message && recommendation ? `${message} Use ${recommendation}.` : message,
+    recommendedVersion,
+    recommendedRange,
+  };
+}
+
+export function applyProviderCompatibility(
+  snapshot: ServerProvider,
+  policies: ReadonlyArray<ProviderCompatibilityPolicy> | undefined,
+  fallback: ReadonlyArray<ProviderCompatibilityPolicy> | undefined,
+): ServerProvider {
+  const { compatibilityAdvisory: _previous, ...base } = snapshot;
+  if (!snapshot.enabled || !snapshot.installed) return base;
+  const advisory =
+    resolveProviderCompatibility(policies, snapshot.driver, snapshot.version) ??
+    resolveProviderCompatibility(fallback, snapshot.driver, snapshot.version);
+  const latestVersion = snapshot.versionAdvisory?.latestVersion;
+  const latestAdvisory = latestVersion
+    ? (resolveProviderCompatibility(policies, snapshot.driver, latestVersion) ??
+      resolveProviderCompatibility(fallback, snapshot.driver, latestVersion))
+    : undefined;
+  const updateCommand = snapshot.versionAdvisory?.updateCommand;
+  // The maintenance resolver emits this command only for confirmed Homebrew installs.
+  const needsHomebrewRefresh =
+    updateCommand?.startsWith("brew upgrade ") &&
+    (advisory?.status === "unsupported" || advisory?.status === "broken") &&
+    (latestAdvisory?.status === "unsupported" || latestAdvisory?.status === "broken");
+  return advisory
+    ? {
+        ...base,
+        compatibilityAdvisory: {
+          ...advisory,
+          message: needsHomebrewRefresh
+            ? `${advisory.message} Homebrew's local package metadata may be stale. Run brew update && ${updateCommand} on this environment's host, then refresh provider status.`
+            : advisory.message,
+          ...(latestAdvisory ? { latestVersionStatus: latestAdvisory.status } : {}),
+        },
+      }
+    : base;
+}

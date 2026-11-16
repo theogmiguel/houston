@@ -1,0 +1,23 @@
+{
+  "name": "@houston-app/source-control-definitions",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./registry": {
+      "types": "./src/registry.ts",
+      "import": "./src/registry.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@houston-app/source-control-azure-devops": "workspace:*",
+    "@houston-app/source-control-bitbucket": "workspace:*",
+    "@houston-app/source-control-core": "workspace:*",
+    "@houston-app/source-control-forgejo": "workspace:*",
+    "@houston-app/source-control-gitcafe": "workspace:*",
+    "@houston-app/source-control-github": "workspace:*",
+    "@houston-app/source-control-gitlab": "workspace:*"
+  }
+}

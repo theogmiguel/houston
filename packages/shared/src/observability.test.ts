@@ -1,0 +1,762 @@
+import { assert, describe, expect, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Deferred from "effect/Deferred";
+import * as Fiber from "effect/Fiber";
+import * as Exit from "effect/Exit";
+import * as FileSystem from "effect/FileSystem";
+import { cast } from "effect/Function";
+import * as Layer from "effect/Layer";
+import * as Logger from "effect/Logger";
+import * as Path from "effect/Path";
+import * as Ref from "effect/Ref";
+import * as References from "effect/References";
+import * as Schema from "effect/Schema";
+import * as Tracer from "effect/Tracer";
+import type { OtlpTracer } from "effect/observability";
+import { vi } from "vite-plus/test";
+
+import {
+  causeErrorTag,
+  compactTraceAttributes,
+  decodeOtlpTraceRecords,
+  errorTag,
+  makeLocalFileTracer,
+  makeTraceSink,
+  type EffectTraceRecord,
+  type TraceRecord,
+  OtlpHeadersFromString,
+  truncateTraceAttributes,
+  processServiceInstanceId,
+  redactUrlCredentials,
+} from "./observability.ts";
+
+describe("processServiceInstanceId", () => {
+  it("stays the same for the process unless the operator set one", () => {
+    expect(processServiceInstanceId()).toBe(processServiceInstanceId({}));
+    expect(processServiceInstanceId({ "service.instance.id": "pod-7" })).toBe("pod-7");
+  });
+});
+
+describe("errorTag", () => {
+  it("reports structural tags without retaining arbitrary values", () => {
+    assert.equal(errorTag({ _tag: "AcpRequestError" }), "AcpRequestError");
+    assert.equal(errorTag(new TypeError("secret-token-value")), "TypeError");
+    assert.equal(errorTag({ _tag: "secret token value" }), "TaggedError");
+  });
+});
+
+describe("causeErrorTag", () => {
+  it("reports the tagged failure value instead of the Cause reason wrapper", () => {
+    assert.equal(
+      causeErrorTag(Cause.fail({ _tag: "ServerAuthInvalidCredentialError" })),
+      "ServerAuthInvalidCredentialError",
+    );
+  });
+});
+
+const TraceRecordLine = Schema.Struct({
+  name: Schema.String,
+  spanId: Schema.String,
+  parentSpanId: Schema.optional(Schema.String),
+  attributes: Schema.Record(Schema.String, Schema.Unknown),
+  events: Schema.Array(
+    Schema.Struct({
+      name: Schema.String,
+      attributes: Schema.Record(Schema.String, Schema.Unknown),
+    }),
+  ),
+  exit: Schema.optional(
+    Schema.Struct({
+      _tag: Schema.String,
+    }),
+  ),
+});
+
+const decodeTraceRecordLine = Schema.decodeUnknownSync(Schema.fromJsonString(TraceRecordLine));
+
+const makeRecord = (name: string, suffix = ""): TraceRecord => ({
+  type: "effect-span",
+  name,
+  traceId: `trace-${name}-${suffix}`,
+  spanId: `span-${name}-${suffix}`,
+  sampled: true,
+  kind: "internal",
+  startTimeUnixNano: "1",
+  endTimeUnixNano: "2",
+  durationMs: 1,
+  attributes: {
+    payload: suffix,
+  },
+  events: [],
+  links: [],
+  exit: {
+    _tag: "Success",
+  },
+});
+
+const readTraceRecords = Effect.fn("readTraceRecords")(function* (tracePath: string) {
+  const fileSystem = yield* FileSystem.FileSystem;
+  return (yield* fileSystem.readFileString(tracePath))
+    .trim()
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .map((line) => decodeTraceRecordLine(line));
+});
+
+const layerTest = (tracePath: string) =>
+  Layer.mergeAll(
+    Layer.effect(
+      Tracer.Tracer,
+      makeLocalFileTracer({
+        filePath: tracePath,
+        maxBytes: 1024 * 1024,
+        maxFiles: 2,
+        batchWindowMs: 10_000,
+      }),
+    ),
+    Logger.layer([Logger.tracerLogger], { mergeWithExisting: false }),
+    Layer.succeed(References.MinimumLogLevel, "Info"),
+  );
+
+const nodeServicesIt = it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer));
+
+// The redaction pattern before the marker pre-check, kept as the oracle for its equivalence.
+const UNCONDITIONAL_URL_CREDENTIALS = /(^|[?&"\s])(wsTicket|dpop)=[^&#"\\\s]*/g;
+
+const urlCredentialCorpus = (): ReadonlyArray<string> => {
+  const names = [
+    "wsTicket",
+    "dpop",
+    "WSTICKET",
+    "wsticket",
+    "WsTicket",
+    "DPOP",
+    "Dpop",
+    "dPoP",
+    "%77sTicket",
+    "ws%54icket",
+    "%64pop",
+    "\\u0077sTicket",
+    "\\u0064pop",
+    "ws Ticket",
+  ];
+  const separators = ["=", "%3D", "%3d", "\\u003d", "\\u003D", " =", "=="];
+  const prefixes = ["", "?", "&", '"', " ", "\n", "\t", '\\"', "/ws?", "x", "#", ";"];
+  const values = ["secret", "", "a&b", 'a"b', "a\\b", "a#b", "a b"];
+  const corpus: Array<string> = [
+    "/ws?wsTicket=ticket-secret&dpop=proof-secret&clientSurface=web",
+    "http://127.0.0.1:3773/ws?wsTicket=ticket-secret&dpop=proof-secret&clientSurface=web",
+    "RequestParseError (GET /ws?wsTicket=ticket-secret&dpop=proof-secret)",
+    "wsTicket=REDACTED&clientOs=linux&dpop=REDACTED",
+    "no credentials here",
+    "",
+  ];
+  for (const name of names) {
+    for (const separator of separators) {
+      for (const prefix of prefixes) {
+        for (const value of values) {
+          corpus.push(`${prefix}${name}${separator}${value}`);
+        }
+      }
+    }
+  }
+  // Trace records carry these strings inside serialized JSON, sometimes JSON nested in JSON.
+  return corpus.flatMap((text) => [
+    text,
+    JSON.stringify({ attributes: { "url.full": text } }),
+    JSON.stringify(JSON.stringify({ cause: text })),
+  ]);
+};
+
+describe("redactUrlCredentials", () => {
+  it("redacts exactly what the unconditional pattern redacts, in every case and encoding", () => {
+    const corpus = urlCredentialCorpus();
+    let redacted = 0;
+    for (const text of corpus) {
+      const expected = text.replace(UNCONDITIONAL_URL_CREDENTIALS, "$1$2=<redacted>");
+      if (expected !== text) redacted++;
+      assert.strictEqual(redactUrlCredentials(text), expected, JSON.stringify(text));
+    }
+    // The corpus must exercise both outcomes, or the equality above proves nothing.
+    assert.isAbove(redacted, 100);
+    assert.isAbove(corpus.length - redacted, 100);
+  });
+});
+
+describe("truncateTraceAttributes", () => {
+  it("clamps oversized strings at any depth without mutating the input", () => {
+    const stack = "s".repeat(2_000);
+    const attributes = {
+      "db.query.text": "q".repeat(2_000),
+      short: "ok",
+      error: { name: "Error", stack, nested: ["a".repeat(2_000)] },
+    };
+    const truncated = truncateTraceAttributes(attributes);
+
+    assert.equal((truncated["db.query.text"] as string).length, 200 + "…[truncated]".length);
+    assert.equal(truncated["short"], "ok");
+    const error = truncated["error"] as { stack: string; nested: Array<string> };
+    assert.equal(error.stack.length, 500 + "…[truncated]".length);
+    assert.equal(error.nested[0]?.length, 500 + "…[truncated]".length);
+    assert.equal(attributes.error.stack, stack);
+  });
+});
+
+describe("observability", () => {
+  it.effect(
+    "preserves successful results without retaining them in sampled or unsampled spans",
+    () =>
+      Effect.gen(function* () {
+        for (const sampled of [true, false]) {
+          const delegates: Array<Tracer.Span> = [];
+          const records: Array<EffectTraceRecord> = [];
+          const tracer = yield* makeLocalFileTracer({
+            filePath: "unused",
+            maxBytes: 1024,
+            maxFiles: 1,
+            batchWindowMs: 10_000,
+            sink: {
+              filePath: "unused",
+              push: (record) => {
+                if (record.type === "effect-span") records.push(record);
+              },
+              flush: Effect.void,
+              close: () => Effect.void,
+            },
+            delegate: Tracer.make({
+              span: (options) => {
+                const span = new Tracer.NativeSpan({ ...options, sampled });
+                delegates.push(span);
+                return span;
+              },
+            }),
+          });
+          const payload = { turnItems: [{ output: [{ text: "synthetic-result" }] }] };
+          let span: Tracer.Span | undefined;
+          const result = yield* Effect.gen(function* () {
+            span = yield* Effect.currentSpan;
+            return payload;
+          }).pipe(
+            Effect.withSpan("read-thread-projection"),
+            Effect.provideService(Tracer.Tracer, tracer),
+          );
+          assert.strictEqual(result, payload);
+          assert.isDefined(span);
+          for (const completed of [span!, ...delegates]) {
+            assert.equal(completed.status._tag, "Ended");
+            if (completed.status._tag === "Ended") {
+              assert.deepStrictEqual(completed.status.exit, Exit.void);
+            }
+          }
+          assert.deepStrictEqual(
+            records.map((record) => record.exit),
+            sampled ? [{ _tag: "Success" }] : [],
+          );
+        }
+      }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+  );
+
+  it("normalizes circular arrays, maps, and sets without recursing forever", () => {
+    const array: Array<unknown> = ["alpha"];
+    array.push(array);
+
+    const map = new Map<string, unknown>();
+    map.set("self", map);
+
+    const set = new Set<unknown>();
+    set.add(set);
+
+    assert.deepStrictEqual(
+      compactTraceAttributes({
+        array,
+        map,
+        set,
+      }),
+      {
+        array: ["alpha", "[Circular]"],
+        map: { self: "[Circular]" },
+        set: ["[Circular]"],
+      },
+    );
+  });
+
+  it("keeps an object that appears twice without marking it circular", () => {
+    const shared = { cwd: "/repo" };
+    const sharedMap = new Map([["cwd", "/repo"]]);
+    const sharedSet = new Set(["/repo"]);
+
+    assert.deepStrictEqual(
+      compactTraceAttributes({
+        ctx: { first: shared, second: shared },
+        list: [shared, shared],
+        maps: [sharedMap, sharedMap],
+        sets: [sharedSet, sharedSet],
+      }),
+      {
+        ctx: { first: { cwd: "/repo" }, second: { cwd: "/repo" } },
+        list: [{ cwd: "/repo" }, { cwd: "/repo" }],
+        maps: [{ cwd: "/repo" }, { cwd: "/repo" }],
+        sets: [["/repo"], ["/repo"]],
+      },
+    );
+  });
+
+  it("caps shared references that would expand exponentially", () => {
+    let graph: Record<string, unknown> = { cwd: "/repo" };
+    for (let depth = 0; depth < 20; depth++) {
+      graph = { left: graph, right: graph };
+    }
+
+    const serialized = JSON.stringify(compactTraceAttributes({ graph }));
+
+    assert.include(serialized, '"[Truncated]"');
+    assert.isBelow(serialized.length, 1_000_000);
+  });
+
+  nodeServicesIt("node services", (it) => {
+    it.effect(
+      "keeps trace producers responsive during a slow write, bounds the backlog, and drains on close",
+      () =>
+        Effect.scoped(
+          Effect.gen(function* () {
+            const fs = yield* FileSystem.FileSystem;
+            const path = yield* Path.Path;
+            const directory = yield* fs.makeTempDirectoryScoped({
+              prefix: "houston-trace-backpressure-",
+            });
+            const tracePath = path.join(directory, "trace.ndjson");
+            const started = yield* Deferred.make<void>();
+            const release = yield* Deferred.make<void>();
+            const closed = yield* Ref.make(false);
+            const sink = yield* makeTraceSink({
+              filePath: tracePath,
+              maxBytes: 5_000_000,
+              maxFiles: 2,
+              batchWindowMs: 10_000,
+            }).pipe(
+              Effect.provideService(FileSystem.FileSystem, {
+                ...fs,
+                writeFile: (file, data, options) =>
+                  Effect.gen(function* () {
+                    yield* Deferred.succeed(started, undefined);
+                    yield* Deferred.await(release);
+                    yield* fs.writeFile(file, data, options);
+                  }),
+              }),
+            );
+            sink.push(makeRecord("first"));
+            const flushing = yield* Effect.forkChild(sink.flush);
+            yield* Deferred.await(started);
+            for (let index = 0; index < 2_000; index++)
+              sink.push(makeRecord("small", String(index)));
+            for (let index = 0; index < 3; index++)
+              sink.push({ ...makeRecord("large"), attributes: { payload: "x".repeat(2_000_000) } });
+            const closing = yield* Effect.forkChild(
+              sink.close().pipe(Effect.tap(() => Ref.set(closed, true))),
+            );
+            yield* Effect.yieldNow;
+            assert.isFalse(yield* Ref.get(closed));
+            yield* Deferred.succeed(release, undefined);
+            yield* Fiber.join(flushing);
+            yield* Fiber.join(closing);
+            const records = yield* readTraceRecords(tracePath);
+            assert.deepStrictEqual(
+              records.map((record) => record.name),
+              ["first", ...Array.from({ length: 2_000 }, () => "small"), "large", "large"],
+            );
+            assert.isTrue(yield* Ref.get(closed));
+          }),
+        ),
+    );
+
+    it.effect("keeps every trace file within the configured limit for threshold flushes", () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const tempDir = yield* fileSystem.makeTempDirectoryScoped({
+            prefix: "houston-trace-sink-",
+          });
+          const tracePath = path.join(tempDir, "shared.trace.ndjson");
+          const maxBytes = 1_024;
+
+          const sink = yield* makeTraceSink({
+            filePath: tracePath,
+            maxBytes,
+            maxFiles: 2,
+            batchWindowMs: 10_000,
+          });
+
+          for (let index = 0; index < 256; index += 1) {
+            sink.push(makeRecord("threshold", `${index}-${"x".repeat(48)}`));
+          }
+          yield* sink.close();
+
+          const matchingFiles = (yield* fileSystem.readDirectory(tempDir)).filter(
+            (entry) => entry === "shared.trace.ndjson" || entry.startsWith("shared.trace.ndjson."),
+          );
+          assert.include(matchingFiles, "shared.trace.ndjson.1");
+          for (const entry of matchingFiles) {
+            const stat = yield* fileSystem.stat(path.join(tempDir, entry));
+            assert.isAtMost(Number(stat.size), maxBytes, entry);
+          }
+        }),
+      ),
+    );
+
+    it.effect("drops a single trace record that cannot fit within the configured limit", () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const tempDir = yield* fileSystem.makeTempDirectoryScoped({
+            prefix: "houston-trace-sink-",
+          });
+          const tracePath = path.join(tempDir, "shared.trace.ndjson");
+          const maxBytes = 1_024;
+
+          const sink = yield* makeTraceSink({
+            filePath: tracePath,
+            maxBytes,
+            maxFiles: 2,
+            batchWindowMs: 10_000,
+          });
+
+          sink.push(makeRecord("oversized", "x".repeat(maxBytes * 2)));
+          sink.push(makeRecord("retained"));
+          yield* sink.close();
+
+          const records = yield* readTraceRecords(tracePath);
+          const stat = yield* fileSystem.stat(tracePath);
+          assert.deepEqual(
+            records.map((record) => record.name),
+            ["retained"],
+          );
+          assert.isAtMost(Number(stat.size), maxBytes);
+        }),
+      ),
+    );
+
+    it.effect("scans a trace record for credentials only when it names a credential", () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const tempDir = yield* fileSystem.makeTempDirectoryScoped({
+            prefix: "houston-trace-sink-",
+          });
+          const tracePath = path.join(tempDir, "shared.trace.ndjson");
+          const sink = yield* makeTraceSink({
+            filePath: tracePath,
+            maxBytes: 1024 * 1024,
+            maxFiles: 2,
+            batchWindowMs: 10_000,
+          });
+
+          const replace = vi.spyOn(RegExp.prototype, Symbol.replace);
+          const credentialScans = () =>
+            replace.mock.contexts.filter((pattern) => String(pattern).includes("wsTicket")).length;
+          try {
+            sink.push(makeRecord("plain", "/ws?clientSurface=web&ticket=wsTicket"));
+            assert.strictEqual(credentialScans(), 0);
+            sink.push(makeRecord("credential", "/ws?wsTicket=ticket-secret"));
+            assert.strictEqual(credentialScans(), 1);
+          } finally {
+            replace.mockRestore();
+          }
+          yield* sink.close();
+
+          const written = yield* fileSystem.readFileString(tracePath);
+          assert.notInclude(written, "ticket-secret");
+          assert.include(written, "/ws?wsTicket=<redacted>");
+          assert.include(written, "ticket=wsTicket");
+        }),
+      ),
+    );
+
+    it.effect("keeps WebSocket credentials out of trace files and exported spans", () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const tempDir = yield* fileSystem.makeTempDirectoryScoped({
+            prefix: "houston-trace-sink-",
+          });
+          const tracePath = path.join(tempDir, "shared.trace.ndjson");
+          const sink = yield* makeTraceSink({
+            filePath: tracePath,
+            maxBytes: 1024 * 1024,
+            maxFiles: 2,
+            batchWindowMs: 10_000,
+          });
+          const delegates: Array<Tracer.NativeSpan> = [];
+          const tracer = yield* makeLocalFileTracer({
+            filePath: tracePath,
+            maxBytes: 1024 * 1024,
+            maxFiles: 2,
+            batchWindowMs: 10_000,
+            sink,
+            delegate: Tracer.make({
+              span: (options) => {
+                const span = new Tracer.NativeSpan(options);
+                delegates.push(span);
+                return span;
+              },
+            }),
+          });
+          const url = "/ws?wsTicket=ticket-secret&dpop=proof-secret&clientSurface=web";
+
+          yield* Effect.annotateCurrentSpan({
+            "url.full": `http://127.0.0.1:3773${url}`,
+            "url.query": url.slice(4),
+          }).pipe(
+            Effect.withSpan("GET", { kind: "server" }),
+            Effect.provideService(Tracer.Tracer, tracer),
+          );
+          yield* Effect.die(new Error(`RequestParseError (GET ${url})`)).pipe(
+            Effect.tapCause((cause) => Effect.logError(cause)),
+            Effect.withSpan("DeviceHubProxy.proxyWebSocket"),
+            Effect.provideService(Tracer.Tracer, tracer),
+            Effect.provide(Logger.layer([Logger.tracerLogger], { mergeWithExisting: false })),
+            Effect.exit,
+          );
+          yield* sink.close();
+
+          const written = yield* fileSystem.readFileString(tracePath);
+          const exported = delegates.map((span) =>
+            JSON.stringify({
+              attributes: Object.fromEntries(span.attributes),
+              events: span.events.map(([, , attributes]) => attributes),
+              exit:
+                span.status._tag === "Ended" && Exit.isFailure(span.status.exit)
+                  ? Cause.pretty(span.status.exit.cause)
+                  : "",
+            }),
+          );
+          for (const text of [written, ...exported]) {
+            assert.notInclude(text, "ticket-secret");
+            assert.notInclude(text, "proof-secret");
+          }
+          assert.include(written, "wsTicket=<redacted>&dpop=<redacted>&clientSurface=web");
+          assert.include(exported.join("\n"), "effect.cause");
+        }),
+      ),
+    );
+
+    it.effect("drops only the invalid trace record when serialization fails", () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const tempDir = yield* fileSystem.makeTempDirectoryScoped({
+            prefix: "houston-trace-sink-",
+          });
+          const tracePath = path.join(tempDir, "shared.trace.ndjson");
+
+          const sink = yield* makeTraceSink({
+            filePath: tracePath,
+            maxBytes: 1024,
+            maxFiles: 2,
+            batchWindowMs: 10_000,
+          });
+
+          const circular: Array<unknown> = [];
+          circular.push(circular);
+
+          sink.push(makeRecord("alpha"));
+          sink.push({
+            ...makeRecord("invalid"),
+            attributes: {
+              circular,
+            },
+          } as TraceRecord);
+          sink.push(makeRecord("beta"));
+          yield* sink.close();
+
+          const lines = yield* readTraceRecords(tracePath);
+
+          assert.deepStrictEqual(
+            lines.map((line) => line.name),
+            ["alpha", "beta"],
+          );
+        }),
+      ),
+    );
+
+    it.effect("writes nested spans to disk and captures log messages as span events", () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const tempDir = yield* fileSystem.makeTempDirectoryScoped({
+            prefix: "houston-local-tracer-",
+          });
+          const tracePath = path.join(tempDir, "shared.trace.ndjson");
+
+          yield* Effect.scoped(
+            Effect.gen(function* () {
+              const program = Effect.gen(function* () {
+                yield* Effect.annotateCurrentSpan({
+                  "demo.parent": true,
+                });
+                yield* Effect.logInfo("parent event");
+                yield* Effect.gen(function* () {
+                  yield* Effect.annotateCurrentSpan({
+                    "demo.child": true,
+                  });
+                  yield* Effect.logInfo("child event");
+                }).pipe(Effect.withSpan("child-span"));
+              }).pipe(Effect.withSpan("parent-span"));
+
+              yield* program.pipe(Effect.provide(layerTest(tracePath)));
+            }),
+          );
+
+          const records = yield* readTraceRecords(tracePath);
+          assert.equal(records.length, 2);
+
+          const parent = records.find((record) => record.name === "parent-span");
+          const child = records.find((record) => record.name === "child-span");
+
+          assert.notEqual(parent, undefined);
+          assert.notEqual(child, undefined);
+          if (!parent || !child) {
+            return;
+          }
+
+          assert.equal(child.parentSpanId, parent.spanId);
+          assert.equal(parent.attributes["demo.parent"], true);
+          assert.equal(child.attributes["demo.child"], true);
+          assert.equal(
+            parent.events.some((event) => event.name === "parent event"),
+            true,
+          );
+          assert.equal(
+            child.events.some((event) => event.name === "child event"),
+            true,
+          );
+          assert.equal(
+            child.events.some((event) => event.attributes["effect.logLevel"] === "INFO"),
+            true,
+          );
+        }),
+      ),
+    );
+
+    it.effect("serializes interrupted spans with an interrupted exit status", () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const tempDir = yield* fileSystem.makeTempDirectoryScoped({
+            prefix: "houston-local-tracer-",
+          });
+          const tracePath = path.join(tempDir, "shared.trace.ndjson");
+
+          yield* Effect.scoped(
+            Effect.exit(
+              Effect.interrupt.pipe(
+                Effect.withSpan("interrupt-span"),
+                Effect.provide(layerTest(tracePath)),
+              ),
+            ),
+          );
+
+          const records = yield* readTraceRecords(tracePath);
+          assert.equal(records.length, 1);
+          assert.equal(records[0]?.name, "interrupt-span");
+          assert.equal(records[0]?.exit?._tag, "Interrupted");
+        }),
+      ),
+    );
+  });
+});
+
+describe("decodeOtlpTraceRecords", () => {
+  it("decodes spans when OTLP/JSON omits unset and empty fields", () => {
+    // Protobuf JSON leaves out unset and empty fields, so this batch is valid.
+    const payload = cast<unknown, OtlpTracer.TraceData>({
+      resourceSpans: [
+        {},
+        {
+          scopeSpans: [
+            {},
+            {
+              spans: [
+                {
+                  traceId: "trace-1",
+                  spanId: "span-1",
+                  name: "browser.request",
+                  startTimeUnixNano: "1000000",
+                  endTimeUnixNano: "3000000",
+                  attributes: [{ key: "tags", value: { arrayValue: {} } }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    assert.deepStrictEqual(decodeOtlpTraceRecords(cast<unknown, OtlpTracer.TraceData>({})), []);
+    assert.deepStrictEqual(decodeOtlpTraceRecords(payload), [
+      {
+        type: "otlp-span",
+        name: "browser.request",
+        traceId: "trace-1",
+        spanId: "span-1",
+        sampled: true,
+        kind: "internal",
+        startTimeUnixNano: "1000000",
+        endTimeUnixNano: "3000000",
+        durationMs: 2,
+        attributes: { tags: [] },
+        resourceAttributes: {},
+        scope: { attributes: {} },
+        events: [],
+        links: [],
+        status: { code: "0" },
+      },
+    ]);
+  });
+});
+
+describe("OtlpHeadersFromString", () => {
+  const decode = Schema.decodeUnknownSync(OtlpHeadersFromString);
+
+  it.each([
+    {
+      name: "decodes percent-encoded values",
+      input: "authorization=Basic%20abc%3D%3D,x-tenant=houston",
+      expected: { authorization: "Basic abc==", "x-tenant": "houston" },
+    },
+    {
+      name: "ignores whitespace around separators",
+      input: "authorization=Basic%20abc%3D%3D, x-tenant = houston ,",
+      expected: { authorization: "Basic abc==", "x-tenant": "houston" },
+    },
+    {
+      name: "keeps literal equals signs inside a value",
+      input: "authorization=Bearer abc==",
+      expected: { authorization: "Bearer abc==" },
+    },
+    {
+      name: "keeps an empty value",
+      input: "x-empty=",
+      expected: { "x-empty": "" },
+    },
+  ])("$name", ({ input, expected }) => {
+    expect(decode(input)).toEqual(expected);
+  });
+
+  it.each([
+    { name: "rejects a pair without a separator", input: "authorization" },
+    { name: "rejects a pair without a key", input: "=value" },
+    { name: "rejects a malformed percent-encoding", input: "authorization=%E0" },
+  ])("$name", ({ input }) => {
+    expect(() => decode(input)).toThrow();
+  });
+});

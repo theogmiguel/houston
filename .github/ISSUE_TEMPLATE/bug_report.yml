@@ -27,10 +27,10 @@ body:
       label: Area
       description: Which part of Houston does this affect?
       options:
-        - daemon
+        - server
         - renderer
         - app shell
-        - hooks and providers
+        - providers
         - orchestration
         - build or CI
         - docs
@@ -44,9 +44,9 @@ body:
       label: Steps to reproduce
       description: What did you do, in order?
       placeholder: |
-        1. Open a workspace, spawn a Claude Code pane
-        2. Split the pane and start a second agent in the same directory
-        3. Detach and reattach the app
+        1. Open a workspace and start a thread with Claude
+        2. Start a second thread in the same project
+        3. Close and reopen the app
     validations:
       required: true
 
@@ -54,7 +54,7 @@ body:
     id: expected
     attributes:
       label: Expected behaviour
-      placeholder: The pane keeps its name and status after reattaching.
+      placeholder: The thread keeps its name and status after reopening the app.
     validations:
       required: true
 
@@ -62,7 +62,7 @@ body:
     id: actual
     attributes:
       label: Actual behaviour
-      placeholder: The pane shows as idle even though the agent CLI is still running inside it.
+      placeholder: The thread shows as idle even though its agent run is still going.
     validations:
       required: true
 
@@ -89,6 +89,7 @@ body:
     attributes:
       label: Logs
       description: |
-        Settings ▸ Daemon ▸ Copy diagnostics gives the useful block. Please check it
-        for anything private (paths, project names, pasted secrets) before pasting here.
+        The server log is `<channel dir>/v2/logs/v2-server.log` (`~/.houston/v2` for the
+        installed app on Linux). Please check it for anything private (paths, project
+        names, pasted secrets) before pasting here.
       render: shell

@@ -1,142 +1,112 @@
-# Appearance, mascot and terminal settings
+# Appearance, typography and chat
 
-Two settings sections cover presentation: **Settings ▸ Appearance** for the app
-chrome, window and mascot, and **Settings ▸ Terminal** for how panes render and behave.
+**Settings ▸ Appearance** controls how Houston looks. **Settings ▸ Chat** and **Settings ▸
+Diffs & pull requests** control the composer and diffs.
 
-## Finding settings
+## Themes
 
-Settings groups configuration by purpose:
+**Colors & themes** offers light, dark and system mode, a set of built-in themes, and custom
+themes. A custom theme can be created from scratch, duplicated from an existing one, edited,
+exported or imported. VS Code theme files can be imported.
 
-| Group | Configuration |
-|---|---|
-| Agents | Overview, CLIs, Skills, MCP servers and Review |
-| App | Appearance, Terminal, Shortcuts and Notifications |
-| Work | Workspaces, Tasks, Orchestration and Dictation |
-| Devices | Phone and remote access, and WSL on Windows |
-| System | Privacy & data, Daemon, and About |
+### Custom CSS
 
-Use Agents ▸ Overview to resolve reported hook, skill, server or
-review issues; it opens the owning configuration page. Search Settings by feature or
-setting name. **Back to workspaces** returns to your work; **Esc** first clears an active
-settings search, then returns to workspaces.
+For a change that colors cannot make, open **Custom CSS** in the theme editor. The CSS is saved
+with the theme, applies after Houston's own styles on web and desktop, previews as you type, and
+is included when you export or import the theme. It holds up to 20,000 characters; the editor
+shows the count when you go over, and the theme is not saved until it fits. Use `.dark` or
+`:root:not(.dark)` to target one appearance.
 
-Skills, MCP servers and Review are configured under Settings ▸ Agents. Tasks, Pull
-requests, Routines and Usage remain work destinations in the rail.
+Custom CSS cannot load files, so a theme from another person or an agent cannot send what is on
+your screen to another site. `@import`, `image-set()` and `url()` are ignored, except `url()`
+with a `data:` address or an `#id`. A declaration that contains a backslash is ignored too, and
+so is an at-rule Houston cannot check. Only the affected declaration or rule is dropped; the
+rest of the theme still applies.
 
-## Settings ▸ Agents ▸ Skills
+Class names in the app change between releases. For rules that keep working, target `data-slot`
+and other `data-` attributes, such as `[data-chat-header]` or `[data-slot="button"]`. Panes and
+tabs have `[data-layout-tab-bar]`, `[data-layout-pane-tab]` (the selected tab has
+`aria-selected="true"`) and `[data-layout-pane-content]`. Some app
+rules are more specific than yours and need `!important`. CSS cannot reach terminal text, the
+file tree or diff internals; use theme colors for those.
 
-Search your skills and filter by Yours or This workspace. Copy counts show how many
-reported agents can use each skill. Select a skill or its copy count to expand the
-per-agent status inline: synced, missing, different from Claude Code, or reading
-Claude Code’s folder directly. Add a missing copy or compare differing instructions
-before copying Claude Code’s version to an agent. The expanded detail also provides
-editing, deleting, an instructions disclosure and undoing a previous copy operation.
+If a rule hides something you need, pick the Houston theme in **Colors & themes**, or run
+`houston theme set houston` on the machine that runs the server. `houston` is the default look
+with no theme; a built-in theme id such as `grove` works too.
 
-**Sync all** fills missing copies using the Claude Code source for every eligible
-skill in the library, including skills hidden by search or the scope filter. Skills
-with differing copies are excluded; expand them and compare instructions before
-choosing which copy to keep. Agents that read Claude Code’s skills directly do not
-need a separate copy. **Sync this skill** fills only that skill’s missing copies.
+### Ask an agent
 
-## Settings ▸ Appearance
+An agent running in a thread on this machine can restyle Houston for you. Ask it to change the
+look, for example "make the chat header taller", "give Houston a solarized theme" or "switch me to
+dark mode". It publishes a theme with colors and CSS on the server and switches the web and
+desktop clients of that server to it, or switches them to light, dark or system mode. It can
+only change the server it runs on, and only from a thread with full access or the default
+access mode. The agent cannot see the result, so it works in small steps and asks how it looks.
+Ask it to switch back to the default look to undo a change, or use the steps above.
 
-**Chrome theme** — pick between two overall themes, Graphite (the default) and Paper.
+The same page sets **Contrast**, **Glass opacity**, **Animations**, **Environment
+identification**, **Chat width**, **Effort display**, **Render math**, **Word wrap** and whether
+branch and worktree controls stay visible below the composer in active threads.
 
-**Window background** — Solid (default) or Custom. Custom takes an image, dithers it the
-way an old display would, and paints it behind the rail, the titlebar, the gutters and
-your panes alike, with your panes' own backgrounds turned translucent so the picture
-shows through your terminal text. A browser pane stays opaque — a web page isn't
-Houston's to see through. Choose from a few bundled images or your own; switching back
-and forth between them does not delete your own image. Custom has its own dials:
+**Environment identification** shows a Dev or Nightly pill beside the name in the sidebar
+header, on by default. Release builds show no pill. **Chat width** sets the width of the message
+timeline: Comfortable, Wide or Full.
 
-- **Pixel size** — how coarse the dithered pixels are.
-- **Colour** — a toggle between the image's original colours and monochrome.
-- **Brightness** — a ceiling on how bright the image may get.
-- **Chrome** — how heavy a coat sits over the rail/titlebar/gutters.
-- **Panes** — how heavy a coat sits over your terminal panes.
-- **Fade the bottom edge** — fades the image into the theme toward the bottom of the
-  window.
-- **Reset window background** — restores all of the above to their defaults.
+**Animations** is on by default. Turning it off stops menu, dialog, list and layout motion
+across the application, as the system's reduce-motion setting also does. Panels and drawers
+open and close without animation either way.
 
-If your system has reduce-transparency or increase-contrast switched on, Custom is
-disabled and Solid is shown instead for as long as that system setting stays on — your
-own Custom choice is not lost, and Custom comes back on its own once you turn the system
-setting back off.
+**Word wrap** wraps long lines in code blocks, diffs and file previews. It is off by default, so
+long lines scroll sideways; diffs and file previews also have their own wrap toggle.
 
-**Terminal palette** — pick a color palette for terminal panes, or leave it on Auto to
-follow the chrome theme. The command palette’s **Change terminal palette…** picker
-previews the palette highlighted by Up/Down or the pointer. The check marks the saved
-palette; Enter saves the preview and Escape restores the saved palette. Focus stays
-in the search field while browsing. A palette change recolors existing ANSI text and
-backgrounds in open panes. Applications can override palette colors until reset;
-fixed 256-color and RGB output keeps its original colors.
+## Layout
 
-New panes support full colour even when Houston is launched from a command runner with
-`NO_COLOR` set. To disable CLI colours intentionally, set `NO_COLOR` inside the pane or
-in your shell startup files.
+The layout settings in **Settings ▸ Appearance** are saved on this device and apply to every
+project. **Your layout** is the arrangement a new chat opens into: a chat with a terminal below it
+by default, which you can rearrange in the editor and **Reset**. **Behavior** sets:
 
-**Sidebar** — restore work destinations hidden from the rail: Tasks, Pull requests,
-Routines and Usage.
+- **Terminal**: below the chat (default), in a new tab or in a new column.
+- **Side pane**: beside the chat (default), in a new tab or at the end of the strip. This is where
+  diffs, files, the browser and pull requests open.
+- **Side pane opens on**: last used (default), Diff, Files, Browser or Pull request.
+- **New tabs**: after the current tab (default) or at the end.
+- **When it doesn't fit**: what happens when a new pane has no room. **Shrink, then scroll**
+  (default) narrows columns down to 420px and then scrolls, **Always shrink** keeps every column in
+  view, and **Always scroll** keeps column widths and scrolls. In every mode the columns together
+  are at least as wide as the window.
 
-**App zoom** — scales the whole app: 90%, 100%, 110%, or 125%. Ctrl+/Ctrl− do the same
-thing from the keyboard.
+On macOS, **Three-finger swipe** moves one column, or one workspace up or down, per flick.
 
-## Settings ▸ Appearance ▸ Mascot
+## Typography
 
-Settings ▸ Appearance ▸ Mascot controls Houston's companion in the rail or floating
-inside the Houston window. It is on by default and keeps you company; it never
-reports agent status or reads terminal text or hooks. Turn Mascot off to remove its artwork and interactions.
+**Settings ▸ Appearance ▸ Typography** sets the interface font and size, and the code font
+used by code blocks, diffs and file previews. **Separate fonts** adds independent prompt and
+terminal fonts. Each font picker has a reset button. A font must be installed on the machine; Houston does
+not download fonts.
 
-Choose Brand art or Pixel, Classic, Aurora, Sunset or Mono colours, and a wardrobe
-hat. Colours also apply to the rail brand mark and every in-app mascot; the desktop
-and tray icons keep their original colours. The companion moves into empty states,
-About and other mascot surfaces, returning to its previous position when they close.
-Only one companion appears at a time. Celebrate holidays uses the local calendar; holiday
-outfits take precedence.
-The install anniversary uses the first day this renderer sees the companion.
-Sounds and Break reminders start off. Nap when I'm away starts on: after two minutes
-without input Houston plays, and after five minutes it sleeps. Break reminders suggest
-a stretch after ninety minutes of continuous input, during a quiet moment.
+## Chat
 
-Click to say hello, rub the mascot to pet it, or double-click to flip. Drag Houston
-anywhere inside the window and release it to leave it floating. Its usual
-moods, outfits, speech and idle activities continue there. During a drag, the rail
-shows a docking target; drop Houston onto that slot to return it with a boing.
-Position in Settings ▸ Appearance ▸ Mascot shows Rail or Floating and offers Return
-to rail. While floating, the command palette also offers Return mascot to rail.
-Position is remembered relative to the window and kept on screen when the window
-resizes. Drops over a native browser pane move to the nearest available position
-outside it; if none fits, Houston returns to the rail. A floating companion remains
-visible when the rail is collapsed. It cannot leave the Houston window.
+**Settings ▸ Chat** controls the composer:
 
-Ten clicks within four seconds open Ring Invaders. The command palette
-also offers Pet Houston, Say hi, Disco mode, Play Ring Invaders and Replay mascot intro.
-Meet the mascot again replays the introduction. Motion pauses when hidden or unfocused
-unless Animate when Houston is in the background is enabled. Reduced motion keeps
-static poses and disables particles, the drag lift animation and all mascot flights.
-All companion preferences and greeting history stay in renderer-local storage;
-nothing is transmitted.
+- **Rich text composer** shows formatted Markdown as you type in the thread composer. When
+  the cursor is on styled text, its Markdown shows instead, such as `**bold**`, and the
+  markers edit like any other text: delete them to remove the style, or change `**` to `*`
+  for italic. The style updates when the cursor leaves. Styled text that contains or touches
+  literal Markdown characters, such as a bold `path\` or `2*3`, keeps its styling without
+  showing markers; use the formatting shortcuts or turn the setting off to edit those ranges.
+- **Send shortcut** chooses whether Enter sends, Enter sends until the prompt has a line break and
+  then `Ctrl+Enter` sends, or `Ctrl+Enter` always sends.
+- **Show skills in slash menu** adds skills to the `/` menu; `$` always lists them.
+- **Follow-up behavior** sets what a message sent while the agent works does: **Queue**
+  sends it when the turn ends, and **Steer** redirects the running turn, or queues the
+  message when the provider cannot steer.
 
-## Settings ▸ Terminal
+The composer's send menu also offers **Queue message**, **Steer message** and **Interrupt
+and send** while a turn runs. See [Threads and workspaces](threads-and-workspaces.md#the-composer).
 
-**Type**
+## Diffs
 
-| Setting | What it controls | Default |
-|---|---|---|
-| Font size | Terminal text size | 14 (range 8–24) |
-| Font family | Terminal font | — |
-| Line height | Line spacing as a multiplier of font size; below 1.0 clips descenders | 1.35 (range 1.0–2.0) |
-
-**Behaviour**
-
-| Setting | What it controls | Default |
-|---|---|---|
-| Cursor blink | Whether the terminal cursor blinks | on |
-| Scrollback | Lines kept per pane for newly opened panes; a reconnect only recovers what the daemon itself kept | 10,000 (range 1,000–30,000) |
-| Shell integration | Terminals report prompts, commands and working directory back to Houston — powers history and handoff | on |
-| Shift+Enter inserts a newline | Write multi-line prompts without sending | — |
-| Clipboard access | Lets terminal apps set the system clipboard (OSC 52) | on |
-| Copy on select | Selecting terminal text copies it immediately (TUIs still need Shift-drag to select) | off |
-| Copy the text, not the box | Strips TUI box-drawing borders when copying | on |
-| Panes per stack | How many tabs one grid cell may hold; lowering it closes nothing already open | 4 (range 2–8) |
-| Idle quiet window | How long a session must be silent before Houston calls it idle | 400ms (range 100–30,000ms) |
+**Settings ▸ Diffs & pull requests** sets the diff layout, whether whitespace-only changes
+are hidden by default, whether files start expanded or collapsed, and the diff colors.
+**Open pull requests and changes panels proactively** opens the matching panel when an agent
+finishes, except in layout panes and narrow windows.

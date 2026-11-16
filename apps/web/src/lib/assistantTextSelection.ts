@@ -1,0 +1,318 @@
+import { ASSISTANT_CITATION_CONTEXT_LENGTH, type AssistantCitation } from "@houston-app/contracts";
+
+import { mathWrapperOf } from "../markdown-clipboard";
+
+export type AssistantTextSelector = {
+  readonly text: string;
+  readonly start: number;
+  readonly end: number;
+  readonly prefix: string;
+  readonly suffix: string;
+};
+
+export type AssistantCitationSourceAnchor = {
+  source: HTMLElement;
+  range: Range;
+  viewport: HTMLElement;
+};
+
+export function findAssistantCitationSourceAnchor(
+  document: Document,
+  citation: AssistantCitation,
+): AssistantCitationSourceAnchor | null {
+  const source = [
+    ...document.querySelectorAll<HTMLElement>("[data-assistant-citation-source]"),
+  ].find(
+    (element) =>
+      element.dataset.assistantCitationSource === citation.messageId &&
+      element.dataset.assistantCitationEnvironment === citation.environmentId &&
+      element.dataset.assistantCitationThread === citation.threadId,
+  );
+  const viewport = source?.closest<HTMLElement>("[data-assistant-citation-viewport]");
+  if (!source || !viewport) return null;
+  const range = resolveAssistantCitationRange(source, citation);
+  return range ? { source, range, viewport } : null;
+}
+
+const CONTROL_SELECTOR = "button, input, textarea, select, [role=button], [contenteditable]";
+const EXCLUDED_SELECTOR = `${CONTROL_SELECTOR}, [hidden], [aria-hidden=true], script, style, template, noscript, svg`;
+const BLOCK_SELECTOR =
+  "address, article, aside, blockquote, dd, div, dl, dt, figcaption, figure, footer, h1, h2, h3, h4, h5, h6, header, hr, li, main, nav, ol, p, pre, section, table, td, th, tr, ul";
+
+const WHITESPACE_RUN = /\s+/g;
+
+function normalizeWhitespace(text: string): string {
+  return text.replace(WHITESPACE_RUN, " ");
+}
+
+function splitsSurrogatePair(text: string, offset: number): boolean {
+  const before = text.charCodeAt(offset - 1);
+  const after = text.charCodeAt(offset);
+  return before >= 0xd800 && before <= 0xdbff && after >= 0xdc00 && after <= 0xdfff;
+}
+
+const WHITESPACE_CHAR = /\s/;
+
+export function createAssistantTextSelector(
+  text: string,
+  rawStart: number,
+  rawEnd: number,
+): AssistantTextSelector | null {
+  const quote = text.slice(rawStart, rawEnd);
+  if (quote.trim().length === 0) return null;
+
+  const normalized = normalizeWhitespace(text);
+  let start = normalizeWhitespace(text.slice(0, rawStart)).length;
+  if (
+    rawStart > 0 &&
+    WHITESPACE_CHAR.test(text[rawStart - 1]!) &&
+    WHITESPACE_CHAR.test(text[rawStart]!)
+  ) {
+    start -= 1;
+  }
+  const end = normalizeWhitespace(text.slice(0, rawEnd)).length;
+  let prefixStart = Math.max(0, start - ASSISTANT_CITATION_CONTEXT_LENGTH);
+  let suffixEnd = Math.min(normalized.length, end + ASSISTANT_CITATION_CONTEXT_LENGTH);
+  // A split pair becomes a replacement character when the context enters a URL.
+  if (splitsSurrogatePair(normalized, prefixStart)) prefixStart += 1;
+  if (splitsSurrogatePair(normalized, suffixEnd)) suffixEnd -= 1;
+  return {
+    text: quote,
+    start,
+    end,
+    prefix: normalized.slice(prefixStart, start),
+    suffix: normalized.slice(end, suffixEnd),
+  };
+}
+
+/** Offsets use normalized UTF-16 units. Saved offsets may drift, so they cannot break context ties. */
+export function findAssistantCitationText(
+  text: string,
+  selector: AssistantTextSelector,
+): { start: number; end: number } | null {
+  const normalized = normalizeWhitespace(text);
+  const quote = normalizeWhitespace(selector.text);
+  if (quote.trim().length === 0) return null;
+
+  const prefix = normalizeWhitespace(selector.prefix);
+  const suffix = normalizeWhitespace(selector.suffix);
+  const matchesContext = (start: number, end: number) =>
+    normalized.slice(Math.max(0, start - prefix.length), start) === prefix &&
+    normalized.slice(end, end + suffix.length) === suffix;
+
+  let match =
+    Number.isSafeInteger(selector.start) &&
+    Number.isSafeInteger(selector.end) &&
+    selector.start >= 0 &&
+    selector.end - selector.start === quote.length &&
+    normalized.slice(selector.start, selector.end) === quote &&
+    matchesContext(selector.start, selector.end)
+      ? { start: selector.start, end: selector.end }
+      : null;
+  let onlyQuote: { start: number; end: number } | null = null;
+  let quoteCount = 0;
+
+  for (
+    let start = normalized.indexOf(quote);
+    start !== -1;
+    start = normalized.indexOf(quote, start + 1)
+  ) {
+    const end = start + quote.length;
+    quoteCount += 1;
+    onlyQuote = { start, end };
+    if (!matchesContext(start, end)) continue;
+    if (match !== null && match.start !== start) return null;
+    match = { start, end };
+  }
+
+  return match ?? (quoteCount === 1 ? onlyQuote : null);
+}
+
+/** A text node, or a whole rendered formula standing for its TeX. */
+type TextChunk = { node: Text | Element; start: number; end: number };
+
+const isText = (node: Node): node is Text => node.nodeType === 3;
+
+function readAssistantText(root: HTMLElement) {
+  const parts: string[] = [];
+  const chunks: TextChunk[] = [];
+  let length = 0;
+  let separator = false;
+
+  const append = (node: Text | Element, text: string) => {
+    if (separator && length > 0) {
+      parts.push("\n");
+      length += 1;
+    }
+    separator = false;
+    chunks.push({ node, start: length, end: length + text.length });
+    parts.push(text);
+    length += text.length;
+  };
+
+  const visit = (node: Node) => {
+    if (node.nodeType === 3) {
+      const text = node as Text;
+      if (text.length > 0) append(text, text.data);
+      return;
+    }
+    if (node.nodeType !== 1) return;
+    const element = node as Element;
+    if (element.matches(EXCLUDED_SELECTOR)) return;
+    const block = element.matches(BLOCK_SELECTOR);
+    if (block || element.tagName === "BR") separator = true;
+    if (element.matches("[data-markdown-math]")) {
+      append(element, element.getAttribute("data-markdown-copy")?.trim() ?? "");
+    } else {
+      for (const child of element.childNodes) visit(child);
+    }
+    if (block) separator = true;
+  };
+
+  visit(root);
+  return { text: parts.join(""), chunks };
+}
+
+function excludedAncestor(node: Node): Element | null {
+  const element = node.nodeType === 1 ? (node as Element) : node.parentElement;
+  return element?.closest(EXCLUDED_SELECTOR) ?? null;
+}
+
+function isUsableRange(root: HTMLElement, range: Range): boolean {
+  if (
+    range.collapsed ||
+    !root.contains(range.startContainer) ||
+    !root.contains(range.endContainer) ||
+    excludedAncestor(range.startContainer) !== null ||
+    excludedAncestor(range.endContainer) !== null
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function isUnselectable(text: Text): boolean {
+  const element = mathWrapperOf(text.parentElement) ?? text.parentElement;
+  const view = element?.ownerDocument?.defaultView;
+  return !!element && !!view && view.getComputedStyle(element).userSelect === "none";
+}
+
+function selectedTextBoundary(range: Range, node: Node, last: boolean): Text | null {
+  if (!range.intersectsNode(node)) return null;
+  if (node.nodeType === 3) {
+    const text = node as Text;
+    const start = node === range.startContainer ? range.startOffset : 0;
+    const end = node === range.endContainer ? range.endOffset : text.length;
+    // Triple-click ranges include unselected text from unselectable rows and the next response.
+    return start < end && !isUnselectable(text) ? text : null;
+  }
+  for (
+    let child = last ? node.lastChild : node.firstChild;
+    child !== null;
+    child = last ? child.previousSibling : child.nextSibling
+  ) {
+    const boundary = selectedTextBoundary(range, child, last);
+    if (boundary !== null) return boundary;
+  }
+  return null;
+}
+
+export function captureAssistantTextSelection(
+  viewport: HTMLElement,
+  selection: Selection | null,
+): { source: HTMLElement; selector: AssistantTextSelector; range: Range } | null {
+  if (selection === null || selection.isCollapsed || selection.rangeCount !== 1) return null;
+  const range = selection.getRangeAt(0).cloneRange();
+  const first = selectedTextBoundary(range, range.commonAncestorContainer, false);
+  const last = selectedTextBoundary(range, range.commonAncestorContainer, true);
+  if (first === null || last === null) return null;
+  const source = first.parentElement?.closest<HTMLElement>("[data-assistant-citation-source]");
+  if (!source || !viewport.contains(source)) return null;
+
+  // Paragraph selection can end at the next block's offset 0 or a parent
+  // boundary. Validate the text actually selected, not that empty endpoint.
+  // An endpoint inside a formula's glyphs takes in the whole formula.
+  const startFormula = mathWrapperOf(first.parentElement);
+  const endFormula = mathWrapperOf(last.parentElement);
+  if (startFormula) range.setStartBefore(startFormula);
+  else range.setStart(first, first === range.startContainer ? range.startOffset : 0);
+  if (endFormula) range.setEndAfter(endFormula);
+  else range.setEnd(last, last === range.endContainer ? range.endOffset : last.length);
+  if (!isUsableRange(source, range)) return null;
+
+  const stream = readAssistantText(source);
+  let rawStart: number | null = null;
+  let rawEnd = 0;
+  for (const chunk of stream.chunks) {
+    if (!range.intersectsNode(chunk.node)) continue;
+    const start = range.startContainer === chunk.node ? range.startOffset : 0;
+    const end = range.endContainer === chunk.node ? range.endOffset : chunk.end - chunk.start;
+    if (start === end) continue;
+    rawStart ??= chunk.start + start;
+    rawEnd = chunk.start + end;
+  }
+  if (rawStart === null) return null;
+  const selector = createAssistantTextSelector(stream.text, rawStart, rawEnd);
+  return selector === null ? null : { source, selector, range };
+}
+
+/** How much of a response a reply quotes: enough to recognise it, not to resend it. */
+const RESPONSE_OPENING_LENGTH = 300;
+
+/**
+ * The opening of a response. Reads the rendered text so offsets match what the reader sees, and
+ * falls back to the raw text when the source is virtualized away or renders no text.
+ */
+export function captureAssistantMessageOpening(
+  source: HTMLElement | null,
+  fallbackText: string,
+): AssistantTextSelector | null {
+  const rendered = source ? readAssistantText(source).text : "";
+  const text = rendered.trim() ? rendered : fallbackText;
+  const rawStart = text.length - text.trimStart().length;
+  let rawEnd = Math.min(text.trimEnd().length, rawStart + RESPONSE_OPENING_LENGTH);
+  if (splitsSurrogatePair(text, rawEnd)) rawEnd -= 1;
+  return createAssistantTextSelector(text, rawStart, rawEnd);
+}
+
+const RAW_TEXT_OFFSET_PATTERN = /\s+|\S+/g;
+
+function rawTextOffset(text: string, normalizedOffset: number): number {
+  let offset = 0;
+  for (const match of text.matchAll(RAW_TEXT_OFFSET_PATTERN)) {
+    const whitespace = WHITESPACE_CHAR.test(match[0][0]!);
+    const length = whitespace ? 1 : match[0].length;
+    if (normalizedOffset <= offset + length) {
+      return (
+        match.index +
+        (whitespace && normalizedOffset > offset ? match[0].length : normalizedOffset - offset)
+      );
+    }
+    offset += length;
+  }
+  return text.length;
+}
+
+export function resolveAssistantCitationRange(
+  root: HTMLElement,
+  selector: AssistantTextSelector,
+): Range | null {
+  if (excludedAncestor(root) !== null) return null;
+  const stream = readAssistantText(root);
+  const match = findAssistantCitationText(stream.text, selector);
+  if (match === null) return null;
+
+  const start = rawTextOffset(stream.text, match.start);
+  const end = rawTextOffset(stream.text, match.end);
+  const first = stream.chunks.find((chunk) => chunk.end > start);
+  const last = stream.chunks.findLast((chunk) => chunk.start < end);
+  if (first === undefined || last === undefined) return null;
+
+  const range = root.ownerDocument.createRange();
+  // A match that touches a formula covers the formula as rendered.
+  if (isText(first.node)) range.setStart(first.node, Math.max(0, start - first.start));
+  else range.setStartBefore(first.node);
+  if (isText(last.node)) range.setEnd(last.node, Math.min(last.node.length, end - last.start));
+  else range.setEndAfter(last.node);
+  return isUsableRange(root, range) ? range : null;
+}

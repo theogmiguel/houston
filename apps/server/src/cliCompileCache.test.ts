@@ -1,0 +1,83 @@
+// @effect-diagnostics nodeBuiltinImport:off -- Resolves the real CLI entrypoint for subprocess tests.
+import * as NodeURL from "node:url";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import { expect, it } from "@effect/vitest";
+import * as Layer from "effect/Layer";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Stream from "effect/Stream";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
+
+it.live("enables CLI caching while respecting overrides and unavailable storage", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+    const root = yield* fs.makeTempDirectoryScoped({ prefix: "houston-cli-cache-test-" });
+    const report = `import { getCompileCacheDir, registerHooks } from 'node:module'; registerHooks({ resolve(specifier, context, nextResolve) { if (specifier === './binCli.ts') console.error('CACHE=' + (getCompileCacheDir() ?? 'disabled')); return nextResolve(specifier, context); } });`;
+    const run = Effect.fn("cliCompileCache.test.run")(function* (
+      env: Record<string, string>,
+      args: ReadonlyArray<string> = ["--help"],
+    ) {
+      const child = yield* spawner.spawn(
+        ChildProcess.make(
+          process.execPath,
+          [
+            "--experimental-strip-types",
+            "--import",
+            `data:text/javascript,${encodeURIComponent(report)}`,
+            NodeURL.fileURLToPath(new URL("./bin.ts", import.meta.url)),
+            ...args,
+          ],
+          {
+            env: {
+              XDG_CACHE_HOME: `${root}/cache`,
+              HOUSTON_HOME: `${root}/home`,
+              NODE_COMPILE_CACHE: undefined,
+              NODE_DISABLE_COMPILE_CACHE: undefined,
+              APPIMAGE: "",
+              ...env,
+            },
+          },
+        ),
+      );
+      return yield* Effect.all(
+        {
+          stdout: child.stdout.pipe(Stream.decodeText(), Stream.mkString),
+          stderr: child.stderr.pipe(Stream.decodeText(), Stream.mkString),
+          exitCode: child.exitCode.pipe(Effect.map(Number)),
+        },
+        { concurrency: "unbounded" },
+      );
+    }, Effect.scoped);
+    const normal = yield* run({});
+    expect(normal.exitCode).toBe(0);
+    expect(normal.stderr.replaceAll("\\", "/")).toContain(
+      `CACHE=${root}/cache/houston/compile-cache`.replaceAll("\\", "/"),
+    );
+    // The bare launcher runs before the CLI module graph loads; flags and help use the full CLI.
+    const launcher = yield* run({ HOUSTON_HOME: "" }, ["__service-launcher"]);
+    expect(launcher.exitCode).toBe(1);
+    expect(launcher.stderr).toContain("[service-launcher] HOUSTON_HOME is required");
+    expect(launcher.stderr).not.toContain("CACHE=");
+    const launcherHelp = yield* run({ HOUSTON_HOME: "" }, ["__service-launcher", "--help"]);
+    expect(launcherHelp.exitCode).toBe(0);
+    expect(launcherHelp.stderr).toContain("CACHE=");
+    expect(launcherHelp.stdout).toContain("__service-launcher");
+    const appImage = yield* run({ APPIMAGE: `${root}/Houston.AppImage` });
+    expect(appImage.exitCode).toBe(0);
+    expect(appImage.stderr).toContain("CACHE=disabled");
+    const existing = yield* run({ NODE_COMPILE_CACHE: `${root}/explicit` });
+    expect(existing.exitCode).toBe(0);
+    expect(existing.stderr.replaceAll("\\", "/")).toContain(
+      `${root}/explicit`.replaceAll("\\", "/"),
+    );
+    const disabled = yield* run({ NODE_DISABLE_COMPILE_CACHE: "1" });
+    expect(disabled.exitCode).toBe(0);
+    expect(disabled.stderr).toContain("CACHE=disabled");
+    yield* fs.writeFileString(`${root}/blocked`, "not a directory");
+    const unavailable = yield* run({ XDG_CACHE_HOME: `${root}/blocked` });
+    expect(unavailable.exitCode).toBe(0);
+    expect(unavailable.stderr).toContain("CACHE=disabled");
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);

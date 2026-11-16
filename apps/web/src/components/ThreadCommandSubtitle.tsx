@@ -1,0 +1,104 @@
+import type { ProviderDriverKind } from "@houston-app/contracts";
+import { FolderGit2Icon, FolderIcon, GitBranchIcon } from "lucide-react";
+import { Fragment, type ReactNode } from "react";
+import { ProviderInstanceIcon } from "./chat/ProviderInstanceIcon";
+import { cn } from "~/lib/utils";
+
+import { resolveThreadSubtitleSegments } from "./ThreadCommandSubtitle.logic";
+import { MiddleTruncate } from "./ui/middle-truncate";
+
+export type ThreadCommandSubtitleVariant = "workspace-harness" | "workspace" | "branch-harness";
+
+const THREAD_COMMAND_SUBTITLE_VARIANT: ThreadCommandSubtitleVariant = "workspace-harness";
+
+export const COMMAND_PALETTE_META_ICON_CLASS = "size-3 shrink-0 text-muted-foreground/70";
+
+export function CommandPaletteMetaDot() {
+  return <span className="shrink-0 text-muted-foreground/50">·</span>;
+}
+
+function WorkspaceIcon(props: { variant: ThreadCommandSubtitleVariant; isWorktree: boolean }) {
+  if (props.isWorktree) {
+    return <FolderGit2Icon className={COMMAND_PALETTE_META_ICON_CLASS} aria-hidden />;
+  }
+  if (props.variant === "branch-harness") {
+    return <GitBranchIcon className={COMMAND_PALETTE_META_ICON_CLASS} aria-hidden />;
+  }
+  return <FolderIcon className={COMMAND_PALETTE_META_ICON_CLASS} aria-hidden />;
+}
+
+export function ThreadCommandSubtitle(props: {
+  projectTitle: string | null;
+  environmentLabel?: string | null;
+  branch: string | null;
+  worktreePath: string | null;
+  isCurrent: boolean;
+  /** The thread's pull request badge, on the second line beside the checkout. */
+  pullRequest?: ReactNode;
+  driverKind?: ProviderDriverKind | null;
+  providerDisplayName?: string | null;
+  acpRegistryAgentId?: string | undefined;
+  acpRegistryIconUrl?: string | undefined;
+  variant?: ThreadCommandSubtitleVariant;
+  className?: string;
+}) {
+  const variant = props.variant ?? THREAD_COMMAND_SUBTITLE_VARIANT;
+  const isWorktree = props.worktreePath != null && props.worktreePath.trim().length > 0;
+  const showHarness =
+    variant !== "workspace" && props.driverKind != null && props.providerDisplayName;
+
+  const projectLabel = props.projectTitle?.trim() || null;
+  const branchLabel = props.branch?.trim() || null;
+  const segments = resolveThreadSubtitleSegments({
+    projectTitle: projectLabel,
+    branch: branchLabel,
+    hasPullRequest: props.pullRequest != null && props.pullRequest !== false,
+    showHarness: Boolean(showHarness && props.driverKind),
+    isCurrent: props.isCurrent,
+  });
+
+  if (segments.length === 0) return null;
+
+  return (
+    <span
+      className={cn(
+        "inline-flex min-w-0 max-w-full items-center gap-1 text-xs text-muted-foreground/70",
+        props.className,
+      )}
+    >
+      {segments.map((segment, index) => (
+        <Fragment key={segment}>
+          {index > 0 ? <CommandPaletteMetaDot /> : null}
+          {segment === "project" ? (
+            <span className="inline-flex min-w-0 items-center gap-1">
+              <span className="min-w-0 truncate">{projectLabel}</span>
+              {props.environmentLabel ? (
+                <>
+                  <CommandPaletteMetaDot />
+                  <span className="shrink-0">{props.environmentLabel}</span>
+                </>
+              ) : null}
+            </span>
+          ) : segment === "branch" ? (
+            <span className="inline-flex min-w-0 items-center gap-1">
+              <WorkspaceIcon variant={variant} isWorktree={isWorktree} />
+              <MiddleTruncate value={branchLabel ?? ""} />
+            </span>
+          ) : segment === "pullRequest" ? (
+            <span className="inline-flex min-w-0 items-center gap-1">{props.pullRequest}</span>
+          ) : segment === "harness" && props.driverKind ? (
+            <ProviderInstanceIcon
+              driverKind={props.driverKind}
+              displayName={props.providerDisplayName ?? props.driverKind}
+              acpRegistryAgentId={props.acpRegistryAgentId}
+              acpRegistryIconUrl={props.acpRegistryIconUrl}
+              iconClassName="size-3 shrink-0 opacity-70"
+            />
+          ) : (
+            <span className="shrink-0">Current thread</span>
+          )}
+        </Fragment>
+      ))}
+    </span>
+  );
+}

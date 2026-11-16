@@ -1,0 +1,19 @@
+import { ProviderDriverKind } from "@houston-app/contracts";
+import { defineProviderClient } from "@houston-app/provider-core/client";
+
+import { OpenCodeSettings } from "./settings.ts";
+
+export const openCodeClient = defineProviderClient({
+  driverKind: ProviderDriverKind.make("opencode"),
+  label: "OpenCode",
+  acpRegistryAgentIds: ["opencode", "opencode-v2"],
+  settingsSchema: OpenCodeSettings,
+  icon: {
+    viewBox: "0 0 32 40",
+    fill: { light: "#211E1E", dark: "#F1ECEC" },
+    paths: [
+      { d: "M24 32H8V16H24V32Z", fill: { light: "#CFCECD", dark: "#4B4646" } },
+      { d: "M24 8H8V32H24V8ZM32 40H0V0H32V40Z" },
+    ],
+  },
+});
