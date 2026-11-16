@@ -75,9 +75,8 @@ export async function readConnectionCatalog(
   baseDir: string,
 ): Promise<string | null> {
   const service = connectionCatalogServiceName(baseDir);
-  const entry = keychain.entry(service, CATALOG_ACCOUNT);
   try {
-    return (await entry.getPassword()) ?? null;
+    return (await keychain.entry(service, CATALOG_ACCOUNT).getPassword()) ?? null;
   } catch (cause) {
     if (isMissingKeychainEntry(cause)) return null;
     throw new DesktopConnectionCatalogStoreKeychainError({ operation: "read", service, cause });
