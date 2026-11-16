@@ -1,6 +1,6 @@
 {
   "name": "@houston-app/cli",
-  "version": "0.19.10",
+  "version": "0.20.0-rc.1",
   "license": "MIT",
   "repository": {
     "type": "git",
