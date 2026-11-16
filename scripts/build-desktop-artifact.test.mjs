@@ -101,6 +101,19 @@ NodeTest.test("the NSIS hook defines only macros the installer templates insert"
   NodeAssert.doesNotMatch(hook, /StrFunc\.nsh/);
 });
 
+NodeTest.test("the NSIS hook declares its install variables only in the installer build", () => {
+  const hook = NodeFS.readFileSync(
+    NodePath.join(REPO_ROOT, "apps/desktop/resources/installer.nsh"),
+    "utf8",
+  );
+  const declared = [...hook.matchAll(/^\s*Var \/GLOBAL (\w+)$/gm)].map((match) => match[1]);
+  NodeAssert.deepEqual(declared, ["houstonUpdateMode", "houstonRestart", "houstonLaunchArgs"]);
+  const guarded = /!ifndef BUILD_UNINSTALLER\n((?: {2}Var \/GLOBAL \w+\n)+)!endif/.exec(hook)?.[1];
+  NodeAssert.equal(guarded?.match(/Var \/GLOBAL/g)?.length, declared.length);
+  const uninstall = /!macro customUnInstall\n([\s\S]*?)!macroend/.exec(hook)?.[1] ?? "";
+  for (const name of declared) NodeAssert.equal(uninstall.includes(`$${name}`), false);
+});
+
 NodeTest.test("every label in the NSIS hook is a jump target", () => {
   // An unused label is a makensis warning, and the build treats warnings as errors.
   const hook = NodeFS.readFileSync(

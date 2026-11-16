@@ -6,9 +6,13 @@
   !undef RUN_AFTER_FINISH
 !endif
 
-Var /GLOBAL houstonUpdateMode
-Var /GLOBAL houstonRestart
-Var /GLOBAL houstonLaunchArgs
+; The uninstaller build inserts neither macro that uses these, and a variable
+; nothing references is a makensis warning.
+!ifndef BUILD_UNINSTALLER
+  Var /GLOBAL houstonUpdateMode
+  Var /GLOBAL houstonRestart
+  Var /GLOBAL houstonLaunchArgs
+!endif
 
 !macro customInstall
   !ifndef DO_NOT_CREATE_START_MENU_SHORTCUT
